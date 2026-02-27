@@ -3,12 +3,12 @@ const BASE_URL='https://prod-api.4portun.com/openapi/gateway/api/v2';
 let _cachedToken=null,_tokenExpiry=0;
 async function getToken(){
   if(_cachedToken&&Date.now()<_tokenExpiry)return _cachedToken;
-  const res=await fetch(AUTH_URL,{method:'POST',headers:{'Content-Type':'application/json','appId':process.env.PORTUN_APP_ID,'secret':process.env.PORTUN_SECRET},body:JSON.stringify({})});
+  const res=await fetch(AUTH_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({appId:process.env.PORTUN_APP_ID,secret:process.env.PORTUN_SECRET})});
   const body=await res.text();
   if(!res.ok)throw new Error('Auth '+res.status+': '+body);
   const data=JSON.parse(body);
-  if(!data.token)throw new Error('No token: '+body);
-  _cachedToken=data.token;_tokenExpiry=Date.now()+23*60*60*1000;
+  if(!data.data)throw new Error('No token: '+body);
+  _cachedToken=data.data;_tokenExpiry=Date.now()+23*60*60*1000;
   return _cachedToken;
 }
 const EVENT_LABELS={LOBD:{label:'已装船',icon:'📦'},DLPT:{label:'已离港',icon:'🚢'},BDAR:{label:'抵达过境港',icon:'⚓'},BLPT:{label:'离开过境港',icon:'🚢'},ARRIVALD:{label:'抵达目的港',icon:'🏁'},DSCH:{label:'已卸货',icon:'✅'},GATE_IN:{label:'进场',icon:'🔵'},GATE_OUT:{label:'出场',icon:'🔵'}};
@@ -26,7 +26,7 @@ export default async function handler(req,res){
   if(!/^[A-Z0-9-]{4,30}$/.test(blNo.trim()))return res.status(400).json({error:'Invalid blNo'});
   try{
     const token=await getToken();
-    const trackRes=await fetch(BASE_URL+'/getOceanTracking',{method:'POST',headers:{'Content-Type':'application/json','appId':process.env.PORTUN_APP_ID,'Authorization':'Bearer '+token},body:JSON.stringify({blNo:blNo.trim()})});
+    const trackRes=await fetch(BASE_URL+'/getOceanTracking',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({blNo:blNo.trim()})});
     if(!trackRes.ok)throw new Error('Track '+trackRes.status+': '+(await trackRes.text()));
     const raw=await trackRes.json();
     if(raw.code&&raw.code!==0&&raw.code!=='0')return res.status(404).json({error:raw.message||'Not found',code:raw.code});
