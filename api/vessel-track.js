@@ -23,7 +23,7 @@ async function getToken() {
                   'appId': process.env.PORTUN_APP_ID,
                   'secret': process.env.PORTUN_SECRET,
             },
-      body: JSON.stringify({}),;
+      body: JSON.stringify({}),
 
   if (!res.ok) throw new Error(`Auth failed: ${res.status}`);
   const data = await res.json();
