@@ -16,14 +16,14 @@ let _tokenExpiry = 0;
 async function getToken() {
   if (_cachedToken && Date.now() < _tokenExpiry) return _cachedToken;
 
-  const res = await fetch(AUTH_URL, {
+  const res = await fetch(AUTH_URL, 
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      appId: process.env.PORTUN_APP_ID,
-      secret: process.env.PORTUN_SECRET,
-    }),
-  });
+        headers: {
+          'Content-Type': 'application/json',
+                  'appId': process.env.PORTUN_APP_ID,
+                  'secret': process.env.PORTUN_SECRET,
+            },
+      body: JSON.stringify({}),;
 
   if (!res.ok) throw new Error(`Auth failed: ${res.status}`);
   const data = await res.json();
