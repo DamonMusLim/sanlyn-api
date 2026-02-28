@@ -34,6 +34,8 @@ export default async function handler(req,res){
     const trackRes=await fetch(BASE_URL+'/getOceanTracking',{method:'POST',headers,body:JSON.stringify({billNo:blNo.trim(),subscriptionId})});
     const raw=await trackRes.json();
     if(raw.code!==200)return res.status(404).json({error:raw.message,code:raw.code});
+    // DEBUG: return raw data to diagnose
+    if(req.query.debug==='1')return res.status(200).json({raw});
     const d=raw.data;
     const container=d.containers?.[0];
     const events=(container?.status||[]).map(normalizeEvent);
