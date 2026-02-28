@@ -37,11 +37,12 @@ export default async function handler(req,res){
     // DEBUG: return raw data to diagnose
     if(req.query.debug==='1')return res.status(200).json({raw});
     const d=raw.data;
-    const container=d.containers?.[0];
-    const events=(container?.status||[]).map(normalizeEvent);
+    const places=d.places||[];
+    const polPlace=places.find(p=>p.type==='1')||places[0]||{};
+    const podPlace=places.find(p=>p.type==='4')||places[places.length-1]||{};
+    const ctnrData=d.containerInfos?.[0]||{};
+    const events=(ctnrData.statusList||d.statusList||[]).map(normalizeEvent);
     const actualEvents=events.filter(e=>e.isActual);
-    const lastRoute=d.routes?.[d.routes.length-1];
-    const firstRoute=d.routes?.[0];
     res.setHeader('Cache-Control','s-maxage=300, stale-while-revalidate=600');
     return res.status(200).json({blNo:blNo.trim(),ctnrNo:ctnrNo.trim(),carrierCode:carrierCode.trim(),carrierName:d.carrier?.carrierNameCn||d.carrier?.carrierName||'',pol:polPlace.nameCn||polPlace.name||'',pod:podPlace.nameCn||podPlace.name||'',etd:polPlace.etd||'',atd:polPlace.atd||'',eta:podPlace.eta||'',ata:podPlace.ata||'',vessel:polPlace.vessel||d.firstVessel?.vessel||'',voyage:polPlace.voyage||d.firstVessel?.voyage||'',currentStatus:{code:ctnrData.currentStatusCode||'',time:ctnrData.currentStatusTime||'',desc:ctnrData.descriptionCn||ctnrData.description||''},events,latestEvent:actualEvents.length>0?actualEvents[actualEvents.length-1]:null,places,subscriptionId});
   }catch(err){
