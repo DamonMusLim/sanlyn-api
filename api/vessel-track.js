@@ -43,7 +43,7 @@ export default async function handler(req,res){
     const lastRoute=d.routes?.[d.routes.length-1];
     const firstRoute=d.routes?.[0];
     res.setHeader('Cache-Control','s-maxage=300, stale-while-revalidate=600');
-    return res.status(200).json({blNo:blNo.trim(),ctnrNo:ctnrNo.trim(),carrierCode:carrierCode.trim(),carrierName:d.carrier?.carrierNameCn||d.carrier?.carrierName||'',pol:firstRoute?.polName||'',pod:lastRoute?.podName||'',etd:firstRoute?.polEtd||'',atd:firstRoute?.polAtd||'',eta:lastRoute?.podEta||'',ata:lastRoute?.podAta||'',vessel:d.firstVessel?.vessel||'',voyage:d.firstVessel?.voyage||'',currentStatus:{code:container?.currentStatusCode||'',time:container?.currentStatusTime||'',desc:container?.descriptionCn||container?.description||''},events,latestEvent:actualEvents.length>0?actualEvents[actualEvents.length-1]:null,routes:d.routes||[],subscriptionId});
+    return res.status(200).json({blNo:blNo.trim(),ctnrNo:ctnrNo.trim(),carrierCode:carrierCode.trim(),carrierName:d.carrier?.carrierNameCn||d.carrier?.carrierName||'',pol:polPlace.nameCn||polPlace.name||'',pod:podPlace.nameCn||podPlace.name||'',etd:polPlace.etd||'',atd:polPlace.atd||'',eta:podPlace.eta||'',ata:podPlace.ata||'',vessel:polPlace.vessel||d.firstVessel?.vessel||'',voyage:polPlace.voyage||d.firstVessel?.voyage||'',currentStatus:{code:ctnrData.currentStatusCode||'',time:ctnrData.currentStatusTime||'',desc:ctnrData.descriptionCn||ctnrData.description||''},events,latestEvent:actualEvents.length>0?actualEvents[actualEvents.length-1]:null,places,subscriptionId});
   }catch(err){
     console.error('[vessel-track]',err.message);
     return res.status(500).json({error:'Failed',detail:err.message});
