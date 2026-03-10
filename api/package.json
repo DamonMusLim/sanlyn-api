@@ -1,8 +1,12 @@
 {
-  "name": "sanlyn-api",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "vercel dev"
-  }
+    "name": "sanlyn-api",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+          "dev": "vercel dev"
+    },
+    "dependencies": {
+          "ali-oss": "^6.20.0",
+          "formidable": "^3.5.2"
+    }
 }
