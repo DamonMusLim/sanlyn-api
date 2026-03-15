@@ -1,11 +1,7 @@
 {
-  "rewrites": [
-    { "source": "/api/docs", "destination": "/docs" },
-    { "source": "/api/vessel-track", "destination": "/vessel-track" }
-  ],
   "headers": [
     {
-      "source": "/api/(.*)",
+      "source": "/(.*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" }
       ]
