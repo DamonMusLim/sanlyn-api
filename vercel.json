@@ -1,12 +1,4 @@
 {
-  "functions": {
-    "api-docs.js": {
-      "runtime": "@vercel/node"
-    },
-    "vessel-track.js": {
-      "runtime": "@vercel/node"
-    }
-  },
   "headers": [
     {
       "source": "/(.*)",
