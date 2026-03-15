@@ -1,4 +1,8 @@
 {
+  "rewrites": [
+    { "source": "/api/docs", "destination": "/docs" },
+    { "source": "/api/vessel-track", "destination": "/vessel-track" }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
