@@ -1,0 +1,14 @@
+{
+    "name": "sanlyn-api",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "vercel dev"
+    },
+    "dependencies": {
+        "ali-oss": "^6.20.0",
+        "formidable": "^3.5.2",
+        "nodemailer": "^6.9.0",
+        "pg": "^8.20.0"
+    }
+}
