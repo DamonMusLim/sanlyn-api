@@ -13,5 +13,18 @@ export default async function handler(req, res) {
     query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
     const result = await pool.query(query, params);
     return res.status(200).json({ success: true, data: result.rows, count: result.rowCount });
-  } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  } catch (err) {
+    // 表不存在时从OSS fallback
+    if (err.message.includes("does not exist")) {
+      try {
+        const r = await fetch("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/data/customers.json");
+        const d = await r.json();
+        const list = Array.isArray(d) ? d : [];
+        return res.status(200).json({ success: true, data: list, count: list.length, source: "oss" });
+      } catch(ossErr) {
+        return res.status(200).json({ success: true, data: [], count: 0 });
+      }
+    }
+    return res.status(500).json({ success: false, error: err.message });
+  }
 }
