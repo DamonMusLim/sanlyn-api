@@ -27,11 +27,14 @@ export default async function handler(req, res) {
       })
     });
     const jdyData = await jdyRes.json();
-    const row = (jdyData.data_list || jdyData.data || [])[0];
-    if (!row) return res.status(404).json({ error: "Contract not found in JDY: " + contractNo });
+    const rows = jdyData.data_list || jdyData.data || [];
+    if (!rows.length) return res.status(404).json({ error: "Contract not found in JDY: " + contractNo });
+
+    // 找有PI文件的那条记录
+    const row = rows.find(r => r[PI_WIDGET] && r[PI_WIDGET].length > 0);
+    if (!row) return res.status(404).json({ error: "No PI file found for: " + contractNo });
 
     const piFiles = row[PI_WIDGET] || [];
-    if (!piFiles.length) return res.status(404).json({ error: "No PI file found for: " + contractNo });
 
     const piFile = piFiles[0];
     const piUrl  = piFile.url;
