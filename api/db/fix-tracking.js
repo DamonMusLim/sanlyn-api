@@ -13,22 +13,22 @@ export default async function handler(req, res) {
       const result = await pool.query(`
         UPDATE shipping_plans SET
           raw = raw || jsonb_build_object(
-            'currentStatus', $2,
-            'currentStatusCn', $3,
-            'trackingUpdatedAt', $4,
-            'atd', $5,
-            'vessel', $6,
-            'voyage', $7
+            'currentStatus', $2::text,
+            'currentStatusCn', $3::text,
+            'trackingUpdatedAt', $4::text,
+            'atd', $5::text,
+            'vessel', $6::text,
+            'voyage', $7::text
           )
         WHERE bl_no = $1 OR raw->>'blNo' = $1
       `, [
         p.blNo || "",
-        p.currentStatus || null,
-        p.currentStatusCn || null,
-        p.trackingUpdatedAt || null,
-        p.atd || null,
-        p.vessel || null,
-        p.voyage || p.voyageNo || null,
+        p.currentStatus || "",
+        p.currentStatusCn || "",
+        p.trackingUpdatedAt || "",
+        p.atd || "",
+        p.vessel || "",
+        p.voyage || p.voyageNo || "",
       ]);
       updated += result.rowCount;
     }
