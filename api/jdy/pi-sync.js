@@ -16,22 +16,28 @@ export default async function handler(req, res) {
     if (!contractNo) return res.status(400).json({ error: "contractNo required" });
 
     // 1. 从JDY查这个合同号的PI文件
-    const jdyRes = await fetch("https://api.jiandaoyun.com/api/v5/app/entry/data/list", {
-      method: "POST",
-      headers: { "Authorization": "Bearer " + JDY_TOKEN, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        app_id: JDY_APP,
-        entry_id: JDY_ENTRY,
-        data_filter: { rel: "and", conds: [{ field: CN_WIDGET, type: "text", method: "eq", value: contractNo }] },
-        limit: 10
-      })
-    });
-    const jdyData = await jdyRes.json();
-    const rows = jdyData.data_list || jdyData.data || [];
-    if (!rows.length) return res.status(404).json({ error: "Contract not found in JDY: " + contractNo });
-
-    // 找有PI文件的那条记录
-    const row = rows.find(r => r[PI_WIDGET] && r[PI_WIDGET].length > 0);
+    // 分批拉取所有单证归档记录，找匹配合同号且有PI的
+    let row = null;
+    let lastId = undefined;
+    outer: for (let page = 0; page < 20; page++) {
+      const body = { app_id: JDY_APP, entry_id: JDY_ENTRY, limit: 100 };
+      if (lastId) body.last_id = lastId;
+      const jdyRes = await fetch("https://api.jiandaoyun.com/api/v5/app/entry/data/list", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + JDY_TOKEN, "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const jdyData = await jdyRes.json();
+      const rows = jdyData.data_list || jdyData.data || [];
+      if (!rows.length) break;
+      for (const r of rows) {
+        if (r[CN_WIDGET] === contractNo && r[PI_WIDGET] && r[PI_WIDGET].length > 0) {
+          row = r; break outer;
+        }
+      }
+      if (rows.length < 100) break;
+      lastId = rows[rows.length - 1]._id;
+    }
     if (!row) return res.status(404).json({ error: "No PI file found for: " + contractNo });
 
     const piFiles = row[PI_WIDGET] || [];
