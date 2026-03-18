@@ -14,12 +14,8 @@ export default async function handler(req, res) {
         container_no = NULLIF(TRIM(raw->>'containerNo'), ''),
         customs_cn   = NULLIF(TRIM(raw->>'customsCN'), ''),
         trucking_cn  = NULLIF(TRIM(raw->>'truckingCN'), ''),
-        customer     = NULLIF(TRIM(COALESCE(raw->>'customerCompanyEN', raw->>'customerCompany')), ''),
-        status       = CASE
-          WHEN raw->>'flowStatus' IN ('流程结束（归档关闭）','客户确认收货（签收/异常）','流转完成') THEN 'completed'
-          ELSE 'in_progress'
-        END
-      WHERE bl_no IS NULL OR customer IS NULL OR status IS NULL
+        customer     = NULLIF(TRIM(COALESCE(raw->>'customerCompanyEN', raw->>'customerCompany')), '')
+      WHERE bl_no IS NULL OR customer IS NULL
       RETURNING _id, bl_no, customer, status
     `);
     return res.status(200).json({ success: true, updated: result.rowCount, sample: result.rows.slice(0,5) });
