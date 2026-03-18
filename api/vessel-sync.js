@@ -91,6 +91,35 @@ export default async function handler(req, res) {
       return result;
     });
     await writeOSSJson(client, "data/shipping_plans.json", merged);
+
+    // ── RDS同步tracking字段 ──
+    try {
+      const pool = getPool();
+      for (const u of updates) {
+        if (!u.blNo) continue;
+        await pool.query(`
+          UPDATE shipping_plans SET
+            raw = raw || jsonb_build_object(
+              'currentStatus', $2::text,
+              'currentStatusCn', $3::text,
+              'trackingUpdatedAt', $4::text,
+              'atd', $5::text,
+              'vessel', $6::text,
+              'voyage', $7::text
+            )
+          WHERE bl_no = $1 OR raw->>'blNo' = $1
+        `, [
+          u.blNo,
+          u.currentStatus || "",
+          u.currentStatusCn || "",
+          u.trackingUpdatedAt || "",
+          u.atd || "",
+          u.vessel || "",
+          u.voyage || "",
+        ]);
+      }
+    } catch(rdsErr) { console.error('[vessel-sync RDS]', rdsErr.message); }
+
     return res.status(200).json({ success: true, updated: updates.length, total: merged.length });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
