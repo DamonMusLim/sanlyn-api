@@ -16,7 +16,7 @@ export default async function handler(req, res) {
         trucking_cn  = NULLIF(TRIM(raw->>'truckingCN'), ''),
         customer     = NULLIF(TRIM(COALESCE(raw->>'customerCompanyEN', raw->>'customerCompany')), '')
       WHERE bl_no IS NULL OR customer IS NULL
-      RETURNING _id, bl_no, customer, status
+      RETURNING _id, bl_no, customer
     `);
     return res.status(200).json({ success: true, updated: result.rowCount, sample: result.rows.slice(0,5) });
   } catch (err) {
