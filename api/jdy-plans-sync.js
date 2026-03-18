@@ -1,4 +1,5 @@
 import OSS from 'ali-oss';
+import { getPool } from './db.js';
 const OSS_KEY='data/shipping_plans.json';
 const OSS_PUBLIC=`https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/${OSS_KEY}`;
 const W={shipmentNo:'_widget_1762828544749',shippingLine:'_widget_1765450157283',pol:'_widget_1764591553171',pod:'_widget_1764591553172',containerQty:'_widget_1765450157285',containerType:'_widget_1766895482504',customerEN:'_widget_1766913567261',customerCN:'_widget_1766568840023',forwarderCN:'_widget_1764591553170',forwarderEN:'_widget_1765191742170',truckingCN:'_widget_1768645113405',customsCN:'_widget_1768645113406',insuranceCN:'_widget_1773730136760',insuranceCost:'_widget_1773730136761',freightCost:'_widget_1768299925392',freightSaleUSD:'_widget_1766566622260',thcTotal:'_widget_1768300192916',truckingCost:'_widget_1772454275249',customsCost:'_widget_1768641952534',shipmentDate:'_widget_1764582236204',blNo:'_widget_1773399157196',etd:'_widget_1771626741566',eta:'_widget_1771626741567',vessel:'_widget_1771626741568',containerNo:'_widget_1771626741552',flowStatus:'_widget_1764582236205',contractNo:'_widget_1768820368507',orderNos:'_widget_1767084770362'};
@@ -26,6 +27,27 @@ export default async function handler(req,res){
     else{list.unshift(rec);}
     const client=getOSSClient();
     await client.put(OSS_KEY,Buffer.from(JSON.stringify(list,null,2),'utf-8'),{mime:'application/json'});
+    // ── RDS upsert ──
+    try {
+      const pool = getPool();
+      await pool.query(`
+        INSERT INTO shipping_plans (_id, bl_no, vessel, voyage, etd, eta, container_no, customs_cn, trucking_cn, customer, raw, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,NOW())
+        ON CONFLICT (_id) DO UPDATE SET
+          bl_no=EXCLUDED.bl_no, vessel=EXCLUDED.vessel, voyage=EXCLUDED.voyage,
+          etd=EXCLUDED.etd, eta=EXCLUDED.eta, container_no=EXCLUDED.container_no,
+          customs_cn=EXCLUDED.customs_cn, trucking_cn=EXCLUDED.trucking_cn,
+          customer=EXCLUDED.customer, raw=EXCLUDED.raw, updated_at=NOW()
+      `, [
+        rec._id||rec.shipmentNo,
+        rec.blNo||null, rec.vessel||null, rec.voyageNo||null,
+        rec.etd||null, rec.eta||null, rec.containerNo||null,
+        rec.customsCN||null, rec.truckingCN||null,
+        rec.customerCompanyEN||rec.customerCompany||null,
+        JSON.stringify(rec)
+      ]);
+    } catch(rdsErr) { console.error('[jdy-plans-sync RDS]', rdsErr.message); }
+
     return res.status(200).json({ok:true,action:idx>=0?'updated':'created',shipmentNo:rec.shipmentNo});
   }catch(err){console.error('[jdy-plans-sync]',err);return res.status(500).json({error:err.message});}
 }
