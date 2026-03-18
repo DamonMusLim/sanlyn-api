@@ -2,9 +2,9 @@ import { getPool, setCors } from "../db.js";
 
 const JDY_TOKEN = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
 const JDY_APP   = "689cb08a93c073210bfc772b";
-const JDY_ENTRY = "691e76b3cb637ee7ef1f25ca";  // 单证归档表
-const PI_WIDGET = "_widget_1771739769157";
-const CN_WIDGET = "_widget_1766730818801";
+const JDY_ENTRY = "6419d478b9b91b00091e4d73";  // 订单主表
+const PI_WIDGET = "_widget_1769418068618";
+const CN_WIDGET = "_widget_1679903024720";
 
 export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
