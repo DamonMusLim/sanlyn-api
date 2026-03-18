@@ -23,7 +23,7 @@ export default async function handler(req, res) {
         app_id: JDY_APP,
         entry_id: JDY_ENTRY,
         data_filter: { rel: "and", conds: [{ field: CN_WIDGET, type: "text", method: "eq", value: contractNo }] },
-        limit: 1
+        limit: 10
       })
     });
     const jdyData = await jdyRes.json();
