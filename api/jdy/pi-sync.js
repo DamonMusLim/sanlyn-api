@@ -67,8 +67,8 @@ export default async function handler(req, res) {
     const docsRes = await fetch("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/data/documents.json");
     const docsRaw = await docsRes.json();
     const docs = Array.isArray(docsRaw) ? docsRaw : (docsRaw.documents || []);
-    const idx = docs.findIndex(d => d.contractNo === contractNo || d.orderNo === contractNo);
-    if (idx >= 0) { docs[idx].pi = piObj; docs[idx].updatedAt = new Date().toISOString(); }
+    const idx = docs.findIndex(d => (d.contractNo && d.contractNo === contractNo) || (d.orderNo && d.orderNo === contractNo));
+    if (idx >= 0) { docs[idx].pi = piObj; docs[idx].contractNo = docs[idx].contractNo || contractNo; docs[idx].updatedAt = new Date().toISOString(); }
     else { docs.push({ contractNo, pi: piObj, updatedAt: new Date().toISOString() }); }
 
     const uploadFd = new FormData();
