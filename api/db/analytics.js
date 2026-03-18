@@ -14,7 +14,7 @@ export default async function handler(req, res) {
           SUM(CAST(o.total_amount AS NUMERIC)) AS total_amount,
           COALESCE(SUM(CAST(p.raw->>'receivedAmount' AS NUMERIC)),0) AS total_received,
           SUM(CAST(o.total_amount AS NUMERIC)) - COALESCE(SUM(CAST(p.raw->>'receivedAmount' AS NUMERIC)),0) AS outstanding
-        FROM orders o LEFT JOIN finance_payments p ON o._id = p._id
+        FROM orders o LEFT JOIN finance_payments p ON o.contract_no = p._id
         ${where} GROUP BY o.customer ORDER BY total_amount DESC NULLS LAST LIMIT 50
       `, params);
       return res.status(200).json({ success: true, data: result.rows });
@@ -35,7 +35,7 @@ export default async function handler(req, res) {
           COALESCE(CAST(p.raw->>'receivedAmount' AS NUMERIC),0) AS received,
           CAST(o.total_amount AS NUMERIC) - COALESCE(CAST(p.raw->>'receivedAmount' AS NUMERIC),0) AS outstanding,
           o.currency, o.created_at
-        FROM orders o LEFT JOIN finance_payments p ON o._id = p._id
+        FROM orders o LEFT JOIN finance_payments p ON o.contract_no = p._id
         WHERE CAST(o.total_amount AS NUMERIC) > 0
           AND (p._id IS NULL OR CAST(o.total_amount AS NUMERIC) > COALESCE(CAST(p.raw->>'receivedAmount' AS NUMERIC),0))
         ORDER BY outstanding DESC NULLS LAST LIMIT 100
