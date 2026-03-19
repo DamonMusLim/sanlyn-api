@@ -22,7 +22,7 @@ export default async function handler(req, res) {
 
   try {
     let { contractNo } = req.body;
-    if (!contractNo) return res.status(400).json({ error: "contractNo required" });
+    if (!contractNo) if (!contractNo) return res.status(200).json({ ok: true, skip: "no contractNo" });
     contractNo = contractNo.replace(/^\[|\]$/g, "").trim();
 
     // 1. JDY filter查询
