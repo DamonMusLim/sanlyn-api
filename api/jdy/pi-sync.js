@@ -2,9 +2,15 @@ import { getPool, setCors } from "../db.js";
 
 const JDY_TOKEN = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
 const JDY_APP   = "689cb08a93c073210bfc772b";
-const JDY_ENTRY = "6419d478b9b91b00091e4d73";  // 订单主表
-const PI_WIDGET = "_widget_1769418068618";
+const JDY_ENTRY = "6419d478b9b91b00091e4d73";
 const CN_WIDGET = "_widget_1679903024720";
+const FIELD_MAP = {
+  pi:              "_widget_1769418068618",
+  contract:        "_widget_1771709164165",
+  invoice:         "_widget_1769078158887",
+  packingList:     "_widget_1771709164164",
+  factoryContract: "_widget_1771628524623",
+};
 
 export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
@@ -13,85 +19,82 @@ export default async function handler(req, res) {
 
   try {
     let { contractNo } = req.body;
-    // JDY TEXT模式变量会加方括号，清理掉
-    if (contractNo) contractNo = contractNo.replace(/^\[|\]$/g, "").trim();
     if (!contractNo) return res.status(400).json({ error: "contractNo required" });
+    contractNo = contractNo.replace(/^\[|\]$/g, "").trim();
+    if (!contractNo) return res.status(400).json({ error: "contractNo empty after cleaning" });
 
-    // 1. 从JDY查这个合同号的PI文件
-    // 分批拉取所有单证归档记录，找匹配合同号且有PI的
-    let row = null;
-    let lastId = undefined;
-    outer: for (let page = 0; page < 20; page++) {
-      const body = { app_id: JDY_APP, entry_id: JDY_ENTRY, limit: 100 };
-      if (lastId) body.last_id = lastId;
-      const jdyRes = await fetch("https://api.jiandaoyun.com/api/v5/app/entry/data/list", {
-        method: "POST",
-        headers: { "Authorization": "Bearer " + JDY_TOKEN, "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      const jdyData = await jdyRes.json();
-      const rows = jdyData.data_list || jdyData.data || [];
-      if (!rows.length) break;
-      for (const r of rows) {
-        if (r[CN_WIDGET] === contractNo && r[PI_WIDGET] && r[PI_WIDGET].length > 0) {
-          row = r; break outer;
-        }
-      }
-      if (rows.length < 100) break;
-      lastId = rows[rows.length - 1]._id;
-    }
-    if (!row) return res.status(404).json({ error: "No PI file found for: " + contractNo });
+    // 1. 用filter精确查JDY订单主表
+    const jdyRes = await fetch("https://api.jiandaoyun.com/api/v5/app/entry/data/list", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + JDY_TOKEN, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        app_id: JDY_APP, entry_id: JDY_ENTRY,
+        data_filter: { rel: "and", conds: [{ field: CN_WIDGET, type: "text", method: "eq", value: contractNo }] },
+        limit: 1,
+      })
+    });
+    const jdyData = await jdyRes.json();
+    const row = (jdyData.data || jdyData.data_list || [])[0];
+    if (!row) return res.status(404).json({ error: "Contract not found: " + contractNo });
 
-    const piFiles = row[PI_WIDGET] || [];
-
-    const piFile = piFiles[0];
-    const piUrl  = piFile.url;
-    const fileName = piFile.name || ("PI_" + contractNo + ".xlsx");
-
-    // 2. 从JDY下载PI文件
-    const fileRes = await fetch(piUrl);
-    if (!fileRes.ok) throw new Error("Failed to fetch PI: " + fileRes.status);
-    const fileBuffer = await fileRes.arrayBuffer();
-    const contentType = fileRes.headers.get("content-type") || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    const ossPath = "documents/pi/" + fileName;
-
-    // 3. 上传到OSS
-    const fd = new FormData();
-    fd.append("file", new Blob([fileBuffer], { type: contentType }), fileName);
-    fd.append("path", ossPath);
-    const ossRes = await fetch("https://sanlyn-api.vercel.app/api/oss-upload", { method: "POST", body: fd });
-    if (!ossRes.ok) throw new Error("OSS upload failed: " + ossRes.status);
-    const ossData = await ossRes.json();
-    const ossUrl = ossData.url || ("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/" + ossPath);
-    const piObj  = { url: ossUrl, name: fileName, size: fileBuffer.byteLength };
-
-    // 4. 更新OSS documents.json
+    // 2. 读现有documents.json
     const docsRes = await fetch("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/data/documents.json");
     const docsRaw = await docsRes.json();
-    const docs = Array.isArray(docsRaw) ? docsRaw : (docsRaw.documents || []);
-    const idx = docs.findIndex(d => (d.contractNo && d.contractNo === contractNo) || (d.orderNo && d.orderNo === contractNo));
-    if (idx >= 0) { docs[idx].pi = piObj; docs[idx].contractNo = docs[idx].contractNo || contractNo; docs[idx].updatedAt = new Date().toISOString(); }
-    else { docs.push({ contractNo, pi: piObj, updatedAt: new Date().toISOString() }); }
+    const docs = Array.isArray(docsRaw) ? docsRaw : (docsRaw.documents || docsRaw.data || []);
+    const idx = docs.findIndex(d => d.contractNo === contractNo || d.orderNo === contractNo);
+    const docEntry = idx >= 0 ? { ...docs[idx] } : { contractNo };
 
-    const uploadFd = new FormData();
-    uploadFd.append("file", new Blob([JSON.stringify(docs)], { type: "application/json" }), "documents.json");
-    uploadFd.append("path", "data/documents.json");
-    await fetch("https://sanlyn-api.vercel.app/api/oss-upload", { method: "POST", body: uploadFd });
+    // 3. 逐个字段下载上传OSS
+    const results = {};
+    for (const [field, widget] of Object.entries(FIELD_MAP)) {
+      const files = row[widget] || [];
+      if (!files.length) continue;
+      const f = files[0];
+      if (!f.url) continue;
+      try {
+        const fileData = await fetch(f.url, { timeout: 30000 }).then(r => r.arrayBuffer());
+        const fname = f.name || (field + "_" + contractNo + ".xlsx");
+        const ossPath = "documents/" + field + "/" + fname;
+        const boundary = "FormBoundary" + Date.now();
+        const body = Buffer.concat([
+          Buffer.from("--" + boundary + "\r\nContent-Disposition: form-data; name=\"path\"\r\n\r\n" + ossPath + "\r\n"),
+          Buffer.from("--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"" + fname + "\"\r\nContent-Type: application/octet-stream\r\n\r\n"),
+          Buffer.from(fileData),
+          Buffer.from("\r\n--" + boundary + "--\r\n"),
+        ]);
+        const ossRes = await fetch("https://sanlyn-api.vercel.app/api/oss-upload", {
+          method: "POST",
+          headers: { "Content-Type": "multipart/form-data; boundary=" + boundary },
+          body,
+        });
+        const ossData = await ossRes.json();
+        const ossUrl = ossData.url || ("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/" + ossPath);
+        docEntry[field] = { url: ossUrl, name: fname, size: f.size || fileData.byteLength };
+        results[field] = ossUrl;
+      } catch(e) {
+        results[field] = "error: " + e.message;
+      }
+    }
 
-    // 5. 写RDS（如果表存在）
-    try {
-      const pool = getPool();
-      await pool.query(`
-        INSERT INTO documents (contract_no, pi, updated_at)
-        VALUES ($1, $2, NOW())
-        ON CONFLICT (contract_no)
-        DO UPDATE SET pi = $2, updated_at = NOW()
-      `, [contractNo, JSON.stringify(piObj)]);
-    } catch(dbErr) { console.warn("RDS skip:", dbErr.message); }
+    // 4. 写回documents.json
+    docEntry.updatedAt = new Date().toISOString();
+    if (idx >= 0) docs[idx] = docEntry; else docs.push(docEntry);
+    const docsJson = JSON.stringify(docs);
+    const boundary2 = "FormBoundary" + Date.now();
+    const uploadBody = Buffer.concat([
+      Buffer.from("--" + boundary2 + "\r\nContent-Disposition: form-data; name=\"path\"\r\n\r\ndata/documents.json\r\n"),
+      Buffer.from("--" + boundary2 + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"documents.json\"\r\nContent-Type: application/json\r\n\r\n"),
+      Buffer.from(docsJson),
+      Buffer.from("\r\n--" + boundary2 + "--\r\n"),
+    ]);
+    await fetch("https://sanlyn-api.vercel.app/api/oss-upload", {
+      method: "POST",
+      headers: { "Content-Type": "multipart/form-data; boundary=" + boundary2 },
+      body: uploadBody,
+    });
 
-    return res.status(200).json({ success: true, contractNo, ossUrl });
+    return res.status(200).json({ success: true, contractNo, synced: results });
   } catch (err) {
-    console.error("pi-sync error:", err);
     return res.status(500).json({ success: false, error: err.message });
   }
 }
