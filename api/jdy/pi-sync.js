@@ -57,7 +57,9 @@ export default async function handler(req, res) {
         const fileRes = await fetch(f.url);
         if (!fileRes.ok) throw new Error("JDY fetch failed: " + fileRes.status);
         const fileBlob = await fileRes.blob();
-        const fname = f.name || (field + "_" + contractNo + ".xlsx");
+        // 统一命名规则: PI_FS20260220059.xlsx
+        const ext = (f.name || "").split(".").pop() || "xlsx";
+        const fname = field.toUpperCase() + "_" + contractNo + "." + ext;
         const ossPath = "documents/" + field + "/" + fname;
         const fd = new FormData();
         fd.append("path", ossPath);
