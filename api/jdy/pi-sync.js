@@ -12,7 +12,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { contractNo } = req.body;
+    let { contractNo } = req.body;
+    // JDY TEXT模式变量会加方括号，清理掉
+    if (contractNo) contractNo = contractNo.replace(/^\[|\]$/g, "").trim();
     if (!contractNo) return res.status(400).json({ error: "contractNo required" });
 
     // 1. 从JDY查这个合同号的PI文件
