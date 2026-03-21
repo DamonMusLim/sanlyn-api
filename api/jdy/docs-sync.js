@@ -1,4 +1,5 @@
 import { setCors } from "../db.js";
+import { ossUploadJSON, ossReadJSON, ossUploadBuffer } from "../oss-direct.js";
 
 const JDY_TOKEN = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
 const JDY_APP   = "689cb08a93c073210bfc772b";
@@ -21,9 +22,9 @@ const BL_NO_WIDGET = "_widget_1773596720903";
 
 async function syncDocsFromRow(row, contractNo) {
   const blNo = row[BL_NO_WIDGET] || "";
-  const docsRes = await fetch("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/data/documents.json");
-  const docsRaw = await docsRes.json();
-  const docs = Array.isArray(docsRaw) ? docsRaw : (docsRaw.documents || docsRaw.data || []);
+  let docs;
+  try { docs = await ossReadJSON("data/documents.json"); } catch(e) { docs = []; }
+  if (!Array.isArray(docs)) docs = docs.documents || docs.data || [];
 
   const cnIdx = contractNo ? docs.findIndex(d => d.contractNo === contractNo) : -1;
   const cnEntry = cnIdx >= 0 ? { ...docs[cnIdx] } : (contractNo ? { contractNo } : null);
@@ -42,13 +43,9 @@ async function syncDocsFromRow(row, contractNo) {
       const fname = field.toUpperCase() + "_" + key + "." + ext;
       const ossPath = "documents/" + field + "/" + fname;
       const fileRes = await fetch(f.url);
-      const fileBlob = await fileRes.blob();
-      const fd = new FormData();
-      fd.append("path", ossPath);
-      fd.append("file", fileBlob, fname);
-      const ossRes = await fetch(OSS_UPLOAD, { method: "POST", body: fd });
-      const ossData = await ossRes.json();
-      const ossUrl = ossData.url || ("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/" + ossPath);
+      if (!fileRes.ok) throw new Error("fetch failed");
+      const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+      const ossUrl = await ossUploadBuffer(ossPath, fileBuffer);
       const fileObj = { url: ossUrl, name: fname, size: f.size || 0 };
       if (cnEntry) cnEntry[field] = fileObj;
       if (blEntry) blEntry[field] = fileObj;
@@ -63,10 +60,7 @@ async function syncDocsFromRow(row, contractNo) {
   if (cnEntry) { if (cnIdx >= 0) docs[cnIdx] = cnEntry; else docs.push(cnEntry); }
   if (blEntry) { if (blIdx >= 0) docs[blIdx] = blEntry; else docs.push(blEntry); }
 
-  const fd2 = new FormData();
-  fd2.append("path", "data/documents.json");
-  fd2.append("file", new Blob([JSON.stringify(docs)], { type: "application/json" }), "documents.json");
-  await fetch(OSS_UPLOAD, { method: "POST", body: fd2 });
+  await ossUploadJSON("data/documents.json", docs);
   return { contractNo, blNo, synced: results };
 }
 

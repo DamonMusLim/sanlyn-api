@@ -1,4 +1,5 @@
 import { setCors } from "../db.js";
+import { ossUploadJSON, ossReadJSON, ossUploadBuffer } from "../oss-direct.js";
 
 const JDY_TOKEN = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
 const JDY_APP   = "689cb08a93c073210bfc772b";
@@ -40,9 +41,9 @@ export default async function handler(req, res) {
     if (!row) return res.status(404).json({ error: "Contract not found: " + contractNo });
 
     // 2. 读现有documents.json
-    const docsRes = await fetch("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/data/documents.json");
-    const docsRaw = await docsRes.json();
-    const docs = Array.isArray(docsRaw) ? docsRaw : (docsRaw.documents || docsRaw.data || []);
+    let docs;
+    try { docs = await ossReadJSON("data/documents.json"); } catch(e) { docs = []; }
+    if (!Array.isArray(docs)) docs = docs.documents || docs.data || [];
     const idx = docs.findIndex(d => d.contractNo === contractNo || d.orderNo === contractNo);
     const docEntry = idx >= 0 ? { ...docs[idx] } : { contractNo };
 
@@ -77,10 +78,7 @@ export default async function handler(req, res) {
     // 4. 写回documents.json
     docEntry.updatedAt = new Date().toISOString();
     if (idx >= 0) docs[idx] = docEntry; else docs.push(docEntry);
-    const fd2 = new FormData();
-    fd2.append("path", "data/documents.json");
-    fd2.append("file", new Blob([JSON.stringify(docs)], { type: "application/json" }), "documents.json");
-    await fetch("https://sanlyn-api.vercel.app/api/oss-upload", { method: "POST", body: fd2 });
+    await ossUploadJSON("data/documents.json", docs);
 
     return res.status(200).json({ success: true, contractNo, synced: results });
   } catch (err) {
