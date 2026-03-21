@@ -12,7 +12,7 @@ const DOC_FIELD_MAP = {
   hc:          "_widget_1767008538946",
   vc:          "_widget_1767008538947",
   customsDecl: "_widget_1767008538949",
-  freightInv:  "_widget_1773914554424",
+  invoice:     "_widget_1773914554424",
   so:          "_widget_1771737294154",
   coo:         "_widget_1763604147210",
 };
