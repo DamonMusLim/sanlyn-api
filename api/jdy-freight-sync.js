@@ -38,12 +38,61 @@ function toDate(v) {
   try { return new Date(v).toISOString().slice(0, 10); } catch { return null; }
 }
 
+async function upsertOne(pool, d) {
+  function get(row, k) {
+    const W = {
+      carrier:"_widget_1765191135618",pol:"_widget_1764590764461",pod:"_widget_1764590764463",
+      validFrom:"_widget_1766385879996",validTo:"_widget_1766385879997",
+      price20gp:"_widget_1766460008891",price40hq:"_widget_1766460008892",thc:"_widget_1766460008893",
+      nextSailing:"_widget_1766687802819",eta:"_widget_1767157052893",
+      forwarder:"_widget_1764590764459",routeCode:"_widget_1766167914318",
+      remarks:"_widget_1764585946456",freeDays:"_widget_1767157052905",
+    };
+    const v = row[W[k]];
+    if (v === null || v === undefined) return null;
+    if (typeof v === "object" && "value" in v) return v.value ?? null;
+    return v;
+  }
+  function toDate(v) { if (!v) return null; try { return new Date(v).toISOString().slice(0,10); } catch { return null; } }
+  await pool.query(`
+    INSERT INTO freight_quotes (jdy_id,carrier,forwarder,pol,pod,route_code,
+      price_20gp,price_40hq,thc,valid_from,valid_to,next_sailing,eta,free_days,remarks,raw,updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,NOW())
+    ON CONFLICT (jdy_id) DO UPDATE SET
+      carrier=EXCLUDED.carrier,forwarder=EXCLUDED.forwarder,pol=EXCLUDED.pol,pod=EXCLUDED.pod,
+      route_code=EXCLUDED.route_code,price_20gp=EXCLUDED.price_20gp,price_40hq=EXCLUDED.price_40hq,
+      thc=EXCLUDED.thc,valid_from=EXCLUDED.valid_from,valid_to=EXCLUDED.valid_to,
+      next_sailing=EXCLUDED.next_sailing,eta=EXCLUDED.eta,free_days=EXCLUDED.free_days,
+      remarks=EXCLUDED.remarks,raw=EXCLUDED.raw,updated_at=NOW()
+  `, [
+    d._id, get(d,"carrier"),get(d,"forwarder"),get(d,"pol"),get(d,"pod"),get(d,"routeCode"),
+    parseFloat(get(d,"price20gp"))||null, parseFloat(get(d,"price40hq"))||null,
+    parseFloat(get(d,"thc"))||null,
+    toDate(get(d,"validFrom")),toDate(get(d,"validTo")),
+    toDate(get(d,"nextSailing")),toDate(get(d,"eta")),
+    get(d,"freeDays"),get(d,"remarks"),JSON.stringify(d),
+  ]);
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
     const pool = getPool();
+
+    // ── 模式1：JDY推送过来的单条数据 ──────────────────────
+    const body = req.body;
+    if (body && (body.op || body.data)) {
+      const op = body.op || "";
+      if (op === "data_remove") return res.status(200).json({ ok: true, action: "skip_delete" });
+      const d = body.data?.data || body.data || {};
+      if (!d._id) return res.status(200).json({ ok: true, skip: "no_id" });
+      await upsertOne(pool, d);
+      return res.status(200).json({ ok: true, action: "upserted", id: d._id });
+    }
+
+    // ── 模式2：主动全量拉取（无body时触发） ───────────────
     let allRows = [];
     let lastId  = null;
     let hasMore = true;
