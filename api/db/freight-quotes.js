@@ -89,7 +89,10 @@ export default async function handler(req, res) {
         }
       );
 
-      const json = await r.json();
+      const text = await r.text();
+      if (!text || !text.trim()) break;
+      const json = JSON.parse(text);
+      if (json.code && json.code !== 0) { console.error("[freight-quotes] JDY error:", json); break; }
       const rows = json.data || [];
       allQuotes  = allQuotes.concat(rows.map(mapQuote));
       hasMore    = rows.length === 100;
