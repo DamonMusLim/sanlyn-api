@@ -3,7 +3,7 @@
  * 从JDY货代报价表读取有效运价
  * entry ID: 692d71da9e9f7fc0d52611a9
  */
-import { setCors } from "./db.js";
+import { setCors } from "../db.js";
 
 const JDY_TOKEN  = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
 const JDY_APP_ID = "689cb08a93c073210bfc772b";
