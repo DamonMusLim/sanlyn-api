@@ -72,7 +72,9 @@ export default async function handler(req, res) {
       }
     );
 
-    const jdyJson = await jdyRes.json();
+    const jdyText = await jdyRes.text();
+    if (!jdyText || !jdyText.trim()) return res.status(200).json({ success: true, addresses: [] });
+    const jdyJson = JSON.parse(jdyText);
 
     if (!jdyRes.ok || jdyJson.code) {
       return res.status(500).json({
