@@ -78,14 +78,14 @@ export default async function handler(req, res) {
       };
 
       const r = await fetch(
-        `https://api.jiandaoyun.com/api/v5/app/entry/data/list`,
+        `https://api.jiandaoyun.com/api/v5/app/${JDY_APP_ID}/entry/${JDY_ENTRY}/data/list`,
         {
           method:  "POST",
           headers: {
             "Content-Type":  "application/json",
             "Authorization": `Bearer ${JDY_TOKEN}`,
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify({ limit: body.limit, ...(body.last_id ? { last_id: body.last_id } : {}) }),
         }
       );
 
