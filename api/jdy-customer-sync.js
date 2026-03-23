@@ -1,7 +1,8 @@
 import { setCors, getPool } from "./db.js";
 
 const CW = {
-  companyCode:      "_widget_1771622930859",  // 客户代号
+  companyCode:      "_widget_1771622930859",  // 客户代号（可能是空）
+  selectCompany:    "_widget_1766650731323",  // 选择公司（linkdata，关联公司表代号）
   relatedFactories: "_widget_1774282924445",  // 关联工厂
 };
 
@@ -24,7 +25,12 @@ export default async function handler(req, res) {
     if (op === "data_remove") return res.status(200).json({ ok: true, skip: "delete" });
 
     const row = body.data?.data || body.data || body;
-    const companyCode = get(row, CW.companyCode);
+    // 优先用「选择公司」linkdata字段，fallback到「客户代号」
+    const selectCompanyRaw = get(row, CW.selectCompany);
+    const linkedCode = Array.isArray(selectCompanyRaw)
+      ? (selectCompanyRaw[0]?._id || selectCompanyRaw[0])
+      : (typeof selectCompanyRaw === "object" ? selectCompanyRaw?._id : selectCompanyRaw);
+    const companyCode = linkedCode || get(row, CW.companyCode);
     if (!companyCode) return res.status(200).json({ ok: true, skip: "no companyCode" });
 
     const factoriesRaw = get(row, CW.relatedFactories);
