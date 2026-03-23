@@ -1,8 +1,15 @@
 import { setCors, getPool } from "./db.js";
 
 const ENTRY = {
-  docs:    "691e76b3cb637ee7ef1f25ca",  // 单证归档
-  company: "692a7c7d85918bdb075ee048",  // 公司表
+  docs:       "691e76b3cb637ee7ef1f25ca",  // 单证归档
+  company:    "692a7c7d85918bdb075ee048",  // 公司表
+  customer:   "68da2738987870a88c839d6e",  // 客户档案
+};
+
+// 客户档案字段
+const CUSTW = {
+  companyCode:     "_widget_1771622930859",  // 客户代号
+  relatedFactories:"_widget_1774282924445",  // 关联工厂(checkboxgroup)
 };
 
 const CN_WIDGET = "_widget_1766730818801";
@@ -88,6 +95,24 @@ export default async function handler(req, res) {
       const pool = getPool();
       const result = await syncCompany(row, jdyId, pool);
       return res.status(200).json({ ok: true, ...result });
+    }
+
+    // 客户档案
+    if (entryId === ENTRY.customer) {
+      const pool = getPool();
+      const companyCode = get(row, CUSTW.companyCode);
+      const factoriesRaw = get(row, CUSTW.relatedFactories);
+      const factories = Array.isArray(factoriesRaw) ? factoriesRaw : (factoriesRaw ? [factoriesRaw] : []);
+      if (companyCode) {
+        await pool.query(`
+          UPDATE customers SET
+            raw = raw || jsonb_build_object('relatedFactories', $1::jsonb),
+            updated_at = NOW()
+          WHERE company_code = $2
+        `, [JSON.stringify(factories), companyCode]);
+        console.log(\`[jdy-sync] customer \${companyCode} factories=\${factories.join(",")}\`);
+      }
+      return res.status(200).json({ ok: true, synced: "customer", companyCode, factories });
     }
 
     return res.status(200).json({ ok: true, skip: "unknown entryId", entryId });
