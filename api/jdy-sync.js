@@ -104,13 +104,15 @@ export default async function handler(req, res) {
       const factoriesRaw = get(row, CUSTW.relatedFactories);
       const factories = Array.isArray(factoriesRaw) ? factoriesRaw : (factoriesRaw ? [factoriesRaw] : []);
       if (companyCode) {
-        await pool.query(`
+        // 客户档案里的代号可能是短代码(PS)或长代码(CN-00037)，两个都试
+        const r1 = await pool.query(`
           UPDATE customers SET
             raw = raw || jsonb_build_object('relatedFactories', $1::jsonb),
             updated_at = NOW()
-          WHERE company_code = $2
+          WHERE company_code = $2 OR raw->>'companyCode' = $2 OR raw->>'shortCode' = $2
+          RETURNING company_code
         `, [JSON.stringify(factories), companyCode]);
-        console.log(\`[jdy-sync] customer \${companyCode} factories=\${factories.join(",")}\`);
+        console.log(\`[jdy-sync] customer \${companyCode} updated=\${r1.rowCount} factories=\${factories.join(",")}\`);
       }
       return res.status(200).json({ ok: true, synced: "customer", companyCode, factories });
     }
