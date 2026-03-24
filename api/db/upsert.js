@@ -14,14 +14,18 @@ export default async function handler(req, res) {
       vals = [record.username,record.password,record.role,record.company,record.supplierRole||record.supplier_role,record.permissions,record.department,JSON.stringify(record)];
     } else if (table === "orders") {
       // 提取products子表，补全barcode字段
+      // ⚠️ _widget_1764396068580 = CBM（体积），不是 category！
       const rawProducts = (record.products||record._widget_1764396068557||[]).map(p => ({
         name:     p.name    || p._widget_1764396068574 || "",
         qty:      p.qty     || p._widget_1764396068583 || 0,
         barcode:  p.barcode || p._widget_1764396068578 || "",
-        category: p.category|| p._widget_1764396068580 || "",
+        category: p.category || "",
+        cbm:      p.cbm     || p._widget_1764396068580 || "",
         factory:  p.factory || p._widget_1764396068576 || "",
       }));
-      const enrichedRecord = { ...record, products: rawProducts };
+      // 顶层 category：从 JDY _widget_1766653844751（订单类目）读取
+      const topCategory = record.category || record._widget_1766653844751 || "";
+      const enrichedRecord = { ...record, products: rawProducts, category: topCategory };
       sql = `INSERT INTO orders (_id,contract_no,customer_po,customer,destination,etd,eta,status,production_status,total_amount,currency,plan_id,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW()) ON CONFLICT (_id) DO UPDATE SET contract_no=$2,customer_po=$3,customer=$4,destination=$5,etd=$6,eta=$7,status=$8,production_status=$9,total_amount=$10,currency=$11,plan_id=$12,raw=$13,updated_at=NOW() RETURNING *`;
       vals = [record._id,record.contractNo||record.contract_no,record.customerPO||record.customer_po,record.customer,record.destination,record.etd||null,record.eta||null,record.status,record.productionStatus||record.production_status,record.totalAmount||record.total_amount||null,record.currency||"USD",record.planId||record.plan_id,JSON.stringify(enrichedRecord)];
     } else if (table === "finance_payments") {
