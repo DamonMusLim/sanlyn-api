@@ -60,6 +60,71 @@ const ORDER_WIDGETS = {
   "_widget_1771093417266": "source",               // source
 };
 
+// ─── S65: 海运计划表 widget ID → 业务字段 ───
+const SHIPPING_WIDGETS = {
+  "_widget_1762828544749": "shipmentNo",           // 出运编号
+  "_widget_1773399157196": "blNo",                 // BL单号
+  "_widget_1768820368507": "contractNo",           // 合同号
+  "_widget_1765450157283": "shippingLine",         // 船公司
+  "_widget_1771626741568": "vessel",               // 船名
+  "_widget_1771626741569": "voyageNo",             // 航次
+  "_widget_1765450157284": "voyageNoAlt",          // 航次（备用）
+  "_widget_1764591553171": "pol",                  // 起运港（默认）
+  "_widget_1764591553172": "pod",                  // 目的港（默认）
+  "_widget_1764582236204": "shipmentDate",         // 出运日期
+  "_widget_1769075239993": "eta",                  // 预计到港时间
+  "_widget_1771626741566": "etd",                  // ETD（开船日）
+  "_widget_1771626741567": "etaSO",                // ETA（预计到港日）
+  "_widget_1771626741547": "cutoffDate",           // 截港日
+  "_widget_1765450157285": "containerQty",         // 柜数量
+  "_widget_1766895482504": "containerType",        // 建议柜型
+  "_widget_1771626741552": "containerNo",          // 柜号
+  "_widget_1771626741551": "sealNo",               // 封签
+  "_widget_1764582236205": "status",               // 状态
+  "_widget_1766568840023": "customerCompany",      // 客户公司名称
+  "_widget_1766913567261": "customerCompanyEN",    // 公司名称（英文）（客户公司）
+  "_widget_1764591553170": "forwarderCN",          // 公司名称（中文）（货代公司）
+  "_widget_1765191742170": "forwarderEN",          // 公司名称（英文）（货代公司）
+  "_widget_1773486880174": "issuingCompany",       // 出单公司
+  // ★ S65: 供应商字段 ★
+  "_widget_1765450157291": "oceanForwarder",       // 选择海运（lookup → 货代）
+  "_widget_1768645113405": "truckingCN",           // 拖车公司（中文）
+  "_widget_1768645113406": "customsBroker",        // 报关行
+  "_widget_1772454275251": "customsBrokerSelect",  // 选择报关行（combo）
+  // 费用
+  "_widget_1768299925392": "freightCost",          // 海运费（成本）
+  "_widget_1766566622260": "freightSaleUSD",       // 海运费（销售）
+  "_widget_1766460409789": "portSurchargeTotal",   // 港杂总金额
+  "_widget_1772454275249": "truckingCostTotal",    // 拖车总费用（成本）
+  "_widget_1772454275250": "truckingCostSale",     // 拖车总费用（销售）
+  "_widget_1768641952534": "customsCostTotal",     // 报关费用（成本）
+  "_widget_1768641952535": "customsCostSale",      // 报关费用（销售）
+  "_widget_1772454275255": "customsSaleAlt",       // 报关费销售
+  // 收付
+  "_widget_1766569134331": "freightPaidAmount",    // 海运已付金额
+  "_widget_1766569134332": "freightPendingPay",    // 海运未付金额
+  "_widget_1766569134329": "freightReceivedAmount",// 海运已收金额
+  "_widget_1766569134330": "freightPendingReceive",// 海运未收金额
+  "_widget_1766567302495": "portSurchargePaid",    // 港杂已付金额
+  "_widget_1766567302496": "portSurchargePending", // 港杂剩余未付金额
+  "_widget_1766566948893": "portSurchargeReceived", // 港杂已收金额
+  "_widget_1766567079062": "portSurchargePendingReceive", // 港杂剩余未收金额
+  "_widget_1768643215093": "truckingCostPaid",     // 拖车总费用（成本）已付
+  "_widget_1768643215094": "truckingCostPending",  // 拖车总费用（成本）未付
+  "_widget_1768643215097": "customsCostPaid",      // 报关费用（成本）已付
+  "_widget_1768643215098": "customsCostPending",   // 报关费用（成本）未付
+  // 订单子表
+  "_widget_1762828544751": "orderSubform",         // 订单号子表
+  "_widget_1765451948626": "orderNos",             // 辅助订单号集合
+  "_widget_1767084770362": "orderNosAlt",          // 订单号集合
+  // 其他
+  "_widget_1764582236207": "remarks",              // 备注
+  "_widget_1770884051962": "profit",               // 利润
+  "_widget_1773730136761": "insuranceSale",        // 保险销售价
+  "_widget_1766814081887": "businessType",         // 业务类型
+  "_widget_1766814081889": "transportMode",        // 运输方式
+};
+
 // ─── S61: 报关资料表 widget ID → 业务字段 ───
 const CUSTOMS_WIDGETS = {
   "_widget_1763603690386": "customsNo",
@@ -104,10 +169,32 @@ function _normalizeJDYOrder(r) {
   for (const [wid, field] of Object.entries(ORDER_WIDGETS)) {
     if (r[wid] !== undefined) out[field] = _jdyVal(r[wid]);
   }
+  for (const key of Object.keys(r)) {
+    if (!key.startsWith("_widget_") && !(key in out)) out[key] = r[key];
+  }
+  return out;
+}
+
+// ─── S65: Normalize JDY shipping plan ───
+function _normalizeJDYShipping(r) {
+  const out = { _id: r._id };
+  for (const [wid, field] of Object.entries(SHIPPING_WIDGETS)) {
+    if (r[wid] !== undefined) out[field] = _jdyVal(r[wid]);
+  }
   // 保留非 widget 字段
   for (const key of Object.keys(r)) {
     if (!key.startsWith("_widget_") && !(key in out)) out[key] = r[key];
   }
+  // Derived fields
+  out.voyageNo = out.voyageNo || out.voyageNoAlt || "";
+  out.eta = out.etaSO || out.eta || null;
+  out.customer = out.customerCompanyEN || out.customerCompany || "";
+  // customsBroker fallback: combo selection → text field
+  out.customsCN = out.customsBroker || out.customsBrokerSelect || "";
+  out.truckingCN = out.truckingCN || "";
+  out.forwarderCN = out.forwarderCN || "";
+  // flowStatus from status
+  out.flowStatus = out.status || "";
   return out;
 }
 
@@ -166,11 +253,9 @@ export default async function handler(req, res) {
       sql = `INSERT INTO accounts (username,password,role,company,supplier_role,permissions,department,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) ON CONFLICT (username) DO UPDATE SET password=$2,role=$3,company=$4,supplier_role=$5,permissions=$6,department=$7,raw=$8,updated_at=NOW() RETURNING *`;
       vals = [rawRecord.username,rawRecord.password,rawRecord.role,rawRecord.company,rawRecord.supplierRole||rawRecord.supplier_role,rawRecord.permissions,rawRecord.department,JSON.stringify(rawRecord)];
     } else if (table === "orders") {
-      // JDY 原始数据自动 normalize
       const hasWidgets = Object.keys(rawRecord).some(k => k.startsWith("_widget_"));
       const record = hasWidgets ? _normalizeJDYOrder(rawRecord) : rawRecord;
 
-      // products 子表 — ⚠️ _widget_1764396068580 = CBM，不是 category
       const prodSource = record.products || [];
       const rawProducts = (Array.isArray(prodSource) ? prodSource : []).map(p => {
         const pv = (k) => _jdyVal(p[k]);
@@ -178,7 +263,7 @@ export default async function handler(req, res) {
           name:     p.name    || pv("_widget_1764396068574") || "",
           qty:      p.qty     || pv("_widget_1764396068583") || 0,
           barcode:  p.barcode || pv("_widget_1764396068578") || "",
-          category: p.category || pv("_widget_1766565146298") || "",  // 二级分类
+          category: p.category || pv("_widget_1766565146298") || "",
           cbm:      p.cbm     || pv("_widget_1764396068580") || "",
           factory:  p.factory || pv("_widget_1764571997306") || "",
           size:     p.size    || pv("_widget_1764396068575") || "",
@@ -236,8 +321,36 @@ export default async function handler(req, res) {
         JSON.stringify(record),
       ];
     } else {
-      sql = `INSERT INTO shipping_plans (_id,bl_no,vessel,voyage,etd,eta,cutoff_date,container_no,customs_cn,trucking_cn,customer,created_by,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW()) ON CONFLICT (_id) DO UPDATE SET bl_no=$2,vessel=$3,voyage=$4,etd=$5,eta=$6,cutoff_date=$7,container_no=$8,customs_cn=$9,trucking_cn=$10,customer=$11,created_by=$12,raw=$13,updated_at=NOW() RETURNING *`;
-      vals = [rawRecord._id,rawRecord.blNo||rawRecord.bl_no,rawRecord.vessel,rawRecord.voyage,rawRecord.etd||null,rawRecord.eta||null,rawRecord.cutoffDate||rawRecord.cutoff_date||null,rawRecord.containerNo||rawRecord.container_no,rawRecord.customsCN||rawRecord.customs_cn,rawRecord.truckingCN||rawRecord.trucking_cn,rawRecord.customer,rawRecord.createdBy||rawRecord.created_by,JSON.stringify(rawRecord)];
+      // ★ S65: shipping_plans — auto-normalize JDY widget IDs ★
+      const hasWidgets = Object.keys(rawRecord).some(k => k.startsWith("_widget_"));
+      const record = hasWidgets ? _normalizeJDYShipping(rawRecord) : rawRecord;
+
+      sql = `INSERT INTO shipping_plans (_id,bl_no,vessel,voyage,etd,eta,cutoff_date,container_no,customs_cn,trucking_cn,customer,created_by,shipment_no,contract_no,container_type,forwarder_cn,freight_cost,freight_sale_usd,port_surcharge_total,trucking_cost_total,customs_cost_total,flow_status,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,NOW()) ON CONFLICT (_id) DO UPDATE SET bl_no=$2,vessel=$3,voyage=$4,etd=$5,eta=$6,cutoff_date=$7,container_no=$8,customs_cn=$9,trucking_cn=$10,customer=$11,created_by=$12,shipment_no=$13,contract_no=$14,container_type=$15,forwarder_cn=$16,freight_cost=$17,freight_sale_usd=$18,port_surcharge_total=$19,trucking_cost_total=$20,customs_cost_total=$21,flow_status=$22,raw=$23,updated_at=NOW() RETURNING *`;
+      vals = [
+        record._id,
+        record.blNo || record.bl_no || null,
+        record.vessel || null,
+        record.voyageNo || record.voyage || null,
+        _dt(record.etd) || null,
+        _dt(record.eta) || null,
+        _dt(record.cutoffDate || record.cutoff_date) || null,
+        record.containerNo || record.container_no || null,
+        record.customsCN || record.customs_cn || null,
+        record.truckingCN || record.trucking_cn || null,
+        record.customer || record.customerCompanyEN || record.customerCompany || null,
+        record.createdBy || record.created_by || null,
+        record.shipmentNo || record.shipment_no || null,
+        record.contractNo || record.contract_no || null,
+        record.containerType || record.container_type || null,
+        record.forwarderCN || record.forwarder_cn || null,
+        Number(record.freightCost || record.freight_cost) || null,
+        Number(record.freightSaleUSD || record.freight_sale_usd) || null,
+        Number(record.portSurchargeTotal || record.port_surcharge_total) || null,
+        Number(record.truckingCostTotal || record.trucking_cost_total) || null,
+        Number(record.customsCostTotal || record.customs_cost_total) || null,
+        record.flowStatus || record.flow_status || null,
+        JSON.stringify(record),
+      ];
     }
     const result = await pool.query(sql, vals);
     return res.status(200).json({ success: true, data: result.rows[0] });
