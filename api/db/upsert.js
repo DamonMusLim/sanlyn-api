@@ -1,5 +1,5 @@
 import { getPool, setCors } from "../db.js";
-const TABLES = ["orders","finance_payments","shipping_plans","accounts"];
+const TABLES = ["orders","finance_payments","shipping_plans","accounts","customs_data"];
 
 // ─── JDY 订单主表 widget ID → 业务字段（从表单数据结构确认） ───
 const ORDER_WIDGETS = {
@@ -60,6 +60,39 @@ const ORDER_WIDGETS = {
   "_widget_1771093417266": "source",               // source
 };
 
+// ─── S61: 报关资料表 widget ID → 业务字段 ───
+const CUSTOMS_WIDGETS = {
+  "_widget_1763603690386": "customsNo",
+  "_widget_1767082183888": "shipmentNo",
+  "_widget_1773088074376": "customsDecOfficial",
+  "_widget_1773088074377": "releaseNote",
+  "_widget_1766823510929": "bookingNote",
+  "_widget_1769072140465": "blDraft",
+  "_widget_1768815958469": "blFinal",
+  "_widget_1768818743679": "customsDec",
+  "_widget_1769162177987": "originCert",
+  "_widget_1766474587096": "quarantineReport",
+  "_widget_1769763783948": "sealPhotos",
+  "_widget_1766824437654": "factorySign",
+  "_widget_1766473197615": "loadingSubform",
+};
+
+const LOADING_SUBFORM_WIDGETS = {
+  "_widget_1767069458550": "contractNo",
+  "_widget_1766473743213": "orderNo",
+  "_widget_1766473743210": "containerType",
+  "_widget_1766473743211": "loadingDate",
+  "_widget_1766824437653": "totalWeightKG",
+  "_widget_1773088074435": "factoryContact",
+  "_widget_1773088074436": "factoryPhone",
+  "_widget_1773088074404": "driverName",
+  "_widget_1773088074405": "driverPlate",
+  "_widget_1773088074406": "containerNo",
+  "_widget_1774349445978": "weightTicket",
+  "_widget_1773088074407": "sealNo",
+  "_widget_1773088074434": "photos9grid",
+};
+
 function _jdyVal(v) {
   if (v === null || v === undefined) return "";
   if (typeof v === "object" && !Array.isArray(v) && v.value !== undefined) return v.value ?? "";
@@ -78,10 +111,45 @@ function _normalizeJDYOrder(r) {
   return out;
 }
 
+function _normalizeCustomsRecord(r) {
+  const out = { _id: r._id };
+  for (const [wid, field] of Object.entries(CUSTOMS_WIDGETS)) {
+    if (r[wid] !== undefined) {
+      if (field === "loadingSubform") {
+        const arr = Array.isArray(r[wid]) ? r[wid] : [];
+        out.loadingDetails = arr.map(item => {
+          const row = {};
+          for (const [swid, sfield] of Object.entries(LOADING_SUBFORM_WIDGETS)) {
+            if (item[swid] !== undefined) row[sfield] = _jdyVal(item[swid]);
+          }
+          for (const k of Object.keys(item)) {
+            if (!k.startsWith("_widget_") && !(k in row)) row[k] = item[k];
+          }
+          return row;
+        });
+      } else {
+        out[field] = _jdyVal(r[wid]);
+      }
+    }
+  }
+  for (const key of Object.keys(r)) {
+    if (!key.startsWith("_widget_") && !(key in out)) out[key] = r[key];
+  }
+  return out;
+}
+
 function _dt(v) {
   if (!v) return null;
   if (typeof v === "number" && v > 1e12) return new Date(v).toISOString().slice(0, 10);
   if (typeof v === "string") return v.slice(0, 10) || null;
+  return null;
+}
+
+function _fileVal(v) {
+  if (!v) return null;
+  if (typeof v === "string") return JSON.stringify([{ url: v }]);
+  if (Array.isArray(v)) return JSON.stringify(v);
+  if (v.url) return JSON.stringify([v]);
   return null;
 }
 
@@ -144,6 +212,29 @@ export default async function handler(req, res) {
     } else if (table === "finance_payments") {
       sql = `INSERT INTO finance_payments (_id,plan_id,customer,amount,currency,paid_date,status,tt_slip_url,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()) ON CONFLICT (_id) DO UPDATE SET plan_id=$2,customer=$3,amount=$4,currency=$5,paid_date=$6,status=$7,tt_slip_url=$8,raw=$9,updated_at=NOW() RETURNING *`;
       vals = [rawRecord._id,rawRecord.planId||rawRecord.plan_id,rawRecord.customer,rawRecord.amount||null,rawRecord.currency||"USD",rawRecord.paidDate||rawRecord.paid_date||null,rawRecord.status,rawRecord.ttSlipUrl||rawRecord.tt_slip_url,JSON.stringify(rawRecord)];
+    } else if (table === "customs_data") {
+      const hasWidgets = Object.keys(rawRecord).some(k => k.startsWith("_widget_"));
+      const record = hasWidgets ? _normalizeCustomsRecord(rawRecord) : rawRecord;
+      const contractNo = record.contractNo || (record.loadingDetails?.[0]?.contractNo) || null;
+      sql = `INSERT INTO customs_data (_id,customs_no,shipment_no,contract_no,customs_dec_official,release_note,booking_note,bl_draft,bl_final,customs_dec,origin_cert,quarantine_report,seal_photos,factory_sign,loading_details,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW()) ON CONFLICT (_id) DO UPDATE SET customs_no=$2,shipment_no=$3,contract_no=$4,customs_dec_official=$5,release_note=$6,booking_note=$7,bl_draft=$8,bl_final=$9,customs_dec=$10,origin_cert=$11,quarantine_report=$12,seal_photos=$13,factory_sign=$14,loading_details=$15,raw=$16,updated_at=NOW() RETURNING *`;
+      vals = [
+        record._id,
+        record.customsNo || record.customs_no || null,
+        record.shipmentNo || record.shipment_no || null,
+        contractNo,
+        _fileVal(record.customsDecOfficial),
+        _fileVal(record.releaseNote),
+        _fileVal(record.bookingNote),
+        _fileVal(record.blDraft),
+        _fileVal(record.blFinal),
+        _fileVal(record.customsDec),
+        _fileVal(record.originCert),
+        _fileVal(record.quarantineReport),
+        _fileVal(record.sealPhotos),
+        _fileVal(record.factorySign),
+        JSON.stringify(record.loadingDetails || []),
+        JSON.stringify(record),
+      ];
     } else {
       sql = `INSERT INTO shipping_plans (_id,bl_no,vessel,voyage,etd,eta,cutoff_date,container_no,customs_cn,trucking_cn,customer,created_by,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW()) ON CONFLICT (_id) DO UPDATE SET bl_no=$2,vessel=$3,voyage=$4,etd=$5,eta=$6,cutoff_date=$7,container_no=$8,customs_cn=$9,trucking_cn=$10,customer=$11,created_by=$12,raw=$13,updated_at=NOW() RETURNING *`;
       vals = [rawRecord._id,rawRecord.blNo||rawRecord.bl_no,rawRecord.vessel,rawRecord.voyage,rawRecord.etd||null,rawRecord.eta||null,rawRecord.cutoffDate||rawRecord.cutoff_date||null,rawRecord.containerNo||rawRecord.container_no,rawRecord.customsCN||rawRecord.customs_cn,rawRecord.truckingCN||rawRecord.trucking_cn,rawRecord.customer,rawRecord.createdBy||rawRecord.created_by,JSON.stringify(rawRecord)];
