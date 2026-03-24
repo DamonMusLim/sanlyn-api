@@ -2,17 +2,30 @@
 const BASE = "https://prod-api.4portun.com/openapi";
 
 const CARRIER_MAP = {
-  "KMTC":"KMTC","COSCO":"COSCO","COSU":"COSCO","MSCU":"MSC","MEDU":"MSC",
+  "KMTC":"KMTC","COSCO":"COSCO","COSU":"COSCO","MSCU":"MSC","MEDU":"MSC","MSCL":"MSC",
   "MAEU":"MAE","HLCU":"HLC","EITU":"ONE","ONEY":"ONE","CXDU":"COSCO",
   "NBXG":"CMA","CMDU":"CMA","YMLU":"YML","EVGU":"EVG","HDMU":"HMM",
   "ZIMU":"ZIM","OOLU":"OOCL","APLU":"APL","SITU":"SIT","FCIU":"FCL",
+  "EGLV":"EVG","TRIU":"TSL","WHLC":"WHL","SNKO":"SNL","NSAU":"ANL",
 };
+
+// BL patterns that don't match prefix but belong to known carriers
+const BL_PATTERNS = [
+  { re: /^\d{3}[A-Z]{4,}/,  carrier: null },  // numeric prefix = need DB lookup
+  { re: /^HJSC/,             carrier: "HJS" },
+  { re: /^SHPH/,             carrier: "COSCO" },
+];
 
 function guessCarrier(blNo) {
   if (!blNo) return null;
   const u = blNo.toUpperCase();
+  // Try prefix match first
   for (const [p, c] of Object.entries(CARRIER_MAP)) {
     if (u.startsWith(p)) return c;
+  }
+  // Try pattern match
+  for (const { re, carrier } of BL_PATTERNS) {
+    if (re.test(u) && carrier) return carrier;
   }
   return null;
 }
