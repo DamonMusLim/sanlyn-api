@@ -16,8 +16,8 @@ const W = {
   customerCN:   '_widget_1766568840023',  // 客户公司名称
   forwarderCN:  '_widget_1764591553170',  // 货代公司（中文）
   forwarderEN:  '_widget_1765191742170',  // 货代公司（英文）
-  truckingCN:   '_widget_1768645113405',  // 拖车公司（中文）
-  customsCN:    '_widget_1768645113406',  // 报关行
+  truckingCN:   '_widget_1774376841970',  // 拖车公司（中文）
+  customsCN:    '_widget_1772454275251',  // 报关行
   insuranceCN:  '_widget_1773730136760',  // 保险公司中文
   insuranceCost:'_widget_1773730136761',  // 保险销售价
   freightCost:  '_widget_1768299925392',  // 海运费（成本）
