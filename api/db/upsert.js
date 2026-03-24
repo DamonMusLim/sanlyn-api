@@ -3,7 +3,8 @@ const TABLES = ["orders","finance_payments","shipping_plans","accounts"];
 
 // ─── JDY 订单主表 widget ID → 业务字段（从表单数据结构确认） ───
 const ORDER_WIDGETS = {
-  "_widget_1679903024720": "contractNo",          // 合同号 (sn)
+  "_widget_1679903024720": "contractNo",
+  "_widget_1756914144559": "customerPO",          // 合同号 (sn)
   "_widget_1764468507574": "companyNameEN",        // 公司名称（英文）
   "_widget_1764468507573": "companyNameCN",        // 公司名称（中文）
   "_widget_1764590113940": "companyCode",          // Company_Code
