@@ -4,125 +4,119 @@ const TABLES = ["orders","finance_payments","shipping_plans","accounts","customs
 // ─── JDY 订单主表 widget ID → 业务字段（从表单数据结构确认） ───
 const ORDER_WIDGETS = {
   "_widget_1679903024720": "contractNo",
-  "_widget_1756914144559": "customerPO",          // 合同号 (sn)
-  "_widget_1764468507574": "companyNameEN",        // 公司名称（英文）
-  "_widget_1764468507573": "companyNameCN",        // 公司名称（中文）
-  "_widget_1764590113940": "companyCode",          // Company_Code
-  "_widget_1764578480945": "groupCode",            // 客户集团代码
-  "_widget_1770371550212": "consignee",            // Consignee
-  "_widget_1764471197748": "destination",          // 目的港
-  "_widget_1764591186973": "pol",                  // 起运港
-  "_widget_1663812600609": "requireArrivalDate",   // Required date of arrival
-  "_widget_1765186212190": "deliveryDate",         // 预计交货日期
-  "_widget_1766462809214": "actDelivery",          // 工厂交货确认
-  "_widget_1773467773240": "productionStatus",     // status生产状态
-  "_widget_1772321728293": "customerConfirmStatus",// 客户确认状态
-  "_widget_1764467945302": "totalAmount",          // 总金额（客户）
-  "_widget_1765186561849": "totalAmountFactory",   // 总金额（工厂）
-  "_widget_1764467945301": "totalQty",             // 总数量
-  "_widget_1766897323225": "grossWeight",          // 总毛重
-  "_widget_1766897323226": "netWeight",            // 总净重
-  "_widget_1772451090157": "totalCBM",             // 总CBM
-  "_widget_1766564550881": "containerType",        // 建议柜型
-  "_widget_1768218310025": "containerQty",         // 柜子数量
-  "_widget_1770797914842": "currency",             // 交易币种
-  "_widget_1766977056108": "currencyAlt",          // 币种
-  "_widget_1762571045801": "remarks",              // 备注
-  "_widget_1766653844751": "category",             // 二级类目
-  "_widget_1768475646834": "country",              // Country
-  "_widget_1770371550210": "countryOther",         // country（Other）
-  "_widget_1771947148663": "portOther",            // Port（Other）
-  "_widget_1771815489798": "address",              // 地址
-  "_widget_1772452248447": "customerAddress",      // 客户地址
-  "_widget_1769423792123": "phone",                // 联系电话
-  "_widget_1769423792125": "email",                // 联系邮箱
-  "_widget_1764396068557": "products",             // Order1 子表
-  "_widget_1768218309979": "products2",            // Order2 子表
-  "_widget_1768218310002": "products3",            // Order3 子表
-  "_widget_1766747364528": "paymentPlan",          // 付款计划子表
-  "_widget_1765194153605": "issuingCompany",       // 出单公司
-  "_widget_1769078795960": "issuingCompanyEN",     // 出单公司(英文)
-  "_widget_1765186212182": "factory",              // 工厂
-  "_widget_1767068173069": "truckingCompany",      // 拖车公司
-  "_widget_1770194186548": "customsBroker",        // 报关行
-  "_widget_1770882800051": "profit",               // 利润
-  "_widget_1770887264333": "exchangeRate",         // 汇率
-  "_widget_1771629244589": "delayReason",          // 延期原因
-  // 附件
-  "_widget_1769418068618": "piUrl",                // PI文件
-  "_widget_1771709164165": "contractUrl",          // 合同SC
-  "_widget_1769078158887": "invoiceUrl",           // 发票IV
-  "_widget_1771709164164": "packingListUrl",       // 箱单PL
-  "_widget_1769417235037": "purchaseContractUrl",  // 采购合同
-  "_widget_1771628524623": "factoryContractUrl",   // 工厂上传合同
-  "_widget_1771093417264": "tenantId",             // tenant_id
-  "_widget_1771093417265": "portalSubmissionId",   // portal_submission_id
-  "_widget_1771093417266": "source",               // source
+  "_widget_1756914144559": "customerPO",
+  "_widget_1764468507574": "companyNameEN",
+  "_widget_1764468507573": "companyNameCN",
+  "_widget_1764590113940": "companyCode",
+  "_widget_1764578480945": "groupCode",
+  "_widget_1770371550212": "consignee",
+  "_widget_1764471197748": "destination",
+  "_widget_1764591186973": "pol",
+  "_widget_1663812600609": "requireArrivalDate",
+  "_widget_1765186212190": "deliveryDate",
+  "_widget_1766462809214": "actDelivery",
+  "_widget_1773467773240": "productionStatus",
+  "_widget_1772321728293": "customerConfirmStatus",
+  "_widget_1764467945302": "totalAmount",
+  "_widget_1765186561849": "totalAmountFactory",
+  "_widget_1764467945301": "totalQty",
+  "_widget_1766897323225": "grossWeight",
+  "_widget_1766897323226": "netWeight",
+  "_widget_1772451090157": "totalCBM",
+  "_widget_1766564550881": "containerType",
+  "_widget_1768218310025": "containerQty",
+  "_widget_1770797914842": "currency",
+  "_widget_1766977056108": "currencyAlt",
+  "_widget_1762571045801": "remarks",
+  "_widget_1766653844751": "category",
+  "_widget_1768475646834": "country",
+  "_widget_1770371550210": "countryOther",
+  "_widget_1771947148663": "portOther",
+  "_widget_1771815489798": "address",
+  "_widget_1772452248447": "customerAddress",
+  "_widget_1769423792123": "phone",
+  "_widget_1769423792125": "email",
+  "_widget_1764396068557": "products",
+  "_widget_1768218309979": "products2",
+  "_widget_1768218310002": "products3",
+  "_widget_1766747364528": "paymentPlan",
+  "_widget_1765194153605": "issuingCompany",
+  "_widget_1769078795960": "issuingCompanyEN",
+  "_widget_1765186212182": "factory",
+  "_widget_1767068173069": "truckingCompany",
+  "_widget_1770194186548": "customsBroker",
+  "_widget_1770882800051": "profit",
+  "_widget_1770887264333": "exchangeRate",
+  "_widget_1771629244589": "delayReason",
+  "_widget_1769418068618": "piUrl",
+  "_widget_1771709164165": "contractUrl",
+  "_widget_1769078158887": "invoiceUrl",
+  "_widget_1771709164164": "packingListUrl",
+  "_widget_1769417235037": "purchaseContractUrl",
+  "_widget_1771628524623": "factoryContractUrl",
+  "_widget_1771093417264": "tenantId",
+  "_widget_1771093417265": "portalSubmissionId",
+  "_widget_1771093417266": "source",
 };
 
 // ─── S65: 海运计划表 widget ID → 业务字段 ───
 const SHIPPING_WIDGETS = {
-  "_widget_1762828544749": "shipmentNo",           // 出运编号
-  "_widget_1773399157196": "blNo",                 // BL单号
-  "_widget_1768820368507": "contractNo",           // 合同号
-  "_widget_1765450157283": "shippingLine",         // 船公司
-  "_widget_1771626741568": "vessel",               // 船名
-  "_widget_1771626741569": "voyageNo",             // 航次
-  "_widget_1765450157284": "voyageNoAlt",          // 航次（备用）
-  "_widget_1764591553171": "pol",                  // 起运港（默认）
-  "_widget_1764591553172": "pod",                  // 目的港（默认）
-  "_widget_1764582236204": "shipmentDate",         // 出运日期
-  "_widget_1769075239993": "eta",                  // 预计到港时间
-  "_widget_1771626741566": "etd",                  // ETD（开船日）
-  "_widget_1771626741567": "etaSO",                // ETA（预计到港日）
-  "_widget_1771626741547": "cutoffDate",           // 截港日
-  "_widget_1765450157285": "containerQty",         // 柜数量
-  "_widget_1766895482504": "containerType",        // 建议柜型
-  "_widget_1771626741552": "containerNo",          // 柜号
-  "_widget_1771626741551": "sealNo",               // 封签
-  "_widget_1764582236205": "status",               // 状态
-  "_widget_1766568840023": "customerCompany",      // 客户公司名称
-  "_widget_1766913567261": "customerCompanyEN",    // 公司名称（英文）（客户公司）
-  "_widget_1764591553170": "forwarderCN",          // 公司名称（中文）（货代公司）
-  "_widget_1765191742170": "forwarderEN",          // 公司名称（英文）（货代公司）
-  "_widget_1773486880174": "issuingCompany",       // 出单公司
-  // ★ S65: 供应商字段 ★
-  "_widget_1765450157291": "oceanForwarder",       // 选择海运（lookup → 货代）
-  "_widget_1768645113405": "truckingCN",           // 拖车公司（中文）
-  "_widget_1768645113406": "customsBroker",        // 报关行
-  "_widget_1772454275251": "customsBrokerSelect",  // 选择报关行（combo）
-  // 费用
-  "_widget_1768299925392": "freightCost",          // 海运费（成本）
-  "_widget_1766566622260": "freightSaleUSD",       // 海运费（销售）
-  "_widget_1766460409789": "portSurchargeTotal",   // 港杂总金额
-  "_widget_1772454275249": "truckingCostTotal",    // 拖车总费用（成本）
-  "_widget_1772454275250": "truckingCostSale",     // 拖车总费用（销售）
-  "_widget_1768641952534": "customsCostTotal",     // 报关费用（成本）
-  "_widget_1768641952535": "customsCostSale",      // 报关费用（销售）
-  "_widget_1772454275255": "customsSaleAlt",       // 报关费销售
-  // 收付
-  "_widget_1766569134331": "freightPaidAmount",    // 海运已付金额
-  "_widget_1766569134332": "freightPendingPay",    // 海运未付金额
-  "_widget_1766569134329": "freightReceivedAmount",// 海运已收金额
-  "_widget_1766569134330": "freightPendingReceive",// 海运未收金额
-  "_widget_1766567302495": "portSurchargePaid",    // 港杂已付金额
-  "_widget_1766567302496": "portSurchargePending", // 港杂剩余未付金额
-  "_widget_1766566948893": "portSurchargeReceived", // 港杂已收金额
-  "_widget_1766567079062": "portSurchargePendingReceive", // 港杂剩余未收金额
-  "_widget_1768643215093": "truckingCostPaid",     // 拖车总费用（成本）已付
-  "_widget_1768643215094": "truckingCostPending",  // 拖车总费用（成本）未付
-  "_widget_1768643215097": "customsCostPaid",      // 报关费用（成本）已付
-  "_widget_1768643215098": "customsCostPending",   // 报关费用（成本）未付
-  // 订单子表
-  "_widget_1762828544751": "orderSubform",         // 订单号子表
-  "_widget_1765451948626": "orderNos",             // 辅助订单号集合
-  "_widget_1767084770362": "orderNosAlt",          // 订单号集合
-  // 其他
-  "_widget_1764582236207": "remarks",              // 备注
-  "_widget_1770884051962": "profit",               // 利润
-  "_widget_1773730136761": "insuranceSale",        // 保险销售价
-  "_widget_1766814081887": "businessType",         // 业务类型
-  "_widget_1766814081889": "transportMode",        // 运输方式
+  "_widget_1762828544749": "shipmentNo",
+  "_widget_1773399157196": "blNo",
+  "_widget_1768820368507": "contractNo",
+  "_widget_1765450157283": "shippingLine",
+  "_widget_1771626741568": "vessel",
+  "_widget_1771626741569": "voyageNo",
+  "_widget_1765450157284": "voyageNoAlt",
+  "_widget_1764591553171": "pol",
+  "_widget_1764591553172": "pod",
+  "_widget_1764582236204": "shipmentDate",
+  "_widget_1769075239993": "eta",
+  "_widget_1771626741566": "etd",
+  "_widget_1771626741567": "etaSO",
+  "_widget_1771626741547": "cutoffDate",
+  "_widget_1765450157285": "containerQty",
+  "_widget_1766895482504": "containerType",
+  "_widget_1771626741552": "containerNo",
+  "_widget_1771626741551": "sealNo",
+  "_widget_1764582236205": "status",
+  "_widget_1766568840023": "customerCompany",
+  "_widget_1766913567261": "customerCompanyEN",
+  "_widget_1764591553170": "forwarderCN",
+  "_widget_1765191742170": "forwarderEN",
+  "_widget_1773486880174": "issuingCompany",
+  "_widget_1765450157291": "oceanForwarder",
+  "_widget_1768645113405": "truckingCN",
+  "_widget_1768645113406": "customsBroker",
+  "_widget_1772454275251": "customsBrokerSelect",
+  "_widget_1768299925392": "freightCost",
+  "_widget_1766566622260": "freightSaleUSD",
+  "_widget_1766460409789": "portSurchargeTotal",
+  "_widget_1772454275249": "truckingCostTotal",
+  "_widget_1772454275250": "truckingCostSale",
+  "_widget_1768641952534": "customsCostTotal",
+  "_widget_1768641952535": "customsCostSale",
+  "_widget_1772454275255": "customsSaleAlt",
+  "_widget_1766569134331": "freightPaidAmount",
+  "_widget_1766569134332": "freightPendingPay",
+  "_widget_1766569134329": "freightReceivedAmount",
+  "_widget_1766569134330": "freightPendingReceive",
+  "_widget_1766567302495": "portSurchargePaid",
+  "_widget_1766567302496": "portSurchargePending",
+  "_widget_1766566948893": "portSurchargeReceived",
+  "_widget_1766567079062": "portSurchargePendingReceive",
+  "_widget_1768643215093": "truckingCostPaid",
+  "_widget_1768643215094": "truckingCostPending",
+  "_widget_1768643215097": "customsCostPaid",
+  "_widget_1768643215098": "customsCostPending",
+  "_widget_1762828544751": "orderSubform",
+  "_widget_1765451948626": "orderNos",
+  "_widget_1767084770362": "orderNosAlt",
+  "_widget_1764582236207": "remarks",
+  "_widget_1770884051962": "profit",
+  "_widget_1773730136761": "insuranceSale",
+  "_widget_1766814081887": "businessType",
+  "_widget_1766814081889": "transportMode",
 };
 
 // ─── S61: 报关资料表 widget ID → 业务字段 ───
@@ -175,25 +169,20 @@ function _normalizeJDYOrder(r) {
   return out;
 }
 
-// ─── S65: Normalize JDY shipping plan ───
 function _normalizeJDYShipping(r) {
   const out = { _id: r._id };
   for (const [wid, field] of Object.entries(SHIPPING_WIDGETS)) {
     if (r[wid] !== undefined) out[field] = _jdyVal(r[wid]);
   }
-  // 保留非 widget 字段
   for (const key of Object.keys(r)) {
     if (!key.startsWith("_widget_") && !(key in out)) out[key] = r[key];
   }
-  // Derived fields
   out.voyageNo = out.voyageNo || out.voyageNoAlt || "";
   out.eta = out.etaSO || out.eta || null;
   out.customer = out.customerCompanyEN || out.customerCompany || "";
-  // customsBroker fallback: combo selection → text field
   out.customsCN = out.customsBroker || out.customsBrokerSelect || "";
   out.truckingCN = out.truckingCN || "";
   out.forwarderCN = out.forwarderCN || "";
-  // flowStatus from status
   out.flowStatus = out.status || "";
   return out;
 }
@@ -321,11 +310,11 @@ export default async function handler(req, res) {
         JSON.stringify(record),
       ];
     } else {
-      // ★ S65: shipping_plans — auto-normalize JDY widget IDs ★
+      // ★ S66: shipping_plans — added pol ($24) and pod ($25) columns ★
       const hasWidgets = Object.keys(rawRecord).some(k => k.startsWith("_widget_"));
       const record = hasWidgets ? _normalizeJDYShipping(rawRecord) : rawRecord;
 
-      sql = `INSERT INTO shipping_plans (_id,bl_no,vessel,voyage,etd,eta,cutoff_date,container_no,customs_cn,trucking_cn,customer,created_by,shipment_no,contract_no,container_type,forwarder_cn,freight_cost,freight_sale_usd,port_surcharge_total,trucking_cost_total,customs_cost_total,flow_status,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,NOW()) ON CONFLICT (_id) DO UPDATE SET bl_no=$2,vessel=$3,voyage=$4,etd=$5,eta=$6,cutoff_date=$7,container_no=$8,customs_cn=$9,trucking_cn=$10,customer=$11,created_by=$12,shipment_no=$13,contract_no=$14,container_type=$15,forwarder_cn=$16,freight_cost=$17,freight_sale_usd=$18,port_surcharge_total=$19,trucking_cost_total=$20,customs_cost_total=$21,flow_status=$22,raw=$23,updated_at=NOW() RETURNING *`;
+      sql = `INSERT INTO shipping_plans (_id,bl_no,vessel,voyage,etd,eta,cutoff_date,container_no,customs_cn,trucking_cn,customer,created_by,shipment_no,contract_no,container_type,forwarder_cn,freight_cost,freight_sale_usd,port_surcharge_total,trucking_cost_total,customs_cost_total,flow_status,raw,pol,pod,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,NOW()) ON CONFLICT (_id) DO UPDATE SET bl_no=$2,vessel=$3,voyage=$4,etd=$5,eta=$6,cutoff_date=$7,container_no=$8,customs_cn=$9,trucking_cn=$10,customer=$11,created_by=$12,shipment_no=$13,contract_no=$14,container_type=$15,forwarder_cn=$16,freight_cost=$17,freight_sale_usd=$18,port_surcharge_total=$19,trucking_cost_total=$20,customs_cost_total=$21,flow_status=$22,raw=$23,pol=$24,pod=$25,updated_at=NOW() RETURNING *`;
       vals = [
         record._id,
         record.blNo || record.bl_no || null,
@@ -350,6 +339,8 @@ export default async function handler(req, res) {
         Number(record.customsCostTotal || record.customs_cost_total) || null,
         record.flowStatus || record.flow_status || null,
         JSON.stringify(record),
+        record.pol || null,                           // ★ S66: $24 pol
+        record.pod || record.destination || null,     // ★ S66: $25 pod
       ];
     }
     const result = await pool.query(sql, vals);
