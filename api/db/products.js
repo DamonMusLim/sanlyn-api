@@ -1,77 +1,34 @@
-// api/db/products.js — S71 产品数据API
-// 部署到 sanlyn-api (Vercel)
-
-const { Pool } = require('pg');
-
-let pool;
-function getPool() {
-  if (!pool) {
-    pool = new Pool({
-      host: process.env.PG_HOST,
-      port: 5432,
-      database: process.env.PG_DATABASE || 'sanlyn_db',
-      user: process.env.PG_USER,
-      password: process.env.PG_PASSWORD,
-      ssl: false,
-      max: 5,
-    });
-  }
-  return pool;
-}
-
-module.exports = async (req, res) => {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-
+import { getPool, setCors } from "../db.js";
+export default async function handler(req, res) {
+  setCors(req, res, "GET, OPTIONS");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
-    const p = getPool();
-    const { brand, category, search, limit } = req.query;
-    
-    let sql = 'SELECT * FROM products';
-    const conditions = [];
-    const params = [];
-    let idx = 1;
+    const pool = getPool();
+    const { brand, category, search, limit = 1000 } = req.query;
+
+    let query = "SELECT * FROM products", params = [], conds = [];
 
     if (brand) {
-      conditions.push(`(brand = $${idx} OR raw->>'brand' = $${idx} OR raw->>'_widget_1755320381921' = $${idx})`);
       params.push(brand);
-      idx++;
+      conds.push(`(brand = $${params.length} OR raw->>'brand' = $${params.length})`);
     }
     if (category) {
-      conditions.push(`(category = $${idx} OR raw->>'category' = $${idx} OR raw->>'_widget_1759256456320' = $${idx})`);
       params.push(category);
-      idx++;
+      conds.push(`(category = $${params.length} OR raw->>'cat1' = $${params.length})`);
     }
     if (search) {
-      const q = `%${search}%`;
-      conditions.push(`(
-        sku ILIKE $${idx} OR product_name ILIKE $${idx} OR product_name_cn ILIKE $${idx}
-        OR raw->>'_widget_1755320381920' ILIKE $${idx}
-        OR raw->>'_widget_1755320381922' ILIKE $${idx}
-        OR raw->>'_widget_1764952417030' ILIKE $${idx}
-      )`);
-      params.push(q);
-      idx++;
+      params.push(`%${search}%`);
+      conds.push(`(sku ILIKE $${params.length} OR product_name ILIKE $${params.length} OR product_name_cn ILIKE $${params.length})`);
     }
 
-    if (conditions.length > 0) {
-      sql += ' WHERE ' + conditions.join(' AND ');
-    }
+    if (conds.length) query += " WHERE " + conds.join(" AND ");
+    params.push(parseInt(limit));
+    query += ` ORDER BY id DESC LIMIT $${params.length}`;
 
-    sql += ' ORDER BY id DESC';
-
-    if (limit) {
-      sql += ` LIMIT $${idx}`;
-      params.push(parseInt(limit));
-    }
-
-    const result = await p.query(sql, params);
-    res.status(200).json({ data: result.rows, count: result.rows.length });
+    const result = await pool.query(query, params);
+    return res.status(200).json({ data: result.rows, count: result.rows.length });
   } catch (err) {
-    console.error('Products API error:', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
-};
+}
