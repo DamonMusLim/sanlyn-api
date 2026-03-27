@@ -1,5 +1,5 @@
 import { getPool, setCors } from "../db.js";
-const TABLES = ["orders","finance_payments","shipping_plans","accounts","customs_data"];
+const TABLES = ["orders","finance_payments","shipping_plans","accounts","customs_data","products"];
 
 // ─── JDY 订单主表 widget ID → 业务字段（从表单数据结构确认） ───
 const ORDER_WIDGETS = {
@@ -343,6 +343,26 @@ export default async function handler(req, res) {
         record.pod || record.destination || null,     // ★ S66: $25 pod
       ];
     }
+    } else if (table === "products") {
+      const record = rawRecord;
+      sql = `INSERT INTO products (_id,sku,product_name,product_name_cn,brand,category,spec,factory_price,sanlyn_price,cbm,weight,gross_weight,customer_pricing,customs_info,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW()) ON CONFLICT (_id) DO UPDATE SET sku=$2,product_name=$3,product_name_cn=$4,brand=$5,category=$6,spec=$7,factory_price=$8,sanlyn_price=$9,cbm=$10,weight=$11,gross_weight=$12,customer_pricing=$13,customs_info=$14,raw=$15,updated_at=NOW() RETURNING *`;
+      vals = [
+        record._id || null,
+        record.sku || null,
+        record.product_name || null,
+        record.product_name_cn || null,
+        record.brand || null,
+        record.category || null,
+        record.spec || null,
+        record.factory_price || null,
+        record.sanlyn_price || null,
+        record.cbm || null,
+        record.weight || null,
+        record.gross_weight || null,
+        record.customer_pricing ? JSON.stringify(record.customer_pricing) : "{}",
+        record.customs_info ? JSON.stringify(record.customs_info) : "{}",
+        JSON.stringify(record.raw || record),
+      ];
     const result = await pool.query(sql, vals);
     return res.status(200).json({ success: true, data: result.rows[0] });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
