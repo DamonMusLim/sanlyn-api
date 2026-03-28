@@ -29,7 +29,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  try {
     const { excelUrl, outputPath } = req.body;
     if (!excelUrl) return res.status(400).json({ error: 'excelUrl required' });
 
@@ -100,7 +99,6 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('[convert] Error:', err);
     return res.status(500).json({ error: err.message });
-  }
 }
 
 // ── IMM 转换调用（使用 OpenAPI 签名）──────────────
@@ -121,9 +119,6 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
 
   const client = new IMMClient(config);
 
-  // 先确保 IMM 项目绑定了这个 Bucket
-  try {
-  }
 
   // 使用 CreateOfficeConversionTask (异步接口)
   const request = new IMMModule.CreateOfficeConversionTaskRequest({
