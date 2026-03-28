@@ -123,14 +123,14 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
 
   // 使用 CreateOfficeConversionTask (异步接口)
   const request = new IMMModule.CreateOfficeConversionTaskRequest({
-    projectName: project,
-    sourceURI: sourceUri,
-    targetURI: targetUri,
-    targetType: 'pdf',
+    ProjectName: project,
+    SourceURI: sourceUri,
+    TargetURI: targetUri,
+    TargetType: 'pdf',
   });
 
   const taskResult = await client.createOfficeConversionTask(request);
-  const taskId = taskResult.body?.taskId;
+  const taskId = taskResult.body?.TaskId || taskResult.body?.taskId;
   if (!taskId) throw new Error('IMM task creation failed: no taskId returned');
 
   // 轮询等待完成（最多90秒）
@@ -138,15 +138,15 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
     await new Promise(r => setTimeout(r, 5000));
 
     const getRequest = new IMMModule.GetTaskRequest({
-      projectName: project,
-      taskType: 'OfficeConversion',
-      taskId,
+      ProjectName: project,
+      TaskType: 'OfficeConversion',
+      TaskId: taskId,
     });
     const status = await client.getTask(getRequest);
-    const state = status.body?.status;
+    const state = status.body?.Status || status.body?.status;
 
-    if (state === 'Succeeded') return { taskId, status: 'completed' };
-    if (state === 'Failed') throw new Error('IMM task failed: ' + (status.body?.message || 'unknown'));
+    if (state === 'Succeeded') return { TaskId: taskId, status: 'completed' };
+    if (state === 'Failed') throw new Error('IMM task failed: ' + (status.body?.Message || status.body?.message || 'unknown'));
   }
 
   throw new Error('IMM conversion timeout (90s)');
