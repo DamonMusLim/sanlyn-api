@@ -124,8 +124,8 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
   // 使用 CreateOfficeConversionTask (异步接口)
   const request = new IMMModule.CreateOfficeConversionTaskRequest({
     projectName: project,
-    sources: [{ URI: sourceUri }],
-    targetURIPrefix: targetUri.replace(/[^/]*$/, ''),
+    sourceURI: sourceUri,
+    targetURI: targetUri,
     targetType: 'pdf',
   });
 
