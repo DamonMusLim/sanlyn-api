@@ -72,6 +72,7 @@ const SHIPPING_WIDGETS = {
   "_widget_1764591553172": "pod",
   "_widget_1764582236204": "shipmentDate",
   "_widget_1769075239993": "eta",
+  "_widget_1769074755924": "etdEstimate",
   "_widget_1771626741566": "etd",
   "_widget_1771626741567": "etaSO",
   "_widget_1771626741547": "cutoffDate",
@@ -179,6 +180,7 @@ function _normalizeJDYShipping(r) {
   }
   out.voyageNo = out.voyageNo || out.voyageNoAlt || "";
   out.eta = out.etaSO || out.eta || null;
+  out.etd = out.etd || out.etdEstimate || null;
   out.customer = out.customerCompanyEN || out.customerCompany || "";
   out.customsCN = out.customsBroker || out.customsBrokerSelect || "";
   out.truckingCN = out.truckingCN || "";
