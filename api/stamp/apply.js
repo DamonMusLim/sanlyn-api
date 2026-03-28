@@ -66,29 +66,17 @@ async function logStampAction(pool, params) {
   return res.rows[0]?.id;
 }
 
-// ── OSS 上传（复用已有的 oss-upload 逻辑）──────────
+// ── OSS 上传（直接用 ali-oss SDK）──────────────────
 async function uploadToOSS(ossPath, buffer, contentType = 'application/pdf') {
-  // 方案: 调用自身的 oss-upload API（内部调用）
-  // 如果在同一 Vercel 项目中，可直接 import OSS SDK
-  // 这里用 fetch 调自己的 oss-upload endpoint
-  const FormData = (await import('formdata-node')).FormData;
-  const { Blob } = await import('buffer');
-
-  const fd = new FormData();
-  fd.append('file', new Blob([buffer], { type: contentType }), ossPath.split('/').pop());
-  fd.append('path', ossPath);
-
-  const resp = await fetch('https://sanlyn-api.vercel.app/api/oss-upload', {
-    method: 'POST',
-    body: fd,
+  const OSS = (await import('ali-oss')).default;
+  const client = new OSS({
+    region: process.env.OSS_REGION,
+    accessKeyId: process.env.OSS_ACCESS_KEY_ID,
+    accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
+    bucket: process.env.OSS_BUCKET,
   });
-
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`OSS upload failed: ${resp.status} ${err}`);
-  }
-  const result = await resp.json();
-  return result.url || `${OSS_BASE}/${ossPath}`;
+  await client.put(ossPath, Buffer.from(buffer), { mime: contentType });
+  return `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${ossPath}`;
 }
 
 // ── 主处理函数 ──────────────────────────────────────
