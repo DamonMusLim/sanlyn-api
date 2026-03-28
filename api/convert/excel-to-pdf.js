@@ -105,78 +105,49 @@ export default async function handler(req, res) {
 
 // ── IMM 转换调用（使用 OpenAPI 签名）──────────────
 async function callIMMConversion({ accessKeyId, accessKeySecret, region, project, sourceUri, targetUri }) {
-  // 使用 IMM SDK (@alicloud/imm20200930)
-  // 如果没装 SDK，降级用 HTTP 签名调用
-  try {
-    const IMMModule = await import('@alicloud/imm20200930');const IMM = IMMModule.default || IMMModule;
-    const OpenApiModule = await import('@alicloud/openapi-client');
-    const OpenApi = OpenApiModule.default || OpenApiModule;
+  const IMMModule = await import('@alicloud/imm20200930');
+  const OpenApiModule = await import('@alicloud/openapi-client');
+  
+  // IMM SDK: default export 是 Client 构造函数
+  const IMMClient = IMMModule.default;
+  const Config = OpenApiModule.default?.Config || OpenApiModule.Config;
 
-    const config = new (OpenApi.Config || OpenApi.default.Config)({
-      accessKeyId,
-      accessKeySecret,
-      regionId: region,
-      endpoint: `imm.${region}.aliyuncs.com`,
-    });
+  const config = new Config({
+    accessKeyId,
+    accessKeySecret,
+    regionId: region,
+    endpoint: `imm.${region}.aliyuncs.com`,
+  });
 
-    const client = new IMM(config);
+  const client = new IMMClient(config);
 
-    // 使用同步转换接口 ConvertOfficeFormat（更快，无需轮询）
-    // 如果文件大可能超时，那时再换异步接口
-    const request = new (IMM.ConvertOfficeFormatRequest || IMM.default?.ConvertOfficeFormatRequest)({
+  // 使用 CreateOfficeConversionTask (异步接口)
+  const request = new IMMModule.CreateOfficeConversionTaskRequest({
+    projectName: project,
+    sourceUri,
+    targetUri,
+    targetType: 'pdf',
+  });
+
+  const taskResult = await client.createOfficeConversionTask(request);
+  const taskId = taskResult.body?.taskId;
+  if (!taskId) throw new Error('IMM task creation failed: no taskId returned');
+
+  // 轮询等待完成（最多90秒）
+  for (let i = 0; i < 18; i++) {
+    await new Promise(r => setTimeout(r, 5000));
+
+    const getRequest = new IMMModule.GetTaskRequest({
       projectName: project,
-      sourceUri,
-      targetUri,
-      targetType: 'pdf',
+      taskType: 'OfficeConversion',
+      taskId,
     });
+    const status = await client.getTask(getRequest);
+    const state = status.body?.status;
 
-    const result = await client.convertOfficeFormat(request);
-    return { taskId: 'sync', status: 'completed', result };
-  } catch (sdkErr) {
-    // SDK 不可用时，降级用 CreateOfficeConversionTask (异步)
-    console.warn('[convert] IMM SDK call failed, trying async task:', sdkErr.message);
-
-    const IMMModule = await import('@alicloud/imm20200930');const IMM = IMMModule.default || IMMModule;
-    const OpenApiModule = await import('@alicloud/openapi-client');
-    const OpenApi = OpenApiModule.default || OpenApiModule;
-
-    const config = new (OpenApi.Config || OpenApi.default.Config)({
-      accessKeyId,
-      accessKeySecret,
-      regionId: region,
-      endpoint: `imm.${region}.aliyuncs.com`,
-    });
-
-    const client = new IMM(config);
-
-    const request = new (IMM.CreateOfficeConversionTaskRequest || IMM.default?.CreateOfficeConversionTaskRequest)({
-      projectName: project,
-      sourceUri,
-      targetUri,
-      targetType: 'pdf',
-    });
-
-    const taskResult = await client.createOfficeConversionTask(request);
-    const taskId = taskResult.body?.taskId;
-
-    if (!taskId) throw new Error('IMM task creation failed: no taskId');
-
-    // 轮询等待完成（最多60秒）
-    for (let i = 0; i < 12; i++) {
-      await new Promise(r => setTimeout(r, 5000));
-
-      const getRequest = new (IMM.GetTaskRequest || IMM.default?.GetTaskRequest)({
-        projectName: project,
-        taskType: 'OfficeConversion',
-        taskId,
-      });
-      const status = await client.getTask(getRequest);
-      const state = status.body?.status;
-
-      if (state === 'Succeeded') return { taskId, status: 'completed' };
-      if (state === 'Failed') throw new Error(`IMM task failed: ${status.body?.message || 'unknown'}`);
-    }
-
-    throw new Error('IMM conversion timeout (60s)');
+    if (state === 'Succeeded') return { taskId, status: 'completed' };
+    if (state === 'Failed') throw new Error('IMM task failed: ' + (status.body?.message || 'unknown'));
   }
+
+  throw new Error('IMM conversion timeout (90s)');
 }
