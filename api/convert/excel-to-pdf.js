@@ -109,7 +109,7 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
   const OpenApiModule = await import('@alicloud/openapi-client');
   
   // IMM SDK: default export 是 Client 构造函数
-  const IMMClient = IMMModule.default;
+  const IMMClient = IMMModule.default.default;
   const Config = OpenApiModule.default?.Config || OpenApiModule.Config;
 
   const config = new Config({
