@@ -108,21 +108,22 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
   // 使用 IMM SDK (@alicloud/imm20200930)
   // 如果没装 SDK，降级用 HTTP 签名调用
   try {
-    const IMM = await import('@alicloud/imm20200930');
-    const OpenApi = await import('@alicloud/openapi-client');
+    const IMMModule = await import('@alicloud/imm20200930');const IMM = IMMModule.default || IMMModule;
+    const OpenApiModule = await import('@alicloud/openapi-client');
+    const OpenApi = OpenApiModule.default || OpenApiModule;
 
-    const config = new OpenApi.default.Config({
+    const config = new (OpenApi.Config || OpenApi.default.Config)({
       accessKeyId,
       accessKeySecret,
       regionId: region,
       endpoint: `imm.${region}.aliyuncs.com`,
     });
 
-    const client = new IMM.default(config);
+    const client = new IMM(config);
 
     // 使用同步转换接口 ConvertOfficeFormat（更快，无需轮询）
     // 如果文件大可能超时，那时再换异步接口
-    const request = new IMM.ConvertOfficeFormatRequest({
+    const request = new (IMM.ConvertOfficeFormatRequest || IMM.default?.ConvertOfficeFormatRequest)({
       projectName: project,
       sourceUri,
       targetUri,
@@ -135,19 +136,20 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
     // SDK 不可用时，降级用 CreateOfficeConversionTask (异步)
     console.warn('[convert] IMM SDK call failed, trying async task:', sdkErr.message);
 
-    const IMM = await import('@alicloud/imm20200930');
-    const OpenApi = await import('@alicloud/openapi-client');
+    const IMMModule = await import('@alicloud/imm20200930');const IMM = IMMModule.default || IMMModule;
+    const OpenApiModule = await import('@alicloud/openapi-client');
+    const OpenApi = OpenApiModule.default || OpenApiModule;
 
-    const config = new OpenApi.default.Config({
+    const config = new (OpenApi.Config || OpenApi.default.Config)({
       accessKeyId,
       accessKeySecret,
       regionId: region,
       endpoint: `imm.${region}.aliyuncs.com`,
     });
 
-    const client = new IMM.default(config);
+    const client = new IMM(config);
 
-    const request = new IMM.CreateOfficeConversionTaskRequest({
+    const request = new (IMM.CreateOfficeConversionTaskRequest || IMM.default?.CreateOfficeConversionTaskRequest)({
       projectName: project,
       sourceUri,
       targetUri,
@@ -163,7 +165,7 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
     for (let i = 0; i < 12; i++) {
       await new Promise(r => setTimeout(r, 5000));
 
-      const getRequest = new IMM.GetTaskRequest({
+      const getRequest = new (IMM.GetTaskRequest || IMM.default?.GetTaskRequest)({
         projectName: project,
         taskType: 'OfficeConversion',
         taskId,
