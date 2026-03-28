@@ -112,10 +112,10 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
   const client = new IMM(config);
 
   const request = new IMMModule.CreateOfficeConversionTaskRequest({
-    ProjectName: project,
-    SourceURI: sourceUri,
-    TargetURI: targetUri,
-    TargetType: 'pdf',
+    projectName: project,
+    sourceURI: sourceUri,
+    targetURI: targetUri,
+    targetType: 'pdf',
   });
 
   const taskResult = await client.createOfficeConversionTask(request);
@@ -127,14 +127,14 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
     await new Promise(r => setTimeout(r, 5000));
 
     const getRequest = new IMMModule.GetTaskRequest({
-      ProjectName: project,
-      TaskType: 'OfficeConversion',
-      TaskId: taskId,
+      projectName: project,
+      taskType: 'OfficeConversion',
+      taskId: taskId,
     });
     const status = await client.getTask(getRequest);
     const state = status.body?.Status || status.body?.status;
 
-    if (state === 'Succeeded') return { TaskId: taskId, status: 'completed' };
+    if (state === 'Succeeded') return { taskId: taskId, status: 'completed' };
     if (state === 'Failed') throw new Error('IMM task failed: ' + (status.body?.Message || status.body?.message || 'unknown'));
   }
 
