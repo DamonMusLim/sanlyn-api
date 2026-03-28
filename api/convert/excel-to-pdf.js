@@ -15,7 +15,7 @@ const OSS_HK = {
 };
 
 const OSS_HZ = {
-  region: 'oss-cn-hangzhou',
+  region: 'cn-hangzhou',
   accessKeyId: process.env.OSS_ACCESS_KEY_ID,
   accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
   bucket: 'sanlyn-imm-temp',
