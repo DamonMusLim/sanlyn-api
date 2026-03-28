@@ -2,16 +2,14 @@
 // Sanlyn OS — Excel→PDF 转换 API
 // POST { excelUrl, outputPath? }
 // 流程: 下载Excel → 上传到杭州OSS → IMM转PDF → 下载PDF → 上传回香港OSS → 返回URL
-//
-// 依赖: ali-oss, @alicloud/imm20200930 (阿里云IMM SDK)
 
 import { setCors } from '../db.js';
 
 const OSS_HK = {
-  region: process.env.OSS_REGION,                    // oss-cn-hongkong
+  region: process.env.OSS_REGION,
   accessKeyId: process.env.OSS_ACCESS_KEY_ID,
   accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
-  bucket: process.env.OSS_BUCKET,                    // sanlyn-files
+  bucket: process.env.OSS_BUCKET,
 };
 
 const OSS_HZ = {
@@ -29,7 +27,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  try {    const { excelUrl, outputPath } = req.body;
+  try {
+    const { excelUrl, outputPath } = req.body;
     if (!excelUrl) return res.status(400).json({ error: 'excelUrl required' });
 
     const OSSClient = (await import('ali-oss')).default;
@@ -38,25 +37,23 @@ export default async function handler(req, res) {
     const baseName = originalName.replace(/\.[^.]+$/, '');
     const ext = originalName.match(/\.([^.]+)$/)?.[1] || 'xlsx';
 
-    // ── 1. 下载 Excel（从香港 OSS 或任意 URL）──
+    // 1. 下载 Excel
     console.log('[convert] Step 1: Downloading Excel...');
     const excelResp = await fetch(excelUrl);
     if (!excelResp.ok) throw new Error(`Failed to fetch Excel: ${excelResp.status}`);
     const excelBuffer = Buffer.from(await excelResp.arrayBuffer());
     console.log(`[convert] Excel downloaded: ${excelBuffer.length} bytes`);
 
-    // ── 2. 上传到杭州 OSS（IMM 中转）──
+    // 2. 上传到杭州 OSS
     console.log('[convert] Step 2: Uploading to Hangzhou OSS...');
     const hzClient = new OSSClient(OSS_HZ);
     const hzInputKey = `convert/input/${baseName}_${timestamp}.${ext}`;
-    await hzClient.put(hzInputKey, excelBuffer, { mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    await hzClient.put(hzInputKey, excelBuffer);
     console.log(`[convert] Uploaded to: oss://${OSS_HZ.bucket}/${hzInputKey}`);
 
-    // ── 3. 调用 IMM CreateOfficeConversionTask ──
+    // 3. 调用 IMM 转换
     console.log('[convert] Step 3: Calling IMM conversion...');
     const hzOutputKey = `convert/output/${baseName}_${timestamp}.pdf`;
-
-    // 使用 IMM OpenAPI (REST 方式，避免额外 SDK 依赖)
     const immResult = await callIMMConversion({
       accessKeyId: OSS_HZ.accessKeyId,
       accessKeySecret: OSS_HZ.accessKeySecret,
@@ -65,19 +62,15 @@ export default async function handler(req, res) {
       sourceUri: `oss://${OSS_HZ.bucket}/${hzInputKey}`,
       targetUri: `oss://${OSS_HZ.bucket}/${hzOutputKey}`,
     });
-    console.log('[convert] IMM conversion result:', immResult.taskId || 'done');
+    console.log('[convert] IMM conversion done:', immResult.TaskId || 'ok');
 
-    // ── 4. 等待转换完成 + 下载 PDF ──
+    // 4. 下载转换后的 PDF
     console.log('[convert] Step 4: Downloading converted PDF...');
-    // IMM 同步接口会直接完成，异步需要轮询
-    // ConvertOfficeFormat 是同步的，CreateOfficeConversionTask 是异步的
-    // 如果用同步接口，到这步PDF已经在OSS了
-
     const pdfResult = await hzClient.get(hzOutputKey);
     const pdfBuffer = pdfResult.content;
     console.log(`[convert] PDF downloaded: ${pdfBuffer.length} bytes`);
 
-    // ── 5. 上传 PDF 到香港 OSS ──
+    // 5. 上传 PDF 到香港 OSS
     console.log('[convert] Step 5: Uploading PDF to Hong Kong OSS...');
     const hkClient = new OSSClient(OSS_HK);
     const hkOutputKey = outputPath || `documents/converted/${baseName}_${timestamp}.pdf`;
@@ -85,7 +78,7 @@ export default async function handler(req, res) {
     const pdfUrl = `https://${OSS_HK.bucket}.${OSS_HK.region}.aliyuncs.com/${hkOutputKey}`;
     console.log(`[convert] PDF uploaded to: ${pdfUrl}`);
 
-    // ── 6. 清理杭州临时文件（异步，不阻塞响应）──
+    // 6. 清理杭州临时文件
     hzClient.delete(hzInputKey).catch(() => {});
     hzClient.delete(hzOutputKey).catch(() => {});
 
@@ -99,15 +92,14 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('[convert] Error:', err);
     return res.status(500).json({ error: err.message });
+  }
 }
 
-// ── IMM 转换调用（使用 OpenAPI 签名）──────────────
+// IMM 转换调用
 async function callIMMConversion({ accessKeyId, accessKeySecret, region, project, sourceUri, targetUri }) {
   const IMMModule = await import('@alicloud/imm20200930');
+  const IMM = IMMModule.default.default;
   const OpenApiModule = await import('@alicloud/openapi-client');
-  
-  // IMM SDK: default export 是 Client 构造函数
-  const IMMClient = IMMModule.default.default;
   const Config = OpenApiModule.default?.Config || OpenApiModule.Config;
 
   const config = new Config({
@@ -117,10 +109,8 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
     endpoint: `imm.${region}.aliyuncs.com`,
   });
 
-  const client = new IMMClient(config);
+  const client = new IMM(config);
 
-
-  // 使用 CreateOfficeConversionTask (异步接口)
   const request = new IMMModule.CreateOfficeConversionTaskRequest({
     ProjectName: project,
     SourceURI: sourceUri,
