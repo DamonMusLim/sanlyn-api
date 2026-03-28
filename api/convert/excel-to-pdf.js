@@ -123,13 +123,6 @@ async function callIMMConversion({ accessKeyId, accessKeySecret, region, project
 
   // 先确保 IMM 项目绑定了这个 Bucket
   try {
-    await client.attachOSSBucket(new IMMModule.AttachOSSBucketRequest({
-      ProjectName: project,
-      OSSBucket: 'sanlyn-imm-temp',
-    }));
-  } catch (attachErr) {
-    // 已绑定的话会报错，忽略
-    console.log('[convert] attachOSSBucket:', attachErr.message || 'ok');
   }
 
   // 使用 CreateOfficeConversionTask (异步接口)
