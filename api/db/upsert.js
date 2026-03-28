@@ -309,6 +309,28 @@ export default async function handler(req, res) {
         JSON.stringify(record.loadingDetails || []),
         JSON.stringify(record),
       ];
+    } else if (table === "products") {
+      // ★ S72: products — fixed: moved inside if-else chain, added image_url ($16) ★
+      const record = rawRecord;
+      sql = `INSERT INTO products (_id,sku,product_name,product_name_cn,brand,category,spec,factory_price,sanlyn_price,cbm,weight,gross_weight,image_url,customer_pricing,customs_info,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW()) ON CONFLICT (_id) DO UPDATE SET sku=$2,product_name=$3,product_name_cn=$4,brand=$5,category=$6,spec=$7,factory_price=$8,sanlyn_price=$9,cbm=$10,weight=$11,gross_weight=$12,image_url=$13,customer_pricing=$14,customs_info=$15,raw=$16,updated_at=NOW() RETURNING *`;
+      vals = [
+        record._id || null,
+        record.sku || null,
+        record.product_name || null,
+        record.product_name_cn || null,
+        record.brand || null,
+        record.category || null,
+        record.spec || null,
+        record.factory_price || null,
+        record.sanlyn_price || null,
+        record.cbm || null,
+        record.weight || null,
+        record.gross_weight || null,
+        record.image_url || null,
+        record.customer_pricing ? JSON.stringify(record.customer_pricing) : "{}",
+        record.customs_info ? JSON.stringify(record.customs_info) : "{}",
+        JSON.stringify(record.raw || record),
+      ];
     } else {
       // ★ S66: shipping_plans — added pol ($24) and pod ($25) columns ★
       const hasWidgets = Object.keys(rawRecord).some(k => k.startsWith("_widget_"));
@@ -343,26 +365,6 @@ export default async function handler(req, res) {
         record.pod || record.destination || null,     // ★ S66: $25 pod
       ];
     }
-    } else if (table === "products") {
-      const record = rawRecord;
-      sql = `INSERT INTO products (_id,sku,product_name,product_name_cn,brand,category,spec,factory_price,sanlyn_price,cbm,weight,gross_weight,customer_pricing,customs_info,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW()) ON CONFLICT (_id) DO UPDATE SET sku=$2,product_name=$3,product_name_cn=$4,brand=$5,category=$6,spec=$7,factory_price=$8,sanlyn_price=$9,cbm=$10,weight=$11,gross_weight=$12,customer_pricing=$13,customs_info=$14,raw=$15,updated_at=NOW() RETURNING *`;
-      vals = [
-        record._id || null,
-        record.sku || null,
-        record.product_name || null,
-        record.product_name_cn || null,
-        record.brand || null,
-        record.category || null,
-        record.spec || null,
-        record.factory_price || null,
-        record.sanlyn_price || null,
-        record.cbm || null,
-        record.weight || null,
-        record.gross_weight || null,
-        record.customer_pricing ? JSON.stringify(record.customer_pricing) : "{}",
-        record.customs_info ? JSON.stringify(record.customs_info) : "{}",
-        JSON.stringify(record.raw || record),
-      ];
     const result = await pool.query(sql, vals);
     return res.status(200).json({ success: true, data: result.rows[0] });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
