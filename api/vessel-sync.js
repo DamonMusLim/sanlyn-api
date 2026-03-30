@@ -1,6 +1,7 @@
 // /api/vessel-sync.js
 // Vercel Serverless Function — L3B 替代
 import OSS from "ali-oss";
+import { getPool } from "./db.js";
 
 function getOSSClient() {
   return new OSS({
@@ -99,13 +100,17 @@ export default async function handler(req, res) {
         if (!u.blNo) continue;
         await pool.query(`
           UPDATE shipping_plans SET
+            eta = CASE WHEN $8::text != '' THEN $8::timestamptz ELSE eta END,
+            vessel = CASE WHEN $6::text != '' THEN $6::text ELSE vessel END,
+            voyage = CASE WHEN $7::text != '' THEN $7::text ELSE voyage END,
             raw = raw || jsonb_build_object(
               'currentStatus', $2::text,
               'currentStatusCn', $3::text,
               'trackingUpdatedAt', $4::text,
               'atd', $5::text,
               'vessel', $6::text,
-              'voyage', $7::text
+              'voyage', $7::text,
+              'eta', $8::text
             )
           WHERE bl_no = $1 OR raw->>'blNo' = $1
         `, [
@@ -116,6 +121,7 @@ export default async function handler(req, res) {
           u.atd || "",
           u.vessel || "",
           u.voyage || "",
+          u.eta || "",
         ]);
       }
     } catch(rdsErr) { console.error('[vessel-sync RDS]', rdsErr.message); }
