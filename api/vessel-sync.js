@@ -126,7 +126,59 @@ export default async function handler(req, res) {
       }
     } catch(rdsErr) { console.error('[vessel-sync RDS]', rdsErr.message); }
 
-    return res.status(200).json({ success: true, updated: updates.length, total: merged.length });
+    // ── JDY 回写 tracking 字段（ETD + ETA only）──
+    // 4portun tracking → JDY 海运计划表，用于触发通知（如开港通知车队）
+    // 注意：船公司(_widget_1765450157283) 和 航次(_widget_1765450157284) 由货代报价带入，不覆盖
+    const JDY_API = "https://api.jiandaoyun.com/api/v5";
+    const JDY_TOKEN = process.env.JDY_TOKEN || "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+    const JDY_APP_ID = "689cb08a93c073210bfc772b";
+    const JDY_ENTRY_ID = "6912a100e6f679d3089bd434"; // 海运计划表
+    // Widget IDs — S83 新建的 4portun 专用字段
+    const W_ETD_4P = "_widget_1774869524862";  // ETD（开船日，4portun atd 实际开航）
+    const W_ETA_4P = "_widget_1774869524863";  // ETA（预计到港日，4portun 最新 ETA）
+    // 原有 ETA 字段也同步更新
+    const W_ETA_SO = "_widget_1771626741567";  // ETA（预计到港日）SO区域
+    let jdyWriteCount = 0;
+
+    try {
+      const pool2 = getPool();
+      for (const u of updates) {
+        if (!u.blNo) continue;
+        // 从 RDS 获取 JDY _id（shipping_plans.raw._id）
+        const idRes = await pool2.query(
+          `SELECT raw->>'_id' as jdy_id FROM shipping_plans WHERE bl_no = $1 OR raw->>'blNo' = $1 LIMIT 1`,
+          [u.blNo]
+        );
+        const jdyId = idRes.rows[0]?.jdy_id;
+        if (!jdyId) continue;
+
+        // Build update payload — only ETD/ETA, don't touch 船公司/航次
+        const updateFields = {};
+        if (u.atd) updateFields[W_ETD_4P] = { value: u.atd };     // 4portun 实际开航
+        if (u.eta) {
+          updateFields[W_ETA_4P] = { value: u.eta };               // 4portun 最新 ETA
+          updateFields[W_ETA_SO] = { value: u.eta };               // SO区域 ETA 也同步
+        }
+        if (Object.keys(updateFields).length === 0) continue;
+
+        try {
+          await fetch(`${JDY_API}/app/entry/data/update`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${JDY_TOKEN}` },
+            body: JSON.stringify({
+              app_id: JDY_APP_ID, entry_id: JDY_ENTRY_ID,
+              data_id: jdyId,
+              data: updateFields,
+            }),
+          });
+          jdyWriteCount++;
+        } catch(jdyUpdateErr) {
+          console.error(`[vessel-sync JDY update] ${u.blNo}:`, jdyUpdateErr.message);
+        }
+      }
+    } catch(jdyErr) { console.error('[vessel-sync JDY]', jdyErr.message); }
+
+    return res.status(200).json({ success: true, updated: updates.length, jdyWritten: jdyWriteCount, total: merged.length });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
