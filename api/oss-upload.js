@@ -13,6 +13,7 @@ export const config = { api: { bodyParser: false } };
 const ALLOWED = [
     "https://sanlyn-os.vercel.app",
     "https://ai.sanlynos.com",
+    "https://ai.sanlyn.cn",
     "http://localhost:5173",
     "http://localhost:3000",
   ];
