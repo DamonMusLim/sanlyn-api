@@ -9,22 +9,14 @@ export default async function handler(req, res) {
     let query = "SELECT * FROM orders", params = [], conds = [];
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`status = $${params.length}`); }
-    // Factory 精确匹配（用于区分 td vs zc-oem）
-    if (factory) { params.push(factory); conds.push(`raw->>'factory' = $${params.length}`); }
-    // Brand 过滤（产品名兜底，widget字段备用）
+    if (factory)  { params.push(factory);           conds.push(`raw->>'factory' = $${params.length}`); }
     if (brands) {
       let brandList;
       try { brandList = JSON.parse(brands); } catch { brandList = [brands]; }
       if (brandList.length > 0) {
         const orClauses = [];
-        brandList.forEach(brand => {
-          params.push(brand);
-          orClauses.push(`raw->>'_widget_1775071325804' = $${params.length}`);
-        });
-        brandList.forEach(brand => {
-          params.push(`%${brand}%`);
-          orClauses.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(raw->'products') p WHERE p->>'name' ILIKE $${params.length})`);
-        });
+        brandList.forEach(brand => { params.push(brand); orClauses.push(`raw->>'_widget_1775071325804' = $${params.length}`); });
+        brandList.forEach(brand => { params.push(`%${brand}%`); orClauses.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(raw->'products') p WHERE p->>'name' ILIKE $${params.length})`); });
         conds.push(`(${orClauses.join(' OR ')})`);
       }
     }
