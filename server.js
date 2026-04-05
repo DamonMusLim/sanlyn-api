@@ -73,6 +73,7 @@ mount("/api/db/customer-stamps",   () => import("./api/db/customer-stamps.js"));
 mount("/api/db/customs",           () => import("./api/db/customs.js"));
 mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
 mount("/api/db/documents",         () => import("./api/db/documents.js"));
+mount("/api/db/factory-submit",    () => import("./api/db/factory-submit.js"));
 mount("/api/db/forward-doc",       () => import("./api/db/forward-doc.js"));
 mount("/api/db/finance-records",   () => import("./api/db/finance-records.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
