@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     // 表不存在时从OSS fallback
     if (err.message.includes("does not exist")) {
       try {
-        const r = await fetch("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/data/customers.json");
+        const r = await fetch("https://files.sanlynos.com/data/customers.json");
         const d = await r.json();
         const list = Array.isArray(d) ? d : [];
         return res.status(200).json({ success: true, data: list, count: list.length, source: "oss" });

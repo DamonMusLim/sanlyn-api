@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     const { contract_no, limit = 500 } = req.query;
 
     // 始终从OSS读取（最新数据）
-    const ossRes = await fetch("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/data/documents.json");
+    const ossRes = await fetch("https://files.sanlynos.com/data/documents.json");
     const ossRaw = await ossRes.json();
     const ossDocs = Array.isArray(ossRaw) ? ossRaw : (ossRaw.documents || ossRaw.data || []);
 

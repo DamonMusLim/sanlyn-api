@@ -67,7 +67,7 @@ export default async function handler(req, res) {
         fd.append("file", fileBlob, fname);
         const ossRes = await fetch("https://sanlyn-api.vercel.app/api/oss-upload", { method: "POST", body: fd });
         const ossData = await ossRes.json();
-        const ossUrl = ossData.url || ("https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/" + ossPath);
+        const ossUrl = ossData.url || ("https://files.sanlynos.com/" + ossPath);
         docEntry[field] = { url: ossUrl, name: fname, size: f.size || 0 };
         results[field] = "ok";
       } catch(e) {

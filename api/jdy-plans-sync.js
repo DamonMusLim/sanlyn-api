@@ -2,7 +2,7 @@ import OSS from 'ali-oss';
 import { getPool } from './db.js';
 
 const OSS_KEY    = 'data/shipping_plans.json';
-const OSS_PUBLIC = `https://sanlyn-files.oss-cn-hongkong.aliyuncs.com/${OSS_KEY}`;
+const OSS_PUBLIC = `https://files.sanlynos.com/${OSS_KEY}`;
 
 // widget ID 映射（完整版，已从JDY表单数据结构确认）
 const W = {
