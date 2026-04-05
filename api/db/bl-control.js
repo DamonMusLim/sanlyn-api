@@ -50,7 +50,7 @@ export default async function handler(req, res) {
       const rows = result.rows.map(function (r) {
         const raw = r.raw || {};
         return {
-          id: r.id,
+          
           contract_no: r.contract_no,
           shipment_no: r.shipment_no,
           bl_final: r.bl_final,
