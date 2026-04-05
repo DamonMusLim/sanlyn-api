@@ -65,12 +65,15 @@ function mount(route, handlerModule) {
 mount("/api/db/accounts",          () => import("./api/db/accounts.js"));
 mount("/api/db/analytics",         () => import("./api/db/analytics.js"));
 mount("/api/db/audit-log",         () => import("./api/db/audit-log.js"));
+mount("/api/db/bl-control",        () => import("./api/db/bl-control.js"));
 mount("/api/db/company",           () => import("./api/db/company.js"));
 mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));
+mount("/api/db/customer-stamps",   () => import("./api/db/customer-stamps.js"));
 mount("/api/db/customs",           () => import("./api/db/customs.js"));
 mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
 mount("/api/db/documents",         () => import("./api/db/documents.js"));
+mount("/api/db/forward-doc",       () => import("./api/db/forward-doc.js"));
 mount("/api/db/finance-records",   () => import("./api/db/finance-records.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
