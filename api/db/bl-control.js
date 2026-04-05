@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     try {
       const { status, contract } = req.query;
-      let sql = `SELECT id, contract_no, shipment_no, bl_final, bl_draft,
+      let sql = `SELECT contract_no, shipment_no, bl_final, bl_draft,
                         raw, loading_details, updated_at
                  FROM customs_data
                  WHERE (bl_final IS NOT NULL OR bl_draft IS NOT NULL)`;
