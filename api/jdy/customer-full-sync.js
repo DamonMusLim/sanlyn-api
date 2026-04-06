@@ -128,6 +128,30 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
+  // 诊断模式：直接返回 JDY 原始响应
+  if (req.query.raw === "1") {
+    try {
+      var testBody = { limit: 3, fields: [W.companyCode, W.nameEN, W.brands] };
+      var testResp = await fetch(JDY_API + "/app/" + JDY_APP_ID + "/entry/" + JDY_CUSTOMER_ENTRY + "/data/list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + JDY_TOKEN },
+        body: JSON.stringify(testBody),
+      });
+      var rawText = await testResp.text();
+      return res.status(200).json({
+        diagnostic: true,
+        httpStatus: testResp.status,
+        requestBody: testBody,
+        entryId: JDY_CUSTOMER_ENTRY,
+        appId: JDY_APP_ID,
+        tokenPrefix: JDY_TOKEN.slice(0, 6) + "...",
+        rawResponse: rawText.slice(0, 2000),
+      });
+    } catch (e) {
+      return res.status(200).json({ diagnostic: true, error: e.message });
+    }
+  }
+
   try {
     var code = req.query.code || "";
     var filter = code ? {
