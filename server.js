@@ -88,7 +88,8 @@ mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
 mount("/api/db/vault-read",        () => import("./api/db/vault-read.js"));
 
 // ── /api/jdy/* endpoints ──
-mount("/api/jdy/customer-addresses", () => import("./api/jdy/customer-addresses.js"));
+mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
+mount("/api/jdy/customer-full-sync", () => import("./api/jdy/customer-full-sync.js"));
 mount("/api/jdy/docs-sync",          () => import("./api/jdy/docs-sync.js"));
 mount("/api/jdy/order-create",       () => import("./api/jdy/order-create.js"));
 mount("/api/jdy/pi-sync",            () => import("./api/jdy/pi-sync.js"));
