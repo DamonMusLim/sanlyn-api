@@ -87,6 +87,7 @@ mount("/api/db/tenants",           () => import("./api/db/tenants.js"));
 mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
 mount("/api/db/vault-read",        () => import("./api/db/vault-read.js"));
 mount("/api/db/fix-co-account",  () => import("./api/db/fix-co-account.js"));
+mount("/api/db/fix-co-account",  () => import("./api/db/fix-co-account.js"));
 mount("/api/db/fix-groups",        () => import("./api/db/fix-groups.js"));
 mount("/api/db/migrate-products",    () => import("./api/db/migrate-products.js"));
 mount("/api/db/sync-products-oss",   () => import("./api/db/sync-products-to-oss.js"));
