@@ -10,7 +10,6 @@ export default async function handler(req, res) {
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`status = $${params.length}`); }
     if (factory)  { params.push(factory);           conds.push(`raw->>'factory' = $${params.length}`); }
-    // Company-level filtering for data isolation
     if (company_codes) {
       let codeList; try { codeList = JSON.parse(company_codes); } catch { codeList = company_codes.split(","); }
       if (codeList.length > 0) {
