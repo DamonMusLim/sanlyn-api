@@ -5,6 +5,16 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tenants (
+        id SERIAL PRIMARY KEY,
+        company_code VARCHAR(50) UNIQUE,
+        name VARCHAR(200),
+        config JSONB DEFAULT '{}',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
     const { company_code, limit = 100 } = req.query;
     let query = "SELECT * FROM tenants", params = [], conds = [];
     if (company_code) { params.push(company_code); conds.push(`company_code = $${params.length}`); }
