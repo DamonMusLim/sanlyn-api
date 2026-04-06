@@ -108,13 +108,14 @@ async function fetchJDY(filter, fields) {
       body: JSON.stringify(body),
     });
     var text = await resp.text();
-    if (!text || !text.trim()) break;
-    var json = JSON.parse(text);
+    if (!text || !text.trim()) { hasMore = false; break; }
+    var json;
+    try { json = JSON.parse(text); } catch(e) { throw new Error("JDY parse error: " + text.slice(0, 200)); }
     if (!resp.ok || json.code) {
-      throw new Error("JDY error: " + (json.msg || json.code || resp.status));
+      throw new Error("JDY error: " + JSON.stringify({ code: json.code, msg: json.msg, status: resp.status }));
     }
     var records = json.data || [];
-    if (records.length === 0) break;
+    if (records.length === 0) { hasMore = false; break; }
     allData = allData.concat(records);
     dataId = records[records.length - 1]._id;
     if (records.length < 100) hasMore = false;
@@ -135,16 +136,24 @@ export default async function handler(req, res) {
     } : null;
 
     var debug = req.query.debug === "1";
-    // 不限制 fields，拉全部字段，方便发现品牌等字段的 widget ID
-    var records = await fetchJDY(filter, null);
+    // 必须传 fields，否则 JDY 可能返回空
+    var coreFields = [W.companyCode, W.nameEN, W.brands, W.country, W.currency,
+      W.paymentMethod, W.customerLevel, W.tradeTerms, W.addressSubform,
+      W.relatedFactory, W.pricingTier, W.markupMode, W.markupValue,
+      W.logisticsMarkup, W.weHandleOcean, W.blTypePref, W.defaultPayment,
+      W.paySubform, W.selectCompany, W.featureFlags, W.productMarkupPct,
+      W.logisticsMarkupPct, W.logisticsMarkupCtn, W.logisticsMarkupShip,
+      W.markupCurrency, W.logisticsMarkupCur, W.selectCountry];
+    var records = await fetchJDY(filter, coreFields);
 
-    // debug 模式返回原始 JDY 数据（只取第一条）
+    // debug 模式返回原始 JDY 数据（只取前两条）
     if (debug) {
       return res.status(200).json({
         success: true,
         total: records.length,
-        sample: records.length > 0 ? records[0] : null,
+        sample: records.length > 0 ? records.slice(0, 2) : null,
         allKeys: records.length > 0 ? Object.keys(records[0]) : [],
+        fieldsRequested: coreFields.length,
       });
     }
 
