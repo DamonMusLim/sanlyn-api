@@ -64,8 +64,10 @@ export default async function handler(req, res) {
 
     // ── GET ─────────────────────────────────────────────
     if (req.method === "GET") {
-      var { company_code, group_id, portal_role, search, limit = 200 } = req.query;
+      var { company_code, group_id, portal_role, search, include_inactive, limit = 200 } = req.query;
       var query = "SELECT * FROM customers", params = [], conds = [];
+      // Default: only active customers (pass include_inactive=1 for admin views)
+      if (!include_inactive) conds.push("is_active = true");
       if (company_code)  { params.push(company_code);  conds.push("company_code = $" + params.length); }
       if (group_id)      { params.push(group_id);      conds.push("group_id = $" + params.length); }
       if (portal_role)   { params.push(portal_role);   conds.push("portal_role = $" + params.length); }
