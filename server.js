@@ -90,6 +90,7 @@ mount("/api/db/diag-shipping",   () => import("./api/db/diag-shipping.js"));
 mount("/api/db/fix-co-account",  () => import("./api/db/fix-co-account.js"));
 mount("/api/db/diag-shipping",   () => import("./api/db/diag-shipping.js"));
 mount("/api/db/fix-co-account",  () => import("./api/db/fix-co-account.js"));
+mount("/api/db/diag-shipping",   () => import("./api/db/diag-shipping.js"));
 mount("/api/db/fix-groups",        () => import("./api/db/fix-groups.js"));
 mount("/api/db/migrate-products",    () => import("./api/db/migrate-products.js"));
 mount("/api/db/sync-products-oss",   () => import("./api/db/sync-products-to-oss.js"));
