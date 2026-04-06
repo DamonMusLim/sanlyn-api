@@ -6,7 +6,7 @@
  */
 import { getPool, setCors } from "../db.js";
 
-var JDY_TOKEN          = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+var JDY_TOKEN          = "jgAipmndimpj0endT0wStd6gpspAQpAd";
 var JDY_APP_ID         = "689cb08a93c073210bfc772b";
 var JDY_CUSTOMER_ENTRY = "68da2738987870a88c839d6e";  // 客户档案
 var JDY_API            = "https://api.jiandaoyun.com/api/v5";

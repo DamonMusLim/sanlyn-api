@@ -1,7 +1,7 @@
 import { setCors } from "../db.js";
 import { ossUploadJSON, ossReadJSON, ossUploadBuffer } from "../oss-direct.js";
 
-const JDY_TOKEN = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+const JDY_TOKEN = "jgAipmndimpj0endT0wStd6gpspAQpAd";
 const JDY_APP   = "689cb08a93c073210bfc772b";
 const JDY_ENTRY = "6419d478b9b91b00091e4d73";
 const CN_WIDGET = "_widget_1679903024720";

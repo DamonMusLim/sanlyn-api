@@ -57,7 +57,7 @@ async function updateJDY(jdyId, fields) {
   const res = await fetch("https://api.jiandaoyun.com/api/v5/app/entry/data/update", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${process.env.JDY_TOKEN || "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU"}`,
+      "Authorization": `Bearer ${process.env.JDY_TOKEN || "jgAipmndimpj0endT0wStd6gpspAQpAd"}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
