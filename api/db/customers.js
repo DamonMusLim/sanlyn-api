@@ -26,10 +26,31 @@ CREATE INDEX IF NOT EXISTS idx_cust_code ON customers(company_code);
 CREATE INDEX IF NOT EXISTS idx_cust_group ON customers(group_id);
 `;
 
+var ALTER_COLS = [
+  ["brands",        "JSONB DEFAULT '[]'::jsonb"],
+  ["addresses",     "JSONB DEFAULT '[]'::jsonb"],
+  ["contact_name",  "VARCHAR(128) DEFAULT ''"],
+  ["contact_phone", "VARCHAR(64) DEFAULT ''"],
+  ["contact_email", "VARCHAR(128) DEFAULT ''"],
+  ["country",       "VARCHAR(64) DEFAULT ''"],
+  ["currency",      "VARCHAR(8) DEFAULT 'USD'"],
+  ["payment_term",  "VARCHAR(128) DEFAULT ''"],
+  ["portal_role",   "VARCHAR(32) DEFAULT 'customer'"],
+  ["group_id",      "VARCHAR(64) DEFAULT ''"],
+  ["invoice",       "JSONB DEFAULT '{}'::jsonb"],
+  ["is_active",     "BOOLEAN DEFAULT true"],
+  ["name_en",       "VARCHAR(256) DEFAULT ''"],
+  ["name_cn",       "VARCHAR(256) DEFAULT ''"],
+];
+
 var inited = false;
 async function ensureTable(pool) {
   if (inited) return;
-  await pool.query(INIT_SQL);
+  try { await pool.query(INIT_SQL); } catch(e) { /* table may exist */ }
+  // Add missing columns to existing table
+  for (var c of ALTER_COLS) {
+    try { await pool.query("ALTER TABLE customers ADD COLUMN IF NOT EXISTS " + c[0] + " " + c[1]); } catch(e) { /* ignore */ }
+  }
   inited = true;
 }
 
