@@ -32,8 +32,8 @@ app.use((req, res, next) => {
 
 // ── Body parsing (for non-multipart routes) ──
 app.use((req, res, next) => {
-  // Skip body parsing for oss-upload (formidable handles it)
-  if (req.path === "/api/oss-upload") return next();
+  // Skip body parsing for multipart endpoints (formidable handles it)
+  if (req.path === "/api/oss-upload" || req.path === "/api/ocr-booking") return next();
   next();
 });
 app.use(express.json({ limit: "10mb" }));
@@ -115,6 +115,7 @@ mount("/api/jdy-freight-sync", () => import("./api/jdy-freight-sync.js"));
 mount("/api/jdy-plans-sync",  () => import("./api/jdy-plans-sync.js"));
 mount("/api/jdy-sync",        () => import("./api/jdy-sync.js"));
 mount("/api/jdy-write",       () => import("./api/jdy-write.js"));
+mount("/api/ocr-booking",     () => import("./api/ocr-booking.js"));
 mount("/api/ocr-license",     () => import("./api/ocr-license.js"));
 mount("/api/ocr-review",      () => import("./api/ocr-review.js"));
 mount("/api/oss-upload",      () => import("./api/oss-upload.js"));
