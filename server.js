@@ -95,6 +95,7 @@ mount("/api/db/diag-shipping",   () => import("./api/db/diag-shipping.js"));
 mount("/api/db/diag-shipping",   () => import("./api/db/diag-shipping.js"));
 mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
 mount("/api/db/seed-huihe-charges",() => import("./api/db/seed-huihe-charges.js"));
+mount("/api/db/fix-product-prices", () => import("./api/db/fix-product-prices.js"));
 mount("/api/db/fix-groups",        () => import("./api/db/fix-groups.js"));
 mount("/api/db/migrate-products",    () => import("./api/db/migrate-products.js"));
 mount("/api/db/sync-products-oss",   () => import("./api/db/sync-products-to-oss.js"));
