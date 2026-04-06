@@ -11,29 +11,47 @@ var JDY_APP_ID         = "689cb08a93c073210bfc772b";
 var JDY_CUSTOMER_ENTRY = "68da2738987870a88c839d6e";  // 客户档案
 var JDY_API            = "https://api.jiandaoyun.com/api/v5";
 
-// ── JDY 客户档案字段 ──────────────────────────────
+// ── JDY 客户档案字段（来自 JDY 表单数据结构）──────────
 var W = {
-  companyCode:    "_widget_1771622930859",  // 客户代号
-  nameEN:         "_widget_1764392061245",  // 公司英文名
-  nameCN:         "_widget_1764394732263",  // 公司中文名
-  country:        "_widget_1770371120295",  // 国家
-  contactName:    "_widget_1764392061248",  // 联系人
-  contactPhone:   "_widget_1764392061252",  // 电话
-  contactEmail:   "_widget_1764392061256",  // 邮箱
-  currency:       "_widget_1770797914842",  // 交易币种
-  paymentTerm:    "_widget_1771815411185",  // 付款条件
-  brands:         "_widget_1775071325804",  // 品牌（多选/文本）
-  groupId:        "_widget_1771622930865",  // 分组ID
-  addressSubform: "_widget_1770371120291",  // 地址子表
+  companyCode:    "_widget_1771622930859",  // 客户代号 (text)
+  nameEN:         "_widget_1762568848071",  // 客户公司（英文）(text)
+  selectCompany:  "_widget_1766650731323",  // 选择公司 (linkdata)
+  brands:         "_widget_1759129256811",  // Brand (combocheck 多选!)
+  relatedFactory: "_widget_1774282924487",  // 关联工厂 (combocheck)
+  country:        "_widget_1768475611585",  // 国家 (text)
+  selectCountry:  "_widget_1768475715971",  // 选择国家 (lookup)
+  currency:       "_widget_1770797795019",  // 交易币种 (combo)
+  paymentMethod:  "_widget_1772321952179",  // 付款方式 (radiogroup)
+  customerLevel:  "_widget_1766834853664",  // 客户等级 (radiogroup)
+  defaultPayment: "_widget_1766834853668",  // 默认付款策略 (radiogroup)
+  tradeTerms:     "_widget_1766834853675",  // 允许贸易条款 (radiogroup)
+  blTypePref:     "_widget_1771622930875",  // 提单类型偏好 (radiogroup)
+  pricingTier:    "_widget_1772534679214",  // pricingTier (combo)
+  featureFlags:   "_widget_1772534679217",  // featureFlags (textarea)
+  // 加价策略
+  markupMode:     "_widget_1766840643018",  // 加价模式 (radiogroup)
+  markupValue:    "_widget_1766840643036",  // 加价值 (number)
+  markupCurrency: "_widget_1766840643023",  // 加价币种 (radiogroup)
+  logisticsMarkup:"_widget_1766840643034",  // 物流加价模式 (radiogroup)
+  logisticsMarkupPct:  "_widget_1766913411037",  // 加价百分比 (number)
+  logisticsMarkupCtn:  "_widget_1766913411038",  // 加价固定金额/柜 (number)
+  logisticsMarkupShip: "_widget_1766913411039",  // 加价固定金额/票 (number)
+  logisticsMarkupCur:  "_widget_1766840643037",  // 物流加价币种 (radiogroup)
+  weHandleOcean:  "_widget_1766840643039",  // 是否我方代办海运 (radiogroup)
+  productMarkupPct: "_widget_1771622930877", // 销售产品加价百分比 (radiogroup)
+  // 地址子表
+  addressSubform: "_widget_1770371120291",  // 地址明细 (subform)
   sub_country:    "_widget_1770371120295",
   sub_port:       "_widget_1771523439038",
   sub_addrShort:  "_widget_1771815411179",
   sub_addrFull:   "_widget_1770371120312",
   sub_consignee:  "_widget_1770371120343",
-  // 发票信息
-  inv_nameEN:     "_widget_1764392061279",  // Invoice公司名
-  inv_addressEN:  "_widget_1764394732272",  // Invoice地址
-  inv_addressCN:  "_widget_1764394732273",  // Invoice地址CN
+  // 付款子表
+  paySubform:     "_widget_1766891785476",  // 付款子表单 (subform)
+  pay_type:       "_widget_1766891785478",  // 类型 (combo)
+  pay_pct:        "_widget_1766892526096",  // 百分比 (number)
+  pay_currency:   "_widget_1766891785481",  // 币种 (combo)
+  pay_company:    "_widget_1766891785484",  // 客户公司 (text)
 };
 
 function get(row, w) {
@@ -165,54 +183,75 @@ export default async function handler(req, res) {
         if (!companyCode) continue;
 
         var nameEN       = get(rec, W.nameEN) || "";
-        var nameCN       = get(rec, W.nameCN) || "";
         var country      = get(rec, W.country) || "";
-        var contactName  = get(rec, W.contactName) || "";
-        var contactPhone = get(rec, W.contactPhone) || "";
-        var contactEmail = get(rec, W.contactEmail) || "";
         var currency     = get(rec, W.currency) || "USD";
-        var paymentTerm  = get(rec, W.paymentTerm) || "";
-        var groupId      = get(rec, W.groupId) || "";
+        var paymentMethod = get(rec, W.paymentMethod) || "";
         var brandsRaw    = get(rec, W.brands);
         var brands       = parseBrands(brandsRaw);
 
         var subformData  = get(rec, W.addressSubform);
         var addresses    = parseAddresses(Array.isArray(subformData) ? subformData : []);
 
-        var invNameEN    = get(rec, W.inv_nameEN) || "";
-        var invAddrEN    = get(rec, W.inv_addressEN) || "";
-        var invAddrCN    = get(rec, W.inv_addressCN) || "";
-        var invoice      = { nameEN: invNameEN, addressEN: invAddrEN, addressCN: invAddrCN };
+        // 付款子表
+        var paySubRaw    = get(rec, W.paySubform);
+        var payTerms     = Array.isArray(paySubRaw) ? paySubRaw.map(function(r) {
+          return {
+            type: get(r, W.pay_type) || "",
+            pct: get(r, W.pay_pct) || 0,
+            currency: get(r, W.pay_currency) || "",
+            company: get(r, W.pay_company) || "",
+          };
+        }) : [];
+
+        // 所有策略/配置字段存到 raw
+        var rawData = {
+          jdyId:          rec._id,
+          lastSync:       new Date().toISOString(),
+          brandsRaw:      brandsRaw,
+          customerLevel:  get(rec, W.customerLevel) || "",
+          defaultPayment: get(rec, W.defaultPayment) || "",
+          tradeTerms:     get(rec, W.tradeTerms) || "",
+          blTypePref:     get(rec, W.blTypePref) || "",
+          pricingTier:    get(rec, W.pricingTier) || "",
+          featureFlags:   get(rec, W.featureFlags) || "",
+          markupMode:     get(rec, W.markupMode) || "",
+          markupValue:    get(rec, W.markupValue) || 0,
+          markupCurrency: get(rec, W.markupCurrency) || "",
+          logisticsMarkup:    get(rec, W.logisticsMarkup) || "",
+          logisticsMarkupPct: get(rec, W.logisticsMarkupPct) || 0,
+          logisticsMarkupCtn: get(rec, W.logisticsMarkupCtn) || 0,
+          logisticsMarkupShip:get(rec, W.logisticsMarkupShip) || 0,
+          logisticsMarkupCur: get(rec, W.logisticsMarkupCur) || "",
+          weHandleOcean:  get(rec, W.weHandleOcean) || "",
+          productMarkupPct: get(rec, W.productMarkupPct) || "",
+          relatedFactory: parseBrands(get(rec, W.relatedFactory)),
+          payTerms:       payTerms,
+          portalRole:     "customer",
+        };
 
         var sql = `
           INSERT INTO customers (company_code, name_en, name_cn, brands, addresses,
             contact_name, contact_phone, contact_email, country, currency,
             payment_term, portal_role, group_id, invoice, raw)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'customer',$12,$13,$14)
+          VALUES ($1,$2,'',$3,$4,'','','',$5,$6,$7,'customer','',$8,$9)
           ON CONFLICT (company_code) DO UPDATE SET
             name_en       = COALESCE(NULLIF($2,''), customers.name_en),
-            name_cn       = COALESCE(NULLIF($3,''), customers.name_cn),
-            brands        = CASE WHEN $4::jsonb = '[]'::jsonb THEN customers.brands ELSE $4::jsonb END,
-            addresses     = CASE WHEN $5::jsonb = '[]'::jsonb THEN customers.addresses ELSE $5::jsonb END,
-            contact_name  = COALESCE(NULLIF($6,''), customers.contact_name),
-            contact_phone = COALESCE(NULLIF($7,''), customers.contact_phone),
-            contact_email = COALESCE(NULLIF($8,''), customers.contact_email),
-            country       = COALESCE(NULLIF($9,''), customers.country),
-            currency      = COALESCE(NULLIF($10,''), customers.currency),
-            payment_term  = COALESCE(NULLIF($11,''), customers.payment_term),
-            group_id      = COALESCE(NULLIF($12,''), customers.group_id),
-            invoice       = $13::jsonb,
-            raw           = customers.raw || $14::jsonb,
+            brands        = CASE WHEN $3::jsonb = '[]'::jsonb THEN customers.brands ELSE $3::jsonb END,
+            addresses     = CASE WHEN $4::jsonb = '[]'::jsonb THEN customers.addresses ELSE $4::jsonb END,
+            country       = COALESCE(NULLIF($5,''), customers.country),
+            currency      = COALESCE(NULLIF($6,''), customers.currency),
+            payment_term  = COALESCE(NULLIF($7,''), customers.payment_term),
+            invoice       = CASE WHEN $8::jsonb = '{}'::jsonb THEN customers.invoice ELSE $8::jsonb END,
+            raw           = customers.raw || $9::jsonb,
             updated_at    = NOW()
           RETURNING company_code, name_en, brands
         `;
         var params = [
-          companyCode, nameEN, nameCN,
+          companyCode, nameEN,
           JSON.stringify(brands), JSON.stringify(addresses),
-          contactName, contactPhone, contactEmail,
-          country, currency, paymentTerm, groupId,
-          JSON.stringify(invoice),
-          JSON.stringify({ jdyId: rec._id, lastSync: new Date().toISOString(), brandsRaw: brandsRaw }),
+          country, currency, paymentMethod,
+          JSON.stringify({}),
+          JSON.stringify(rawData),
         ];
         var r = await pool.query(sql, params);
         synced.push(r.rows[0]);
