@@ -116,6 +116,7 @@ mount("/api/jdy-plans-sync",  () => import("./api/jdy-plans-sync.js"));
 mount("/api/jdy-sync",        () => import("./api/jdy-sync.js"));
 mount("/api/jdy-write",       () => import("./api/jdy-write.js"));
 mount("/api/ocr-booking",     () => import("./api/ocr-booking.js"));
+mount("/api/ocr-booking",     () => import("./api/ocr-booking.js"));
 mount("/api/ocr-license",     () => import("./api/ocr-license.js"));
 mount("/api/ocr-review",      () => import("./api/ocr-review.js"));
 mount("/api/oss-upload",      () => import("./api/oss-upload.js"));
