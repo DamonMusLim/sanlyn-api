@@ -3,7 +3,7 @@
 import { getPool, setCors } from "../db.js";
 
 var ALLOWED_TABLES = {
-  orders: { label: "订单管理", key: "_id", columns: ["_id","order_no","contract_no","customer_po","customer","company_code","destination","etd","eta","status","production_status","total_amount","currency","source","created_by","jdy_synced","created_at","updated_at"] },
+  orders: { label: "订单管理", key: "_id", columns: ["_id","order_no","contract_no","customer_po","customer","company_code","company_name_cn","company_name_en","consignee","customer_address","country","destination_port","pol","delivery_date","confirmed_delivery","required_arrival","total_qty","total_cbm","gross_weight","net_weight","container_type","container_qty","total_amount","total_amount_factory","currency","exchange_rate","profit","declare_amount","tax_rebate_amount","status","production_status","factory","remarks","created_at","updated_at"] },
   shipping_plans: { label: "海运计划", key: "_id", columns: ["_id","shipment_no","bl_no","vessel","voyage","etd","eta","cutoff_date","container_no","container_type","customer","forwarder_cn","trucking_cn","customs_cn","pol","pod","freight_cost","freight_sale_usd","flow_status","created_at","updated_at"] },
   finance_payments: { label: "财务收款", key: "_id", columns: ["_id","plan_id","customer","amount","currency","paid_date","status","created_at","updated_at"] },
   customs_data: { label: "报关资料", key: "_id", columns: ["_id","customs_no","shipment_no","contract_no","created_at","updated_at"] },
