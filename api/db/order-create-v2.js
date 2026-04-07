@@ -79,21 +79,23 @@ export default async function handler(req, res) {
         });
       }
 
-      // ── Next PO number for a brand prefix ──
-      if (action === "next-po" && req.query.prefix) {
-        var prefix = req.query.prefix.toUpperCase().replace(/[^A-Z0-9]/g, "");
-        var pattern = "^" + prefix + "-[0-9]+$";
+      // ── Next PO number: {factoryPrefix}-{customerId}-{seq} e.g. ZC-03-61 ──
+      if (action === "next-po" && req.query.factoryPrefix && req.query.customerId) {
+        var fp = req.query.factoryPrefix.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        var cid = String(parseInt(req.query.customerId) || 0).padStart(2, "0");
+        var poPrefix = fp + "-" + cid + "-";
+        var pattern = "^" + fp + "-" + cid + "-[0-9]+$";
         var result = await pool.query(
           "SELECT customer_po FROM orders WHERE customer_po ~ $1 ORDER BY LENGTH(customer_po) DESC, customer_po DESC LIMIT 1",
           [pattern]
         ).catch(function() { return { rows: [] }; });
         var nextNum = 1;
         if (result.rows.length) {
-          var last = result.rows[0].customer_po;
-          var num = parseInt((last || "").replace(prefix + "-", "")) || 0;
+          var last = result.rows[0].customer_po || "";
+          var num = parseInt(last.replace(poPrefix, "")) || 0;
           nextNum = num + 1;
         }
-        return res.status(200).json({ success: true, nextPO: prefix + "-" + nextNum });
+        return res.status(200).json({ success: true, nextPO: poPrefix + nextNum });
       }
 
       // ── Default: init data ──
@@ -116,6 +118,7 @@ export default async function handler(req, res) {
         var brands = Array.isArray(c.brands) ? c.brands.join(", ") : (c.brands || "");
 
         customerMap[code] = {
+          customerId: c.id,
           companyCode: code,
           companyNameCN: c.name_cn || "",
           companyNameEN: c.name_en || "",
