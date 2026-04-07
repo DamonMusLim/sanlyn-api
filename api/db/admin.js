@@ -12,6 +12,7 @@ var ALLOWED_TABLES = {
   tenants: { label: "租户管理", key: "id", columns: ["id","company_code","name","config","created_at","updated_at"] },
   customers: { label: "客户管理", key: "_id", columns: ["_id","company_code","company_name_cn","company_name_en","created_at","updated_at"] },
   local_charges: { label: "港口费用", key: "id", columns: ["id","carrier","pol","pod","container_type","company","cost_total","sell_total","fee_items","created_at"] },
+  factories: { label: "工厂管理", key: "id", columns: ["id","name","name_short","po_prefix","ports","notes","is_active","created_at"] },
 };
 
 export default async function handler(req, res) {

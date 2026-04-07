@@ -154,9 +154,15 @@ export default async function handler(req, res) {
         "SELECT order_no, contract_no FROM orders WHERE order_no IS NOT NULL ORDER BY created_at DESC LIMIT 1"
       ).catch(function() { return { rows: [] }; });
 
+      // Load factory config from DB (falls back to empty if table not yet created)
+      var factoriesResult = await pool.query(
+        "SELECT name, name_short, po_prefix, ports FROM factories WHERE is_active = true ORDER BY name_short"
+      ).catch(function() { return { rows: [] }; });
+
       return res.status(200).json({
         success: true,
         customers: Object.values(customerMap),
+        factories: factoriesResult.rows,
         lastOrderNo: lastOrder.rows[0]?.order_no || null,
         lastContractNo: lastOrder.rows[0]?.contract_no || null,
         nextOrderNo: generateOrderNo(),
