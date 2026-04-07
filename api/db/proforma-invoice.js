@@ -115,7 +115,9 @@ export default async function handler(req, res) {
 
     // ── Customer info ──
     var customer = order.company_name_en || raw.companyNameEN || raw.companyNameCN || order.customer || "";
-    var customerAddr = raw.customerAddress || raw.deliveryAddress || "";
+    var _rawAddr = raw.customerAddress || raw.deliveryAddress || "";
+    var CUST_ADDRS_PI={"petsome":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA","dibaq":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA"};
+    var customerAddr=(function(name,existing){if(existing&&existing.trim().length>3)return existing;var k=(name||"").toLowerCase();for(var key in CUST_ADDRS_PI){if(k.includes(key))return CUST_ADDRS_PI[key];}return existing||"";})(customer,_rawAddr);
     var customerTel = raw.phone || "";
 
     // ── PI number: use contract_no or generate from order_no ──
@@ -180,8 +182,8 @@ export default async function handler(req, res) {
   .detail-val{font-size:12px;font-weight:600;color:#111;}
 
   /* Port banner */
-  .port-banner{background:#111;color:#fff;display:flex;border-radius:2px;overflow:hidden;margin-bottom:10px;}
-  .port-cell{flex:1;padding:8px 12px;border-right:1px solid #333;}
+  .port-banner{border:2px solid #111;color:#111;background:#fff;display:flex;border-radius:2px;overflow:hidden;margin-bottom:10px;}
+  .port-cell{flex:1;padding:8px 12px;border-right:1px solid #ddd;}
   .port-cell:last-child{border-right:none;}
   .port-lbl{font-size:8.5px;font-weight:700;letter-spacing:1px;color:#aaa;text-transform:uppercase;margin-bottom:2px;}
   .port-val{font-size:12px;font-weight:600;}
@@ -255,26 +257,26 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
   <!-- ── Buyer + Details ── -->
   <div class="info-row">
     <div class="info-section">
-      <div class="info-section-hdr">付款方 / BUYER (BILL TO)</div>
+      <div class="info-section-hdr">BUYER (BILL TO)</div>
       <div class="info-section-body">
         <div class="buyer-name">${esc(customer) || "[BUYER NAME]"}</div>
         <div class="buyer-addr">
-          ${esc(customerAddr) || "[ADDRESS]"}
+          ${esc(customerAddr)}
           ${customerTel ? "<br>Tel: " + esc(customerTel) : ""}
         </div>
       </div>
     </div>
     <div class="info-section">
-      <div class="info-section-hdr">单据详情 / DETAILS</div>
+      <div class="info-section-hdr">DETAILS</div>
       <div class="info-section-body">
         <div class="details-grid">
-          <div class="detail-lbl">发票编号 No.:</div>
-          <div class="detail-val">${esc(invoiceDisplay)}</div>
-          <div class="detail-lbl">订单编号 Order:</div>
+          <div class="detail-lbl">No.:</div>
+          <div class="detail-val">${esc(piNo)}</div>
+          <div class="detail-lbl">Order:</div>
           <div class="detail-val">${esc(orderNo)}</div>
-          <div class="detail-lbl">日期 Date:</div>
+          <div class="detail-lbl">Date:</div>
           <div class="detail-val">${esc(piDate)}</div>
-          <div class="detail-lbl">币种 Currency:</div>
+          <div class="detail-lbl">Currency:</div>
           <div class="detail-val">${esc(currency)}</div>
         </div>
       </div>
@@ -284,15 +286,15 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
   <!-- ── Port Banner ── -->
   <div class="port-banner">
     <div class="port-cell">
-      <div class="port-lbl">装运港 Port of Loading</div>
+      <div class="port-lbl">PORT OF LOADING</div>
       <div class="port-val">${esc(pol)}</div>
     </div>
     <div class="port-cell">
-      <div class="port-lbl">目的港 Port of Destination</div>
+      <div class="port-lbl">PORT OF DESTINATION</div>
       <div class="port-val">${esc(pod)}</div>
     </div>
     <div class="port-cell">
-      <div class="port-lbl">贸易术语 Terms (Incoterms® 2020)</div>
+      <div class="port-lbl">TERMS (Incoterms® 2020)</div>
       <div class="port-val">${esc(incoterms)}</div>
     </div>
   </div>
@@ -314,9 +316,11 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
         var name = p.productName || p.name || p.description || "-";
         var size = p.size || p.spec || "-";
         var qty = p.qty || p.quantity || "-";
-        var unitPrice = fmtMoney(p.unitPrice || p.price);
+        var _up=p.unitPrice||p.price||p.unit_price||p["_widget_1764396068577"]||0;
+        if((!_up||Number(_up)===0)&&(p.subtotal||p.amount)&&p.qty&&Number(p.qty)>0)_up=Number(p.subtotal||p.amount||0)/Number(p.qty);
+        var unitPrice = fmtMoney(_up);
         var sub = Number(p.subtotal || p.amount || 0);
-        if (!sub && p.qty && p.unitPrice) sub = Number(p.qty) * Number(p.unitPrice);
+        if (!sub && p.qty && _up) sub = Number(p.qty) * Number(_up);
         return `<tr>
           <td class="no">${String(i+1).padStart(2,"0")}</td>
           <td>${esc(name)}</td>
@@ -335,7 +339,7 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
       }).join("") : ""}
       <!-- Total row -->
       <tr class="total-row">
-        <td colspan="4" class="total-label">总计金额 TOTAL AMOUNT (${esc(currency)}):</td>
+        <td colspan="4" class="total-label">TOTAL AMOUNT (${esc(currency)}):</td>
         <td colspan="2" class="total-amount">${fmtMoney(total)}</td>
       </tr>
     </tbody>
@@ -344,7 +348,7 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
   <!-- ── Terms + Banking ── -->
   <div class="bottom-grid">
     <div class="bottom-card">
-      <div class="bottom-hdr">成交条款 Terms &amp; Conditions</div>
+      <div class="bottom-hdr">TERMS &amp; CONDITIONS</div>
       <div class="bottom-body">
         <ol>
           ${cfg.terms.map(function(t){ return "<li>" + esc(t) + "</li>"; }).join("")}
@@ -352,7 +356,7 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
       </div>
     </div>
     <div class="bottom-card">
-      <div class="bottom-hdr">银行信息 Banking Information</div>
+      <div class="bottom-hdr">BANKING INFORMATION</div>
       <div class="bottom-body">
         <div class="bank-row"><div class="bank-lbl">受益人:</div><div class="bank-val">${esc(cfg.bank.beneficiary)}</div></div>
         <div class="bank-row"><div class="bank-lbl">银行:</div><div class="bank-val">${esc(cfg.bank.bankName)}</div></div>
