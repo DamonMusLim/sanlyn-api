@@ -115,6 +115,7 @@ export default async function handler(req, res) {
           blType: c.bl_type || "",
           tradeTerms: c.trade_terms || "",
           ourShipping: c.our_shipping || "",
+          addresses: addrs,
           raw: c.raw || {}
         };
       });
