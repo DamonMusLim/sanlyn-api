@@ -166,9 +166,9 @@ export default async function handler(req, res) {
   .seller-addr{font-size:10px;color:#555;margin-top:4px;line-height:1.5;}
   .title-block{text-align:right;}
   .title-cn{font-size:26px;font-weight:800;color:#111;letter-spacing:2px;}
-  .title-en{font-size:15px;font-weight:700;letter-spacing:2px;color:#333;margin-top:2px;}
+  .title-en{font-size:13px;font-weight:700;letter-spacing:2px;color:#555;margin-top:3px;}
 
-  .divider{border:none;border-top:2px solid #111;margin:8px 0 10px 0;}
+  .divider{border:none;border-top:2px solid #111;margin:16px 0 12px 0;}
 
   /* Info row */
   .info-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;}

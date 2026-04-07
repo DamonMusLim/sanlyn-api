@@ -78,8 +78,9 @@ body{font-family:'Inter','Noto Sans SC',Arial,sans-serif;color:#222;background:#
 .co-addr{font-size:10px;color:#555;margin-top:4px;line-height:1.5;}
 .title-r{text-align:right;}
 .title-cn{font-size:22px;font-weight:800;letter-spacing:2px;}
-.title-en{font-size:13px;font-weight:700;letter-spacing:2px;color:#333;margin-top:2px;}
-hr.div{border:none;border-top:2px solid #111;margin:8px 0 10px 0;}
+.title-en{font-size:12px;font-weight:700;letter-spacing:2px;color:#555;margin-top:3px;}
+.title-main{font-size:30px;font-weight:900;letter-spacing:3px;color:#111;}
+hr.div{border:none;border-top:2px solid #111;margin:16px 0 12px 0;}
 .info-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;}
 .info-box{border:1px solid #ddd;border-radius:2px;}
 .ibox-hdr{font-size:9px;font-weight:700;letter-spacing:1px;color:#888;padding:4px 8px;border-bottom:1px solid #eee;background:#fafafa;text-transform:uppercase;}
@@ -125,7 +126,7 @@ table.items tr:nth-child(even) td{background:#fafafa;}
 
 function wrap(title,body,ap){ return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="page">${body}<div class="footer"><span>⚡</span> Generated &amp; Verified by <span>Sanlyn OS Supply Chain Engine</span></div></div></body></html>`; }
 
-function docHdr(cfg,cn,en){ return `<div class="hdr"><div><div class="co-name">${esc(cfg.nameEN)}</div><div class="co-sub">Global Sourcing &amp; Supply Chain Partner</div><div class="co-addr">${esc(cfg.address)}<br>Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</div></div><div class="title-r">${cn?`<div class="title-cn">${esc(cn)}</div>`:""}<div class="title-en">${esc(en)}</div></div></div><hr class="div">`; }
+function docHdr(cfg,cn,en){ return `<div class="hdr"><div><div class="co-name">${esc(cfg.nameEN)}</div><div class="co-sub">Global Sourcing &amp; Supply Chain Partner</div><div class="co-addr">${esc(cfg.address)}<br>Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</div></div><div class="title-r">${cn?`<div class="title-cn">${esc(cn)}</div><div class="title-en">${esc(en)}</div>`:`<div class="title-main">${esc(en)}</div>`}</div></div><hr class="div">`; }
 
 function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){ return `<div class="info-row"><div class="info-box"><div class="ibox-hdr">BUYER (BILL TO)</div><div class="ibox-body"><div class="buyer-name">${esc(cust)||"[BUYER]"}</div><div class="buyer-addr">${esc(addr)||""}${tel?`<br>Tel: ${esc(tel)}`:""}</div></div></div><div class="info-box"><div class="ibox-hdr">DETAILS</div><div class="ibox-body"><div class="dg"><div class="dl">${esc(noLbl||"No.")}:</div><div class="dv">${esc(docNo)}</div><div class="dl">Order:</div><div class="dv">${esc(ordNo)}</div><div class="dl">Date:</div><div class="dv">${esc(date)}</div>${curr?`<div class="dl">Currency:</div><div class="dv">${esc(curr)}</div>`:""}</div></div></div></div>`; }
 
