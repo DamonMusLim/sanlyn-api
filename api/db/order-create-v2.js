@@ -85,32 +85,40 @@ export default async function handler(req, res) {
       ).catch(function() { return { rows: [] }; });
 
       var custTable = await pool.query(
-        "SELECT _id, company_code, company_name_cn, company_name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, raw FROM customers ORDER BY company_name_en"
+        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, raw FROM customers ORDER BY name_en"
       ).catch(function() { return { rows: [] }; });
 
       var customerMap = {};
       (custTable.rows || []).forEach(function(c) {
-        var code = c.company_code || c._id;
-        if (code) customerMap[code] = {
+        var code = c.company_code || ("cust-" + c.id);
+        if (!code) return;
+        // Extract first address for defaults
+        var addrs = [];
+        try { addrs = typeof c.addresses === "string" ? JSON.parse(c.addresses) : (c.addresses || []); } catch(e) {}
+        var firstAddr = addrs[0] || {};
+        var brands = Array.isArray(c.brands) ? c.brands.join(", ") : (c.brands || "");
+
+        customerMap[code] = {
           companyCode: code,
-          companyNameCN: c.company_name_cn || "",
-          companyNameEN: c.company_name_en || "",
-          brands: c.brands || "",
-          country: c.country || "",
+          companyNameCN: c.name_cn || "",
+          companyNameEN: c.name_en || "",
+          brands: brands,
+          country: c.country || firstAddr.country || "",
           countryEN: c.country_en || "",
           currency: c.currency || "CNY",
           grade: c.grade || "",
           paymentPolicy: c.payment_policy || "",
           paymentTerms: c.payment_terms || [],
-          destinationPort: c.destination_port || "",
-          address: c.address || "",
-          consignee: c.consignee || "",
+          destinationPort: c.destination_port || firstAddr.port || "",
+          address: c.address || firstAddr.address || "",
+          consignee: c.consignee || firstAddr.consignee || "",
           blType: c.bl_type || "",
           tradeTerms: c.trade_terms || "",
           ourShipping: c.our_shipping || "",
           raw: c.raw || {}
         };
       });
+      // Supplement from orders table for any customers not in customers table
       (customers.rows || []).forEach(function(c) {
         if (c.company_code && !customerMap[c.company_code]) {
           customerMap[c.company_code] = {

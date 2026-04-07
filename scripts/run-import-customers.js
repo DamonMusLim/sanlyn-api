@@ -1,5 +1,5 @@
 // Run: node scripts/run-import-customers.js
-// Imports 9 customers from JDY Excel data into PostgreSQL
+// Upserts 9 customers from JDY Excel into PostgreSQL (matches actual schema)
 import pg from "pg";
 var { Pool } = pg;
 
@@ -11,64 +11,63 @@ var pool = new Pool({
 });
 
 var customers = [
-  { id: "699825784ebdb040c35e7c3a", code: "699825784ebdb040c35e7c3a", nameEN: "ENRICH CHAMPION SDN BHD", nameCN: "", personNo: "00015", brands: "ECO,ENRICH,DACO,WANPY", country: "", countryEN: "", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", destPort: "", address: "", consignee: "", departments: "", linkedFactory: "" },
-  { id: "6984696b7b04d6e4b06005f2", code: "6984696b7b04d6e4b06005f2", nameEN: "HARMONIOUS HAPPY VENTURES SDN BHD", nameCN: "", personNo: "00011", brands: "PET'S ACADEMY,PROPAW", country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "B", paymentPolicy: "B：30%定金+70%尾款（提单/发货前）", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", destPort: "", address: "", consignee: "", departments: "FortuneSanlyn", linkedFactory: "" },
-  { id: "6977345f2c2f9c249a146d10", code: "6977345f2c2f9c249a146d10", nameEN: "Eversparkles Pte Ltd", nameCN: "", personNo: "00010", brands: "Signature7", country: "", countryEN: "Philippines", currency: "USD", grade: "B", paymentPolicy: "B：30%定金+70%尾款（提单/发货前）", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "SWB", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", destPort: "", address: "Unit8148SanFranciscoSt.Plainview MandaluyongCityMetroManilaPhilippines1550", consignee: "Nexquest- KMPInternational Corporation", departments: "FortuneSanlyn", linkedFactory: "" },
-  { id: "697466a4c02a1a689e67cc42", code: "697466a4c02a1a689e67cc42", nameEN: "FORTUNESANLYN GROUP LIMITED", nameCN: "", personNo: "00009", brands: "福贝,SINATURE 7,JJ PET,爱舒乐,宠银,天缘,AMD,CATSOME,DOGSOME,ECO,ENRICH,JERKYTIME,NATURAL WORLD,NU,PET'S ACADEMY,PLAY N' BOND,PROPAW,Sinature7,SNIFFLY,SNIFLLY,SOUPTIME,SOUTTIME,TING TIME,TRULY,WANPY", country: "", countryEN: "Saudi Arabia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", destPort: "", address: "SOAQALJOMA.PARK BE HAPPY.199,TRIPOLI,LIBYA", consignee: "AL BASHEK COMPANY", departments: "FortuneSanlyn", linkedFactory: "" },
-  { id: "69733fa475ebb4ab77fedecd", code: "69733fa475ebb4ab77fedecd", nameEN: "", nameCN: "福贝", personNo: "00008", brands: "福贝", country: "", countryEN: "", currency: "CNY", grade: "B", paymentPolicy: "B：30%定金+70%尾款（提单/发货前）", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", destPort: "", address: "", consignee: "", departments: "福贝", linkedFactory: "" },
-  { id: "6951e26dbd937e1ab631e35d", code: "CN-00037", nameEN: "PETSOME SDN BHD", nameCN: "", personNo: "00007", brands: "CATSOME,WANPY,DOGSOME", country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "SWB", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "按固定金额加价（每柜）", ourShipping: "是", destPort: "Kota Kinabalu", address: "Lot 1, Wei Hing Warehouse Jalan Bengkel Majlis Bandar Baru Penampang Jalan Bundusan 88300 Penampang Sabah, Malaysia", consignee: "PETSOME SDN BHD", departments: "PETSOME GROUP,FortuneSanlyn", linkedFactory: "CN-00055" },
-  { id: "694cfbda958c870fe5992fbd", code: "694cfbda958c870fe5992fbd", nameEN: "DIBAQ (M) SDN BHD", nameCN: "", personNo: "00006", brands: "NATURAL WORLD,JERKYTIME,SOUPTIME,SOUTTIME,TING TIME,TRULY", country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.4},{"type":"尾款","percentage":0.6}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "按百分比加价", ourShipping: "是", destPort: "", address: "", consignee: "", departments: "远航国际,PETSOME GROUP", linkedFactory: "" },
-  { id: "694cf863ba35328f1cb0bba6", code: "694cf863ba35328f1cb0bba6", nameEN: "JJ PET GROUP SDN BHD", nameCN: "", personNo: "00005", brands: "CATSOME", country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", destPort: "", address: "", consignee: "", departments: "建平中砂膨润土有限公司,FortuneSanlyn", linkedFactory: "" },
-  { id: "694cf301b9b1cc51f999e03a", code: "694cf301b9b1cc51f999e03a", nameEN: "PETSOME (EU) SDN BHD", nameCN: "", personNo: "00004", brands: "SNIFFLY", country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "按固定金额加价（每柜）", ourShipping: "是", destPort: "", address: "", consignee: "", departments: "PETSOME GROUP,FortuneSanlyn", linkedFactory: "" },
+  { code: "ENRICH", nameEN: "ENRICH CHAMPION SDN BHD", nameCN: "", personNo: "00015", brands: ["ECO","ENRICH","DACO","WANPY"], country: "", countryEN: "", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", addresses: [], departments: "FortuneSanlyn", linkedFactory: "" },
+  { code: "HARMONIOUS", nameEN: "HARMONIOUS HAPPY VENTURES SDN BHD", nameCN: "", personNo: "00011", brands: ["PET'S ACADEMY","PROPAW"], country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "B", paymentPolicy: "B：30%定金+70%尾款（提单/发货前）", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", addresses: [], departments: "FortuneSanlyn", linkedFactory: "" },
+  { code: "EVERSPARKLES", nameEN: "Eversparkles Pte Ltd", nameCN: "", personNo: "00010", brands: ["Signature7"], country: "Philippines", countryEN: "Philippines", currency: "USD", grade: "B", paymentPolicy: "B：30%定金+70%尾款（提单/发货前）", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "SWB", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", addresses: [{"port":"","country":"Philippines","address":"Unit8148SanFranciscoSt.Plainview MandaluyongCityMetroManilaPhilippines1550","consignee":"Nexquest- KMPInternational Corporation"}], departments: "FortuneSanlyn", linkedFactory: "" },
+  { code: "FORTUNESANLYN", nameEN: "FORTUNESANLYN GROUP LIMITED", nameCN: "", personNo: "00009", brands: ["福贝","SINATURE 7","JJ PET","爱舒乐","宠银","天缘","AMD","CATSOME","DOGSOME","ECO","ENRICH","JERKYTIME","NATURAL WORLD","NU","PET'S ACADEMY","PLAY N' BOND","PROPAW","Sinature7","SNIFFLY","SOUPTIME","TING TIME","TRULY","WANPY"], country: "Saudi Arabia", countryEN: "Saudi Arabia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", addresses: [{"port":"","country":"Saudi Arabia","address":"SOAQALJOMA.PARK BE HAPPY.199,TRIPOLI,LIBYA","consignee":"AL BASHEK COMPANY"}], departments: "FortuneSanlyn", linkedFactory: "" },
+  { code: "FUBEI", nameEN: "", nameCN: "福贝", personNo: "00008", brands: ["福贝"], country: "", countryEN: "", currency: "CNY", grade: "B", paymentPolicy: "B：30%定金+70%尾款（提单/发货前）", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", addresses: [], departments: "福贝", linkedFactory: "" },
+  { code: "PETSOME", nameEN: "PETSOME SDN BHD", nameCN: "", personNo: "00007", brands: ["CATSOME","WANPY","DOGSOME"], country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "SWB", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "按固定金额加价（每柜）", ourShipping: "是", addresses: [{"port":"Kota Kinabalu","country":"Malaysia","address":"Lot 1, Wei Hing Warehouse Jalan Bengkel Majlis Bandar Baru Penampang Jalan Bundusan 88300 Penampang Sabah, Malaysia","consignee":"PETSOME SDN BHD"}], departments: "PETSOME GROUP,FortuneSanlyn", linkedFactory: "CN-00055" },
+  { code: "DIBAQ", nameEN: "DIBAQ (M) SDN BHD", nameCN: "", personNo: "00006", brands: ["NATURAL WORLD","JERKYTIME","SOUPTIME","SOUTTIME","TING TIME","TRULY"], country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.4},{"type":"尾款","percentage":0.6}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "按百分比加价", ourShipping: "是", addresses: [], departments: "远航国际,PETSOME GROUP", linkedFactory: "" },
+  { code: "JJPET", nameEN: "JJ PET GROUP SDN BHD", nameCN: "", personNo: "00005", brands: ["CATSOME"], country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "不加价", ourShipping: "是", addresses: [], departments: "建平中砂膨润土有限公司,FortuneSanlyn", linkedFactory: "" },
+  { code: "PETSOME-EU", nameEN: "PETSOME (EU) SDN BHD", nameCN: "", personNo: "00004", brands: ["SNIFFLY"], country: "Malaysia", countryEN: "Malaysia", currency: "CNY", grade: "A", paymentPolicy: "A：发货前全款", paymentTerms: [{"type":"定金","percentage":0.3},{"type":"尾款","percentage":0.7}], blType: "", tradeTerms: "FOB", pricingMode: "不加价", logisticsMarkup: "按固定金额加价（每柜）", ourShipping: "是", addresses: [], departments: "PETSOME GROUP,FortuneSanlyn", linkedFactory: "" },
 ];
 
 async function run() {
-  // Add columns
-  var alterSQL = `
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS person_no TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS brands TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS linked_factory TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS departments TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS bl_type TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS country TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS country_en TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS grade TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_policy TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_terms JSONB;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS pricing_mode TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS trade_terms TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS logistics_markup TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS our_shipping TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS destination_port TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT;
-    ALTER TABLE customers ADD COLUMN IF NOT EXISTS consignee TEXT;
-  `;
-  await pool.query(alterSQL);
-  console.log("✅ Columns ready");
+  var ok = 0, fail = 0, updated = 0;
 
-  var ok = 0, fail = 0;
   for (var c of customers) {
     try {
-      await pool.query(`
-        INSERT INTO customers (_id, company_code, company_name_en, company_name_cn, person_no, brands, linked_factory, departments, bl_type, country, country_en, currency, grade, payment_policy, payment_terms, pricing_mode, trade_terms, logistics_markup, our_shipping, destination_port, address, consignee)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-        ON CONFLICT (_id) DO UPDATE SET
-          company_code=EXCLUDED.company_code, company_name_en=EXCLUDED.company_name_en, company_name_cn=EXCLUDED.company_name_cn,
-          person_no=EXCLUDED.person_no, brands=EXCLUDED.brands, linked_factory=EXCLUDED.linked_factory,
-          departments=EXCLUDED.departments, bl_type=EXCLUDED.bl_type, country=EXCLUDED.country, country_en=EXCLUDED.country_en,
-          currency=EXCLUDED.currency, grade=EXCLUDED.grade, payment_policy=EXCLUDED.payment_policy,
-          payment_terms=EXCLUDED.payment_terms, pricing_mode=EXCLUDED.pricing_mode, trade_terms=EXCLUDED.trade_terms,
-          logistics_markup=EXCLUDED.logistics_markup, our_shipping=EXCLUDED.our_shipping,
-          destination_port=EXCLUDED.destination_port, address=EXCLUDED.address, consignee=EXCLUDED.consignee
-      `, [
-        c.id, c.code, c.nameEN, c.nameCN, c.personNo, c.brands, c.linkedFactory, c.departments,
-        c.blType, c.country, c.countryEN, c.currency, c.grade, c.paymentPolicy,
-        JSON.stringify(c.paymentTerms), c.pricingMode, c.tradeTerms, c.logisticsMarkup,
-        c.ourShipping, c.destPort, c.address, c.consignee
-      ]);
-      ok++;
-      console.log("  ✅ " + (c.nameEN || c.nameCN) + " | " + c.grade + " | " + (c.countryEN || "-"));
+      // Check if customer already exists by name_en or company_code
+      var existing = await pool.query(
+        "SELECT id, company_code, name_en FROM customers WHERE LOWER(name_en) = LOWER($1) OR company_code = $2 LIMIT 1",
+        [c.nameEN || "___none___", c.code]
+      );
+
+      if (existing.rows.length > 0) {
+        // Update existing
+        await pool.query(`
+          UPDATE customers SET
+            company_code = $1, person_no = $2, brands = $3, country = $4, country_en = $5,
+            currency = $6, grade = $7, payment_policy = $8, payment_terms = $9,
+            bl_type = $10, trade_terms = $11, pricing_mode = $12, logistics_markup = $13,
+            our_shipping = $14, addresses = $15, departments = $16, linked_factory = $17,
+            updated_at = NOW()
+          WHERE id = $18
+        `, [
+          c.code, c.personNo, JSON.stringify(c.brands), c.country, c.countryEN,
+          c.currency, c.grade, c.paymentPolicy, JSON.stringify(c.paymentTerms),
+          c.blType, c.tradeTerms, c.pricingMode, c.logisticsMarkup,
+          c.ourShipping, JSON.stringify(c.addresses), c.departments, c.linkedFactory,
+          existing.rows[0].id
+        ]);
+        updated++;
+        console.log("  🔄 Updated: " + (c.nameEN || c.nameCN) + " (id=" + existing.rows[0].id + ")");
+      } else {
+        // Insert new
+        await pool.query(`
+          INSERT INTO customers (company_code, name_en, name_cn, person_no, brands, country, country_en,
+            currency, grade, payment_policy, payment_terms, bl_type, trade_terms, pricing_mode,
+            logistics_markup, our_shipping, addresses, departments, linked_factory, created_at, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW(),NOW())
+        `, [
+          c.code, c.nameEN, c.nameCN, c.personNo, JSON.stringify(c.brands), c.country, c.countryEN,
+          c.currency, c.grade, c.paymentPolicy, JSON.stringify(c.paymentTerms),
+          c.blType, c.tradeTerms, c.pricingMode, c.logisticsMarkup,
+          c.ourShipping, JSON.stringify(c.addresses), c.departments, c.linkedFactory
+        ]);
+        ok++;
+        console.log("  ✅ Inserted: " + (c.nameEN || c.nameCN));
+      }
     } catch (e) {
       fail++;
       console.log("  ❌ " + (c.nameEN || c.nameCN) + ": " + e.message);
@@ -76,13 +75,15 @@ async function run() {
   }
 
   // Verify
-  var result = await pool.query("SELECT company_name_en, company_name_cn, brands, grade, country_en, destination_port FROM customers WHERE grade IS NOT NULL AND grade != '' ORDER BY company_name_en");
-  console.log("\n📋 Database now has " + result.rows.length + " customers with grade:");
+  var result = await pool.query("SELECT company_code, name_en, name_cn, brands, grade, country_en, addresses FROM customers WHERE grade IS NOT NULL AND grade != '' ORDER BY name_en");
+  console.log("\n📋 Customers with grade (" + result.rows.length + "):");
   result.rows.forEach(function(r) {
-    console.log("  " + (r.company_name_en || r.company_name_cn) + " [" + r.grade + "] " + (r.country_en || "") + " brands=" + (r.brands || "-"));
+    var brands = Array.isArray(r.brands) ? r.brands.join(",") : (r.brands || "-");
+    var addr = Array.isArray(r.addresses) && r.addresses.length > 0 ? r.addresses[0].consignee || "" : "";
+    console.log("  " + (r.name_en || r.name_cn) + " [" + r.grade + "] " + (r.country_en || "") + " | brands=" + brands + (addr ? " | consignee=" + addr : ""));
   });
 
-  console.log("\n✅ Done! " + ok + " imported, " + fail + " failed");
+  console.log("\n✅ Done! " + ok + " new, " + updated + " updated, " + fail + " failed");
   await pool.end();
 }
 
