@@ -79,12 +79,10 @@ export default async function handler(req, res) {
         });
       }
 
-      // ── Next PO number: {factoryPrefix}-{customerId}-{seq} e.g. ZC-03-61 ──
-      if (action === "next-po" && req.query.factoryPrefix && req.query.customerId) {
+      // ── Next PO number: {factoryPrefix}-{seq} e.g. ZC-3 ──
+      if (action === "next-po" && req.query.factoryPrefix) {
         var fp = req.query.factoryPrefix.toUpperCase().replace(/[^A-Z0-9]/g, "");
-        var cid = String(parseInt(req.query.customerId) || 0).padStart(2, "0");
-        var poPrefix = fp + "-" + cid + "-";
-        var pattern = "^" + fp + "-" + cid + "-[0-9]+$";
+        var pattern = "^" + fp + "-[0-9]+$";
         var result = await pool.query(
           "SELECT customer_po FROM orders WHERE customer_po ~ $1 ORDER BY LENGTH(customer_po) DESC, customer_po DESC LIMIT 1",
           [pattern]
@@ -92,10 +90,10 @@ export default async function handler(req, res) {
         var nextNum = 1;
         if (result.rows.length) {
           var last = result.rows[0].customer_po || "";
-          var num = parseInt(last.replace(poPrefix, "")) || 0;
+          var num = parseInt(last.replace(fp + "-", "")) || 0;
           nextNum = num + 1;
         }
-        return res.status(200).json({ success: true, nextPO: poPrefix + nextNum });
+        return res.status(200).json({ success: true, nextPO: fp + "-" + nextNum });
       }
 
       // ── Default: init data ──

@@ -11,14 +11,14 @@ var pool = new Pool({
   database: "sanlyn_db",
   user: "sanlyn_admin",
   password: "SanlynRDS2026!",
-  ssl: { rejectUnauthorized: false },
+  ssl: false,
 });
 
 var SEED = [
   { name: "烟台中宠股份有限公司",       name_short: "中宠",   po_prefix: "ZC", ports: ["Qingdao 青岛"] },
   { name: "烟台中宠食品股份有限公司",   name_short: "中宠食品", po_prefix: "ZC", ports: ["Qingdao 青岛"] },
   { name: "福建泰迪宠物食品有限公司",   name_short: "泰迪",   po_prefix: "XM", ports: ["Xiamen 厦门"] },
-  { name: "福建恒安国际贸易有限公司",   name_short: "恒安",   po_prefix: "XM", ports: ["Xiamen 厦门"] },
+  { name: "福建恒安国际贸易有限公司",   name_short: "恒安",   po_prefix: "HA", ports: ["Xiamen 厦门"] },
   { name: "江苏宠银进出口贸易有限公司", name_short: "宠银",   po_prefix: "CY", ports: ["Lianyungang 连云港", "Qingdao 青岛"] },
   { name: "连云港中砂宠物用品有限公司", name_short: "中砂",   po_prefix: "LL", ports: ["Lianyungang 连云港", "Qingdao 青岛"] },
   { name: "辽宁宠爱科技有限公司",       name_short: "宠爱",   po_prefix: "CL", ports: ["Jinzhou 锦州", "Tianjin 天津"] },
