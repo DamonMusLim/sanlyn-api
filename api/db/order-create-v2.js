@@ -79,6 +79,23 @@ export default async function handler(req, res) {
         });
       }
 
+      // ── Next PO number for a brand prefix ──
+      if (action === "next-po" && req.query.prefix) {
+        var prefix = req.query.prefix.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        var pattern = "^" + prefix + "-[0-9]+$";
+        var result = await pool.query(
+          "SELECT customer_po FROM orders WHERE customer_po ~ $1 ORDER BY LENGTH(customer_po) DESC, customer_po DESC LIMIT 1",
+          [pattern]
+        ).catch(function() { return { rows: [] }; });
+        var nextNum = 1;
+        if (result.rows.length) {
+          var last = result.rows[0].customer_po;
+          var num = parseInt((last || "").replace(prefix + "-", "")) || 0;
+          nextNum = num + 1;
+        }
+        return res.status(200).json({ success: true, nextPO: prefix + "-" + nextNum });
+      }
+
       // ── Default: init data ──
       var customers = await pool.query(
         "SELECT DISTINCT company_code, company_name_cn, company_name_en FROM orders WHERE company_code IS NOT NULL AND company_code != '' GROUP BY company_code, company_name_cn, company_name_en ORDER BY company_name_en"
@@ -142,6 +159,19 @@ export default async function handler(req, res) {
         nextOrderNo: generateOrderNo(),
         nextContractNo: generateContractNo(),
       });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // ── DELETE: remove a single order ──
+  if (req.method === "DELETE") {
+    try {
+      var orderNo = req.query.orderNo || (req.body || {}).orderNo;
+      if (!orderNo) return res.status(400).json({ error: "orderNo required" });
+      var del = await pool.query("DELETE FROM orders WHERE order_no = $1 RETURNING order_no", [orderNo]);
+      if (!del.rows.length) return res.status(404).json({ error: "Order not found: " + orderNo });
+      return res.status(200).json({ success: true, deleted: del.rows[0].order_no });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
