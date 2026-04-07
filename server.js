@@ -50,6 +50,7 @@ function mount(route, handlerModule) {
 }
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
+mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
 mount("/api/db/admin",             () => import("./api/db/admin.js"));
 mount("/api/db/accounts",          () => import("./api/db/accounts.js"));
 mount("/api/db/analytics",         () => import("./api/db/analytics.js"));

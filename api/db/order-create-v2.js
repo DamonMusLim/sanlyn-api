@@ -24,19 +24,70 @@ export default async function handler(req, res) {
 
   var pool = getPool();
 
-  // ── GET: return form data (customers + recent orders for next number) ──
+  // ── GET: return form data ──
+  // ?action=customers → customer list
+  // ?action=customer-products&companyCode=XXX → customer's recent order products
+  // default → customers + next numbers
   if (req.method === "GET") {
     try {
+      var action = req.query.action || "init";
+
+      // ── Customer's history products (for association) ──
+      if (action === "customer-products" && req.query.companyCode) {
+        var code = req.query.companyCode;
+        // Get products from this customer's recent orders
+        var recentOrders = await pool.query(
+          "SELECT products, customer_po, order_no, created_at FROM orders WHERE company_code = $1 AND products IS NOT NULL ORDER BY created_at DESC LIMIT 10",
+          [code]
+        );
+        // Extract unique products with latest qty/price
+        var productMap = {};
+        (recentOrders.rows || []).forEach(function(ord) {
+          var prods = [];
+          try { prods = typeof ord.products === "string" ? JSON.parse(ord.products) : (ord.products || []); } catch(e) {}
+          prods.forEach(function(p) {
+            var key = p.code || p.name;
+            if (key && !productMap[key]) {
+              productMap[key] = {
+                name: p.name || "", code: p.code || "", brand: p.brand || "",
+                size: p.size || "", unit: p.unit || "CTN",
+                unitPrice: p.unitPrice || p.price || 0,
+                cbm: p.cbm || 0, grossWeight: p.grossWeight || 0, netWeight: p.netWeight || 0,
+                lastQty: p.qty || 0, lastOrderNo: ord.order_no,
+                lastDate: ord.created_at,
+                // Keep declare/tax info for finance
+                bagsPerBox: p.bagsPerBox || 0,
+                declareAmountPerBox: p.declareAmountPerBox || 0,
+                vatRate: p.vatRate || 0, taxRebateRate: p.taxRebateRate || 0,
+                hsCode: p.hsCode || "",
+              };
+            }
+          });
+        });
+
+        // Also get this customer's default info
+        var custInfo = await pool.query(
+          "SELECT country, destination_port, customer_address, consignee, currency FROM orders WHERE company_code = $1 ORDER BY created_at DESC LIMIT 1",
+          [code]
+        ).catch(function() { return { rows: [] }; });
+
+        return res.status(200).json({
+          success: true,
+          products: Object.values(productMap),
+          orderCount: recentOrders.rows.length,
+          defaults: custInfo.rows[0] || {},
+        });
+      }
+
+      // ── Default: init data ──
       var customers = await pool.query(
         "SELECT DISTINCT company_code, company_name_cn, company_name_en FROM orders WHERE company_code IS NOT NULL AND company_code != '' GROUP BY company_code, company_name_cn, company_name_en ORDER BY company_name_en"
       ).catch(function() { return { rows: [] }; });
 
-      // Also try customers table
       var custTable = await pool.query(
         "SELECT _id, company_code, company_name_cn, company_name_en, raw FROM customers ORDER BY company_name_en"
       ).catch(function() { return { rows: [] }; });
 
-      // Merge: customers table is source of truth, supplement from orders
       var customerMap = {};
       (custTable.rows || []).forEach(function(c) {
         var code = c.company_code || c._id;
@@ -57,7 +108,6 @@ export default async function handler(req, res) {
         }
       });
 
-      // Get latest order number for reference
       var lastOrder = await pool.query(
         "SELECT order_no, contract_no FROM orders WHERE order_no IS NOT NULL ORDER BY created_at DESC LIMIT 1"
       ).catch(function() { return { rows: [] }; });
