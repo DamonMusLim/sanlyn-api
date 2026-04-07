@@ -85,7 +85,7 @@ export default async function handler(req, res) {
       ).catch(function() { return { rows: [] }; });
 
       var custTable = await pool.query(
-        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, raw FROM customers ORDER BY name_en"
+        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, raw FROM customers WHERE is_active != false AND (grade IS NOT NULL AND grade != '' OR brands IS NOT NULL AND brands != '{}' AND brands != '[]' AND brands::text != '') ORDER BY name_en"
       ).catch(function() { return { rows: [] }; });
 
       var customerMap = {};
