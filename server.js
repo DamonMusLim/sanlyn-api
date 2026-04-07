@@ -59,6 +59,7 @@ mount("/api/db/bl-control",        () => import("./api/db/bl-control.js"));
 mount("/api/db/company",           () => import("./api/db/company.js"));
 mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));
+mount("/api/db/import-customers",  () => import("./api/db/import-customers.js"));
 mount("/api/db/customer-stamps",   () => import("./api/db/customer-stamps.js"));
 mount("/api/db/customs",           () => import("./api/db/customs.js"));
 mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
