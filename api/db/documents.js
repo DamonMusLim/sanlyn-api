@@ -319,15 +319,28 @@ export default async function handler(req, res) {
       var tgwSp=pick(sp.gross_weight,spraw.grossWeight,"-");
       var tcbm=pick(sp.total_cbm,spraw.totalCBM,"-");
       var soNo=pick(sp.shipment_no,id);
-      var consignee=pick(sp.customer_en,sp.customer,spraw.consignee,"[CONSIGNEE]");
-      var consAddr=pick(spraw.consigneeAddress,"");
+      // helper: reject widget template strings from old form system
+      function notWidget(v){ return v&&typeof v==="string"&&!v.includes("#_widget_")&&!v.includes("${")&&v.trim().length>1; }
+      function pickClean(){ for(var i=0;i<arguments.length;i++){var v=arguments[i];if(notWidget(v))return v;} return ""; }
+      var consignee=pickClean(sp.customer_en,sp.customer,spraw.consignee)||"[CONSIGNEE]";
+      var consAddr=resolveAddr(consignee, notWidget(spraw.consigneeAddress)?spraw.consigneeAddress:"");
       var shipper=cfg3.nameEN;
-      // Cargo from linked orders
+      // Cargo, HS code from linked orders
       var cargo=pick(spraw.cargoDescription,sp.cargo_description,"SAID TO CONTAIN");
+      var hsCodes="";
       if(sp.order_nos&&sp.order_nos.length){
         var loR=await pool.query("SELECT raw FROM orders WHERE order_no = ANY($1::text[])",[sp.order_nos]);
-        var descs=loR.rows.map(function(r){var rr=r.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};} return rr.blDescription||rr.cargoDescription||"";}).filter(Boolean);
+        var descs=[],hsList=[];
+        loR.rows.forEach(function(r){
+          var rr=r.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
+          var d=rr.blDescription||rr.cargoDescription||""; if(d)descs.push(d);
+          var hs=rr.hsCode||rr.hs_code||rr.hscode||""; if(hs&&hsList.indexOf(hs)<0)hsList.push(hs);
+          // also check products array
+          var prods=rr.products||rr.items||[];
+          prods.forEach(function(p){var ph=p.hsCode||p.hs_code||p.hscode||""; if(ph&&hsList.indexOf(ph)<0)hsList.push(ph);});
+        });
         if(descs.length)cargo=descs.join("; ");
+        hsCodes=hsList.join(", ");
       }
 
       if(type==="so"){
@@ -357,8 +370,22 @@ export default async function handler(req, res) {
             </tr>
           </table>
           <table style="width:100%;border-collapse:collapse;font-size:11px">
-            <thead><tr style="background:#111;color:#fff">${["Container No./箱号","Seal No./封志号 & Marks/标记","No. of Pkgs/件数","Description/货名","G.W (KG)","Measurement (CBM)"].map(function(h){return`<th style="padding:8px;font-size:10px;font-weight:700">${h}</th>`;}).join("")}</tr></thead>
-            <tbody><tr>${[pick(sp.container_no,spraw.containerNo,""),pick(sp.seal_no,spraw.sealNo,""),String(cqty)+" × "+ctype,cargo,String(tgwSp),String(tcbm)].map(function(v){return`<td style="border:1px solid #ddd;padding:7px 8px;text-align:center">${esc(v)}</td>`;}).join("")}</tr></tbody>
+            <thead><tr style="background:#111;color:#fff">
+              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">Container No.<br>集装箱号</th>
+              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">Seal No.<br>封志号</th>
+              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">Pkgs/件数</th>
+              <th style="padding:8px;font-size:10px;font-weight:700;text-align:left">HS Code &amp; Description<br>HS编码 &amp; 货描</th>
+              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">G.W (KG)<br>毛重</th>
+              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">CBM (M³)<br>方数</th>
+            </tr></thead>
+            <tbody><tr>
+              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center">${esc(pick(sp.container_no,spraw.containerNo,""))}</td>
+              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center">${esc(pick(sp.seal_no,spraw.sealNo,""))}</td>
+              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center">${esc(String(cqty)+" × "+ctype)}</td>
+              <td style="border:1px solid #ddd;padding:7px 8px;text-align:left">${hsCodes?`<div style="font-weight:700;margin-bottom:3px">${esc(hsCodes)}</div>`:""}${esc(cargo)}</td>
+              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center;font-weight:700">${esc(String(tgwSp))}</td>
+              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center;font-weight:700">${esc(String(tcbm))}</td>
+            </tr></tbody>
           </table>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;font-size:11px">
             ${[["船期 ETD",etd],["截关日 Cut-off",cutoff||"-"],["运费 Freight","FREIGHT PREPAID"],["船公司 Carrier",pick(sp.shipping_line,spraw.shippingLine,"-")],["柜型 Container",ctype],["柜量 Qty",String(cqty)]].map(function(b){return`<div style="border:1px solid #ddd;padding:7px 10px;border-radius:2px"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase">${b[0]}</div><div style="font-weight:600;font-size:12px;margin-top:2px">${esc(b[1])}</div></div>`;}).join("")}
