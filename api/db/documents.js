@@ -79,7 +79,7 @@ body{font-family:'Inter','Noto Sans SC',Arial,sans-serif;color:#222;background:#
 .title-r{text-align:right;}
 .title-cn{font-size:22px;font-weight:800;letter-spacing:2px;}
 .title-en{font-size:12px;font-weight:700;letter-spacing:2px;color:#555;margin-top:3px;}
-.title-main{font-size:30px;font-weight:900;letter-spacing:3px;color:#111;}
+.title-main{font-size:20px;font-weight:900;letter-spacing:2px;color:#111;white-space:nowrap;}
 hr.div{border:none;border-top:2px solid #111;margin:16px 0 12px 0;}
 .info-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;}
 .info-box{border:1px solid #ddd;border-radius:2px;}
