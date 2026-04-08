@@ -920,7 +920,7 @@ async function upsertCompanies(pool, companies) {
       if (c.contact_phone) raw.contact_phone = c.contact_phone;
       const res = await pool.query(
         `INSERT INTO customers (_id,company_code,name_cn,name_en,country,destination_port,address,contact_email,role_type,role_types,is_active,raw)
-         VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,true,$10::jsonb)
+         VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9::text[],true,$10::jsonb)
          ON CONFLICT (company_code) DO UPDATE SET
            name_cn=EXCLUDED.name_cn,
            name_en=EXCLUDED.name_en,
@@ -929,14 +929,14 @@ async function upsertCompanies(pool, companies) {
            address=CASE WHEN EXCLUDED.address!='' THEN EXCLUDED.address ELSE customers.address END,
            contact_email=CASE WHEN EXCLUDED.contact_email!='' THEN EXCLUDED.contact_email ELSE customers.contact_email END,
            role_type=CASE WHEN EXCLUDED.role_type!='' THEN EXCLUDED.role_type ELSE customers.role_type END,
-           role_types=EXCLUDED.role_types::jsonb,
+           role_types=EXCLUDED.role_types,
            raw=COALESCE(customers.raw,'{}') || EXCLUDED.raw,
            is_active=true, updated_at=NOW()
          RETURNING (xmax=0) AS inserted`,
         [c.company_code, c.name_cn||"", c.name_en||"", c.country||"",
          c.destination_port||"", c.address||"",
          c.contact_email||"", c.role_type||"",
-         JSON.stringify(c.role_types||[]), JSON.stringify(raw)]
+         c.role_types||[], JSON.stringify(raw)]
       );
       if (res.rows[0]?.inserted) inserted++; else updated++;
     } catch(e) {
