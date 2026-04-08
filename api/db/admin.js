@@ -151,8 +151,8 @@ export default async function handler(req, res) {
             var arr = Array.isArray(v) ? v : (typeof v === "string" ? JSON.parse(v) : []);
             params.push(arr);
             sets.push(col + " = $" + params.length + "::text[]");
-          } else if (col === "brands" || col === "addresses" || col === "invoice") {
-            // JSONB array columns
+          } else if (col === "brands" || col === "addresses" || col === "invoice" || col === "payment_terms" || col === "fee_items" || col === "config" || col === "ports") {
+            // JSONB columns — accept string or object/array
             var jsonVal = typeof v === "string" ? v : JSON.stringify(v);
             params.push(jsonVal);
             sets.push(col + " = $" + params.length + "::jsonb");
