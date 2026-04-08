@@ -8,7 +8,7 @@ var ALLOWED_TABLES = {
   finance_payments: { label: "财务收款", key: "_id", columns: ["_id","jdy_id","type","direction","contract_no","order_no","customer_en","customer_cn","issuing_co","total_customer","total_factory","paid_amount","pending_amount","this_amount","currency","bank_ref","payment_date","pay_type","pay_item","forwarder_cn","freight_recv","freight_pay","port_recv","port_pay","truck_recv","truck_pay","customs_recv","customs_pay","audit_issues","audit_status","status","raw","created_at","updated_at"] },
   customs_data: { label: "报关资料", key: "_id", columns: ["_id","customs_no","shipment_no","contract_no","created_at","updated_at"] },
   products: { label: "产品库", key: "sku", columns: ["id","sku","product_name","product_name_cn","brand","size","unit","spec","cbm","net_weight","gross_weight","barcode","hs_code","category","cat1","cat2","cat3","cat1_cn","cat2_cn","cat3_cn","factory_price","sanlyn_price","price_usd","tax_rate","rebate_rate","profit","trade_terms","declaration_name","declaration_elements","bl_description","factory_name","declaration_amount","bg_bx","flavor","moq","jdy_id","image_url","active","created_at","updated_at"] },
-  accounts: { label: "账号管理", key: "username", columns: ["id","username","role","company","supplier_role","department","created_at","updated_at"] },
+  accounts: { label: "账号管理", key: "username", columns: ["id","username","role","company","company_code","company_codes","supplier_role","department","created_at","updated_at"] },
   tenants: { label: "租户管理", key: "id", columns: ["id","company_code","name","config","created_at","updated_at"] },
   customers: { label: "客户管理", key: "_id", columns: ["_id","company_code","name_cn","name_en","country","currency","grade","destination_port","address","consignee","contact_tel","contact_email","brands","trade_terms","payment_policy","payment_terms","bl_type","our_shipping","role_type","role_types","is_active","created_at","updated_at"] },
   local_charges: { label: "港口费用", key: "id", columns: ["id","carrier","pol","pod","container_type","company","cost_total","sell_total","fee_items","created_at"] },
@@ -159,9 +159,9 @@ export default async function handler(req, res) {
             var jsonStr = typeof v !== "string" ? JSON.stringify(v) : v;
             params.push(jsonStr);
             sets.push(col + " = COALESCE(" + col + ",'{}') || $" + params.length + "::jsonb");
-          } else if (col === "role_types") {
-            // text[] column — accept array or JSON string
-            var arr = Array.isArray(v) ? v : (typeof v === "string" ? JSON.parse(v) : []);
+          } else if (col === "role_types" || col === "company_codes") {
+            // text[] columns — accept array or JSON string
+            var arr = Array.isArray(v) ? v : (typeof v === "string" ? (function(){try{return JSON.parse(v);}catch(e){return v.split(",").map(function(x){return x.trim();}).filter(Boolean);}})() : []);
             params.push(arr);
             sets.push(col + " = $" + params.length + "::text[]");
           } else if (col === "brands" || col === "addresses" || col === "invoice" || col === "payment_terms" || col === "fee_items" || col === "config" || col === "ports") {

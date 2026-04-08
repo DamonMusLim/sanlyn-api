@@ -18,21 +18,22 @@ export default async function handler(req, res) {
     // Refresh token with latest account data
     try {
       var acct = await pool.query(
-        "SELECT _id, email, name, role, company_code, company_name_cn, company_name_en, status FROM accounts WHERE _id = $1 OR email = $2 LIMIT 1",
+        "SELECT _id, email, name, role, company_code, company_codes, company_name_cn, company_name_en, status FROM accounts WHERE _id = $1 OR email = $2 LIMIT 1",
         [req.user.uid, req.user.email]
       );
       if (!acct.rows[0]) return res.status(401).json({ error: "Account not found" });
       var u = acct.rows[0];
       if (u.status !== "active") return res.status(403).json({ error: "账号已停用" });
+      var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
 
       var newToken = generateToken({
         uid: u._id, email: u.email, name: u.name, role: u.role,
-        companyCode: u.company_code, companyNameCN: u.company_name_cn, companyNameEN: u.company_name_en
+        companyCode: u.company_code, companyCodes: companyCodes, companyNameCN: u.company_name_cn, companyNameEN: u.company_name_en
       });
 
       return res.status(200).json({ success: true, token: newToken, user: {
         uid: u._id, email: u.email, name: u.name, role: u.role,
-        companyCode: u.company_code, companyNameCN: u.company_name_cn
+        companyCode: u.company_code, companyCodes: companyCodes, companyNameCN: u.company_name_cn
       }});
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -48,7 +49,7 @@ export default async function handler(req, res) {
 
     // Find account
     var result = await pool.query(
-      "SELECT _id, email, name, role, password, company_code, company_name_cn, company_name_en, status FROM accounts WHERE email = $1 LIMIT 1",
+      "SELECT _id, email, name, role, password, company_code, company_codes, company_name_cn, company_name_en, status FROM accounts WHERE email = $1 LIMIT 1",
       [email.toLowerCase().trim()]
     );
 
@@ -59,17 +60,19 @@ export default async function handler(req, res) {
     // Simple password check (plaintext for now — upgrade to bcrypt later)
     if (u.password !== password) return res.status(401).json({ error: "密码错误" });
 
+    var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
+
     // Generate token
     var token = generateToken({
       uid: u._id, email: u.email, name: u.name, role: u.role,
-      companyCode: u.company_code, companyNameCN: u.company_name_cn, companyNameEN: u.company_name_en
+      companyCode: u.company_code, companyCodes: companyCodes, companyNameCN: u.company_name_cn, companyNameEN: u.company_name_en
     });
 
     return res.status(200).json({
       success: true, token: token,
       user: {
         uid: u._id, email: u.email, name: u.name, role: u.role,
-        companyCode: u.company_code, companyNameCN: u.company_name_cn
+        companyCode: u.company_code, companyCodes: companyCodes, companyNameCN: u.company_name_cn
       }
     });
   } catch (err) {
