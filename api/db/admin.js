@@ -23,6 +23,19 @@ export default async function handler(req, res) {
   try {
     var action = req.query.action || req.body?.action || "list";
 
+    // ── GET /api/db/admin?action=distinct&table=products&col=brand
+    if (action === "distinct") {
+      var table = req.query.table;
+      var col = req.query.col;
+      if (!table || !ALLOWED_TABLES[table] || !ALLOWED_TABLES[table].columns.includes(col)) {
+        return res.status(400).json({ error: "Invalid table or column" });
+      }
+      var r = await pool.query(
+        "SELECT DISTINCT " + col + " FROM " + table + " WHERE " + col + " IS NOT NULL AND " + col + " != '' ORDER BY " + col
+      );
+      return res.status(200).json({ success: true, values: r.rows.map(function(row){ return row[col]; }) });
+    }
+
     // ── GET /api/db/admin?action=schema — return table definitions
     if (action === "schema") {
       var tables = {};
