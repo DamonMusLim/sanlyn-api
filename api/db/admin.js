@@ -146,11 +146,16 @@ export default async function handler(req, res) {
             var jsonStr = typeof v !== "string" ? JSON.stringify(v) : v;
             params.push(jsonStr);
             sets.push(col + " = COALESCE(" + col + ",'{}') || $" + params.length + "::jsonb");
-          } else if (col === "role_types" || col === "brands") {
-            // text[] columns — accept array or JSON string
+          } else if (col === "role_types") {
+            // text[] column — accept array or JSON string
             var arr = Array.isArray(v) ? v : (typeof v === "string" ? JSON.parse(v) : []);
             params.push(arr);
             sets.push(col + " = $" + params.length + "::text[]");
+          } else if (col === "brands" || col === "addresses" || col === "invoice") {
+            // JSONB array columns
+            var jsonVal = typeof v === "string" ? v : JSON.stringify(v);
+            params.push(jsonVal);
+            sets.push(col + " = $" + params.length + "::jsonb");
           } else {
             params.push(v);
             sets.push(col + " = $" + params.length);
