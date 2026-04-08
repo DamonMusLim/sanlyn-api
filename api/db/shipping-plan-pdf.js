@@ -136,26 +136,70 @@ export default async function handler(req, res) {
     // ══════════════════════════════════════════
     // 托书 Booking Note
     // ══════════════════════════════════════════
-    if (isBooking) {
-      const consignee = cust ? (cust.consignee || cust.name_en || cust.name_cn || fmt(p.customer_en)) : fmt(p.customer_en || p.customer);
+    if (isBooking || isBlDraft) {
+      // ── Aggregate cargo data from linked orders ──
+      let totalCbm = 0, totalGw = 0, totalQty = 0;
+      let blDescSet = new Set(), hsCodeSet = new Set();
+      let issuingCoEN = "XIAMEN SANLYN IMPORT AND EXPORT CO., LTD";
+      let issuingCoAddr = "Xiamen, Fujian, China";
+
+      for (const o of orders) {
+        totalCbm += Number(o.total_cbm || 0);
+        totalGw  += Number(o.gross_weight || 0);
+        totalQty += Number(o.total_qty || 0);
+        const raw = typeof o.raw === "string" ? (() => { try { return JSON.parse(o.raw); } catch(e) { return {}; } })() : (o.raw || {});
+        if (raw.blDescription) blDescSet.add(raw.blDescription);
+        if (raw.issuingCompanyEN) issuingCoEN = raw.issuingCompanyEN;
+        else if (raw.issuingCompany)  issuingCoEN = raw.issuingCompany;
+        // Extract SKUs from products array in raw JSON
+        const prods = raw.products || [];
+        prods.forEach(pr => { if (pr.sku) hsCodeSet.add("__sku__" + pr.sku); });
+      }
+
+      // Query HS codes + bl_description from products table
+      const skus = [...hsCodeSet].map(s => s.replace("__sku__","")).filter(Boolean);
+      if (skus.length > 0) {
+        try {
+          const ph2 = skus.map((_,i) => `$${i+1}`).join(",");
+          const hsRes = await pool.query(
+            `SELECT DISTINCT hs_code, bl_description FROM products WHERE sku IN (${ph2}) AND hs_code IS NOT NULL AND hs_code != ''`,
+            skus
+          );
+          hsRes.rows.forEach(r => {
+            if (r.hs_code) hsCodeSet.add(r.hs_code);
+            if (r.bl_description && !blDescSet.size) blDescSet.add(r.bl_description);
+          });
+          // Remove the __sku__ placeholders
+          skus.forEach(s => hsCodeSet.delete("__sku__" + s));
+        } catch(e) {}
+      }
+
+      const consignee = cust ? (cust.consignee || cust.name_en || cust.name_cn) : fmt(p.customer_en || p.customer);
       const consigneeAddr = cust ? (cust.address || cust.destination_port || "") : "";
+      const blDescText = [...blDescSet].join(" / ") || "PET PRODUCTS";
+      const hsText = [...hsCodeSet].filter(s => !s.startsWith("__sku__")).join(" / ") || "—";
+      const cbmText = totalCbm > 0 ? totalCbm.toFixed(3) + " CBM" : "—";
+      const gwText  = totalGw  > 0 ? totalGw.toLocaleString() + " KG" : "—";
+      const qtyText = totalQty > 0 ? totalQty + " CTNS" : "—";
+
+      if (isBooking) {
       const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>托书 — ${fmt(p.shipment_no)}</title><style>${sharedCss}</style></head><body>
 ${printBtn}
 <div class="page">
   ${docHeader("📋 托书 Booking Note", p.shipment_no)}
 
-  <div class="sec-title">托运方 / Shipper</div>
+  <div class="sec-title">发货人 / Shipper</div>
   <div class="grid2">
-    <div class="field"><div class="lbl">Shipper</div><div class="val n">XIAMEN SANLYN IMPORT AND EXPORT CO., LTD</div></div>
-    <div class="field"><div class="lbl">地址 Address</div><div class="val n">Xiamen, Fujian, China</div></div>
+    <div class="field"><div class="lbl">Shipper (发货人)</div><div class="val n">${esc(issuingCoEN)}</div></div>
+    <div class="field"><div class="lbl">地址 Address</div><div class="val n">${esc(issuingCoAddr)}</div></div>
   </div>
 
-  <div class="sec-title">收货方 / Consignee</div>
+  <div class="sec-title">收货人 / Consignee</div>
   <div class="grid2">
-    <div class="field"><div class="lbl">Consignee</div><div class="val n">${esc(consignee)}</div></div>
-    <div class="field"><div class="lbl">Address</div><div class="val n">${esc(consigneeAddr)}</div></div>
+    <div class="field"><div class="lbl">Consignee (收货人)</div><div class="val n">${esc(consignee)}</div></div>
+    <div class="field"><div class="lbl">地址 Address</div><div class="val n">${esc(consigneeAddr)}</div></div>
     <div class="field"><div class="lbl">通知方 Notify Party</div><div class="val n">${esc(consignee)}</div></div>
-    <div class="field"><div class="lbl">联系方式</div><div class="val n">${cust ? esc(cust.contact_tel||cust.contact_email||"—") : "—"}</div></div>
+    <div class="field"><div class="lbl">联系方式 Contact</div><div class="val n">${cust ? esc(cust.contact_tel || cust.contact_email || "—") : "—"}</div></div>
   </div>
 
   <div class="sec-title">航线信息 / Sailing Details</div>
@@ -165,27 +209,50 @@ ${printBtn}
     <div class="field"><div class="lbl">航次 Voyage</div><div class="val">${fmt(p.voyage)}</div></div>
     <div class="field"><div class="lbl">起运港 POL</div><div class="val">${fmt(p.pol)}</div></div>
     <div class="field"><div class="lbl">目的港 POD</div><div class="val">${fmt(p.pod)}</div></div>
-    <div class="field"><div class="lbl">直航/中转</div><div class="val">${fmt(p.transit)}</div></div>
+    <div class="field"><div class="lbl">直航/中转</div><div class="val">${fmt(p.transit || "Direct")}</div></div>
     <div class="field"><div class="lbl">ETD 预计开船</div><div class="val">${fmtDate(p.etd)}</div></div>
-    <div class="field"><div class="lbl">ETA 预计到港</div><div class="val">${fmtDate(p.eta)}</div></div>
-    <div class="field"><div class="lbl">截单日 SI Cutoff</div><div class="val">${fmtDate(p.si_cutoff_date||p.cutoff_date)}</div></div>
+    <div class="field"><div class="lbl">截单日 SI Cutoff</div><div class="val">${fmtDate(p.si_cutoff_date || p.cutoff_date)}</div></div>
+    <div class="field"><div class="lbl">开港日 Port Open</div><div class="val">${fmtDate(p.port_open_date)}</div></div>
   </div>
 
   <div class="sec-title">柜型柜量 / Container</div>
   <div class="grid3">
     <div class="field"><div class="lbl">柜型 Type</div><div class="val">${fmt(p.container_type)}</div></div>
     <div class="field"><div class="lbl">柜量 Qty</div><div class="val">${fmt(p.container_qty)}</div></div>
-    <div class="field"><div class="lbl">柜号 Container No.</div><div class="val">${fmt(p.container_no)||"待定"}</div></div>
+    <div class="field"><div class="lbl">柜号 Container No.</div><div class="val">${p.container_no ? fmt(p.container_no) : "TBC"}</div></div>
+  </div>
+
+  <div class="sec-title">货物信息 / Cargo Details</div>
+  <div class="grid2" style="margin-bottom:8px">
+    <div class="field"><div class="lbl">货物描述 Description of Goods</div><div class="val n" style="font-size:13px;font-family:inherit">${esc(blDescText)}</div></div>
+    <div class="field"><div class="lbl">HS Code</div><div class="val">${esc(hsText)}</div></div>
+    <div class="field"><div class="lbl">总数量 Total Qty</div><div class="val">${esc(qtyText)}</div></div>
+    <div class="field"><div class="lbl">总毛重 Gross Weight</div><div class="val">${esc(gwText)}</div></div>
+    <div class="field"><div class="lbl">总体积 Total CBM</div><div class="val">${esc(cbmText)}</div></div>
+    <div class="field"><div class="lbl">包装 Packing</div><div class="val n">Export standard cartons</div></div>
   </div>
 
   ${orders.length > 0 ? `
-  <div class="sec-title">货物明细 / Cargo</div>
+  <div class="sec-title">关联订单 / Linked Orders</div>
   <table>
-    <thead><tr><th>#</th><th>合同号</th><th>客户PO</th><th>品名</th></tr></thead>
-    <tbody>${orders.map((o,i)=>{
-      const raw=o.raw||{};
-      return `<tr><td style="color:#94a3b8">${i+1}</td><td class="val">${esc(o.contract_no||raw.contractNo||"—")}</td><td class="val">${esc(o.customer_po||raw.customerPO||"—")}</td><td>${esc(raw.blDescription||raw.productName||"PET PRODUCTS")}</td></tr>`;
+    <thead><tr><th>#</th><th>合同号 Contract No.</th><th>客户PO Customer PO</th><th>箱数 Qty</th><th>CBM</th><th>毛重 GW (KG)</th></tr></thead>
+    <tbody>${orders.map((o,i) => {
+      const raw2 = typeof o.raw==="string" ? (()=>{try{return JSON.parse(o.raw);}catch(e){return {};}})() : (o.raw||{});
+      return `<tr>
+        <td style="color:#94a3b8">${i+1}</td>
+        <td class="val" style="font-size:11px">${esc(o.contract_no || raw2.contractNo || "—")}</td>
+        <td style="font-size:11px">${esc(o.customer_po || raw2.customerPO || "—")}</td>
+        <td style="text-align:right">${o.total_qty || raw2.totalQty || "—"}</td>
+        <td style="text-align:right">${o.total_cbm ? Number(o.total_cbm).toFixed(3) : (raw2.totalCBM || "—")}</td>
+        <td style="text-align:right">${o.gross_weight || raw2.grossWeight || "—"}</td>
+      </tr>`;
     }).join("")}</tbody>
+    <tfoot><tr>
+      <td colspan="3" style="text-align:right;font-weight:700">合计 TOTAL</td>
+      <td style="text-align:right;font-weight:700">${qtyText}</td>
+      <td style="text-align:right;font-weight:700">${cbmText}</td>
+      <td style="text-align:right;font-weight:700">${gwText}</td>
+    </tr></tfoot>
   </table>` : ""}
 
   ${p.remarks ? `<div class="sec-title">备注 Remarks</div><div class="remark-box">${esc(p.remarks)}</div>` : ""}
@@ -195,138 +262,102 @@ ${printBtn}
     <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">货代确认 Forwarder</div></div>
     <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">日期 Date</div></div>
   </div>
-  <div class="footer"><span>XIAMEN SANLYN IMPORT AND EXPORT CO., LTD</span><span>Ref: ${fmt(p.shipment_no)} · ${genDate}</span></div>
+  <div class="footer"><span>${esc(issuingCoEN)}</span><span>Booking Note · ${fmt(p.shipment_no)} · ${genDate}</span></div>
 </div>${autoprint}</body></html>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       return res.status(200).send(html);
-    }
+      } // end isBooking
 
-    // ══════════════════════════════════════════
-    // 提单草稿 B/L Draft
-    // ══════════════════════════════════════════
-    if (isBlDraft) {
-      const consignee = cust ? (cust.consignee || cust.name_en || "") : fmt(p.customer_en||p.customer);
-      const consigneeAddr = cust ? (cust.address || "") : "";
-      const notify = consignee;
-      // Build cargo description from orders or use default
-      const cargoLines = orders.length ? orders.map(o => {
-        const raw = o.raw||{};
-        const marks = o.contract_no || raw.contractNo || o.customer_po || "";
-        const desc = raw.blDescription || raw.productName || "PET PRODUCTS";
-        const qty = raw.totalQty ? raw.totalQty + " CTNS" : "";
-        const weight = raw.grossWeight ? "G.W: " + raw.grossWeight + " KG" : "";
-        const cbm = raw.totalCBM ? "MEAS: " + raw.totalCBM + " CBM" : "";
-        return { marks, desc, qty, weight, cbm };
-      }) : [{ marks: "AS PER CONTRACT", desc: "PET PRODUCTS", qty: "", weight: "", cbm: "" }];
+      // ── 提单草稿 B/L Draft (shares aggregated data above) ──
+      const blCargoLines = orders.length ? orders.map(o => {
+        const raw2 = typeof o.raw==="string" ? (()=>{try{return JSON.parse(o.raw);}catch(e){return {};}})() : (o.raw||{});
+        const marks = o.contract_no || raw2.contractNo || o.customer_po || "AS PER CONTRACT";
+        const desc  = raw2.blDescription || blDescText || "PET PRODUCTS";
+        const qty   = (o.total_qty || raw2.totalQty) ? (o.total_qty || raw2.totalQty) + " CTNS" : "";
+        const wt    = (o.gross_weight || raw2.grossWeight) ? "G.W: " + (o.gross_weight || raw2.grossWeight) + " KG" : "";
+        const cbm2  = (o.total_cbm || raw2.totalCBM) ? "MEAS: " + Number(o.total_cbm || raw2.totalCBM).toFixed(3) + " CBM" : "";
+        return { marks, desc, qty, wt, cbm2 };
+      }) : [{ marks: "AS PER CONTRACT", desc: blDescText || "PET PRODUCTS", qty: qtyText, wt: gwText, cbm2: cbmText }];
 
-      const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>提单草稿 B/L Draft — ${fmt(p.shipment_no)}</title><style>${sharedCss}
-      .bl-box { border:1px solid #1e3a8a; margin-bottom:0; }
-      .bl-row { display:grid; border-bottom:1px solid #e2e8f0; }
-      .bl-row.c2 { grid-template-columns:1fr 1fr; }
-      .bl-row.c3 { grid-template-columns:1fr 1fr 1fr; }
-      .bl-cell { padding:8px 10px; border-right:1px solid #e2e8f0; min-height:48px; }
-      .bl-cell:last-child { border-right:none; }
-      .bl-head { font-size:8px; color:#64748b; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
-      .bl-val { font-size:11px; font-weight:600; color:#0f172a; margin-top:4px; line-height:1.5; }
-      .draft-watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-30deg); font-size:120px; font-weight:900; color:rgba(200,0,0,0.06); pointer-events:none; z-index:0; white-space:nowrap; }
+            const blHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>提单草稿 B/L Draft — ${fmt(p.shipment_no)}</title><style>${sharedCss}
+      .bl-box{border:1px solid #1e3a8a;margin-bottom:0;}
+      .bl-row{display:grid;border-bottom:1px solid #e2e8f0;}
+      .bl-row.c2{grid-template-columns:1fr 1fr;} .bl-row.c3{grid-template-columns:1fr 1fr 1fr;}
+      .bl-cell{padding:8px 10px;border-right:1px solid #e2e8f0;min-height:48px;} .bl-cell:last-child{border-right:none;}
+      .bl-head{font-size:8px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;}
+      .bl-val{font-size:11px;font-weight:600;color:#0f172a;margin-top:4px;line-height:1.5;}
+      .draft-wm{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:120px;font-weight:900;color:rgba(200,0,0,0.06);pointer-events:none;z-index:0;white-space:nowrap;}
       </style></head><body>
 ${printBtn}
-<div class="draft-watermark">DRAFT</div>
+<div class="draft-wm">DRAFT</div>
 <div class="page">
   ${docHeader("📝 提单草稿 B/L Draft", p.bl_no || p.shipment_no)}
   <div style="font-size:10px;color:#dc2626;text-align:center;margin-bottom:12px;font-weight:600">⚠️ DRAFT — FOR CONFIRMATION ONLY · 仅供确认，非正本</div>
-
   <div class="bl-box">
     <div class="bl-row c2">
       <div class="bl-cell">
-        <div class="bl-head">Shipper / Exporter</div>
-        <div class="bl-val">XIAMEN SANLYN IMPORT AND EXPORT CO., LTD<br>Xiamen, Fujian, China</div>
+        <div class="bl-head">Shipper / Exporter (发货人)</div>
+        <div class="bl-val">${esc(issuingCoEN)}<br><span style="font-weight:400;font-size:10px">${esc(issuingCoAddr)}</span></div>
       </div>
       <div class="bl-cell">
-        <div class="bl-head">B/L No. / Draft Ref.</div>
-        <div class="bl-val">${esc(p.bl_no || "TBC")}</div>
-        <div class="bl-head" style="margin-top:8px">Shipment Ref.</div>
-        <div class="bl-val">${esc(p.shipment_no || "—")}</div>
+        <div class="bl-head">B/L No.</div><div class="bl-val">${esc(p.bl_no || "TBC")}</div>
+        <div class="bl-head" style="margin-top:6px">Shipment Ref.</div><div class="bl-val">${esc(p.shipment_no)}</div>
       </div>
     </div>
     <div class="bl-row c2">
       <div class="bl-cell" style="min-height:60px">
-        <div class="bl-head">Consignee</div>
-        <div class="bl-val">${esc(consignee)}<br>${esc(consigneeAddr)}</div>
+        <div class="bl-head">Consignee (收货人)</div>
+        <div class="bl-val">${esc(consignee)}<br><span style="font-weight:400;font-size:10px">${esc(consigneeAddr)}</span></div>
       </div>
       <div class="bl-cell">
-        <div class="bl-head">Notify Party</div>
-        <div class="bl-val">${esc(notify)}<br>${cust ? esc(cust.contact_tel||"") : ""}</div>
+        <div class="bl-head">Notify Party (通知方)</div>
+        <div class="bl-val">${esc(consignee)}<br><span style="font-weight:400;font-size:10px">${cust ? esc(cust.contact_tel||"") : ""}</span></div>
       </div>
     </div>
     <div class="bl-row c3">
-      <div class="bl-cell">
-        <div class="bl-head">Vessel Name</div>
-        <div class="bl-val">${esc(p.vessel||"—")}</div>
-      </div>
-      <div class="bl-cell">
-        <div class="bl-head">Voyage No.</div>
-        <div class="bl-val">${esc(p.voyage||"—")}</div>
-      </div>
-      <div class="bl-cell">
-        <div class="bl-head">Carrier / Shipping Line</div>
-        <div class="bl-val">${esc(p.shipping_line||"—")}</div>
-      </div>
+      <div class="bl-cell"><div class="bl-head">Vessel (船名)</div><div class="bl-val">${esc(p.vessel||"—")}</div></div>
+      <div class="bl-cell"><div class="bl-head">Voyage No.</div><div class="bl-val">${esc(p.voyage||"—")}</div></div>
+      <div class="bl-cell"><div class="bl-head">Carrier (船公司)</div><div class="bl-val">${esc(p.shipping_line||"—")}</div></div>
     </div>
     <div class="bl-row c3">
-      <div class="bl-cell">
-        <div class="bl-head">Port of Loading</div>
-        <div class="bl-val">${esc(p.pol||"—")}</div>
-      </div>
-      <div class="bl-cell">
-        <div class="bl-head">Port of Discharge</div>
-        <div class="bl-val">${esc(p.pod||"—")}</div>
-      </div>
-      <div class="bl-cell">
-        <div class="bl-head">ETD</div>
-        <div class="bl-val">${fmtDate(p.etd)}</div>
-      </div>
+      <div class="bl-cell"><div class="bl-head">Port of Loading (起运港)</div><div class="bl-val">${esc(p.pol||"—")}</div></div>
+      <div class="bl-cell"><div class="bl-head">Port of Discharge (目的港)</div><div class="bl-val">${esc(p.pod||"—")}</div></div>
+      <div class="bl-cell"><div class="bl-head">ETD</div><div class="bl-val">${fmtDate(p.etd)}</div></div>
     </div>
     <div class="bl-row c3">
-      <div class="bl-cell">
-        <div class="bl-head">Container No.</div>
-        <div class="bl-val">${esc(p.container_no||"TBC")}</div>
-      </div>
-      <div class="bl-cell">
-        <div class="bl-head">Container Type / Qty</div>
-        <div class="bl-val">${esc(p.container_type||"—")} × ${fmt(p.container_qty||1)}</div>
-      </div>
-      <div class="bl-cell">
-        <div class="bl-head">Freight</div>
-        <div class="bl-val">${p.freight_sale_usd ? "PREPAID" : "AS ARRANGED"}</div>
-      </div>
+      <div class="bl-cell"><div class="bl-head">Container No.</div><div class="bl-val">${esc(p.container_no||"TBC")}</div></div>
+      <div class="bl-cell"><div class="bl-head">Container Type × Qty</div><div class="bl-val">${esc(p.container_type||"—")} × ${fmt(p.container_qty||1)}</div></div>
+      <div class="bl-cell"><div class="bl-head">Freight</div><div class="bl-val">${p.freight_sale_usd ? "PREPAID" : "AS ARRANGED"}</div></div>
     </div>
-
-    <!-- Cargo description -->
-    <div style="background:#1e3a8a;color:#fff;padding:6px 10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Description of Goods</div>
+    <div style="background:#1e3a8a;color:#fff;padding:6px 10px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Description of Goods / Cargo Details</div>
     <table>
-      <thead><tr><th>Marks & Numbers</th><th>Description of Goods</th><th>Qty (Ctns)</th><th>Gross Weight</th><th>Measurement</th></tr></thead>
-      <tbody>${cargoLines.map(c=>`<tr><td class="val" style="font-size:10px">${esc(c.marks)}</td><td>${esc(c.desc)}</td><td style="text-align:right">${esc(c.qty)}</td><td style="text-align:right">${esc(c.weight)}</td><td style="text-align:right">${esc(c.cbm)}</td></tr>`).join("")}</tbody>
+      <thead><tr><th>Marks & Nos.</th><th>Description</th><th>HS Code</th><th>Qty</th><th>Gross Wt.</th><th>Measurement</th></tr></thead>
+      <tbody>${blCargoLines.map(c=>`<tr>
+        <td class="val" style="font-size:10px">${esc(c.marks)}</td>
+        <td>${esc(c.desc)}</td>
+        <td style="font-family:monospace">${esc(hsText)}</td>
+        <td style="text-align:right">${esc(c.qty)}</td>
+        <td style="text-align:right">${esc(c.wt)}</td>
+        <td style="text-align:right">${esc(c.cbm2)}</td>
+      </tr>`).join("")}
+      </tbody>
+      <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700">TOTAL</td><td style="text-align:right;font-weight:700">${qtyText}</td><td style="text-align:right;font-weight:700">${gwText}</td><td style="text-align:right;font-weight:700">${cbmText}</td></tr></tfoot>
     </table>
-
     <div class="bl-row" style="grid-template-columns:1fr">
-      <div class="bl-cell">
-        <div class="bl-head">Special Instructions / 特别说明</div>
-        <div class="bl-val" style="min-height:28px">${p.remarks ? esc(p.remarks) : ""}</div>
-      </div>
+      <div class="bl-cell"><div class="bl-head">Special Instructions</div>
+      <div class="bl-val" style="min-height:24px">${p.remarks ? esc(p.remarks) : ""}</div></div>
     </div>
   </div>
-
   <div class="sig-area" style="margin-top:12px">
     <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">Shipper</div></div>
     <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">Confirmed By (船公司)</div></div>
     <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">Date</div></div>
   </div>
-  <div class="footer"><span>XIAMEN SANLYN IMPORT AND EXPORT CO., LTD</span><span>B/L Draft · Ref: ${fmt(p.shipment_no)} · ${genDate}</span></div>
+  <div class="footer"><span>${esc(issuingCoEN)}</span><span>B/L Draft · ${fmt(p.shipment_no)} · ${genDate}</span></div>
 </div>${autoprint}</body></html>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      return res.status(200).send(html);
-    }
+      return res.status(200).send(blHtml);
+    } // end isBooking || isBlDraft
 
     // ══════════════════════════════════════════
     // 海运费发票 Freight Invoice
