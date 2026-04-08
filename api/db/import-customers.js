@@ -916,22 +916,22 @@ async function upsertCompanies(pool, companies) {
   for (const c of companies) {
     try {
       const res = await pool.query(
-        `INSERT INTO customers (_id,company_code,name_cn,name_en,country,destination_port,address,contact_tel,contact_email,role_type,role_types,is_active)
+        `INSERT INTO customers (_id,company_code,name_cn,name_en,country,destination_port,address,contact_phone,contact_email,role_type,role_types,is_active)
          VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,true)
          ON CONFLICT (company_code) DO UPDATE SET
            name_cn=EXCLUDED.name_cn,
            name_en=EXCLUDED.name_en,
-           country=CASE WHEN EXCLUDED.country!=\'\'  THEN EXCLUDED.country  ELSE customers.country  END,
-           destination_port=CASE WHEN EXCLUDED.destination_port!=\'\'  THEN EXCLUDED.destination_port  ELSE customers.destination_port  END,
-           address=CASE WHEN EXCLUDED.address!=\'\'  THEN EXCLUDED.address  ELSE customers.address  END,
-           contact_tel=CASE WHEN EXCLUDED.contact_tel!=\'\'  THEN EXCLUDED.contact_tel  ELSE customers.contact_tel  END,
-           contact_email=CASE WHEN EXCLUDED.contact_email!=\'\'  THEN EXCLUDED.contact_email  ELSE customers.contact_email  END,
-           role_type=CASE WHEN EXCLUDED.role_type!=\'\'  THEN EXCLUDED.role_type  ELSE customers.role_type  END,
+           country=CASE WHEN EXCLUDED.country!='' THEN EXCLUDED.country ELSE customers.country END,
+           destination_port=CASE WHEN EXCLUDED.destination_port!='' THEN EXCLUDED.destination_port ELSE customers.destination_port END,
+           address=CASE WHEN EXCLUDED.address!='' THEN EXCLUDED.address ELSE customers.address END,
+           contact_phone=CASE WHEN EXCLUDED.contact_phone!='' THEN EXCLUDED.contact_phone ELSE customers.contact_phone END,
+           contact_email=CASE WHEN EXCLUDED.contact_email!='' THEN EXCLUDED.contact_email ELSE customers.contact_email END,
+           role_type=CASE WHEN EXCLUDED.role_type!='' THEN EXCLUDED.role_type ELSE customers.role_type END,
            role_types=EXCLUDED.role_types::jsonb,
            is_active=true, updated_at=NOW()
          RETURNING (xmax=0) AS inserted`,
         [c.company_code, c.name_cn||"", c.name_en||"", c.country||"",
-         c.destination_port||"", c.address||"", c.contact_tel||"",
+         c.destination_port||"", c.address||"", c.contact_tel||c.contact_phone||"",
          c.contact_email||"", c.role_type||"",
          JSON.stringify(c.role_types||[])]
       );
