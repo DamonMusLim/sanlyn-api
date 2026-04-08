@@ -5,9 +5,9 @@ import { getPool, setCors } from "../db.js";
 var ALLOWED_TABLES = {
   orders: { label: "订单管理", key: "_id", columns: ["_id","order_no","contract_no","customer_po","customer","company_code","company_name_cn","company_name_en","consignee","customer_address","country","destination_port","pol","delivery_date","confirmed_delivery","required_arrival","total_qty","total_cbm","gross_weight","net_weight","container_type","container_qty","total_amount","total_amount_factory","currency","exchange_rate","profit","declare_amount","tax_rebate_amount","status","production_status","factory","remarks","created_at","updated_at"] },
   shipping_plans: { label: "海运计划", key: "_id", columns: ["_id","shipment_no","bl_no","vessel","voyage","etd","eta","cutoff_date","container_no","container_type","customer","forwarder_cn","trucking_cn","customs_cn","pol","pod","freight_cost","freight_sale_usd","flow_status","created_at","updated_at"] },
-  finance_payments: { label: "财务收款", key: "_id", columns: ["_id","plan_id","customer","amount","currency","paid_date","status","created_at","updated_at"] },
+  finance_payments: { label: "财务收款", key: "_id", columns: ["_id","jdy_id","type","direction","contract_no","order_no","customer_en","customer_cn","issuing_co","total_customer","total_factory","paid_amount","pending_amount","this_amount","currency","bank_ref","payment_date","pay_type","pay_item","forwarder_cn","freight_recv","freight_pay","port_recv","port_pay","truck_recv","truck_pay","customs_recv","customs_pay","audit_issues","audit_status","status","raw","created_at","updated_at"] },
   customs_data: { label: "报关资料", key: "_id", columns: ["_id","customs_no","shipment_no","contract_no","created_at","updated_at"] },
-  products: { label: "产品库", key: "_id", columns: ["_id","sku","product_name","product_name_cn","brand","category","spec","factory_price","sanlyn_price","cbm","weight","image_url","created_at","updated_at"] },
+  products: { label: "产品库", key: "sku", columns: ["id","sku","product_name","product_name_cn","brand","size","unit","spec","cbm","net_weight","gross_weight","barcode","hs_code","category","cat1","cat2","cat3","cat1_cn","cat2_cn","cat3_cn","factory_price","sanlyn_price","price_usd","tax_rate","rebate_rate","profit","trade_terms","declaration_name","declaration_elements","bl_description","factory_name","declaration_amount","bg_bx","flavor","moq","jdy_id","image_url","active","created_at","updated_at"] },
   accounts: { label: "账号管理", key: "username", columns: ["id","username","role","company","supplier_role","department","created_at","updated_at"] },
   tenants: { label: "租户管理", key: "id", columns: ["id","company_code","name","config","created_at","updated_at"] },
   customers: { label: "客户管理", key: "_id", columns: ["_id","company_code","company_name_cn","company_name_en","created_at","updated_at"] },
@@ -57,7 +57,8 @@ export default async function handler(req, res) {
       var limit = parseInt(req.query.limit || 50);
       var offset = parseInt(req.query.offset || 0);
       var search = req.query.search || "";
-      var sortBy = req.query.sort || "created_at";
+      var defaultSort = ALLOWED_TABLES[table].columns.includes("created_at") ? "created_at" : (ALLOWED_TABLES[table].columns.includes("id") ? "id" : ALLOWED_TABLES[table].key);
+      var sortBy = req.query.sort || defaultSort;
       var sortDir = (req.query.dir || "DESC").toUpperCase() === "ASC" ? "ASC" : "DESC";
       var filters = {};
       try { filters = req.query.filters ? JSON.parse(req.query.filters) : {}; } catch(e) {}
@@ -152,6 +153,27 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, data: result.rows[0] });
     }
 
+    // ── POST /api/db/admin { action:"insert", table:"finance_payments", fields:{...} }
+    if (action === "insert" && req.method === "POST") {
+      var table = req.body.table;
+      var fields = req.body.fields || {};
+      if (!table || !ALLOWED_TABLES[table]) return res.status(400).json({ error: "Invalid table" });
+      var keyCol = ALLOWED_TABLES[table].key;
+      var cols = [], params = [];
+      for (var col in fields) {
+        if (ALLOWED_TABLES[table].columns.includes(col) && !col.includes("created_at")) {
+          var v = fields[col];
+          params.push((col === "audit_issues" || col === "raw") && typeof v !== "string" ? JSON.stringify(v) : v);
+          cols.push(col + (col === "audit_issues" || col === "raw" ? "::jsonb" : ""));
+        }
+      }
+      if (!cols.length) return res.status(400).json({ error: "No valid fields" });
+      var placeholders = params.map(function(_, i) { return "$" + (i + 1); });
+      var sql = "INSERT INTO " + table + " (" + cols.join(",") + ",created_at,updated_at) VALUES(" + placeholders.join(",") + ",NOW(),NOW()) ON CONFLICT(" + keyCol + ") DO NOTHING RETURNING *";
+      var result = await pool.query(sql, params);
+      return res.status(200).json({ success: true, data: result.rows[0] });
+    }
+
     // ── POST /api/db/admin { action:"delete", table:"orders", id:"xxx" }
     if (action === "delete" && req.method === "POST") {
       var table = req.body.table;
@@ -163,12 +185,21 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, deleted: result.rowCount });
     }
 
-    // ── POST /api/db/admin { action:"sql", query:"SELECT ..." } (admin raw SQL, read-only)
+    // ── POST /api/db/admin { action:"sql", query:"..." } (admin raw SQL — all types)
     if (action === "sql" && req.method === "POST") {
       var query = (req.body.query || "").trim();
-      if (!query.toUpperCase().startsWith("SELECT")) return res.status(400).json({ error: "Only SELECT queries allowed" });
+      if (!query) return res.status(400).json({ error: "Query required" });
+      var upper = query.toUpperCase().replace(/\s+/g, " ");
+      var blocked = ["DROP TABLE","DROP DATABASE","TRUNCATE ","DROP INDEX","DROP SCHEMA","DROP SEQUENCE"];
+      for (var b of blocked) { if (upper.includes(b)) return res.status(400).json({ error: "Blocked: " + b.trim() }); }
       var result = await pool.query(query);
-      return res.status(200).json({ success: true, data: result.rows, count: result.rowCount });
+      var isSelect = upper.trimStart().startsWith("SELECT") || upper.trimStart().startsWith("WITH");
+      return res.status(200).json({
+        success: true,
+        data: isSelect ? result.rows : [],
+        count: isSelect ? result.rows.length : undefined,
+        rowCount: isSelect ? undefined : result.rowCount,
+      });
     }
 
     return res.status(400).json({ error: "Unknown action: " + action });

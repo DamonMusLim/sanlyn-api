@@ -230,6 +230,94 @@ async function matchOrders(extracted) {
   }
 }
 
+// ── Save extracted booking data to shipping_plans ──
+async function saveShippingPlan(extracted, matchedOrders) {
+  if (!extracted || extracted.parseError) return null;
+  const pool = getPool();
+  try {
+    // Build a stable _id from booking number
+    const bkgClean = (extracted.bookingNo || "").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);
+    const planId = bkgClean ? `ocr_bkg_${bkgClean}` : `ocr_bkg_${Date.now()}`;
+
+    // Container type: prefer size code (20GP/40HQ) over full string
+    let cType = extracted.containerSize || "";
+    if (!cType && extracted.containerType) {
+      const m = (extracted.containerType || "").match(/(40HC|40HQ|40GP|20GP)/i);
+      cType = m ? m[0].toUpperCase() : extracted.containerType;
+    }
+
+    const orderNosStr = matchedOrders.map(m => m.orderNo).filter(Boolean).join(", ");
+
+    const rawData = {
+      ocrSource: true,
+      bookingNo:  extracted.bookingNo,
+      carrier:    extracted.carrier,
+      shipper:    extracted.shipper,
+      consignee:  extracted.consignee,
+      commodity:  extracted.commodity,
+      grossWeight: extracted.grossWeight,
+      cbm:        extracted.volume,
+      sealNo:     extracted.sealNo,
+      containerNos: extracted.containerNos,
+      containerCount: extracted.containerCount,
+      siCutoff:   extracted.siCutoff,
+      vgmCutoff:  extracted.vgmCutoff,
+      cyOpenDate: extracted.cyOpenDate,
+      cutoffTime: extracted.cutoffTime,
+      finalDest:  extracted.finalDest,
+      loadingAddress: extracted.loadingAddress,
+      specialInstructions: extracted.specialInstructions,
+      matchedOrderIds: matchedOrders.map(m => m.id),
+      extractedAt: new Date().toISOString(),
+    };
+
+    const result = await pool.query(`
+      INSERT INTO shipping_plans(
+        _id, shipment_no, bl_no, vessel,
+        pol, pod, container_type, container_no,
+        cutoff_date, etd, eta,
+        customer, flow_status, status,
+        current_status, current_status_cn,
+        raw, updated_at
+      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,NOW())
+      ON CONFLICT (_id) DO UPDATE SET
+        bl_no        = COALESCE(EXCLUDED.bl_no,        shipping_plans.bl_no),
+        vessel       = COALESCE(EXCLUDED.vessel,       shipping_plans.vessel),
+        container_no = COALESCE(EXCLUDED.container_no, shipping_plans.container_no),
+        etd          = COALESCE(EXCLUDED.etd,          shipping_plans.etd),
+        eta          = COALESCE(EXCLUDED.eta,          shipping_plans.eta),
+        raw          = EXCLUDED.raw,
+        updated_at   = NOW()
+      RETURNING id, _id, shipment_no, bl_no, etd, eta, flow_status
+    `, [
+      planId,                                      // $1  _id
+      extracted.bookingNo || planId,               // $2  shipment_no
+      extracted.blNo   || null,                    // $3  bl_no
+      extracted.vessel || null,                    // $4  vessel
+      extracted.pol    || null,                    // $5  pol
+      extracted.pod    || null,                    // $6  pod
+      cType            || null,                    // $7  container_type
+      extracted.containerNos || null,              // $8  container_no
+      extracted.cutoffDate   || null,              // $9  cutoff_date
+      extracted.etd    || null,                    // $10 etd
+      extracted.eta    || null,                    // $11 eta
+      extracted.shipper|| null,                    // $12 customer
+      "已订舱",                                    // $13 flow_status
+      "booking_confirmed",                         // $14 status
+      "Booking",                                   // $15 current_status
+      "订舱",                                      // $16 current_status_cn
+      JSON.stringify(rawData),                     // $17 raw
+    ]);
+
+    const saved = result.rows[0];
+    console.log("[ocr-booking] shipping_plan saved:", saved?._id, "action:", saved ? "upserted" : "no row returned");
+    return { action: "upserted", plan: saved };
+  } catch (err) {
+    console.error("[ocr-booking saveShippingPlan]", err.message);
+    return { action: "error", error: err.message };
+  }
+}
+
 // ── Main handler ──
 export default async function handler(req, res) {
   setCors(req, res);
@@ -261,12 +349,16 @@ export default async function handler(req, res) {
     // Match against existing orders
     const matchedOrders = await matchOrders(extracted);
 
+    // Save to shipping_plans DB (always — idempotent via ON CONFLICT _id)
+    const savedPlan = await saveShippingPlan(extracted, matchedOrders);
+
     return res.status(200).json({
       success: true,
       ossUrl,
       extracted,
       matchedOrders,
       matchCount: matchedOrders.length,
+      savedPlan,
     });
   } catch (err) {
     console.error("[ocr-booking]", err);
