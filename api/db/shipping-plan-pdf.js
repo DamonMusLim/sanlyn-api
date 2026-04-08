@@ -50,6 +50,10 @@ export default async function handler(req, res) {
       if (v == null || v === "") return "—";
       return Number(v).toLocaleString("zh-CN", { minimumFractionDigits: dec, maximumFractionDigits: dec });
     };
+    const esc = s => {
+      if (!s) return "";
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    };
 
     // ── Fee rows for cost sheet ──
     const portFees = [
