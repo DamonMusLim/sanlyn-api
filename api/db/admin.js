@@ -139,7 +139,7 @@ export default async function handler(req, res) {
       var sets = [];
       var params = [];
       for (var col in fields) {
-        if (ALLOWED_TABLES[table].columns.includes(col) && col !== keyCol && !col.includes("created_at")) {
+        if (ALLOWED_TABLES[table].columns.includes(col) && col !== keyCol && !col.includes("created_at") && !col.includes("updated_at")) {
           var v = fields[col];
           if (col === "raw" || col === "audit_issues") {
             // Merge into existing JSONB rather than replace
