@@ -252,6 +252,19 @@ export default async function handler(req, res) {
         var factory=pick(raw.factory,raw.factoryName,raw.supplier,"[FACTORY]");
         var buyerTaxNo=pick(cfg.taxNo,raw.sellerTaxNo,"");
         var vendorTaxNo=pick(raw.factoryTaxNo,raw.vendorTaxNo,"");
+        var vendorAddress="", vendorBank="", vendorAccount="";
+        // Look up factory info from factories table
+        try{
+          var fSearch=factory.replace(/股份|有限公司|进出口/g,"").trim().slice(0,6);
+          var fR=await pool.query("SELECT * FROM factories WHERE name=$1 OR name LIKE $2 LIMIT 1",[factory,'%'+fSearch+'%']);
+          if(fR.rows.length){
+            var fd=fR.rows[0];
+            vendorTaxNo=vendorTaxNo||fd.tax_no||"";
+            vendorAddress=fd.address||"";
+            vendorBank=fd.bank_name||"";
+            vendorAccount=fd.bank_account||"";
+          }
+        }catch(e){}
         html=wrap("Purchase Order — "+noPO,`
           <div style="text-align:center;margin-bottom:14px"><div style="font-size:20px;font-weight:800;letter-spacing:4px">采 购 合 同</div><div style="font-size:12px;color:#666;letter-spacing:1px">PURCHASE ORDER (PO)</div></div>
           <div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:11px;padding:8px;background:#f9f9f9;border:1px solid #eee;border-radius:2px">
@@ -273,9 +286,9 @@ export default async function handler(req, res) {
               <div style="padding:10px;font-size:11px;line-height:1.9">
                 <div><b>公司名称:</b> ${esc(factory)}</div>
                 ${vendorTaxNo?`<div><b>税号:</b> ${esc(vendorTaxNo)}</div>`:""}
-                ${raw.factoryAddress?`<div><b>地址:</b> ${esc(raw.factoryAddress)}</div>`:""}
-                ${raw.factoryBank?`<div><b>开户银行:</b> ${esc(raw.factoryBank)}</div>`:""}
-                ${raw.factoryAccount?`<div><b>银行账户:</b> ${esc(raw.factoryAccount)}</div>`:""}
+                ${(vendorAddress||raw.factoryAddress)?`<div><b>地址:</b> ${esc(vendorAddress||raw.factoryAddress)}</div>`:""}
+                ${(vendorBank||raw.factoryBank)?`<div><b>开户银行:</b> ${esc(vendorBank||raw.factoryBank)}</div>`:""}
+                ${(vendorAccount||raw.factoryAccount)?`<div><b>银行账户:</b> ${esc(vendorAccount||raw.factoryAccount)}</div>`:""}
               </div>
             </div>
           </div>

@@ -1,37 +1,35 @@
 import { getPool, setCors } from "../db.js";
 
-var ALTER_SQL = `
--- Add new columns if they don't exist
-DO $$ BEGIN
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS factory_price     NUMERIC(12,2) DEFAULT NULL;
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS sanlyn_price      NUMERIC(12,2) DEFAULT NULL;
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS price_usd         NUMERIC(12,2) DEFAULT NULL;
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS tax_rate          NUMERIC(5,4)  DEFAULT 0;
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS rebate_rate       NUMERIC(5,4)  DEFAULT 0;
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS profit            NUMERIC(12,4) DEFAULT NULL;
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS cat1              VARCHAR(64)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS cat2              VARCHAR(64)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS cat3              VARCHAR(64)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS cat1_cn           VARCHAR(64)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS cat2_cn           VARCHAR(64)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS cat3_cn           VARCHAR(64)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS trade_terms       VARCHAR(16)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS declaration_name  VARCHAR(512)  DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS declaration_elements TEXT       DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS bl_description    VARCHAR(512)  DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS factory_name      VARCHAR(256)  DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS declaration_amount NUMERIC(12,2) DEFAULT NULL;
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS bg_bx             NUMERIC(8,2)  DEFAULT NULL;
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS flavor            VARCHAR(128)  DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS moq               VARCHAR(64)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS jdy_id            VARCHAR(64)   DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS spec              VARCHAR(256)  DEFAULT '';
-  ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url         VARCHAR(512)  DEFAULT '';
-END $$;
-CREATE INDEX IF NOT EXISTS idx_prod_cat1 ON products(cat1);
-CREATE INDEX IF NOT EXISTS idx_prod_cat2 ON products(cat2);
-CREATE INDEX IF NOT EXISTS idx_prod_hs   ON products(hs_code);
-`;
+// Each ALTER run separately to avoid DO-block issues with pg driver
+var ALTER_COLS = [
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS factory_price     NUMERIC(12,2) DEFAULT NULL",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS sanlyn_price      NUMERIC(12,2) DEFAULT NULL",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS price_usd         NUMERIC(12,2) DEFAULT NULL",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS tax_rate          NUMERIC(5,4)  DEFAULT 0",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS rebate_rate       NUMERIC(5,4)  DEFAULT 0",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS profit            NUMERIC(12,4) DEFAULT NULL",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS cat1              VARCHAR(64)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS cat2              VARCHAR(64)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS cat3              VARCHAR(64)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS cat1_cn           VARCHAR(64)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS cat2_cn           VARCHAR(64)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS cat3_cn           VARCHAR(64)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS trade_terms       VARCHAR(16)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS declaration_name  VARCHAR(512)  DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS declaration_elements TEXT       DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS bl_description    VARCHAR(512)  DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS factory_name      VARCHAR(256)  DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS declaration_amount NUMERIC(12,2) DEFAULT NULL",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS bg_bx             NUMERIC(8,2)  DEFAULT NULL",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS flavor            VARCHAR(128)  DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS moq               VARCHAR(64)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS jdy_id            VARCHAR(64)   DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS spec              VARCHAR(256)  DEFAULT ''",
+  "ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url         VARCHAR(512)  DEFAULT ''",
+  "CREATE INDEX IF NOT EXISTS idx_prod_cat1 ON products(cat1)",
+  "CREATE INDEX IF NOT EXISTS idx_prod_cat2 ON products(cat2)",
+  "CREATE INDEX IF NOT EXISTS idx_prod_hs ON products(hs_code)",
+];
 
 var INIT_SQL = `
 CREATE TABLE IF NOT EXISTS products (
@@ -97,7 +95,9 @@ export default async function handler(req, res) {
     // Step 1: Ensure table + new columns
     log.push("=== Step 1: Ensure products table + new columns ===");
     await pool.query(INIT_SQL);
-    await pool.query(ALTER_SQL);
+    for (var altSql of ALTER_COLS) {
+      try { await pool.query(altSql); } catch(e) { /* column may already exist */ }
+    }
     log.push("Table + columns + indexes OK");
 
     // Step 2: Get product data
