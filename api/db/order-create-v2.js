@@ -234,6 +234,7 @@ export default async function handler(req, res) {
         code: p.code || p.barcode || "",
         brand: p.brand || "",
         category: p.category || p.cat1 || "",
+        declarationName: p.declarationName || p.declaration_name || p.category || p.cat1 || "",
         hsCode: p.hsCode || p.hs_code || "",
         size: p.size || p.spec || "",
         qty: qty,
