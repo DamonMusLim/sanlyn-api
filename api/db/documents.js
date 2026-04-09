@@ -340,8 +340,9 @@ export default async function handler(req, res) {
       var shipper=cfg3.nameEN;
       // Cargo lines — per product with HS code
       var cargoLines=[];
-      if(sp.order_nos&&sp.order_nos.length){
-        var loR=await pool.query("SELECT raw,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[])",[sp.order_nos]);
+      var _orderNos=sp.order_nos||spraw.orderNos||spraw.order_nos||[];
+      if(_orderNos&&_orderNos.length){
+        var loR=await pool.query("SELECT raw,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[])",[ _orderNos]);
         loR.rows.forEach(function(r){
           var rr=r.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
           var prods=rr.products||rr.items||[];
