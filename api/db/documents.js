@@ -338,73 +338,147 @@ export default async function handler(req, res) {
       var consignee=pickClean(sp.customer_en,sp.customer,spraw.consignee)||"[CONSIGNEE]";
       var consAddr=resolveAddr(consignee, notWidget(spraw.consigneeAddress)?spraw.consigneeAddress:"");
       var shipper=cfg3.nameEN;
-      // Cargo, HS code from linked orders
-      var cargo=pick(spraw.cargoDescription,sp.cargo_description,"SAID TO CONTAIN");
-      var hsCodes="";
+      // Cargo lines — per product with HS code
+      var cargoLines=[];
       if(sp.order_nos&&sp.order_nos.length){
-        var loR=await pool.query("SELECT raw FROM orders WHERE order_no = ANY($1::text[])",[sp.order_nos]);
-        var descs=[],hsList=[];
+        var loR=await pool.query("SELECT raw,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[])",[sp.order_nos]);
         loR.rows.forEach(function(r){
           var rr=r.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
-          var d=rr.blDescription||rr.cargoDescription||""; if(d)descs.push(d);
-          var hs=rr.hsCode||rr.hs_code||rr.hscode||""; if(hs&&hsList.indexOf(hs)<0)hsList.push(hs);
-          // also check products array
           var prods=rr.products||rr.items||[];
-          prods.forEach(function(p){var ph=p.hsCode||p.hs_code||p.hscode||""; if(ph&&hsList.indexOf(ph)<0)hsList.push(ph);});
+          prods.forEach(function(p){
+            var desc=p.blDescription||p.declarationName||p.bl_description||p.productNameEN||p.productName||"";
+            var hs=p.hsCode||p.hs_code||p.hscode||"";
+            if(!desc&&!hs)return;
+            var key=(hs+"|"+desc).toLowerCase();
+            if(!cargoLines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))
+              cargoLines.push({desc:desc,hs:hs});
+          });
+          // fallback: order-level description
+          if(!prods.length){
+            var d=rr.blDescription||rr.cargoDescription||"";
+            var hs=rr.hsCode||rr.hs_code||"";
+            if(d||hs){var key=(hs+"|"+d).toLowerCase();if(!cargoLines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))cargoLines.push({desc:d,hs:hs});}
+          }
         });
-        if(descs.length)cargo=descs.join("; ");
-        hsCodes=hsList.join(", ");
+      }
+      if(!cargoLines.length){
+        var fb=pick(spraw.cargoDescription,sp.cargo_description,"");
+        if(fb)cargoLines=[{desc:fb,hs:""}];
       }
 
       if(type==="so"){
+        var carrier=pick(sp.shipping_line,spraw.shippingLine,"-");
+        var eta=pick(sp.eta,spraw.eta,"-"); if(eta&&eta!=="-")eta=fmtD(eta);
+        var conNo=pick(sp.container_no,spraw.containerNo,"");
+        var sealNo=pick(sp.seal_no,spraw.sealNo,"");
+        // Build cargo description cell: one line per product
+        var cargoDescHTML=cargoLines.length
+          ?cargoLines.map(function(cl){
+              return`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #eee">`
+                +`<span style="font-size:11px">${esc(cl.desc)||"—"}</span>`
+                +(cl.hs?`<span style="font-size:10px;color:#555;margin-left:12px;white-space:nowrap">HS: <b>${esc(cl.hs)}</b></span>`:"")
+                +`</div>`;
+            }).join("")
+          :`<span style="color:#aaa;font-size:11px">— 请补充货描 —</span>`;
+
         html=wrap("Booking Note — "+soNo,`
-          <div style="text-align:center;padding:10px 0 8px 0;border-bottom:2px solid #111;margin-bottom:12px">
-            <div style="font-size:16px;font-weight:800">${esc(fwd.nameCN)}</div>
-            <div style="font-size:10px;color:#666;margin-top:2px">${esc(fwd.nameEN)}</div>
-            <div style="font-size:14px;font-weight:700;margin-top:6px;letter-spacing:2px">出口货物委托书 SHIPPING ORDER</div>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:11px">
-            <span><b>D/R No.:</b> ${esc(soNo)}</span><span><b>托运日期 Date:</b> ${esc(fmtD(sp.created_at))}</span>
-          </div>
-          <table style="width:100%;border-collapse:collapse;margin-bottom:10px">
-            ${[
-              ["Shipper / 发货人", shipper+"<br><span style='font-size:10px;color:#666'>"+esc(cfg3.address)+"</span>", "请在提单待确认样上注明:<br><span style='color:#c00;font-size:11px'>申请目的港最长免箱时间，至少申请免箱 21 天</span>"],
-              ["Consignee / 收货人", consignee+(consAddr?"<br>"+esc(consAddr):""), "Notify Party / 通知人<br>"+esc(consignee)+(consAddr?"<br>"+esc(consAddr):"")],
-            ].map(function(r){return`<tr>${r.map(function(c){return`<td style="border:1px solid #aaa;padding:8px 10px;font-size:12px;vertical-align:top;width:50%">${c}</td>`;}).join("")}</tr>`;}).join("")}
-          </table>
-          <table style="width:100%;border-collapse:collapse;margin-bottom:10px">
+          <table style="width:100%;border-collapse:collapse;margin-bottom:0">
             <tr>
-              <td style="border:1px solid #aaa;padding:8px;font-size:12px;width:50%"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:3px">Ocean Vessel / 船名 &nbsp;&nbsp; Voyage / 航次</div>${esc(vessel)} / ${esc(voyage)}</td>
-              <td style="border:1px solid #aaa;padding:8px;font-size:12px"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:3px">Port of Loading / 装货港</div>${esc(polSp)}</td>
-            </tr>
-            <tr>
-              <td style="border:1px solid #aaa;padding:8px;font-size:12px"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:3px">Port of Discharge / 卸货港</div>${esc(podSp)}</td>
-              <td style="border:1px solid #aaa;padding:8px;font-size:12px"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:3px">Place of Delivery / 交货地</div>${esc(podSp)}</td>
+              <td style="padding:10px 0 6px 0;border-bottom:2px solid #111">
+                <div style="font-size:17px;font-weight:800">${esc(fwd.nameCN)}</div>
+                <div style="font-size:10px;color:#666;margin-top:1px">${esc(fwd.nameEN)}</div>
+              </td>
+              <td style="padding:10px 0 6px 0;border-bottom:2px solid #111;text-align:right;vertical-align:bottom">
+                <div style="font-size:15px;font-weight:800;letter-spacing:2px">出口货物委托书</div>
+                <div style="font-size:11px;font-weight:600;color:#555;letter-spacing:1px">SHIPPING ORDER</div>
+                <div style="font-size:11px;margin-top:4px"><b>D/R No.:</b> ${esc(soNo)} &nbsp;&nbsp; <b>日期:</b> ${esc(fmtD(sp.created_at))}</div>
+              </td>
             </tr>
           </table>
-          <table style="width:100%;border-collapse:collapse;font-size:11px">
+
+          <table style="width:100%;border-collapse:collapse;margin-top:10px;margin-bottom:0">
+            <tr>
+              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top;width:60%">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Shipper / 发货人</div>
+                <div style="font-weight:700;font-size:12px">${esc(shipper)}</div>
+                <div style="font-size:10px;color:#666;margin-top:2px">${esc(cfg3.address||"")}</div>
+              </td>
+              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top;width:40%;color:#c00" rowspan="3">
+                <div style="font-size:9px;font-weight:700;margin-bottom:6px">请在提单待确认样上注明：</div>
+                <div style="font-size:11px;font-weight:600">申请目的港最长免箱时间，至少申请目的港免箱混 <u>21 天</u></div>
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Consignee / 收货人</div>
+                <div style="font-weight:700;font-size:12px">${esc(consignee)}</div>
+                ${consAddr?`<div style="font-size:10px;color:#666;margin-top:2px">${esc(consAddr)}</div>`:""}
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Notify Party / 通知人</div>
+                <div style="font-weight:700;font-size:12px">${esc(consignee)}</div>
+                ${consAddr?`<div style="font-size:10px;color:#666;margin-top:2px">${esc(consAddr)}</div>`:""}
+              </td>
+            </tr>
+          </table>
+
+          <table style="width:100%;border-collapse:collapse;margin-top:8px">
+            <tr>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:40%">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Ocean Vessel &amp; Voyage / 船名航次</div>
+                <b>${esc(vessel)}</b> / ${esc(voyage)}
+              </td>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:30%">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Port of Loading / 装货港</div>
+                <b>${esc(polSp)}</b>
+              </td>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:30%">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Carrier / 船公司</div>
+                <b>${esc(carrier)}</b>
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Port of Discharge / 卸货港</div>
+                <b>${esc(podSp)}</b>
+              </td>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">ETD / 开船日</div>
+                <b>${esc(etd)}</b>
+              </td>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">ETA / 预计到港</div>
+                <b>${esc(eta)}</b>
+              </td>
+            </tr>
+          </table>
+
+          <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11px">
             <thead><tr style="background:#111;color:#fff">
-              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">Container No.<br>集装箱号</th>
-              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">Seal No.<br>封志号</th>
-              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">Pkgs/件数</th>
-              <th style="padding:8px;font-size:10px;font-weight:700;text-align:left">HS Code &amp; Description<br>HS编码 &amp; 货描</th>
-              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">G.W (KG)<br>毛重</th>
-              <th style="padding:8px;font-size:10px;font-weight:700;text-align:center">CBM (M³)<br>方数</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:14%">Container No.<br>集装箱号</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:10%">Seal No.<br>封志号</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:10%">Pkgs<br>件数</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:left">Description of Goods &amp; HS Code<br>货物描述 &amp; HS编码</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:10%">G.W.(KG)<br>毛重</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:9%">CBM<br>方数</th>
             </tr></thead>
             <tbody><tr>
-              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center">${esc(pick(sp.container_no,spraw.containerNo,""))}</td>
-              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center">${esc(pick(sp.seal_no,spraw.sealNo,""))}</td>
-              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center">${esc(String(cqty)+" × "+ctype)}</td>
-              <td style="border:1px solid #ddd;padding:7px 8px;text-align:left">${hsCodes?`<div style="font-weight:700;margin-bottom:3px">${esc(hsCodes)}</div>`:""}${esc(cargo)}</td>
-              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center;font-weight:700">${esc(String(tgwSp))}</td>
-              <td style="border:1px solid #ddd;padding:7px 8px;text-align:center;font-weight:700">${esc(String(tcbm))}</td>
+              <td style="border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top">${esc(conNo)||"—"}</td>
+              <td style="border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top">${esc(sealNo)||"—"}</td>
+              <td style="border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top">${esc(String(cqty)+" × "+ctype)}</td>
+              <td style="border:1px solid #ddd;padding:8px;vertical-align:top">${cargoDescHTML}</td>
+              <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top">${esc(String(tgwSp))}</td>
+              <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top">${esc(String(tcbm))}</td>
             </tr></tbody>
           </table>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px;font-size:11px">
-            ${[["船期 ETD",etd],["截关日 Cut-off",cutoff||"-"],["运费 Freight","FREIGHT PREPAID"],["船公司 Carrier",pick(sp.shipping_line,spraw.shippingLine,"-")],["柜型 Container",ctype],["柜量 Qty",String(cqty)]].map(function(b){return`<div style="border:1px solid #ddd;padding:7px 10px;border-radius:2px"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase">${b[0]}</div><div style="font-weight:600;font-size:12px;margin-top:2px">${esc(b[1])}</div></div>`;}).join("")}
+
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;font-size:11px">
+            ${[["截关日 Cut-off",cutoff||"-"],["运费 Freight","FREIGHT PREPAID"],["柜型 Container",ctype],["柜量 Qty",String(cqty)]].map(function(b){return`<div style="border:1px solid #ddd;padding:6px 10px;border-radius:2px"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase">${b[0]}</div><div style="font-weight:600;font-size:12px;margin-top:2px">${esc(b[1])}</div></div>`;}).join("")}
           </div>
-          <div style="margin-top:12px;font-size:10.5px;padding-top:8px;border-top:1px solid #eee;display:flex;justify-content:space-between">
-            <div><b>制单:</b> ${esc(cfg3.nameEN)}</div><div><b>Contact:</b> ${esc(fwd.contact)} | <b>Email:</b> ${esc(fwd.email)}</div>
+          <div style="margin-top:12px;font-size:10px;padding-top:8px;border-top:1px solid #eee;display:flex;justify-content:space-between;color:#555">
+            <div><b>制单:</b> ${esc(cfg3.nameEN)}</div><div><b>联系人:</b> ${esc(fwd.contact)} &nbsp; <b>Email:</b> ${esc(fwd.email)}</div>
           </div>
         `,ap);
       }
