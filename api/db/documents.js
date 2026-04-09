@@ -342,12 +342,12 @@ export default async function handler(req, res) {
       var cargoLines=[];
       var _orderNos=sp.order_nos||spraw.orderNos||spraw.order_nos||[];
       if(_orderNos&&_orderNos.length){
-        var loR=await pool.query("SELECT raw,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[])",[ _orderNos]);
+        var loR=await pool.query("SELECT raw,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
         loR.rows.forEach(function(r){
           var rr=r.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
           var prods=rr.products||rr.items||[];
           prods.forEach(function(p){
-            var desc=p.blDescription||p.declarationName||p.bl_description||p.productNameEN||p.productName||"";
+            var desc=p.blDescription||p.declarationName||p.bl_description||p.productNameEN||p.productName||p.name||"";
             var hs=p.hsCode||p.hs_code||p.hscode||"";
             if(!desc&&!hs)return;
             var key=(hs+"|"+desc).toLowerCase();
