@@ -339,32 +339,34 @@ export default async function handler(req, res) {
       var consAddr=resolveAddr(consignee, notWidget(spraw.consigneeAddress)?spraw.consigneeAddress:"");
       var shipper=cfg3.nameEN;
       // Cargo lines — per product with HS code
-      var cargoLines=[];
+      var cargoLines=[], cargoByOrder={};
+      function _buildLines(rr){
+        var prods=rr.products||rr.items||[], lines=[];
+        prods.forEach(function(p){
+          var desc=p.blDescription||p.declarationName||p.bl_description||p.productNameEN||p.productName||p.name||"";
+          var hs=p.hsCode||p.hs_code||p.hscode||"";
+          if(!desc&&!hs)return;
+          var key=(hs+"|"+desc).toLowerCase();
+          if(!lines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))lines.push({desc:desc,hs:hs});
+        });
+        if(!prods.length){var d=rr.blDescription||rr.cargoDescription||"",hs=rr.hsCode||rr.hs_code||"";if(d||hs)lines.push({desc:d,hs:hs});}
+        return lines;
+      }
       var _orderNos=sp.order_nos||spraw.orderNos||spraw.order_nos||[];
       if(_orderNos&&_orderNos.length){
-        var loR=await pool.query("SELECT raw,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
+        var loR=await pool.query("SELECT raw,contract_no,order_no,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
         loR.rows.forEach(function(r){
           var rr=r.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
-          var prods=rr.products||rr.items||[];
-          prods.forEach(function(p){
-            var desc=p.blDescription||p.declarationName||p.bl_description||p.productNameEN||p.productName||p.name||"";
-            var hs=p.hsCode||p.hs_code||p.hscode||"";
-            if(!desc&&!hs)return;
-            var key=(hs+"|"+desc).toLowerCase();
-            if(!cargoLines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))
-              cargoLines.push({desc:desc,hs:hs});
-          });
-          // fallback: order-level description
-          if(!prods.length){
-            var d=rr.blDescription||rr.cargoDescription||"";
-            var hs=rr.hsCode||rr.hs_code||"";
-            if(d||hs){var key=(hs+"|"+d).toLowerCase();if(!cargoLines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))cargoLines.push({desc:d,hs:hs});}
-          }
+          var lines=_buildLines(rr);
+          var key=r.contract_no||r.order_no||"";
+          if(key)cargoByOrder[key]=lines;
+          lines.forEach(function(l){var k=(l.hs+"|"+l.desc).toLowerCase();if(!cargoLines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===k;}))cargoLines.push(l);});
         });
       }
-      if(!cargoLines.length){
-        var fb=pick(spraw.cargoDescription,sp.cargo_description,"");
-        if(fb)cargoLines=[{desc:fb,hs:""}];
+      if(!cargoLines.length){var fb=pick(spraw.cargoDescription,sp.cargo_description,"");if(fb)cargoLines=[{desc:fb,hs:""}];}
+      function _cargoHTML(lines){
+        if(!lines||!lines.length)return'<span style="color:#aaa;font-size:11px">— 请补充货描 —</span>';
+        return lines.map(function(cl){return'<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #eee"><span style="font-size:11px">'+esc(cl.desc||"—")+'</span>'+(cl.hs?'<span style="font-size:10px;color:#555;margin-left:12px;white-space:nowrap">HS: <b>'+esc(cl.hs)+'</b></span>':"")+' </div>';}).join("");
       }
 
       if(type==="so"){
@@ -372,15 +374,7 @@ export default async function handler(req, res) {
         var eta=pick(sp.eta,spraw.eta,"-"); if(eta&&eta!=="-")eta=fmtD(eta);
         var conNo=pick(sp.container_no,spraw.containerNo,"");
         var sealNo=pick(sp.seal_no,spraw.sealNo,"");
-        // Build cargo description cell: one line per product
-        var cargoDescHTML=cargoLines.length
-          ?cargoLines.map(function(cl){
-              return`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #eee">`
-                +`<span style="font-size:11px">${esc(cl.desc)||"—"}</span>`
-                +(cl.hs?`<span style="font-size:10px;color:#555;margin-left:12px;white-space:nowrap">HS: <b>${esc(cl.hs)}</b></span>`:"")
-                +`</div>`;
-            }).join("")
-          :`<span style="color:#aaa;font-size:11px">— 请补充货描 —</span>`;
+        var cargoDescHTML=_cargoHTML(cargoLines);
 
         html=wrap("Booking Note — "+soNo,`
           <table style="width:100%;border-collapse:collapse;margin-bottom:0">
@@ -468,12 +462,14 @@ export default async function handler(req, res) {
             <tbody>${(function(){
               var ctrs=spraw.containers||[];
               if(ctrs.length){
-                return ctrs.map(function(c,i){
+                return ctrs.map(function(c){
+                  var okey=c.order_no||c.contract_no||"";
+                  var cLines=(okey&&cargoByOrder[okey])?cargoByOrder[okey]:cargoLines;
                   return "<tr>"
                     +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.container_no||"—")+"</td>"
                     +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.seal_no||"—")+"</td>"
                     +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.type||ctype)+"</td>"
-                    +(i===0?"<td style='border:1px solid #ddd;padding:8px;vertical-align:top' rowspan='"+ctrs.length+"'>"+cargoDescHTML+"</td>":"")
+                    +"<td style='border:1px solid #ddd;padding:8px;vertical-align:top'>"+_cargoHTML(cLines)+"</td>"
                     +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:middle'>"+esc(String(c.gw||"—"))+"</td>"
                     +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:middle'>"+esc(String(c.cbm||"—"))+"</td>"
                     +"</tr>";
