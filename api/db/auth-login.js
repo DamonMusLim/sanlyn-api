@@ -24,7 +24,15 @@ export default async function handler(req, res) {
       if (!acct.rows[0]) return res.status(401).json({ error: "Account not found" });
       var u = acct.rows[0];
       if (u.status !== "active") return res.status(403).json({ error: "账号已停用" });
-      var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
+      var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : null;
+      if (!companyCodes && u.company_code) {
+        try {
+          var custRow2 = await pool.query("SELECT company_codes FROM customers WHERE company_code = $1 LIMIT 1", [u.company_code]);
+          var cc2 = custRow2.rows[0]?.company_codes;
+          companyCodes = (cc2 && cc2.length) ? cc2 : [u.company_code];
+        } catch(e) { companyCodes = [u.company_code]; }
+      }
+      if (!companyCodes) companyCodes = [];
 
       var newToken = generateToken({
         uid: u._id, email: u.email, name: u.name, role: u.role,
@@ -60,7 +68,16 @@ export default async function handler(req, res) {
     // Simple password check (plaintext for now — upgrade to bcrypt later)
     if (u.password !== password) return res.status(401).json({ error: "密码错误" });
 
-    var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
+    // If account has no company_codes, look up from customers table
+    var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : null;
+    if (!companyCodes && u.company_code) {
+      try {
+        var custRow = await pool.query("SELECT company_codes FROM customers WHERE company_code = $1 LIMIT 1", [u.company_code]);
+        var cc = custRow.rows[0]?.company_codes;
+        companyCodes = (cc && cc.length) ? cc : [u.company_code];
+      } catch(e) { companyCodes = [u.company_code]; }
+    }
+    if (!companyCodes) companyCodes = [];
 
     // Generate token
     var token = generateToken({
