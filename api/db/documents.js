@@ -458,21 +458,36 @@ export default async function handler(req, res) {
 
           <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11px">
             <thead><tr style="background:#111;color:#fff">
-              <th style="padding:7px 8px;font-size:10px;text-align:center;width:14%">Container No.<br>集装箱号</th>
-              <th style="padding:7px 8px;font-size:10px;text-align:center;width:10%">Seal No.<br>封志号</th>
-              <th style="padding:7px 8px;font-size:10px;text-align:center;width:10%">Pkgs<br>件数</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:16%">Container No.<br>集装箱号</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:12%">Seal No.<br>封志号</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:9%">Type<br>柜型</th>
               <th style="padding:7px 8px;font-size:10px;text-align:left">Description of Goods &amp; HS Code<br>货物描述 &amp; HS编码</th>
               <th style="padding:7px 8px;font-size:10px;text-align:center;width:10%">G.W.(KG)<br>毛重</th>
               <th style="padding:7px 8px;font-size:10px;text-align:center;width:9%">CBM<br>方数</th>
             </tr></thead>
-            <tbody><tr>
-              <td style="border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top">${esc(conNo)||"—"}</td>
-              <td style="border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top">${esc(sealNo)||"—"}</td>
-              <td style="border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top">${esc(String(cqty)+" × "+ctype)}</td>
-              <td style="border:1px solid #ddd;padding:8px;vertical-align:top">${cargoDescHTML}</td>
-              <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top">${esc(String(tgwSp))}</td>
-              <td style="border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top">${esc(String(tcbm))}</td>
-            </tr></tbody>
+            <tbody>${(function(){
+              var ctrs=spraw.containers||[];
+              if(ctrs.length){
+                return ctrs.map(function(c,i){
+                  return "<tr>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.container_no||"—")+"</td>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.seal_no||"—")+"</td>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.type||ctype)+"</td>"
+                    +(i===0?"<td style='border:1px solid #ddd;padding:8px;vertical-align:top' rowspan='"+ctrs.length+"'>"+cargoDescHTML+"</td>":"")
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:middle'>"+esc(String(c.gw||"—"))+"</td>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:middle'>"+esc(String(c.cbm||"—"))+"</td>"
+                    +"</tr>";
+                }).join("");
+              }
+              return "<tr>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(conNo)||"—"+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(sealNo)||"—"+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(ctype)+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;vertical-align:top'>"+cargoDescHTML+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top'>"+esc(String(tgwSp))+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top'>"+esc(String(tcbm))+"</td>"
+                +"</tr>";
+            })()}</tbody>
           </table>
 
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;font-size:11px">
