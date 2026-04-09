@@ -55,10 +55,11 @@ export default async function handler(req, res) {
     var { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: "邮箱和密码必填" });
 
-    // Find account
+    // Find account by email or username
+    var loginVal = email.toLowerCase().trim();
     var result = await pool.query(
-      "SELECT _id, email, name, role, password, company_code, company_codes, company_name_cn, company_name_en, status FROM accounts WHERE email = $1 LIMIT 1",
-      [email.toLowerCase().trim()]
+      "SELECT _id, email, name, role, password, company_code, company_codes, company_name_cn, company_name_en, status FROM accounts WHERE email = $1 OR username = $1 LIMIT 1",
+      [loginVal]
     );
 
     if (!result.rows[0]) return res.status(401).json({ error: "账号不存在" });
