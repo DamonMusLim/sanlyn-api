@@ -15,6 +15,7 @@ var ALLOWED_TABLES = {
   customs_rates: { label: "报关费率", key: "_id", columns: ["_id","vendor_cn","pol","base_fee","currency","max_free_descs","extra_per_desc","notes","created_at"] },
   trucking_rates: { label: "车队费率", key: "_id", columns: ["_id","vendor_cn","factory_name","pol","valid_from","valid_to","rates","surge","currency","created_at"] },
   factories: { label: "工厂管理", key: "id", columns: ["id","name","name_short","po_prefix","ports","notes","is_active","created_at"] },
+  field_schemas: { label: "字段设计", key: "id", columns: ["id","table_name","column_name","label","label_en","field_type","storage","section","section_icon","section_order","sort_order","is_visible","is_editable","is_required","is_list_col","show_empty","width","options","default_value","placeholder","description","linked_table","linked_field","linked_bring","created_at","updated_at"] },
 };
 
 export default async function handler(req, res) {
