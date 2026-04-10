@@ -199,9 +199,17 @@ export default async function handler(req, res) {
         if (ALLOWED_TABLES[table].columns.includes(col) && !col.includes("created_at")) {
           var v = fields[col];
           var JSONB_COLS = ["raw","audit_issues","rates","surge","fees","free_time","fee_items","config","ports","payment_terms","addresses","invoice","brands"];
+          var TEXT_ARR_COLS = ["role_types","company_codes"];
           var isJsonb = JSONB_COLS.includes(col);
-          params.push(isJsonb && typeof v !== "string" ? JSON.stringify(v) : v);
-          cols.push(col + (isJsonb ? "::jsonb" : ""));
+          var isTextArr = TEXT_ARR_COLS.includes(col);
+          if (isTextArr) {
+            var arr = Array.isArray(v) ? v : (typeof v === "string" ? v.split(",").map(function(x){return x.trim();}).filter(Boolean) : []);
+            params.push(arr);
+            cols.push(col + "::text[]");
+          } else {
+            params.push(isJsonb && typeof v !== "string" ? JSON.stringify(v) : v);
+            cols.push(col + (isJsonb ? "::jsonb" : ""));
+          }
         }
       }
       if (!cols.length) return res.status(400).json({ error: "No valid fields" });
