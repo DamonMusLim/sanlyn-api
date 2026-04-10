@@ -194,7 +194,7 @@ export default async function handler(req, res) {
       var fields = req.body.fields || {};
       if (!table || !ALLOWED_TABLES[table]) return res.status(400).json({ error: "Invalid table" });
       var keyCol = ALLOWED_TABLES[table].key;
-      var cols = [], params = [];
+      var colNames = [], params = [], valCasts = [];
       for (var col in fields) {
         if (ALLOWED_TABLES[table].columns.includes(col) && !col.includes("created_at")) {
           var v = fields[col];
@@ -202,20 +202,24 @@ export default async function handler(req, res) {
           var TEXT_ARR_COLS = ["role_types","company_codes"];
           var isJsonb = JSONB_COLS.includes(col);
           var isTextArr = TEXT_ARR_COLS.includes(col);
+          colNames.push(col);
           if (isTextArr) {
             var arr = Array.isArray(v) ? v : (typeof v === "string" ? v.split(",").map(function(x){return x.trim();}).filter(Boolean) : []);
             params.push(arr);
-            cols.push(col + "::text[]");
+            valCasts.push("::text[]");
+          } else if (isJsonb) {
+            params.push(typeof v !== "string" ? JSON.stringify(v) : v);
+            valCasts.push("::jsonb");
           } else {
-            params.push(isJsonb && typeof v !== "string" ? JSON.stringify(v) : v);
-            cols.push(col + (isJsonb ? "::jsonb" : ""));
+            params.push(v);
+            valCasts.push("");
           }
         }
       }
-      if (!cols.length) return res.status(400).json({ error: "No valid fields" });
-      var placeholders = params.map(function(_, i) { return "$" + (i + 1); });
+      if (!colNames.length) return res.status(400).json({ error: "No valid fields" });
+      var placeholders = params.map(function(_, i) { return "$" + (i + 1) + valCasts[i]; });
       var hasUpdAt = ALLOWED_TABLES[table].columns.includes("updated_at");
-      var sql = "INSERT INTO " + table + " (" + cols.join(",") + ",created_at" + (hasUpdAt?",updated_at":"") + ") VALUES(" + placeholders.join(",") + ",NOW()" + (hasUpdAt?",NOW()":"") + ") ON CONFLICT(" + keyCol + ") DO NOTHING RETURNING *";
+      var sql = "INSERT INTO " + table + " (" + colNames.join(",") + ",created_at" + (hasUpdAt?",updated_at":"") + ") VALUES(" + placeholders.join(",") + ",NOW()" + (hasUpdAt?",NOW()":"") + ") ON CONFLICT(" + keyCol + ") DO NOTHING RETURNING *";
       var result = await pool.query(sql, params);
       return res.status(200).json({ success: true, data: result.rows[0] });
     }
