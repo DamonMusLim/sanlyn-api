@@ -4,84 +4,50 @@ const COMPANIES = [{"data_id": "69b3a430d08f58ab90e371c2", "company_code": "CN-0
 
 export default async function handler(req, res) {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const results = { ok: 0, updated: 0, skipped: 0, errors: [] };
+  const ok = [], updated = [], failed = [];
 
   for (const c of COMPANIES) {
-    if (!c.company_code) { results.skipped++; continue; }
-
-    // Build raw object (bank + credit code + EN address)
-    const raw = {};
-    if (c.credit_code) raw.credit_code = c.credit_code;
-    if (c.address_en)  raw.address_en  = c.address_en;
-    if (c.banks && c.banks.length) raw.banks = c.banks;
-
-    const roles = Array.isArray(c.role_types) ? c.role_types.filter(Boolean) : [];
-
+    if (!c.company_code) continue;
     try {
-      // Upsert by company_code (insert if not exists, update if exists)
-      const existing = await pool.query(
-        "SELECT _id FROM customers WHERE company_code = $1 LIMIT 1",
-        [c.company_code]
-      );
+      const raw = {};
+      if (c.credit_code) raw.credit_code = c.credit_code;
+      if (c.address_en) raw.address_en = c.address_en;
+      if (c.banks && c.banks.length) raw.banks = c.banks;
+      const roles = Array.isArray(c.role_types) ? c.role_types.filter(Boolean) : [];
+      const rawStr = Object.keys(raw).length ? JSON.stringify(raw) : null;
 
-      if (existing.rows.length === 0) {
-        // INSERT
-        await pool.query(`
-          INSERT INTO customers
-            (company_code, name_cn, name_en, address, country, destination_port,
-             contact_tel, contact_email, role_types, group_id, is_active, raw,
-             created_at, updated_at)
-          VALUES
-            ($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10,$11,$12::jsonb,NOW(),NOW())
-        `, [
-          c.company_code,
-          c.name_cn || null,
-          c.name_en || null,
-          c.address || null,
-          c.country || '中国',
-          c.destination_port || null,
-          c.contact_tel ? String(c.contact_tel) : null,
-          c.contact_email || null,
-          roles,
-          c.group_id || null,
-          true,
-          Object.keys(raw).length ? JSON.stringify(raw) : null
-        ]);
-        results.ok++;
-      } else {
-        // UPDATE — merge raw with existing
-        const id = existing.rows[0]._id;
-        const sets = ["updated_at=NOW()"];
-        const params = [];
-        const push = (v) => { params.push(v); return "$" + params.length; };
-
-        if (c.name_cn)          sets.push("name_cn=" + push(c.name_cn));
-        if (c.name_en)          sets.push("name_en=" + push(c.name_en));
-        if (c.address)          sets.push("address=" + push(c.address));
-        if (c.country)          sets.push("country=" + push(c.country));
-        if (c.destination_port) sets.push("destination_port=" + push(c.destination_port));
-        if (c.contact_tel)      sets.push("contact_tel=" + push(String(c.contact_tel)));
-        if (c.contact_email)    sets.push("contact_email=" + push(c.contact_email));
-        if (roles.length)       sets.push("role_types=" + push(roles) + "::text[]");
-        if (c.group_id)         sets.push("group_id=" + push(c.group_id));
-        if (Object.keys(raw).length)
-          sets.push("raw=COALESCE(raw,\'{}\')::jsonb || " + push(JSON.stringify(raw)) + "::jsonb");
-
-        params.push(id);
+      const ex = await pool.query("SELECT _id FROM customers WHERE company_code=$1 LIMIT 1", [c.company_code]);
+      if (ex.rows.length === 0) {
         await pool.query(
-          "UPDATE customers SET " + sets.join(",") + " WHERE _id=$" + params.length,
-          params
+          "INSERT INTO customers(company_code,name_cn,name_en,address,country,destination_port,contact_tel,contact_email,role_types,group_id,is_active,raw,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[],$10,$11,$12::jsonb,NOW(),NOW())",
+          [c.company_code,c.name_cn||null,c.name_en||null,c.address||null,c.country||"中国",c.destination_port||null,c.contact_tel?String(c.contact_tel):null,c.contact_email||null,roles,c.group_id||null,true,rawStr]
         );
-        results.updated++;
+        ok.push(c.company_code);
+      } else {
+        const id = ex.rows[0]._id;
+        const sets = ["updated_at=NOW()"], p = [];
+        const add = (sql, v) => { p.push(v); sets.push(sql + "$" + p.length); };
+        if (c.name_cn) add("name_cn=", c.name_cn);
+        if (c.name_en) add("name_en=", c.name_en);
+        if (c.address) add("address=", c.address);
+        if (c.country) add("country=", c.country);
+        if (c.destination_port) add("destination_port=", c.destination_port);
+        if (c.contact_tel) add("contact_tel=", String(c.contact_tel));
+        if (c.contact_email) add("contact_email=", c.contact_email);
+        if (roles.length) { p.push(roles); sets.push("role_types=$" + p.length + "::text[]"); }
+        if (c.group_id) add("group_id=", c.group_id);
+        if (rawStr) { p.push(rawStr); sets.push("raw=COALESCE(raw,'{}'::jsonb)||$" + p.length + "::jsonb"); }
+        p.push(id);
+        await pool.query("UPDATE customers SET " + sets.join(",") + " WHERE _id=$" + p.length, p);
+        updated.push(c.company_code);
       }
-    } catch (e) {
-      results.errors.push({ code: c.company_code, error: e.message });
+    } catch(e) {
+      failed.push({ code: c.company_code, error: e.message });
     }
   }
 
-  await pool.end();
   return res.status(200).json({
-    message: `导入完成: ${results.ok} 新增, ${results.updated} 更新, ${results.skipped} 跳过, ${results.errors.length} 失败`,
-    ...results
+    message: `完成: ${ok.length} 新增, ${updated.length} 更新, ${failed.length} 失败`,
+    ok, updated, failed
   });
 }
