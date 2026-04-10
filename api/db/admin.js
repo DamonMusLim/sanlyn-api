@@ -10,7 +10,7 @@ var ALLOWED_TABLES = {
   products: { label: "产品库", key: "sku", columns: ["id","sku","product_name","product_name_cn","brand","size","unit","spec","cbm","net_weight","gross_weight","barcode","hs_code","category","cat1","cat2","cat3","cat1_cn","cat2_cn","cat3_cn","factory_price","sanlyn_price","price_usd","tax_rate","rebate_rate","profit","trade_terms","declaration_name","declaration_elements","bl_description","factory_name","declaration_amount","bg_bx","flavor","moq","jdy_id","image_url","active","created_at","updated_at"] },
   accounts: { label: "账号管理", key: "username", columns: ["id","username","role","company","company_code","company_codes","supplier_role","department","created_at","updated_at"] },
   tenants: { label: "租户管理", key: "id", columns: ["id","company_code","name","config","created_at","updated_at"] },
-  customers: { label: "客户管理", key: "_id", columns: ["_id","company_code","name_cn","name_en","country","currency","grade","destination_port","address","consignee","contact_tel","contact_phone","contact_email","brands","trade_terms","payment_policy","payment_terms","bl_type","our_shipping","role_type","role_types","group_id","company_codes","is_active","created_at","updated_at"] },
+  customers: { label: "客户管理", key: "_id", columns: ["_id","company_code","name_cn","name_en","country","currency","grade","destination_port","address","consignee","contact_tel","contact_phone","contact_email","brands","trade_terms","payment_policy","payment_terms","bl_type","our_shipping","role_type","role_types","group_id","company_codes","is_active","raw","created_at","updated_at"] },
   local_charges: { label: "海运报价", key: "id", columns: ["id","carrier","pol","pod","container_type","company","cost_total","sell_total","fee_items","created_at"] },
   customs_rates: { label: "报关费率", key: "_id", columns: ["_id","vendor_cn","pol","base_fee","currency","max_free_descs","extra_per_desc","notes","created_at"] },
   trucking_rates: { label: "车队费率", key: "_id", columns: ["_id","vendor_cn","factory_name","pol","valid_from","valid_to","rates","surge","currency","created_at"] },
@@ -166,7 +166,7 @@ export default async function handler(req, res) {
             var arr = Array.isArray(v) ? v : (typeof v === "string" ? (function(){try{return JSON.parse(v);}catch(e){return v.split(",").map(function(x){return x.trim();}).filter(Boolean);}})() : []);
             params.push(arr);
             sets.push(col + " = $" + params.length + "::text[]");
-          } else if (col === "brands" || col === "addresses" || col === "invoice" || col === "payment_terms" || col === "fee_items" || col === "config" || col === "ports") {
+          } else if (col === "brands" || col === "addresses" || col === "invoice" || col === "payment_terms" || col === "fee_items" || col === "config" || col === "ports" || col === "rates" || col === "surge" || col === "fees" || col === "free_time") {
             // JSONB columns — accept string or object/array
             var jsonVal = typeof v === "string" ? v : JSON.stringify(v);
             params.push(jsonVal);
