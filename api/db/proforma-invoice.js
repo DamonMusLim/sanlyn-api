@@ -25,11 +25,10 @@ var COMPANY_CONFIGS = {
       rmbAccount: "4312 7991 8006",
     },
     terms: [
-      "PACKAGING: Export standard cartons.",
-      "SHIPMENT: Within 30 days after receipt of the deposit.",
-      "PAYMENT: 30% deposit via T/T, 70% balance against copy of B/L.",
-      "QUALITY CLAIM: Claims must be made within 30 days after cargo arrival at the destination port.",
-      "VALIDITY: This invoice is valid for 7 days from the date of issue.",
+      "包装: 出口标准纸箱 / Export standard cartons.",
+      "装运: 收到定金后30天内 / Shipment within 30 days.",
+      "付款: 30%定金, 70%余款凭提单副本 / 30% Deposit, 70% against BL copy.",
+      "索赔: 货到后30天内提出 / Claims within 30 days of arrival.",
     ],
   },
   sanlyn: {
@@ -47,11 +46,10 @@ var COMPANY_CONFIGS = {
       rmbAccount: "[RMB Account]",
     },
     terms: [
-      "PACKAGING: Export standard cartons.",
-      "SHIPMENT: Within 30 days after receipt of the deposit.",
-      "PAYMENT: 30% deposit via T/T, 70% balance against copy of B/L.",
-      "QUALITY CLAIM: Claims must be made within 30 days after cargo arrival.",
-      "VALIDITY: This invoice is valid for 7 days from the date of issue.",
+      "包装: 出口标准纸箱 / Export standard cartons.",
+      "装运: 收到定金后30天内 / Shipment within 30 days.",
+      "付款: 30%定金, 70%余款凭提单副本 / 30% Deposit, 70% against BL copy.",
+      "索赔: 货到后30天内提出 / Claims within 30 days of arrival.",
     ],
   },
 };
@@ -116,7 +114,7 @@ export default async function handler(req, res) {
     // ── Customer info ──
     var customer = order.company_name_en || raw.companyNameEN || raw.companyNameCN || order.customer || "";
     var _rawAddr = raw.customerAddress || raw.deliveryAddress || "";
-    var CUST_ADDRS_PI={"petsome":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA","dibaq":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA"};
+    var CUST_ADDRS_PI={"petsome":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA","dibaq":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA","enrich":"NO.2 JALAN PERDANA 1A, TAMAN SEGAR PERDANA, 43200 CHERAS, SELANGOR, MALAYSIA"};
     var customerAddr=(function(name,existing){if(existing&&existing.trim().length>3)return existing;var k=(name||"").toLowerCase();for(var key in CUST_ADDRS_PI){if(k.includes(key))return CUST_ADDRS_PI[key];}return existing||"";})(customer,_rawAddr);
     var customerTel = raw.phone || "";
 
@@ -135,10 +133,12 @@ export default async function handler(req, res) {
     else if (Array.isArray(raw.items)) products = raw.items;
 
     // Calculate total
+    function _up(p){var v=p.unitPrice||p.price||p.unit_price||p.salePrice||p["_widget_1764396068577"]||0;if((!v||Number(v)===0)&&(p.subtotal||p.amount)&&p.qty&&Number(p.qty)>0)v=Number(p.subtotal||p.amount||0)/Number(p.qty);return v;}
+
     var total = 0;
     products.forEach(function(p) {
       var sub = Number(p.subtotal || p.amount || 0);
-      if (!sub && p.qty && p.unitPrice) sub = Number(p.qty) * Number(p.unitPrice);
+      if (!sub && p.qty) sub = Number(p.qty) * Number(_up(p));
       total += sub;
     });
     if (!total) total = Number(order.total_amount) || 0;
@@ -166,9 +166,9 @@ export default async function handler(req, res) {
   .seller-addr{font-size:10px;color:#555;margin-top:4px;line-height:1.5;}
   .title-block{text-align:right;}
   .title-cn{font-size:26px;font-weight:800;color:#111;letter-spacing:2px;}
-  .title-en{font-size:13px;font-weight:700;letter-spacing:2px;color:#555;margin-top:3px;}
+  .title-en{font-size:15px;font-weight:700;letter-spacing:2px;color:#333;margin-top:2px;}
 
-  .divider{border:none;border-top:2px solid #111;margin:16px 0 12px 0;}
+  .divider{border:none;border-top:2px solid #111;margin:8px 0 10px 0;}
 
   /* Info row */
   .info-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;}
@@ -182,11 +182,11 @@ export default async function handler(req, res) {
   .detail-val{font-size:12px;font-weight:600;color:#111;}
 
   /* Port banner */
-  .port-banner{border:2px solid #111;color:#111;background:#fff;display:flex;border-radius:2px;overflow:hidden;margin-bottom:10px;}
-  .port-cell{flex:1;padding:8px 12px;border-right:1px solid #ddd;}
+  .port-banner{border:2px solid #000;display:flex;border-radius:0;overflow:hidden;margin-bottom:10px;font-weight:bold;font-size:11px;}
+  .port-cell{flex:1;padding:10px 12px;border-right:1px solid #000;}
   .port-cell:last-child{border-right:none;}
-  .port-lbl{font-size:8.5px;font-weight:700;letter-spacing:1px;color:#aaa;text-transform:uppercase;margin-bottom:2px;}
-  .port-val{font-size:12px;font-weight:600;}
+  .port-lbl{display:none;}
+  .port-val{font-size:11px;font-weight:bold;}
 
   /* Products table */
   table.items{width:100%;border-collapse:collapse;margin-bottom:0;}
@@ -257,26 +257,26 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
   <!-- ── Buyer + Details ── -->
   <div class="info-row">
     <div class="info-section">
-      <div class="info-section-hdr">BUYER (BILL TO)</div>
+      <div class="info-section-hdr">付款方 / BUYER (BILL TO)</div>
       <div class="info-section-body">
         <div class="buyer-name">${esc(customer) || "[BUYER NAME]"}</div>
         <div class="buyer-addr">
-          ${esc(customerAddr)}
+          ${esc(customerAddr) || "[ADDRESS]"}
           ${customerTel ? "<br>Tel: " + esc(customerTel) : ""}
         </div>
       </div>
     </div>
     <div class="info-section">
-      <div class="info-section-hdr">DETAILS</div>
+      <div class="info-section-hdr">单据详情 / DETAILS</div>
       <div class="info-section-body">
         <div class="details-grid">
-          <div class="detail-lbl">No.:</div>
-          <div class="detail-val">${esc(piNo)}</div>
-          <div class="detail-lbl">Order:</div>
+          <div class="detail-lbl">发票编号 No.:</div>
+          <div class="detail-val">${esc(invoiceDisplay)}</div>
+          <div class="detail-lbl">订单编号 Order:</div>
           <div class="detail-val">${esc(orderNo)}</div>
-          <div class="detail-lbl">Date:</div>
+          <div class="detail-lbl">日期 Date:</div>
           <div class="detail-val">${esc(piDate)}</div>
-          <div class="detail-lbl">Currency:</div>
+          <div class="detail-lbl">币种 Currency:</div>
           <div class="detail-val">${esc(currency)}</div>
         </div>
       </div>
@@ -285,18 +285,9 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
 
   <!-- ── Port Banner ── -->
   <div class="port-banner">
-    <div class="port-cell">
-      <div class="port-lbl">PORT OF LOADING</div>
-      <div class="port-val">${esc(pol)}</div>
-    </div>
-    <div class="port-cell">
-      <div class="port-lbl">PORT OF DESTINATION</div>
-      <div class="port-val">${esc(pod)}</div>
-    </div>
-    <div class="port-cell">
-      <div class="port-lbl">TERMS (Incoterms® 2020)</div>
-      <div class="port-val">${esc(incoterms)}</div>
-    </div>
+    <div class="port-cell">装运港 POL: ${esc(pol)}</div>
+    <div class="port-cell">目的港 POD: ${esc(pod)}</div>
+    <div class="port-cell" style="border-right:none">贸易术语 Terms: ${esc(incoterms)} (Incoterms® 2020)</div>
   </div>
 
   <!-- ── Products Table ── -->
@@ -304,42 +295,39 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
     <thead>
       <tr>
         <th style="width:36px">NO.</th>
-        <th class="left">品名 Description</th>
-        <th style="width:100px;text-align:center">规格 Size</th>
-        <th style="width:60px">数量 QTY</th>
-        <th style="width:90px">单价 Price</th>
-        <th style="width:100px">金额 Amount</th>
+        <th class="left">品名及规格 DESCRIPTION &amp; SIZE</th>
+        <th style="width:70px">数量 QTY</th>
+        <th style="width:90px">单价 PRICE</th>
+        <th style="width:110px">金额 AMOUNT</th>
       </tr>
     </thead>
     <tbody>
       ${products.length > 0 ? products.map(function(p, i) {
         var name = p.productName || p.name || p.description || "-";
-        var size = p.size || p.spec || "-";
+        var size = p.size || p.spec || "";
+        var desc = size ? name + " (" + size + ")" : name;
         var qty = p.qty || p.quantity || "-";
-        var _up=p.unitPrice||p.price||p.unit_price||p["_widget_1764396068577"]||0;
-        if((!_up||Number(_up)===0)&&(p.subtotal||p.amount)&&p.qty&&Number(p.qty)>0)_up=Number(p.subtotal||p.amount||0)/Number(p.qty);
-        var unitPrice = fmtMoney(_up);
+        var unitPrice = fmtMoney(_up(p));
         var sub = Number(p.subtotal || p.amount || 0);
-        if (!sub && p.qty && _up) sub = Number(p.qty) * Number(_up);
+        if (!sub && p.qty) sub = Number(p.qty) * Number(_up(p));
         return `<tr>
           <td class="no">${String(i+1).padStart(2,"0")}</td>
-          <td>${esc(name)}</td>
-          <td class="center">${esc(size)}</td>
+          <td>${esc(desc)}</td>
           <td class="center">${esc(String(qty))}</td>
           <td class="right">${unitPrice}</td>
           <td class="right">${fmtMoney(sub)}</td>
         </tr>`;
       }).join("") : `<tr>
           <td class="no">01</td>
-          <td colspan="5" style="color:#ccc;font-style:italic;">— 产品明细将从订单自动填入 —</td>
+          <td colspan="4" style="color:#ccc;font-style:italic;">— 产品明细将从订单自动填入 —</td>
         </tr>`}
       <!-- Empty filler rows if < 3 items -->
       ${products.length > 0 && products.length < 3 ? Array(3 - products.length).fill(0).map(function(_,i){
-        return `<tr><td class="no" style="color:#ddd">${String(products.length+i+1).padStart(2,"0")}</td><td colspan="5"></td></tr>`;
+        return `<tr><td class="no" style="color:#ddd">${String(products.length+i+1).padStart(2,"0")}</td><td colspan="4"></td></tr>`;
       }).join("") : ""}
       <!-- Total row -->
       <tr class="total-row">
-        <td colspan="4" class="total-label">TOTAL AMOUNT (${esc(currency)}):</td>
+        <td colspan="3" class="total-label">总计 TOTAL AMOUNT (${esc(currency)}):</td>
         <td colspan="2" class="total-amount">${fmtMoney(total)}</td>
       </tr>
     </tbody>
@@ -348,7 +336,7 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
   <!-- ── Terms + Banking ── -->
   <div class="bottom-grid">
     <div class="bottom-card">
-      <div class="bottom-hdr">TERMS &amp; CONDITIONS</div>
+      <div class="bottom-hdr">成交条款 TERMS &amp; CONDITIONS</div>
       <div class="bottom-body">
         <ol>
           ${cfg.terms.map(function(t){ return "<li>" + esc(t) + "</li>"; }).join("")}
@@ -356,14 +344,12 @@ ${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
       </div>
     </div>
     <div class="bottom-card">
-      <div class="bottom-hdr">BANKING INFORMATION</div>
+      <div class="bottom-hdr">银行信息 BANKING INFORMATION</div>
       <div class="bottom-body">
         <div class="bank-row"><div class="bank-lbl">受益人:</div><div class="bank-val">${esc(cfg.bank.beneficiary)}</div></div>
         <div class="bank-row"><div class="bank-lbl">银行:</div><div class="bank-val">${esc(cfg.bank.bankName)}</div></div>
         <div class="bank-row"><div class="bank-lbl">SWIFT:</div><div class="bank-val">${esc(cfg.bank.swift)}</div></div>
-        <div class="bank-row"><div class="bank-lbl">银行地址:</div><div class="bank-val">${esc(cfg.bank.bankAddr)}</div></div>
-        <div class="bank-row"><div class="bank-lbl">USD Account:</div><div class="bank-val">${esc(cfg.bank.usdAccount)}</div></div>
-        <div class="bank-row"><div class="bank-lbl">RMB Account:</div><div class="bank-val">${esc(cfg.bank.rmbAccount)}</div></div>
+        <div class="bank-row"><div class="bank-lbl">账号 Acc No.:</div><div class="bank-val">${esc(cfg.bank.usdAccount)}</div></div>
         <div class="bank-warning">* 付款前请务必核对账号信息 / Please verify bank info before payment.</div>
       </div>
     </div>
