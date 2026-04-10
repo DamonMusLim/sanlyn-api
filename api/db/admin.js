@@ -178,8 +178,10 @@ export default async function handler(req, res) {
         }
       }
       if (!sets.length) return res.status(400).json({ error: "No valid fields to update" });
-      params.push(new Date().toISOString());
-      sets.push("updated_at = $" + params.length);
+      if(ALLOWED_TABLES[table].columns.includes("updated_at")){
+        params.push(new Date().toISOString());
+        sets.push("updated_at = $" + params.length);
+      }
       params.push(id);
       var sql = "UPDATE " + table + " SET " + sets.join(", ") + " WHERE " + keyCol + " = $" + params.length + " RETURNING *";
       var result = await pool.query(sql, params);
@@ -196,13 +198,16 @@ export default async function handler(req, res) {
       for (var col in fields) {
         if (ALLOWED_TABLES[table].columns.includes(col) && !col.includes("created_at")) {
           var v = fields[col];
-          params.push((col === "audit_issues" || col === "raw") && typeof v !== "string" ? JSON.stringify(v) : v);
-          cols.push(col + (col === "audit_issues" || col === "raw" ? "::jsonb" : ""));
+          var JSONB_COLS = ["raw","audit_issues","rates","surge","fees","free_time","fee_items","config","ports","payment_terms","addresses","invoice","brands"];
+          var isJsonb = JSONB_COLS.includes(col);
+          params.push(isJsonb && typeof v !== "string" ? JSON.stringify(v) : v);
+          cols.push(col + (isJsonb ? "::jsonb" : ""));
         }
       }
       if (!cols.length) return res.status(400).json({ error: "No valid fields" });
       var placeholders = params.map(function(_, i) { return "$" + (i + 1); });
-      var sql = "INSERT INTO " + table + " (" + cols.join(",") + ",created_at,updated_at) VALUES(" + placeholders.join(",") + ",NOW(),NOW()) ON CONFLICT(" + keyCol + ") DO NOTHING RETURNING *";
+      var hasUpdAt = ALLOWED_TABLES[table].columns.includes("updated_at");
+      var sql = "INSERT INTO " + table + " (" + cols.join(",") + ",created_at" + (hasUpdAt?",updated_at":"") + ") VALUES(" + placeholders.join(",") + ",NOW()" + (hasUpdAt?",NOW()":"") + ") ON CONFLICT(" + keyCol + ") DO NOTHING RETURNING *";
       var result = await pool.query(sql, params);
       return res.status(200).json({ success: true, data: result.rows[0] });
     }
