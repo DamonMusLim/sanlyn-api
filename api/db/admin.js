@@ -12,6 +12,8 @@ var ALLOWED_TABLES = {
   tenants: { label: "租户管理", key: "id", columns: ["id","company_code","name","config","created_at","updated_at"] },
   customers: { label: "客户管理", key: "_id", columns: ["_id","company_code","name_cn","name_en","country","currency","grade","destination_port","address","consignee","contact_tel","contact_phone","contact_email","brands","trade_terms","payment_policy","payment_terms","bl_type","our_shipping","role_type","role_types","group_id","company_codes","is_active","created_at","updated_at"] },
   local_charges: { label: "海运报价", key: "id", columns: ["id","carrier","pol","pod","container_type","company","cost_total","sell_total","fee_items","created_at"] },
+  customs_rates: { label: "报关费率", key: "_id", columns: ["_id","vendor_cn","pol","base_fee","currency","max_free_descs","extra_per_desc","notes","created_at"] },
+  trucking_rates: { label: "车队费率", key: "_id", columns: ["_id","vendor_cn","factory_name","pol","valid_from","valid_to","rates","surge","currency","created_at"] },
   factories: { label: "工厂管理", key: "id", columns: ["id","name","name_short","po_prefix","ports","notes","is_active","created_at"] },
 };
 
