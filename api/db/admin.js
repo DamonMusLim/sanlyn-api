@@ -243,7 +243,8 @@ export default async function handler(req, res) {
       var upper = query.toUpperCase().replace(/\s+/g, " ");
       var blocked = ["DROP TABLE","DROP DATABASE","TRUNCATE ","DROP INDEX","DROP SCHEMA","DROP SEQUENCE"];
       for (var b of blocked) { if (upper.includes(b)) return res.status(400).json({ error: "Blocked: " + b.trim() }); }
-      var result = await pool.query(query);
+      var params = req.body.params || [];
+      var result = await pool.query(query, params);
       var isSelect = upper.trimStart().startsWith("SELECT") || upper.trimStart().startsWith("WITH");
       return res.status(200).json({
         success: true,
