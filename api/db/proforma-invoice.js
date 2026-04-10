@@ -147,235 +147,137 @@ export default async function handler(req, res) {
     var invoiceDisplay = "FS" + new Date().getFullYear() + (piNo.replace(/[^0-9]/g,"").slice(-8) || "00000001");
 
     // ── HTML ──
+    var productRowsHtml = products.length > 0 ? products.map(function(p, i) {
+      var name = p.productName || p.name || p.description || "-";
+      var size = p.size || p.spec || "";
+      var desc = size ? name + " (" + size + ")" : name;
+      var qty = p.qty || p.quantity || "-";
+      var up = _up(p);
+      var sub = Number(p.subtotal || p.amount || 0);
+      if (!sub && p.qty) sub = Number(p.qty) * Number(up);
+      return '<tr><td>' + String(i+1).padStart(2,"0") + '</td><td>' + esc(desc) + '</td><td class="text-right">' + esc(String(qty)) + '</td><td class="text-right">' + fmtMoney(up) + '</td><td class="text-right">' + fmtMoney(sub) + '</td></tr>';
+    }).join("") : '<tr><td>01</td><td colspan="4" style="color:#999;font-style:italic">— 产品明细将从订单自动填入 —</td></tr>';
+
+    var termsHtml = cfg.terms.map(function(t,i){ return (i+1) + ". " + esc(t); }).join("<br>\n            ");
+
     var html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Proforma Invoice — ${esc(piNo)}</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap');
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Inter','Noto Sans SC',Arial,sans-serif;color:#222;background:#f0f0f0;font-size:13px;}
-  .page{background:#fff;width:210mm;min-height:297mm;margin:0 auto;padding:14mm 14mm 10mm 14mm;position:relative;}
-
-  /* Header */
-  .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
-  .seller-name{font-size:22px;font-weight:800;color:#111;line-height:1.2;letter-spacing:-0.3px;}
-  .seller-sub{font-size:9.5px;color:#888;margin-top:2px;font-weight:500;}
-  .seller-addr{font-size:10px;color:#555;margin-top:4px;line-height:1.5;}
-  .title-block{text-align:right;}
-  .title-cn{font-size:26px;font-weight:800;color:#111;letter-spacing:2px;}
-  .title-en{font-size:15px;font-weight:700;letter-spacing:2px;color:#333;margin-top:2px;}
-
-  .divider{border:none;border-top:2px solid #111;margin:8px 0 10px 0;}
-
-  /* Info row */
-  .info-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;}
-  .info-section{border:1px solid #ddd;border-radius:2px;}
-  .info-section-hdr{font-size:9px;font-weight:700;letter-spacing:1px;color:#888;padding:4px 8px;border-bottom:1px solid #eee;background:#fafafa;text-transform:uppercase;}
-  .info-section-body{padding:8px;}
-  .buyer-name{font-size:13px;font-weight:700;color:#111;margin-bottom:3px;}
-  .buyer-addr{font-size:10.5px;color:#444;line-height:1.5;}
-  .details-grid{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;align-items:baseline;}
-  .detail-lbl{font-size:10px;color:#888;white-space:nowrap;}
-  .detail-val{font-size:12px;font-weight:600;color:#111;}
-
-  /* Port banner */
-  .port-banner{border:2px solid #000;display:flex;border-radius:0;overflow:hidden;margin-bottom:10px;font-weight:bold;font-size:11px;}
-  .port-cell{flex:1;padding:10px 12px;border-right:1px solid #000;}
-  .port-cell:last-child{border-right:none;}
-  .port-lbl{display:none;}
-  .port-val{font-size:11px;font-weight:bold;}
-
-  /* Products table */
-  table.items{width:100%;border-collapse:collapse;margin-bottom:0;}
-  table.items thead tr{background:#111;color:#fff;}
-  table.items th{padding:8px 10px;font-size:10.5px;font-weight:700;letter-spacing:0.5px;text-align:center;}
-  table.items th.left{text-align:left;}
-  table.items td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px;vertical-align:middle;}
-  table.items td.center{text-align:center;}
-  table.items td.right{text-align:right;}
-  table.items td.no{text-align:center;color:#888;width:36px;}
-  table.items tr.total-row td{border-top:2px solid #111;border-bottom:none;padding-top:10px;font-weight:700;font-size:13px;}
-  table.items tr:nth-child(even) td{background:#fafafa;}
-  .total-label{text-align:right;color:#555;font-size:11px;}
-  .total-amount{text-align:right;font-size:16px;font-weight:800;color:#111;}
-
-  /* T&C + Banking */
-  .bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
-  .bottom-card{border:1px solid #ddd;border-radius:2px;}
-  .bottom-hdr{font-size:9.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:5px 10px;border-bottom:1px solid #eee;background:#fafafa;}
-  .bottom-body{padding:10px;font-size:10.5px;color:#444;line-height:1.7;}
-  .bottom-body ol{padding-left:14px;}
-  .bottom-body li{margin-bottom:1px;}
-  .bank-row{display:flex;gap:4px;margin-bottom:3px;}
-  .bank-lbl{color:#888;min-width:72px;font-size:10px;}
-  .bank-val{color:#111;font-weight:500;font-size:10.5px;}
-  .bank-warning{color:#c00;font-size:9.5px;margin-top:6px;font-weight:600;}
-
-  /* Signatures */
-  .sig-row{display:flex;justify-content:space-between;margin-top:16px;padding-top:6px;}
-  .sig-block{width:44%;text-align:center;}
-  .sig-line{border-top:1px solid #aaa;margin-bottom:6px;padding-top:6px;}
-  .sig-label{font-size:10px;font-weight:700;letter-spacing:0.5px;color:#444;text-transform:uppercase;}
-  .sig-sub{font-size:9px;color:#999;margin-top:3px;}
-  .sig-space{height:44px;}
-
-  /* Footer */
-  .footer{margin-top:14px;text-align:center;font-size:9px;color:#bbb;border-top:1px solid #eee;padding-top:6px;}
-  .footer span{color:#f9ab00;font-weight:700;}
-
-  @media print{
-    body{background:#fff;}
-    .page{width:100%;padding:10mm 12mm 8mm 12mm;box-shadow:none;}
-  }
+  body{font-family:'Helvetica','Arial','PingFang SC',sans-serif;color:#000;margin:0;padding:30px;font-size:11px;line-height:1.4;}
+  .container{max-width:800px;margin:auto;}
+  .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:25px;}
+  .seller-info{flex:1;}
+  .seller-name{font-size:20px;font-weight:900;text-transform:uppercase;margin-bottom:5px;}
+  .doc-type{text-align:right;}
+  .doc-type h1{margin:0;font-size:28px;font-weight:900;letter-spacing:1px;}
+  .doc-type p{font-size:14px;font-weight:bold;margin:2px 0;}
+  .meta-grid{display:grid;grid-template-columns:1.2fr 0.8fr;gap:40px;margin-bottom:20px;}
+  .section-label{font-size:10px;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:8px;color:#444;}
+  .meta-list{list-style:none;padding:0;margin:0;}
+  .meta-list li{margin-bottom:4px;display:flex;}
+  .meta-list li b{width:110px;font-weight:bold;}
+  .trade-terms-bar{border:2px solid #000;padding:10px;display:flex;justify-content:space-between;margin-bottom:25px;font-weight:bold;font-size:11px;}
+  table{width:100%;border-collapse:collapse;margin-bottom:25px;}
+  th{background:#000;color:#fff;padding:10px;text-align:left;font-size:10px;text-transform:uppercase;}
+  td{padding:10px;border-bottom:1px solid #000;vertical-align:top;}
+  .text-right{text-align:right;}
+  .total-row{font-size:13px;font-weight:900;background:#fff;}
+  .details-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:10px;}
+  .details-box{border:1px solid #000;padding:12px;}
+  .details-box h4{margin:0 0 10px 0;font-size:11px;text-transform:uppercase;text-decoration:underline;}
+  .signature-grid{display:flex;justify-content:space-between;margin-top:50px;}
+  .sig-box{width:45%;border-top:2px solid #000;padding-top:10px;text-align:center;height:100px;font-weight:bold;display:flex;flex-direction:column;justify-content:space-between;}
+  .brand-slogan{text-align:center;margin-top:60px;font-size:9px;color:#888;border-top:1px dashed #ccc;padding-top:15px;letter-spacing:1px;}
+  .brand-slogan b{color:#555;}
+  @media print{body{padding:0;}.container{max-width:100%;border:none;}}
 </style>
-${autoPrint ? '<script>window.onload=function(){window.print();}</script>' : ''}
+${autoPrint ? '<script>window.onload=function(){window.print()}<\/script>' : ''}
 </head>
 <body>
-<div class="page">
-
-  <!-- ── Header ── -->
-  <div class="header">
-    <div>
-      <div class="seller-name">${esc(cfg.nameEN)}</div>
-      <div class="seller-sub">Global Sourcing &amp; Supply Chain Partner</div>
-      <div class="seller-addr">
-        ${esc(cfg.address)}<br>
-        Tel: ${esc(cfg.tel)} &nbsp;|&nbsp; Email: ${esc(cfg.email)}
-      </div>
-    </div>
-    <div class="title-block">
-      <div class="title-cn">形式发票</div>
-      <div class="title-en">PROFORMA INVOICE</div>
-    </div>
-  </div>
-
-  <hr class="divider">
-
-  <!-- ── Buyer + Details ── -->
-  <div class="info-row">
-    <div class="info-section">
-      <div class="info-section-hdr">付款方 / BUYER (BILL TO)</div>
-      <div class="info-section-body">
-        <div class="buyer-name">${esc(customer) || "[BUYER NAME]"}</div>
-        <div class="buyer-addr">
-          ${esc(customerAddr) || "[ADDRESS]"}
-          ${customerTel ? "<br>Tel: " + esc(customerTel) : ""}
+<div class="container">
+    <div class="header">
+        <div class="seller-info">
+            <div class="seller-name">${esc(cfg.nameCN)} / ${esc(cfg.nameEN)}</div>
+            <p style="margin:2px 0;">${esc(cfg.address)}</p>
+            <p style="margin:2px 0;">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p>
         </div>
-      </div>
-    </div>
-    <div class="info-section">
-      <div class="info-section-hdr">单据详情 / DETAILS</div>
-      <div class="info-section-body">
-        <div class="details-grid">
-          <div class="detail-lbl">发票编号 No.:</div>
-          <div class="detail-val">${esc(invoiceDisplay)}</div>
-          <div class="detail-lbl">订单编号 Order:</div>
-          <div class="detail-val">${esc(orderNo)}</div>
-          <div class="detail-lbl">日期 Date:</div>
-          <div class="detail-val">${esc(piDate)}</div>
-          <div class="detail-lbl">币种 Currency:</div>
-          <div class="detail-val">${esc(currency)}</div>
+        <div class="doc-type">
+            <h1>形式发票</h1>
+            <p>PROFORMA INVOICE</p>
         </div>
-      </div>
     </div>
-  </div>
-
-  <!-- ── Port Banner ── -->
-  <div class="port-banner">
-    <div class="port-cell">装运港 POL: ${esc(pol)}</div>
-    <div class="port-cell">目的港 POD: ${esc(pod)}</div>
-    <div class="port-cell" style="border-right:none">贸易术语 Terms: ${esc(incoterms)} (Incoterms® 2020)</div>
-  </div>
-
-  <!-- ── Products Table ── -->
-  <table class="items">
-    <thead>
-      <tr>
-        <th style="width:36px">NO.</th>
-        <th class="left">品名及规格 DESCRIPTION &amp; SIZE</th>
-        <th style="width:70px">数量 QTY</th>
-        <th style="width:90px">单价 PRICE</th>
-        <th style="width:110px">金额 AMOUNT</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${products.length > 0 ? products.map(function(p, i) {
-        var name = p.productName || p.name || p.description || "-";
-        var size = p.size || p.spec || "";
-        var desc = size ? name + " (" + size + ")" : name;
-        var qty = p.qty || p.quantity || "-";
-        var unitPrice = fmtMoney(_up(p));
-        var sub = Number(p.subtotal || p.amount || 0);
-        if (!sub && p.qty) sub = Number(p.qty) * Number(_up(p));
-        return `<tr>
-          <td class="no">${String(i+1).padStart(2,"0")}</td>
-          <td>${esc(desc)}</td>
-          <td class="center">${esc(String(qty))}</td>
-          <td class="right">${unitPrice}</td>
-          <td class="right">${fmtMoney(sub)}</td>
-        </tr>`;
-      }).join("") : `<tr>
-          <td class="no">01</td>
-          <td colspan="4" style="color:#ccc;font-style:italic;">— 产品明细将从订单自动填入 —</td>
-        </tr>`}
-      <!-- Empty filler rows if < 3 items -->
-      ${products.length > 0 && products.length < 3 ? Array(3 - products.length).fill(0).map(function(_,i){
-        return `<tr><td class="no" style="color:#ddd">${String(products.length+i+1).padStart(2,"0")}</td><td colspan="4"></td></tr>`;
-      }).join("") : ""}
-      <!-- Total row -->
-      <tr class="total-row">
-        <td colspan="3" class="total-label">总计 TOTAL AMOUNT (${esc(currency)}):</td>
-        <td colspan="2" class="total-amount">${fmtMoney(total)}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <!-- ── Terms + Banking ── -->
-  <div class="bottom-grid">
-    <div class="bottom-card">
-      <div class="bottom-hdr">成交条款 TERMS &amp; CONDITIONS</div>
-      <div class="bottom-body">
-        <ol>
-          ${cfg.terms.map(function(t){ return "<li>" + esc(t) + "</li>"; }).join("")}
-        </ol>
-      </div>
+    <div class="meta-grid">
+        <div>
+            <div class="section-label">付款方 / BUYER (BILL TO)</div>
+            <p style="font-size:13px;font-weight:bold;margin:0;">${esc(customer) || "[BUYER NAME]"}</p>
+            <p style="margin:5px 0;">${esc(customerAddr) || "[ADDRESS]"}</p>
+            ${customerTel ? '<p style="margin:2px 0;">Tel: ' + esc(customerTel) + '</p>' : ''}
+        </div>
+        <div>
+            <div class="section-label">单据详情 / DETAILS</div>
+            <ul class="meta-list">
+                <li><b>发票编号 No.:</b> ${esc(invoiceDisplay)}</li>
+                <li><b>订单编号 Order:</b> ${esc(orderNo)}</li>
+                <li><b>日期 Date:</b> ${esc(piDate)}</li>
+                <li><b>币种 Currency:</b> ${esc(currency)}</li>
+            </ul>
+        </div>
     </div>
-    <div class="bottom-card">
-      <div class="bottom-hdr">银行信息 BANKING INFORMATION</div>
-      <div class="bottom-body">
-        <div class="bank-row"><div class="bank-lbl">受益人:</div><div class="bank-val">${esc(cfg.bank.beneficiary)}</div></div>
-        <div class="bank-row"><div class="bank-lbl">银行:</div><div class="bank-val">${esc(cfg.bank.bankName)}</div></div>
-        <div class="bank-row"><div class="bank-lbl">SWIFT:</div><div class="bank-val">${esc(cfg.bank.swift)}</div></div>
-        <div class="bank-row"><div class="bank-lbl">账号 Acc No.:</div><div class="bank-val">${esc(cfg.bank.usdAccount)}</div></div>
-        <div class="bank-warning">* 付款前请务必核对账号信息 / Please verify bank info before payment.</div>
-      </div>
+    <div class="trade-terms-bar">
+        <span>装运港 POL: ${esc(pol)}</span>
+        <span>目的港 POD: ${esc(pod)}</span>
+        <span>贸易术语 Terms: ${esc(incoterms)} (Incoterms® 2020)</span>
     </div>
-  </div>
-
-  <!-- ── Signatures ── -->
-  <div class="sig-row">
-    <div class="sig-block">
-      <div class="sig-space"></div>
-      <div class="sig-line"></div>
-      <div class="sig-label">Buyer Authorized Signature</div>
-      <div class="sig-sub">(买方授权签署 / 盖章)</div>
+    <table>
+        <thead>
+            <tr>
+                <th style="width:40px;">No.</th>
+                <th>品名及规格 Description &amp; Size</th>
+                <th class="text-right" style="width:80px;">数量 Qty</th>
+                <th class="text-right" style="width:80px;">单价 Price</th>
+                <th class="text-right" style="width:100px;">金额 Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${productRowsHtml}
+        </tbody>
+        <tfoot>
+            <tr class="total-row">
+                <td colspan="4" class="text-right">总计金额 TOTAL AMOUNT (${esc(currency)}):</td>
+                <td class="text-right">${fmtMoney(total)}</td>
+            </tr>
+        </tfoot>
+    </table>
+    <div class="details-grid">
+        <div class="details-box">
+            <h4>成交条款 TERMS &amp; CONDITIONS</h4>
+            ${termsHtml}
+        </div>
+        <div class="details-box">
+            <h4>银行信息 BANKING INFORMATION</h4>
+            受益人: ${esc(cfg.bank.beneficiary)}<br>
+            银行: ${esc(cfg.bank.bankName)}<br>
+            SWIFT: ${esc(cfg.bank.swift)}<br>
+            账号 Acc No.: ${esc(cfg.bank.usdAccount)}<br>
+            <span style="color:red;font-size:10px;font-weight:bold;">* 付款前请务必核对账号信息 / Please verify bank info before payment.</span>
+        </div>
     </div>
-    <div class="sig-block">
-      <div class="sig-space"></div>
-      <div class="sig-line"></div>
-      <div class="sig-label">Seller Authorized Signature</div>
-      <div class="sig-sub">(卖方授权签署 / 盖章)</div>
+    <div class="signature-grid">
+        <div class="sig-box">
+            <span>BUYER AUTHORIZED SIGNATURE</span>
+            <span style="font-weight:normal;font-size:9px;">(买方授权签署 / 盖章)</span>
+        </div>
+        <div class="sig-box">
+            <span>SELLER AUTHORIZED SIGNATURE</span>
+            <span style="font-weight:normal;font-size:9px;">(卖方授权签署 / 盖章)</span>
+        </div>
     </div>
-  </div>
-
-  <!-- ── Footer ── -->
-  <div class="footer">
-    <span>⚡</span> Generated &amp; Verified by <span>Sanlyn OS Supply Chain Engine</span>
-  </div>
-
+    <div class="brand-slogan">
+        ⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b>
+    </div>
 </div>
 </body>
 </html>`;

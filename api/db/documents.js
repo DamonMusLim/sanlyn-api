@@ -69,85 +69,57 @@ function resolveUnitPrice(p){
   return up;
 }
 
-var CSS = `<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter','Noto Sans SC',Arial,sans-serif;color:#222;background:#f0f0f0;font-size:13px;}
-.page{background:#fff;width:210mm;min-height:297mm;margin:0 auto;padding:14mm 14mm 10mm 14mm;}
-.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;}
-.co-name{font-size:18px;font-weight:800;color:#111;}
-.co-sub{font-size:9px;color:#888;margin-top:2px;}
-.co-addr{font-size:10px;color:#555;margin-top:4px;line-height:1.5;}
-.title-r{text-align:right;}
-.title-cn{font-size:22px;font-weight:800;letter-spacing:2px;}
-.title-cn{font-size:22px;font-weight:800;letter-spacing:2px;}
-.title-en{font-size:13px;font-weight:700;letter-spacing:2px;color:#333;margin-top:2px;}
-hr.div{border:none;border-top:2px solid #111;margin:16px 0 12px 0;}
-.info-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:10px;}
-.info-box{border:1px solid #ddd;border-radius:2px;}
-.ibox-hdr{font-size:9px;font-weight:700;letter-spacing:1px;color:#888;padding:4px 8px;border-bottom:1px solid #eee;background:#fafafa;text-transform:uppercase;}
-.ibox-body{padding:8px;}
-.buyer-name{font-size:13px;font-weight:700;color:#111;margin-bottom:3px;}
-.buyer-addr{font-size:10.5px;color:#444;line-height:1.5;}
-.dg{display:grid;grid-template-columns:auto 1fr;gap:3px 8px;align-items:baseline;}
-.dl{font-size:10px;color:#888;white-space:nowrap;}
-.dv{font-size:12px;font-weight:600;}
-.port-banner{border:2px solid #000;display:flex;margin-bottom:10px;font-weight:bold;font-size:11px;}
-.pc{flex:1;padding:10px 12px;border-right:1px solid #000;}
-.pc:last-child{border-right:none;}
-.pl{display:none;}
-.pv{font-size:11px;font-weight:bold;}
-table.items{width:100%;border-collapse:collapse;margin-bottom:0;}
-table.items thead tr{background:#111;color:#fff;}
-table.items th{padding:8px 10px;font-size:10.5px;font-weight:700;letter-spacing:0.5px;text-align:center;}
-table.items th.tl{text-align:left;}
-table.items td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px;}
-table.items td.tc{text-align:center;}
-table.items td.tr{text-align:right;}
-table.items tr.tot td{border-top:2px solid #111;border-bottom:none;padding-top:10px;font-weight:700;font-size:13px;}
-table.items tr:nth-child(even) td{background:#fafafa;}
-.btm{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
-.btm-card{border:1px solid #ddd;border-radius:2px;}
-.btm-hdr{font-size:9.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:5px 10px;border-bottom:1px solid #eee;background:#fafafa;}
-.btm-body{padding:10px;font-size:10.5px;color:#444;line-height:1.7;}
-.btm-body ol{padding-left:14px;}
-.bk-row{display:flex;gap:4px;margin-bottom:3px;}
-.bk-l{color:#888;min-width:80px;font-size:10px;}
-.bk-v{color:#111;font-weight:500;font-size:10.5px;}
-.bk-warn{color:#c00;font-size:9.5px;margin-top:6px;font-weight:600;}
-.sig-row{display:flex;justify-content:space-between;margin-top:16px;}
-.sig-b{width:44%;text-align:center;}
-.sig-line{border-top:1px solid #aaa;margin-bottom:6px;padding-top:6px;}
-.sig-lbl{font-size:10px;font-weight:700;letter-spacing:0.5px;color:#444;text-transform:uppercase;}
-.sig-sub{font-size:9px;color:#999;margin-top:3px;}
-.sig-sp{height:44px;}
-.footer{margin-top:14px;text-align:center;font-size:9px;color:#bbb;border-top:1px solid #eee;padding-top:6px;}
-.footer span{color:#f9ab00;font-weight:700;}
-@media print{body{background:#fff;}.page{width:100%;padding:10mm;}}
+var CSS=`<style>
+body{font-family:'Helvetica','Arial','PingFang SC',sans-serif;color:#000;margin:0;padding:30px;font-size:11px;line-height:1.4;}
+.container{max-width:800px;margin:auto;}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:25px;}
+.seller-info{flex:1;}
+.seller-name{font-size:20px;font-weight:900;text-transform:uppercase;margin-bottom:5px;}
+.doc-type{text-align:right;}
+.doc-type h1{margin:0;font-size:28px;font-weight:900;letter-spacing:1px;}
+.doc-type p{font-size:14px;font-weight:bold;margin:2px 0;}
+.meta-grid{display:grid;grid-template-columns:1.2fr 0.8fr;gap:40px;margin-bottom:20px;}
+.section-label{font-size:10px;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:8px;color:#444;}
+.meta-list{list-style:none;padding:0;margin:0;}
+.meta-list li{margin-bottom:4px;display:flex;}
+.meta-list li b{width:110px;font-weight:bold;}
+.trade-terms-bar{border:2px solid #000;padding:10px;display:flex;justify-content:space-between;margin-bottom:25px;font-weight:bold;font-size:11px;}
+table{width:100%;border-collapse:collapse;margin-bottom:25px;}
+th{background:#000;color:#fff;padding:10px;text-align:left;font-size:10px;text-transform:uppercase;}
+td{padding:10px;border-bottom:1px solid #000;vertical-align:top;}
+.text-right{text-align:right;}
+.total-row{font-size:13px;font-weight:900;background:#fff;}
+.details-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:10px;}
+.details-box{border:1px solid #000;padding:12px;}
+.details-box h4{margin:0 0 10px 0;font-size:11px;text-transform:uppercase;text-decoration:underline;}
+.signature-grid{display:flex;justify-content:space-between;margin-top:50px;}
+.sig-box{width:45%;border-top:2px solid #000;padding-top:10px;text-align:center;height:100px;font-weight:bold;display:flex;flex-direction:column;justify-content:space-between;}
+.brand-slogan{text-align:center;margin-top:60px;font-size:9px;color:#888;border-top:1px dashed #ccc;padding-top:15px;letter-spacing:1px;}
+.brand-slogan b{color:#555;}
+@media print{body{padding:0;}.container{max-width:100%;border:none;}}
 </style>`;
 
-function wrap(title,body,ap){ return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="page">${body}<div class="footer"><span>⚡</span> Generated &amp; Verified by <span>Sanlyn OS Supply Chain Engine</span></div></div></body></html>`; }
+function wrap(title,body,ap){return`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
 
-function docHdr(cfg,cn,en){ return `<div class="hdr"><div><div class="co-name">${esc(cfg.nameEN)}</div><div class="co-sub">Global Sourcing &amp; Supply Chain Partner</div><div class="co-addr">${esc(cfg.address)}<br>Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</div></div><div class="title-r">${cn?`<div class="title-cn">${esc(cn)}</div>`:""}<div class="title-en">${esc(en)}</div></div></div><hr class="div">`; }
+function docHdr(cfg,cn,en){return`<div class="header"><div class="seller-info"><div class="seller-name">${esc(cfg.nameCN)} / ${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type">${cn?`<h1>${esc(cn)}</h1>`:""}<p>${esc(en)}</p></div></div>`;}
 
-function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){ return `<div class="info-row"><div class="info-box"><div class="ibox-hdr">付款方 / BUYER (BILL TO)</div><div class="ibox-body"><div class="buyer-name">${esc(cust)||"[BUYER]"}</div><div class="buyer-addr">${esc(addr)||"[ADDRESS]"}${tel?`<br>Tel:${esc(tel)}`:""}</div></div></div><div class="info-box"><div class="ibox-hdr">单据详情 / DETAILS</div><div class="ibox-body"><div class="dg"><div class="dl">${esc(noLbl||"No.")}:</div><div class="dv">${esc(docNo)}</div><div class="dl">Order:</div><div class="dv">${esc(ordNo)}</div><div class="dl">Date:</div><div class="dv">${esc(date)}</div>${curr?`<div class="dl">Currency:</div><div class="dv">${esc(curr)}</div>`:""}</div></div></div></div>`; }
+function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class="meta-grid"><div><div class="section-label">付款方 / BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">单据详情 / DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>订单编号 Order:</b> ${esc(ordNo)}</li><li><b>日期 Date:</b> ${esc(date)}</li>${curr?`<li><b>币种 Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
 
-function portBar(pol,pod,terms){ return `<div class="port-banner"><div class="pc">装运港 POL: ${esc(pol)||"-"}</div><div class="pc">目的港 POD: ${esc(pod)||"-"}</div><div class="pc" style="border-right:none">贸易术语 Terms: ${esc(terms)||"-"} (Incoterms® 2020)</div></div>`; }
+function portBar(pol,pod,terms){return`<div class="trade-terms-bar"><span>装运港 POL: ${esc(pol)||"-"}</span><span>目的港 POD: ${esc(pod)||"-"}</span><span>贸易术语 Terms: ${esc(terms)||"-"} (Incoterms® 2020)</span></div>`;}
 
-function bankCard(bk){ return `<div class="btm-card"><div class="btm-hdr">银行信息 BANKING INFORMATION</div><div class="btm-body"><div class="bk-row"><div class="bk-l">受益人:</div><div class="bk-v">${esc(bk.beneficiary||bk.accountName||"")}</div></div><div class="bk-row"><div class="bk-l">银行:</div><div class="bk-v">${esc(bk.bankName)}</div></div><div class="bk-row"><div class="bk-l">SWIFT:</div><div class="bk-v">${esc(bk.swift)}</div></div>${bk.usdAccount?`<div class="bk-row"><div class="bk-l">账号 Acc No.:</div><div class="bk-v">${esc(bk.usdAccount)}</div></div>`:""}<div class="bk-warn" style="color:#c00;font-size:9.5px;margin-top:6px;font-weight:600">* 付款前请务必核对账号信息 / Please verify bank info before payment.</div></div></div>`; }
+function bankCard(bk){return`<div class="details-box"><h4>银行信息 BANKING INFORMATION</h4>受益人: ${esc(bk.beneficiary||bk.accountName||"")}<br>银行: ${esc(bk.bankName)}<br>SWIFT: ${esc(bk.swift)}<br>${bk.usdAccount?`账号 Acc No.: ${esc(bk.usdAccount)}<br>`:""}<span style="color:red;font-size:10px;font-weight:bold">* 付款前请务必核对账号信息 / Please verify bank info before payment.</span></div>`;}
 
-function termsCard(ts){ return `<div class="btm-card"><div class="btm-hdr">成交条款 TERMS &amp; CONDITIONS</div><div class="btm-body"><ol>${ts.map(function(t){return"<li>"+esc(t)+"</li>";}).join("")}</ol></div></div>`; }
+function termsCard(ts){return`<div class="details-box"><h4>成交条款 TERMS &amp; CONDITIONS</h4>${ts.map(function(t,i){return(i+1)+". "+esc(t);}).join("<br>")}</div>`;}
 
-function sigBlock(){ return `<div class="sig-row"><div class="sig-b"><div class="sig-sp"></div><div class="sig-line"></div><div class="sig-lbl">Buyer Authorized Signature</div><div class="sig-sub">(买方授权签署 / 盖章)</div></div><div class="sig-b"><div class="sig-sp"></div><div class="sig-line"></div><div class="sig-lbl">Seller Authorized Signature</div><div class="sig-sub">(卖方授权签署 / 盖章)</div></div></div>`; }
+function sigBlock(){return`<div class="signature-grid"><div class="sig-box"><span>BUYER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(买方授权签署 / 盖章)</span></div><div class="sig-box"><span>SELLER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(卖方授权签署 / 盖章)</span></div></div>`;}
 
-function productRows(prods,cols,currency){
-  if(!prods.length) return `<tr><td class="no">01</td><td colspan="${cols.length}" style="color:#ccc;text-align:center;font-style:italic;padding:20px">— Product details auto-filled from order —</td></tr>`;
-  var rows=prods.map(function(p,i){return`<tr><td style="text-align:center;color:#888;width:36px">${String(i+1).padStart(2,"0")}</td>${cols.map(function(c){var v=c.fn?c.fn(p):(p[c.k]||"-");return`<td class="${c.al==="right"?"tr":c.al==="center"?"tc":""}">${esc(String(v))}</td>`;}).join("")}</tr>`;}).join("");
-  var filler=prods.length<3?Array(3-prods.length).fill(0).map(function(_,i){return`<tr><td style="color:#ddd;text-align:center">${String(prods.length+i+1).padStart(2,"0")}</td>${cols.map(function(){return"<td></td>";}).join("")}</tr>`;}).join(""):"";
-  return rows+filler;
+function productRows(prods,cols){
+  if(!prods.length)return'<tr><td>01</td><td colspan="'+cols.length+'" style="color:#999;font-style:italic">— 产品明细将从订单自动填入 —</td></tr>';
+  return prods.map(function(p,i){return'<tr><td>'+String(i+1).padStart(2,"0")+'</td>'+cols.map(function(c){var v=c.fn?c.fn(p):(p[c.k]||"-");return'<td class="'+(c.al==="right"?"text-right":"")+'">'+esc(String(v))+'</td>';}).join("")+'</tr>';}).join("");
 }
 
-function getProds(raw){ return Array.isArray(raw.products)?raw.products:Array.isArray(raw.items)?raw.items:[]; }
-function getTotal(prods,order){ return prods.reduce(function(s,p){var sub=Number(p.subtotal||p.amount||0);if(!sub&&p.qty&&p.unitPrice)sub=Number(p.qty)*Number(p.unitPrice);return s+sub;},0)||Number(order.total_amount)||0; }
+function getProds(raw){return Array.isArray(raw.products)?raw.products:Array.isArray(raw.items)?raw.items:[];}
+function getTotal(prods,order){return prods.reduce(function(s,p){var sub=Number(p.subtotal||p.amount||0);if(!sub&&p.qty)sub=Number(p.qty)*Number(resolveUnitPrice(p));return s+sub;},0)||Number(order.total_amount)||0;}
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -189,7 +161,7 @@ export default async function handler(req, res) {
       var tgw=prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0);},0)||Number(raw.grossWeight||0);
       var tnw=prods.reduce(function(s,p){return s+Number(p.netWeight||p.nw||0);},0)||Number(raw.netWeight||0);
 
-      var totRow=`<tr class="tot"><td colspan="3" style="text-align:right;color:#555;font-size:11px;">总计金额 TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" style="text-align:right;font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
+      var totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">总计金额 TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
 
       if(type==="sc"){
         var no="SC-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
@@ -203,9 +175,9 @@ export default async function handler(req, res) {
           ${docHdr(cfg,"销售合同","SALES CONTRACT")}
           ${buyerBlock(cust,caddr,ctel,no,"Contract No.",ordNo,date,curr)}
           ${portBar(pol,pod,inco)}
-          <table class="items"><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th class="tl"${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
+          <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
-          <div class="btm">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+          <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
       }
 
       if(type==="iv"){
@@ -220,9 +192,9 @@ export default async function handler(req, res) {
           ${docHdr(cfg,"商业发票","COMMERCIAL INVOICE")}
           ${buyerBlock(cust,caddr,ctel,noIV,"Invoice No.",ordNo,date,curr)}
           ${portBar(pol,pod,inco)}
-          <table class="items"><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th class="tl"${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
+          <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
-          <div class="btm">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
       }
 
       if(type==="pl"){
@@ -239,9 +211,9 @@ export default async function handler(req, res) {
           ${docHdr(cfg,"装箱单","PACKING LIST")}
           ${buyerBlock(cust,caddr,ctel,noPL,"P/L No.",ordNo,date,null)}
           ${portBar(pol,pod,inco)}
-          <table class="items"><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th class="${c.al==='right'?'':'tl'}"${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
+          <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPL,curr)}
-          <tr class="tot"><td colspan="2" style="text-align:right;color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; Total:</td><td class="tc">${fmtM(tqty,0)}</td><td class="tr">${fmtM(tgw)}</td><td class="tr">${fmtM(tnw)}</td><td class="tr">${fmtM(tcbmPL,3)}</td></tr>
+          <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
           </tbody></table>${sigBlock()}`,ap);
       }
 
@@ -251,7 +223,6 @@ export default async function handler(req, res) {
         var buyerTaxNo=pick(cfg.taxNo,raw.sellerTaxNo,"");
         var vendorTaxNo=pick(raw.factoryTaxNo,raw.vendorTaxNo,"");
         var vendorAddress="", vendorBank="", vendorAccount="";
-        // Look up factory info from factories table
         try{
           var fSearch=factory.replace(/股份|有限公司|进出口/g,"").trim().slice(0,6);
           var fR=await pool.query("SELECT * FROM factories WHERE name=$1 OR name LIKE $2 LIMIT 1",[factory,'%'+fSearch+'%']);
@@ -263,52 +234,52 @@ export default async function handler(req, res) {
             vendorAccount=fd.bank_account||"";
           }
         }catch(e){}
+        var totPO=prods.reduce(function(s,p){var fp=pick(p.factoryPrice,p.unitPrice,p.price);var sub=Number(p.subtotalFactory||p.subtotal||0);if(!sub&&p.qty&&fp)sub=Number(p.qty)*Number(fp);return s+sub;},0)||Number(o.total_amount)||0;
         html=wrap("Purchase Order — "+noPO,`
-          <div style="text-align:center;margin-bottom:14px"><div style="font-size:20px;font-weight:800;letter-spacing:4px">采 购 合 同</div><div style="font-size:12px;color:#666;letter-spacing:1px">PURCHASE ORDER (PO)</div></div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:12px;font-size:11px;padding:8px;background:#f9f9f9;border:1px solid #eee;border-radius:2px">
-            <div><b>Order:</b> ${esc(ordNo)}</div><div><b>合同号 Contract No.:</b> ${esc(cno)}</div><div><b>期待交货日 Delivery:</b> ${esc(date)}</div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
-            <div style="border:1px solid #ddd;border-radius:2px">
-              <div style="font-size:9.5px;font-weight:700;letter-spacing:1px;padding:5px 10px;border-bottom:1px solid #eee;background:#111;color:#fff">买方信息 Buyer / Bill To</div>
-              <div style="padding:10px;font-size:11px;line-height:1.9">
-                <div><b>公司名称:</b> ${esc(cfg.nameCN)}<br><span style="color:#666;font-size:10px">${esc(cfg.nameEN)}</span></div>
-                ${buyerTaxNo?`<div><b>税号:</b> ${esc(buyerTaxNo)}</div>`:""}
-                <div><b>地址:</b> ${esc(cfg.address)}</div>
-                <div><b>开户银行:</b> ${esc(cfg.buyerBank||cfg.bank.bankName)}</div>
-                <div><b>银行账户:</b> ${esc(cfg.bank.rmbAccount)}</div>
-              </div>
+          ${docHdr(cfg,"采购合同","PURCHASE ORDER")}
+          <div class="meta-grid">
+            <div>
+              <div class="section-label">买方信息 BUYER / BILL TO</div>
+              <p style="font-size:13px;font-weight:bold;margin:0">${esc(cfg.nameCN)}</p>
+              <p style="margin:2px 0;color:#666;font-size:10px">${esc(cfg.nameEN)}</p>
+              ${buyerTaxNo?`<p style="margin:2px 0">税号: ${esc(buyerTaxNo)}</p>`:""}
+              <p style="margin:2px 0">地址: ${esc(cfg.address)}</p>
+              <p style="margin:2px 0">开户银行: ${esc(cfg.buyerBank||cfg.bank.bankName)}</p>
+              <p style="margin:2px 0">银行账户: ${esc(cfg.bank.rmbAccount)}</p>
             </div>
-            <div style="border:1px solid #ddd;border-radius:2px">
-              <div style="font-size:9.5px;font-weight:700;letter-spacing:1px;padding:5px 10px;border-bottom:1px solid #eee;background:#111;color:#fff">供应商信息 Vendor / Ship From</div>
-              <div style="padding:10px;font-size:11px;line-height:1.9">
-                <div><b>公司名称:</b> ${esc(factory)}</div>
-                ${vendorTaxNo?`<div><b>税号:</b> ${esc(vendorTaxNo)}</div>`:""}
-                ${(vendorAddress||raw.factoryAddress)?`<div><b>地址:</b> ${esc(vendorAddress||raw.factoryAddress)}</div>`:""}
-                ${(vendorBank||raw.factoryBank)?`<div><b>开户银行:</b> ${esc(vendorBank||raw.factoryBank)}</div>`:""}
-                ${(vendorAccount||raw.factoryAccount)?`<div><b>银行账户:</b> ${esc(vendorAccount||raw.factoryAccount)}</div>`:""}
-              </div>
+            <div>
+              <div class="section-label">供应商信息 VENDOR / SHIP FROM</div>
+              <p style="font-size:13px;font-weight:bold;margin:0">${esc(factory)}</p>
+              ${vendorTaxNo?`<p style="margin:2px 0">税号: ${esc(vendorTaxNo)}</p>`:""}
+              ${(vendorAddress||raw.factoryAddress)?`<p style="margin:2px 0">地址: ${esc(vendorAddress||raw.factoryAddress)}</p>`:""}
+              ${(vendorBank||raw.factoryBank)?`<p style="margin:2px 0">开户银行: ${esc(vendorBank||raw.factoryBank)}</p>`:""}
+              ${(vendorAccount||raw.factoryAccount)?`<p style="margin:2px 0">银行账户: ${esc(vendorAccount||raw.factoryAccount)}</p>`:""}
             </div>
           </div>
-          <table class="items"><thead><tr><th style="width:36px">NO.</th><th class="tl">品名 Item Description</th><th style="width:70px;text-align:center">数量 Qty</th><th style="width:90px;text-align:right">单价 Unit Price</th><th style="width:100px;text-align:right">金额 Amount</th><th style="width:90px;text-align:center">条形码 Code</th></tr></thead>
+          <div class="trade-terms-bar">
+            <span>订单号 Order: ${esc(ordNo)}</span>
+            <span>合同号 Contract No.: ${esc(cno)}</span>
+            <span>期待交货日 Delivery: ${esc(date)}</span>
+          </div>
+          <table><thead><tr><th style="width:36px">NO.</th><th>品名 Item Description</th><th style="width:70px;text-align:center">数量 Qty</th><th style="width:90px;text-align:right">单价 Unit Price</th><th style="width:100px;text-align:right">金额 Amount</th><th style="width:90px;text-align:center">条形码 Code</th></tr></thead>
           <tbody>
-            ${prods.length===0?`<tr><td class="tc">01</td><td colspan="5" style="color:#ccc;text-align:center;font-style:italic;padding:20px">— 产品明细将自动填入 —</td></tr>`:
+            ${prods.length===0?`<tr><td>01</td><td colspan="5" style="color:#999;font-style:italic">— 产品明细将自动填入 —</td></tr>`:
               prods.map(function(p,i){
                 var fp=pick(p.factoryPrice,p.unitPrice,p.price);
                 var sub=Number(p.subtotalFactory||p.subtotal||0);if(!sub&&p.qty&&fp)sub=Number(p.qty)*Number(fp);
-                return`<tr><td class="tc">${String(i+1).padStart(2,"0")}</td><td>${esc(pick(p.productName,p.name,"-"))}</td><td class="tc">${esc(String(p.qty||"-"))}</td><td class="tr">${fmtM(fp)}</td><td class="tr">${fmtM(sub)}</td><td class="tc" style="font-size:10px;color:#666">${esc(p.barcode||p.code||"")}</td></tr>`;
+                return`<tr><td>${String(i+1).padStart(2,"0")}</td><td>${esc(pick(p.productName,p.name,"-"))}</td><td style="text-align:center">${esc(String(p.qty||"-"))}</td><td class="text-right">${fmtM(fp)}</td><td class="text-right">${fmtM(sub)}</td><td style="text-align:center;font-size:10px;color:#666">${esc(p.barcode||p.code||"")}</td></tr>`;
               }).join("")}
-            <tr class="tot"><td colspan="2" style="text-align:right;color:#555;font-size:11px">合计 Total:</td><td class="tc">${fmtM(tqty,0)}</td><td></td><td class="tr" style="font-size:14px">${fmtM(tot)}</td><td></td></tr>
+            <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">合计 Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right" style="font-size:14px">${fmtM(totPO)}</td><td></td></tr>
           </tbody></table>
-          <div style="margin-top:12px;border:1px solid #ddd;border-radius:2px">
-            <div style="font-size:9.5px;font-weight:700;letter-spacing:1px;padding:5px 10px;border-bottom:1px solid #eee;background:#fafafa">备注及条款 Remarks &amp; Terms</div>
-            <div style="padding:10px;font-size:10px;color:#444;line-height:1.8"><ol>
-              <li><b>质量 Quality:</b> 供方须保证产品符合约定规格。终端客户投诉有据可查时，供方承担退款或补货责任。<i>(Supplier guarantees specs; liable for refund/replacement on verified defects.)</i></li>
-              <li><b>交期 Delivery:</b> 如有延误，须提前5个工作日书面通知。逾期导致的亏舱费、改船费、客户索赔由供方承担。<i>(5 working days written notice required for delays. Supplier liable for resulting losses.)</i></li>
-              <li><b>系统声明:</b> 本合同由 Sanlyn OS 供应链引擎自动生成，作为双方商业确认之有效凭证。</li>
-            </ol></div>
+          <div class="details-grid">
+            <div class="details-box"><h4>备注及条款 REMARKS &amp; TERMS</h4>
+              1. 质量 Quality: 供方须保证产品符合约定规格。终端客户投诉有据可查时，供方承担退款或补货责任。(Supplier guarantees specs; liable for refund/replacement on verified defects.)<br>
+              2. 交期 Delivery: 如有延误，须提前5个工作日书面通知。逾期导致的亏舱费、改船费、客户索赔由供方承担。(5 working days written notice required for delays. Supplier liable for resulting losses.)<br>
+              3. 系统声明: 本合同由 Sanlyn OS 供应链引擎自动生成，作为双方商业确认之有效凭证。
+            </div>
+            ${bankCard(cfg.bank)}
           </div>
-          <div class="sig-row"><div class="sig-b"><div class="sig-sp"></div><div class="sig-line"></div><div class="sig-lbl">买方代表 Buyer Representative</div><div class="sig-sub">批准签章 / Authorized Stamp</div></div><div class="sig-b"><div class="sig-sp"></div><div class="sig-line"></div><div class="sig-lbl">卖方代表 Seller Representative</div><div class="sig-sub">批准签章 / Authorized Stamp</div></div></div>
+          <div class="signature-grid"><div class="sig-box"><span>BUYER REPRESENTATIVE</span><span style="font-weight:normal;font-size:9px">(买方代表签署 / 盖章)</span></div><div class="sig-box"><span>SELLER REPRESENTATIVE</span><span style="font-weight:normal;font-size:9px">(卖方代表签署 / 盖章)</span></div></div>
         `,ap);
       }
     }
