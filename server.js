@@ -88,6 +88,7 @@ mount("/api/db/tenants",           () => import("./api/db/tenants.js"));
 mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
 mount("/api/db/vault-read",        () => import("./api/db/vault-read.js"));
 mount("/api/db/diag-shipping",     () => import("./api/db/diag-shipping.js"));
+mount("/api/db/import-shipping-plans", () => import("./api/db/import-shipping-plans.js"));
 mount("/api/db/fix-co-account",    () => import("./api/db/fix-co-account.js"));
 mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
 mount("/api/db/seed-huihe-charges",   () => import("./api/db/seed-huihe-charges.js"));
