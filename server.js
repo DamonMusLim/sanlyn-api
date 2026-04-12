@@ -39,6 +39,12 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// ── API Key 鉴权 ──
+// 在所有 /api/* 路由之前验证 Authorization: Bearer sk_xxx
+// 公开路径（登录、健康检查）自动跳过
+import { authMiddleware } from "./api/auth.js";
+app.use(authMiddleware);
+
 // ── Vercel handler adapter ──
 // Vercel handlers expect (req, res) with req.query populated
 // Express already does this, so we just need to call the handler
