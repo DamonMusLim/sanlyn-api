@@ -5,7 +5,7 @@
 const JDY_API   = "https://api.jiandaoyun.com/api/v5/app/entry/data/list";
 const APP_ID    = "689cb08a93c073210bfc772b";
 const ENTRY_ID  = "691e74ea175dfbf0607cc820";  // 报关资料表
-const JDY_TOKEN = process.env.JDY_TOKEN || "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+const JDY_TOKEN = process.env.JDY_TOKEN || "jgAipmndimpj0endT0wStd6gpspAQpAd";
 const UPSERT_URL = process.env.UPSERT_URL || "https://sanlyn-api.vercel.app/api/db/upsert";
 
 async function fetchAllJDY() {

@@ -1,6 +1,6 @@
 // /api/ocr-review.js
-// Vercel Serverless Function — 阿里云百炼 qwen-vl-plus 识别水单 + JDY write-back
-// 使用 OpenAI 兼容接口，无需复杂签名
+// 阿里云百炼 qwen-vl-plus 识别水单 + JDY write-back + PostgreSQL upsert
+import { getPool } from "./db.js";
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -22,10 +22,7 @@ async function callQwenVL(ossUrl) {
         {
           role: "user",
           content: [
-            {
-              type: "image_url",
-              image_url: { url: ossUrl },
-            },
+            { type: "image_url", image_url: { url: ossUrl } },
             {
               type: "text",
               text: `这是一张银行付款水单/转账凭证。请仔细识别所有文字，然后严格只返回如下JSON格式，不要任何其他文字、解释或markdown：
@@ -43,7 +40,6 @@ function parseQwenResponse(data) {
   try {
     const text = data?.choices?.[0]?.message?.content || "";
     console.log("[ocr-review] qwen raw text:", text.slice(0, 300));
-    // 提取 JSON
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     return JSON.parse(jsonMatch[0]);
@@ -57,7 +53,7 @@ async function updateJDY(jdyId, fields) {
   const res = await fetch("https://api.jiandaoyun.com/api/v5/app/entry/data/update", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${process.env.JDY_TOKEN || "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU"}`,
+      "Authorization": `Bearer ${process.env.JDY_TOKEN || "jgAipmndimpj0endT0wStd6gpspAQpAd"}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -70,23 +66,79 @@ async function updateJDY(jdyId, fields) {
   return res.json();
 }
 
+// ── AI Audit for payment record ──
+function auditPayment(fields) {
+  const issues = [];
+  if (!fields.currency)     issues.push("缺币种");
+  if (!fields.paymentDate)  issues.push("缺付款日期");
+  if (!fields.amount)       issues.push("缺本次金额");
+  if (!fields.bankRef)      issues.push("缺银行参考号");
+  if (!fields.senderName)   issues.push("缺付款方名称");
+  if (issues.length === 0)  return { status: "ok", issues: [] };
+  if (!fields.amount || !fields.currency) return { status: "error", issues };
+  return { status: "warn", issues };
+}
+
+// ── Upsert extracted data into finance_payments ──
+async function upsertPaymentRecord(jdyId, ocrFields) {
+  const pool = getPool();
+  const audit = auditPayment(ocrFields);
+  // Use jdy_id if available, otherwise generate a unique id from timestamp
+  const id = jdyId ? `jdy_${jdyId}` : `ocr_${Date.now()}`;
+
+  const result = await pool.query(`
+    INSERT INTO finance_payments(
+      _id, jdy_id, type, direction,
+      this_amount, currency, payment_date, bank_ref,
+      customer_cn, status,
+      audit_issues, audit_status,
+      raw, created_at, updated_at
+    ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,NOW(),NOW())
+    ON CONFLICT(_id) DO UPDATE SET
+      this_amount  = COALESCE(EXCLUDED.this_amount,  finance_payments.this_amount),
+      currency     = COALESCE(EXCLUDED.currency,     finance_payments.currency),
+      payment_date = COALESCE(EXCLUDED.payment_date, finance_payments.payment_date),
+      bank_ref     = COALESCE(EXCLUDED.bank_ref,     finance_payments.bank_ref),
+      customer_cn  = COALESCE(EXCLUDED.customer_cn,  finance_payments.customer_cn),
+      audit_issues = EXCLUDED.audit_issues,
+      audit_status = EXCLUDED.audit_status,
+      updated_at   = NOW()
+    RETURNING *
+  `, [
+    id,
+    jdyId || null,
+    'OCR扫描',
+    '收款',
+    ocrFields.amount     || null,
+    ocrFields.currency   || null,
+    ocrFields.paymentDate|| null,
+    ocrFields.bankRef    || null,
+    ocrFields.senderName || null,
+    'ocr_pending',
+    JSON.stringify(audit.issues),
+    audit.status,
+    JSON.stringify({ ocrSource: true, rawOcr: ocrFields }),
+  ]);
+  return result.rows[0];
+}
+
 export default async function handler(req, res) {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ success: false, error: "Method not allowed" });
 
   try {
-    const { ossUrl, jdyId } = req.body;
+    const { ossUrl, jdyId, saveToDb } = req.body;
     if (!ossUrl) return res.status(400).json({ success: false, error: "Missing ossUrl" });
 
-    // 1. 调 qwen-vl-plus 识别
+    // 1. OCR via Qwen VL
     const qwenData = await callQwenVL(ossUrl);
     console.log("[ocr-review] qwen response:", JSON.stringify(qwenData).slice(0, 400));
 
     const fields = parseQwenResponse(qwenData);
     console.log("[ocr-review] extracted:", JSON.stringify(fields));
 
-    // 2. 写回 JDY
+    // 2. Write back to JDY (existing behavior — bankRef + currency)
     let jdyUpdated = false;
     if (jdyId && fields) {
       const jdyFields = {};
@@ -99,7 +151,14 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ success: true, fields, jdyUpdated });
+    // 3. Save to PostgreSQL finance_payments (when saveToDb=true)
+    let savedRecord = null;
+    if (saveToDb && fields) {
+      savedRecord = await upsertPaymentRecord(jdyId, fields);
+      console.log("[ocr-review] DB saved:", savedRecord?._id);
+    }
+
+    return res.status(200).json({ success: true, fields, jdyUpdated, savedRecord });
 
   } catch (err) {
     console.error("[ocr-review] error:", err);

@@ -6,7 +6,7 @@
 const https = require('https');
 
 const JDY_API = 'https://api.jiandaoyun.com/api/v5';
-const JDY_TOKEN = 'qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU';
+const JDY_TOKEN = 'jgAipmndimpj0endT0wStd6gpspAQpAd';
 const JDY_APP = '689cb08a93c073210bfc772b';
 const JDY_PRODUCT_ENTRY = '5c6a555e2ce076490e9e0595';
 

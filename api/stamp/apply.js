@@ -12,7 +12,7 @@ const STAMP_MAP = {
   shanling: 'stamps/shanling_seal.png',
 };
 
-const OSS_BASE = 'https://sanlyn-files.oss-cn-hongkong.aliyuncs.com';
+const OSS_BASE = 'https://files.sanlynos.com';
 
 // ── 权限校验 ────────────────────────────────────────
 async function checkPermission(pool, operator, stampKey) {

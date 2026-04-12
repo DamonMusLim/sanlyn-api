@@ -3,7 +3,7 @@
 // 用法: node scripts/sync-all-plans.js
 
 const JDY_API = "https://api.jiandaoyun.com/api/v5/app/entry/data/list";
-const JDY_TOKEN = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+const JDY_TOKEN = "jgAipmndimpj0endT0wStd6gpspAQpAd";
 const APP_ID = "689cb08a93c073210bfc772b";
 const ENTRY_ID = "6912a100e6f679d3089bd434"; // 海运计划
 const SYNC_API = "https://api.sanlyn.cn/api/jdy-plans-sync";

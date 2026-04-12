@@ -18,7 +18,7 @@
  * }
  */
 
-const JDY_TOKEN          = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+const JDY_TOKEN          = "jgAipmndimpj0endT0wStd6gpspAQpAd";
 const JDY_APP_ID         = "689cb08a93c073210bfc772b";
 const JDY_CUSTOMER_ENTRY = "68da2738987870a88c839d6e";  // 客户档案
 

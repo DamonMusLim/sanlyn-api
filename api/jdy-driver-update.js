@@ -1,7 +1,7 @@
 // /api/jdy-driver-update.js
 // 司机提交登记后写回 JDY 报关资料表 → 装通知子表单（追加一行）
 
-const JDY_TOKEN = 'qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU';
+const JDY_TOKEN = 'jgAipmndimpj0endT0wStd6gpspAQpAd';
 const JDY_BASE  = 'https://api.jiandaoyun.com/api/v5/app/entry';
 const APP_ID    = '689cb08a93c073210bfc772b';
 const ENTRY_ID  = '691e74ea175dfbf0607cc820';

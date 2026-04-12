@@ -15,7 +15,7 @@ function setCors(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
-const JDY_TOKEN = process.env.JDY_TOKEN || "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+const JDY_TOKEN = process.env.JDY_TOKEN || "jgAipmndimpj0endT0wStd6gpspAQpAd";
 const JDY_APP   = "689cb08a93c073210bfc772b";
 
 // 查询 JDY 中同合同号的记录

@@ -8,7 +8,7 @@
  */
 
 const JDY_URL = "https://api.jiandaoyun.com/api/v5/app/entry/data/list";
-const JDY_TOKEN = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+const JDY_TOKEN = "jgAipmndimpj0endT0wStd6gpspAQpAd";
 const APP_ID = "689cb08a93c073210bfc772b";
 const ENTRY_ID = "6419d478b9b91b00091e4d73";
 

@@ -5,7 +5,7 @@
  */
 import { getPool } from "./db.js";
 
-const JDY_TOKEN = "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+const JDY_TOKEN = "jgAipmndimpj0endT0wStd6gpspAQpAd";
 const JDY_APP_ID = "689cb08a93c073210bfc772b";
 const JDY_ENTRY = "692d71da9e9f7fc0d52611a9";
 

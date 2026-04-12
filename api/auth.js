@@ -1,156 +1,112 @@
-// ══════════════════════════════════════════════════════════
-// auth.js — API Key 鉴权中间件
-// 验证 Authorization: Bearer sk_xxx
-// 通过后在 req 上挂载 tenant_id 和 apiKeyInfo
-// ══════════════════════════════════════════════════════════
-import { getPool } from "./db.js";
+// /api/auth.js — JWT token authentication module
+// Provides: generateToken, verifyToken, extractUser, requireAuth, requireRole, authMiddleware
+// Uses HS256 with built-in crypto (no external deps)
+import crypto from "crypto";
 
-// 不需要鉴权的路径（登录、健康检查）
+var SECRET = process.env.JWT_SECRET || "sanlyn-os-2026-secret-key";
+var TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
+
+// ── Base64url encode/decode ──
+function b64url(buf) {
+  return Buffer.from(buf).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+function b64urlDecode(str) {
+  str = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (str.length % 4) str += "=";
+  return Buffer.from(str, "base64");
+}
+
+// ── Generate JWT ──
+export function generateToken(payload) {
+  var header = { alg: "HS256", typ: "JWT" };
+  var now = Math.floor(Date.now() / 1000);
+  var body = Object.assign({}, payload, { iat: now, exp: now + TOKEN_EXPIRY });
+
+  var segments = [b64url(JSON.stringify(header)), b64url(JSON.stringify(body))];
+  var sig = crypto.createHmac("sha256", SECRET).update(segments.join(".")).digest();
+  segments.push(b64url(sig));
+  return segments.join(".");
+}
+
+// ── Verify JWT → returns payload or null ──
+export function verifyToken(token) {
+  try {
+    if (!token) return null;
+    var parts = token.split(".");
+    if (parts.length !== 3) return null;
+
+    // Verify signature
+    var sig = crypto.createHmac("sha256", SECRET).update(parts[0] + "." + parts[1]).digest();
+    var expectedSig = b64url(sig);
+    if (expectedSig !== parts[2]) return null;
+
+    // Decode payload
+    var payload = JSON.parse(b64urlDecode(parts[1]).toString());
+
+    // Check expiry
+    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+
+    return payload;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ── Express/Vercel middleware: extracts user from token ──
+// Sets req.user if valid token, otherwise req.user = null
+// Does NOT block — use requireAuth() to block unauthorized requests
+export function extractUser(req) {
+  var auth = req.headers.authorization || "";
+  var token = auth.startsWith("Bearer ") ? auth.slice(7) : (req.query?.token || null);
+  req.user = verifyToken(token);
+  return req.user;
+}
+
+// ── Strict auth check — returns error response if no valid token ──
+export function requireAuth(req, res) {
+  extractUser(req);
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized", message: "请先登录" });
+    return false;
+  }
+  return true;
+}
+
+// ── Role check ──
+export function requireRole(req, res, roles) {
+  if (!requireAuth(req, res)) return false;
+  if (!roles.includes(req.user.role)) {
+    res.status(403).json({ error: "Forbidden", message: "权限不足" });
+    return false;
+  }
+  return true;
+}
+
+// ── 不需要鉴权的路径 ──
 const PUBLIC_PATHS = [
   "/",
   "/health",
-  "/api/db/accounts",   // 登录接口
+  "/api/db/accounts",     // 登录接口
+  "/api/db/auth-login",   // 登录接口
 ];
 
-// 是否跳过鉴权
 function isPublicPath(path, method) {
-  // OPTIONS 预检请求永远放行
   if (method === "OPTIONS") return true;
-
-  // 精确匹配公开路径
   if (PUBLIC_PATHS.includes(path)) return true;
-
   return false;
 }
 
-// API Key 缓存（避免每次请求都查数据库）
-// key -> { tenant_id, permissions, key_name, cached_at }
-const keyCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
+// ── Express 全局鉴权中间件 ──
+// 在所有 /api/* 路由之前验证 JWT token
+// 公开路径自动跳过
+export function authMiddleware(req, res, next) {
+  if (isPublicPath(req.path, req.method)) return next();
 
-async function lookupApiKey(apiKey) {
-  // 先查缓存
-  const cached = keyCache.get(apiKey);
-  if (cached && Date.now() - cached.cached_at < CACHE_TTL) {
-    return cached;
+  extractUser(req);
+  if (!req.user) {
+    return res.status(401).json({ error: "Unauthorized", message: "请先登录" });
   }
-
-  // 查数据库
-  const pool = getPool();
-  const result = await pool.query(
-    `SELECT id, tenant_id, key_name, permissions, is_active, expires_at
-     FROM api_keys
-     WHERE api_key = $1 AND is_active = true
-     LIMIT 1`,
-    [apiKey]
-  );
-
-  if (result.rows.length === 0) return null;
-
-  const row = result.rows[0];
-
-  // 检查是否过期
-  if (row.expires_at && new Date(row.expires_at) < new Date()) {
-    return null;
-  }
-
-  const info = {
-    id: row.id,
-    tenant_id: row.tenant_id,
-    key_name: row.key_name,
-    permissions: row.permissions,
-    cached_at: Date.now(),
-  };
-
-  // 写入缓存
-  keyCache.set(apiKey, info);
-
-  // 异步更新 last_used_at（不阻塞请求）
-  pool.query(
-    "UPDATE api_keys SET last_used_at = NOW() WHERE id = $1",
-    [row.id]
-  ).catch(() => {});
-
-  return info;
-}
-
-/**
- * Express 中间件：验证 API Key
- * 用法：app.use(authMiddleware);
- */
-export async function authMiddleware(req, res, next) {
-  // 公开路径直接放行
-  if (isPublicPath(req.path, req.method)) {
-    return next();
-  }
-
-  // 读取 Authorization header
-  const authHeader = req.headers.authorization || "";
-
-  if (!authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      success: false,
-      error: "Missing or invalid Authorization header",
-      hint: "Use: Authorization: Bearer sk_xxx",
-    });
-  }
-
-  const apiKey = authHeader.slice(7); // 去掉 "Bearer " 前缀
-
-  if (!apiKey || apiKey.length < 10) {
-    return res.status(401).json({
-      success: false,
-      error: "Invalid API key format",
-    });
-  }
-
-  try {
-    const keyInfo = await lookupApiKey(apiKey);
-
-    if (!keyInfo) {
-      return res.status(403).json({
-        success: false,
-        error: "Invalid or expired API key",
-      });
-    }
-
-    // 挂载到 req 上，后续路由可以使用
-    req.tenantId = keyInfo.tenant_id;
-    req.apiKeyName = keyInfo.key_name;
-    req.apiPermissions = keyInfo.permissions;
-
-    next();
-  } catch (err) {
-    console.error("[auth] Error validating API key:", err.message);
-    return res.status(500).json({
-      success: false,
-      error: "Auth service error",
-    });
-  }
-}
-
-/**
- * 权限检查中间件工厂
- * 用法：app.use("/api/db/orders", requirePermission("read"));
- */
-export function requirePermission(permission) {
-  return (req, res, next) => {
-    // 如果没有经过 auth（公开路径），直接放行
-    if (!req.apiPermissions) return next();
-
-    const perms = Array.isArray(req.apiPermissions)
-      ? req.apiPermissions
-      : [];
-
-    if (perms.includes("admin") || perms.includes(permission)) {
-      return next();
-    }
-
-    return res.status(403).json({
-      success: false,
-      error: `Insufficient permissions. Required: ${permission}`,
-    });
-  };
+  next();
 }
 
 export default authMiddleware;

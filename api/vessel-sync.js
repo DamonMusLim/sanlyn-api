@@ -130,7 +130,7 @@ export default async function handler(req, res) {
     // 4portun tracking → JDY 海运计划表，用于触发通知（如开港通知车队）
     // 注意：船公司(_widget_1765450157283) 和 航次(_widget_1765450157284) 由货代报价带入，不覆盖
     const JDY_API = "https://api.jiandaoyun.com/api/v5";
-    const JDY_TOKEN = process.env.JDY_TOKEN || "qtgTVmm3322lgmYYiSCRhbC2oUNR0CNU";
+    const JDY_TOKEN = process.env.JDY_TOKEN || "jgAipmndimpj0endT0wStd6gpspAQpAd";
     const JDY_APP_ID = "689cb08a93c073210bfc772b";
     const JDY_ENTRY_ID = "6912a100e6f679d3089bd434"; // 海运计划表
     // Widget IDs — S83 新建的 4portun 专用字段

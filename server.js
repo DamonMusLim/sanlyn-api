@@ -2,14 +2,12 @@
 // server.js — Express adapter for Alibaba Cloud FC
 // Wraps Vercel serverless handlers into Express routes
 // Deploy: FC HTTP Trigger or standalone Node.js
-// ══════════════════════════════════════════════════════════
 import "dotenv/config";
 import express from "express";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 
 const app = express();
-
 // ── CORS middleware (replace Vercel headers config) ──
 const ALLOWED_ORIGINS = [
   "https://ai.sanlyn.cn",
@@ -18,7 +16,6 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:3000",
 ];
-
 app.use((req, res, next) => {
   const origin = req.headers.origin || "";
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -29,21 +26,18 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") return res.status(200).end();
   next();
 });
-
 // ── Body parsing (for non-multipart routes) ──
-app.use((req, res, next) => {
-  // Skip body parsing for oss-upload (formidable handles it)
-  if (req.path === "/api/oss-upload") return next();
-  next();
-});
+  // Skip body parsing for multipart endpoints (formidable handles it)
+  if (req.path === "/api/oss-upload" || req.path === "/api/ocr-booking") return next();
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// ── API Key 鉴权 ──
-// 在所有 /api/* 路由之前验证 Authorization: Bearer sk_xxx
+// ── JWT 鉴权中间件 ──
+// 在所有 /api/* 路由之前验证 Authorization: Bearer <token>
 // 公开路径（登录、健康检查）自动跳过
 import { authMiddleware } from "./api/auth.js";
 app.use(authMiddleware);
+
 
 // ── Vercel handler adapter ──
 // Vercel handlers expect (req, res) with req.query populated
@@ -62,21 +56,24 @@ function mount(route, handlerModule) {
     }
   });
 }
-
-// ══════════════════════════════════════════════════════════
 // Route Registration — mirrors Vercel's file-based routing
-// ══════════════════════════════════════════════════════════
-
 // ── /api/db/* endpoints ──
+mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
+mount("/api/db/admin",             () => import("./api/db/admin.js"));
 mount("/api/db/accounts",          () => import("./api/db/accounts.js"));
 mount("/api/db/analytics",         () => import("./api/db/analytics.js"));
 mount("/api/db/audit-log",         () => import("./api/db/audit-log.js"));
+mount("/api/db/bl-control",        () => import("./api/db/bl-control.js"));
 mount("/api/db/company",           () => import("./api/db/company.js"));
 mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));
+mount("/api/db/import-customers",  () => import("./api/db/import-customers.js"));
+mount("/api/db/customer-stamps",   () => import("./api/db/customer-stamps.js"));
 mount("/api/db/customs",           () => import("./api/db/customs.js"));
 mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
 mount("/api/db/documents",         () => import("./api/db/documents.js"));
+mount("/api/db/factory-submit",    () => import("./api/db/factory-submit.js"));
+mount("/api/db/forward-doc",       () => import("./api/db/forward-doc.js"));
 mount("/api/db/finance-records",   () => import("./api/db/finance-records.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
@@ -88,19 +85,28 @@ mount("/api/db/stamp-permissions", () => import("./api/db/stamp-permissions.js")
 mount("/api/db/tenants",           () => import("./api/db/tenants.js"));
 mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
 mount("/api/db/vault-read",        () => import("./api/db/vault-read.js"));
-
+mount("/api/db/diag-shipping",     () => import("./api/db/diag-shipping.js"));
+mount("/api/db/fix-co-account",    () => import("./api/db/fix-co-account.js"));
+mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
+mount("/api/db/seed-huihe-charges",   () => import("./api/db/seed-huihe-charges.js"));
+mount("/api/db/seed-oss-local-charges",() => import("./api/db/seed-oss-local-charges.js"));
+mount("/api/db/fix-product-prices",() => import("./api/db/fix-product-prices.js"));
+mount("/api/db/fix-groups",        () => import("./api/db/fix-groups.js"));
+mount("/api/db/migrate-products",  () => import("./api/db/migrate-products.js"));
+mount("/api/db/migrate-orders",    () => import("./api/db/migrate-orders.js"));
+mount("/api/db/migrate-orders-v2", () => import("./api/db/migrate-orders-v2.js"));
+mount("/api/db/order-create-v2",   () => import("./api/db/order-create-v2.js"));
+mount("/api/db/sync-products-oss", () => import("./api/db/sync-products-to-oss.js"));
 // ── /api/jdy/* endpoints ──
-mount("/api/jdy/customer-addresses", () => import("./api/jdy/customer-addresses.js"));
+mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
+mount("/api/jdy/customer-full-sync", () => import("./api/jdy/customer-full-sync.js"));
 mount("/api/jdy/docs-sync",          () => import("./api/jdy/docs-sync.js"));
 mount("/api/jdy/order-create",       () => import("./api/jdy/order-create.js"));
 mount("/api/jdy/pi-sync",            () => import("./api/jdy/pi-sync.js"));
-
 // ── /api/stamp/* ──
 mount("/api/stamp/apply", () => import("./api/stamp/apply.js"));
-
 // ── /api/convert/* ──
 mount("/api/convert/excel-to-pdf", () => import("./api/convert/excel-to-pdf.js"));
-
 // ── /api/* top-level endpoints ──
 mount("/api/doc-convert-jdy", () => import("./api/doc-convert-jdy.js"));
 mount("/api/doc-convert",     () => import("./api/doc-convert.js"));
@@ -123,20 +129,15 @@ mount("/api/vessel-map",      () => import("./api/vessel-map.js"));
 mount("/api/vessel-subscribe",() => import("./api/vessel-subscribe.js"));
 mount("/api/vessel-sync",     () => import("./api/vessel-sync.js"));
 mount("/api/vessel-track",    () => import("./api/vessel-track.js"));
-
 // ── Static files (driver-evidence page) ──
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use("/public", express.static(join(__dirname, "public")));
-
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
 app.get("/health", (req, res) => res.json({ status: "ok" }));
-
 // ── Start server (for local/FC deployment) ──
 const PORT = process.env.PORT || 9000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[sanlyn-api] listening on :${PORT}`);
-});
-
 export default app;
