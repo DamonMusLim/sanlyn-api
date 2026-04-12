@@ -6,6 +6,7 @@ import "dotenv/config";
 import express from "express";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import { authMiddleware } from "./api/auth.js";
 
 const app = express();
 // ── CORS middleware (replace Vercel headers config) ──
@@ -27,15 +28,16 @@ app.use((req, res, next) => {
   next();
 });
 // ── Body parsing (for non-multipart routes) ──
+app.use((req, res, next) => {
   // Skip body parsing for multipart endpoints (formidable handles it)
   if (req.path === "/api/oss-upload" || req.path === "/api/ocr-booking") return next();
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+  express.json({ limit: "10mb" })(req, res, (err) => {
+    if (err) return next(err);
+    express.urlencoded({ extended: true, limit: "10mb" })(req, res, next);
+  });
+});
 
 // ── JWT 鉴权中间件 ──
-// 在所有 /api/* 路由之前验证 Authorization: Bearer <token>
-// 公开路径（登录、健康检查）自动跳过
-import { authMiddleware } from "./api/auth.js";
 app.use(authMiddleware);
 
 
