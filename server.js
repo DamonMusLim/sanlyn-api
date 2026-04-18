@@ -128,6 +128,7 @@ mount("/api/jdy-write",       () => import("./api/jdy-write.js"));
 mount("/api/ocr-license",     () => import("./api/ocr-license.js"));
 mount("/api/ocr-review",      () => import("./api/ocr-review.js"));
 mount("/api/oss-upload",      () => import("./api/oss-upload.js"));
+mount("/api/proxy-file",      () => import("./api/proxy-file.js"));
 mount("/api/send-email",      () => import("./api/send-email.js"));
 mount("/api/setup-finance",   () => import("./api/setup-finance.js"));
 mount("/api/vessel-callback", () => import("./api/vessel-callback.js"));
