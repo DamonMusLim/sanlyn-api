@@ -1,7 +1,9 @@
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();

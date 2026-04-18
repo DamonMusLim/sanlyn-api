@@ -7,6 +7,7 @@ import express from "express";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { authMiddleware } from "./api/auth.js";
+import { portalGate }    from "./api/portal/gate.js";
 
 const app = express();
 // ── CORS middleware (replace Vercel headers config) ──
@@ -39,6 +40,8 @@ app.use((req, res, next) => {
 
 // ── JWT 鉴权中间件 ──
 app.use(authMiddleware);
+// ── Portal 专用鉴权网关（/api/portal 路由组，Phase 3 Fix1）──
+app.use("/api/portal", portalGate);
 
 
 // ── Vercel handler adapter ──
@@ -80,6 +83,7 @@ mount("/api/db/finance-records",   () => import("./api/db/finance-records.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
+mount("/api/db/finance_payments",  () => import("./api/db/finance_payments.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));
 mount("/api/db/raw-patch",         () => import("./api/db/raw-patch.js"));
 mount("/api/db/shipping",          () => import("./api/db/shipping.js"));
@@ -88,7 +92,6 @@ mount("/api/db/tenants",           () => import("./api/db/tenants.js"));
 mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
 mount("/api/db/vault-read",        () => import("./api/db/vault-read.js"));
 mount("/api/db/diag-shipping",     () => import("./api/db/diag-shipping.js"));
-mount("/api/db/import-shipping-plans", () => import("./api/db/import-shipping-plans.js"));
 mount("/api/db/fix-co-account",    () => import("./api/db/fix-co-account.js"));
 mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
 mount("/api/db/seed-huihe-charges",   () => import("./api/db/seed-huihe-charges.js"));
@@ -132,6 +135,14 @@ mount("/api/vessel-map",      () => import("./api/vessel-map.js"));
 mount("/api/vessel-subscribe",() => import("./api/vessel-subscribe.js"));
 mount("/api/vessel-sync",     () => import("./api/vessel-sync.js"));
 mount("/api/vessel-track",    () => import("./api/vessel-track.js"));
+mount("/api/db/m3-missing",   () => import("./api/db/m3-missing.js"));
+mount("/api/m3/run-merge",    () => import("./api/m3/run-merge.js"));
+mount("/api/m3/scan-missing", () => import("./api/m3/scan-missing.js"));
+// ── Portal 读接口（Phase 2 + Phase 3 登录）──────────────────
+mount("/api/portal/login",     () => import("./api/portal/login.js"));
+mount("/api/portal/shipping",  () => import("./api/portal/shipping.js"));
+mount("/api/portal/documents", () => import("./api/portal/documents.js"));
+mount("/api/portal/missing",   () => import("./api/portal/missing.js"));
 // ── Static files (driver-evidence page) ──
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));

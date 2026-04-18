@@ -4,11 +4,15 @@
 // 返回 text/html 打印就绪页面（报关资料清单 + 单据状态）
 
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).end();
+
+  // S17.3 P0: 报关资料需要登录，防止知道 shipment_no 即可下载
+  if (!requireAuth(req, res)) return;
 
   const { contract, shipment } = req.query;
   if (!contract && !shipment) return res.status(400).send("<h1>Missing contract or shipment param</h1>");

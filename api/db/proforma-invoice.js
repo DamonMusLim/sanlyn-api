@@ -7,6 +7,7 @@
 // Returns text/html  — browser Ctrl+P or Save as PDF
 
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 
 // ── Company configs (add more companies here as needed) ──
 var COMPANY_CONFIGS = {
@@ -78,9 +79,11 @@ function esc(s) {
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if (req.method !== "GET") return res.status(405).end();
 
-  // ── Token auth ──
+  // ── Secondary token auth (DOCS_SECRET — for external share links) ──
+  // S18.1 note: JWT check above is primary; DOCS_SECRET is an additional optional layer.
   var DOC_TOKEN = process.env.DOCS_SECRET || "";
   var reqToken = req.query.token || req.headers["x-docs-token"] || "";
   if(DOC_TOKEN && reqToken !== DOC_TOKEN){

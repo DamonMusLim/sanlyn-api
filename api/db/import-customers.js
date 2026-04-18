@@ -4,7 +4,7 @@
 //                          — 批量 upsert 任意公司数组（可重复执行）
 import { getPool, setCors } from "../db.js";
 
-const SEED_SECRET = process.env.IMPORT_SECRET || "sanlyn2026import";
+const SEED_SECRET = process.env.IMPORT_SECRET;
 
 const SEED_COMPANIES = [
 {
@@ -950,9 +950,9 @@ export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  const secret = req.query.secret || req.headers["x-import-secret"];
+  const secret = req.headers["x-import-secret"];
   if (secret !== SEED_SECRET) {
-    return res.status(401).json({ error: "Unauthorized. Pass ?secret=sanlyn2026import" });
+    return res.status(401).json({ error: "Unauthorized. Provide secret via X-Import-Secret header." });
   }
 
   const pool = await getPool();

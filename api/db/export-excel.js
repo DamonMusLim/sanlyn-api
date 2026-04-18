@@ -8,6 +8,7 @@
 // GET ?type=finance_shipments         → 海运费用明细 Excel
 
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -99,6 +100,8 @@ export default async function handler(req, res) {
     //  报关资料清单 Excel
     // ════════════════════════════════
     if (type === "customs") {
+      // S17.3 P0: 报关 Excel 需要登录，防止裸查
+      if (!requireAuth(req, res)) return;
       const key = shipment || contract;
       let sql = "SELECT * FROM customs_data WHERE 1=1";
       const vals = [];

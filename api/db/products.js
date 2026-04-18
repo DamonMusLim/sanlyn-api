@@ -39,6 +39,34 @@ export default async function handler(req, res) {
     }
   }
 
+  // PATCH = update HS Code / declaration fields on a product by id
+  if (req.method === "PATCH") {
+    try {
+      if (!req.user || !["admin", "logistics"].includes(req.user.role)) {
+        return res.status(403).json({ error: "Forbidden: admin or logistics only" });
+      }
+      const pool = getPool();
+      const id = req.params?.id || req.query?.id || req.body?.id;
+      if (!id) return res.status(400).json({ error: "id required" });
+      const { hsCode, declarationName, declarationElements, declarationPrice, blDescription } = req.body;
+      const patch = {};
+      if (hsCode             != null) patch.hsCode             = hsCode;
+      if (declarationName    != null) patch.declarationName    = declarationName;
+      if (declarationElements!= null) patch.declarationElements= declarationElements;
+      if (declarationPrice   != null) patch.declarationPrice   = declarationPrice;
+      if (blDescription      != null) patch.blDescription      = blDescription;
+      if (Object.keys(patch).length === 0) return res.status(400).json({ error: "no fields to patch" });
+      const r = await pool.query(
+        `UPDATE products SET raw = COALESCE(raw,'{}') || $1::jsonb, updated_at = NOW() WHERE id = $2 RETURNING id`,
+        [JSON.stringify(patch), id]
+      );
+      if (r.rowCount === 0) return res.status(404).json({ error: "product not found" });
+      return res.status(200).json({ success: true, id });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {

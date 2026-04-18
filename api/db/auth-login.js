@@ -3,6 +3,21 @@
 // GET with valid token → { user } (token verify/refresh)
 import { getPool, setCors } from "../db.js";
 import { generateToken, extractUser } from "../auth.js";
+import bcrypt from "bcryptjs";
+
+// ── compat: supports both legacy plaintext and bcrypt hashed passwords ──
+// If stored value starts with "$2b$" it is a bcrypt hash → use bcrypt.compare
+// Otherwise fall back to plain equality and auto-upgrade the stored value on success
+async function verifyPassword(pool, userId, inputPlain, storedValue) {
+  if (storedValue && (storedValue.startsWith("$2b$") || storedValue.startsWith("$2a$"))) {
+    return bcrypt.compare(inputPlain, storedValue);
+  }
+  // plaintext path — also upgrades on first successful login
+  if (inputPlain !== storedValue) return false;
+  const hash = await bcrypt.hash(inputPlain, 12);
+  await pool.query("UPDATE accounts SET password = $1 WHERE id = $2", [hash, userId]);
+  return true;
+}
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
@@ -53,7 +68,8 @@ export default async function handler(req, res) {
     if (!result.rows[0]) return res.status(401).json({ error: "账号不存在" });
     var u = result.rows[0];
 
-    if (u.password !== password) return res.status(401).json({ error: "密码错误" });
+    const passwordOk = await verifyPassword(pool, u.id, password, u.password);
+    if (!passwordOk) return res.status(401).json({ error: "密码错误" });
 
     var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
 

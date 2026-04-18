@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { registerFiles } from "./m3-writer.js"; // ★ M3 Phase 1
 const TABLES = ["orders","finance_payments","shipping_plans","accounts","customs_data","products"];
 
 // ─── JDY 订单主表 widget ID → 业务字段（从表单数据结构确认） ───
@@ -240,8 +241,9 @@ export default async function handler(req, res) {
     const { table, record: rawRecord } = req.body;
     if (!TABLES.includes(table)) return res.status(400).json({ success: false, error: "Invalid table" });
     let sql, vals;
+    let m3FileMeta = null; // ★ M3 Phase 1: populated in customs_data branch
     if (table === "accounts") {
-      sql = `INSERT INTO accounts (username,password,role,company,supplier_role,permissions,department,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) ON CONFLICT (username) DO UPDATE SET password=$2,role=$3,company=$4,supplier_role=$5,permissions=$6,department=$7,raw=$8,updated_at=NOW() RETURNING *`;
+      sql = `INSERT INTO accounts (username,password,role,company,supplier_role,permissions,department,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) ON CONFLICT (username) DO UPDATE SET password=CASE WHEN accounts.password LIKE '$2b$%' OR accounts.password LIKE '$2a$%' THEN accounts.password ELSE EXCLUDED.password END,role=$3,company=$4,supplier_role=$5,permissions=$6,department=$7,raw=$8,updated_at=NOW() RETURNING *`;
       vals = [rawRecord.username,rawRecord.password,rawRecord.role,rawRecord.company,rawRecord.supplierRole||rawRecord.supplier_role,rawRecord.permissions,rawRecord.department,JSON.stringify(rawRecord)];
     } else if (table === "orders") {
       const hasWidgets = Object.keys(rawRecord).some(k => k.startsWith("_widget_"));
@@ -311,6 +313,13 @@ export default async function handler(req, res) {
         JSON.stringify(record.loadingDetails || []),
         JSON.stringify(record),
       ];
+      // ★ M3 Phase 1: capture for post-upsert file registration (接入点 A)
+      m3FileMeta = {
+        shipment_no: record.shipmentNo || record.shipment_no || null,
+        contract_no: contractNo,
+        record,
+        upload_by: req.body?.operator || req.body?.user || "system",
+      };
     } else if (table === "products") {
       // ★ S72: products — fixed: moved inside if-else chain, added image_url ($16) ★
       const record = rawRecord;
@@ -368,6 +377,21 @@ export default async function handler(req, res) {
       ];
     }
     const result = await pool.query(sql, vals);
+
+    // ★ M3 Phase 1: register files after customs_data upsert (接入点 A)
+    // 失败不阻塞主流程，失败格式见 M3_phase1_plan_v2.md §九.1
+    if (m3FileMeta) {
+      try {
+        await registerFiles({ ...m3FileMeta, existing_row: null, pool });
+      } catch (m3Err) {
+        console.error("[M3_WRITE_FAIL]", JSON.stringify({
+          stage: "upsert_customs_hook", shipment_no: m3FileMeta.shipment_no || "unknown",
+          file_type: "customs_data", source_engine: "system",
+          error: m3Err.message || String(m3Err), ts: new Date().toISOString(),
+        }));
+      }
+    }
+
     return res.status(200).json({ success: true, data: result.rows[0] });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 }

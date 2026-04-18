@@ -3,7 +3,8 @@
 // Uses HS256 with built-in crypto (no external deps)
 import crypto from "crypto";
 
-var SECRET = process.env.JWT_SECRET || "sanlyn-os-2026-secret-key";
+var SECRET = process.env.JWT_SECRET;
+if (!SECRET) throw new Error("JWT_SECRET environment variable is required but not set");
 var TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
 
 // ── Base64url encode/decode ──
@@ -82,26 +83,32 @@ export function requireRole(req, res, roles) {
   return true;
 }
 
-// ── 不需要鉴权的路径 ──
+// ── 完全公开路径（无需任何 token）──
 const PUBLIC_PATHS = [
   "/",
   "/health",
-  "/api/db/accounts",     // 登录接口
-  "/api/db/auth-login",   // 登录接口
+  "/api/db/accounts",     // 主应用登录接口
+  "/api/db/auth-login",   // 主应用登录接口
+  "/api/portal/login",    // Portal 登录（portal token 在此签发，登录前无 token）
 ];
 
-function isPublicPath(path, method) {
-  if (method === "OPTIONS") return true;
-  if (PUBLIC_PATHS.includes(path)) return true;
-  return false;
-}
+// Portal 路由独立 auth 体系（HMAC token）
+// 不参与内部 JWT 校验；具体校验由 portalGate 中间件负责
+// 注意：仅 /api/portal/login 在 PUBLIC_PATHS；其余 portal 路由在此前缀下直通，由 portalGate 拦截
+const PORTAL_ROUTES_PREFIX = "/api/portal/";
 
 // ── Express 全局鉴权中间件 ──
-// 在所有 /api/* 路由之前验证 JWT token
-// 公开路径自动跳过
+// 职责：内部 JWT 校验。Portal 路径识别后直通（交由 portalGate）。
 export function authMiddleware(req, res, next) {
-  if (isPublicPath(req.path, req.method)) return next();
+  if (req.method === "OPTIONS") return next();
 
+  // 完全公开路径：无需任何 token
+  if (PUBLIC_PATHS.includes(req.path)) return next();
+
+  // Portal 路由体系：使用独立 HMAC token，由 portalGate 负责校验，跳过内部 JWT
+  if (req.path.startsWith(PORTAL_ROUTES_PREFIX)) return next();
+
+  // 内部路由：必须持有有效内部 JWT
   extractUser(req);
   if (!req.user) {
     return res.status(401).json({ error: "Unauthorized", message: "请先登录" });

@@ -1,11 +1,12 @@
+require('dotenv').config();
 const {Client}=require('pg');
 const fs=require('fs');
 const client=new Client({
-  host:'pgm-j6c92e9e7xe2qvingo.pg.rds.aliyuncs.com',
+  host:process.env.PG_HOST||'pgm-j6c92e9e7xe2qvingo.pg.rds.aliyuncs.com',
   port:5432,
-  database:'sanlyn_db',
-  user:'sanlyn_admin',
-  password:'SanlynRDS2026!',
+  database:process.env.PG_DB||'sanlyn_db',
+  user:process.env.PG_USER||'sanlyn_admin',
+  password:process.env.PG_PASSWORD,
   ssl:false
 });
 const cols=[

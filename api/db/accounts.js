@@ -1,4 +1,16 @@
 import { getPool, setCors } from "../db.js";
+import bcrypt from "bcryptjs";
+
+async function verifyPassword(pool, userId, inputPlain, storedValue) {
+  if (storedValue && (storedValue.startsWith("$2b$") || storedValue.startsWith("$2a$"))) {
+    return bcrypt.compare(inputPlain, storedValue);
+  }
+  if (inputPlain !== storedValue) return false;
+  const hash = await bcrypt.hash(inputPlain, 12);
+  await pool.query("UPDATE accounts SET password = $1 WHERE id = $2", [hash, userId]);
+  return true;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -14,14 +26,19 @@ export default async function handler(req, res) {
       params.push(parseInt(limit));
       query += ` ORDER BY a.created_at DESC LIMIT $${params.length}`;
       const result = await pool.query(query, params);
-      return res.status(200).json({ success: true, data: result.rows, count: result.rowCount });
+      const data = result.rows.map(({ password: _pw, ...rest }) => rest);
+      return res.status(200).json({ success: true, data, count: result.rowCount });
     }
     if (req.method === "POST") {
       const { username, password } = req.body || {};
       if (!username || !password) return res.status(400).json({ success: false, error: "Missing credentials" });
-      const result = await pool.query(joinSQL + " WHERE a.username = $1 AND a.password = $2 LIMIT 1", [username, password]);
+      const result = await pool.query(joinSQL + " WHERE a.username = $1 LIMIT 1", [username]);
       if (result.rowCount === 0) return res.status(401).json({ success: false, error: "Invalid credentials" });
-      return res.status(200).json({ success: true, data: result.rows[0] });
+      const row = result.rows[0];
+      const ok = await verifyPassword(pool, row.id, password, row.password);
+      if (!ok) return res.status(401).json({ success: false, error: "Invalid credentials" });
+      const { password: _pw, ...safeRow } = row;
+      return res.status(200).json({ success: true, data: safeRow });
     }
     return res.status(405).json({ error: "Method not allowed" });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }

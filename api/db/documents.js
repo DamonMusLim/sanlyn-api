@@ -13,6 +13,7 @@
 // All return text/html — English for foreign clients, bilingual for internal
 
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 
 var COMPANIES = {
   petbaby: {
@@ -124,6 +125,7 @@ function getTotal(prods,order){return prods.reduce(function(s,p){var sub=Number(
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if(req.method==="OPTIONS") return res.status(200).end();
+  if(!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if(req.method!=="GET") return res.status(405).end();
 
   // ── Token auth ── must pass ?token=DOCS_SECRET or X-Docs-Token header
@@ -133,13 +135,29 @@ export default async function handler(req, res) {
     return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid access token.</p>");
   }
 
-  var{type,id,company:qco,print:ap}=req.query;
+  var{type,id,company:qco,print:ap,contract_no,bl_no,limit}=req.query;
+
+  // ── List mode: no type/id → return documents table rows ──
+  if(!type && !id){
+    try{
+      var pool2=getPool();
+      var q2="SELECT * FROM documents", p2=[], w2=[];
+      if(contract_no){ p2.push(contract_no); w2.push("contract_no=$"+p2.length); }
+      if(bl_no){       p2.push(bl_no);       w2.push("bl_no=$"+p2.length); }
+      if(w2.length) q2+=" WHERE "+w2.join(" AND ");
+      q2+=" ORDER BY created_at DESC";
+      p2.push(parseInt(limit)||1000); q2+=" LIMIT $"+p2.length;
+      var r2=await pool2.query(q2,p2);
+      return res.json({success:true,data:r2.rows,count:r2.rowCount});
+    }catch(e2){ return res.status(500).json({error:e2.message}); }
+  }
+
   if(!type||!id) return res.status(400).send("<h1>Missing type or id</h1>");
 
   try {
     var pool=getPool(), html="";
 
-    if(["sc","iv","pl","po"].includes(type)){
+    if(["sc","iv","pl","po","pi"].includes(type)){
       var oR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1",[id]);
       if(!oR.rows.length) return res.status(404).send("<h1>Order not found: "+esc(id)+"</h1>");
       var o=oR.rows[0], raw=o.raw||{};
@@ -215,6 +233,23 @@ export default async function handler(req, res) {
           <tbody>${productRows(prods,colsPL,curr)}
           <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
           </tbody></table>${sigBlock()}`,ap);
+      }
+
+      if(type==="pi"){
+        var noPI="PI-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
+        var colsPI=[
+          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"品名及规格 Description &amp; Size"},
+          {k:"qty",al:"center",w:"70px",lbl:"数量 QTY"},
+          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"单价 Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"金额 Amount ("+curr+")"},
+        ];
+        html=wrap("Proforma Invoice — "+noPI,`
+          ${docHdr(cfg,"形式发票","PROFORMA INVOICE")}
+          ${buyerBlock(cust,caddr,ctel,noPI,"PI No.",ordNo,date,curr)}
+          ${portBar(pol,pod,inco)}
+          <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
+          <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
+          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
       }
 
       if(type==="po"){

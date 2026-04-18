@@ -2,11 +2,14 @@
 // GET: list records (with filters: direction, category, status, counterparty_code, shipment_no, date range)
 // POST: create or update a finance record
 
+import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
 
   const { Pool } = require("pg");
   const pool = new Pool({

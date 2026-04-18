@@ -11,6 +11,7 @@
         "@alicloud/imm20200930": "^4.6.1",
         "@alicloud/openapi-client": "^0.4.15",
         "ali-oss": "^6.20.0",
+        "bcryptjs": "^2.4.3",
         "dotenv": "^16.4.5",
         "express": "^4.21.0",
         "formdata-node": "^6.0.3",

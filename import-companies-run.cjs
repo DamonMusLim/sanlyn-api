@@ -1,10 +1,11 @@
+require('dotenv').config();
 const {Client}=require('pg');
 const fs=require('fs');
 const data=JSON.parse(fs.readFileSync('/Users/apple/Desktop/sanlyn-api-dev/companies_import.json'));
 const client=new Client({
-  host:'pgm-j6c92e9e7xe2qvingo.pg.rds.aliyuncs.com',
-  port:5432,database:'sanlyn_db',
-  user:'sanlyn_admin',password:'SanlynRDS2026!',ssl:false
+  host:process.env.PG_HOST||'pgm-j6c92e9e7xe2qvingo.pg.rds.aliyuncs.com',
+  port:5432,database:process.env.PG_DB||'sanlyn_db',
+  user:process.env.PG_USER||'sanlyn_admin',password:process.env.PG_PASSWORD,ssl:false
 });
 client.connect().then(async()=>{
   // Add missing columns to customers table

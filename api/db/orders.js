@@ -1,11 +1,21 @@
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
-    const { customer, status, limit = 500, brands, factory, company_code, company_codes } = req.query;
+    let { customer, status, limit = 500, brands, factory, company_code, company_codes } = req.query;
+    // Tenant scoping: non-admin users can only see their own company's orders
+    if (req.user && req.user.role !== "admin") {
+      const userCodes = req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : null);
+      if (userCodes && userCodes.length > 0) {
+        company_codes = JSON.stringify(userCodes);
+        company_code  = undefined;
+      }
+    }
     let query = "SELECT * FROM orders", params = [], conds = [];
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`status = $${params.length}`); }

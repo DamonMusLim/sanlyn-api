@@ -10,7 +10,7 @@ function setCors(res) {
 }
 
 async function recognizeLicense(ossUrl) {
-  const apiKey = process.env.QWEN_API_KEY || "sk-465c7b0cd9414362912e58fdb7762439";
+  const apiKey = process.env.QWEN_API_KEY;
   const res = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
     method: "POST",
     headers: {

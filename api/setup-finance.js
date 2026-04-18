@@ -1,7 +1,7 @@
 // api/setup-finance.js — One-time setup to create finance_records table
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  if (req.query.key !== "sanlyn2026") {
+  if (req.query.key !== process.env.CRON_SECRET) {
     return res.status(403).json({ error: "Forbidden" });
   }
 

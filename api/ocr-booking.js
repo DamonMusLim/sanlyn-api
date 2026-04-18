@@ -6,6 +6,8 @@ import OSS from "ali-oss";
 import { IncomingForm } from "formidable";
 import fs from "fs";
 import { getPool } from "./db.js";
+import { registerOcrResult } from "./db/m3-writer.js"; // ★ M3 Phase 1
+import { runMerge } from "./db/m3-merge.js"; // ★ M3 Phase 2
 
 export const config = { api: { bodyParser: false } };
 
@@ -50,7 +52,7 @@ async function uploadToOSS(buffer, filename) {
 
 // ── Qwen VL extraction ──
 async function extractBookingFields(ossUrl) {
-  const apiKey = process.env.QWEN_API_KEY || "sk-465c7b0cd9414362912e58fdb7762439";
+  const apiKey = process.env.QWEN_API_KEY;
   const resp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -352,6 +354,60 @@ export default async function handler(req, res) {
     // Save to shipping_plans DB (always — idempotent via ON CONFLICT _id)
     const savedPlan = await saveShippingPlan(extracted, matchedOrders);
 
+    // ★ M3 Phase 1: register OCR result into M3 tables (接入点 B)
+    // 失败不阻塞主流程，失败格式见 M3_phase1_plan_v2.md §九.1
+    let m3Result = null;
+    try {
+      const pool = getPool();
+      // 推断 shipment_no：优先用 bookingNo，其次从 matchedOrders 取
+      const shipmentNo = extracted?.bookingNo
+        || matchedOrders?.[0]?.orderNo
+        || null;
+      const fname = fileObj
+        ? (fileObj.originalFilename || "booking_note.pdf")
+        : "booking_note.pdf";
+      m3Result = await registerOcrResult({
+        ossUrl,
+        filename:     fname,
+        shipment_no:  shipmentNo,
+        extracted,
+        triggered_by: "upload",
+        pool,
+      });
+    } catch (m3Err) {
+      console.error("[M3_WRITE_FAIL]", JSON.stringify({
+        stage:         "ocr_booking_hook",
+        shipment_no:   extracted?.bookingNo || "unknown",
+        file_type:     "booking_note",
+        source_engine: "qwen_vl",
+        error:         m3Err.message || String(m3Err),
+        ts:            new Date().toISOString(),
+      }));
+    }
+
+    // ★ M3 Phase 2: 自动触发 merge（fire-and-forget，不阻塞 HTTP 响应）
+    if (m3Result && m3Result.file_id) {
+      const mergeShipmentNo = extracted?.bookingNo
+        || matchedOrders?.[0]?.orderNo
+        || null;
+      if (mergeShipmentNo) {
+        const pool2 = getPool();
+        // setImmediate 保证在当前 event-loop tick 完成后才运行
+        setImmediate(() => {
+          runMerge({ shipment_no: mergeShipmentNo, pool: pool2 }).catch(mergeErr => {
+            console.error("[M3_WRITE_FAIL]", JSON.stringify({
+              stage:         "ocr_booking_auto_merge",
+              shipment_no:   mergeShipmentNo,
+              file_type:     "booking_note",
+              source_engine: "qwen_vl",
+              error:         mergeErr.message || String(mergeErr),
+              ts:            new Date().toISOString(),
+            }));
+          });
+        });
+      }
+    }
+
     return res.status(200).json({
       success: true,
       ossUrl,
@@ -359,6 +415,7 @@ export default async function handler(req, res) {
       matchedOrders,
       matchCount: matchedOrders.length,
       savedPlan,
+      m3: m3Result ? { file_id: m3Result.file_id, task_id: m3Result.task_id, result_count: m3Result.result_count } : null,
     });
   } catch (err) {
     console.error("[ocr-booking]", err);
