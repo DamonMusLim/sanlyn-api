@@ -140,7 +140,20 @@ function sigBlock(){return`<div class="signature-grid"><div class="sig-box"><spa
 
 function productRows(prods,cols){
   if(!prods.length)return'<tr><td>01</td><td colspan="'+cols.length+'" style="color:#999;font-style:italic">— Line items will auto-populate from order —</td></tr>';
-  return prods.map(function(p,i){return'<tr><td>'+String(i+1).padStart(2,"0")+'</td>'+cols.map(function(c){var v=c.fn?c.fn(p):(p[c.k]||"-");return'<td class="'+(c.al==="right"?"text-right":"")+'">'+esc(String(v))+'</td>';}).join("")+'</tr>';}).join("");
+  var totalCols=cols.length+1; // +1 for NO.
+  var lastGroup=""; var idx=0; var out=[];
+  prods.forEach(function(p){
+    // Emit a group header row when the order group changes (multi-order B/L merge).
+    var grp=p._groupKey||"";
+    if(grp && grp!==lastGroup){
+      var hdr="订单 "+(p._customerPO||"")+(p._containerNo?" · "+p._containerNo:"")+(p._contractNo?" · "+p._contractNo:"");
+      out.push('<tr class="group-header" style="background:#f0f4ff"><td colspan="'+totalCols+'" style="font-weight:700;color:#1e40af;padding:6px 8px;font-size:11px;letter-spacing:.02em">'+esc(hdr)+'</td></tr>');
+      lastGroup=grp;
+    }
+    idx++;
+    out.push('<tr><td>'+String(idx).padStart(2,"0")+'</td>'+cols.map(function(c){var v=c.fn?c.fn(p):(p[c.k]||"-");return'<td class="'+(c.al==="right"?"text-right":"")+'">'+esc(String(v))+'</td>';}).join("")+'</tr>');
+  });
+  return out.join("");
 }
 
 function getProds(raw){return Array.isArray(raw.products)?raw.products:Array.isArray(raw.items)?raw.items:[];}
@@ -198,28 +211,48 @@ export default async function handler(req, res) {
       var pod=pick(raw.destination,raw.pod,raw.destinationPort,"-");
       var inco=pick(raw.tradeTerms,raw.incoterms,"FOB");
       var prods=getProds(raw);
+      // Tag primary-order products with group metadata (container / customer PO / contract).
+      // Used by productRows() to emit a section header when multiple orders are merged.
+      var _primaryContainer=pick(raw.containerNo,"");
+      var _primaryCno=pick(o.contract_no,o.order_no,id);
+      var _primaryPO=pick(raw.customerPO,o.customer_po,o.order_no);
+      prods=prods.map(function(p){return Object.assign({},p,{_groupKey:_primaryCno,_containerNo:_primaryContainer,_customerPO:_primaryPO,_contractNo:_primaryCno});});
       // ── Multi-order B/L merge: when ?ids=CN1,CN2,... passed (SC/IV/PL only, NOT PI) ──
       // Load sibling orders (same B/L, different contracts) and merge their products into
       // ONE combined trade doc — required for customs declaration on grouped shipments.
       var _mergedCnos=[cno], _mergedPOs=[ordNo];
+      var _hasMultiOrder=false;
       if(ids && type!=="pi"){
         var idList=String(ids).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
         if(idList.length){
           var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
-          sibR.rows.forEach(function(sib){
+          // Sort sibling orders by customer_po for stable output (XM-254 → 256 → 262 → 263 etc.)
+          var sibRows=sibR.rows.slice().sort(function(a,b){var pa=(a.customer_po||"");var pb=(b.customer_po||"");return pa<pb?-1:pa>pb?1:0;});
+          sibRows.forEach(function(sib){
             var sRaw=sib.raw||{};
             if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
             var sProds=getProds(sRaw);
-            if(sProds.length) prods=prods.concat(sProds);
-            var sCno=sib.contract_no||sib.customer_po; if(sCno) _mergedCnos.push(sCno);
-            var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no); if(sPO) _mergedPOs.push(sPO);
+            var sCno=sib.contract_no||sib.customer_po;
+            var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no);
+            var sContainer=pick(sRaw.containerNo,"");
+            if(sProds.length){
+              var tagged=sProds.map(function(p){return Object.assign({},p,{_groupKey:sCno,_containerNo:sContainer,_customerPO:sPO,_contractNo:sCno});});
+              prods=prods.concat(tagged);
+            }
+            if(sCno) _mergedCnos.push(sCno);
+            if(sPO) _mergedPOs.push(sPO);
           });
+          _hasMultiOrder=true;
           // Dedupe & join for display
           var _uniq=function(arr){return arr.filter(function(v,i,a){return v && a.indexOf(v)===i;});};
           cno=_uniq(_mergedCnos).join(" / ");
           ordNo=_uniq(_mergedPOs).join(" / ");
+          // Re-sort merged products by customer_po so groups appear in order
+          prods.sort(function(a,b){var pa=(a._customerPO||"");var pb=(b._customerPO||"");return pa<pb?-1:pa>pb?1:0;});
         }
       }
+      // Single-order: no group header needed — blank the tag so productRows skips it.
+      if(!_hasMultiOrder) prods=prods.map(function(p){return Object.assign({},p,{_groupKey:""});});
       var tot=getTotal(prods,o);
       var tqty=prods.reduce(function(s,p){return s+Number(p.qty||0);},0)||Number(raw.totalQty||0);
       // GW/NW in products are PER-CARTON values — must multiply by qty for totals.
