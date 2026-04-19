@@ -17,7 +17,8 @@ export default async function handler(req, res) {
         "factory_price","sanlyn_price","price_usd","tax_rate","rebate_rate",
         "cat1","cat2","cat3","cat1_cn","cat2_cn","cat3_cn",
         "trade_terms","declaration_name","declaration_elements","bl_description",
-        "factory_name","declaration_amount","bg_bx","flavor","moq","spec","image_url"
+        "factory_name","declaration_amount","bg_bx","flavor","moq","spec","image_url",
+        "shelf_life_days"
       ];
       for (var f of fields) {
         if (b[f] !== undefined) {

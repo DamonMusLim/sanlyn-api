@@ -101,6 +101,8 @@ mount("/api/db/fix-groups",        () => import("./api/db/fix-groups.js"));
 mount("/api/db/migrate-products",  () => import("./api/db/migrate-products.js"));
 mount("/api/db/migrate-orders",    () => import("./api/db/migrate-orders.js"));
 mount("/api/db/migrate-orders-v2", () => import("./api/db/migrate-orders-v2.js"));
+mount("/api/db/migrate-qc",        () => import("./api/db/migrate-qc.js"));
+mount("/api/db/qc-checks",         () => import("./api/db/qc-checks.js"));
 mount("/api/db/order-create-v2",   () => import("./api/db/order-create-v2.js"));
 mount("/api/db/sync-products-oss", () => import("./api/db/sync-products-to-oss.js"));
 // ── /api/jdy/* endpoints ──
