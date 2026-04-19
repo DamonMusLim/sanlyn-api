@@ -83,6 +83,7 @@ mount("/api/db/accounts",          () => import("./api/db/accounts.js"));
 mount("/api/db/analytics",         () => import("./api/db/analytics.js"));
 mount("/api/db/audit-log",         () => import("./api/db/audit-log.js"));
 mount("/api/db/bl-control",        () => import("./api/db/bl-control.js"));
+mount("/api/db/container-bookings",() => import("./api/db/container-bookings.js"));
 mount("/api/db/company",           () => import("./api/db/company.js"));
 mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));

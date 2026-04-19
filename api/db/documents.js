@@ -211,10 +211,22 @@ export default async function handler(req, res) {
       var pod=pick(raw.destination,raw.pod,raw.destinationPort,"-");
       var inco=pick(raw.tradeTerms,raw.incoterms,"FOB");
       var prods=getProds(raw);
+      // ── Look up container assignment from container_bookings subtable ──
+      // Source of truth for which container holds which order (plus driver/VGM/trucking).
+      // Falls back to orders.raw.containerNo if no booking record yet.
+      var _cbMap={}; // contract_no → container_no
+      try {
+        var cbR=await pool.query(
+          "SELECT contract_no, container_no FROM container_bookings WHERE contract_no = ANY($1::text[])",
+          [[pick(o.contract_no,o.order_no,id)].concat(String(ids||"").split(",").map(function(s){return s.trim();}).filter(Boolean))]
+        );
+        cbR.rows.forEach(function(row){ if(row.contract_no) _cbMap[row.contract_no]=row.container_no; });
+      } catch (e) { console.warn("[documents] container_bookings lookup failed:",e.message); }
+
       // Tag primary-order products with group metadata (container / customer PO / contract).
       // Used by productRows() to emit a section header when multiple orders are merged.
-      var _primaryContainer=pick(raw.containerNo,"");
       var _primaryCno=pick(o.contract_no,o.order_no,id);
+      var _primaryContainer=pick(_cbMap[_primaryCno], raw.containerNo, "");
       var _primaryPO=pick(raw.customerPO,o.customer_po,o.order_no);
       prods=prods.map(function(p){return Object.assign({},p,{_groupKey:_primaryCno,_containerNo:_primaryContainer,_customerPO:_primaryPO,_contractNo:_primaryCno});});
       // ── Multi-order B/L merge: when ?ids=CN1,CN2,... passed (SC/IV/PL only, NOT PI) ──
@@ -234,7 +246,7 @@ export default async function handler(req, res) {
             var sProds=getProds(sRaw);
             var sCno=sib.contract_no||sib.customer_po;
             var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no);
-            var sContainer=pick(sRaw.containerNo,"");
+            var sContainer=pick(_cbMap[sCno], sRaw.containerNo, "");
             if(sProds.length){
               var tagged=sProds.map(function(p){return Object.assign({},p,{_groupKey:sCno,_containerNo:sContainer,_customerPO:sPO,_contractNo:sCno});});
               prods=prods.concat(tagged);
