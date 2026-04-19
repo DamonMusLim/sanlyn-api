@@ -94,7 +94,7 @@ body{font-family:'Helvetica','Arial','PingFang SC',sans-serif;color:#000;margin:
 .container{max-width:800px;margin:auto;}
 .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:25px;}
 .seller-info{flex:1;}
-.seller-name{font-size:26px;font-weight:900;text-transform:uppercase;margin-bottom:5px;}
+.seller-name{font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;}
 .doc-type{text-align:right;}
 .doc-type h1{margin:0;font-size:28px;font-weight:900;letter-spacing:1px;}
 .doc-type p{font-size:14px;font-weight:bold;margin:2px 0;}
@@ -121,7 +121,8 @@ td{padding:10px;border-bottom:1px solid #000;vertical-align:top;}
 
 function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
 
-function docHdr(cfg,cn,en){return`<div class="header"><div class="seller-info"><div class="seller-name">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1></div></div>`;}
+function sellerNamePx(name){ var l=(name||"").length; return l<=28?"20px":l<=38?"17px":l<=48?"14px":"12px"; }
+function docHdr(cfg,cn,en){return`<div class="header"><div class="seller-info"><div class="seller-name" style="font-size:${sellerNamePx(cfg.nameEN)}">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1></div></div>`;}
 
 function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class="meta-grid"><div><div class="section-label">BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>Order:</b> ${esc(ordNo)}</li><li><b>Date:</b> ${esc(date)}</li>${curr?`<li><b>Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
 
