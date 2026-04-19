@@ -222,8 +222,9 @@ export default async function handler(req, res) {
       }
       var tot=getTotal(prods,o);
       var tqty=prods.reduce(function(s,p){return s+Number(p.qty||0);},0)||Number(raw.totalQty||0);
-      var tgw=prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0);},0)||Number(raw.grossWeight||0);
-      var tnw=prods.reduce(function(s,p){return s+Number(p.netWeight||p.nw||0);},0)||Number(raw.netWeight||0);
+      // GW/NW in products are PER-CARTON values — must multiply by qty for totals.
+      var tgw=prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0)*Number(p.qty||0);},0)||Number(raw.grossWeight||0);
+      var tnw=prods.reduce(function(s,p){return s+Number(p.netWeight||p.nw||0)*Number(p.qty||0);},0)||Number(raw.netWeight||0);
 
       var totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
 
@@ -267,8 +268,8 @@ export default async function handler(req, res) {
         var colsPL=[
           {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"55px",lbl:"QTY"},
-          {k:"gw",al:"right",w:"75px",fn:function(p){return fmtM(p.grossWeight||p.gw||0);},lbl:"G.W (KG)"},
-          {k:"nw",al:"right",w:"75px",fn:function(p){return fmtM(p.netWeight||p.nw||0);},lbl:"N.W (KG)"},
+          {k:"gw",al:"right",w:"75px",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return fmtM(pg*q||pg);},lbl:"G.W (KG)"},
+          {k:"nw",al:"right",w:"75px",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return fmtM(pn*q||pn);},lbl:"N.W (KG)"},
           {k:"cbm",al:"right",w:"65px",fn:function(p){return fmtM(p.cbm||p.volume||0,3);},lbl:"CBM"},
         ];
         html=wrap("Packing List — "+noPL,`
