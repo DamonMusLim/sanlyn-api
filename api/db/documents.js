@@ -159,7 +159,7 @@ export default async function handler(req, res) {
     return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid access token.</p>");
   }
 
-  var{type,id,company:qco,print:ap,contract_no,bl_no,limit}=req.query;
+  var{type,id,ids,company:qco,print:ap,contract_no,bl_no,limit}=req.query;
 
   // ── List mode: no type/id → return documents table rows ──
   if(!type && !id){
@@ -198,6 +198,24 @@ export default async function handler(req, res) {
       var pod=pick(raw.destination,raw.pod,raw.destinationPort,"-");
       var inco=pick(raw.tradeTerms,raw.incoterms,"FOB");
       var prods=getProds(raw);
+      // ── Multi-order B/L merge: when ?ids=CN1,CN2,... passed (SC/IV/PL only, NOT PI) ──
+      // Load sibling orders (same B/L, different contracts) and merge their products into
+      // ONE combined trade doc — required for customs declaration on grouped shipments.
+      if(ids && type!=="pi"){
+        var idList=String(ids).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
+        if(idList.length){
+          var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
+          sibR.rows.forEach(function(sib){
+            var sRaw=sib.raw||{};
+            if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
+            var sProds=getProds(sRaw);
+            if(sProds.length) prods=prods.concat(sProds);
+          });
+          // Append sibling contract_nos to displayed contract number for traceability
+          var allCnos=[cno].concat(sibR.rows.map(function(r){return r.contract_no||r.customer_po;}).filter(Boolean));
+          cno=allCnos.join(" / ");
+        }
+      }
       var tot=getTotal(prods,o);
       var tqty=prods.reduce(function(s,p){return s+Number(p.qty||0);},0)||Number(raw.totalQty||0);
       var tgw=prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0);},0)||Number(raw.grossWeight||0);
