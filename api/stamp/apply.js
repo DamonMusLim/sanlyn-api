@@ -95,6 +95,8 @@ export default async function handler(req, res) {
       stampKey = 'babi',
       pages = 'last',
       position = 'br',
+      customX,   // ★ S99: free-drag position (0-1 from left), overrides position preset when set
+      customY,   // ★ S99: free-drag position (0-1 from top), overrides position preset when set
       scale = 0.19,
       opacity = 0.85,
       operator,
@@ -171,7 +173,10 @@ export default async function handler(req, res) {
       }
 
       const offsetX = 60, offsetY = 60;
-      const pos = calcPosition(position, pageW, pageH, sW, sH, offsetX, offsetY);
+      // ★ S99: customX/customY override preset — origin top-left, PDF-lib origin bottom-left
+      const pos = (customX != null && customY != null)
+        ? calcCustomPosition(customX, customY, pageW, pageH, sW, sH)
+        : calcPosition(position, pageW, pageH, sW, sH, offsetX, offsetY);
 
       page.drawImage(stampImage, {
         x: pos.x,
@@ -258,4 +263,14 @@ function calcPosition(pos, pageW, pageH, sW, sH, ox, oy) {
     cc: { x: (pageW - sW) / 2, y: (pageH - sH) / 2 },
   };
   return map[pos] || map.br;
+}
+
+// ★ S99: Free-drag custom position
+// customX/customY are 0-1 fractions, origin = top-left (browser convention)
+// PDF-lib x = left, y = from bottom → invert Y
+function calcCustomPosition(cx, cy, pageW, pageH, sW, sH) {
+  // Center the stamp on the drag point, clamped within page bounds
+  const x = Math.min(Math.max(cx * pageW - sW / 2, 0), pageW - sW);
+  const y = Math.min(Math.max((1 - cy) * pageH - sH / 2, 0), pageH - sH);
+  return { x, y };
 }
