@@ -133,6 +133,7 @@ mount("/api/convert/excel-to-pdf", () => import("./api/convert/excel-to-pdf.js")
 mount("/api/doc-convert-jdy", () => import("./api/doc-convert-jdy.js"));
 mount("/api/doc-convert",     () => import("./api/doc-convert.js"));
 mount("/api/doc-review",      () => import("./api/doc-review.js"));
+mount("/api/db/doc-share",    () => import("./api/db/doc-share.js"));
 mount("/api/freight-quotes",  () => import("./api/freight-quotes.js"));
 mount("/api/jdy-company-sync",() => import("./api/jdy-company-sync.js"));
 mount("/api/jdy-company",     () => import("./api/jdy-company.js"));
