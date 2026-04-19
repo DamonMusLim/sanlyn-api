@@ -201,6 +201,7 @@ export default async function handler(req, res) {
       // ── Multi-order B/L merge: when ?ids=CN1,CN2,... passed (SC/IV/PL only, NOT PI) ──
       // Load sibling orders (same B/L, different contracts) and merge their products into
       // ONE combined trade doc — required for customs declaration on grouped shipments.
+      var _mergedCnos=[cno], _mergedPOs=[ordNo];
       if(ids && type!=="pi"){
         var idList=String(ids).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
         if(idList.length){
@@ -210,10 +211,13 @@ export default async function handler(req, res) {
             if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
             var sProds=getProds(sRaw);
             if(sProds.length) prods=prods.concat(sProds);
+            var sCno=sib.contract_no||sib.customer_po; if(sCno) _mergedCnos.push(sCno);
+            var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no); if(sPO) _mergedPOs.push(sPO);
           });
-          // Append sibling contract_nos to displayed contract number for traceability
-          var allCnos=[cno].concat(sibR.rows.map(function(r){return r.contract_no||r.customer_po;}).filter(Boolean));
-          cno=allCnos.join(" / ");
+          // Dedupe & join for display
+          var _uniq=function(arr){return arr.filter(function(v,i,a){return v && a.indexOf(v)===i;});};
+          cno=_uniq(_mergedCnos).join(" / ");
+          ordNo=_uniq(_mergedPOs).join(" / ");
         }
       }
       var tot=getTotal(prods,o);
@@ -224,7 +228,7 @@ export default async function handler(req, res) {
       var totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
 
       if(type==="sc"){
-        var no="SC-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
+        var no=cno.split(" / ").map(function(c){return"SC-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var colsSC=[
           {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
@@ -241,7 +245,7 @@ export default async function handler(req, res) {
       }
 
       if(type==="iv"){
-        var noIV="IV-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
+        var noIV=cno.split(" / ").map(function(c){return"IV-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var colsIV=[
           {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
@@ -258,7 +262,7 @@ export default async function handler(req, res) {
       }
 
       if(type==="pl"){
-        var noPL="PL-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
+        var noPL=cno.split(" / ").map(function(c){return"PL-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var tcbmPL=prods.reduce(function(s,p){return s+Number(p.cbm||p.volume||0);},0)||Number(raw.totalCBM||raw.cbm||0);
         var colsPL=[
           {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
