@@ -15,26 +15,45 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 
-var COMPANIES = {
-  petbaby: {
-    nameCN: "厦门巴匕进出口有限公司",
-    nameEN: "XIAMEN PET BABY IMPORT AND EXPORT CO., LTD",
-    address: "4th Floor, 26-9# Huarong Road, Huli, Xiamen, China",
-    tel: "+86 186 0905 8888", email: "info@petbaby.cn",
-    bank: { beneficiary: "XIAMEN PET BABY IMPORT AND EXPORT CO., LTD", bankName: "BANK OF CHINA XIAMEN BRANCH", swift: "BKCHCNBI73A", bankAddr: "No. 40 North Hubin Road, Xiamen, China", usdAccount: "4299 8287 9286", rmbAccount: "4312 7991 8006" },
-    taxNo: "", buyerBank: "中国银行厦门分行",
-    terms: { sc: ["包装: 出口标准纸箱 / Export standard cartons.","装运: 收到定金后30天内 / Shipment within 30 days.","付款: 30%定金, 70%余款凭提单副本 / 30% Deposit, 70% against BL copy.","索赔: 货到后30天内提出 / Claims within 30 days of arrival.","不可抗力: 卖方不承担不可抗力造成的延误责任 / Seller not liable for Force Majeure delays.","仲裁: 所有争议提交CIETAC仲裁 / All disputes submitted to CIETAC."], iv: ["包装: 出口标准纸箱 / Export standard cartons.","装运: 收到定金后30天内 / Shipment within 30 days.","付款: 30%定金, 70%余款凭提单副本 / 30% Deposit, 70% against BL copy.","索赔: 货到后30天内提出 / Claims within 30 days of arrival."] },
-  },
-  sanlyn: {
-    nameCN: "厦门三麟进出口有限公司",
-    nameEN: "XIAMEN SANLYN IMPORT AND EXPORT CO., LTD",
-    address: "Xiamen, Fujian, China", tel: "+86 186 0905 8888", email: "info@sanlyn.cn",
-    bank: { beneficiary: "XIAMEN SANLYN IMPORT AND EXPORT CO., LTD", bankName: "BANK OF CHINA XIAMEN BRANCH", swift: "BKCHCNBI73A", bankAddr: "No. 40 North Hubin Road, Xiamen, China", usdAccount: "[USD Account]", rmbAccount: "[RMB Account]" },
-    taxNo: "", buyerBank: "中国银行厦门分行",
-    terms: { sc: ["包装: 出口标准纸箱 / Export standard cartons.","装运: 收到定金后30天内 / Shipment within 30 days.","付款: 30%定金, 70%余款凭提单副本 / 30% Deposit, 70% against BL copy.","索赔: 货到后30天内提出 / Claims within 30 days of arrival.","不可抗力 / Not liable for Force Majeure delays.","仲裁 / All disputes submitted to CIETAC."], iv: ["包装: 出口标准纸箱 / Export standard cartons.","装运: 收到定金后30天内 / Shipment within 30 days.","付款: 30%定金, 70%余款凭提单副本 / 30% Deposit, 70% against BL copy.","索赔: 货到后30天内提出 / Claims within 30 days of arrival."] },
-  },
-};
-var DEFAULT_CO = "petbaby";
+// ── Seller config: loaded from seller_profiles table (no hardcoding) ──────────
+// To add a new issuing company, INSERT a row into seller_profiles.
+// Shape returned: { nameEN, nameCN, address, tel, email, bank:{...}, terms:{sc:[],iv:[]} }
+async function loadSellerCfg(pool, raw, qco) {
+  var code = qco || "";
+  if(!code){ var h=(raw.issuingCompanyEN||raw.issuingCompany||"").toLowerCase(); if(h.includes("sanlyn"))code="sanlyn"; }
+  try {
+    var q = code
+      ? "SELECT * FROM seller_profiles WHERE code=$1 LIMIT 1"
+      : "SELECT * FROM seller_profiles WHERE is_default=TRUE LIMIT 1";
+    var p = code ? [code] : [];
+    var r = await pool.query(q, p);
+    if(!r.rows.length){ // fallback: first row
+      var fb = await pool.query("SELECT * FROM seller_profiles ORDER BY id LIMIT 1");
+      if(!fb.rows.length) throw new Error("No seller profile found");
+      r = fb;
+    }
+    var s = r.rows[0];
+    return {
+      nameEN: s.name_en||"", nameCN: s.name_cn||"",
+      address: s.address||"", tel: s.tel||"", email: s.email||"",
+      bank: {
+        beneficiary: s.bank_beneficiary||s.name_en||"",
+        bankName: s.bank_name||"", swift: s.bank_swift||"",
+        bankAddr: s.bank_addr||"", usdAccount: s.usd_account||"",
+        rmbAccount: s.rmb_account||"",
+      },
+      terms: {
+        sc: Array.isArray(s.terms_sc) ? s.terms_sc : (s.terms_sc||[]),
+        iv: Array.isArray(s.terms_iv) ? s.terms_iv : (s.terms_iv||[]),
+      },
+    };
+  } catch(e) {
+    // Hard fallback so doc still renders if DB query fails
+    return { nameEN:"[SELLER]", nameCN:"", address:"", tel:"", email:"",
+      bank:{beneficiary:"",bankName:"",swift:"",bankAddr:"",usdAccount:""},
+      terms:{sc:[],iv:[]}, _err: e.message };
+  }
+}
 
 var FORWARDERS = {
   default: {
@@ -49,7 +68,7 @@ function fmtM(v,d){ if(v===null||v===undefined||v==="")return"-"; var n=Number(v
 function fmtD(v){ if(!v)return"-"; try{return new Date(v).toISOString().slice(0,10);}catch(e){return String(v);} }
 function pick(){ for(var i=0;i<arguments.length;i++){if(arguments[i]!==null&&arguments[i]!==undefined&&arguments[i]!=="")return arguments[i];} return ""; }
 
-function resolveCo(raw,q){ if(q&&COMPANIES[q])return COMPANIES[q]; var h=(raw.issuingCompanyEN||raw.issuingCompany||"").toLowerCase(); if(h.includes("sanlyn"))return COMPANIES.sanlyn; return COMPANIES[DEFAULT_CO]; }
+// resolveCo replaced by async loadSellerCfg above
 
 var CUST_ADDRS={
   "petsome":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA",
@@ -75,7 +94,7 @@ body{font-family:'Helvetica','Arial','PingFang SC',sans-serif;color:#000;margin:
 .container{max-width:800px;margin:auto;}
 .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:25px;}
 .seller-info{flex:1;}
-.seller-name{font-size:20px;font-weight:900;text-transform:uppercase;margin-bottom:5px;}
+.seller-name{font-size:26px;font-weight:900;text-transform:uppercase;margin-bottom:5px;}
 .doc-type{text-align:right;}
 .doc-type h1{margin:0;font-size:28px;font-weight:900;letter-spacing:1px;}
 .doc-type p{font-size:14px;font-weight:bold;margin:2px 0;}
@@ -100,22 +119,26 @@ td{padding:10px;border-bottom:1px solid #000;vertical-align:top;}
 @media print{body{padding:0;}.container{max-width:100%;border:none;}}
 </style>`;
 
-function wrap(title,body,ap){return`<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
+function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
 
-function docHdr(cfg,cn,en){return`<div class="header"><div class="seller-info"><div class="seller-name">${esc(cfg.nameCN)} / ${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type">${cn?`<h1>${esc(cn)}</h1>`:""}<p>${esc(en)}</p></div></div>`;}
+function docHdr(cfg,cn,en){return`<div class="header"><div class="seller-info"><div class="seller-name">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1></div></div>`;}
 
-function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class="meta-grid"><div><div class="section-label">付款方 / BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">单据详情 / DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>订单编号 Order:</b> ${esc(ordNo)}</li><li><b>日期 Date:</b> ${esc(date)}</li>${curr?`<li><b>币种 Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
+function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class="meta-grid"><div><div class="section-label">BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>Order:</b> ${esc(ordNo)}</li><li><b>Date:</b> ${esc(date)}</li>${curr?`<li><b>Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
 
-function portBar(pol,pod,terms){return`<div class="trade-terms-bar"><span>装运港 POL: ${esc(pol)||"-"}</span><span>目的港 POD: ${esc(pod)||"-"}</span><span>贸易术语 Terms: ${esc(terms)||"-"} (Incoterms® 2020)</span></div>`;}
+function portBar(pol,pod,terms){return`<div class="trade-terms-bar"><span>POL: ${esc(pol)||"-"}</span><span>POD: ${esc(pod)||"-"}</span><span>Terms: ${esc(terms)||"-"} (Incoterms® 2020)</span></div>`;}
 
-function bankCard(bk){return`<div class="details-box"><h4>银行信息 BANKING INFORMATION</h4>受益人: ${esc(bk.beneficiary||bk.accountName||"")}<br>银行: ${esc(bk.bankName)}<br>SWIFT: ${esc(bk.swift)}<br>${bk.usdAccount?`账号 Acc No.: ${esc(bk.usdAccount)}<br>`:""}<span style="color:red;font-size:10px;font-weight:bold">* 付款前请务必核对账号信息 / Please verify bank info before payment.</span></div>`;}
+function bankCard(bk){return`<div class="details-box"><h4>BANKING INFORMATION</h4>Beneficiary: ${esc(bk.beneficiary||bk.accountName||"")}<br>Bank: ${esc(bk.bankName)}<br>SWIFT: ${esc(bk.swift)}<br>${bk.bankAddr?`Bank Address: ${esc(bk.bankAddr)}<br>`:""}${bk.usdAccount?`Account No.: ${esc(bk.usdAccount)}<br>`:""}<span style="color:red;font-size:10px;font-weight:bold">* Please verify bank info before payment.</span></div>`;}
 
-function termsCard(ts){return`<div class="details-box"><h4>成交条款 TERMS &amp; CONDITIONS</h4>${ts.map(function(t,i){return(i+1)+". "+esc(t);}).join("<br>")}</div>`;}
+function termsCard(ts){
+  // Strip Chinese + " / " separators from terms. Keep English portion only.
+  function _en(t){ var s=String(t||""); if(s.indexOf("/")>=0) s=s.split("/").pop(); return s.replace(/[\u4e00-\u9fff:：]/g,"").trim(); }
+  return`<div class="details-box"><h4>TERMS &amp; CONDITIONS</h4>${ts.map(function(t,i){return(i+1)+". "+esc(_en(t));}).join("<br>")}</div>`;
+}
 
-function sigBlock(){return`<div class="signature-grid"><div class="sig-box"><span>BUYER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(买方授权签署 / 盖章)</span></div><div class="sig-box"><span>SELLER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(卖方授权签署 / 盖章)</span></div></div>`;}
+function sigBlock(){return`<div class="signature-grid"><div class="sig-box"><span>BUYER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(Signature / Company Seal)</span></div><div class="sig-box"><span>SELLER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(Signature / Company Seal)</span></div></div>`;}
 
 function productRows(prods,cols){
-  if(!prods.length)return'<tr><td>01</td><td colspan="'+cols.length+'" style="color:#999;font-style:italic">— 产品明细将从订单自动填入 —</td></tr>';
+  if(!prods.length)return'<tr><td>01</td><td colspan="'+cols.length+'" style="color:#999;font-style:italic">— Line items will auto-populate from order —</td></tr>';
   return prods.map(function(p,i){return'<tr><td>'+String(i+1).padStart(2,"0")+'</td>'+cols.map(function(c){var v=c.fn?c.fn(p):(p[c.k]||"-");return'<td class="'+(c.al==="right"?"text-right":"")+'">'+esc(String(v))+'</td>';}).join("")+'</tr>';}).join("");
 }
 
@@ -162,7 +185,7 @@ export default async function handler(req, res) {
       if(!oR.rows.length) return res.status(404).send("<h1>Order not found: "+esc(id)+"</h1>");
       var o=oR.rows[0], raw=o.raw||{};
       if(typeof raw==="string")try{raw=JSON.parse(raw);}catch(e){raw={};}
-      var cfg=resolveCo(raw,qco);
+      var cfg=await loadSellerCfg(pool,raw,qco);
       var cust=pick(o.company_name_en,raw.companyNameEN,raw.companyNameCN,o.customer);
       var caddr=resolveAddr(cust,pick(raw.customerAddress,raw.deliveryAddress));
       var ctel=raw.phone||"";
@@ -179,21 +202,21 @@ export default async function handler(req, res) {
       var tgw=prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0);},0)||Number(raw.grossWeight||0);
       var tnw=prods.reduce(function(s,p){return s+Number(p.netWeight||p.nw||0);},0)||Number(raw.netWeight||0);
 
-      var totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">总计金额 TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
+      var totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
 
       if(type==="sc"){
         var no="SC-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var colsSC=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"品名及规格 Description &amp; Size"},
-          {k:"qty",al:"center",w:"70px",lbl:"数量 QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"单价 Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"金额 Amount"},
+          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"qty",al:"center",w:"70px",lbl:"QTY"},
+          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
         ];
         html=wrap("Sales Contract — "+no,`
           ${docHdr(cfg,"销售合同","SALES CONTRACT")}
           ${buyerBlock(cust,caddr,ctel,no,"Contract No.",ordNo,date,curr)}
           ${portBar(pol,pod,inco)}
-          <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
+          <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
       }
@@ -201,16 +224,16 @@ export default async function handler(req, res) {
       if(type==="iv"){
         var noIV="IV-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var colsIV=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"品名及规格 Description &amp; Size"},
-          {k:"qty",al:"center",w:"70px",lbl:"数量 QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"单价 Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"金额 Amount"},
+          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"qty",al:"center",w:"70px",lbl:"QTY"},
+          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
         ];
         html=wrap("Commercial Invoice — "+noIV,`
           ${docHdr(cfg,"商业发票","COMMERCIAL INVOICE")}
           ${buyerBlock(cust,caddr,ctel,noIV,"Invoice No.",ordNo,date,curr)}
           ${portBar(pol,pod,inco)}
-          <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
+          <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
       }
@@ -219,8 +242,8 @@ export default async function handler(req, res) {
         var noPL="PL-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var tcbmPL=prods.reduce(function(s,p){return s+Number(p.cbm||p.volume||0);},0)||Number(raw.totalCBM||raw.cbm||0);
         var colsPL=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"品名及规格 Description &amp; Size"},
-          {k:"qty",al:"center",w:"55px",lbl:"数量 QTY"},
+          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"qty",al:"center",w:"55px",lbl:"QTY"},
           {k:"gw",al:"right",w:"75px",fn:function(p){return fmtM(p.grossWeight||p.gw||0);},lbl:"G.W (KG)"},
           {k:"nw",al:"right",w:"75px",fn:function(p){return fmtM(p.netWeight||p.nw||0);},lbl:"N.W (KG)"},
           {k:"cbm",al:"right",w:"65px",fn:function(p){return fmtM(p.cbm||p.volume||0,3);},lbl:"CBM"},
@@ -229,7 +252,7 @@ export default async function handler(req, res) {
           ${docHdr(cfg,"装箱单","PACKING LIST")}
           ${buyerBlock(cust,caddr,ctel,noPL,"P/L No.",ordNo,date,null)}
           ${portBar(pol,pod,inco)}
-          <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
+          <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPL,curr)}
           <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
           </tbody></table>${sigBlock()}`,ap);
@@ -238,16 +261,16 @@ export default async function handler(req, res) {
       if(type==="pi"){
         var noPI="PI-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var colsPI=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"品名及规格 Description &amp; Size"},
-          {k:"qty",al:"center",w:"70px",lbl:"数量 QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"单价 Unit Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"金额 Amount ("+curr+")"},
+          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"qty",al:"center",w:"70px",lbl:"QTY"},
+          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount ("+curr+")"},
         ];
         html=wrap("Proforma Invoice — "+noPI,`
-          ${docHdr(cfg,"形式发票","PROFORMA INVOICE")}
+          ${docHdr(cfg,"","PROFORMA INVOICE")}
           ${buyerBlock(cust,caddr,ctel,noPI,"PI No.",ordNo,date,curr)}
           ${portBar(pol,pod,inco)}
-          <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}">${c.lbl}</th>`;}).join("")}</tr></thead>
+          <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
       }
@@ -324,7 +347,7 @@ export default async function handler(req, res) {
       if(!spR.rows.length) return res.status(404).send("<h1>Shipment not found: "+esc(id)+"</h1>");
       var sp=spR.rows[0], spraw=sp.raw||{};
       if(typeof spraw==="string")try{spraw=JSON.parse(spraw);}catch(e){spraw={};}
-      var cfg3=resolveCo(spraw,qco);
+      var cfg3=await loadSellerCfg(pool,spraw,qco);
       var fwd=FORWARDERS["default"];
       var vessel=pick(sp.vessel,spraw.vessel,"-");
       var voyage=pick(sp.voyage,spraw.voyage,"-");
