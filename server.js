@@ -8,8 +8,22 @@ import { fileURLToPath } from "url";
 import { dirname } from "path";
 import { authMiddleware } from "./api/auth.js";
 import { portalGate }    from "./api/portal/gate.js";
+import rateLimit from "express-rate-limit";
 
 const app = express();
+
+// ── Security: rate limit login endpoint ──────────────────────────────────────
+// Max 10 attempts per IP per 15 minutes. Blocks brute-force attacks.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,   // 15 minutes
+  max: 10,                     // max 10 attempts per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts. Please wait 15 minutes and try again." },
+  skipSuccessfulRequests: true, // only count failed attempts
+});
+app.use("/api/db/auth-login", loginLimiter);
+// ────────────────────────────────────────────────────────────────────────────
 // ── CORS middleware (replace Vercel headers config) ──
 const ALLOWED_ORIGINS = [
   "https://ai.sanlyn.cn",
