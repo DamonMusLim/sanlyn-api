@@ -130,6 +130,7 @@ mount("/api/jdy/order-create",       () => import("./api/jdy/order-create.js"));
 mount("/api/jdy/pi-sync",            () => import("./api/jdy/pi-sync.js"));
 // ── /api/stamp/* ──
 mount("/api/stamp/apply", () => import("./api/stamp/apply.js"));
+mount("/api/stamp/smart-position", () => import("./api/stamp/smart-position.js"));
 // ── /api/convert/* ──
 mount("/api/convert/excel-to-pdf", () => import("./api/convert/excel-to-pdf.js"));
 // ── /api/* top-level endpoints ──
