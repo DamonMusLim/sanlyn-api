@@ -361,6 +361,15 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+        _xlsCapture={sheetName:"Proforma Invoice",docNo:noPI,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
+          headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
+          colKeys:[
+            {k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},
+            {k:"qty"},
+            {k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},
+            {k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}
+          ],
+          rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
       }
 
       if(type==="po"){
