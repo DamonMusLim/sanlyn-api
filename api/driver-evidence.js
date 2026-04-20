@@ -11,7 +11,7 @@
 
 import { getPool, setCors } from "./db.js";
 
-// Fields the driver is allowed to write (weight + transport)
+// Fields the driver is allowed to write (weight + transport + pickup/return evidence)
 const DRIVER_FIELDS = [
   "cargo_weight_kg",
   "weight_ticket_url",
@@ -20,6 +20,11 @@ const DRIVER_FIELDS = [
   "truck_plate",
   "driver_name",
   "driver_phone",
+  // NEW: stage-specific photo sets
+  "pickup_photos",         // JSONB — 提柜阶段照片
+  "return_photos",         // JSONB — 还柜阶段照片
+  "pickup_submitted_at",
+  "return_submitted_at",
 ];
 
 // Fields the factory is allowed to write (on-site loading)
@@ -32,7 +37,7 @@ const FACTORY_FIELDS = [
   "factory_submitted_by",
 ];
 
-const JSONB = new Set(["loading_photos","evidence_photos"]);
+const JSONB = new Set(["loading_photos","evidence_photos","pickup_photos","return_photos"]);
 
 // Readable subset returned to the page (both factory and driver see all of this)
 const READ_FIELDS = [
@@ -40,8 +45,10 @@ const READ_FIELDS = [
   "tare_weight_kg","cargo_weight_kg","pickup_time","pickup_yard","return_yard",
   "loading_address","loading_contact","truck_plate","trailer_plate",
   "driver_name","driver_phone","trucking_company",
-  "evidence_photos","loading_photos","loading_note","seal_photo_url","weight_ticket_url",
+  "evidence_photos","loading_photos","pickup_photos","return_photos",
+  "loading_note","seal_photo_url","weight_ticket_url",
   "driver_submitted_at","factory_submitted_at","factory_submitted_by",
+  "pickup_submitted_at","return_submitted_at",
 ];
 
 export default async function handler(req, res) {
@@ -90,15 +97,30 @@ export default async function handler(req, res) {
 
       // Must be an existing dispatcher-created row
       var exist = await pool.query(
-        "SELECT id, driver_submitted_at, factory_submitted_at FROM container_bookings WHERE bl_no=$1 AND container_no=$2 LIMIT 1",
+        "SELECT id, driver_submitted_at, factory_submitted_at, pickup_submitted_at, return_submitted_at FROM container_bookings WHERE bl_no=$1 AND container_no=$2 LIMIT 1",
         [bl, cno]
       );
       if (!exist.rows.length) {
         return res.status(404).json({ error: "No dispatcher record found for this container. Please contact dispatcher." });
       }
-      var alreadyAt = role === "driver" ? exist.rows[0].driver_submitted_at : exist.rows[0].factory_submitted_at;
-      if (alreadyAt) {
-        return res.status(409).json({ error: "Already submitted by " + role, submitted_at: alreadyAt });
+      // Stage-aware single-submit guard:
+      //   • pickup_photos payload → check pickup_submitted_at
+      //   • return_photos payload → check return_submitted_at
+      //   • loading_photos payload (factory) → check factory_submitted_at
+      //   • weight_ticket_url/cargo_weight_kg (driver weight) → check driver_submitted_at
+      var row0 = exist.rows[0];
+      var stage = body.stage || null; // optional explicit stage hint from client
+      if ((body.pickup_photos || stage === "pickup") && row0.pickup_submitted_at) {
+        return res.status(409).json({ error: "pickup already submitted", submitted_at: row0.pickup_submitted_at, stage: "pickup" });
+      }
+      if ((body.return_photos || stage === "return") && row0.return_submitted_at) {
+        return res.status(409).json({ error: "return already submitted", submitted_at: row0.return_submitted_at, stage: "return" });
+      }
+      if (role === "factory" && row0.factory_submitted_at) {
+        return res.status(409).json({ error: "loading already submitted", submitted_at: row0.factory_submitted_at, stage: "loading" });
+      }
+      if (role === "driver" && (body.weight_ticket_url || body.cargo_weight_kg) && row0.driver_submitted_at) {
+        return res.status(409).json({ error: "driver weight already submitted", submitted_at: row0.driver_submitted_at, stage: "weight" });
       }
 
       // Pick whitelisted fields by role

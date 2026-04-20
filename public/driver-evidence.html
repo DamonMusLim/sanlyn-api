@@ -135,6 +135,23 @@ body::before{
 /* Role gating — hide sections not for this role */
 body[data-role="factory"] .role-driver{display:none !important}
 body[data-role="driver"] .role-factory{display:none !important}
+/* Driver stage gating — show only the active stage's sections */
+body[data-role="driver"][data-stage="pickup"] .stage-weight,
+body[data-role="driver"][data-stage="pickup"] .stage-return{display:none !important}
+body[data-role="driver"][data-stage="weight"] .stage-pickup,
+body[data-role="driver"][data-stage="weight"] .stage-return{display:none !important}
+body[data-role="driver"][data-stage="return"] .stage-pickup,
+body[data-role="driver"][data-stage="return"] .stage-weight{display:none !important}
+body[data-role="factory"] .stage-tabs{display:none !important}
+
+/* Stage tabs */
+.stage-tabs{display:flex;gap:6px;margin-bottom:16px;padding:4px;background:rgba(255,255,255,0.04);border:1px solid var(--input-b);border-radius:12px}
+.stage-tab{flex:1;padding:10px 8px;border-radius:8px;border:none;background:transparent;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all 0.2s;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px}
+.stage-tab .tab-icon{font-size:18px}
+.stage-tab.active{background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;box-shadow:0 2px 10px rgba(37,99,235,0.3)}
+.stage-tab .tab-done{display:none;position:absolute;top:4px;right:6px;font-size:10px;color:var(--green-l)}
+.stage-tab.done{color:var(--green-l)}
+.stage-tab.done.active{background:linear-gradient(135deg,#059669,#10b981)}
 .section:nth-child(2){animation-delay:0.05s}
 .section:nth-child(3){animation-delay:0.1s}
 .section:nth-child(4){animation-delay:0.15s}
@@ -173,6 +190,37 @@ body[data-role="driver"] .role-factory{display:none !important}
       <span id="kb_pickup" style="font-size:16px;font-weight:800;color:var(--amber);font-family:'DM Mono',monospace;margin-left:8px">—</span>
     </div>
     <div id="kb_customer" style="font-size:11px;color:var(--muted);margin-top:8px">—</div>
+  </div>
+
+  <!-- 司机阶段切换 Tabs (driver only) -->
+  <div class="stage-tabs role-driver" id="stageTabs">
+    <button type="button" class="stage-tab active" data-stage="pickup" onclick="switchStage('pickup')">
+      <span class="tab-icon">📦</span><span>Pickup 提柜</span>
+    </button>
+    <button type="button" class="stage-tab" data-stage="weight" onclick="switchStage('weight')">
+      <span class="tab-icon">⚖️</span><span>Weight 过磅</span>
+    </button>
+    <button type="button" class="stage-tab" data-stage="return" onclick="switchStage('return')">
+      <span class="tab-icon">🏁</span><span>Return 还柜</span>
+    </button>
+  </div>
+
+  <!-- Pickup 提柜照 (driver) -->
+  <div class="section role-driver stage-pickup">
+    <div class="section-title">📦 提柜现场照片</div>
+    <div class="card">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">请在堆场拍空箱外观 + 箱号铭牌 + 箱内（至少 3 张）</div>
+      <div class="photo-grid" id="pickupPhotos"></div>
+    </div>
+  </div>
+
+  <!-- Return 还柜照 (driver) -->
+  <div class="section role-driver stage-return">
+    <div class="section-title">🏁 还柜现场照片</div>
+    <div class="card">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">请在港口/堆场拍重箱外观 + 封签 + 交接单（至少 3 张）</div>
+      <div class="photo-grid" id="returnPhotos"></div>
+    </div>
   </div>
 
   <!-- 调度预填信息 (read-only) -->
@@ -216,7 +264,7 @@ body[data-role="driver"] .role-factory{display:none !important}
   </div>
 
   <!-- 货重 (driver fills at weighbridge) -->
-  <div class="section role-driver">
+  <div class="section role-driver stage-weight">
     <div class="section-title">⚖️ 过磅货重（司机填）</div>
     <div class="card">
       <div class="field" style="margin-bottom:6px">
@@ -291,14 +339,19 @@ var CB_ENDPOINT   = API + "/driver-evidence";   // public: read + driver-whiteli
 var blNo = "";
 var containerNo = "";
 var role = "driver";      // "driver" | "factory" — from ?role= query param
+var stage = "pickup";     // driver only: "pickup" | "weight" | "return"
 var booking = null;
-var gridFiles = [null,null,null,null,null,null,null,null,null];
+var gridFiles = [null,null,null,null,null,null,null,null,null];      // factory 9-grid
+var pickupFiles = [null,null,null,null,null,null];                   // driver pickup 6-slot
+var returnFiles = [null,null,null,null,null,null];                   // driver return 6-slot
 var weightFile = null;
 var sealPhotoFile = null;
 var uploading = false;
 var submitted = false;
 var editMode = false;
 var GRID_LABELS = ["左前","正前","右前","左侧","正面","右侧","左后","正后","右后"];
+var PICKUP_LABELS = ["空箱外观","箱号铭牌","箱内","箱门","底板","其他"];
+var RETURN_LABELS = ["重箱外观","封签","交接单","箱门","车架","其他"];
 
 // ═══ Init ═══
 (function init() {
@@ -310,6 +363,7 @@ var GRID_LABELS = ["左前","正前","右前","左侧","正面","右侧","左后
 
   // Apply role to body (CSS hides opposing sections)
   document.body.dataset.role = role;
+  document.body.dataset.stage = stage;
 
   // Role chip
   var chip = document.getElementById("roleChip");
@@ -342,6 +396,7 @@ var GRID_LABELS = ["左前","正前","右前","左侧","正面","右侧","左后
 
   document.getElementById("shipId").textContent = containerNo + " · " + blNo;
   if (role === "factory") renderGrid();
+  if (role === "driver") { renderDriverGrid("pickup"); renderDriverGrid("return"); }
 
   // Watch cargo weight for VGM preview + submit state
   document.getElementById("cargoWeight").addEventListener("input", function(){
@@ -368,13 +423,8 @@ function loadBooking() {
       booking = row;
       showDispatchInfo(booking);
       showPeerStatus(booking);
-      var selfDone = role === "factory" ? booking.factory_submitted_at : booking.driver_submitted_at;
-      if (selfDone) {
-        document.getElementById("submitBtn").className = "submit-btn done";
-        document.getElementById("submitBtn").innerHTML = "✅ 此柜" + (role==="factory"?"已由工厂":"已由司机") + "提交 — " + new Date(selfDone).toLocaleString("zh-CN");
-        document.getElementById("submitBtn").disabled = true;
-        submitted = true;
-      }
+      updateStageTabDoneMarks();
+      refreshStageSubmitLock();
     })
     .catch(function(e){ console.warn(e); showManualEntry(); });
 }
@@ -464,6 +514,96 @@ function toast(msg, type) {
   el.textContent = msg;
   el.className = "toast show " + (type || "info");
   setTimeout(function(){ el.className = "toast"; }, 2500);
+}
+
+// ═══ Driver stage switching ═══
+function switchStage(s) {
+  if (uploading) return;
+  stage = s;
+  document.body.dataset.stage = s;
+  var tabs = document.querySelectorAll(".stage-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].classList.toggle("active", tabs[i].dataset.stage === s);
+  }
+  submitted = false; // per-stage submission state
+  refreshStageSubmitLock();
+  updateSubmitBtn();
+}
+
+function updateStageTabDoneMarks() {
+  if (role !== "driver" || !booking) return;
+  var map = { pickup: booking.pickup_submitted_at, weight: booking.driver_submitted_at, "return": booking.return_submitted_at };
+  var tabs = document.querySelectorAll(".stage-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    var s = tabs[i].dataset.stage;
+    tabs[i].classList.toggle("done", !!map[s]);
+    // add checkmark prefix
+    var txt = tabs[i].querySelector("span:last-child");
+    if (map[s] && txt && txt.textContent.indexOf("✓") < 0) {
+      txt.innerHTML = "✓ " + txt.textContent;
+    }
+  }
+}
+
+function refreshStageSubmitLock() {
+  if (!booking) { submitted = false; return; }
+  var done;
+  if (role === "factory") done = booking.factory_submitted_at;
+  else if (stage === "pickup") done = booking.pickup_submitted_at;
+  else if (stage === "return") done = booking.return_submitted_at;
+  else done = booking.driver_submitted_at; // weight
+  var btn = document.getElementById("submitBtn");
+  if (done) {
+    btn.className = "submit-btn done";
+    var label = role === "factory" ? "工厂" : (stage === "pickup" ? "提柜" : stage === "return" ? "还柜" : "过磅");
+    btn.innerHTML = "✅ " + label + " 已提交 — " + new Date(done).toLocaleString("zh-CN");
+    btn.disabled = true;
+    submitted = true;
+  } else {
+    btn.disabled = false;
+    submitted = false;
+    updateSubmitBtn();
+  }
+}
+
+// ═══ Driver photo grids (pickup / return) ═══
+function renderDriverGrid(which) {
+  var wrapId = which === "pickup" ? "pickupPhotos" : "returnPhotos";
+  var files  = which === "pickup" ? pickupFiles  : returnFiles;
+  var labels = which === "pickup" ? PICKUP_LABELS : RETURN_LABELS;
+  var wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  for (var i = 0; i < files.length; i++) {
+    var slot = document.createElement("div");
+    slot.className = "photo-slot" + (files[i] ? " has-photo" : "");
+    if (files[i]) {
+      slot.innerHTML = '<img src="' + URL.createObjectURL(files[i]) + '"/>'
+        + '<button class="remove" data-w="'+which+'" data-i="'+i+'">×</button>';
+    } else {
+      slot.innerHTML = '<span class="icon">📷</span><span class="label">' + labels[i] + '</span>';
+    }
+    (function(idx, w){
+      slot.addEventListener("click", function(e){
+        if (e.target.classList.contains("remove")) {
+          if (w === "pickup") pickupFiles[idx] = null; else returnFiles[idx] = null;
+          renderDriverGrid(w); updateSubmitBtn(); return;
+        }
+        var arr = w === "pickup" ? pickupFiles : returnFiles;
+        if (arr[idx]) return;
+        var inp = document.createElement("input");
+        inp.type = "file"; inp.accept = "image/*"; inp.capture = "environment";
+        inp.onchange = function(){
+          if (inp.files && inp.files[0]) {
+            if (w === "pickup") pickupFiles[idx] = inp.files[0]; else returnFiles[idx] = inp.files[0];
+            renderDriverGrid(w); updateSubmitBtn();
+          }
+        };
+        inp.click();
+      });
+    })(i, which);
+    wrap.appendChild(slot);
+  }
 }
 
 // ═══ 9-Grid Photos ═══
@@ -586,20 +726,43 @@ function updateSubmitBtn() {
       btn.innerHTML = "还需：" + missing.join("、");
     }
   } else {
-    // Driver: cargo weight + weight ticket
-    var cargo = Number(document.getElementById("cargoWeight").value) || 0;
-    var plate = document.getElementById("driverPlate").value.trim();
-    var name = document.getElementById("driverName").value.trim();
-    if (!plate) missing.push("车牌");
-    if (!name) missing.push("司机姓名");
-    if (!cargo) missing.push("货重");
-    if (!weightFile) missing.push("过磅单照片");
-    if (missing.length === 0) {
-      btn.className = "submit-btn ready";
-      btn.innerHTML = "📤 司机提交（货重 " + cargo + " KG + 过磅单）";
+    // Driver — branch by stage
+    if (stage === "pickup") {
+      var pCount = pickupFiles.filter(Boolean).length;
+      if (pCount < 3) missing.push("提柜照(已" + pCount + "/3)");
+      if (missing.length === 0) {
+        btn.className = "submit-btn ready";
+        btn.innerHTML = "📤 提交提柜照（" + pCount + " 张）";
+      } else {
+        btn.className = "submit-btn disabled";
+        btn.innerHTML = "还需：" + missing.join("、");
+      }
+    } else if (stage === "return") {
+      var rCount = returnFiles.filter(Boolean).length;
+      if (rCount < 3) missing.push("还柜照(已" + rCount + "/3)");
+      if (missing.length === 0) {
+        btn.className = "submit-btn ready";
+        btn.innerHTML = "📤 提交还柜照（" + rCount + " 张）";
+      } else {
+        btn.className = "submit-btn disabled";
+        btn.innerHTML = "还需：" + missing.join("、");
+      }
     } else {
-      btn.className = "submit-btn disabled";
-      btn.innerHTML = "还需：" + missing.join("、");
+      // weight stage
+      var cargo = Number(document.getElementById("cargoWeight").value) || 0;
+      var plate = document.getElementById("driverPlate").value.trim();
+      var name = document.getElementById("driverName").value.trim();
+      if (!plate) missing.push("车牌");
+      if (!name) missing.push("司机姓名");
+      if (!cargo) missing.push("货重");
+      if (!weightFile) missing.push("过磅单照片");
+      if (missing.length === 0) {
+        btn.className = "submit-btn ready";
+        btn.innerHTML = "📤 司机提交（货重 " + cargo + " KG + 过磅单）";
+      } else {
+        btn.className = "submit-btn disabled";
+        btn.innerHTML = "还需：" + missing.join("、");
+      }
     }
   }
 }
@@ -627,8 +790,10 @@ async function handleSubmit() {
   btn.innerHTML = "⏳ 上传中...";
   document.getElementById("progressWrap").style.display = "block";
 
-  var ossBase = "delivery/" + role + "/" + encodeURIComponent(blNo) + "/" + encodeURIComponent(cno) + "/";
-  var payload = { bl_no: blNo, container_no: cno, role: role };
+  // New OSS layout: delivery/<BL>/<CNO>/<stage>/  — stage-based (pickup/loading/weight/return)
+  var stageKey = role === "factory" ? "loading" : stage;
+  var ossBase = "delivery/" + encodeURIComponent(blNo) + "/" + encodeURIComponent(cno) + "/" + stageKey + "/";
+  var payload = { bl_no: blNo, container_no: cno, role: role, stage: stageKey };
 
   try {
     if (role === "factory") {
@@ -660,8 +825,36 @@ async function handleSubmit() {
       payload.seal_photo_url = sealUrl;
       payload.factory_submitted_at = new Date().toISOString();
       if (booking && booking.loading_contact) payload.factory_submitted_by = booking.loading_contact;
+    } else if (stage === "pickup") {
+      var pPhotos = pickupFiles.filter(Boolean);
+      if (pPhotos.length < 3) throw new Error("至少 3 张提柜照");
+      var totalP = pPhotos.length, doneP = 0, pUrls = [];
+      for (var pi = 0; pi < pPhotos.length; pi++) {
+        var pIdx = pickupFiles.indexOf(pPhotos[pi]);
+        var pPath = ossBase + "pickup_" + PICKUP_LABELS[pIdx] + "_" + Date.now() + "_" + pPhotos[pi].name;
+        var pUrl = await uploadFile(pPhotos[pi], pPath);
+        pUrls.push({ position: PICKUP_LABELS[pIdx], url: pUrl });
+        doneP++; updateProgress(doneP, totalP);
+        btn.innerHTML = "⏳ 上传中 " + doneP + "/" + totalP + "...";
+      }
+      payload.pickup_photos = pUrls;
+      payload.pickup_submitted_at = new Date().toISOString();
+    } else if (stage === "return") {
+      var rPhotos = returnFiles.filter(Boolean);
+      if (rPhotos.length < 3) throw new Error("至少 3 张还柜照");
+      var totalR = rPhotos.length, doneR = 0, rUrls = [];
+      for (var ri = 0; ri < rPhotos.length; ri++) {
+        var rIdx = returnFiles.indexOf(rPhotos[ri]);
+        var rPath = ossBase + "return_" + RETURN_LABELS[rIdx] + "_" + Date.now() + "_" + rPhotos[ri].name;
+        var rUrl = await uploadFile(rPhotos[ri], rPath);
+        rUrls.push({ position: RETURN_LABELS[rIdx], url: rUrl });
+        doneR++; updateProgress(doneR, totalR);
+        btn.innerHTML = "⏳ 上传中 " + doneR + "/" + totalR + "...";
+      }
+      payload.return_photos = rUrls;
+      payload.return_submitted_at = new Date().toISOString();
     } else {
-      // Driver
+      // Driver weight stage
       var cargo = Number(document.getElementById("cargoWeight").value) || 0;
       var plate = document.getElementById("driverPlate").value.trim();
       var dname = document.getElementById("driverName").value.trim();
