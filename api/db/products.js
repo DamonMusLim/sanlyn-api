@@ -76,6 +76,36 @@ export default async function handler(req, res) {
 
     var query = "SELECT * FROM products", params = [], conds = [];
 
+    // ── Brand scoping (fail-closed) ──
+    // Internal roles see everything; everyone else is scoped to the brands
+    // assigned to their customer record(s). This enforces price isolation
+    // server-side so prices can't leak even if the frontend is bypassed.
+    var INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin"];
+    if (req.user && !INTERNAL_ROLES.includes(req.user.role)) {
+      var codes = Array.isArray(req.user.companyCodes) && req.user.companyCodes.length
+        ? req.user.companyCodes
+        : (req.user.companyCode ? [req.user.companyCode] : []);
+      if (codes.length === 0) {
+        return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
+      }
+      var custR = await pool.query(
+        "SELECT brands FROM customers WHERE company_code = ANY($1::text[]) AND is_active = true",
+        [codes]
+      );
+      var brandSet = new Set();
+      for (var row of custR.rows) {
+        var bs = row.brands;
+        if (typeof bs === "string") { try { bs = JSON.parse(bs); } catch (_) { bs = []; } }
+        if (Array.isArray(bs)) for (var br of bs) if (br) brandSet.add(String(br).trim());
+      }
+      if (brandSet.size === 0) {
+        // No brand assigned → return nothing (fail-closed).
+        return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
+      }
+      params.push(Array.from(brandSet));
+      conds.push("brand = ANY($" + params.length + "::text[])");
+    }
+
     if (brand) {
       params.push(brand);
       conds.push("brand = $" + params.length);
