@@ -5,10 +5,8 @@
 // POST { docId, pdfUrl, mode: "auto" | "v2" | "v3" }
 // Response { x, y, page, source, confidence, visionRemaining }
 
-import pg from "pg";
-
-const { Pool } = pg;
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+import { getPool } from "../db.js";
+const pool = getPool();
 
 const VISION_QUOTA_PER_DOC = 2;
 
