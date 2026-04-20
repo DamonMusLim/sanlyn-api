@@ -949,7 +949,7 @@ export default async function handler(req, res) {
         res.setHeader("Content-Type","application/pdf");
         res.setHeader("Content-Disposition","attachment; filename=\""+pdfName+"\"");
         res.setHeader("Cache-Control","no-store");
-        return res.status(200).send(pdfBuf);
+        return res.status(200).send(Buffer.from(pdfBuf));
       }catch(pdfErr){
         console.error("[documents] puppeteer PDF error:",pdfErr.message);
         // Return JSON error so frontend can fall back to print=1 instead of
