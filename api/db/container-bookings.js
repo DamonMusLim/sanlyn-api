@@ -17,11 +17,22 @@ const ALL_FIELDS = [
   "tare_weight_kg","cargo_weight_kg","pickup_time","pickup_yard","return_yard",
   "loading_address","loading_contact","truck_plate","trailer_plate",
   "driver_name","driver_phone","trucking_company","note",
+  // Driver-submitted evidence (filled at weighbridge / loading scene)
+  "evidence_photos","seal_photo_url","weight_ticket_url","driver_submitted_at",
 ];
+
+// JSONB columns need JSON.stringify on insert
+const JSONB_FIELDS = new Set(["evidence_photos"]);
 
 function pickBody(body){
   var out={};
-  ALL_FIELDS.forEach(function(k){ if(body[k]!==undefined) out[k]=body[k]===""?null:body[k]; });
+  ALL_FIELDS.forEach(function(k){
+    if(body[k]!==undefined){
+      var v = body[k]===""?null:body[k];
+      if(v!=null && JSONB_FIELDS.has(k) && typeof v !== "string") v = JSON.stringify(v);
+      out[k]=v;
+    }
+  });
   return out;
 }
 

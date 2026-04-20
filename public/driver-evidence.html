@@ -132,6 +132,9 @@ body::before{
 /* Animations */
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 .card,.section{animation:fadeUp 0.4s ease-out both}
+/* Role gating — hide sections not for this role */
+body[data-role="factory"] .role-driver{display:none !important}
+body[data-role="driver"] .role-factory{display:none !important}
 .section:nth-child(2){animation-delay:0.05s}
 .section:nth-child(3){animation-delay:0.1s}
 .section:nth-child(4){animation-delay:0.15s}
@@ -146,62 +149,84 @@ body::before{
   <div class="header">
     <div class="logo">Sanlyn OS · 装柜存证系统</div>
     <h1>📷 装柜存证上传</h1>
-    <div class="sub">请在装柜现场拍照并填写信息</div>
+    <div class="sub">请核对信息并上传装柜照片 + 过磅单</div>
     <div class="ship-id" id="shipId">加载中...</div>
   </div>
 
-  <!-- 司机信息 -->
-  <div class="section">
+  <!-- 角色标签：FACTORY / DRIVER -->
+  <div id="roleBadge" style="text-align:center;margin-bottom:10px;display:none">
+    <span id="roleChip" style="display:inline-block;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:800;letter-spacing:1px"></span>
+  </div>
+
+  <!-- 对方进度提示 -->
+  <div id="peerStatus" class="card" style="display:none;padding:10px 14px;margin-bottom:12px;font-size:12px">
+    <span id="peerText">—</span>
+  </div>
+
+  <!-- 关键信息横幅：PO号 + 合同号 + 拖箱时间 (所有人看到相同信息) -->
+  <div id="keyBanner" class="card" style="display:none;background:linear-gradient(135deg,rgba(37,99,235,0.12),rgba(139,92,246,0.10));border-color:rgba(37,99,235,0.35);text-align:center;padding:14px 16px;margin-bottom:16px">
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">订单 / 合同 / 拖箱时间</div>
+    <div id="kb_po" style="font-size:22px;font-weight:800;color:var(--blue-l);font-family:'DM Mono',monospace;letter-spacing:1px;margin-bottom:4px">—</div>
+    <div id="kb_contract" style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:8px">—</div>
+    <div style="padding:8px 14px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);border-radius:8px;display:inline-block">
+      <span style="font-size:11px;color:var(--muted)">拖箱时间</span>
+      <span id="kb_pickup" style="font-size:16px;font-weight:800;color:var(--amber);font-family:'DM Mono',monospace;margin-left:8px">—</span>
+    </div>
+    <div id="kb_customer" style="font-size:11px;color:var(--muted);margin-top:8px">—</div>
+  </div>
+
+  <!-- 调度预填信息 (read-only) -->
+  <div class="section" id="dispatchSection" style="display:none">
+    <div class="section-title">📋 调度信息（车队已填）</div>
+    <div class="card" style="background:rgba(59,130,246,0.05);border-color:rgba(59,130,246,0.25)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;font-size:12px">
+        <div><div style="color:var(--muted);font-size:10px">箱号</div><div id="v_container" style="font-weight:700;font-family:'DM Mono',monospace">—</div></div>
+        <div><div style="color:var(--muted);font-size:10px">封签号</div><div id="v_seal" style="font-weight:700;font-family:'DM Mono',monospace">—</div></div>
+        <div><div style="color:var(--muted);font-size:10px">车号</div><div id="v_truck" style="font-weight:700">—</div></div>
+        <div><div style="color:var(--muted);font-size:10px">司机</div><div id="v_driver" style="font-weight:700">—</div></div>
+        <div><div style="color:var(--muted);font-size:10px">拖箱时间</div><div id="v_pickup" style="font-weight:700">—</div></div>
+        <div><div style="color:var(--muted);font-size:10px">柜重 (Tare)</div><div id="v_tare" style="font-weight:700;color:var(--amber)">—</div></div>
+      </div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.06);font-size:11px;color:var(--muted)">
+        <div>🏭 <span id="v_address">—</span></div>
+      </div>
+      <button type="button" id="editToggle" onclick="toggleEdit()" style="margin-top:12px;width:100%;padding:8px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--input-b);color:var(--muted);font-size:11px;cursor:pointer">
+        ✏️ 信息有误？点我修改
+      </button>
+    </div>
+  </div>
+
+  <!-- 司机信息 (hidden by default if dispatcher pre-filled) -->
+  <div class="section" id="driverSection" style="display:none">
     <div class="section-title">🚛 司机信息</div>
     <div class="card">
-      <div class="field">
-        <label>车牌号 *</label>
-        <input id="driverPlate" placeholder="如：鲁KA0650" maxlength="12"/>
-      </div>
-      <div class="field">
-        <label>司机姓名 *</label>
-        <input id="driverName" placeholder="请输入姓名"/>
-      </div>
-      <div class="field">
-        <label>联系电话 *</label>
-        <input id="driverPhone" type="tel" placeholder="手机号码" maxlength="13"/>
-      </div>
+      <div class="field"><label>车牌号 *</label><input id="driverPlate" placeholder="如：闽DK9678" maxlength="12"/></div>
+      <div class="field"><label>司机姓名 *</label><input id="driverName" placeholder="请输入姓名"/></div>
+      <div class="field"><label>联系电话 *</label><input id="driverPhone" type="tel" placeholder="手机号码" maxlength="13"/></div>
     </div>
   </div>
 
-  <!-- 箱号封号 -->
-  <div class="section">
+  <!-- 箱封信息 (hidden by default if dispatcher pre-filled) -->
+  <div class="section" id="containerSection" style="display:none">
     <div class="section-title">📦 箱封信息</div>
     <div class="card">
-      <div class="field">
-        <label>箱号 Container No. *</label>
-        <input id="containerNo" placeholder="如：SEGU4935454" maxlength="20" style="text-transform:uppercase"/>
-      </div>
-      <div class="field">
-        <label>封号 Seal No. *</label>
-        <input id="sealNo" placeholder="如：NJ722588" maxlength="20" style="text-transform:uppercase"/>
-      </div>
+      <div class="field"><label>箱号 Container No. *</label><input id="containerNo" placeholder="如：TCNU1446076" maxlength="20" style="text-transform:uppercase"/></div>
+      <div class="field"><label>封号 Seal No. *</label><input id="sealNo" placeholder="如：YMAV897778" maxlength="20" style="text-transform:uppercase"/></div>
     </div>
   </div>
 
-  <!-- 9宫格照片 -->
-  <div class="section">
-    <div class="section-title">📷 装柜全景（9宫格）</div>
+  <!-- 货重 (driver fills at weighbridge) -->
+  <div class="section role-driver">
+    <div class="section-title">⚖️ 过磅货重（司机填）</div>
     <div class="card">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
-        请从不同角度拍摄装柜过程，至少上传 4 张
+      <div class="field" style="margin-bottom:6px">
+        <label>货重 Cargo Weight (KG) *</label>
+        <input id="cargoWeight" type="number" inputmode="decimal" step="0.01" placeholder="如：25000" style="font-family:'DM Mono',monospace"/>
       </div>
-      <div class="photo-grid" id="gridPhotos"></div>
-    </div>
-  </div>
-
-  <!-- 过磅单 -->
-  <div class="section">
-    <div class="section-title">⚖️ 过磅单</div>
-    <div class="card">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
-        拍摄过磅单或地磅显示屏
+      <div style="font-size:10px;color:var(--dim);margin-bottom:10px">
+        VGM = 柜重 <span id="v_tare2">—</span> + 货重 = <span id="v_vgm" style="color:var(--green-l);font-weight:700">—</span> KG
       </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">📸 过磅单照片</div>
       <div class="photo-single" id="weightTicket" onclick="pickWeightTicket()">
         <span style="font-size:32px">⚖️</span>
         <div>
@@ -213,11 +238,36 @@ body::before{
     </div>
   </div>
 
+  <!-- 封签特写照 (工厂装完封签时拍) -->
+  <div class="section role-factory">
+    <div class="section-title">🔒 封签特写照</div>
+    <div class="card">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">请拍摄封签号清晰可见的特写</div>
+      <div class="photo-single" id="sealPhoto" onclick="pickSealPhoto()">
+        <span style="font-size:32px">🔒</span>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--muted)">点击拍照或选择图片</div>
+          <div style="font-size:10px;color:var(--dim);margin-top:2px">封签号要能看清</div>
+        </div>
+      </div>
+      <input id="sealPhotoInput" type="file" accept="image/*" capture="environment" style="display:none" onchange="handleSealPhoto(this)"/>
+    </div>
+  </div>
+
+  <!-- 9宫格照片 (工厂现场拍装柜) -->
+  <div class="section role-factory">
+    <div class="section-title">📷 装柜全景（9宫格）</div>
+    <div class="card">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+        请从不同角度拍摄装柜过程，至少上传 4 张
+      </div>
+      <div class="photo-grid" id="gridPhotos"></div>
+    </div>
+  </div>
+
   <!-- 提交 -->
   <div class="section">
-    <button class="submit-btn disabled" id="submitBtn" onclick="handleSubmit()">
-      请先填写必填信息
-    </button>
+    <button class="submit-btn disabled" id="submitBtn" onclick="handleSubmit()">请先填写必填信息</button>
     <div class="progress" id="progressWrap" style="display:none">
       <div class="progress-bar" id="progressBar" style="width:0%"></div>
     </div>
@@ -233,60 +283,179 @@ body::before{
 
 <script>
 // ═══ Config ═══
-var API = "https://sanlyn-api.vercel.app/api";
-var OSS_UPLOAD = API + "/oss-upload";
-var RAW_PATCH = API + "/db/raw-patch";
-var AUDIT_LOG = API + "/db/audit-log";
+var API = "https://api.sanlyn.cn/api";
+var OSS_UPLOAD    = API + "/oss-upload";
+var CB_ENDPOINT   = API + "/driver-evidence";   // public: read + driver-whitelist write
 
 // ═══ State ═══
-var shipmentNo = "";
-var gridFiles = [null,null,null,null,null,null,null,null,null]; // 9 slots
+var blNo = "";
+var containerNo = "";
+var role = "driver";      // "driver" | "factory" — from ?role= query param
+var booking = null;
+var gridFiles = [null,null,null,null,null,null,null,null,null];
 var weightFile = null;
+var sealPhotoFile = null;
 var uploading = false;
 var submitted = false;
+var editMode = false;
+var GRID_LABELS = ["左前","正前","右前","左侧","正面","右侧","左后","正后","右后"];
 
 // ═══ Init ═══
 (function init() {
   var params = new URLSearchParams(window.location.search);
-  shipmentNo = params.get("id") || params.get("shipmentNo") || "";
-  document.getElementById("shipId").textContent = shipmentNo || "未指定单号";
-  if (!shipmentNo) {
-    document.getElementById("shipId").style.color = "#ef4444";
-    document.getElementById("shipId").textContent = "⚠ 缺少单号参数";
+  blNo        = params.get("bl") || params.get("bl_no") || "";
+  containerNo = (params.get("container") || params.get("container_no") || "").toUpperCase();
+  role        = (params.get("role") || "driver").toLowerCase();
+  if (role !== "factory" && role !== "driver") role = "driver";
+
+  // Apply role to body (CSS hides opposing sections)
+  document.body.dataset.role = role;
+
+  // Role chip
+  var chip = document.getElementById("roleChip");
+  var badge = document.getElementById("roleBadge");
+  badge.style.display = "block";
+  if (role === "factory") {
+    chip.textContent = "🏭 工厂端 · 装柜现场";
+    chip.style.background = "rgba(139,92,246,0.15)";
+    chip.style.color = "#c4b5fd";
+    chip.style.border = "1px solid rgba(139,92,246,0.3)";
+    document.querySelector(".header h1").textContent = "📷 工厂装柜记录";
+    document.querySelector(".header .sub").textContent = "请拍装柜照 + 封签特写";
+  } else {
+    chip.textContent = "🚛 司机端 · 过磅送港";
+    chip.style.background = "rgba(37,99,235,0.15)";
+    chip.style.color = "var(--blue-l)";
+    chip.style.border = "1px solid rgba(37,99,235,0.3)";
+    document.querySelector(".header h1").textContent = "⚖️ 司机过磅上传";
+    document.querySelector(".header .sub").textContent = "请填货重 + 拍过磅单";
   }
-  renderGrid();
-  // Pre-fill if data exists
-  if (shipmentNo) loadExisting();
-  // Watch inputs for submit button state
+
+  // Legacy: ?id=<shipmentNo>
+  if (!blNo && !containerNo) {
+    var legacy = params.get("id") || params.get("shipmentNo") || "";
+    if (legacy) document.getElementById("shipId").textContent = "⚠ 旧版二维码，请使用新二维码";
+    else document.getElementById("shipId").textContent = "⚠ 缺少单号参数";
+    document.getElementById("shipId").style.color = "#ef4444";
+    return;
+  }
+
+  document.getElementById("shipId").textContent = containerNo + " · " + blNo;
+  if (role === "factory") renderGrid();
+
+  // Watch cargo weight for VGM preview + submit state
+  document.getElementById("cargoWeight").addEventListener("input", function(){
+    updateVgmPreview();
+    updateSubmitBtn();
+  });
   ["driverPlate","driverName","driverPhone","containerNo","sealNo"].forEach(function(id){
     document.getElementById(id).addEventListener("input", updateSubmitBtn);
   });
+
+  loadBooking();
 })();
 
-function loadExisting() {
-  fetch(API + "/db/vault-read?contractNo=" + encodeURIComponent(shipmentNo) + "&table=shipping_plans")
+function loadBooking() {
+  fetch(CB_ENDPOINT + "?bl=" + encodeURIComponent(blNo) + "&container=" + encodeURIComponent(containerNo))
     .then(function(r){ return r.json(); })
     .then(function(d){
-      if (!d || !d.vault) return;
-      // Pre-fill driver info from raw-patch data
+      var row = d && d.data;
+      if (!row) {
+        // No dispatcher record yet — fall back to manual entry
+        showManualEntry();
+        return;
+      }
+      booking = row;
+      showDispatchInfo(booking);
+      showPeerStatus(booking);
+      var selfDone = role === "factory" ? booking.factory_submitted_at : booking.driver_submitted_at;
+      if (selfDone) {
+        document.getElementById("submitBtn").className = "submit-btn done";
+        document.getElementById("submitBtn").innerHTML = "✅ 此柜" + (role==="factory"?"已由工厂":"已由司机") + "提交 — " + new Date(selfDone).toLocaleString("zh-CN");
+        document.getElementById("submitBtn").disabled = true;
+        submitted = true;
+      }
     })
-    .catch(function(){});
-  // Also try shipping plan raw data
-  fetch(API + "/db/shipping")
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      var list = data.data || data || [];
-      var plan = list.find(function(p){ return (p.shipment_no || (p.raw||{}).shipmentNo) === shipmentNo; });
-      if (!plan) return;
-      var r = plan.raw || {};
-      if (r.driverPlate) document.getElementById("driverPlate").value = r.driverPlate;
-      if (r.driverName) document.getElementById("driverName").value = r.driverName;
-      if (r.driverPhone) document.getElementById("driverPhone").value = r.driverPhone;
-      if (r.containerNo) document.getElementById("containerNo").value = r.containerNo;
-      if (r.sealNo) document.getElementById("sealNo").value = r.sealNo;
-      updateSubmitBtn();
-    })
-    .catch(function(){});
+    .catch(function(e){ console.warn(e); showManualEntry(); });
+}
+
+function showDispatchInfo(b) {
+  // Key banner — everyone (driver, factory, dispatcher) sees same info
+  var bannerEl = document.getElementById("keyBanner");
+  if (b.customer_po || b.pickup_time || b.contract_no) {
+    bannerEl.style.display = "block";
+    document.getElementById("kb_po").textContent = b.customer_po ? "PO " + b.customer_po : "(待分配 PO)";
+    var parts = [];
+    if (b.contract_no) parts.push("合同 " + b.contract_no);
+    if (b.booking_no) parts.push("SO " + b.booking_no);
+    parts.push("BL " + (b.bl_no || blNo));
+    document.getElementById("kb_contract").textContent = parts.join(" · ");
+    document.getElementById("kb_pickup").textContent = b.pickup_time
+      ? new Date(b.pickup_time).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})
+      : "— 待调度确认";
+    document.getElementById("kb_customer").textContent = b.customer ? "客户 " + b.customer : "";
+  }
+
+  document.getElementById("dispatchSection").style.display = "block";
+  document.getElementById("v_container").textContent = b.container_no || "—";
+  document.getElementById("v_seal").textContent      = b.seal_no      || "待补";
+  document.getElementById("v_truck").textContent     = b.truck_plate  || "—";
+  document.getElementById("v_driver").textContent    = (b.driver_name || "") + (b.driver_phone ? " · " + b.driver_phone : "");
+  document.getElementById("v_pickup").textContent    = b.pickup_time ? new Date(b.pickup_time).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
+  document.getElementById("v_tare").textContent      = b.tare_weight_kg ? b.tare_weight_kg + " KG" : "待补";
+  document.getElementById("v_tare2").textContent     = b.tare_weight_kg ? b.tare_weight_kg + " KG" : "?";
+  document.getElementById("v_address").textContent   = (b.loading_address || "") + (b.loading_contact ? " · " + b.loading_contact : "");
+  // Pre-fill hidden fields so submit has them
+  document.getElementById("driverPlate").value = b.truck_plate || "";
+  document.getElementById("driverName").value  = b.driver_name || "";
+  document.getElementById("driverPhone").value = b.driver_phone || "";
+  document.getElementById("containerNo").value = b.container_no || "";
+  document.getElementById("sealNo").value      = b.seal_no || "";
+  if (b.cargo_weight_kg) document.getElementById("cargoWeight").value = b.cargo_weight_kg;
+  updateVgmPreview();
+  updateSubmitBtn();
+}
+
+function showPeerStatus(b) {
+  var el = document.getElementById("peerStatus");
+  var txt = document.getElementById("peerText");
+  var peerDoneAt = role === "factory" ? b.driver_submitted_at : b.factory_submitted_at;
+  var peerName = role === "factory" ? "司机" : "工厂";
+  if (peerDoneAt) {
+    el.style.display = "block";
+    el.style.background = "rgba(16,185,129,0.08)";
+    el.style.border = "1px solid rgba(16,185,129,0.25)";
+    txt.innerHTML = '✅ <b>' + peerName + '已提交</b> · ' + new Date(peerDoneAt).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
+    txt.style.color = "var(--green-l)";
+  } else {
+    el.style.display = "block";
+    el.style.background = "rgba(245,158,11,0.08)";
+    el.style.border = "1px solid rgba(245,158,11,0.25)";
+    txt.innerHTML = '⏳ 等待 ' + peerName + ' 提交';
+    txt.style.color = "var(--amber)";
+  }
+}
+
+function showManualEntry() {
+  // No dispatcher record — driver fills everything
+  document.getElementById("driverSection").style.display = "block";
+  document.getElementById("containerSection").style.display = "block";
+  if (containerNo) document.getElementById("containerNo").value = containerNo;
+  updateSubmitBtn();
+}
+
+function toggleEdit() {
+  editMode = !editMode;
+  document.getElementById("driverSection").style.display = editMode ? "block" : "none";
+  document.getElementById("containerSection").style.display = editMode ? "block" : "none";
+  document.getElementById("editToggle").textContent = editMode ? "✕ 取消修改，用调度信息" : "✏️ 信息有误？点我修改";
+}
+
+function updateVgmPreview() {
+  var tare = booking && booking.tare_weight_kg ? Number(booking.tare_weight_kg) : 0;
+  var cargo = Number(document.getElementById("cargoWeight").value) || 0;
+  var vgm = tare + cargo;
+  document.getElementById("v_vgm").textContent = vgm ? vgm.toFixed(2) : "—";
 }
 
 // ═══ Toast ═══
@@ -298,8 +467,6 @@ function toast(msg, type) {
 }
 
 // ═══ 9-Grid Photos ═══
-var GRID_LABELS = ["左前","正前","右前","左侧","正面","右侧","左后","正后","右后"];
-
 function renderGrid() {
   var wrap = document.getElementById("gridPhotos");
   wrap.innerHTML = "";
@@ -371,36 +538,69 @@ function removeWeightTicket(e) {
   updateSubmitBtn();
 }
 
-// ═══ Submit Button State ═══
+// ═══ Seal Photo ═══
+function pickSealPhoto() {
+  if (sealPhotoFile) return;
+  document.getElementById("sealPhotoInput").click();
+}
+
+function handleSealPhoto(inp) {
+  if (inp.files && inp.files[0]) {
+    sealPhotoFile = inp.files[0];
+    var el = document.getElementById("sealPhoto");
+    el.className = "photo-single has-photo";
+    el.innerHTML = '<img src="' + URL.createObjectURL(sealPhotoFile) + '"/>'
+      + '<button class="remove" onclick="removeSealPhoto(event)">×</button>';
+    updateSubmitBtn();
+  }
+}
+
+function removeSealPhoto(e) {
+  e.stopPropagation();
+  sealPhotoFile = null;
+  var el = document.getElementById("sealPhoto");
+  el.className = "photo-single";
+  el.innerHTML = '<span style="font-size:32px">🔒</span><div><div style="font-size:13px;font-weight:700;color:var(--muted)">点击拍照或选择图片</div><div style="font-size:10px;color:var(--dim);margin-top:2px">封签号要能看清</div></div>';
+  el.onclick = pickSealPhoto;
+  updateSubmitBtn();
+}
+
+// ═══ Submit Button State (role-aware) ═══
 function updateSubmitBtn() {
   var btn = document.getElementById("submitBtn");
   if (submitted || uploading) return;
-  var plate = document.getElementById("driverPlate").value.trim();
-  var name = document.getElementById("driverName").value.trim();
-  var phone = document.getElementById("driverPhone").value.trim();
-  var cno = document.getElementById("containerNo").value.trim();
-  var seal = document.getElementById("sealNo").value.trim();
-  var photoCount = gridFiles.filter(Boolean).length;
+  var missing = [];
 
-  var ready = plate && name && phone && cno && seal && photoCount >= 4;
-  var partial = plate || name || phone || cno || seal || photoCount > 0;
-
-  if (ready) {
-    btn.className = "submit-btn ready";
-    btn.innerHTML = "📤 提交存证（" + photoCount + "张照片" + (weightFile ? " + 过磅单" : "") + "）";
-  } else if (partial) {
-    btn.className = "submit-btn disabled";
-    var missing = [];
-    if (!plate) missing.push("车牌");
-    if (!name) missing.push("姓名");
-    if (!phone) missing.push("电话");
-    if (!cno) missing.push("箱号");
-    if (!seal) missing.push("封号");
-    if (photoCount < 4) missing.push("至少4张照片(已" + photoCount + "张)");
-    btn.innerHTML = "还需填写：" + missing.join("、");
+  if (role === "factory") {
+    // Factory: 9-grid + 封签特写 (封签号现场确认)
+    var seal = document.getElementById("sealNo").value.trim();
+    var photoCount = gridFiles.filter(Boolean).length;
+    if (!seal) missing.push("封签号");
+    if (!sealPhotoFile) missing.push("封签特写");
+    if (photoCount < 4) missing.push("装柜照(已" + photoCount + "/4)");
+    if (missing.length === 0) {
+      btn.className = "submit-btn ready";
+      btn.innerHTML = "📤 工厂提交（" + photoCount + "装柜 + 封签）";
+    } else {
+      btn.className = "submit-btn disabled";
+      btn.innerHTML = "还需：" + missing.join("、");
+    }
   } else {
-    btn.className = "submit-btn disabled";
-    btn.innerHTML = "请先填写必填信息";
+    // Driver: cargo weight + weight ticket
+    var cargo = Number(document.getElementById("cargoWeight").value) || 0;
+    var plate = document.getElementById("driverPlate").value.trim();
+    var name = document.getElementById("driverName").value.trim();
+    if (!plate) missing.push("车牌");
+    if (!name) missing.push("司机姓名");
+    if (!cargo) missing.push("货重");
+    if (!weightFile) missing.push("过磅单照片");
+    if (missing.length === 0) {
+      btn.className = "submit-btn ready";
+      btn.innerHTML = "📤 司机提交（货重 " + cargo + " KG + 过磅单）";
+    } else {
+      btn.className = "submit-btn disabled";
+      btn.innerHTML = "还需：" + missing.join("、");
+    }
   }
 }
 
@@ -415,24 +615,11 @@ async function uploadFile(file, path) {
   return data.url;
 }
 
-// ═══ Submit ═══
+// ═══ Submit (role-aware) ═══
 async function handleSubmit() {
   if (uploading || submitted) return;
-  var plate = document.getElementById("driverPlate").value.trim();
-  var name = document.getElementById("driverName").value.trim();
-  var phone = document.getElementById("driverPhone").value.trim();
-  var cno = document.getElementById("containerNo").value.trim().toUpperCase();
-  var seal = document.getElementById("sealNo").value.trim().toUpperCase();
-  var photos = gridFiles.filter(Boolean);
-
-  if (!plate || !name || !phone || !cno || !seal || photos.length < 4) {
-    toast("请填写所有必填信息", "err");
-    return;
-  }
-  if (!shipmentNo) {
-    toast("缺少单号参数", "err");
-    return;
-  }
+  var cno = (document.getElementById("containerNo").value.trim() || containerNo).toUpperCase();
+  if (!blNo || !cno) { toast("缺少 BL / 箱号参数", "err"); return; }
 
   uploading = true;
   var btn = document.getElementById("submitBtn");
@@ -440,69 +627,70 @@ async function handleSubmit() {
   btn.innerHTML = "⏳ 上传中...";
   document.getElementById("progressWrap").style.display = "block";
 
-  var totalFiles = photos.length + (weightFile ? 1 : 0);
-  var uploaded = 0;
-  var photoUrls = [];
-  var weightUrl = "";
+  var ossBase = "delivery/" + role + "/" + encodeURIComponent(blNo) + "/" + encodeURIComponent(cno) + "/";
+  var payload = { bl_no: blNo, container_no: cno, role: role };
 
   try {
-    // Upload grid photos
-    for (var i = 0; i < photos.length; i++) {
-      var idx = gridFiles.indexOf(photos[i]);
-      var path = "delivery/driver/" + shipmentNo + "/grid_" + GRID_LABELS[idx] + "_" + Date.now() + "_" + photos[i].name;
-      var url = await uploadFile(photos[i], path);
-      photoUrls.push({ position: GRID_LABELS[idx], url: url });
-      uploaded++;
-      updateProgress(uploaded, totalFiles);
-      btn.innerHTML = "⏳ 上传中 " + uploaded + "/" + totalFiles + "...";
+    if (role === "factory") {
+      var seal = document.getElementById("sealNo").value.trim().toUpperCase();
+      var photos = gridFiles.filter(Boolean);
+      if (!seal) throw new Error("请填封签号");
+      if (!sealPhotoFile) throw new Error("请上传封签特写");
+      if (photos.length < 4) throw new Error("至少 4 张装柜照");
+
+      var totalFiles = photos.length + 1;
+      var uploaded = 0;
+      var photoUrls = [];
+
+      for (var i = 0; i < photos.length; i++) {
+        var idx = gridFiles.indexOf(photos[i]);
+        var gpath = ossBase + "grid_" + GRID_LABELS[idx] + "_" + Date.now() + "_" + photos[i].name;
+        var gurl = await uploadFile(photos[i], gpath);
+        photoUrls.push({ position: GRID_LABELS[idx], url: gurl });
+        uploaded++;
+        updateProgress(uploaded, totalFiles);
+        btn.innerHTML = "⏳ 上传中 " + uploaded + "/" + totalFiles + "...";
+      }
+      var sPath = ossBase + "seal_" + Date.now() + "_" + sealPhotoFile.name;
+      var sealUrl = await uploadFile(sealPhotoFile, sPath);
+      uploaded++; updateProgress(uploaded, totalFiles);
+
+      payload.seal_no = seal;
+      payload.loading_photos = photoUrls;
+      payload.seal_photo_url = sealUrl;
+      payload.factory_submitted_at = new Date().toISOString();
+      if (booking && booking.loading_contact) payload.factory_submitted_by = booking.loading_contact;
+    } else {
+      // Driver
+      var cargo = Number(document.getElementById("cargoWeight").value) || 0;
+      var plate = document.getElementById("driverPlate").value.trim();
+      var dname = document.getElementById("driverName").value.trim();
+      var dphone = document.getElementById("driverPhone").value.trim();
+      if (!cargo) throw new Error("请填货重");
+      if (!weightFile) throw new Error("请上传过磅单");
+
+      btn.innerHTML = "⏳ 上传过磅单...";
+      var wPath = ossBase + "weight_" + Date.now() + "_" + weightFile.name;
+      var weightUrl = await uploadFile(weightFile, wPath);
+
+      payload.cargo_weight_kg = cargo;
+      payload.weight_ticket_url = weightUrl;
+      payload.driver_submitted_at = new Date().toISOString();
+      if (editMode || !booking) {
+        if (plate) payload.truck_plate = plate;
+        if (dname) payload.driver_name = dname;
+        if (dphone) payload.driver_phone = dphone;
+      }
     }
 
-    // Upload weight ticket
-    if (weightFile) {
-      var wPath = "delivery/driver/" + shipmentNo + "/weight_" + Date.now() + "_" + weightFile.name;
-      weightUrl = await uploadFile(weightFile, wPath);
-      uploaded++;
-      updateProgress(uploaded, totalFiles);
-    }
-
-    btn.innerHTML = "⏳ 保存数据...";
-
-    // Patch shipping_plan raw fields
-    var now = new Date().toLocaleString("zh-CN", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false });
-    var patches = {
-      driverPlate: plate,
-      driverName: name,
-      driverPhone: phone,
-      containerNo: cno,
-      sealNo: seal,
-      driverSubmittedAt: now,
-    };
-    if (weightUrl) patches.weightTicketUrl = weightUrl;
-    if (photoUrls.length > 0) patches.driverPhotos9grid = JSON.stringify(photoUrls);
-
-    await fetch(RAW_PATCH, {
+    btn.innerHTML = "⏳ 保存...";
+    var res = await fetch(CB_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ shipmentNo: shipmentNo, patches: patches })
+      body: JSON.stringify(payload)
     });
-
-    // Write audit log
-    await fetch(AUDIT_LOG, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contractNo: shipmentNo,
-        certKey: "driverEvidence",
-        table: "shipping_plans",
-        log: {
-          icon: "📷",
-          user: name + " (" + plate + ")",
-          action: "司机上传装柜存证",
-          time: now,
-          detail: photos.length + "张照片" + (weightUrl ? " + 过磅单" : "") + " · 箱号" + cno + " · 封号" + seal
-        }
-      })
-    });
+    var out = await res.json();
+    if (!res.ok || out.error) throw new Error(out.error || "Save failed");
 
     // Done!
     submitted = true;
@@ -510,7 +698,6 @@ async function handleSubmit() {
     btn.innerHTML = "✅ 上传完成";
     toast("存证上传成功！", "ok");
 
-    // Show done section
     setTimeout(function(){
       document.getElementById("doneSection").style.display = "block";
       document.getElementById("doneSection").scrollIntoView({ behavior: "smooth" });
