@@ -290,6 +290,15 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+        _xlsCapture={sheetName:"Sales Contract",docNo:no,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,
+          headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
+          colKeys:[
+            {k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},
+            {k:"qty"},
+            {k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},
+            {k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}
+          ],
+          rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
       }
 
       if(type==="iv"){
@@ -811,6 +820,9 @@ export default async function handler(req, res) {
     }
 
     // ── Excel export (format=xlsx) ─────────────────────────────────────────────
+    if(format==="xlsx" && !_xlsCapture){
+      return res.status(400).json({error:"xlsx_not_supported_for_type",type:type});
+    }
     if(format==="xlsx" && _xlsCapture){
       var ExcelJS=(await import("exceljs")).default;
       var wb=new ExcelJS.Workbook();
@@ -884,11 +896,19 @@ export default async function handler(req, res) {
     if(format==="pdf"){
       try{
         var puppeteer=(await import("puppeteer")).default;
-        var browser=await puppeteer.launch({
+        // Prefer system Chrome (lighter than Puppeteer's bundled Chromium).
+        // /usr/bin/google-chrome is installed on the API server; env override for other hosts.
+        var chromePath=process.env.CHROME_PATH||process.env.PUPPETEER_EXECUTABLE_PATH||"/usr/bin/google-chrome";
+        var launchOpts={
           headless:"new",
           args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage",
                 "--disable-gpu","--disable-software-rasterizer"],
-        });
+        };
+        try{
+          var fs=await import("fs");
+          if(fs.existsSync(chromePath)) launchOpts.executablePath=chromePath;
+        }catch(_){}
+        var browser=await puppeteer.launch(launchOpts);
         var page=await browser.newPage();
         // Pass HTML directly — no circular HTTP request needed
         await page.setContent(html,{waitUntil:"networkidle0"});
@@ -907,11 +927,10 @@ export default async function handler(req, res) {
         return res.status(200).send(pdfBuf);
       }catch(pdfErr){
         console.error("[documents] puppeteer PDF error:",pdfErr.message);
-        // Graceful fallback: serve HTML with print=1 so user can still save
-        res.setHeader("Content-Type","text/html; charset=utf-8");
-        res.setHeader("Cache-Control","no-store");
-        var fallbackHtml=html.replace("</head>","<script>window.onload=function(){window.print();}</script></head>");
-        return res.status(200).send(fallbackHtml);
+        // Return JSON error so frontend can fall back to print=1 instead of
+        // tricking the browser into saving HTML with a .pdf extension
+        res.setHeader("Content-Type","application/json");
+        return res.status(503).json({error:"pdf_render_unavailable",detail:pdfErr.message});
       }
     }
     // ──────────────────────────────────────────────────────────────────────────
