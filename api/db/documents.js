@@ -146,7 +146,7 @@ function productRows(prods,cols){
     // Emit a group header row when the order group changes (multi-order B/L merge).
     var grp=p._groupKey||"";
     if(grp && grp!==lastGroup){
-      var hdr="订单 "+(p._customerPO||"")+(p._containerNo?" · "+p._containerNo:"")+(p._contractNo?" · "+p._contractNo:"");
+      var hdr="ORDER "+(p._customerPO||"")+(p._containerNo?" · "+p._containerNo:"")+(p._contractNo?" · "+p._contractNo:"");
       out.push('<tr class="group-header" style="background:#f0f4ff"><td colspan="'+totalCols+'" style="font-weight:700;color:#1e40af;padding:6px 8px;font-size:11px;letter-spacing:.02em">'+esc(hdr)+'</td></tr>');
       lastGroup=grp;
     }
@@ -172,7 +172,8 @@ export default async function handler(req, res) {
     return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid access token.</p>");
   }
 
-  var{type,id,ids,company:qco,print:ap,contract_no,bl_no,limit}=req.query;
+  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit}=req.query;
+  // format=xlsx → Excel export (handled after data fetch, same query pipeline)
 
   // ── List mode: no type/id → return documents table rows ──
   if(!type && !id){
@@ -265,6 +266,7 @@ export default async function handler(req, res) {
       }
       // Single-order: no group header needed — blank the tag so productRows skips it.
       if(!_hasMultiOrder) prods=prods.map(function(p){return Object.assign({},p,{_groupKey:""});});
+      var _xlsCapture=null; // populated by sc/iv/pl blocks for xlsx export
       var tot=getTotal(prods,o);
       var tqty=prods.reduce(function(s,p){return s+Number(p.qty||0);},0)||Number(raw.totalQty||0);
       // GW/NW in products are PER-CARTON values — must multiply by qty for totals.
@@ -305,6 +307,10 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+        _xlsCapture={sheetName:"Invoice",docNo:noIV,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,
+          headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
+          colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty"},{k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},{k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}],
+          rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
       }
 
       if(type==="pl"){
@@ -325,6 +331,10 @@ export default async function handler(req, res) {
           <tbody>${productRows(prods,colsPL,curr)}
           <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
           </tbody></table>${sigBlock()}`,ap);
+        _xlsCapture={sheetName:"Packing List",docNo:noPL,buyer:cust,date:date,cno:cno,curr:"",pol:pol,pod:pod,
+          headers:["NO.","Description & Size","QTY","G.W (KG)","N.W (KG)","CBM"],
+          colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(Number(p.cbm||p.volume||0).toFixed(3))||0;}}],
+          rows:prods,totals:["","TOTAL",tqty,parseFloat(tgw.toFixed(2)),parseFloat(tnw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
       }
 
       if(type==="pi"){
@@ -384,9 +394,9 @@ export default async function handler(req, res) {
             </div>
           </div>
           <div class="trade-terms-bar">
-            <span>订单号 Order: ${esc(ordNo)}</span>
-            <span>合同号 Contract No.: ${esc(cno)}</span>
-            <span>期待交货日 Delivery: ${esc(date)}</span>
+            <span>Order No.: ${esc(ordNo)}</span>
+            <span>Contract No.: ${esc(cno)}</span>
+            <span>Delivery: ${esc(date)}</span>
           </div>
           <table><thead><tr><th style="width:36px">NO.</th><th>品名 Item Description</th><th style="width:70px;text-align:center">数量 Qty</th><th style="width:90px;text-align:right">单价 Unit Price</th><th style="width:100px;text-align:right">金额 Amount</th><th style="width:90px;text-align:center">条形码 Code</th></tr></thead>
           <tbody>
@@ -799,6 +809,112 @@ export default async function handler(req, res) {
         </div></body></html>`;
       }
     }
+
+    // ── Excel export (format=xlsx) ─────────────────────────────────────────────
+    if(format==="xlsx" && _xlsCapture){
+      var ExcelJS=(await import("exceljs")).default;
+      var wb=new ExcelJS.Workbook();
+      wb.creator="Sanlyn OS"; wb.created=new Date();
+      var ws=wb.addWorksheet(_xlsCapture.sheetName||_xlsCapture.docNo);
+
+      // Title row
+      ws.mergeCells("A1:F1");
+      ws.getCell("A1").value=_xlsCapture.sheetName+" — "+_xlsCapture.docNo;
+      ws.getCell("A1").font={bold:true,size:13};
+      ws.getCell("A1").alignment={horizontal:"center"};
+
+      // Meta rows
+      ws.addRow([]);
+      ws.addRow(["Buyer:",_xlsCapture.buyer,"","Date:",_xlsCapture.date]);
+      ws.addRow(["Contract No.:",_xlsCapture.cno,"","Currency:",_xlsCapture.curr]);
+      ws.addRow(["POL:",_xlsCapture.pol,"","POD:",_xlsCapture.pod]);
+      ws.addRow([]);
+
+      // Header
+      var hdrRow=ws.addRow(_xlsCapture.headers);
+      hdrRow.eachCell(function(c){c.font={bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF111111"}};c.alignment={horizontal:"center"};});
+      ws.getColumn(1).width=6;
+      ws.getColumn(2).width=52;
+
+      // Data rows
+      var rowNum=0;
+      var lastGrp="";
+      _xlsCapture.rows.forEach(function(p){
+        // Group header
+        var grp=p._groupKey||"";
+        if(grp&&grp!==lastGrp){
+          var gRow=ws.addRow(["","ORDER "+(p._customerPO||"")+(p._containerNo?" · "+p._containerNo:"")+(p._contractNo?" · "+p._contractNo:"")]);
+          gRow.eachCell(function(c){c.font={bold:true,color:{argb:"FF1e40af"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFe8eeff"}};});
+          ws.mergeCells("B"+gRow.number+":F"+gRow.number);
+          lastGrp=grp;
+        }
+        rowNum++;
+        var cells=[String(rowNum).padStart(2,"0")];
+        _xlsCapture.colKeys.forEach(function(k){
+          var v=k.fn?k.fn(p):(p[k.k]||"");
+          // Strip commas from numbers
+          var n=parseFloat(String(v).replace(/,/g,""));
+          cells.push(isNaN(n)?v:n);
+        });
+        var dr=ws.addRow(cells);
+        dr.getCell(1).alignment={horizontal:"center"};
+        // Right-align numeric columns
+        for(var ci=2;ci<=cells.length;ci++){
+          if(typeof cells[ci-1]==="number") dr.getCell(ci).alignment={horizontal:"right"};
+        }
+        // Alternate row fill
+        if(rowNum%2===0) dr.eachCell(function(c){c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFAFAFA"}};});
+      });
+
+      // Totals row
+      ws.addRow([]);
+      var tRow=ws.addRow(_xlsCapture.totals);
+      tRow.eachCell(function(c,ci){c.font={bold:true};if(ci===tRow.cellCount)c.numFmt="#,##0.00";});
+
+      // Column widths for numeric cols
+      for(var ci=3;ci<=_xlsCapture.headers.length;ci++) ws.getColumn(ci).width=16;
+
+      res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition","attachment; filename=\""+_xlsCapture.docNo+".xlsx\"");
+      res.setHeader("Cache-Control","no-store");
+      var buf=await wb.xlsx.writeBuffer();
+      return res.status(200).send(Buffer.from(buf));
+    }
+    // ── PDF export (format=pdf) — puppeteer renders HTML → PDF buffer ────────
+    if(format==="pdf"){
+      try{
+        var puppeteer=(await import("puppeteer")).default;
+        var browser=await puppeteer.launch({
+          headless:"new",
+          args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage",
+                "--disable-gpu","--disable-software-rasterizer"],
+        });
+        var page=await browser.newPage();
+        // Pass HTML directly — no circular HTTP request needed
+        await page.setContent(html,{waitUntil:"networkidle0"});
+        var pdfBuf=await page.pdf({
+          format:"A4",
+          printBackground:true,
+          margin:{top:"14mm",bottom:"14mm",left:"12mm",right:"12mm"},
+        });
+        await browser.close();
+        // Infer a filename from the html (grab first <title> tag)
+        var titleMatch=html.match(/<title[^>]*>([^<]+)<\/title>/i);
+        var pdfName=(titleMatch?titleMatch[1].replace(/[^A-Za-z0-9_\-\.]/g,"_"):"document")+".pdf";
+        res.setHeader("Content-Type","application/pdf");
+        res.setHeader("Content-Disposition","attachment; filename=\""+pdfName+"\"");
+        res.setHeader("Cache-Control","no-store");
+        return res.status(200).send(pdfBuf);
+      }catch(pdfErr){
+        console.error("[documents] puppeteer PDF error:",pdfErr.message);
+        // Graceful fallback: serve HTML with print=1 so user can still save
+        res.setHeader("Content-Type","text/html; charset=utf-8");
+        res.setHeader("Cache-Control","no-store");
+        var fallbackHtml=html.replace("</head>","<script>window.onload=function(){window.print();}</script></head>");
+        return res.status(200).send(fallbackHtml);
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
 
     if(!html) return res.status(400).send("<h1>Unknown type: "+esc(type)+"</h1>");
     res.setHeader("Content-Type","text/html; charset=utf-8");
