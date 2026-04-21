@@ -56,7 +56,7 @@ export default async function handler(req, res) {
   try {
     const pool = getPool();
     const q = await pool.query(
-      `SELECT _id, bl_no, ata, current_status_cn, raw FROM shipping_plans
+      `SELECT _id, bl_no, eta, ata, current_status_cn, raw FROM shipping_plans
        WHERE bl_no=$1 OR _id=$1 LIMIT 1`,
       [blNo]
     );
@@ -72,6 +72,22 @@ export default async function handler(req, res) {
           subscriptionId: p.raw?.portun_subscription_id || null,
           appId: APP_ID, carrierCode, blNo,
         });
+      }
+      // (a1) ETA+3 守卫：预计到港已过 3 天，很可能已到港（客户只是没回填 ata）
+      //      → 拒绝新订阅，避免每天刷订阅烧钱；已缓存的可以继续复用
+      if (!forceRefresh && p.eta) {
+        const etaPlus3Ms = new Date(p.eta).getTime() + 3 * 86400000;
+        if (Date.now() > etaPlus3Ms) {
+          return res.status(200).json({
+            cached: !!p.raw?.portun_subscription_id,
+            arrived: true,
+            reason: "eta_plus_3_days_passed_assumed_arrived",
+            token: null,
+            subscriptionId: p.raw?.portun_subscription_id || null,
+            appId: APP_ID, carrierCode, blNo,
+            hint: "回填 shipping_plans.ata 后即不再触发此规则；如要继续追踪请 forceRefresh=true",
+          });
+        }
       }
       // (a2) 严格白名单：raw.portun_allowed != true 且无缓存 → 拒绝订阅
       //      (已有缓存 subscriptionId 可以继续复用，不触发收费)
