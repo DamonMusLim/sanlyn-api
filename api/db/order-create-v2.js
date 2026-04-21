@@ -268,6 +268,69 @@ export default async function handler(req, res) {
 
     var portalId = "order_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
 
+    // ─────────────────────────────────────────────────────────────
+    // S89: Credit exposure check (proxy-purchase model)
+    // Flags over-limit orders so admin can approve/reject before production.
+    // Non-blocking: the order is still created, just tagged.
+    // ─────────────────────────────────────────────────────────────
+    var creditInfo = null;
+    try {
+      if (companyCode) {
+        var acctQ = await pool.query(
+          "SELECT username, raw FROM accounts WHERE role = 'customer' AND (raw->>'companyCode' = $1 OR company_code = $1) LIMIT 1",
+          [companyCode]
+        );
+        if (acctQ.rows.length) {
+          var acctRaw = acctQ.rows[0].raw || {};
+          var paymentTerms   = acctRaw.paymentTerms   || "prepay_100";
+          var creditLimit    = Number(acctRaw.creditLimit)   || 0;
+          var creditUsed     = Number(acctRaw.creditUsed)    || 0;
+          var creditCurrency = acctRaw.creditCurrency || "USD";
+          var requireApprv   = acctRaw.requireApproval !== false;
+          var orderCurrency  = (currency || "CNY").toUpperCase();
+          var orderAmt       = Number(totalAmount) || 0;
+          var currencyMatch  = orderCurrency === creditCurrency;
+          // MVP: only enforce when currencies match; otherwise flag as advisory
+          var newExposure    = creditUsed + (currencyMatch ? orderAmt : 0);
+          var overLimit      = creditLimit > 0 && newExposure > creditLimit;
+          var isCredit       = (paymentTerms === "cod_on_arrival" || paymentTerms === "net_30" || paymentTerms === "prepay_30_balance_bl");
+
+          creditInfo = {
+            paymentTerms:     paymentTerms,
+            creditLimit:      creditLimit,
+            creditCurrency:   creditCurrency,
+            creditUsedBefore: creditUsed,
+            orderAmount:      orderAmt,
+            orderCurrency:    orderCurrency,
+            currencyMatch:    currencyMatch,
+            newExposure:      newExposure,
+            overLimit:        overLimit,
+            isCreditOrder:    isCredit,
+            requireApproval:  requireApprv,
+            checkedAt:        new Date().toISOString(),
+            acctUsername:     acctQ.rows[0].username,
+          };
+          if (overLimit && isCredit) {
+            creditInfo.creditApprovalStatus = requireApprv ? "pending" : "acknowledged";
+          } else if (isCredit) {
+            creditInfo.creditApprovalStatus = "within_limit";
+          } else {
+            creditInfo.creditApprovalStatus = "not_applicable";  // prepay_100
+          }
+        } else {
+          creditInfo = { checkedAt: new Date().toISOString(), note: "no_matching_customer_account" };
+        }
+      }
+    } catch (ce) {
+      console.error("[order-create-v2] credit check failed:", ce);
+      creditInfo = { checkedAt: new Date().toISOString(), error: ce.message };
+    }
+
+    // Merge credit info into body.raw so it persists to orders.raw
+    if (creditInfo) {
+      body = Object.assign({}, body, { credit: creditInfo });
+    }
+
     var sql = `INSERT INTO orders (
       _id, order_no, contract_no, customer_po,
       company_code, company_name_cn, company_name_en, group_code, brand, category,
@@ -320,7 +383,8 @@ export default async function handler(req, res) {
         totalCBM: totalCBM,
         containerType: containerType,
         productCount: cleanProducts.length,
-      }
+      },
+      credit: creditInfo,   // S89: client may show "pending approval" banner
     });
   } catch (err) {
     console.error("[order-create-v2]", err);

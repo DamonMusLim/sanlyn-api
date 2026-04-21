@@ -11,6 +11,8 @@ import { portalGate }    from "./api/portal/gate.js";
 import rateLimit from "express-rate-limit";
 
 const app = express();
+// Nginx sits in front — trust 1 hop of X-Forwarded-For (needed for rate-limit client IP)
+app.set("trust proxy", 1);
 
 // ── Security: rate limit login endpoint ──────────────────────────────────────
 // Max 10 attempts per IP per 15 minutes. Blocks brute-force attacks.
@@ -23,6 +25,16 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true, // only count failed attempts
 });
 app.use("/api/db/auth-login", loginLimiter);
+
+// Public factory-fill endpoint: max 30 requests / 5min / IP (covers GET/POST/lookup)
+const factoryLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please wait a few minutes." },
+});
+app.use("/api/factory-fill", factoryLimiter);
 // ────────────────────────────────────────────────────────────────────────────
 // ── CORS middleware (replace Vercel headers config) ──
 const ALLOWED_ORIGINS = [
@@ -86,6 +98,7 @@ mount("/api/db/bl-control",        () => import("./api/db/bl-control.js"));
 mount("/api/db/container-bookings",      () => import("./api/db/container-bookings.js"));
 mount("/api/db/container-bookings-parse",() => import("./api/db/container-bookings-parse.js"));
 mount("/api/driver-evidence",            () => import("./api/driver-evidence.js"));
+mount("/api/factory-fill",               () => import("./api/factory-fill.js"));
 mount("/api/db/company",           () => import("./api/db/company.js"));
 mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));
@@ -97,6 +110,12 @@ mount("/api/db/documents",         () => import("./api/db/documents.js"));
 mount("/api/db/doc-uploads",       () => import("./api/db/doc-uploads.js"));
 mount("/api/db/doc-reminders",     () => import("./api/db/doc-reminders.js"));
 mount("/api/db/factory-submit",    () => import("./api/db/factory-submit.js"));
+mount("/api/db/factory-prefill",   () => import("./api/db/factory-prefill.js"));
+mount("/api/db/factory-token-create", () => import("./api/db/factory-token-create.js"));
+mount("/api/db/factory-reviews",   () => import("./api/db/factory-reviews.js"));
+mount("/api/db/seed-payment-defaults",  () => import("./api/db/seed-payment-defaults.js"));
+mount("/api/db/recompute-credit-used",  () => import("./api/db/recompute-credit-used.js"));
+mount("/api/db/credit-approvals",       () => import("./api/db/credit-approvals.js"));
 mount("/api/db/forward-doc",       () => import("./api/db/forward-doc.js"));
 mount("/api/db/finance-records",   () => import("./api/db/finance-records.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
@@ -173,6 +192,10 @@ mount("/api/portal/missing",   () => import("./api/portal/missing.js"));
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use("/public", express.static(join(__dirname, "public")));
+// Short link for factory fill: /f/<token> → static page
+app.get("/f/:token", (req, res) => {
+  res.redirect("/public/factory-fill.html?t=" + encodeURIComponent(req.params.token));
+});
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
 app.get("/health", (req, res) => res.json({ status: "ok" }));

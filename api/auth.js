@@ -91,6 +91,7 @@ const PUBLIC_PATHS = [
   "/api/db/auth-login",   // 主应用登录接口
   "/api/portal/login",    // Portal 登录（portal token 在此签发，登录前无 token）
   "/api/driver-evidence", // 司机扫 QR 上传装柜证据（无登录；凭 bl_no+container_no 授权）
+  "/api/factory-fill",    // 工厂 token 填单（无登录；凭 _idx_tokens 授权）
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
@@ -103,11 +104,19 @@ const PORTAL_ROUTES_PREFIX = "/api/portal/";
 export function authMiddleware(req, res, next) {
   if (req.method === "OPTIONS") return next();
 
+  // Browser auto-requests: silence rather than 401
+  if (req.path === "/favicon.ico" || req.path === "/robots.txt") {
+    return res.status(204).end();
+  }
+
   // 完全公开路径：无需任何 token
   if (PUBLIC_PATHS.includes(req.path)) return next();
 
   // 静态文件 /public/* 直通（driver-evidence.html / dispatch-paste.html 等）
   if (req.path.startsWith("/public/")) return next();
+
+  // Factory short link /f/<token> → redirect to /public/factory-fill.html, no auth
+  if (req.path.startsWith("/f/")) return next();
 
   // Portal 路由体系：使用独立 HMAC token，由 portalGate 负责校验，跳过内部 JWT
   if (req.path.startsWith(PORTAL_ROUTES_PREFIX)) return next();

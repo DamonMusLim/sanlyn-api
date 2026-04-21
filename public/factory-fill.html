@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<!-- v=2026-04-21-07 -->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>Sanlyn Factory Order – 工厂填单</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b1120;--card:rgba(15,23,42,.75);--card-b:rgba(255,255,255,.07);
+  --blue:#2563eb;--blue-l:#3b82f6;--green:#10b981;--green-l:#34d399;
+  --amber:#f59e0b;--red:#ef4444;--purple:#8b5cf6;
+  --text:#f8fafc;--muted:#94a3b8;--dim:#475569;
+  --input-bg:rgba(255,255,255,.04);--input-b:rgba(255,255,255,.1);
+}
+html{scroll-behavior:smooth}
+body{font-family:'DM Sans','PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse 80% 50% at 20% -10%,rgba(37,99,235,.1) 0%,transparent 60%),radial-gradient(ellipse 60% 40% at 80% 100%,rgba(16,185,129,.06) 0%,transparent 55%)}
+.container{max-width:560px;margin:0 auto;padding:20px 16px 120px;position:relative}
+.brand{text-align:center;padding:8px 0 20px;opacity:.9}
+.brand .logo{font-weight:800;font-size:22px;letter-spacing:1.5px;background:linear-gradient(90deg,#34d399,#3b82f6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand .tagline{font-size:12px;color:var(--muted);margin-top:2px;letter-spacing:2px}
+
+.card{background:var(--card);border:1px solid var(--card-b);border-radius:16px;padding:20px;margin-bottom:16px;backdrop-filter:blur(20px)}
+.card h2{font-size:16px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.card h2 .pill{font-size:10px;font-weight:600;padding:3px 8px;border-radius:999px;background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid rgba(59,130,246,.3)}
+.card h2 .pill.ok{background:rgba(16,185,129,.15);color:#6ee7b7;border-color:rgba(16,185,129,.3)}
+
+.row{display:flex;gap:10px;margin-bottom:12px}
+.field{flex:1;min-width:0}
+label{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:4px;letter-spacing:.5px}
+input,select,textarea{width:100%;background:var(--input-bg);border:1px solid var(--input-b);color:var(--text);font-size:14px;padding:10px 12px;border-radius:8px;font-family:inherit;transition:all .15s}
+input:focus,select:focus,textarea:focus{outline:0;border-color:var(--blue-l);background:rgba(59,130,246,.05)}
+input[readonly]{opacity:.7;cursor:not-allowed}
+.hint{font-size:11px;color:var(--dim);margin-top:3px}
+
+.prefill-box{background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(59,130,246,.05));border:1px solid rgba(16,185,129,.25);border-radius:12px;padding:14px;margin-bottom:14px}
+.prefill-row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px dashed rgba(255,255,255,.05)}
+.prefill-row:last-child{border:0}
+.prefill-row .k{color:var(--muted)}
+.prefill-row .v{font-weight:600;color:#6ee7b7}
+.prefill-row .v.locked{color:#fbbf24}
+
+.line{background:rgba(0,0,0,.2);border:1px solid var(--card-b);border-radius:10px;padding:14px;margin-bottom:10px}
+.line-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px;color:var(--muted)}
+.remove{background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;padding:0 6px}
+.add-line{background:transparent;border:1px dashed var(--input-b);color:var(--muted);padding:10px;width:100%;border-radius:8px;cursor:pointer;font-size:13px;transition:all .15s}
+.add-line:hover{border-color:var(--blue-l);color:var(--text)}
+
+.summary{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);border-radius:12px;padding:14px;margin-top:12px}
+.summary-row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px}
+.summary-row.total{border-top:1px solid rgba(255,255,255,.1);margin-top:6px;padding-top:10px;font-size:15px;font-weight:700}
+
+.container-badge{margin-top:10px;padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.container-badge.fcl{background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.3);color:#c4b5fd}
+.container-badge.lcl{background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.25);color:#93c5fd}
+.container-badge.big{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#fcd34d}
+
+.switch-row{display:flex;align-items:center;gap:10px;padding:10px 0}
+.switch{position:relative;display:inline-block;width:44px;height:24px}
+.switch input{opacity:0;width:0;height:0}
+.slider{position:absolute;cursor:pointer;inset:0;background:var(--dim);border-radius:24px;transition:.2s}
+.slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.2s}
+input:checked+.slider{background:var(--green)}
+input:checked+.slider:before{transform:translateX(20px)}
+
+button.primary{width:100%;background:linear-gradient(135deg,var(--blue),var(--blue-l));color:white;border:0;padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:.5px}
+button.primary:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(37,99,235,.3)}
+button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+
+.success-view{text-align:center;padding:40px 20px}
+.success-icon{font-size:56px;margin-bottom:14px}
+.success-view h1{font-size:22px;font-weight:800;margin-bottom:8px}
+.success-view p{color:var(--muted);font-size:14px;line-height:1.6}
+
+.error-view{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:12px;padding:20px;margin:20px 0;text-align:center;color:#fca5a5}
+.spinner{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,.2);border-top-color:var(--blue-l);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.stamp{display:inline-block;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);color:#fcd34d;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;letter-spacing:.5px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="brand">
+    <div class="logo">SANLYN</div>
+    <div class="tagline">FACTORY ORDER PORTAL</div>
+  </div>
+
+  <div id="loading" class="card" style="text-align:center;padding:40px">
+    <div class="spinner"></div>
+    <p style="margin-top:12px;color:var(--muted);font-size:13px">加载订单信息…</p>
+  </div>
+
+  <div id="error-view" class="error-view" style="display:none">
+    <div style="font-size:32px;margin-bottom:10px">⚠️</div>
+    <h3 id="error-title" style="font-size:16px;font-weight:700;margin-bottom:6px">链接无效</h3>
+    <p id="error-msg" style="font-size:13px">请联系客户重新获取链接。</p>
+  </div>
+
+  <div id="form-view" style="display:none">
+
+    <!-- 1. 工厂信息（新工厂必填，已注册自动隐藏） — STEP 1 -->
+    <div class="card" id="new-factory-card" style="display:none">
+      <h2>🏭 贵司信息 <span class="pill">STEP 1</span></h2>
+
+      <!-- 快速登录：已注册工厂直接凭税号识别 -->
+      <div id="login-box" style="background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.25);border-radius:10px;padding:12px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div style="font-size:13px;color:var(--text)">🔑 <strong>已与 Sanlyn 合作过？</strong> 凭税号一键识别，无需重填</div>
+          <button type="button" id="login-toggle" onclick="toggleLogin()" style="background:rgba(56,189,248,.15);border:1px solid rgba(56,189,248,.4);color:#7dd3fc;padding:6px 12px;border-radius:8px;font-size:12px;cursor:pointer">快速登录</button>
+        </div>
+        <div id="login-form" style="display:none;margin-top:10px">
+          <div class="row">
+            <div class="field" style="flex:1"><label>统一社会信用代码 (18位)</label><input type="text" id="login-taxId" maxlength="18" placeholder="91XXXXXXXXXXXXXXXX"/></div>
+            <div class="field" style="flex:0 0 auto;align-self:end"><button type="button" onclick="doLogin()" style="padding:10px 16px;background:#38bdf8;color:#000;border:none;border-radius:8px;font-weight:600;cursor:pointer">识别</button></div>
+          </div>
+          <p class="hint" id="login-hint" style="margin-top:6px">系统将查询是否已存在贵司档案</p>
+        </div>
+      </div>
+
+      <!-- 登录成功后的只读卡片 -->
+      <div id="recognized-box" style="display:none;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="font-size:12px;color:#4ade80;margin-bottom:6px">✅ 已识别贵司档案</div>
+        <div style="font-size:16px;font-weight:700;color:var(--text)" id="rec-nameCN">—</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px"><span id="rec-taxId">—</span> · <span id="rec-phone">—</span></div>
+        <button type="button" onclick="resetLogin()" style="margin-top:8px;background:none;border:1px solid rgba(255,255,255,.1);color:var(--muted);padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer">换一个公司</button>
+      </div>
+
+      <!-- 新工厂完整填表 -->
+      <div id="manual-form">
+        <p class="hint" style="margin-bottom:14px">首次合作请按营业执照如实填写：</p>
+        <div class="field" style="margin-bottom:12px"><label>公司全称（营业执照上的名称）</label><input type="text" id="nf-nameCN" placeholder="请填写营业执照上的公司全称" oninput="checkStep1()"/></div>
+        <div class="row">
+          <div class="field"><label>统一社会信用代码 (18位)</label><input type="text" id="nf-taxId" maxlength="18" placeholder="91XXXXXXXXXXXXXXXX" oninput="checkStep1()"/></div>
+          <div class="field"><label>联系手机号</label><input type="text" id="nf-phone" placeholder="138XXXXXXXX" oninput="checkStep1()"/></div>
+        </div>
+        <div class="field"><label>注册地址</label><input type="text" id="nf-address" placeholder="省/市/区/详细地址"/></div>
+        <p class="hint" style="margin-top:10px">📸 营业执照照片上传功能稍后开放，本次请先填写文字信息。</p>
+      </div>
+    </div>
+
+    <!-- 2. 货物明细 — STEP 1 (also) -->
+    <div class="card">
+      <h2>📦 宠物产品明细 <span class="pill">STEP 1</span></h2>
+      <div id="lines"></div>
+      <button type="button" class="add-line" onclick="addLine()">+ 添加一行</button>
+
+      <div class="summary">
+        <div class="summary-row"><span>总数量</span><span id="s-qty">0</span></div>
+        <div class="summary-row"><span>总 CBM (体积)</span><span id="s-cbm">0.000</span></div>
+        <div class="summary-row total"><span>货款合计</span><span id="s-sub">¥ 0.00</span></div>
+      </div>
+      <!-- hidden (used internally) -->
+      <span id="s-tax" style="display:none"></span>
+      <span id="s-gross" style="display:none"></span>
+
+      <div id="container-hint" class="container-badge lcl" style="display:none">
+        <span id="container-icon">📦</span>
+        <span id="container-text">—</span>
+      </div>
+    </div>
+
+    <!-- 3. 开票信息确认 — STEP 2 (auto-reveal after step 1) -->
+    <div class="card" id="invoice-card">
+      <h2>💼 请确认开票信息 <span class="pill">STEP 2</span></h2>
+      <div class="prefill-box">
+        <div class="prefill-row" style="font-size:15px;padding:10px 0">
+          <span class="k">发票品名</span><span class="v" id="p-invoiceName" style="font-size:16px">—</span>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:6px">Sanlyn 已根据您的产品类目预设发票品名，请确认贵司能否按此开具增值税专用发票。</p>
+
+      <div class="switch-row" style="margin-top:6px">
+        <label class="switch"><input type="checkbox" id="switch-canVat" checked/><span class="slider"></span></label>
+        <label for="switch-canVat" style="margin:0;font-size:14px;color:var(--text)">✅ 可以按此品名开具<strong>增值税专用发票</strong></label>
+      </div>
+
+      <div class="switch-row" style="border-top:1px dashed rgba(255,255,255,.06);padding-top:12px">
+        <label class="switch"><input type="checkbox" id="switch-editName"/><span class="slider"></span></label>
+        <label for="switch-editName" style="margin:0;font-size:13px;color:var(--muted)">开票品名需要<strong>修改</strong></label>
+      </div>
+      <div id="edit-name-area" style="display:none;margin-top:10px">
+        <label>您实际能开的发票品名</label>
+        <input type="text" id="edit-invoiceName" placeholder="例：宠物垫子、猫砂盆、宠物玩具 …"/>
+        <p class="hint" style="margin-top:4px">⚠️ 修改后 Sanlyn 会重新核验并与您联系</p>
+      </div>
+      <!-- hidden -->
+      <input type="hidden" id="edit-taxCode"/>
+    </div>
+
+    <!-- 4. 预计交货时间 — STEP 2 -->
+    <div class="card" id="delivery-card">
+      <h2>📅 预计交货时间 <span class="pill">STEP 2</span></h2>
+      <div class="field">
+        <label>承诺交货日期</label>
+        <input type="date" id="delivery-promised"/>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>生产周期说明（可选）</label>
+        <input type="text" id="delivery-lead-note" placeholder="下单后 X 天完成生产 / 分批安排等"/>
+      </div>
+    </div>
+
+    <!-- 5. 备注 -->
+    <div class="card" id="note-card">
+      <h2>📝 备注（可选）</h2>
+      <textarea id="note" rows="3" placeholder="付款方式、特殊说明…"></textarea>
+    </div>
+
+    <!-- 6. 订单信息（只读，放最底） -->
+    <div class="card" style="opacity:.7">
+      <h2>📋 订单参考 <span class="pill">READ-ONLY</span></h2>
+      <div class="prefill-box">
+        <div class="prefill-row"><span class="k">订单号</span><span class="v" id="f-orderNo">—</span></div>
+        <div class="prefill-row"><span class="k">币种</span><span class="v" id="f-currency">CNY</span></div>
+        <div class="prefill-row"><span class="k">链接有效期至</span><span class="v" id="f-expires">—</span></div>
+      </div>
+      <p class="hint">⚠️ 此链接单次填写，提交后自动失效。</p>
+    </div>
+
+    <button class="primary" id="submit-btn" onclick="submitForm()">✅ 确认提交给 Sanlyn</button>
+  </div>
+
+  <div id="success-view" class="success-view card" style="display:none">
+    <div class="success-icon">🎉</div>
+    <h1>提交成功！</h1>
+    <p id="success-msg" style="margin-top:10px">Sanlyn 审核后将与您联系。</p>
+    <div id="success-summary" style="margin-top:20px;text-align:left"></div>
+  </div>
+</div>
+
+<script>
+var API = location.origin;
+var TOKEN = new URLSearchParams(location.search).get("t") || new URLSearchParams(location.search).get("token");
+var CTX = null;
+var LINES = [];
+
+function $(id) { return document.getElementById(id); }
+function fmt(n) { return (n||0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+async function init() {
+  if (!TOKEN) return showErr("缺少 token", "链接不完整，请联系客户重新发送。");
+  try {
+    var r = await fetch(API + "/api/factory-fill?token=" + encodeURIComponent(TOKEN));
+    var d = await r.json();
+    if (!r.ok || !d.success) return showErr(d.error || "token_invalid", {
+      token_not_found: "链接不存在或已作废，请联系客户重新发送。",
+      token_expired: "链接已过期，请联系客户重新发送。",
+      token_used: d.message || "此链接已提交过。如需修改请联系 Sanlyn 重新发送。",
+    }[d.error] || "请联系客户重新获取。");
+    CTX = d;
+    render();
+  } catch (e) {
+    showErr("network_error", "网络异常，请刷新重试。\n\n" + (e && e.message ? "[" + e.message + "]" : ""));
+  }
+}
+
+function showErr(title, msg) {
+  $("loading").style.display = "none";
+  $("form-view").style.display = "none";
+  $("success-view").style.display = "none";
+  $("error-view").style.display = "block";
+  $("error-title").textContent = title;
+  $("error-msg").textContent = msg;
+}
+
+function render() {
+  $("loading").style.display = "none";
+  $("error-view").style.display = "none";
+  $("success-view").style.display = "none";
+  $("form-view").style.display = "block";
+
+  // Order info (brand 不对外显示，客户身份保密)
+  $("f-orderNo").textContent   = CTX.order?.orderNo || "NEW ORDER";
+  $("f-currency").textContent  = CTX.order?.currency || "CNY";
+  $("f-expires").textContent   = CTX.expiresAt ? new Date(CTX.expiresAt).toLocaleDateString("zh-CN") : "7 天内";
+
+  // Prefill (only invoiceName is surfaced to factory; tax/HS/VAT kept internal)
+  if (CTX.prefill) {
+    if ($("p-invoiceName"))   $("p-invoiceName").textContent = CTX.prefill.invoiceName;
+    if ($("edit-invoiceName")) $("edit-invoiceName").value   = CTX.prefill.invoiceName;
+    if ($("edit-taxCode"))     $("edit-taxCode").value       = CTX.prefill.taxCode;
+  }
+
+  // New factory card
+  if (CTX.factory && !CTX.factory.isRegistered) {
+    $("new-factory-card").style.display = "block";
+    $("nf-nameCN").value  = CTX.factory.nameCN || "";
+    $("nf-taxId").value   = CTX.factory.taxId || "";
+    $("nf-phone").value   = CTX.factory.phone ? CTX.factory.phone.replace(/^\+86/, "") : "";
+  }
+
+  // 空行起步 — 不预设任何客户侧信息
+  LINES = [{ productName: "", qty: "", unitPrice: "", cbm: "" }];
+  renderLines();
+
+  // Edit toggle
+  $("switch-editName").addEventListener("change", function(e){
+    $("edit-name-area").style.display = e.target.checked ? "block" : "none";
+  });
+
+  checkStep1();
+
+  // Prevent past dates on delivery field
+  var today = new Date().toISOString().split("T")[0];
+  var dp = $("delivery-promised");
+  if (dp) dp.min = today;
+}
+
+function renderLines() {
+  var box = $("lines"); box.innerHTML = "";
+  LINES.forEach(function(l, i){
+    var el = document.createElement("div");
+    el.className = "line";
+
+    // head
+    var head = document.createElement("div");
+    head.className = "line-head";
+    var title = document.createElement("span");
+    title.textContent = "货物 #" + (i+1);
+    head.appendChild(title);
+    if (LINES.length > 1) {
+      var rm = document.createElement("button");
+      rm.className = "remove"; rm.textContent = "×";
+      rm.onclick = function(){ removeLine(i); };
+      head.appendChild(rm);
+    }
+    el.appendChild(head);
+
+    // productName field
+    function makeField(label, type, step, key, placeholder, recalcOnInput) {
+      var f = document.createElement("div"); f.className = "field";
+      var lab = document.createElement("label"); lab.textContent = label;
+      var inp = document.createElement("input");
+      inp.type = type; if (step) inp.step = step;
+      inp.value = l[key] == null ? "" : l[key];        // safe: .value assignment, no HTML parsing
+      if (placeholder) inp.placeholder = placeholder;
+      inp.addEventListener(recalcOnInput ? "input" : "change", function(e){
+        upd(i, key, e.target.value);
+        if (recalcOnInput) recalc();
+      });
+      f.appendChild(lab); f.appendChild(inp);
+      return f;
+    }
+
+    el.appendChild(makeField("产品名称", "text", null, "productName", "例：宠物垫子", false));
+    var row = document.createElement("div"); row.className = "row";
+    row.appendChild(makeField("数量",        "number", "1",     "qty",       "", true));
+    row.appendChild(makeField("单价 (CNY)",  "number", "0.01",  "unitPrice", "", true));
+    row.appendChild(makeField("CBM (体积)",  "number", "0.001", "cbm",       "", true));
+    el.appendChild(row);
+
+    box.appendChild(el);
+  });
+  recalc();
+}
+
+function upd(i, k, v) { LINES[i][k] = v; checkStep1(); }
+function addLine() { LINES.push({productName:"",qty:"",unitPrice:"",cbm:""}); renderLines(); }
+function removeLine(i) { LINES.splice(i,1); renderLines(); }
+
+// kept as no-op to avoid ReferenceError from inline oninput handlers
+function checkStep1() {}
+
+// ── Quick login flow ──
+var RECOGNIZED = null;  // { companyCode, nameCN, taxId, phone, address }
+
+function toggleLogin() {
+  var box = $("login-form");
+  box.style.display = box.style.display === "none" ? "block" : "none";
+}
+
+async function doLogin() {
+  var tid = ($("login-taxId").value || "").trim();
+  var hint = $("login-hint");
+  hint.style.color = "";
+  if (tid.length !== 18) {
+    hint.textContent = "⚠️ 统一社会信用代码必须为 18 位";
+    hint.style.color = "#fca5a5";
+    return;
+  }
+  hint.textContent = "查询中…";
+  try {
+    var r = await fetch(API + "/api/factory-fill?token=" + encodeURIComponent(TOKEN) + "&lookupTaxId=" + encodeURIComponent(tid));
+    var d = await r.json();
+    if (!r.ok || !d.success) throw new Error(d.error || "lookup failed");
+    if (!d.matched) {
+      hint.textContent = "ℹ️ 未找到该税号的档案，请按下方手动填写（首次合作）";
+      hint.style.color = "#fbbf24";
+      return;
+    }
+    // Match found → show recognized card, hide manual form + login
+    RECOGNIZED = d.factory;
+    $("login-box").style.display = "none";
+    $("manual-form").style.display = "none";
+    $("recognized-box").style.display = "block";
+    $("rec-nameCN").textContent = d.factory.nameCN || "—";
+    $("rec-taxId").textContent  = d.factory.taxId  || "—";
+    $("rec-phone").textContent  = d.factory.phone  || "—";
+  } catch (e) {
+    hint.textContent = "⚠️ 查询失败: " + e.message;
+    hint.style.color = "#fca5a5";
+  }
+}
+
+function resetLogin() {
+  RECOGNIZED = null;
+  $("recognized-box").style.display = "none";
+  $("login-box").style.display = "block";
+  $("manual-form").style.display = "block";
+  $("login-taxId").value = "";
+  $("login-form").style.display = "none";
+}
+
+function recalc() {
+  var qty=0, sub=0, cbm=0;
+  LINES.forEach(function(l){
+    var q = parseFloat(l.qty)||0, p = parseFloat(l.unitPrice)||0, c = parseFloat(l.cbm)||0;
+    qty += q; sub += q*p; cbm += c;
+  });
+  var tax = sub * 0.13;
+  var gross = sub + tax;
+  $("s-qty").textContent  = qty.toLocaleString();
+  $("s-cbm").textContent  = cbm.toFixed(3);
+  // 工厂侧只显示货款合计（不含税），税率由 Sanlyn 内部处理
+  $("s-sub").textContent  = "¥ " + fmt(sub);
+  $("s-tax").textContent  = fmt(tax);
+  $("s-gross").textContent = fmt(gross);
+
+  // Container hint
+  var hint = $("container-hint");
+  if (cbm <= 0) { hint.style.display = "none"; return; }
+  hint.style.display = "flex";
+  if (cbm >= 70) {
+    hint.className = "container-badge fcl";
+    $("container-icon").textContent = "🚢";
+    $("container-text").textContent = "CBM " + cbm.toFixed(2) + " ≥ 70 → 整柜 (FCL 40HQ) — 运费按整柜报价";
+  } else if (cbm >= 30) {
+    hint.className = "container-badge big";
+    $("container-icon").textContent = "📦";
+    $("container-text").textContent = "CBM " + cbm.toFixed(2) + " → 大拼柜 (LCL Large) — 临近整柜阈值，可考虑凑整";
+  } else {
+    hint.className = "container-badge lcl";
+    $("container-icon").textContent = "📦";
+    $("container-text").textContent = "CBM " + cbm.toFixed(2) + " → 拼柜 (LCL)";
+  }
+  checkStep1();
+}
+
+async function submitForm() {
+  var btn = $("submit-btn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 提交中…';
+
+  // 新工厂必须先填完公司信息（若已通过快速登录识别则跳过）
+  if (!RECOGNIZED && CTX.factory && !CTX.factory.isRegistered) {
+    var nfName = $("nf-nameCN").value.trim();
+    var nfTaxId = $("nf-taxId").value.trim();
+    var nfPhone = $("nf-phone").value.trim();
+    if (!nfName || !nfTaxId || !nfPhone) {
+      alert("首次合作请完整填写贵司信息：公司全称、统一社会信用代码、联系手机号");
+      document.getElementById("new-factory-card").scrollIntoView({behavior:"smooth",block:"start"});
+      btn.disabled = false; btn.textContent = "✅ 确认提交给 Sanlyn";
+      return;
+    }
+    if (nfTaxId.length !== 18) {
+      alert("统一社会信用代码必须为 18 位");
+      $("nf-taxId").focus();
+      btn.disabled = false; btn.textContent = "✅ 确认提交给 Sanlyn";
+      return;
+    }
+  }
+
+  var validLines = LINES.filter(function(l){ return parseFloat(l.qty)>0 && parseFloat(l.unitPrice)>0; });
+  if (validLines.length === 0) {
+    alert("请至少填写一行有效的数量+单价");
+    btn.disabled = false; btn.textContent = "✅ 确认提交给 Sanlyn";
+    return;
+  }
+
+  var payload = {
+    token: TOKEN,
+    lines: validLines.map(function(l){ return {
+      productName: l.productName,
+      qty: parseFloat(l.qty),
+      unitPrice: parseFloat(l.unitPrice),
+      cbm: parseFloat(l.cbm)||0,
+      canIssueVat: $("switch-canVat").checked,
+    }}),
+    taxRate: 0.13,
+    currency: CTX.order?.currency || "CNY",
+    acceptedPrefill: !$("switch-editName").checked,
+    prefillOverrides: $("switch-editName").checked ? {
+      invoiceName: $("edit-invoiceName").value,
+      taxCode: $("edit-taxCode").value,
+    } : null,
+    note: $("note").value,
+    delivery: {
+      promised: $("delivery-promised")?.value || null,
+      leadNote: $("delivery-lead-note")?.value || null,
+    },
+  };
+
+  // Factory info — prefer recognized login over manual entry
+  if (RECOGNIZED) {
+    payload.recognizedFactory = {
+      companyCode: RECOGNIZED.companyCode,
+      taxId:       RECOGNIZED.taxId,
+    };
+  } else if (CTX.factory && !CTX.factory.isRegistered) {
+    payload.factoryInfo = {
+      nameCN:  $("nf-nameCN").value,
+      taxId:   $("nf-taxId").value,
+      phone:   $("nf-phone").value,
+      address: $("nf-address").value,
+    };
+  }
+
+  try {
+    var r = await fetch(API + "/api/factory-fill", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload),
+    });
+    var d = await r.json();
+    if (!r.ok || !d.success) throw new Error(d.error || "submit failed");
+
+    $("form-view").style.display = "none";
+    $("success-view").style.display = "block";
+    var s = d.summary;
+    var container = s.containerHint === "full_container_fcl" ? "🚢 整柜 (FCL)" :
+                    s.containerHint === "lcl_large" ? "📦 大拼柜" : "📦 拼柜 (LCL)";
+
+    // Safe DOM construction — no innerHTML with user data
+    var wrap = $("success-summary");
+    wrap.innerHTML = "";
+
+    // Contract number banner (big + copyable)
+    if (d.contractNo) {
+      var cn = document.createElement("div");
+      cn.style.cssText = "background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.4);border-radius:10px;padding:16px;margin-bottom:14px;text-align:center";
+      var cnLabel = document.createElement("div");
+      cnLabel.textContent = "合同编号（请截屏保存）";
+      cnLabel.style.cssText = "font-size:12px;color:#4ade80;margin-bottom:6px";
+      var cnVal = document.createElement("div");
+      cnVal.textContent = d.contractNo;
+      cnVal.style.cssText = "font-size:20px;font-weight:800;color:#fff;letter-spacing:1px;font-family:monospace";
+      cn.appendChild(cnLabel); cn.appendChild(cnVal);
+      wrap.appendChild(cn);
+    }
+
+    function row(k, v) {
+      var r = document.createElement("div"); r.className = "prefill-row";
+      var ks = document.createElement("span"); ks.className = "k"; ks.textContent = k;
+      var vs = document.createElement("span"); vs.className = "v"; vs.textContent = v;
+      r.appendChild(ks); r.appendChild(vs); return r;
+    }
+    var box = document.createElement("div"); box.className = "prefill-box";
+    box.appendChild(row("总数量", s.totalQty.toLocaleString()));
+    box.appendChild(row("总 CBM", s.totalCBM.toFixed(3)));
+    box.appendChild(row("货款合计", "¥ " + fmt(s.totalSubtotal)));
+    box.appendChild(row("货柜建议", container));
+    wrap.appendChild(box);
+
+    if (d.warnings && d.warnings.length) {
+      var w = document.createElement("div");
+      w.className = "container-badge fcl";
+      w.style.marginTop = "12px";
+      var icon = document.createElement("span"); icon.textContent = "💡";
+      var msg = document.createElement("span"); msg.textContent = d.warnings.join("；");
+      w.appendChild(icon); w.appendChild(msg);
+      wrap.appendChild(w);
+    }
+  } catch (e) {
+    alert("提交失败: " + e.message);
+    btn.disabled = false; btn.textContent = "✅ 确认提交给 Sanlyn";
+  }
+}
+
+init();
+</script>
+</body>
+</html>
