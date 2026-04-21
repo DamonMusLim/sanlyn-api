@@ -20,9 +20,9 @@ function genPassword() {
   return seg(3) + "-" + seg(3) + "-" + seg(3);
 }
 
-// ── Token: 48 hex chars (URL-safe, hard to guess) ──────────────────────
+// ── Token: 12 hex chars (48 bits, still ~280 trillion combos for 7-day one-time link) ──
 function genToken() {
-  return randomBytes(24).toString("hex");
+  return randomBytes(6).toString("hex");
 }
 
 export default async function handler(req, res) {
@@ -36,7 +36,11 @@ export default async function handler(req, res) {
 
     const token    = genToken();
     const password = genPassword();
+    // Short link for QR / SMS (password still required on arrival)
     const shareUrl = `${SHARE_BASE}/api/db/doc-share?token=${token}`;
+    // One-click link that embeds the password — recipient clicks once, file downloads.
+    // Use this for IM/email forwards where link + password in one place is OK.
+    const quickUrl = `${SHARE_BASE}/api/db/doc-share?token=${token}&password=${encodeURIComponent(password)}`;
 
     await pool.query(`
       INSERT INTO doc_share_links
@@ -55,6 +59,7 @@ export default async function handler(req, res) {
       token,
       password,
       shareUrl,
+      quickUrl,
       expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
       docName: docName || "",
     });
