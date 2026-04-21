@@ -118,6 +118,11 @@ export function authMiddleware(req, res, next) {
   // Factory short link /f/<token> → redirect to /public/factory-fill.html, no auth
   if (req.path.startsWith("/f/")) return next();
 
+  // Doc share recipient download: GET /api/db/doc-share?token=...&password=...
+  // External recipients have no JWT — handler verifies via token + password instead.
+  // POST (link creation) still requires JWT (falls through to check below).
+  if (req.method === "GET" && req.path === "/api/db/doc-share") return next();
+
   // Portal 路由体系：使用独立 HMAC token，由 portalGate 负责校验，跳过内部 JWT
   if (req.path.startsWith(PORTAL_ROUTES_PREFIX)) return next();
 

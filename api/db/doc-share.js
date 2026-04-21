@@ -46,7 +46,7 @@ export default async function handler(req, res) {
       INSERT INTO doc_share_links
         (token, contract_no, doc_key, doc_url, doc_name, password,
          created_by, expires_at, max_downloads, download_count, downloaded_log)
-      VALUES ($1,$2,$3,$4,$5,$6,$7, NOW()+INTERVAL '7 days', 1, 0,
+      VALUES ($1,$2,$3,$4,$5,$6,$7, NOW()+INTERVAL '1 day', 1, 0,
         $8::jsonb)
     `, [
       token, contractNo || "", docKey || "", docUrl, docName || "",
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
       password,
       shareUrl,
       quickUrl,
-      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
       docName: docName || "",
     });
   }
