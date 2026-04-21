@@ -290,7 +290,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Sales Contract",docNo:no,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
+        _xlsCapture={sheetName:"Sales Contract",docNo:no,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
             {k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},
@@ -316,7 +316,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Invoice",docNo:noIV,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
+        _xlsCapture={sheetName:"Invoice",docNo:noIV,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty"},{k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},{k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}],
           rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
@@ -340,7 +340,7 @@ export default async function handler(req, res) {
           <tbody>${productRows(prods,colsPL,curr)}
           <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
           </tbody></table>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Packing List",docNo:noPL,buyer:cust,date:date,cno:cno,curr:"",pol:pol,pod:pod,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
+        _xlsCapture={sheetName:"Packing List",docNo:noPL,buyer:cust,date:date,cno:cno,curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
           headers:["NO.","Description & Size","QTY","G.W (KG)","N.W (KG)","CBM"],
           colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(Number(p.cbm||p.volume||0).toFixed(3))||0;}}],
           rows:prods,totals:["","TOTAL",tqty,parseFloat(tgw.toFixed(2)),parseFloat(tnw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
@@ -361,7 +361,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Proforma Invoice",docNo:noPI,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
+        _xlsCapture={sheetName:"Proforma Invoice",docNo:noPI,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
             {k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},
@@ -919,6 +919,95 @@ export default async function handler(req, res) {
 
       // Column widths for numeric cols
       for(var ci=3;ci<=_xlsCapture.headers.length;ci++) ws.getColumn(ci).width=16;
+
+      // ── Footer: Incoterm / Terms & Conditions / Banking / Signatures ─────
+      var _lastCol=_xlsCapture.headers.length; // e.g. 5 for SC/IV/PI, 6 for PL
+      var _colLetter=function(n){var s="";while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;};
+      var _lastColL=_colLetter(_lastCol);
+
+      function _stripCN(t){var s=String(t||"");if(s.indexOf("/")>=0)s=s.split("/").pop();return s.replace(/[\u4e00-\u9fff:：]/g,"").trim();}
+      function _addSectionTitle(title){
+        ws.addRow([]);
+        var r=ws.addRow([title]);
+        ws.mergeCells("A"+r.number+":"+_lastColL+r.number);
+        r.getCell(1).font={bold:true,size:11,color:{argb:"FFFFFFFF"}};
+        r.getCell(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF111111"}};
+        r.getCell(1).alignment={horizontal:"left",vertical:"middle"};
+        r.height=18;
+      }
+      function _addKV(label,value){
+        var r=ws.addRow([label,value]);
+        r.getCell(1).font={bold:true,size:10};
+        r.getCell(2).font={size:10};
+        ws.mergeCells("B"+r.number+":"+_lastColL+r.number);
+      }
+      function _addNote(text,color){
+        var r=ws.addRow([text]);
+        ws.mergeCells("A"+r.number+":"+_lastColL+r.number);
+        r.getCell(1).font={italic:true,size:9,color:{argb:color||"FF888888"}};
+      }
+
+      // Incoterm line (small, right under totals)
+      if(_xlsCapture.incoterm){
+        ws.addRow([]);
+        var rInco=ws.addRow(["Trade Terms:","("+_xlsCapture.incoterm+") Incoterms® 2020"]);
+        rInco.getCell(1).font={bold:true,size:10};
+        rInco.getCell(2).font={size:10};
+        ws.mergeCells("B"+rInco.number+":"+_lastColL+rInco.number);
+      }
+
+      // Terms & Conditions
+      if(Array.isArray(_xlsCapture.terms)&&_xlsCapture.terms.length){
+        _addSectionTitle("TERMS & CONDITIONS");
+        _xlsCapture.terms.forEach(function(t,i){
+          var line=(i+1)+". "+_stripCN(t);
+          var r=ws.addRow([line]);
+          ws.mergeCells("A"+r.number+":"+_lastColL+r.number);
+          r.getCell(1).alignment={wrapText:true,vertical:"top"};
+          r.getCell(1).font={size:10};
+        });
+      }
+
+      // Banking Information
+      var bk=_xlsCapture.bank;
+      if(bk&&(bk.beneficiary||bk.accountName||bk.bankName||bk.swift)){
+        _addSectionTitle("BANKING INFORMATION");
+        _addKV("Beneficiary:",bk.beneficiary||bk.accountName||"");
+        if(bk.bankName)   _addKV("Bank:",bk.bankName);
+        if(bk.swift)      _addKV("SWIFT:",bk.swift);
+        if(bk.bankAddr)   _addKV("Bank Address:",bk.bankAddr);
+        if(bk.usdAccount) _addKV("Account No.:",bk.usdAccount);
+        _addNote("* Please verify bank info before payment.","FFCC0000");
+      }
+
+      // Signatures
+      ws.addRow([]);ws.addRow([]);
+      var sigMid=Math.max(2,Math.ceil(_lastCol/2));
+      var sigR1=ws.addRow([]);
+      // Draw top border across two halves as signature lines
+      for(var _ci=1;_ci<=_lastCol;_ci++){
+        sigR1.getCell(_ci).border={top:{style:"medium",color:{argb:"FF000000"}}};
+      }
+      var sigR2=ws.addRow([]);
+      sigR2.getCell(1).value="BUYER AUTHORIZED SIGNATURE";
+      sigR2.getCell(sigMid+1).value="SELLER AUTHORIZED SIGNATURE";
+      ws.mergeCells("A"+sigR2.number+":"+_colLetter(sigMid)+sigR2.number);
+      ws.mergeCells(_colLetter(sigMid+1)+sigR2.number+":"+_lastColL+sigR2.number);
+      sigR2.getCell(1).font={bold:true,size:10};
+      sigR2.getCell(sigMid+1).font={bold:true,size:10};
+      sigR2.getCell(1).alignment={horizontal:"center"};
+      sigR2.getCell(sigMid+1).alignment={horizontal:"center"};
+      var sigR3=ws.addRow([]);
+      sigR3.getCell(1).value="(Signature / Company Seal)";
+      sigR3.getCell(sigMid+1).value="(Signature / Company Seal)";
+      ws.mergeCells("A"+sigR3.number+":"+_colLetter(sigMid)+sigR3.number);
+      ws.mergeCells(_colLetter(sigMid+1)+sigR3.number+":"+_lastColL+sigR3.number);
+      sigR3.getCell(1).font={size:9,color:{argb:"FF888888"}};
+      sigR3.getCell(sigMid+1).font={size:9,color:{argb:"FF888888"}};
+      sigR3.getCell(1).alignment={horizontal:"center"};
+      sigR3.getCell(sigMid+1).alignment={horizontal:"center"};
+      // Give space for stamps
+      ws.addRow([]);ws.addRow([]);ws.addRow([]);
 
       res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition","attachment; filename=\""+_xlsCapture.docNo+".xlsx\"");
