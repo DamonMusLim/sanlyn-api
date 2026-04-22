@@ -7,9 +7,15 @@
 //                                   → updates orders.raw + customers.raw, marks token used
 
 import { getPool, setCors } from "./db.js";
+import { lookupRefundRate } from "./db/export-refund-lookup.js";
+import { evaluatePoints } from "./db/invoice-points.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+
+function quarterOf(d = new Date()) {
+  return `${d.getFullYear()}Q${Math.floor(d.getMonth()/3)+1}`;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const KB_DIR = path.join(__dirname, "kb");
@@ -237,6 +243,51 @@ export default async function handler(req, res) {
                           : totalCBM >= 30 ? "lcl_large"
                           : "lcl";
 
+      // ── 发票点数卡关 ──────────────────────────────────
+      // body.pointPct = 工厂自报开票加点（必填，0 = 直接开票含税）
+      // hsCode 从 prefill 或 body.hsCode 取；refundRate 从 KB 查
+      const pointPct  = body.pointPct === undefined ? null : parseFloat(body.pointPct);
+      const hsCode    = (body.hsCode || (body.prefillOverrides && body.prefillOverrides.hsCode) || "").toString();
+      const refundInfo = hsCode ? lookupRefundRate(hsCode) : { refundRate: null, color: "gray", warning: "no hs code" };
+      const refundRate = refundInfo.refundRate;
+
+      let pointsEvaluation = null;
+      if (pointPct !== null && !Number.isNaN(pointPct) && refundRate !== null) {
+        const ev = evaluatePoints({
+          bareNet: totalSubtotal,
+          pointPct,
+          refundRate,
+          baseMargin: 6,
+        });
+        pointsEvaluation = {
+          pointPct,
+          hsCode: hsCode || null,
+          refundRate,
+          refundColor: refundInfo.color,
+          refundWarning: refundInfo.warning || null,
+          invoiceAmt: ev.invoiceAmt,
+          refundAmt: ev.refundAmt,
+          netPoints: ev.netPoints,
+          baseMargin: 6,
+          status: ev.status,
+        };
+        // Block: net points < 2 or refund rate = 0 (unless explicit override by Sanlyn, TODO)
+        if (ev.status === "red_low_margin" && !body.overrideLowMargin) {
+          return res.status(422).json({
+            error: "points_too_low",
+            message: `此报价净利润仅 ${ev.netPoints} 点（最低要求 2 点）。请与工厂议价或联系 Sanlyn。`,
+            evaluation: pointsEvaluation,
+          });
+        }
+        if (ev.status === "red_zero_refund" && !body.overrideZeroRefund) {
+          return res.status(422).json({
+            error: "zero_refund",
+            message: `此 HS 编码 ${hsCode} 退税率为 0，此单无法退税。必须 Sanlyn 老板审批才能继续。`,
+            evaluation: pointsEvaluation,
+          });
+        }
+      }
+
       // Compute response sequence and contract number
       const prevResponses = (ctx.order && ctx.order.raw && Array.isArray(ctx.order.raw.factoryResponses))
         ? ctx.order.raw.factoryResponses.length : 0;
@@ -270,6 +321,7 @@ export default async function handler(req, res) {
           grossAmount,
           containerHint,
           currency: body.currency || "CNY",
+          pointsEvaluation,
         },
         acceptedPrefill: body.acceptedPrefill !== false,
         prefillOverrides: body.prefillOverrides || null,
@@ -314,23 +366,84 @@ export default async function handler(req, res) {
       }
 
       // Append to order.raw.factoryResponses[], status → pending_damon_review
+      // Also set invoiceConfirmedAt if factory accepted prefill (开票品名/点数都确认了)
       if (ctx.order) {
+        const nowIso = new Date().toISOString();
+        const invoiceConfirmed = (factoryResponse.acceptedPrefill === true) && (pointsEvaluation !== null);
         await pool.query(
           `UPDATE orders SET
              raw = jsonb_set(
                jsonb_set(
-                 COALESCE(raw, '{}'::jsonb),
-                 '{factoryResponses}',
-                 COALESCE(raw->'factoryResponses', '[]'::jsonb) || $1::jsonb
+                 jsonb_set(
+                   COALESCE(raw, '{}'::jsonb),
+                   '{factoryResponses}',
+                   COALESCE(raw->'factoryResponses', '[]'::jsonb) || $1::jsonb
+                 ),
+                 '{reviewStatus}',
+                 '"pending_damon_review"'
                ),
-               '{reviewStatus}',
-               '"pending_damon_review"'
+               '{invoiceConfirmedAt}',
+               to_jsonb($3::text)
              ),
              production_status = 'factory_confirmed',
              updated_at = NOW()
            WHERE order_no=$2`,
-          [JSON.stringify(factoryResponse), ctx.order.order_no]
+          [JSON.stringify(factoryResponse), ctx.order.order_no, invoiceConfirmed ? nowIso : null]
         );
+      }
+
+      // Write invoice_point_history (反作弊+统计)
+      if (pointsEvaluation && ctx.factory) {
+        try {
+          // Lookup factory quarterly median to flag outlier
+          const qtr = quarterOf();
+          const { rows: hist } = await pool.query(
+            `SELECT point_pct FROM invoice_point_history WHERE factory_code=$1 AND quarter=$2`,
+            [ctx.factory.company_code, qtr]
+          );
+          const pts = hist.map(r => Number(r.point_pct)).filter(Number.isFinite);
+          let median = null;
+          if (pts.length) {
+            const s = [...pts].sort((a,b)=>a-b);
+            const m = Math.floor(s.length/2);
+            median = s.length % 2 ? s[m] : +((s[m-1]+s[m])/2).toFixed(2);
+          }
+          const outlier = median !== null && (pointsEvaluation.pointPct - median) >= 1.5;
+          pointsEvaluation.factoryQuarterMedian = median;
+          pointsEvaluation.outlier = outlier;
+
+          await pool.query(
+            `INSERT INTO invoice_point_history
+               (factory_code, factory_name, order_no, customer_code, hs_code, invoice_name,
+                bare_net, point_pct, invoice_amt, refund_rate, net_points, base_margin,
+                status, quarter, raw)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+            [
+              ctx.factory.company_code,
+              ctx.factory.name_cn || null,
+              ctx.order ? ctx.order.order_no : null,
+              ctx.order ? ctx.order.company_code : null,
+              pointsEvaluation.hsCode,
+              body.invoiceName || (body.prefillOverrides && body.prefillOverrides.invoiceName) || null,
+              +totalSubtotal.toFixed(2),
+              pointsEvaluation.pointPct,
+              pointsEvaluation.invoiceAmt,
+              pointsEvaluation.refundRate,
+              pointsEvaluation.netPoints,
+              6,
+              pointsEvaluation.status,
+              qtr,
+              JSON.stringify({
+                contractNo, refundLookup: refundInfo,
+                outlier, factoryQuarterMedian: median,
+                source: "factory-fill-portal"
+              })
+            ]
+          );
+        } catch (histErr) {
+          console.error("[factory-fill] invoice_point_history insert failed:", histErr.message);
+          // Do not block submission on history write failure
+        }
       }
 
       // Mark token used on customers.raw (don't delete — keep audit trail)
@@ -351,14 +464,23 @@ export default async function handler(req, res) {
         [token, ctx.company_code]
       );
 
+      const warnings = [];
+      if (factoryResponse.summary.containerHint === "full_container_fcl") {
+        warnings.push("CBM ≥ 70 → 整柜 (FCL)，运费按整柜报价");
+      }
+      if (pointsEvaluation && pointsEvaluation.status === "yellow") {
+        warnings.push(`净利润仅 ${pointsEvaluation.netPoints} 点（黄灯），建议议价`);
+      }
+      if (pointsEvaluation && pointsEvaluation.outlier) {
+        warnings.push(`此厂本季中位数 ${pointsEvaluation.factoryQuarterMedian}%，本次 ${pointsEvaluation.pointPct}% 偏高`);
+      }
       return res.status(200).json({
         success: true,
         message: "Factory submission received. Awaiting Sanlyn review.",
         contractNo,
         summary: factoryResponse.summary,
-        warnings: factoryResponse.summary.containerHint === "full_container_fcl"
-          ? ["CBM ≥ 70 → 整柜 (FCL)，运费按整柜报价"]
-          : [],
+        pointsEvaluation,
+        warnings,
       });
     }
 

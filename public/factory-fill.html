@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v=2026-04-21-07 -->
+<!-- v=2026-04-22-points-01 -->
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8"/>
@@ -195,6 +195,26 @@ button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:
       <input type="hidden" id="edit-taxCode"/>
     </div>
 
+    <!-- 3b. 开票点数 — STEP 2 -->
+    <div class="card" id="points-card">
+      <h2>💰 开票点数 <span class="pill">STEP 2</span></h2>
+      <p class="hint" style="margin:0 0 10px 0">
+        很多工厂 0 税率采购，开票需要加点。请如实填写 —— 我们以数据留档，长期合作的工厂点数稳定会得到更多订单。
+      </p>
+      <div class="field">
+        <label>开票加点 (%)</label>
+        <input type="number" id="point-pct" min="0" max="20" step="0.1" placeholder="例：3 (表示加 3 个点)"/>
+        <p class="hint" style="margin-top:4px">0 = 含税价，不另加点 · 常见 2-5 · 超过 5 需说明</p>
+      </div>
+      <div id="points-preview" style="display:none;padding:12px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);margin-top:8px;font-size:13px">
+        <div class="prefill-row"><span class="k">工厂裸价</span><span class="v" id="pp-bare">—</span></div>
+        <div class="prefill-row"><span class="k">含票价 (= 裸价 × (1+点数))</span><span class="v" id="pp-invoice">—</span></div>
+        <div class="prefill-row"><span class="k">Sanlyn 出口退税</span><span class="v" id="pp-refund">—</span></div>
+        <div class="prefill-row" id="pp-status-row"><span class="k">净利润点数</span><span class="v" id="pp-net" style="font-weight:800">—</span></div>
+        <div id="pp-warning" style="margin-top:8px;padding:8px 10px;border-radius:6px;font-size:12px;display:none"></div>
+      </div>
+    </div>
+
     <!-- 4. 预计交货时间 — STEP 2 -->
     <div class="card" id="delivery-card">
       <h2>📅 预计交货时间 <span class="pill">STEP 2</span></h2>
@@ -305,6 +325,10 @@ function render() {
   $("switch-editName").addEventListener("change", function(e){
     $("edit-name-area").style.display = e.target.checked ? "block" : "none";
   });
+
+  // Live recompute points preview
+  var ppEl = document.getElementById("point-pct");
+  if (ppEl) ppEl.addEventListener("input", recalcPoints);
 
   checkStep1();
 
@@ -452,6 +476,42 @@ function recalc() {
     $("container-text").textContent = "CBM " + cbm.toFixed(2) + " → 拼柜 (LCL)";
   }
   checkStep1();
+  recalcPoints();
+}
+
+// 实时计算开票点数 → 净利润 (红/黄/绿)
+function recalcPoints() {
+  var pPctEl = document.getElementById("point-pct");
+  var prev   = document.getElementById("points-preview");
+  if (!pPctEl || !prev) return;
+  var pointPct = parseFloat(pPctEl.value);
+  var bare = 0;
+  LINES.forEach(function(l){
+    bare += (parseFloat(l.qty)||0) * (parseFloat(l.unitPrice)||0);
+  });
+  if (!(pointPct >= 0) || bare <= 0) { prev.style.display = "none"; return; }
+  prev.style.display = "block";
+  var refundRate = (CTX && CTX.prefill && typeof CTX.prefill.vatRate === "number") ? CTX.prefill.vatRate : 0.13;
+  // NOTE: refundRate here is the VAT on the invoice; the actual export refund rate
+  // is looked up by HS on the server side. UI preview uses VAT as a reasonable estimate.
+  var invoiceAmt = bare * (1 + pointPct/100);
+  var refundAmt  = invoiceAmt * refundRate;
+  var netPts     = +(refundRate*100 - pointPct - 6).toFixed(2);
+  document.getElementById("pp-bare").textContent    = "¥ " + fmt(bare);
+  document.getElementById("pp-invoice").textContent = "¥ " + fmt(invoiceAmt);
+  document.getElementById("pp-refund").textContent  = "¥ " + fmt(refundAmt) + " ("+(refundRate*100).toFixed(0)+"%)";
+  var netEl = document.getElementById("pp-net");
+  var wEl   = document.getElementById("pp-warning");
+  var color, msg;
+  if (netPts < 2)       { color = "#ef4444"; msg = "🔴 净利润低于 2 点，下单将被阻断。请降低加点或联系 Sanlyn。"; }
+  else if (netPts < 3)  { color = "#eab308"; msg = "🟡 净利润仅 "+netPts+" 点，属薄利，请确认后再提交。"; }
+  else                  { color = "#22c55e"; msg = "🟢 净利润 "+netPts+" 点，正常范围。"; }
+  netEl.textContent = netPts + " 点";
+  netEl.style.color = color;
+  wEl.textContent = msg;
+  wEl.style.background = "rgba(" + (color==="#ef4444"?"239,68,68":color==="#eab308"?"234,179,8":"34,197,94") + ",0.12)";
+  wEl.style.color = color;
+  wEl.style.display = "block";
 }
 
 async function submitForm() {
@@ -496,6 +556,9 @@ async function submitForm() {
     }}),
     taxRate: 0.13,
     currency: CTX.order?.currency || "CNY",
+    pointPct: parseFloat($("point-pct").value) || 0,
+    hsCode: (CTX.prefill && CTX.prefill.hsHint) || null,
+    invoiceName: $("switch-editName").checked ? $("edit-invoiceName").value : (CTX.prefill && CTX.prefill.invoiceName),
     acceptedPrefill: !$("switch-editName").checked,
     prefillOverrides: $("switch-editName").checked ? {
       invoiceName: $("edit-invoiceName").value,

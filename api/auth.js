@@ -126,6 +126,14 @@ export function authMiddleware(req, res, next) {
   // Portal 路由体系：使用独立 HMAC token，由 portalGate 负责校验，跳过内部 JWT
   if (req.path.startsWith(PORTAL_ROUTES_PREFIX)) return next();
 
+  // Cron endpoints: allow if x-cron-secret header matches env secret
+  // (handler still validates; this just skips JWT requirement)
+  const cronHeader = req.headers["x-cron-secret"];
+  if (cronHeader && process.env.CRON_SECRET && cronHeader === process.env.CRON_SECRET) {
+    req.user = { role: "system", sub: "cron", account: "cron" };
+    return next();
+  }
+
   // 内部路由：必须持有有效内部 JWT
   extractUser(req);
   if (!req.user) {

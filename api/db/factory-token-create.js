@@ -110,11 +110,11 @@ export default async function handler(req, res) {
     // 6) 订单上标记已发送
     await pool.query(
       `UPDATE orders SET
-         raw = jsonb_set(
-           COALESCE(raw, '{}'::jsonb),
-           '{factoryTokenSent}',
-           to_jsonb(NOW()::text)
-         ),
+         raw = COALESCE(raw, '{}'::jsonb)
+               || jsonb_build_object(
+                    'factoryTokenSent',    NOW()::text,
+                    'invoiceTokenSentAt',  NOW()::text
+                  ),
          updated_at = NOW()
        WHERE order_no = $1`,
       [orderNo]
