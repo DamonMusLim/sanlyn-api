@@ -35,6 +35,7 @@ const factoryLimiter = rateLimit({
   message: { error: "Too many requests. Please wait a few minutes." },
 });
 app.use("/api/factory-fill", factoryLimiter);
+app.use("/api/pending-confirm", factoryLimiter);
 // ────────────────────────────────────────────────────────────────────────────
 // ── CORS middleware (replace Vercel headers config) ──
 const ALLOWED_ORIGINS = [
@@ -99,6 +100,8 @@ mount("/api/db/container-bookings",      () => import("./api/db/container-bookin
 mount("/api/db/container-bookings-parse",() => import("./api/db/container-bookings-parse.js"));
 mount("/api/driver-evidence",            () => import("./api/driver-evidence.js"));
 mount("/api/factory-fill",               () => import("./api/factory-fill.js"));
+mount("/api/pending-confirm",            () => import("./api/pending-confirm.js"));
+mount("/api/db/pending-token-create",    () => import("./api/db/pending-token-create.js"));
 mount("/api/db/company",           () => import("./api/db/company.js"));
 mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));
