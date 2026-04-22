@@ -6,13 +6,21 @@
 // DELETE ?id=xxx                 → delete plan
 import { getPool, setCors } from "../db.js";
 
-function generateShipmentNo() {
-  var d = new Date();
-  var y = d.getFullYear();
-  var m = String(d.getMonth() + 1).padStart(2, "0");
-  var day = String(d.getDate()).padStart(2, "0");
-  var seq = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
-  return "SP" + y + m + day + seq;
+// Production convention: CY00000 sequential (see CY00041/42/44/45/46…).
+// Old "SP" + date + random generator was unused in practice and created
+// inconsistent codes; this now queries MAX(CY#####) and increments.
+async function generateShipmentNo(pool) {
+  try {
+    const { rows } = await pool.query(
+      "SELECT shipment_no FROM shipping_plans WHERE shipment_no ~ '^CY[0-9]{5}$' ORDER BY shipment_no DESC LIMIT 1"
+    );
+    const last = rows[0]?.shipment_no || "CY00000";
+    const n = parseInt(last.slice(2), 10) + 1;
+    return "CY" + String(n).padStart(5, "0");
+  } catch (e) {
+    // Fallback if DB unreachable mid-create: use timestamp, NOT the legacy SP format
+    return "CY" + String(Date.now()).slice(-5);
+  }
 }
 
 var ENSURE_COLS = `
@@ -72,7 +80,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         orders: ordersResult.rows,
-        nextShipmentNo: generateShipmentNo(),
+        nextShipmentNo: await generateShipmentNo(pool),
       });
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -166,7 +174,7 @@ export default async function handler(req, res) {
       flowStatus, remarks, createdBy
     } = body;
 
-    var sNo = shipmentNo || generateShipmentNo();
+    var sNo = shipmentNo || await generateShipmentNo(pool);
     var portalId = "sp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
 
     // Ensure table exists
