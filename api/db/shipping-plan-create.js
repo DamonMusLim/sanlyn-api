@@ -6,19 +6,20 @@
 // DELETE ?id=xxx                 → delete plan
 import { getPool, setCors } from "../db.js";
 
-// Production convention: CY00000 sequential (see CY00041/42/44/45/46…).
-// Old "SP" + date + random generator was unused in practice and created
-// inconsistent codes; this now queries MAX(CY#####) and increments.
+// Production convention: CY00000 sequential.
+// Real order count reached 146 before the system caught up — old rows
+// (CY00001..CY00045) stay untouched; new numbering continues from 146+.
+// So we floor at CY00146 so nothing dips back into the legacy gap.
+const MIN_SHIPMENT_SEQ = 146;
 async function generateShipmentNo(pool) {
   try {
     const { rows } = await pool.query(
       "SELECT shipment_no FROM shipping_plans WHERE shipment_no ~ '^CY[0-9]{5}$' ORDER BY shipment_no DESC LIMIT 1"
     );
     const last = rows[0]?.shipment_no || "CY00000";
-    const n = parseInt(last.slice(2), 10) + 1;
+    const n = Math.max(parseInt(last.slice(2), 10), MIN_SHIPMENT_SEQ) + 1;
     return "CY" + String(n).padStart(5, "0");
   } catch (e) {
-    // Fallback if DB unreachable mid-create: use timestamp, NOT the legacy SP format
     return "CY" + String(Date.now()).slice(-5);
   }
 }
