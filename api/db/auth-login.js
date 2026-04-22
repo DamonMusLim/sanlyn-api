@@ -32,7 +32,7 @@ export default async function handler(req, res) {
 
     try {
       var acct = await pool.query(
-        "SELECT id, username, role, company_code, company_codes FROM accounts WHERE id = $1 OR username = $2 LIMIT 1",
+        "SELECT id, username, role, company, supplier_role, company_code, company_codes FROM accounts WHERE id = $1 OR username = $2 LIMIT 1",
         [req.user.uid, req.user.username]
       );
       if (!acct.rows[0]) return res.status(401).json({ error: "Account not found" });
@@ -41,11 +41,13 @@ export default async function handler(req, res) {
 
       var newToken = generateToken({
         uid: u.id, username: u.username, role: u.role,
+        company: u.company, supplierRole: u.supplier_role,
         companyCode: u.company_code, companyCodes: companyCodes
       });
 
       return res.status(200).json({ success: true, token: newToken, user: {
         uid: u.id, username: u.username, role: u.role,
+        company: u.company, supplierRole: u.supplier_role,
         companyCode: u.company_code, companyCodes: companyCodes
       }});
     } catch (err) {
@@ -61,7 +63,7 @@ export default async function handler(req, res) {
     if (!username || !password) return res.status(400).json({ error: "username 和 password 必填" });
 
     var result = await pool.query(
-      "SELECT id, username, password, role, company_code, company_codes FROM accounts WHERE username = $1 LIMIT 1",
+      "SELECT id, username, password, role, company, supplier_role, company_code, company_codes FROM accounts WHERE username = $1 LIMIT 1",
       [username.trim()]
     );
 
@@ -75,6 +77,7 @@ export default async function handler(req, res) {
 
     var token = generateToken({
       uid: u.id, username: u.username, role: u.role,
+      company: u.company, supplierRole: u.supplier_role,
       companyCode: u.company_code, companyCodes: companyCodes
     });
 
@@ -82,6 +85,7 @@ export default async function handler(req, res) {
       success: true, token: token,
       user: {
         uid: u.id, username: u.username, role: u.role,
+        company: u.company, supplierRole: u.supplier_role,
         companyCode: u.company_code, companyCodes: companyCodes
       }
     });
