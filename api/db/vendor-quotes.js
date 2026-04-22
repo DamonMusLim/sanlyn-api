@@ -75,17 +75,18 @@ export default async function handler(req, res) {
       const key = [r.pol || "", r.pod || "", r.container_type || ""].join("|");
       if (seen.has(key)) continue;
       seen.add(key);
+      // ⚠️ SECURITY: Never expose our customer-facing sale price (freight_sale_usd)
+      // to the vendor. Vendors only see what WE pay THEM (the cost side).
       unique.push({
         shipmentNo: r.shipment_no,
         pol: r.pol, pod: r.pod,
         containerType: r.container_type,
         etd: r.etd,
-        customer: r.customer,
-        priceCost:  u.supplierRole === "ocean" ? Number(r.freight_cost||0)
-                  : u.supplierRole === "customs" ? Number(r.customs_cost_total||0)
-                  : Number(r.trucking_cost_total||0),
-        priceSale:  u.supplierRole === "ocean" ? Number(r.freight_sale_usd||0) : null,
-        portSurcharge: Number(r.port_surcharge_total||0),
+        // customer name withheld — vendor doesn't need to see end-client either
+        myPrice:  u.supplierRole === "ocean" ? Number(r.freight_cost||0)
+                : u.supplierRole === "customs" ? Number(r.customs_cost_total||0)
+                : Number(r.trucking_cost_total||0),
+        portSurcharge: u.supplierRole === "ocean" ? Number(r.port_surcharge_total||0) : 0,
       });
     }
 
