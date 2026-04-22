@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v=2026-04-22-points-01 -->
+<!-- v=2026-04-22-points-03 -->
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8"/>
@@ -203,8 +203,9 @@ button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:
       </p>
       <div class="field">
         <label>开票加点 (%)</label>
-        <input type="number" id="point-pct" min="0" max="20" step="0.1" placeholder="例：3 (表示加 3 个点)"/>
-        <p class="hint" style="margin-top:4px">0 = 含税价，不另加点 · 常见 2-5 · 超过 5 需说明</p>
+        <input type="number" id="point-pct" min="0" max="20" step="0.1" value="6" placeholder="6"/>
+        <p class="hint" style="margin-top:4px" id="point-hint">默认 <strong>6 个点</strong>。如贵司开票点数不同请如实修改 · 0 = 含税价（不另加点） · 超过 6 需说明</p>
+        <p class="hint" style="margin-top:4px;display:none" id="point-market-ref"></p>
       </div>
       <div id="points-preview" style="display:none;padding:12px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);margin-top:8px;font-size:13px">
         <div class="prefill-row"><span class="k">工厂裸价</span><span class="v" id="pp-bare">—</span></div>
@@ -307,6 +308,40 @@ function render() {
     if ($("p-invoiceName"))   $("p-invoiceName").textContent = CTX.prefill.invoiceName;
     if ($("edit-invoiceName")) $("edit-invoiceName").value   = CTX.prefill.invoiceName;
     if ($("edit-taxCode"))     $("edit-taxCode").value       = CTX.prefill.taxCode;
+
+    // Historical points suggestion (layer L1→L4)
+    var sp = CTX.prefill.suggestedPointPct;
+    var src = CTX.prefill.suggestedPointSource;
+    var n   = CTX.prefill.suggestedPointSampleN || 0;
+    var mref = CTX.prefill.marketReference || {};
+    if ($("point-pct") && typeof sp === "number") {
+      $("point-pct").value = sp;
+    }
+    if ($("point-hint")) {
+      var hintText;
+      switch (src) {
+        case "factory_hs_stable":
+          hintText = "📊 根据贵司近 6 个月同品类 " + n + " 次合作，点数中位数 <strong>" + sp + "%</strong>，已预填。如需调整请直接改。";
+          break;
+        case "factory_hs_sparse":
+          hintText = "📊 贵司同品类合作 " + n + " 次，参考中位数 <strong>" + sp + "%</strong>。样本还小，请按实际填写。";
+          break;
+        case "factory_allcat":
+          hintText = "📊 根据贵司近 6 个月全品类 " + n + " 次合作，平均点数 <strong>" + sp + "%</strong>。";
+          break;
+        case "hs_market":
+          hintText = "📊 同品类市场中位数 <strong>" + sp + "%</strong>（基于 " + n + " 次同行报价）。首次合作，请按贵司实际填写。";
+          break;
+        default:
+          hintText = "默认 <strong>6 个点</strong>。如贵司开票点数不同请如实修改 · 0 = 含税价（不另加点） · 超过 6 需说明";
+      }
+      $("point-hint").innerHTML = hintText;
+    }
+    if ($("point-market-ref") && mref.rate !== null && mref.rate !== undefined) {
+      $("point-market-ref").style.display = "block";
+      $("point-market-ref").innerHTML = "💡 同品类市场参考：" + mref.rate + "% (" + mref.sampleN + " 次同行报价)";
+      $("point-market-ref").style.color = "#fbbf24";
+    }
   }
 
   // New factory card
@@ -326,9 +361,9 @@ function render() {
     $("edit-name-area").style.display = e.target.checked ? "block" : "none";
   });
 
-  // Live recompute points preview
+  // Live recompute points preview + initial render for default 6pt
   var ppEl = document.getElementById("point-pct");
-  if (ppEl) ppEl.addEventListener("input", recalcPoints);
+  if (ppEl) { ppEl.addEventListener("input", recalcPoints); recalcPoints(); }
 
   checkStep1();
 

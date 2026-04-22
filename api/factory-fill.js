@@ -159,6 +159,83 @@ export default async function handler(req, res) {
       }
       const prefill = prefillFromHint(itemHint);
 
+      // ── 历史点数推荐（层层台阶 L1→L2→L3→L4）──────────
+      // L1: 该厂 × 该 HS 近6月中位数 (≥3 条: stable)
+      // L2: 该厂 全品类 近6月中位数 (≥3 条)
+      // L3: 全厂 × 该 HS 近6月中位数 (市场价，≥5 条)
+      // L4: Sanlyn 默认 6 点
+      let suggestedPointPct = 6;
+      let suggestedPointSource = "sanlyn_default";
+      let suggestedPointSampleN = 0;
+      const marketReference = { rate: null, sampleN: 0 };
+      const hsHint = prefill.hsHint || null;
+      try {
+        const medianOf = (arr) => {
+          if (!arr.length) return null;
+          const s = [...arr].sort((a,b)=>a-b);
+          const m = Math.floor(s.length/2);
+          return s.length % 2 ? s[m] : +((s[m-1]+s[m])/2).toFixed(2);
+        };
+        const runQ = async (sql, params) => {
+          const r = await pool.query(sql, params);
+          return r.rows.map(x => Number(x.point_pct)).filter(Number.isFinite);
+        };
+
+        // L1: factory × HS
+        if (ctx.factory && ctx.factory.tax_id && hsHint) {
+          const pts = await runQ(
+            `SELECT point_pct FROM invoice_point_history
+              WHERE factory_code=$1 AND hs_code=$2
+                AND created_at >= NOW() - INTERVAL '6 months'`,
+            [ctx.factory.company_code, hsHint]
+          );
+          if (pts.length >= 1) {
+            suggestedPointPct = medianOf(pts);
+            suggestedPointSource = pts.length >= 3 ? "factory_hs_stable" : "factory_hs_sparse";
+            suggestedPointSampleN = pts.length;
+          }
+        }
+        // L2: factory all-category
+        if (suggestedPointSource === "sanlyn_default" && ctx.factory && ctx.factory.tax_id) {
+          const pts = await runQ(
+            `SELECT point_pct FROM invoice_point_history
+              WHERE factory_code=$1
+                AND created_at >= NOW() - INTERVAL '6 months'`,
+            [ctx.factory.company_code]
+          );
+          if (pts.length >= 3) {
+            suggestedPointPct = medianOf(pts);
+            suggestedPointSource = "factory_allcat";
+            suggestedPointSampleN = pts.length;
+          }
+        }
+        // L3 (也作为谈判参考 — 永远查，不管有没有 L1/L2)：HS market
+        if (hsHint) {
+          const pts = await runQ(
+            `SELECT point_pct FROM invoice_point_history
+              WHERE hs_code=$1
+                AND created_at >= NOW() - INTERVAL '6 months'`,
+            [hsHint]
+          );
+          if (pts.length >= 5) {
+            marketReference.rate = medianOf(pts);
+            marketReference.sampleN = pts.length;
+          }
+          // 若 L1/L2 都没拿到 → 用市场价兜底
+          if (suggestedPointSource === "sanlyn_default" && pts.length >= 5) {
+            suggestedPointPct = marketReference.rate;
+            suggestedPointSource = "hs_market";
+            suggestedPointSampleN = pts.length;
+          }
+        }
+      } catch (e) {
+        console.error("[factory-fill] historical points lookup failed:", e.message);
+      }
+      prefill.suggestedPointPct     = suggestedPointPct;
+      prefill.suggestedPointSource  = suggestedPointSource;   // factory_hs_stable / factory_hs_sparse / factory_allcat / hs_market / sanlyn_default
+      prefill.suggestedPointSampleN = suggestedPointSampleN;
+      prefill.marketReference       = marketReference;         // { rate, sampleN } — 永远展示，作为"同行价"
+
       // Strip sensitive: hide customer identity AND brand (brand可能泄漏客户品牌)
       // 只返回订单号 + 币种，产品明细工厂自己填
       const safeOrder = ctx.order ? {

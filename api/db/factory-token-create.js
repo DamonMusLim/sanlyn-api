@@ -26,9 +26,15 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
-  // 鉴权：内部岗位才能发
-  if (!req.user || !["admin", "sales", "logistics"].includes(req.user.role)) {
-    return res.status(403).json({ error: "Forbidden: admin/sales/logistics only" });
+  // 鉴权：内部岗位 or 订单所属 customer 本人
+  if (!req.user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  const INTERNAL_ROLES = ["admin", "sales", "logistics"];
+  const isInternal = INTERNAL_ROLES.includes(req.user.role);
+  const isCustomer = req.user.role === "customer";
+  if (!isInternal && !isCustomer) {
+    return res.status(403).json({ error: "Forbidden" });
   }
 
   try {
@@ -48,6 +54,16 @@ export default async function handler(req, res) {
       [orderNo]
     );
     if (or.rows.length === 0) return res.status(404).json({ error: "order not found" });
+
+    // Customer 只能给自己的订单发链接
+    if (isCustomer) {
+      const orderOwner = or.rows[0].company_code || "";
+      const userCodes = Array.isArray(req.user.companyCodes) ? req.user.companyCodes
+                      : (req.user.companyCode ? [req.user.companyCode] : []);
+      if (!orderOwner || !userCodes.includes(orderOwner)) {
+        return res.status(403).json({ error: "Forbidden: not your order" });
+      }
+    }
 
     // 2) 若没指定工厂 → 建 CN-* stub
     if (!factoryCompanyCode) {

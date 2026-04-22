@@ -183,10 +183,234 @@ export default async function handler(req, res) {
       const qtyText = totalQty > 0 ? totalQty + " CTNS" : "—";
 
       if (isBooking) {
-      const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>托书 — ${fmt(p.shipment_no)}</title><style>${sharedCss}</style></head><body>
+      // ── v4 booking note ──
+      const raw4       = p.raw || {};
+      const tradeTerm  = raw4.tradeTerm  || "EXW";
+      const releaseType= p.release_type  || (raw4.telexRelease ? "telex" : "obl");
+      const freightCC  = (raw4.freightTerms || "Collect").toLowerCase().includes("collect");
+      const cargoReady = raw4.cargoReadyDate || "";
+      const bookingRef = p.forwarder_booking_no || raw4.bookingNo || "";
+      const fwdMark    = raw4.forwarderMark || "";
+      const ctrQty     = raw4.containerQty || 1;
+      const ctrType    = p.container_type  || "—";
+      const ctrNo      = p.container_no    || "TBC";
+      const customsBroker = p.customs_cn   || raw4.supplierCustoms || "—";
+      const truckingCo    = p.trucking_cn  || raw4.supplierTrucking|| "—";
+      const fwdCo         = p.forwarder_cn || raw4.supplierFreight || "—";
+      const issuingName   = raw4.issuingCompanyEN || issuingCoEN;
+      const refNo         = p._id || p.shipment_no || "—";
+      // checkbox helpers
+      const cb  = (on) => on ? `<span class="cb-box ck">✓</span>` : `<span class="cb-box"></span>`;
+      const tag = (txt,cls) => `<span class="tag ${cls}">${txt}</span>`;
+
+      const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>托书 — ${esc(refNo)}</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-size:12px;color:#0f172a;background:#f1f5f9}
+.page{max-width:210mm;margin:20px auto;padding:14mm 12mm 12mm;background:#fff;box-shadow:0 4px 32px rgba(0,0,0,.12);border-radius:8px}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #1e3a8a}
+.doc-t{font-size:17px;font-weight:800;color:#1e3a8a}.ref-no{font-family:monospace;font-size:12px;font-weight:700;background:#eff6ff;padding:2px 9px;border-radius:4px;border:1px solid #bfdbfe;display:inline-block;margin-top:4px}
+.gen-t{font-size:9px;color:#94a3b8;margin-top:3px}
+.co-r{text-align:right}.co-name{font-size:15px;font-weight:900;color:#1e3a8a}.co-os{color:#3b82f6}.co-sub{font-size:9px;color:#94a3b8;margin-top:2px}
+.main{display:grid;grid-template-columns:1fr 190px;border:1px solid #cbd5e1}
+.lc{border-right:1px solid #cbd5e1}.pb{padding:8px 10px;border-bottom:1px solid #e2e8f0}.pb:last-child{border-bottom:none}
+.pl{font-size:9px;font-weight:700;color:#1e3a8a;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px;padding-bottom:3px;border-bottom:.5px solid #e2e8f0}
+.pn{font-size:12px;font-weight:700;color:#0f172a;line-height:1.5}.pa{font-size:10.5px;color:#334155;line-height:1.5;margin-top:2px}
+.rc{}.rr{padding:6px 10px;border-bottom:1px solid #e2e8f0;min-height:30px}.rr:last-child{border-bottom:none}
+.rl{font-size:8.5px;font-weight:700;color:#1e3a8a;text-transform:uppercase;letter-spacing:.06em}
+.rv{font-size:11px;font-weight:700;color:#0f172a;font-family:monospace;margin-top:2px}.rv.n{font-family:inherit}
+.route{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid #cbd5e1;border-top:none}
+.rc2{padding:7px 10px;border-right:1px solid #e2e8f0}.rc2:last-child{border-right:none}
+.rl2{font-size:8.5px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.rv2{font-size:12px;font-weight:700;color:#0f172a;font-family:monospace;margin-top:2px}
+.cargo-w{border:1px solid #cbd5e1;border-top:none}
+table{width:100%;border-collapse:collapse}
+thead th{background:#1e3a8a;color:#fff;padding:6px 10px;text-align:left;font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+thead th.r{text-align:right}tbody td{padding:7px 10px;border-bottom:.5px solid #e2e8f0;font-size:11px;vertical-align:top}
+tfoot td{padding:7px 10px;font-weight:700;background:#eff6ff;border-top:1.5px solid #1e3a8a;font-size:11px}
+.hs{font-family:monospace;font-size:10px;color:#475569;margin-top:3px}
+.redbox{border:2px solid #dc2626;border-radius:6px;padding:8px 12px;margin-top:12px}
+.rbt{font-size:9.5px;font-weight:800;color:#dc2626;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+.rb-r{display:flex;align-items:center;gap:16px;padding:4px 0;border-bottom:.5px solid #fee2e2;flex-wrap:wrap}
+.rb-r:last-child{border-bottom:none}
+.rbl{font-size:9.5px;font-weight:700;color:#0f172a;min-width:100px;white-space:nowrap}
+.cbg{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cb{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600}
+.cb-box{width:13px;height:13px;border:1.5px solid #94a3b8;border-radius:2px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
+.cb-box.ck{border-color:#000;background:#000;color:#fff;font-weight:900}
+.pay{margin-top:10px;padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px}
+.pay-t{font-size:9px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.pay-g{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.pi{display:flex;align-items:center;gap:8px}.pl2{font-size:10px;font-weight:700;color:#0f172a;min-width:88px}
+.svc{display:flex;gap:0;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-top:10px}
+.si{flex:1;padding:8px 4px;text-align:center;border-right:1px solid #e2e8f0}.si:last-child{border-right:none}
+.si.on{background:#f0fdf4}.si.off{background:#f8fafc;opacity:.55}
+.si-i{font-size:15px;margin-bottom:3px}.si-n{font-size:10px;font-weight:700;color:#0f172a}.si-s{font-size:8.5px;color:#64748b}
+.sig4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-top:16px}
+.sb{border-top:1px solid #cbd5e1;padding-top:6px;text-align:center}.sb.cr{border-top:1px solid #fbbf24;background:#fffbeb;border-radius:0 0 4px 4px}
+.sl{height:28px;border-bottom:1px dashed #e2e8f0;margin:6px 0}
+.slb{font-size:8.5px;color:#94a3b8;font-weight:600;text-transform:uppercase}
+.footer{margin-top:12px;padding-top:8px;border-top:.5px solid #e2e8f0;display:flex;justify-content:space-between;font-size:8.5px;color:#94a3b8}
+.tag{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px}
+.tb{background:#eff6ff;color:#1e3a8a;border:1px solid #bfdbfe}.tg{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
+@media print{@page{size:A4;margin:0}body{background:#fff;padding:0}.page{padding:10mm 10mm 8mm;max-width:none;box-shadow:none;border-radius:0}.no-print{display:none!important}}
+@media screen{.print-btn{position:fixed;top:20px;right:20px;padding:10px 20px;background:#1e3a8a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(30,58,138,.4);z-index:1000}}
+</style></head><body>
 ${printBtn}
 <div class="page">
-  ${docHeader("📋 托书 Booking Note", p.shipment_no)}
+
+<div class="hdr">
+  <div>
+    <div class="doc-t">📋 托书 Booking Note</div>
+    <div class="ref-no">${esc(refNo)}</div>
+    <div class="gen-t">${genDate} · Generated: ${generatedAt}</div>
+  </div>
+  <div class="co-r">
+    <div class="co-name">Sanlyn <span class="co-os">OS</span></div>
+    <div class="co-sub">Booking Note · Auto Generated</div>
+    <div class="co-sub">sanlyn.cn</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="lc">
+    <div class="pb"><div class="pl">发货人 Shipper</div><div class="pn">${esc(issuingName)}</div><div class="pa">${esc(issuingCoAddr)}</div></div>
+    <div class="pb"><div class="pl">收货人 Consignee</div><div class="pn">${esc(consignee)}</div><div class="pa">${esc(consigneeAddr)}</div></div>
+    <div class="pb" style="min-height:56px"><div class="pl">通知人 Notify Party</div><div class="pn" style="color:#475569;font-weight:500">SAME AS CONSIGNEE</div></div>
+  </div>
+  <div class="rc">
+    <div class="rr"><div class="rl">外运编号 Booking Ref</div><div class="rv">${esc(bookingRef)}</div></div>
+    <div class="rr"><div class="rl">货代标识 Forwarder</div><div class="rv">${esc(fwdMark||fwdCo)}</div></div>
+    <div class="rr"><div class="rl">报关地点 Customs</div><div class="rv n">${esc(p.pol||"厦门")}</div></div>
+    <div class="rr"><div class="rl">报关行 Broker</div><div class="rv n">${esc(customsBroker)}</div></div>
+    <div class="rr"><div class="rl">操作 Ops Contact</div><div class="rv n" style="color:#94a3b8">—</div></div>
+    <div class="rr"><div class="rl">单证 Doc Contact</div><div class="rv n" style="color:#94a3b8">—</div></div>
+  </div>
+</div>
+
+<div class="route">
+  <div class="rc2"><div class="rl2">起运港 POL</div><div class="rv2 n">${esc(p.pol||"—")}${raw4.terminal?` (${esc(raw4.terminal)})`:"" }</div></div>
+  <div class="rc2"><div class="rl2">目的港 POD</div><div class="rv2 n">${esc(p.pod||"—")}</div></div>
+  <div class="rc2"><div class="rl2">船名/航次 Vessel/Voyage</div><div class="rv2">${esc(p.vessel||"—")} / ${esc(p.voyage||"—")}</div></div>
+  <div class="rc2"><div class="rl2">ETD 预计开船</div><div class="rv2">${fmtDate(p.etd)}</div></div>
+</div>
+
+<div class="cargo-w">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:55px">唛头 Mark</th>
+        <th style="width:80px">件数 Packages</th>
+        <th>货物名称及HS Code Description &amp; HS</th>
+        <th class="r" style="width:90px">毛重 G.W.</th>
+        <th class="r" style="width:80px">体积 CBM</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="color:#94a3b8">N/M</td>
+        <td style="font-weight:700">${esc(qtyText)}</td>
+        <td><div style="font-weight:700">${esc(blDescText)}</div><div class="hs">HS: ${esc(hsText)}</div></td>
+        <td style="text-align:right;font-weight:700">${esc(gwText)}</td>
+        <td style="text-align:right;font-weight:700">${esc(cbmText)}</td>
+      </tr>
+      <tr><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td></td><td></td><td></td><td></td><td></td></tr>
+      <tr><td></td><td></td><td></td><td></td><td></td></tr>
+    </tbody>
+    <tfoot><tr>
+      <td></td><td style="font-weight:700">${esc(qtyText)}</td>
+      <td style="text-align:right;color:#475569">合计 TOTAL</td>
+      <td style="text-align:right">${esc(gwText)}</td>
+      <td style="text-align:right">${esc(cbmText)}</td>
+    </tr></tfoot>
+  </table>
+</div>
+
+<div class="redbox">
+  <div class="rbt">⚠ 确认事项 Declarations</div>
+  <div class="rb-r" style="background:#fffbeb;margin:-4px -4px 6px;padding:7px 10px;border-radius:4px;border:1.5px solid #fbbf24!important">
+    <span class="rbl" style="color:#92400e">📦 货好时间 Cargo Ready</span>
+    <span style="font-size:13px;font-weight:900;color:#92400e;font-family:monospace;border-bottom:1.5px solid #d97706;padding-bottom:1px;min-width:110px">${cargoReady||"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}</span>
+    <span style="font-size:9px;color:#b45309;margin-left:auto">如来不及请提前告知</span>
+  </div>
+  <div class="rb-r">
+    <span class="rbl">贸易条款 Terms</span>
+    <div class="cbg">
+      <span class="cb">${cb(tradeTerm==="FOB")} FOB</span>
+      <span class="cb">${cb(tradeTerm==="EXW")} EXW</span>
+      <span class="cb">${cb(tradeTerm==="CIF")} CIF</span>
+      <span class="cb">${cb(tradeTerm==="CNF")} CNF</span>
+      <span class="cb">${cb(!["FOB","EXW","CIF","CNF"].includes(tradeTerm))} 其他</span>
+    </div>
+    <span class="rbl" style="margin-left:20px">拖车/报关</span>
+    <div class="cbg">
+      <span class="cb">${cb(true)} 自拖自报</span>
+      <span class="cb">${cb(false)} 代拖代报</span>
+    </div>
+  </div>
+  <div class="rb-r">
+    <span class="rbl">危险品/电池/液体</span>
+    <div class="cbg">
+      <span class="cb">${cb(false)} YES<span style="font-size:8.5px;color:#94a3b8">(需MSDS)</span></span>
+      <span class="cb">${cb(true)} NO</span>
+    </div>
+    <span class="rbl" style="margin-left:20px">实木/木架/托盘</span>
+    <div class="cbg">
+      <span class="cb">${cb(false)} YES</span>
+      <span class="cb">${cb(true)} NO</span>
+      <span style="font-size:9px;color:#94a3b8">熏蒸:</span>
+      <span class="cb">${cb(false)} YES</span>
+      <span class="cb">${cb(false)} NO</span>
+    </div>
+  </div>
+  <div class="rb-r">
+    <span class="rbl">箱型箱量 Container</span>
+    <span style="font-family:monospace;font-weight:700;font-size:12px">${esc(ctrType)} × ${ctrQty}</span>
+    <span style="color:#94a3b8;font-size:9px;margin-left:8px">柜号: ${esc(ctrNo)}</span>
+  </div>
+</div>
+
+<div class="pay">
+  <div class="pay-t">付款方式 Payment Terms</div>
+  <div class="pay-g">
+    <div class="pi"><span class="pl2">海运费 Ocean Freight</span>
+      <div class="cbg"><span class="cb">${cb(!freightCC)} PREPAID</span><span class="cb">${cb(freightCC)} CC 到付</span></div></div>
+    <div class="pi"><span class="pl2">目的港费 DTHC</span>
+      <div class="cbg"><span class="cb">${cb(!freightCC)} PREPAID</span><span class="cb">${cb(freightCC)} CC 到付</span></div></div>
+    <div class="pi"><span class="pl2">提单类型 B/L</span>
+      <div class="cbg">
+        <span class="cb">${cb(releaseType==="obl")} 正本 OBL</span>
+        <span class="cb">${cb(releaseType==="telex")} 电放 Telex</span>
+        <span class="cb">${cb(releaseType==="swb")} SWB</span>
+      </div></div>
+  </div>
+</div>
+
+<div class="svc">
+  <div class="si on"><div class="si-i">✅</div><div class="si-n">订舱</div><div class="si-s">Booking</div></div>
+  <div class="si on"><div class="si-i">✅</div><div class="si-n">VGM 委托</div><div class="si-s">VGM by Agent</div></div>
+  <div class="si off"><div class="si-i">⬜</div><div class="si-n">拖车 (自理)</div><div class="si-s">Own Trucking</div></div>
+  <div class="si off"><div class="si-i">⬜</div><div class="si-n">报关 (自理)</div><div class="si-s">Own Customs</div></div>
+  <div class="si off"><div class="si-i">⬜</div><div class="si-n">装箱 (自理)</div><div class="si-s">Own Stuffing</div></div>
+</div>
+
+<div class="sig4">
+  <div class="sb"><div class="sl"></div><div class="slb">制单 Prepared By</div></div>
+  <div class="sb"><div class="sl"></div><div class="slb">货代确认 Forwarder</div></div>
+  <div class="sb"><div class="sl"></div><div class="slb">日期 Date</div></div>
+  <div class="sb cr">
+    <div style="font-size:13px;font-weight:900;color:#92400e;font-family:monospace;line-height:28px">${cargoReady||"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}</div>
+    <div style="font-size:8.5px;color:#b45309;font-weight:700;text-transform:uppercase">📦 货好时间 Cargo Ready</div>
+    <div style="font-size:8px;color:#d97706">如来不及请提前告知</div>
+  </div>
+</div>
+
+<div class="footer">
+  <span style="font-weight:700;color:#475569">${esc(issuingName)}</span>
+  <span>Booking Note · ${esc(refNo)} · ${genDate}</span>
+</div>
+
+</div>${autoprint}</body></html>`;
 
   <div class="sec-title">发货人 / Shipper</div>
   <div class="grid2">

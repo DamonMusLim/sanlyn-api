@@ -24,11 +24,22 @@ export default async function handler(req, res) {
       let codeList; try { codeList = JSON.parse(company_codes); } catch { codeList = company_codes.split(","); }
       if (codeList.length > 0) {
         const ph = codeList.map(function(c) { params.push(c); return "$" + params.length; });
-        conds.push("(raw->>'companyCode' IN (" + ph.join(",") + ") OR company_code IN (" + ph.join(",") + "))");
+        // Match either the buyer (company_code / raw.companyCode) OR the factory
+        // (raw.factoryCompanyCode). Lets factory portal accounts see the orders
+        // they are supplying, e.g. HENGAN sees HARMONIOUS's 48-4 because it ships it.
+        conds.push(
+          "(raw->>'companyCode' IN (" + ph.join(",") + ")" +
+          " OR company_code IN (" + ph.join(",") + ")" +
+          " OR raw->>'factoryCompanyCode' IN (" + ph.join(",") + "))"
+        );
       }
     } else if (company_code) {
       params.push(company_code);
-      conds.push("(raw->>'companyCode' = $" + params.length + " OR company_code = $" + params.length + ")");
+      conds.push(
+        "(raw->>'companyCode' = $" + params.length +
+        " OR company_code = $" + params.length +
+        " OR raw->>'factoryCompanyCode' = $" + params.length + ")"
+      );
     }
     if (brands) {
       let brandList;
