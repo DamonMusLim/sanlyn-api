@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
   const pool = getPool();
 
-  const [orders, ar, shipping] = await Promise.all([
+  const [orders, ar, shipping, personalLoans, personalPayments] = await Promise.all([
     pool.query(`SELECT status, COUNT(*) n FROM orders GROUP BY status`),
     pool.query(`SELECT issuing_company, issuing_code,
                   SUM(amount) total, COUNT(*) cnt,
@@ -29,6 +29,22 @@ export default async function handler(req, res) {
     pool.query(`SELECT COUNT(*) FILTER (WHERE eta > NOW()) in_transit,
                   COUNT(*) FILTER (WHERE eta < NOW() AND eta > NOW()-'30 days'::INTERVAL) arrived
                 FROM shipping_plans`),
+    pool.query(`SELECT pl.id, pl.borrower_name, pl.principal, pl.monthly_net,
+                  pl.due_date, pl.status,
+                  COUNT(pp.id) FILTER (WHERE pp.status='received') received_count,
+                  COUNT(pp.id) FILTER (WHERE pp.status='overdue')  overdue_count,
+                  COUNT(pp.id) FILTER (WHERE pp.status='pending')  pending_count,
+                  COALESCE(SUM(pp.expected_amount) FILTER (WHERE pp.status='received'),0) received_total,
+                  COALESCE(SUM(pp.expected_amount) FILTER (WHERE pp.status='overdue'),0)  overdue_total
+                FROM personal_loans pl
+                LEFT JOIN personal_loan_payments pp ON pp.loan_id = pl.id
+                WHERE pl.owner='damon'
+                GROUP BY pl.id ORDER BY pl.principal DESC`).catch(() => ({rows:[]})),
+    pool.query(`SELECT COUNT(*) FILTER (WHERE status='overdue') overdue,
+                  COUNT(*) FILTER (WHERE status='pending' AND expected_date <= NOW()+'7 days'::INTERVAL) due_soon
+                FROM personal_loan_payments pp
+                JOIN personal_loans pl ON pl.id=pp.loan_id
+                WHERE pl.owner='damon'`).catch(() => ({rows:[{}]})),
   ]);
 
   const statusMap = {};
@@ -40,6 +56,25 @@ export default async function handler(req, res) {
   const totalAR = ar.rows.reduce((s,r) => s + parseFloat(r.total||0), 0);
   const overdueTotal = ar.rows.reduce((s,r) => s + parseInt(r.overdue||0), 0);
   const inTransit = parseInt(shipping.rows[0]?.in_transit || 0);
+
+  // 个人借款汇总
+  const totalLent = personalLoans.rows.reduce((s,r) => s + parseFloat(r.principal||0), 0);
+  const totalNet  = personalLoans.rows.reduce((s,r) => s + parseFloat(r.monthly_net||0), 0);
+  const personalOverdue = parseInt(personalPayments.rows[0]?.overdue || 0);
+  const personalDueSoon = parseInt(personalPayments.rows[0]?.due_soon || 0);
+
+  const personalRows = personalLoans.rows.map(r => {
+    const isOverdue = r.status === "overdue";
+    const due = r.due_date ? new Date(r.due_date).toLocaleDateString("zh-CN") : "—";
+    return `<tr>
+      <td>${r.borrower_name}</td>
+      <td class="num">¥${Math.round(parseFloat(r.principal||0)).toLocaleString()}</td>
+      <td class="num" style="color:${parseFloat(r.monthly_net)<0?"#ef4444":"#10b981"}">¥${Math.round(parseFloat(r.monthly_net||0)).toLocaleString()}</td>
+      <td>${r.received_count}/${r.overdue_count}/${r.pending_count}</td>
+      <td>${due}</td>
+      <td>${isOverdue ? `<span class="badge red">逾期</span>` : `<span class="badge green">正常</span>`}</td>
+    </tr>`;
+  }).join("");
 
   const arRows = ar.rows.map(r => `
     <tr>
@@ -97,8 +132,31 @@ tr:last-child td{border-bottom:none}
   <div class="grid">
     <div class="card"><div class="icon">📋</div><div class="val">${active}</div><div class="lbl">进行中订单</div></div>
     <div class="card"><div class="icon">🚢</div><div class="val">${inTransit}</div><div class="lbl">在途货柜</div></div>
-    <div class="card"><div class="icon">💰</div><div class="val">$${Math.round(totalAR/1000)}K</div><div class="lbl">待收款总额</div></div>
-    <div class="card"><div class="icon">⚠️</div><div class="val ${overdueTotal>0?"red":""}">${overdueTotal}</div><div class="lbl">逾期账款</div></div>
+    <div class="card"><div class="icon">💰</div><div class="val">$${Math.round(totalAR/1000)}K</div><div class="lbl">公司应收</div></div>
+    <div class="card"><div class="icon">⚠️</div><div class="val ${overdueTotal>0?"red":""}">${overdueTotal}</div><div class="lbl">公司逾期</div></div>
+  </div>
+
+  <div style="font-size:14px;font-weight:700;color:#a5b4fc;margin:24px 0 12px;letter-spacing:1px">━━ 个人财务 ━━</div>
+  <div class="grid">
+    <div class="card"><div class="icon">💎</div><div class="val">¥${Math.round(totalLent/10000)}万</div><div class="lbl">借出本金</div></div>
+    <div class="card"><div class="icon">📈</div><div class="val">¥${Math.round(totalNet/1000)}K</div><div class="lbl">月净收益</div></div>
+    <div class="card"><div class="icon">⏰</div><div class="val ${personalDueSoon>0?"red":""}">${personalDueSoon}</div><div class="lbl">7天内到期</div></div>
+    <div class="card"><div class="icon">🔴</div><div class="val ${personalOverdue>0?"red":""}">${personalOverdue}</div><div class="lbl">个人逾期</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">个人借款明细</div>
+    <table>
+      <thead><tr>
+        <td style="color:#475569;font-size:11px">借款人</td>
+        <td class="num" style="color:#475569;font-size:11px">本金</td>
+        <td class="num" style="color:#475569;font-size:11px">月净利</td>
+        <td style="color:#475569;font-size:11px">已收/逾期/待收</td>
+        <td style="color:#475569;font-size:11px">到期</td>
+        <td style="color:#475569;font-size:11px">状态</td>
+      </tr></thead>
+      <tbody>${personalRows || '<tr><td colspan="6" style="text-align:center;color:#475569;padding:20px">暂无数据</td></tr>'}</tbody>
+    </table>
   </div>
 
   <div class="section">
