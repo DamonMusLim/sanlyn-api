@@ -36,6 +36,19 @@ const factoryLimiter = rateLimit({
 });
 app.use("/api/factory-fill", factoryLimiter);
 app.use("/api/pending-confirm", factoryLimiter);
+
+// B2-2A: factory-portal endpoints rate-limit (notifications / upload-history).
+// Factory portal polls notifications every 30s → allow ≥ 120 req / 5min / IP headroom,
+// but cap abusive clients. 240 req / 5min / IP is safe for a factory with 3–4 open tabs.
+const factoryPortalLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many factory-portal requests. Please wait a few minutes." },
+});
+app.use("/api/factory-portal/notifications", factoryPortalLimiter);
+app.use("/api/factory-portal/upload-history", factoryPortalLimiter);
 // ────────────────────────────────────────────────────────────────────────────
 // ── CORS middleware (replace Vercel headers config) ──
 const ALLOWED_ORIGINS = [
@@ -154,7 +167,16 @@ mount("/api/db/migrate-order-mode", () => import("./api/db/migrate-order-mode.js
 mount("/api/db/migrate-tasks",      () => import("./api/db/migrate-tasks.js"));      // P1-2
 mount("/api/db/migrate-collab",     () => import("./api/db/migrate-collab.js"));     // P1-3
 mount("/api/db/migrate-tasks-factory-code", () => import("./api/db/migrate-tasks-factory-code.js")); // BUG-A
+// ── v2 Network Layer (blueprint v2) ───────────────────────────
+mount("/api/db/migrate-v2-network",     () => import("./api/db/migrate-v2-network.js"));     // v2 schema
+mount("/api/db/relationships",          () => import("./api/db/relationships.js"));          // graph edges
+mount("/api/db/company-capabilities",   () => import("./api/db/company-capabilities.js"));   // what each company can do
+mount("/api/db/thread-events",          () => import("./api/db/thread-events.js"));          // unified timeline
 mount("/api/factory-portal/tasks",  () => import("./api/factory-portal-tasks.js"));  // P1-2 list
+mount("/api/factory-portal/notifications",      () => import("./api/factory-portal-notifications.js"));      // B2-1 list
+mount("/api/factory-portal/notifications/:id",  () => import("./api/factory-portal-notifications.js"));      // B2-1 patch
+mount("/api/factory-portal/upload-history",     () => import("./api/factory-portal-upload-history.js"));     // B2-1 list
+mount("/api/db/migrate-factory-notifications",  () => import("./api/db/migrate-factory-notifications.js")); // B2-2A migration
 mount("/api/tasks",                 () => import("./api/tasks.js"));                 // P1-2 detail + P1-4 action
 mount("/api/tasks/create",          () => import("./api/tasks-create.js"));          // P2-B admin manual create
 mount("/api/collab",                () => import("./api/collab.js"));                // P1-3
