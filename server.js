@@ -138,7 +138,9 @@ mount("/api/db/seed-payment-defaults",  () => import("./api/db/seed-payment-defa
 mount("/api/db/recompute-credit-used",  () => import("./api/db/recompute-credit-used.js"));
 mount("/api/db/credit-approvals",       () => import("./api/db/credit-approvals.js"));
 mount("/api/db/forward-doc",       () => import("./api/db/forward-doc.js"));
-mount("/api/db/finance-records",   () => import("./api/db/finance-records.js"));
+mount("/api/db/finance-records",       () => import("./api/db/finance-records.js"));
+// Alias kept for legacy frontend callers (CustomerPCFinance + CustomerFinanceWorkbench)
+mount("/api/db/finance-receivables",   () => import("./api/db/finance-records.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
