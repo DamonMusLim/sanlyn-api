@@ -23,8 +23,8 @@ var STATEMENTS = [
   // edges of different types (e.g. A buys from B AND ships via B).
   `CREATE TABLE IF NOT EXISTS relationships (
     id                 BIGSERIAL PRIMARY KEY,
-    from_company_id    INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    to_company_id      INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    from_company_id    INT NOT NULL,  -- FK to customers.id omitted (no PK in prod); app validates
+    to_company_id      INT NOT NULL,  -- FK to customers.id omitted (no PK in prod); app validates
     type               VARCHAR(32) NOT NULL,
       -- 'buys_from' | 'sells_to' | 'ships_via' | 'serves' | 'partners_with'
     category           VARCHAR(64) DEFAULT '',
@@ -71,7 +71,7 @@ var STATEMENTS = [
   // What this company can do. One row per capability so they can be
   // verified and scored independently.
   `CREATE TABLE IF NOT EXISTS company_capabilities (
-    company_id   INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    company_id   INT NOT NULL,  -- FK to customers.id omitted (no PK in prod); app validates
     capability   VARCHAR(32) NOT NULL,
       -- 'manufacture' | 'trade' | 'shipping' | 'trucking' | 'customs'
       -- | 'warehouse' | 'inspection' | 'insurance' | 'finance' | 'translation'
@@ -102,7 +102,7 @@ var STATEMENTS = [
     id                BIGSERIAL PRIMARY KEY,
     token             VARCHAR(64) NOT NULL UNIQUE,    -- random URL-safe token
     inviter_user_id   INT NOT NULL,                   -- who sent the invite
-    inviter_company_id INT NOT NULL REFERENCES customers(id),
+    inviter_company_id INT NOT NULL,                  -- FK to customers.id (no PK in prod); app validates
     target_role       VARCHAR(32) NOT NULL,
       -- 'contact' | 'factory' | 'trader' | 'shipping'
       -- | 'trucking' | 'customs' | 'inspection' | ...
@@ -133,8 +133,8 @@ var STATEMENTS = [
   // This is the data behind Customer Thread / Supplier Thread / etc.
   `CREATE TABLE IF NOT EXISTS thread_events (
     id              BIGSERIAL PRIMARY KEY,
-    company_id      INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    counterparty_id INT REFERENCES customers(id) ON DELETE CASCADE,
+    company_id      INT NOT NULL,  -- FK to customers.id omitted (no PK in prod); app validates
+    counterparty_id INT,           -- FK to customers.id omitted (no PK in prod); app validates
       -- nullable: some events (notes / AI suggestions) live on a single side
     type            VARCHAR(32) NOT NULL,
       -- 'task' | 'task_done' | 'order' | 'payment' | 'document' | 'shipment'
