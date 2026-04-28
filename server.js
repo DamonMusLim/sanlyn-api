@@ -166,6 +166,7 @@ mount("/api/db/migrate-orders-v2", () => import("./api/db/migrate-orders-v2.js")
 mount("/api/db/migrate-qc",        () => import("./api/db/migrate-qc.js"));
 mount("/api/db/migrate-factory-portal", () => import("./api/db/migrate-factory-portal.js"));
 mount("/api/db/migrate-order-mode", () => import("./api/db/migrate-order-mode.js")); // P1-1
+mount("/api/db/migrate-order-flow-v3", () => import("./api/db/migrate-order-flow-v3.js")); // v3
 mount("/api/db/migrate-tasks",      () => import("./api/db/migrate-tasks.js"));      // P1-2
 mount("/api/db/migrate-collab",     () => import("./api/db/migrate-collab.js"));     // P1-3
 mount("/api/db/migrate-tasks-factory-code", () => import("./api/db/migrate-tasks-factory-code.js")); // BUG-A
@@ -186,6 +187,9 @@ mount("/api/db/migrate-freight",   () => import("./api/db/migrate-freight.js"));
 mount("/api/db/modules",           () => import("./api/db/modules.js"));
 mount("/api/db/qc-checks",         () => import("./api/db/qc-checks.js"));
 mount("/api/db/order-create-v2",   () => import("./api/db/order-create-v2.js"));
+mount("/api/db/orders-status",     () => import("./api/db/orders-status.js"));    // v3 state machine
+mount("/api/db/products-v3",       () => import("./api/db/products-v3.js"));      // v3 role-filtered
+mount("/api/db/products-stats",    () => import("./api/db/products-stats.js"));   // v3 KPI stats
 mount("/api/db/sync-products-oss", () => import("./api/db/sync-products-to-oss.js"));
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
