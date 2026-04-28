@@ -175,6 +175,9 @@ mount("/api/db/migrate-v2-network",     () => import("./api/db/migrate-v2-networ
 mount("/api/db/relationships",          () => import("./api/db/relationships.js"));          // graph edges
 mount("/api/db/company-capabilities",   () => import("./api/db/company-capabilities.js"));   // what each company can do
 mount("/api/db/thread-events",          () => import("./api/db/thread-events.js"));          // unified timeline
+// ── Payment Terms (factory proposes, admin approves) ──────────
+mount("/api/db/migrate-payment-terms",  () => import("./api/db/migrate-payment-terms.js"));
+mount("/api/db/payment-terms",          () => import("./api/db/payment-terms.js"));
 mount("/api/factory-portal/tasks",  () => import("./api/factory-portal-tasks.js"));  // P1-2 list
 mount("/api/factory-portal/notifications",      () => import("./api/factory-portal-notifications.js"));      // B2-1 list
 mount("/api/factory-portal/notifications/:id",  () => import("./api/factory-portal-notifications.js"));      // B2-1 patch
