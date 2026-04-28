@@ -178,6 +178,7 @@ mount("/api/db/thread-events",          () => import("./api/db/thread-events.js"
 // ── Payment Terms (factory proposes, admin approves) ──────────
 mount("/api/db/migrate-payment-terms",  () => import("./api/db/migrate-payment-terms.js"));
 mount("/api/db/payment-terms",          () => import("./api/db/payment-terms.js"));
+mount("/api/db/seed-payment-term-tasks",() => import("./api/db/seed-payment-term-tasks.js"));
 mount("/api/factory-portal/tasks",  () => import("./api/factory-portal-tasks.js"));  // P1-2 list
 mount("/api/factory-portal/notifications",      () => import("./api/factory-portal-notifications.js"));      // B2-1 list
 mount("/api/factory-portal/notifications/:id",  () => import("./api/factory-portal-notifications.js"));      // B2-1 patch
