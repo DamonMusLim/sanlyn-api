@@ -187,6 +187,7 @@ mount("/api/db/migrate-freight",   () => import("./api/db/migrate-freight.js"));
 mount("/api/db/modules",           () => import("./api/db/modules.js"));
 mount("/api/db/qc-checks",         () => import("./api/db/qc-checks.js"));
 mount("/api/db/order-create-v2",   () => import("./api/db/order-create-v2.js"));
+mount("/api/db/factory-invite",    () => import("./api/db/factory-invite.js"));   // v3 factory onboarding
 mount("/api/db/orders-status",     () => import("./api/db/orders-status.js"));    // v3 state machine
 mount("/api/db/products-v3",       () => import("./api/db/products-v3.js"));      // v3 role-filtered
 mount("/api/db/products-stats",    () => import("./api/db/products-stats.js"));   // v3 KPI stats
