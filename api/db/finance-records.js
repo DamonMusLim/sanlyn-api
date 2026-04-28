@@ -3,6 +3,7 @@
 // POST: create or update a finance record
 
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
+import pg from "pg"; // ESM-safe — was `require("pg")` which throws under ESM
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -11,7 +12,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
 
-  const { Pool } = require("pg");
+  const { Pool } = pg;
   const pool = new Pool({
     host: process.env.PG_HOST,
     port: parseInt(process.env.PG_PORT || "5432"),
