@@ -195,7 +195,15 @@ mount("/api/db/factory-invite",        () => import("./api/db/factory-invite.js"
 mount("/api/db/factory-invite-list",   () => import("./api/db/factory-invite-list.js"));   // admin queue
 mount("/api/db/factory-invite-review",   () => import("./api/db/factory-invite-review.js")); // admin approve/reject
 mount("/api/db/factory-invite-complete", () => import("./api/db/factory-invite-complete.js")); // invitee final submit
+mount("/api/db/ai-cleaner",              () => import("./api/db/ai-cleaner.js"));              // MiniMax 脏活管家
 mount("/api/db/migrate-invite-review", () => import("./api/db/migrate-invite-review.js")); // schema migration
+
+// ── v2.0 主数据升级 (2026-04-29) ──
+mount("/api/db/migrate-customers-v2", () => import("./api/db/migrate-customers-v2.js")); // v2 customers schema
+mount("/api/db/migrate-audit-logs",   () => import("./api/db/migrate-audit-logs.js"));   // audit_logs v2 columns
+mount("/api/db/kyc-upload",           () => import("./api/db/kyc-upload.js"));           // KYC doc upload
+mount("/api/db/kyc-ocr",              () => import("./api/db/kyc-ocr.js"));              // KYC OCR (4-country)
+mount("/api/db/kyc-review",           () => import("./api/db/kyc-review.js"));           // admin KYC approval
 mount("/api/db/orders-status",     () => import("./api/db/orders-status.js"));    // v3 state machine
 mount("/api/db/products-v3",       () => import("./api/db/products-v3.js"));      // v3 role-filtered
 mount("/api/db/products-stats",    () => import("./api/db/products-stats.js"));   // v3 KPI stats
