@@ -150,6 +150,29 @@ export default async function handler(req, res) {
 
       await client.query("COMMIT");
 
+      // ── Link factory to the inviting buyer's allowedFactories ──
+      // invited_by = buyer's company_code. We append the new factory's company_code
+      // so the buyer can immediately see the factory in their order creation dropdown.
+      if (invite.invited_by && invite.type === "factory") {
+        try {
+          await pool.query(`
+            UPDATE customers
+            SET raw = jsonb_set(
+              COALESCE(raw, '{}'),
+              '{allowedFactories}',
+              COALESCE(raw->'allowedFactories', '[]') || $1::jsonb
+            )
+            WHERE company_code = $2
+          `, [
+            JSON.stringify([{ key: finalCode, introducedBySanlyn: false, commissionRate: 0 }]),
+            invite.invited_by,
+          ]);
+        } catch (linkErr) {
+          // Non-fatal — relationship can be added manually via admin
+          console.error("[invite-complete] allowedFactories link failed:", linkErr.message);
+        }
+      }
+
       // Notify admin (outside tx)
       pingAdmin({ type: invite.type, legal_name, tax_id, legal_rep, documents });
 

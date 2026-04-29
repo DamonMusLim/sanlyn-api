@@ -68,13 +68,46 @@ export default async function handler(req, res) {
   var pool = getPool();
   var { id, action, note } = req.body || {};
   if (!id || !action)                return res.status(400).json({ error: "id + action required" });
-  if (!["approve","reject"].includes(action)) return res.status(400).json({ error: "action must be approve|reject" });
+  if (!["approve","reject","activate"].includes(action)) return res.status(400).json({ error: "action must be approve|reject|activate" });
   if (action === "reject" && !note)  return res.status(400).json({ error: "note required when rejecting" });
 
   try {
     var cur = await pool.query("SELECT * FROM factory_invites WHERE id = $1", [id]);
     if (!cur.rows.length)   return res.status(404).json({ error: "invite not found" });
     var inv = cur.rows[0];
+
+    // ── activate: after factory has completed registration, admin enables account ──
+    if (action === "activate") {
+      if (inv.status !== "registered") {
+        return res.status(409).json({ error: "can only activate after factory completes registration", current_status: inv.status });
+      }
+      // Get the customer created by this invite
+      var custQ = await pool.query(
+        "SELECT id, company_code FROM customers WHERE (raw->>'registered_via_invite')::int = $1 LIMIT 1",
+        [id]
+      );
+      if (!custQ.rows.length) return res.status(404).json({ error: "no customer record found for this invite" });
+      var cust = custQ.rows[0];
+
+      await pool.query("UPDATE customers SET is_active = true, updated_at = NOW() WHERE id = $1", [cust.id]);
+      await pool.query("UPDATE accounts SET is_active = true WHERE company_code = $1", [cust.company_code]);
+      await pool.query(
+        "UPDATE factory_invites SET status='active', reviewed_by=$1, reviewed_at=NOW(), review_note=$2 WHERE id=$3",
+        [req.user.email, note || "Account activated by admin", id]
+      );
+
+      // WeCom ping
+      if (WECOM_WEBHOOK) {
+        fetch(WECOM_WEBHOOK, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ msgtype:"markdown", markdown:{ content:`## ✅ Partner Account Activated\n**Company:** ${cust.company_code}\n**Type:** ${inv.type}\n**Activated by:** ${req.user.email}` } }),
+        }).catch(() => {});
+      }
+
+      return res.status(200).json({ success: true, id, status: "active", company_code: cust.company_code });
+    }
+
+    // ── approve / reject: standard first-pass review ──
     if (inv.status !== "pending") {
       return res.status(409).json({ error: "already reviewed", current_status: inv.status });
     }
