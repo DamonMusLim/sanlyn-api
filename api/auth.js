@@ -101,9 +101,42 @@ const PUBLIC_PATHS = [
 // 注意：仅 /api/portal/login 在 PUBLIC_PATHS；其余 portal 路由在此前缀下直通，由 portalGate 拦截
 const PORTAL_ROUTES_PREFIX = "/api/portal/";
 
+// ── Stale-JWT enrichment ──
+// Old JWTs may lack companyCode (e.g. issued before account row was backfilled).
+// Look it up from accounts table and patch req.user. 60s TTL cache to avoid
+// per-request DB hits.
+var _enrichCache = new Map();
+async function enrichStaleUser(req) {
+  if (!req.user) return;
+  if (req.user.companyCode || req.user.company_code) return;
+  var uid = req.user.uid || req.user.id;
+  if (!uid) return;
+  var hit = _enrichCache.get(uid);
+  if (hit && Date.now() - hit.ts < 60000) {
+    if (hit.companyCode)  req.user.companyCode  = hit.companyCode;
+    if (hit.companyCodes) req.user.companyCodes = hit.companyCodes;
+    return;
+  }
+  try {
+    var dbMod = await import("./db.js");
+    var r = await dbMod.getPool().query(
+      "SELECT company_code, company_codes FROM accounts WHERE id = $1 LIMIT 1",
+      [uid]
+    );
+    var row = r.rows[0];
+    if (row && row.company_code) {
+      req.user.companyCode = row.company_code;
+      if (row.company_codes && row.company_codes.length) req.user.companyCodes = row.company_codes;
+      _enrichCache.set(uid, { ts: Date.now(), companyCode: row.company_code, companyCodes: row.company_codes });
+    } else {
+      _enrichCache.set(uid, { ts: Date.now() });
+    }
+  } catch (e) { /* swallow — endpoint will return graceful empty */ }
+}
+
 // ── Express 全局鉴权中间件 ──
 // 职责：内部 JWT 校验。Portal 路径识别后直通（交由 portalGate）。
-export function authMiddleware(req, res, next) {
+export async function authMiddleware(req, res, next) {
   if (req.method === "OPTIONS") return next();
 
   // Browser auto-requests: silence rather than 401
@@ -141,6 +174,7 @@ export function authMiddleware(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: "Unauthorized", message: "请先登录" });
   }
+  await enrichStaleUser(req);
   next();
 }
 
