@@ -90,13 +90,17 @@ export default async function handler(req, res) {
   try {
     const pool = getPool();
     let { customer, status, limit = 500, brands, factory, company_code, company_codes } = req.query;
-    // Tenant scoping: non-admin users can only see their own company's orders
+    // Tenant scoping: non-admin users can only see their own company's orders.
+    // FAIL-CLOSED: if JWT has no role or no companyCodes, refuse the request —
+    // forces re-login so the fresh JWT carries the correct scope. (Prior
+    // version fell through and returned ALL orders when JWT was missing fields.)
     if (req.user && req.user.role !== "admin") {
       const userCodes = req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : null);
-      if (userCodes && userCodes.length > 0) {
-        company_codes = JSON.stringify(userCodes);
-        company_code  = undefined;
+      if (!userCodes || userCodes.length === 0) {
+        return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
       }
+      company_codes = JSON.stringify(userCodes);
+      company_code  = undefined;
     }
     let query = "SELECT * FROM orders", params = [], conds = [];
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }

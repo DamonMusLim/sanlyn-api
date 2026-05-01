@@ -25,7 +25,7 @@ export default async function handler(req, res) {
   try {
     /* ═══ GET: list finance records ═══ */
     if (req.method === "GET") {
-      const {
+      let {
         direction, category, status, counterparty_code,
         issuing_code, shipment_no, order_nos,
         date_from, date_to, company_code,
@@ -35,6 +35,23 @@ export default async function handler(req, res) {
       let params = [];
       let idx = 1;
 
+      // ── Tenant scoping (fail-closed) ──
+      // Non-admin: force company_code filter to user's own scope, regardless
+      // of what the client sent.
+      if (req.user && req.user.role !== "admin") {
+        const userCodes = req.user.companyCodes
+          || (req.user.companyCode ? [req.user.companyCode] : null);
+        if (!userCodes || userCodes.length === 0) {
+          return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
+        }
+        const cpPh = userCodes.map(() => "$" + (idx++)).join(",");
+        userCodes.forEach((c) => params.push(c));
+        const isPh = userCodes.map(() => "$" + (idx++)).join(",");
+        userCodes.forEach((c) => params.push(c));
+        where.push("(counterparty_code IN (" + cpPh + ") OR issuing_code IN (" + isPh + "))");
+        company_code = undefined; // ignore client-supplied
+      }
+
       if (direction) { where.push("direction = $" + idx); params.push(direction.toUpperCase()); idx++; }
       if (category) { where.push("category = $" + idx); params.push(category); idx++; }
       if (status) { where.push("status = $" + idx); params.push(status); idx++; }
@@ -43,7 +60,7 @@ export default async function handler(req, res) {
       if (shipment_no) { where.push("shipment_no = $" + idx); params.push(shipment_no); idx++; }
       if (order_nos) { where.push("order_nos ILIKE $" + idx); params.push("%" + order_nos + "%"); idx++; }
 
-      // company_code: matches either counterparty or issuing (for portal views)
+      // company_code (admin only — non-admin already scoped above)
       if (company_code) {
         where.push("(counterparty_code = $" + idx + " OR issuing_code = $" + (idx + 1) + ")");
         params.push(company_code, company_code);

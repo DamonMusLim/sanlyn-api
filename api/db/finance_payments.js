@@ -12,7 +12,20 @@ export default async function handler(req, res) {
   // ── GET /api/db/payments ──────────────────────────────────────
   if (req.method === "GET") {
     try {
-      const { company_code, company_codes, limit = 200 } = req.query;
+      let { company_code, company_codes, limit = 200 } = req.query;
+      // ── Tenant scoping (fail-closed) ──
+      // Non-admin users can ONLY see their own company's payment records.
+      // If the JWT has no role or no companyCodes, refuse — forces re-login
+      // so the new JWT picks up the proper scope.
+      if (req.user && req.user.role !== "admin") {
+        const userCodes = req.user.companyCodes
+          || (req.user.companyCode ? [req.user.companyCode] : null);
+        if (!userCodes || userCodes.length === 0) {
+          return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
+        }
+        company_codes = JSON.stringify(userCodes);
+        company_code  = undefined;
+      }
       let query = "SELECT * FROM finance_payments", params = [], conds = [];
 
       if (company_codes) {
