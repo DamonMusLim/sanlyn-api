@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 var INIT_SQL = `
 CREATE TABLE IF NOT EXISTS customers (
@@ -57,6 +58,22 @@ async function ensureTable(pool) {
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PUT, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
+
+  // ── Tenant scoping (fail-closed) ──
+  // GET: non-admin callers see ONLY their own companyCode rows.
+  // POST/PUT/DELETE: admin only — customer master data is global config.
+  var isAdmin = req.user && req.user.role === "admin";
+  if (!isAdmin && req.method !== "GET") {
+    return res.status(403).json({ error: "Admin only — customer master data is read-only for tenants." });
+  }
+  var userCodes = null;
+  if (!isAdmin) {
+    userCodes = req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : null);
+    if (!userCodes || userCodes.length === 0) {
+      return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
+    }
+  }
 
   try {
     var pool = getPool();
@@ -68,7 +85,14 @@ export default async function handler(req, res) {
       var query = "SELECT * FROM customers", params = [], conds = [];
       // Default: only active customers (pass include_inactive=1 for admin views)
       if (!include_inactive) conds.push("is_active = true");
-      if (company_code)  { params.push(company_code);  conds.push("company_code = $" + params.length); }
+      // Non-admin: hard-restrict to own companyCodes; ignore any client-supplied company_code
+      if (!isAdmin) {
+        var ph = userCodes.map(function (c) { params.push(c); return "$" + params.length; }).join(",");
+        conds.push("company_code IN (" + ph + ")");
+      } else if (company_code) {
+        params.push(company_code);
+        conds.push("company_code = $" + params.length);
+      }
       if (group_id)      { params.push(group_id);      conds.push("group_id = $" + params.length); }
       if (portal_role)   { params.push(portal_role);   conds.push("portal_role = $" + params.length); }
       var searchTerm = q || search; // support both ?q= and ?search=
@@ -124,6 +148,10 @@ export default async function handler(req, res) {
         var r = await fetch("https://files.sanlynos.com/data/customers.json");
         var d = await r.json();
         var list = Array.isArray(d) ? d : [];
+        // Apply tenant scope to OSS fallback too
+        if (!isAdmin && userCodes) {
+          list = list.filter(function (row) { return row && userCodes.includes(row.company_code); });
+        }
         return res.status(200).json({ success: true, data: list, count: list.length, source: "oss" });
       } catch(ossErr) {
         return res.status(200).json({ success: true, data: [], count: 0 });

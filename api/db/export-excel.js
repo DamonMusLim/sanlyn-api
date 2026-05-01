@@ -15,7 +15,35 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).end();
 
+  // ── Auth + tenant scoping (fail-closed) ──
+  // All Excel exports require a valid JWT. Internal/sensitive exports
+  // (cost breakdowns, finance summaries) are admin-only. Per-shipment and
+  // per-customs exports are scoped to the caller's companyCodes when not admin.
+  if (!requireAuth(req, res)) return;
+  const isAdmin = req.user && req.user.role === "admin";
+  const userCodes = isAdmin
+    ? null
+    : (req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : null));
+  if (!isAdmin && (!userCodes || userCodes.length === 0)) {
+    return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
+  }
+
   const { type, id, shipment, contract, company_code, month } = req.query;
+
+  // Internal-only export types — admin gate ahead of any DB read
+  if (!isAdmin && (type === "cost" || type === "finance_shipments" || type === "finance_summary")) {
+    return res.status(403).json({ error: "Admin only — finance/cost exports are restricted." });
+  }
+
+  // Helper: refuse a row that the caller is not scoped to.
+  function _inScope(rowCompanyCode, rowCustomerEn) {
+    if (isAdmin) return true;
+    if (!userCodes) return false;
+    if (rowCompanyCode && userCodes.includes(rowCompanyCode)) return true;
+    // Soft-match on customer_en (some legacy rows store name only)
+    if (rowCustomerEn && userCodes.some(c => rowCustomerEn.toUpperCase().startsWith(String(c).toUpperCase()))) return true;
+    return false;
+  }
 
   try {
     const pool = getPool();
@@ -29,6 +57,11 @@ export default async function handler(req, res) {
       );
       if (!pRes.rows.length) return res.status(404).json({ error: "Not found" });
       const p = pRes.rows[0];
+
+      // Tenant scope check — shipping plan must belong to caller's company
+      if (!_inScope(p.company_code, p.customer_en || p.customer)) {
+        return res.status(403).json({ error: "Out of scope — this shipping plan is not yours." });
+      }
 
       // Linked orders
       let orders = [];
@@ -100,8 +133,7 @@ export default async function handler(req, res) {
     //  报关资料清单 Excel
     // ════════════════════════════════
     if (type === "customs") {
-      // S17.3 P0: 报关 Excel 需要登录，防止裸查
-      if (!requireAuth(req, res)) return;
+      // S17.3 P0: 报关 Excel 需要登录（auth 已在顶部统一处理）
       const key = shipment || contract;
       let sql = "SELECT * FROM customs_data WHERE 1=1";
       const vals = [];
@@ -122,6 +154,10 @@ export default async function handler(req, res) {
       }
 
       const oRaw = order?.raw || {};
+      // Tenant scope check — order must belong to caller's company
+      if (order && !_inScope(order.company_code, order.customer || oRaw.companyNameEN)) {
+        return res.status(403).json({ error: "Out of scope — this customs record is not yours." });
+      }
       const products = (oRaw.products||[]);
 
       const DOCS = [

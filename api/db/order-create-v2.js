@@ -2,6 +2,7 @@
 // POST: create order with customer + products selection
 // GET: fetch form helpers (customers list, products list)
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 function generateOrderNo() {
   var d = new Date();
@@ -21,6 +22,26 @@ function generateContractNo() {
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
+
+  // ── Tenant scoping (fail-closed) ──
+  // Order creation/deletion is admin-only at the API layer. Non-admin users
+  // who need to create orders must do so through the customer portal flow,
+  // which has its own scoped endpoints. Any authenticated non-admin caller
+  // hitting this endpoint directly is rejected.
+  var isAdmin = req.user && req.user.role === "admin";
+  if (!isAdmin && (req.method === "POST" || req.method === "DELETE")) {
+    return res.status(403).json({ error: "Admin only — order creation/deletion is restricted." });
+  }
+  // For GET (form helpers), non-admin callers must have a company scope so we
+  // can later restrict the customer list to their own scope.
+  var userCodes = null;
+  if (!isAdmin) {
+    userCodes = req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : null);
+    if (!userCodes || userCodes.length === 0) {
+      return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
+    }
+  }
 
   var pool = getPool();
 
@@ -35,6 +56,9 @@ export default async function handler(req, res) {
       // ── Customer's history products (for association) ──
       if (action === "customer-products" && req.query.companyCode) {
         var code = req.query.companyCode;
+        if (!isAdmin && userCodes && !userCodes.includes(code)) {
+          return res.status(403).json({ error: "Out of scope — you cannot view this customer's order history." });
+        }
         // Get products from this customer's recent orders
         var recentOrders = await pool.query(
           "SELECT products, customer_po, order_no, created_at FROM orders WHERE company_code = $1 AND products IS NOT NULL ORDER BY created_at DESC LIMIT 10",
@@ -55,8 +79,8 @@ export default async function handler(req, res) {
                 cbm: p.cbm || 0, grossWeight: p.grossWeight || 0, netWeight: p.netWeight || 0,
                 lastQty: p.qty || 0, lastOrderNo: ord.order_no,
                 lastDate: ord.created_at,
-                // Keep declare/tax info for finance
-                bagsPerBox: p.bagsPerBox || 0,
+                innerQty: p.innerQty || p.bagsPerBox || 0,
+                innerUnit: p.innerUnit || "PCS",
                 declareAmountPerBox: p.declareAmountPerBox || 0,
                 vatRate: p.vatRate || 0, taxRebateRate: p.taxRebateRate || 0,
                 hsCode: p.hsCode || "",
@@ -97,12 +121,24 @@ export default async function handler(req, res) {
       }
 
       // ── Default: init data ──
+      // Scope customer list by user's companyCodes for non-admin callers.
+      var scopeClauseOrders = "";
+      var scopeClauseCust   = "";
+      var scopeParams       = [];
+      if (!isAdmin && userCodes && userCodes.length) {
+        var ph = userCodes.map(function (c, i) { scopeParams.push(c); return "$" + scopeParams.length; }).join(",");
+        scopeClauseOrders = " AND company_code IN (" + ph + ")";
+        scopeClauseCust   = " AND company_code IN (" + ph + ")";
+      }
+
       var customers = await pool.query(
-        "SELECT DISTINCT company_code, company_name_cn, company_name_en FROM orders WHERE company_code IS NOT NULL AND company_code != '' GROUP BY company_code, company_name_cn, company_name_en ORDER BY company_name_en"
+        "SELECT DISTINCT company_code, company_name_cn, company_name_en FROM orders WHERE company_code IS NOT NULL AND company_code != ''" + scopeClauseOrders + " GROUP BY company_code, company_name_cn, company_name_en ORDER BY company_name_en",
+        scopeParams
       ).catch(function() { return { rows: [] }; });
 
       var custTable = await pool.query(
-        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, raw FROM customers WHERE is_active != false AND (grade IS NOT NULL AND grade != '' OR brands IS NOT NULL AND brands != '{}' AND brands != '[]' AND brands::text != '') ORDER BY name_en"
+        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, raw FROM customers WHERE is_active != false" + scopeClauseCust + " AND (grade IS NOT NULL AND grade != '' OR brands IS NOT NULL AND brands != '{}' AND brands != '[]' AND brands::text != '') ORDER BY name_en",
+        scopeParams
       ).catch(function() { return { rows: [] }; });
 
       var customerMap = {};
@@ -247,7 +283,8 @@ export default async function handler(req, res) {
         totalCbm: pCbm,
         grossWeight: parseFloat(p.grossWeight) || parseFloat(p.gross_weight) || 0,
         netWeight: parseFloat(p.netWeight) || parseFloat(p.net_weight) || 0,
-        bagsPerBox: parseInt(p.bagsPerBox) || parseInt(p.bags_per_box) || 0,
+        innerQty: parseInt(p.innerQty) || parseInt(p.bagsPerBox) || parseInt(p.bags_per_box) || 0,
+        innerUnit: p.innerUnit || "PCS",
         declareAmountPerBox: parseFloat(p.declareAmount) || parseFloat(p.declareAmountPerBox) || 0,
         vatRate: parseFloat(p.vatRate) || parseFloat(p.vat_rate) || 0,
         taxRebateRate: parseFloat(p.taxRebateRate) || parseFloat(p.tax_rebate_rate) || 0,
@@ -348,7 +385,7 @@ export default async function handler(req, res) {
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16,$17,
       $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,
       $36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46
-    ) RETURNING _id, order_no, contract_no, total_amount, total_amount_factory, profit, status`;
+    ) RETURNING id, _id, order_no, contract_no, total_amount, total_amount_factory, profit, status`;
 
     var vals = [
       portalId, orderNo, contractNo, body.customerPO || null,
@@ -368,6 +405,40 @@ export default async function handler(req, res) {
 
     var result = await pool.query(sql, vals);
     var order = result.rows[0];
+
+    // Auto-create payment_term task (non-fatal — never blocks order creation)
+    try {
+      const taskId = "t-pt-" + Math.random().toString(36).slice(2, 10);
+      const orderLabel = order.contract_no || order.order_no || `Order #${order.id}`;
+      await pool.query(`
+        INSERT INTO tasks (
+          id, title, task_type, level, status, risk_level,
+          owner_object_type, owner_object_id, owner_object_label,
+          related_order_no, related_po_no, company_code,
+          mode, due_at, reason, raw
+        ) VALUES (
+          $1, $2, 'payment_term_confirm', 'order', 'open', 'mid',
+          'order', $3, $4,
+          $5, $6, $7,
+          'owned', NOW() + INTERVAL '3 days',
+          'Order created without an agreed payment term. Factory or trader needs to propose one.',
+          $8::jsonb
+        )
+      `, [
+        taskId,
+        `Confirm payment term · ${orderLabel}`,
+        String(order.id),
+        orderLabel,
+        order.order_no || '', body.customerPO || '', companyCode || '',
+        JSON.stringify({
+          order_id: order.id,
+          workflow: 'payment_term',
+          cta: { label: 'Propose payment term', open_payment_term_modal: true },
+        }),
+      ]);
+    } catch (taskErr) {
+      console.warn("[order-create-v2] payment_term task creation failed (non-fatal):", taskErr.message);
+    }
 
     return res.status(200).json({
       success: true,
