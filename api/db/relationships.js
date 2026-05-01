@@ -28,6 +28,17 @@ export default async function handler(req, res) {
     // ── GET ─────────────────────────────────────────────
     if (req.method === "GET") {
       var { from, to, company, type, status = 'active', limit = 200 } = req.query;
+
+      // Resolve from_code / to_code → integer IDs via customers table
+      if (!from && req.query.from_code) {
+        var codeRes = await pool.query("SELECT id FROM customers WHERE company_code = $1 LIMIT 1", [req.query.from_code]);
+        if (codeRes.rows.length) from = String(codeRes.rows[0].id);
+      }
+      if (!to && req.query.to_code) {
+        var codeRes2 = await pool.query("SELECT id FROM customers WHERE company_code = $1 LIMIT 1", [req.query.to_code]);
+        if (codeRes2.rows.length) to = String(codeRes2.rows[0].id);
+      }
+
       var conds = [], params = [];
 
       if (company) {
@@ -39,6 +50,12 @@ export default async function handler(req, res) {
       }
       if (type)   { params.push(type);   conds.push("type = $" + params.length); }
       if (status) { params.push(status); conds.push("status = $" + params.length); }
+
+      // Hide supplier-identity rows from non-admin callers (middleman privacy)
+      var isAdmin = req.user && req.user.role === 'admin';
+      if (!isAdmin) {
+        conds.push("(visibility_to_partners IS NULL OR visibility_to_partners != 'hidden')");
+      }
 
       // Visibility guard: caller must be one of the parties (1-hop default)
       if (callerCompanyId && !company && !from && !to) {

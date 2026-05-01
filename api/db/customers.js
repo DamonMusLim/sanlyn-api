@@ -64,14 +64,15 @@ export default async function handler(req, res) {
 
     // ── GET ─────────────────────────────────────────────
     if (req.method === "GET") {
-      var { company_code, group_id, portal_role, search, include_inactive, limit = 200 } = req.query;
+      var { company_code, group_id, portal_role, search, q, include_inactive, limit = 200 } = req.query;
       var query = "SELECT * FROM customers", params = [], conds = [];
       // Default: only active customers (pass include_inactive=1 for admin views)
       if (!include_inactive) conds.push("is_active = true");
       if (company_code)  { params.push(company_code);  conds.push("company_code = $" + params.length); }
       if (group_id)      { params.push(group_id);      conds.push("group_id = $" + params.length); }
       if (portal_role)   { params.push(portal_role);   conds.push("portal_role = $" + params.length); }
-      if (search)        { params.push("%" + search + "%"); conds.push("(name_en ILIKE $" + params.length + " OR name_cn ILIKE $" + params.length + " OR company_code ILIKE $" + params.length + ")"); }
+      var searchTerm = q || search; // support both ?q= and ?search=
+      if (searchTerm)    { params.push("%" + searchTerm + "%"); conds.push("(name_en ILIKE $" + params.length + " OR name_cn ILIKE $" + params.length + " OR company_code ILIKE $" + params.length + ")"); }
       if (conds.length) query += " WHERE " + conds.join(" AND ");
       params.push(parseInt(limit));
       query += " ORDER BY created_at DESC LIMIT $" + params.length;
