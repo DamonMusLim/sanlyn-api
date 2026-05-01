@@ -42,6 +42,10 @@ var STATEMENTS = [
     updated_at        TIMESTAMPTZ DEFAULT NOW()
   )`,
 
+  // Phase 2: add factory_code for factory-scoped queries
+  `ALTER TABLE qc_checks ADD COLUMN IF NOT EXISTS factory_code VARCHAR(64) DEFAULT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_qc_factory  ON qc_checks(factory_code)`,
+
   `CREATE INDEX IF NOT EXISTS idx_qc_order    ON qc_checks(order_contract_no)`,
   `CREATE INDEX IF NOT EXISTS idx_qc_product  ON qc_checks(product_id)`,
   `CREATE INDEX IF NOT EXISTS idx_qc_result   ON qc_checks(qc_result)`,

@@ -16,12 +16,13 @@ export default async function handler(req, res) {
 
     // ---- GET ----
     if (req.method === "GET") {
-      var { order_contract_no, product_id, review_status, qc_result, limit = 200 } = req.query;
+      var { order_contract_no, product_id, review_status, qc_result, factory_code, limit = 200 } = req.query;
       var conds = [], vals = [];
       if (order_contract_no) { vals.push(order_contract_no); conds.push("order_contract_no = $" + vals.length); }
       if (product_id)        { vals.push(parseInt(product_id)); conds.push("product_id = $" + vals.length); }
       if (review_status)     { vals.push(review_status); conds.push("review_status = $" + vals.length); }
       if (qc_result)         { vals.push(qc_result); conds.push("qc_result = $" + vals.length); }
+      if (factory_code)      { vals.push(factory_code); conds.push("factory_code = $" + vals.length); }
       var where = conds.length ? " WHERE " + conds.join(" AND ") : "";
       vals.push(parseInt(limit));
       var sql = `
@@ -57,7 +58,7 @@ export default async function handler(req, res) {
         "order_contract_no", "product_id", "product_sku",
         "batch_no", "production_date", "best_before", "qty",
         "qc_result", "qc_date", "qc_by", "checklist", "photos", "fail_reason",
-        "entry_mode",
+        "entry_mode", "factory_code",
       ];
       var vals2 = [
         b.order_contract_no, b.product_id || null, b.product_sku || null,
@@ -69,6 +70,7 @@ export default async function handler(req, res) {
         JSON.stringify(b.photos || []),
         b.fail_reason || "",
         b.entry_mode || "realtime",
+        b.factory_code || null,
       ];
       var ph = cols.map((_, i) => "$" + (i + 1)).join(", ");
       var sql = `INSERT INTO qc_checks (${cols.join(", ")}) VALUES (${ph}) RETURNING *`;
