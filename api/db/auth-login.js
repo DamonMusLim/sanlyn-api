@@ -32,23 +32,28 @@ export default async function handler(req, res) {
 
     try {
       var acct = await pool.query(
-        "SELECT id, username, role, company, supplier_role, company_code, company_codes FROM accounts WHERE id = $1 OR username = $2 LIMIT 1",
+        "SELECT id, username, role, company, supplier_role, company_code, company_codes, raw FROM accounts WHERE id = $1 OR username = $2 LIMIT 1",
         [req.user.uid, req.user.username]
       );
       if (!acct.rows[0]) return res.status(401).json({ error: "Account not found" });
       var u = acct.rows[0];
       var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
+      var rawObj = u.raw || {};
+      if (typeof rawObj === "string") { try { rawObj = JSON.parse(rawObj); } catch { rawObj = {}; } }
+      var access = Array.isArray(rawObj.access) ? rawObj.access : [];
 
       var newToken = generateToken({
         uid: u.id, username: u.username, role: u.role,
         company: u.company, supplierRole: u.supplier_role,
-        companyCode: u.company_code, companyCodes: companyCodes
+        companyCode: u.company_code, companyCodes: companyCodes,
+        access: access
       });
 
       return res.status(200).json({ success: true, token: newToken, user: {
         uid: u.id, username: u.username, role: u.role,
         company: u.company, supplierRole: u.supplier_role,
-        companyCode: u.company_code, companyCodes: companyCodes
+        companyCode: u.company_code, companyCodes: companyCodes,
+        access: access
       }});
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -63,7 +68,7 @@ export default async function handler(req, res) {
     if (!username || !password) return res.status(400).json({ error: "username 和 password 必填" });
 
     var result = await pool.query(
-      "SELECT id, username, password, role, company, supplier_role, company_code, company_codes FROM accounts WHERE username = $1 LIMIT 1",
+      "SELECT id, username, password, role, company, supplier_role, company_code, company_codes, raw FROM accounts WHERE username = $1 LIMIT 1",
       [username.trim()]
     );
 
@@ -74,11 +79,17 @@ export default async function handler(req, res) {
     if (!passwordOk) return res.status(401).json({ error: "密码错误" });
 
     var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
+    // access list lives in accounts.raw.access (JSONB). Used for fine-grained
+    // permission checks like Pay Balance button visibility.
+    var rawObj = u.raw || {};
+    if (typeof rawObj === "string") { try { rawObj = JSON.parse(rawObj); } catch { rawObj = {}; } }
+    var access = Array.isArray(rawObj.access) ? rawObj.access : [];
 
     var token = generateToken({
       uid: u.id, username: u.username, role: u.role,
       company: u.company, supplierRole: u.supplier_role,
-      companyCode: u.company_code, companyCodes: companyCodes
+      companyCode: u.company_code, companyCodes: companyCodes,
+      access: access
     });
 
     return res.status(200).json({
@@ -86,7 +97,8 @@ export default async function handler(req, res) {
       user: {
         uid: u.id, username: u.username, role: u.role,
         company: u.company, supplierRole: u.supplier_role,
-        companyCode: u.company_code, companyCodes: companyCodes
+        companyCode: u.company_code, companyCodes: companyCodes,
+        access: access
       }
     });
   } catch (err) {
