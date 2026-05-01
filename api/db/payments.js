@@ -1,8 +1,11 @@
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+  if (!requireAuth(req, res)) return;
+  if (req.user?.role !== "admin") return res.status(403).json({ error: "Admin only — use /api/db/finance_payments for tenant access." });
   try {
     const pool = getPool();
     const { customer, status, plan_id, limit = 500 } = req.query;
