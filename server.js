@@ -221,6 +221,10 @@ mount("/api/db/orders-status",     () => import("./api/db/orders-status.js"));  
 mount("/api/db/products-v3",       () => import("./api/db/products-v3.js"));      // v3 role-filtered
 mount("/api/db/products-stats",    () => import("./api/db/products-stats.js"));   // v3 KPI stats
 mount("/api/db/sync-products-oss", () => import("./api/db/sync-products-to-oss.js"));
+// ── Credit Notes ──────────────────────────────────────────────
+mount("/api/db/credit-notes",          () => import("./api/db/credit-notes.js"));          // CRUD + status update
+mount("/api/db/migrate-credit-notes",  () => import("./api/db/migrate-credit-notes.js"));  // table migration
+mount("/api/db/product-image-update", () => import("./api/db/product-image-update.js")); // product image upload
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
 mount("/api/jdy/customer-full-sync", () => import("./api/jdy/customer-full-sync.js"));
