@@ -55,7 +55,9 @@ const ALLOWED_ORIGINS = [
   "https://ai.sanlyn.cn",
   "https://ai.sanlynos.com",
   "https://sanlyn-os.vercel.app",
+  "https://dashboard.sanlyn.cn",
   "http://localhost:5173",
+  "http://localhost:5188",
   "http://localhost:3000",
 ];
 app.use((req, res, next) => {
