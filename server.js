@@ -269,6 +269,11 @@ mount("/api/portal/login",     () => import("./api/portal/login.js"));
 mount("/api/portal/shipping",  () => import("./api/portal/shipping.js"));
 mount("/api/portal/documents", () => import("./api/portal/documents.js"));
 mount("/api/portal/missing",   () => import("./api/portal/missing.js"));
+
+// MiniMax chat completion proxy for Task Workspace V1.5 (read-only).
+// Hard contract: keys stay in process.env.MINIMAX_API_KEY; rate-limited
+// 30s/task+role; daily cap 100; max_tokens hard 800; prompt 4000 chars.
+mount("/api/minimax-chat",     () => import("./api/minimax-chat.js"));
 // ── Static files (driver-evidence page) ──
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
