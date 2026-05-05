@@ -169,6 +169,20 @@ export async function authMiddleware(req, res, next) {
     return next();
   }
 
+  // ── dev-only bypass for /api/minimax-chat ──
+  // STRICT guards: must be (a) NOT in production, (b) MINIMAX_CHAT_DEV_BYPASS_AUTH=1,
+  // (c) request path === /api/minimax-chat. Anything else falls through to normal auth.
+  // Purpose: let Damon test the chat endpoint locally without spinning up the full
+  // login + DB stack. NEVER set this flag in pm2 prod env.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    process.env.MINIMAX_CHAT_DEV_BYPASS_AUTH === "1" &&
+    req.path === "/api/minimax-chat"
+  ) {
+    req.user = { role: "system", sub: "dev-bypass", account: "dev-local" };
+    return next();
+  }
+
   // 内部路由：必须持有有效内部 JWT
   extractUser(req);
   if (!req.user) {

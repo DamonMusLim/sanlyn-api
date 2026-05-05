@@ -52,6 +52,11 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method_not_allowed" });
 
+  // Audit trail: log when running under dev bypass (never in prod path).
+  if (req.user && req.user.sub === "dev-bypass") {
+    console.log(`[minimax-chat] DEV-BYPASS request from ${req.ip || "?"} (NODE_ENV=${process.env.NODE_ENV || "unset"})`);
+  }
+
   const apiKey = process.env.MINIMAX_API_KEY;
   if (!apiKey) {
     return res.status(503).json({
