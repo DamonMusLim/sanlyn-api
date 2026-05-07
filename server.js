@@ -59,6 +59,7 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:5188",
   "http://localhost:3000",
+  "http://localhost:3099",
 ];
 app.use((req, res, next) => {
   const origin = req.headers.origin || "";
@@ -226,6 +227,9 @@ mount("/api/db/sync-products-oss", () => import("./api/db/sync-products-to-oss.j
 // ── Credit Notes ──────────────────────────────────────────────
 mount("/api/db/credit-notes",          () => import("./api/db/credit-notes.js"));          // CRUD + status update
 mount("/api/db/migrate-credit-notes",  () => import("./api/db/migrate-credit-notes.js"));  // table migration
+// ── Freight Debit Notes (洋宝宝出单) ──────────────────────────
+mount("/api/freight-debit-notes",          () => import("./api/freight-debit-notes.js"));          // GET/POST/PATCH
+mount("/api/db/migrate-freight-debit-notes", () => import("./api/db/migrate-freight-debit-notes.js")); // table migration
 mount("/api/db/product-image-update", () => import("./api/db/product-image-update.js")); // product image upload
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
@@ -243,7 +247,8 @@ mount("/api/doc-convert-jdy", () => import("./api/doc-convert-jdy.js"));
 mount("/api/doc-convert",     () => import("./api/doc-convert.js"));
 mount("/api/doc-review",      () => import("./api/doc-review.js"));
 mount("/api/db/doc-share",    () => import("./api/db/doc-share.js"));
-mount("/api/freight-quotes",  () => import("./api/freight-quotes.js"));
+mount("/api/freight-quotes",  () => import("./api/freight-quotes.js"))
+mount("/api/freight-rates",   () => import("./api/freight-rates.js"));;
 mount("/api/jdy-company-sync",() => import("./api/jdy-company-sync.js"));
 mount("/api/jdy-company",     () => import("./api/jdy-company.js"));
 mount("/api/jdy-customer-sync",() => import("./api/jdy-customer-sync.js"));
@@ -271,6 +276,7 @@ mount("/api/portal/login",     () => import("./api/portal/login.js"));
 mount("/api/portal/shipping",  () => import("./api/portal/shipping.js"));
 mount("/api/portal/documents", () => import("./api/portal/documents.js"));
 mount("/api/portal/missing",   () => import("./api/portal/missing.js"));
+mount("/api/portal/orders",    () => import("./api/portal/orders.js"));    // Stage C1
 
 // MiniMax chat completion proxy for Task Workspace V1.5 (read-only).
 // Hard contract: keys stay in process.env.MINIMAX_API_KEY; rate-limited
