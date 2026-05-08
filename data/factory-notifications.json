@@ -1,0 +1,59 @@
+{
+  "_comment": "B2-1/B2-2A 回退数据源。生产环境 PG 表 factory_notifications 才是 source of truth。",
+  "items": [
+    {
+      "id": "ntf-0001",
+      "factoryId": "FAC-JJ",
+      "supplierId": null,
+      "taskId": "t-00001",
+      "deliveryId": null,
+      "title": "Delivery doc rejected — missing CO",
+      "body": "Please re-upload Certificate of Origin signed by CCPIT.",
+      "status": "unread",
+      "severity": "warning",
+      "createdAt": "2026-04-23T08:12:00.000Z",
+      "updatedAt": null,
+      "audit": {
+        "lastActionBy": "ops-wen",
+        "lastActionRole": "ops",
+        "lastActionAt": "2026-04-23T08:12:00.000Z"
+      }
+    },
+    {
+      "id": "ntf-0002",
+      "factoryId": "FAC-JJ",
+      "supplierId": null,
+      "taskId": "t-00004",
+      "deliveryId": "dlv-77",
+      "title": "Invoice accepted",
+      "body": "Your uploaded invoice #FS20260418075 was accepted.",
+      "status": "read",
+      "severity": "info",
+      "createdAt": "2026-04-22T02:45:00.000Z",
+      "updatedAt": "2026-04-22T03:01:00.000Z",
+      "audit": {
+        "lastActionBy": "factory-jj",
+        "lastActionRole": "factory",
+        "lastActionAt": "2026-04-22T03:01:00.000Z"
+      }
+    },
+    {
+      "id": "ntf-0003",
+      "factoryId": "FAC-DB",
+      "supplierId": null,
+      "taskId": "t-00011",
+      "deliveryId": null,
+      "title": "Urge: pending driver info",
+      "body": "Driver info for container COAU1234567 is still missing.",
+      "status": "unread",
+      "severity": "critical",
+      "createdAt": "2026-04-24T01:10:00.000Z",
+      "updatedAt": null,
+      "audit": {
+        "lastActionBy": "ops-wen",
+        "lastActionRole": "ops",
+        "lastActionAt": "2026-04-24T01:10:00.000Z"
+      }
+    }
+  ]
+}

@@ -27,6 +27,8 @@ var PLAN = [
   ["customers.kyc_verified_by",      "ALTER TABLE customers ADD COLUMN IF NOT EXISTS kyc_verified_by VARCHAR(64)"],
   ["customers.bank_swift",           "ALTER TABLE customers ADD COLUMN IF NOT EXISTS bank_swift VARCHAR(16)"],
   ["customers.bank_branch",          "ALTER TABLE customers ADD COLUMN IF NOT EXISTS bank_branch VARCHAR(128)"],
+  ["customers.wechat",               "ALTER TABLE customers ADD COLUMN IF NOT EXISTS wechat VARCHAR(64)"],
+  ["customers.whatsapp",             "ALTER TABLE customers ADD COLUMN IF NOT EXISTS whatsapp VARCHAR(32)"],
 
   ["idx customers.parent",           "CREATE INDEX IF NOT EXISTS idx_customers_parent ON customers(parent_company_code)"],
   ["idx customers.kyc_status",       "CREATE INDEX IF NOT EXISTS idx_customers_kyc_status ON customers(kyc_status)"],

@@ -45,10 +45,35 @@ export default async function handler(req, res) {
 
     if (req.method === "POST" || req.method === "PATCH") {
       var body = req.body || {};
-      var { company_id, capability, category, moq, lead_days, capacity, pricing_note,
+      var { company_id, capability, capabilities, category, moq, lead_days, capacity, pricing_note,
             cert_list, verified_by, verified_at, sanlyn_score, is_published, raw } = body;
-      if (!company_id || !capability) {
-        return res.status(400).json({ success: false, error: "company_id and capability required" });
+      if (!company_id) {
+        return res.status(400).json({ success: false, error: "company_id required" });
+      }
+
+      // Batch mode: { company_id, capabilities: ['manufacture', 'trade', ...] }
+      // Replaces all capabilities for this company.
+      if (Array.isArray(capabilities)) {
+        var invalid = capabilities.filter(c => !VALID_CAPABILITIES.includes(c));
+        if (invalid.length) {
+          return res.status(400).json({ success: false, error: "invalid capabilities: " + invalid.join(",") });
+        }
+        await pool.query("DELETE FROM company_capabilities WHERE company_id = $1", [parseInt(company_id)]);
+        var inserted = [];
+        for (var cap of capabilities) {
+          var r = await pool.query(
+            `INSERT INTO company_capabilities (company_id, capability, is_published) VALUES ($1,$2,true)
+             ON CONFLICT (company_id, capability) DO UPDATE SET is_published=true, updated_at=NOW() RETURNING *`,
+            [parseInt(company_id), cap]
+          );
+          if (r.rows[0]) inserted.push(r.rows[0]);
+        }
+        return res.status(200).json({ success: true, data: inserted, count: inserted.length });
+      }
+
+      // Single capability mode
+      if (!capability) {
+        return res.status(400).json({ success: false, error: "capability or capabilities[] required" });
       }
       if (!VALID_CAPABILITIES.includes(capability)) {
         return res.status(400).json({ success: false, error: "capability must be one of " + VALID_CAPABILITIES.join(",") });

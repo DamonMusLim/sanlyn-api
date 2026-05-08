@@ -8,7 +8,7 @@ import { getPool, setCors } from '../db.js';
 import { requireAuth } from '../auth.js';
 
 export default async function handler(req, res) {
-  setCors(res);
+  setCors(req, res);
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (!requireAuth(req, res)) return;
 

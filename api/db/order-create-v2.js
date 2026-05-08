@@ -24,22 +24,32 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return;
 
-  // ── Tenant scoping (fail-closed) ──
-  // Order creation/deletion is admin-only at the API layer. Non-admin users
-  // who need to create orders must do so through the customer portal flow,
-  // which has its own scoped endpoints. Any authenticated non-admin caller
-  // hitting this endpoint directly is rejected.
+  // ── Access control ────────────────────────────────────────────────────────
+  // Admin: unrestricted for all methods.
+  // Customer (non-admin): POST allowed with server-side scope enforcement.
+  //   - DELETE remains admin-only (destructive, no undo).
+  //   - buyer_company_code must be within the caller's JWT companyCodes.
+  //   - Scope empty → fail-closed (403). Client scope params are never trusted.
   var isAdmin = req.user && req.user.role === "admin";
-  if (!isAdmin && (req.method === "POST" || req.method === "DELETE")) {
-    return res.status(403).json({ error: "Admin only — order creation/deletion is restricted." });
+
+  if (!isAdmin && req.method === "DELETE") {
+    return res.status(403).json({
+      error: "Admin only — order deletion is restricted.",
+      code: "FORBIDDEN",
+    });
   }
-  // For GET (form helpers), non-admin callers must have a company scope so we
-  // can later restrict the customer list to their own scope.
+
+  // Compute caller scope for all non-admin users (used by GET scoping + POST validation).
+  // FAIL-CLOSED: empty scope → reject (forces re-login with fresh JWT).
   var userCodes = null;
   if (!isAdmin) {
-    userCodes = req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : null);
-    if (!userCodes || userCodes.length === 0) {
-      return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
+    var rawCodes = req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : []);
+    userCodes = Array.isArray(rawCodes) && rawCodes.length ? rawCodes : null;
+    if (!userCodes) {
+      return res.status(403).json({
+        error: "Account scope missing — please log out and log in again.",
+        code: "SCOPE_MISSING",
+      });
     }
   }
 
@@ -225,14 +235,116 @@ export default async function handler(req, res) {
 
   try {
     var body = req.body || {};
+
+    // ── Forbidden field scrub ─────────────────────────────────────────────────
+    // Strip internal cost/settlement fields before any processing or DB storage.
+    // Defense-in-depth: these must never enter orders.raw via customer portal.
+    var FORBIDDEN_PAYLOAD_KEYS = [
+      "margin", "trader_margin", "platform_fee", "settlement_edge",
+      "paid", "settled", "factory_exw_price", "other_broker_commission",
+      "bank_account", "driver_phone",
+    ];
+    FORBIDDEN_PAYLOAD_KEYS.forEach(function(k) { delete body[k]; });
+
+    // ── V3 payload detection and adaptation ──────────────────────────────────
+    // OrderCreateV3 sends V3 format: { buyer_company_code, containers, shipment, factory_code, ref }
+    // Legacy admin tool sends:        { companyCode, products, consignee, ... }
+    // Detect by presence of buyer_company_code and adapt to legacy format for INSERT.
+    if (body.buyer_company_code) {
+      // Look up buyer details from customers table (never trust frontend name strings)
+      var buyerRow = {};
+      try {
+        var bRes = await pool.query(
+          "SELECT name_cn, name_en, country, destination_port, consignee, currency FROM customers WHERE company_code = $1 LIMIT 1",
+          [body.buyer_company_code]
+        );
+        buyerRow = bRes.rows[0] || {};
+      } catch (lookupErr) {
+        console.warn("[order-create-v2] buyer lookup failed (non-fatal):", lookupErr.message);
+      }
+
+      // Flatten containers → products array
+      var v3Products = [];
+      (body.containers || []).forEach(function(c) {
+        (c.slots || []).forEach(function(s) {
+          (s.products || []).forEach(function(p) {
+            v3Products.push(Object.assign({}, p, {
+              containerType: c.containerType || "",
+              _slotFactoryKey: s.factoryKey || c.factoryKey || body.factory_code || "",
+              _slotPO: s.po || c.po || "",
+            }));
+          });
+        });
+      });
+
+      var ship = body.shipment || {};
+      var primaryContainerType = (body.containers && body.containers[0] && body.containers[0].containerType) || "40HQ";
+      var containerQtyV3 = (body.containers || []).length || 1;
+
+      // Remap to legacy body format (reuse existing validation + INSERT path)
+      body = {
+        companyCode:      body.buyer_company_code,
+        companyNameCN:    buyerRow.name_cn || "",
+        companyNameEN:    buyerRow.name_en || "",
+        consignee:        ship.consignee   || buyerRow.consignee || "",
+        customerAddress:  ship.deliveryAddr || "",
+        country:          ship.country     || buyerRow.country   || "",
+        // P1-BUG-2 fix: destination_port = port code; destination = human-readable country/city text
+        destinationPort:  buyerRow.destination_port || "",
+        destination:      ship.country || buyerRow.country || "",
+        pol:              ship.loadPort    || "",
+        deliveryDate:     ship.deliveryDate || null,
+        requiredArrival:  ship.reqArrival  || null,
+        remarks:          ship.remarks     || "",
+        factory:          body.factory_code || "",
+        currency:         buyerRow.currency || "USD",
+        containerType:    primaryContainerType,
+        containerQty:     containerQtyV3,
+        products:         v3Products,
+        contractNo:       body.ref || null,  // V3 ref (SC-YYYYMMDD-NNN) as contract ref
+        // P1-BUG-3 fix: source = "customer-portal" for customer self-service orders
+        createdBy:        "customer-portal",
+        source:           "customer-portal",
+        // Preserve V3 metadata in raw (visible to admin, never returned to customers)
+        _source:          "OrderCreateV3",
+        _v3_proxy_export: body.proxy_export   || false,
+        _v3_sanlyn_commission: body.sanlyn_commission || null,
+        _v3_containers:   body.containers     || [],
+      };
+    }
+
+    // ── Server-side buyer scope validation (non-admin) ────────────────────────
+    // CRITICAL: Must run AFTER V3 adaptation so body.companyCode is normalised.
+    // Verifies caller JWT scope includes the requested buyer. Never trust any
+    // client-supplied company_codes, query params, or stagingProfile values.
+    if (!isAdmin) {
+      var requestedBuyer = (body.companyCode || "").toUpperCase();
+      if (!requestedBuyer) {
+        return res.status(400).json({
+          error: "buyer_company_code (companyCode) is required.",
+          code: "BUYER_REQUIRED",
+        });
+      }
+      var callerNorm = userCodes.map(function(c) { return (c || "").toUpperCase(); });
+      if (!callerNorm.includes(requestedBuyer)) {
+        return res.status(403).json({
+          error: "Forbidden — buyer_company_code is outside your account scope.",
+          code: "BUYER_OUT_OF_SCOPE",
+          requestedBuyer: requestedBuyer,
+          // Do NOT echo callerNorm — avoid leaking caller scope to error response
+        });
+      }
+    }
+
     var {
       companyCode, companyNameCN, companyNameEN, groupCode, brand, category,
       consignee, customerAddress, phone, email,
-      country, destinationPort, pol,
+      country, destinationPort, destination, pol,
       deliveryDate, confirmedDelivery, requiredArrival,
       currency, exchangeRate,
       factory, issuingCompany, issuingCompanyEN,
-      remarks, products, createdBy
+      // P1-BUG-3 fix: source is set explicitly by V3 adapter or legacy caller
+      remarks, products, createdBy, source
     } = body;
 
     if (!companyNameCN && !companyNameEN) return res.status(400).json({ error: "客户名称必填" });
@@ -241,12 +353,133 @@ export default async function handler(req, res) {
     var orderNo = body.orderNo || generateOrderNo();
     var contractNo = body.contractNo || generateContractNo();
 
+    // ── Product Master JOIN ─────────────────────────────────────────────────────
+    // Batch-fetch product master data for all SKUs in this order.
+    // FAIL-OPEN: if sku not in products table, row is kept as-is (no error).
+    // Only active products are used (active = true filter).
+    //
+    // Columns fetched (verified against products schema 2026-05-07):
+    //   id, updated_at — used for deterministic duplicate resolution
+    //   net_weight, gross_weight, cbm, hs_code, declaration_name,
+    //   bl_description, barcode
+    //
+    // Duplicate SKU policy (products table has no sku UNIQUE constraint):
+    //   If multiple active rows share the same sku, pick the one with:
+    //     1. latest updated_at (most recently maintained record)
+    //     2. largest id as tie-breaker (inserted later, more likely canonical)
+    //   Resolution is done in JS (not relying on SQL ORDER BY for forEach stability).
+    //   A console.warn is emitted for every duplicate found (for observability).
+    //
+    // NOTE: inner_qty / inner_unit do NOT exist in products table (2026-05-07 audit).
+    //   These remain in the allowed-fill intent but cannot be populated until the column
+    //   is added. Tracked as P2 schema addition.
+    //
+    // NEVER fetched from master (forbidden — financial / settlement fields):
+    //   factory_price, price_usd, profit, declaration_amount, vat_rate, rebate_rate
+    var skuMasterMap = {};
+    var incomingSkus = (products || []).map(function(p) { return (p.sku || p.code || "").trim(); }).filter(Boolean);
+    if (incomingSkus.length) {
+      try {
+        var masterRes = await pool.query(
+          "SELECT id, sku, product_name, net_weight, gross_weight, cbm, hs_code, declaration_name, bl_description, barcode, updated_at FROM products WHERE sku = ANY($1) AND active = true",
+          [incomingSkus]
+        );
+
+        // Group rows by sku, then pick the best row deterministically.
+        // This is robust regardless of SQL result-set order.
+        var skuGroups = {};
+        (masterRes.rows || []).forEach(function(row) {
+          var key = row.sku ? row.sku.trim() : "";
+          if (!key) return;
+          if (!skuGroups[key]) skuGroups[key] = [];
+          skuGroups[key].push(row);
+        });
+
+        Object.keys(skuGroups).forEach(function(sku) {
+          var group = skuGroups[sku];
+          var selected;
+          if (group.length === 1) {
+            selected = group[0];
+          } else {
+            // Deterministic selection: updated_at DESC, then id DESC as tie-breaker.
+            group.sort(function(a, b) {
+              var tA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+              var tB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+              if (tB !== tA) return tB - tA;           // latest updated_at first
+              return (Number(b.id) || 0) - (Number(a.id) || 0);  // largest id first
+            });
+            selected = group[0];
+            // Warn on every duplicate so it is visible in production logs
+            console.warn(
+              "[order-create-v2] duplicate_sku_master_found sku=" + sku +
+              " count=" + group.length +
+              " selected_id=" + selected.id +
+              " selected_updated_at=" + (selected.updated_at || "null")
+            );
+          }
+          skuMasterMap[sku] = selected;
+        });
+
+        if (Object.keys(skuMasterMap).length) {
+          console.log("[order-create-v2] product master JOIN: " + Object.keys(skuMasterMap).length + "/" + incomingSkus.length + " SKUs resolved");
+        }
+      } catch (masterErr) {
+        // Fail-open: master lookup failure must never block order creation
+        console.warn("[order-create-v2] product master JOIN failed (non-fatal):", masterErr.message);
+      }
+    }
+
+    // Fill only missing/falsy fields from master row. Never overwrites client-supplied values.
+    // p is treated as immutable — returns a new object.
+    function fillFromMaster(p, master) {
+      if (!master) return p;
+      var filled = [];
+      var result = Object.assign({}, p);
+
+      // Each entry: [products_col, p_camelKey, p_snakeKey (optional alias)]
+      // Only columns verified to exist in products table are listed here.
+      var MASTER_FILL = [
+        ["net_weight",       "netWeight",       "net_weight"],
+        ["gross_weight",     "grossWeight",      "gross_weight"],
+        ["cbm",              "cbm",              null],
+        ["hs_code",          "hsCode",           "hs_code"],
+        ["declaration_name", "declarationName",  "declaration_name"],
+        ["barcode",          "barcode",          null],
+        // bl_description: direct column in products (not derived from declaration_name)
+        ["bl_description",   "blDescription",    "bl_description"],
+      ];
+
+      MASTER_FILL.forEach(function(entry) {
+        var col = entry[0], camel = entry[1], snake = entry[2];
+        var masterVal = master[col];
+        if (masterVal === null || masterVal === undefined || masterVal === "") return;
+        // Check all aliases for an existing client value
+        var clientHasValue = (
+          (p[camel]  !== null && p[camel]  !== undefined && p[camel]  !== "" && p[camel]  !== 0) ||
+          (snake && p[snake] !== null && p[snake] !== undefined && p[snake] !== "" && p[snake] !== 0)
+        );
+        if (!clientHasValue) {
+          result[camel] = masterVal;
+          if (snake) result[snake] = masterVal;
+          filled.push(col);
+        }
+      });
+
+      if (filled.length) result._masterFilled = filled;
+      return result;
+    }
+
     // Calculate totals from products
     var totalQty = 0, totalAmount = 0, totalAmountFactory = 0;
     var totalCBM = 0, grossWeight = 0, netWeight = 0;
     var declareAmount = 0;
 
     var cleanProducts = products.map(function(p) {
+      // Enrich p with product master data before extracting fields (fail-open)
+      var skuKey = (p.sku || p.code || "").trim();
+      if (skuKey && skuMasterMap[skuKey]) {
+        p = fillFromMaster(p, skuMasterMap[skuKey]);
+      }
       var qty = parseInt(p.qty) || 0;
       var unitPrice = parseFloat(p.unitPrice) || parseFloat(p.price) || 0;
       var factoryPrice = parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || unitPrice;
@@ -285,6 +518,13 @@ export default async function handler(req, res) {
         netWeight: parseFloat(p.netWeight) || parseFloat(p.net_weight) || 0,
         innerQty: parseInt(p.innerQty) || parseInt(p.bagsPerBox) || parseInt(p.bags_per_box) || 0,
         innerUnit: p.innerUnit || "PCS",
+        // bl_description: from client, or filled from master bl_description column (never overrides client)
+        blDescription: p.blDescription || p.bl_description || p.declarationName || p.declaration_name || "",
+        // barcode: from client, or filled from master (never overrides client)
+        barcode: p.barcode || p.code || "",
+        sku: p.sku || "",
+        // Track which fields were auto-filled from product master (for audit in raw)
+        _masterFilled: p._masterFilled || undefined,
         declareAmountPerBox: parseFloat(p.declareAmount) || parseFloat(p.declareAmountPerBox) || 0,
         vatRate: parseFloat(p.vatRate) || parseFloat(p.vat_rate) || 0,
         taxRebateRate: parseFloat(p.taxRebateRate) || parseFloat(p.tax_rebate_rate) || 0,
@@ -368,8 +608,17 @@ export default async function handler(req, res) {
       body = Object.assign({}, body, { credit: creditInfo });
     }
 
+    // orders.id has no serial default — must supply next integer manually.
+    // Use MAX(id)+1 with a fallback to 1 (low-concurrency acceptable for order creation).
+    var nextIdRes = await pool.query("SELECT COALESCE(MAX(id), 0) + 1 AS nid FROM orders");
+    var nextId = nextIdRes.rows[0].nid;
+
+    // P1-BUG-3 fix: source reflects actual order origin, not hardcoded "admin"
+    // V3 adapter sets body.source = "customer-portal"; legacy admin path has no source → "admin_panel"
+    var orderSource = source || (createdBy === "customer-portal" ? "customer-portal" : "admin_panel");
+
     var sql = `INSERT INTO orders (
-      _id, order_no, contract_no, customer_po,
+      id, _id, order_no, contract_no, customer_po,
       company_code, company_name_cn, company_name_en, group_code, brand, category,
       consignee, customer_address, phone, email,
       country, destination_port, destination, pol,
@@ -382,25 +631,73 @@ export default async function handler(req, res) {
       products, factory, issuing_company, issuing_company_en, remarks,
       source, created_by, customer, raw
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16,$17,
-      $18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,
-      $36,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
+      $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,
+      $38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48
     ) RETURNING id, _id, order_no, contract_no, total_amount, total_amount_factory, profit, status`;
 
+    // $1–$16:  id … country
+    // $17:     destination_port  (P1-BUG-2 fix: was $17 twice)
+    // $18:     destination       (P1-BUG-2 fix: new distinct param)
+    // $19:     pol               (shifted from $18)
+    // $20–$22: delivery_date, confirmed_delivery, required_arrival
+    // $23–$26: total_qty, total_cbm, gross_weight, net_weight
+    // $27–$28: container_type, container_qty
+    // $29–$32: total_amount, total_amount_factory, currency, exchange_rate
+    // $33–$37: profit, declare_amount, vat_rate, tax_rebate_rate, tax_rebate_amount
+    // $38–$39: status, production_status
+    // $40–$44: products, factory, issuing_company, issuing_company_en, remarks
+    // $45:     source  (P1-BUG-3 fix: was hardcoded "admin")
+    // $46–$48: created_by, customer, raw
     var vals = [
-      portalId, orderNo, contractNo, body.customerPO || null,
-      companyCode || "", companyNameCN || "", companyNameEN || "", groupCode || "", brand || "", category || "",
-      consignee || "", customerAddress || "", phone || "", email || "",
-      country || "", destinationPort || "", pol || "",
-      deliveryDate || null, confirmedDelivery || null, requiredArrival || null,
-      totalQty, parseFloat(totalCBM.toFixed(3)), parseFloat(grossWeight.toFixed(2)), parseFloat(netWeight.toFixed(2)),
-      containerType, containerQty,
-      parseFloat(totalAmount.toFixed(2)), parseFloat(totalAmountFactory.toFixed(2)), currency || "CNY", parseFloat(exchangeRate) || null,
-      parseFloat(profit.toFixed(2)), parseFloat(declareAmount.toFixed(2)), vatRate || null, taxRebateRate || null, parseFloat(taxRebateAmount.toFixed(2)),
-      "pending", null,
-      JSON.stringify(cleanProducts), factory || "", issuingCompany || "", issuingCompanyEN || "", remarks || "",
-      "admin", createdBy || "admin", companyNameEN || companyNameCN || "",
-      JSON.stringify(body)
+      /*$1*/  nextId,
+      /*$2*/  portalId,
+      /*$3*/  orderNo,
+      /*$4*/  contractNo,
+      /*$5*/  body.customerPO || null,
+      /*$6*/  companyCode || "",
+      /*$7*/  companyNameCN || "",
+      /*$8*/  companyNameEN || "",
+      /*$9*/  groupCode || "",
+      /*$10*/ brand || "",
+      /*$11*/ category || "",
+      /*$12*/ consignee || "",
+      /*$13*/ customerAddress || "",
+      /*$14*/ phone || "",
+      /*$15*/ email || "",
+      /*$16*/ country || "",
+      /*$17*/ destinationPort || "",
+      /*$18*/ destination || "",
+      /*$19*/ pol || "",
+      /*$20*/ deliveryDate || null,
+      /*$21*/ confirmedDelivery || null,
+      /*$22*/ requiredArrival || null,
+      /*$23*/ totalQty,
+      /*$24*/ parseFloat(totalCBM.toFixed(3)),
+      /*$25*/ parseFloat(grossWeight.toFixed(2)),
+      /*$26*/ parseFloat(netWeight.toFixed(2)),
+      /*$27*/ containerType,
+      /*$28*/ containerQty,
+      /*$29*/ parseFloat(totalAmount.toFixed(2)),
+      /*$30*/ parseFloat(totalAmountFactory.toFixed(2)),
+      /*$31*/ currency || "CNY",
+      /*$32*/ parseFloat(exchangeRate) || null,
+      /*$33*/ parseFloat(profit.toFixed(2)),
+      /*$34*/ parseFloat(declareAmount.toFixed(2)),
+      /*$35*/ vatRate || null,
+      /*$36*/ taxRebateRate || null,
+      /*$37*/ parseFloat(taxRebateAmount.toFixed(2)),
+      /*$38*/ "pending",
+      /*$39*/ null,
+      /*$40*/ JSON.stringify(cleanProducts),
+      /*$41*/ factory || "",
+      /*$42*/ issuingCompany || "",
+      /*$43*/ issuingCompanyEN || "",
+      /*$44*/ remarks || "",
+      /*$45*/ orderSource,
+      /*$46*/ createdBy || "admin_panel",
+      /*$47*/ companyNameEN || companyNameCN || "",
+      /*$48*/ JSON.stringify(body),
     ];
 
     var result = await pool.query(sql, vals);
@@ -442,6 +739,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
+      // Top-level order_no for easy client parsing (OrderCreateV3 reads d.order_no)
+      order_no: order.order_no,
       order: order,
       summary: {
         orderNo: order.order_no,

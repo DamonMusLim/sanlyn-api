@@ -159,6 +159,102 @@ function productRows(prods,cols){
 function getProds(raw){return Array.isArray(raw.products)?raw.products:Array.isArray(raw.items)?raw.items:[];}
 function getTotal(prods,order){return prods.reduce(function(s,p){var sub=Number(p.subtotal||p.amount||0);if(!sub&&p.qty)sub=Number(p.qty)*Number(resolveUnitPrice(p));return s+sub;},0)||Number(order.total_amount)||0;}
 
+// ── enrichProdsFromMaster ────────────────────────────────────────────────────
+// Fills missing PRODUCT ATTRIBUTE fields in raw.products[] items from the
+// products master table (joined by sku). Used only at document-generation time
+// — never writes to the DB and never modifies orders.raw.
+//
+// ── PRICE THREE-TIER RULE (HARD BOUNDARY) ───────────────────────────────────
+// Prices in this system are separated into three independent tiers. They must
+// never cross-fill or fall back to each other:
+//
+//   Tier 1 — Customs / declaration price:
+//     customs_declared_price, declaration_price, declaration_amount
+//     Source: order-confirmed customs value agreed with customs broker.
+//
+//   Tier 2 — Factory / purchase price:
+//     factory_price, factoryPrice, purchase_price
+//     Source: agreed procurement price with the factory.
+//
+//   Tier 3 — Customer / sale price:
+//     unitPrice, customer_price, price
+//     Source: agreed sale price on the customer's contract (PI/IV).
+//
+// Customer documents take Tier 3. Factory documents take Tier 2.
+// Customs declarations take Tier 1. No cross-tier fallback ever.
+//
+// ── WHAT THIS FUNCTION MAY FILL (product attribute fields only) ──────────────
+//   hs_code, declaration_name, bl_description,
+//   net_weight, gross_weight, cbm,
+//   inner_qty, inner_unit,
+//   barcode, factory_name
+//   (declaration_elements as a non-price attribute string)
+//
+// ── STRICTLY FORBIDDEN FROM MERGE (all pricing / cost / margin fields) ───────
+//   unitPrice, price, customer_price,
+//   factoryPrice, factory_price, purchase_price,
+//   customs_declared_price, declaration_price, declaration_amount,
+//   unitPriceCNY, unitPriceUSD,
+//   cost, profit, freightShare, margin, platform_fee, commission
+//
+// Fill rule: blank-only — a field is filled from master ONLY when the product
+// item's value is undefined, null, or "". Numeric zero (0) is preserved as-is.
+//
+// Fail-open: sku absent → skip item; sku not in master → console.warn + keep
+//   original; DB error → console.warn + return original prods unchanged.
+async function enrichProdsFromMaster(pool, prods) {
+  if (!prods || !prods.length) return prods;
+  var skus = prods.map(function(p) { return p && p.sku; }).filter(Boolean);
+  if (!skus.length) return prods; // no SKUs → nothing to join
+
+  var masterMap = {};
+  try {
+    var r = await pool.query(
+      "SELECT sku, hs_code, declaration_name, declaration_elements," +
+      " bl_description, net_weight, gross_weight, cbm, inner_qty, inner_unit," +
+      " barcode, factory_name" +
+      " FROM products WHERE sku = ANY($1::text[]) AND active = true",
+      [skus]
+    );
+    r.rows.forEach(function(row) { masterMap[row.sku] = row; });
+  } catch (e) {
+    console.warn("[documents] enrichProdsFromMaster: DB error —", e.message, "— using raw products only");
+    return prods; // fail-open: DB unreachable, render with existing data
+  }
+
+  // _f: fill from master only when prod value is undefined / null / ""
+  // Never fills when prod value is 0, false, or any other defined value.
+  function _f(prodVal, masterVal) {
+    return (prodVal === undefined || prodVal === null || prodVal === "") && masterVal != null
+      ? masterVal
+      : prodVal;
+  }
+
+  return prods.map(function(p) {
+    if (!p) return p;
+    if (!p.sku) return p; // no sku → skip join for this item
+    var m = masterMap[p.sku];
+    if (!m) {
+      console.warn("[documents] enrichProdsFromMaster: SKU not in products master —", p.sku, "— using raw values");
+      return p; // fail-open: unknown SKU, render with existing data
+    }
+    // Build enriched copy. Pricing / cost / margin fields are NOT in this list.
+    return Object.assign({}, p, {
+      netWeight:           _f(p.netWeight,           m.net_weight),
+      grossWeight:         _f(p.grossWeight,         m.gross_weight),
+      cbm:                 _f(p.cbm,                 m.cbm),
+      blDescription:       _f(p.blDescription   || p.bl_description,   m.bl_description),
+      declarationName:     _f(p.declarationName  || p.declaration_name, m.declaration_name),
+      hsCode:              _f(p.hsCode || p.hs_code || p.hscode,        m.hs_code),
+      declarationElements: _f(p.declarationElements,                    m.declaration_elements),
+      inner_qty:           _f(p.inner_qty,                              m.inner_qty),
+      inner_unit:          _f(p.inner_unit,                             m.inner_unit),
+      barcode:             _f(p.barcode || p.code,                      m.barcode),
+      factory_name:        _f(p.factory_name,                           m.factory_name),
+    });
+  });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if(req.method==="OPTIONS") return res.status(200).end();
@@ -211,7 +307,7 @@ export default async function handler(req, res) {
       var pol=pick(raw.pol,raw.portOfLoading,"-");
       var pod=pick(raw.destination,raw.pod,raw.destinationPort,"-");
       var inco=pick(raw.tradeTerms,raw.incoterms,"FOB");
-      var prods=getProds(raw);
+      var prods=await enrichProdsFromMaster(pool,getProds(raw));
       // ── Look up container assignment from container_bookings subtable ──
       // Source of truth for which container holds which order (plus driver/VGM/trucking).
       // Falls back to orders.raw.containerNo if no booking record yet.
@@ -241,10 +337,10 @@ export default async function handler(req, res) {
           var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
           // Sort sibling orders by customer_po for stable output (XM-254 → 256 → 262 → 263 etc.)
           var sibRows=sibR.rows.slice().sort(function(a,b){var pa=(a.customer_po||"");var pb=(b.customer_po||"");return pa<pb?-1:pa>pb?1:0;});
-          sibRows.forEach(function(sib){
+          for(var sib of sibRows){
             var sRaw=sib.raw||{};
             if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
-            var sProds=getProds(sRaw);
+            var sProds=await enrichProdsFromMaster(pool,getProds(sRaw));
             var sCno=sib.contract_no||sib.customer_po;
             var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no);
             var sContainer=pick(_cbMap[sCno], sRaw.containerNo, "");
@@ -254,7 +350,7 @@ export default async function handler(req, res) {
             }
             if(sCno) _mergedCnos.push(sCno);
             if(sPO) _mergedPOs.push(sPO);
-          });
+          }
           _hasMultiOrder=true;
           // Dedupe & join for display
           var _uniq=function(arr){return arr.filter(function(v,i,a){return v && a.indexOf(v)===i;});};
@@ -479,13 +575,15 @@ export default async function handler(req, res) {
       var _orderNos=sp.order_nos||spraw.orderNos||spraw.order_nos||[];
       if(_orderNos&&_orderNos.length){
         var loR=await pool.query("SELECT raw,contract_no,order_no,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
-        loR.rows.forEach(function(r){
-          var rr=r.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
-          var lines=_buildLines(rr);
-          var key=r.contract_no||r.order_no||"";
+        for(var loRow of loR.rows){
+          var rr=loRow.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
+          var enrichedBLProds=await enrichProdsFromMaster(pool,rr.products||rr.items||[]);
+          var rrE=Object.assign({},rr,{products:enrichedBLProds,items:enrichedBLProds});
+          var lines=_buildLines(rrE);
+          var key=loRow.contract_no||loRow.order_no||"";
           if(key)cargoByOrder[key]=lines;
           lines.forEach(function(l){var k=(l.hs+"|"+l.desc).toLowerCase();if(!cargoLines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===k;}))cargoLines.push(l);});
-        });
+        }
       }
       if(!cargoLines.length){var fb=pick(spraw.cargoDescription,sp.cargo_description,"");if(fb)cargoLines=[{desc:fb,hs:""}];}
       function _cargoHTML(lines){
