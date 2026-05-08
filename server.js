@@ -200,6 +200,10 @@ mount("/api/db/loading-sheets",     () => import("./api/db/loading-sheets.js"));
 mount("/api/db/migrate-loading-sheets", () => import("./api/db/migrate-loading-sheets.js"));
 // ── Air-A · Collab Sheet Backend V2 ───────────────────────────────────
 mount("/api/db/migrate-collab-support",     () => import("./api/db/migrate-collab-support.js"));
+// ── Field Visibility Configurator (Air-A) ─────────────────────────────
+mount("/api/db/migrate-field-visibility",   () => import("./api/db/migrate-field-visibility.js"));
+mount("/api/db/field-visibility/bulk",      () => import("./api/db/field-visibility.js"));
+mount("/api/db/field-visibility",           () => import("./api/db/field-visibility.js"));
 mount("/api/db/customs-draft-sheets",       () => import("./api/db/customs-draft-sheets.js"));
 mount("/api/db/inspection-request-sheets",  () => import("./api/db/inspection-request-sheets.js"));
 mount("/api/db/cert-application-sheets",    () => import("./api/db/cert-application-sheets.js"));
@@ -211,6 +215,8 @@ mount("/api/db/driver-assignments",         () => import("./api/db/driver-assign
 mount("/api/db/drivers",                    () => import("./api/db/drivers.js"));
 mount("/api/db/driver-reviews",             () => import("./api/db/driver-reviews.js"));
 mount("/api/db/collab-sheets/queue",        () => import("./api/db/collab-sheets-queue.js"));
+mount("/api/db/collab-sheets",             () => import("./api/db/collab-sheets.js"));
+mount("/api/db/collab-sheet-templates",    () => import("./api/db/collab-sheet-templates.js"));
 mount("/api/db/order-create-v2",   () => import("./api/db/order-create-v2.js"));
 mount("/api/db/factory-invite",        () => import("./api/db/factory-invite.js"));        // v3 partner onboarding (6 types)
 mount("/api/db/factory-invite-list",   () => import("./api/db/factory-invite-list.js"));   // admin queue
