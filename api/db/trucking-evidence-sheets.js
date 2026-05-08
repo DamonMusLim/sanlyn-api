@@ -2,7 +2,7 @@ import { getPool, setCors } from "../db.js";
 import {
   isInternalRole, roleFromAuth,
   adaptCollabSheet, filterByRole,
-  assertNoForbiddenInBody, sendError,
+  assertNoForbiddenInBody, sendError, callerCompanyScope,
 } from "../lib/viewmodel-adapter.js";
 
 // trucking_loading_evidence sheet API · table: trucking_evidence_sheets
@@ -32,6 +32,8 @@ export default async function handler(req, res) {
   const role = roleFromAuth(req);
   const pool = getPool();
   const ctx = { role, sheetType: SHEET_TYPE };
+  // Watchtower fix (codex P1-1 2026-05-08): scope derived from JWT, never query.
+  const company = callerCompanyScope(req);
 
   try {
     // ── GET ────────────────────────────────────────────────────────────
@@ -45,7 +47,7 @@ export default async function handler(req, res) {
         const r = await pool.query("SELECT * FROM " + TABLE + " WHERE id = $1", [parseInt(id)]);
         if (!r.rows.length) return sendError(res, 404, "not_found");
         const row = r.rows[0];
-        if (!isInternalRole(role) && owner_company_code && row.owner_company_code !== owner_company_code) {
+        if (!isInternalRole(role) && !company.all.includes(row.owner_company_code)) {
           return sendError(res, 403, "forbidden");
         }
         return res.status(200).json({ data: adaptCollabSheet(row, ctx) });
@@ -53,13 +55,16 @@ export default async function handler(req, res) {
 
       const conds = [];
       const vals = [];
-      if (owner_company_code) { vals.push(owner_company_code); conds.push("owner_company_code = $" + vals.length); }
-      if (status)             { vals.push(status);             conds.push("status = $" + vals.length); }
-
-      // Non-internal callers MUST scope by owner_company_code
-      if (!isInternalRole(role) && !owner_company_code) {
-        return sendError(res, 400, "owner_company_code_required");
+      // Watchtower fix (codex P1-1): scope from JWT for non-admin.
+      let _scopeCompany;
+      if (isInternalRole(role)) {
+        _scopeCompany = owner_company_code || null;
+      } else {
+        if (!company.primary) return sendError(res, 403, "forbidden");
+        _scopeCompany = company.primary;
       }
+      if (_scopeCompany) { vals.push(_scopeCompany); conds.push("owner_company_code = $" + vals.length); }
+      if (status)         { vals.push(status);         conds.push("status = $" + vals.length); }
 
       const where = conds.length ? "WHERE " + (conds.join(" AND ")) : "";
       vals.push(limit);
@@ -110,8 +115,7 @@ export default async function handler(req, res) {
 
       // RBAC: non-internal must scope by owner_company_code
       if (!isInternalRole(role)) {
-        const qcc = req.query?.owner_company_code;
-        if (!qcc || existing.owner_company_code !== qcc) return sendError(res, 403, "forbidden");
+        if (!company.all.includes(existing.owner_company_code)) return sendError(res, 403, "forbidden");
         if (action === "approve" || action === "reject") return sendError(res, 403, "admin_only_action");
       }
 

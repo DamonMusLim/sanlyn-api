@@ -59,6 +59,10 @@ export default async function handler(req, res) {
   const role = roleFromAuth(req);
   const pool = getPool();
   const isAdmin = isInternalRole(role);
+  // Watchtower fix (codex P1-4 / P2 2026-05-08): derive trucking_company from
+  // JWT, never trust query/body. companyCode comes from authMiddleware
+  // enrichStaleUser (api/auth.js) which patches it from the accounts table.
+  const callerCompany = (req.user && (req.user.companyCode || req.user.company_code)) || null;
 
   try {
     if (req.method === "GET") {
@@ -66,19 +70,33 @@ export default async function handler(req, res) {
       if (id) {
         const r = await pool.query("SELECT * FROM drivers WHERE id = $1", [parseInt(id)]);
         if (!r.rows.length) return sendError(res, 404, "not_found");
-        return res.status(200).json({ data: rowToPublic(r.rows[0]) });
+        const row = r.rows[0];
+        // Watchtower fix (codex P2): non-admin must own this driver's trucking_company
+        // AND must not see blacklisted drivers.
+        if (!isAdmin) {
+          if (!callerCompany || row.trucking_company_id !== callerCompany) {
+            return sendError(res, 403, "forbidden");
+          }
+          if (row.blacklist) return sendError(res, 404, "not_found");
+        }
+        return res.status(200).json({ data: rowToPublic(row) });
       }
 
-      const trucking_company_id = req.query?.trucking_company_id;
       const active = req.query?.active;
       const conds = [];
       const vals = [];
 
-      if (!isAdmin) {
-        // Trucking role MUST scope by trucking_company_id
-        if (!trucking_company_id) return sendError(res, 400, "trucking_company_id_required");
+      // Watchtower fix (codex P1-4): scope is JWT-derived for non-admin; admins
+      // may still filter by query string.
+      let scopeCompany;
+      if (isAdmin) {
+        scopeCompany = req.query?.trucking_company_id || null;
+      } else {
+        if (!callerCompany) return sendError(res, 403, "forbidden");
+        scopeCompany = callerCompany;
       }
-      if (trucking_company_id) { vals.push(trucking_company_id); conds.push("trucking_company_id = $" + vals.length); }
+      if (scopeCompany) { vals.push(scopeCompany); conds.push("trucking_company_id = $" + vals.length); }
+
       if (active === "true")   { conds.push("active = TRUE"); }
       if (active === "false")  { conds.push("active = FALSE"); }
       // External callers can never see blacklisted drivers
@@ -93,7 +111,19 @@ export default async function handler(req, res) {
       // Both internal and trucking can create drivers (trucking creates within its own company)
       const b = req.body || {};
       if (!b.phone) return sendError(res, 400, "phone_required");
-      if (!isAdmin && !b.trucking_company_id) return sendError(res, 400, "trucking_company_id_required");
+
+      // Watchtower fix (codex P1-4): non-admin must POST under their own
+      // trucking_company_id (JWT-derived). Admins may pass any.
+      let insertCompany;
+      if (isAdmin) {
+        insertCompany = b.trucking_company_id || null;
+      } else {
+        if (!callerCompany) return sendError(res, 403, "forbidden");
+        if (b.trucking_company_id && b.trucking_company_id !== callerCompany) {
+          return sendError(res, 403, "trucking_company_mismatch");
+        }
+        insertCompany = callerCompany;
+      }
 
       try {
         const ins = await pool.query(
@@ -104,7 +134,7 @@ export default async function handler(req, res) {
            RETURNING *`,
           [
             b.phone, b.name || null, b.truck_plate || null,
-            b.trucking_company_id || null, b.id_card_last4 || null,
+            insertCompany, b.id_card_last4 || null,
             !!b.accepts_side_cargo,
             JSON.stringify(b.side_cargo_rate || null),
           ]
@@ -125,9 +155,12 @@ export default async function handler(req, res) {
       const cur = await pool.query("SELECT trucking_company_id FROM drivers WHERE id = $1", [parseInt(id)]);
       if (!cur.rows.length) return sendError(res, 404, "not_found");
 
+      // Watchtower fix (codex P1-4 PATCH variant): same as POST/GET — derive
+      // company from JWT, not from query.
       if (!isAdmin) {
-        const qcid = req.query?.trucking_company_id;
-        if (!qcid || cur.rows[0].trucking_company_id !== qcid) return sendError(res, 403, "forbidden");
+        if (!callerCompany || cur.rows[0].trucking_company_id !== callerCompany) {
+          return sendError(res, 403, "forbidden");
+        }
       }
 
       const allowed = isAdmin ? ADMIN_ALLOWED_PATCH : TRUCKING_ALLOWED_PATCH;

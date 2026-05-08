@@ -69,17 +69,24 @@ export default async function handler(req, res) {
     await ensureTable(pool);
 
     if (req.method === "GET") {
-      const { docId, contractNo, limit = 100 } = req.query || {};
+      const { docId, contractNo, doc_type, limit = 500 } = req.query || {};
+      // Watchtower fix (codex P1-2 2026-05-08): require docId or contractNo
+      // for non-admin callers. Without a scope filter, this endpoint would
+      // dump up to 500 rows of OSS URLs + uploader notes to any authenticated
+      // user. Admins/internal may still batch-fetch unfiltered for ops dashboards.
+      const _role = String((req.user && req.user.role) || "").toLowerCase();
+      const _isAdmin = ["admin","internal","boss","finance","platform_admin","system"].includes(_role);
+      if (!_isAdmin && !docId && !contractNo) {
+        return res.status(400).json({ error: "docId or contractNo required" });
+      }
       const conds = [], vals = [];
       if (docId)      { vals.push(docId);      conds.push("doc_id = $" + vals.length); }
       if (contractNo) { vals.push(contractNo); conds.push("contract_no = $" + vals.length); }
-      if (!conds.length) return res.status(400).json({ error: "docId or contractNo required" });
-      vals.push(parseInt(limit));
+      if (doc_type)   { vals.push(doc_type);   conds.push("doc_type = $" + vals.length); }
+      vals.push(Math.min(parseInt(limit) || 500, 1000));
+      const whereClause = conds.length ? "WHERE " + conds.join(" AND ") : "";
       const r = await pool.query(
-        `SELECT * FROM document_uploads
-         WHERE ${conds.join(" AND ")}
-         ORDER BY uploaded_at DESC
-         LIMIT $${vals.length}`,
+        `SELECT * FROM document_uploads ${whereClause} ORDER BY uploaded_at DESC LIMIT $${vals.length}`,
         vals
       );
       return res.status(200).json({ data: r.rows });

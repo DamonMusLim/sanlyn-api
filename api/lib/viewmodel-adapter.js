@@ -44,6 +44,23 @@ export function roleFromAuth(req) {
   }
 }
 
+// ── Company scope from JWT (codex P1-1 fix 2026-05-08) ──
+// Server-side, authMiddleware → enrichStaleUser populates req.user.companyCode
+// and req.user.companyCodes (multi-company users). NEVER trust the query string
+// for the caller's own company; always derive from JWT. This helper returns
+// the JWT-bound company code(s) for use in WHERE clauses.
+//
+// Returns: { primary: string|null, all: string[] }
+//   primary = req.user.companyCode (single value for default scope)
+//   all     = union of primary + companyCodes (for multi-company internal staff)
+export function callerCompanyScope(req) {
+  const u = (req && req.user) || {};
+  const primary = u.companyCode || u.company_code || null;
+  const list = Array.isArray(u.companyCodes) ? u.companyCodes.slice() : [];
+  if (primary && !list.includes(primary)) list.unshift(primary);
+  return { primary, all: list };
+}
+
 // ── Note channel visibility (which note fields each role may read) ──
 export const NOTE_VISIBILITY = {
   customer:        ["customer_visible_note",  "participant_note"],
