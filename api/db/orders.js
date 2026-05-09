@@ -129,6 +129,8 @@ async function handlePatch(req, res) {
     if (rest.margin_pct      === undefined && marginPct != null) { n++; sets.push("margin_pct    = $" + n); vals.push(marginPct); }
   }
 
+  if (body.pricing_snapshot !== undefined) { n++; sets.push("pricing_snapshot = $" + n); vals.push(JSON.stringify(body.pricing_snapshot)); }
+  if (body.payment_schedule !== undefined) { n++; sets.push("payment_schedule = $" + n); vals.push(JSON.stringify(body.payment_schedule)); }
   n++; sets.push("updated_at = NOW()");
   vals.push(id);
   const sql = "UPDATE orders SET " + sets.join(", ") + " WHERE id = $" + (n) + " RETURNING id";
