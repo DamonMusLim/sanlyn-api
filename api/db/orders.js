@@ -83,7 +83,12 @@ function checkComplianceException(row, requester) {
 }
 
 // ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
-const PATCH_ALLOWED_COLS = ["order_no","company_code","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency"];
+const PATCH_ALLOWED_COLS = [
+  "order_no","company_code","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
+  // Profit structure埋点 (2026-05-09)
+  "factory_amount","customer_amount","margin_amount","margin_pct",
+  "quote_sent_at","customer_replied_at","negotiation_rounds",
+];
 
 async function handlePatch(req, res) {
   if (!req.user || req.user.role !== "admin") {
@@ -106,6 +111,24 @@ async function handlePatch(req, res) {
     n++; sets.push("raw = COALESCE(raw,'{}') || $" + n + "::jsonb"); vals.push(JSON.stringify(rawPatch));
   }
   if (sets.length === 0) return res.status(400).json({ error: "no fields to update" });
+
+  // ── Auto-compute profit fields from raw.products ────────────────
+  // If raw.products is being saved (either via rawPatch or already exists),
+  // recompute factory_amount / customer_amount / margin_amount / margin_pct
+  // so the columns stay in sync without manual entry.
+  const patchProducts = rawPatch && Array.isArray(rawPatch.products) ? rawPatch.products : null;
+  if (patchProducts && patchProducts.length > 0) {
+    const factoryAmt  = patchProducts.reduce((s, it) => s + (Number(it.factoryPrice || 0) * Number(it.qty || 1)), 0);
+    const customerAmt = patchProducts.reduce((s, it) => s + Number(it.subtotal || 0), 0);
+    const marginAmt   = customerAmt - factoryAmt;
+    const marginPct   = factoryAmt > 0 ? Math.round(marginAmt / factoryAmt * 1000) / 10 : null;
+    // Only overwrite if caller didn't explicitly supply these cols (let explicit win)
+    if (rest.factory_amount  === undefined && factoryAmt  > 0) { n++; sets.push("factory_amount  = $" + n); vals.push(factoryAmt); }
+    if (rest.customer_amount === undefined && customerAmt > 0) { n++; sets.push("customer_amount = $" + n); vals.push(customerAmt); }
+    if (rest.margin_amount   === undefined)                    { n++; sets.push("margin_amount   = $" + n); vals.push(marginAmt); }
+    if (rest.margin_pct      === undefined && marginPct != null) { n++; sets.push("margin_pct    = $" + n); vals.push(marginPct); }
+  }
+
   n++; sets.push("updated_at = NOW()");
   vals.push(id);
   const sql = "UPDATE orders SET " + sets.join(", ") + " WHERE id = $" + (n) + " RETURNING id";

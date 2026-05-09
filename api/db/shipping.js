@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
+import { sendShipmentNotifications } from "../../jobs/shipment-notify.js";
 
 // Normalize a Chinese company name for matching:
 //  - strip full/half-width brackets, spaces, punctuation
@@ -16,21 +17,90 @@ function normCompany(s) {
   return x;
 }
 
+const PATCH_ALLOW = [
+  "bl_no","vessel","voyage","pol","pod","etd","eta","cutoff_date",
+  "flow_status","container_type","container_no","seal_no",
+  "qty_total","total_cbm","total_cartons","gross_weight_kg",
+  "freight_cost","freight_sale_usd","port_surcharge_total",
+  "bkg_fee","doc_fee","tlx_fee","thc_fee","eir_fee","seal_fee","vgm_fee","customs_declare_fee",
+  "customs_cost_total","trucking_cost_total","agency_fee_rmb",
+  "forwarder_cn","customs_cn","trucking_cn","shipper","consignee",
+  "cargo_description","product_notes","release_type",
+  "order_contract_nos","contract_no","shipment_no",
+  "notes","status","current_status","current_status_cn",
+];
+
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
+
+  const pool = getPool();
+
+  // ── PATCH ─────────────────────────────────────────────────
+  if (req.method === "PATCH") {
+    const { id, ...fields } = req.body || {};
+    if (!id) return res.status(400).json({ error: "id required" });
+
+    // Fetch existing row first (for bl_no change detection)
+    let existing = null;
+    try {
+      const ex = await pool.query("SELECT * FROM shipping_plans WHERE id = $1", [id]);
+      existing = ex.rows[0] || null;
+    } catch (e) {
+      return res.status(500).json({ error: "fetch existing: " + e.message });
+    }
+    if (!existing) return res.status(404).json({ error: "row not found" });
+
+    const sets = [];
+    const vals = [];
+    PATCH_ALLOW.forEach(k => {
+      if (k in fields) {
+        vals.push(fields[k]);
+        sets.push(`${k} = $${vals.length}`);
+      }
+    });
+    if (!sets.length) return res.status(400).json({ error: "no updatable fields" });
+    vals.push(id);
+    const sql = `UPDATE shipping_plans SET ${sets.join(", ")}, updated_at = now() WHERE id = $${vals.length} RETURNING *`;
+
+    let saved;
+    try {
+      const r = await pool.query(sql, vals);
+      saved = r.rows[0];
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+
+    // ── bl_no change detection → trigger dual notifications ──
+    const prevBl = existing.bl_no;
+    const newBl  = saved.bl_no;
+    let notifyResult = null;
+    if (!prevBl && newBl) {
+      try {
+        notifyResult = await sendShipmentNotifications(pool, saved);
+      } catch (e) {
+        console.error("[shipping] notify failed (non-fatal):", e.message);
+        notifyResult = { error: e.message };
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: saved,
+      ...(notifyResult ? { notified: notifyResult } : {}),
+    });
+  }
+
+  // ── GET ───────────────────────────────────────────────────
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
-    const pool = getPool();
     const { customer, created_by, limit = 500 } = req.query;
     let query = "SELECT * FROM shipping_plans", params = [], conds = [];
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
     if (created_by) { params.push(created_by); conds.push(`created_by = $${params.length}`); }
 
     // ── Vendor data scoping: logistics users see ONLY their own shipments ──
-    // Strategy: fetch candidate rows then filter in Node by bidirectional
-    // normalized-substring match (tighter than SQL ILIKE on a 2-char prefix).
     const u = req.user || {};
     let scopeCol = null, scopeNeedle = "";
     if (u.role === "logistics") {
@@ -42,8 +112,6 @@ export default async function handler(req, res) {
       if (!scopeCol || !scopeNeedle) {
         return res.status(200).json({ success: true, data: [], count: 0, scoped: "logistics:empty" });
       }
-      // Pre-filter in SQL with a loose 2-char hint to avoid scanning all rows,
-      // then apply tight substring check in Node.
       const hint = scopeNeedle.slice(0, 2);
       params.push(`%${hint}%`);
       conds.push(`${scopeCol} ILIKE $${params.length}`);
