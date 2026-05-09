@@ -104,6 +104,10 @@ const PUBLIC_PATHS = [
   "/api/db/customer-magic-link/use",
   // Forwarder Booking Submit — token-authenticated, no JWT
   "/api/db/forwarder-booking-submit",
+  // Customs Broker Magic Link — token-authenticated, no JWT
+  "/api/db/customs-broker-checkin",
+  // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
+  "/api/db/sample-delivery-checkin",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）

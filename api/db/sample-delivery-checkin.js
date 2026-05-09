@@ -103,7 +103,7 @@ export default async function handler(req, res) {
       // 获取关联任务
       const { rows: taskRows } = await pool.query(
         `SELECT task_id, title, status, workflow_node, due_at
-           FROM tasks
+           FROM sample_workflow_tasks
           WHERE sample_sheet_id = $1
           ORDER BY created_at ASC`,
         [sheetId]
@@ -185,7 +185,7 @@ export default async function handler(req, res) {
 
         // 推进关联任务状态
         await pool.query(
-          `UPDATE tasks
+          `UPDATE sample_workflow_tasks
               SET status       = 'DONE',
                   completed_at = NOW(),
                   updated_at   = NOW()
@@ -281,13 +281,13 @@ async function _logEvent(pool, sheetId, eventType, { actor_type, actor_id, note,
   try {
     // 找到关联任务
     const { rows } = await pool.query(
-      `SELECT task_id FROM tasks WHERE sample_sheet_id = $1 LIMIT 1`,
+      `SELECT task_id FROM sample_workflow_tasks WHERE sample_sheet_id = $1 LIMIT 1`,
       [sheetId]
     );
     if (!rows.length) return;
 
     await pool.query(
-      `INSERT INTO task_events (event_id, task_id, event_type, from_status, to_status, actor_type, actor_id, note)
+      `INSERT INTO sample_task_events (event_id, task_id, event_type, from_status, to_status, actor_type, actor_id, note)
        VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7)`,
       [rows[0].task_id, eventType, from_status, to_status, actor_type, actor_id, note]
     );

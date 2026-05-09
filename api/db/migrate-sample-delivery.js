@@ -75,52 +75,33 @@ CREATE INDEX IF NOT EXISTS idx_sample_delivery_order   ON sample_delivery_sheets
 CREATE INDEX IF NOT EXISTS idx_sample_delivery_status  ON sample_delivery_sheets(status);
 
 -- ══════════════════════════════════════════════════════════════
--- 2. tasks  — 任务中心主表
+-- 2. sample_workflow_tasks  — 样品交付节点任务表
+--    独立于旧版 tasks 表，避免 schema 冲突
 -- ══════════════════════════════════════════════════════════════
-CREATE SEQUENCE IF NOT EXISTS task_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS swt_seq START 1;
 
-CREATE TABLE IF NOT EXISTS tasks (
+CREATE TABLE IF NOT EXISTS sample_workflow_tasks (
   task_id         TEXT PRIMARY KEY DEFAULT (
-    'TASK-' || to_char(NOW(), 'YYYY') || '-' || lpad(nextval('task_seq')::text, 4, '0')
+    'SWT-' || to_char(NOW(), 'YYYY') || '-' || lpad(nextval('swt_seq')::text, 4, '0')
   ),
   title           TEXT NOT NULL,
   description     TEXT,
-
-  task_type       TEXT NOT NULL DEFAULT 'BUSINESS_TASK',
-  -- BUSINESS_TASK / DEVELOPMENT_TASK / DATA_TASK / SERVER_TASK
-  -- CUSTOMER_FOLLOWUP / FACTORY_COLLAB / FINANCE_TASK
-  -- AI_EXECUTION_TASK / DAILY_DIARY_TASK / STAFF_REPORT_TASK
-
-  source_type     TEXT DEFAULT 'MANUAL',
-  -- MANUAL / DIARY / CRON / API / AI_SUGGESTED / WORKFLOW
-
-  source_ref      TEXT,                       -- diary_id / ai_run_id / sheet_id 等
 
   -- 关联的样品交付工作流
   sample_sheet_id INTEGER REFERENCES sample_delivery_sheets(id),
   workflow_node   TEXT,
   -- CUSTOMER_REQUEST / FACTORY_CONFIRM / QC / SHIPMENT / CUSTOMER_SIGN
 
-  -- 关联业务对象
-  related_order_id     INTEGER,
-  related_customer_id  TEXT,
-  related_project_key  TEXT,
-
   -- 优先级
   risk_level      TEXT NOT NULL DEFAULT 'P3',  -- P0 / P1 / P2 / P3
-  priority        INTEGER DEFAULT 50,
 
   -- 状态机
   status          TEXT NOT NULL DEFAULT 'NEW',
-  -- NEW / TRIAGED / ASSIGNED / IN_PROGRESS / WAITING_REVIEW
-  -- DONE / BLOCKED / FAILED / CANCELLED
+  -- NEW / IN_PROGRESS / DONE / CANCELLED
 
   -- 归属
   owner_type      TEXT DEFAULT 'HUMAN',        -- HUMAN / AI / CRON
-  owner_id        TEXT,                         -- user_id or 'damon'
-
-  requires_damon_approval BOOLEAN DEFAULT FALSE,
-  redline_flags   TEXT[] DEFAULT '{}',
+  owner_id        TEXT,
 
   -- 时间
   due_at          TIMESTAMPTZ,
@@ -129,21 +110,18 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at    TIMESTAMPTZ,
 
-  evidence_url    TEXT,
-  next_action     TEXT
+  evidence_url    TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_status    ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_risk      ON tasks(risk_level);
-CREATE INDEX IF NOT EXISTS idx_tasks_due       ON tasks(due_at);
-CREATE INDEX IF NOT EXISTS idx_tasks_sheet     ON tasks(sample_sheet_id);
+CREATE INDEX IF NOT EXISTS idx_swt_status    ON sample_workflow_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_swt_sheet     ON sample_workflow_tasks(sample_sheet_id);
 
 -- ══════════════════════════════════════════════════════════════
--- 3. task_events  — 任务事件流
+-- 3. sample_task_events  — 样品任务事件流
 -- ══════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS task_events (
+CREATE TABLE IF NOT EXISTS sample_task_events (
   event_id     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  task_id      TEXT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
+  task_id      TEXT NOT NULL REFERENCES sample_workflow_tasks(task_id) ON DELETE CASCADE,
 
   event_type   TEXT NOT NULL,
   -- STATUS_CHANGE / NOTE / APPROVAL / REJECTION / ASSIGNMENT
@@ -160,8 +138,8 @@ CREATE TABLE IF NOT EXISTS task_events (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id);
-CREATE INDEX IF NOT EXISTS idx_task_events_time ON task_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ste_task ON sample_task_events(task_id);
+CREATE INDEX IF NOT EXISTS idx_ste_time ON sample_task_events(created_at DESC);
 
 -- ══════════════════════════════════════════════════════════════
 -- 4. notifications_log  — 企微通知发送记录
@@ -205,8 +183,8 @@ export default async function handler(req, res) {
     await pool.query(SQL);
     return res.status(200).json({
       ok: true,
-      message: "sample_delivery_sheets + tasks + task_events + notifications_log created (idempotent)",
-      tables: ["sample_delivery_sheets", "tasks", "task_events", "notifications_log"],
+      message: "sample_delivery_sheets + sample_workflow_tasks + sample_task_events + notifications_log created (idempotent)",
+      tables: ["sample_delivery_sheets", "sample_workflow_tasks", "sample_task_events", "notifications_log"],
     });
   } catch (err) {
     console.error("[migrate-sample-delivery] error:", err);
