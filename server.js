@@ -178,6 +178,7 @@ app.all("/api/db/customer-magic-link", async (req, res) => {
   }
 });
 mount("/api/db/migrate-magic-links",() => import("./api/db/migrate-magic-links.js"));
+mount("/api/db/forwarder-booking-submit", () => import("./api/db/forwarder-booking-submit.js"));
 mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"));
 mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));
@@ -249,6 +250,7 @@ mount("/api/db/doc-revision-sheets",        () => import("./api/db/doc-revision-
 mount("/api/db/magic-link",                 () => import("./api/db/magic-link.js"));
 mount("/api/db/driver-assignments",         () => import("./api/db/driver-assignments.js"));
 mount("/api/db/driver-checkin",             () => import("./api/db/driver-checkin.js"));
+mount("/api/db/customs-broker-checkin",     () => import("./api/db/customs-broker-checkin.js"));
 mount("/api/db/drivers",                    () => import("./api/db/drivers.js"));
 mount("/api/db/driver-reviews",             () => import("./api/db/driver-reviews.js"));
 mount("/api/db/collab-sheets/queue",        () => import("./api/db/collab-sheets-queue.js"));
