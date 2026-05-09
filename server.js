@@ -333,6 +333,9 @@ mount("/api/db/migrate-packaging",     () => import("./api/db/migrate-packaging.
 mount("/api/db/forwarder-performance", () => import("./api/db/forwarder-performance.js"));
 mount("/api/db/forwarder-alert-rules", () => import("./api/db/forwarder-alert-rules.js"));
 mount("/api/db/migrate-forwarder-perf",() => import("./api/db/migrate-forwarder-perf.js"));
+// ── Payment reminder endpoints ──
+mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-payment-reminder.js"));
+
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
 app.get("/health", (req, res) => res.json({ status: "ok" }));
@@ -341,4 +344,10 @@ const PORT = process.env.PORT || 9000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[sanlyn-api] listening on :${PORT}`);
 });
+
+// ── Payment reminder cron (09:00 daily) ──────────────────────────────────────
+import("./jobs/payment-reminder.js")
+  .then(({ schedulePaymentReminder }) => schedulePaymentReminder())
+  .catch(e => console.error("[server] payment-reminder schedule failed:", e.message));
+
 export default app;
