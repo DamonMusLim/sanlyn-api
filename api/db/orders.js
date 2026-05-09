@@ -131,6 +131,10 @@ async function handlePatch(req, res) {
 
   if (body.pricing_snapshot !== undefined) { n++; sets.push("pricing_snapshot = $" + n); vals.push(JSON.stringify(body.pricing_snapshot)); }
   if (body.payment_schedule !== undefined) { n++; sets.push("payment_schedule = $" + n); vals.push(JSON.stringify(body.payment_schedule)); }
+  // Merge first_issued_at JSONB (per-docType timestamps) — use COALESCE merge to preserve other docTypes
+  if (body.first_issued_at !== undefined && typeof body.first_issued_at === "object") {
+    n++; sets.push("first_issued_at = COALESCE(first_issued_at,'{}') || $" + n + "::jsonb"); vals.push(JSON.stringify(body.first_issued_at));
+  }
   n++; sets.push("updated_at = NOW()");
   vals.push(id);
   const sql = "UPDATE orders SET " + sets.join(", ") + " WHERE id = $" + (n) + " RETURNING id";

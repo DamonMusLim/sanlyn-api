@@ -62,6 +62,11 @@ export default async function handler(req, res) {
         sets.push(`${k} = $${vals.length}`);
       }
     });
+    // Merge first_issued_at JSONB (per-docType timestamps)
+    if (fields.first_issued_at && typeof fields.first_issued_at === "object") {
+      vals.push(JSON.stringify(fields.first_issued_at));
+      sets.push(`first_issued_at = COALESCE(first_issued_at,'{}') || $${vals.length}::jsonb`);
+    }
     if (!sets.length) return res.status(400).json({ error: "no updatable fields" });
     vals.push(id);
     const sql = `UPDATE shipping_plans SET ${sets.join(", ")}, updated_at = now() WHERE id = $${vals.length} RETURNING *`;
