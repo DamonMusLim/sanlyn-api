@@ -374,6 +374,8 @@ mount("/api/db/forwarder-alert-rules", () => import("./api/db/forwarder-alert-ru
 mount("/api/db/migrate-forwarder-perf",() => import("./api/db/migrate-forwarder-perf.js"));
 // ── Payment reminder endpoints ──
 mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-payment-reminder.js"));
+// ── Reconciliation / monthly statement ──
+mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
 
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));

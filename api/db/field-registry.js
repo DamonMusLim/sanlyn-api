@@ -18,7 +18,7 @@ const REGISTRY = [
   {
     table: "orders", field: "trade_terms", label: "贸易条款", source: "manual / enum", required: true,
     sql: `SELECT COUNT(*) AS total,
-                 COUNT(*) FILTER (WHERE raw->>'tradeTerms' IS NOT NULL AND raw->>'tradeTerms' <> '') AS filled
+                 COUNT(*) FILTER (WHERE trade_terms IS NOT NULL AND trade_terms <> '') AS filled
           FROM orders`,
   },
   {
