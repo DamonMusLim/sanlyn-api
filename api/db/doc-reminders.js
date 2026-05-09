@@ -68,6 +68,41 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const b = req.body || {};
+      // ── ETD delay notification (type='etd_delay') ───────────────
+      if (b.type === "etd_delay") {
+        const { order_id, order_no, old_etd, new_etd, customer } = b;
+        if (!order_no || !old_etd || !new_etd)
+          return res.status(400).json({ error: "order_no, old_etd, new_etd required for etd_delay" });
+
+        // 1. WeCom push
+        const webhook = process.env.WECOM_WEBHOOK_URL;
+        if (webhook) {
+          const msg = `**⚠ ETD 推迟通知**\n订单: \`${order_no}\`\n客户: ${customer || "—"}\n原 ETD: ${old_etd}\n新 ETD: ${new_etd}\n> 请及时跟进装期安排`;
+          await fetch(webhook, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ msgtype: "markdown", markdown: { content: msg } }),
+          }).catch(e => console.error("[doc-reminders etd_delay] wecom:", e.message));
+        }
+
+        // 2. Append to orders.raw.etd_history[]
+        if (order_id) {
+          const entry = JSON.stringify({ from: old_etd, to: new_etd, changed_at: new Date().toISOString() });
+          await pool.query(
+            `UPDATE orders
+             SET raw = jsonb_set(
+               COALESCE(raw,'{}'),
+               '{etd_history}',
+               COALESCE(raw->'etd_history','[]'::jsonb) || $1::jsonb
+             )
+             WHERE id = $2`,
+            [entry, order_id]
+          ).catch(e => console.error("[doc-reminders etd_delay] db:", e.message));
+        }
+
+        return res.status(200).json({ ok: true, type: "etd_delay", order_no, old_etd, new_etd });
+      }
+
       if (!b.docId) return res.status(400).json({ error: "docId required" });
 
       // Cooldown check: latest reminder for this docId
