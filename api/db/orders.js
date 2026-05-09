@@ -88,6 +88,8 @@ const PATCH_ALLOWED_COLS = [
   // Profit structure埋点 (2026-05-09)
   "factory_amount","customer_amount","margin_amount","margin_pct",
   "quote_sent_at","customer_replied_at","negotiation_rounds",
+  // Seller entity (2026-05-09): which Sanlyn entity issues the PI/SC/IV
+  "seller_code",
 ];
 
 async function handlePatch(req, res) {
