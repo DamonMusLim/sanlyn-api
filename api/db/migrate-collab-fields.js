@@ -52,8 +52,8 @@ export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  requireAuth(req, res, async () => {
-    if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+  if (!requireAuth(req, res)) return;
+  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
     const pool = getPool();
     const results = [];
@@ -82,5 +82,4 @@ export default async function handler(req, res) {
     }
 
     res.json({ success: true, results, message: "migrate-collab-fields complete — all columns idempotent" });
-  });
 }

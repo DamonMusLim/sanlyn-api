@@ -117,8 +117,8 @@ export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  requireAuth(req, res, async () => {
-    if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+  if (!requireAuth(req, res)) return;
+  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
     const { order_id, order_no, target_role, message } = req.body || {};
     if (!target_role) return res.status(400).json({ error: "target_role required" });
@@ -173,5 +173,4 @@ export default async function handler(req, res) {
 
     const ok = wecom.ok || email.ok || false;
     res.status(ok ? 200 : 207).json({ ok, channels: { wecom, email, sms } });
-  });
 }

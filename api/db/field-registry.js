@@ -150,8 +150,8 @@ export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  requireAuth(req, res, async () => {
-    if (req.method !== "GET") return res.status(405).json({ error: "GET only" });
+  if (!requireAuth(req, res)) return;
+  if (req.method !== "GET") return res.status(405).json({ error: "GET only" });
 
     const pool = getPool();
     try {
@@ -173,5 +173,4 @@ export default async function handler(req, res) {
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
-  });
 }
