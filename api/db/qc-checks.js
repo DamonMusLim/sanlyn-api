@@ -87,6 +87,8 @@ export default async function handler(req, res) {
         "qc_result", "qc_date", "qc_by", "checklist", "photos", "fail_reason",
         "batch_no", "production_date", "best_before", "qty",
         "reviewed_by", "review_status",
+        // Phase 2 review fields (aliased names accepted too)
+        "reviewer", "reviewed_at",
       ];
       var sets = [], vals3 = [], n = 0;
       for (var f of allowed) {
@@ -98,7 +100,21 @@ export default async function handler(req, res) {
           vals3.push(v);
         }
       }
-      if (b.review_status && b.review_status !== "pending") {
+      // 支持 reviewer 作为 reviewed_by 的别名
+      if (b.reviewer !== undefined && b.reviewed_by === undefined) {
+        n++;
+        sets.push("reviewed_by = $" + n);
+        vals3.push(b.reviewer);
+      }
+      // 支持 reviewed_at 显式传入 或 自动设置（审核动作时）
+      if (b.reviewed_at) {
+        n++;
+        sets.push("reviewed_at = $" + n);
+        vals3.push(b.reviewed_at);
+      } else if (b.review_status && b.review_status !== "pending") {
+        sets.push("reviewed_at = NOW()");
+      } else if (b.qc_result && b.qc_result !== "pending" && b.reviewed_by) {
+        // 通过 qc_result 驱动审核时间
         sets.push("reviewed_at = NOW()");
       }
       if (sets.length === 0) return res.status(400).json({ error: "no fields to update" });
