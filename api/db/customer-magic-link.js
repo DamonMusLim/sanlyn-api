@@ -133,7 +133,9 @@ export default async function handler(req, res) {
         const key = meta.contract_no || meta.shipment_id;
         const fs = await pool.query(
           `SELECT id, _id, contract_no, bl_no, pol, pod, etd, eta, cutoff_date,
-                  container_type, shipper, consignee, cargo_description, product_notes,
+                  container_type, shipper,
+                  raw->>'consignee' AS consignee,
+                  cargo_description, product_notes,
                   gross_weight_kg, total_cartons, total_cbm, release_type,
                   forwarder_cn, flow_status, forwarder_booking_no, vessel, voyage
              FROM shipping_plans

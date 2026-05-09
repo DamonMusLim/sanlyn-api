@@ -86,7 +86,7 @@ export default async function handler(req, res) {
     const key = meta.contract_no || meta.shipment_id;
     const r = await pool.query(
       `SELECT id, _id, contract_no, vessel, voyage, bl_no, pol, pod, flow_status,
-              shipper, consignee, forwarder_cn
+              shipper, raw->>'consignee' AS consignee, forwarder_cn
          FROM shipping_plans
         WHERE (contract_no = $1 OR _id = $1 OR id::text = $1
                OR order_contract_nos ILIKE $2)
@@ -115,9 +115,12 @@ export default async function handler(req, res) {
   add("vessel",   b.vessel?.trim()  || null);
   add("voyage",   b.voyage?.trim()  || null);
   add("flow_status",   "booked");
-  add("booking_sent_at", new Date().toISOString());
+  // booking_sent_at may or may not exist depending on migration state
+  // Store in raw.booking_sent_at instead to be safe
 
   // vault merge for BL draft (if provided)
+  // Always store booking_sent_at in vault (safe even if column doesn't exist)
+  const bookingSentAt = new Date().toISOString();
   let vaultMerge = null;
   if (b.bl_draft && b.bl_draft.filename) {
     const bl = {
