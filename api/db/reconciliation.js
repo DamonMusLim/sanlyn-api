@@ -41,6 +41,38 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Resolve company_code → canonical CN-XXXXX format ─────────
+    // Accepts either CN-XXXXX directly, or a short name/keyword that
+    // gets looked up in the customers table.
+    let resolvedCompanyCode = company_code;
+    let resolvedCompanyName = null;
+
+    if (!company_code.match(/^CN-\d+$/i)) {
+      // Try to resolve by name_en, name, or short_code ILIKE match
+      const lookup = await pool.query(
+        `SELECT company_code, name, name_en FROM customers
+         WHERE name_en ILIKE $1 OR name ILIKE $1 OR short_code ILIKE $1
+         LIMIT 1`,
+        [`%${company_code}%`]
+      );
+      if (lookup.rows.length > 0) {
+        resolvedCompanyCode = lookup.rows[0].company_code;
+        resolvedCompanyName = lookup.rows[0].name_en || lookup.rows[0].name;
+      } else {
+        // Fall back to using the value as-is (may match customer column directly)
+        resolvedCompanyCode = company_code;
+      }
+    } else {
+      // Look up the name for display
+      const lookup = await pool.query(
+        `SELECT name_en, name FROM customers WHERE company_code = $1 LIMIT 1`,
+        [company_code]
+      );
+      if (lookup.rows.length > 0) {
+        resolvedCompanyName = lookup.rows[0].name_en || lookup.rows[0].name;
+      }
+    }
+
     // ── Determine period ──────────────────────────────────────────
     const now = new Date();
     const targetYear  = parseInt(year  || now.getFullYear(), 10);
@@ -55,12 +87,13 @@ export default async function handler(req, res) {
     const periodLabel = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
 
     // ── 1. Fetch orders for this company in the period ────────────
-    // Include orders whose ETD, delivery_date, or created_at falls in the period,
-    // or orders that are active (not cancelled) and were created earlier (outstanding).
+    // Match by company_code (CN-XXXXX) OR customer name (for legacy data).
+    // Include orders whose ETD, delivery_date, or created_at falls in the period.
     const ordersResult = await pool.query(
       `SELECT
          _id              AS contract_no,
          company_code,
+         customer,
          status,
          customer_amount,
          factory_amount,
@@ -73,7 +106,7 @@ export default async function handler(req, res) {
          created_at,
          raw
        FROM orders
-       WHERE company_code = $1
+       WHERE (company_code = $1 OR (company_code IS NULL AND customer ILIKE $4))
          AND status != 'cancelled'
          AND (
            (etd            >= $2 AND etd            < $3)
@@ -81,7 +114,8 @@ export default async function handler(req, res) {
            OR (created_at     >= $2 AND created_at     < $3)
          )
        ORDER BY COALESCE(etd, delivery_date, created_at) ASC`,
-      [company_code, periodStart.toISOString(), periodEnd.toISOString()]
+      [resolvedCompanyCode, periodStart.toISOString(), periodEnd.toISOString(),
+       `%${company_code}%`]
     );
 
     const orders = ordersResult.rows;
@@ -91,7 +125,8 @@ export default async function handler(req, res) {
       return res.json({
         success: true,
         period: periodLabel,
-        company_code,
+        company_code: resolvedCompanyCode,
+        company_name: resolvedCompanyName,
         generated_at: new Date().toISOString(),
         summary: {
           total_orders: 0,
@@ -267,7 +302,8 @@ export default async function handler(req, res) {
       return res.json({
         success:       true,
         period:        periodLabel,
-        company_code,
+        company_code:  resolvedCompanyCode,
+        company_name:  resolvedCompanyName,
         generated_at:  new Date().toISOString(),
         summary,
       });
@@ -277,7 +313,8 @@ export default async function handler(req, res) {
     return res.json({
       success:        true,
       period:         periodLabel,
-      company_code,
+      company_code:   resolvedCompanyCode,
+      company_name:   resolvedCompanyName,
       generated_at:   new Date().toISOString(),
       summary,
       orders:         enrichedOrders,
