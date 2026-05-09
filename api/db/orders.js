@@ -82,10 +82,46 @@ function checkComplianceException(row, requester) {
   return false;
 }
 
+// ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
+const PATCH_ALLOWED_COLS = ["order_no","company_code","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency"];
+
+async function handlePatch(req, res) {
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({ error: "Forbidden: admin only" });
+  }
+  const pool = getPool();
+  const body = req.body || {};
+  const { id, raw: rawPatch, ...rest } = body;
+  if (!id) return res.status(400).json({ error: "id required" });
+
+  const sets = [], vals = [];
+  let n = 0;
+  for (const col of PATCH_ALLOWED_COLS) {
+    if (rest[col] !== undefined) {
+      n++; sets.push(col + " = $" + n); vals.push(rest[col]);
+    }
+  }
+  // Merge raw JSONB if provided
+  if (rawPatch && typeof rawPatch === "object") {
+    n++; sets.push("raw = COALESCE(raw,'{}') || $" + n + "::jsonb"); vals.push(JSON.stringify(rawPatch));
+  }
+  if (sets.length === 0) return res.status(400).json({ error: "no fields to update" });
+  n++; sets.push("updated_at = NOW()");
+  vals.push(id);
+  const sql = "UPDATE orders SET " + sets.join(", ") + " WHERE id = $" + (n) + " RETURNING id";
+  const r = await pool.query(sql, vals);
+  if (r.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  return res.status(200).json({ success: true, id });
+}
+
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
+  if (req.method === "PATCH") {
+    try { return await handlePatch(req, res); }
+    catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  }
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();

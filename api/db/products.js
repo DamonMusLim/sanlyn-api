@@ -72,7 +72,9 @@ export default async function handler(req, res) {
 
   try {
     var pool = getPool();
-    var { brand, category, cat1, cat2, cat3, search, limit = 1000, offset = 0 } = req.query;
+    var { brand, category, cat1, cat2, cat3, search, q, limit = 1000, offset = 0 } = req.query;
+    // ?q= is an alias for ?search= (used by product picker in OrdersModule)
+    if (q && !search) search = q;
 
     var query = "SELECT * FROM products", params = [], conds = [];
 
