@@ -237,6 +237,7 @@ mount("/api/db/modules",           () => import("./api/db/modules.js"));
 mount("/api/db/qc-checks",         () => import("./api/db/qc-checks.js"));
 mount("/api/db/qc-notify",         () => import("./api/db/qc-notify.js"));
 mount("/api/db/loading-sheets",     () => import("./api/db/loading-sheets.js"));
+mount("/api/db/loading-collab-sheets", () => import("./api/db/loading-collab-sheets.js"));
 mount("/api/db/migrate-loading-sheets", () => import("./api/db/migrate-loading-sheets.js"));
 // ── Air-A · Collab Sheet Backend V2 ───────────────────────────────────
 mount("/api/db/migrate-collab-support",     () => import("./api/db/migrate-collab-support.js"));

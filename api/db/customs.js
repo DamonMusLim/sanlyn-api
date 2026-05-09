@@ -78,11 +78,16 @@ export default async function handler(req, res) {
     const sql = `
       SELECT
         c.*,
-        o.id          AS order_id,
-        o.customer    AS order_customer,
-        o.status      AS order_status,
-        o.total_amount AS order_amount,
-        o.bl_no       AS order_bl_no
+        o.id            AS order_id,
+        o.customer      AS order_customer,
+        o.status        AS order_status,
+        o.total_amount  AS order_amount,
+        o.bl_no         AS order_bl_no,
+        o.trade_terms   AS order_trade_terms,
+        o.currency      AS order_currency,
+        o.etd           AS order_etd,
+        o.seller_code   AS order_seller_code,
+        o.raw->>'factory' AS order_factory
       FROM customs_data c
       LEFT JOIN orders o
         ON  (c.order_no    IS NOT NULL AND c.order_no    != '' AND o.contract_no = c.order_no)

@@ -92,6 +92,8 @@ const PATCH_ALLOWED_COLS = [
   "seller_code",
   // Three-tier pricing for middlemen like 洋宝宝 (2026-05-10)
   "factory_price_total","middleman_code","middleman_markup_total","middleman_markup_pct","customer_price_total",
+  // Exchange rate: factory prices in USD → customer prices in CNY conversion (2026-05-10)
+  "exchange_rate",
 ];
 
 async function handlePatch(req, res) {
@@ -120,12 +122,28 @@ async function handlePatch(req, res) {
   // If raw.products is being saved (either via rawPatch or already exists),
   // recompute factory_amount / customer_amount / margin_amount / margin_pct
   // so the columns stay in sync without manual entry.
+  //
+  // Cross-currency fix (2026-05-10): factoryPrice is in USD, subtotal is in CNY.
+  // Use exchange_rate to convert factory USD → CNY before subtracting.
+  // exchange_rate is taken from: (1) this PATCH payload, (2) current DB row.
   const patchProducts = rawPatch && Array.isArray(rawPatch.products) ? rawPatch.products : null;
   if (patchProducts && patchProducts.length > 0) {
+    // Fetch current row to get stored exchange_rate if not provided in this PATCH
+    let currentRow = null;
+    try {
+      const cur = await pool.query("SELECT exchange_rate FROM orders WHERE id = $1", [id]);
+      currentRow = cur.rows[0] || null;
+    } catch (_) { /* non-fatal: proceed without currentRow */ }
+
     const factoryAmt  = patchProducts.reduce((s, it) => s + (Number(it.factoryPrice || 0) * Number(it.qty || 1)), 0);
     const customerAmt = patchProducts.reduce((s, it) => s + Number(it.subtotal || 0), 0);
-    const marginAmt   = customerAmt - factoryAmt;
-    const marginPct   = factoryAmt > 0 ? Math.round(marginAmt / factoryAmt * 1000) / 10 : null;
+    // When exchange_rate is set (factory in USD, customer in CNY), convert factory to CNY first
+    const exRate = Number(rest.exchange_rate || currentRow?.exchange_rate || 0);
+    const factoryInCustomerCurrency = exRate > 0 ? factoryAmt * exRate : factoryAmt;
+    const marginAmt   = customerAmt - factoryInCustomerCurrency;
+    const marginPct   = factoryInCustomerCurrency > 0
+      ? Math.round(marginAmt / factoryInCustomerCurrency * 1000) / 10
+      : null;
     // Only overwrite if caller didn't explicitly supply these cols (let explicit win)
     if (rest.factory_amount  === undefined && factoryAmt  > 0) { n++; sets.push("factory_amount  = $" + n); vals.push(factoryAmt); }
     if (rest.customer_amount === undefined && customerAmt > 0) { n++; sets.push("customer_amount = $" + n); vals.push(customerAmt); }
