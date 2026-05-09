@@ -6,9 +6,11 @@
 // GET ?type=cost&id=SP2024xxxx        → 成本核算单 Excel (admin only)
 // GET ?type=finance_summary           → 财务汇总 Excel
 // GET ?type=finance_shipments         → 海运费用明细 Excel
+// GET ?type=pi|sc|iv|pl|po&id=ORDER  → 订单文件 Excel (PI/SC/Invoice/PL/PO)
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import ExcelJS from "exceljs";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -306,7 +308,166 @@ export default async function handler(req, res) {
       return _sendExcel(res, rows, `海运费用汇总_${month||"全部"}`, 14);
     }
 
-    return res.status(400).json({ error: "type 参数无效: shipping / customs / cost / finance_shipments" });
+    // ════════════════════════════════
+    //  订单文件 Excel (PI / SC / IV / PL / PO)
+    // ════════════════════════════════
+    if (["pi","sc","iv","pl","po"].includes(type) && id) {
+      const oRes = await pool.query(
+        "SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1",
+        [id]
+      );
+      if (!oRes.rows.length) return res.status(404).json({ error: "Order not found: " + id });
+      const o = oRes.rows[0];
+      const raw = (typeof o.raw === "string" ? JSON.parse(o.raw) : o.raw) || {};
+      const prods = Array.isArray(raw.products) ? raw.products : [];
+
+      const DOC_LABEL = { pi:"Proforma Invoice", sc:"Sales Contract", iv:"Commercial Invoice", pl:"Packing List", po:"Purchase Order" };
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "Sanlyn OS";
+      wb.created = new Date();
+      const ws = wb.addWorksheet(DOC_LABEL[type]);
+
+      // ── Style helpers ──
+      const TITLE_FILL  = { type:"pattern", pattern:"solid", fgColor:{ argb:"FF1E293B" } };
+      const HEADER_FILL = { type:"pattern", pattern:"solid", fgColor:{ argb:"FF334155" } };
+      const ALT_FILL    = { type:"pattern", pattern:"solid", fgColor:{ argb:"FFF8FAFC" } };
+      const WHITE_FILL  = { type:"pattern", pattern:"solid", fgColor:{ argb:"FFFFFFFF" } };
+      const BORDER      = { style:"thin", color:{ argb:"FFB0BAC6" } };
+      const BORDERS     = { top:BORDER, left:BORDER, bottom:BORDER, right:BORDER };
+
+      function titleRow(text, cols) {
+        const r = ws.addRow([text]);
+        ws.mergeCells(r.number, 1, r.number, cols);
+        r.getCell(1).font  = { bold:true, size:14, color:{ argb:"FFFFFFFF" } };
+        r.getCell(1).fill  = TITLE_FILL;
+        r.getCell(1).alignment = { horizontal:"center", vertical:"middle" };
+        r.height = 28;
+      }
+      function labelValueRow(label, value, labelCol, valueCol, fill) {
+        const r = ws.lastRow;
+        r.getCell(labelCol).value = label;
+        r.getCell(labelCol).font  = { bold:true, size:10 };
+        r.getCell(labelCol).fill  = fill || WHITE_FILL;
+        r.getCell(valueCol).value = value ?? "—";
+        r.getCell(valueCol).fill  = fill || WHITE_FILL;
+        r.getCell(labelCol).border = BORDERS;
+        r.getCell(valueCol).border = BORDERS;
+      }
+      function hdrRow(labels) {
+        const r = ws.addRow(labels);
+        r.eachCell(c => {
+          c.font = { bold:true, size:10, color:{ argb:"FFFFFFFF" } };
+          c.fill = HEADER_FILL;
+          c.border = BORDERS;
+          c.alignment = { horizontal:"center", vertical:"middle", wrapText:true };
+        });
+        r.height = 20;
+        return r;
+      }
+
+      // ── Col widths ──
+      ws.columns = [
+        { width:5 }, { width:30 }, { width:12 }, { width:12 },
+        { width:12 }, { width:14 }, { width:14 }, { width:14 },
+      ];
+
+      // ── Title ──
+      titleRow(`${DOC_LABEL[type]}  |  Sanlyn Trade`, 8);
+      ws.addRow([]);
+
+      // ── Header metadata ──
+      const meta = [
+        ["Contract No.", o.contract_no || o.order_no || id,  "Customer", raw.customerName || o.customer || "—"],
+        ["Date",         (o.delivery_date||o.created_at) ? new Date(o.delivery_date||o.created_at).toISOString().slice(0,10) : "—", "Currency", raw.currency || o.currency || "USD"],
+        ["Port of Load", raw.pol || raw.portOfLoading || "—", "Port of Dest", raw.destination || raw.pod || "—"],
+        ["Trade Terms",  raw.tradeTerms || raw.incoterms || "FOB",          "Payment Terms", raw.paymentTerms || "—"],
+      ];
+      for (const [lA, vA, lB, vB] of meta) {
+        ws.addRow(["", lA, vA, "", lB, vB]);
+        const r = ws.lastRow;
+        r.getCell(2).font = { bold:true, size:10 }; r.getCell(2).fill = ALT_FILL; r.getCell(2).border = BORDERS;
+        r.getCell(3).fill = WHITE_FILL; r.getCell(3).border = BORDERS;
+        r.getCell(5).font = { bold:true, size:10 }; r.getCell(5).fill = ALT_FILL; r.getCell(5).border = BORDERS;
+        r.getCell(6).fill = WHITE_FILL; r.getCell(6).border = BORDERS;
+        r.height = 18;
+      }
+      ws.addRow([]);
+
+      // ── Product table ──
+      const showFactory = isAdmin && (type === "po" || type === "iv");
+      const prodCols = showFactory
+        ? ["#", "Product / Description", "HS Code", "Qty", "Unit", "Factory Price", "Unit Price", "Subtotal"]
+        : ["#", "Product / Description", "HS Code", "Qty", "Unit", "Unit Price", "Subtotal", "CBM"];
+      hdrRow(prodCols);
+
+      let grandTotal = 0;
+      prods.forEach((p, i) => {
+        const sub = Number(p.subtotal || 0) || Number(p.unitPrice || 0) * Number(p.qty || 0);
+        grandTotal += sub;
+        const rowData = showFactory
+          ? [i+1, p.name || p.productName || "—", p.hs_code || p.hsCode || "—",
+             p.qty || 0, p.unit || "CTN", p.factoryPrice || 0, p.unitPrice || 0, sub]
+          : [i+1, p.name || p.productName || "—", p.hs_code || p.hsCode || "—",
+             p.qty || 0, p.unit || "CTN", p.unitPrice || 0, sub, p.cbm || 0];
+        const r = ws.addRow(rowData);
+        r.eachCell((c, cn) => {
+          c.border = BORDERS;
+          c.fill = i % 2 === 0 ? WHITE_FILL : ALT_FILL;
+          if (cn > 3) c.alignment = { horizontal:"right" };
+          // Format currency cols
+          if ((showFactory && cn >= 6) || (!showFactory && cn >= 6)) {
+            if (typeof c.value === "number") c.numFmt = "#,##0.00";
+          }
+        });
+        r.height = 18;
+      });
+
+      // ── Total row ──
+      ws.addRow([]);
+      const totRow = ws.addRow([
+        "", "", "", "", "",
+        showFactory ? "" : "",
+        "TOTAL",
+        grandTotal,
+      ]);
+      totRow.eachCell((c, cn) => {
+        if (cn >= 7) {
+          c.font = { bold:true, size:11 };
+          c.fill = HEADER_FILL;
+          c.border = BORDERS;
+          if (typeof c.value === "number") c.numFmt = "#,##0.00";
+          c.font = { bold:true, color:{ argb:"FFFFFFFF" } };
+        }
+      });
+      totRow.height = 20;
+
+      // ── Remarks ──
+      if (raw.remarks || o.remarks) {
+        ws.addRow([]);
+        const rRow = ws.addRow(["Remarks:", raw.remarks || o.remarks || ""]);
+        ws.mergeCells(rRow.number, 2, rRow.number, 8);
+        rRow.getCell(1).font = { bold:true };
+        rRow.getCell(2).alignment = { wrapText:true };
+        rRow.height = 40;
+      }
+
+      // ── Footer ──
+      ws.addRow([]);
+      const footRow = ws.addRow([`Generated by Sanlyn OS  ·  ${new Date().toISOString().slice(0,10)}`]);
+      ws.mergeCells(footRow.number, 1, footRow.number, 8);
+      footRow.getCell(1).font = { italic:true, size:9, color:{ argb:"FF94A3B8" } };
+      footRow.getCell(1).alignment = { horizontal:"right" };
+
+      // ── Output ──
+      const ref = o.contract_no || o.order_no || id;
+      const filename = `Sanlyn-${type.toUpperCase()}-${ref}-${new Date().toISOString().slice(0,10)}.xlsx`;
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      const buf = await wb.xlsx.writeBuffer();
+      return res.end(buf);
+    }
+
+    return res.status(400).json({ error: "type 参数无效: shipping / customs / cost / finance_shipments / pi / sc / iv / pl / po" });
 
   } catch (err) {
     console.error("[export-excel]", err);
