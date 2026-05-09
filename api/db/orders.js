@@ -125,7 +125,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
-    let { customer, status, limit = 500, brands, factory, company_code, company_codes } = req.query;
+    let { customer, status, limit = 500, brands, factory, company_code, company_codes, sku } = req.query;
     // Tenant scoping: non-admin users can only see their own company's orders.
     // FAIL-CLOSED: if JWT has no role or no companyCodes, refuse the request —
     // forces re-login so the fresh JWT carries the correct scope. (Prior
@@ -172,6 +172,10 @@ export default async function handler(req, res) {
         brandList.forEach(brand => { params.push(`%${brand}%`); orClauses.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(raw->'products') p WHERE p->>'name' ILIKE $${params.length})`); });
         conds.push(`(${orClauses.join(' OR ')})`);
       }
+    }
+    if (sku) {
+      params.push("%" + sku + "%");
+      conds.push("EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(raw->'products','[]'::jsonb)) p WHERE p->>'sku' ILIKE $" + params.length + ")");
     }
     if (conds.length) query += " WHERE " + conds.join(" AND ");
     params.push(parseInt(limit));
