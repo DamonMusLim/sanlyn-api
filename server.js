@@ -200,6 +200,7 @@ mount("/api/collab",                () => import("./api/collab.js"));           
 mount("/api/db/migrate-freight",   () => import("./api/db/migrate-freight.js"));
 mount("/api/db/modules",           () => import("./api/db/modules.js"));
 mount("/api/db/qc-checks",         () => import("./api/db/qc-checks.js"));
+mount("/api/db/qc-notify",         () => import("./api/db/qc-notify.js"));
 mount("/api/db/loading-sheets",     () => import("./api/db/loading-sheets.js"));
 mount("/api/db/migrate-loading-sheets", () => import("./api/db/migrate-loading-sheets.js"));
 // ── Air-A · Collab Sheet Backend V2 ───────────────────────────────────
@@ -256,6 +257,11 @@ mount("/api/db/migrate-credit-notes",  () => import("./api/db/migrate-credit-not
 mount("/api/freight-debit-notes",          () => import("./api/freight-debit-notes.js"));          // GET/POST/PATCH
 mount("/api/db/migrate-freight-debit-notes", () => import("./api/db/migrate-freight-debit-notes.js")); // table migration
 mount("/api/db/product-image-update", () => import("./api/db/product-image-update.js")); // product image upload
+// ── RFQ Marketplace ──────────────────────────────────────────
+mount("/api/db/migrate-rfq",   () => import("./api/db/migrate-rfq.js"));    // table migration
+mount("/api/db/rfq-requests",  () => import("./api/db/rfq-requests.js"));   // CRUD
+mount("/api/db/rfq-items",     () => import("./api/db/rfq-items.js"));      // forwarder quote lines
+mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
 mount("/api/jdy/customer-full-sync", () => import("./api/jdy/customer-full-sync.js"));
@@ -315,6 +321,13 @@ app.use("/public", express.static(join(__dirname, "public")));
 app.get("/f/:token", (req, res) => {
   res.redirect("/public/factory-fill.html?t=" + encodeURIComponent(req.params.token));
 });
+mount("/api/db/packaging",             () => import("./api/db/packaging.js"));
+mount("/api/db/packaging-move",        () => import("./api/db/packaging-move.js"));
+mount("/api/db/packaging-logs",        () => import("./api/db/packaging-logs.js"));
+mount("/api/db/migrate-packaging",     () => import("./api/db/migrate-packaging.js"));
+mount("/api/db/forwarder-performance", () => import("./api/db/forwarder-performance.js"));
+mount("/api/db/forwarder-alert-rules", () => import("./api/db/forwarder-alert-rules.js"));
+mount("/api/db/migrate-forwarder-perf",() => import("./api/db/migrate-forwarder-perf.js"));
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
 app.get("/health", (req, res) => res.json({ status: "ok" }));
