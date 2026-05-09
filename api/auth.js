@@ -95,6 +95,10 @@ const PUBLIC_PATHS = [
   "/api/db/magic-link",   // Driver Magic Link (Air-A): 司机点 SMS 链接，凭 raw token + SHA-256 比对授权
   "/api/factory-fill",    // 工厂 token 填单（无登录；凭 _idx_tokens 授权）
   "/api/pending-confirm", // 工厂确认交期（无登录；凭 _idx_tokens 授权，purpose=pending_confirm）
+  "/api/track/verify",    // Public supply-chain tracking card — token validated inside handler
+  "/api/track/confirm",   // Customer delivery confirmation — token validated inside handler
+  "/api/track/sign",      // Customer e-signature — token validated inside handler
+  "/api/track/message",   // Customer message to ops — token validated inside handler
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）

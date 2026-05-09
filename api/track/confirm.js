@@ -4,8 +4,11 @@
 
 import { getPool, setCors } from "../db.js";
 
-function hashToken(bl, seed) {
-  return Buffer.from(bl + ":" + (seed || "")).toString("base64url").slice(0, 24);
+function specToken(bl) { try { return Buffer.from(bl + ":sanlyn2024").toString("base64"); } catch(e) { return ""; } }
+function hashToken(bl, seed) { return Buffer.from(bl + ":" + (seed || "")).toString("base64url").slice(0, 24); }
+function isValidToken(token, bl, shipping) {
+  var raw = (typeof shipping.raw === "string") ? JSON.parse(shipping.raw || "{}") : (shipping.raw || {});
+  return token === specToken(bl) || token === hashToken(bl, shipping.id) || (raw.track_token && token === raw.track_token);
 }
 
 export default async function handler(req, res) {
@@ -25,8 +28,7 @@ export default async function handler(req, res) {
 
     var shipping = sRes.rows[0];
     var raw = (typeof shipping.raw === "string") ? JSON.parse(shipping.raw || "{}") : (shipping.raw || {});
-    var expectedToken = raw.track_token || hashToken(bl, shipping.id);
-    if (token !== expectedToken) return res.status(403).json({ error: "链接无效" });
+    if (!isValidToken(token, bl, shipping)) return res.status(403).json({ error: "Invalid or expired link" });
 
     if (!shipping.contract_no) return res.status(400).json({ error: "No contract_no on shipping record" });
 

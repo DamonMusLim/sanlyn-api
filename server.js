@@ -295,6 +295,11 @@ mount("/api/proxy-file",      () => import("./api/proxy-file.js"));
 mount("/api/send-email",      () => import("./api/send-email.js"));
 mount("/api/setup-finance",   () => import("./api/setup-finance.js"));
 mount("/api/vessel-callback", () => import("./api/vessel-callback.js"));
+// ── Supply-chain tracking card (public, token-authenticated) ──
+mount("/api/track/verify",  () => import("./api/track/verify.js"));
+mount("/api/track/confirm", () => import("./api/track/confirm.js"));
+mount("/api/track/sign",    () => import("./api/track/sign.js"));
+mount("/api/track/message", () => import("./api/track/message.js"));
 mount("/api/vessel-map",      () => import("./api/vessel-map.js"));
 mount("/api/vessel-subscribe",() => import("./api/vessel-subscribe.js"));
 mount("/api/vessel-sync",     () => import("./api/vessel-sync.js"));
