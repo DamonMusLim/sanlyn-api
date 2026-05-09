@@ -225,6 +225,7 @@ mount("/api/db/trucking-evidence-sheets",   () => import("./api/db/trucking-evid
 mount("/api/db/doc-revision-sheets",        () => import("./api/db/doc-revision-sheets.js"));
 mount("/api/db/magic-link",                 () => import("./api/db/magic-link.js"));
 mount("/api/db/driver-assignments",         () => import("./api/db/driver-assignments.js"));
+mount("/api/db/driver-checkin",             () => import("./api/db/driver-checkin.js"));
 mount("/api/db/drivers",                    () => import("./api/db/drivers.js"));
 mount("/api/db/driver-reviews",             () => import("./api/db/driver-reviews.js"));
 mount("/api/db/collab-sheets/queue",        () => import("./api/db/collab-sheets-queue.js"));

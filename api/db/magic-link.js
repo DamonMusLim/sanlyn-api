@@ -63,7 +63,7 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const drv = await pool.query(
-        "SELECT name, phone FROM drivers WHERE id = $1",
+        "SELECT name, phone, credit_score FROM drivers WHERE id = $1",
         [assignment.driver_id]
       );
       const sheet = assignment.collab_sheet_table && assignment.collab_sheet_id
