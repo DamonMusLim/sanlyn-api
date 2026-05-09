@@ -155,6 +155,29 @@ mount("/api/db/payments",          () => import("./api/db/payments.js"));
 mount("/api/db/finance_payments",  () => import("./api/db/finance_payments.js"));
 mount("/api/db/export-excel",      () => import("./api/db/export-excel.js"));
 mount("/api/db/export-pdf",        () => import("./api/db/export-pdf.js"));
+mount("/api/db/shipment-tracking",  () => import("./api/db/shipment-tracking.js"));
+// customer-magic-link uses sub-paths (/generate, /validate, /use) — needs prefix match
+app.all("/api/db/customer-magic-link/*", async (req, res) => {
+  try {
+    const mod = await import("./api/db/customer-magic-link.js");
+    const handler = mod.default || mod;
+    // Set req.path to sub-path suffix (e.g. "generate", "validate", "use")
+    await handler(req, res);
+  } catch (err) {
+    console.error("[customer-magic-link] Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+app.all("/api/db/customer-magic-link", async (req, res) => {
+  try {
+    const mod = await import("./api/db/customer-magic-link.js");
+    const handler = mod.default || mod;
+    await handler(req, res);
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+mount("/api/db/migrate-magic-links",() => import("./api/db/migrate-magic-links.js"));
 mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"));
 mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));

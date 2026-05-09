@@ -99,6 +99,9 @@ const PUBLIC_PATHS = [
   "/api/track/confirm",   // Customer delivery confirmation — token validated inside handler
   "/api/track/sign",      // Customer e-signature — token validated inside handler
   "/api/track/message",   // Customer message to ops — token validated inside handler
+  // Customer Magic Link (public validate/use — handler verifies token internally)
+  "/api/db/customer-magic-link/validate",
+  "/api/db/customer-magic-link/use",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
