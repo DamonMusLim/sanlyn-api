@@ -102,6 +102,8 @@ const PUBLIC_PATHS = [
   // Customer Magic Link (public validate/use — handler verifies token internally)
   "/api/db/customer-magic-link/validate",
   "/api/db/customer-magic-link/use",
+  // Forwarder Booking Submit — token-authenticated, no JWT
+  "/api/db/forwarder-booking-submit",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）

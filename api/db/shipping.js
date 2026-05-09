@@ -26,7 +26,7 @@ const PATCH_ALLOW = [
   "customs_cost_total","trucking_cost_total","agency_fee_rmb",
   "forwarder_cn","customs_cn","trucking_cn","shipper","consignee",
   "cargo_description","product_notes","release_type",
-  "order_contract_nos","contract_no","shipment_no",
+  "order_contract_nos","contract_no","shipment_no","forwarder_booking_no","booking_sent_at","collab_sheet_status",
   "notes","status","current_status","current_status_cn",
   // driver + insurance (added 2026-05-09)
   "driver_info","insurance_required","insurance_premium","insurance_policy_no","insurance_rate",

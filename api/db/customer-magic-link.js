@@ -82,7 +82,17 @@ export default async function handler(req, res) {
       [hash, recipientRole, JSON.stringify(meta), String(ttl)]
     );
 
-    const url = `${APP_BASE}/m/${raw}`;
+    // Role-based URL routing
+    const rolePathPrefix = {
+      forwarder:           "forwarder",
+      customs:             "customs-broker",
+      driver:              "driver",
+      customer_downstream: "",   // /m/{token}
+    };
+    const prefix = rolePathPrefix[recipientRole];
+    const url = prefix
+      ? `${APP_BASE}/m/${prefix}/${raw}`
+      : `${APP_BASE}/m/${raw}`;
     return res.status(200).json({
       token:      raw,
       url,
@@ -115,6 +125,57 @@ export default async function handler(req, res) {
 
     const link = rows[0];
     const meta = (typeof link.meta === "string" ? JSON.parse(link.meta) : link.meta) || {};
+
+    // For forwarder role: fetch booking sheet data (safe fields — no factory, no prices)
+    let forwarderSheetData = null;
+    if (link.recipient_role === "forwarder" && (meta.contract_no || meta.shipment_id)) {
+      try {
+        const key = meta.contract_no || meta.shipment_id;
+        const fs = await pool.query(
+          `SELECT id, _id, contract_no, bl_no, pol, pod, etd, eta, cutoff_date,
+                  container_type, shipper, consignee, cargo_description, product_notes,
+                  gross_weight_kg, total_cartons, total_cbm, release_type,
+                  forwarder_cn, flow_status, forwarder_booking_no, vessel, voyage
+             FROM shipping_plans
+            WHERE (contract_no = $1 OR _id = $1 OR id::text = $1
+                   OR order_contract_nos ILIKE $2)
+            ORDER BY created_at DESC LIMIT 1`,
+          [key, `%${key}%`]
+        );
+        if (fs.rows.length) {
+          const sp = fs.rows[0];
+          forwarderSheetData = {
+            id:                  sp.id,
+            _id:                 sp._id,
+            contract_no:         sp.contract_no,
+            bl_no:               sp.bl_no,
+            pol:                 sp.pol,
+            pod:                 sp.pod,
+            etd:                 sp.etd,
+            eta:                 sp.eta,
+            cutoff_date:         sp.cutoff_date,
+            container_type:      sp.container_type,
+            shipper:             sp.shipper,
+            consignee:           sp.consignee,
+            cargo_description:   sp.cargo_description,
+            product_notes:       sp.product_notes,
+            gross_weight_kg:     sp.gross_weight_kg,
+            total_cartons:       sp.total_cartons,
+            total_cbm:           sp.total_cbm,
+            release_type:        sp.release_type,
+            forwarder_cn:        sp.forwarder_cn,
+            flow_status:         sp.flow_status,
+            // Already-submitted booking data (for pre-filling if re-opened)
+            forwarder_booking_no: sp.forwarder_booking_no,
+            vessel:              sp.vessel,
+            voyage:              sp.voyage,
+            // Explicitly NOT included: factory, customs_cn, trucking_cn, any price fields
+          };
+        }
+      } catch (e) {
+        console.warn("[customer-magic-link] forwarder sheet fetch failed:", e.message);
+      }
+    }
 
     // For customer_downstream: fetch tracking data
     let trackingData = null;
@@ -170,7 +231,8 @@ export default async function handler(req, res) {
         shipment_id: meta.shipment_id,
         // Never expose phone/email in validate response
       },
-      tracking:   trackingData,
+      tracking:      trackingData,
+      booking_sheet: forwarderSheetData,
     });
   }
 
