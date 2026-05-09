@@ -1,95 +1,78 @@
 // api/db/rfq-items.js
-// GET    /api/db/rfq-items?rfq_id=N            — list items for one RFQ
-// POST   /api/db/rfq-items                     — create item (auto-calculates total_usd)
-// PATCH  /api/db/rfq-items                     — update item by id
+// freight_rfq_items table CRUD — actual schema:
+// id(uuid), rfq_id(uuid FK), forwarder_co, vessel, voyage, etd,
+// usd_rate, transit_days, notes, is_lowest, selected, submitted_at
 
 import { getPool, setCors } from "../db.js";
+
+const ALLOWED_PATCH = ["forwarder_co","vessel","voyage","etd","usd_rate",
+                       "transit_days","notes","is_lowest","selected"];
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+
   const pool = getPool();
 
-  try {
-    // ── GET ──────────────────────────────────────────────────────
-    if (req.method === "GET") {
-      const { rfq_id, limit = 200 } = req.query || {};
-      if (!rfq_id) return res.status(400).json({ error: "rfq_id required" });
-      const r = await pool.query(
-        `SELECT * FROM freight_rfq_items WHERE rfq_id = $1 ORDER BY created_at ASC LIMIT $2`,
-        [parseInt(rfq_id), parseInt(limit)]
-      );
-      return res.json({ success: true, data: r.rows, count: r.rows.length });
-    }
-
-    // ── POST (create) ─────────────────────────────────────────────
-    if (req.method === "POST") {
-      const b = req.body || {};
-      if (!b.rfq_id) return res.status(400).json({ error: "rfq_id required" });
-      const freight   = Number(b.freight_usd    || 0);
-      const surcharge = Number(b.port_surcharge || 0);
-      const thc       = Number(b.thc            || 0);
-      const doc       = Number(b.doc_fee        || 0);
-      const total     = freight + surcharge + thc + doc;
-      const r = await pool.query(
-        `INSERT INTO freight_rfq_items
-           (rfq_id, forwarder_name, freight_usd, port_surcharge, thc, doc_fee,
-            total_usd, transit_days, valid_until, notes)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-         RETURNING *`,
-        [
-          parseInt(b.rfq_id),
-          b.forwarder_name || null,
-          freight || null, surcharge || null, thc || null, doc || null,
-          total || null,
-          b.transit_days ? parseInt(b.transit_days) : null,
-          b.valid_until  || null,
-          b.notes        || null,
-        ]
-      );
-      return res.status(201).json({ success: true, data: r.rows[0] });
-    }
-
-    // ── PATCH (update) ────────────────────────────────────────────
-    if (req.method === "PATCH") {
-      const b = req.body || {};
-      if (!b.id) return res.status(400).json({ error: "id required" });
-      const ALLOWED = [
-        "forwarder_name","freight_usd","port_surcharge","thc","doc_fee",
-        "total_usd","transit_days","valid_until","notes",
-      ];
-      const sets = [], vals = [];
-      for (const k of ALLOWED) {
-        if (k in b) { vals.push(b[k]); sets.push(`${k} = $${vals.length}`); }
-      }
-      // Recalculate total if any cost field changed
-      const costFields = ["freight_usd","port_surcharge","thc","doc_fee"];
-      if (costFields.some(k => k in b)) {
-        // Fetch current row to sum
-        const cur = await pool.query("SELECT * FROM freight_rfq_items WHERE id=$1",[b.id]);
-        if (cur.rows.length) {
-          const row = cur.rows[0];
-          const total = (Number(b.freight_usd    ?? row.freight_usd    ?? 0))
-                      + (Number(b.port_surcharge ?? row.port_surcharge ?? 0))
-                      + (Number(b.thc            ?? row.thc            ?? 0))
-                      + (Number(b.doc_fee        ?? row.doc_fee        ?? 0));
-          // Ensure total_usd is in the update
-          if (!("total_usd" in b)) { vals.push(total); sets.push(`total_usd = $${vals.length}`); }
-        }
-      }
-      if (!sets.length) return res.status(400).json({ error: "nothing to update" });
-      vals.push(b.id);
-      const r = await pool.query(
-        `UPDATE freight_rfq_items SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING *`,
-        vals
-      );
-      if (!r.rows.length) return res.status(404).json({ error: "not found" });
-      return res.json({ success: true, data: r.rows[0] });
-    }
-
-    return res.status(405).json({ error: "method_not_allowed" });
-  } catch (err) {
-    console.error("[rfq-items]", err);
-    return res.status(500).json({ error: err.message });
+  // ── GET ──
+  if (req.method === "GET") {
+    const { rfq_id } = req.query;
+    if (!rfq_id) return res.status(400).json({ error: "rfq_id required" });
+    const { rows } = await pool.query(
+      `SELECT * FROM freight_rfq_items WHERE rfq_id = $1 ORDER BY usd_rate ASC`,
+      [rfq_id]
+    );
+    return res.status(200).json({ success: true, data: rows, count: rows.length });
   }
+
+  // ── POST ──
+  if (req.method === "POST") {
+    const { rfq_id, forwarder_co, vessel, voyage, etd, usd_rate,
+            transit_days, notes } = req.body || {};
+    if (!rfq_id || !forwarder_co || !usd_rate)
+      return res.status(400).json({ error: "rfq_id, forwarder_co, usd_rate required" });
+    const { rows } = await pool.query(
+      `INSERT INTO freight_rfq_items
+         (rfq_id, forwarder_co, vessel, voyage, etd, usd_rate, transit_days, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING *`,
+      [rfq_id, forwarder_co, vessel || null, voyage || null, etd || null,
+       usd_rate, transit_days || null, notes || null]
+    );
+    // Recompute is_lowest across all items for this rfq
+    await pool.query(
+      `UPDATE freight_rfq_items SET is_lowest = (usd_rate = (
+         SELECT MIN(usd_rate) FROM freight_rfq_items WHERE rfq_id = $1
+       )) WHERE rfq_id = $1`,
+      [rfq_id]
+    );
+    return res.status(201).json({ success: true, data: rows[0] });
+  }
+
+  // ── PATCH ──
+  if (req.method === "PATCH") {
+    const { id, rfq_id, ...patch } = req.body || {};
+    if (!id) return res.status(400).json({ error: "id required" });
+    const keys = Object.keys(patch).filter(k => ALLOWED_PATCH.includes(k));
+    if (!keys.length) return res.status(400).json({ error: "no valid fields" });
+    const sets = keys.map((k, i) => `${k} = $${i+2}`).join(", ");
+    const vals = [id, ...keys.map(k => patch[k])];
+    const { rows } = await pool.query(
+      `UPDATE freight_rfq_items SET ${sets} WHERE id = $1 RETURNING *`, vals
+    );
+    if (!rows.length) return res.status(404).json({ error: "not found" });
+    // Recompute is_lowest if usd_rate changed
+    if (patch.usd_rate != null && rfq_id) {
+      await pool.query(
+        `UPDATE freight_rfq_items SET is_lowest = (usd_rate = (
+           SELECT MIN(usd_rate) FROM freight_rfq_items WHERE rfq_id = $1
+         )) WHERE rfq_id = $1`,
+        [rfq_id]
+      );
+    }
+    return res.status(200).json({ success: true, data: rows[0] });
+  }
+
+  return res.status(405).json({ error: "method not allowed" });
 }
