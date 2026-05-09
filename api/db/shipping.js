@@ -28,6 +28,8 @@ const PATCH_ALLOW = [
   "cargo_description","product_notes","release_type",
   "order_contract_nos","contract_no","shipment_no",
   "notes","status","current_status","current_status_cn",
+  // driver + insurance (added 2026-05-09)
+  "driver_info","insurance_required","insurance_premium","insurance_policy_no","insurance_rate",
 ];
 
 export default async function handler(req, res) {

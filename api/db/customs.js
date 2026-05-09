@@ -11,6 +11,8 @@ const PATCH_ALLOW = [
   "order_no","contract_no","shipment_no","status","trade_terms",
   "declaration_date","declared_value","currency","hs_code","entry_type",
   "customs_notes","notes","total_amount","factory_city","port",
+  // insurance (added 2026-05-09)
+  "insured","insurance_rate","insurance_policy_no","insurance_premium",
 ];
 
 export default async function handler(req, res) {
