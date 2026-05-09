@@ -85,11 +85,13 @@ function checkComplianceException(row, requester) {
 // ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
 const PATCH_ALLOWED_COLS = [
   "order_no","company_code","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
-  // Profit structure埋点 (2026-05-09)
+  // Profit structure (2026-05-09)
   "factory_amount","customer_amount","margin_amount","margin_pct",
   "quote_sent_at","customer_replied_at","negotiation_rounds",
   // Seller entity (2026-05-09): which Sanlyn entity issues the PI/SC/IV
   "seller_code",
+  // Three-tier pricing for middlemen like 洋宝宝 (2026-05-10)
+  "factory_price_total","middleman_code","middleman_markup_total","middleman_markup_pct","customer_price_total",
 ];
 
 async function handlePatch(req, res) {
