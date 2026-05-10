@@ -149,7 +149,13 @@ export default async function handler(req, res) {
     const hblFirstSet = !prevHbl && newHbl;
     if (blFirstSet || hblFirstSet) {
       try {
-        notifyResult = await sendShipmentNotifications(pool, saved);
+        // Codex P2 (round 4): if only HBL was just set, factory notify
+        // should NOT fire (factory notification is tied to MBL). Tell the
+        // notifier which sides are eligible this trigger.
+        notifyResult = await sendShipmentNotifications(pool, saved, {
+          allowFactory:  blFirstSet,   // only when MBL just appeared
+          allowCustomer: true,         // both transitions can finalise customer send
+        });
       } catch (e) {
         console.error("[shipping] notify failed (non-fatal):", e.message);
         notifyResult = { error: e.message };

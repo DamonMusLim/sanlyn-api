@@ -114,13 +114,19 @@ function buildFactoryText(row) {
 }
 
 // ── Main export ───────────────────────────────────────────────
-export async function sendShipmentNotifications(pool, row, { force = false } = {}) {
+// Options:
+//   force         — re-send even if notifications_sent timestamps exist
+//   allowFactory  — caller gate (default true). Set false when only HBL
+//                   was just set (factory notify tied to MBL first-set).
+//   allowCustomer — caller gate (default true).
+export async function sendShipmentNotifications(pool, row, opts = {}) {
+  const { force = false, allowFactory = true, allowCustomer = true } = opts;
   const raw = row.raw || {};
   const sent = raw.notifications_sent || {};
   const now  = new Date().toISOString();
 
-  let doCustomer = force || !sent.customer;
-  const doFactory  = force || !sent.factory;
+  let doCustomer = allowCustomer && (force || !sent.customer);
+  const doFactory  = allowFactory  && (force || !sent.factory);
 
   // BL three-way isolation gate (Codex round 2 P2):
   // Defer the customer notification until HBL is set so we don't burn the

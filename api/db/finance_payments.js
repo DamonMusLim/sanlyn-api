@@ -80,34 +80,54 @@ export default async function handler(req, res) {
 
       const r = await pool.query(query, params);
 
-      // ── Summary totals — split per currency to avoid CNY+USD mixing ─
-      // by_currency[ccy] = { ar, ap }
-      // Codex P2 fix: imported / OCR rows often carry the value in
-      // this_amount or paid_amount with amount=NULL. Use the same
-      // fallback chain reconciliation.js applies, otherwise the
-      // dashboard understates AR/AP for legacy imports.
-      const pickAmount = (row) => {
-        const r = row.raw || {};
-        const v = row.paid_amount   != null ? row.paid_amount
-                : row.this_amount   != null ? row.this_amount
-                : r.receivedAmount  != null ? r.receivedAmount
-                : row.amount        != null ? row.amount
-                : 0;
-        const n = parseFloat(v);
-        return Number.isFinite(n) ? n : 0;
-      };
+      // ── Summary totals — Codex P2 (round 4) ─────────────────────────
+      // Earlier rounds aggregated from r.rows (the LIMITed page), so
+      // companies with > limit rows had understated dashboard totals.
+      // Now run a SEPARATE aggregate query against the FULL filtered set
+      // (same WHERE clause, no LIMIT). One row per (currency, direction).
+      //
+      // Amount fallback (mirrors reconciliation.js):
+      //   COALESCE(paid_amount, this_amount, raw->>'receivedAmount'::numeric, amount, 0)
+      const summaryWhere = conds.length ? " WHERE " + conds.join(" AND ") : "";
+      // Reuse params (no LIMIT placeholder for summary query)
+      const summaryParams = params.slice(0, -1); // drop the LIMIT param appended later
+      const summarySql = `
+        SELECT
+          COALESCE(NULLIF(currency,''), 'UNKNOWN') AS ccy,
+          CASE
+            WHEN direction IN ('AR','收款','in')  THEN 'AR'
+            WHEN direction IN ('AP','付款','out') THEN 'AP'
+            ELSE 'OTHER'
+          END AS dc,
+          COUNT(*) AS cnt,
+          COALESCE(SUM(
+            COALESCE(
+              paid_amount,
+              this_amount,
+              NULLIF(raw->>'receivedAmount','')::numeric,
+              amount,
+              0
+            )
+          ), 0)::numeric AS total,
+          COUNT(*) FILTER (
+            WHERE (contract_no IS NULL OR contract_no = '')
+              AND (order_no    IS NULL OR order_no    = '')
+          ) AS unmatched_in_bucket
+        FROM finance_payments
+        ${summaryWhere}
+        GROUP BY 1, 2
+      `;
+      const sumRes = await pool.query(summarySql, summaryParams);
+
       const by_currency = {};
       let unmatched = 0;
-      r.rows.forEach(row => {
-        const amt = pickAmount(row);
-        const ccy = (row.currency || "UNKNOWN").toUpperCase();
-        const dc  = row.direction_canonical;
+      sumRes.rows.forEach(row => {
+        const ccy = row.ccy.toUpperCase();
         if (!by_currency[ccy]) by_currency[ccy] = { ar: 0, ap: 0 };
-        if (dc === "AR") by_currency[ccy].ar += amt;
-        else if (dc === "AP") by_currency[ccy].ap += amt;
-        if (!row.contract_no && !row.order_no) unmatched++;
+        if (row.dc === "AR") by_currency[ccy].ar += parseFloat(row.total) || 0;
+        else if (row.dc === "AP") by_currency[ccy].ap += parseFloat(row.total) || 0;
+        unmatched += parseInt(row.unmatched_in_bucket, 10) || 0;
       });
-      // Round to 2dp
       Object.keys(by_currency).forEach(c => {
         by_currency[c].ar = Math.round(by_currency[c].ar * 100) / 100;
         by_currency[c].ap = Math.round(by_currency[c].ap * 100) / 100;
