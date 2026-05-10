@@ -49,15 +49,27 @@ function stripBlFields(row, role) {
   for (const [field, allowed] of Object.entries(BL_ROLE_ACCESS)) {
     if (!allowed.has(role)) delete out[field];
   }
-  // Codex P1 (round 4): the notifier persists rendered customer/factory
-  // text into raw.customer_notification_text / raw.factory_notification_text.
-  // Customer text contains HBL; factory text may contain MBL. Strip those
-  // from raw based on role so a non-permitted reader cannot recover the BL
-  // through the raw payload. internal_ops keeps everything.
+  // Codex P1 (rounds 4 + 5): raw payload contains BL leakage through:
+  //   1. Persisted notification text (raw.customer_notification_text /
+  //      raw.factory_notification_text) — written by the notifier.
+  //   2. Importer-written BL aliases (raw.blNo, raw.bl_no, raw.blHouse,
+  //      raw.bl_house, raw.blCustoms, raw.bl_customs) — written by
+  //      minimax-booking and other importers.
+  // Strip ALL of these from raw based on role. internal_ops keeps everything.
   if (out.raw && typeof out.raw === "object" && role !== "internal_ops") {
     const raw = { ...out.raw };
-    if (!BL_ROLE_ACCESS.bl_house.has(role)) delete raw.customer_notification_text;
-    if (!BL_ROLE_ACCESS.bl_no.has(role))    delete raw.factory_notification_text;
+    // BL aliases — three-way isolation
+    if (!BL_ROLE_ACCESS.bl_no.has(role)) {
+      delete raw.blNo;     delete raw.bl_no;
+      delete raw.factory_notification_text;
+    }
+    if (!BL_ROLE_ACCESS.bl_house.has(role)) {
+      delete raw.blHouse;  delete raw.bl_house;
+      delete raw.customer_notification_text;
+    }
+    if (!BL_ROLE_ACCESS.bl_customs.has(role)) {
+      delete raw.blCustoms; delete raw.bl_customs;
+    }
     out.raw = raw;
   }
   return out;
