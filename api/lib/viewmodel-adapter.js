@@ -71,6 +71,7 @@ export const NOTE_VISIBILITY = {
   driver:          ["driver_visible_note"],
   internal:        ["*"],
   admin:           ["*"],
+  super_admin:     ["*"],
   platform_admin:  ["*"],
   boss:            ["*"],
   finance:         ["*"],
