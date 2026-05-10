@@ -165,16 +165,24 @@ async function handlePatch(req, res) {
   return res.status(200).json({ success: true, id });
 }
 
-// ── POST mark_ready: admin sets raw.actDelivery = NOW() on behalf of factory ──
+// ── POST mark_ready: factory delivery confirmation on behalf of ops ───────────
+// Auth: requires 'orders:admin:write' capability (req.user.access[]) or admin role.
+// v3.2 §6.1: writes raw.actDelivery + inserts order_events production_complete.
 async function handleMarkReady(req, res) {
-  if (!req.user || req.user.role !== "admin") {
-    return res.status(403).json({ error: "Forbidden: admin only" });
+  // Capability gate: check req.user.access (JWT field from accounts.raw.access).
+  // Admin role accepted as fallback for backwards-compatibility while access grants roll out.
+  const capabilities = Array.isArray(req.user?.access) ? req.user.access : [];
+  const hasCapability = capabilities.includes("orders:admin:write") || req.user?.role === "admin";
+  if (!req.user || !hasCapability) {
+    return res.status(403).json({ error: "Forbidden: requires orders:admin:write capability or admin role" });
   }
   const id = parseInt(req.query.id || req.body?.id);
   if (!id || isNaN(id)) return res.status(400).json({ error: "id required" });
 
   const pool = getPool();
   const now = new Date().toISOString();
+
+  // 1. Write raw.actDelivery timestamp
   const r = await pool.query(
     `UPDATE orders
         SET raw = jsonb_set(COALESCE(raw, '{}'::jsonb), '{actDelivery}', to_jsonb($1::text), true),
@@ -184,6 +192,21 @@ async function handleMarkReady(req, res) {
     [now, id]
   );
   if (r.rowCount === 0) return res.status(404).json({ error: "order not found" });
+
+  // 2. Insert order_events record (v3.2 §6.1 + Claude H migration)
+  // Non-fatal: log but do not fail the response if order_events write fails.
+  try {
+    await pool.query(
+      `INSERT INTO order_events
+         (order_id, stage_key, source, actor_role, actor_user_id, occurred_at, is_current, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), true, 'completed', NOW())`,
+      [id, "production_complete", "manual", "internal_ops", req.user.uid || req.user.sub || null]
+    );
+  } catch (evtErr) {
+    // Non-fatal: order update succeeded; event write failure is logged only.
+    console.error("[mark_ready] order_events insert failed:", evtErr.message);
+  }
+
   return res.status(200).json({ success: true, actDelivery: now });
 }
 
