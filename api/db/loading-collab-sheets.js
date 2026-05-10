@@ -47,20 +47,41 @@ export default async function handler(req, res) {
     if (!order_id) return sendError(res, 400, "order_id_required");
     const pool = getPool();
     try {
-      const conds = ["order_id = $1"];
+      const conds = ["lcs.order_id = $1"];
       const vals  = [parseInt(order_id)];
-      if (initiated_by === "factory") {
-        conds.push("(loading->>'submitted_by_factory')::boolean = true");
-      } else if (initiated_by === "customer") {
-        conds.push("(loading->>'submitted_by_factory')::boolean = false");
+
+      // [P1-Fix-2] Scope GET by caller company — non-internal callers can only
+      // see sheets belonging to their own JWT company (as factory OR customer).
+      if (!isInternalRole(role)) {
+        const jwtCo = callerCompanyCode(req);
+        if (!jwtCo) return sendError(res, 403, "missing_company_scope");
+        // Must be the factory on the sheet OR the customer on the order.
+        conds.push(
+          "(lcs.factory_code = $" + (vals.length + 1) +
+          " OR o.company_code = $" + (vals.length + 1) + ")"
+        );
+        vals.push(jwtCo);
       }
+
+      if (initiated_by === "factory") {
+        conds.push("(lcs.loading->>'submitted_by_factory')::boolean = true");
+      } else if (initiated_by === "customer") {
+        conds.push("(lcs.loading->>'submitted_by_factory')::boolean = false");
+      }
+
+      // trade_terms & freight_by are stored inside loading JSONB (schema-safe).
       const r = await pool.query(
-        `SELECT id, order_id, order_no, contract_no, factory_code, customer_code,
-                status, submitted_at, trade_terms, freight_by,
-                loading, products, participant_note
-           FROM loading_collab_sheets
+        `SELECT lcs.id, lcs.order_id, lcs.order_no, lcs.contract_no,
+                lcs.factory_code,
+                lcs.loading->>'customer_code' AS customer_code,
+                lcs.status, lcs.submitted_at,
+                lcs.loading->>'trade_terms' AS trade_terms,
+                lcs.loading->>'freight_by'  AS freight_by,
+                lcs.loading, lcs.products, lcs.participant_note
+           FROM loading_collab_sheets lcs
+           JOIN orders o ON o.id = lcs.order_id
           WHERE ${conds.join(" AND ")}
-          ORDER BY submitted_at DESC NULLS LAST
+          ORDER BY lcs.submitted_at DESC NULLS LAST
           LIMIT 20`,
         vals
       );
@@ -125,6 +146,30 @@ export default async function handler(req, res) {
     }
     const o = ord.rows[0];
 
+    // [P1-Fix-3] Verify the order actually belongs to this caller.
+    // JWT company must match the order's company (customer) or factory.
+    if (!isInternalRole(role)) {
+      const jwtCo = callerCompanyCode(req);
+      if (isCustomerSubmit) {
+        // Customer: JWT company must match order's customer company_code
+        if (!jwtCo || (o.company_code && String(o.company_code) !== String(jwtCo))) {
+          await client.query("ROLLBACK");
+          return sendError(res, 403, "order_ownership_mismatch");
+        }
+      } else {
+        // Factory: JWT company must match order's factory_code (if recorded)
+        if (!jwtCo) {
+          await client.query("ROLLBACK");
+          return sendError(res, 403, "missing_company_scope");
+        }
+        const orderFactory = o.raw_factory_code;
+        if (orderFactory && String(orderFactory) !== String(jwtCo)) {
+          await client.query("ROLLBACK");
+          return sendError(res, 403, "order_factory_mismatch");
+        }
+      }
+    }
+
     // Snapshot order.products[] → planned rows
     let planned = [];
     try {
@@ -145,23 +190,26 @@ export default async function handler(req, res) {
       }));
     } catch (_) { planned = []; }
 
+    // [P1-Fix-1] trade_terms, freight_by, customer_code stored inside loading JSONB
+    // so this INSERT works without a schema migration for new columns.
     const loadingPayload = {
       cargo_ready_date:      cargoReadyDate,
       submitted_by_factory:  !isCustomerSubmit,
+      trade_terms:           tradeTerms   || null,
+      freight_by:            freightBy    || null,
+      customer_code:         customerCode || null,
     };
 
     const ins = await client.query(
       `INSERT INTO loading_collab_sheets
          (order_id, order_no, contract_no, factory_code,
           status, submitted_at,
-          products, loading, participant_note,
-          trade_terms, freight_by, customer_code)
-       VALUES ($1,$2,$3,$4,'submitted', NOW(), $5::jsonb, $6::jsonb, $7, $8, $9, $10)
+          products, loading, participant_note)
+       VALUES ($1,$2,$3,$4,'submitted', NOW(), $5::jsonb, $6::jsonb, $7)
        RETURNING *`,
       [
         orderId, o.order_no || null, o.contract_no || null, factoryCode,
         JSON.stringify(planned), JSON.stringify(loadingPayload), note,
-        tradeTerms, freightBy, customerCode,
       ]
     );
     const row = ins.rows[0];
