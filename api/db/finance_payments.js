@@ -131,21 +131,49 @@ export default async function handler(req, res) {
       if (note)           rawPatch.note            = note;
 
       if (existing.rows.length > 0) {
-        // UPDATE — only set fields that are provided
-        const sets = ["updated_at = NOW()"];
+        // UPDATE — only set fields that are provided.
+        //
+        // PATCH placeholder rule (Codex P1-1 fix):
+        //   add(value, sqlFragment) does push-first then derives the placeholder
+        //   from the post-push length. So vals[0] = $1, vals[1] = $2, ...
+        //   The WHERE contract_no placeholder is the LAST one ($N).
+        //
+        // Manual proof (cases that previously failed):
+        //   1. PATCH only slipUrl:
+        //        vals=[slipUrl, contractNo]
+        //        SET tt_slip_url = $1, updated_at = NOW()
+        //        WHERE contract_no = $2  ✓
+        //   2. PATCH slipUrl + paidAmount + bankRef:
+        //        vals=[slipUrl, paidAmount, bankRef, contractNo]
+        //        SET tt_slip_url=$1, paid_amount=$2, bank_ref=$3, updated_at=NOW()
+        //        WHERE contract_no = $4  ✓
+        //   3. PATCH only rawPatch (note/buyer/etc):
+        //        vals=[jsonb, contractNo]
+        //        SET raw = ... $1::jsonb, updated_at = NOW()
+        //        WHERE contract_no = $2  ✓
+        const sets = [];
         const vals = [];
-        const p = () => "$" + (vals.length + 1);
-        if (slipUrl)     { vals.push(slipUrl);     sets.push(`tt_slip_url = ${p()}`); }
-        if (invoiceUrl)  { vals.push(invoiceUrl);  sets.push(`raw = jsonb_set(COALESCE(raw,'{}'), '{invoiceUrl}', ${p()}::jsonb)`); }
-        if (invoiceDate) { vals.push(invoiceDate); sets.push(`raw = jsonb_set(COALESCE(raw,'{}'), '{invoiceDate}', ${p()}::jsonb)`); }
-        if (paidAmount != null) { vals.push(Number(paidAmount)); sets.push(`paid_amount = ${p()}`); }
-        if (amount != null)     { vals.push(Number(amount));     sets.push(`amount = ${p()}`); }
-        if (bankRef)     { vals.push(bankRef);     sets.push(`bank_ref = ${p()}`); }
-        if (currency)    { vals.push(currency);    sets.push(`currency = ${p()}`); }
+        const add = (value, fragment) => {
+          vals.push(value);
+          sets.push(fragment.replace("$$", "$" + vals.length));
+        };
+        if (slipUrl)     add(slipUrl,            `tt_slip_url = $$`);
+        if (invoiceUrl)  add(invoiceUrl,         `raw = jsonb_set(COALESCE(raw,'{}'), '{invoiceUrl}', $$::jsonb)`);
+        if (invoiceDate) add(invoiceDate,        `raw = jsonb_set(COALESCE(raw,'{}'), '{invoiceDate}', $$::jsonb)`);
+        if (paidAmount != null) add(Number(paidAmount), `paid_amount = $$`);
+        if (amount != null)     add(Number(amount),     `amount = $$`);
+        if (bankRef)     add(bankRef,            `bank_ref = $$`);
+        if (currency)    add(currency,           `currency = $$`);
         if (Object.keys(rawPatch).length > 0) {
-          vals.push(JSON.stringify(rawPatch));
-          sets.push(`raw = COALESCE(raw,'{}') || ${p()}::jsonb`);
+          add(JSON.stringify(rawPatch),          `raw = COALESCE(raw,'{}') || $$::jsonb`);
         }
+        sets.push("updated_at = NOW()");
+
+        if (vals.length === 0) {
+          return res.status(400).json({ error: "No fields to update" });
+        }
+
+        // WHERE binding is the final placeholder ($N+1 after all SET bindings)
         vals.push(contractNo);
         const r = await pool.query(
           `UPDATE finance_payments SET ${sets.join(", ")} WHERE contract_no = $${vals.length} RETURNING id`,

@@ -259,13 +259,16 @@ export default async function handler(req, res) {
         paidTotal > 0;
 
       // Build clean payment list
+      // Codex P2 fix: payments[].type fallback now includes the native
+      // pay_type column. Order: raw->>type → raw->>payType → native
+      // pay_type. raw->>type wins to preserve existing UI behaviour.
       const payments = orderPayments.map(p => ({
         id:          p.id,
         paid_date:   p.payment_date || p.paid_date || p.paid_date_raw || p.payment_date_raw || p.created_at,
         this_amount: p.paid_amount != null ? parseFloat(p.paid_amount)
                    : p.received_amount_raw ? parseFloat(p.received_amount_raw)
                    : p.amount != null      ? parseFloat(p.amount) : null,
-        type:        p.type_raw || p.pay_type_raw || null,
+        type:        p.type_raw || p.pay_type_raw || p.pay_type || null,
         bank_ref:    p.bank_ref || p.bank_ref_raw || null,
         direction:   p.direction || null,
         currency:    p.currency  || order.currency || "USD",
