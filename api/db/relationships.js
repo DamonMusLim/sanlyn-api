@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 // ═══════════════════════════════════════════════════════════════
 // /api/db/relationships — graph edges between companies (v2 Network)
@@ -6,9 +7,9 @@ import { getPool, setCors } from "../db.js";
 // GET    ?from=<id>&type=<type>     — list edges from a company
 // GET    ?to=<id>&type=<type>       — list edges into a company
 // GET    ?company=<id>              — list ALL edges touching this company
-// POST   { from, to, type, ... }    — create edge (idempotent on UNIQUE)
-// PATCH  { id, status, volume, ... }— update edge stats / status
-// DELETE ?id=<id>                   — remove (rare; usually status='ended')
+// POST   { from, to, type, ... }    — create edge (idempotent on UNIQUE) — admin only
+// PATCH  { id, status, volume, ... }— update edge stats / status — admin only
+// DELETE ?id=<id>                   — remove (rare; usually status='ended') — admin only
 //
 // Visibility (1-hop default per blueprint v2 decision 3):
 // Caller's company_id is checked against from/to. If neither, returns 403.
@@ -21,9 +22,20 @@ export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
+  // ── Auth: all methods require valid JWT ──
+  if (!requireAuth(req, res)) return;
+
+  // ── Writes (POST/PATCH/DELETE) are admin-only ──
+  if (req.method !== "GET") {
+    var isAdminWrite = req.user && req.user.role === "admin";
+    if (!isAdminWrite) {
+      return res.status(403).json({ success: false, error: "Admin only — relationship writes require admin role." });
+    }
+  }
+
   try {
     var pool = getPool();
-    var callerCompanyId = req.company_id || req.headers["x-company-id"]; // injected by auth middleware
+    var callerCompanyId = req.user && (req.user.company_id || req.user.companyId) || req.headers["x-company-id"];
 
     // ── GET ─────────────────────────────────────────────
     if (req.method === "GET") {

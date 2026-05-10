@@ -4,11 +4,22 @@
 // 只读接口，供客户门户使用
 
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  // ── Auth: require valid JWT ──
+  if (!requireAuth(req, res)) return;
+
+  // ── Tenant scope: non-admin callers are restricted to their own company codes ──
+  const isAdmin = req.user.role === "admin";
+  const userCodes = req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : null);
+  if (!isAdmin && (!userCodes || userCodes.length === 0)) {
+    return res.status(403).json({ success: false, error: "Account scope missing — please log out and log in again." });
+  }
 
   try {
     const pool = getPool();
@@ -22,13 +33,23 @@ export default async function handler(req, res) {
       );
       if (!oRes.rows.length) return res.status(404).json({ success: false, error: "Order not found" });
       const order = oRes.rows[0];
+      // Non-admin: verify caller owns this order
+      if (!isAdmin) {
+        const orderCode = order.company_code || order.raw?.companyCode;
+        if (!userCodes.includes(orderCode)) {
+          return res.status(403).json({ success: false, error: "Access denied — order belongs to a different account." });
+        }
+      }
       const plan = await _findShippingPlan(pool, order);
       return res.status(200).json({ success: true, data: _merge(order, plan) });
     }
 
-    // ── Build company filter ──
+    // ── Build company filter — non-admin: ignore client-supplied codes, use JWT scope ──
     let codeList = [];
-    if (company_codes) {
+    if (!isAdmin) {
+      // Hard-pin to JWT-issued company codes; client-supplied values are ignored
+      codeList = userCodes;
+    } else if (company_codes) {
       try { codeList = JSON.parse(company_codes); } catch { codeList = company_codes.split(","); }
     } else if (company_code) {
       codeList = [company_code];

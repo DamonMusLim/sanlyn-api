@@ -52,9 +52,12 @@ export default async function handler(req, res) {
 
   // ── POST generate ────────────────────────────────────────────
   if (req.method === "POST" && pathSuffix === "generate") {
-    // Admin auth required to issue links
-    const role = roleFromAuth ? roleFromAuth(req) : null;
+    // Admin/internal auth required to issue links — any authenticated non-internal user is forbidden
     if (!requireAuth(req, res)) return;
+    const role = roleFromAuth ? roleFromAuth(req) : (req.user && req.user.role);
+    if (!isInternalRole || !isInternalRole(role)) {
+      return res.status(403).json({ error: "Forbidden — only internal/admin accounts may generate magic links." });
+    }
 
     const b = req.body || {};
     const recipientRole = b.recipient_role;

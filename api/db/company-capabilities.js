@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 // ═══════════════════════════════════════════════════════════════
 // /api/db/company-capabilities — what each company can do (v2 Network)
@@ -6,9 +7,9 @@ import { getPool, setCors } from "../db.js";
 // GET    ?company=<id>                     — list this company's capabilities
 // GET    ?capability=<cap>&published=1     — directory: who can do X
 // GET    ?capability=<cap>&category=<cat>&published=1 — narrowed directory
-// POST   { company_id, capability, ... }   — upsert capability
-// PATCH  { company_id, capability, ... }   — same as POST
-// DELETE ?company=<id>&capability=<cap>    — remove capability
+// POST   { company_id, capability, ... }   — upsert capability (admin only)
+// PATCH  { company_id, capability, ... }   — same as POST (admin only)
+// DELETE ?company=<id>&capability=<cap>    — remove capability (admin only)
 // ═══════════════════════════════════════════════════════════════
 
 var VALID_CAPABILITIES = [
@@ -19,6 +20,17 @@ var VALID_CAPABILITIES = [
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  // ── Auth: all methods require valid JWT ──
+  if (!requireAuth(req, res)) return;
+
+  // ── Writes (POST/PATCH/DELETE) are admin-only ──
+  if (req.method !== "GET") {
+    var isAdmin = req.user && req.user.role === "admin";
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, error: "Admin only — capability writes require admin role." });
+    }
+  }
 
   try {
     var pool = getPool();
