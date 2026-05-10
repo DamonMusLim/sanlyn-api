@@ -74,14 +74,23 @@ export default async function handler(req, res) {
 
       const r = await pool.query(query, params);
 
-      // ── Summary totals (AR / AP split) ────────────────────────
-      let total_ar = 0, total_ap = 0, unmatched = 0;
+      // ── Summary totals — split per currency to avoid CNY+USD mixing ─
+      // by_currency[ccy] = { ar, ap }
+      const by_currency = {};
+      let unmatched = 0;
       r.rows.forEach(row => {
         const amt = parseFloat(row.amount) || 0;
+        const ccy = (row.currency || "UNKNOWN").toUpperCase();
         const dc  = row.direction_canonical;
-        if (dc === "AR") total_ar += amt;
-        else if (dc === "AP") total_ap += amt;
+        if (!by_currency[ccy]) by_currency[ccy] = { ar: 0, ap: 0 };
+        if (dc === "AR") by_currency[ccy].ar += amt;
+        else if (dc === "AP") by_currency[ccy].ap += amt;
         if (!row.contract_no && !row.order_no) unmatched++;
+      });
+      // Round to 2dp
+      Object.keys(by_currency).forEach(c => {
+        by_currency[c].ar = Math.round(by_currency[c].ar * 100) / 100;
+        by_currency[c].ap = Math.round(by_currency[c].ap * 100) / 100;
       });
 
       return res.status(200).json({
@@ -89,8 +98,7 @@ export default async function handler(req, res) {
         data:    r.rows,
         count:   r.rowCount,
         summary: {
-          total_ar:   Math.round(total_ar  * 100) / 100,
-          total_ap:   Math.round(total_ap  * 100) / 100,
+          by_currency, // canonical — { CNY: {ar, ap}, USD: {ar, ap}, ... }
           unmatched,
         },
       });
