@@ -152,6 +152,25 @@ export default async function handler(req, res) {
       catSummary = catQ.rows;
     }
 
+    // ── P0: strip internal fields for non-internal roles (v3.2 §8) ──────────
+    // "价格/利润字段永隐外部" — factory_price, profit, sale_price_cny etc.
+    // must never reach portal / external user responses.
+    const PRICE_INTERNAL_FIELDS = [
+      "factory_price", "profit", "sale_price_cny",
+      "vat_rate", "rebate_rate", "sanlyn_price",
+      "bg_bx", "factory_name", "factory_city",
+      "issuing_company", "jdy_id", "declaration_amount",
+    ];
+    if (req.user && !INTERNAL_ROLES.includes(req.user.role)) {
+      for (const row of result.rows) {
+        for (const f of PRICE_INTERNAL_FIELDS) delete row[f];
+        // Also strip from raw JSONB if present
+        if (row.raw && typeof row.raw === "object") {
+          for (const f of PRICE_INTERNAL_FIELDS) delete row.raw[f];
+        }
+      }
+    }
+
     return res.status(200).json({
       data: result.rows,
       count: result.rows.length,

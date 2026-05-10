@@ -386,6 +386,14 @@ mount("/api/db/ai-operations", () => import("./api/db/ai-operations.js"));
 mount("/api/db/ai-summaries",  () => import("./api/db/ai-summaries.js"));
 mount("/api/db/notifications", () => import("./api/db/notifications.js"));
 
+// ── v3.2 §6 — order_events / order_tasks / containers ────────────────────
+mount("/api/db/migrate-order-events", () => import("./api/db/migrate-order-events.js"));
+mount("/api/db/migrate-order-tasks",  () => import("./api/db/migrate-order-tasks.js"));
+mount("/api/db/migrate-containers",   () => import("./api/db/migrate-containers.js"));
+mount("/api/db/order-events",  () => import("./api/db/order-events.js"));
+mount("/api/db/order-tasks",   () => import("./api/db/order-tasks.js"));
+mount("/api/db/containers",    () => import("./api/db/containers.js"));
+
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
 app.get("/health", (req, res) => res.json({ status: "ok" }));
