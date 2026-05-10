@@ -9,14 +9,12 @@ export default async function handler(req, res) {
 
   const pool = getPool();
 
-  // ── GET /api/db/payments ──────────────────────────────────────
+  // ── GET /api/db/finance_payments ─────────────────────────────
   if (req.method === "GET") {
     try {
-      let { company_code, company_codes, limit = 200 } = req.query;
+      let { company_code, company_codes, direction, status, limit = 500 } = req.query;
       // ── Tenant scoping (fail-closed) ──
       // Non-admin users can ONLY see their own company's payment records.
-      // If the JWT has no role or no companyCodes, refuse — forces re-login
-      // so the new JWT picks up the proper scope.
       if (req.user && req.user.role !== "admin") {
         const userCodes = req.user.companyCodes
           || (req.user.companyCode ? [req.user.companyCode] : null);
@@ -26,7 +24,23 @@ export default async function handler(req, res) {
         company_codes = JSON.stringify(userCodes);
         company_code  = undefined;
       }
-      let query = "SELECT * FROM finance_payments", params = [], conds = [];
+
+      // SELECT with field aliases so the frontend receives consistent keys:
+      //   payment_no   = _id  (natural surrogate for display)
+      //   payment_type = pay_type
+      //   direction_canonical = normalised AR/AP label for UI
+      let query = `
+        SELECT *,
+          _id                                          AS payment_no,
+          COALESCE(pay_type, type)                     AS payment_type,
+          CASE
+            WHEN direction IN ('AR','收款','in') THEN 'AR'
+            WHEN direction IN ('AP','付款','out') THEN 'AP'
+            ELSE COALESCE(direction, '')
+          END                                          AS direction_canonical
+        FROM finance_payments
+      `;
+      let params = [], conds = [];
 
       if (company_codes) {
         let codes; try { codes = JSON.parse(company_codes); } catch { codes = company_codes.split(","); }
@@ -39,12 +53,47 @@ export default async function handler(req, res) {
         conds.push(`raw->>'companyCode' = $${params.length}`);
       }
 
+      // Optional direction filter — accepts canonical (AR/AP) or legacy Chinese
+      if (direction) {
+        const dir = direction.toUpperCase();
+        if (dir === "AR") {
+          conds.push(`(direction IN ('AR','收款','in') OR direction IS NULL OR direction = '')`);
+        } else if (dir === "AP") {
+          conds.push(`direction IN ('AP','付款','out')`);
+        } else {
+          params.push(direction);
+          conds.push(`direction = $${params.length}`);
+        }
+      }
+
+      if (status) { params.push(status); conds.push(`status = $${params.length}`); }
+
       if (conds.length) query += " WHERE " + conds.join(" AND ");
-      query += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+      query += ` ORDER BY COALESCE(payment_date, paid_date, created_at) DESC LIMIT $${params.length + 1}`;
       params.push(Number(limit));
 
       const r = await pool.query(query, params);
-      return res.status(200).json({ payments: r.rows });
+
+      // ── Summary totals (AR / AP split) ────────────────────────
+      let total_ar = 0, total_ap = 0, unmatched = 0;
+      r.rows.forEach(row => {
+        const amt = parseFloat(row.amount) || 0;
+        const dc  = row.direction_canonical;
+        if (dc === "AR") total_ar += amt;
+        else if (dc === "AP") total_ap += amt;
+        if (!row.contract_no && !row.order_no) unmatched++;
+      });
+
+      return res.status(200).json({
+        success: true,
+        data:    r.rows,
+        count:   r.rowCount,
+        summary: {
+          total_ar:   Math.round(total_ar  * 100) / 100,
+          total_ap:   Math.round(total_ap  * 100) / 100,
+          unmatched,
+        },
+      });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
