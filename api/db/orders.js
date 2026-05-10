@@ -165,13 +165,43 @@ async function handlePatch(req, res) {
   return res.status(200).json({ success: true, id });
 }
 
+// ── POST mark_ready: admin sets raw.actDelivery = NOW() on behalf of factory ──
+async function handleMarkReady(req, res) {
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({ error: "Forbidden: admin only" });
+  }
+  const id = parseInt(req.query.id || req.body?.id);
+  if (!id || isNaN(id)) return res.status(400).json({ error: "id required" });
+
+  const pool = getPool();
+  const now = new Date().toISOString();
+  const r = await pool.query(
+    `UPDATE orders
+        SET raw = jsonb_set(COALESCE(raw, '{}'::jsonb), '{actDelivery}', to_jsonb($1::text), true),
+            updated_at = NOW()
+      WHERE id = $2
+      RETURNING id`,
+    [now, id]
+  );
+  if (r.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  return res.status(200).json({ success: true, actDelivery: now });
+}
+
 export default async function handler(req, res) {
-  setCors(req, res, "GET, PATCH, OPTIONS");
+  setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if (req.method === "PATCH") {
     try { return await handlePatch(req, res); }
     catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  }
+  if (req.method === "POST") {
+    const action = req.query.action;
+    if (action === "mark_ready") {
+      try { return await handleMarkReady(req, res); }
+      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
+    return res.status(400).json({ error: "unknown action" });
   }
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {

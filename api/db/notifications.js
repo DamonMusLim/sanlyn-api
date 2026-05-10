@@ -6,6 +6,7 @@
 // PATCH ?action=read|pin|unpin|archive&id=N
 //
 import { getPool, setCors } from "../db.js";
+import { isInternalRole, roleFromAuth } from "../lib/viewmodel-adapter.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
@@ -14,6 +15,15 @@ export default async function handler(req, res) {
   const pool = getPool();
   const action = req.query?.action || "list";
   const userId = req.user?.username || "anonymous";
+
+  // POST (create notification) is internal-only — customers/factories cannot inject.
+  // GET and PATCH are scoped per-user via userId so all authenticated users may call them.
+  if (req.method === "POST") {
+    const role = roleFromAuth(req);
+    if (!isInternalRole(role)) {
+      return res.status(403).json({ error: "Forbidden: internal access only" });
+    }
+  }
 
   try {
     // ─── GET list ────────────────────────────────────────
@@ -24,15 +34,16 @@ export default async function handler(req, res) {
       const scopeId= req.query.scope_id;
       const limit  = Math.min(parseInt(req.query.limit) || 50, 200);
 
+      // userId always first param so SELECT computed columns reference it safely via $1
+      const params = [userId];
+      const userIdx = 1;
+
       const conds = [];
-      const params = [];
       if (filter === "unread") {
         conds.push("archived_at IS NULL");
-        conds.push("NOT (read_by ? $" + (params.length + 1) + ")");
-        params.push(userId);
+        conds.push("NOT jsonb_exists(read_by, $" + userIdx + ")");
       } else if (filter === "pinned") {
-        params.push(userId);
-        conds.push("$" + params.length + " = ANY(pinned_by)");
+        conds.push("$" + userIdx + " = ANY(COALESCE(pinned_by, ARRAY[]::TEXT[]))");
       } else if (filter === "archived") {
         conds.push("archived_at IS NOT NULL");
       } else {
@@ -50,8 +61,8 @@ export default async function handler(req, res) {
                read_by, pinned_by, archived_at,
                related_op, related_summary, related_task,
                created_at,
-               (read_by ? '${userId.replace(/'/g, "''")}') AS is_read,
-               ('${userId.replace(/'/g, "''")}' = ANY(COALESCE(pinned_by, ARRAY[]::TEXT[]))) AS is_pinned
+               jsonb_exists(read_by, $${userIdx}) AS is_read,
+               ($${userIdx} = ANY(COALESCE(pinned_by, ARRAY[]::TEXT[]))) AS is_pinned
         FROM notifications
         ${whereSql}
         ORDER BY created_at DESC
@@ -59,10 +70,10 @@ export default async function handler(req, res) {
       `;
       const r = await pool.query(sql, params);
 
-      // unread count
+      // unread count — jsonb_exists avoids string interpolation
       const c = await pool.query(
         `SELECT COUNT(*) AS unread FROM notifications
-         WHERE archived_at IS NULL AND NOT (read_by ? $1)`,
+         WHERE archived_at IS NULL AND NOT jsonb_exists(read_by, $1)`,
         [userId]
       );
 
@@ -80,9 +91,9 @@ export default async function handler(req, res) {
       if (!id) return res.status(400).json({ error: "id required" });
       const r = await pool.query("SELECT * FROM notifications WHERE id = $1", [id]);
       if (r.rows.length === 0) return res.status(404).json({ error: "not found" });
-      // mark read
+      // mark read — COALESCE guards against NULL read_by
       await pool.query(
-        `UPDATE notifications SET read_by = read_by || jsonb_build_object($2, NOW()::TEXT)
+        `UPDATE notifications SET read_by = COALESCE(read_by, '{}'::jsonb) || jsonb_build_object($2, NOW()::TEXT)
          WHERE id = $1`,
         [id, userId]
       );
@@ -119,7 +130,7 @@ export default async function handler(req, res) {
 
       if (action === "read") {
         await pool.query(
-          `UPDATE notifications SET read_by = read_by || jsonb_build_object($2, NOW()::TEXT)
+          `UPDATE notifications SET read_by = COALESCE(read_by, '{}'::jsonb) || jsonb_build_object($2, NOW()::TEXT)
            WHERE id = $1`,
           [id, userId]
         );

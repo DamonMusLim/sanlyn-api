@@ -7,10 +7,18 @@
 // POST                                        创建（手工/AI 写入）
 //
 import { getPool, setCors } from "../db.js";
+import { isInternalRole, roleFromAuth } from "../lib/viewmodel-adapter.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  // AI summaries contain internal operational data — internal roles only.
+  // Global authMiddleware guarantees req.user is set (no anonymous reach).
+  const role = roleFromAuth(req);
+  if (!isInternalRole(role)) {
+    return res.status(403).json({ error: "Forbidden: internal access only" });
+  }
 
   const pool = getPool();
   const action = req.query?.action;
@@ -192,8 +200,8 @@ export default async function handler(req, res) {
     // ─── POST 创建（手动/AI 写入）─────────────────────────
     if (req.method === "POST") {
       const b = req.body || {};
-      if (!b.scope || !b.summary_type) {
-        return res.status(400).json({ error: "scope and summary_type required" });
+      if (!b.scope || !b.summary_type || !b.period_start || !b.period_end) {
+        return res.status(400).json({ error: "scope, summary_type, period_start, period_end required" });
       }
       const r = await pool.query(`
         INSERT INTO ai_summaries
@@ -213,6 +221,6 @@ export default async function handler(req, res) {
 
     return res.status(400).json({ error: "unknown action" });
   } catch (err) {
-    return res.status(500).json({ error: err.message, stack: err.stack });
+    return res.status(500).json({ error: err.message });
   }
 }
