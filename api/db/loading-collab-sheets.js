@@ -1,19 +1,19 @@
 // POST /api/db/loading-collab-sheets
 //
-// Factory-driven "Submit Cargo Ready" entry point.
-// Creates a loading_collab_sheets row with status='submitted' (skipping
-// 'assigned' / 'in_progress'), so the sheet enters CollabHub Pending Review
-// the moment the factory hits the button.
+// Bidirectional "Submit Cargo Ready / Request Shipment" entry point.
+// Supports two initiator types:
+//   1. Factory-side: body.factory_code set, body.cargo_ready_date required
+//   2. Customer-side: body.customer_code set, cargo_ready_date optional
 //
-// Body: { order_id, factory_code, cargo_ready_date, note }
+// Body: { order_id, factory_code?, customer_code?, cargo_ready_date?,
+//         trade_terms?, freight_by?, note? }
 //
-// Auth: factory JWT (or any internal role for ops). Non-internal callers must
-// have JWT companyCode === body.factory_code — defense-in-depth so a Factory A
-// token cannot submit for Factory B.
+// Auth:
+//   · Internal roles: always allowed
+//   · Factory JWT: JWT companyCode must match body.factory_code
+//   · Customer JWT: JWT companyCode must match body.customer_code
 //
-// Side effect: locates the matching shipping_plans row (via order's
-// contract_no / id) and marks raw->collab_sheet_status='submitted' so
-// downstream UI can show the cargo-ready signal without a JOIN to this table.
+// Side effect: marks matching shipping_plans raw->collab_sheet_status='submitted'
 import { getPool, setCors } from "../db.js";
 import { isInternalRole, roleFromAuth, sendError } from "../lib/viewmodel-adapter.js";
 
@@ -21,7 +21,6 @@ function callerCompanyCode(req) {
   if (req && req.user && (req.user.companyCode || req.user.company_code)) {
     return req.user.companyCode || req.user.company_code;
   }
-  // Fallback: parse JWT bearer payload (mirrors loading-sheets.js best-effort).
   try {
     const auth = (req.headers && req.headers.authorization) || "";
     const token = auth.replace(/^Bearer\s+/i, "");
@@ -36,28 +35,72 @@ function callerCompanyCode(req) {
 }
 
 export default async function handler(req, res) {
-  setCors(req, res, "POST, OPTIONS");
+  setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") return sendError(res, 405, "method_not_allowed");
 
   const role = roleFromAuth(req);
   if (role === "anonymous") return sendError(res, 401, "auth_required");
 
+  // ── GET: fetch collab sheets for an order ───────────────────────
+  if (req.method === "GET") {
+    const { order_id, initiated_by } = req.query;
+    if (!order_id) return sendError(res, 400, "order_id_required");
+    const pool = getPool();
+    try {
+      const conds = ["order_id = $1"];
+      const vals  = [parseInt(order_id)];
+      if (initiated_by === "factory") {
+        conds.push("(loading->>'submitted_by_factory')::boolean = true");
+      } else if (initiated_by === "customer") {
+        conds.push("(loading->>'submitted_by_factory')::boolean = false");
+      }
+      const r = await pool.query(
+        `SELECT id, order_id, order_no, contract_no, factory_code, customer_code,
+                status, submitted_at, trade_terms, freight_by,
+                loading, products, participant_note
+           FROM loading_collab_sheets
+          WHERE ${conds.join(" AND ")}
+          ORDER BY submitted_at DESC NULLS LAST
+          LIMIT 20`,
+        vals
+      );
+      return res.json({ success: true, data: r.rows });
+    } catch (err) {
+      return sendError(res, 500, "internal_error", err.message);
+    }
+  }
+
+  if (req.method !== "POST") return sendError(res, 405, "method_not_allowed");
+
   const body = req.body || {};
-  const orderId = parseInt(body.order_id);
-  const factoryCode = body.factory_code && String(body.factory_code).trim();
+  const orderId      = parseInt(body.order_id);
+  const factoryCode  = body.factory_code  ? String(body.factory_code).trim()  : null;
+  const customerCode = body.customer_code ? String(body.customer_code).trim() : null;
   const cargoReadyDate = body.cargo_ready_date || null;
-  const note = body.note || null;
+  const tradeTerms   = body.trade_terms   ? String(body.trade_terms).trim()   : null;
+  const freightBy    = body.freight_by    ? String(body.freight_by).trim()    : null;
+  const note         = body.note          || null;
 
   if (!orderId || isNaN(orderId)) return sendError(res, 400, "order_id_required");
-  if (!factoryCode) return sendError(res, 400, "factory_code_required");
-  if (!cargoReadyDate) return sendError(res, 400, "cargo_ready_date_required");
+  if (!factoryCode && !customerCode)  return sendError(res, 400, "factory_code_or_customer_code_required");
 
-  // Factory scope guard — JWT companyCode must match body factory_code.
+  // Factory path: cargo_ready_date required
+  const isCustomerSubmit = Boolean(customerCode && !factoryCode);
+  if (!isCustomerSubmit && !cargoReadyDate) {
+    return sendError(res, 400, "cargo_ready_date_required");
+  }
+
+  // Scope guard — JWT companyCode must match the submitter field
   if (!isInternalRole(role)) {
     const jwtCo = callerCompanyCode(req);
-    if (!jwtCo || String(jwtCo) !== factoryCode) {
-      return sendError(res, 403, "factory_scope_mismatch");
+    if (isCustomerSubmit) {
+      if (!jwtCo || String(jwtCo) !== customerCode) {
+        return sendError(res, 403, "customer_scope_mismatch");
+      }
+    } else {
+      if (!jwtCo || String(jwtCo) !== factoryCode) {
+        return sendError(res, 403, "factory_scope_mismatch");
+      }
     }
   }
 
@@ -67,9 +110,13 @@ export default async function handler(req, res) {
   try {
     await client.query("BEGIN");
 
-    // Pull order context for the products snapshot.
+    // Pull order context — include company_code (customer) + raw (factory contact).
     const ord = await client.query(
-      "SELECT id, order_no, contract_no, products FROM orders WHERE id = $1",
+      `SELECT id, order_no, contract_no, products,
+              company_code, raw->>'factory_code' AS raw_factory_code,
+              raw->>'factory_wechat' AS factory_wechat,
+              raw->>'customer_wechat' AS customer_wechat
+         FROM orders WHERE id = $1`,
       [orderId]
     );
     if (!ord.rows.length) {
@@ -78,7 +125,7 @@ export default async function handler(req, res) {
     }
     const o = ord.rows[0];
 
-    // Snapshot order.products[] → planned/actual rows (matches loading-sheets.js shape).
+    // Snapshot order.products[] → planned rows
     let planned = [];
     try {
       const prods = Array.isArray(o.products)
@@ -99,32 +146,33 @@ export default async function handler(req, res) {
     } catch (_) { planned = []; }
 
     const loadingPayload = {
-      cargo_ready_date: cargoReadyDate,
-      submitted_by_factory: true,
+      cargo_ready_date:      cargoReadyDate,
+      submitted_by_factory:  !isCustomerSubmit,
     };
 
     const ins = await client.query(
       `INSERT INTO loading_collab_sheets
          (order_id, order_no, contract_no, factory_code,
           status, submitted_at,
-          products, loading, participant_note)
-       VALUES ($1,$2,$3,$4,'submitted', NOW(), $5::jsonb, $6::jsonb, $7)
+          products, loading, participant_note,
+          trade_terms, freight_by, customer_code)
+       VALUES ($1,$2,$3,$4,'submitted', NOW(), $5::jsonb, $6::jsonb, $7, $8, $9, $10)
        RETURNING *`,
       [
         orderId, o.order_no || null, o.contract_no || null, factoryCode,
         JSON.stringify(planned), JSON.stringify(loadingPayload), note,
+        tradeTerms, freightBy, customerCode,
       ]
     );
     const row = ins.rows[0];
 
-    // Mark the matching shipping_plan with collab_sheet_status='submitted'.
-    // Match by order_contract_nos (text[]) containing this order's contract_no.
-    // Stored in raw JSONB to avoid a schema migration here.
+    // Mark the matching shipping_plan — update BOTH the actual column and raw JSONB.
     let planUpdated = 0;
     if (o.contract_no) {
       const upd = await client.query(
         `UPDATE shipping_plans
-            SET raw = jsonb_set(COALESCE(raw, '{}'::jsonb),
+            SET collab_sheet_status = 'submitted',
+                raw = jsonb_set(COALESCE(raw, '{}'::jsonb),
                                 '{collab_sheet_status}', '"submitted"', true),
                 updated_at = NOW()
           WHERE order_contract_nos ILIKE '%' || $1 || '%'
@@ -135,6 +183,43 @@ export default async function handler(req, res) {
     }
 
     await client.query("COMMIT");
+
+    // ── QQ friend-request: notify counterparty via WeChat webhook ──
+    // Factory submitted → notify customer; customer submitted → notify factory.
+    // Fire-and-forget after commit so it never blocks the response.
+    const webhookUrl = process.env.WECOM_WEBHOOK_URL;
+    if (webhookUrl) {
+      const orderTag = `\`${o.order_no || o.contract_no || orderId}\``;
+      let msgLines;
+      if (isCustomerSubmit) {
+        msgLines = [
+          "🛒 **客户已发起出货请求**",
+          `**订单**: ${orderTag}`,
+          tradeTerms ? `**贸易条款**: ${tradeTerms}` : null,
+          freightBy  ? `**运费安排**: ${freightBy}`   : null,
+          note       ? `**备注**: ${note}`            : null,
+          "_请工厂登录 Sanlyn 确认货好日期_",
+        ];
+      } else {
+        msgLines = [
+          "📦 **工厂已提交货好通知**",
+          `**订单**: ${orderTag}`,
+          cargoReadyDate ? `**货好日期**: ${cargoReadyDate}` : null,
+          tradeTerms     ? `**贸易条款**: ${tradeTerms}`     : null,
+          note           ? `**备注**: ${note}`               : null,
+          "_请客户登录 Sanlyn 确认并安排出货_",
+        ];
+      }
+      fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          msgtype: "markdown",
+          markdown: { content: msgLines.filter(Boolean).join("\n") },
+        }),
+      }).catch(e => console.error("[loading-collab-sheets] wecom notify failed:", e.message));
+    }
+
     return res.status(201).json({
       success: true,
       data: row,
