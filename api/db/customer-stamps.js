@@ -16,8 +16,11 @@ export default async function handler(req, res) {
 
   const pool = getPool();
   const isAdmin = req.user.role === "admin";
-  // Derive the canonical username from JWT; ignore any client-supplied username for scope checks
+  // Derive canonical username from JWT — fail-closed if absent.
   const callerUsername = req.user.sub || req.user.account || req.user.username || null;
+  if (!callerUsername) {
+    return res.status(403).json({ error: "Account identity missing — please log in again." });
+  }
 
   try {
     // ── ensure table exists ──
@@ -35,8 +38,16 @@ export default async function handler(req, res) {
 
     // ── GET: load stamps — non-admin sees only their own ──
     if (req.method === 'GET') {
-      // Admin may pass ?username= to query any user; non-admin is locked to JWT identity
-      const targetUsername = isAdmin ? (req.query.username || callerUsername) : callerUsername;
+      // Admin may pass ?username= to query any user; non-admin is locked to JWT identity.
+      // Admin username param: validate type + length to prevent log pollution.
+      let targetUsername = callerUsername;
+      if (isAdmin && req.query.username) {
+        const q = String(req.query.username).trim();
+        if (q.length === 0 || q.length > 128) {
+          return res.status(400).json({ error: "username must be 1–128 characters" });
+        }
+        targetUsername = q;
+      }
       if (!targetUsername) {
         return res.status(400).json({ error: 'username required' });
       }

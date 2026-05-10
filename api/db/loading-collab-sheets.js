@@ -50,16 +50,17 @@ export default async function handler(req, res) {
       const conds = ["lcs.order_id = $1"];
       const vals  = [parseInt(order_id)];
 
-      // [P1-Fix-2] Scope GET by caller company — non-internal callers can only
-      // see sheets belonging to their own JWT company (as factory OR customer).
+      // [P1-Fix-2] Scope GET by JWT role — no OR mixing between customer/factory lenses.
       if (!isInternalRole(role)) {
         const jwtCo = callerCompanyCode(req);
         if (!jwtCo) return sendError(res, 403, "missing_company_scope");
-        // Must be the factory on the sheet OR the customer on the order.
-        conds.push(
-          "(lcs.factory_code = $" + (vals.length + 1) +
-          " OR o.company_code = $" + (vals.length + 1) + ")"
-        );
+        if (role === "customer") {
+          // Customer: can only see sheets for orders they own (canonical company_code col)
+          conds.push("o.company_code = $" + (vals.length + 1));
+        } else {
+          // Factory / supplier: can only see sheets where they are the factory
+          conds.push("lcs.factory_code = $" + (vals.length + 1));
+        }
         vals.push(jwtCo);
       }
 
@@ -94,35 +95,38 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return sendError(res, 405, "method_not_allowed");
 
   const body = req.body || {};
-  const orderId      = parseInt(body.order_id);
-  const factoryCode  = body.factory_code  ? String(body.factory_code).trim()  : null;
-  const customerCode = body.customer_code ? String(body.customer_code).trim() : null;
+  const orderId        = parseInt(body.order_id);
+  const factoryCode    = body.factory_code  ? String(body.factory_code).trim()  : null;
   const cargoReadyDate = body.cargo_ready_date || null;
-  const tradeTerms   = body.trade_terms   ? String(body.trade_terms).trim()   : null;
-  const freightBy    = body.freight_by    ? String(body.freight_by).trim()    : null;
-  const note         = body.note          || null;
+  const note           = body.note || null;
+
+  // Validated enums — only allowlisted values accepted, never trust raw body strings
+  const TRADE_TERMS_ALLOWED = new Set(["EXW","FOB","CIF","CFR","CNF","DDP","DAP","DDU","FCA","CPT","CIP"]);
+  const FREIGHT_BY_ALLOWED  = new Set(["seller","buyer","sanlyn","tbd"]);
+  const tradeTermsRaw = body.trade_terms ? String(body.trade_terms).trim().toUpperCase() : null;
+  const freightByRaw  = body.freight_by  ? String(body.freight_by).trim().toLowerCase()  : null;
+  const tradeTerms = tradeTermsRaw && TRADE_TERMS_ALLOWED.has(tradeTermsRaw) ? tradeTermsRaw : null;
+  const freightBy  = freightByRaw  && FREIGHT_BY_ALLOWED.has(freightByRaw)   ? freightByRaw  : null;
 
   if (!orderId || isNaN(orderId)) return sendError(res, 400, "order_id_required");
-  if (!factoryCode && !customerCode)  return sendError(res, 400, "factory_code_or_customer_code_required");
+  if (!factoryCode) return sendError(res, 400, "factory_code_required");
 
-  // Factory path: cargo_ready_date required
-  const isCustomerSubmit = Boolean(customerCode && !factoryCode);
+  // Submit type is determined by JWT role — NOT by which body fields are present.
+  // customer role → customer submit lens; factory/internal → factory submit lens.
+  const isCustomerSubmit = role === "customer";
   if (!isCustomerSubmit && !cargoReadyDate) {
     return sendError(res, 400, "cargo_ready_date_required");
   }
 
-  // Scope guard — JWT companyCode must match the submitter field
+  // Scope guard — JWT companyCode must match body.factory_code.
+  // customer_code is NOT taken from body; it is derived from orders.company_code server-side.
   if (!isInternalRole(role)) {
     const jwtCo = callerCompanyCode(req);
-    if (isCustomerSubmit) {
-      if (!jwtCo || String(jwtCo) !== customerCode) {
-        return sendError(res, 403, "customer_scope_mismatch");
-      }
-    } else {
-      if (!jwtCo || String(jwtCo) !== factoryCode) {
-        return sendError(res, 403, "factory_scope_mismatch");
-      }
+    if (!jwtCo) return sendError(res, 403, "missing_company_scope");
+    if (!isCustomerSubmit) {
+      if (String(jwtCo) !== factoryCode) return sendError(res, 403, "factory_scope_mismatch");
     }
+    // customer submit: company ownership is verified post-order-fetch (Fix-3 below)
   }
 
   const pool = getPool();
@@ -146,24 +150,28 @@ export default async function handler(req, res) {
     }
     const o = ord.rows[0];
 
-    // [P1-Fix-3] Verify the order actually belongs to this caller.
-    // JWT company must match the order's company (customer) or factory.
+    // [P1-Fix-3] Verify order ownership against canonical DB columns only.
+    // raw_factory_code is NOT used for auth — it is an imported/unverified field.
     if (!isInternalRole(role)) {
       const jwtCo = callerCompanyCode(req);
+      if (!jwtCo) {
+        await client.query("ROLLBACK");
+        return sendError(res, 403, "missing_company_scope");
+      }
       if (isCustomerSubmit) {
-        // Customer: JWT company must match order's customer company_code
-        if (!jwtCo || (o.company_code && String(o.company_code) !== String(jwtCo))) {
+        // Customer: JWT company must match orders.company_code (canonical column).
+        // Fail-closed: if company_code is null/empty, deny.
+        const orderCustomer = o.company_code ? String(o.company_code).trim().toUpperCase() : null;
+        if (!orderCustomer || orderCustomer !== String(jwtCo).toUpperCase()) {
           await client.query("ROLLBACK");
           return sendError(res, 403, "order_ownership_mismatch");
         }
       } else {
-        // Factory: JWT company must match order's factory_code (if recorded)
-        if (!jwtCo) {
-          await client.query("ROLLBACK");
-          return sendError(res, 403, "missing_company_scope");
-        }
-        const orderFactory = o.raw_factory_code;
-        if (orderFactory && String(orderFactory) !== String(jwtCo)) {
+        // Factory: JWT company must match body.factory_code (already scope-guarded above).
+        // Sanity-check: factory_code on the order must match if the column exists.
+        // We do NOT read from raw — if factory_code col is empty we allow (backward compat)
+        // but log for audit.
+        if (o.factory_code && String(o.factory_code).trim().toUpperCase() !== String(jwtCo).toUpperCase()) {
           await client.query("ROLLBACK");
           return sendError(res, 403, "order_factory_mismatch");
         }
@@ -190,14 +198,16 @@ export default async function handler(req, res) {
       }));
     } catch (_) { planned = []; }
 
-    // [P1-Fix-1] trade_terms, freight_by, customer_code stored inside loading JSONB
-    // so this INSERT works without a schema migration for new columns.
+    // [P1-Fix-1] trade_terms, freight_by stored inside loading JSONB (schema-safe).
+    // customer_code is derived from orders.company_code (server-side canonical),
+    // NOT from the request body — body-supplied customer_code is never trusted for auth.
     const loadingPayload = {
       cargo_ready_date:      cargoReadyDate,
       submitted_by_factory:  !isCustomerSubmit,
-      trade_terms:           tradeTerms   || null,
-      freight_by:            freightBy    || null,
-      customer_code:         customerCode || null,
+      trade_terms:           tradeTerms || null,
+      freight_by:            freightBy  || null,
+      // customer_code stored here for display only — auth always uses orders.company_code
+      customer_code_display: o.company_code || null,
     };
 
     const ins = await client.query(

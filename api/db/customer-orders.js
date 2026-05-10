@@ -6,6 +6,17 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
+// ── Normalize company codes from JWT (case, whitespace, dedup, length guard) ──
+function normalizeCompanyCodes(raw) {
+  if (!raw) return [];
+  const arr = Array.isArray(raw) ? raw : String(raw).split(",");
+  return [...new Set(
+    arr
+      .map(c => String(c).trim().toUpperCase())
+      .filter(c => c.length > 0 && c.length <= 64)
+  )];
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -16,8 +27,11 @@ export default async function handler(req, res) {
 
   // ── Tenant scope: non-admin callers are restricted to their own company codes ──
   const isAdmin = req.user.role === "admin";
-  const userCodes = req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : null);
-  if (!isAdmin && (!userCodes || userCodes.length === 0)) {
+  // Normalize: handle array, comma-string, single value; uppercase; dedup; length-cap
+  const userCodes = normalizeCompanyCodes(
+    req.user.companyCodes ?? req.user.companyCode ?? null
+  );
+  if (!isAdmin && userCodes.length === 0) {
     return res.status(403).json({ success: false, error: "Account scope missing — please log out and log in again." });
   }
 
@@ -33,10 +47,13 @@ export default async function handler(req, res) {
       );
       if (!oRes.rows.length) return res.status(404).json({ success: false, error: "Order not found" });
       const order = oRes.rows[0];
-      // Non-admin: verify caller owns this order
+      // Non-admin: verify caller owns this order.
+      // Fail-closed: if company_code is empty, deny access — do NOT fallback to raw.
       if (!isAdmin) {
-        const orderCode = order.company_code || order.raw?.companyCode;
-        if (!userCodes.includes(orderCode)) {
+        const orderCode = order.company_code
+          ? String(order.company_code).trim().toUpperCase()
+          : null;
+        if (!orderCode || !userCodes.includes(orderCode)) {
           return res.status(403).json({ success: false, error: "Access denied — order belongs to a different account." });
         }
       }
@@ -60,10 +77,12 @@ export default async function handler(req, res) {
     }
 
     // ── Fetch orders ──
+    // Permission filter uses only the canonical company_code column.
+    // raw->>'companyCode' is legacy/import data and must NOT participate in auth decisions.
     const ph = codeList.map((_, i) => `$${i + 1}`).join(",");
     const orderSql = `
       SELECT * FROM orders
-      WHERE (raw->>'companyCode' IN (${ph}) OR company_code IN (${ph}))
+      WHERE company_code IN (${ph})
       ORDER BY created_at DESC
       LIMIT $${codeList.length + 1} OFFSET $${codeList.length + 2}
     `;
@@ -133,7 +152,7 @@ export default async function handler(req, res) {
 
     // ── Count total (for pagination) ──
     const countRes = await pool.query(
-      `SELECT COUNT(*) as total FROM orders WHERE (raw->>'companyCode' IN (${ph}) OR company_code IN (${ph}))`,
+      `SELECT COUNT(*) as total FROM orders WHERE company_code IN (${ph})`,
       codeList
     );
 
