@@ -57,9 +57,12 @@ export default async function handler(req, res) {
         if (role === "customer") {
           // Customer: can only see sheets for orders they own (canonical company_code col)
           conds.push("o.company_code = $" + (vals.length + 1));
-        } else {
+        } else if (role === "factory" || role === "supplier") {
           // Factory / supplier: can only see sheets where they are the factory
           conds.push("lcs.factory_code = $" + (vals.length + 1));
+        } else {
+          // Unknown / preview / trader / viewer — fail-closed, no data
+          return sendError(res, 403, "role_not_permitted_for_this_resource");
         }
         vals.push(jwtCo);
       }
@@ -138,7 +141,7 @@ export default async function handler(req, res) {
     // Pull order context — include company_code (customer) + raw (factory contact).
     const ord = await client.query(
       `SELECT id, order_no, contract_no, products,
-              company_code, raw->>'factory_code' AS raw_factory_code,
+              company_code, factory_code,
               raw->>'factory_wechat' AS factory_wechat,
               raw->>'customer_wechat' AS customer_wechat
          FROM orders WHERE id = $1`,
@@ -167,11 +170,14 @@ export default async function handler(req, res) {
           return sendError(res, 403, "order_ownership_mismatch");
         }
       } else {
-        // Factory: JWT company must match body.factory_code (already scope-guarded above).
-        // Sanity-check: factory_code on the order must match if the column exists.
-        // We do NOT read from raw — if factory_code col is empty we allow (backward compat)
-        // but log for audit.
-        if (o.factory_code && String(o.factory_code).trim().toUpperCase() !== String(jwtCo).toUpperCase()) {
+        // Factory: orders.factory_code must exist and match JWT company — fail-closed.
+        // Empty factory_code is not trusted; admin/ops must backfill the column first.
+        const orderFactory = o.factory_code ? String(o.factory_code).trim().toUpperCase() : null;
+        if (!orderFactory) {
+          await client.query("ROLLBACK");
+          return sendError(res, 403, "order_factory_scope_missing");
+        }
+        if (orderFactory !== String(jwtCo).toUpperCase()) {
           await client.query("ROLLBACK");
           return sendError(res, 403, "order_factory_mismatch");
         }

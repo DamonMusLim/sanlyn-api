@@ -8,7 +8,8 @@ import { requireAuth } from "../auth.js";
 
 // ── Normalize company codes from JWT (case, whitespace, dedup, length guard) ──
 function normalizeCompanyCodes(raw) {
-  if (!raw) return [];
+  // Guard null/undefined before String() to avoid "null" / "undefined" entries
+  if (raw == null) return [];
   const arr = Array.isArray(raw) ? raw : String(raw).split(",");
   return [...new Set(
     arr
