@@ -63,22 +63,14 @@ function getContractNos(row) {
 }
 
 // ── Build notification texts ──────────────────────────────────
-// BL three-way isolation (PR #5):
-//   Customer sees HBL only. MBL (bl_no) is NEVER surfaced to customers,
-//   even if HBL is missing — show "—" and log a warning so internal ops
-//   can fill HBL before re-notifying.
 function buildCustomerText(row) {
   const localCharges = calcLocalCharges(row);
-  if (!row.bl_house) {
-    console.warn(`[shipment-notify] HBL missing on shipment_no=${row.shipment_no || row._id}; customer notification will show "—" instead of MBL`);
-  }
-  const customerBl = row.bl_house || "—";
   return [
     `## 🚢 Shipment Confirmed`,
     ``,
     `| Field | Value |`,
     `|---|---|`,
-    `| **BL No** | ${customerBl} |`,
+    `| **BL No** | ${row.bl_no || "—"} |`,
     `| **Vessel / Voyage** | ${row.vessel || "—"} ${row.voyage || ""} |`,
     `| **POL → POD** | ${row.pol || "—"} → ${row.pod || "—"} |`,
     `| **ETD** | ${fmtDate(row.etd)} |`,
@@ -114,41 +106,22 @@ function buildFactoryText(row) {
 }
 
 // ── Main export ───────────────────────────────────────────────
-// Options:
-//   force         — re-send even if notifications_sent timestamps exist
-//   allowFactory  — caller gate (default true). Set false when only HBL
-//                   was just set (factory notify tied to MBL first-set).
-//   allowCustomer — caller gate (default true).
-export async function sendShipmentNotifications(pool, row, opts = {}) {
-  const { force = false, allowFactory = true, allowCustomer = true } = opts;
+export async function sendShipmentNotifications(pool, row, { force = false } = {}) {
   const raw = row.raw || {};
   const sent = raw.notifications_sent || {};
   const now  = new Date().toISOString();
 
-  let doCustomer = allowCustomer && (force || !sent.customer);
-  const doFactory  = allowFactory  && (force || !sent.factory);
-
-  // BL three-way isolation gate (Codex round 2 P2):
-  // Defer the customer notification until HBL is set so we don't burn the
-  // single send slot with "BL No = —". Factory may proceed (factory may
-  // legitimately see only MBL).
-  let customerDeferred = false;
-  if (doCustomer && !row.bl_house) {
-    doCustomer = false;
-    customerDeferred = true;
-    console.warn(`[shipment-notify] HBL missing on shipment_no=${row.shipment_no || row._id}; deferring customer notification until bl_house is set`);
-  }
+  const doCustomer = force || !sent.customer;
+  const doFactory  = force || !sent.factory;
 
   if (!doCustomer && !doFactory) {
     return {
-      customer: customerDeferred
-        ? { skipped: true, reason: "deferred: HBL missing" }
-        : { skipped: true, reason: "already sent" },
+      customer: { skipped: true, reason: "already sent" },
       factory:  { skipped: true, reason: "already sent" },
     };
   }
 
-  const customerText = doCustomer ? buildCustomerText(row) : null;
+  const customerText = buildCustomerText(row);
   const factoryText  = buildFactoryText(row);
 
   const results = { customer: null, factory: null };
@@ -156,9 +129,7 @@ export async function sendShipmentNotifications(pool, row, opts = {}) {
   // ── Customer notification ─────────────────────────────────
   if (doCustomer) {
     results.customer = await sendWecom(customerText);
-    console.log(`[shipment-notify] customer HBL=${row.bl_house} →`, results.customer);
-  } else if (customerDeferred) {
-    results.customer = { skipped: true, reason: "deferred: HBL missing" };
+    console.log(`[shipment-notify] customer BL=${row.bl_no} →`, results.customer);
   } else {
     results.customer = { skipped: true, reason: "already sent" };
   }
@@ -172,8 +143,6 @@ export async function sendShipmentNotifications(pool, row, opts = {}) {
   }
 
   // ── Persist texts + timestamps into raw ──────────────────
-  // IMPORTANT: do NOT mark customer as sent when deferred — leaves the slot
-  // open so a later HBL update triggers a real send.
   const newSent = { ...sent };
   if (doCustomer && !results.customer.error) newSent.customer = now;
   if (doFactory  && !results.factory.error)  newSent.factory  = now;

@@ -14,15 +14,6 @@
  * Response: Every record passes through _cropForCustomer() before being returned.
  *           Internal cost, vendor, margin, and raw-blob fields are stripped.
  *
- * SECURITY: driver_info / driver_phone MUST NEVER be exposed via the portal.
- *           Per ORDER-CARD v3.2 §8, driver_phone is restricted to roles
- *           ['trucking', 'internal_ops']. Portal serves only customer roles,
- *           so driver_info is unconditionally excluded. Both _merge (no
- *           driver_info key, raw JSONB never spread) and _cropForCustomer
- *           (explicit destructure whitelist) enforce this. If a future
- *           change adds driver_info to _merge, _cropForCustomer's whitelist
- *           will silently drop it — keep that whitelist intact.
- *
  * STOP conditions (any violation stops execution and returns error):
  *   - No valid Bearer token → 401 (handled by portalGate before this handler runs)
  *   - user_type !== 'customer' → 403
@@ -245,9 +236,7 @@ function _merge(order, plan) {
     updated_at:        order.updated_at,
     pol:    order.pol    || raw.pol    || null,
     pod:    order.pod    || raw.pod    || null,
-    // BL three-way (v3.2 §8): customer/import_broker portal sees HBL only.
-    // MBL (`bl_no`) is intentionally NOT exposed here — it belongs to ocean_partner.
-    bl_house: order.bl_house || raw.hblNo || raw.hbl || raw.hbl_no || raw.blHouse || raw.bl_house || null,
+    bl_no:  order.bl_no  || raw.blNo   || null,
     vessel: order.vessel || raw.vessel || null,
     voyage: order.voyage || raw.voyage || null,
     etd:    order.etd    || raw.etd    || null,
@@ -266,8 +255,7 @@ function _merge(order, plan) {
     // deliberately not included here (second enforcement is in _cropForCustomer).
     out.shipping_plan = {
       shipment_no:    plan.shipment_no,
-      // v3.2 §8 BL three-way: customer portal exposes HBL only (NOT MBL/bl_no).
-      bl_house:       plan.bl_house,
+      bl_no:          plan.bl_no,
       vessel:         plan.vessel,
       voyage:         plan.voyage,
       etd:            plan.etd         ? String(plan.etd).substring(0, 10)         : null,
@@ -288,7 +276,7 @@ function _merge(order, plan) {
     };
 
     // Promote key shipping fields to top level
-    if (plan.bl_house       && !out.bl_house)       out.bl_house       = plan.bl_house;
+    if (plan.bl_no          && !out.bl_no)          out.bl_no          = plan.bl_no;
     if (plan.vessel         && !out.vessel)          out.vessel         = plan.vessel;
     if (plan.voyage         && !out.voyage)          out.voyage         = plan.voyage;
     if (plan.pol            && !out.pol)             out.pol            = plan.pol;
@@ -331,7 +319,7 @@ function _cropForCustomer(order) {
     total_amount, currency,
     destination_port, delivery_date, confirmed_delivery, required_arrival,
     created_at, updated_at,
-    pol, pod, bl_house, vessel, voyage, etd, eta, flow_status,
+    pol, pod, bl_no, vessel, voyage, etd, eta, flow_status,
     products, attachments, pdf_urls,
     shipping_plan,
   } = order;
@@ -341,8 +329,7 @@ function _cropForCustomer(order) {
   if (shipping_plan) {
     croppedPlan = {
       shipment_no:    shipping_plan.shipment_no    ?? null,
-      // v3.2 §8 BL three-way: customer portal sees HBL, never MBL.
-      bl_house:       shipping_plan.bl_house       ?? null,
+      bl_no:          shipping_plan.bl_no          ?? null,
       vessel:         shipping_plan.vessel         ?? null,
       voyage:         shipping_plan.voyage         ?? null,
       etd:            shipping_plan.etd            ?? null,
@@ -370,7 +357,7 @@ function _cropForCustomer(order) {
     total_amount, currency,
     destination_port, delivery_date, confirmed_delivery, required_arrival,
     created_at, updated_at,
-    pol, pod, bl_house, vessel, voyage, etd, eta, flow_status,
+    pol, pod, bl_no, vessel, voyage, etd, eta, flow_status,
     products, attachments, pdf_urls,
     shipping_plan: croppedPlan,
     // Excluded top-level: remarks, factory, raw

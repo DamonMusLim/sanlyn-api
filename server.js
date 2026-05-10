@@ -394,11 +394,6 @@ mount("/api/db/order-events",  () => import("./api/db/order-events.js"));
 mount("/api/db/order-tasks",   () => import("./api/db/order-tasks.js"));
 mount("/api/db/containers",    () => import("./api/db/containers.js"));
 
-// ── SC Phase 2: Supply-chain quote + collab endpoints ─────────────────────────
-mount("/api/supply-chain/quote-requests", () => import("./api/supply-chain-quote-requests.js"));
-mount("/api/supply-chain/quote-bids",     () => import("./api/supply-chain-quote-bids.js"));
-mount("/api/collab/cards",                () => import("./api/supply-chain-collab-cards.js"));
-
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
 app.get("/health", (req, res) => res.json({ status: "ok" }));

@@ -17,71 +17,8 @@ function normCompany(s) {
   return x;
 }
 
-// ── BL three-way isolation (v3.2 §8) ─────────────────────────────
-// bl_no       = MBL  → ocean_partner + internal_ops
-// bl_house    = HBL  → internal_ops + customer + import_broker
-// bl_customs  = 报关 → internal_ops + customs_broker
-// Anything else: strip the field entirely (fail-closed).
-const BL_ROLE_ACCESS = {
-  bl_no:      new Set(["internal_ops", "ocean_partner"]),
-  bl_house:   new Set(["internal_ops", "customer", "import_broker"]),
-  bl_customs: new Set(["internal_ops", "customs_broker"]),
-};
-
-// Map legacy/alias roles to canonical v3.2 RoleKey.
-// `logistics + supplierRole=ocean` (legacy) → ocean_partner
-// `logistics + supplierRole=customs` → customs_broker
-function canonicalRole(u) {
-  if (!u) return null;
-  if (u.role === "admin" || u.role === "internal_ops" || u.role === "staff") return "internal_ops";
-  if (u.role === "logistics") {
-    if (u.supplierRole === "ocean")   return "ocean_partner";
-    if (u.supplierRole === "customs") return "customs_broker";
-    if (u.supplierRole === "truck")   return "trucking_partner";
-    return null;
-  }
-  return u.role || null; // customer / import_broker / factory_* etc. pass through
-}
-
-function stripBlFields(row, role) {
-  if (!row) return row;
-  const out = { ...row };
-  for (const [field, allowed] of Object.entries(BL_ROLE_ACCESS)) {
-    if (!allowed.has(role)) delete out[field];
-  }
-  // Codex P1 (rounds 4 + 5): raw payload contains BL leakage through:
-  //   1. Persisted notification text (raw.customer_notification_text /
-  //      raw.factory_notification_text) — written by the notifier.
-  //   2. Importer-written BL aliases (raw.blNo, raw.bl_no, raw.blHouse,
-  //      raw.bl_house, raw.blCustoms, raw.bl_customs) — written by
-  //      minimax-booking and other importers.
-  // Strip ALL of these from raw based on role. internal_ops keeps everything.
-  if (out.raw && typeof out.raw === "object" && role !== "internal_ops") {
-    const raw = { ...out.raw };
-    // BL aliases — three-way isolation
-    if (!BL_ROLE_ACCESS.bl_no.has(role)) {
-      delete raw.blNo;     delete raw.bl_no;
-    }
-    if (!BL_ROLE_ACCESS.bl_house.has(role)) {
-      delete raw.blHouse;  delete raw.bl_house;
-    }
-    if (!BL_ROLE_ACCESS.bl_customs.has(role)) {
-      delete raw.blCustoms; delete raw.bl_customs;
-    }
-    // Codex P1 (round 7): historical rows have raw.{customer,factory}_
-    // notification_text rendered with the OLD logic (used row.bl_no for
-    // customer text). Even roles that can see HBL must not receive the
-    // legacy text because it may contain MBL. Always strip these for
-    // non-internal_ops; the notifier re-renders fresh text on next event.
-    delete raw.customer_notification_text;
-    delete raw.factory_notification_text;
-    out.raw = raw;
-  }
-  return out;
-}
-
 const PATCH_ALLOW = [
-  "bl_no","bl_house","bl_customs","vessel","voyage","pol","pod","etd","eta","cutoff_date",
+  "bl_no","vessel","voyage","pol","pod","etd","eta","cutoff_date",
   "flow_status","container_type","container_no","seal_no",
   "qty_total","total_cbm","total_cartons","gross_weight_kg",
   "freight_cost","freight_sale_usd","port_surcharge_total",
@@ -102,19 +39,10 @@ export default async function handler(req, res) {
 
   const pool = getPool();
 
-  const role = canonicalRole(req.user);
-
   // ── PATCH ─────────────────────────────────────────────────
   if (req.method === "PATCH") {
     const { id, ...fields } = req.body || {};
     if (!id) return res.status(400).json({ error: "id required" });
-
-    // Fail-closed: strip BL fields the caller is not allowed to write.
-    for (const [blField, allowed] of Object.entries(BL_ROLE_ACCESS)) {
-      if (blField in fields && !allowed.has(role)) {
-        delete fields[blField];
-      }
-    }
 
     // Fetch existing row first (for bl_no change detection)
     let existing = null;
@@ -151,28 +79,13 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: err.message });
     }
 
-    // ── BL change detection → trigger dual notifications ──
-    // Trigger on either:
-    //   (a) MBL first set  → factory notify (customer deferred if no HBL)
-    //   (b) HBL first set  → customer notify (catches deferred case)
-    // Codex P1 (round 3): without (b), a shipment that gets MBL before
-    // HBL would defer customer notify and never re-fire when HBL arrives.
-    const prevBl    = existing.bl_no;
-    const newBl     = saved.bl_no;
-    const prevHbl   = existing.bl_house;
-    const newHbl    = saved.bl_house;
+    // ── bl_no change detection → trigger dual notifications ──
+    const prevBl = existing.bl_no;
+    const newBl  = saved.bl_no;
     let notifyResult = null;
-    const blFirstSet  = !prevBl  && newBl;
-    const hblFirstSet = !prevHbl && newHbl;
-    if (blFirstSet || hblFirstSet) {
+    if (!prevBl && newBl) {
       try {
-        // Codex P2 (round 4): if only HBL was just set, factory notify
-        // should NOT fire (factory notification is tied to MBL). Tell the
-        // notifier which sides are eligible this trigger.
-        notifyResult = await sendShipmentNotifications(pool, saved, {
-          allowFactory:  blFirstSet,   // only when MBL just appeared
-          allowCustomer: true,         // both transitions can finalise customer send
-        });
+        notifyResult = await sendShipmentNotifications(pool, saved);
       } catch (e) {
         console.error("[shipping] notify failed (non-fatal):", e.message);
         notifyResult = { error: e.message };
@@ -181,7 +94,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: stripBlFields(saved, role),
+      data: saved,
       ...(notifyResult ? { notified: notifyResult } : {}),
     });
   }
@@ -222,7 +135,6 @@ export default async function handler(req, res) {
         return cell && (cell.includes(scopeNeedle) || scopeNeedle.includes(cell));
       });
     }
-    const scoped = rows.map(r => stripBlFields(r, role));
-    return res.status(200).json({ success: true, data: scoped, count: scoped.length });
+    return res.status(200).json({ success: true, data: rows, count: rows.length });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 }
