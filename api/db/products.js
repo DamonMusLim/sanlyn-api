@@ -1,5 +1,40 @@
 import { getPool, setCors } from "../db.js";
 
+// ── Unknown Field Policy (P1-A) ──────────────────────────────────────────────
+// Products PUT: canonical snake_case fields only. 'sku' is the identifier key.
+const PRODUCTS_PUT_ALLOWED = new Set([
+  "sku",
+  "product_name","product_name_cn","brand","size","unit","price","cbm",
+  "net_weight","gross_weight","barcode","hs_code","active",
+  "factory_price","sanlyn_price","price_usd","tax_rate","rebate_rate",
+  "cat1","cat2","cat3","cat1_cn","cat2_cn","cat3_cn",
+  "trade_terms","declaration_name","declaration_elements","bl_description",
+  "factory_name","declaration_amount","inner_qty","inner_unit","flavor","moq","spec","image_url",
+  "shelf_life_days",
+]);
+
+// Products PATCH: camelCase collab/declaration fields + identifier. No others.
+const PRODUCTS_PATCH_ALLOWED = new Set([
+  "id",
+  "hsCode","declarationName","declarationElements","declarationPrice","blDescription",
+]);
+
+function rejectUnknownFields(allowed, body, res) {
+  const bodyKeys = Object.keys(body || {});
+  const unknown = bodyKeys.filter(k => !allowed.has(k));
+  if (unknown.length > 0) {
+    res.status(400).json({
+      success: false,
+      error: "UNKNOWN_FIELD",
+      unknown_fields: unknown,
+      allowed_fields: Array.from(allowed).sort(),
+      message: "Request contains fields that are not accepted by this endpoint.",
+    });
+    return true; // signal: response already sent, caller must return
+  }
+  return false;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, PUT, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -10,16 +45,13 @@ export default async function handler(req, res) {
       var pool = getPool();
       var b = req.body || {};
       if (!b.sku) return res.status(400).json({ error: "sku required" });
+
+      // P1-A: reject any field not in the canonical whitelist
+      if (rejectUnknownFields(PRODUCTS_PUT_ALLOWED, b, res)) return;
+
       var sets = [], vals = [], n = 0;
-      var fields = [
-        "product_name","product_name_cn","brand","size","unit","price","cbm",
-        "net_weight","gross_weight","barcode","hs_code","active",
-        "factory_price","sanlyn_price","price_usd","tax_rate","rebate_rate",
-        "cat1","cat2","cat3","cat1_cn","cat2_cn","cat3_cn",
-        "trade_terms","declaration_name","declaration_elements","bl_description",
-        "factory_name","declaration_amount","inner_qty","inner_unit","flavor","moq","spec","image_url",
-        "shelf_life_days"
-      ];
+      // Iterate the whitelist (excludes 'sku' — used as WHERE key, not SET target)
+      var fields = Array.from(PRODUCTS_PUT_ALLOWED).filter(f => f !== "sku");
       for (var f of fields) {
         if (b[f] !== undefined) {
           n++;
@@ -41,6 +73,7 @@ export default async function handler(req, res) {
   }
 
   // PATCH = update HS Code / declaration fields on a product by id
+  // Syncs both raw JSONB (legacy read path) and canonical main columns (downstream read path)
   if (req.method === "PATCH") {
     try {
       if (!req.user || !["admin", "logistics"].includes(req.user.role)) {
@@ -49,17 +82,40 @@ export default async function handler(req, res) {
       const pool = getPool();
       const id = req.params?.id || req.query?.id || req.body?.id;
       if (!id) return res.status(400).json({ error: "id required" });
+
+      // P1-A: reject any field not in the PATCH canonical set
+      if (rejectUnknownFields(PRODUCTS_PATCH_ALLOWED, req.body, res)) return;
+
       const { hsCode, declarationName, declarationElements, declarationPrice, blDescription } = req.body;
-      const patch = {};
-      if (hsCode             != null) patch.hsCode             = hsCode;
-      if (declarationName    != null) patch.declarationName    = declarationName;
-      if (declarationElements!= null) patch.declarationElements= declarationElements;
-      if (declarationPrice   != null) patch.declarationPrice   = declarationPrice;
-      if (blDescription      != null) patch.blDescription      = blDescription;
-      if (Object.keys(patch).length === 0) return res.status(400).json({ error: "no fields to patch" });
+
+      // Build raw JSONB patch object (legacy read compatibility)
+      const rawPatch = {};
+      if (hsCode              != null) rawPatch.hsCode              = hsCode;
+      if (declarationName     != null) rawPatch.declarationName     = declarationName;
+      if (declarationElements != null) rawPatch.declarationElements = declarationElements;
+      if (declarationPrice    != null) rawPatch.declarationPrice    = declarationPrice;
+      if (blDescription       != null) rawPatch.blDescription       = blDescription;
+      if (Object.keys(rawPatch).length === 0) return res.status(400).json({ error: "no fields to patch" });
+
+      // Build main column updates (canonical DB columns — downstream reads these)
+      const colSets = [];
+      const colVals = [];
+      let idx = 1;
+      if (hsCode              != null) { colSets.push(`hs_code = $${idx++}`);              colVals.push(hsCode); }
+      if (declarationName     != null) { colSets.push(`declaration_name = $${idx++}`);     colVals.push(declarationName); }
+      if (declarationElements != null) { colSets.push(`declaration_elements = $${idx++}`); colVals.push(declarationElements); }
+      if (declarationPrice    != null) { colSets.push(`declaration_amount = $${idx++}`);   colVals.push(declarationPrice); }
+      if (blDescription       != null) { colSets.push(`bl_description = $${idx++}`);       colVals.push(blDescription); }
+
+      // Always update raw and updated_at in the same statement
+      colSets.push(`raw = COALESCE(raw,'{}') || $${idx++}::jsonb`);
+      colVals.push(JSON.stringify(rawPatch));
+      colSets.push(`updated_at = NOW()`);
+      colVals.push(id);
+
       const r = await pool.query(
-        `UPDATE products SET raw = COALESCE(raw,'{}') || $1::jsonb, updated_at = NOW() WHERE id = $2 RETURNING id`,
-        [JSON.stringify(patch), id]
+        `UPDATE products SET ${colSets.join(", ")} WHERE id = $${idx} RETURNING id`,
+        colVals
       );
       if (r.rowCount === 0) return res.status(404).json({ error: "product not found" });
       return res.status(200).json({ success: true, id });

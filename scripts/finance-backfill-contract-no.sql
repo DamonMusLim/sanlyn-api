@@ -57,9 +57,11 @@ SELECT
     WHEN fp.order_no IS NULL OR fp.order_no = '' THEN 'no_order_no'
     WHEN fp.order_no LIKE '%,%'                  THEN 'multi_order_skipped'
     WHEN fp.contract_no IS NOT NULL AND fp.contract_no != '' THEN 'already_linked'
+    -- Distinguish "no matching order in orders table" (orphan) from
+    -- "matched but orders.contract_no is empty" (skipped) — Codex P3
+    WHEN o.order_no IS NULL                                  THEN 'orphan_no_match'
     WHEN o.contract_no IS NOT NULL AND o.contract_no != ''   THEN 'will_link_with_FS_style'
-    WHEN o.contract_no IS NULL OR o.contract_no = ''         THEN 'orders_has_no_FS_style_skipped'
-    ELSE 'orphan_no_match'
+    ELSE 'orders_has_no_FS_style_skipped'
   END AS status,
   COUNT(*) AS cnt,
   ROUND(SUM(fp.amount)::numeric, 2) AS total_amount
