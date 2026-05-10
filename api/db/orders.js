@@ -199,7 +199,7 @@ async function handleMarkReady(req, res) {
     await pool.query(
       `INSERT INTO order_events
          (order_id, stage_key, source, actor_role, actor_user_id, occurred_at, is_current, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW(), true, 'completed', NOW())`,
+       VALUES ($1, $2, $3, $4, $5, NOW(), true, 'active', NOW())`,
       [id, "production_complete", "manual", "internal_ops", req.user.uid || req.user.sub || null]
     );
   } catch (evtErr) {
@@ -243,6 +243,13 @@ export default async function handler(req, res) {
       company_code  = undefined;
     }
     let query = "SELECT * FROM orders", params = [], conds = [];
+
+    // Mock isolation: non-admin users never see is_mock=true rows unless they hold mock:read cap.
+    const hasMockRead = Array.isArray(req.user?.capabilities) && req.user.capabilities.includes("mock:read");
+    if (req.user && req.user.role !== "admin" && !hasMockRead) {
+      conds.push("(is_mock IS NULL OR is_mock = FALSE)");
+    }
+
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`status = $${params.length}`); }
     if (factory)  { params.push(factory);           conds.push(`raw->>'factory' = $${params.length}`); }
