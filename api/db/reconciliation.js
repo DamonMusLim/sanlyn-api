@@ -244,14 +244,21 @@ export default async function handler(req, res) {
       };
 
       // Match payments to this order:
-      //  - Primary:  finance_payments.contract_no = orders.contract_no (FS-style)
-      //  - Fallback: finance_payments.order_no    = orders.order_no    (40-CA-1 style)
-      //  - AND      payment direction is AR (no AP leakage into receivables)
-      const orderPayments = allPayments.filter(p =>
-        isAR(p) &&
-        ((cno && p.contract_no === cno) ||
-         (ono && p.order_no    === ono))
-      );
+      //  - Primary:  payment.contract_no === order.contract_no (FS-style)
+      //  - Fallback: order_no match — but ONLY when the payment has no
+      //    usable contract_no (Codex round 6 P2: a precise contract
+      //    match must not fall through to a fuzzy order_no match, or a
+      //    payment whose contract_no points elsewhere could double-count
+      //    against a different order sharing the legacy order_no).
+      //  - AND payment direction is AR (no AP into receivables).
+      const paymentHasContract = (p) => p.contract_no && p.contract_no !== "";
+      const orderPayments = allPayments.filter(p => {
+        if (!isAR(p)) return false;
+        if (paymentHasContract(p)) {
+          return cno && p.contract_no === cno;       // precise match only
+        }
+        return ono && p.order_no === ono;            // fallback when no contract_no
+      });
 
       // Sum paid amounts — prefer paid_amount column, fallback to raw->receivedAmount, then amount
       const paidTotal = orderPayments.reduce((sum, p) => {
