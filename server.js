@@ -380,6 +380,12 @@ mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-p
 // ── Reconciliation / monthly statement ──
 mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
 
+// ── AI ops/summaries + notifications inbox ──
+mount("/api/db/migrate-ai-and-notifications", () => import("./api/db/migrate-ai-and-notifications.js"));
+mount("/api/db/ai-operations", () => import("./api/db/ai-operations.js"));
+mount("/api/db/ai-summaries",  () => import("./api/db/ai-summaries.js"));
+mount("/api/db/notifications", () => import("./api/db/notifications.js"));
+
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
 app.get("/health", (req, res) => res.json({ status: "ok" }));

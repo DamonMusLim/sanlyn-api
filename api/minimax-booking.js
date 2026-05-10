@@ -118,8 +118,9 @@ function pdfToJpeg(pdfBuffer) {
   }
 }
 
-// ── Qwen VL 识别（通过OSS URL，从中国大陆可访问）──
-async function extractWithQwenVL(ossImageUrl) {
+// ── Qwen VL 识别（通过OSS URL，从中国大陆可访问）+ AI 日记 ──
+async function extractWithQwenVL(ossImageUrl, logCtx) {
+  const startMs = Date.now();
   const apiKey = process.env.QWEN_API_KEY;
 
   const resp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
@@ -143,13 +144,33 @@ async function extractWithQwenVL(ossImageUrl) {
   const text = (data.choices?.[0]?.message?.content || "").trim();
   console.log("[minimax-booking] qwen raw:", text.slice(0, 200));
   const clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  let parsed;
   try {
-    return JSON.parse(clean);
+    parsed = JSON.parse(clean);
   } catch (e) {
     const m = clean.match(/\{[\s\S]*\}/);
-    if (m) { try { return JSON.parse(m[0]); } catch (e2) {} }
-    return { _raw: text, _parseError: "Failed to parse Qwen VL response" };
+    if (m) { try { parsed = JSON.parse(m[0]); } catch (e2) {} }
+    if (!parsed) parsed = { _raw: text, _parseError: "Failed to parse Qwen VL response" };
   }
+
+  // ── AI 日记 ─────────────────────────────────────────
+  try {
+    const { logAI } = await import("./lib/ai-log.js");
+    const opId = await logAI({
+      doc_type: "bl_extract",
+      action: "extract",
+      model: "qwen-vl-max",
+      input_data: { ossImageUrl },
+      output_data: parsed,
+      confidence: parsed._parseError ? 0.3 : 0.85,
+      duration_ms: Date.now() - startMs,
+      cost_tokens: data.usage?.total_tokens || null,
+      triggered_by: logCtx?.triggered_by || "system",
+    });
+    if (parsed && !parsed._parseError) parsed._aiOpId = opId;
+  } catch {}
+
+  return parsed;
 }
 
 // ── 匹配已有订单 ──
@@ -416,7 +437,7 @@ export default async function handler(req, res) {
 
     // 3. Qwen VL 识别（通过 OSS URL，大陆可访问）
     if (!ossImageUrl) throw new Error("OSS upload failed, cannot extract");
-    const extracted = await extractWithQwenVL(ossImageUrl);
+    const extracted = await extractWithQwenVL(ossImageUrl, { triggered_by: req.user?.username || "system" });
     console.log("[minimax-booking] extracted:", JSON.stringify(extracted).slice(0, 200));
 
     // 3. 匹配订单
