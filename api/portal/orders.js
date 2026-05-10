@@ -247,7 +247,7 @@ function _merge(order, plan) {
     pod:    order.pod    || raw.pod    || null,
     // BL three-way (v3.2 §8): customer/import_broker portal sees HBL only.
     // MBL (`bl_no`) is intentionally NOT exposed here — it belongs to ocean_partner.
-    bl_house: order.bl_house || raw.hblNo || raw.hbl || raw.hbl_no || null,
+    bl_house: order.bl_house || raw.hblNo || raw.hbl || raw.hbl_no || raw.blHouse || raw.bl_house || null,
     vessel: order.vessel || raw.vessel || null,
     voyage: order.voyage || raw.voyage || null,
     etd:    order.etd    || raw.etd    || null,

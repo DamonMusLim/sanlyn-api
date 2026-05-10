@@ -104,7 +104,16 @@ export default async function handler(req, res) {
             COALESCE(
               paid_amount,
               this_amount,
-              NULLIF(raw->>'receivedAmount','')::numeric,
+              -- raw is importer-controlled JSON; receivedAmount may be a
+              -- formatted string ('1,234.00', '¥1234'). Codex round 7 P2:
+              -- only cast when the trimmed/comma-stripped value is a
+              -- plain number. Anything else → fall through to amount.
+              CASE
+                WHEN raw->>'receivedAmount' IS NULL THEN NULL
+                WHEN regexp_replace(raw->>'receivedAmount', '[, ]', '', 'g') ~ '^-?\d+(\.\d+)?$'
+                  THEN regexp_replace(raw->>'receivedAmount', '[, ]', '', 'g')::numeric
+                ELSE NULL
+              END,
               amount,
               0
             )

@@ -61,15 +61,20 @@ function stripBlFields(row, role) {
     // BL aliases — three-way isolation
     if (!BL_ROLE_ACCESS.bl_no.has(role)) {
       delete raw.blNo;     delete raw.bl_no;
-      delete raw.factory_notification_text;
     }
     if (!BL_ROLE_ACCESS.bl_house.has(role)) {
       delete raw.blHouse;  delete raw.bl_house;
-      delete raw.customer_notification_text;
     }
     if (!BL_ROLE_ACCESS.bl_customs.has(role)) {
       delete raw.blCustoms; delete raw.bl_customs;
     }
+    // Codex P1 (round 7): historical rows have raw.{customer,factory}_
+    // notification_text rendered with the OLD logic (used row.bl_no for
+    // customer text). Even roles that can see HBL must not receive the
+    // legacy text because it may contain MBL. Always strip these for
+    // non-internal_ops; the notifier re-renders fresh text on next event.
+    delete raw.customer_notification_text;
+    delete raw.factory_notification_text;
     out.raw = raw;
   }
   return out;
