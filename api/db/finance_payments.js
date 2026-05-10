@@ -76,10 +76,24 @@ export default async function handler(req, res) {
 
       // ── Summary totals — split per currency to avoid CNY+USD mixing ─
       // by_currency[ccy] = { ar, ap }
+      // Codex P2 fix: imported / OCR rows often carry the value in
+      // this_amount or paid_amount with amount=NULL. Use the same
+      // fallback chain reconciliation.js applies, otherwise the
+      // dashboard understates AR/AP for legacy imports.
+      const pickAmount = (row) => {
+        const r = row.raw || {};
+        const v = row.paid_amount   != null ? row.paid_amount
+                : row.this_amount   != null ? row.this_amount
+                : r.receivedAmount  != null ? r.receivedAmount
+                : row.amount        != null ? row.amount
+                : 0;
+        const n = parseFloat(v);
+        return Number.isFinite(n) ? n : 0;
+      };
       const by_currency = {};
       let unmatched = 0;
       r.rows.forEach(row => {
-        const amt = parseFloat(row.amount) || 0;
+        const amt = pickAmount(row);
         const ccy = (row.currency || "UNKNOWN").toUpperCase();
         const dc  = row.direction_canonical;
         if (!by_currency[ccy]) by_currency[ccy] = { ar: 0, ap: 0 };

@@ -63,14 +63,22 @@ function getContractNos(row) {
 }
 
 // ── Build notification texts ──────────────────────────────────
+// BL three-way isolation (PR #5):
+//   Customer sees HBL only. MBL (bl_no) is NEVER surfaced to customers,
+//   even if HBL is missing — show "—" and log a warning so internal ops
+//   can fill HBL before re-notifying.
 function buildCustomerText(row) {
   const localCharges = calcLocalCharges(row);
+  if (!row.bl_house) {
+    console.warn(`[shipment-notify] HBL missing on shipment_no=${row.shipment_no || row._id}; customer notification will show "—" instead of MBL`);
+  }
+  const customerBl = row.bl_house || "—";
   return [
     `## 🚢 Shipment Confirmed`,
     ``,
     `| Field | Value |`,
     `|---|---|`,
-    `| **BL No** | ${row.bl_no || "—"} |`,
+    `| **BL No** | ${customerBl} |`,
     `| **Vessel / Voyage** | ${row.vessel || "—"} ${row.voyage || ""} |`,
     `| **POL → POD** | ${row.pol || "—"} → ${row.pod || "—"} |`,
     `| **ETD** | ${fmtDate(row.etd)} |`,
