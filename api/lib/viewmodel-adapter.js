@@ -18,7 +18,7 @@ import crypto from "node:crypto";
 
 // ── Roles considered "internal" (full visibility, may write internal_note) ──
 const INTERNAL_ROLES = new Set([
-  "admin", "internal", "boss", "finance", "platform_admin", "system",
+  "admin", "super_admin", "internal", "boss", "finance", "platform_admin", "system",
 ]);
 
 export function isInternalRole(role) {
