@@ -211,8 +211,12 @@ export default async function handler(req, res) {
           sets.push(fragment.replace("$$", "$" + vals.length));
         };
         if (slipUrl)     add(slipUrl,            `tt_slip_url = $$`);
-        if (invoiceUrl)  add(invoiceUrl,         `raw = jsonb_set(COALESCE(raw,'{}'), '{invoiceUrl}', $$::jsonb)`);
-        if (invoiceDate) add(invoiceDate,        `raw = jsonb_set(COALESCE(raw,'{}'), '{invoiceDate}', $$::jsonb)`);
+        // Codex round 8 P2: invoiceUrl ('https://...') and invoiceDate
+        // ('2026-05-11') are plain strings, not JSON literals. The old
+        // `$N::jsonb` cast would throw 22P02. Use to_jsonb($N::text) to
+        // wrap the bound string in a JSON string value safely.
+        if (invoiceUrl)  add(invoiceUrl,         `raw = jsonb_set(COALESCE(raw,'{}'), '{invoiceUrl}',  to_jsonb($$::text))`);
+        if (invoiceDate) add(invoiceDate,        `raw = jsonb_set(COALESCE(raw,'{}'), '{invoiceDate}', to_jsonb($$::text))`);
         if (paidAmount != null) add(Number(paidAmount), `paid_amount = $$`);
         if (amount != null)     add(Number(amount),     `amount = $$`);
         if (bankRef)     add(bankRef,            `bank_ref = $$`);
