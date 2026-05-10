@@ -108,9 +108,13 @@ export default async function handler(req, res) {
       });
 
       return res.status(200).json({
-        success: true,
-        data:    r.rows,
-        count:   r.rowCount,
+        success:  true,
+        data:     r.rows,
+        // Backward-compat: legacy callers (pre-PR-#5) read `payments`.
+        // Codex P2: keep the old key alongside `data` until all callers
+        // migrate. Same array reference — no extra payload cost.
+        payments: r.rows,
+        count:    r.rowCount,
         summary: {
           by_currency, // canonical — { CNY: {ar, ap}, USD: {ar, ap}, ... }
           unmatched,

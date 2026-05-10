@@ -119,17 +119,30 @@ export async function sendShipmentNotifications(pool, row, { force = false } = {
   const sent = raw.notifications_sent || {};
   const now  = new Date().toISOString();
 
-  const doCustomer = force || !sent.customer;
+  let doCustomer = force || !sent.customer;
   const doFactory  = force || !sent.factory;
+
+  // BL three-way isolation gate (Codex round 2 P2):
+  // Defer the customer notification until HBL is set so we don't burn the
+  // single send slot with "BL No = —". Factory may proceed (factory may
+  // legitimately see only MBL).
+  let customerDeferred = false;
+  if (doCustomer && !row.bl_house) {
+    doCustomer = false;
+    customerDeferred = true;
+    console.warn(`[shipment-notify] HBL missing on shipment_no=${row.shipment_no || row._id}; deferring customer notification until bl_house is set`);
+  }
 
   if (!doCustomer && !doFactory) {
     return {
-      customer: { skipped: true, reason: "already sent" },
+      customer: customerDeferred
+        ? { skipped: true, reason: "deferred: HBL missing" }
+        : { skipped: true, reason: "already sent" },
       factory:  { skipped: true, reason: "already sent" },
     };
   }
 
-  const customerText = buildCustomerText(row);
+  const customerText = doCustomer ? buildCustomerText(row) : null;
   const factoryText  = buildFactoryText(row);
 
   const results = { customer: null, factory: null };
@@ -137,7 +150,9 @@ export async function sendShipmentNotifications(pool, row, { force = false } = {
   // ── Customer notification ─────────────────────────────────
   if (doCustomer) {
     results.customer = await sendWecom(customerText);
-    console.log(`[shipment-notify] customer BL=${row.bl_no} →`, results.customer);
+    console.log(`[shipment-notify] customer HBL=${row.bl_house} →`, results.customer);
+  } else if (customerDeferred) {
+    results.customer = { skipped: true, reason: "deferred: HBL missing" };
   } else {
     results.customer = { skipped: true, reason: "already sent" };
   }
@@ -151,6 +166,8 @@ export async function sendShipmentNotifications(pool, row, { force = false } = {
   }
 
   // ── Persist texts + timestamps into raw ──────────────────
+  // IMPORTANT: do NOT mark customer as sent when deferred — leaves the slot
+  // open so a later HBL update triggers a real send.
   const newSent = { ...sent };
   if (doCustomer && !results.customer.error) newSent.customer = now;
   if (doFactory  && !results.factory.error)  newSent.factory  = now;
