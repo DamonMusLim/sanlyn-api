@@ -17,8 +17,43 @@ function normCompany(s) {
   return x;
 }
 
+// ── BL three-way isolation (v3.2 §8) ─────────────────────────────
+// bl_no       = MBL  → ocean_partner + internal_ops
+// bl_house    = HBL  → internal_ops + customer + import_broker
+// bl_customs  = 报关 → internal_ops + customs_broker
+// Anything else: strip the field entirely (fail-closed).
+const BL_ROLE_ACCESS = {
+  bl_no:      new Set(["internal_ops", "ocean_partner"]),
+  bl_house:   new Set(["internal_ops", "customer", "import_broker"]),
+  bl_customs: new Set(["internal_ops", "customs_broker"]),
+};
+
+// Map legacy/alias roles to canonical v3.2 RoleKey.
+// `logistics + supplierRole=ocean` (legacy) → ocean_partner
+// `logistics + supplierRole=customs` → customs_broker
+function canonicalRole(u) {
+  if (!u) return null;
+  if (u.role === "admin" || u.role === "internal_ops" || u.role === "staff") return "internal_ops";
+  if (u.role === "logistics") {
+    if (u.supplierRole === "ocean")   return "ocean_partner";
+    if (u.supplierRole === "customs") return "customs_broker";
+    if (u.supplierRole === "truck")   return "trucking_partner";
+    return null;
+  }
+  return u.role || null; // customer / import_broker / factory_* etc. pass through
+}
+
+function stripBlFields(row, role) {
+  if (!row) return row;
+  const out = { ...row };
+  for (const [field, allowed] of Object.entries(BL_ROLE_ACCESS)) {
+    if (!allowed.has(role)) delete out[field];
+  }
+  return out;
+}
+
 const PATCH_ALLOW = [
-  "bl_no","vessel","voyage","pol","pod","etd","eta","cutoff_date",
+  "bl_no","bl_house","bl_customs","vessel","voyage","pol","pod","etd","eta","cutoff_date",
   "flow_status","container_type","container_no","seal_no",
   "qty_total","total_cbm","total_cartons","gross_weight_kg",
   "freight_cost","freight_sale_usd","port_surcharge_total",
@@ -39,10 +74,19 @@ export default async function handler(req, res) {
 
   const pool = getPool();
 
+  const role = canonicalRole(req.user);
+
   // ── PATCH ─────────────────────────────────────────────────
   if (req.method === "PATCH") {
     const { id, ...fields } = req.body || {};
     if (!id) return res.status(400).json({ error: "id required" });
+
+    // Fail-closed: strip BL fields the caller is not allowed to write.
+    for (const [blField, allowed] of Object.entries(BL_ROLE_ACCESS)) {
+      if (blField in fields && !allowed.has(role)) {
+        delete fields[blField];
+      }
+    }
 
     // Fetch existing row first (for bl_no change detection)
     let existing = null;
@@ -94,7 +138,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      data: saved,
+      data: stripBlFields(saved, role),
       ...(notifyResult ? { notified: notifyResult } : {}),
     });
   }
@@ -135,6 +179,7 @@ export default async function handler(req, res) {
         return cell && (cell.includes(scopeNeedle) || scopeNeedle.includes(cell));
       });
     }
-    return res.status(200).json({ success: true, data: rows, count: rows.length });
+    const scoped = rows.map(r => stripBlFields(r, role));
+    return res.status(200).json({ success: true, data: scoped, count: scoped.length });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 }
