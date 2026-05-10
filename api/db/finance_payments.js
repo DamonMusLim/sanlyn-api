@@ -53,13 +53,19 @@ export default async function handler(req, res) {
         conds.push(`raw->>'companyCode' = $${params.length}`);
       }
 
-      // Optional direction filter — accepts canonical (AR/AP) or legacy Chinese
+      // Optional direction filter — accepts canonical (AR/AP), legacy
+      // Chinese (收款/付款), or "UNCLASSIFIED" for explicitly unset rows.
+      // Codex P2 (round 3): AR must NOT silently include NULL/empty
+      // direction rows; those are unclassified and may include AP/legacy.
+      // Callers needing the unclassified bucket must request it explicitly.
       if (direction) {
         const dir = direction.toUpperCase();
         if (dir === "AR") {
-          conds.push(`(direction IN ('AR','收款','in') OR direction IS NULL OR direction = '')`);
+          conds.push(`direction IN ('AR','收款','in')`);
         } else if (dir === "AP") {
           conds.push(`direction IN ('AP','付款','out')`);
+        } else if (dir === "UNCLASSIFIED") {
+          conds.push(`(direction IS NULL OR direction = '')`);
         } else {
           params.push(direction);
           conds.push(`direction = $${params.length}`);

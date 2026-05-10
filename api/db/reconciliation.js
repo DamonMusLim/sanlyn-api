@@ -222,12 +222,24 @@ export default async function handler(req, res) {
       const cno = order.contract_no;
       const ono = order.order_no;
 
+      // AR predicate — Codex P1 (round 3):
+      // Reconciliation = customer receivable view. Must include only AR
+      // payments (money IN from customer). AP rows that share an order_no
+      // (supplier/forwarder payouts) would otherwise reduce the customer's
+      // outstanding balance incorrectly.
+      const isAR = (p) => {
+        const d = (p.direction || "").toString();
+        return d === "AR" || d === "收款" || d === "in";
+      };
+
       // Match payments to this order:
       //  - Primary:  finance_payments.contract_no = orders.contract_no (FS-style)
       //  - Fallback: finance_payments.order_no    = orders.order_no    (40-CA-1 style)
+      //  - AND      payment direction is AR (no AP leakage into receivables)
       const orderPayments = allPayments.filter(p =>
-        (cno && p.contract_no === cno) ||
-        (ono && p.order_no    === ono)
+        isAR(p) &&
+        ((cno && p.contract_no === cno) ||
+         (ono && p.order_no    === ono))
       );
 
       // Sum paid amounts — prefer paid_amount column, fallback to raw->receivedAmount, then amount

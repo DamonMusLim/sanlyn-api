@@ -123,11 +123,20 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: err.message });
     }
 
-    // ── bl_no change detection → trigger dual notifications ──
-    const prevBl = existing.bl_no;
-    const newBl  = saved.bl_no;
+    // ── BL change detection → trigger dual notifications ──
+    // Trigger on either:
+    //   (a) MBL first set  → factory notify (customer deferred if no HBL)
+    //   (b) HBL first set  → customer notify (catches deferred case)
+    // Codex P1 (round 3): without (b), a shipment that gets MBL before
+    // HBL would defer customer notify and never re-fire when HBL arrives.
+    const prevBl    = existing.bl_no;
+    const newBl     = saved.bl_no;
+    const prevHbl   = existing.bl_house;
+    const newHbl    = saved.bl_house;
     let notifyResult = null;
-    if (!prevBl && newBl) {
+    const blFirstSet  = !prevBl  && newBl;
+    const hblFirstSet = !prevHbl && newHbl;
+    if (blFirstSet || hblFirstSet) {
       try {
         notifyResult = await sendShipmentNotifications(pool, saved);
       } catch (e) {
