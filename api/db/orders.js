@@ -247,7 +247,8 @@ export default async function handler(req, res) {
     // Mock isolation: non-admin users never see is_mock=true rows unless they hold mock:read cap.
     const hasMockRead = Array.isArray(req.user?.capabilities) && req.user.capabilities.includes("mock:read");
     if (req.user && req.user.role !== "admin" && !hasMockRead) {
-      conds.push("(is_mock IS NULL OR is_mock = FALSE)");
+      // is_mock column not yet in schema — use raw JSONB fallback
+      conds.push("(raw->>'is_mock' IS NULL OR raw->>'is_mock' != 'true')");
     }
 
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
