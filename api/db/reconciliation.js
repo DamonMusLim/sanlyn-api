@@ -222,14 +222,25 @@ export default async function handler(req, res) {
       const cno = order.contract_no;
       const ono = order.order_no;
 
-      // AR predicate — Codex P1 (round 3):
-      // Reconciliation = customer receivable view. Must include only AR
-      // payments (money IN from customer). AP rows that share an order_no
-      // (supplier/forwarder payouts) would otherwise reduce the customer's
-      // outstanding balance incorrectly.
+      // AR predicate — reconciliation = customer receivable view.
+      //
+      //   Include: AR / 收款 / in  (canonical + legacy AR)
+      //   Include: empty/NULL direction  (legacy unclassified — Codex
+      //            round 4 P1: rejecting these silently overstated
+      //            outstanding for ~256 PETSOME historical rows that
+      //            haven't been touched by the dry-run normalize SQL yet).
+      //   Exclude: AP / 付款 / out  (supplier/forwarder payouts — Codex
+      //            round 3 P1: must not bleed into customer paidTotal).
+      //
+      // The empty-direction inclusion is safe in this context because the
+      // payment was already restricted to this customer's orders by
+      // contract_no/order_no JOIN; an AP row with the same order_no is
+      // explicitly excluded by the AP test. After the data-fix SQL runs,
+      // empty direction → AR migration makes this branch a no-op.
       const isAR = (p) => {
         const d = (p.direction || "").toString();
-        return d === "AR" || d === "收款" || d === "in";
+        if (d === "AP" || d === "付款" || d === "out") return false;
+        return true; // AR / 收款 / in / empty
       };
 
       // Match payments to this order:

@@ -49,6 +49,17 @@ function stripBlFields(row, role) {
   for (const [field, allowed] of Object.entries(BL_ROLE_ACCESS)) {
     if (!allowed.has(role)) delete out[field];
   }
+  // Codex P1 (round 4): the notifier persists rendered customer/factory
+  // text into raw.customer_notification_text / raw.factory_notification_text.
+  // Customer text contains HBL; factory text may contain MBL. Strip those
+  // from raw based on role so a non-permitted reader cannot recover the BL
+  // through the raw payload. internal_ops keeps everything.
+  if (out.raw && typeof out.raw === "object" && role !== "internal_ops") {
+    const raw = { ...out.raw };
+    if (!BL_ROLE_ACCESS.bl_house.has(role)) delete raw.customer_notification_text;
+    if (!BL_ROLE_ACCESS.bl_no.has(role))    delete raw.factory_notification_text;
+    out.raw = raw;
+  }
   return out;
 }
 
