@@ -311,33 +311,33 @@ async function saveShippingPlan(extracted, matchedOrders, ossUrl) {
 }
 
 // ── 自动回写订单（如果精确匹配到 BL 号）──
+// Uses jsonb || merge so all raw fields update atomically (multiple
+// jsonb_set calls in one SET clause only keep the last assignment).
 async function backfillOrder(extracted, matchedOrders) {
   if (!extracted.bl_no || matchedOrders.length === 0) return null;
   const exactMatch = matchedOrders.find(m => m.matchType === "bl_no");
   if (!exactMatch) return null;
 
   const pool = getPool();
-  const sets = ["status = 'shipped'"];
-  const vals = [];
+  const rawPatch = {};
 
-  if (extracted.bl_no) {
-    vals.push(extracted.bl_no);
-    sets.push(`raw = jsonb_set(raw, '{blNo}', $${vals.length}::text::jsonb)`);
-  }
-  if (extracted.container_no) {
-    vals.push(JSON.stringify(extracted.container_no));
-    sets.push(`raw = jsonb_set(raw, '{containerNo}', $${vals.length}::text::jsonb)`);
-  }
+  if (extracted.bl_no)        rawPatch.blNo        = extracted.bl_no;
+  if (extracted.container_no) rawPatch.containerNo  = extracted.container_no;
   if (extracted.vessel) {
-    vals.push(JSON.stringify(`${extracted.vessel}${extracted.voyage ? "/" + extracted.voyage : ""}`));
-    sets.push(`raw = jsonb_set(raw, '{vessel}', $${vals.length}::text::jsonb)`);
+    rawPatch.vessel = `${extracted.vessel}${extracted.voyage ? "/" + extracted.voyage : ""}`;
   }
+  if (extracted.etd) {
+    rawPatch.etd         = extracted.etd;
+    rawPatch.actDelivery = extracted.etd + "T00:00:00.000Z";
+  }
+  if (extracted.eta) rawPatch.eta = extracted.eta;
+
+  const sets = ["status = 'shipped'", "raw = raw || $1::jsonb"];
+  const vals = [JSON.stringify(rawPatch)];
+
   if (extracted.etd) {
     vals.push(extracted.etd);
     sets.push(`etd = $${vals.length}::date`);
-    const etdFull = JSON.stringify(extracted.etd + "T00:00:00.000Z");
-    vals.push(etdFull);
-    sets.push(`raw = jsonb_set(raw, '{actDelivery}', $${vals.length}::text::jsonb)`);
   }
 
   vals.push(exactMatch.orderNo);
