@@ -275,7 +275,8 @@ mount("/api/db/migrate-customers-v2",  () => import("./api/db/migrate-customers-
 mount("/api/db/migrate-company-certs",() => import("./api/db/migrate-company-certs.js")); // cert_type_config + company_certs
 mount("/api/db/cert-expiry-check",   () => import("./api/db/cert-expiry-check.js"));    // cron: cert expiry alert
 mount("/api/db/export-certs",        () => import("./api/db/export-certs.js"));          // per-shipment export certs (ciq/vet/phyto)
-mount("/api/db/cert-type-config",    () => import("./api/db/cert-type-config.js"));      // admin: manage cert types
+mount("/api/db/cert-type-config",    () => import("./api/db/cert-type-config.js"));      // admin: manage cert types (legacy)
+mount("/api/db/credential-types",    () => import("./api/db/credential-types.js"));      // Stage 3 phase 1: canonical credential_types (read-only)
 mount("/api/db/company-certs",       () => import("./api/db/company-certs.js"));          // factory/seller: own cert docs
 mount("/api/db/migrate-audit-logs",   () => import("./api/db/migrate-audit-logs.js"));   // audit_logs v2 columns
 mount("/api/db/kyc-upload",           () => import("./api/db/kyc-upload.js"));           // KYC doc upload
@@ -385,6 +386,11 @@ mount("/api/db/migrate-ai-and-notifications", () => import("./api/db/migrate-ai-
 mount("/api/db/ai-operations", () => import("./api/db/ai-operations.js"));
 mount("/api/db/ai-summaries",  () => import("./api/db/ai-summaries.js"));
 mount("/api/db/notifications", () => import("./api/db/notifications.js"));
+
+// ── SC Collab Phase 2 — quote requests / bids / collab cards ─────────────
+mount("/api/supply-chain/quote-requests", () => import("./api/supply-chain-quote-requests.js"));
+mount("/api/supply-chain/quote-bids",     () => import("./api/supply-chain-quote-bids.js"));
+mount("/api/collab/cards",                () => import("./api/supply-chain-collab-cards.js"));
 
 // ── v3.2 §6 — order_events / order_tasks / containers ────────────────────
 mount("/api/db/migrate-order-events", () => import("./api/db/migrate-order-events.js"));
