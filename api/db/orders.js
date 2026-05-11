@@ -167,7 +167,9 @@ async function handlePatch(req, res) {
 
 // ── POST (no action): create a new order — admin only, minimal fields ─────────
 // Called by NewOrderDrawer in admin-v1 OrdersModule.
-// orders.id has no serial default; must supply MAX(id)+1 manually (same as order-create-v2).
+// orders.id has no serial default; we use a scalar subquery inside the INSERT
+// so the MAX(id)+1 read and the INSERT happen atomically in one round-trip,
+// eliminating the race condition present in a separate SELECT then INSERT pattern.
 async function handleCreate(req, res) {
   if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({ error: "Forbidden: admin only" });
@@ -176,24 +178,22 @@ async function handleCreate(req, res) {
   const body = req.body || {};
   if (!body.customer) return res.status(400).json({ error: "customer is required" });
 
-  const nextIdRes = await pool.query("SELECT COALESCE(MAX(id), 0) + 1 AS nid FROM orders");
-  const nextId = nextIdRes.rows[0].nid;
-
   // Auto-generate order_no / contract_no if caller omits them
   const d = new Date();
   const ds = String(d.getFullYear()) + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0");
-  const rnd = String(Math.floor(Math.random()*10000)).padStart(4,"0");
-  const orderNo    = body.order_no    || ("ORD-" + ds + "-" + rnd);
+  const orderNo    = body.order_no    || ("ORD-" + ds + "-" + String(Math.floor(Math.random()*10000)).padStart(4,"0"));
   const contractNo = body.contract_no || ("FS"   + ds + String(Math.floor(Math.random()*1000)).padStart(3,"0"));
 
   const r = await pool.query(
     `INSERT INTO orders
        (id, order_no, contract_no, customer, company_code, factory,
         trade_terms, status, total_amount, currency, etd, notes, source, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'admin_panel',$13)
+     VALUES (
+       (SELECT COALESCE(MAX(id),0)+1 FROM orders),
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'admin_panel',$12
+     )
      RETURNING id, order_no, contract_no`,
     [
-      nextId,
       orderNo,
       contractNo,
       body.customer,
@@ -271,6 +271,7 @@ export default async function handler(req, res) {
       try { return await handleMarkReady(req, res); }
       catch (err) { return res.status(500).json({ success: false, error: err.message }); }
     }
+    if (action) return res.status(400).json({ error: "unknown action: " + action });
     // No action = create new order
     try { return await handleCreate(req, res); }
     catch (err) { return res.status(500).json({ success: false, error: err.message }); }
