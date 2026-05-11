@@ -244,11 +244,7 @@ export default async function handler(req, res) {
     }
     let query = "SELECT * FROM orders", params = [], conds = [];
 
-    // Mock isolation: non-admin users never see is_mock=true rows unless they hold mock:read cap.
-    const hasMockRead = Array.isArray(req.user?.capabilities) && req.user.capabilities.includes("mock:read");
-    if (req.user && req.user.role !== "admin" && !hasMockRead) {
-      conds.push("(is_mock IS NULL OR is_mock = FALSE)");
-    }
+    // is_mock column was removed from orders table — filter dropped (ORDER-DATA-DISPLAY-UNBLOCK-001)
 
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`status = $${params.length}`); }
