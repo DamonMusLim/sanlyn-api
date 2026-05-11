@@ -89,6 +89,7 @@ const PUBLIC_PATHS = [
   "/health",
   // "/api/db/accounts", // REMOVED 2026-04-22 P0 — no longer public; use /api/db/auth-login
   "/api/db/auth-login",   // 主应用登录接口
+  "/api/db/test-fixture-login", // Dev-only fixture login (returns 404 in production)
   "/api/db/check-username", // 注册页查重（只返回 {exists:bool}，不泄露其他字段）
   "/api/portal/login",    // Portal 登录（portal token 在此签发，登录前无 token）
   "/api/driver-evidence", // 司机扫 QR 上传装柜证据（无登录；凭 bl_no+container_no 授权）
