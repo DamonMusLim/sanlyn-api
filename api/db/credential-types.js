@@ -117,7 +117,25 @@ async function readCanonical(pool, filters) {
 // ── Legacy reader: cert_type_config (Stage 2C §8 compat read) ────────
 // Maps legacy column names into the canonical shape so callers see the
 // same fields regardless of source.
+//
+// FILTER NOTE (Codex round-1 P2 fix):
+//   Legacy cert_type_config has no `category` or `supply_chain_type`
+//   columns. Every row maps to `category: "other"` and an empty
+//   `applies_to_supply_chain_types` array in the canonical projection.
+//   If the caller requested category != "other" or any supply_chain_type
+//   value, no legacy row can satisfy the filter; we short-circuit to
+//   an empty result rather than returning data that contradicts
+//   `filters_applied`. This keeps the contract honest on legacy-only DBs.
 async function readLegacy(pool, filters) {
+  // ── Filters legacy cannot represent → short-circuit to [] ──
+  if (filters.category && filters.category !== "other") {
+    return [];
+  }
+  if (filters.supply_chain_type) {
+    // legacy rows always have applies_to_supply_chain_types = []
+    return [];
+  }
+
   var where = [];
   var params = [];
   function add(clause, value) {
@@ -133,7 +151,6 @@ async function readLegacy(pool, filters) {
   }
 
   if (filters.role) add("$$ = ANY(company_roles)", filters.role);
-  // legacy has no category / supply_chain_type — silently ignore those filters
 
   var sql =
     "SELECT id, cert_key AS code, cert_name_cn AS name_cn, cert_name_en AS name_en, " +
