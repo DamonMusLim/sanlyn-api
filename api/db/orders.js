@@ -165,6 +165,53 @@ async function handlePatch(req, res) {
   return res.status(200).json({ success: true, id });
 }
 
+// ── POST (no action): create a new order — admin only, minimal fields ─────────
+// Called by NewOrderDrawer in admin-v1 OrdersModule.
+// orders.id has no serial default; must supply MAX(id)+1 manually (same as order-create-v2).
+async function handleCreate(req, res) {
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({ error: "Forbidden: admin only" });
+  }
+  const pool = getPool();
+  const body = req.body || {};
+  if (!body.customer) return res.status(400).json({ error: "customer is required" });
+
+  const nextIdRes = await pool.query("SELECT COALESCE(MAX(id), 0) + 1 AS nid FROM orders");
+  const nextId = nextIdRes.rows[0].nid;
+
+  // Auto-generate order_no / contract_no if caller omits them
+  const d = new Date();
+  const ds = String(d.getFullYear()) + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0");
+  const rnd = String(Math.floor(Math.random()*10000)).padStart(4,"0");
+  const orderNo    = body.order_no    || ("ORD-" + ds + "-" + rnd);
+  const contractNo = body.contract_no || ("FS"   + ds + String(Math.floor(Math.random()*1000)).padStart(3,"0"));
+
+  const r = await pool.query(
+    `INSERT INTO orders
+       (id, order_no, contract_no, customer, company_code, factory,
+        trade_terms, status, total_amount, currency, etd, notes, source, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'admin_panel',$13)
+     RETURNING id, order_no, contract_no`,
+    [
+      nextId,
+      orderNo,
+      contractNo,
+      body.customer,
+      body.company_code || null,
+      body.factory      || null,
+      body.trade_terms  || "FOB",
+      body.status       || "draft",
+      body.total_amount ? Number(body.total_amount) : null,
+      body.currency     || "USD",
+      body.etd          || null,
+      body.notes        || null,
+      req.user.uid || req.user.sub || null,
+    ]
+  );
+  const row = r.rows[0];
+  return res.status(200).json({ success: true, id: row.id, order_no: row.order_no, contract_no: row.contract_no });
+}
+
 // ── POST mark_ready: factory delivery confirmation on behalf of ops ───────────
 // Auth: requires 'orders:admin:write' capability (req.user.access[]) or admin role.
 // v3.2 §6.1: writes raw.actDelivery + inserts order_events production_complete.
@@ -224,7 +271,9 @@ export default async function handler(req, res) {
       try { return await handleMarkReady(req, res); }
       catch (err) { return res.status(500).json({ success: false, error: err.message }); }
     }
-    return res.status(400).json({ error: "unknown action" });
+    // No action = create new order
+    try { return await handleCreate(req, res); }
+    catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   }
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
