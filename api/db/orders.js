@@ -167,9 +167,8 @@ async function handlePatch(req, res) {
 
 // ── POST (no action): create a new order — admin only, minimal fields ─────────
 // Called by NewOrderDrawer in admin-v1 OrdersModule.
-// orders.id has no serial default; we use a scalar subquery inside the INSERT
-// so the MAX(id)+1 read and the INSERT happen atomically in one round-trip,
-// eliminating the race condition present in a separate SELECT then INSERT pattern.
+// orders.id has no serial default (schema-frozen). We use pg_advisory_xact_lock
+// to serialize concurrent creates so MAX(id)+1 is always unique.
 async function handleCreate(req, res) {
   if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({ error: "Forbidden: admin only" });
@@ -184,32 +183,44 @@ async function handleCreate(req, res) {
   const orderNo    = body.order_no    || ("ORD-" + ds + "-" + String(Math.floor(Math.random()*10000)).padStart(4,"0"));
   const contractNo = body.contract_no || ("FS"   + ds + String(Math.floor(Math.random()*1000)).padStart(3,"0"));
 
-  const r = await pool.query(
-    `INSERT INTO orders
-       (id, order_no, contract_no, customer, company_code, factory,
-        trade_terms, status, total_amount, currency, etd, notes, source, created_by)
-     VALUES (
-       (SELECT COALESCE(MAX(id),0)+1 FROM orders),
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'admin_panel',$12
-     )
-     RETURNING id, order_no, contract_no`,
-    [
-      orderNo,
-      contractNo,
-      body.customer,
-      body.company_code || null,
-      body.factory      || null,
-      body.trade_terms  || "FOB",
-      body.status       || "draft",
-      body.total_amount ? Number(body.total_amount) : null,
-      body.currency     || "USD",
-      body.etd          || null,
-      body.notes        || null,
-      req.user.uid || req.user.sub || null,
-    ]
-  );
-  const row = r.rows[0];
-  return res.status(200).json({ success: true, id: row.id, order_no: row.order_no, contract_no: row.contract_no });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Advisory lock serializes concurrent admin creates for id generation (no schema change needed)
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('orders_id_gen'))");
+    const nidRes = await client.query("SELECT COALESCE(MAX(id),0)+1 AS nid FROM orders");
+    const nextId = nidRes.rows[0].nid;
+    const r = await client.query(
+      `INSERT INTO orders
+         (id, order_no, contract_no, customer, company_code, factory,
+          trade_terms, status, total_amount, currency, etd, notes, source, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'admin_panel',$13)
+       RETURNING id, order_no, contract_no`,
+      [
+        nextId,
+        orderNo,
+        contractNo,
+        body.customer,
+        body.company_code || null,
+        body.factory      || null,
+        body.trade_terms  || "FOB",
+        body.status       || "draft",
+        body.total_amount ? Number(body.total_amount) : null,
+        body.currency     || "USD",
+        body.etd          || null,
+        body.notes        || null,
+        req.user.uid || req.user.sub || null,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = r.rows[0];
+    return res.status(200).json({ success: true, id: row.id, order_no: row.order_no, contract_no: row.contract_no });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ── POST mark_ready: factory delivery confirmation on behalf of ops ───────────
