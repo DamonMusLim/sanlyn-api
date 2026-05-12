@@ -103,6 +103,9 @@ const PUBLIC_PATHS = [
   // Customer Magic Link (public validate/use — handler verifies token internally)
   "/api/db/customer-magic-link/validate",
   "/api/db/customer-magic-link/use",
+  // Customer Invite: validate + activate are public (token is credential); generate requires admin JWT
+  "/api/db/customer-invite/validate",
+  "/api/db/customer-invite/activate",
   // Forwarder Booking Submit — token-authenticated, no JWT
   "/api/db/forwarder-booking-submit",
   // Customs Broker Magic Link — token-authenticated, no JWT
