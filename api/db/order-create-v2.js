@@ -169,6 +169,19 @@ export default async function handler(req, res) {
       // ── Factories authorized for a specific buyer ──
       if (action === "factory-by-buyer" && req.query.buyerCode) {
         var buyerCode = req.query.buyerCode;
+
+        // PKG-006 AUTHZ-GUARD: non-admin callers may only query factories for their own buyerCode.
+        // Prevents enumerating other companies' factory relationships by probing arbitrary buyerCodes.
+        if (!isAdmin) {
+          var callerBuyerNorm = (userCodes || []).map(function(c){ return (c||"").toUpperCase(); });
+          if (!callerBuyerNorm.includes((buyerCode||"").toUpperCase())) {
+            return res.status(403).json({
+              error: "Forbidden — buyerCode is outside your account scope.",
+              code: "FACTORY_BY_BUYER_SCOPE_ERROR",
+            });
+          }
+        }
+
         var buyerRes = await pool.query(
           "SELECT id FROM customers WHERE company_code = $1 LIMIT 1",
           [buyerCode]
@@ -288,27 +301,41 @@ export default async function handler(req, res) {
         var firstAddr = addrs[0] || {};
         var brands = Array.isArray(c.brands) ? c.brands.join(", ") : (c.brands || "");
 
-        customerMap[code] = {
-          customerId: c.id,
-          companyCode: code,
-          companyNameCN: c.name_cn || "",
-          companyNameEN: c.name_en || "",
-          brands: brands,
-          country: c.country || firstAddr.country || "",
-          countryEN: c.country_en || "",
-          currency: c.currency || "CNY",
-          grade: c.grade || "",
-          paymentPolicy: c.payment_policy || "",
-          paymentTerms: c.payment_terms || [],
-          destinationPort: c.destination_port || firstAddr.port || "",
-          address: c.address || firstAddr.address || "",
-          consignee: c.consignee || firstAddr.consignee || "",
-          blType: c.bl_type || "",
-          tradeTerms: c.trade_terms || "",
-          ourShipping: c.our_shipping || "",
-          addresses: addrs,
-          raw: c.raw || {}
-        };
+        if (isAdmin) {
+          // Admin: full customer record for internal order creation
+          customerMap[code] = {
+            customerId: c.id,
+            companyCode: code,
+            companyNameCN: c.name_cn || "",
+            companyNameEN: c.name_en || "",
+            brands: brands,
+            country: c.country || firstAddr.country || "",
+            countryEN: c.country_en || "",
+            currency: c.currency || "CNY",
+            grade: c.grade || "",
+            paymentPolicy: c.payment_policy || "",
+            paymentTerms: c.payment_terms || [],
+            destinationPort: c.destination_port || firstAddr.port || "",
+            address: c.address || firstAddr.address || "",
+            consignee: c.consignee || firstAddr.consignee || "",
+            blType: c.bl_type || "",
+            tradeTerms: c.trade_terms || "",
+            ourShipping: c.our_shipping || "",
+            addresses: addrs,
+            raw: c.raw || {}
+          };
+        } else {
+          // DEC-03: external callers receive whitelist-only fields — no raw/payment/internal data
+          customerMap[code] = {
+            companyCode: code,
+            companyNameCN: c.name_cn || "",
+            companyNameEN: c.name_en || "",
+            country: c.country || firstAddr.country || "",
+            currency: c.currency || "USD",
+            destinationPort: c.destination_port || firstAddr.port || "",
+            consignee: c.consignee || firstAddr.consignee || "",
+          };
+        }
       });
       // Supplement from orders table for any customers not in customers table
       (customers.rows || []).forEach(function(c) {
@@ -580,7 +607,17 @@ export default async function handler(req, res) {
     if (!products || !products.length) return res.status(400).json({ error: "请添加产品" });
 
     var orderNo = body.orderNo || generateOrderNo();
-    var contractNo = body.contractNo || generateContractNo();
+    // DEC-02: backend FS-prefix is canonical contract_no.
+    // Non-admin callers may supply a client-side SC-prefix ref (draft display ref) but it is
+    // stored as raw._clientRef only. The official contract_no always comes from server generateContractNo().
+    // Admin callers may explicitly supply contractNo (for re-submission / import scenarios).
+    var contractNo = isAdmin
+      ? (body.contractNo || generateContractNo())
+      : generateContractNo();
+    // Preserve client SC-prefix ref in raw for display continuity (OrderCreateV4 shows SC-... in header)
+    if (!isAdmin && body.contractNo) {
+      body = Object.assign({}, body, { _clientRef: body.contractNo });
+    }
 
     // ── Product Master JOIN ─────────────────────────────────────────────────────
     // Batch-fetch product master data for all SKUs in this order.
@@ -966,23 +1003,37 @@ export default async function handler(req, res) {
       console.warn("[order-create-v2] payment_term task creation failed (non-fatal):", taskErr.message);
     }
 
+    // PKG-002: strip internal cost fields from customer-facing response.
+    // profit / totalAmountFactory reveal Sanlyn's margin and MUST NOT reach external callers.
+    // Admin callers receive the full summary for cost tracking.
+    var summaryPublic = {
+      orderNo: order.order_no,
+      contractNo: order.contract_no,
+      customer: companyNameEN || companyNameCN,
+      totalAmount: totalAmount,
+      totalQty: totalQty,
+      totalCBM: totalCBM,
+      containerType: containerType,
+      productCount: cleanProducts.length,
+    };
+    var summaryFull = Object.assign({}, summaryPublic, {
+      totalAmountFactory: totalAmountFactory,
+      profit: profit,
+    });
+
+    // Also strip cost fields from the order row returned to non-admin callers
+    var orderPublic = Object.assign({}, order);
+    if (!isAdmin) {
+      delete orderPublic.profit;
+      delete orderPublic.total_amount_factory;
+    }
+
     return res.status(200).json({
       success: true,
       // Top-level order_no for easy client parsing (OrderCreateV3 reads d.order_no)
       order_no: order.order_no,
-      order: order,
-      summary: {
-        orderNo: order.order_no,
-        contractNo: order.contract_no,
-        customer: companyNameEN || companyNameCN,
-        totalAmount: totalAmount,
-        totalAmountFactory: totalAmountFactory,
-        profit: profit,
-        totalQty: totalQty,
-        totalCBM: totalCBM,
-        containerType: containerType,
-        productCount: cleanProducts.length,
-      },
+      order: isAdmin ? order : orderPublic,
+      summary: isAdmin ? summaryFull : summaryPublic,
       credit: creditInfo,   // S89: client may show "pending approval" banner
     });
   } catch (err) {
