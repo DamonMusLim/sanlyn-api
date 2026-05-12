@@ -32,10 +32,7 @@ export default async function handler(req, res) {
     try {
       const pool = getPool();
       const ownedBl = await pool.query(
-        `SELECT 1 FROM orders
-         WHERE (bl_no = $1 OR raw->>'blNo' = $1)
-           AND (company_code = ANY($2::text[]) OR raw->>'companyCode' = ANY($2::text[]))
-         LIMIT 1`,
+        `SELECT 1 FROM shipping_plans WHERE bl_no = $1 AND company_code = ANY($2::text[]) LIMIT 1`,
         [blNo.trim().toUpperCase(), codes]
       );
       if (ownedBl.rowCount === 0) {
