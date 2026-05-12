@@ -272,15 +272,47 @@ export default async function handler(req, res) {
   // format=xlsx → Excel export (handled after data fetch, same query pipeline)
 
   // ── List mode: no type/id → return documents table rows ──
+  // DOCS-AUTH-AUDIT-001 P1-HIGH scope guard (2026-05-13):
+  // Non-internal users (customers) MUST only see their own company's documents.
+  // Scoping is done server-side via JOIN to orders.company_code.
+  // Fail-closed: customer with no companyCodes gets empty array, not 403, to avoid breaking UI.
   if(!type && !id){
     try{
       var pool2=getPool();
-      var q2="SELECT * FROM documents", p2=[], w2=[];
-      if(contract_no){ p2.push(contract_no); w2.push("contract_no=$"+p2.length); }
-      if(bl_no){       p2.push(bl_no);       w2.push("bl_no=$"+p2.length); }
-      if(w2.length) q2+=" WHERE "+w2.join(" AND ");
-      q2+=" ORDER BY created_at DESC";
-      p2.push(parseInt(limit)||1000); q2+=" LIMIT $"+p2.length;
+      var isInternal2 = req.user && (
+        req.user.role === "admin" || req.user.role === "finance" ||
+        req.user.role === "trader" || req.user.role === "logistics"
+      );
+
+      var p2=[], w2=[];
+
+      var q2;
+      if(isInternal2){
+        // Internal: full table access
+        q2 = "SELECT d.* FROM documents d";
+        if(contract_no){ p2.push(contract_no); w2.push("d.contract_no=$"+p2.length); }
+        if(bl_no){       p2.push(bl_no);       w2.push("d.bl_no=$"+p2.length); }
+        if(w2.length) q2 += " WHERE "+w2.join(" AND ");
+      } else {
+        // Customer scope: JOIN orders on contract_no, filter by company_code.
+        // Fail-closed: if user has no company codes, return empty immediately.
+        var codes2 = req.user && (req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : [])) || [];
+        if(!codes2.length){
+          return res.json({success:true,data:[],count:0,_scope:"empty-no-company"});
+        }
+        // JOIN to orders — docs without a matching order row are excluded (safer).
+        // Docs linked only via bl_no (no contract_no) are also excluded; they surface
+        // through the shipping-plan → order join when that path is implemented.
+        p2.push(codes2); // $1 = text[]
+        q2 = "SELECT d.* FROM documents d"
+           + " INNER JOIN orders o ON o.contract_no = d.contract_no"
+           + " WHERE o.company_code = ANY($1::text[])";
+        if(contract_no){ p2.push(contract_no); q2 += " AND d.contract_no=$"+p2.length; }
+        if(bl_no){       p2.push(bl_no);       q2 += " AND d.bl_no=$"+p2.length; }
+      }
+
+      q2 += " ORDER BY d.created_at DESC";
+      p2.push(parseInt(limit)||1000); q2 += " LIMIT $"+p2.length;
       var r2=await pool2.query(q2,p2);
       return res.json({success:true,data:r2.rows,count:r2.rowCount});
     }catch(e2){ return res.status(500).json({error:e2.message}); }
@@ -295,6 +327,15 @@ export default async function handler(req, res) {
       var oR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1",[id]);
       if(!oR.rows.length) return res.status(404).send("<h1>Order not found: "+esc(id)+"</h1>");
       var o=oR.rows[0], raw=o.raw||{};
+      // DOCS-AUTH-AUDIT-001 P1-HIGH: customer scope guard on generated docs.
+      // Fail-closed: customer can only generate docs for their own orders.
+      var _isInternal = req.user && (req.user.role==="admin"||req.user.role==="finance"||req.user.role==="trader"||req.user.role==="logistics");
+      if(!_isInternal){
+        var _codes = req.user && (req.user.companyCodes||(req.user.companyCode?[req.user.companyCode]:[])) || [];
+        if(!_codes.length || !_codes.includes(o.company_code)){
+          return res.status(403).send("<h1>403 Forbidden</h1><p>You do not have access to this document.</p>");
+        }
+      }
       if(typeof raw==="string")try{raw=JSON.parse(raw);}catch(e){raw={};}
       var cfg=await loadSellerCfg(pool,raw,qco);
       var cust=pick(o.company_name_en,raw.companyNameEN,raw.companyNameCN,o.customer);
