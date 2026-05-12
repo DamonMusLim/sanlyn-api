@@ -75,6 +75,7 @@ export default async function handler(req, res) {
         try {
           var cpResult = await pool.query(
             `SELECT cp.id AS cp_id, cp.alias_sku, cp.price_cny, cp.price_usd, cp.moq, cp.lead_time_days, cp.notes AS cp_notes,
+                    cp.price_visible,
                     p.sku, p.name_cn, p.name_en, p.brand, p.size, p.unit, p.cbm, p.gross_weight, p.net_weight,
                     p.inner_qty, p.inner_unit, p.hs_code
              FROM company_products cp
@@ -97,9 +98,10 @@ export default async function handler(req, res) {
               brand: r.brand || "",
               size: r.size || "",
               unit: r.unit || "CTN",
-              unitPrice: parseFloat(r.price_usd) || 0,
-              price_usd: parseFloat(r.price_usd) || 0,
-              price_cny: parseFloat(r.price_cny) || 0,
+              unitPrice:    r.price_visible === false ? null : (parseFloat(r.price_usd) || 0),
+              price_usd:    r.price_visible === false ? null : (parseFloat(r.price_usd) || 0),
+              price_cny:    r.price_visible === false ? null : (parseFloat(r.price_cny) || 0),
+              priceVisible: r.price_visible !== false,
               cbm: parseFloat(r.cbm) || 0,
               grossWeight: parseFloat(r.gross_weight) || 0,
               netWeight: parseFloat(r.net_weight) || 0,
@@ -442,7 +444,6 @@ export default async function handler(req, res) {
       var srBody = req.body || {};
 
       // AUTHZ-GUARD-001: scope-gate companyCode for non-admin callers
-      // External callers cannot create sourcing tasks on behalf of other buyers.
       if (!isAdmin) {
         var srCode = (srBody.companyCode || "").toUpperCase();
         var srCallerNorm = (userCodes || []).map(function(c){ return (c||"").toUpperCase(); });
@@ -454,36 +455,66 @@ export default async function handler(req, res) {
         }
       }
 
-      var taskId = "t-sr-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      var srId   = "sr-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      var taskId = "t-"  + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+
+      // Collect image names from request body (real upload via DAS is Phase 2)
+      var imageNames = [];
+      if (Array.isArray(srBody.imageNames)) imageNames = srBody.imageNames.slice(0, 10);
+
+      // INSERT sample_requests (source of truth, independent table)
+      try {
+        await pool.query(`
+          INSERT INTO sample_requests
+            (id, task_id, company_code, product_name, spec, qty, budget, notes, image_names, requested_by, assigned_to)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,'xiamen-babi')
+        `, [
+          srId, taskId,
+          srBody.companyCode || "",
+          srBody.productName || "",
+          srBody.spec || "", srBody.qty || "", srBody.budget || "", srBody.notes || "",
+          JSON.stringify(imageNames),
+          srBody.requestedBy || req.user?.account || "portal",
+        ]);
+      } catch (srInsErr) {
+        // sample_requests table may not exist yet (migration pending) — continue to tasks
+        console.warn("[order-create-v2] sample_requests insert skipped:", srInsErr.message);
+      }
+
+      // INSERT tasks — use level=NULL and owner_object_type=NULL to avoid CHECK constraint issues
+      // task_type='SAMPLE_REQUEST' is sufficient to query these
       await pool.query(`
         INSERT INTO tasks (
           id, title, task_type, level, status, risk_level,
           owner_object_type, owner_object_id, owner_object_label,
-          company_code, mode, due_at, reason, raw
+          company_code, assigned_to, mode, due_at, reason, raw
         ) VALUES (
-          $1, $2, 'SAMPLE_REQUEST', 'supply', 'open', 'low',
-          'supply_chain', $3, $4,
-          $5, 'owned', NOW() + INTERVAL '7 days',
-          'New sample / sourcing request submitted via Order Create.',
+          $1, $2, 'SAMPLE_REQUEST', NULL, 'open', 'low',
+          NULL, $3, $4,
+          $5, 'xiamen-babi', 'owned', NOW() + INTERVAL '7 days',
+          'New sample / sourcing request from customer portal.',
           $6::jsonb
         )
       `, [
         taskId,
         "Sample Request: " + (srBody.productName || "Unknown"),
-        taskId,
+        srId,
         "Sample: " + (srBody.productName || "Unknown"),
         srBody.companyCode || "",
         JSON.stringify({
+          srId:        srId,
           productName: srBody.productName || "",
-          spec: srBody.spec || "",
-          qty: srBody.qty || "",
-          budget: srBody.budget || "",
-          notes: srBody.notes || "",
-          requestedBy: srBody.requestedBy || "admin",
+          spec:        srBody.spec || "",
+          qty:         srBody.qty || "",
+          budget:      srBody.budget || "",
+          notes:       srBody.notes || "",
+          imageNames:  imageNames,
+          requestedBy: srBody.requestedBy || req.user?.account || "portal",
           submittedAt: new Date().toISOString(),
         }),
       ]);
-      return res.status(200).json({ success: true, taskId: taskId });
+
+      return res.status(200).json({ success: true, taskId, srId });
     } catch (srErr) {
       console.error("[order-create-v2] sample-request failed:", srErr);
       return res.status(500).json({ success: false, error: srErr.message });

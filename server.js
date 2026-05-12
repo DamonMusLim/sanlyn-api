@@ -238,6 +238,7 @@ mount("/api/db/migrate-factory-portal", () => import("./api/db/migrate-factory-p
 mount("/api/db/migrate-order-mode", () => import("./api/db/migrate-order-mode.js")); // P1-1
 mount("/api/db/migrate-order-flow-v3", () => import("./api/db/migrate-order-flow-v3.js")); // v3
 mount("/api/db/migrate-tasks",      () => import("./api/db/migrate-tasks.js"));      // P1-2
+mount("/api/db/migrate-sample-requests", () => import("./api/db/migrate-sample-requests.js")); // sample_requests table + price_visible
 mount("/api/db/migrate-collab",     () => import("./api/db/migrate-collab.js"));     // P1-3
 mount("/api/db/migrate-tasks-factory-code", () => import("./api/db/migrate-tasks-factory-code.js")); // BUG-A
 // ── v2 Network Layer (blueprint v2) ───────────────────────────
