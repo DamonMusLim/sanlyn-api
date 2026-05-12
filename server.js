@@ -149,10 +149,12 @@ mount("/api/db/orders-recompute-all",  () => import("./api/db/orders-recompute.j
 mount("/api/db/orders-recompute",      () => import("./api/db/orders-recompute.js"));
 mount("/api/db/credit-approvals",       () => import("./api/db/credit-approvals.js"));
 mount("/api/db/forward-doc",       () => import("./api/db/forward-doc.js"));
-mount("/api/db/finance-preview",       () => import("./api/db/finance-preview.js"));   // D-FINANCE-PREVIEW-FC-AUDIT-BRIDGE-AND-GATE-IMPL-001
-mount("/api/db/finance-records",       () => import("./api/db/finance-records.js"));
+mount("/api/db/finance-preview",          () => import("./api/db/finance-preview.js"));   // D-FINANCE-PREVIEW-FC-AUDIT-BRIDGE-AND-GATE-IMPL-001
+mount("/api/db/finance-records",          () => import("./api/db/finance-records.js"));
 // Alias kept for legacy frontend callers (CustomerPCFinance + CustomerFinanceWorkbench)
-mount("/api/db/finance-receivables",   () => import("./api/db/finance-records.js"));
+mount("/api/db/finance-receivables",      () => import("./api/db/finance-records.js"));
+// FINANCE-WORKSPACE-UI-IMPL-001: read-only freight AP bills (GET only, no writes)
+mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplier-bills.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
