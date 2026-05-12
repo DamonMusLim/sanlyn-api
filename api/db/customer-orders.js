@@ -59,7 +59,7 @@ export default async function handler(req, res) {
         }
       }
       const plan = await _findShippingPlan(pool, order);
-      return res.status(200).json({ success: true, data: _merge(order, plan) });
+      return res.status(200).json({ success: true, data: _merge(order, plan, isAdmin) });
     }
 
     // ── Build company filter — non-admin: ignore client-supplied codes, use JWT scope ──
@@ -148,7 +148,7 @@ export default async function handler(req, res) {
     const merged = orders.map(o => {
       const key = o.order_no || o._id;
       const plan = planByOrderNo[String(key)] || null;
-      return _merge(o, plan);
+      return _merge(o, plan, isAdmin);
     });
 
     // ── Count total (for pagination) ──
@@ -188,9 +188,44 @@ async function _findShippingPlan(pool, order) {
   }
 }
 
+// ── Product-level forbidden fields (non-admin must not see Sanlyn's cost/tax structure) ──
+const PRODUCT_FORBIDDEN_KEYS = [
+  "factoryPrice", "factorySubtotal", "factory_price", "factory_subtotal",
+  "declareAmountPerBox", "declare_amount_per_box",
+  "vatRate", "vat_rate",
+  "taxRebateRate", "tax_rebate_rate",
+  "_masterFilled",
+];
+
+// ── Shipping plan internal cost fields (non-admin must not see Sanlyn's procurement costs) ──
+const PLAN_FORBIDDEN_KEYS = [
+  "freight_cost",   // Sanlyn's wholesale freight cost
+  "trucking_fee",   // Sanlyn's trucking cost
+  "customs_fee",    // Sanlyn's customs filing cost
+  "insurance_fee",  // Sanlyn's insurance cost
+  "doc_fee",        // Internal doc fee
+  "thc_fee",        // Terminal handling charge
+  "seal_fee",       // Seal fee
+];
+
 // ── Merge order + shipping plan into unified record ──
-function _merge(order, plan) {
+// isAdmin controls whether internal cost fields are included in the response.
+function _merge(order, plan, isAdmin) {
   const raw = order.raw || {};
+
+  // Strip forbidden product-level fields for non-admin callers.
+  // orders.raw.products may contain factoryPrice/factorySubtotal/vatRate etc.
+  // that reveal Sanlyn's procurement cost and tax structure.
+  let products = raw.products || order.products || [];
+  if (!isAdmin && Array.isArray(products)) {
+    products = products.map(function(p) {
+      if (!p || typeof p !== "object") return p;
+      const safe = Object.assign({}, p);
+      PRODUCT_FORBIDDEN_KEYS.forEach(function(k) { delete safe[k]; });
+      return safe;
+    });
+  }
+
   const out = {
     // ── Core order fields ──
     _id:          order._id,
@@ -227,8 +262,8 @@ function _merge(order, plan) {
     voyage: order.voyage || raw.voyage || null,
     etd: order.etd || raw.etd || null,
     eta: order.eta || raw.eta || null,
-    // ── Products ──
-    products: raw.products || order.products || [],
+    // ── Products (filtered above for non-admin) ──
+    products: products,
     // ── Attachments / docs ──
     attachments: raw.attachments || order.attachments || {},
     pdf_urls: raw.pdfUrls || order.pdf_urls || {},
@@ -236,7 +271,8 @@ function _merge(order, plan) {
 
   // ── Overlay shipping plan if found ──
   if (plan) {
-    out.shipping_plan = {
+    // Build base plan object (logistics-facing fields only)
+    const planBase = {
       _id:           plan._id,
       shipment_no:   plan.shipment_no,
       bl_no:         plan.bl_no,
@@ -253,17 +289,14 @@ function _merge(order, plan) {
       forwarder_cn:  plan.forwarder_cn,
       trucking_cn:   plan.trucking_cn,
       customs_cn:    plan.customs_cn,
-      freight_cost:  plan.freight_cost,
-      freight_sale_usd: plan.freight_sale_usd,
-      // Fee breakdown
-      trucking_fee:  plan.trucking_fee,
-      customs_fee:   plan.customs_fee,
-      insurance_fee: plan.insurance_fee,
-      doc_fee:       plan.doc_fee,
-      thc_fee:       plan.thc_fee,
-      seal_fee:      plan.seal_fee,
+      freight_sale_usd: plan.freight_sale_usd, // customer-facing charge — safe to expose
       order_nos:     plan.order_nos,
     };
+    // Admin: include full internal cost breakdown
+    if (isAdmin) {
+      PLAN_FORBIDDEN_KEYS.forEach(function(k) { planBase[k] = plan[k]; });
+    }
+    out.shipping_plan = planBase;
 
     // Promote key shipping fields to top level (for backward compat with _toCard)
     if (plan.bl_no   && !out.bl_no)     out.bl_no  = plan.bl_no;
