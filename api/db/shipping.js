@@ -45,6 +45,16 @@ async function nextShipmentNo(pool) {
   }
 }
 
+function stripShippingForCustomer(row) {
+  const {
+    freight_cost, freight_sale_usd, port_surcharge_total,
+    customs_cost_total, trucking_cost_total, agency_fee_rmb,
+    forwarder_cn, trucking_cn, customs_cn,
+    ...safe
+  } = row;
+  return safe;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -88,6 +98,7 @@ export default async function handler(req, res) {
       port_surcharge_total: body.port_surcharge_total || null,
       forwarder_booking_no: forwarderBookingNo,
       status:             body.status             || null,
+      vault:              (body.vault && typeof body.vault === "object" && !Array.isArray(body.vault)) ? body.vault : null,
       created_by:         req.user?.id || req.user?.email || body.created_by || "admin",
     };
 
@@ -195,6 +206,15 @@ export default async function handler(req, res) {
       conds.push(`${scopeCol} ILIKE $${params.length}`);
     }
 
+    if (u.role === "customer") {
+      const codes = u.companyCodes || (u.companyCode ? [u.companyCode] : null);
+      if (!codes || codes.length === 0) {
+        return res.status(403).json({ error: "Account scope missing — log out and log in again." });
+      }
+      params.push(codes);
+      conds.push(`customer = ANY($${params.length}::text[])`);
+    }
+
     if (conds.length) query += " WHERE " + conds.join(" AND ");
     params.push(parseInt(limit));
     query += ` ORDER BY etd DESC LIMIT $${params.length}`;
@@ -206,6 +226,7 @@ export default async function handler(req, res) {
         return cell && (cell.includes(scopeNeedle) || scopeNeedle.includes(cell));
       });
     }
-    return res.status(200).json({ success: true, data: rows, count: rows.length });
+    const data = u.role === "customer" ? rows.map(stripShippingForCustomer) : rows;
+    return res.status(200).json({ success: true, data, count: data.length });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 }

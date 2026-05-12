@@ -1,8 +1,11 @@
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+  const forCustomer = req.user?.role === "customer";
   try {
     const pool = getPool();
     const { pol, pod, carrier, limit = 1000 } = req.query;
@@ -16,6 +19,7 @@ export default async function handler(req, res) {
         f.next_sailing AS "nextSailing",
         f.valid_from AS "validFrom", f.valid_to AS "validTo",
         f.transit_days AS "transitDays", f.thc, f.remarks, f.raw,
+        f.local_charge_code AS "localChargeCode",
         f.created_at AS "createdAt", f.updated_at AS "updatedAt",
         pc.sale_price_20gp AS "portGp20",
         pc.sale_price_40hq AS "portHq40",
@@ -37,6 +41,10 @@ export default async function handler(req, res) {
     params.push(parseInt(limit));
     query += ` ORDER BY f.created_at DESC LIMIT $${params.length}`;
     const result = await pool.query(query, params);
-    return res.status(200).json(result.rows);
+    return res.status(200).json(
+      forCustomer
+        ? result.rows.map(r => ({ ...r, gp20: undefined, hq40: undefined }))
+        : result.rows
+    );
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 }

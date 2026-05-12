@@ -3,6 +3,7 @@
 // POST:  create record(s)
 // PATCH: update rate + lock/unlock
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 const PATCH_ALLOW = [
   "charge_code","charge_name","amount","currency","charge_type",
@@ -14,6 +15,8 @@ const PATCH_ALLOW = [
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
+  const forCustomer = req.user?.role === "customer";
 
   const pool = getPool();
 
@@ -119,7 +122,13 @@ export default async function handler(req, res) {
       params.push(parseInt(limit));
       query += " ORDER BY created_at DESC LIMIT $" + params.length;
       const result = await pool.query(query, params);
-      return res.status(200).json({ success: true, data: result.rows, count: result.rowCount });
+      return res.status(200).json({
+        success: true,
+        data: forCustomer
+          ? result.rows.map(r => { const { cost_total, ...safe } = r; return safe; })
+          : result.rows,
+        count: result.rowCount,
+      });
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
     }

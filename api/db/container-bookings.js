@@ -50,6 +50,21 @@ export default async function handler(req,res){
         var r=await pool.query("SELECT * FROM container_bookings WHERE id=$1",[id]);
         return res.json({ success:true, data:r.rows[0]||null });
       }
+      if (bl_no && req.user?.role === "customer") {
+        const codes = req.user?.companyCodes || (req.user?.companyCode ? [req.user.companyCode] : null);
+        if (codes && codes.length > 0) {
+          const owned = await pool.query(
+            `SELECT 1 FROM orders
+             WHERE (bl_no = $1 OR raw->>'blNo' = $1)
+               AND (company_code = ANY($2::text[]) OR raw->>'companyCode' = ANY($2::text[]))
+             LIMIT 1`,
+            [bl_no, codes]
+          );
+          if (owned.rowCount === 0) {
+            return res.status(403).json({ error: "Forbidden: BL not in your account scope." });
+          }
+        }
+      }
       var q="SELECT * FROM container_bookings", w=[], p=[];
       if(bl_no){        p.push(bl_no);        w.push("bl_no=$"+p.length); }
       if(contract_no){  p.push(contract_no);  w.push("contract_no=$"+p.length); }

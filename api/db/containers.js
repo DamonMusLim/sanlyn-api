@@ -1,6 +1,6 @@
 // containers.js — CRUD for shipment_group + containers + order_containers (v3.2 §6.3)
 import { getPool, setCors } from "../db.js";
-import { extractUser } from "../auth.js";
+import { requireAuth } from "../auth.js";
 
 function getCompanyCodes(req, res) {
   const role = req.user?.role;
@@ -33,7 +33,7 @@ async function orderBelongsToCaller(pool, order_id, codes, res) {
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (!req.user) extractUser(req); // populate req.user if authMiddleware hasn't run (serverless path)
+  if (!requireAuth(req, res)) return;
 
   const pool = getPool();
   const codes = getCompanyCodes(req, res);

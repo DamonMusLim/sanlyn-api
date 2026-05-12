@@ -1,9 +1,12 @@
 import { getPool, setCors } from "./db.js";
+import { requireAuth } from "./auth.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+  const forCustomer = req.user?.role === "customer";
 
   try {
     const pool  = getPool();
@@ -24,7 +27,7 @@ export default async function handler(req, res) {
       data:    result.rows.map(r => ({
         id:          r.id,
         carrier:     r.carrier     || "",
-        forwarder:   r.forwarder   || "",
+        forwarder:   forCustomer ? undefined : (r.forwarder || ""),
         pol:         r.pol         || "",
         pod:         r.pod         || "",
         routeCode:   r.route_code  || "",

@@ -6,6 +6,7 @@
 //   2. 订阅成功后把 subscriptionId 回写 shipping_plans.raw
 //   3. 仍然只按 BL（一个提单一份钱），不按柜
 import { getPool } from "./db.js";
+import { requireAuth } from "./auth.js";
 
 const BASE = "https://prod-api.4portun.com/openapi";
 
@@ -38,6 +39,7 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
 
   const APP_ID = process.env.PORTUN_APP_ID || "SHYBB";
   const SECRET = process.env.PORTUN_SECRET;

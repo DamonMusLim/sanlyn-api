@@ -6,11 +6,14 @@
 // Supports POST (preferred) and GET (legacy)
 // 4portun API requires AppId + AppSecret in request BODY, not headers
 
+import { requireAuth } from "./auth.js";
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!requireAuth(req, res)) return;
 
   const APP_ID = process.env.PORTUN_APP_ID || 'SHYBB';
   const APP_SECRET = process.env.PORTUN_SECRET;
