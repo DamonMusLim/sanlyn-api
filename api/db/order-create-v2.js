@@ -69,6 +69,59 @@ export default async function handler(req, res) {
         if (!isAdmin && userCodes && !userCodes.includes(code)) {
           return res.status(403).json({ error: "Out of scope — you cannot view this customer's order history." });
         }
+
+        // Try company_products table first (authorized catalog with customer-specific pricing)
+        var cpRows = [];
+        try {
+          var cpResult = await pool.query(
+            `SELECT cp.id AS cp_id, cp.alias_sku, cp.price_cny, cp.price_usd, cp.moq, cp.lead_time_days, cp.notes AS cp_notes,
+                    p.sku, p.name_cn, p.name_en, p.brand, p.size, p.unit, p.cbm, p.gross_weight, p.net_weight,
+                    p.inner_qty, p.inner_unit, p.hs_code
+             FROM company_products cp
+             JOIN customers cust ON cust.id = cp.company_id
+             JOIN products p ON p.id = cp.product_id
+             WHERE cust.company_code = $1 AND cp.active = true
+             ORDER BY p.name_en`,
+            [code]
+          );
+          cpRows = cpResult.rows || [];
+        } catch(cpErr) {
+          // table may not exist or product_id FK issue — fall through to order history
+        }
+
+        if (cpRows.length > 0) {
+          var cpProducts = cpRows.map(function(r) {
+            return {
+              name: r.name_en || r.name_cn || "",
+              code: r.alias_sku || r.sku || "",
+              brand: r.brand || "",
+              size: r.size || "",
+              unit: r.unit || "CTN",
+              unitPrice: parseFloat(r.price_usd) || 0,
+              price_usd: parseFloat(r.price_usd) || 0,
+              price_cny: parseFloat(r.price_cny) || 0,
+              cbm: parseFloat(r.cbm) || 0,
+              grossWeight: parseFloat(r.gross_weight) || 0,
+              netWeight: parseFloat(r.net_weight) || 0,
+              innerQty: r.inner_qty || 0,
+              innerUnit: r.inner_unit || "PCS",
+              hsCode: r.hs_code || "",
+              moq: r.moq || 0,
+              leadTimeDays: r.lead_time_days || 0,
+              notes: r.cp_notes || "",
+              isAuthorized: true,
+            };
+          });
+          return res.status(200).json({
+            success: true,
+            products: cpProducts,
+            orderCount: 0,
+            defaults: {},
+            source: "company_products",
+            authorizedCount: cpProducts.length,
+          });
+        }
+
         // Get products from this customer's recent orders
         var recentOrders = await pool.query(
           "SELECT products, customer_po, order_no, created_at FROM orders WHERE company_code = $1 AND products IS NOT NULL ORDER BY created_at DESC LIMIT 10",
@@ -110,6 +163,65 @@ export default async function handler(req, res) {
           products: Object.values(productMap),
           orderCount: recentOrders.rows.length,
           defaults: custInfo.rows[0] || {},
+        });
+      }
+
+      // ── Factories authorized for a specific buyer ──
+      if (action === "factory-by-buyer" && req.query.buyerCode) {
+        var buyerCode = req.query.buyerCode;
+        var buyerRes = await pool.query(
+          "SELECT id FROM customers WHERE company_code = $1 LIMIT 1",
+          [buyerCode]
+        ).catch(function() { return { rows: [] }; });
+
+        var factories = [];
+        var fromRelationships = false;
+
+        if (buyerRes.rows.length) {
+          var buyerId = buyerRes.rows[0].id;
+          var relRes = await pool.query(
+            `SELECT DISTINCT c.id, c.company_code, c.name_cn, c.name_en, c.name_short,
+                    c.port_default, c.export_mode, c.address
+             FROM relationships r
+             JOIN customers c ON (
+               (r.type = 'buys_from' AND r.from_company_id = $1 AND c.id = r.to_company_id)
+               OR (r.type = 'sells_to' AND r.to_company_id = $1 AND c.id = r.from_company_id)
+             )
+             WHERE c.role_type = 'factory' AND r.status = 'active'`,
+            [buyerId]
+          ).catch(function() { return { rows: [] }; });
+
+          if (relRes.rows.length) {
+            factories = relRes.rows;
+            fromRelationships = true;
+          }
+        }
+
+        // Fallback: all factories from customers table
+        if (!factories.length) {
+          var allFactRes = await pool.query(
+            "SELECT id, company_code, name_cn, name_en, name_short, port_default, export_mode FROM customers WHERE role_type = 'factory' ORDER BY name_en"
+          ).catch(function() { return { rows: [] }; });
+          factories = allFactRes.rows;
+        }
+
+        var factoryList = factories.map(function(row) {
+          return {
+            companyCode: row.company_code || "",
+            nameEN: row.name_en || "",
+            nameCN: row.name_cn || "",
+            nameShort: row.name_short || "",
+            portDefault: row.port_default || "",
+            exportMode: row.export_mode || null,
+            isProxy: row.export_mode === "proxy",
+          };
+        });
+
+        return res.status(200).json({
+          success: true,
+          factories: factoryList,
+          authorizedCount: factoryList.length,
+          fromRelationships: fromRelationships,
         });
       }
 
@@ -203,10 +315,52 @@ export default async function handler(req, res) {
         "SELECT name, name_short, po_prefix, ports FROM factories WHERE is_active = true ORDER BY name_short"
       ).catch(function() { return { rows: [] }; });
 
+      // Load factories from customers table (role_type='factory') as enrichment
+      var customersFactories = await pool.query(
+        "SELECT company_code, name_cn, name_en, name_short, port_default, export_mode FROM customers WHERE role_type = 'factory' AND is_active != false ORDER BY name_en"
+      ).catch(function() { return { rows: [] }; });
+
+      // Build enrichment map: company_code/name_short → row
+      var custFactMap = {};
+      (customersFactories.rows || []).forEach(function(cf) {
+        if (cf.company_code) custFactMap[cf.company_code] = cf;
+        if (cf.name_short) custFactMap[cf.name_short] = custFactMap[cf.name_short] || cf;
+      });
+
+      // Merge: factories table rows enriched with customers export_mode/companyCode
+      var mergedFactories = (factoriesResult.rows || []).map(function(f) {
+        var enrich = custFactMap[f.po_prefix] || custFactMap[f.name_short] || {};
+        return {
+          name: f.name,
+          nameShort: f.name_short || enrich.name_short || "",
+          poPrefix: f.po_prefix || "",
+          ports: f.ports || [],
+          exportMode: enrich.export_mode || null,
+          companyCode: enrich.company_code || null,
+        };
+      });
+
+      // Also add any customers-table factories NOT already in factories table
+      (customersFactories.rows || []).forEach(function(cf) {
+        var alreadyPresent = mergedFactories.some(function(f) {
+          return f.companyCode === cf.company_code || f.nameShort === cf.name_short;
+        });
+        if (!alreadyPresent && (cf.name_en || cf.name_cn)) {
+          mergedFactories.push({
+            name: cf.name_en || cf.name_cn || cf.company_code,
+            nameShort: cf.name_short || "",
+            poPrefix: "",
+            ports: cf.port_default ? [cf.port_default] : [],
+            exportMode: cf.export_mode || null,
+            companyCode: cf.company_code,
+          });
+        }
+      });
+
       return res.status(200).json({
         success: true,
         customers: Object.values(customerMap),
-        factories: factoriesResult.rows,
+        factories: mergedFactories,
         lastOrderNo: lastOrder.rows[0]?.order_no || null,
         lastContractNo: lastOrder.rows[0]?.contract_no || null,
         nextOrderNo: generateOrderNo(),
@@ -230,8 +384,48 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── POST: create order ──
+  // ── POST: create order or action-specific tasks ──
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  // ── POST ?action=sample-request ──
+  if (req.query.action === "sample-request") {
+    try {
+      var srBody = req.body || {};
+      var taskId = "t-sr-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      await pool.query(`
+        INSERT INTO tasks (
+          id, title, task_type, level, status, risk_level,
+          owner_object_type, owner_object_id, owner_object_label,
+          company_code, mode, due_at, reason, raw
+        ) VALUES (
+          $1, $2, 'SAMPLE_REQUEST', 'sourcing', 'open', 'low',
+          'sourcing', $3, $4,
+          $5, 'owned', NOW() + INTERVAL '7 days',
+          'New sample / sourcing request submitted via Order Create.',
+          $6::jsonb
+        )
+      `, [
+        taskId,
+        "Sample Request: " + (srBody.productName || "Unknown"),
+        taskId,
+        "Sample: " + (srBody.productName || "Unknown"),
+        srBody.companyCode || "",
+        JSON.stringify({
+          productName: srBody.productName || "",
+          spec: srBody.spec || "",
+          qty: srBody.qty || "",
+          budget: srBody.budget || "",
+          notes: srBody.notes || "",
+          requestedBy: srBody.requestedBy || "admin",
+          submittedAt: new Date().toISOString(),
+        }),
+      ]);
+      return res.status(200).json({ success: true, taskId: taskId });
+    } catch (srErr) {
+      console.error("[order-create-v2] sample-request failed:", srErr);
+      return res.status(500).json({ success: false, error: srErr.message });
+    }
+  }
 
   try {
     var body = req.body || {};
@@ -336,6 +530,9 @@ export default async function handler(req, res) {
       }
     }
 
+    var exportController = body.exportController || (body.proxyExport ? "SANLYN" : "SELF");
+    var factoryCompanyCode = body.factoryCompanyCode || body.selectedFactoryCode || null;
+
     var {
       companyCode, companyNameCN, companyNameEN, groupCode, brand, category,
       consignee, customerAddress, phone, email,
@@ -346,6 +543,9 @@ export default async function handler(req, res) {
       // P1-BUG-3 fix: source is set explicitly by V3 adapter or legacy caller
       remarks, products, createdBy, source
     } = body;
+
+    // Merge exportController + factoryCompanyCode into body so they land in orders.raw
+    body = Object.assign({}, body, { exportController: exportController, factoryCompanyCode: factoryCompanyCode });
 
     if (!companyNameCN && !companyNameEN) return res.status(400).json({ error: "客户名称必填" });
     if (!products || !products.length) return res.status(400).json({ error: "请添加产品" });
