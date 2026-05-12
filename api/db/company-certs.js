@@ -50,6 +50,41 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     var role = req.query?.role || "factory";
 
+    // Role alias mapping — normalize incoming role names to cert category
+    var ROLE_ALIAS = {
+      // buyer / customer variants
+      "customer":          "customer",
+      "buyer":             "customer",
+      "client":            "customer",
+      // factory / seller variants
+      "factory":           "factory",
+      "seller":            "factory",
+      "trader":            "seller",
+      "trader_internal":   "seller",
+      "direct_export":     "factory",
+      "supplier_limited":  "factory",
+      // forwarder / logistics
+      "forwarder":         "forwarder",
+      "logistics":         "forwarder",
+      "ocean":             "forwarder",
+      // supply chain types
+      "supply_chain":      "forwarder",    // fallback until SC-specific seeds exist
+      "customs":           "forwarder",
+      "trucking":          "forwarder",
+      "inspection":        "forwarder",
+      "warehouse":         "forwarder",
+      // broker
+      "broker_factory":    "seller",
+      "broker_customer":   "customer",
+      "broker_supply":     "forwarder",
+      // platform
+      "admin":             "seller",       // admin sees seller certs by default
+      "platform_admin":    "seller",
+      "platform_finance":  "seller",
+      "finance":           "seller",
+    };
+    role = ROLE_ALIAS[role] || role;  // normalize, keep original if no alias
+
     // 1. 拉出该角色需要的 cert 类型（只取 active 的）
     var typesRes = await pool.query(
       `SELECT cert_key, cert_name_cn, cert_name_en, company_roles, required, expire_track, warn_days, sort_order
