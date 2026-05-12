@@ -40,30 +40,37 @@ export default async function handler(req,res){
   setCors(req,res,"GET, POST, PATCH, DELETE, OPTIONS");
   if(req.method==="OPTIONS") return res.status(200).end();
   if(!requireAuth(req,res)) return;
+  if (req.user?.role === "customer" && req.method !== "GET") {
+    return res.status(403).json({ error: "Customers may not create or modify container bookings." });
+  }
   const pool = getPool();
 
   try {
     // ── GET ──────────────────────────────────────────────────────
     if(req.method==="GET"){
       var { id, bl_no, contract_no, container_no } = req.query;
+      if (req.user?.role === "customer") {
+        const codes = req.user?.companyCodes || (req.user?.companyCode ? [req.user.companyCode] : null);
+        if (!codes || codes.length === 0) {
+          return res.status(403).json({ error: "Account scope missing — log out and log in again." });
+        }
+        if (!bl_no) {
+          return res.status(403).json({ error: "Customers must query container bookings by bl_no." });
+        }
+        const owned = await pool.query(
+          `SELECT 1 FROM orders
+           WHERE (bl_no = $1 OR raw->>'blNo' = $1)
+             AND (company_code = ANY($2::text[]) OR raw->>'companyCode' = ANY($2::text[]))
+           LIMIT 1`,
+          [bl_no, codes]
+        );
+        if (owned.rowCount === 0) {
+          return res.status(403).json({ error: "Forbidden: BL not in your account scope." });
+        }
+      }
       if(id){
         var r=await pool.query("SELECT * FROM container_bookings WHERE id=$1",[id]);
         return res.json({ success:true, data:r.rows[0]||null });
-      }
-      if (bl_no && req.user?.role === "customer") {
-        const codes = req.user?.companyCodes || (req.user?.companyCode ? [req.user.companyCode] : null);
-        if (codes && codes.length > 0) {
-          const owned = await pool.query(
-            `SELECT 1 FROM orders
-             WHERE (bl_no = $1 OR raw->>'blNo' = $1)
-               AND (company_code = ANY($2::text[]) OR raw->>'companyCode' = ANY($2::text[]))
-             LIMIT 1`,
-            [bl_no, codes]
-          );
-          if (owned.rowCount === 0) {
-            return res.status(403).json({ error: "Forbidden: BL not in your account scope." });
-          }
-        }
       }
       var q="SELECT * FROM container_bookings", w=[], p=[];
       if(bl_no){        p.push(bl_no);        w.push("bl_no=$"+p.length); }

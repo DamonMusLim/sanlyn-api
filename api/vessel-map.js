@@ -52,6 +52,24 @@ export default async function handler(req, res) {
 
   if (!blNo)        return res.status(400).json({ error: "Missing blNo" });
   if (!carrierCode) return res.status(400).json({ error: "Cannot determine carrierCode for " + blNo });
+  if (req.user?.role === "customer") {
+    const codes = req.user?.companyCodes || (req.user?.companyCode ? [req.user.companyCode] : null);
+    if (!codes || codes.length === 0) {
+      return res.status(403).json({ error: "Account scope missing — log out and log in again." });
+    }
+    try {
+      const scopePool = getPool();
+      const ownedBl = await scopePool.query(
+        "SELECT 1 FROM shipping_plans WHERE bl_no = $1 AND customer = ANY($2::text[]) LIMIT 1",
+        [blNo, codes]
+      );
+      if (ownedBl.rowCount === 0) {
+        return res.status(403).json({ error: "Forbidden: BL not in your account scope." });
+      }
+    } catch (dbErr) {
+      return res.status(503).json({ error: "scope_check_unavailable", detail: dbErr.message });
+    }
+  }
 
   // ── Guard: 查 DB，看是否已到港/已缓存 ─────────────────────────────────
   let cached = null;

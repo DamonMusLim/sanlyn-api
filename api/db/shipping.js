@@ -50,6 +50,9 @@ function stripShippingForCustomer(row) {
     freight_cost, freight_sale_usd, port_surcharge_total,
     customs_cost_total, trucking_cost_total, agency_fee_rmb,
     forwarder_cn, trucking_cn, customs_cn,
+    bkg_fee, doc_fee, tlx_fee, thc_fee, eir_fee, seal_fee, vgm_fee,
+    customs_declare_fee, insurance_premium, insurance_policy_no,
+    insurance_rate, vault,
     ...safe
   } = row;
   return safe;
@@ -64,6 +67,7 @@ export default async function handler(req, res) {
 
   // ── POST (create new shipping plan) ───────────────────────
   if (req.method === "POST") {
+    if (req.user?.role === "customer") return res.status(403).json({ error: "Customers may not create or modify shipping plans." });
     const body = req.body || {};
     const shipmentNo = await nextShipmentNo(pool);
     const _id = "sp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
@@ -119,6 +123,7 @@ export default async function handler(req, res) {
 
   // ── PATCH ─────────────────────────────────────────────────
   if (req.method === "PATCH") {
+    if (req.user?.role === "customer") return res.status(403).json({ error: "Customers may not create or modify shipping plans." });
     let { id, ...fields } = req.body || {};
     // booking_no is the UI alias; DB column is forwarder_booking_no
     if ("booking_no" in fields && !("forwarder_booking_no" in fields)) {

@@ -16,6 +16,9 @@ export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return;
+  if (req.method !== "GET" && req.user?.role === "customer") {
+    return res.status(403).json({ error: "Customers may not modify local charges." });
+  }
   const forCustomer = req.user?.role === "customer";
 
   const pool = getPool();
@@ -125,7 +128,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         data: forCustomer
-          ? result.rows.map(r => { const { cost_total, ...safe } = r; return safe; })
+          ? result.rows.map(r => { const { cost_total, fees, raw, ...safe } = r; return safe; })
           : result.rows,
         count: result.rowCount,
       });
