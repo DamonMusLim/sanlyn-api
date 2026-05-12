@@ -56,6 +56,11 @@ const FACTORY_HIDE_PROD = [
 // Customer must NOT see factory cost fields (but customer CAN see unitPrice / totalPrice)
 const CUSTOMER_HIDE_PROD = [
   "factoryPrice", "cost",                      // factory cost price
+  "factorySubtotal", "factory_price", "factory_subtotal", // factory line totals
+  "declareAmountPerBox", "declare_amount_per_box", // customs declaration internal values
+  "vatRate", "vat_rate",                        // tax structure — internal
+  "taxRebateRate", "tax_rebate_rate",           // export rebate rate — internal
+  "_masterFilled",                              // internal fill flag
 ];
 
 // Sanlyn profit fields — neither factory nor customer ever sees these.
@@ -65,7 +70,11 @@ const ALWAYS_HIDE_TOP = [
   "profit",                                    // orders.profit = Sanlyn net profit — internal only
 ];
 // Fields hidden from customer but visible to factory (factory's own costs)
-const CUSTOMER_HIDE_TOP = ["factory_amount", "factory_price_total", "total_amount_factory"];
+// GREY-TRIAL-P1-FIX-001: add raw blob + vat/tax aggregate columns to customer strip
+const CUSTOMER_HIDE_TOP = [
+  "factory_amount", "factory_price_total", "total_amount_factory",
+  "vat_rate", "tax_rebate_rate", "tax_rebate_amount", "declare_amount",
+];
 // Fields hidden from factory but visible to customer (customer's own pricing)
 const FACTORY_HIDE_TOP  = ["customer_amount", "customer_price_total"];
 
