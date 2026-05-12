@@ -202,8 +202,11 @@ export default async function handler(req, res) {
           row.priceVisible = false;
           row._priceMode = 'rfq';
         } else if (_brandVisibilityMap.has(row.brand)) {
-          row.priceVisible = row.priceVisible !== false; // keep existing Layer 2 flag
-          row._priceMode = 'full';
+          // Layer 2: company_products.price_visible may already be on the row (boolean).
+          // undefined → true (no Layer 2 override, price is visible).
+          // false     → false (Layer 2 hides price even when Layer 1 is 'full').
+          row.priceVisible = row.priceVisible !== false; // undefined !== false → true ✅ (correct)
+          row._priceMode = row.priceVisible ? 'full' : 'rfq'; // Layer 2 rfq
         }
       }
     }
