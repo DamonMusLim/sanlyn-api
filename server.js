@@ -260,6 +260,7 @@ mount("/api/tasks/create",          () => import("./api/tasks-create.js"));     
 mount("/api/collab",                () => import("./api/collab.js"));                // P1-3
 mount("/api/db/migrate-freight",   () => import("./api/db/migrate-freight.js"));
 mount("/api/db/migrate-hh-bill-202604", () => import("./api/db/migrate-hh-bill-202604.js")); // ONE-SHOT: 天津惠禾 HH_202604ZXCK01868
+mount("/api/db/migrate-cleanup-test-orders", () => import("./api/db/migrate-cleanup-test-orders.js")); // ONE-SHOT: delete 9 bogus ORD-20260512 test orders
 mount("/api/db/modules",           () => import("./api/db/modules.js"));
 mount("/api/db/qc-checks",         () => import("./api/db/qc-checks.js"));
 mount("/api/db/qc-notify",         () => import("./api/db/qc-notify.js"));
