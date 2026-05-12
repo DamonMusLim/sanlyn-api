@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { getBrandScope, applyRfqLayer } from "./brand-scoping.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, PUT, OPTIONS");
@@ -78,13 +79,9 @@ export default async function handler(req, res) {
 
     var query = "SELECT * FROM products", params = [], conds = [];
 
-    // ── Brand scoping (fail-closed) — Layer 1: company_brand_permissions ──
-    // Internal roles see everything. External (customer/portal) roles are scoped
-    // to brands configured in company_brand_permissions.
-    // Feature-flag: if table doesn't exist, falls back to customers.brands (legacy).
-    // effectivePriceMode: full→price shown, rfq→price_usd=null, hidden→excluded.
+    // ── Brand scoping — Layer 1 (see api/db/brand-scoping.js) ──────────────
     var INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin", "trader"];
-    var _brandVisibilityMap = null; // null = not scoped; Map<brand, 'full'|'rfq'> when scoped
+    var _visibilityMap = null; // set when external caller uses new table
     if (req.user && !INTERNAL_ROLES.includes(req.user.role)) {
       var codes = Array.isArray(req.user.companyCodes) && req.user.companyCodes.length
         ? req.user.companyCodes
@@ -92,66 +89,18 @@ export default async function handler(req, res) {
       if (codes.length === 0) {
         return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
       }
-
-      // Try new company_brand_permissions table first (feature-flag: fail gracefully)
-      var _usedNewTable = false;
-      try {
-        var cbpR = await pool.query(
-          `SELECT brand, visibility
-           FROM company_brand_permissions
-           WHERE tenant_code = 'SANLYN'
-             AND company_code = ANY($1::text[])
-             AND visibility IN ('full', 'rfq')`,
-          [codes]
-        );
-        if (cbpR.rows.length > 0) {
-          _brandVisibilityMap = new Map();
-          for (var cbpRow of cbpR.rows) {
-            // Most permissive wins when same brand appears multiple times (e.g. multi-code customer)
-            var existing = _brandVisibilityMap.get(cbpRow.brand);
-            if (!existing || (existing === 'rfq' && cbpRow.visibility === 'full')) {
-              _brandVisibilityMap.set(cbpRow.brand, cbpRow.visibility);
-            }
-          }
-          _usedNewTable = true;
-        } else {
-          // Table exists but 0 rows for this customer → fail-closed
-          _brandVisibilityMap = new Map(); // empty = nothing visible
-          _usedNewTable = true;
-        }
-      } catch (_cbpErr) {
-        // Table doesn't exist yet — fall back to legacy customers.brands
+      var scope = await getBrandScope(pool, codes);
+      if (scope.mode === 'empty') {
+        return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
       }
-
-      if (!_usedNewTable) {
-        // Legacy fallback: read customers.brands JSONB array
-        var custR = await pool.query(
-          "SELECT brands FROM customers WHERE company_code = ANY($1::text[]) AND is_active = true",
-          [codes]
-        );
-        var brandSet = new Set();
-        for (var row of custR.rows) {
-          var bs = row.brands;
-          if (typeof bs === "string") { try { bs = JSON.parse(bs); } catch (_) { bs = []; } }
-          if (Array.isArray(bs)) for (var br of bs) if (br) brandSet.add(String(br).trim());
-          // Also handle JSONB array
-          if (bs && typeof bs === "object" && Array.isArray(Array.from ? Array.from(bs) : null)) {
-            for (var br of bs) if (br) brandSet.add(String(br).trim());
-          }
-        }
-        if (brandSet.size === 0) {
-          return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
-        }
-        params.push(Array.from(brandSet));
-        conds.push("brand = ANY($" + params.length + "::text[])");
-        _brandVisibilityMap = null; // legacy mode: no visibility info, all are 'full'
-      } else if (_brandVisibilityMap !== null) {
-        if (_brandVisibilityMap.size === 0) {
-          return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
-        }
-        params.push(Array.from(_brandVisibilityMap.keys()));
-        conds.push("brand = ANY($" + params.length + "::text[])");
+      if (scope.mode === 'new') {
+        _visibilityMap = scope.visibilityMap;
+        params.push(Array.from(scope.visibilityMap.keys()));
+      } else {
+        // legacy: brandSet, no visibility info
+        params.push(Array.from(scope.brandSet));
       }
+      conds.push("brand = ANY($" + params.length + "::text[])");
     }
 
     if (brand) {
@@ -191,25 +140,8 @@ export default async function handler(req, res) {
 
     var result = await pool.query(query, params);
 
-    // ── Layer 1 RFQ: apply visibility from company_brand_permissions ──
-    // For brands with visibility='rfq': null out price fields so customer sees
-    // the product but not the price (shows RFQ badge in UI).
-    if (_brandVisibilityMap !== null) {
-      for (const row of result.rows) {
-        if (_brandVisibilityMap.get(row.brand) === 'rfq') {
-          row.price_usd = null;
-          row.price = null;
-          row.priceVisible = false;
-          row._priceMode = 'rfq';
-        } else if (_brandVisibilityMap.has(row.brand)) {
-          // Layer 2: company_products.price_visible may already be on the row (boolean).
-          // undefined → true (no Layer 2 override, price is visible).
-          // false     → false (Layer 2 hides price even when Layer 1 is 'full').
-          row.priceVisible = row.priceVisible !== false; // undefined !== false → true ✅ (correct)
-          row._priceMode = row.priceVisible ? 'full' : 'rfq'; // Layer 2 rfq
-        }
-      }
-    }
+    // ── Layer 1→2 RFQ (logic lives in brand-scoping.js → applyRfqLayer) ────
+    if (_visibilityMap !== null) applyRfqLayer(result.rows, _visibilityMap);
 
     // Category summary
     var catSummary = null;
