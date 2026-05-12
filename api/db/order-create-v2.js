@@ -198,7 +198,22 @@ export default async function handler(req, res) {
         }
 
         // Fallback: all factories from customers table
+        // AUTHZ-GUARD-001: external callers (non-admin) are FAIL-CLOSED —
+        // they must have an explicit buyer↔factory relationship in the relationships table.
+        // Only admin/internal callers may see the full factory list when no relationship is set.
         if (!factories.length) {
+          if (!isAdmin) {
+            // External customer / agent: no authorized factories → return empty, do NOT leak full list
+            return res.status(200).json({
+              success: true,
+              factories: [],
+              authorizedCount: 0,
+              fromRelationships: false,
+              fallbackBlocked: true,
+              message: "No authorized factories configured for this buyer. Contact Sanlyn to set up factory authorization.",
+            });
+          }
+          // Admin / internal only: fallback to full factory list for internal order creation
           var allFactRes = await pool.query(
             "SELECT id, company_code, name_cn, name_en, name_short, port_default, export_mode FROM customers WHERE role_type = 'factory' ORDER BY name_en"
           ).catch(function() { return { rows: [] }; });
@@ -391,6 +406,20 @@ export default async function handler(req, res) {
   if (req.query.action === "sample-request") {
     try {
       var srBody = req.body || {};
+
+      // AUTHZ-GUARD-001: scope-gate companyCode for non-admin callers
+      // External callers cannot create sourcing tasks on behalf of other buyers.
+      if (!isAdmin) {
+        var srCode = (srBody.companyCode || "").toUpperCase();
+        var srCallerNorm = (userCodes || []).map(function(c){ return (c||"").toUpperCase(); });
+        if (!srCode || !srCallerNorm.includes(srCode)) {
+          return res.status(403).json({
+            error: "Forbidden — companyCode is outside your account scope.",
+            code: "SAMPLE_REQUEST_SCOPE_ERROR",
+          });
+        }
+      }
+
       var taskId = "t-sr-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
       await pool.query(`
         INSERT INTO tasks (
