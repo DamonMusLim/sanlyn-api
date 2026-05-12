@@ -107,6 +107,9 @@ function mount(route, handlerModule) {
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
 mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
+// Dev-only fixture login — endpoint self-guards (404 in production, 403 without ENABLE_TEST_AUTH=1)
+// TOOLCHAIN-TEST-ACCOUNT-FIXTURE-001
+mount("/api/db/test-fixture-login", () => import("./api/db/test-fixture-login.js"));
 mount("/api/db/admin",             () => import("./api/db/admin.js"));
 mount("/api/db/accounts",          () => import("./api/db/accounts.js"));
 mount("/api/db/analytics",         () => import("./api/db/analytics.js"));
@@ -146,9 +149,12 @@ mount("/api/db/orders-recompute-all",  () => import("./api/db/orders-recompute.j
 mount("/api/db/orders-recompute",      () => import("./api/db/orders-recompute.js"));
 mount("/api/db/credit-approvals",       () => import("./api/db/credit-approvals.js"));
 mount("/api/db/forward-doc",       () => import("./api/db/forward-doc.js"));
-mount("/api/db/finance-records",       () => import("./api/db/finance-records.js"));
+mount("/api/db/finance-preview",          () => import("./api/db/finance-preview.js"));   // D-FINANCE-PREVIEW-FC-AUDIT-BRIDGE-AND-GATE-IMPL-001
+mount("/api/db/finance-records",          () => import("./api/db/finance-records.js"));
 // Alias kept for legacy frontend callers (CustomerPCFinance + CustomerFinanceWorkbench)
-mount("/api/db/finance-receivables",   () => import("./api/db/finance-records.js"));
+mount("/api/db/finance-receivables",      () => import("./api/db/finance-records.js"));
+// FINANCE-WORKSPACE-UI-IMPL-001: read-only freight AP bills (GET only, no writes)
+mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplier-bills.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
@@ -159,6 +165,24 @@ mount("/api/db/shipment-tracking",  () => import("./api/db/shipment-tracking.js"
 mount("/api/db/urge",                  () => import("./api/db/urge.js"));
 mount("/api/db/field-registry",        () => import("./api/db/field-registry.js"));
 mount("/api/db/migrate-collab-fields", () => import("./api/db/migrate-collab-fields.js"));
+// customer-invite: self-service activation links for customer accounts — needs prefix match
+app.all("/api/db/customer-invite/*", async (req, res) => {
+  try {
+    const mod = await import("./api/db/customer-invite.js");
+    await (mod.default || mod)(req, res);
+  } catch (err) {
+    console.error("[customer-invite] Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+app.all("/api/db/customer-invite", async (req, res) => {
+  try {
+    const mod = await import("./api/db/customer-invite.js");
+    await (mod.default || mod)(req, res);
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
 // customer-magic-link uses sub-paths (/generate, /validate, /use) — needs prefix match
 app.all("/api/db/customer-magic-link/*", async (req, res) => {
   try {
@@ -183,6 +207,7 @@ app.all("/api/db/customer-magic-link", async (req, res) => {
 mount("/api/db/migrate-magic-links",() => import("./api/db/migrate-magic-links.js"));
 mount("/api/db/forwarder-booking-submit", () => import("./api/db/forwarder-booking-submit.js"));
 mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"));
+mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
 mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));
 mount("/api/db/raw-patch",         () => import("./api/db/raw-patch.js"));
@@ -233,6 +258,7 @@ mount("/api/tasks",                 () => import("./api/tasks.js"));            
 mount("/api/tasks/create",          () => import("./api/tasks-create.js"));          // P2-B admin manual create
 mount("/api/collab",                () => import("./api/collab.js"));                // P1-3
 mount("/api/db/migrate-freight",   () => import("./api/db/migrate-freight.js"));
+mount("/api/db/migrate-hh-bill-202604", () => import("./api/db/migrate-hh-bill-202604.js")); // ONE-SHOT: 天津惠禾 HH_202604ZXCK01868
 mount("/api/db/modules",           () => import("./api/db/modules.js"));
 mount("/api/db/qc-checks",         () => import("./api/db/qc-checks.js"));
 mount("/api/db/qc-notify",         () => import("./api/db/qc-notify.js"));
@@ -275,7 +301,8 @@ mount("/api/db/migrate-customers-v2",  () => import("./api/db/migrate-customers-
 mount("/api/db/migrate-company-certs",() => import("./api/db/migrate-company-certs.js")); // cert_type_config + company_certs
 mount("/api/db/cert-expiry-check",   () => import("./api/db/cert-expiry-check.js"));    // cron: cert expiry alert
 mount("/api/db/export-certs",        () => import("./api/db/export-certs.js"));          // per-shipment export certs (ciq/vet/phyto)
-mount("/api/db/cert-type-config",    () => import("./api/db/cert-type-config.js"));      // admin: manage cert types
+mount("/api/db/cert-type-config",    () => import("./api/db/cert-type-config.js"));      // admin: manage cert types (legacy)
+mount("/api/db/credential-types",    () => import("./api/db/credential-types.js"));      // Stage 3 phase 1: canonical credential_types (read-only)
 mount("/api/db/company-certs",       () => import("./api/db/company-certs.js"));          // factory/seller: own cert docs
 mount("/api/db/migrate-audit-logs",   () => import("./api/db/migrate-audit-logs.js"));   // audit_logs v2 columns
 mount("/api/db/kyc-upload",           () => import("./api/db/kyc-upload.js"));           // KYC doc upload
@@ -385,6 +412,11 @@ mount("/api/db/migrate-ai-and-notifications", () => import("./api/db/migrate-ai-
 mount("/api/db/ai-operations", () => import("./api/db/ai-operations.js"));
 mount("/api/db/ai-summaries",  () => import("./api/db/ai-summaries.js"));
 mount("/api/db/notifications", () => import("./api/db/notifications.js"));
+
+// ── SC Collab Phase 2 — quote requests / bids / collab cards ─────────────
+mount("/api/supply-chain/quote-requests", () => import("./api/supply-chain-quote-requests.js"));
+mount("/api/supply-chain/quote-bids",     () => import("./api/supply-chain-quote-bids.js"));
+mount("/api/collab/cards",                () => import("./api/supply-chain-collab-cards.js"));
 
 // ── v3.2 §6 — order_events / order_tasks / containers ────────────────────
 mount("/api/db/migrate-order-events", () => import("./api/db/migrate-order-events.js"));

@@ -7,9 +7,11 @@ import { requireAuth } from "../auth.js";
 // GET    ?from=<id>&type=<type>     — list edges from a company
 // GET    ?to=<id>&type=<type>       — list edges into a company
 // GET    ?company=<id>              — list ALL edges touching this company
-// POST   { from, to, type, ... }    — create edge (idempotent on UNIQUE) — admin only
+// POST   { from, to, type, ... }    — create edge (idempotent on UNIQUE)
+//         self-service: caller must be from_company_id OR to_company_id; admin = unrestricted
 // PATCH  { id, status, volume, ... }— update edge stats / status — admin only
-// DELETE ?id=<id>                   — remove (rare; usually status='ended') — admin only
+// DELETE ?id=<id>                   — remove (rare; usually status='ended')
+//         self-service: caller must be a party to the edge; admin = unrestricted
 //
 // Visibility (1-hop default per blueprint v2 decision 3):
 // Caller's company_id is checked against from/to. If neither, returns 403.
@@ -18,6 +20,52 @@ import { requireAuth } from "../auth.js";
 
 var VALID_TYPES = ['buys_from', 'sells_to', 'ships_via', 'serves', 'partners_with'];
 
+// ── Helpers ──────────────────────────────────────────────────
+
+// Resolve the caller's numeric company id.
+// JWT carries companyCode (string); look up the integer id from customers table.
+// Returns numeric id or null if not found.
+var _companyIdCache = new Map(); // companyCode → { id, ts }
+async function resolveCallerCompanyId(user, pool) {
+  // Already numeric on the token (future-proofing)
+  if (user.company_id && Number.isInteger(user.company_id)) return user.company_id;
+  if (user.companyId  && Number.isInteger(user.companyId))  return user.companyId;
+
+  var code = user.companyCode || user.company_code;
+  if (!code) return null;
+
+  var hit = _companyIdCache.get(code);
+  if (hit && Date.now() - hit.ts < 60000) return hit.id;
+
+  var r = await pool.query(
+    "SELECT id FROM customers WHERE company_code = $1 LIMIT 1",
+    [code]
+  );
+  var id = r.rows.length ? r.rows[0].id : null;
+  _companyIdCache.set(code, { id, ts: Date.now() });
+  return id;
+}
+
+// ── Self-service scope guard ──────────────────────────────────
+// Admins bypass all checks. Non-admins must be a party to the relationship.
+// fromId / toId should be integers.
+// Throws an error with .status = 403 on violation.
+async function assertRelationshipScope(req, pool, fromId, toId) {
+  if (req.user.role === "admin" || req.user.superAdmin) return; // admin bypass
+
+  var myId = await resolveCallerCompanyId(req.user, pool);
+  if (!myId) {
+    var err = new Error("Cannot resolve your company — contact an admin");
+    err.status = 403;
+    throw err;
+  }
+  if (fromId !== myId && toId !== myId) {
+    var err2 = new Error("Cannot create/delete relationships for other companies");
+    err2.status = 403;
+    throw err2;
+  }
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -25,11 +73,10 @@ export default async function handler(req, res) {
   // ── Auth: all methods require valid JWT ──
   if (!requireAuth(req, res)) return;
 
-  // ── Writes (POST/PATCH/DELETE) are admin-only ──
-  if (req.method !== "GET") {
-    var isAdminWrite = req.user && req.user.role === "admin";
-    if (!isAdminWrite) {
-      return res.status(403).json({ success: false, error: "Admin only — relationship writes require admin role." });
+  // ── PATCH remains admin-only (stats/status updates are operational) ──
+  if (req.method === "PATCH") {
+    if (!req.user || req.user.role !== "admin") {
+      return res.status(403).json({ success: false, error: "Admin only — relationship stats updates require admin role." });
     }
   }
 
@@ -121,6 +168,9 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: "type must be one of " + VALID_TYPES.join(",") });
       }
 
+      // ── self-service scope check ──
+      await assertRelationshipScope(req, pool, parseInt(from_company_id), parseInt(to_company_id));
+
       var sql = `INSERT INTO relationships
         (from_company_id, to_company_id, type, category, invited_by_user_id, invite_id, notes)
         VALUES ($1,$2,$3,$4,$5,$6,$7)
@@ -173,6 +223,19 @@ export default async function handler(req, res) {
     if (req.method === "DELETE") {
       var id = req.query && req.query.id;
       if (!id) return res.status(400).json({ success: false, error: "id required" });
+
+      // ── self-service scope check ──
+      // Fetch the relationship first to verify the caller is a party to it
+      var existing = await pool.query(
+        "SELECT from_company_id, to_company_id FROM relationships WHERE id = $1 LIMIT 1",
+        [parseInt(id)]
+      );
+      if (!existing.rowCount) {
+        return res.status(404).json({ success: false, error: "relationship not found" });
+      }
+      var rel = existing.rows[0];
+      await assertRelationshipScope(req, pool, rel.from_company_id, rel.to_company_id);
+
       await pool.query("DELETE FROM relationships WHERE id = $1", [parseInt(id)]);
       return res.status(200).json({ success: true, deleted: parseInt(id) });
     }
@@ -180,6 +243,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ success: false, error: "method not allowed" });
   } catch (err) {
     console.error("[relationships] error:", err);
-    return res.status(500).json({ success: false, error: String(err.message || err) });
+    var status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
+    return res.status(status).json({ success: false, error: String(err.message || err) });
   }
 }

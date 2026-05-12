@@ -91,7 +91,11 @@ export default async function handler(req, res) {
     // Include orders whose ETD, delivery_date, or created_at falls in the period.
     const ordersResult = await pool.query(
       `SELECT
-         _id              AS contract_no,
+         -- Use the human-readable contract_no (FS20260223060) as the match key.
+         -- finance_payments.contract_no stores FS-style values, NOT the MongoDB _id.
+         -- Fall back to _id only if contract_no is missing (very old records).
+         COALESCE(NULLIF(contract_no,''), _id) AS contract_no,
+         order_no,
          company_code,
          customer,
          status,
@@ -143,47 +147,56 @@ export default async function handler(req, res) {
     }
 
     // ── 2. Fetch all payments for this company ────────────────────
-    // Match by contract_no (canonical) or via raw->>'companyCode' scoped
+    // Match by contract_no OR order_no (fallback for legacy payments where
+    // contract_no = FS-style string and order_no = short '40-CA-1' style).
     const contractNos = orders.map(o => o.contract_no).filter(Boolean);
-    const placeholders = contractNos.map((_, i) => `$${i + 2}`).join(", ");
+    const orderNos    = orders.map(o => o.order_no).filter(Boolean);
 
     let paymentsResult;
-    if (contractNos.length > 0) {
-      paymentsResult = await pool.query(
+    if (contractNos.length > 0 || orderNos.length > 0) {
+      // Build dynamic IN lists for both contract_no and order_no
+      const allKeys   = [...new Set([...contractNos, ...orderNos])];
+      const phs       = allKeys.map((_, i) => `$${i + 2}`).join(", ");
+      paymentsResult  = await pool.query(
         `SELECT
            id,
            contract_no,
+           order_no,
            _id,
            amount,
            paid_amount,
            bank_ref,
            currency,
            direction,
+           pay_type,
            status,
            tt_slip_url,
+           payment_date,
+           paid_date,
            created_at,
            updated_at,
            raw,
-           -- raw sub-fields commonly used
-           raw->>'companyCode'   AS company_code_raw,
-           raw->>'paidDate'      AS paid_date_raw,
-           raw->>'paymentDate'   AS payment_date_raw,
-           raw->>'type'          AS type_raw,
-           raw->>'payType'       AS pay_type_raw,
-           raw->>'receivedAmount'AS received_amount_raw,
-           raw->>'bankRef'       AS bank_ref_raw,
-           raw->>'note'          AS note_raw
+           raw->>'companyCode'    AS company_code_raw,
+           raw->>'paidDate'       AS paid_date_raw,
+           raw->>'paymentDate'    AS payment_date_raw,
+           raw->>'type'           AS type_raw,
+           raw->>'payType'        AS pay_type_raw,
+           raw->>'receivedAmount' AS received_amount_raw,
+           raw->>'bankRef'        AS bank_ref_raw,
+           raw->>'note'           AS note_raw
          FROM finance_payments
-         WHERE contract_no IN (${placeholders})
+         WHERE contract_no IN (${phs})
+            OR order_no    IN (${phs})
             OR raw->>'companyCode' = $1
-         ORDER BY created_at ASC`,
-        [company_code, ...contractNos]
+         ORDER BY COALESCE(payment_date, paid_date, created_at) ASC`,
+        [company_code, ...allKeys]
       );
     } else {
       paymentsResult = await pool.query(
         `SELECT
-           id, contract_no, _id, amount, paid_amount, bank_ref, currency, direction,
-           status, tt_slip_url, created_at, updated_at, raw,
+           id, contract_no, order_no, _id, amount, paid_amount, bank_ref, currency,
+           direction, pay_type, status, tt_slip_url, payment_date, paid_date,
+           created_at, updated_at, raw,
            raw->>'companyCode'    AS company_code_raw,
            raw->>'paidDate'       AS paid_date_raw,
            raw->>'paymentDate'    AS payment_date_raw,
@@ -194,7 +207,7 @@ export default async function handler(req, res) {
            raw->>'note'           AS note_raw
          FROM finance_payments
          WHERE raw->>'companyCode' = $1
-         ORDER BY created_at ASC`,
+         ORDER BY COALESCE(payment_date, paid_date, created_at) ASC`,
         [company_code]
       );
     }
@@ -207,9 +220,45 @@ export default async function handler(req, res) {
 
     const enrichedOrders = orders.map(order => {
       const cno = order.contract_no;
+      const ono = order.order_no;
 
-      // Match payments to this order by contract_no
-      const orderPayments = allPayments.filter(p => p.contract_no === cno);
+      // AR predicate — reconciliation = customer receivable view.
+      //
+      //   Include: AR / 收款 / in  (canonical + legacy AR)
+      //   Include: empty/NULL direction  (legacy unclassified — Codex
+      //            round 4 P1: rejecting these silently overstated
+      //            outstanding for ~256 PETSOME historical rows that
+      //            haven't been touched by the dry-run normalize SQL yet).
+      //   Exclude: AP / 付款 / out  (supplier/forwarder payouts — Codex
+      //            round 3 P1: must not bleed into customer paidTotal).
+      //
+      // The empty-direction inclusion is safe in this context because the
+      // payment was already restricted to this customer's orders by
+      // contract_no/order_no JOIN; an AP row with the same order_no is
+      // explicitly excluded by the AP test. After the data-fix SQL runs,
+      // empty direction → AR migration makes this branch a no-op.
+      const isAR = (p) => {
+        const d = (p.direction || "").toString();
+        if (d === "AP" || d === "付款" || d === "out") return false;
+        return true; // AR / 收款 / in / empty
+      };
+
+      // Match payments to this order:
+      //  - Primary:  payment.contract_no === order.contract_no (FS-style)
+      //  - Fallback: order_no match — but ONLY when the payment has no
+      //    usable contract_no (Codex round 6 P2: a precise contract
+      //    match must not fall through to a fuzzy order_no match, or a
+      //    payment whose contract_no points elsewhere could double-count
+      //    against a different order sharing the legacy order_no).
+      //  - AND payment direction is AR (no AP into receivables).
+      const paymentHasContract = (p) => p.contract_no && p.contract_no !== "";
+      const orderPayments = allPayments.filter(p => {
+        if (!isAR(p)) return false;
+        if (paymentHasContract(p)) {
+          return cno && p.contract_no === cno;       // precise match only
+        }
+        return ono && p.order_no === ono;            // fallback when no contract_no
+      });
 
       // Sum paid amounts — prefer paid_amount column, fallback to raw->receivedAmount, then amount
       const paidTotal = orderPayments.reduce((sum, p) => {
@@ -240,13 +289,16 @@ export default async function handler(req, res) {
         paidTotal > 0;
 
       // Build clean payment list
+      // Codex P2 fix: payments[].type fallback now includes the native
+      // pay_type column. Order: raw->>type → raw->>payType → native
+      // pay_type. raw->>type wins to preserve existing UI behaviour.
       const payments = orderPayments.map(p => ({
         id:          p.id,
-        paid_date:   p.paid_date_raw || p.payment_date_raw || p.created_at,
+        paid_date:   p.payment_date || p.paid_date || p.paid_date_raw || p.payment_date_raw || p.created_at,
         this_amount: p.paid_amount != null ? parseFloat(p.paid_amount)
                    : p.received_amount_raw ? parseFloat(p.received_amount_raw)
                    : p.amount != null      ? parseFloat(p.amount) : null,
-        type:        p.type_raw || p.pay_type_raw || null,
+        type:        p.type_raw || p.pay_type_raw || p.pay_type || null,
         bank_ref:    p.bank_ref || p.bank_ref_raw || null,
         direction:   p.direction || null,
         currency:    p.currency  || order.currency || "USD",

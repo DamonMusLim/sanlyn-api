@@ -33,33 +33,95 @@ const SENSITIVE_RAW_KEYS = [
   "containerBookingNo", "bookingNo",
 ];
 
-// 敏感的 product 子字段（products[] 里也有单价，必须逐项剥离）
-const SENSITIVE_PRODUCT_KEYS = [
-  "unitPrice", "unitPriceCNY", "unitPriceUSD", "price", "totalAmount",
-  "cost", "profit", "freightShare",
+// ROLE-BASED-REAL-ACCOUNT-VERIFY-001 — Product sub-field isolation:
+//   "always" = hide from both factory and customer (Sanlyn-internal analytics only)
+//   "factory hides" = customer-facing prices factory must not see
+//   "customer hides" = factory cost fields customer must not see
+//
+// NOTE: SENSITIVE_PRODUCT_KEYS is kept for legacy reference but NOT used in stripSensitive.
+//       All stripping is now done via role-specific arrays below.
+const SENSITIVE_PRODUCT_KEYS = []; // legacy — not used
+
+// Product fields always hidden from external roles (Sanlyn-internal)
+const ALWAYS_HIDE_PROD = [
+  "freightShare", "profit",   // Sanlyn allocation / margin — internal only
+];
+// Factory must NOT see customer-side prices (but factory CAN see factoryPrice / cost)
+const FACTORY_HIDE_PROD = [
+  "unitPrice", "unitPriceCNY", "unitPriceUSD",
+  "customerPrice", "salePrice",
+  "totalPrice", "totalAmount", "price",        // customer-facing line totals
+  "subtotal",                                  // customer subtotal = qty × unitPrice
+];
+// Customer must NOT see factory cost fields (but customer CAN see unitPrice / totalPrice)
+const CUSTOMER_HIDE_PROD = [
+  "factoryPrice", "cost",                      // factory cost price
 ];
 
+// Sanlyn profit fields — neither factory nor customer ever sees these.
+const ALWAYS_HIDE_TOP = [
+  "margin_amount", "margin_pct",               // Sanlyn profit — never expose externally
+  "middleman_markup_total", "middleman_markup_pct",
+  "profit",                                    // orders.profit = Sanlyn net profit — internal only
+];
+// Fields hidden from customer but visible to factory (factory's own costs)
+const CUSTOMER_HIDE_TOP = ["factory_amount", "factory_price_total", "total_amount_factory"];
+// Fields hidden from factory but visible to customer (customer's own pricing)
+const FACTORY_HIDE_TOP  = ["customer_amount", "customer_price_total"];
+
 function stripSensitive(row, requesterRole) {
-  // 前端兜底已经有 CSS，这里是 API 真过滤
-  // 仅当 mode=agent 且请求者是工厂角色时剥离
-  // admin / sales / logistics / customer 等内部或货主侧角色看到完整数据
+  // ROLE-BASED-REAL-ACCOUNT-VERIFY-001:
+  //   factory : sees factory_amount but NOT margin / customer pricing
+  //   customer: sees customer_amount/unitPrice but NOT margin / factory cost
+  //   admin/logistics: full visibility (no stripping)
   if (!row) return row;
-  if (row.mode !== "agent") return row;
-  if (requesterRole !== "factory") return row;
+  if (requesterRole !== "factory" && requesterRole !== "customer") return row;
 
   const cleaned = { ...row };
+
+  // Strip Sanlyn-internal profit from both roles
+  for (const k of ALWAYS_HIDE_TOP) {
+    if (k in cleaned) delete cleaned[k];
+  }
+
+  // Role-specific top-level strips
+  const roleTopHide = requesterRole === "factory" ? FACTORY_HIDE_TOP : CUSTOMER_HIDE_TOP;
+  for (const k of roleTopHide) {
+    if (k in cleaned) delete cleaned[k];
+  }
+
   const raw = cleaned.raw && typeof cleaned.raw === "object" ? { ...cleaned.raw } : {};
 
   for (const k of SENSITIVE_RAW_KEYS) {
     if (k in raw) delete raw[k];
   }
 
-  // products[] 内逐项剥离
+  // products[] stripping — the canonical products array is the TOP-LEVEL column (not raw.products).
+  // raw.products is a smaller snapshot used for document generation — strip both for safety.
+  // ROLE-BASED-REAL-ACCOUNT-VERIFY-001 fix: target row.products (top-level) not just raw.products.
+  const prodHideKeys = [
+    ...ALWAYS_HIDE_PROD,
+    ...(requesterRole === "factory" ? FACTORY_HIDE_PROD : CUSTOMER_HIDE_PROD),
+  ];
+
+  // Strip top-level products column
+  if (Array.isArray(cleaned.products)) {
+    cleaned.products = cleaned.products.map(function(p) {
+      if (!p || typeof p !== "object") return p;
+      const cp = { ...p };
+      for (const k of prodHideKeys) {
+        if (k in cp) delete cp[k];
+      }
+      return cp;
+    });
+  }
+
+  // Strip raw.products too (document generation snapshot)
   if (Array.isArray(raw.products)) {
     raw.products = raw.products.map(function(p) {
       if (!p || typeof p !== "object") return p;
       const cp = { ...p };
-      for (const k of SENSITIVE_PRODUCT_KEYS) {
+      for (const k of prodHideKeys) {
         if (k in cp) delete cp[k];
       }
       return cp;
@@ -69,7 +131,7 @@ function stripSensitive(row, requesterRole) {
   cleaned.raw = raw;
   // 打标让前端 / 调试可见
   cleaned._sensitive_stripped = true;
-  cleaned._stripped_reason = "agent-mode + factory-role";
+  cleaned._stripped_reason = requesterRole + "-role (mode=" + (row.mode || "null") + ")";
   return cleaned;
 }
 
@@ -165,6 +227,64 @@ async function handlePatch(req, res) {
   return res.status(200).json({ success: true, id });
 }
 
+// ── POST (no action): create a new order — admin only, minimal fields ─────────
+// Called by NewOrderDrawer in admin-v1 OrdersModule.
+// orders.id has no serial default (schema-frozen). We use pg_advisory_xact_lock
+// to serialize concurrent creates so MAX(id)+1 is always unique.
+async function handleCreate(req, res) {
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({ error: "Forbidden: admin only" });
+  }
+  const pool = getPool();
+  const body = req.body || {};
+  if (!body.customer) return res.status(400).json({ error: "customer is required" });
+
+  // Auto-generate order_no / contract_no if caller omits them
+  const d = new Date();
+  const ds = String(d.getFullYear()) + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0");
+  const orderNo    = body.order_no    || ("ORD-" + ds + "-" + String(Math.floor(Math.random()*10000)).padStart(4,"0"));
+  const contractNo = body.contract_no || ("FS"   + ds + String(Math.floor(Math.random()*1000)).padStart(3,"0"));
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Advisory lock serializes concurrent admin creates for id generation (no schema change needed)
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('orders_id_gen'))");
+    const nidRes = await client.query("SELECT COALESCE(MAX(id),0)+1 AS nid FROM orders");
+    const nextId = nidRes.rows[0].nid;
+    const r = await client.query(
+      `INSERT INTO orders
+         (id, order_no, contract_no, customer, company_code, factory,
+          trade_terms, status, total_amount, currency, etd, notes, source, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'admin_panel',$13)
+       RETURNING id, order_no, contract_no`,
+      [
+        nextId,
+        orderNo,
+        contractNo,
+        body.customer,
+        body.company_code || null,
+        body.factory      || null,
+        body.trade_terms  || "FOB",
+        body.status       || "draft",
+        body.total_amount ? Number(body.total_amount) : null,
+        body.currency     || "USD",
+        body.etd          || null,
+        body.notes        || null,
+        req.user.uid || req.user.sub || null,
+      ]
+    );
+    await client.query("COMMIT");
+    const row = r.rows[0];
+    return res.status(200).json({ success: true, id: row.id, order_no: row.order_no, contract_no: row.contract_no });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // ── POST mark_ready: factory delivery confirmation on behalf of ops ───────────
 // Auth: requires 'orders:admin:write' capability (req.user.access[]) or admin role.
 // v3.2 §6.1: writes raw.actDelivery + inserts order_events production_complete.
@@ -224,7 +344,10 @@ export default async function handler(req, res) {
       try { return await handleMarkReady(req, res); }
       catch (err) { return res.status(500).json({ success: false, error: err.message }); }
     }
-    return res.status(400).json({ error: "unknown action" });
+    if (action) return res.status(400).json({ error: "unknown action: " + action });
+    // No action = create new order
+    try { return await handleCreate(req, res); }
+    catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   }
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
@@ -244,11 +367,7 @@ export default async function handler(req, res) {
     }
     let query = "SELECT * FROM orders", params = [], conds = [];
 
-    // Mock isolation: non-admin users never see is_mock=true rows unless they hold mock:read cap.
-    const hasMockRead = Array.isArray(req.user?.capabilities) && req.user.capabilities.includes("mock:read");
-    if (req.user && req.user.role !== "admin" && !hasMockRead) {
-      conds.push("(is_mock IS NULL OR is_mock = FALSE)");
-    }
+    // is_mock column was removed from orders table — filter dropped (ORDER-DATA-DISPLAY-UNBLOCK-001)
 
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`status = $${params.length}`); }

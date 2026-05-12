@@ -32,16 +32,87 @@ const PATCH_ALLOW = [
   "driver_info","insurance_required","insurance_premium","insurance_policy_no","insurance_rate",
 ];
 
+async function nextShipmentNo(pool) {
+  try {
+    const { rows } = await pool.query(
+      "SELECT shipment_no FROM shipping_plans WHERE shipment_no ~ '^CY[0-9]{5}$' ORDER BY shipment_no DESC LIMIT 1"
+    );
+    const last = rows[0]?.shipment_no || "CY00000";
+    const n = Math.max(parseInt(last.slice(2), 10), 146) + 1;
+    return "CY" + String(n).padStart(5, "0");
+  } catch {
+    return "CY" + String(Date.now()).slice(-5);
+  }
+}
+
 export default async function handler(req, res) {
-  setCors(req, res, "GET, PATCH, OPTIONS");
+  setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
 
   const pool = getPool();
 
+  // ── POST (create new shipping plan) ───────────────────────
+  if (req.method === "POST") {
+    const body = req.body || {};
+    const shipmentNo = await nextShipmentNo(pool);
+    const _id = "sp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
+    // booking_no is the UI field name; DB column is forwarder_booking_no
+    const forwarderBookingNo = body.forwarder_booking_no || body.booking_no || null;
+
+    const insertFields = {
+      _id,
+      shipment_no:        shipmentNo,
+      order_contract_nos: body.order_contract_nos || null,
+      contract_no:        body.contract_no        || null,
+      bl_no:              body.bl_no              || null,
+      vessel:             body.vessel             || null,
+      voyage:             body.voyage             || null,
+      pol:                body.pol                || null,
+      pod:                body.pod                || null,
+      etd:                body.etd                || null,
+      eta:                body.eta                || null,
+      cutoff_date:        body.cutoff_date        || null,
+      flow_status:        body.flow_status        || "draft",
+      container_type:     body.container_type     || null,
+      container_no:       body.container_no       || null,
+      seal_no:            body.seal_no            || null,
+      customer:           body.customer           || null,
+      forwarder_cn:       body.forwarder_cn       || null,
+      customs_cn:         body.customs_cn         || null,
+      trucking_cn:        body.trucking_cn        || null,
+      shipper:            body.shipper            || null,
+      cargo_description:  body.cargo_description  || null,
+      freight_cost:       body.freight_cost       || null,
+      freight_sale_usd:   body.freight_sale_usd   || null,
+      port_surcharge_total: body.port_surcharge_total || null,
+      forwarder_booking_no: forwarderBookingNo,
+      status:             body.status             || null,
+      created_by:         req.user?.id || req.user?.email || body.created_by || "admin",
+    };
+
+    const cols = Object.keys(insertFields).filter(k => insertFields[k] !== null && insertFields[k] !== undefined);
+    const vals = cols.map(k => insertFields[k]);
+    const placeholders = cols.map((_, i) => `$${i + 1}`);
+
+    try {
+      const r = await pool.query(
+        `INSERT INTO shipping_plans (${cols.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING *`,
+        vals
+      );
+      return res.status(200).json({ success: true, data: r.rows[0] });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   // ── PATCH ─────────────────────────────────────────────────
   if (req.method === "PATCH") {
-    const { id, ...fields } = req.body || {};
+    let { id, ...fields } = req.body || {};
+    // booking_no is the UI alias; DB column is forwarder_booking_no
+    if ("booking_no" in fields && !("forwarder_booking_no" in fields)) {
+      fields = { ...fields, forwarder_booking_no: fields.booking_no };
+    }
     if (!id) return res.status(400).json({ error: "id required" });
 
     // Fetch existing row first (for bl_no change detection)

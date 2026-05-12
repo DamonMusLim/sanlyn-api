@@ -69,6 +69,59 @@ export default async function handler(req, res) {
         if (!isAdmin && userCodes && !userCodes.includes(code)) {
           return res.status(403).json({ error: "Out of scope — you cannot view this customer's order history." });
         }
+
+        // Try company_products table first (authorized catalog with customer-specific pricing)
+        var cpRows = [];
+        try {
+          var cpResult = await pool.query(
+            `SELECT cp.id AS cp_id, cp.alias_sku, cp.price_cny, cp.price_usd, cp.moq, cp.lead_time_days, cp.notes AS cp_notes,
+                    p.sku, p.name_cn, p.name_en, p.brand, p.size, p.unit, p.cbm, p.gross_weight, p.net_weight,
+                    p.inner_qty, p.inner_unit, p.hs_code
+             FROM company_products cp
+             JOIN customers cust ON cust.id = cp.company_id
+             JOIN products p ON p.id = cp.product_id
+             WHERE cust.company_code = $1 AND cp.active = true
+             ORDER BY p.name_en`,
+            [code]
+          );
+          cpRows = cpResult.rows || [];
+        } catch(cpErr) {
+          // table may not exist or product_id FK issue — fall through to order history
+        }
+
+        if (cpRows.length > 0) {
+          var cpProducts = cpRows.map(function(r) {
+            return {
+              name: r.name_en || r.name_cn || "",
+              code: r.alias_sku || r.sku || "",
+              brand: r.brand || "",
+              size: r.size || "",
+              unit: r.unit || "CTN",
+              unitPrice: parseFloat(r.price_usd) || 0,
+              price_usd: parseFloat(r.price_usd) || 0,
+              price_cny: parseFloat(r.price_cny) || 0,
+              cbm: parseFloat(r.cbm) || 0,
+              grossWeight: parseFloat(r.gross_weight) || 0,
+              netWeight: parseFloat(r.net_weight) || 0,
+              innerQty: r.inner_qty || 0,
+              innerUnit: r.inner_unit || "PCS",
+              hsCode: r.hs_code || "",
+              moq: r.moq || 0,
+              leadTimeDays: r.lead_time_days || 0,
+              notes: r.cp_notes || "",
+              isAuthorized: true,
+            };
+          });
+          return res.status(200).json({
+            success: true,
+            products: cpProducts,
+            orderCount: 0,
+            defaults: {},
+            source: "company_products",
+            authorizedCount: cpProducts.length,
+          });
+        }
+
         // Get products from this customer's recent orders
         var recentOrders = await pool.query(
           "SELECT products, customer_po, order_no, created_at FROM orders WHERE company_code = $1 AND products IS NOT NULL ORDER BY created_at DESC LIMIT 10",
@@ -110,6 +163,93 @@ export default async function handler(req, res) {
           products: Object.values(productMap),
           orderCount: recentOrders.rows.length,
           defaults: custInfo.rows[0] || {},
+        });
+      }
+
+      // ── Factories authorized for a specific buyer ──
+      if (action === "factory-by-buyer" && req.query.buyerCode) {
+        var buyerCode = req.query.buyerCode;
+
+        // PKG-006 AUTHZ-GUARD: non-admin callers may only query factories for their own buyerCode.
+        // Prevents enumerating other companies' factory relationships by probing arbitrary buyerCodes.
+        if (!isAdmin) {
+          var callerBuyerNorm = (userCodes || []).map(function(c){ return (c||"").toUpperCase(); });
+          if (!callerBuyerNorm.includes((buyerCode||"").toUpperCase())) {
+            return res.status(403).json({
+              error: "Forbidden — buyerCode is outside your account scope.",
+              code: "FACTORY_BY_BUYER_SCOPE_ERROR",
+            });
+          }
+        }
+
+        var buyerRes = await pool.query(
+          "SELECT id FROM customers WHERE company_code = $1 LIMIT 1",
+          [buyerCode]
+        ).catch(function() { return { rows: [] }; });
+
+        var factories = [];
+        var fromRelationships = false;
+
+        if (buyerRes.rows.length) {
+          var buyerId = buyerRes.rows[0].id;
+          var relRes = await pool.query(
+            `SELECT DISTINCT c.id, c.company_code, c.name_cn, c.name_en, c.name_short,
+                    c.port_default, c.export_mode, c.address
+             FROM relationships r
+             JOIN customers c ON (
+               (r.type = 'buys_from' AND r.from_company_id = $1 AND c.id = r.to_company_id)
+               OR (r.type = 'sells_to' AND r.to_company_id = $1 AND c.id = r.from_company_id)
+             )
+             WHERE c.role_type = 'factory' AND r.status = 'active'`,
+            [buyerId]
+          ).catch(function() { return { rows: [] }; });
+
+          if (relRes.rows.length) {
+            factories = relRes.rows;
+            fromRelationships = true;
+          }
+        }
+
+        // Fallback: all factories from customers table
+        // AUTHZ-GUARD-001: external callers (non-admin) are FAIL-CLOSED —
+        // they must have an explicit buyer↔factory relationship in the relationships table.
+        // Only admin/internal callers may see the full factory list when no relationship is set.
+        if (!factories.length) {
+          if (!isAdmin) {
+            // External customer / agent: no authorized factories → return empty, do NOT leak full list
+            return res.status(200).json({
+              success: true,
+              factories: [],
+              authorizedCount: 0,
+              fromRelationships: false,
+              fallbackBlocked: true,
+              message: "No authorized factories configured for this buyer. Contact Sanlyn to set up factory authorization.",
+            });
+          }
+          // Admin / internal only: fallback to full factory list for internal order creation
+          var allFactRes = await pool.query(
+            "SELECT id, company_code, name_cn, name_en, name_short, port_default, export_mode FROM customers WHERE role_type = 'factory' ORDER BY name_en"
+          ).catch(function() { return { rows: [] }; });
+          factories = allFactRes.rows;
+        }
+
+        var factoryList = factories.map(function(row) {
+          return {
+            companyCode: row.company_code || "",
+            nameEN: row.name_en || "",
+            nameCN: row.name_cn || "",
+            nameShort: row.name_short || "",
+            portDefault: row.port_default || "",
+            exportMode: row.export_mode || null,
+            isProxy: row.export_mode === "proxy",
+          };
+        });
+
+        return res.status(200).json({
+          success: true,
+          factories: factoryList,
+          authorizedCount: factoryList.length,
+          fromRelationships: fromRelationships,
         });
       }
 
@@ -161,27 +301,41 @@ export default async function handler(req, res) {
         var firstAddr = addrs[0] || {};
         var brands = Array.isArray(c.brands) ? c.brands.join(", ") : (c.brands || "");
 
-        customerMap[code] = {
-          customerId: c.id,
-          companyCode: code,
-          companyNameCN: c.name_cn || "",
-          companyNameEN: c.name_en || "",
-          brands: brands,
-          country: c.country || firstAddr.country || "",
-          countryEN: c.country_en || "",
-          currency: c.currency || "CNY",
-          grade: c.grade || "",
-          paymentPolicy: c.payment_policy || "",
-          paymentTerms: c.payment_terms || [],
-          destinationPort: c.destination_port || firstAddr.port || "",
-          address: c.address || firstAddr.address || "",
-          consignee: c.consignee || firstAddr.consignee || "",
-          blType: c.bl_type || "",
-          tradeTerms: c.trade_terms || "",
-          ourShipping: c.our_shipping || "",
-          addresses: addrs,
-          raw: c.raw || {}
-        };
+        if (isAdmin) {
+          // Admin: full customer record for internal order creation
+          customerMap[code] = {
+            customerId: c.id,
+            companyCode: code,
+            companyNameCN: c.name_cn || "",
+            companyNameEN: c.name_en || "",
+            brands: brands,
+            country: c.country || firstAddr.country || "",
+            countryEN: c.country_en || "",
+            currency: c.currency || "CNY",
+            grade: c.grade || "",
+            paymentPolicy: c.payment_policy || "",
+            paymentTerms: c.payment_terms || [],
+            destinationPort: c.destination_port || firstAddr.port || "",
+            address: c.address || firstAddr.address || "",
+            consignee: c.consignee || firstAddr.consignee || "",
+            blType: c.bl_type || "",
+            tradeTerms: c.trade_terms || "",
+            ourShipping: c.our_shipping || "",
+            addresses: addrs,
+            raw: c.raw || {}
+          };
+        } else {
+          // DEC-03: external callers receive whitelist-only fields — no raw/payment/internal data
+          customerMap[code] = {
+            companyCode: code,
+            companyNameCN: c.name_cn || "",
+            companyNameEN: c.name_en || "",
+            country: c.country || firstAddr.country || "",
+            currency: c.currency || "USD",
+            destinationPort: c.destination_port || firstAddr.port || "",
+            consignee: c.consignee || firstAddr.consignee || "",
+          };
+        }
       });
       // Supplement from orders table for any customers not in customers table
       (customers.rows || []).forEach(function(c) {
@@ -203,10 +357,52 @@ export default async function handler(req, res) {
         "SELECT name, name_short, po_prefix, ports FROM factories WHERE is_active = true ORDER BY name_short"
       ).catch(function() { return { rows: [] }; });
 
+      // Load factories from customers table (role_type='factory') as enrichment
+      var customersFactories = await pool.query(
+        "SELECT company_code, name_cn, name_en, name_short, port_default, export_mode FROM customers WHERE role_type = 'factory' AND is_active != false ORDER BY name_en"
+      ).catch(function() { return { rows: [] }; });
+
+      // Build enrichment map: company_code/name_short → row
+      var custFactMap = {};
+      (customersFactories.rows || []).forEach(function(cf) {
+        if (cf.company_code) custFactMap[cf.company_code] = cf;
+        if (cf.name_short) custFactMap[cf.name_short] = custFactMap[cf.name_short] || cf;
+      });
+
+      // Merge: factories table rows enriched with customers export_mode/companyCode
+      var mergedFactories = (factoriesResult.rows || []).map(function(f) {
+        var enrich = custFactMap[f.po_prefix] || custFactMap[f.name_short] || {};
+        return {
+          name: f.name,
+          nameShort: f.name_short || enrich.name_short || "",
+          poPrefix: f.po_prefix || "",
+          ports: f.ports || [],
+          exportMode: enrich.export_mode || null,
+          companyCode: enrich.company_code || null,
+        };
+      });
+
+      // Also add any customers-table factories NOT already in factories table
+      (customersFactories.rows || []).forEach(function(cf) {
+        var alreadyPresent = mergedFactories.some(function(f) {
+          return f.companyCode === cf.company_code || f.nameShort === cf.name_short;
+        });
+        if (!alreadyPresent && (cf.name_en || cf.name_cn)) {
+          mergedFactories.push({
+            name: cf.name_en || cf.name_cn || cf.company_code,
+            nameShort: cf.name_short || "",
+            poPrefix: "",
+            ports: cf.port_default ? [cf.port_default] : [],
+            exportMode: cf.export_mode || null,
+            companyCode: cf.company_code,
+          });
+        }
+      });
+
       return res.status(200).json({
         success: true,
         customers: Object.values(customerMap),
-        factories: factoriesResult.rows,
+        factories: mergedFactories,
         lastOrderNo: lastOrder.rows[0]?.order_no || null,
         lastContractNo: lastOrder.rows[0]?.contract_no || null,
         nextOrderNo: generateOrderNo(),
@@ -230,8 +426,62 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── POST: create order ──
+  // ── POST: create order or action-specific tasks ──
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  // ── POST ?action=sample-request ──
+  if (req.query.action === "sample-request") {
+    try {
+      var srBody = req.body || {};
+
+      // AUTHZ-GUARD-001: scope-gate companyCode for non-admin callers
+      // External callers cannot create sourcing tasks on behalf of other buyers.
+      if (!isAdmin) {
+        var srCode = (srBody.companyCode || "").toUpperCase();
+        var srCallerNorm = (userCodes || []).map(function(c){ return (c||"").toUpperCase(); });
+        if (!srCode || !srCallerNorm.includes(srCode)) {
+          return res.status(403).json({
+            error: "Forbidden — companyCode is outside your account scope.",
+            code: "SAMPLE_REQUEST_SCOPE_ERROR",
+          });
+        }
+      }
+
+      var taskId = "t-sr-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      await pool.query(`
+        INSERT INTO tasks (
+          id, title, task_type, level, status, risk_level,
+          owner_object_type, owner_object_id, owner_object_label,
+          company_code, mode, due_at, reason, raw
+        ) VALUES (
+          $1, $2, 'SAMPLE_REQUEST', 'sourcing', 'open', 'low',
+          'sourcing', $3, $4,
+          $5, 'owned', NOW() + INTERVAL '7 days',
+          'New sample / sourcing request submitted via Order Create.',
+          $6::jsonb
+        )
+      `, [
+        taskId,
+        "Sample Request: " + (srBody.productName || "Unknown"),
+        taskId,
+        "Sample: " + (srBody.productName || "Unknown"),
+        srBody.companyCode || "",
+        JSON.stringify({
+          productName: srBody.productName || "",
+          spec: srBody.spec || "",
+          qty: srBody.qty || "",
+          budget: srBody.budget || "",
+          notes: srBody.notes || "",
+          requestedBy: srBody.requestedBy || "admin",
+          submittedAt: new Date().toISOString(),
+        }),
+      ]);
+      return res.status(200).json({ success: true, taskId: taskId });
+    } catch (srErr) {
+      console.error("[order-create-v2] sample-request failed:", srErr);
+      return res.status(500).json({ success: false, error: srErr.message });
+    }
+  }
 
   try {
     var body = req.body || {};
@@ -336,6 +586,9 @@ export default async function handler(req, res) {
       }
     }
 
+    var exportController = body.exportController || (body.proxyExport ? "SANLYN" : "SELF");
+    var factoryCompanyCode = body.factoryCompanyCode || body.selectedFactoryCode || null;
+
     var {
       companyCode, companyNameCN, companyNameEN, groupCode, brand, category,
       consignee, customerAddress, phone, email,
@@ -347,11 +600,24 @@ export default async function handler(req, res) {
       remarks, products, createdBy, source
     } = body;
 
+    // Merge exportController + factoryCompanyCode into body so they land in orders.raw
+    body = Object.assign({}, body, { exportController: exportController, factoryCompanyCode: factoryCompanyCode });
+
     if (!companyNameCN && !companyNameEN) return res.status(400).json({ error: "客户名称必填" });
     if (!products || !products.length) return res.status(400).json({ error: "请添加产品" });
 
     var orderNo = body.orderNo || generateOrderNo();
-    var contractNo = body.contractNo || generateContractNo();
+    // DEC-02: backend FS-prefix is canonical contract_no.
+    // Non-admin callers may supply a client-side SC-prefix ref (draft display ref) but it is
+    // stored as raw._clientRef only. The official contract_no always comes from server generateContractNo().
+    // Admin callers may explicitly supply contractNo (for re-submission / import scenarios).
+    var contractNo = isAdmin
+      ? (body.contractNo || generateContractNo())
+      : generateContractNo();
+    // Preserve client SC-prefix ref in raw for display continuity (OrderCreateV4 shows SC-... in header)
+    if (!isAdmin && body.contractNo) {
+      body = Object.assign({}, body, { _clientRef: body.contractNo });
+    }
 
     // ── Product Master JOIN ─────────────────────────────────────────────────────
     // Batch-fetch product master data for all SKUs in this order.
@@ -737,23 +1003,37 @@ export default async function handler(req, res) {
       console.warn("[order-create-v2] payment_term task creation failed (non-fatal):", taskErr.message);
     }
 
+    // PKG-002: strip internal cost fields from customer-facing response.
+    // profit / totalAmountFactory reveal Sanlyn's margin and MUST NOT reach external callers.
+    // Admin callers receive the full summary for cost tracking.
+    var summaryPublic = {
+      orderNo: order.order_no,
+      contractNo: order.contract_no,
+      customer: companyNameEN || companyNameCN,
+      totalAmount: totalAmount,
+      totalQty: totalQty,
+      totalCBM: totalCBM,
+      containerType: containerType,
+      productCount: cleanProducts.length,
+    };
+    var summaryFull = Object.assign({}, summaryPublic, {
+      totalAmountFactory: totalAmountFactory,
+      profit: profit,
+    });
+
+    // Also strip cost fields from the order row returned to non-admin callers
+    var orderPublic = Object.assign({}, order);
+    if (!isAdmin) {
+      delete orderPublic.profit;
+      delete orderPublic.total_amount_factory;
+    }
+
     return res.status(200).json({
       success: true,
       // Top-level order_no for easy client parsing (OrderCreateV3 reads d.order_no)
       order_no: order.order_no,
-      order: order,
-      summary: {
-        orderNo: order.order_no,
-        contractNo: order.contract_no,
-        customer: companyNameEN || companyNameCN,
-        totalAmount: totalAmount,
-        totalAmountFactory: totalAmountFactory,
-        profit: profit,
-        totalQty: totalQty,
-        totalCBM: totalCBM,
-        containerType: containerType,
-        productCount: cleanProducts.length,
-      },
+      order: isAdmin ? order : orderPublic,
+      summary: isAdmin ? summaryFull : summaryPublic,
       credit: creditInfo,   // S89: client may show "pending approval" banner
     });
   } catch (err) {
