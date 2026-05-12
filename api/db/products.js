@@ -73,7 +73,7 @@ export default async function handler(req, res) {
 
   try {
     var pool = getPool();
-    var { brand, category, cat1, cat2, cat3, search, q, limit = 1000, offset = 0 } = req.query;
+    var { brand, category, cat1, cat2, cat3, search, q, barcodes, limit = 1000, offset = 0 } = req.query;
     // ?q= is an alias for ?search= (used by product picker in OrdersModule)
     if (q && !search) search = q;
 
@@ -90,16 +90,12 @@ export default async function handler(req, res) {
         return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
       }
       var scope = await getBrandScope(pool, codes);
-      if (scope.mode === 'empty') {
+      if (scope.mode === 'fail_closed') {
         return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
       }
-      if (scope.mode === 'new') {
-        _visibilityMap = scope.visibilityMap;
-        params.push(Array.from(scope.visibilityMap.keys()));
-      } else {
-        // legacy: brandSet, no visibility info
-        params.push(Array.from(scope.brandSet));
-      }
+      // mode: 'new' → visibilityMap populated; 'legacy' → visibilityMap empty (all full)
+      if (scope.mode === 'new') _visibilityMap = scope.visibilityMap;
+      params.push(Array.from(scope.brandSet)); // always present in 'new' and 'legacy'
       conds.push("brand = ANY($" + params.length + "::text[])");
     }
 
@@ -122,6 +118,13 @@ export default async function handler(req, res) {
     if (search) {
       params.push("%" + search + "%");
       conds.push("(sku ILIKE $" + params.length + " OR product_name ILIKE $" + params.length + " OR product_name_cn ILIKE $" + params.length + " OR brand ILIKE $" + params.length + ")");
+    }
+    if (barcodes) {
+      var bArr = String(barcodes).split(",").map(s => s.trim()).filter(Boolean);
+      if (bArr.length) {
+        params.push(bArr);
+        conds.push("barcode = ANY($" + params.length + "::text[])");
+      }
     }
 
     // Default: only active

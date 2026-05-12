@@ -3,41 +3,52 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Extracted from products.js so linters / formatters can't accidentally wipe it.
  *
- * Call: const scope = await getBrandScope(pool, companyCodes);
+ * getBrandScope(pool, codes) → always returns:
+ *   { mode: 'new'        , brandSet: Set, visibilityMap: Map }
+ *   { mode: 'legacy'     , brandSet: Set, visibilityMap: Map }  ← visibilityMap empty
+ *   { mode: 'fail_closed', brandSet: Set, visibilityMap: Map }  ← both empty
  *
- * Returns one of three shapes:
- *   { mode: 'internal' }                       — caller is internal role, no scoping needed
- *   { mode: 'new',    visibilityMap: Map }     — company_brand_permissions table active
- *   { mode: 'legacy', brandSet: Set }          — fallback to customers.brands JSONB
- *   { mode: 'empty' }                          — fail-closed: no brands assigned, return []
+ * mode is LOCKED to exactly three values: 'new' | 'legacy' | 'fail_closed'
+ * Return shape is always the full struct — callers never need to guard for missing fields.
  *
- * effectivePriceMode (applyRfqLayer in products.js):
- *   brand.visibility = 'full'  → price shown
- *   brand.visibility = 'rfq'   → price_usd/price/priceVisible nulled (RFQ badge in UI)
- *   brand not in table         → excluded from results (visibility = 'hidden' default)
+ * Visibility semantics (brand-level gate):
+ *   'full'  → product listed, price shown
+ *   'rfq'   → product listed, price_usd/price/priceVisible nulled (RFQ badge in UI)
+ *   'hidden'→ product excluded from query results (not in visibilityMap / brandSet)
+ *   (no row) → treated as 'hidden' — fail-closed default
+ *
+ * RFQ only hides price — it does NOT remove the product row.
+ * Rows for unlisted brands are excluded at the SQL WHERE level (brand = ANY(...)).
  *
  * Three-layer model:
- *   Layer 1: company_brand_permissions.visibility   (this file)
- *   Layer 2: company_products.price_visible         (products.js RFQ layer)
+ *   Layer 1: company_brand_permissions.visibility   ← this file
+ *   Layer 2: company_products.price_visible         ← applyRfqLayer (this file)
  *   Layer 3: PRICE_INTERNAL_FIELDS + TRADER_HIDE_FIELDS strip (products.js, always last)
  *
- * ⚠ SECURITY-CRITICAL FILE — do not reformat or restructure without Codex review.
+ * Legacy fallback scope guarantee:
+ *   customers.brands is queried with company_code = ANY($codes) where $codes = JWT companyCodes.
+ *   A customer can only see brands from their own company records — never another customer's.
+ *
+ * ⚠ SECURITY-CRITICAL — do not reformat or restructure without Codex review.
  * Last Codex audit: CODEX-REVIEW-RESULT-002-FINAL (2026-05-13) — 10/10 PASS
  */
+
+const EMPTY_SET = new Set();
+const EMPTY_MAP = new Map();
 
 /**
  * Resolve brand scope for a non-internal (customer/portal) caller.
  *
  * @param {import('pg').Pool} pool
- * @param {string[]} codes — companyCodes from JWT (already validated non-empty)
+ * @param {string[]} codes — JWT companyCodes (non-empty, pre-validated by caller)
  * @returns {Promise<{
- *   mode: 'new'|'legacy'|'empty',
- *   visibilityMap?: Map<string,'full'|'rfq'>,
- *   brandSet?: Set<string>
+ *   mode: 'new'|'legacy'|'fail_closed',
+ *   brandSet: Set<string>,
+ *   visibilityMap: Map<string,'full'|'rfq'>
  * }>}
  */
 export async function getBrandScope(pool, codes) {
-  // ── Try company_brand_permissions first (feature-flag: graceful fallback) ──
+  // ── Try company_brand_permissions (feature-flag: fallback if table absent) ──
   try {
     const cbpR = await pool.query(
       `SELECT brand, visibility
@@ -48,7 +59,7 @@ export async function getBrandScope(pool, codes) {
       [codes]
     );
 
-    // Table exists — build visibility map (most permissive wins for multi-code customers)
+    // Build visibility map — most permissive wins across multiple company_codes
     const visibilityMap = new Map();
     for (const row of cbpR.rows) {
       const existing = visibilityMap.get(row.brand);
@@ -58,17 +69,20 @@ export async function getBrandScope(pool, codes) {
     }
 
     if (visibilityMap.size === 0) {
-      // Table present but customer has no permitted brands → fail-closed
-      return { mode: 'empty' };
+      // Table present but zero permitted brands for this customer → fail-closed
+      return { mode: 'fail_closed', brandSet: EMPTY_SET, visibilityMap: EMPTY_MAP };
     }
 
-    return { mode: 'new', visibilityMap };
+    // brandSet = keys of visibilityMap (used for SQL WHERE clause)
+    return { mode: 'new', brandSet: new Set(visibilityMap.keys()), visibilityMap };
 
   } catch (_) {
-    // company_brand_permissions doesn't exist yet — fall through to legacy
+    // Table doesn't exist yet → fall through to legacy customers.brands
   }
 
-  // ── Legacy fallback: customers.brands JSONB array ──
+  // ── Legacy fallback: customers.brands JSONB array ────────────────────────
+  // Scope: queries only the customer's own company_code(s) from JWT.
+  // Cannot leak other customers' brands — WHERE locks to $codes.
   const custR = await pool.query(
     "SELECT brands FROM customers WHERE company_code = ANY($1::text[]) AND is_active = true",
     [codes]
@@ -77,7 +91,7 @@ export async function getBrandScope(pool, codes) {
   const brandSet = new Set();
   for (const row of custR.rows) {
     let bs = row.brands;
-    // pg returns JSONB arrays as JS arrays already; handle string-encoded edge case
+    // pg driver returns JSONB arrays as JS arrays; handle legacy string-encoded edge case
     if (typeof bs === 'string') {
       try { bs = JSON.parse(bs); } catch (_) { bs = []; }
     }
@@ -87,32 +101,36 @@ export async function getBrandScope(pool, codes) {
   }
 
   if (brandSet.size === 0) {
-    // No brands in legacy table either → fail-closed
-    return { mode: 'empty' };
+    // No brands configured in legacy table → fail-closed
+    return { mode: 'fail_closed', brandSet: EMPTY_SET, visibilityMap: EMPTY_MAP };
   }
 
-  return { mode: 'legacy', brandSet };
+  // Legacy mode: no per-brand visibility info — all permitted brands treated as 'full'
+  return { mode: 'legacy', brandSet, visibilityMap: EMPTY_MAP };
 }
 
 /**
  * Apply RFQ layer to query result rows (Layer 1 → Layer 2 interaction).
- * Mutates rows in-place. Layer 3 (PRICE_INTERNAL_FIELDS strip) must run AFTER this.
  *
- * @param {any[]} rows — query result rows
+ * Only called when mode === 'new' (new table path).
+ * Mutates rows in-place — does NOT remove rows.
+ * Layer 3 (PRICE_INTERNAL_FIELDS strip) must run AFTER this function.
+ *
+ * @param {any[]} rows — products query result rows
  * @param {Map<string,'full'|'rfq'>} visibilityMap
  */
 export function applyRfqLayer(rows, visibilityMap) {
   for (const row of rows) {
     if (visibilityMap.get(row.brand) === 'rfq') {
-      // Brand-level RFQ: price hidden regardless of Layer 2
-      row.price_usd   = null;
-      row.price       = null;
+      // Brand-level RFQ: null price fields → product row stays, price hidden
+      row.price_usd    = null;
+      row.price        = null;
       row.priceVisible = false;
-      row._priceMode  = 'rfq';
+      row._priceMode   = 'rfq';
     } else if (visibilityMap.has(row.brand)) {
-      // Layer 2: company_products.price_visible may be on the row (boolean).
+      // Brand is 'full' → check Layer 2 (company_products.price_visible on row)
       // undefined → true  (no Layer 2 override, price visible by default)
-      // false     → false (Layer 2 explicitly hides price even at full visibility)
+      // false     → false (Layer 2 hides price even when Layer 1 grants 'full')
       row.priceVisible = row.priceVisible !== false; // undefined !== false → true ✅
       row._priceMode   = row.priceVisible ? 'full' : 'rfq';
     }
