@@ -82,7 +82,7 @@ export default async function handler(req, res) {
     // Internal roles see everything; everyone else is scoped to the brands
     // assigned to their customer record(s). This enforces price isolation
     // server-side so prices can't leak even if the frontend is bypassed.
-    var INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin"];
+    var INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin", "trader"];
     if (req.user && !INTERNAL_ROLES.includes(req.user.role)) {
       var codes = Array.isArray(req.user.companyCodes) && req.user.companyCodes.length
         ? req.user.companyCodes
@@ -167,6 +167,22 @@ export default async function handler(req, res) {
         // Also strip from raw JSONB if present
         if (row.raw && typeof row.raw === "object") {
           for (const f of PRICE_INTERNAL_FIELDS) delete row.raw[f];
+        }
+      }
+    }
+
+    // ── Trader tier: trader is internal (can see sanlyn_price) but NOT factory cost/margin ──
+    // trader = reseller; sees selling price (sanlyn_price) but Sanlyn's buy-side is confidential.
+    const TRADER_HIDE_FIELDS = [
+      "factory_price", "profit",
+      "vat_rate", "rebate_rate",
+      "bg_bx", "issuing_company", "jdy_id",
+    ];
+    if (req.user && req.user.role === "trader") {
+      for (const row of result.rows) {
+        for (const f of TRADER_HIDE_FIELDS) delete row[f];
+        if (row.raw && typeof row.raw === "object") {
+          for (const f of TRADER_HIDE_FIELDS) delete row.raw[f];
         }
       }
     }

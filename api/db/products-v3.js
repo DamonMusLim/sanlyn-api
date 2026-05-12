@@ -20,7 +20,7 @@ var FIELDS_BY_ROLE = {
   admin:   "*",
   factory: ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","factory_code","category","stock","inner_qty","inner_unit","factory_price","moq","declaration_name","declaration_elements","bl_description"],
   buyer:   ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","factory_code","category","stock","inner_qty","inner_unit","sanlyn_price","price_usd","moq","image_url"],
-  trader:  ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","factory_code","category","stock","inner_qty","inner_unit","price_usd","moq","image_url"],
+  trader:  ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","factory_code","category","stock","inner_qty","inner_unit","sanlyn_price","sale_price_cny","price_usd","moq","image_url"],
 };
 
 function pickFields(row, role) {
