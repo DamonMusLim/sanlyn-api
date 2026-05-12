@@ -33,33 +33,95 @@ const SENSITIVE_RAW_KEYS = [
   "containerBookingNo", "bookingNo",
 ];
 
-// 敏感的 product 子字段（products[] 里也有单价，必须逐项剥离）
-const SENSITIVE_PRODUCT_KEYS = [
-  "unitPrice", "unitPriceCNY", "unitPriceUSD", "price", "totalAmount",
-  "cost", "profit", "freightShare",
+// ROLE-BASED-REAL-ACCOUNT-VERIFY-001 — Product sub-field isolation:
+//   "always" = hide from both factory and customer (Sanlyn-internal analytics only)
+//   "factory hides" = customer-facing prices factory must not see
+//   "customer hides" = factory cost fields customer must not see
+//
+// NOTE: SENSITIVE_PRODUCT_KEYS is kept for legacy reference but NOT used in stripSensitive.
+//       All stripping is now done via role-specific arrays below.
+const SENSITIVE_PRODUCT_KEYS = []; // legacy — not used
+
+// Product fields always hidden from external roles (Sanlyn-internal)
+const ALWAYS_HIDE_PROD = [
+  "freightShare", "profit",   // Sanlyn allocation / margin — internal only
+];
+// Factory must NOT see customer-side prices (but factory CAN see factoryPrice / cost)
+const FACTORY_HIDE_PROD = [
+  "unitPrice", "unitPriceCNY", "unitPriceUSD",
+  "customerPrice", "salePrice",
+  "totalPrice", "totalAmount", "price",        // customer-facing line totals
+  "subtotal",                                  // customer subtotal = qty × unitPrice
+];
+// Customer must NOT see factory cost fields (but customer CAN see unitPrice / totalPrice)
+const CUSTOMER_HIDE_PROD = [
+  "factoryPrice", "cost",                      // factory cost price
 ];
 
+// Sanlyn profit fields — neither factory nor customer ever sees these.
+const ALWAYS_HIDE_TOP = [
+  "margin_amount", "margin_pct",               // Sanlyn profit — never expose externally
+  "middleman_markup_total", "middleman_markup_pct",
+  "profit",                                    // orders.profit = Sanlyn net profit — internal only
+];
+// Fields hidden from customer but visible to factory (factory's own costs)
+const CUSTOMER_HIDE_TOP = ["factory_amount", "factory_price_total", "total_amount_factory"];
+// Fields hidden from factory but visible to customer (customer's own pricing)
+const FACTORY_HIDE_TOP  = ["customer_amount", "customer_price_total"];
+
 function stripSensitive(row, requesterRole) {
-  // 前端兜底已经有 CSS，这里是 API 真过滤
-  // 仅当 mode=agent 且请求者是工厂角色时剥离
-  // admin / sales / logistics / customer 等内部或货主侧角色看到完整数据
+  // ROLE-BASED-REAL-ACCOUNT-VERIFY-001:
+  //   factory : sees factory_amount but NOT margin / customer pricing
+  //   customer: sees customer_amount/unitPrice but NOT margin / factory cost
+  //   admin/logistics: full visibility (no stripping)
   if (!row) return row;
-  if (row.mode !== "agent") return row;
-  if (requesterRole !== "factory") return row;
+  if (requesterRole !== "factory" && requesterRole !== "customer") return row;
 
   const cleaned = { ...row };
+
+  // Strip Sanlyn-internal profit from both roles
+  for (const k of ALWAYS_HIDE_TOP) {
+    if (k in cleaned) delete cleaned[k];
+  }
+
+  // Role-specific top-level strips
+  const roleTopHide = requesterRole === "factory" ? FACTORY_HIDE_TOP : CUSTOMER_HIDE_TOP;
+  for (const k of roleTopHide) {
+    if (k in cleaned) delete cleaned[k];
+  }
+
   const raw = cleaned.raw && typeof cleaned.raw === "object" ? { ...cleaned.raw } : {};
 
   for (const k of SENSITIVE_RAW_KEYS) {
     if (k in raw) delete raw[k];
   }
 
-  // products[] 内逐项剥离
+  // products[] stripping — the canonical products array is the TOP-LEVEL column (not raw.products).
+  // raw.products is a smaller snapshot used for document generation — strip both for safety.
+  // ROLE-BASED-REAL-ACCOUNT-VERIFY-001 fix: target row.products (top-level) not just raw.products.
+  const prodHideKeys = [
+    ...ALWAYS_HIDE_PROD,
+    ...(requesterRole === "factory" ? FACTORY_HIDE_PROD : CUSTOMER_HIDE_PROD),
+  ];
+
+  // Strip top-level products column
+  if (Array.isArray(cleaned.products)) {
+    cleaned.products = cleaned.products.map(function(p) {
+      if (!p || typeof p !== "object") return p;
+      const cp = { ...p };
+      for (const k of prodHideKeys) {
+        if (k in cp) delete cp[k];
+      }
+      return cp;
+    });
+  }
+
+  // Strip raw.products too (document generation snapshot)
   if (Array.isArray(raw.products)) {
     raw.products = raw.products.map(function(p) {
       if (!p || typeof p !== "object") return p;
       const cp = { ...p };
-      for (const k of SENSITIVE_PRODUCT_KEYS) {
+      for (const k of prodHideKeys) {
         if (k in cp) delete cp[k];
       }
       return cp;
@@ -69,7 +131,7 @@ function stripSensitive(row, requesterRole) {
   cleaned.raw = raw;
   // 打标让前端 / 调试可见
   cleaned._sensitive_stripped = true;
-  cleaned._stripped_reason = "agent-mode + factory-role";
+  cleaned._stripped_reason = requesterRole + "-role (mode=" + (row.mode || "null") + ")";
   return cleaned;
 }
 
