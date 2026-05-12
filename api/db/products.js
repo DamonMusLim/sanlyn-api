@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { getBrandScope, applyRfqLayer } from "./brand-scoping.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, PUT, OPTIONS");
@@ -72,19 +73,15 @@ export default async function handler(req, res) {
 
   try {
     var pool = getPool();
-    var { brand, category, cat1, cat2, cat3, search, q, limit = 1000, offset = 0 } = req.query;
+    var { brand, category, cat1, cat2, cat3, search, q, barcodes, limit = 1000, offset = 0 } = req.query;
     // ?q= is an alias for ?search= (used by product picker in OrdersModule)
     if (q && !search) search = q;
 
     var query = "SELECT * FROM products", params = [], conds = [];
 
-    // ── Brand scoping (fail-closed) — Layer 1: company_brand_permissions ──
-    // Internal roles see everything. External (customer/portal) roles are scoped
-    // to brands configured in company_brand_permissions.
-    // Feature-flag: if table doesn't exist, falls back to customers.brands (legacy).
-    // effectivePriceMode: full→price shown, rfq→price_usd=null, hidden→excluded.
+    // ── Brand scoping — Layer 1 (see api/db/brand-scoping.js) ──────────────
     var INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin", "trader"];
-    var _brandVisibilityMap = null; // null = not scoped; Map<brand,'full'|'rfq'> when scoped
+    var _visibilityMap = null; // set when external caller uses new table
     if (req.user && !INTERNAL_ROLES.includes(req.user.role)) {
       var codes = Array.isArray(req.user.companyCodes) && req.user.companyCodes.length
         ? req.user.companyCodes
@@ -92,62 +89,14 @@ export default async function handler(req, res) {
       if (codes.length === 0) {
         return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
       }
-
-      // Try new company_brand_permissions table first (feature-flag: fail gracefully)
-      var _usedNewTable = false;
-      try {
-        var cbpR = await pool.query(
-          `SELECT brand, visibility
-           FROM company_brand_permissions
-           WHERE tenant_code = 'SANLYN'
-             AND company_code = ANY($1::text[])
-             AND visibility IN ('full', 'rfq')`,
-          [codes]
-        );
-        _brandVisibilityMap = new Map();
-        for (var cbpRow of cbpR.rows) {
-          // Most permissive wins when same brand appears across multiple company_codes
-          var existing = _brandVisibilityMap.get(cbpRow.brand);
-          if (!existing || (existing === 'rfq' && cbpRow.visibility === 'full')) {
-            _brandVisibilityMap.set(cbpRow.brand, cbpRow.visibility);
-          }
-        }
-        _usedNewTable = true;
-        // 0 rows → fail-closed (empty map)
-      } catch (_cbpErr) {
-        // Table doesn't exist yet — fall back to legacy customers.brands
+      var scope = await getBrandScope(pool, codes);
+      if (scope.mode === 'fail_closed') {
+        return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
       }
-
-      if (!_usedNewTable) {
-        // Legacy fallback: read customers.brands JSONB array
-        var custR = await pool.query(
-          "SELECT brands FROM customers WHERE company_code = ANY($1::text[]) AND is_active = true",
-          [codes]
-        );
-        var brandSet = new Set();
-        for (var row of custR.rows) {
-          var bs = row.brands;
-          if (bs && typeof bs === "object" && !Array.isArray(bs)) {
-            // JSONB array from pg driver
-            try { bs = Array.isArray(bs) ? bs : Object.values(bs); } catch (_) { bs = []; }
-          }
-          if (typeof bs === "string") { try { bs = JSON.parse(bs); } catch (_) { bs = []; } }
-          if (Array.isArray(bs)) for (var br of bs) if (br) brandSet.add(String(br).trim());
-        }
-        if (brandSet.size === 0) {
-          return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
-        }
-        params.push(Array.from(brandSet));
-        conds.push("brand = ANY($" + params.length + "::text[])");
-        _brandVisibilityMap = null; // legacy mode: no visibility info, treat all as 'full'
-      } else {
-        if (_brandVisibilityMap.size === 0) {
-          // No permitted brands → fail-closed
-          return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
-        }
-        params.push(Array.from(_brandVisibilityMap.keys()));
-        conds.push("brand = ANY($" + params.length + "::text[])");
-      }
+      // mode: 'new' → visibilityMap populated; 'legacy' → visibilityMap empty (all full)
+      if (scope.mode === 'new') _visibilityMap = scope.visibilityMap;
+      params.push(Array.from(scope.brandSet)); // always present in 'new' and 'legacy'
+      conds.push("brand = ANY($" + params.length + "::text[])");
     }
 
     if (brand) {
@@ -170,6 +119,13 @@ export default async function handler(req, res) {
       params.push("%" + search + "%");
       conds.push("(sku ILIKE $" + params.length + " OR product_name ILIKE $" + params.length + " OR product_name_cn ILIKE $" + params.length + " OR brand ILIKE $" + params.length + ")");
     }
+    if (barcodes) {
+      var bArr = String(barcodes).split(",").map(s => s.trim()).filter(Boolean);
+      if (bArr.length) {
+        params.push(bArr);
+        conds.push("barcode = ANY($" + params.length + "::text[])");
+      }
+    }
 
     // Default: only active
     conds.push("active = true");
@@ -187,25 +143,8 @@ export default async function handler(req, res) {
 
     var result = await pool.query(query, params);
 
-    // ── Layer 1 RFQ: apply visibility from company_brand_permissions ──
-    // For brands with visibility='rfq': null out price fields so customer sees
-    // the product but not the price (RFQ badge in UI). Layer 3 strip runs after.
-    if (_brandVisibilityMap !== null) {
-      for (const row of result.rows) {
-        if (_brandVisibilityMap.get(row.brand) === 'rfq') {
-          row.price_usd = null;
-          row.price = null;
-          row.priceVisible = false;
-          row._priceMode = 'rfq';
-        } else if (_brandVisibilityMap.has(row.brand)) {
-          // Layer 2: company_products.price_visible may be on the row (boolean).
-          // undefined → true (no Layer 2 override, price is visible by default).
-          // false     → false (Layer 2 hides price even when Layer 1 is 'full').
-          row.priceVisible = row.priceVisible !== false; // undefined !== false → true ✅
-          row._priceMode = row.priceVisible ? 'full' : 'rfq'; // Layer 2 downgrades
-        }
-      }
-    }
+    // ── Layer 1→2 RFQ (logic lives in brand-scoping.js → applyRfqLayer) ────
+    if (_visibilityMap !== null) applyRfqLayer(result.rows, _visibilityMap);
 
     // Category summary
     var catSummary = null;
@@ -233,9 +172,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── Trader tier: sees sanlyn_price but NOT factory buy-side fields ──
-    // trader is in INTERNAL_ROLES (sees scoped products), but Sanlyn's
-    // purchase cost/margin is still confidential from resellers.
+    // ── Trader tier: trader is internal (can see sanlyn_price) but NOT factory cost/margin ──
+    // trader = reseller; sees selling price (sanlyn_price) but Sanlyn's buy-side is confidential.
     const TRADER_HIDE_FIELDS = [
       "factory_price", "profit",
       "vat_rate", "rebate_rate",

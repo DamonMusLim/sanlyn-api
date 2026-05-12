@@ -90,7 +90,8 @@ export default async function handler(req, res) {
       }
 
       const plan   = await _findShippingPlan(pool, order);
-      const merged = _merge(order, plan);
+      const blockedDocs = await _fetchBlockedDocs(pool, order.company_code);
+      const merged = _merge(order, plan, blockedDocs);
       return res.status(200).json({ success: true, data: _cropForCustomer(merged) });
     }
 
@@ -138,10 +139,29 @@ export default async function handler(req, res) {
       for (const no of noArr) planByOrderNo[String(no)] = plan;
     }
 
+    // ── 6.5. Fetch customer doc visibility config (fail-open) ─────────────────
+    // blocked_doc_keys controls UI display only — not a file access control.
+    const uniqueCodes = [...new Set(orders.map(o => o.company_code).filter(Boolean))];
+    const blockedByCode = {};
+    if (uniqueCodes.length > 0) {
+      try {
+        const custRes = await pool.query(
+          `SELECT company_code, raw->'blocked_doc_keys' AS blocked_doc_keys
+             FROM customers WHERE company_code = ANY($1::text[])`,
+          [uniqueCodes]
+        );
+        for (const row of custRes.rows) {
+          const val = row.blocked_doc_keys;
+          blockedByCode[row.company_code] = Array.isArray(val) ? val : (val ? val : []);
+        }
+      } catch (_) { /* fail-open: missing config = show all docs */ }
+    }
+
     // ── 7. Merge + crop ───────────────────────────────────────────────────────
     const data = orders.map(o => {
       const key = o.order_no || o._id;
-      return _cropForCustomer(_merge(o, planByOrderNo[String(key)] || null));
+      const blocked = blockedByCode[o.company_code] || [];
+      return _cropForCustomer(_merge(o, planByOrderNo[String(key)] || null, blocked));
     });
 
     // ── 8. Total count for pagination ─────────────────────────────────────────
@@ -181,6 +201,22 @@ function _buildAuthorizedCodes(permissions) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PRIVATE: Fetch customer_blocked_docs for a single company_code
+// Fail-open: returns [] on any error so missing config never hides docs.
+async function _fetchBlockedDocs(pool, companyCode) {
+  if (!companyCode) return [];
+  try {
+    const res = await pool.query(
+      `SELECT raw->'blocked_doc_keys' AS blocked_doc_keys
+         FROM customers WHERE company_code = $1 LIMIT 1`,
+      [companyCode]
+    );
+    const val = res.rows[0]?.blocked_doc_keys;
+    return Array.isArray(val) ? val : (val ? val : []);
+  } catch (_) { return []; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PRIVATE: Find shipping plan for a single order
 // ─────────────────────────────────────────────────────────────────────────────
 async function _findShippingPlan(pool, order) {
@@ -207,7 +243,7 @@ async function _findShippingPlan(pool, order) {
 //       Internal cost fields are NOT included in shipping_plan here (unlike the internal
 //       api/db/customer-orders.js version), but _cropForCustomer adds a second explicit
 //       whitelist layer as defense-in-depth.
-function _merge(order, plan) {
+function _merge(order, plan, customerBlockedDocs = []) {
   const raw = order.raw || {};
   const out = {
     _id:               order._id,
@@ -244,6 +280,8 @@ function _merge(order, plan) {
     products:    raw.products    || order.products    || [],
     attachments: raw.attachments || order.attachments || {},
     pdf_urls:    raw.pdfUrls     || order.pdf_urls    || {},
+    // UI display filter — NOT a security boundary (see documentVisibility.js)
+    customer_blocked_docs: Array.isArray(customerBlockedDocs) ? customerBlockedDocs : [],
     // Intentionally omitted:
     //   remarks  — may contain internal ops notes
     //   factory  — internal supplier reference
@@ -360,6 +398,7 @@ function _cropForCustomer(order) {
     pol, pod, bl_no, vessel, voyage, etd, eta, flow_status,
     products, attachments, pdf_urls,
     shipping_plan: croppedPlan,
+    customer_blocked_docs: order.customer_blocked_docs ?? [],
     // Excluded top-level: remarks, factory, raw
   };
 }
