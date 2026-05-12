@@ -3,20 +3,26 @@
 // GET with valid token → { user } (token verify/refresh)
 import { getPool, setCors } from "../db.js";
 import { generateToken, extractUser } from "../auth.js";
+import { writeAudit } from "./audit-helper.js";
 import bcrypt from "bcryptjs";
 
 // ── compat: supports both legacy plaintext and bcrypt hashed passwords ──
 // If stored value starts with "$2b$" it is a bcrypt hash → use bcrypt.compare
 // Otherwise fall back to plain equality and auto-upgrade the stored value on success
+// Returns { ok: boolean, upgraded: boolean }
 async function verifyPassword(pool, userId, inputPlain, storedValue) {
   if (storedValue && (storedValue.startsWith("$2b$") || storedValue.startsWith("$2a$"))) {
-    return bcrypt.compare(inputPlain, storedValue);
+    const ok = await bcrypt.compare(inputPlain, storedValue);
+    return { ok, upgraded: false };
   }
-  // plaintext path — also upgrades on first successful login
-  if (inputPlain !== storedValue) return false;
+  // plaintext path — auto-upgrade to bcrypt on first successful login
+  if (inputPlain !== storedValue) return { ok: false, upgraded: false };
   const hash = await bcrypt.hash(inputPlain, 12);
-  await pool.query("UPDATE accounts SET password = $1 WHERE id = $2", [hash, userId]);
-  return true;
+  await pool.query(
+    "UPDATE accounts SET password = $1, updated_at = NOW() WHERE id = $2",
+    [hash, userId]
+  );
+  return { ok: true, upgraded: true };
 }
 
 export default async function handler(req, res) {
@@ -75,8 +81,30 @@ export default async function handler(req, res) {
     if (!result.rows[0]) return res.status(401).json({ error: "账号不存在" });
     var u = result.rows[0];
 
-    const passwordOk = await verifyPassword(pool, u.id, password, u.password);
-    if (!passwordOk) return res.status(401).json({ error: "密码错误" });
+    const { ok: passwordOk, upgraded } = await verifyPassword(pool, u.id, password, u.password);
+
+    if (!passwordOk) {
+      // 登录失败审计
+      writeAudit(pool, req, {
+        action: "account.login_failed",
+        entity_type: "account",
+        entity_id: u.id,
+        diff_summary: `login failed for username=${u.username}`,
+        detail: { username: u.username, role: u.role },
+      }).catch(() => {});
+      return res.status(401).json({ error: "密码错误" });
+    }
+
+    // 明文→bcrypt 自动升级日志
+    if (upgraded) {
+      writeAudit(pool, req, {
+        action: "account.password_auto_upgraded",
+        entity_type: "account",
+        entity_id: u.id,
+        diff_summary: "plaintext password auto-upgraded to bcrypt on login",
+        detail: { username: u.username, note: "legacy plaintext → bcrypt hash" },
+      }).catch(() => {});
+    }
 
     var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
     // access list lives in accounts.raw.access (JSONB). Used for fine-grained
@@ -91,6 +119,15 @@ export default async function handler(req, res) {
       companyCode: u.company_code, companyCodes: companyCodes,
       access: access
     });
+
+    // 登录成功审计
+    writeAudit(pool, req, {
+      action: "account.login",
+      entity_type: "account",
+      entity_id: u.id,
+      diff_summary: `login success: ${u.username} (${u.role})`,
+      detail: { username: u.username, role: u.role, company: u.company },
+    }).catch(() => {});
 
     return res.status(200).json({
       success: true, token: token,
