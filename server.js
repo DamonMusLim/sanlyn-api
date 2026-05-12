@@ -122,6 +122,7 @@ mount("/api/factory-fill",               () => import("./api/factory-fill.js"));
 mount("/api/pending-confirm",            () => import("./api/pending-confirm.js"));
 mount("/api/db/pending-token-create",    () => import("./api/db/pending-token-create.js"));
 mount("/api/db/company",           () => import("./api/db/company.js"));
+mount("/api/db/company-products",  () => import("./api/db/company-products.js"));        // factory/trader product catalog CRUD
 mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));
 mount("/api/db/import-customers",  () => import("./api/db/import-customers.js"));
@@ -239,6 +240,7 @@ mount("/api/db/migrate-order-mode", () => import("./api/db/migrate-order-mode.js
 mount("/api/db/migrate-order-flow-v3", () => import("./api/db/migrate-order-flow-v3.js")); // v3
 mount("/api/db/migrate-tasks",      () => import("./api/db/migrate-tasks.js"));      // P1-2
 mount("/api/db/migrate-sample-requests", () => import("./api/db/migrate-sample-requests.js")); // sample_requests table + price_visible
+mount("/api/db/migrate-exchange-rate",   () => import("./api/db/migrate-exchange-rate.js"));   // exchange_rates table
 mount("/api/db/migrate-collab",     () => import("./api/db/migrate-collab.js"));     // P1-3
 mount("/api/db/migrate-tasks-factory-code", () => import("./api/db/migrate-tasks-factory-code.js")); // BUG-A
 // ── v2 Network Layer (blueprint v2) ───────────────────────────
@@ -427,6 +429,9 @@ mount("/api/db/migrate-containers",   () => import("./api/db/migrate-containers.
 mount("/api/db/order-events",  () => import("./api/db/order-events.js"));
 mount("/api/db/order-tasks",   () => import("./api/db/order-tasks.js"));
 mount("/api/db/containers",    () => import("./api/db/containers.js"));
+
+// ── Platform utilities ───────────────────────────────────────────────────────
+mount("/api/platform/exchange-rate", () => import("./api/platform/exchange-rate.js"));   // USD/CNY daily rate + price_usd sync
 
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
