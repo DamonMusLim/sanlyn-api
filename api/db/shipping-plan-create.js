@@ -61,6 +61,15 @@ export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
+  // ── Auth guard: ALL methods require admin role ────────────────────────────
+  // This endpoint is AdminPanel-only (shipping plan creation / edit / detail).
+  // GET returns ALL pending orders across every customer — never expose to
+  // customer / factory / logistics roles.
+  // ROLE-VIEWMODEL-PERMISSION-REGRESSION-001: P1 scope bug fixed 2026-05-12.
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({ error: "Forbidden: admin only" });
+  }
+
   var pool = getPool();
 
   // ── GET ──
