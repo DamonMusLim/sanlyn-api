@@ -112,6 +112,8 @@ const PUBLIC_PATHS = [
   "/api/db/customs-broker-checkin",
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
+  // Exchange rate — public read (non-sensitive, needed by factory/customer portal before product pricing)
+  "/api/platform/exchange-rate",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
