@@ -106,11 +106,29 @@ export default async function handler(req, res) {
       }).catch(() => {});
     }
 
+    var rawObj = u.raw || {};
+    if (typeof rawObj === "string") { try { rawObj = JSON.parse(rawObj); } catch { rawObj = {}; } }
+
+    // ── Weak-password / must-reset gate ────────────────────────
+    // Accounts flagged must_reset_password=true are blocked from login.
+    // Client must use the activation link (POST /api/db/customer-invite/activate).
+    if (rawObj.must_reset_password === true) {
+      writeAudit(pool, req, {
+        action: "account.login_blocked_must_reset",
+        entity_type: "account", entity_id: u.id,
+        diff_summary: `login blocked: must_reset_password for ${u.username}`,
+        detail: { username: u.username, role: u.role },
+      }).catch(() => {});
+      return res.status(403).json({
+        error: "Password reset required. Please use your activation link to set a new password.",
+        must_reset: true,
+        contact: "Contact your account manager for a new activation link.",
+      });
+    }
+
     var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
     // access list lives in accounts.raw.access (JSONB). Used for fine-grained
     // permission checks like Pay Balance button visibility.
-    var rawObj = u.raw || {};
-    if (typeof rawObj === "string") { try { rawObj = JSON.parse(rawObj); } catch { rawObj = {}; } }
     var access = Array.isArray(rawObj.access) ? rawObj.access : [];
 
     var token = generateToken({
