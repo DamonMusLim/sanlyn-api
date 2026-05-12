@@ -85,10 +85,16 @@ export default async function handler(req, res) {
       var query = "SELECT * FROM customers", params = [], conds = [];
       // Default: only active customers (pass include_inactive=1 for admin views)
       if (!include_inactive) conds.push("is_active = true");
-      // Non-admin: hard-restrict to own companyCodes; ignore any client-supplied company_code
+      // Non-admin: restrict to own companyCodes. If company_code is specified AND in their allowed
+      // list, use exact match so group accounts can self-scope to their own company.
       if (!isAdmin) {
-        var ph = userCodes.map(function (c) { params.push(c); return "$" + params.length; }).join(",");
-        conds.push("company_code IN (" + ph + ")");
+        if (company_code && userCodes.includes(company_code)) {
+          params.push(company_code);
+          conds.push("company_code = $" + params.length);
+        } else {
+          var ph = userCodes.map(function (c) { params.push(c); return "$" + params.length; }).join(",");
+          conds.push("company_code IN (" + ph + ")");
+        }
       } else if (company_code) {
         params.push(company_code);
         conds.push("company_code = $" + params.length);
