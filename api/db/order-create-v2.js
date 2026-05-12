@@ -135,7 +135,10 @@ export default async function handler(req, res) {
           prods.forEach(function(p) {
             var key = p.code || p.name;
             if (key && !productMap[key]) {
-              productMap[key] = {
+              // SECURITY-FIX PKG-P0-001: strip internal-only fields from customer-role responses.
+              // taxRebateRate / vatRate / declareAmountPerBox reveal export-rebate strategy and
+              // customs-declare values — must never be returned to customer JWT callers.
+              var productEntry = {
                 name: p.name || "", code: p.code || "", brand: p.brand || "",
                 size: p.size || "", unit: p.unit || "CTN",
                 unitPrice: p.unitPrice || p.price || 0,
@@ -144,10 +147,14 @@ export default async function handler(req, res) {
                 lastDate: ord.created_at,
                 innerQty: p.innerQty || p.bagsPerBox || 0,
                 innerUnit: p.innerUnit || "PCS",
-                declareAmountPerBox: p.declareAmountPerBox || 0,
-                vatRate: p.vatRate || 0, taxRebateRate: p.taxRebateRate || 0,
                 hsCode: p.hsCode || "",
               };
+              if (isAdmin) {
+                productEntry.declareAmountPerBox = p.declareAmountPerBox || 0;
+                productEntry.vatRate = p.vatRate || 0;
+                productEntry.taxRebateRate = p.taxRebateRate || 0;
+              }
+              productMap[key] = productEntry;
             }
           });
         });
@@ -454,8 +461,8 @@ export default async function handler(req, res) {
           owner_object_type, owner_object_id, owner_object_label,
           company_code, mode, due_at, reason, raw
         ) VALUES (
-          $1, $2, 'SAMPLE_REQUEST', 'sourcing', 'open', 'low',
-          'sourcing', $3, $4,
+          $1, $2, 'SAMPLE_REQUEST', 'supply', 'open', 'low',
+          'supply_chain', $3, $4,
           $5, 'owned', NOW() + INTERVAL '7 days',
           'New sample / sourcing request submitted via Order Create.',
           $6::jsonb
