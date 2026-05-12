@@ -96,58 +96,44 @@ export default async function handler(req, res) {
     }
 
     // ── Batch fetch all shipping plans for these orders ──
-    // shipping_plans.order_nos is a JSONB array of order_no strings
-    // Match: order.order_no OR order._id appearing in plan.order_nos
-    const orderNos = orders
-      .map(o => o.order_no || o._id)
+    // shipping_plans.order_contract_nos is a TEXT column with comma/pipe-separated contract_nos
+    // Match: order.contract_no appearing in plan.order_contract_nos
+    const contractNos = orders
+      .map(o => o.contract_no || (o.raw && o.raw.contractNo))
       .filter(Boolean);
 
     let plans = [];
-    if (orderNos.length > 0) {
-      // Use jsonb ? operator to check if any order_no exists in the array
-      // We do a broader fetch of recent shipping plans for this customer and match in JS
-      // (More efficient than N queries for N orders)
-      const customerNames = [...new Set(orders.map(o => o.customer || o.raw?.companyNameEN).filter(Boolean))];
-      let planSql = `SELECT * FROM shipping_plans WHERE 1=1`;
-      const planParams = [];
-
-      if (customerNames.length > 0) {
-        const custPh = customerNames.map((_, i) => `$${i + 1}`).join(",");
-        planSql += ` AND customer ILIKE ANY (ARRAY[${customerNames.map((_, i) => `$${i + 1}`).join(",")}])`;
-        planParams.push(...customerNames.map(n => `%${n}%`));
-        // This doesn't work with ILIKE ANY ARRAY - let's use OR instead
-      }
-
-      // Simpler: fetch ALL plans where order_nos contains any of our order numbers
-      // Use a single query with jsonb containment checks
-      const orderNoPhs = orderNos.map((_, i) => `$${i + 1}`).join(",");
+    if (contractNos.length > 0) {
+      // Split order_contract_nos by comma or pipe into an array, then check overlap
+      // string_to_array(regexp_replace(col, '|', ',', 'g'), ',') && ARRAY[$1, $2, ...]
       const planRes = await pool.query(
         `SELECT * FROM shipping_plans
-         WHERE order_nos IS NOT NULL
-           AND EXISTS (
-             SELECT 1 FROM jsonb_array_elements_text(order_nos) AS ono
-             WHERE ono IN (${orderNoPhs})
-           )
+         WHERE order_contract_nos IS NOT NULL
+           AND string_to_array(
+             regexp_replace(order_contract_nos, '\\|', ',', 'g'),
+             ','
+           ) && $1::text[]
          ORDER BY etd DESC`,
-        orderNos
+        [contractNos]
       );
       plans = planRes.rows;
     }
 
-    // ── Build lookup: order_no → plan ──
-    const planByOrderNo = {};
+    // ── Build lookup: contract_no → plan ──
+    // order_contract_nos is TEXT (comma/pipe-separated); split to build the index
+    const planByContractNo = {};
     for (const plan of plans) {
-      const planOrderNos = plan.order_nos || [];
-      const noArr = Array.isArray(planOrderNos) ? planOrderNos : [];
-      for (const no of noArr) {
-        planByOrderNo[String(no)] = plan;
+      const raw = plan.order_contract_nos || "";
+      const nos = String(raw).split(/[,|]/).map(s => s.trim()).filter(Boolean);
+      for (const no of nos) {
+        planByContractNo[no] = plan;
       }
     }
 
     // ── Merge orders with their shipping plans ──
     const merged = orders.map(o => {
-      const key = o.order_no || o._id;
-      const plan = planByOrderNo[String(key)] || null;
+      const key = o.contract_no || (o.raw && o.raw.contractNo);
+      const plan = key ? (planByContractNo[String(key).trim()] || null) : null;
       return _merge(o, plan, isAdmin);
     });
 
@@ -172,15 +158,18 @@ export default async function handler(req, res) {
 
 // ── Find shipping plan for a single order ──
 async function _findShippingPlan(pool, order) {
-  const key = order.order_no || order._id;
+  const key = order.contract_no || (order.raw && order.raw.contractNo);
   if (!key) return null;
   try {
     const res = await pool.query(
       `SELECT * FROM shipping_plans
-       WHERE order_nos IS NOT NULL
-         AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(order_nos) AS ono WHERE ono = $1)
+       WHERE order_contract_nos IS NOT NULL
+         AND string_to_array(
+           regexp_replace(order_contract_nos, '\\|', ',', 'g'),
+           ','
+         ) @> ARRAY[$1::text]
        ORDER BY etd DESC LIMIT 1`,
-      [String(key)]
+      [String(key).trim()]
     );
     return res.rows[0] || null;
   } catch (e) {
@@ -198,14 +187,23 @@ const PRODUCT_FORBIDDEN_KEYS = [
 ];
 
 // ── Shipping plan internal cost fields (non-admin must not see Sanlyn's procurement costs) ──
+// Column names verified against production shipping_plans schema 2026-05-12
 const PLAN_FORBIDDEN_KEYS = [
-  "freight_cost",   // Sanlyn's wholesale freight cost
-  "trucking_fee",   // Sanlyn's trucking cost
-  "customs_fee",    // Sanlyn's customs filing cost
-  "insurance_fee",  // Sanlyn's insurance cost
-  "doc_fee",        // Internal doc fee
-  "thc_fee",        // Terminal handling charge
-  "seal_fee",       // Seal fee
+  "freight_cost",         // Sanlyn's wholesale freight cost
+  "trucking_cost_total",  // Sanlyn's trucking cost
+  "customs_cost_total",   // Sanlyn's customs filing cost
+  "customs_declare_fee",  // Customs declaration fee
+  "insurance_premium",    // Sanlyn's insurance cost
+  "insurance_rate",       // Insurance rate
+  "port_surcharge_total", // Port surcharge
+  "doc_fee",              // Internal doc fee
+  "thc_fee",              // Terminal handling charge
+  "seal_fee",             // Seal fee
+  "bkg_fee",              // Booking fee
+  "tlx_fee",              // Telex release fee
+  "eir_fee",              // Equipment interchange fee
+  "vgm_fee",              // VGM fee
+  "driver_info",          // Driver contact info (internal)
 ];
 
 // ── Merge order + shipping plan into unified record ──
@@ -290,7 +288,7 @@ function _merge(order, plan, isAdmin) {
       trucking_cn:   plan.trucking_cn,
       customs_cn:    plan.customs_cn,
       freight_sale_usd: plan.freight_sale_usd, // customer-facing charge — safe to expose
-      order_nos:     plan.order_nos,
+      order_contract_nos: plan.order_contract_nos,
     };
     // Admin: include full internal cost breakdown
     if (isAdmin) {
