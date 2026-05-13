@@ -1,7 +1,7 @@
-// /api/db/trucking-rates.js — Trucking rates (factory → port) CRUD
-// GET  : list/filter by vendor_cn, factory_name, pol
-// POST : create / batch create
-// PATCH: update by _id  (admin only)
+// /api/db/customs-rates.js — Customs broker flat-fee rates CRUD
+// GET  : list/filter by vendor_cn, pol
+// POST : create / batch create (admin)
+// PATCH: update by _id (admin)
 import { getPool, setCors } from "../db.js";
 
 export default async function handler(req, res) {
@@ -13,15 +13,14 @@ export default async function handler(req, res) {
   // ── GET ──────────────────────────────────────────────────
   if (req.method === "GET") {
     try {
-      const { vendor, factory, pol, limit = 1000 } = req.query;
-      let query = "SELECT * FROM trucking_rates";
+      const { vendor, pol, limit = 1000 } = req.query;
+      let query = "SELECT * FROM customs_rates";
       const params = [], conds = [];
-      if (vendor)  { params.push("%" + vendor  + "%"); conds.push("vendor_cn ILIKE $"   + params.length); }
-      if (factory) { params.push("%" + factory + "%"); conds.push("factory_name ILIKE $" + params.length); }
-      if (pol)     { params.push("%" + pol     + "%"); conds.push("pol ILIKE $"          + params.length); }
+      if (vendor) { params.push("%" + vendor + "%"); conds.push("vendor_cn ILIKE $" + params.length); }
+      if (pol)    { params.push("%" + pol    + "%"); conds.push("pol ILIKE $"       + params.length); }
       if (conds.length) query += " WHERE " + conds.join(" AND ");
       params.push(parseInt(limit));
-      query += " ORDER BY updated_at DESC NULLS LAST LIMIT $" + params.length;
+      query += " ORDER BY base_fee ASC NULLS LAST, updated_at DESC NULLS LAST LIMIT $" + params.length;
       const result = await pool.query(query, params);
       return res.status(200).json(result.rows);
     } catch (err) {
@@ -40,18 +39,19 @@ export default async function handler(req, res) {
       const inserted = [];
       for (const r of records) {
         const result = await pool.query(
-          `INSERT INTO trucking_rates
-             (vendor_cn, factory_name, pol, valid_from, valid_to,
-              rates, surge, currency, notes, raw)
+          `INSERT INTO customs_rates
+             (vendor_cn, pol, base_fee, extra_per_desc, max_free_descs,
+              currency, notes, valid_from, valid_to, raw)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
            RETURNING *`,
           [
-            r.vendor_cn || "", r.factory_name || "", r.pol || "",
-            r.valid_from || null, r.valid_to || null,
-            JSON.stringify(r.rates || {}),
-            JSON.stringify(r.surge || {}),
+            r.vendor_cn || "", r.pol || "",
+            r.base_fee != null ? r.base_fee : 80,   // 行情默认 ¥80/票
+            r.extra_per_desc != null ? r.extra_per_desc : 0,
+            r.max_free_descs != null ? r.max_free_descs : 0,
             r.currency || "CNY",
             r.notes || "",
+            r.valid_from || null, r.valid_to || null,
             JSON.stringify(r.raw || {}),
           ]
         );
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
       if (!_id || !patch) {
         return res.status(400).json({ success: false, error: "_id and patch required" });
       }
-      const ALLOWED = ["vendor_cn","factory_name","pol","valid_from","valid_to","rates","surge","currency","notes","raw"];
+      const ALLOWED = ["vendor_cn","pol","base_fee","extra_per_desc","max_free_descs","currency","notes","valid_from","valid_to","raw"];
       const sets = [], params = [];
       for (const [k, v] of Object.entries(patch)) {
         if (!ALLOWED.includes(k)) continue;
@@ -84,7 +84,7 @@ export default async function handler(req, res) {
       sets.push("updated_at = NOW()");
       params.push(_id);
       const r = await pool.query(
-        `UPDATE trucking_rates SET ${sets.join(", ")} WHERE _id = $${params.length} RETURNING *`,
+        `UPDATE customs_rates SET ${sets.join(", ")} WHERE _id = $${params.length} RETURNING *`,
         params
       );
       return res.status(200).json({ success: true, data: r.rows[0] });

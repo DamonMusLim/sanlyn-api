@@ -226,6 +226,7 @@ mount("/api/db/countries",         () => import("./api/db/countries.mjs"));
 mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs"));
 mount("/api/db/companies",          () => import("./api/db/companies.js"));
 mount("/api/db/trucking-rates",     () => import("./api/db/trucking-rates.js"));
+mount("/api/db/customs-rates",      () => import("./api/db/customs-rates.js"));
 mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
 mount("/api/db/seed-huihe-charges",   () => import("./api/db/seed-huihe-charges.js"));
 mount("/api/db/seed-oss-local-charges",() => import("./api/db/seed-oss-local-charges.js"));
