@@ -190,7 +190,73 @@ export default async function handler(req, res) {
         var factories = [];
         var fromRelationships = false;
 
-        if (buyerRes.rows.length) {
+        // ── Layer 1: partner_relationships (new) — customer_factory edges ─────
+        // Resolves company_code_b to factories OR seller_profiles (so 巴匕/洋宝宝-style entries also surface).
+        var partnerRes = await pool.query(
+          `SELECT pr.company_code_b AS code
+             FROM partner_relationships pr
+            WHERE pr.company_code_a = $1
+              AND pr.relationship_type = 'customer_factory'
+              AND pr.status = 'active'`,
+          [buyerCode]
+        ).catch(function() { return { rows: [] }; });
+
+        if (partnerRes.rows.length) {
+          var codes = partnerRes.rows.map(function(r){ return r.code; });
+          // Hydrate from factories table (full factory info)
+          var factHydrate = await pool.query(
+            `SELECT company_code, name AS name_cn, name_short, po_prefix, ports, address
+               FROM factories
+              WHERE company_code = ANY($1::text[])`,
+            [codes]
+          ).catch(function() { return { rows: [] }; });
+          var seenCodes = new Set();
+          factHydrate.rows.forEach(function(row) {
+            seenCodes.add(row.company_code);
+            factories.push({
+              company_code: row.company_code,
+              name_cn:      row.name_cn || "",
+              name_en:      "",
+              name_short:   row.name_short || row.po_prefix || "",
+              port_default: Array.isArray(row.ports) && row.ports.length ? row.ports[0] : "",
+              export_mode:  null,
+              address:      row.address || "",
+            });
+          });
+          // Hydrate any remaining codes from seller_profiles (e.g. petbaby)
+          var missing = codes.filter(function(c){ return !seenCodes.has(c); });
+          if (missing.length) {
+            var spHydrate = await pool.query(
+              `SELECT code, name_cn, name_en
+                 FROM seller_profiles
+                WHERE code = ANY($1::text[])`,
+              [missing]
+            ).catch(function() { return { rows: [] }; });
+            spHydrate.rows.forEach(function(row) {
+              seenCodes.add(row.code);
+              factories.push({
+                company_code: row.code,
+                name_cn:      row.name_cn || "",
+                name_en:      row.name_en || "",
+                name_short:   row.name_cn || row.code,
+                port_default: "",
+                export_mode:  "proxy",  // seller_profile entries default to proxy export
+                address:      "",
+              });
+            });
+            // Codes not resolved anywhere — still surface them as raw entries so UI can show them
+            missing.filter(function(c){ return !seenCodes.has(c); }).forEach(function(c) {
+              factories.push({
+                company_code: c, name_cn: c, name_en: "", name_short: c,
+                port_default: "", export_mode: null, address: "",
+              });
+            });
+          }
+          fromRelationships = true;
+        }
+
+        // ── Layer 2: legacy relationships table fallback ───────────────────────
+        if (!factories.length && buyerRes.rows.length) {
           var buyerId = buyerRes.rows[0].id;
           var relRes = await pool.query(
             `SELECT DISTINCT c.id, c.company_code, c.name_cn, c.name_en, c.name_short,
@@ -234,12 +300,16 @@ export default async function handler(req, res) {
         }
 
         var factoryList = factories.map(function(row) {
+          var displayName = row.name_en || row.name_cn || row.name_short || row.company_code || "";
           return {
+            name: displayName,                            // OrderCreateV4 reads this as the display label
             companyCode: row.company_code || "",
             nameEN: row.name_en || "",
             nameCN: row.name_cn || "",
             nameShort: row.name_short || "",
+            poPrefix: row.name_short || row.company_code || "",
             portDefault: row.port_default || "",
+            ports: row.port_default ? [row.port_default] : [],
             exportMode: row.export_mode || null,
             isProxy: row.export_mode === "proxy",
           };
