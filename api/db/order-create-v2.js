@@ -63,6 +63,39 @@ export default async function handler(req, res) {
     try {
       var action = req.query.action || "init";
 
+      // ── Single customer info (returns sub_entities + base fields) ──
+      if (action === "customer-info" && req.query.companyCode) {
+        var ciCode = req.query.companyCode;
+        if (!isAdmin && userCodes && !userCodes.includes(ciCode)) {
+          return res.status(403).json({ error: "Out of scope" });
+        }
+        var ciRes = await pool.query(
+          "SELECT company_code, name_cn, name_en, country, currency, grade, destination_port, consignee, sub_entities FROM customers WHERE company_code = $1 LIMIT 1",
+          [ciCode]
+        ).catch(function() { return { rows: [] }; });
+        if (!ciRes.rows.length) {
+          return res.status(404).json({ success: false, error: "Customer not found" });
+        }
+        var row = ciRes.rows[0];
+        var subEntities = row.sub_entities || [];
+        if (typeof subEntities === "string") { try { subEntities = JSON.parse(subEntities); } catch(_) { subEntities = []; } }
+        if (!Array.isArray(subEntities)) subEntities = [];
+        return res.status(200).json({
+          success: true,
+          data: {
+            companyCode: row.company_code,
+            companyNameCN: row.name_cn || "",
+            companyNameEN: row.name_en || "",
+            country: row.country || "",
+            currency: row.currency || "",
+            grade: row.grade || "",
+            destinationPort: row.destination_port || "",
+            consignee: row.consignee || "",
+            subEntities: subEntities,
+          }
+        });
+      }
+
       // ── Customer's history products (for association) ──
       if (action === "customer-products" && req.query.companyCode) {
         var code = req.query.companyCode;
