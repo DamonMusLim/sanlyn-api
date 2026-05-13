@@ -169,6 +169,7 @@ export default async function handler(req, res) {
       // ── Factories authorized for a specific buyer ──
       if (action === "factory-by-buyer" && req.query.buyerCode) {
         var buyerCode = req.query.buyerCode;
+        var subEntityCode = (req.query.subEntityCode || "").trim();   // optional — when set, use sub-entity's signed factories
 
         // PKG-006 AUTHZ-GUARD: non-admin callers may only query factories for their own buyerCode.
         // Prevents enumerating other companies' factory relationships by probing arbitrary buyerCodes.
@@ -183,22 +184,34 @@ export default async function handler(req, res) {
         }
 
         var buyerRes = await pool.query(
-          "SELECT id FROM customers WHERE company_code = $1 LIMIT 1",
+          "SELECT id, sub_entities FROM customers WHERE company_code = $1 LIMIT 1",
           [buyerCode]
         ).catch(function() { return { rows: [] }; });
+
+        // Validate subEntityCode belongs to this buyer (defense against spoofing)
+        if (subEntityCode && buyerRes.rows.length) {
+          var subs = buyerRes.rows[0].sub_entities || [];
+          if (typeof subs === "string") { try { subs = JSON.parse(subs); } catch(_) { subs = []; } }
+          var validCodes = subs.map(function(s){ return s.code; });
+          if (validCodes.indexOf(subEntityCode) === -1) {
+            return res.status(400).json({ error: "subEntityCode not found under buyerCode" });
+          }
+        }
 
         var factories = [];
         var fromRelationships = false;
 
         // ── Layer 1: partner_relationships (new) — customer_factory edges ─────
         // Resolves company_code_b to factories OR seller_profiles (so 巴匕/洋宝宝-style entries also surface).
+        // If subEntityCode given, query sub-entity's relations; otherwise parent buyer.
+        var lookupCode = subEntityCode || buyerCode;
         var partnerRes = await pool.query(
           `SELECT pr.company_code_b AS code
              FROM partner_relationships pr
             WHERE pr.company_code_a = $1
               AND pr.relationship_type = 'customer_factory'
               AND pr.status = 'active'`,
-          [buyerCode]
+          [lookupCode]
         ).catch(function() { return { rows: [] }; });
 
         if (partnerRes.rows.length) {
@@ -357,7 +370,7 @@ export default async function handler(req, res) {
       ).catch(function() { return { rows: [] }; });
 
       var custTable = await pool.query(
-        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, raw FROM customers WHERE is_active != false" + scopeClauseCust + " AND (grade IS NOT NULL AND grade != '' OR brands IS NOT NULL AND brands != '{}' AND brands != '[]' AND brands::text != '') ORDER BY name_en",
+        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, sub_entities, raw FROM customers WHERE is_active != false" + scopeClauseCust + " AND (grade IS NOT NULL AND grade != '' OR brands IS NOT NULL AND brands != '{}' AND brands != '[]' AND brands::text != '') ORDER BY name_en",
         scopeParams
       ).catch(function() { return { rows: [] }; });
 
@@ -370,6 +383,11 @@ export default async function handler(req, res) {
         try { addrs = typeof c.addresses === "string" ? JSON.parse(c.addresses) : (c.addresses || []); } catch(e) {}
         var firstAddr = addrs[0] || {};
         var brands = Array.isArray(c.brands) ? c.brands.join(", ") : (c.brands || "");
+
+        // Normalize sub_entities (may come as JSON string or array)
+        var subEntities = c.sub_entities || [];
+        if (typeof subEntities === "string") { try { subEntities = JSON.parse(subEntities); } catch(_) { subEntities = []; } }
+        if (!Array.isArray(subEntities)) subEntities = [];
 
         if (isAdmin) {
           // Admin: full customer record for internal order creation
@@ -392,6 +410,7 @@ export default async function handler(req, res) {
             tradeTerms: c.trade_terms || "",
             ourShipping: c.our_shipping || "",
             addresses: addrs,
+            subEntities: subEntities,
             raw: c.raw || {}
           };
         } else {
@@ -404,6 +423,7 @@ export default async function handler(req, res) {
             currency: c.currency || "USD",
             destinationPort: c.destination_port || firstAddr.port || "",
             consignee: c.consignee || firstAddr.consignee || "",
+            subEntities: subEntities,
           };
         }
       });
