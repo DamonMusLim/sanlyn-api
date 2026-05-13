@@ -3,70 +3,55 @@
 //
 // GET /api/db/order-payee-account?orderId=<id>&currency=<USD|CNY>
 //
-// Returns the scoped payee bank account for a specific order.
-// - customer: can only query their own orders (scoped by companyCodes)
-// - admin/internal/finance: can query any order
-// - Never returns full bank_accounts list
-// - Never returns raw/internal fields
-// - Fails closed: no companyCodes → 403
+// Returns the payee bank account for an order.
+// The payee is determined by whichever company was SELECTED on the order
+// (issuing_company / seller_code), NOT inferred from incoterm.
 //
-// PAYEE ROUTING RULES (updated 2026-05-13):
-// ┌─────────────────────────────────────┬────────────────────────────────┐
-// │ Condition                           │ Payee company_code             │
-// ├─────────────────────────────────────┼────────────────────────────────┤
-// │ trade_terms ∈ {DDP,DAP,DDU,CNF,CNI} │ BABI (厦门巴匕出口有限公司)    │
-// │ trade_terms ∈ {FOB,CIF,CFR,EXW,...} │ CN-00016 (上海洋贝国际物流)    │
-// │ trade_terms missing, seller_code set│ SELLER_CODE_TO_BANK_COMPANY    │
-// │ nothing matched                     │ null → frontend shows "Pending"│
-// └─────────────────────────────────────┴────────────────────────────────┘
+// ── HOW TO ADD A NEW COMPANY ─────────────────────────────────────────────────
+// 1. INSERT INTO bank_accounts
+//      (company_code, currency, account_holder, bank_name, bank_name_en,
+//       account_no, swift, bank_address, active, is_default)
+//    VALUES ('YOUR-CODE', 'USD', '...', ..., true, true);
+//    (repeat for CNY if needed)
 //
-// To add a new supplier/forwarder:
-//   1. INSERT INTO bank_accounts (company_code, currency, account_holder, …, active, is_default)
-//   2. Add the routing rule to INCOTERM_TO_COMPANY or SELLER_CODE_TO_BANK_COMPANY below.
+// 2. Add entry to ISSUING_COMPANY_MAP below so the order field value
+//    maps to your new company_code.
+//
+// 3. When creating orders, set issuing_company or seller_code to one of
+//    the keys in ISSUING_COMPANY_MAP.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-// ── Payee routing: incoterm → bank_accounts.company_code ─────────────────────
-// Incoterms where Sanlyn acts as the all-in seller (BABI collects)
-const BABI_TERMS = new Set(["DDP", "DAP", "DDU", "CNF", "CNI", "CIF", "CFR"]);
-// Incoterms where logistics arm (上海洋贝) collects freight separately
-const YANGBAO_TERMS = new Set(["FOB", "EXW", "FCA", "CPT", "CIP"]);
+// Maps every known value of orders.issuing_company / orders.seller_code
+// → bank_accounts.company_code
+//
+// Add a row here whenever you onboard a new issuing entity.
+const ISSUING_COMPANY_MAP = {
+  // ── 厦门巴匕出口有限公司 ──────────────────────────────────────
+  "BABI":                       "BABI",
+  "petbaby":                    "BABI",
+  "XIAMEN PET BABY":            "BABI",
+  "XIAMEN PET BABY IMPORT AND EXPORT CO., LTD": "BABI",
+  "xiamen pet baby":            "BABI",
 
-const INCOTERM_TO_COMPANY = {
-  // All-in delivery: BABI (厦门巴匕出口有限公司)
-  DDP: "BABI", DAP: "BABI", DDU: "BABI",
-  CNF: "BABI", CNI: "BABI", CIF: "BABI", CFR: "BABI",
-  // Origin-only: 上海洋贝国际物流有限公司
-  FOB: "CN-00016", EXW: "CN-00016", FCA: "CN-00016",
-  CPT: "CN-00016", CIP: "CN-00016",
-};
+  // ── 上海洋贝国际物流有限公司 ──────────────────────────────────
+  "CN-00016":                   "CN-00016",
+  "yangbaobao":                 "CN-00016",
+  "YANGBAOBAO":                 "CN-00016",
+  "上海洋贝":                   "CN-00016",
+  "Shanghai Ocean Baby":        "CN-00016",
+  "SHANGHAI OCEAN BABY":        "CN-00016",
 
-// Fallback: orders.seller_code → bank_accounts.company_code
-// Add new suppliers here when onboarding them.
-const SELLER_CODE_TO_BANK_COMPANY = {
-  petbaby:    "BABI",
-  yangbaobao: "CN-00016",
-  // future_forwarder: "CN-XXXXX",
+  // ── future company example ────────────────────────────────────
+  // "MY-NEW-COMPANY":          "CN-XXXXX",
 };
 
 const INTERNAL_ROLES = new Set(["admin", "finance", "trader", "logistics", "boss", "internal", "platform_admin"]);
 
 function isInternal(user) {
   return user && INTERNAL_ROLES.has(String(user.role).toLowerCase());
-}
-
-function resolveIncoterm(raw) {
-  if (!raw) return null;
-  let t = "";
-  try {
-    const obj = typeof raw === "string" ? JSON.parse(raw) : raw;
-    t = (obj.tradeTerms || obj.trade_terms || obj.incoterm || "").toUpperCase().trim();
-  } catch {
-    t = String(raw).toUpperCase().trim();
-  }
-  // Normalise: "DDP GUANGZHOU" → "DDP"
-  return t.split(/[\s,/]/)[0] || null;
 }
 
 export default async function handler(req, res) {
@@ -79,66 +64,66 @@ export default async function handler(req, res) {
   const orderId  = req.query.orderId  || req.query.order_id;
   const currency = (req.query.currency || "USD").toUpperCase().trim();
 
-  if (!orderId) {
-    return res.status(400).json({ error: "orderId required" });
-  }
-  if (!["USD", "CNY"].includes(currency)) {
-    return res.status(400).json({ error: "currency must be USD or CNY" });
-  }
+  if (!orderId) return res.status(400).json({ error: "orderId required" });
+  if (!["USD", "CNY"].includes(currency)) return res.status(400).json({ error: "currency must be USD or CNY" });
 
   const pool = getPool();
 
   try {
-    // ── 1. Fetch the order (include trade_terms + raw for incoterm routing) ──────
+    // ── 1. Fetch order — include all issuing company fields ───────────────────
     const oRes = await pool.query(
-      `SELECT id, contract_no, seller_code, company_code, trade_terms,
-              raw->>'tradeTerms'  AS raw_trade_terms,
-              raw->>'incoterm'    AS raw_incoterm
+      `SELECT id, contract_no, company_code,
+              seller_code,
+              issuing_company,
+              issuing_company_en,
+              raw->>'seller'      AS raw_seller,
+              raw->>'sellerName'  AS raw_seller_name,
+              raw->>'sellerCode'  AS raw_seller_code
          FROM orders WHERE id = $1 LIMIT 1`,
       [orderId]
     );
     const order = oRes.rows[0];
-    if (!order) {
-      return res.status(404).json({ error: "order_not_found" });
-    }
+    if (!order) return res.status(404).json({ error: "order_not_found" });
 
-    // ── 2. Customer scope guard ────────────────────────────────────────────────
+    // ── 2. Customer scope guard ───────────────────────────────────────────────
     if (!isInternal(user)) {
       const customerCodes = user.companyCodes || (user.company_code ? [user.company_code] : []);
-      if (!customerCodes.length) {
-        return res.status(403).json({ error: "forbidden" });
-      }
-      if (!customerCodes.includes(order.company_code)) {
-        return res.status(403).json({ error: "forbidden" });
-      }
+      if (!customerCodes.length) return res.status(403).json({ error: "forbidden" });
+      if (!customerCodes.includes(order.company_code)) return res.status(403).json({ error: "forbidden" });
     }
 
-    // ── 3. Resolve payee company code via incoterm routing ────────────────────
-    // Priority: trade_terms column → raw.tradeTerms → raw.incoterm → seller_code fallback
-    const rawIncoterm =
-      order.trade_terms ||
-      order.raw_trade_terms ||
-      order.raw_incoterm ||
-      null;
+    // ── 3. Resolve which company was selected on this order ───────────────────
+    // Try each field in priority order — whichever is set first wins.
+    const candidates = [
+      order.issuing_company_en,
+      order.issuing_company,
+      order.seller_code,
+      order.raw_seller_code,
+      order.raw_seller_name,
+      order.raw_seller,
+    ];
 
-    const incoterm = resolveIncoterm(rawIncoterm);
-    let bankCompanyCode = incoterm ? INCOTERM_TO_COMPANY[incoterm] : null;
-
-    // Fallback: use seller_code mapping when incoterm not in table
-    if (!bankCompanyCode) {
-      const sellerCode = order.seller_code || "petbaby";
-      bankCompanyCode  = SELLER_CODE_TO_BANK_COMPANY[sellerCode] || null;
+    let bankCompanyCode = null;
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const key = String(candidate).trim();
+      // Exact match first, then case-insensitive
+      bankCompanyCode = ISSUING_COMPANY_MAP[key]
+        || ISSUING_COMPANY_MAP[key.toLowerCase()]
+        || ISSUING_COMPANY_MAP[key.toUpperCase()]
+        || null;
+      if (bankCompanyCode) break;
     }
 
     if (!bankCompanyCode) {
       return res.status(200).json({
         success: true, data: null,
-        _pending: "payee_account_not_configured",
-        _debug_incoterm: incoterm,
+        _pending: "issuing_company_not_set_or_not_mapped",
+        _debug_candidates: candidates.filter(Boolean),
       });
     }
 
-    // ── 4. Fetch bank account (exact company + currency + active + default) ────
+    // ── 4. Fetch bank account ─────────────────────────────────────────────────
     const bRes = await pool.query(
       `SELECT account_holder, bank_name, bank_name_en, account_no, swift, bank_address, currency
          FROM bank_accounts
@@ -155,7 +140,6 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true, data: null,
         _pending: `no_${currency}_account_for_${bankCompanyCode}`,
-        _debug_incoterm: incoterm,
         _debug_company: bankCompanyCode,
       });
     }
