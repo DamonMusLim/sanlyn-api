@@ -26,7 +26,15 @@ var DM_SK         = process.env.DM_ACCESS_KEY_SECRET || "";
 var DM_REGION     = process.env.DM_REGION         || "ap-southeast-1";
 var DAILY_QUOTA   = 5;
 
-var ALLOWED_TYPES = ["colleague","customer","factory","ocean","trucking","service"];
+var ALLOWED_TYPES = ["colleague","customer","factory","trader","ocean","trucking","service"];
+
+// Role-based invite permissions (enforced server-side)
+var ROLE_INVITE_MAP = {
+  customer:    ["factory", "trader"],
+  factory:     ["customer", "ocean", "trucking", "service"],
+  admin:       ["colleague","customer","factory","trader","ocean","trucking","service"],
+  super_admin: ["colleague","customer","factory","trader","ocean","trucking","service"],
+};
 
 function makeToken() { return crypto.randomBytes(24).toString("hex"); }
 
@@ -148,13 +156,24 @@ export default async function handler(req, res) {
       if (inv.used_at)                return res.status(410).json({ error: "already used" });
       if (inv.status === "rejected")  return res.status(410).json({ error: "rejected by admin", note: inv.review_note });
       if (new Date(inv.expires_at) < new Date()) return res.status(410).json({ error: "expired" });
+      // Write opened_at on first visit (growth funnel: INVITED → OPENED)
+      if (!inv.opened_at) {
+        try {
+          await pool.query(
+            "UPDATE factory_invites SET opened_at = NOW() WHERE id = $1 AND opened_at IS NULL",
+            [inv.id]
+          );
+        } catch (_) { /* opened_at column may not exist yet; non-fatal */ }
+      }
       // Hide internals from public landing page
       return res.status(200).json({
         success: true,
         invite: {
           token: inv.token, type: inv.type,
-          factory_name: inv.factory_name,
-          contact_name: inv.contact_name,
+          factory_name:  inv.factory_name,
+          contact_name:  inv.contact_name,
+          contact_email: inv.contact_email,
+          contact_phone: inv.contact_phone,
           status: inv.status,
           message: inv.message,
           expires_at: inv.expires_at,
@@ -185,6 +204,17 @@ export default async function handler(req, res) {
   if (!ALLOWED_TYPES.includes(type)) return res.status(400).json({ error: "invalid type" });
   if (!factoryName)                  return res.status(400).json({ error: "factory_name / companyName required" });
   if (!channelValue)                 return res.status(400).json({ error: "channel_value required" });
+
+  // ── Role-based invite permission check ──
+  var senderRole = req.user && req.user.role;
+  var allowedForRole = ROLE_INVITE_MAP[senderRole] || [];
+  if (senderRole && allowedForRole.length > 0 && !allowedForRole.includes(type)) {
+    return res.status(403).json({
+      error: "invite_not_permitted",
+      message: "Your role (" + senderRole + ") cannot invite partners of type: " + type,
+      allowed_types: allowedForRole,
+    });
+  }
 
   try {
     // ── Dedup by tax_id ──

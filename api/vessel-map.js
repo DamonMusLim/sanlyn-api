@@ -15,6 +15,8 @@ const CARRIER_MAP = {
   "NBXG":"CMA","CMDU":"CMA","YMLU":"YML","EVGU":"EVG","HDMU":"HMM",
   "ZIMU":"ZIM","OOLU":"OOCL","APLU":"APL","SITU":"SIT","FCIU":"FCL",
   "EGLV":"EVG","TRIU":"TSL","WHLC":"WHL","SNKO":"SNL","NSAU":"ANL",
+  // SOLT = SITC Container Lines (confirmed 2026-05-13 via 4portun subscription test)
+  "SOLT":"SITC","SNTR":"SNL","ACLU":"ACL","PCIU":"PIL","FLCU":"FGL",
 };
 
 const BL_PATTERNS = [

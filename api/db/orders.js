@@ -365,32 +365,43 @@ export default async function handler(req, res) {
       company_codes = JSON.stringify(userCodes);
       company_code  = undefined;
     }
-    let query = "SELECT * FROM orders", params = [], conds = [];
+    // LEFT JOIN latest loading_collab_sheets per order for driver chip
+    let query = `
+      SELECT o.*,
+             lcs.loading->>'driver_name'    AS driver_name,
+             lcs.loading->>'driver_phone'   AS driver_phone,
+             lcs.loading->>'truck_plate'    AS truck_plate,
+             lcs.loading->>'planned_load_at' AS planned_load_at
+        FROM orders o
+        LEFT JOIN LATERAL (
+          SELECT loading FROM loading_collab_sheets
+           WHERE order_id = o.id
+           ORDER BY submitted_at DESC NULLS LAST
+           LIMIT 1
+        ) lcs ON TRUE
+    `, params = [], conds = [];
 
     // is_mock column was removed from orders table — filter dropped (ORDER-DATA-DISPLAY-UNBLOCK-001)
 
-    if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
-    if (status)   { params.push(status);           conds.push(`status = $${params.length}`); }
-    if (factory)  { params.push(factory);           conds.push(`raw->>'factory' = $${params.length}`); }
+    if (customer) { params.push(`%${customer}%`); conds.push(`o.customer ILIKE $${params.length}`); }
+    if (status)   { params.push(status);           conds.push(`o.status = $${params.length}`); }
+    if (factory)  { params.push(factory);           conds.push(`o.raw->>'factory' = $${params.length}`); }
     if (company_codes) {
       let codeList; try { codeList = JSON.parse(company_codes); } catch { codeList = company_codes.split(","); }
       if (codeList.length > 0) {
         const ph = codeList.map(function(c) { params.push(c); return "$" + params.length; });
-        // Match either the buyer (company_code / raw.companyCode) OR the factory
-        // (raw.factoryCompanyCode). Lets factory portal accounts see the orders
-        // they are supplying, e.g. HENGAN sees HARMONIOUS's 48-4 because it ships it.
         conds.push(
-          "(raw->>'companyCode' IN (" + ph.join(",") + ")" +
-          " OR company_code IN (" + ph.join(",") + ")" +
-          " OR raw->>'factoryCompanyCode' IN (" + ph.join(",") + "))"
+          "(o.raw->>'companyCode' IN (" + ph.join(",") + ")" +
+          " OR o.company_code IN (" + ph.join(",") + ")" +
+          " OR o.raw->>'factoryCompanyCode' IN (" + ph.join(",") + "))"
         );
       }
     } else if (company_code) {
       params.push(company_code);
       conds.push(
-        "(raw->>'companyCode' = $" + params.length +
-        " OR company_code = $" + params.length +
-        " OR raw->>'factoryCompanyCode' = $" + params.length + ")"
+        "(o.raw->>'companyCode' = $" + params.length +
+        " OR o.company_code = $" + params.length +
+        " OR o.raw->>'factoryCompanyCode' = $" + params.length + ")"
       );
     }
     if (brands) {
@@ -398,18 +409,18 @@ export default async function handler(req, res) {
       try { brandList = JSON.parse(brands); } catch { brandList = [brands]; }
       if (brandList.length > 0) {
         const orClauses = [];
-        brandList.forEach(brand => { params.push(brand); orClauses.push(`raw->>'_widget_1775071325804' = $${params.length}`); });
-        brandList.forEach(brand => { params.push(`%${brand}%`); orClauses.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(raw->'products') p WHERE p->>'name' ILIKE $${params.length})`); });
+        brandList.forEach(brand => { params.push(brand); orClauses.push(`o.raw->>'_widget_1775071325804' = $${params.length}`); });
+        brandList.forEach(brand => { params.push(`%${brand}%`); orClauses.push(`EXISTS (SELECT 1 FROM jsonb_array_elements(o.raw->'products') p WHERE p->>'name' ILIKE $${params.length})`); });
         conds.push(`(${orClauses.join(' OR ')})`);
       }
     }
     if (sku) {
       params.push("%" + sku + "%");
-      conds.push("EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(raw->'products','[]'::jsonb)) p WHERE p->>'sku' ILIKE $" + params.length + ")");
+      conds.push("EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(o.raw->'products','[]'::jsonb)) p WHERE p->>'sku' ILIKE $" + params.length + ")");
     }
     if (conds.length) query += " WHERE " + conds.join(" AND ");
     params.push(parseInt(limit));
-    query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
+    query += ` ORDER BY o.created_at DESC LIMIT $${params.length}`;
     const result = await pool.query(query, params);
 
     // ── P1-1 field filtering ──

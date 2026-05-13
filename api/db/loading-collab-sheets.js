@@ -79,8 +79,13 @@ export default async function handler(req, res) {
                 lcs.factory_code,
                 lcs.loading->>'customer_code' AS customer_code,
                 lcs.status, lcs.submitted_at,
-                lcs.loading->>'trade_terms' AS trade_terms,
-                lcs.loading->>'freight_by'  AS freight_by,
+                lcs.loading->>'trade_terms'    AS trade_terms,
+                lcs.loading->>'freight_by'     AS freight_by,
+                lcs.loading->>'driver_name'    AS driver_name,
+                lcs.loading->>'driver_phone'   AS driver_phone,
+                lcs.loading->>'truck_plate'    AS truck_plate,
+                lcs.loading->>'planned_load_at' AS planned_load_at,
+                lcs.loading->>'truck_status'   AS truck_status,
                 lcs.loading, lcs.products, lcs.participant_note
            FROM loading_collab_sheets lcs
            JOIN orders o ON o.id = lcs.order_id
@@ -90,6 +95,47 @@ export default async function handler(req, res) {
         vals
       );
       return res.json({ success: true, data: r.rows });
+    } catch (err) {
+      return sendError(res, 500, "internal_error", err.message);
+    }
+  }
+
+  // ── PATCH: assign driver to a loading sheet ─────────────────────
+  // Internal-only. Stores driver_name/phone/plate inside loading JSONB.
+  if (req.method === "PATCH") {
+    if (!isInternalRole(role)) return sendError(res, 403, "internal_only");
+    const id = parseInt(req.query?.id);
+    if (!id || isNaN(id)) return sendError(res, 400, "id_required");
+    const b = req.body || {};
+    const allowed = ["driver_name", "driver_phone", "truck_plate", "planned_load_at", "truck_status"];
+    const patch = {};
+    for (const k of allowed) {
+      if (b[k] !== undefined) patch[k] = b[k] === "" ? null : String(b[k]).trim();
+    }
+    if (!Object.keys(patch).length) return sendError(res, 400, "no_fields");
+    const pool = getPool();
+    try {
+      // Merge patch keys into loading JSONB without overwriting other keys
+      const sets = Object.keys(patch).map((k, i) =>
+        `loading = jsonb_set(COALESCE(loading,'{}'), '{${k}}', $${i + 2}::jsonb, true)`
+      );
+      // Chain jsonb_set calls via CTE
+      const jsonSets = Object.keys(patch).reduce((acc, k) => {
+        return `jsonb_set(COALESCE(${acc},'{}'), '{${k}}', to_jsonb($${Object.keys(patch).indexOf(k) + 2}::text), true)`;
+      }, "loading");
+      const vals = [id, ...Object.values(patch).map(v => v === null ? null : String(v))];
+      const r = await pool.query(
+        `UPDATE loading_collab_sheets
+            SET loading = ${jsonSets}, updated_at = NOW()
+          WHERE id = $1
+          RETURNING id, order_id, order_no, loading->>'driver_name' AS driver_name,
+                    loading->>'driver_phone' AS driver_phone,
+                    loading->>'truck_plate'  AS truck_plate,
+                    loading->>'planned_load_at' AS planned_load_at`,
+        vals
+      );
+      if (!r.rows.length) return sendError(res, 404, "sheet_not_found");
+      return res.json({ success: true, data: r.rows[0] });
     } catch (err) {
       return sendError(res, 500, "internal_error", err.message);
     }
