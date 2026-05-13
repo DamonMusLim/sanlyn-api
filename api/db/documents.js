@@ -128,7 +128,13 @@ function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class
 
 function portBar(pol,pod,terms){return`<div class="trade-terms-bar"><span>POL: ${esc(pol)||"-"}</span><span>POD: ${esc(pod)||"-"}</span><span>Terms: ${esc(terms)||"-"} (Incoterms® 2020)</span></div>`;}
 
-function bankCard(bk){return`<div class="details-box"><h4>BANKING INFORMATION</h4>Beneficiary: ${esc(bk.beneficiary||bk.accountName||"")}<br>Bank: ${esc(bk.bankName)}<br>SWIFT: ${esc(bk.swift)}<br>${bk.bankAddr?`Bank Address: ${esc(bk.bankAddr)}<br>`:""}${bk.usdAccount?`Account No.: ${esc(bk.usdAccount)}<br>`:""}<span style="color:red;font-size:10px;font-weight:bold">* Please verify bank info before payment.</span></div>`;}
+function bankCard(bk,curr){
+  var cur=String(curr||"").toUpperCase();
+  var isCNY=cur==="CNY"||cur==="RMB";
+  var acct=isCNY?(bk.rmbAccount||bk.cnyAccount||""):(bk.usdAccount||"");
+  var acctLabel=isCNY?"Account No. (CNY)":"Account No. (USD)";
+  return`<div class="details-box"><h4>BANKING INFORMATION</h4>Beneficiary: ${esc(bk.beneficiary||bk.accountName||"")}<br>Bank: ${esc(bk.bankName)}<br>SWIFT: ${esc(bk.swift)}<br>${bk.bankAddr?`Bank Address: ${esc(bk.bankAddr)}<br>`:""}${acct?`${acctLabel}: ${esc(acct)}<br>`:""}<span style="color:red;font-size:10px;font-weight:bold">* Please verify bank info before payment.</span></div>`;
+}
 
 function termsCard(ts){
   // Strip Chinese + " / " separators from terms. Keep English portion only.
@@ -413,7 +419,7 @@ export default async function handler(req, res) {
       var totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
 
       if(type==="sc"){
-        var no=cno.split(" / ").map(function(c){return"SC-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
+        var no=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var colsSC=[
           {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
@@ -426,7 +432,7 @@ export default async function handler(req, res) {
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
-          <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+          <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}`,ap);
         _xlsCapture={sheetName:"Sales Contract",docNo:no,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
@@ -439,7 +445,7 @@ export default async function handler(req, res) {
       }
 
       if(type==="iv"){
-        var noIV=cno.split(" / ").map(function(c){return"IV-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
+        var noIV=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var colsIV=[
           {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
@@ -452,7 +458,7 @@ export default async function handler(req, res) {
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
-          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}`,ap);
         _xlsCapture={sheetName:"Invoice",docNo:noIV,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty"},{k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},{k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}],
@@ -460,7 +466,7 @@ export default async function handler(req, res) {
       }
 
       if(type==="pl"){
-        var noPL=cno.split(" / ").map(function(c){return"PL-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
+        var noPL=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var tcbmPL=prods.reduce(function(s,p){return s+Number(p.cbm||p.volume||0);},0)||Number(raw.totalCBM||raw.cbm||0);
         var colsPL=[
           {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
@@ -484,7 +490,7 @@ export default async function handler(req, res) {
       }
 
       if(type==="pi"){
-        var noPI="PI-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
+        var noPI=cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var colsPI=[
           {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
@@ -497,7 +503,7 @@ export default async function handler(req, res) {
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
-          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}`,ap);
         _xlsCapture={sheetName:"Proforma Invoice",docNo:noPI,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
@@ -569,7 +575,7 @@ export default async function handler(req, res) {
               2. 交期 Delivery: 如有延误，须提前5个工作日书面通知。逾期导致的亏舱费、改船费、客户索赔由供方承担。(5 working days written notice required for delays. Supplier liable for resulting losses.)<br>
               3. 系统声明: 本合同由 Sanlyn OS 供应链引擎自动生成，作为双方商业确认之有效凭证。
             </div>
-            ${bankCard(cfg.bank)}
+            ${bankCard(cfg.bank,curr)}
           </div>
           <div class="signature-grid"><div class="sig-box"><span>BUYER REPRESENTATIVE</span><span style="font-weight:normal;font-size:9px">(买方代表签署 / 盖章)</span></div><div class="sig-box"><span>SELLER REPRESENTATIVE</span><span style="font-weight:normal;font-size:9px">(卖方代表签署 / 盖章)</span></div></div>
         `,ap);
