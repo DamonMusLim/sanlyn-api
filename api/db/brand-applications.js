@@ -103,12 +103,13 @@ export default async function handler(req, res) {
 
       if (action === "approved") {
         // Idempotent grant: upsert company_brand_permissions(company_code, brand) = full
+        // source CHECK constraint allows: manual / migrated_from_customers_brands / contract / system / import
         await client.query(
           `INSERT INTO company_brand_permissions
              (tenant_code, company_code, brand, visibility, source, created_by, note)
-           VALUES ('SANLYN', $1, $2, 'full', 'brand_application:' || $3, $4, $5)
+           VALUES ('SANLYN', $1, $2, 'full', 'manual', $3, $4)
            ON CONFLICT DO NOTHING`,
-          [row.applicant_company_code, row.brand, String(row.id), reviewer, "Granted via brand application #" + row.id]
+          [row.applicant_company_code, row.brand, reviewer, "Granted via brand application #" + row.id + ". " + (reviewNotes || "")]
         );
       }
       await client.query("COMMIT");
