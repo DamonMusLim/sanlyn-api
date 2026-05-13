@@ -386,6 +386,7 @@ mount("/api/portal/orders",    () => import("./api/portal/orders.js"));    // St
 // Hard contract: keys stay in process.env.MINIMAX_API_KEY; rate-limited
 // 30s/task+role; daily cap 100; max_tokens hard 800; prompt 4000 chars.
 mount("/api/minimax-chat",     () => import("./api/minimax-chat.js"));
+mount("/api/ocr-booking",     () => import("./api/ocr-booking.js")); // multipart bypass at line 77
 // ── Static files (driver-evidence page) ──
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
