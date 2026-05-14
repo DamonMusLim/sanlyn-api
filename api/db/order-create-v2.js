@@ -249,11 +249,13 @@ export default async function handler(req, res) {
 
         if (partnerRes.rows.length) {
           var codes = partnerRes.rows.map(function(r){ return r.code; });
-          // Hydrate from factories table (full factory info)
+          // Hydrate from factories table + customers (for name_en)
           var factHydrate = await pool.query(
-            `SELECT company_code, name AS name_cn, name_short, po_prefix, ports, address
-               FROM factories
-              WHERE company_code = ANY($1::text[])`,
+            `SELECT f.company_code, f.name AS name_cn, f.name_short, f.po_prefix, f.ports, f.address,
+                    c.name_en, c.address_cn, c.address_en, c.currency, c.addresses
+               FROM factories f
+               LEFT JOIN customers c ON (c.company_code = f.company_code OR c.name_cn = f.name)
+              WHERE f.company_code = ANY($1::text[])`,
             [codes]
           ).catch(function() { return { rows: [] }; });
           var seenCodes = new Set();
@@ -262,11 +264,14 @@ export default async function handler(req, res) {
             factories.push({
               company_code: row.company_code,
               name_cn:      row.name_cn || "",
-              name_en:      "",
-              name_short:   row.name_short || row.po_prefix || "",
+              name_en:      row.name_en || "",
+              name_short:   row.name_short || "",
+              po_prefix:    row.po_prefix || "",
               port_default: Array.isArray(row.ports) && row.ports.length ? row.ports[0] : "",
               export_mode:  null,
-              address:      row.address || "",
+              address:      row.address_en || row.address_cn || row.address || "",
+              addresses:    row.addresses || null,
+              currency:     row.currency || "CNY",
             });
           });
           // Hydrate any remaining codes from seller_profiles (e.g. petbaby)
@@ -306,7 +311,8 @@ export default async function handler(req, res) {
           var buyerId = buyerRes.rows[0].id;
           var relRes = await pool.query(
             `SELECT DISTINCT c.id, c.company_code, c.name_cn, c.name_en, c.name_short,
-                    c.port_default, c.export_mode, c.address
+                    c.port_default, c.export_mode, c.address, c.address_cn, c.address_en,
+                    c.currency, c.addresses
              FROM relationships r
              JOIN customers c ON (
                (r.type = 'buys_from' AND r.from_company_id = $1 AND c.id = r.to_company_id)
@@ -340,7 +346,7 @@ export default async function handler(req, res) {
           }
           // Admin / internal only: fallback to full factory list for internal order creation
           var allFactRes = await pool.query(
-            "SELECT id, company_code, name_cn, name_en, name_short, port_default, export_mode FROM customers WHERE role_type = 'factory' ORDER BY name_en"
+            "SELECT id, company_code, name_cn, name_en, name_short, port_default, export_mode, address, address_cn, address_en, currency, addresses FROM customers WHERE portal_role = 'factory' ORDER BY name_en"
           ).catch(function() { return { rows: [] }; });
           factories = allFactRes.rows;
         }
@@ -353,11 +359,14 @@ export default async function handler(req, res) {
             nameEN: row.name_en || "",
             nameCN: row.name_cn || "",
             nameShort: row.name_short || "",
-            poPrefix: row.name_short || row.company_code || "",
+            poPrefix: row.po_prefix || row.name_short || row.company_code || "",
             portDefault: row.port_default || "",
             ports: row.port_default ? [row.port_default] : [],
             exportMode: row.export_mode || null,
             isProxy: row.export_mode === "proxy",
+            address: row.address_cn || row.address_en || row.address || "",
+            addresses: row.addresses || null,
+            defaultCurrency: row.currency || "CNY",
           };
         });
 
@@ -1091,6 +1100,15 @@ export default async function handler(req, res) {
 
     var result = await pool.query(sql, vals);
     var order = result.rows[0];
+
+    // Save trade_terms to order row + update customer's last-used value (non-fatal)
+    if (body.trade_terms) {
+      try {
+        var tt = String(body.trade_terms).toUpperCase().trim();
+        await pool.query("UPDATE orders SET trade_terms = $1 WHERE id = $2", [tt, order.id]);
+        await pool.query("UPDATE customers SET trade_terms = $1, updated_at = NOW() WHERE company_code = $2", [tt, companyCode]);
+      } catch (_) {}
+    }
 
     // Auto-create payment_term task (non-fatal — never blocks order creation)
     try {
