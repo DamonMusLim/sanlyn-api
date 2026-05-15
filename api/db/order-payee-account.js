@@ -49,6 +49,8 @@ const ISSUING_COMPANY_MAP = {
   "SHANGHAI OCEAN BABY":        "CN-00016",
   "Shanghai Ocean Baby International Logistics":           "CN-00016",
   "Shanghai Ocean Baby International Logistics Co.,Ltd.": "CN-00016",
+  "OCEAN_BABY":                                            "CN-00016",
+  "上海洋宝宝 × COSCO":                                    "CN-00016",
 
   // ── future company example ────────────────────────────────────
   // "MY-NEW-COMPANY":          "CN-XXXXX",
@@ -91,15 +93,16 @@ export default async function handler(req, res) {
               o.raw->>'freightForwarder' AS raw_freight_forwarder,
               (SELECT COALESCE(
                         sp.forwarder_cn,
-                        sp.forwarder,
+                        sp.forwarder_partner,
                         sp.raw->>'shipperCompany',
                         sp.raw->>'issuingCompany',
-                        sp.raw->>'forwarder',
                         sp.raw->>'counterpart'
                       )
                  FROM shipping_plans sp
                 WHERE sp.order_contract_nos ILIKE '%' || o.contract_no || '%'
                   AND sp.order_contract_nos <> ''
+                ORDER BY (sp.forwarder_cn IS NOT NULL) DESC,
+                         (sp.bl_no IS NOT NULL) DESC
                 LIMIT 1
               ) AS sp_forwarder
          FROM orders o WHERE o.id = $1 LIMIT 1`,
