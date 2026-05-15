@@ -35,11 +35,23 @@ export default async function handler(req, res) {
 
   if (!requireAuth(req, res)) return;
 
-  // Access control: finance + admin only
-  const role = req.user?.role;
-  if (role !== "admin" && role !== "finance") {
+  // ── Access control ────────────────────────────────────────────────────────
+  // admin / finance : full access (all suppliers, all filters honoured)
+  // logistics       : read-only access to OWN supplier rows only
+  //                   company binding is taken from JWT; ?supplier= query param
+  //                   is IGNORED to prevent cross-supplier data leakage
+  // others          : 403
+  const role        = req.user?.role;
+  const userCompany = req.user?.company || req.user?.companyName || null;
+
+  if (role !== "admin" && role !== "finance" && role !== "logistics") {
     return res.status(403).json({
-      error: "Access denied. finance or admin role required.",
+      error: "Access denied. finance, admin, or logistics role required.",
+    });
+  }
+  if (role === "logistics" && !userCompany) {
+    return res.status(403).json({
+      error: "logistics user missing company binding — cannot scope supplier filter",
     });
   }
 
@@ -48,7 +60,7 @@ export default async function handler(req, res) {
   try {
     const {
       bl_no,
-      supplier,
+      supplier,          // NOTE: ignored for logistics role (see below)
       supplier_type,
       bill_month,
       reconciled,
@@ -68,7 +80,13 @@ export default async function handler(req, res) {
       params.push(bl_no);
       conds.push(`bl_no = $${params.length}`);
     }
-    if (supplier) {
+
+    // supplier filter — logistics role: always enforce company binding, ignore ?supplier= param
+    if (role === "logistics") {
+      params.push(`%${userCompany}%`);
+      conds.push(`supplier ILIKE $${params.length}`);
+      // req.query.supplier is intentionally dropped — prevents cross-supplier data access
+    } else if (supplier) {
       params.push(`%${supplier}%`);
       conds.push(`supplier ILIKE $${params.length}`);
     }
