@@ -34,15 +34,21 @@ const ISSUING_COMPANY_MAP = {
   "petbaby":                    "BABI",
   "XIAMEN PET BABY":            "BABI",
   "XIAMEN PET BABY IMPORT AND EXPORT CO., LTD": "BABI",
+  "XIAMEN PET BABY IMPORT AND EXPORT CO.,LTD":  "BABI",
+  "厦门巴匕进出口有限公司":      "BABI",
   "xiamen pet baby":            "BABI",
 
-  // ── 上海洋贝国际物流有限公司 ──────────────────────────────────
+  // ── 上海洋宝宝国际物流有限公司 (CN-00016) ────────────────────
   "CN-00016":                   "CN-00016",
   "yangbaobao":                 "CN-00016",
   "YANGBAOBAO":                 "CN-00016",
   "上海洋贝":                   "CN-00016",
+  "上海洋宝宝":                 "CN-00016",
+  "上海洋宝宝国际物流有限公司": "CN-00016",
   "Shanghai Ocean Baby":        "CN-00016",
   "SHANGHAI OCEAN BABY":        "CN-00016",
+  "Shanghai Ocean Baby International Logistics":           "CN-00016",
+  "Shanghai Ocean Baby International Logistics Co.,Ltd.": "CN-00016",
 
   // ── future company example ────────────────────────────────────
   // "MY-NEW-COMPANY":          "CN-XXXXX",
@@ -63,6 +69,8 @@ export default async function handler(req, res) {
   const user     = req.user;
   const orderId  = req.query.orderId  || req.query.order_id;
   const currency = (req.query.currency || "USD").toUpperCase().trim();
+  // Optional: caller can override the payee company code (e.g. freight orders use CN-00016)
+  const freightCompany = req.query.freightCompany || null;
 
   if (!orderId) return res.status(400).json({ error: "orderId required" });
   if (!["USD", "CNY"].includes(currency)) return res.status(400).json({ error: "currency must be USD or CNY" });
@@ -113,6 +121,14 @@ export default async function handler(req, res) {
         || ISSUING_COMPANY_MAP[key.toUpperCase()]
         || null;
       if (bankCompanyCode) break;
+    }
+
+    // ── 3b. Freight forwarder override ───────────────────────────────────────
+    // Caller (e.g. FinanceCard for ocean freight orders) can pass
+    // ?freightCompany=CN-00016 to override the issuing-company resolution.
+    // Validated: only uppercase letters, digits, hyphens.
+    if (freightCompany && /^[A-Z0-9\-]+$/.test(freightCompany)) {
+      bankCompanyCode = freightCompany;
     }
 
     if (!bankCompanyCode) {
