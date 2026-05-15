@@ -90,9 +90,12 @@ export default async function handler(req, res) {
               o.raw->>'sellerCode'       AS raw_seller_code,
               o.raw->>'freightForwarder' AS raw_freight_forwarder,
               (SELECT COALESCE(
+                        sp.forwarder_cn,
+                        sp.forwarder,
                         sp.raw->>'shipperCompany',
                         sp.raw->>'issuingCompany',
-                        sp.raw->>'forwarder'
+                        sp.raw->>'forwarder',
+                        sp.raw->>'counterpart'
                       )
                  FROM shipping_plans sp
                 WHERE sp.order_contract_nos ILIKE '%' || o.contract_no || '%'
