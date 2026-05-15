@@ -42,16 +42,17 @@ export default async function handler(req, res) {
   //                   is IGNORED to prevent cross-supplier data leakage
   // others          : 403
   const role        = req.user?.role;
-  const userCompany = req.user?.company || req.user?.companyName || null;
+  const userCompany     = req.user?.company || req.user?.companyName || null;
+  const userCompanyCode = req.user?.companyCode || (Array.isArray(req.user?.companyCodes) && req.user.companyCodes[0]) || null;
 
   if (role !== "admin" && role !== "finance" && role !== "logistics") {
     return res.status(403).json({
       error: "Access denied. finance, admin, or logistics role required.",
     });
   }
-  if (role === "logistics" && !userCompany) {
+  if (role === "logistics" && !userCompanyCode) {
     return res.status(403).json({
-      error: "logistics user missing company binding — cannot scope supplier filter",
+      error: "logistics user missing companyCode binding — cannot scope supplier filter",
     });
   }
 
@@ -81,11 +82,12 @@ export default async function handler(req, res) {
       conds.push(`bl_no = $${params.length}`);
     }
 
-    // supplier filter — logistics role: always enforce company binding, ignore ?supplier= param
+    // supplier filter — logistics role: enforce company_code binding from JWT (stable across name format variations)
+    // ?supplier= query param is IGNORED for logistics to prevent cross-supplier data leakage
     if (role === "logistics") {
-      params.push(`%${userCompany}%`);
-      conds.push(`supplier ILIKE $${params.length}`);
-      // req.query.supplier is intentionally dropped — prevents cross-supplier data access
+      params.push(userCompanyCode);
+      conds.push(`supplier_company_code = $${params.length}`);
+      // req.query.supplier is intentionally dropped — JWT companyCode is the only source of truth
     } else if (supplier) {
       params.push(`%${supplier}%`);
       conds.push(`supplier ILIKE $${params.length}`);
