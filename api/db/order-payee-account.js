@@ -69,8 +69,6 @@ export default async function handler(req, res) {
   const user     = req.user;
   const orderId  = req.query.orderId  || req.query.order_id;
   const currency = (req.query.currency || "USD").toUpperCase().trim();
-  // Optional: caller can override the payee company code (e.g. freight orders use CN-00016)
-  const freightCompany = req.query.freightCompany || null;
 
   if (!orderId) return res.status(400).json({ error: "orderId required" });
   if (!["USD", "CNY"].includes(currency)) return res.status(400).json({ error: "currency must be USD or CNY" });
@@ -84,9 +82,10 @@ export default async function handler(req, res) {
               seller_code,
               issuing_company,
               issuing_company_en,
-              raw->>'seller'      AS raw_seller,
-              raw->>'sellerName'  AS raw_seller_name,
-              raw->>'sellerCode'  AS raw_seller_code
+              raw->>'seller'           AS raw_seller,
+              raw->>'sellerName'       AS raw_seller_name,
+              raw->>'sellerCode'       AS raw_seller_code,
+              raw->>'freightForwarder' AS raw_freight_forwarder
          FROM orders WHERE id = $1 LIMIT 1`,
       [orderId]
     );
@@ -100,11 +99,15 @@ export default async function handler(req, res) {
       if (!customerCodes.includes(order.company_code)) return res.status(403).json({ error: "forbidden" });
     }
 
-    // ── 3. Resolve which company was selected on this order ───────────────────
-    // Try each field in priority order — whichever is set first wins.
+    // ── 3. Resolve the payee company from order data ──────────────────────────
+    // Priority: freight forwarder (when present) > product issuing company.
+    // raw_freight_forwarder is set by the frontend WorkBench for ocean freight
+    // orders, sourced from shipping_plans.counterpart (the actual freight seller).
+    // All names resolve via ISSUING_COMPANY_MAP — no company codes hardcoded here.
     const candidates = [
-      order.issuing_company_en,
-      order.issuing_company,
+      order.raw_freight_forwarder,   // freight seller (counterpart from shipping plan)
+      order.issuing_company_en,      // product seller (en)
+      order.issuing_company,         // product seller (cn)
       order.seller_code,
       order.raw_seller_code,
       order.raw_seller_name,
@@ -121,14 +124,6 @@ export default async function handler(req, res) {
         || ISSUING_COMPANY_MAP[key.toUpperCase()]
         || null;
       if (bankCompanyCode) break;
-    }
-
-    // ── 3b. Freight forwarder override ───────────────────────────────────────
-    // Caller (e.g. FinanceCard for ocean freight orders) can pass
-    // ?freightCompany=CN-00016 to override the issuing-company resolution.
-    // Validated: only uppercase letters, digits, hyphens.
-    if (freightCompany && /^[A-Z0-9\-]+$/.test(freightCompany)) {
-      bankCompanyCode = freightCompany;
     }
 
     if (!bankCompanyCode) {
