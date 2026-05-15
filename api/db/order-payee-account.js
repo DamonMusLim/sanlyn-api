@@ -76,17 +76,30 @@ export default async function handler(req, res) {
   const pool = getPool();
 
   try {
-    // ── 1. Fetch order — include all issuing company fields ───────────────────
+    // ── 1. Fetch order + linked shipping-plan forwarder ──────────────────────
+    // sp_forwarder: get the freight seller (counterpart) directly from
+    // shipping_plans, so the payee resolves correctly even if the frontend
+    // did not enrich raw.freightForwarder (e.g. no matching plan in WorkBench).
     const oRes = await pool.query(
-      `SELECT id, contract_no, company_code,
-              seller_code,
-              issuing_company,
-              issuing_company_en,
-              raw->>'seller'           AS raw_seller,
-              raw->>'sellerName'       AS raw_seller_name,
-              raw->>'sellerCode'       AS raw_seller_code,
-              raw->>'freightForwarder' AS raw_freight_forwarder
-         FROM orders WHERE id = $1 LIMIT 1`,
+      `SELECT o.id, o.contract_no, o.company_code,
+              o.seller_code,
+              o.issuing_company,
+              o.issuing_company_en,
+              o.raw->>'seller'           AS raw_seller,
+              o.raw->>'sellerName'       AS raw_seller_name,
+              o.raw->>'sellerCode'       AS raw_seller_code,
+              o.raw->>'freightForwarder' AS raw_freight_forwarder,
+              (SELECT COALESCE(
+                        sp.raw->>'shipperCompany',
+                        sp.raw->>'issuingCompany',
+                        sp.raw->>'forwarder'
+                      )
+                 FROM shipping_plans sp
+                WHERE sp.order_contract_nos ILIKE '%' || o.contract_no || '%'
+                  AND sp.order_contract_nos <> ''
+                LIMIT 1
+              ) AS sp_forwarder
+         FROM orders o WHERE o.id = $1 LIMIT 1`,
       [orderId]
     );
     const order = oRes.rows[0];
@@ -105,7 +118,8 @@ export default async function handler(req, res) {
     // orders, sourced from shipping_plans.counterpart (the actual freight seller).
     // All names resolve via ISSUING_COMPANY_MAP — no company codes hardcoded here.
     const candidates = [
-      order.raw_freight_forwarder,   // freight seller (counterpart from shipping plan)
+      order.raw_freight_forwarder,   // frontend-injected freight seller (WorkBench enrichment)
+      order.sp_forwarder,            // freight seller from shipping_plans JOIN (always fresh)
       order.issuing_company_en,      // product seller (en)
       order.issuing_company,         // product seller (cn)
       order.seller_code,
