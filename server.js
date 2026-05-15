@@ -230,6 +230,7 @@ mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs
 mount("/api/db/companies",          () => import("./api/db/companies.js"));
 mount("/api/db/trucking-rates",     () => import("./api/db/trucking-rates.js"));
 mount("/api/db/customs-rates",      () => import("./api/db/customs-rates.js"));
+mount("/api/db/exchange-rate",      () => import("./api/db/exchange-rate.js"));
 mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
 mount("/api/db/seed-huihe-charges",   () => import("./api/db/seed-huihe-charges.js"));
 mount("/api/db/seed-oss-local-charges",() => import("./api/db/seed-oss-local-charges.js"));
@@ -245,6 +246,7 @@ mount("/api/db/migrate-order-flow-v3", () => import("./api/db/migrate-order-flow
 mount("/api/db/migrate-tasks",      () => import("./api/db/migrate-tasks.js"));      // P1-2
 mount("/api/db/migrate-collab",     () => import("./api/db/migrate-collab.js"));     // P1-3
 mount("/api/db/migrate-tasks-factory-code", () => import("./api/db/migrate-tasks-factory-code.js")); // BUG-A
+mount("/api/db/migrate-sanlyn-brand", () => import("./api/db/migrate-sanlyn-brand.js")); // SANLYN white-label
 // ── v2 Network Layer (blueprint v2) ───────────────────────────
 mount("/api/db/migrate-v2-network",     () => import("./api/db/migrate-v2-network.js"));     // v2 schema
 mount("/api/db/relationships",          () => import("./api/db/relationships.js"));          // graph edges
