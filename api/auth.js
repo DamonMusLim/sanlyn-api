@@ -112,9 +112,6 @@ const PUBLIC_PATHS = [
   "/api/db/customs-broker-checkin",
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
-  // 2026-05-16 audit one-off fix endpoint — nonce-gated inside handler.
-  // Remove this entry in the follow-up commit that drops the handler file.
-  "/api/admin/audit-fix-2026-05-16",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
