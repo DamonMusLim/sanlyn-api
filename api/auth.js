@@ -112,9 +112,6 @@ const PUBLIC_PATHS = [
   "/api/db/customs-broker-checkin",
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
-  // One-off SOA cleanup (2026-05-16) — nonce-gated inside handler. Path + handler
-  // removed in follow-up commit after successful run.
-  "/api/admin/cleanup-soa-2026-05-16",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
