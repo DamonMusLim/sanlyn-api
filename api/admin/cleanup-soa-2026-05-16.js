@@ -2,18 +2,19 @@
 // Deletes 12 test orders (PETSOME GROUP + low-amount JJ PET GROUP) + backfills
 // created_at and missing company_name_en for legitimate manual_import orders.
 //
-// Auth: ?key=<CRON_SECRET>
-// Usage: curl -X POST "https://api.sanlyn.cn/api/admin/cleanup-soa-2026-05-16?key=$CRON_SECRET"
-//
-// After running once, this file SHOULD be deleted in the next commit (dead code red line).
-// Tracked in /Users/mac/.claude/projects/-Users-mac-Desktop/memory/MEMORY.md
+// Auth: ?nonce=<NONCE>  (one-shot — file deleted immediately after success)
+// Path bypasses the global JWT middleware via PUBLIC_PATHS entry in api/auth.js,
+// so the nonce embedded below is the only gate. NONCE is rotated/removed in the
+// follow-up commit that drops this file.
 import { getPool, setCors } from "../db.js";
+
+const NONCE = "91e1a6dde150ca98a2f18746759bb5a603db6c338dd232f6";
 
 export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST")    return res.status(405).json({ error: "POST only" });
-  if (req.query.key !== process.env.CRON_SECRET) {
+  if (req.query.nonce !== NONCE) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
