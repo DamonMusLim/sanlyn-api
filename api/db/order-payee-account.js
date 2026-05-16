@@ -119,13 +119,18 @@ export default async function handler(req, res) {
     }
 
     // ── 3. Resolve the payee company from order data ──────────────────────────
-    // Priority: freight forwarder (when present) > product issuing company.
-    // raw_freight_forwarder is set by the frontend WorkBench for ocean freight
-    // orders, sourced from shipping_plans.counterpart (the actual freight seller).
-    // All names resolve via ISSUING_COMPANY_MAP — no company codes hardcoded here.
-    const candidates = [
+    // Per payee_account_resolution_rules.md:
+    //   purpose=cargo   → 货物款 → issuing_company (BABI 等) → bank_accounts
+    //   purpose=freight → 运费款 → shipping_plans.counterpart (洋宝宝 等)
+    //   purpose missing → backward-compat: freight-first (legacy behavior)
+    // The customer Finance panel calls with purpose=cargo for the cargo invoice
+    // section and purpose=freight for the ocean freight section.
+    const purpose = String(req.query.purpose || "").toLowerCase();
+    const freightCandidates = [
       order.raw_freight_forwarder,   // frontend-injected freight seller (WorkBench enrichment)
       order.sp_forwarder,            // freight seller from shipping_plans JOIN (always fresh)
+    ];
+    const cargoCandidates = [
       order.issuing_company_en,      // product seller (en)
       order.issuing_company,         // product seller (cn)
       order.seller_code,
@@ -133,6 +138,11 @@ export default async function handler(req, res) {
       order.raw_seller_name,
       order.raw_seller,
     ];
+    const candidates = purpose === "cargo"
+      ? cargoCandidates
+      : purpose === "freight"
+      ? freightCandidates
+      : [...freightCandidates, ...cargoCandidates]; // legacy default
 
     let bankCompanyCode = null;
     for (const candidate of candidates) {
