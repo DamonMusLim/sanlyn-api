@@ -296,6 +296,7 @@ mount("/api/db/collab-sheets/queue",        () => import("./api/db/collab-sheets
 mount("/api/db/collab-sheets",             () => import("./api/db/collab-sheets.js"));
 mount("/api/db/collab-sheet-templates",    () => import("./api/db/collab-sheet-templates.js"));
 mount("/api/db/order-create-v2",   () => import("./api/db/order-create-v2.js"));
+mount("/api/db/order-field-audit", () => import("./api/db/order-field-audit.js"));
 mount("/api/db/factory-invite",        () => import("./api/db/factory-invite.js"));        // v3 partner onboarding (6 types)
 mount("/api/db/factory-invite-list",   () => import("./api/db/factory-invite-list.js"));   // admin queue
 mount("/api/db/factory-invite-review",   () => import("./api/db/factory-invite-review.js")); // admin approve/reject

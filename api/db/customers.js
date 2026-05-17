@@ -42,6 +42,8 @@ var ALTER_COLS = [
   ["is_active",     "BOOLEAN DEFAULT true"],
   ["name_en",       "VARCHAR(256) DEFAULT ''"],
   ["name_cn",       "VARCHAR(256) DEFAULT ''"],
+  ["card_template", "VARCHAR(32) DEFAULT 'minimal'"],
+  ["logo_url",      "TEXT DEFAULT ''"],
 ];
 
 var inited = false;
@@ -56,7 +58,7 @@ async function ensureTable(pool) {
 }
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, POST, PUT, DELETE, OPTIONS");
+  setCors(req, res, "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return;
 
@@ -124,8 +126,8 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, data: row });
     }
 
-    // ── PUT — update by company_code ────────────────────
-    if (req.method === "PUT") {
+    // ── PUT / PATCH — update by company_code ─────────────
+    if (req.method === "PUT" || req.method === "PATCH") {
       var body = req.body || {};
       if (!body.company_code) return res.status(400).json({ success: false, error: "company_code required" });
       var row = await upsertOne(pool, body);
@@ -165,8 +167,9 @@ async function upsertOne(pool, c) {
   var sql = `
     INSERT INTO customers (company_code, name_en, name_cn, brands, addresses,
       contact_name, contact_phone, contact_email, country, currency,
-      payment_term, portal_role, group_id, invoice, raw, is_active)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+      payment_term, portal_role, group_id, invoice, raw, is_active,
+      card_template, logo_url)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
     ON CONFLICT (company_code) DO UPDATE SET
       name_en       = COALESCE(NULLIF(EXCLUDED.name_en,''),       customers.name_en),
       name_cn       = COALESCE(NULLIF(EXCLUDED.name_cn,''),       customers.name_cn),
@@ -183,6 +186,8 @@ async function upsertOne(pool, c) {
       invoice       = CASE WHEN EXCLUDED.invoice = '{}'::jsonb THEN customers.invoice ELSE EXCLUDED.invoice END,
       raw           = customers.raw || EXCLUDED.raw,
       is_active     = EXCLUDED.is_active,
+      card_template = COALESCE(NULLIF(EXCLUDED.card_template,''), customers.card_template),
+      logo_url      = COALESCE(NULLIF(EXCLUDED.logo_url,''),      customers.logo_url),
       updated_at    = NOW()
     RETURNING *`;
 
@@ -203,6 +208,8 @@ async function upsertOne(pool, c) {
     JSON.stringify(c.invoice || {}),
     JSON.stringify(c.raw || {}),
     c.is_active !== false,
+    c.card_template || "minimal",
+    c.logo_url || "",
   ];
   var result = await pool.query(sql, params);
   return result.rows[0];
