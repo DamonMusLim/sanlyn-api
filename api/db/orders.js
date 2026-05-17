@@ -158,6 +158,27 @@ const PATCH_ALLOWED_COLS = [
   "exchange_rate",
 ];
 
+// Order_no prefix must match company_code numeric suffix.
+// Naming convention: order_no = "{customer_num}-{factory}-{seq}", e.g. "37-WP-60" for CN-00037.
+// Add `raw.order_no_prefix_exempt: true` to bypass (used for legacy JDY customs declaration numbers).
+// Returns { ok: true } or { ok: false, error: string } — caller responds with 400.
+function checkOrderNoPrefix(order_no, company_code, raw) {
+  if (raw && raw.order_no_prefix_exempt) return { ok: true };
+  if (!order_no || !company_code) return { ok: true }; // partial PATCH — skip when either is missing
+  const prefixMatch = String(order_no).match(/^([0-9]{2})-/);
+  const ccMatch     = String(company_code).match(/00([0-9]{2})$/);
+  if (!prefixMatch || !ccMatch) return { ok: true }; // unconventional format — don't block
+  if (prefixMatch[1] !== ccMatch[1]) {
+    return {
+      ok: false,
+      error: "order_no_prefix_mismatch",
+      message: `Prefix '${prefixMatch[1]}-' on order_no '${order_no}' does not match company_code '${company_code}'. ` +
+               `Either correct the prefix or set raw.order_no_prefix_exempt=true with reason if intentional.`
+    };
+  }
+  return { ok: true };
+}
+
 async function handlePatch(req, res) {
   if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({ error: "Forbidden: admin only" });
@@ -166,6 +187,19 @@ async function handlePatch(req, res) {
   const body = req.body || {};
   const { id, raw: rawPatch, ...rest } = body;
   if (!id) return res.status(400).json({ error: "id required" });
+
+  // Validate order_no/company_code prefix consistency BEFORE writing
+  if (rest.order_no !== undefined || rest.company_code !== undefined) {
+    // Need current row for the field the PATCH isn't touching
+    const cur = await pool.query("SELECT order_no, company_code, raw FROM orders WHERE id=$1", [id]);
+    if (cur.rows[0]) {
+      const finalOrderNo = rest.order_no    !== undefined ? rest.order_no    : cur.rows[0].order_no;
+      const finalCompany = rest.company_code !== undefined ? rest.company_code : cur.rows[0].company_code;
+      const finalRaw     = { ...(cur.rows[0].raw || {}), ...(rawPatch || {}) };
+      const chk = checkOrderNoPrefix(finalOrderNo, finalCompany, finalRaw);
+      if (!chk.ok) return res.status(400).json({ error: chk.error, message: chk.message });
+    }
+  }
 
   const sets = [], vals = [];
   let n = 0;
@@ -244,6 +278,12 @@ async function handleCreate(req, res) {
   const ds = String(d.getFullYear()) + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0");
   const orderNo    = body.order_no    || ("ORD-" + ds + "-" + String(Math.floor(Math.random()*10000)).padStart(4,"0"));
   const contractNo = body.contract_no || ("FS"   + ds + String(Math.floor(Math.random()*1000)).padStart(3,"0"));
+
+  // Prefix consistency check — blocks the kind of misfile we found on 2026-05-18 (40-LL-21 went to PETSOME)
+  if (body.company_code) {
+    const chk = checkOrderNoPrefix(orderNo, body.company_code, body.raw || {});
+    if (!chk.ok) return res.status(400).json({ error: chk.error, message: chk.message });
+  }
 
   const client = await pool.connect();
   try {
