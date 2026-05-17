@@ -156,6 +156,7 @@ mount("/api/db/finance-records",          () => import("./api/db/finance-records
 mount("/api/db/finance-receivables",      () => import("./api/db/finance-records.js"));
 // FINANCE-WORKSPACE-UI-IMPL-001: read-only freight AP bills (GET only, no writes)
 mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplier-bills.js"));
+mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
