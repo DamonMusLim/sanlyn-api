@@ -112,6 +112,8 @@ const PUBLIC_PATHS = [
   "/api/db/customs-broker-checkin",
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
+  // Team invite accept — public (token in URL is the credential, validated server-side)
+  "/api/db/team-join",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）

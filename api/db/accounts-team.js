@@ -86,6 +86,8 @@ async function ensureInviteTable(pool) {
       created_at    TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // 2026-05-18 add raw JSONB column for headquarters multi-company scope (company_codes[])
+  await pool.query(`ALTER TABLE team_invites ADD COLUMN IF NOT EXISTS raw JSONB`);
 }
 
 export default async function handler(req, res) {
@@ -134,6 +136,9 @@ export default async function handler(req, res) {
       if (!email) return res.status(400).json({ error: "email required" });
       role = ALLOWED_ROLES.includes(role) ? role : "operator";
 
+      // Headquarters scope (2026-05-18): caller passes company_codes[] = all siblings.
+      // We store them on team_invites.raw and propagate to accounts.company_codes on accept.
+      var hqCodes = Array.isArray(body.company_codes) && body.company_codes.length > 0 ? body.company_codes : null;
       var targetCode = body.company_code || myCode;
       if (!isAdmin && targetCode !== myCode) {
         // Allow cross-company invite within the same group / parent company.
@@ -172,10 +177,12 @@ export default async function handler(req, res) {
 
       var token = crypto.randomBytes(24).toString("hex");
       var expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      // Store HQ multi-company scope on raw JSONB if present; accept handler reads it back.
+      var inviteRaw = hqCodes ? JSON.stringify({ scope: "headquarters", company_codes: hqCodes }) : null;
       var ins = await pool.query(
-        `INSERT INTO team_invites (token, company_code, email, role, invited_by, expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [token, targetCode, email, role, req.user.email || req.user.username, expires]
+        `INSERT INTO team_invites (token, company_code, email, role, invited_by, expires_at, raw)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [token, targetCode, email, role, req.user.email || req.user.username, expires, inviteRaw]
       );
 
       var link = BASE_URL + "/team-join?token=" + token;
