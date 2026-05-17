@@ -599,12 +599,21 @@ ${printBtn}
     }
 
     // ══════════════════════════════════════════
-    // 洋宝宝 Freight Debit Note (成本账单 · 内部专用)
+    // DEPRECATED 2026-05-18 · Use /api/db/documents?type=debit&id=<shipping_plan_id>
+    // The canonical debit note generator now lives in documents.js (Sanlyn OS branded).
+    // 301 redirect preserves any existing bookmarks/links.
     // ══════════════════════════════════════════
     if (isDebitNote) {
+      return res.redirect(301, "/api/db/documents?type=debit&id=" + encodeURIComponent(req.query?.id || ""));
+    }
+    if (false) {  // dead code below — keep for ~30 days then drop entirely
       const dnNo = "YBB-" + (p.shipment_no || p.bl_no || "").replace(/[^A-Z0-9]/gi,"").toUpperCase() + "-" + genDate.replace(/-/g,"");
-      const toName  = cust ? (cust.name_en || cust.name_cn) : (p.customer_en || p.customer_cn || "XIAMEN SANLYN IMPORT AND EXPORT CO., LTD");
-      const toNote  = cust ? (cust.address || cust.destination_port || "") : "";
+      // ⚠ Customer name: real fields only. NEVER fall back to a hardcoded company name (per memory: feedback_never_invent_fields)
+      const toName  = cust ? (cust.name_en || cust.name_cn) : (p.customer_en || p.customer_cn || "");
+      const toNote  = cust ? (cust.address || "") : "";
+      const toUscc  = cust ? (cust.uscc || "") : "";              // real column added 2026-05-18
+      const freightTerm = p.freight_term || "";                    // real column added 2026-05-18 — show only if set
+      const quoteRef    = p.quote_ref || "";                        // real column added 2026-05-18 — link to itemized FQ
 
       const cnyFees = [
         ["EDI 费 EDI Fee",                          p.edi_fee],
@@ -691,75 +700,48 @@ table tr:last-child td{border-bottom:none}
     </div>
   </div>
 
-  <!-- Meta bar -->
+  <!-- Meta bar — only show fields with real values (no fabricated placeholders) -->
   <div class="meta-bar">
     <div class="meta-item"><div class="lbl">B/L No.</div><div class="val">${esc(fmt(p.bl_no))}</div></div>
     <div class="meta-item"><div class="lbl">ETD</div><div class="val">${fmtDate(p.etd)}</div></div>
     <div class="meta-item"><div class="lbl">Container</div><div class="val">${esc(containerLabel||"—")}</div></div>
     <div class="meta-item"><div class="lbl">POD</div><div class="val">${esc(fmt(p.pod))}</div></div>
+    ${freightTerm ? `<div class="meta-item"><div class="lbl">Freight Term</div><div class="val">${esc(freightTerm)}</div></div>` : ""}
   </div>
 
-  <!-- Party row -->
-  <div class="party-row">
-    <div class="party-box">
-      <div class="dir">FROM · 出票方</div>
-      <div class="name">上海洋宝宝国际物流</div>
-      <div class="sub">上海洋宝宝国际物流有限公司<br>Shanghai Ocean Baby Intl Logistics</div>
-    </div>
-    <div class="party-box">
-      <div class="dir">TO · 收票方</div>
-      <div class="name">${esc(toName)}</div>
-      ${toNote ? `<div class="sub">${esc(toNote)}</div>` : ""}
-    </div>
+  <!-- TO block — enlarged consignee; FROM removed (issuer info in header). USCC printed only if present. -->
+  <div class="party-box" style="margin-bottom:12px">
+    <div class="dir">TO · 收票方</div>
+    <div class="name" style="font-size:15px">${esc(toName||"—")}</div>
+    ${toNote ? `<div class="sub">${esc(toNote)}</div>` : ""}
+    ${toUscc ? `<div class="sub mono">USCC 统一社会信用代码: <strong>${esc(toUscc)}</strong></div>` : ""}
   </div>
 
-  <!-- CNY local charges -->
-  <div class="section-title">CNY 港杂费 · LOCAL CHARGES (RMB)
-    <span style="float:right;font-size:8px;color:#1e40af;font-weight:700">${ticketCount} 票 · ${boxCount} 箱</span>
-  </div>
-  <table>
-    <thead><tr>
-      <th>费用项目 Description</th>
-      <th style="text-align:right">单价 / 票 Per B/L</th>
-      <th style="text-align:right">金额 Amount</th>
-    </tr></thead>
-    <tbody>
-      ${cnyFees.length > 0
-        ? cnyFees.map(([desc, amt]) => `
-          <tr>
-            <td>${esc(desc)}</td>
-            <td class="mono text-right">¥ ${fmtNum(amt/ticketCount)}</td>
-            <td class="mono text-right">¥ ${fmtNum(amt)}</td>
-          </tr>`).join("")
-        : `<tr><td colspan="3" style="color:#94a3b8;text-align:center;padding:8px">— 暂无港杂费 No local charges —</td></tr>`
-      }
-    </tbody>
-  </table>
-  ${cnyTotal > 0 ? `
-  <div class="sum-box" style="margin-top:6px">
-    <div class="s-lbl">CNY 小计 · RMB Subtotal</div>
-    <div class="s-val">¥ ${fmtNum(cnyTotal)}</div>
-  </div>` : ""}
-
-  <!-- Ocean Freight USD -->
+  <!-- Simple FI: USD ocean freight + CNY subtotal only. Itemized breakdown lives in the quotation (FQ). -->
   ${usdFreight > 0 ? `
-  <div class="freight-bar" style="margin-top:8px">
+  <div class="freight-bar">
     <div>
       <div class="lbl">🚢 Ocean Freight · 海运费</div>
-      <div style="font-size:8px;opacity:.7;margin-top:2px">${esc(containerLabel)} · ${esc(fmt(p.pod))} · Ref: ${esc(fmt(p.shipment_no||p.bl_no))}</div>
+      <div style="font-size:8px;opacity:.7;margin-top:2px">${esc(containerLabel)} · ${esc(fmt(p.pod))}</div>
     </div>
     <div class="amt">$${fmtNum(usdFreight)}</div>
   </div>` : ""}
 
-  <!-- Summary -->
+  <!-- Two-currency totals — what the customer actually pays -->
   <div class="summary-bar">
-    <div class="sum-box">
-      <div class="s-lbl">港杂合计 Local Charges</div>
-      <div class="s-val">CNY ¥ ${fmtNum(cnyTotal)}</div>
+    <div class="sum-box" style="background:#fef3c7;border-color:#fde68a">
+      <div>
+        <div class="s-lbl">TOTAL PAYABLE · CNY 人民币应付</div>
+        <div style="font-size:8px;color:#94a3b8;margin-top:2px">Local charges at ${esc(fmt(p.pol)||"POL")} · Remit to CNY A/C</div>
+      </div>
+      <div class="s-val" style="font-size:18px;color:#b45309">¥ ${fmtNum(cnyTotal)}</div>
     </div>
-    <div class="sum-box" style="${usdFreight > 0 ? 'background:#eff6ff;border-color:#bfdbfe' : ''}">
-      <div class="s-lbl">海运费合计 Ocean Freight</div>
-      <div class="s-val" style="${usdFreight > 0 ? 'color:#1e40af' : ''}">USD $${fmtNum(usdFreight)}</div>
+    <div class="sum-box" style="background:#dbeafe;border-color:#bfdbfe">
+      <div>
+        <div class="s-lbl">TOTAL PAYABLE · USD 美元应付</div>
+        <div style="font-size:8px;color:#94a3b8;margin-top:2px">Ocean freight only · Remit to USD A/C</div>
+      </div>
+      <div class="s-val" style="font-size:18px;color:#1e40af">$ ${fmtNum(usdFreight)}</div>
     </div>
   </div>
 
@@ -770,6 +752,12 @@ table tr:last-child td{border-bottom:none}
     USD A/C: <strong>433849630299</strong> &nbsp;·&nbsp; CNY A/C: <strong>433849860868</strong><br>
     Account Name: <strong>SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</strong>
   </div>
+
+  <!-- See-quotation link — only shown when quote_ref exists -->
+  ${quoteRef ? `
+  <div style="background:#f0f9ff;border:1px dashed #38bdf8;border-radius:5px;padding:8px 12px;margin-top:10px;font-size:10px;color:#0369a1">
+    📄 <strong>For itemized breakdown · 完整费用明细见报价单</strong> &nbsp;·&nbsp; Quote Ref: <strong class="mono">${esc(quoteRef)}</strong>
+  </div>` : ""}
 
   <!-- Footer -->
   <div class="footer-bar">

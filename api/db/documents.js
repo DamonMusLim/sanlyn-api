@@ -765,6 +765,10 @@ export default async function handler(req, res) {
       }
 
       if(type==="debit"){
+        // ⚠ Real fields only — never fabricate values (memory: feedback_never_invent_fields)
+        var freightTerm = pick(sp.freight_term, "");           // 2026-05-18 new column
+        var quoteRef    = pick(sp.quote_ref, "");              // 2026-05-18 new column
+        var buyerUscc   = pick(cust && cust.uscc, "");         // 2026-05-18 new customers.uscc
         var exr=Number(pick(sp.exchange_rate,spraw.exchangeRate,7.2));
         var fUSD=Number(pick(sp.freight_sale_usd,0));
         var fCNY=Number(pick(sp.freight_cost,0));
@@ -842,6 +846,7 @@ export default async function handler(req, res) {
               <div class="section-label">付款方 / BILL TO</div>
               <p style="font-size:13px;font-weight:700;margin:0 0 5px 0">${esc(consignee)}</p>
               <p style="color:#555">${esc(consAddr)}</p>
+              ${buyerUscc?`<p style="color:#555;font-family:monospace;font-size:10px;margin-top:3px">USCC 统一社会信用代码: <b>${esc(buyerUscc)}</b></p>`:""}
             </div>
             <div>
               <div class="section-label">单据详情 / DETAILS</div>
@@ -850,6 +855,8 @@ export default async function handler(req, res) {
                 ${blNo?`<li><b>提单号 B/L No.:</b>${esc(blNo)}</li>`:""}
                 <li><b>日期 Date:</b>${fmtD(new Date())}</li>
                 <li><b>ETD:</b>${esc(etd)}</li>
+                ${freightTerm?`<li><b>付款方式 Freight Term:</b>${esc(freightTerm)}</li>`:""}
+                ${quoteRef?`<li><b>报价单号 Quote Ref:</b>${esc(quoteRef)}</li>`:""}
               </ul>
             </div>
           </div>
