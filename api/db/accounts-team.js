@@ -136,12 +136,29 @@ export default async function handler(req, res) {
 
       var targetCode = body.company_code || myCode;
       if (!isAdmin && targetCode !== myCode) {
-        return res.status(403).json({ error: "can only invite to own company" });
+        // Allow cross-company invite within the same group / parent company.
+        // PETSOME GROUP siblings + 中宠 departments all share group_id or
+        // parent_company_code with the inviter's company.
+        var sameGroup = await pool.query(
+          `SELECT 1 FROM customers a, customers b
+            WHERE a.company_code = $1 AND b.company_code = $2
+              AND (
+                (a.group_id IS NOT NULL AND a.group_id = b.group_id)
+                OR a.company_code = b.parent_company_code
+                OR b.company_code = a.parent_company_code
+                OR a.parent_company_code = b.parent_company_code
+              )
+            LIMIT 1`,
+          [myCode, targetCode]
+        );
+        if (sameGroup.rows.length === 0) {
+          return res.status(403).json({ error: "can only invite to own company or group" });
+        }
       }
 
       // Check for existing account or pending invite with this email
       var dup = await pool.query(
-        "SELECT id FROM accounts WHERE username = $1 OR contact_email = $1 LIMIT 1",
+        "SELECT id FROM accounts WHERE username = $1 LIMIT 1",
         [email]
       );
       if (dup.rows.length) return res.status(409).json({ error: "email already registered" });

@@ -48,6 +48,31 @@ const EMPTY_MAP = new Map();
  * }>}
  */
 export async function getBrandScope(pool, codes) {
+  // ── Group expansion (2026-05-17): if any caller company belongs to a
+  // group, expand the scope to include every sibling + the group root. A
+  // group user must see the union of all sibling companies' authorized
+  // brands (e.g. PETSOME GROUP = SDN BHD + EU + DIBAQ M, total 9 brands).
+  // Sibling expansion preserves fail-closed semantics — the WHERE still
+  // locks to caller's group only, never crosses groups. ────────────────────
+  try {
+    const groupR = await pool.query(
+      `SELECT DISTINCT c2.company_code
+         FROM customers c1
+         JOIN customers c2 ON (
+              (c1.group_code IS NOT NULL AND c1.group_code = c2.group_code)
+           OR  c1.company_code = c2.parent_company_code
+           OR  c1.company_code = c2.company_code
+         )
+        WHERE c1.company_code = ANY($1::text[])`,
+      [codes]
+    );
+    const expanded = new Set(codes);
+    for (const row of groupR.rows) expanded.add(row.company_code);
+    if (expanded.size > codes.length) codes = Array.from(expanded);
+  } catch (_) {
+    // group columns absent → keep original codes (safe fallback)
+  }
+
   // ── Try company_brand_permissions (feature-flag: fallback if table absent) ──
   try {
     const cbpR = await pool.query(

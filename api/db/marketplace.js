@@ -179,8 +179,9 @@ export default async function handler(req, res) {
 
   // ── DDP branch — domestic supply chain, no DB-backed table yet ──
   if (type === 'ddp') {
-    // TODO: read from a ddp_rates table once it exists. For now mock seed.
-    return res.status(200).json({ ok: true, source: 'mock', type, routes: MOCK_DDP });
+    // No ddp_rates table yet — return empty so the UI shows a real empty
+    // state instead of mock catalog entries that mislead the operator.
+    return res.status(200).json({ ok: true, source: 'empty', type, routes: [] });
   }
 
   // ── Freight (ocean) branch — try DB first, fall back to mock ──
@@ -213,13 +214,11 @@ export default async function handler(req, res) {
           carriers: r.raw?.carriers || [],
         }));
 
-      if (visible.length === 0) {
-        return res.status(200).json({ ok: true, source: 'mock-fallback', type, routes: MOCK_FREIGHT });
-      }
       return res.status(200).json({ ok: true, source: 'db', type, routes: visible });
     } catch (err) {
-      // PG 42P01 (undefined_table) or 42703 (undefined_column) → fall back gracefully
-      return res.status(200).json({ ok: true, source: 'mock-fallback', type, routes: MOCK_FREIGHT, fallback_reason: err.code || err.message });
+      // PG 42P01 (undefined_table) or 42703 (undefined_column) → return empty
+      // (UI renders an empty state) instead of mock seed data that misleads.
+      return res.status(200).json({ ok: true, source: 'empty', type, routes: [], fallback_reason: err.code || err.message });
     }
   }
 
