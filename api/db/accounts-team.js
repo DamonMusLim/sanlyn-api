@@ -88,6 +88,10 @@ async function ensureInviteTable(pool) {
   `);
   // 2026-05-18 add raw JSONB column for headquarters multi-company scope (company_codes[])
   await pool.query(`ALTER TABLE team_invites ADD COLUMN IF NOT EXISTS raw JSONB`);
+  // 2026-05-18 admin-approval flow requires accounts.is_active + portal_role columns
+  // These were referenced by code but missing from prod schema — discovered during E2E test.
+  await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS portal_role TEXT`);
 }
 
 export default async function handler(req, res) {
@@ -106,14 +110,22 @@ export default async function handler(req, res) {
       if (!code) return res.status(200).json({ success: true, company_code: null, members: [], pending_invites: [] });
       if (!isAdmin && code !== myCode) return res.status(403).json({ error: "can only view own company" });
 
+      // Active accounts only — pending-review go in their own bucket below
       var r = await pool.query(
         `SELECT id, username, role, company, company_code, supplier_role,
                 portal_role, is_active, created_at
-         FROM accounts WHERE company_code = $1 ORDER BY created_at ASC`,
+         FROM accounts WHERE company_code = $1 AND is_active = true ORDER BY created_at ASC`,
         [code]
       );
 
-      // pending invites (not yet accepted)
+      // Inactive accounts = registered but waiting for admin approval (双门槛 流程)
+      var pendingReview = await pool.query(
+        `SELECT id, username, role, company_code, company_codes, created_at
+         FROM accounts WHERE company_code = $1 AND is_active = false ORDER BY created_at DESC`,
+        [code]
+      );
+
+      // Outstanding invites (not yet clicked / not yet registered)
       await ensureInviteTable(pool);
       var inv = await pool.query(
         `SELECT id, email, role, invited_by, expires_at, created_at
@@ -125,6 +137,7 @@ export default async function handler(req, res) {
         success: true,
         company_code: code,
         members: r.rows.map(sanitize),
+        pending_review: pendingReview.rows.map(sanitize),
         pending_invites: inv.rows,
       });
     }
@@ -133,7 +146,15 @@ export default async function handler(req, res) {
     var body = req.body || {};
     if (req.method === "POST" && body.action === "invite") {
       var { email, role } = body;
-      if (!email) return res.status(400).json({ error: "email required" });
+      // Email is now OPTIONAL (2026-05-18 双门槛): admin can generate link without
+      // knowing recipient's email; invitee self-claims on team-join page.
+      // If admin provides one, it becomes a hard verification gate.
+      if (email != null && email !== "" && String(email).indexOf("@") < 0) {
+        return res.status(400).json({ error: "email_invalid" });
+      }
+      // Use a placeholder for the not-null constraint when admin doesn't know the email.
+      // team-join handler treats any value without '@' as "no hint" and lets invitee self-claim.
+      var emailForDb = email && String(email).trim() ? String(email).trim().toLowerCase() : "(pending-self-claim)";
       role = ALLOWED_ROLES.includes(role) ? role : "operator";
 
       // Headquarters scope (2026-05-18): caller passes company_codes[] = all siblings.
@@ -161,19 +182,20 @@ export default async function handler(req, res) {
         }
       }
 
-      // Check for existing account or pending invite with this email
-      var dup = await pool.query(
-        "SELECT id FROM accounts WHERE username = $1 LIMIT 1",
-        [email]
-      );
-      if (dup.rows.length) return res.status(409).json({ error: "email already registered" });
+      // Dup checks only meaningful when admin specified a real email
+      if (email) {
+        var dup = await pool.query("SELECT id FROM accounts WHERE username = $1 LIMIT 1", [email]);
+        if (dup.rows.length) return res.status(409).json({ error: "email already registered" });
+      }
 
       await ensureInviteTable(pool);
-      var dup2 = await pool.query(
-        "SELECT id FROM team_invites WHERE email = $1 AND company_code = $2 AND status = 'pending' LIMIT 1",
-        [email, targetCode]
-      );
-      if (dup2.rows.length) return res.status(409).json({ error: "invite already pending for this email" });
+      if (email) {
+        var dup2 = await pool.query(
+          "SELECT id FROM team_invites WHERE email = $1 AND company_code = $2 AND status = 'pending' LIMIT 1",
+          [email, targetCode]
+        );
+        if (dup2.rows.length) return res.status(409).json({ error: "invite already pending for this email" });
+      }
 
       var token = crypto.randomBytes(24).toString("hex");
       var expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
@@ -182,18 +204,21 @@ export default async function handler(req, res) {
       var ins = await pool.query(
         `INSERT INTO team_invites (token, company_code, email, role, invited_by, expires_at, raw)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-        [token, targetCode, email, role, req.user.email || req.user.username, expires, inviteRaw]
+        [token, targetCode, emailForDb, role, req.user.email || req.user.username, expires, inviteRaw]
       );
 
-      var link = BASE_URL + "/team-join?token=" + token;
-      var emailRes = await sendInviteEmail({ to: email, inviter_company: req.user.company || targetCode, invite_link: link });
+      var link = BASE_URL + "/team-join.html?token=" + token;
+      // Only send email if admin actually specified a real email; otherwise admin shares link manually
+      var emailRes = email
+        ? await sendInviteEmail({ to: email, inviter_company: req.user.company || targetCode, invite_link: link })
+        : { skipped: true, reason: "no_email_self_claim_flow" };
 
       writeAudit(pool, req, {
         action: "team.invite",
         entity_type: "account",
         entity_id: ins.rows[0].id,
-        after: { email, role, company_code: targetCode },
-        note: "invite link sent",
+        after: { email: email || "(self-claim)", role, company_code: targetCode },
+        note: email ? "invite link sent via email" : "invite link generated for manual share",
       }).catch(() => {});
 
       return res.status(200).json({ success: true, invite_id: ins.rows[0].id, link, email_sent: emailRes });
