@@ -482,27 +482,46 @@ export default async function handler(req, res) {
       // Group products by (bl_description, hs_code) and sum qty + amount.
       // Customer audience keeps SKU-level detail (full marketing names).
       if (audience === "customs" && type !== "pi") {
-        // Per damon 2026-05-18: for unidentified products in CUSTOMS context,
-        // default to "PET FOOD" since this is a pet-food trading business.
-        // Customer-side (audience='customer') keeps the original full marketing
-        // name so the buyer sees what they're getting; customs only needs HS
-        // category. This is NOT inventing — it's the business's default category.
-        var DEFAULT_CUSTOMS_DESC = "PET FOOD";
+        // Per damon 2026-05-18 (sample 14652V_PI / 14653V_PI):
+        // Real customs IV format: "PET FOOD / 宠物食品 {BRAND} {SUBTYPE} ({pack})"
+        // Subtype is one of 3 categories per chinese customs convention:
+        //   罐头 Canned (wet food) · 烘干 Oven-roasted (treats) · 干粮 Dry food
+        // Inferred from product name keywords (English + Chinese).
+        function inferSubtype(name) {
+          var n = String(name || "").toUpperCase();
+          // Wet/canned indicators
+          if (/CANNED|CAN |LOAF|GRAVY|POUCH|罐头|湿粮|肉酱|肉条/.test(n)) return "罐头 Canned";
+          // Treats/snacks/oven-roasted
+          if (/JERKY|STICK|BISCUIT|TREAT|CHEWS?|BONE|烘干|零食|肉干|饼干|咬胶/.test(n)) return "烘干 Oven-roasted";
+          // Dry food (kibble / complete food / grain free dry / 干粮)
+          if (/KIBBLE|GRAIN FREE|COMPLETE FOOD|DRY|干粮|粮$/.test(n)) return "干粮 Dry food";
+          return ""; // unknown → no subtype (still grouped by brand)
+        }
+        function inferBrand(p) {
+          var b = p.brand || p.品牌 || "";
+          if (b) return String(b).toUpperCase();
+          var n = String(p.productName || p.name || "").toUpperCase();
+          var brands = ["WANPY", "TRULY", "CATSOME", "DOGSOME", "SNIFFLY", "TING TIME",
+                        "JERKYTIME", "SOUPTIME", "NATURAL WORLD", "DIBAQ", "PETSOME"];
+          for (var i = 0; i < brands.length; i++) if (n.indexOf(brands[i]) === 0 || n.indexOf(" " + brands[i]) > -1) return brands[i];
+          return "";
+        }
         var groups = {};
         var order = [];
         prods.forEach(function(p){
-          // Group key: per multi-order container (so each container header stays)
-          // + bl_description + hs_code. UNIDENTIFIED products default to PET FOOD
-          // (for customs) instead of leaking the full marketing name.
-          var bl = p.blDescription || p.bl_description || p.declarationName || p.declaration_name || "";
-          var hs = p.hsCode || p.hs_code || "";
-          if (!bl) bl = DEFAULT_CUSTOMS_DESC; // pragmatic default for customs only
-          var name = bl;
+          var brand = inferBrand(p);
+          var subtype = inferSubtype(p.productName || p.name || "");
+          // Compose customs description: PET FOOD / 宠物食品 [BRAND] [SUBTYPE]
+          var parts = ["PET FOOD / 宠物食品"];
+          if (brand) parts.push(brand);
+          if (subtype) parts.push(subtype);
+          var name = parts.join(" ");
+          var hs = p.hsCode || p.hs_code || (subtype.indexOf("罐头") >= 0 ? "2309101000" : "2309109000");
           var key = (p._groupKey||"") + "|" + name + "|" + hs;
           if (!groups[key]) {
             groups[key] = Object.assign({}, p, {
               // Replace name fields with the aggregated description
-              productName: name, name: name, blDescription: bl || name,
+              productName: name, name: name, blDescription: name,
               qty: 0, subtotal: 0, _aggCount: 0,
             });
             order.push(key);
