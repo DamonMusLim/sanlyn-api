@@ -482,14 +482,22 @@ export default async function handler(req, res) {
       // Group products by (bl_description, hs_code) and sum qty + amount.
       // Customer audience keeps SKU-level detail (full marketing names).
       if (audience === "customs" && type !== "pi") {
+        // Per damon 2026-05-18: for unidentified products in CUSTOMS context,
+        // default to "PET FOOD" since this is a pet-food trading business.
+        // Customer-side (audience='customer') keeps the original full marketing
+        // name so the buyer sees what they're getting; customs only needs HS
+        // category. This is NOT inventing — it's the business's default category.
+        var DEFAULT_CUSTOMS_DESC = "PET FOOD";
         var groups = {};
         var order = [];
         prods.forEach(function(p){
           // Group key: per multi-order container (so each container header stays)
-          // + bl_description + hs_code. Fall back to product name if no bl_description.
+          // + bl_description + hs_code. UNIDENTIFIED products default to PET FOOD
+          // (for customs) instead of leaking the full marketing name.
           var bl = p.blDescription || p.bl_description || p.declarationName || p.declaration_name || "";
           var hs = p.hsCode || p.hs_code || "";
-          var name = bl || pick(p.productName, p.name, p.description, "-");
+          if (!bl) bl = DEFAULT_CUSTOMS_DESC; // pragmatic default for customs only
+          var name = bl;
           var key = (p._groupKey||"") + "|" + name + "|" + hs;
           if (!groups[key]) {
             groups[key] = Object.assign({}, p, {
