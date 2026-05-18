@@ -126,6 +126,8 @@ mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));
 mount("/api/db/import-customers",  () => import("./api/db/import-customers.js"));
 mount("/api/db/customer-stamps",   () => import("./api/db/customer-stamps.js"));
+mount("/api/db/customer-brand-routes", () => import("./api/db/customer-brand-routes.js")); // factory-self brand→customer auth (2026-05-19)
+mount("/api/db/partner-relationships", () => import("./api/db/partner-relationships.js")); // partner network listing (2026-05-19)
 mount("/api/db/customs",           () => import("./api/db/customs.js"));
 mount("/api/db/customs-summary",   () => import("./api/db/customs-summary.js")); // 分类报关汇总
 mount("/api/db/customs-draft",    () => import("./api/db/customs-draft.js"));   // 报关底稿生成
@@ -225,6 +227,7 @@ mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
 mount("/api/db/vault-read",        () => import("./api/db/vault-read.js"));
 mount("/api/db/diag-shipping",          () => import("./api/db/diag-shipping.js"));
 mount("/api/db/shipping-health-check", () => import("./api/db/shipping-health-check.js"));
+mount("/api/db/migrate-sp-audit",      () => import("./api/db/migrate-sp-audit.js")); // Phase 5: BL/ETA audit trail
 mount("/api/db/fix-co-account",    () => import("./api/db/fix-co-account.js"));
 mount("/api/db/countries",         () => import("./api/db/countries.mjs"));
 mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs"));
@@ -335,6 +338,7 @@ mount("/api/db/migrate-credit-notes",  () => import("./api/db/migrate-credit-not
 // ── Freight Debit Notes (洋宝宝出单) ──────────────────────────
 mount("/api/freight-debit-notes",          () => import("./api/freight-debit-notes.js"));          // GET/POST/PATCH
 mount("/api/db/migrate-freight-debit-notes", () => import("./api/db/migrate-freight-debit-notes.js")); // table migration
+mount("/api/db/landed-cost",         () => import("./api/db/landed-cost.js")); // 2026-05-18 My Landed Cost per-BL aggregator
 mount("/api/db/product-image-update", () => import("./api/db/product-image-update.js")); // product image upload
 // ── RFQ Marketplace ──────────────────────────────────────────
 mount("/api/db/migrate-rfq",   () => import("./api/db/migrate-rfq.js"));    // table migration

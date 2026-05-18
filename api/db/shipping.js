@@ -168,6 +168,9 @@ export default async function handler(req, res) {
 
     let saved;
     try {
+      // Phase 5: set app.current_user so trg_sp_audit can record the actor
+      const actor = req.user?.email || req.user?.id || "system";
+      await pool.query(`SET LOCAL app.current_user = $1`, [actor]);
       const r = await pool.query(sql, vals);
       saved = r.rows[0];
     } catch (err) {
