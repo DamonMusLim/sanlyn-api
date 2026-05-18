@@ -303,6 +303,7 @@ mount("/api/db/factory-invite-list",   () => import("./api/db/factory-invite-lis
 mount("/api/db/factory-invite-review",   () => import("./api/db/factory-invite-review.js")); // admin approve/reject
 mount("/api/db/factory-invite-complete", () => import("./api/db/factory-invite-complete.js")); // invitee final submit
 mount("/api/db/team-join",               () => import("./api/db/team-join.js")); // 2026-05-18 team invite accept (public, token-auth)
+mount("/api/db/order-confirm",           () => import("./api/db/order-confirm.js")); // 2026-05-18 factory→customer 2-stage confirm state machine
 mount("/api/db/ai-cleaner",              () => import("./api/db/ai-cleaner.js"));              // MiniMax 脏活管家
 mount("/api/db/migrate-invite-review", () => import("./api/db/migrate-invite-review.js")); // schema migration
 
