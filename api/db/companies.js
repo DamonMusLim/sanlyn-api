@@ -1,5 +1,5 @@
 // /api/db/companies.js — Sanlyn group entities CRUD (distinct from company.js which is JDY)
-import { getPool, setCors } from "./db.js";
+import { getPool, setCors } from "../db.js";
 
 const INIT_SQL = `
 CREATE TABLE IF NOT EXISTS companies (
