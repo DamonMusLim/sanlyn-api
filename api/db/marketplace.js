@@ -7,7 +7,7 @@
 // Until freight_rates.raw.sharing column is populated we fall back to seed mock
 // data so the customer-side Marketplace renders end-to-end. Frontend can be
 // pointed at this endpoint today; data sources fill in later without UI churn.
-import { getPool, setCors } from "./db.js";
+import { getPool, setCors } from "../db.js"; // prod has db.js at /opt/sanlyn-api-test/api/db.js — one level up from api/db/
 
 // ── Mock seed (mirrors Sanlyn-OS/screens/customer/logistics/marketplace/mockData.js) ──
 // Keep in sync until DB-backed rates land.
