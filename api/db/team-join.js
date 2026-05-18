@@ -16,13 +16,14 @@
 // Customer team accounts are immediately active (no Sanlyn admin review needed —
 // the inviter is the company's own admin/super_admin and is trusted).
 
-import crypto from "crypto";
+import bcrypt from "bcryptjs";
 import { getPool, setCors } from "../db.js";
 
-function hashPassword(plain) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.createHash("sha256").update(salt + plain).digest("hex");
-  return salt + ":" + hash;
+// Must match auth-login.js verifyPassword() — it ONLY accepts bcrypt hashes
+// ($2a$/$2b$ prefix) and treats anything else as plaintext to auto-upgrade.
+// Using sha256+salt here would create permanently unloggable accounts.
+async function hashPassword(plain) {
+  return bcrypt.hash(plain, 12);
 }
 
 export default async function handler(req, res) {
@@ -115,7 +116,7 @@ export default async function handler(req, res) {
     const dup = await client.query("SELECT id FROM accounts WHERE username = $1 LIMIT 1", [email]);
     if (dup.rows[0]) { await client.query("ROLLBACK"); return res.status(409).json({ error: "email_already_registered" }); }
 
-    const passwordHash = hashPassword(password);
+    const passwordHash = await hashPassword(password);
 
     // HQ scope → store company_codes[] alongside primary company_code
     const hqCodes = i.raw && i.raw.scope === "headquarters" && Array.isArray(i.raw.company_codes) ? i.raw.company_codes : null;

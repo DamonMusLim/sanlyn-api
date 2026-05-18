@@ -103,6 +103,10 @@ export default async function handler(req, res) {
   var myCode = req.user.companyCode || req.user.company_code;
   var isAdmin = req.user.role === "admin" || req.user.role === "super_admin";
 
+  // P2 fix per codex: run schema migration ONCE at entry so all methods see the new columns.
+  // is_active / portal_role were referenced before being added — first call after deploy would 500.
+  try { await ensureInviteTable(pool); } catch (e) { /* non-fatal — best-effort */ }
+
   try {
     // ── GET: list teammates ──
     if (req.method === "GET") {
@@ -125,8 +129,7 @@ export default async function handler(req, res) {
         [code]
       );
 
-      // Outstanding invites (not yet clicked / not yet registered)
-      await ensureInviteTable(pool);
+      // Outstanding invites (not yet clicked / not yet registered) — table ensured at handler entry
       var inv = await pool.query(
         `SELECT id, email, role, invited_by, expires_at, created_at
          FROM team_invites WHERE company_code = $1 AND status = 'pending' ORDER BY created_at DESC`,
@@ -161,24 +164,40 @@ export default async function handler(req, res) {
       // We store them on team_invites.raw and propagate to accounts.company_codes on accept.
       var hqCodes = Array.isArray(body.company_codes) && body.company_codes.length > 0 ? body.company_codes : null;
       var targetCode = body.company_code || myCode;
-      if (!isAdmin && targetCode !== myCode) {
-        // Allow cross-company invite within the same group / parent company.
-        // PETSOME GROUP siblings + 中宠 departments all share group_id or
-        // parent_company_code with the inviter's company.
-        var sameGroup = await pool.query(
-          `SELECT 1 FROM customers a, customers b
-            WHERE a.company_code = $1 AND b.company_code = $2
+
+      // Resolve inviter's full allowed scope: own company + any sibling (same group_id /
+      // parent_company_code / direct parent). Sanlyn admins bypass — they're trusted to manage all.
+      var allowedCodes = new Set([myCode]);
+      if (!isAdmin && myCode) {
+        var scope = await pool.query(
+          `SELECT b.company_code FROM customers a, customers b
+            WHERE a.company_code = $1
               AND (
                 (a.group_id IS NOT NULL AND a.group_id = b.group_id)
                 OR a.company_code = b.parent_company_code
                 OR b.company_code = a.parent_company_code
-                OR a.parent_company_code = b.parent_company_code
-              )
-            LIMIT 1`,
-          [myCode, targetCode]
+                OR (a.parent_company_code IS NOT NULL AND a.parent_company_code = b.parent_company_code)
+                OR b.company_code = a.company_code
+              )`,
+          [myCode]
         );
-        if (sameGroup.rows.length === 0) {
-          return res.status(403).json({ error: "can only invite to own company or group" });
+        scope.rows.forEach(function(r) { allowedCodes.add(r.company_code); });
+      }
+
+      // Gate target_code against allowed scope
+      if (!isAdmin && !allowedCodes.has(targetCode)) {
+        return res.status(403).json({ error: "can only invite to own company or group" });
+      }
+      // P1 fix per codex: every requested HQ scope code MUST be within inviter's allowed scope.
+      // Otherwise caller could grant invitee access to companies they themselves don't have.
+      if (!isAdmin && hqCodes) {
+        for (var i = 0; i < hqCodes.length; i++) {
+          if (!allowedCodes.has(hqCodes[i])) {
+            return res.status(403).json({
+              error: "hq_scope_out_of_range",
+              message: "Cannot grant HQ access to " + hqCodes[i] + " — outside your group scope.",
+            });
+          }
         }
       }
 
@@ -188,7 +207,7 @@ export default async function handler(req, res) {
         if (dup.rows.length) return res.status(409).json({ error: "email already registered" });
       }
 
-      await ensureInviteTable(pool);
+      // ensureInviteTable already ran at handler entry
       if (email) {
         var dup2 = await pool.query(
           "SELECT id FROM team_invites WHERE email = $1 AND company_code = $2 AND status = 'pending' LIMIT 1",
