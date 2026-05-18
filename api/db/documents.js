@@ -240,14 +240,21 @@ async function enrichProdsFromMaster(pool, prods) {
       r.rows.forEach(function(row) { masterMap[row.sku] = row; if (row.barcode) bcMap[row.barcode] = row; });
     }
     if (barcodes.length) {
+      // 2026-05-18: legacy raw.products often store SKU in the `barcode` field
+      // (TNC-06, CP1894, etc — not real EAN barcodes). Match on barcode OR sku
+      // so either column hits work.
       var r2 = await pool.query(
         "SELECT sku, hs_code, declaration_name, declaration_elements," +
         " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit," +
         " barcode, factory_name" +
-        " FROM products WHERE barcode = ANY($1::text[]) AND active = true",
+        " FROM products WHERE (barcode = ANY($1::text[]) OR sku = ANY($1::text[])) AND active = true",
         [barcodes]
       );
-      r2.rows.forEach(function(row) { if (row.barcode) bcMap[row.barcode] = row; if (row.sku && !masterMap[row.sku]) masterMap[row.sku] = row; });
+      r2.rows.forEach(function(row) {
+        if (row.barcode) bcMap[row.barcode] = row;
+        if (row.sku) bcMap[row.sku] = row; // also key by sku so 'barcode'-named SKUs resolve
+        if (row.sku && !masterMap[row.sku]) masterMap[row.sku] = row;
+      });
     }
   } catch (e) {
     console.warn("[documents] enrichProdsFromMaster: DB error —", e.message, "— using raw products only");
@@ -462,7 +469,15 @@ export default async function handler(req, res) {
       // Single-order: no group header needed — blank the tag so productRows skips it.
       if(!_hasMultiOrder) prods=prods.map(function(p){return Object.assign({},p,{_groupKey:""});});
 
-      // 2026-05-18 — Customs aggregation:
+      // 2026-05-18 — Customs aggregation + drop empty product rows.
+      // Empty rows ({qty:0, name empty}) leak through from upstream import bugs;
+      // they show as "—" in PDF and break visual cleanliness. Filter ANY audience.
+      prods = prods.filter(function(p){
+        if (!p) return false;
+        var hasName = (p.productName || p.name || p.description || p.blDescription || p.bl_description);
+        var hasQty  = Number(p.qty || 0) > 0;
+        return hasName || hasQty;
+      });
       // Chinese customs declares by HS code / 报关品名, NOT per-SKU.
       // Group products by (bl_description, hs_code) and sum qty + amount.
       // Customer audience keeps SKU-level detail (full marketing names).
