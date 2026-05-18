@@ -51,6 +51,16 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
 
   const pool = getPool();
+  const _role = req.user?.role || 'customer';
+  const _isInternalWriter = _role === 'admin' || _role === 'finance' || _role === 'logistics';
+
+  // Layer 3: write operations (POST/PATCH) restricted to internal roles only
+  if ((req.method === "POST" || req.method === "PATCH") && !_isInternalWriter) {
+    return res.status(403).json({
+      error: "Forbidden: shipping plan writes require admin/finance/logistics role",
+      code:  "SHIPPING_WRITE_FORBIDDEN",
+    });
+  }
 
   // ── POST (create new shipping plan) ───────────────────────
   if (req.method === "POST") {
@@ -59,6 +69,14 @@ export default async function handler(req, res) {
     // L3: bl_no 写入时自动升级 status（DB trigger 双保险）
     if (body.bl_no && body.bl_no.trim() && (!body.flow_status || body.flow_status === 'draft')) {
       body.flow_status = 'booked';
+    }
+
+    // L3: freight_sale_usd 写入时校验 currency 格式（422）
+    if (body.freight_sale_usd !== undefined && body.freight_sale_usd !== null) {
+      const fsu = Number(body.freight_sale_usd);
+      if (isNaN(fsu) || fsu < 0) {
+        return res.status(422).json({ error: "freight_sale_usd must be a non-negative number" });
+      }
     }
 
     const shipmentNo = await nextShipmentNo(pool);
@@ -180,32 +198,83 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const { customer, created_by, limit = 500 } = req.query;
-    let query = "SELECT * FROM shipping_plans", params = [], conds = [];
-    if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
-    if (created_by) { params.push(created_by); conds.push(`created_by = $${params.length}`); }
+    // Use alias sp so EXISTS subqueries can reference it
+    let query = "SELECT sp.* FROM shipping_plans sp", params = [], conds = [];
+    if (customer) { params.push(`%${customer}%`); conds.push(`sp.customer ILIKE $${params.length}`); }
+    if (created_by) { params.push(created_by); conds.push(`sp.created_by = $${params.length}`); }
 
-    // ── Vendor data scoping: logistics users see ONLY their own shipments ──
     const u = req.user || {};
+    const isInternal = u.role === 'admin' || u.role === 'finance';
     let scopeCol = null, scopeNeedle = "";
-    if (u.role === "logistics") {
-      scopeCol = u.supplierRole === "ocean" ? "forwarder_cn"
-              : u.supplierRole === "customs" ? "customs_cn"
-              : u.supplierRole === "truck"   ? "trucking_cn"
-              : null;
-      scopeNeedle = normCompany(u.company);
-      if (!scopeCol || !scopeNeedle) {
-        return res.status(200).json({ success: true, data: [], count: 0, scoped: "logistics:empty" });
+
+    if (!isInternal) {
+      // ── Logistics: see only their own shipments ────────────────────────────
+      if (u.role === "logistics") {
+        scopeCol = u.supplierRole === "ocean" ? "forwarder_cn"
+                : u.supplierRole === "customs" ? "customs_cn"
+                : u.supplierRole === "truck"   ? "trucking_cn"
+                : null;
+        scopeNeedle = normCompany(u.company);
+        if (!scopeCol || !scopeNeedle) {
+          return res.status(200).json({ success: true, data: [], count: 0, scoped: "logistics:empty" });
+        }
+        const hint = scopeNeedle.slice(0, 2);
+        params.push(`%${hint}%`);
+        conds.push(`sp.${scopeCol} ILIKE $${params.length}`);
+
+      // ── Customer: see only plans tied to their orders ─────────────────────
+      } else if (u.role === "customer") {
+        const codes = u.companyCodes || (u.companyCode ? [u.companyCode] : []);
+        if (codes.length === 0) {
+          // FAIL-CLOSED-2026-05-19: no scope → empty
+          return res.status(200).json({ success: true, data: [], count: 0, scoped: "customer:empty" });
+        }
+        params.push(codes);
+        conds.push(
+          `EXISTS (
+            SELECT 1 FROM orders o
+            WHERE o.company_code = ANY($${params.length}::text[])
+            AND (
+              sp.contract_no = o.contract_no
+              OR sp.order_contract_nos LIKE '%' || o.contract_no || '%'
+            )
+          )`
+        );
+
+      // ── Factory: see only plans tied to their factory orders ──────────────
+      } else if (u.role === "factory" || u.role === "supplier") {
+        const codes = u.companyCodes || (u.companyCode ? [u.companyCode] : []);
+        if (codes.length === 0) {
+          return res.status(200).json({ success: true, data: [], count: 0, scoped: "factory:empty" });
+        }
+        params.push(codes);
+        conds.push(
+          `EXISTS (
+            SELECT 1 FROM orders o
+            WHERE (
+              o.raw->>'factory_code' = ANY($${params.length}::text[])
+              OR o.raw->>'factoryCompanyCode' = ANY($${params.length}::text[])
+            )
+            AND (
+              sp.contract_no = o.contract_no
+              OR sp.order_contract_nos LIKE '%' || o.contract_no || '%'
+            )
+          )`
+        );
+
+      } else {
+        // Unknown role: FAIL-CLOSED — return empty rather than full data
+        return res.status(200).json({ success: true, data: [], count: 0, scoped: "unknown:empty" });
       }
-      const hint = scopeNeedle.slice(0, 2);
-      params.push(`%${hint}%`);
-      conds.push(`${scopeCol} ILIKE $${params.length}`);
     }
+    // admin/finance: no scope filter — see everything
 
     if (conds.length) query += " WHERE " + conds.join(" AND ");
     params.push(parseInt(limit));
-    query += ` ORDER BY etd DESC LIMIT $${params.length}`;
+    query += ` ORDER BY sp.etd DESC LIMIT $${params.length}`;
     let rows = (await pool.query(query, params)).rows;
 
+    // Defense-in-depth: secondary filter for logistics (name normalization)
     if (scopeCol && scopeNeedle) {
       rows = rows.filter(r => {
         const cell = normCompany(r[scopeCol]);
