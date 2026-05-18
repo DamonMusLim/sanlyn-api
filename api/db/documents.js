@@ -221,18 +221,34 @@ function getTotal(prods,order){return prods.reduce(function(s,p){var sub=Number(
 async function enrichProdsFromMaster(pool, prods) {
   if (!prods || !prods.length) return prods;
   var skus = prods.map(function(p) { return p && p.sku; }).filter(Boolean);
-  if (!skus.length) return prods; // no SKUs → nothing to join
+  // 2026-05-18: fallback to barcode lookup when SKU not on raw product.
+  // Many legacy raw.products carry only barcode (no sku), preventing bl_description fill.
+  var barcodes = prods.map(function(p) { return p && (p.barcode || p.code); }).filter(Boolean);
+  if (!skus.length && !barcodes.length) return prods; // nothing to JOIN
 
   var masterMap = {};
+  var bcMap = {};
   try {
-    var r = await pool.query(
-      "SELECT sku, hs_code, declaration_name, declaration_elements," +
-      " bl_description, net_weight, gross_weight, cbm, inner_qty, inner_unit," +
-      " barcode, factory_name" +
-      " FROM products WHERE sku = ANY($1::text[]) AND active = true",
-      [skus]
-    );
-    r.rows.forEach(function(row) { masterMap[row.sku] = row; });
+    if (skus.length) {
+      var r = await pool.query(
+        "SELECT sku, hs_code, declaration_name, declaration_elements," +
+        " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit," +
+        " barcode, factory_name" +
+        " FROM products WHERE sku = ANY($1::text[]) AND active = true",
+        [skus]
+      );
+      r.rows.forEach(function(row) { masterMap[row.sku] = row; if (row.barcode) bcMap[row.barcode] = row; });
+    }
+    if (barcodes.length) {
+      var r2 = await pool.query(
+        "SELECT sku, hs_code, declaration_name, declaration_elements," +
+        " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit," +
+        " barcode, factory_name" +
+        " FROM products WHERE barcode = ANY($1::text[]) AND active = true",
+        [barcodes]
+      );
+      r2.rows.forEach(function(row) { if (row.barcode) bcMap[row.barcode] = row; if (row.sku && !masterMap[row.sku]) masterMap[row.sku] = row; });
+    }
   } catch (e) {
     console.warn("[documents] enrichProdsFromMaster: DB error —", e.message, "— using raw products only");
     return prods; // fail-open: DB unreachable, render with existing data
@@ -248,11 +264,10 @@ async function enrichProdsFromMaster(pool, prods) {
 
   return prods.map(function(p) {
     if (!p) return p;
-    if (!p.sku) return p; // no sku → skip join for this item
-    var m = masterMap[p.sku];
+    // Try SKU first, then barcode fallback (2026-05-18)
+    var m = (p.sku && masterMap[p.sku]) || ((p.barcode || p.code) && bcMap[p.barcode || p.code]);
     if (!m) {
-      console.warn("[documents] enrichProdsFromMaster: SKU not in products master —", p.sku, "— using raw values");
-      return p; // fail-open: unknown SKU, render with existing data
+      return p; // unknown — render with raw values
     }
     // Build enriched copy. Pricing / cost / margin fields are NOT in this list.
     return Object.assign({}, p, {
@@ -397,9 +412,10 @@ export default async function handler(req, res) {
       // sample IV-YMJAI228525573 covering XM-254/256/262/263 in one PDF.
       // Customer-audience override: skip BL-merge — customer wants per-contract version.
       var audience = String(_audReq || "").toLowerCase() === "customer" ? "customer" : "customs";
+      // BOTH audiences merge by BL — per damon 2026-05-18: "客户的也要合并！客户要全品名详情"
+      // Only the product name field differs: customs uses bl_description, customer uses full name.
       var autoIds = ids;
-      if (audience === "customer") autoIds = null; // never merge for customer copy
-      if (!autoIds && type !== "pi" && audience === "customs") {
+      if (!autoIds && type !== "pi") {
         var blForLookup = pick(o.bl_no, raw.blNo, raw.bl_no);
         if (blForLookup) {
           try {
@@ -457,7 +473,19 @@ export default async function handler(req, res) {
       if(type==="sc"){
         var no=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var colsSC=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"name",al:"",fn:function(p){
+            // Audience-aware product name (2026-05-18):
+            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
+            //   customer → productName / name (full marketing name with brand+flavor+spec)
+            var n;
+            if (audience === "customs") {
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
+            } else {
+              n = pick(p.productName, p.name, p.description, "-");
+            }
+            var sz = p.size || p.spec || "";
+            return sz ? n + " (" + sz + ")" : n;
+          },lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
           {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
           {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
@@ -472,7 +500,19 @@ export default async function handler(req, res) {
         _xlsCapture={sheetName:"Sales Contract",docNo:(ordNo||no)+"_SC",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
-            {k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},
+            {k:"name",fn:function(p){
+            // Audience-aware product name (2026-05-18):
+            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
+            //   customer → productName / name (full marketing name with brand+flavor+spec)
+            var n;
+            if (audience === "customs") {
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
+            } else {
+              n = pick(p.productName, p.name, p.description, "-");
+            }
+            var sz = p.size || p.spec || "";
+            return sz ? n + " (" + sz + ")" : n;
+          }},
             {k:"qty"},
             {k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},
             {k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}
@@ -483,7 +523,19 @@ export default async function handler(req, res) {
       if(type==="iv"){
         var noIV=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var colsIV=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"name",al:"",fn:function(p){
+            // Audience-aware product name (2026-05-18):
+            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
+            //   customer → productName / name (full marketing name with brand+flavor+spec)
+            var n;
+            if (audience === "customs") {
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
+            } else {
+              n = pick(p.productName, p.name, p.description, "-");
+            }
+            var sz = p.size || p.spec || "";
+            return sz ? n + " (" + sz + ")" : n;
+          },lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
           {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
           {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
@@ -497,7 +549,19 @@ export default async function handler(req, res) {
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}`,ap);
         _xlsCapture={sheetName:"Invoice",docNo:(ordNo||noIV)+"_IV",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
-          colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty"},{k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},{k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}],
+          colKeys:[{k:"name",fn:function(p){
+            // Audience-aware product name (2026-05-18):
+            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
+            //   customer → productName / name (full marketing name with brand+flavor+spec)
+            var n;
+            if (audience === "customs") {
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
+            } else {
+              n = pick(p.productName, p.name, p.description, "-");
+            }
+            var sz = p.size || p.spec || "";
+            return sz ? n + " (" + sz + ")" : n;
+          }},{k:"qty"},{k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},{k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}],
           rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
       }
 
@@ -505,7 +569,19 @@ export default async function handler(req, res) {
         var noPL=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var tcbmPL=prods.reduce(function(s,p){return s+Number(p.cbm||p.volume||0);},0)||Number(raw.totalCBM||raw.cbm||0);
         var colsPL=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"name",al:"",fn:function(p){
+            // Audience-aware product name (2026-05-18):
+            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
+            //   customer → productName / name (full marketing name with brand+flavor+spec)
+            var n;
+            if (audience === "customs") {
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
+            } else {
+              n = pick(p.productName, p.name, p.description, "-");
+            }
+            var sz = p.size || p.spec || "";
+            return sz ? n + " (" + sz + ")" : n;
+          },lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"55px",lbl:"QTY"},
           {k:"gw",al:"right",w:"75px",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return fmtM(pg*q||pg);},lbl:"G.W (KG)"},
           {k:"nw",al:"right",w:"75px",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return fmtM(pn*q||pn);},lbl:"N.W (KG)"},
@@ -521,14 +597,38 @@ export default async function handler(req, res) {
           </tbody></table>${sigBlock()}`,ap);
         _xlsCapture={sheetName:"Packing List",docNo:(ordNo||noPL)+"_PL",buyer:cust,date:date,cno:cno,curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
           headers:["NO.","Description & Size","QTY","G.W (KG)","N.W (KG)","CBM"],
-          colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(Number(p.cbm||p.volume||0).toFixed(3))||0;}}],
+          colKeys:[{k:"name",fn:function(p){
+            // Audience-aware product name (2026-05-18):
+            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
+            //   customer → productName / name (full marketing name with brand+flavor+spec)
+            var n;
+            if (audience === "customs") {
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
+            } else {
+              n = pick(p.productName, p.name, p.description, "-");
+            }
+            var sz = p.size || p.spec || "";
+            return sz ? n + " (" + sz + ")" : n;
+          }},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(Number(p.cbm||p.volume||0).toFixed(3))||0;}}],
           rows:prods,totals:["","TOTAL",tqty,parseFloat(tgw.toFixed(2)),parseFloat(tnw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
       }
 
       if(type==="pi"){
         var noPI=cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var colsPI=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"name",al:"",fn:function(p){
+            // Audience-aware product name (2026-05-18):
+            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
+            //   customer → productName / name (full marketing name with brand+flavor+spec)
+            var n;
+            if (audience === "customs") {
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
+            } else {
+              n = pick(p.productName, p.name, p.description, "-");
+            }
+            var sz = p.size || p.spec || "";
+            return sz ? n + " (" + sz + ")" : n;
+          },lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
           {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
           {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount ("+curr+")"},
@@ -543,7 +643,19 @@ export default async function handler(req, res) {
         _xlsCapture={sheetName:"Proforma Invoice",docNo:(ordNo||noPI)+"_PI",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
-            {k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},
+            {k:"name",fn:function(p){
+            // Audience-aware product name (2026-05-18):
+            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
+            //   customer → productName / name (full marketing name with brand+flavor+spec)
+            var n;
+            if (audience === "customs") {
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
+            } else {
+              n = pick(p.productName, p.name, p.description, "-");
+            }
+            var sz = p.size || p.spec || "";
+            return sz ? n + " (" + sz + ")" : n;
+          }},
             {k:"qty"},
             {k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},
             {k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}
