@@ -1,7 +1,10 @@
 // /api/db/company-brand-permissions.js
 // GET  ?companyCode=XXX → brand permissions for that company (admin or self).
-// POST { company_code, brand, visibility, note? } → upsert permission (admin only).
+// POST { company_code, brand, visibility, is_exclusive?, nda_note?, note? } → upsert (admin only).
 // DELETE ?companyCode=XXX&brand=YYY → remove permission (admin only).
+//
+// Phase 7 (FAIL-CLOSED-2026-05-19): is_exclusive=true marks a brand as NDA-exclusive
+// for one company — getBrandScope() will hide that brand from ALL other customers.
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
@@ -26,7 +29,8 @@ export default async function handler(req, res) {
     try {
       const pool = getPool();
       const r = await pool.query(
-        `SELECT brand, visibility, source, note
+        `SELECT brand, visibility, source, note,
+                COALESCE(is_exclusive, false) AS is_exclusive, nda_note
            FROM company_brand_permissions
           WHERE tenant_code = 'SANLYN'
             AND company_code = $1
@@ -50,16 +54,22 @@ export default async function handler(req, res) {
       const pool = getPool();
       const results = [];
       for (const item of rows) {
-        const { company_code, brand, visibility = "full", note = "", created_by = "admin" } = item;
+        const {
+          company_code, brand, visibility = "full",
+          is_exclusive = false, nda_note = null,
+          note = "", created_by = "admin",
+        } = item;
         if (!company_code || !brand) { results.push({ error: "company_code and brand required", item }); continue; }
         const r = await pool.query(
           `INSERT INTO company_brand_permissions
-             (tenant_code, company_code, brand, visibility, source, note, created_by, updated_by, updated_at)
-           VALUES ('SANLYN', $1, $2, $3, 'manual', $4, $5, $5, NOW())
+             (tenant_code, company_code, brand, visibility, source, note,
+              is_exclusive, nda_note, created_by, updated_by, updated_at)
+           VALUES ('SANLYN', $1, $2, $3, 'manual', $4, $5, $6, $7, $7, NOW())
            ON CONFLICT (tenant_code, company_code, brand)
-           DO UPDATE SET visibility=$3, note=$4, updated_by=$5, updated_at=NOW()
+           DO UPDATE SET visibility=$3, note=$4, is_exclusive=$5, nda_note=$6,
+                         updated_by=$7, updated_at=NOW()
            RETURNING *`,
-          [company_code, brand, visibility, note, created_by]
+          [company_code, brand, visibility, note, is_exclusive, nda_note, created_by]
         );
         results.push(r.rows[0]);
       }

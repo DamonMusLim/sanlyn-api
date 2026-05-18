@@ -228,6 +228,7 @@ mount("/api/db/vault-read",        () => import("./api/db/vault-read.js"));
 mount("/api/db/diag-shipping",          () => import("./api/db/diag-shipping.js"));
 mount("/api/db/shipping-health-check", () => import("./api/db/shipping-health-check.js"));
 mount("/api/db/migrate-sp-audit",      () => import("./api/db/migrate-sp-audit.js")); // Phase 5: BL/ETA audit trail
+mount("/api/db/migrate-brand-nda",    () => import("./api/db/migrate-brand-nda.js")); // Phase 7: NDA exclusive brand redact
 mount("/api/db/fix-co-account",    () => import("./api/db/fix-co-account.js"));
 mount("/api/db/countries",         () => import("./api/db/countries.mjs"));
 mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs"));

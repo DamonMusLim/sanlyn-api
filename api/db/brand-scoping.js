@@ -30,6 +30,11 @@
  *   A customer can only see brands from their own company records — never another customer's.
  *
  * ⚠ SECURITY-CRITICAL — do not reformat or restructure without Codex review.
+ * Phase 7 (FAIL-CLOSED-2026-05-19): exclusive NDA brands (is_exclusive=true for
+ * another company) are subtracted from the caller's visible set. Column guarded
+ * with try/catch so pre-migration envs fail-open only on the NDA subtraction
+ * (existing brand scope is still correct).
+ *
  * Last Codex audit: CODEX-REVIEW-RESULT-002-FINAL (2026-05-13) — 10/10 PASS
  */
 
@@ -95,6 +100,33 @@ export async function getBrandScope(pool, codes) {
 
     if (visibilityMap.size === 0) {
       // Table present but zero permitted brands for this customer → fail-closed
+      return { mode: 'fail_closed', brandSet: EMPTY_SET, visibilityMap: EMPTY_MAP };
+    }
+
+    // ── Phase 7: NDA exclusive brands — subtract brands that are is_exclusive
+    // for ANY OTHER company. A brand marked exclusive for Company A is invisible
+    // to all other callers, even if they have a permission row for that brand.
+    // Guard: is_exclusive column may not exist yet (pre-migration) → safe catch.
+    try {
+      const ndaR = await pool.query(
+        `SELECT DISTINCT brand
+           FROM company_brand_permissions
+          WHERE tenant_code = 'SANLYN'
+            AND is_exclusive = true
+            AND company_code <> ALL($1::text[])`,
+        [codes]
+      );
+      for (const row of ndaR.rows) {
+        // Remove from caller's visible set if it was granted but is NDA-exclusive elsewhere
+        if (visibilityMap.has(row.brand)) {
+          visibilityMap.delete(row.brand);
+        }
+      }
+    } catch (_) {
+      // is_exclusive column absent (migration not yet run) → skip, no harm
+    }
+
+    if (visibilityMap.size === 0) {
       return { mode: 'fail_closed', brandSet: EMPTY_SET, visibilityMap: EMPTY_MAP };
     }
 
