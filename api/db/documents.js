@@ -122,7 +122,17 @@ td{padding:10px;border-bottom:1px solid #000;vertical-align:top;}
 function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
 
 function sellerNamePx(name){ var l=(name||"").length; return l<=28?"20px":l<=38?"17px":l<=48?"14px":"12px"; }
-function docHdr(cfg,cn,en){return`<div class="header"><div class="seller-info"><div class="seller-name" style="font-size:${sellerNamePx(cfg.nameEN)}">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1></div></div>`;}
+// audience: 'customs' → red 报关用 badge; 'customer' → blue 客户存档 badge; '' → no badge
+function audienceBadge(audience) {
+  if (audience === "customs") {
+    return `<div style="display:inline-block;margin-top:4px;padding:3px 10px;border-radius:4px;background:#fee2e2;color:#991b1b;border:1.5px solid #dc2626;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;">FOR CUSTOMS USE · 报关专用</div>`;
+  }
+  if (audience === "customer") {
+    return `<div style="display:inline-block;margin-top:4px;padding:3px 10px;border-radius:4px;background:#dbeafe;color:#1e3a8a;border:1.5px solid #2563eb;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;">CUSTOMER COPY · 客户存档</div>`;
+  }
+  return "";
+}
+function docHdr(cfg,cn,en,audience){return`<div class="header"><div class="seller-info"><div class="seller-name" style="font-size:${sellerNamePx(cfg.nameEN)}">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1>${audienceBadge(audience)}</div></div>`;}
 
 function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class="meta-grid"><div><div class="section-label">BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>Order:</b> ${esc(ordNo)}</li><li><b>Date:</b> ${esc(date)}</li>${curr?`<li><b>Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
 
@@ -274,7 +284,10 @@ export default async function handler(req, res) {
     return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid access token.</p>");
   }
 
-  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit}=req.query;
+  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,audience:_audReq}=req.query;
+  // audience: 'customs' (BL-merged) or 'customer' (per-contract).
+  // Default: customs when merge will happen, customer otherwise.
+  // Customer-explicit override forces per-contract render even if siblings exist.
   // format=xlsx → Excel export (handled after data fetch, same query pipeline)
 
   // ── List mode: no type/id → return documents table rows ──
@@ -382,8 +395,11 @@ export default async function handler(req, res) {
       // When this order has a BL number and ?ids= wasn't explicit, look up all other orders
       // with the same BL and merge them into one consolidated IV/SC/PL. Mirrors damon's
       // sample IV-YMJAI228525573 covering XM-254/256/262/263 in one PDF.
+      // Customer-audience override: skip BL-merge — customer wants per-contract version.
+      var audience = String(_audReq || "").toLowerCase() === "customer" ? "customer" : "customs";
       var autoIds = ids;
-      if (!autoIds && type !== "pi") {
+      if (audience === "customer") autoIds = null; // never merge for customer copy
+      if (!autoIds && type !== "pi" && audience === "customs") {
         var blForLookup = pick(o.bl_no, raw.blNo, raw.bl_no);
         if (blForLookup) {
           try {
@@ -447,7 +463,7 @@ export default async function handler(req, res) {
           {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
         ];
         html=wrap((ordNo||no)+"_SC",`
-          ${docHdr(cfg,"销售合同","SALES CONTRACT")}
+          ${docHdr(cfg,"销售合同","SALES CONTRACT",audience)}
           ${buyerBlock(cust,caddr,ctel,no,"Contract No.",ordNo,date,curr)}
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
@@ -473,7 +489,7 @@ export default async function handler(req, res) {
           {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
         ];
         html=wrap((ordNo||noIV)+"_IV",`
-          ${docHdr(cfg,"商业发票","COMMERCIAL INVOICE")}
+          ${docHdr(cfg,"商业发票","COMMERCIAL INVOICE",audience)}
           ${buyerBlock(cust,caddr,ctel,noIV,"Invoice No.",ordNo,date,curr)}
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
@@ -496,7 +512,7 @@ export default async function handler(req, res) {
           {k:"cbm",al:"right",w:"65px",fn:function(p){return fmtM(p.cbm||p.volume||0,3);},lbl:"CBM"},
         ];
         html=wrap((ordNo||noPL)+"_PL",`
-          ${docHdr(cfg,"装箱单","PACKING LIST")}
+          ${docHdr(cfg,"装箱单","PACKING LIST",audience)}
           ${buyerBlock(cust,caddr,ctel,noPL,"P/L No.",ordNo,date,null)}
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
