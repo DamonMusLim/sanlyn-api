@@ -55,6 +55,12 @@ export default async function handler(req, res) {
   // ── POST (create new shipping plan) ───────────────────────
   if (req.method === "POST") {
     const body = req.body || {};
+
+    // L3: bl_no 写入时自动升级 status（DB trigger 双保险）
+    if (body.bl_no && body.bl_no.trim() && (!body.flow_status || body.flow_status === 'draft')) {
+      body.flow_status = 'booked';
+    }
+
     const shipmentNo = await nextShipmentNo(pool);
     const _id = "sp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
     // booking_no is the UI field name; DB column is forwarder_booking_no

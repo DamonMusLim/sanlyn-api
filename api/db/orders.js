@@ -273,6 +273,20 @@ async function handleCreate(req, res) {
   const body = req.body || {};
   if (!body.customer) return res.status(400).json({ error: "customer is required" });
 
+  // L3: factory_code 必填（admin 创单时必须选工厂，否则工厂端永远看不到该订单）
+  const rawBody = body.raw || {};
+  const factoryCode = (rawBody.factory_code || rawBody.factoryCompanyCode || '').trim();
+  if (!factoryCode) {
+    return res.status(422).json({
+      error: 'factory_code 必填',
+      hint: '请从 partner_relationships 选择工厂，否则工厂端无法看到该订单'
+    });
+  }
+  // 回写到 raw，确保两个字段同步
+  rawBody.factory_code = factoryCode;
+  rawBody.factoryCompanyCode = factoryCode;
+  body.raw = rawBody;
+
   // Auto-generate order_no / contract_no if caller omits them
   const d = new Date();
   const ds = String(d.getFullYear()) + String(d.getMonth()+1).padStart(2,"0") + String(d.getDate()).padStart(2,"0");
