@@ -461,6 +461,44 @@ export default async function handler(req, res) {
       }
       // Single-order: no group header needed — blank the tag so productRows skips it.
       if(!_hasMultiOrder) prods=prods.map(function(p){return Object.assign({},p,{_groupKey:""});});
+
+      // 2026-05-18 — Customs aggregation:
+      // Chinese customs declares by HS code / 报关品名, NOT per-SKU.
+      // Group products by (bl_description, hs_code) and sum qty + amount.
+      // Customer audience keeps SKU-level detail (full marketing names).
+      if (audience === "customs" && type !== "pi") {
+        var groups = {};
+        var order = [];
+        prods.forEach(function(p){
+          // Group key: per multi-order container (so each container header stays)
+          // + bl_description + hs_code. Fall back to product name if no bl_description.
+          var bl = p.blDescription || p.bl_description || p.declarationName || p.declaration_name || "";
+          var hs = p.hsCode || p.hs_code || "";
+          var name = bl || pick(p.productName, p.name, p.description, "-");
+          var key = (p._groupKey||"") + "|" + name + "|" + hs;
+          if (!groups[key]) {
+            groups[key] = Object.assign({}, p, {
+              // Replace name fields with the aggregated description
+              productName: name, name: name, blDescription: bl || name,
+              qty: 0, subtotal: 0, _aggCount: 0,
+            });
+            order.push(key);
+          }
+          var g = groups[key];
+          g.qty       += Number(p.qty || 0);
+          g.subtotal  += Number(p.subtotal || (Number(p.qty||0) * Number(resolveUnitPrice(p)||0)) || 0);
+          g._aggCount += 1;
+          // Weighted price: keep first non-zero unit price (homogeneous within group)
+          if (!g.unitPrice && p.unitPrice) g.unitPrice = p.unitPrice;
+        });
+        prods = order.map(function(k){
+          var g = groups[k];
+          // For aggregated rows, drop size (heterogeneous within group)
+          if (g._aggCount > 1) { g.size = ""; g.spec = ""; }
+          return g;
+        });
+      }
+
       var _xlsCapture=null; // populated by sc/iv/pl blocks for xlsx export
       var tot=getTotal(prods,o);
       var tqty=prods.reduce(function(s,p){return s+Number(p.qty||0);},0)||Number(raw.totalQty||0);
