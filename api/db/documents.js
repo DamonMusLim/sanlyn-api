@@ -378,8 +378,28 @@ export default async function handler(req, res) {
       // ONE combined trade doc — required for customs declaration on grouped shipments.
       var _mergedCnos=[cno], _mergedPOs=[ordNo];
       var _hasMultiOrder=false;
-      if(ids && type!=="pi"){
-        var idList=String(ids).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
+      // 2026-05-18: auto-detect siblings sharing the same BL — no need for frontend to pass ?ids=
+      // When this order has a BL number and ?ids= wasn't explicit, look up all other orders
+      // with the same BL and merge them into one consolidated IV/SC/PL. Mirrors damon's
+      // sample IV-YMJAI228525573 covering XM-254/256/262/263 in one PDF.
+      var autoIds = ids;
+      if (!autoIds && type !== "pi") {
+        var blForLookup = pick(o.bl_no, raw.blNo, raw.bl_no);
+        if (blForLookup) {
+          try {
+            var sibBl = await pool.query(
+              "SELECT contract_no, customer_po FROM orders WHERE bl_no=$1 OR raw->>'blNo'=$2",
+              [blForLookup, blForLookup]
+            );
+            var sibCnos = sibBl.rows
+              .map(function(r){ return r.contract_no || r.customer_po; })
+              .filter(function(v){ return v && v !== cno; });
+            if (sibCnos.length) autoIds = sibCnos.join(",");
+          } catch (e) { /* lookup failed — fall through to single-order */ }
+        }
+      }
+      if(autoIds && type!=="pi"){
+        var idList=String(autoIds).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
         if(idList.length){
           var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
           // Sort sibling orders by customer_po for stable output (XM-254 → 256 → 262 → 263 etc.)
