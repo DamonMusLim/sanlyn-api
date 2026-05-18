@@ -122,17 +122,10 @@ td{padding:10px;border-bottom:1px solid #000;vertical-align:top;}
 function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
 
 function sellerNamePx(name){ var l=(name||"").length; return l<=28?"20px":l<=38?"17px":l<=48?"14px":"12px"; }
-// audience: 'customs' → red 报关用 badge; 'customer' → blue 客户存档 badge; '' → no badge
-function audienceBadge(audience) {
-  if (audience === "customs") {
-    return `<div style="display:inline-block;margin-top:4px;padding:3px 10px;border-radius:4px;background:#fee2e2;color:#991b1b;border:1.5px solid #dc2626;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;">FOR CUSTOMS USE · 报关专用</div>`;
-  }
-  if (audience === "customer") {
-    return `<div style="display:inline-block;margin-top:4px;padding:3px 10px;border-radius:4px;background:#dbeafe;color:#1e3a8a;border:1.5px solid #2563eb;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;">CUSTOMER COPY · 客户存档</div>`;
-  }
-  return "";
-}
-function docHdr(cfg,cn,en,audience){return`<div class="header"><div class="seller-info"><div class="seller-name" style="font-size:${sellerNamePx(cfg.nameEN)}">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1>${audienceBadge(audience)}</div></div>`;}
+// Per damon 2026-05-18: NO audience badge on PDF — recipient (customer or customs)
+// shouldn't see internal admin labels. Admin tracks the version themselves.
+// `audience` still drives behavior (merge / categorization) just not displayed.
+function docHdr(cfg,cn,en /*, audience — intentionally unused for display */){return`<div class="header"><div class="seller-info"><div class="seller-name" style="font-size:${sellerNamePx(cfg.nameEN)}">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1></div></div>`;}
 
 function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class="meta-grid"><div><div class="section-label">BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>Order:</b> ${esc(ordNo)}</li><li><b>Date:</b> ${esc(date)}</li>${curr?`<li><b>Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
 
@@ -482,6 +475,11 @@ export default async function handler(req, res) {
       // Group products by (bl_description, hs_code) and sum qty + amount.
       // Customer audience keeps SKU-level detail (full marketing names).
       if (audience === "customs" && type !== "pi") {
+        // Per damon 2026-05-18: customs doesn't split by sub-contract — one
+        // consolidated table per BL. Strip _groupKey so sibling orders merge
+        // into the same brand+subtype rows (no "ORDER xxx" headers appear).
+        prods = prods.map(function(p){ return Object.assign({}, p, { _groupKey: "" }); });
+        _hasMultiOrder = false; // suppress group-header rendering in productRows()
         // Per damon 2026-05-18 (sample 14652V_PI / 14653V_PI):
         // Real customs IV format: "PET FOOD / 宠物食品 {BRAND} {SUBTYPE} ({pack})"
         // Subtype is one of 3 categories per chinese customs convention:
