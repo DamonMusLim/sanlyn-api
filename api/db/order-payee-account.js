@@ -50,6 +50,7 @@ const ISSUING_COMPANY_MAP = {
   "Shanghai Ocean Baby International Logistics":           "CN-00016",
   "Shanghai Ocean Baby International Logistics Co.,Ltd.": "CN-00016",
   "OCEAN_BABY":                                            "CN-00016",
+  "OCEANBABY":                  "CN-00016",
   "上海洋宝宝 × COSCO":                                    "CN-00016",
 
   // ── future company example ────────────────────────────────────
