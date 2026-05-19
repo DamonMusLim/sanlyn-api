@@ -76,12 +76,16 @@ const FACTORY_HIDE_FIELDS = [
 // raw JSONB blob (factoryCode / factoryName / factoryCity / factoryCompanyCode)
 // — flagged by CODEX-REVIEW P1 (2026-05-19): the strip only matched snake_case
 // keys, leaving camelCase factory identity visible to customer responses.
+// "factory_profile" was added 2026-05-20 alongside the Factory Write-in V1
+// endpoint — the new sub-object holds factory_product_code/name/spec/moq/etc.
+// and must NEVER reach customer responses.
 const CUSTOMER_HIDE_FIELDS = [
   "factory_price", "sanlyn_price", "price", "price_usd",
   "profit", "sale_price_cny", "vat_rate", "rebate_rate", "tax_rate",
   "bg_bx", "factory_name", "factory_city", "factory_code",
   "factoryCode", "factoryName", "factoryCity", "factoryCompanyCode",
   "issuing_company", "issuingCompany", "jdy_id", "jdyId", "declaration_amount",
+  "factory_profile",
 ];
 
 // Internal-restricted (logistics/sales/operator): no extra hide today.
@@ -388,6 +392,93 @@ export function applyAllVisibility(rows, reqUser) {
   return rows;
 }
 
+// ── Factory write-in V1 (2026-05-20) ───────────────────────────────────────
+// Write gate for the new PATCH /api/db/products/:sku/factory-profile endpoint.
+// Distinct from the PUT/PATCH master-data gates because the write surface is
+// narrow (raw.factory_profile + raw.aliases.factory[code]) and factories must
+// be allowed to maintain their own profile.
+//
+//   - admin / super_admin / superadmin / platform_admin   → may write any factory
+//   - finance / platform_finance                          → may write any factory
+//   - logistics                                            → may write any factory
+//   - factory                                              → only own company_code
+//   - everyone else                                        → 403
+//
+// canWriteFactoryProfile returns { ok, targetFactoryCompanyCode, reason }.
+//   - ok=false → caller forbidden; reason explains why
+//   - ok=true  → targetFactoryCompanyCode is the validated company code to
+//                write into; callers MUST use this, NOT the body's value.
+//
+// For factory role: targetFactoryCompanyCode is locked to req.user's own code.
+// For admin/finance/logistics: targetFactoryCompanyCode comes from the body
+// (target_factory_company_code is REQUIRED and must be a non-empty string).
+const FACTORY_PROFILE_ANY_FACTORY_ROLES = new Set([
+  "admin", "super_admin", "superadmin", "platform_admin",
+  "finance", "platform_finance",
+  "logistics",
+]);
+
+export function canWriteFactoryProfile(reqUser, requestedTargetCode) {
+  if (!reqUser || !reqUser.role) {
+    return { ok: false, reason: "no req.user" };
+  }
+  const role = normalizeRole(reqUser.role);
+
+  // Admin / finance / logistics: may write any factory's profile, but MUST
+  // supply target_factory_company_code in the body so the audit trail is
+  // explicit and the write is not "to whoever the actor happens to belong to".
+  if (FACTORY_PROFILE_ANY_FACTORY_ROLES.has(role)) {
+    const code = typeof requestedTargetCode === "string" ? requestedTargetCode.trim() : "";
+    if (!code) {
+      return { ok: false, reason: "target_factory_company_code required for proxy write" };
+    }
+    return { ok: true, targetFactoryCompanyCode: code };
+  }
+
+  // Factory: locked to own company_code. Body's target_factory_company_code
+  // is IGNORED for permission and MUST equal own code if supplied.
+  if (role === "factory") {
+    const codes = normalizeCodes(reqUser);
+    if (codes.length === 0) {
+      return { ok: false, reason: "factory has no company_code" };
+    }
+    const own = codes[0];
+    if (requestedTargetCode != null && String(requestedTargetCode).trim() &&
+        String(requestedTargetCode).trim() !== own) {
+      return { ok: false, reason: "factory may only write own company_code" };
+    }
+    return { ok: true, targetFactoryCompanyCode: own };
+  }
+
+  return { ok: false, reason: `role ${role} cannot write factory profile` };
+}
+
+// Whitelist of body keys accepted by PATCH /api/db/products/:sku/factory-profile.
+// Any other key is rejected (defense-in-depth — never trust body shape).
+export const FACTORY_PROFILE_WRITABLE_KEYS = Object.freeze([
+  "factory_product_code",
+  "factory_product_name",
+  "factory_spec",
+  "moq",
+  "lead_time_days",
+  "production_status",
+  "package_requirement",
+  "material_requirement",
+  "qc_requirement",
+  "factory_notes",
+]);
+
+// Keys explicitly rejected if present in the body (extra clear-error rather
+// than silent ignore — surfaces misuse during development).
+export const FACTORY_PROFILE_REJECTED_KEYS = Object.freeze([
+  "factory_price", "sanlyn_price", "sales_price", "customs_declared_price",
+  "invoice_price", "tax_rebate_rate", "tax_rate", "rebate_rate",
+  "profit", "margin", "pricing",
+  "customer_sku", "customer_alias",
+  "aliases", "factory_profile",      // direct overwrite of these sub-objects
+  "raw", "id", "sku", "active", "deleted_at",
+]);
+
 export default {
   getProductScope,
   applyProductRowScope,
@@ -395,4 +486,7 @@ export default {
   resolvePartyAlias,
   resolvePricingVisibility,
   applyAllVisibility,
+  canWriteFactoryProfile,
+  FACTORY_PROFILE_WRITABLE_KEYS,
+  FACTORY_PROFILE_REJECTED_KEYS,
 };

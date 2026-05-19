@@ -214,6 +214,9 @@ mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"
 mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
 mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));
+// Product Master V1 — Factory Write-in (PATCH only; raw.factory_profile +
+// raw.aliases.factory). Permission in api/lib/product-scope.js.
+mount("/api/db/products/:sku/factory-profile", () => import("./api/db/product-factory-profile.js"));
 mount("/api/db/company-brand-permissions", () => import("./api/db/company-brand-permissions.js"));
 mount("/api/db/factory-brands",    () => import("./api/db/factory-brands.js"));
 mount("/api/db/brand-applications",() => import("./api/db/brand-applications.js"));
