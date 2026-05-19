@@ -119,10 +119,13 @@ export default async function handler(req, res) {
 
     // ── Factory row scope: SQL pre-filter on factory_code = ANY(caller.codes).
     //    Front-end ?factory_code= is IGNORED for permission. The post-query
-    //    applyProductRowScope() repeats this as defense-in-depth. ──────────
+    //    applyProductRowScope() repeats this as defense-in-depth.
+    //    CODEX-REVIEW P2 (2026-05-19): legacy rows store factory ownership in
+    //    raw.factoryCode rather than the top-level column — match either path
+    //    so transition data is not silently invisible to factories. ─────────
     if (userScope.mode === "factory") {
       params.push(userScope.codes);
-      conds.push("factory_code = ANY($" + params.length + "::text[])");
+      conds.push("(factory_code = ANY($" + params.length + "::text[]) OR raw->>'factoryCode' = ANY($" + params.length + "::text[]))");
     }
 
     if (brand) {

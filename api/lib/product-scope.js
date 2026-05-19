@@ -41,7 +41,10 @@ const INTERNAL_RESTRICTED_ROLES = new Set([
 ]);
 
 const FACTORY_ROLES  = new Set(["factory"]);
-const CUSTOMER_ROLES = new Set(["customer", "portal", "external"]);
+// "buyer" is the role assigned by factory-invite-complete.js for invite type
+// "customer" — treat it as a customer-scoped role so the existing buyer-account
+// flow keeps working (regression flagged by CODEX-REVIEW P1, 2026-05-19).
+const CUSTOMER_ROLES = new Set(["customer", "buyer", "portal", "external"]);
 
 // ── Field hide lists (kept in sync with products.js historic strip set) ─────
 // Trader/customer/factory: explicit hides override defaults.
@@ -64,11 +67,16 @@ const FACTORY_HIDE_FIELDS = [
 ];
 
 // Customer: no pricing / margin / internal identifiers / other-factory info.
+// Includes camelCase variants for fields that historically lived inside the
+// raw JSONB blob (factoryCode / factoryName / factoryCity / factoryCompanyCode)
+// — flagged by CODEX-REVIEW P1 (2026-05-19): the strip only matched snake_case
+// keys, leaving camelCase factory identity visible to customer responses.
 const CUSTOMER_HIDE_FIELDS = [
   "factory_price", "sanlyn_price", "price", "price_usd",
   "profit", "sale_price_cny", "vat_rate", "rebate_rate", "tax_rate",
   "bg_bx", "factory_name", "factory_city", "factory_code",
-  "issuing_company", "jdy_id", "declaration_amount",
+  "factoryCode", "factoryName", "factoryCity", "factoryCompanyCode",
+  "issuing_company", "issuingCompany", "jdy_id", "jdyId", "declaration_amount",
 ];
 
 // Internal-restricted (logistics/customs/sales/operator): no extra hide today.

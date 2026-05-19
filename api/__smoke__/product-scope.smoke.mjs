@@ -313,6 +313,40 @@ process.stdout.write("\n§6 applyAllVisibility integration\n");
   check("E2E factory: no rebate_rate",             jsonF.indexOf("rebate_rate") === -1);
 }
 
+// ─── §6b: CODEX-REVIEW round 2 regressions ──────────────────────────────────
+process.stdout.write("\n§6b CODEX-REVIEW round 2 regressions\n");
+{
+  // P1: buyer role maps to customer-scoped (factory-invite-complete.js path)
+  const buyerScope = getProductScope({ role: "buyer", companyCode: "CN-00040" });
+  check("buyer role → mode=customer (not null)", buyerScope && buyerScope.mode === "customer");
+  const buyerNoCode = getProductScope({ role: "buyer" });
+  check("buyer without companyCode → null (fail-closed)", buyerNoCode === null);
+
+  // P1: camelCase factory identifiers stripped for customer
+  const rowCamel = {
+    id: 1, sku: "WP-62", product_name: "x", brand: "PETSOME",
+    raw: {
+      factoryCode: "CN-00001",
+      factoryName: "XIAMEN PET BABY",
+      factoryCity: "Xiamen",
+      factoryCompanyCode: "CN-00001",
+      issuingCompany: "Sanlyn",
+    },
+  };
+  applyProductFieldWhitelist([rowCamel], { role: "customer", companyCode: "CN-00040" });
+  const jsonCamel = JSON.stringify(rowCamel);
+  check("customer: raw.factoryCode stripped",         jsonCamel.indexOf("factoryCode") === -1);
+  check("customer: raw.factoryName stripped",         jsonCamel.indexOf("factoryName") === -1);
+  check("customer: raw.factoryCity stripped",         jsonCamel.indexOf("factoryCity") === -1);
+  check("customer: raw.factoryCompanyCode stripped",  jsonCamel.indexOf("factoryCompanyCode") === -1);
+  check("customer: raw.issuingCompany stripped",      jsonCamel.indexOf("issuingCompany") === -1);
+
+  // Buyer path mirrors customer
+  const rowBuyer = JSON.parse(JSON.stringify(rowCamel));
+  applyProductFieldWhitelist([rowBuyer], { role: "buyer", companyCode: "CN-00040" });
+  check("buyer: raw.factoryCode stripped (mirrors customer)", JSON.stringify(rowBuyer).indexOf("factoryCode") === -1);
+}
+
 // ─── §7: Front-end query params CANNOT escalate permission ──────────────────
 process.stdout.write("\n§7 Front-end hints never escalate\n");
 {
