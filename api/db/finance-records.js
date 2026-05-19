@@ -29,26 +29,45 @@ export default async function handler(req, res) {
         direction, category, status, counterparty_code,
         issuing_code, shipment_no, order_nos,
         date_from, date_to, company_code,
+        // factory_code: intentionally ignored — scope is derived from JWT
+        // companyCodes, not from any client-supplied param (FAIL-CLOSED-2026-05-19)
       } = req.query;
 
       let where = [];
       let params = [];
       let idx = 1;
 
-      // ── Tenant scoping (fail-closed) ──
-      // Non-admin: force company_code filter to user's own scope, regardless
-      // of what the client sent.
+      // ── Tenant scoping (fail-closed) — FAIL-CLOSED-2026-05-19 ──────────────
+      // Non-admin: force scope to user's JWT company codes, regardless of
+      // what the client sent.  factory role: also match raw JSONB factory_code
+      // because finance records tag factory via raw->>'factory_code' /
+      // raw->>'factoryCompanyCode', not always via counterparty_code.
       if (req.user && req.user.role !== "admin") {
         const userCodes = req.user.companyCodes
           || (req.user.companyCode ? [req.user.companyCode] : null);
         if (!userCodes || userCodes.length === 0) {
           return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
         }
-        const cpPh = userCodes.map(() => "$" + (idx++)).join(",");
-        userCodes.forEach((c) => params.push(c));
-        const isPh = userCodes.map(() => "$" + (idx++)).join(",");
-        userCodes.forEach((c) => params.push(c));
-        where.push("(counterparty_code IN (" + cpPh + ") OR issuing_code IN (" + isPh + "))");
+
+        const isFactory = req.user.role === 'factory' || req.user.role === 'supplier';
+
+        if (isFactory) {
+          // Factory: scope by raw->>'factory_code' OR raw->>'factoryCompanyCode'
+          // (counterparty_code/issuing_code may not carry factory codes reliably)
+          const ph = userCodes.map(() => "$" + (idx++)).join(",");
+          userCodes.forEach((c) => params.push(c));
+          where.push(
+            "(raw->>'factory_code' IN (" + ph + ")" +
+            " OR raw->>'factoryCompanyCode' IN (" + ph + "))"
+          );
+        } else {
+          // Customer / logistics / finance: scope by counterparty_code or issuing_code
+          const cpPh = userCodes.map(() => "$" + (idx++)).join(",");
+          userCodes.forEach((c) => params.push(c));
+          const isPh = userCodes.map(() => "$" + (idx++)).join(",");
+          userCodes.forEach((c) => params.push(c));
+          where.push("(counterparty_code IN (" + cpPh + ") OR issuing_code IN (" + isPh + "))");
+        }
         company_code = undefined; // ignore client-supplied
       }
 
@@ -110,6 +129,15 @@ export default async function handler(req, res) {
 
     /* ═══ POST: create or update finance record ═══ */
     if (req.method === "POST") {
+      // Finance writes: restricted to internal roles only (FAIL-CLOSED-2026-05-19)
+      const _writeRole = req.user?.role || 'customer';
+      if (_writeRole !== 'admin' && _writeRole !== 'finance') {
+        await pool.end();
+        return res.status(403).json({
+          error: "Forbidden: finance record writes require admin or finance role",
+          code:  "FINANCE_WRITE_FORBIDDEN",
+        });
+      }
       const body = req.body || {};
       const {
         id, record_no, direction, category, status,
