@@ -1110,6 +1110,85 @@ export default async function handler(req, res) {
       } catch (_) {}
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // AUTO-SEED partner_relationships (customer_factory)  · 2026-05-18
+    // Purpose: when admin creates an order, write back the (buyer, factory) edge
+    // so subsequent OrderCreateV4 factory-by-buyer lookups surface it.
+    //
+    // ⚠ AUTHZ-GATE (Codex audit 2026-05-18 HIGH finding):
+    // SKIPPED for non-admin callers. A customer submitting an order under
+    // their own buyerCode could otherwise inject any factory_code from the
+    // factories whitelist into the relationship table (the existence check
+    // alone is NOT authorization). Only admin/internal callers — who are
+    // already operating with full visibility and intent to bind the relation
+    // — are allowed to mint partner_relationships from order POSTs. Customer
+    // self-service orders must NOT auto-bind; relationships for those flows
+    // are seeded out-of-band (admin UI or bulk-seed script).
+    //
+    // Safety (in addition to authz gate):
+    //   - Skips when companyCode missing (buyer unknown → can't bind)
+    //   - Only resolves factory_code values that exist in factories table
+    //     (no fabrication; protects against typo/injection of CN-XXXXX)
+    //   - Self-binding guard (a == b)
+    //   - NOT EXISTS guard prevents duplicates
+    //   - Wrapped in try/catch — never blocks order creation
+    // ─────────────────────────────────────────────────────────────────
+    try {
+      if (!isAdmin) {
+        // Non-admin callers (customer portal) cannot auto-create relationships.
+        // Their orders still succeed; the relationship simply doesn't get
+        // implicitly minted. Admin must approve / seed it explicitly.
+      } else if (companyCode) {
+        const factoryCodeCandidates = new Set();
+        // From product rows (factory_code can be company_code or po_prefix)
+        if (Array.isArray(cleanProducts)) {
+          for (const p of cleanProducts) {
+            const fc = (p && (p.factory_code || p.factoryCode));
+            if (fc) factoryCodeCandidates.add(String(fc).trim());
+          }
+        }
+        // From top-level body (admin order create posts factoryCompanyCode)
+        if (body.factoryCompanyCode) factoryCodeCandidates.add(String(body.factoryCompanyCode).trim());
+        if (body.factory_code)       factoryCodeCandidates.add(String(body.factory_code).trim());
+
+        for (const candidate of factoryCodeCandidates) {
+          if (!candidate) continue;
+          // Resolve: accept only canonical CN-NNNNN codes that exist in factories.
+          // PO prefixes (e.g. 'LL', 'CL') get resolved via factories.po_prefix lookup.
+          let resolved = null;
+          if (/^CN-\d{4,}$/i.test(candidate)) {
+            const r = await pool.query(
+              `SELECT company_code FROM factories WHERE UPPER(company_code) = UPPER($1) LIMIT 1`,
+              [candidate]
+            );
+            if (r.rows.length) resolved = r.rows[0].company_code;
+          } else {
+            const r = await pool.query(
+              `SELECT company_code FROM factories WHERE UPPER(po_prefix) = UPPER($1) LIMIT 1`,
+              [candidate]
+            );
+            if (r.rows.length) resolved = r.rows[0].company_code;
+          }
+          if (!resolved) continue;
+          // Guard against self-binding (customer = factory shouldn't happen but be safe)
+          if (resolved.toUpperCase() === String(companyCode).toUpperCase()) continue;
+          await pool.query(
+            `INSERT INTO partner_relationships (company_code_a, company_code_b, relationship_type, status, notes)
+             SELECT $1, $2, 'customer_factory', 'active', 'auto-seeded on order create (order_id=' || $3 || ')'
+             WHERE NOT EXISTS (
+               SELECT 1 FROM partner_relationships
+               WHERE company_code_a = $1
+                 AND company_code_b = $2
+                 AND relationship_type = 'customer_factory'
+             )`,
+            [companyCode, resolved, String(order.id)]
+          );
+        }
+      }
+    } catch (relErr) {
+      console.error("[order-create-v2] partner_relationships auto-seed failed (non-fatal):", relErr.message);
+    }
+
     // Auto-create payment_term task (non-fatal — never blocks order creation)
     try {
       const taskId = "t-pt-" + Math.random().toString(36).slice(2, 10);
