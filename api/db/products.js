@@ -176,8 +176,14 @@ export default async function handler(req, res) {
     if (_visibilityMap !== null) applyRfqLayer(result.rows, _visibilityMap);
 
     // Category summary
+    // CODEX-REVIEW P2 (2026-05-19): the unconditional SELECT bypassed the
+    // caller's scope, leaking global category counts to factory/customer
+    // callers. Only expose the summary to scopes that already see the full
+    // catalog (admin / finance / internal-restricted). Scoped callers
+    // (factory/customer) get null — they can compute their own from data.
     var catSummary = null;
-    if (req.query.summary === "1") {
+    if (req.query.summary === "1" &&
+        (userScope.mode === "full" || userScope.mode === "internal_restricted")) {
       var catQ = await pool.query("SELECT cat1, cat2, COUNT(*) as cnt FROM products WHERE active = true AND cat1 != '' GROUP BY cat1, cat2 ORDER BY cat1, cnt DESC");
       catSummary = catQ.rows;
     }
