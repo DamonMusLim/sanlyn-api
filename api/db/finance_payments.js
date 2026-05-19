@@ -13,14 +13,19 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     try {
       let { company_code, company_codes, direction, status, limit = 500 } = req.query;
-      // ── Tenant scoping (fail-closed) ──
+      // ── Tenant scoping (fail-closed) — FAIL-CLOSED-2026-05-19 ──────────────
       // Non-admin users can ONLY see their own company's payment records.
+      // factory/supplier role: also match raw->>'factory_code' / 'factoryCompanyCode'
+      // because finance_payments tag factory via raw JSONB, not the customer
+      // companyCode field (mirrors finance-records.js factory fix).
+      let _factoryScope = false;
       if (req.user && req.user.role !== "admin") {
         const userCodes = req.user.companyCodes
           || (req.user.companyCode ? [req.user.companyCode] : null);
         if (!userCodes || userCodes.length === 0) {
           return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
         }
+        _factoryScope = (req.user.role === 'factory' || req.user.role === 'supplier');
         company_codes = JSON.stringify(userCodes);
         company_code  = undefined;
       }
@@ -46,7 +51,16 @@ export default async function handler(req, res) {
         let codes; try { codes = JSON.parse(company_codes); } catch { codes = company_codes.split(","); }
         if (codes.length > 0) {
           const ph = codes.map(c => { params.push(c); return "$" + params.length; });
-          conds.push(`(raw->>'companyCode' IN (${ph.join(",")}) OR customer_en ILIKE ANY(ARRAY[${ph.map(p => p + "||'%'").join(",")}]))`);
+          if (_factoryScope) {
+            // Factory: scope by raw->>'factory_code' / 'factoryCompanyCode' only.
+            // Do NOT include customer_en prefix match (would leak unrelated rows).
+            conds.push(
+              `(raw->>'factory_code' IN (${ph.join(",")})` +
+              ` OR raw->>'factoryCompanyCode' IN (${ph.join(",")}))`
+            );
+          } else {
+            conds.push(`(raw->>'companyCode' IN (${ph.join(",")}) OR customer_en ILIKE ANY(ARRAY[${ph.map(p => p + "||'%'").join(",")}]))`);
+          }
         }
       } else if (company_code) {
         params.push(company_code);
@@ -162,6 +176,14 @@ export default async function handler(req, res) {
 
   // ── PATCH /api/db/finance_payments ───────────────────────────
   if (req.method === "PATCH") {
+    // FAIL-CLOSED-2026-05-19: payment writes restricted to admin/finance only
+    const _writeRole = req.user?.role || 'customer';
+    if (_writeRole !== 'admin' && _writeRole !== 'finance') {
+      return res.status(403).json({
+        error: "Forbidden: payment writes require admin or finance role",
+        code:  "PAYMENT_WRITE_FORBIDDEN",
+      });
+    }
     try {
       const {
         contractNo, slipUrl, invoiceUrl, invoiceDate,

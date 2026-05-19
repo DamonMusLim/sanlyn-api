@@ -1,5 +1,10 @@
 // /api/db/companies.js — Sanlyn group entities CRUD (distinct from company.js which is JDY)
+//
+// FAIL-CLOSED-2026-05-19: previously had ZERO auth — anyone could POST/PATCH
+// to insert or modify companies, including the bank_accounts JSONB column.
+// Now: GET requires JWT; POST/PATCH restricted to admin role only.
 import { getPool, setCors } from "../db.js";
+import { requireAuth }      from "../auth.js";
 
 const INIT_SQL = `
 CREATE TABLE IF NOT EXISTS companies (
@@ -47,6 +52,9 @@ async function ensureTable(pool) {
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
+
+  const _isAdmin = req.user?.role === "admin";
 
   const pool = getPool();
   await ensureTable(pool);
@@ -68,6 +76,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
+    if (!_isAdmin) return res.status(403).json({ error: "Forbidden: admin only" });
     try {
       const { code, name_en, name_cn, type, country, registration_no, tax_id, bank_accounts, address, stamps, default_seller, notes } = req.body || {};
       if (!code || !name_en) return res.status(400).json({ error: "code and name_en required" });
@@ -85,6 +94,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "PATCH") {
+    if (!_isAdmin) return res.status(403).json({ error: "Forbidden: admin only" });
     try {
       const { id, ...patch } = req.body || {};
       if (!id) return res.status(400).json({ error: "id required" });
