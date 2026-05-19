@@ -77,6 +77,29 @@ process.stdout.write("\n§1 canWriteFactoryProfile\n");
   const facNoCode = canWriteFactoryProfile({ role: "factory" }, "CN-00001");
   check("factory without companyCode → ok=false", facNoCode.ok === false);
 
+  // CODEX-REVIEW round 2 (2026-05-20): multi-code factory users
+  // Factory with multiple codes targeting their 2nd code → allowed
+  const facMulti2nd = canWriteFactoryProfile(
+    { role: "factory", companyCodes: ["CN-00001", "CN-00002"] }, "CN-00002");
+  check("factory multi-code, target=2nd own code → ok=true",
+        facMulti2nd.ok === true && facMulti2nd.targetFactoryCompanyCode === "CN-00002");
+
+  // Factory with multiple codes, no target supplied → 403 (ambiguous)
+  const facMultiAmbig = canWriteFactoryProfile(
+    { role: "factory", companyCodes: ["CN-00001", "CN-00002"] }, "");
+  check("factory multi-code, no target → ok=false (ambiguous)", facMultiAmbig.ok === false);
+
+  // Factory with multiple codes targeting a code NOT in caller's set → forbidden
+  const facMultiCross = canWriteFactoryProfile(
+    { role: "factory", companyCodes: ["CN-00001", "CN-00002"] }, "CN-00099");
+  check("factory multi-code, target outside own set → ok=false", facMultiCross.ok === false);
+
+  // Factory with single code, no target → defaults to own
+  const facSingleDefault = canWriteFactoryProfile(
+    { role: "factory", companyCode: "CN-00001" }, "");
+  check("factory single-code, no target → defaults to own",
+        facSingleDefault.ok === true && facSingleDefault.targetFactoryCompanyCode === "CN-00001");
+
   // Trader / sales / operator / customs → forbidden (not on factory profile gate)
   const t = canWriteFactoryProfile({ role: "trader" }, "CN-00001");
   check("trader → ok=false", t.ok === false);

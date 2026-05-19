@@ -216,7 +216,11 @@ mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"))
 mount("/api/db/products",          () => import("./api/db/products.js"));
 // Product Master V1 — Factory Write-in (PATCH only; raw.factory_profile +
 // raw.aliases.factory). Permission in api/lib/product-scope.js.
+// Two mount paths so the endpoint works in both Express (server.js) and
+// Vercel (file-based routing maps the file to the flat path). Handler
+// resolves SKU from req.params.sku || req.query.sku || req.body.sku.
 mount("/api/db/products/:sku/factory-profile", () => import("./api/db/product-factory-profile.js"));
+mount("/api/db/product-factory-profile",       () => import("./api/db/product-factory-profile.js"));
 mount("/api/db/company-brand-permissions", () => import("./api/db/company-brand-permissions.js"));
 mount("/api/db/factory-brands",    () => import("./api/db/factory-brands.js"));
 mount("/api/db/brand-applications",() => import("./api/db/brand-applications.js"));

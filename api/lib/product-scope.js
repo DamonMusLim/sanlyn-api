@@ -435,19 +435,31 @@ export function canWriteFactoryProfile(reqUser, requestedTargetCode) {
     return { ok: true, targetFactoryCompanyCode: code };
   }
 
-  // Factory: locked to own company_code. Body's target_factory_company_code
-  // is IGNORED for permission and MUST equal own code if supplied.
+  // Factory: locked to caller's own company_code(s). Multi-code factory
+  // users may target any of their own codes; the body's value is honored
+  // only if it appears in caller.companyCodes. Default behaviour:
+  //   - single code → use it (target may be omitted)
+  //   - multiple codes → target MUST be supplied to avoid ambiguity
+  // CODEX-REVIEW P2 (2026-05-20): the previous code locked to codes[0],
+  // breaking multi-code factory users who could GET products under their
+  // 2nd code but not write the profile.
   if (role === "factory") {
     const codes = normalizeCodes(reqUser);
     if (codes.length === 0) {
       return { ok: false, reason: "factory has no company_code" };
     }
-    const own = codes[0];
-    if (requestedTargetCode != null && String(requestedTargetCode).trim() &&
-        String(requestedTargetCode).trim() !== own) {
-      return { ok: false, reason: "factory may only write own company_code" };
+    const reqTrim = requestedTargetCode != null ? String(requestedTargetCode).trim() : "";
+    if (reqTrim) {
+      if (!codes.includes(reqTrim)) {
+        return { ok: false, reason: "factory may only write own company_code(s)" };
+      }
+      return { ok: true, targetFactoryCompanyCode: reqTrim };
     }
-    return { ok: true, targetFactoryCompanyCode: own };
+    // No target supplied — only safe to default when caller has a single code
+    if (codes.length === 1) {
+      return { ok: true, targetFactoryCompanyCode: codes[0] };
+    }
+    return { ok: false, reason: "factory has multiple company_codes — target_factory_company_code required" };
   }
 
   return { ok: false, reason: `role ${role} cannot write factory profile` };
