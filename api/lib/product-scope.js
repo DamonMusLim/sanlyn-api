@@ -84,9 +84,23 @@ const CUSTOMER_HIDE_FIELDS = [
   "issuing_company", "issuingCompany", "jdy_id", "jdyId", "declaration_amount",
 ];
 
-// Internal-restricted (logistics/customs/sales/operator): no extra hide today.
+// Internal-restricted (logistics/sales/operator): no extra hide today.
 // Marked for P0-future tightening (e.g. logistics shouldn't see full margin).
 const INTERNAL_RESTRICTED_HIDE_FIELDS = [];
+
+// Customs: needs HS / declaration_name / declaration_amount, but must NOT see
+// commercial pricing or margin. Previously the customs role was NOT in
+// INTERNAL_ROLES (see prior products.js INTERNAL_ROLES list), so it fell
+// through to brand-scoping with the customer strip. Promoting it to
+// internal_restricted without a hide list re-exposed factory_price /
+// sanlyn_price / profit / rebate_rate — CODEX-REVIEW P1 (2026-05-19).
+// Use the trader hide list as the baseline (same intent: internal but no
+// cost/margin) plus sanlyn_price (customs does not need commercial sell price).
+const CUSTOMS_HIDE_FIELDS = [
+  "factory_price", "sanlyn_price", "price", "price_usd", "sale_price_cny",
+  "profit", "vat_rate", "rebate_rate", "tax_rate",
+  "bg_bx", "issuing_company", "jdy_id",
+];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function normalizeRole(role) {
@@ -206,7 +220,9 @@ export function applyProductFieldWhitelist(rows, reqUser) {
       hideList = [];
       break;
     case "internal_restricted":
-      hideList = scope.role === "trader" ? TRADER_HIDE_FIELDS : INTERNAL_RESTRICTED_HIDE_FIELDS;
+      if      (scope.role === "trader")  hideList = TRADER_HIDE_FIELDS;
+      else if (scope.role === "customs") hideList = CUSTOMS_HIDE_FIELDS;
+      else                                hideList = INTERNAL_RESTRICTED_HIDE_FIELDS;
       break;
     case "factory":
       hideList = FACTORY_HIDE_FIELDS;
@@ -314,6 +330,17 @@ export function resolvePricingVisibility(row, reqUser) {
     // Codex audit (CODEX-REVIEW P1, 2026-05-19): trader fell through here and
     // received tax_rebate_rate + status flags. Strip pricing entirely for trader.
     if (scope.role === "trader") {
+      delete row.raw.pricing;
+      return row;
+    }
+    // Customs: keep customs_declared_price + tax_rebate_rate (it's the only
+    // role besides admin that legitimately needs them for declarations), but
+    // strip sales/factory/invoice pricing — including status flags.
+    if (scope.role === "customs") {
+      const customsMasked = {};
+      if (pricing.customs_declared_price) customsMasked.customs_declared_price = pricing.customs_declared_price;
+      if (pricing.tax_rebate_rate)        customsMasked.tax_rebate_rate        = pricing.tax_rebate_rate;
+      row.pricing = customsMasked;
       delete row.raw.pricing;
       return row;
     }

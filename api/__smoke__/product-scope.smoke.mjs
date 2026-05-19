@@ -199,6 +199,16 @@ process.stdout.write("\n§3 applyProductFieldWhitelist\n");
   check("trader cannot see profit",           traderRows[0].profit === undefined);
   check("trader keeps sanlyn_price",          traderRows[0].sanlyn_price === 18.0);
 
+  // Customs: must NOT see commercial pricing/margin (CODEX-REVIEW round 6
+  // regression — was internal_restricted with empty hide list). Sees HS /
+  // declaration fields, no factory_price/sanlyn_price/profit/rebate.
+  const customsRows = [makeRow()];
+  applyProductFieldWhitelist(customsRows, { role: "customs" });
+  check("customs cannot see factory_price",   customsRows[0].factory_price === undefined);
+  check("customs cannot see sanlyn_price",    customsRows[0].sanlyn_price === undefined);
+  check("customs cannot see profit",          customsRows[0].profit === undefined);
+  check("customs cannot see rebate_rate",     customsRows[0].rebate_rate === undefined);
+
   // null req.user → fail-closed: returns []
   const nullRows = [makeRow()];
   const nullOut = applyProductFieldWhitelist(nullRows, null);
