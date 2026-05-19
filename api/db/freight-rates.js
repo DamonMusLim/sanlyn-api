@@ -1,8 +1,20 @@
 import { getPool, setCors } from "../db.js";
+import { requireAuth }      from "../auth.js";
+
+// Phase 8 (FAIL-CLOSED-2026-05-19): cost columns hidden from non-internal roles.
+// gp20/hq40 = carrier cost (Sanlyn pays); customer_gp20/hq40 = sale price (customer sees).
+// raw JSONB may contain margin/cost breakdown — also redacted for non-internal.
+const COST_FIELDS = ['gp20', 'hq40', 'raw'];
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  const _role       = req.user?.role || 'customer';
+  const _isInternal = _role === 'admin' || _role === 'finance' || _role === 'logistics';
+
   try {
     const pool = getPool();
     const { pol, pod, carrier, limit = 1000 } = req.query;
@@ -36,7 +48,17 @@ export default async function handler(req, res) {
     if (conds.length) query += " WHERE " + conds.join(" AND ");
     params.push(parseInt(limit));
     query += ` ORDER BY f.created_at DESC LIMIT $${params.length}`;
-    const result = await pool.query(query, params);
-    return res.status(200).json(result.rows);
+    let rows = (await pool.query(query, params)).rows;
+
+    // Phase 8: strip cost fields for non-internal callers
+    if (!_isInternal) {
+      rows = rows.map(r => {
+        const out = { ...r };
+        for (const f of COST_FIELDS) delete out[f];
+        return out;
+      });
+    }
+
+    return res.status(200).json(rows);
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 }

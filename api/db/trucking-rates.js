@@ -2,13 +2,23 @@
 // GET  : list/filter by vendor_cn, factory_name, pol
 // POST : create / batch create
 // PATCH: update by _id  (admin only)
+//
+// Phase 8 (FAIL-CLOSED-2026-05-19): GET now requires JWT; raw JSONB (contains
+// cost breakdown) is stripped for customer/factory/supplier roles.
 import { getPool, setCors } from "../db.js";
+import { requireAuth }      from "../auth.js";
+
+// Cost/margin columns redacted for non-internal roles
+const TRUCKING_COST_FIELDS = ['raw'];
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
 
-  const pool = getPool();
+  const pool       = getPool();
+  const _role       = req.user?.role || 'customer';
+  const _isInternal = _role === 'admin' || _role === 'finance' || _role === 'logistics';
 
   // ── GET ──────────────────────────────────────────────────
   if (req.method === "GET") {
@@ -22,8 +32,18 @@ export default async function handler(req, res) {
       if (conds.length) query += " WHERE " + conds.join(" AND ");
       params.push(parseInt(limit));
       query += " ORDER BY updated_at DESC NULLS LAST LIMIT $" + params.length;
-      const result = await pool.query(query, params);
-      return res.status(200).json(result.rows);
+      let rows = (await pool.query(query, params)).rows;
+
+      // Phase 8: strip cost fields for non-internal callers
+      if (!_isInternal) {
+        rows = rows.map(r => {
+          const out = { ...r };
+          for (const f of TRUCKING_COST_FIELDS) delete out[f];
+          return out;
+        });
+      }
+
+      return res.status(200).json(rows);
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
     }
