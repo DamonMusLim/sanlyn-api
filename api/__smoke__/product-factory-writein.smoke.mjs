@@ -100,6 +100,19 @@ process.stdout.write("\n§1 canWriteFactoryProfile\n");
   check("factory single-code, no target → defaults to own",
         facSingleDefault.ok === true && facSingleDefault.targetFactoryCompanyCode === "CN-00001");
 
+  // CODEX-REVIEW round 5 P1 (2026-05-20): role normalization in return value.
+  // Mixed-case role string normalized in return value so handlers can switch
+  // on auth.role without re-folding.
+  const facMixedCase = canWriteFactoryProfile(
+    { role: "Factory", companyCode: "CN-00001" }, "CN-00001");
+  check("factory role 'Factory' (mixed case) → ok=true",        facMixedCase.ok === true);
+  check("factory role returned normalized to 'factory'",         facMixedCase.role === "factory");
+
+  const adminMixedCase = canWriteFactoryProfile(
+    { role: "ADMIN" }, "CN-00099");
+  check("admin role 'ADMIN' (uppercase) → ok=true",              adminMixedCase.ok === true);
+  check("admin role returned normalized to 'admin'",             adminMixedCase.role === "admin");
+
   // Trader / sales / operator / customs → forbidden (not on factory profile gate)
   const t = canWriteFactoryProfile({ role: "trader" }, "CN-00001");
   check("trader → ok=false", t.ok === false);

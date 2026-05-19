@@ -197,8 +197,11 @@ export default async function handler(req, res) {
       // ownership check (factory_code OR raw->>'factoryCode' = caller's code)
       // here in the SELECT so an attacker who knows another factory's SKU
       // cannot mutate the row.
+      // CODEX-REVIEW round 5 P1 (2026-05-20): use the normalized role from
+      // canWriteFactoryProfile (auth.role) instead of re-folding req.user.role
+      // here — eliminates the casing-mismatch bypass surface.
       let sel;
-      const factoryActsAsSelf = String(req.user.role || "").toLowerCase() === "factory";
+      const factoryActsAsSelf = auth.role === "factory";
       if (factoryActsAsSelf) {
         sel = await client.query(
           "SELECT id, sku, raw, factory_name FROM products " +
@@ -226,6 +229,27 @@ export default async function handler(req, res) {
         return res.status(404).json({ error: "product not found", sku });
       }
       const row = sel.rows[0];
+      // CODEX-REVIEW round 5 P2 (2026-05-20): proxy writes (admin/finance/
+      // logistics) must not stamp factory B's profile onto a row whose
+      // primary factory_code is factory A. The singleton raw.factory_profile
+      // would then leak B's product code/name/spec to A on GET. Guard:
+      // target_factory_company_code MUST equal the row's factory ownership
+      // (factory_code column or raw.factoryCode legacy path). If they don't
+      // match, the admin needs to reassign factory_code first via a separate
+      // flow; this endpoint refuses to mix.
+      if (!factoryActsAsSelf) {
+        const rowFactoryCode = row.factory_code ||
+          (isPlainObject(row.raw) && row.raw.factoryCode) || null;
+        if (!rowFactoryCode || String(rowFactoryCode) !== String(targetCode)) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            error: "factory_mismatch",
+            message: "target_factory_company_code does not match the product's factory ownership; reassign factory_code first",
+            product_factory_code: rowFactoryCode,
+            target_factory_company_code: targetCode,
+          });
+        }
+      }
       const prevRaw = isPlainObject(row.raw) ? row.raw : {};
       const prevProfile = isPlainObject(prevRaw.factory_profile) ? prevRaw.factory_profile : {};
       const prevAliases = isPlainObject(prevRaw.aliases) ? prevRaw.aliases : {};

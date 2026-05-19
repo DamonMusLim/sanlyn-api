@@ -392,104 +392,14 @@ export function applyAllVisibility(rows, reqUser) {
   return rows;
 }
 
-// ── Factory write-in V1 (2026-05-20) ───────────────────────────────────────
-// Write gate for the new PATCH /api/db/products/:sku/factory-profile endpoint.
-// Distinct from the PUT/PATCH master-data gates because the write surface is
-// narrow (raw.factory_profile + raw.aliases.factory[code]) and factories must
-// be allowed to maintain their own profile.
-//
-//   - admin / super_admin / superadmin / platform_admin   → may write any factory
-//   - finance / platform_finance                          → may write any factory
-//   - logistics                                            → may write any factory
-//   - factory                                              → only own company_code
-//   - everyone else                                        → 403
-//
-// canWriteFactoryProfile returns { ok, targetFactoryCompanyCode, reason }.
-//   - ok=false → caller forbidden; reason explains why
-//   - ok=true  → targetFactoryCompanyCode is the validated company code to
-//                write into; callers MUST use this, NOT the body's value.
-//
-// For factory role: targetFactoryCompanyCode is locked to req.user's own code.
-// For admin/finance/logistics: targetFactoryCompanyCode comes from the body
-// (target_factory_company_code is REQUIRED and must be a non-empty string).
-const FACTORY_PROFILE_ANY_FACTORY_ROLES = new Set([
-  "admin", "super_admin", "superadmin", "platform_admin",
-  "finance", "platform_finance",
-  "logistics",
-]);
-
-export function canWriteFactoryProfile(reqUser, requestedTargetCode) {
-  if (!reqUser || !reqUser.role) {
-    return { ok: false, reason: "no req.user" };
-  }
-  const role = normalizeRole(reqUser.role);
-
-  // Admin / finance / logistics: may write any factory's profile, but MUST
-  // supply target_factory_company_code in the body so the audit trail is
-  // explicit and the write is not "to whoever the actor happens to belong to".
-  if (FACTORY_PROFILE_ANY_FACTORY_ROLES.has(role)) {
-    const code = typeof requestedTargetCode === "string" ? requestedTargetCode.trim() : "";
-    if (!code) {
-      return { ok: false, reason: "target_factory_company_code required for proxy write" };
-    }
-    return { ok: true, targetFactoryCompanyCode: code };
-  }
-
-  // Factory: locked to caller's own company_code(s). Multi-code factory
-  // users may target any of their own codes; the body's value is honored
-  // only if it appears in caller.companyCodes. Default behaviour:
-  //   - single code → use it (target may be omitted)
-  //   - multiple codes → target MUST be supplied to avoid ambiguity
-  // CODEX-REVIEW P2 (2026-05-20): the previous code locked to codes[0],
-  // breaking multi-code factory users who could GET products under their
-  // 2nd code but not write the profile.
-  if (role === "factory") {
-    const codes = normalizeCodes(reqUser);
-    if (codes.length === 0) {
-      return { ok: false, reason: "factory has no company_code" };
-    }
-    const reqTrim = requestedTargetCode != null ? String(requestedTargetCode).trim() : "";
-    if (reqTrim) {
-      if (!codes.includes(reqTrim)) {
-        return { ok: false, reason: "factory may only write own company_code(s)" };
-      }
-      return { ok: true, targetFactoryCompanyCode: reqTrim };
-    }
-    // No target supplied — only safe to default when caller has a single code
-    if (codes.length === 1) {
-      return { ok: true, targetFactoryCompanyCode: codes[0] };
-    }
-    return { ok: false, reason: "factory has multiple company_codes — target_factory_company_code required" };
-  }
-
-  return { ok: false, reason: `role ${role} cannot write factory profile` };
-}
-
-// Whitelist of body keys accepted by PATCH /api/db/products/:sku/factory-profile.
-// Any other key is rejected (defense-in-depth — never trust body shape).
-export const FACTORY_PROFILE_WRITABLE_KEYS = Object.freeze([
-  "factory_product_code",
-  "factory_product_name",
-  "factory_spec",
-  "moq",
-  "lead_time_days",
-  "production_status",
-  "package_requirement",
-  "material_requirement",
-  "qc_requirement",
-  "factory_notes",
-]);
-
-// Keys explicitly rejected if present in the body (extra clear-error rather
-// than silent ignore — surfaces misuse during development).
-export const FACTORY_PROFILE_REJECTED_KEYS = Object.freeze([
-  "factory_price", "sanlyn_price", "sales_price", "customs_declared_price",
-  "invoice_price", "tax_rebate_rate", "tax_rate", "rebate_rate",
-  "profit", "margin", "pricing",
-  "customer_sku", "customer_alias",
-  "aliases", "factory_profile",      // direct overwrite of these sub-objects
-  "raw", "id", "sku", "active", "deleted_at",
-]);
+// Factory-profile write gate + body whitelists moved to product-write-gates.js
+// (2026-05-20) to keep this module under the 500-line cap. Re-export so
+// existing import sites don't break.
+export {
+  canWriteFactoryProfile,
+  FACTORY_PROFILE_WRITABLE_KEYS,
+  FACTORY_PROFILE_REJECTED_KEYS,
+} from "./product-write-gates.js";
 
 export default {
   getProductScope,
@@ -498,7 +408,4 @@ export default {
   resolvePartyAlias,
   resolvePricingVisibility,
   applyAllVisibility,
-  canWriteFactoryProfile,
-  FACTORY_PROFILE_WRITABLE_KEYS,
-  FACTORY_PROFILE_REJECTED_KEYS,
 };
