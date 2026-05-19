@@ -15,7 +15,11 @@ import {
 } from "../lib/product-scope.js";
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, PUT, OPTIONS");
+  // PATCH added (2026-05-19): a PATCH branch has existed in this handler for
+  // a while but was missing from the CORS allow-list, so browser clients
+  // could not call it. CODEX-REVIEW P2 on the P0-1 PR flagged this as the
+  // logistics replacement path for HS/declaration edits.
+  setCors(req, res, "GET, PUT, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // PUT = update single product
