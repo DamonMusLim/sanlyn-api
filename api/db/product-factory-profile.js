@@ -204,7 +204,7 @@ export default async function handler(req, res) {
       const factoryActsAsSelf = auth.role === "factory";
       if (factoryActsAsSelf) {
         sel = await client.query(
-          "SELECT id, sku, raw, factory_name FROM products " +
+          "SELECT id, sku, raw, factory_name, factory_code FROM products " +
           " WHERE sku = $1 " +
           "   AND (factory_code = $2 OR raw->>'factoryCode' = $2) " +
           " FOR UPDATE",
@@ -215,7 +215,7 @@ export default async function handler(req, res) {
         // explicitly; SKU ownership is verified by the audit trail, not by a
         // hard SQL guard (admins can correct cross-factory data).
         sel = await client.query(
-          "SELECT id, sku, raw, factory_name FROM products WHERE sku = $1 FOR UPDATE",
+          "SELECT id, sku, raw, factory_name, factory_code FROM products WHERE sku = $1 FOR UPDATE",
           [sku]
         );
       }
