@@ -316,6 +316,14 @@ process.stdout.write("\n§6 applyAllVisibility integration\n");
 // ─── §6b: CODEX-REVIEW round 2 regressions ──────────────────────────────────
 process.stdout.write("\n§6b CODEX-REVIEW round 2 regressions\n");
 {
+  // P2: canonical role aliases (financePreviewGate.js) must resolve to full
+  const pf = getProductScope({ role: "platform_finance" });
+  check("platform_finance → mode=full", pf && pf.mode === "full");
+  const io = getProductScope({ role: "internal_operator" });
+  check("internal_operator → mode=full", io && io.mode === "full");
+  const pa = getProductScope({ role: "platform_admin" });
+  check("platform_admin → mode=full", pa && pa.mode === "full");
+
   // P1: buyer role maps to customer-scoped (factory-invite-complete.js path)
   const buyerScope = getProductScope({ role: "buyer", companyCode: "CN-00040" });
   check("buyer role → mode=customer (not null)", buyerScope && buyerScope.mode === "customer");

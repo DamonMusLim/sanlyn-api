@@ -27,9 +27,14 @@
 
 // ── Role classification ──────────────────────────────────────────────────────
 // FULL: see everything. Sensitive ops still audit_log.
+// Includes the canonical 3-role layer documented in api/lib/financePreviewGate.js
+// (finance → platform_finance, admin → platform_admin, internal → internal_operator)
+// — CODEX-REVIEW P2 (2026-05-19) noted the canonical aliases were missing,
+// which would 403 legitimate finance/operator users.
 const FULL_ROLES = new Set([
   "admin", "super_admin", "superadmin", "ceo", "system",
   "boss", "internal", "platform_admin", "finance",
+  "platform_finance", "internal_operator",
 ]);
 
 // INTERNAL_RESTRICTED: internal staff that, per V1 doctrine, should NOT see
