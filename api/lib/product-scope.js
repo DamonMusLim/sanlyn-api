@@ -290,6 +290,14 @@ export function resolvePricingVisibility(row, reqUser) {
   if (scope.mode === "full") return row;
 
   if (scope.mode === "internal_restricted") {
+    // Trader is a reseller — TRADER_HIDE_FIELDS already strips rebate/tax from
+    // top-level columns, so the nested pricing branch must NOT re-leak them.
+    // Codex audit (CODEX-REVIEW P1, 2026-05-19): trader fell through here and
+    // received tax_rebate_rate + status flags. Strip pricing entirely for trader.
+    if (scope.role === "trader") {
+      delete row.raw.pricing;
+      return row;
+    }
     const masked = {};
     if (pricing.customs_declared_price) masked.customs_declared_price = pricing.customs_declared_price;
     if (pricing.tax_rebate_rate)        masked.tax_rebate_rate        = pricing.tax_rebate_rate;

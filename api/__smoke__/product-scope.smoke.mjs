@@ -268,6 +268,17 @@ process.stdout.write("\n§5 resolvePricingVisibility\n");
   resolvePricingVisibility(rowA, { role: "admin" });
   check("admin keeps raw.pricing intact",     rowA.raw.pricing && rowA.raw.pricing.factory_price.value === 12.5);
 
+  // Trader (internal_restricted but reseller): no pricing leak — regression for
+  // CODEX-REVIEW P1 (2026-05-19). Trader must NOT receive tax_rebate_rate or
+  // any pricing status flags even though it shares the internal_restricted branch.
+  const rowT = makeRow();
+  resolvePricingVisibility(rowT, { role: "trader" });
+  check("trader gets no raw.pricing",         !rowT.raw.pricing);
+  check("trader gets no pricing key",         !rowT.pricing);
+  check("trader response has no tax_rebate_rate", JSON.stringify(rowT).indexOf("tax_rebate_rate") === -1);
+  check("trader response has no customs_declared_price", JSON.stringify(rowT).indexOf("customs_declared_price") === -1);
+  check("trader response has no factory_price_status", JSON.stringify(rowT).indexOf("factory_price_status") === -1);
+
   // null req.user → pricing stripped
   const rowN = makeRow();
   resolvePricingVisibility(rowN, null);
