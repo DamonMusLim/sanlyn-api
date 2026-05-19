@@ -27,6 +27,9 @@ check("trader → false",                       canEditProductMasterData({ role:
 check("sales → false (not on PUT allow-list)",canEditProductMasterData({ role: "sales" }) === false);
 check("operator → false",                     canEditProductMasterData({ role: "operator" }) === false);
 check("customs → false",                      canEditProductMasterData({ role: "customs" }) === false);
+// CODEX-REVIEW P1 (2026-05-19): logistics keeps PATCH path (per-field) but
+// is denied PUT (any-field) to prevent rewriting factory_price/margin.
+check("logistics → false (must use PATCH)",   canEditProductMasterData({ role: "logistics" }) === false);
 check("unknown role → false",                 canEditProductMasterData({ role: "wizard" }) === false);
 check("system → false (cron only reads)",     canEditProductMasterData({ role: "system" }) === false);
 
@@ -37,7 +40,6 @@ check("superadmin → true",                    canEditProductMasterData({ role:
 check("platform_admin → true",                canEditProductMasterData({ role: "platform_admin" }) === true);
 check("finance → true",                       canEditProductMasterData({ role: "finance" }) === true);
 check("platform_finance → true",              canEditProductMasterData({ role: "platform_finance" }) === true);
-check("logistics → true",                     canEditProductMasterData({ role: "logistics" }) === true);
 
 process.stdout.write("\n§3 Case-insensitive normalisation\n");
 check("ADMIN (uppercase) → true",             canEditProductMasterData({ role: "ADMIN" }) === true);

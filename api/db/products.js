@@ -27,7 +27,7 @@ export default async function handler(req, res) {
       // Allow-list lives in api/lib/product-scope.js so PUT and PATCH stay
       // aligned and the role set is testable in isolation.
       if (!canEditProductMasterData(req.user)) {
-        return res.status(403).json({ error: "Forbidden", message: "admin / finance / logistics only" });
+        return res.status(403).json({ error: "Forbidden", message: "admin / finance only (logistics: use PATCH)" });
       }
       var pool = getPool();
       var b = req.body || {};
