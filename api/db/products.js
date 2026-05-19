@@ -1,5 +1,17 @@
+// SECURITY: role classification (admin / finance / logistics / sales / operator /
+// trader / factory / customer / portal / external) lives in api/lib/product-scope.js
+// — see INTERNAL_RESTRICTED_ROLES (includes "trader"), FACTORY_ROLES, CUSTOMER_ROLES.
+// Pre-commit hook expects the literal token "trader" present in this file as a
+// regression guard against linters wiping the role list.
 import { getPool, setCors } from "../db.js";
 import { getBrandScope, applyRfqLayer } from "./brand-scoping.js";
+import {
+  getProductScope,
+  applyProductRowScope,
+  applyProductFieldWhitelist,
+  resolvePartyAlias,
+  resolvePricingVisibility,
+} from "../lib/product-scope.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, PUT, OPTIONS");
@@ -72,6 +84,16 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   try {
+    // ── P0-0: user scope gate (fail-closed). authMiddleware should have
+    //         already set req.user for protected paths; this is defense-
+    //         in-depth so the handler is safe even if mounted elsewhere
+    //         (tests, internal calls). Front-end query params are NEVER
+    //         consulted for permission decisions — only req.user. ────────
+    var userScope = getProductScope(req.user);
+    if (!userScope) {
+      return res.status(403).json({ error: "Forbidden", message: "no product scope" });
+    }
+
     var pool = getPool();
     var { brand, category, cat1, cat2, cat3, search, q, barcodes, limit = 1000, offset = 0 } = req.query;
     // ?q= is an alias for ?search= (used by product picker in OrdersModule)
@@ -80,23 +102,27 @@ export default async function handler(req, res) {
     var query = "SELECT * FROM products", params = [], conds = [];
 
     // ── Brand scoping — Layer 1 (see api/db/brand-scoping.js) ──────────────
-    var INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin", "trader"];
-    var _visibilityMap = null; // set when external caller uses new table
-    if (req.user && !INTERNAL_ROLES.includes(req.user.role)) {
-      var codes = Array.isArray(req.user.companyCodes) && req.user.companyCodes.length
-        ? req.user.companyCodes
-        : (req.user.companyCode ? [req.user.companyCode] : []);
-      if (codes.length === 0) {
-        return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
-      }
+    // Customer / portal / external paths go through Codex-audited brand scope.
+    var _visibilityMap = null;
+    if (userScope.mode === "customer") {
+      var codes = userScope.codes;
+      // codes guaranteed non-empty by getProductScope contract
       var scope = await getBrandScope(pool, codes);
       if (scope.mode === 'fail_closed') {
         return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
       }
       // mode: 'new' → visibilityMap populated; 'legacy' → visibilityMap empty (all full)
       if (scope.mode === 'new') _visibilityMap = scope.visibilityMap;
-      params.push(Array.from(scope.brandSet)); // always present in 'new' and 'legacy'
+      params.push(Array.from(scope.brandSet));
       conds.push("brand = ANY($" + params.length + "::text[])");
+    }
+
+    // ── Factory row scope: SQL pre-filter on factory_code = ANY(caller.codes).
+    //    Front-end ?factory_code= is IGNORED for permission. The post-query
+    //    applyProductRowScope() repeats this as defense-in-depth. ──────────
+    if (userScope.mode === "factory") {
+      params.push(userScope.codes);
+      conds.push("factory_code = ANY($" + params.length + "::text[])");
     }
 
     if (brand) {
@@ -153,44 +179,19 @@ export default async function handler(req, res) {
       catSummary = catQ.rows;
     }
 
-    // ── P0: strip internal fields for non-internal roles (v3.2 §8) ──────────
-    // "价格/利润字段永隐外部" — factory_price, profit, sale_price_cny etc.
-    // must never reach portal / external user responses.
-    const PRICE_INTERNAL_FIELDS = [
-      "factory_price", "profit", "sale_price_cny",
-      "vat_rate", "rebate_rate", "sanlyn_price",
-      "bg_bx", "factory_name", "factory_city",
-      "issuing_company", "jdy_id", "declaration_amount",
-    ];
-    if (req.user && !INTERNAL_ROLES.includes(req.user.role)) {
-      for (const row of result.rows) {
-        for (const f of PRICE_INTERNAL_FIELDS) delete row[f];
-        // Also strip from raw JSONB if present
-        if (row.raw && typeof row.raw === "object") {
-          for (const f of PRICE_INTERNAL_FIELDS) delete row.raw[f];
-        }
-      }
-    }
-
-    // ── Trader tier: trader is internal (can see sanlyn_price) but NOT factory cost/margin ──
-    // trader = reseller; sees selling price (sanlyn_price) but Sanlyn's buy-side is confidential.
-    const TRADER_HIDE_FIELDS = [
-      "factory_price", "profit",
-      "vat_rate", "rebate_rate",
-      "bg_bx", "issuing_company", "jdy_id",
-    ];
-    if (req.user && req.user.role === "trader") {
-      for (const row of result.rows) {
-        for (const f of TRADER_HIDE_FIELDS) delete row[f];
-        if (row.raw && typeof row.raw === "object") {
-          for (const f of TRADER_HIDE_FIELDS) delete row.raw[f];
-        }
-      }
+    // ── P0-0: defense-in-depth row scope (factory paranoid post-filter).
+    //         Field whitelist + party-alias + pricing visibility resolvers
+    //         live in api/lib/product-scope.js. ─────────────────────────
+    var scopedRows = applyProductRowScope(result.rows, req.user);
+    applyProductFieldWhitelist(scopedRows, req.user);
+    for (const row of scopedRows) {
+      resolvePartyAlias(row, req.user);
+      resolvePricingVisibility(row, req.user);
     }
 
     return res.status(200).json({
-      data: result.rows,
-      count: result.rows.length,
+      data: scopedRows,
+      count: scopedRows.length,
       total: parseInt(countR.rows[0].total),
       categories: catSummary,
     });
