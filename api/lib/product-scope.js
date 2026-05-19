@@ -388,6 +388,26 @@ export function applyAllVisibility(rows, reqUser) {
   return rows;
 }
 
+// ── Write gate: who can edit the products master table? ─────────────────────
+// PUT /api/db/products accepts cost / margin columns (factory_price,
+// sanlyn_price, rebate_rate, tax_rate, …) so the allow-list is strict:
+//   - admin / super_admin / superadmin / platform_admin → master data ops
+//   - finance / platform_finance                        → pricing & margin
+//   - logistics                                         → HS / declaration fields
+// PATCH already has its own admin/logistics gate; this helper keeps the two
+// methods aligned and avoids drift.
+// Returns true if the caller may write product master data, false otherwise.
+const PRODUCT_WRITE_ROLES = new Set([
+  "admin", "super_admin", "superadmin", "platform_admin",
+  "finance", "platform_finance",
+  "logistics",
+]);
+
+export function canEditProductMasterData(reqUser) {
+  if (!reqUser || !reqUser.role) return false;
+  return PRODUCT_WRITE_ROLES.has(normalizeRole(reqUser.role));
+}
+
 export default {
   getProductScope,
   applyProductRowScope,
@@ -395,4 +415,5 @@ export default {
   resolvePartyAlias,
   resolvePricingVisibility,
   applyAllVisibility,
+  canEditProductMasterData,
 };
