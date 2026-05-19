@@ -131,6 +131,18 @@ process.stdout.write("\n§2 applyProductRowScope\n");
   const facRaw = applyProductRowScope(rowsRawOnly, { role: "factory", companyCode: "CN-00001" });
   check("factory matches via raw.factoryCode fallback", facRaw.length === 1 && facRaw[0].id === 10);
 
+  // CODEX-REVIEW round 5 (2026-05-19): legacy row where factory_code column
+  // holds an old backfill value but raw.factoryCode holds the real company
+  // code — factory must still see it (post-filter must match EITHER, not
+  // short-circuit on the column).
+  const rowsLegacy = [
+    { id: 20, factory_code: "OLD-PREFIX-XX", raw: { factoryCode: "CN-00001" } },
+    { id: 21, factory_code: "OLD-PREFIX-YY", raw: { factoryCode: "CN-00099" } },
+  ];
+  const facLegacy = applyProductRowScope(rowsLegacy, { role: "factory", companyCode: "CN-00001" });
+  check("factory matches via raw.factoryCode even when column is populated",
+        facLegacy.length === 1 && facLegacy[0].id === 20);
+
   // factory without companyCode → fail-closed (null scope → [])
   const facFail = applyProductRowScope(rows, { role: "factory" });
   check("factory without companyCode → [] (fail-closed)", facFail.length === 0);

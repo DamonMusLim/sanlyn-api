@@ -164,10 +164,16 @@ export function applyProductRowScope(rows, reqUser) {
     case "customer":
       return rows;
     case "factory": {
+      // Match either the top-level column or raw.factoryCode (mirrors the
+      // SQL prefilter OR clause). CODEX-REVIEW P2 (2026-05-19): the previous
+      // `||` short-circuit dropped legacy rows where factory_code held an
+      // old backfill value but raw.factoryCode held the real company code.
       const codeSet = new Set(scope.codes);
       return rows.filter(r => {
-        const fc = r && (r.factory_code || (r.raw && r.raw.factoryCode));
-        return fc != null && codeSet.has(String(fc));
+        if (!r) return false;
+        if (r.factory_code != null && codeSet.has(String(r.factory_code))) return true;
+        if (r.raw && r.raw.factoryCode != null && codeSet.has(String(r.raw.factoryCode))) return true;
+        return false;
       });
     }
     default:
