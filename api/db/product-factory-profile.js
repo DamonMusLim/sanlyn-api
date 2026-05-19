@@ -170,13 +170,40 @@ export default async function handler(req, res) {
     try {
       await client.query("BEGIN");
 
-      // SELECT FOR UPDATE — atomic read-modify-write
-      const sel = await client.query(
-        "SELECT id, sku, raw, factory_name FROM products WHERE sku = $1 FOR UPDATE",
-        [sku]
-      );
+      // SELECT FOR UPDATE — atomic read-modify-write.
+      // CODEX-REVIEW P1 (2026-05-20): factories must not be able to write
+      // products that belong to a different factory. canWriteFactoryProfile
+      // only proves the actor writes under their own company code; it does
+      // NOT prove they own the product row. Mirror the GET-side factory
+      // ownership check (factory_code OR raw->>'factoryCode' = caller's code)
+      // here in the SELECT so an attacker who knows another factory's SKU
+      // cannot mutate the row.
+      let sel;
+      const factoryActsAsSelf = String(req.user.role || "").toLowerCase() === "factory";
+      if (factoryActsAsSelf) {
+        sel = await client.query(
+          "SELECT id, sku, raw, factory_name FROM products " +
+          " WHERE sku = $1 " +
+          "   AND (factory_code = $2 OR raw->>'factoryCode' = $2) " +
+          " FOR UPDATE",
+          [sku, targetCode]
+        );
+      } else {
+        // admin / finance / logistics: proxy write — target was supplied
+        // explicitly; SKU ownership is verified by the audit trail, not by a
+        // hard SQL guard (admins can correct cross-factory data).
+        sel = await client.query(
+          "SELECT id, sku, raw, factory_name FROM products WHERE sku = $1 FOR UPDATE",
+          [sku]
+        );
+      }
       if (sel.rows.length === 0) {
         await client.query("ROLLBACK");
+        // For factory mode, return 403 — do not confirm whether the SKU
+        // exists for another factory.
+        if (factoryActsAsSelf) {
+          return res.status(403).json({ error: "Forbidden", message: "product not in your factory scope" });
+        }
         return res.status(404).json({ error: "product not found", sku });
       }
       const row = sel.rows[0];
