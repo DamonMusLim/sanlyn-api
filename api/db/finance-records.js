@@ -51,22 +51,30 @@ export default async function handler(req, res) {
 
         const isFactory = req.user.role === 'factory' || req.user.role === 'supplier';
 
+        // Base scope: counterparty_code OR issuing_code IN (JWT codes).
+        // Existing factory records and workflow-engine-created payment requests
+        // identify the factory via counterparty_code, so we MUST keep this
+        // predicate for factories too — additive, not replacement.
+        const cpPh = userCodes.map(() => "$" + (idx++)).join(",");
+        userCodes.forEach((c) => params.push(c));
+        const isPh = userCodes.map(() => "$" + (idx++)).join(",");
+        userCodes.forEach((c) => params.push(c));
+        const baseScope = "counterparty_code IN (" + cpPh + ") OR issuing_code IN (" + isPh + ")";
+
         if (isFactory) {
-          // Factory: scope by raw->>'factory_code' OR raw->>'factoryCompanyCode'
-          // (counterparty_code/issuing_code may not carry factory codes reliably)
-          const ph = userCodes.map(() => "$" + (idx++)).join(",");
+          // Factory: ALSO match raw->>'factory_code' / 'factoryCompanyCode'
+          // for records that tag factory in raw JSONB instead of the column.
+          const fcPh = userCodes.map(() => "$" + (idx++)).join(",");
+          userCodes.forEach((c) => params.push(c));
+          const fccPh = userCodes.map(() => "$" + (idx++)).join(",");
           userCodes.forEach((c) => params.push(c));
           where.push(
-            "(raw->>'factory_code' IN (" + ph + ")" +
-            " OR raw->>'factoryCompanyCode' IN (" + ph + "))"
+            "(" + baseScope +
+            " OR raw->>'factory_code' IN (" + fcPh + ")" +
+            " OR raw->>'factoryCompanyCode' IN (" + fccPh + "))"
           );
         } else {
-          // Customer / logistics / finance: scope by counterparty_code or issuing_code
-          const cpPh = userCodes.map(() => "$" + (idx++)).join(",");
-          userCodes.forEach((c) => params.push(c));
-          const isPh = userCodes.map(() => "$" + (idx++)).join(",");
-          userCodes.forEach((c) => params.push(c));
-          where.push("(counterparty_code IN (" + cpPh + ") OR issuing_code IN (" + isPh + "))");
+          where.push("(" + baseScope + ")");
         }
         company_code = undefined; // ignore client-supplied
       }

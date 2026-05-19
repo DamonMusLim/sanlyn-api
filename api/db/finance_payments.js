@@ -52,11 +52,14 @@ export default async function handler(req, res) {
         if (codes.length > 0) {
           const ph = codes.map(c => { params.push(c); return "$" + params.length; });
           if (_factoryScope) {
-            // Factory: scope by raw->>'factory_code' / 'factoryCompanyCode' only.
-            // Do NOT include customer_en prefix match (would leak unrelated rows).
+            // Factory: match raw->>'factory_code' / 'factoryCompanyCode' AS WELL AS
+            // raw->>'companyCode' (some legacy/workflow-created rows tag the factory
+            // there). Skip customer_en prefix match — too noisy and would leak.
+            const ph2 = codes.map(c => { params.push(c); return "$" + params.length; });
             conds.push(
               `(raw->>'factory_code' IN (${ph.join(",")})` +
-              ` OR raw->>'factoryCompanyCode' IN (${ph.join(",")}))`
+              ` OR raw->>'factoryCompanyCode' IN (${ph.join(",")})` +
+              ` OR raw->>'companyCode' IN (${ph2.join(",")}))`
             );
           } else {
             conds.push(`(raw->>'companyCode' IN (${ph.join(",")}) OR customer_en ILIKE ANY(ARRAY[${ph.map(p => p + "||'%'").join(",")}]))`);
