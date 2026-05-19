@@ -25,6 +25,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getPool, setCors } from "../db.js";
+import { extractUser } from "../auth.js";
 import { writeAuditLog, getClientInfo } from "../audit.js";
 import {
   canWriteFactoryProfile,
@@ -93,8 +94,17 @@ function writeBackup(record) {
 
 // Merge the patch into existing raw.factory_profile. Returns the new
 // factory_profile object (caller is responsible for assigning it back to raw).
+//
+// CODEX-REVIEW P2 (2026-05-20): if the existing profile belongs to a
+// different factory_company_code (e.g. admin proxy-writing for factory B
+// where the previous profile was written by factory A), spreading the old
+// values would attribute A's product code / name / spec / moq to B for any
+// key the patch did NOT include. Detect that mismatch and start from an
+// empty base so partial updates can never leak another factory's fields.
 function buildFactoryProfile(prevProfile, patch, targetCode, factoryName, actor) {
-  const base = isPlainObject(prevProfile) ? { ...prevProfile } : {};
+  const prevCode = isPlainObject(prevProfile) ? prevProfile.factory_company_code : null;
+  const sameFactory = prevCode && String(prevCode) === String(targetCode);
+  const base = sameFactory ? { ...prevProfile } : {};
   // Apply only the whitelisted keys
   for (const k of FACTORY_PROFILE_WRITABLE_KEYS) {
     if (patch[k] !== undefined) base[k] = patch[k];
@@ -130,8 +140,17 @@ export default async function handler(req, res) {
   }
 
   try {
+    // CODEX-REVIEW P2 (2026-05-20): when this handler is reached through the
+    // Vercel file-based route (api/db/products/[sku]/factory-profile.js),
+    // server.js's authMiddleware has NOT run, so req.user is unset. Run the
+    // same JWT extraction here as a defense-in-depth. Idempotent under
+    // Express — if authMiddleware already ran, req.user is already set and
+    // extractUser is a cheap no-op refresh.
     if (!req.user) {
-      return res.status(403).json({ error: "Forbidden", message: "no req.user" });
+      try { extractUser(req); } catch (_) { /* swallow */ }
+    }
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized", message: "no req.user" });
     }
 
     const body = req.body || {};
