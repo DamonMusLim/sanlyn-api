@@ -256,6 +256,8 @@ mount("/api/db/migrate-products-spec-source",        () => import("./api/db/migr
 mount("/api/db/migrate-products-spec-source-repair",    () => import("./api/db/migrate-products-spec-source-repair.js")); // 002r: fix trade_show clobber bug
 mount("/api/db/migrate-products-carton-qty-backfill", () => import("./api/db/migrate-products-carton-qty-backfill.js")); // 003: factory-confirmed carton_qty + box dims
 mount("/api/db/migrate-products-spec-verified-fix",   () => import("./api/db/migrate-products-spec-verified-fix.js"));   // 003f: fix spec_verified=FALSE bug from migration 003
+mount("/api/db/migrate-products-cp-backfill",         () => import("./api/db/migrate-products-cp-backfill.js"));           // 004: CP-series 858 SKUs cbm/weight/carton_qty from 产品信息 xlsx
+mount("/api/db/migrate-products-tt-backfill",         () => import("./api/db/migrate-products-tt-backfill.js"));           // 005: TT-series 430 SKUs carton/price/image from 2025新品 xlsx
 mount("/api/db/migrate-orders",    () => import("./api/db/migrate-orders.js"));
 mount("/api/db/migrate-orders-v2", () => import("./api/db/migrate-orders-v2.js"));
 mount("/api/db/migrate-qc",        () => import("./api/db/migrate-qc.js"));
