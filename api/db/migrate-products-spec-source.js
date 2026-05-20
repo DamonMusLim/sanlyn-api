@@ -53,13 +53,17 @@ const DATA_STMTS = [
   },
   {
     label: "rescue_pack_spec",
-    description: "Copy raw.pack_spec → spec for rows where spec IS NULL (51 rows)",
+    description: "Copy raw.pack_spec → spec for rows where spec IS NULL and no source yet tagged",
+    // IMPORTANT: AND spec_source IS NULL — never overwrite a row that was already
+    // tagged by a prior step (e.g. trade_show). Without this guard the second UPDATE
+    // would clobber the first one's tags on rows where both conditions apply.
     sql: `UPDATE products
           SET    spec        = raw->>'pack_spec',
                  spec_source = 'raw_migration'
           WHERE  spec IS NULL
-            AND  raw->>'pack_spec' IS NOT NULL`,
-    expect: 51,
+            AND  raw->>'pack_spec' IS NOT NULL
+            AND  spec_source IS NULL`,
+    expect: 0, // 0 after repair run; first run was 51 (now fixed in prod by repair SQL)
   },
 ];
 
