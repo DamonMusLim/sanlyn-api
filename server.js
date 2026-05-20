@@ -253,7 +253,9 @@ mount("/api/db/fix-product-prices",() => import("./api/db/fix-product-prices.js"
 mount("/api/db/fix-groups",        () => import("./api/db/fix-groups.js"));
 mount("/api/db/migrate-products",             () => import("./api/db/migrate-products.js"));
 mount("/api/db/migrate-products-spec-source",        () => import("./api/db/migrate-products-spec-source.js")); // 002: provenance columns + backfill
-mount("/api/db/migrate-products-spec-source-repair", () => import("./api/db/migrate-products-spec-source-repair.js")); // 002r: fix trade_show clobber bug
+mount("/api/db/migrate-products-spec-source-repair",    () => import("./api/db/migrate-products-spec-source-repair.js")); // 002r: fix trade_show clobber bug
+mount("/api/db/migrate-products-carton-qty-backfill", () => import("./api/db/migrate-products-carton-qty-backfill.js")); // 003: factory-confirmed carton_qty + box dims
+mount("/api/db/migrate-products-spec-verified-fix",   () => import("./api/db/migrate-products-spec-verified-fix.js"));   // 003f: fix spec_verified=FALSE bug from migration 003
 mount("/api/db/migrate-orders",    () => import("./api/db/migrate-orders.js"));
 mount("/api/db/migrate-orders-v2", () => import("./api/db/migrate-orders-v2.js"));
 mount("/api/db/migrate-qc",        () => import("./api/db/migrate-qc.js"));
