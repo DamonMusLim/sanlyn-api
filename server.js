@@ -251,7 +251,8 @@ mount("/api/db/seed-huihe-charges",   () => import("./api/db/seed-huihe-charges.
 mount("/api/db/seed-oss-local-charges",() => import("./api/db/seed-oss-local-charges.js"));
 mount("/api/db/fix-product-prices",() => import("./api/db/fix-product-prices.js"));
 mount("/api/db/fix-groups",        () => import("./api/db/fix-groups.js"));
-mount("/api/db/migrate-products",  () => import("./api/db/migrate-products.js"));
+mount("/api/db/migrate-products",             () => import("./api/db/migrate-products.js"));
+mount("/api/db/migrate-products-spec-source", () => import("./api/db/migrate-products-spec-source.js")); // 002: provenance columns + backfill
 mount("/api/db/migrate-orders",    () => import("./api/db/migrate-orders.js"));
 mount("/api/db/migrate-orders-v2", () => import("./api/db/migrate-orders-v2.js"));
 mount("/api/db/migrate-qc",        () => import("./api/db/migrate-qc.js"));
@@ -387,6 +388,7 @@ mount("/api/ocr-review",      () => import("./api/ocr-review.js"));
 mount("/api/oss-upload",      () => import("./api/oss-upload.js"));
 mount("/api/proxy-file",      () => import("./api/proxy-file.js"));
 mount("/api/send-email",      () => import("./api/send-email.js"));
+mount("/api/notify/order-created", () => import("./api/notify/order-created.js"));
 mount("/api/setup-finance",   () => import("./api/setup-finance.js"));
 mount("/api/vessel-callback", () => import("./api/vessel-callback.js"));
 // ── Supply-chain tracking card (public, token-authenticated) ──
