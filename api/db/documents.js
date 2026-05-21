@@ -57,6 +57,7 @@ async function loadSellerCfg(pool, raw, qco, opts) {
         sc: Array.isArray(s.terms_sc) ? s.terms_sc : (s.terms_sc||[]),
         iv: Array.isArray(s.terms_iv) ? s.terms_iv : (s.terms_iv||[]),
       },
+      seal_url: s.seal_url||"",  // 卖方公章图 URL（sigBlock 自动盖章用）
     };
   } catch(e) {
     // Hard fallback so doc still renders if DB query fails
@@ -149,36 +150,17 @@ tr,thead,tfoot{page-break-inside:avoid;break-inside:avoid;}
 </style>`;
 
 // 2026-05-19: docRef = optional footer reference (Doc No + Issue date), moved from header
-function wrap(title,body,ap,docRef){
-  var ref = docRef
-    ? `<div class="doc-ref"><span><span class="ref-k">Doc No.</span> <span class="ref-v">${esc(docRef.docNo||title)}</span></span><span class="ref-sep">·</span><span><span class="ref-k">Issued</span> <span class="ref-v">${esc(docRef.date||new Date().toISOString().slice(0,10))}</span></span></div>`
-    : '';
-  return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}${ref}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;
-}
+function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
 
 function sellerNamePx(name){ var l=(name||"").length; return l<=28?"20px":l<=38?"17px":l<=48?"14px":"12px"; }
 // Per damon 2026-05-18: NO audience badge on PDF — recipient (customer or customs)
 // shouldn't see internal admin labels. Admin tracks the version themselves.
 // `audience` still drives behavior (merge / categorization) just not displayed.
-function docHdr(cfg,cn,en /*, audience — intentionally unused for display */){
-  // 2026-05-19 — Light header v2:
-  //   - smaller seller name (13px not 20+)
-  //   - English title primary 22px, Chinese subtitle 10px gray
-  //   - no Tel/Email (Damon: hardcoded was not BABI's real contact)
-  //   - Doc No + Issued moved to footer via wrap(docRef)
-  return`<div class="header"><div class="seller-info"><div class="seller-name">${esc(cfg.nameEN)}</div><p>${esc(cfg.address)}</p></div><div class="doc-type"><h1>${esc(en)}</h1>${cn?`<p>${esc(cn)}</p>`:""}</div></div>`;
-}
+function docHdr(cfg,cn,en /*, audience — intentionally unused for display */){return`<div class="header"><div class="seller-info"><div class="seller-name" style="font-size:${sellerNamePx(cfg.nameEN)}">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1></div></div>`;}
 
-function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){
-  // 2026-05-19: PL 用 "Buyer / Consignee" (无金额单据), 其他用 "Buyer (Bill To)"
-  var buyerLbl = curr ? "BUYER (BILL TO)" : "BUYER / CONSIGNEE";
-  return`<div class="meta-grid"><div><div class="section-label">${buyerLbl}</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">ORDER DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>Order:</b> ${esc(ordNo)}</li><li><b>Date:</b> ${esc(date)}</li>${curr?`<li><b>Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;
-}
+function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class="meta-grid"><div><div class="section-label">BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>Order:</b> ${esc(ordNo)}</li><li><b>Date:</b> ${esc(date)}</li>${curr?`<li><b>Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
 
-function portBar(pol,pod,terms){
-  // 2026-05-19 light info-bar (3 cells with subtle gray bg + 1px lines)
-  return`<div class="trade-terms-bar"><span><span style="display:block;font-size:8.5px;font-weight:700;color:#888;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:2px">Port of Loading</span><span style="font-size:11px;font-weight:600;color:#111">${esc(pol)||"—"}</span></span><span><span style="display:block;font-size:8.5px;font-weight:700;color:#888;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:2px">Port of Discharge</span><span style="font-size:11px;font-weight:600;color:#111">${esc(pod)||"—"}</span></span><span><span style="display:block;font-size:8.5px;font-weight:700;color:#888;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:2px">Incoterms</span><span style="font-size:11px;font-weight:600;color:#111">${esc(terms)||"—"} (Incoterms® 2020)</span></span></div>`;
-}
+function portBar(pol,pod,terms){return`<div class="trade-terms-bar"><span>POL: ${esc(pol)||"-"}</span><span>POD: ${esc(pod)||"-"}</span><span>Terms: ${esc(terms)||"-"} (Incoterms® 2020)</span></div>`;}
 
 function bankCard(bk,curr){
   var cur=String(curr||"").toUpperCase();
@@ -717,7 +699,7 @@ export default async function handler(req, res) {
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
-          <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock(cfg.seal_url)}</div>`; html=wrap((ordNo||noIV)+"_IV",_packBodies.iv,ap,{docNo:_fsNoIV,date:date});
+          <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}</div>`; html=wrap((ordNo||noIV)+"_IV",_packBodies.iv,ap,{docNo:_fsNoIV,date:date});
         _xlsCapture={sheetName:"Invoice",docNo:(ordNo||noIV)+"_IV",buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[{k:"name",fn:function(p){
@@ -751,8 +733,6 @@ export default async function handler(req, res) {
             var sz = p.size || p.spec || "";
             return sz ? n + " (" + sz + ")" : n;
           },lbl:"Description &amp; Size"},
-          // 2026-05-19 客户要求 PL 加 barcode 列 (仓库扫货用)
-          {k:"bc",al:"center",w:"110px",fn:function(p){return p.barcode||p.code||"";},lbl:"Barcode"},
           {k:"qty",al:"center",w:"55px",lbl:"CTN"},
           {k:"nw",al:"right",w:"80px",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return fmtM(audience==='customs'?pn:(pn*q||pn));},lbl:"TOTAL NW (KG)"},
           {k:"gw",al:"right",w:"80px",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return fmtM(audience==='customs'?pg:(pg*q||pg));},lbl:"TOTAL GW (KG)"},
@@ -767,27 +747,33 @@ export default async function handler(req, res) {
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPL,curr)}
-          <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td></td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
-          </tbody></table>${sigBlock(cfg.seal_url)}`; html=wrap((ordNo||noPL)+"_PL",_packBodies.pl,ap,{docNo:_fsNoPL,date:date});
+          <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
+          </tbody></table>${sigBlock()}`; html=wrap((ordNo||noPL)+"_PL",_packBodies.pl,ap,{docNo:_fsNoPL,date:date});
 
       if(_PACK){
         // 不自己拼版式：复用现有单据模板，每张各放一个原样 .container（跟单张完全一致），
         // 用 page-break 分成 3 页。
         var _ct =function(b){return b?'<div class="container">'+b+'</div>':'';};
         var _ctp=function(b){return b?'<div class="container" style="page-break-before:always">'+b+'</div>':'';};
-        html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc((ordNo||id)+" 报关 PL·SC·IV")}</title>${CSS}</head><body>`
+        // 屏幕上：灰底 + 每张白纸带阴影间距 → 看着就是 3 张分开的纸；打印/存PDF = 3 页。
+        var _packCss='<style>@media screen{body{background:#e5e7eb;padding:24px 0;}.container{box-shadow:0 3px 16px rgba(0,0,0,.18);margin:0 auto 28px;padding:42px;}}@media print{.no-print{display:none!important;}}</style>';
+        var _btn='<div class="no-print" style="position:fixed;top:12px;right:12px;z-index:9999;display:flex;gap:8px">'
+          +'<button onclick="var u=location.href;location.href=u+(u.indexOf(\'?\')<0?\'?\':\'&\')+\'format=pdf\'" style="padding:9px 18px;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.3)">⬇ 下载 PDF（3页）</button>'
+          +'<button onclick="window.print()" style="padding:9px 18px;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;box-shadow:0 2px 8px rgba(0,0,0,.3)">🖨 打印</button>'
+          +'</div>';
+        html=`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc((ordNo||id)+" 报关 PL·SC·IV")}</title>${CSS}${_packCss}</head><body>${_btn}`
           +_ct(_packBodies.pl)+_ctp(_packBodies.sc)+_ctp(_packBodies.iv)
           +`</body></html>`;
       }
         _xlsCapture={sheetName:"Packing List",docNo:(ordNo||noPL)+"_PL",buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
-          headers:["NO.","Description & Size","Barcode","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],
+          headers:["NO.","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],
           colKeys:[{k:"name",fn:function(p){
             // PL Excel — same rule: always real product name (see colsPL above)
             var n = pick(p.productName, p.name, p.description, "-");
             var sz = p.size || p.spec || "";
             return sz ? n + " (" + sz + ")" : n;
-          }},{k:"bc",fn:function(p){return p.barcode||p.code||"";}},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}],
-          rows:prods,totals:["","TOTAL","",tqty,parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
+          }},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}],
+          rows:prods,totals:["","TOTAL",tqty,parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
       }
 
       if(type==="pi"){
@@ -817,7 +803,7 @@ export default async function handler(req, res) {
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
-          <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock(cfg.seal_url)}</div>`,ap,{docNo:_fsNoPI,date:date});
+          <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}</div>`,ap,{docNo:_fsNoPI,date:date});
         _xlsCapture={sheetName:"Proforma Invoice",docNo:(ordNo||noPI)+"_PI",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
