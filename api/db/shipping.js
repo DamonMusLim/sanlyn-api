@@ -18,7 +18,7 @@ function normCompany(s) {
 }
 
 const PATCH_ALLOW = [
-  "bl_no","vessel","voyage","pol","pod","etd","eta","cutoff_date",
+  "bl_no","vessel","voyage","pol","pod","etd","eta","cutoff_date","carrier_code",
   "flow_status","container_type","container_no","seal_no",
   "qty_total","total_cbm","total_cartons","gross_weight_kg",
   "freight_cost","freight_sale_usd","port_surcharge_total",
@@ -92,6 +92,7 @@ export default async function handler(req, res) {
       bl_no:              body.bl_no              || null,
       vessel:             body.vessel             || null,
       voyage:             body.voyage             || null,
+      carrier_code:       body.carrier_code       || null,
       pol:                body.pol                || null,
       pod:                body.pod                || null,
       etd:                body.etd                || null,

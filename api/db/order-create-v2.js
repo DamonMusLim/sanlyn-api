@@ -10,6 +10,52 @@ function generateOrderNo() {
   return prefix + "-" + String(Math.floor(Math.random() * 10000)).padStart(4, "0");
 }
 
+// Resolve a manufacturer's PO prefix (factories.po_prefix, e.g. 连云港中砂 -> "LL").
+// NOTE: factories.po_prefix is a SEPARATE coding system from products.factory_code
+// (连云港中砂 = ZS in products but LL in factories). Order numbers use the
+// factories.po_prefix. Matched by the manufacturer's full name. Returns "" if unknown.
+async function resolveFactoryPrefix(pool, factoryName) {
+  var name = String(factoryName || "").trim();
+  if (!name) return "";
+  try {
+    var r = await pool.query(
+      "SELECT po_prefix FROM factories WHERE name = $1 AND po_prefix IS NOT NULL AND po_prefix <> '' LIMIT 1",
+      [name]
+    );
+    return (r.rows[0] && r.rows[0].po_prefix) ? String(r.rows[0].po_prefix).trim() : "";
+  } catch (e) { return ""; }
+}
+
+// order_no convention = <company numeric suffix>-<factory po_prefix>-<next seq>,
+// e.g. HARMONIOUS(CN-00048) + 连云港中砂 -> "48-LL-1". Prefixing with the factory
+// keeps same-customer sequences from colliding across factories ("不会乱").
+// Falls back to <suffix>-<seq> if the factory is unknown, then the date-based
+// ORD- code if the company code has no numeric tail. The seq is the max trailing
+// number for the exact prefix, +1. $1 is a fixed literal prefix (LIKE) — the
+// numeric suffix is parseInt'd and po_prefix comes from our own factories table.
+async function nextOrderNo(pool, companyCode, factoryName) {
+  var m = String(companyCode || "").match(/(\d+)\s*$/);
+  if (!m) return generateOrderNo();
+  var custSuffix = String(parseInt(m[1], 10)); // CN-00048 -> "48"
+  var fpx = await resolveFactoryPrefix(pool, factoryName);
+  var prefix = fpx ? (custSuffix + "-" + fpx) : custSuffix; // "48-LL" or "48"
+  try {
+    var r = await pool.query(
+      "SELECT order_no FROM orders WHERE order_no LIKE $1",
+      [prefix + "-%"]
+    );
+    var max = 0;
+    var tail = new RegExp("^" + prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "-([0-9]+)$");
+    (r.rows || []).forEach(function(row) {
+      var mm = String(row.order_no || "").match(tail);
+      if (mm) { var n = parseInt(mm[1], 10); if (n > max) max = n; }
+    });
+    return prefix + "-" + (max + 1);
+  } catch (e) {
+    return generateOrderNo();
+  }
+}
+
 function generateContractNo() {
   var d = new Date();
   var y = d.getFullYear();
@@ -738,7 +784,10 @@ export default async function handler(req, res) {
     if (!companyNameCN && !companyNameEN) return res.status(400).json({ error: "客户名称必填" });
     if (!products || !products.length) return res.status(400).json({ error: "请添加产品" });
 
-    var orderNo = body.orderNo || generateOrderNo();
+    // Manufacturer name for the order_no factory prefix. Orders are split one-per
+    // factory upstream, so all line items share a manufacturer; use the first.
+    var _mfrName = (products && products[0] && (products[0].factory_name || products[0].factory)) || factory || "";
+    var orderNo = body.orderNo || await nextOrderNo(pool, companyCode, _mfrName);
     // DEC-02: backend FS-prefix is canonical contract_no.
     // Non-admin callers may supply a client-side SC-prefix ref (draft display ref) but it is
     // stored as raw._clientRef only. The official contract_no always comes from server generateContractNo().

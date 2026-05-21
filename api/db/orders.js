@@ -147,6 +147,10 @@ function checkComplianceException(row, requester) {
 // ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
 const PATCH_ALLOWED_COLS = [
   "order_no","company_code","company_name_en","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
+  // Buyer + commercial refs editable from the order detail Deal section (2026-05-22)
+  "customer","customer_po","payment_terms",
+  // Actual delivery date (expected = delivery_date; actual triggers收款+定船期) (2026-05-22)
+  "confirmed_delivery",
   // Profit structure (2026-05-09)
   "factory_amount","customer_amount","margin_amount","margin_pct",
   "quote_sent_at","customer_replied_at","negotiation_rounds",
@@ -425,7 +429,14 @@ export default async function handler(req, res) {
              lcs.loading->>'driver_name'    AS driver_name,
              lcs.loading->>'driver_phone'   AS driver_phone,
              lcs.loading->>'truck_plate'    AS truck_plate,
-             lcs.loading->>'planned_load_at' AS planned_load_at
+             lcs.loading->>'planned_load_at' AS planned_load_at,
+             sp.bl_no               AS sp_bl_no,
+             sp.etd                 AS sp_etd,
+             sp.eta                 AS sp_eta,
+             sp.pol                 AS sp_pol,
+             sp.pod                 AS sp_pod,
+             sp.current_status_cn   AS sp_status_cn,
+             sp.tracking_updated_at AS sp_tracking_updated_at
         FROM orders o
         LEFT JOIN LATERAL (
           SELECT loading FROM loading_collab_sheets
@@ -433,6 +444,19 @@ export default async function handler(req, res) {
            ORDER BY submitted_at DESC NULLS LAST
            LIMIT 1
         ) lcs ON TRUE
+        -- Live shipping dates from the linked shipping_plan (Portun keeps eta/etd
+        -- fresh via /api/vessel-callback). ONE row only (LIMIT 1) — never fan out
+        -- per container, which would both inflate rows and over-bill Portun.
+        LEFT JOIN LATERAL (
+          SELECT s.bl_no, s.etd, s.eta, s.pol, s.pod, s.current_status_cn, s.tracking_updated_at
+            FROM shipping_plans s
+           WHERE (NULLIF(o.bl_no,'') IS NOT NULL AND s.bl_no = o.bl_no)
+              OR (s.contract_no IS NOT NULL AND o.contract_no IS NOT NULL AND s.contract_no = o.contract_no)
+              OR (s.order_contract_nos IS NOT NULL AND o.contract_no IS NOT NULL AND s.order_contract_nos ILIKE '%' || o.contract_no || '%')
+              OR (s.order_contract_nos IS NOT NULL AND o.order_no IS NOT NULL AND s.order_contract_nos ILIKE '%' || o.order_no || '%')
+           ORDER BY s.tracking_updated_at DESC NULLS LAST, s.eta DESC NULLS LAST
+           LIMIT 1
+        ) sp ON TRUE
     `, params = [], conds = [];
 
     // is_mock column was removed from orders table — filter dropped (ORDER-DATA-DISPLAY-UNBLOCK-001)

@@ -1,3 +1,8 @@
+// DEPRECATION NOTE 2026-05-20:
+// `products` is the SOLE source of truth for product master data.
+// `nb_products` (NocoBase mirror) and `products_old_backup` are DEPRECATED — do not query/write them.
+// Logistics keys inside products.raw (raw.carton_qty / raw.unit_gw_kg / raw.carton_dims) are IGNORED;
+// use the authoritative top-level columns instead (carton_qty, net_weight, gross_weight, box_l/w/h).
 // SECURITY: role classification (admin / finance / logistics / sales / operator /
 // trader / factory / customer / portal / external) lives in api/lib/product-scope.js
 // — see INTERNAL_RESTRICTED_ROLES (includes "trader"), FACTORY_ROLES, CUSTOMER_ROLES.
@@ -14,7 +19,7 @@ import {
 } from "../lib/product-scope.js";
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, PUT, OPTIONS");
+  setCors(req, res, "GET, PUT, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // PUT = update single product
@@ -31,7 +36,8 @@ export default async function handler(req, res) {
         "cat1","cat2","cat3","cat1_cn","cat2_cn","cat3_cn",
         "trade_terms","declaration_name","declaration_elements","bl_description",
         "factory_name","declaration_amount","inner_qty","inner_unit","flavor","moq","spec","image_url",
-        "shelf_life_days"
+        "shelf_life_days",
+        "spec_source","spec_verified","spec_verified_at","spec_verified_by"
       ];
       for (var f of fields) {
         if (b[f] !== undefined) {
@@ -53,29 +59,54 @@ export default async function handler(req, res) {
     }
   }
 
-  // PATCH = update HS Code / declaration fields on a product by id
+  // PATCH = update product fields by id (admin/logistics only).
+  // Writes TOP-LEVEL columns (the editor sends the full snake_case field set).
+  // Was a 5-field camelCase→raw stub that silently dropped ~40 edited fields.
   if (req.method === "PATCH") {
     try {
       if (!req.user || !["admin", "logistics"].includes(req.user.role)) {
         return res.status(403).json({ error: "Forbidden: admin or logistics only" });
       }
       const pool = getPool();
-      const id = req.params?.id || req.query?.id || req.body?.id;
+      const b = req.body || {};
+      const id = req.params?.id || req.query?.id || b.id;
       if (!id) return res.status(400).json({ error: "id required" });
-      const { hsCode, declarationName, declarationElements, declarationPrice, blDescription } = req.body;
-      const patch = {};
-      if (hsCode             != null) patch.hsCode             = hsCode;
-      if (declarationName    != null) patch.declarationName    = declarationName;
-      if (declarationElements!= null) patch.declarationElements= declarationElements;
-      if (declarationPrice   != null) patch.declarationPrice   = declarationPrice;
-      if (blDescription      != null) patch.blDescription      = blDescription;
-      if (Object.keys(patch).length === 0) return res.status(400).json({ error: "no fields to patch" });
-      const r = await pool.query(
-        `UPDATE products SET raw = COALESCE(raw,'{}') || $1::jsonb, updated_at = NOW() WHERE id = $2 RETURNING id`,
-        [JSON.stringify(patch), id]
-      );
+
+      // Real, writable products columns only (verified vs schema 2026-05-22).
+      const PATCH_COLS = [
+        "product_name","product_name_cn","category","unit","brand","barcode","flavor",
+        "size","spec","shelf_life_days","cat1","cat2","cat3","hs_code","hs_source",
+        "origin_country","declaration_amount","declaration_name","declaration_elements",
+        "bl_description","vat_rate","rebate_rate","issuing_company","cbm","net_weight",
+        "gross_weight","carton_qty","box_l","box_w","box_h","product_dims","pallet_size",
+        "stock","bg_bx","factory_name","factory_code","factory_city","factory_price",
+        "price_usd","sale_price_cny","profit","colors","material","image_url","active",
+      ];
+      // Cost/pricing columns — admin only (logistics may edit logistics fields, not pricing).
+      const COST_COLS = new Set(["factory_price","profit","vat_rate","rebate_rate","sale_price_cny","price_usd"]);
+      // Legacy camelCase customs aliases (customs-draft flow) → snake_case columns.
+      const ALIASES = { hsCode:"hs_code", declarationName:"declaration_name",
+        declarationElements:"declaration_elements", declarationPrice:"declaration_amount",
+        blDescription:"bl_description" };
+      const merged = { ...b };
+      for (const [camel, snake] of Object.entries(ALIASES)) {
+        if (merged[camel] != null && merged[snake] == null) merged[snake] = merged[camel];
+      }
+
+      const isAdmin = req.user.role === "admin";
+      const sets = [], vals = [];
+      for (const col of PATCH_COLS) {
+        if (!(col in merged) || merged[col] === undefined) continue;
+        if (COST_COLS.has(col) && !isAdmin) continue; // non-admin can't write pricing
+        vals.push(merged[col] === "" ? null : merged[col]);
+        sets.push(col + " = $" + vals.length);
+      }
+      if (sets.length === 0) return res.status(400).json({ error: "no recognized fields to patch" });
+      vals.push(id);
+      const sql = "UPDATE products SET " + sets.join(", ") + ", updated_at = NOW() WHERE id = $" + vals.length + " RETURNING *";
+      const r = await pool.query(sql, vals);
       if (r.rowCount === 0) return res.status(404).json({ error: "product not found" });
-      return res.status(200).json({ success: true, id });
+      return res.status(200).json({ success: true, id, data: r.rows[0] });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
