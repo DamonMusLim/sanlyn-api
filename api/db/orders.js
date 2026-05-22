@@ -572,7 +572,9 @@ export default async function handler(req, res) {
              sp.pol                 AS sp_pol,
              sp.pod                 AS sp_pod,
              sp.current_status_cn   AS sp_status_cn,
-             sp.tracking_updated_at AS sp_tracking_updated_at
+             sp.tracking_updated_at AS sp_tracking_updated_at,
+             oe._events,
+             ot._tasks
         FROM orders o
         LEFT JOIN LATERAL (
           SELECT loading FROM loading_collab_sheets
@@ -593,6 +595,48 @@ export default async function handler(req, res) {
            ORDER BY s.tracking_updated_at DESC NULLS LAST, s.eta DESC NULLS LAST
            LIMIT 1
         ) sp ON TRUE
+        -- v3.2 §6.1 — current active milestone events (one row per stage_key per order)
+        -- Gracefully no-ops when order_events table does not yet exist.
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'id', e.id,
+              'stage_key', e.stage_key,
+              'event_group', e.event_group,
+              'sequence_no', e.sequence_no,
+              'occurred_at', e.occurred_at,
+              'actor_role', e.actor_role,
+              'actor_company_id', e.actor_company_id,
+              'source', e.source,
+              'visibility_scope', e.visibility_scope,
+              'confidence', e.confidence,
+              'meta', e.meta
+            ) ORDER BY e.occurred_at ASC
+          ) AS _events
+          FROM order_events e
+          WHERE e.order_id = o.id
+            AND e.is_current = TRUE
+            AND e.status = 'active'
+        ) oe ON TRUE
+        -- v3.2 §6.2 — open tasks assigned to any party on this order
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'id', t.id,
+              'task_key', t.task_key,
+              'assigned_role', t.assigned_role,
+              'assigned_company_id', t.assigned_company_id,
+              'assigned_user_id', t.assigned_user_id,
+              'status', t.status,
+              'priority', t.priority,
+              'due_at', t.due_at,
+              'meta', t.meta
+            ) ORDER BY t.due_at ASC NULLS LAST
+          ) AS _tasks
+          FROM order_tasks t
+          WHERE t.order_id = o.id
+            AND t.status NOT IN ('done', 'cancelled')
+        ) ot ON TRUE
     `, params = [], conds = [];
 
     // is_mock column was removed from orders table — filter dropped (ORDER-DATA-DISPLAY-UNBLOCK-001)
