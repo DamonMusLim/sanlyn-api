@@ -390,6 +390,132 @@ async function handleMarkReady(req, res) {
   return res.status(200).json({ success: true, actDelivery: now });
 }
 
+// ── Cancel Request: any authenticated user can request, but order must NOT be in production ──
+// Rule: once confirmed_delivery IS NOT NULL, production has started → reject cancel.
+async function handleCancelRequest(req, res) {
+  const id = parseInt(req.query.id || req.body?.id);
+  if (!id || isNaN(id)) return res.status(400).json({ error: "id required" });
+  const reason = (req.body?.reason || "").trim();
+  if (!reason) return res.status(400).json({ error: "reason required" });
+
+  const pool = getPool();
+  // Fetch current order state
+  const check = await pool.query(
+    `SELECT id, status, confirmed_delivery, raw->'cancellation_request' AS existing_req
+       FROM orders WHERE id = $1`, [id]
+  );
+  if (check.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  const o = check.rows[0];
+
+  // Guard: production started (confirmed_delivery set) = cannot cancel
+  if (o.confirmed_delivery) {
+    return res.status(409).json({
+      error: "Cannot cancel: production has already started (goods confirmed by factory).",
+      code: "PRODUCTION_STARTED"
+    });
+  }
+  // Guard: terminal states
+  if (["shipped","in_transit","customs","delivered","cancelled"].includes(o.status)) {
+    return res.status(409).json({ error: `Cannot cancel: order is already ${o.status}.` });
+  }
+  // Guard: duplicate pending request
+  if (o.existing_req && o.existing_req.status === "pending") {
+    return res.status(409).json({ error: "A cancellation request is already pending review." });
+  }
+
+  const requestPayload = {
+    status: "pending",
+    reason,
+    requested_at: new Date().toISOString(),
+    requested_by: req.user?.companyCode || req.user?.uid || "unknown",
+    requested_by_role: req.user?.role || "unknown",
+  };
+
+  await pool.query(
+    `UPDATE orders
+        SET raw = jsonb_set(COALESCE(raw,'{}'), '{cancellation_request}', $1::jsonb, true),
+            updated_at = NOW()
+      WHERE id = $2`,
+    [JSON.stringify(requestPayload), id]
+  );
+
+  // Log event
+  try {
+    await pool.query(
+      `INSERT INTO order_events
+         (order_id, stage_key, source, actor_role, actor_user_id, occurred_at, is_current, status, created_at)
+       VALUES ($1,'cancel_requested','manual',$2,$3,NOW(),false,'active',NOW())`,
+      [id, req.user?.role || "unknown", req.user?.uid || req.user?.sub || null]
+    );
+  } catch (_) {}
+
+  return res.status(200).json({ success: true, message: "Cancellation request submitted. Pending Sanlyn review." });
+}
+
+// ── Cancel Review: internal admin/ops only — approve or reject a pending cancel request ──
+async function handleCancelReview(req, res) {
+  const capabilities = Array.isArray(req.user?.access) ? req.user.access : [];
+  const isInternal = capabilities.includes("orders:admin:write") || req.user?.role === "admin";
+  if (!req.user || !isInternal) {
+    return res.status(403).json({ error: "Forbidden: requires admin role or orders:admin:write" });
+  }
+  const id = parseInt(req.query.id || req.body?.id);
+  if (!id || isNaN(id)) return res.status(400).json({ error: "id required" });
+  const action = req.body?.action; // "approve" | "reject"
+  if (!["approve","reject"].includes(action)) return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
+  const notes = (req.body?.notes || "").trim();
+
+  const pool = getPool();
+  const check = await pool.query(
+    `SELECT id, status, raw->'cancellation_request' AS req FROM orders WHERE id = $1`, [id]
+  );
+  if (check.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  const o = check.rows[0];
+  if (!o.req || o.req.status !== "pending") {
+    return res.status(409).json({ error: "No pending cancellation request found." });
+  }
+
+  const updatedReq = {
+    ...o.req,
+    status: action === "approve" ? "approved" : "rejected",
+    reviewed_by: req.user?.uid || req.user?.sub || "admin",
+    reviewed_by_role: req.user?.role,
+    reviewed_at: new Date().toISOString(),
+    notes: notes || undefined,
+  };
+
+  // If approved: also set orders.status = 'cancelled'
+  const statusUpdate = action === "approve"
+    ? `, status = 'cancelled'`
+    : "";
+
+  await pool.query(
+    `UPDATE orders
+        SET raw = jsonb_set(COALESCE(raw,'{}'), '{cancellation_request}', $1::jsonb, true),
+            updated_at = NOW()${statusUpdate}
+      WHERE id = $2`,
+    [JSON.stringify(updatedReq), id]
+  );
+
+  try {
+    await pool.query(
+      `INSERT INTO order_events
+         (order_id, stage_key, source, actor_role, actor_user_id, occurred_at, is_current, status, created_at)
+       VALUES ($1,$2,'manual',$3,$4,NOW(),false,'active',NOW())`,
+      [id, action === "approve" ? "cancel_approved" : "cancel_rejected",
+       req.user?.role || "admin", req.user?.uid || req.user?.sub || null]
+    );
+  } catch (_) {}
+
+  return res.status(200).json({
+    success: true,
+    message: action === "approve"
+      ? "Order cancelled successfully."
+      : "Cancellation request rejected. Order remains active.",
+    order_status: action === "approve" ? "cancelled" : o.status,
+  });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -402,6 +528,14 @@ export default async function handler(req, res) {
     const action = req.query.action;
     if (action === "mark_ready") {
       try { return await handleMarkReady(req, res); }
+      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
+    if (action === "cancel_request") {
+      try { return await handleCancelRequest(req, res); }
+      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
+    if (action === "cancel_review") {
+      try { return await handleCancelReview(req, res); }
       catch (err) { return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action) return res.status(400).json({ error: "unknown action: " + action });
