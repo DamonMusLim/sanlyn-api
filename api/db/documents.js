@@ -923,8 +923,6 @@ export default async function handler(req, res) {
               <div class="po-party-title">买方开票资料</div>
               <div class="po-row"><span class="po-lbl">公司名称：</span><span class="po-val">${esc(cfg.nameCN)}</span></div>
               <div class="po-row"><span class="po-lbl">税号：</span><span class="po-val">${esc(buyerTaxNo)}</span></div>
-              <div class="po-row"><span class="po-lbl">地址：</span><span class="po-val">${esc(cfg.address)}</span></div>
-              <div class="po-row"><span class="po-lbl">电话号码：</span><span class="po-val">${esc(cfg.tel||"")}</span></div>
               <div class="po-row"><span class="po-lbl">开户银行：</span><span class="po-val">${esc(buyerBankName)}</span></div>
               <div class="po-row"><span class="po-lbl">银行账户：</span><span class="po-val">${esc(buyerRmbAccount)}</span></div>
             </div>
