@@ -147,6 +147,8 @@ function checkComplianceException(row, requester) {
 // ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
 const PATCH_ALLOWED_COLS = [
   "order_no","company_code","company_name_en","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
+  // Order totals — auto-derived from raw.products on save (compute-at-write, then docs/list read the stored value) (2026-05-22)
+  "total_qty","net_weight","gross_weight","total_cbm",
   // Buyer + commercial refs editable from the order detail Deal section (2026-05-22)
   "customer","customer_po","payment_terms",
   // Actual delivery date (expected = delivery_date; actual triggers收款+定船期) (2026-05-22)
@@ -410,7 +412,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
-    let { customer, status, limit = 500, brands, factory, company_code, company_codes, sku } = req.query;
+    let { customer, status, limit = 500, brands, factory, company_code, company_codes, sku, order_no, contract_no } = req.query;
     // Tenant scoping: non-admin users can only see their own company's orders.
     // FAIL-CLOSED: if JWT has no role or no companyCodes, refuse the request —
     // forces re-login so the fresh JWT carries the correct scope. (Prior
@@ -464,6 +466,11 @@ export default async function handler(req, res) {
     if (customer) { params.push(`%${customer}%`); conds.push(`o.customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`o.status = $${params.length}`); }
     if (factory)  { params.push(factory);           conds.push(`o.raw->>'factory' = $${params.length}`); }
+    // Exact-match lookups by order_no / contract_no (2026-05-22) — previously
+    // these query params were silently ignored, so a "?order_no=X" call returned
+    // the whole list in non-stable order (caused a wrong-row data edit).
+    if (order_no)    { params.push(order_no);    conds.push(`o.order_no = $${params.length}`); }
+    if (contract_no) { params.push(contract_no); conds.push(`o.contract_no = $${params.length}`); }
     if (company_codes) {
       let codeList; try { codeList = JSON.parse(company_codes); } catch { codeList = company_codes.split(","); }
       if (codeList.length > 0) {
