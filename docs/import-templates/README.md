@@ -44,12 +44,12 @@
 
 ## orders_backfill_template.csv
 
-匹配键: **`id`** (orders 主键, DB 有唯一索引)。
-注: `order_no` 虽 96/96 值唯一, 但 DB **无唯一约束**, 脚本要求匹配键必须有真实唯一索引(防竞态/脏数据), 故用 `id`。`contract_no` 有 2 个重复值更不可作键。从数据管理台导出订单时带上 id 列。
+匹配键: **`order_no`** (D3 已拍板; migration 028 给 orders.order_no 加了 `UNIQUE + NOT NULL + 非空 CHECK`, 96/96 唯一 0 NULL 已验证, 可作真实唯一匹配键)。
+注: `contract_no` 有 2 个重复值不可作键; 仍可用 `--match-key id` 回退到主键。从数据管理台导出订单时带上 order_no 列。
 
 | 列 | 必填 | 格式 | 说明 |
 |---|---|---|---|
-| `id` | ★匹配键 | 整数 | orders 主键(唯一索引) |
+| `order_no` | ★匹配键 | 文本 | 内部公司订单号(028 加 UNIQUE, 唯一匹配键) |
 | `pi_no` | 可选 | 文本 | PI 编号(027新列, 与 contract_no 分离) |
 | `sc_no` | 可选 | 文本 | SC 编号(027新列) |
 
@@ -70,7 +70,8 @@
 | `mbl_no` | 可选 | 文本 | Master B/L 号(027新列) |
 | `vessel` | 可选 | 文本 | 船名(现 125/259) |
 | `etd` | 可选 | 日期 YYYY-MM-DD | 预计开船(现 171/259) |
-| `container_type` | 可选 | ISO 值 `20GP`/`40GP`/`40HQ`/`45HQ` | 用标准 ISO，勿用 `40hq`/`HC40` |
+| `container_type` | 可选 | ISO 值 `20GP`/`40GP`/`40HQ`/`45HQ` | 用标准 ISO，勿用 `40hq`/`HC40`；**勿在此列内嵌数量**(如 `40HQ×2`)，数量填 container_qty |
+| `container_qty` | 可选 | 整数 | 柜数(028新列)；多柜时 container_type 填单一 ISO 值、本列填数量。028 已规范化 4 行历史多柜值(122→40HQ/3, 162→40HQ/2, 164→20GP/3, 240→40HQ/2) |
 
 ---
 

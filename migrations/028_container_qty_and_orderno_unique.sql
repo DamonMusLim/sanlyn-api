@@ -56,23 +56,36 @@ BEGIN
   IF c > 0 THEN RAISE EXCEPTION 'ABORT: 出现未在映射表内的多柜 container_type % 行, 请先补映射', c; END IF;
 END $$;
 
--- D1.4 规范化: container_type → ISO, 数量 → container_qty (仅限 4 个已知值; 幂等: 处理后值不再匹配)
+-- D1.3b 一致性守卫 (Codex #1): 若多柜行 container_qty 已有值且 ≠ 映射数量 → 中止,
+--   避免"qty 非空导致 container_type 永远不被规范化"的隐性脏状态. 等于映射值则放行(幂等重跑安全).
+DO $$ DECLARE bad int;
+BEGIN
+  SELECT COUNT(*) INTO bad FROM public.shipping_plans
+   WHERE container_type IN ('HC40,HC40,HC40','40HQ×2','20GP×3','2x40HC')
+     AND container_qty IS NOT NULL
+     AND container_qty <> CASE container_type
+           WHEN 'HC40,HC40,HC40' THEN 3 WHEN '40HQ×2' THEN 2
+           WHEN '20GP×3' THEN 3 WHEN '2x40HC' THEN 2 END;
+  IF bad > 0 THEN RAISE EXCEPTION 'ABORT: % 行多柜值的 container_qty 已存在且与映射数量不符, 人工核对后再跑', bad; END IF;
+END $$;
+
+-- D1.4 规范化: container_type → ISO, 数量 → container_qty (仅限 4 个已知值)
+-- 幂等且无脏状态: 无论 qty 是否已填(经 D1.3b 守卫确保已填的=正确值), 都把 container_type 规范化为单一 ISO.
 -- 执行前后请跑 row count 核对 (见文件末 VERIFICATION)
 UPDATE public.shipping_plans
-   SET container_type = CASE container_type
-         WHEN 'HC40,HC40,HC40' THEN '40HQ'
-         WHEN '40HQ×2'         THEN '40HQ'
-         WHEN '20GP×3'         THEN '20GP'
-         WHEN '2x40HC'         THEN '40HQ'
-       END,
-       container_qty = CASE container_type
+   SET container_qty = COALESCE(container_qty, CASE container_type
          WHEN 'HC40,HC40,HC40' THEN 3
          WHEN '40HQ×2'         THEN 2
          WHEN '20GP×3'         THEN 3
          WHEN '2x40HC'         THEN 2
+       END),
+       container_type = CASE container_type
+         WHEN 'HC40,HC40,HC40' THEN '40HQ'
+         WHEN '40HQ×2'         THEN '40HQ'
+         WHEN '20GP×3'         THEN '20GP'
+         WHEN '2x40HC'         THEN '40HQ'
        END
- WHERE container_type IN ('HC40,HC40,HC40','40HQ×2','20GP×3','2x40HC')
-   AND container_qty IS NULL;   -- 仅填空, 不覆盖已有 container_qty (防数据丢失)
+ WHERE container_type IN ('HC40,HC40,HC40','40HQ×2','20GP×3','2x40HC');
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- D3: orders.order_no 加 UNIQUE + NOT NULL + 非空 CHECK (确保永远可作导入匹配键)
@@ -84,7 +97,7 @@ LOCK TABLE public.orders IN SHARE ROW EXCLUSIVE MODE;
 -- D3.1 预检: order_no 不得有重复 / NULL / 空串 (否则加约束会失败, 提前清晰中止)
 DO $$ DECLARE dup int; nul int;
 BEGIN
-  SELECT COUNT(*) INTO nul FROM public.orders WHERE order_no IS NULL OR order_no = '';
+  SELECT COUNT(*) INTO nul FROM public.orders WHERE order_no IS NULL OR btrim(order_no) = '';
   IF nul > 0 THEN RAISE EXCEPTION 'ABORT: orders.order_no 有 % 行 NULL/空串, 无法加 UNIQUE', nul; END IF;
   SELECT COUNT(*) INTO dup FROM (SELECT order_no FROM public.orders GROUP BY order_no HAVING COUNT(*)>1) d;
   IF dup > 0 THEN RAISE EXCEPTION 'ABORT: orders.order_no 有 % 个重复值, 无法加 UNIQUE', dup; END IF;
