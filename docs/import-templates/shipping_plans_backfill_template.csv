@@ -1,2 +1,2 @@
-id,doc_cutoff,cargo_cutoff,booking_no,so_no,hbl_no,mbl_no,vessel,etd,container_type
-__EXAMPLE_DELETE_THIS_ROW__,2026-05-16,2026-05-17,2326621450,SO123456,SHBB2026051801,OOLU2697451100,OOCL UTAH,2026-05-18,40HQ
+id,doc_cutoff,cargo_cutoff,booking_no,so_no,hbl_no,mbl_no,vessel,etd,container_type,container_qty
+__EXAMPLE_DELETE_THIS_ROW__,2026-05-16,2026-05-17,2326621450,SO123456,SHBB2026051801,OOLU2697451100,OOCL UTAH,2026-05-18,40HQ,2

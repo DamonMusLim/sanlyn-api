@@ -31,11 +31,14 @@ const TABLES = {
     uniqueKeys: ['id'], multiKeys: ['sku'],
     columns: ['factory_code','net_weight','gross_weight','cbm','carton_qty','box_l','box_w','box_h',
               'brand_authorization_no','factory_registration_no','shelf_life_days'],
+    // D2: 用 sku(--allow-multi)批量填时, 仅允许"产品级"字段(各变体相同); 变体级字段(净重/毛重/cbm/箱件数)严禁
+    multiKeyColumns: ['factory_code','brand_authorization_no','factory_registration_no'],
     defaultKey: 'id',
   },
-  orders:         { uniqueKeys: ['id'], multiKeys: [], columns: ['pi_no','sc_no'], defaultKey: 'id' },
+  // D3: order_no 已加 UNIQUE+NOT NULL+非空 CHECK (migration 028), 可作匹配键
+  orders:         { uniqueKeys: ['order_no','id'], multiKeys: [], columns: ['pi_no','sc_no'], defaultKey: 'order_no' },
   shipping_plans: { uniqueKeys: ['id','_id'], multiKeys: [], columns:
-              ['doc_cutoff','cargo_cutoff','booking_no','so_no','hbl_no','mbl_no','vessel','etd','container_type'],
+              ['doc_cutoff','cargo_cutoff','booking_no','so_no','hbl_no','mbl_no','vessel','etd','container_type','container_qty'],
               defaultKey: 'id' },
 };
 const EXAMPLE_KEY = '__EXAMPLE_DELETE_THIS_ROW__';
@@ -106,6 +109,12 @@ const dataCols = header.slice(1);
 const bad = dataCols.filter(c => !cfg.columns.includes(c));
 if (bad.length) die(`CSV 含不允许的列: ${bad.join(', ')}\n  ${TABLE} 仅允许: ${cfg.columns.join(', ')}`);
 if (!dataCols.length) die('CSV 除匹配键外无数据列');
+// D2: 用非唯一键(sku)批量时, 仅允许"产品级"字段; 变体级字段必须按 id
+if (isMulti) {
+  const allowedM = cfg.multiKeyColumns || [];
+  const notSafe = dataCols.filter(c => !allowedM.includes(c));
+  if (notSafe.length) die(`用 "${matchKey}"(多行键)只能填产品级字段 [${allowedM.join(', ')}]\n  以下字段因变体间不同, 必须按 id 导入: ${notSafe.join(', ')}`);
+}
 dataRows.forEach((r, i) => { if (r.length !== header.length) die(`第 ${i+2} 行列数 ${r.length} ≠ 表头 ${header.length}`); });
 
 const csvRows = []; const seen = new Map();

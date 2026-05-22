@@ -30,7 +30,15 @@
 | `factory_registration_no` | 可选 | 文本 | 工厂出口备案号(027新列, 宠物食品合规) |
 | `shelf_life_days` | 可选 | 整数(天) | 保质期(1条缺) |
 
-> ⚠️ 决策点: 若希望用 sku 批量填**产品级**字段(factory_code 等, 各变体相同)，需 Damon 确认后用 `--match-key sku --allow-multi`(会把同 sku 所有变体行一起填)。**变体级**字段(net_weight/gross_weight/cbm)严禁用 sku 键。
+### D2 已拍板: products 两条通道
+
+| 字段 | 通道 | 模板 | 命令 |
+|---|---|---|---|
+| `net_weight` / `gross_weight` / `cbm` / `carton_qty` (变体级, 各尺寸不同) | **必须按 id** | `products_backfill_template.csv` | `--table products` (默认 id) |
+| `factory_code` / `brand_authorization_no` / `factory_registration_no` (产品级, 各变体相同) | **可按 sku 批量** | `products_backfill_BY_SKU_template.csv` | `--table products --match-key sku --allow-multi` |
+| box_l/box_w/box_h / shelf_life_days | 按 id | 主模板 | `--table products` |
+
+> sku 通道脚本内置硬限制: 用 `--match-key sku` 时, CSV 只允许出现 factory_code/brand_authorization_no/factory_registration_no 三列; 出现变体级字段直接报错(防同 sku 多变体被填成同一净重)。
 
 ---
 
