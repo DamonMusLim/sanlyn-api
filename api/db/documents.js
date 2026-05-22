@@ -48,6 +48,7 @@ async function loadSellerCfg(pool, raw, qco, opts) {
       nameEN: s.name_en||"", nameCN: s.name_cn||"",
       address: s.address||"", tel: s.tel||"", email: s.email||"",
       taxNo: s.tax_no||"",   // 卖方统一社会信用代码（采购合同买方税号）
+      termsPO: Array.isArray(s.terms_po) ? s.terms_po : (s.terms_po||[]),
       bank: {
         beneficiary: s.bank_beneficiary||s.name_en||"",
         bankName: s.bank_name||"", swift: s.bank_swift||"",
@@ -945,18 +946,7 @@ export default async function handler(req, res) {
           </tbody></table>
           <div style="margin-top:12px;font-size:11px;line-height:1.9;color:#333;border:1px solid #ddd;padding:10px 14px;border-radius:4px;">
             <strong>备注：</strong><br>
-            <strong>一、交付与物流（Delivery &amp; Logistics）</strong><br>
-            交货方式：乙方负责将货物运至甲方指定仓库，运费及运输风险由乙方承担。<br>
-            特殊定义：若订单注明"工厂自提"，乙方须将货物安全整装截至甲方安排的车辆。<br><br>
-            <strong>二、质量与验收（Quality Control）</strong><br>
-            标准：以双方封样样品为准。收货后 7 个工作日内完成抽检（抽检比例 ≥ 5%）。<br>
-            不良处理：不良率 ≤ 1%，双方友好协商处理；不良率 &gt; 1%，乙方按实际损失予以补偿或补货，具体方案由双方书面确认。<br><br>
-            <strong>三、付款条款（Payment Terms）</strong><br>
-            预付款：合同签订后 3 个工作日内，支付 30% 定金。<br>
-            尾款：货物验收合格后，乙方开具增值税专用发票，甲方于 5 个工作日内支付 70% 尾款。<br><br>
-            <strong>四、合同效力（Validity）</strong><br>
-            本合同自双方签字盖章之日起生效，一式两份，甲乙双方各执一份，具有同等法律效力。如发生争议，双方应首先友好协商解决。<br>
-            本合同由 Sanlyn OS 供应链系统自动生成，作为双方商业确认之有效凭证。
+            ${(cfg.termsPO||[]).map(function(t){return`<strong>${esc(t.heading||"")}</strong><br>${esc(t.body||"")}<br><br>`;}).join("")}
           </div>
           <div class="signature-grid" style="margin-top:14px;"><div class="sig-box"><span>买方代表：</span><span style="font-weight:normal;font-size:9px">（签字 / 盖章）</span></div><div class="sig-box"><span>卖方代表：</span><span style="font-weight:normal;font-size:9px">（签字 / 盖章）</span></div></div>
         `,ap);
