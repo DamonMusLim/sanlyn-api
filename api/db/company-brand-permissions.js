@@ -60,18 +60,29 @@ export default async function handler(req, res) {
           note = "", created_by = "admin",
         } = item;
         if (!company_code || !brand) { results.push({ error: "company_code and brand required", item }); continue; }
-        const r = await pool.query(
-          `INSERT INTO company_brand_permissions
-             (tenant_code, company_code, brand, visibility, source, note,
-              is_exclusive, nda_note, created_by, updated_by, updated_at)
-           VALUES ('SANLYN', $1, $2, $3, 'manual', $4, $5, $6, $7, $7, NOW())
-           ON CONFLICT (tenant_code, company_code, brand)
-           DO UPDATE SET visibility=$3, note=$4, is_exclusive=$5, nda_note=$6,
-                         updated_by=$7, updated_at=NOW()
-           RETURNING *`,
+        // Explicit UPDATE-then-INSERT avoids requiring a UNIQUE constraint on
+        // (tenant_code, company_code, brand) — which may not exist on all envs.
+        const upd = await pool.query(
+          `UPDATE company_brand_permissions
+              SET visibility=$3, note=$4, is_exclusive=$5, nda_note=$6,
+                  updated_by=$7, updated_at=NOW()
+            WHERE tenant_code='SANLYN' AND company_code=$1 AND brand=$2
+            RETURNING id`,
           [company_code, brand, visibility, note, is_exclusive, nda_note, created_by]
         );
-        results.push(r.rows[0]);
+        if (upd.rowCount > 0) {
+          results.push({ id: upd.rows[0].id, company_code, brand, updated: true });
+        } else {
+          const ins = await pool.query(
+            `INSERT INTO company_brand_permissions
+               (tenant_code, company_code, brand, visibility, source, note,
+                is_exclusive, nda_note, created_by, updated_by, updated_at)
+             VALUES ('SANLYN', $1, $2, $3, 'manual', $4, $5, $6, $7, $7, NOW())
+             RETURNING *`,
+            [company_code, brand, visibility, note, is_exclusive, nda_note, created_by]
+          );
+          results.push(ins.rows[0]);
+        }
       }
       return res.status(200).json({ success: true, data: results });
     } catch (e) {
