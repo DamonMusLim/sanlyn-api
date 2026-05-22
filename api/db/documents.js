@@ -261,7 +261,7 @@ async function enrichProdsFromMaster(pool, prods) {
   try {
     if (skus.length) {
       var r = await pool.query(
-        "SELECT sku, hs_code, declaration_name, declaration_elements," +
+        "SELECT sku, product_name, hs_code, declaration_name, declaration_elements," +
         " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit," +
         " barcode, factory_name" +
         " FROM products WHERE sku = ANY($1::text[]) AND active = true",
@@ -319,6 +319,7 @@ async function enrichProdsFromMaster(pool, prods) {
       inner_unit:          _f(p.inner_unit,                             m.inner_unit),
       barcode:             _f(p.barcode || p.code,                      m.barcode),
       factory_name:        _f(p.factory_name,                           m.factory_name),
+      productName:         _f(p.productName || p.name,                  m.product_name),
     });
   });
 }
@@ -542,7 +543,7 @@ export default async function handler(req, res) {
       //   • 产品就是 product_name（PL 客户版/IV/SC/PI 客户版 用）
       //   • 报关合并 = declaration_name（"宠物食品"/"宠物玩具"等）+ hs_code 去重
       // ────────────────────────────────────────────────────────────────────
-      if (audience === "customs") {
+      if (audience === "customs" && type !== "po") {
         // Per damon 2026-05-18: customs doesn't split by sub-contract — one
         // consolidated table per BL. Strip _groupKey so sibling orders merge.
         prods = prods.map(function(p){ return Object.assign({}, p, { _groupKey: "" }); });
@@ -934,13 +935,14 @@ export default async function handler(req, res) {
             <span>合同号：<strong>${esc(cno)}</strong></span>
             <span>交货日期：<strong>${esc(date)}</strong></span>
           </div>
-          <table><thead><tr><th style="width:36px">行号</th><th>品名</th><th style="width:70px;text-align:center">数量</th><th style="width:90px;text-align:right">单价</th><th style="width:100px;text-align:right">金额</th><th style="width:90px;text-align:center">SKU</th></tr></thead>
+          <table><thead><tr><th style="width:36px">行号</th><th>品名 / Item Description</th><th style="width:70px;text-align:center">数量 / Qty</th><th style="width:90px;text-align:right">单价 / Unit Price</th><th style="width:100px;text-align:right">金额 / Amount</th><th style="width:110px;text-align:center">条形码 / Barcode</th></tr></thead>
           <tbody>
             ${prods.length===0?`<tr><td>01</td><td colspan="5" style="color:#999;font-style:italic">— 产品明细将自动填入 —</td></tr>`:
               prods.map(function(p,i){
                 var fp=pick(p.factoryPrice,p.unitPrice,p.price);
                 var sub=Number(p.subtotalFactory||p.subtotal||0);if(!sub&&p.qty&&fp)sub=Number(p.qty)*Number(fp);
-                return`<tr><td>${String(i+1).padStart(2,"0")}</td><td>${esc(pick(p.productName,p.name,"-"))}</td><td style="text-align:center">${esc(String(p.qty||"-"))}</td><td class="text-right">${fmtM(fp)}</td><td class="text-right">${fmtM(sub)}</td><td style="text-align:center;font-size:10px;color:#666">${esc(p.sku||p.barcode||p.code||"")}</td></tr>`;
+                var fullName=pick(p.productName,p.name,"-");
+                return`<tr><td>${String(i+1).padStart(2,"0")}</td><td>${esc(fullName)}</td><td style="text-align:center">${esc(String(p.qty||"-"))}</td><td class="text-right">${fmtM(fp)}</td><td class="text-right">${fmtM(sub)}</td><td style="text-align:center;font-size:10px;color:#444;letter-spacing:0.5px">${esc(p.barcode||"")}</td></tr>`;
               }).join("")}
             <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">合计</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right" style="font-size:14px">${fmtM(totPO)}</td><td></td></tr>
           </tbody></table>
