@@ -8,12 +8,36 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
+// Lazy column migration — adds columns that may be missing on older installs.
+let _cbpInited = false;
+async function ensureCbpCols(pool) {
+  if (_cbpInited) return;
+  const cols = [
+    ["is_exclusive", "BOOLEAN DEFAULT false"],
+    ["nda_note",     "TEXT"],
+    ["note",         "TEXT DEFAULT ''"],
+    ["updated_by",   "VARCHAR(64) DEFAULT 'admin'"],
+    ["updated_at",   "TIMESTAMPTZ DEFAULT NOW()"],
+    ["source",       "VARCHAR(32) DEFAULT 'manual'"],
+    ["created_by",   "VARCHAR(64) DEFAULT 'admin'"],
+  ];
+  for (const [col, def] of cols) {
+    try {
+      await pool.query(`ALTER TABLE company_brand_permissions ADD COLUMN IF NOT EXISTS ${col} ${def}`);
+    } catch (_) { /* ignore */ }
+  }
+  _cbpInited = true;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return;
 
   const isAdmin = req.user && req.user.role === "admin";
+
+  const pool = getPool();
+  await ensureCbpCols(pool);
 
   // ── GET ──────────────────────────────────────────────────────────────────
   if (req.method === "GET") {
@@ -27,7 +51,6 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: "Out of scope" });
     }
     try {
-      const pool = getPool();
       const r = await pool.query(
         `SELECT brand, visibility, source, note,
                 COALESCE(is_exclusive, false) AS is_exclusive, nda_note
@@ -51,7 +74,6 @@ export default async function handler(req, res) {
     const rows = Array.isArray(body) ? body : [body];
     if (!rows.length) return res.status(400).json({ error: "Empty payload" });
     try {
-      const pool = getPool();
       const results = [];
       for (const item of rows) {
         const {
