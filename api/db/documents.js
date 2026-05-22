@@ -889,51 +889,76 @@ export default async function handler(req, res) {
           }
         }catch(e){}
         var totPO=prods.reduce(function(s,p){var fp=pick(p.factoryPrice,p.unitPrice,p.price);var sub=Number(p.subtotalFactory||p.subtotal||0);if(!sub&&p.qty&&fp)sub=Number(p.qty)*Number(fp);return s+sub;},0)||Number(o.total_amount)||0;
+        // buyer RMB account: prefer seller_profiles.rmb_account
+        var buyerRmbAccount=pick(cfg.bank.rmbAccount,"");
+        var buyerBankName=pick(cfg.bank.bankName,"");
+        var vendorPhone=raw.factoryPhone||"";
         html=wrap("Purchase Order — "+noPO,`
-          ${docHdr(cfg,"采购合同","PURCHASE ORDER")}
-          <div class="meta-grid">
-            <div>
-              <div class="section-label">买方信息 BUYER / BILL TO</div>
-              <p style="font-size:13px;font-weight:bold;margin:0">${esc(cfg.nameCN)}</p>
-              <p style="margin:2px 0;color:#666;font-size:10px">${esc(cfg.nameEN)}</p>
-              ${buyerTaxNo?`<p style="margin:2px 0">税号: ${esc(buyerTaxNo)}</p>`:""}
-              <p style="margin:2px 0">地址: ${esc(cfg.address)}</p>
-              <p style="margin:2px 0">开户银行: ${esc(cfg.buyerBank||cfg.bank.bankName)}</p>
-              <p style="margin:2px 0">银行账户: ${esc(cfg.bank.rmbAccount)}</p>
+          <style>
+            .po-header{text-align:center;font-size:20px;font-weight:bold;letter-spacing:4px;padding:10px 0 14px;border-bottom:2px solid #222;}
+            .po-parties{display:grid;grid-template-columns:1fr 1fr;border:1px solid #aaa;margin-top:0;}
+            .po-party{padding:10px 14px;}
+            .po-party+.po-party{border-left:1px solid #aaa;}
+            .po-party-title{font-size:11px;font-weight:800;background:#f0f0f0;margin:-10px -14px 8px;padding:5px 14px;border-bottom:1px solid #ddd;}
+            .po-row{display:flex;font-size:11px;line-height:1.7;}
+            .po-lbl{color:#555;width:72px;flex-shrink:0;}
+            .po-val{font-weight:600;color:#111;}
+            .po-ref{display:flex;gap:32px;padding:7px 14px;background:#fafafa;border:1px solid #aaa;border-top:none;font-size:11px;}
+            .po-ref span{color:#333;}
+            .po-ref strong{color:#111;}
+          </style>
+          <div class="po-header">采购合同</div>
+          <div class="po-parties">
+            <div class="po-party">
+              <div class="po-party-title">买方开票资料</div>
+              <div class="po-row"><span class="po-lbl">公司名称：</span><span class="po-val">${esc(cfg.nameCN)}</span></div>
+              <div class="po-row"><span class="po-lbl">税号：</span><span class="po-val">${esc(buyerTaxNo)}</span></div>
+              <div class="po-row"><span class="po-lbl">地址：</span><span class="po-val">${esc(cfg.address)}</span></div>
+              <div class="po-row"><span class="po-lbl">电话号码：</span><span class="po-val">${esc(cfg.tel||"")}</span></div>
+              <div class="po-row"><span class="po-lbl">开户银行：</span><span class="po-val">${esc(buyerBankName)}</span></div>
+              <div class="po-row"><span class="po-lbl">银行账户：</span><span class="po-val">${esc(buyerRmbAccount)}</span></div>
             </div>
-            <div>
-              <div class="section-label">供应商信息 VENDOR / SHIP FROM</div>
-              <p style="font-size:13px;font-weight:bold;margin:0">${esc(factory)}</p>
-              ${vendorTaxNo?`<p style="margin:2px 0">税号: ${esc(vendorTaxNo)}</p>`:""}
-              ${(vendorAddress||raw.factoryAddress)?`<p style="margin:2px 0">地址: ${esc(vendorAddress||raw.factoryAddress)}</p>`:""}
-              ${(vendorBank||raw.factoryBank)?`<p style="margin:2px 0">开户银行: ${esc(vendorBank||raw.factoryBank)}</p>`:""}
-              ${(vendorAccount||raw.factoryAccount)?`<p style="margin:2px 0">银行账户: ${esc(vendorAccount||raw.factoryAccount)}</p>`:""}
+            <div class="po-party">
+              <div class="po-party-title">卖方账户信息</div>
+              <div class="po-row"><span class="po-lbl">公司名称：</span><span class="po-val">${esc(factory)}</span></div>
+              <div class="po-row"><span class="po-lbl">税号：</span><span class="po-val">${esc(vendorTaxNo)}</span></div>
+              <div class="po-row"><span class="po-lbl">地址：</span><span class="po-val">${esc(vendorAddress||raw.factoryAddress||"")}</span></div>
+              <div class="po-row"><span class="po-lbl">电话号码：</span><span class="po-val">${esc(vendorPhone)}</span></div>
+              <div class="po-row"><span class="po-lbl">开户银行：</span><span class="po-val">${esc(vendorBank||raw.factoryBank||"")}</span></div>
+              <div class="po-row"><span class="po-lbl">银行账户：</span><span class="po-val">${esc(vendorAccount||raw.factoryAccount||"")}</span></div>
             </div>
           </div>
-          <div class="trade-terms-bar">
-            <span>Order No.: ${esc(ordNo)}</span>
-            <span>Contract No.: ${esc(cno)}</span>
-            <span>Delivery: ${esc(date)}</span>
+          <div class="po-ref">
+            <span>Order: <strong>${esc(ordNo)}</strong></span>
+            <span>合同号：<strong>${esc(cno)}</strong></span>
+            <span>交货日期：<strong>${esc(date)}</strong></span>
           </div>
-          <table><thead><tr><th style="width:36px">NO.</th><th>品名 Item Description</th><th style="width:70px;text-align:center">数量 Qty</th><th style="width:90px;text-align:right">单价 Unit Price</th><th style="width:100px;text-align:right">金额 Amount</th><th style="width:90px;text-align:center">条形码 Code</th></tr></thead>
+          <table><thead><tr><th style="width:36px">行号</th><th>品名</th><th style="width:70px;text-align:center">数量</th><th style="width:90px;text-align:right">单价</th><th style="width:100px;text-align:right">金额</th><th style="width:90px;text-align:center">SKU</th></tr></thead>
           <tbody>
             ${prods.length===0?`<tr><td>01</td><td colspan="5" style="color:#999;font-style:italic">— 产品明细将自动填入 —</td></tr>`:
               prods.map(function(p,i){
                 var fp=pick(p.factoryPrice,p.unitPrice,p.price);
                 var sub=Number(p.subtotalFactory||p.subtotal||0);if(!sub&&p.qty&&fp)sub=Number(p.qty)*Number(fp);
-                return`<tr><td>${String(i+1).padStart(2,"0")}</td><td>${esc(pick(p.productName,p.name,"-"))}</td><td style="text-align:center">${esc(String(p.qty||"-"))}</td><td class="text-right">${fmtM(fp)}</td><td class="text-right">${fmtM(sub)}</td><td style="text-align:center;font-size:10px;color:#666">${esc(p.barcode||p.code||"")}</td></tr>`;
+                return`<tr><td>${String(i+1).padStart(2,"0")}</td><td>${esc(pick(p.productName,p.name,"-"))}</td><td style="text-align:center">${esc(String(p.qty||"-"))}</td><td class="text-right">${fmtM(fp)}</td><td class="text-right">${fmtM(sub)}</td><td style="text-align:center;font-size:10px;color:#666">${esc(p.sku||p.barcode||p.code||"")}</td></tr>`;
               }).join("")}
-            <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">合计 Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right" style="font-size:14px">${fmtM(totPO)}</td><td></td></tr>
+            <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">合计</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right" style="font-size:14px">${fmtM(totPO)}</td><td></td></tr>
           </tbody></table>
-          <div class="details-grid">
-            <div class="details-box"><h4>备注及条款 REMARKS &amp; TERMS</h4>
-              1. 质量 Quality: 供方须保证产品符合约定规格。终端客户投诉有据可查时，供方承担退款或补货责任。(Supplier guarantees specs; liable for refund/replacement on verified defects.)<br>
-              2. 交期 Delivery: 如有延误，须提前5个工作日书面通知。逾期导致的亏舱费、改船费、客户索赔由供方承担。(5 working days written notice required for delays. Supplier liable for resulting losses.)<br>
-              3. 系统声明: 本合同由 Sanlyn OS 供应链引擎自动生成，作为双方商业确认之有效凭证。
-            </div>
-            ${bankCard(cfg.bank,curr)}
+          <div style="margin-top:12px;font-size:11px;line-height:1.9;color:#333;border:1px solid #ddd;padding:10px 14px;border-radius:4px;">
+            <strong>备注：</strong><br>
+            <strong>一、交付与物流（Delivery &amp; Logistics）</strong><br>
+            交货方式：乙方负责将货物运至甲方指定仓库，运费及运输风险由乙方承担。<br>
+            特殊定义：若订单注明"工厂自提"，乙方须将货物安全整装截至甲方安排的车辆。<br><br>
+            <strong>二、质量与验收（Quality Control）</strong><br>
+            标准：以双方封样样品为准。收货后 7 个工作日内完成抽检（抽检比例 ≥ 5%）。<br>
+            不良处理：不良率 ≤ 1%，双方友好协商处理；不良率 &gt; 1%，乙方按实际损失予以补偿或补货，具体方案由双方书面确认。<br><br>
+            <strong>三、付款条款（Payment Terms）</strong><br>
+            预付款：合同签订后 3 个工作日内，支付 30% 定金。<br>
+            尾款：货物验收合格后，乙方开具增值税专用发票，甲方于 5 个工作日内支付 70% 尾款。<br><br>
+            <strong>四、合同效力（Validity）</strong><br>
+            本合同自双方签字盖章之日起生效，一式两份，甲乙双方各执一份，具有同等法律效力。如发生争议，双方应首先友好协商解决。<br>
+            本合同由 Sanlyn OS 供应链系统自动生成，作为双方商业确认之有效凭证。
           </div>
-          <div class="signature-grid"><div class="sig-box"><span>BUYER REPRESENTATIVE</span><span style="font-weight:normal;font-size:9px">(买方代表签署 / 盖章)</span></div><div class="sig-box"><span>SELLER REPRESENTATIVE</span><span style="font-weight:normal;font-size:9px">(卖方代表签署 / 盖章)</span></div></div>
+          <div class="signature-grid" style="margin-top:14px;"><div class="sig-box"><span>买方代表：</span><span style="font-weight:normal;font-size:9px">（签字 / 盖章）</span></div><div class="sig-box"><span>卖方代表：</span><span style="font-weight:normal;font-size:9px">（签字 / 盖章）</span></div></div>
         `,ap);
       }
     }
