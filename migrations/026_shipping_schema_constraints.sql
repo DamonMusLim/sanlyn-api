@@ -1,13 +1,24 @@
 -- ══════════════════════════════════════════════════════════════════════════════
 -- Migration 026: shipping schema 约束补全
 -- 前置条件: migration 025 已跑（order_events/order_tasks 已建，8 项 ALTER 已做）
+--   验证: SELECT column_name FROM information_schema.columns
+--         WHERE table_name='shipping_plans' AND column_name='local_charges_code';
+--   必须返回 1 行，否则先跑 025 再跑本脚本。
 -- 安全: 全部幂等 (DO $$ + IF NOT EXISTS / IF EXISTS)，无 DROP
--- 生产前必须先跑 Codex review
+-- Codex review: PASS 2026-05-23 (agent a79aceabcc37ea0a1)
 -- Date: 2026-05-23
 -- ══════════════════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- STEP 0: 补 PRIMARY KEY（freight_rates / shipping_plans / local_charges 当前无 PK 声明）
+-- COLUMN NAME DISAMBIGUATION (Codex MEDIUM #1 response):
+--   freight_rates.local_charge_code   (无 s) — 预存列，FK → local_charges，一条运价绑一条港杂费
+--   shipping_plans.local_charges_code (有 s) — 025 新增列，FK → local_charges，一条计划绑一条港杂费
+--   两者是不同表上功能类似的不同列，命名差异属历史遗留，非 bug。
+--   本脚本 STEP 3 处理的是 shipping_plans 端的 FK。
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 0: 补 PRIMARY KEY（freight_rates 当前无 PK 声明；shipping_plans 已有 pkey）
 -- 这是 FK 的前提。用 DO 块做幂等保护。
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -30,12 +41,16 @@ DO $$ BEGIN
 END $$;
 
 -- local_charges.charge_code 唯一约束 (FK 前置)
--- 注意: charge_code 当前 nullable; 先清理 NULL 再加约束
--- 若存在 NULL charge_code 行，下面的 UNIQUE 会失败，需人工先清理
+-- 检查: 按列名查现有 UNIQUE 约束（兼容已存在 local_charges_charge_code_unique 的情况）
+-- 预检: 生产已确认 0 条 NULL charge_code（2026-05-23 MCP 验证）
 DO $$ BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'local_charges' AND constraint_name = 'uq_local_charges_code'
+    SELECT 1 FROM information_schema.table_constraints tc
+    JOIN information_schema.constraint_column_usage ccu
+      ON tc.constraint_name = ccu.constraint_name
+    WHERE tc.table_name = 'local_charges'
+      AND tc.constraint_type = 'UNIQUE'
+      AND ccu.column_name = 'charge_code'
   ) THEN
     ALTER TABLE local_charges ADD CONSTRAINT uq_local_charges_code UNIQUE (charge_code);
   END IF;
