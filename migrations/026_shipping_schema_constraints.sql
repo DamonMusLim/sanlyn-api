@@ -31,12 +31,17 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- shipping_plans: PK 在 _id (varchar)，id (integer) 是次级整型标识符，需加 UNIQUE 才能被 FK 引用
+-- orders.shipping_plan_id (integer) → shipping_plans.id (integer + UNIQUE)
 DO $$ BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'shipping_plans' AND constraint_type = 'PRIMARY KEY'
+    SELECT 1 FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
+    WHERE tc.table_name = 'shipping_plans'
+      AND tc.constraint_type IN ('PRIMARY KEY','UNIQUE')
+      AND kcu.column_name = 'id'
   ) THEN
-    ALTER TABLE shipping_plans ADD PRIMARY KEY (id);
+    ALTER TABLE shipping_plans ADD CONSTRAINT uq_shipping_plans_id UNIQUE (id);
   END IF;
 END $$;
 
