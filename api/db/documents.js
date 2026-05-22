@@ -894,10 +894,15 @@ export default async function handler(req, res) {
         // buyer RMB account: prefer seller_profiles.rmb_account
         var buyerRmbAccount=pick(cfg.bank.rmbAccount,"");
         var buyerBankName=pick(cfg.bank.bankName,"");
-        var vendorPhone=raw.factoryPhone||"";
+        // delivery date: read from orders.delivery_date / confirmed_delivery, NOT today
+        // If unset → show blank underline so factory can fill by hand
+        var _poDelRaw=pick(o.delivery_date,o.confirmed_delivery,raw.deliveryDate,raw.expectedDelivery,"");
+        var poDeliveryDate=_poDelRaw ? fmtD(_poDelRaw) : "______________";
         html=wrap("Purchase Order — "+noPO,`
           <style>
-            .po-header{text-align:center;font-size:20px;font-weight:bold;letter-spacing:4px;padding:10px 0 14px;border-bottom:2px solid #222;}
+            .po-header{text-align:center;padding:10px 0 4px;}
+            .po-header-cn{font-size:20px;font-weight:bold;letter-spacing:4px;display:block;}
+            .po-header-en{font-size:12px;font-weight:600;color:#555;letter-spacing:2px;display:block;margin-top:2px;padding-bottom:10px;border-bottom:2px solid #222;}
             .po-parties{display:grid;grid-template-columns:1fr 1fr;border:1px solid #aaa;margin-top:0;}
             .po-party{padding:10px 14px;}
             .po-party+.po-party{border-left:1px solid #aaa;}
@@ -909,7 +914,10 @@ export default async function handler(req, res) {
             .po-ref span{color:#333;}
             .po-ref strong{color:#111;}
           </style>
-          <div class="po-header">采购合同</div>
+          <div class="po-header">
+            <span class="po-header-cn">采购合同</span>
+            <span class="po-header-en">PURCHASE ORDER</span>
+          </div>
           <div class="po-parties">
             <div class="po-party">
               <div class="po-party-title">买方开票资料</div>
@@ -924,16 +932,14 @@ export default async function handler(req, res) {
               <div class="po-party-title">卖方账户信息</div>
               <div class="po-row"><span class="po-lbl">公司名称：</span><span class="po-val">${esc(factory)}</span></div>
               <div class="po-row"><span class="po-lbl">税号：</span><span class="po-val">${esc(vendorTaxNo)}</span></div>
-              <div class="po-row"><span class="po-lbl">地址：</span><span class="po-val">${esc(vendorAddress||raw.factoryAddress||"")}</span></div>
-              <div class="po-row"><span class="po-lbl">电话号码：</span><span class="po-val">${esc(vendorPhone)}</span></div>
               <div class="po-row"><span class="po-lbl">开户银行：</span><span class="po-val">${esc(vendorBank||raw.factoryBank||"")}</span></div>
               <div class="po-row"><span class="po-lbl">银行账户：</span><span class="po-val">${esc(vendorAccount||raw.factoryAccount||"")}</span></div>
             </div>
           </div>
           <div class="po-ref">
             <span>Order: <strong>${esc(ordNo)}</strong></span>
-            <span>合同号：<strong>${esc(cno)}</strong></span>
-            <span>交货日期：<strong>${esc(date)}</strong></span>
+            <span>合同号 / Contract No.: <strong>${esc(cno)}</strong></span>
+            <span>交货日期 / Delivery Date: <strong>${poDeliveryDate||"___________"}</strong></span>
           </div>
           <table><thead><tr><th style="width:36px">行号</th><th>品名 / Item Description</th><th style="width:70px;text-align:center">数量 / Qty</th><th style="width:90px;text-align:right">单价 / Unit Price</th><th style="width:100px;text-align:right">金额 / Amount</th><th style="width:110px;text-align:center">条形码 / Barcode</th></tr></thead>
           <tbody>
