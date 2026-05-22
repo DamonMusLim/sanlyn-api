@@ -47,6 +47,7 @@ async function loadSellerCfg(pool, raw, qco, opts) {
     return {
       nameEN: s.name_en||"", nameCN: s.name_cn||"",
       address: s.address||"", tel: s.tel||"", email: s.email||"",
+      taxNo: s.tax_no||"",   // 卖方统一社会信用代码（采购合同买方税号）
       bank: {
         beneficiary: s.bank_beneficiary||s.name_en||"",
         bankName: s.bank_name||"", swift: s.bank_swift||"",
@@ -829,15 +830,58 @@ export default async function handler(req, res) {
 
       if(type==="po"){
         var noPO=pick(o.order_no,o.contract_no,id);
-        var factory=pick(raw.factory,raw.factoryName,raw.supplier,"[FACTORY]");
+        // ── Factory resolution ─────────────────────────────────────────────────
+        // raw.factory is often populated with the ISSUING company (BABI/PetBaby),
+        // NOT the actual manufacturing factory. Filter those out, then resolve via:
+        //   1) order_no encoded factory code (format: {cust}-{FACTORY_CODE}-{seq})
+        //   2) orders.factory_code / raw.factory_code / raw.factoryCode
+        //   3) products[].factory_code derived from order's SKUs
+        //   4) raw.factory / raw.factoryName (if not self-referential)
+        var SELLER_KWORDS=["PET BABY","OCEANBABY","OCEAN BABY","BABI","SANLYN","巴匕","洋宝宝","宠宝"];
+        var rawFacStr=pick(raw.factory,raw.factoryName,raw.supplier,"");
+        var isSelf=SELLER_KWORDS.some(function(k){return rawFacStr.toUpperCase().includes(k.toUpperCase());});
+        if(isSelf) rawFacStr="";
+
+        // Step 1: extract factory po_prefix from order_no (e.g. "48-LL-1" → "LL")
+        var orderNoParts=(o.order_no||"").split("-");
+        var orderNoFac=orderNoParts.length>=3 ? orderNoParts[1] : "";
+
+        // Step 2: explicit factory_code fields
+        var fcode=o.factory_code||raw.factory_code||raw.factoryCode||"";
+
+        // Step 3: if still no code, derive from products SKUs
+        if(!fcode && !orderNoFac && prods.length){
+          try{
+            var skus=prods.map(function(p){return p.sku||p.barcode||"";}).filter(Boolean);
+            if(skus.length){
+              var pfR=await pool.query("SELECT factory_code FROM products WHERE sku=ANY($1) AND factory_code IS NOT NULL LIMIT 1",[skus]);
+              if(pfR.rows.length) fcode=pfR.rows[0].factory_code||"";
+            }
+          }catch(e){}
+        }
+
+        var factory=rawFacStr||"[FACTORY]";
         var buyerTaxNo=pick(cfg.taxNo,raw.sellerTaxNo,"");
         var vendorTaxNo=pick(raw.factoryTaxNo,raw.vendorTaxNo,"");
         var vendorAddress="", vendorBank="", vendorAccount="";
         try{
-          var fSearch=factory.replace(/股份|有限公司|进出口/g,"").trim().slice(0,6);
-          var fR=await pool.query("SELECT * FROM factories WHERE name=$1 OR name LIKE $2 LIMIT 1",[factory,'%'+fSearch+'%']);
-          if(fR.rows.length){
+          // Try lookup by po_prefix (from order_no) first — most reliable
+          var fR=null;
+          if(orderNoFac){
+            fR=await pool.query("SELECT * FROM factories WHERE po_prefix=$1 LIMIT 1",[orderNoFac]);
+          }
+          // Try by factory_code (matches factories.company_code or po_prefix)
+          if((!fR||!fR.rows.length) && fcode){
+            fR=await pool.query("SELECT * FROM factories WHERE company_code=$1 OR po_prefix=$1 LIMIT 1",[fcode]);
+          }
+          // Fallback: name search on whatever string we have
+          if(!fR||!fR.rows.length){
+            var fSearch=(factory!=="[FACTORY]")?factory.replace(/股份|有限公司|进出口/g,"").trim().slice(0,6):"";
+            if(fSearch) fR=await pool.query("SELECT * FROM factories WHERE name=$1 OR name LIKE $2 LIMIT 1",[factory,'%'+fSearch+'%']);
+          }
+          if(fR && fR.rows.length){
             var fd=fR.rows[0];
+            factory=fd.name||factory;           // always use the real factory name from DB
             vendorTaxNo=vendorTaxNo||fd.tax_no||"";
             vendorAddress=fd.address||"";
             vendorBank=fd.bank_name||"";
