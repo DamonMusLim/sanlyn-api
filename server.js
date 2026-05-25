@@ -319,6 +319,7 @@ mount("/api/db/collab-sheets/queue",        () => import("./api/db/collab-sheets
 mount("/api/db/collab-sheets",             () => import("./api/db/collab-sheets.js"));
 mount("/api/db/collab-sheet-templates",    () => import("./api/db/collab-sheet-templates.js"));
 mount("/api/db/order-create-v2",   () => import("./api/db/order-create-v2.js"));
+mount("/api/db/order-line-items",   () => import("./api/db/order-line-items.js"));
 mount("/api/db/order-field-audit", () => import("./api/db/order-field-audit.js"));
 mount("/api/db/factory-invite",        () => import("./api/db/factory-invite.js"));        // v3 partner onboarding (6 types)
 mount("/api/db/factory-invite-list",   () => import("./api/db/factory-invite-list.js"));   // admin queue
@@ -381,7 +382,8 @@ mount("/api/doc-convert",     () => import("./api/doc-convert.js"));
 mount("/api/doc-review",      () => import("./api/doc-review.js"));
 mount("/api/db/doc-share",    () => import("./api/db/doc-share.js"));
 mount("/api/freight-quotes",  () => import("./api/freight-quotes.js"))
-mount("/api/freight-rates",   () => import("./api/freight-rates.js"));;
+// [SECURITY-P0 A5] removed unauthenticated route — covered by api/db/freight-rates.js
+// mount("/api/freight-rates",   () => import("./api/freight-rates.js"));;
 mount("/api/jdy-company-sync",() => import("./api/jdy-company-sync.js"));
 mount("/api/jdy-company",     () => import("./api/jdy-company.js"));
 mount("/api/jdy-customer-sync",() => import("./api/jdy-customer-sync.js"));
@@ -455,6 +457,10 @@ mount("/api/supply-chain/quote-requests", () => import("./api/supply-chain-quote
 mount("/api/supply-chain/quote-bids",     () => import("./api/supply-chain-quote-bids.js"));
 mount("/api/collab/cards",                () => import("./api/supply-chain-collab-cards.js"));
 
+// ── Recurring / scheduled orders ─────────────────────────────────────────────
+mount("/api/db/recurring-orders",         () => import("./api/db/recurring-orders.js"));
+mount("/api/db/ocr-parse",               () => import("./api/db/ocr-parse.js"));
+
 // ── v3.2 §6 — order_events / order_tasks / containers ────────────────────
 mount("/api/db/migrate-order-events", () => import("./api/db/migrate-order-events.js"));
 mount("/api/db/migrate-order-tasks",  () => import("./api/db/migrate-order-tasks.js"));
@@ -462,6 +468,8 @@ mount("/api/db/migrate-containers",   () => import("./api/db/migrate-containers.
 mount("/api/db/order-events",  () => import("./api/db/order-events.js"));
 mount("/api/db/order-tasks",   () => import("./api/db/order-tasks.js"));
 mount("/api/db/containers",    () => import("./api/db/containers.js"));
+// ── Migration 025 — shipping schema ALTER TABLEs ──────────────────────────
+mount("/api/db/migrate-025-shipping-schema", () => import("./api/db/migrate-025-shipping-schema.js"));
 
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
@@ -476,5 +484,10 @@ app.listen(PORT, "0.0.0.0", () => {
 import("./jobs/payment-reminder.js")
   .then(({ schedulePaymentReminder }) => schedulePaymentReminder())
   .catch(e => console.error("[server] payment-reminder schedule failed:", e.message));
+
+// ── Recurring order cron (08:00 daily) ───────────────────────────────────────
+import("./jobs/recurring-order-cron.js")
+  .then(({ scheduleRecurringOrders }) => scheduleRecurringOrders())
+  .catch(e => console.error("[server] recurring-order-cron schedule failed:", e.message));
 
 export default app;
