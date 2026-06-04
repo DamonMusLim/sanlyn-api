@@ -282,7 +282,7 @@ export default async function handler(req, res) {
 
   try {
     const params = ["active"];
-    let sql = `SELECT scope, field_key, binding_json, is_legal
+    let sql = `SELECT scope, field_key, canonical_key, binding_json, is_legal
                FROM field_bindings
                WHERE status = $1`;
     if (req.query?.scope) {
@@ -294,7 +294,7 @@ export default async function handler(req, res) {
     const data = {};
     r.rows.forEach(row => {
       if (!data[row.scope]) data[row.scope] = {};
-      data[row.scope][row.field_key] = { ...row.binding_json, is_legal: row.is_legal };
+      data[row.scope][row.field_key] = { ...row.binding_json, canonical_key: row.canonical_key, is_legal: row.is_legal };
     });
 
     res.json({ success: true, generated_at: new Date().toISOString(), count: r.rows.length, data });
