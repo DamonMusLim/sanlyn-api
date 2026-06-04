@@ -84,6 +84,16 @@ export default async function handler(req, res) {
     if (trimmedNote.error) return res.status(400).json({ success: false, error: trimmedNote.error });
     const trimmedReason = trimOptionalString(reason, "reason");
     if (trimmedReason.error) return res.status(400).json({ success: false, error: trimmedReason.error });
+    const hasBodyCanonicalKey = Object.prototype.hasOwnProperty.call(body, "canonical_key");
+    const hasBindingCanonicalKey = Object.prototype.hasOwnProperty.call(binding, "canonical_key");
+    let canonicalKey = null;
+    if (hasBodyCanonicalKey || hasBindingCanonicalKey) {
+      const rawCanonicalKey = hasBodyCanonicalKey ? body.canonical_key : binding.canonical_key;
+      if (typeof rawCanonicalKey !== "string" || !rawCanonicalKey.trim()) {
+        return res.status(400).json({ success: false, error: "canonical_key must be a non-empty string" });
+      }
+      canonicalKey = rawCanonicalKey.trim();
+    }
     if (!ALLOWED_STRATEGIES.includes(binding.strategy)) {
       return res.status(400).json({ success: false, error: "binding.strategy invalid" });
     }
@@ -147,24 +157,20 @@ export default async function handler(req, res) {
       await client.query("BEGIN");
 
       const fieldHistoryResult = await client.query(
-        `SELECT binding_json, is_legal, status
+        `SELECT binding_json, status, canonical_key
          FROM field_bindings
          WHERE scope = $1 AND field_key = $2
          FOR UPDATE`,
         [trimmedScope.value, trimmedFieldKey.value]
       );
       const current = fieldHistoryResult.rows.find(row => row.status === "active") || null;
-      const dbLegal = fieldHistoryResult.rows.length === 0
-        ? true
-        : fieldHistoryResult.rows.some(row => row.is_legal === true);
-      const isLegal = dbLegal || binding.is_legal === true;
       const normalizedBinding = {
         ...binding,
         label: trimmedLabel.value,
         source: sourceTable || sourceColumn ? { ...(binding.source || {}), table: sourceTable, column: sourceColumn } : binding.source,
         formula: typeof formula === "string" ? formula : binding.formula,
-        is_legal: isLegal,
       };
+      if (canonicalKey) normalizedBinding.canonical_key = canonicalKey;
       if (Object.prototype.hasOwnProperty.call(binding, "unit")) normalizedBinding.unit = trimmedUnit.value;
       if (Object.prototype.hasOwnProperty.call(binding, "note")) normalizedBinding.note = trimmedNote.value;
 
@@ -173,14 +179,7 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: "Forbidden", message: "权限不足" });
       }
 
-      let targetStatus = "active";
-      if (isLegal) {
-        if (role === "sales") {
-          await client.query("ROLLBACK");
-          return res.status(403).json({ error: "Forbidden", message: "legal fields require admin approval" });
-        }
-        if (role === "logistics") targetStatus = "draft";
-      }
+      const targetStatus = "active";
 
       const versionResult = await client.query(
         `SELECT COALESCE(MAX(version), 0) + 1 AS next_version
@@ -205,18 +204,19 @@ export default async function handler(req, res) {
 
       await client.query(
         `INSERT INTO field_bindings (
-           scope, field_key, label, source_strategy, source_table, source_column,
+           scope, field_key, canonical_key, label, source_strategy, source_table, source_column,
            formula, formula_human, agg, unit, is_legal, binding_json, status,
            version, note, created_by, updated_by
          )
          VALUES (
-           $1, $2, $3, $4, $5, $6,
-           $7, $8, $9, $10, $11, $12::jsonb, $13,
-           $14, $15, $16, $17
+           $1, $2, $3, $4, $5, $6, $7,
+           $8, $9, $10, $11, $12, $13::jsonb, $14,
+           $15, $16, $17, $18
          )`,
         [
           trimmedScope.value,
           trimmedFieldKey.value,
+          canonicalKey,
           normalizedBinding.label,
           binding.strategy,
           sourceTable,
@@ -225,7 +225,7 @@ export default async function handler(req, res) {
           binding.formula_human,
           binding.agg,
           normalizedBinding.unit,
-          isLegal,
+          binding.is_legal === true,
           JSON.stringify(normalizedBinding),
           targetStatus,
           nextVersion,
@@ -245,14 +245,14 @@ export default async function handler(req, res) {
           JSON.stringify({
             scope: trimmedScope.value,
             field_key: trimmedFieldKey.value,
-            is_legal: isLegal,
+            canonical_key: canonicalKey,
             source_table: sourceTable || null,
             source_column: sourceColumn || null,
             strategy: binding.strategy,
             status: targetStatus,
             version: nextVersion,
             reason: trimmedReason.value,
-            before: current ? { ...current.binding_json, is_legal: current.is_legal } : null,
+            before: current ? { ...current.binding_json, canonical_key: current.canonical_key } : null,
             after: normalizedBinding,
           }),
         ]
@@ -264,7 +264,7 @@ export default async function handler(req, res) {
         status: targetStatus,
         version: nextVersion,
         data: normalizedBinding,
-        message: targetStatus === "draft" ? "Submitted as draft pending approval" : "Field binding updated",
+        message: "Field binding updated",
       });
     } catch (e) {
       if (client) await client.query("ROLLBACK").catch(function () {});
@@ -294,7 +294,12 @@ export default async function handler(req, res) {
     const data = {};
     r.rows.forEach(row => {
       if (!data[row.scope]) data[row.scope] = {};
-      data[row.scope][row.field_key] = { ...row.binding_json, canonical_key: row.canonical_key, is_legal: row.is_legal };
+      data[row.scope][row.field_key] = {
+        ...row.binding_json,
+        canonical_key: row.canonical_key,
+        is_legal: row.is_legal,
+        customs_relevant: row.is_legal,
+      };
     });
 
     res.json({ success: true, generated_at: new Date().toISOString(), count: r.rows.length, data });
