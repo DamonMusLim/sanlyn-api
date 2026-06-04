@@ -90,15 +90,18 @@ export default async function handler(req, res) {
 
   try {
     const r = await pool.query(sql, [...params, "active", MODULE_ORDER]);
+    const includeInactive = isTrue(req.query?.include_inactive);
+    const moduleFilter = req.query?.module ? String(req.query.module).trim() : null;
     const moduleMap = new Map();
+    const fieldMap = new Map();
 
     for (const moduleKey of MODULE_ORDER) {
-      moduleMap.set(moduleKey, { module_key: moduleKey, fields: [] });
+      moduleMap.set(moduleKey, { module_key: moduleKey, fields: [], relations: [], subforms: [] });
     }
 
     for (const row of r.rows) {
       if (!moduleMap.has(row.module_key)) {
-        moduleMap.set(row.module_key, { module_key: row.module_key, fields: [] });
+        moduleMap.set(row.module_key, { module_key: row.module_key, fields: [], relations: [], subforms: [] });
       }
 
       const field = {
@@ -123,6 +126,7 @@ export default async function handler(req, res) {
         status: row.status,
         binding: null,
         compat: null,
+        lookups: [],
       };
 
       if (row.binding_id != null) {
@@ -150,10 +154,129 @@ export default async function handler(req, res) {
       }
 
       moduleMap.get(row.module_key).fields.push(field);
+      fieldMap.set(`${row.module_key}.${row.field_key}`, field);
+    }
+
+    const relationParams = [];
+    const relationWhere = [];
+    if (!includeInactive) {
+      relationParams.push("active");
+      relationWhere.push(`status = $${relationParams.length}`);
+    }
+    if (moduleFilter) {
+      relationParams.push(moduleFilter);
+      relationWhere.push(`(from_module = $${relationParams.length} OR to_module = $${relationParams.length})`);
+    }
+    const relationResult = await pool.query(
+      `SELECT
+         relation_key,
+         from_module,
+         from_field_key,
+         to_module,
+         to_field_key,
+         relation_type,
+         role_key,
+         label,
+         cardinality,
+         resolution_json,
+         status
+       FROM field_relations
+       ${relationWhere.length ? "WHERE " + relationWhere.join(" AND ") : ""}
+       ORDER BY relation_key`,
+      relationParams
+    );
+
+    for (const row of relationResult.rows) {
+      const targetModules = new Set([row.from_module, row.to_module]);
+      for (const moduleKey of targetModules) {
+        if (!moduleMap.has(moduleKey)) continue;
+        const direction = row.from_module === moduleKey && row.to_module === moduleKey
+          ? "self"
+          : row.from_module === moduleKey
+            ? "outbound"
+            : "inbound";
+        moduleMap.get(moduleKey).relations.push({
+          relation_key: row.relation_key,
+          from_module: row.from_module,
+          from_field_key: row.from_field_key,
+          to_module: row.to_module,
+          to_field_key: row.to_field_key,
+          relation_type: row.relation_type,
+          role_key: row.role_key,
+          label: row.label,
+          cardinality: row.cardinality,
+          direction,
+          resolution: row.resolution_json || {},
+          status: row.status,
+        });
+      }
+
+      if (row.relation_type === "subform" && moduleMap.has(row.from_module)) {
+        moduleMap.get(row.from_module).subforms.push({
+          relation_key: row.relation_key,
+          module_key: row.to_module,
+          role_key: row.role_key,
+          label: row.label,
+          parent_module: row.from_module,
+          parent_field_key: row.from_field_key,
+          child_module: row.to_module,
+          child_field_key: row.to_field_key,
+          cardinality: row.cardinality,
+          status: row.status,
+        });
+      }
+    }
+
+    const lookupParams = [];
+    const lookupWhere = [];
+    if (!includeInactive) {
+      lookupParams.push("active");
+      lookupWhere.push(`status = $${lookupParams.length}`);
+    }
+    if (moduleFilter) {
+      lookupParams.push(moduleFilter);
+      lookupWhere.push(`module_key = $${lookupParams.length}`);
+    }
+    const lookupResult = await pool.query(
+      `SELECT
+         lookup_key,
+         module_key,
+         target_field_key,
+         relation_key,
+         related_module,
+         related_field_key,
+         mode,
+         is_readonly,
+         status
+       FROM field_lookups
+       ${lookupWhere.length ? "WHERE " + lookupWhere.join(" AND ") : ""}
+       ORDER BY lookup_key`,
+      lookupParams
+    );
+
+    for (const row of lookupResult.rows) {
+      const field = fieldMap.get(`${row.module_key}.${row.target_field_key}`);
+      if (!field) continue;
+      field.lookups.push({
+        lookup_key: row.lookup_key,
+        relation_key: row.relation_key,
+        related_module: row.related_module,
+        related_field_key: row.related_field_key,
+        mode: row.mode,
+        is_readonly: row.is_readonly,
+        status: row.status,
+      });
     }
 
     const modules = Array.from(moduleMap.values()).filter(module => module.fields.length > 0);
-    res.json({ success: true, generated_at: new Date().toISOString(), count: r.rows.length, modules });
+    res.json({
+      success: true,
+      generated_at: new Date().toISOString(),
+      count: r.rows.length,
+      relation_count: relationResult.rows.length,
+      lookup_count: lookupResult.rows.length,
+      modules,
+    });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
