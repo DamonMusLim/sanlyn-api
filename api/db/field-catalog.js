@@ -4,7 +4,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth }      from "../auth.js";
 
-const MODULE_ORDER = ["orders", "products", "order_line_items", "customs", "shipping", "finance"];
+const MODULE_ORDER = ["orders", "order_line_items", "products", "shipping_plans", "companies", "customs", "shipping", "finance"];
 
 function isTrue(value) {
   return value === true || value === "true";
@@ -52,6 +52,13 @@ export default async function handler(req, res) {
       fd.unit,
       fd.format,
       fd.is_legal,
+      COALESCE(fd.customs_relevant, fd.is_legal) AS customs_relevant,
+      fd.source_kind AS definition_source_kind,
+      fd.source_table AS definition_source_table,
+      fd.source_column AS definition_source_column,
+      fd.is_system_derived,
+      fd.is_curated,
+      fd.stale_risk,
       fd.grain,
       fd.relationship_json,
       fd.validation_json,
@@ -103,6 +110,13 @@ export default async function handler(req, res) {
         unit: row.unit,
         format: row.format || {},
         is_legal: row.is_legal,
+        customs_relevant: row.customs_relevant,
+        source_kind: row.definition_source_kind,
+        source_table: row.definition_source_table,
+        source_column: row.definition_source_column,
+        is_system_derived: row.is_system_derived,
+        is_curated: row.is_curated,
+        stale_risk: row.stale_risk,
         grain: row.grain,
         relationship: row.relationship_json || {},
         validation: row.validation_json || {},
