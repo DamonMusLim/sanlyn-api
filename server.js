@@ -168,6 +168,7 @@ mount("/api/db/export-pdf",        () => import("./api/db/export-pdf.js"));
 mount("/api/db/shipment-tracking",  () => import("./api/db/shipment-tracking.js"));
 mount("/api/db/urge",                  () => import("./api/db/urge.js"));
 mount("/api/db/field-registry",        () => import("./api/db/field-registry.js"));
+mount("/api/db/field-bindings",        () => import("./api/db/field-bindings.js"));
 mount("/api/db/migrate-collab-fields", () => import("./api/db/migrate-collab-fields.js"));
 // customer-invite: self-service activation links for customer accounts — needs prefix match
 app.all("/api/db/customer-invite/*", async (req, res) => {
