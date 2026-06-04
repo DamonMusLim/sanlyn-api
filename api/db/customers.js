@@ -28,22 +28,39 @@ CREATE INDEX IF NOT EXISTS idx_cust_group ON customers(group_id);
 `;
 
 var ALTER_COLS = [
-  ["brands",        "JSONB DEFAULT '[]'::jsonb"],
-  ["addresses",     "JSONB DEFAULT '[]'::jsonb"],
-  ["contact_name",  "VARCHAR(128) DEFAULT ''"],
-  ["contact_phone", "VARCHAR(64) DEFAULT ''"],
-  ["contact_email", "VARCHAR(128) DEFAULT ''"],
-  ["country",       "VARCHAR(64) DEFAULT ''"],
-  ["currency",      "VARCHAR(8) DEFAULT 'USD'"],
-  ["payment_term",  "VARCHAR(128) DEFAULT ''"],
-  ["portal_role",   "VARCHAR(32) DEFAULT 'customer'"],
-  ["group_id",      "VARCHAR(64) DEFAULT ''"],
-  ["invoice",       "JSONB DEFAULT '{}'::jsonb"],
-  ["is_active",     "BOOLEAN DEFAULT true"],
-  ["name_en",       "VARCHAR(256) DEFAULT ''"],
-  ["name_cn",       "VARCHAR(256) DEFAULT ''"],
-  ["card_template", "VARCHAR(32) DEFAULT 'minimal'"],
-  ["logo_url",      "TEXT DEFAULT ''"],
+  ["brands",                "JSONB DEFAULT '[]'::jsonb"],
+  ["addresses",             "JSONB DEFAULT '[]'::jsonb"],
+  ["contact_name",          "VARCHAR(128) DEFAULT ''"],
+  ["contact_phone",         "VARCHAR(64) DEFAULT ''"],
+  ["contact_email",         "VARCHAR(128) DEFAULT ''"],
+  ["country",               "VARCHAR(64) DEFAULT ''"],
+  ["currency",              "VARCHAR(8) DEFAULT 'USD'"],
+  ["payment_term",          "VARCHAR(128) DEFAULT ''"],
+  ["portal_role",           "VARCHAR(32) DEFAULT 'customer'"],
+  ["group_id",              "VARCHAR(64) DEFAULT ''"],
+  ["invoice",               "JSONB DEFAULT '{}'::jsonb"],
+  ["is_active",             "BOOLEAN DEFAULT true"],
+  ["name_en",               "VARCHAR(256) DEFAULT ''"],
+  ["name_cn",               "VARCHAR(256) DEFAULT ''"],
+  ["name",                  "VARCHAR(256) DEFAULT ''"],
+  ["card_template",         "VARCHAR(32) DEFAULT 'minimal'"],
+  ["logo_url",              "TEXT DEFAULT ''"],
+  // Phase 4 admin-edit columns (added 2026-05-22)
+  ["role_type",             "VARCHAR(32) DEFAULT 'customer'"],
+  ["payment_policy",        "TEXT DEFAULT ''"],
+  ["payment_days",          "INTEGER"],
+  ["trade_terms",           "VARCHAR(64) DEFAULT ''"],
+  ["bl_type",               "VARCHAR(32) DEFAULT ''"],
+  ["grade",                 "VARCHAR(32) DEFAULT ''"],
+  ["pricing_mode",          "VARCHAR(32) DEFAULT 'list'"],
+  ["markup_pct",            "NUMERIC(8,4)"],
+  ["markup_currency",       "VARCHAR(8) DEFAULT 'USD'"],
+  ["markup_per_container",  "NUMERIC(12,2)"],
+  ["markup_per_shipment",   "NUMERIC(12,2)"],
+  ["port_markup_enabled",   "BOOLEAN DEFAULT false"],
+  ["freight_markup_enabled","BOOLEAN DEFAULT false"],
+  ["parent_company_code",   "VARCHAR(64)"],
+  ["contact_name",          "VARCHAR(128) DEFAULT ''"],
 ];
 
 var inited = false;
@@ -126,11 +143,15 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, data: row });
     }
 
-    // ── PUT / PATCH — update by company_code ─────────────
+    // ── PUT / PATCH — direct UPDATE (no ON CONFLICT needed) ──────
+    // PATCH only updates existing rows; never inserts. upsertOne is NOT used
+    // here because the production table may lack the UNIQUE constraint on
+    // company_code that ON CONFLICT requires.
     if (req.method === "PUT" || req.method === "PATCH") {
       var body = req.body || {};
       if (!body.company_code) return res.status(400).json({ success: false, error: "company_code required" });
-      var row = await upsertOne(pool, body);
+      var row = await updateOne(pool, body);
+      if (!row) return res.status(404).json({ success: false, error: "Customer not found: " + body.company_code });
       return res.status(200).json({ success: true, data: row });
     }
 
@@ -161,6 +182,70 @@ export default async function handler(req, res) {
     }
     return res.status(500).json({ success: false, error: err.message });
   }
+}
+
+// Direct UPDATE — used by PATCH. Never inserts. Returns null if row not found.
+async function updateOne(pool, c) {
+  var result = await pool.query(
+    `UPDATE customers SET
+       name                  = COALESCE(NULLIF($2,''),  name),
+       name_en               = COALESCE(NULLIF($3,''),  name_en),
+       name_cn               = COALESCE(NULLIF($4,''),  name_cn),
+       country               = COALESCE(NULLIF($5,''),  country),
+       currency              = COALESCE(NULLIF($6,''),  currency),
+       contact_name          = $7,
+       contact_email         = COALESCE(NULLIF($8,''),  contact_email),
+       contact_phone         = COALESCE(NULLIF($9,''),  contact_phone),
+       payment_term          = COALESCE(NULLIF($10,''), payment_term),
+       payment_policy        = $11,
+       payment_days          = $12,
+       trade_terms           = COALESCE(NULLIF($13,''), trade_terms),
+       bl_type               = COALESCE(NULLIF($14,''), bl_type),
+       grade                 = COALESCE(NULLIF($15,''), grade),
+       is_active             = $16,
+       pricing_mode          = COALESCE(NULLIF($17,''), pricing_mode),
+       markup_pct            = $18,
+       markup_currency       = COALESCE(NULLIF($19,''), markup_currency),
+       port_markup_enabled   = $20,
+       freight_markup_enabled= $21,
+       markup_per_container  = $22,
+       markup_per_shipment   = $23,
+       card_template         = COALESCE(NULLIF($24,''), card_template),
+       logo_url              = COALESCE(NULLIF($25,''), logo_url),
+       raw                   = COALESCE(raw,'{}') || $26,
+       updated_at            = NOW()
+     WHERE company_code = $1
+     RETURNING *`,
+    [
+      c.company_code,
+      c.name               || "",
+      c.name_en            || "",
+      c.name_cn            || "",
+      c.country            || "",
+      c.currency           || "",
+      c.contact_name       != null ? String(c.contact_name) : null,
+      c.contact_email      || "",
+      c.contact_phone      || "",
+      c.payment_term       || "",
+      c.payment_policy     != null ? String(c.payment_policy) : null,
+      c.payment_days       != null ? Number(c.payment_days)   : null,
+      c.trade_terms        || "",
+      c.bl_type            || "",
+      c.grade              || "",
+      c.is_active !== false,
+      c.pricing_mode       || "",
+      c.markup_pct         != null ? Number(c.markup_pct)     : null,
+      c.markup_currency    || "USD",
+      !!c.port_markup_enabled,
+      !!c.freight_markup_enabled,
+      c.markup_per_container != null ? Number(c.markup_per_container) : null,
+      c.markup_per_shipment  != null ? Number(c.markup_per_shipment)  : null,
+      c.card_template      || "minimal",
+      c.logo_url           || "",
+      JSON.stringify(c.raw || {}),
+    ]
+  );
+  return result.rows[0] || null;
 }
 
 async function upsertOne(pool, c) {

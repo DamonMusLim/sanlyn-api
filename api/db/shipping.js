@@ -18,9 +18,9 @@ function normCompany(s) {
 }
 
 const PATCH_ALLOW = [
-  "bl_no","vessel","voyage","pol","pod","etd","eta","cutoff_date",
+  "bl_no","vessel","voyage","pol","pod","etd","eta","cutoff_date","carrier_code",
   "flow_status","container_type","container_no","seal_no",
-  "qty_total","total_cbm","total_cartons","gross_weight_kg",
+  "total_cbm","total_cartons","gross_weight_kg",
   "freight_cost","freight_sale_usd","port_surcharge_total",
   "bkg_fee","doc_fee","tlx_fee","thc_fee","eir_fee","seal_fee","vgm_fee","customs_declare_fee",
   "customs_cost_total","trucking_cost_total","agency_fee_rmb",
@@ -92,6 +92,7 @@ export default async function handler(req, res) {
       bl_no:              body.bl_no              || null,
       vessel:             body.vessel             || null,
       voyage:             body.voyage             || null,
+      carrier_code:       body.carrier_code       || null,
       pol:                body.pol                || null,
       pod:                body.pod                || null,
       etd:                body.etd                || null,
@@ -167,14 +168,25 @@ export default async function handler(req, res) {
     const sql = `UPDATE shipping_plans SET ${sets.join(", ")}, updated_at = now() WHERE id = $${vals.length} RETURNING *`;
 
     let saved;
+    const client = await pool.connect();
     try {
-      // Phase 5: set app.current_user so trg_sp_audit can record the actor
+      // Phase 5: set app.current_user so trg_sp_audit can record the actor.
+      // NOTE: Postgres SET does NOT accept bind params ($1) — that throws
+      // "syntax error at or near current_user" and breaks every PATCH.
+      // set_config(name, value, is_local=true) is the parameterized equivalent,
+      // and must share the transaction/connection with the UPDATE so the
+      // is_local setting is still in effect when trg_sp_audit fires.
       const actor = req.user?.email || req.user?.id || "system";
-      await pool.query(`SET LOCAL app.current_user = $1`, [actor]);
-      const r = await pool.query(sql, vals);
+      await client.query("BEGIN");
+      await client.query(`SELECT set_config('app.current_user', $1, true)`, [actor]);
+      const r = await client.query(sql, vals);
+      await client.query("COMMIT");
       saved = r.rows[0];
     } catch (err) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
       return res.status(500).json({ error: err.message });
+    } finally {
+      client.release();
     }
 
     // ── bl_no change detection → trigger dual notifications ──

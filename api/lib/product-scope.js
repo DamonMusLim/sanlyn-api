@@ -76,12 +76,16 @@ const FACTORY_HIDE_FIELDS = [
 // raw JSONB blob (factoryCode / factoryName / factoryCity / factoryCompanyCode)
 // — flagged by CODEX-REVIEW P1 (2026-05-19): the strip only matched snake_case
 // keys, leaving camelCase factory identity visible to customer responses.
+// "factory_profile" was added 2026-05-20 alongside the Factory Write-in V1
+// endpoint — the new sub-object holds factory_product_code/name/spec/moq/etc.
+// and must NEVER reach customer responses.
 const CUSTOMER_HIDE_FIELDS = [
   "factory_price", "sanlyn_price", "price", "price_usd",
   "profit", "sale_price_cny", "vat_rate", "rebate_rate", "tax_rate",
   "bg_bx", "factory_name", "factory_city", "factory_code",
   "factoryCode", "factoryName", "factoryCity", "factoryCompanyCode",
   "issuing_company", "issuingCompany", "jdy_id", "jdyId", "declaration_amount",
+  "factory_profile",
 ];
 
 // Internal-restricted (logistics/sales/operator): no extra hide today.
@@ -387,6 +391,15 @@ export function applyAllVisibility(rows, reqUser) {
   }
   return rows;
 }
+
+// Factory-profile write gate + body whitelists moved to product-write-gates.js
+// (2026-05-20) to keep this module under the 500-line cap. Re-export so
+// existing import sites don't break.
+export {
+  canWriteFactoryProfile,
+  FACTORY_PROFILE_WRITABLE_KEYS,
+  FACTORY_PROFILE_REJECTED_KEYS,
+} from "./product-write-gates.js";
 
 export default {
   getProductScope,

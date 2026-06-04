@@ -72,7 +72,13 @@ export default async function handler(req, res) {
           extraWhere += ` AND ot.assigned_user_id = $${params.length}`;
         }
 
-        // Company scope: join to orders and filter — admins get all
+        // Company scope: join to orders and filter.
+        // ADMIN CROSS-TENANT INTENTIONAL: when codes === null (admin/system role),
+        // no JOIN is added and the query returns tasks across all tenants.
+        // This is deliberate — internal Sanlyn ops need to see all tasks (e.g.
+        // "my task inbox" for ops staff who manage multi-company shipments).
+        // Risk accepted: admin/system JWTs are Sanlyn-internal only (not exposed to partners).
+        // If future roles require scoped admin views, add tenant_id to order_tasks and filter here.
         let scopeJoin = "";
         if (codes !== null) {
           params.push(codes);

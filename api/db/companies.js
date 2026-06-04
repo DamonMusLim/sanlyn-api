@@ -57,7 +57,9 @@ export default async function handler(req, res) {
   const _isAdmin = req.user?.role === "admin";
 
   const pool = getPool();
-  await ensureTable(pool);
+  // fail-soft 2026-05-20: ensureTable 失败(权限/schema drift)不再 500 整个 handler;
+  // companies 表 prod 早已存在, SELECT/UPDATE 走方法各自 try/catch 报真实错误.
+  try { await ensureTable(pool); } catch (e) { /* swallow: table likely already exists */ }
 
   if (req.method === "GET") {
     try {

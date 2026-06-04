@@ -109,11 +109,11 @@ export default async function handler(req, res) {
       iv_total += Number(ord.total_amount) || 0;
       total_ctn += Number(ord.total_qty) || 0;
       total_containers += Number(ord.container_qty) || 0;
+      // NOTE: company_code intentionally OMITTED — anti-counterfeit ID, never to customer payload.
       iv_refs.push({
         order_no: ord.order_no,
         contract_no: ord.contract_no,
         amount: Number(ord.total_amount) || 0,
-        company_code: ord.company_code,
       });
 
       const products = Array.isArray(ord.raw?.products) ? ord.raw.products : [];

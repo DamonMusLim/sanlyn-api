@@ -147,6 +147,12 @@ function checkComplianceException(row, requester) {
 // ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
 const PATCH_ALLOWED_COLS = [
   "order_no","company_code","company_name_en","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
+  // Order totals — auto-derived from raw.products on save (compute-at-write, then docs/list read the stored value) (2026-05-22)
+  "total_qty","net_weight","gross_weight","total_cbm",
+  // Buyer + commercial refs editable from the order detail Deal section (2026-05-22)
+  "customer","customer_po","payment_terms",
+  // Actual delivery date (expected = delivery_date; actual triggers收款+定船期) (2026-05-22)
+  "confirmed_delivery",
   // Profit structure (2026-05-09)
   "factory_amount","customer_amount","margin_amount","margin_pct",
   "quote_sent_at","customer_replied_at","negotiation_rounds",
@@ -384,6 +390,132 @@ async function handleMarkReady(req, res) {
   return res.status(200).json({ success: true, actDelivery: now });
 }
 
+// ── Cancel Request: any authenticated user can request, but order must NOT be in production ──
+// Rule: once confirmed_delivery IS NOT NULL, production has started → reject cancel.
+async function handleCancelRequest(req, res) {
+  const id = parseInt(req.query.id || req.body?.id);
+  if (!id || isNaN(id)) return res.status(400).json({ error: "id required" });
+  const reason = (req.body?.reason || "").trim();
+  if (!reason) return res.status(400).json({ error: "reason required" });
+
+  const pool = getPool();
+  // Fetch current order state
+  const check = await pool.query(
+    `SELECT id, status, confirmed_delivery, raw->'cancellation_request' AS existing_req
+       FROM orders WHERE id = $1`, [id]
+  );
+  if (check.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  const o = check.rows[0];
+
+  // Guard: production started (confirmed_delivery set) = cannot cancel
+  if (o.confirmed_delivery) {
+    return res.status(409).json({
+      error: "Cannot cancel: production has already started (goods confirmed by factory).",
+      code: "PRODUCTION_STARTED"
+    });
+  }
+  // Guard: terminal states
+  if (["shipped","in_transit","customs","delivered","cancelled"].includes(o.status)) {
+    return res.status(409).json({ error: `Cannot cancel: order is already ${o.status}.` });
+  }
+  // Guard: duplicate pending request
+  if (o.existing_req && o.existing_req.status === "pending") {
+    return res.status(409).json({ error: "A cancellation request is already pending review." });
+  }
+
+  const requestPayload = {
+    status: "pending",
+    reason,
+    requested_at: new Date().toISOString(),
+    requested_by: req.user?.companyCode || req.user?.uid || "unknown",
+    requested_by_role: req.user?.role || "unknown",
+  };
+
+  await pool.query(
+    `UPDATE orders
+        SET raw = jsonb_set(COALESCE(raw,'{}'), '{cancellation_request}', $1::jsonb, true),
+            updated_at = NOW()
+      WHERE id = $2`,
+    [JSON.stringify(requestPayload), id]
+  );
+
+  // Log event
+  try {
+    await pool.query(
+      `INSERT INTO order_events
+         (order_id, stage_key, source, actor_role, actor_user_id, occurred_at, is_current, status, created_at)
+       VALUES ($1,'cancel_requested','manual',$2,$3,NOW(),false,'active',NOW())`,
+      [id, req.user?.role || "unknown", req.user?.uid || req.user?.sub || null]
+    );
+  } catch (_) {}
+
+  return res.status(200).json({ success: true, message: "Cancellation request submitted. Pending Sanlyn review." });
+}
+
+// ── Cancel Review: internal admin/ops only — approve or reject a pending cancel request ──
+async function handleCancelReview(req, res) {
+  const capabilities = Array.isArray(req.user?.access) ? req.user.access : [];
+  const isInternal = capabilities.includes("orders:admin:write") || req.user?.role === "admin";
+  if (!req.user || !isInternal) {
+    return res.status(403).json({ error: "Forbidden: requires admin role or orders:admin:write" });
+  }
+  const id = parseInt(req.query.id || req.body?.id);
+  if (!id || isNaN(id)) return res.status(400).json({ error: "id required" });
+  const action = req.body?.action; // "approve" | "reject"
+  if (!["approve","reject"].includes(action)) return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
+  const notes = (req.body?.notes || "").trim();
+
+  const pool = getPool();
+  const check = await pool.query(
+    `SELECT id, status, raw->'cancellation_request' AS req FROM orders WHERE id = $1`, [id]
+  );
+  if (check.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  const o = check.rows[0];
+  if (!o.req || o.req.status !== "pending") {
+    return res.status(409).json({ error: "No pending cancellation request found." });
+  }
+
+  const updatedReq = {
+    ...o.req,
+    status: action === "approve" ? "approved" : "rejected",
+    reviewed_by: req.user?.uid || req.user?.sub || "admin",
+    reviewed_by_role: req.user?.role,
+    reviewed_at: new Date().toISOString(),
+    notes: notes || undefined,
+  };
+
+  // If approved: also set orders.status = 'cancelled'
+  const statusUpdate = action === "approve"
+    ? `, status = 'cancelled'`
+    : "";
+
+  await pool.query(
+    `UPDATE orders
+        SET raw = jsonb_set(COALESCE(raw,'{}'), '{cancellation_request}', $1::jsonb, true),
+            updated_at = NOW()${statusUpdate}
+      WHERE id = $2`,
+    [JSON.stringify(updatedReq), id]
+  );
+
+  try {
+    await pool.query(
+      `INSERT INTO order_events
+         (order_id, stage_key, source, actor_role, actor_user_id, occurred_at, is_current, status, created_at)
+       VALUES ($1,$2,'manual',$3,$4,NOW(),false,'active',NOW())`,
+      [id, action === "approve" ? "cancel_approved" : "cancel_rejected",
+       req.user?.role || "admin", req.user?.uid || req.user?.sub || null]
+    );
+  } catch (_) {}
+
+  return res.status(200).json({
+    success: true,
+    message: action === "approve"
+      ? "Order cancelled successfully."
+      : "Cancellation request rejected. Order remains active.",
+    order_status: action === "approve" ? "cancelled" : o.status,
+  });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -398,6 +530,14 @@ export default async function handler(req, res) {
       try { return await handleMarkReady(req, res); }
       catch (err) { return res.status(500).json({ success: false, error: err.message }); }
     }
+    if (action === "cancel_request") {
+      try { return await handleCancelRequest(req, res); }
+      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
+    if (action === "cancel_review") {
+      try { return await handleCancelReview(req, res); }
+      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
     if (action) return res.status(400).json({ error: "unknown action: " + action });
     // No action = create new order
     try { return await handleCreate(req, res); }
@@ -406,7 +546,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
-    let { customer, status, limit = 500, brands, factory, company_code, company_codes, sku } = req.query;
+    let { customer, status, limit = 500, brands, factory, company_code, company_codes, sku, order_no, contract_no } = req.query;
     // Tenant scoping: non-admin users can only see their own company's orders.
     // FAIL-CLOSED: if JWT has no role or no companyCodes, refuse the request —
     // forces re-login so the fresh JWT carries the correct scope. (Prior
@@ -425,7 +565,16 @@ export default async function handler(req, res) {
              lcs.loading->>'driver_name'    AS driver_name,
              lcs.loading->>'driver_phone'   AS driver_phone,
              lcs.loading->>'truck_plate'    AS truck_plate,
-             lcs.loading->>'planned_load_at' AS planned_load_at
+             lcs.loading->>'planned_load_at' AS planned_load_at,
+             sp.bl_no               AS sp_bl_no,
+             sp.etd                 AS sp_etd,
+             sp.eta                 AS sp_eta,
+             sp.pol                 AS sp_pol,
+             sp.pod                 AS sp_pod,
+             sp.current_status_cn   AS sp_status_cn,
+             sp.tracking_updated_at AS sp_tracking_updated_at,
+             oe._events,
+             ot._tasks
         FROM orders o
         LEFT JOIN LATERAL (
           SELECT loading FROM loading_collab_sheets
@@ -433,6 +582,61 @@ export default async function handler(req, res) {
            ORDER BY submitted_at DESC NULLS LAST
            LIMIT 1
         ) lcs ON TRUE
+        -- Live shipping dates from the linked shipping_plan (Portun keeps eta/etd
+        -- fresh via /api/vessel-callback). ONE row only (LIMIT 1) — never fan out
+        -- per container, which would both inflate rows and over-bill Portun.
+        LEFT JOIN LATERAL (
+          SELECT s.bl_no, s.etd, s.eta, s.pol, s.pod, s.current_status_cn, s.tracking_updated_at
+            FROM shipping_plans s
+           WHERE (NULLIF(o.bl_no,'') IS NOT NULL AND s.bl_no = o.bl_no)
+              OR (s.contract_no IS NOT NULL AND o.contract_no IS NOT NULL AND s.contract_no = o.contract_no)
+              OR (s.order_contract_nos IS NOT NULL AND o.contract_no IS NOT NULL AND s.order_contract_nos ILIKE '%' || o.contract_no || '%')
+              OR (s.order_contract_nos IS NOT NULL AND o.order_no IS NOT NULL AND s.order_contract_nos ILIKE '%' || o.order_no || '%')
+           ORDER BY s.tracking_updated_at DESC NULLS LAST, s.eta DESC NULLS LAST
+           LIMIT 1
+        ) sp ON TRUE
+        -- v3.2 §6.1 — current active milestone events (one row per stage_key per order)
+        -- Gracefully no-ops when order_events table does not yet exist.
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'id', e.id,
+              'stage_key', e.stage_key,
+              'event_group', e.event_group,
+              'sequence_no', e.sequence_no,
+              'occurred_at', e.occurred_at,
+              'actor_role', e.actor_role,
+              'actor_company_id', e.actor_company_id,
+              'source', e.source,
+              'visibility_scope', e.visibility_scope,
+              'confidence', e.confidence,
+              'meta', e.meta
+            ) ORDER BY e.occurred_at ASC
+          ) AS _events
+          FROM order_events e
+          WHERE e.order_id = o.id
+            AND e.is_current = TRUE
+            AND e.status = 'active'
+        ) oe ON TRUE
+        -- v3.2 §6.2 — open tasks assigned to any party on this order
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'id', t.id,
+              'task_key', t.task_key,
+              'assigned_role', t.assigned_role,
+              'assigned_company_id', t.assigned_company_id,
+              'assigned_user_id', t.assigned_user_id,
+              'status', t.status,
+              'priority', t.priority,
+              'due_at', t.due_at,
+              'meta', t.meta
+            ) ORDER BY t.due_at ASC NULLS LAST
+          ) AS _tasks
+          FROM order_tasks t
+          WHERE t.order_id = o.id
+            AND t.status NOT IN ('done', 'cancelled')
+        ) ot ON TRUE
     `, params = [], conds = [];
 
     // is_mock column was removed from orders table — filter dropped (ORDER-DATA-DISPLAY-UNBLOCK-001)
@@ -440,6 +644,11 @@ export default async function handler(req, res) {
     if (customer) { params.push(`%${customer}%`); conds.push(`o.customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`o.status = $${params.length}`); }
     if (factory)  { params.push(factory);           conds.push(`o.raw->>'factory' = $${params.length}`); }
+    // Exact-match lookups by order_no / contract_no (2026-05-22) — previously
+    // these query params were silently ignored, so a "?order_no=X" call returned
+    // the whole list in non-stable order (caused a wrong-row data edit).
+    if (order_no)    { params.push(order_no);    conds.push(`o.order_no = $${params.length}`); }
+    if (contract_no) { params.push(contract_no); conds.push(`o.contract_no = $${params.length}`); }
     if (company_codes) {
       let codeList; try { codeList = JSON.parse(company_codes); } catch { codeList = company_codes.split(","); }
       if (codeList.length > 0) {
