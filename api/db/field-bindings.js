@@ -7,8 +7,57 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth }      from "../auth.js";
 
 const ALLOWED_SOURCE_TABLES = ["order_line_items", "products", "orders", "shipping_plans"];
+const ALLOWED_SOURCE_COLUMNS = {
+  order_line_items: ["cbm_ctn", "qty_ctn", "nw_ctn", "gw_ctn", "hs_code", "declaration_name", "declaration_elements", "tax_rebate_rate"],
+  products: ["hs_code", "declaration_name", "declaration_elements", "tax_rebate_rate", "cbm_ctn", "nw_ctn", "gw_ctn"],
+  orders: ["total_cbm", "total_qty", "net_weight", "gross_weight", "total_amount"],
+  shipping_plans: ["bl_no", "container_qty"],
+};
 const ALLOWED_STRATEGIES = ["direct", "computed", "master_first", "constant"];
 const ALLOWED_AGGS = ["sum_over_lines", "first", "max", "concat_distinct"];
+const ALLOWED_FORMULA_FUNCTIONS = ["SUM", "MAPX", "IF", "ABS", "ROUND", "MIN", "MAX", "CONCATENATE"];
+
+function trimRequiredString(value, name) {
+  if (typeof value !== "string" || !value.trim()) {
+    return { error: name + " required" };
+  }
+  return { value: value.trim() };
+}
+
+function trimOptionalString(value, name) {
+  if (value === undefined || value === null) return { value: null };
+  if (typeof value !== "string") return { error: name + " must be a string" };
+  if (!value.trim()) return { error: name + " required" };
+  return { value: value.trim() };
+}
+
+function hasBalancedParens(value) {
+  let depth = 0;
+  for (const ch of value) {
+    if (ch === "(") depth += 1;
+    if (ch === ")") depth -= 1;
+    if (depth < 0) return false;
+  }
+  return depth === 0;
+}
+
+function validateFormula(formula) {
+  if (typeof formula !== "string" || !formula.trim()) return false;
+  const trimmed = formula.trim();
+  if (!/^[A-Za-z0-9_ .,*/+\-()"']+$/.test(trimmed)) return false;
+  if (!hasBalancedParens(trimmed)) return false;
+  const calls = trimmed.match(/\b[A-Za-z_][A-Za-z0-9_]*\s*\(/g) || [];
+  return calls.every(call => ALLOWED_FORMULA_FUNCTIONS.includes(call.replace(/\s*\($/, "").toUpperCase()));
+}
+
+function validateSourcePair(sourceTable, sourceColumn) {
+  if (sourceColumn && !sourceTable) return "source_column requires source_table";
+  if (sourceTable && !ALLOWED_SOURCE_TABLES.includes(sourceTable)) return "source_table not allowed";
+  if (sourceTable && sourceColumn && !ALLOWED_SOURCE_COLUMNS[sourceTable]?.includes(sourceColumn)) {
+    return "source_column not allowed for source_table";
+  }
+  return null;
+}
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, PATCH, OPTIONS");
@@ -20,64 +69,109 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     const body = req.body || {};
     const { scope, field_key, binding, reason } = body;
-    if (typeof scope !== "string" || !scope.trim() || typeof field_key !== "string" || !field_key.trim() || !binding || typeof binding !== "object" || Array.isArray(binding)) {
+    const trimmedScope = trimRequiredString(scope, "scope");
+    const trimmedFieldKey = trimRequiredString(field_key, "field_key");
+    if (trimmedScope.error || trimmedFieldKey.error || !binding || typeof binding !== "object" || Array.isArray(binding)) {
       return res.status(400).json({ success: false, error: "scope, field_key, and binding object required" });
     }
-    if (typeof binding.label !== "string" || !binding.label.trim()) {
+    const trimmedLabel = trimRequiredString(binding.label, "binding.label");
+    if (trimmedLabel.error) {
       return res.status(400).json({ success: false, error: "binding.label required" });
     }
+    const trimmedUnit = trimOptionalString(binding.unit, "binding.unit");
+    if (trimmedUnit.error) return res.status(400).json({ success: false, error: trimmedUnit.error });
+    const trimmedNote = trimOptionalString(binding.note, "binding.note");
+    if (trimmedNote.error) return res.status(400).json({ success: false, error: trimmedNote.error });
+    const trimmedReason = trimOptionalString(reason, "reason");
+    if (trimmedReason.error) return res.status(400).json({ success: false, error: trimmedReason.error });
     if (!ALLOWED_STRATEGIES.includes(binding.strategy)) {
       return res.status(400).json({ success: false, error: "binding.strategy invalid" });
     }
     if (binding.agg != null && !ALLOWED_AGGS.includes(binding.agg)) {
       return res.status(400).json({ success: false, error: "binding.agg invalid" });
     }
-    if (reason !== undefined && typeof reason !== "string") {
-      return res.status(400).json({ success: false, error: "reason must be a string" });
+    const sourceTable = typeof binding.source?.table === "string" ? binding.source.table.trim() : binding.source?.table;
+    const sourceColumn = typeof binding.source?.column === "string" ? binding.source.column.trim() : binding.source?.column;
+    if (sourceTable != null && typeof sourceTable !== "string") {
+      return res.status(400).json({ success: false, error: "source_table must be a string" });
     }
-    const sourceTable = binding.source?.table;
-    if (sourceTable != null && !ALLOWED_SOURCE_TABLES.includes(sourceTable)) {
-      return res.status(400).json({ success: false, error: "source_table not allowed" });
+    if (sourceColumn != null && typeof sourceColumn !== "string") {
+      return res.status(400).json({ success: false, error: "source_column must be a string" });
     }
-    if (JSON.stringify(binding).length > 20000 || (reason && String(reason).length > 2000)) {
+    if (sourceTable === "" || sourceColumn === "") {
+      return res.status(400).json({ success: false, error: "source.table and source.column cannot be empty" });
+    }
+    const sourceError = validateSourcePair(sourceTable, sourceColumn);
+    if (sourceError) return res.status(400).json({ success: false, error: sourceError });
+    const hasValue = Object.prototype.hasOwnProperty.call(binding, "value");
+    const formula = typeof binding.formula === "string" ? binding.formula.trim() : binding.formula;
+    if (binding.strategy === "direct" || binding.strategy === "master_first") {
+      if (!sourceTable || !sourceColumn) {
+        return res.status(400).json({ success: false, error: "source.table and source.column required" });
+      }
+      if (binding.formula != null) {
+        return res.status(400).json({ success: false, error: "formula not allowed for source strategy" });
+      }
+    }
+    if (binding.strategy === "computed") {
+      if (!validateFormula(formula)) {
+        return res.status(400).json({ success: false, error: "binding.formula invalid" });
+      }
+      if (binding.agg != null) {
+        return res.status(400).json({ success: false, error: "binding.agg incompatible with computed strategy" });
+      }
+    }
+    if (binding.strategy === "constant") {
+      if (!hasValue) {
+        return res.status(400).json({ success: false, error: "binding.value required" });
+      }
+      if (sourceTable || sourceColumn || binding.formula != null) {
+        return res.status(400).json({ success: false, error: "source and formula not allowed for constant strategy" });
+      }
+      if (binding.agg != null) {
+        return res.status(400).json({ success: false, error: "binding.agg incompatible with constant strategy" });
+      }
+    }
+    if (binding.strategy === "master_first" && binding.agg != null && binding.agg !== "first") {
+      return res.status(400).json({ success: false, error: "binding.agg incompatible with master_first strategy" });
+    }
+    if (JSON.stringify(binding).length > 20000 || (trimmedReason.value && trimmedReason.value.length > 2000)) {
       return res.status(413).json({ success: false, error: "payload too large" });
     }
 
-    let legalResult;
-    try {
-      legalResult = await pool.query(
-        `SELECT bool_or(is_legal) AS is_legal
-         FROM field_bindings
-         WHERE scope = $1 AND field_key = $2`,
-        [scope, field_key]
-      );
-    } catch (e) {
-      console.error(e);
-      return res.status(500).json({ success: false, error: "internal error" });
-    }
-    const dbLegal = legalResult.rows[0]?.is_legal == null ? true : legalResult.rows[0].is_legal;
-    const isLegal = dbLegal || binding.is_legal === true;
-
     const role = req.user.role;
-    if (!["admin", "logistics", "sales"].includes(role)) {
-      return res.status(403).json({ error: "Forbidden", message: "权限不足" });
-    }
-
     const operator = req.user.account || req.user.sub;
     let client;
     try {
       client = await pool.connect();
       await client.query("BEGIN");
 
-      const currentResult = await client.query(
-        `SELECT binding_json, is_legal
+      const fieldHistoryResult = await client.query(
+        `SELECT binding_json, is_legal, status
          FROM field_bindings
-         WHERE scope = $1 AND field_key = $2 AND status = $3
-         LIMIT 1
+         WHERE scope = $1 AND field_key = $2
          FOR UPDATE`,
-        [scope, field_key, "active"]
+        [trimmedScope.value, trimmedFieldKey.value]
       );
-      const current = currentResult.rows[0] || null;
+      const current = fieldHistoryResult.rows.find(row => row.status === "active") || null;
+      const dbLegal = fieldHistoryResult.rows.length === 0
+        ? true
+        : fieldHistoryResult.rows.some(row => row.is_legal === true);
+      const isLegal = dbLegal || binding.is_legal === true;
+      const normalizedBinding = {
+        ...binding,
+        label: trimmedLabel.value,
+        source: sourceTable || sourceColumn ? { ...(binding.source || {}), table: sourceTable, column: sourceColumn } : binding.source,
+        formula: typeof formula === "string" ? formula : binding.formula,
+        is_legal: isLegal,
+      };
+      if (Object.prototype.hasOwnProperty.call(binding, "unit")) normalizedBinding.unit = trimmedUnit.value;
+      if (Object.prototype.hasOwnProperty.call(binding, "note")) normalizedBinding.note = trimmedNote.value;
+
+      if (!["admin", "logistics", "sales"].includes(role)) {
+        await client.query("ROLLBACK");
+        return res.status(403).json({ error: "Forbidden", message: "权限不足" });
+      }
 
       let targetStatus = "active";
       if (isLegal) {
@@ -92,7 +186,7 @@ export default async function handler(req, res) {
         `SELECT COALESCE(MAX(version), 0) + 1 AS next_version
          FROM field_bindings
          WHERE scope = $1 AND field_key = $2`,
-        [scope, field_key]
+        [trimmedScope.value, trimmedFieldKey.value]
       );
       const nextVersion = Number(versionResult.rows[0].next_version);
 
@@ -105,7 +199,7 @@ export default async function handler(req, res) {
           `UPDATE field_bindings
            SET status = $1
            WHERE scope = $2 AND field_key = $3 AND status = $4`,
-          ["superseded", scope, field_key, "active"]
+          ["superseded", trimmedScope.value, trimmedFieldKey.value, "active"]
         );
       }
 
@@ -121,21 +215,21 @@ export default async function handler(req, res) {
            $14, $15, $16, $17
          )`,
         [
-          scope,
-          field_key,
-          binding.label,
+          trimmedScope.value,
+          trimmedFieldKey.value,
+          normalizedBinding.label,
           binding.strategy,
-          binding.source?.table,
-          binding.source?.column,
-          binding.formula,
+          sourceTable,
+          sourceColumn,
+          normalizedBinding.formula,
           binding.formula_human,
           binding.agg,
-          binding.unit,
+          normalizedBinding.unit,
           isLegal,
-          JSON.stringify(binding),
+          JSON.stringify(normalizedBinding),
           targetStatus,
           nextVersion,
-          binding.note,
+          normalizedBinding.note,
           operator,
           operator,
         ]
@@ -149,13 +243,17 @@ export default async function handler(req, res) {
           operator,
           role,
           JSON.stringify({
-            scope,
-            field_key,
+            scope: trimmedScope.value,
+            field_key: trimmedFieldKey.value,
+            is_legal: isLegal,
+            source_table: sourceTable || null,
+            source_column: sourceColumn || null,
+            strategy: binding.strategy,
             status: targetStatus,
             version: nextVersion,
-            reason: reason || null,
-            before: current ? current.binding_json : null,
-            after: binding,
+            reason: trimmedReason.value,
+            before: current ? { ...current.binding_json, is_legal: current.is_legal } : null,
+            after: normalizedBinding,
           }),
         ]
       );
@@ -165,6 +263,7 @@ export default async function handler(req, res) {
         success: true,
         status: targetStatus,
         version: nextVersion,
+        data: normalizedBinding,
         message: targetStatus === "draft" ? "Submitted as draft pending approval" : "Field binding updated",
       });
     } catch (e) {
@@ -183,11 +282,11 @@ export default async function handler(req, res) {
 
   try {
     const params = ["active"];
-    let sql = `SELECT scope, field_key, binding_json
+    let sql = `SELECT scope, field_key, binding_json, is_legal
                FROM field_bindings
                WHERE status = $1`;
     if (req.query?.scope) {
-      params.push(req.query.scope);
+      params.push(String(req.query.scope).trim());
       sql += " AND scope = $2";
     }
 
@@ -195,7 +294,7 @@ export default async function handler(req, res) {
     const data = {};
     r.rows.forEach(row => {
       if (!data[row.scope]) data[row.scope] = {};
-      data[row.scope][row.field_key] = row.binding_json;
+      data[row.scope][row.field_key] = { ...row.binding_json, is_legal: row.is_legal };
     });
 
     res.json({ success: true, generated_at: new Date().toISOString(), count: r.rows.length, data });
