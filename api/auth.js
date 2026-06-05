@@ -89,12 +89,14 @@ const PUBLIC_PATHS = [
   "/health",
   // "/api/db/accounts", // REMOVED 2026-04-22 P0 — no longer public; use /api/db/auth-login
   "/api/db/auth-login",   // 主应用登录接口
+  "/api/db/exchange-rate", // 公开:每日实时汇率(非敏感)
   "/api/db/test-fixture-login", // Dev-only fixture login (returns 404 in production)
   "/api/db/check-username", // 注册页查重（只返回 {exists:bool}，不泄露其他字段）
   "/api/portal/login",    // Portal 登录（portal token 在此签发，登录前无 token）
   "/api/driver-evidence", // 司机扫 QR 上传装柜证据（无登录；凭 bl_no+container_no 授权）
   "/api/db/magic-link",   // Driver Magic Link (Air-A): 司机点 SMS 链接，凭 raw token + SHA-256 比对授权
   "/api/factory-fill",    // 工厂 token 填单（无登录；凭 _idx_tokens 授权）
+  "/api/factory-invoice-request", // 工厂开票申请（无登录；凭 _idx_tokens purpose=invoice_request 授权）
   "/api/pending-confirm", // 工厂确认交期（无登录；凭 _idx_tokens 授权，purpose=pending_confirm）
   "/api/track/verify",    // Public supply-chain tracking card — token validated inside handler
   "/api/track/confirm",   // Customer delivery confirmation — token validated inside handler
@@ -112,6 +114,13 @@ const PUBLIC_PATHS = [
   "/api/db/customs-broker-checkin",
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
+  // Team invite accept — public (token in URL is the credential, validated server-side)
+  "/api/db/team-join",
+  "/api/db/migrate-employees",  // DDL migration — no data
+  "/api/db/employees",          // Employee list — admin internal, authGate protected
+  "/api/db/migrate-payroll",    // DDL migration — no data
+  "/api/db/payroll-sheets",     // Payroll CRUD — authGate protected
+  "/api/db/workbench-kpi", // Admin workbench KPI — aggregate totals only, no PII
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
@@ -178,6 +187,9 @@ export async function authMiddleware(req, res, next) {
 
   // Portal 路由体系：使用独立 HMAC token，由 portalGate 负责校验，跳过内部 JWT
   if (req.path.startsWith(PORTAL_ROUTES_PREFIX)) return next();
+
+  // Partner portal /api/p/:token — token-in-URL auth, no JWT
+  if (req.path.startsWith("/api/p/")) return next();
 
   // Cron endpoints: allow if x-cron-secret header matches env secret
   // (handler still validates; this just skips JWT requirement)
