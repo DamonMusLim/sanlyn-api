@@ -169,6 +169,7 @@ mount("/api/db/export-pdf",        () => import("./api/db/export-pdf.js"));
 mount("/api/db/shipment-tracking",  () => import("./api/db/shipment-tracking.js"));
 mount("/api/db/urge",                  () => import("./api/db/urge.js"));
 mount("/api/db/field-registry",        () => import("./api/db/field-registry.js"));
+mount("/api/db/ocr", () => import("./api/db/ocr.js"));
 mount("/api/db/ingest", () => import("./api/db/ingest.js"));
 mount("/api/db/order-audit", () => import("./api/db/order-audit.js"));
 mount("/api/db/hs-check", () => import("./api/db/hs-check.js"));
