@@ -13,7 +13,7 @@
 // All return text/html — English for foreign clients, bilingual for internal
 
 import { getPool, setCors } from "../db.js";
-import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
+import { requireAuth, extractUser } from "../auth.js"; // S18.1: handler-level auth guard
 
 // ── Seller config: loaded from seller_profiles table (no hardcoding) ──────────
 // To add a new issuing company, INSERT a row into seller_profiles.
@@ -34,8 +34,9 @@ async function loadSellerCfg(pool, raw, qco) {
     }
     var s = r.rows[0];
     return {
+      code: s.code||"", stamp_code: s.stamp_code||"",
       nameEN: s.name_en||"", nameCN: s.name_cn||"",
-      address: s.address||"", tel: s.tel||"", email: s.email||"",
+      address: s.address||"", addressEN: s.address_en||"", tel: s.tel||"", email: s.email||"", seal_url: s.seal_url||"",
       bank: {
         beneficiary: s.bank_beneficiary||s.name_en||"",
         bankName: s.bank_name||"", swift: s.bank_swift||"",
@@ -55,6 +56,25 @@ async function loadSellerCfg(pool, raw, qco) {
   }
 }
 
+// 货代出单档案（洋宝宝）— 全部从 seller_profiles 读，严禁硬编码
+async function loadForwarderCfg(pool) {
+  try {
+    var r = await pool.query("SELECT * FROM seller_profiles WHERE code='yangbaobao' LIMIT 1");
+    if(!r.rows.length) throw new Error("yangbaobao profile not found");
+    var s = r.rows[0];
+    return {
+      nameCN: s.name_cn||"", nameEN: s.name_en||"", address: s.address||"",
+      contact: s.tel||"", email: s.email||"", tel: s.tel||"", seal_url: s.seal_url||"",
+      bank: { accountName: s.bank_beneficiary||s.name_en||"", bankName: s.bank_name||"",
+        swift: s.bank_swift||"", bankAddr: s.bank_addr||"",
+        usdAccount: s.usd_account||"", cnyAccount: s.rmb_account||"" },
+    };
+  } catch(e) {
+    return { nameCN:"", nameEN:"", address:"", contact:"", email:"", tel:"", seal_url:"",
+      bank:{accountName:"",bankName:"",swift:"",bankAddr:"",usdAccount:"",cnyAccount:""}, _err:e.message };
+  }
+}
+
 var FORWARDERS = {
   default: {
     nameCN: "上海洋宝宝国际物流有限公司", nameEN: "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.",
@@ -70,16 +90,9 @@ function pick(){ for(var i=0;i<arguments.length;i++){if(arguments[i]!==null&&arg
 
 // resolveCo replaced by async loadSellerCfg above
 
-var CUST_ADDRS={
-  "petsome":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA",
-  "dibaq":"LOT 1716, JALAN SG LONG, BATU 11, SG LONG, 43000 KAJANG, SELANGOR, MALAYSIA",
-  "enrich":"NO.2 JALAN PERDANA 1A, TAMAN SEGAR PERDANA, 43200 CHERAS, SELANGOR, MALAYSIA",
-};
+// 字段铁律：禁止硬编码客户地址。地址只能来自 orders.raw 或 customers 表（见下方 DB 查询）。
 function resolveAddr(name,existing){
-  if(existing&&existing.trim()&&existing.trim().length>3)return existing;
-  var k=(name||"").toLowerCase();
-  for(var key in CUST_ADDRS){if(k.includes(key))return CUST_ADDRS[key];}
-  return existing||"";
+  return (existing&&String(existing).trim().length>3)?existing:"";
 }
 function resolveUnitPrice(p){
   var up=p.unitPrice||p.price||p.unit_price||p.salePrice||p["_widget_1764396068577"]||0;
@@ -92,6 +105,9 @@ function resolveUnitPrice(p){
 var CSS=`<style>
 body{font-family:'Helvetica','Arial','PingFang SC',sans-serif;color:#000;margin:0;padding:30px;font-size:11px;line-height:1.4;}
 .container{max-width:800px;margin:auto;}
+.doc-toolbar{position:fixed;top:14px;right:14px;display:flex;gap:8px;z-index:9999;}
+.dtb{padding:8px 14px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.15);background:#2563eb;color:#fff;}
+.dtb-green{background:#16a34a;}
 .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:25px;}
 .seller-info{flex:1;}
 .seller-name{font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;}
@@ -114,21 +130,62 @@ td{padding:10px;border-bottom:1px solid #000;vertical-align:top;}
 .details-box h4{margin:0 0 10px 0;font-size:11px;text-transform:uppercase;text-decoration:underline;}
 .signature-grid{display:flex;justify-content:space-between;margin-top:50px;}
 .sig-box{width:45%;border-top:2px solid #000;padding-top:10px;text-align:center;height:100px;font-weight:bold;display:flex;flex-direction:column;justify-content:space-between;}
+.seal-img{position:absolute;right:38px;top:-40px;width:110px;height:110px;object-fit:contain;opacity:0.86;pointer-events:none;}
 .brand-slogan{text-align:center;margin-top:60px;font-size:9px;color:#888;border-top:1px dashed #ccc;padding-top:15px;letter-spacing:1px;}
 .brand-slogan b{color:#555;}
-@media print{body{padding:0;}.container{max-width:100%;border:none;}}
+@media print{
+  @page{size:A4;margin:10mm;}
+  .no-print{display:none !important;}
+  body{padding:0;font-size:9.5px;line-height:1.3;}
+  .container{max-width:100%;border:none;}
+  .header{padding-bottom:8px;margin-bottom:12px;}
+  .doc-type h1{font-size:22px;}
+  .doc-type p{font-size:12px;}
+  .meta-grid{margin-bottom:10px;gap:24px;}
+  .section-label{margin-bottom:5px;padding-bottom:2px;}
+  .meta-list li{margin-bottom:2px;}
+  .trade-terms-bar{margin-bottom:10px;padding:5px 8px;font-size:10px;}
+  table{margin-bottom:10px;}
+  th{padding:5px 8px;}
+  td{padding:4px 8px;}
+  .total-row{font-size:11px;}
+  .details-grid{margin-top:6px;gap:20px;}
+  .details-box{padding:8px;}
+  .details-box h4{margin:0 0 4px;}
+  .details-box p{margin:2px 0 !important;line-height:1.2 !important;}
+  .details-box p[style*="font-size:10px"]{font-size:8.5px !important;}
+  .signature-grid{margin-top:16px;}
+  .sig-box{height:auto;padding-top:8px;}
+  .seal-img{right:38px;top:-36px;width:100px;height:100px;}
+  .sig-box div{margin-bottom:12px !important;}
+  .brand-slogan{margin-top:12px;padding-top:8px;}
+}
 </style>`;
 
-function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
+function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="doc-toolbar no-print"><button class="dtb" onclick="window.print()">🖨 打印</button><button class="dtb dtb-green" onclick="var u=new URL(location.href);u.searchParams.set('format','pdf');window.location=u.toString();">⬇ 下载 PDF</button><button class="dtb" onclick="var u=new URL(location.href);u.searchParams.set('format','xlsx');window.location=u.toString();">📊 下载 Excel</button></div><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
 
 function sellerNamePx(name){ var l=(name||"").length; return l<=28?"20px":l<=38?"17px":l<=48?"14px":"12px"; }
-function docHdr(cfg,cn,en){return`<div class="header"><div class="seller-info"><div class="seller-name" style="font-size:${sellerNamePx(cfg.nameEN)}">${esc(cfg.nameEN)}</div><p style="margin:2px 0">${esc(cfg.address)}</p><p style="margin:2px 0">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</p></div><div class="doc-type"><h1>${esc(en)}</h1></div></div>`;}
+function docHdr(cfg,cn,en,mode){
+  // mode: 'domestic'(PO)=去掉与买方信息重复的顶部公司名+地址,标题中英一起 ; 'export'(PI)=只英文名,去掉中文地址+Tel/Email ; default=英文名+中文地址+Tel/Email
+  if(mode==='domestic'){
+    return`<div class="header" style="justify-content:center;text-align:center"><div class="doc-type" style="text-align:center"><h1>${esc(en)}</h1>${cn?`<p style="font-size:16px;font-weight:bold;margin:3px 0 0">${esc(cn)}</p>`:""}</div></div>`;
+  }
+  var nm = cfg.nameEN;
+  var lines;
+  if(mode==='export'){
+    lines = cfg.addressEN?`<p style="margin:2px 0">${esc(cfg.addressEN)}</p>`:"";
+  } else {
+    var _contact = [cfg.tel?("Tel: "+esc(cfg.tel)):"", cfg.email?("Email: "+esc(cfg.email)):""].filter(Boolean).join(" | ");
+    lines = `<p style="margin:2px 0">${esc(cfg.address)}</p>${_contact?`<p style="margin:2px 0">${_contact}</p>`:""}`; // forge: Tel/Email有才显示(假数据清空即不显)
+  }
+  return`<div class="header"><div class="seller-info"><div class="seller-name" style="font-size:${sellerNamePx(nm)}">${esc(nm)}</div>${lines}</div><div class="doc-type"><h1>${esc(en)}</h1></div></div>`;
+}
 
-function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr){return`<div class="meta-grid"><div><div class="section-label">BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li><li><b>Order:</b> ${esc(ordNo)}</li><li><b>Date:</b> ${esc(date)}</li>${curr?`<li><b>Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
+function buyerBlock(cust,addr,tel,docNo,noLbl,ordNo,date,curr,container){return`<div class="meta-grid"><div><div class="section-label">BUYER (BILL TO)</div><p style="font-size:13px;font-weight:bold;margin:0">${esc(cust)||"[BUYER]"}</p><p style="margin:5px 0">${esc(addr)||"[ADDRESS]"}</p>${tel?`<p style="margin:2px 0">Tel: ${esc(tel)}</p>`:""}</div><div><div class="section-label">DETAILS</div><ul class="meta-list"><li><b>${esc(noLbl||"No.")}:</b> ${esc(docNo)}</li>${ordNo?`<li><b>Order:</b> ${esc(ordNo)}</li>`:""}<li><b>Date:</b> ${esc(date)}</li>${container?`<li><b>Container No.:</b> ${esc(container)}</li>`:""}${curr?`<li><b>Currency:</b> ${esc(curr)}</li>`:""}</ul></div></div>`;}
 
-function portBar(pol,pod,terms){return`<div class="trade-terms-bar"><span>POL: ${esc(pol)||"-"}</span><span>POD: ${esc(pod)||"-"}</span><span>Terms: ${esc(terms)||"-"} (Incoterms® 2020)</span></div>`;}
+function portBar(pol,pod,terms){var P=esc(pol),D=esc(pod);if((!P||P==="-")&&(!D||D==="-"))return"";return`<div class="trade-terms-bar"><span>POL: ${P||"-"}</span><span>POD: ${D||"-"}</span><span>Terms: ${esc(terms)||"-"} (Incoterms® 2020)</span></div>`;}
 
-function bankCard(bk){return`<div class="details-box"><h4>BANKING INFORMATION</h4>Beneficiary: ${esc(bk.beneficiary||bk.accountName||"")}<br>Bank: ${esc(bk.bankName)}<br>SWIFT: ${esc(bk.swift)}<br>${bk.bankAddr?`Bank Address: ${esc(bk.bankAddr)}<br>`:""}${bk.usdAccount?`Account No.: ${esc(bk.usdAccount)}<br>`:""}<span style="color:red;font-size:10px;font-weight:bold">* Please verify bank info before payment.</span></div>`;}
+function bankCard(bk,curr,benName,bankNameOverride){var isCNY=String(curr||"").toUpperCase()==="CNY";var acct=isCNY?(bk.rmbAccount||bk.cnyAccount||bk.usdAccount):(bk.usdAccount||bk.rmbAccount||bk.cnyAccount);var acctLbl=isCNY?"Account No. (CNY)":"Account No.";return`<div class="details-box"><h4>BANKING INFORMATION</h4>Beneficiary: ${esc(benName||bk.beneficiary||bk.accountName||"")}<br>Bank: ${esc(bankNameOverride||bk.bankName)}<br>SWIFT: ${esc(bk.swift)}<br>${bk.bankAddr?`Bank Address: ${esc(bk.bankAddr)}<br>`:""}${acct?`${acctLbl}: ${esc(acct)}<br>`:""}<span style="color:red;font-size:10px;font-weight:bold">* Please verify bank info before payment.</span></div>`;}
 
 function termsCard(ts){
   // Strip Chinese + " / " separators from terms. Keep English portion only.
@@ -136,7 +193,10 @@ function termsCard(ts){
   return`<div class="details-box"><h4>TERMS &amp; CONDITIONS</h4>${ts.map(function(t,i){return(i+1)+". "+esc(_en(t));}).join("<br>")}</div>`;
 }
 
-function sigBlock(){return`<div class="signature-grid"><div class="sig-box"><span>BUYER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(Signature / Company Seal)</span></div><div class="sig-box"><span>SELLER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(Signature / Company Seal)</span></div></div>`;}
+function sigBlock(seal){var s=seal?`<img class="seal-img" src="${esc(seal)}" alt="seal"/>`:"";return`<div class="signature-grid"><div class="sig-box"><span>BUYER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(Signature / Company Seal)</span></div><div class="sig-box" style="position:relative">${s}<span>SELLER AUTHORIZED SIGNATURE</span><span style="font-weight:normal;font-size:9px">(Signature / Company Seal)</span></div></div>`;}
+
+// 分组小标题(蓝标) 单一来源: HTML(productRows) 与 Excel(xlsx) 共用, 防两边不一致
+function _groupHdr(p){return "ORDER "+(p._customerPO||p._contractNo||"")+(p._containerNo?" · 柜"+p._containerNo:"")+(p._sealNo?" · 封"+p._sealNo:"");}
 
 function productRows(prods,cols){
   if(!prods.length)return'<tr><td>01</td><td colspan="'+cols.length+'" style="color:#999;font-style:italic">— Line items will auto-populate from order —</td></tr>';
@@ -146,7 +206,7 @@ function productRows(prods,cols){
     // Emit a group header row when the order group changes (multi-order B/L merge).
     var grp=p._groupKey||"";
     if(grp && grp!==lastGroup){
-      var hdr="ORDER "+(p._customerPO||"")+(p._containerNo?" · "+p._containerNo:"")+(p._contractNo?" · "+p._contractNo:"");
+      var hdr=_groupHdr(p); // 共享: 柜号+铅封号, 与Excel同源
       out.push('<tr class="group-header" style="background:#f0f4ff"><td colspan="'+totalCols+'" style="font-weight:700;color:#1e40af;padding:6px 8px;font-size:11px;letter-spacing:.02em">'+esc(hdr)+'</td></tr>');
       lastGroup=grp;
     }
@@ -159,160 +219,52 @@ function productRows(prods,cols){
 function getProds(raw){return Array.isArray(raw.products)?raw.products:Array.isArray(raw.items)?raw.items:[];}
 function getTotal(prods,order){return prods.reduce(function(s,p){var sub=Number(p.subtotal||p.amount||0);if(!sub&&p.qty)sub=Number(p.qty)*Number(resolveUnitPrice(p));return s+sub;},0)||Number(order.total_amount)||0;}
 
-// ── enrichProdsFromMaster ────────────────────────────────────────────────────
-// Fills missing PRODUCT ATTRIBUTE fields in raw.products[] items from the
-// products master table (joined by sku). Used only at document-generation time
-// — never writes to the DB and never modifies orders.raw.
-//
-// ── PRICE THREE-TIER RULE (HARD BOUNDARY) ───────────────────────────────────
-// Prices in this system are separated into three independent tiers. They must
-// never cross-fill or fall back to each other:
-//
-//   Tier 1 — Customs / declaration price:
-//     customs_declared_price, declaration_price, declaration_amount
-//     Source: order-confirmed customs value agreed with customs broker.
-//
-//   Tier 2 — Factory / purchase price:
-//     factory_price, factoryPrice, purchase_price
-//     Source: agreed procurement price with the factory.
-//
-//   Tier 3 — Customer / sale price:
-//     unitPrice, customer_price, price
-//     Source: agreed sale price on the customer's contract (PI/IV).
-//
-// Customer documents take Tier 3. Factory documents take Tier 2.
-// Customs declarations take Tier 1. No cross-tier fallback ever.
-//
-// ── WHAT THIS FUNCTION MAY FILL (product attribute fields only) ──────────────
-//   hs_code, declaration_name, bl_description,
-//   net_weight, gross_weight, cbm,
-//   inner_qty, inner_unit,
-//   barcode, factory_name
-//   (declaration_elements as a non-price attribute string)
-//
-// ── STRICTLY FORBIDDEN FROM MERGE (all pricing / cost / margin fields) ───────
-//   unitPrice, price, customer_price,
-//   factoryPrice, factory_price, purchase_price,
-//   customs_declared_price, declaration_price, declaration_amount,
-//   unitPriceCNY, unitPriceUSD,
-//   cost, profit, freightShare, margin, platform_fee, commission
-//
-// Fill rule: blank-only — a field is filled from master ONLY when the product
-// item's value is undefined, null, or "". Numeric zero (0) is preserved as-is.
-//
-// Fail-open: sku absent → skip item; sku not in master → console.warn + keep
-//   original; DB error → console.warn + return original prods unchanged.
-async function enrichProdsFromMaster(pool, prods) {
-  if (!prods || !prods.length) return prods;
-  var skus = prods.map(function(p) { return p && p.sku; }).filter(Boolean);
-  if (!skus.length) return prods; // no SKUs → nothing to join
-
-  var masterMap = {};
-  try {
-    var r = await pool.query(
-      "SELECT sku, hs_code, declaration_name, declaration_elements," +
-      " bl_description, net_weight, gross_weight, cbm, inner_qty, inner_unit," +
-      " barcode, factory_name" +
-      " FROM products WHERE sku = ANY($1::text[]) AND active = true",
-      [skus]
-    );
-    r.rows.forEach(function(row) { masterMap[row.sku] = row; });
-  } catch (e) {
-    console.warn("[documents] enrichProdsFromMaster: DB error —", e.message, "— using raw products only");
-    return prods; // fail-open: DB unreachable, render with existing data
-  }
-
-  // _f: fill from master only when prod value is undefined / null / ""
-  // Never fills when prod value is 0, false, or any other defined value.
-  function _f(prodVal, masterVal) {
-    return (prodVal === undefined || prodVal === null || prodVal === "") && masterVal != null
-      ? masterVal
-      : prodVal;
-  }
-
-  return prods.map(function(p) {
-    if (!p) return p;
-    if (!p.sku) return p; // no sku → skip join for this item
-    var m = masterMap[p.sku];
-    if (!m) {
-      console.warn("[documents] enrichProdsFromMaster: SKU not in products master —", p.sku, "— using raw values");
-      return p; // fail-open: unknown SKU, render with existing data
-    }
-    // Build enriched copy. Pricing / cost / margin fields are NOT in this list.
-    return Object.assign({}, p, {
-      netWeight:           _f(p.netWeight,           m.net_weight),
-      grossWeight:         _f(p.grossWeight,         m.gross_weight),
-      cbm:                 _f(p.cbm,                 m.cbm),
-      blDescription:       _f(p.blDescription   || p.bl_description,   m.bl_description),
-      declarationName:     _f(p.declarationName  || p.declaration_name, m.declaration_name),
-      hsCode:              _f(p.hsCode || p.hs_code || p.hscode,        m.hs_code),
-      declarationElements: _f(p.declarationElements,                    m.declaration_elements),
-      inner_qty:           _f(p.inner_qty,                              m.inner_qty),
-      inner_unit:          _f(p.inner_unit,                             m.inner_unit),
-      barcode:             _f(p.barcode || p.code,                      m.barcode),
-      factory_name:        _f(p.factory_name,                           m.factory_name),
-    });
-  });
-}
-
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if(req.method==="OPTIONS") return res.status(200).end();
-  if(!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if(req.method!=="GET") return res.status(405).end();
 
-  // ── Token auth ── must pass ?token=DOCS_SECRET or X-Docs-Token header
-  var DOC_TOKEN = process.env.DOCS_SECRET || "";
-  var reqToken = req.query.token || req.headers["x-docs-token"] || "";
-  if(DOC_TOKEN && reqToken !== DOC_TOKEN){
-    return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid access token.</p>");
+  // ── Layer 1: JWT auth — requires Authorization: Bearer <JWT> header ──────
+  // NOTE: extractUser() is used instead of requireAuth() here because the
+  // ?token= query param is reserved for DOCS_SECRET (Layer 2 below), not JWT.
+  // JWT must be passed via the Authorization header only.
+  extractUser(req);
+  if(!req.user){
+    return res.status(401).json({ error: "Unauthorized", message: "请先登录" });
   }
 
-  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit}=req.query;
+  // ── Layer 2: DOCS_SECRET token — 仅用于外部token链接(无JWT用户) ──────────
+  // 2026-06-03 fix: 已登录内部用户(Layer1 extractUser通过)直接放行——
+  // window.open无法发X-Docs-Token头, 内部admin看PI/PO/SC/IV不该被Layer2挡。
+  // DOCS_SECRET仅在无内部JWT用户时作为外部访问凭证校验。
+  if(!req.user){
+    var DOC_TOKEN = process.env.DOCS_SECRET || "";
+    if(!DOC_TOKEN){
+      return res.status(503).send("<h1>503 Service Unavailable</h1><p>DOCS_SECRET not configured.</p>");
+    }
+    var reqToken = req.headers["x-docs-token"] || req.query.docs_token || "";
+    if(reqToken !== DOC_TOKEN){
+      return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid docs token.</p>");
+    }
+  }
+
+  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,stamp}=req.query;
   // format=xlsx → Excel export (handled after data fetch, same query pipeline)
 
   // ── List mode: no type/id → return documents table rows ──
-  // DOCS-AUTH-AUDIT-001 P1-HIGH scope guard (2026-05-13):
-  // Non-internal users (customers) MUST only see their own company's documents.
-  // Scoping is done server-side via JOIN to orders.company_code.
-  // Fail-closed: customer with no companyCodes gets empty array, not 403, to avoid breaking UI.
   if(!type && !id){
     try{
       var pool2=getPool();
-      var isInternal2 = req.user && (
-        req.user.role === "admin" || req.user.role === "finance" ||
-        req.user.role === "trader" || req.user.role === "logistics"
-      );
-
-      var p2=[], w2=[];
-
-      var q2;
-      if(isInternal2){
-        // Internal: full table access
-        q2 = "SELECT d.* FROM documents d";
-        if(contract_no){ p2.push(contract_no); w2.push("d.contract_no=$"+p2.length); }
-        if(bl_no){       p2.push(bl_no);       w2.push("d.bl_no=$"+p2.length); }
-        if(w2.length) q2 += " WHERE "+w2.join(" AND ");
-      } else {
-        // Customer scope: JOIN orders on contract_no, filter by company_code.
-        // Fail-closed: if user has no company codes, return empty immediately.
-        var codes2 = req.user && (req.user.companyCodes || (req.user.companyCode ? [req.user.companyCode] : [])) || [];
-        if(!codes2.length){
-          return res.json({success:true,data:[],count:0,_scope:"empty-no-company"});
-        }
-        // JOIN to orders — docs without a matching order row are excluded (safer).
-        // Docs linked only via bl_no (no contract_no) are also excluded; they surface
-        // through the shipping-plan → order join when that path is implemented.
-        p2.push(codes2); // $1 = text[]
-        q2 = "SELECT d.* FROM documents d"
-           + " INNER JOIN orders o ON o.contract_no = d.contract_no"
-           + " WHERE o.company_code = ANY($1::text[])";
-        if(contract_no){ p2.push(contract_no); q2 += " AND d.contract_no=$"+p2.length; }
-        if(bl_no){       p2.push(bl_no);       q2 += " AND d.bl_no=$"+p2.length; }
-      }
-
-      q2 += " ORDER BY d.created_at DESC";
-      p2.push(parseInt(limit)||1000); q2 += " LIMIT $"+p2.length;
+      var q2="SELECT * FROM documents", p2=[], w2=[];
+      var callerCode = (req.user.companyCode || req.user.company_code || "");
+      if(!callerCode) return res.status(403).json({error:"company_scope_missing"});
+      var allCodes = req.user.companyCodes && req.user.companyCodes.length ? req.user.companyCodes : [callerCode];
+      p2.push(allCodes); w2.push("company_code = ANY($"+p2.length+"::text[])");
+      if(contract_no){ p2.push(contract_no); w2.push("contract_no=$"+p2.length); }
+      if(bl_no){       p2.push(bl_no);       w2.push("bl_no=$"+p2.length); }
+      if(w2.length) q2+=" WHERE "+w2.join(" AND ");
+      q2+=" ORDER BY created_at DESC";
+      p2.push(parseInt(limit)||1000); q2+=" LIMIT $"+p2.length;
       var r2=await pool2.query(q2,p2);
       return res.json({success:true,data:r2.rows,count:r2.rowCount});
     }catch(e2){ return res.status(500).json({error:e2.message}); }
@@ -323,50 +275,86 @@ export default async function handler(req, res) {
   try {
     var pool=getPool(), html="";
 
-    if(["sc","iv","pl","po","pi"].includes(type)){
-      var oR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1",[id]);
+    if(["sc","iv","pl","po","pi","pack"].includes(type)){
+      var oR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 OR order_no=$1 LIMIT 1",[id]);
       if(!oR.rows.length) return res.status(404).send("<h1>Order not found: "+esc(id)+"</h1>");
       var o=oR.rows[0], raw=o.raw||{};
-      // DOCS-AUTH-AUDIT-001 P1-HIGH: customer scope guard on generated docs.
-      // Fail-closed: customer can only generate docs for their own orders.
-      var _isInternal = req.user && (req.user.role==="admin"||req.user.role==="finance"||req.user.role==="trader"||req.user.role==="logistics");
-      if(!_isInternal){
-        var _codes = req.user && (req.user.companyCodes||(req.user.companyCode?[req.user.companyCode]:[])) || [];
-        if(!_codes.length || !_codes.includes(o.company_code)){
-          return res.status(403).send("<h1>403 Forbidden</h1><p>You do not have access to this document.</p>");
-        }
-      }
       if(typeof raw==="string")try{raw=JSON.parse(raw);}catch(e){raw={};}
       var cfg=await loadSellerCfg(pool,raw,qco);
+      // 自动盖章(&stamp=1): 把开票公司的默认公章嵌入签章区(SELLER框)。多租户: 按 cfg.stamp_code 找该公司默认章。
+      // 仅内部角色或开票公司本人可触发,防止把预盖章单据外发给客户/货代造成泄露。
+      var _seal="";
+      try{
+        if(String(stamp||"")==="1"){
+          var _role=(req.user&&(req.user.role||req.user.roleCode||"")).toString().toLowerCase();
+          var _stampCode=(cfg.stamp_code||cfg.code||"").toString().toUpperCase();
+          var _callerCo=(req.user&&(req.user.companyCode||req.user.company_code||"")).toString().toUpperCase();
+          var _allowed=/(admin|staff|ops|owner|manager|internal|operator)/.test(_role)||(!!_callerCo&&_callerCo===_stampCode);
+          if(_allowed&&_stampCode){
+            var _sR=await pool.query("SELECT url FROM customer_stamps WHERE is_active AND is_default AND upper(company_code)=$1 ORDER BY id LIMIT 1",[_stampCode]);
+            if(_sR.rows.length) _seal=_sR.rows[0].url||"";
+          }
+        }
+      }catch(e){ console.warn("[documents] seal lookup failed:",e.message); }
       var cust=pick(o.company_name_en,raw.companyNameEN,raw.companyNameCN,o.customer);
       var caddr=resolveAddr(cust,pick(raw.customerAddress,raw.deliveryAddress));
       var ctel=raw.phone||"";
-      var ordNo=pick(raw.customerPO,o.customer_po,o.order_no);
+      try{ if(!caddr||!ctel){ var _cuR=await pool.query("SELECT address,address_en,contact_phone FROM customers WHERE name_en ILIKE $1 OR name_cn ILIKE $1 LIMIT 1",[cust]); if(_cuR.rows.length){ caddr=caddr||_cuR.rows[0].address_en||_cuR.rows[0].address||""; ctel=ctel||_cuR.rows[0].contact_phone||""; } } }catch(e){ console.warn("[documents] customer addr lookup failed:",e.message); }
+      var ordNo=pick(raw.customerPO,o.customer_po,String(o.order_no||"").replace(/^[0-9]+-/,""),o.contract_no); // forge: PO号=customer_po或订单号去客户码(DG-3/LL-5),再无则合同号
       var cno=pick(o.contract_no,o.order_no,id);
       var date=fmtD(pick(o.delivery_date,o.created_at));
       var curr=pick(raw.currency,o.currency,"USD");
       var pol=pick(raw.pol,raw.portOfLoading,"-");
       var pod=pick(raw.destination,raw.pod,raw.destinationPort,"-");
       var inco=pick(raw.tradeTerms,raw.incoterms,"FOB");
-      var prods=await enrichProdsFromMaster(pool,getProds(raw));
+      // SSOT(2026-06-03 forge): 单据数据以 order_line_items(订单表) 为准, raw.products 仅兜底
+      function _liToProd(li){
+        return{
+          productName: li.product_name||li.name||(li.raw&&li.raw.productName)||"",
+          sku:         li.sku||(li.raw&&li.raw.sku)||"",
+          barcode:     li.barcode||(li.raw&&li.raw.barcode)||"",
+          qty:         li.qty_ctn||li.qty||0,
+          unit:        li.unit||"CTN",
+          unitPrice:   li.unit_price||0,
+          subtotal:    li.subtotal||0,
+          factoryPrice:li.factory_price||li.unit_price||0,
+          netWeight:   li.nw_ctn||li.net_weight||0,
+          grossWeight: li.gw_ctn||li.gross_weight||0,
+          cbm:         li.cbm_ctn||li.cbm||0,
+          bgbx:        li.bg_bx||(li.raw&&li.raw.bgBx)||"",
+          size:        li.size||(li.raw&&li.raw.size)||"",
+          hsCode:      li.hs_code||(li.raw&&li.raw.hsCode)||"",
+          declarationName: li.declaration_name||"",
+          declarationNameEn: li.declaration_name_en||"",
+          declareAmtBox: Number(li.declare_amount_per_box)||0,
+        };
+      }
+      var prods=[];
+      try{
+        var liR=await pool.query("SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[o.id||o._id]);
+        if(liR.rows.length) prods=liR.rows.map(_liToProd);
+      }catch(e){console.warn("[documents] order_line_items primary load failed:",e.message);}
+      if(!prods.length) prods=getProds(raw);
       // ── Look up container assignment from container_bookings subtable ──
       // Source of truth for which container holds which order (plus driver/VGM/trucking).
       // Falls back to orders.raw.containerNo if no booking record yet.
-      var _cbMap={}; // contract_no → container_no
+      var _cbMap={}; // contract_no → {container_no, seal_no}
       try {
         var cbR=await pool.query(
-          "SELECT contract_no, container_no FROM container_bookings WHERE contract_no = ANY($1::text[])",
-          [[pick(o.contract_no,o.order_no,id)].concat(String(ids||"").split(",").map(function(s){return s.trim();}).filter(Boolean))]
+          "SELECT contract_no, container_no, seal_no FROM container_bookings WHERE bl_no = $2 OR contract_no = ANY($1::text[])",
+          [[pick(o.contract_no,o.order_no,id)].concat(String(ids||"").split(",").map(function(s){return s.trim();}).filter(Boolean)), o.bl_no||""]
         );
-        cbR.rows.forEach(function(row){ if(row.contract_no) _cbMap[row.contract_no]=row.container_no; });
+        cbR.rows.forEach(function(row){ if(row.contract_no) _cbMap[row.contract_no]={container_no:row.container_no, seal_no:row.seal_no}; });
       } catch (e) { console.warn("[documents] container_bookings lookup failed:",e.message); }
 
       // Tag primary-order products with group metadata (container / customer PO / contract).
       // Used by productRows() to emit a section header when multiple orders are merged.
       var _primaryCno=pick(o.contract_no,o.order_no,id);
-      var _primaryContainer=pick(_cbMap[_primaryCno], raw.containerNo, "");
-      var _primaryPO=pick(raw.customerPO,o.customer_po,o.order_no);
-      prods=prods.map(function(p){return Object.assign({},p,{_groupKey:_primaryCno,_containerNo:_primaryContainer,_customerPO:_primaryPO,_contractNo:_primaryCno});});
+      var _cb0=_cbMap[_primaryCno]||{};
+      var _primaryContainer=pick(_cb0.container_no, raw.containerNo, "");
+      var _primarySeal=_cb0.seal_no||"";
+      var _primaryPO=pick(raw.customerPO,o.customer_po,String(o.order_no||"").replace(/^[0-9]+-/,""),o.contract_no);
+      prods=prods.map(function(p){return Object.assign({},p,{_groupKey:_primaryCno,_containerNo:_primaryContainer,_sealNo:_primarySeal,_customerPO:_primaryPO,_contractNo:_primaryCno});});
       // ── Multi-order B/L merge: when ?ids=CN1,CN2,... passed (SC/IV/PL only, NOT PI) ──
       // Load sibling orders (same B/L, different contracts) and merge their products into
       // ONE combined trade doc — required for customs declaration on grouped shipments.
@@ -375,18 +363,24 @@ export default async function handler(req, res) {
       if(ids && type!=="pi"){
         var idList=String(ids).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
         if(idList.length){
-          var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
+          var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[]) OR order_no = ANY($1::text[])",[idList]);
           // Sort sibling orders by customer_po for stable output (XM-254 → 256 → 262 → 263 etc.)
           var sibRows=sibR.rows.slice().sort(function(a,b){var pa=(a.customer_po||"");var pb=(b.customer_po||"");return pa<pb?-1:pa>pb?1:0;});
-          for(var sib of sibRows){
+          for(const sib of sibRows){
+            // 去重护栏: 跳过主单自己(ids若含主单合同号会重复加载→食品等翻倍)
+            if(String(sib.id||sib._id)===String(o.id||o._id) || (sib.contract_no && sib.contract_no===o.contract_no)){ continue; }
             var sRaw=sib.raw||{};
             if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
-            var sProds=await enrichProdsFromMaster(pool,getProds(sRaw));
+            var sProds=[];
+            try{ var sLi=await pool.query("SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[sib.id||sib._id]); if(sLi.rows.length) sProds=sLi.rows.map(_liToProd); }catch(e){}
+            if(!sProds.length) sProds=getProds(sRaw);
             var sCno=sib.contract_no||sib.customer_po;
-            var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no);
-            var sContainer=pick(_cbMap[sCno], sRaw.containerNo, "");
+            var sPO=pick(sRaw.customerPO,sib.customer_po,String(sib.order_no||"").replace(/^[0-9]+-/,""),sib.contract_no);
+            var _cbS=_cbMap[sCno]||{};
+            var sContainer=pick(_cbS.container_no, sRaw.containerNo, "");
+            var sSeal=_cbS.seal_no||"";
             if(sProds.length){
-              var tagged=sProds.map(function(p){return Object.assign({},p,{_groupKey:sCno,_containerNo:sContainer,_customerPO:sPO,_contractNo:sCno});});
+              var tagged=sProds.map(function(p){return Object.assign({},p,{_groupKey:sCno,_containerNo:sContainer,_sealNo:sSeal,_customerPO:sPO,_contractNo:sCno});});
               prods=prods.concat(tagged);
             }
             if(sCno) _mergedCnos.push(sCno);
@@ -403,140 +397,191 @@ export default async function handler(req, res) {
       }
       // Single-order: no group header needed — blank the tag so productRows skips it.
       if(!_hasMultiOrder) prods=prods.map(function(p){return Object.assign({},p,{_groupKey:""});});
-      var _xlsCapture=null; // populated by sc/iv/pl blocks for xlsx export
+      // ── 工厂/城市 lookup(对合并后的全部prods含兄弟订单): 报关 IV/PL/SC 按工厂拆行
+      //    (同HS两厂各一行,如箱包徐州80+河北51)。显示仍只品名不露厂名(防跳单)。
+      if(String(req.query.customs||"")==="1"||String(req.query.customs||"")==="true"){
+        try{
+          var _skusF=Array.from(new Set(prods.map(function(p){return p.sku;}).filter(Boolean)));
+          if(_skusF.length){
+            var _fR=await pool.query("SELECT DISTINCT ON (sku) sku,factory_name,factory_city FROM products WHERE sku=ANY($1) ORDER BY sku,updated_at DESC NULLS LAST",[_skusF]);
+            var _fMap={}; _fR.rows.forEach(function(r){_fMap[r.sku]={f:r.factory_name||"",c:r.factory_city||""};});
+            prods=prods.map(function(p){var m=_fMap[p.sku]||{};return Object.assign({},p,{_factory:m.f||"",_city:m.c||""});});
+          }
+        }catch(e){console.warn("[documents] factory/city lookup failed:",e.message);}
+      }
+      // ── 真正的报关资料 ?customs=1: 按报关品名(declaration_name)+工厂 合并, 金额=申报金额, 不分订单组 ──
+      if(String(req.query.customs||"")==="1"||String(req.query.customs||"")==="true"){
+        var _dg={}, _ord=[];
+        prods.forEach(function(p){
+          var dn=(p.declarationName||p.declaration_name||p.category||p.productName||p.name||"其他");
+          // 报关按工厂拆行(同HS两厂各一行,如箱包徐州80+河北51);productName仍只品名不露厂名(防跳单)
+          var key=dn+""+(p._factory||p._city||"");
+          if(!_dg[key]){ _dg[key]={productName:dn,name:dn,nameEn:"",sku:"",_groupKey:"",_containerNo:"",_customerPO:"",_contractNo:"",size:"",hsCode:(p.hsCode||p.hs_code||""),unit:(p.unit||"CTN"),qty:0,_nw:0,_gw:0,_cbm:0,_decl:0}; _ord.push(key); }
+          var g=_dg[key], q=Number(p.qty)||0;
+          g.qty+=q; g._nw+=(Number(p.netWeight)||0)*q; g._gw+=(Number(p.grossWeight)||0)*q; g._cbm+=(Number(p.cbm)||0)*q;
+          g._decl+=(Number(p.declareAmtBox)||Number(p.unitPrice)||0)*q;
+          if(!g.size&&(p.size||p.spec)) g.size=p.size||p.spec;
+          if(!g.hsCode&&(p.hsCode||p.hs_code)) g.hsCode=p.hsCode||p.hs_code;
+          if(!g.nameEn&&p.declarationNameEn) g.nameEn=p.declarationNameEn;
+        });
+        // 报关资料品名显示中英文: "中文 / ENGLISH"
+        prods=_ord.map(function(k){var g=_dg[k],q=g.qty||1;var _pn=g.productName+(g.nameEn?" / "+g.nameEn:"");return {productName:_pn,name:_pn,sku:"",_groupKey:"",_containerNo:"",_customerPO:"",_contractNo:"",size:g.size,hsCode:g.hsCode,unit:g.unit,qty:g.qty,netWeight:g._nw/q,grossWeight:g._gw/q,cbm:g._cbm/q,unitPrice:g._decl/q,subtotal:g._decl};});
+      }
+      var _xlsCapture=null, _capSC=null, _capIV=null, _capPL=null; // populated by sc/iv/pl blocks for xlsx export
+      var _bodySC="",_bodyIV="",_bodyPL=""; // forge pack
       var tot=getTotal(prods,o);
+      var _mergedContainers=Array.from(new Set(prods.map(function(p){return p._containerNo;}).filter(Boolean))).join(" / "); // forge: 单据显示柜号
       var tqty=prods.reduce(function(s,p){return s+Number(p.qty||0);},0)||Number(raw.totalQty||0);
       // GW/NW in products are PER-CARTON values — must multiply by qty for totals.
-      var tgw=prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0)*Number(p.qty||0);},0)||Number(raw.grossWeight||0);
-      var tnw=prods.reduce(function(s,p){return s+Number(p.netWeight||p.nw||0)*Number(p.qty||0);},0)||Number(raw.netWeight||0);
+      // ── 单一来源列取值 fn: HTML(productRows) 与 xlsx(colKeys) 共用, 防两套漂移(CBM/柜封类bug根治) ──
+      var _vName =function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;};
+      var _vQty  =function(p){return Number(p.qty)||0;};
+      var _vPrice=function(p){return Number(resolveUnitPrice(p))||0;};
+      var _vAmt  =function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return s;};
+      var _vGw   =function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return pg*q||pg;};
+      var _vNw   =function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return pn*q||pn;};
+      var _vCbm  =function(p){var pc=Number(p.cbm||p.volume||0);var q=Number(p.qty||0);return pc*q||pc;};
+      // HTML 格式化器(字符串) / xlsx 数值化器 — 只差展示格式, 值同源
+      var _hNum =function(v){return fmtM(v);}, _hNum3=function(v){return fmtM(v,3);};
+      var _xNum =function(v){return parseFloat(Number(v).toFixed(2))||0;}, _xNum3=function(v){return parseFloat(Number(v).toFixed(3))||0;};
+      var tgw=prods.reduce(function(s,p){return s+_vGw(p);},0)||Number(raw.grossWeight||0);
+      var tnw=prods.reduce(function(s,p){return s+_vNw(p);},0)||Number(raw.netWeight||0);
 
       var totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
 
-      if(type==="sc"){
-        var no=cno.split(" / ").map(function(c){return"SC-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
+      if(type==="sc"||type==="pack"){
+        var no=cno; // forge: 单据号=合同号(FS),不加SC-前缀
         var colsSC=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"name",al:"",fn:_vName,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
+          {k:"price",al:"right",w:"95px",fn:function(p){return _hNum(_vPrice(p));},lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:function(p){return _hNum(_vAmt(p));},lbl:"Amount"},
         ];
-        html=wrap("Sales Contract — "+no,`
+        _bodySC=`
           ${docHdr(cfg,"销售合同","SALES CONTRACT")}
-          ${buyerBlock(cust,caddr,ctel,no,"Contract No.",ordNo,date,curr)}
-          ${portBar(pol,pod,inco)}
+          ${buyerBlock(cust,caddr,ctel,no,"Contract No.",ordNo,date,curr,_mergedContainers)}
+          
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
-          <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Sales Contract",docNo:no,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
+          <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank,curr)}</div>${sigBlock(_seal)}`; if(type!=="pack")html=wrap("Sales Contract — "+no,_bodySC,ap);
+        _xlsCapture=_capSC={sheetName:"Sales Contract",docNo:no,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
-            {k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},
-            {k:"qty"},
-            {k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},
-            {k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}
+            {k:"name",fn:_vName},
+            {k:"qty",fn:_vQty},
+            {k:"price",fn:function(p){return _xNum(_vPrice(p));}},
+            {k:"amt",fn:function(p){return _xNum(_vAmt(p));}}
           ],
-          rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
+          rows:prods,totals:["","TOTAL","","",_xNum(tot)]};
       }
 
-      if(type==="iv"){
-        var noIV=cno.split(" / ").map(function(c){return"IV-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
+      if(type==="iv"||type==="pack"){
+        var noIV=cno; // forge: 发票号=合同号(FS),不加IV-前缀; PO号在Order字段
         var colsIV=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"name",al:"",fn:_vName,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
+          {k:"price",al:"right",w:"95px",fn:function(p){return _hNum(_vPrice(p));},lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:function(p){return _hNum(_vAmt(p));},lbl:"Amount"},
         ];
-        html=wrap("Commercial Invoice — "+noIV,`
+        _bodyIV=`
           ${docHdr(cfg,"商业发票","COMMERCIAL INVOICE")}
-          ${buyerBlock(cust,caddr,ctel,noIV,"Invoice No.",ordNo,date,curr)}
-          ${portBar(pol,pod,inco)}
+          ${buyerBlock(cust,caddr,ctel,noIV,"Invoice No.",ordNo,date,curr,_mergedContainers)}
+          
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
-          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Invoice",docNo:noIV,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
+          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock(_seal)}`; if(type!=="pack")html=wrap("Commercial Invoice — "+noIV,_bodyIV,ap);
+        _xlsCapture=_capIV={sheetName:"Invoice",docNo:noIV,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
-          colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty"},{k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},{k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}],
-          rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
+          colKeys:[{k:"name",fn:_vName},{k:"qty",fn:_vQty},{k:"price",fn:function(p){return _xNum(_vPrice(p));}},{k:"amt",fn:function(p){return _xNum(_vAmt(p));}}],
+          rows:prods,totals:["","TOTAL","","",_xNum(tot)]};
       }
 
-      if(type==="pl"){
-        var noPL=cno.split(" / ").map(function(c){return"PL-"+c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
-        var tcbmPL=prods.reduce(function(s,p){return s+Number(p.cbm||p.volume||0);},0)||Number(raw.totalCBM||raw.cbm||0);
+      if(type==="pl"||type==="pack"){
+        var noPL=cno; // forge: 不加PL-前缀
+        var tcbmPL=prods.reduce(function(s,p){return s+_vCbm(p);},0)||Number(raw.totalCBM||raw.cbm||0);
         var colsPL=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"name",al:"",fn:_vName,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"55px",lbl:"QTY"},
-          {k:"gw",al:"right",w:"75px",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return fmtM(pg*q||pg);},lbl:"G.W (KG)"},
-          {k:"nw",al:"right",w:"75px",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return fmtM(pn*q||pn);},lbl:"N.W (KG)"},
-          {k:"cbm",al:"right",w:"65px",fn:function(p){return fmtM(p.cbm||p.volume||0,3);},lbl:"CBM"},
+          {k:"gw",al:"right",w:"75px",fn:function(p){return _hNum(_vGw(p));},lbl:"G.W (KG)"},
+          {k:"nw",al:"right",w:"75px",fn:function(p){return _hNum(_vNw(p));},lbl:"N.W (KG)"},
+          {k:"cbm",al:"right",w:"65px",fn:function(p){return _hNum3(_vCbm(p));},lbl:"CBM"},
         ];
-        html=wrap("Packing List — "+noPL,`
+        _bodyPL=`
           ${docHdr(cfg,"装箱单","PACKING LIST")}
-          ${buyerBlock(cust,caddr,ctel,noPL,"P/L No.",ordNo,date,null)}
-          ${portBar(pol,pod,inco)}
+          ${buyerBlock(cust,caddr,ctel,noPL,"P/L No.",ordNo,date,curr,_mergedContainers)}
+          
           <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPL,curr)}
           <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
-          </tbody></table>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Packing List",docNo:noPL,buyer:cust,date:date,cno:cno,curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
+          </tbody></table>${sigBlock(_seal)}`; if(type!=="pack")html=wrap("Packing List — "+noPL,_bodyPL,ap);
+        _xlsCapture=_capPL={sheetName:"Packing List",docNo:noPL,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
           headers:["NO.","Description & Size","QTY","G.W (KG)","N.W (KG)","CBM"],
-          colKeys:[{k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(Number(p.cbm||p.volume||0).toFixed(3))||0;}}],
-          rows:prods,totals:["","TOTAL",tqty,parseFloat(tgw.toFixed(2)),parseFloat(tnw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
+          colKeys:[{k:"name",fn:_vName},{k:"qty",fn:_vQty},{k:"gw",fn:function(p){return _xNum(_vGw(p));}},{k:"nw",fn:function(p){return _xNum(_vNw(p));}},{k:"cbm",fn:function(p){return _xNum3(_vCbm(p));}}],
+          rows:prods,totals:["","TOTAL",tqty,_xNum(tgw),_xNum(tnw),_xNum3(tcbmPL)]};
       }
 
+      if(type==="pack"){ html=wrap("报关资料 PL+SC+IV — "+esc(cno), [_bodyPL,_bodySC,_bodyIV].filter(Boolean).join('<div style="page-break-after:always;height:0;"></div>'), ap); }
+
       if(type==="pi"){
-        var noPI="PI-"+cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
+        var noPI=String(o.contract_no||o.order_no||id).replace(/[^A-Za-z0-9-]/g,"").slice(0,40);  // = 内部流水号 contract_no(FS开头·系统不可改)，无前缀（不编造）
         var colsPI=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+          {k:"name",al:"",fn:_vName,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount ("+curr+")"},
+          {k:"price",al:"right",w:"95px",fn:function(p){return _hNum(_vPrice(p));},lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:function(p){return _hNum(_vAmt(p));},lbl:"Amount ("+curr+")"},
         ];
         html=wrap("Proforma Invoice — "+noPI,`
-          ${docHdr(cfg,"","PROFORMA INVOICE")}
+          ${docHdr(cfg,"","PROFORMA INVOICE","export")}
           ${buyerBlock(cust,caddr,ctel,noPI,"PI No.",ordNo,date,curr)}
-          ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
-          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank)}</div>${sigBlock()}`,ap);
+          <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock(_seal)}`,ap);
         _xlsCapture={sheetName:"Proforma Invoice",docNo:noPI,buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
-            {k:"name",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;}},
-            {k:"qty"},
-            {k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},
-            {k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}
+            {k:"name",fn:_vName},
+            {k:"qty",fn:_vQty},
+            {k:"price",fn:function(p){return _xNum(_vPrice(p));}},
+            {k:"amt",fn:function(p){return _xNum(_vAmt(p));}}
           ],
-          rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
+          rows:prods,totals:["","TOTAL","","",_xNum(tot)]};
       }
 
       if(type==="po"){
         var noPO=pick(o.order_no,o.contract_no,id);
-        var factory=pick(raw.factory,raw.factoryName,raw.supplier,"[FACTORY]");
+        // 供应商=工厂：优先 orders 主表 canonical 列(产品→工厂映射)，raw.factory 不可靠(曾被写成买方巴匕)
+        var factory=pick(o.factory_name_cn,o.factory,raw.factoryName,raw.supplier,raw.factory,"[FACTORY]");
         var buyerTaxNo=pick(cfg.taxNo,raw.sellerTaxNo,"");
         var vendorTaxNo=pick(raw.factoryTaxNo,raw.vendorTaxNo,"");
         var vendorAddress="", vendorBank="", vendorAccount="";
         try{
-          var fSearch=factory.replace(/股份|有限公司|进出口/g,"").trim().slice(0,6);
-          var fR=await pool.query("SELECT * FROM factories WHERE name=$1 OR name LIKE $2 LIMIT 1",[factory,'%'+fSearch+'%']);
+          // 供应商显示用全中文名（去掉 "/ English"），并补全税号/开户行/账号
+          var fSearch=factory.split("/")[0].replace(/股份|有限公司|进出口/g,"").trim().slice(0,6);
+          var fR=await pool.query("SELECT * FROM factories WHERE name=$1 OR name LIKE $2 ORDER BY (tax_no IS NULL), id LIMIT 1",[factory,'%'+fSearch+'%']);
           if(fR.rows.length){
             var fd=fR.rows[0];
+            factory=fd.name||factory;            // 全中文名，无英文
             vendorTaxNo=vendorTaxNo||fd.tax_no||"";
             vendorAddress=fd.address||"";
             vendorBank=fd.bank_name||"";
             vendorAccount=fd.bank_account||"";
+          } else {
+            factory=factory.split("/")[0].trim();  // 至少去掉英文部分
           }
         }catch(e){}
+        // 买方开户银行（中文，PO为内贸文件）
+        var buyerBankCN="";
+        try{ var bcR=await pool.query("SELECT bank_name FROM companies WHERE name_cn=$1 LIMIT 1",[cfg.nameCN]); if(bcR.rows.length) buyerBankCN=bcR.rows[0].bank_name||""; }catch(e){}
         var totPO=prods.reduce(function(s,p){var fp=pick(p.factoryPrice,p.unitPrice,p.price);var sub=Number(p.subtotalFactory||p.subtotal||0);if(!sub&&p.qty&&fp)sub=Number(p.qty)*Number(fp);return s+sub;},0)||Number(o.total_amount)||0;
         html=wrap("Purchase Order — "+noPO,`
-          ${docHdr(cfg,"采购合同","PURCHASE ORDER")}
+          ${docHdr(cfg,"采购合同","PURCHASE ORDER","domestic")}
           <div class="meta-grid">
             <div>
               <div class="section-label">买方信息 BUYER / BILL TO</div>
               <p style="font-size:13px;font-weight:bold;margin:0">${esc(cfg.nameCN)}</p>
-              <p style="margin:2px 0;color:#666;font-size:10px">${esc(cfg.nameEN)}</p>
               ${buyerTaxNo?`<p style="margin:2px 0">税号: ${esc(buyerTaxNo)}</p>`:""}
               <p style="margin:2px 0">地址: ${esc(cfg.address)}</p>
-              <p style="margin:2px 0">开户银行: ${esc(cfg.buyerBank||cfg.bank.bankName)}</p>
+              <p style="margin:2px 0">开户银行: ${esc(buyerBankCN||cfg.buyerBank||cfg.bank.bankName)}</p>
               <p style="margin:2px 0">银行账户: ${esc(cfg.bank.rmbAccount)}</p>
             </div>
             <div>
@@ -563,15 +608,33 @@ export default async function handler(req, res) {
               }).join("")}
             <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">合计 Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right" style="font-size:14px">${fmtM(totPO)}</td><td></td></tr>
           </tbody></table>
-          <div class="details-grid">
-            <div class="details-box"><h4>备注及条款 REMARKS &amp; TERMS</h4>
-              1. 质量 Quality: 供方须保证产品符合约定规格。终端客户投诉有据可查时，供方承担退款或补货责任。(Supplier guarantees specs; liable for refund/replacement on verified defects.)<br>
-              2. 交期 Delivery: 如有延误，须提前5个工作日书面通知。逾期导致的亏舱费、改船费、客户索赔由供方承担。(5 working days written notice required for delays. Supplier liable for resulting losses.)<br>
-              3. 系统声明: 本合同由 Sanlyn OS 供应链引擎自动生成，作为双方商业确认之有效凭证。
-            </div>
-            ${bankCard(cfg.bank)}
+          <div class="details-box" style="margin-top:10px">
+            <h4>备注 REMARKS &amp; TERMS</h4>
+            <p style="margin:6px 0 2px"><b>1. 质量保证与售后 (Quality &amp; Liability)</b></p>
+            <p style="margin:0 0 2px">供方须保证交付的产品完全符合约定的规格与质量标准。如货物发运后，终端客户提出质量投诉并提供实质性证据（如缺陷照片、视频或第三方检验报告），供方承诺积极配合调查，并对确属生产原因导致的不良品承担相应的退款或免费补货责任。</p>
+            <p style="margin:0 0 8px;color:#555;font-size:10px">(Supplier guarantees that all goods meet the agreed specifications. In the event of an end-customer complaint supported by substantive evidence, the Supplier agrees to assume responsibility for refunds or replacements for verified manufacturing defects.)</p>
+            <p style="margin:6px 0 2px"><b>2. 交期预警与物流协同 (Delivery &amp; Logistics Coordination)</b></p>
+            <p style="margin:0 0 2px">国际海运船期衔接紧密，请严格按照本订单所列之交期（Delivery Date）排产。如遇不可抗力或延误风险，请务必提前至少 5 个工作日书面通知我司，以便及时调整物流舱位。如因贵司逾期交货且未按规定提前预警，导致我司产生的海运亏舱费、改船费或终端客户索赔，须由贵司承担相应的实际损失。</p>
+            <p style="margin:0 0 8px;color:#555;font-size:10px">(Strict adherence to the Delivery Date is required for ocean freight scheduling. Please notify us in writing at least 5 working days in advance of any potential delays. In the event of delayed delivery without the required advance notice, the Supplier shall be liable for actual losses incurred by our company, including but not limited to dead freight, vessel rescheduling fees, and end-customer claims.)</p>
+            <p style="margin:6px 0 2px"><b>3. 履约依据 (Execution &amp; Agreement)</b></p>
+            <p style="margin:0 0 2px">本采购订单（PO）为我司标准排产指令。如贵司已另行出具《销售合同》或 PI，本 PO 将作为该合同的执行与对账凭证；针对产品质量与售后的核心底线，以本条款之精神为准。</p>
+            <p style="margin:0 0 8px;color:#555;font-size:10px">(This PO serves as the standard execution document. If a separate Sales Contract/PI is provided by the Supplier, this PO acts as the operational counterpart, maintaining the core principles of quality liability herein.)</p>
+            <p style="margin:6px 0 2px"><b>4. 系统声明 (System Notice)</b></p>
+            <p style="margin:0 0 2px">本电子合约由 ⚡Sanlyn OS 供应链引擎自动生成并追溯，作为双方商业确认之有效凭证。</p>
+            <p style="margin:0;color:#555;font-size:10px">(Generated &amp; Verified by Sanlyn OS Supply Chain Engine. Valid as an official commercial confirmation.)</p>
           </div>
-          <div class="signature-grid"><div class="sig-box"><span>BUYER REPRESENTATIVE</span><span style="font-weight:normal;font-size:9px">(买方代表签署 / 盖章)</span></div><div class="sig-box"><span>SELLER REPRESENTATIVE</span><span style="font-weight:normal;font-size:9px">(卖方代表签署 / 盖章)</span></div></div>
+          <div class="signature-grid">
+            <div class="sig-box" style="text-align:left;height:auto;padding-top:14px">
+              <div style="margin-bottom:18px">买方代表 Buyer Rep.: ______________</div>
+              <div style="margin-bottom:18px">批准签章 Approved / Seal: ______________</div>
+              <div>日期 Date: ______________</div>
+            </div>
+            <div class="sig-box" style="text-align:left;height:auto;padding-top:14px">
+              <div style="margin-bottom:18px">卖方代表 Seller Rep.: ______________</div>
+              <div style="margin-bottom:18px">批准签章 Approved / Seal: ______________</div>
+              <div>日期 Date: ______________</div>
+            </div>
+          </div>
         `,ap);
       }
     }
@@ -582,7 +645,7 @@ export default async function handler(req, res) {
       var sp=spR.rows[0], spraw=sp.raw||{};
       if(typeof spraw==="string")try{spraw=JSON.parse(spraw);}catch(e){spraw={};}
       var cfg3=await loadSellerCfg(pool,spraw,qco);
-      var fwd=FORWARDERS["default"];
+      var fwd=await loadForwarderCfg(pool);
       var vessel=pick(sp.vessel,spraw.vessel,"-");
       var voyage=pick(sp.voyage,spraw.voyage,"-");
       var polSp=pick(sp.pol,"-"), podSp=pick(sp.pod,"-");
@@ -616,15 +679,13 @@ export default async function handler(req, res) {
       var _orderNos=sp.order_nos||spraw.orderNos||spraw.order_nos||[];
       if(_orderNos&&_orderNos.length){
         var loR=await pool.query("SELECT raw,contract_no,order_no,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
-        for(var loRow of loR.rows){
-          var rr=loRow.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
-          var enrichedBLProds=await enrichProdsFromMaster(pool,rr.products||rr.items||[]);
-          var rrE=Object.assign({},rr,{products:enrichedBLProds,items:enrichedBLProds});
-          var lines=_buildLines(rrE);
-          var key=loRow.contract_no||loRow.order_no||"";
+        loR.rows.forEach(function(r){
+          var rr=r.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
+          var lines=_buildLines(rr);
+          var key=r.contract_no||r.order_no||"";
           if(key)cargoByOrder[key]=lines;
           lines.forEach(function(l){var k=(l.hs+"|"+l.desc).toLowerCase();if(!cargoLines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===k;}))cargoLines.push(l);});
-        }
+        });
       }
       if(!cargoLines.length){var fb=pick(spraw.cargoDescription,sp.cargo_description,"");if(fb)cargoLines=[{desc:fb,hs:""}];}
       function _cargoHTML(lines){
@@ -759,6 +820,7 @@ export default async function handler(req, res) {
       }
 
       if(type==="debit"){
+        cfg3=await loadSellerCfg(pool,spraw,"yangbaobao");  // 运费账单出单方=洋宝宝
         var exr=Number(pick(sp.exchange_rate,spraw.exchangeRate,7.2));
         var fUSD=Number(pick(sp.freight_sale_usd,0));
         var fCNY=Number(pick(sp.freight_cost,0));
@@ -975,6 +1037,11 @@ export default async function handler(req, res) {
       var ExcelJS=(await import("exceljs")).default;
       var wb=new ExcelJS.Workbook();
       wb.creator="Sanlyn OS"; wb.created=new Date();
+      // 公章: 盖章时(_seal) 把章图嵌入xlsx签章区, 与 PDF/HTML 一致
+      var _sealImgId=null;
+      if(_seal){ try{ var _sr=await fetch(_seal); if(_sr&&_sr.ok){ var _sab=await _sr.arrayBuffer(); _sealImgId=wb.addImage({buffer:Buffer.from(_sab), extension:(String(_seal).toLowerCase().indexOf(".jpg")>=0||String(_seal).toLowerCase().indexOf(".jpeg")>=0)?"jpeg":"png"}); } }catch(e){ console.warn("[documents] xlsx seal fetch failed:",e.message); } }
+      var _caps=(type==="pack")?[_capPL,_capSC,_capIV].filter(Boolean):[_xlsCapture];
+      for(var _si=0;_si<_caps.length;_si++){ _xlsCapture=_caps[_si];
       var ws=wb.addWorksheet(_xlsCapture.sheetName||_xlsCapture.docNo);
       var _sel=_xlsCapture.seller||{};
 
@@ -1011,7 +1078,7 @@ export default async function handler(req, res) {
       ws.addRow([]);
       ws.addRow(["Buyer:",_xlsCapture.buyer,"","Date:",_xlsCapture.date]);
       ws.addRow(["Contract No.:",_xlsCapture.cno,"","Currency:",_xlsCapture.curr]);
-      ws.addRow(["PO No.:",_xlsCapture.poNo||"","","",""]);
+      ws.addRow(["PO No.:",_xlsCapture.poNo||"","Container No.:",_mergedContainers||"",""]);
       ws.addRow(["POL:",_xlsCapture.pol,"","POD:",_xlsCapture.pod]);
       ws.addRow([]);
 
@@ -1028,7 +1095,7 @@ export default async function handler(req, res) {
         // Group header
         var grp=p._groupKey||"";
         if(grp&&grp!==lastGrp){
-          var gRow=ws.addRow(["","ORDER "+(p._customerPO||"")+(p._containerNo?" · "+p._containerNo:"")+(p._contractNo?" · "+p._contractNo:"")]);
+          var gRow=ws.addRow(["",_groupHdr(p)]);
           gRow.eachCell(function(c){c.font={bold:true,color:{argb:"FF1e40af"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFe8eeff"}};});
           ws.mergeCells("B"+gRow.number+":F"+gRow.number);
           lastGrp=grp;
@@ -1147,9 +1214,16 @@ export default async function handler(req, res) {
       sigR3.getCell(sigMid+1).alignment={horizontal:"center"};
       // Give space for stamps
       ws.addRow([]);ws.addRow([]);ws.addRow([]);
+      // 公章盖在 SELLER 签章区(右半), 浮于签名行之上
+      if(_sealImgId!=null){
+        try{
+          ws.addImage(_sealImgId, { tl:{col:_lastCol-1.35, row:sigR1.number-1.2}, ext:{width:118,height:118}, editAs:"absolute" });
+        }catch(e){ console.warn("[documents] xlsx addImage failed:",e.message); }
+      }
 
+      } // end per-sheet loop
       res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      res.setHeader("Content-Disposition","attachment; filename=\""+_xlsCapture.docNo+".xlsx\"");
+      res.setHeader("Content-Disposition","attachment; filename=\""+(type==="pack"?"Sanlyn-Docs":String(_xlsCapture.docNo||"document").replace(/[^A-Za-z0-9_\-]/g,"_"))+".xlsx\"");
       res.setHeader("Cache-Control","no-store");
       var buf=await wb.xlsx.writeBuffer();
       return res.status(200).send(Buffer.from(buf));
