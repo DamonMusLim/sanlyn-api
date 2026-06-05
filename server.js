@@ -126,8 +126,11 @@ mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
 mount("/api/db/customers",         () => import("./api/db/customers.js"));
 mount("/api/db/import-customers",  () => import("./api/db/import-customers.js"));
 mount("/api/db/customer-stamps",   () => import("./api/db/customer-stamps.js"));
+mount("/api/db/customer-brand-routes", () => import("./api/db/customer-brand-routes.js")); // factory-self brand→customer auth (2026-05-19)
+mount("/api/db/partner-relationships", () => import("./api/db/partner-relationships.js")); // partner network listing (2026-05-19)
 mount("/api/db/customs",           () => import("./api/db/customs.js"));
-mount("/api/db/customs-summary",   () => import("./api/db/customs-summary.js")); // 分类报关汇总
+mount("/api/db/customs-summary",        () => import("./api/db/customs-summary.js")); // 分类报关汇总
+mount("/api/db/customs-consolidated",   () => import("./api/db/customs-consolidated.js")); // 多柜合并报关 (2026-05-22)
 mount("/api/db/customs-draft",    () => import("./api/db/customs-draft.js"));   // 报关底稿生成
 mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
 mount("/api/db/documents",         () => import("./api/db/documents.js"));
@@ -156,6 +159,7 @@ mount("/api/db/finance-records",          () => import("./api/db/finance-records
 mount("/api/db/finance-receivables",      () => import("./api/db/finance-records.js"));
 // FINANCE-WORKSPACE-UI-IMPL-001: read-only freight AP bills (GET only, no writes)
 mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplier-bills.js"));
+mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
@@ -165,6 +169,11 @@ mount("/api/db/export-pdf",        () => import("./api/db/export-pdf.js"));
 mount("/api/db/shipment-tracking",  () => import("./api/db/shipment-tracking.js"));
 mount("/api/db/urge",                  () => import("./api/db/urge.js"));
 mount("/api/db/field-registry",        () => import("./api/db/field-registry.js"));
+mount("/api/db/field-bindings",        () => import("./api/db/field-bindings.js"));
+mount("/api/db/field-catalog/resolve", () => import("./api/db/field-catalog-resolve.js"));
+mount("/api/db/field-catalog",         () => import("./api/db/field-catalog.js"));
+mount("/api/db/template-form",          () => import("./api/db/template-form.js"));
+mount("/api/db/field-layout",           () => import("./api/db/field-layout.js"));
 mount("/api/db/migrate-collab-fields", () => import("./api/db/migrate-collab-fields.js"));
 // customer-invite: self-service activation links for customer accounts — needs prefix match
 app.all("/api/db/customer-invite/*", async (req, res) => {
@@ -211,6 +220,16 @@ mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"
 mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
 mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));
+// Product Master V1 — Factory Write-in (PATCH only; raw.factory_profile +
+// raw.aliases.factory). Permission in api/lib/product-scope.js.
+// Two mount paths so the endpoint works in both Express (server.js) and
+// Vercel (file-based routing maps the file to the flat path). Handler
+// resolves SKU from req.params.sku || req.query.sku || req.body.sku.
+mount("/api/db/products/:sku/factory-profile", () => import("./api/db/product-factory-profile.js"));
+mount("/api/db/product-factory-profile",       () => import("./api/db/product-factory-profile.js"));
+mount("/api/db/company-brand-permissions", () => import("./api/db/company-brand-permissions.js"));
+mount("/api/db/factory-brands",    () => import("./api/db/factory-brands.js"));
+mount("/api/db/brand-applications",() => import("./api/db/brand-applications.js"));
 mount("/api/db/raw-patch",         () => import("./api/db/raw-patch.js"));
 mount("/api/db/shipping",          () => import("./api/db/shipping.js"));
 mount("/api/db/shipping-notify",   () => import("./api/db/shipping-notify.js")); // BL录入双轨通知
@@ -221,17 +240,34 @@ mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
 mount("/api/db/vault-read",        () => import("./api/db/vault-read.js"));
 mount("/api/db/diag-shipping",          () => import("./api/db/diag-shipping.js"));
 mount("/api/db/shipping-health-check", () => import("./api/db/shipping-health-check.js"));
+mount("/api/db/migrate-sp-audit",      () => import("./api/db/migrate-sp-audit.js")); // Phase 5: BL/ETA audit trail
+mount("/api/db/migrate-brand-nda",    () => import("./api/db/migrate-brand-nda.js")); // Phase 7: NDA exclusive brand redact
+mount("/api/db/migrate-upstream-type", () => import("./api/db/migrate-upstream-type.js")); // upstream_type: oem_factory/trade_factory/trading_co/intermediary
+mount("/api/db/migrate-factory-orders", () => import("./api/db/migrate-factory-orders.js")); // FPO tables: factory_orders + factory_order_events
+mount("/api/db/factory-orders",        () => import("./api/db/factory-orders.js"));           // FPO CRUD API
 mount("/api/db/fix-co-account",    () => import("./api/db/fix-co-account.js"));
 mount("/api/db/countries",         () => import("./api/db/countries.mjs"));
 mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs"));
+mount("/api/db/mailings", () => import("./api/db/mailings.mjs"));
+ mount("/api/db/customs-fix-amount", () => import("./api/db/customs-fix-amount.mjs"));
+ mount("/api/db/customs-certify", () => import("./api/db/customs-certify.mjs")); // 报关/开票品名权威认证 (2026-06-05)
 mount("/api/db/companies",          () => import("./api/db/companies.js"));
 mount("/api/db/trucking-rates",     () => import("./api/db/trucking-rates.js"));
+mount("/api/db/customs-rates",      () => import("./api/db/customs-rates.js"));
+mount("/api/db/exchange-rate",      () => import("./api/db/exchange-rate.js"));
 mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
 mount("/api/db/seed-huihe-charges",   () => import("./api/db/seed-huihe-charges.js"));
 mount("/api/db/seed-oss-local-charges",() => import("./api/db/seed-oss-local-charges.js"));
 mount("/api/db/fix-product-prices",() => import("./api/db/fix-product-prices.js"));
 mount("/api/db/fix-groups",        () => import("./api/db/fix-groups.js"));
-mount("/api/db/migrate-products",  () => import("./api/db/migrate-products.js"));
+mount("/api/db/migrate-products",             () => import("./api/db/migrate-products.js"));
+mount("/api/db/migrate-products-spec-source",        () => import("./api/db/migrate-products-spec-source.js")); // 002: provenance columns + backfill
+mount("/api/db/migrate-products-spec-source-repair",    () => import("./api/db/migrate-products-spec-source-repair.js")); // 002r: fix trade_show clobber bug
+mount("/api/db/migrate-products-carton-qty-backfill", () => import("./api/db/migrate-products-carton-qty-backfill.js")); // 003: factory-confirmed carton_qty + box dims
+mount("/api/db/migrate-products-spec-verified-fix",   () => import("./api/db/migrate-products-spec-verified-fix.js"));   // 003f: fix spec_verified=FALSE bug from migration 003
+mount("/api/db/migrate-products-cp-backfill",         () => import("./api/db/migrate-products-cp-backfill.js"));           // 004: CP-series 858 SKUs cbm/weight/carton_qty from 产品信息 xlsx
+mount("/api/db/migrate-products-tt-backfill",         () => import("./api/db/migrate-products-tt-backfill.js"));           // 005: TT-series 430 SKUs carton/price/image from 2025新品 xlsx
+mount("/api/db/migrate-products-size-infer",          () => import("./api/db/migrate-products-size-infer.js"));           // 006: SQL regex on size+product_name → infer carton_qty for ~270 unsourced rows
 mount("/api/db/migrate-orders",    () => import("./api/db/migrate-orders.js"));
 mount("/api/db/migrate-orders-v2", () => import("./api/db/migrate-orders-v2.js"));
 mount("/api/db/migrate-qc",        () => import("./api/db/migrate-qc.js"));
@@ -241,6 +277,7 @@ mount("/api/db/migrate-order-flow-v3", () => import("./api/db/migrate-order-flow
 mount("/api/db/migrate-tasks",      () => import("./api/db/migrate-tasks.js"));      // P1-2
 mount("/api/db/migrate-collab",     () => import("./api/db/migrate-collab.js"));     // P1-3
 mount("/api/db/migrate-tasks-factory-code", () => import("./api/db/migrate-tasks-factory-code.js")); // BUG-A
+mount("/api/db/migrate-sanlyn-brand", () => import("./api/db/migrate-sanlyn-brand.js")); // SANLYN white-label
 // ── v2 Network Layer (blueprint v2) ───────────────────────────
 mount("/api/db/migrate-v2-network",     () => import("./api/db/migrate-v2-network.js"));     // v2 schema
 mount("/api/db/relationships",          () => import("./api/db/relationships.js"));          // graph edges
@@ -282,6 +319,7 @@ mount("/api/db/magic-link",                 () => import("./api/db/magic-link.js
 mount("/api/db/driver-assignments",         () => import("./api/db/driver-assignments.js"));
 mount("/api/db/driver-checkin",             () => import("./api/db/driver-checkin.js"));
 mount("/api/db/customs-broker-checkin",     () => import("./api/db/customs-broker-checkin.js"));
+mount("/api/db/customs-broker-assign",      () => import("./api/db/customs-broker-assign.js"));
 mount("/api/db/sample-delivery-checkin",   () => import("./api/db/sample-delivery-checkin.js"));
 mount("/api/db/migrate-sample-delivery",   () => import("./api/db/migrate-sample-delivery.js"));
 mount("/api/db/drivers",                    () => import("./api/db/drivers.js"));
@@ -290,10 +328,15 @@ mount("/api/db/collab-sheets/queue",        () => import("./api/db/collab-sheets
 mount("/api/db/collab-sheets",             () => import("./api/db/collab-sheets.js"));
 mount("/api/db/collab-sheet-templates",    () => import("./api/db/collab-sheet-templates.js"));
 mount("/api/db/order-create-v2",   () => import("./api/db/order-create-v2.js"));
+mount("/api/db/order-line-items",   () => import("./api/db/order-line-items.js"));
+mount("/api/db/order-field-audit", () => import("./api/db/order-field-audit.js"));
 mount("/api/db/factory-invite",        () => import("./api/db/factory-invite.js"));        // v3 partner onboarding (6 types)
 mount("/api/db/factory-invite-list",   () => import("./api/db/factory-invite-list.js"));   // admin queue
 mount("/api/db/factory-invite-review",   () => import("./api/db/factory-invite-review.js")); // admin approve/reject
 mount("/api/db/factory-invite-complete", () => import("./api/db/factory-invite-complete.js")); // invitee final submit
+mount("/api/db/team-join",               () => import("./api/db/team-join.js")); // 2026-05-18 team invite accept (public, token-auth)
+mount("/api/db/order-confirm",           () => import("./api/db/order-confirm.js")); // 2026-05-18 factory→customer 2-stage confirm state machine
+mount("/api/db/marketplace",             () => import("./api/db/marketplace.js"));    // 2026-05-18 mount fix: handler existed but never wired → 404 in browser
 mount("/api/db/ai-cleaner",              () => import("./api/db/ai-cleaner.js"));              // MiniMax 脏活管家
 mount("/api/db/migrate-invite-review", () => import("./api/db/migrate-invite-review.js")); // schema migration
 
@@ -324,6 +367,7 @@ mount("/api/db/migrate-credit-notes",  () => import("./api/db/migrate-credit-not
 // ── Freight Debit Notes (洋宝宝出单) ──────────────────────────
 mount("/api/freight-debit-notes",          () => import("./api/freight-debit-notes.js"));          // GET/POST/PATCH
 mount("/api/db/migrate-freight-debit-notes", () => import("./api/db/migrate-freight-debit-notes.js")); // table migration
+mount("/api/db/landed-cost",         () => import("./api/db/landed-cost.js")); // 2026-05-18 My Landed Cost per-BL aggregator
 mount("/api/db/product-image-update", () => import("./api/db/product-image-update.js")); // product image upload
 // ── RFQ Marketplace ──────────────────────────────────────────
 mount("/api/db/migrate-rfq",   () => import("./api/db/migrate-rfq.js"));    // table migration
@@ -347,7 +391,8 @@ mount("/api/doc-convert",     () => import("./api/doc-convert.js"));
 mount("/api/doc-review",      () => import("./api/doc-review.js"));
 mount("/api/db/doc-share",    () => import("./api/db/doc-share.js"));
 mount("/api/freight-quotes",  () => import("./api/freight-quotes.js"))
-mount("/api/freight-rates",   () => import("./api/freight-rates.js"));;
+// [SECURITY-P0 A5] removed unauthenticated route — covered by api/db/freight-rates.js
+// mount("/api/freight-rates",   () => import("./api/freight-rates.js"));;
 mount("/api/jdy-company-sync",() => import("./api/jdy-company-sync.js"));
 mount("/api/jdy-company",     () => import("./api/jdy-company.js"));
 mount("/api/jdy-customer-sync",() => import("./api/jdy-customer-sync.js"));
@@ -361,6 +406,7 @@ mount("/api/ocr-review",      () => import("./api/ocr-review.js"));
 mount("/api/oss-upload",      () => import("./api/oss-upload.js"));
 mount("/api/proxy-file",      () => import("./api/proxy-file.js"));
 mount("/api/send-email",      () => import("./api/send-email.js"));
+mount("/api/notify/order-created", () => import("./api/notify/order-created.js"));
 mount("/api/setup-finance",   () => import("./api/setup-finance.js"));
 mount("/api/vessel-callback", () => import("./api/vessel-callback.js"));
 // ── Supply-chain tracking card (public, token-authenticated) ──
@@ -386,6 +432,7 @@ mount("/api/portal/orders",    () => import("./api/portal/orders.js"));    // St
 // Hard contract: keys stay in process.env.MINIMAX_API_KEY; rate-limited
 // 30s/task+role; daily cap 100; max_tokens hard 800; prompt 4000 chars.
 mount("/api/minimax-chat",     () => import("./api/minimax-chat.js"));
+mount("/api/ocr-booking",     () => import("./api/ocr-booking.js")); // multipart bypass at line 77
 // ── Static files (driver-evidence page) ──
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -407,6 +454,8 @@ mount("/api/db/migrate-forwarder-perf",() => import("./api/db/migrate-forwarder-
 mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-payment-reminder.js"));
 // ── Reconciliation / monthly statement ──
 mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
+mount("/api/db/tax-rebate", () => import("./api/db/tax-rebate.js"));  // 退税板块 P1
+mount("/api/db/tax-rebate-import", () => import("./api/db/tax-rebate-import.js"));  // 退税进项明细导入 P2
 
 // ── AI ops/summaries + notifications inbox ──
 mount("/api/db/migrate-ai-and-notifications", () => import("./api/db/migrate-ai-and-notifications.js"));
@@ -419,6 +468,10 @@ mount("/api/supply-chain/quote-requests", () => import("./api/supply-chain-quote
 mount("/api/supply-chain/quote-bids",     () => import("./api/supply-chain-quote-bids.js"));
 mount("/api/collab/cards",                () => import("./api/supply-chain-collab-cards.js"));
 
+// ── Recurring / scheduled orders ─────────────────────────────────────────────
+mount("/api/db/recurring-orders",         () => import("./api/db/recurring-orders.js"));
+mount("/api/db/ocr-parse",               () => import("./api/db/ocr-parse.js"));
+
 // ── v3.2 §6 — order_events / order_tasks / containers ────────────────────
 mount("/api/db/migrate-order-events", () => import("./api/db/migrate-order-events.js"));
 mount("/api/db/migrate-order-tasks",  () => import("./api/db/migrate-order-tasks.js"));
@@ -426,6 +479,8 @@ mount("/api/db/migrate-containers",   () => import("./api/db/migrate-containers.
 mount("/api/db/order-events",  () => import("./api/db/order-events.js"));
 mount("/api/db/order-tasks",   () => import("./api/db/order-tasks.js"));
 mount("/api/db/containers",    () => import("./api/db/containers.js"));
+// ── Migration 025 — shipping schema ALTER TABLEs ──────────────────────────
+mount("/api/db/migrate-025-shipping-schema", () => import("./api/db/migrate-025-shipping-schema.js"));
 
 // ── Health check ──
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
@@ -440,5 +495,10 @@ app.listen(PORT, "0.0.0.0", () => {
 import("./jobs/payment-reminder.js")
   .then(({ schedulePaymentReminder }) => schedulePaymentReminder())
   .catch(e => console.error("[server] payment-reminder schedule failed:", e.message));
+
+// ── Recurring order cron (08:00 daily) ───────────────────────────────────────
+import("./jobs/recurring-order-cron.js")
+  .then(({ scheduleRecurringOrders }) => scheduleRecurringOrders())
+  .catch(e => console.error("[server] recurring-order-cron schedule failed:", e.message));
 
 export default app;
