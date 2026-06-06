@@ -399,6 +399,8 @@ mount("/api/m3/run-merge",    () => import("./api/m3/run-merge.js"));
 mount("/api/m3/scan-missing", () => import("./api/m3/scan-missing.js"));
 // ── Portal 读接口（Phase 2 + Phase 3 登录）──────────────────
 mount("/api/portal/login",     () => import("./api/portal/login.js"));
+mount("/api/internal/auth-check",        () => import("./api/internal/auth-check.js"));
+mount("/api/internal/lookup",            () => import("./api/internal/lookup.js"));
 mount("/api/portal/shipping",  () => import("./api/portal/shipping.js"));
 mount("/api/portal/documents", () => import("./api/portal/documents.js"));
 mount("/api/portal/missing",   () => import("./api/portal/missing.js"));

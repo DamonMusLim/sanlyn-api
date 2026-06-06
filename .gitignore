@@ -1,4 +1,5 @@
-node_modules/
-.vercel
-.env*.local
 *.bak
+.env
+.env*.local
+.vercel
+node_modules/
