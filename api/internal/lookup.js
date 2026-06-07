@@ -133,9 +133,10 @@ export default async function handler(req, res) {
       const sku = String(body.sku || "").trim();
       const hint = String(body.hint || "").trim();  // 香型/品名关键词
       const r = await pool.query(
-        `SELECT p.id, p.sku, p.product_name, p.flavor, p.brand,
+        `SELECT p.id, p.sku, p.product_name, p.flavor, p.brand, p.factory_name,
                 p.factory_price, p.sale_price_cny, p.price_usd,
-                p.net_weight, p.gross_weight, p.cbm, p.bg_bx, p.hs_code, p.vat_rate
+                p.net_weight, p.gross_weight, p.cbm, p.bg_bx, p.hs_code,
+                p.vat_rate, p.rebate_rate, p.declaration_name, p.declaration_amount
            FROM products p
           WHERE p.brand IN (SELECT jsonb_array_elements_text(c.brands) FROM customers c WHERE c.company_code = $1)
             AND ( ($2 <> '' AND p.sku = $2)

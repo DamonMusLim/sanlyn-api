@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
+import { serializeOrdersForRole } from "../lib/orders/serializer.js"; // W0-1: role-scoped allowlist
 
 // ── P1-1: 代理模式敏感字段剥离 ──────────────────────────────────
 // 当 order.mode === 'agent' 且请求者是工厂角色时，从 raw JSONB 里剥离这些 key。
@@ -55,7 +56,12 @@ const FACTORY_HIDE_PROD = [
 ];
 // Customer must NOT see factory cost fields (but customer CAN see unitPrice / totalPrice)
 const CUSTOMER_HIDE_PROD = [
-  "factoryPrice", "cost",                      // factory cost price
+  "factoryPrice", "factory_price", "cost",          // factory cost price
+  "factorySubtotal", "factory_subtotal",             // factory line total
+  "declareAmountPerBox", "declare_amount_per_box",   // customs declared amount (internal)
+  "vatRate", "vat_rate",                             // VAT rate (internal tax structure)
+  "taxRebateRate", "tax_rebate_rate",                // tax rebate rate (internal)
+  "_masterFilled",                                   // internal backfill flag
 ];
 
 // Sanlyn profit fields — neither factory nor customer ever sees these.
@@ -147,6 +153,12 @@ function checkComplianceException(row, requester) {
 // ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
 const PATCH_ALLOWED_COLS = [
   "order_no","company_code","company_name_en","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
+  // Order totals — auto-derived from raw.products on save (compute-at-write, then docs/list read the stored value) (2026-05-22)
+  "total_qty","net_weight","gross_weight","total_cbm",
+  // Buyer + commercial refs editable from the order detail Deal section (2026-05-22)
+  "customer","customer_po","payment_terms",
+  // Actual delivery date (expected = delivery_date; actual triggers收款+定船期) (2026-05-22)
+  "confirmed_delivery",
   // Profit structure (2026-05-09)
   "factory_amount","customer_amount","margin_amount","margin_pct",
   "quote_sent_at","customer_replied_at","negotiation_rounds",
@@ -308,29 +320,84 @@ async function handleCreate(req, res) {
     const nextId = nidRes.rows[0].nid;
     const r = await client.query(
       `INSERT INTO orders
-         (id, order_no, contract_no, customer, company_code, factory,
-          trade_terms, status, total_amount, currency, etd, notes, source, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'admin_panel',$13)
+         (_id, id, order_no, contract_no, customer, company_code, company_name_en,
+          factory, factory_code, country, destination_port, pol,
+          trade_terms, status, production_status, container_qty,
+          total_amount, total_amount_factory, currency, etd, remarks,
+          products, raw, source, created_by)
+       VALUES
+         (gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,
+          $7,$8,$9,$10,$11,
+          $12,$13,$14,$15,
+          $16,$23,$17,$18,$19,
+          $20::jsonb,$21::jsonb,'admin_panel',$22)
        RETURNING id, order_no, contract_no`,
       [
-        nextId,
-        orderNo,
-        contractNo,
-        body.customer,
-        body.company_code || null,
-        body.factory      || null,
-        body.trade_terms  || "FOB",
-        body.status       || "draft",
-        body.total_amount ? Number(body.total_amount) : null,
-        body.currency     || "USD",
-        body.etd          || null,
-        body.notes        || null,
-        req.user.uid || req.user.sub || null,
+        nextId,                                                   // $1  id
+        orderNo,                                                  // $2  order_no
+        contractNo,                                               // $3  contract_no
+        body.customer,                                            // $4  customer
+        body.company_code || null,                                // $5  company_code
+        body.company_name_en || null,                             // $6  company_name_en
+        body.factory || null,                                     // $7  factory
+        rawBody.factory_code || body.factory_code || null,        // $8  factory_code
+        body.country || null,                                     // $9  country
+        body.destination_port || null,                            // $10 destination_port
+        body.pol || null,                                         // $11 pol
+        body.trade_terms || "FOB",                                // $12 trade_terms
+        body.status || "draft",                                   // $13 status
+        body.production_status || null,                           // $14 production_status
+        body.container_qty != null ? Number(body.container_qty) : null, // $15 container_qty
+        body.total_amount ? Number(body.total_amount) : null,     // $16 total_amount
+        body.currency || "USD",                                   // $17 currency
+        body.etd || null,                                         // $18 etd
+        body.remarks || body.notes || null,                       // $19 remarks
+        JSON.stringify(Array.isArray(body.products) ? body.products : []), // $20 products jsonb
+        JSON.stringify(rawBody || body.raw || {}),                // $21 raw jsonb
+        req.user.uid || req.user.sub || null,                     // $22 created_by
+        body.total_amount_factory != null ? Number(body.total_amount_factory) : null, // $23 采购额
       ]
     );
-    await client.query("COMMIT");
     const row = r.rows[0];
-    return res.status(200).json({ success: true, id: row.id, order_no: row.order_no, contract_no: row.contract_no });
+    // 写订单明细 order_line_items(铁律:建单必须落OLI,否则UI产品网格空) — 同事务
+    const lineItems = Array.isArray(body.products) ? body.products : [];
+    for (let i = 0; i < lineItems.length; i++) {
+      const li = lineItems[i];
+      const qty = li.qty != null ? Number(li.qty) : (li.qty_ctn != null ? Number(li.qty_ctn) : null);
+      const up = li.unit_price != null ? Number(li.unit_price) : null;
+      const fp = li.factory_price != null ? Number(li.factory_price) : null;
+      await client.query(
+        `INSERT INTO order_line_items
+           (order_id, sku, product_id, product_name, qty_ctn, unit, unit_price, factory_price, subtotal, factory_subtotal, nw_ctn, gw_ctn, cbm_ctn, hs_code, bg_bx, sort_order,
+            declaration_name, declare_amount_per_box, vat_rate, tax_rebate_rate, brand)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+        [
+          row.id,
+          li.sku || null,
+          li.product_id != null ? Number(li.product_id) : null,
+          li.product_name || null,
+          qty,
+          li.unit || "CTN",
+          up,
+          fp,
+          (up != null && qty != null) ? up * qty : null,         // subtotal 销售小计
+          (fp != null && qty != null) ? fp * qty : null,         // factory_subtotal 采购小计
+          li.nw_ctn != null ? Number(li.nw_ctn) : null,
+          li.gw_ctn != null ? Number(li.gw_ctn) : null,
+          li.cbm_ctn != null ? Number(li.cbm_ctn) : null,
+          li.hs_code || null,
+          li.bg_bx != null ? parseInt(li.bg_bx, 10) || null : null,
+          i,
+          li.declaration_name || null,
+          li.declaration_amount != null ? Number(li.declaration_amount) : null,
+          li.vat_rate != null ? Number(li.vat_rate) : null,
+          li.rebate_rate != null ? Number(li.rebate_rate) : null,
+          li.brand || null,
+        ]
+      );
+    }
+    await client.query("COMMIT");
+    return res.status(200).json({ success: true, id: row.id, order_no: row.order_no, contract_no: row.contract_no, line_items: lineItems.length });
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
@@ -384,6 +451,132 @@ async function handleMarkReady(req, res) {
   return res.status(200).json({ success: true, actDelivery: now });
 }
 
+// ── Cancel Request: any authenticated user can request, but order must NOT be in production ──
+// Rule: once confirmed_delivery IS NOT NULL, production has started → reject cancel.
+async function handleCancelRequest(req, res) {
+  const id = parseInt(req.query.id || req.body?.id);
+  if (!id || isNaN(id)) return res.status(400).json({ error: "id required" });
+  const reason = (req.body?.reason || "").trim();
+  if (!reason) return res.status(400).json({ error: "reason required" });
+
+  const pool = getPool();
+  // Fetch current order state
+  const check = await pool.query(
+    `SELECT id, status, confirmed_delivery, raw->'cancellation_request' AS existing_req
+       FROM orders WHERE id = $1`, [id]
+  );
+  if (check.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  const o = check.rows[0];
+
+  // Guard: production started (confirmed_delivery set) = cannot cancel
+  if (o.confirmed_delivery) {
+    return res.status(409).json({
+      error: "Cannot cancel: production has already started (goods confirmed by factory).",
+      code: "PRODUCTION_STARTED"
+    });
+  }
+  // Guard: terminal states
+  if (["shipped","in_transit","customs","delivered","cancelled"].includes(o.status)) {
+    return res.status(409).json({ error: `Cannot cancel: order is already ${o.status}.` });
+  }
+  // Guard: duplicate pending request
+  if (o.existing_req && o.existing_req.status === "pending") {
+    return res.status(409).json({ error: "A cancellation request is already pending review." });
+  }
+
+  const requestPayload = {
+    status: "pending",
+    reason,
+    requested_at: new Date().toISOString(),
+    requested_by: req.user?.companyCode || req.user?.uid || "unknown",
+    requested_by_role: req.user?.role || "unknown",
+  };
+
+  await pool.query(
+    `UPDATE orders
+        SET raw = jsonb_set(COALESCE(raw,'{}'), '{cancellation_request}', $1::jsonb, true),
+            updated_at = NOW()
+      WHERE id = $2`,
+    [JSON.stringify(requestPayload), id]
+  );
+
+  // Log event
+  try {
+    await pool.query(
+      `INSERT INTO order_events
+         (order_id, stage_key, source, actor_role, actor_user_id, occurred_at, is_current, status, created_at)
+       VALUES ($1,'cancel_requested','manual',$2,$3,NOW(),false,'active',NOW())`,
+      [id, req.user?.role || "unknown", req.user?.uid || req.user?.sub || null]
+    );
+  } catch (_) {}
+
+  return res.status(200).json({ success: true, message: "Cancellation request submitted. Pending Sanlyn review." });
+}
+
+// ── Cancel Review: internal admin/ops only — approve or reject a pending cancel request ──
+async function handleCancelReview(req, res) {
+  const capabilities = Array.isArray(req.user?.access) ? req.user.access : [];
+  const isInternal = capabilities.includes("orders:admin:write") || req.user?.role === "admin";
+  if (!req.user || !isInternal) {
+    return res.status(403).json({ error: "Forbidden: requires admin role or orders:admin:write" });
+  }
+  const id = parseInt(req.query.id || req.body?.id);
+  if (!id || isNaN(id)) return res.status(400).json({ error: "id required" });
+  const action = req.body?.action; // "approve" | "reject"
+  if (!["approve","reject"].includes(action)) return res.status(400).json({ error: "action must be 'approve' or 'reject'" });
+  const notes = (req.body?.notes || "").trim();
+
+  const pool = getPool();
+  const check = await pool.query(
+    `SELECT id, status, raw->'cancellation_request' AS req FROM orders WHERE id = $1`, [id]
+  );
+  if (check.rowCount === 0) return res.status(404).json({ error: "order not found" });
+  const o = check.rows[0];
+  if (!o.req || o.req.status !== "pending") {
+    return res.status(409).json({ error: "No pending cancellation request found." });
+  }
+
+  const updatedReq = {
+    ...o.req,
+    status: action === "approve" ? "approved" : "rejected",
+    reviewed_by: req.user?.uid || req.user?.sub || "admin",
+    reviewed_by_role: req.user?.role,
+    reviewed_at: new Date().toISOString(),
+    notes: notes || undefined,
+  };
+
+  // If approved: also set orders.status = 'cancelled'
+  const statusUpdate = action === "approve"
+    ? `, status = 'cancelled'`
+    : "";
+
+  await pool.query(
+    `UPDATE orders
+        SET raw = jsonb_set(COALESCE(raw,'{}'), '{cancellation_request}', $1::jsonb, true),
+            updated_at = NOW()${statusUpdate}
+      WHERE id = $2`,
+    [JSON.stringify(updatedReq), id]
+  );
+
+  try {
+    await pool.query(
+      `INSERT INTO order_events
+         (order_id, stage_key, source, actor_role, actor_user_id, occurred_at, is_current, status, created_at)
+       VALUES ($1,$2,'manual',$3,$4,NOW(),false,'active',NOW())`,
+      [id, action === "approve" ? "cancel_approved" : "cancel_rejected",
+       req.user?.role || "admin", req.user?.uid || req.user?.sub || null]
+    );
+  } catch (_) {}
+
+  return res.status(200).json({
+    success: true,
+    message: action === "approve"
+      ? "Order cancelled successfully."
+      : "Cancellation request rejected. Order remains active.",
+    order_status: action === "approve" ? "cancelled" : o.status,
+  });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -398,6 +591,14 @@ export default async function handler(req, res) {
       try { return await handleMarkReady(req, res); }
       catch (err) { return res.status(500).json({ success: false, error: err.message }); }
     }
+    if (action === "cancel_request") {
+      try { return await handleCancelRequest(req, res); }
+      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
+    if (action === "cancel_review") {
+      try { return await handleCancelReview(req, res); }
+      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
     if (action) return res.status(400).json({ error: "unknown action: " + action });
     // No action = create new order
     try { return await handleCreate(req, res); }
@@ -406,7 +607,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
-    let { customer, status, limit = 500, brands, factory, company_code, company_codes, sku } = req.query;
+    let { customer, status, limit = 500, brands, factory, company_code, company_codes, sku, order_no, contract_no } = req.query;
     // Tenant scoping: non-admin users can only see their own company's orders.
     // FAIL-CLOSED: if JWT has no role or no companyCodes, refuse the request —
     // forces re-login so the fresh JWT carries the correct scope. (Prior
@@ -425,7 +626,22 @@ export default async function handler(req, res) {
              lcs.loading->>'driver_name'    AS driver_name,
              lcs.loading->>'driver_phone'   AS driver_phone,
              lcs.loading->>'truck_plate'    AS truck_plate,
-             lcs.loading->>'planned_load_at' AS planned_load_at
+             lcs.loading->>'planned_load_at' AS planned_load_at,
+             sp.bl_no               AS sp_bl_no,
+             sp.etd                 AS sp_etd,
+             sp.eta                 AS sp_eta,
+             sp.pol                 AS sp_pol,
+             sp.pod                 AS sp_pod,
+             sp.current_status_cn   AS sp_status_cn,
+             sp.tracking_updated_at AS sp_tracking_updated_at,
+             sp.container_type      AS sp_container_type,
+             sp.carrier_code       AS sp_shipping_line,
+             COALESCE(NULLIF(o.raw->>'containerType',''), sp.container_type) AS container_type_raw,
+             COALESCE(NULLIF(o.raw->>'shippingLine',''), sp.carrier_code) AS shipping_line,
+             fc.name_cn     AS factory_name_cn,
+             fc.name_en     AS factory_name_en,
+             oe._events,
+             ot._tasks
         FROM orders o
         LEFT JOIN LATERAL (
           SELECT loading FROM loading_collab_sheets
@@ -433,6 +649,61 @@ export default async function handler(req, res) {
            ORDER BY submitted_at DESC NULLS LAST
            LIMIT 1
         ) lcs ON TRUE
+        -- Live shipping dates from the linked shipping_plan (Portun keeps eta/etd
+        -- fresh via /api/vessel-callback). ONE row only (LIMIT 1) — never fan out
+        -- per container, which would both inflate rows and over-bill Portun.
+        LEFT JOIN LATERAL (
+          SELECT s.bl_no, s.etd, s.eta, s.pol, s.pod, s.current_status_cn, s.tracking_updated_at, s.container_type, s.carrier_code
+            FROM shipping_plans s
+           WHERE (NULLIF(o.bl_no,'') IS NOT NULL AND s.bl_no = o.bl_no)
+              OR (s.contract_no IS NOT NULL AND o.contract_no IS NOT NULL AND s.contract_no = o.contract_no)
+              OR (s.order_contract_nos IS NOT NULL AND o.contract_no IS NOT NULL AND s.order_contract_nos ILIKE '%' || o.contract_no || '%')
+              OR (s.order_contract_nos IS NOT NULL AND o.order_no IS NOT NULL AND s.order_contract_nos ILIKE '%' || o.order_no || '%')
+           ORDER BY s.tracking_updated_at DESC NULLS LAST, s.eta DESC NULLS LAST
+           LIMIT 1
+        ) sp ON TRUE
+        -- v3.2 §6.1 — current active milestone events (one row per stage_key per order)
+        -- Gracefully no-ops when order_events table does not yet exist.
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'id', e.id,
+              'stage_key', e.stage_key,
+              'event_group', e.event_group,
+              'sequence_no', e.sequence_no,
+              'occurred_at', e.occurred_at,
+              'actor_role', e.actor_role,
+              'actor_company_id', e.actor_company_id,
+              'source', e.source,
+              'visibility_scope', e.visibility_scope,
+              'confidence', e.confidence,
+              'meta', e.meta
+            ) ORDER BY e.occurred_at ASC
+          ) AS _events
+          FROM order_events e
+          WHERE e.order_id = o.id
+            AND e.is_current = TRUE
+            AND e.status = 'active'
+        ) oe ON TRUE
+        -- v3.2 §6.2 — open tasks assigned to any party on this order
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'id', t.id,
+              'task_key', t.task_key,
+              'assigned_role', t.assigned_role,
+              'assigned_company_id', t.assigned_company_id,
+              'assigned_user_id', t.assigned_user_id,
+              'status', t.status,
+              'due_at', t.due_at,
+              'meta', t.meta
+            ) ORDER BY t.due_at ASC NULLS LAST
+          ) AS _tasks
+          FROM order_tasks t
+          WHERE t.order_id = o.id
+            AND t.status NOT IN ('done', 'cancelled')
+        ) ot ON TRUE
+        LEFT JOIN companies fc ON NULLIF(TRIM(o.factory_code),'') IS NOT NULL AND fc.code = TRIM(o.factory_code)
     `, params = [], conds = [];
 
     // is_mock column was removed from orders table — filter dropped (ORDER-DATA-DISPLAY-UNBLOCK-001)
@@ -440,6 +711,11 @@ export default async function handler(req, res) {
     if (customer) { params.push(`%${customer}%`); conds.push(`o.customer ILIKE $${params.length}`); }
     if (status)   { params.push(status);           conds.push(`o.status = $${params.length}`); }
     if (factory)  { params.push(factory);           conds.push(`o.raw->>'factory' = $${params.length}`); }
+    // Exact-match lookups by order_no / contract_no (2026-05-22) — previously
+    // these query params were silently ignored, so a "?order_no=X" call returned
+    // the whole list in non-stable order (caused a wrong-row data edit).
+    if (order_no)    { params.push(order_no);    conds.push(`o.order_no = $${params.length}`); }
+    if (contract_no) { params.push(contract_no); conds.push(`o.contract_no = $${params.length}`); }
     if (company_codes) {
       let codeList; try { codeList = JSON.parse(company_codes); } catch { codeList = company_codes.split(","); }
       if (codeList.length > 0) {
@@ -477,10 +753,32 @@ export default async function handler(req, res) {
     query += ` ORDER BY o.created_at DESC LIMIT $${params.length}`;
     const result = await pool.query(query, params);
 
-    // ── P1-1 field filtering ──
+    // ── P1-1 field filtering (negative-list defence-in-depth) ──
     const requesterRole = (req.user && req.user.role) || null;
     const filtered = result.rows.map(function(r) { return stripSensitive(r, requesterRole); });
 
-    return res.status(200).json({ success: true, data: filtered, count: result.rowCount });
+    // ── PRODUCTS-BACKFILL-001: promote raw.products → top-level products when empty ──
+    // Some older orders have products only in raw.products (not in the top-level products column).
+    // The serializer below strips raw from all external responses, so without this backfill those
+    // 7 orders would show empty product lists in the customer/detail panel.
+    // stripSensitive() has already cleaned raw.products of factoryPrice/cost/vatRate etc,
+    // so it is safe to promote here — sensitive fields are already gone.
+    const withProducts = filtered.map(function(r) {
+      if (!r) return r;
+      const hasTopProducts = Array.isArray(r.products) && r.products.length > 0;
+      if (hasTopProducts) return r;
+      const rawProducts = r.raw && Array.isArray(r.raw.products) && r.raw.products.length > 0
+        ? r.raw.products
+        : null;
+      if (!rawProducts) return r;
+      return Object.assign({}, r, { products: rawProducts });
+    });
+
+    // ── W0-1 role-scoped positive allowlist (fail-closed; default = customer_facing) ──
+    // Runs AFTER stripSensitive: even if a sensitive key sneaks through the deny list,
+    // it cannot exit unless the role's allowlist explicitly permits it.
+    const safe = serializeOrdersForRole(withProducts, requesterRole);
+
+    return res.status(200).json({ success: true, data: safe, count: result.rowCount });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 }
