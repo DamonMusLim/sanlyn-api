@@ -60,7 +60,7 @@ export default async function handler(req, res) {
     if (type === "order_by_contract") {
       const o = await pool.query(
         `SELECT _id, contract_no, order_no, status, customer, company_code, country FROM orders
-         WHERE contract_no = $1 LIMIT 1`,
+         WHERE contract_no = $1 OR order_no = $1 LIMIT 1`,
         [String(body.contract_no || "")]
       );
       if (!o.rows.length) return res.status(200).json({ ok: true, type, data: null });
