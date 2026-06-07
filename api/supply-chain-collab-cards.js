@@ -191,7 +191,10 @@ export default async function handler(req, res) {
 
   const ctx = viewerCtxFromReq(req);
 
-  if (['broker_supply', 'broker_factory', 'broker_customer'].includes(ctx.role)) {
+  // 白名单:只允许已知角色进入协同卡流程;其余(含各类 broker / 未知)一律 403
+  const ALLOWED_COLLAB_ROLES = ['admin', 'logistics', 'trader', 'supply_chain',
+    'customer', 'buyer', 'factory', 'freight'];
+  if (!ALLOWED_COLLAB_ROLES.includes(ctx.role)) {
     return sendError(res, 403, 'FORBIDDEN', 'Role not permitted in collab flow');
   }
 
@@ -225,11 +228,13 @@ export default async function handler(req, res) {
   // ── List ─────────────────────────────────────────────────────────────────
   try {
     // P1-D1: SQL-level scope guards derived from JWT (not from query params)
-    const buyerFilter    = ctx.role === 'buyer'    ? ctx.companyCode : undefined;
-    const factoryFilter  = ctx.role === 'factory'  ? ctx.companyCode : undefined;
-    const supplierFilter = ctx.role === 'supply_chain' ? ctx.companyCode : undefined;
-    const serviceFilter  = ctx.role === 'supply_chain' ? ctx.serviceType
-                                                       : cleanedQuery.service_type;
+    // 'customer' is the actual JWT role used in production; 'buyer' is the spec alias — accept both
+    const isBuyer    = ['customer', 'buyer'].includes(ctx.role);
+    const isSupplier = ['logistics', 'supply_chain', 'freight'].includes(ctx.role);
+    const buyerFilter    = isBuyer              ? ctx.companyCode : undefined;
+    const factoryFilter  = ctx.role === 'factory' ? ctx.companyCode : undefined;
+    const supplierFilter = isSupplier           ? ctx.companyCode : undefined;
+    const serviceFilter  = isSupplier ? ctx.serviceType : cleanedQuery.service_type;
 
     const { rows, fixture } = await fetchCollabRows(pool, {
       buyerCompanyCode:    buyerFilter,
