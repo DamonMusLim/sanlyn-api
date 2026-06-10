@@ -1747,6 +1747,15 @@ export default async function handler(req, res) {
       }
       if(!consignee) consignee="[CONSIGNEE]";
       var consAddr=resolveAddr(consignee, notWidget(spraw.consigneeAddress)?spraw.consigneeAddress:"");
+      // 收货人地址/联系人从 customers 主数据读(经orders.company_code), raw优先 (2026-06-10 Damon: 船司要求联系方式)
+      var consContact=String(pick(spraw.consignee_contact,spraw.consigneeContact,"")),consPhone=String(pick(spraw.consignee_phone,spraw.consigneePhone,""));
+      try{
+        var _ccNos=sp.order_nos||spraw.orderNos||[];
+        if(_ccNos&&_ccNos.length){
+          var _ccR=await pool.query("SELECT c.address_en,c.address,c.contact_name,c.contact_phone FROM customers c JOIN orders o ON o.company_code=c.company_code WHERE o.order_no = ANY($1::text[]) OR o.contract_no = ANY($1::text[]) LIMIT 1",[_ccNos]);
+          if(_ccR.rows.length){var _cc=_ccR.rows[0];if(!consAddr)consAddr=_cc.address_en||_cc.address||"";if(!consContact)consContact=_cc.contact_name||"";if(!consPhone)consPhone=_cc.contact_phone||"";}
+        }
+      }catch(e){}
       var shipper=cfg3.nameEN;
       // Cargo lines — per product with HS code
       var cargoLines=[], cargoByOrder={};
@@ -1895,21 +1904,13 @@ export default async function handler(req, res) {
           +'<div class="main-grid">'
           +'<div class="left-col">'
           +'<div class="party-block"><div class="party-label">发货人：<span>Shipper:</span></div><div class="party-val"><b>'+esc(_soShipName||shipper||"")+'</b>'+(_soShipAddr?'<br>'+esc(_soShipAddr):"")+(_soShipTel?'<br>Tel: '+esc(_soShipTel):"")+'</div></div>'
-          +'<div class="party-block"><div class="party-label">收货人：<span>Consignee</span></div><div class="party-val"><b>'+esc(consignee)+'</b>'+(consAddr?'<br>'+esc(consAddr):"")+'</div></div>'
+          +'<div class="party-block"><div class="party-label">收货人：<span>Consignee</span></div><div class="party-val"><b>'+esc(consignee)+'</b>'+(consAddr?'<br>'+esc(consAddr):"")+((consContact||consPhone)?'<br>Tel: '+esc((consContact?consContact+" ":"")+(consPhone||"")):"")+'</div></div>'
           +'<div class="party-block no-border"><div class="party-label">通知人：<span>Notify</span></div><div class="party-val">SAME AS CONSIGNEE</div></div>'
           +'</div>'
           +'<div class="right-col">'
           +'<div class="rp-row" style="min-height:28px"><div class="rp-label">外运编号：</div><div class="rp-value">'+esc(pick(sp.forwarder_booking_no,spraw.bookingNo,""))+'</div></div>'
-          +'<div class="rp-row" style="min-height:28px"><div class="rp-label">CY单号（内部）：</div><div class="rp-value">'+esc(sp.shipment_no||soNo||"")+'</div></div>'
           +'<div class="rp-row" style="min-height:28px"><div class="rp-label">订舱详细信息确认：</div><div class="rp-value">'+(pick(sp.shipping_line,sp.carrier_code,"")?'<b>'+esc(pick(sp.shipping_line,sp.carrier_code,""))+' </b>':"")+esc(pick(sp.vessel,""))+(sp.voyage?" / "+esc(sp.voyage):"")+(sp.etd?'<br>ETD: '+esc(fmtD(sp.etd)):"")+(sp.eta?'&nbsp;&nbsp;ETA: '+esc(fmtD(sp.eta)):"")+'</div></div>'
-          +'<div class="rp-row"><div class="rp-label">报关地点：</div><div class="rp-value">'+esc(_soCustomsPlace)+'</div></div>'
-          +'<div class="rp-row"><div class="rp-label">报关票数：</div><div class="rp-value">'+esc(_soTickets)+'</div></div>'
-          +'<div class="rp-row"><div class="rp-ops">'
-          +'<div><span>联系方式：</span><br><span class="rp-value">'+esc(cfg3.tel||"")+'</span></div>'
-          +'<div><span>操作：</span><br><span class="rp-value"></span></div>'
-          +'<div><span>单证：</span><br><span class="rp-value"></span></div>'
-          +'</div></div>'
-          +'<div class="rp-row no-border" style="min-height:60px"><div class="rp-label">委托我们代理拖车报关请填写：</div><div class="rp-value" style="white-space:pre-line">'+esc(pick(spraw.towDetail,""))+'</div></div>'
+          +'<div class="rp-row no-border"><div class="rp-label">报关票数：</div><div class="rp-value">'+esc(_soTickets)+'</div></div>'
           +'</div>'
           +'</div>'
           +'<div class="port-row">'

@@ -73,6 +73,7 @@ export default async function handler(req, res) {
                'voyage',  COALESCE(voyage,''),
                'etd',     COALESCE(etd::text,''),
                'eta',     COALESCE(eta::text,''),
+               'booking_no', COALESCE(forwarder_booking_no,''),
                'status',  $2::text,
                'reason',  $3::text,
                'replaced_at', to_char(now() AT TIME ZONE 'Asia/Shanghai','YYYY-MM-DD'),
@@ -83,6 +84,7 @@ export default async function handler(req, res) {
            carrier_code  = COALESCE($4, carrier_code),
            vessel = $5, voyage = $6,
            etd = NULLIF($7,'')::date, eta = NULLIF($8,'')::date,
+           forwarder_booking_no = NULL,
            updated_at = now()
          WHERE id = $1
          RETURNING id, shipment_no, shipping_line, vessel, voyage, etd, eta,
