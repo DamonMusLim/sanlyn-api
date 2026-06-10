@@ -40,16 +40,38 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
+  // Scope gate: only admin/ops can access any order; other roles may only access orders
+  // belonging to their own company. Fail-closed: unknown roles are denied.
+  const userRole = req.user?.role;
+  const FULL_ACCESS_ROLES = ["admin", "ops", "finance"];
+  if (!FULL_ACCESS_ROLES.includes(userRole) && userRole !== "customer") {
+    return res.status(403).json({ error: "Forbidden", message: "权限不足" });
+  }
+
   const { order_no } = req.query;
   if (!order_no) return res.status(400).json({ success: false, error: "order_no is required" });
 
   const pool = getPool();
 
   // Find order by order_no OR contract_no
-  const orderRes = await pool.query(
-    `SELECT * FROM orders WHERE order_no = $1 OR contract_no = $1 LIMIT 1`,
-    [order_no]
-  );
+  // For non-admin roles: enforce company scope so customers cannot read other companies' drafts
+  let orderRes;
+  if (FULL_ACCESS_ROLES.includes(userRole)) {
+    orderRes = await pool.query(
+      `SELECT * FROM orders WHERE order_no = $1 OR contract_no = $1 LIMIT 1`,
+      [order_no]
+    );
+  } else {
+    // customer role: scope to their own company_code
+    const companyCode = req.user.companyCode || req.user.company_code;
+    if (!companyCode) {
+      return res.status(403).json({ error: "Forbidden", message: "账户未绑定公司，无法访问报关底稿" });
+    }
+    orderRes = await pool.query(
+      `SELECT * FROM orders WHERE (order_no = $1 OR contract_no = $1) AND company_code = $2 LIMIT 1`,
+      [order_no, companyCode]
+    );
+  }
   if (!orderRes.rows.length) {
     return res.status(404).json({ success: false, error: "Order not found: " + order_no });
   }
@@ -57,7 +79,20 @@ export default async function handler(req, res) {
   const raw = o.raw || {};
 
   // Enrich products: join products table by barcode to get declaration fields
-  const orderProducts = Array.isArray(o.products) ? o.products : [];
+  let orderProducts = Array.isArray(o.products) ? o.products : [];
+  // 2026-06-10: orders.products 旧列常为 NULL — 明细真值=order_line_items, 空时回退 OLI
+  if (!orderProducts.length) {
+    try {
+      const liR = await pool.query("SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id", [o.id || o._id]);
+      orderProducts = liR.rows.map(li => ({
+        sku: li.sku || "", barcode: li.barcode || li.sku || "",
+        qty: Number(li.qty_ctn) || 0,
+        netWeight: Number(li.nw_ctn) || 0,
+        grossWeight: Number(li.gw_ctn) || 0,
+        hsCode: li.hs_code || "",
+      }));
+    } catch (e) { /* keep empty — render shows no rows rather than invented data */ }
+  }
   let enriched = orderProducts;
 
   if (orderProducts.length > 0) {
@@ -65,21 +100,41 @@ export default async function handler(req, res) {
     if (barcodes.length > 0) {
       const ph = barcodes.map((_, i) => "$" + (i + 1));
       const pRes = await pool.query(
-        `SELECT barcode, hs_code, declaration_name, declaration_elements, factory_city
-         FROM products WHERE barcode IN (${ph.join(",")})`,
-        barcodes
+        `SELECT sku, barcode, hs_code, declaration_name, declaration_elements, factory_city
+         FROM products WHERE barcode = ANY($1::text[]) OR sku = ANY($1::text[])`,
+        [barcodes]
       );
       const byBarcode = {};
-      pRes.rows.forEach(r => { byBarcode[r.barcode] = r; });
+      pRes.rows.forEach(r => { if (r.barcode) byBarcode[r.barcode] = r; if (r.sku && !byBarcode[r.sku]) byBarcode[r.sku] = r; });
+
+      // Pre-check: all mandatory declaration fields must exist in products table
+      const REQUIRED_DECL_FIELDS = ['declaration_name', 'hs_code', 'declaration_elements', 'factory_city'];
+      const missingFields = [];
+      for (const p of orderProducts) {
+        const pr = byBarcode[p.barcode] || {};
+        for (const field of REQUIRED_DECL_FIELDS) {
+          if (!pr[field]) {
+            missingFields.push({ sku: p.sku || p.barcode, field });
+          }
+        }
+      }
+      if (missingFields.length > 0) {
+        return res.status(422).json({
+          success: false,
+          error: 'declaration fields missing in products table',
+          action: 'STOP',
+          missing: missingFields,
+        });
+      }
 
       enriched = orderProducts.map(p => {
         const pr = byBarcode[p.barcode] || {};
         return {
           ...p,
           hsCode:               p.hsCode || pr.hs_code || "",
-          declaration_name:     pr.declaration_name || p.name || p.category || "宠物食品",
+          declaration_name:     pr.declaration_name,          // DB only, no fallback
           declaration_elements: pr.declaration_elements || "",
-          factory_city:         pr.factory_city || raw.factoryCity || "",
+          factory_city:         pr.factory_city || "", // DB only — no fallback to raw per declaration field policy
         };
       });
     }
@@ -95,7 +150,7 @@ export default async function handler(req, res) {
   // Bucket products by hs_code + declaration_name (merge same HS)
   const buckets = {};
   enriched.forEach(p => {
-    const dname = p.declaration_name || "宠物食品";
+    const dname = p.declaration_name; // guaranteed non-empty by pre-check above
     const hs    = p.hsCode || "";
     const key   = hs + "||" + dname;
     if (!buckets[key]) {
