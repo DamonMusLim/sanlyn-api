@@ -101,7 +101,7 @@ var FORWARDERS = {
 
 function esc(s){ if(!s)return""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function fmtM(v,d){ if(v===null||v===undefined||v==="")return"-"; var n=Number(v); if(isNaN(n))return String(v); return n.toLocaleString("en-US",{minimumFractionDigits:d!==undefined?d:2,maximumFractionDigits:d!==undefined?d:2}); }
-function fmtD(v){ if(!v)return"-"; try{return new Date(v).toISOString().slice(0,10);}catch(e){return String(v);} }
+function fmtD(v){ if(!v)return"-"; try{if(v instanceof Date){var y=v.getFullYear(),m=String(v.getMonth()+1).padStart(2,"0"),d=String(v.getDate()).padStart(2,"0");return y+"-"+m+"-"+d;}var s=String(v);var mt=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(mt)return mt[1]+"-"+mt[2]+"-"+mt[3];return new Date(v).toISOString().slice(0,10);}catch(e){return String(v);} }
 function pick(){ for(var i=0;i<arguments.length;i++){if(arguments[i]!==null&&arguments[i]!==undefined&&arguments[i]!=="")return arguments[i];} return ""; }
 
 // resolveCo replaced by async loadSellerCfg above
@@ -1825,7 +1825,7 @@ export default async function handler(req, res) {
           return '<tr>'
             +'<td style="text-align:center">N/M</td>'
             +'<td style="text-align:center">'+esc(String(Number(r.total_qty)||"&#8212;"))+' ctns</td>'
-            +'<td>'+descHtml+'<div style="font-size:10.5px;color:#777;margin-top:2px">'+esc(r.customer_po||r.contract_no||"")+'</div></td>'
+            +'<td>'+descHtml+'<div style="font-size:10.5px;color:#777;margin-top:2px">'+esc([r.customer_po,r.contract_no].filter(Boolean).join(" \u00b7 "))+'</div></td>'
             +'<td style="text-align:center">'+hsHtml+'</td>'
             +'<td style="text-align:center">'+esc(Number(r.gross_weight)?Number(r.gross_weight).toLocaleString("en-US")+" kgs":"&#8212;")+'</td>'
             +'<td style="text-align:center">'+esc(Number(r.total_cbm)?Number(r.total_cbm).toFixed(3)+" cbm":"&#8212;")+'</td>'
@@ -1844,7 +1844,7 @@ export default async function handler(req, res) {
         var _soCusM=String(pick(spraw.customs_mode,spraw.customsMode,"")).toLowerCase();
         var _soCtQty=pick(sp.container_qty,spraw.containerQty,cqty);
         var _soCtType=pick(sp.container_type,spraw.containerType,ctype);
-        var _soCargoReady=fmtD(pick(sp.cutoff_date,sp.etd,""))||"";
+        var _soCargoReady=fmtD(pick(sp.cargo_ready_date,spraw.cargoReadyDate,""))||"";
         var _soTickets=_soRows.length?String(_soRows.length)+"票":"";
         var _soCustomsPlace=String(polSp||"").replace(/[A-Za-z\s]/g,"")||String(polSp||"");
         html='<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><title>出口货物委托单 '+esc(soNo)+'</title><style>'
