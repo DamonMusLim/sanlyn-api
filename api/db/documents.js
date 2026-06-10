@@ -1831,6 +1831,11 @@ export default async function handler(req, res) {
         var _soTerms=String(pick(spraw.tradeTerms,spraw.trade_terms,"")).toUpperCase();
         var _soRelease=String(pick(sp.release_type,spraw.releaseType,"telex")).toLowerCase();
         var _soIsTelex=_soRelease==="telex"||_soRelease==="电放";
+        var _soIsSwb=_soRelease==="swb"||_soRelease==="seaway"||_soRelease==="sea waybill";
+        var _soIsOrig=_soRelease==="original"||_soRelease==="正本";
+        // 拖车/报关 4独立选项: raw.tow=self|agent, raw.customs_mode=self|agent (2026-06-10 Damon)
+        var _soTow=String(pick(spraw.tow,"")).toLowerCase();
+        var _soCusM=String(pick(spraw.customs_mode,spraw.customsMode,"")).toLowerCase();
         var _soCtQty=pick(sp.container_qty,spraw.containerQty,cqty);
         var _soCtType=pick(sp.container_type,spraw.containerType,ctype);
         var _soCargoReady=fmtD(pick(sp.cutoff_date,sp.etd,""))||"";
@@ -1926,10 +1931,10 @@ export default async function handler(req, res) {
           +'<div class="check-row"><span class="q">是否有实木包装 / 木架 / 托盘？</span><span class="yn">'+CK(false)+' YES &nbsp;'+CK(true)+' NO</span></div>'
           +'<div class="check-row"><span class="q">如有实木包装，是否已做熏蒸？</span><span class="yn">'+CK(false)+' YES &nbsp;'+CK(true)+' NO</span></div>'
           +'<div class="dl-line" style="margin-top:6px"><b>箱型箱量 (CONTAINER)：</b>'+esc(String(_soCtQty))+' &times; '+esc(String(_soCtType))+'</div>'
-          +'<div class="dl-line">'+CK(false)+' 自拖自报 &nbsp;&nbsp;'+CK(false)+' 代拖代报</div>'
+          +'<div class="dl-line"><b>拖车：</b>'+CK(_soTow==="self")+' 自拖 &nbsp;'+CK(_soTow==="agent")+' 代拖 &nbsp;&nbsp;<b>报关：</b>'+CK(_soCusM==="self")+' 自报 &nbsp;'+CK(_soCusM==="agent")+' 代报</div>'
           +'</div>'
           +'<div class="decl-right">'
-          +'<div class="dl-line"><b>提单方式：</b>'+CK(!_soIsTelex)+' 正本 &nbsp;'+CK(_soIsTelex)+' 电放 &nbsp;'+CK(false)+' 其他：___________</div>'
+          +'<div class="dl-line"><b>提单方式：</b>'+CK(_soIsOrig)+' 正本 &nbsp;'+CK(_soIsTelex)+' 电放 &nbsp;'+CK(_soIsSwb)+' SWB &nbsp;'+CK(!_soIsOrig&&!_soIsTelex&&!_soIsSwb&&!!_soRelease&&_soRelease!=="telex")+' 其他：'+esc((!_soIsOrig&&!_soIsTelex&&!_soIsSwb&&_soRelease)?_soRelease.toUpperCase():"___________")+'</div>'
           +(_soIsTelex?'<div class="dl-line"><b>电放授权方 / B/L Release To：</b>'+esc(consignee)+'</div>':"")
           +'<div style="margin-top:10px"><div style="font-size:11px;color:#555;margin-bottom:4px">备注 Remarks</div>'
           +'<div style="font-size:12.5px;border:1px solid #ddd;border-radius:2px;padding:5px;min-height:80px;white-space:pre-line">'+esc(pick(spraw.remarks,sp.product_notes,""))+'</div></div>'
