@@ -132,6 +132,7 @@ mount("/api/db/customs",           () => import("./api/db/customs.js"));
 mount("/api/db/customs-summary",        () => import("./api/db/customs-summary.js")); // 分类报关汇总
 mount("/api/db/customs-consolidated",   () => import("./api/db/customs-consolidated.js")); // 多柜合并报关 (2026-05-22)
 mount("/api/db/customs-draft",    () => import("./api/db/customs-draft.js"));   // 报关底稿生成
+mount("/api/db/customs-declaration", () => import("./api/db/customs-declaration.js")); // 申报要素写回 products (替代废弃 JDY jdy_create_customs_doc)
 mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
 mount("/api/db/documents",         () => import("./api/db/documents.js"));
 mount("/api/db/seller-profiles",   () => import("./api/db/seller-profiles.js")); // issuing company list for SELLER dropdown — internal only (BANK-ACCOUNT-PAYEE-MINIMAL-FIX-001)
