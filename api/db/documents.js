@@ -1441,8 +1441,14 @@ export default async function handler(req, res) {
 
       if(type==="pl"||_PACK){
         var noPL=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
-        // CBM resolution: prefer explicit per-CTN field × qty; fall back to p.cbm (line total) for legacy rows
-        var cbmOf=function(p){if(audience==='customs')return Number(p._cbmTot||p.cbm||0);var perCtn=Number(p.cbmPerCtn||p.cbm_per_ctn||0);var q=Number(p.qty||0);if(perCtn>0&&q>0)return perCtn*q;return Number(p.cbm||p.volume||0);};
+        // CBM resolution: _cbmTot (explicit total) > per-CTN field × qty > p.cbm treated as per-CTN × qty (canonical)
+        var cbmOf=function(p){
+          var q=Number(p.qty||0);
+          var tot=Number(p._cbmTot||0); if(tot>0) return tot;
+          var perCtn=Number(p.cbmPerCtn||p.cbm_per_ctn||0); if(perCtn>0) return q>0?perCtn*q:perCtn;
+          var cbm=Number(p.cbm||0); if(cbm>0) return q>0?cbm*q:cbm;   // per-CTN canonical (matches merge path line ~897)
+          return Number(p.volume||0);
+        };
         var tcbmPL=Number(o.total_cbm)||prods.reduce(function(s,p){return s+cbmOf(p);},0)||Number(raw.totalCBM||raw.cbm||0);
         var colsPL=[
           {k:"name",al:"",fn:function(p){
@@ -1895,7 +1901,7 @@ export default async function handler(req, res) {
           +'<div class="right-col">'
           +'<div class="rp-row" style="min-height:28px"><div class="rp-label">外运编号：</div><div class="rp-value">'+esc(pick(sp.forwarder_booking_no,spraw.bookingNo,""))+'</div></div>'
           +'<div class="rp-row" style="min-height:28px"><div class="rp-label">CY单号（内部）：</div><div class="rp-value">'+esc(sp.shipment_no||soNo||"")+'</div></div>'
-          +'<div class="rp-row" style="min-height:28px"><div class="rp-label">订舱详细信息确认：</div><div class="rp-value">'+esc(pick(sp.vessel,""))+(sp.voyage?" / "+esc(sp.voyage):"")+(sp.etd?'<br>ETD: '+esc(fmtD(sp.etd)):"")+'</div></div>'
+          +'<div class="rp-row" style="min-height:28px"><div class="rp-label">订舱详细信息确认：</div><div class="rp-value">'+(pick(sp.shipping_line,sp.carrier_code,"")?'<b>'+esc(pick(sp.shipping_line,sp.carrier_code,""))+' </b>':"")+esc(pick(sp.vessel,""))+(sp.voyage?" / "+esc(sp.voyage):"")+(sp.etd?'<br>ETD: '+esc(fmtD(sp.etd)):"")+(sp.eta?'&nbsp;&nbsp;ETA: '+esc(fmtD(sp.eta)):"")+'</div></div>'
           +'<div class="rp-row"><div class="rp-label">报关地点：</div><div class="rp-value">'+esc(_soCustomsPlace)+'</div></div>'
           +'<div class="rp-row"><div class="rp-label">报关票数：</div><div class="rp-value">'+esc(_soTickets)+'</div></div>'
           +'<div class="rp-row"><div class="rp-ops">'
