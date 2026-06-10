@@ -303,7 +303,7 @@ async function enrichProdsFromMaster(pool, prods) {
   try {
     if (skus.length) {
       var r = await pool.query(
-        "SELECT sku, product_name, hs_code, declaration_name, declaration_elements," +
+        "SELECT sku, product_name, hs_code, declaration_name, declaration_name_en, declaration_elements," +
         " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit," +
         " barcode, factory_name" +
         " FROM products WHERE sku = ANY($1::text[]) AND active = true",
@@ -316,7 +316,7 @@ async function enrichProdsFromMaster(pool, prods) {
       // (TNC-06, CP1894, etc — not real EAN barcodes). Match on barcode OR sku
       // so either column hits work.
       var r2 = await pool.query(
-        "SELECT sku, hs_code, declaration_name, declaration_elements," +
+        "SELECT sku, hs_code, declaration_name, declaration_name_en, declaration_elements," +
         " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit," +
         " barcode, factory_name" +
         " FROM products WHERE (barcode = ANY($1::text[]) OR sku = ANY($1::text[])) AND active = true",
@@ -356,6 +356,7 @@ async function enrichProdsFromMaster(pool, prods) {
       cbmPerCtn:           _f(p.cbmPerCtn,           m.cbm), // master cbm IS per-CTN; renderer multiplies by qty
       blDescription:       _f(p.blDescription   || p.bl_description,   m.bl_description),
       declarationName:     _f(p.declarationName  || p.declaration_name, m.declaration_name),
+      declarationNameEn:   _f(p.declarationNameEn || p.declaration_name_en, m.declaration_name_en),
       hsCode:              _f(p.hsCode || p.hs_code || p.hscode,        m.hs_code),
       declarationElements: _f(p.declarationElements,                    m.declaration_elements),
       inner_qty:           _f(p.inner_qty,                              m.inner_qty),
@@ -1747,20 +1748,29 @@ export default async function handler(req, res) {
         var prods=rr.products||rr.items||[], lines=[];
         prods.forEach(function(p){
           var desc=p.blDescription||p.declarationName||p.bl_description||p.productNameEN||p.productName||p.name||"";
+          var descEn=p.declarationNameEn||p.declaration_name_en||"";
           var hs=p.hsCode||p.hs_code||p.hscode||"";
           if(!desc&&!hs)return;
           var key=(hs+"|"+desc).toLowerCase();
-          if(!lines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))lines.push({desc:desc,hs:hs});
+          if(!lines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))lines.push({desc:desc,descEn:descEn,hs:hs});
         });
         if(!prods.length){var d=rr.blDescription||rr.cargoDescription||"",hs=rr.hsCode||rr.hs_code||"";if(d||hs)lines.push({desc:d,hs:hs});}
         return lines;
       }
       var _orderNos=sp.order_nos||spraw.orderNos||spraw.order_nos||[];
       if(_orderNos&&_orderNos.length){
-        var loR=await pool.query("SELECT raw,contract_no,order_no,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
+        var loR=await pool.query("SELECT id,raw,contract_no,order_no,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
         for(var loRow of loR.rows){
           var rr=loRow.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
-          var enrichedBLProds=await enrichProdsFromMaster(pool,rr.products||rr.items||[]);
+          var _loProds=rr.products||rr.items||[];
+          // raw.products 空时回退 order_line_items(明细真值表) — 新单建单只写 OLI
+          if(!_loProds.length&&loRow.id){
+            try{
+              var _loLi=await pool.query("SELECT sku,barcode,product_name,bl_description,declaration_name,declaration_name_en,hs_code FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[loRow.id]);
+              _loProds=_loLi.rows.map(function(li){return{sku:li.sku||"",barcode:li.barcode||"",productName:li.product_name||"",blDescription:li.bl_description||li.declaration_name_en||li.declaration_name||"",declarationName:li.declaration_name||"",hsCode:li.hs_code||""};});
+            }catch(e){}
+          }
+          var enrichedBLProds=await enrichProdsFromMaster(pool,_loProds);
           var rrE=Object.assign({},rr,{products:enrichedBLProds,items:enrichedBLProds});
           var lines=_buildLines(rrE);
           var key=loRow.contract_no||loRow.order_no||"";
@@ -1775,129 +1785,162 @@ export default async function handler(req, res) {
       }
 
       if(type==="so"){
-        var carrier=pick(sp.shipping_line,spraw.shippingLine,"-");
-        var eta=pick(sp.eta,spraw.eta,"-"); if(eta&&eta!=="-")eta=fmtD(eta);
-        var conNo=pick(sp.container_no,spraw.containerNo,"");
-        var sealNo=pick(sp.seal_no,spraw.sealNo,"");
-        var cargoDescHTML=_cargoHTML(cargoLines);
-
-        html=wrap("Booking Note — "+soNo,`
-          <table style="width:100%;border-collapse:collapse;margin-bottom:0">
-            <tr>
-              <td style="padding:10px 0 6px 0;border-bottom:2px solid #111">
-                <div style="font-size:17px;font-weight:800">${esc(fwd.nameCN)}</div>
-                <div style="font-size:10px;color:#666;margin-top:1px">${esc(fwd.nameEN)}</div>
-              </td>
-              <td style="padding:10px 0 6px 0;border-bottom:2px solid #111;text-align:right;vertical-align:bottom">
-                <div style="font-size:15px;font-weight:800;letter-spacing:2px">出口货物委托书</div>
-                <div style="font-size:11px;font-weight:600;color:#555;letter-spacing:1px">SHIPPING ORDER</div>
-                <div style="font-size:11px;margin-top:4px"><b>D/R No.:</b> ${esc(soNo)} &nbsp;&nbsp; <b>日期:</b> ${esc(fmtD(sp.created_at))}</div>
-              </td>
-            </tr>
-          </table>
-
-          <table style="width:100%;border-collapse:collapse;margin-top:10px;margin-bottom:0">
-            <tr>
-              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top;width:60%">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Shipper / 发货人</div>
-                <div style="font-weight:700;font-size:12px">${esc(shipper)}</div>
-                <div style="font-size:10px;color:#666;margin-top:2px">${esc(cfg3.address||"")}</div>
-              </td>
-              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top;width:40%;color:#c00" rowspan="3">
-                <div style="font-size:9px;font-weight:700;margin-bottom:6px">请在提单待确认样上注明：</div>
-                <div style="font-size:11px;font-weight:600">申请目的港最长免箱时间，至少申请目的港免箱混 <u>21 天</u></div>
-              </td>
-            </tr>
-            <tr>
-              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Consignee / 收货人</div>
-                <div style="font-weight:700;font-size:12px">${esc(consignee)}</div>
-                ${consAddr?`<div style="font-size:10px;color:#666;margin-top:2px">${esc(consAddr)}</div>`:""}
-              </td>
-            </tr>
-            <tr>
-              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Notify Party / 通知人</div>
-                <div style="font-weight:700;font-size:12px">${esc(consignee)}</div>
-                ${consAddr?`<div style="font-size:10px;color:#666;margin-top:2px">${esc(consAddr)}</div>`:""}
-              </td>
-            </tr>
-          </table>
-
-          <table style="width:100%;border-collapse:collapse;margin-top:8px">
-            <tr>
-              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:40%">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Ocean Vessel &amp; Voyage / 船名航次</div>
-                <b>${esc(vessel)}</b> / ${esc(voyage)}
-              </td>
-              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:30%">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Port of Loading / 装货港</div>
-                <b>${esc(polSp)}</b>
-              </td>
-              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:30%">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Carrier / 船公司</div>
-                <b>${esc(carrier)}</b>
-              </td>
-            </tr>
-            <tr>
-              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Port of Discharge / 卸货港</div>
-                <b>${esc(podSp)}</b>
-              </td>
-              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">ETD / 开船日</div>
-                <b>${esc(etd)}</b>
-              </td>
-              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
-                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">ETA / 预计到港</div>
-                <b>${esc(eta)}</b>
-              </td>
-            </tr>
-          </table>
-
-          <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11px">
-            <thead><tr style="background:#111;color:#fff">
-              <th style="padding:7px 8px;font-size:10px;text-align:center;width:16%">Container No.<br>集装箱号</th>
-              <th style="padding:7px 8px;font-size:10px;text-align:center;width:12%">Seal No.<br>封志号</th>
-              <th style="padding:7px 8px;font-size:10px;text-align:center;width:9%">Type<br>柜型</th>
-              <th style="padding:7px 8px;font-size:10px;text-align:left">Description of Goods &amp; HS Code<br>货物描述 &amp; HS编码</th>
-              <th style="padding:7px 8px;font-size:10px;text-align:center;width:10%">G.W.(KG)<br>毛重</th>
-              <th style="padding:7px 8px;font-size:10px;text-align:center;width:9%">CBM<br>方数</th>
-            </tr></thead>
-            <tbody>${(function(){
-              var ctrs=spraw.containers||[];
-              if(ctrs.length){
-                return ctrs.map(function(c){
-                  var okey=c.order_no||c.contract_no||"";
-                  var cLines=(okey&&cargoByOrder[okey])?cargoByOrder[okey]:cargoLines;
-                  return "<tr>"
-                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.container_no||"—")+"</td>"
-                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.seal_no||"—")+"</td>"
-                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.type||ctype)+"</td>"
-                    +"<td style='border:1px solid #ddd;padding:8px;vertical-align:top'>"+_cargoHTML(cLines)+"</td>"
-                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:middle'>"+esc(String(c.gw||"—"))+"</td>"
-                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:middle'>"+esc(String(c.cbm||"—"))+"</td>"
-                    +"</tr>";
-                }).join("");
-              }
-              return "<tr>"
-                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(conNo)||"—"+"</td>"
-                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(sealNo)||"—"+"</td>"
-                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(ctype)+"</td>"
-                +"<td style='border:1px solid #ddd;padding:8px;vertical-align:top'>"+cargoDescHTML+"</td>"
-                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top'>"+esc(String(tgwSp))+"</td>"
-                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top'>"+esc(String(tcbm))+"</td>"
-                +"</tr>";
-            })()}</tbody>
-          </table>
-
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;font-size:11px">
-            ${[["截关日 Cut-off",cutoff||"-"],["运费 Freight","FREIGHT PREPAID"],["柜型 Container",ctype],["柜量 Qty",String(cqty)]].map(function(b){return`<div style="border:1px solid #ddd;padding:6px 10px;border-radius:2px"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase">${b[0]}</div><div style="font-weight:600;font-size:12px;margin-top:2px">${esc(b[1])}</div></div>`;}).join("")}
-          </div>
-          <div style="margin-top:12px;font-size:10px;padding-top:8px;border-top:1px solid #eee;display:flex;justify-content:space-between;color:#555">
-            <div><b>制单:</b> ${esc(cfg3.nameEN)}</div><div><b>联系人:</b> ${esc(fwd.contact)} &nbsp; <b>Email:</b> ${esc(fwd.email)}</div>
-          </div>
-        `,ap);
+        // 2026-06-10 Damon: 托书改用模板 shipping-instruction-托书-v1.html(出口货物委托单/SHIPPING BOOKING INSTRUCTION)
+        // 红色港口标签已去除; 表单输入改为服务端直填; 勾选用静态 ☑/☐。
+        var CK=function(on){return on?"&#9745;":"&#9744;";};
+        // shipper 抬头: sp.shipper 匹配 seller_profiles 取地址/电话; 匹配不到只显名称
+        var _soShipName=pick(sp.shipper,spraw.shipper,"");
+        var _soShipAddr="",_soShipTel="";
+        if(_soShipName){
+          try{
+            var _spfR=await pool.query("SELECT name_en,address,tel FROM seller_profiles WHERE name_en ILIKE '%'||$1||'%' OR $1 ILIKE '%'||name_en||'%' LIMIT 1",[_soShipName]);
+            if(_spfR.rows.length){_soShipAddr=_spfR.rows[0].address||"";_soShipTel=_spfR.rows[0].tel||"";}
+          }catch(e){}
+        }
+        // 每单一行货表: 订单总量直读(铁律不派生)
+        var _soRows=[];
+        var _soOrderNos=sp.order_nos||spraw.orderNos||[];
+        if(_soOrderNos&&_soOrderNos.length){
+          try{
+            var _soR=await pool.query("SELECT order_no,contract_no,customer_po,total_qty,gross_weight,total_cbm FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[]) ORDER BY order_no",[_soOrderNos]);
+            _soRows=_soR.rows;
+          }catch(e){}
+        }
+        var _soCargoTr=_soRows.length?_soRows.map(function(r){
+          var key=r.contract_no||r.order_no||"";
+          var lines=(key&&cargoByOrder[key])?cargoByOrder[key]:cargoLines;
+          var descHtml=lines.map(function(l){
+            var en=(l.descEn&&l.descEn!==l.desc)?l.descEn:"";
+            return en?("<b>"+esc(en)+"</b> "+esc(l.desc||"")):esc(l.desc||"");
+          }).filter(Boolean).join("<br>")||"&#8212;";
+          var hsHtml=lines.map(function(l){return l.hs?esc(l.hs):"";}).filter(Boolean).join("<br>")||"&#8212;";
+          return '<tr>'
+            +'<td style="text-align:center">N/M</td>'
+            +'<td style="text-align:center">'+esc(String(Number(r.total_qty)||"&#8212;"))+' ctns</td>'
+            +'<td>'+descHtml+'<div style="font-size:8.5px;color:#777;margin-top:2px">'+esc(r.customer_po||r.contract_no||"")+'</div></td>'
+            +'<td style="text-align:center">'+hsHtml+'</td>'
+            +'<td style="text-align:center">'+esc(Number(r.gross_weight)?Number(r.gross_weight).toLocaleString("en-US")+" kgs":"&#8212;")+'</td>'
+            +'<td style="text-align:center">'+esc(Number(r.total_cbm)?Number(r.total_cbm).toFixed(3)+" cbm":"&#8212;")+'</td>'
+            +'</tr>';
+        }).join(""):('<tr><td style="text-align:center">N/M</td><td></td><td>'+_cargoHTML(cargoLines)+'</td><td></td><td style="text-align:center">'+esc(tgwSp!=="-"?String(tgwSp)+" kgs":"")+'</td><td style="text-align:center">'+esc(tcbm!=="-"?String(tcbm)+" cbm":"")+'</td></tr>');
+        var _soTotQty=_soRows.reduce(function(s,r){return s+(Number(r.total_qty)||0);},0);
+        var _soTotGw=_soRows.reduce(function(s,r){return s+(Number(r.gross_weight)||0);},0);
+        var _soTotCbm=_soRows.reduce(function(s,r){return s+(Number(r.total_cbm)||0);},0);
+        var _soTerms=String(pick(spraw.tradeTerms,spraw.trade_terms,"")).toUpperCase();
+        var _soRelease=String(pick(sp.release_type,spraw.releaseType,"telex")).toLowerCase();
+        var _soIsTelex=_soRelease==="telex"||_soRelease==="电放";
+        var _soCtQty=pick(sp.container_qty,spraw.containerQty,cqty);
+        var _soCtType=pick(sp.container_type,spraw.containerType,ctype);
+        var _soCargoReady=fmtD(pick(sp.cutoff_date,sp.etd,""))||"";
+        var _soTickets=_soRows.length?String(_soRows.length)+"票":"";
+        var _soCustomsPlace=String(polSp||"").replace(/[A-Za-z\s]/g,"")||String(polSp||"");
+        html='<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><title>出口货物委托单 '+esc(soNo)+'</title><style>'
+          +'*{box-sizing:border-box;margin:0;padding:0}'
+          +'body{font-family:Arial,"Microsoft YaHei",sans-serif;font-size:11px;color:#111;background:#e5e7eb;padding:16px}'
+          +'.page{width:210mm;margin:0 auto 24px;background:#fff;padding:10mm 12mm;box-shadow:0 2px 8px rgba(0,0,0,.15)}'
+          +'.doc-title{text-align:center;font-size:16px;font-weight:900;letter-spacing:.15em;border-bottom:2px solid #111;padding-bottom:6px}'
+          +'.doc-en{text-align:center;font-size:10px;color:#555;padding:3px 0 6px;border-bottom:1px solid #ccc}'
+          +'.main-grid{display:grid;grid-template-columns:1fr 38%;border:1px solid #999;border-top:none}'
+          +'.left-col{border-right:1px solid #999}'
+          +'.party-block{padding:5px 8px;border-bottom:1px solid #999;min-height:52px}'
+          +'.party-block.no-border{border-bottom:none}'
+          +'.party-label{font-size:10px;font-weight:700;margin-bottom:3px}'
+          +'.party-label span{font-weight:400;font-style:italic}'
+          +'.party-val{font-size:10.5px;line-height:1.5;white-space:pre-line}'
+          +'.rp-row{padding:4px 8px;border-bottom:1px solid #999;min-height:22px}'
+          +'.rp-row:last-child{border-bottom:none}'
+          +'.rp-label{font-size:9px;color:#555;margin-bottom:1px}'
+          +'.rp-value{font-size:10.5px}'
+          +'.rp-ops{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px}'
+          +'.rp-ops span{font-size:9px;color:#555}'
+          +'.port-row{display:grid;grid-template-columns:1fr 1fr;border:1px solid #999;border-top:none}'
+          +'.port-cell{padding:4px 8px;border-right:1px solid #999}'
+          +'.port-cell:last-child{border-right:none}'
+          +'.port-label{font-size:9.5px;font-weight:700;color:#111;margin-bottom:2px}'
+          +'.port-en{font-size:8.5px;color:#555;font-style:italic}'
+          +'.port-val{font-size:11px;font-weight:700}'
+          +'.cargo-wrap{border:1px solid #999;border-top:none}'
+          +'.cargo-table{width:100%;border-collapse:collapse}'
+          +'.cargo-table th{font-size:9px;font-weight:700;padding:4px 5px;border:1px solid #ccc;text-align:center;background:#f5f5f5;line-height:1.3}'
+          +'.cargo-table td{border:1px solid #ccc;padding:4px 5px;vertical-align:top;font-size:10px}'
+          +'.cargo-table .total-row td{background:#f9f9f9;font-weight:700;font-size:9.5px}'
+          +'.decl-row{display:grid;grid-template-columns:1fr 1fr;border:1px solid #999;border-top:none}'
+          +'.decl-left{padding:6px 8px;border-right:1px solid #999}'
+          +'.decl-right{padding:6px 8px}'
+          +'.dl-line{font-size:10px;margin-bottom:6px}'
+          +'.dl-line b{font-weight:700}'
+          +'.msds-note{font-size:9px;color:#555;font-style:italic;margin-left:14px;margin-bottom:4px;line-height:1.3}'
+          +'.check-row{display:flex;align-items:flex-start;margin-bottom:4px;font-size:10px;line-height:1.4}'
+          +'.check-row .q{flex:1}'
+          +'.check-row .yn{white-space:nowrap;margin-left:8px}'
+          +'@media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0;padding:8mm 10mm}.no-print{display:none!important}}'
+          +'</style></head><body>'
+          +'<button class="no-print" onclick="window.print()" style="position:fixed;top:14px;right:14px;padding:8px 16px;background:#111;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9">&#128424; 打印 / PDF</button>'
+          +'<div class="page">'
+          +'<div class="doc-title">出口货物委托单</div>'
+          +'<div class="doc-en">SHIPPING BOOKING INSTRUCTION</div>'
+          +'<div class="main-grid">'
+          +'<div class="left-col">'
+          +'<div class="party-block"><div class="party-label">发货人：<span>Shipper:</span></div><div class="party-val"><b>'+esc(_soShipName||shipper||"")+'</b>'+(_soShipAddr?'<br>'+esc(_soShipAddr):"")+(_soShipTel?'<br>Tel: '+esc(_soShipTel):"")+'</div></div>'
+          +'<div class="party-block"><div class="party-label">收货人：<span>Consignee</span></div><div class="party-val"><b>'+esc(consignee)+'</b>'+(consAddr?'<br>'+esc(consAddr):"")+'</div></div>'
+          +'<div class="party-block no-border"><div class="party-label">通知人：<span>Notify</span></div><div class="party-val">SAME AS CONSIGNEE</div></div>'
+          +'</div>'
+          +'<div class="right-col">'
+          +'<div class="rp-row" style="min-height:28px"><div class="rp-label">外运编号：</div><div class="rp-value">'+esc(pick(sp.forwarder_booking_no,spraw.bookingNo,""))+'</div></div>'
+          +'<div class="rp-row" style="min-height:28px"><div class="rp-label">CY单号（内部）：</div><div class="rp-value">'+esc(sp.shipment_no||soNo||"")+'</div></div>'
+          +'<div class="rp-row" style="min-height:28px"><div class="rp-label">订舱详细信息确认：</div><div class="rp-value">'+esc(pick(sp.vessel,""))+(sp.voyage?" / "+esc(sp.voyage):"")+(sp.etd?'<br>ETD: '+esc(fmtD(sp.etd)):"")+'</div></div>'
+          +'<div class="rp-row"><div class="rp-label">报关地点：</div><div class="rp-value">'+esc(_soCustomsPlace)+'</div></div>'
+          +'<div class="rp-row"><div class="rp-label">报关票数：</div><div class="rp-value">'+esc(_soTickets)+'</div></div>'
+          +'<div class="rp-row"><div class="rp-ops">'
+          +'<div><span>联系方式：</span><br><span class="rp-value">'+esc(cfg3.tel||"")+'</span></div>'
+          +'<div><span>操作：</span><br><span class="rp-value"></span></div>'
+          +'<div><span>单证：</span><br><span class="rp-value"></span></div>'
+          +'</div></div>'
+          +'<div class="rp-row no-border" style="min-height:60px"><div class="rp-label">委托我们代理拖车报关请填写：</div><div class="rp-value" style="white-space:pre-line">'+esc(pick(spraw.towDetail,""))+'</div></div>'
+          +'</div>'
+          +'</div>'
+          +'<div class="port-row">'
+          +'<div class="port-cell"><div class="port-label">Port of loading: <span class="port-en">装货港</span></div><div class="port-val">'+esc(polSp)+'</div></div>'
+          +'<div class="port-cell"><div class="port-label">Port of discharge: 目的港 <span class="port-en">卸货港</span></div><div class="port-val">'+esc(podSp)+'</div></div>'
+          +'</div>'
+          +'<div class="cargo-wrap"><table class="cargo-table">'
+          +'<thead><tr>'
+          +'<th style="width:12%">唛头<br>Mark&amp;number</th>'
+          +'<th style="width:12%">数量<br>Number of package</th>'
+          +'<th style="width:30%">货物名称 /<br>Description of goods</th>'
+          +'<th style="width:14%">HS编码 /<br>HS Code</th>'
+          +'<th style="width:16%">毛重<br>Gross weight</th>'
+          +'<th style="width:16%">体积<br>Measurement</th>'
+          +'</tr></thead><tbody>'
+          +_soCargoTr
+          +(_soRows.length>1?'<tr class="total-row"><td style="text-align:center">TOTAL</td><td style="text-align:center">'+_soTotQty.toLocaleString("en-US")+' ctns</td><td></td><td></td><td style="text-align:center">'+_soTotGw.toLocaleString("en-US")+' kgs</td><td style="text-align:center">'+_soTotCbm.toFixed(3)+' cbm</td></tr>':"")
+          +'</tbody></table></div>'
+          +'<div class="decl-row">'
+          +'<div class="decl-left">'
+          +'<div class="dl-line"><b>货好时间 (CARGO READY DATE)：</b>'+esc(_soCargoReady)+'</div>'
+          +'<div class="dl-line"><b>条款 (TERMS)：</b> '+CK(_soTerms==="FOB")+' FOB &nbsp;'+CK(_soTerms==="EXW")+' EXW &nbsp;'+CK(_soTerms==="FCA")+' FCA &nbsp;其他：'+esc(["FOB","EXW","FCA",""].indexOf(_soTerms)<0?_soTerms:"______")+'</div>'
+          +'<div class="check-row"><span class="q">是否有电池/液体货物？Product with Battery：</span><span class="yn">'+CK(false)+' YES &nbsp;'+CK(true)+' NO</span></div>'
+          +'<div class="msds-note">如果是，请提供MSDS<br><em>If YES, Pls provide the MSDS Test report of Batteries</em></div>'
+          +'<div class="check-row"><span class="q">是否有实木包装 / 木架 / 托盘？</span><span class="yn">'+CK(false)+' YES &nbsp;'+CK(true)+' NO</span></div>'
+          +'<div class="check-row"><span class="q">如有实木包装，是否已做熏蒸？</span><span class="yn">'+CK(false)+' YES &nbsp;'+CK(true)+' NO</span></div>'
+          +'<div class="dl-line" style="margin-top:6px"><b>箱型箱量 (CONTAINER)：</b>'+esc(String(_soCtQty))+' &times; '+esc(String(_soCtType))+'</div>'
+          +'<div class="dl-line">'+CK(false)+' 自拖自报 &nbsp;&nbsp;'+CK(false)+' 代拖代报</div>'
+          +'</div>'
+          +'<div class="decl-right">'
+          +'<div class="dl-line"><b>提单方式：</b>'+CK(!_soIsTelex)+' 正本 &nbsp;'+CK(_soIsTelex)+' 电放 &nbsp;'+CK(false)+' 其他：___________</div>'
+          +(_soIsTelex?'<div class="dl-line"><b>电放授权方 / B/L Release To：</b>'+esc(consignee)+'</div>':"")
+          +'<div style="margin-top:10px"><div style="font-size:9px;color:#555;margin-bottom:3px">备注 Remarks</div>'
+          +'<div style="font-size:10px;border:1px solid #ddd;border-radius:2px;padding:4px;min-height:70px;white-space:pre-line">'+esc(pick(spraw.remarks,sp.product_notes,""))+'</div></div>'
+          +'</div></div>'
+          +'<div style="border:1px solid #999;border-top:none;padding:5px 12px;background:#f9f9f9">'
+          +'<p style="font-size:8px;color:#666;line-height:1.6">本托书为格式条款，委托方签字/盖章即视为已充分阅读并接受全部内容；如有与本托书冲突之特别约定，须以双方授权代表签字盖章的书面文件为准；本托书传真件、扫描件与原件具有同等法律效力；因本托书引起或与之相关的任何争议，适用中华人民共和国法律，由厦门海事法院管辖。</p>'
+          +'</div>'
+          +'<div style="border:1px solid #999;border-top:none;padding:8px 12px;min-height:54px">'
+          +'<div style="font-size:9px;color:#555;margin-bottom:4px">委托方签署 / Principal&#39;s Signature &amp; Seal（请盖公章，须与Shipper抬头一致）</div>'
+          +'<div style="border-bottom:1px solid #ccc;margin-top:28px"></div>'
+          +'<div style="font-size:8px;color:#aaa;text-align:center;margin-top:2px">签字 / 公章 / 日期</div>'
+          +'</div>'
+          +'</div></body></html>';
       }
 
       if(type==="debit"){
