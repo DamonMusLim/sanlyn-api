@@ -1050,19 +1050,53 @@ async function handleTruckingSubmit(req, res, pool) {
   if (!planId) return res.status(500).json({ ok: false, error: "链接数据异常" });
 
   // 过磅重→柜表（真值写回；箱封号只填空防覆盖）
+  // 失败/柜号不匹配 → cb_warnings 红标留痕，绝不静默吞掉
+  const cbWarnings = [];
   if (vehicles) {
     for (const v of vehicles) {
       if (!v.cntr) continue;
       try {
-        await pool.query(
+        const r = await pool.query(
           `UPDATE container_bookings SET
              vgm_weight_kg = COALESCE($1, vgm_weight_kg),
              seal_no = COALESCE(NULLIF(seal_no,''), $2),
              truck_plate = COALESCE(NULLIF(truck_plate,''), $3),
+             trailer_plate = COALESCE(NULLIF(trailer_plate,''), $6),
+             driver_name = COALESCE(NULLIF(driver_name,''), $7),
+             driver_phone = COALESCE(NULLIF(driver_phone,''), $8),
+             pickup_time = COALESCE(pickup_time, $9::timestamptz),
              updated_at = now()
            WHERE shipping_plan_id = $4 AND container_no = $5`,
-          [v.weigh_kg, v.seal_no, v.plate, planId, v.cntr]);
-      } catch (e) {}
+          [v.weigh_kg, v.seal_no, v.plate, planId, v.cntr,
+           v.trailer_plate, v.driver, v.driver_phone, v.pickup_time || null]);
+        if (r.rowCount === 0)
+          cbWarnings.push({ cntr: v.cntr, reason: "柜号在本票订舱柜表无匹配，未回写，请核对柜号" });
+      } catch (e) {
+        console.error("[trucking-cb-writeback]", v.cntr, e.message);
+        cbWarnings.push({ cntr: v.cntr, reason: "柜表回写失败: " + e.message });
+      }
+    }
+  } else if (plate || driver_phone) {
+    // 单车平铺路径：该票恰好一柜时回写那一柜；多柜无柜号 → 红标不盲写
+    try {
+      const { rows: cbs } = await pool.query(
+        `SELECT id, container_no FROM container_bookings WHERE shipping_plan_id = $1`, [planId]);
+      if (cbs.length === 1) {
+        await pool.query(
+          `UPDATE container_bookings SET
+             truck_plate = COALESCE(NULLIF(truck_plate,''), $1),
+             driver_name = COALESCE(NULLIF(driver_name,''), $2),
+             driver_phone = COALESCE(NULLIF(driver_phone,''), $3),
+             pickup_time = COALESCE(pickup_time, $4::timestamptz),
+             updated_at = now()
+           WHERE id = $5`,
+          [plate || null, driver || null, driver_phone || null, pickup_time || null, cbs[0].id]);
+      } else if (cbs.length > 1) {
+        cbWarnings.push({ cntr: null, reason: "本票多柜但提交未带柜号，柜表未回写，请按柜逐一填报" });
+      }
+    } catch (e) {
+      console.error("[trucking-cb-writeback:single]", e.message);
+      cbWarnings.push({ cntr: null, reason: "柜表回写失败: " + e.message });
     }
   }
 
@@ -1073,6 +1107,7 @@ async function handleTruckingSubmit(req, res, pool) {
         driver_phone: driver_phone || null, pickup_time: pickup_time || null,
         remarks: remarks || null, submitted_at: new Date().toISOString(),
         source: "trucking_booking_link" };
+  detail.cb_warnings = cbWarnings.length ? cbWarnings : null;
   await pool.query(
     `UPDATE shipping_plans
         SET trucking_detail = COALESCE(trucking_detail, '{}'::jsonb) || $1::jsonb,
@@ -1080,7 +1115,7 @@ async function handleTruckingSubmit(req, res, pool) {
       WHERE id = $2`,
     [JSON.stringify(detail), planId]
   );
-  return res.json({ ok: true });
+  return res.json({ ok: true, cb_warnings: cbWarnings });
 }
 
 // ── POST /broker-submit ───────────────────────────────────────

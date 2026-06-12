@@ -195,7 +195,7 @@ textarea.form-input { resize: vertical; min-height: 60px; }
         <div class="step-num" id="sn1">🚛</div>
         <div style="min-width:0;">
           <div class="step-title">车辆 & 司机 / Vehicles</div>
-          <div class="step-sub">每辆车一层 · 提交后收起，点击可展开修改</div>
+          <div class="step-sub">每辆车一层 · 装柜后回填柜号/封号/磅重 · 提交后收起，点击可展开修改</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
@@ -283,10 +283,18 @@ function vehHtml(i, d={}){
         <input class="form-input" id="phone_${i}" type="tel" value="${esc(d.driver_phone)}" placeholder="手机号"></div>
       <div class="form-field" style="margin:0;"><label class="form-label">提箱时间</label>
         <input class="form-input" id="pickup_${i}" type="datetime-local" value="${esc(d.pickup_time)}"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">柜号 Container No.</label>
+        <input class="form-input" id="cntr_${i}" value="${esc(d.cntr)}" placeholder="例：OOLU1234567" style="text-transform:uppercase;"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">封号 Seal No.</label>
+        <input class="form-input" id="seal_${i}" value="${esc(d.seal_no)}" placeholder="铅封号" style="text-transform:uppercase;"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">过磅重 kg</label>
+        <input class="form-input" id="weigh_${i}" type="number" min="0" step="1" value="${esc(d.weigh_kg)}" placeholder="装柜后磅重(kg)"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">挂车牌</label>
+        <input class="form-input" id="trailer_${i}" value="${esc(d.trailer_plate)}" placeholder="挂车/拖架牌(选填)"></div>
     </div>
   </div>`;
 }
-function snap(){ vehs = vehs.map((v,i)=>$('veh_'+i)?{plate:gv('plate_'+i),driver:gv('driver_'+i),driver_phone:gv('phone_'+i),pickup_time:gv('pickup_'+i)}:v); }
+function snap(){ vehs = vehs.map((v,i)=>$('veh_'+i)?{plate:gv('plate_'+i),driver:gv('driver_'+i),driver_phone:gv('phone_'+i),pickup_time:gv('pickup_'+i),cntr:gv('cntr_'+i).toUpperCase(),seal_no:gv('seal_'+i).toUpperCase(),weigh_kg:gv('weigh_'+i),trailer_plate:gv('trailer_'+i)}:v); }
 function renderVehs(){ $('vehGroups').innerHTML = vehs.map((v,i)=>vehHtml(i,v)).join(''); }
 function addVeh(){ vehs.push({}); renderVehs(); }
 function delVeh(i){ snap(); vehs.splice(i,1); if(!vehs.length) vehs.push({}); renderVehs(); }
@@ -319,11 +327,13 @@ async function boot(){
   // 已提交过：预填 + 收起
   const td = s.trucking_detail || {};
   const saved = Array.isArray(td.vehicles)?td.vehicles:(td.plate?[{plate:td.plate,driver:td.driver,driver_phone:td.driver_phone,pickup_time:td.pickup_time}]:[]);
-  if(saved.length && td.source==='trucking_booking_link'){
-    vehs = saved.map(v=>({plate:v.plate||'',driver:v.driver||'',driver_phone:v.driver_phone||'',pickup_time:v.pickup_time||''}));
+  if(saved.length){
+    vehs = saved.map(v=>({plate:v.plate||'',driver:v.driver||'',driver_phone:v.driver_phone||'',pickup_time:v.pickup_time||'',cntr:v.cntr||'',seal_no:v.seal_no||'',weigh_kg:v.weigh_kg||'',trailer_plate:v.trailer_plate||''}));
     if(td.remarks) $('remarks').value = td.remarks;
     renderVehs();
-    collapseVeh(saved.length+' 辆车已提交 · '+saved.map(v=>v.plate).filter(Boolean).join(' / '));
+    // 自己提交过才收起；柜表派生的预填（source=container_bookings）保持展开待补
+    if(td.source==='trucking_booking_link')
+      collapseVeh(saved.length+' 辆车已提交 · '+saved.map(v=>v.plate).filter(Boolean).join(' / '));
   } else { vehs=[{}]; renderVehs(); }
   uploads = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
   renderFiles();
@@ -344,7 +354,16 @@ async function save(){
     $('btnSubmit').disabled = false;
     if(!r.ok||!d.ok){ toast(d.error||'提交失败'); return; }
     collapseVeh(vehicles.length+' 辆车已提交 · '+vehicles.map(v=>v.plate).filter(Boolean).join(' / '));
-    toast('✓ 已提交，可继续上传装柜照片');
+    // 柜表回写警告：红标显示，不静默
+    const old=$('cbWarnBox'); if(old) old.remove();
+    if(Array.isArray(d.cb_warnings)&&d.cb_warnings.length){
+      const w=document.createElement('div'); w.id='cbWarnBox'; w.className='alert-callout';
+      w.innerHTML='<b>⚠️ 柜号核对提醒</b><br>'+d.cb_warnings.map(x=>esc((x.cntr?x.cntr+'：':'')+x.reason)).join('<br>');
+      $('step1').appendChild(w);
+      toast('已提交，但有柜号需要核对');
+    } else {
+      toast('✓ 已提交，可继续上传装柜照片');
+    }
   }catch(e){ $('btnSubmit').disabled=false; toast('网络错误，请重试'); }
 }
 

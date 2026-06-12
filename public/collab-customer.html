@@ -267,7 +267,21 @@ function pick(i){
     el.querySelector('.sel-pill').classList.toggle('hidden',k!==i);
   });
 }
-function reopen(){ confirmed=false; renderConfirmState(); toast('可重新选择航班，选好后再次确认'); }
+function reopen(){
+  confirmed=false; window._isAmend = !!sheet.customer_submitted; renderConfirmState();
+  // 已确认过再改 = 改单：明示可能产生改单费（以船司账单为准）
+  if(window._isAmend){
+    const cz=$('confirmZone');
+    if(cz && !$('amendNotice')){
+      const n=document.createElement('div'); n.id='amendNotice';
+      n.style.cssText='margin:0 0 10px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:6px;font-size:12px;color:#92400e;';
+      const cnt=(sheet.customer_amend&&sheet.customer_amend.count)?Number(sheet.customer_amend.count):0;
+      n.innerHTML='⚠️ <b>改单提醒 Amendment</b>：您已确认过船期，再次提交将视为<b>改单</b>，船公司可能收取改单费（以实际账单为准）。'+(cnt>0?`<span style="margin-left:6px;color:#b45309;">本票已改单 ${cnt} 次</span>`:'');
+      cz.insertBefore(n,cz.firstChild);
+    }
+  }
+  toast('可重新选择航班，选好后再次确认');
+}
 
 function renderSailings(){
   $('sailCount').textContent = sailings.length + ' 个班次';
@@ -583,7 +597,8 @@ async function boot(){
 async function confirmBooking(){
   if(selIdx<0){ toast('请先点选一个航班'); return; }
   const x = sailings[selIdx];
-  if(!confirm(`确认订舱：${x.carrier} ${x.vessel||''} · ETD ${fmt(x.etd)}？\n确认后 Sanlyn 将锁定舱位。`)) return;
+  const amendTip = window._isAmend ? '\n⚠️ 本次为改单，船公司可能收取改单费（以账单为准）。' : '';
+  if(!confirm(`确认订舱：${x.carrier} ${x.vessel||''} · ETD ${fmt(x.etd)}？\n确认后 Sanlyn 将锁定舱位。${amendTip}`)) return;
   $('btnConfirm').disabled = true;
   try{
     const r = await fetch(`${API}/customer-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -591,6 +606,11 @@ async function confirmBooking(){
     const d = await r.json();
     $('btnConfirm').disabled = false;
     if(!r.ok||!d.ok){ toast(d.error||'提交失败'); return; }
+    if(window._isAmend){
+      sheet.customer_amend = { count: ((sheet.customer_amend&&Number(sheet.customer_amend.count))||0) + 1 };
+      window._isAmend = false;
+      const n=$('amendNotice'); if(n) n.remove();
+    }
     confirmed = true; sheet.customer_submitted = true;
     sheet.customer_submitted_at = new Date().toISOString();
     renderConfirmState();

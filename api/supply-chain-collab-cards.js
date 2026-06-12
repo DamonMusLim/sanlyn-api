@@ -137,6 +137,8 @@ async function fetchCollabRows(pool, filters) {
     return { rows, fixture: false };
   } catch (e) {
     if (e.code === '42P01') {
+      // 表未建：绝不造数——只有显式 development 才返回 fixture，其余(含未设NODE_ENV的prod)一律空列表
+      if (process.env.NODE_ENV !== 'development') return { rows: [], fixture: false };
       // P1-D1: also apply scope guard to fixture rows
       let rows = devFixtureRows();
       if (filters.buyerCompanyCode)   rows = rows.filter(r => r.buyer_company_code   === filters.buyerCompanyCode);
@@ -157,6 +159,7 @@ async function fetchCollabById(pool, id) {
     return { row: rows[0] || null, fixture: false };
   } catch (e) {
     if (e.code === '42P01') {
+      if (process.env.NODE_ENV !== 'development') return { row: null, fixture: false };
       return { row: devFixtureRows().find(r => r.collab_id === id) || null, fixture: true };
     }
     throw e;
