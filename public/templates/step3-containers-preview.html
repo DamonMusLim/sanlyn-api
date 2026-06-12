@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step 3 · Containers — Design Preview</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0a0e1a;
+  color: #f1f5f9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  padding: 0;
+}
+
+/* aurora bg */
+.aurora {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 1200px 700px at 18% -10%, rgba(124,58,237,.32) 0%, transparent 55%),
+    radial-gradient(ellipse 900px 600px at 110% 5%,  rgba(59,130,246,.28) 0%, transparent 55%),
+    radial-gradient(ellipse 700px 500px at 50% 100%, rgba(245,158,11,.14) 0%, transparent 55%),
+    linear-gradient(180deg, #0a0e1a 0%, #0f1424 60%, #0a0e1a 100%);
+  background-attachment: fixed;
+}
+
+/* ── sticky header ── */
+.sticky-hdr {
+  position: sticky; top: 0; z-index: 200;
+  background: rgba(10,14,26,.82);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  padding: 10px 20px;
+  display: flex; align-items: center; gap: 12px;
+}
+.hdr-title {
+  font-size: 15px; font-weight: 800; letter-spacing: -0.02em;
+  background: linear-gradient(135deg,#93c5fd 0%,#60a5fa 50%,#3b82f6 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hdr-ref { font-size: 10px; color: #64748b; font-family: monospace; }
+.step-bar { flex: 1; display: flex; justify-content: center; align-items: center; gap: 0; }
+.step-dot {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; color: #fff;
+  flex-shrink: 0;
+}
+.step-dot.done   { background: linear-gradient(135deg,#4ade80,#22c55e,#16a34a); box-shadow: 0 0 0 4px rgba(34,197,94,.22),0 8px 28px rgba(34,197,94,.50); }
+.step-dot.active { background: linear-gradient(135deg,#60a5fa,#3b82f6,#1d4ed8); box-shadow: 0 0 0 4px rgba(59,130,246,.20),0 8px 28px rgba(59,130,246,.45); }
+.step-dot.future { background: rgba(255,255,255,.08); color: #64748b; }
+.step-lbl { font-size: 12px; font-weight: 700; color: #3b82f6; margin-left: 6px; }
+.step-line { width: 32px; height: 2px; margin: 0 6px; border-radius: 2px; }
+.btn-place {
+  padding: 6px 12px; border-radius: 8px; border: none;
+  background: linear-gradient(135deg,#4ade80,#22c55e,#16a34a);
+  color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  box-shadow: 0 0 0 4px rgba(34,197,94,.22),0 8px 28px rgba(34,197,94,.50);
+}
+
+/* ── layout ── */
+.page-body { max-width: 1320px; margin: 0 auto; padding: 22px 16px; display: flex; gap: 18px; align-items: flex-start; }
+.main-col { flex: 1; min-width: 0; }
+.right-col { width: 284px; flex-shrink: 0; }
+
+/* ── container tabs ── */
+.ctn-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.ctn-tab {
+  padding: 8px 14px; border-radius: 8px 8px 0 0;
+  font-size: 12px; cursor: pointer; font-weight: 700;
+  background: rgba(28,35,55,.85); color: #3b82f6;
+  border: 1px solid rgba(255,255,255,.08);
+  border-bottom: 1px solid rgba(28,35,55,.85);
+  white-space: nowrap;
+}
+.ctn-tab-inactive {
+  padding: 8px 14px; border-radius: 8px 8px 0 0;
+  font-size: 12px; cursor: pointer; font-weight: 500;
+  background: rgba(255,255,255,.04); color: #64748b;
+  border: 1px solid transparent;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  white-space: nowrap;
+}
+.ctn-add {
+  padding: 8px 14px; border-radius: 8px 8px 0 0;
+  border: 1px dashed #3b82f6;
+  background: transparent; color: #3b82f6;
+  cursor: pointer; font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+
+/* ── container body ── */
+.ctn-body {
+  background: rgba(28,35,55,.85);
+  border: 1px solid rgba(255,255,255,.08);
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+/* factory bar */
+.fac-bar {
+  background: linear-gradient(135deg,rgba(245,158,11,.18),rgba(180,83,9,.12));
+  border: 1px solid rgba(245,158,11,.4);
+  border-radius: 8px; padding: 10px 14px;
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  position: relative;
+}
+.fac-bar::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(135deg,#fbbf24,#f59e0b,#b45309);
+  border-radius: 8px 8px 0 0;
+}
+
+/* fields row */
+.fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 12px; margin-bottom: 14px;
+}
+.lbl { font-size: 10px; color: #64748b; font-weight: 700; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .06em; }
+.inp-field {
+  width: 100%; padding: 9px 12px;
+  border: 1px solid rgba(255,255,255,.08); border-radius: 6px;
+  font-size: 13px; background: rgba(255,255,255,.04); color: #f1f5f9;
+  font-family: inherit; outline: none;
+}
+
+/* action btns */
+.action-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.act-btn { padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
+
+/* ── PRODUCT TABLE ─────────────────────────── */
+.prod-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 12px; min-width: 680px;
+}
+
+/* NEW: wider to accommodate image + stock col */
+.prod-table th, .prod-table td {
+  padding: 0;
+  vertical-align: middle;
+}
+
+/* header */
+.prod-table thead tr {
+  background: rgba(255,255,255,.04);
+  border-bottom: 1px solid rgba(255,255,255,.16);
+}
+.prod-table th {
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 9px; color: #64748b; font-weight: 700;
+  white-space: nowrap; text-transform: uppercase; letter-spacing: .04em;
+}
+.prod-table th.right { text-align: right; }
+
+/* rows */
+.prod-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.06); }
+.prod-table tbody tr:last-child { border-bottom: none; }
+.prod-table tbody tr:hover { background: rgba(255,255,255,.015); }
+
+.prod-table td { padding: 10px 10px; }
+.prod-table td.center { text-align: center; }
+.prod-table td.right  { text-align: right; }
+
+/* ── image cell ── */
+.td-img { width: 56px; padding: 8px 6px 8px 10px !important; }
+.prod-thumb {
+  width: 44px; height: 44px; border-radius: 8px;
+  background: rgba(2,13,31,.8); border: 1px solid rgba(255,255,255,.08);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.prod-thumb img { width: 100%; height: 100%; object-fit: contain; padding: 3px; }
+.prod-thumb .fallback { font-size: 22px; opacity: .45; }
+
+/* ── product info cell ── */
+.td-product { min-width: 180px; }
+.prod-name { font-weight: 600; color: #f1f5f9; line-height: 1.3; }
+.prod-code { font-size: 10px; color: #64748b; font-family: monospace; margin-top: 2px; }
+
+/* ── 包材库存 badge ── */
+.pkg-stock {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 5px; font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 4px;
+  white-space: nowrap;
+}
+.pkg-stock.ok  { background: rgba(34,197,94,.12);  color: #86efac; border: 1px solid rgba(34,197,94,.25); }
+.pkg-stock.low { background: rgba(245,158,11,.12); color: #fcd34d; border: 1px solid rgba(245,158,11,.25); }
+.pkg-stock.nil { background: rgba(100,116,139,.15); color: #94a3b8; border: 1px solid rgba(100,116,139,.2); }
+
+/* ── incoterm badge ── */
+.inco-badge {
+  font-size: 10px; padding: 2px 7px; border-radius: 4px;
+  font-weight: 700; background: #dbeafe; color: #1d4ed8;
+}
+
+/* ── small inputs ── */
+.mini-inp {
+  padding: 4px 7px; border: 1px solid rgba(255,255,255,.08); border-radius: 4px;
+  font-size: 11px; background: rgba(0,0,0,.25); color: #f1f5f9;
+  font-family: inherit; outline: none;
+}
+.mini-inp:focus { border-color: #3b82f6; }
+.mini-inp.qty-warn { border-color: rgba(245,158,11,.6); background: rgba(245,158,11,.06); }
+
+/* subtotal */
+.subtotal { font-weight: 700; color: #60a5fa; white-space: nowrap; }
+.subtotal.warn { color: #fcd34d; }
+
+/* remove btn */
+.rm-btn { color: #ef4444; cursor: pointer; font-size: 17px; background: none; border: none; padding: 0 4px; line-height: 1; }
+
+/* container totals */
+.ctn-totals { display: flex; gap: 14px; padding: 8px 4px 0; font-size: 11px; color: #64748b; flex-wrap: wrap; }
+
+/* ── summary card ── */
+.summ-card {
+  background: rgba(20,26,42,.78); backdrop-filter: blur(14px);
+  border-radius: 14px; border: 1px solid rgba(255,255,255,.08);
+  padding: 20px; margin-bottom: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.4);
+}
+.summ-grid { display: grid; grid-template-columns: repeat(6,1fr); gap: 8px; }
+.summ-cell {
+  padding: 12px 8px; background: rgba(255,255,255,.04);
+  border-radius: 8px; text-align: center;
+  border: 1px solid rgba(255,255,255,.08);
+}
+.summ-lbl { font-size: 9px; color: #64748b; margin-bottom: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.summ-val { font-size: 15px; font-weight: 800; letter-spacing: -0.02em; }
+
+/* ── action row ── */
+.action-row { display: flex; justify-content: space-between; margin-bottom: 80px; gap: 10px; flex-wrap: wrap; }
+.btn-back  { padding: 11px 22px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.04); cursor: pointer; font-size: 13px; font-weight: 600; color: #cbd5e1; }
+.btn-draft { padding: 10px 18px; border-radius: 8px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.04); color: #cbd5e1; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btn-send  { padding: 10px 20px; border-radius: 8px; border: none; background: linear-gradient(135deg,#fbbf24,#f59e0b,#b45309); color: #fff; cursor: pointer; font-size: 13px; font-weight: 800; box-shadow: 0 0 0 4px rgba(245,158,11,.20),0 8px 28px rgba(245,158,11,.45); }
+.btn-submit { padding: 11px 28px; border-radius: 8px; border: none; background: linear-gradient(135deg,#4ade80,#22c55e,#16a34a); color: #fff; cursor: pointer; font-size: 14px; font-weight: 800; box-shadow: 0 0 0 4px rgba(34,197,94,.22),0 8px 28px rgba(34,197,94,.50); }
+
+/* ── right col ── */
+.right-card {
+  background: rgba(28,35,55,.85); border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08); overflow: hidden; margin-bottom: 12px;
+}
+.right-card-header {
+  background: linear-gradient(135deg,#fbbf24,#f59e0b,#b45309);
+  padding: 16px 18px; position: relative; overflow: hidden;
+}
+.right-card-header::before {
+  content: ''; position: absolute; top: -50%; right: -50%;
+  width: 200%; height: 200%;
+  background: radial-gradient(circle,rgba(255,255,255,.18) 0%,transparent 35%);
+  pointer-events: none;
+}
+.right-card-body { padding: 11px 18px; }
+.right-row {
+  display: flex; justify-content: space-between;
+  padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: 10px;
+}
+.right-row:last-child { border-bottom: none; }
+.right-lbl { color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.right-val { font-size: 12px; color: #f1f5f9; font-weight: 600; }
+
+.ai-card {
+  background: linear-gradient(135deg,rgba(167,139,250,.10),rgba(124,58,237,.06));
+  border: 1px solid rgba(167,139,250,.30);
+  border-radius: 14px; padding: 14px;
+}
+.ai-item {
+  padding: 8px 10px; background: rgba(0,0,0,.25); border-radius: 6px;
+  margin-bottom: 5px; font-size: 11px; color: #c4b5fd; line-height: 1.45;
+  border: 1px solid rgba(167,139,250,.18); cursor: pointer;
+}
+
+/* stock warning */
+.stock-warn {
+  margin-top: 10px; padding: 9px 14px; border-radius: 8px;
+  background: rgba(245,158,11,.07); border: 1px solid rgba(245,158,11,.3);
+  font-size: 11.5px; color: #fcd34d; display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* annotation */
+.anno {
+  background: rgba(56,189,248,.06); border: 1px solid rgba(56,189,248,.2);
+  border-radius: 8px; padding: 9px 14px; font-size: 11.5px; color: #94a3b8;
+  line-height: 1.6; margin-bottom: 14px;
+}
+.anno b { color: #7dd3fc; }
+
+/* scroll wrapper for table */
+.table-scroll { overflow-x: auto; margin-bottom: 12px; }
+
+select.mini-inp { cursor: pointer; }
+</style>
+</head>
+<body class="aurora">
+
+<!-- Sticky Header -->
+<div class="sticky-hdr">
+  <button style="padding:6px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);cursor:pointer;font-size:12px;color:#cbd5e1;font-weight:500;">← Back</button>
+  <div>
+    <div class="hdr-title">New Order</div>
+    <div class="hdr-ref">Ref: SC-20260502-957</div>
+  </div>
+  <!-- Step bar -->
+  <div class="step-bar">
+    <div class="step-dot done">✓</div>
+    <span style="font-size:12px;font-weight:600;color:#16a34a;margin-left:6px;">Buyer</span>
+    <div class="step-line" style="background:linear-gradient(135deg,#4ade80,#22c55e);"></div>
+    <div class="step-dot done">✓</div>
+    <span style="font-size:12px;font-weight:600;color:#16a34a;margin-left:6px;">Shipment</span>
+    <div class="step-line" style="background:rgba(255,255,255,.08);"></div>
+    <div class="step-dot active">3</div>
+    <span class="step-lbl">Containers</span>
+  </div>
+  <button class="btn-place">Place Order</button>
+</div>
+
+<div class="page-body">
+  <div class="main-col">
+
+    <!-- annotation -->
+    <div class="anno">
+      <b>Step 3 改动（仅此处）：</b>
+      产品表新增 <b>缩略图列</b>（图片从 OSS 加载，无图自动 fallback 📦）+ 品名下方 <b>包材库存 badge</b>（绿足够 / 橙偏少 / 灰无库存）。
+      超出库存数时 Qty 输入框变橙色边框并在表格下方弹出提示。其余字段、布局、按钮全部不动。
+    </div>
+
+    <!-- Container tabs -->
+    <div class="ctn-tabs">
+      <div class="ctn-tab">
+        CTN 1 (WP)
+        <span style="font-size:10px;padding:1px 6px;border-radius:8px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#fff;font-weight:700;margin-left:4px;">3</span>
+      </div>
+      <div class="ctn-tab-inactive">CTN 2 (ZC)</div>
+      <button class="ctn-add">+ Add</button>
+    </div>
+
+    <!-- Container Body -->
+    <div class="ctn-body">
+
+      <!-- Factory bar -->
+      <div class="fac-bar">
+        <span style="font-size:12px;color:#fcd34d;font-weight:700;white-space:nowrap;">🏭 Factory:</span>
+        <select class="mini-inp" style="flex:1;min-width:180px;max-width:340px;height:36px;font-weight:600;border:1px solid rgba(245,158,11,.4);">
+          <option>山东万谷 WANPY (WP) · Qingdao 青岛</option>
+        </select>
+        <button style="padding:7px 14px;border-radius:6px;border:1px solid #3b82f6;background:rgba(59,130,246,.10);color:#3b82f6;cursor:pointer;font-size:12px;font-weight:600;">📋 Browse Catalog</button>
+        <button style="padding:7px 14px;border-radius:6px;border:none;background:linear-gradient(135deg,#fbbf24,#f59e0b,#b45309);color:#fff;cursor:pointer;font-size:12px;font-weight:700;box-shadow:0 2px 12px rgba(245,158,11,.45);">📤 Send to Factory</button>
+      </div>
+
+      <!-- Fields -->
+      <div class="fields-grid">
+        <div>
+          <div class="lbl">PO Number</div>
+          <input class="inp-field" value="WP-20260502" />
+        </div>
+        <div>
+          <div class="lbl">Port of Loading</div>
+          <input class="inp-field" value="Qingdao 青岛" />
+        </div>
+        <div>
+          <div class="lbl">Destination Port</div>
+          <input class="inp-field" value="Port Klang" />
+        </div>
+        <div>
+          <div class="lbl">Container Type</div>
+          <select class="inp-field">
+            <option>40HQ</option><option>40GP</option><option>20GP</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="action-btns">
+        <button class="act-btn" style="border:1px solid #3b82f6;background:rgba(59,130,246,.08);color:#3b82f6;">+ Add Product</button>
+        <button class="act-btn" style="border:1px solid #a78bfa;background:rgba(167,139,250,.08);color:#a78bfa;">+ Custom Product</button>
+        <button class="act-btn" style="border:1px solid #f59e0b;background:rgba(245,158,11,.08);color:#fbbf24;font-weight:700;">⚡ Quick Order</button>
+        <button class="act-btn" style="border:1px solid #10b981;background:rgba(16,185,129,.08);color:#34d399;">📤 Import Excel</button>
+      </div>
+
+      <!-- ★ Product Table (ONLY this table is changed) -->
+      <div class="table-scroll">
+        <table class="prod-table">
+          <thead>
+            <tr>
+              <th style="width:56px;">#</th>
+              <th style="width:56px;"><!-- IMG --></th>   <!-- ★ NEW: image col -->
+              <th>Product</th>
+              <th>Incoterm</th>
+              <th class="right" style="width:90px;">Unit Price</th>
+              <th class="right" style="width:80px;">Qty (CTN)</th>
+              <th class="right" style="width:90px;">Subtotal</th>
+              <th style="width:28px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <!-- Row 1: OK stock -->
+            <tr>
+              <td class="center" style="color:#64748b;font-size:10px;">1</td>
+              <td class="td-img">
+                <div class="prod-thumb">
+                  <img src="https://files.sanlynos.com/products/CA-03H/raw.jpg"
+                       onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+                       alt="" />
+                  <div class="fallback" style="display:none">📦</div>
+                </div>
+              </td>
+              <td class="td-product">
+                <div class="prod-name">WANPY CHICKEN JERKY STEAKS</div>
+                <div class="prod-code">CA-03H · HS 2309.90</div>
+                <div class="pkg-stock ok">📦 240 ctns available</div>
+              </td>
+              <td><span class="inco-badge">FOB</span></td>
+              <td class="right"><input class="mini-inp" value="36.00" style="width:72px;text-align:right;font-family:monospace;" /></td>
+              <td class="right"><input class="mini-inp" value="60" style="width:56px;text-align:center;font-weight:700;" /></td>
+              <td class="right"><span class="subtotal">USD 2,160</span></td>
+              <td><button class="rm-btn">×</button></td>
+            </tr>
+
+            <!-- Row 2: Low stock, qty OK -->
+            <tr>
+              <td class="center" style="color:#64748b;font-size:10px;">2</td>
+              <td class="td-img">
+                <div class="prod-thumb">
+                  <img src="https://files.sanlynos.com/products/RAC-01/raw.jpg"
+                       onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+                       alt="" />
+                  <div class="fallback" style="display:none">📦</div>
+                </div>
+              </td>
+              <td class="td-product">
+                <div class="prod-name">WANPY CREAMY TREAT CHICKEN FOR CAT</div>
+                <div class="prod-code">RAC-01 · HS 2309.90</div>
+                <div class="pkg-stock low">⚠ Only 12 ctns available</div>
+              </td>
+              <td><span class="inco-badge">FOB</span></td>
+              <td class="right"><input class="mini-inp" value="14.00" style="width:72px;text-align:right;font-family:monospace;" /></td>
+              <td class="right">
+                <!-- qty > stock → warn -->
+                <input class="mini-inp qty-warn" value="20" style="width:56px;text-align:center;font-weight:700;" />
+              </td>
+              <td class="right"><span class="subtotal warn">USD 280</span></td>
+              <td><button class="rm-btn">×</button></td>
+            </tr>
+
+            <!-- Row 3: no image fallback, good stock -->
+            <tr>
+              <td class="center" style="color:#64748b;font-size:10px;">3</td>
+              <td class="td-img">
+                <div class="prod-thumb">
+                  <!-- no image → fallback -->
+                  <img src="https://files.sanlynos.com/products/NOIMG/raw.jpg"
+                       onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+                       alt="" />
+                  <div class="fallback" style="display:flex">📦</div>
+                </div>
+              </td>
+              <td class="td-product">
+                <div class="prod-name">WANPY CHICKEN JERKY DUMBBELLS LARGE JAR</div>
+                <div class="prod-code">CD-04HJ · HS 2309.90</div>
+                <div class="pkg-stock ok">📦 48 ctns available</div>
+              </td>
+              <td><span class="inco-badge">FOB</span></td>
+              <td class="right"><input class="mini-inp" value="46.40" style="width:72px;text-align:right;font-family:monospace;" /></td>
+              <td class="right"><input class="mini-inp" value="24" style="width:56px;text-align:center;font-weight:700;" /></td>
+              <td class="right"><span class="subtotal">USD 1,114</span></td>
+              <td><button class="rm-btn">×</button></td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Stock warning notice (appears when any qty > stock) -->
+      <div class="stock-warn">
+        ⚠ <span><b>RAC-01</b> qty (20) exceeds available packaging stock (12 ctns). Sanlyn will confirm lead time before production.</span>
+      </div>
+
+      <!-- Container totals -->
+      <div class="ctn-totals">
+        <span>Qty: <strong style="color:#f1f5f9">104 CTN</strong></span>
+        <span>Amount: <strong style="color:#60a5fa">USD 3,554</strong></span>
+        <span>CBM: <strong style="color:#f1f5f9">4.28</strong></span>
+        <span style="font-weight:700;color:#f59e0b">40HQ</span>
+      </div>
+    </div><!-- /ctn-body -->
+
+    <!-- Order Summary card (unchanged) -->
+    <div class="summ-card">
+      <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px;">Order Summary · 2 containers</div>
+      <div class="summ-grid">
+        <div class="summ-cell"><div class="summ-lbl">Containers</div><div class="summ-val" style="color:#60a5fa">2</div></div>
+        <div class="summ-cell"><div class="summ-lbl">Total Qty</div><div class="summ-val">186 CTN</div></div>
+        <div class="summ-cell"><div class="summ-lbl">Amount</div><div class="summ-val" style="color:#60a5fa">$6,110</div></div>
+        <div class="summ-cell"><div class="summ-lbl">Total CBM</div><div class="summ-val">8.4</div></div>
+        <div class="summ-cell"><div class="summ-lbl">Total GW</div><div class="summ-val">3,820 KG</div></div>
+        <div class="summ-cell"><div class="summ-lbl">Total NW</div><div class="summ-val">3,500 KG</div></div>
+      </div>
+    </div>
+
+    <!-- Action row (unchanged) -->
+    <div class="action-row">
+      <button class="btn-back">← Back</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn-draft">💾 Save Draft</button>
+        <button class="btn-send">📤 Send All to Factories</button>
+        <button class="btn-submit">✓ Place Order</button>
+      </div>
+    </div>
+
+  </div><!-- /main-col -->
+
+  <!-- Right column (unchanged) -->
+  <div class="right-col">
+    <!-- Factory card (shows in step 3) -->
+    <div class="right-card">
+      <div class="right-card-header">
+        <div style="font-size:15px;font-weight:800;color:#fff;line-height:1.2;position:relative;">山东万谷 WANPY</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.78);margin-top:2px;position:relative;">Shandong Wangu</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.72);margin-top:8px;line-height:1.5;position:relative;border-top:1px solid rgba(255,255,255,.15);padding-top:8px;">
+          Premium WANPY brand manufacturer. Strong in dry food & treat lines with competitive MOQ.
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;position:relative;">
+          <span style="font-size:11px;padding:2px 10px;border-radius:12px;background:rgba(255,255,255,.28);color:#fff;font-weight:800;">WP</span>
+          <span style="font-size:11px;color:rgba(255,255,255,.92);">📍 Qingdao 青岛</span>
+        </div>
+      </div>
+      <div class="right-card-body">
+        <div style="font-size:10px;color:#64748b;margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Categories</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.04);">
+          <span style="font-size:10px;padding:2px 8px;border-radius:12px;background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.3);">🐶 Dry</span>
+          <span style="font-size:10px;padding:2px 8px;border-radius:12px;background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.3);">🍖 Treats</span>
+        </div>
+        <div class="right-row" style="margin-top:8px;">
+          <span class="right-lbl">Port</span>
+          <span class="right-val">Qingdao</span>
+        </div>
+        <div class="right-row">
+          <span class="right-lbl">Export Type</span>
+          <span class="right-val">Direct</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI panel -->
+    <div class="ai-card">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;">
+        <strong style="font-size:13px;color:#ddd6fe;font-weight:800;">🤖 Smart Suggestions</strong>
+        <span style="font-size:9px;padding:2px 7px;border-radius:8px;background:linear-gradient(135deg,#c4b5fd,#a78bfa,#7c3aed);color:#fff;font-weight:700;">SOON</span>
+      </div>
+      <div class="ai-item">📦 This buyer usually orders these items together</div>
+      <div class="ai-item">🆕 Check factory for new SKUs in this category</div>
+      <div class="ai-item">📅 AI pricing suggestions coming in next release</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

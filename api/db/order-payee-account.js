@@ -3,21 +3,58 @@
 //
 // GET /api/db/order-payee-account?orderId=<id>&currency=<USD|CNY>
 //
-// Returns the scoped payee bank account for a specific order.
-// - customer: can only query their own orders (scoped by companyCodes)
-// - admin/internal/finance: can query any order
-// - Never returns full bank_accounts list
-// - Never returns raw/internal fields
-// - Fails closed: no companyCodes → 403
+// Returns the payee bank account for an order.
+// The payee is determined by whichever company was SELECTED on the order
+// (issuing_company / seller_code), NOT inferred from incoterm.
+//
+// ── HOW TO ADD A NEW COMPANY ─────────────────────────────────────────────────
+// 1. INSERT INTO bank_accounts
+//      (company_code, currency, account_holder, bank_name, bank_name_en,
+//       account_no, swift, bank_address, active, is_default)
+//    VALUES ('YOUR-CODE', 'USD', '...', ..., true, true);
+//    (repeat for CNY if needed)
+//
+// 2. Add entry to ISSUING_COMPANY_MAP below so the order field value
+//    maps to your new company_code.
+//
+// 3. When creating orders, set issuing_company or seller_code to one of
+//    the keys in ISSUING_COMPANY_MAP.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-// Legacy mapping: orders.seller_code → bank_accounts.company_code
-// This adapter lives here (server-side only). Never sent to client.
-const SELLER_CODE_TO_BANK_COMPANY = {
-  petbaby:    "BABI",
-  yangbaobao: "CN-00016",  // reserved — data quality TBD
+// Maps every known value of orders.issuing_company / orders.seller_code
+// → bank_accounts.company_code
+//
+// Add a row here whenever you onboard a new issuing entity.
+const ISSUING_COMPANY_MAP = {
+  // ── 厦门巴匕出口有限公司 ──────────────────────────────────────
+  "BABI":                       "BABI",
+  "petbaby":                    "BABI",
+  "XIAMEN PET BABY":            "BABI",
+  "XIAMEN PET BABY IMPORT AND EXPORT CO., LTD": "BABI",
+  "XIAMEN PET BABY IMPORT AND EXPORT CO.,LTD":  "BABI",
+  "厦门巴匕进出口有限公司":      "BABI",
+  "xiamen pet baby":            "BABI",
+
+  // ── 上海洋宝宝国际物流有限公司 (CN-00016) ────────────────────
+  "CN-00016":                   "CN-00016",
+  "yangbaobao":                 "CN-00016",
+  "YANGBAOBAO":                 "CN-00016",
+  "上海洋贝":                   "CN-00016",
+  "上海洋宝宝":                 "CN-00016",
+  "上海洋宝宝国际物流有限公司": "CN-00016",
+  "Shanghai Ocean Baby":        "CN-00016",
+  "SHANGHAI OCEAN BABY":        "CN-00016",
+  "Shanghai Ocean Baby International Logistics":           "CN-00016",
+  "Shanghai Ocean Baby International Logistics Co.,Ltd.": "CN-00016",
+  "OCEAN_BABY":                                            "CN-00016",
+  "OCEANBABY":                  "CN-00016",
+  "上海洋宝宝 × COSCO":                                    "CN-00016",
+
+  // ── future company example ────────────────────────────────────
+  // "MY-NEW-COMPANY":          "CN-XXXXX",
 };
 
 const INTERNAL_ROLES = new Set(["admin", "finance", "trader", "logistics", "boss", "internal", "platform_admin"]);
@@ -36,51 +73,102 @@ export default async function handler(req, res) {
   const orderId  = req.query.orderId  || req.query.order_id;
   const currency = (req.query.currency || "USD").toUpperCase().trim();
 
-  if (!orderId) {
-    return res.status(400).json({ error: "orderId required" });
-  }
-  if (!["USD", "CNY"].includes(currency)) {
-    return res.status(400).json({ error: "currency must be USD or CNY" });
-  }
+  if (!orderId) return res.status(400).json({ error: "orderId required" });
+  if (!["USD", "CNY"].includes(currency)) return res.status(400).json({ error: "currency must be USD or CNY" });
 
   const pool = getPool();
 
   try {
-    // ── 1. Fetch the order, check scope ────────────────────────────────────────
+    // ── 1. Fetch order + linked shipping-plan forwarder ──────────────────────
+    // sp_forwarder: get the freight seller (counterpart) directly from
+    // shipping_plans, so the payee resolves correctly even if the frontend
+    // did not enrich raw.freightForwarder (e.g. no matching plan in WorkBench).
     const oRes = await pool.query(
-      `SELECT id, contract_no, seller_code, company_code
-         FROM orders WHERE id = $1 LIMIT 1`,
+      `SELECT o.id, o.contract_no, o.company_code,
+              o.seller_code,
+              o.issuing_company,
+              o.issuing_company_en,
+              o.raw->>'seller'           AS raw_seller,
+              o.raw->>'sellerName'       AS raw_seller_name,
+              o.raw->>'sellerCode'       AS raw_seller_code,
+              o.raw->>'freightForwarder' AS raw_freight_forwarder,
+              (SELECT COALESCE(
+                        sp.forwarder_cn,
+                        -- W0-4: ignore the legacy DDL default literal that fires
+                        -- whenever an INSERT omits forwarder_partner. Only trust
+                        -- the value when there is no forwarder_cn fallback.
+                        NULLIF(sp.forwarder_partner, '上海洋宝宝 × COSCO'),
+                        sp.raw->>'shipperCompany',
+                        sp.raw->>'issuingCompany',
+                        sp.raw->>'counterpart'
+                      )
+                 FROM shipping_plans sp
+                WHERE sp.order_contract_nos ILIKE '%' || o.contract_no || '%'
+                  AND sp.order_contract_nos <> ''
+                ORDER BY (sp.forwarder_cn IS NOT NULL) DESC,
+                         (sp.bl_no IS NOT NULL) DESC
+                LIMIT 1
+              ) AS sp_forwarder
+         FROM orders o WHERE o.id = $1 LIMIT 1`,
       [orderId]
     );
     const order = oRes.rows[0];
-    if (!order) {
-      return res.status(404).json({ error: "order_not_found" });
-    }
+    if (!order) return res.status(404).json({ error: "order_not_found" });
 
-    // ── 2. Customer scope guard ────────────────────────────────────────────────
+    // ── 2. Customer scope guard ───────────────────────────────────────────────
     if (!isInternal(user)) {
       const customerCodes = user.companyCodes || (user.company_code ? [user.company_code] : []);
-      if (!customerCodes.length) {
-        // Fail-closed: no company scope → 403
-        return res.status(403).json({ error: "forbidden" });
-      }
-      if (!customerCodes.includes(order.company_code)) {
-        return res.status(403).json({ error: "forbidden" });
-      }
+      if (!customerCodes.length) return res.status(403).json({ error: "forbidden" });
+      if (!customerCodes.includes(order.company_code)) return res.status(403).json({ error: "forbidden" });
     }
 
-    // ── 3. Resolve payee company code via legacy map ───────────────────────────
-    const sellerCode       = order.seller_code || "petbaby";
-    const bankCompanyCode  = SELLER_CODE_TO_BANK_COMPANY[sellerCode];
+    // ── 3. Resolve the payee company from order data ──────────────────────────
+    // Per payee_account_resolution_rules.md:
+    //   purpose=cargo   → 货物款 → issuing_company (BABI 等) → bank_accounts
+    //   purpose=freight → 运费款 → shipping_plans.counterpart (洋宝宝 等)
+    //   purpose missing → backward-compat: freight-first (legacy behavior)
+    // The customer Finance panel calls with purpose=cargo for the cargo invoice
+    // section and purpose=freight for the ocean freight section.
+    const purpose = String(req.query.purpose || "").toLowerCase();
+    const freightCandidates = [
+      order.raw_freight_forwarder,   // frontend-injected freight seller (WorkBench enrichment)
+      order.sp_forwarder,            // freight seller from shipping_plans JOIN (always fresh)
+    ];
+    const cargoCandidates = [
+      order.issuing_company_en,      // product seller (en)
+      order.issuing_company,         // product seller (cn)
+      order.seller_code,
+      order.raw_seller_code,
+      order.raw_seller_name,
+      order.raw_seller,
+    ];
+    const candidates = purpose === "cargo"
+      ? cargoCandidates
+      : purpose === "freight"
+      ? freightCandidates
+      : [...freightCandidates, ...cargoCandidates]; // legacy default
+
+    let bankCompanyCode = null;
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const key = String(candidate).trim();
+      // Exact match first, then case-insensitive
+      bankCompanyCode = ISSUING_COMPANY_MAP[key]
+        || ISSUING_COMPANY_MAP[key.toLowerCase()]
+        || ISSUING_COMPANY_MAP[key.toUpperCase()]
+        || null;
+      if (bankCompanyCode) break;
+    }
+
     if (!bankCompanyCode) {
-      // seller_code not in legacy map — payee account not configured
+      // [SECURITY-P0 A3] strip debug leak
       return res.status(200).json({
         success: true, data: null,
-        _pending: "payee_account_not_configured",
+        _pending: "issuing_company_not_set_or_not_mapped",
       });
     }
 
-    // ── 4. Fetch bank account (scoped: exact company + currency + active) ──────
+    // ── 4. Fetch bank account ─────────────────────────────────────────────────
     const bRes = await pool.query(
       `SELECT account_holder, bank_name, bank_name_en, account_no, swift, bank_address, currency
          FROM bank_accounts
@@ -94,13 +182,14 @@ export default async function handler(req, res) {
     const acct = bRes.rows[0] || null;
 
     if (!acct) {
+      // [SECURITY-P0 A3] strip debug leak
       return res.status(200).json({
         success: true, data: null,
-        _pending: `no_${currency}_account_configured`,
+        _pending: `no_${currency}_account_for`,
       });
     }
 
-    // ── 5. Return scoped fields only — no id / raw / source / audit fields ─────
+    // ── 5. Return scoped fields only ──────────────────────────────────────────
     return res.status(200).json({
       success: true,
       data: {

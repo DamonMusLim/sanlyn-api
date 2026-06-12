@@ -19,7 +19,12 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { loadUserPermissions, PortalAuthError } from './auth-check.js';
 
 // 独立于内部 JWT secret，必须在生产环境通过 env 覆盖
-const PORTAL_SECRET = process.env.PORTAL_JWT_SECRET || 'portal_phase2_dev_secret_CHANGE_IN_PROD';
+const PORTAL_SECRET = process.env.PORTAL_JWT_SECRET;
+if (!PORTAL_SECRET) {
+  // Fail loudly at module load time — never fall back to a known dev string in production.
+  // In dev, set PORTAL_JWT_SECRET=any-local-dev-string in your .env file.
+  throw new Error("PORTAL_JWT_SECRET environment variable is required but not set");
+}
 
 // Token 有效期：8 小时（秒）
 const TOKEN_TTL = 8 * 3600;

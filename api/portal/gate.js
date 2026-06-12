@@ -26,9 +26,11 @@ import { getPool }                            from '../db.js';
 
 // login 路径不需要 token（在此前签发）
 const PORTAL_PUBLIC_PATHS = new Set(["/login"]);
+// /orders 允许内部 Admin JWT 直通(协同卡真实数据测试);也兼容 portal token
+const PORTAL_INTERNAL_BYPASS_PATHS = new Set(["/orders"]);
 
 // 仅允许 logistics 和 customer 访问 portal；internal 暂不开放
-const ALLOWED_USER_TYPES  = new Set(["logistics", "customer"]);
+const ALLOWED_USER_TYPES  = new Set(["logistics", "customer", "admin"]);
 
 /**
  * portalGate
@@ -44,6 +46,21 @@ export async function portalGate(req, res, next) {
 
   // 登录接口无需 token — 在此处生成 token，所以放行
   if (PORTAL_PUBLIC_PATHS.has(req.path)) return next();
+
+  // /orders 路径:内部 Admin JWT 直通(协同卡真实数据,无需 portal token)
+  const reqPathBase = "/" + (req.path || "").split("/").filter(Boolean)[0];
+  if (PORTAL_INTERNAL_BYPASS_PATHS.has(reqPathBase)) {
+    const ah = (req.headers["authorization"] || "").trim();
+    if (ah.startsWith("Bearer ")) {
+      try {
+        const payload = JSON.parse(Buffer.from(ah.slice(7).split(".")[1], "base64").toString());
+        if (payload.role === "admin" || payload.role === "logistics" || payload.role === "finance") {
+          req.portalPermissions = { user_type: payload.role, company_codes: payload.company_codes || [] };
+          return next();
+        }
+      } catch { /* fallthrough to portal token */ }
+    }
+  }
 
   // ── 1. Token 存在性检查 ──
   const authHeader = (req.headers["authorization"] || "").trim();

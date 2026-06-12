@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sanlyn OS · 订舱协同填报</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  background: #f0f2f5; color: #111; font-size: 13px; }
+
+.portal-bar { background: #1a1d23; padding: 0 24px; display: flex; align-items: center;
+  position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+.portal-brand { color: #f1f5f9; font-size: 14px; font-weight: 800;
+  letter-spacing: 1px; padding: 14px 0; margin-right: 24px; }
+.portal-login-badge { margin-left: auto; font-size: 10px; color: #64748b; padding: 14px 0; }
+
+.shell-narrow { max-width: 760px; margin: 0 auto; padding: 20px 16px; }
+.shell-tight  { max-width: 460px; margin: 0 auto; padding: 60px 16px; }
+
+.card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 14px; }
+.section { padding: 14px 16px; border-bottom: 1px solid #f0f2f5; }
+.section:last-child { border-bottom: none; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px;
+  border-radius: 20px; font-size: 11px; font-weight: 800; }
+.badge-green  { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.badge-amber  { background: #fef9c3; color: #a16207; border: 1px solid #fde68a; }
+.badge-red    { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+.badge-blue   { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+.btn { padding: 7px 16px; border-radius: 7px; border: none;
+  font-size: 12px; font-weight: 700; cursor: pointer; }
+.btn-blue  { background: #1a73e8; color: #fff; }
+.btn-green { background: #059669; color: #fff; }
+.btn-ghost { background: #f3f4f6; color: #374151; border: 1px solid #e0e4ea; }
+.btn-sm { padding: 5px 12px; font-size: 11px; }
+.btn-lg { padding: 10px 24px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Step card ── */
+.step-card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  margin-bottom: 14px; overflow: hidden; transition: border-color .2s; }
+.step-card.required { border-color: #fbbf24; }
+.step-card.done     { border-color: #86efac; }
+.step-card.alert    { border-color: #fca5a5; }
+
+.step-head { padding: 12px 16px; display: flex; align-items: center;
+  justify-content: space-between; background: #fff;
+  border-bottom: 1px solid #f0f2f5; transition: background .15s; user-select: none; }
+/* 收起态：整行可点击展开 */
+.step-card.done .step-head { cursor: pointer; }
+.step-card.done .step-head:hover { background: #f8fafc; }
+
+.step-num { width: 26px; height: 26px; border-radius: 50%; background: #1a1d23;
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; flex-shrink: 0; }
+.step-num.done  { background: #059669; }
+.step-num.alert { background: #dc2626; }
+
+.step-title { font-size: 13px; font-weight: 800; color: #1a1d23; }
+.step-sub   { font-size: 11px; color: #6b7280; margin-top: 1px; }
+
+/* 收起摘要行 */
+.step-summary { display: none; font-size: 11px; font-weight: 700;
+  color: #059669; flex: 1; margin: 0 10px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.step-card.done .step-summary { display: block; }
+.step-card.done .step-title { font-size: 12px; color: #6b7280; font-weight: 600; }
+.step-card.done .step-sub   { display: none; }
+
+/* 折叠箭头 */
+.chevron { font-size: 12px; color: #9ca3af; transition: transform .25s; flex-shrink: 0; }
+.step-card.done .chevron { transform: rotate(0deg); }      /* ▼ 收起 */
+.step-card:not(.done) .chevron { transform: rotate(180deg); } /* ▲ 展开 */
+
+/* 内容区折叠 */
+.step-body { overflow: hidden; transition: max-height .3s ease, opacity .3s ease; }
+.step-card.done .step-body { max-height: 0 !important; opacity: 0; }
+.step-card:not(.done) .step-body { max-height: 2000px; opacity: 1; }
+
+.form-field { margin-bottom: 10px; }
+.form-label { font-size: 11px; font-weight: 700; color: #374151;
+  margin-bottom: 4px; display: block; }
+.form-label .req { color: #dc2626; }
+.form-input { width: 100%; border: 1.5px solid #c8cdd6; border-radius: 6px;
+  padding: 8px 10px; font-size: 13px; outline: none; font-family: inherit; background: #fff; }
+.form-input:focus { border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
+.form-input.alert { border-color: #dc2626; background: #fef2f2; }
+textarea.form-input { resize: vertical; min-height: 60px; }
+
+.toggle-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.tog { padding: 8px 16px; border-radius: 7px; border: 1.5px solid #c8cdd6;
+  background: #fff; font-size: 12px; font-weight: 700; color: #4b5563;
+  cursor: pointer; text-align: center; }
+.tog.on-green { border-color: #059669; background: #d1fae5; color: #059669; }
+.tog.on-blue  { border-color: #1a73e8; background: #dbeafe; color: #1d4ed8; }
+.tog.on-red   { border-color: #dc2626; background: #fee2e2; color: #b91c1c; }
+
+.cargo-t { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cargo-t th { background: #f8fafc; padding: 6px 8px; text-align: left;
+  border: 1px solid #c8cdd6; font-size: 10px; font-weight: 800; color: #374151; }
+.cargo-t td { padding: 4px 6px; border: 1px solid #e0e4ea; }
+.cargo-t tr.alert-row td { border-color: #fca5a5; background: #fef2f2; }
+.cargo-t tr.total { font-weight: 800; background: #f8f8f8; }
+.cargo-t input.cell-in { width: 100%; border: 1px solid transparent; border-radius: 4px;
+  padding: 4px 6px; font-size: 11px; outline: none; font-family: inherit; background: transparent; }
+.cargo-t input.cell-in:focus { border-color: #1a73e8; background: #fff; }
+
+.landing-card { background: #fff; border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.10); overflow: hidden; }
+.landing-head { background: linear-gradient(135deg,#059669,#10b981);
+  padding: 24px; text-align: center; color: #fff; }
+.landing-head h1 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+.landing-head p { font-size: 12px; opacity: .9; }
+
+.alert-callout { padding: 10px 14px; background: #fef2f2;
+  border-left: 4px solid #dc2626; border-radius: 6px;
+  margin: 10px 16px; font-size: 12px; color: #991b1b; }
+
+.chip { background: #fff; border: 1px solid #e0e4ea; border-radius: 8px;
+  padding: 8px 14px; font-size: 12px; }
+.chip b { color: #1a1d23; }
+.chip span { color: #6b7280; }
+.dl-btn { display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 12px 14px; border: 1.5px solid #e0e4ea; border-radius: 9px;
+  background: #fff; cursor: pointer; font-size: 12px; font-weight: 700;
+  color: #1a1d23; margin-bottom: 8px; text-align: left; text-decoration: none; }
+.dl-btn:hover { border-color: #93c5fd; }
+.up-zone { border: 2px dashed #c8cdd6; border-radius: 10px; padding: 22px;
+  text-align: center; cursor: pointer; color: #6b7280; font-size: 12px; }
+.up-zone:hover { border-color: #1a73e8; color: #1a73e8; }
+.file-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border: 1px solid #d1fae5; background: #f0fdf4; border-radius: 8px;
+  font-size: 12px; margin-bottom: 6px; }
+
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1a1d23; color: #fff; padding: 10px 22px; border-radius: 20px;
+  font-size: 12px; font-weight: 700; display: none; z-index: 999; }
+.toast.show { display: block; }
+.hidden { display: none !important; }
+.center-state { text-align: center; padding: 70px 20px; color: #6b7280; }
+.center-state .big { font-size: 44px; margin-bottom: 14px; }
+.center-state h2 { font-size: 17px; font-weight: 800; color: #1a1d23; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<div class="portal-bar">
+  <div class="portal-brand">SANLYN OS</div>
+  <div class="portal-login-badge" id="topBadge">报关协同</div>
+</div>
+
+<div class="center-state" id="stateLoading"><div class="big">⏳</div><p>正在加载…</p></div>
+
+<div class="hidden" id="stateForm">
+<div class="shell-narrow">
+
+  <div class="card" style="border:2px solid #fbbf24;">
+    <div style="background:#fffbeb;padding:14px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:24px;">🛂</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:800;color:#92400e;" id="bannerTitle">— 报关协同</div>
+        <div style="font-size:11px;color:#a16207;margin-top:2px;">下载报关资料 · 回传报关单据</div>
+      </div>
+      <div class="badge badge-amber" id="actBadge">需要您操作</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="chips"></div>
+
+  <!-- 下载 -->
+  <div class="step-card" id="step1">
+    <div class="step-head">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num">⬇</div>
+        <div>
+          <div class="step-title">下载资料 / Download</div>
+          <div class="step-sub">托书 · 报关底稿（按订单）</div>
+        </div>
+      </div>
+    </div>
+    <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+      <div class="section" id="dlBox"></div>
+    </div>
+  </div>
+
+  <!-- 上传 -->
+  <div class="step-card required" id="step2">
+    <div class="step-head">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num">⬆</div>
+        <div>
+          <div class="step-title">上传回传 / Upload</div>
+          <div class="step-sub">报关单 · 放行截图 · 查验通知等，传完即存</div>
+        </div>
+      </div>
+      <div class="badge badge-green hidden" id="upBadge"></div>
+    </div>
+    <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+      <div class="section">
+        <div id="fileList"></div>
+        <div class="up-zone" onclick="document.getElementById('fileInput').click()">
+          ＋ 点击选择文件上传（PDF / 图片，≤8MB，可多次）
+        </div>
+        <input type="file" id="fileInput" multiple accept="image/*,.pdf" style="display:none;">
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;font-size:11px;color:#9ca3af;margin-bottom:40px;">
+    上传即自动保存，无需提交 · 🔒 此链接仅限本票使用 · 数据仅您与 Sanlyn 可见
+  </div>
+</div>
+</div>
+
+<div class="center-state hidden" id="stateDead">
+  <div class="big">⛔️</div><h2>链接无效</h2><p>链接已过期或被重发作废，请联系 Sanlyn 重新获取。</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api/db/booking-collab';
+const token = new URLSearchParams(location.search).get('token') || '';
+const $ = id => document.getElementById(id);
+const show = id => { ['stateLoading','stateForm','stateDead'].forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+
+let uploads = [];
+function renderFiles(){
+  const mine = uploads.filter(u=>u.role==='broker');
+  $('fileList').innerHTML = mine.map(u=>`
+    <div class="file-row"><span>📄</span><span style="flex:1;font-weight:700;">${esc(u.filename)}</span>
+      <span style="color:#047857;font-size:10px;">${esc(String(u.uploaded_at).replace('T',' ').slice(5,16))} ✓ 已收到</span></div>`).join('');
+  const b=$('upBadge');
+  if(mine.length){ b.textContent='✓ 已传 '+mine.length+' 份'; b.classList.remove('hidden');
+    $('step2').classList.remove('required'); $('actBadge').textContent='已回传'; $('actBadge').className='badge badge-green'; }
+}
+
+async function boot(){
+  if(!token){ show('stateDead'); return; }
+  const r = await fetch(`${API}/validate?token=${encodeURIComponent(token)}`);
+  const d = await r.json().catch(()=>({}));
+  if(!d.valid || d.role!=='broker_booking'){ show('stateDead'); return; }
+  const s = d.booking_sheet || {};
+  $('topBadge').textContent = s.shipment_no || '报关协同';
+  $('bannerTitle').textContent = (s.shipment_no||'—') + ' — 报关协同';
+  const chips=[];
+  if(s.pol||s.pod) chips.push(`<div class="chip"><span>航线 </span><b>${esc(s.pol||'—')} → ${esc(s.pod||'—')}</b></div>`);
+  if(s.container_type) chips.push(`<div class="chip"><span>柜型 </span><b>${esc(s.container_type)}</b></div>`);
+  if(s.etd) chips.push(`<div class="chip"><span>ETD </span><b>${esc(fmtD(s.etd))}</b></div>`);
+  $('chips').innerHTML = chips.join('');
+  // 下载按钮：托书 + 每订单报关底稿
+  const orders = Array.isArray(s.orders)?s.orders:[];
+  let dl = `<a class="dl-btn" href="${API}/file?token=${encodeURIComponent(token)}&type=so" target="_blank">📋 <span style="flex:1;">托书 / Booking Instruction</span><span style="color:#1a73e8;">下载 ↗</span></a>`;
+  orders.forEach(o=>{ if(o.order_no) dl += `<a class="dl-btn" href="${API}/file?token=${encodeURIComponent(token)}&type=cd&ref=${encodeURIComponent(o.order_no)}" target="_blank">🛂 <span style="flex:1;">报关底稿 · ${esc(o.order_no)}</span><span style="color:#1a73e8;">下载 ↗</span></a>`; });
+  if(!orders.length) dl += '<div style="font-size:11px;color:#9ca3af;margin-top:4px;">本票暂未挂订单，报关底稿待 Sanlyn 关联后可下载。</div>';
+  $('dlBox').innerHTML = dl;
+  uploads = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
+  renderFiles();
+  show('stateForm');
+}
+
+$('fileInput')?.addEventListener('change', async e=>{
+  for(const f of e.target.files){
+    if(f.size > 8*1024*1024){ toast(f.name+' 超过 8MB'); continue; }
+    const b64 = await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(f); });
+    try{
+      const r = await fetch(`${API}/upload`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token,filename:f.name,mime:f.type,data_base64:b64})});
+      const d = await r.json();
+      if(!r.ok||!d.ok){ toast(f.name+' 上传失败: '+(d.error||'')); continue; }
+      uploads.push(d.file); renderFiles(); toast('✓ '+f.name+' 已上传');
+    }catch(err){ toast(f.name+' 网络错误'); }
+  }
+  e.target.value='';
+});
+
+boot();
+</script>
+</body>
+</html>

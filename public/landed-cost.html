@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>My Landed Cost · 到岸成本</title>
+<style>
+  :root {
+    --bg:#0B1120; --panel:#111a2f; --panel2:#0e1628;
+    --line:#1f2a44; --line2:#2a3858;
+    --txt:#e2e8f0; --mut:#94a3b8; --dim:#64748b;
+    --blue:#38bdf8; --blue-bg:rgba(56,189,248,.15); --blue-edge:rgba(56,189,248,.45);
+    --violet:#a78bfa; --violet-bg:rgba(167,139,250,.15); --violet-edge:rgba(167,139,250,.45);
+    --emerald:#34d399; --amber:#fbbf24; --rose:#f87171;
+    --mono:'SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:30px 16px;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.5}
+  .wrap{max-width:980px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .card-hdr{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,#13203d 0%,#111a2f 100%)}
+  .hdr-left h1{margin:0 0 6px;font-size:18px;font-weight:700}
+  .hdr-left .sub{color:var(--mut);font-size:11px;font-family:var(--mono)}
+  .pill-row{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{padding:3px 9px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  .pill-violet{background:var(--violet-bg);color:var(--violet);border:1px solid var(--violet-edge)}
+  .pill-blue{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-edge)}
+  .pill-amber{background:rgba(251,191,36,.15);color:var(--amber);border:1px solid rgba(251,191,36,.45)}
+  .sec{border-bottom:1px solid var(--line)}
+  .sec:last-child{border-bottom:none}
+  .sec-hdr{padding:12px 22px;display:flex;align-items:center;gap:10px;background:var(--panel2)}
+  .sec-hdr .chev{color:var(--dim);font-size:10px;width:12px}
+  .sec-hdr .ttl{font-size:13px;font-weight:700;flex:1}
+  .sec-hdr .ttl small{color:var(--mut);font-weight:500;margin-left:8px;font-size:11px}
+  .sec-hdr .sum{font-family:var(--mono);font-size:13px;color:var(--txt);font-weight:600}
+  .sec-body{padding:16px 22px}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:6px 18px}
+  .kv .k{color:var(--mut)}
+  .kv .v{font-family:var(--mono);color:var(--txt)}
+  .kv .v.locked{color:var(--blue)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;color:var(--mut);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+  td{padding:10px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td.num{text-align:right}
+  td.sku{font-weight:600;color:var(--txt)}
+  td.name{font-family:-apple-system,sans-serif;color:var(--mut);font-size:11px}
+  tr.total td{background:#0a1428;border-top:2px solid var(--line2);border-bottom:none;font-weight:700;color:var(--emerald)}
+  .mock-row{padding:10px 22px;color:var(--dim);font-size:11px;background:var(--panel2);display:flex;justify-content:space-between;align-items:center}
+  .mock-row .badge{padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700;background:rgba(100,116,139,.2);color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+  .foot{padding:14px 22px;background:var(--panel2);color:var(--dim);font-size:11px;line-height:1.6;border-top:1px solid var(--line)}
+  .foot strong{color:var(--mut)}
+  .center-msg{padding:60px 20px;text-align:center;color:var(--mut)}
+  .center-msg.err{color:var(--rose)}
+  .pending-banner{padding:14px 22px;background:rgba(251,191,36,.08);border-bottom:1px solid rgba(251,191,36,.25);color:var(--amber);font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div id="root" class="card">
+    <div class="center-msg">Loading...</div>
+  </div>
+</div>
+
+<script>
+function getToken(){return localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}
+function authFetch(u){var h={};var t=getToken();if(t)h['Authorization']='Bearer '+t;return fetch(u,{headers:h});}
+function fmt(n){if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmt4(n){if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:4});}
+function curSym(c){return c==='CNY'?'¥':(c==='EUR'?'€':'$');}
+
+async function load(){
+  var bl = new URLSearchParams(location.search).get('bl_no');
+  if (!bl){ document.getElementById('root').innerHTML='<div class="center-msg err">Missing ?bl_no=XXX</div>'; return; }
+  try {
+    var r = await authFetch('/api/db/landed-cost?bl_no='+encodeURIComponent(bl));
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.error || ('HTTP '+r.status));
+    render(d, bl);
+  } catch (e) {
+    document.getElementById('root').innerHTML='<div class="center-msg err">'+e.message+'</div>';
+  }
+}
+
+function render(d, bl) {
+  var $ = curSym(d.purchase.currency);
+  var pending = d.freight.status === 'pending';
+
+  var skuRows = d.skus.map(function(s){
+    return '<tr>'+
+      '<td class="sku">'+(s.sku||'—')+'</td>'+
+      '<td class="name">'+s.name+'<br><span style="color:var(--dim)">'+(s.size||'')+'</span></td>'+
+      '<td class="num">'+(s.ctn?s.ctn.toLocaleString():'—')+'</td>'+
+      '<td class="num">'+$+fmt(s.iv_total)+'</td>'+
+      '<td class="num" style="color:var(--blue)">'+$+fmt(s.freight_share)+'</td>'+
+      '<td class="num" style="color:var(--emerald)">'+$+fmt(s.landed_total)+'</td>'+
+      '<td class="num" style="color:var(--emerald)">'+$+fmt4(s.per_ctn)+'</td>'+
+      '<td class="num">'+$+fmt4(s.per_unit)+'</td>'+
+    '</tr>';
+  }).join('');
+
+  var feeBreakdownRows = '';
+  if (!pending) {
+    var fb = d.freight.fee_breakdown;
+    var groups = [
+      ['THC · 码头操作', fb.thc],
+      ['场站 / Storage', fb.storage],
+      ['港杂 / Port entry', fb.port_entry],
+      ['单证 · Documentation', fb.doc],
+      ['舱单 · Booking', fb.booking],
+      ['信息 · EDI', fb.edi],
+      ['操作费 · Customs', fb.customs],
+      ['VGM (occupies fee_packing)', fb.packing],
+      ['其他 (crane+pickup+parking+trucking+epacking+barcode)',
+        fb.crane+fb.pickup+fb.parking+fb.trucking+fb.epacking+fb.barcode],
+    ];
+    feeBreakdownRows = groups.filter(function(g){return g[1]>0;}).map(function(g){
+      return '<div class="k">'+g[0]+'</div>'+
+        '<div class="v locked">¥'+fmt(g[1])+' → $'+fmt(g[1]/d.fx.rate_applied)+'</div>';
+    }).join('');
+  }
+
+  document.getElementById('root').innerHTML =
+    '<div class="card-hdr">'+
+      '<div class="hdr-left">'+
+        '<h1>My Landed Cost · 到岸成本</h1>'+
+        '<div class="sub">BL '+bl+' · '+(d.bl.vessel||'—')+' v.'+(d.bl.voyage||'—')+
+          ' · ETD '+(d.bl.etd?String(d.bl.etd).slice(0,10):'—')+
+          ' · '+(d.bl.pol||'—')+' → '+(d.bl.pod||'—')+'</div>'+
+      '</div>'+
+      '<div class="pill-row">'+
+        (pending? '<span class="pill pill-amber">⏳ Freight pending</span>' : '<span class="pill pill-blue">✓ Verified by Sanlyn</span>')+
+        '<span class="pill pill-violet">Your Data · Not Shared</span>'+
+      '</div>'+
+    '</div>'+
+
+    (pending ? '<div class="pending-banner">⏳ <strong>Freight data pending</strong> · Sanlyn 团队尚未录入此 BL 的运费账单，单 SKU 进货价仅含 IV 金额，运费分摊待补</div>' : '')+
+
+    '<div class="sec">'+
+      '<div class="sec-hdr"><span class="chev">▼</span><span class="ttl">1 · Purchase Price <small>auto from IV (orders.total_amount)</small></span><span class="sum">'+d.purchase.currency+' '+fmt(d.purchase.iv_total)+'</span></div>'+
+      '<div class="sec-body"><div class="kv">'+
+        '<div class="k">Invoice total ('+d.purchase.iv_refs.length+' orders)</div><div class="v locked">'+$+fmt(d.purchase.iv_total)+'</div>'+
+        '<div class="k">Currency</div><div class="v locked">'+d.purchase.currency+'</div>'+
+        '<div class="k">Incoterm</div><div class="v locked">'+d.purchase.incoterm+'</div>'+
+        '<div class="k">Container count</div><div class="v locked">'+d.bl.container_count+' × '+(d.bl.container_type||'—')+'</div>'+
+        '<div class="k">Total cartons</div><div class="v locked">'+d.bl.total_ctn.toLocaleString()+' CTN</div>'+
+      '</div></div>'+
+    '</div>'+
+
+    '<div class="sec">'+
+      '<div class="sec-hdr"><span class="chev">▼</span><span class="ttl">2 · Ocean Freight Bundle <small>'+(pending?'NOT YET ENTERED':'auto-filled · FX '+fmt4(d.fx.rate_applied)+' ('+d.fx.source+')')+'</small></span><span class="sum">'+(pending?'—':'USD '+fmt(d.freight.subtotal_usd))+'</span></div>'+
+      '<div class="sec-body"><div class="kv">'+
+        (pending ? '<div class="k" style="grid-column:1/-1;color:var(--dim);text-align:center;padding:20px 0">⏳ Awaiting Sanlyn team to enter freight debit note for this BL</div>' :
+          ('<div class="k">Ocean freight (USD direct)</div><div class="v locked">$'+fmt(d.freight.usd_freight_direct)+'</div>'+
+           feeBreakdownRows +
+           '<div class="k" style="border-top:1px solid var(--line);padding-top:8px;color:var(--txt);font-weight:600">Freight bundle subtotal</div>'+
+           '<div class="v locked" style="border-top:1px solid var(--line);padding-top:8px;font-weight:700">$'+fmt(d.freight.subtotal_usd)+'</div>')) +
+      '</div></div>'+
+    '</div>'+
+
+    '<div class="mock-row"><span>▶ 3 · Customs + Duty <span style="color:var(--mut)">— you fill (import duty, broker, quarantine, VAT)</span></span><span class="badge">Empty</span></div>'+
+    '<div class="mock-row"><span>▶ 4 · Trucking (last mile) <span style="color:var(--mut)">— you fill</span></span><span class="badge">Empty</span></div>'+
+    '<div class="mock-row"><span>▶ 5 · Other <span style="color:var(--mut)">— insurance, demurrage, detention, misc</span></span><span class="badge">Empty</span></div>'+
+
+    '<div class="sec">'+
+      '<div class="sec-hdr"><span class="chev">▼</span><span class="ttl">6 · Per-SKU Landed Cost · 单 SKU 进货价 <small>auto-allocated by CTN ratio</small></span><span class="sum">'+$+fmt(d.totals.landed)+' total</span></div>'+
+      '<div class="sec-body" style="padding:0">'+
+        '<table><thead><tr><th>SKU</th><th>Product</th><th class="num">CTN</th><th class="num">IV Total</th><th class="num">Freight Share</th><th class="num">Landed Total</th><th class="num">Per CTN</th><th class="num">Per Unit</th></tr></thead>'+
+        '<tbody>'+skuRows+
+          '<tr class="total"><td colspan="2">TOTAL · 整票合计</td>'+
+            '<td class="num">'+d.totals.ctn.toLocaleString()+'</td>'+
+            '<td class="num">'+$+fmt(d.totals.iv)+'</td>'+
+            '<td class="num">'+$+fmt(d.totals.freight)+'</td>'+
+            '<td class="num">'+$+fmt(d.totals.landed)+'</td>'+
+            '<td class="num">'+$+fmt4(d.totals.avg_per_ctn)+' avg</td>'+
+            '<td class="num">—</td>'+
+          '</tr>'+
+        '</tbody></table>'+
+      '</div>'+
+    '</div>'+
+
+    '<div class="foot">'+
+      '<strong>How freight is allocated:</strong> per-CTN basis · each carton absorbs the same share of the $'+fmt(d.freight.subtotal_usd)+' bundle.<br>'+
+      '<strong>FX policy:</strong> '+d.fx.source+' · applied rate <code>'+fmt4(d.fx.rate_applied)+'</code> (base '+fmt4(d.fx.base_rate)+' + markup '+d.fx.markup+').<br>'+
+      '<strong>Privacy:</strong> '+d.meta.privacy_note+'<br>'+
+      '<span style="color:var(--mut)">Generated '+(d.meta.generated_at||'').slice(0,19).replace('T',' ')+' · Wave 1 single-currency mode</span>'+
+    '</div>';
+}
+
+load();
+</script>
+
+</body>
+</html>

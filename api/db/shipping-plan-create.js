@@ -184,6 +184,16 @@ export default async function handler(req, res) {
       flowStatus, remarks, createdBy
     } = body;
 
+    // ── 准入闸(2026-06-11 Damon定): 买方必填; 内单必须有合同号; 外单必须显式标记 ──
+    var isExternal = !!(body.isExternal || /外单|freight_external|freight_agency/.test(String(remarks || "")));
+    if (!customer && !customerEN && !customerCN) {
+      return res.status(400).json({ error: "买方公司必填(customer)——没有买方不进海运主表" });
+    }
+    var cnList = Array.isArray(contractNos) ? contractNos.filter(Boolean) : (contractNos ? [contractNos] : []);
+    if (!isExternal && !cnList.length) {
+      return res.status(400).json({ error: "内单必须带合同号(contractNos)；外单请显式传 isExternal=true 或备注标[外单]" });
+    }
+
     var sNo = shipmentNo || await generateShipmentNo(pool);
     var portalId = "sp_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
 
@@ -270,7 +280,8 @@ export default async function handler(req, res) {
       port_surcharge_total, trucking_cost_total, customs_cost_total, insurance_cost,
       containers_detail, trucking_detail,
       is_ddp, ddp_total, ddp_agent,
-      flow_status, remarks, created_by
+      flow_status, remarks, created_by,
+      forwarder_partner
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
       $11,$12,$13,$14,$15,$16,$17,$18,
@@ -283,7 +294,8 @@ export default async function handler(req, res) {
       $47,$48,$49,$50,
       $51,$52,
       $53,$54,$55,
-      $56,$57,$58
+      $56,$57,$58,
+      $59
     ) RETURNING *`;
 
     var vals = [
@@ -300,19 +312,71 @@ export default async function handler(req, res) {
       containersDetail ? JSON.stringify(containersDetail) : null,
       truckingDetail ? JSON.stringify(truckingDetail) : null,
       isDdp ? true : false, n(ddpTotal), s(ddpAgent),
-      flowStatus || "待订舱", s(remarks), createdBy || "admin"
+      flowStatus || "待订舱", s(remarks), createdBy || "admin",
+      // W0-4: explicit NULL prevents the DDL default '上海洋宝宝 × COSCO' from firing.
+      // Caller must set forwarder via raw or POST body if they want it; never silently default.
+      (req.body && (req.body.forwarderPartner || req.body.forwarder_partner)) || null
     ];
 
     var result = await pool.query(sql, vals);
     var plan = result.rows[0];
 
-    // Mark linked orders as confirmed
+    // 缺成本 → 自动开三段 RFQ（海运/车队/报关；自拖自报不开车队/报关；防重）
+    if (plan.pol) {
+      var ct = String(plan.container_type || "40HQ").toUpperCase().replace("HC", "HQ");
+      var selfArr = plan.arrange_mode === "self";
+      var rfqJobs = [];
+      if (plan.freight_cost == null && plan.pod)
+        rfqJobs.push(["ocean", plan.pol + "→" + plan.pod]);
+      if (!selfArr && plan.trucking_cost_total == null)
+        rfqJobs.push(["truck", "装柜→" + plan.pol]);
+      if (!selfArr && plan.customs_cost_total == null)
+        rfqJobs.push(["customs", plan.pol + " 出口报关"]);
+      rfqJobs.forEach(function(job) {
+        pool.query(
+          `INSERT INTO freight_rfqs (pol, pod, ctnr_type, status, etd, route,
+             shipping_plan_id, service_type, created_by)
+           SELECT $1,$2,$3,'open',$4,$5,$6,$7,$8
+           WHERE NOT EXISTS (
+             SELECT 1 FROM freight_rfqs r
+              WHERE r.shipping_plan_id = $6 AND COALESCE(r.service_type,'ocean') = $7
+                AND r.status NOT IN ('closed','cancelled'))`,
+          [plan.pol, plan.pod || null, ct, plan.etd || null, job[1],
+           plan.id, job[0], createdBy || "auto"]
+        ).catch(function(e) { console.warn("[plan-create] auto-RFQ skip:", e.message); });
+      });
+    }
+
+    // Mark linked orders as confirmed + 回挂 shipping_plan_id + 带出开票公司（工厂端"下游"显示用）
     if (orderNos && orderNos.length) {
       var nos = arr(orderNos);
       await pool.query(
-        "UPDATE orders SET status = 'confirmed', updated_at = NOW() WHERE order_no = ANY($1) AND status = 'pending'",
-        [nos]
+        "UPDATE orders SET status = 'confirmed', shipping_plan_id = $2, updated_at = NOW() WHERE order_no = ANY($1) AND (status = 'pending' OR shipping_plan_id IS NULL)",
+        [nos, plan.id]
       ).catch(function() {});
+      // 回填 order_contract_nos（列表「合同号」列读这个字段）+ contract_nos 数组
+      await pool.query(
+        `UPDATE shipping_plans sp
+            SET order_contract_nos = d.cns,
+                contract_nos = CASE WHEN sp.contract_nos IS NULL OR sp.contract_nos = '{}' THEN d.cn_arr ELSE sp.contract_nos END
+           FROM (SELECT string_agg(DISTINCT o.contract_no, ',') AS cns,
+                        array_agg(DISTINCT o.contract_no) AS cn_arr
+                   FROM orders o
+                  WHERE o.order_no = ANY($2) AND o.contract_no IS NOT NULL AND o.contract_no <> '') d
+          WHERE sp.id = $1
+            AND (sp.order_contract_nos IS NULL OR sp.order_contract_nos = '')
+            AND d.cns IS NOT NULL`,
+        [plan.id, nos]
+      ).catch(function(e) { console.warn("[plan-create] contract_nos backfill skip:", e.message); });
+      if (!plan.issuing_company) {
+        pool.query(
+          `UPDATE shipping_plans sp SET issuing_company = o.issuing_company
+             FROM orders o
+            WHERE sp.id = $1 AND o.order_no = ANY($2) AND o.issuing_company IS NOT NULL
+              AND sp.issuing_company IS NULL`,
+          [plan.id, nos]
+        ).catch(function() {});
+      }
     }
 
     return res.status(200).json({

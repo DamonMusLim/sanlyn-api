@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>开票申请 — Sanlyn</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;background:#f5f7fa;color:#1a1a2e;min-height:100vh;padding:20px}
+.card{background:#fff;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,.08);max-width:760px;margin:0 auto;padding:32px;position:relative}
+.logo{display:flex;align-items:center;gap:10px;margin-bottom:24px}
+.logo-text{font-size:14px;color:#64748b}
+.logo-brand{font-size:18px;font-weight:700;color:#0f172a}
+h1{font-size:20px;font-weight:700;color:#0f172a;margin-bottom:4px}
+.subtitle{font-size:13px;color:#64748b;margin-bottom:24px}
+.section{margin-bottom:20px}
+.section-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.kv{display:flex;flex-direction:column;gap:2px}
+.kv label{font-size:11px;color:#94a3b8}
+.kv span{font-size:14px;color:#0f172a;font-weight:500}
+.badge{display:inline-block;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:#f8fafc}
+th{padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:#64748b;letter-spacing:.04em;border-bottom:2px solid #e2e8f0}
+td{padding:10px;border-bottom:1px solid #f1f5f9;color:#0f172a}
+tr:last-child td{border-bottom:none}
+.num{text-align:right;font-family:'SF Mono',monospace}
+tfoot td{font-weight:700;background:#f8fafc;padding:10px}
+.total-row td{background:#eff6ff;font-weight:700;font-size:14px}
+.footer{margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.note{font-size:12px;color:#64748b;flex:1}
+.note strong{color:#dc2626}
+.btn-pdf{background:#0f172a;color:#fff;border:none;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.btn-pdf:hover{background:#1e293b}
+.expires{font-size:11px;color:#94a3b8;margin-top:8px;text-align:right}
+.loading{text-align:center;padding:60px;color:#64748b}
+.error-box{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px;color:#dc2626;text-align:center}
+@media print{
+  body{background:#fff;padding:0}
+  .card{box-shadow:none;padding:20px;max-width:100%}
+  .btn-pdf,.expires{display:none}
+  h1{font-size:18px}
+}
+@media(max-width:600px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="card" id="app">
+  <div class="loading">加载中…</div>
+</div>
+<script>
+const token = new URLSearchParams(location.search).get('t') || '';
+const API = 'https://api.sanlyn.cn/api/factory-invoice-request?token=' + encodeURIComponent(token);
+
+function fmt(n){return Number(n||0).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function fmtDate(s){if(!s)return'—';return String(s).slice(0,10)}
+
+fetch(API).then(r=>r.json()).then(d=>{
+  if(!d.ok){
+    document.getElementById('app').innerHTML=`<div class="error-box"><div style="font-size:24px;margin-bottom:8px">🔒</div><div>${d.error||'链接已失效或不存在'}</div></div>`;
+    return;
+  }
+  const items = d.items||[];
+  const total = items.reduce((s,i)=>s+(Number(i.subtotal)||0),0);
+  const taxTotal=total*0.13, withTax=total*1.13; // 采购进项口径: 不含税=工厂实付货款, 价税合计=x1.13专票金额; 报关单是出口收入口径, 允许高于发票
+  const totalNw = items.reduce((s,i)=>s+(Number(i.nwKg)||0),0);
+  const rows = items.map((item,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td><div style="font-weight:600">${item.name}</div>${item.hsCode?`<div style="font-size:11px;color:#94a3b8">HS ${item.hsCode}</div>`:''}</td>
+      <td class="num">${item.qty} ${item.unit}</td>
+      <td class="num">${item.nwKg!=null?item.nwKg+' kg':'—'}</td>
+      <td class="num">${fmt(item.unitPrice)}</td>
+      <td class="num" style="font-weight:600">${fmt(item.subtotal)}</td>
+    </tr>`).join('');
+
+  document.getElementById('app').innerHTML=`
+    <div class="logo">
+      <div>
+        <div class="logo-brand">Sanlyn</div>
+        <div class="logo-text">供应链协同平台</div>
+      </div>
+    </div>
+    <h1>采购开票申请</h1>
+    <div class="subtitle">请按本页信息向购买方开具增值税专用发票</div>
+    <span class="badge">增值税专用发票</span>
+
+    <div class="section">
+      <div class="section-title">购买方信息（开票抬头）</div>
+      <div class="grid2">
+        <div class="kv"><label>单位名称</label><span>${d.buyer.name}</span></div>
+        <div class="kv"><label>纳税人识别号</label><span style="font-family:monospace">${d.buyer.taxId}</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">销售方（贵司）</div>
+      <div class="grid2">
+        <div class="kv"><label>单位名称</label><span>${d.seller.name||'—'}</span></div>
+        <div class="kv"><label>纳税人识别号</label><span style="font-family:monospace">${d.seller.taxId||'—'}</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">订单信息</div>
+      <div class="grid2">
+        <div class="kv"><label>合同号</label><span>${d.order.contractNo||'—'}</span></div>
+        <div class="kv"><label>客户 PO</label><span>${d.order.customerPo||'—'}</span></div>
+        <div class="kv"><label>出口日期</label><span>${fmtDate(d.order.etd)}</span></div>
+        <div class="kv"><label>币种</label><span>${d.order.currency||'CNY'}</span></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">开票明细</div>
+      <table>
+        <thead><tr><th>#</th><th>货物名称</th><th class="num">数量</th><th class="num">净重 NW</th><th class="num">单价</th><th class="num">金额</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td colspan="3" style="text-align:right">合计</td>
+            <td class="num">${totalNw?totalNw+' kg':'—'}</td>
+            <td style="text-align:right">合计（${d.order.currency||'CNY'}）</td>
+            <td class="num">${fmt(total)}</td>
+          </tr>
+          <tr>
+            <td colspan="5" style="text-align:right;color:#94a3b8">税额 13%</td>
+            <td class="num">${fmt(taxTotal)}</td>
+          </tr>
+          <tr class="total-row">
+            <td colspan="5" style="text-align:right;font-weight:700">价税合计（13% 增值税专票）</td>
+            <td class="num" style="font-weight:700">${fmt(withTax)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <div class="footer">
+      <div class="note">
+        <strong>请注意：</strong>本页信息仅供开票参考，如有疑问请联系 Sanlyn 业务对接人确认。<br>
+        发票开具后请将发票扫描件发送给对接人留存。
+      </div>
+      <button class="btn-pdf" onclick="window.print()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        下载 / 打印 PDF
+      </button>
+    </div>
+    <div class="expires">链接有效期至 ${fmtDate(d.expiresAt)} · 仅持链接人可见</div>
+  `;
+}).catch(()=>{
+  document.getElementById('app').innerHTML='<div class="error-box">网络错误，请刷新重试</div>';
+});
+</script>
+</body>
+</html>

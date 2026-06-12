@@ -29,9 +29,23 @@ async function writeOSSJson(client, key, data) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).end();
+
+  // Fail-closed: if secret is not configured, refuse all requests
+  const secret = process.env.VESSEL_CALLBACK_TOKEN;
+  if (!secret) {
+    console.error("[vessel-callback] VESSEL_CALLBACK_TOKEN not set — rejecting request");
+    return res.status(500).json({ success: false, error: "webhook not configured" });
+  }
+
+  // Static token check — token must be appended to callbackUrl during subscription
+  // e.g. callbackUrl: 'https://sanlyn-api.vercel.app/api/vessel-callback?token=' + process.env.VESSEL_CALLBACK_TOKEN
+  const reqToken = req.query.token || "";
+  if (reqToken !== secret) {
+    console.warn("[vessel-callback] token mismatch — possible spoofed payload");
+    return res.status(401).json({ success: false, error: "invalid token" });
+  }
 
   try {
     const body = req.body;

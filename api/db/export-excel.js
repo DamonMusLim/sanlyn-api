@@ -221,17 +221,29 @@ export default async function handler(req, res) {
       const p = pRes.rows[0];
 
       const portFees = [
-        ["文件费", p.doc_fee], ["通讯费", p.tlx_fee], ["信息传输费", p.info_trans_fee],
+        ["文件费", p.doc_fee], ["通讯费", p.tlx_fee],
         ["订舱费", p.bkg_fee], ["THC", p.thc_fee], ["EIR", p.eir_fee], ["铅封费", p.seal_fee],
       ].filter(([,v]) => v != null && Number(v) > 0);
 
       const portTotal  = portFees.reduce((s,[,v]) => s+Number(v||0), 0);
-      const otherTotal = [p.trucking_fee, p.customs_fee, p.insurance_cost].reduce((s,v) => s+Number(v||0), 0);
+      // D-004 (2026-05-25): use correct DB column names (trucking_cost_total, customs_cost_total, insurance_premium)
+      const otherTotal = [p.trucking_cost_total, p.customs_cost_total, p.insurance_premium].reduce((s,v) => s+Number(v||0), 0);
       const totalCost  = Number(p.freight_total_cny||0);
       const saleFrt    = Number(p.freight_sale_usd||0);
-      // Rough profit if exchange rate ~7.2
-      const costEstCNY = (Number(p.freight_cost||0) * 7.2) + portTotal + otherTotal;
-      const saleEstCNY = (saleFrt * 7.2) + portTotal + otherTotal;
+      // D-003 (2026-05-25): use live FX rate from exchange_rates table instead of hardcoded 7.2
+      let usdCnyRate = 7.2; // fallback only
+      let usdCnyRateLabel = "7.20 (回退值)";
+      try {
+        const exrRes = await pool.query(
+          "SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' ORDER BY fetched_at DESC LIMIT 1"
+        );
+        if (exrRes.rows.length && exrRes.rows[0].rate) {
+          usdCnyRate = Number(exrRes.rows[0].rate);
+          usdCnyRateLabel = String(usdCnyRate.toFixed(4)) + " (实时)";
+        }
+      } catch (_) { /* use fallback */ }
+      const costEstCNY = (Number(p.freight_cost||0) * usdCnyRate) + portTotal + otherTotal;
+      const saleEstCNY = (saleFrt * usdCnyRate) + portTotal + otherTotal;
       const profit     = saleEstCNY - costEstCNY;
 
       const rows = [
@@ -248,12 +260,12 @@ export default async function handler(req, res) {
         _row(["港杂小计", portTotal, ""]),
         _blank(),
         _rowHeader(["其他费用", "金额 CNY", ""]),
-        _row(["拖车费", p.trucking_fee ?? 0, ""]),
-        _row(["报关费", p.customs_fee ?? 0, ""]),
-        _row(["保险费", p.insurance_cost ?? 0, ""]),
+        _row(["拖车费", p.trucking_cost_total ?? 0, ""]),
+        _row(["报关费", p.customs_cost_total ?? 0, ""]),
+        _row(["保险费", p.insurance_premium ?? 0, ""]),
         _row(["其他小计", otherTotal, ""]),
         _blank(),
-        _hdr("利润估算 (按汇率 7.2)", 3),
+        _hdr(`利润估算 (按汇率 ${usdCnyRateLabel})`, 3),
         _row(["成本合计 (估)", Math.round(costEstCNY), "CNY"]),
         _row(["报价合计 (估)", Math.round(saleEstCNY), "CNY"]),
         _row(["毛利润 (估)", Math.round(profit), profit >= 0 ? "盈利" : "亏损"]),

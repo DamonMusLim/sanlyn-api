@@ -2,3 +2,11 @@ node_modules/
 .vercel
 .env*.local
 *.bak
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519

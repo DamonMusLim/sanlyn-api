@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, initial-scale=1" />
+<title>Logistics Marketplace v1 · Sanlyn OS · Customer View</title>
+<style>
+  :root {
+    --bg: #060A14; --surface: #0C1426; --surface2: #111B30; --line: #1F2D44;
+    --t1: #E2E8F0; --t2: #94A3B8; --t3: #64748B;
+    --blue: #38BDF8; --teal: #2DD4BF; --green: #10B981;
+    --amber: #F59E0B; --rose: #FB7185; --violet: #A78BFA; --orange: #FB923C;
+    --best: #FBBF24;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--t1); font-family: Inter,-apple-system,system-ui,sans-serif; font-size: 13px; padding: 24px 32px 80px; }
+  h1 { font-size: 22px; font-weight: 800; margin: 0 0 4px; color: #C084FC; }
+  .sub { color: var(--t3); font-size: 12px; margin-bottom: 22px; }
+
+  /* === Full Trust Banner (keep as-is) === */
+  .trust-banner { display: flex; align-items: center; gap: 14px; padding: 14px 18px; background: linear-gradient(135deg, rgba(139,92,246,.10), rgba(56,189,248,.05)); border: 1px solid rgba(139,92,246,.35); border-radius: 14px; margin-bottom: 14px; }
+  .trust-icon { font-size: 20px; padding: 8px 10px; background: rgba(139,92,246,.18); border-radius: 10px; }
+  .trust-title { font-weight: 700; font-size: 14px; color: #E9D5FF; }
+  .trust-pill { display: inline-block; padding: 2px 8px; background: rgba(139,92,246,.25); color: #DDD6FE; font-size: 10px; font-weight: 700; border-radius: 5px; margin-left: 6px; }
+  .trust-chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .trust-chip { padding: 3px 9px; background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 6px; font-size: 10.5px; color: var(--t2); }
+  .trust-cta { margin-left: auto; padding: 8px 16px; background: rgba(139,92,246,.2); border: 1px solid rgba(139,92,246,.5); color: #C084FC; border-radius: 8px; font-weight: 700; font-size: 11.5px; cursor: pointer; }
+  .trust-aside { display: flex; gap: 6px; align-items: center; padding: 6px 12px; background: rgba(45,212,191,.08); border: 1px solid rgba(45,212,191,.25); border-radius: 10px; font-size: 11px; color: var(--teal); margin-left: 8px; }
+  .pill-express { padding: 2px 7px; background: var(--amber); color: #1A1300; font-size: 9.5px; font-weight: 800; border-radius: 4px; }
+
+  /* === Marketplace shell === */
+  .market { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-top: 14px; }
+  .market-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .market-title { font-size: 15px; font-weight: 800; color: var(--t1); }
+  .market-sub { font-size: 11px; color: var(--t3); margin-top: 2px; }
+  .market-actions { margin-left: auto; display: flex; gap: 8px; }
+  .market-btn { padding: 6px 12px; border-radius: 7px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--t2); }
+  .market-btn.primary { background: rgba(56,189,248,.12); border-color: rgba(56,189,248,.4); color: var(--blue); }
+
+  /* === Region tabs === */
+  .regions { display: flex; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
+  .region { padding: 6px 12px; border-radius: 7px; font-size: 11.5px; font-weight: 700; cursor: pointer; background: rgba(255,255,255,.03); border: 1px solid var(--line); color: var(--t2); display: inline-flex; align-items: center; gap: 5px; }
+  .region.on { background: rgba(56,189,248,.15); color: var(--blue); border-color: rgba(56,189,248,.4); }
+  .region .cnt { font-size: 9.5px; padding: 1px 5px; background: rgba(255,255,255,.08); border-radius: 4px; color: var(--t1); }
+  .filter-info { margin-left: auto; font-size: 10.5px; color: var(--t3); }
+
+  /* === Route card grid === */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .route { background: var(--surface2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .route-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .lane { font-size: 14px; font-weight: 800; color: var(--t1); display: flex; align-items: center; gap: 6px; }
+  .lane .arrow { color: var(--t3); }
+  .badge { padding: 2px 7px; border-radius: 5px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+  .b-hot   { background: rgba(251,113,133,.15); color: var(--rose); border: 1px solid rgba(251,113,133,.35); }
+  .b-urgent{ background: rgba(245,158,11,.15); color: var(--amber); border: 1px solid rgba(245,158,11,.35); }
+  .b-normal{ background: rgba(100,116,139,.15); color: var(--t2); border: 1px solid rgba(100,116,139,.3); }
+  .order-cnt { padding: 2px 8px; background: rgba(255,255,255,.04); border-radius: 5px; font-size: 10px; color: var(--t2); }
+  .detail-btn { margin-left: auto; padding: 4px 10px; background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.3); color: var(--blue); border-radius: 6px; font-size: 10.5px; font-weight: 700; cursor: pointer; }
+
+  /* Recent shipment summary */
+  .rec { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(255,255,255,.02); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; font-size: 11.5px; }
+  .rec b { color: var(--t1); }
+  .rec .cargo { padding: 1px 6px; background: rgba(167,139,250,.12); color: var(--violet); border-radius: 4px; font-size: 10px; font-weight: 700; }
+  .rec .clock { margin-left: auto; padding: 2px 7px; background: rgba(251,191,36,.12); color: var(--best); border-radius: 4px; font-size: 10px; font-weight: 700; font-family: 'SF Mono',monospace; }
+
+  /* Carrier price block */
+  .carrier { background: rgba(255,255,255,.015); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .carrier.best { border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.04); }
+  .carrier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .carrier-name { font-weight: 800; font-size: 12.5px; color: var(--t1); font-family: 'SF Mono',monospace; letter-spacing: .02em; }
+  .voyage { color: var(--t3); font-size: 11px; font-family: 'SF Mono',monospace; }
+  .best-flag { margin-left: auto; padding: 2px 7px; background: var(--best); color: #1A1300; font-size: 9.5px; font-weight: 800; border-radius: 4px; }
+  .booked-flag { padding: 2px 7px; background: rgba(16,185,129,.18); color: var(--green); font-size: 9.5px; font-weight: 800; border-radius: 4px; border: 1px solid rgba(16,185,129,.35); }
+  .port-fee { margin-left: auto; padding: 2px 7px; background: rgba(255,255,255,.04); border-radius: 4px; font-size: 9.5px; color: var(--t2); font-family: 'SF Mono',monospace; }
+
+  /* Price grid */
+  .pgrid { display: grid; grid-template-columns: 38px repeat(3, 1fr); gap: 4px; font-size: 11px; font-family: 'SF Mono',monospace; }
+  .pgrid .head { color: var(--t3); font-size: 10px; padding: 3px 6px; text-align: right; font-weight: 700; }
+  .pgrid .head.cur { color: var(--blue); }
+  .pgrid .ctype { color: var(--t2); padding: 4px 6px; font-weight: 700; }
+  .pgrid .cell { padding: 4px 6px; border-radius: 4px; text-align: right; color: var(--t1); background: rgba(255,255,255,.02); }
+  .pgrid .cell.empty { color: var(--t3); background: rgba(255,255,255,.01); }
+  .pgrid .cell.win { background: rgba(251,191,36,.12); color: var(--best); font-weight: 800; }
+
+  /* Customer expectation */
+  .expect { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: rgba(251,191,36,.06); border: 1px solid rgba(251,191,36,.25); border-radius: 7px; margin: 8px 0 10px; font-size: 11px; }
+  .expect-icon { color: var(--best); font-size: 14px; }
+  .expect-text { color: #FDE68A; }
+  .expect-text b { color: var(--best); font-family: 'SF Mono',monospace; }
+
+  /* Customer CTAs */
+  .ctas { display: flex; gap: 6px; margin-top: 4px; }
+  .cta { flex: 1; padding: 8px 10px; border-radius: 7px; font-size: 11.5px; font-weight: 800; cursor: pointer; border: none; text-align: center; }
+  .cta-book { background: linear-gradient(135deg, var(--blue), var(--teal)); color: #03101A; }
+  .cta-target { background: rgba(167,139,250,.15); border: 1px solid rgba(167,139,250,.4); color: var(--violet); }
+  .cta-compare { background: rgba(255,255,255,.04); border: 1px solid var(--line); color: var(--t2); padding: 8px 10px; max-width: 90px; }
+
+  /* === Shippable Orders sidebar (kept) === */
+  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 14px; align-items: start; }
+  .ship-box { background: var(--surface); border: 1px solid rgba(16,185,129,.25); border-radius: 12px; padding: 14px; }
+  .ship-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .ship-title { font-weight: 800; font-size: 13px; color: var(--t1); }
+  .ship-cnt { margin-left: auto; padding: 2px 8px; background: rgba(16,185,129,.15); color: var(--green); border-radius: 5px; font-size: 10px; font-weight: 800; }
+  .ship-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; background: rgba(255,255,255,.025); border-radius: 8px; margin-bottom: 6px; font-size: 11.5px; cursor: pointer; }
+  .ship-row .po { font-weight: 800; color: var(--t1); font-family: 'SF Mono',monospace; }
+  .ship-row .cargo-sm { font-size: 10px; color: var(--t3); flex: 1; }
+  .ship-row .cu { padding: 2px 7px; background: rgba(56,189,248,.12); color: var(--blue); border-radius: 4px; font-size: 9.5px; font-weight: 800; }
+  .ship-foot { text-align: center; margin-top: 8px; font-size: 10.5px; color: var(--t3); }
+
+  /* Notes block */
+  .notes { margin-top: 22px; padding: 14px 18px; background: rgba(167,139,250,.04); border: 1px dashed rgba(167,139,250,.3); border-radius: 10px; font-size: 11.5px; color: var(--t2); line-height: 1.7; }
+  .notes h3 { margin: 0 0 6px; font-size: 12px; color: var(--violet); }
+  .notes code { background: rgba(255,255,255,.05); padding: 1px 5px; border-radius: 3px; font-size: 10.5px; color: #FBBF24; }
+  .notes ul { margin: 6px 0 0; padding-left: 18px; }
+  .notes li { margin-bottom: 3px; }
+
+  .changelog { margin-top: 18px; font-size: 11px; color: var(--t3); }
+</style>
+</head>
+<body>
+
+<h1>🌊 Logistics Marketplace · v1 mockup</h1>
+<div class="sub">Customer view · replaces "Choose Route + Recent + Shippable Orders" Step 1 area · file path <code style="color: var(--blue); font-family: 'SF Mono',monospace;">~/Desktop/Sanlyn/templates/logistics-marketplace-v1.html</code></div>
+
+<!-- ═══ FULL TRUST BANNER (keep as-is, no API) ═══ -->
+<div class="trust-banner">
+  <div class="trust-icon">⭐</div>
+  <div>
+    <div class="trust-title">All-in · Sanlyn Full Management <span class="trust-pill">FULL TRUST</span></div>
+    <div class="trust-chips">
+      <span class="trust-chip">📦 Booking</span>
+      <span class="trust-chip">🚛 Trucking</span>
+      <span class="trust-chip">📋 Customs</span>
+      <span class="trust-chip">🏭 Port & Docs</span>
+      <span class="trust-chip">🦠 Fumigation</span>
+      <span class="trust-chip">🛡 Insurance</span>
+    </div>
+  </div>
+  <button class="trust-cta">We Handle It All →</button>
+  <div class="trust-aside">✈ Air & DDP · from $4.50/kg <span class="pill-express">EXPRESS</span></div>
+  <!-- ❌ Sourcing NEW button removed — replaced by product-page ordering -->
+</div>
+
+<!-- ═══ MAIN LAYOUT — Marketplace + Shippable sidebar ═══ -->
+<div class="layout">
+
+  <!-- ═══ OCEAN MARKETPLACE (replaces old Step 1) ═══ -->
+  <div class="market">
+    <div class="market-head">
+      <div>
+        <div class="market-title">🌊 Ocean Marketplace</div>
+        <div class="market-sub">Compare carriers across lanes · cheapest per voyage wins · click 立即 Book / Set target to act</div>
+      </div>
+      <div class="market-actions">
+        <button class="market-btn">📊 Sort: ⏱ Cutoff</button>
+        <button class="market-btn primary">+ Add Custom Route</button>
+      </div>
+    </div>
+
+    <!-- Region tabs -->
+    <div class="regions">
+      <div class="region on">🌐 全部 <span class="cnt">3</span></div>
+      <div class="region">🌏 东南亚 <span class="cnt">1</span></div>
+      <div class="region">🌍 中东 <span class="cnt">0</span></div>
+      <div class="region">🇺🇸 北美 <span class="cnt">1</span></div>
+      <div class="region">🇪🇺 欧洲 <span class="cnt">1</span></div>
+      <div class="region">🇯🇵 日韩 <span class="cnt">0</span></div>
+      <div class="region">🧭 其他 <span class="cnt">0</span></div>
+      <div class="filter-info">🔥 紧急 + 临期单优先显示</div>
+    </div>
+
+    <!-- Route cards grid -->
+    <div class="grid">
+
+      <!-- ─── ROUTE 1: Qingdao → Port Klang (HOT) ─── -->
+      <div class="route">
+        <div class="route-head">
+          <div class="lane">🇨🇳 Qingdao <span class="arrow">→</span> 🇲🇾 Port Klang</div>
+          <span class="badge b-hot">🔥 Hot</span>
+          <span class="order-cnt">2 orders</span>
+          <button class="detail-btn">📋 Details →</button>
+        </div>
+
+        <div class="rec">
+          📦 Next sailing <b>5/28</b> · 5×40HQ
+          <span class="cargo">食品</span>
+          <span class="clock">⏱ 4h 36m</span>
+        </div>
+
+        <!-- Carrier 1: COSCO V2324 — already booked by Sanlyn (BEST) -->
+        <div class="carrier best">
+          <div class="carrier-head">
+            <span class="carrier-name">COSCO</span><span class="voyage">V2324</span>
+            <span class="best-flag">★ BEST</span>
+            <span class="booked-flag">✓ BOOKED</span>
+            <span class="port-fee">港杂 ¥4,000</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">5/28 ↓</div>
+            <div class="head">6/9 ↓</div>
+            <div class="head">6/22</div>
+            <div class="ctype">20GP</div>
+            <div class="cell win">$400</div>
+            <div class="cell">$420</div>
+            <div class="cell empty">未报</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell win">$500</div>
+            <div class="cell">$520</div>
+            <div class="cell empty">未报</div>
+          </div>
+        </div>
+
+        <!-- Carrier 2: MSC V324 (alternative) -->
+        <div class="carrier">
+          <div class="carrier-head">
+            <span class="carrier-name">MSC</span><span class="voyage">V324</span>
+            <span class="port-fee" style="margin-left:auto;">港杂 ¥4,000</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">5/28 ↓</div>
+            <div class="head">6/9 ↓</div>
+            <div class="head">6/22</div>
+            <div class="ctype">20GP</div>
+            <div class="cell">$420</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell">$540</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+          </div>
+        </div>
+
+        <div class="expect">
+          <span class="expect-icon">🎯</span>
+          <span class="expect-text">Your target · 4×40HQ · 海运 <b>$800/柜</b> · 港杂 <b>¥2,300/柜</b></span>
+        </div>
+
+        <div class="ctas">
+          <button class="cta cta-book">📅 Book COSCO V2324 · $500</button>
+          <button class="cta cta-target">🎯 Adjust target</button>
+          <button class="cta cta-compare">⚖ Compare</button>
+        </div>
+      </div>
+
+      <!-- ─── ROUTE 2: Shanghai → LA (URGENT) ─── -->
+      <div class="route">
+        <div class="route-head">
+          <div class="lane">🇨🇳 Shanghai <span class="arrow">→</span> 🇺🇸 Los Angeles</div>
+          <span class="badge b-urgent">⚠ 临期</span>
+          <span class="order-cnt">1 order</span>
+          <button class="detail-btn">📋 Details →</button>
+        </div>
+
+        <div class="rec">
+          📦 Next sailing <b>6/14</b> · 3×40HQ
+          <span class="cargo">一般货</span>
+          <span class="clock">⏱ 1d 8h</span>
+        </div>
+
+        <!-- Carrier 1: EMC EVER GIVEN (BEST) -->
+        <div class="carrier best">
+          <div class="carrier-head">
+            <span class="carrier-name">EMC</span><span class="voyage">EVER GIVEN</span>
+            <span class="best-flag">★ BEST</span>
+            <span class="port-fee">港杂 ¥3,200</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">6/7</div>
+            <div class="head">6/14 ↓</div>
+            <div class="head">6/21</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell empty">未报</div>
+            <div class="cell win">$2,080</div>
+            <div class="cell empty">未报</div>
+            <div class="ctype">40HC</div>
+            <div class="cell empty">未报</div>
+            <div class="cell win">$2,100</div>
+            <div class="cell empty">未报</div>
+          </div>
+        </div>
+
+        <!-- Carrier 2: ONE ALMERIA (no quote yet) -->
+        <div class="carrier">
+          <div class="carrier-head">
+            <span class="carrier-name">ONE</span><span class="voyage">ALMERIA</span>
+            <span class="port-fee" style="margin-left:auto;">港杂 ¥3,200</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">6/7</div>
+            <div class="head">6/14 ↓</div>
+            <div class="head">6/21</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="ctype">40HC</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+          </div>
+        </div>
+
+        <div class="expect">
+          <span class="expect-icon">🎯</span>
+          <span class="expect-text">Your target · 40HQ · 海运 <b>$2,100/柜</b> · 港杂 <b>¥3,200/柜</b></span>
+        </div>
+
+        <div class="ctas">
+          <button class="cta cta-book">📅 Book EMC EVER GIVEN · $2,080</button>
+          <button class="cta cta-target">🎯 Adjust target</button>
+          <button class="cta cta-compare">⚖ Compare</button>
+        </div>
+      </div>
+
+      <!-- ─── ROUTE 3: Ningbo → Hamburg ─── -->
+      <div class="route">
+        <div class="route-head">
+          <div class="lane">🇨🇳 Ningbo <span class="arrow">→</span> 🇩🇪 Hamburg</div>
+          <span class="badge b-normal">一般货</span>
+          <span class="order-cnt">1 order</span>
+          <button class="detail-btn">📋 Details →</button>
+        </div>
+
+        <div class="rec">
+          📦 Next sailing <b>6/17</b> · 4×40HQ
+          <span class="cargo">一般货</span>
+          <span class="clock" style="background:rgba(56,189,248,.12); color:var(--blue);">⏱ 5d 2h</span>
+        </div>
+
+        <div class="carrier best">
+          <div class="carrier-head">
+            <span class="carrier-name">HAPAG</span><span class="voyage">RIO BLANCO</span>
+            <span class="best-flag">★ BEST</span>
+            <span class="port-fee">港杂 ¥3,500</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">6/3</div>
+            <div class="head">6/10</div>
+            <div class="head">6/17 ↓</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="cell win">$1,650</div>
+          </div>
+        </div>
+
+        <div class="expect">
+          <span class="expect-icon">🎯</span>
+          <span class="expect-text">Your target · 40HQ · 海运 <b>$1,650/柜</b> · 港杂 <b>¥3,500/柜</b></span>
+        </div>
+
+        <div class="ctas">
+          <button class="cta cta-book">📅 Book HAPAG · $1,650</button>
+          <button class="cta cta-target">🎯 Adjust target</button>
+          <button class="cta cta-compare">⚖ Compare</button>
+        </div>
+      </div>
+
+      <!-- Placeholder for "+ New Lane" -->
+      <div class="route" style="border-style: dashed; opacity: .55; display:flex; align-items:center; justify-content:center; min-height:260px; cursor:pointer;">
+        <div style="text-align:center;">
+          <div style="font-size: 32px;">➕</div>
+          <div style="font-weight:800; color:var(--violet); margin-top:6px;">Add Custom Route</div>
+          <div style="font-size:11px; color:var(--t3); margin-top:3px;">无现成航线？发起询价 / 抢单池</div>
+        </div>
+      </div>
+
+    </div><!-- /grid -->
+  </div><!-- /market -->
+
+  <!-- ═══ Shippable Orders sidebar (KEPT) ═══ -->
+  <div class="ship-box">
+    <div class="ship-head">
+      <span style="font-size:16px;">📦</span>
+      <span class="ship-title">Shippable Orders</span>
+      <span class="ship-cnt">3 READY</span>
+    </div>
+    <div class="ship-row">
+      <span class="po">WP-62</span>
+      <span class="cargo-sm">—</span>
+      <span class="cu">—</span>
+    </div>
+    <div class="ship-row">
+      <span class="po">LL-21</span>
+      <span class="cargo-sm">豆腐猫砂 · 1600 CTN</span>
+      <span class="cu">1×40HQ</span>
+    </div>
+    <div class="ship-row">
+      <span class="po">LL-ORDER-20</span>
+      <span class="cargo-sm">豆腐猫砂 · 1600 CTN</span>
+      <span class="cu">1×40HQ</span>
+    </div>
+    <div class="ship-foot">3 of 3 ready · 36 producing · View all orders →</div>
+  </div>
+
+</div><!-- /layout -->
+
+<!-- ═══ Design notes (for review) ═══ -->
+<div class="notes">
+  <h3>📝 Design notes — please confirm before React implementation</h3>
+  <ul>
+    <li><b>Replaces</b>: existing Step 1 (Choose Route + Recent + Continue button). Step 2 picker still works — clicking <code>📅 Book</code> CTA jumps user into the existing Step 2 flow with carrier/voyage pre-filled.</li>
+    <li><b>Dedupe rule</b>: when multiple forwarders quote the same carrier + voyage, only the cheapest row is shown. Other forwarders are silent (loser, no UI). Confirmed: "只看价".</li>
+    <li><b>Customer CTAs</b>: <code>Book now</code> (accept current best price) and <code>Adjust target</code> (open Set-Target modal, posts to 抢单池 for forwarders to bid lower). <code>立即抢单</code> from 图3 is the FORWARDER-side button — not shown on this customer view.</li>
+    <li><b>Region filter</b>: tabs across the top filter routes by destination region. Counts auto-update.</li>
+    <li><b>BEST flag</b>: golden ★ on the carrier whose price ≤ customer target OR is the absolute cheapest on the route.</li>
+    <li><b>BOOKED flag</b>: green chip on carriers Sanlyn has already locked space with (vs. just published rates).</li>
+    <li><b>Data sources</b>: <code>freight_rates.raw.sharing</code> (marketplace-shared rates) + <code>shipping_plans</code> (next 3 sailings per lane) + the customer's last quote/target as "Your target".</li>
+    <li><b>Empty state</b>: dashed "+ Add Custom Route" tile invites custom-route inquiry → posts to bid pool when no published rate exists.</li>
+    <li><b>Trust banner</b> (top): kept exactly as in current Logistics Hub — pure advert, zero API.</li>
+    <li><b>Removed</b>: <code>Sourcing NEW</code> button (代购) — duplicate of product-page ordering.</li>
+  </ul>
+</div>
+
+<div class="changelog">
+  Changelog · v1 (2026-05-16) — initial mockup based on user screenshot 图3 + customer-side reinterpretation. Pending Damon sign-off → React implementation in <code>screens/customer/logistics/MarketplaceHub.jsx</code>.
+</div>
+
+</body>
+</html>

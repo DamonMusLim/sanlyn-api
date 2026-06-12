@@ -34,6 +34,7 @@ const QUEUE_TABLES = [
   ["trucking_pickup_sheets",      "trucking_pickup_confirmation", "owner_company_code"],
   ["trucking_evidence_sheets",    "trucking_loading_evidence",    "owner_company_code"],
   ["doc_revision_sheets",         "document_revision_request",    "owner_company_code"],
+  ["booking_collab_sheets",       "booking_collab",               "owner_company_code"],
 ];
 
 const ALLOWED_STATUS = new Set([

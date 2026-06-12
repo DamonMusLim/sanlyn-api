@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Order Editor (JDY-style v2) · Preview 2026-05-18</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "SF Pro Text", sans-serif; background: #f4f6f9; color: #1f2937; padding: 16px; }
+  .wrap { max-width: 1500px; margin: 0 auto; }
+
+  /* === Top sticky toolbar (借鉴 JDY) === */
+  .top-toolbar { background: #fff; border-radius: 8px; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: sticky; top: 0; z-index: 10; }
+  .tb-left { display: flex; align-items: center; gap: 14px; }
+  .tb-title { font-size: 17px; font-weight: 600; }
+  .tb-rec-nav { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #6b7280; }
+  .tb-rec-nav button { background: none; border: 1px solid #e5e7eb; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; color: #6b7280; }
+  .tb-action-group { display: flex; gap: 4px; padding: 4px 8px; border: 1px solid #e5e7eb; border-radius: 6px; }
+  .tb-btn { background: none; border: none; padding: 5px 10px; font-size: 12px; cursor: pointer; color: #374151; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; }
+  .tb-btn:hover { background: #f3f4f6; }
+  .tb-btn.danger { color: #dc2626; }
+  .tb-btn.primary { color: #fff; background: #2563eb; padding: 6px 14px; font-weight: 500; }
+  .tb-btn.primary:hover { background: #1d4ed8; }
+  .tb-mode-tabs { display: flex; gap: 4px; }
+  .tb-mode-tab { padding: 6px 14px; font-size: 12px; cursor: pointer; border-radius: 6px; color: #6b7280; }
+  .tb-mode-tab.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+  .badge-mode { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+  .mode-edit { background: #fef3c7; color: #92400e; }
+
+  /* === Sections === */
+  .section { background: #fff; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); overflow: hidden; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; user-select: none; border-bottom: 1px solid #f3f4f6; background: linear-gradient(to right, #f9fafb, #fff); }
+  .section-header.collapsed { border-bottom: none; }
+  .section-title { font-size: 13px; font-weight: 600; color: #111827; display: flex; align-items: center; gap: 8px; }
+  .field-count { background: #e0e7ff; color: #3730a3; padding: 1px 8px; border-radius: 10px; font-size: 10px; font-weight: 500; }
+  .chevron { color: #9ca3af; transition: transform 0.2s; font-size: 11px; }
+  .section-header.collapsed .chevron { transform: rotate(-90deg); }
+  .section-body { padding: 14px 16px; }
+  .section-body.collapsed { display: none; }
+
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field-label { font-size: 11px; color: #6b7280; font-weight: 500; display: flex; gap: 4px; align-items: center; }
+  .field-input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: #fff; }
+  .field-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  .field-input.calc { background: #fefce8; border-color: #fde68a; }
+  .field-input.calc::after { content: "fx"; }
+  .field-input[readonly]:not(.calc) { background: #f9fafb; color: #6b7280; }
+  .tag-rare { display: inline-block; padding: 1px 5px; background: #fef3c7; color: #92400e; border-radius: 3px; font-size: 9px; font-weight: 600; }
+  .tag-calc { display: inline-block; padding: 1px 5px; background: #fef9c3; color: #854d0e; border-radius: 3px; font-size: 9px; font-weight: 600; }
+  .tag-money { display: inline-block; padding: 1px 5px; background: #d1fae5; color: #065f46; border-radius: 3px; font-size: 9px; font-weight: 600; }
+  .tag-locked { display: inline-block; padding: 1px 5px; background: #fee2e2; color: #991b1b; border-radius: 3px; font-size: 9px; font-weight: 600; }
+
+  .advanced { display: none; }
+  body.show-all .advanced { display: flex; }
+  body.show-all .section-advanced { display: block; }
+  body.show-all td.advanced, body.show-all th.advanced { display: table-cell; }
+  .section-advanced { display: none; }
+  td.advanced, th.advanced { display: none; }
+
+  /* === Products table with editable cells & live formulas === */
+  table.products { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  table.products th { background: #f3f4f6; padding: 8px 6px; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; font-size: 11px; }
+  table.products td { padding: 4px 6px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+  table.products td input { width: 100%; border: 1px solid transparent; padding: 4px 6px; border-radius: 3px; font-size: 12px; background: transparent; }
+  table.products td input:hover { border-color: #d1d5db; background: #fff; }
+  table.products td input:focus { outline: none; border-color: #2563eb; background: #fff; }
+  table.products td input.calc { background: #fefce8; color: #854d0e; font-weight: 500; }
+  table.products tbody tr:hover { background: #fafbfc; }
+  .row-add { padding: 8px; color: #2563eb; cursor: pointer; font-size: 12px; font-weight: 500; }
+  .totals-row { background: #f9fafb; }
+  .totals-row td { padding: 8px 6px; font-weight: 600; color: #111827; }
+
+  /* === Download/Print/Activity sidebar (借鉴 JDY) === */
+  .layout { display: grid; grid-template-columns: 1fr 280px; gap: 12px; align-items: start; }
+  .right-rail { position: sticky; top: 64px; }
+  .rail-card { background: #fff; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .rail-title { font-size: 11px; color: #6b7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+  .file-pill { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 12px; margin-bottom: 4px; cursor: pointer; }
+  .file-pill .xl { background: #16a34a; color: #fff; padding: 1px 4px; border-radius: 2px; font-size: 9px; font-weight: 700; }
+  .file-pill .filename { flex: 1; color: #15803d; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-pill .download { color: #16a34a; cursor: pointer; }
+  .file-pill.struck .filename { text-decoration: line-through; color: #9ca3af; }
+  .activity-item { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+  .activity-avatar { width: 22px; height: 22px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
+  .activity-body { flex: 1; font-size: 11px; color: #6b7280; }
+  .activity-body .who { color: #111827; font-weight: 500; }
+  .activity-body .when { color: #9ca3af; font-size: 10px; }
+
+  /* === Color accents === */
+  .section-basic .section-header { border-left: 3px solid #6366f1; }
+  .section-trade .section-header { border-left: 3px solid #10b981; }
+  .section-products .section-header { border-left: 3px solid #f59e0b; }
+  .section-finance .section-header { border-left: 3px solid #ec4899; }
+  .section-buyer .section-header { border-left: 3px solid #3b82f6; }
+  .section-factory .section-header { border-left: 3px solid #22c55e; }
+  .section-seller .section-header { border-left: 3px solid #a855f7; }
+  .section-system .section-header { border-left: 3px solid #6b7280; }
+
+  /* === Grid view (借鉴 JDY 数据管理) === */
+  .grid-view { display: none; background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  body.grid-mode .grid-view { display: block; }
+  body.grid-mode .form-view { display: none; }
+  table.grid-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.grid-table th { background: #f3f4f6; padding: 8px 8px; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; font-size: 10px; white-space: nowrap; }
+  table.grid-table td { padding: 6px 8px; border-bottom: 1px solid #f3f4f6; font-size: 11px; }
+  table.grid-table td.num { text-align: right; }
+  table.grid-table tbody tr:hover { background: #fafbfc; }
+  .group-header { background: #eff6ff; padding: 6px 10px; font-weight: 600; color: #1d4ed8; font-size: 11px; border-radius: 4px; margin: 8px 0 4px 0; }
+
+  /* === Permission preview bar === */
+  .perm-banner { background: #fef9c3; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 4px; margin-bottom: 10px; font-size: 12px; color: #78350f; }
+  /* === Doc tabs === */
+  .doc-tab { flex: 1; text-align: center; padding: 10px 6px; font-size: 11px; cursor: pointer; color: #6b7280; border-bottom: 2px solid transparent; font-weight: 500; }
+  .doc-tab.active { color: #2563eb; border-bottom-color: #2563eb; background: #eff6ff; }
+  .doc-tab:hover:not(.active) { background: #f9fafb; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- TOP TOOLBAR (借鉴 JDY 图2) -->
+  <div class="top-toolbar">
+    <div class="tb-left">
+      <div class="tb-title">FS20260428002 <span class="badge-mode mode-edit">EDIT</span></div>
+      <div class="tb-rec-nav"><button>‹</button> 2/82 <button>›</button></div>
+      <div class="tb-mode-tabs">
+        <div class="tb-mode-tab active" onclick="document.body.classList.remove('grid-mode');this.parentElement.querySelectorAll('.tb-mode-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');">📋 表单视图</div>
+        <div class="tb-mode-tab" onclick="document.body.classList.add('grid-mode');this.parentElement.querySelectorAll('.tb-mode-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');">📊 网格视图(财务SOA)</div>
+      </div>
+    </div>
+    <div class="tb-left">
+      <div class="tb-action-group">
+        <button class="tb-btn">🖨 打印</button>
+        <button class="tb-btn">⬇ 下载PI</button>
+        <button class="tb-btn">⬇ 下载IV</button>
+        <button class="tb-btn">⬇ 下载PL</button>
+        <button class="tb-btn">⬇ 下载SC</button>
+      </div>
+      <div class="tb-action-group">
+        <button class="tb-btn">📋 复制</button>
+        <button class="tb-btn">📤 分享</button>
+        <button class="tb-btn">🔁 激活流程</button>
+        <button class="tb-btn danger">🗑 删除</button>
+      </div>
+      <span style="font-size:12px;color:#6b7280;">🔓 <span style="color:#2563eb;cursor:pointer;" onclick="document.body.classList.toggle('show-all'); this.textContent = document.body.classList.contains('show-all') ? '只显示常用' : '显示全部 60+ 字段';">显示全部 60+ 字段</span></span>
+      <button class="tb-btn primary">保存</button>
+    </div>
+  </div>
+
+  <!-- PERMISSION BANNER -->
+  <div class="perm-banner">
+    🔒 <strong>查看权限</strong>：你正以 <strong>admin</strong> 身份编辑 — 客户视图打印只看到 IV/PL，看不到 PI/SC/成本价/利润；工厂视图只看到 PI/SC，看不到客户价/付款状态。
+  </div>
+
+  <div class="layout">
+
+  <!-- LEFT: form view -->
+  <div class="form-view">
+
+  <!-- 订单基本 -->
+  <div class="section section-basic">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-title">📋 订单基本 <span class="field-count">12 字段</span></div>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="grid-4">
+        <div class="field"><label class="field-label">合同号 *</label><input class="field-input" value="FS20260428002"></div>
+        <div class="field"><label class="field-label">关联客户组</label><input class="field-input" value="00007"></div>
+        <div class="field"><label class="field-label">下单时间</label><input class="field-input" type="date" value="2026-04-28"></div>
+        <div class="field"><label class="field-label">利润风险标记</label><select class="field-input"><option>正常</option><option>低</option><option>高</option></select></div>
+        <div class="field"><label class="field-label">Port (起运港代码)</label><input class="field-input" value="CN-00051"></div>
+        <div class="field"><label class="field-label">起运港</label><input class="field-input" value="Qingdao"></div>
+        <div class="field"><label class="field-label">内部识别号 <span class="tag-locked">系统</span></label><input class="field-input" value="PETSOME-ORDER-0093" readonly></div>
+        <div class="field"><label class="field-label">公司名称 (中文)</label><input class="field-input" value=""></div>
+        <div class="field"><label class="field-label">Company Code</label><input class="field-input" value="PETSOME"></div>
+        <div class="field"><label class="field-label">客户集团代码</label><input class="field-input" value="PETSOME"></div>
+        <div class="field"><label class="field-label">Country</label><input class="field-input" value="Malaysia"></div>
+        <div class="field"><label class="field-label">品牌授权 ⚠️</label><input class="field-input" value="CATSOME, WANPY, DOGSOME" style="background:#fef3c7;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 贸易条款 -->
+  <div class="section section-trade">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-title">🚢 贸易条款 & 物流 <span class="field-count">8 字段</span></div>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="grid-4">
+        <div class="field"><label class="field-label">允许贸易条款 *</label>
+          <select class="field-input"><option>FOB</option><option>CIF</option><option>CFR</option><option>EXW</option><option>DDP</option></select>
+        </div>
+        <div class="field"><label class="field-label">Port (目的港代码)</label><input class="field-input" value="GK00283"></div>
+        <div class="field"><label class="field-label">目的港</label><input class="field-input" value="Port Klang Westport"></div>
+        <div class="field"><label class="field-label">Required date of arrival</label><input class="field-input" type="date" value="2026-06-15"></div>
+        <div class="field"><label class="field-label">交易币种 *</label>
+          <select class="field-input"><option>CNY</option><option>USD</option><option>EUR</option></select>
+        </div>
+        <div class="field"><label class="field-label">汇率</label><input class="field-input" value="6.9" onchange="recalc()"></div>
+        <div class="field"><label class="field-label">建议柜型</label><select class="field-input"><option>40hq</option><option>40gp</option><option>20gp</option></select></div>
+        <div class="field"><label class="field-label">柜子数量</label><input class="field-input" value="1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 产品 - 全部可编辑 + 公式联动 -->
+  <div class="section section-products">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-title">📦 产品 / Products <span class="field-count">5 行 · 全部可改 · 公式联动</span>
+        <span style="margin-left:12px;padding:2px 8px;background:#dbeafe;color:#1e40af;border-radius:3px;font-size:10px;font-weight:600;">工厂 portal: 外贸（巴匕代出口）</span>
+      </div>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div style="background:#eff6ff;border-left:3px solid #2563eb;padding:8px 12px;margin-bottom:10px;font-size:11px;color:#1e40af;border-radius:3px;">
+        💡 中宠是 <strong>外贸 portal</strong>（没有自己出口资质，走巴匕代出口）→ 这一列是 <strong>外贸价</strong>（巴匕给客户的价，已含代理费）。<br>
+        如果选「工贸一体」工厂（如福新 FX），这一列会变成「工厂直出价」（无代理费层）。
+      </div>
+      <table class="products" id="products-table">
+        <thead>
+          <tr>
+            <th style="width:28px;">#</th>
+            <th style="width:130px;">Code</th>
+            <th style="width:90px;">二级分类</th>
+            <th>Product Name</th>
+            <th style="width:130px;">Size</th>
+            <th style="width:90px;">外贸价(¥)</th>
+            <th style="width:70px;">数量(CTN)</th>
+            <th style="width:80px;">单CTN净重(kg)</th>
+            <th style="width:80px;">单CTN毛重(kg)</th>
+            <th style="width:70px;">单CTN CBM</th>
+            <th style="width:90px;">小计 <span class="tag-calc">fx</span></th>
+            <th style="width:80px;">净重小计 <span class="tag-calc">fx</span></th>
+            <th style="width:80px;">毛重小计 <span class="tag-calc">fx</span></th>
+            <th style="width:70px;">CBM小计 <span class="tag-calc">fx</span></th>
+            <th style="width:30px;"></th>
+          </tr>
+        </thead>
+        <tbody id="prod-tbody">
+          <!-- 数据 JS 渲染 -->
+        </tbody>
+        <tfoot>
+          <tr class="totals-row">
+            <td colspan="6" style="text-align:right;">总计 (Totals)</td>
+            <td id="total-qty">2400</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td id="total-amount">6864.00</td>
+            <td id="total-net">21600</td>
+            <td id="total-gross">26160</td>
+            <td id="total-cbm">38.4</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="row-add" onclick="addRow()">+ 添加产品行</div>
+
+      <div class="grid-4" style="margin-top:14px;padding-top:14px;border-top:1px solid #f3f4f6;">
+        <div class="field"><label class="field-label">总数量 <span class="tag-calc">fx · 可手动覆盖</span></label><input class="field-input calc" id="total-qty-2" value="2400"></div>
+        <div class="field"><label class="field-label">总金额(工厂) <span class="tag-calc">fx</span></label><input class="field-input calc" id="total-amount-2" value="6864.00"></div>
+        <div class="field"><label class="field-label">总金额(客户) <span class="tag-rare">罕用</span></label><input class="field-input advanced" value=""></div>
+        <div class="field"><label class="field-label">总毛重 (kg)</label><input class="field-input calc" id="total-gross-2" value="26160"></div>
+        <div class="field"><label class="field-label">总净重 (kg)</label><input class="field-input calc" id="total-net-2" value="21600"></div>
+        <div class="field"><label class="field-label">总 CBM</label><input class="field-input calc" id="total-cbm-2" value="38.4"></div>
+        <div class="field"><label class="field-label">预计交货日期</label><input class="field-input" type="date" value="2026-04-27"></div>
+        <div class="field"><label class="field-label">工厂交货确认</label><input class="field-input" type="date"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 财务（瘦身：订单主表只保留 chip，详细财务进 Finance 模块）-->
+  <div class="section section-finance">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-title">💰 财务状态 (chip 概览) <span class="field-count">1 chip + 详情跳转</span></div>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div style="background:#f9fafb;padding:14px;border-radius:6px;display:flex;align-items:center;justify-content:space-between;">
+        <div style="display:flex;gap:24px;">
+          <div>
+            <div style="font-size:11px;color:#6b7280;">收款</div>
+            <div style="font-size:16px;font-weight:600;color:#16a34a;">已收 ¥0 <span style="color:#6b7280;font-size:12px;font-weight:400;">/ 待收 ¥164,736</span></div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#6b7280;">付款</div>
+            <div style="font-size:16px;font-weight:600;color:#dc2626;">已付 ¥0 <span style="color:#6b7280;font-size:12px;font-weight:400;">/ 待付 ¥164,736</span></div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#6b7280;">毛利</div>
+            <div style="font-size:16px;font-weight:600;color:#6b7280;">¥0 <span style="font-size:12px;font-weight:400;">(0%)</span></div>
+          </div>
+        </div>
+        <a href="#" style="font-size:12px;color:#2563eb;text-decoration:none;">查看完整账单 (11 字段) ›</a>
+      </div>
+      <div style="font-size:11px;color:#9ca3af;margin-top:8px;">💡 详细财务（开票/收票/退货等）在 Finance 模块管理，订单主表只显示状态概览。</div>
+    </div>
+  </div>
+
+  <!-- 买方 -->
+  <div class="section section-buyer">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-title">🏢 买方公司 / 客户信息 <span class="field-count">7 字段 + 3 附件</span></div>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="grid-3">
+        <div class="field"><label class="field-label">Applicat Company (客户)</label><input class="field-input" value="PETSOME SDN BHD"></div>
+        <div class="field"><label class="field-label">公司名称 (英文)</label><input class="field-input" value="PETSOME SDN BHD"></div>
+        <div class="field"><label class="field-label">联系电话</label><input class="field-input" value="+60 12 345 6789"></div>
+      </div>
+      <div class="grid-2" style="margin-top:10px;">
+        <div class="field"><label class="field-label">客户地址</label><textarea class="field-input" rows="2">LOT 1716,JALAN SG LONG,BATU 11,SG LONG,43000 KAJANG,SELANGOR</textarea></div>
+        <div class="field"><label class="field-label">选择地址 (备用)</label><textarea class="field-input" rows="2"></textarea></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 出单 -->
+  <div class="section section-factory">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-title">🏭 出单公司 / 工厂信息 <span class="field-count">9 字段</span></div>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="grid-4">
+        <div class="field"><label class="field-label">出单公司 (中文)</label><input class="field-input" value="厦门巴匕进出口有限公司"></div>
+        <div class="field"><label class="field-label">出单公司 (英文)</label><input class="field-input" value="XIAMEN PET BABY IMPORT AND EXPORT CO., LTD"></div>
+        <div class="field"><label class="field-label">出单公司地址</label><input class="field-input" value="厦门市湖里区华荣路26-9号4层"></div>
+        <div class="field"><label class="field-label">税号</label><input class="field-input" value="91350206MA34RW3852"></div>
+        <div class="field"><label class="field-label">开户银行</label><input class="field-input" value="中国银行"></div>
+        <div class="field"><label class="field-label">银行账户</label><input class="field-input" value="431279918006,429982879286"></div>
+        <div class="field"><label class="field-label">工厂中文名</label><input class="field-input" value="烟台中宠食品股份有限公司"></div>
+        <div class="field"><label class="field-label">工厂税号</label><input class="field-input" value="913700007337235643"></div>
+        <div class="field"><label class="field-label">工厂开户行</label><input class="field-input" value="中行烟台莱山支行"></div>
+        <div class="field advanced"><label class="field-label">工厂银行账户</label><input class="field-input" value="235107318878"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 卖方信息（修正版 · 全部下拉 · 集团类才能改出单公司）-->
+  <div class="section section-seller">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-title">💼 卖方信息 (内部 · 出单/收款/报关主体) <span class="field-count">6 字段</span></div>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div style="background:#fef3c7;border-left:3px solid #f59e0b;padding:8px 12px;margin-bottom:10px;font-size:11px;color:#78350f;border-radius:3px;">
+        ⚠️ 改「出单公司」会触发法务通知（避免临时换主体没人知道）。报关主体可以临时改单，自由度高。
+      </div>
+
+      <div class="grid-3">
+        <!-- 出单公司：dropdown of Sanlyn 集团公司 (4 选 1) -->
+        <div class="field">
+          <label class="field-label">出单公司 <span class="tag-locked">改了通知法务</span></label>
+          <select class="field-input" onchange="syncSeller(this)">
+            <option value="BABI">厦门巴匕进出口有限公司 (BABI)</option>
+            <option value="OCEANBABY">上海洋宝宝国际物流有限公司 (OCEANBABY)</option>
+            <option value="FORTUNESANLYN">富城山凌集团有限公司 (FortuneSanlyn)</option>
+            <option value="SANLYN">Sanlyn Holdings (集团总部)</option>
+          </select>
+        </div>
+
+        <!-- 印章：自动跟随出单公司 -->
+        <div class="field">
+          <label class="field-label">出单印章 <span class="tag-calc">fx · 跟随公司</span></label>
+          <select class="field-input calc" disabled>
+            <option>巴匕电子章 (auto)</option>
+          </select>
+        </div>
+
+        <!-- 报关主体：默认同出单公司，可临时改 -->
+        <div class="field">
+          <label class="field-label">报关主体 <span class="tag-rare">可临时改</span></label>
+          <select class="field-input">
+            <option value="BABI">厦门巴匕（默认同出单）</option>
+            <option value="OCEANBABY">上海洋宝宝</option>
+            <option value="FORTUNESANLYN">富城山凌</option>
+          </select>
+        </div>
+
+        <!-- 收款币种：跟客户档案 default_currency （目前缺 → 警告） -->
+        <div class="field">
+          <label class="field-label">收款币种 <span class="tag-locked">⚠️ 客户档案缺字段</span></label>
+          <select class="field-input" style="border-color:#fb923c;">
+            <option>CNY</option>
+            <option>USD</option>
+            <option>EUR</option>
+            <option>SGD</option>
+            <option>MYR</option>
+          </select>
+        </div>
+
+        <!-- 收款账户：跟出单公司的 bank_accounts 联动 -->
+        <div class="field">
+          <label class="field-label">收款账户 <span class="tag-calc">fx · 跟随公司+币种</span></label>
+          <select class="field-input calc">
+            <option>巴匕 · 中国银行 · 431279918006 (CNY)</option>
+            <option>巴匕 · 中国银行 · 429982879286 (USD)</option>
+          </select>
+        </div>
+
+        <!-- 业务负责人：选 admin 用户 -->
+        <div class="field">
+          <label class="field-label">业务负责人 <span class="tag-money">可改</span></label>
+          <select class="field-input">
+            <option>Damon (admin)</option>
+            <option>Lyn (ops)</option>
+            <option>张芳 (sales)</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="background:#fef9c3;padding:8px 12px;border-radius:4px;font-size:11px;color:#78350f;margin-top:10px;">
+        💡 <strong>缺字段提示</strong>：customers 表无 default_currency → 已生成 SQL 待跑（brand-authorizations-2026-05-18.sql Step 1）<br>
+        bank_accounts 跟出单公司+币种的联动需要前端 hook，落地后这两个 select 会自动过滤。
+      </div>
+    </div>
+  </div>
+
+  <!-- 系统隐藏 -->
+  <div class="section section-system section-advanced">
+    <div class="section-header" onclick="toggleSection(this)">
+      <div class="section-title">⚙️ 系统字段 <span class="field-count">8 字段</span> <span class="tag-locked">默认隐藏</span></div>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="grid-4">
+        <div class="field"><label class="field-label">tenant_id</label><input class="field-input" readonly></div>
+        <div class="field"><label class="field-label">portal_submission_id</label><input class="field-input" readonly></div>
+        <div class="field"><label class="field-label">source</label><input class="field-input" value="web-admin"></div>
+        <div class="field"><label class="field-label">status (生产状态)</label>
+          <select class="field-input"><option>待确认</option><option>生产中</option><option>已完成</option></select>
+        </div>
+        <div class="field"><label class="field-label">提交人</label><input class="field-input" value="Damon" readonly></div>
+        <div class="field"><label class="field-label">提交时间</label><input class="field-input" value="2026-04-28 03:25:26" readonly></div>
+        <div class="field"><label class="field-label">流程状态</label><input class="field-input" value="流转完成" readonly></div>
+        <div class="field"><label class="field-label">当前节点</label><input class="field-input" readonly></div>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /form-view -->
+
+  <!-- GRID VIEW (借鉴 JDY 数据管理 图4) -->
+  <div class="grid-view">
+    <div style="margin-bottom:10px;">
+      <strong style="font-size:13px;">📊 网格视图 · 财务SOA · 所有产品平铺</strong>
+      <div style="font-size:11px;color:#6b7280;margin-top:2px;">每张订单一组，点订单号折叠/展开</div>
+    </div>
+    <div class="group-header">▼ FS20260428002 · PETSOME · 5 SKUs · 总CBM 38.4 · 待收 ¥164,736</div>
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th>Code</th><th>Product Name</th><th>Size</th>
+          <th class="num">Qty/Ctn</th><th class="num">小计 (¥)</th><th class="num">CBM</th>
+          <th class="num">Net Wt</th><th class="num">Gross Wt</th>
+          <th>建议柜型</th><th class="num">总数量</th><th class="num">总金额</th><th>备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>9551016105872</td><td>Dogsome duck 375g</td><td>375G/CANX24/CTN</td><td class="num">480</td><td class="num">1,372.80</td><td class="num">7.68</td><td class="num">4320</td><td class="num">5232</td><td>40hq</td><td class="num">2400</td><td class="num">6,864</td><td></td></tr>
+        <tr><td>9551016100327</td><td>Dogsome salmon 375g</td><td>375G/CANX24/CTN</td><td class="num">480</td><td class="num">1,372.80</td><td class="num">7.68</td><td class="num">4320</td><td class="num">5232</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>9551016100334</td><td>Dogsome codfish 375g</td><td>375G/CANX24/CTN</td><td class="num">480</td><td class="num">1,372.80</td><td class="num">7.68</td><td class="num">4320</td><td class="num">5232</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>9551016100341</td><td>Dogsome lamb 375g</td><td>375G/CANX24/CTN</td><td class="num">480</td><td class="num">1,372.80</td><td class="num">7.68</td><td class="num">4320</td><td class="num">5232</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>9551016100358</td><td>Dogsome chicken 375g</td><td>375G/CANX24/CTN</td><td class="num">480</td><td class="num">1,372.80</td><td class="num">7.68</td><td class="num">4320</td><td class="num">5232</td><td></td><td></td><td></td><td></td></tr>
+      </tbody>
+    </table>
+    <div class="group-header" style="margin-top:14px;">▼ FS20260415007 · ENRICH · 8 SKUs · 总CBM 29.44 · 待收 $1,540</div>
+    <table class="grid-table">
+      <thead>
+        <tr>
+          <th>Code</th><th>Product Name</th><th>Size</th>
+          <th class="num">Qty/Ctn</th><th class="num">小计 (¥)</th><th class="num">CBM</th>
+          <th class="num">Net Wt</th><th class="num">Gross Wt</th>
+          <th>建议柜型</th><th class="num">总数量</th><th class="num">总金额</th><th>备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>9551014016989</td><td>PET'S ACADEMY BENTONITE CAT LITTER</td><td>1.3KG/BAG X 12/IN</td><td class="num">1472</td><td class="num">22,609.92</td><td class="num">29.44</td><td class="num">22963.2</td><td class="num">23404.8</td><td>40hq</td><td class="num">4478</td><td class="num">68,782</td><td></td></tr>
+      </tbody>
+    </table>
+    <div style="text-align:center;color:#6b7280;font-size:12px;padding:14px;">... 还有 80 条订单 ...</div>
+  </div>
+
+  <!-- RIGHT RAIL: files + activity (借鉴 JDY 数据日志) -->
+  <div class="right-rail">
+    <div class="rail-card" style="display:none;">
+      <div class="rail-title">📂 单据下载 · JDY 模板</div>
+      <div class="file-pill"><span class="xl">XLSX</span><span class="filename">FS20260428002-PI.xlsx</span><span class="download">⬇</span></div>
+      <div class="file-pill"><span class="xl">XLSX</span><span class="filename">FS20260428002-IV.xlsx</span><span class="download">⬇</span></div>
+      <div class="file-pill"><span class="xl">XLSX</span><span class="filename">FS20260428002-PL.xlsx</span><span class="download">⬇</span></div>
+      <div class="file-pill"><span class="xl">XLSX</span><span class="filename">FS20260428002-SC.xlsx</span><span class="download">⬇</span></div>
+      <div class="file-pill"><span class="xl">XLSX</span><span class="filename">采购合同.xlsx</span><span class="download">⬇</span></div>
+      <button class="tb-btn primary" style="width:100%;margin-top:8px;">📤 重新生成所有</button>
+    </div>
+    <!-- ========= 统一文档管理 Tab ========= -->
+    <div class="rail-card" style="padding:0;">
+      <div style="display:flex;border-bottom:1px solid #f3f4f6;">
+        <div class="doc-tab active" data-tab="order" onclick="switchDocTab(this)">订单主</div>
+        <div class="doc-tab" data-tab="customs" onclick="switchDocTab(this)">报关</div>
+        <div class="doc-tab" data-tab="finance" onclick="switchDocTab(this)">财务</div>
+        <div class="doc-tab" data-tab="extra" onclick="switchDocTab(this)">补传</div>
+        <div class="doc-tab" data-tab="log" onclick="switchDocTab(this)">日志</div>
+      </div>
+
+      <!-- Tab: 订单主 -->
+      <div class="doc-panel active" data-panel="order" style="padding:12px;">
+        <div class="rail-title" style="margin-top:0;">📋 订单文档</div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">PI · FS20260428002.xlsx</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">SC · 合同.xlsx</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">IV · 商业发票.xlsx</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">PL · 箱单.xlsx</span><span class="download">⬇</span></div>
+      </div>
+
+      <!-- Tab: 报关 -->
+      <div class="doc-panel" data-panel="customs" style="padding:12px;display:none;">
+        <div class="rail-title" style="margin-top:0;">🛂 报关资料</div>
+        <div class="file-pill"><span class="xl">PDF</span><span class="filename">报关委托书.pdf</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">报关-IV(HS合并).xlsx</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">报关-PL(HS合并).xlsx</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">申报要素.xlsx</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">PDF</span><span class="filename">出口许可证.pdf</span><span class="download">⬇</span></div>
+        <button class="tb-btn primary" style="width:100%;margin-top:8px;font-size:11px;">+ 上传报关单据</button>
+      </div>
+
+      <!-- Tab: 财务（上入下出，分段） -->
+      <div class="doc-panel" data-panel="finance" style="padding:12px;display:none;">
+        <div style="background:#dbeafe;padding:6px 10px;border-radius:4px;margin-bottom:8px;">
+          <div style="font-size:10px;font-weight:600;color:#1e40af;">⬆️ 收款（入）</div>
+          <div style="font-size:11px;color:#1e3a8a;margin-top:3px;">待收 ¥164,736 · 已收 ¥0</div>
+        </div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">客户 IV-PETSOME.xlsx</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">PDF</span><span class="filename">收款水单-未上传</span><span class="download" style="color:#9ca3af;">↑</span></div>
+
+        <div style="background:#fee2e2;padding:6px 10px;border-radius:4px;margin:10px 0 8px;">
+          <div style="font-size:10px;font-weight:600;color:#991b1b;">⬇️ 付款（出）</div>
+          <div style="font-size:11px;color:#7f1d1d;margin-top:3px;">待付 ¥164,736 · 已付 ¥0</div>
+        </div>
+        <div class="file-pill"><span class="xl">XLSX</span><span class="filename">采购合同-中宠.xlsx</span><span class="download">⬇</span></div>
+        <div class="file-pill"><span class="xl">PDF</span><span class="filename">付款凭证-未上传</span><span class="download" style="color:#9ca3af;">↑</span></div>
+
+        <div style="background:#f3f4f6;padding:6px 10px;border-radius:4px;margin:10px 0 8px;">
+          <div style="font-size:10px;font-weight:600;color:#374151;">⚖️ 差额对账</div>
+          <div style="font-size:11px;color:#111827;margin-top:3px;">毛利 ¥0 · 利润率 0% <span style="color:#6b7280;font-size:10px;">(收-付计算中)</span></div>
+        </div>
+      </div>
+
+      <!-- Tab: 补传 -->
+      <div class="doc-panel" data-panel="extra" style="padding:12px;display:none;">
+        <div class="rail-title" style="margin-top:0;">📎 补充上传</div>
+        <div style="border:1px dashed #d1d5db;padding:14px;text-align:center;border-radius:4px;color:#6b7280;font-size:11px;">
+          拖拽文件到这里 / 点击上传<br>
+          <span style="font-size:10px;color:#9ca3af;">支持 PDF / Excel / 图片 · 单文件 ≤ 500MB</span>
+        </div>
+        <div style="margin-top:8px;font-size:10px;color:#9ca3af;">💡 用于：临时改单、客户改地址证明、报关补料等</div>
+      </div>
+
+      <!-- Tab: 日志 -->
+      <div class="doc-panel" data-panel="log" style="padding:12px;display:none;">
+        <div class="rail-title" style="margin-top:0;">🔄 流程动态</div>
+        <div class="activity-item">
+          <div class="activity-avatar">D</div>
+          <div class="activity-body">
+            <div><span class="who">Damon</span> 改 3 字段 (price ×2, qty ×1)</div>
+            <div class="when">2026-05-18 22:18</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-avatar" style="background:#10b981;">L</div>
+          <div class="activity-body">
+            <div><span class="who">Lyn</span> 上传 PI</div>
+            <div class="when">2026-04-28 03:27</div>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-avatar">D</div>
+          <div class="activity-body">
+            <div><span class="who">Damon</span> 提交订单</div>
+            <div class="when">2026-04-28 03:25</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /layout -->
+
+</div>
+
+<script>
+const PRODUCTS = [
+  { code: "9551016105872", cat: "湿粮/罐头", name: "Dogsome duck 375g",    size: "375G/CANX24/CTN", price: 2.86, qty: 480, netCtn: 9.0,  grossCtn: 10.9, cbmCtn: 0.016 },
+  { code: "9551016100327", cat: "湿粮/罐头", name: "Dogsome salmon 375g",  size: "375G/CANX24/CTN", price: 2.86, qty: 480, netCtn: 9.0,  grossCtn: 10.9, cbmCtn: 0.016 },
+  { code: "9551016100334", cat: "湿粮/罐头", name: "Dogsome codfish 375g", size: "375G/CANX24/CTN", price: 2.86, qty: 480, netCtn: 9.0,  grossCtn: 10.9, cbmCtn: 0.016 },
+  { code: "9551016100341", cat: "湿粮/罐头", name: "Dogsome lamb 375g",    size: "375G/CANX24/CTN", price: 2.86, qty: 480, netCtn: 9.0,  grossCtn: 10.9, cbmCtn: 0.016 },
+  { code: "9551016100358", cat: "湿粮/罐头", name: "Dogsome chicken 375g", size: "375G/CANX24/CTN", price: 2.86, qty: 480, netCtn: 9.0,  grossCtn: 10.9, cbmCtn: 0.016 },
+];
+
+function render() {
+  const tbody = document.getElementById('prod-tbody');
+  tbody.innerHTML = '';
+  PRODUCTS.forEach((p, i) => {
+    const subtotal = (p.price * p.qty).toFixed(2);
+    const netSub   = (p.netCtn * p.qty).toFixed(1);
+    const grossSub = (p.grossCtn * p.qty).toFixed(1);
+    const cbmSub   = (p.cbmCtn * p.qty).toFixed(2);
+    tbody.insertAdjacentHTML('beforeend', `
+      <tr>
+        <td>${i+1}</td>
+        <td><input value="${p.code}" onchange="PRODUCTS[${i}].code=this.value"></td>
+        <td><input value="${p.cat}" onchange="PRODUCTS[${i}].cat=this.value"></td>
+        <td><input value="${p.name}" onchange="PRODUCTS[${i}].name=this.value"></td>
+        <td><input value="${p.size}" onchange="PRODUCTS[${i}].size=this.value"></td>
+        <td><input value="${p.price}" type="number" step="0.01" onchange="PRODUCTS[${i}].price=parseFloat(this.value)||0;recalc()"></td>
+        <td><input value="${p.qty}" type="number" onchange="PRODUCTS[${i}].qty=parseInt(this.value)||0;recalc()"></td>
+        <td><input value="${p.netCtn}" type="number" step="0.01" onchange="PRODUCTS[${i}].netCtn=parseFloat(this.value)||0;recalc()"></td>
+        <td><input value="${p.grossCtn}" type="number" step="0.01" onchange="PRODUCTS[${i}].grossCtn=parseFloat(this.value)||0;recalc()"></td>
+        <td><input value="${p.cbmCtn}" type="number" step="0.001" onchange="PRODUCTS[${i}].cbmCtn=parseFloat(this.value)||0;recalc()"></td>
+        <td><input class="calc" value="${subtotal}" readonly></td>
+        <td><input class="calc" value="${netSub}" readonly></td>
+        <td><input class="calc" value="${grossSub}" readonly></td>
+        <td><input class="calc" value="${cbmSub}" readonly></td>
+        <td><span style="color:#dc2626;cursor:pointer;" onclick="PRODUCTS.splice(${i},1);render();recalc();">×</span></td>
+      </tr>
+    `);
+  });
+  recalc();
+}
+
+function recalc() {
+  const totalQty   = PRODUCTS.reduce((s,p)=>s+p.qty, 0);
+  const totalAmt   = PRODUCTS.reduce((s,p)=>s+p.price*p.qty, 0).toFixed(2);
+  const totalNet   = PRODUCTS.reduce((s,p)=>s+p.netCtn*p.qty, 0).toFixed(1);
+  const totalGross = PRODUCTS.reduce((s,p)=>s+p.grossCtn*p.qty, 0).toFixed(1);
+  const totalCbm   = PRODUCTS.reduce((s,p)=>s+p.cbmCtn*p.qty, 0).toFixed(2);
+  document.getElementById('total-qty').textContent    = totalQty;
+  document.getElementById('total-amount').textContent = totalAmt;
+  document.getElementById('total-net').textContent    = totalNet;
+  document.getElementById('total-gross').textContent  = totalGross;
+  document.getElementById('total-cbm').textContent    = totalCbm;
+  document.getElementById('total-qty-2').value    = totalQty;
+  document.getElementById('total-amount-2').value = totalAmt;
+  document.getElementById('total-net-2').value    = totalNet;
+  document.getElementById('total-gross-2').value  = totalGross;
+  document.getElementById('total-cbm-2').value    = totalCbm;
+}
+
+function addRow() {
+  PRODUCTS.push({ code: "", cat: "", name: "", size: "", price: 0, qty: 0, netCtn: 0, grossCtn: 0, cbmCtn: 0 });
+  render();
+}
+
+function toggleSection(header) {
+  header.classList.toggle('collapsed');
+  header.nextElementSibling.classList.toggle('collapsed');
+}
+
+function syncSeller(sel) {
+  // 出单公司变了 → 自动联动印章 / 收款账户
+  const map = {
+    BABI:          { stamp: '巴匕电子章', acct: '巴匕 · 中国银行 · 431279918006' },
+    OCEANBABY:     { stamp: '洋宝宝电子章', acct: '洋宝宝 · 招商 · 7211xxxxxxx' },
+    FORTUNESANLYN: { stamp: '富城山凌电子章', acct: '富城山凌 · 工商 · 4000xxxxxxx' },
+    SANLYN:        { stamp: 'Sanlyn 集团章', acct: 'Sanlyn HQ · HSBC · 800xxxxxxx' },
+  };
+  const cur = map[sel.value];
+  alert('⚠️ 出单公司改成：' + sel.options[sel.selectedIndex].text + '\n→ 法务会收到通知\n→ 印章/收款账户自动联动');
+}
+
+function switchDocTab(tab) {
+  tab.parentElement.querySelectorAll('.doc-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  const target = tab.dataset.tab;
+  tab.closest('.rail-card').querySelectorAll('.doc-panel').forEach(p => {
+    p.style.display = (p.dataset.panel === target) ? 'block' : 'none';
+  });
+}
+
+render();
+</script>
+</body>
+</html>

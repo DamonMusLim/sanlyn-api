@@ -11,6 +11,7 @@
 //            uploaded → rejected → approved (重新审)
 
 import { getPool, setCors } from "../db.js";
+import { requireAuth, requireRole } from "../auth.js";
 
 const VALID_STATUSES = ["uploaded", "approved", "released", "downloaded", "rejected"];
 
@@ -23,6 +24,11 @@ function _unquote(v) {
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method === "POST") {
+    if (!requireRole(req, res, ["admin", "logistics", "staff"])) return;
+  } else {
+    if (!requireAuth(req, res)) return;
+  }
 
   const pool = getPool();
 
@@ -35,6 +41,19 @@ export default async function handler(req, res) {
                  FROM customs_data
                  WHERE (bl_final IS NOT NULL OR bl_draft IS NOT NULL)`;
       const vals = [];
+
+      // Tenant scope: non-admin users may only see records belonging to their company.
+      // admin sees all rows (full-table access is intentional for operations).
+      if (req.user.role !== "admin") {
+        const userCompanyCode = req.user.companyCode || req.user.company_code || null;
+        if (!userCompanyCode) {
+          return res.status(403).json({ success: false, error: "No company scope — access denied" });
+        }
+        vals.push(userCompanyCode);
+        // issuing_company is stored inside the raw JSONB column
+        sql += ` AND (raw->>'issuing_company' = $${vals.length} OR raw->>'issuingCompany' = $${vals.length})`;
+      }
+
       if (contract) {
         vals.push(contract);
         sql += ` AND contract_no = $${vals.length}`;
@@ -146,22 +165,23 @@ export default async function handler(req, res) {
       // 构建 patch
       const patch = { bl_status: newStatus };
 
+      const actorId = req.user.username || String(req.user.uid) || "unknown";
       if (newStatus === "approved") {
-        patch.bl_approved_by = body.bl_approved_by || "unknown";
-        patch.bl_approved_at = body.bl_approved_at || new Date().toISOString();
+        patch.bl_approved_by = actorId;
+        patch.bl_approved_at = new Date().toISOString();
       }
       if (newStatus === "released") {
-        patch.bl_released_by = body.bl_released_by || "unknown";
-        patch.bl_released_at = body.bl_released_at || new Date().toISOString();
+        patch.bl_released_by = actorId;
+        patch.bl_released_at = new Date().toISOString();
         patch.bl_release_method = body.bl_release_method || "manual";
       }
       if (newStatus === "rejected") {
-        patch.bl_rejected_by = body.bl_rejected_by || "unknown";
+        patch.bl_rejected_by = actorId;
         patch.bl_reject_reason = body.bl_reject_reason || "";
       }
       if (newStatus === "downloaded") {
         patch.bl_downloaded_at = new Date().toISOString();
-        patch.bl_downloaded_by = body.bl_downloaded_by || "unknown";
+        patch.bl_downloaded_by = actorId;
       }
 
       if (body.bl_controller) patch.bl_controller = body.bl_controller;

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Sanlyn OS</title>
+  <script type="module" crossorigin src="/admin-v1/assets/index.js"></script>
+  <link rel="stylesheet" crossorigin href="/admin-v1/assets/index-CGMQc4-8.css">
+</head>
+<body>
+  <div id="root"></div>
+  <!-- 杀残留 Service Worker:本应用不注册SW,任何SW都是旧版残留(缓存旧chunk致白屏)。加载即注销+清缓存,一劳永逸,无需用户手动清。 -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(rs){
+        if (rs && rs.length) {
+          rs.forEach(function(r){ r.unregister(); });
+          if (window.caches && caches.keys) caches.keys().then(function(ks){ ks.forEach(function(k){ caches.delete(k); }); });
+          if (sessionStorage.getItem("_swKilled") !== "1") { sessionStorage.setItem("_swKilled","1"); location.reload(); }
+        }
+      }).catch(function(){});
+    }
+  </script>
+</body>
+</html>

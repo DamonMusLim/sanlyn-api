@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "code": "HT001",
+      "name": "purchase-contract-template.html",
+      "label": "购销合同-鑫宝凌汽车",
+      "cat": "其他",
+      "desc": "可编辑字段，DAS公章选择/制作/上传，打印即可签约",
+      "size": 24520
+    },
+    {
+      "code": "HT003",
+      "name": "cn-credit-note.html",
+      "label": "贷记通知单 CN",
+      "cat": "外贸单证",
+      "desc": "贷记通知单标准模板，按最小单位填写数量",
+      "size": 10516
+    },
+    {
+      "code": "HT004",
+      "name": "finance-card-po-primary.html",
+      "label": "财务PO卡片",
+      "cat": "外贸单证",
+      "desc": "财务视角采购订单，含付款状态跟踪",
+      "size": 22496
+    },
+    {
+      "code": "HT005",
+      "name": "landed-cost-preview-2026-05-18.html",
+      "label": "到岸成本预览",
+      "cat": "外贸单证",
+      "desc": "DDP到岸成本拆解：运费/关税/保险/代理费",
+      "size": 12273
+    },
+    {
+      "code": "HT006",
+      "name": "ocean-freight-service-agreement-v1.html",
+      "label": "海运货代服务协议书",
+      "cat": "海运货运",
+      "desc": "海运服务合同标准模板，含条款与签章区",
+      "size": 20532
+    },
+    {
+      "code": "HT007",
+      "name": "ocean-freight-billing-preview.html",
+      "label": "海运费用账单",
+      "cat": "海运货运",
+      "desc": "货代开具账单，含海运费/港杂/附加费",
+      "size": 26869
+    },
+    {
+      "code": "HT008",
+      "name": "freight-marketplace-v1.html",
+      "label": "货代比价市场 v1",
+      "cat": "海运货运",
+      "desc": "多货代报价比价，含折扣率与有效期",
+      "size": 34931
+    },
+    {
+      "code": "HT009",
+      "name": "freight-quote-table-v1.html",
+      "label": "货运报价表",
+      "cat": "海运货运",
+      "desc": "按港口/船公司/柜型呈现",
+      "size": 12635
+    },
+    {
+      "code": "HT010",
+      "name": "shipping-plan-v1-yangbaobao.html",
+      "label": "出运计划确认单",
+      "cat": "海运货运",
+      "desc": "含箱量/重量/ETD/ETA",
+      "size": 20497
+    },
+    {
+      "code": "HT011",
+      "name": "freight-dn-enrich-2026-04.html",
+      "label": "货运借记通知单",
+      "cat": "海运货运",
+      "desc": "货代向Sanlyn开具的运费借记通知单",
+      "size": 11702
+    },
+    {
+      "code": "HT012",
+      "name": "freight-quote-enrich-2026-04.html",
+      "label": "货运报价单（丰聪）",
+      "cat": "海运货运",
+      "desc": "丰聪货代报价，含各费用拆分",
+      "size": 8813
+    },
+    {
+      "code": "HT013",
+      "name": "logistics-marketplace-v1.html",
+      "label": "物流市场 v1",
+      "cat": "海运货运",
+      "desc": "物流服务市场，货代信息聚合",
+      "size": 24038
+    },
+    {
+      "code": "HT014",
+      "name": "logistics-marketplace-v2.html",
+      "label": "物流市场 v2（含评分）",
+      "cat": "海运货运",
+      "desc": "升级版，含评分与历史成交价",
+      "size": 44217
+    },
+    {
+      "code": "HT015",
+      "name": "booking-instruction-v3.html",
+      "label": "订舱指令单 v3",
+      "cat": "报关订舱",
+      "desc": "向货代下达订舱，含船期/品名/柜型/HS码",
+      "size": 101606
+    },
+    {
+      "code": "HT017",
+      "name": "doc-action-sheet-preview.html",
+      "label": "单证操作面板（DAS）",
+      "cat": "报关订舱",
+      "desc": "DAS弹窗：AI审核/签章/下载",
+      "size": 18859
+    },
+    {
+      "code": "HT018",
+      "name": "step3-containers-preview.html",
+      "label": "整柜出运确认",
+      "cat": "报关订舱",
+      "desc": "整柜出运Step3，含装箱单与货物清单",
+      "size": 25782
+    },
+    {
+      "code": "HT019",
+      "name": "step3-pinjui-preview.html",
+      "label": "拼柜出运确认",
+      "cat": "报关订舱",
+      "desc": "拼柜出运Step3，含分拨与货代信息",
+      "size": 32178
+    },
+    {
+      "code": "HT020",
+      "name": "brand-authorization-mapper.html",
+      "label": "品牌授权映射表",
+      "cat": "品牌授权",
+      "desc": "品牌→授权工厂→产品SKU三层授权关系",
+      "size": 22075
+    },
+    {
+      "code": "HT021",
+      "name": "order-card-v2.4-role-aware.html",
+      "label": "订单卡片 v2.4（角色）",
+      "cat": "订单管理",
+      "desc": "不同角色看不同操作入口",
+      "size": 45522
+    },
+    {
+      "code": "HT022",
+      "name": "order-card-v2.5-supply-chain.html",
+      "label": "订单卡片 v2.5（供应链）",
+      "cat": "订单管理",
+      "desc": "含工厂/货代/报关进度",
+      "size": 33649
+    },
+    {
+      "code": "HT023",
+      "name": "order-create-v4-2step.html",
+      "label": "建单流程 v4（两步）",
+      "cat": "订单管理",
+      "desc": "Step1基本信息→Step2产品明细",
+      "size": 26345
+    },
+    {
+      "code": "HT024",
+      "name": "quote-card-v1-role-aware.html",
+      "label": "报价卡片 v1",
+      "cat": "订单管理",
+      "desc": "含审批与转订单功能",
+      "size": 35207
+    },
+    {
+      "code": "HT025",
+      "name": "quote-order-unified-v3.html",
+      "label": "报价/订单统一视图 v3",
+      "cat": "订单管理",
+      "desc": "全流程状态跟踪",
+      "size": 179788
+    },
+    {
+      "code": "HT026",
+      "name": "order-product-picker-preview.html",
+      "label": "建单产品选择器",
+      "cat": "订单管理",
+      "desc": "建单时选产品，支持搜索与多选",
+      "size": 24613
+    },
+    {
+      "code": "HT027",
+      "name": "collab-sheet-v4-roles.html",
+      "label": "协同填表（角色隔离）",
+      "cat": "其他",
+      "desc": "工厂/货代/Sanlyn各自填写区域隔离",
+      "size": 35224
+    },
+    {
+      "code": "HT028",
+      "name": "jdy-style-order-editor-preview.html",
+      "label": "建单编辑器（简道云风格）",
+      "cat": "其他",
+      "desc": "字段分组与校验",
+      "size": 45224
+    },
+    {
+      "code": "HT029",
+      "name": "partner-workbench-v1.html",
+      "label": "合作伙伴工作台 v1",
+      "cat": "其他",
+      "desc": "含任务/单据/消息中心",
+      "size": 34981
+    },
+    {
+      "code": "HT030",
+      "name": "packaging-inventory.html",
+      "label": "包装规格与库存",
+      "cat": "其他",
+      "desc": "产品包装规格与库存跟踪，含箱规与重量",
+      "size": 33938
+    },
+    {
+      "code": "HT031",
+      "name": "Operation_Letter_PBXHQ-20250918.pdf",
+      "label": "操作流程说明信-PBXHQ-20250918",
+      "cat": "外贸单证",
+      "desc": "DDP西班牙出运说明信，含出口港/到达港/Incoterm",
+      "size": 5499
+    },
+    {
+      "code": "HT032",
+      "name": "Operation_Letter_PBXHQ-20250918.pdf",
+      "label": "Operation Letter PBXHQ 20250918",
+      "cat": "订单管理",
+      "desc": "交易模版。",
+      "size": 5499
+    }
+  ]
+}

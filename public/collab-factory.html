@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sanlyn OS · 订舱协同填报</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  background: #f0f2f5; color: #111; font-size: 13px; }
+
+.portal-bar { background: #1a1d23; padding: 0 24px; display: flex; align-items: center;
+  position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+.portal-brand { color: #f1f5f9; font-size: 14px; font-weight: 800;
+  letter-spacing: 1px; padding: 14px 0; margin-right: 24px; }
+.portal-login-badge { margin-left: auto; font-size: 10px; color: #64748b; padding: 14px 0; }
+
+.shell-narrow { max-width: 760px; margin: 0 auto; padding: 20px 16px; }
+.shell-tight  { max-width: 460px; margin: 0 auto; padding: 60px 16px; }
+
+.card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 14px; }
+.section { padding: 14px 16px; border-bottom: 1px solid #f0f2f5; }
+.section:last-child { border-bottom: none; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px;
+  border-radius: 20px; font-size: 11px; font-weight: 800; }
+.badge-green  { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.badge-amber  { background: #fef9c3; color: #a16207; border: 1px solid #fde68a; }
+.badge-red    { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+.badge-blue   { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+.btn { padding: 7px 16px; border-radius: 7px; border: none;
+  font-size: 12px; font-weight: 700; cursor: pointer; }
+.btn-blue  { background: #1a73e8; color: #fff; }
+.btn-green { background: #059669; color: #fff; }
+.btn-ghost { background: #f3f4f6; color: #374151; border: 1px solid #e0e4ea; }
+.btn-sm { padding: 5px 12px; font-size: 11px; }
+.btn-lg { padding: 10px 24px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Step card ── */
+.step-card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  margin-bottom: 14px; overflow: hidden; transition: border-color .2s; }
+.step-card.required { border-color: #fbbf24; }
+.step-card.done     { border-color: #86efac; }
+.step-card.alert    { border-color: #fca5a5; }
+
+.step-head { padding: 12px 16px; display: flex; align-items: center;
+  justify-content: space-between; background: #fff;
+  border-bottom: 1px solid #f0f2f5; transition: background .15s; user-select: none; }
+/* 收起态：整行可点击展开 */
+.step-card.done .step-head { cursor: pointer; }
+.step-card.done .step-head:hover { background: #f8fafc; }
+
+.step-num { width: 26px; height: 26px; border-radius: 50%; background: #1a1d23;
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; flex-shrink: 0; }
+.step-num.done  { background: #059669; }
+.step-num.alert { background: #dc2626; }
+
+.step-title { font-size: 13px; font-weight: 800; color: #1a1d23; }
+.step-sub   { font-size: 11px; color: #6b7280; margin-top: 1px; }
+
+/* 收起摘要行 */
+.step-summary { display: none; font-size: 11px; font-weight: 700;
+  color: #059669; flex: 1; margin: 0 10px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.step-card.done .step-summary { display: block; }
+.step-card.done .step-title { font-size: 12px; color: #6b7280; font-weight: 600; }
+.step-card.done .step-sub   { display: none; }
+
+/* 折叠箭头 */
+.chevron { font-size: 12px; color: #9ca3af; transition: transform .25s; flex-shrink: 0; }
+.step-card.done .chevron { transform: rotate(0deg); }      /* ▼ 收起 */
+.step-card:not(.done) .chevron { transform: rotate(180deg); } /* ▲ 展开 */
+
+/* 内容区折叠 */
+.step-body { overflow: hidden; transition: max-height .3s ease, opacity .3s ease; }
+.step-card.done .step-body { max-height: 0 !important; opacity: 0; }
+.step-card:not(.done) .step-body { max-height: 2000px; opacity: 1; }
+
+.form-field { margin-bottom: 10px; }
+.form-label { font-size: 11px; font-weight: 700; color: #374151;
+  margin-bottom: 4px; display: block; }
+.form-label .req { color: #dc2626; }
+.form-input { width: 100%; border: 1.5px solid #c8cdd6; border-radius: 6px;
+  padding: 8px 10px; font-size: 13px; outline: none; font-family: inherit; background: #fff; }
+.form-input:focus { border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
+.form-input.alert { border-color: #dc2626; background: #fef2f2; }
+textarea.form-input { resize: vertical; min-height: 60px; }
+
+.toggle-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.tog { padding: 8px 16px; border-radius: 7px; border: 1.5px solid #c8cdd6;
+  background: #fff; font-size: 12px; font-weight: 700; color: #4b5563;
+  cursor: pointer; text-align: center; }
+.tog.on-green { border-color: #059669; background: #d1fae5; color: #059669; }
+.tog.on-blue  { border-color: #1a73e8; background: #dbeafe; color: #1d4ed8; }
+.tog.on-red   { border-color: #dc2626; background: #fee2e2; color: #b91c1c; }
+
+.cargo-t { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cargo-t th { background: #f8fafc; padding: 6px 8px; text-align: left;
+  border: 1px solid #c8cdd6; font-size: 10px; font-weight: 800; color: #374151; }
+.cargo-t td { padding: 4px 6px; border: 1px solid #e0e4ea; }
+.cargo-t tr.alert-row td { border-color: #fca5a5; background: #fef2f2; }
+.cargo-t tr.total { font-weight: 800; background: #f8f8f8; }
+.cargo-t input.cell-in { width: 100%; border: 1px solid transparent; border-radius: 4px;
+  padding: 4px 6px; font-size: 11px; outline: none; font-family: inherit; background: transparent; }
+.cargo-t input.cell-in:focus { border-color: #1a73e8; background: #fff; }
+
+.landing-card { background: #fff; border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.10); overflow: hidden; }
+.landing-head { background: linear-gradient(135deg,#059669,#10b981);
+  padding: 24px; text-align: center; color: #fff; }
+.landing-head h1 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+.landing-head p { font-size: 12px; opacity: .9; }
+
+.alert-callout { padding: 10px 14px; background: #fef2f2;
+  border-left: 4px solid #dc2626; border-radius: 6px;
+  margin: 10px 16px; font-size: 12px; color: #991b1b; }
+
+.chip { background: #fff; border: 1px solid #e0e4ea; border-radius: 8px;
+  padding: 8px 14px; font-size: 12px; }
+.chip b { color: #1a1d23; }
+.chip span { color: #6b7280; }
+
+.ctn-group { border: 1.5px solid #e0e4ea; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.ctn-group.alert { border-color: #fca5a5; }
+.ctn-group-head { background: #f8fafc; padding: 7px 12px; display: flex;
+  align-items: center; justify-content: space-between; border-bottom: 1px solid #e0e4ea; }
+.ctn-group-title { font-size: 11px; font-weight: 800; color: #374151; }
+.ctn-group-sub { font-size: 10px; color: #6b7280; }
+
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1a1d23; color: #fff; padding: 10px 22px; border-radius: 20px;
+  font-size: 12px; font-weight: 700; display: none; z-index: 999; }
+.toast.show { display: block; }
+.hidden { display: none !important; }
+.center-state { text-align: center; padding: 70px 20px; color: #6b7280; }
+.center-state .big { font-size: 44px; margin-bottom: 14px; }
+.center-state h2 { font-size: 17px; font-weight: 800; color: #1a1d23; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<div class="portal-bar">
+  <div class="portal-brand">SANLYN OS</div>
+  <div class="portal-login-badge" id="topBadge">工厂协同</div>
+</div>
+
+<div class="center-state" id="stateLoading"><div class="big">⏳</div><p>正在加载…</p></div>
+
+<div class="hidden" id="stateForm">
+<div class="shell-narrow">
+
+  <div class="card" style="border:2px solid #fbbf24;">
+    <div style="background:#fffbeb;padding:14px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:24px;">🏭</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:800;color:#92400e;" id="bannerTitle">— 工厂货物确认</div>
+        <div style="font-size:11px;color:#a16207;margin-top:2px;">确认货好日期与柜型 · 已选项可点击展开修改</div>
+      </div>
+      <div class="badge badge-amber">需要您操作</div>
+    </div>
+  </div>
+
+
+
+  <!-- STEP 1 货好日期+柜型（填好自动收起） -->
+  <div class="step-card required" id="step1">
+    <div class="step-head" onclick="toggleStep(1)">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        <div class="step-num" id="sn1">1</div>
+        <div style="min-width:0;">
+          <div class="step-title">货好日期 + 柜型 / Cargo Ready</div>
+          <div class="step-sub">必填</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <div class="step-summary" id="sum1"></div>
+        <div class="badge badge-red" id="badge1">必填</div>
+        <span class="chevron">▼</span>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="section">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;" id="infoGrid"></div>
+        <div id="bookedBar"></div>
+        <div class="grid2">
+          <div class="form-field">
+            <label class="form-label">货好日期 <span class="req">*</span></label>
+            <input type="date" class="form-input" id="cargo_ready_date">
+          </div>
+          <div>
+            <div class="form-label" style="margin-bottom:8px;">柜型 <span class="req">*</span></div>
+            <div class="toggle-row" id="ctRow">
+              <div class="tog" data-ct="20GP">20GP</div>
+              <div class="tog" data-ct="40GP">40GP</div>
+              <div class="tog" data-ct="40HQ">40HQ</div>
+              <div class="tog" data-ct="LCL">LCL</div>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f2f5;">
+          <div class="form-label" style="margin-bottom:6px;">交易条款 <span style="font-weight:400;color:#9ca3af;" id="ttHint">（先选先定 · 对方已选则锁定）</span></div>
+          <div class="toggle-row" id="ttRow">
+            <div class="tog" data-tt="FOB">FOB</div><div class="tog" data-tt="EXW">EXW</div>
+            <div class="tog" data-tt="FCA">FCA</div><div class="tog" data-tt="CIF">CIF</div>
+            <div class="tog" data-tt="DDP">DDP</div><div class="tog" data-tt="CNF">CNF/CFR</div>
+          </div>
+          <div id="fobSub" style="display:none;margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div>
+                <div class="form-label" style="margin-bottom:6px;">🚛 拖车 · 委托 Sanlyn？</div>
+                <div class="toggle-row" id="trkRow">
+                  <div class="tog" data-trk="agent">✅ 委托（代拖）</div>
+                  <div class="tog" data-trk="self">自行安排（自拖）</div>
+                </div>
+              </div>
+              <div>
+                <div class="form-label" style="margin-bottom:6px;">🛂 报关 · 委托 Sanlyn？</div>
+                <div class="toggle-row" id="cusRow">
+                  <div class="tog" data-cus="agent">✅ 委托（代报）</div>
+                  <div class="tog" data-cus="self">自行安排（自报）</div>
+                </div>
+              </div>
+            </div>
+            <div id="selfNote" style="display:none;font-size:11px;color:#6b7280;margin-top:8px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2 货物明细：有订单=只读真值；没订单=工厂自填（柜分层·一行一品名） -->
+  <div class="step-card" id="step2">
+    <div class="step-head">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num" id="sn2">2</div>
+        <div>
+          <div class="step-title">货物明细 / Cargo Detail</div>
+          <div class="step-sub" id="cargoSub">每柜一层 · 一行一个品名</div>
+        </div>
+      </div>
+      <div class="badge badge-red" id="missBadge" style="display:none;"></div>
+    </div>
+    <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+      <!-- 只读模式（订单已挂） -->
+      <div class="section" id="cargoRead" style="display:none;"></div>
+      <!-- 可编辑模式（订单缺明细，工厂自填） -->
+      <div class="section" id="cargoEdit" style="display:none;">
+        <div id="ctnGroups"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="snapshot();addCtn()">＋ 添加一柜</button>
+          <div style="font-size:11px;font-weight:800;color:#374151;" id="grandTotal"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 货物属性 + 备注 -->
+  <div class="step-card" id="step3">
+    <div class="step-head" onclick="toggleStep(3)">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num" id="sn3">3</div>
+        <div>
+          <div class="step-title">货物属性 + 备注</div>
+          <div class="step-sub">默认普通货物</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <div class="step-summary" id="sum3"></div>
+        <span class="chevron">▼</span>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="section">
+        <div class="toggle-row" id="cgtRow" style="margin-bottom:12px;">
+          <div class="tog" data-cgt="普通货物">✅ 普通货物</div>
+          <div class="tog" data-cgt="危险品">⚠️ 危险品</div>
+          <div class="tog" data-cgt="其他">❓ 其他</div>
+        </div>
+        <!-- 托书三问：与托书格式件一一对应 -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-top:10px;border-top:1px solid #f0f2f5;">
+          <span style="flex:1;font-size:12px;font-weight:700;color:#374151;">是否有电池 / 液体货物？</span>
+          <div class="toggle-row" id="batRow"><div class="tog" data-bat="yes">YES</div><div class="tog" data-bat="no">NO</div></div>
+        </div>
+        <div id="msdsNote" style="display:none;font-size:11px;color:#b91c1c;margin:-4px 0 10px;">⚠️ 请提供 MSDS（电池安全数据表），运输费可能上调。</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="flex:1;font-size:12px;font-weight:700;color:#374151;">是否有实木包装 / 木架 / 托盘木托？</span>
+          <div class="toggle-row" id="woodRow"><div class="tog" data-wood="yes">YES</div><div class="tog" data-wood="no">NO</div></div>
+        </div>
+        <div id="fumWrap" style="display:none;align-items:center;gap:10px;margin-bottom:10px;">
+          <span style="flex:1;font-size:12px;font-weight:700;color:#374151;">如有实木包装，是否已做熏蒸？</span>
+          <div class="toggle-row" id="fumRow"><div class="tog" data-fum="yes">已熏蒸</div><div class="tog" data-fum="no">未熏蒸</div></div>
+        </div>
+        <div id="fumNote" style="display:none;font-size:11px;color:#a16207;margin:-4px 0 10px;">⚠️ 未熏蒸实木包装无法出口，需先做 IPPC 熏蒸。</div>
+        <textarea class="form-input" id="remarks" rows="3" placeholder="分批 / 假期 / 特殊要求请说明…"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- 入厂要求登记（工厂固定属性·填一次永久复用） -->
+  <div class="card" id="entryCard">
+    <div class="section">
+      <div style="font-size:13px;font-weight:800;margin-bottom:2px;">🏭 入厂要求登记 <span style="font-weight:400;color:#9ca3af;font-size:11px;">（填一次即固定，司机/车队提柜前自动看到）</span></div>
+      <div class="grid2" style="margin-top:10px;">
+        <div class="form-field" style="margin:0;"><label class="form-label">厂内联系人</label>
+          <input class="form-input" id="er_contact" placeholder="装货对接人"></div>
+        <div class="form-field" style="margin:0;"><label class="form-label">联系电话</label>
+          <input class="form-input" id="er_phone" type="tel" placeholder="司机到厂联系"></div>
+      </div>
+      <div class="form-field" style="margin-top:10px;"><label class="form-label">入厂要求 <span style="font-weight:400;color:#9ca3af;">（如：不收国四拖车 / 禁拖鞋 / 需扫码答题）</span></label>
+        <input class="form-input" id="er_note" placeholder="司机需要知道的入厂规定"></div>
+      <div class="form-field" style="margin-top:10px;"><label class="form-label">入厂考试/扫码链接 <span style="font-weight:400;color:#9ca3af;">（有就贴，二维码图片用下方上传）</span></label>
+        <input class="form-input" id="er_url" placeholder="https://..."></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+        <button class="btn btn-blue btn-sm" onclick="saveEntryReq()">💾 保存入厂要求</button>
+        <span class="up-zone" style="flex:1;margin:0;padding:8px;font-size:11px;" onclick="pickQR()">📷 上传入厂二维码图片</span>
+        <span id="erSaved" style="font-size:11px;color:#059669;"></span>
+      </div>
+    </div>
+  </div>
+
+    <div style="display:flex;gap:10px;margin-bottom:30px;">
+    <button class="btn btn-green btn-lg" style="flex:1;" id="btnSubmit" onclick="save()">📦 提交货物信息</button>
+  </div>
+  <div style="text-align:center;font-size:11px;color:#9ca3af;margin-bottom:40px;">
+    🔒 此链接仅限本次委托使用 · 数据仅您与 Sanlyn 可见
+  </div>
+</div>
+</div>
+
+<div class="center-state hidden" id="stateDone">
+  <div class="big">✅</div><h2>已提交</h2>
+  <p>Sanlyn 已收到货物信息。如需修改可重新打开本链接，修改后再次提交即覆盖更新。</p>
+</div>
+<div class="center-state hidden" id="stateDead">
+  <div class="big">⛔️</div><h2>链接无效</h2><p>链接已过期或被重发作废，请联系 Sanlyn 重新获取。</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api/db/booking-collab';
+const token = new URLSearchParams(location.search).get('token') || '';
+const $ = id => document.getElementById(id);
+const states = ['stateLoading','stateForm','stateDone','stateDead'];
+const show = id => { states.forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function gv(id){ return ($(id)?.value||'').trim(); }
+function gn(id){ const v=parseFloat($(id)?.value); return isNaN(v)?null:v; }
+function gi(id){ const v=parseInt($(id)?.value); return isNaN(v)?null:v; }
+function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+
+let sel = { ct:null, cgt:'普通货物', tt:null, trk:null, cus:null, bat:'no', wood:'no', fum:null };
+let locked = { tt:false, trk:false, cus:false };
+let editMode = false, groups = [], lineSeq = 0, SCOPE = null;
+
+/* ── 折叠 ── */
+function collapseStep(n, summary){
+  const card=$('step'+n);
+  card.classList.add('done'); card.classList.remove('required','alert');
+  $('sn'+n).classList.add('done');
+  $('sum'+n).textContent='✓ '+summary;
+  const b=$('badge'+n); if(b) b.style.display='none';
+}
+function reopenStep(n){
+  $('step'+n).classList.remove('done'); $('sn'+n).classList.remove('done');
+  const b=$('badge'+n); if(b) b.style.display='';
+}
+function toggleStep(n){ if($('step'+n).classList.contains('done')) reopenStep(n); }
+let t1,t3;
+function checkStep1(immediate){
+  clearTimeout(t1);
+  if((!window._loading && !gv('cargo_ready_date'))||!sel.ct||!sel.tt) return;
+  if((sel.tt==='FOB'||sel.tt==='EXW')&&(!sel.trk||!sel.cus)) return;
+  const fn=()=>{
+    let s = (window._loading?'装柜中':gv('cargo_ready_date'))+' · '+sel.ct+' · '+sel.tt;
+    if(sel.tt==='FOB'||sel.tt==='EXW') s += ' · '+(sel.trk==='agent'?'代拖':'自拖')+(sel.cus==='agent'?'代报':'自报');
+    collapseStep(1, s);
+  };
+  if(immediate) fn(); else t1=setTimeout(fn,600);
+}
+function checkStep3(immediate){
+  clearTimeout(t3);
+  if(sel.cgt!=='普通货物') return;          // 危险品保持展开
+  if(sel.bat==='yes') return;               // 有电池要MSDS，保持展开
+  if(sel.wood==='yes'&&sel.fum!=='yes') return; // 木包装必须已熏蒸才收
+  const fn=()=>{
+    let s='普通货物 · '+(sel.bat==='no'?'无电池液体':'')+' · '+(sel.wood==='no'?'无木包装':'木包装已熏蒸');
+    collapseStep(3, s.replace(' ·  · ',' · '));
+  };
+  if(immediate) fn(); else t3=setTimeout(fn,600);
+}
+
+function bindTog(rowId, attr, key, onChange){
+  $(rowId).addEventListener('click', e=>{
+    const el = e.target.closest('[data-'+attr+']');
+    if(!el) return;
+    sel[key]=el.dataset[attr];
+    [...$(rowId).querySelectorAll('[data-'+attr+']')].forEach(t=>{
+      t.classList.remove('on-blue','on-green','on-red');
+      if(t===el) t.classList.add(attr==='cgt'?(el.dataset[attr]==='普通货物'?'on-green':el.dataset[attr]==='危险品'?'on-red':'on-blue'):'on-blue');
+    });
+    if(onChange) onChange();
+  });
+}
+bindTog('ctRow','ct','ct',()=>checkStep1());
+bindTog('cgtRow','cgt','cgt',()=>checkStep3());
+function bindSel(rowId, attr, key, cb){
+  $(rowId).addEventListener('click', e=>{
+    const el = e.target.closest('[data-'+attr+']');
+    if(!el) return;
+    // 2026-06-11 纠正：协同三方都能改，无唯一方——不再锁定，改了即提交生效并留痕
+    if(locked[key]){ locked[key]=false; toast('此项对方已选过（'+sel[key]+'），您的修改提交后生效并通知各方'); }
+    sel[key]=el.dataset[attr];
+    [...$(rowId).querySelectorAll('[data-'+attr+']')].forEach(t=>{
+      t.classList.remove('on-blue','on-green','on-red');
+      if(t===el) t.classList.add('on-blue');
+    });
+    if(cb) cb(sel[key]);
+  });
+}
+bindSel('ttRow','tt','tt',v=>{ $('fobSub').style.display=(v==='FOB'||v==='EXW')?'block':'none'; checkStep1(); });
+bindSel('trkRow','trk','trk',()=>{selfNote();checkStep1();});
+bindSel('cusRow','cus','cus',()=>{selfNote();checkStep1();});
+bindSel('batRow','bat','bat',v=>{ $('msdsNote').style.display=v==='yes'?'block':'none'; checkStep3(); });
+bindSel('woodRow','wood','wood',v=>{ $('fumWrap').style.display=v==='yes'?'flex':'none'; if(v==='no'){sel.fum=null;$('fumNote').style.display='none';} checkStep3(); });
+bindSel('fumRow','fum','fum',v=>{ $('fumNote').style.display=v==='no'?'block':'none'; checkStep3(); });
+function selfNote(){
+  const p=[];
+  if(sel.trk==='self')p.push('自拖请提供：车牌 / 进港预约 / 装柜磅单');
+  if(sel.cus==='self')p.push('自报请提供：出口报关单 / 装箱单 / 发票');
+  $('selfNote').textContent=p.join('　·　');
+  $('selfNote').style.display=p.length?'block':'none';
+}
+function preset(rowId, attr, val, cls){
+  const el=$(rowId).querySelector(`[data-${attr}="${val}"]`);
+  if(el) el.classList.add(cls||'on-blue');
+}
+function setTog(rowId,attr,val){ if(!val) return; const el=$(rowId).querySelector(`[data-${attr}="${val}"]`); if(el) el.click(); }
+
+/* ── 分柜分层（工厂自填模式） ── */
+function groupIsDG(seq){
+  // 价格三列只对 DG/代购单：本柜绑定的本厂订单含 export_mode=daigou 才显示
+  const ci = window._cntrBySeq && window._cntrBySeq[seq];
+  const ords = (ci&&ci.cargo||[]).map(x=>x.order_no).filter(Boolean);
+  const arr = (window._ordersArr||[]);
+  return ords.some(no=>{ const o=arr.find(z=>z.order_no===no); return o&&o.export_mode==='daigou'; });
+}
+function lineHtml(id, d={}, showPrice){
+  return `<tr id="line_${id}">
+    <td><input class="cell-in" id="cargo_name_${id}" value="${esc(d.cargo_name)}" placeholder="写清是什么货就行"></td>
+    <td><input class="cell-in" id="hs_code_${id}" value="${esc(d.hs_code)}" placeholder="不知可留空"></td>
+    <td><input class="cell-in" id="pkg_qty_${id}" type="number" min="1" value="${esc(d.pkg_qty)}"></td>
+    <td><input class="cell-in" id="nw_kg_${id}" type="number" step="0.01" value="${esc(d.nw_kg)}"></td>
+    <td><input class="cell-in" id="gw_kg_${id}" type="number" step="0.01" value="${esc(d.gw_kg)}"></td>
+    <td><input class="cell-in" id="cbm_m3_${id}" type="number" step="0.001" value="${esc(d.cbm_m3)}"></td>
+    ${showPrice?`<td><input class="cell-in" id="price_${id}" type="number" step="0.01" value="${esc(d.price)}" placeholder="单价"></td>
+    <td><select class="cell-in" id="ptype_${id}" style="padding:4px 2px;">
+      <option value="untaxed" ${d.price_type!=='taxed'?'selected':''}>未含税</option>
+      <option value="taxed" ${d.price_type==='taxed'?'selected':''}>含税</option></select></td>
+    <td><input class="cell-in" id="ppts_${id}" type="number" step="0.5" min="0" max="20" value="${esc(d.tax_points!=null?d.tax_points:11)}" style="min-width:44px;text-align:center;"></td>`:''}
+    <td style="text-align:center;"><span style="cursor:pointer;color:#dc2626;font-weight:800;" onclick="delLine(${id})">×</span></td>
+  </tr>`;
+}
+function addCtn(linesData, seq){
+  const g={lines:[], seq: seq || (groups.length ? Math.max(...groups.map(x=>x.seq))+1 : 1)};
+  groups.push(g);
+  (linesData&&linesData.length?linesData:[{}]).forEach(d=>{ g.lines.push({id:lineSeq++, data:d}); });
+  renderGroups();
+}
+function addLine(gi_){ groups[gi_].lines.push({id:lineSeq++, data:{}}); renderGroups(); }
+function delLine(id){
+  snapshot();
+  groups.forEach(g=>{ g.lines=g.lines.filter(l=>l.id!==id); });
+  groups=groups.filter(g=>g.lines.length);
+  if(!groups.length) addCtn(); else renderGroups();
+}
+function delCtn(gi_){ snapshot(); groups.splice(gi_,1); if(!groups.length) addCtn(); else renderGroups(); }
+function snapshot(){
+  groups.forEach(g=>g.lines.forEach(l=>{
+    if(!$('line_'+l.id)) return;
+    l.data={oli_id:(l.data&&l.data.oli_id)||null,cargo_name:gv('cargo_name_'+l.id),hs_code:gv('hs_code_'+l.id),
+      pkg_qty:gi('pkg_qty_'+l.id),nw_kg:gn('nw_kg_'+l.id),gw_kg:gn('gw_kg_'+l.id),cbm_m3:gn('cbm_m3_'+l.id),price:gv('price_'+l.id),price_type:gv('ptype_'+l.id),tax_points:gv('ppts_'+l.id)};
+  }));
+}
+function renderGroups(){
+  $('ctnGroups').innerHTML = groups.map((g,gi_)=>`
+    <div class="ctn-group" id="grp_${gi_}">
+      <div class="ctn-group-head">
+        <div class="ctn-group-title">🥡 柜 ${g.seq}${(window._cntrBySeq&&window._cntrBySeq[g.seq])?(c=>` · <span style="color:#111827;">${esc(c.container_no||'')}</span>${c.seal_no?` · 封 ${esc(c.seal_no)}`:''}${c.plate?` · 🚛 ${esc(c.plate)}`:''}${c.driver_phone?` · <a href="tel:${esc(c.driver_phone)}" style="color:#1a73e8;">${esc(c.driver_name||'司机')} ${esc(c.driver_phone)}</a>`:''}`)(window._cntrBySeq[g.seq]):''} <span class="ctn-group-sub" id="gsub_${gi_}"></span></div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <span style="font-size:10px;color:#9ca3af;">过磅</span><input id="fw_${g.seq}" type="number" step="0.01" value="${(window._fwVals&&window._fwVals[g.seq])||''}" placeholder="kg" style="width:74px;border:1px solid #e0e4ea;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;" onchange="window._fwVals=window._fwVals||{};window._fwVals[${g.seq}]=this.value;">
+          <span style="cursor:pointer;color:#1a73e8;font-size:11px;font-weight:700;" onclick="snapshot();addLine(${gi_})">＋ 加一个品名</span>
+          ${(groups.length>1&&!SCOPE)?`<span style="cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;" onclick="delCtn(${gi_})">× 删柜</span>`:''}
+        </div>
+      </div>
+      ${(window._cntrBySeq&&window._cntrBySeq[g.seq]&&window._cntrBySeq[g.seq].loading_address)?`<div style="font-size:11px;color:#6b7280;padding:4px 12px;background:#fffbeb;border-bottom:1px solid #fde68a;">📍 装货地址：<b style="color:#92400e;">${esc(window._cntrBySeq[g.seq].loading_address)}</b>（写错了及时沟通司机）</div>`:''}
+      ${(()=>{const ci=window._cntrBySeq&&window._cntrBySeq[g.seq];
+        const myOrds=(window._ordersArr||[]).map(o=>o.order_no);
+        const cg=(ci&&ci.cargo||[]).filter(x=>x.order_no&&(!myOrds.length||myOrds.includes(x.order_no)));if(!cg.length)return '';
+        return `<div style="font-size:11px;padding:5px 12px;background:#ecfdf5;border-bottom:1px solid #a7f3d0;color:#047857;font-weight:700;">✓ 本柜已关联订单：${cg.map(x=>esc((x.order_no||'').replace(/^\d+-/,''))+(x.name?' · '+esc(x.name):'')+(x.cartons?' · '+x.cartons+'箱':'')).join('　')} — 明细已录入系统，无需重复填写（有补充再加行）</div>`;})()}
+      <table class="cargo-t">
+        <thead><tr><th>品名 *</th><th style="width:64px;" title="不知道可留空，Sanlyn 报关时统一归整">HS<span style="font-weight:400;color:#9ca3af;font-size:9px;">选填</span></th><th style="width:64px;">箱数 *</th>
+          <th style="width:66px;">NW kg</th><th style="width:66px;">GW kg</th><th style="width:58px;">CBM</th>
+          ${groupIsDG(g.seq)?`<th style="width:60px;" title="必须注明未含税或含税">单价 *</th><th style="width:60px;">税别 *</th><th style="width:54px;" title="开票点数%">点数%</th>`:''}<th style="width:24px;"></th></tr></thead>
+        <tbody>${g.lines.map(l=>lineHtml(l.id,l.data,groupIsDG(g.seq))).join('')}</tbody>
+      </table>
+    </div>`).join('');
+  document.querySelectorAll('#ctnGroups input').forEach(i=>i.addEventListener('input',recalc));
+  recalc();
+}
+function recalc(){
+  let Q=0,GW=0,CBM=0;
+  groups.forEach((g,gi_)=>{
+    let q=0,gw=0,cbm=0,amt=0;
+    g.lines.forEach(l=>{
+      if(!$('line_'+l.id)) return;
+      q+=gi('pkg_qty_'+l.id)||0; gw+=gn('gw_kg_'+l.id)||0; cbm+=gn('cbm_m3_'+l.id)||0; amt+=(gn('price_'+l.id)||0)*(gi('pkg_qty_'+l.id)||0);
+    });
+    Q+=q;GW+=gw;CBM+=cbm;
+    const el=$('gsub_'+gi_); if(el) el.textContent=q?` ${q}箱 · GW ${gw.toLocaleString()} · ${cbm.toFixed(2)} CBM${amt?` · 未含税合计 ¥${amt.toLocaleString(undefined,{maximumFractionDigits:2})}`:''}`:'';
+  });
+  $('grandTotal').textContent=Q?`TOTAL · ${groups.length} 柜 · ${Q}箱 · GW ${GW.toLocaleString()} · ${CBM.toFixed(2)} CBM`:`${groups.length} 柜`;
+}
+
+async function boot(){
+  if(!token){ show('stateDead'); return; }
+  const r = await fetch(`${API}/validate?token=${encodeURIComponent(token)}`);
+  const d = await r.json().catch(()=>({}));
+  if(!d.valid || d.role!=='factory_booking'){ show('stateDead'); return; }
+  const s = d.booking_sheet || {};
+  window._cntrBySeq = {};
+  (function(){
+    const order = Array.isArray(s.containers_order) ? s.containers_order : [];
+    const live = Array.isArray(s.containers_live) ? s.containers_live : [];
+    order.forEach((no, i) => {
+      const hit = live.find(x => x.container_no === no);
+      if (hit) window._cntrBySeq[i+1] = hit;
+    });
+    if (!order.length) live.forEach((x, i) => { window._cntrBySeq[i+1] = x; });
+  })();
+
+  SCOPE = d.factory_scope || null;
+  $('topBadge').textContent = s.shipment_no || '工厂协同';
+  const ordersArr = Array.isArray(s.orders)?s.orders:[]; window._ordersArr = ordersArr;
+  const facName = SCOPE ? SCOPE.label
+    : [...new Set(ordersArr.map(o=>o.factory).filter(Boolean))].join(' / ');
+  $('bannerTitle').textContent = (s.shipment_no||'—') + ' — 工厂货物确认' + (facName?`（${facName}）`:'');
+  // 分柜/拼柜进度：N/M 厂已确认
+  const fp = d.factory_progress;
+  if(fp && fp.total > 1){
+    document.querySelector('.portal-login-badge').textContent =
+      `${s.shipment_no||''} · ${fp.submitted}/${fp.total} 厂已确认`;
+  }
+  if(SCOPE){
+    document.querySelector('#step1 .step-sub').textContent =
+      `您负责柜 ${SCOPE.seqs.join('、')} · 其他柜由另一工厂填写，互不可见`;
+  }
+  const cells=[];
+  const cell=(l,d)=>`<div style="border:1px solid #f0f2f5;background:#f8fafc;border-radius:8px;padding:7px 10px;"><div style="font-size:9px;color:#9ca3af;font-weight:700;">${l}</div><div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:2px;">${d}</div></div>`;
+  if(s.issuing_company) cells.push(cell('客户(下游)',esc(s.issuing_company)));
+  if(s.pol) cells.push(cell('送港',esc(s.pol)));
+  if(s.etd) cells.push(cell('ETD',fmtD(s.etd)));
+  if(s.customer_submitted) cells.push(cell('客户','✓ 已确认航班'));
+  if(s.factory_submitted) cells.push(cell('状态','✓ 已提交 · 可修改重交'));
+  // 总箱数/总重：直接读订单总量字段（铁律：不现算），多单求和
+  const _q = ordersArr.reduce((t,o)=>t+(Number(o.total_qty)||0),0);
+  const _g = ordersArr.reduce((t,o)=>t+(Number(o.gross_weight)||0),0);
+  if(_q && !SCOPE) cells.push(cell('总箱数', _q.toLocaleString()+' 箱'+(_g?' · '+_g.toLocaleString()+' kg':'')));
+  $('infoGrid').innerHTML = cells.join('');
+  if(s.freight_term){ sel.tt=s.freight_term; locked.tt=true;
+    preset('ttRow','tt',s.freight_term,'on-green');
+    $('ttHint').textContent='（已选定：'+s.freight_term+'）';
+    $('fobSub').style.display=(s.freight_term==='FOB'||s.freight_term==='EXW')?'block':'none'; }
+  if(s.trucking_arrange){ sel.trk=s.trucking_arrange; locked.trk=true; preset('trkRow','trk',s.trucking_arrange,'on-green'); }
+  if(s.customs_arrange){ sel.cus=s.customs_arrange; locked.cus=true; preset('cusRow','cus',s.customs_arrange,'on-green'); }
+  const fa = s.factory_attrs || {};
+  sel.bat = fa.battery==='yes'?'yes':'no'; preset('batRow','bat',sel.bat, sel.bat==='no'?'on-green':'on-red');
+  if(sel.bat==='yes') $('msdsNote').style.display='block';
+  sel.wood = fa.wood_packaging==='yes'?'yes':'no'; preset('woodRow','wood',sel.wood, sel.wood==='no'?'on-green':'on-blue');
+  if(sel.wood==='yes'){ $('fumWrap').style.display='flex';
+    if(fa.fumigation){ sel.fum=fa.fumigation; preset('fumRow','fum',sel.fum, sel.fum==='yes'?'on-green':'on-red');
+      if(sel.fum==='no') $('fumNote').style.display='block'; } }
+
+  // 货物明细：有订单=只读真值；没有=工厂自填（预填上次提交的 factory_cargo）
+  const items = ordersArr.flatMap(o=>(o.items||[]).map(it=>({...it,order_no:o.order_no})));
+  // 分柜/拼柜模式：无论订单有无明细，本厂都必须能填自己的柜（订单明细只作参考）
+  if(items.length && !SCOPE){
+    $('cargoRead').style.display='block';
+    $('cargoSub').textContent='只读 · 来自订单数据，如有出入请备注';
+    $('cargoRead').innerHTML = `<table class="cargo-t"><thead><tr>
+      <th>订单</th><th>品名</th><th style="width:60px;">箱数</th><th style="width:80px;">GW kg</th></tr></thead><tbody>` +
+      items.map(it=>`<tr><td>${esc(it.order_no)}</td><td>${esc(it.product_name||it.description||it.sku)}${it.size?` <span style="color:#9ca3af;font-size:10px;">${esc(it.size)}</span>`:''}</td>
+        <td>${esc(it.ctns)}</td><td>${esc(it.gw_kgs)}</td></tr>`).join('') +
+      `<tr style="font-weight:800;background:#f8f8f8;"><td></td><td>TOTAL</td>
+        <td>${items.reduce((t,x)=>t+(Number(x.ctns)||0),0).toLocaleString()}</td>
+        <td>${items.reduce((t,x)=>t+(Number(x.gw_kgs)||0),0).toLocaleString()}</td></tr></tbody></table>`;
+  } else {
+    editMode = true;
+    $('cargoEdit').style.display='block';
+    let fc = Array.isArray(s.factory_cargo)?s.factory_cargo:[];
+    if(SCOPE){
+      const mySeqs = SCOPE.seqs;
+      // 只见本厂行：柜号在范围内 且 厂标是自己（拼柜同柜也看不到对方品名）
+      fc = fc.filter(x=>mySeqs.includes(x.container_seq||1) && (!x.factory_label || x.factory_label===SCOPE.label));
+      const bySeq={};
+      fc.forEach(x=>{ const k=x.container_seq||1; (bySeq[k]=bySeq[k]||[]).push(x); });
+      // 绑单柜：订单明细(OLI)直接预填进柜行——工厂原位补 NW/GW/CBM/价格，提交写回订单主表
+      mySeqs.forEach(k=>{
+        if(!(bySeq[k]&&bySeq[k].length)){
+          const ci = window._cntrBySeq && window._cntrBySeq[k];
+          const ords = (ci&&ci.cargo||[]).map(x=>x.order_no).filter(Boolean);
+          if(ords.length){
+            const pre = ordersArr.filter(o=>ords.includes(o.order_no))
+              .flatMap(o=>(o.items||[]).map(it=>({
+                oli_id: it.oli_id, cargo_name: it.product_name||it.description||'',
+                hs_code: it.hs_code||'', pkg_qty: it.ctns||'',
+                nw_kg: Number(it.nw_kgs)||'', gw_kg: Number(it.gw_kgs)||'', cbm_m3: Number(it.cbm)||'',
+              })));
+            if(pre.length) bySeq[k]=pre;
+          }
+        }
+      });
+      mySeqs.forEach(k=>addCtn(bySeq[k]||[{}], k));             // 固定柜号，不能加别人的柜
+      document.querySelector('#cargoEdit .btn-ghost').style.display='none'; // 隐藏“添加一柜”
+    } else if(fc.length){
+      const bySeq={};
+      fc.forEach(x=>{ const k=x.container_seq||1; (bySeq[k]=bySeq[k]||[]).push(x); });
+      Object.keys(bySeq).map(Number).sort((a,b)=>a-b).forEach(k=>addCtn(bySeq[k], k));
+    } else addCtn();
+  }
+
+  // 预填上次提交
+  if(s.factory_submitted){
+    if(s.factory_cargo_ready) $('cargo_ready_date').value=fmtD(s.factory_cargo_ready);
+    if(s.factory_container_type) setTog('ctRow','ct',s.factory_container_type);
+    if(s.factory_cargo_type) setTog('cgtRow','cgt',s.factory_cargo_type);
+    if(s.factory_remarks) $('remarks').value=s.factory_remarks;
+  } else if(s.container_type) setTog('ctRow','ct',String(s.container_type).toUpperCase().replace('HC','HQ'));
+  // 默认普通货物（已选/默认都直接亮绿）
+  if(!sel.cgt||sel.cgt==='普通货物'){ sel.cgt='普通货物'; const el=$('cgtRow').querySelector('[data-cgt="普通货物"]'); if(el) el.classList.add('on-green'); }
+  // 已订舱=柜型锁定；已提柜=装柜中，货好不再要求
+  window._booked = !!(s.so_no || s.bl_no);
+  (function(){
+    const fe = s.factory_entry || {};
+    const mine = (SCOPE && fe[SCOPE.label]) || fe['default'] || Object.values(fe)[0];
+    if(mine){
+      if($('er_contact')) $('er_contact').value = mine.contact||'';
+      if($('er_phone')) $('er_phone').value = mine.phone||'';
+      if($('er_note')) $('er_note').value = mine.note||'';
+      if($('er_url')) $('er_url').value = mine.exam_url||'';
+      if($('erSaved')) $('erSaved').textContent='✓ 已登记';
+    }
+  })();
+  window._loading = Array.isArray(s.containers_live) && s.containers_live.length > 0;
+  if (window._booked) {
+    sel.ct = s.container_type || sel.ct;
+    const ctRow = $('ctRow');
+    if (ctRow) {
+      ctRow.querySelectorAll('.tog').forEach(t => {
+        t.style.pointerEvents = 'none'; t.style.opacity = (t.dataset.ct === sel.ct) ? '1' : '.3';
+        if (t.dataset.ct === sel.ct) t.classList.add('on');
+      });
+    }
+  }
+  if (window._booked || window._loading) {
+    const bits = [];
+    if (window._booked) bits.push('⚓ 已订舱 · 柜型 ' + (s.container_type || '') + ' × ' + (s.container_qty || '') + ' 已锁定');
+    if (window._loading) bits.push('🚛 柜已提 · 装柜进行中，货好日期免填');
+    $('bookedBar').innerHTML = '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#047857;">' + bits.join('　') + '</div>';
+    if (window._loading) { const cf = $('cargo_ready_date'); if (cf) cf.closest('.form-field').style.display = 'none'; }
+  }
+  checkStep1(true); checkStep3(true);
+  show('stateForm');
+  // 选了即存：条款/拖报点击后立刻 partial 保存，刷新不丢
+  window._autoSaveTerms = async function(){
+    try{
+      await fetch(`${API}/factory-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token, partial:true,
+          freight_term: sel.tt||null,
+          trucking_arrange: sel.trk||null,
+          customs_arrange: sel.cus||null })});
+    }catch(e){}
+  };
+  ['ttRow','trkRow','cusRow'].forEach(id=>{
+    const el=$(id); if(el) el.addEventListener('click', ()=>setTimeout(window._autoSaveTerms, 50));
+  });
+}
+
+async function save(){
+  if(!window._loading && !gv('cargo_ready_date')){ reopenStep(1); toast('请选择货好日期'); return; }
+  if(!sel.ct){ reopenStep(1); toast('请选择柜型'); return; }
+  if(!sel.tt){ reopenStep(1); toast('请选择交易条款'); return; }
+  if((sel.tt==='FOB'||sel.tt==='EXW')&&(!sel.trk||!sel.cus)){ reopenStep(1); toast('FOB/EXW 请确认拖车与报关由谁安排'); return; }
+  if(sel.wood==='yes'&&!sel.fum){ toast('实木包装请确认是否已熏蒸'); return; }
+  let containers = null;
+  if(editMode){
+    snapshot();
+    containers = [];
+    groups.forEach((g)=>g.lines.forEach(l=>{
+      const d=l.data;
+      if(d.cargo_name||d.pkg_qty!=null) containers.push({container_seq:g.seq,...d});
+    }));
+    const bad = containers.find(x=>!x.cargo_name||x.pkg_qty==null);
+    if(bad){ toast('品名和箱数必填，填了一部分的行请补全或清空'); return; }
+  }
+  $('btnSubmit').disabled = true;
+  try{
+    const body = {token,cargo_ready_date:gv('cargo_ready_date'),container_type:sel.ct,cargo_type:sel.cgt,remarks:gv('remarks'),
+      freight_term: sel.tt,
+      trucking_arrange: sel.trk,
+      customs_arrange: sel.cus,
+      attrs: {battery:sel.bat, wood_packaging:sel.wood, fumigation:sel.fum}};
+    if(containers&&containers.length) body.containers = containers;
+    const _fw = Object.entries(window._fwVals||{}).filter(([s,k])=>k).map(([s,k])=>({seq:s,weigh_kg:k}));
+    if(_fw.length) body.container_weights = _fw;
+    const r = await fetch(`${API}/factory-submit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d = await r.json();
+    $('btnSubmit').disabled = false;
+    if(!r.ok||!d.ok){ toast(d.error||'提交失败'); return; }
+    // 先选先定回话：我选的没生效（对方先定了）要明说
+    if(sel.tt && d.freight_term && d.freight_term !== sel.tt){
+      alert(`提示：本票条款当前为 ${d.freight_term}（协同各方均可修改，以最新提交为准）。`);
+    }
+    show('stateDone');
+  }catch(e){ $('btnSubmit').disabled=false; toast('网络错误，请重试'); }
+}
+
+$('cargo_ready_date').addEventListener('change',()=>checkStep1());
+
+let _qrInput = null;
+function pickQR(){
+  if(!_qrInput){
+    _qrInput = document.createElement('input'); _qrInput.type='file'; _qrInput.accept='image/*';
+    _qrInput.addEventListener('change', async e=>{
+      const f = e.target.files[0]; if(!f) return;
+      try{
+        const b64 = await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(f);});
+        const r = await fetch(`${API}/upload`,{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({token,filename:'[入厂二维码]'+f.name,mime:f.type,data_base64:b64})});
+        const d = await r.json();
+        if(!r.ok||!d.ok){ toast(d.error||'上传失败'); return; }
+        toast('✓ 入厂二维码已上传'); $('erSaved').textContent='✓ 已登记+二维码';
+      }catch(err){ toast('网络错误'); }
+      e.target.value='';
+    });
+  }
+  _qrInput.click();
+}
+async function saveEntryReq(){
+  try{
+    const r = await fetch(`${API}/factory-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token, entry_req:{contact:gv('er_contact'),phone:gv('er_phone'),note:gv('er_note'),exam_url:gv('er_url')}})});
+    const d = await r.json();
+    if(!r.ok||!d.ok){ toast(d.error||'保存失败'); return; }
+    $('erSaved').textContent='✓ 已登记（固定档案）';
+    toast('✓ 入厂要求已登记');
+  }catch(e){ toast('网络错误'); }
+}
+(function(){
+  // 回显已登记的入厂要求
+  try{
+    const fe = (window._sheet&&window._sheet.factory_entry)||null;
+  }catch(e){}
+})();
+boot();
+</script>
+</body>
+</html>

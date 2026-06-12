@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sanlyn · Freight Doc Templates v3</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #111827; color: #f1f5f9; font-family: -apple-system, 'SF Pro Text', sans-serif; padding: 20px; }
+  .mono { font-family: 'SF Mono', monospace; }
+
+  /* Layout */
+  .wrap { max-width: 1320px; margin: 0 auto; }
+  .h-page { font-size: 18px; font-weight: 900; text-align: center; }
+  .h-sub  { font-size: 12px; color: #64748b; text-align: center; margin: 4px 0 24px; }
+
+  .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; margin-bottom: 36px; }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 36px; }
+  @media (max-width: 1100px) { .row-3 { grid-template-columns: 1fr; } .row-2 { grid-template-columns: 1fr; } }
+
+  .sec-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .sec-bar .num { background: #1e3a5f; border: 1px solid #2563eb; color: #93c5fd; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; }
+  .sec-bar .t  { font-size: 14px; font-weight: 800; }
+  .sec-bar .s  { font-size: 11px; color: #64748b; flex: 1; }
+
+  .col-tag { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 9px; font-weight: 800; letter-spacing: .08em; margin-bottom: 6px; }
+  .tag-cust { background: rgba(96,165,250,.12); color: #60a5fa; border: 1px solid rgba(96,165,250,.3); }
+  .tag-fact { background: rgba(251,146,60,.12); color: #fb923c; border: 1px solid rgba(251,146,60,.3); }
+  .tag-both { background: rgba(168,85,247,.12); color: #c084fc; border: 1px solid rgba(168,85,247,.3); }
+  .col-title { font-size: 13px; font-weight: 700; }
+  .col-sub   { font-size: 10px; color: #64748b; margin: 2px 0 10px; }
+
+  /* Card */
+  .doc { background: #1a2235; border-radius: 10px; overflow: hidden; border: 1px solid #2a3a55; font-size: 11px; }
+
+  .doc-header { background: #0f172a; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
+  .company .cn { font-size: 12px; font-weight: 800; }
+  .company .en { font-size: 9px; color: #60a5fa; margin-top: 1px; }
+  .badge { padding: 4px 9px; border-radius: 5px; font-size: 9px; font-weight: 800; letter-spacing: .08em; white-space: nowrap; }
+  .badge-q-exw { background: #1a3a2c; border: 1px solid #16a34a; color: #86efac; }
+  .badge-q-fob { background: #3a2a1a; border: 1px solid #d97706; color: #fcd34d; }
+  .badge-q-cnf { background: #3a1a2c; border: 1px solid #db2777; color: #f9a8d4; }
+  .badge-fi    { background: #1e3a5f; border: 1px solid #2563eb; color: #93c5fd; }
+
+  .num-bar { background: #0a0f1e; padding: 10px 14px; }
+  .num-bar .lbl { font-size: 9px; color: #475569; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .num-bar .num { font-size: 16px; font-weight: 900; font-family: 'SF Mono', monospace; margin-top: 2px; }
+  .num-bar .meta { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+  .chip { padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,.05); border: 1px solid #1e293b; font-size: 9px; color: #94a3b8; font-family: 'SF Mono', monospace; }
+  .chip b { color: #f1f5f9; font-weight: 700; margin-left: 3px; }
+
+  /* TO (consignee) — bigger now */
+  .to-block { padding: 14px 16px; border-top: 1px solid #1e293b; background: rgba(96,165,250,.04); }
+  .to-block .lbl { font-size: 9px; color: #475569; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  .to-block .name { font-size: 18px; font-weight: 900; color: #f1f5f9; letter-spacing: -.01em; }
+  .to-block .country { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+  /* Charge sections */
+  .charge-bar { background: rgba(255,255,255,.03); padding: 7px 14px; border-top: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
+  .charge-bar .t { font-size: 10px; font-weight: 800; color: #94a3b8; }
+  .charge-bar .who { font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+  .who-seller { background: rgba(251,146,60,.12); color: #fb923c; border: 1px solid rgba(251,146,60,.25); }
+  .who-buyer  { background: rgba(96,165,250,.12); color: #60a5fa; border: 1px solid rgba(96,165,250,.25); }
+
+  .fee { display: flex; align-items: center; padding: 5px 14px; border-top: 1px solid rgba(30,41,59,.5); font-size: 11px; }
+  .fee-cn { color: #94a3b8; width: 84px; flex-shrink: 0; font-size: 10px; }
+  .fee-u  { display: inline-block; font-size: 8px; padding: 1px 3px; border-radius: 3px; background: rgba(96,165,250,.1); color: #60a5fa; border: 1px solid rgba(96,165,250,.2); margin-left: 2px; font-family: 'SF Mono', monospace; }
+  .fee-u.box { background: rgba(52,211,153,.1); color: #34d399; border-color: rgba(52,211,153,.2); }
+  .fee-en { color: #64748b; flex: 1; font-size: 10px; }
+  .fee-amt { font-weight: 700; font-family: 'SF Mono', monospace; min-width: 70px; text-align: right; }
+  .fee-amt.zero { color: #334155; font-weight: 400; }
+
+  .sub-row { display: flex; justify-content: space-between; padding: 8px 14px; background: rgba(96,165,250,.06); border-top: 1px solid rgba(96,165,250,.15); }
+  .sub-row .l { font-size: 11px; font-weight: 800; color: #60a5fa; }
+  .sub-row .a { font-size: 14px; font-weight: 900; font-family: 'SF Mono', monospace; color: #60a5fa; }
+
+  .usd { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-top: 1px solid #1e293b; background: rgba(0,0,0,.25); }
+  .usd .l .label { font-size: 11px; font-weight: 700; }
+  .usd .l .sub { font-size: 9px; color: #475569; margin-top: 2px; }
+  .usd .a { font-size: 22px; font-weight: 900; font-family: 'SF Mono', monospace; }
+
+  .cta { padding: 9px 14px; background: rgba(52,211,153,.05); border-top: 1px solid rgba(52,211,153,.2); text-align: center; font-size: 10px; color: #86efac; font-weight: 600; }
+
+  .foot { padding: 9px 14px; border-top: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; }
+  .foot .info { font-size: 10px; color: #64748b; line-height: 1.5; }
+  .foot .info b { color: #94a3b8; }
+  .foot .legend { font-size: 8px; color: #475569; margin-top: 3px; }
+  .stamp { width: 42px; height: 42px; border: 1.5px dashed rgba(239,68,68,.4); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; color: rgba(239,68,68,.5); font-weight: 700; line-height: 1.1; text-align: center; }
+
+  .bank-block { padding: 10px 14px; background: rgba(255,255,255,.02); border-top: 1px solid #1e293b; font-size: 10px; color: #94a3b8; }
+  .bank-block .t { font-size: 9px; font-weight: 800; color: #475569; letter-spacing: .06em; margin-bottom: 6px; }
+  .bank-block .placeholder { color: #fbbf24; font-style: italic; font-size: 10px; }
+
+  /* Audit panel */
+  .audit { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 18px 22px; margin-top: 12px; }
+  .audit .t { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: #475569; margin-bottom: 12px; }
+  .audit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; font-size: 11px; }
+  @media (max-width: 900px) { .audit-grid { grid-template-columns: 1fr; } }
+  .audit ul { list-style: none; line-height: 1.7; color: #94a3b8; padding: 0; }
+  .audit ul li { padding-left: 14px; position: relative; }
+  .audit ul li::before { position: absolute; left: 0; }
+  .audit .good li::before { content: "✓"; color: #34d399; }
+  .audit .bad  li::before { content: "!"; color: #f87171; }
+  .audit .info li::before { content: "·"; color: #475569; }
+  .audit h4 { font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+  .audit h4.green { color: #34d399; }
+  .audit h4.red   { color: #f87171; }
+  .audit h4.blue  { color: #60a5fa; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<h1 class="h-page">📑 Sanlyn Freight Doc Master · v3</h1>
+<p class="h-sub">3 Quote variants by Incoterm × 2 Debit Note variants · No customer codes anywhere customer-facing</p>
+
+<!-- ════════════════════════════════════════
+     SECTION A · FREIGHT QUOTATION × 3
+════════════════════════════════════════ -->
+<div class="sec-bar">
+  <span class="num">A</span>
+  <span class="t">Freight Quotation (FQ) — split by Incoterm</span>
+  <span class="s">Same body, different ownership tag per row · audience tag at top</span>
+</div>
+
+<div class="row-3">
+
+  <!-- ── EXW · Customer view ── -->
+  <div>
+    <span class="col-tag tag-cust">→ TO CUSTOMER</span>
+    <div class="col-title">EXW · 工厂交货</div>
+    <div class="col-sub">Customer arranges everything from factory door. Sees full chain.</div>
+    <div class="doc">
+      <div class="doc-header">
+        <div class="company">
+          <div class="cn">上海洋宝宝国际物流</div>
+          <div class="en">Shanghai Ocean Baby Intl Logistics</div>
+        </div>
+        <div class="badge badge-q-exw">QUOTE · EXW</div>
+      </div>
+      <div class="num-bar">
+        <div class="lbl">Quote No.</div>
+        <div class="num">FQ-EXW-2026-0518-001</div>
+        <div class="meta">
+          <span class="chip">Valid <b>2026-06-15</b></span>
+          <span class="chip">CTR <b>40HQ</b></span>
+          <span class="chip">From <b>Factory · Xiamen</b></span>
+          <span class="chip">To <b>Port Klang</b></span>
+        </div>
+      </div>
+      <div class="to-block">
+        <div class="lbl">To · 收件方</div>
+        <div class="name">PETSOME SDN BHD</div>
+        <div class="country">Malaysia</div>
+      </div>
+
+      <div class="charge-bar"><div class="t">CNY 港杂费 · LOCAL CHARGES</div></div>
+      <div class="fee"><div class="fee-cn">报关费<span class="fee-u">/票</span></div><div class="fee-en">Customs Declaration</div><div class="fee-amt">¥350</div></div>
+      <div class="fee"><div class="fee-cn">单证费<span class="fee-u">/票</span></div><div class="fee-en">Documentation</div><div class="fee-amt">¥450</div></div>
+      <div class="fee"><div class="fee-cn">订舱费<span class="fee-u">/票</span></div><div class="fee-en">Booking</div><div class="fee-amt">¥200</div></div>
+      <div class="fee"><div class="fee-cn">VGM<span class="fee-u">/票</span></div><div class="fee-en">VGM</div><div class="fee-amt">¥80</div></div>
+      <div class="fee"><div class="fee-cn">THC<span class="fee-u box">/箱</span></div><div class="fee-en">Terminal Handling</div><div class="fee-amt">¥1,070</div></div>
+      <div class="fee"><div class="fee-cn">封铅费<span class="fee-u box">/箱</span></div><div class="fee-en">Seal</div><div class="fee-amt">¥45</div></div>
+      <div class="fee"><div class="fee-cn">拖车费<span class="fee-u box">/箱</span></div><div class="fee-en">Trucking (factory→port)</div><div class="fee-amt">¥1,200</div></div>
+      <div class="sub-row"><div class="l">CNY 小计</div><div class="a">¥ 3,395</div></div>
+      <div class="usd">
+        <div class="l"><div class="label">🚢 Ocean Freight</div><div class="sub">40HQ · all-in</div></div>
+        <div class="a">$1,200</div>
+      </div>
+      <div class="cta">✓ Reply to confirm · Expires 2026-06-15</div>
+      <div class="foot">
+        <div class="info"><div>Contact: <b>Damon</b> · damon@sanlyns.com</div></div>
+        <div class="stamp">业务<br>章</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FOB · Split view ── -->
+  <div>
+    <span class="col-tag tag-both">⇄ SPLIT: SELLER + BUYER</span>
+    <div class="col-title">FOB · 离岸价</div>
+    <div class="col-sub">Seller owns pre-board charges, buyer owns ocean+after. Each sees their own.</div>
+    <div class="doc">
+      <div class="doc-header">
+        <div class="company">
+          <div class="cn">上海洋宝宝国际物流</div>
+          <div class="en">Shanghai Ocean Baby Intl Logistics</div>
+        </div>
+        <div class="badge badge-q-fob">QUOTE · FOB</div>
+      </div>
+      <div class="num-bar">
+        <div class="lbl">Quote No.</div>
+        <div class="num">FQ-FOB-2026-0518-001</div>
+        <div class="meta">
+          <span class="chip">Valid <b>2026-06-15</b></span>
+          <span class="chip">CTR <b>40HQ</b></span>
+          <span class="chip">FOB <b>Xiamen</b></span>
+          <span class="chip">To <b>Port Klang</b></span>
+        </div>
+      </div>
+      <div class="to-block">
+        <div class="lbl">To · 收件方</div>
+        <div class="name">PETSOME SDN BHD</div>
+        <div class="country">Malaysia</div>
+      </div>
+
+      <div class="charge-bar">
+        <div class="t">📦 Pre-Board Charges</div>
+        <div class="who who-seller">SELLER 工厂承担</div>
+      </div>
+      <div class="fee"><div class="fee-cn">报关费<span class="fee-u">/票</span></div><div class="fee-en">Customs Declaration</div><div class="fee-amt">¥350</div></div>
+      <div class="fee"><div class="fee-cn">单证费<span class="fee-u">/票</span></div><div class="fee-en">Documentation</div><div class="fee-amt">¥450</div></div>
+      <div class="fee"><div class="fee-cn">订舱费<span class="fee-u">/票</span></div><div class="fee-en">Booking</div><div class="fee-amt">¥200</div></div>
+      <div class="fee"><div class="fee-cn">VGM<span class="fee-u">/票</span></div><div class="fee-en">VGM</div><div class="fee-amt">¥80</div></div>
+      <div class="fee"><div class="fee-cn">THC<span class="fee-u box">/箱</span></div><div class="fee-en">Terminal Handling</div><div class="fee-amt">¥1,070</div></div>
+      <div class="fee"><div class="fee-cn">封铅费<span class="fee-u box">/箱</span></div><div class="fee-en">Seal</div><div class="fee-amt">¥45</div></div>
+      <div class="fee"><div class="fee-cn">拖车费<span class="fee-u box">/箱</span></div><div class="fee-en">Trucking</div><div class="fee-amt">¥1,200</div></div>
+
+      <div class="charge-bar">
+        <div class="t">🚢 Post-Board Charges</div>
+        <div class="who who-buyer">BUYER 客户承担</div>
+      </div>
+      <div class="usd">
+        <div class="l"><div class="label">🚢 Ocean Freight</div><div class="sub">40HQ · Xiamen → Port Klang</div></div>
+        <div class="a">$1,200</div>
+      </div>
+      <div class="cta">✓ Split view · Each party sees only their own charges in their copy</div>
+      <div class="foot">
+        <div class="info"><div>Contact: <b>Damon</b> · damon@sanlyns.com</div></div>
+        <div class="stamp">业务<br>章</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CNF / CIF / DDP · Factory view ── -->
+  <div>
+    <span class="col-tag tag-fact">→ TO FACTORY</span>
+    <div class="col-title">CNF / CIF / DDP · 包到港/包到门</div>
+    <div class="col-sub">Seller (factory) arranges & pays freight, needs to know cost to price product.</div>
+    <div class="doc">
+      <div class="doc-header">
+        <div class="company">
+          <div class="cn">上海洋宝宝国际物流</div>
+          <div class="en">Shanghai Ocean Baby Intl Logistics</div>
+        </div>
+        <div class="badge badge-q-cnf">QUOTE · CNF/DDP</div>
+      </div>
+      <div class="num-bar">
+        <div class="lbl">Quote No.</div>
+        <div class="num">FQ-CNF-2026-0518-001</div>
+        <div class="meta">
+          <span class="chip">Valid <b>2026-06-15</b></span>
+          <span class="chip">CTR <b>40HQ</b></span>
+          <span class="chip">From <b>Xiamen</b></span>
+          <span class="chip">To <b>Port Klang</b></span>
+        </div>
+      </div>
+      <div class="to-block">
+        <div class="lbl">To · 收件方</div>
+        <div class="name">福新国际货运</div>
+        <div class="country">Factory · Xiamen</div>
+      </div>
+
+      <div class="charge-bar"><div class="t">🚢 Ocean + Origin Charges</div><div class="who who-seller">ALL-IN · 工厂垫付</div></div>
+      <div class="fee"><div class="fee-cn">报关费<span class="fee-u">/票</span></div><div class="fee-en">Customs</div><div class="fee-amt">¥350</div></div>
+      <div class="fee"><div class="fee-cn">单证费<span class="fee-u">/票</span></div><div class="fee-en">Docs</div><div class="fee-amt">¥450</div></div>
+      <div class="fee"><div class="fee-cn">订舱费<span class="fee-u">/票</span></div><div class="fee-en">Booking</div><div class="fee-amt">¥200</div></div>
+      <div class="fee"><div class="fee-cn">THC<span class="fee-u box">/箱</span></div><div class="fee-en">Terminal Handling</div><div class="fee-amt">¥1,070</div></div>
+      <div class="fee"><div class="fee-cn">拖车费<span class="fee-u box">/箱</span></div><div class="fee-en">Trucking</div><div class="fee-amt">¥1,200</div></div>
+      <div class="sub-row"><div class="l">CNY 小计</div><div class="a">¥ 3,270</div></div>
+      <div class="usd">
+        <div class="l"><div class="label">🚢 Ocean Freight (incl.)</div><div class="sub">40HQ · CNF Port Klang</div></div>
+        <div class="a">$1,200</div>
+      </div>
+      <div class="charge-bar" style="background:rgba(251,146,60,.06)"><div class="t" style="color:#fb923c">💰 Suggested Customer Quote</div></div>
+      <div class="fee"><div class="fee-cn" style="color:#fb923c">总价 USD</div><div class="fee-en">All-in to customer</div><div class="fee-amt" style="color:#fb923c">$1,675</div></div>
+      <div class="cta">✓ Includes freight margin · Show only USD total to end-customer</div>
+      <div class="foot">
+        <div class="info"><div>Contact: <b>Damon</b> · damon@sanlyns.com</div></div>
+        <div class="stamp">业务<br>章</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ════════════════════════════════════════
+     SECTION B · DEBIT NOTE × 2 (Simple + Full)
+════════════════════════════════════════ -->
+<div class="sec-bar">
+  <span class="num">B</span>
+  <span class="t">Freight Debit Note (FI) — Simple vs Full</span>
+  <span class="s">Same data, customer toggles detail level · FROM block removed · TO enlarged</span>
+</div>
+
+<div class="row-2">
+
+  <!-- ── Simple ── -->
+  <div>
+    <span class="col-tag tag-cust">→ TO CUSTOMER</span>
+    <div class="col-title">Simple · 简版</div>
+    <div class="col-sub">Top-line totals only. For customers who want a clean number.</div>
+    <div class="doc">
+      <div class="doc-header">
+        <div class="company">
+          <div class="cn">上海洋宝宝国际物流</div>
+          <div class="en">Shanghai Ocean Baby Intl Logistics</div>
+        </div>
+        <div class="badge badge-fi">DEBIT NOTE · SIMPLE</div>
+      </div>
+      <div class="num-bar">
+        <div class="lbl">B/L No.</div>
+        <div class="num">OOLU2312638590</div>
+        <div class="meta">
+          <span class="chip">ETD <b>2025-12-18</b></span>
+          <span class="chip">CTR <b>40HQ</b></span>
+          <span class="chip">POL <b>Qingdao</b></span>
+          <span class="chip">POD <b>Port Klang Westport</b></span>
+        </div>
+      </div>
+      <div class="to-block">
+        <div class="lbl">To · 收件方</div>
+        <div class="name">PETSOME SDN BHD</div>
+        <div class="country">Malaysia</div>
+      </div>
+
+      <div class="sub-row" style="padding: 14px"><div class="l">港杂合计 · Local Charges</div><div class="a">¥ 1,675</div></div>
+      <div class="usd">
+        <div class="l"><div class="label">🚢 Ocean Freight · 海运费</div><div class="sub">40HQ · all-in</div></div>
+        <div class="a">$825</div>
+      </div>
+      <div class="bank-block">
+        <div class="t">BANKING · 银行信息</div>
+        <div class="placeholder">[ Bank details to be added later ]</div>
+      </div>
+      <div class="foot">
+        <div class="info"><div>Contact: <b>Damon</b> · damon@sanlyns.com</div></div>
+        <div class="stamp">公章<br>Stamp</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Full ── -->
+  <div>
+    <span class="col-tag tag-cust">→ TO CUSTOMER</span>
+    <div class="col-title">Full · 完整版</div>
+    <div class="col-sub">Itemized breakdown — for accounting / audit-conscious customers.</div>
+    <div class="doc">
+      <div class="doc-header">
+        <div class="company">
+          <div class="cn">上海洋宝宝国际物流</div>
+          <div class="en">Shanghai Ocean Baby Intl Logistics</div>
+        </div>
+        <div class="badge badge-fi">DEBIT NOTE · FULL</div>
+      </div>
+      <div class="num-bar">
+        <div class="lbl">B/L No.</div>
+        <div class="num">OOLU2312638590</div>
+        <div class="meta">
+          <span class="chip">ETD <b>2025-12-18</b></span>
+          <span class="chip">CTR <b>40HQ</b></span>
+          <span class="chip">POL <b>Qingdao</b></span>
+          <span class="chip">POD <b>Port Klang Westport</b></span>
+        </div>
+      </div>
+      <div class="to-block">
+        <div class="lbl">To · 收件方</div>
+        <div class="name">PETSOME SDN BHD</div>
+        <div class="country">Malaysia</div>
+      </div>
+
+      <div class="charge-bar"><div class="t">CNY 港杂费 · LOCAL CHARGES (RMB)</div><div class="who who-buyer">1 票 · 1 箱</div></div>
+      <div class="fee"><div class="fee-cn">EDI 费<span class="fee-u">/票</span></div><div class="fee-en">EDI</div><div class="fee-amt zero">¥—</div></div>
+      <div class="fee"><div class="fee-cn">报关费<span class="fee-u">/票</span></div><div class="fee-en">Customs Declaration</div><div class="fee-amt zero">¥0</div></div>
+      <div class="fee"><div class="fee-cn">单证费<span class="fee-u">/票</span></div><div class="fee-en">Documentation</div><div class="fee-amt">¥450</div></div>
+      <div class="fee"><div class="fee-cn">订舱费<span class="fee-u">/票</span></div><div class="fee-en">Booking</div><div class="fee-amt zero">¥0</div></div>
+      <div class="fee"><div class="fee-cn">VGM<span class="fee-u">/票</span></div><div class="fee-en">VGM</div><div class="fee-amt">¥80</div></div>
+      <div class="fee"><div class="fee-cn">封铅费<span class="fee-u box">/箱</span></div><div class="fee-en">Seal</div><div class="fee-amt">¥45</div></div>
+      <div class="fee"><div class="fee-cn">THC<span class="fee-u box">/箱</span></div><div class="fee-en">Terminal Handling</div><div class="fee-amt">¥1,070</div></div>
+      <div class="fee"><div class="fee-cn">进港费<span class="fee-u box">/箱</span></div><div class="fee-en">Port Entry</div><div class="fee-amt">¥30</div></div>
+      <div class="fee"><div class="fee-cn">拖车费<span class="fee-u box">/箱</span></div><div class="fee-en">Trucking</div><div class="fee-amt zero">¥0</div></div>
+      <div class="sub-row"><div class="l">CNY 小计 · RMB Subtotal</div><div class="a">¥ 1,675</div></div>
+      <div class="usd">
+        <div class="l"><div class="label">🚢 Ocean Freight · 海运费</div><div class="sub">40HQ · Qingdao → Port Klang Westport</div></div>
+        <div class="a">$825</div>
+      </div>
+      <div class="bank-block">
+        <div class="t">BANKING · 银行信息</div>
+        <div class="placeholder">[ Bank details to be added later ]</div>
+      </div>
+      <div class="foot">
+        <div class="info">
+          <div>Contact: <b>Damon</b> · damon@sanlyns.com</div>
+          <div class="legend">Local charges in RMB · Ocean freight in USD · /票=per B/L · /箱=per container</div>
+        </div>
+        <div class="stamp">公章<br>Stamp</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ════════════════════════════════════════
+     SECTION C · AUDIT & OTHER ISSUES FOUND
+════════════════════════════════════════ -->
+<div class="audit">
+  <div class="t">🔍 Audit Report — other issues spotted while building</div>
+  <div class="audit-grid">
+
+    <div>
+      <h4 class="red">⚠ Issues to fix</h4>
+      <ul class="bad">
+        <li>Existing `ShippingModule.jsx > printDebitNote()` is a plain HTML table — far below the洋宝宝 template quality. Needs full rewrite.</li>
+        <li>洋宝宝 stamp + bank info hardcoded in old templates. Must be data-driven via `issuing_company`.</li>
+        <li>`shipping_plans` missing `edi_fee` column — currently no place to store EDI charge.</li>
+        <li>`port_surcharge_total` (2,621) doesn't match sum of fee columns (1,775) on row id=216. Either trailing fees missing or `_total` is stale. Need reconciliation.</li>
+        <li>`tlx_fee` DB name is ambiguous — Chinese template says 「电子装箱费」 but tlx = telex release. Rename + clarify.</li>
+        <li>Fee responsibility (seller vs buyer) is NOT stored anywhere — currently we'd have to derive from incoterm on every render. Consider `raw.charge_responsibility` map.</li>
+      </ul>
+    </div>
+
+    <div>
+      <h4 class="blue">📋 To clarify with you</h4>
+      <ul class="info">
+        <li>FOB split: do we generate TWO PDFs (seller copy + buyer copy) or ONE PDF with both halves visible to internal?</li>
+        <li>CNF/DDP "Suggested Customer Quote" — show factory the margin or hide? Currently shown.</li>
+        <li>Simple vs Full: is this a per-customer setting (`customers.raw.debitNoteStyle`) or per-document toggle?</li>
+        <li>Stamp image: do we want real PNG seal upload per `issuing_company`, or text placeholder OK for now?</li>
+        <li>Bank info section — confirm structure: Bank/Swift/USD A/C/CNY A/C/Account Name. Or 6 fields per currency?</li>
+        <li>EXW for customer includes 拖车费 — is this customer-arranged trucking or seller-arranged?</li>
+      </ul>
+    </div>
+
+    <div>
+      <h4 class="green">✅ Locked rules (applied to all templates above)</h4>
+      <ul class="good">
+        <li>NO `company_code` rendered anywhere customer-facing — only `company_name_en` + country.</li>
+        <li>FROM block removed on FI; TO/收件方 enlarged to 18px bold.</li>
+        <li>Bank info hidden behind placeholder until data model finalized.</li>
+        <li>Issuing company (洋宝宝/巴匕/etc) treated as a variable — JSX must read from `issuing_company` config, not hardcode.</li>
+        <li>Stamp shape kept generic (公章/业务章) — swappable per issuer.</li>
+        <li>FQ shows 业务章 (sales seal), FI shows 公章 (financial seal) — different stamps.</li>
+        <li>Single body component, multiple shell wrappers. No fork.</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+</div><!-- /.wrap -->
+
+</body>
+</html>

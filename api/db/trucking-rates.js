@@ -1,47 +1,25 @@
-// /api/db/trucking-rates.js — Trucking rates CRUD
+// /api/db/trucking-rates.js — 拖车费率 CRUD（对齐真实DB schema）
+// DB: trucking_rates(_id uuid, vendor_cn, factory_name, pol, valid_from, valid_to,
+//                   rates jsonb, surge jsonb, currency, notes, raw, created_at, updated_at)
 import { getPool, setCors } from "./db.js";
-
-const INIT_SQL = `
-CREATE TABLE IF NOT EXISTS trucking_rates (
-  id             SERIAL PRIMARY KEY,
-  origin_city    VARCHAR(128),
-  destination    VARCHAR(128),
-  container_type VARCHAR(20) DEFAULT '20GP',
-  amount         NUMERIC(12,2),
-  currency       VARCHAR(8) DEFAULT 'CNY',
-  provider       VARCHAR(200),
-  valid_from     DATE,
-  valid_until    DATE,
-  notes          TEXT,
-  created_at     TIMESTAMPTZ DEFAULT NOW(),
-  updated_at     TIMESTAMPTZ DEFAULT NOW()
-);
-`;
-
-let inited = false;
-async function ensureTable(pool) {
-  if (inited) return;
-  await pool.query(INIT_SQL);
-  inited = true;
-}
+import { requireAuth } from "../auth.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-
   const pool = getPool();
-  await ensureTable(pool);
 
+  // GET — list / filter
   if (req.method === "GET") {
     try {
-      const { origin_city, destination, container_type, limit = 1000 } = req.query;
+      const { pol, vendor_cn, factory_name, limit = 1000 } = req.query;
       let query = "SELECT * FROM trucking_rates", params = [], conds = [];
-      if (origin_city)    { params.push(`%${origin_city}%`);    conds.push(`origin_city ILIKE $${params.length}`); }
-      if (destination)    { params.push(`%${destination}%`);    conds.push(`destination ILIKE $${params.length}`); }
-      if (container_type) { params.push(container_type);         conds.push(`container_type = $${params.length}`); }
+      if (pol)          { params.push(`%${pol}%`);          conds.push(`pol ILIKE $${params.length}`); }
+      if (vendor_cn)    { params.push(`%${vendor_cn}%`);    conds.push(`vendor_cn ILIKE $${params.length}`); }
+      if (factory_name) { params.push(`%${factory_name}%`); conds.push(`factory_name ILIKE $${params.length}`); }
       if (conds.length) query += " WHERE " + conds.join(" AND ");
       params.push(parseInt(limit));
-      query += ` ORDER BY origin_city, destination, container_type, created_at DESC LIMIT $${params.length}`;
+      query += ` ORDER BY pol ASC, vendor_cn ASC LIMIT $${params.length}`;
       const result = await pool.query(query, params);
       return res.status(200).json({ success: true, data: result.rows, count: result.rowCount });
     } catch (err) {
@@ -49,14 +27,21 @@ export default async function handler(req, res) {
     }
   }
 
+  // POST — create
   if (req.method === "POST") {
+    if (!requireAuth(req, res)) return;
     try {
-      const { origin_city, destination, container_type, amount, currency, provider, valid_from, valid_until, notes } = req.body || {};
+      const { vendor_cn, factory_name, pol, valid_from, valid_to, rates, surge, currency, notes, raw } = req.body || {};
       const r = await pool.query(
-        `INSERT INTO trucking_rates(origin_city,destination,container_type,amount,currency,provider,valid_from,valid_until,notes)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [origin_city||null, destination||null, container_type||"20GP", amount||null, currency||"CNY",
-         provider||null, valid_from||null, valid_until||null, notes||null]
+        `INSERT INTO trucking_rates(vendor_cn,factory_name,pol,valid_from,valid_to,rates,surge,currency,notes,raw)
+         VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10::jsonb) RETURNING *`,
+        [
+          vendor_cn || null, factory_name || null, pol || null,
+          valid_from || null, valid_to || null,
+          JSON.stringify(rates || {}), JSON.stringify(surge || {}),
+          currency || "CNY", notes || null,
+          JSON.stringify(raw || null)
+        ]
       );
       return res.status(201).json({ success: true, data: r.rows[0] });
     } catch (err) {
@@ -64,19 +49,26 @@ export default async function handler(req, res) {
     }
   }
 
+  // PATCH — update by _id
   if (req.method === "PATCH") {
+    if (!requireAuth(req, res)) return;
     try {
-      const { id, ...patch } = req.body || {};
-      if (!id) return res.status(400).json({ error: "id required" });
-      const allowed = ["origin_city","destination","container_type","amount","currency","provider","valid_from","valid_until","notes"];
+      const { _id, ...patch } = req.body || {};
+      if (!_id) return res.status(400).json({ error: "_id required" });
+      const SCALAR  = ["vendor_cn","factory_name","pol","valid_from","valid_to","currency","notes"];
+      const JSONB   = ["rates","surge","raw"];
       const sets = [], vals = [];
-      for (const k of allowed) {
+      for (const k of SCALAR) {
         if (patch[k] !== undefined) { vals.push(patch[k]); sets.push(`${k} = $${vals.length}`); }
       }
+      for (const k of JSONB) {
+        if (patch[k] !== undefined) { vals.push(JSON.stringify(patch[k])); sets.push(`${k} = $${vals.length}::jsonb`); }
+      }
       if (!sets.length) return res.status(400).json({ error: "no fields to update" });
-      vals.push(id); sets.push("updated_at = NOW()");
+      vals.push(_id);
+      sets.push("updated_at = now()");
       const r = await pool.query(
-        `UPDATE trucking_rates SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING *`, vals
+        `UPDATE trucking_rates SET ${sets.join(", ")} WHERE _id = $${vals.length} RETURNING *`, vals
       );
       if (!r.rowCount) return res.status(404).json({ error: "record not found" });
       return res.status(200).json({ success: true, data: r.rows[0] });
@@ -85,11 +77,13 @@ export default async function handler(req, res) {
     }
   }
 
+  // DELETE — by _id
   if (req.method === "DELETE") {
+    if (!requireAuth(req, res)) return;
     try {
-      const id = req.query.id || req.body?.id;
-      if (!id) return res.status(400).json({ error: "id required" });
-      const r = await pool.query("DELETE FROM trucking_rates WHERE id = $1", [id]);
+      const id = req.query._id || req.body?._id;
+      if (!id) return res.status(400).json({ error: "_id required" });
+      const r = await pool.query("DELETE FROM trucking_rates WHERE _id = $1", [id]);
       if (!r.rowCount) return res.status(404).json({ error: "record not found" });
       return res.status(200).json({ success: true });
     } catch (err) {

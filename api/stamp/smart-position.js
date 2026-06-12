@@ -31,12 +31,20 @@ function setCors(res) {
 // For our own generator URLs, append &format=pdf and forward caller's Authorization.
 async function fetchPdfBytes(pdfUrl, authHeader) {
   let url = pdfUrl;
+  // Node.js fetch requires absolute URLs — convert relative paths to localhost
+  if (url.startsWith("/")) {
+    const port = process.env.PORT || 9000;
+    url = "http://127.0.0.1:" + port + url;
+  }
   const isOurApi = /\/api\/db\/documents/.test(url);
+  const isShipPdf = /\/api\/db\/shipping-plan-pdf/.test(url);
   if (isOurApi && url.indexOf("format=") < 0) {
     url += (url.indexOf("?") >= 0 ? "&" : "?") + "format=pdf";
   }
+  // shipping-plan-pdf returns HTML — skip pdf-parse, return graceful no-match
+  if (isShipPdf) return null;
   const headers = {};
-  if (isOurApi && authHeader) headers["Authorization"] = authHeader;
+  if ((isOurApi || isShipPdf) && authHeader) headers["Authorization"] = authHeader;
   const r = await fetch(url, { headers });
   if (!r.ok) throw new Error(`Fetch PDF failed: HTTP ${r.status}`);
   return Buffer.from(await r.arrayBuffer());
@@ -212,6 +220,15 @@ export default async function handler(req, res) {
 
     const authHeader = req.headers.authorization || "";
     const pdfBuffer = await fetchPdfBytes(pdfUrl, authHeader);
+
+    // HTML-based endpoints (shipping-plan-pdf) return null — no AI detection available
+    if (pdfBuffer === null) {
+      return res.status(200).json({
+        x: null, y: null, page: null, source: "unsupported",
+        confidence: 0, message: "Document format not supported for AI positioning (HTML).",
+        visionUsed: 0, visionRemaining: 0, visionLimit: 0,
+      });
+    }
 
     const used = await getVisionUsed(docId);
     const remaining = Math.max(0, VISION_QUOTA_PER_DOC - used);

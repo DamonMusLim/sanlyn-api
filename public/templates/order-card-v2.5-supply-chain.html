@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OrderCardV2 · v2.5 · BL/ETD/ETA + 供应链点击分支</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060A14;color:#e2e8f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px;min-height:100vh}
+.shell{max-width:1340px;margin:0 auto}
+.title{font-size:24px;font-weight:900;letter-spacing:-.01em;margin-bottom:6px;background:linear-gradient(90deg,#60a5fa,#c084fc,#34d399);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:#64748b;font-size:12px;margin-bottom:8px}
+.banner{background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:12px 16px;font-size:12px;color:#cbd5e1;margin-bottom:24px;line-height:1.7}
+.banner b{color:#7dd3fc}
+.banner code{background:rgba(15,23,42,.7);color:#fbbf24;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"SF Mono",monospace}
+h2.section{font-size:16px;font-weight:900;color:#f8fafc;margin:36px 0 14px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+h2.section::before{content:"";width:3px;height:18px;background:linear-gradient(180deg,#38bdf8,#a78bfa);border-radius:2px}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.cell{display:flex;flex-direction:column;gap:8px}
+.cell-label{font-size:10px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.cell-label .dot{width:6px;height:6px;border-radius:50%}
+.cell-desc{font-size:11px;color:#64748b;font-weight:600;letter-spacing:.01em;margin-top:-3px}
+
+/* card */
+.card{background:#0B1120;border:1px solid rgba(148,163,184,.1);border-radius:14px;overflow:hidden;cursor:pointer;transition:all .2s;position:relative}
+.card:hover{transform:translateY(-2px);border-color:rgba(56,189,248,.4);box-shadow:0 8px 28px rgba(56,189,248,.12)}
+.card:hover .open-hint{opacity:1}
+.open-hint{position:absolute;top:6px;right:6px;font-size:9px;color:#7dd3fc;background:rgba(15,23,42,.95);padding:3px 7px;border-radius:5px;font-weight:800;border:1px solid rgba(56,189,248,.4);opacity:0;transition:.2s;z-index:20;backdrop-filter:blur(6px);letter-spacing:.04em}
+
+/* top */
+.top{position:relative;height:110px;border-bottom:1px solid rgba(148,163,184,.08);overflow:hidden}
+.top svg{display:block;width:100%;height:100%}
+.top-tag{position:absolute;top:7px;left:7px;font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:5px;backdrop-filter:blur(6px);z-index:5}
+.top-meta{position:absolute;top:7px;right:34px;background:rgba(15,23,42,.95);font-size:9.5px;font-weight:900;padding:3px 8px;border-radius:6px;letter-spacing:.04em;display:flex;align-items:center;gap:5px;backdrop-filter:blur(6px);z-index:5}
+.top-meta b{font-family:"SF Mono",monospace;font-size:11px}
+.top-strip{position:absolute;left:0;right:0;bottom:0;height:22px;background:linear-gradient(180deg,transparent,rgba(0,0,0,.7));display:flex;align-items:center;padding:0 8px;z-index:4}
+.top-strip .info{flex:1;font-size:9.5px;font-weight:800;color:#cbd5e1;font-family:"SF Mono",monospace;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.pulse{animation:pulse 1.6s infinite}
+
+.s-ocean{background:linear-gradient(180deg,#0c1e3a,#0a1628)}
+.s-ocean .top-tag{background:rgba(56,189,248,.18);border:1px solid rgba(56,189,248,.4);color:#7dd3fc}
+.s-ocean .top-meta{border:1px solid rgba(56,189,248,.4);color:#7dd3fc}
+.s-truck{background:linear-gradient(180deg,#0a2818,#061a0f)}
+.s-truck .top-tag{background:rgba(34,197,94,.18);border:1px solid rgba(34,197,94,.4);color:#86efac}
+.s-truck .top-meta{border:1px solid rgba(34,197,94,.4);color:#86efac}
+.s-redacted{background:linear-gradient(180deg,#0e1424,#080c18)}
+.s-redacted .top-tag{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.25);color:#94a3b8}
+.s-redacted .top-meta{border:1px solid rgba(148,163,184,.25);color:#94a3b8}
+
+/* identity row — now with BL + ETD/ETA */
+.id-row{padding:10px 14px 4px;display:flex;justify-content:space-between;align-items:baseline}
+.oid{font-family:"SF Mono",monospace;font-size:14px;font-weight:900;color:#f8fafc;letter-spacing:.02em}
+.id-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.po-line{font-size:10px;color:#64748b;font-weight:700;font-family:"SF Mono",monospace}
+.po-line b{color:#94a3b8;font-weight:800}
+
+/* second-line meta strip — BL + dates */
+.meta-row{padding:0 14px 8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-bottom:1px dashed rgba(148,163,184,.08);padding-bottom:8px;margin-bottom:8px}
+.meta-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;font-family:"SF Mono",monospace}
+.meta-chip .lbl{font-size:8.5px;color:#64748b;font-weight:900;letter-spacing:.06em;text-transform:uppercase}
+.meta-chip .val{color:#cbd5e1}
+.mc-bl{background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.2)}
+.mc-bl .val{color:#7dd3fc}
+.mc-etd{background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2)}
+.mc-etd .val{color:#86efac}
+.mc-eta{background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.2)}
+.mc-eta .val{color:#c4b5fd}
+.mc-redact{background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.2)}
+.mc-redact .val{color:#64748b;font-style:italic}
+
+.cargo{padding:2px 14px 10px;font-size:11.5px;color:#94a3b8;font-family:"SF Mono",monospace;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cargo .dot{color:#334155}
+.cargo b{color:#cbd5e1;font-weight:700}
+.chip{display:inline-flex;font-size:10px;font-weight:700;color:#a5b4fc;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);padding:1px 6px;border-radius:4px}
+
+.wf{padding:10px 14px 8px;border-top:1px solid rgba(148,163,184,.06);display:flex;align-items:center;gap:0}
+.node{flex:1;display:flex;flex-direction:column;align-items:center;position:relative;font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.node .ball{width:9px;height:9px;border-radius:50%;background:#1e293b;border:1.5px solid #334155;margin-bottom:4px;position:relative;z-index:2}
+.node.done .ball{background:#22c55e;border-color:#22c55e}
+.node.now .ball{background:#38bdf8;border-color:#38bdf8;box-shadow:0 0 0 4px rgba(56,189,248,.18);animation:pulse 1.6s infinite}
+.node:not(:last-child)::after{content:"";position:absolute;top:5px;left:60%;right:-40%;height:1.5px;background:#1e293b;z-index:1}
+.node.done:not(:last-child)::after{background:#22c55e}
+.node .lbl{color:#475569;font-size:8.5px;text-align:center;line-height:1.2;max-width:65px}
+.node.done .lbl{color:#86efac}
+.node.now .lbl{color:#7dd3fc}
+
+.next{padding:8px 14px;border-top:1px solid rgba(148,163,184,.06);display:flex;align-items:center;gap:8px;background:rgba(15,23,42,.4);height:42px}
+.next-prefix{font-size:9px;font-weight:900;color:#64748b;letter-spacing:.06em}
+.next-text{flex:1;font-size:11.5px;color:#cbd5e1;font-weight:600}
+.next-btn{padding:5px 11px;background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;font-size:10.5px;font-weight:900;border-radius:6px;border:none;cursor:pointer;letter-spacing:.02em;display:inline-flex;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(124,58,237,.3)}
+.next-btn:disabled{background:#1e293b;color:#475569;box-shadow:none;cursor:not-allowed}
+
+/* ━━━━━━━━━━ click destination preview ━━━━━━━━━━ */
+.dest{border-radius:12px;overflow:hidden;background:#0B1120;border:1px solid rgba(148,163,184,.15)}
+.dest-head{padding:10px 14px;background:rgba(15,23,42,.7);border-bottom:1px solid rgba(148,163,184,.1);display:flex;align-items:center;gap:10px}
+.dest-head .ic{font-size:18px}
+.dest-head .t{font-size:13px;font-weight:900;color:#f8fafc;letter-spacing:-.01em}
+.dest-head .s{font-size:10px;color:#64748b;font-weight:700;margin-left:auto;letter-spacing:.04em}
+.dest-tabs{display:flex;background:rgba(2,6,23,.5);border-bottom:1px solid rgba(148,163,184,.08);padding:0 8px}
+.dt{padding:8px 14px;font-size:10.5px;font-weight:800;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.04em;display:flex;align-items:center;gap:5px}
+.dt.active{color:#7dd3fc;border-bottom-color:#38bdf8}
+.dt.locked{opacity:.4;cursor:not-allowed}
+.dt .badge{display:inline-block;background:#ef4444;color:#fff;font-size:8.5px;padding:1px 5px;border-radius:8px;font-weight:900;margin-left:3px}
+.dest-body{padding:16px 18px;min-height:200px;font-size:12px;color:#cbd5e1;line-height:1.6}
+.dest-body h5{font-size:11px;font-weight:900;color:#f8fafc;margin-bottom:8px;letter-spacing:.04em;text-transform:uppercase}
+.dest-body ul{list-style:none;padding:0}
+.dest-body li{padding:6px 8px;background:rgba(15,23,42,.4);border-radius:6px;margin-bottom:5px;font-size:11.5px;border-left:3px solid #38bdf8;display:flex;align-items:center;gap:8px}
+.dest-body li.done{border-left-color:#22c55e;color:#86efac}
+.dest-body li.todo{border-left-color:#f59e0b;color:#fcd34d}
+.dest-body li.lock{border-left-color:#475569;color:#64748b;font-style:italic}
+.dest-body li b{color:#f8fafc}
+.dest-body .actbtn{margin-left:auto;font-size:10px;font-weight:900;padding:3px 9px;background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;border:none;border-radius:5px;cursor:pointer}
+.file-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(15,23,42,.5);border-radius:6px;margin-bottom:4px;font-size:11.5px}
+.file-row .fic{font-size:14px}
+.file-row .fnm{flex:1;color:#e2e8f0;font-weight:700}
+.file-row .fmeta{font-size:9.5px;color:#64748b;font-family:"SF Mono",monospace}
+.file-row .fdl{color:#7dd3fc;font-size:11px;font-weight:800;cursor:pointer}
+
+.click-map{margin-top:24px;background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:12px;padding:18px 22px;overflow-x:auto}
+.click-map h3{font-size:13px;font-weight:900;color:#f8fafc;margin-bottom:14px}
+.click-map table{width:100%;font-size:11px;border-collapse:collapse;min-width:760px}
+.click-map th{text-align:left;color:#94a3b8;font-weight:800;padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.15);font-size:10px;letter-spacing:.04em;text-transform:uppercase;background:rgba(15,23,42,.7)}
+.click-map td{padding:8px 10px;border-bottom:1px dashed rgba(148,163,184,.08);color:#cbd5e1}
+.click-map td.code{font-family:"SF Mono",monospace;color:#7dd3fc;font-size:10.5px}
+.click-map td b{color:#f8fafc}
+.tag{display:inline-block;font-size:9px;font-weight:800;padding:2px 6px;border-radius:4px;letter-spacing:.04em}
+.tag.green{background:rgba(34,197,94,.15);color:#86efac;border:1px solid rgba(34,197,94,.3)}
+.tag.purple{background:rgba(167,139,250,.15);color:#c4b5fd;border:1px solid rgba(167,139,250,.3)}
+.tag.amber{background:rgba(245,158,11,.15);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
+.tag.gray{background:rgba(148,163,184,.12);color:#94a3b8;border:1px solid rgba(148,163,184,.25)}
+.tag.cyan{background:rgba(6,182,212,.15);color:#67e8f9;border:1px solid rgba(6,182,212,.3)}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="title">OrderCardV2 · v2.5 — BL/ETD/ETA 入档 + 供应链复用 + 点击 4 路分支</div>
+  <div class="sub">2026-05-10 · 增加身份字段第二行 (BL/ETD/ETA) · 同一卡按身份 click 进 4 个不同界面</div>
+
+  <div class="banner">
+    <b>三个修正：</b>
+    <br>(1) 卡片增加 <code>meta-row</code> 第二行：<b>BL · ETD · ETA</b> 三个 chip，按角色裁剪；
+    <br>(2) <b>供应链复用同一卡</b>：工厂/司机/报关行也用这个卡，但点击落点不同；
+    <br>(3) <b>点击 4 路分支</b>：Sanlyn → 详情页；客户 → 客户详情；供应链 → <b>协同卡 (action)</b>；外部 → <b>文件包 (read-only)</b>。
+  </div>
+
+  <!-- ━━━━━━━━━━ Section A: BL/ETD/ETA 字段位置（海运 + 车队两张卡）━━━━━━━━━━ -->
+  <h2 class="section">A · BL / ETD / ETA 字段三视角</h2>
+
+  <div class="grid">
+
+    <!-- Sanlyn 全权 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#38bdf8"></span>Sanlyn 视角（全权）</div>
+      <div class="cell-desc">完整 BL + ETD + ETA</div>
+      <div class="card">
+        <div class="open-hint">→ /admin/orders/...</div>
+        <div class="top s-ocean">
+          <svg viewBox="0 0 340 110" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="seaA" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0c1e3a"/><stop offset="100%" stop-color="#0a1628"/></linearGradient>
+              <linearGradient id="routeA" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#22c55e"/><stop offset="55%" stop-color="#38bdf8"/><stop offset="56%" stop-color="#1e293b"/><stop offset="100%" stop-color="#475569"/></linearGradient>
+            </defs>
+            <rect width="340" height="110" fill="url(#seaA)"/>
+            <path d="M0,110 L0,72 Q12,62 28,65 Q42,72 60,69 Q78,63 90,69 L90,110 Z" fill="#1e293b" opacity=".6"/>
+            <path d="M260,18 L340,18 L340,46 Q325,42 310,45 Q295,48 280,46 Q270,44 260,48 Z" fill="#1e293b" opacity=".6"/>
+            <path d="M280,110 L340,110 L340,80 Q322,78 310,82 Q298,86 285,82 Q278,80 280,85 Z" fill="#1e293b" opacity=".5"/>
+            <path d="M55,72 Q170,32 305,85" stroke="url(#routeA)" stroke-width="2" fill="none"/>
+            <circle cx="55" cy="72" r="5" fill="#22c55e" stroke="#0b1120" stroke-width="2"/>
+            <text x="55" y="93" text-anchor="middle" font-size="9" font-weight="800" fill="#86efac" font-family="SF Mono,monospace">XMN</text>
+            <g transform="translate(180,49)" class="pulse"><circle r="14" fill="rgba(56,189,248,.18)"/><circle r="6" fill="#38bdf8" stroke="#fff" stroke-width="1.5"/><text y="-12" text-anchor="middle" font-size="10">🚢</text></g>
+            <circle cx="305" cy="85" r="4" fill="#475569" stroke="#0b1120" stroke-width="2"/>
+            <text x="305" y="78" text-anchor="middle" font-size="9" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">LGB</text>
+          </svg>
+          <div class="top-tag">🚢 Ocean</div>
+          <div class="top-meta"><b>6d</b> ETA</div>
+          <div class="top-strip"><div class="info">▶ COSCO ROSE · 118E · 55%</div></div>
+        </div>
+        <div class="id-row">
+          <div class="oid">FS20260206020</div>
+          <div class="id-right"><div class="po-line">PO <b>XM-235</b></div></div>
+        </div>
+        <div class="meta-row">
+          <div class="meta-chip mc-bl"><span class="lbl">BL</span><span class="val">SHA-COS-118456</span></div>
+          <div class="meta-chip mc-etd"><span class="lbl">ETD</span><span class="val">Apr 24</span></div>
+          <div class="meta-chip mc-eta"><span class="lbl">ETA</span><span class="val">Jun 8</span></div>
+        </div>
+        <div class="cargo"><b>2,200</b> CTN <span class="dot">·</span> <b>16</b> SKUs <span class="dot">·</span> <span class="chip">1×40HQ</span> <span class="dot">·</span> <b>22.0t</b></div>
+        <div class="wf">
+          <div class="node done"><div class="ball"></div><div class="lbl">Customs</div></div>
+          <div class="node now"><div class="ball"></div><div class="lbl">Transit</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">Arrived</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">Delivered</div></div>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Bill of lading ready</div><button class="next-btn">→ View BL</button></div>
+      </div>
+    </div>
+
+    <!-- 客户视角 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#7dd3fc"></span>客户视角 (HBL)</div>
+      <div class="cell-desc">House BL + ETD/ETA</div>
+      <div class="card">
+        <div class="open-hint">→ /portal/orders/...</div>
+        <div class="top s-ocean">
+          <svg viewBox="0 0 340 110" preserveAspectRatio="none">
+            <use href="#anything" x="0" y="0"/>
+            <rect width="340" height="110" fill="url(#seaA)"/>
+            <path d="M0,110 L0,72 Q12,62 28,65 Q42,72 60,69 Q78,63 90,69 L90,110 Z" fill="#1e293b" opacity=".6"/>
+            <path d="M280,110 L340,110 L340,80 Q322,78 310,82 Q298,86 285,82 Q278,80 280,85 Z" fill="#1e293b" opacity=".5"/>
+            <path d="M55,72 Q170,32 305,85" stroke="url(#routeA)" stroke-width="2" fill="none"/>
+            <circle cx="55" cy="72" r="5" fill="#22c55e" stroke="#0b1120" stroke-width="2"/>
+            <text x="55" y="93" text-anchor="middle" font-size="9" font-weight="800" fill="#86efac" font-family="SF Mono,monospace">XMN</text>
+            <g transform="translate(180,49)" class="pulse"><circle r="14" fill="rgba(56,189,248,.18)"/><circle r="6" fill="#38bdf8" stroke="#fff" stroke-width="1.5"/><text y="-12" text-anchor="middle" font-size="10">🚢</text></g>
+            <circle cx="305" cy="85" r="4" fill="#475569" stroke="#0b1120" stroke-width="2"/>
+            <text x="305" y="78" text-anchor="middle" font-size="9" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">LGB</text>
+          </svg>
+          <div class="top-tag">🚢 Ocean</div>
+          <div class="top-meta"><b>Jun 8</b> ETA</div>
+          <div class="top-strip"><div class="info">In transit · 55% complete</div></div>
+        </div>
+        <div class="id-row">
+          <div class="oid">FS20260206020</div>
+          <div class="id-right"><div class="po-line">PO <b>XM-235</b></div></div>
+        </div>
+        <div class="meta-row">
+          <div class="meta-chip mc-bl"><span class="lbl">HBL</span><span class="val">SLN-235-A</span></div>
+          <div class="meta-chip mc-etd"><span class="lbl">ETD</span><span class="val">Apr 24</span></div>
+          <div class="meta-chip mc-eta"><span class="lbl">ETA</span><span class="val">Jun 8</span></div>
+        </div>
+        <div class="cargo"><b>2,200</b> CTN <span class="dot">·</span> <b>16</b> SKUs <span class="dot">·</span> <span class="chip">1×40HQ</span></div>
+        <div class="wf">
+          <div class="node done"><div class="ball"></div><div class="lbl">Customs</div></div>
+          <div class="node now"><div class="ball"></div><div class="lbl">In transit</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">Arrived</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">Delivered</div></div>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">House BL ready for download</div><button class="next-btn">→ View HBL</button></div>
+      </div>
+    </div>
+
+    <!-- 工厂视角 (trader_export 模式) -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#fcd34d"></span>工厂视角 (trader_export)</div>
+      <div class="cell-desc">BL 隐 · ETD 见 · ETA 隐</div>
+      <div class="card">
+        <div class="open-hint">→ /collab/...</div>
+        <div class="top s-redacted">
+          <svg viewBox="0 0 340 110" preserveAspectRatio="none">
+            <g transform="translate(60,55)"><circle r="12" fill="#22c55e"/><text y="5" text-anchor="middle" font-size="14">🏭</text></g>
+            <text x="60" y="84" text-anchor="middle" font-size="8" font-weight="800" fill="#86efac" font-family="SF Mono,monospace">YOUR PLANT</text>
+            <g transform="translate(170,55)" class="pulse">
+              <rect x="-44" y="-14" width="88" height="28" rx="6" fill="rgba(148,163,184,.06)" stroke="#475569" stroke-width="1" stroke-dasharray="4,3"/>
+              <text y="4" text-anchor="middle" font-size="10" fill="#94a3b8">📦 dispatched</text>
+            </g>
+            <text x="170" y="86" text-anchor="middle" font-size="7" font-weight="700" fill="#64748b" font-family="SF Mono,monospace">handed off to trader</text>
+            <g transform="translate(280,55)"><rect x="-22" y="-14" width="44" height="28" rx="3" fill="rgba(148,163,184,.08)" stroke="#475569" stroke-width="1.5"/><text y="4" text-anchor="middle" font-size="13" fill="#475569">🌍</text></g>
+            <text x="280" y="84" text-anchor="middle" font-size="8" font-weight="800" fill="#475569" font-family="SF Mono,monospace">DESTINATION</text>
+          </svg>
+          <div class="top-tag">📦 Handed off</div>
+          <div class="top-meta">paid <b>5d</b></div>
+          <div class="top-strip"><div class="info">Cargo confirmed picked up · trader managing onward</div></div>
+        </div>
+        <div class="id-row">
+          <div class="oid">FS20260206020</div>
+          <div class="id-right"><div class="po-line">SO <b>F-218</b></div></div>
+        </div>
+        <div class="meta-row">
+          <div class="meta-chip mc-redact"><span class="lbl">BL</span><span class="val">restricted</span></div>
+          <div class="meta-chip mc-etd"><span class="lbl">Pickup</span><span class="val">Apr 22</span></div>
+          <div class="meta-chip mc-redact"><span class="lbl">ETA</span><span class="val">restricted</span></div>
+        </div>
+        <div class="cargo"><b>2,200</b> CTN <span class="dot">·</span> <b>16</b> SKUs <span class="dot">·</span> <span class="chip">1×40HQ</span></div>
+        <div class="wf">
+          <div class="node done"><div class="ball"></div><div class="lbl">Confirmed</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">Produced</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">Shipped</div></div>
+          <div class="node now"><div class="ball"></div><div class="lbl">Closed</div></div>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Awaiting final payment</div><button class="next-btn">→ View invoice</button></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ━━━━━━━━━━ Section B: 4 路点击落点 ━━━━━━━━━━ -->
+  <h2 class="section">B · 同一张卡 · 4 路点击落点</h2>
+  <div class="banner" style="background:rgba(167,139,250,.06);border-color:rgba(167,139,250,.2)">
+    <b>核心创新：</b>列表卡<b>给所有人复用</b>，但点击落点按身份分流。供应链点 → <b>协同卡 (做事)</b>，非角色相关人 → <b>文件包 (只看)</b>，
+    Sanlyn / 客户 → 详情页（深度操作 vs 只读）。代码层：
+    <code>onClick = router[role](order.id)</code>
+  </div>
+
+  <div class="grid">
+
+    <!-- 1. Sanlyn → 详情页 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#38bdf8"></span>① Sanlyn → 详情页</div>
+      <div class="cell-desc">/admin/orders/${id} · 全权读写</div>
+      <div class="dest">
+        <div class="dest-head">
+          <div class="ic">🛠</div>
+          <div class="t">Order FS20260206020 · Admin View</div>
+          <div class="s">Full ops</div>
+        </div>
+        <div class="dest-tabs">
+          <div class="dt active">📋 Overview</div>
+          <div class="dt">✨ AI</div>
+          <div class="dt">📦 Products</div>
+          <div class="dt">💰 Finance</div>
+          <div class="dt">🕘 Activity</div>
+        </div>
+        <div class="dest-body">
+          <h5>关键字段（全可见 + 可编辑）</h5>
+          <ul>
+            <li class="done"><b>BL</b> SHA-COS-118456 · MBL <b>actbtn</b><button class="actbtn">Edit</button></li>
+            <li class="done"><b>HBL</b> SLN-235-A · 已签发</li>
+            <li class="done"><b>ETD/ETA</b> Apr 24 / Jun 8 · 来自船公司</li>
+            <li class="done"><b>客户成交价</b> $48,200 · 利润 $7,150</li>
+            <li class="done"><b>工厂 EXW</b> ¥315,500</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 客户 → 客户详情 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#7dd3fc"></span>② 客户 → 客户详情</div>
+      <div class="cell-desc">/portal/orders/${id} · 只读为主</div>
+      <div class="dest">
+        <div class="dest-head">
+          <div class="ic">👤</div>
+          <div class="t">Order FS20260206020 · My View</div>
+          <div class="s">Customer portal</div>
+        </div>
+        <div class="dest-tabs">
+          <div class="dt active">📋 Status</div>
+          <div class="dt">🚢 Tracking</div>
+          <div class="dt">📄 Documents</div>
+          <div class="dt">💳 Invoice</div>
+          <div class="dt locked">💰 🔒</div>
+        </div>
+        <div class="dest-body">
+          <h5>客户能看的字段</h5>
+          <ul>
+            <li class="done"><b>HBL</b> SLN-235-A · download <button class="actbtn">PDF</button></li>
+            <li class="done"><b>ETD</b> Apr 24 · <b>ETA</b> Jun 8 (live tracking)</li>
+            <li class="todo"><b>Outstanding</b> $24,100 · pay before BL release</li>
+            <li class="lock"><b>Factory price</b> 🔒 hidden</li>
+            <li class="lock"><b>Sanlyn margin</b> 🔒 hidden</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. 供应链 → 协同卡 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#86efac"></span>③ 供应链 → 协同卡</div>
+      <div class="cell-desc">/collab/${id} · "做事"模式</div>
+      <div class="dest" style="border-color:rgba(34,197,94,.4)">
+        <div class="dest-head" style="background:rgba(34,197,94,.06)">
+          <div class="ic">🤝</div>
+          <div class="t">Collab F-218 · Action items</div>
+          <div class="s">Factory role</div>
+        </div>
+        <div class="dest-tabs">
+          <div class="dt">📄 Files only</div>
+          <div class="dt active">✅ My tasks <span class="badge">3</span></div>
+          <div class="dt">💬 Messages</div>
+          <div class="dt">📊 Status</div>
+        </div>
+        <div class="dest-body">
+          <h5>你需要做的 3 件事</h5>
+          <ul>
+            <li class="todo"><b>① 上传发票影印</b> 报关需要 <button class="actbtn">📤 Upload</button></li>
+            <li class="todo"><b>② 确认装柜数量</b> 1,920 vs 1,950 差异 <button class="actbtn">→ Confirm</button></li>
+            <li class="todo"><b>③ 签电放保函</b> Sanlyn 已发 <button class="actbtn">✍️ Sign</button></li>
+            <li class="done"><b>✓ 装柜照片</b> 已上传 12 张 (Apr 21)</li>
+            <li class="lock"><b>客户名/价格/HBL</b> 🔒 不可见</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 4. 文件包 (在第二行单独) -->
+  <div class="grid" style="grid-template-columns:repeat(3,1fr);margin-top:18px">
+
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#94a3b8"></span>④ 文件包 → 只看</div>
+      <div class="cell-desc">/files/${token} · 链接分享 · 无登录</div>
+      <div class="dest" style="border-color:rgba(148,163,184,.3)">
+        <div class="dest-head" style="background:rgba(148,163,184,.06)">
+          <div class="ic">📁</div>
+          <div class="t">Files for F-218 · Read only</div>
+          <div class="s">Doc share</div>
+        </div>
+        <div class="dest-tabs">
+          <div class="dt active">📄 Files</div>
+        </div>
+        <div class="dest-body">
+          <h5>4 份文件 (link expires in 7d)</h5>
+          <div class="file-row"><div class="fic">📄</div><div class="fnm">Invoice IV-218.pdf</div><div class="fmeta">2.3MB · v2</div><div class="fdl">⬇ Download</div></div>
+          <div class="file-row"><div class="fic">📦</div><div class="fnm">Packing List PL-218.pdf</div><div class="fmeta">1.8MB · v2</div><div class="fdl">⬇ Download</div></div>
+          <div class="file-row"><div class="fic">🛂</div><div class="fnm">Customs Draft.pdf</div><div class="fmeta">956KB</div><div class="fdl">⬇ Download</div></div>
+          <div class="file-row"><div class="fic">🚢</div><div class="fnm">House BL SLN-235-A.pdf</div><div class="fmeta">412KB</div><div class="fdl">⬇ Download</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cell" style="grid-column:span 2">
+      <div class="cell-label"><span class="dot" style="background:#a78bfa"></span>路由代码 · onClick 决策树</div>
+      <div class="cell-desc">前端 store 层注入</div>
+      <div style="background:#0a0e1a;border:1px solid rgba(148,163,184,.15);border-radius:8px;padding:14px 18px;font-family:'SF Mono',monospace;font-size:11px;color:#cbd5e1;line-height:1.7">
+<pre style="margin:0;white-space:pre-wrap"><span style="color:#64748b">// OrderCard onClick 路由 — 一处定，全站用</span>
+<span style="color:#c4b5fd">function</span> <span style="color:#7dd3fc">getCardClickDest</span>(order, user) {
+  <span style="color:#64748b">// 1. Sanlyn 内部任何角色 → 详情页（全权）</span>
+  <span style="color:#c4b5fd">if</span> (user.tenant === <span style="color:#86efac">'sanlyn'</span>) <span style="color:#c4b5fd">return</span> `/admin/orders/${order.id}`;
+
+  <span style="color:#64748b">// 2. 客户 (买方) → 客户门户详情</span>
+  <span style="color:#c4b5fd">if</span> (user.role === <span style="color:#86efac">'customer'</span> && order.customer_id === user.company_id)
+    <span style="color:#c4b5fd">return</span> `/portal/orders/${order.id}`;
+
+  <span style="color:#64748b">// 3. 供应链 (工厂/司机/报关行) → 协同卡（做事）</span>
+  <span style="color:#c4b5fd">if</span> ([<span style="color:#86efac">'factory'</span>, <span style="color:#86efac">'trucker'</span>, <span style="color:#86efac">'broker'</span>].includes(user.role)
+      && order.collaborators.includes(user.id))
+    <span style="color:#c4b5fd">return</span> `/collab/${order.collab_code}?as=${user.role}`;
+
+  <span style="color:#64748b">// 4. 仅持有文件分享 token → 文件包页（无登录）</span>
+  <span style="color:#c4b5fd">if</span> (user.tokens?.fileShare?.[order.id])
+    <span style="color:#c4b5fd">return</span> `/files/${user.tokens.fileShare[order.id]}`;
+
+  <span style="color:#64748b">// 5. 其他 → 拒绝（fail-closed）</span>
+  <span style="color:#c4b5fd">throw</span> <span style="color:#fcd34d">new</span> AccessDenied(<span style="color:#86efac">'No access to this order'</span>);
+}</pre>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ━━━━━━━━━━ Section C: BL/ETD/ETA 角色裁剪表 ━━━━━━━━━━ -->
+  <h2 class="section">C · BL · ETD · ETA 角色裁剪表</h2>
+  <div class="click-map">
+    <table>
+      <thead>
+        <tr><th>角色</th><th>BL 显示</th><th>ETD 显示</th><th>ETA 显示</th><th>原因 / 防跳单</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>Sanlyn 内部</b></td><td class="code">MBL 全号</td><td class="code">Apr 24 (船公司)</td><td class="code">Jun 8</td><td>全权读写</td></tr>
+        <tr><td><b>客户 (buyer)</b></td><td class="code">HBL 全号</td><td class="code">Apr 24</td><td class="code">Jun 8 + live</td><td>客户需要 HBL 提货</td></tr>
+        <tr><td><b>工厂 (trader_export)</b></td><td><span class="tag gray">restricted</span></td><td class="code">Pickup Apr 22</td><td><span class="tag gray">restricted</span></td><td><b>防跳单</b>：BL/ETA 暴露 = 客户能直接找船公司</td></tr>
+        <tr><td><b>工厂 (factory_direct)</b></td><td class="code">MBL (own)</td><td class="code">Apr 24</td><td class="code">Jun 8</td><td>客户已知道工厂 → 全可见</td></tr>
+        <tr><td><b>报关行</b></td><td class="code">报关 BL only</td><td class="code">截关 Apr 22</td><td><span class="tag gray">N/A</span></td><td>报关只关心报关单据</td></tr>
+        <tr><td><b>司机/车队</b></td><td><span class="tag gray">N/A</span></td><td class="code">Pickup Apr 22 14:00</td><td><span class="tag gray">N/A</span></td><td>司机只看提柜时间</td></tr>
+        <tr><td><b>海运公司 (forwarder)</b></td><td class="code">MBL (own)</td><td class="code">Apr 24</td><td class="code">Jun 8</td><td>船公司本来就有</td></tr>
+        <tr><td><b>文件包 (token)</b></td><td class="code">仅 share 范围内</td><td class="code">仅 share 范围内</td><td class="code">仅 share 范围内</td><td>按 token 权限白名单</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ━━━━━━━━━━ Section D: 锁版补丁 ━━━━━━━━━━ -->
+  <h2 class="section">D · 锁版补丁（v2.4 → v3.0 新增 4 条）</h2>
+  <div class="banner" style="background:rgba(34,197,94,.06);border-color:rgba(34,197,94,.2)">
+    <b>规则 16</b>：身份字段第二行 <code>meta-row</code> = BL · ETD · ETA 三 chip，按角色裁剪（restricted 显示但不显数据）。
+    <br><b>规则 17</b>：BL 区分 MBL/HBL/报关 BL — trader_export 工厂只能见"restricted"，factory_direct 工厂可见 MBL。
+    <br><b>规则 18</b>：列表卡 onClick 走<b>统一路由表</b> <code>getCardClickDest(order, user)</code>，4 路落点：
+    <code>/admin/orders/</code>、<code>/portal/orders/</code>、<code>/collab/</code>、<code>/files/</code>。
+    <br><b>规则 19</b>：协同卡 (/collab) 顶部 tab 必须按顺序：📄 Files only · ✅ My tasks · 💬 Messages · 📊 Status。
+    供应链默认进 <b>My tasks</b>，外部 share 默认进 <b>Files only</b>。
+  </div>
+
+</div>
+</body>
+</html>

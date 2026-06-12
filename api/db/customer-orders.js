@@ -188,6 +188,30 @@ async function _findShippingPlan(pool, order) {
   }
 }
 
+// MIN_FIX_BATCH_20260526 A-2 (2026-05-25):
+// _merge previously emitted `company_code` (CN-XXXXX 防伪 ID) and `factory` name
+// to non-admin callers, bypassing the canonical CUSTOMER_FACING allowlist in
+// api/lib/orders/serializer.js. Below TOP_FORBIDDEN_KEYS_CUSTOMER strips those
+// + a defensive list of other internal identifiers from the final response when
+// caller is not admin. Per memory rule feedback_customer_code_anti_counterfeit.md:
+// company_code NEVER on customer-facing payload.
+const TOP_FORBIDDEN_KEYS_CUSTOMER = [
+  "company_code",                  // 防伪 ID — never customer-facing
+  "factory",                       // factory name leak (跳单 risk)
+  "factory_code",                  // factory anti-counterfeit ID
+  "factory_name",
+  "issuing_company", "issuing_company_code",
+  "forwarder", "forwarder_cn", "forwarder_en",
+  "merged_forwarder_cn",
+  "freight_cost", "trucking_fee", "customs_fee", "insurance_fee",
+  "doc_fee", "thc_fee", "seal_fee",
+  "factory_price", "factory_subtotal", "factory_amount", "factory_price_total",
+  "profit", "margin",
+  "middleman_markup_total", "middleman_markup_pct",
+  "exchange_rate", "fx_rate",
+  "vault", "pricing_snapshot",
+];
+
 // ── Product-level forbidden fields (non-admin must not see Sanlyn's cost/tax structure) ──
 const PRODUCT_FORBIDDEN_KEYS = [
   "factoryPrice", "factorySubtotal", "factory_price", "factory_subtotal",
@@ -311,6 +335,20 @@ function _merge(order, plan, isAdmin) {
     if (plan.flow_status)               out.flow_status = plan.flow_status;
   } else {
     out.shipping_plan = null;
+  }
+
+  // A-2 customer-facing scrub: strip top-level forbidden keys for non-admin.
+  // Belt-and-braces with per-call serializer; this is the merge-path safety net.
+  if (!isAdmin) {
+    TOP_FORBIDDEN_KEYS_CUSTOMER.forEach(function(k) { delete out[k]; });
+    // Defensive: also scrub nested shipping_plan internal cost fields if any
+    // slipped through PLAN_FORBIDDEN_KEYS guard above (e.g. future field additions).
+    if (out.shipping_plan && typeof out.shipping_plan === "object") {
+      ["freight_cost","trucking_fee","customs_fee","insurance_fee",
+       "doc_fee","thc_fee","seal_fee"].forEach(function(k) {
+        delete out.shipping_plan[k];
+      });
+    }
   }
 
   return out;

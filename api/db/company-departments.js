@@ -25,7 +25,9 @@ export default async function handler(req, res) {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
   var pool = getPool();
-  var myCode = req.user.companyCode || req.user.company_code;
+  var isAdmin = req.user.role === "admin" || req.user.role === "super_admin";
+  var myCode = (isAdmin && (req.query?.company_code || req.body?.company_code))
+    || req.user.companyCode || req.user.company_code;
   if (!myCode) return res.status(200).json({ success: true, group_code: null, departments: [] });
 
   // 拿本公司记录

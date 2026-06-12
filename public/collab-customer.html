@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sanlyn OS · 托书协同</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  background: #f0f2f5; color: #111; font-size: 13px; }
+.shell { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
+.card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 14px; }
+.sec-head { padding: 13px 16px; border-bottom: 1px solid #f0f2f5; }
+.sec-title { font-size: 13px; font-weight: 800; color: #1a1d23; }
+.sec-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+
+/* 顶部 My Shipment */
+.ship-head { background: #1a1d23; color: #fff; padding: 14px 18px;
+  display: flex; align-items: center; justify-content: space-between; border-radius: 10px 10px 0 0; }
+.ship-title { font-size: 14px; font-weight: 800; }
+.ship-sub { font-size: 11px; color: #9ca3af; margin-top: 3px; }
+.badge { display: inline-flex; align-items: center; padding: 4px 12px;
+  border-radius: 20px; font-size: 11px; font-weight: 800; }
+.badge-amber { background: #fef9c3; color: #a16207; }
+.badge-green { background: #dcfce7; color: #15803d; }
+
+.kv { display: flex; justify-content: space-between; padding: 10px 18px;
+  border-bottom: 1px solid #f0f2f5; font-size: 12px; }
+.kv:last-child { border-bottom: none; }
+.kv .k { color: #6b7280; }
+.kv .v { font-weight: 700; color: #1a1d23; text-align: right; }
+.kv .v.green { color: #059669; }
+
+/* 进度条 */
+.steps { display: flex; align-items: center; padding: 16px 22px; }
+.stp { display: flex; flex-direction: column; align-items: center; gap: 6px; flex-shrink: 0; }
+.stp-dot { width: 26px; height: 26px; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
+.stp-dot.done { background: #059669; color: #fff; }
+.stp-dot.cur  { background: #1a73e8; color: #fff; }
+.stp-dot.todo { background: #e5e7eb; color: #9ca3af; }
+.stp-lbl { font-size: 10px; font-weight: 700; color: #6b7280; white-space: nowrap; }
+.stp-lbl.cur { color: #1a73e8; }
+.stp-line { flex: 1; height: 3px; margin: 0 6px 20px; border-radius: 2px; background: #e5e7eb; }
+.stp-line.done { background: #059669; }
+
+/* 货物表 */
+.cg-t { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cg-t th { background: #f8fafc; padding: 8px 10px; text-align: left;
+  font-size: 10px; font-weight: 800; color: #374151; border-bottom: 1px solid #e0e4ea; }
+.cg-t td { padding: 8px 10px; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }
+.note-in { width: 100%; border: 1.5px solid #e0e4ea; border-radius: 6px;
+  padding: 6px 9px; font-size: 11px; outline: none; font-family: inherit; }
+.note-in:focus { border-color: #1a73e8; }
+.note-in.saved { border-color: #fbbf24; background: #fffbeb; }
+
+/* 航班卡 */
+.sail { border: 1.5px solid #e0e4ea; border-radius: 10px; margin: 10px 16px;
+  padding: 13px 15px; cursor: pointer; transition: border-color .15s; background: #fff; }
+.sail:hover { border-color: #93c5fd; }
+.sail.selected { border: 2.5px solid #059669; background: #f6fef9; box-shadow: 0 0 0 3px #05966918; }
+.sail-top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.sail-carrier { font-size: 13px; font-weight: 800; color: #1a1d23; }
+.sail-vessel { font-size: 11px; color: #6b7280; }
+.rec-pill { font-size: 9px; font-weight: 800; background: #dbeafe; color: #1d4ed8;
+  padding: 2px 8px; border-radius: 12px; }
+.sel-pill { margin-left: auto; font-size: 10px; font-weight: 800;
+  background: #059669; color: #fff; padding: 3px 10px; border-radius: 12px; }
+.sail-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+.sail-cell { border: 1px solid #f0f2f5; border-radius: 8px; padding: 7px 10px; }
+.sail-cell .l { font-size: 9px; color: #9ca3af; font-weight: 700; }
+.sail-cell .d { font-size: 12px; font-weight: 800; color: #1a1d23; margin-top: 2px; }
+.sail-cell .d.red { color: #b91c1c; }
+.sail-cell .d.green { color: #059669; }
+
+.confirm-bar { background: #eff6ff; border-top: 1px solid #dbeafe; padding: 11px 16px;
+  font-size: 11.5px; color: #1e40af; }
+.btn { padding: 12px 24px; border-radius: 9px; border: none; font-size: 13px;
+  font-weight: 800; cursor: pointer; }
+.btn-green { background: #059669; color: #fff; width: 100%; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* 已确认横幅 */
+.confirmed-banner { background: linear-gradient(135deg,#ecfdf5,#d1fae5);
+  border: 1.5px solid #86efac; border-radius: 10px; padding: 14px 18px;
+  margin-bottom: 14px; display: flex; align-items: center; gap: 12px; }
+
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1a1d23; color: #fff; padding: 10px 22px; border-radius: 20px;
+  font-size: 12px; font-weight: 700; display: none; z-index: 999; }
+.toast.show { display: block; }
+.hidden { display: none !important; }
+.center-state { text-align: center; padding: 70px 20px; color: #6b7280; }
+.center-state .big { font-size: 44px; margin-bottom: 14px; }
+.center-state h2 { font-size: 17px; font-weight: 800; color: #1a1d23; margin-bottom: 6px; }
+.sync-dot { font-size: 10px; color: #059669; font-weight: 700; float: right; }
+</style>
+</head>
+<body>
+
+<div class="center-state" id="stateLoading"><div class="big">⏳</div><p>正在加载…</p></div>
+
+<div class="hidden" id="stateForm">
+<div class="shell">
+
+  <!-- 已确认横幅（谁定了就显示） -->
+  <div class="confirmed-banner hidden" id="confirmedBanner">
+    <div style="font-size:26px;">✅</div>
+    <div style="flex:1;">
+      <div style="font-size:13px;font-weight:800;color:#065f46;" id="confirmedText">已确认</div>
+      <div style="font-size:11px;color:#047857;margin-top:2px;" id="confirmedSub"></div>
+    </div>
+    <button onclick="reopen()" style="background:none;border:1px solid #86efac;color:#047857;
+      padding:6px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">重新选择</button>
+  </div>
+
+  <!-- My Shipment -->
+  <div class="card">
+    <div class="ship-head">
+      <div>
+        <div class="ship-title">协同 · My Shipment</div>
+        <div class="ship-sub" id="shipSub">—</div>
+      </div>
+      <span class="badge badge-amber" id="actionBadge">需要您确认</span>
+    </div>
+    <div id="kvBox"></div>
+    <div class="steps" id="stepsBox"></div>
+  </div>
+
+  <!-- Cargo Description -->
+  <div class="card" id="cargoCard" style="display:none;">
+    <div class="sec-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div>
+        <div class="sec-title">货物明细 / Cargo Description <span class="sync-dot hidden" id="syncDot">✓ 已同步</span></div>
+        <div class="sec-sub">订舱前请核对 · 改 HS/品名写备注即同步</div>
+      </div>
+      <span style="flex-shrink:0;font-size:10px;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 10px;font-weight:700;">FE 勾选申请 · 改 HS 写备注</span>
+    </div>
+    <table class="cg-t">
+      <thead><tr><th>Brand Code</th><th>品名 & 规格 Description</th><th style="width:96px;">HS Code</th>
+        <th style="width:40px;text-align:center;" title="FE 东南亚原产地证 ¥200/证 邮费到付">FE</th>
+        <th style="width:54px;">箱数</th><th style="width:70px;">单价</th><th style="width:80px;">金额</th>
+        <th style="width:72px;">GW (KGS)</th><th style="width:170px;">您的备注 Your Notes</th></tr></thead>
+      <tbody id="cargoBody"></tbody>
+    </table>
+  </div>
+
+  <!-- 条款 + 价格 -->
+  <div class="card" id="termCard">
+    <div class="sec-head">
+      <div class="sec-title">条款 · 航班 & 费用 / Terms & Charges</div>
+      <div class="sec-sub">条款选择即生效 · 价格为 Sanlyn 报价</div>
+    </div>
+    <div style="padding:12px 16px;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;" id="ttRowC"></div>
+      <div id="priceBox" style="margin-top:8px;"></div>
+      <div id="sailMerge" style="margin-top:6px;"></div>
+    </div>
+  </div>
+
+  <!-- 柜明细 -->
+  <div class="card" id="cntrCard" style="display:none;">
+    <div class="sec-head">
+      <div class="sec-title">柜 / Containers <span id="cntrCount" style="font-weight:400;color:#9ca3af;"></span></div>
+    </div>
+    <div id="cntrBox" style="padding:8px 16px 14px;"></div>
+  </div>
+
+  <!-- 单据下载 -->
+  <div class="card" id="docCard">
+    <div class="sec-head"><div class="sec-title">单据 / Documents</div></div>
+    <div style="padding:10px 16px 16px;">
+      <a id="dlPack" target="_blank" style="display:flex;align-items:center;gap:10px;border:1.5px solid #e0e4ea;border-radius:10px;padding:12px 14px;text-decoration:none;color:#111827;font-size:13px;font-weight:700;">
+        📦 <span style="flex:1;">客户资料合并版（PL + SC + IV）</span><span style="color:#1a73e8;">下载 ↗</span></a>
+      <div id="feRow" style="display:flex;align-items:center;gap:10px;border:1.5px solid #e0e4ea;border-radius:10px;padding:12px 14px;margin-top:8px;font-size:13px;">
+        🌏 <div style="flex:1;">
+          <div style="font-weight:700;">FE 东南亚原产地证 Form E <span id="feMust" class="hidden" style="font-size:10px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:1px 6px;margin-left:6px;">代购单必办</span></div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:2px;">¥200 / 票 · 邮费快递到付（客户自费）· 享东盟关税优惠</div>
+        </div>
+        <button id="feBtn" onclick="toggleFE()" style="padding:8px 16px;border-radius:8px;border:1.5px solid #1a73e8;background:#fff;color:#1a73e8;font-size:12px;font-weight:700;cursor:pointer;">申请 FE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Available Sailings -->
+  <div class="card">
+    <div class="sec-head" style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div class="sec-title">可选航班 / Available Sailings</div>
+        <div class="sec-sub" id="sailSub">点击卡片选择您偏好的航班 · 选择即自动记录 · ⚠️ 确认后改其他航线将产生改舱/退仓费</div>
+      </div>
+      <span class="badge badge-amber" id="sailCount" style="background:#dbeafe;color:#1d4ed8;">—</span>
+    </div>
+    <div id="sailBox"><div style="padding:20px 16px;font-size:12px;color:#9ca3af;">暂无可选航班，请联系 Sanlyn 业务员。</div></div>
+    <div class="confirm-bar hidden" id="recBar"></div>
+  </div>
+
+  <!-- 确认按钮 -->
+  <div id="confirmZone">
+    <button class="btn btn-green" id="btnConfirm" onclick="confirmBooking()">✅ 确认订舱 Confirm Booking</button>
+    <div style="text-align:center;font-size:11px;color:#9ca3af;margin-top:12px;">
+      选择/备注实时自动保存 · 点确认后即锁定本票订舱 · 🔒 数据仅您与 Sanlyn 可见
+    </div>
+  </div>
+
+</div>
+</div>
+
+<div class="center-state hidden" id="stateDead">
+  <div class="big">⛔️</div><h2>链接无效</h2><p>链接已过期或被重发作废，请联系 Sanlyn 重新获取。</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api/db/booking-collab';
+const token = new URLSearchParams(location.search).get('token') || '';
+const $ = id => document.getElementById(id);
+const show = id => { ['stateLoading','stateForm','stateDead'].forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
+function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+function fmt(d){ return d?fmtD(d):'—'; }
+
+let sheet = {}, sailings = [], selIdx = -1, confirmed = false, noteTimer = null, notes = {};
+
+function renderSteps(){
+  const factoryDone = !!sheet.factory_submitted;
+  const filed = sailings.length > 0;
+  const steps = [
+    { lbl:'工厂备货 Factory Ready', state: factoryDone?'done':'todo' },
+    { lbl:'船期已出 Booking Filed', state: filed?'done':'todo' },
+    { lbl:'您的确认 Confirmation', state: confirmed?'done':(filed?'cur':'todo') },
+    { lbl:'已开船 In Transit', state:'todo' },
+  ];
+  $('stepsBox').innerHTML = steps.map((s,i)=>
+    `<div class="stp"><div class="stp-dot ${s.state}">${s.state==='done'?'✓':i+1}</div>
+     <div class="stp-lbl ${s.state==='cur'?'cur':''}">${s.lbl}</div></div>` +
+    (i<3?`<div class="stp-line ${s.state==='done'?'done':''}"></div>`:'')
+  ).join('');
+}
+
+function renderConfirmState(){
+  // 谁定了就显示：已确认横幅 + 锁定选中卡
+  if(confirmed){
+    const x = sailings[selIdx] || sheet.customer_selected_sailing || {};
+    $('confirmedBanner').classList.remove('hidden');
+    $('confirmedText').textContent = `已确认订舱：${x.carrier||''} ${x.vessel||''} · ETD ${fmt(x.etd)}`;
+    $('confirmedSub').textContent = (sheet.customer_submitted_at?`确认时间 ${String(sheet.customer_submitted_at).replace('T',' ').slice(0,16)} · `:'') + 'Sanlyn 已收到，舱位锁定中';
+    $('actionBadge').textContent='已确认'; $('actionBadge').className='badge badge-green';
+    $('confirmZone').style.display='none';
+  } else {
+    $('confirmedBanner').classList.add('hidden');
+    $('actionBadge').textContent='需要您确认'; $('actionBadge').className='badge badge-amber';
+    $('confirmZone').style.display='block';
+  }
+  renderSteps();
+}
+
+function pick(i){
+  if(confirmed) return;
+  selIdx=i;
+  sailings.forEach((_,k)=>{
+    const el=$('sail_'+k);
+    el.classList.toggle('selected',k===i);
+    el.querySelector('.sel-pill').classList.toggle('hidden',k!==i);
+  });
+}
+function reopen(){ confirmed=false; renderConfirmState(); toast('可重新选择航班，选好后再次确认'); }
+
+function renderSailings(){
+  $('sailCount').textContent = sailings.length + ' 个班次';
+  if(!sailings.length){
+    if (sheet.so_no || sheet.bl_no) {
+      $('sailCount').textContent = '已订舱';
+      const seg = [sheet.carrier_code, sheet.vessel, sheet.voyage].filter(Boolean).join(' · ');
+      $('sailBox').innerHTML = `<div style="padding:14px 16px;font-size:13px;background:#f0fdf4;border-radius:8px;margin:0 0 4px;">
+        ✅ <b>已订舱：${esc(seg||'—')}</b>${sheet.etd?` · ETD ${fmt(sheet.etd)}`:''}
+        <span style="color:#9ca3af;font-size:11px;margin-left:8px;">改其他航线将产生改舱/退仓费</span></div>`;
+    }
+    return;
+  }
+  $('sailBox').innerHTML = sailings.map((x,i)=>`
+    <div class="sail" id="sail_${i}" onclick="pick(${i})">
+      <div class="sail-top">
+        <span style="font-size:18px;">🚢</span>
+        <div>
+          <span class="sail-carrier">${esc(x.carrier||'—')}</span>
+          ${x.is_recommended?'<span class="rec-pill">Sanlyn 推荐</span>':''}
+          <div class="sail-vessel">${esc(x.vessel||'')} ${esc(x.voyage||'')}</div>
+        </div>
+        <span class="sel-pill hidden">✓ Selected</span>
+      </div>
+      <div class="sail-grid">
+        <div class="sail-cell"><div class="l">ETD ${esc(sheet.pol||'')}</div><div class="d">${fmt(x.etd)}</div></div>
+        <div class="sail-cell"><div class="l">ETA ${esc(sheet.pod||'')}</div><div class="d">${fmt(x.eta)}</div></div>
+        <div class="sail-cell"><div class="l">截关 Cut-off</div><div class="d red">${fmt(x.cutoff_date)}</div></div>
+        <div class="sail-cell"><div class="l">运费 / ${esc(sheet.container_type||'柜')}</div><div class="d green">${x.rate_usd?('USD '+Number(x.rate_usd).toLocaleString()):'—'}</div></div>
+      </div>
+    </div>`).join('');
+  const rec = sailings.find(x=>x.is_recommended);
+  if(rec){ $('recBar').classList.remove('hidden');
+    $('recBar').innerHTML = `Sanlyn 推荐 <b>${esc(rec.carrier)} ${fmt(rec.etd)}</b> — 综合船期与价格最优。报价 48 小时内有效。`; }
+}
+
+function saveNotes(){
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(async ()=>{
+    try{
+      const r = await fetch(`${API}/customer-notes`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token,notes})});
+      if(r.ok){ const d=$('syncDot'); d.classList.remove('hidden'); setTimeout(()=>d.classList.add('hidden'),2000); }
+    }catch(e){}
+  }, 800);
+}
+
+function renderCargo(){
+  const orders = Array.isArray(sheet.orders)?sheet.orders:[];
+  if(!orders.some(o=>(o.items||[]).length)) return;
+  $('cargoCard').style.display='block';
+  const saved = sheet.customer_item_notes || {};
+  let gSeq = 0, html = '';
+  orders.forEach(o=>{
+    const its = o.items||[];
+    if(!its.length) return;
+    const dgBadge = o.export_mode==='daigou' ? ' <span style="background:#f3e8ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:4px;padding:1px 7px;font-size:10px;">DAIGOU · Buying Agent</span>' : '';
+    const liveC = Array.isArray(sheet.containers_live)?sheet.containers_live:[];
+    const myC = liveC.filter(x=>(x.cargo||[]).some(g=>g.order_no===o.order_no));
+    const cntrTag = myC.length
+      ? myC.map(x=>`<span style="color:#475569;font-weight:600;">　柜 ${esc(x.container_no||'')}${x.seal_no?' · 封 '+esc(x.seal_no):''}${x.container_type?' · '+esc(x.container_type):''}</span>`).join('')
+      : ' <span style="color:#9ca3af;font-weight:400;font-size:10px;">　柜待装柜绑定</span>';
+    html += `<tr><td colspan="9" style="background:#f1f5f9;font-weight:800;font-size:11px;color:#334155;padding:6px 10px;">ORDER ${esc((o.order_no||'').replace(/^\d+-/,''))}　·　${esc(o.contract_no||'')}${dgBadge}${cntrTag}</td></tr>`;
+    its.forEach((it,i)=>{
+      let bc = it.barcode;
+      if(!bc){ gSeq++; bc = 'G-'+String(gSeq).padStart(4,'0'); }
+      const key = it.barcode || it.sku || (o.order_no+'_'+i);
+      if(saved[key]) notes[key]=saved[key];
+      const feKey = it.barcode||it.sku||key;
+      const feChecked = !!(window._feLines && window._feLines[feKey]);
+      const nameLine = esc(it.product_name||it.description||'—') + (it.size?`<div style="font-size:10px;color:#9ca3af;">${esc(it.size)}</div>`:'');
+      html += `<tr>
+        <td style="font-weight:700;${it.barcode?'':'color:#b45309;'}" ${it.barcode?'':'title="无条形码·代购特殊条码"'}>${esc(bc)}</td>
+        <td>${nameLine}</td>
+        <td style="font-family:monospace;">${esc(it.hs_code||'—')}</td>
+        <td style="text-align:center;"><input type="checkbox" class="fe-ck" data-fekey="${esc(feKey)}" data-hs="${esc(it.hs_code||'')}" ${feChecked?'checked':''} ${sheet.is_daigou?'checked disabled':''} style="width:15px;height:15px;cursor:pointer;accent-color:#1a73e8;"></td>
+        <td>${esc(it.ctns||'—')}</td>
+        <td>${it.unit_price!=null?Number(it.unit_price).toLocaleString():'—'}</td>
+        <td style="font-weight:700;">${it.amount!=null?Number(it.amount).toLocaleString():'—'}</td>
+        <td>${esc(it.gw_kgs||'—')}</td>
+        <td><input class="note-in ${saved[key]?'saved':''}" data-key="${esc(key)}"
+          value="${esc(saved[key]||'')}" placeholder="如需改品名/HS/标签请说明"></td>
+      </tr>`;
+    });
+  });
+  $('cargoBody').innerHTML = html;
+  document.querySelectorAll('.note-in').forEach(inp=>{
+    inp.addEventListener('input',()=>{ notes[inp.dataset.key]=inp.value; saveNotes(); });
+  });
+  document.querySelectorAll('.fe-ck').forEach(ck=>{
+    ck.addEventListener('change',()=>{
+      window._feLines = window._feLines || {};
+      const hs = ck.dataset.hs;
+      // 同 HS 联动：一票 FE 按品类报，勾一行=同 HS 全勾
+      const group = hs ? [...document.querySelectorAll(`.fe-ck[data-hs="${hs}"]`)] : [ck];
+      group.forEach(x=>{ if(!x.disabled){ x.checked = ck.checked; } window._feLines[x.dataset.fekey] = ck.checked; });
+      clearTimeout(window._feTimer);
+      window._feTimer = setTimeout(saveFELines, 600);
+    });
+  });
+}
+async function saveFELines(){
+  const lines = window._feLines || {};
+  const any = Object.values(lines).some(Boolean);
+  try{
+    const r = await fetch(`${API}/customer-notes`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token, fe_request: any, fe_lines: any ? lines : null})});
+    const d = await r.json();
+    if(!r.ok||!d.ok){ alert(d.error||'FE 保存失败'); return; }
+    window._feState = any; sheet.fe_cert = d.fe_cert;
+    const pr = sheet.pricing || (sheet.pricing = {});
+    pr.port_charges_lines = (pr.port_charges_lines||[]).filter(l=>l.name!=='FE原产地证费');
+    if (any) pr.port_charges_lines.push({name:'FE原产地证费'+(d.fe_cert.cert_count>1?`（${d.fe_cert.cert_count}证）`:''), sale: d.fe_cert.fee, currency: d.fe_cert.currency||'CNY'});
+    pr.port_charges_total = pr.port_charges_lines.length ? pr.port_charges_lines.reduce((s,l)=>s+(Number(l.sale)||0),0) : null;
+    renderPrice(); if(window.renderFE) renderFE();
+  }catch(e){}
+}
+async function boot(){
+  if(!token){ show('stateDead'); return; }
+  const r = await fetch(`${API}/validate?token=${encodeURIComponent(token)}`);
+  const d = await r.json().catch(()=>({}));
+  if(!d.valid || d.role!=='customer_booking'){ show('stateDead'); return; }
+  sheet = d.booking_sheet || {};
+  window.__fp = d.factory_progress || null;
+  sailings = Array.isArray(sheet.sailings)?sheet.sailings:[];
+  confirmed = !!sheet.customer_submitted;
+
+  $('shipSub').textContent = [sheet.shipment_no, (sheet.pol&&sheet.pod)?`${sheet.pol} → ${sheet.pod}`:null,
+    sheet.etd?('ETD '+fmt(sheet.etd)):null].filter(Boolean).join(' · ');
+  const orders = Array.isArray(sheet.orders)?sheet.orders:[];
+  const orderNos = orders.map(o=>o.order_no).filter(Boolean).join(' / ');
+  const items = orders.flatMap(o=>o.items||[]);
+  const ctns = sheet.total_cartons || items.reduce((s,x)=>s+(Number(x.ctns)||0),0) || null;
+  const gw = sheet.gross_weight_kg || items.reduce((s,x)=>s+(Number(x.gw_kgs)||0),0) || null;
+  const kvs = [
+    ['订单 Orders', orderNos||'—', ''],
+    ['工厂备货 Factory Ready', (()=>{
+      const fp = window.__fp;
+      if(fp && fp.total > 1){
+        const done = fp.submitted >= fp.total;
+        return (done?'已确认 ':'备货中 ') + fp.submitted + '/' + fp.total
+          + (done?(' — '+fmt(sheet.factory_cargo_ready)):'');
+      }
+      return sheet.factory_submitted?('已确认 Confirmed — '+fmt(sheet.factory_cargo_ready)):'待工厂确认';
+    })(), (window.__fp ? (window.__fp.submitted>=window.__fp.total?'green':'') : (sheet.factory_submitted?'green':''))],
+    ['货物 Cargo', [ctns?ctns.toLocaleString()+' CTNS':null, gw?Number(gw).toLocaleString()+' KGS':null,
+      sheet.total_cbm?Number(sheet.total_cbm)+' CBM':null].filter(Boolean).join(' · ')||'—',''],
+    ['柜型 Container', (sheet.container_type||'—')+(sheet.container_qty?' × '+sheet.container_qty:''),''],
+    ['条款 Incoterms', sheet.freight_term||'—',''],
+  ];
+  $('kvBox').innerHTML = kvs.map(k=>`<div class="kv"><span class="k">${k[0]}</span><span class="v ${k[2]}">${esc(k[1])}</span></div>`).join('');
+
+  window._feLines = (sheet.fe_cert && sheet.fe_cert.lines) || {};
+  renderCargo();
+  // 条款选择（选了即存，customer-notes 端点已支持 freight_term）
+  window.renderTT = function(){
+    const TT = ['FOB','EXW','FCA','CIF','DDP','CNF/CFR'];
+    const cur = sheet.freight_term || '';
+    const curLabel = (cur==='CNF'||cur==='CFR') ? 'CNF/CFR' : cur;
+    if (cur && !window._ttExpand) {
+      $('ttRowC').innerHTML = `<div style="display:flex;align-items:center;gap:8px;">
+        <div style="padding:5px 13px;border:1.5px solid #1a73e8;border-radius:8px;font-size:12px;font-weight:700;color:#1a73e8;background:#eff6ff;">${curLabel}</div>
+        <span style="font-size:11px;color:#9ca3af;cursor:pointer;" onclick="window._ttExpand=true;renderTT();">✎ 改条款</span></div>`;
+      return;
+    }
+    $('ttRowC').innerHTML = TT.map(t=>`<div class="tt-chip${(curLabel===t)?' on':''}" data-tt="${t}"
+      style="padding:5px 13px;border:1.5px solid ${(curLabel===t)?'#1a73e8':'#e0e4ea'};border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;${(curLabel===t)?'color:#1a73e8;background:#eff6ff;':''}">${t}</div>`).join('');
+    document.querySelectorAll('.tt-chip').forEach(ch=>ch.addEventListener('click', async ()=>{
+      const v = ch.dataset.tt==='CNF/CFR'?'CNF':ch.dataset.tt;
+      try{ await fetch(`${API}/customer-notes`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token,freight_term:v})}); sheet.freight_term=v; window._ttExpand=false; renderTT(); renderPrice(); }catch(e){}
+    }));
+  };
+  renderTT();
+  // 价格区：海运价 + 港杂费总数（明细点开）
+  window.renderPrice = function(){
+    const pr = sheet.pricing || {};
+    const rows = [];
+    // 已订航班（订舱即定，与费用同卡）
+    if (sheet.so_no || sheet.bl_no) {
+      const seg = [sheet.carrier_code, sheet.vessel, sheet.voyage].filter(Boolean).join(' · ');
+      rows.push(`<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;background:#f0fdf4;border-radius:6px;padding:6px 10px;margin-bottom:4px;">
+        <span>⛴️ 已订航班 <b>${esc(seg||'—')}</b>${sheet.etd?` · ETD ${fmt(sheet.etd)}`:''}</span>
+        <span style="color:#047857;font-weight:700;">✓ 已订舱 <span style="color:#1a73e8;font-weight:600;cursor:pointer;margin-left:8px;" onclick="window.toggleSail&&toggleSail()">改航班 ▾</span></span></div>`);
+    }
+    if (pr.freight_sale_usd != null) {
+      const fq = Number(sheet.container_qty)||1;
+      rows.push(`<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;">
+        <span>🚢 海运费 Ocean Freight</span><b>USD ${Number(pr.freight_sale_usd).toLocaleString()} × ${fq} 柜 ＝ USD ${(Number(pr.freight_sale_usd)*fq).toLocaleString()}</b></div>`);
+    }
+    if (pr.port_charges_total != null)
+      rows.push(`<div style="font-size:13px;">
+        <div style="display:flex;justify-content:space-between;padding:3px 0;cursor:pointer;font-size:11px;" onclick="const d=$('pcDetail');d.style.display=d.style.display==='none'?'block':'none';">
+          <span>⚓ 港杂费 Port Charges <span style="color:#9ca3af;font-size:11px;">(点开明细)</span></span>
+          <b>CNY ${Number(pr.port_charges_total).toLocaleString()}</b></div>
+        <div id="pcDetail" style="display:none;background:#f9fafb;border-radius:8px;padding:8px 12px;">
+          ${(pr.port_charges_lines||[]).map(l=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:#374151;"><span>${esc(l.name)}</span><span>${esc(l.currency)} ${Number(l.sale).toLocaleString()}</span></div>`).join('')||'<div style="font-size:11px;color:#9ca3af;">暂无明细</div>'}
+        </div></div>`);
+    // EXW 必算项（2026-06-12 Damon 铁律：EXW=工厂交货，内陆段费用必须单列给客户；FOB 不算）
+    if ((sheet.freight_term||'').toUpperCase() === 'EXW') {
+      const lineNames = (pr.port_charges_lines||[]).map(l=>l.name||'');
+      const need = [];
+      if ((sheet.trucking_arrange||'agent') === 'agent' && !lineNames.some(n=>/拖车/.test(n))) need.push('拖车费');
+      if ((sheet.customs_arrange||'agent')  === 'agent' && !lineNames.some(n=>/报关/.test(n))) need.push('报关费');
+      if (need.length)
+        rows.push(`<div style="font-size:11px;color:#b91c1c;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:6px 10px;margin-top:4px;font-weight:700;">⚠️ EXW 条款：${need.join('、')} 必算 · 待 Sanlyn 报价后自动显示</div>`);
+    }
+    $('priceBox').innerHTML = rows.length ? rows.join('')
+      : '<div style="font-size:12px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;">💰 价格待 Sanlyn 报价确认后显示在这里（不显示成本，只显示给您的报价）</div>';
+  };
+  renderPrice();
+  // 柜明细（柜号/封号/柜型/车牌——无司机隐私）
+  (function(){
+    const live = [];
+    if(!live.length) return;
+    $('cntrCard').style.display='block';
+    $('cntrCount').textContent = live.length+' 柜';
+    $('cntrBox').innerHTML = live.map((x,i)=>{
+      const ordersX = Array.isArray(sheet.orders)?sheet.orders:[];
+      const pos = (x.cargo||[]).map(g=>{
+        const po = String(g.order_no||'').replace(/^\d+-/,'');
+        const od = ordersX.find(o=>o.order_no===g.order_no);
+        return po + (od&&od.export_mode==='daigou' ? ' <span style="color:#7c3aed;font-size:10px;">DAIGOU</span>' : '');
+      }).filter(Boolean).join('+');
+      return `
+      <div style="display:grid;grid-template-columns:1.4fr 1.1fr 0.7fr 1fr;gap:6px 12px;border:1px solid #f0f2f5;border-radius:8px;padding:7px 12px;margin-top:6px;font-size:11px;">
+        <div><span style="color:#9ca3af;">柜${i+1}</span> <b>${esc(x.container_no||'—')}</b>${pos?` <span style="color:#1d4ed8;font-weight:700;">· ${esc(pos)}</span>`:''}</div>
+        <div><span style="color:#9ca3af;">封号</span> <b>${esc(x.seal_no||'—')}</b></div>
+        <div><b>${esc(x.container_type||'—')}</b></div>
+        <div style="color:#9ca3af;">${pos?'':'PO 待装柜绑定'}</div>
+      </div>`;}).join('');
+  })();
+  // FE 原产地证（¥200/票·邮费到付自费；代购单必办自动开通）
+  window._feState = (sheet.fe_cert && sheet.fe_cert.requested) ? true : false;
+  window.renderFE = function(){
+    const btn = $('feBtn');
+    if (sheet.is_daigou) $('feMust').classList.remove('hidden');
+    if (window._feState) {
+      btn.textContent = sheet.is_daigou ? '✓ 已开通（必办）' : '✓ 已申请 · 点击取消';
+      btn.style.background = '#ecfdf5'; btn.style.borderColor = '#a7f3d0'; btn.style.color = '#047857';
+      if (sheet.is_daigou) { btn.style.cursor = 'default'; btn.onclick = null; }
+    } else {
+      btn.textContent = '申请 FE'; btn.style.background = '#fff'; btn.style.borderColor = '#1a73e8'; btn.style.color = '#1a73e8';
+    }
+  };
+  window.toggleFE = async function(){
+    const want = !window._feState;
+    // 与行勾联动：开=全行勾上，关=全清
+    document.querySelectorAll('.fe-ck').forEach(ck=>{ if(!ck.disabled) ck.checked = want; window._feLines = window._feLines||{}; window._feLines[ck.dataset.fekey]=want; });
+    if (document.querySelectorAll('.fe-ck').length) { await saveFELines(); return; }
+    try{
+      const r = await fetch(`${API}/customer-notes`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token, fe_request: want})});
+      const d = await r.json();
+      if(!r.ok||!d.ok){ alert(d.error||'操作失败'); return; }
+      window._feState = want; sheet.fe_cert = d.fe_cert;
+      // 价格区同步 FE 行
+      const pr = sheet.pricing || (sheet.pricing = {});
+      pr.port_charges_lines = (pr.port_charges_lines||[]).filter(l=>l.name!=='FE原产地证费');
+      if (want) pr.port_charges_lines.push({name:'FE原产地证费', sale: d.fe_cert.fee||200, currency: d.fe_cert.currency||'CNY'});
+      pr.port_charges_total = pr.port_charges_lines.length ? pr.port_charges_lines.reduce((s,l)=>s+(Number(l.sale)||0),0) : null;
+      renderPrice(); renderFE();
+    }catch(e){ alert('网络错误'); }
+  };
+  renderFE();
+  // 代购单：未开通则自动开通（必办）
+  if (sheet.is_daigou && !window._feState) { window.toggleFE(); }
+  // 客户资料合并版下载
+  (function(){
+    const orders0 = Array.isArray(sheet.orders)?sheet.orders:[];
+    const f = (orders0.find(o=>o.order_no)||{}).order_no;
+    $('dlPack').href = `${API}/file?token=${encodeURIComponent(token)}&type=pack&aud=customer`;
+  })();
+  // 已选班次置顶
+  (function(){
+    if(!sheet.customer_selected_sailing) return;
+    const cs = typeof sheet.customer_selected_sailing==='string'?(()=>{try{return JSON.parse(sheet.customer_selected_sailing)}catch(e){return null}})():sheet.customer_selected_sailing;
+    if(!cs||!cs.vessel) return;
+    const bar = document.createElement('div');
+    bar.style.cssText='background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:13px;';
+    bar.innerHTML = `⛴️ <b>已选班次：</b>${esc(cs.vessel)} ${esc(cs.voyage||'')} · ETD ${fmt(cs.etd)} <span style="color:#9ca3af;font-size:11px;margin-left:8px;">改其他航线将产生改舱/退仓费</span>`;
+    const shell = document.querySelector('.shell');
+    shell.insertBefore(bar, shell.firstChild.nextSibling);
+  })();
+  renderSailings();
+  // 已确认过：预选她定的船
+  if(confirmed && sheet.customer_selected_sailing){
+    const cs = typeof sheet.customer_selected_sailing==='string'?JSON.parse(sheet.customer_selected_sailing):sheet.customer_selected_sailing;
+    const idx = sailings.findIndex(x=>x.vessel===cs.vessel&&String(x.etd)===String(cs.etd));
+    if(idx>=0){ selIdx=idx; setTimeout(()=>{ const el=$('sail_'+idx); if(el){el.classList.add('selected');el.querySelector('.sel-pill').classList.remove('hidden');} },0); }
+    sheet.customer_selected_sailing = cs;
+  }
+  // 航班卡并入条款&费用卡：已订舱默认收起，「改航班」展开
+  (function(){
+    const sailCard = $('sailBox') && $('sailBox').closest('.card');
+    const cz = $('confirmZone');
+    if (!sailCard || !$('sailMerge')) return;
+    $('sailMerge').appendChild(sailCard);
+    if (cz) $('sailMerge').appendChild(cz);
+    sailCard.style.margin = '0';
+    const booked = !!(sheet.so_no || sheet.bl_no);
+    window.toggleSail = function(){
+      const on = sailCard.style.display === 'none';
+      sailCard.style.display = on ? '' : 'none';
+      if (cz) cz.style.display = on ? '' : 'none';
+    };
+    if (booked) { sailCard.style.display = 'none'; if (cz) cz.style.display = 'none'; }
+  })();
+  renderConfirmState();
+  show('stateForm');
+}
+
+async function confirmBooking(){
+  if(selIdx<0){ toast('请先点选一个航班'); return; }
+  const x = sailings[selIdx];
+  if(!confirm(`确认订舱：${x.carrier} ${x.vessel||''} · ETD ${fmt(x.etd)}？\n确认后 Sanlyn 将锁定舱位。`)) return;
+  $('btnConfirm').disabled = true;
+  try{
+    const r = await fetch(`${API}/customer-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,selected_sailing:x,reference_no:null,remarks:null})});
+    const d = await r.json();
+    $('btnConfirm').disabled = false;
+    if(!r.ok||!d.ok){ toast(d.error||'提交失败'); return; }
+    confirmed = true; sheet.customer_submitted = true;
+    sheet.customer_submitted_at = new Date().toISOString();
+    renderConfirmState();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }catch(e){ $('btnConfirm').disabled=false; toast('网络错误，请重试'); }
+}
+
+boot();
+</script>
+</body>
+</html>

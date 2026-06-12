@@ -16,7 +16,7 @@ const pool = new pg.Pool({
   port:     parseInt(process.env.DB_PORT || "5432"),
   database: process.env.DB_NAME     || "sanlyn_db",
   user:     process.env.DB_USER     || "sanlyn_admin",
-  password: process.env.DB_PASSWORD || "Sanlyn2026!",
+  password: process.env.DB_PASSWORD || "Snlnb7f92c74d6fbaa8b97b0379b",
   max: 5,
 });
 

@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ocean Freight Service Agreement · 海运服务协议</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Times New Roman', 'SimSun', serif;
+  background: #f0f2f5; color: #111; font-size: 13px; line-height: 1.8;
+}
+.shell { max-width: 860px; margin: 0 auto; padding: 32px 16px; }
+
+/* Screen toolbar */
+.toolbar {
+  background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  padding: 12px 20px; margin-bottom: 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.tb-info { font-size: 12px; color: #6b7280; }
+.tb-ref  { font-size: 14px; font-weight: 800; color: #1a73e8; margin-top: 2px; }
+.tb-actions { display: flex; gap: 8px; }
+.btn { padding: 7px 16px; border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer; border: none; }
+.btn-print  { background: #f3f4f6; color: #374151; border: 1px solid #e0e4ea; }
+.btn-pdf    { background: #1a73e8; color: #fff; }
+.btn-sign   { background: #059669; color: #fff; }
+
+/* Document */
+.doc {
+  background: #fff; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,.10);
+}
+.doc-inner { padding: 48px 60px; }
+
+/* Title block */
+.title-block { text-align: center; margin-bottom: 32px; }
+.title-cn {
+  font-size: 22px; font-weight: 900; letter-spacing: 4px;
+  color: #1a1d23; margin-bottom: 6px;
+}
+.title-en {
+  font-size: 14px; font-weight: 700; letter-spacing: 2px;
+  color: #374151; text-transform: uppercase;
+}
+.title-sub {
+  font-size: 11px; color: #6b7280; margin-top: 8px;
+  border-top: 1px solid #e0e4ea; padding-top: 8px;
+}
+
+/* Contract number + date */
+.meta-row {
+  display: flex; justify-content: space-between;
+  font-size: 12px; color: #4b5563; margin-bottom: 28px;
+  padding-bottom: 16px; border-bottom: 1.5px solid #e0e4ea;
+}
+.meta-field { display: flex; gap: 6px; }
+.meta-label { font-weight: 700; }
+.meta-blank {
+  display: inline-block; min-width: 160px;
+  border-bottom: 1px solid #374151; padding: 0 4px;
+}
+
+/* Party block */
+.parties-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  margin-bottom: 28px;
+}
+.party-box {
+  border: 1.5px solid #e0e4ea; border-radius: 8px; padding: 14px 16px;
+}
+.party-tag {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 800; margin-bottom: 10px;
+}
+.party-a .party-tag { background: #dbeafe; color: #1d4ed8; }
+.party-b .party-tag { background: #d1fae5; color: #065f46; }
+.party-row { font-size: 12px; margin-bottom: 5px; }
+.party-key { font-weight: 700; color: #374151; }
+.party-val { color: #1a1d23; }
+.blank-line {
+  display: inline-block; min-width: 180px;
+  border-bottom: 1px dotted #9ca3af; margin-left: 4px;
+}
+
+/* Section */
+.section { margin-bottom: 24px; }
+.sec-title {
+  font-size: 13.5px; font-weight: 900; color: #1a1d23;
+  margin-bottom: 10px; padding: 6px 0;
+  border-bottom: 1.5px solid #1a1d23;
+  display: flex; align-items: baseline; gap: 8px;
+}
+.sec-num {
+  background: #1a1d23; color: #fff;
+  padding: 1px 7px; border-radius: 4px; font-size: 11px;
+}
+.sec-en { font-size: 10px; font-weight: 400; color: #6b7280; letter-spacing: 1px; }
+
+/* Sub section */
+.sub { margin-left: 0; margin-bottom: 14px; }
+.sub-title {
+  font-size: 12.5px; font-weight: 800; color: #374151;
+  margin-bottom: 6px; margin-top: 12px;
+}
+
+/* List items */
+.clause { font-size: 12.5px; margin-bottom: 8px; line-height: 1.75; }
+.clause-num { font-weight: 700; margin-right: 4px; }
+.indent { padding-left: 20px; }
+.bi { font-weight: 700; }
+
+/* Services checklist */
+.svc-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; margin: 12px 0;
+}
+.svc-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; padding: 6px 10px;
+  border: 1px solid #e0e4ea; border-radius: 6px;
+}
+.svc-chk {
+  width: 14px; height: 14px; border: 1.5px solid #374151;
+  border-radius: 2px; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; font-size: 10px;
+}
+.svc-chk.on { background: #1a1d23; color: #fff; }
+
+/* Rate table */
+.rate-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  margin: 12px 0;
+}
+.rate-table th {
+  background: #f8fafc; padding: 7px 10px; text-align: left;
+  border: 1px solid #c8cdd6; font-weight: 800; color: #374151;
+}
+.rate-table td {
+  padding: 7px 10px; border: 1px solid #e0e4ea; color: #1a1d23;
+}
+.rate-table .blank { color: #9ca3af; font-style: italic; }
+
+/* Note box */
+.note-box {
+  background: #fffbeb; border: 1px solid #fbbf24; border-radius: 6px;
+  padding: 10px 14px; font-size: 11.5px; color: #92400e; margin: 10px 0;
+}
+
+/* Signature block */
+.sig-section { margin-top: 48px; }
+.sig-title {
+  text-align: center; font-size: 12px; color: #6b7280;
+  margin-bottom: 24px; border-top: 1px solid #e0e4ea; padding-top: 16px;
+}
+.sig-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 40px;
+}
+.sig-party { }
+.sig-party-name {
+  font-size: 13px; font-weight: 800; color: #1a1d23;
+  margin-bottom: 16px; padding-bottom: 6px;
+  border-bottom: 1.5px solid #1a1d23;
+}
+.sig-row {
+  display: flex; align-items: flex-end; gap: 8px;
+  margin-bottom: 18px; font-size: 12px;
+}
+.sig-label { font-weight: 700; white-space: nowrap; color: #374151; }
+.sig-line {
+  flex: 1; border-bottom: 1px solid #374151; min-height: 28px;
+}
+.stamp-box {
+  width: 100px; height: 100px; border: 2px dashed #c8cdd6;
+  border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; margin: 0 auto;
+  font-size: 11px; color: #9ca3af; text-align: center;
+  line-height: 1.4;
+}
+
+/* Footer */
+.doc-footer {
+  margin-top: 40px; padding-top: 16px;
+  border-top: 1px solid #e0e4ea; text-align: center;
+  font-size: 10px; color: #9ca3af;
+}
+
+@media print {
+  body { background: #fff; }
+  .shell { padding: 0; }
+  .toolbar { display: none; }
+  .doc { box-shadow: none; border-radius: 0; }
+  .doc-inner { padding: 20px 40px; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Screen toolbar -->
+  <div class="toolbar">
+    <div>
+      <div class="tb-info">Sanlyn OS · Trade Document · 海运服务协议模板 v1.0</div>
+      <div class="tb-ref">OCEAN FREIGHT SERVICE AGREEMENT</div>
+    </div>
+    <div class="tb-actions">
+      <button class="btn btn-print" onclick="window.print()">🖨️ 打印</button>
+      <button class="btn btn-pdf">⬇️ 下载 PDF</button>
+      <button class="btn btn-sign">✍️ 发送签约</button>
+    </div>
+  </div>
+
+  <!-- Document -->
+  <div class="doc">
+    <div class="doc-inner">
+
+      <!-- Title -->
+      <div class="title-block">
+        <div class="title-cn">海运货代服务协议书</div>
+        <div class="title-en">Ocean Freight Forwarding Service Agreement</div>
+        <div class="title-sub">
+          本协议为 Sanlyn 与客户之间的海运服务标准协议 · Standard Sea Freight Service Agreement between Sanlyn and Client
+        </div>
+      </div>
+
+      <!-- Meta -->
+      <div class="meta-row">
+        <div class="meta-field">
+          <span class="meta-label">合同编号 Contract No.:</span>
+          <span class="meta-blank">SVC-<span style="color:#9ca3af;">YYYY</span>-<span style="color:#9ca3af;">####</span></span>
+        </div>
+        <div class="meta-field">
+          <span class="meta-label">签署日期 Date:</span>
+          <span class="meta-blank">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+        </div>
+      </div>
+
+      <!-- Parties -->
+      <div class="parties-grid">
+        <div class="party-box party-a">
+          <div class="party-tag">甲方 PARTY A / 委托方</div>
+          <div class="party-row"><span class="party-key">公司名称 / Company:</span><br>
+            <span class="party-val"><span class="blank-line"></span></span></div>
+          <div class="party-row"><span class="party-key">注册地址 / Address:</span><br>
+            <span class="party-val"><span class="blank-line"></span></span></div>
+          <div class="party-row"><span class="party-key">联系人 / Contact:</span>
+            <span class="party-val"><span class="blank-line"></span></span></div>
+          <div class="party-row"><span class="party-key">电话 / Tel:</span>
+            <span class="party-val"><span class="blank-line"></span></span></div>
+          <div class="party-row"><span class="party-key">邮箱 / Email:</span>
+            <span class="party-val"><span class="blank-line"></span></span></div>
+        </div>
+        <div class="party-box party-b">
+          <div class="party-tag">乙方 PARTY B / 服务方</div>
+          <div class="party-row"><span class="party-key">公司名称 / Company:</span><br>
+            <span class="party-val">福建三琳工贸有限公司<br>FUJIAN SANLYN INDUSTRIAL CO., LTD</span></div>
+          <div class="party-row"><span class="party-key">注册地址 / Address:</span><br>
+            <span class="party-val">FUZHOU, FUJIAN, CHINA</span></div>
+          <div class="party-row"><span class="party-key">联系人 / Contact:</span>
+            <span class="party-val">Sanlyn Trade Team</span></div>
+          <div class="party-row"><span class="party-key">邮箱 / Email:</span>
+            <span class="party-val">trade@sanlyn.cn</span></div>
+          <div class="party-row"><span class="party-key">系统 / Platform:</span>
+            <span class="party-val">ai.sanlyn.cn</span></div>
+        </div>
+      </div>
+
+      <p class="clause" style="margin-bottom:24px;">
+        根据甲乙双方友好协商，乙方受甲方委托提供海运货代及贸易协同服务，双方达成如下协议：<br>
+        <span style="font-size:11px;color:#6b7280;">
+        Pursuant to mutual agreement, Party B agrees to provide ocean freight forwarding and trade coordination services to Party A as follows:
+        </span>
+      </p>
+
+      <!-- Section 1: Services -->
+      <div class="section">
+        <div class="sec-title">
+          <span class="sec-num">一</span> 委托服务范围
+          <span class="sec-en">SCOPE OF SERVICES</span>
+        </div>
+        <p class="clause">乙方在本协议有效期内，接受甲方委托办理以下业务（勾选适用项）：</p>
+        <div class="svc-grid">
+          <div class="svc-item"><div class="svc-chk on">✓</div> 海运订舱 Ocean Freight Booking</div>
+          <div class="svc-item"><div class="svc-chk on">✓</div> 出口报关 Export Customs Clearance</div>
+          <div class="svc-item"><div class="svc-chk on">✓</div> 托书协同 Booking Instruction Coordination</div>
+          <div class="svc-item"><div class="svc-chk on">✓</div> 提单跟踪 Bill of Lading Tracking</div>
+          <div class="svc-item"><div class="svc-chk"></div> 目的港报关 Destination Customs</div>
+          <div class="svc-item"><div class="svc-chk"></div> 货物保险 Cargo Insurance</div>
+          <div class="svc-item"><div class="svc-chk"></div> 仓储 Warehousing</div>
+          <div class="svc-item"><div class="svc-chk"></div> 拖车 Inland Trucking</div>
+        </div>
+        <p class="clause">甲方委托乙方办理的具体货物明细，由甲方通过 Sanlyn OS 系统（ai.sanlyn.cn）以托书（Booking Instruction）形式提供，托书经双方确认后即构成本协议的执行附件。</p>
+      </div>
+
+      <!-- Section 2: Obligations -->
+      <div class="section">
+        <div class="sec-title">
+          <span class="sec-num">二</span> 双方责任义务
+          <span class="sec-en">OBLIGATIONS</span>
+        </div>
+
+        <div class="sub-title">2.1 甲方责任 / Party A Obligations</div>
+        <div class="clause indent"><span class="clause-num">（1）</span>甲方应确保其托运货物符合中国及目的国的进出口法律法规，不属于禁运或限制物品。</div>
+        <div class="clause indent"><span class="clause-num">（2）</span>甲方应在货物装船前 <span class="bi">7 个工作日</span>内，通过系统或书面方式向乙方提供：合同、发票、装箱单、HS 编码、贸易条款及其他报关所需资料。</div>
+        <div class="clause indent"><span class="clause-num">（3）</span>甲方提供的申报信息须真实、完整、合法。因甲方申报不实导致的罚款、延误及损失由甲方承担。</div>
+        <div class="clause indent"><span class="clause-num">（4）</span>甲方有权通过 Sanlyn OS 系统实时查看货物状态、单证及费用明细。</div>
+
+        <div class="sub-title">2.2 乙方责任 / Party B Obligations</div>
+        <div class="clause indent"><span class="clause-num">（1）</span>乙方应在甲方授权范围内代理订舱、报关及相关事务，维护甲方合法权益。</div>
+        <div class="clause indent"><span class="clause-num">（2）</span>乙方应及时处理托书，确保船期、箱型等信息准确，并通过系统实时同步状态给甲方。</div>
+        <div class="clause indent"><span class="clause-num">（3）</span>乙方有义务为甲方保守商业秘密，未经甲方书面同意，不向第三方透露货物及价格信息。</div>
+        <div class="clause indent"><span class="clause-num">（4）</span>因乙方过失造成甲方损失的，乙方最高赔偿额为当笔货物损失的 <span class="bi">2 倍</span>。</div>
+      </div>
+
+      <!-- Section 3: Fees -->
+      <div class="section">
+        <div class="sec-title">
+          <span class="sec-num">三</span> 费用及结算
+          <span class="sec-en">FEES &amp; PAYMENT</span>
+        </div>
+
+        <p class="clause">具体费率以每票业务的《报价及结算单》为准，该结算单为本协议不可分割的附件。参考费率结构如下：</p>
+
+        <table class="rate-table">
+          <thead>
+            <tr>
+              <th>费用项目 Item</th>
+              <th>计费方式 Basis</th>
+              <th>参考价 Est. Rate</th>
+              <th>备注 Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>海运费 Ocean Freight</td>
+              <td>按航线 Per Route</td>
+              <td class="blank">见报价单</td>
+              <td>PREPAID / CC</td>
+            </tr>
+            <tr>
+              <td>报关费 Customs Fee</td>
+              <td>每票 Per Shipment</td>
+              <td class="blank">见报价单</td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>港杂费 THC / Port Charges</td>
+              <td>每箱 Per Container</td>
+              <td class="blank">见报价单</td>
+              <td>目的港由甲方承担</td>
+            </tr>
+            <tr>
+              <td>文件费 Documentation</td>
+              <td>每套 Per Set</td>
+              <td class="blank">见报价单</td>
+              <td>提单/报关单</td>
+            </tr>
+            <tr>
+              <td>平台服务费 Platform Fee</td>
+              <td>每票 Per Shipment</td>
+              <td>¥ 50</td>
+              <td>Sanlyn OS 协同系统</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="note-box">
+          ⚠️ 平台服务费（¥50/票）含：实时货物跟踪 + 单证协同 + 自动对账功能。自动对账功能上线前暂不收取。<br>
+          Platform fee (¥50/shipment) covers: real-time tracking + document collaboration + auto-reconciliation. Auto-reconciliation waived until feature goes live.
+        </div>
+
+        <div class="clause"><span class="clause-num">结算方式：</span>乙方以每月最后一日为结算日，次月 5 日前向甲方提供结算清单，甲方在 <span class="bi">7 个工作日</span>内确认并付款。逾期视为默认确认。</div>
+      </div>
+
+      <!-- Section 4: Term -->
+      <div class="section">
+        <div class="sec-title">
+          <span class="sec-num">四</span> 协议有效期与终止
+          <span class="sec-en">TERM &amp; TERMINATION</span>
+        </div>
+        <div class="clause indent"><span class="clause-num">（1）</span>本协议自双方加盖公章之日起生效，<span class="bi">有效期两年</span>；期满前 30 日内若双方不书面提出终止，本协议自动延长一年。</div>
+        <div class="clause indent"><span class="clause-num">（2）</span>任何一方如需提前终止，须提前 <span class="bi">30 天</span>书面通知对方；终止前已接受的业务仍按本协议执行至完成。</div>
+        <div class="clause indent"><span class="clause-num">（3）</span>协议终止不影响已产生的费用及责任义务的履行。</div>
+      </div>
+
+      <!-- Section 5: Dispute -->
+      <div class="section">
+        <div class="sec-title">
+          <span class="sec-num">五</span> 争议解决与补充
+          <span class="sec-en">DISPUTE RESOLUTION</span>
+        </div>
+        <div class="clause indent"><span class="clause-num">（1）</span>本协议未尽事宜，双方本着友好合作精神协商解决。协商不成的，提交<span class="bi">厦门仲裁委员会</span>仲裁解决。</div>
+        <div class="clause indent"><span class="clause-num">（2）</span>对本协议的任何修改须经双方书面确认，修改前所发生的业务仍按原协议执行。</div>
+        <div class="clause indent"><span class="clause-num">（3）</span>本协议一式两份，甲乙双方各执一份，具有同等法律效力。</div>
+      </div>
+
+      <!-- Attachments note -->
+      <div style="background:#f8fafc;border:1px solid #e0e4ea;border-radius:6px;padding:12px 16px;font-size:12px;margin-bottom:32px;">
+        <div style="font-weight:800;margin-bottom:6px;">📎 协议附件 Attachments</div>
+        <div>1. 报价及结算单 / Rate Sheet（每票单独附）</div>
+        <div>2. 甲方营业执照复印件 / Party A Business License</div>
+        <div>3. 乙方营业执照及资质证书 / Party B Licenses &amp; Certifications</div>
+      </div>
+
+      <!-- Signature -->
+      <div class="sig-section">
+        <div class="sig-title">
+          以下签署表示双方已阅读、理解并同意本协议全部条款<br>
+          <span style="font-size:11px;">The signatures below indicate both parties have read, understood and agreed to all terms of this Agreement</span>
+        </div>
+        <div class="sig-grid">
+          <!-- Party A -->
+          <div class="sig-party">
+            <div class="sig-party-name">甲方 / PARTY A</div>
+            <div class="sig-row">
+              <span class="sig-label">公司全称：</span>
+              <div class="sig-line"></div>
+            </div>
+            <div class="sig-row">
+              <span class="sig-label">授权代表：</span>
+              <div class="sig-line"></div>
+            </div>
+            <div class="sig-row">
+              <span class="sig-label">签署日期：</span>
+              <div class="sig-line"></div>
+            </div>
+            <div style="text-align:center;margin-top:16px;">
+              <div class="stamp-box">公司盖章<br>Company<br>Seal</div>
+            </div>
+          </div>
+
+          <!-- Party B -->
+          <div class="sig-party">
+            <div class="sig-party-name">乙方 / PARTY B</div>
+            <div class="sig-row">
+              <span class="sig-label">公司全称：</span>
+              <div class="sig-line" style="font-size:11px;padding-bottom:2px;">福建三琳工贸有限公司</div>
+            </div>
+            <div class="sig-row">
+              <span class="sig-label">授权代表：</span>
+              <div class="sig-line"></div>
+            </div>
+            <div class="sig-row">
+              <span class="sig-label">签署日期：</span>
+              <div class="sig-line"></div>
+            </div>
+            <div style="text-align:center;margin-top:16px;">
+              <div class="stamp-box" style="border-color:#c00;color:#c00;font-weight:700;font-size:10px;">
+                FUJIAN<br>SANLYN<br>INDUSTRIAL<br>CO., LTD
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="doc-footer">
+        Powered by Sanlyn OS · ai.sanlyn.cn · Trade Collaboration Platform<br>
+        本文件由 Sanlyn 系统生成，具有完整法律效力 · This document is legally binding when signed by both parties
+      </div>
+
+    </div><!-- /doc-inner -->
+  </div><!-- /doc -->
+
+</div><!-- /shell -->
+</body>
+</html>

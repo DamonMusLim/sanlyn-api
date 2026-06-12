@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vendor 我的报价 · 历史正本设计 (含立即抢单)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060A14;color:#e2e8f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px;min-height:100vh}
+.shell{max-width:1240px;margin:0 auto}
+.title{font-size:22px;font-weight:900;letter-spacing:-.01em;margin-bottom:6px;background:linear-gradient(90deg,#3b82f6,#7c3aed,#f59e0b);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:#64748b;font-size:12px;margin-bottom:20px}
+
+.banner{background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.25);border-radius:10px;padding:12px 16px;font-size:12px;color:#cbd5e1;margin-bottom:18px;line-height:1.7}
+.banner b{color:#c4b5fd}
+.banner code{background:rgba(15,23,42,.7);color:#fcd34d;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"SF Mono",monospace}
+
+/* App shell */
+.app-head{background:#0a0e1a;border:1px solid rgba(148,163,184,.1);border-radius:14px;padding:14px 20px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.app-head .left{display:flex;align-items:center;gap:14px}
+.app-head .logo{font-size:16px;font-weight:900}
+.app-head .logo .b{color:#f8fafc}
+.app-head .logo .p{background:linear-gradient(90deg,#3b82f6,#7c3aed);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.app-head .vendor-tag{font-size:10px;font-weight:800;padding:4px 10px;border-radius:6px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#fcd34d;letter-spacing:.04em;text-transform:uppercase}
+.app-head .right{display:flex;align-items:center;gap:10px}
+.app-head .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:12px}
+
+/* welcome */
+.welcome{background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:12px;padding:14px 20px;margin-bottom:14px;display:flex;align-items:center;gap:14px}
+.welcome .av{width:50px;height:50px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#d97706);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:16px;flex-shrink:0}
+.welcome .col-name{font-size:18px;font-weight:900;color:#f8fafc;display:flex;align-items:center;gap:8px}
+.welcome .greet{color:#cbd5e1;font-weight:700}
+.welcome .scope{font-size:11px;color:#64748b;margin-top:4px;font-family:"SF Mono",monospace}
+.welcome .engine{margin-left:auto;font-size:11px;font-weight:800;padding:5px 12px;border-radius:6px;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#86efac;display:inline-flex;align-items:center;gap:6px}
+.welcome .engine .dot{width:6px;height:6px;background:#22c55e;border-radius:50%;animation:p 1.4s infinite}
+@keyframes p{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* tabs */
+.vtabs{display:flex;background:rgba(15,23,42,.5);border-radius:10px;padding:4px;margin-bottom:18px;gap:4px;border:1px solid rgba(148,163,184,.1)}
+.vtab{flex:1;padding:9px 14px;font-size:12px;font-weight:800;color:#64748b;cursor:pointer;border-radius:7px;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px;transition:.15s}
+.vtab.active{background:linear-gradient(135deg,rgba(59,130,246,.15),rgba(124,58,237,.15));color:#c4b5fd;border:1px solid rgba(167,139,250,.3)}
+.vtab .ic{font-size:14px}
+.vtab .badge{font-size:9.5px;padding:1px 6px;border-radius:8px;background:#ef4444;color:#fff;font-weight:900;margin-left:2px}
+
+/* section */
+h2.section{font-size:14px;font-weight:900;color:#f8fafc;margin:24px 0 10px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+h2.section::before{content:"";width:3px;height:16px;background:linear-gradient(180deg,#3b82f6,#7c3aed);border-radius:2px}
+h2.section .count{font-size:11px;font-weight:800;color:#7dd3fc;background:rgba(56,189,248,.1);padding:2px 8px;border-radius:5px}
+h2.section .stat{font-size:10.5px;font-weight:700;color:#64748b;margin-left:auto;font-family:"SF Mono",monospace}
+
+/* RFQ card grid */
+.rfq-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px;margin-bottom:14px}
+
+/* RFQ card · 待我报价 */
+.rfq{background:#0B1120;border:1px solid rgba(148,163,184,.12);border-radius:12px;overflow:hidden}
+.rfq.urgent{border-color:rgba(239,68,68,.4);box-shadow:0 0 12px rgba(239,68,68,.1)}
+.rfq-top{padding:8px 12px;border-bottom:1px solid rgba(148,163,184,.08);display:flex;align-items:center;justify-content:space-between;background:rgba(15,23,42,.4)}
+.rfq-id{font-family:"SF Mono",monospace;font-size:11.5px;font-weight:900;color:#f8fafc}
+.rfq-deadline{font-size:9.5px;font-weight:900;padding:3px 8px;border-radius:5px;background:rgba(245,158,11,.12);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
+.rfq-deadline.urgent{background:rgba(239,68,68,.12);color:#fca5a5;border-color:rgba(239,68,68,.4)}
+
+.rfq-route{padding:10px 12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(148,163,184,.06)}
+.rfq-route .pol,.rfq-route .pod{font-family:"SF Mono",monospace;font-size:13px;font-weight:900;color:#f8fafc}
+.rfq-route .arr{flex:1;color:#475569;text-align:center;font-size:14px}
+
+.rfq-cargo{padding:8px 12px;font-size:11px;color:#94a3b8;font-family:"SF Mono",monospace;display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-bottom:1px solid rgba(148,163,184,.06)}
+.rfq-cargo b{color:#cbd5e1;font-weight:700}
+.rfq-cargo .dot{color:#334155}
+.rfq-cargo .ct{display:inline-flex;font-size:10px;font-weight:700;color:#a5b4fc;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);padding:1px 6px;border-radius:4px}
+
+.rfq-info{padding:8px 12px;display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:#94a3b8;border-bottom:1px solid rgba(148,163,184,.06)}
+.rfq-info .label{font-size:9px;color:#64748b;font-weight:800;letter-spacing:.04em;text-transform:uppercase;margin-right:6px}
+.rfq-info .other{color:#fcd34d;font-weight:800}
+
+/* quote input area */
+.rfq-quote{padding:10px 12px;background:rgba(15,23,42,.5);display:flex;align-items:center;gap:8px}
+.rfq-quote input{flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(148,163,184,.2);border-radius:6px;padding:7px 10px;color:#f8fafc;font-size:13px;font-weight:700;font-family:"SF Mono",monospace;outline:none}
+.rfq-quote input:focus{border-color:#7c3aed}
+.rfq-quote .ccy{font-size:10px;color:#64748b;font-weight:700;font-family:"SF Mono",monospace}
+.rfq-quote .submit{padding:7px 14px;background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;font-size:11px;font-weight:900;border-radius:6px;border:none;cursor:pointer;flex-shrink:0;letter-spacing:.04em}
+
+/* status pill */
+.pill{display:inline-flex;font-size:9.5px;font-weight:900;padding:3px 8px;border-radius:5px;letter-spacing:.04em;text-transform:uppercase}
+.pill-pending{background:rgba(56,189,248,.12);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)}
+.pill-quoted{background:rgba(245,158,11,.12);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
+.pill-won{background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.3)}
+.pill-lost{background:rgba(148,163,184,.1);color:#94a3b8;border:1px solid rgba(148,163,184,.25)}
+
+/* 已报价 / 已中标 卡 */
+.qcard{background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center}
+.qcard .id{font-family:"SF Mono",monospace;font-size:12px;font-weight:900;color:#f8fafc}
+.qcard .id .sub{font-size:10px;color:#64748b;font-weight:700;margin-top:2px}
+.qcard .route{font-family:"SF Mono",monospace;font-size:11px;color:#94a3b8;font-weight:700}
+.qcard .my-rate{font-family:"SF Mono",monospace;font-size:13px;font-weight:900;color:#86efac}
+.qcard .my-rate .ccy{font-size:10px;color:#64748b;margin-right:3px}
+.qcard .my-rate .lbl{font-size:8.5px;color:#64748b;font-weight:700;letter-spacing:.04em;text-transform:uppercase;display:block;margin-top:2px}
+
+/* ━━━━━━ 立即抢单 区(高亮 / 紧急感) ━━━━━━ */
+.grab-section{margin-top:28px;background:linear-gradient(135deg,rgba(239,68,68,.04),rgba(245,158,11,.06));border:1px solid rgba(245,158,11,.2);border-radius:14px;padding:18px 20px}
+.grab-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.grab-head .ic{font-size:22px;animation:flame 1.6s infinite}
+@keyframes flame{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+.grab-head .ttl{font-size:16px;font-weight:900;color:#fcd34d;letter-spacing:-.01em}
+.grab-head .desc{font-size:11px;color:#94a3b8;font-weight:700;margin-left:12px}
+.grab-head .hot-count{margin-left:auto;font-size:11px;font-weight:900;padding:5px 12px;border-radius:6px;background:#ef4444;color:#fff;animation:flame 1.6s infinite;box-shadow:0 0 12px rgba(239,68,68,.4)}
+
+.grab-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+
+.grab-card{background:rgba(15,23,42,.7);border:1.5px solid rgba(245,158,11,.3);border-radius:12px;overflow:hidden;position:relative}
+.grab-card::before{content:"🔥";position:absolute;top:8px;right:10px;font-size:14px;animation:flame 1.4s infinite}
+.grab-top{padding:8px 12px;border-bottom:1px solid rgba(245,158,11,.15);display:flex;align-items:center;gap:8px;background:rgba(245,158,11,.05)}
+.grab-top .id{font-family:"SF Mono",monospace;font-size:11.5px;font-weight:900;color:#f8fafc}
+.grab-top .countdown{margin-left:auto;font-size:10px;font-weight:900;padding:3px 8px;border-radius:5px;background:rgba(239,68,68,.15);color:#fca5a5;font-family:"SF Mono",monospace;border:1px solid rgba(239,68,68,.3)}
+
+.grab-route{padding:12px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(245,158,11,.1)}
+.grab-route .pol,.grab-route .pod{font-family:"SF Mono",monospace;font-size:14px;font-weight:900;color:#f8fafc}
+.grab-route .arr{flex:1;color:#fcd34d;text-align:center;font-size:18px;font-family:"SF Mono",monospace;letter-spacing:.5em}
+
+.grab-cargo{padding:8px 12px;font-size:11px;color:#cbd5e1;font-family:"SF Mono",monospace;display:flex;flex-wrap:wrap;gap:6px;align-items:center;border-bottom:1px solid rgba(245,158,11,.1)}
+.grab-cargo b{color:#fff;font-weight:800}
+.grab-cargo .ct{display:inline-flex;font-size:10px;font-weight:800;color:#fcd34d;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);padding:2px 7px;border-radius:5px}
+.grab-cargo .vessel{font-size:10px;color:#7dd3fc}
+
+.grab-stats{padding:8px 12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;border-bottom:1px solid rgba(245,158,11,.1)}
+.grab-stats .stat-item{font-size:10px;color:#94a3b8}
+.grab-stats .stat-item .num{font-size:14px;font-weight:900;color:#fcd34d;font-family:"SF Mono",monospace;display:block}
+.grab-stats .stat-item .num.others{color:#fca5a5}
+
+.grab-input{padding:10px 12px;background:rgba(0,0,0,.3);display:flex;align-items:center;gap:8px}
+.grab-input input{flex:1;background:rgba(255,255,255,.06);border:1.5px solid rgba(245,158,11,.4);border-radius:7px;padding:9px 12px;color:#fff;font-size:14px;font-weight:900;font-family:"SF Mono",monospace;outline:none}
+.grab-input input:focus{border-color:#fcd34d;box-shadow:0 0 0 3px rgba(245,158,11,.2)}
+.grab-input .ccy-prefix{font-size:11px;color:#fcd34d;font-weight:900;font-family:"SF Mono",monospace}
+.grab-input .grab-btn{padding:9px 18px;background:linear-gradient(135deg,#ef4444,#f59e0b);color:#fff;font-size:12px;font-weight:900;border-radius:7px;border:none;cursor:pointer;letter-spacing:.06em;flex-shrink:0;text-transform:uppercase;box-shadow:0 4px 12px rgba(239,68,68,.4);animation:flame 1.8s infinite;display:inline-flex;align-items:center;gap:5px}
+
+.grab-hint{font-size:10px;color:#94a3b8;margin-top:6px;padding:0 12px 8px;font-style:italic}
+.grab-hint b{color:#fcd34d}
+
+/* note */
+.note{background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:10px;padding:14px 16px;font-size:11.5px;color:#cbd5e1;margin-top:14px;line-height:1.7}
+.note h4{font-size:12px;color:#f8fafc;font-weight:900;margin-bottom:6px}
+.note ul{padding-left:14px;margin:0}
+.note li{margin-bottom:3px;font-size:10.5px}
+.note b{color:#fcd34d}
+.note .red{color:#fca5a5}
+
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="title">Vendor 我的报价 · 历史正本设计</div>
+  <div class="sub">底部"立即抢单"是关键 · 让供应链方主动竞争 · 快速成交</div>
+
+  <div class="banner">
+    <b>角色：</b> hh 货代 (天津惠和国际货运代理) = <code>ocean_partner</code><br>
+    <b>看到：</b> 自己的报价 / 自己的订单 / Sanlyn 派给我的 RFQ / <b>抢单池</b><br>
+    <b>看不到：</b> 其他货代价格 · 客户成交价 · Sanlyn 利润 · 其他客户名
+  </div>
+
+  <!-- App head -->
+  <div class="app-head">
+    <div class="left">
+      <span class="logo"><span class="b">SANLYN</span> <span class="p">VENDOR</span></span>
+      <span class="vendor-tag">🚢 ocean_partner · vendor</span>
+    </div>
+    <div class="right">
+      <span class="avatar">HH</span>
+    </div>
+  </div>
+
+  <!-- Welcome -->
+  <div class="welcome">
+    <div class="av">HH</div>
+    <div style="flex:1">
+      <div class="col-name"><span class="greet">晚上好,</span><span>HH 货代</span></div>
+      <div class="scope">天津惠和国际货运代理有限公司 · 已认证海运承运商</div>
+    </div>
+    <span class="engine"><span class="dot"></span>报价引擎: 运行中</span>
+  </div>
+
+  <!-- 4 tabs (按 supplierRole=ocean 显示) -->
+  <div class="vtabs">
+    <div class="vtab"><span class="ic">🏠</span>首页</div>
+    <div class="vtab active"><span class="ic">💹</span>我的报价 <span class="badge">3</span></div>
+    <div class="vtab"><span class="ic">📦</span>订单 (8)</div>
+    <div class="vtab"><span class="ic">💰</span>账单</div>
+  </div>
+
+  <!-- ━━━━━━━━━━ §1 待我报价 ━━━━━━━━━━ -->
+  <h2 class="section">📥 待我报价 · Sanlyn 给我的询价 <span class="count">3</span><span class="stat">本月已成 12 单 · 命中率 68%</span></h2>
+
+  <div class="rfq-grid">
+
+    <div class="rfq urgent">
+      <div class="rfq-top">
+        <span class="rfq-id">RFQ-2604-018</span>
+        <span class="rfq-deadline urgent">截止 4h · 急</span>
+      </div>
+      <div class="rfq-route">
+        <span class="pol">CNTSN</span>
+        <span class="arr">→</span>
+        <span class="pod">USLGB</span>
+      </div>
+      <div class="rfq-cargo">
+        <b>4×40HQ</b>
+        <span class="dot">·</span>
+        <b>Apr 22</b> ETD
+        <span class="dot">·</span>
+        <span class="ct">普通货</span>
+      </div>
+      <div class="rfq-info">
+        <span><span class="label">客户</span>***** 公司</span>
+        <span class="other">已 4 家在报</span>
+      </div>
+      <div class="rfq-quote">
+        <span class="ccy">USD</span>
+        <input type="number" placeholder="3,200" />
+        <span class="ccy">/40HQ</span>
+        <button class="submit">提交报价</button>
+      </div>
+    </div>
+
+    <div class="rfq">
+      <div class="rfq-top">
+        <span class="rfq-id">RFQ-2604-019</span>
+        <span class="rfq-deadline">截止 1d</span>
+      </div>
+      <div class="rfq-route">
+        <span class="pol">CNNGB</span>
+        <span class="arr">→</span>
+        <span class="pod">DEHAM</span>
+      </div>
+      <div class="rfq-cargo">
+        <b>2×40HQ</b>
+        <span class="dot">·</span>
+        <b>May 2</b> ETD
+        <span class="dot">·</span>
+        <span class="ct">食品</span>
+      </div>
+      <div class="rfq-info">
+        <span><span class="label">客户</span>***** 公司</span>
+        <span class="other">已 2 家在报</span>
+      </div>
+      <div class="rfq-quote">
+        <span class="ccy">USD</span>
+        <input type="number" placeholder="2,750" />
+        <span class="ccy">/40HQ</span>
+        <button class="submit">提交报价</button>
+      </div>
+    </div>
+
+    <div class="rfq">
+      <div class="rfq-top">
+        <span class="rfq-id">RFQ-2604-020</span>
+        <span class="rfq-deadline">截止 2d</span>
+      </div>
+      <div class="rfq-route">
+        <span class="pol">CNTSN</span>
+        <span class="arr">→</span>
+        <span class="pod">SGSIN</span>
+      </div>
+      <div class="rfq-cargo">
+        <b>1×40HQ</b>
+        <span class="dot">·</span>
+        <b>May 5</b> ETD
+        <span class="dot">·</span>
+        <span class="ct">化工品</span>
+      </div>
+      <div class="rfq-info">
+        <span><span class="label">客户</span>***** 公司</span>
+        <span class="other">已 1 家在报</span>
+      </div>
+      <div class="rfq-quote">
+        <span class="ccy">USD</span>
+        <input type="number" placeholder="950" />
+        <span class="ccy">/40HQ</span>
+        <button class="submit">提交报价</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ━━━━━━━━━━ §2 已提交报价(等结果) ━━━━━━━━━━ -->
+  <h2 class="section">⏳ 已提交报价 · 等待 Sanlyn 选标 <span class="count">5</span></h2>
+
+  <div class="qcard">
+    <div>
+      <div class="id">RFQ-2604-015</div>
+      <div class="sub">提交于 2 天前</div>
+    </div>
+    <div class="route">CNTSN → JPYOK · 2×40HQ</div>
+    <div class="my-rate">
+      <span class="ccy">USD</span>1,850
+      <span class="lbl">我的报价</span>
+    </div>
+    <span class="pill pill-pending">待选标</span>
+  </div>
+
+  <div class="qcard">
+    <div>
+      <div class="id">RFQ-2604-013</div>
+      <div class="sub">提交于 3 天前</div>
+    </div>
+    <div class="route">CNNGB → KRPUS · 1×40HQ</div>
+    <div class="my-rate">
+      <span class="ccy">USD</span>720
+      <span class="lbl">我的报价</span>
+    </div>
+    <span class="pill pill-quoted">5 家在报</span>
+  </div>
+
+  <div class="qcard">
+    <div>
+      <div class="id">RFQ-2604-011</div>
+      <div class="sub">5 天前 · 已落选</div>
+    </div>
+    <div class="route">CNTSN → USLAX · 3×40HQ</div>
+    <div class="my-rate" style="color:#94a3b8">
+      <span class="ccy">USD</span>3,400
+      <span class="lbl">我的报价</span>
+    </div>
+    <span class="pill pill-lost">未中标</span>
+  </div>
+
+  <!-- ━━━━━━━━━━ §3 已中标(进入履约) ━━━━━━━━━━ -->
+  <h2 class="section">✅ 已中标 · 已转履约 <span class="count">8</span></h2>
+
+  <div class="qcard">
+    <div>
+      <div class="id">RFQ-2604-008 · SO-2604-008</div>
+      <div class="sub">中标于 4 月 25 日 · 已开船</div>
+    </div>
+    <div class="route">CNTSN → USLGB · 1×40HQ</div>
+    <div class="my-rate">
+      <span class="ccy">USD</span>3,150
+      <span class="lbl">中标价</span>
+    </div>
+    <span class="pill pill-won">在途</span>
+  </div>
+
+  <div class="qcard">
+    <div>
+      <div class="id">RFQ-2604-005 · SO-2604-005</div>
+      <div class="sub">中标于 4 月 22 日 · 已到港</div>
+    </div>
+    <div class="route">CNNGB → USLAX · 2×40HQ</div>
+    <div class="my-rate">
+      <span class="ccy">USD</span>3,300
+      <span class="lbl">中标价</span>
+    </div>
+    <span class="pill pill-won">已到港</span>
+  </div>
+
+  <!-- ━━━━━━━━━━ §4 ⭐ 立即抢单 ⭐ ━━━━━━━━━━ -->
+  <div class="grab-section">
+
+    <div class="grab-head">
+      <span class="ic">🔥</span>
+      <span class="ttl">立即抢单</span>
+      <span class="desc">Sanlyn 紧急询价 · 第一个合理报价直接成交</span>
+      <span class="hot-count">3 待抢</span>
+    </div>
+
+    <div class="grab-grid">
+
+      <div class="grab-card">
+        <div class="grab-top">
+          <span class="id">⚡ HOT-2604-A</span>
+          <span class="countdown">剩 38 min</span>
+        </div>
+        <div class="grab-route">
+          <span class="pol">CNTSN</span>
+          <span class="arr">→</span>
+          <span class="pod">USLGB</span>
+        </div>
+        <div class="grab-cargo">
+          <span class="ct">2×40HQ</span>
+          <span class="dot">·</span>
+          <b>Apr 26</b> ETD
+          <span class="dot">·</span>
+          <span class="vessel">优先 COSCO/MSC</span>
+        </div>
+        <div class="grab-stats">
+          <div class="stat-item">
+            <span class="num">2,800</span>
+            参考底价 USD/40HQ
+          </div>
+          <div class="stat-item">
+            <span class="num others">3 家</span>
+            正在抢
+          </div>
+        </div>
+        <div class="grab-input">
+          <span class="ccy-prefix">USD</span>
+          <input type="number" placeholder="2,750" />
+          <button class="grab-btn">⚡ 立即抢单</button>
+        </div>
+        <div class="grab-hint">
+          ⚠ 第一个 ≤ <b>2,800 USD/40HQ</b> 自动中标 · 系统直接派单 · 中标后 1h 内确认
+        </div>
+      </div>
+
+      <div class="grab-card">
+        <div class="grab-top">
+          <span class="id">⚡ HOT-2604-B</span>
+          <span class="countdown">剩 2h 15m</span>
+        </div>
+        <div class="grab-route">
+          <span class="pol">CNNGB</span>
+          <span class="arr">→</span>
+          <span class="pod">VNSGN</span>
+        </div>
+        <div class="grab-cargo">
+          <span class="ct">1×40HQ</span>
+          <span class="dot">·</span>
+          <b>May 1</b> ETD
+          <span class="dot">·</span>
+          <span class="vessel">直达优先</span>
+        </div>
+        <div class="grab-stats">
+          <div class="stat-item">
+            <span class="num">450</span>
+            参考底价 USD/40HQ
+          </div>
+          <div class="stat-item">
+            <span class="num others">5 家</span>
+            正在抢
+          </div>
+        </div>
+        <div class="grab-input">
+          <span class="ccy-prefix">USD</span>
+          <input type="number" placeholder="430" />
+          <button class="grab-btn">⚡ 立即抢单</button>
+        </div>
+        <div class="grab-hint">
+          ⚠ 5 家在抢 · 价格越低越快出 · 当前最低 <b>440 USD</b>
+        </div>
+      </div>
+
+      <div class="grab-card">
+        <div class="grab-top">
+          <span class="id">⚡ HOT-2604-C</span>
+          <span class="countdown">剩 6h</span>
+        </div>
+        <div class="grab-route">
+          <span class="pol">CNTSN</span>
+          <span class="arr">→</span>
+          <span class="pod">DEHAM</span>
+        </div>
+        <div class="grab-cargo">
+          <span class="ct">3×40HQ</span>
+          <span class="dot">·</span>
+          <b>May 8</b> ETD
+          <span class="dot">·</span>
+          <span class="vessel">大柜数</span>
+        </div>
+        <div class="grab-stats">
+          <div class="stat-item">
+            <span class="num">2,650</span>
+            参考底价 USD/40HQ
+          </div>
+          <div class="stat-item">
+            <span class="num others">1 家</span>
+            正在抢
+          </div>
+        </div>
+        <div class="grab-input">
+          <span class="ccy-prefix">USD</span>
+          <input type="number" placeholder="2,500" />
+          <button class="grab-btn">⚡ 立即抢单</button>
+        </div>
+        <div class="grab-hint">
+          🎯 大柜数 + 还没什么人抢 · <b>3 个 40HQ 一次成交</b>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ━━━━━━━━━━ 设计说明 ━━━━━━━━━━ -->
+  <div class="note">
+    <h4>设计逻辑（你之前的正本设计）</h4>
+    <ul>
+      <li><b>§1 待我报价</b> — Sanlyn 派给我的常规 RFQ。我提交我的报价后,Sanlyn 后台跟其他几家比较选标。我看到 "已 N 家在报" 的<span class="red">数字但不见别人的价</span>(防跳单核心)</li>
+      <li><b>§2 已提交</b> — 等待 Sanlyn 选标。状态有 "待选标 / N 家在报 / 未中标"</li>
+      <li><b>§3 已中标</b> — 进入履约 → 跟 SO-XXXX 关联</li>
+      <li><b>§4 ⭐ 立即抢单</b> — <b>核心创新</b>:Sanlyn 给的紧急询价,第一个 ≤ 参考底价的报价<span class="red">直接自动成交</span>(不用等选标)</li>
+    </ul>
+    <h4 style="margin-top:10px">为什么"立即抢单"是关键</h4>
+    <ul>
+      <li>👍 货代有动力主动抢 — 比常规报价快 N 倍</li>
+      <li>👍 Sanlyn 紧急情况秒成交 — 不用等几小时选标</li>
+      <li>👍 只显示参考底价(Sanlyn 接受的最高价),不显示别人的实际报价 — <b>防跳单底线</b></li>
+      <li>👍 在抢的家数(社交压力)是公开的,但具体多少不公开</li>
+    </ul>
+    <h4 style="margin-top:10px">看不到的(铁律)</h4>
+    <ul>
+      <li>✗ 其他货代的实际报价</li>
+      <li>✗ 客户名 (永远 *****)</li>
+      <li>✗ Sanlyn 加价多少 / 客户成交价</li>
+      <li>✗ 其他报关行 / 车队 / DDP 价格</li>
+      <li>✗ 跨服务线信息(我是海运 → 看不到报关 / DDP / 保险)</li>
+    </ul>
+  </div>
+
+  <div class="note" style="margin-top:8px;border-color:rgba(56,189,248,.25);background:rgba(56,189,248,.03)">
+    <h4>跟 admin Pricing-V2 Hub 对比</h4>
+    <ul>
+      <li><b>admin Pricing-V2</b>(internal_ops 看):全网 6 家报关行 + 价格对比 + 邀请新伙伴 — <span class="red">Sanlyn 内部决策工具</span></li>
+      <li><b>vendor 我的报价</b>(本设计):仅自己的报价 + Sanlyn 派给我的 RFQ + 立即抢单池 — <span class="red">供应链方做事入口</span></li>
+      <li><b>customer 看不到任何报价中心</b>:只看自己的成交价(在订单详情) — <span class="red">客户不进供应链体系</span></li>
+    </ul>
+    <p style="margin-top:8px;font-size:11px">同一个"报价"概念,3 套完全独立的 UI · 数据 · 权限。这是 v3.2 的体系。</p>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,5 +1,10 @@
 // /api/db/companies.js — Sanlyn group entities CRUD (distinct from company.js which is JDY)
-import { getPool, setCors } from "./db.js";
+//
+// FAIL-CLOSED-2026-05-19: previously had ZERO auth — anyone could POST/PATCH
+// to insert or modify companies, including the bank_accounts JSONB column.
+// Now: GET requires JWT; POST/PATCH restricted to admin role only.
+import { getPool, setCors } from "../db.js";
+import { requireAuth }      from "../auth.js";
 
 const INIT_SQL = `
 CREATE TABLE IF NOT EXISTS companies (
@@ -21,6 +26,16 @@ CREATE TABLE IF NOT EXISTS companies (
 );
 `;
 
+// Migration: add columns that may not exist in older production schemas
+const MIGRATE_SQL = [
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS country         VARCHAR(8)  DEFAULT 'CN'`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS registration_no VARCHAR(128)`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS bank_accounts   JSONB DEFAULT '[]'::jsonb`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS stamps          JSONB DEFAULT '[]'::jsonb`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS default_seller  BOOLEAN DEFAULT false`,
+  `ALTER TABLE companies ADD COLUMN IF NOT EXISTS notes           TEXT`,
+];
+
 const SANLYN_GROUP = [
   { code:"XPB",  name_en:"Xiamen Pet Baby",   type:"operating", country:"CN" },
   { code:"SHK",  name_en:"Sanlyn HK",         type:"holding",   country:"HK" },
@@ -35,11 +50,16 @@ let inited = false;
 async function ensureTable(pool) {
   if (inited) return;
   await pool.query(INIT_SQL);
+  for (const sql of MIGRATE_SQL) {
+    await pool.query(sql);
+  }
   for (const c of SANLYN_GROUP) {
-    await pool.query(
-      `INSERT INTO companies(code,name_en,type,country) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO NOTHING`,
-      [c.code, c.name_en, c.type, c.country]
-    );
+    try {
+      await pool.query(
+        `INSERT INTO companies(code,name_en,type,country) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO NOTHING`,
+        [c.code, c.name_en, c.type, c.country]
+      );
+    } catch (e) { /* skip seed violating type/check constraint (legacy type like tech/partner) */ }
   }
   inited = true;
 }
@@ -47,16 +67,20 @@ async function ensureTable(pool) {
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
+
+  const _isAdmin = req.user?.role === "admin";
 
   const pool = getPool();
   await ensureTable(pool);
 
   if (req.method === "GET") {
     try {
-      const { type, country, limit = 100 } = req.query;
+      const { type, country, limit = 100, q } = req.query;
       let query = "SELECT * FROM companies", params = [], conds = [];
       if (type)    { params.push(type);    conds.push(`type = $${params.length}`); }
       if (country) { params.push(country); conds.push(`country = $${params.length}`); }
+      if (q && q.trim()) { const kw = q.trim(); params.push("%" + kw + "%"); const p = params.length; conds.push("(name_cn ILIKE $" + p + " OR name_en ILIKE $" + p + " OR code ILIKE $" + p + ")"); }
       if (conds.length) query += " WHERE " + conds.join(" AND ");
       params.push(parseInt(limit));
       query += ` ORDER BY code ASC LIMIT $${params.length}`;
@@ -68,6 +92,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
+    if (!_isAdmin) return res.status(403).json({ error: "Forbidden: admin only" });
     try {
       const { code, name_en, name_cn, type, country, registration_no, tax_id, bank_accounts, address, stamps, default_seller, notes } = req.body || {};
       if (!code || !name_en) return res.status(400).json({ error: "code and name_en required" });
@@ -85,6 +110,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "PATCH") {
+    if (!_isAdmin) return res.status(403).json({ error: "Forbidden: admin only" });
     try {
       const { id, ...patch } = req.body || {};
       if (!id) return res.status(400).json({ error: "id required" });

@@ -22,24 +22,79 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // Only GET allowed — all write methods rejected
+  // ── PATCH: admin/finance only — correct FSB records (amount, category, notes) ──
+  if (req.method === "PATCH") {
+    const pRole = req.user?.role;
+    if (pRole !== "admin" && pRole !== "finance") {
+      return res.status(403).json({ error: "admin or finance role required for corrections" });
+    }
+    try {
+      const body = req.body || {};
+      if (!body.id) return res.status(400).json({ success: false, error: "id required" });
+      const PATCHABLE = ["amount","cost_category","rebill_status","reconcile_note","container_no","link_plan_id","incoterm","supplier_type","currency"];
+      const pool = getPool();
+      const params = [], sets = [];
+      for (const col of PATCHABLE) {
+        if (!Object.prototype.hasOwnProperty.call(body, col)) continue;
+        params.push(body[col]); sets.push(`${col} = $${params.length}`);
+      }
+      if (!sets.length) return res.status(400).json({ success: false, error: "no patchable fields" });
+      sets.push(`updated_at = now()`);
+      params.push(body.id);
+      const r = await pool.query(
+        `UPDATE freight_supplier_bills SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING *`,
+        params
+      );
+      if (!r.rows.length) return res.status(404).json({ success: false, error: "record not found" });
+      return res.status(200).json({ success: true, data: r.rows[0] });
+    } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  }
+
+  // ── DELETE: admin only — remove wrong FSB entries ──
+  if (req.method === "DELETE") {
+    const dRole = req.user?.role;
+    if (dRole !== "admin") return res.status(403).json({ error: "admin role required for deletion" });
+    try {
+      const body = req.body || {};
+      if (!body.id) return res.status(400).json({ success: false, error: "id required" });
+      const pool = getPool();
+      const r = await pool.query("DELETE FROM freight_supplier_bills WHERE id = $1 RETURNING id", [body.id]);
+      if (!r.rows.length) return res.status(404).json({ success: false, error: "not found" });
+      return res.status(200).json({ success: true, deleted: r.rows[0].id });
+    } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  }
+
+  // Only GET (and above PATCH/DELETE) allowed
   if (req.method !== "GET") {
     return res.status(405).json({
-      error: "Method not allowed. This endpoint is read-only.",
-      allowed: ["GET"],
+      error: "Method not allowed.",
+      allowed: ["GET", "PATCH", "DELETE"],
     });
   }
 
   if (!requireAuth(req, res)) return;
 
-  // Access control: finance + admin only
-  const role = req.user?.role;
-  if (role !== "admin" && role !== "finance") {
+  // ── Access control ────────────────────────────────────────────────────────
+  // admin / finance : full access (all suppliers, all filters honoured)
+  // logistics       : read-only access to OWN supplier rows only
+  //                   company binding is taken from JWT; ?supplier= query param
+  //                   is IGNORED to prevent cross-supplier data leakage
+  // others          : 403
+  const role        = req.user?.role;
+  const userCompany     = req.user?.company || req.user?.companyName || null;
+  const userCompanyCode = req.user?.companyCode || (Array.isArray(req.user?.companyCodes) && req.user.companyCodes[0]) || null;
+
+  if (role !== "admin" && role !== "finance" && role !== "logistics") {
     return res.status(403).json({
-      error: "Access denied. finance or admin role required.",
+      error: "Access denied. finance, admin, or logistics role required.",
+    });
+  }
+  if (role === "logistics" && !userCompanyCode) {
+    return res.status(403).json({
+      error: "logistics user missing companyCode binding — cannot scope supplier filter",
     });
   }
 
@@ -48,7 +103,7 @@ export default async function handler(req, res) {
   try {
     const {
       bl_no,
-      supplier,
+      supplier,          // NOTE: ignored for logistics role (see below)
       supplier_type,
       bill_month,
       reconciled,
@@ -68,7 +123,14 @@ export default async function handler(req, res) {
       params.push(bl_no);
       conds.push(`bl_no = $${params.length}`);
     }
-    if (supplier) {
+
+    // supplier filter — logistics role: enforce company_code binding from JWT (stable across name format variations)
+    // ?supplier= query param is IGNORED for logistics to prevent cross-supplier data leakage
+    if (role === "logistics") {
+      params.push(userCompanyCode);
+      conds.push(`supplier_company_code = $${params.length}`);
+      // req.query.supplier is intentionally dropped — JWT companyCode is the only source of truth
+    } else if (supplier) {
       params.push(`%${supplier}%`);
       conds.push(`supplier ILIKE $${params.length}`);
     }

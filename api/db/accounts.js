@@ -6,6 +6,11 @@
 //   - sanitizeRow() strips password / pwd / pwd_hash / raw.password / raw.tempToken.
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+// MODE_D_PREP_CUSTOMER_API_STRIPPER_001 (W0 P0 2026-05-25): customer-role allowlist
+import { audienceForRole, pickByAllowlist, scrubCustomerNested, ACCOUNTS_CUSTOMER_SAFE } from "../lib/customer-safe-fields.js";
+
+// [SECURITY-P0 A10] DDL-drift safety flag: warn once if customers.allowed_brands missing
+let _allowedBrandsMissingWarned = false;
 
 const SENSITIVE_COL = new Set(["password", "pwd", "pwd_hash", "password_hash"]);
 const SENSITIVE_RAW = new Set(["password", "pwd", "pwd_hash", "tempToken", "temp_token"]);
@@ -69,9 +74,32 @@ export default async function handler(req, res) {
     // Select all columns (a.*) — sanitizeRow() is the SINGLE point of truth for stripping
     // secrets (password column + raw.password/tempToken/etc). This way adding a column
     // later never accidentally breaks a frontend filter that expected the field.
+    // [SECURITY-P0 A10] allowed_brands column may not exist in all envs — runQuery() falls
+    // back to a SELECT without c.allowed_brands and defaults to [] in the response.
     const joinSQL = `SELECT a.*, c.allowed_brands, c.factory_name, c.group_code
                        FROM accounts a
                        LEFT JOIN companies c ON a.company_code = c.code`;
+    const joinSQLNoBrands = `SELECT a.*, c.factory_name, c.group_code
+                       FROM accounts a
+                       LEFT JOIN companies c ON a.company_code = c.code`;
+    async function runQuery(qWithBrands, params) {
+      try {
+        return await pool.query(qWithBrands, params);
+      } catch (e) {
+        // 42703 = undefined_column
+        if (e && (e.code === "42703" || /allowed_brands/.test(e.message || ""))) {
+          if (!_allowedBrandsMissingWarned) {
+            _allowedBrandsMissingWarned = true;
+            console.warn("[accounts] customs.allowed_brands column missing — see Package B/C migration draft");
+          }
+          const qFallback = qWithBrands.replace(joinSQL, joinSQLNoBrands);
+          const r = await pool.query(qFallback, params);
+          r.rows = r.rows.map((row) => ({ allowed_brands: [], ...row }));
+          return r;
+        }
+        throw e;
+      }
+    }
 
     if (isAdmin || isSystem || isSuperAdmin) {
       // Admin: may filter by username / role
@@ -84,7 +112,7 @@ export default async function handler(req, res) {
       if (conds.length) q += " WHERE " + conds.join(" AND ");
       params.push(Math.min(parseInt(limit) || 200, 1000));
       q += ` ORDER BY a.created_at DESC LIMIT $${params.length}`;
-      const result = await pool.query(q, params);
+      const result = await runQuery(q, params);
       const data = result.rows.map(sanitizeRow);
       return res.status(200).json({ success: true, data, count: result.rowCount });
     }
@@ -100,9 +128,15 @@ export default async function handler(req, res) {
     if (selfId)       { params.push(selfId);       conds.push(`a.id = $${params.length}`); }
     if (selfUsername) { params.push(selfUsername); conds.push(`a.username = $${params.length}`); }
     const q = joinSQL + " WHERE " + conds.join(" OR ") + " LIMIT 1";
-    const result = await pool.query(q, params);
+    const result = await runQuery(q, params);
     if (result.rowCount === 0) return res.status(404).json({ success: false, error: "Not found" });
-    return res.status(200).json({ success: true, data: [sanitizeRow(result.rows[0])], count: 1 });
+    // MODE_D_PREP_CUSTOMER_API_STRIPPER_001: customer/forwarder allowlist on self-row.
+    // sanitizeRow first (strips password/raw.password), then customer allowlist on top.
+    const baseSafe = sanitizeRow(result.rows[0]);
+    const finalRow = audienceForRole(user.role) === "customer"
+      ? scrubCustomerNested([pickByAllowlist(baseSafe, ACCOUNTS_CUSTOMER_SAFE)], user.role)[0]
+      : baseSafe;
+    return res.status(200).json({ success: true, data: [finalRow], count: 1 });
   } catch (err) {
     console.error("[accounts]", err);
     return res.status(500).json({ success: false, error: "Internal error" });

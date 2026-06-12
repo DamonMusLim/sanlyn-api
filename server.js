@@ -75,11 +75,111 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   // Skip body parsing for multipart endpoints (formidable handles it)
   if (req.path === "/api/oss-upload" || req.path === "/api/ocr-booking") return next();
+  if (req.path === "/api/db/templates-list" && req.method === "POST") return next();
   express.json({ limit: "10mb" })(req, res, (err) => {
     if (err) return next(err);
     express.urlencoded({ extended: true, limit: "10mb" })(req, res, next);
   });
 });
+
+// ── Templates list (manifest-driven) ───────────────────────────────────
+{
+  const { readFileSync, writeFileSync } = await import("fs");
+  const { fileURLToPath: ftu } = await import("url");
+  const { dirname: pd } = await import("path");
+  const TPLDIR = pd(ftu(import.meta.url)) + "/public/templates";
+  const MANIFEST = TPLDIR + "/manifest.json";
+
+  function loadManifest() {
+    try { return JSON.parse(readFileSync(MANIFEST, "utf8")).templates; }
+    catch { return []; }
+  }
+
+  // Public — list
+  app.get("/api/db/templates-list", (_q, rs) => {
+    const files = loadManifest();
+    rs.json({ success: true, files, total: files.length, generated: new Date().toISOString().slice(0,10) });
+  });
+
+  // Public — preview HTML/PDF
+  app.get("/api/db/templates-list/preview", (req, res) => {
+    const files = loadManifest();
+    const f = files.find(t => t.name === req.query.file || t.code === req.query.file);
+    if (!f) return res.status(404).json({ error: "not found" });
+    const ext = (f.name || "").split(".").pop().toLowerCase();
+    if (ext === "pdf") {
+      res.setHeader("Content-Type", "application/pdf");
+      res.send(readFileSync(TPLDIR + "/" + f.name));
+    } else {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(readFileSync(TPLDIR + "/" + f.name, "utf8"));
+    }
+  });
+
+
+  // Upload new template (HTML or PDF)
+  app.post("/api/db/templates-list", async (req, res) => {
+    const { IncomingForm } = await import("formidable");
+    const { copyFileSync, statSync, mkdirSync } = await import("fs");
+    const form = new IncomingForm({ maxFileSize: 30 * 1024 * 1024, keepExtensions: true });
+    form.parse(req, (err, fields, files) => {
+      if (err) return res.status(400).json({ error: "Upload parse failed: " + err.message });
+      const fileArr = files.file || [];
+      if (!fileArr.length) return res.status(400).json({ error: "No file uploaded" });
+      const uploaded = fileArr[0];
+      const origName = (uploaded.originalFilename || "upload").replace(/[^a-zA-Z0-9._-]/g, "_");
+      const ext = origName.split(".").pop().toLowerCase();
+      if (!["html", "pdf"].includes(ext)) return res.status(400).json({ error: "Only .html and .pdf allowed" });
+      const label = ((fields.label || [""])[0] || "").trim() || origName.replace(/\.[^.]+$/, "");
+      const cat   = (fields.cat   || ["其他"])[0];
+      const desc  = ((fields.desc  || [""])[0] || "").trim();
+      try {
+        mkdirSync(TPLDIR, { recursive: true });
+        const destPath = TPLDIR + "/" + origName;
+        copyFileSync(uploaded.filepath, destPath);
+        const size = statSync(destPath).size;
+        const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
+        const nums = (manifest.templates || []).map(t => parseInt((t.code||"").replace("HT",""),10)).filter(Boolean);
+        const nextNum = nums.length ? Math.max(...nums) + 1 : 1;
+        const code = "HT" + String(nextNum).padStart(3, "0");
+        const entry = { code, name: origName, label, cat, desc, size };
+        manifest.templates.push(entry);
+        writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2), "utf8");
+        res.json({ success: true, template: entry });
+      } catch(e) { res.status(500).json({ error: e.message }); }
+    });
+  });
+
+  // Auth-gated — edit label/cat/desc by code
+  app.patch("/api/db/templates-list", (req, res) => {
+    const { code, label, cat, desc } = req.body;
+    if (!code) return res.status(400).json({ error: "code required" });
+    const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
+    const tpl = manifest.templates.find(t => t.code === code);
+    if (!tpl) return res.status(404).json({ error: "not found" });
+    if (label !== undefined) tpl.label = label;
+    if (cat   !== undefined) tpl.cat   = cat;
+    if (desc  !== undefined) tpl.desc  = desc;
+    writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2), "utf8");
+    res.json({ success: true, template: tpl });
+  });
+
+  // Auth-gated — delete one or many by code
+  app.delete("/api/db/templates-list", (req, res) => {
+    const { codes } = req.body; // array of HT codes
+    if (!Array.isArray(codes) || !codes.length) return res.status(400).json({ error: "codes required" });
+    const files = loadManifest();
+    const after = files.filter(t => !codes.includes(t.code));
+    const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
+    manifest.templates = after;
+    writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2), "utf8");
+    res.json({ success: true, deleted: files.length - after.length, remaining: after.length });
+  });
+}
+
+
+// ── MCP Server (no JWT — uses x-mcp-key) ──
+mount("/api/mcp", () => import("./api/mcp.js"));
 
 // ── JWT 鉴权中间件 ──
 app.use(authMiddleware);
@@ -106,6 +206,7 @@ function mount(route, handlerModule) {
 }
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
+mount("/api/db/auth-refresh",       () => import("./api/db/auth-refresh.js"));
 mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
 // Dev-only fixture login — endpoint self-guards (404 in production, 403 without ENABLE_TEST_AUTH=1)
 // TOOLCHAIN-TEST-ACCOUNT-FIXTURE-001
@@ -131,6 +232,12 @@ mount("/api/db/partner-relationships", () => import("./api/db/partner-relationsh
 mount("/api/db/customs",           () => import("./api/db/customs.js"));
 mount("/api/db/customs-summary",        () => import("./api/db/customs-summary.js")); // 分类报关汇总
 mount("/api/db/customs-consolidated",   () => import("./api/db/customs-consolidated.js")); // 多柜合并报关 (2026-05-22)
+mount("/api/db/customs-certify",        () => import("./api/db/customs-certify.mjs")); // 报关/开票品名权威认证
+mount("/api/db/customs-audit",          () => import("./api/db/customs-audit.mjs")); // 报关单核对件自动审核
+mount("/api/db/exchange-rates",         () => import("./api/db/exchange-rates.js")); // 汇率
+mount("/api/db/doc-render",             () => import("./api/db/doc-render.mjs")); // 厂检单/QC 按工厂模版生成(2026-06-07)
+mount("/api/db/stamps-list",            () => import("./api/db/stamps-list.mjs")); // 可选公章清单
+mount("/api/db/doc-result-ocr",         () => import("./api/db/doc-result-ocr.mjs")); // 已填报告OCR自动填值
 mount("/api/db/customs-draft",    () => import("./api/db/customs-draft.js"));   // 报关底稿生成
 mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
 mount("/api/db/documents",         () => import("./api/db/documents.js"));
@@ -143,6 +250,8 @@ mount("/api/db/factory-prefill",   () => import("./api/db/factory-prefill.js"));
 mount("/api/db/factory-token-create", () => import("./api/db/factory-token-create.js"));
 mount("/api/db/factory-recent",       () => import("./api/db/factory-recent.js"));
 mount("/api/db/check-username",       () => import("./api/db/check-username.js"));
+mount("/api/internal/auth-check", () => import("./api/internal/auth-check.js"));
+mount("/api/internal/lookup", () => import("./api/internal/lookup.js"));
 mount("/api/db/export-refund-lookup", () => import("./api/db/export-refund-lookup.js"));
 mount("/api/db/invoice-points",       () => import("./api/db/invoice-points.js"));
 mount("/api/db/invoice-confirmation-scan", () => import("./api/db/invoice-confirmation-scan.js"));
@@ -167,13 +276,10 @@ mount("/api/db/finance_payments",  () => import("./api/db/finance_payments.js"))
 mount("/api/db/export-excel",      () => import("./api/db/export-excel.js"));
 mount("/api/db/export-pdf",        () => import("./api/db/export-pdf.js"));
 mount("/api/db/shipment-tracking",  () => import("./api/db/shipment-tracking.js"));
+mount("/api/db/shipment-completeness", () => import("./api/db/shipment-completeness.js")); // 2026-06-08 remount
+mount("/api/db/reconcile",             () => import("./api/db/reconcile.js"));             // 2026-06-08 remount
 mount("/api/db/urge",                  () => import("./api/db/urge.js"));
 mount("/api/db/field-registry",        () => import("./api/db/field-registry.js"));
-mount("/api/db/ocr", () => import("./api/db/ocr.js"));
-mount("/api/db/ingest", () => import("./api/db/ingest.js"));
-mount("/api/db/order-audit", () => import("./api/db/order-audit.js"));
-mount("/api/db/hs-check", () => import("./api/db/hs-check.js"));
-mount("/api/db/weight-verify", () => import("./api/db/weight-verify.js"));
 mount("/api/db/field-bindings",        () => import("./api/db/field-bindings.js"));
 mount("/api/db/field-catalog/resolve", () => import("./api/db/field-catalog-resolve.js"));
 mount("/api/db/field-catalog",         () => import("./api/db/field-catalog.js"));
@@ -220,9 +326,22 @@ app.all("/api/db/customer-magic-link", async (req, res) => {
   }
 });
 mount("/api/db/migrate-magic-links",() => import("./api/db/migrate-magic-links.js"));
+// booking-collab uses sub-paths (/validate, /send-factory-link, etc.) — needs prefix match
+app.all("/api/db/booking-collab/*", async (req, res) => {
+  try {
+    const mod = await import("./api/db/booking-collab.js");
+    const handler = mod.default || mod;
+    await handler(req, res);
+  } catch (err) {
+    console.error("[booking-collab] Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+mount("/api/db/booking-collab", () => import("./api/db/booking-collab.js"));
 mount("/api/db/forwarder-booking-submit", () => import("./api/db/forwarder-booking-submit.js"));
 mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"));
 mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
+mount("/api/db/shipping-plan-rebook", () => import("./api/db/shipping-plan-rebook.js")); // 换航次原子操作: 旧航次进raw.booking_history+新航次写主表 2026-06-10
 mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));
 // Product Master V1 — Factory Write-in (PATCH only; raw.factory_profile +
@@ -239,6 +358,7 @@ mount("/api/db/raw-patch",         () => import("./api/db/raw-patch.js"));
 mount("/api/db/shipping",          () => import("./api/db/shipping.js"));
 mount("/api/db/shipping-notify",   () => import("./api/db/shipping-notify.js")); // BL录入双轨通知
 mount("/api/db/vendor-quotes",     () => import("./api/db/vendor-quotes.js"));
+mount("/api/db/stamp-pdf",         () => import("./api/db/stamp-pdf.js"));
 mount("/api/db/stamp-permissions", () => import("./api/db/stamp-permissions.js"));
 mount("/api/db/tenants",           () => import("./api/db/tenants.js"));
 mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
@@ -255,9 +375,8 @@ mount("/api/db/countries",         () => import("./api/db/countries.mjs"));
 mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs"));
 mount("/api/db/mailings", () => import("./api/db/mailings.mjs"));
  mount("/api/db/customs-fix-amount", () => import("./api/db/customs-fix-amount.mjs"));
- mount("/api/db/customs-certify", () => import("./api/db/customs-certify.mjs")); // 报关/开票品名权威认证 (2026-06-05)
- mount("/api/db/verify-doc", () => import("./api/db/verify-doc.js")); // 上传单据AI核验+货物交叉验 (2026-06-05)
 mount("/api/db/companies",          () => import("./api/db/companies.js"));
+mount("/api/db/trucking-vendors",  () => import("./api/db/trucking-vendors.js"));
 mount("/api/db/trucking-rates",     () => import("./api/db/trucking-rates.js"));
 mount("/api/db/customs-rates",      () => import("./api/db/customs-rates.js"));
 mount("/api/db/exchange-rate",      () => import("./api/db/exchange-rate.js"));
@@ -317,6 +436,7 @@ mount("/api/db/field-visibility/bulk",      () => import("./api/db/field-visibil
 mount("/api/db/field-visibility",           () => import("./api/db/field-visibility.js"));
 mount("/api/db/customs-draft-sheets",       () => import("./api/db/customs-draft-sheets.js"));
 mount("/api/db/inspection-request-sheets",  () => import("./api/db/inspection-request-sheets.js"));
+mount("/api/db/inspection-status",          () => import("./api/db/inspection-status.js")); // 检疫状态查询
 mount("/api/db/cert-application-sheets",    () => import("./api/db/cert-application-sheets.js"));
 mount("/api/db/trucking-pickup-sheets",     () => import("./api/db/trucking-pickup-sheets.js"));
 mount("/api/db/trucking-evidence-sheets",   () => import("./api/db/trucking-evidence-sheets.js"));
@@ -330,6 +450,8 @@ mount("/api/db/sample-delivery-checkin",   () => import("./api/db/sample-deliver
 mount("/api/db/migrate-sample-delivery",   () => import("./api/db/migrate-sample-delivery.js"));
 mount("/api/db/drivers",                    () => import("./api/db/drivers.js"));
 mount("/api/db/driver-reviews",             () => import("./api/db/driver-reviews.js"));
+mount("/api/db/shipment-collab",          () => import("./api/db/shipment-collab.js"));
+mount("/api/db/external-tokens",          () => import("./api/db/external-tokens.js"));
 mount("/api/db/collab-sheets/queue",        () => import("./api/db/collab-sheets-queue.js"));
 mount("/api/db/collab-sheets",             () => import("./api/db/collab-sheets.js"));
 mount("/api/db/collab-sheet-templates",    () => import("./api/db/collab-sheet-templates.js"));
@@ -437,6 +559,9 @@ mount("/api/portal/orders",    () => import("./api/portal/orders.js"));    // St
 // MiniMax chat completion proxy for Task Workspace V1.5 (read-only).
 // Hard contract: keys stay in process.env.MINIMAX_API_KEY; rate-limited
 // 30s/task+role; daily cap 100; max_tokens hard 800; prompt 4000 chars.
+mount("/api/db/ports",     () => import("./api/db/ports.js"));
+mount("/api/db/carriers", () => import("./api/db/carriers.js"));
+mount("/api/bl-ocr",      () => import("./api/bl-ocr.js"));
 mount("/api/minimax-chat",     () => import("./api/minimax-chat.js"));
 mount("/api/ocr-booking",     () => import("./api/ocr-booking.js")); // multipart bypass at line 77
 // ── Static files (driver-evidence page) ──
@@ -461,7 +586,18 @@ mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-p
 // ── Reconciliation / monthly statement ──
 mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
 mount("/api/db/tax-rebate", () => import("./api/db/tax-rebate.js"));  // 退税板块 P1
-mount("/api/db/tax-rebate-import", () => import("./api/db/tax-rebate-import.js"));  // 退税进项明细导入 P2
+mount("/api/db/ciq-no", () => import("./api/db/ciq-no.js"));  // 单一窗口报检申请号 per order
+mount("/api/db/eport-rebate", () => import("./api/db/eport-rebate.js"));
+mount("/api/db/tax-rebate-import", () => import("./api/db/tax-rebate-import.js"));
+mount("/api/db/employees",           () => import("./api/db/employees.js"));        // HR: 员工档案
+mount("/api/db/migrate-employees",   () => import("./api/db/migrate-employees.js"));  // HR migration
+mount("/api/db/payroll-sheets",      () => import("./api/db/payroll-sheets.js"));      // HR: 工资单
+mount("/api/db/migrate-payroll",     () => import("./api/db/migrate-payroll.js"));     // HR migration
+mount("/api/db/payroll-generate",    () => import("./api/db/payroll-generate.js"));   // HR: 工资单生成+Excel
+mount("/api/db/migrate-employees-v2",() => import("./api/db/migrate-employees-v2.js")); // HR: v2 migration
+mount("/api/db/fe-status", () => import("./api/db/fe-status.js"));
+mount("/api/db/verify-doc", () => import("./api/db/verify-doc.js"));
+mount("/api/db/mailings", () => import("./api/db/mailings.js"));  // 退税进项明细导入 P2
 
 // ── AI ops/summaries + notifications inbox ──
 mount("/api/db/migrate-ai-and-notifications", () => import("./api/db/migrate-ai-and-notifications.js"));
@@ -488,7 +624,16 @@ mount("/api/db/containers",    () => import("./api/db/containers.js"));
 // ── Migration 025 — shipping schema ALTER TABLEs ──────────────────────────
 mount("/api/db/migrate-025-shipping-schema", () => import("./api/db/migrate-025-shipping-schema.js"));
 
-// ── Health check ──
+ 
+// ── SO Dispatch v5 ────────────────────────────────────────────────────────
+mount("/api/so/trigger",                  () => import("./api/so/trigger.js"));
+mount("/api/so/dispatch/*",                 () => import("./api/so/trigger.js"));
+mount("/api/so/loading-sheet",           () => import("./api/so/trigger.js"));
+mount("/api/so/trucking-confirm",        () => import("./api/so/trigger.js"));
+mount("/api/so/customs-acknowledge",     () => import("./api/so/trigger.js"));
+mount("/api/so/collab-share",           () => import("./api/so/collab-share.js"));
+mount("/api/so/collab-public/*",         () => import("./api/so/collab-share.js"));
+
 app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date().toISOString() }));
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 // ── Start server (for local/FC deployment) ──

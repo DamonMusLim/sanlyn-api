@@ -46,7 +46,12 @@ export default async function handler(req, res) {
     // ── 1. Fetch contract HTML ──────────────────────────────────────────
     const url = contractUrl ||
       `${process.env.API_BASE || "https://api.sanlyn.cn"}/api/db/documents?type=sc&id=${encodeURIComponent(contractNo)}`;
-    const docRes = await fetch(url, { headers: { "User-Agent": "SanlynReview/1.0" } });
+    const docRes = await fetch(url, {
+      headers: {
+        "User-Agent": "SanlynReview/1.0",
+        "x-docs-token": process.env.DOCS_SECRET || "",
+      },
+    });
     if (!docRes.ok) throw new Error(`Could not fetch contract: HTTP ${docRes.status}`);
     const html = await docRes.text();
 
@@ -64,27 +69,31 @@ export default async function handler(req, res) {
     if (contractNo) {
       const pool = getPool();
       const r = await pool.query(
-        "SELECT raw FROM orders WHERE contract_no = $1 LIMIT 1",
+        "SELECT customer, total_amount, customer_amount, total_qty, bl_no, raw FROM orders WHERE contract_no = $1 OR bl_no = $1 OR order_no = $1",
         [contractNo]
       );
       if (r.rows.length) {
         const raw = r.rows[0].raw || {};
+        const _rows = r.rows;
+        const _buyer = _rows[0].customer || raw.companyNameEN || raw.companyNameCN || "—";
+        const _amt = _rows.reduce(function(s,o){return s+(Number(o.total_amount)||Number(o.customer_amount)||0);},0);
+        const _qty = _rows.reduce(function(s,o){return s+(Number(o.total_qty)||0);},0);
         orderContext = `
 Order DB reference (ground truth):
 - Contract No: ${contractNo}
 - Customer PO: ${raw.customerPO || "—"}
 - Product: ${raw.productName || "—"}
 - Total Boxes: ${raw.totalBoxes || "—"}
-- Total QTY: ${raw.totalQty || "—"}
+- Total QTY: ${_qty || raw.totalQty || "—"}
 - Unit Price: ${raw.unitPrice || "—"} ${raw.currency || "USD"}
-- Total Amount: ${raw.totalAmount || "—"}
+- Total Amount: ${_amt || raw.totalAmount || "—"}
 - Incoterms: ${raw.deliveryTerms || "—"}
 - POL: ${raw.portOfLoading || "—"}
 - POD: ${raw.portOfDischarge || "—"}
 - Delivery Date: ${raw.deliveryDate || raw.actDelivery || "—"}
 - Payment Terms: ${raw.paymentTerms || "—"}
 - Seller Company: ${raw.issuingCompanyEN || "—"}
-- Buyer Company: ${raw.companyNameEN || "—"}
+- Buyer Company: ${_buyer}
 `;
       }
     }

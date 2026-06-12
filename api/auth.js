@@ -89,6 +89,7 @@ const PUBLIC_PATHS = [
   "/health",
   // "/api/db/accounts", // REMOVED 2026-04-22 P0 — no longer public; use /api/db/auth-login
   "/api/db/auth-login",   // 主应用登录接口
+  "/api/db/register",     // 公开自助注册(2026-06-05)
   "/api/db/exchange-rate", // 公开:每日实时汇率(非敏感)
   "/api/db/test-fixture-login", // Dev-only fixture login (returns 404 in production)
   "/api/db/check-username", // 注册页查重（只返回 {exists:bool}，不泄露其他字段）
@@ -105,6 +106,18 @@ const PUBLIC_PATHS = [
   // Customer Magic Link (public validate/use — handler verifies token internally)
   "/api/db/customer-magic-link/validate",
   "/api/db/customer-magic-link/use",
+  // Booking Collab Sheet — magic-link token-gated, no JWT
+  "/api/db/booking-collab/validate",
+  "/api/db/booking-collab/factory-submit",
+  "/api/db/booking-collab/customer-submit",
+  "/api/db/booking-collab/trucking-submit",
+  "/api/db/booking-collab/broker-submit",
+  "/api/db/booking-collab/customer-notes",
+  "/api/db/booking-collab/file",
+  "/api/db/booking-collab/upload",
+  "/api/db/booking-collab/sailings",
+  // 代购协同表 — opaque token-gated, GET/PATCH public; POST requires JWT (handled inside)
+  "/api/db/collab-sheets",
   // Customer Invite: validate + activate are public (token is credential); generate requires admin JWT
   "/api/db/customer-invite/validate",
   "/api/db/customer-invite/activate",
@@ -176,6 +189,7 @@ export async function authMiddleware(req, res, next) {
 
   // 静态文件 /public/* 直通（driver-evidence.html / dispatch-paste.html 等）
   if (req.path.startsWith("/public/")) return next();
+  if (req.path.startsWith("/api/so/collab-public/")) return next(); // public magic-link token-gated
 
   // Factory short link /f/<token> → redirect to /public/factory-fill.html, no auth
   if (req.path.startsWith("/f/")) return next();
@@ -210,6 +224,18 @@ export async function authMiddleware(req, res, next) {
     req.path === "/api/minimax-chat"
   ) {
     req.user = { role: "system", sub: "dev-bypass", account: "dev-local" };
+    return next();
+  }
+
+  // 单据长期书签钥匙（Damon 2026-06-12：改完数据刷新旧链接不再 401）
+  // 仅 GET 渲染类端点 + ?key= 匹配 env DOC_VIEW_KEY 才放行，只读 logistics 身份。
+  if (
+    req.method === "GET" &&
+    process.env.DOC_VIEW_KEY &&
+    req.query && req.query.key === process.env.DOC_VIEW_KEY &&
+    (req.path === "/api/db/shipping-plan-pdf" || req.path === "/api/db/documents")
+  ) {
+    req.user = { role: "logistics", sub: "doc-view-key", account: "doc-view-key" };
     return next();
   }
 

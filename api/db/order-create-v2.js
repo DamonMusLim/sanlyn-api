@@ -3,11 +3,58 @@
 // GET: fetch form helpers (customers list, products list)
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { runOrderAudit } from "./order-audit.js";
 
 function generateOrderNo() {
   var d = new Date();
   var prefix = "ORD-" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
   return prefix + "-" + String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+}
+
+// Resolve a manufacturer's PO prefix (factories.po_prefix, e.g. 连云港中砂 -> "LL").
+// NOTE: factories.po_prefix is a SEPARATE coding system from products.factory_code
+// (连云港中砂 = ZS in products but LL in factories). Order numbers use the
+// factories.po_prefix. Matched by the manufacturer's full name. Returns "" if unknown.
+async function resolveFactoryPrefix(pool, factoryName) {
+  var name = String(factoryName || "").trim();
+  if (!name) return "";
+  try {
+    var r = await pool.query(
+      "SELECT po_prefix FROM factories WHERE name = $1 AND po_prefix IS NOT NULL AND po_prefix <> '' LIMIT 1",
+      [name]
+    );
+    return (r.rows[0] && r.rows[0].po_prefix) ? String(r.rows[0].po_prefix).trim() : "";
+  } catch (e) { return ""; }
+}
+
+// order_no convention = <company numeric suffix>-<factory po_prefix>-<next seq>,
+// e.g. HARMONIOUS(CN-00048) + 连云港中砂 -> "48-LL-1". Prefixing with the factory
+// keeps same-customer sequences from colliding across factories ("不会乱").
+// Falls back to <suffix>-<seq> if the factory is unknown, then the date-based
+// ORD- code if the company code has no numeric tail. The seq is the max trailing
+// number for the exact prefix, +1. $1 is a fixed literal prefix (LIKE) — the
+// numeric suffix is parseInt'd and po_prefix comes from our own factories table.
+async function nextOrderNo(pool, companyCode, factoryName) {
+  var m = String(companyCode || "").match(/(\d+)\s*$/);
+  if (!m) return generateOrderNo();
+  var custSuffix = String(parseInt(m[1], 10)); // CN-00048 -> "48"
+  var fpx = await resolveFactoryPrefix(pool, factoryName);
+  var prefix = fpx ? (custSuffix + "-" + fpx) : custSuffix; // "48-LL" or "48"
+  try {
+    var r = await pool.query(
+      "SELECT order_no FROM orders WHERE order_no LIKE $1",
+      [prefix + "-%"]
+    );
+    var max = 0;
+    var tail = new RegExp("^" + prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "-([0-9]+)$");
+    (r.rows || []).forEach(function(row) {
+      var mm = String(row.order_no || "").match(tail);
+      if (mm) { var n = parseInt(mm[1], 10); if (n > max) max = n; }
+    });
+    return prefix + "-" + (max + 1);
+  } catch (e) {
+    return generateOrderNo();
+  }
 }
 
 function generateContractNo() {
@@ -62,6 +109,39 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     try {
       var action = req.query.action || "init";
+
+      // ── Single customer info (returns sub_entities + base fields) ──
+      if (action === "customer-info" && req.query.companyCode) {
+        var ciCode = req.query.companyCode;
+        if (!isAdmin && userCodes && !userCodes.includes(ciCode)) {
+          return res.status(403).json({ error: "Out of scope" });
+        }
+        var ciRes = await pool.query(
+          "SELECT company_code, name_cn, name_en, country, currency, grade, destination_port, consignee, sub_entities FROM customers WHERE company_code = $1 LIMIT 1",
+          [ciCode]
+        ).catch(function() { return { rows: [] }; });
+        if (!ciRes.rows.length) {
+          return res.status(404).json({ success: false, error: "Customer not found" });
+        }
+        var row = ciRes.rows[0];
+        var subEntities = row.sub_entities || [];
+        if (typeof subEntities === "string") { try { subEntities = JSON.parse(subEntities); } catch(_) { subEntities = []; } }
+        if (!Array.isArray(subEntities)) subEntities = [];
+        return res.status(200).json({
+          success: true,
+          data: {
+            companyCode: row.company_code,
+            companyNameCN: row.name_cn || "",
+            companyNameEN: row.name_en || "",
+            country: row.country || "",
+            currency: row.currency || "",
+            grade: row.grade || "",
+            destinationPort: row.destination_port || "",
+            consignee: row.consignee || "",
+            subEntities: subEntities,
+          }
+        });
+      }
 
       // ── Customer's history products (for association) ──
       if (action === "customer-products" && req.query.companyCode) {
@@ -169,6 +249,7 @@ export default async function handler(req, res) {
       // ── Factories authorized for a specific buyer ──
       if (action === "factory-by-buyer" && req.query.buyerCode) {
         var buyerCode = req.query.buyerCode;
+        var subEntityCode = (req.query.subEntityCode || "").trim();   // optional — when set, use sub-entity's signed factories
 
         // PKG-006 AUTHZ-GUARD: non-admin callers may only query factories for their own buyerCode.
         // Prevents enumerating other companies' factory relationships by probing arbitrary buyerCodes.
@@ -183,18 +264,102 @@ export default async function handler(req, res) {
         }
 
         var buyerRes = await pool.query(
-          "SELECT id FROM customers WHERE company_code = $1 LIMIT 1",
+          "SELECT id, sub_entities FROM customers WHERE company_code = $1 LIMIT 1",
           [buyerCode]
         ).catch(function() { return { rows: [] }; });
+
+        // Validate subEntityCode belongs to this buyer (defense against spoofing)
+        if (subEntityCode && buyerRes.rows.length) {
+          var subs = buyerRes.rows[0].sub_entities || [];
+          if (typeof subs === "string") { try { subs = JSON.parse(subs); } catch(_) { subs = []; } }
+          var validCodes = subs.map(function(s){ return s.code; });
+          if (validCodes.indexOf(subEntityCode) === -1) {
+            return res.status(400).json({ error: "subEntityCode not found under buyerCode" });
+          }
+        }
 
         var factories = [];
         var fromRelationships = false;
 
-        if (buyerRes.rows.length) {
+        // ── Layer 1: partner_relationships (new) — customer_factory edges ─────
+        // Resolves company_code_b to factories OR seller_profiles (so 巴匕/洋宝宝-style entries also surface).
+        // If subEntityCode given, query sub-entity's relations; otherwise parent buyer.
+        var lookupCode = subEntityCode || buyerCode;
+        var partnerRes = await pool.query(
+          `SELECT pr.company_code_b AS code
+             FROM partner_relationships pr
+            WHERE pr.company_code_a = $1
+              AND pr.relationship_type = 'customer_factory'
+              AND pr.status = 'active'`,
+          [lookupCode]
+        ).catch(function() { return { rows: [] }; });
+
+        if (partnerRes.rows.length) {
+          var codes = partnerRes.rows.map(function(r){ return r.code; });
+          // Hydrate from factories table + customers (for name_en)
+          var factHydrate = await pool.query(
+            `SELECT f.company_code, f.name AS name_cn, f.name_short, f.po_prefix, f.ports, f.address,
+                    c.name_en, c.address_cn, c.address_en, c.currency, c.addresses
+               FROM factories f
+               LEFT JOIN customers c ON (c.company_code = f.company_code OR c.name_cn = f.name)
+              WHERE f.company_code = ANY($1::text[])`,
+            [codes]
+          ).catch(function() { return { rows: [] }; });
+          var seenCodes = new Set();
+          factHydrate.rows.forEach(function(row) {
+            seenCodes.add(row.company_code);
+            factories.push({
+              company_code: row.company_code,
+              name_cn:      row.name_cn || "",
+              name_en:      row.name_en || "",
+              name_short:   row.name_short || "",
+              po_prefix:    row.po_prefix || "",
+              port_default: Array.isArray(row.ports) && row.ports.length ? row.ports[0] : "",
+              export_mode:  null,
+              address:      row.address_en || row.address_cn || row.address || "",
+              addresses:    row.addresses || null,
+              currency:     row.currency || "CNY",
+            });
+          });
+          // Hydrate any remaining codes from seller_profiles (e.g. petbaby)
+          var missing = codes.filter(function(c){ return !seenCodes.has(c); });
+          if (missing.length) {
+            var spHydrate = await pool.query(
+              `SELECT code, name_cn, name_en
+                 FROM seller_profiles
+                WHERE code = ANY($1::text[])`,
+              [missing]
+            ).catch(function() { return { rows: [] }; });
+            spHydrate.rows.forEach(function(row) {
+              seenCodes.add(row.code);
+              factories.push({
+                company_code: row.code,
+                name_cn:      row.name_cn || "",
+                name_en:      row.name_en || "",
+                name_short:   row.name_cn || row.code,
+                port_default: "",
+                export_mode:  "proxy",  // seller_profile entries default to proxy export
+                address:      "",
+              });
+            });
+            // Codes not resolved anywhere — still surface them as raw entries so UI can show them
+            missing.filter(function(c){ return !seenCodes.has(c); }).forEach(function(c) {
+              factories.push({
+                company_code: c, name_cn: c, name_en: "", name_short: c,
+                port_default: "", export_mode: null, address: "",
+              });
+            });
+          }
+          fromRelationships = true;
+        }
+
+        // ── Layer 2: legacy relationships table fallback ───────────────────────
+        if (!factories.length && buyerRes.rows.length) {
           var buyerId = buyerRes.rows[0].id;
           var relRes = await pool.query(
             `SELECT DISTINCT c.id, c.company_code, c.name_cn, c.name_en, c.name_short,
-                    c.port_default, c.export_mode, c.address
+                    c.port_default, c.export_mode, c.address, c.address_cn, c.address_en,
+                    c.currency, c.addresses
              FROM relationships r
              JOIN customers c ON (
                (r.type = 'buys_from' AND r.from_company_id = $1 AND c.id = r.to_company_id)
@@ -228,20 +393,27 @@ export default async function handler(req, res) {
           }
           // Admin / internal only: fallback to full factory list for internal order creation
           var allFactRes = await pool.query(
-            "SELECT id, company_code, name_cn, name_en, name_short, port_default, export_mode FROM customers WHERE role_type = 'factory' ORDER BY name_en"
+            "SELECT id, company_code, name_cn, name_en, name_short, port_default, export_mode, address, address_cn, address_en, currency, addresses FROM customers WHERE portal_role = 'factory' ORDER BY name_en"
           ).catch(function() { return { rows: [] }; });
           factories = allFactRes.rows;
         }
 
         var factoryList = factories.map(function(row) {
+          var displayName = row.name_en || row.name_cn || row.name_short || row.company_code || "";
           return {
+            name: displayName,                            // OrderCreateV4 reads this as the display label
             companyCode: row.company_code || "",
             nameEN: row.name_en || "",
             nameCN: row.name_cn || "",
             nameShort: row.name_short || "",
+            poPrefix: row.po_prefix || row.name_short || row.company_code || "",
             portDefault: row.port_default || "",
+            ports: row.port_default ? [row.port_default] : [],
             exportMode: row.export_mode || null,
             isProxy: row.export_mode === "proxy",
+            address: row.address_cn || row.address_en || row.address || "",
+            addresses: row.addresses || null,
+            defaultCurrency: row.currency || "CNY",
           };
         });
 
@@ -287,7 +459,7 @@ export default async function handler(req, res) {
       ).catch(function() { return { rows: [] }; });
 
       var custTable = await pool.query(
-        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, raw FROM customers WHERE is_active != false" + scopeClauseCust + " AND (grade IS NOT NULL AND grade != '' OR brands IS NOT NULL AND brands != '{}' AND brands != '[]' AND brands::text != '') ORDER BY name_en",
+        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, sub_entities, raw FROM customers WHERE is_active != false" + scopeClauseCust + " AND (grade IS NOT NULL AND grade != '' OR brands IS NOT NULL AND brands != '{}' AND brands != '[]' AND brands::text != '') ORDER BY name_en",
         scopeParams
       ).catch(function() { return { rows: [] }; });
 
@@ -300,6 +472,11 @@ export default async function handler(req, res) {
         try { addrs = typeof c.addresses === "string" ? JSON.parse(c.addresses) : (c.addresses || []); } catch(e) {}
         var firstAddr = addrs[0] || {};
         var brands = Array.isArray(c.brands) ? c.brands.join(", ") : (c.brands || "");
+
+        // Normalize sub_entities (may come as JSON string or array)
+        var subEntities = c.sub_entities || [];
+        if (typeof subEntities === "string") { try { subEntities = JSON.parse(subEntities); } catch(_) { subEntities = []; } }
+        if (!Array.isArray(subEntities)) subEntities = [];
 
         if (isAdmin) {
           // Admin: full customer record for internal order creation
@@ -322,6 +499,7 @@ export default async function handler(req, res) {
             tradeTerms: c.trade_terms || "",
             ourShipping: c.our_shipping || "",
             addresses: addrs,
+            subEntities: subEntities,
             raw: c.raw || {}
           };
         } else {
@@ -334,6 +512,7 @@ export default async function handler(req, res) {
             currency: c.currency || "USD",
             destinationPort: c.destination_port || firstAddr.port || "",
             consignee: c.consignee || firstAddr.consignee || "",
+            subEntities: subEntities,
           };
         }
       });
@@ -588,6 +767,14 @@ export default async function handler(req, res) {
 
     var exportController = body.exportController || (body.proxyExport ? "SANLYN" : "SELF");
     var factoryCompanyCode = body.factoryCompanyCode || body.selectedFactoryCode || null;
+    // ORDER_ENTRY_P0_FIX_001 — write orders.factory_code column.
+    // Accepts snake (body.factory_code, new FE), camel fallbacks, or resolved factoryCompanyCode.
+    // Column type is VARCHAR(8); upper-case + truncate defensively.
+    var factoryCodeRaw = body.factory_code || factoryCompanyCode || "";
+    var factoryCodeForCol = String(factoryCodeRaw || "").trim().toUpperCase().slice(0, 8) || null;
+    // ORDER_ENTRY_P0_FIX_001 — optional bl_no (canonical store = shipping_plans.bl_no;
+    // this is an opportunistic write to orders.bl_no if the column exists).
+    var blNoForCol = (body.bl_no || body.blNo || "").toString().trim() || null;
 
     var {
       companyCode, companyNameCN, companyNameEN, groupCode, brand, category,
@@ -606,7 +793,10 @@ export default async function handler(req, res) {
     if (!companyNameCN && !companyNameEN) return res.status(400).json({ error: "客户名称必填" });
     if (!products || !products.length) return res.status(400).json({ error: "请添加产品" });
 
-    var orderNo = body.orderNo || generateOrderNo();
+    // Manufacturer name for the order_no factory prefix. Orders are split one-per
+    // factory upstream, so all line items share a manufacturer; use the first.
+    var _mfrName = (products && products[0] && (products[0].factory_name || products[0].factory)) || factory || "";
+    var orderNo = body.orderNo || await nextOrderNo(pool, companyCode, _mfrName);
     // DEC-02: backend FS-prefix is canonical contract_no.
     // Non-admin callers may supply a client-side SC-prefix ref (draft display ref) but it is
     // stored as raw._clientRef only. The official contract_no always comes from server generateContractNo().
@@ -643,11 +833,12 @@ export default async function handler(req, res) {
     // NEVER fetched from master (forbidden — financial / settlement fields):
     //   factory_price, price_usd, profit, declaration_amount, vat_rate, rebate_rate
     var skuMasterMap = {};
+    var skuVariantsMap = {};  // 多规格: 每SKU全部active变体行
     var incomingSkus = (products || []).map(function(p) { return (p.sku || p.code || "").trim(); }).filter(Boolean);
     if (incomingSkus.length) {
       try {
         var masterRes = await pool.query(
-          "SELECT id, sku, product_name, net_weight, gross_weight, cbm, hs_code, declaration_name, bl_description, barcode, updated_at FROM products WHERE sku = ANY($1) AND active = true",
+          "SELECT id, sku, product_name, net_weight, gross_weight, cbm, hs_code, declaration_name, bl_description, barcode, sale_price_cny, factory_price, bg_bx, declaration_amount, size, spec, updated_at FROM products WHERE sku = ANY($1) AND active = true",
           [incomingSkus]
         );
 
@@ -684,6 +875,7 @@ export default async function handler(req, res) {
             );
           }
           skuMasterMap[sku] = selected;
+          skuVariantsMap[sku] = group;  // 存全部规格行供按bg_bx选
         });
 
         if (Object.keys(skuMasterMap).length) {
@@ -711,6 +903,9 @@ export default async function handler(req, res) {
         ["hs_code",          "hsCode",           "hs_code"],
         ["declaration_name", "declarationName",  "declaration_name"],
         ["barcode",          "barcode",          null],
+        ["product_name",     "productName",      "product_name"],
+        ["size",             "size",             null],
+        ["spec",             "spec",             null],
         // bl_description: direct column in products (not derived from declaration_name)
         ["bl_description",   "blDescription",    "bl_description"],
       ];
@@ -740,17 +935,65 @@ export default async function handler(req, res) {
     var totalCBM = 0, grossWeight = 0, netWeight = 0;
     var declareAmount = 0;
 
+    // 多规格选行(2026-06-06): 同SKU多个规格行,按本行bg_bx(=数量÷箱数)选对应变体取价,否则多规格共用一价。见 product-management skill。
+    function pickVariant(sku, clientBg, p) {
+      if (!sku) return null;
+      var group = skuVariantsMap[sku];
+      if (!group || !group.length) return skuMasterMap[sku] || null;
+      if (group.length === 1) return group[0];
+      if (clientBg && clientBg > 0) {
+        var byBg = group.filter(function(r){ return parseInt(r.bg_bx, 10) === clientBg; });
+        if (byBg.length) return byBg[0];
+      }
+      var cnw = parseFloat(p && (p.netWeight || p.net_weight));
+      if (cnw > 0) {
+        var best=null, bd=1e9;
+        group.forEach(function(r){ var d=Math.abs((parseFloat(r.net_weight)||0)-cnw); if(d<bd){bd=d;best=r;} });
+        if (best && bd < 0.5) return best;
+      }
+      return skuMasterMap[sku] || group[0];
+    }
     var cleanProducts = products.map(function(p) {
       // Enrich p with product master data before extracting fields (fail-open)
       var skuKey = (p.sku || p.code || "").trim();
-      if (skuKey && skuMasterMap[skuKey]) {
-        p = fillFromMaster(p, skuMasterMap[skuKey]);
+      var _clientBg = parseInt(p.bgBx) || parseInt(p.bg_bx) || parseInt(p.carton_qty) || parseInt(p.bagsPerBox);
+      var _variant = pickVariant(skuKey, _clientBg, p);  // 按规格选对应变体行
+      if (_variant) {
+        p = fillFromMaster(p, _variant);
       }
       var qty = parseInt(p.qty) || 0;
-      var unitPrice = parseFloat(p.unitPrice) || parseFloat(p.price) || 0;
-      var factoryPrice = parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || unitPrice;
-      var subtotal = parseFloat(p.subtotal) || (unitPrice * qty);
-      var factorySubtotal = factoryPrice * qty;
+      // 单价铁律(2026-06-03): 后端按主数据权威重算。单价(每箱) = sale_price_cny(每个) × bg_bx(每箱个数)。
+      // 杜绝前端口径错(曾把每个价当每箱价、漏乘bg_bx导致金额×bg偏小)。详见记忆 feedback_order_create_v2_line_items_factory。
+      var _master = _variant || (skuKey && skuMasterMap[skuKey]) || null;
+      // ── GW/CBM 估值 (Workstream A, 2026-06-07) ──────────────────────────────
+      // fillFromMaster 已从产品主数据回填 grossWeight/cbm；若仍为空则按 NW×1.15 估算，
+      // 并在 p._gwEstimated=true 上标记（写入 OLI raw，前端据此标黄）。
+      // 规则：禁止留 null 出单；估算比 0 更准；完全无 NW/GW 的行写入警告。
+      var _gw = parseFloat(p.grossWeight) || parseFloat(p.gross_weight) || 0;
+      var _nw = parseFloat(p.netWeight)   || parseFloat(p.net_weight)   || 0;
+      if (!_gw && _nw > 0) {
+        _gw = +(_nw * 1.15).toFixed(2);
+        p.grossWeight = _gw; p.gross_weight = _gw;
+        p._gwEstimated = true;
+      }
+      // CBM: 暂无尺寸数据时不估算，保持 null（触发器不依赖CBM求和；前端标黄提示）
+      // ─────────────────────────────────────────────────────────────────────────
+      // bg_bx 消歧(2026-06-06): 同一SKU在products可能有多个active行(bg_bx不同),master按updated_at任意挑会选错每箱个数;
+      // 且同一SKU在同票不同行装箱数可能不同 → 每箱个数以客户端(装箱单 数量/箱数)为权威。仅影响bg_bx,sale_price仍master-first(单价铁律不变)。
+      var _clientBg = parseInt(p.bgBx) || parseInt(p.bg_bx) || parseInt(p.carton_qty) || parseInt(p.bagsPerBox);
+      var bgBx = (_clientBg && _clientBg > 0) ? _clientBg : (parseInt(_master && _master.bg_bx) || 1);
+      var unitPrice, factoryPrice, _priceFromMaster = false;
+      if (_master && parseFloat(_master.sale_price_cny) > 0) {
+        unitPrice    = +(parseFloat(_master.sale_price_cny) * bgBx).toFixed(4);
+        factoryPrice = +((parseFloat(_master.factory_price) || parseFloat(_master.sale_price_cny)) * bgBx).toFixed(4);
+        _priceFromMaster = true;
+      } else {
+        // 主数据无价 → 用客户端传入价(可能不准，下方 priceWarnings 会标红)
+        unitPrice    = parseFloat(p.unitPrice) || parseFloat(p.price) || 0;
+        factoryPrice = parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || unitPrice;
+      }
+      var subtotal = +(unitPrice * qty).toFixed(2);
+      var factorySubtotal = +(factoryPrice * qty).toFixed(2);
       var pCbm = (parseFloat(p.cbm) || 0) * qty;
       var pGW = (parseFloat(p.grossWeight) || parseFloat(p.gross_weight) || 0) * qty;
       var pNW = (parseFloat(p.netWeight) || parseFloat(p.net_weight) || 0) * qty;
@@ -776,6 +1019,8 @@ export default async function handler(req, res) {
         unit: p.unit || "CTN",
         unitPrice: unitPrice,
         factoryPrice: factoryPrice,
+        bgBx: bgBx,
+        _priceFromMaster: _priceFromMaster,
         subtotal: subtotal,
         factorySubtotal: factorySubtotal,
         cbm: parseFloat(p.cbm) || 0,
@@ -791,11 +1036,64 @@ export default async function handler(req, res) {
         sku: p.sku || "",
         // Track which fields were auto-filled from product master (for audit in raw)
         _masterFilled: p._masterFilled || undefined,
+        _gwEstimated: p._gwEstimated || false,
         declareAmountPerBox: parseFloat(p.declareAmount) || parseFloat(p.declareAmountPerBox) || 0,
         vatRate: parseFloat(p.vatRate) || parseFloat(p.vat_rate) || 0,
         taxRebateRate: parseFloat(p.taxRebateRate) || parseFloat(p.tax_rebate_rate) || 0,
       };
     });
+
+    // 历史价防呆: 单价非主数据来源(或为0)的行标红返回，提醒人工核对，避免错价出货。
+    // (不依赖历史脏数据对比——主数据已是权威；这里只兜住"没用上主数据价"的风险行)
+    var priceWarnings = cleanProducts
+      .filter(function(cp){ return cp.sku && (!cp._priceFromMaster || !(cp.unitPrice > 0)); })
+      .map(function(cp){ return { sku: cp.sku, name: cp.name, unitPrice: cp.unitPrice,
+        reason: cp.unitPrice > 0 ? "单价非主数据来源，请核对" : "缺单价" }; });
+    if (priceWarnings.length) console.warn("[order-create-v2] price_warnings:", JSON.stringify(priceWarnings));
+
+    // GW/CBM 估值警告 (Workstream A, 2026-06-07): 前端展示黄标
+    var gwWarnings = cleanProducts
+      .filter(function(cp){ return cp.sku && (cp._gwEstimated || !(parseFloat(cp.grossWeight) > 0)); })
+      .map(function(cp){ return {
+        sku: cp.sku, name: cp.name,
+        gw_ctn: cp.grossWeight || null,
+        cbm_ctn: cp.cbm || null,
+        reason: cp._gwEstimated ? "GW从NW×1.15估算，建议补充工厂实测数据" : "缺GW/CBM，请补充产品主数据"
+      }; });
+    if (gwWarnings.length) console.warn("[order-create-v2] gw_warnings:", JSON.stringify(gwWarnings));
+
+    // ── 数据完整性预警 (2026-06-07) ─────────────────────────────────────────
+    // 建单后自动检查关键字段缺失，返回 dataWarnings 供前端红标提醒。不阻断建单。
+    var dataWarnings = cleanProducts
+      .filter(function(cp){ return cp.sku; })
+      .reduce(function(acc, cp) {
+        var missing = [];
+        if (!cp.barcode && !(skuMasterMap[(cp.sku||"").trim()] || {}).barcode) missing.push("BARCODE");
+        if (!cp.size && !cp.spec && !(skuMasterMap[(cp.sku||"").trim()] || {}).size && !(skuMasterMap[(cp.sku||"").trim()] || {}).spec) missing.push("SIZE");
+        if (missing.length) acc.push({ sku: cp.sku, name: cp.name || "", missing: missing, action: "请在产品主数据补充后重建单或人工核实" });
+        return acc;
+      }, []);
+    if (dataWarnings.length) console.warn("[order-create-v2] data_warnings:", JSON.stringify(dataWarnings));
+
+    // 落库前最终审计闸门(复用 order-audit 模块): BLOCK 级问题(缺主数据/数量非法/单价口径错)直接 422，绝不建错单。
+    // 价格已在上方按主数据重算，故此处主要兜住 数量非法 / SKU不在主数据 等重算救不了的。审计本身报错则 fail-open 不挡建单。
+    try {
+      var _auditLines = cleanProducts.map(function (cp) {
+        return { sku: cp.sku, qty: cp.qty, unitPrice: cp.unitPrice, subtotal: cp.subtotal };
+      });
+      var _audit = await runOrderAudit(pool, _auditLines);
+      if (_audit && _audit.summary && _audit.summary.blockCount > 0) {
+        console.warn("[order-create-v2] ORDER_AUDIT_BLOCKED:", JSON.stringify(_audit.findings));
+        return res.status(422).json({
+          error: "订单审计未通过，存在阻断级问题，未建单",
+          code: "ORDER_AUDIT_BLOCKED",
+          findings: _audit.findings,
+          canonicalLines: _audit.canonicalLines,
+        });
+      }
+    } catch (auditErr) {
+      console.warn("[order-create-v2] order audit failed (non-fatal):", auditErr.message);
+    }
 
     // Auto container type
     var containerType = body.containerType || (totalCBM < 30 ? "20GP" : "40HQ");
@@ -883,6 +1181,26 @@ export default async function handler(req, res) {
     // V3 adapter sets body.source = "customer-portal"; legacy admin path has no source → "admin_panel"
     var orderSource = source || (createdBy === "customer-portal" ? "customer-portal" : "admin_panel");
 
+    // ORDER_ENTRY_P0_FIX_001 — probe optional columns before building INSERT.
+    // factory_code: confirmed in migrate-order-flow-v3.js (always present).
+    // bl_no: no migration found; probe at runtime. If absent, value still persists in raw.bl_no.
+    var hasBlNoCol = false;
+    try {
+      var colProbe = await pool.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'bl_no' LIMIT 1"
+      );
+      hasBlNoCol = colProbe.rows.length > 0;
+    } catch (_e) { hasBlNoCol = false; }
+
+    var extraCols = ["factory_code"];
+    var extraVals = [factoryCodeForCol];
+    if (hasBlNoCol) { extraCols.push("bl_no"); extraVals.push(blNoForCol); }
+    // 代购单=特殊单型（2026-06-11 Damon）：daigou 标记驱动 DG徽章/FE必办/价格三件套/客户×1.02
+    var _exportMode = (body.export_mode === "daigou" || body.daigou === true) ? "daigou" : "direct";
+    extraCols.push("export_mode"); extraVals.push(_exportMode);
+    // Build $49, $50, ... placeholders for the extras
+    var extraPlaceholders = extraVals.map(function(_v, i){ return "$" + (48 + i + 1); }).join(",");
+
     var sql = `INSERT INTO orders (
       id, _id, order_no, contract_no, customer_po,
       company_code, company_name_cn, company_name_en, group_code, brand, category,
@@ -895,11 +1213,13 @@ export default async function handler(req, res) {
       profit, declare_amount, vat_rate, tax_rebate_rate, tax_rebate_amount,
       status, production_status,
       products, factory, issuing_company, issuing_company_en, remarks,
-      source, created_by, customer, raw
+      source, created_by, customer, raw,
+      ${extraCols.join(", ")}
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,
       $20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,
-      $38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48
+      $38,$39,$40,$41,$42,$43,$44,$45,$46,$47,$48,
+      ${extraPlaceholders}
     ) RETURNING id, _id, order_no, contract_no, total_amount, total_amount_factory, profit, status`;
 
     // $1–$16:  id … country
@@ -956,7 +1276,7 @@ export default async function handler(req, res) {
       /*$38*/ "pending",
       /*$39*/ null,
       /*$40*/ JSON.stringify(cleanProducts),
-      /*$41*/ factory || "",
+      /*$41*/ _mfrName || factory || "",  // FIX(工厂列): 优先产品映射工厂名 _mfrName(=products[0].factory_name)，杜绝误写买方/巴匕
       /*$42*/ issuingCompany || "",
       /*$43*/ issuingCompanyEN || "",
       /*$44*/ remarks || "",
@@ -965,9 +1285,146 @@ export default async function handler(req, res) {
       /*$47*/ companyNameEN || companyNameCN || "",
       /*$48*/ JSON.stringify(body),
     ];
+    // ORDER_ENTRY_P0_FIX_001 — append optional column values ($49+) built above.
+    extraVals.forEach(function(v){ vals.push(v); });
 
     var result = await pool.query(sql, vals);
     var order = result.rows[0];
+
+    // ─────────────────────────────────────────────────────────────────
+    // FIX(line_items): 把产品写进 order_line_items 表（之前只写了 products jsonb 列，
+    // 导致订单详情「产品行」网格永远空）。非致命：失败不阻断建单。
+    // 字段映射与 raw.products 一致，单据(PI/PO)与UI网格共用同一真值。
+    try {
+      var _num = function(v){ var n = Number(String(v == null ? "" : v).replace(/[^0-9.\-]/g, "")); return isNaN(n) ? null : n; };
+      var _li = Array.isArray(cleanProducts) ? cleanProducts : [];
+      for (var _i = 0; _i < _li.length; _i++) {
+        var p = _li[_i] || {};
+        var _qty = _num(p.qty) || 0;
+        var _up  = _num(p.unitPrice); if (_up == null) _up = _num(p.price);
+        var _fp  = _num(p.factoryPrice); if (_fp == null) _fp = _num(p.factory_price); if (_fp == null) _fp = _up;
+        var _bg  = _num(p.bgBx); if (_bg == null) _bg = _num(p.carton_qty); if (_bg == null) _bg = _num(p.bg_bx); if (_bg == null) _bg = _num(p.bagsPerBox);
+        // FIX 2026-06-03 forge: declare_amount_per_box(每箱申报额)从products主数据带,报关SSOT用,缺=null由报关端点STOP
+        var _declPerBox = _num((skuMasterMap[(p.sku||p.code||"").trim()]||{}).declaration_amount);
+        if (_declPerBox == null) _declPerBox = _num(p.declareAmountPerBox);
+        if (_declPerBox == null) _declPerBox = _num(p.declare_amount_per_box);
+        await pool.query(
+          `INSERT INTO order_line_items
+            (order_id, sku, barcode, product_name, brand, bg_bx, qty_ctn, unit, unit_price, factory_price,
+             subtotal, factory_subtotal, nw_ctn, gw_ctn, cbm_ctn, size, hs_code, declaration_name, bl_description,
+             vat_rate, tax_rebate_rate, sort_order, declare_amount_per_box)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+          [ order.id,
+            p.sku || p.productCode || null,
+            p.barcode || p.code || (skuMasterMap[(p.sku||p.productCode||"").trim()] || {}).barcode || null,
+            p.name || p.productName || null,
+            p.brand || null,
+            _bg, _qty, p.unit || "CTN", _up, _fp,
+            (_qty && _up != null) ? +(_qty * _up).toFixed(2) : null,
+            (_qty && _fp != null) ? +(_qty * _fp).toFixed(2) : null,
+            _num(p.netWeight) != null ? _num(p.netWeight) : _num(p.net_weight),
+            _num(p.grossWeight) != null ? _num(p.grossWeight) : _num(p.gross_weight),
+            _num(p.cbm),
+            p.size || p.spec || (skuMasterMap[(p.sku||p.productCode||"").trim()] || {}).size || (skuMasterMap[(p.sku||p.productCode||"").trim()] || {}).spec || null,
+            p.hs_code || p.hsCode || null,
+            p.declaration_name || p.declarationName || (p.raw && p.raw.declareName) || null,
+            p.bl_description || p.blDescription || (p.raw && p.raw.blDesc) || null,
+            _num(p.vat_rate) != null ? _num(p.vat_rate) : _num(p.vatRate),
+            _num(p.tax_rebate_rate),
+            _i + 1, _declPerBox ]
+        );
+      }
+    } catch (liErr) {
+      console.warn("[order-create-v2] order_line_items insert failed (non-fatal):", liErr.message);
+    }
+
+    // Save trade_terms to order row + update customer's last-used value (non-fatal)
+    if (body.trade_terms) {
+      try {
+        var tt = String(body.trade_terms).toUpperCase().trim();
+        await pool.query("UPDATE orders SET trade_terms = $1 WHERE id = $2", [tt, order.id]);
+        await pool.query("UPDATE customers SET trade_terms = $1, updated_at = NOW() WHERE company_code = $2", [tt, companyCode]);
+      } catch (_) {}
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // AUTO-SEED partner_relationships (customer_factory)  · 2026-05-18
+    // Purpose: when admin creates an order, write back the (buyer, factory) edge
+    // so subsequent OrderCreateV4 factory-by-buyer lookups surface it.
+    //
+    // ⚠ AUTHZ-GATE (Codex audit 2026-05-18 HIGH finding):
+    // SKIPPED for non-admin callers. A customer submitting an order under
+    // their own buyerCode could otherwise inject any factory_code from the
+    // factories whitelist into the relationship table (the existence check
+    // alone is NOT authorization). Only admin/internal callers — who are
+    // already operating with full visibility and intent to bind the relation
+    // — are allowed to mint partner_relationships from order POSTs. Customer
+    // self-service orders must NOT auto-bind; relationships for those flows
+    // are seeded out-of-band (admin UI or bulk-seed script).
+    //
+    // Safety (in addition to authz gate):
+    //   - Skips when companyCode missing (buyer unknown → can't bind)
+    //   - Only resolves factory_code values that exist in factories table
+    //     (no fabrication; protects against typo/injection of CN-XXXXX)
+    //   - Self-binding guard (a == b)
+    //   - NOT EXISTS guard prevents duplicates
+    //   - Wrapped in try/catch — never blocks order creation
+    // ─────────────────────────────────────────────────────────────────
+    try {
+      if (!isAdmin) {
+        // Non-admin callers (customer portal) cannot auto-create relationships.
+        // Their orders still succeed; the relationship simply doesn't get
+        // implicitly minted. Admin must approve / seed it explicitly.
+      } else if (companyCode) {
+        const factoryCodeCandidates = new Set();
+        // From product rows (factory_code can be company_code or po_prefix)
+        if (Array.isArray(cleanProducts)) {
+          for (const p of cleanProducts) {
+            const fc = (p && (p.factory_code || p.factoryCode));
+            if (fc) factoryCodeCandidates.add(String(fc).trim());
+          }
+        }
+        // From top-level body (admin order create posts factoryCompanyCode)
+        if (body.factoryCompanyCode) factoryCodeCandidates.add(String(body.factoryCompanyCode).trim());
+        if (body.factory_code)       factoryCodeCandidates.add(String(body.factory_code).trim());
+
+        for (const candidate of factoryCodeCandidates) {
+          if (!candidate) continue;
+          // Resolve: accept only canonical CN-NNNNN codes that exist in factories.
+          // PO prefixes (e.g. 'LL', 'CL') get resolved via factories.po_prefix lookup.
+          let resolved = null;
+          if (/^CN-\d{4,}$/i.test(candidate)) {
+            const r = await pool.query(
+              `SELECT company_code FROM factories WHERE UPPER(company_code) = UPPER($1) LIMIT 1`,
+              [candidate]
+            );
+            if (r.rows.length) resolved = r.rows[0].company_code;
+          } else {
+            const r = await pool.query(
+              `SELECT company_code FROM factories WHERE UPPER(po_prefix) = UPPER($1) LIMIT 1`,
+              [candidate]
+            );
+            if (r.rows.length) resolved = r.rows[0].company_code;
+          }
+          if (!resolved) continue;
+          // Guard against self-binding (customer = factory shouldn't happen but be safe)
+          if (resolved.toUpperCase() === String(companyCode).toUpperCase()) continue;
+          await pool.query(
+            `INSERT INTO partner_relationships (company_code_a, company_code_b, relationship_type, status, notes)
+             SELECT $1, $2, 'customer_factory', 'active', 'auto-seeded on order create (order_id=' || $3 || ')'
+             WHERE NOT EXISTS (
+               SELECT 1 FROM partner_relationships
+               WHERE company_code_a = $1
+                 AND company_code_b = $2
+                 AND relationship_type = 'customer_factory'
+             )`,
+            [companyCode, resolved, String(order.id)]
+          );
+        }
+      }
+    } catch (relErr) {
+      console.error("[order-create-v2] partner_relationships auto-seed failed (non-fatal):", relErr.message);
+    }
 
     // Auto-create payment_term task (non-fatal — never blocks order creation)
     try {
@@ -1015,6 +1472,9 @@ export default async function handler(req, res) {
       totalCBM: totalCBM,
       containerType: containerType,
       productCount: cleanProducts.length,
+      priceWarnings: priceWarnings,  // 单价非主数据来源/缺价的行，前端可红标提醒
+      gwWarnings: gwWarnings,        // GW估算/缺失的行，前端可黄标提醒（不阻断建单）
+      dataWarnings: dataWarnings,    // 建单后字段缺失预警(BARCODE/SIZE等)，前端红标，不阻断建单
     };
     var summaryFull = Object.assign({}, summaryPublic, {
       totalAmountFactory: totalAmountFactory,

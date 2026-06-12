@@ -4,7 +4,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth }      from "../auth.js";
 
-const ALLOWED_MODULES = new Set(["shipping_plans"]);
+const ALLOWED_MODULES = new Set(["shipping_plans","orders","products","order_line_items","companies","customers","countries","ports","container_bookings","customs"]);
 
 function validModuleKey(value) {
   const moduleKey = value == null ? "" : String(value).trim();

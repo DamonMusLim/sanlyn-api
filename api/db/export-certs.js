@@ -43,14 +43,40 @@ export default async function handler(req, res) {
     CREATE INDEX IF NOT EXISTS idx_export_certs_company ON export_certs(company_code);
   `);
 
+  // ── W0-2: tenant scope gate ──
+  // Worker I GAP-IE-27: export_certs had NO tenant/company scope. Enforce here.
+  //  - super_admin/admin: full visibility (audit logged for non-own queries)
+  //  - any other role with companyCodes[]: results filtered to caller's codes
+  //  - missing role OR empty companyCodes: 403 fail-closed
+  var userRole = String((req.user && req.user.role) || "").toLowerCase();
+  var userCodes = (req.user && (req.user.companyCodes
+                    || (req.user.companyCode ? [req.user.companyCode] : []))) || [];
+  var isAdmin   = (userRole === "admin" || userRole === "super_admin" || userRole === "root");
+  if (!isAdmin && (!userCodes || userCodes.length === 0)) {
+    return res.status(403).json({ error: "Account scope missing — please log out and log in again." });
+  }
+
   try {
     // ── GET ──
     if (req.method === "GET") {
       var { plan_id, company_code } = req.query || {};
       var where = [], vals = [];
       if (plan_id)      { vals.push(plan_id);      where.push(`ec.shipping_plan_id = $${vals.length}`); }
-      if (company_code) { vals.push(company_code); where.push(`ec.company_code = $${vals.length}`); }
+      if (company_code) {
+        // W0-2: non-admin cannot query foreign company_code
+        if (!isAdmin && !userCodes.includes(company_code)) {
+          return res.status(403).json({ error: "cross-company access denied" });
+        }
+        vals.push(company_code); where.push(`ec.company_code = $${vals.length}`);
+      }
       if (!where.length) return res.status(400).json({ error: "plan_id or company_code required" });
+
+      // W0-2: enforce caller-scope as additional WHERE for non-admin (covers
+      // plan_id queries where the plan belongs to a different company).
+      if (!isAdmin) {
+        vals.push(userCodes);
+        where.push(`ec.company_code = ANY($${vals.length}::text[])`);
+      }
 
       var r = await pool.query(`
         SELECT ec.*,
@@ -61,6 +87,17 @@ export default async function handler(req, res) {
         WHERE ${where.join(" AND ")}
         ORDER BY ec.cert_type, ec.created_at DESC
       `, vals);
+
+      // W0-2: admin cross-company access → audit log
+      if (isAdmin && company_code && !userCodes.includes(company_code)) {
+        writeAudit(pool, req, {
+          action: "export_cert.admin_cross_company_read",
+          entity_type: "export_cert",
+          entity_id: null,
+          after: { queried_company_code: company_code, queried_plan_id: plan_id || null,
+                   admin_codes: userCodes },
+        }).catch(() => {});
+      }
 
       return res.status(200).json({ success: true, count: r.rows.length, certs: r.rows });
     }
@@ -77,6 +114,39 @@ export default async function handler(req, res) {
       if (!CERT_TYPES.includes(cert_type)) {
         return res.status(400).json({ error: "invalid cert_type: " + CERT_TYPES.join("|") });
       }
+      // W0-2: non-admin POST cannot create rows for a foreign company_code
+      if (!isAdmin && company_code && !userCodes.includes(company_code)) {
+        return res.status(403).json({ error: "cross-company write denied" });
+      }
+      // W0-2: non-admin POST must verify the shipping_plan belongs to caller's
+      // scope AND must have a resolved company_code (no null fail-open).
+      // Review-fix: when planCC is null OR caller omits company_code, inherit
+      // from plan OR refuse — never silently create an unscoped row.
+      if (!isAdmin) {
+        if (!shipping_plan_id) {
+          return res.status(400).json({ error: "shipping_plan_id required for non-admin POST" });
+        }
+        var planChk = await pool.query(
+          "SELECT company_code FROM shipping_plans WHERE id = $1 LIMIT 1",
+          [shipping_plan_id]
+        );
+        if (!planChk.rows.length) {
+          return res.status(404).json({ error: "shipping_plan not found" });
+        }
+        var planCC = planChk.rows[0].company_code;
+        // Plan with NULL company_code is unscoped — refuse (don't inherit ambiguity)
+        if (!planCC) {
+          return res.status(403).json({ error: "shipping_plan has no company_code; cannot scope cert" });
+        }
+        if (!userCodes.includes(planCC)) {
+          return res.status(403).json({ error: "cross-company write denied" });
+        }
+        // W0-2 review fix 2: ALWAYS force company_code from plan for non-admin
+        // POST. Don't trust caller-supplied value (could be a confused alias).
+        // We already verified planCC ∈ userCodes above.
+        company_code = planCC;
+        b.company_code = planCC;
+      }
 
       var r = await pool.query(`
         INSERT INTO export_certs
@@ -84,6 +154,9 @@ export default async function handler(req, res) {
            issuing_authority, file_url, status, ocr_raw, note, created_by, updated_at)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
         ON CONFLICT (shipping_plan_id, cert_type) DO UPDATE SET
+          -- W0-2 review fix 2: backfill company_code on existing legacy null rows
+          -- so re-upserting an unscoped row inherits its plan's scope.
+          company_code      = COALESCE(export_certs.company_code, EXCLUDED.company_code),
           cert_no           = COALESCE(EXCLUDED.cert_no, export_certs.cert_no),
           issue_date        = COALESCE(EXCLUDED.issue_date, export_certs.issue_date),
           expire_date       = COALESCE(EXCLUDED.expire_date, export_certs.expire_date),
@@ -113,6 +186,24 @@ export default async function handler(req, res) {
       var idMatch = (req.url || "").match(/\/export-certs\/([^?]+)/);
       var targetId = (req.body || {}).id || (idMatch && idMatch[1]);
       if (!targetId) return res.status(400).json({ error: "id required" });
+
+      // W0-2: non-admin PATCH must verify target row belongs to caller's scope.
+      // Review-fix: a row with NULL company_code is unscoped legacy data — refuse
+      // rather than fail open.
+      if (!isAdmin) {
+        var ownChk = await pool.query(
+          "SELECT company_code FROM export_certs WHERE id = $1 LIMIT 1",
+          [targetId]
+        );
+        if (!ownChk.rows.length) return res.status(404).json({ error: "not found" });
+        var rowCC = ownChk.rows[0].company_code;
+        if (!rowCC) {
+          return res.status(403).json({ error: "row has no company_code; cannot scope edit" });
+        }
+        if (!userCodes.includes(rowCC)) {
+          return res.status(403).json({ error: "cross-company write denied" });
+        }
+      }
 
       var b2 = req.body || {};
       var sets = [], vals2 = [];

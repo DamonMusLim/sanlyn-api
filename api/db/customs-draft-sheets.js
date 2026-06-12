@@ -15,6 +15,7 @@ import {
 // GET   ?status=Y                          → admin queue
 // POST                                     → admin assigns (status=assigned)
 // PATCH ?id=N                              → owner role updates fields
+// PATCH ?id=N&action=activate              → admin activates draft→assigned
 // PATCH ?id=N&action=submit                → owner submits
 // PATCH ?id=N&action=approve               → admin approves
 // PATCH ?id=N&action=reject                → admin requests revision
@@ -53,6 +54,9 @@ export default async function handler(req, res) {
         return res.status(200).json({ data: adaptCollabSheet(row, ctx) });
       }
 
+      const contract_no = req.query?.contract_no;
+      const order_no_q  = req.query?.order_no;
+
       const conds = [];
       const vals = [];
       // Watchtower fix (codex P1-1): scope from JWT for non-admin.
@@ -65,6 +69,8 @@ export default async function handler(req, res) {
       }
       if (_scopeCompany) { vals.push(_scopeCompany); conds.push("owner_company_code = $" + vals.length); }
       if (status)         { vals.push(status);         conds.push("status = $" + vals.length); }
+      if (contract_no)    { vals.push(contract_no);    conds.push("contract_no = $" + vals.length); }
+      if (order_no_q)     { vals.push(order_no_q);     conds.push("order_no = $" + vals.length); }
 
       const where = conds.length ? "WHERE " + (conds.join(" AND ")) : "";
       vals.push(limit);
@@ -119,6 +125,15 @@ export default async function handler(req, res) {
       }
 
       // Action shortcuts
+      if (action === "activate") {
+        if (!isInternalRole(role)) return sendError(res, 403, "admin_only_action");
+        const ra = await pool.query(
+          "UPDATE " + TABLE + " SET status='assigned' WHERE id=$1 AND status='draft' RETURNING *",
+          [parseInt(id)]
+        );
+        if (!ra.rows.length) return sendError(res, 409, "invalid_status_transition");
+        return res.status(200).json({ data: adaptCollabSheet(ra.rows[0], ctx) });
+      }
       if (action === "submit") {
         const rs = await pool.query(
           "UPDATE " + TABLE + "\n              SET status='submitted', submitted_at=NOW()\n            WHERE id=$1 AND status IN ('assigned','in_progress','needs_revision')\n            RETURNING *", [parseInt(id)]);

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DocActionSheet Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #060a14;
+    font-family: 'PingFang SC','SF Pro Text',system-ui,sans-serif;
+    display: flex; align-items: flex-start; justify-content: center;
+    gap: 32px; padding: 40px 20px; flex-wrap: wrap; min-height: 100vh;
+  }
+  .col-label {
+    color: #475569; font-size: 11px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; margin-bottom: 12px; text-align: center;
+  }
+  /* ── Shared tokens ── */
+  .sheet {
+    background: #0d1117; border-radius: 22px; overflow: hidden;
+    width: 360px; max-height: 92vh; overflow-y: auto;
+  }
+  /* ─── FACTORY VIEW (legacy, zh) ─── */
+  .sheet-factory { border: 1px solid rgba(56,189,248,0.25); }
+  /* ─── CUSTOMER VIEW (compact, en) ─── */
+  .sheet-customer { border: 1px solid rgba(56,189,248,0.25); }
+  /* ─── ERROR VIEW ─── */
+  .sheet-error { border: 1px solid rgba(239,68,68,0.4); }
+
+  /* Header */
+  .hdr {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .hdr-icon { font-size: 30px; }
+  .hdr-title { font-size: 16px; font-weight: 900; color: #93c5fd; }
+  .hdr-sub { font-size: 11px; color: #4b5563; margin-top: 2px; }
+  .hdr-badge {
+    margin-left: auto; border-radius: 20px; padding: 4px 10px;
+    display: flex; align-items: center; gap: 5; font-size: 10px; font-weight: 800;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .badge-filed { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.45); color: #4ade80; }
+  .badge-pending { background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.35); color: #94a3b8; }
+  .badge-confirmed { background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.45); color: #60a5fa; }
+  .hdr-close {
+    width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08); color: #94a3b8; font-size: 15px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Stage strip */
+  .stages {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
+    margin: 14px 18px 0;
+  }
+  .stage-btn {
+    border-radius: 12px; padding: 10px 4px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 5;
+    transition: all .15s; font-size: 10px; font-weight: 600;
+    text-align: center;
+  }
+  .stage-btn span.icon { font-size: 18px; }
+  .stage-pending  { background: rgba(255,255,255,0.03); border: 1.5px solid rgba(255,255,255,0.08); color: #4b5563; }
+  .stage-confirmed { background: rgba(59,130,246,0.05); border: 1.5px solid rgba(59,130,246,0.2); color: #4b5563; }
+  .stage-active-filed { background: rgba(34,197,94,0.12); border: 1.5px solid rgba(34,197,94,0.45); color: #4ade80; box-shadow: 0 0 10px rgba(34,197,94,0.25); font-weight: 900; }
+
+  /* Action buttons */
+  .actions { padding: 14px 18px 0; display: grid; gap: 8px; }
+  .btn {
+    width: 100%; padding: 14px; border-radius: 12px; font-size: 13px; font-weight: 800;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8;
+    transition: all .15s; border: 1.5px solid;
+  }
+  .btn-view  { background: rgba(34,197,94,0.1);  border-color: rgba(34,197,94,0.35);  color: #22c55e; }
+  .btn-dl    { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.08); color: #94a3b8; }
+  .btn-up    { background: rgba(167,139,250,0.15); border-color: rgba(167,139,250,0.4); color: #e9d5ff; }
+  .btn-stamp { background: linear-gradient(135deg,rgba(239,68,68,0.12),rgba(245,158,11,0.08)); border-color: rgba(239,68,68,0.35); color: #fca5a5; }
+  .btn-fb    { background: rgba(139,92,246,0.08); border-color: rgba(139,92,246,0.35); color: #c4b5fd; }
+  .btn-fwd   { background: rgba(56,189,248,0.08); border-color: rgba(56,189,248,0.30); color: #38bdf8; }
+  .btn-xl    { background: rgba(34,197,94,0.07); border-color: rgba(34,197,94,0.3); color: #4ade80; }
+  .btn-row   { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .badge-free { background: rgba(34,197,94,0.2); border-radius: 20px; padding: 2px 8px; font-size: 10px; font-weight: 800; color: #4ade80; margin-left: 4px; }
+  .badge-paid { background: rgba(139,92,246,0.2); border-radius: 20px; padding: 2px 8px; font-size: 10px; font-weight: 800; color: #a78bfa; }
+
+  /* AI card */
+  .ai-card {
+    margin: 14px 18px 4px;
+    background: linear-gradient(165deg,rgba(139,92,246,0.12),rgba(59,130,246,0.06));
+    border: 1.5px solid rgba(139,92,246,0.35); border-radius: 16px; overflow: hidden;
+  }
+  .ai-hdr {
+    padding: 14px 16px 10px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .ai-avatar {
+    width: 32px; height: 32px; border-radius: 10px;
+    background: linear-gradient(135deg,#7c3aed,#3b82f6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; box-shadow: 0 3px 12px rgba(124,58,237,.3); flex-shrink: 0;
+  }
+  .ai-title { font-size: 13px; font-weight: 900; color: #f3e8ff; }
+  .ai-sub { font-size: 9px; color: rgba(196,181,253,.6); font-family: 'Courier New',monospace; margin-top: 2px; }
+  .ai-hint {
+    margin: 0 14px 10px;
+    background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.15);
+    border-radius: 10px; padding: 8px 12px;
+  }
+  .ai-hint-label { font-size: 9px; color: #c084fc; font-weight: 800; margin-bottom: 3px; letter-spacing: .06em; }
+  .ai-hint-body { font-size: 11px; color: #e9d5ff; line-height: 1.6; }
+  .risk-list { padding: 0 14px 12px; }
+  .risk-label { font-size: 9px; color: #4b5563; font-weight: 700; margin-bottom: 6px; letter-spacing: .06em; }
+  .risk-row {
+    display: flex; align-items: center; gap: 8; margin-bottom: 4px;
+    padding: 5px 8px; border-radius: 8px; border: 1px solid;
+  }
+  .risk-high   { background: rgba(239,68,68,0.12);  border-color: rgba(239,68,68,0.35); }
+  .risk-mid    { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.3); }
+  .risk-low    { background: rgba(34,197,94,0.08);  border-color: rgba(34,197,94,0.25); }
+  .risk-icon { font-size: 12px; }
+  .risk-name { font-size: 11px; font-weight: 800; min-width: 44px; }
+  .risk-ex   { font-size: 10px; color: #94a3b8; }
+  .risk-high .risk-name  { color: #ef4444; }
+  .risk-mid  .risk-name  { color: #f59e0b; }
+  .risk-low  .risk-name  { color: #22c55e; }
+  .ai-start-btn {
+    width: calc(100% - 28px); margin: 0 14px 14px; padding: 13px;
+    border-radius: 12px; font-size: 13px; font-weight: 800; cursor: pointer;
+    background: linear-gradient(135deg,#7c3aed,#3b82f6); border: none; color: #fff;
+    box-shadow: 0 4px 16px rgba(124,58,237,.25);
+    display: flex; align-items: center; justify-content: center; gap: 8;
+  }
+
+  /* Close gap */
+  .bottom-pad { height: 20px; }
+
+  /* ── DAS Compact View (Customer) ── */
+  .das {
+    background: #0f1520; border-radius: 18px; overflow: hidden; width: 360px;
+    border: 1px solid rgba(56,189,248,0.2);
+  }
+  .das-hdr {
+    display: flex; align-items: center; gap: 10; padding: 14px 16px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .das-icon-wrap {
+    width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+    background: linear-gradient(135deg,rgba(59,130,246,0.25),rgba(56,189,248,0.1));
+    border: 1px solid rgba(56,189,248,0.3);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .das-title { font-size: 15px; font-weight: 900; color: #e2e8f0; }
+  .das-sub   { font-size: 10px; color: #4b5563; margin-top: 2px; }
+  .das-close {
+    margin-left: auto; width: 28px; height: 28px; border-radius: 7px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    color: #94a3b8; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .das-status-strip {
+    display: flex; align-items: center; gap: 8; padding: 10px 16px;
+    background: rgba(34,197,94,0.06); border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .das-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+  .das-status-txt { font-size: 11px; color: #4ade80; font-weight: 700; }
+  .das-ref { font-size: 10px; font-family: 'Courier New',monospace; color: #4b5563; margin-left: auto; }
+  .das-actions { padding: 12px 16px; display: grid; gap: 8px; }
+  .das-btn {
+    width: 100%; padding: 12px; border-radius: 11px; font-size: 12px; font-weight: 800;
+    cursor: pointer; display: flex; align-items: center; gap: 8;
+    border: 1px solid; transition: all .15s;
+  }
+  .das-btn-primary { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.35); color: #4ade80; }
+  .das-btn-dl      { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.08); color: #94a3b8; }
+  .das-btn-stamp   { background: linear-gradient(135deg,rgba(239,68,68,0.08),rgba(245,158,11,0.05)); border-color: rgba(239,68,68,0.3); color: #fca5a5; }
+  .das-btn-fwd     { background: rgba(56,189,248,0.07); border-color: rgba(56,189,248,0.25); color: #38bdf8; }
+  .das-ai-mini {
+    margin: 0 16px 12px;
+    background: linear-gradient(135deg,rgba(124,58,237,0.1),rgba(59,130,246,0.06));
+    border: 1px solid rgba(124,58,237,0.3); border-radius: 12px; padding: 11px 14px;
+    display: flex; align-items: center; gap: 10; cursor: pointer;
+  }
+  .das-ai-avatar {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: linear-gradient(135deg,#7c3aed,#3b82f6);
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+    box-shadow: 0 2px 8px rgba(124,58,237,.25); flex-shrink: 0;
+  }
+  .das-ai-label { font-size: 12px; font-weight: 800; color: #ede9fe; }
+  .das-ai-sub   { font-size: 9px; color: rgba(167,139,250,.7); margin-top: 1px; }
+  .das-ai-badge { margin-left: auto; background: rgba(139,92,246,0.18); border-radius: 20px; padding: 2px 8px; font-size: 9px; font-weight: 800; color: #a78bfa; }
+
+  /* ── Error / AI warn state ── */
+  .ai-warn {
+    margin: 10px 18px 0;
+    background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.25);
+    border-radius: 9px; padding: 10px;
+  }
+  .ai-warn-title { font-size: 11px; color: #fde68a; font-weight: 700; margin-bottom: 3px; }
+  .ai-warn-body  { font-size: 11px; color: #fde68a; line-height: 1.5; }
+
+  /* Trade notice */
+  .trade-notice {
+    margin: 12px 18px 0;
+    background: rgba(96,165,250,0.06); border: 1px solid rgba(96,165,250,0.2);
+    border-radius: 10px; padding: 8px 12px; font-size: 11px; color: #93c5fd; line-height: 1.6;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ── Col 1: Factory legacy view (zh) ── -->
+<div>
+  <div class="col-label">工厂视图 · Legacy zh</div>
+  <div class="sheet sheet-factory">
+
+    <!-- Header -->
+    <div class="hdr">
+      <span class="hdr-icon">📄</span>
+      <div>
+        <div class="hdr-title">采购合同</div>
+        <div class="hdr-sub">Purchase Contract · FS20260418075</div>
+      </div>
+      <div class="hdr-badge badge-filed">
+        <span>📁</span> 归档完毕
+      </div>
+      <button class="hdr-close">✕</button>
+    </div>
+
+    <!-- Stage strip -->
+    <div class="stages">
+      <button class="stage-btn stage-pending">
+        <span class="icon">⏳</span>
+        <span>待验证</span>
+      </button>
+      <button class="stage-btn stage-confirmed">
+        <span class="icon">✔️</span>
+        <span>已确认</span>
+      </button>
+      <button class="stage-btn stage-active-filed">
+        <span class="icon">📁</span>
+        <span>归档完毕</span>
+      </button>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="actions">
+      <button class="btn btn-view">
+        <span>👁️</span><span>在线查看文件</span>
+      </button>
+      <div class="btn-row">
+        <button class="btn btn-dl">
+          <span>📄</span><span>PDF 下载</span>
+        </button>
+        <button class="btn btn-xl">
+          <span>📊</span><span>Excel 下载</span>
+        </button>
+      </div>
+      <button class="btn btn-up">
+        <span>📎</span><span>重新上传文件</span>
+      </button>
+      <button class="btn btn-stamp">
+        <span>🔏</span><span>电子签章</span>
+        <span class="badge-free">免费</span>
+      </button>
+    </div>
+
+    <!-- AI card -->
+    <div class="ai-card">
+      <div class="ai-hdr">
+        <div style="display:flex;align-items:center;gap:10">
+          <div class="ai-avatar">🤖</div>
+          <div>
+            <div class="ai-title">AI 智能审核</div>
+            <div class="ai-sub">SMART REVIEW · 每月免费 3 次</div>
+          </div>
+        </div>
+        <span class="badge-paid">付费</span>
+      </div>
+
+      <div class="ai-hint">
+        <div class="ai-hint-label">📐 单证规范要求</div>
+        <div class="ai-hint-body">抬头：合同号 + 工厂名称 + 产品明细 + 工厂价格</div>
+      </div>
+
+      <div class="risk-list">
+        <div class="risk-label">审核将检测以下风险等级：</div>
+        <div class="risk-row risk-high">
+          <span class="risk-icon">🔴</span>
+          <span class="risk-name">高风险</span>
+          <span class="risk-ex">合同号缺失 / 金额不一致</span>
+        </div>
+        <div class="risk-row risk-mid">
+          <span class="risk-icon">🟡</span>
+          <span class="risk-name">中风险</span>
+          <span class="risk-ex">签章模糊 / 日期格式异常</span>
+        </div>
+        <div class="risk-row risk-low">
+          <span class="risk-icon">🟢</span>
+          <span class="risk-name">低风险</span>
+          <span class="risk-ex">非关键字段缺失 / 格式建议</span>
+        </div>
+      </div>
+
+      <button class="ai-start-btn">
+        <span>🤖</span><span>开始 AI 审核</span>
+      </button>
+    </div>
+
+    <div class="bottom-pad"></div>
+  </div>
+</div>
+
+<!-- ── Col 2: Customer compact view (en) ── -->
+<div>
+  <div class="col-label">Customer View · Compact en</div>
+  <div class="das">
+
+    <div class="das-hdr">
+      <div class="das-icon-wrap">📋</div>
+      <div>
+        <div class="das-title">Commercial Invoice</div>
+        <div class="das-sub">IV · FS20260418075</div>
+      </div>
+      <button class="das-close">✕</button>
+    </div>
+
+    <div class="das-status-strip">
+      <span class="das-status-dot"></span>
+      <span class="das-status-txt">Ready</span>
+      <span class="das-ref">IV-FS20260418075</span>
+    </div>
+
+    <div class="das-actions">
+      <button class="das-btn das-btn-primary">
+        <span>👁</span><span>View File</span>
+      </button>
+      <button class="das-btn das-btn-dl">
+        <span>📄</span><span>PDF</span>
+      </button>
+      <button class="das-btn das-btn-stamp">
+        <span>🔏</span><span>E-Stamp</span>
+        <span class="badge-free" style="margin-left:auto">Free</span>
+      </button>
+      <button class="das-btn das-btn-fwd">
+        <span>📤</span><span>Forward</span>
+      </button>
+    </div>
+
+    <div class="das-ai-mini">
+      <div class="das-ai-avatar">🤖</div>
+      <div>
+        <div class="das-ai-label">AI Smart Review</div>
+        <div class="das-ai-sub">SMART REVIEW · 3 free per month</div>
+      </div>
+      <span class="das-ai-badge">Paid</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Col 3: AI warn state + Trade notice ── -->
+<div>
+  <div class="col-label">AI 警告 · 贸易方只读</div>
+  <div class="sheet" style="border:1px solid rgba(56,189,248,0.25)">
+
+    <div class="hdr">
+      <span class="hdr-icon">📝</span>
+      <div>
+        <div class="hdr-title" style="color:#93c5fd">Purchase Contract</div>
+        <div class="hdr-sub">采购合同 · FS20260418075</div>
+      </div>
+      <div class="hdr-badge badge-pending">
+        <span>⏳</span> Pending
+      </div>
+      <button class="hdr-close">✕</button>
+    </div>
+
+    <div class="trade-notice">
+      🤖 该单证由 Sanlyn OS 统一管理 · 开通 AI 智能审核即享单证审核 + 电子签章全套服务
+    </div>
+
+    <div class="ai-warn" style="margin-top:12px">
+      <div class="ai-warn-title">⚠️ AI 审核</div>
+      <div class="ai-warn-body">检测到中风险：签章日期格式异常，请核查第 3 页日期字段是否符合规范。</div>
+    </div>
+
+    <!-- Actions (trade read-only: view + download only) -->
+    <div class="actions">
+      <button class="btn btn-view">
+        <span>👁️</span><span>在线查看文件</span>
+      </button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <button class="btn btn-dl" style="padding:12px 8px;font-size:12px">
+          <span>📄</span><span>PDF 下载</span>
+        </button>
+        <button class="btn" style="background:rgba(34,197,94,0.06);border-color:rgba(34,197,94,0.3);color:#4ade80;padding:12px 8px;font-size:12px">
+          <span>📊</span><span>Excel 下载</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- AI card (compact, no hint) -->
+    <div class="ai-card" style="margin-top:14px">
+      <div class="ai-hdr">
+        <div style="display:flex;align-items:center;gap:10">
+          <div class="ai-avatar">🤖</div>
+          <div>
+            <div class="ai-title">AI 智能审核</div>
+            <div class="ai-sub">SMART REVIEW · 每月免费 3 次</div>
+          </div>
+        </div>
+        <span class="badge-paid">付费</span>
+      </div>
+
+      <div class="risk-list">
+        <div class="risk-label">审核将检测以下风险等级：</div>
+        <div class="risk-row risk-high">
+          <span class="risk-icon">🔴</span>
+          <span class="risk-name">高风险</span>
+          <span class="risk-ex">合同号缺失 / 金额不一致</span>
+        </div>
+        <div class="risk-row risk-mid">
+          <span class="risk-icon">🟡</span>
+          <span class="risk-name">中风险</span>
+          <span class="risk-ex">签章模糊 / 日期格式异常</span>
+        </div>
+        <div class="risk-row risk-low">
+          <span class="risk-icon">🟢</span>
+          <span class="risk-name">低风险</span>
+          <span class="risk-ex">非关键字段缺失 / 格式建议</span>
+        </div>
+      </div>
+
+      <button class="ai-start-btn">
+        <span>🤖</span><span>开始 AI 审核</span>
+      </button>
+    </div>
+
+    <div class="bottom-pad"></div>
+  </div>
+</div>
+
+</body>
+</html>

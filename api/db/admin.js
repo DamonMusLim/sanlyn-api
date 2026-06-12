@@ -56,7 +56,7 @@ export default async function handler(req, res) {
       var stats = {};
       var queries = [
         { key: "orders", sql: "SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status='pending') as pending, COUNT(*) FILTER (WHERE created_at > NOW()-INTERVAL '7 days') as recent FROM orders" },
-        { key: "shipping", sql: "SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE flow_status IN ('已订舱','已装柜','已开船')) as active FROM shipping_plans" },
+        { key: "shipping", sql: "SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE flow_status IN ('booked','loaded','departed','in_transit')) as active FROM shipping_plans" },
         { key: "payments", sql: "SELECT COUNT(*) as total, COALESCE(SUM(amount),0) as total_amount FROM finance_payments" },
         { key: "products", sql: "SELECT COUNT(*) as total FROM products" },
         { key: "accounts", sql: "SELECT COUNT(*) as total FROM accounts" },

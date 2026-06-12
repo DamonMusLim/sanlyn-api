@@ -167,9 +167,16 @@ export default async function handler(req, res) {
         contractNo, slipUrl, invoiceUrl, invoiceDate,
         amount, paidAmount, bankRef, currency, direction,
         contracts, buyer, shipperCompany, note,
+        companyCode,
       } = req.body;
 
       if (!contractNo) return res.status(400).json({ error: "contractNo required" });
+
+      // L3: companyCode 格式校验 (fail-closed)
+      const CC_RE = /^(CN-[0-9]{4,}|BABI|OCEANBABY|FORTUNESANLYN|SANLYN)$/;
+      if (companyCode && !CC_RE.test(companyCode)) {
+        return res.status(422).json({ error: `companyCode '${companyCode}' 格式无效，必须是 CN-XXXXX 或已知常量` });
+      }
 
       // Check if row exists
       const existing = await pool.query(

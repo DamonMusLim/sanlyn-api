@@ -1,0 +1,2358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quote→Order Unified · v3 · Supply Chain = Portal Preview · BL center · Hero=Door</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060A14;color:#e2e8f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:32px;min-height:100vh}
+.shell{max-width:1380px;margin:0 auto}
+.title{font-size:24px;font-weight:900;letter-spacing:-.01em;margin-bottom:6px;background:linear-gradient(90deg,#60a5fa,#c084fc,#34d399);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:#64748b;font-size:12px;margin-bottom:8px}
+.banner{background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:12px 16px;font-size:12px;color:#cbd5e1;margin-bottom:24px;line-height:1.7}
+.banner b{color:#7dd3fc}
+.banner code{background:rgba(15,23,42,.7);color:#fbbf24;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"SF Mono",monospace}
+.banner .pill{display:inline-block;font-size:10px;font-weight:900;color:#fbbf24;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);padding:2px 7px;border-radius:5px;letter-spacing:.04em;margin-right:4px}
+
+h2.section{font-size:16px;font-weight:900;color:#f8fafc;margin:34px 0 14px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+h2.section::before{content:"";width:3px;height:18px;background:linear-gradient(180deg,#38bdf8,#a78bfa);border-radius:2px}
+h2.section .tag{font-size:10px;font-weight:800;color:#94a3b8;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.15);padding:3px 8px;border-radius:5px;letter-spacing:.04em}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.cell{display:flex;flex-direction:column;gap:8px}
+.cell-label{font-size:10px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.cell-label .dot{width:6px;height:6px;border-radius:50%}
+.cell-desc{font-size:10.5px;color:#64748b;font-weight:600;margin-top:-3px;line-height:1.4}
+
+/* ─── Card ─── */
+.card{background:#0B1120;border:1px solid rgba(148,163,184,.1);border-radius:14px;overflow:hidden;position:relative;transition:.2s}
+.card:hover{border-color:rgba(56,189,248,.35);box-shadow:0 8px 28px rgba(56,189,248,.1)}
+
+/* ───── Hero is THE DOOR ───── */
+.hero{position:relative;height:124px;border-bottom:1px solid rgba(148,163,184,.08);overflow:hidden;cursor:pointer;transition:.2s}
+.hero:hover{box-shadow:inset 0 0 0 1.5px rgba(56,189,248,.35)}
+.hero:hover .hero-hint{opacity:1;transform:translateX(0)}
+.hero:hover .hero-expand{opacity:1}
+.hero.disabled{cursor:not-allowed;opacity:.55}
+.hero.disabled:hover{box-shadow:none}
+.hero.disabled .hero-hint{display:none}
+.hero.disabled .hero-expand{display:none}
+.hero.disabled .hero-lock{display:flex}
+
+.hero svg{display:block;width:100%;height:100%}
+.top-tag{position:absolute;top:7px;left:7px;font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:5px;backdrop-filter:blur(6px);z-index:5}
+.top-meta{position:absolute;top:7px;right:34px;background:rgba(15,23,42,.95);font-size:9.5px;font-weight:900;padding:3px 8px;border-radius:6px;letter-spacing:.04em;display:flex;align-items:center;gap:5px;backdrop-filter:blur(6px);z-index:5}
+
+/* Hero stage-primary identifier slot (top-center between tag and meta) */
+.top-id{position:absolute;top:7px;left:50%;transform:translateX(-50%);font-family:"SF Mono",monospace;font-size:13px;font-weight:900;color:#f8fafc;letter-spacing:.02em;z-index:5;background:rgba(15,23,42,.92);padding:3px 11px;border-radius:6px;border:1px solid rgba(56,189,248,.35);backdrop-filter:blur(6px);text-align:center;white-space:nowrap;max-width:55%;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.top-id .lbl{font-size:8.5px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase}
+.top-id .big{color:#7dd3fc;font-size:14px;font-weight:900}
+.top-id .sep{color:#475569;font-weight:600}
+.top-id .extra{font-size:10.5px;color:#cbd5e1;font-weight:700}
+.top-meta b{font-family:"SF Mono",monospace;font-size:11px;color:#fbbf24}
+.top-strip{position:absolute;left:0;right:0;bottom:0;height:22px;background:linear-gradient(180deg,transparent,rgba(0,0,0,.7));display:flex;align-items:center;padding:0 8px;z-index:4}
+.top-strip .info{flex:1;font-size:9.5px;font-weight:800;color:#cbd5e1;font-family:"SF Mono",monospace;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* hero affordance */
+.hero-expand{position:absolute;top:7px;right:8px;font-size:11px;color:#7dd3fc;opacity:.5;transition:.2s;z-index:6;font-weight:900;line-height:1}
+.hero-hint{position:absolute;bottom:26px;right:8px;font-size:9.5px;font-weight:800;color:#7dd3fc;background:rgba(15,23,42,.95);border:1px solid rgba(56,189,248,.4);padding:3px 8px;border-radius:5px;opacity:0;transform:translateX(8px);transition:.2s;z-index:6;letter-spacing:.02em;backdrop-filter:blur(6px);white-space:nowrap}
+.hero-lock{position:absolute;top:7px;right:8px;display:none;align-items:center;gap:4px;font-size:11px;color:#94a3b8;background:rgba(15,23,42,.95);border:1px solid rgba(148,163,184,.3);padding:3px 7px;border-radius:5px;z-index:6;backdrop-filter:blur(6px)}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.pulse{animation:pulse 1.6s infinite}
+
+.s-quote{background:linear-gradient(180deg,#2a1f0a,#1a1408)}
+.s-quote .top-tag{background:rgba(245,158,11,.18);border:1px solid rgba(245,158,11,.4);color:#fcd34d}
+.s-quote .top-meta{border:1px solid rgba(245,158,11,.4);color:#fcd34d}
+
+.s-prod{background:linear-gradient(180deg,#2a1a08,#180f04)}
+.s-prod .top-tag{background:rgba(249,115,22,.18);border:1px solid rgba(249,115,22,.4);color:#fdba74}
+.s-prod .top-meta{border:1px solid rgba(249,115,22,.4);color:#fdba74}
+
+.s-eta{background:linear-gradient(180deg,#1c1535,#120e22)}
+.s-eta .top-tag{background:rgba(167,139,250,.18);border:1px solid rgba(167,139,250,.4);color:#c4b5fd}
+.s-eta .top-meta{border:1px solid rgba(167,139,250,.4);color:#c4b5fd}
+
+.s-truck{background:linear-gradient(180deg,#0a2818,#061a0f)}
+.s-truck .top-tag{background:rgba(34,197,94,.18);border:1px solid rgba(34,197,94,.4);color:#86efac}
+.s-truck .top-meta{border:1px solid rgba(34,197,94,.4);color:#86efac}
+
+.s-ocean{background:linear-gradient(180deg,#0c1e3a,#0a1628)}
+.s-ocean .top-tag{background:rgba(56,189,248,.18);border:1px solid rgba(56,189,248,.4);color:#7dd3fc}
+.s-ocean .top-meta{border:1px solid rgba(56,189,248,.4);color:#7dd3fc}
+
+.s-arrived{background:linear-gradient(180deg,#0a2530,#061820)}
+.s-arrived .top-tag{background:rgba(6,182,212,.18);border:1px solid rgba(6,182,212,.4);color:#67e8f9}
+.s-arrived .top-meta{border:1px solid rgba(6,182,212,.4);color:#67e8f9}
+
+.s-redacted{background:linear-gradient(180deg,#0e1424,#080c18)}
+.s-redacted .top-tag{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.25);color:#94a3b8}
+.s-redacted .top-meta{border:1px solid rgba(148,163,184,.25);color:#94a3b8}
+
+/* identity */
+.id-row{padding:10px 14px 2px;display:flex;justify-content:space-between;align-items:baseline}
+.oid{font-family:"SF Mono",monospace;font-size:14px;font-weight:900;color:#f8fafc}
+.oid .lbl{font-size:9px;font-weight:900;color:#94a3b8;letter-spacing:.08em;margin-right:5px;text-transform:uppercase}
+.oid .big{font-size:17px;color:#7dd3fc;letter-spacing:.02em}
+.po{font-size:10px;color:#64748b;font-weight:700;text-align:right}
+.po b{color:#94a3b8;font-family:"SF Mono",monospace;font-weight:800}
+.po .ord-small{font-family:"SF Mono",monospace;font-size:10px;color:#64748b}
+
+/* Multi-container list — show under cargo when > 1 container */
+.containers{padding:4px 14px 8px;display:flex;flex-direction:column;gap:3px}
+.containers .ctr{display:flex;justify-content:space-between;align-items:center;font-size:10px;font-family:"SF Mono",monospace;padding:3px 8px;background:rgba(56,189,248,.04);border:1px solid rgba(56,189,248,.12);border-radius:5px;gap:8px}
+.containers .ctr .cno{color:#e2e8f0;font-weight:800}
+.containers .ctr .ctype{color:#a5b4fc;font-weight:700;font-size:9.5px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.2);padding:1px 5px;border-radius:3px}
+.containers .ctr .sno{color:#94a3b8;font-weight:700}
+.containers .ctr .cstatus{font-size:9px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:1px 5px;border-radius:3px}
+.containers .ctr .cstatus.ok{color:#6ee7b7;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25)}
+.containers .ctr .cstatus.transit{color:#7dd3fc;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.25)}
+.containers .ctr .cstatus.warn{color:#fcd34d;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25)}
+.containers details{margin-top:0}
+.containers summary{cursor:pointer;font-size:9.5px;font-weight:900;color:#7dd3fc;padding:5px 8px;background:rgba(56,189,248,.06);border:1px dashed rgba(56,189,248,.3);border-radius:5px;list-style:none;text-align:center;letter-spacing:.06em;text-transform:uppercase;user-select:none}
+.containers summary::-webkit-details-marker{display:none}
+.containers summary:hover{background:rgba(56,189,248,.12);color:#38bdf8;border-style:solid}
+.containers details[open] summary{margin-bottom:3px;background:rgba(56,189,248,.04)}
+.containers details > .ctr{margin-top:3px}
+.containers details[open] summary::after{content:" ↑"}
+.containers details:not([open]) summary::after{content:" ↓"}
+
+.owner-row{padding:0 14px 4px;font-size:10px;color:#94a3b8;display:flex;gap:8px;flex-wrap:wrap}
+.owner-chip{display:inline-flex;align-items:center;gap:4px;background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.15);padding:2px 7px;border-radius:5px;font-weight:700;color:#cbd5e1}
+.owner-chip .role{color:#64748b;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+
+/* dates row · order_date + expected_delivery_date + derived deadlines */
+.dates-row{padding:0 14px 6px;font-size:10px;color:#94a3b8;display:flex;gap:10px;flex-wrap:wrap;font-family:"SF Mono",monospace;align-items:center}
+.dates-row .d{display:inline-flex;gap:4px;align-items:center}
+.dates-row .d .k{color:#64748b;font-weight:900;font-size:9px;letter-spacing:.04em;text-transform:uppercase}
+.dates-row .d .v{color:#cbd5e1;font-weight:800}
+.dates-row .d .v.target{color:#7dd3fc}
+.dates-row .d .v.warn{color:#fcd34d}
+.dates-row .d .v.risk{color:#fda4af}
+.dates-row .d .v.ok{color:#6ee7b7}
+.dates-row .src{font-size:9px;color:#475569;font-weight:700}
+.dates-row .risk-chip{color:#fda4af;font-weight:900;font-size:9px;background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.3);padding:1px 6px;border-radius:4px;letter-spacing:.04em;text-transform:uppercase}
+.dates-row .ok-chip{color:#6ee7b7;font-weight:900;font-size:9px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);padding:1px 6px;border-radius:4px;letter-spacing:.04em;text-transform:uppercase}
+.dates-row .reminder-chip{color:#fbbf24;font-weight:900;font-size:9px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);padding:1px 6px;border-radius:4px;letter-spacing:.04em;text-transform:uppercase}
+
+.cargo{padding:2px 14px 10px;font-size:11.5px;color:#94a3b8;font-family:"SF Mono",monospace;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cargo .dot{color:#334155}
+.cargo b{color:#cbd5e1;font-weight:700}
+.chip{display:inline-flex;font-size:10px;font-weight:700;color:#a5b4fc;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);padding:1px 6px;border-radius:4px}
+.biz-amt{font-size:10px;font-weight:700;color:#67e8f9;background:rgba(6,182,212,.08);border:1px solid rgba(6,182,212,.25);padding:1px 6px;border-radius:4px;font-family:"SF Mono",monospace}
+.biz-amt .lbl{color:#94a3b8;font-weight:800;font-size:9px;letter-spacing:.04em;text-transform:uppercase;margin-right:4px}
+
+/* workflow */
+.wf{padding:8px 12px 6px;border-top:1px solid rgba(148,163,184,.06);display:flex;align-items:flex-start;gap:0}
+.node{flex:1;display:flex;flex-direction:column;align-items:center;position:relative;font-size:8.5px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;min-width:0}
+.node .ball{width:9px;height:9px;border-radius:50%;background:#1e293b;border:1.5px solid #334155;margin-bottom:4px;position:relative;z-index:2}
+.node.done .ball{background:#22c55e;border-color:#22c55e}
+.node.now .ball{background:#38bdf8;border-color:#38bdf8;box-shadow:0 0 0 4px rgba(56,189,248,.18);animation:pulse 1.6s infinite}
+.node:not(:last-child)::after{content:"";position:absolute;top:5px;left:60%;right:-40%;height:1.5px;background:#1e293b;z-index:1}
+.node.done:not(:last-child)::after{background:#22c55e}
+.node .lbl{color:#475569;font-size:8.5px;text-align:center;line-height:1.2;max-width:62px}
+.node.done .lbl{color:#86efac}
+.node.now .lbl{color:#7dd3fc}
+
+/* role + perm + finance summary */
+.role-row{padding:7px 12px;border-top:1px solid rgba(148,163,184,.06);display:flex;align-items:center;gap:6px;background:rgba(15,23,42,.5);flex-wrap:wrap}
+.role-chip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;padding:3px 7px;border-radius:5px;letter-spacing:.02em}
+.r-sl{background:rgba(167,139,250,.12);color:#c4b5fd;border:1px solid rgba(167,139,250,.3)}
+.r-fc{background:rgba(16,185,129,.12);color:#6ee7b7;border:1px solid rgba(16,185,129,.3)}
+.r-tr{background:rgba(52,211,153,.12);color:#86efac;border:1px solid rgba(52,211,153,.3)}
+.r-cb{background:rgba(56,189,248,.12);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)}
+.r-dr{background:rgba(245,158,11,.12);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
+.r-fw{background:rgba(6,182,212,.12);color:#67e8f9;border:1px solid rgba(6,182,212,.3)}
+.r-in{background:rgba(168,85,247,.12);color:#d8b4fe;border:1px solid rgba(168,85,247,.3)}
+.r-cu{background:rgba(244,114,182,.12);color:#fbcfe8;border:1px solid rgba(244,114,182,.3)}
+
+.perm-set{display:inline-flex;gap:3px;margin-left:auto}
+.perm{width:18px;height:18px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:900;font-family:"SF Mono",monospace}
+.p-V{background:rgba(56,189,248,.18);color:#7dd3fc;border:1px solid rgba(56,189,248,.35)}
+.p-E{background:rgba(16,185,129,.18);color:#6ee7b7;border:1px solid rgba(16,185,129,.35)}
+.p-U{background:rgba(167,139,250,.22);color:#c4b5fd;border:1px solid rgba(167,139,250,.4)}
+.p-S{background:linear-gradient(135deg,rgba(245,158,11,.25),rgba(244,114,182,.15));color:#fcd34d;border:1px solid rgba(245,158,11,.4)}
+.p-X{background:transparent;color:#475569;border:1px dashed rgba(148,163,184,.18)}
+
+/* finance status chip (label only, no amount) */
+.fin-row{padding:6px 12px;border-top:1px solid rgba(148,163,184,.06);display:flex;align-items:center;gap:6px;background:rgba(15,23,42,.25);font-size:10px}
+.fin-label{color:#64748b;font-weight:900;letter-spacing:.06em;text-transform:uppercase;font-size:9px}
+.fin-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;padding:2px 8px;border-radius:5px;letter-spacing:.02em}
+.fin-pending{background:rgba(245,158,11,.1);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
+.fin-required{background:rgba(244,63,94,.1);color:#fda4af;border:1px solid rgba(244,63,94,.3)}
+.fin-review{background:rgba(167,139,250,.1);color:#c4b5fd;border:1px solid rgba(167,139,250,.3)}
+.fin-ok{background:rgba(16,185,129,.1);color:#6ee7b7;border:1px solid rgba(16,185,129,.3)}
+.fin-ready{background:rgba(56,189,248,.1);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)}
+.fin-link{margin-left:auto;font-size:9.5px;font-weight:900;color:#7dd3fc;letter-spacing:.04em;cursor:pointer}
+.fin-link:hover{color:#38bdf8}
+
+/* ─── v3: Supply-Chain Portal Preview Card (compact · upload+download only) ─── */
+.sc-summary-row{padding:9px 14px;border-top:1px solid rgba(148,163,184,.06);background:rgba(15,23,42,.4)}
+.sc-summary-row .label{font-size:9px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px}
+.sc-summary-row .text{font-size:11.5px;color:#cbd5e1;font-weight:700;line-height:1.4}
+.sc-counts{padding:10px 14px;border-top:1px solid rgba(148,163,184,.06);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sc-count{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;padding:4px 9px;border-radius:6px;letter-spacing:.02em;white-space:nowrap}
+.sc-count .ico{font-size:12px;line-height:1}
+.sc-count.dl{background:rgba(148,163,184,.06);color:#cbd5e1;border:1px solid rgba(148,163,184,.18)}
+.sc-count.ul{background:rgba(56,189,248,.08);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)}
+.sc-count.missing{background:rgba(244,63,94,.08);color:#fda4af;border:1px solid rgba(244,63,94,.3)}
+.sc-count.done{background:rgba(16,185,129,.08);color:#6ee7b7;border:1px solid rgba(16,185,129,.3)}
+.sc-count.warn{background:rgba(245,158,11,.08);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
+.sc-cta-row{padding:10px 14px;border-top:1px solid rgba(148,163,184,.06);background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sc-cta-row .open-portal{font-size:11px;font-weight:900;color:#fff;background:linear-gradient(135deg,#3b82f6,#7c3aed);padding:7px 14px;border-radius:7px;border:none;cursor:pointer;letter-spacing:.02em;box-shadow:0 2px 8px rgba(124,58,237,.3);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.sc-cta-row .open-portal.gated{background:#1e293b;color:#475569;box-shadow:none;cursor:not-allowed}
+.sc-cta-row .status-note{font-size:10px;color:#94a3b8;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sc-cta-row .status-note b{color:#cbd5e1}
+.sc-mini-boundary{padding:7px 14px;background:rgba(244,63,94,.04);border-top:1px solid rgba(244,63,94,.15);font-size:9.5px;color:#fda4af;font-weight:600;line-height:1.3}
+.sc-mini-boundary b{color:#fca5a5}
+
+/* ─── v3.1: Direct file chips (replaces count chips in portal preview) ─── */
+.sc-files{padding:10px 14px;border-top:1px solid rgba(148,163,184,.06);display:flex;flex-direction:column;gap:8px}
+.sc-fgroup{display:flex;flex-direction:column;gap:5px}
+.sc-fgroup .glabel{font-size:9px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.sc-fgroup .glabel .gcount{color:#cbd5e1;background:rgba(148,163,184,.08);padding:1px 6px;border-radius:3px;font-size:8.5px;letter-spacing:.04em}
+.sc-fgrid{display:flex;flex-wrap:wrap;gap:5px}
+.sc-chip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;padding:4px 9px;border-radius:5px;cursor:pointer;transition:.15s;border:1px solid;letter-spacing:.01em;white-space:nowrap;line-height:1.2}
+.sc-chip:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.sc-chip .fname{font-weight:800}
+.sc-chip .act{font-weight:900;font-size:11px;line-height:1}
+.sc-chip.done{color:#6ee7b7;background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.3)}
+.sc-chip.done .act{color:#22c55e}
+.sc-chip.missing{color:#fda4af;background:rgba(244,63,94,.08);border-color:rgba(244,63,94,.35);animation:pulse 2.4s infinite}
+.sc-chip.missing .act{color:#f43f5e}
+.sc-chip.ai{color:#c4b5fd;background:rgba(167,139,250,.1);border-color:rgba(167,139,250,.35)}
+.sc-chip.ai .act{color:#a78bfa}
+.sc-chip.pending{color:#94a3b8;background:rgba(148,163,184,.06);border-color:rgba(148,163,184,.2);border-style:dashed}
+.sc-chip.pending .act{color:#64748b}
+.sc-chip.warn{color:#fcd34d;background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.35)}
+.sc-chip.warn .act{color:#f59e0b}
+.sc-chip.dl{color:#cbd5e1;background:rgba(148,163,184,.06);border-color:rgba(148,163,184,.2)}
+.sc-chip.dl:hover{color:#7dd3fc;border-color:rgba(56,189,248,.35)}
+.sc-chip.dl .act{color:#7dd3fc}
+.sc-chip.more{color:#64748b;background:transparent;border-style:dashed;border-color:rgba(148,163,184,.2)}
+
+/* ─── v3.2: Collaboration auxiliary bar (协同 thin row · between id-row and file chips) ─── */
+.sc-coord{padding:7px 14px;border-top:1px solid rgba(148,163,184,.06);background:linear-gradient(90deg,rgba(167,139,250,.05),rgba(56,189,248,.02));display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:30px}
+.sc-coord .clabel{font-size:8.5px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase}
+.sc-coord .cbtn{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;padding:3px 8px;border-radius:5px;cursor:pointer;border:1px solid;line-height:1.2;transition:.15s}
+.sc-coord .cbtn:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.sc-coord .cbtn .num{font-family:"SF Mono",monospace;font-weight:900}
+.sc-coord .cbtn.msg{color:#c4b5fd;background:rgba(167,139,250,.08);border-color:rgba(167,139,250,.3)}
+.sc-coord .cbtn.msg.unread{background:rgba(167,139,250,.18);border-color:rgba(167,139,250,.5);animation:pulse 2.4s infinite}
+.sc-coord .cbtn.pin{color:#fcd34d;background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.3)}
+.sc-coord .cbtn.update{color:#7dd3fc;background:rgba(56,189,248,.08);border-color:rgba(56,189,248,.3)}
+.sc-coord .cbtn.mention{color:#fda4af;background:rgba(244,63,94,.1);border-color:rgba(244,63,94,.35);animation:pulse 2.4s infinite}
+.sc-coord .cbtn.issue{color:#fda4af;background:rgba(244,63,94,.08);border-color:rgba(244,63,94,.3)}
+.sc-coord .cbtn.empty{color:#64748b;background:transparent;border-color:rgba(148,163,184,.15);border-style:dashed}
+.sc-coord .view-link{margin-left:auto;font-size:9.5px;font-weight:900;color:#a78bfa;letter-spacing:.04em;cursor:pointer;text-transform:uppercase}
+.sc-coord .view-link:hover{color:#c4b5fd}
+
+/* ─── v3.3: Principal card tab strip (Customer + Sanlyn · jumps to §14 drawer tabs) ─── */
+.card-tabs{padding:6px 10px;border-top:1px solid rgba(148,163,184,.06);background:rgba(56,189,248,.03);display:flex;gap:3px;overflow-x:auto;align-items:center}
+.card-tabs::-webkit-scrollbar{height:0;width:0}
+.card-tabs .ctab{font-size:9.5px;font-weight:800;color:#94a3b8;padding:5px 9px;border-radius:5px;cursor:pointer;border:1px solid transparent;letter-spacing:.02em;white-space:nowrap;line-height:1.2;display:inline-flex;align-items:center;gap:4px;transition:.15s}
+.card-tabs .ctab:hover{color:#7dd3fc;background:rgba(56,189,248,.06);border-color:rgba(56,189,248,.18)}
+.card-tabs .ctab.active{color:#7dd3fc;background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.35);font-weight:900;box-shadow:0 1px 4px rgba(56,189,248,.15)}
+.card-tabs .ctab .num{color:#fcd34d;font-family:"SF Mono",monospace;font-weight:900;font-size:9px;padding:1px 4px;background:rgba(245,158,11,.12);border-radius:3px;line-height:1}
+.card-tabs .ctab.has-flag{color:#fda4af}
+.card-tabs .ctab.has-flag .num{color:#fda4af;background:rgba(244,63,94,.12)}
+.card-tabs .ctab.locked{color:#475569;cursor:not-allowed;opacity:.55}
+.card-tabs .ctab.locked::after{content:" 🔒";font-size:8px}
+.card-tabs .tab-prefix{font-size:8.5px;font-weight:900;color:#475569;letter-spacing:.08em;text-transform:uppercase;margin-right:4px;padding:5px 0}
+
+/* AI Hint / Smart Notice Zone — between role/finance row and next */
+.ai-hint{padding:8px 12px;border-top:1px solid rgba(167,139,250,.18);display:flex;align-items:flex-start;gap:8px;background:linear-gradient(90deg,rgba(167,139,250,.08),rgba(56,189,248,.04))}
+.ai-hint .ai-icon{font-size:14px;line-height:1.2;flex-shrink:0;margin-top:1px}
+.ai-hint .ai-body{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.ai-hint .ai-title{font-size:10px;font-weight:900;color:#c4b5fd;letter-spacing:.04em;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ai-hint .ai-title .kind{font-size:8.5px;font-weight:900;color:#94a3b8;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.22);padding:1px 5px;border-radius:3px;text-transform:uppercase;letter-spacing:.06em}
+.ai-hint .ai-msg{font-size:10.5px;color:#cbd5e1;font-weight:600;line-height:1.4}
+.ai-hint .ai-cta{font-size:10px;font-weight:900;color:#c4b5fd;background:transparent;border:1px solid rgba(167,139,250,.4);padding:4px 10px;border-radius:5px;cursor:pointer;flex-shrink:0;align-self:center;letter-spacing:.02em;white-space:nowrap}
+.ai-hint .ai-cta:hover{background:rgba(167,139,250,.18)}
+.ai-hint.risk{background:linear-gradient(90deg,rgba(244,63,94,.08),rgba(245,158,11,.04));border-top-color:rgba(244,63,94,.25)}
+.ai-hint.risk .ai-title{color:#fda4af}
+.ai-hint.risk .ai-cta{color:#fda4af;border-color:rgba(244,63,94,.4)}
+.ai-hint.info{background:linear-gradient(90deg,rgba(56,189,248,.06),rgba(15,23,42,.2));border-top-color:rgba(56,189,248,.18)}
+.ai-hint.info .ai-title{color:#7dd3fc}
+.ai-hint.info .ai-cta{color:#7dd3fc;border-color:rgba(56,189,248,.4)}
+.ai-hint.action{background:linear-gradient(90deg,rgba(56,189,248,.08),rgba(167,139,250,.04));border-top-color:rgba(56,189,248,.25)}
+.ai-hint.action .ai-title{color:#7dd3fc}
+.ai-hint.action .ai-cta{color:#7dd3fc;border-color:rgba(56,189,248,.4)}
+.ai-hint .dismiss{font-size:13px;color:#475569;cursor:pointer;line-height:1;flex-shrink:0;align-self:flex-start;margin-top:1px;padding:0 2px}
+.ai-hint .dismiss:hover{color:#94a3b8}
+
+/* next */
+.next{padding:8px 14px;border-top:1px solid rgba(148,163,184,.06);display:flex;align-items:center;gap:8px;background:rgba(15,23,42,.4);height:42px}
+.next-prefix{font-size:9px;font-weight:900;color:#64748b;letter-spacing:.06em}
+.next-text{flex:1;font-size:11px;color:#cbd5e1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.next-btn{padding:5px 11px;background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;font-size:10.5px;font-weight:900;border-radius:6px;border:none;cursor:pointer;letter-spacing:.02em;display:inline-flex;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(124,58,237,.3);white-space:nowrap}
+.next-btn.gated{background:#1e293b;color:#475569;box-shadow:none;cursor:not-allowed}
+.next-btn.fin{background:linear-gradient(135deg,#fbbf24,#f59e0b);box-shadow:0 2px 6px rgba(245,158,11,.3)}
+
+/* legend */
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 20px;padding:11px 14px;background:#0e131e;border:1px solid rgba(255,255,255,.06);border-radius:10px}
+.legend .leg-it{display:flex;align-items:center;gap:6px;font-size:11px;color:#cbd5e1}
+.legend .ic{width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font-weight:900;font-size:10px;font-family:"SF Mono",monospace}
+.legend b{color:#e2e8f0}
+
+/* mock drawer ─ for visualizing what Hero opens */
+.drawer-row{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px}
+.drawer{background:#0e131e;border:1px solid rgba(56,189,248,.2);border-radius:12px;overflow:hidden;position:relative}
+.drawer::before{content:"MOCK DRAWER · opens when Hero is clicked";position:absolute;top:8px;right:10px;font-size:9px;font-weight:900;color:#7dd3fc;letter-spacing:.06em;background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3);padding:2px 7px;border-radius:5px;z-index:2}
+.drawer-head{padding:14px 18px 10px;border-bottom:1px solid rgba(148,163,184,.08);background:linear-gradient(180deg,rgba(56,189,248,.06),transparent)}
+.drawer-head .stage{font-size:9px;font-weight:900;color:#7dd3fc;letter-spacing:.08em;text-transform:uppercase}
+.drawer-head .name{font-size:16px;font-weight:900;color:#f8fafc;margin-top:2px}
+.drawer-head .sub{font-size:11px;color:#94a3b8;margin-top:2px}
+.drawer-tabs{display:flex;gap:0;padding:0 18px;border-bottom:1px solid rgba(148,163,184,.08);background:rgba(15,23,42,.4)}
+.drawer-tabs .t{font-size:10.5px;font-weight:800;color:#94a3b8;padding:8px 12px;border-bottom:2px solid transparent;cursor:pointer;letter-spacing:.02em}
+.drawer-tabs .t.active{color:#7dd3fc;border-bottom-color:#38bdf8}
+.drawer-body{padding:14px 18px;font-size:11.5px;color:#cbd5e1;line-height:1.6}
+.drawer-body .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.08)}
+.drawer-body .row:last-child{border-bottom:none}
+.drawer-body .row .k{color:#64748b;font-weight:700;font-size:10.5px;letter-spacing:.02em}
+.drawer-body .row .v{color:#e2e8f0;font-weight:800;font-family:"SF Mono",monospace;font-size:11px}
+.drawer-body .row .v.ok{color:#6ee7b7}
+.drawer-body .row .v.warn{color:#fcd34d}
+.drawer-body .row .v.muted{color:#64748b}
+.drawer-footer{padding:10px 18px;border-top:1px solid rgba(148,163,184,.08);display:flex;justify-content:space-between;align-items:center;background:rgba(15,23,42,.4)}
+.drawer-footer .lock{font-size:10px;color:#64748b;font-weight:700}
+.drawer-footer .btn{padding:5px 11px;background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;font-size:10.5px;font-weight:900;border-radius:6px;border:none;cursor:pointer}
+
+/* fix-log */
+.fixlog{margin-top:36px;padding:20px 24px;background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:12px;font-size:11.5px;color:#94a3b8;line-height:1.7}
+.fixlog h3{font-size:13px;font-weight:900;color:#f8fafc;margin-bottom:10px}
+.fixlog table{width:100%;border-collapse:collapse;margin-top:8px}
+.fixlog th,.fixlog td{text-align:left;padding:7px 10px;border-bottom:1px dashed rgba(148,163,184,.1);font-size:11px;vertical-align:top}
+.fixlog th{font-size:10px;font-weight:900;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;background:rgba(15,23,42,.6)}
+.fixlog .from{color:#fda4af;text-decoration:line-through;text-decoration-color:rgba(244,63,94,.6);font-family:"SF Mono",monospace;font-size:10.5px}
+.fixlog .to{color:#6ee7b7;font-family:"SF Mono",monospace;font-size:10.5px}
+.fixlog .where{color:#7dd3fc;font-family:"SF Mono",monospace;font-size:10.5px}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="title">Quote→Order Unified · v3</div>
+  <div class="sub">Supply Chain = Portal Preview (upload/download only) · BL-only Hero center · Work ≠ Finance · 2026-05-12</div>
+
+  <div class="banner">
+    <span class="pill">RULE #1</span> <b>Work Card ≠ Finance Card.</b> Zero amounts on履约卡片. Money chips show labels only (<code>Balance pending</code>), buttons go <code>Go to Billing</code>, never <code>Pay $X</code>.<br>
+    <span class="pill">RULE #2</span> <b>Hero Zone = Stage Door.</b> The top 124px is a button. Click → opens the stage's drawer (Contract / Production / ETD / Loading+Customs / Ocean / Arrival). No-access roles see lock + tooltip.<br>
+    <span class="pill">RULE #3</span> <b>Order Date + Expected Delivery Date are clocks.</b> Every card surfaces `Ordered` + `Delivery target` in identity zone. T-7 → T+1 cascade drives Billing reminders + supply-chain reverse-scheduling. Never confused with ETD/ETA.<br>
+    <span class="pill">RULE #4</span> <b>AI Hint + AI Assist Layer.</b> One-line smart notice between role-row and CTA. 15 assist types (Customs / Docs / ETD / Ocean / Trucking / Insurance / Billing Handoff / Risk / Timeline …). Cropped per role, no $, no leaks, never auto-executes.<br>
+    <span class="pill">RULE #5</span> <b>Final Scope Guard.</b> Wave 1 implementation = P0 Assist only (Cropper · Timeline · Docs · Customs · Billing Handoff). AI Hint v1 = rule-based, no LLM free-form. <code>expected_delivery_date</code> splits into customer_requested / committed / current_estimated. <code>order_date</code> never mislabels system_created.<br>
+    <span class="pill">RULE #6</span> <b>Map Hero = tabbed drawer.</b> Ocean / Trucking / Arrival heroes each open a 6-tab drawer (Route · Vessel · BL · AN · Exceptions · Timeline for Ocean). Each tab: visible / hidden / disabled / redacted per role.<br>
+    <span class="pill">RULE #7</span> <b>Supply-chain role = Task Portal, not workbench.</b> Customs / Trucking / Driver / Forwarder / Insurance click the hero and land in a single-purpose portal (download / upload / AI check / submit). Tabbed drawer is for Sanlyn + Customer.<br>
+    <span class="pill">BIZ-AMT</span> Two exceptions: <code>customs declared value</code> and <code>insured value</code> may show — they are business-required, not fees. Labeled explicitly with the <span class="biz-amt"><span class="lbl">label</span>amount</span> chip.
+  </div>
+
+  <div class="legend">
+    <div class="leg-it"><span class="ic p-V">V</span><b>View</b></div>
+    <div class="leg-it"><span class="ic p-E">E</span><b>Edit</b></div>
+    <div class="leg-it"><span class="ic p-U">U</span><b>Upload</b></div>
+    <div class="leg-it"><span class="ic p-S">S</span><b>Sign</b></div>
+    <div class="leg-it"><span class="ic p-X">—</span><span style="color:#475569">No permission</span></div>
+    <div class="leg-it"><span class="ic" style="background:rgba(56,189,248,.18);color:#7dd3fc">⤢</span><b>Click hero → drawer</b></div>
+    <div class="leg-it"><span class="ic" style="background:rgba(148,163,184,.12);color:#94a3b8">🔒</span><b>Disabled · not in scope</b></div>
+  </div>
+
+  <!-- ═══════════════ A · 6 stages · Sanlyn 全权 ═══════════════ -->
+  <h2 class="section">A · 6 阶段 · Hero = Stage Door <span class="tag">Sanlyn view · hover hero to see drawer hint</span></h2>
+
+  <div class="banner" style="background:rgba(56,189,248,.04);border-color:rgba(56,189,248,.2);margin-bottom:14px;font-size:11.5px">
+    <b style="color:#7dd3fc">Hero 中央 chip = 仅 BL</b> · Hero 顶部中央这个 chip <b>只放 BL 号</b>（且只在 BL 已签发的阶段：⑤海运中 / ⑥到港）。其他阶段 Hero 中央留空，避免堆砌。
+    车牌 / 司机 / SO / 柜数 / POD 状态等都放下方（top-strip / cargo / containers list / next-text），不上 Hero 中央。
+    多柜：cargo 行显示组合 + 折叠 <b style="color:#7dd3fc">≤3 全显 · &gt;3 显前 3 + "+N more"</b>（含 <code style="background:rgba(245,158,11,.08);padding:1px 5px;border-radius:3px;color:#fcd34d">delayed</code> 等异常高亮）；&gt;20 柜进 Drawer。
+  </div>
+  <div class="grid">
+
+    <!-- ① 待签约 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#f59e0b"></span>① 待签约 · Pre-Contract</div>
+      <div class="cell-desc">Hero click → <b>Contract & Order Documents Drawer</b></div>
+      <div class="card">
+        <div class="hero s-quote" title="Open Contract & Order Documents">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none">
+            <rect x="18" y="32" width="86" height="60" rx="3" fill="#fef3c7" opacity=".06" stroke="#fcd34d" stroke-width="1" stroke-dasharray="2,2"/>
+            <text x="61" y="58" text-anchor="middle" font-size="18" fill="#fcd34d" opacity=".7">📜</text>
+            <text x="61" y="78" text-anchor="middle" font-size="8" font-weight="900" fill="#fbbf24" font-family="SF Mono,monospace">PI · SC · PO</text>
+            <g transform="translate(125,36)"><rect width="64" height="20" rx="3" fill="rgba(34,197,94,.15)" stroke="#22c55e" stroke-width="1"/><text x="32" y="13" text-anchor="middle" font-size="9" font-weight="900" fill="#86efac">Customer ✓</text></g>
+            <g transform="translate(125,60)"><rect width="64" height="20" rx="3" fill="rgba(34,197,94,.15)" stroke="#22c55e" stroke-width="1"/><text x="32" y="13" text-anchor="middle" font-size="9" font-weight="900" fill="#86efac">Sanlyn ✓</text></g>
+            <g transform="translate(205,48)" class="pulse"><rect width="84" height="28" rx="3" fill="rgba(245,158,11,.18)" stroke="#fcd34d" stroke-width="1.5" stroke-dasharray="3,3"/><text x="42" y="13" text-anchor="middle" font-size="9" font-weight="900" fill="#fcd34d">Factory</text><text x="42" y="23" text-anchor="middle" font-size="8" fill="#fbbf24">awaiting</text></g>
+          </svg>
+          <div class="top-tag">📜 Pre-Contract</div>
+          <div class="top-meta"><b>2/3</b> signed</div>
+          <div class="hero-expand">⤢</div>
+          <div class="hero-hint">Open Contract Docs</div>
+          <div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">⏳ Factory pending · 2 days idle</div></div>
+        </div>
+        <div class="id-row"><div class="oid">QT-2026-0512-018</div><div class="po">→ SC-218 · PO <b>XM-260</b></div></div>
+        <div class="owner-row">
+          <span class="owner-chip"><span class="role">SALES</span> Lyn Chen</span>
+          <span class="owner-chip"><span class="role">OPS</span> Mia</span>
+        </div>
+        <div class="dates-row">
+          <span class="d"><span class="k">Ordered</span><span class="v">May 12</span></span>
+          <span class="d"><span class="k">Delivery target</span><span class="v target">Jun 05</span></span>
+          <span class="src">📜 contract</span>
+        </div>
+        <div class="cargo"><b>1,800</b> CTN <span class="dot">·</span> <b>12</b> SKUs <span class="dot">·</span> <span class="chip">1×40HQ</span></div>
+        <div class="wf">
+          <div class="node now"><div class="ball"></div><div class="lbl">待签约</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">生产中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">确认交期</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">发货中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">海运中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">到港</div></div>
+        </div>
+        <div class="role-row">
+          <span class="role-chip r-sl">🤝 Sanlyn</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-E">E</span><span class="perm p-U">U</span><span class="perm p-S">S</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-pending">Quote pending → no billing yet</span>
+          <span class="fin-link">View Finance →</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Push factory signature</div><button class="next-btn">→ Send reminder</button></div>
+      </div>
+    </div>
+
+    <!-- ② 生产中 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#f97316"></span>② 生产中 · Producing</div>
+      <div class="cell-desc">Hero click → <b>Production Detail Drawer</b></div>
+      <div class="card">
+        <div class="hero s-prod">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none">
+            <g transform="translate(18,52)">
+              <rect width="304" height="6" rx="3" fill="#1e293b"/>
+              <rect width="131" height="6" rx="3" fill="url(#prodG2)"/>
+              <defs><linearGradient id="prodG2" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#f97316"/><stop offset="100%" stop-color="#fb923c"/></linearGradient></defs>
+            </g>
+            <g text-anchor="middle">
+              <g transform="translate(46,55)"><circle r="9" fill="#22c55e"/><text y="4" font-size="11" fill="#fff">✓</text></g>
+              <g transform="translate(138,55)" class="pulse"><circle r="11" fill="#f97316" stroke="#fff" stroke-width="1.5"/><text y="4" font-size="11" fill="#fff">⚙</text></g>
+              <g transform="translate(230,55)"><circle r="9" fill="#1e293b" stroke="#475569" stroke-width="1.5"/></g>
+              <g transform="translate(322,55)"><circle r="9" fill="#1e293b" stroke="#475569" stroke-width="1.5"/></g>
+            </g>
+            <g font-size="8" font-weight="800" font-family="SF Mono,monospace" text-anchor="middle">
+              <text x="46" y="82" fill="#86efac">Material</text>
+              <text x="138" y="82" fill="#fdba74">Producing</text>
+              <text x="230" y="82" fill="#475569">QC</text>
+              <text x="322" y="82" fill="#475569">Pack</text>
+            </g>
+          </svg>
+          <div class="top-tag">🏭 Producing</div>
+          <div class="top-meta"><b>43%</b> · 12d</div>
+          <div class="hero-expand">⤢</div>
+          <div class="hero-hint">Open Production Detail</div>
+          <div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">Day 12/28 · 3 QC photos · ETA ready May 28</div></div>
+        </div>
+        <div class="id-row"><div class="oid">FS20260622050</div><div class="po">PO <b>XM-255</b></div></div>
+        <div class="owner-row">
+          <span class="owner-chip"><span class="role">SALES</span> Lyn Chen</span>
+          <span class="owner-chip"><span class="role">OPS</span> Mia</span>
+        </div>
+        <div class="dates-row">
+          <span class="d"><span class="k">Order</span><span class="v">May 12</span></span>
+          <span class="d"><span class="k">Ready target</span><span class="v">May 28</span></span>
+          <span class="d"><span class="k">Loading</span><span class="v">May 30</span></span>
+          <span class="d"><span class="k">Delivery</span><span class="v target">Jun 05</span></span>
+        </div>
+        <div class="cargo"><b>1,280</b> CTN <span class="dot">·</span> <b>9</b> SKUs <span class="dot">·</span> <span class="chip">1×40HQ</span></div>
+        <div class="wf">
+          <div class="node done"><div class="ball"></div><div class="lbl">待签约</div></div>
+          <div class="node now"><div class="ball"></div><div class="lbl">生产中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">确认交期</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">发货中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">海运中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">到港</div></div>
+        </div>
+        <div class="role-row">
+          <span class="role-chip r-fc">🏭 Factory</span>
+          <span style="font-size:10px;color:#64748b">QC photos + progress</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-E">E</span><span class="perm p-U">U</span><span class="perm p-X">—</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-pending">Deposit confirmed · balance pending</span>
+          <span class="fin-link">View Finance →</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Mid-term factory QC</div><button class="next-btn">→ Schedule QC</button></div>
+      </div>
+    </div>
+
+    <!-- ③ 确认交货期 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#a78bfa"></span>③ 确认交货期 · ETD Confirm</div>
+      <div class="cell-desc">Hero click → <b>ETD Alignment Drawer</b></div>
+      <div class="card">
+        <div class="hero s-eta">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none">
+            <g transform="translate(18,40)">
+              <rect width="304" height="50" rx="6" fill="rgba(167,139,250,.04)" stroke="rgba(167,139,250,.18)" stroke-width="1"/>
+            </g>
+            <g font-size="8" font-weight="800" font-family="SF Mono,monospace" fill="#94a3b8" text-anchor="middle">
+              <text x="42" y="56">Mon</text><text x="42" y="68">22</text>
+              <text x="86" y="56">Tue</text><text x="86" y="68">23</text>
+              <text x="130" y="56">Wed</text><text x="130" y="68">24</text>
+              <text x="174" y="56">Thu</text><text x="174" y="68">25</text>
+              <text x="218" y="56">Fri</text><text x="218" y="68">26</text>
+              <text x="262" y="56">Sat</text><text x="262" y="68">27</text>
+              <text x="306" y="56">Sun</text><text x="306" y="68">28</text>
+            </g>
+            <g transform="translate(28,74)"><rect width="28" height="14" rx="3" fill="rgba(56,189,248,.25)" stroke="#38bdf8" stroke-width="1"/><text x="14" y="10" text-anchor="middle" font-size="8" font-weight="900" fill="#7dd3fc">Want</text></g>
+            <g transform="translate(204,74)" class="pulse"><rect width="28" height="14" rx="3" fill="rgba(167,139,250,.3)" stroke="#a78bfa" stroke-width="1.5"/><text x="14" y="10" text-anchor="middle" font-size="8" font-weight="900" fill="#c4b5fd">ETD</text></g>
+            <path d="M62,81 L202,81" stroke="#475569" stroke-width="1" stroke-dasharray="2,2"/>
+            <text x="132" y="79" text-anchor="middle" font-size="8" font-weight="700" fill="#fcd34d">+4 days late</text>
+          </svg>
+          <div class="top-tag">🗓 ETD Confirm</div>
+          <div class="top-meta"><b>+4d</b> gap</div>
+          <div class="hero-expand">⤢</div>
+          <div class="hero-hint">Open ETD Alignment</div>
+          <div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">Want Apr 22 · Factory ETD Apr 26 · vessel cut May 1</div></div>
+        </div>
+        <div class="id-row"><div class="oid">FS20260622052</div><div class="po">PO <b>XM-257</b></div></div>
+        <div class="owner-row">
+          <span class="owner-chip"><span class="role">SALES</span> Lyn Chen</span>
+          <span class="owner-chip"><span class="role">OPS</span> Kai</span>
+        </div>
+        <div class="dates-row">
+          <span class="d"><span class="k">Want</span><span class="v">Apr 22</span></span>
+          <span class="d"><span class="k">Factory ready</span><span class="v warn">Apr 26</span></span>
+          <span class="d"><span class="k">Cut-off</span><span class="v">May 01</span></span>
+          <span class="d"><span class="k">Delivery target</span><span class="v target">Apr 30</span></span>
+          <span class="risk-chip">+4d gap</span>
+        </div>
+        <div class="cargo"><b>9,000</b> CTN <span class="dot">·</span> <b>20</b> SKUs <span class="dot">·</span> <span class="chip">1×40HQ</span></div>
+        <div class="wf">
+          <div class="node done"><div class="ball"></div><div class="lbl">待签约</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">生产中</div></div>
+          <div class="node now"><div class="ball"></div><div class="lbl">确认交期</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">发货中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">海运中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">到港</div></div>
+        </div>
+        <div class="role-row">
+          <span class="role-chip r-tr">📑 Trading Co</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-E">E</span><span class="perm p-X">—</span><span class="perm p-S">S</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-pending">Invoice draft pending</span>
+          <span class="fin-link">View Finance →</span>
+        </div>
+        <div class="ai-hint risk">
+          <div class="ai-icon">🤖</div>
+          <div class="ai-body">
+            <div class="ai-title"><span class="kind">Smart ETD</span>Risk · +4 day gap</div>
+            <div class="ai-msg">Factory ready date slips past customer reverse-schedule. Confirm acceptance or switch vessel.</div>
+          </div>
+          <button class="ai-cta">→ Negotiate ETD</button>
+          <span class="dismiss">×</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Confirm ETD with customer</div><button class="next-btn">→ Negotiate</button></div>
+      </div>
+    </div>
+
+    <!-- ④ 发货中 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#22c55e"></span>④ 发货中 · Trucking + Customs</div>
+      <div class="cell-desc">Hero click → <b>Loading + Customs Drawer</b></div>
+      <div class="card">
+        <div class="hero s-truck">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none">
+            <path d="M30,76 L310,76" stroke="#22c55e" stroke-width="2" fill="none" opacity=".4" stroke-dasharray="6,4"/>
+            <path d="M30,76 L180,76" stroke="#22c55e" stroke-width="3" fill="none"/>
+            <g transform="translate(30,76)"><circle r="9" fill="#22c55e"/><text y="4" text-anchor="middle" font-size="10">🏭</text></g>
+            <text x="30" y="100" text-anchor="middle" font-size="8" font-weight="800" fill="#86efac" font-family="SF Mono,monospace">FACTORY</text>
+            <g transform="translate(180,76)" class="pulse"><circle r="13" fill="rgba(34,197,94,.25)"/><text y="5" text-anchor="middle" font-size="14">🚚</text></g>
+            <text x="180" y="58" text-anchor="middle" font-size="8" font-weight="900" fill="#86efac" font-family="SF Mono,monospace">2 of 3 stops · 70km</text>
+            <g transform="translate(310,76)"><circle r="7" fill="#475569" stroke="#22c55e" stroke-width="1.5"/><text y="4" text-anchor="middle" font-size="9">⚓</text></g>
+            <text x="310" y="100" text-anchor="middle" font-size="8" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">PORT XMN</text>
+          </svg>
+          <div class="top-tag">🚚 Shipping Out</div>
+          <div class="top-meta">arr <b>3h</b></div>
+          <div class="hero-expand">⤢</div>
+          <div class="hero-hint">Open Loading + Customs</div>
+          <div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">🧑 张师傅 · 闽D-12345 · loading 80% · customs draft ✓</div></div>
+        </div>
+        <div class="id-row"><div class="oid">FS20260622055</div><div class="po">PO <b>XM-258</b></div></div>
+        <div class="owner-row">
+          <span class="owner-chip"><span class="role">OPS</span> Kai</span>
+          <span class="owner-chip"><span class="role">CUSTOMS</span> Sun</span>
+        </div>
+        <div class="dates-row">
+          <span class="d"><span class="k">Loading</span><span class="v">May 30</span></span>
+          <span class="d"><span class="k">Gate-in</span><span class="v">May 31</span></span>
+          <span class="d"><span class="k">Docs due</span><span class="v warn">May 29</span></span>
+          <span class="d"><span class="k">Delivery</span><span class="v target">Jun 05</span></span>
+        </div>
+        <div class="cargo"><b>1,920</b> CTN <span class="dot">·</span> <b>5</b> SKUs <span class="dot">·</span> <span class="chip">1×40HQ</span> <span class="dot">·</span> NW <b>16.8t</b></div>
+        <div class="wf">
+          <div class="node done"><div class="ball"></div><div class="lbl">待签约</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">生产中</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">确认交期</div></div>
+          <div class="node now"><div class="ball"></div><div class="lbl">发货中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">海运中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">到港</div></div>
+        </div>
+        <div class="role-row">
+          <span class="role-chip r-dr">🚛 Driver</span>
+          <span class="role-chip r-cb">📜 Customs</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-U">U</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-review">Trucking + customs settlement pending</span>
+          <span class="fin-link">View Finance →</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Truck arrives port · customs file</div><button class="next-btn">→ Track</button></div>
+      </div>
+    </div>
+
+    <!-- ⑤ 海运中 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#38bdf8"></span>⑤ 海运中 · Ocean Transit</div>
+      <div class="cell-desc">Hero click → <b>Portun / Ocean Tracking Drawer</b></div>
+      <div class="card">
+        <div class="hero s-ocean">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="routeU2" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#22c55e"/><stop offset="55%" stop-color="#38bdf8"/>
+                <stop offset="56%" stop-color="#1e293b"/><stop offset="100%" stop-color="#475569"/>
+              </linearGradient>
+            </defs>
+            <path d="M55,80 Q170,38 305,93" stroke="url(#routeU2)" stroke-width="2" fill="none"/>
+            <circle cx="55" cy="80" r="5" fill="#22c55e" stroke="#0b1120" stroke-width="2"/>
+            <text x="55" y="100" text-anchor="middle" font-size="9" font-weight="800" fill="#86efac" font-family="SF Mono,monospace">XMN</text>
+            <g transform="translate(180,55)" class="pulse">
+              <circle r="14" fill="rgba(56,189,248,.18)"/>
+              <circle r="6" fill="#38bdf8" stroke="#fff" stroke-width="1.5"/>
+              <text y="-12" text-anchor="middle" font-size="11">🚢</text>
+            </g>
+            <text x="180" y="37" text-anchor="middle" font-size="8" font-weight="900" fill="#7dd3fc" font-family="SF Mono,monospace">55% transit</text>
+            <circle cx="305" cy="93" r="4" fill="#475569" stroke="#0b1120" stroke-width="2"/>
+            <text x="305" y="83" text-anchor="middle" font-size="9" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">LGB</text>
+          </svg>
+          <div class="top-tag">🚢 Ocean Transit</div>
+          <div class="top-id"><span class="lbl">BL</span><span class="big">FX-2204</span></div>
+          <div class="top-meta"><b>6d</b> ETA</div>
+          <div class="hero-expand">⤢</div>
+          <div class="hero-hint">Open Portun / Tracking</div>
+          <div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">COSCO ROSE 118E · BL ✓ · arrival notice pending</div></div>
+        </div>
+        <div class="id-row"><div class="oid">FS20260206020</div><div class="po">PO <b>XM-235</b></div></div>
+        <div class="owner-row">
+          <span class="owner-chip"><span class="role">SALES</span> Lyn Chen</span>
+          <span class="owner-chip"><span class="role">OCEAN</span> Ray</span>
+        </div>
+        <div class="dates-row">
+          <span class="d"><span class="k">ETD</span><span class="v">May 14</span></span>
+          <span class="d"><span class="k">ETA</span><span class="v">Jun 05</span></span>
+          <span class="d"><span class="k">Delivery target</span><span class="v target">Jun 05</span></span>
+          <span class="ok-chip">✓ on track</span>
+        </div>
+        <div class="cargo"><b>14,400</b> CTN <span class="dot">·</span> <b>30</b> SKUs <span class="dot">·</span> <span class="chip">8×40HQ + 2×20GP</span> <span class="dot">·</span> <b>10</b> containers</div>
+        <div class="containers">
+          <div class="ctr"><span class="cno">CCLU 7234561</span><span class="ctype">40HQ</span><span class="sno">seal SL 88231</span><span class="cstatus transit">in transit</span></div>
+          <div class="ctr"><span class="cno">CCLU 7234562</span><span class="ctype">40HQ</span><span class="sno">seal SL 88232</span><span class="cstatus transit">in transit</span></div>
+          <div class="ctr"><span class="cno">CCLU 7234563</span><span class="ctype">40HQ</span><span class="sno">seal SL 88233</span><span class="cstatus transit">in transit</span></div>
+          <details>
+            <summary>+ 7 more · click to expand</summary>
+            <div class="ctr"><span class="cno">CCLU 7234564</span><span class="ctype">40HQ</span><span class="sno">seal SL 88234</span><span class="cstatus transit">in transit</span></div>
+            <div class="ctr"><span class="cno">CCLU 7234565</span><span class="ctype">40HQ</span><span class="sno">seal SL 88235</span><span class="cstatus transit">in transit</span></div>
+            <div class="ctr"><span class="cno">MAEU 8821190</span><span class="ctype">40HQ</span><span class="sno">seal SL 88236</span><span class="cstatus transit">in transit</span></div>
+            <div class="ctr"><span class="cno">MAEU 8821191</span><span class="ctype">40HQ</span><span class="sno">seal SL 88237</span><span class="cstatus transit">in transit</span></div>
+            <div class="ctr"><span class="cno">MAEU 8821192</span><span class="ctype">40HQ</span><span class="sno">seal SL 88238</span><span class="cstatus warn">delayed</span></div>
+            <div class="ctr"><span class="cno">TGHU 1182203</span><span class="ctype">20GP</span><span class="sno">seal SL 88239</span><span class="cstatus transit">in transit</span></div>
+            <div class="ctr"><span class="cno">TGHU 1182204</span><span class="ctype">20GP</span><span class="sno">seal SL 88240</span><span class="cstatus transit">in transit</span></div>
+          </details>
+        </div>
+        <div class="wf">
+          <div class="node done"><div class="ball"></div><div class="lbl">待签约</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">生产中</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">确认交期</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">发货中</div></div>
+          <div class="node now"><div class="ball"></div><div class="lbl">海运中</div></div>
+          <div class="node"><div class="ball"></div><div class="lbl">到港</div></div>
+        </div>
+        <div class="role-row">
+          <span class="role-chip r-fw">🚢 Forwarder</span>
+          <span class="role-chip r-cu">👤 Customer</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-U">U</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-required">Balance payment required</span>
+          <span class="fin-link">Go to Billing →</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">BL ready · payment status in Finance</div><button class="next-btn">→ View BL</button></div>
+      </div>
+    </div>
+
+    <!-- ⑥ 到港 -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#06b6d4"></span>⑥ 到港 · Arrived</div>
+      <div class="cell-desc">Hero click → <b>Arrival + POD Drawer</b></div>
+      <div class="card">
+        <div class="hero s-arrived">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none">
+            <rect x="20" y="50" width="300" height="40" rx="6" fill="rgba(6,182,212,.05)" stroke="rgba(6,182,212,.2)" stroke-width="1"/>
+            <g transform="translate(56,70)"><circle r="14" fill="#10b981"/><text y="5" text-anchor="middle" font-size="14">✓</text></g>
+            <text x="56" y="100" text-anchor="middle" font-size="8" font-weight="900" fill="#6ee7b7" font-family="SF Mono,monospace">Arrived</text>
+            <text x="56" y="40" text-anchor="middle" font-size="9" font-weight="800" fill="#67e8f9" font-family="SF Mono,monospace">LGB</text>
+            <g transform="translate(150,70)" class="pulse"><circle r="13" fill="rgba(6,182,212,.25)"/><text y="5" text-anchor="middle" font-size="13">📦</text></g>
+            <text x="150" y="100" text-anchor="middle" font-size="8" font-weight="900" fill="#67e8f9" font-family="SF Mono,monospace">Clearing</text>
+            <g transform="translate(244,70)"><circle r="11" fill="#1e293b" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="3,2"/><text y="4" text-anchor="middle" font-size="12">🚚</text></g>
+            <text x="244" y="100" text-anchor="middle" font-size="8" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">Pickup</text>
+            <g transform="translate(310,70)"><circle r="9" fill="#1e293b" stroke="#475569" stroke-width="1.5"/><text y="4" text-anchor="middle" font-size="11">🏠</text></g>
+            <text x="310" y="100" text-anchor="middle" font-size="8" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">DOOR</text>
+          </svg>
+          <div class="top-tag">⚓ Arrived</div>
+          <div class="top-id"><span class="lbl">BL</span><span class="big">FX-2201</span></div>
+          <div class="top-meta"><b>D+2</b></div>
+          <div class="hero-expand">⤢</div>
+          <div class="hero-hint">Open Arrival + POD</div>
+          <div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">Vessel berthed May 8 · ISF/AMS filed · clearance in progress</div></div>
+        </div>
+        <div class="id-row"><div class="oid">FS20260120015</div><div class="po">PO <b>XM-201</b></div></div>
+        <div class="owner-row">
+          <span class="owner-chip"><span class="role">SALES</span> Lyn Chen</span>
+          <span class="owner-chip"><span class="role">CS</span> Aria</span>
+        </div>
+        <div class="dates-row">
+          <span class="d"><span class="k">Delivery target</span><span class="v target">Jun 06</span></span>
+          <span class="d"><span class="k">Actual arrival</span><span class="v ok">Jun 04</span></span>
+          <span class="d"><span class="k">D+</span><span class="v">2</span></span>
+          <span class="ok-chip">early -2d</span>
+        </div>
+        <div class="cargo"><b>1,440</b> CTN <span class="dot">·</span> <b>8</b> SKUs <span class="dot">·</span> <span class="chip">1×40HQ</span></div>
+        <div class="wf">
+          <div class="node done"><div class="ball"></div><div class="lbl">待签约</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">生产中</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">确认交期</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">发货中</div></div>
+          <div class="node done"><div class="ball"></div><div class="lbl">海运中</div></div>
+          <div class="node now"><div class="ball"></div><div class="lbl">到港</div></div>
+        </div>
+        <div class="role-row">
+          <span class="role-chip r-cu">👤 Customer</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-U">U</span><span class="perm p-S">S</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-ok">Paid confirmed · tax refund initiated</span>
+          <span class="fin-link">View Finance →</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Customer POD sign-off</div><button class="next-btn">→ Confirm POD</button></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ B · same Ocean card × 8 roles · v3 split: principals vs supply-chain ═══════════════ -->
+  <h2 class="section">B · 「海运中」× 8 roles <span class="tag">v3 split · principals = full card · supply-chain = portal preview only</span></h2>
+
+  <div class="banner" style="background:rgba(167,139,250,.05);border-color:rgba(167,139,250,.2);margin-bottom:14px;font-size:11.5px">
+    <b style="color:#c4b5fd">v3.1 supply-chain rule</b> · 供应链角色（🏭工厂 / 📜报关 / 🚛司机 / 🚢货代 / 🛡保险）<b>不显示完整生命周期卡 + 不用 tab</b>。
+    每个文件 = 一个 chip，<b>点 chip 直接下载 / 上传</b>。两个分组标签：<b>📥 Download · 📤 Upload</b>。
+    chip 状态 5 色：<span style="color:#6ee7b7">✓ done</span> · <span style="color:#c4b5fd">🤖 AI checking</span> · <span style="color:#fda4af">↑ missing (脉冲)</span> · <span style="color:#94a3b8">⏳ pending</span> · <span style="color:#fcd34d">⚠ warn</span>。
+    Portal CTA → "Deep view"（AI flag 详情 / 历史 / 照片 gallery）— 日常 90% 操作直接 chip 完成。
+    Principal 角色（🤝Sanlyn / 👤Customer / 📑Trading Co）保留完整卡。
+  </div>
+  <div class="grid">
+
+    <!-- B-1 Sanlyn -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#a78bfa"></span>🤝 Sanlyn (full)</div>
+      <div class="cell-desc">Click hero → full tracking drawer</div>
+      <div class="card">
+        <div class="hero s-ocean">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none"><path d="M55,80 Q170,38 305,93" stroke="#38bdf8" stroke-width="2" fill="none"/><circle cx="55" cy="80" r="5" fill="#22c55e"/><text x="55" y="100" text-anchor="middle" font-size="9" font-weight="800" fill="#86efac" font-family="SF Mono,monospace">XMN</text><g transform="translate(180,55)" class="pulse"><circle r="6" fill="#38bdf8"/><text y="-12" text-anchor="middle" font-size="11">🚢</text></g><circle cx="305" cy="93" r="4" fill="#475569"/><text x="305" y="83" text-anchor="middle" font-size="9" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">LGB</text></svg>
+          <div class="top-tag">🚢 Ocean</div>
+          <div class="top-id"><span class="lbl">BL</span><span class="big">FX-2204</span></div>
+          <div class="top-meta"><b>6d</b> ETA</div>
+          <div class="hero-expand">⤢</div><div class="hero-hint">Open Tracking</div><div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">COSCO ROSE 118E · BL ✓ · AN pending</div></div>
+        </div>
+        <div class="id-row"><div class="oid">ORD-2204</div><div class="po">Supplier 福新FX</div></div>
+        <div class="owner-row"><span class="owner-chip"><span class="role">SALES</span> Lyn</span><span class="owner-chip"><span class="role">OCEAN</span> Ray</span><span class="owner-chip"><span class="role">FIN</span> Jia</span></div>
+        <div class="dates-row">
+          <span class="d"><span class="k">Order</span><span class="v">May 01</span></span>
+          <span class="d"><span class="k">ETD</span><span class="v">May 14</span></span>
+          <span class="d"><span class="k">ETA</span><span class="v">Jun 05</span></span>
+          <span class="d"><span class="k">Delivery</span><span class="v target">Jun 05</span></span>
+        </div>
+        <div class="cargo"><b>2,200</b> CTN <span class="dot">·</span> <span class="chip">40HQ×1</span></div>
+        <div class="card-tabs">
+          <span class="tab-prefix">§14 drawer</span>
+          <span class="ctab active">Route</span>
+          <span class="ctab">Vessel</span>
+          <span class="ctab">BL <span class="num">✓</span></span>
+          <span class="ctab has-flag">AN <span class="num">pending</span></span>
+          <span class="ctab has-flag">Exceptions <span class="num">1</span></span>
+          <span class="ctab">Timeline</span>
+        </div>
+        <div class="wf"><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node now"><div class="ball"></div></div><div class="node"><div class="ball"></div></div></div>
+        <div class="role-row">
+          <span class="role-chip r-sl">🤝 Sanlyn</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-E">E</span><span class="perm p-U">U</span><span class="perm p-S">S</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-required">Balance pending · AR open</span>
+          <span class="fin-link">Open Finance →</span>
+        </div>
+        <div class="ai-hint info">
+          <div class="ai-icon">🤖</div>
+          <div class="ai-body">
+            <div class="ai-title"><span class="kind">Smart Timeline</span>T-7 window open</div>
+            <div class="ai-msg">Customer delivery target Jun 5 → Billing reminder window opens May 29. AR open, no auto-action.</div>
+          </div>
+          <button class="ai-cta">→ View timeline</button>
+          <span class="dismiss">×</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Release BL · trigger billing in Finance</div><button class="next-btn">→ Manage</button></div>
+      </div>
+    </div>
+
+    <!-- B-2 Customer -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#f472b6"></span>👤 Customer</div>
+      <div class="cell-desc">Click hero → tracking-only drawer</div>
+      <div class="card">
+        <div class="hero s-ocean">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none"><path d="M55,80 Q170,38 305,93" stroke="#38bdf8" stroke-width="2" fill="none"/><circle cx="55" cy="80" r="5" fill="#22c55e"/><text x="55" y="100" text-anchor="middle" font-size="9" font-weight="800" fill="#86efac" font-family="SF Mono,monospace">XMN</text><g transform="translate(180,55)" class="pulse"><circle r="6" fill="#38bdf8"/><text y="-12" text-anchor="middle" font-size="11">🚢</text></g><circle cx="305" cy="93" r="4" fill="#475569"/><text x="305" y="83" text-anchor="middle" font-size="9" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">LGB</text></svg>
+          <div class="top-tag">🚢 Ocean</div>
+          <div class="top-id"><span class="lbl">BL</span><span class="big">FX-2204</span></div>
+          <div class="top-meta"><b>Jun 5</b> ETA</div>
+          <div class="hero-expand">⤢</div><div class="hero-hint">Track shipment</div><div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">Sanlyn Ocean · BL copy ready · arrival notice ETA Jun 5</div></div>
+        </div>
+        <div class="id-row"><div class="oid">ORD-2204</div><div class="po">My PO <b>XM-235</b></div></div>
+        <div class="owner-row"><span class="owner-chip"><span class="role">YOUR CONTACT</span> Lyn Chen · Sanlyn</span></div>
+        <div class="dates-row">
+          <span class="d"><span class="k">Ordered</span><span class="v">May 01</span></span>
+          <span class="d"><span class="k">Delivery target</span><span class="v target">Jun 05</span></span>
+          <span class="reminder-chip">⏰ Billing T-7 · May 29</span>
+        </div>
+        <div class="cargo"><b>2,200</b> CTN <span class="dot">·</span> <span class="chip">40HQ×1</span></div>
+        <div class="card-tabs">
+          <span class="tab-prefix">§14 drawer</span>
+          <span class="ctab">Route</span>
+          <span class="ctab">Vessel</span>
+          <span class="ctab active">BL <span class="num">copy ✓</span></span>
+          <span class="ctab has-flag">AN <span class="num">pending</span></span>
+          <span class="ctab">Exceptions</span>
+          <span class="ctab">Timeline</span>
+        </div>
+        <div class="wf"><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node now"><div class="ball"></div></div><div class="node"><div class="ball"></div></div></div>
+        <div class="role-row">
+          <span class="role-chip r-cu">👤 Customer</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-U">U</span><span class="perm p-X">—</span><span class="perm p-X">—</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-required">Payment required</span>
+          <span class="fin-link">Go to Billing →</span>
+        </div>
+        <div class="ai-hint action">
+          <div class="ai-icon">🤖</div>
+          <div class="ai-body">
+            <div class="ai-title"><span class="kind">Smart Billing Handoff</span>Billing action open</div>
+            <div class="ai-msg">Expected delivery is near. Please check your payment status in Billing — amount is shown there, not here.</div>
+          </div>
+          <button class="ai-cta">→ Go to Billing</button>
+          <span class="dismiss">×</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Balance + telex release</div><button class="next-btn fin">→ Go to Billing</button></div>
+      </div>
+    </div>
+
+    <!-- B-3 Factory · v3.1 direct chips -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#10b981"></span>🏭 Factory · direct chips</div>
+      <div class="cell-desc">Shipped out · only 退税核销联 pending</div>
+      <div class="sc-card">
+        <div class="hero s-redacted disabled" style="height:80px">
+          <svg viewBox="0 0 340 80" preserveAspectRatio="none">
+            <text x="170" y="42" text-anchor="middle" font-size="11" font-weight="900" fill="#94a3b8" font-family="SF Mono,monospace">📦 SHIPPED OUT</text>
+            <text x="170" y="60" text-anchor="middle" font-size="9" font-weight="700" fill="#64748b">F-218 · NW 21.2t · closed May 8</text>
+          </svg>
+          <div class="top-tag">📦 Shipped</div><div class="top-meta">May 8</div>
+        </div>
+        <div class="id-row"><div class="oid">F-218</div><div class="po">Sanlyn coord <b>Mia</b></div></div>
+
+        <div class="sc-files">
+          <div class="sc-fgroup">
+            <div class="glabel">📥 Download <span class="gcount">5 files</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip dl"><span class="fname">PL</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">IV</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">SC 摘要</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">产品资料</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">装货照片回看</span><span class="act">↓</span></span>
+            </div>
+          </div>
+          <div class="sc-fgroup">
+            <div class="glabel">📤 Upload <span class="gcount">0 / 1 done</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip pending"><span class="fname">退税核销联</span><span class="act">⏳</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sc-cta-row">
+          <div class="status-note">Standby · <b>awaiting customs refund packet</b></div>
+          <button class="open-portal">→ Deep view (history)</button>
+        </div>
+        <div class="sc-mini-boundary">
+          🔒 <b>Not shown:</b> customer · ocean cost · BL · vessel · margin · other roles.
+        </div>
+      </div>
+    </div>
+
+    <!-- B-4 Customs Broker · v3.1 inline file chips (no tabs, direct one-click) -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#38bdf8"></span>📜 Customs Broker · direct chips</div>
+      <div class="cell-desc">Click any chip = one-click download / upload. Portal only for deep view.</div>
+      <div class="sc-card">
+        <div class="hero s-redacted" style="height:80px">
+          <svg viewBox="0 0 340 80" preserveAspectRatio="none">
+            <text x="170" y="38" text-anchor="middle" font-size="11" font-weight="900" fill="#7dd3fc" font-family="SF Mono,monospace">📜 DEC-2204 · RELEASED ✓</text>
+            <text x="170" y="58" text-anchor="middle" font-size="9" font-weight="700" fill="#94a3b8" font-family="SF Mono,monospace">HS 23091000 · NW 21.2t</text>
+          </svg>
+          <div class="top-tag">📜 Customs</div><div class="top-meta">DEC-2204</div>
+        </div>
+        <div class="id-row"><div class="oid">C-12-HM</div><div class="po">Sanlyn coord <b>Sun</b></div></div>
+
+        <div class="sc-coord">
+          <span class="clabel">协同</span>
+          <span class="cbtn mention">@ 你 · <span class="num">1</span></span>
+          <span class="cbtn msg unread">💬 <span class="num">3</span></span>
+          <span class="cbtn pin">📌 <span class="num">2</span></span>
+          <span class="cbtn update">🔔 <span class="num">5</span></span>
+          <span class="view-link">view all →</span>
+        </div>
+
+        <div class="sc-files">
+          <div class="sc-fgroup">
+            <div class="glabel">📥 Download <span class="gcount">7 files</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip dl"><span class="fname">PL</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">IV</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">SC</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">SO</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">HS / 申报要素</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">检疫报告</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">产品资料</span><span class="act">↓</span></span>
+            </div>
+          </div>
+
+          <div class="sc-fgroup">
+            <div class="glabel">📤 Upload <span class="gcount">3 / 6 done</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip done"><span class="fname">报关单</span><span class="act">✓</span></span>
+              <span class="sc-chip done"><span class="fname">放行单 1</span><span class="act">✓</span></span>
+              <span class="sc-chip ai"><span class="fname">放行单 2</span><span class="act">🤖</span></span>
+              <span class="sc-chip missing"><span class="fname">放行单 3</span><span class="act">↑</span></span>
+              <span class="sc-chip pending"><span class="fname">退税回执</span><span class="act">⏳</span></span>
+              <span class="sc-chip pending"><span class="fname">异常说明</span><span class="act">opt</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sc-cta-row">
+          <div class="status-note">Status · <b>放行单 3 ↑ + AI flag on 放行单 2</b></div>
+          <button class="open-portal">→ Deep view (AI flags · history)</button>
+        </div>
+        <div class="sc-mini-boundary">
+          🔒 <b>Not shown:</b> customer · pricing · driver · other forwarders · margin. Portal only for AI flag detail + change history; chips above are the daily 90% actions.
+        </div>
+      </div>
+    </div>
+
+    <!-- B-5 Driver · v3.1 direct chips -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#f59e0b"></span>🚛 Driver · direct chips</div>
+      <div class="cell-desc">9 photo slots — 5 done, 4 pending</div>
+      <div class="sc-card">
+        <div class="hero s-redacted" style="height:80px">
+          <svg viewBox="0 0 340 80" preserveAspectRatio="none">
+            <text x="170" y="38" text-anchor="middle" font-size="11" font-weight="900" fill="#fcd34d" font-family="SF Mono,monospace">🚛 TRK-0091 · TRIP CLOSED</text>
+            <text x="170" y="58" text-anchor="middle" font-size="9" font-weight="700" fill="#94a3b8" font-family="SF Mono,monospace">闽D-12345 · 70km · May 6</text>
+          </svg>
+          <div class="top-tag">🚛 Closed</div><div class="top-meta">May 6</div>
+        </div>
+        <div class="id-row"><div class="oid">TRK-0091</div><div class="po">Loading contact <b>张师傅</b></div></div>
+
+        <div class="sc-files">
+          <div class="sc-fgroup">
+            <div class="glabel">📥 View task <span class="gcount">5 items</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip dl"><span class="fname">工厂地址</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">港口/堆场</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">SO</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">柜任务</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">装货时间窗</span><span class="act">↓</span></span>
+            </div>
+          </div>
+          <div class="sc-fgroup">
+            <div class="glabel">📤 Upload photos <span class="gcount">5 / 9 done</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip done"><span class="fname">空柜照</span><span class="act">✓</span></span>
+              <span class="sc-chip done"><span class="fname">到厂照</span><span class="act">✓</span></span>
+              <span class="sc-chip done"><span class="fname">装货中</span><span class="act">✓</span></span>
+              <span class="sc-chip done"><span class="fname">满柜照</span><span class="act">✓</span></span>
+              <span class="sc-chip done"><span class="fname">进港凭证</span><span class="act">✓</span></span>
+              <span class="sc-chip missing"><span class="fname">封号特写</span><span class="act">↑</span></span>
+              <span class="sc-chip missing"><span class="fname">车牌照</span><span class="act">↑</span></span>
+              <span class="sc-chip missing"><span class="fname">POD 签收</span><span class="act">↑</span></span>
+              <span class="sc-chip pending"><span class="fname">异常</span><span class="act">opt</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sc-cta-row">
+          <div class="status-note">Status · <b>3 photos to upload — close trip</b></div>
+          <button class="open-portal">→ Deep view (photo gallery)</button>
+        </div>
+        <div class="sc-mini-boundary">
+          🔒 <b>Not shown:</b> customer · BL · vessel · margin · fees.
+        </div>
+      </div>
+    </div>
+
+    <!-- B-6 Forwarder · v3.1 direct chips -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#06b6d4"></span>🚢 Forwarder · direct chips</div>
+      <div class="cell-desc">BL issued; AI flag on consignee + AN pending</div>
+      <div class="sc-card">
+        <div class="hero s-ocean" style="height:80px">
+          <svg viewBox="0 0 340 80" preserveAspectRatio="none">
+            <text x="170" y="38" text-anchor="middle" font-size="11" font-weight="900" fill="#7dd3fc" font-family="SF Mono,monospace">🚢 ISSUED</text>
+            <text x="170" y="58" text-anchor="middle" font-size="9" font-weight="700" fill="#94a3b8" font-family="SF Mono,monospace">COSCO ROSE 118E · ETA Jun 5</text>
+          </svg>
+          <div class="top-tag">🚢 My Vessel</div><div class="top-id"><span class="lbl">BL</span><span class="big">FX-2204</span></div><div class="top-meta"><b>6d</b> ETA</div>
+        </div>
+        <div class="id-row"><div class="oid">SO 44781</div><div class="po">Sanlyn coord <b>Ray</b></div></div>
+
+        <div class="sc-files">
+          <div class="sc-fgroup">
+            <div class="glabel">📥 Download <span class="gcount">6 files</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip dl"><span class="fname">托书</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">SI</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">PL / IV</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">非危声明</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">电放协议</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">海运合同</span><span class="act">↓</span></span>
+            </div>
+          </div>
+          <div class="sc-fgroup">
+            <div class="glabel">📤 Upload <span class="gcount">3 / 6 done</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip done"><span class="fname">SO</span><span class="act">✓</span></span>
+              <span class="sc-chip ai"><span class="fname">BL copy</span><span class="act">🤖</span></span>
+              <span class="sc-chip done"><span class="fname">ETA update</span><span class="act">✓</span></span>
+              <span class="sc-chip missing"><span class="fname">Arrival Notice</span><span class="act">↑</span></span>
+              <span class="sc-chip pending"><span class="fname">电放确认</span><span class="act">⏳</span></span>
+              <span class="sc-chip pending"><span class="fname">改船通知</span><span class="act">opt</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sc-cta-row">
+          <div class="status-note">Status · <b>BL consignee AI flag + AN by Jun 02 (T-3)</b></div>
+          <button class="open-portal">→ Deep view (AI flags · history)</button>
+        </div>
+        <div class="sc-mini-boundary">
+          🔒 <b>Not shown:</b> customer full name · pricing · margin · other forwarders · trucking · commission.
+        </div>
+      </div>
+    </div>
+
+    <!-- B-7 Trading Co -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#34d399"></span>📑 Trading Co (Shipper)</div>
+      <div class="cell-desc">Click hero → signed docs as shipper</div>
+      <div class="card">
+        <div class="hero s-ocean">
+          <svg viewBox="0 0 340 124" preserveAspectRatio="none"><path d="M55,80 Q170,38 305,93" stroke="#38bdf8" stroke-width="2" fill="none"/><circle cx="55" cy="80" r="5" fill="#22c55e"/><text x="55" y="100" text-anchor="middle" font-size="9" font-weight="800" fill="#86efac" font-family="SF Mono,monospace">XMN</text><g transform="translate(180,55)" class="pulse"><circle r="6" fill="#38bdf8"/><text y="-12" text-anchor="middle" font-size="11">🚢</text></g><circle cx="305" cy="93" r="4" fill="#475569"/><text x="305" y="83" text-anchor="middle" font-size="9" font-weight="800" fill="#94a3b8" font-family="SF Mono,monospace">LGB</text></svg>
+          <div class="top-tag">📑 As Shipper</div><div class="top-meta"><b>6d</b> ETA</div>
+          <div class="hero-expand">⤢</div><div class="hero-hint">Open shipper docs</div><div class="hero-lock">🔒</div>
+          <div class="top-strip"><div class="info">Shipper 厦门贸易 · IV/PL signed · BL consigned</div></div>
+        </div>
+        <div class="id-row"><div class="oid">IV-2204</div><div class="po">SC <b>SC-218</b></div></div>
+        <div class="owner-row"><span class="owner-chip"><span class="role">SALES</span> Lyn</span><span class="owner-chip"><span class="role">DOC OPS</span> Mia</span></div>
+        <div class="dates-row">
+          <span class="d"><span class="k">IV signed</span><span class="v ok">May 08</span></span>
+          <span class="d"><span class="k">Telex release target</span><span class="v">May 25</span></span>
+          <span class="d"><span class="k">Delivery</span><span class="v target">Jun 05</span></span>
+        </div>
+        <div class="cargo"><b>40HQ×1</b> <span class="dot">·</span> 2,200 CTN <span class="dot">·</span> NW 21.2t</div>
+        <div class="wf"><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node done"><div class="ball"></div></div><div class="node now"><div class="ball"></div></div><div class="node"><div class="ball"></div></div></div>
+        <div class="role-row">
+          <span class="role-chip r-tr">📑 Trading Co</span>
+          <span class="perm-set"><span class="perm p-V">V</span><span class="perm p-E">E</span><span class="perm p-X">—</span><span class="perm p-S">S</span></span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Finance</span>
+          <span class="fin-chip fin-ready">Invoice ready · in Finance</span>
+          <span class="fin-link">View Finance →</span>
+        </div>
+        <div class="next"><div class="next-prefix">▸ NEXT</div><div class="next-text">Sign telex release on BL</div><button class="next-btn">→ Sign</button></div>
+      </div>
+    </div>
+
+    <!-- B-8 Insurance · v3.1 direct chips -->
+    <div class="cell">
+      <div class="cell-label"><span class="dot" style="background:#a855f7"></span>🛡 Insurance · direct chips</div>
+      <div class="cell-desc">Policy active · standby</div>
+      <div class="sc-card">
+        <div class="hero s-redacted" style="height:80px">
+          <svg viewBox="0 0 340 80" preserveAspectRatio="none">
+            <text x="170" y="38" text-anchor="middle" font-size="13" fill="#d8b4fe">🛡</text>
+            <text x="170" y="58" text-anchor="middle" font-size="11" font-weight="900" fill="#c4b5fd" font-family="SF Mono,monospace">INS-2204 · ICC(A) · ACTIVE</text>
+          </svg>
+          <div class="top-tag">🛡 Insured</div><div class="top-meta">ICC(A)</div>
+        </div>
+        <div class="id-row"><div class="oid">INS-2204</div><div class="po">Sanlyn coord <b>Aria</b></div></div>
+        <div class="cargo" style="padding-bottom:6px">ICC(A) <span class="dot">·</span> <span class="biz-amt"><span class="lbl">insured value</span>$40,480</span></div>
+
+        <div class="sc-files">
+          <div class="sc-fgroup">
+            <div class="glabel">📥 Download <span class="gcount">4 items</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip dl"><span class="fname">IV / PL</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">航线信息</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">货物信息</span><span class="act">↓</span></span>
+              <span class="sc-chip dl"><span class="fname">投保资料</span><span class="act">↓</span></span>
+            </div>
+          </div>
+          <div class="sc-fgroup">
+            <div class="glabel">📤 Upload <span class="gcount">1 / 4 done</span></div>
+            <div class="sc-fgrid">
+              <span class="sc-chip done"><span class="fname">保单</span><span class="act">✓</span></span>
+              <span class="sc-chip pending"><span class="fname">批单</span><span class="act">opt</span></span>
+              <span class="sc-chip pending"><span class="fname">理赔资料</span><span class="act">⏳</span></span>
+              <span class="sc-chip pending"><span class="fname">异常说明</span><span class="act">opt</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="sc-cta-row">
+          <div class="status-note">Status · <b>standby</b> · no action unless claim filed</div>
+          <button class="open-portal gated">→ Deep view (policy detail)</button>
+        </div>
+        <div class="sc-mini-boundary">
+          🔒 <b>Not shown:</b> premium · commission · margin · other supplier info · customer payment. Only insured value (labeled) visible.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ C · two example mock drawers ═══════════════ -->
+  <h2 class="section">C · Mock drawers · what Hero opens <span class="tag">Pre-Contract & Ocean Transit</span></h2>
+
+  <div class="drawer-row">
+
+    <!-- Drawer A · Contract -->
+    <div class="drawer">
+      <div class="drawer-head">
+        <div class="stage">① Pre-Contract</div>
+        <div class="name">Contract & Order Documents</div>
+        <div class="sub">QT-2026-0512-018 · cropped for <b>Sanlyn</b></div>
+      </div>
+      <div class="drawer-tabs">
+        <div class="t active">PI</div>
+        <div class="t">Customer SC</div>
+        <div class="t">Factory PO</div>
+        <div class="t">Signature History</div>
+      </div>
+      <div class="drawer-body">
+        <div class="row"><span class="k">PI No.</span><span class="v">PI-2204-v3</span></div>
+        <div class="row"><span class="k">Issued</span><span class="v">2026-05-08</span></div>
+        <div class="row"><span class="k">Validity</span><span class="v">2026-05-20</span></div>
+        <div class="row"><span class="k">SKUs</span><span class="v">12 items · 1×40HQ</span></div>
+        <div class="row"><span class="k">Incoterm</span><span class="v">CIF Los Angeles</span></div>
+        <div class="row"><span class="k">Customer signed</span><span class="v ok">✓ 2026-05-09</span></div>
+        <div class="row"><span class="k">Sanlyn signed</span><span class="v ok">✓ 2026-05-10</span></div>
+        <div class="row"><span class="k">Factory signed</span><span class="v warn">⏳ awaiting</span></div>
+        <div class="row"><span class="k">Quote / Pricing</span><span class="v muted">Hidden on work surface — Finance only</span></div>
+      </div>
+      <div class="drawer-footer">
+        <span class="lock">🔒 Factory PO unit cost lives in Finance only</span>
+        <button class="btn">→ Send factory reminder</button>
+      </div>
+    </div>
+
+    <!-- Drawer E · Ocean Tracking -->
+    <div class="drawer">
+      <div class="drawer-head">
+        <div class="stage">⑤ Ocean Transit</div>
+        <div class="name">Portun / Ocean Tracking</div>
+        <div class="sub">ORD-2204 · cropped for <b>Customer</b></div>
+      </div>
+      <div class="drawer-tabs">
+        <div class="t active">Route</div>
+        <div class="t">Vessel</div>
+        <div class="t">BL</div>
+        <div class="t">Arrival Notice</div>
+        <div class="t">Exceptions</div>
+        <div class="t">Timeline</div>
+      </div>
+      <div class="drawer-body">
+        <div class="row"><span class="k">POL</span><span class="v">XMN · Xiamen</span></div>
+        <div class="row"><span class="k">POD</span><span class="v">LGB · Long Beach</span></div>
+        <div class="row"><span class="k">Vessel</span><span class="v">COSCO ROSE</span></div>
+        <div class="row"><span class="k">Voyage</span><span class="v">118E</span></div>
+        <div class="row"><span class="k">ETD / ETA</span><span class="v">May 14 / Jun 5</span></div>
+        <div class="row"><span class="k">Transit</span><span class="v">55% · 22d total</span></div>
+        <div class="row"><span class="k">BL</span><span class="v ok">Copy ready · telex pending</span></div>
+        <div class="row"><span class="k">Arrival notice</span><span class="v warn">ETA Jun 5</span></div>
+        <div class="row"><span class="k">Ocean cost / Margin</span><span class="v muted">Not in your scope</span></div>
+      </div>
+      <div class="drawer-footer">
+        <span class="lock">🔒 Forwarder · costs · margin hidden · Finance owns billing</span>
+        <button class="btn">→ Go to Billing</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ C-BL · Bill of Lading Drawer (3 views side-by-side) ═══════════════ -->
+  <h2 class="section">C-BL · Bill of Lading Drawer <span class="tag">§7.4 · BL tab content · 3 role views · the core ocean artifact</span></h2>
+
+  <style>
+  .bl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px}
+  .bl-card{background:#0e131e;border:1px solid rgba(148,163,184,.12);border-radius:12px;overflow:hidden}
+  .bl-card.customer-view{border-color:rgba(244,114,182,.25)}
+  .bl-card.forwarder-view{border-color:rgba(6,182,212,.25)}
+  .bl-card.sanlyn-view{border-color:rgba(167,139,250,.25)}
+  .bl-head{padding:11px 14px;border-bottom:1px solid rgba(148,163,184,.08);background:linear-gradient(180deg,rgba(56,189,248,.05),transparent);display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .bl-head .view-label{font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;padding:3px 7px;border-radius:5px;display:inline-block;margin-bottom:4px}
+  .customer-view .view-label{background:rgba(244,114,182,.12);color:#fbcfe8;border:1px solid rgba(244,114,182,.3)}
+  .forwarder-view .view-label{background:rgba(6,182,212,.12);color:#67e8f9;border:1px solid rgba(6,182,212,.3)}
+  .sanlyn-view .view-label{background:rgba(167,139,250,.12);color:#c4b5fd;border:1px solid rgba(167,139,250,.3)}
+  .bl-head .bl-no{font-family:"SF Mono",monospace;font-size:14px;font-weight:900;color:#f8fafc}
+  .bl-head .lifecycle{font-size:8.5px;font-weight:900;color:#fcd34d;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);padding:2px 6px;border-radius:4px;letter-spacing:.04em;text-transform:uppercase;align-self:flex-start}
+  .bl-head .lifecycle.ok{color:#6ee7b7;background:rgba(16,185,129,.1);border-color:rgba(16,185,129,.3)}
+  .bl-head .lifecycle.blocked{color:#fda4af;background:rgba(244,63,94,.1);border-color:rgba(244,63,94,.3)}
+
+  .bl-section{padding:9px 14px;border-bottom:1px solid rgba(148,163,184,.06)}
+  .bl-section:last-child{border-bottom:none}
+  .bl-sec-title{font-size:9px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .bl-sec-title .icon{font-size:11px}
+  .bl-kv{display:flex;justify-content:space-between;padding:3px 0;font-size:10.5px;gap:8px}
+  .bl-kv .k{color:#64748b;font-weight:700;flex-shrink:0}
+  .bl-kv .v{color:#e2e8f0;font-weight:800;font-family:"SF Mono",monospace;text-align:right;word-break:break-word}
+  .bl-kv .v.ok{color:#6ee7b7}
+  .bl-kv .v.warn{color:#fcd34d}
+  .bl-kv .v.risk{color:#fda4af}
+  .bl-kv .v.muted{color:#64748b;font-style:italic}
+  .bl-kv .v.redacted{color:#475569;font-style:italic;font-size:10px}
+  .bl-kv .v.sanlyn{color:#c4b5fd}
+
+  .bl-parties{padding:10px 14px;background:rgba(15,23,42,.4);border-bottom:1px solid rgba(148,163,184,.06)}
+  .bl-party{margin-bottom:7px}
+  .bl-party:last-child{margin-bottom:0}
+  .bl-party .role{font-size:8.5px;font-weight:900;color:#7dd3fc;letter-spacing:.08em;text-transform:uppercase;margin-bottom:2px}
+  .bl-party .name{font-size:11px;color:#e2e8f0;font-weight:800;line-height:1.3}
+  .bl-party .name.redacted{color:#475569;font-style:italic;font-weight:600;font-size:10px}
+  .bl-party .name .confirmed{color:#6ee7b7;font-size:9px;font-weight:900;margin-left:5px}
+  .bl-party .name .pending{color:#fcd34d;font-size:9px;font-weight:900;margin-left:5px}
+
+  .bl-watermark{padding:11px 14px;background:repeating-linear-gradient(-45deg,rgba(244,114,182,.04),rgba(244,114,182,.04) 10px,transparent 10px,transparent 20px);border-bottom:1px solid rgba(244,114,182,.15);text-align:center;font-size:9.5px;color:#fbcfe8;font-weight:900;letter-spacing:.12em}
+
+  .bl-ai{padding:10px 14px;background:linear-gradient(90deg,rgba(167,139,250,.08),rgba(56,189,248,.04));border-bottom:1px solid rgba(167,139,250,.18);display:flex;gap:8px;align-items:flex-start}
+  .bl-ai.danger{background:linear-gradient(90deg,rgba(244,63,94,.08),rgba(245,158,11,.04));border-bottom-color:rgba(244,63,94,.25)}
+  .bl-ai .ai-i{font-size:14px;flex-shrink:0}
+  .bl-ai .ai-c{flex:1;min-width:0}
+  .bl-ai .ai-t{font-size:10px;font-weight:900;color:#c4b5fd;margin-bottom:2px}
+  .bl-ai.danger .ai-t{color:#fda4af}
+  .bl-ai .ai-m{font-size:10px;color:#cbd5e1;line-height:1.4}
+
+  .bl-cta{padding:10px 14px;background:rgba(15,23,42,.5);display:flex;gap:6px;flex-wrap:wrap;border-top:1px solid rgba(148,163,184,.08)}
+  .bl-btn{font-size:10px;font-weight:800;padding:6px 10px;border-radius:6px;border:1px solid transparent;cursor:pointer;letter-spacing:.02em}
+  .bl-btn.primary{background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;border-color:rgba(124,58,237,.5)}
+  .bl-btn.secondary{background:transparent;border-color:rgba(148,163,184,.3);color:#cbd5e1}
+  .bl-btn.gated{background:#1e293b;color:#475569;cursor:not-allowed}
+  .bl-btn.fin{background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#fff;border-color:rgba(245,158,11,.5)}
+
+  .bl-hidden-note{padding:8px 14px;background:rgba(244,63,94,.04);border-top:1px solid rgba(244,63,94,.18);font-size:9.5px;color:#fda4af;font-weight:700;line-height:1.4}
+  .bl-hidden-note b{color:#fca5a5}
+
+  .container-list{display:flex;flex-direction:column;gap:3px}
+  .container-row{display:flex;justify-content:space-between;font-size:10px;font-family:"SF Mono",monospace;padding:2px 6px;background:rgba(148,163,184,.04);border-radius:3px}
+  .container-row .cno{color:#e2e8f0;font-weight:800}
+  .container-row .sno{color:#94a3b8;font-weight:700}
+  </style>
+
+  <div class="banner" style="background:rgba(167,139,250,.05);border-color:rgba(167,139,250,.2);margin-bottom:14px">
+    <b style="color:#c4b5fd">BL = Bill of Lading = 物权凭证 + 客户放货钥匙 + 争议底单。</b>
+    同一份 BL 文档，3 个角色 3 套视图。客户拿到的永远是脱敏 <code style="background:rgba(15,23,42,.5);padding:1px 4px;border-radius:3px;color:#fbcfe8">COPY 水印版</code>，
+    货代看自己负责的，Sanlyn 看全量（含审计 + 内部 master/house 区分 + AI flags 原文）。
+    <b>BL 上的 freight amount 在所有 work-card surface 渲染时被删除</b>，只 Finance 模块能调取含金额原件。
+  </div>
+
+  <div class="bl-grid">
+
+    <!-- ─────── BL Customer View ─────── -->
+    <div class="bl-card customer-view">
+      <div class="bl-head">
+        <div>
+          <div class="view-label">👤 Customer View</div>
+          <div class="bl-no">BL FX-2204</div>
+        </div>
+        <div class="lifecycle">pending<br>confirm</div>
+      </div>
+
+      <div class="bl-watermark">📄 COPY · QT-…018 · WATERMARKED · NOT NEGOTIABLE</div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">📋</span>Identification</div>
+        <div class="bl-kv"><span class="k">BL No.</span><span class="v">FX-2204</span></div>
+        <div class="bl-kv"><span class="k">Type</span><span class="v">Telex release (pending)</span></div>
+        <div class="bl-kv"><span class="k">Version</span><span class="v">v2 (latest)</span></div>
+        <div class="bl-kv"><span class="k">Shipped on board</span><span class="v">May 14, 2026</span></div>
+        <div class="bl-kv"><span class="k">Master / House</span><span class="v redacted">— not in your scope</span></div>
+      </div>
+
+      <div class="bl-parties">
+        <div class="bl-sec-title"><span class="icon">🏢</span>Parties</div>
+        <div class="bl-party">
+          <div class="role">Shipper</div>
+          <div class="name">Sanlyn Trading Co., Ltd. <span class="confirmed">✓ confirmed</span></div>
+        </div>
+        <div class="bl-party">
+          <div class="role">Consignee</div>
+          <div class="name">PETSOME LLC<br>4521 Wilshire Blvd, Los Angeles, CA <span class="pending">⏳ confirm needed</span></div>
+        </div>
+        <div class="bl-party">
+          <div class="role">Notify Party</div>
+          <div class="name muted">Same as consignee</div>
+        </div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">🚢</span>Routing</div>
+        <div class="bl-kv"><span class="k">POL</span><span class="v">XMN · Xiamen</span></div>
+        <div class="bl-kv"><span class="k">POD</span><span class="v">LGB · Long Beach</span></div>
+        <div class="bl-kv"><span class="k">Vessel / Voyage</span><span class="v">COSCO ROSE / 118E</span></div>
+        <div class="bl-kv"><span class="k">Freight terms</span><span class="v">CY/CY</span></div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">📦</span>Cargo</div>
+        <div class="bl-kv"><span class="k">Packages</span><span class="v">2,200 CTN · 1×40HQ</span></div>
+        <div class="bl-kv"><span class="k">NW / GW / CBM</span><span class="v">21.2t / 22.4t / 65 m³</span></div>
+        <div class="bl-kv"><span class="k">Description</span><span class="v" style="font-size:10px">Pet food — assorted</span></div>
+        <div class="bl-kv"><span class="k">Container · Seal</span><span class="v">CCLU 7234561 · SL 88231</span></div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">🔓</span>Release</div>
+        <div class="bl-kv"><span class="k">Release status</span><span class="v warn">Blocked · Balance pending</span></div>
+        <div class="bl-kv"><span class="k">Surrender method</span><span class="v">Telex (requested)</span></div>
+        <div class="bl-kv"><span class="k">Original mailing</span><span class="v muted">N/A (telex)</span></div>
+      </div>
+
+      <div class="bl-ai">
+        <div class="ai-i">🤖</div>
+        <div class="ai-c">
+          <div class="ai-t">Smart Documents · BL ready for your confirmation</div>
+          <div class="ai-m">Please confirm consignee + notify info. Balance status shown in Billing — amount is not on this card.</div>
+        </div>
+      </div>
+
+      <div class="bl-cta">
+        <button class="bl-btn primary">Confirm consignee</button>
+        <button class="bl-btn secondary">Download COPY ↓</button>
+        <button class="bl-btn fin">Go to Billing</button>
+      </div>
+
+      <div class="bl-hidden-note">
+        🔒 <b>Hidden from your view:</b> shipper raw legal name · master/house BL · forwarder internal account · freight amount · AI flag raw text · other parties' addresses.
+      </div>
+    </div>
+
+    <!-- ─────── BL Forwarder View ─────── -->
+    <div class="bl-card forwarder-view">
+      <div class="bl-head">
+        <div>
+          <div class="view-label">🚢 Forwarder View</div>
+          <div class="bl-no">BL FX-2204</div>
+        </div>
+        <div class="lifecycle">draft<br>flagged</div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">📋</span>Identification</div>
+        <div class="bl-kv"><span class="k">BL No.</span><span class="v">FX-2204</span></div>
+        <div class="bl-kv"><span class="k">Type</span><span class="v">House BL (Master: COSCO-XMU2204)</span></div>
+        <div class="bl-kv"><span class="k">Version</span><span class="v">v2 (you uploaded May 12)</span></div>
+        <div class="bl-kv"><span class="k">Shipped on board</span><span class="v">May 14, 2026</span></div>
+        <div class="bl-kv"><span class="k">Originals issued</span><span class="v">3 / 3</span></div>
+        <div class="bl-kv"><span class="k">Originals surrendered</span><span class="v warn">0 / 3</span></div>
+      </div>
+
+      <div class="bl-parties">
+        <div class="bl-sec-title"><span class="icon">🏢</span>Parties</div>
+        <div class="bl-party">
+          <div class="role">Shipper</div>
+          <div class="name">Sanlyn Trading Co., Ltd. (Xiamen)<br><span style="font-size:9.5px;color:#94a3b8;font-weight:600">your booking ref · need for filing</span></div>
+        </div>
+        <div class="bl-party">
+          <div class="role">Consignee</div>
+          <div class="name warn">PETSOME LLC<br>4521 Wilshire Blvd, Los Angeles, CA <span class="pending">⚠ AI flag · check below</span></div>
+        </div>
+        <div class="bl-party">
+          <div class="role">Notify Party</div>
+          <div class="name muted">Same as consignee</div>
+        </div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">🚢</span>Routing · Cargo</div>
+        <div class="bl-kv"><span class="k">POL / POD</span><span class="v">XMN → LGB</span></div>
+        <div class="bl-kv"><span class="k">Vessel / Voyage</span><span class="v">COSCO ROSE / 118E</span></div>
+        <div class="bl-kv"><span class="k">Cut-off (passed)</span><span class="v ok">May 07 ✓</span></div>
+        <div class="bl-kv"><span class="k">Container · Seal</span><span class="v">CCLU 7234561 · SL 88231</span></div>
+        <div class="bl-kv"><span class="k">Description (HS)</span><span class="v">Pet food · 23091000</span></div>
+        <div class="bl-kv"><span class="k">NW / GW / CBM</span><span class="v">21.2t / 22.4t / 65 m³</span></div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">🔓</span>Release flow</div>
+        <div class="bl-kv"><span class="k">Telex status</span><span class="v warn">Agreement pending Sanlyn upload</span></div>
+        <div class="bl-kv"><span class="k">Surrender method</span><span class="v">Telex (intended)</span></div>
+        <div class="bl-kv"><span class="k">Mail tracking</span><span class="v muted">N/A (telex)</span></div>
+        <div class="bl-kv"><span class="k">Visual Check</span><span class="v warn">2 flags · see AI</span></div>
+      </div>
+
+      <div class="bl-ai danger">
+        <div class="ai-i">🤖</div>
+        <div class="ai-c">
+          <div class="ai-t">Smart Documents · BL draft check (raw flags)</div>
+          <div class="ai-m">
+            <b style="color:#fcd34d">⚠ Consignee field appears blank on draft v1</b> — fixed in v2 but flag persists until Sanlyn approves.<br>
+            <b style="color:#fcd34d">⚠ Notify party blank</b> — confirm with customer or set "same as consignee".<br>
+            <b style="color:#6ee7b7">✓ Stamp + signature detected.</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="bl-cta">
+        <button class="bl-btn primary">Replace BL ↻</button>
+        <button class="bl-btn secondary">Upload telex agreement</button>
+        <button class="bl-btn secondary">View change history</button>
+      </div>
+
+      <div class="bl-hidden-note">
+        🔒 <b>Hidden from your view:</b> customer full company alias / ratings · customer pricing · Sanlyn margin · other forwarders' competing BLs · customer internal billing state · raw freight amount (per §3).
+      </div>
+    </div>
+
+    <!-- ─────── BL Sanlyn (Internal) View ─────── -->
+    <div class="bl-card sanlyn-view">
+      <div class="bl-head">
+        <div>
+          <div class="view-label">🤝 Sanlyn S(ops) View</div>
+          <div class="bl-no">BL FX-2204</div>
+        </div>
+        <div class="lifecycle blocked">release<br>blocked</div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">📋</span>Identification</div>
+        <div class="bl-kv"><span class="k">BL No.</span><span class="v">FX-2204</span></div>
+        <div class="bl-kv"><span class="k">Type · M/H</span><span class="v sanlyn">House (FX-2204) / Master (COSCO-XMU2204)</span></div>
+        <div class="bl-kv"><span class="k">Version</span><span class="v">v2 · uploaded by Ray (Forwarder) · May 12 14:22</span></div>
+        <div class="bl-kv"><span class="k">Lifecycle</span><span class="v warn">issued → release_blocked (since May 13)</span></div>
+        <div class="bl-kv"><span class="k">Last changed by</span><span class="v sanlyn">Ray @ Forwarder · reason: consignee correction</span></div>
+      </div>
+
+      <div class="bl-parties">
+        <div class="bl-sec-title"><span class="icon">🏢</span>Parties (full)</div>
+        <div class="bl-party">
+          <div class="role">Shipper</div>
+          <div class="name">Sanlyn Trading Co., Ltd. (Xiamen, China)<br>厦门三联科技有限公司</div>
+        </div>
+        <div class="bl-party">
+          <div class="role">Consignee · confirmed by customer</div>
+          <div class="name">PETSOME LLC<br>4521 Wilshire Blvd, Los Angeles, CA 90010, USA <span class="pending">⏳ awaiting C confirm</span></div>
+        </div>
+        <div class="bl-party">
+          <div class="role">Notify Party</div>
+          <div class="name muted">Same as consignee (default)</div>
+        </div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">🚢</span>Routing · Cargo · Containers</div>
+        <div class="bl-kv"><span class="k">POL / POD / POR / POD'</span><span class="v">XMN → LGB · receipt: XMN · delivery: LGB</span></div>
+        <div class="bl-kv"><span class="k">Vessel / Voyage</span><span class="v">COSCO ROSE / 118E · ETD May 14 · ETA Jun 05</span></div>
+        <div class="bl-kv"><span class="k">Freight terms</span><span class="v">CY/CY · prepaid</span></div>
+        <div class="bl-kv"><span class="k">Description</span><span class="v">Pet food · 23091000 · 2,200 CTN</span></div>
+        <div class="bl-kv"><span class="k">NW / GW / CBM</span><span class="v">21.2t / 22.4t / 65 m³</span></div>
+        <div style="margin-top:6px"><div class="container-list">
+          <div class="container-row"><span class="cno">CCLU 7234561</span><span class="sno">seal SL 88231</span></div>
+        </div></div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">🔓</span>Release flow (full audit)</div>
+        <div class="bl-kv"><span class="k">Release status</span><span class="v risk">Blocked</span></div>
+        <div class="bl-kv"><span class="k">Block reason</span><span class="v warn">Balance pending (AR open)</span></div>
+        <div class="bl-kv"><span class="k">Originals issued / surrendered</span><span class="v">3 / 0</span></div>
+        <div class="bl-kv"><span class="k">Telex status</span><span class="v warn">Requested by customer · agreement pending</span></div>
+        <div class="bl-kv"><span class="k">Mail tracking</span><span class="v muted">N/A (telex intended)</span></div>
+        <div class="bl-kv"><span class="k">Surrender method</span><span class="v">Telex</span></div>
+        <div class="bl-kv"><span class="k">Customer confirmation</span><span class="v warn">Pending consignee confirm (sent May 13)</span></div>
+      </div>
+
+      <div class="bl-section">
+        <div class="bl-sec-title"><span class="icon">💰</span>Finance (label-only on this card)</div>
+        <div class="bl-kv"><span class="k">AR status</span><span class="v warn">Balance pending</span></div>
+        <div class="bl-kv"><span class="k">Freight amount</span><span class="v redacted">→ View in Finance (not on work card)</span></div>
+      </div>
+
+      <div class="bl-ai">
+        <div class="ai-i">🤖</div>
+        <div class="ai-c">
+          <div class="ai-t">Smart Documents · BL release blocked — 2 unblockers needed</div>
+          <div class="ai-m">
+            (1) Customer balance payment → handled in Finance · (2) Customer consignee confirmation → Smart Customer Update prompt already sent May 13.<br>
+            Forwarder BL draft passed Visual Check after v2 replacement. Audit log: 3 entries since May 12.
+          </div>
+        </div>
+      </div>
+
+      <div class="bl-cta">
+        <button class="bl-btn primary">Approve telex release</button>
+        <button class="bl-btn secondary">Push customer (consignee)</button>
+        <button class="bl-btn fin">Open Finance</button>
+        <button class="bl-btn secondary">View audit log</button>
+      </div>
+
+      <div class="bl-hidden-note" style="background:rgba(167,139,250,.04);border-top-color:rgba(167,139,250,.18);color:#c4b5fd">
+        🔓 <b>S(ops) sees:</b> full parties · master/house · audit log · finance status label · forwarder + customer linked actions. <b>S(ops) does NOT see:</b> raw freight amount (only `S(finance)` + `S(admin)` see in Finance module).
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ D · fix log ═══════════════ -->
+  <h2 class="section">D · Fix log · v1 → v2 finance redaction <span class="tag">all amount leaks scrubbed</span></h2>
+  <div class="fixlog">
+    <table>
+      <thead><tr><th>Where</th><th>Before (v1)</th><th>After (v2)</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td class="where">A.① cargo</td><td class="from">$2,420/HQ</td><td class="to">(removed)</td><td>Quote price = Finance</td></tr>
+        <tr><td class="where">A.⑤ next-text</td><td class="from">Bill of lading → balance + telex release</td><td class="to">BL ready · payment status in Finance</td><td>No $ in CTA text</td></tr>
+        <tr><td class="where">B.1 Sanlyn top-strip</td><td class="from">margin +$240/HQ</td><td class="to">BL ✓ · AN pending</td><td>Margin = Finance</td></tr>
+        <tr><td class="where">B.1 Sanlyn cargo</td><td class="from">$4,840</td><td class="to">(removed)</td><td>Receivable = Finance</td></tr>
+        <tr><td class="where">B.2 Customer cargo</td><td class="from">$4,840</td><td class="to">(removed)</td><td>Customer balance = Billing</td></tr>
+        <tr><td class="where">B.2 Customer next-btn</td><td class="from">Pay $4,840</td><td class="to">Go to Billing</td><td>Button must not embed $</td></tr>
+        <tr><td class="where">B.2 Customer strip</td><td class="from">balance due May 25</td><td class="to">arrival notice ETA Jun 5</td><td>Due-amount language belongs to Finance</td></tr>
+        <tr><td class="where">B.3 Factory strip</td><td class="from">payment 70% received</td><td class="to">production closed</td><td>% received = Finance</td></tr>
+        <tr><td class="where">B.4 Customs cargo</td><td class="from">申报金额 $36,800</td><td class="to">declared value $36,800 (labeled)</td><td>Business-required amount, explicitly labeled</td></tr>
+        <tr><td class="where">B.5 Driver hero text</td><td class="from">Trip closed · ¥1,200 to be paid</td><td class="to">Trip closed · settlement pending</td><td>Driver fee = Finance</td></tr>
+        <tr><td class="where">B.7 Trading Co cargo</td><td class="from">Total $36,800</td><td class="to">40HQ×1 · 2,200 CTN · NW 21.2t</td><td>Invoice amount = Finance</td></tr>
+        <tr><td class="where">B.8 Insurance cargo</td><td class="from">Cover $40,480 · deductible $250</td><td class="to">insured value $40,480 (labeled) · ICC(A)</td><td>Insured value OK with label; deductible = Finance</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ═══════════════ F · Supply Chain Role Task Portals ═══════════════ -->
+  <h2 class="section">F · Supply Chain Role Task Portals <span class="tag">§15 · upload-first · no 6-stage strip · no money</span></h2>
+
+  <style>
+  /* Portal styles — radical simplicity, upload-first */
+  .portal{background:#0e131e;border:1px solid rgba(148,163,184,.12);border-radius:14px;overflow:hidden;margin-bottom:18px}
+  .portal-head{padding:14px 18px;border-bottom:1px solid rgba(148,163,184,.08);background:linear-gradient(180deg,rgba(56,189,248,.05),transparent);display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+  .portal-head .left{flex:1;min-width:260px}
+  .portal-head .badge{font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:5px;display:inline-block;margin-bottom:6px}
+  .portal-head .badge.customs{background:rgba(56,189,248,.12);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)}
+  .portal-head .badge.trucking{background:rgba(245,158,11,.12);color:#fcd34d;border:1px solid rgba(245,158,11,.3)}
+  .portal-head .badge.forwarder{background:rgba(6,182,212,.12);color:#67e8f9;border:1px solid rgba(6,182,212,.3)}
+  .portal-head .badge.insurance{background:rgba(168,85,247,.12);color:#d8b4fe;border:1px solid rgba(168,85,247,.3)}
+  .portal-head .title{font-size:16px;font-weight:900;color:#f8fafc;margin-bottom:3px}
+  .portal-head .sub{font-size:11px;color:#94a3b8;font-family:"SF Mono",monospace}
+  .portal-head .right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;font-size:10px;color:#94a3b8}
+  .portal-head .right .due{color:#fcd34d;font-weight:900;font-family:"SF Mono",monospace}
+  .portal-head .right .coord{display:inline-flex;gap:4px;background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.15);padding:2px 7px;border-radius:5px;font-weight:700;color:#cbd5e1}
+
+  /* simple progress per §15.11 — replaces 6-stage strip */
+  .portal-progress{display:flex;align-items:flex-start;gap:0;padding:14px 18px;background:rgba(15,23,42,.4);border-bottom:1px solid rgba(148,163,184,.06)}
+  .portal-progress .pnode{flex:1;display:flex;flex-direction:column;align-items:center;position:relative;min-width:0}
+  .portal-progress .pnode .pball{width:14px;height:14px;border-radius:50%;background:#1e293b;border:2px solid #334155;margin-bottom:6px;z-index:2;position:relative}
+  .portal-progress .pnode.done .pball{background:#22c55e;border-color:#22c55e}
+  .portal-progress .pnode.now .pball{background:#38bdf8;border-color:#38bdf8;box-shadow:0 0 0 5px rgba(56,189,248,.18);animation:pulse 1.6s infinite}
+  .portal-progress .pnode:not(:last-child)::after{content:"";position:absolute;top:7px;left:60%;right:-40%;height:2px;background:#1e293b;z-index:1}
+  .portal-progress .pnode.done:not(:last-child)::after{background:#22c55e}
+  .portal-progress .pnode .plbl{font-size:10px;font-weight:800;color:#64748b;letter-spacing:.02em;text-align:center;line-height:1.3}
+  .portal-progress .pnode.done .plbl{color:#86efac}
+  .portal-progress .pnode.now .plbl{color:#7dd3fc}
+
+  /* file zones */
+  .zone{padding:14px 18px;border-bottom:1px solid rgba(148,163,184,.06)}
+  .zone-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .zone-head .zlbl{font-size:11px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:8px}
+  .zone-head .zlbl .ico{font-size:14px}
+  .zone-head .count{font-size:10px;font-weight:800;color:#cbd5e1;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.18);padding:2px 7px;border-radius:5px;letter-spacing:.04em}
+  .zone.upload{background:linear-gradient(180deg,rgba(56,189,248,.04),transparent)}
+  .zone.upload .zlbl{color:#7dd3fc}
+
+  /* file row */
+  .frow{display:grid;grid-template-columns:24px 1.4fr 80px 90px 120px 90px;gap:10px;padding:9px 8px;border-radius:7px;align-items:center;font-size:11px;border:1px solid transparent;margin-bottom:4px}
+  .frow:hover{background:rgba(148,163,184,.04);border-color:rgba(148,163,184,.08)}
+  .frow .ftype{font-size:14px;text-align:center;color:#94a3b8}
+  .frow .fname{font-weight:800;color:#e2e8f0;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .frow .fname .name{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .frow .fname .meta{font-size:9.5px;color:#64748b;font-family:"SF Mono",monospace;font-weight:600}
+  .frow .freq{font-size:9px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;text-align:center}
+  .frow .freq.req{color:#fda4af;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.25);padding:2px 5px;border-radius:4px}
+  .frow .freq.opt{color:#94a3b8;background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.15);padding:2px 5px;border-radius:4px}
+  .frow .fdue{font-size:9.5px;color:#fbbf24;font-weight:800;font-family:"SF Mono",monospace;text-align:center}
+  .frow .fdue.ok{color:#6ee7b7}
+  .frow .fdue.gone{color:#94a3b8}
+  .frow .fstatus{font-size:9.5px;font-weight:800;letter-spacing:.02em;text-align:center;padding:3px 7px;border-radius:5px;white-space:nowrap}
+  .fs-missing{color:#fda4af;background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.3)}
+  .fs-pending{color:#94a3b8;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.2)}
+  .fs-uploaded{color:#7dd3fc;background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.3)}
+  .fs-checking{color:#c4b5fd;background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.3)}
+  .fs-issue{color:#fcd34d;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35)}
+  .fs-review{color:#c4b5fd;background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.3)}
+  .fs-approved{color:#6ee7b7;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3)}
+  .fs-rejected{color:#fda4af;background:rgba(244,63,94,.12);border:1px solid rgba(244,63,94,.35)}
+  .frow .faction{font-size:10px;font-weight:900;color:#7dd3fc;text-align:right;cursor:pointer;letter-spacing:.04em;white-space:nowrap}
+  .frow .faction.upload{color:#7dd3fc}
+  .frow .faction.replace{color:#fcd34d}
+  .frow .faction.view{color:#94a3b8}
+  .frow .faction:hover{text-decoration:underline}
+
+  /* upload drop hint */
+  .upload-tip{margin-top:8px;padding:9px 12px;background:rgba(56,189,248,.06);border:1px dashed rgba(56,189,248,.3);border-radius:8px;font-size:10.5px;color:#7dd3fc;font-weight:700;display:flex;align-items:center;gap:8px}
+  .upload-tip .dropicon{font-size:14px}
+
+  /* AI block */
+  .ai-block{padding:12px 18px;border-bottom:1px solid rgba(148,163,184,.06);background:linear-gradient(90deg,rgba(167,139,250,.08),rgba(56,189,248,.04));display:flex;align-items:flex-start;gap:10px}
+  .ai-block .ai-ic{font-size:18px}
+  .ai-block .ai-c{flex:1;min-width:0}
+  .ai-block .ai-h{font-size:11px;font-weight:900;color:#c4b5fd;letter-spacing:.04em;margin-bottom:3px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .ai-block .ai-h .ai-kind{font-size:9px;font-weight:900;color:#94a3b8;background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.22);padding:1px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:.06em}
+  .ai-block .ai-h .ai-conf{font-size:9px;color:#64748b;font-weight:700}
+  .ai-block .ai-list{margin:6px 0 0 0;padding-left:18px;font-size:10.5px;color:#cbd5e1;line-height:1.6}
+  .ai-block .ai-list li{margin-bottom:2px}
+  .ai-block .ai-list li.bad::before{content:"⚠ ";color:#fcd34d}
+  .ai-block .ai-list li.ok::before{content:"✓ ";color:#6ee7b7}
+  .ai-block .ai-list li.miss::before{content:"✗ ";color:#fda4af}
+  .ai-foot{padding:10px 18px;border-bottom:1px solid rgba(148,163,184,.06);background:rgba(15,23,42,.4);font-size:9.5px;color:#64748b;font-weight:700;display:flex;align-items:center;gap:8px}
+  .ai-foot b{color:#94a3b8}
+
+  /* CTA bar */
+  .portal-cta{padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;background:rgba(15,23,42,.5)}
+  .portal-cta .lhs{font-size:11px;color:#94a3b8;font-weight:700;display:flex;align-items:center;gap:6px}
+  .portal-cta .lhs b{color:#cbd5e1}
+  .portal-cta .btns{display:flex;gap:8px}
+  .pbtn{padding:8px 16px;font-size:11.5px;font-weight:900;border-radius:7px;border:1px solid transparent;cursor:pointer;letter-spacing:.02em}
+  .pbtn-primary{background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;border-color:rgba(124,58,237,.5);box-shadow:0 2px 8px rgba(124,58,237,.25)}
+  .pbtn-primary.gated{background:#1e293b;color:#475569;box-shadow:none;cursor:not-allowed;border-color:rgba(148,163,184,.15)}
+  .pbtn-secondary{background:transparent;border-color:rgba(148,163,184,.3);color:#cbd5e1}
+  .pbtn-secondary:hover{border-color:rgba(56,189,248,.5);color:#7dd3fc}
+
+  /* boundary note */
+  .boundary{padding:10px 18px;background:rgba(244,63,94,.04);border-top:1px solid rgba(244,63,94,.18);font-size:10px;color:#fda4af;font-weight:700;display:flex;align-items:center;gap:8px}
+  .boundary b{color:#fca5a5}
+  </style>
+
+  <div class="banner" style="margin-bottom:18px;background:rgba(167,139,250,.05);border-color:rgba(167,139,250,.2)">
+    <b style="color:#c4b5fd">Supply-chain Role Task Portal · §15.2 universal shell.</b>
+    Different from Sanlyn/Customer cards: <b>no 6-stage workflow strip</b> (uses §15.11 role-specific simple progress), <b>no finance amount</b>,
+    <b>no other-role information</b>. Just: task summary → files to view → files to upload → AI check → submit.
+    The portal opens when a supply-chain role clicks the Hero from their side (§15.10 hero-click routing).
+  </div>
+
+  <!-- ─────── F-1 · Customs Broker Portal ─────── -->
+  <div class="portal">
+    <div class="portal-head">
+      <div class="left">
+        <div class="badge customs">📜 Customs Broker · Task Portal</div>
+        <div class="title">Declaration filing · 1×40HQ</div>
+        <div class="sub">C-12-HM · HS 23091000 · NW 21.2t · 2,200 CTN</div>
+      </div>
+      <div class="right">
+        <div>Docs due <span class="due">May 07 16:00</span></div>
+        <div class="coord"><span style="color:#64748b;font-size:9px;font-weight:900;letter-spacing:.06em">SANLYN COORD</span> Sun</div>
+      </div>
+    </div>
+
+    <div class="portal-progress">
+      <div class="pnode done"><div class="pball"></div><div class="plbl">Docs ready</div></div>
+      <div class="pnode now"><div class="pball"></div><div class="plbl">Declaration</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">Release</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">Uploaded</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">Approved</div></div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-head">
+        <div class="zlbl"><span class="ico">📥</span>Download / View</div>
+        <div class="count">7 files</div>
+      </div>
+      <div class="frow"><div class="ftype">📄</div><div class="fname"><span class="name">Packing List (PL)</span><span class="meta">v3 · 2026-05-06 · by Factory</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📄</div><div class="fname"><span class="name">Commercial Invoice (IV)</span><span class="meta">v2 · 2026-05-06 · by Trading Co</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📄</div><div class="fname"><span class="name">Sales Contract (SC)</span><span class="meta">SC-218 · for filing reference</span></div><div class="freq opt">OPT</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Uploaded</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">HS / Declaration Elements</span><span class="meta">23091000 · pet food</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">Product master docs</span><span class="meta">8 SKU spec sheets</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">🛡</div><div class="fname"><span class="name">Inspection Report</span><span class="meta">pending factory upload</span></div><div class="freq req">REQ</div><div class="fdue">due May 07</div><div class="fstatus fs-missing">Missing</div><div class="faction">Notify ↗</div></div>
+      <div class="frow"><div class="ftype">📜</div><div class="fname"><span class="name">FE Certificate</span><span class="meta">not required for this HS</span></div><div class="freq opt">OPT</div><div class="fdue gone">—</div><div class="fstatus fs-pending">N/A</div><div class="faction view">—</div></div>
+    </div>
+
+    <div class="zone upload">
+      <div class="zone-head">
+        <div class="zlbl"><span class="ico">📤</span>Upload Required <span style="color:#fcd34d;font-size:9px;margin-left:8px">3 of 6 done</span></div>
+        <div class="count">6 files</div>
+      </div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">Customs Declaration</span><span class="meta">draft from Smart Customs</span></div><div class="freq req">REQ</div><div class="fdue">May 07</div><div class="fstatus fs-uploaded">Uploaded</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">Release slip 1 / 放行单 1</span><span class="meta">customs-released copy</span></div><div class="freq req">REQ</div><div class="fdue">May 08</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">Release slip 2 / 放行单 2</span><span class="meta">terminal release</span></div><div class="freq req">REQ</div><div class="fdue">May 08</div><div class="fstatus fs-checking">AI checking</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">Release slip 3 / 放行单 3</span><span class="meta">final release confirmation</span></div><div class="freq req">REQ</div><div class="fdue">May 08</div><div class="fstatus fs-missing">Missing</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">退税回执 / Tax Refund Receipt</span><span class="meta">post-shipment, if applicable</span></div><div class="freq opt">OPT</div><div class="fdue gone">later</div><div class="fstatus fs-pending">Pending</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">⚠</div><div class="fname"><span class="name">Exception note</span><span class="meta">any anomaly description</span></div><div class="freq opt">OPT</div><div class="fdue gone">—</div><div class="fstatus fs-pending">Pending</div><div class="faction upload">Upload ↑</div></div>
+
+      <div class="upload-tip">
+        <span class="dropicon">⤓</span>
+        <span>Drop files here, or click <b>Upload ↑</b> on a missing row. PDF / JPG / PNG, max 10MB each. AI Visual Check runs automatically after upload.</span>
+      </div>
+    </div>
+
+    <div class="ai-block">
+      <div class="ai-ic">🤖</div>
+      <div class="ai-c">
+        <div class="ai-h"><span class="ai-kind">Smart Customs + Visual Check</span>2 issues detected on uploaded files<span class="ai-conf">confidence: medium</span></div>
+        <ul class="ai-list">
+          <li class="bad">Release slip 2 — NW on doc (21.0t) does not match system (21.2t). Verify before approving.</li>
+          <li class="miss">Release slip 3 missing — required before declaration can close.</li>
+          <li class="ok">PL / IV / Declaration: HS Code, container_no, seal_no all consistent.</li>
+          <li class="ok">Visual Check: stamps and signatures detected on all uploaded slips.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ai-foot">
+      🛡 <b>AI Visual Check boundary:</b> flags suspicious visual issues only — does not certify legal validity. Final declaration submission requires authorized human (§13.8 / §15.13).
+    </div>
+
+    <div class="portal-cta">
+      <div class="lhs">Status · <b>Waiting on release slip 3</b> · then ready for Sanlyn review</div>
+      <div class="btns">
+        <button class="pbtn pbtn-secondary">Re-upload slip 2</button>
+        <button class="pbtn pbtn-primary gated">Submit for Sanlyn review</button>
+      </div>
+    </div>
+
+    <div class="boundary">
+      🔒 <b>Hidden from this portal:</b> customer identity · customer pricing · trucking fees · ocean margin · other supplier info · Sanlyn AR/AP. Finance routes via <code style="background:rgba(15,23,42,.5);padding:1px 4px;border-radius:3px;color:#fcd34d">Go to Finance</code> only — never inline amounts.
+    </div>
+  </div>
+
+  <!-- ─────── F-2 · Trucking / Driver Portal ─────── -->
+  <div class="portal">
+    <div class="portal-head">
+      <div class="left">
+        <div class="badge trucking">🚛 Trucking / Driver · Task Portal</div>
+        <div class="title">Pickup & gate-in · 1×40HQ</div>
+        <div class="sub">TRK-0091 · plate 闽D-12345 · driver 张师傅 · loading window today 09:00–12:00</div>
+      </div>
+      <div class="right">
+        <div>Gate-in by <span class="due">May 06 18:00</span></div>
+        <div class="coord"><span style="color:#64748b;font-size:9px;font-weight:900;letter-spacing:.06em">SANLYN COORD</span> Kai</div>
+      </div>
+    </div>
+
+    <div class="portal-progress">
+      <div class="pnode done"><div class="pball"></div><div class="plbl">Assigned</div></div>
+      <div class="pnode done"><div class="pball"></div><div class="plbl">Pickup</div></div>
+      <div class="pnode now"><div class="pball"></div><div class="plbl">Loading</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">Gate-in</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">POD</div></div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-head">
+        <div class="zlbl"><span class="ico">📥</span>Download / View</div>
+        <div class="count">5 items</div>
+      </div>
+      <div class="frow"><div class="ftype">📍</div><div class="fname"><span class="name">Loading address (coded)</span><span class="meta">F-218 · 厦门工厂区 12 号</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Available</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">⚓</div><div class="fname"><span class="name">Port / Yard</span><span class="meta">XMN · Terminal 3 · gate B</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Available</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">SO (Shipping Order)</span><span class="meta">SO-44781 · 40HQ × 1</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Available</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">Container task</span><span class="meta">type 40HQ · seal pending · empty pickup TBC</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Available</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">⏰</div><div class="fname"><span class="name">Loading window</span><span class="meta">May 06 09:00–12:00</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Available</div><div class="faction view">View ↗</div></div>
+    </div>
+
+    <div class="zone upload">
+      <div class="zone-head">
+        <div class="zlbl"><span class="ico">📤</span>Upload Required <span style="color:#fcd34d;font-size:9px;margin-left:8px">5 of 9 done</span></div>
+        <div class="count">9 photos</div>
+      </div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">Empty container photo</span><span class="meta">before loading</span></div><div class="freq req">REQ</div><div class="fdue ok">done</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">Arrival at factory photo</span><span class="meta">truck + factory gate</span></div><div class="freq req">REQ</div><div class="fdue ok">done</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">Loading in progress</span><span class="meta">mid-load shot</span></div><div class="freq req">REQ</div><div class="fdue">today</div><div class="fstatus fs-uploaded">Uploaded</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">Full container photo</span><span class="meta">after loading complete</span></div><div class="freq req">REQ</div><div class="fdue">today</div><div class="fstatus fs-uploaded">Uploaded</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">Seal close-up</span><span class="meta">seal number readable</span></div><div class="freq req">REQ</div><div class="fdue">today</div><div class="fstatus fs-missing">Missing</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">Plate close-up</span><span class="meta">license plate readable</span></div><div class="freq req">REQ</div><div class="fdue">today</div><div class="fstatus fs-missing">Missing</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">Gate-in proof</span><span class="meta">terminal entry receipt</span></div><div class="freq req">REQ</div><div class="fdue">May 06 18:00</div><div class="fstatus fs-pending">Pending</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">POD / handoff photo</span><span class="meta">closes trip</span></div><div class="freq req">REQ</div><div class="fdue">after gate-in</div><div class="fstatus fs-pending">Pending</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">📷</div><div class="fname"><span class="name">Exception photo</span><span class="meta">damage / delay / anomaly</span></div><div class="freq opt">OPT</div><div class="fdue gone">if any</div><div class="fstatus fs-pending">Pending</div><div class="faction upload">Upload ↑</div></div>
+
+      <div class="upload-tip">
+        <span class="dropicon">📷</span>
+        <span>Take photos directly from phone, or drop files here. <b>Seal + plate + POD</b> are the most-disputed photos — upload before gate-in.</span>
+      </div>
+    </div>
+
+    <div class="ai-block">
+      <div class="ai-ic">🤖</div>
+      <div class="ai-c">
+        <div class="ai-h"><span class="ai-kind">Smart Trucking + Evidence Check</span>2 missing photos block trip closure<span class="ai-conf">confidence: high</span></div>
+        <ul class="ai-list">
+          <li class="miss">Seal close-up missing — required before gate-in to avoid handoff dispute.</li>
+          <li class="miss">Plate close-up missing — required for terminal entry record.</li>
+          <li class="ok">Empty / arrival / loading / full photos all uploaded and visually clear.</li>
+          <li class="ok">Container number on photos matches task: CCLU 7234561.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ai-foot">
+      🛡 <b>AI Visual Check:</b> photos auto-screened for blur, wrong-task uploads, and missing seal/plate visibility. Final acceptance is a human gate.
+    </div>
+
+    <div class="portal-cta">
+      <div class="lhs">Status · <b>Waiting on seal + plate photos</b> · then proceed to gate-in</div>
+      <div class="btns">
+        <button class="pbtn pbtn-secondary">Save draft</button>
+        <button class="pbtn pbtn-primary">Upload remaining 2 photos</button>
+      </div>
+    </div>
+
+    <div class="boundary">
+      🔒 <b>Hidden from this portal:</b> customer name · customer payment · trucking fee · ocean cost · Sanlyn margin · customs declared value (not needed for this task) · other supply-chain info.
+    </div>
+  </div>
+
+  <!-- ─────── F-3 · Forwarder Portal (compact) ─────── -->
+  <div class="portal">
+    <div class="portal-head">
+      <div class="left">
+        <div class="badge forwarder">🚢 Forwarder · Task Portal</div>
+        <div class="title">Booking → BL → Arrival Notice · 40HQ × 1</div>
+        <div class="sub">BL FX-2204 · COSCO ROSE 118E · XMN → LGB · cut-off May 07</div>
+      </div>
+      <div class="right">
+        <div>AN due <span class="due">Jun 02 (T-3)</span></div>
+        <div class="coord"><span style="color:#64748b;font-size:9px;font-weight:900;letter-spacing:.06em">SANLYN COORD</span> Ray</div>
+      </div>
+    </div>
+
+    <div class="portal-progress">
+      <div class="pnode done"><div class="pball"></div><div class="plbl">Booking</div></div>
+      <div class="pnode done"><div class="pball"></div><div class="plbl">SO</div></div>
+      <div class="pnode now"><div class="pball"></div><div class="plbl">BL</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">AN</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">Done</div></div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-head"><div class="zlbl"><span class="ico">📥</span>Download / View</div><div class="count">5 files</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">Booking instruction</span><span class="meta">from Sanlyn</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">SI (Shipping Instruction)</span><span class="meta">v2 · 2026-05-04</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📄</div><div class="fname"><span class="name">PL / IV (for shipper docs)</span><span class="meta">per shipper permission</span></div><div class="freq opt">OPT</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Uploaded</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">Non-dangerous declaration</span><span class="meta">pet food category</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">Telex release agreement</span><span class="meta">template draft</span></div><div class="freq opt">OPT</div><div class="fdue gone">at BL</div><div class="fstatus fs-pending">Pending</div><div class="faction view">View ↗</div></div>
+    </div>
+
+    <div class="zone upload">
+      <div class="zone-head"><div class="zlbl"><span class="ico">📤</span>Upload Required <span style="color:#fcd34d;font-size:9px;margin-left:8px">3 of 6 done</span></div><div class="count">6 files</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">SO (Shipping Order)</span><span class="meta">SO-44781</span></div><div class="freq req">REQ</div><div class="fdue ok">done</div><div class="fstatus fs-approved">Approved</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">BL copy</span><span class="meta">FX-2204 v1</span></div><div class="freq req">REQ</div><div class="fdue ok">done</div><div class="fstatus fs-issue">AI issue</div><div class="faction replace">Replace ↺</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">Arrival Notice</span><span class="meta">to customer</span></div><div class="freq req">REQ</div><div class="fdue">Jun 02</div><div class="fstatus fs-missing">Missing</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">Vessel change notice</span><span class="meta">only if vessel changes</span></div><div class="freq opt">OPT</div><div class="fdue gone">—</div><div class="fstatus fs-pending">N/A</div><div class="faction view">—</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">Telex release confirmation</span><span class="meta">after balance paid</span></div><div class="freq req">REQ</div><div class="fdue">post-payment</div><div class="fstatus fs-pending">Pending</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">📑</div><div class="fname"><span class="name">ETA update</span><span class="meta">latest schedule</span></div><div class="freq req">REQ</div><div class="fdue">weekly</div><div class="fstatus fs-uploaded">Uploaded</div><div class="faction view">View ↗</div></div>
+
+      <div class="upload-tip">
+        <span class="dropicon">⤓</span>
+        <span>BL copy has an AI flag — consignee field looks pending. <b>Replace</b> with the latest version before requesting telex release.</span>
+      </div>
+    </div>
+
+    <div class="ai-block">
+      <div class="ai-ic">🤖</div>
+      <div class="ai-c">
+        <div class="ai-h"><span class="ai-kind">Smart Ocean + Documents</span>BL copy needs attention<span class="ai-conf">confidence: high</span></div>
+        <ul class="ai-list">
+          <li class="bad">BL copy v1 — consignee field shows "TO ORDER" but notify party is blank. Confirm with Sanlyn before issuing customer copy.</li>
+          <li class="miss">Arrival Notice not yet uploaded — customer-side ETA reminder needs this by T-3 (Jun 02).</li>
+          <li class="ok">Vessel / voyage / ETD / ETA match system. No schedule change detected.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ai-foot">
+      🛡 <b>AI Visual Check:</b> flags consignee blank, stamp absence, layout mismatch. Final BL release requires Sanlyn + carrier human confirmation.
+    </div>
+
+    <div class="portal-cta">
+      <div class="lhs">Status · <b>BL replace + AN upload</b> · then proceed to telex release</div>
+      <div class="btns">
+        <button class="pbtn pbtn-secondary">Save draft</button>
+        <button class="pbtn pbtn-primary">Replace BL + Upload AN</button>
+      </div>
+    </div>
+
+    <div class="boundary">
+      🔒 <b>Hidden from this portal:</b> customer full company name · customer pricing · margin · other forwarders' quotes · internal commission · trucking info.
+    </div>
+  </div>
+
+  <!-- ─────── F-4 · Insurance Portal (compact) ─────── -->
+  <div class="portal">
+    <div class="portal-head">
+      <div class="left">
+        <div class="badge insurance">🛡 Insurance · Task Portal</div>
+        <div class="title">Policy binding & standby · ICC(A)</div>
+        <div class="sub">INS-2204 · XMN → LGB · insured value $40,480 (business-required)</div>
+      </div>
+      <div class="right">
+        <div>Effective from <span class="due">May 14 (ETD)</span></div>
+        <div class="coord"><span style="color:#64748b;font-size:9px;font-weight:900;letter-spacing:.06em">SANLYN COORD</span> Aria</div>
+      </div>
+    </div>
+
+    <div class="portal-progress">
+      <div class="pnode done"><div class="pball"></div><div class="plbl">Policy draft</div></div>
+      <div class="pnode done"><div class="pball"></div><div class="plbl">Review</div></div>
+      <div class="pnode now"><div class="pball"></div><div class="plbl">Issued</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">Active</div></div>
+      <div class="pnode"><div class="pball"></div><div class="plbl">Claim standby</div></div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-head"><div class="zlbl"><span class="ico">📥</span>Download / View</div><div class="count">4 items</div></div>
+      <div class="frow"><div class="ftype">📄</div><div class="fname"><span class="name">IV / PL (per permission)</span><span class="meta">for policy reference</span></div><div class="freq opt">OPT</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Available</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">🗺</div><div class="fname"><span class="name">Route coverage area</span><span class="meta">XMN → LGB direct</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Available</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">📦</div><div class="fname"><span class="name">Cargo info</span><span class="meta">pet food · 40HQ × 1 · NW 21.2t</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Available</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">💰</div><div class="fname"><span class="name">Insured value</span><span class="meta">$40,480 (110% IV — business-required, NOT a fee)</span></div><div class="freq req">REQ</div><div class="fdue ok">ready</div><div class="fstatus fs-uploaded">Confirmed</div><div class="faction view">View ↗</div></div>
+    </div>
+
+    <div class="zone upload">
+      <div class="zone-head"><div class="zlbl"><span class="ico">📤</span>Upload Required <span style="color:#fcd34d;font-size:9px;margin-left:8px">1 of 4 done</span></div><div class="count">4 files</div></div>
+      <div class="frow"><div class="ftype">🛡</div><div class="fname"><span class="name">Insurance policy</span><span class="meta">final signed PDF</span></div><div class="freq req">REQ</div><div class="fdue">May 13</div><div class="fstatus fs-uploaded">Uploaded</div><div class="faction view">View ↗</div></div>
+      <div class="frow"><div class="ftype">🛡</div><div class="fname"><span class="name">Endorsement</span><span class="meta">only if any change</span></div><div class="freq opt">OPT</div><div class="fdue gone">if any</div><div class="fstatus fs-pending">N/A</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">📋</div><div class="fname"><span class="name">Claim docs</span><span class="meta">only if claim filed</span></div><div class="freq opt">OPT</div><div class="fdue gone">if any</div><div class="fstatus fs-pending">Standby</div><div class="faction upload">Upload ↑</div></div>
+      <div class="frow"><div class="ftype">⚠</div><div class="fname"><span class="name">Exception note</span><span class="meta">coverage gap or anomaly</span></div><div class="freq opt">OPT</div><div class="fdue gone">—</div><div class="fstatus fs-pending">Pending</div><div class="faction upload">Upload ↑</div></div>
+
+      <div class="upload-tip">
+        <span class="dropicon">⤓</span>
+        <span>Policy already uploaded. Standby for claim documents only if a claim is filed (T+30 typical).</span>
+      </div>
+    </div>
+
+    <div class="ai-block">
+      <div class="ai-ic">🤖</div>
+      <div class="ai-c">
+        <div class="ai-h"><span class="ai-kind">Smart Insurance + Documents</span>Policy ready, awaiting ETD<span class="ai-conf">confidence: high</span></div>
+        <ul class="ai-list">
+          <li class="ok">Insured value $40,480 present and labeled (110% IV per ICC(A) convention).</li>
+          <li class="ok">Route XMN → LGB matches order — coverage area aligned.</li>
+          <li class="ok">Policy effective May 14 = ETD. No timing gap.</li>
+          <li class="ok">No claim activity. Portal stays in standby until POD or exception.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ai-foot">
+      🛡 <b>AI Visual Check:</b> validated stamps and signatures on policy PDF. Final coverage validity remains a carrier/insurer human decision.
+    </div>
+
+    <div class="portal-cta">
+      <div class="lhs">Status · <b>Standing by</b> · no action needed unless claim filed</div>
+      <div class="btns">
+        <button class="pbtn pbtn-primary gated">No action</button>
+      </div>
+    </div>
+
+    <div class="boundary">
+      🔒 <b>Hidden from this portal:</b> premium · commission · insurance service fee · Sanlyn margin · customer payment · other supplier info. Only <code style="background:rgba(15,23,42,.5);padding:1px 4px;border-radius:3px;color:#67e8f9">insured value</code> is shown — explicitly labeled as business-required, not a fee.
+    </div>
+  </div>
+
+  <!-- ═══════════════ G · Customer Arrived Drawer (Documents + Cost Sheet) ═══════════════ -->
+  <h2 class="section">G · Customer Arrived Drawer <span class="tag">Documents tab · Cost Sheet tab · with [+ Request] buttons for missing docs</span></h2>
+
+  <style>
+  .cdrawer{background:#0e131e;border:1px solid rgba(56,189,248,.2);border-radius:14px;overflow:hidden;margin-bottom:18px;position:relative}
+  .cdrawer-head{padding:14px 20px;border-bottom:1px solid rgba(148,163,184,.08);background:linear-gradient(180deg,rgba(16,185,129,.06),transparent);display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+  .cdrawer-head .lhs{flex:1;min-width:240px}
+  .cdrawer-head .oid{font-family:"SF Mono",monospace;font-size:18px;font-weight:900;color:#f8fafc;margin-bottom:3px}
+  .cdrawer-head .sub{font-size:11.5px;color:#94a3b8;font-weight:700;display:flex;gap:10px;flex-wrap:wrap}
+  .cdrawer-head .sub b{color:#cbd5e1}
+  .cdrawer-head .status-pill{font-size:10px;font-weight:900;color:#6ee7b7;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.4);padding:5px 11px;border-radius:6px;letter-spacing:.06em;display:inline-flex;align-items:center;gap:5px}
+  .cdrawer-head .status-pill .dot{width:6px;height:6px;border-radius:50%;background:#10b981}
+
+  .cdrawer-tabs{display:flex;padding:0 14px;border-bottom:1px solid rgba(148,163,184,.08);background:rgba(15,23,42,.4);gap:0;overflow-x:auto}
+  .cdrawer-tabs::-webkit-scrollbar{height:0}
+  .cdrawer-tabs .ctab{font-size:11px;font-weight:800;color:#94a3b8;padding:10px 14px;border-bottom:2px solid transparent;cursor:pointer;letter-spacing:.02em;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;transition:.15s}
+  .cdrawer-tabs .ctab:hover{color:#cbd5e1}
+  .cdrawer-tabs .ctab.active{color:#7dd3fc;border-bottom-color:#38bdf8;font-weight:900}
+  .cdrawer-tabs .ctab .badge{font-size:8.5px;font-weight:900;color:#fcd34d;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);padding:1px 5px;border-radius:3px;font-family:"SF Mono",monospace;line-height:1}
+  .cdrawer-tabs .ctab .badge.flag{color:#fda4af;background:rgba(244,63,94,.12);border-color:rgba(244,63,94,.3)}
+  .cdrawer-tabs .ctab .badge.ok{color:#6ee7b7;background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.3)}
+
+  .cdrawer-body{padding:16px 20px;background:#0a0e17}
+  .cdrawer-sub-title{font-size:9.5px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .cdrawer-sub-title .ico{font-size:14px}
+  .cdrawer-sub-title .count{font-size:9px;color:#cbd5e1;background:rgba(148,163,184,.08);padding:1px 6px;border-radius:3px;font-family:"SF Mono",monospace;font-weight:800}
+  .cdrawer-sub-title .help{margin-left:auto;font-size:9.5px;font-weight:700;color:#64748b;letter-spacing:0;text-transform:none}
+
+  .docs-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-bottom:14px}
+  .docs-cat{display:flex;flex-direction:column;gap:6px}
+  .docs-chips{display:flex;flex-wrap:wrap;gap:6px}
+
+  .doc-chip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;padding:6px 11px;border-radius:6px;cursor:pointer;border:1px solid;letter-spacing:.01em;line-height:1.2;transition:.15s;white-space:nowrap}
+  .doc-chip:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.25)}
+  .doc-chip .fname{font-weight:800}
+  .doc-chip .act{font-weight:900;font-size:12px;line-height:1}
+  .doc-chip .ver{font-size:8.5px;color:#94a3b8;background:rgba(148,163,184,.1);padding:1px 4px;border-radius:3px;font-family:"SF Mono",monospace}
+  .doc-chip.available{color:#cbd5e1;background:rgba(148,163,184,.06);border-color:rgba(148,163,184,.22)}
+  .doc-chip.available:hover{color:#7dd3fc;border-color:rgba(56,189,248,.4);background:rgba(56,189,248,.06)}
+  .doc-chip.available .act{color:#7dd3fc}
+  .doc-chip.upload-action{color:#7dd3fc;background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.35)}
+  .doc-chip.upload-action .act{color:#38bdf8}
+  .doc-chip.request{color:#fbbf24;background:rgba(245,158,11,.06);border:1px dashed rgba(245,158,11,.45);font-weight:900;animation:pulse 3s infinite}
+  .doc-chip.request:hover{background:rgba(245,158,11,.14);border-style:solid;color:#fcd34d}
+  .doc-chip.request .act{color:#f59e0b;font-size:13px}
+  .doc-chip.pending{color:#94a3b8;background:rgba(148,163,184,.04);border:1px dashed rgba(148,163,184,.2)}
+  .doc-chip.pending .act{color:#64748b}
+  .doc-chip.requested{color:#94a3b8;background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.2);cursor:not-allowed}
+  .doc-chip.requested .act{color:#94a3b8}
+  .doc-chip.requested .meta{font-size:8.5px;color:#64748b;font-weight:700;font-family:"SF Mono",monospace}
+
+  .docs-hidden-note{padding:9px 12px;background:rgba(244,63,94,.04);border:1px dashed rgba(244,63,94,.18);border-radius:8px;font-size:10px;color:#fda4af;font-weight:700;line-height:1.5}
+  .docs-hidden-note b{color:#fca5a5}
+
+  /* Cost Sheet */
+  .cost-section{background:#0e131e;border:1px solid rgba(148,163,184,.1);border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .cost-sec-head{padding:10px 14px;background:rgba(56,189,248,.04);border-bottom:1px solid rgba(56,189,248,.12);display:flex;justify-content:space-between;align-items:center;cursor:pointer}
+  .cost-sec-head .title{font-size:11.5px;font-weight:900;color:#cbd5e1;display:flex;align-items:center;gap:8px}
+  .cost-sec-head .title .num{color:#7dd3fc;font-family:"SF Mono",monospace}
+  .cost-sec-head .sub-total{font-family:"SF Mono",monospace;font-size:11px;color:#fbbf24;font-weight:900}
+  .cost-sec-head.locked{background:rgba(148,163,184,.04);border-bottom-color:rgba(148,163,184,.1)}
+  .cost-sec-head.locked .title{color:#94a3b8}
+  .cost-sec-head.computed{background:rgba(16,185,129,.05);border-bottom-color:rgba(16,185,129,.18)}
+  .cost-sec-head.computed .title{color:#6ee7b7}
+  .cost-sec-body{padding:10px 14px;display:flex;flex-direction:column;gap:6px}
+  .cost-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;gap:10px}
+  .cost-row .lbl{color:#94a3b8;font-weight:700;flex:1;min-width:0}
+  .cost-row .input{font-family:"SF Mono",monospace;font-size:11px;font-weight:800;color:#f8fafc;background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.18);padding:4px 10px;border-radius:5px;width:130px;text-align:right;cursor:text}
+  .cost-row .input.readonly{background:rgba(148,163,184,.05);color:#cbd5e1;cursor:not-allowed;border-style:dashed}
+  .cost-row .input.empty{color:#64748b}
+  .cost-row .input.derived{background:rgba(16,185,129,.06);color:#6ee7b7;border-color:rgba(16,185,129,.25)}
+  .cost-row .input.big{font-size:14px;width:160px;font-weight:900}
+  .cost-row .currency{font-size:9px;color:#64748b;font-weight:700}
+
+  .cost-summary{background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(56,189,248,.04));border:1px solid rgba(16,185,129,.3);border-radius:10px;padding:14px 18px;margin-bottom:10px}
+  .cost-summary .stitle{font-size:9.5px;font-weight:900;color:#6ee7b7;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
+  .cost-bigrow{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px dashed rgba(16,185,129,.15)}
+  .cost-bigrow:last-child{border-bottom:none}
+  .cost-bigrow .k{font-size:11px;color:#cbd5e1;font-weight:800}
+  .cost-bigrow .v{font-family:"SF Mono",monospace;font-size:15px;font-weight:900;color:#6ee7b7}
+  .cost-bigrow .v.huge{font-size:20px}
+  .cost-bigrow .delta-up{font-size:9.5px;color:#fda4af;font-weight:900;margin-left:6px}
+  .cost-bigrow .delta-down{font-size:9.5px;color:#6ee7b7;font-weight:900;margin-left:6px}
+
+  .cost-cta{display:flex;gap:8px;justify-content:flex-end;padding-top:10px;border-top:1px solid rgba(148,163,184,.08);margin-top:10px}
+  .cost-btn{font-size:11px;font-weight:900;padding:7px 14px;border-radius:6px;border:1px solid;cursor:pointer;letter-spacing:.02em}
+  .cost-btn.primary{background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;border-color:rgba(124,58,237,.5)}
+  .cost-btn.secondary{background:transparent;border-color:rgba(148,163,184,.3);color:#cbd5e1}
+
+  .cost-privacy{margin-top:10px;padding:10px 14px;background:rgba(167,139,250,.04);border:1px dashed rgba(167,139,250,.25);border-radius:8px;font-size:10px;color:#c4b5fd;line-height:1.5;font-weight:700}
+  .cost-privacy b{color:#a78bfa}
+
+  .incoterm-banner{background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.22);border-radius:8px;padding:9px 14px;margin-bottom:14px;font-size:10.5px;color:#fcd34d;font-weight:700;display:flex;align-items:center;gap:8px}
+  .incoterm-banner b{color:#fbbf24;font-family:"SF Mono",monospace}
+
+  .alt-tab-label{font-size:10px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;background:rgba(15,23,42,.5);padding:5px 11px;border-radius:5px;border:1px solid rgba(148,163,184,.15);display:inline-flex;align-items:center;gap:6px;margin-bottom:8px}
+  .alt-tab-label .arrow{color:#7dd3fc}
+  </style>
+
+  <div class="banner" style="background:rgba(16,185,129,.05);border-color:rgba(16,185,129,.22);margin-bottom:14px;font-size:11.5px">
+    <b style="color:#6ee7b7">Customer Arrived Drawer · §3 doc catalog + §5 Cost Sheet tab</b> · 顶部 6 tab · 默认 Documents tab 打开 ·
+    <b style="color:#fbbf24">缺失文件 = [+ Request] 一键按钮（不留空 chip）</b> · 客户不该看的文件 = 零像素隐藏（如 Factory PO）·
+    Cost Sheet tab 客户自填 landed cost · Sanlyn 不看个体明细。
+  </div>
+
+  <!-- ─── G-1 · Customer Drawer · Documents tab active ─── -->
+  <div class="cdrawer">
+    <div class="cdrawer-head">
+      <div class="lhs">
+        <div class="oid">FS20260123020-1</div>
+        <div class="sub">
+          <span>Order <b>2026-01-23</b></span>
+          <span>·</span>
+          <span>SC <b>SC-2026-018</b></span>
+          <span>·</span>
+          <span>PO <b>Order-1</b></span>
+          <span>·</span>
+          <span>BL <b>FX-2204</b></span>
+        </div>
+      </div>
+      <div class="status-pill"><span class="dot"></span>ARRIVED · POD pending</div>
+    </div>
+
+    <div class="cdrawer-tabs">
+      <div class="ctab">Summary</div>
+      <div class="ctab active">Documents <span class="badge">14</span> <span class="badge flag">3 missing</span></div>
+      <div class="ctab">Tracking</div>
+      <div class="ctab">Status</div>
+      <div class="ctab">Cost Sheet <span class="badge ok">draft</span></div>
+      <div class="ctab">Discussion <span class="badge flag">@ 1</span></div>
+    </div>
+
+    <div class="cdrawer-body">
+
+      <div class="incoterm-banner">
+        🚢 Incoterm <b>FOB · XINGANG</b> · 客户从 POL 起承担运输与清关 · Cost Sheet 适用 sections 2-5
+      </div>
+
+      <!-- Documents tab content -->
+      <div class="docs-grid">
+
+        <div class="docs-cat">
+          <div class="cdrawer-sub-title"><span class="ico">📄</span>Commercial <span class="count">4 / 4</span></div>
+          <div class="docs-chips">
+            <span class="doc-chip available"><span class="fname">PI</span><span class="ver">v3</span><span class="act">↓</span></span>
+            <span class="doc-chip available"><span class="fname">Sales Contract</span><span class="ver">SC-018</span><span class="act">↓</span></span>
+            <span class="doc-chip available"><span class="fname">Commercial Invoice</span><span class="act">↓</span></span>
+            <span class="doc-chip available"><span class="fname">Packing List</span><span class="act">↓</span></span>
+          </div>
+        </div>
+
+        <div class="docs-cat">
+          <div class="cdrawer-sub-title"><span class="ico">📜</span>Compliance <span class="count">2 / 4</span></div>
+          <div class="docs-chips">
+            <span class="doc-chip available"><span class="fname">FE 检疫证</span><span class="act">↓</span></span>
+            <span class="doc-chip available"><span class="fname">Health Cert</span><span class="act">↓</span></span>
+            <span class="doc-chip request"><span class="act">+</span><span class="fname">Request CO 产地证</span></span>
+            <span class="doc-chip requested"><span class="fname">Insurance Policy</span><span class="meta">· Aria 14:08</span></span>
+          </div>
+        </div>
+
+        <div class="docs-cat">
+          <div class="cdrawer-sub-title"><span class="ico">🔬</span>Quality <span class="count">1 / 3</span></div>
+          <div class="docs-chips">
+            <span class="doc-chip available"><span class="fname">QC Report</span><span class="act">↓</span></span>
+            <span class="doc-chip request"><span class="act">+</span><span class="fname">Request QC Photos</span></span>
+            <span class="doc-chip request"><span class="act">+</span><span class="fname">Request Sample Approval</span></span>
+          </div>
+        </div>
+
+        <div class="docs-cat">
+          <div class="cdrawer-sub-title"><span class="ico">🚢</span>Logistics <span class="count">4 / 5</span></div>
+          <div class="docs-chips">
+            <span class="doc-chip available"><span class="fname">BL Copy</span><span class="ver">COPY</span><span class="act">↓</span></span>
+            <span class="doc-chip available"><span class="fname">Arrival Notice</span><span class="act">↓</span></span>
+            <span class="doc-chip available"><span class="fname">Delivery Order</span><span class="act">↓</span></span>
+            <span class="doc-chip available"><span class="fname">ETA Updates</span><span class="ver">v4</span><span class="act">↓</span></span>
+            <span class="doc-chip upload-action"><span class="fname">POD · sign + upload</span><span class="act">↑</span></span>
+          </div>
+        </div>
+
+        <div class="docs-cat">
+          <div class="cdrawer-sub-title"><span class="ico">📜</span>Customs <span class="count">1 / 2</span></div>
+          <div class="docs-chips">
+            <span class="doc-chip available"><span class="fname">Export Release</span><span class="act">↓</span></span>
+            <span class="doc-chip pending"><span class="fname">Import Release</span><span class="act">⏳ clearing</span></span>
+          </div>
+        </div>
+
+        <div class="docs-cat">
+          <div class="cdrawer-sub-title"><span class="ico">📊</span>Cost (your data) <span class="count">tab</span></div>
+          <div class="docs-chips">
+            <span class="doc-chip available"><span class="fname">Cost Sheet Template (blank)</span><span class="act">↓</span></span>
+            <span class="doc-chip upload-action"><span class="fname">Open Cost Sheet Tab</span><span class="act">→</span></span>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="docs-hidden-note">
+        🔒 <b>Hidden from your view (zero pixels rendered):</b> Factory PO · Factory cost ledger · Sanlyn margin · forwarder internal account · master BL · driver phone & plate · other suppliers · Sanlyn AR/AP. These docs may exist on the order but are not in your scope (§6 anti-disintermediation).
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ─── G-2 · Same Drawer · Cost Sheet tab active ─── -->
+  <div class="alt-tab-label">↓ Same drawer · tab switched to <span class="arrow">Cost Sheet →</span></div>
+
+  <div class="cdrawer">
+    <div class="cdrawer-head">
+      <div class="lhs">
+        <div class="oid">FS20260123020-1 · Cost Sheet</div>
+        <div class="sub">
+          <span>Filled by <b>JJ PET GROUP SDN BHD</b></span>
+          <span>·</span>
+          <span>Last saved <b>2026-05-12 16:42</b></span>
+          <span>·</span>
+          <span style="color:#6ee7b7">● Auto-save on</span>
+        </div>
+      </div>
+      <div class="status-pill" style="color:#c4b5fd;background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.4)"><span class="dot" style="background:#a78bfa"></span>YOUR DATA · NOT SHARED</div>
+    </div>
+
+    <div class="cdrawer-tabs">
+      <div class="ctab">Summary</div>
+      <div class="ctab">Documents</div>
+      <div class="ctab">Tracking</div>
+      <div class="ctab">Status</div>
+      <div class="ctab active">Cost Sheet <span class="badge ok">draft</span></div>
+      <div class="ctab">Discussion <span class="badge flag">@ 1</span></div>
+    </div>
+
+    <div class="cdrawer-body">
+
+      <div class="incoterm-banner">
+        🚢 Incoterm <b>FOB</b> · Section 1 auto-filled from IV · Sections 2-5 you fill · Section 6 auto-computed
+      </div>
+
+      <!-- Section 1 -->
+      <div class="cost-section">
+        <div class="cost-sec-head locked">
+          <div class="title"><span class="num">1.</span>🔒 Purchase Price (read-only · from IV)</div>
+          <div class="sub-total">$128,400</div>
+        </div>
+        <div class="cost-sec-body">
+          <div class="cost-row"><span class="lbl">Total amount (from IV)</span><input class="input readonly" value="$128,400.00" readonly><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Currency</span><input class="input readonly" value="USD" readonly><span class="currency">—</span></div>
+          <div class="cost-row"><span class="lbl">Incoterm</span><input class="input readonly" value="FOB XINGANG" readonly><span class="currency">—</span></div>
+        </div>
+      </div>
+
+      <!-- Section 2 -->
+      <div class="cost-section">
+        <div class="cost-sec-head">
+          <div class="title"><span class="num">2.</span>🚢 Ocean Freight Bundle</div>
+          <div class="sub-total">$3,950</div>
+        </div>
+        <div class="cost-sec-body">
+          <div class="cost-row"><span class="lbl">Ocean freight (XMN → Kota Kinabalu)</span><input class="input" value="$3,200.00"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Local charge (POD 港杂)</span><input class="input" value="$420.00"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">THC / DOC fee</span><input class="input" value="$280.00"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Telex release fee</span><input class="input" value="$50.00"><span class="currency">USD</span></div>
+        </div>
+      </div>
+
+      <!-- Section 3 -->
+      <div class="cost-section">
+        <div class="cost-sec-head">
+          <div class="title"><span class="num">3.</span>📜 Customs + Duty</div>
+          <div class="sub-total">$9,288</div>
+        </div>
+        <div class="cost-sec-body">
+          <div class="cost-row"><span class="lbl">Import duty (7% on CIF)</span><input class="input" value="$8,988.00"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Customs broker fee</span><input class="input" value="$180.00"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Quarantine fee</span><input class="input" value="$120.00"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">VAT / SST / other tax</span><input class="input empty" value="$ —"><span class="currency">USD</span></div>
+        </div>
+      </div>
+
+      <!-- Section 4 -->
+      <div class="cost-section">
+        <div class="cost-sec-head">
+          <div class="title"><span class="num">4.</span>🚛 Trucking (last mile)</div>
+          <div class="sub-total">$280</div>
+        </div>
+        <div class="cost-sec-body">
+          <div class="cost-row"><span class="lbl">Port → warehouse (Kota Kinabalu)</span><input class="input" value="$280.00"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Provider</span><input class="input" value="KK Logistics SDN" style="text-align:left;width:200px"><span class="currency">—</span></div>
+        </div>
+      </div>
+
+      <!-- Section 5 -->
+      <div class="cost-section">
+        <div class="cost-sec-head">
+          <div class="title"><span class="num">5.</span>📋 Other</div>
+          <div class="sub-total">$0</div>
+        </div>
+        <div class="cost-sec-body">
+          <div class="cost-row"><span class="lbl">Insurance premium</span><input class="input empty" value="$ —"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Demurrage charges</span><input class="input empty" value="$ —"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Detention charges</span><input class="input empty" value="$ —"><span class="currency">USD</span></div>
+          <div class="cost-row"><span class="lbl">Misc</span><input class="input empty" value="$ —"><span class="currency">USD</span></div>
+        </div>
+      </div>
+
+      <!-- Section 6 auto-computed -->
+      <div class="cost-summary">
+        <div class="stitle">💰 Auto-computed Landed Cost</div>
+        <div class="cost-bigrow">
+          <span class="k">Total Landed Cost</span>
+          <span><span class="v huge">$141,918.00</span><span class="delta-up">▲ +2.8% vs prior</span></span>
+        </div>
+        <div class="cost-bigrow">
+          <span class="k">Per CTN landed cost (5,493 CTN)</span>
+          <span class="v">$25.84</span>
+        </div>
+        <div class="cost-bigrow">
+          <span class="k">Per SKU avg (16 SKUs)</span>
+          <span><span class="v">view breakdown</span> <span class="delta-down">→</span></span>
+        </div>
+        <div class="cost-bigrow">
+          <span class="k">Compare with prior order on XMN → BKI lane</span>
+          <span><span class="v" style="font-size:12px">3 prior orders · avg $138,065</span></span>
+        </div>
+        <div class="cost-cta">
+          <button class="cost-btn secondary">Export PDF</button>
+          <button class="cost-btn secondary">Export Excel</button>
+          <button class="cost-btn primary">Save</button>
+        </div>
+      </div>
+
+      <div class="cost-privacy">
+        🔒 <b>Privacy boundary:</b> only you (JJ PET GROUP) can see these numbers. Sanlyn does not read individual line items — only anonymized lane-level aggregates (≥5 customers per cohort). This tab respects §3 Work ≠ Finance: it's your accounting tool, not a Sanlyn-published price.
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Rules pinned -->
+  <div class="fixlog" style="margin-top:18px">
+    <h3>Hero Zone affordance rules</h3>
+    <ul style="padding-left:18px;font-size:11.5px;color:#cbd5e1">
+      <li>Whole 124px top region is a button. <code>cursor: pointer</code>. Hover = inset glow + slide-in hint.</li>
+      <li>Top-right shows <code>⤢</code> expand icon by default; <code>🔒</code> when disabled.</li>
+      <li>Disabled state: <code>opacity:.55</code>, lock icon, tooltip text per role (e.g. <code>Trip closed</code>, <code>Not in scope</code>).</li>
+      <li>Click → drawer route: <code>?drawer=&lt;contract|production|etd|loading|ocean|arrival&gt;&amp;v=&lt;viewer&gt;</code>. Drawer content cropped via <code>useFieldVisibility(viewer, field)</code>.</li>
+      <li>Hero <b>never</b> opens a finance drawer. Finance chip in role-row routes to Finance module instead.</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

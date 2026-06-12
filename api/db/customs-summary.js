@@ -26,8 +26,11 @@ const MERGE_MAP = {
   "喂水喂食器": "宠物喂食器",
 };
 
+// W0-5 (feedback_declaration_fields_mandatory): return null on missing instead
+// of falling back to the unhelpful "其他" bucket. Callers track null entries in
+// missing_fields[] and refuse to render the customs declaration (type=cd).
 function normalize(name) {
-  if (!name) return "其他";
+  if (!name) return null;
   return MERGE_MAP[name.trim()] || name.trim();
 }
 
@@ -122,6 +125,9 @@ export default async function handler(req, res) {
     // 4. 归并
     const buckets = {};   // declaration_name → { ctn, nw_kg, gw_kg, cbm }
     const missingWeight = [];
+    // W0-5: lines without a real declaration_name are tracked separately and
+    // returned as missing_fields[]; for type=cd callers this must trigger STOP.
+    const missingDecl = [];
 
     for (const line of lines) {
       // 品名：有 SKU 优先从产品表拿，否则用 JSONB 原始品名
@@ -137,7 +143,12 @@ export default async function handler(req, res) {
         if (!gwPer && pInfo.gwPer) gwPer = pInfo.gwPer;
       }
 
-      const decl = normalize(declRaw);
+      const decl = normalize(declRaw); // W0-5: null if missing
+      if (!decl) {
+        missingDecl.push(line.sku || declRaw || "(no-sku)");
+        // Skip aggregation — never bucket into "其他".
+        continue;
+      }
       const totalNw = parseFloat((nwPer * line.qty).toFixed(2));
       const totalGw = parseFloat((gwPer * line.qty).toFixed(2));
 
@@ -150,6 +161,21 @@ export default async function handler(req, res) {
       if (line.qty > 0 && totalNw === 0 && totalGw === 0) {
         missingWeight.push(line.sku || declRaw || "unknown");
       }
+    }
+
+    // W0-5: if caller requested type=cd (customs declaration), refuse to render
+    // when any line is missing declaration_name. Other types (iv/pl/sc) get a
+    // warning banner instead but still render.
+    const reqType = String((req.query && req.query.type) || (req.body && req.body.type) || "").toLowerCase();
+    if (reqType === "cd" && missingDecl.length) {
+      return res.status(400).json({
+        success: false,
+        error: "declaration_name_missing",
+        missing_fields: ["declaration_name"],
+        missing_skus: [...new Set(missingDecl)],
+        rule: "feedback_declaration_fields_mandatory",
+        hint: "Fill products.declaration_name for the listed SKUs before generating a customs declaration.",
+      });
     }
 
     // 5. 整形输出，按 CTN 降序
@@ -179,6 +205,8 @@ export default async function handler(req, res) {
       rows,
       total,
       missing_weight: [...new Set(missingWeight)],
+      missing_declaration_name: [...new Set(missingDecl)], // W0-5
+      missing_fields: missingDecl.length ? ["declaration_name"] : [],
       orders_found:   orders.length,
       orders_missing: ordersMissing,
       generated_at:   new Date().toISOString(),

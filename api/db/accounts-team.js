@@ -86,6 +86,12 @@ async function ensureInviteTable(pool) {
       created_at    TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // 2026-05-18 add raw JSONB column for headquarters multi-company scope (company_codes[])
+  await pool.query(`ALTER TABLE team_invites ADD COLUMN IF NOT EXISTS raw JSONB`);
+  // 2026-05-18 admin-approval flow requires accounts.is_active + portal_role columns
+  // These were referenced by code but missing from prod schema — discovered during E2E test.
+  await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE accounts ADD COLUMN IF NOT EXISTS portal_role TEXT`);
 }
 
 export default async function handler(req, res) {
@@ -97,6 +103,10 @@ export default async function handler(req, res) {
   var myCode = req.user.companyCode || req.user.company_code;
   var isAdmin = req.user.role === "admin" || req.user.role === "super_admin";
 
+  // P2 fix per codex: run schema migration ONCE at entry so all methods see the new columns.
+  // is_active / portal_role were referenced before being added — first call after deploy would 500.
+  try { await ensureInviteTable(pool); } catch (e) { /* non-fatal — best-effort */ }
+
   try {
     // ── GET: list teammates ──
     if (req.method === "GET") {
@@ -104,15 +114,22 @@ export default async function handler(req, res) {
       if (!code) return res.status(200).json({ success: true, company_code: null, members: [], pending_invites: [] });
       if (!isAdmin && code !== myCode) return res.status(403).json({ error: "can only view own company" });
 
+      // Active accounts only — pending-review go in their own bucket below
       var r = await pool.query(
         `SELECT id, username, role, company, company_code, supplier_role,
                 portal_role, is_active, created_at
-         FROM accounts WHERE company_code = $1 ORDER BY created_at ASC`,
+         FROM accounts WHERE company_code = $1 AND is_active = true ORDER BY created_at ASC`,
         [code]
       );
 
-      // pending invites (not yet accepted)
-      await ensureInviteTable(pool);
+      // Inactive accounts = registered but waiting for admin approval (双门槛 流程)
+      var pendingReview = await pool.query(
+        `SELECT id, username, role, company_code, company_codes, created_at
+         FROM accounts WHERE company_code = $1 AND is_active = false ORDER BY created_at DESC`,
+        [code]
+      );
+
+      // Outstanding invites (not yet clicked / not yet registered) — table ensured at handler entry
       var inv = await pool.query(
         `SELECT id, email, role, invited_by, expires_at, created_at
          FROM team_invites WHERE company_code = $1 AND status = 'pending' ORDER BY created_at DESC`,
@@ -123,6 +140,7 @@ export default async function handler(req, res) {
         success: true,
         company_code: code,
         members: r.rows.map(sanitize),
+        pending_review: pendingReview.rows.map(sanitize),
         pending_invites: inv.rows,
       });
     }
@@ -131,45 +149,95 @@ export default async function handler(req, res) {
     var body = req.body || {};
     if (req.method === "POST" && body.action === "invite") {
       var { email, role } = body;
-      if (!email) return res.status(400).json({ error: "email required" });
+      // Email is now OPTIONAL (2026-05-18 双门槛): admin can generate link without
+      // knowing recipient's email; invitee self-claims on team-join page.
+      // If admin provides one, it becomes a hard verification gate.
+      if (email != null && email !== "" && String(email).indexOf("@") < 0) {
+        return res.status(400).json({ error: "email_invalid" });
+      }
+      // Use a placeholder for the not-null constraint when admin doesn't know the email.
+      // team-join handler treats any value without '@' as "no hint" and lets invitee self-claim.
+      var emailForDb = email && String(email).trim() ? String(email).trim().toLowerCase() : "(pending-self-claim)";
       role = ALLOWED_ROLES.includes(role) ? role : "operator";
 
+      // Headquarters scope (2026-05-18): caller passes company_codes[] = all siblings.
+      // We store them on team_invites.raw and propagate to accounts.company_codes on accept.
+      var hqCodes = Array.isArray(body.company_codes) && body.company_codes.length > 0 ? body.company_codes : null;
       var targetCode = body.company_code || myCode;
-      if (!isAdmin && targetCode !== myCode) {
-        return res.status(403).json({ error: "can only invite to own company" });
+
+      // Resolve inviter's full allowed scope: own company + any sibling (same group_id /
+      // parent_company_code / direct parent). Sanlyn admins bypass — they're trusted to manage all.
+      var allowedCodes = new Set([myCode]);
+      if (!isAdmin && myCode) {
+        var scope = await pool.query(
+          `SELECT b.company_code FROM customers a, customers b
+            WHERE a.company_code = $1
+              AND (
+                (a.group_id IS NOT NULL AND a.group_id = b.group_id)
+                OR a.company_code = b.parent_company_code
+                OR b.company_code = a.parent_company_code
+                OR (a.parent_company_code IS NOT NULL AND a.parent_company_code = b.parent_company_code)
+                OR b.company_code = a.company_code
+              )`,
+          [myCode]
+        );
+        scope.rows.forEach(function(r) { allowedCodes.add(r.company_code); });
       }
 
-      // Check for existing account or pending invite with this email
-      var dup = await pool.query(
-        "SELECT id FROM accounts WHERE username = $1 OR contact_email = $1 LIMIT 1",
-        [email]
-      );
-      if (dup.rows.length) return res.status(409).json({ error: "email already registered" });
+      // Gate target_code against allowed scope
+      if (!isAdmin && !allowedCodes.has(targetCode)) {
+        return res.status(403).json({ error: "can only invite to own company or group" });
+      }
+      // P1 fix per codex: every requested HQ scope code MUST be within inviter's allowed scope.
+      // Otherwise caller could grant invitee access to companies they themselves don't have.
+      if (!isAdmin && hqCodes) {
+        for (var i = 0; i < hqCodes.length; i++) {
+          if (!allowedCodes.has(hqCodes[i])) {
+            return res.status(403).json({
+              error: "hq_scope_out_of_range",
+              message: "Cannot grant HQ access to " + hqCodes[i] + " — outside your group scope.",
+            });
+          }
+        }
+      }
 
-      await ensureInviteTable(pool);
-      var dup2 = await pool.query(
-        "SELECT id FROM team_invites WHERE email = $1 AND company_code = $2 AND status = 'pending' LIMIT 1",
-        [email, targetCode]
-      );
-      if (dup2.rows.length) return res.status(409).json({ error: "invite already pending for this email" });
+      // Dup checks only meaningful when admin specified a real email
+      if (email) {
+        var dup = await pool.query("SELECT id FROM accounts WHERE username = $1 LIMIT 1", [email]);
+        if (dup.rows.length) return res.status(409).json({ error: "email already registered" });
+      }
+
+      // ensureInviteTable already ran at handler entry
+      if (email) {
+        var dup2 = await pool.query(
+          "SELECT id FROM team_invites WHERE email = $1 AND company_code = $2 AND status = 'pending' LIMIT 1",
+          [email, targetCode]
+        );
+        if (dup2.rows.length) return res.status(409).json({ error: "invite already pending for this email" });
+      }
 
       var token = crypto.randomBytes(24).toString("hex");
       var expires = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      // Store HQ multi-company scope on raw JSONB if present; accept handler reads it back.
+      var inviteRaw = hqCodes ? JSON.stringify({ scope: "headquarters", company_codes: hqCodes }) : null;
       var ins = await pool.query(
-        `INSERT INTO team_invites (token, company_code, email, role, invited_by, expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-        [token, targetCode, email, role, req.user.email || req.user.username, expires]
+        `INSERT INTO team_invites (token, company_code, email, role, invited_by, expires_at, raw)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [token, targetCode, emailForDb, role, req.user.email || req.user.username, expires, inviteRaw]
       );
 
-      var link = BASE_URL + "/team-join?token=" + token;
-      var emailRes = await sendInviteEmail({ to: email, inviter_company: req.user.company || targetCode, invite_link: link });
+      var link = BASE_URL + "/team-join.html?token=" + token;
+      // Only send email if admin actually specified a real email; otherwise admin shares link manually
+      var emailRes = email
+        ? await sendInviteEmail({ to: email, inviter_company: req.user.company || targetCode, invite_link: link })
+        : { skipped: true, reason: "no_email_self_claim_flow" };
 
       writeAudit(pool, req, {
         action: "team.invite",
         entity_type: "account",
         entity_id: ins.rows[0].id,
-        after: { email, role, company_code: targetCode },
-        note: "invite link sent",
+        after: { email: email || "(self-claim)", role, company_code: targetCode },
+        note: email ? "invite link sent via email" : "invite link generated for manual share",
       }).catch(() => {});
 
       return res.status(200).json({ success: true, invite_id: ins.rows[0].id, link, email_sent: emailRes });

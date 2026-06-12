@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>货代账单录入 · Freight Debit Note Entry</title>
+<style>
+  :root {
+    --bg:#0B1120; --panel:#111a2f; --panel2:#0e1628;
+    --line:#1f2a44; --line2:#2a3858;
+    --txt:#e2e8f0; --mut:#94a3b8; --dim:#64748b;
+    --blue:#38bdf8; --emerald:#34d399; --amber:#fbbf24; --rose:#f87171;
+    --mono:'SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:30px 16px;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px}
+  .wrap{max-width:880px;margin:0 auto}
+  h1{margin:0 0 6px;font-size:20px}
+  .sub{color:var(--mut);font-size:12px;margin-bottom:24px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:20px}
+  .card h2{margin:0;padding:14px 20px;font-size:14px;border-bottom:1px solid var(--line);background:var(--panel2);font-weight:700}
+  .card h2 small{color:var(--mut);font-weight:400;margin-left:8px;font-size:11px}
+  .body{padding:18px 20px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
+  .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px 20px}
+  label{display:block;color:var(--mut);font-size:11px;margin-bottom:5px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+  input,select,textarea{
+    width:100%;padding:9px 11px;background:var(--panel2);border:1px solid var(--line2);
+    color:var(--txt);border-radius:5px;font-family:var(--mono);font-size:13px;
+  }
+  input:focus,select:focus{outline:none;border-color:var(--blue)}
+  input[type=number]{text-align:right}
+  .hint{color:var(--dim);font-size:10px;margin-top:3px}
+  .group-title{
+    grid-column:1/-1;color:var(--blue);font-size:11px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.05em;padding-top:8px;
+    border-top:1px solid var(--line);margin-top:6px;padding-bottom:2px;
+  }
+  .group-title:first-child{border-top:none;padding-top:0;margin-top:0}
+  .row{display:flex;align-items:center;gap:8px}
+  .row input{flex:1}
+  .row .unit{color:var(--mut);font-size:11px;width:50px}
+  .actions{display:flex;gap:10px;padding:16px 20px;background:var(--panel2);border-top:1px solid var(--line);justify-content:flex-end}
+  button{padding:10px 22px;border-radius:5px;border:none;cursor:pointer;font-size:13px;font-weight:600}
+  .btn-primary{background:var(--blue);color:#0b1120}
+  .btn-primary:hover{background:#0ea5e9}
+  .btn-secondary{background:var(--panel);color:var(--txt);border:1px solid var(--line2)}
+  .live-total{
+    grid-column:1/-1;background:var(--panel2);border:1px dashed var(--line2);
+    border-radius:5px;padding:12px 14px;display:flex;justify-content:space-between;
+    font-family:var(--mono);
+  }
+  .live-total .v{color:var(--emerald);font-weight:700;font-size:15px}
+  .live-total .vu{color:var(--blue);font-weight:600;font-size:13px}
+  .pill{padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;background:rgba(56,189,248,.15);color:var(--blue);border:1px solid rgba(56,189,248,.45)}
+  .toast{
+    position:fixed;top:20px;right:20px;padding:12px 18px;border-radius:6px;
+    background:var(--emerald);color:#0b1120;font-weight:600;
+    box-shadow:0 4px 12px rgba(0,0,0,.4);transform:translateX(120%);
+    transition:transform .25s;z-index:1000;
+  }
+  .toast.show{transform:translateX(0)}
+  .toast.err{background:var(--rose);color:#fff}
+  .auth-warn{padding:14px 20px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.4);color:var(--amber);border-radius:6px;margin-bottom:20px;font-size:12px}
+  .recent{font-size:11px;color:var(--mut);margin-top:18px}
+  .recent table{width:100%;border-collapse:collapse}
+  .recent th{text-align:left;padding:6px 8px;color:var(--dim);font-weight:600;border-bottom:1px solid var(--line);font-size:10px;text-transform:uppercase}
+  .recent td{padding:6px 8px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:11px}
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<div class="wrap">
+
+  <h1>货代账单录入 · Freight Debit Note Entry</h1>
+  <div class="sub">为 My Landed Cost 提供 §2 数据源 · 录入后客户立刻能看到分摊后的进货价</div>
+
+  <div id="authWarn" class="auth-warn" style="display:none">
+    ⚠️ 未检测到登录态。请先登录 ai.sanlyn.cn 拿到 JWT 再用此页面。
+  </div>
+
+  <form id="fdnForm">
+
+    <!-- Zone A: Header -->
+    <div class="card">
+      <h2>1 · 单据头 · Header</h2>
+      <div class="body">
+        <div class="grid-3">
+          <div>
+            <label>BL No. *</label>
+            <input type="text" id="bl_no" required placeholder="MEDUWX608047" />
+          </div>
+          <div>
+            <label>ETD</label>
+            <input type="date" id="etd" />
+          </div>
+          <div>
+            <label>POD</label>
+            <input type="text" id="pod" placeholder="PORT KELANG" />
+          </div>
+          <div>
+            <label>Container Type</label>
+            <select id="container_type">
+              <option value="40HQ">40HQ</option>
+              <option value="40GP">40GP</option>
+              <option value="20GP">20GP</option>
+              <option value="45HQ">45HQ</option>
+            </select>
+          </div>
+          <div>
+            <label>Customer (英文短名)</label>
+            <input type="text" id="customer_en" placeholder="PETSOME" />
+          </div>
+          <div>
+            <label>Incoterm</label>
+            <select id="incoterm">
+              <option value="FOB">FOB</option>
+              <option value="EXW">EXW</option>
+              <option value="CIF">CIF</option>
+              <option value="CFR">CFR</option>
+              <option value="DDP">DDP</option>
+              <option value="DAP">DAP</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Zone B: Counts -->
+    <div class="card">
+      <h2>2 · 票数 + 柜数 · Counts</h2>
+      <div class="body">
+        <div class="grid-3">
+          <div>
+            <label>票数 Ticket Count</label>
+            <input type="number" id="ticket_count" value="1" min="1" />
+            <div class="hint">同 BL 拆几票算几票（青岛舱单按拆票数收）</div>
+          </div>
+          <div>
+            <label>柜数 Box Count</label>
+            <input type="number" id="box_count" value="1" min="1" />
+            <div class="hint">THC / 港杂 / 场站 按柜计</div>
+          </div>
+          <div>
+            <label>Work No.</label>
+            <input type="text" id="work_no" placeholder="HV614A 等" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Zone D + E: Fees -->
+    <div class="card">
+      <h2>3 · 费用明细 · Fees <small>(单价 RMB · 系统按上面票数/柜数自动乘)</small></h2>
+      <div class="body">
+        <div class="grid">
+
+          <div class="group-title">按柜收 (× 柜数)</div>
+
+          <div><label>THC 码头操作 ¥/柜</label>
+            <input type="number" step="0.01" id="fee_thc" placeholder="1012" /></div>
+          <div><label>场站 ¥/柜</label>
+            <input type="number" step="0.01" id="fee_storage" placeholder="400" /></div>
+          <div><label>港杂 ¥/柜</label>
+            <input type="number" step="0.01" id="fee_port_entry" placeholder="391" /></div>
+          <div><label>VGM ¥/柜 <small style="color:var(--dim)">(暂占 fee_packing 位)</small></label>
+            <input type="number" step="0.01" id="fee_packing" placeholder="70" /></div>
+          <div><label>吊机 fee_crane ¥/柜</label>
+            <input type="number" step="0.01" id="fee_crane" placeholder="0" /></div>
+          <div><label>提箱 fee_pickup ¥/柜</label>
+            <input type="number" step="0.01" id="fee_pickup" placeholder="0" /></div>
+          <div><label>停车 fee_parking ¥/柜</label>
+            <input type="number" step="0.01" id="fee_parking" placeholder="0" /></div>
+          <div><label>拖车 fee_trucking ¥/柜</label>
+            <input type="number" step="0.01" id="fee_trucking" placeholder="0" /></div>
+
+          <div class="group-title">按票收 (× 票数)</div>
+
+          <div><label>单证 ¥/票</label>
+            <input type="number" step="0.01" id="fee_doc" placeholder="450" /></div>
+          <div><label>舱单 ¥/票</label>
+            <input type="number" step="0.01" id="fee_booking" placeholder="100" /></div>
+          <div><label>信息 ¥/票</label>
+            <input type="number" step="0.01" id="fee_edi" placeholder="10.6" /></div>
+          <div><label>操作费 ¥/票</label>
+            <input type="number" step="0.01" id="fee_customs" placeholder="100" /></div>
+          <div><label>电子箱单 fee_epacking ¥/票</label>
+            <input type="number" step="0.01" id="fee_epacking" placeholder="0" /></div>
+          <div><label>条码 fee_barcode ¥/票</label>
+            <input type="number" step="0.01" id="fee_barcode" placeholder="0" /></div>
+
+          <div class="group-title">海运费 (USD) + FX</div>
+
+          <div><label>USD Freight 海运费 $</label>
+            <input type="number" step="0.01" id="usd_freight" placeholder="5000.00" /></div>
+          <div><label>FX rate snapshot <small style="color:var(--dim)">(留空走系统取值)</small></label>
+            <input type="number" step="0.0001" id="fx_rate_snapshot" placeholder="7.20" /></div>
+
+          <div class="live-total">
+            <span>实时合计</span>
+            <span>
+              <span class="vu">CNY ¥<span id="liveCny">0.00</span></span>
+              &nbsp;+&nbsp;
+              <span class="v">USD $<span id="liveUsd">0.00</span></span>
+              &nbsp;→&nbsp;
+              <span class="v">USD合计 $<span id="liveTotalUsd">0.00</span></span>
+            </span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn-secondary" id="clearBtn">清空</button>
+        <button type="submit" class="btn-primary" id="saveBtn">💾 保存 · Save Draft</button>
+      </div>
+    </div>
+
+  </form>
+
+  <div class="recent">
+    <h3 style="color:var(--txt);font-size:13px;margin:24px 0 10px">📋 最近录入 · Recent (latest 10)</h3>
+    <table>
+      <thead><tr><th>Ref</th><th>BL</th><th>Customer</th><th>CNY</th><th>USD</th><th>Status</th><th>At</th></tr></thead>
+      <tbody id="recentTbody"><tr><td colspan="7" style="text-align:center;padding:14px;color:var(--dim)">Loading...</td></tr></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  // ── Auth ──
+  function getToken() {
+    return localStorage.getItem('sanlyn_jwt') || localStorage.getItem('sanlyn_token') || '';
+  }
+  if (!getToken()) document.getElementById('authWarn').style.display = 'block';
+
+  function authFetch(url, opts) {
+    var headers = Object.assign({'Content-Type':'application/json'}, (opts && opts.headers) || {});
+    var tok = getToken();
+    if (tok) headers['Authorization'] = 'Bearer ' + tok;
+    return fetch(url, Object.assign({}, opts || {}, { headers: headers }));
+  }
+
+  // ── Toast ──
+  var toast = document.getElementById('toast');
+  function showToast(msg, isErr) {
+    toast.textContent = msg;
+    toast.className = 'toast show' + (isErr ? ' err' : '');
+    setTimeout(function(){ toast.className = 'toast' + (isErr?' err':''); }, 3000);
+  }
+
+  // ── Live total ──
+  var perBox = ['fee_thc','fee_storage','fee_port_entry','fee_packing','fee_crane','fee_pickup','fee_parking','fee_trucking'];
+  var perTicket = ['fee_doc','fee_booking','fee_edi','fee_customs','fee_epacking','fee_barcode'];
+  function num(id){ return parseFloat(document.getElementById(id).value) || 0; }
+  function recomputeLive() {
+    var box = num('box_count') || 1;
+    var ticket = num('ticket_count') || 1;
+    var cny = 0;
+    perBox.forEach(function(k){ cny += num(k) * box; });
+    perTicket.forEach(function(k){ cny += num(k) * ticket; });
+    var usd = num('usd_freight');
+    var fx = num('fx_rate_snapshot') || 7.30;
+    var totalUsd = usd + (cny / fx);
+    document.getElementById('liveCny').textContent = cny.toFixed(2);
+    document.getElementById('liveUsd').textContent = usd.toFixed(2);
+    document.getElementById('liveTotalUsd').textContent = totalUsd.toFixed(2);
+  }
+  document.querySelectorAll('input').forEach(function(el){ el.addEventListener('input', recomputeLive); });
+
+  // ── Submit ──
+  document.getElementById('fdnForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    var btn = document.getElementById('saveBtn');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    var allFields = ['bl_no','etd','pod','container_type','customer_en','incoterm','work_no',
+      'ticket_count','box_count','usd_freight','fx_rate_snapshot'].concat(perBox).concat(perTicket);
+    var payload = {};
+    allFields.forEach(function(k){
+      var v = document.getElementById(k).value;
+      if (v !== '' && v != null) payload[k] = v;
+    });
+    try {
+      var r = await authFetch('/api/freight-debit-notes', { method:'POST', body: JSON.stringify(payload) });
+      var j = await r.json();
+      if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+      showToast('✓ 已保存 ' + (j.ref_no || j.id || ''));
+      loadRecent();
+    } catch (err) {
+      showToast('✗ ' + err.message, true);
+    } finally {
+      btn.disabled = false; btn.textContent = '💾 保存 · Save Draft';
+    }
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', function(){
+    document.getElementById('fdnForm').reset();
+    recomputeLive();
+  });
+
+  // ── Recent list ──
+  async function loadRecent() {
+    try {
+      var r = await authFetch('/api/freight-debit-notes?limit=10');
+      var j = await r.json();
+      var rows = j.rows || j.data || [];
+      var html = rows.map(function(x){
+        return '<tr><td>'+(x.ref_no||'')+'</td><td>'+(x.bl_no||'')+'</td><td>'+(x.customer_en||'')+
+          '</td><td>¥'+Number(x.cny_total||0).toFixed(0)+'</td><td>$'+Number(x.usd_freight||0).toFixed(0)+
+          '</td><td>'+(x.status||'')+'</td><td>'+(x.created_at||'').slice(0,10)+'</td></tr>';
+      }).join('');
+      document.getElementById('recentTbody').innerHTML = html ||
+        '<tr><td colspan="7" style="text-align:center;padding:14px;color:var(--dim)">No records yet.</td></tr>';
+    } catch (e) {
+      document.getElementById('recentTbody').innerHTML =
+        '<tr><td colspan="7" style="text-align:center;padding:14px;color:var(--rose)">Load failed: '+e.message+'</td></tr>';
+    }
+  }
+  loadRecent();
+  recomputeLive();
+</script>
+
+</body>
+</html>

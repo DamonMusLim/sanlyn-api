@@ -80,7 +80,8 @@ export default async function handler(req, res) {
         });
 
       // Build public URL
-      const url = `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${ossPath}`;
+      // CDN 自定义域(客户端可达);raw oss-cn-hongkong.aliyuncs.com 大陆客户端不通(2026-06-05)
+      const url = `https://files.sanlynos.com/${ossPath}`;
 
       return res.status(200).json({ success: true, url });
   } catch (err) {

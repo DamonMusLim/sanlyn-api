@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Sanlyn OS · Join Your Team</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(circle at top, #1e293b 0%, #0a0f1e 60%);
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    width: 100%; max-width: 460px;
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 14px;
+    padding: 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+    position: relative;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 20px;
+  }
+  .brand .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+  }
+  .brand .name {
+    font-size: 12px; font-weight: 800; letter-spacing: .08em;
+    color: #94a3b8; text-transform: uppercase;
+  }
+  .lang-toggle {
+    position: absolute; top: 22px; right: 22px;
+    display: flex; align-items: center; gap: 2px;
+    font-size: 10px; font-weight: 700;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid #334155;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .lang-toggle button {
+    background: transparent; border: none;
+    padding: 4px 10px; cursor: pointer;
+    color: #64748b; font-size: 10px; font-weight: 700;
+    font-family: inherit;
+  }
+  .lang-toggle button.on {
+    background: rgba(96,165,250,0.15); color: #60a5fa;
+  }
+
+  .state { display: none; }
+  .state.active { display: block; }
+
+  .spinner {
+    width: 28px; height: 28px;
+    border: 2px solid rgba(96,165,250,0.2);
+    border-top-color: #60a5fa;
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+    margin: 30px auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { text-align: center; color: #64748b; font-size: 13px; }
+
+  h1 {
+    font-size: 20px; font-weight: 800; color: #f1f5f9;
+    margin-bottom: 6px; letter-spacing: -0.01em;
+  }
+  .greeting { font-size: 13px; color: #94a3b8; margin-bottom: 18px; }
+  .greeting b { color: #f1f5f9; }
+
+  .info-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 12px; border-radius: 8px;
+    background: rgba(255,255,255,0.03); border: 1px solid #1e293b;
+    margin-bottom: 8px; font-size: 12px;
+  }
+  .info-row .k { color: #64748b; }
+  .info-row .v { color: #f1f5f9; font-weight: 700; }
+
+  .hq-banner {
+    margin: 8px 0 14px;
+    padding: 10px 14px;
+    background: rgba(168,85,247,0.08);
+    border: 1px solid rgba(168,85,247,0.3);
+    border-radius: 8px;
+    font-size: 12px; color: #c084fc; line-height: 1.5;
+  }
+  .hq-banner b { color: #d8b4fe; }
+
+  label {
+    display: block; font-size: 10px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: #64748b; margin: 14px 0 6px;
+  }
+  input[type=password], input[type=email] {
+    width: 100%; padding: 11px 12px; border-radius: 8px;
+    background: rgba(255,255,255,0.04); border: 1px solid #334155;
+    color: #f1f5f9; font-size: 14px; outline: none;
+    font-family: inherit;
+  }
+  input[type=password]:focus, input[type=email]:focus {
+    border-color: #60a5fa; background: rgba(96,165,250,0.06);
+  }
+  input.email-hinted {
+    background: rgba(168,85,247,0.06);
+    border-color: rgba(168,85,247,0.3);
+  }
+  .hint { font-size: 11px; color: #64748b; margin-top: 5px; }
+
+  button.primary {
+    width: 100%; margin-top: 18px;
+    padding: 12px 0; border-radius: 8px; border: none;
+    background: linear-gradient(135deg, #2563eb, #60a5fa);
+    color: white; font-size: 13px; font-weight: 800;
+    letter-spacing: .03em; cursor: pointer;
+    transition: filter .15s;
+    font-family: inherit;
+  }
+  button.primary:hover:not(:disabled) { filter: brightness(1.1); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .err-box {
+    padding: 14px; border-radius: 8px;
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.3);
+    color: #fca5a5; font-size: 13px; line-height: 1.5;
+  }
+  .err-box b { color: #fecaca; }
+  .inline-error {
+    margin-top: 10px; font-size: 12px; color: #fca5a5;
+  }
+
+  .success-icon {
+    width: 56px; height: 56px;
+    margin: 8px auto 16px;
+    border-radius: 50%;
+    background: rgba(34,197,94,0.15);
+    border: 2px solid #22c55e;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; color: #4ade80;
+  }
+  .success h2 {
+    text-align: center; font-size: 18px; font-weight: 800;
+    color: #f1f5f9; margin-bottom: 6px;
+  }
+  .success p {
+    text-align: center; font-size: 13px; color: #94a3b8;
+    margin-bottom: 18px;
+  }
+  a.login-btn {
+    display: block; padding: 12px 0; border-radius: 8px;
+    background: rgba(34,197,94,0.12); color: #4ade80;
+    text-align: center; font-size: 13px; font-weight: 700;
+    text-decoration: none; border: 1px solid rgba(34,197,94,0.3);
+    font-family: inherit;
+  }
+  a.login-btn:hover { background: rgba(34,197,94,0.18); }
+
+  .footer-link {
+    text-align: center; margin-top: 16px;
+    font-size: 11px; color: #475569;
+  }
+  .footer-link b { color: #94a3b8; }
+
+  code.url-sample {
+    display: block; margin-top: 6px; padding: 6px 8px;
+    background: rgba(0,0,0,0.3); border-radius: 4px;
+    font-size: 10.5px; color: #94a3b8;
+    font-family: monospace; word-break: break-all;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="lang-toggle">
+    <button id="lang-en" type="button">EN</button>
+    <button id="lang-cn" type="button">中</button>
+  </div>
+
+  <div class="brand">
+    <div class="dot"></div>
+    <div class="name">Sanlyn OS</div>
+  </div>
+
+  <!-- ── Loading ── -->
+  <div id="state-loading" class="state active">
+    <div class="spinner"></div>
+    <div class="loading-text" data-i18n="loading">Verifying invitation…</div>
+  </div>
+
+  <!-- ── Landing (no token) ── -->
+  <div id="state-landing" class="state">
+    <div style="font-size: 36px; text-align: center; margin: 4px 0 12px;">👥</div>
+    <h1 style="text-align: center; margin-bottom: 8px;" data-i18n="landing.title">Team Join Page</h1>
+    <p style="text-align: center; font-size: 13px; color: #94a3b8; line-height: 1.6; margin-bottom: 22px;" data-i18n-html="landing.desc">
+      This page is used to accept a team invitation. You should arrive here by clicking the link in an <b style="color:#f1f5f9">invitation email</b> sent by your team admin.
+    </p>
+
+    <div style="background: rgba(96,165,250,0.06); border: 1px solid rgba(96,165,250,0.2); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;">
+      <div style="font-size: 11px; font-weight: 800; color: #60a5fa; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px;" data-i18n="landing.find">
+        📧 Looking for your invite?
+      </div>
+      <div style="font-size: 12px; color: #cbd5e1; line-height: 1.6;" data-i18n-html="landing.findDesc">
+        Check your email (including <b>spam folder</b>) for a message from Sanlyn OS. The link will look like:
+      </div>
+      <code class="url-sample">/team-join.html?token=…</code>
+    </div>
+
+    <a href="/" class="login-btn" style="background: rgba(96,165,250,0.1); color: #60a5fa; border-color: rgba(96,165,250,0.3);" data-i18n="landing.signin">
+      → I already have an account · Sign in
+    </a>
+
+    <div class="footer-link" style="margin-top: 18px;" data-i18n-html="landing.askAdmin">
+      Need an invite? Ask your team admin to add you in <b>Profile → Team Members → + Invite</b>
+    </div>
+  </div>
+
+  <!-- ── Error (broken token) ── -->
+  <div id="state-error" class="state">
+    <h1 style="margin-bottom: 12px;" data-i18n="error.title">Invitation Issue</h1>
+    <div class="err-box">
+      <b id="err-title">—</b>
+      <div id="err-detail" style="margin-top: 6px; opacity: 0.85;"></div>
+    </div>
+    <a href="/" class="login-btn" style="margin-top: 14px; background: rgba(96,165,250,0.1); color: #60a5fa; border-color: rgba(96,165,250,0.3);" data-i18n="error.signin">
+      → Go to Sign In
+    </a>
+    <div class="footer-link" style="margin-top: 14px;" data-i18n="error.contact">
+      If you believe this is a mistake, contact your team admin to resend.
+    </div>
+  </div>
+
+  <!-- ── Form ── -->
+  <div id="state-form" class="state">
+    <!-- Invitation hero — clean & minimal: who invited + what to do -->
+    <div style="text-align: center; margin-bottom: 22px;">
+      <div style="font-size: 32px; margin-bottom: 10px;">🎉</div>
+      <div style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px;" data-i18n="form.invitedBy">You've been invited by</div>
+      <div id="invite-company-hero" style="font-size: 22px; font-weight: 900; color: #f1f5f9; letter-spacing: -0.01em; line-height: 1.3;">—</div>
+      <div style="font-size: 13px; color: #64748b; margin-top: 8px;" data-i18n="form.joinTeam">to join the team on Sanlyn OS</div>
+    </div>
+
+    <div class="greeting" data-i18n-html="form.greetingV2">Enter your email and set a password to join.</div>
+
+    <!-- Email input: 双门槛 — invitee self-claims email; if admin hinted, must match -->
+    <label for="email-input" data-i18n="form.emailLabel">Your Email</label>
+    <input id="email-input" type="email" autocomplete="email" data-i18n-attr="placeholder:form.emailPlaceholder">
+    <div class="hint" id="email-hint" data-i18n="form.emailHint">We'll use this to send order updates and as your sign-in ID.</div>
+
+    <label for="pw" data-i18n="form.pwLabel">Choose Password</label>
+    <input id="pw" type="password" autocomplete="new-password" minlength="8" data-i18n-attr="placeholder:form.pwPlaceholder">
+    <div class="hint" data-i18n="form.pwHint">Pick something only you know. You can change it later in Profile.</div>
+
+    <label for="pw2" data-i18n="form.pw2Label">Confirm Password</label>
+    <input id="pw2" type="password" autocomplete="new-password" data-i18n-attr="placeholder:form.pw2Placeholder">
+
+    <button id="submit-btn" class="primary" data-i18n="form.submit">Create Account & Continue →</button>
+    <div id="form-error" class="inline-error" style="display: none;"></div>
+  </div>
+
+  <!-- ── Success ── -->
+  <div id="state-success" class="state success">
+    <div class="success-icon">✓</div>
+    <h2 data-i18n="success.title">Account Created</h2>
+    <p data-i18n="success.desc">Welcome to Sanlyn OS. You can now sign in with your email and password.</p>
+    <a id="login-link" class="login-btn" href="/" data-i18n="success.signin">Go to Sign In →</a>
+  </div>
+
+  <!-- ── Pending review (admin needs to approve) ── -->
+  <div id="state-pending" class="state success">
+    <div class="success-icon" style="background: rgba(251,191,36,0.15); border-color: #fbbf24; color: #fcd34d;">⏳</div>
+    <h2 data-i18n="pending.title">Awaiting Admin Approval</h2>
+    <p data-i18n="pending.desc">Your registration has been received. Your team admin will review and activate your account shortly. You'll be able to sign in once approved.</p>
+    <div style="background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25); border-radius: 8px; padding: 12px 14px; margin-top: 12px; font-size: 11px; color: #fcd34d; line-height: 1.6;" data-i18n="pending.hint">
+      💡 Speed it up: send a message to whoever invited you so they know to approve.
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const API_BASE = "https://api.sanlyn.cn";
+
+  // ── i18n dictionary ──
+  const I18N = {
+    en: {
+      "title":             "Sanlyn OS · Join Your Team",
+      "loading":           "Verifying invitation…",
+      "landing.title":     "Team Join Page",
+      "landing.desc":      "This page is used to accept a team invitation. You should arrive here by clicking the link in an <b style=\"color:#f1f5f9\">invitation email</b> sent by your team admin.",
+      "landing.find":      "📧 Looking for your invite?",
+      "landing.findDesc":  "Check your email (including <b>spam folder</b>) for a message from Sanlyn OS. The link will look like:",
+      "landing.signin":    "→ I already have an account · Sign in",
+      "landing.askAdmin":  "Need an invite? Ask your team admin to add you in <b>Profile → Team Members → + Invite</b>",
+      "error.title":       "Invitation Issue",
+      "error.signin":      "→ Go to Sign In",
+      "error.contact":     "If you believe this is a mistake, contact your team admin to resend.",
+      "form.title":        "Join Your Team",
+      "form.invitedBy":    "You've been invited by",
+      "form.joinTeam":     "to join the team on Sanlyn OS",
+      "form.emailLabel":   "Your Email",
+      "form.emailPlaceholder": "name@your-company.com",
+      "form.emailHint":    "We'll use this to send order updates and as your sign-in ID.",
+      "form.emailHintMatch": "✓ This invite was issued for a specific email — enter it to verify.",
+      "form.greetingV2":   "Enter your email and set a password to join.",
+      "form.greeting":     "Hi <b id=\"invite-email\">—</b>, set a password to join your company on Sanlyn OS.",
+      "form.company":      "Company",
+      "form.role":         "Role",
+      "form.hq":           "🏛 <b>Headquarters scope.</b> You'll see and act across <b><span id=\"hq-count\">0</span> group companies</b> when you sign in.",
+      "form.pwLabel":      "Choose Password",
+      "form.pwPlaceholder":"At least 8 characters",
+      "form.pwHint":       "Pick something only you know. You can change it later in Profile.",
+      "form.pw2Label":     "Confirm Password",
+      "form.pw2Placeholder":"Re-enter to confirm",
+      "form.submit":       "Create Account & Continue →",
+      "success.title":     "Account Created",
+      "success.desc":      "Welcome to Sanlyn OS. You can now sign in with your email and password.",
+      "success.signin":    "Go to Sign In →",
+      "pending.title":     "Awaiting Admin Approval",
+      "pending.desc":      "Your registration has been received. Your team admin will review and activate your account shortly. You'll be able to sign in once approved.",
+      "pending.hint":      "💡 Speed it up: send a message to whoever invited you so they know to approve.",
+      // Dynamic error strings
+      "err.notFound":      ["Invitation not found", "The token in your link doesn't match any active invitation."],
+      "err.expired":       ["This invitation has expired", "Ask your admin to send a fresh invitation."],
+      "err.alreadyUsed":   ["This invitation was already used", "If you forgot your password, use the reset flow from the sign-in page."],
+      "err.invalid":       ["Invitation no longer valid", ""],
+      "err.loadFail":      ["Could not load invitation", ""],
+      "err.network":       ["Network error", "Could not reach Sanlyn OS. Check your connection and refresh."],
+      "form.err.pwShort":  "Password must be at least 8 characters.",
+      "form.err.pwMatch":  "Passwords don't match — please re-enter.",
+      "form.err.dupEmail": "An account already exists for this email. Use sign-in or password reset.",
+      "form.err.expired":  "This invitation has expired or was already used.",
+      "form.err.generic":  "Could not create account. Try again.",
+      "form.err.network":  "Network error. Please try again.",
+      "form.err.emailInvalid": "Please enter a valid email address.",
+      "form.err.emailMismatch": "This email doesn't match the invite. Check with your admin.",
+      "form.creating":     "Creating account…",
+    },
+    cn: {
+      "title":             "Sanlyn OS · 加入团队",
+      "loading":           "正在验证邀请…",
+      "landing.title":     "团队加入页",
+      "landing.desc":      "本页用于接受团队邀请。请通过团队管理员发送的 <b style=\"color:#f1f5f9\">邀请邮件</b> 中的链接进入。",
+      "landing.find":      "📧 找不到邀请？",
+      "landing.findDesc":  "请查看您的邮箱（含 <b>垃圾邮件箱</b>）是否收到来自 Sanlyn OS 的邮件。链接格式如下：",
+      "landing.signin":    "→ 我已有账号 · 登录",
+      "landing.askAdmin":  "还没有邀请？请让管理员在 <b>个人资料 → 团队成员 → + 邀请</b> 中添加您",
+      "error.title":       "邀请异常",
+      "error.signin":      "→ 前往登录",
+      "error.contact":     "如有疑问，请联系您的团队管理员重新发送邀请。",
+      "form.title":        "加入团队",
+      "form.invitedBy":    "您收到来自以下公司的邀请",
+      "form.joinTeam":     "邀请您加入 Sanlyn OS",
+      "form.emailLabel":   "您的邮箱",
+      "form.emailPlaceholder": "name@your-company.com",
+      "form.emailHint":    "用于接收订单通知，也是您的登录账号。",
+      "form.emailHintMatch": "✓ 本邀请已指定邮箱，请输入对应邮箱完成验证。",
+      "form.greetingV2":   "请输入您的邮箱并设置密码以加入。",
+      "form.greeting":     "您好 <b id=\"invite-email\">—</b>，请设置密码以加入您所在公司的 Sanlyn OS。",
+      "form.company":      "公司",
+      "form.role":         "角色",
+      "form.hq":           "🏛 <b>总部权限。</b>登录后您将可见并操作 <b><span id=\"hq-count\">0</span> 家集团公司</b> 的全部数据。",
+      "form.pwLabel":      "设置密码",
+      "form.pwPlaceholder":"至少 8 位",
+      "form.pwHint":       "请使用您专属的密码，登录后可在「个人资料」中修改。",
+      "form.pw2Label":     "确认密码",
+      "form.pw2Placeholder":"再次输入以确认",
+      "form.submit":       "创建账号并继续 →",
+      "success.title":     "账号已创建",
+      "success.desc":      "欢迎使用 Sanlyn OS。请使用您的邮箱和密码登录。",
+      "success.signin":    "前往登录 →",
+      "pending.title":     "等待管理员审核",
+      "pending.desc":      "您的注册已提交。团队管理员审核通过后即可登录使用。请稍候片刻。",
+      "pending.hint":      "💡 加快进度：通知邀请您的同事尽快处理审核。",
+      "err.notFound":      ["邀请不存在", "您链接中的 token 没有匹配到任何有效邀请。"],
+      "err.expired":       ["邀请已过期", "请联系管理员重新发送邀请。"],
+      "err.alreadyUsed":   ["邀请已被使用", "如果忘记密码，请通过登录页的重置流程。"],
+      "err.invalid":       ["邀请已失效", ""],
+      "err.loadFail":      ["无法加载邀请", ""],
+      "err.network":       ["网络错误", "无法连接 Sanlyn OS，请检查网络后刷新。"],
+      "form.err.pwShort":  "密码至少 8 位。",
+      "form.err.pwMatch":  "两次密码不一致，请重新输入。",
+      "form.err.dupEmail": "该邮箱已有账号，请直接登录或使用密码重置。",
+      "form.err.expired":  "邀请已过期或已被使用。",
+      "form.err.generic":  "创建账号失败，请重试。",
+      "form.err.network":  "网络错误，请重试。",
+      "form.err.emailInvalid": "请输入有效的邮箱地址。",
+      "form.err.emailMismatch": "邮箱与邀请记录不符，请联系管理员确认。",
+      "form.creating":     "正在创建账号…",
+    }
+  };
+
+  // ── Language detection: localStorage > navigator.language > 'en' ──
+  function detectLang() {
+    const saved = localStorage.getItem("sanlyn_lang");
+    if (saved === "en" || saved === "cn") return saved;
+    const nav = (navigator.language || "en").toLowerCase();
+    return nav.startsWith("zh") ? "cn" : "en";
+  }
+  let LANG = detectLang();
+
+  function t(key) { return (I18N[LANG] && I18N[LANG][key]) || I18N.en[key] || key; }
+
+  function applyI18n() {
+    document.documentElement.lang = LANG === "cn" ? "zh-CN" : "en";
+    document.title = t("title");
+    // text content
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+      const key = el.getAttribute("data-i18n");
+      const v = t(key);
+      if (typeof v === "string") el.textContent = v;
+    });
+    // HTML content (allows inline tags)
+    document.querySelectorAll("[data-i18n-html]").forEach(el => {
+      const key = el.getAttribute("data-i18n-html");
+      const v = t(key);
+      if (typeof v === "string") el.innerHTML = v;
+    });
+    // attribute (e.g. placeholder)
+    document.querySelectorAll("[data-i18n-attr]").forEach(el => {
+      const spec = el.getAttribute("data-i18n-attr"); // "placeholder:form.pwPlaceholder"
+      const [attr, key] = spec.split(":");
+      el.setAttribute(attr, t(key));
+    });
+    // toggle button state
+    document.getElementById("lang-en").classList.toggle("on", LANG === "en");
+    document.getElementById("lang-cn").classList.toggle("on", LANG === "cn");
+    // Rehydrate dynamic fields if a state was already loaded
+    if (currentInvite) renderInvite(currentInvite);
+  }
+
+  function setLang(l) {
+    LANG = l; localStorage.setItem("sanlyn_lang", l);
+    applyI18n();
+  }
+  document.getElementById("lang-en").addEventListener("click", () => setLang("en"));
+  document.getElementById("lang-cn").addEventListener("click", () => setLang("cn"));
+
+  // ── State helpers ──
+  function showState(name) {
+    document.querySelectorAll(".state").forEach(el => el.classList.remove("active"));
+    document.getElementById("state-" + name).classList.add("active");
+  }
+
+  function showError(errKey, customDetail) {
+    const [title, detail] = t(errKey);
+    document.getElementById("err-title").textContent = title;
+    document.getElementById("err-detail").textContent = customDetail || detail || "";
+    showState("error");
+  }
+
+  function getToken() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("token");
+  }
+
+  let currentInvite = null;
+  function renderInvite(inv) {
+    // Hero: only company name. Role + HQ scope are internal details, hidden per damon 2026-05-18
+    const heroEl = document.getElementById("invite-company-hero");
+    if (heroEl) heroEl.textContent = inv.company_name;
+
+    // 双门槛: if admin pre-set an email, prefill + lock it visually; else free input
+    const emailInput = document.getElementById("email-input");
+    const emailHint  = document.getElementById("email-hint");
+    if (inv.email && inv.email.indexOf("@") > 0) {
+      emailInput.value = inv.email;
+      emailInput.classList.add("email-hinted");
+      emailHint.textContent = t("form.emailHintMatch");
+    } else {
+      emailInput.value = "";
+      emailInput.classList.remove("email-hinted");
+      emailHint.textContent = t("form.emailHint");
+    }
+  }
+
+  // ── Apply i18n once, then run flow ──
+  applyI18n();
+
+  const token = getToken();
+  if (!token) { showState("landing"); return; }
+
+  fetch(API_BASE + "/api/db/team-join?token=" + encodeURIComponent(token))
+    .then(r => r.json().then(d => ({ status: r.status, body: d })))
+    .then(({ status, body }) => {
+      if (status === 404) return showError("err.notFound");
+      if (status === 410) {
+        if (body.error === "invite_expired") return showError("err.expired");
+        if (String(body.error).startsWith("invite_already_")) return showError("err.alreadyUsed");
+        return showError("err.invalid", body.error || "");
+      }
+      if (status >= 400 || !body.ok) return showError("err.loadFail", body.error || "");
+
+      currentInvite = body.invite;
+      renderInvite(currentInvite);
+      showState("form");
+    })
+    .catch(() => showError("err.network"));
+
+  // ── Submit ──
+  document.getElementById("submit-btn").addEventListener("click", function() {
+    const email = (document.getElementById("email-input").value || "").trim().toLowerCase();
+    const pw  = document.getElementById("pw").value;
+    const pw2 = document.getElementById("pw2").value;
+    const errEl = document.getElementById("form-error");
+    errEl.style.display = "none";
+
+    // Email validation (client-side; backend re-checks)
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailOk) { errEl.textContent = t("form.err.emailInvalid"); errEl.style.display = "block"; return; }
+    // If admin pre-hinted, enforce match here too (server still authoritative)
+    const hinted = currentInvite && currentInvite.email && currentInvite.email.indexOf("@") > 0
+                   ? currentInvite.email.toLowerCase() : null;
+    if (hinted && email !== hinted) {
+      errEl.textContent = t("form.err.emailMismatch"); errEl.style.display = "block"; return;
+    }
+    if (pw.length < 8) { errEl.textContent = t("form.err.pwShort"); errEl.style.display = "block"; return; }
+    if (pw !== pw2)    { errEl.textContent = t("form.err.pwMatch"); errEl.style.display = "block"; return; }
+
+    const btn = document.getElementById("submit-btn");
+    btn.disabled = true; btn.textContent = t("form.creating");
+
+    fetch(API_BASE + "/api/db/team-join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: token, email: email, password: pw }),
+    })
+      .then(r => r.json().then(d => ({ status: r.status, body: d })))
+      .then(({ status, body }) => {
+        if (status === 200 && body.ok) {
+          // pending_review = admin needs to approve; else immediate active
+          return showState(body.pending_review ? "pending" : "success");
+        }
+        if (status === 409)      errEl.textContent = t("form.err.dupEmail");
+        else if (status === 410) errEl.textContent = t("form.err.expired");
+        else                     errEl.textContent = body.error || t("form.err.generic");
+        errEl.style.display = "block";
+        btn.disabled = false; btn.textContent = t("form.submit");
+      })
+      .catch(() => {
+        errEl.textContent = t("form.err.network");
+        errEl.style.display = "block";
+        btn.disabled = false; btn.textContent = t("form.submit");
+      });
+  });
+
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Enter" && document.getElementById("state-form").classList.contains("active")) {
+      document.getElementById("submit-btn").click();
+    }
+  });
+})();
+</script>
+</body>
+</html>

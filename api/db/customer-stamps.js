@@ -8,7 +8,7 @@ import { getPool, setCors } from '../db.js';
 import { requireAuth } from '../auth.js';
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, POST, DELETE, OPTIONS");
+  setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // ── Auth: require valid JWT for all operations ──
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'username required' });
       }
       const result = await pool.query(
-        `SELECT id, username, company_code, name, url, uploaded_at
+        `SELECT id, username, company_code, name, url, uploaded_at, is_default, shape
          FROM customer_stamps
          WHERE username = $1 AND is_active = true
          ORDER BY uploaded_at DESC`,
@@ -96,7 +96,35 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, deleted: result.rows[0].id });
     }
 
-    return res.status(405).json({ error: 'GET/POST/DELETE only' });
+    // ── PATCH: 设为默认(固定)章 — 触发器自动把同公司其他章取消默认 ──
+    if (req.method === 'PATCH') {
+      const { id, set_default, name } = req.body;
+      if (!id) return res.status(400).json({ error: 'id required' });
+      if (set_default) {
+        const sql = isAdmin
+          ? `UPDATE customer_stamps SET is_default = true WHERE id = $1 AND is_active = true RETURNING id`
+          : `UPDATE customer_stamps SET is_default = true WHERE id = $1 AND username = $2 AND is_active = true RETURNING id`;
+        const params = isAdmin ? [id] : [id, callerUsername];
+        const result = await pool.query(sql, params);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Stamp not found' });
+        return res.status(200).json({ success: true, default_id: result.rows[0].id });
+      }
+      // 改名: 校验非空 + 长度; 非admin只能改自己的章
+      if (typeof name === 'string') {
+        const nm = name.trim();
+        if (!nm || nm.length > 64) return res.status(400).json({ error: 'name must be 1–64 chars' });
+        const sql = isAdmin
+          ? `UPDATE customer_stamps SET name = $1 WHERE id = $2 AND is_active = true RETURNING id, name`
+          : `UPDATE customer_stamps SET name = $1 WHERE id = $2 AND username = $3 AND is_active = true RETURNING id, name`;
+        const params = isAdmin ? [nm, id] : [nm, id, callerUsername];
+        const result = await pool.query(sql, params);
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Stamp not found' });
+        return res.status(200).json({ success: true, id: result.rows[0].id, name: result.rows[0].name });
+      }
+      return res.status(400).json({ error: 'set_default or name required' });
+    }
+
+    return res.status(405).json({ error: 'GET/POST/PATCH/DELETE only' });
   } catch (err) {
     console.error('customer-stamps error:', err);
     return res.status(500).json({ error: err.message });

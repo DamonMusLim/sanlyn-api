@@ -169,9 +169,10 @@ export default async function handler(req, res) {
     };
 
     await pool.query(
+      // W0-4: explicit forwarder_partner=NULL prevents DDL default '上海洋宝宝 × COSCO' from firing.
       `INSERT INTO shipping_plans
-        (_id, shipment_no, customer, created_by, flow_status, raw, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        (_id, shipment_no, customer, created_by, flow_status, raw, forwarder_partner, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NULL, NOW())
        ON CONFLICT (_id) DO UPDATE SET
         shipment_no=$2, customer=$3, created_by=$4, flow_status=$5, raw=$6, updated_at=NOW()`,
       [

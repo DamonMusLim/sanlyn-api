@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>财务工作台 · 内部对账 · Sanlyn</title>
+<style>
+  :root {
+    --bg:#060A14; --card:#0F1629; --surface:#0C1222;
+    --border:rgba(255,255,255,0.06); --borderHi:rgba(255,255,255,0.12);
+    --t1:#E2E8F0; --t2:#94A3B8; --t3:#64748B;
+    --blue:#38BDF8; --green:#10B981; --amber:#F59E0B;
+    --red:#EF4444; --purple:#A78BFA; --cyan:#22D3EE;
+  }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--t1); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .wrap { padding:18px 22px 80px; }
+  .h1 { font-size:18px; font-weight:900; }
+  .badge { font-size:10px; padding:2px 8px; border-radius:5px; font-weight:700; display:inline-block; }
+  .badge-real { background:rgba(16,185,129,0.15); color:#34d399; }
+  .badge-boss { background:rgba(239,68,68,0.15); color:#fca5a5; }
+  .badge-internal { background:rgba(167,139,250,0.18); color:#a78bfa; }
+  .mono { font-family:"SF Mono",Menlo,monospace; }
+
+  /* BossSection */
+  .boss-wrap { margin-bottom:14px; border:1px solid rgba(167,139,250,0.25); border-radius:12px; overflow:hidden; }
+  .boss-head { display:flex; align-items:center; gap:8px; padding:10px 14px; background:rgba(167,139,250,0.06); border-bottom:1px solid rgba(167,139,250,0.15); cursor:pointer; }
+  .boss-head .title { font-size:13px; font-weight:800; color:var(--purple); }
+  .boss-body { padding:12px 14px; background:var(--card); }
+  .boss-cards { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  .boss-card { background:var(--surface); border-radius:10px; padding:12px 14px; border:1px solid var(--border); text-align:center; }
+  .boss-card .lbl { font-size:11px; color:var(--t2); margin-bottom:4px; }
+  .boss-card .val { font-size:18px; font-weight:800; font-family:"SF Mono",monospace; }
+  .boss-card.blue .val{color:var(--blue)} .boss-card.green .val{color:var(--green)}
+  .boss-card.amber .val{color:var(--amber)} .boss-card.cyan .val{color:var(--cyan)}
+  .ratings { border-top:1px solid var(--border); padding-top:12px; }
+  .ratings .label { font-size:11px; font-weight:700; color:var(--t3); margin-bottom:8px; letter-spacing:.05em; }
+  .rating-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:6px; }
+  .rating { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+  .rating .n { font-size:11px; font-weight:700; color:var(--t1); }
+  .rating .s { font-size:10px; color:var(--amber); letter-spacing:.05em; }
+  .rating .d { font-size:10px; color:var(--t3); margin-top:2px; }
+
+  /* Category cards */
+  .cat-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:14px; }
+  .cat { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 10px; cursor:pointer; text-align:left; transition:.15s; }
+  .cat:hover { transform:translateY(-1px); border-color:var(--borderHi); }
+  .cat.active { background:rgba(167,139,250,0.10); border-color:rgba(167,139,250,0.5); }
+  .cat .ic-lbl { display:flex; align-items:center; gap:6px; margin-bottom:6px; }
+  .cat .ic { font-size:16px; }
+  .cat .lbl { font-size:12px; font-weight:800; }
+  .cat.cargo .lbl{color:var(--blue)}    .cat.freight .lbl{color:var(--cyan)}
+  .cat.payable .lbl{color:var(--amber)} .cat.invoice .lbl{color:var(--purple)}
+  .cat.cn .lbl{color:#5b8bb6}
+  .cat .ct { font-size:11px; color:var(--t2); }
+  .cat .amt { font-size:13px; font-weight:700; color:var(--t1); margin-top:2px; font-family:"SF Mono",monospace; }
+  .cat .over { font-size:10px; color:var(--red); margin-top:2px; }
+
+  /* All Orders section */
+  .ord-section { background:var(--card); border:1px solid var(--border); border-radius:12px; margin-bottom:14px; overflow:hidden; }
+  .ord-head { padding:10px 14px 8px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .ord-head .title { font-size:12px; font-weight:800; color:var(--t1); }
+  .tabs { display:flex; gap:5px; }
+  .tab { padding:4px 10px; border-radius:6px; cursor:pointer; font-size:11px; font-weight:700; background:transparent; color:var(--t3); border:1px solid var(--border); }
+  .tab.on { background:rgba(139,92,246,0.18); color:#a78bfa; border-color:rgba(139,92,246,0.4); }
+  .ord-actions { margin-left:auto; display:flex; gap:6px; }
+  .btn-batch { padding:5px 12px; border-radius:6px; cursor:pointer; background:rgba(96,165,250,0.12); color:#60a5fa; border:1px solid rgba(96,165,250,0.4); font-size:11px; font-weight:800; }
+  .btn-soa { padding:5px 12px; border-radius:6px; cursor:pointer; background:rgba(34,197,94,0.12); color:var(--green); border:1px solid rgba(34,197,94,0.4); font-size:11px; font-weight:800; }
+  .ord-search { padding:8px 14px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .ord-search input { background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:7px; padding:5px 10px; font-size:11px; color:var(--t1); outline:none; width:200px; }
+  .chips { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { padding:5px 11px; border-radius:999px; cursor:pointer; background:transparent; color:var(--t2); border:1px solid var(--border); font-size:11px; font-weight:700; display:inline-flex; align-items:center; gap:5px; }
+  .chip.on { background:rgba(56,189,248,0.18); color:var(--blue); border-color:rgba(56,189,248,0.4); }
+  .chip .dot { width:7px; height:7px; border-radius:4px; }
+  .chip .cnt { opacity:.7; font-family:monospace; }
+
+  /* Billing card */
+  .card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; padding:12px; }
+  .bcard { background:var(--surface); border-radius:12px; overflow:hidden; cursor:pointer; transition:.15s; border:1px solid rgba(109,40,217,0.3); }
+  .bcard:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.45); }
+  .bcard.paid    { border-color:rgba(16,185,129,0.25); }
+  .bcard.overdue { border-color:rgba(239,68,68,0.4); }
+  .bcard.ocean   { border-color:rgba(56,189,248,0.25); }
+  .alert-bar { padding:6px 12px; font-size:10.5px; font-weight:700; }
+  .alert-bar.purple { background:rgba(139,92,246,0.12); color:var(--purple); }
+  .alert-bar.green  { background:rgba(16,185,129,0.12); color:var(--green); }
+  .alert-bar.red    { background:rgba(239,68,68,0.12); color:var(--red); }
+  .alert-bar.blue   { background:rgba(56,189,248,0.08); color:var(--blue); }
+  .alert-bar.amber  { background:rgba(251,146,60,0.12); color:#fb923c; }
+  .chip-row { display:flex; gap:5px; padding:8px 12px 0; flex-wrap:wrap; align-items:center; }
+  .typeChip { padding:2px 7px; border-radius:5px; font-size:10px; font-weight:700; }
+  .typeChip.cargo { background:rgba(245,158,11,0.15); color:var(--amber); }
+  .typeChip.ocean { background:rgba(56,189,248,0.15); color:var(--blue); }
+  .typeChip.invoice { background:rgba(167,139,250,0.15); color:var(--purple); }
+  .termChip { padding:2px 7px; border-radius:5px; font-size:10px; font-weight:700; background:rgba(34,211,238,0.12); color:var(--cyan); }
+  .id-row { padding:6px 12px 0; font-size:10px; color:var(--t3); display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .id-row .po { color:var(--purple); font-weight:700; font-family:monospace; }
+  .id-row .inco { padding:1px 6px; border-radius:4px; background:rgba(34,197,94,0.1); color:var(--green); font-weight:700; font-size:9.5px; }
+  .id-row .fs { margin-left:auto; font-family:monospace; color:var(--t2); font-weight:700; }
+  .body-row { padding:8px 12px 0; }
+  .money { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  .money .total { font-size:14px; font-weight:900; font-family:"SF Mono",monospace; }
+  .money .ccy { font-size:10px; color:#64748b; font-weight:600; margin-right:3px; }
+  .split { display:flex; flex-direction:column; gap:4px; font-size:10.5px; color:var(--t2); }
+  .split .dot { width:6px; height:6px; border-radius:3px; display:inline-block; margin-right:5px; }
+  .pbar { display:flex; align-items:center; gap:8px; }
+  .pbar .track { flex:1; height:4px; border-radius:2px; background:rgba(255,255,255,0.06); overflow:hidden; }
+  .pbar .fill { height:100%; border-radius:2px; }
+  .pbar .pct { font-size:10px; font-family:monospace; white-space:nowrap; }
+  .parties { padding:5px 12px 9px; margin-top:6px; border-top:1px solid rgba(255,255,255,0.04); display:flex; flex-direction:column; gap:1px; font-size:9.5px; }
+  .parties .row { color:var(--t3); display:flex; gap:3px; }
+  .parties .name { color:#94a3b8; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cta-wrap { padding:10px 14px 12px; }
+  .cta { width:100%; padding:9px 0; border-radius:8px; color:#fff; font-size:12px; font-weight:800; text-align:center; letter-spacing:.03em; cursor:pointer; }
+  .cta.internal { background:linear-gradient(135deg,#7c3aed,#a78bfa); }
+  .cta.paid     { background:linear-gradient(135deg,#059669,#10b981); }
+  .cta.overdue  { background:linear-gradient(135deg,#dc2626,#f97316); }
+  .cta.ocean    { background:linear-gradient(135deg,#0369a1,#0ea5e9); }
+  .cta:hover { filter:brightness(1.12); }
+
+  /* Margin display (showMargin=true for internal finance) */
+  .margin { font-size:10px; color:var(--purple); margin-top:4px; font-family:monospace; }
+
+  /* legend */
+  .legend { background:rgba(167,139,250,0.04); border:1px dashed rgba(167,139,250,0.3); border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:11px; color:var(--t2); display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+  .legend strong { color:var(--purple); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div style="margin-bottom:16px; display:flex; align-items:center; gap:10px;">
+    <span class="h1">💼 财务工作台 · 内部对账</span>
+    <span class="badge badge-internal">role=finance · INTERNAL · 内部Sanlyn</span>
+  </div>
+
+  <!-- BossSection -->
+  <div class="boss-wrap">
+    <div class="boss-head">
+      <span class="title">💎 现金流仪表盘</span>
+      <span class="badge badge-boss">仅老板/财务可见</span>
+      <span class="badge badge-real">✓ REAL · 实时数据</span>
+      <span style="margin-left:auto; color:var(--t3); font-size:12px;">▲</span>
+    </div>
+    <div class="boss-body">
+      <!-- Cards with value=0 are auto-hidden -->
+      <div class="boss-cards" style="grid-template-columns:repeat(3,1fr);">
+        <div class="boss-card blue">  <div class="lbl">本月应收</div><div class="val">USD 186,400.00</div></div>
+        <div class="boss-card green"> <div class="lbl">本月已收</div><div class="val">USD 127,850.00</div></div>
+        <div class="boss-card cyan">  <div class="lbl">净现金流</div><div class="val">USD 84,650.00</div></div>
+        <!-- 本月应付=0 → hidden -->
+      </div>
+      <div class="ratings">
+        <div class="label">⭐ 客户回款评级 TOP 5</div>
+        <div class="rating-grid">
+          <div class="rating"><div class="n">Petsome EU GmbH</div><div class="s">⭐⭐⭐</div><div class="d">平均 38天 · 本月逾期 2 次</div></div>
+          <div class="rating"><div class="n">JJ Pet</div><div class="s">⭐⭐⭐⭐</div><div class="d">平均 22天 · 准时</div></div>
+          <div class="rating"><div class="n">Harmonious Happy</div><div class="s">⭐⭐</div><div class="d">平均 52天 · 累计欠款 $34,200</div></div>
+          <div class="rating"><div class="n">Petsome HK Ltd</div><div class="s">⭐⭐⭐⭐⭐</div><div class="d">平均 12天 · 优质客户</div></div>
+          <div class="rating"><div class="n">ZC Pet</div><div class="s">⭐⭐⭐</div><div class="d">平均 35天</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Category cards (INTERNAL_CAT_DEFS) -->
+  <div class="cat-grid">
+    <button class="cat cargo active">
+      <div class="ic-lbl"><span class="ic">💰</span><span class="lbl">应收货款</span></div>
+      <div class="ct">8 items</div>
+      <div class="amt">86,250.00</div>
+      <div class="over">2 overdue</div>
+    </button>
+    <button class="cat freight">
+      <div class="ic-lbl"><span class="ic">🚢</span><span class="lbl">应收运费</span></div>
+      <div class="ct">4 items</div>
+      <div class="amt">21,400.00</div>
+      <div class="over">1 overdue</div>
+    </button>
+    <button class="cat payable">
+      <div class="ic-lbl"><span class="ic">🏭</span><span class="lbl">应付供应商</span></div>
+      <div class="ct">6 items</div>
+      <div class="amt">43,200.00</div>
+    </button>
+    <button class="cat invoice">
+      <div class="ic-lbl"><span class="ic">🧾</span><span class="lbl">待开票</span></div>
+      <div class="ct">11 items</div>
+      <div class="amt">62,890.00</div>
+    </button>
+    <button class="cat cn">
+      <div class="ic-lbl"><span class="ic">📋</span><span class="lbl">红冲/退款</span></div>
+      <div class="ct">2 issued</div>
+      <div class="amt">−3,800.00</div>
+    </button>
+  </div>
+
+  <!-- All Orders -->
+  <div class="ord-section">
+    <div class="ord-head">
+      <span class="title">📦 所有订单</span>
+      <div class="tabs">
+        <button class="tab on">All</button>
+        <button class="tab">💰 Cargo</button>
+        <button class="tab">🚢 Ocean</button>
+      </div>
+      <div class="ord-actions">
+        <button class="btn-batch">☐ 批量对账</button>
+        <button class="btn-soa">📋 SOA</button>
+      </div>
+    </div>
+    <div class="ord-search">
+      <input placeholder="搜索合同号 / BL / 客户…" />
+      <div class="chips">
+        <span class="chip on">All <span class="cnt">12</span></span>
+        <span class="chip"><span class="dot" style="background:var(--green)"></span>✓ Paid <span class="cnt">3</span></span>
+        <span class="chip"><span class="dot" style="background:var(--amber)"></span>⏳ Partial <span class="cnt">4</span></span>
+        <span class="chip"><span class="dot" style="background:var(--red)"></span>🔴 Overdue <span class="cnt">2</span></span>
+        <span class="chip"><span class="dot" style="background:var(--t3)"></span>○ Unpaid <span class="cnt">3</span></span>
+      </div>
+    </div>
+
+    <div class="card-grid">
+      <!-- Card 1: Partial · Cargo -->
+      <div class="bcard">
+        <div class="alert-bar purple">📝 部分回款 · 余款 $19,915 待催</div>
+        <div class="chip-row">
+          <span class="typeChip cargo">💰 Cargo</span>
+          <span class="termChip">⚡ TT 30/70</span>
+        </div>
+        <div class="id-row">
+          <span>2026-04-07</span>·<span class="po">XM-0407</span>
+          <span class="inco">FOB</span>
+          <span class="fs">FS20260407001</span>
+        </div>
+        <div class="body-row">
+          <div class="money">
+            <div><span class="ccy">USD</span><span class="total">28,450.00</span></div>
+            <div class="split">
+              <div><span class="dot" style="background:#10b981"></span>定金 30% — 已付 $8,535</div>
+              <div><span class="dot" style="background:#475569"></span>尾款 70% — 待收 $19,915</div>
+            </div>
+            <div class="pbar"><div class="track"><div class="fill" style="width:30%; background:var(--amber)"></div></div><span class="pct" style="color:var(--amber)">30% 已收</span></div>
+            <div class="margin">毛利 +$5,890 (20.7%)</div>
+          </div>
+        </div>
+        <div class="parties">
+          <div class="row">往来方：<strong class="name">PETSOME GmbH</strong></div>
+          <div class="row">工厂方：<strong class="name">JJ Pet Co.</strong></div>
+        </div>
+        <div class="cta-wrap"><div class="cta internal">📝 对账/开票</div></div>
+      </div>
+
+      <!-- Card 2: Overdue · Ocean -->
+      <div class="bcard overdue">
+        <div class="alert-bar red">🔴 已逾期 12 天 — 请尽快处理</div>
+        <div class="chip-row">
+          <span class="typeChip ocean">🚢 Ocean</span>
+          <span class="termChip">⚡ Deposit + B/L</span>
+        </div>
+        <div class="id-row">
+          <span>2026-04-08</span>·<span class="po">XM-0408</span>
+          <span class="inco">CIF</span>
+          <span class="fs">FS20260408002</span>
+        </div>
+        <div class="body-row">
+          <div class="money">
+            <div><span class="ccy">USD</span><span class="total">12,800.00</span></div>
+            <div class="split">
+              <div><span class="dot" style="background:#475569"></span>运费 USD 12,800 — 待收</div>
+            </div>
+            <div class="pbar"><div class="track"><div class="fill" style="width:0%"></div></div><span class="pct" style="color:var(--red)">0% 已收</span></div>
+            <div class="margin">代收，无利差</div>
+          </div>
+        </div>
+        <div class="parties">
+          <div class="row">客户：<strong class="name">PETSOME GmbH</strong></div>
+          <div class="row">货代：<strong class="name">大顺大</strong></div>
+        </div>
+        <div class="cta-wrap"><div class="cta overdue">⚠ 逾期处理 →</div></div>
+      </div>
+
+      <!-- Card 3: Paid · Cargo -->
+      <div class="bcard paid">
+        <div class="alert-bar green">✅ 已结清 · 票已开</div>
+        <div class="chip-row">
+          <span class="typeChip cargo">💰 Cargo</span>
+          <span class="termChip">⚡ TT 100% Advance</span>
+        </div>
+        <div class="id-row">
+          <span>2026-03-01</span>·<span class="po">XM-0301</span>
+          <span class="inco">FOB</span>
+          <span class="fs">FS20260301040</span>
+        </div>
+        <div class="body-row">
+          <div class="money">
+            <div><span class="ccy">USD</span><span class="total" style="color:#34d399;">16,200.00</span></div>
+            <div class="split">
+              <div><span class="dot" style="background:#10b981"></span>全款 — 已付 $16,200</div>
+            </div>
+            <div class="pbar"><div class="track"><div class="fill" style="width:100%; background:var(--green)"></div></div><span class="pct" style="color:var(--green)">100% 已收</span></div>
+            <div class="margin">毛利 +$3,420 (21.1%)</div>
+          </div>
+        </div>
+        <div class="parties">
+          <div class="row">往来方：<strong class="name">Harmonious Happy</strong></div>
+          <div class="row">工厂方：<strong class="name">JJ Pet Co.</strong></div>
+        </div>
+        <div class="cta-wrap"><div class="cta paid">✓ 已对账</div></div>
+      </div>
+
+      <!-- Card 4: Unpaid · Invoice pending -->
+      <div class="bcard">
+        <div class="alert-bar amber">🧾 待开票 — 客户已签收</div>
+        <div class="chip-row">
+          <span class="typeChip invoice">🧾 待开票</span>
+          <span class="termChip">⚡ Monthly 30</span>
+        </div>
+        <div class="id-row">
+          <span>2026-04-30</span>·<span class="po">XM-0430</span>
+          <span class="inco">FOB</span>
+          <span class="fs">FS20260430015</span>
+        </div>
+        <div class="body-row">
+          <div class="money">
+            <div><span class="ccy">USD</span><span class="total">9,800.00</span></div>
+            <div class="split">
+              <div><span class="dot" style="background:#a78bfa"></span>已发货未开票</div>
+              <div style="font-size:10px; color:var(--t3); padding-left:11px;">到期日：2026-05-30</div>
+            </div>
+            <div class="pbar"><div class="track"><div class="fill" style="width:0%"></div></div><span class="pct" style="color:var(--purple)">待开票</span></div>
+            <div class="margin">毛利 +$1,920 (19.6%)</div>
+          </div>
+        </div>
+        <div class="parties">
+          <div class="row">客户：<strong class="name">PETSOME EU GmbH</strong></div>
+          <div class="row">开票主体：<strong class="name">厦门佩特宝</strong></div>
+        </div>
+        <div class="cta-wrap"><div class="cta internal">📝 对账/开票</div></div>
+      </div>
+
+      <!-- Card 5: Payable · Supplier -->
+      <div class="bcard">
+        <div class="alert-bar amber">🏭 应付供应商 — 货代发票已到</div>
+        <div class="chip-row">
+          <span class="typeChip ocean">🏭 Payable</span>
+          <span class="termChip">⚡ Net 30</span>
+        </div>
+        <div class="id-row">
+          <span>2026-04-18</span>·<span class="po">P-0418</span>
+          <span class="inco">—</span>
+          <span class="fs">SP-20260418-DSD</span>
+        </div>
+        <div class="body-row">
+          <div class="money">
+            <div><span class="ccy">USD</span><span class="total" style="color:var(--amber);">−4,200.00</span></div>
+            <div class="split">
+              <div><span class="dot" style="background:#f59e0b"></span>应付货代 — 大顺大</div>
+              <div style="font-size:10px; color:var(--t3); padding-left:11px;">到期：2026-05-18</div>
+            </div>
+            <div class="pbar"><div class="track"><div class="fill" style="width:0%"></div></div><span class="pct" style="color:var(--amber)">0% 已付</span></div>
+            <div class="margin" style="color:var(--cyan);">关联收入 +$5,800 · 利差 +$1,600</div>
+          </div>
+        </div>
+        <div class="parties">
+          <div class="row">收款方：<strong class="name">大顺大物流</strong></div>
+          <div class="row">关联 BL：<strong class="name">FS20260408002</strong></div>
+        </div>
+        <div class="cta-wrap"><div class="cta internal">📝 对账/开票</div></div>
+      </div>
+
+      <!-- Card 6: Credit Note -->
+      <div class="bcard" style="border-color:rgba(31,78,120,0.35);">
+        <div class="alert-bar" style="background:rgba(31,78,120,0.18); color:#7fb3e0;">📋 红冲单 · 客户退货</div>
+        <div class="chip-row">
+          <span class="typeChip" style="background:rgba(31,78,120,0.18); color:#7fb3e0;">📋 Credit Note</span>
+        </div>
+        <div class="id-row">
+          <span>2026-04-22</span>·<span class="po">CN-0422</span>
+          <span class="fs">CN20260422001</span>
+        </div>
+        <div class="body-row">
+          <div class="money">
+            <div><span class="ccy">USD</span><span class="total" style="color:#C00000;">−3,800.00</span></div>
+            <div class="split" style="font-size:10px; color:var(--t3);">关联订单 FS20260218030 · 客户已确认</div>
+          </div>
+        </div>
+        <div class="parties">
+          <div class="row">客户：<strong class="name">DIBAQ</strong></div>
+          <div class="row">原因：<strong class="name">规格差异 / 部分退货</strong></div>
+        </div>
+        <div class="cta-wrap"><div class="cta internal">📝 处理红冲</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center; padding:30px 0; color:var(--t3); font-size:11px;">
+    Sanlyn-OS Internal Finance Template · 这是同一组件 <code>CustomerFinanceWorkbench</code>，role=<code>finance</code> 时的视图
+  </div>
+</div>
+</body>
+</html>

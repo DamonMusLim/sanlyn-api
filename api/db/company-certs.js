@@ -38,7 +38,9 @@ export default async function handler(req, res) {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
   var pool = getPool();
-  var myCode = req.user.companyCode || req.user.company_code;
+  var isAdmin = req.user.role === "admin" || req.user.role === "super_admin";
+  var overrideCode = isAdmin ? (req.query?.company_code || req.body?.company_code) : null;
+  var myCode = overrideCode || req.user.companyCode || req.user.company_code;
   if (!myCode) {
     if (req.method === "GET") return res.status(200).json({ success: true, company_code: null, data: [] });
     return res.status(400).json({ error: "company_code missing from token" });

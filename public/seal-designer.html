@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>印章设计器（完整版）· Sanlyn</title>
+<style>
+@font-face { font-family:'FangSong'; src:url('https://api.sanlyn.cn/public/FangSong.ttf'); }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,"PingFang SC",sans-serif;background:#f0f2f5;color:#1e293b;}
+
+/* Template library */
+.tpl-bar{display:flex;gap:6px;margin-bottom:10px;}
+.tpl-bar input{flex:1;padding:7px 10px;border-radius:7px;border:1.5px solid #e2e8f0;font-size:12px;outline:none;}
+.tpl-bar input:focus{border-color:#7c3aed;}
+.tpl-save-btn{padding:7px 12px;border-radius:7px;border:none;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.tpl-item{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:6px;background:#fff;cursor:pointer;transition:all .12s;}
+.tpl-item:hover{border-color:#7c3aed;background:#f5f3ff;}
+.tpl-item-name{flex:1;font-size:13px;color:#334155;font-weight:600;}
+.tpl-item-load{font-size:11px;color:#7c3aed;font-weight:700;}
+.tpl-item-del{font-size:11px;color:#ef4444;cursor:pointer;padding:2px 7px;border-radius:4px;border:1px solid #fca5a5;background:#fff;}
+.tpl-empty{font-size:12px;color:#94a3b8;text-align:center;padding:12px 0;}
+
+.topbar{background:#1e293b;color:#f8fafc;padding:12px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.topbar h1{font-size:15px;font-weight:800;flex:1;}
+.tbtn{padding:8px 16px;border-radius:8px;border:none;font-size:12px;font-weight:700;cursor:pointer;}
+.tbtn-save{background:#16a34a;color:#fff;}
+.tbtn-tpl{background:#0f172a;color:#fff;}
+.tbtn-das{background:#dc2626;color:#fff;}
+.tbtn-tpl2{background:#475569;color:#fff;}
+.layout{display:flex;gap:0;height:calc(100vh - 52px);}
+.sidebar{width:340px;overflow-y:auto;background:#fff;border-right:1px solid #e2e8f0;flex-shrink:0;}
+.preview-area{flex:1;display:flex;flex-direction:column;align-items:center;padding:30px;gap:16px;overflow-y:auto;}
+canvas{display:block;border:1px solid #e2e8f0;border-radius:8px;background:#fff;}
+.hint{font-size:11px;color:#94a3b8;}
+
+/* sidebar sections */
+.section{border-bottom:1px solid #e2e8f0;}
+.section-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;cursor:pointer;user-select:none;background:#f8fafc;font-size:13px;font-weight:700;color:#334155;}
+.section-head:hover{background:#f1f5f9;}
+.section-head .arrow{font-size:10px;color:#94a3b8;transition:transform .15s;}
+.section-head.open .arrow{transform:rotate(90deg);}
+.section-body{padding:14px 16px;display:none;}
+.section-body.open{display:block;}
+
+/* field rows */
+.row{margin-bottom:12px;}
+.row label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px;}
+.row input[type=text],.row input[type=number],.row select,.row textarea{
+  width:100%;padding:7px 10px;border-radius:7px;border:1.5px solid #e2e8f0;
+  font-size:13px;color:#1e293b;outline:none;background:#fff;}
+.row input:focus,.row select:focus{border-color:#38bdf8;}
+.row input[type=range]{width:100%;accent-color:#ef4444;}
+.row input[type=checkbox]{width:16px;height:16px;accent-color:#3b82f6;vertical-align:middle;}
+.row-check{display:flex;align-items:center;gap:8px;font-size:13px;color:#334155;}
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.color-row{display:flex;gap:6px;}
+.color-btn{flex:1;padding:6px;border-radius:6px;border:2px solid transparent;font-size:11px;font-weight:700;cursor:pointer;}
+.color-btn.active{border-color:#1e293b;}
+.sub-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px;}
+.sub-card-head{font-size:11px;font-weight:800;color:#64748b;margin-bottom:8px;text-transform:uppercase;}
+.add-btn{display:block;width:100%;padding:7px;text-align:center;background:#eff6ff;border:1.5px dashed #93c5fd;border-radius:7px;font-size:12px;color:#3b82f6;cursor:pointer;font-weight:700;}
+.del-btn{float:right;font-size:11px;color:#ef4444;cursor:pointer;padding:1px 6px;border-radius:4px;border:1px solid #fca5a5;background:#fff;}
+
+/* DAS saved list */
+.das-list{margin-top:16px;width:100%;max-width:500px;}
+.das-list h3{font-size:12px;font-weight:700;color:#64748b;margin-bottom:8px;text-transform:uppercase;}
+.das-item{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;border:1px solid #e2e8f0;margin-bottom:6px;background:#f8fafc;}
+.das-item img{width:44px;height:44px;object-fit:contain;}
+.das-item-name{flex:1;font-size:12px;color:#334155;}
+.das-item-del{font-size:11px;color:#ef4444;cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid #fca5a5;background:#fff;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 24px;border-radius:30px;font-size:13px;font-weight:600;display:none;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.2);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>🔴 印章设计器（完整版）</h1>
+  <button class="tbtn tbtn-tpl2" onclick="loadTpl()">📂 加载模板</button>
+  <button class="tbtn" style="background:#7c3aed;color:#fff" onclick="loadDefaultTpl()">📋 默认模板</button>
+  <button class="tbtn tbtn-tpl"  onclick="saveTpl()">💾 导出JSON</button>
+  <input type="file" id="tplFile" accept=".json" style="display:none" onchange="onTplFile(event)">
+  <button class="tbtn tbtn-save" onclick="exportPNG()">⬇ 导出PNG</button>
+  <button class="tbtn tbtn-das"  onclick="saveToDAS()">⬆ 保存到DAS</button>
+</div>
+
+<div class="layout">
+  <!-- LEFT: all settings -->
+  <div class="sidebar" id="sidebar">
+
+    <!-- 模板库 -->
+    <div class="section">
+      <div class="section-head open" onclick="toggle(this)">📋 我的模板库<span class="arrow">▶</span></div>
+      <div class="section-body open">
+        <div class="tpl-bar">
+          <input type="text" id="tplSaveName" placeholder="模板名称，如：巴匕合同章" />
+          <button class="tpl-save-btn" onclick="saveTplLocal()">保存</button>
+        </div>
+        <div id="tplList"></div>
+      </div>
+    </div>
+
+    <!-- 基本 -->
+    <div class="section">
+      <div class="section-head open" onclick="toggle(this)">印章基本设置<span class="arrow">▶</span></div>
+      <div class="section-body open">
+        <div class="row"><label>印章名称（保存时用）</label><input type="text" id="sealLabel" placeholder="厦门巴匕合同章"></div>
+        <div class="row-2">
+          <div class="row"><label>宽 mm</label><input type="number" id="cfgWidth" value="40" step="1" min="20" max="80" oninput="render()"></div>
+          <div class="row"><label>高 mm</label><input type="number" id="cfgHeight" value="30" step="1" min="20" max="80" oninput="render()"></div>
+        </div>
+        <div class="row"><label>边框宽度 mm</label><input type="range" id="cfgBorder" min="0.1" max="3" step="0.1" value="1" oninput="this.nextElementSibling.textContent=this.value+' mm';render()"><span>1 mm</span></div>
+        <div class="row"><label>印章颜色</label>
+          <div class="color-row">
+            <button class="color-btn active" style="background:#fee2e2;color:#dc2626" onclick="setColor('#cc0000',this)">红色</button>
+            <button class="color-btn" style="background:#dbeafe;color:#1d4ed8" onclick="setColor('#1d4ed8',this)">蓝色</button>
+            <button class="color-btn" style="background:#f1f5f9;color:#334155" onclick="setColor('#334155',this)">黑色</button>
+          </div>
+        </div>
+        <div class="row"><label class="row-check"><input type="checkbox" id="cfgRough" onchange="render()"> 毛边效果</label></div>
+        <div class="row"><label class="row-check"><input type="checkbox" id="cfgAging" onchange="render()"> 做旧效果</label></div>
+        <div class="row"><label>做旧强度</label><input type="range" id="cfgAgingInt" min="1" max="100" step="1" value="50" oninput="this.nextElementSibling.textContent=this.value;render()"><span>50</span></div>
+        <div class="row"><label class="row-check"><input type="checkbox" id="cfgSecurity" checked onchange="render()"> 防伪纹路</label></div>
+        <div class="row"><label class="row-check"><input type="checkbox" id="cfgInner" onchange="render()"> 内圈</label></div>
+        <div class="row"><label>章形状</label>
+  <div class="color-row">
+    <button class="color-btn active" id="shapeCircle" onclick="setShape('circle',this)">圆形章</button>
+    <button class="color-btn" id="shapeRect" onclick="setShape('rect',this)">方形章</button>
+  </div>
+</div>
+      </div>
+    </div>
+
+    <!-- 公司名称 -->
+    <div class="section">
+      <div class="section-head open" onclick="toggle(this)">公司名称列表设置<span class="arrow">▶</span></div>
+      <div class="section-body open" id="companyList"></div>
+    </div>
+
+    <!-- 章型 -->
+    <div class="section">
+      <div class="section-head open" onclick="toggle(this)">印章类型列表设置<span class="arrow">▶</span></div>
+      <div class="section-body open" id="stampTypeList"></div>
+    </div>
+
+    <!-- 编码 -->
+    <div class="section">
+      <div class="section-head" onclick="toggle(this)">印章编码设置<span class="arrow">▶</span></div>
+      <div class="section-body">
+        <div class="row"><label>编码（留空不显示）</label><input type="text" id="cfgCode" placeholder="留空不显示" oninput="render()"></div>
+        <div class="row"><label>压缩比</label><input type="range" id="cfgCodeComp" min="0.5" max="2" step="0.05" value="1" oninput="this.nextElementSibling.textContent=this.value;render()"><span>1</span></div>
+      </div>
+    </div>
+
+    <!-- 税号 -->
+    <div class="section">
+      <div class="section-head" onclick="toggle(this)">中间数字设置<span class="arrow">▶</span></div>
+      <div class="section-body">
+        <div class="row"><label>税号/编码（留空不显示）</label><input type="text" id="cfgTax" placeholder="留空不显示" oninput="render()"></div>
+      </div>
+    </div>
+
+    <!-- 星星/图片 -->
+    <div class="section">
+      <div class="section-head open" onclick="toggle(this)">图片列表设置<span class="arrow">▶</span></div>
+      <div class="section-body open">
+        <div class="sub-card">
+          <div class="sub-card-head">中心五角星</div>
+          <div class="row"><label class="row-check"><input type="checkbox" id="cfgStar" checked onchange="render()"> 显示五角星</label></div>
+          <div class="row"><label>星直径 mm</label><input type="range" id="cfgStarD" min="4" max="30" step="1" value="14" oninput="this.nextElementSibling.textContent=this.value+' mm';render()"><span>14 mm</span></div>
+          <div class="row"><label>垂直偏移 mm</label><input type="range" id="cfgStarY" min="-10" max="10" step="0.5" value="-2" oninput="this.nextElementSibling.textContent=this.value+' mm';render()"><span>-2 mm</span></div>
+          <div class="row"><label>自定义图片替换星星</label>
+            <input type="file" id="starImg" accept="image/*" onchange="loadStarImg(event)">
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: preview + DAS list -->
+  <div class="preview-area">
+    <canvas id="sealCanvas" width="500" height="500" style="width:360px;height:360px"></canvas>
+    <div class="hint">实时预览 · 调整左侧参数后自动更新</div>
+    <div class="das-list" id="dasList"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://api.sanlyn.cn/public/DrawStampUtils.js"></script>
+<script>
+var API = 'https://api.sanlyn.cn';
+var _color = '#cc0000';
+var _dsu = null;
+var _fontLoaded = false;
+var _starDataUrl = null;
+var _renderTimer = null;
+var _shape = 'circle'; // 'circle' or 'rect'
+var _embedMode = location.search.indexOf('embed=1') >= 0;
+
+function setShape(s, btn) {
+  _shape = s;
+  document.querySelectorAll('#shapeCircle,#shapeRect').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  render();
+}
+
+// Load FangSong font
+var ff = new FontFace('FangSong','url('+API+'/public/FangSong.ttf)');
+ff.load().then(function(f){ document.fonts.add(f); _fontLoaded=true; render(); }).catch(function(){ _fontLoaded=true; render(); });
+
+/* ── Token (cross-origin support) ── */
+function getToken(){
+  try {
+    var m = location.search.match(/[?&]_t=([^&]+)/);
+    if(m) return decodeURIComponent(m[1]);
+    return localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';
+  } catch(e){ return ''; }
+}
+function authH(){ return {'Content-Type':'application/json','Authorization':'Bearer '+getToken()}; }
+
+/* ── Section toggle ── */
+function toggle(head){
+  head.classList.toggle('open');
+  head.nextElementSibling.classList.toggle('open');
+}
+
+/* ── Color ── */
+function setColor(c,btn){
+  _color = c;
+  document.querySelectorAll('.color-btn').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  render();
+}
+
+/* ── Company list dynamic UI ── */
+var _companies = [{ name:'印章绘制有限责任公司', compression:1, borderOffset:0.5, fontHeight:4.2, fontWeight:'bold', fontFamily:'FangSong, 仿宋, SimSun', distFactor:10 }];
+var _stampTypes = [{ type:'合同专用章', fontHeight:4.6, fontWeight:'bold', fontFamily:'FangSong, 仿宋, SimSun', compression:1, letterSpacing:0, positionY:3 }];
+
+function renderCompanyUI(){
+  var div = document.getElementById('companyList');
+  div.innerHTML = '';
+  _companies.forEach(function(c,i){
+    var card = document.createElement('div');
+    card.className = 'sub-card';
+    card.innerHTML = '<div class="sub-card-head">公司 '+(i+1)+' <span class="del-btn" onclick="delCompany('+i+')">删除</span></div>'+
+      mkRow('公司名称','<input type="text" value="'+escHtml(c.name)+'" oninput="_companies['+i+'].name=this.value;render()">')+
+      mkRow('字体大小 mm','<input type="range" min="2" max="8" step="0.1" value="'+c.fontHeight+'" oninput="_companies['+i+'].fontHeight=parseFloat(this.value);this.nextElementSibling.textContent=this.value+\' mm\';render()"><span>'+c.fontHeight+' mm</span>')+
+      mkRow('压缩比','<input type="range" min="0.5" max="2" step="0.05" value="'+c.compression+'" oninput="_companies['+i+'].compression=parseFloat(this.value);this.nextElementSibling.textContent=this.value;render()"><span>'+c.compression+'</span>')+
+      mkRow('边距偏移','<input type="range" min="0" max="5" step="0.1" value="'+c.borderOffset+'" oninput="_companies['+i+'].borderOffset=parseFloat(this.value);this.nextElementSibling.textContent=this.value;render()"><span>'+c.borderOffset+'</span>')+
+      mkRow('字体','<select onchange="_companies['+i+'].fontFamily=this.value;render()">'+fontOpts(c.fontFamily)+'</select>')+
+      mkRow('文字分布系数（越大越展开）','<input type="range" min="1" max="20" step="0.5" value="'+(c.distFactor||10)+'" oninput="_companies['+i+'].distFactor=parseFloat(this.value);this.nextElementSibling.textContent=this.value;render()"><span>'+(c.distFactor||10)+'</span>');
+    div.appendChild(card);
+  });
+  var add = document.createElement('div');
+  add.className = 'add-btn';
+  add.textContent = '+ 添加公司名称';
+  add.onclick = function(){ _companies.push({name:'新公司名称',compression:1,borderOffset:0.5,fontHeight:4.2,fontWeight:'bold',fontFamily:'FangSong, 仿宋, SimSun',distFactor:10}); renderCompanyUI(); render(); };
+  div.appendChild(add);
+}
+function delCompany(i){ _companies.splice(i,1); renderCompanyUI(); render(); }
+
+function renderStampTypeUI(){
+  var div = document.getElementById('stampTypeList');
+  div.innerHTML = '';
+  _stampTypes.forEach(function(t,i){
+    var card = document.createElement('div');
+    card.className = 'sub-card';
+    card.innerHTML = '<div class="sub-card-head">章型 '+(i+1)+' <span class="del-btn" onclick="delStampType('+i+')">删除</span></div>'+
+      mkRow('章型文字','<input type="text" value="'+escHtml(t.type)+'" oninput="_stampTypes['+i+'].type=this.value;render()">')+
+      mkRow('字体大小 mm','<input type="range" min="2" max="8" step="0.1" value="'+t.fontHeight+'" oninput="_stampTypes['+i+'].fontHeight=parseFloat(this.value);this.nextElementSibling.textContent=this.value+\' mm\';render()"><span>'+t.fontHeight+' mm</span>')+
+      mkRow('压缩比','<input type="range" min="0.5" max="2" step="0.05" value="'+t.compression+'" oninput="_stampTypes['+i+'].compression=parseFloat(this.value);this.nextElementSibling.textContent=this.value;render()"><span>'+t.compression+'</span>')+
+      mkRow('垂直偏移','<input type="range" min="-10" max="10" step="0.5" value="'+t.positionY+'" oninput="_stampTypes['+i+'].positionY=parseFloat(this.value);this.nextElementSibling.textContent=this.value;render()"><span>'+t.positionY+'</span>')+
+      mkRow('字体','<select onchange="_stampTypes['+i+'].fontFamily=this.value;render()">'+fontOpts(t.fontFamily)+'</select>');
+    div.appendChild(card);
+  });
+  var add = document.createElement('div');
+  add.className = 'add-btn';
+  add.textContent = '+ 添加章型';
+  add.onclick = function(){ _stampTypes.push({type:'财务专用章',fontHeight:4.6,fontWeight:'bold',fontFamily:'FangSong, 仿宋, SimSun',compression:1,letterSpacing:0,positionY:3}); renderStampTypeUI(); render(); };
+  div.appendChild(add);
+}
+function delStampType(i){ _stampTypes.splice(i,1); renderStampTypeUI(); render(); }
+
+function fontOpts(cur){
+  var fonts = ['FangSong, 仿宋, SimSun','SimSun, 宋体','KaiTi, 楷体','SimHei, 黑体','Arial','Times New Roman'];
+  return fonts.map(function(f){ return '<option value="'+f+'"'+(f===cur?' selected':'')+'>'+f.split(',')[0].trim()+'</option>'; }).join('');
+}
+function mkRow(label, ctrl){ return '<div class="row"><label>'+label+'</label>'+ctrl+'</div>'; }
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+/* ── Star image ── */
+function loadStarImg(e){
+  var file = e.target.files[0]; if(!file) return;
+  var r = new FileReader();
+  r.onload = function(ev){ _starDataUrl = ev.target.result; render(); };
+  r.readAsDataURL(file);
+}
+
+/* ── Render ── */
+function g(id){ return document.getElementById(id); }
+function gv(id){ return parseFloat(g(id).value)||0; }
+function gc(id){ return g(id).checked; }
+
+function render(){
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(_doRender, 80);
+}
+
+function _doRender(){
+  if (_shape === 'rect') { _doRenderRect(); return; }
+  var canvas = g('sealCanvas');
+  var w = gv('cfgWidth'), h = gv('cfgHeight');
+  var side = Math.max(w, h);
+  var MM = canvas.width / (side + 10);
+
+  try {
+    if(_dsu) _dsu = null;
+    _dsu = new DSU.DrawStampUtils(canvas, MM);
+    var cfg = _dsu.getDrawConfigs();
+
+    cfg.primaryColor = _color;
+    cfg.width  = w;
+    cfg.height = h;
+    cfg.borderWidth = gv('cfgBorder');
+
+    cfg.companyList = _companies.map(function(c){
+      return {
+        companyName: c.name,
+        compression: c.compression,
+        borderOffset: c.borderOffset,
+        textDistributionFactor: c.distFactor||10,
+        fontFamily: c.fontFamily,
+        fontHeight: c.fontHeight,
+        fontWeight: c.fontWeight||'bold',
+        shape: 'ellipse',
+        adjustEllipseText: false,
+        adjustEllipseTextFactor: 0.5
+      };
+    });
+
+    cfg.stampTypeList = _stampTypes.map(function(t){
+      return {
+        stampType: t.type,
+        fontHeight: t.fontHeight,
+        fontFamily: t.fontFamily,
+        fontWeight: t.fontWeight||'bold',
+        compression: t.compression,
+        letterSpacing: t.letterSpacing||0,
+        positionY: t.positionY,
+        fontWidth: 1,
+        lineSpacing: 1
+      };
+    });
+
+    cfg.stampCode.code    = g('cfgCode').value.trim();
+    cfg.taxNumber.code    = g('cfgTax').value.trim();
+    cfg.stampCode.compression = gv('cfgCodeComp');
+
+    cfg.drawStar.drawStar     = gc('cfgStar');
+    cfg.drawStar.starDiameter = gv('cfgStarD');
+    cfg.drawStar.starPositionY= gv('cfgStarY');
+    cfg.drawStar.useImage     = !!_starDataUrl;
+    if(_starDataUrl){ cfg.drawStar.src = _starDataUrl; }
+
+    cfg.roughEdge.drawRoughEdge = gc('cfgRough');
+    cfg.agingEffect.applyAging  = gc('cfgAging');
+    cfg.agingEffect.agingIntensity = gv('cfgAgingInt');
+    cfg.securityPattern.openSecurityPattern = gc('cfgSecurity');
+    cfg.innerCircle.drawInnerCircle = gc('cfgInner');
+    cfg.ruler.showRuler = false; cfg.ruler.showFullRuler = false;
+
+    _dsu.setDrawConfigs(cfg);
+    _dsu.refreshStamp(false, false);
+  } catch(e){
+    console.error('DrawStamp error', e);
+  }
+}
+
+/* ── Rectangle stamp drawing ── */
+function _doRenderRect(){
+  var canvas = g('sealCanvas');
+  var ctx = canvas.getContext('2d');
+  var CW = canvas.width, CH = canvas.height;
+  ctx.clearRect(0, 0, CW, CH);
+
+  var wMM = gv('cfgWidth') || 45;
+  var hMM = gv('cfgHeight') || 30;
+  var bwMM = gv('cfgBorder') || 1;
+  var scale = Math.min(CW / (wMM + 10), CH / (hMM + 10));
+  var pw = wMM * scale;
+  var ph = hMM * scale;
+  var x0 = (CW - pw) / 2;
+  var y0 = (CH - ph) / 2;
+  var bw = bwMM * scale;
+
+  ctx.strokeStyle = _color;
+  ctx.fillStyle = _color;
+
+  // Outer border
+  ctx.lineWidth = bw;
+  ctx.strokeRect(x0, y0, pw, ph);
+  // Inner border
+  var gap = bw * 2.5;
+  ctx.strokeRect(x0 + gap, y0 + gap, pw - gap*2, ph - gap*2);
+
+  var company = _companies[0] || {};
+  var stampType = _stampTypes[0] || {};
+  var innerX = x0 + gap + bw;
+  var innerW = pw - gap*2 - bw*2;
+  var innerY = y0 + gap + bw;
+  var innerH = ph - gap*2 - bw*2;
+
+  // Company name — top 35% of inner area
+  var nameText = company.name || '';
+  if (nameText) {
+    var fh = (company.fontHeight || 5) * scale;
+    ctx.font = 'bold ' + fh + 'px ' + (company.fontFamily || 'FangSong, 仿宋, SimSun');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var tw = ctx.measureText(nameText).width;
+    var cy = innerY + innerH * 0.28;
+    if (tw > innerW) {
+      ctx.save();
+      var ratio = innerW / tw;
+      ctx.translate(CW/2, cy);
+      ctx.scale(ratio * (company.compression || 1), 1);
+      ctx.fillText(nameText, 0, 0);
+      ctx.restore();
+    } else {
+      ctx.fillText(nameText, CW/2, cy);
+    }
+  }
+
+  // Star — center
+  if (gc('cfgStar')) {
+    var starR = gv('cfgStarD') * scale / 2;
+    var starCy = innerY + innerH * 0.5 + gv('cfgStarY') * scale;
+    _drawStar(ctx, CW/2, starCy, starR, _color);
+  }
+
+  // Stamp type — bottom 25%
+  var stText = stampType.type || '';
+  if (stText) {
+    var sfh = (stampType.fontHeight || 4) * scale;
+    ctx.font = 'bold ' + sfh + 'px ' + (stampType.fontFamily || 'FangSong, 仿宋, SimSun');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var stw = ctx.measureText(stText).width;
+    var sy = innerY + innerH * 0.78;
+    if (stw > innerW) {
+      ctx.save();
+      var sr = innerW / stw;
+      ctx.translate(CW/2, sy);
+      ctx.scale(sr * (stampType.compression||1), 1);
+      ctx.fillText(stText, 0, 0);
+      ctx.restore();
+    } else {
+      ctx.fillText(stText, CW/2, sy);
+    }
+  }
+
+  // Aging effect
+  if (gc('cfgAging')) {
+    var intensity = gv('cfgAgingInt');
+    var imgData = ctx.getImageData(0, 0, CW, CH);
+    var d = imgData.data;
+    for (var i = 0; i < d.length; i+=4) {
+      if (d[i+3] > 10 && Math.random() < intensity/100 * 0.4) {
+        d[i+3] = Math.max(0, d[i+3] - Math.random() * 200);
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+}
+
+function _drawStar(ctx, cx, cy, r, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (var i = 0; i < 10; i++) {
+    var angle = (i * Math.PI/5) - Math.PI/2;
+    var radius = (i%2===0) ? r : r*0.4;
+    var sx = cx + radius * Math.cos(angle);
+    var sy = cy + radius * Math.sin(angle);
+    if (i===0) ctx.moveTo(sx,sy); else ctx.lineTo(sx,sy);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+
+
+/* ── Export PNG ── */
+function exportPNG(){
+  var name = g('sealLabel').value.trim() || (_companies[0]&&_companies[0].name) || 'seal';
+  var canvas = g('sealCanvas');
+  var a = document.createElement('a');
+  a.download = name+'.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+/* ── Save to DAS ── */
+function saveToDAS(){
+  var token = getToken();
+  if(!token){ showToast('请先在 ai.sanlyn.cn 登录后再打开此页面'); return; }
+  var label = g('sealLabel').value.trim() || (_companies[0]&&_companies[0].name+' 章') || '印章';
+  var canvas = g('sealCanvas');
+  fetch(canvas.toDataURL('image/png'))
+    .then(function(r){ return r.blob(); })
+    .then(function(blob){
+      var fd = new FormData();
+      fd.append('file', blob, label+'.png');
+      fd.append('path', 'stamps/'+Date.now()+'_'+label+'.png');
+      return fetch(API+'/api/oss-upload',{method:'POST',body:fd});
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d.url&&!d.success) throw new Error(d.error||'OSS上传失败');
+      var url = d.url||d.data&&d.data.url;
+      return fetch(API+'/api/db/customer-stamps',{
+        method:'POST', headers:authH(),
+        body:JSON.stringify({name:label, url:url, shape:'circle'})
+      }).then(function(r){ return r.json(); });
+    })
+    .then(function(d){
+      if(!d.success&&!d.id) throw new Error(d.error||'保存失败');
+      showToast('✓ 已保存到 DAS：'+label, 3000);
+      loadDasStamps();
+    })
+    .catch(function(e){ showToast('保存失败：'+e.message); });
+}
+
+/* ── DAS list ── */
+function loadDasStamps(){
+  var token = getToken(); if(!token) return;
+  fetch(API+'/api/db/customer-stamps',{headers:{'Authorization':'Bearer '+token}})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      var stamps = d.stamps||d.data||[];
+      var list = g('dasList');
+      if(!stamps.length){ list.innerHTML=''; return; }
+      list.innerHTML = '<h3>DAS 共享印章库（'+stamps.length+'）</h3>';
+      stamps.forEach(function(s){
+        var item = document.createElement('div');
+        item.className='das-item';
+        item.innerHTML='<img src="'+s.url+'"/><span class="das-item-name">'+(s.name||'未命名')+'</span><button class="das-item-del" onclick="delStamp('+s.id+')">删除</button>';
+        list.appendChild(item);
+      });
+    });
+}
+
+function delStamp(id){
+  if(!confirm('确认删除？')) return;
+  var token = getToken();
+  fetch(API+'/api/db/customer-stamps/'+id,{method:'DELETE',headers:{'Authorization':'Bearer '+token}})
+    .then(function(){ loadDasStamps(); });
+}
+
+/* ── Template save/load ── */
+function saveTpl(){
+  var cfg = collectCfg();
+  var json = JSON.stringify(cfg, null, 2);
+  var a = document.createElement('a');
+  a.href = 'data:application/json;charset=utf-8,'+encodeURIComponent(json);
+  a.download = (g('sealLabel').value.trim()||'seal')+'-template.json';
+  a.click();
+}
+
+function loadTpl(){ g('tplFile').click(); }
+
+function onTplFile(e){
+  var file = e.target.files[0]; if(!file) return;
+  var r = new FileReader();
+  r.onload = function(ev){
+    try {
+      var cfg = JSON.parse(ev.target.result);
+      applyCfg(cfg);
+    } catch(err){ showToast('模板解析失败：'+err.message); }
+  };
+  r.readAsText(file);
+  e.target.value='';
+}
+
+function collectCfg(){
+  return {
+    label: g('sealLabel').value.trim(),
+    shape: _shape,
+    color: _color,
+    width: gv('cfgWidth'), height: gv('cfgHeight'),
+    borderWidth: gv('cfgBorder'),
+    roughEdge: gc('cfgRough'),
+    aging: gc('cfgAging'), agingInt: gv('cfgAgingInt'),
+    security: gc('cfgSecurity'),
+    innerCircle: gc('cfgInner'),
+    companies: _companies,
+    stampTypes: _stampTypes,
+    stampCode: g('cfgCode').value.trim(),
+    stampCodeComp: gv('cfgCodeComp'),
+    taxCode: g('cfgTax').value.trim(),
+    star: gc('cfgStar'), starD: gv('cfgStarD'), starY: gv('cfgStarY')
+  };
+}
+
+function applyCfg(c){
+  if(c.label)  g('sealLabel').value = c.label;
+  if(c.shape){ _shape=c.shape; var sb=document.getElementById(_shape==='rect'?'shapeRect':'shapeCircle'); if(sb){document.querySelectorAll('#shapeCircle,#shapeRect').forEach(function(b){b.classList.remove('active');}); sb.classList.add('active');} }
+  if(c.color)  { _color=c.color; document.querySelectorAll('.color-btn').forEach(function(b){b.classList.remove('active');}); }
+  if(c.width)  g('cfgWidth').value = c.width;
+  if(c.height) g('cfgHeight').value = c.height;
+  if(c.borderWidth !== undefined) g('cfgBorder').value = c.borderWidth;
+  if(c.roughEdge !== undefined) g('cfgRough').checked = c.roughEdge;
+  if(c.aging !== undefined)     g('cfgAging').checked = c.aging;
+  if(c.agingInt)                g('cfgAgingInt').value = c.agingInt;
+  if(c.security !== undefined)  g('cfgSecurity').checked = c.security;
+  if(c.innerCircle !== undefined) g('cfgInner').checked = c.innerCircle;
+  if(c.companies)  { _companies = c.companies; renderCompanyUI(); }
+  if(c.stampTypes) { _stampTypes = c.stampTypes; renderStampTypeUI(); }
+  if(c.stampCode !== undefined) g('cfgCode').value = c.stampCode;
+  if(c.stampCodeComp) g('cfgCodeComp').value = c.stampCodeComp;
+  if(c.taxCode !== undefined)   g('cfgTax').value = c.taxCode;
+  if(c.star !== undefined)      g('cfgStar').checked = c.star;
+  if(c.starD)                   g('cfgStarD').value = c.starD;
+  if(c.starY !== undefined)     g('cfgStarY').value = c.starY;
+  render();
+}
+
+/* ── Toast ── */
+function showToast(msg, dur){
+  var t=g('toast'); t.textContent=msg; t.style.display='block';
+  setTimeout(function(){ t.style.display='none'; }, dur||2500);
+}
+
+/* ── Local template library (localStorage) ── */
+var TPL_KEY = 'sanlyn_seal_templates';
+
+function getTpls(){
+  try { return JSON.parse(localStorage.getItem(TPL_KEY)||'[]'); } catch(e){ return []; }
+}
+function setTpls(arr){
+  try { localStorage.setItem(TPL_KEY, JSON.stringify(arr)); } catch(e){}
+}
+
+function saveTplLocal(){
+  var name = document.getElementById('tplSaveName').value.trim();
+  if(!name){ showToast('请先输入模板名称'); return; }
+  var cfg = collectCfg();
+  cfg.label = name;
+  var arr = getTpls();
+  var idx = arr.findIndex(function(t){ return t.label===name; });
+  if(idx>=0){ arr[idx]=cfg; } else { arr.push(cfg); }
+  setTpls(arr);
+  document.getElementById('tplSaveName').value='';
+  renderTplList();
+  showToast('✓ 模板「'+name+'」已保存', 2000);
+}
+
+function loadTplLocal(name){ var arr=getTpls(); var i=arr.findIndex(function(t){return t.label===name;}); if(i>=0) loadTplByIdx(i); }
+function _loadTplLocal_ORIG(name){
+  var arr = getTpls();
+  var cfg = arr.find(function(t){ return t.label===name; });
+  if(!cfg){ showToast('找不到模板：'+name); return; }
+  applyCfg(cfg);
+  showToast('✓ 已加载模板：'+name, 2000);
+}
+
+function deleteTplLocal(name){
+  if(!confirm('删除模板「'+name+'」？')) return;
+  var arr = getTpls().filter(function(t){ return t.label!==name; });
+  setTpls(arr);
+  renderTplList();
+  showToast('已删除：'+name);
+}
+
+function renderTplList(){
+  var div = document.getElementById('tplList');
+  var arr = getTpls();
+  if(!arr.length){ div.innerHTML='<div class="tpl-empty">暂无保存的模板，点上方"保存"按钮添加</div>'; return; }
+  div.innerHTML = arr.map(function(t,i){
+    var n = t.label||'未命名';
+    return '<div class="tpl-item" data-idx="'+i+'" onclick="loadTplByIdx('+i+')">'      +'<span class="tpl-item-name">'+escHtml(n)+'</span>'      +'<span class="tpl-item-load">加载</span>'      +'<button class="tpl-item-del" onclick="event.stopPropagation();deleteTplByIdx('+i+')">删除</button>'      +'</div>';
+  }).join('');
+}
+function loadTplByIdx(i){ var arr=getTpls(); if(arr[i]) { applyCfg(arr[i]); showToast('✓ 已加载：'+(arr[i].label||'模板'), 2000); } }
+function deleteTplByIdx(i){ if(!confirm('删除此模板？')) return; var arr=getTpls(); arr.splice(i,1); setTpls(arr); renderTplList(); }
+
+/* ── Load default preset ── */
+function loadDefaultTpl(){
+  fetch(API+'/public/seal-template-default.json?v='+Date.now())
+    .then(function(r){ return r.json(); })
+    .then(function(cfg){ applyCfg(cfg); showToast('✓ 已加载默认模板', 2000); })
+    .catch(function(e){ showToast('加载失败：'+e.message); });
+}
+
+// Init
+renderCompanyUI();
+renderStampTypeUI();
+renderTplList();
+loadDasStamps();
+render();
+// Retry render after fonts+DSU settle
+setTimeout(render, 800);
+
+// Embed mode — show Apply to contract button + company pre-fill + template save
+if (_embedMode) {
+  // Pre-fill company name from URL param
+  (function(){
+    try {
+      var m = location.search.match(/[?&]company=([^&]+)/);
+      if (m) {
+        var name = decodeURIComponent(m[1]);
+        if (name && _companies[0]) {
+          _companies[0].name = name;
+          renderCompanyUI();
+          render();
+        }
+      }
+    } catch(e){}
+  })();
+
+  // Hide topbar, shrink layout
+  document.getElementById('dasList').style.display = 'none';
+  document.querySelector('.topbar').style.display = 'none';
+  document.querySelector('.layout').style.height = '100vh';
+
+  // Add bottom action bar in preview area
+  var bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:10px;width:100%;max-width:340px;';
+
+  // Template save row
+  var saveRow = document.createElement('div');
+  saveRow.style.cssText = 'display:flex;gap:8px;width:100%;';
+  var tplInput = document.createElement('input');
+  tplInput.type = 'text';
+  tplInput.placeholder = '模板名称，如：巴匕合同章';
+  tplInput.style.cssText = 'flex:1;padding:8px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none;';
+  tplInput.onfocus = function(){ this.style.borderColor='#7c3aed'; };
+  tplInput.onblur = function(){ this.style.borderColor='#e2e8f0'; };
+  var tplSaveBtn = document.createElement('button');
+  tplSaveBtn.textContent = '💾 存模板';
+  tplSaveBtn.style.cssText = 'padding:8px 14px;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;';
+  tplSaveBtn.onclick = function(){
+    var name = tplInput.value.trim();
+    if (!name){ showToast('请输入模板名称'); return; }
+    var cfg = collectCfg(); cfg.label = name;
+    var arr = getTpls();
+    var idx = arr.findIndex(function(t){ return t.label===name; });
+    if(idx>=0) arr[idx]=cfg; else arr.push(cfg);
+    setTpls(arr);
+    renderTplList();
+    showToast('✓ 模板「'+name+'」已保存', 2000);
+    tplInput.value = '';
+  };
+  saveRow.appendChild(tplInput);
+  saveRow.appendChild(tplSaveBtn);
+
+  // Apply button
+  var _applyBtn = document.createElement('button');
+  _applyBtn.style.cssText = 'font-size:15px;padding:12px 0;width:100%;border-radius:9px;border:none;background:#16a34a;color:#fff;font-weight:800;cursor:pointer;letter-spacing:1px;';
+  _applyBtn.textContent = '✓ 应用到合同';
+  _applyBtn.onclick = function() {
+    window.parent.postMessage({ type:'seal-apply', dataUrl: g('sealCanvas').toDataURL('image/png') }, '*');
+  };
+
+  bar.appendChild(saveRow);
+  bar.appendChild(_applyBtn);
+  document.querySelector('.preview-area').appendChild(bar);
+}
+
+</script>
+</body>
+</html>

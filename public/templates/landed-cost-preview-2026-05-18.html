@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>My Landed Cost · Preview v1 · 2026-05-18</title>
+<style>
+  :root {
+    --bg:#0B1120; --panel:#111a2f; --panel2:#0e1628;
+    --line:#1f2a44; --line2:#2a3858;
+    --txt:#e2e8f0; --mut:#94a3b8; --dim:#64748b;
+    --blue:#38bdf8; --blue-bg:rgba(56,189,248,.15); --blue-edge:rgba(56,189,248,.45);
+    --violet:#a78bfa; --violet-bg:rgba(167,139,250,.15); --violet-edge:rgba(167,139,250,.45);
+    --emerald:#34d399; --amber:#fbbf24; --rose:#f87171;
+    --mono:'SF Mono','Menlo','Consolas',monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:40px 20px;
+    background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    font-size:13px;line-height:1.5;
+  }
+  .wrap{max-width:980px;margin:0 auto}
+
+  /* ── Tab header ── */
+  .tab-bar{
+    display:flex;gap:2px;border-bottom:1px solid var(--line);
+    margin-bottom:0;
+  }
+  .tab{
+    padding:10px 18px;color:var(--mut);font-size:12px;font-weight:600;
+    letter-spacing:.03em;cursor:default;
+  }
+  .tab.active{
+    color:var(--txt);background:var(--panel);
+    border:1px solid var(--line);border-bottom:none;
+    border-radius:6px 6px 0 0;position:relative;top:1px;
+  }
+
+  /* ── Card ── */
+  .card{
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:0 8px 8px 8px;overflow:hidden;
+  }
+  .card-hdr{
+    padding:18px 22px;border-bottom:1px solid var(--line);
+    display:flex;align-items:center;justify-content:space-between;
+    background:linear-gradient(180deg,#13203d 0%,#111a2f 100%);
+  }
+  .hdr-left h1{
+    margin:0 0 6px;font-size:18px;font-weight:700;letter-spacing:-.01em;
+  }
+  .hdr-left .sub{color:var(--mut);font-size:11px;font-family:var(--mono)}
+  .pill-row{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{
+    padding:3px 9px;border-radius:4px;font-size:10px;font-weight:700;
+    letter-spacing:.04em;text-transform:uppercase;
+  }
+  .pill-violet{background:var(--violet-bg);color:var(--violet);border:1px solid var(--violet-edge)}
+  .pill-blue  {background:var(--blue-bg);  color:var(--blue);  border:1px solid var(--blue-edge)}
+
+  /* ── Section ── */
+  .sec{border-bottom:1px solid var(--line)}
+  .sec:last-child{border-bottom:none}
+  .sec-hdr{
+    padding:12px 22px;display:flex;align-items:center;gap:10px;
+    cursor:pointer;user-select:none;background:var(--panel2);
+  }
+  .sec-hdr .chev{color:var(--dim);font-size:10px;width:12px}
+  .sec-hdr .ttl{font-size:13px;font-weight:700;flex:1}
+  .sec-hdr .ttl small{color:var(--mut);font-weight:500;margin-left:8px;font-size:11px}
+  .sec-hdr .sum{font-family:var(--mono);font-size:13px;color:var(--txt);font-weight:600}
+  .sec-body{padding:16px 22px}
+
+  /* ── KV grid ── */
+  .kv{display:grid;grid-template-columns:1fr auto;gap:6px 18px}
+  .kv .k{color:var(--mut)}
+  .kv .v{font-family:var(--mono);color:var(--txt)}
+  .kv .v.locked{color:var(--blue)}
+  .kv .v.mut{color:var(--dim)}
+
+  /* ── Table ── */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{
+    text-align:left;color:var(--mut);font-weight:600;
+    padding:8px 10px;border-bottom:1px solid var(--line);
+    font-size:10px;text-transform:uppercase;letter-spacing:.05em;
+  }
+  td{padding:10px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td.num{text-align:right}
+  td.sku{font-weight:600;color:var(--txt)}
+  td.name{font-family:-apple-system,sans-serif;color:var(--mut);font-size:11px}
+
+  /* ── Totals row ── */
+  tr.total td{
+    background:#0a1428;border-top:2px solid var(--line2);
+    border-bottom:none;font-weight:700;color:var(--emerald);
+  }
+
+  /* ── Footer ── */
+  .foot{
+    padding:14px 22px;background:var(--panel2);
+    color:var(--dim);font-size:11px;line-height:1.6;
+    border-top:1px solid var(--line);
+  }
+  .foot strong{color:var(--mut)}
+
+  /* ── Mock-mode badges (placeholder for collapsed sections) ── */
+  .mock-row{
+    padding:10px 22px;color:var(--dim);font-size:11px;
+    background:var(--panel2);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .mock-row .badge{
+    padding:2px 7px;border-radius:3px;font-size:9px;font-weight:700;
+    background:rgba(100,116,139,.2);color:var(--dim);
+    text-transform:uppercase;letter-spacing:.04em;
+  }
+
+  .preview-note{
+    max-width:980px;margin:0 auto 16px;padding:10px 14px;
+    background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);
+    border-radius:6px;color:var(--amber);font-size:11px;
+  }
+</style>
+</head>
+<body>
+
+<div class="preview-note">
+  ⚠️ <strong>Preview · mock data 2026-05-18</strong> · BL SITC-NB2605181 · 2× 40HQ to MYS · 字段口径已对齐 freight_debit_notes / orders / shipping_plans 真实 schema
+</div>
+
+<div class="wrap">
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <div class="tab">Summary</div>
+    <div class="tab">Documents</div>
+    <div class="tab">Tracking</div>
+    <div class="tab">Status</div>
+    <div class="tab active">My Landed Cost</div>
+    <div class="tab">Discussion</div>
+  </div>
+
+  <div class="card">
+
+    <!-- Card header -->
+    <div class="card-hdr">
+      <div class="hdr-left">
+        <h1>My Landed Cost · 到岸成本</h1>
+        <div class="sub">BL SITC-NB2605181 · COSCO HOUSTON v.605S · ETD 2026-05-12 · POL XMN → POD PKG</div>
+      </div>
+      <div class="pill-row">
+        <span class="pill pill-blue">✓ Verified by Sanlyn</span>
+        <span class="pill pill-violet">Your Data · Not Shared</span>
+      </div>
+    </div>
+
+    <!-- §1 Purchase Price -->
+    <div class="sec">
+      <div class="sec-hdr">
+        <span class="chev">▼</span>
+        <span class="ttl">1 · Purchase Price <small>auto from IV</small></span>
+        <span class="sum">USD 45,000.00</span>
+      </div>
+      <div class="sec-body">
+        <div class="kv">
+          <div class="k">Invoice total (IV-2605-001 + IV-2605-002)</div>
+          <div class="v locked">$45,000.00</div>
+          <div class="k">Currency</div>
+          <div class="v locked">USD</div>
+          <div class="k">Incoterm</div>
+          <div class="v locked">FOB Xiamen</div>
+          <div class="k">Container count</div>
+          <div class="v locked">2 × 40HQ</div>
+          <div class="k">Total cartons</div>
+          <div class="v locked">4,000 CTN</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- §2 Ocean Freight Bundle -->
+    <div class="sec">
+      <div class="sec-hdr">
+        <span class="chev">▼</span>
+        <span class="ttl">
+          2 · Ocean Freight Bundle
+          <small>auto-filled by Sanlyn · FX 7.30 (rate 7.20 + 0.10 spread)</small>
+        </span>
+        <span class="sum">USD 6,643.84</span>
+      </div>
+      <div class="sec-body">
+        <div class="kv">
+          <div class="k">Ocean freight (USD direct)</div>
+          <div class="v locked">$5,000.00</div>
+          <div class="k">THC · 码头操作</div>
+          <div class="v locked">¥4,800.00 → $657.53</div>
+          <div class="k">Documentation fee · 单据费</div>
+          <div class="v locked">¥800.00 → $109.59</div>
+          <div class="k">Customs clearance · 报关</div>
+          <div class="v locked">¥1,200.00 → $164.38</div>
+          <div class="k">EDI + booking + packing + barcode</div>
+          <div class="v locked">¥2,100.00 → $287.67</div>
+          <div class="k">Port entry + crane + pickup + storage</div>
+          <div class="v locked">¥3,100.00 → $424.67</div>
+          <div class="k" style="border-top:1px solid var(--line);padding-top:8px;color:var(--txt);font-weight:600">Freight bundle subtotal</div>
+          <div class="v locked" style="border-top:1px solid var(--line);padding-top:8px;font-weight:700">$6,643.84</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- §3 Customs + Duty (collapsed mock) -->
+    <div class="mock-row">
+      <span>▶ 3 · Customs + Duty <span style="color:var(--mut)">— you fill (import duty, broker, quarantine, VAT)</span></span>
+      <span class="badge">Empty · click to fill</span>
+    </div>
+
+    <!-- §4 Trucking (collapsed mock) -->
+    <div class="mock-row">
+      <span>▶ 4 · Trucking (last mile) <span style="color:var(--mut)">— you fill (port→warehouse, trucker)</span></span>
+      <span class="badge">Empty · click to fill</span>
+    </div>
+
+    <!-- §5 Other (collapsed mock) -->
+    <div class="mock-row">
+      <span>▶ 5 · Other <span style="color:var(--mut)">— insurance, demurrage, detention, misc</span></span>
+      <span class="badge">Empty · click to fill</span>
+    </div>
+
+    <!-- §6 Per-SKU breakdown -->
+    <div class="sec">
+      <div class="sec-hdr">
+        <span class="chev">▼</span>
+        <span class="ttl">
+          6 · Per-SKU Landed Cost · 单 SKU 进货价
+          <small>auto-allocated by CTN ratio</small>
+        </span>
+        <span class="sum">$51,643.84 total</span>
+      </div>
+      <div class="sec-body" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Product</th>
+              <th class="num">CTN</th>
+              <th class="num">IV Total</th>
+              <th class="num">Freight Share</th>
+              <th class="num">Landed Total</th>
+              <th class="num">Per CTN</th>
+              <th class="num">Per Unit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="sku">TN-50</td>
+              <td class="name">WANPY MEAT LOAF VENISON 400G 罐头<br><span style="color:var(--dim)">24 罐/CTN</span></td>
+              <td class="num">2,000</td>
+              <td class="num">$24,000.00</td>
+              <td class="num" style="color:var(--blue)">$3,321.92</td>
+              <td class="num" style="color:var(--emerald)">$27,321.92</td>
+              <td class="num" style="color:var(--emerald)">$13.661</td>
+              <td class="num">$0.5692</td>
+            </tr>
+            <tr>
+              <td class="sku">DD-02H</td>
+              <td class="name">WANPY DUCK JERKY 100G 烘干<br><span style="color:var(--dim)">40 包/CTN</span></td>
+              <td class="num">1,500</td>
+              <td class="num">$15,000.00</td>
+              <td class="num" style="color:var(--blue)">$2,491.44</td>
+              <td class="num" style="color:var(--emerald)">$17,491.44</td>
+              <td class="num" style="color:var(--emerald)">$11.661</td>
+              <td class="num">$0.2915</td>
+            </tr>
+            <tr>
+              <td class="sku">CE-08H</td>
+              <td class="name">TRULY CHICKEN & CALCIUM BONE 90G 烘干<br><span style="color:var(--dim)">30 包/CTN</span></td>
+              <td class="num">500</td>
+              <td class="num">$6,000.00</td>
+              <td class="num" style="color:var(--blue)">$830.48</td>
+              <td class="num" style="color:var(--emerald)">$6,830.48</td>
+              <td class="num" style="color:var(--emerald)">$13.661</td>
+              <td class="num">$0.4554</td>
+            </tr>
+            <tr class="total">
+              <td colspan="2">TOTAL · 整票合计</td>
+              <td class="num">4,000</td>
+              <td class="num">$45,000.00</td>
+              <td class="num">$6,643.84</td>
+              <td class="num">$51,643.84</td>
+              <td class="num">$12.911 avg</td>
+              <td class="num">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="foot">
+      <strong>How freight is allocated:</strong> per-CTN basis · each SKU absorbs <code style="color:var(--blue)">$1.661/CTN</code> of the $6,643.84 bundle (4,000 total CTN).<br>
+      <strong>FX policy:</strong> CNY → USD at <code>7.30</code> (daily mid-rate 7.20 + 0.10 spread; locked at BL booking date).<br>
+      <strong>Privacy:</strong> Sanlyn auto-fills §1 + §2 (data Sanlyn already has). §3–§5 are your numbers — Sanlyn does not read them.<br>
+      <span style="color:var(--mut)">Export → <a href="#" style="color:var(--blue)">PDF</a> · <a href="#" style="color:var(--blue)">Excel</a> · Wave 1: single-currency mode</span>
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>

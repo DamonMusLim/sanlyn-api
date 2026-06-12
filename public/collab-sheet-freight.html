@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>协同表 · 装柜数据填报 · Sanlyn</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060A14;color:#e2e8f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px 20px;min-height:100vh}
+.shell{max-width:720px;margin:0 auto}
+
+/* ── HEADER（v5 同款）── */
+.page-header{background:rgba(255,255,255,0.03);border:1px solid rgba(148,163,184,0.12);border-radius:12px;padding:16px 20px;margin-bottom:20px}
+.page-header h1{font-size:18px;font-weight:900;letter-spacing:-.01em;background:linear-gradient(90deg,#60a5fa,#c084fc,#34d399);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.header-meta{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:#94a3b8}
+.header-meta span{display:flex;align-items:center;gap:5px}
+.header-meta .val{color:#e2e8f0;font-weight:700}
+.tag-orange{display:inline-block;background:rgba(251,146,60,.12);border:1px solid rgba(251,146,60,.35);color:#fdba74;font-size:10px;font-weight:800;padding:2px 9px;border-radius:20px;letter-spacing:.04em}
+
+/* ── COLLAB CARD（v5 同款）── */
+.collab-card{background:rgba(255,255,255,0.04);border:1px solid rgba(148,163,184,0.12);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.card-head{padding:12px 16px;border-bottom:1px solid rgba(148,163,184,.1);background:rgba(15,23,42,.4)}
+.card-head-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.card-title{font-size:13px;font-weight:900;color:#f1f5f9}
+.card-subtitle{font-size:11px;color:#64748b;margin-top:2px}
+.card-body{padding:14px 16px}
+.status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:800;white-space:nowrap;flex-shrink:0}
+.pill-yellow{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);color:#fcd34d}
+.pill-green{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);color:#4ade80}
+.pill-dot{width:6px;height:6px;border-radius:50%}
+.dot-yellow{background:#fbbf24;animation:dot-pulse 1.2s infinite}
+.dot-green{background:#4ade80}
+@keyframes dot-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.cutoff-bar{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.25);padding:7px 14px;font-size:11px;color:#fca5a5;font-weight:700;display:flex;align-items:center;gap:6px}
+
+/* info grid */
+.info-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:11.5px}
+.info-label{color:#64748b;font-weight:600;white-space:nowrap;padding-top:1px}
+.info-val{color:#e2e8f0;font-weight:600}
+.info-val.mono{font-family:'SF Mono',monospace;font-size:11px;color:#93c5fd}
+
+/* ── 柜子卡片 ── */
+.ctn-card{background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.ctn-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.ctn-no{font-size:12px;font-weight:900;color:#93c5fd;font-family:'SF Mono',monospace}
+.ctn-state{font-size:10px;color:#64748b;font-weight:700}
+.ctn-state.ok{color:#4ade80}
+
+/* form */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:10.5px;color:#64748b;font-weight:700;letter-spacing:.04em}
+.form-group label .req{color:#f87171}
+.form-input{background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);border-radius:7px;color:#e2e8f0;padding:7px 11px;font-size:12px;outline:none;transition:border .15s;width:100%}
+.form-input:focus{border-color:#60a5fa;box-shadow:0 0 0 2px rgba(96,165,250,.12)}
+.form-input.err{border-color:#f87171}
+.field-hint{font-size:10px;color:#475569}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:800;cursor:pointer;border:none;letter-spacing:.02em;transition:all .15s}
+.btn-primary{background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff}
+.btn-primary:hover{background:linear-gradient(135deg,#1d4ed8,#2563eb)}
+.btn-green{background:linear-gradient(135deg,#059669,#10b981);color:#fff}
+.btn-green:hover{background:linear-gradient(135deg,#047857,#059669)}
+.btn-lg{padding:12px 20px;font-size:14px;width:100%}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* phone gate */
+.gate-invite{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.gate-invite .t{font-size:12px;font-weight:800;color:#fcd34d;margin-bottom:4px}
+.gate-invite .d{font-size:11px;color:#b8a04a;line-height:1.6}
+.gate-err{font-size:11px;color:#f87171;font-weight:700;margin-top:8px;display:none}
+.lock-note{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#475569;margin-top:14px;justify-content:center}
+
+/* toast / state */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;border:1px solid rgba(148,163,184,.2);color:#e2e8f0;padding:10px 22px;border-radius:20px;font-size:12px;font-weight:700;display:none;z-index:99}
+.toast.show{display:block}
+.center-state{text-align:center;padding:70px 20px;color:#64748b}
+.center-state .big{font-size:40px;margin-bottom:14px}
+.center-state h2{font-size:17px;font-weight:900;color:#e2e8f0;margin-bottom:6px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- header -->
+  <div class="page-header">
+    <h1>协同表 · 装柜数据填报</h1>
+    <div class="header-meta" id="headerMeta">
+      <span>📋 <span class="val" id="hSheetNo">—</span></span>
+      <span class="tag-orange" id="hTag" style="display:none">外单</span>
+    </div>
+  </div>
+
+  <!-- loading -->
+  <div class="center-state" id="stateLoading">
+    <div class="big">⏳</div><p>正在加载…</p>
+  </div>
+
+  <!-- ① 手机号门禁 -->
+  <div class="collab-card hidden" id="stateGate">
+    <div class="card-head"><div class="card-head-row">
+      <div><div class="card-title">🔐 身份验证</div>
+      <div class="card-subtitle">请验证手机号后进入填报</div></div>
+      <span class="status-pill pill-yellow"><span class="pill-dot dot-yellow"></span>待验证</span>
+    </div></div>
+    <div class="card-body">
+      <div class="gate-invite">
+        <div class="t">📨 您已收到 Sanlyn 的协同邀请</div>
+        <div class="d">Sanlyn 邀请您填写本票货物的装柜数据<br>请输入您的手机号验证身份</div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>手机号 / MOBILE <span class="req">*</span></label>
+        <input class="form-input" id="gatePhone" type="tel" placeholder="1XX XXXX XXXX" maxlength="20">
+        <div class="gate-err" id="gateErr">手机号验证失败，请确认后重试</div>
+      </div>
+      <button class="btn btn-green btn-lg" id="btnVerify" onclick="verifyPhone()">✓ 验证并继续</button>
+      <div class="lock-note">🔒 链接与手机号双重验证 · 数据仅您与 Sanlyn 可见</div>
+    </div>
+  </div>
+
+  <!-- ② 填报表单 -->
+  <div class="hidden" id="stateForm">
+
+    <div class="collab-card">
+      <div class="cutoff-bar" id="cutoffBar" style="display:none">⏰ <span id="cutoffText"></span></div>
+      <div class="card-head"><div class="card-head-row">
+        <div><div class="card-title" id="fTitle">📦 货物信息</div>
+        <div class="card-subtitle" id="fSub">逐柜填写实际装柜数据</div></div>
+        <span class="status-pill pill-yellow" id="fPill"><span class="pill-dot dot-yellow"></span>filling…</span>
+      </div></div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label>发货人名称</label>
+            <input class="form-input" id="shipper_name" placeholder="公司全称">
+          </div>
+          <div class="form-group">
+            <label>唛头 / MARKS</label>
+            <input class="form-input" id="marks" placeholder="如：N/M 或品牌唛头">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="collab-card">
+      <div class="card-head"><div class="card-head-row">
+        <div><div class="card-title">🚢 分柜明细</div>
+        <div class="card-subtitle">每柜数据独立填写 · 以装柜磅单为准</div></div>
+      </div></div>
+      <div class="card-body">
+        <div id="ctnList"></div>
+        <button class="btn btn-primary" id="btnAddCtn" onclick="addContainer()" style="margin-top:4px">＋ 添加一柜</button>
+      </div>
+    </div>
+
+    <button class="btn btn-green btn-lg" id="btnSubmit" onclick="submitAll()">提交装柜数据</button>
+    <div class="lock-note">提交后如需修改请联系 Sanlyn 操作员</div>
+  </div>
+
+  <!-- ③ 完成 -->
+  <div class="center-state hidden" id="stateDone">
+    <div class="big">✅</div>
+    <h2>已提交</h2>
+    <p>Sanlyn 已收到装柜数据，将尽快安排后续手续。</p>
+  </div>
+
+  <!-- 链接失效 -->
+  <div class="center-state hidden" id="stateDead">
+    <div class="big">⛔️</div>
+    <h2 id="deadTitle">链接无效</h2>
+    <p id="deadText">请联系 Sanlyn 重新获取链接。</p>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api/db/collab-sheets';
+const qs = new URLSearchParams(location.search);
+const token = qs.get('token') || '';
+const LS_KEY = 'collab_phone_' + token.slice(0, 8);
+
+let version = 1;
+let verifiedPhone = null;
+let ctnCount = 0;
+
+const $ = (id) => document.getElementById(id);
+const show = (id) => { ['stateLoading','stateGate','stateForm','stateDone','stateDead'].forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
+function toast(msg, ms = 2600) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), ms); }
+
+function apiUrl(extra = '') {
+  let u = `${API}?token=${encodeURIComponent(token)}`;
+  if (verifiedPhone) u += `&phone=${encodeURIComponent(verifiedPhone)}`;
+  return u + extra;
+}
+
+async function boot() {
+  if (!token) { show('stateDead'); return; }
+  const saved = localStorage.getItem(LS_KEY);
+  if (saved) { verifiedPhone = saved; }
+  const r = await fetch(apiUrl());
+  if (r.status === 403 && !verifiedPhone) { show('stateGate'); return; }
+  if (r.status === 403 && verifiedPhone) { localStorage.removeItem(LS_KEY); verifiedPhone = null; show('stateGate'); return; }
+  if (r.status === 429) { dead('访问已锁定', '尝试次数过多，请30分钟后再试。'); return; }
+  if (!r.ok) { dead(); return; }
+  render(await r.json());
+}
+
+function dead(title, text) {
+  if (title) $('deadTitle').textContent = title;
+  if (text) $('deadText').textContent = text;
+  show('stateDead');
+}
+
+async function verifyPhone() {
+  const phone = $('gatePhone').value.trim();
+  if (!phone) { $('gateErr').style.display = 'block'; return; }
+  $('btnVerify').disabled = true; $('btnVerify').textContent = '验证中…';
+  verifiedPhone = phone;
+  const r = await fetch(apiUrl());
+  $('btnVerify').disabled = false; $('btnVerify').textContent = '✓ 验证并继续';
+  if (r.status === 403) { verifiedPhone = null; $('gateErr').style.display = 'block'; $('gatePhone').classList.add('err'); return; }
+  if (r.status === 429) { dead('访问已锁定', '尝试次数过多，请30分钟后再试。'); return; }
+  if (!r.ok) { dead(); return; }
+  localStorage.setItem(LS_KEY, phone);
+  render(await r.json());
+}
+
+function render(d) {
+  version = d.version;
+  $('hSheetNo').textContent = d.sheet_no || '—';
+  if (d.sheet_type === 'freight_external') $('hTag').style.display = 'inline-block';
+
+  if (d.status === 'submitted' || d.status === 'finalized') { show('stateDone'); return; }
+
+  const c = (d.data_json && d.data_json.customer) || {};
+  if (c.shipper_name) $('shipper_name').value = c.shipper_name;
+  if (c.marks) $('marks').value = c.marks;
+
+  $('ctnList').innerHTML = '';
+  ctnCount = 0;
+  const containers = Array.isArray(c.containers) && c.containers.length ? c.containers : [{}];
+  containers.forEach((ctn) => addContainer(ctn));
+
+  show('stateForm');
+}
+
+function addContainer(data = {}) {
+  const i = ctnCount++;
+  const div = document.createElement('div');
+  div.className = 'ctn-card';
+  div.id = 'ctn_' + i;
+  div.innerHTML = `
+    <div class="ctn-head">
+      <span class="ctn-no">柜 ${i + 1}</span>
+      <span class="ctn-state" id="ctnState_${i}">待填</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>品名 <span class="req">*</span></label>
+        <input class="form-input" id="cargo_name_${i}" value="${esc(data.cargo_name)}" placeholder="中文品名"></div>
+      <div class="form-group"><label>HS 编码 <span class="req">*</span></label>
+        <input class="form-input" id="hs_code_${i}" value="${esc(data.hs_code)}" placeholder="10位编码" maxlength="20"></div>
+    </div>
+    <div class="form-row three">
+      <div class="form-group"><label>件数/箱数 <span class="req">*</span></label>
+        <input class="form-input" id="pkg_qty_${i}" type="number" min="1" value="${esc(data.pkg_qty)}"></div>
+      <div class="form-group"><label>净重 KG <span class="req">*</span></label>
+        <input class="form-input" id="nw_kg_${i}" type="number" step="0.01" min="0" value="${esc(data.nw_kg)}"></div>
+      <div class="form-group"><label>毛重 KG <span class="req">*</span></label>
+        <input class="form-input" id="gw_kg_${i}" type="number" step="0.01" min="0" value="${esc(data.gw_kg)}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>体积 CBM <span class="req">*</span></label>
+        <input class="form-input" id="cbm_m3_${i}" type="number" step="0.001" min="0" value="${esc(data.cbm_m3)}"></div>
+      <div class="form-group" style="justify-content:flex-end">
+        <div class="field-hint">以装柜磅单实际数据为准</div></div>
+    </div>`;
+  $('ctnList').appendChild(div);
+}
+
+function esc(v) { return v == null ? '' : String(v).replace(/"/g, '&quot;'); }
+function gv(id) { return ($(id)?.value || '').trim(); }
+function gn(id) { const v = parseFloat($(id)?.value); return isNaN(v) ? null : v; }
+function gi(id) { const v = parseInt($(id)?.value); return isNaN(v) ? null : v; }
+
+function collect() {
+  const containers = [];
+  let allOk = true;
+  for (let i = 0; i < ctnCount; i++) {
+    if (!$('ctn_' + i)) continue;
+    const item = {
+      container_seq: i + 1,
+      cargo_name: gv('cargo_name_' + i),
+      hs_code: gv('hs_code_' + i),
+      pkg_qty: gi('pkg_qty_' + i),
+      nw_kg: gn('nw_kg_' + i),
+      gw_kg: gn('gw_kg_' + i),
+      cbm_m3: gn('cbm_m3_' + i),
+    };
+    const ok = item.cargo_name && item.hs_code && item.pkg_qty && item.nw_kg != null && item.gw_kg != null && item.cbm_m3 != null;
+    ['cargo_name','hs_code','pkg_qty','nw_kg','gw_kg','cbm_m3'].forEach(f => {
+      const el = $(f + '_' + i);
+      if (el) el.classList.toggle('err', !item[f] && item[f] !== 0);
+    });
+    $('ctnState_' + i).textContent = ok ? '✓ 完整' : '待填';
+    $('ctnState_' + i).className = 'ctn-state' + (ok ? ' ok' : '');
+    if (!ok) allOk = false;
+    containers.push(item);
+  }
+  return { containers, allOk };
+}
+
+async function submitAll() {
+  const { containers, allOk } = collect();
+  if (!allOk) { toast('请补全所有柜子的必填项'); return; }
+  // 毛重>净重 校验
+  for (const c of containers) {
+    if (c.gw_kg <= c.nw_kg) { toast(`柜 ${c.container_seq}：毛重应大于净重，请核对`); return; }
+  }
+  const btn = $('btnSubmit');
+  btn.disabled = true; btn.textContent = '提交中…';
+  const patch = { customer: { containers } };
+  const sn = gv('shipper_name'); if (sn) patch.customer.shipper_name = sn;
+  const mk = gv('marks'); if (mk) patch.customer.marks = mk;
+  try {
+    const r = await fetch(apiUrl(), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_version: version, patch }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      toast(r.status === 409 ? '数据已被更新，请刷新页面' : (d.error || '提交失败'));
+      btn.disabled = false; btn.textContent = '提交装柜数据';
+      return;
+    }
+    version = d.version;
+    show('stateDone');
+  } catch (e) {
+    toast('网络错误，请重试');
+    btn.disabled = false; btn.textContent = '提交装柜数据';
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

@@ -32,13 +32,16 @@ async function recognizeLicense(ossUrl) {
               text: `请识别这张营业执照图片，提取以下信息并以JSON格式返回（只返回JSON，不要其他文字）：
 {
   "companyName": "公司名称",
-  "taxId": "统一社会信用代码",
+  "taxId": "统一社会信用代码 / Business Registration Number",
   "address": "注册地址",
-  "legalPerson": "法定代表人",
+  "legalPerson": "法定代表人 / 负责人",
   "registeredCapital": "注册资本",
-  "businessScope": "经营范围（前50字）"
+  "businessScope": "经营范围（前50字）",
+  "issuer": "登记机关 / Issuing Authority（例 厦门市市场监督管理局；境外执照填发证机构英文名）",
+  "issuedAt": "成立日期 / 注册日期 YYYY-MM-DD（若是境外执照写 Date of Incorporation）",
+  "expiresAt": "营业期限截止日期 YYYY-MM-DD（若为长期/无固定期限，填空字符串）"
 }
-如果某个字段无法识别，请填空字符串。`,
+如果某个字段无法识别，请填空字符串。日期一定要转成 YYYY-MM-DD 格式。`,
             },
           ],
         },

@@ -1,7 +1,9 @@
 import { getPool, setCors } from "../db.js";
+import { requireRole } from "../auth.js";
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireRole(req, res, ["admin"])) return;
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
@@ -19,7 +21,8 @@ export default async function handler(req, res) {
     let query = "SELECT * FROM tenants", params = [], conds = [];
     if (company_code) { params.push(company_code); conds.push(`company_code = $${params.length}`); }
     if (conds.length) query += " WHERE " + conds.join(" AND ");
-    params.push(parseInt(limit));
+    const limitInt = parseInt(limit);
+    params.push(Number.isFinite(limitInt) && limitInt > 0 ? limitInt : 100);
     query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
     const result = await pool.query(query, params);
     return res.status(200).json({ success: true, data: result.rows, count: result.rowCount });

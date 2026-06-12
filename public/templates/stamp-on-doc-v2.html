@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sanlyn · 智能盖章 v2</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'PingFang SC','SF Pro Text',sans-serif;background:#07090f;color:#e2e8f0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+.app{display:flex;flex:1;overflow:hidden}
+
+/* ── Top bar ── */
+.topbar{display:flex;align-items:center;gap:10px;padding:11px 18px;background:#0d1117;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0}
+.topbar-logo{font-size:18px;font-weight:900;color:#3b82f6;letter-spacing:.05em}
+.topbar-doc{font-size:13px;font-weight:700;color:#e2e8f0;flex:1}
+.topbar-doc span{color:#4b5563;font-weight:400;font-size:11px;margin-left:8px}
+.lang-toggle{display:flex;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:20px;overflow:hidden}
+.lang-btn{padding:5px 14px;font-size:11px;font-weight:800;cursor:pointer;border:none;background:none;color:#4b5563;transition:all .15s}
+.lang-btn.active{background:rgba(59,130,246,0.2);color:#93c5fd}
+.status-pill{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700}
+.status-generated{background:rgba(34,197,94,0.15);border:1px solid rgba(34,197,94,0.35);color:#4ade80}
+
+/* ── Left: doc viewport ── */
+.panel-left{flex:1;display:flex;flex-direction:column;background:#0a0d14;overflow:hidden}
+.doc-toolbar{display:flex;align-items:center;gap:8px;padding:9px 16px;background:#0d1117;border-bottom:1px solid rgba(255,255,255,0.06)}
+.doc-type-pills{display:flex;gap:5px}
+.dt-pill{padding:5px 13px;border-radius:20px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);color:#4b5563;transition:all .15s}
+.dt-pill.active{background:rgba(59,130,246,0.18);border-color:rgba(59,130,246,0.5);color:#93c5fd}
+.doc-area{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:24px;background:repeating-linear-gradient(45deg,rgba(255,255,255,0.008),rgba(255,255,255,0.008) 1px,transparent 1px,transparent 8px)}
+.doc-wrap{position:relative;display:inline-block;box-shadow:0 8px 48px rgba(0,0,0,0.6)}
+.doc-page{width:560px;min-height:792px;background:#fff;color:#1a1a1a;padding:50px 58px;font-size:11.5px;line-height:1.75;position:relative;user-select:none}
+.doc-page h1{font-size:17px;font-weight:900;text-align:center;margin-bottom:3px;letter-spacing:.08em}
+.doc-page .dsub{text-align:center;font-size:10.5px;color:#555;margin-bottom:22px}
+.doc-hr{border:none;border-top:1.5px solid #1a1a1a;margin:14px 0}
+.doc-kv{display:grid;grid-template-columns:120px 1fr;gap:3px 0;margin-bottom:4px}
+.doc-kv .k{color:#666;font-size:11px}
+.doc-kv .v{font-weight:700;font-size:11px}
+.doc-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:11px}
+.doc-table th{background:#f0f0f0;padding:5px 4px;font-weight:800;text-align:left}
+.doc-table td{padding:4px 4px;border-bottom:1px solid #eee}
+.doc-table td:last-child,.doc-table th:last-child{text-align:right}
+.doc-table .total-row td{font-weight:900;border-top:1.5px solid #333;border-bottom:none}
+.doc-terms{margin-top:14px;font-size:11px;color:#444;line-height:1.9}
+.sig-area{margin-top:50px;display:flex;justify-content:space-between}
+.sig-block{text-align:center;width:170px}
+.sig-block .sline{border-top:1px solid #888;margin-bottom:5px}
+.sig-block .slabel{font-size:10px;color:#888}
+/* stamp drag */
+.stamp-drag{position:absolute;cursor:grab;user-select:none;touch-action:none}
+.stamp-drag:active{cursor:grabbing}
+.stamp-anchor{position:absolute;width:10px;height:10px;background:rgba(220,38,38,0.5);border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:0.7}50%{transform:translate(-50%,-50%) scale(1.5);opacity:0.3}}
+
+/* ── Right panel ── */
+.panel-right{width:308px;display:flex;flex-direction:column;background:#0d1117;border-left:1px solid rgba(255,255,255,0.07);overflow-y:auto}
+.rp-sec{padding:14px 14px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.rp-lbl{font-size:9.5px;font-weight:800;color:#4b5563;letter-spacing:.08em;text-transform:uppercase;margin-bottom:9px;display:flex;align-items:center;gap:6px}
+.rp-lbl span{flex:1}
+
+/* Doc preset card */
+.preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.preset-card{padding:9px 10px;border-radius:10px;border:1.5px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.02);cursor:pointer;transition:all .15s}
+.preset-card:hover{border-color:rgba(59,130,246,0.4)}
+.preset-card.active{background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.5)}
+.preset-card .pc-name{font-size:12px;font-weight:800;color:#e2e8f0;margin-bottom:2px}
+.preset-card .pc-seal{font-size:10px;color:#4b5563}
+.preset-card.active .pc-name{color:#93c5fd}
+
+/* Stamp preview */
+.stamp-preview-center{display:flex;flex-direction:column;align-items:center;padding:8px 0 4px}
+.stamp-usage-badge{margin-top:7px;font-size:11px;font-weight:800;letter-spacing:.04em;padding:3px 12px;border-radius:20px;background:rgba(245,158,11,0.13);border:1px solid rgba(245,158,11,0.38);color:#fde68a;transition:all .2s}
+.stamp-usage-badge.empty{background:rgba(255,255,255,0.03);border-color:rgba(255,255,255,0.07);color:#4b5563;font-weight:400}
+
+/* Fixed automation toggle */
+.auto-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:rgba(59,130,246,0.06);border:1.5px solid rgba(59,130,246,0.18);cursor:pointer;user-select:none;margin-bottom:8px}
+.auto-row:hover{border-color:rgba(59,130,246,0.35)}
+.toggle-wrap{width:36px;height:20px;border-radius:10px;background:#1e293b;border:1px solid rgba(255,255,255,0.1);position:relative;flex-shrink:0;transition:background .2s}
+.toggle-wrap.on{background:#2563eb;border-color:#3b82f6}
+.toggle-knob{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.3);transition:transform .2s}
+.toggle-wrap.on .toggle-knob{transform:translateX(16px)}
+.auto-label{flex:1;font-size:11.5px;font-weight:700;color:#93c5fd}
+.auto-sub{font-size:9.5px;color:#4b5563;margin-top:1px}
+.preset-saved-badge{font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px;background:rgba(34,197,94,0.13);border:1px solid rgba(34,197,94,0.3);color:#4ade80;margin-left:auto;flex-shrink:0}
+
+/* Controls */
+.field{margin-bottom:10px}
+.field label{display:block;font-size:10.5px;color:#64748b;font-weight:700;margin-bottom:4px}
+.field input,.field select{width:100%;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);color:#e2e8f0;font-size:12px;font-family:inherit;outline:none}
+.field input:focus,.field select:focus{border-color:rgba(220,38,38,0.5)}
+.field select option{background:#0d1117}
+.mini-pills{display:flex;gap:5px;flex-wrap:wrap}
+.mpill{padding:4px 10px;border-radius:16px;font-size:10.5px;font-weight:700;cursor:pointer;border:1.5px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.02);color:#4b5563;transition:all .15s}
+.mpill.active{background:rgba(220,38,38,0.15);border-color:rgba(220,38,38,0.45);color:#fca5a5}
+.mpill-amber.active{background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.45);color:#fde68a}
+
+/* AI Review card */
+.ai-card{border-radius:12px;overflow:hidden;border:1.5px solid rgba(139,92,246,0.3);background:linear-gradient(160deg,rgba(139,92,246,0.08),rgba(59,130,246,0.04))}
+.ai-card-header{padding:10px 12px;display:flex;align-items:center;gap:8px}
+.ai-icon{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#3b82f6);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.ai-card-title{font-size:12px;font-weight:900;color:#f3e8ff;flex:1}
+.ai-card-sub{font-size:9px;color:rgba(196,181,253,0.6);font-family:monospace}
+.ai-fields{padding:0 10px 10px}
+.ai-field-row{display:flex;align-items:flex-start;gap:7px;margin-bottom:5px;padding:6px 8px;border-radius:8px}
+.ai-field-ok{background:rgba(34,197,94,0.07);border:1px solid rgba(34,197,94,0.2)}
+.ai-field-warn{background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25)}
+.ai-field-row .fi{font-size:11px;font-weight:800;flex:1}
+.ai-field-row .fi-ok{color:#4ade80}
+.ai-field-row .fi-warn{color:#fca5a5}
+.ai-field-row .fi-note{font-size:10px;color:#94a3b8;margin-top:1px}
+.ai-badge{padding:1px 7px;border-radius:10px;font-size:9.5px;font-weight:800}
+.badge-ok{background:rgba(34,197,94,0.15);color:#4ade80}
+.badge-warn{background:rgba(239,68,68,0.15);color:#fca5a5}
+
+/* Buttons */
+.btn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:12px;border-radius:11px;font-size:12.5px;font-weight:800;cursor:pointer;border:none;transition:all .18s;font-family:inherit}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn-blue{background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;box-shadow:0 3px 12px rgba(37,99,235,0.3)}
+.btn-blue:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 5px 20px rgba(37,99,235,0.4)}
+.btn-red{background:linear-gradient(135deg,#dc2626,#b45309);color:#fff;box-shadow:0 3px 12px rgba(220,38,38,0.3)}
+.btn-red:not(:disabled):hover{transform:translateY(-1px)}
+.btn-green{background:linear-gradient(135deg,#16a34a,#065f46);color:#fff;box-shadow:0 3px 12px rgba(22,163,74,0.3)}
+.btn-green:not(:disabled):hover{transform:translateY(-1px)}
+.btn-ghost{background:rgba(255,255,255,0.04);border:1.5px solid rgba(255,255,255,0.09);color:#64748b}
+.btn-ghost:not(:disabled):hover{border-color:rgba(255,255,255,0.18);color:#e2e8f0}
+.btn-ai{background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;box-shadow:0 3px 12px rgba(124,58,237,0.35)}
+.btn-ai:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 5px 20px rgba(124,58,237,0.45)}
+
+/* Footer */
+.rp-footer{padding:12px 14px;display:flex;flex-direction:column;gap:7px;margin-top:auto;border-top:1px solid rgba(255,255,255,0.07);background:#0d1117;position:sticky;bottom:0}
+.hint-text{font-size:10px;color:#4b5563;text-align:center;padding:2px 0}
+
+/* Spinner */
+.spin{display:inline-block;width:16px;height:16px;border:2.5px solid rgba(255,255,255,0.25);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Confirm overlay ── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.show{opacity:1;pointer-events:all}
+.modal{background:#0d1117;border:1.5px solid rgba(34,197,94,0.4);border-radius:20px;padding:22px;max-width:440px;width:100%}
+.modal-head{font-size:15px;font-weight:900;color:#4ade80;margin-bottom:4px;display:flex;align-items:center;gap:9px}
+.modal-sub{font-size:11px;color:#4b5563;margin-bottom:16px}
+.modal-preview-wrap{background:#f8f8f8;border-radius:12px;padding:20px 24px;margin-bottom:14px;display:flex;gap:16px;align-items:flex-start}
+.modal-doc-text{font-size:10.5px;color:#333;line-height:1.9;flex:1}
+.legal-box{background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.2);border-radius:9px;padding:9px 11px;font-size:10.5px;color:#93c5fd;line-height:1.7;margin-bottom:12px}
+.legal-check{display:flex;align-items:flex-start;gap:9px;cursor:pointer;margin-bottom:14px}
+.legal-check input{width:15px;height:15px;margin-top:2px;accent-color:#dc2626;flex-shrink:0}
+.legal-check span{font-size:11.5px;color:#fde68a;line-height:1.6}
+.modal-btns{display:grid;grid-template-columns:1fr 2fr;gap:8px}
+
+/* Log */
+.log-row{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:10.5px;color:#94a3b8}
+.log-row:last-child{border:none}
+.log-time{font-size:9px;color:#4b5563;font-family:monospace;margin-left:auto;flex-shrink:0;white-space:nowrap}
+
+/* VIP */
+.vip-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:9.5px;font-weight:900;background:linear-gradient(135deg,#78350f,#92400e);border:1px solid rgba(245,158,11,0.5);color:#fbbf24;letter-spacing:.04em;flex-shrink:0}
+.vip-lock-overlay{position:relative}
+.vip-lock-overlay::after{content:'👑 VIP';position:absolute;inset:0;background:rgba(7,9,15,0.72);border-radius:inherit;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#fbbf24;letter-spacing:.1em;pointer-events:none}
+.btn-vip{background:linear-gradient(135deg,#92400e,#78350f);color:#fbbf24;border:1.5px solid rgba(245,158,11,0.45);box-shadow:0 3px 12px rgba(245,158,11,0.2)}
+.btn-vip:not(:disabled):hover{transform:translateY(-1px);box-shadow:0 5px 20px rgba(245,158,11,0.32)}
+/* VIP paywall modal */
+.vip-modal{background:linear-gradient(160deg,#0d1117,#0f0a1e);border:1.5px solid rgba(245,158,11,0.45);border-radius:24px;padding:0;max-width:420px;width:100%;overflow:hidden}
+.vip-hero{background:linear-gradient(135deg,#78350f 0%,#1e1b4b 60%,#0d1117 100%);padding:28px 24px 22px;text-align:center}
+.vip-crown{font-size:48px;margin-bottom:8px;display:block;filter:drop-shadow(0 0 18px rgba(245,158,11,0.6))}
+.vip-hero-title{font-size:20px;font-weight:900;color:#fbbf24;margin-bottom:4px;letter-spacing:.04em}
+.vip-hero-sub{font-size:12px;color:rgba(253,230,138,0.65)}
+.vip-body{padding:20px 22px}
+.vip-feature-list{margin-bottom:18px}
+.vip-feature{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.05)}
+.vip-feature:last-child{border:none}
+.vip-feature-icon{font-size:18px;width:32px;text-align:center;flex-shrink:0}
+.vip-feature-text{flex:1}
+.vip-feature-name{font-size:12.5px;font-weight:800;color:#e2e8f0}
+.vip-feature-desc{font-size:10px;color:#4b5563;margin-top:1px}
+.vip-feature-badge{font-size:9px;font-weight:800;padding:2px 7px;border-radius:8px}
+.badge-included{background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.3);color:#4ade80}
+.badge-free{background:rgba(100,116,139,0.15);border:1px solid rgba(100,116,139,0.25);color:#64748b}
+.vip-price-row{display:flex;align-items:baseline;gap:6px;margin-bottom:6px}
+.vip-price{font-size:32px;font-weight:900;color:#fbbf24;line-height:1}
+.vip-price-unit{font-size:13px;color:#92400e;font-weight:700}
+.vip-price-note{font-size:10px;color:#4b5563;margin-bottom:16px}
+.vip-plans{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.vip-plan{padding:12px;border-radius:12px;border:1.5px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.02);cursor:pointer;text-align:center;transition:all .15s}
+.vip-plan.active,.vip-plan:hover{border-color:rgba(245,158,11,0.5);background:rgba(245,158,11,0.07)}
+.vip-plan-name{font-size:11.5px;font-weight:800;color:#e2e8f0;margin-bottom:2px}
+.vip-plan-price{font-size:16px;font-weight:900;color:#fbbf24}
+.vip-plan-sub{font-size:9.5px;color:#4b5563;margin-top:2px}
+.vip-plan.active .vip-plan-sub{color:#d97706}
+.vip-modal-btns{display:grid;grid-template-columns:1fr 2fr;gap:8px}
+
+/* Coming soon */
+.coming-soon-section{margin:14px 0 0;padding-top:14px;border-top:1px solid rgba(255,255,255,0.07)}
+.coming-soon-title{font-size:9.5px;font-weight:800;color:#4b5563;letter-spacing:.08em;text-transform:uppercase;margin-bottom:9px}
+.coming-soon-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.cs-card{padding:9px 10px;border-radius:10px;border:1.5px dashed rgba(255,255,255,0.08);background:rgba(255,255,255,0.015);display:flex;flex-direction:column;gap:3px;position:relative;overflow:hidden}
+.cs-card-icon{font-size:16px}
+.cs-card-name{font-size:11px;font-weight:800;color:#64748b}
+.cs-card-desc{font-size:9.5px;color:#374151;line-height:1.4}
+.cs-badge{position:absolute;top:7px;right:8px;font-size:8.5px;font-weight:800;padding:2px 6px;border-radius:6px;background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.3);color:#a78bfa}
+.dt-pill-soon{opacity:0.4;cursor:default!important;border-style:dashed!important;font-size:10px}
+.dt-pill-soon:hover{opacity:0.5!important}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);color:#fff;font-size:12.5px;font-weight:700;padding:10px 20px;border-radius:11px;z-index:300;opacity:0;pointer-events:none;transition:all .3s;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.4)}
+.toast.show{opacity:1}
+.toast-success{background:#16a34a}
+.toast-warn{background:#d97706}
+.toast-info{background:#2563eb}
+
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px}
+</style>
+</head>
+<body>
+
+<!-- ── Top bar ── -->
+<div class="topbar">
+  <div class="topbar-logo">SANLYN</div>
+  <div class="topbar-doc" id="topDocLabel">Commercial Invoice <span id="topDocNo">· FS20260220037</span></div>
+  <div class="lang-toggle">
+    <button class="lang-btn active" onclick="setLang('zh')">中文</button>
+    <button class="lang-btn" onclick="setLang('en')">EN</button>
+  </div>
+  <div class="status-pill status-generated" id="topStatus">Generated</div>
+</div>
+
+<div class="app">
+
+<!-- ── LEFT: Document ── -->
+<div class="panel-left">
+  <div class="doc-toolbar">
+    <div id="docTypeLabel" style="font-size:10.5px;color:#4b5563;font-weight:700;margin-right:4px">文件类型</div>
+    <div class="doc-type-pills" id="docTypePills">
+      <div class="dt-pill active" data-dt="IV" onclick="selectDocType(this,'IV')">CI / Invoice</div>
+      <div class="dt-pill" data-dt="SC" onclick="selectDocType(this,'SC')">SC / Contract</div>
+      <div class="dt-pill" data-dt="PI" onclick="selectDocType(this,'PI')">PI / Proforma</div>
+      <div class="dt-pill" data-dt="PL" onclick="selectDocType(this,'PL')">PL / Packing</div>
+      <div class="dt-pill" data-dt="BL" onclick="selectDocType(this,'BL')">BL / 提单</div>
+      <!-- extensible: FUTURE_DOC_TYPES rendered by JS here -->
+      <div id="futureDocPills"></div>
+    </div>
+    <button class="btn btn-ghost" style="width:auto;padding:5px 12px;font-size:11px;margin-left:auto" onclick="resetStamp()" id="btnReset">↺ 重置</button>
+  </div>
+
+  <div class="doc-area" id="docArea">
+    <div class="doc-wrap" id="docWrap">
+      <div class="doc-page" id="docPage"><!-- filled by JS --></div>
+      <!-- stamp -->
+      <div class="stamp-drag" id="stampDrag" style="display:none;position:absolute;left:380px;top:660px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── RIGHT: Controls ── -->
+<div class="panel-right">
+
+  <!-- ① Doc preset -->
+  <div class="rp-sec">
+    <div class="rp-lbl"><span id="lbl_preset">📋 文件印章配置</span></div>
+    <div class="preset-grid" id="presetGrid"><!-- filled by JS --></div>
+    <div style="margin-top:8px;font-size:10px;color:#4b5563" id="presetNote"></div>
+  </div>
+
+  <!-- ② Stamp content -->
+  <div class="rp-sec">
+    <div class="rp-lbl"><span id="lbl_stampContent">🔏 印章内容</span></div>
+    <div class="field">
+      <label id="lbl_company">公司名称</label>
+      <input type="text" id="companyName" value="厦门宠贝进出口有限公司" oninput="renderAll()" maxlength="20">
+    </div>
+    <div class="field">
+      <label id="lbl_companyEn">英文名（选填）</label>
+      <input type="text" id="companyEn" value="XIAMEN PET BABY" oninput="renderAll()" maxlength="20">
+    </div>
+    <div class="field">
+      <label id="lbl_color">颜色</label>
+      <div class="mini-pills" id="colorPills">
+        <div class="mpill active" data-color="#dc2626" onclick="selectColor(this,'#dc2626')" id="cpill_red">🔴 红色</div>
+        <div class="mpill" data-color="#1d4ed8" onclick="selectColor(this,'#1d4ed8')" id="cpill_blue">🔵 蓝色</div>
+        <div class="mpill" data-color="#1a1a1a" onclick="selectColor(this,'#1a1a1a')" id="cpill_black">⚫ 黑色</div>
+      </div>
+    </div>
+    <div class="field">
+      <label id="lbl_shape">印章类型</label>
+      <div class="mini-pills" id="shapePills">
+        <div class="mpill active" data-shape="round" onclick="selectShape(this,'round')" id="spill_round">圆形公章</div>
+        <div class="mpill" data-shape="oval" onclick="selectShape(this,'oval')" id="spill_oval">椭圆合同章</div>
+        <div class="mpill" data-shape="square" onclick="selectShape(this,'square')" id="spill_square">方形财务章</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ③ Usage label -->
+  <div class="rp-sec">
+    <div class="rp-lbl"><span id="lbl_usageTitle">🏷 用途标注</span></div>
+    <div class="mini-pills" id="labelChips" style="margin-bottom:8px">
+      <div class="mpill mpill-amber active" data-label="" onclick="selectLabel(this,'')">通用</div>
+      <div class="mpill mpill-amber" data-label="仅限海运" onclick="selectLabel(this,'仅限海运')">仅限海运</div>
+      <div class="mpill mpill-amber" data-label="仅供采购" onclick="selectLabel(this,'仅供采购')">仅供采购</div>
+      <div class="mpill mpill-amber" data-label="合同专用" onclick="selectLabel(this,'合同专用')">合同专用</div>
+      <div class="mpill mpill-amber" data-label="财务专用" onclick="selectLabel(this,'财务专用')">财务专用</div>
+      <div class="mpill mpill-amber" data-label="仅供核验" onclick="selectLabel(this,'仅供核验')">仅供核验</div>
+    </div>
+    <div class="field">
+      <label id="lbl_customLabel">自定义（最多8字）</label>
+      <input type="text" id="customLabel" placeholder="例: 仅限出口" oninput="onCustomLabel()" maxlength="8">
+    </div>
+  </div>
+
+  <!-- ③.5 固定自动化 -->
+  <div class="rp-sec">
+    <div class="rp-lbl"><span id="lbl_autoTitle">⚡ 固定自动化</span></div>
+    <div class="auto-row" onclick="toggleAutoSave()">
+      <div>
+        <div class="auto-label" id="autoLabel">记忆此文档的盖章配置</div>
+        <div class="auto-sub" id="autoSub">开启后切换文档类型自动加载</div>
+      </div>
+      <div class="toggle-wrap" id="autoToggle"><div class="toggle-knob"></div></div>
+    </div>
+    <button class="btn btn-ghost" style="width:100%;padding:8px;font-size:11px" onclick="saveDocConfig()" id="btnSaveConfig">
+      💾 <span id="lbl_saveConfig">保存当前配置到此文档类型</span>
+    </button>
+    <div style="margin-top:6px;font-size:9.5px;color:#4b5563" id="configStatus"></div>
+  </div>
+
+  <!-- ④ Stamp preview -->
+  <div class="rp-sec">
+    <div class="rp-lbl"><span id="lbl_preview">👁 印章预览</span></div>
+    <div class="stamp-preview-center">
+      <canvas id="previewCanvas" width="130" height="130"></canvas>
+      <div class="stamp-usage-badge empty" id="usageBadge">通用</div>
+    </div>
+  </div>
+
+  <!-- ⑤ AI Review (VIP) -->
+  <div class="rp-sec">
+    <div class="rp-lbl">
+      <span id="lbl_aiTitle">🤖 AI 合同审核</span>
+      <span class="vip-tag">👑 VIP</span>
+    </div>
+    <div class="ai-card" id="aiCard">
+      <div class="ai-card-header">
+        <div class="ai-icon">🤖</div>
+        <div>
+          <div class="ai-card-title" id="aiCardTitle">AI 智能审核</div>
+          <div class="ai-card-sub">SANLYN AI · Contract Review</div>
+        </div>
+        <button class="btn btn-vip" style="width:auto;padding:5px 12px;font-size:11px" onclick="requireVip('ai_review')" id="btnAiRun">
+          <span id="aiRunLabel">👑 开始审核</span>
+        </button>
+      </div>
+      <div class="ai-fields" id="aiFields" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- ⑥ Log -->
+  <div class="rp-sec" id="logSec" style="display:none">
+    <div class="rp-lbl"><span id="lbl_log">📝 操作日志</span></div>
+    <div id="logList"></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="rp-footer">
+    <div class="hint-text" id="hintText">放置印章 → 拖动定位 → 确认盖章</div>
+    <button class="btn btn-red" id="btnPlace" onclick="placeStamp()">
+      🔏 <span id="lbl_btnPlace">放置印章到文件</span>
+    </button>
+    <button class="btn btn-vip" id="btnAutoStamp" onclick="requireVip('auto_stamp')">
+      👑 <span id="lbl_btnAuto">AI 自动审核并盖章</span>
+    </button>
+    <button class="btn btn-green" id="btnConfirm" onclick="openConfirm()" disabled>
+      ✅ <span id="lbl_btnConfirm">确认盖章</span>
+    </button>
+  </div>
+
+</div><!-- /panel-right -->
+</div><!-- /app -->
+
+<!-- ── Confirm Modal ── -->
+<div class="overlay" id="confirmOverlay">
+  <div class="modal">
+    <div class="modal-head">✅ <span id="modal_title">确认盖章</span></div>
+    <div class="modal-sub" id="modal_sub">核对印章内容与位置，确认后生成带章文件</div>
+    <div class="modal-preview-wrap">
+      <div class="modal-doc-text" id="modalDocPreview"></div>
+      <canvas id="modalCanvas" width="90" height="90"></canvas>
+    </div>
+    <div class="legal-box" id="modal_legal">
+      ⚖️ 电子签章具有法律效力（中国《电子签名法》及东南亚相关法规）<br>
+      ① 本次操作将被系统自动记录，不可撤销<br>
+      ② 伪造他方签章属违法行为，须承担法律责任<br>
+      ③ 如有商业争议，以纸质盖章版本为准
+    </div>
+    <label class="legal-check">
+      <input type="checkbox" id="legalCheck" onchange="toggleFinalBtn()">
+      <span id="modal_legalCheck">我已阅读上述声明，以本人名义合法使用此印章</span>
+    </label>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeConfirm()" id="modal_cancel">取消</button>
+      <button class="btn btn-green" id="btnFinal" onclick="finalApply()" disabled>🔏 <span id="modal_confirm">确认盖章，生成文件</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- ── VIP Paywall Modal ── -->
+<div class="overlay" id="vipOverlay">
+  <div class="vip-modal">
+    <div class="vip-hero">
+      <span class="vip-crown">👑</span>
+      <div class="vip-hero-title" id="vip_title">解锁 Sanlyn VIP</div>
+      <div class="vip-hero-sub" id="vip_sub">AI 合同审核 · 自动盖章 · 无限次使用</div>
+    </div>
+    <div class="vip-body">
+      <!-- Feature list -->
+      <div class="vip-feature-list">
+        <div class="vip-feature">
+          <div class="vip-feature-icon">🤖</div>
+          <div class="vip-feature-text">
+            <div class="vip-feature-name" id="vf1_name">AI 合同审核</div>
+            <div class="vip-feature-desc" id="vf1_desc">自动检查发票/合同/提单字段，发现金额、日期、买方等差异</div>
+          </div>
+          <span class="vip-feature-badge badge-included" id="vf1_badge">✓ 包含</span>
+        </div>
+        <div class="vip-feature">
+          <div class="vip-feature-icon">🔏</div>
+          <div class="vip-feature-text">
+            <div class="vip-feature-name" id="vf2_name">AI 自动盖章</div>
+            <div class="vip-feature-desc" id="vf2_desc">AI 审核通过后一键自动定位并盖章，无需手动拖动</div>
+          </div>
+          <span class="vip-feature-badge badge-included" id="vf2_badge">✓ 包含</span>
+        </div>
+        <div class="vip-feature">
+          <div class="vip-feature-icon">💾</div>
+          <div class="vip-feature-text">
+            <div class="vip-feature-name" id="vf3_name">固定自动化配置</div>
+            <div class="vip-feature-desc" id="vf3_desc">记忆每种文档盖章配置，自动加载</div>
+          </div>
+          <span class="vip-feature-badge badge-free" id="vf3_badge">免费</span>
+        </div>
+        <div class="vip-feature">
+          <div class="vip-feature-icon">🖊️</div>
+          <div class="vip-feature-text">
+            <div class="vip-feature-name" id="vf4_name">手动盖章 · 拖动定位</div>
+            <div class="vip-feature-desc" id="vf4_desc">基础盖章功能永久免费</div>
+          </div>
+          <span class="vip-feature-badge badge-free" id="vf4_badge">免费</span>
+        </div>
+      </div>
+      <!-- Plans -->
+      <div class="vip-plans">
+        <div class="vip-plan active" id="plan_monthly" onclick="selectPlan('monthly')">
+          <div class="vip-plan-name" id="vp1_name">月度会员</div>
+          <div class="vip-plan-price">¥99</div>
+          <div class="vip-plan-sub" id="vp1_sub">/ 月 · 随时取消</div>
+        </div>
+        <div class="vip-plan" id="plan_annual" onclick="selectPlan('annual')">
+          <div class="vip-plan-name" id="vp2_name">年度会员</div>
+          <div class="vip-plan-price">¥799</div>
+          <div class="vip-plan-sub" id="vp2_sub">/ 年 · 省 ¥389</div>
+        </div>
+      </div>
+      <!-- Coming soon features -->
+      <div class="coming-soon-section" id="comingSoonSection">
+        <div class="coming-soon-title" id="cs_title">🚀 即将上线</div>
+        <div class="coming-soon-grid" id="comingSoonGrid"><!-- rendered by JS --></div>
+      </div>
+
+      <div style="height:16px"></div>
+      <div class="vip-modal-btns">
+        <button class="btn btn-ghost" onclick="closeVip()" style="padding:10px" id="vip_cancel">暂不升级</button>
+        <button class="btn btn-vip" onclick="activateVipDemo()" style="padding:10px" id="vip_confirm">👑 立即开通 VIP</button>
+      </div>
+      <div style="text-align:center;margin-top:10px;font-size:9.5px;color:#4b5563" id="vip_trial">演示模式：点击立即开通可临时体验 VIP 功能</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// i18n
+// ═══════════════════════════════════════════════════════════
+var LANG = 'zh';
+var I18N = {
+  zh: {
+    docTypeLabel:'文件类型', lbl_preset:'📋 文件印章配置', lbl_stampContent:'🔏 印章内容',
+    lbl_company:'公司名称', lbl_companyEn:'英文名（选填）', lbl_color:'颜色',
+    lbl_shape:'印章类型', lbl_usageTitle:'🏷 用途标注', lbl_customLabel:'自定义（最多8字）',
+    lbl_autoTitle:'⚡ 固定自动化', autoLabel:'记忆此文档的盖章配置', autoSub:'开启后切换文档类型自动加载',
+    lbl_saveConfig:'保存当前配置到此文档类型',
+    lbl_preview:'👁 印章预览', lbl_aiTitle:'🤖 AI 字段审核', aiCardTitle:'AI 智能审核',
+    lbl_log:'📝 操作日志', lbl_btnPlace:'放置印章到文件', lbl_btnAuto:'AI 自动审核并盖章',
+    lbl_btnConfirm:'确认盖章', aiRunLabel:'开始审核',
+    hintPlaced:'✅ 印章已放置 · 拖动调整位置', hintDefault:'放置印章 → 拖动定位 → 确认盖章',
+    hintDone:'🎉 盖章完成', cpill_red:'🔴 红色', cpill_blue:'🔵 蓝色', cpill_black:'⚫ 黑色',
+    spill_round:'圆形公章', spill_oval:'椭圆合同章', spill_square:'方形财务章',
+    modal_title:'确认盖章', modal_sub:'核对印章内容与位置，确认后生成带章文件',
+    modal_cancel:'取消', modal_confirm:'确认盖章，生成文件',
+    modal_legalCheck:'我已阅读上述声明，以本人名义合法使用此印章',
+    toast_placed:'📍 印章已放置，请拖动到签名位置', toast_done:'✅ 盖章成功，文件已生成',
+    toast_aiPass:'✅ AI 审核通过，可以盖章', toast_aiWarn:'⚠️ AI 发现字段问题，请先确认',
+    toast_autoStamping:'🤖 AI 审核中，自动盖章…',
+    aiChecking:'审核中…', aiPass:'✅ 字段核验通过', aiFail:'⚠️ 发现字段问题',
+    fieldOk:'正常', fieldWarn:'异常',
+    presetNote_IV:'适用公章·财务专用章 — CI发票类标准配置',
+    presetNote_SC:'合同专用章 — 销售合同标准配置',
+    presetNote_PI:'适用公章 — 预开发票标准配置',
+    presetNote_PL:'公章 — 装箱单通用配置',
+    presetNote_BL:'提单章 — 海运专用，需海运公司确认',
+    btnReset:'↺ 重置', lbl_autoTitle:'⚡ 固定自动化',
+  },
+  en: {
+    docTypeLabel:'Document Type', lbl_preset:'📋 Stamp Preset by Doc', lbl_stampContent:'🔏 Stamp Content',
+    lbl_company:'Company Name', lbl_companyEn:'English Name (optional)', lbl_color:'Color',
+    lbl_shape:'Stamp Type', lbl_usageTitle:'🏷 Usage Label', lbl_customLabel:'Custom (max 8 chars)',
+    lbl_preview:'👁 Stamp Preview', lbl_aiTitle:'🤖 AI Field Review', aiCardTitle:'AI Smart Review',
+    lbl_log:'📝 Audit Log', lbl_btnPlace:'Place Stamp on Document', lbl_btnAuto:'AI Auto Review & Stamp',
+    lbl_btnConfirm:'Confirm Stamp', aiRunLabel:'Start Review',
+    hintPlaced:'✅ Stamp placed · Drag to adjust', hintDefault:'Place → Drag to position → Confirm',
+    hintDone:'🎉 Stamp applied', cpill_red:'🔴 Red', cpill_blue:'🔵 Blue', cpill_black:'⚫ Black',
+    spill_round:'Round Seal', spill_oval:'Oval Contract Seal', spill_square:'Square Finance Seal',
+    modal_title:'Confirm Stamp', modal_sub:'Review stamp position and content before finalizing',
+    modal_cancel:'Cancel', modal_confirm:'Confirm & Generate File',
+    modal_legalCheck:'I have read the notice above and am using this stamp lawfully',
+    toast_placed:'📍 Stamp placed — drag to signature area', toast_done:'✅ Stamp applied — file generated',
+    toast_aiPass:'✅ AI review passed — ready to stamp', toast_aiWarn:'⚠️ AI found field issues — please review',
+    toast_autoStamping:'🤖 AI reviewing, auto-stamping…',
+    aiChecking:'Reviewing…', aiPass:'✅ All fields verified', aiFail:'⚠️ Field issues found',
+    fieldOk:'OK', fieldWarn:'Mismatch',
+    presetNote_IV:'Company seal + Finance seal — standard CI config',
+    presetNote_SC:'Contract seal — Sales Contract standard config',
+    presetNote_PI:'Company seal — Proforma Invoice config',
+    presetNote_PL:'Company seal — Packing List config',
+    presetNote_BL:'Bill of Lading seal — ocean freight, requires carrier confirmation',
+    btnReset:'↺ Reset', lbl_autoTitle:'⚡ Fixed Automation',
+    autoLabel:'Remember stamp config for this doc type', autoSub:'Auto-loads saved config when switching doc type',
+    lbl_saveConfig:'Save current config for this doc type',
+  },
+};
+
+function t(key){ return (I18N[LANG]||I18N.zh)[key] || key; }
+
+function setLang(lang) {
+  LANG = lang;
+  document.querySelectorAll('.lang-btn').forEach(function(b){ b.classList.toggle('active', b.textContent.toLowerCase().includes(lang==='zh'?'中':'en')); });
+  applyLang();
+}
+
+function applyLang() {
+  var keys = ['lbl_preset','lbl_stampContent','lbl_company','lbl_companyEn','lbl_color','lbl_shape',
+    'lbl_usageTitle','lbl_customLabel','lbl_preview','lbl_aiTitle','lbl_log',
+    'lbl_btnPlace','lbl_btnAuto','lbl_btnConfirm','aiRunLabel','aiCardTitle',
+    'modal_title','modal_sub','modal_cancel','modal_confirm','modal_legalCheck',
+    'cpill_red','cpill_blue','cpill_black','spill_round','spill_oval','spill_square'];
+  keys.forEach(function(k){
+    var el = document.getElementById(k); if(el) el.textContent = t(k);
+  });
+  document.getElementById('docTypeLabel').textContent = t('docTypeLabel');
+  document.getElementById('btnReset').textContent = t('btnReset');
+  document.getElementById('hintText').textContent = state.placed ? t('hintPlaced') : t('hintDefault');
+  updatePresetGrid();
+  renderDocPage();
+  renderFutureDocPills();
+}
+
+// ═══════════════════════════════════════════════════════════
+// Doc presets
+// ═══════════════════════════════════════════════════════════
+var DOC_PRESETS = {
+  IV: { seals: ['company','finance'], defaultShape:'round', defaultColor:'#dc2626', defaultLabel:'财务专用',
+        fields_zh:['发票号','日期','买方名称','金额','贸易条款'], fields_en:['Invoice No.','Date','Buyer Name','Amount','Incoterm'],
+        mockTitle_zh:'商业发票', mockTitle_en:'COMMERCIAL INVOICE' },
+  SC: { seals: ['contract'], defaultShape:'oval', defaultColor:'#dc2626', defaultLabel:'合同专用',
+        fields_zh:['合同号','签约日期','买方','卖方','合同金额'], fields_en:['Contract No.','Date','Buyer','Seller','Total Amount'],
+        mockTitle_zh:'销售合同', mockTitle_en:'SALES CONTRACT' },
+  PI: { seals: ['company'], defaultShape:'round', defaultColor:'#dc2626', defaultLabel:'',
+        fields_zh:['PI编号','有效期','买方','产品描述','金额'], fields_en:['PI No.','Validity','Buyer','Description','Amount'],
+        mockTitle_zh:'形式发票', mockTitle_en:'PROFORMA INVOICE' },
+  PL: { seals: ['company'], defaultShape:'square', defaultColor:'#dc2626', defaultLabel:'',
+        fields_zh:['发票号','包装方式','总净重','总毛重','箱数'], fields_en:['Inv. No.','Packing','Net Weight','Gross Weight','Cartons'],
+        mockTitle_zh:'装箱单', mockTitle_en:'PACKING LIST' },
+  BL: { seals: ['ocean'], defaultShape:'round', defaultColor:'#1d4ed8', defaultLabel:'仅限海运',
+        fields_zh:['提单号','船名航次','装货港','卸货港','货描'], fields_en:['BL No.','Vessel/Voyage','Port of Loading','Port of Discharge','Description'],
+        mockTitle_zh:'提单', mockTitle_en:'BILL OF LADING' },
+};
+
+var SEAL_LABELS = {
+  zh:{ company:'公章', finance:'财务专用章', contract:'合同专用章', ocean:'提单章' },
+  en:{ company:'Company Seal', finance:'Finance Seal', contract:'Contract Seal', ocean:'BL Seal' },
+};
+
+var state = {
+  docType: 'IV', activeSeal: 'company', shape:'round', color:'#dc2626',
+  label:'财务专用', placed:false, stampX:380, stampY:660, aiResult:null,
+};
+
+function updatePresetGrid() {
+  var preset = DOC_PRESETS[state.docType];
+  var grid = document.getElementById('presetGrid');
+  grid.innerHTML = preset.seals.map(function(s){
+    var active = s === state.activeSeal;
+    var sealName = (SEAL_LABELS[LANG]||SEAL_LABELS.zh)[s];
+    var docName = LANG==='zh' ? preset.mockTitle_zh : preset.mockTitle_en;
+    return '<div class="preset-card'+(active?' active':'')+'" onclick="selectSeal(\''+s+'\')">'
+      +'<div class="pc-name">'+sealName+'</div>'
+      +'<div class="pc-seal">→ '+docName+'</div>'
+      +'</div>';
+  }).join('');
+  document.getElementById('presetNote').textContent = t('presetNote_'+state.docType);
+}
+
+function selectDocType(el, dt) {
+  document.querySelectorAll('.dt-pill').forEach(function(e){e.classList.remove('active');});
+  el.classList.add('active');
+  state.docType = dt;
+  var preset = DOC_PRESETS[dt];
+  state.activeSeal = preset.seals[0];
+  // apply preset defaults
+  applyPresetDefaults(preset);
+  state.label = preset.defaultLabel;
+  document.querySelectorAll('#labelChips .mpill').forEach(function(e){ e.classList.remove('active'); });
+  document.querySelectorAll('#labelChips .mpill').forEach(function(e){ if(e.dataset.label===preset.defaultLabel) e.classList.add('active'); });
+  document.getElementById('customLabel').value = '';
+  state.aiResult = null;
+  document.getElementById('aiFields').style.display = 'none';
+  document.getElementById('btnAutoStamp').disabled = true;
+  resetStamp();
+  updatePresetGrid();
+  renderDocPage();
+  renderAll();
+}
+
+function selectSeal(s) {
+  state.activeSeal = s;
+  updatePresetGrid();
+  renderAll();
+}
+
+function applyPresetDefaults(preset) {
+  // shape
+  state.shape = preset.defaultShape;
+  document.querySelectorAll('[data-shape]').forEach(function(e){
+    e.classList.toggle('active', e.dataset.shape === preset.defaultShape);
+  });
+  // color
+  state.color = preset.defaultColor;
+  document.querySelectorAll('[data-color]').forEach(function(e){
+    e.classList.toggle('active', e.dataset.color === preset.defaultColor);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// Document mock content
+// ═══════════════════════════════════════════════════════════
+var DOC_MOCKS = {
+  IV: function(zh) {
+    return '<h1>'+(zh?'商业发票':'COMMERCIAL INVOICE')+'</h1>'
+      +'<div class="dsub">XIAMEN PET BABY IMPORT AND EXPORT CO., LTD</div>'
+      +'<hr class="doc-hr">'
+      +'<div class="doc-kv"><span class="k">'+(zh?'发票号':'Invoice No.')+'</span><span class="v">IV-FS20260220037</span>'
+      +'<span class="k">'+(zh?'日期':'Date')+'</span><span class="v">2026-03-18</span>'
+      +'<span class="k">'+(zh?'买方':'Buyer')+'</span><span class="v">PETSOME SDN BHD</span>'
+      +'<span class="k">'+(zh?'贸易条款':'Terms')+'</span><span class="v">FOB QINGDAO</span></div>'
+      +'<hr class="doc-hr">'
+      +'<table class="doc-table"><thead><tr><th>'+(zh?'品描':'Description')+'</th><th>'+(zh?'数量':'QTY')+'</th><th>'+(zh?'单价':'Unit')+'</th><th>'+(zh?'金额':'Amount')+'</th></tr></thead>'
+      +'<tbody><tr><td>Dogsome Duck 375g</td><td>360 CTN</td><td>$4.20</td><td>$1,512.00</td></tr>'
+      +'<tr><td>Dogsome Salmon 375g</td><td>360 CTN</td><td>$4.50</td><td>$1,620.00</td></tr>'
+      +'<tr><td>Dogsome Codfish 375g</td><td>240 CTN</td><td>$4.20</td><td>$1,008.00</td></tr>'
+      +'<tr class="total-row"><td colspan="3"><b>TOTAL</b></td><td><b>$4,716.00</b></td></tr></tbody></table>'
+      +'<div class="doc-terms">Currency: USD &nbsp;|&nbsp; Payment: 30% TT in advance, 70% before shipment</div>'
+      +sigArea(zh);
+  },
+  SC: function(zh) {
+    return '<h1>'+(zh?'销售合同':'SALES CONTRACT')+'</h1>'
+      +'<div class="dsub">Contract No.: SC-FS20260220037 &nbsp;|&nbsp; Date: 2026-03-15</div>'
+      +'<hr class="doc-hr">'
+      +'<div class="doc-kv"><span class="k">'+(zh?'卖方':'Seller')+'</span><span class="v">XIAMEN PET BABY IMPORT AND EXPORT CO., LTD</span>'
+      +'<span class="k">'+(zh?'买方':'Buyer')+'</span><span class="v">PETSOME SDN BHD, MALAYSIA</span>'
+      +'<span class="k">'+(zh?'合同金额':'Amount')+'</span><span class="v">USD 4,716.00</span>'
+      +'<span class="k">Incoterm</span><span class="v">FOB QINGDAO</span>'
+      +'<span class="k">'+(zh?'付款':'Payment')+'</span><span class="v">30% TT advance + 70% before BL</span></div>'
+      +'<hr class="doc-hr">'
+      +'<div class="doc-terms">'+(zh?'货物详情：Dogsome 375g 系列宠物罐头，共 960 CTN，1×40HQ。交货期：2026-04-15。':'Goods: Dogsome 375g Pet Food Cans, 960 CTN, 1×40HQ. Delivery: 2026-04-15.')+'</div>'
+      +sigArea(zh);
+  },
+  PI: function(zh) {
+    return '<h1>'+(zh?'形式发票':'PROFORMA INVOICE')+'</h1>'
+      +'<div class="dsub">PI No.: PI-FS20260220037 &nbsp;|&nbsp; Valid: 2026-04-18</div>'
+      +'<hr class="doc-hr">'
+      +'<div class="doc-kv"><span class="k">'+(zh?'买方':'To')+'</span><span class="v">PETSOME SDN BHD</span>'
+      +'<span class="k">'+(zh?'发件方':'From')+'</span><span class="v">XIAMEN PET BABY</span>'
+      +'<span class="k">Incoterm</span><span class="v">FOB QINGDAO</span></div>'
+      +'<table class="doc-table"><thead><tr><th>'+(zh?'品描':'Item')+'</th><th>QTY</th><th>'+(zh?'单价':'Price')+'</th><th>Total</th></tr></thead>'
+      +'<tbody><tr><td>Dogsome 375g Canned Food</td><td>960 CTN</td><td>$4.91</td><td>$4,716.00</td></tr>'
+      +'<tr class="total-row"><td colspan="3">TOTAL</td><td><b>$4,716.00</b></td></tr></tbody></table>'
+      +sigArea(zh);
+  },
+  PL: function(zh) {
+    return '<h1>'+(zh?'装箱单':'PACKING LIST')+'</h1>'
+      +'<div class="dsub">Inv. No.: IV-FS20260220037 &nbsp;|&nbsp; Date: 2026-03-18</div>'
+      +'<hr class="doc-hr">'
+      +'<div class="doc-kv"><span class="k">'+(zh?'买方':'Buyer')+'</span><span class="v">PETSOME SDN BHD</span>'
+      +'<span class="k">Container</span><span class="v">1×40HQ — COSU1234567</span>'
+      +'<span class="k">Total CTN</span><span class="v">960 Cartons</span>'
+      +'<span class="k">Net Wt</span><span class="v">17,280 KGS</span>'
+      +'<span class="k">Gross Wt</span><span class="v">19,200 KGS</span>'
+      +'<span class="k">Measure</span><span class="v">28.2 CBM</span></div>'
+      +'<table class="doc-table"><thead><tr><th>Item</th><th>CTN</th><th>N.W./CTN</th><th>G.W./CTN</th></tr></thead>'
+      +'<tbody><tr><td>Dogsome Duck 375g (24pcs)</td><td>360</td><td>9.0kg</td><td>10.0kg</td></tr>'
+      +'<tr><td>Dogsome Salmon 375g (24pcs)</td><td>360</td><td>9.0kg</td><td>10.0kg</td></tr>'
+      +'<tr><td>Dogsome Codfish 375g (24pcs)</td><td>240</td><td>9.0kg</td><td>10.0kg</td></tr>'
+      +'<tr class="total-row"><td>TOTAL</td><td>960</td><td>17,280kg</td><td>19,200kg</td></tr></tbody></table>'
+      +sigArea(zh);
+  },
+  BL: function(zh) {
+    return '<h1>'+(zh?'提单':'BILL OF LADING')+'</h1>'
+      +'<div class="dsub">BL No.: MEDUWX422340 &nbsp;|&nbsp; COSCO SHIPPING</div>'
+      +'<hr class="doc-hr">'
+      +'<div class="doc-kv"><span class="k">Shipper</span><span class="v">XIAMEN PET BABY IMPORT AND EXPORT CO., LTD</span>'
+      +'<span class="k">Consignee</span><span class="v">PETSOME SDN BHD</span>'
+      +'<span class="k">Port of Loading</span><span class="v">QINGDAO, CHINA</span>'
+      +'<span class="k">Port of Discharge</span><span class="v">PORT KLANG WESTPORT, MALAYSIA</span>'
+      +'<span class="k">Vessel / Voyage</span><span class="v">COSCO FORTUNE / 025E</span>'
+      +'<span class="k">ETD / ETA</span><span class="v">2026-03-23 / 2026-04-05</span>'
+      +'<span class="k">Container</span><span class="v">COSU1234567 / 40HQ / SEAL: SLN12345</span>'
+      +'<span class="k">Description</span><span class="v">PET FOOD CANNED — 960 CTNS / 19,200 KGS / 28.2 CBM</span></div>'
+      +sigArea(zh);
+  },
+};
+
+function sigArea(zh) {
+  return '<div class="sig-area">'
+    +'<div class="sig-block"><div class="sline"></div><div class="slabel">'+(zh?'授权签字 / 卖方':'Authorized Signature / Seller')+'</div></div>'
+    +'<div class="sig-block"><div class="sline"></div><div class="slabel">'+(zh?'确认签字 / 买方':'Confirmed / Buyer')+'</div></div>'
+    +'</div>';
+}
+
+function renderDocPage() {
+  var mock = DOC_MOCKS[state.docType];
+  document.getElementById('docPage').innerHTML = mock ? mock(LANG==='zh') : '';
+  var preset = DOC_PRESETS[state.docType];
+  document.getElementById('topDocLabel').innerHTML = (LANG==='zh'?preset.mockTitle_zh:preset.mockTitle_en) + ' <span id="topDocNo">· FS20260220037</span>';
+}
+
+// ═══════════════════════════════════════════════════════════
+// Stamp drawing
+// ═══════════════════════════════════════════════════════════
+function drawStamp(canvas) {
+  var W = canvas.width, H = canvas.height;
+  var ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  var zh = document.getElementById('companyName').value.trim() || (LANG==='zh'?'公司名称':'Company');
+  var en = document.getElementById('companyEn').value.trim();
+  var label = state.label;
+  var color = state.color;
+  var cx = W/2, cy = H/2;
+  ctx.save(); ctx.globalAlpha = 0.9;
+  if (state.shape==='round') {
+    var R = W*0.43;
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.strokeStyle=color; ctx.lineWidth=W*0.046; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx,cy,R*0.82,0,Math.PI*2); ctx.lineWidth=W*0.014; ctx.setLineDash([4,3]); ctx.stroke(); ctx.setLineDash([]);
+    drawStar(ctx,cx,cy,5,R*0.19,R*0.09,color);
+    ctx.font='bold '+(W*0.115)+'px PingFang SC,SimHei,sans-serif';
+    ctx.fillStyle=color; ctx.textAlign='center'; ctx.textBaseline='middle';
+    arcText(ctx,zh.slice(0,8),cx,cy,R*0.63,-Math.PI*0.77,Math.PI*0.77,false);
+    if(en){ctx.font='bold '+(W*0.082)+'px monospace'; arcText(ctx,en,cx,cy,R*0.67,Math.PI*0.22,Math.PI*0.78,true);}
+  } else if(state.shape==='oval') {
+    var rX=W*0.45,rY=H*0.33;
+    ctx.beginPath(); ctx.ellipse(cx,cy,rX,rY,0,0,Math.PI*2); ctx.strokeStyle=color; ctx.lineWidth=W*0.04; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx,cy,rX*0.84,rY*0.78,0,0,Math.PI*2); ctx.lineWidth=W*0.012; ctx.setLineDash([3,3]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font='bold '+(W*0.12)+'px PingFang SC,SimHei,sans-serif'; ctx.fillStyle=color; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(zh.slice(0,6),cx,cy-H*0.05);
+    ctx.font='bold '+(W*0.086)+'px monospace'; ctx.fillText(LANG==='zh'?'合同专用章':'Contract Seal',cx,cy+H*0.09);
+  } else {
+    var p=W*0.06;
+    ctx.strokeStyle=color; ctx.lineWidth=W*0.045; ctx.strokeRect(p,p,W-2*p,H-2*p);
+    ctx.lineWidth=W*0.013; ctx.strokeRect(p+W*0.05,p+H*0.05,W-2*p-W*0.1,H-2*p-H*0.1);
+    ctx.font='bold '+(W*0.12)+'px PingFang SC,SimHei,sans-serif'; ctx.fillStyle=color; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(zh.slice(0,4),cx,cy-H*0.1); ctx.fillText(zh.slice(4,8)||'有限公司',cx,cy+H*0.06);
+  }
+  ctx.restore();
+}
+
+function arcText(ctx,text,cx,cy,r,start,end,flip){
+  var chars=text.split(''); var total=end-start; var step=total/Math.max(chars.length-1,1);
+  chars.forEach(function(ch,i){
+    var angle=flip?(end-i*step-Math.PI/2):(start+i*step-Math.PI/2);
+    ctx.save(); ctx.translate(cx+r*Math.cos(angle+Math.PI/2),cy+r*Math.sin(angle+Math.PI/2));
+    ctx.rotate(angle+Math.PI/2+(flip?Math.PI:0)); ctx.fillText(ch,0,0); ctx.restore();
+  });
+}
+function drawStar(ctx,cx,cy,pts,oR,iR,color){
+  ctx.beginPath();
+  for(var i=0;i<pts*2;i++){var r=i%2===0?oR:iR;var a=(i*Math.PI)/pts-Math.PI/2;
+    if(i===0)ctx.moveTo(cx+r*Math.cos(a),cy+r*Math.sin(a));else ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));}
+  ctx.closePath(); ctx.fillStyle=color; ctx.fill();
+}
+
+function renderAll(){
+  drawStamp(document.getElementById('previewCanvas'));
+  var sd = document.getElementById('stampDrag');
+  var c = sd.querySelector('canvas');
+  if(c) drawStamp(c);
+  var mc = document.getElementById('modalCanvas');
+  if(mc) drawStamp(mc);
+  // update usage badge below preview
+  var badge = document.getElementById('usageBadge');
+  if(badge){
+    var label = state.label;
+    if(label){ badge.textContent = label; badge.className = 'stamp-usage-badge'; }
+    else { badge.textContent = LANG==='zh'?'通用':'General'; badge.className = 'stamp-usage-badge empty'; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Drag
+// ═══════════════════════════════════════════════════════════
+var dragState = {active:false, offX:0, offY:0};
+
+function initDrag(){
+  var el = document.getElementById('stampDrag');
+  el.addEventListener('mousedown',function(e){
+    dragState.active=true; var r=el.getBoundingClientRect();
+    dragState.offX=e.clientX-r.left; dragState.offY=e.clientY-r.top;
+    el.style.zIndex=10; e.preventDefault();
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragState.active) return;
+    var wrap=document.getElementById('docWrap').getBoundingClientRect();
+    var x=e.clientX-wrap.left-dragState.offX, y=e.clientY-wrap.top-dragState.offY;
+    x=Math.max(0,Math.min(x,wrap.width-130)); y=Math.max(0,Math.min(y,wrap.height-130));
+    el.style.left=x+'px'; el.style.top=y+'px'; state.stampX=x; state.stampY=y;
+  });
+  document.addEventListener('mouseup',function(){dragState.active=false;});
+  el.addEventListener('touchstart',function(e){
+    var t=e.touches[0]; var r=el.getBoundingClientRect();
+    dragState.offX=t.clientX-r.left; dragState.offY=t.clientY-r.top; dragState.active=true; e.preventDefault();
+  },{passive:false});
+  document.addEventListener('touchmove',function(e){
+    if(!dragState.active)return; var t=e.touches[0];
+    var wrap=document.getElementById('docWrap').getBoundingClientRect();
+    var x=t.clientX-wrap.left-dragState.offX, y=t.clientY-wrap.top-dragState.offY;
+    x=Math.max(0,Math.min(x,wrap.width-130)); y=Math.max(0,Math.min(y,wrap.height-130));
+    el.style.left=x+'px'; el.style.top=y+'px'; state.stampX=x; state.stampY=y;
+  },{passive:false});
+  document.addEventListener('touchend',function(){dragState.active=false;});
+}
+
+// ═══════════════════════════════════════════════════════════
+// Place / Reset
+// ═══════════════════════════════════════════════════════════
+function placeStamp(){
+  var sd = document.getElementById('stampDrag');
+  sd.innerHTML = '<canvas width="130" height="130"></canvas>';
+  drawStamp(sd.querySelector('canvas'));
+  sd.style.display='block'; sd.style.left='380px'; sd.style.top='660px';
+  state.placed=true; state.stampX=380; state.stampY=660;
+  document.getElementById('btnConfirm').disabled=false;
+  document.getElementById('hintText').textContent=t('hintPlaced');
+  showToast(t('toast_placed'),'info');
+}
+
+function resetStamp(){
+  var sd=document.getElementById('stampDrag'); sd.style.display='none';
+  state.placed=false;
+  document.getElementById('btnConfirm').disabled=true;
+  document.getElementById('hintText').textContent=t('hintDefault');
+  document.getElementById('aiFields').style.display='none';
+  state.aiResult=null;
+  document.getElementById('btnAutoStamp').disabled=true;
+}
+
+// ═══════════════════════════════════════════════════════════
+// AI Review
+// ═══════════════════════════════════════════════════════════
+var AI_DATA = {
+  IV:{ fields:[
+    {key:'Invoice No.',   ok:true,  val:'IV-FS20260220037', note:''},
+    {key:'Date',          ok:true,  val:'2026-03-18',        note:''},
+    {key:'Buyer Name',    ok:false, val:'—',                 note_zh:'订单中未找到买方公司信息', note_en:'Buyer not linked in order'},
+    {key:'Amount',        ok:false, val:'$0',                note_zh:'金额为0或缺失',           note_en:'Amount is 0 or missing'},
+    {key:'Incoterm',      ok:true,  val:'FOB QINGDAO',       note:''},
+  ]},
+  SC:{ fields:[
+    {key:'Contract No.',  ok:true,  val:'SC-FS20260220037', note:''},
+    {key:'Date',          ok:true,  val:'2026-03-15',        note:''},
+    {key:'Buyer',         ok:true,  val:'PETSOME SDN BHD',  note:''},
+    {key:'Seller',        ok:true,  val:'XIAMEN PET BABY',  note:''},
+    {key:'Total Amount',  ok:true,  val:'USD 4,716.00',      note:''},
+  ]},
+  PI:{ fields:[
+    {key:'PI No.',        ok:true,  val:'PI-FS20260220037', note:''},
+    {key:'Validity',      ok:true,  val:'2026-04-18',        note:''},
+    {key:'Buyer',         ok:true,  val:'PETSOME SDN BHD',  note:''},
+    {key:'Amount',        ok:false, val:'$0',                note_zh:'单价 × 数量核算不符',     note_en:'Unit price × qty mismatch'},
+    {key:'Description',   ok:true,  val:'Dogsome 375g',      note:''},
+  ]},
+  PL:{ fields:[
+    {key:'Inv. No.',      ok:true,  val:'IV-FS20260220037', note:''},
+    {key:'Total Cartons', ok:true,  val:'960 CTN',           note:''},
+    {key:'Net Weight',    ok:true,  val:'17,280 KGS',        note:''},
+    {key:'Gross Weight',  ok:false, val:'?',                 note_zh:'毛重字段未填写',          note_en:'Gross weight field is empty'},
+    {key:'Packing',       ok:true,  val:'24pcs/CTN',         note:''},
+  ]},
+  BL:{ fields:[
+    {key:'BL No.',         ok:true,  val:'MEDUWX422340',     note:''},
+    {key:'Vessel/Voyage',  ok:true,  val:'COSCO FORTUNE/025E',note:''},
+    {key:'Port of Loading',ok:true,  val:'QINGDAO',          note:''},
+    {key:'Port of Discharge',ok:true,val:'PORT KLANG',       note:''},
+    {key:'Description',    ok:false, val:'—',                 note_zh:'货描与PI不一致',         note_en:'Description mismatch with PI'},
+  ]},
+};
+
+function runAiReview(){ requireVip('ai_review'); }
+
+function showAiResult(data){
+  state.aiResult = data;
+  var allOk = data.fields.every(function(f){return f.ok;});
+  var container = document.getElementById('aiFields');
+  container.style.display='block';
+  container.innerHTML = data.fields.map(function(f){
+    var note = f.note || (LANG==='zh' ? (f.note_zh||'') : (f.note_en||''));
+    return '<div class="ai-field-row '+(f.ok?'ai-field-ok':'ai-field-warn')+'">'
+      +'<span style="font-size:13px">'+(f.ok?'✅':'🔴')+'</span>'
+      +'<div style="flex:1"><div class="fi '+(f.ok?'fi-ok':'fi-warn')+'">'+f.key
+      +' <span class="ai-badge '+(f.ok?'badge-ok':'badge-warn')+'">'+(f.ok?t('fieldOk'):t('fieldWarn'))+'</span></div>'
+      +(f.val?'<div class="fi-note">'+f.val+'</div>':'')
+      +(note?'<div class="fi-note" style="color:#fca5a5">'+note+'</div>':'')
+      +'</div></div>';
+  }).join('');
+  var header=document.getElementById('aiCard').querySelector('.ai-card-title');
+  header.textContent=allOk?t('aiPass'):t('aiFail');
+  header.style.color=allOk?'#4ade80':'#fca5a5';
+  document.getElementById('btnAutoStamp').disabled=false;
+  showToast(allOk?t('toast_aiPass'):t('toast_aiWarn'), allOk?'success':'warn');
+}
+
+// ═══════════════════════════════════════════════════════════
+// Auto stamp (entry point — VIP gated)
+// ═══════════════════════════════════════════════════════════
+function runAutoStamp(){ requireVip('auto_stamp'); }
+
+// ═══════════════════════════════════════════════════════════
+// Confirm
+// ═══════════════════════════════════════════════════════════
+function openConfirm(){
+  setTimeout(function(){ drawStamp(document.getElementById('modalCanvas')); },50);
+  var preset=DOC_PRESETS[state.docType];
+  var docTitle=LANG==='zh'?preset.mockTitle_zh:preset.mockTitle_en;
+  document.getElementById('modalDocPreview').innerHTML=
+    '<b>'+docTitle+'</b><br>FS20260220037<br>'
+    +'────────────────<br>'
+    +(LANG==='zh'?'买方：':'Buyer: ')+'PETSOME SDN BHD<br>'
+    +(LANG==='zh'?'合计：':'Total: ')+'USD 4,716.00<br><br>'
+    +(LANG==='zh'?'授权签字：___________':'Authorized: ___________');
+  document.getElementById('legalCheck').checked=false;
+  document.getElementById('btnFinal').disabled=true;
+  document.getElementById('confirmOverlay').classList.add('show');
+}
+
+function closeConfirm(){ document.getElementById('confirmOverlay').classList.remove('show'); }
+
+function toggleFinalBtn(){
+  document.getElementById('btnFinal').disabled=!document.getElementById('legalCheck').checked;
+}
+
+function finalApply(){
+  closeConfirm();
+  writeLog();
+  showToast(t('toast_done'),'success');
+  document.getElementById('hintText').textContent=t('hintDone');
+  document.getElementById('btnConfirm').disabled=true;
+  document.getElementById('topStatus').textContent='Stamped ✅';
+  document.getElementById('topStatus').style.background='rgba(220,38,38,0.18)';
+  document.getElementById('topStatus').style.borderColor='rgba(220,38,38,0.4)';
+  document.getElementById('topStatus').style.color='#fca5a5';
+}
+
+// ═══════════════════════════════════════════════════════════
+// Controls
+// ═══════════════════════════════════════════════════════════
+function selectColor(el,color){
+  document.querySelectorAll('[data-color]').forEach(function(e){e.classList.remove('active');});
+  el.classList.add('active'); state.color=color; renderAll();
+}
+function selectShape(el,shape){
+  document.querySelectorAll('[data-shape]').forEach(function(e){e.classList.remove('active');});
+  el.classList.add('active'); state.shape=shape; renderAll();
+}
+function selectLabel(el,label){
+  document.querySelectorAll('#labelChips .mpill').forEach(function(e){e.classList.remove('active');});
+  el.classList.add('active'); document.getElementById('customLabel').value='';
+  state.label=label; renderAll();
+}
+function onCustomLabel(){
+  var v=document.getElementById('customLabel').value.trim();
+  document.querySelectorAll('#labelChips .mpill').forEach(function(e){e.classList.remove('active');});
+  state.label=v; renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════
+// Log
+// ═══════════════════════════════════════════════════════════
+function writeLog(){
+  var logs=[]; try{logs=JSON.parse(localStorage.getItem('sanlyn_stamp_log')||'[]');}catch(e){}
+  var preset=DOC_PRESETS[state.docType];
+  logs.unshift({
+    time:new Date().toLocaleString(),
+    user:'Damon · Admin',
+    doc:LANG==='zh'?preset.mockTitle_zh:preset.mockTitle_en,
+    seal:document.getElementById('companyName').value.trim(),
+    label:state.label||'通用',
+  });
+  localStorage.setItem('sanlyn_stamp_log',JSON.stringify(logs.slice(0,50)));
+  loadLog();
+}
+function loadLog(){
+  var logs=[]; try{logs=JSON.parse(localStorage.getItem('sanlyn_stamp_log')||'[]');}catch(e){}
+  var sec=document.getElementById('logSec'), list=document.getElementById('logList');
+  if(!logs.length){sec.style.display='none';return;}
+  sec.style.display='block';
+  list.innerHTML=logs.slice(0,4).map(function(l){
+    return '<div class="log-row"><span>🔏</span><div style="flex:1"><div style="color:#e2e8f0;font-size:11px;font-weight:700">'+l.seal+' <span style="color:#4b5563;font-weight:400">'+l.label+'</span></div>'
+      +'<div style="font-size:9.5px;color:#4b5563">'+l.doc+'</div></div>'
+      +'<div class="log-time">'+l.time+'</div></div>';
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+// Toast
+// ═══════════════════════════════════════════════════════════
+function showToast(msg,type){
+  var el=document.getElementById('toast');
+  el.textContent=msg;
+  el.className='toast show toast-'+(type||'info');
+  setTimeout(function(){el.classList.remove('show');},2800);
+}
+
+// ═══════════════════════════════════════════════════════════
+// VIP Paywall
+// ═══════════════════════════════════════════════════════════
+var isVip = false;
+var vipPendingAction = null;
+var selectedPlan = 'monthly';
+
+// ── Extension point ──────────────────────────────────────────
+// 新增功能：在这里追加一条记录即可，UI 自动渲染到 VIP 弹窗 + 文档 pill
+// status: 'soon' | 'vip' | 'free'
+var FUTURE_FEATURES = [
+  {
+    icon: '🚫', status: 'soon',
+    zh: { name: '非危险品声明', desc: '自动生成 Non-DG Declaration，适配航空/海运货代要求' },
+    en: { name: 'Non-DG Declaration', desc: 'Auto-generate Non-Dangerous Goods Declaration for air & ocean freight' },
+    docType: 'NDG',   // adds a pill in doc toolbar (optional — leave '' to skip)
+    docPill_zh: 'NDG / 非危',
+    docPill_en: 'NDG / Non-DG',
+  },
+  {
+    icon: '🌍', status: 'soon',
+    zh: { name: '产地证 CO', desc: '中国一般原产地证 / 优惠原产地证自动审核盖章' },
+    en: { name: 'Certificate of Origin', desc: 'Auto review & stamp China CO / Form E / Form D' },
+    docType: 'CO',
+    docPill_zh: 'CO / 产地证',
+    docPill_en: 'CO / Origin',
+  },
+  {
+    icon: '🌿', status: 'soon',
+    zh: { name: '熏蒸证书', desc: '木托/木箱熏蒸证书盖章与字段核验' },
+    en: { name: 'Fumigation Cert', desc: 'Stamp & verify fumigation certificate for wooden pallets/crates' },
+    docType: 'FUM',
+    docPill_zh: 'FUM / 熏蒸',
+    docPill_en: 'FUM / Fumig.',
+  },
+  {
+    icon: '🔬', status: 'soon',
+    zh: { name: '卫生 / 检验证书', desc: '宠物食品卫生证、兽医证、SGS 报告盖章' },
+    en: { name: 'Health / Inspection Cert', desc: 'Stamp health cert, vet cert, SGS inspection report' },
+    docType: 'INSP',
+    docPill_zh: 'INSP / 检验',
+    docPill_en: 'INSP / Cert',
+  },
+  // ── 在这里加新功能 ──────────────────────────────────────────
+  // { icon:'🏷', status:'soon',
+  //   zh:{ name:'XX证书', desc:'描述' },
+  //   en:{ name:'XX Cert', desc:'Description' },
+  //   docType:'XX', docPill_zh:'XX / 名称', docPill_en:'XX / Name' },
+];
+
+// ── Extension point: future doc types rendered into toolbar ──
+function renderFutureDocPills(){
+  var container = document.getElementById('futureDocPills');
+  if(!container) return;
+  container.innerHTML = FUTURE_FEATURES
+    .filter(function(f){ return f.docType; })
+    .map(function(f){
+      var label = LANG==='zh' ? f.docPill_zh : f.docPill_en;
+      return '<div class="dt-pill dt-pill-soon" title="'+(LANG==='zh'?'即将上线':'Coming soon')+'" onclick="showToast(\''+(LANG==='zh'?f.zh.name+\' 即将上线\':f.en.name+\' coming soon\')+\',\'info\')">'
+        +label+' <span style="font-size:8px;opacity:.6">🔜</span></div>';
+    }).join('');
+}
+
+function renderComingSoonGrid(){
+  var grid = document.getElementById('comingSoonGrid');
+  var title = document.getElementById('cs_title');
+  if(!grid) return;
+  if(title) title.textContent = LANG==='zh' ? '🚀 即将上线' : '🚀 Coming Soon';
+  grid.innerHTML = FUTURE_FEATURES.map(function(f){
+    var info = LANG==='zh' ? f.zh : f.en;
+    return '<div class="cs-card"><div class="cs-card-icon">'+f.icon+'</div>'
+      +'<div class="cs-card-name">'+info.name+'</div>'
+      +'<div class="cs-card-desc">'+info.desc+'</div>'
+      +'<div class="cs-badge">🔜 '+(LANG==='zh'?'即将上线':'Soon')+'</div>'
+      +'</div>';
+  }).join('');
+}
+
+var VIP_PLANS = {
+  monthly: { zh: { name:'月度会员', price:'¥99', sub:'/ 月 · 随时取消' }, en: { name:'Monthly', price:'¥99', sub:'/ mo · Cancel anytime' } },
+  annual:  { zh: { name:'年度会员', price:'¥799', sub:'/ 年 · 省 ¥389' }, en: { name:'Annual', price:'¥799', sub:'/ yr · Save ¥389' } },
+};
+
+function requireVip(action){
+  if(isVip){
+    // already VIP — run real action
+    if(action==='ai_review') _runAiReviewReal();
+    else if(action==='auto_stamp') _runAutoStampReal();
+    return;
+  }
+  vipPendingAction = action;
+  openVip();
+}
+
+function openVip(){
+  updateVipModal();
+  document.getElementById('vipOverlay').classList.add('show');
+}
+
+function closeVip(){
+  document.getElementById('vipOverlay').classList.remove('show');
+  vipPendingAction = null;
+}
+
+function selectPlan(plan){
+  selectedPlan = plan;
+  document.getElementById('plan_monthly').classList.toggle('active', plan==='monthly');
+  document.getElementById('plan_annual').classList.toggle('active', plan==='annual');
+}
+
+function activateVipDemo(){
+  isVip = true;
+  closeVip();
+  // update UI
+  updateVipUi();
+  showToast(LANG==='zh' ? '👑 VIP 已激活！欢迎体验' : '👑 VIP activated! Welcome', 'success');
+  // run pending action
+  if(vipPendingAction==='ai_review') setTimeout(_runAiReviewReal, 300);
+  else if(vipPendingAction==='auto_stamp') setTimeout(_runAutoStampReal, 300);
+  vipPendingAction = null;
+}
+
+function updateVipUi(){
+  var aiBtn = document.getElementById('btnAiRun');
+  if(isVip){
+    aiBtn.className = 'btn btn-ai';
+    aiBtn.onclick = _runAiReviewReal;
+    aiBtn.innerHTML = '<span id="aiRunLabel">'+(LANG==='zh'?'开始审核':'Start Review')+'</span>';
+    var autoBtn = document.getElementById('btnAutoStamp');
+    autoBtn.className = 'btn btn-ai';
+    autoBtn.onclick = _runAutoStampReal;
+    autoBtn.innerHTML = '✨ <span id="lbl_btnAuto">'+(LANG==='zh'?'AI 自动审核并盖章':'AI Auto Review & Stamp')+'</span>';
+    // show VIP badge in topbar
+    var existing = document.querySelector('.vip-topbar-badge');
+    if(!existing){
+      var badge = document.createElement('div');
+      badge.className = 'vip-topbar-badge vip-tag';
+      badge.style.cssText = 'margin-left:4px;cursor:pointer';
+      badge.innerHTML = '👑 VIP';
+      badge.onclick = function(){ showToast(LANG==='zh'?'VIP 会员有效中':'VIP active','info'); };
+      document.querySelector('.topbar').appendChild(badge);
+    }
+  }
+}
+
+function updateVipModal(){
+  renderComingSoonGrid();
+  var L = LANG;
+  document.getElementById('vip_title').textContent = L==='zh' ? '解锁 Sanlyn VIP' : 'Unlock Sanlyn VIP';
+  document.getElementById('vip_sub').textContent   = L==='zh' ? 'AI 合同审核 · 自动盖章 · 无限次使用' : 'AI Contract Review · Auto Stamp · Unlimited';
+  document.getElementById('vf1_name').textContent  = L==='zh' ? 'AI 合同审核' : 'AI Contract Review';
+  document.getElementById('vf1_desc').textContent  = L==='zh' ? '自动检查发票/合同/提单字段，发现金额、日期、买方等差异' : 'Auto-check Invoice / Contract / BL fields for amount, date, buyer mismatches';
+  document.getElementById('vf1_badge').textContent = L==='zh' ? '✓ 包含' : '✓ Included';
+  document.getElementById('vf2_name').textContent  = L==='zh' ? 'AI 自动盖章' : 'AI Auto Stamp';
+  document.getElementById('vf2_desc').textContent  = L==='zh' ? 'AI 审核通过后一键自动定位并盖章，无需手动拖动' : 'One-click auto-position and stamp after AI review';
+  document.getElementById('vf2_badge').textContent = L==='zh' ? '✓ 包含' : '✓ Included';
+  document.getElementById('vf3_name').textContent  = L==='zh' ? '固定自动化配置' : 'Fixed Automation Config';
+  document.getElementById('vf3_desc').textContent  = L==='zh' ? '记忆每种文档盖章配置，自动加载' : 'Remember per-doc stamp config, auto-load';
+  document.getElementById('vf3_badge').textContent = L==='zh' ? '免费' : 'Free';
+  document.getElementById('vf4_name').textContent  = L==='zh' ? '手动盖章 · 拖动定位' : 'Manual stamp · drag to position';
+  document.getElementById('vf4_desc').textContent  = L==='zh' ? '基础盖章功能永久免费' : 'Basic stamp always free';
+  document.getElementById('vf4_badge').textContent = L==='zh' ? '免费' : 'Free';
+  document.getElementById('vp1_name').textContent  = VIP_PLANS.monthly[L].name;
+  document.getElementById('vp2_name').textContent  = VIP_PLANS.annual[L].name;
+  document.getElementById('vp1_sub').textContent   = VIP_PLANS.monthly[L].sub;
+  document.getElementById('vp2_sub').textContent   = VIP_PLANS.annual[L].sub;
+  document.getElementById('vip_cancel').textContent  = L==='zh' ? '暂不升级' : 'Not now';
+  document.getElementById('vip_confirm').textContent = '👑 ' + (L==='zh' ? '立即开通 VIP' : 'Activate VIP');
+  document.getElementById('vip_trial').textContent   = L==='zh' ? '演示模式：点击立即开通可临时体验 VIP 功能' : 'Demo mode: click Activate to try VIP features temporarily';
+}
+
+// ── Real implementations (guarded by VIP) ──
+function _runAiReviewReal(){
+  var btn = document.getElementById('btnAiRun');
+  btn.innerHTML = '<div class="spin"></div>';
+  btn.disabled = true;
+  setTimeout(function(){
+    btn.innerHTML = LANG==='zh' ? '开始审核' : 'Start Review';
+    btn.disabled = false;
+    showAiResult(AI_DATA[state.docType]);
+    document.getElementById('btnAutoStamp').disabled = false;
+  }, 1400);
+}
+
+function _runAutoStampReal(){
+  if(!state.aiResult){
+    _runAiReviewReal();
+    setTimeout(function(){ placeStamp(); setTimeout(openConfirm, 600); }, 2200);
+    return;
+  }
+  showToast(t('toast_autoStamping'), 'info');
+  setTimeout(function(){ placeStamp(); setTimeout(openConfirm, 600); }, 400);
+}
+
+// ═══════════════════════════════════════════════════════════
+// Fixed automation — save/load per doc type
+// ═══════════════════════════════════════════════════════════
+var autoSaveOn = false;
+
+function toggleAutoSave(){
+  autoSaveOn = !autoSaveOn;
+  var tog = document.getElementById('autoToggle');
+  tog.classList.toggle('on', autoSaveOn);
+  var sub = document.getElementById('autoSub');
+  sub.textContent = autoSaveOn
+    ? (LANG==='zh' ? '✅ 已开启 · 切换文档自动载入已保存配置' : '✅ On · Loads saved config when switching doc type')
+    : (LANG==='zh' ? '开启后切换文档类型自动加载' : 'Loads saved config when switching doc type');
+}
+
+function saveDocConfig(){
+  var key = 'sanlyn_stamp_preset_' + state.docType;
+  var cfg = {
+    shape: state.shape,
+    color: state.color,
+    label: state.label,
+    companyName: document.getElementById('companyName').value.trim(),
+    companyEn:   document.getElementById('companyEn').value.trim(),
+    activeSeal:  state.activeSeal,
+    savedAt:     new Date().toLocaleString(),
+  };
+  localStorage.setItem(key, JSON.stringify(cfg));
+  var preset = DOC_PRESETS[state.docType];
+  var docName = LANG==='zh' ? preset.mockTitle_zh : preset.mockTitle_en;
+  document.getElementById('configStatus').textContent =
+    '✅ ' + docName + ' ' + (LANG==='zh' ? '配置已保存 · ' : 'config saved · ') + cfg.savedAt;
+  updatePresetSavedBadge();
+  showToast((LANG==='zh' ? '✅ 已保存 ' : '✅ Saved ') + docName + (LANG==='zh' ? ' 盖章配置' : ' stamp config'), 'success');
+}
+
+function loadDocConfig(dt){
+  var key = 'sanlyn_stamp_preset_' + dt;
+  var raw = localStorage.getItem(key);
+  if(!raw) return false;
+  try {
+    var cfg = JSON.parse(raw);
+    if(cfg.companyName) document.getElementById('companyName').value = cfg.companyName;
+    if(cfg.companyEn)   document.getElementById('companyEn').value   = cfg.companyEn;
+    if(cfg.shape){
+      state.shape = cfg.shape;
+      document.querySelectorAll('[data-shape]').forEach(function(e){ e.classList.toggle('active', e.dataset.shape===cfg.shape); });
+    }
+    if(cfg.color){
+      state.color = cfg.color;
+      document.querySelectorAll('[data-color]').forEach(function(e){ e.classList.toggle('active', e.dataset.color===cfg.color); });
+    }
+    if(cfg.label !== undefined){
+      state.label = cfg.label;
+      document.querySelectorAll('#labelChips .mpill').forEach(function(e){ e.classList.toggle('active', e.dataset.label===cfg.label); });
+      document.getElementById('customLabel').value = '';
+    }
+    if(cfg.activeSeal) state.activeSeal = cfg.activeSeal;
+    var preset = DOC_PRESETS[dt];
+    var docName = LANG==='zh' ? preset.mockTitle_zh : preset.mockTitle_en;
+    document.getElementById('configStatus').textContent =
+      '📂 ' + (LANG==='zh' ? '已载入 ' : 'Loaded ') + docName + (LANG==='zh' ? ' 保存的配置' : ' saved config');
+    return true;
+  } catch(e){ return false; }
+}
+
+function updatePresetSavedBadge(){
+  // show ✅ saved badge in doc-type pills
+  document.querySelectorAll('.dt-pill').forEach(function(el){
+    var dt = el.dataset.dt;
+    var saved = !!localStorage.getItem('sanlyn_stamp_preset_' + dt);
+    var existing = el.querySelector('.psb');
+    if(saved && !existing){
+      var b = document.createElement('span');
+      b.className = 'psb preset-saved-badge';
+      b.textContent = '✅';
+      el.appendChild(b);
+    } else if(!saved && existing){
+      existing.remove();
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════
+window.onload=function(){
+  renderDocPage();
+  updatePresetGrid();
+  renderAll();
+  initDrag();
+  loadLog();
+  updatePresetSavedBadge();
+  renderFutureDocPills();
+};
+
+// patch selectDocType to auto-load saved config
+var _origSelectDocType = selectDocType;
+selectDocType = function(el, dt){
+  _origSelectDocType(el, dt);
+  if(autoSaveOn){ loadDocConfig(dt); renderAll(); }
+  updatePresetSavedBadge();
+  document.getElementById('configStatus').textContent = '';
+};
+</script>
+</body>
+</html>

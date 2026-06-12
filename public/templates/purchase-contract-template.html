@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>购销合同模板</title>
+<style>
+@font-face { font-family:'FangSong'; src:url('https://api.sanlyn.cn/public/FangSong.ttf') format('truetype'); }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:"STSongti-SC","Songti SC","SimSun","宋体",serif; background:#f0f2f5; padding:24px; color:#111; }
+.toolbar { max-width:800px; margin:0 auto 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.toolbar button { padding:8px 18px; border-radius:7px; border:none; cursor:pointer; font-size:13px; font-weight:700; }
+.btn-print{background:#1d4ed8;color:#fff;} .btn-seal{background:#16a34a;color:#fff;} .btn-clear{background:#64748b;color:#fff;}
+.hint{font-size:11px;color:#64748b;}
+.page { max-width:800px; margin:0 auto; background:#fff; padding:60px 70px; box-shadow:0 4px 24px rgba(0,0,0,.15); min-height:1120px; }
+h1{text-align:center;font-size:28px;font-weight:900;letter-spacing:4px;margin-bottom:28px;}
+.meta{font-size:15px;line-height:2.1;margin-bottom:18px;}
+.editable{display:inline-block;border-bottom:1px solid #bbb;min-width:60px;padding:0 4px;color:#111;outline:none;}
+.intro{font-size:15px;margin-bottom:14px;}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;}
+th,td{border:1px solid #333;padding:7px 8px;text-align:center;} th{font-weight:700;}
+td input{width:100%;border:none;outline:none;text-align:center;font-size:13px;font-family:inherit;background:#f0f7ff;padding:2px 4px;border-radius:3px;}
+td input.left{text-align:left;}
+.clauses{font-size:15px;line-height:2.1;margin:16px 0;} .clauses p{margin-bottom:4px;}
+.sig-row{display:flex;justify-content:space-between;margin-top:60px;}
+.sig-box{width:46%;font-size:14px;} .sig-label{margin-bottom:10px;font-weight:700;}
+.seal-area{width:188px;height:188px;border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:10px auto;cursor:pointer;position:relative;overflow:hidden;transition:border .15s;}
+.seal-area.empty{border:2px dashed #e2e8f0;}
+.seal-area.empty:hover{border-color:#94a3b8;}
+.seal-area:hover{border-color:#60a5fa;}
+.seal-area img{width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;}
+.seal-hint{font-size:11px;color:#94a3b8;pointer-events:none;text-align:center;line-height:1.5;}
+.sig-date{font-size:13px;margin-top:14px;color:#444;}
+/* Modal */
+#sealModal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;}
+#sealModal.open{display:flex;}
+.modal-box{background:#fff;border-radius:0;padding:0;width:100vw;height:100vh;overflow:hidden;box-shadow:none;display:flex;flex-direction:column;}
+@media(min-width:700px){.modal-box{border-radius:12px;width:96vw;height:94vh;max-width:1300px;box-shadow:0 20px 60px rgba(0,0,0,.3);}}
+.modal-title{font-size:16px;font-weight:800;padding:18px 24px 0;display:flex;justify-content:space-between;align-items:center;}
+.modal-close{cursor:pointer;font-size:20px;color:#94a3b8;background:none;border:none;}
+.modal-tabs{display:flex;gap:4px;padding:10px 24px;margin-bottom:0;border-bottom:1px solid #e2e8f0;}
+.modal-tab{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#f1f5f9;color:#64748b;}
+.modal-body{flex:1;overflow:hidden;}
+#tab-das-content,#tab-upload-content{padding:16px 24px;overflow-y:auto;height:100%;}
+#tab-make-content{height:100%;}
+.modal-tab.active{background:#3b82f6;color:#fff;}
+.stamp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+.stamp-card{border:2px solid #e2e8f0;border-radius:10px;padding:10px;cursor:pointer;text-align:center;position:relative;}
+.stamp-card:hover{border-color:#3b82f6;background:#eff6ff;}
+.stamp-card img{width:80px;height:80px;object-fit:contain;}
+.stamp-name{font-size:11px;color:#475569;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.stamp-del{position:absolute;top:4px;right:4px;font-size:13px;color:#ef4444;background:none;border:none;cursor:pointer;display:none;padding:2px 4px;border-radius:4px;}
+.stamp-card:hover .stamp-del{display:block;}
+.stamp-match{border-color:#16a34a!important;box-shadow:0 0 0 2px #bbf7d0;}
+.stamp-match-badge{position:absolute;top:4px;left:4px;background:#16a34a;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;z-index:2;}
+.stamp-empty{grid-column:1/-1;text-align:center;color:#94a3b8;font-size:13px;padding:24px;line-height:1.8;}
+/* Upload tab */
+.upload-zone{border:2px dashed #cbd5e1;border-radius:12px;padding:20px;text-align:center;cursor:pointer;margin-bottom:12px;}
+.upload-zone:hover{border-color:#3b82f6;background:#f0f7ff;}
+.upload-preview{width:100px;height:100px;object-fit:contain;margin:0 auto 8px;display:block;border-radius:8px;}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
+.row input{flex:1;padding:8px 12px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;}
+.row label{font-size:13px;color:#475569;white-space:nowrap;}
+.btn-save{padding:9px 20px;background:#3b82f6;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;}
+.btn-save:disabled{background:#94a3b8;cursor:not-allowed;}
+.btn-use{padding:9px 20px;background:#16a34a;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;margin-left:8px;}
+.upload-status{font-size:12px;margin-top:8px;text-align:center;}
+/* Make tab */
+.make-section{margin-bottom:14px;}
+.make-section label{display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px;}
+.make-section input[type=text]{width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;}
+.make-section input[type=range]{width:100%;accent-color:#3b82f6;}
+.canvas-wrap{text-align:center;margin:12px 0;background:#fafafa;border-radius:10px;padding:12px;}
+#makeCanvas{border-radius:8px;}
+.make-btns{display:flex;gap:8px;margin-top:12px;}
+@media print{
+  body{background:#fff;padding:0;}
+  .toolbar,#sealModal{display:none!important;}
+  .page{box-shadow:none;padding:40px 60px;}
+  td input{background:transparent;}
+  .seal-area{border:none;} .seal-hint{display:none;}
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button class="btn-print" onclick="window.print()">🖨 打印 / 导出PDF</button>
+  <button class="btn-seal" onclick="openSealPicker('buyer')">🔴 盖买方章</button>
+  <button class="btn-seal" onclick="openSealPicker('seller')">🔴 盖卖方章</button>
+  <button class="btn-clear" onclick="clearSeals()">✕ 清除印章</button>
+  <span class="hint">蓝色字段点击编辑 · 印章从 DAS 选取或在线制作</span>
+</div>
+
+<div class="page">
+  <h1>购 销 合 同</h1>
+  <div class="meta">
+    买方：<span class="editable" contenteditable="true">厦门鑫宝凌汽车服务有限公司</span><br>
+    卖方：<span class="editable" contenteditable="true">厦门车茶驿站汽车服务有限公司</span><br>
+    签约日期：<span class="editable" contenteditable="true">2026.5.15</span>
+  </div>
+  <p class="intro">兹经买卖双方同意，成交下列商品，订立合同如下：</p>
+  <p class="intro">1、货品名称，数量及金额如下：</p>
+  <table>
+    <thead><tr><th>产品名称</th><th>规格型号</th><th>计量单位</th><th>数量</th><th>单价(元)</th><th>金额(元)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><input class="left" value="座套"/></td>
+        <td><input value="真皮座套四件套"/></td>
+        <td><input value="件"/></td>
+        <td><input id="qty" value="1000" oninput="calcAmount()"/></td>
+        <td><input id="unitPrice" value="1,500" oninput="calcAmount()"/></td>
+        <td><input id="amount" value="1,500,000"/></td>
+      </tr>
+      <tr>
+        <td colspan="4" style="text-align:right;font-weight:700;padding-right:12px;">合计</td>
+        <td><input id="amountDaxie" value="壹佰伍拾万元整"/></td>
+        <td><input id="amountTotal" value="1,500,000"/></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="clauses">
+    <p>2、交货期限：<span class="editable" contenteditable="true">款到发货，到2026年7月31日前交货</span></p>
+    <p>3、交货地点：<span class="editable" contenteditable="true">卖方公司自提。</span></p>
+    <p>4、验收标准：<span class="editable" contenteditable="true">按国家同类产品验收执行。</span></p>
+    <p>5、付款方式：银行转帐。货款需转至卖方指定财务账户：</p>
+    <p>&nbsp;&nbsp;&nbsp;&nbsp;收款人：<span class="editable" contenteditable="true">刘源龙</span>&nbsp;；账号：<span class="editable" contenteditable="true">622908123171105798</span>&nbsp;；</p>
+    <p>&nbsp;&nbsp;&nbsp;&nbsp;收款银行：<span class="editable" contenteditable="true">兴业银行</span></p>
+    <p>6、如发生经济纠纷本合同的仲裁在卖方所在地。</p>
+    <p>7、本合同签字后生效，传真件，复印件有效。</p>
+  </div>
+  <div class="sig-row">
+    <div class="sig-box">
+      <div class="sig-label">买方（公司盖章）：</div>
+      <div class="seal-area empty" id="sealBuyer" onclick="openSealPicker('buyer')" ondragover="event.preventDefault()" ondrop="dropSeal(event,'buyer')">
+        <img id="sealBuyerImg" src="" style="display:none"/>
+        <span class="seal-hint" id="sealBuyerHint">点击选择<br>DAS 印章</span>
+      </div>
+      <div class="sig-date">日期：<span class="editable" contenteditable="true">2026年&nbsp;&nbsp;月&nbsp;&nbsp;日</span></div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-label">卖方（公司盖章）：</div>
+      <div class="seal-area empty" id="sealSeller" onclick="openSealPicker('seller')" ondragover="event.preventDefault()" ondrop="dropSeal(event,'seller')">
+        <img id="sealSellerImg" src="" style="display:none"/>
+        <span class="seal-hint" id="sealSellerHint">点击选择<br>DAS 印章</span>
+      </div>
+      <div class="sig-date">日期：<span class="editable" contenteditable="true">2026年&nbsp;&nbsp;月&nbsp;&nbsp;日</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="sealModal">
+  <div class="modal-box">
+    <div class="modal-title">
+      <span>🔴 印章管理</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-tabs">
+      <button class="modal-tab active" id="tab-das" onclick="switchTab('das')">DAS 共享库</button>
+      <button class="modal-tab" id="tab-make" onclick="switchTab('make')">🎨 制作印章</button>
+      <button class="modal-tab" id="tab-upload" onclick="switchTab('upload')">上传图片</button>
+    </div>
+    <div class="modal-body">
+    <!-- DAS Library -->
+    <div id="tab-das-content">
+      <div id="stampGrid" class="stamp-grid"><div class="stamp-empty">加载中…</div></div>
+    </div>
+
+    <!-- Make Seal - full designer iframe -->
+    <div id="tab-make-content" style="display:none;height:100%;">
+      <iframe id="sealDesignerFrame" style="width:100%;height:100%;border:none;display:block;" title="印章设计器"></iframe>
+    </div>
+    <!-- Upload -->
+    <div id="tab-upload-content" style="display:none;">
+      <input type="file" id="sealFileInput" accept="image/*" style="display:none" onchange="onFileChosen(event)">
+      <div class="upload-zone" onclick="document.getElementById('sealFileInput').click()" id="uploadZone">
+        <img id="uploadPreview" class="upload-preview" src="" style="display:none"/>
+        <div id="uploadPlaceholder">
+          <div style="font-size:32px;margin-bottom:8px;">📁</div>
+          <div style="font-size:13px;color:#64748b;">点击选择图片 / 拖入文件</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:4px;">PNG 透明背景最佳</div>
+        </div>
+      </div>
+      <div class="row">
+        <label>印章名称：</label>
+        <input id="uploadSealName" type="text" placeholder="例：厦门巴匕合同章" maxlength="64"/>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-save" id="uploadSaveBtn" disabled onclick="saveSealToDas()">⬆ 保存到 DAS</button>
+        <button class="btn-use" id="uploadUseBtn" disabled onclick="useUploadedSeal()">✓ 直接使用</button>
+      </div>
+      <div class="upload-status" id="uploadStatus"></div>
+    </div>
+    </div><!-- /.modal-body -->
+  </div>
+</div>
+
+<script src="https://api.sanlyn.cn/public/DrawStampUtils.js"></script>
+<script>
+var API_BASE = 'https://api.sanlyn.cn';
+var _sealTarget = null;
+var _sealPartyName = '';
+var _stamps = [];
+var _pendingFile = null;
+var _renderTimer = null;
+var _dsuLoaded = false;
+
+/* seal template picker */
+function loadTplPicker() {
+  var sel = document.getElementById('tplSelect');
+  if (!sel) return;
+
+  var _mergedTpls = []; // accessible to applyTplPreset via closure won't work — use window
+  function buildOpts(extraTpls) {
+    while (sel.options.length > 1) sel.remove(1);
+    var stored = [];
+    try { stored = JSON.parse(localStorage.getItem('sanlyn_seal_templates') || '[]'); } catch(e) {}
+    var seen = {};
+    stored.forEach(function(t) { if(t.label) seen[t.label]=true; });
+    (extraTpls||[]).forEach(function(t) { if(t.label && !seen[t.label]) { stored.push(t); seen[t.label]=true; } });
+    // Store merged list globally so applyTplPreset can look up any template
+    window._tplCache = stored;
+    stored.forEach(function(t) {
+      if (!t.label) return;
+      var opt = document.createElement('option');
+      opt.value = t.label;
+      opt.textContent = t.label;
+      sel.appendChild(opt);
+    });
+    if (sel.options.length === 1) {
+      var hint = document.createElement('option');
+      hint.disabled = true;
+      hint.textContent = '请先在「印章设计」tab保存模板';
+      sel.appendChild(hint);
+    }
+  }
+
+  // Always fetch server default to guarantee at least one option
+  fetch('https://api.sanlyn.cn/public/seal-template-default.json?v=' + Date.now())
+    .then(function(r) { return r.json(); })
+    .then(function(d) { buildOpts(d.label ? [d] : (Array.isArray(d) ? d : [])); })
+    .catch(function() { buildOpts([]); });
+}
+function applyTplPreset(sel) {
+  var name = sel.value;
+  if (!name) return;
+  // Try localStorage first, then server default
+  var arr = [];
+  try { arr = JSON.parse(localStorage.getItem('sanlyn_seal_templates') || '[]'); } catch(e) {}
+  var t = arr.find(function(x){ return x.label === name; });
+  if (!t && window._tplCache) t = window._tplCache.find(function(x){ return x.label === name; });
+  if (!t) { scheduleRender(); return; }
+  _activeTpl = t; // store full params for renderSeal()
+  var c = t.companies && t.companies[0];
+  var s = t.stampTypes && t.stampTypes[0];
+  var nameEl = document.getElementById('makeName');
+  if (nameEl && !nameEl.value.trim() && c) nameEl.value = c.name;
+  if (s) {
+    var typeEl = document.getElementById('makeType');
+    if (typeEl) { var opts=Array.from(typeEl.options).map(function(o){return o.value;}); if(opts.indexOf(s.type)>=0) typeEl.value=s.type; }
+  }
+  if (c) {
+    var set = function(id, valId, v) {
+      var el=document.getElementById(id), vl=document.getElementById(valId);
+      if(el && v!=null){el.value=v; if(vl)vl.textContent=v;}
+    };
+    set('makeFontSize',    'fontSizeVal',    c.fontHeight);
+    set('makeDistFactor',  'distFactorVal',  c.distFactor||6);
+    set('makeBorderOffset','borderOffsetVal',c.borderOffset);
+    set('makeCompression', 'compressionVal', c.compression);
+  }
+  scheduleRender();
+}
+
+function getToken() {
+  try {
+    var m = location.search.match(/[?&]_t=([^&]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    return localStorage.getItem('sanlyn_jwt') || localStorage.getItem('sanlyn_token') || '';
+  } catch(e) { return ''; }
+}
+function authHeaders() {
+  var h = {'Content-Type':'application/json'};
+  var t = getToken(); if (t) h['Authorization'] = 'Bearer ' + t;
+  return h;
+}
+
+function getPartyName(who) {
+  try {
+    var spans = document.querySelectorAll('.meta .editable');
+    if (who === 'buyer'  && spans[0]) return spans[0].textContent.trim();
+    if (who === 'seller' && spans[1]) return spans[1].textContent.trim();
+  } catch(e) {}
+  return '';
+}
+
+function openSealPicker(who) {
+  _sealTarget = who;
+  _sealPartyName = getPartyName(who);
+  document.getElementById('sealModal').classList.add('open');
+  switchTab('das');
+  loadDasStamps();
+}
+function closeModal() { document.getElementById('sealModal').classList.remove('open'); }
+
+function switchTab(tab) {
+  ['das','make','upload'].forEach(function(t) {
+    document.getElementById('tab-'+t).classList.toggle('active', t === tab);
+    document.getElementById('tab-'+t+'-content').style.display = t === tab ? '' : 'none';
+  });
+  if (tab === 'das') loadDasStamps();
+  if (tab === 'make') {
+    var tok = getToken();
+    var frame = document.getElementById('sealDesignerFrame');
+    if (frame) {
+      var company = encodeURIComponent(_sealPartyName || '');
+      var url = API_BASE + '/public/seal-designer.html?embed=1' + (tok ? '&_t=' + encodeURIComponent(tok) : '') + (company ? '&company=' + company : '');
+      frame.src = url; // reload each time so company name is fresh
+    }
+  }
+}
+
+/* ── DAS Library ── */
+function loadDasStamps() {
+  var grid = document.getElementById('stampGrid');
+  grid.innerHTML = '<div class="stamp-empty">加载中…</div>';
+  fetch(API_BASE + '/api/db/customer-stamps', { headers: authHeaders() })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var stamps = Array.isArray(d) ? d : (d.stamps || d.data || []);
+      if (!stamps.length) {
+        grid.innerHTML = '<div class="stamp-empty">共享库暂无印章。<br>点「制作印章」新建，或「上传图片」导入。</div>';
+        return;
+      }
+      _stamps = stamps;
+      var matchIdx = -1;
+      if (_sealPartyName) {
+        matchIdx = stamps.findIndex(function(s) {
+          return s.name && (s.name.indexOf(_sealPartyName) >= 0 || _sealPartyName.indexOf(s.name) >= 0);
+        });
+      }
+      grid.innerHTML = stamps.map(function(s,i) {
+        var isMatch = i === matchIdx;
+        return '<div class="stamp-card' + (isMatch ? ' stamp-match' : '') + '" onclick="selectStamp('+i+')" title="'+(s.name||'')+(isMatch?' · 自动匹配':'')+ '">' +
+          (isMatch ? '<div class="stamp-match-badge">匹配</div>' : '') +
+          '<button class="stamp-del" onclick="event.stopPropagation();deleteSeal('+s.id+')" title="删除">✕</button>' +
+          '<img src="'+s.url+'" onerror="this.style.opacity=0.3"/>' +
+          '<div class="stamp-name">'+(s.name||'印章')+'</div></div>';
+      }).join('');
+      // scroll matched card into view
+      if (matchIdx >= 0) {
+        var cards = grid.querySelectorAll('.stamp-card');
+        if (cards[matchIdx]) cards[matchIdx].scrollIntoView({block:'nearest'});
+      }
+    })
+    .catch(function() {
+      grid.innerHTML = '<div class="stamp-empty">加载失败，请先登录 ai.sanlyn.cn</div>';
+    });
+}
+function selectStamp(idx) { applySeal(_sealTarget, _stamps[idx].url); closeModal(); }
+function deleteSeal(id) {
+  if (!confirm('从 DAS 共享库删除此印章？')) return;
+  fetch(API_BASE + '/api/db/customer-stamps', { method:'DELETE', headers:authHeaders(), body:JSON.stringify({id:id}) })
+    .then(function() { loadDasStamps(); });
+}
+
+/* ── Make Seal Tab ── */
+var _dsuUtils = null;
+var _activeTpl = null; // stores full template params when user picks one
+function initDSU() {
+  if (_dsuLoaded) return;
+  if (typeof DSU === 'undefined') { document.getElementById('makeStatus').textContent = '正在加载印章引擎…'; return; }
+  var canvas = document.getElementById('makeCanvas');
+  var MM = 400 / 40;
+  _dsuUtils = new DSU.DrawStampUtils(canvas, MM);
+  _dsuLoaded = true;
+}
+
+function scheduleRender() {
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(renderSeal, 300);
+}
+
+function renderSeal() {
+  if (typeof DSU === 'undefined') { document.getElementById('makeStatus').textContent = '印章引擎加载中…'; return; }
+  var name = document.getElementById('makeName').value.trim();
+  var type = document.getElementById('makeType').value;
+  if (!name) { document.getElementById('makeStatus').textContent = '请输入公司名称'; return; }
+
+  // Read from sliders (populated by applyTplPreset or user drag)
+  var fontSize     = parseFloat(document.getElementById('makeFontSize').value)    || 4.2;
+  var distFactor   = parseFloat(document.getElementById('makeDistFactor').value)  || 6;
+  var borderOffset = parseFloat(document.getElementById('makeBorderOffset').value)|| 0.3;
+  var compression  = parseFloat(document.getElementById('makeCompression').value) || 1;
+
+  // Recreate DSU with correct MM each render
+  var canvas = document.getElementById('makeCanvas');
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); // clear before new instance
+  var w = (_activeTpl && _activeTpl.width)  || 40;
+  var h = (_activeTpl && _activeTpl.height) || 40;
+  var side = Math.max(w, h);
+  var MM = canvas.width / (side + 10);
+  _dsuUtils = new DSU.DrawStampUtils(canvas, MM);
+  var cfg = _dsuUtils.getDrawConfigs();
+  var tc = _activeTpl && _activeTpl.companies && _activeTpl.companies[0];
+  var ts = _activeTpl && _activeTpl.stampTypes && _activeTpl.stampTypes[0];
+  cfg.primaryColor = (_activeTpl && _activeTpl.color) || '#cc0000';
+  cfg.width  = (_activeTpl && _activeTpl.width)  || 40;
+  cfg.height = (_activeTpl && _activeTpl.height) || 40;
+  cfg.borderWidth = (_activeTpl && _activeTpl.borderWidth != null) ? _activeTpl.borderWidth : 1;
+  cfg.companyList = [{
+    companyName: name,
+    compression:            compression,
+    borderOffset:           borderOffset,
+    textDistributionFactor: distFactor,
+    fontFamily:             (tc && tc.fontFamily) || 'FangSong, 仿宋, SimSun',
+    fontHeight:             fontSize,
+    fontWeight: 'bold', shape: 'ellipse',
+    adjustEllipseText: false, adjustEllipseTextFactor: 0.5
+  }];
+  cfg.stampTypeList = [{
+    stampType:    type,
+    fontHeight:   ts ? ts.fontHeight   : 3.8,
+    fontFamily:   ts ? ts.fontFamily   : 'FangSong, 仿宋, SimSun',
+    fontWeight:   'bold',
+    compression:  ts ? ts.compression  : 1,
+    letterSpacing:ts ? ts.letterSpacing: 0,
+    positionY:    ts ? ts.positionY    : 3,
+    fontWidth: 1, lineSpacing: 1
+  }];
+  cfg.stampCode.code = ''; cfg.taxNumber.code = '';
+  cfg.drawStar.drawStar      = _activeTpl ? !!_activeTpl.star     : true;
+  cfg.drawStar.useImage      = false;
+  cfg.drawStar.starDiameter  = _activeTpl ? (_activeTpl.starD||14): 14;
+  cfg.drawStar.starPositionY = _activeTpl ? (_activeTpl.starY||-2): -2;
+  cfg.roughEdge.drawRoughEdge        = _activeTpl ? !!_activeTpl.roughEdge : false;
+  cfg.agingEffect.applyAging         = _activeTpl ? !!_activeTpl.aging     : false;
+  cfg.agingEffect.agingIntensity     = _activeTpl ? (_activeTpl.agingInt||20) : 50;
+  cfg.securityPattern.openSecurityPattern = _activeTpl ? !!_activeTpl.security : false;
+  cfg.roughEdge.drawRoughEdge = false;
+  cfg.agingEffect.applyAging = false;
+  cfg.innerCircle.drawInnerCircle = false;
+  cfg.outThinCircle.drawInnerCircle = false;
+  cfg.ruler.showRuler = false; cfg.ruler.showFullRuler = false;
+  cfg.shouldDrawRuler = false;
+
+  _dsuUtils.setDrawConfigs(cfg);
+  _dsuUtils.refreshStamp(false, false);
+  document.getElementById('makeStatus').textContent = '预览就绪 — 可调整后保存或直接使用';
+}
+
+function getMadeDataUrl() {
+  return document.getElementById('makeCanvas').toDataURL('image/png');
+}
+
+function useMadeSeal() {
+  if (!document.getElementById('makeName').value.trim()) { alert('请先输入公司名称'); return; }
+  applySeal(_sealTarget, getMadeDataUrl());
+  closeModal();
+}
+
+function saveMadeSealToDas() {
+  var name = document.getElementById('makeName').value.trim();
+  if (!name) { alert('请先输入公司名称'); return; }
+  var type = document.getElementById('makeType').value;
+  var label = name + '（' + type + '）';
+  var dataUrl = getMadeDataUrl();
+  var btn = document.getElementById('makeSaveBtn');
+  btn.disabled = true; btn.textContent = '保存中…';
+
+  // Convert canvas dataURL to blob → upload to OSS
+  fetch(dataUrl).then(function(r) { return r.blob(); })
+    .then(function(blob) {
+      var form = new FormData();
+      form.append('file', blob, name + '.png');
+      form.append('path', 'stamps/' + Date.now() + '_' + name + '.png');
+      return fetch(API_BASE + '/api/oss-upload', { method:'POST', body:form });
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.success || !d.url) throw new Error(d.error || '上传OSS失败');
+      return fetch(API_BASE + '/api/db/customer-stamps', {
+        method:'POST', headers:authHeaders(),
+        body:JSON.stringify({ name:label, url:d.url })
+      }).then(function(r) { return r.json(); });
+    })
+    .then(function(d2) {
+      if (!d2.success) throw new Error(d2.error || '保存失败');
+      btn.textContent = '✓ 已保存'; btn.style.background = '#16a34a';
+      setTimeout(function() { switchTab('das'); btn.disabled=false; btn.textContent='⬆ 保存到 DAS'; btn.style.background=''; }, 800);
+    })
+    .catch(function(err) {
+      alert('保存失败：' + err.message);
+      btn.disabled = false; btn.textContent = '⬆ 保存到 DAS';
+    });
+}
+
+/* ── Upload Tab ── */
+function onFileChosen(e) {
+  var file = e.target.files[0]; if (!file) return;
+  _pendingFile = file;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    document.getElementById('uploadPreview').src = ev.target.result;
+    document.getElementById('uploadPreview').style.display = 'block';
+    document.getElementById('uploadPlaceholder').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+  if (!document.getElementById('uploadSealName').value)
+    document.getElementById('uploadSealName').value = file.name.replace(/\.[^.]+$/,'');
+  document.getElementById('uploadSaveBtn').disabled = false;
+  document.getElementById('uploadUseBtn').disabled = false;
+  document.getElementById('uploadStatus').textContent = '';
+  e.target.value = '';
+}
+
+(function(){
+  var zone = document.getElementById('uploadZone');
+  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.style.borderColor='#3b82f6'; });
+  zone.addEventListener('dragleave', function() { zone.style.borderColor=''; });
+  zone.addEventListener('drop', function(e) {
+    e.preventDefault(); zone.style.borderColor='';
+    var file = e.dataTransfer.files[0]; if (!file||!file.type.startsWith('image/')) return;
+    _pendingFile = file;
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      document.getElementById('uploadPreview').src = ev.target.result;
+      document.getElementById('uploadPreview').style.display = 'block';
+      document.getElementById('uploadPlaceholder').style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+    if (!document.getElementById('uploadSealName').value)
+      document.getElementById('uploadSealName').value = file.name.replace(/\.[^.]+$/,'');
+    document.getElementById('uploadSaveBtn').disabled = false;
+    document.getElementById('uploadUseBtn').disabled = false;
+  });
+})();
+
+function useUploadedSeal() {
+  if (!_pendingFile) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) { applySeal(_sealTarget, ev.target.result); closeModal(); };
+  reader.readAsDataURL(_pendingFile);
+}
+
+function saveSealToDas() {
+  if (!_pendingFile) return;
+  var name = document.getElementById('uploadSealName').value.trim() || _pendingFile.name;
+  var btn = document.getElementById('uploadSaveBtn');
+  var status = document.getElementById('uploadStatus');
+  btn.disabled = true; status.textContent = '上传中…'; status.style.color = '#3b82f6';
+  var form = new FormData();
+  form.append('file', _pendingFile);
+  form.append('path', 'stamps/' + Date.now() + '_' + _pendingFile.name);
+  fetch(API_BASE + '/api/oss-upload', { method:'POST', body:form })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (!d.success||!d.url) throw new Error(d.error||'上传失败');
+      return fetch(API_BASE + '/api/db/customer-stamps', {
+        method:'POST', headers:authHeaders(), body:JSON.stringify({name:name, url:d.url})
+      }).then(function(r) { return r.json(); });
+    })
+    .then(function(d2) {
+      if (!d2.success) throw new Error(d2.error||'保存失败');
+      status.textContent = '✓ 已保存到 DAS'; status.style.color = '#16a34a';
+      _pendingFile = null;
+      setTimeout(function() { switchTab('das'); }, 800);
+    })
+    .catch(function(err) {
+      status.textContent = '✗ ' + err.message; status.style.color = '#ef4444';
+      btn.disabled = false;
+    });
+}
+
+/* ── Common ── */
+function dropSeal(e, who) {
+  e.preventDefault();
+  var file = e.dataTransfer.files[0]; if (!file||!file.type.startsWith('image/')) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) { applySeal(who, ev.target.result); };
+  reader.readAsDataURL(file);
+}
+
+/* ── Invisible LSB Watermark ── */
+function getJwtUser() {
+  try {
+    var tok = getToken(); if (!tok) return 'anon';
+    var payload = JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    return payload.username || payload.sub || payload.email || 'user';
+  } catch(e) { return 'user'; }
+}
+
+function embedSealWatermark(dataUrl, meta) {
+  return new Promise(function(resolve) {
+    var img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+      var c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      var ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      try {
+        var str = JSON.stringify(meta);
+        var bytes = [];
+        for (var i = 0; i < str.length; i++) bytes.push(str.charCodeAt(i));
+        var bits = [];
+        // Magic header 0xAB (8 bits) + length (16 bits)
+        var magic = 0xAB;
+        for (var b = 7; b >= 0; b--) bits.push((magic >> b) & 1);
+        for (var b = 15; b >= 0; b--) bits.push((bytes.length >> b) & 1);
+        bytes.forEach(function(byt) {
+          for (var b = 7; b >= 0; b--) bits.push((byt >> b) & 1);
+        });
+        var imgData = ctx.getImageData(0, 0, c.width, c.height);
+        var d = imgData.data;
+        var bi = 0;
+        for (var i = 0; i < d.length && bi < bits.length; i += 4) {
+          if (d[i+3] > 64) { d[i+2] = (d[i+2] & 0xFE) | bits[bi++]; }
+        }
+        ctx.putImageData(imgData, 0, 0);
+      } catch(e) {}
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = function() { resolve(dataUrl); }; // fallback
+    img.src = dataUrl;
+  });
+}
+
+function applySeal(who, src) {
+  var key = who === 'buyer' ? 'Buyer' : 'Seller';
+  var meta = { t: Math.floor(Date.now()/1000), u: getJwtUser(), w: who,
+               doc: (document.querySelector('.meta .editable') || {}).textContent || '' };
+  embedSealWatermark(src, meta).then(function(marked) {
+    document.getElementById('seal'+key+'Img').src = marked;
+    document.getElementById('seal'+key+'Img').style.display = 'block';
+  document.getElementById('seal'+key).classList.remove('empty');
+    document.getElementById('seal'+key+'Hint').style.display = 'none';
+    try { localStorage.setItem('sanlyn_seal_applied_'+who, marked); } catch(e){}
+  });
+}
+function clearSeals() {
+  ['buyer','seller'].forEach(function(who) {
+    var key = who === 'buyer' ? 'Buyer' : 'Seller';
+    document.getElementById('seal'+key+'Img').src = '';
+    document.getElementById('seal'+key+'Img').style.display = 'none';
+    document.getElementById('seal'+key+'Hint').style.display = 'block';
+    document.getElementById('seal'+key).classList.add('empty');
+    try { localStorage.removeItem('sanlyn_seal_applied_'+who); } catch(e){}
+  });
+}
+// Restore persisted seals on load
+(function(){
+  ['buyer','seller'].forEach(function(who){
+    var key = who==='buyer'?'Buyer':'Seller';
+    try {
+      var src = localStorage.getItem('sanlyn_seal_applied_'+who);
+      if(src){
+        document.getElementById('seal'+key+'Img').src=src;
+        document.getElementById('seal'+key+'Img').style.display='block';
+        document.getElementById('seal'+key+'Hint').style.display='none';
+        document.getElementById('seal'+key).classList.remove('empty');
+      }
+    } catch(e){}
+  });
+})();
+function calcAmount() {
+  var qty = parseFloat((document.getElementById('qty').value||'').replace(/,/g,''))||0;
+  var price = parseFloat((document.getElementById('unitPrice').value||'').replace(/,/g,''))||0;
+  var fmt = (qty*price).toLocaleString('zh-CN');
+  document.getElementById('amount').value = fmt;
+  document.getElementById('amountTotal').value = fmt;
+}
+document.getElementById('sealModal').addEventListener('click', function(e) { if(e.target===this)closeModal(); });
+
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'seal-apply') {
+    applySeal(_sealTarget, e.data.dataUrl);
+    closeModal();
+  }
+});
+</script>
+</body>
+</html>

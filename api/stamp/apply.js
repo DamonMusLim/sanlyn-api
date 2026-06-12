@@ -4,15 +4,40 @@
 // 返回 JSON: { success, stampedUrl, logId }
 
 import { getPool, setCors } from '../db.js';
+import { extractUser } from '../auth.js';
 
 // ── 印章 OSS 路径映射 ──────────────────────────────
 const STAMP_MAP = {
-  babi:     'stamps/babi_seal.png',
-  zhongsha: 'stamps/zhongsha_seal.png',
-  shanling: 'stamps/shanling_seal.png',
+  babi:       'stamps/babi_seal.png',
+  yangbaobao: 'stamps/yangbaobao_seal.png',  // 上海洋宝宝国际物流 (2026-06-02 Damon授权)
+  zhongsha:   'stamps/zhongsha_seal.png',
+  shanling:   'stamps/shanling_seal.png',
 };
 
 const OSS_BASE = 'https://files.sanlynos.com';
+
+// stampKey→公司编码;盖章优先用 DAS(customer_stamps)上传的最新公章,回退内置 STAMP_MAP(2026-06-05)
+const STAMP_COMPANY = { babi:'BABI', yangbaobao:'YBB', zhongsha:'ZHONGSHA', shanling:'SHANLING' };
+// 订单→工厂公司编码(多租户:厂检单等按订单工厂自动取章,不写死 stampKey)
+async function factoryCompanyOf(pool, orderNo){
+  try {
+    const r = await pool.query(
+      "SELECT f.company_code FROM orders o JOIN order_line_items oli ON oli.order_id=o.id JOIN products p ON p.sku=oli.sku JOIN factories f ON f.name=p.factory_name WHERE (o.order_no=$1 OR o.contract_no=$1) AND f.company_code IS NOT NULL LIMIT 1",
+      [orderNo]);
+    return (r.rows[0] && r.rows[0].company_code) || null;
+  } catch(_){ return null; }
+}
+async function resolveStampUrl(pool, stampKey, companyCode){
+  try {
+    // companyCode(订单工厂公司)优先 → STAMP_COMPANY[stampKey] → stampKey大写
+    const cc = companyCode || STAMP_COMPANY[stampKey] || String(stampKey||'').toUpperCase();
+    const r = await pool.query("SELECT url FROM customer_stamps WHERE upper(company_code)=upper($1) AND is_active=true ORDER BY is_default DESC, uploaded_at DESC LIMIT 1",[cc]);
+    const u = r.rows[0] && r.rows[0].url;
+    // 只信任本司 OSS/CDN 域(防 SSRF/取外部恶意图);否则回退内置章(Codex note)
+    if (u && /^https:\/\/(files\.sanlynos\.com|sanlyn-files\.[a-z0-9.-]*aliyuncs\.com)\//i.test(u)) return u;
+  } catch(_){}
+  return null; // 公章只存 DAS(customer_stamps);无 DAS 章 = 不盖,不再回退内置文件(Damon 2026-06-07)
+}
 
 // ── 权限校验 ────────────────────────────────────────
 async function checkPermission(pool, operator, stampKey) {
@@ -76,7 +101,8 @@ async function uploadToOSS(ossPath, buffer, contentType = 'application/pdf') {
     bucket: process.env.OSS_BUCKET,
   });
   await client.put(ossPath, Buffer.from(buffer), { mime: contentType });
-  return `https://${process.env.OSS_BUCKET}.${process.env.OSS_REGION}.aliyuncs.com/${ossPath}`;
+  // 返回 CDN 自定义域(客户端/大陆可达);原始 oss-cn-hongkong.aliyuncs.com 客户端 SSL 不通,导致盖章版下不到(2026-06-05)
+  return `${OSS_BASE}/${ossPath}`;
 }
 
 // ── 主处理函数 ──────────────────────────────────────
@@ -98,8 +124,11 @@ export default async function handler(req, res) {
       customX,   // ★ S99: free-drag position (0-1 from left), overrides position preset when set
       customY,   // ★ S99: free-drag position (0-1 from top), overrides position preset when set
       scale = 0.19,
+      sealMm,            // 印章物理直径(mm),默认40mm标准公章;按A4真实尺寸不随横竖变化
       opacity = 0.85,
       operator,
+      customStampUrl,
+      stampType,
       isSuperAdmin = false,
     } = req.body;
 
@@ -110,8 +139,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'operator required' });
     }
 
+    const isCustom = (stampType === 'custom') && !!customStampUrl;
     const stampPath = STAMP_MAP[stampKey];
-    if (!stampPath) {
+    if (!isCustom && !stampPath) {
       return res.status(400).json({
         error: `Unknown stamp: ${stampKey}. Valid: ${Object.keys(STAMP_MAP).join(', ')}`,
       });
@@ -120,7 +150,14 @@ export default async function handler(req, res) {
     // ── 0. 权限校验 ──
     const pool = getPool();
 
-    if (!isSuperAdmin) {
+    // 服务端 JWT 角色校验:admin/superAdmin 角色直接放行(签名已验,安全),
+    // 不依赖脆弱的 operator 字符串与 stamp_permissions 精确匹配(曾致 admin 仍 403)。
+    let _jwtRole = '';
+    try { extractUser(req); _jwtRole = (req.user && typeof req.user.role === 'string') ? req.user.role : ''; } catch (_) {}
+    const _isAdminRole = ['admin','superadmin','super_admin'].includes(_jwtRole.toLowerCase());
+
+    // 只信服务端验签的 JWT 角色放行 admin/superAdmin;不再信任客户端可伪造的 req.body.isSuperAdmin(Codex BLOCK 修正)。
+    if (!_isAdminRole && !isCustom) {
       const perm = await checkPermission(pool, operator, stampKey);
       if (!perm) {
         return res.status(403).json({
@@ -139,10 +176,39 @@ export default async function handler(req, res) {
       }
     }
 
+    // 厂检单等工厂单据:按订单工厂公司取章(多租户),只取本工厂的章,绝不回退别公司。companyCode 也可显式传。
+    let _companyCode = (req.body && req.body.companyCode) || null;
+    const _isFactoryDoc = typeof documentId === 'string' && /::factory_inspection$/.test(documentId);
+    try {
+      if (_isFactoryDoc && !_companyCode) {
+        _companyCode = await factoryCompanyOf(pool, documentId.replace(/::factory_inspection$/, ''));
+      }
+    } catch(_){}
+    // 公章只能从 DAS(customer_stamps)取;工厂单严格只取本工厂章(绝不回退别公司);没录入=不盖,清晰错误(Damon 2026-06-07)
+    const sealUrl = isCustom
+      ? customStampUrl
+      : (_isFactoryDoc
+          ? (_companyCode ? await resolveStampUrl(pool, null, _companyCode) : null)
+          : await resolveStampUrl(pool, stampKey, _companyCode));
+    if (!sealUrl) {
+      const who = _companyCode || (_isFactoryDoc ? '该订单工厂' : stampKey);
+      return res.status(400).json({ error: '公章未录入 DAS', detail: `${who} 的公章未在 DAS 上传(或未能确定工厂公司),请先在 DAS 添加该公司公章。公章只存 DAS,别公司的章绝不混用。` });
+    }
     // ── 1. 获取源 PDF 和印章图片 ──
+    // Node.js fetch requires absolute URLs — convert relative paths to localhost
+    let _pdfFetchUrl = pdfUrl;
+    if (_pdfFetchUrl.startsWith('/')) {
+      const _port = process.env.PORT || 9000;
+      _pdfFetchUrl = 'http://127.0.0.1:' + _port + _pdfFetchUrl;
+    }
+    // shipping-plan-pdf returns HTML by default — append format=pdf to get actual PDF via puppeteer
+    if (/\/api\/db\/shipping-plan-pdf/.test(_pdfFetchUrl) && !_pdfFetchUrl.includes('format=')) {
+      _pdfFetchUrl += (_pdfFetchUrl.includes('?') ? '&' : '?') + 'format=pdf';
+    }
+    const _authHeader = req.headers.authorization || '';
     const [pdfResp, stampResp] = await Promise.all([
-      fetch(pdfUrl),
-      fetch(`${OSS_BASE}/${stampPath}`),
+      fetch(_pdfFetchUrl, _authHeader ? { headers: { Authorization: _authHeader } } : {}),
+      fetch(sealUrl),
     ]);
 
     if (!pdfResp.ok) throw new Error(`Failed to fetch PDF: ${pdfResp.status}`);
@@ -165,10 +231,15 @@ export default async function handler(req, res) {
       const { width: pageW, height: pageH } = page.getSize();
 
       const stampAspect = stampImage.height / stampImage.width;
-      let sW = pageW * scale;
+      // 按真实物理尺寸定章大小(标准公章直径 ~40mm),不随页面点数/横竖变化。
+      // 旧逻辑 sW=pageW*scale 在 A4 横版(842pt宽)会把章放成 56mm 过大。
+      // 印章按 A4 短边(宽)为参照,横竖版一致(旧 pageW*scale 在A4横版842pt宽放成56mm过大)。
+      // 默认 scale 0.19 × 短边595pt ≈ 113pt = 40mm 标准公章;也可传 sealMm(mm)精确指定。
+      const refDim = Math.min(pageW, pageH);
+      let sW = (typeof sealMm === 'number' && sealMm > 0) ? sealMm * (72 / 25.4) : refDim * scale;
       let sH = sW * stampAspect;
-      if (sH > pageH * 0.4) {
-        sH = pageH * 0.4;
+      if (sH > pageH * 0.35) {                  // 极端长宽比保护
+        sH = pageH * 0.35;
         sW = sH / stampAspect;
       }
 

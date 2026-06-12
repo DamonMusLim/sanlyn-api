@@ -12,15 +12,27 @@
 //   ?limit=200 (default), &offset=0
 //
 // Returns rows shaped per role (factory_price hidden from buyer, etc.)
+//
+// MIN_FIX_BATCH_20260526 A-1 (2026-05-25):
+// Role is now derived from JWT (req.user.role), NOT ?role= query param.
+// Previously ?role=admin worked for any logged-in user → full catalog leak
+// (factory_price, profit, vat_rate, rebate_rate, factory_name/code/city,
+//  issuing_company). Fixed: query ?role= is IGNORED; JWT role wins.
+// Same hardening for company_code (buyer) and factory_code (factory):
+// derived from JWT, query values ignored.
 
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 // Field whitelists per role
 var FIELDS_BY_ROLE = {
   admin:   "*",
   factory: ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","factory_code","category","stock","inner_qty","inner_unit","factory_price","moq","declaration_name","declaration_elements","bl_description"],
-  buyer:   ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","factory_code","category","stock","inner_qty","inner_unit","sanlyn_price","price_usd","moq","image_url"],
-  trader:  ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","factory_code","category","stock","inner_qty","inner_unit","price_usd","moq","image_url"],
+  // A-1 (2026-05-25): factory_code removed from buyer/trader — per
+  // feedback_customer_code_anti_counterfeit.md and Damon's MIN_FIX_BATCH_20260526
+  // directive ("factory_name/code/city" 不得 customer-facing).
+  buyer:   ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","category","stock","inner_qty","inner_unit","sanlyn_price","price_usd","moq","image_url"],
+  trader:  ["id","sku","barcode","product_name","product_name_cn","brand","size","unit","cbm","net_weight","gross_weight","hs_code","category","stock","inner_qty","inner_unit","price_usd","moq","image_url"],
 };
 
 function pickFields(row, role) {
@@ -31,15 +43,53 @@ function pickFields(row, role) {
   return out;
 }
 
+// Map JWT role → products-v3 audience tier.
+// Anything not explicitly admin/internal/factory defaults to 'buyer' (least-privileged).
+function jwtRoleToAudience(jwtRole) {
+  var r = String(jwtRole || "").toLowerCase();
+  if (r === "admin" || r === "super_admin" || r === "root" ||
+      r === "finance" || r === "logistics" || r === "trader" || r === "sales" ||
+      r === "internal") return "admin";
+  if (r === "factory" || r === "factory_user" || r === "supplier") return "factory";
+  // customer, customer_user, forwarder, driver, unknown → buyer
+  return "buyer";
+}
+
+function firstCompanyCodeFromJwt(user) {
+  if (!user) return "";
+  if (Array.isArray(user.companyCodes) && user.companyCodes.length) return String(user.companyCodes[0]).trim().toUpperCase();
+  if (user.companyCode) return String(user.companyCode).trim().toUpperCase();
+  return "";
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "GET only" });
 
   var pool = getPool();
-  var role         = req.query.role || "admin";
-  var factoryCode  = req.query.factory_code || "";
-  var companyCode  = req.query.company_code || "";
+  // A-1 fix: role from JWT, NOT query. Query ?role= is silently ignored.
+  var role = jwtRoleToAudience(req.user && req.user.role);
+
+  // factory role: factory_code MUST come from JWT companyCode (the factory's own code).
+  // buyer role: company_code (for price overrides) MUST come from JWT.
+  // Query values for factory_code / company_code are IGNORED when they would be
+  // privilege-relevant (i.e. for factory / buyer). Admin may still supply them
+  // as filters since they already have full visibility.
+  var jwtCode = firstCompanyCodeFromJwt(req.user);
+  var factoryCode = "";
+  var companyCode = "";
+  if (role === "admin") {
+    factoryCode = req.query.factory_code || "";
+    companyCode = req.query.company_code || "";
+  } else if (role === "factory") {
+    factoryCode = jwtCode;
+    if (!factoryCode) return res.status(403).json({ error: "factory scope missing in JWT" });
+  } else { // buyer
+    companyCode = jwtCode; // may be empty; price_overrides simply won't apply
+  }
+
   var category     = req.query.category || "";
   var brand        = req.query.brand || "";
   var search       = req.query.search || "";
@@ -54,11 +104,11 @@ export default async function handler(req, res) {
     var where = ["active = true"];
     var args = [];
 
-    // Factory role: forced to own factory_code (read from JWT in prod)
+    // Factory role: pinned to JWT factory_code above
     if (role === "factory") {
-      if (!factoryCode) return res.status(400).json({ error: "factory role requires factory_code" });
       args.push(factoryCode); where.push("factory_code = $" + args.length);
     } else if (factoryCode) {
+      // admin-supplied filter
       args.push(factoryCode); where.push("factory_code = $" + args.length);
     }
 

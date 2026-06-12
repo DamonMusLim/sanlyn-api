@@ -61,7 +61,7 @@ async function notifyWecom(row) {
 }
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, POST, OPTIONS");
+  setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   try {
@@ -69,24 +69,17 @@ export default async function handler(req, res) {
     await ensureTable(pool);
 
     if (req.method === "GET") {
-      const { docId, contractNo, doc_type, limit = 500 } = req.query || {};
-      // Watchtower fix (codex P1-2 2026-05-08): require docId or contractNo
-      // for non-admin callers. Without a scope filter, this endpoint would
-      // dump up to 500 rows of OSS URLs + uploader notes to any authenticated
-      // user. Admins/internal may still batch-fetch unfiltered for ops dashboards.
-      const _role = String((req.user && req.user.role) || "").toLowerCase();
-      const _isAdmin = ["admin","internal","boss","finance","platform_admin","system"].includes(_role);
-      if (!_isAdmin && !docId && !contractNo) {
-        return res.status(400).json({ error: "docId or contractNo required" });
-      }
+      const { docId, contractNo, limit = 100 } = req.query || {};
       const conds = [], vals = [];
       if (docId)      { vals.push(docId);      conds.push("doc_id = $" + vals.length); }
       if (contractNo) { vals.push(contractNo); conds.push("contract_no = $" + vals.length); }
-      if (doc_type)   { vals.push(doc_type);   conds.push("doc_type = $" + vals.length); }
-      vals.push(Math.min(parseInt(limit) || 500, 1000));
-      const whereClause = conds.length ? "WHERE " + conds.join(" AND ") : "";
+      if (!conds.length) return res.status(400).json({ error: "docId or contractNo required" });
+      vals.push(parseInt(limit));
       const r = await pool.query(
-        `SELECT * FROM document_uploads ${whereClause} ORDER BY uploaded_at DESC LIMIT $${vals.length}`,
+        `SELECT * FROM document_uploads
+         WHERE ${conds.join(" AND ")}
+         ORDER BY uploaded_at DESC
+         LIMIT $${vals.length}`,
         vals
       );
       return res.status(200).json({ data: r.rows });
@@ -110,6 +103,51 @@ export default async function handler(req, res) {
       // fire-and-forget
       notifyWecom(row).catch(() => {});
       return res.status(200).json(row);
+    }
+
+    if (req.method === "PATCH") {
+      // 盖章版做成原件行上的字段(stamped_url/stamped_meta)——删原件天然带走盖章版,不留孤儿(2026-06-05 Damon)
+      const b = req.body || {};
+      // 部分更新:只动 body 里出现的列(stamped_url/stamped_meta/review_meta),不互相覆盖。
+      const sets = [], vals = [];
+      const add = (col, val, isJson) => { vals.push(isJson ? (val ? JSON.stringify(val) : null) : (val == null ? null : val)); sets.push(col + "=$" + vals.length); };
+      if ("stamped_url" in b) add("stamped_url", b.stamped_url, false);
+      if ("stamped_meta" in b) add("stamped_meta", b.stamped_meta, true);
+      if ("review_meta" in b) add("review_meta", b.review_meta, true);
+      if (!sets.length) return res.status(400).json({ error: "no fields to update" });
+      let where, wvals;
+      if (b.id) { where = "id=$" + (vals.length + 1); wvals = [parseInt(b.id, 10)]; }
+      else if (b.docId && b.docType && b.origUrl) { where = "doc_id=$" + (vals.length + 1) + " AND doc_type=$" + (vals.length + 2) + " AND url=$" + (vals.length + 3); wvals = [b.docId, b.docType, b.origUrl]; }
+      else return res.status(400).json({ error: "need id or (docId,docType,origUrl)" });
+      const r = await pool.query("UPDATE document_uploads SET " + sets.join(", ") + " WHERE " + where + " RETURNING id, name, stamped_url, review_meta", vals.concat(wvals));
+      if (!r.rows.length) return res.status(404).json({ error: "not_found" });
+      return res.status(200).json({ success: true, updated: r.rows[0] });
+    }
+
+    if (req.method === "DELETE") {
+      // Remove an upload record by id (e.g. wrongly-attached file). OSS object is
+      // left intact (no hard purge) — this only unlinks it from the doc list.
+      const id = (req.query || {}).id;
+      if (!id) return res.status(400).json({ error: "id required" });
+      const r = await pool.query(
+        "DELETE FROM document_uploads WHERE id = $1 RETURNING id, doc_id, doc_type, name",
+        [parseInt(id, 10)]
+      );
+      if (!r.rows.length) return res.status(404).json({ error: "not_found" });
+      const row = r.rows[0];
+      // 删原件 → 连带删它的盖章版(同 doc_id + type+_stamped + 名插入"(盖章)"),
+      // 避免删原件后盖章版变孤儿一直挂着(2026-06-05 Damon)。按精确名匹配,绝不误删其它盖章件。
+      let cascaded = [];
+      if (row.doc_type && !/_stamped$/.test(row.doc_type)) {
+        const stampedType = row.doc_type + "_stamped";
+        const stampedName = String(row.name || "").replace(/(\.[^.]+)?$/, "(盖章)$1");
+        const c = await pool.query(
+          "DELETE FROM document_uploads WHERE doc_id = $1 AND doc_type = $2 AND name = $3 RETURNING id, name",
+          [row.doc_id, stampedType, stampedName]
+        );
+        cascaded = c.rows;
+      }
+      return res.status(200).json({ success: true, deleted: row, cascaded });
     }
 
     return res.status(405).json({ error: "method_not_allowed" });
