@@ -26,6 +26,310 @@ function genRaw() {
   return crypto.randomBytes(24).toString("hex"); // 48 hex chars
 }
 
+function scrubCollabInternal(v, seen = new WeakSet()) {
+  if (v == null || typeof v !== "object") return v;
+  if (seen.has(v)) return v;
+  seen.add(v);
+  if (Array.isArray(v)) return v.map(x => scrubCollabInternal(x, seen));
+  const out = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (/token|token_hash|magic_link|access_log|password|secret/i.test(k)) continue;
+    out[k] = scrubCollabInternal(val, seen);
+  }
+  return out;
+}
+
+async function resolvePlanId(pool, ref) {
+  const s = String(ref || "").trim();
+  if (!s) return null;
+  const { rows } = await pool.query(
+    `SELECT id FROM shipping_plans WHERE id::text = $1 OR _id = $1 LIMIT 1`,
+    [s]
+  );
+  return rows.length ? rows[0].id : null;
+}
+
+async function loadCollabPlanBundle(pool, planId, role = "master") {
+  const planRes = await pool.query(
+    `SELECT sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta,
+            sp.container_type, sp.container_qty, sp.collab_status,
+            sp.total_cartons, sp.gross_weight_kg, sp.total_cbm, sp.freight_term,
+            sp.raw->'customer_item_notes' AS customer_item_notes,
+            sp.raw->'factory_cargo' AS factory_cargo,
+            sp.raw->'factory_attrs' AS factory_attrs,
+            sp.raw->'factory_submits' AS factory_submits,
+            sp.raw->'customer_amend' AS customer_amend,
+            sp.raw->'broker_ack' AS broker_ack,
+            sp.trucking_arrange, sp.customs_arrange,
+            sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage,
+            sp.freight_sale_usd, sp.freight_term AS plan_freight_term,
+            sp.release_type,
+            (sp.source_system = 'freight_agency' OR sp.raw ? 'legs' OR sp.raw ? 'transfer') AS is_transfer,
+            sp.raw->'cost_lines' AS cost_lines,
+            (SELECT jsonb_agg(x->>'container_no') FROM jsonb_array_elements(COALESCE(sp.raw->'containers','[]'::jsonb)) x) AS containers_order,
+            sp.raw->'fe_cert' AS fe_cert,
+            sp.raw->'factory_entry' AS factory_entry,
+            EXISTS(SELECT 1 FROM orders dg WHERE dg.shipping_plan_id = sp.id AND dg.export_mode='daigou') AS is_daigou,
+            jsonb_build_object('terminal', sp.raw->>'terminal', 'ship_agent', sp.raw->>'ship_agent',
+              'terminal_tel', sp.raw->>'terminal_tel', 'vgm_cutoff', sp.raw->>'vgm_cutoff',
+              'so_source', sp.raw->>'so_source') || COALESCE(sp.raw->'so_extra','{}'::jsonb) AS so_info,
+            sp.raw->'collab_uploads' AS collab_uploads,
+            sp.trucking_detail,
+            sp.issuing_company,
+            sp.customer AS customer_name,
+            sp.customer_en,
+            sp.factory_submitted, sp.factory_cargo_ready, sp.factory_container_type,
+            sp.factory_cargo_type, sp.factory_remarks, sp.factory_submitted_at,
+            sp.customer_submitted, sp.customer_selected_sailing, sp.customer_reference_no,
+            sp.customer_remarks, sp.customer_submitted_at,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'order_no', o.order_no,
+                  'contract_no', o.contract_no,
+                  'factory',  o.factory,
+                  'export_mode', o.export_mode,
+                  'total_qty', o.total_qty,
+                  'gross_weight', o.gross_weight,
+                  'items', (
+                    SELECT COALESCE(json_agg(json_build_object(
+                      'oli_id',      oli.id,
+                      'sku',         oli.sku,
+                      'description', oli.declaration_name,
+                      'hs_code',     oli.hs_code,
+                      'ctns',        oli.qty_ctn,
+                      'gw_kgs',      ROUND((COALESCE(oli.gw_ctn,0) * COALESCE(oli.qty_ctn,0))::numeric, 1),
+                      'nw_kgs',      ROUND((COALESCE(oli.nw_ctn,0) * COALESCE(oli.qty_ctn,0))::numeric, 1),
+                      'cbm',         ROUND((COALESCE(oli.cbm_ctn,0) * COALESCE(oli.qty_ctn,0))::numeric, 3),
+                      'declare_amount', ROUND((COALESCE(NULLIF(oli.declare_amount_per_box,0), oli.unit_price, 0) * COALESCE(oli.qty_ctn,0))::numeric, 2),
+                      'barcode',     oli.barcode,
+                      'product_name', COALESCE(NULLIF(oli.product_name,''), oli.declaration_name),
+                      'size',        oli.size,
+                      'unit_price',  oli.unit_price,
+                      'amount',      oli.subtotal
+                    )), '[]'::json)
+                    FROM order_line_items oli WHERE oli.order_id = o.id
+                  )
+                )
+              ) FILTER (WHERE o.id IS NOT NULL),
+              '[]'::json
+            ) AS orders
+       FROM shipping_plans sp
+       LEFT JOIN orders o ON o.shipping_plan_id = sp.id
+      WHERE sp.id = $1
+      GROUP BY sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta, sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage, sp.freight_sale_usd, sp.release_type, sp.source_system,
+               sp.container_type, sp.container_qty, sp.collab_status,
+               sp.total_cartons, sp.gross_weight_kg, sp.total_cbm, sp.freight_term,
+               sp.raw, sp.trucking_detail, sp.issuing_company, sp.trucking_arrange, sp.customs_arrange, sp.customer, sp.customer_en,
+               sp.factory_submitted, sp.factory_cargo_ready, sp.factory_container_type,
+               sp.factory_cargo_type, sp.factory_remarks, sp.factory_submitted_at,
+               sp.customer_submitted, sp.customer_selected_sailing, sp.customer_reference_no,
+               sp.customer_remarks, sp.customer_submitted_at`,
+    [planId]
+  );
+  if (!planRes.rows.length) return null;
+
+  const sailingsRes = await pool.query(
+    `SELECT id, carrier, vessel, voyage, etd, eta, cutoff_date, rate_usd, currency, is_recommended
+       FROM plan_sailings
+      WHERE shipping_plan_id = $1
+      ORDER BY etd ASC`,
+    [planId]
+  );
+
+  const cbRaw = await pool.query(
+    `SELECT cb.container_no, cb.seal_no, cb.container_type, cb.tare_weight_kg, cb.cargo_weight_kg,
+            NULLIF(cb.truck_plate,'') AS plate, NULLIF(cb.trailer_plate,'') AS trailer_plate,
+            cb.driver_name, cb.driver_phone, cb.driver_id_no, cb.pickup_time,
+            NULLIF(cb.loading_address,'') AS loading_address, NULLIF(cb.loading_contact,'') AS loading_contact,
+            NULLIF(cb.declaration_cargo_name,'') AS decl_name,
+            o.order_no, o.total_qty AS cartons, o.gross_weight AS order_gw
+       FROM container_bookings cb
+       LEFT JOIN orders o ON o.contract_no = cb.contract_no AND o.shipping_plan_id = cb.shipping_plan_id
+      WHERE cb.shipping_plan_id = $1 ORDER BY cb.container_no, cb.id`,
+    [planId]
+  );
+  const cbMap = new Map();
+  for (const r of cbRaw.rows) {
+    const cur = cbMap.get(r.container_no) || { container_no: r.container_no, cargo: [] };
+    for (const k of ["seal_no","container_type","tare_weight_kg","plate","trailer_plate","driver_name","driver_phone","driver_id_no","pickup_time","loading_address","loading_contact"])
+      if (r[k] != null && cur[k] == null) cur[k] = r[k];
+    if (r.decl_name || r.order_no)
+      cur.cargo.push({
+        name: r.decl_name || null,
+        order_no: r.order_no || null,
+        cartons: r.cartons != null ? Number(r.cartons) : null,
+        gw_kg: r.cargo_weight_kg != null ? Number(r.cargo_weight_kg) : (r.order_gw != null ? Number(r.order_gw) : null),
+      });
+    cbMap.set(r.container_no, cur);
+  }
+
+  const sheet = { ...planRes.rows[0], sailings: sailingsRes.rows, containers_live: [...cbMap.values()] };
+  if (!(sheet.trucking_detail && Array.isArray(sheet.trucking_detail.vehicles) && sheet.trucking_detail.vehicles.length)) {
+    const vehs = sheet.containers_live.filter(r => r.plate || r.trailer_plate || r.driver_phone).map(r => ({
+      plate: r.plate || r.trailer_plate || "", trailer_plate: r.trailer_plate || "",
+      driver: r.driver_name || "", driver_phone: r.driver_phone || "", driver_id_no: r.driver_id_no || "",
+      pickup_time: r.pickup_time || "", cntr: r.container_no, seal_no: r.seal_no || "",
+      tare_kg: r.tare_weight_kg != null ? Number(r.tare_weight_kg) : null,
+      loading_address: r.loading_address || "", loading_contact: r.loading_contact || "",
+      cargo: r.cargo || [],
+    }));
+    if (vehs.length) sheet.trucking_detail = { ...(sheet.trucking_detail || {}), vehicles: vehs, source: "container_bookings" };
+  }
+  return { role, booking_sheet: sheet };
+}
+
+function filledState(done, returned) {
+  if (returned) return "已回";
+  return done ? "已填" : "待填";
+}
+
+function buildMasterPayload(bundle) {
+  const s = bundle.booking_sheet || {};
+  const truckingOwner = s.trucking_arrange || "agent";
+  const customsOwner = s.customs_arrange || "agent";
+  const truckingDone = !!(s.trucking_detail && (
+    s.trucking_detail.plate ||
+    (Array.isArray(s.trucking_detail.vehicles) && s.trucking_detail.vehicles.some(v => v.plate || v.driver_phone))
+  ));
+  const brokerDone = !!(s.broker_ack && (s.broker_ack.confirmed || s.broker_ack.submitted_at || s.broker_ack.remarks || s.broker_ack.missing_docs));
+  const oceanDone = !!(s.so_no || s.bl_no || s.vessel || s.voyage);
+  return scrubCollabInternal({
+    ok: true,
+    view: "master",
+    booking_sheet: s,
+    owners: {
+      ocean: "self",
+      factory: "self",
+      customer: "self",
+      trucking: truckingOwner,
+      customs: customsOwner,
+    },
+    statuses: {
+      ocean: { state: filledState(oceanDone, false), done: oceanDone },
+      factory: { state: filledState(!!s.factory_submitted, false), done: !!s.factory_submitted },
+      customer: { state: filledState(!!s.customer_submitted, false), done: !!s.customer_submitted },
+      trucking: { state: filledState(truckingDone, truckingOwner === "agent" && truckingDone), done: truckingDone },
+      customs: { state: filledState(brokerDone, customsOwner === "agent" && brokerDone), done: brokerDone },
+    },
+    segments: {
+      ocean: { plan: s, sailings: s.sailings || [] },
+      factory: { cargo: s.factory_cargo || [], attrs: s.factory_attrs || {}, submitted: !!s.factory_submitted },
+      customer: { selected_sailing: s.customer_selected_sailing || null, submitted: !!s.customer_submitted },
+      trucking: { detail: s.trucking_detail || null, containers: s.containers_live || [] },
+      customs: { broker_ack: s.broker_ack || null },
+    },
+  });
+}
+
+async function handleMasterView(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const body = req.body || {};
+  const planRef = (req.query && (req.query.plan_id || req.query._id)) || body.plan_id || body._id;
+  const planId = await resolvePlanId(pool, planRef);
+  if (!planId) return res.status(400).json({ ok: false, error: "plan_id/_id 必填或无效" });
+
+  if (req.method === "POST") {
+    const action = String(body.action || "").trim();
+    if (action === "factory-submit") {
+      await pool.query(
+        `UPDATE shipping_plans SET
+           factory_submitted = true,
+           factory_cargo_ready = $1,
+           factory_container_type = $2,
+           factory_cargo_type = $3,
+           factory_remarks = $4,
+           factory_submitted_at = NOW(),
+           freight_term = COALESCE($5, freight_term),
+           trucking_arrange = COALESCE($6, trucking_arrange),
+           customs_arrange = COALESCE($7, customs_arrange),
+           raw = COALESCE(raw,'{}'::jsonb)
+             || CASE WHEN $8::jsonb IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('factory_cargo', $8::jsonb) END
+             || CASE WHEN $9::jsonb IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('factory_attrs', $9::jsonb) END
+             || jsonb_build_object('factory_submits',
+                  COALESCE(raw->'factory_submits','{}'::jsonb)
+                  || jsonb_build_object('_master', jsonb_build_object('cargo_ready', $11::text, 'at', to_char(now(),'YYYY-MM-DD HH24:MI'))))
+         WHERE id = $10`,
+        [
+          body.cargo_ready_date || null,
+          body.container_type || null,
+          body.cargo_type || null,
+          body.remarks || null,
+          ["FOB","EXW","FCA","CIF","DDP","CNF"].includes(body.freight_term) ? body.freight_term : null,
+          ["self","agent"].includes(body.trucking_arrange) ? body.trucking_arrange : null,
+          ["self","agent"].includes(body.customs_arrange) ? body.customs_arrange : null,
+          Array.isArray(body.containers) ? JSON.stringify(body.containers) : null,
+          body.attrs && typeof body.attrs === "object" && !Array.isArray(body.attrs) ? JSON.stringify(body.attrs) : null,
+          planId,
+          body.cargo_ready_date || null,
+        ]
+      );
+    } else if (action === "customer-submit") {
+      if (!body.selected_sailing || typeof body.selected_sailing !== "object")
+        return res.status(400).json({ ok: false, error: "selected_sailing 必填" });
+      const x = body.selected_sailing;
+      await pool.query(
+        `UPDATE shipping_plans SET
+           customer_submitted = true,
+           customer_selected_sailing = $1,
+           customer_reference_no = $2,
+           customer_remarks = $3,
+           customer_submitted_at = NOW(),
+           vessel = $4,
+           voyage = $5,
+           etd = $6,
+           freight_term = COALESCE($7, freight_term)
+         WHERE id = $8`,
+        [JSON.stringify(x), body.reference_no || null, body.remarks || null,
+         x.vessel || null, x.voyage || null, x.etd || null,
+         ["FOB","EXW","FCA","CIF","DDP","CNF"].includes(body.freight_term) ? body.freight_term : null,
+         planId]
+      );
+    } else if (action === "trucking-submit") {
+      const vehicles = Array.isArray(body.vehicles) ? body.vehicles.map((v, i) => ({
+        seq: i + 1,
+        plate: String(v.plate || "").trim() || null,
+        driver: String(v.driver || "").trim() || null,
+        driver_phone: String(v.driver_phone || "").trim() || null,
+        pickup_time: v.pickup_time || null,
+        loading_time: v.loading_time || null,
+        cntr: String(v.cntr || "").trim().toUpperCase() || null,
+        seal_no: String(v.seal_no || "").trim().toUpperCase() || null,
+        trailer_plate: String(v.trailer_plate || "").trim() || null,
+        driver_id_no: String(v.driver_id_no || "").trim() || null,
+        weigh_kg: v.weigh_kg !== "" && v.weigh_kg != null ? Number(v.weigh_kg) : null,
+      })).filter(v => v.plate || v.driver_phone) : [];
+      if (!vehicles.length) return res.status(400).json({ ok: false, error: "至少一辆车需填车牌或司机电话" });
+      const detail = { vehicles, remarks: body.remarks || null, submitted_at: new Date().toISOString(), source: "master_view" };
+      await pool.query(
+        `UPDATE shipping_plans
+            SET trucking_detail = COALESCE(trucking_detail, '{}'::jsonb) || $1::jsonb,
+                updated_at = now()
+          WHERE id = $2`,
+        [JSON.stringify(detail), planId]
+      );
+    } else if (action === "broker-submit") {
+      const ack = { broker_ack: {
+        confirmed: body.confirmed !== false,
+        remarks: body.remarks || null,
+        missing_docs: body.missing_docs || null,
+        submitted_at: new Date().toISOString(),
+        source: "master_view",
+      }};
+      await pool.query(
+        `UPDATE shipping_plans SET raw = COALESCE(raw,'{}'::jsonb) || $1::jsonb, updated_at = now() WHERE id = $2`,
+        [JSON.stringify(ack), planId]
+      );
+    } else {
+      return res.status(400).json({ ok: false, error: "未知 action" });
+    }
+  }
+
+  const bundle = await loadCollabPlanBundle(pool, planId, "master");
+  if (!bundle) return res.status(404).json({ ok: false, error: "找不到出货计划" });
+  return res.json(buildMasterPayload(bundle));
+}
+
 // ── GET /validate?token=<raw> ──────────────────────────────────
 async function handleValidate(req, res, pool) {
   const raw = req.query && req.query.token;
@@ -1505,6 +1809,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === "GET"    && pathSuffix === "plan-factories")     return await handlePlanFactories(req, res, pool);
+    if ((req.method === "GET" || req.method === "POST") && pathSuffix === "master-view") return await handleMasterView(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "validate")           return await handleValidate(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-factory-link")  return await handleSendFactoryLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-customer-link") return await handleSendCustomerLink(req, res, pool);
