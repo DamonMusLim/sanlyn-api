@@ -7,6 +7,8 @@
 // GET ?type=so&id=SHIPMENT_ID     → Booking Note 托书 (→ forwarder)
 // GET ?type=debit&id=SHIPMENT_ID  → Freight Debit Note 账单 (公版)
 // GET ?type=tr&id=SHIPMENT_ID     → Telex Release 电放申请书暨保函
+// GET ?type=telex_loi&id=SHIPMENT_ID → Combined Letter of Indemnity for Telex Release
+// GET ?type=swb_loi&id=SHIPMENT_ID   → Sea Waybill Letter of Indemnity
 //
 // &company=petbaby|sanlyn|...     → override issuing company
 // &print=1                        → auto-print on open
@@ -1821,7 +1823,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if(["so","debit","freight-quote","sq"].includes(type)){
+    if(["so","debit","freight-quote","sq","telex_loi","swb_loi"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
       // 2026-06-10: 加 id::text 精确匹配并按精确度排序 — 此前数字主键 id 只能靠
       // order_contract_nos ILIKE '%409%' 模糊命中, 经常拿到别的计划(托书数据全错的根因)。
@@ -2540,6 +2542,146 @@ export default async function handler(req, res) {
             <div class="stamp-box">此处加盖公章<br>(Company Stamp)</div>
           </div>
         </div></body></html>`;
+      }
+
+      if(type==="telex_loi" || type==="swb_loi"){
+        function _loiMiss(){return'<span style="color:#c00;font-weight:900">____待补____</span>';}
+        function _loiVal(v){return v?esc(v):_loiMiss();}
+        function _loiArr(v){
+          if(Array.isArray(v))return v.filter(Boolean).map(function(x){return String(x).trim();}).filter(Boolean);
+          return String(v||"").replace(/[{}"]/g,"").split(/[,\s/]+/).map(function(x){return x.trim();}).filter(Boolean);
+        }
+        var _loiOrderNos=_loiArr(sp.order_nos||spraw.orderNos||spraw.order_nos||sp.order_contract_nos||sp.contract_no||"");
+        var _loiCarrierCode=String(pick(sp.carrier_code,spraw.carrierCode,spraw.carrier_code,"")).trim();
+        var _loiCarrierTo="";
+        try{
+          if(_loiCarrierCode){
+            var _loiCarR=await pool.query("SELECT loi_recipient FROM carriers WHERE upper(code)=upper($1) LIMIT 1",[_loiCarrierCode]);
+            if(_loiCarR.rows.length)_loiCarrierTo=_loiCarR.rows[0].loi_recipient||"";
+          }
+        }catch(e){console.warn("[documents] loi carrier lookup failed:",e.message);}
+        var _loiIssuer=pick(sp.issuing_company,spraw.issuing_company,spraw.issuingCompany,sp.shipper,spraw.shipper,"");
+        var _loiConsignee=pickClean(sp.customer_en,sp.customer,spraw.consignee)||"";
+        var _loiConsAddr="";
+        try{
+          if(_loiOrderNos.length){
+            var _loiCoR=await pool.query(
+              "SELECT o.company_name_en,o.customer,c.address FROM orders o LEFT JOIN companies c ON c.code=o.company_code WHERE o.order_no = ANY($1::text[]) OR o.contract_no = ANY($1::text[]) LIMIT 1",
+              [_loiOrderNos]
+            );
+            if(_loiCoR.rows.length){
+              _loiConsignee=pickClean(_loiConsignee,_loiCoR.rows[0].company_name_en,_loiCoR.rows[0].customer)||"";
+              _loiConsAddr=_loiCoR.rows[0].address||"";
+            }
+          }
+        }catch(e){console.warn("[documents] loi consignee lookup failed:",e.message);}
+        var _loiCargo=[];
+        try{
+          if(_loiOrderNos.length){
+            var _loiCargoR=await pool.query(
+              "SELECT DISTINCT NULLIF(oli.declaration_name_en,'') AS name_en FROM order_line_items oli JOIN orders o ON o.id=oli.order_id WHERE (o.order_no = ANY($1::text[]) OR o.contract_no = ANY($1::text[])) AND NULLIF(oli.declaration_name_en,'') IS NOT NULL ORDER BY name_en",
+              [_loiOrderNos]
+            );
+            _loiCargo=_loiCargoR.rows.map(function(r){return r.name_en;}).filter(Boolean);
+          }
+        }catch(e){console.warn("[documents] loi cargo OLI lookup failed:",e.message);}
+        var _loiContainers=[],_loiCbCargo=[];
+        try{
+          if(_loiOrderNos.length){
+            var _loiCbR=await pool.query("SELECT container_no, declaration_cargo_name FROM container_bookings WHERE contract_no = ANY($1::text[]) ORDER BY id",[_loiOrderNos]);
+            _loiCbR.rows.forEach(function(r){
+              if(r.container_no&&_loiContainers.indexOf(r.container_no)<0)_loiContainers.push(r.container_no);
+              if(r.declaration_cargo_name&&_loiCbCargo.indexOf(r.declaration_cargo_name)<0)_loiCbCargo.push(r.declaration_cargo_name);
+            });
+          }
+        }catch(e){console.warn("[documents] loi container lookup failed:",e.message);}
+        if(!_loiCargo.length)_loiCargo=_loiCbCargo;
+        var _loiBlNo=pick(sp.bl_no,spraw.blNo,spraw.bl_no,"");
+        var _loiBlDate=fmtD(pick(sp.bl_issue_date,sp.bl_date,sp.issue_date,sp.bl_issued_at,spraw.blIssueDate,spraw.blDate,""));
+        if(_loiBlDate==="-")_loiBlDate="";
+        var _loiVessel=pick(sp.vessel,spraw.vessel,"");
+        var _loiVoyage=pick(sp.voyage,spraw.voyage,"");
+        var _loiPol=pick(sp.pol,spraw.pol,"");
+        var _loiPod=pick(sp.pod,spraw.pod,"");
+        var _loiFnd=pick(sp.place_of_delivery,sp.final_destination,spraw.placeOfDelivery,spraw.finalDestination,"");
+        var _loiSeal="";
+        try{
+          if(String(stamp||"")==="1"&&_loiIssuer){
+            var _loiNorm=function(s){return String(s||"").toUpperCase().replace(/\bAND\b/g,"").replace(/[^A-Z0-9]/g,"");};
+            var _loiSpf=await pool.query("SELECT name_en,code,stamp_code FROM seller_profiles WHERE COALESCE(name_en,'')<>''");
+            var _loiWant=_loiNorm(_loiIssuer),_loiStampCode="";
+            for(var _li=0;_li<_loiSpf.rows.length;_li++){
+              var _loiPn=_loiNorm(_loiSpf.rows[_li].name_en);
+              if(_loiPn&&_loiWant&&(_loiPn===_loiWant||_loiPn.indexOf(_loiWant)>=0||_loiWant.indexOf(_loiPn)>=0)){
+                _loiStampCode=(_loiSpf.rows[_li].stamp_code||_loiSpf.rows[_li].code||"").toString().toUpperCase();
+                break;
+              }
+            }
+            var _loiRole=(req.user&&(req.user.role||req.user.roleCode||"")).toString().toLowerCase();
+            var _loiCallerCo=(req.user&&(req.user.companyCode||req.user.company_code||"")).toString().toUpperCase();
+            var _loiAllowed=/(admin|staff|ops|owner|manager|internal|operator)/.test(_loiRole)||(!!_loiCallerCo&&_loiCallerCo===_loiStampCode);
+            if(_loiAllowed&&_loiStampCode){
+              var _loiSealR=await pool.query("SELECT url FROM customer_stamps WHERE is_active AND is_default AND upper(company_code)=$1 ORDER BY id LIMIT 1",[_loiStampCode]);
+              if(_loiSealR.rows.length)_loiSeal=_loiSealR.rows[0].url||"";
+            }
+          }
+        }catch(e){console.warn("[documents] loi seal lookup failed:",e.message);}
+        var _loiSealImg=_loiSeal?'<img src="'+esc(_loiSeal)+'" alt="seal" style="position:absolute;right:34px;bottom:8px;width:110px;height:110px;opacity:.88;pointer-events:none"/>':"";
+
+        if(type==="telex_loi"){
+          html=wrap("Combined Letter of Indemnity for Telex Release — "+(_loiBlNo||"LOI"),`
+            <style>
+              .loi-title{text-align:center;margin:8px 0 22px}.loi-title h2{font-size:18px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em}.loi-title p{font-size:11px;color:#666;margin:0}
+              .loi-to{font-size:12.5px;margin-bottom:14px}.loi-grid{width:100%;border-collapse:collapse;margin:12px 0 18px}.loi-grid td{border:1px solid #bbb;padding:7px 9px;font-size:11.5px}.loi-grid .k{width:145px;background:#f5f5f5;font-weight:700;color:#333}
+              .loi-body{font-size:12px;line-height:1.75;text-align:justify}.loi-body p{margin:10px 0}.loi-sign{margin-top:36px;width:55%;margin-left:auto;position:relative;min-height:125px}.loi-line{border-bottom:1px solid #111;height:42px;margin:12px 0 5px}
+            </style>
+            <div class="loi-title"><h2>Combined Letter of Indemnity for Telex Release</h2><p>Telex Release / Surrendered Original Bill(s) of Lading</p></div>
+            <p class="loi-to">To: <b>${_loiVal(_loiCarrierTo)}</b></p>
+            <table class="loi-grid">
+              <tr><td class="k">Ship / Voyage</td><td>${_loiVal(_loiVessel)} / ${_loiVal(_loiVoyage)}</td><td class="k">POL / POD / Place of Delivery</td><td>${_loiVal(_loiPol)} / ${_loiVal(_loiPod)} / ${_loiVal(_loiFnd)}</td></tr>
+              <tr><td class="k">Cargo</td><td colspan="3">${_loiCargo.length?esc(_loiCargo.join(" / ")):_loiMiss()}</td></tr>
+              <tr><td class="k">Bill(s) of Lading</td><td colspan="3">${_loiVal(_loiBlNo)} &nbsp; Date of Issue: ${_loiVal(_loiBlDate)} &nbsp; Port of Loading: ${_loiVal(_loiPol)}</td></tr>
+              <tr><td class="k">Container number(s)</td><td colspan="3">${_loiContainers.length?esc(_loiContainers.join(" / ")):_loiMiss()}</td></tr>
+              <tr><td class="k">Shipper</td><td colspan="3">${_loiVal(_loiIssuer)}</td></tr>
+              <tr><td class="k">Consignee</td><td colspan="3"><b>${_loiVal(_loiConsignee)}</b>${_loiConsAddr?"<br>"+esc(_loiConsAddr):"<br>"+_loiMiss()}</td></tr>
+            </table>
+            <div class="loi-body">
+              <p>We, the undersigned shipper of record, hereby request you to instruct your agent at the port of discharge or place of delivery to release the above cargo to the named consignee after the full set of original Bill(s) of Lading has been surrendered by the shipper.</p>
+              <p>In consideration of your complying with our request, we undertake to indemnify you, your servants, agents and affiliates and to hold all of them harmless from and against all liabilities, losses, damages, costs, claims, proceedings and expenses of whatsoever nature arising out of or in connection with such telex release and delivery.</p>
+              <p>We further undertake to provide any further documents or guarantees reasonably required by you in connection with the above shipment.</p>
+            </div>
+            <div class="loi-sign">${_loiSealImg}<p>For and on behalf of <b>${_loiVal(_loiIssuer)}</b></p><div class="loi-line"></div><p>Authorized Signature / Company Stamp</p></div>
+          `,ap);
+        }
+
+        if(type==="swb_loi"){
+          html=wrap("SWB 海运单保函 — "+(_loiBlNo||"LOI"),`
+            <style>
+              .loi-title{text-align:center;margin:8px 0 22px}.loi-title h2{font-size:20px;margin:0 0 4px;letter-spacing:.08em}.loi-title p{font-size:11px;color:#666;margin:0}
+              .loi-to{font-size:13px;margin-bottom:14px}.loi-grid{width:100%;border-collapse:collapse;margin:12px 0 18px}.loi-grid td{border:1px solid #999;padding:7px 9px;font-size:12px}.loi-grid .k{width:160px;background:#f5f5f5;font-weight:700;color:#333}
+              .loi-body{font-size:13px;line-height:1.9;text-align:justify}.loi-body p{margin:10px 0;text-indent:2em}.loi-signs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-top:44px}.loi-sig{border-top:1px solid #111;padding-top:7px;text-align:center;font-size:11px;min-height:110px;position:relative}.loi-sig b{font-size:12px}
+            </style>
+            <div class="loi-title"><h2>SWB 海运单保函</h2><p>SEA WAYBILL LETTER OF INDEMNITY</p></div>
+            <p class="loi-to">致：<b>${_loiVal(_loiCarrierTo)}</b></p>
+            <table class="loi-grid">
+              <tr><td class="k">VSL / VOY</td><td>${_loiVal(_loiVessel)} / ${_loiVal(_loiVoyage)}</td><td class="k">B/L NO</td><td>${_loiVal(_loiBlNo)}</td></tr>
+              <tr><td class="k">POD / FND</td><td colspan="3">${_loiVal(_loiPod)} / ${_loiVal(_loiFnd)}</td></tr>
+              <tr><td class="k">SHIPPER</td><td colspan="3">${_loiVal(_loiIssuer)}</td></tr>
+              <tr><td class="k">CNEE</td><td colspan="3"><b>${_loiVal(_loiConsignee)}</b>${_loiConsAddr?"<br>"+esc(_loiConsAddr):"<br>"+_loiMiss()}</td></tr>
+              <tr><td class="k">DESCRIPTION OF GOODS</td><td colspan="3">${_loiCargo.length?esc(_loiCargo.join(" / ")):_loiMiss()}</td></tr>
+            </table>
+            <div class="loi-body">
+              <p>我司申请贵司就上述货物签发海运单（Sea Waybill），并同意贵司或贵司目的港代理凭收货人身份证明，将货物交付给海运单记载的收货人。</p>
+              <p>由此产生的一切风险、责任、索赔、损失、费用及法律后果均由我司自行承担；如贵司、贵司代理或关联方因此遭受任何索赔或损失，我司承诺予以全额赔偿并使其免受损害。</p>
+              <p>本保函适用中华人民共和国法律，因本保函引起或与本保函有关的任何争议，由中国海事法院管辖。</p>
+            </div>
+            <div class="loi-signs">
+              <div class="loi-sig">${_loiSealImg}<b>发货人签字</b><br>（公司盖章）<br>${_loiVal(_loiIssuer)}</div>
+              <div class="loi-sig"><b>货运代理人盖章</b><br>FORWARDER'S STAMP</div>
+              <div class="loi-sig"><b>日期</b><br>${_loiMiss()}</div>
+            </div>
+          `,ap);
+        }
       }
     }
 
