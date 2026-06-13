@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sanlyn OS · 洋宝宝主控</title>
+<title>Workspace</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
@@ -70,11 +70,11 @@ textarea.form-input { resize: vertical; min-height: 60px; }
 </style>
 </head>
 <body>
-<div class="portal-bar"><div class="portal-brand">SANLYN OS</div><div class="portal-login-badge" id="topBadge">内部主控</div></div>
+<div class="portal-bar"><div class="portal-brand">WORKSPACE</div><div class="portal-login-badge" id="topBadge">Session</div></div>
 
 <div class="center-state" id="stateLoading"><div class="big">⏳</div><p>正在加载…</p></div>
-<div class="center-state hidden" id="stateLogin"><div class="big">⛔</div><h2>请用 Sanlyn 账号登录</h2><p>主控视图只接受内部 JWT，不接受外部协同链接。</p></div>
-<div class="center-state hidden" id="stateDead"><div class="big">⚠️</div><h2>无法打开主控</h2><p id="deadMsg">请检查计划编号或登录态。</p></div>
+<div class="center-state hidden" id="stateLogin"><div class="big">⛔</div><h2>请先登录</h2><p>当前视图需要有效登录态。</p></div>
+<div class="center-state hidden" id="stateDead"><div class="big">⚠️</div><h2>无法打开页面</h2><p id="deadMsg">请检查计划编号或登录态。</p></div>
 
 <div class="hidden" id="stateForm">
 <div class="shell-narrow">
@@ -82,10 +82,22 @@ textarea.form-input { resize: vertical; min-height: 60px; }
     <div style="background:#eff6ff;padding:14px 16px;display:flex;align-items:center;gap:12px;">
       <div style="font-size:24px;">🛟</div>
       <div style="flex:1;">
-        <div style="font-size:15px;font-weight:800;color:#1e3a8a;" id="bannerTitle">洋宝宝主控 · —</div>
-        <div style="font-size:11px;color:#1d4ed8;margin-top:2px;" id="bannerSub">协同表第0视角 · 海运 / 工厂 / 客户 / 车队 / 报关</div>
+        <div style="font-size:15px;font-weight:800;color:#1e3a8a;" id="bannerTitle">—</div>
+        <div style="font-size:11px;color:#1d4ed8;margin-top:2px;" id="bannerSub">海运 / 工厂 / 客户 / 车队 / 报关</div>
       </div>
-      <div class="badge badge-blue">Sanlyn JWT</div>
+      <div class="badge badge-blue">JWT</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:14px;font-weight:800;color:#1a1d23;">发链接</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px;">生成后自动复制到剪贴板</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-green" onclick="sendCustomerLink(this)">发客户链接</button>
+        <button class="btn btn-ghost" onclick="sendPortalLink(this)">发供应链链接</button>
+      </div>
     </div>
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="chips"></div>
@@ -127,6 +139,45 @@ async function api(body){
   const d = await r.json().catch(()=>({}));
   if(!r.ok || !d.ok) throw new Error(d.error || '请求失败');
   return d;
+}
+async function copyText(text){
+  if(navigator.clipboard && window.isSecureContext){
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand('copy');
+  document.body.removeChild(ta);
+  if(!ok) throw new Error('复制失败，请手动复制链接');
+}
+async function sendLink(path, body, okMsg, btn){
+  const oldText = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '生成中…'; }
+  try{
+    const r = await fetch(API + path, { method:'POST', headers:authHeaders(true), body:JSON.stringify({plan_id:planRef, ...body}) });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error || '发链接失败');
+    if(!d.magic_link) throw new Error(d.error || '发链接失败：未返回 magic_link');
+    await copyText(d.magic_link);
+    toast(okMsg);
+  }catch(e){
+    toast(e.message || '发链接失败');
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = oldText; }
+  }
+}
+function sendCustomerLink(btn){
+  return sendLink('/send-customer-link', {}, '已复制，可发给客户', btn);
+}
+function sendPortalLink(btn){
+  return sendLink('/send-portal-link', { segments:['ocean','truck','customs'] }, '已复制，可发给供应链', btn);
 }
 function statusBadge(k){
   const st = (statuses[k]||{}).state || '待填';
@@ -252,7 +303,7 @@ function renderCustoms(){
     <button class="btn btn-green" onclick="saveBroker()">代填报关接单</button>`:readonlyAgent('customs')}</div></div>`;
 }
 function readonlyAgent(k){
-  return `<div class="alert-callout"><b>外发 agent · 只读</b><br>${(statuses[k]||{}).done?'已回填。':'已发链接/待回填。'}主控不在此处代填，避免把外部链路 token 带入内部页面。</div>`;
+  return `<div class="alert-callout"><b>外发 agent · 只读</b><br>${(statuses[k]||{}).done?'已回填。':'已发链接/待回填。'}当前页不在此处代填，避免把外部链路 token 带入内部页面。</div>`;
 }
 function render(){
   renderTabs(); renderChips();
@@ -269,8 +320,8 @@ async function refresh(){
   sheet = data.booking_sheet || {};
   owners = data.owners || {};
   statuses = data.statuses || {};
-  $('topBadge').textContent = sheet.shipment_no || '内部主控';
-  $('bannerTitle').textContent = '🛟 洋宝宝主控 · ' + (sheet.shipment_no || '____待补____');
+  $('topBadge').textContent = sheet.shipment_no || 'Session';
+  $('bannerTitle').textContent = sheet.shipment_no || '—';
   render();
   show('stateForm');
 }
