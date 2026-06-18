@@ -299,7 +299,11 @@ export default async function handler(req, res) {
     return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid access token.</p>");
   }
 
-  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,audience:_audReq}=req.query;
+  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,audience:_audReq,orderNos}=req.query;
+  // Multi-order shorthand: ?type=pi|po&orderNos=CL-19,CL-18,CL-17,CL-16 (no id required)
+  var _explicitNos=orderNos?String(orderNos).split(",").map(function(s){return s.trim();}).filter(Boolean):[];
+  if(_explicitNos.length&&!id){id=_explicitNos[0];}
+  if(_explicitNos.length>1&&!ids){ids=_explicitNos.slice(1).join(",");}
   // audience: 'customs' (BL-merged) or 'customer' (per-contract).
   // Default: customs when merge will happen, customer otherwise.
   // Customer-explicit override forces per-contract render even if siblings exist.
@@ -430,7 +434,7 @@ export default async function handler(req, res) {
           } catch (e) { /* lookup failed — fall through to single-order */ }
         }
       }
-      if(autoIds && type!=="pi"){
+      if(autoIds && (type!=="pi" || _explicitNos.length>1)){
         var idList=String(autoIds).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
         if(idList.length){
           var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
@@ -792,15 +796,28 @@ export default async function handler(req, res) {
             <span>Contract No.: ${esc(cno)}</span>
             <span>Delivery: ${esc(date)}</span>
           </div>
-          <table><thead><tr><th style="width:36px">NO.</th><th>品名 Item Description</th><th style="width:70px;text-align:center">数量 Qty</th><th style="width:90px;text-align:right">单价 Unit Price</th><th style="width:100px;text-align:right">金额 Amount</th><th style="width:90px;text-align:center">条形码 Code</th></tr></thead>
+          <table><thead><tr><th style="width:36px">行号 NO.</th><th>品名 / ITEM DESCRIPTION</th><th style="width:70px;text-align:center">数量 / QTY</th><th style="width:90px;text-align:right">单价(袋) PER BAG</th><th style="width:90px;text-align:right">箱价 CTN PRICE</th><th style="width:100px;text-align:right">金额 / AMOUNT</th><th style="width:90px;text-align:center">条形码 / BARCODE</th></tr></thead>
           <tbody>
-            ${prods.length===0?`<tr><td>01</td><td colspan="5" style="color:#999;font-style:italic">— 产品明细将自动填入 —</td></tr>`:
-              prods.map(function(p,i){
+            ${(function(){
+              if(!prods.length)return'<tr><td>01</td><td colspan="6" style="color:#999;font-style:italic">— 产品明细将自动填入 —</td></tr>';
+              var lastGrp="",idx=0,out=[];
+              prods.forEach(function(p){
+                var grp=p._groupKey||"";
+                if(grp&&grp!==lastGrp){
+                  var hdr=(p._containerNo?p._containerNo+" · ":"")+(p._customerPO||p._contractNo||"");
+                  out.push('<tr style="background:#f0f4ff"><td colspan="7" style="font-weight:700;color:#1e40af;padding:6px 8px;font-size:11px">'+esc(hdr)+'</td></tr>');
+                  lastGrp=grp;
+                }
+                idx++;
                 var fp=pick(p.factoryPrice,p.unitPrice,p.price);
+                var iqty=Number(p.inner_qty||p.innerQty||0);
+                var ctnP=iqty>0?fmtM(Number(fp||0)*iqty):"—";
                 var sub=Number(p.subtotalFactory||p.subtotal||0);if(!sub&&p.qty&&fp)sub=Number(p.qty)*Number(fp);
-                return`<tr><td>${String(i+1).padStart(2,"0")}</td><td>${esc(pick(p.productName,p.name,"-"))}</td><td style="text-align:center">${esc(String(p.qty||"-"))}</td><td class="text-right">${fmtM(fp)}</td><td class="text-right">${fmtM(sub)}</td><td style="text-align:center;font-size:10px;color:#666">${esc(p.barcode||p.code||"")}</td></tr>`;
-              }).join("")}
-            <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">合计 Total:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right" style="font-size:14px">${fmtM(totPO)}</td><td></td></tr>
+                out.push('<tr><td>'+String(idx).padStart(2,"0")+'</td><td>'+esc(pick(p.productName,p.name,"-"))+'</td><td style="text-align:center">'+esc(String(p.qty||"-"))+'</td><td class="text-right">'+fmtM(fp)+'</td><td class="text-right">'+ctnP+'</td><td class="text-right">'+fmtM(sub)+'</td><td style="text-align:center;font-size:10px;color:#666">'+esc(p.barcode||p.code||"")+'</td></tr>');
+              });
+              return out.join("");
+            })()}
+            <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">合计 / TOTAL AMOUNT:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td></td><td class="text-right" style="font-size:14px">${fmtM(totPO)}</td><td></td></tr>
           </tbody></table>
           <div class="details-grid">
             <div class="details-box"><h4>备注及条款 REMARKS &amp; TERMS</h4>
