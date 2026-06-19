@@ -362,7 +362,7 @@ export default async function handler(req, res) {
     var pool=getPool(), html="";
 
     if(["sc","iv","pl","po","pi"].includes(type)){
-      var oR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1",[id]);
+      var oR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR order_no=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1",[id]);
       if(!oR.rows.length) return res.status(404).send("<h1>Order not found: "+esc(id)+"</h1>");
       var o=oR.rows[0], raw=o.raw||{};
       // DOCS-AUTH-AUDIT-001 P1-HIGH: customer scope guard on generated docs.
@@ -437,7 +437,7 @@ export default async function handler(req, res) {
       if(autoIds && (type!=="pi" || _explicitNos.length>1)){
         var idList=String(autoIds).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
         if(idList.length){
-          var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
+          var sibR=await pool.query("SELECT * FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
           // Sort sibling orders by customer_po for stable output (XM-254 → 256 → 262 → 263 etc.)
           var sibRows=sibR.rows.slice().sort(function(a,b){var pa=(a.customer_po||"");var pb=(b.customer_po||"");return pa<pb?-1:pa>pb?1:0;});
           for(var sib of sibRows){
