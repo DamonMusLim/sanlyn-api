@@ -558,7 +558,7 @@ export default async function handler(req, res) {
       var totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
 
       if(type==="sc"){
-        var no=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
+        var no=(cno.split(" / ").find(function(s){return /^FS\d/i.test(s);})||cno.split(" / ")[0]).replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var colsSC=[
           {k:"name",al:"",fn:function(p){
             // Audience-aware product name (2026-05-18):
@@ -584,7 +584,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Sales Contract",docNo:(ordNo||no)+"_SC",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
+        _xlsCapture={sheetName:"Sales Contract",docNo:(ordNo||no)+"_SC",buyer:cust,date:date,cno:(cno.split(" / ").find(function(s){return /^FS\d/i.test(s);})||cno.split(" / ")[0]),curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
             {k:"name",fn:function(p){
@@ -608,7 +608,7 @@ export default async function handler(req, res) {
       }
 
       if(type==="iv"){
-        var noIV=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
+        var noIV=(cno.split(" / ").find(function(s){return /^FS\d/i.test(s);})||cno.split(" / ")[0]).replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var colsIV=[
           {k:"name",al:"",fn:function(p){
             // Audience-aware product name (2026-05-18):
@@ -634,7 +634,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Invoice",docNo:(ordNo||noIV)+"_IV",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
+        _xlsCapture={sheetName:"Invoice",docNo:(ordNo||noIV)+"_IV",buyer:cust,date:date,cno:(cno.split(" / ").find(function(s){return /^FS\d/i.test(s);})||cno.split(" / ")[0]),curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[{k:"name",fn:function(p){
             // Audience-aware product name (2026-05-18):
@@ -653,7 +653,7 @@ export default async function handler(req, res) {
       }
 
       if(type==="pl"){
-        var noPL=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
+        var noPL=(cno.split(" / ").find(function(s){return /^FS\d/i.test(s);})||cno.split(" / ")[0]).replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         // CBM resolution: prefer explicit per-CTN field × qty; fall back to p.cbm (line total) for legacy rows
         var cbmOf=function(p){var perCtn=Number(p.cbmPerCtn||p.cbm_per_ctn||0);var q=Number(p.qty||0);if(perCtn>0&&q>0)return perCtn*q;return Number(p.cbm||p.volume||0);};
         var tcbmPL=prods.reduce(function(s,p){return s+cbmOf(p);},0)||Number(raw.totalCBM||raw.cbm||0);
@@ -684,7 +684,7 @@ export default async function handler(req, res) {
           <tbody>${productRows(prods,colsPL,curr)}
           <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
           </tbody></table>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Packing List",docNo:(ordNo||noPL)+"_PL",buyer:cust,date:date,cno:cno,curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
+        _xlsCapture={sheetName:"Packing List",docNo:(ordNo||noPL)+"_PL",buyer:cust,date:date,cno:(cno.split(" / ").find(function(s){return /^FS\d/i.test(s);})||cno.split(" / ")[0]),curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
           headers:["NO.","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],
           colKeys:[{k:"name",fn:function(p){
             // Audience-aware product name (2026-05-18):
@@ -729,7 +729,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
           <div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}`,ap);
-        _xlsCapture={sheetName:"Proforma Invoice",docNo:(ordNo||noPI)+"_PI",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
+        _xlsCapture={sheetName:"Proforma Invoice",docNo:(ordNo||noPI)+"_PI",buyer:cust,date:date,cno:(cno.split(" / ").find(function(s){return /^FS\d/i.test(s);})||cno.split(" / ")[0]),curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
             {k:"name",fn:function(p){
