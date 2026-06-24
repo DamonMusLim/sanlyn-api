@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# 通用推送护栏 pre-push（版本化在 scripts/git-hooks/）
+# 安装: bash scripts/install-hooks.sh
+#
+# 治"推送漂移丢东西"，任何仓通用（自动认本仓 origin，不写死仓名）：
+#   ① 禁止直接推 main —— 改动一律走分支 + PR（硬卡）
+#   ② 推错远程       —— 推到非 origin 的地方（硬卡）
+#   ③ 有没提交的活   —— 这些不会被部署，别落下功能（提醒）
+#   ④ stash 堆积     —— 做好的功能可能埋在里面（提醒）
+#
+# 紧急强推绕过：  git push --no-verify
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+red()   { printf '\033[31m%s\033[0m\n' "$1"; }
+yellow(){ printf '\033[33m%s\033[0m\n' "$1"; }
+green() { printf '\033[32m%s\033[0m\n' "$1"; }
+
+ORIGIN_URL="$(git remote get-url origin 2>/dev/null || echo '')"
+REMOTE_URL="${2:-}"
+
+# 本仓主分支名（main 或 master，自动判断）
+MAIN_BRANCH="main"
+git show-ref --verify --quiet refs/heads/main || MAIN_BRANCH="master"
+
+PUSHING_MAIN=0
+while read -r local_ref _ _ _; do
+  [ "$local_ref" = "refs/heads/$MAIN_BRANCH" ] && PUSHING_MAIN=1
+done
+
+BLOCK=0
+
+# ── ② 推错远程（任何分支都查）──────────────────────────────────────────
+if [ -n "$REMOTE_URL" ] && [ -n "$ORIGIN_URL" ] && [ "$REMOTE_URL" != "$ORIGIN_URL" ]; then
+  red   "❌ 推送目标不是本仓 origin —— 防推错仓库/互相覆盖。"
+  red   "   目标：$REMOTE_URL"
+  red   "   origin：$ORIGIN_URL"
+  BLOCK=1
+fi
+
+# ── ① 禁止直接推 main，强制走 PR（硬卡）──────────────────────────────
+if [ "$PUSHING_MAIN" = "1" ]; then
+  red   "❌ 别直接推 $MAIN_BRANCH —— 改动请走 PR，让队友看一眼再合。"
+  echo  "   正确流程：  git checkout -b 我的改动  →  push  →  开 PR  →  对方 Approve  →  GitHub 上 Merge"
+  echo  "   紧急强推（你确认无误、对方不在）：  git push --no-verify"
+  BLOCK=1
+
+  # ── ③④ 推 main 时顺带兜底提醒（--no-verify 强推时也看得到）──────────
+  dirty=$(git status --porcelain | wc -l | tr -d ' ')
+  [ "$dirty" -gt 0 ] && yellow "⚠️  工作区有 $dirty 处未提交改动 —— 这些不会被部署，别落下要上线的功能。"
+  stash_n=$(git stash list | wc -l | tr -d ' ')
+  [ "$stash_n" -gt 5 ] && yellow "⚠️  有 $stash_n 个 stash 没合回来 —— 功能可能埋在里面。"
+fi
+
+if [ "$BLOCK" = "1" ]; then
+  echo ""
+  red "推送已拦下。按上面提示走 PR；确认无误要强推用：  git push --no-verify"
+  exit 1
+fi
+
+green "✔ pre-push 通过"
+exit 0
