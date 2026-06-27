@@ -45,6 +45,7 @@ export default async function handler(req, res) {
     const factoryNameCN         = (body.factoryNameCN || "").trim();
     const ttlDays               = Math.min(Math.max(parseInt(body.ttlDays || 7), 1), 30);
     const skuLines              = Array.isArray(body.skuLines) ? body.skuLines : [];
+    const isConfirmMode         = (body.purpose || "") === "factory_confirm";
 
     if (!orderNo) return res.status(400).json({ error: "orderNo required" });
 
@@ -71,8 +72,8 @@ export default async function handler(req, res) {
                            Math.random().toString(36).slice(2, 6).toUpperCase();
       await pool.query(
         `INSERT INTO customers (company_code, name_cn, portal_role, is_active, raw, updated_at)
-         VALUES ($1, $2, 'factory', true, $3::jsonb, NOW())
-         ON CONFLICT (company_code) DO NOTHING`,
+         SELECT $1, $2, 'factory', true, $3::jsonb, NOW()
+         WHERE NOT EXISTS (SELECT 1 FROM customers WHERE company_code=$1)`,
         [
           factoryCompanyCode,
           factoryNameCN || "(待工厂填写)",
@@ -97,8 +98,8 @@ export default async function handler(req, res) {
     // 4) 反向索引
     await pool.query(
       `INSERT INTO _idx_tokens (token, company_code, purpose, expires_at)
-       VALUES ($1, $2, 'factory_fill', $3)`,
-      [token, factoryCompanyCode, expiresAt]
+       VALUES ($1, $2, $3, $4)`,
+      [token, factoryCompanyCode, isConfirmMode ? "factory_confirm" : "factory_fill", expiresAt]
     );
 
     // 5) 写入 customers.raw.activeTokens[]
@@ -106,7 +107,7 @@ export default async function handler(req, res) {
       token,
       orderNo,
       skuLines,
-      purpose: "factory_fill",
+      purpose: isConfirmMode ? "factory_confirm" : "factory_fill",
       issuedAt: new Date().toISOString(),
       expiresAt: expiresAt.toISOString(),
       issuedBy: req.user.username || req.user.userId || "system",
@@ -137,8 +138,11 @@ export default async function handler(req, res) {
     );
 
     // 构造 short URL（老板可直接微信发）
+    // purpose=factory_confirm → /fc/ 链接（确认模式）；默认 fill 模式用 /f/
     const PUBLIC_HOST = process.env.PUBLIC_HOST || "https://api.sanlyn.cn";
-    const shortUrl = `${PUBLIC_HOST}/f/${token}`;
+    const shortUrl = isConfirmMode
+      ? `${PUBLIC_HOST}/fc/${token}`
+      : `${PUBLIC_HOST}/f/${token}`;
 
     return res.status(200).json({
       success: true,

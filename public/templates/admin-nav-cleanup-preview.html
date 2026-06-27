@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Admin Nav Cleanup · Desktop + Mobile · 2026-05-18</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f4f6f9; color: #1f2937; padding: 20px; }
+  .wrap { max-width: 1500px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .sub { color: #6b7280; font-size: 13px; margin-bottom: 20px; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 420px; gap: 24px; }
+
+  .panel { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+  .panel-label { background: #1e293b; color: #94a3b8; padding: 10px 14px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; display: flex; justify-content: space-between; }
+  .panel-label .device { color: #fde68a; }
+
+  /* ============ DESKTOP ============ */
+  .desktop-shell { display: flex; min-height: 760px; }
+  .desktop-sidebar { width: 220px; background: #16213e; color: #ccc; flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .desktop-header { padding: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: center; }
+  .desktop-header .brand { font-size: 18px; font-weight: 700; color: #fff; }
+  .desktop-header .sub { font-size: 11px; color: #888; margin-top: 4px; }
+  .desktop-nav { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .group { margin-bottom: 2px; }
+  .group-header { padding: 8px 16px; font-size: 10px; font-weight: 700; color: #888; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; }
+  .group-header .chev { transition: transform 0.15s; font-size: 9px; }
+  .group.collapsed .group-header .chev { transform: rotate(-90deg); }
+  .group.collapsed .group-items { display: none; }
+  .nav-item { padding: 9px 16px 9px 22px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 13px; transition: background 0.1s; border-left: 3px solid transparent; }
+  .nav-item:hover { background: rgba(255,255,255,0.04); }
+  .nav-item.active { background: rgba(255,255,255,0.1); border-left-color: #3b82f6; color: #fff; }
+  .nav-item .icon { font-size: 14px; width: 16px; text-align: center; }
+  .nav-item .badge { margin-left: auto; background: #ef4444; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 999px; }
+  .nav-item .new-tag { margin-left: auto; background: #10b981; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; }
+
+  .desktop-main { flex: 1; padding: 24px; background: #f8fafc; }
+  .desktop-main h2 { font-size: 16px; margin-bottom: 8px; }
+  .desktop-main .placeholder { color: #94a3b8; font-size: 12px; padding: 60px 20px; text-align: center; border: 2px dashed #cbd5e1; border-radius: 8px; }
+
+  /* ============ MOBILE ============ */
+  .mobile-frame { width: 380px; height: 760px; background: #000; border-radius: 32px; padding: 12px 6px 12px 6px; margin: 0 auto; position: relative; }
+  .mobile-screen { width: 100%; height: 100%; background: #fff; border-radius: 24px; overflow: hidden; position: relative; }
+  .mobile-statusbar { height: 28px; background: #16213e; display: flex; justify-content: space-between; align-items: center; padding: 0 16px; color: #fff; font-size: 11px; }
+  .mobile-topbar { height: 48px; background: #16213e; color: #fff; display: flex; align-items: center; padding: 0 12px; gap: 10px; }
+  .hamburger { font-size: 22px; cursor: pointer; }
+  .mobile-title { font-size: 14px; font-weight: 600; flex: 1; }
+  .mobile-search { width: 28px; height: 28px; background: rgba(255,255,255,0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+
+  /* Mobile drawer */
+  .mobile-drawer { position: absolute; top: 76px; left: 0; right: 0; bottom: 0; background: #16213e; color: #ccc; overflow-y: auto; }
+  .mobile-drawer-header { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); color: #fff; }
+  .mobile-drawer-header .who { font-size: 14px; font-weight: 600; }
+  .mobile-drawer-header .role { font-size: 11px; color: #888; margin-top: 2px; }
+
+  /* Bottom tabs (5 fixed) */
+  .mobile-bottom { position: absolute; bottom: 0; left: 0; right: 0; height: 56px; background: #fff; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-around; align-items: center; }
+  .bottom-tab { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 9px; color: #6b7280; cursor: pointer; padding: 4px 8px; min-width: 60px; }
+  .bottom-tab .ico { font-size: 18px; }
+  .bottom-tab.active { color: #3b82f6; }
+  .bottom-tab.active .ico { transform: scale(1.1); }
+
+  /* Mobile content area */
+  .mobile-content { padding: 16px; height: calc(100% - 76px - 56px); overflow-y: auto; background: #f8fafc; }
+  .mobile-card { background: #fff; border-radius: 8px; padding: 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); font-size: 12px; }
+
+  /* Show drawer in second mobile preview */
+  .mobile-drawer.hidden { display: none; }
+
+  .annotation { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 4px; font-size: 12px; color: #78350f; margin: 16px 0; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat { background: #fff; padding: 14px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; }
+  .stat .num { font-size: 24px; font-weight: 700; color: #2563eb; }
+  .stat .lbl { font-size: 11px; color: #6b7280; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🧹 Admin Nav Cleanup · Desktop + Mobile</h1>
+  <div class="sub">26 项扁平 → 7 组 (默认展开 2 组 = 可见 ~15 行) · 手机端走 hamburger + 5 tab 底部导航</div>
+
+  <div class="stats">
+    <div class="stat"><div class="num">26 → 7</div><div class="lbl">分组</div></div>
+    <div class="stat"><div class="num">15</div><div class="lbl">默认可见行</div></div>
+    <div class="stat"><div class="num">1</div><div class="lbl">死代码删除</div></div>
+    <div class="stat"><div class="num">2</div><div class="lbl">入口合并</div></div>
+  </div>
+
+  <div class="comparison">
+
+    <!-- ============ DESKTOP ============ -->
+    <div class="panel">
+      <div class="panel-label">桌面端 (≥1024px) <span class="device">DESKTOP</span></div>
+      <div class="desktop-shell">
+        <div class="desktop-sidebar">
+          <div class="desktop-header">
+            <div class="brand">Sanlyn Admin</div>
+            <div class="sub">数据管理后台</div>
+          </div>
+          <div class="desktop-nav">
+
+            <div class="group">
+              <div class="group-header">📊 总览 <span class="chev">▼</span></div>
+              <div class="group-items">
+                <div class="nav-item active"><span class="icon">📊</span><span>仪表板</span></div>
+                <div class="nav-item"><span class="icon">📋</span><span>任务大厅</span><span class="badge">3</span></div>
+                <div class="nav-item"><span class="icon">📬</span><span>通知中心</span></div>
+              </div>
+            </div>
+
+            <div class="group">
+              <div class="group-header">📦 业务数据 <span class="chev">▼</span></div>
+              <div class="group-items">
+                <div class="nav-item"><span class="icon">📦</span><span>订单</span></div>
+                <div class="nav-item"><span class="icon">🚢</span><span>海运计划</span></div>
+                <div class="nav-item"><span class="icon">💰</span><span>财务付款</span></div>
+                <div class="nav-item"><span class="icon">📋</span><span>报关</span><span class="new-tag">合</span></div>
+                <div class="nav-item"><span class="icon">💵</span><span>港杂费</span></div>
+              </div>
+            </div>
+
+            <div class="group collapsed">
+              <div class="group-header">🤝 主数据 <span class="chev">▼</span></div>
+              <div class="group-items">
+                <div class="nav-item"><span class="icon">🏷</span><span>产品</span></div>
+                <div class="nav-item"><span class="icon">🤝</span><span>合作伙伴</span></div>
+              </div>
+            </div>
+
+            <div class="group collapsed">
+              <div class="group-header">🔒 权限 & 审核 <span class="chev">▼</span></div>
+              <div class="group-items">
+                <div class="nav-item"><span class="icon">🔒</span><span>Brand Permissions</span><span class="new-tag">新</span></div>
+                <div class="nav-item"><span class="icon">📚</span><span>Data Wiring 参考</span><span class="new-tag">新</span></div>
+                <div class="nav-item"><span class="icon">🔬</span><span>QC 审核</span></div>
+                <div class="nav-item"><span class="icon">📋</span><span>Loading Reviews</span></div>
+              </div>
+            </div>
+
+            <div class="group collapsed">
+              <div class="group-header">📄 文档 & 模板 <span class="chev">▼</span></div>
+              <div class="group-items">
+                <div class="nav-item"><span class="icon">📋</span><span>报价管理</span></div>
+                <div class="nav-item"><span class="icon">📑</span><span>合同管理</span></div>
+                <div class="nav-item"><span class="icon">📋</span><span>模板中心</span></div>
+              </div>
+            </div>
+
+            <div class="group collapsed">
+              <div class="group-header">🤖 AI <span class="chev">▼</span></div>
+              <div class="group-items">
+                <div class="nav-item"><span class="icon">🤖</span><span>AI 员工大厅</span></div>
+                <div class="nav-item"><span class="icon">📊</span><span>AI 报告</span></div>
+              </div>
+            </div>
+
+            <div class="group collapsed">
+              <div class="group-header">⚙️ 系统 <span class="chev">▼</span></div>
+              <div class="group-items">
+                <div class="nav-item"><span class="icon">💻</span><span>SQL 控制台</span></div>
+                <div class="nav-item"><span class="icon">⚙</span><span>Field Config</span></div>
+                <div class="nav-item"><span class="icon">⚙️</span><span>Config Center</span></div>
+                <div class="nav-item"><span class="icon">👤</span><span>账号</span></div>
+                <div class="nav-item"><span class="icon">🏢</span><span>租户</span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <div class="desktop-main">
+          <h2>📊 仪表板</h2>
+          <div class="placeholder">默认展开「总览」+「业务数据」2 组（最常用）<br>其他 5 组点章节标题折叠 / 展开<br>新增模块自动带「新」绿标</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ MOBILE ============ -->
+    <div class="panel" style="background: transparent; box-shadow:none;">
+      <div class="panel-label" style="border-radius:8px 8px 0 0;">手机端 (<640px) <span class="device">MOBILE</span></div>
+      <div class="mobile-frame">
+        <div class="mobile-screen">
+          <div class="mobile-statusbar">
+            <span>22:48</span>
+            <span>📶 100%</span>
+          </div>
+          <div class="mobile-topbar">
+            <span class="hamburger">☰</span>
+            <span class="mobile-title">Sanlyn Admin</span>
+            <span class="mobile-search">🔍</span>
+          </div>
+
+          <!-- Drawer (visible: simulating tap on hamburger) -->
+          <div class="mobile-drawer">
+            <div class="mobile-drawer-header">
+              <div class="who">Damon</div>
+              <div class="role">admin · 168725@gmail.com</div>
+            </div>
+
+            <div class="desktop-nav" style="padding-bottom:80px;">
+              <div class="group">
+                <div class="group-header">📊 总览 <span class="chev">▼</span></div>
+                <div class="group-items">
+                  <div class="nav-item active"><span class="icon">📊</span><span>仪表板</span></div>
+                  <div class="nav-item"><span class="icon">📋</span><span>任务大厅</span><span class="badge">3</span></div>
+                  <div class="nav-item"><span class="icon">📬</span><span>通知中心</span></div>
+                </div>
+              </div>
+
+              <div class="group">
+                <div class="group-header">📦 业务数据 <span class="chev">▼</span></div>
+                <div class="group-items">
+                  <div class="nav-item"><span class="icon">📦</span><span>订单</span></div>
+                  <div class="nav-item"><span class="icon">🚢</span><span>海运计划</span></div>
+                  <div class="nav-item"><span class="icon">💰</span><span>财务付款</span></div>
+                  <div class="nav-item"><span class="icon">📋</span><span>报关</span></div>
+                  <div class="nav-item"><span class="icon">💵</span><span>港杂费</span></div>
+                </div>
+              </div>
+
+              <div class="group collapsed">
+                <div class="group-header">🤝 主数据 <span class="chev">▼</span></div>
+              </div>
+              <div class="group collapsed">
+                <div class="group-header">🔒 权限 & 审核 <span class="chev">▼</span></div>
+              </div>
+              <div class="group collapsed">
+                <div class="group-header">📄 文档 & 模板 <span class="chev">▼</span></div>
+              </div>
+              <div class="group collapsed">
+                <div class="group-header">🤖 AI <span class="chev">▼</span></div>
+              </div>
+              <div class="group collapsed">
+                <div class="group-header">⚙️ 系统 <span class="chev">▼</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom 5-tab nav (always visible, quick access to top 5) -->
+          <div class="mobile-bottom">
+            <div class="bottom-tab active"><span class="ico">📊</span><span>仪表板</span></div>
+            <div class="bottom-tab"><span class="ico">📦</span><span>订单</span></div>
+            <div class="bottom-tab"><span class="ico">🚢</span><span>海运</span></div>
+            <div class="bottom-tab"><span class="ico">💰</span><span>财务</span></div>
+            <div class="bottom-tab"><span class="ico">☰</span><span>更多</span></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="annotation">
+    💡 <strong>手机端策略</strong>：底部固定 5 tab（仪表板/订单/海运/财务/更多）= 80% 操作不点开 drawer。drawer 走 hamburger 进，全屏盖，跟桌面端 7 组结构完全一致。
+  </div>
+
+  <div style="background:#fff;padding:16px 20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.05);margin-top:20px;">
+    <h2 style="font-size:14px;margin-bottom:8px;color:#111827;">📋 改动清单</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <th style="text-align:left;padding:8px;color:#6b7280;font-weight:600;font-size:11px;">变动</th>
+          <th style="text-align:left;padding:8px;color:#6b7280;font-weight:600;font-size:11px;">详情</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;color:#dc2626;font-weight:600;">🗑 删</td><td style="padding:8px;">ModuleSettings.jsx (0 引用 死代码)</td></tr>
+        <tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;color:#16a34a;font-weight:600;">🔗 合</td><td style="padding:8px;">customs_data + 分类报关汇总 → 1 个「📋 报关」(点进去 2 个 tab)</td></tr>
+        <tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;color:#2563eb;font-weight:600;">📁 组</td><td style="padding:8px;">26 项 → 7 折叠组（总览/业务/主数据/权限/文档/AI/系统）</td></tr>
+        <tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;color:#10b981;font-weight:600;">+ 新</td><td style="padding:8px;">Brand Permissions + Data Wiring 参考（带"新"绿标，30天后自动去掉）</td></tr>
+        <tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:8px;color:#10b981;font-weight:600;">+ 新</td><td style="padding:8px;">手机底部 5 tab 快捷栏（仪表板/订单/海运/财务/更多）</td></tr>
+        <tr><td style="padding:8px;color:#6b7280;font-weight:600;">✅ 留</td><td style="padding:8px;">Field Config / Config Center / local_charges 港杂费 都保留</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+document.querySelectorAll('.group-header').forEach(h => {
+  h.addEventListener('click', () => h.parentElement.classList.toggle('collapsed'));
+});
+document.querySelectorAll('.nav-item').forEach(it => {
+  it.addEventListener('click', e => {
+    document.querySelectorAll('.nav-item.active').forEach(a => a.classList.remove('active'));
+    it.classList.add('active');
+  });
+});
+document.querySelectorAll('.bottom-tab').forEach(it => {
+  it.addEventListener('click', e => {
+    document.querySelectorAll('.bottom-tab.active').forEach(a => a.classList.remove('active'));
+    it.classList.add('active');
+  });
+});
+</script>
+</body>
+</html>

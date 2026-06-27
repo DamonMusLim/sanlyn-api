@@ -75,7 +75,6 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   // Skip body parsing for multipart endpoints (formidable handles it)
   if (req.path === "/api/oss-upload" || req.path === "/api/ocr-booking") return next();
-  if (req.path === "/api/db/templates-list" && req.method === "POST") return next();
   express.json({ limit: "10mb" })(req, res, (err) => {
     if (err) return next(err);
     express.urlencoded({ extended: true, limit: "10mb" })(req, res, next);
@@ -101,54 +100,15 @@ app.use((req, res, next) => {
     rs.json({ success: true, files, total: files.length, generated: new Date().toISOString().slice(0,10) });
   });
 
-  // Public — preview HTML/PDF
+  // Public — preview HTML
   app.get("/api/db/templates-list/preview", (req, res) => {
     const files = loadManifest();
     const f = files.find(t => t.name === req.query.file || t.code === req.query.file);
     if (!f) return res.status(404).json({ error: "not found" });
-    const ext = (f.name || "").split(".").pop().toLowerCase();
-    if (ext === "pdf") {
-      res.setHeader("Content-Type", "application/pdf");
-      res.send(readFileSync(TPLDIR + "/" + f.name));
-    } else {
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.send(readFileSync(TPLDIR + "/" + f.name, "utf8"));
-    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(readFileSync(TPLDIR + "/" + f.name, "utf8"));
   });
 
-
-  // Upload new template (HTML or PDF)
-  app.post("/api/db/templates-list", async (req, res) => {
-    const { IncomingForm } = await import("formidable");
-    const { copyFileSync, statSync, mkdirSync } = await import("fs");
-    const form = new IncomingForm({ maxFileSize: 30 * 1024 * 1024, keepExtensions: true });
-    form.parse(req, (err, fields, files) => {
-      if (err) return res.status(400).json({ error: "Upload parse failed: " + err.message });
-      const fileArr = files.file || [];
-      if (!fileArr.length) return res.status(400).json({ error: "No file uploaded" });
-      const uploaded = fileArr[0];
-      const origName = (uploaded.originalFilename || "upload").replace(/[^a-zA-Z0-9._-]/g, "_");
-      const ext = origName.split(".").pop().toLowerCase();
-      if (!["html", "pdf"].includes(ext)) return res.status(400).json({ error: "Only .html and .pdf allowed" });
-      const label = ((fields.label || [""])[0] || "").trim() || origName.replace(/\.[^.]+$/, "");
-      const cat   = (fields.cat   || ["其他"])[0];
-      const desc  = ((fields.desc  || [""])[0] || "").trim();
-      try {
-        mkdirSync(TPLDIR, { recursive: true });
-        const destPath = TPLDIR + "/" + origName;
-        copyFileSync(uploaded.filepath, destPath);
-        const size = statSync(destPath).size;
-        const manifest = JSON.parse(readFileSync(MANIFEST, "utf8"));
-        const nums = (manifest.templates || []).map(t => parseInt((t.code||"").replace("HT",""),10)).filter(Boolean);
-        const nextNum = nums.length ? Math.max(...nums) + 1 : 1;
-        const code = "HT" + String(nextNum).padStart(3, "0");
-        const entry = { code, name: origName, label, cat, desc, size };
-        manifest.templates.push(entry);
-        writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2), "utf8");
-        res.json({ success: true, template: entry });
-      } catch(e) { res.status(500).json({ error: e.message }); }
-    });
-  });
 
   // Auth-gated — edit label/cat/desc by code
   app.patch("/api/db/templates-list", (req, res) => {
@@ -206,7 +166,6 @@ function mount(route, handlerModule) {
 }
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
-mount("/api/db/auth-refresh",       () => import("./api/db/auth-refresh.js"));
 mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
 // Dev-only fixture login — endpoint self-guards (404 in production, 403 without ENABLE_TEST_AUTH=1)
 // TOOLCHAIN-TEST-ACCOUNT-FIXTURE-001
@@ -241,6 +200,7 @@ mount("/api/db/doc-result-ocr",         () => import("./api/db/doc-result-ocr.mj
 mount("/api/db/customs-draft",    () => import("./api/db/customs-draft.js"));   // 报关底稿生成
 mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
 mount("/api/db/documents",         () => import("./api/db/documents.js"));
+mount("/api/db/document_files",     () => import("./api/db/document-files.js")); // 单证文件清单读端点(document_files SSOT) — table-check 缺单证检测 (2026-06-16)
 mount("/api/db/seller-profiles",   () => import("./api/db/seller-profiles.js")); // issuing company list for SELLER dropdown — internal only (BANK-ACCOUNT-PAYEE-MINIMAL-FIX-001)
 mount("/api/db/order-payee-account", () => import("./api/db/order-payee-account.js")); // order-scoped payee bank account (customer-safe)
 mount("/api/db/doc-uploads",       () => import("./api/db/doc-uploads.js"));
@@ -248,6 +208,7 @@ mount("/api/db/doc-reminders",     () => import("./api/db/doc-reminders.js"));
 mount("/api/db/factory-submit",    () => import("./api/db/factory-submit.js"));
 mount("/api/db/factory-prefill",   () => import("./api/db/factory-prefill.js"));
 mount("/api/db/factory-token-create", () => import("./api/db/factory-token-create.js"));
+mount("/api/factory-confirm",         () => import("./api/factory-confirm.js"));
 mount("/api/db/factory-recent",       () => import("./api/db/factory-recent.js"));
 mount("/api/db/check-username",       () => import("./api/db/check-username.js"));
 mount("/api/internal/auth-check", () => import("./api/internal/auth-check.js"));
@@ -268,7 +229,11 @@ mount("/api/db/finance-records",          () => import("./api/db/finance-records
 mount("/api/db/finance-receivables",      () => import("./api/db/finance-records.js"));
 // FINANCE-WORKSPACE-UI-IMPL-001: read-only freight AP bills (GET only, no writes)
 mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplier-bills.js"));
+mount("/api/db/freight-bill-intake",      () => import("./api/db/freight-bill-intake.js"));
+mount("/api/db/order-intake-validate", () => import("./api/db/order-intake-validate.js"));
+mount("/api/db/freight-cost-audit",   () => import("./api/db/freight-cost-audit.js")); // freight cost vs sale audit + set-par (2026-06-17)
 mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
+mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 工厂协同门户·财务板块(短码+collab mt)
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
@@ -351,6 +316,7 @@ mount("/api/db/products",          () => import("./api/db/products.js"));
 // resolves SKU from req.params.sku || req.query.sku || req.body.sku.
 mount("/api/db/products/:sku/factory-profile", () => import("./api/db/product-factory-profile.js"));
 mount("/api/db/product-factory-profile",       () => import("./api/db/product-factory-profile.js"));
+mount("/api/db/product-rebate",    () => import("./api/db/product-rebate.js")); // HS 退税率/增值税率 canonical 查询 + 批量补 rebate_rate (weight-volume-verify 依赖)
 mount("/api/db/company-brand-permissions", () => import("./api/db/company-brand-permissions.js"));
 mount("/api/db/factory-brands",    () => import("./api/db/factory-brands.js"));
 mount("/api/db/brand-applications",() => import("./api/db/brand-applications.js"));
@@ -358,7 +324,6 @@ mount("/api/db/raw-patch",         () => import("./api/db/raw-patch.js"));
 mount("/api/db/shipping",          () => import("./api/db/shipping.js"));
 mount("/api/db/shipping-notify",   () => import("./api/db/shipping-notify.js")); // BL录入双轨通知
 mount("/api/db/vendor-quotes",     () => import("./api/db/vendor-quotes.js"));
-mount("/api/db/stamp-pdf",         () => import("./api/db/stamp-pdf.js"));
 mount("/api/db/stamp-permissions", () => import("./api/db/stamp-permissions.js"));
 mount("/api/db/tenants",           () => import("./api/db/tenants.js"));
 mount("/api/db/upsert",            () => import("./api/db/upsert.js"));
@@ -560,6 +525,7 @@ mount("/api/portal/orders",    () => import("./api/portal/orders.js"));    // St
 // Hard contract: keys stay in process.env.MINIMAX_API_KEY; rate-limited
 // 30s/task+role; daily cap 100; max_tokens hard 800; prompt 4000 chars.
 mount("/api/db/ports",     () => import("./api/db/ports.js"));
+mount("/api/db/staff-daily-reports", () => import("./api/db/staff-daily-reports.mjs"));
 mount("/api/db/carriers", () => import("./api/db/carriers.js"));
 mount("/api/bl-ocr",      () => import("./api/bl-ocr.js"));
 mount("/api/minimax-chat",     () => import("./api/minimax-chat.js"));
@@ -568,13 +534,25 @@ mount("/api/ocr-booking",     () => import("./api/ocr-booking.js")); // multipar
 import { join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use("/public", express.static(join(__dirname, "public")));
+app.use("/templates", express.static(join(__dirname, "public/templates")));
 // Short link for factory fill: /f/<token> → static page
 app.get("/f/:token", (req, res) => {
   res.redirect("/public/factory-fill.html?t=" + encodeURIComponent(req.params.token));
 });
+// Short link for factory order confirmation: /fc/<token> → confirm page
+app.get("/fc/:token", (req, res) => {
+  res.redirect("/public/factory-confirm.html?t=" + encodeURIComponent(req.params.token));
+});
 mount("/api/db/packaging",             () => import("./api/db/packaging.js"));
 mount("/api/db/packaging-move",        () => import("./api/db/packaging-move.js"));
 mount("/api/db/packaging-logs",        () => import("./api/db/packaging-logs.js"));
+mount("/api/db/packaging-consume",  () => import("./api/db/packaging-consume.js"));
+mount("/api/db/daigou-promote",  () => import("./api/db/daigou-promote.js"));
+mount("/api/db/customs-ocr",  () => import("./api/db/customs-ocr.js"));
+mount("/api/db/customs-doc-upload", () => import("./api/db/customs-doc-upload.js"));
+mount("/api/db/kp",  () => import("./api/db/kp.js"));
+mount("/api/db/invoice-portal",  () => import("./api/db/invoice-portal.js"));
+mount("/api/db/invoice-bind",  () => import("./api/db/invoice-bind.js"));
 mount("/api/db/migrate-packaging",     () => import("./api/db/migrate-packaging.js"));
 mount("/api/db/migrate-profit",        () => import("./api/db/migrate-profit.js"));
 mount("/api/db/migrate-local-charges", () => import("./api/db/migrate-local-charges.js"));
@@ -585,6 +563,16 @@ mount("/api/db/migrate-forwarder-perf",() => import("./api/db/migrate-forwarder-
 mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-payment-reminder.js"));
 // ── Reconciliation / monthly statement ──
 mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
+// tax-rebate 子路由: 进项票×报关单分配 N:M
+app.all("/api/db/tax-rebate/*", async (req, res) => {
+  try {
+    const mod = await import("./api/db/tax-rebate-links.js");
+    await (mod.default || mod)(req, res);
+  } catch (err) {
+    console.error("[tax-rebate-links] Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
 mount("/api/db/tax-rebate", () => import("./api/db/tax-rebate.js"));  // 退税板块 P1
 mount("/api/db/ciq-no", () => import("./api/db/ciq-no.js"));  // 单一窗口报检申请号 per order
 mount("/api/db/eport-rebate", () => import("./api/db/eport-rebate.js"));
@@ -638,6 +626,11 @@ app.get("/", (req, res) => res.json({ status: "ok", version: "S88", ts: new Date
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 // ── Start server (for local/FC deployment) ──
 const PORT = process.env.PORT || 9000;
+mount("/api/db/order-parties", () => import("./api/db/order-parties.js"));
+mount("/api/portal/dossier", () => import("./api/db/portal-dossier.js"));
+mount("/api/db/order-merge-groups", () => import("./api/db/order-merge-groups.js"));
+mount("/api/db/order-merge-groups/:id/dissolve", () => import("./api/db/order-merge-groups.js"));
+mount("/api/db/order-merge-groups/:id/remove-item", () => import("./api/db/order-merge-groups.js"));
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`[sanlyn-api] listening on :${PORT}`);
 });

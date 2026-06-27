@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<!-- v=2026-06-22-01 -->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>Sanlyn · 订单确认</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b1120;--card:rgba(15,23,42,.8);--card-b:rgba(255,255,255,.08);
+  --blue:#2563eb;--blue-l:#3b82f6;--green:#10b981;--green-l:#34d399;
+  --amber:#f59e0b;--red:#ef4444;
+  --text:#f8fafc;--muted:#94a3b8;--dim:#475569;
+  --input-bg:rgba(255,255,255,.05);--input-b:rgba(255,255,255,.12);
+}
+body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 80% 50% at 20% -10%,rgba(37,99,235,.1) 0%,transparent 60%),
+             radial-gradient(ellipse 60% 40% at 80% 100%,rgba(16,185,129,.06) 0%,transparent 55%)}
+.wrap{max-width:540px;margin:0 auto;padding:20px 16px 100px;position:relative}
+
+.brand{text-align:center;padding:10px 0 24px}
+.brand .logo{font-weight:800;font-size:22px;letter-spacing:2px;
+  background:linear-gradient(90deg,#34d399,#3b82f6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand .sub{font-size:11px;color:var(--muted);margin-top:2px;letter-spacing:2px}
+
+.card{background:var(--card);border:1px solid var(--card-b);border-radius:16px;padding:20px;margin-bottom:14px;backdrop-filter:blur(20px)}
+.card-title{font-size:14px;font-weight:700;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.card-title .dot{width:6px;height:6px;border-radius:50%;background:var(--blue-l)}
+
+.kv{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:14px;border-bottom:1px solid rgba(255,255,255,.05)}
+.kv:last-child{border:0}
+.kv .k{color:var(--muted)}
+.kv .v{font-weight:600;color:var(--text)}
+.kv .v.green{color:var(--green-l)}
+
+.sku-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;
+  background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.06);border-radius:10px;
+  padding:12px 14px;margin-bottom:8px}
+.sku-name{font-size:14px;font-weight:500}
+.sku-meta{font-size:12px;color:var(--muted);margin-top:2px}
+.qty-box{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.qty-label{font-size:11px;color:var(--muted)}
+.qty-input{width:88px;background:var(--input-bg);border:1px solid var(--input-b);
+  color:var(--text);font-size:15px;font-weight:700;padding:6px 10px;border-radius:8px;
+  text-align:right;font-family:inherit}
+.qty-input:focus{outline:0;border-color:var(--blue-l);background:rgba(59,130,246,.06)}
+.qty-input[readonly]{opacity:.7;cursor:not-allowed}
+
+label{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:5px}
+input[type=date],textarea{
+  width:100%;background:var(--input-bg);border:1px solid var(--input-b);
+  color:var(--text);font-size:14px;padding:10px 12px;border-radius:8px;font-family:inherit;
+  transition:border-color .15s}
+input[type=date]:focus,textarea:focus{outline:0;border-color:var(--blue-l)}
+textarea{resize:vertical;min-height:70px}
+
+.btn-primary{
+  width:100%;background:linear-gradient(135deg,#059669,#10b981);
+  color:#fff;border:0;padding:15px;border-radius:12px;font-size:15px;font-weight:700;
+  cursor:pointer;letter-spacing:.5px;transition:all .15s}
+.btn-primary:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 20px rgba(16,185,129,.3)}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.btn-secondary{
+  width:100%;background:transparent;border:1px solid rgba(255,255,255,.15);
+  color:var(--muted);padding:12px;border-radius:12px;font-size:14px;cursor:pointer;margin-top:10px}
+.btn-secondary:hover{border-color:rgba(255,255,255,.3);color:var(--text)}
+
+.alert{padding:12px 16px;border-radius:10px;font-size:13px;margin-bottom:14px}
+.alert-amber{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);color:#fcd34d}
+.alert-red{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5}
+.alert-green{background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:#6ee7b7}
+
+.spinner{display:inline-block;width:22px;height:22px;border:2px solid rgba(255,255,255,.2);
+  border-top-color:var(--blue-l);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.center{text-align:center;padding:40px 20px}
+
+/* confirmed state */
+.confirm-badge{
+  text-align:center;padding:28px 20px 20px;
+  background:linear-gradient(135deg,rgba(16,185,129,.1),rgba(59,130,246,.05));
+  border:1px solid rgba(16,185,129,.25);border-radius:16px;margin-bottom:14px}
+.confirm-badge .icon{font-size:48px;margin-bottom:10px}
+.confirm-badge h2{font-size:18px;font-weight:800;color:var(--green-l);margin-bottom:6px}
+.confirm-badge p{font-size:13px;color:var(--muted);line-height:1.6}
+
+.field-row{margin-bottom:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="logo">SANLYN</div>
+    <div class="sub">工厂发货确认</div>
+  </div>
+
+  <!-- Loading -->
+  <div id="view-loading" class="card center">
+    <div class="spinner"></div>
+    <p style="margin-top:12px;color:var(--muted);font-size:13px">加载订单…</p>
+  </div>
+
+  <!-- Error -->
+  <div id="view-error" style="display:none">
+    <div class="alert alert-red" id="err-msg">链接无效或已过期，请联系 Sanlyn。</div>
+  </div>
+
+  <!-- Already confirmed -->
+  <div id="view-confirmed" style="display:none">
+    <div class="confirm-badge">
+      <div class="icon">✅</div>
+      <h2>已确认发货</h2>
+      <p id="confirm-summary"></p>
+    </div>
+    <div class="card" id="confirm-detail"></div>
+  </div>
+
+  <!-- Pending — fill & confirm -->
+  <div id="view-pending" style="display:none">
+    <!-- Order summary -->
+    <div class="card" id="order-summary"></div>
+
+    <!-- SKU lines -->
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>确认发货数量</div>
+      <div id="sku-list"></div>
+    </div>
+
+    <!-- ETD -->
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>发货信息</div>
+      <div class="field-row">
+        <label>计划发货日期（ETD）<span style="color:var(--red)">*</span></label>
+        <input type="date" id="etd-input"/>
+      </div>
+      <div class="field-row">
+        <label>备注（可选）</label>
+        <textarea id="note-input" placeholder="如：分批发货安排、特殊说明等"></textarea>
+      </div>
+    </div>
+
+    <div id="submit-err" class="alert alert-red" style="display:none"></div>
+    <button class="btn-primary" id="btn-submit" onclick="submitConfirm()">✅ 确认发货</button>
+    <button class="btn-secondary" onclick="contactUs()">有问题？联系 Sanlyn 修改</button>
+  </div>
+</div>
+
+<script>
+const API = '';
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('t') || params.get('token') || '';
+
+let ORDER_DATA = null;
+
+function $(id){ return document.getElementById(id); }
+function show(id){ $(id).style.display=''; }
+function hide(id){ $(id).style.display='none'; }
+
+function showError(msg){
+  hide('view-loading'); hide('view-pending'); hide('view-confirmed');
+  show('view-error');
+  $('err-msg').textContent = msg || '链接无效或已过期，请联系 Sanlyn。';
+}
+
+function fmtDate(s){
+  if(!s) return '—';
+  return String(s).substring(0,10);
+}
+
+async function load(){
+  if(!TOKEN){ showError('缺少 token，请检查链接是否完整。'); return; }
+  try{
+    const r = await fetch(API + '/api/factory-confirm?t=' + encodeURIComponent(TOKEN));
+    const d = await r.json();
+
+    if(!d.ok || d.status==='invalid'){ showError('链接无效，请联系 Sanlyn 重新发送。'); return; }
+    if(d.status==='expired'){  showError('链接已过期（有效期7天），请联系 Sanlyn 重新发送。'); return; }
+
+    ORDER_DATA = d;
+
+    if(d.status==='confirmed'){
+      renderConfirmed(d);
+    } else {
+      renderPending(d);
+    }
+  } catch(e){
+    showError('网络错误，请稍后重试。');
+  }
+}
+
+function renderConfirmed(d){
+  hide('view-loading'); hide('view-pending'); hide('view-error');
+  show('view-confirmed');
+
+  const c = d.confirmation;
+  const o = d.order;
+  $('confirm-summary').textContent =
+    `订单 ${o?.order_no || ''} 已于 ${fmtDate(c.confirmed_at)} 确认，ETD ${fmtDate(c.confirmed_ship_date)}`;
+
+  const lines = Array.isArray(c.confirmed_lines) ? c.confirmed_lines : [];
+  let html = `<div class="card-title"><span class="dot"></span>确认详情</div>`;
+  html += `<div class="kv"><span class="k">计划发货日期</span><span class="v green">${fmtDate(c.confirmed_ship_date)}</span></div>`;
+  if(o){ html += `<div class="kv"><span class="k">订单号</span><span class="v">${o.order_no}</span></div>`; }
+  if(c.note){ html += `<div class="kv"><span class="k">备注</span><span class="v">${c.note}</span></div>`; }
+  if(lines.length){
+    html += `<div style="margin-top:12px">`;
+    for(const l of lines){
+      html += `<div class="sku-row"><div><div class="sku-name">${l.name||'—'}</div></div>
+               <div class="qty-box"><span class="qty-label">确认数量</span><span style="font-weight:700;font-size:15px;color:var(--green-l)">${l.confirmed_qty??l.qty??'—'}</span></div></div>`;
+    }
+    html += `</div>`;
+  }
+  $('confirm-detail').innerHTML = html;
+}
+
+function renderPending(d){
+  hide('view-loading'); hide('view-confirmed'); hide('view-error');
+  show('view-pending');
+
+  const o = d.order;
+  if(!o){ showError('未找到订单信息。'); return; }
+
+  // Order summary card
+  let sumHtml = `<div class="card-title"><span class="dot"></span>订单信息</div>`;
+  sumHtml += `<div class="kv"><span class="k">订单号</span><span class="v">${o.order_no}</span></div>`;
+  if(o.buyer_name) sumHtml += `<div class="kv"><span class="k">买方</span><span class="v">${o.buyer_name}</span></div>`;
+  if(o.total_qty)  sumHtml += `<div class="kv"><span class="k">总数量</span><span class="v">${o.total_qty} 箱</span></div>`;
+  if(o.delivery_date) sumHtml += `<div class="kv"><span class="k">要求交货日</span><span class="v">${fmtDate(o.delivery_date)}</span></div>`;
+  if(d.factory_name) sumHtml += `<div class="kv"><span class="k">工厂</span><span class="v">${d.factory_name}</span></div>`;
+  $('order-summary').innerHTML = sumHtml;
+
+  // SKU list
+  const products = o.products || [];
+  let skuHtml = '';
+  if(products.length===0){
+    skuHtml = `<p style="color:var(--muted);font-size:13px">暂无明细，直接填写发货日期即可。</p>`;
+  } else {
+    for(const p of products){
+      skuHtml += `
+        <div class="sku-row" data-idx="${p.idx}">
+          <div>
+            <div class="sku-name">${p.name}</div>
+            <div class="sku-meta">PO 数量：${p.qty ?? '—'} ${p.unit||'箱'}</div>
+          </div>
+          <div class="qty-box">
+            <span class="qty-label">确认数量</span>
+            <input class="qty-input" type="number" min="0" step="1"
+              value="${p.qty ?? ''}" placeholder="0"
+              data-idx="${p.idx}" data-name="${p.name}"/>
+          </div>
+        </div>`;
+    }
+  }
+  $('sku-list').innerHTML = skuHtml;
+
+  // Pre-fill ETD from order if available
+  if(o.etd) $('etd-input').value = fmtDate(o.etd);
+  // Min date = today
+  $('etd-input').min = new Date().toISOString().substring(0,10);
+}
+
+async function submitConfirm(){
+  const btn = $('btn-submit');
+  const errBox = $('submit-err');
+  errBox.style.display = 'none';
+
+  const etd = $('etd-input').value.trim();
+  if(!etd){ showSubmitErr('请选择计划发货日期。'); return; }
+
+  // Collect confirmed lines from SKU inputs
+  const inputs = document.querySelectorAll('.qty-input');
+  const confirmed_lines = [];
+  for(const inp of inputs){
+    confirmed_lines.push({
+      idx:           parseInt(inp.dataset.idx),
+      name:          inp.dataset.name,
+      confirmed_qty: parseInt(inp.value) || 0,
+    });
+  }
+
+  btn.disabled = true;
+  btn.textContent = '提交中…';
+
+  try{
+    const r = await fetch(API + '/api/factory-confirm', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        token: TOKEN,
+        confirmed_lines,
+        etd,
+        note: $('note-input').value.trim() || null,
+      }),
+    });
+    const d = await r.json();
+
+    if(!d.ok){
+      if(d.error==='already_confirmed'){
+        showSubmitErr('此订单已确认过，请联系 Sanlyn 如需修改。');
+        setTimeout(()=>location.reload(), 2000);
+        return;
+      }
+      showSubmitErr(d.message || d.error || '提交失败，请重试。');
+      btn.disabled = false;
+      btn.textContent = '✅ 确认发货';
+      return;
+    }
+
+    // Reload to show confirmed view
+    location.reload();
+  } catch(e){
+    showSubmitErr('网络错误，请稍后重试。');
+    btn.disabled = false;
+    btn.textContent = '✅ 确认发货';
+  }
+}
+
+function showSubmitErr(msg){
+  const box = $('submit-err');
+  box.textContent = msg;
+  box.style.display = '';
+}
+
+function contactUs(){
+  alert('请截图此页面，通过微信或电话联系您的 Sanlyn 对接人，说明需要修改的内容。');
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-// booking-collab.js — 协同托书
+// booking-collab.js — 协同托书   PAGE_VERSION v1.2.0 · 2026-06-23 — 预览豁免+is_preview/preview_godview 标志(给前端预览身份横幅)
 // Mounted at /api/db/booking-collab
 //
 // Endpoints:
@@ -24,310 +24,6 @@ function rawToHash(raw) {
 }
 function genRaw() {
   return crypto.randomBytes(24).toString("hex"); // 48 hex chars
-}
-
-function scrubCollabInternal(v, seen = new WeakSet()) {
-  if (v == null || typeof v !== "object") return v;
-  if (seen.has(v)) return v;
-  seen.add(v);
-  if (Array.isArray(v)) return v.map(x => scrubCollabInternal(x, seen));
-  const out = {};
-  for (const [k, val] of Object.entries(v)) {
-    if (/token|token_hash|magic_link|access_log|password|secret/i.test(k)) continue;
-    out[k] = scrubCollabInternal(val, seen);
-  }
-  return out;
-}
-
-async function resolvePlanId(pool, ref) {
-  const s = String(ref || "").trim();
-  if (!s) return null;
-  const { rows } = await pool.query(
-    `SELECT id FROM shipping_plans WHERE id::text = $1 OR _id = $1 LIMIT 1`,
-    [s]
-  );
-  return rows.length ? rows[0].id : null;
-}
-
-async function loadCollabPlanBundle(pool, planId, role = "master") {
-  const planRes = await pool.query(
-    `SELECT sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta,
-            sp.container_type, sp.container_qty, sp.collab_status,
-            sp.total_cartons, sp.gross_weight_kg, sp.total_cbm, sp.freight_term,
-            sp.raw->'customer_item_notes' AS customer_item_notes,
-            sp.raw->'factory_cargo' AS factory_cargo,
-            sp.raw->'factory_attrs' AS factory_attrs,
-            sp.raw->'factory_submits' AS factory_submits,
-            sp.raw->'customer_amend' AS customer_amend,
-            sp.raw->'broker_ack' AS broker_ack,
-            sp.trucking_arrange, sp.customs_arrange,
-            sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage,
-            sp.freight_sale_usd, sp.freight_term AS plan_freight_term,
-            sp.release_type,
-            (sp.source_system = 'freight_agency' OR sp.raw ? 'legs' OR sp.raw ? 'transfer') AS is_transfer,
-            sp.raw->'cost_lines' AS cost_lines,
-            (SELECT jsonb_agg(x->>'container_no') FROM jsonb_array_elements(COALESCE(sp.raw->'containers','[]'::jsonb)) x) AS containers_order,
-            sp.raw->'fe_cert' AS fe_cert,
-            sp.raw->'factory_entry' AS factory_entry,
-            EXISTS(SELECT 1 FROM orders dg WHERE dg.shipping_plan_id = sp.id AND dg.export_mode='daigou') AS is_daigou,
-            jsonb_build_object('terminal', sp.raw->>'terminal', 'ship_agent', sp.raw->>'ship_agent',
-              'terminal_tel', sp.raw->>'terminal_tel', 'vgm_cutoff', sp.raw->>'vgm_cutoff',
-              'so_source', sp.raw->>'so_source') || COALESCE(sp.raw->'so_extra','{}'::jsonb) AS so_info,
-            sp.raw->'collab_uploads' AS collab_uploads,
-            sp.trucking_detail,
-            sp.issuing_company,
-            sp.customer AS customer_name,
-            sp.customer_en,
-            sp.factory_submitted, sp.factory_cargo_ready, sp.factory_container_type,
-            sp.factory_cargo_type, sp.factory_remarks, sp.factory_submitted_at,
-            sp.customer_submitted, sp.customer_selected_sailing, sp.customer_reference_no,
-            sp.customer_remarks, sp.customer_submitted_at,
-            COALESCE(
-              json_agg(
-                json_build_object(
-                  'order_no', o.order_no,
-                  'contract_no', o.contract_no,
-                  'factory',  o.factory,
-                  'export_mode', o.export_mode,
-                  'total_qty', o.total_qty,
-                  'gross_weight', o.gross_weight,
-                  'items', (
-                    SELECT COALESCE(json_agg(json_build_object(
-                      'oli_id',      oli.id,
-                      'sku',         oli.sku,
-                      'description', oli.declaration_name,
-                      'hs_code',     oli.hs_code,
-                      'ctns',        oli.qty_ctn,
-                      'gw_kgs',      ROUND((COALESCE(oli.gw_ctn,0) * COALESCE(oli.qty_ctn,0))::numeric, 1),
-                      'nw_kgs',      ROUND((COALESCE(oli.nw_ctn,0) * COALESCE(oli.qty_ctn,0))::numeric, 1),
-                      'cbm',         ROUND((COALESCE(oli.cbm_ctn,0) * COALESCE(oli.qty_ctn,0))::numeric, 3),
-                      'declare_amount', ROUND((COALESCE(NULLIF(oli.declare_amount_per_box,0), oli.unit_price, 0) * COALESCE(oli.qty_ctn,0))::numeric, 2),
-                      'barcode',     oli.barcode,
-                      'product_name', COALESCE(NULLIF(oli.product_name,''), oli.declaration_name),
-                      'size',        oli.size,
-                      'unit_price',  oli.unit_price,
-                      'amount',      oli.subtotal
-                    )), '[]'::json)
-                    FROM order_line_items oli WHERE oli.order_id = o.id
-                  )
-                )
-              ) FILTER (WHERE o.id IS NOT NULL),
-              '[]'::json
-            ) AS orders
-       FROM shipping_plans sp
-       LEFT JOIN orders o ON o.shipping_plan_id = sp.id
-      WHERE sp.id = $1
-      GROUP BY sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta, sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage, sp.freight_sale_usd, sp.release_type, sp.source_system,
-               sp.container_type, sp.container_qty, sp.collab_status,
-               sp.total_cartons, sp.gross_weight_kg, sp.total_cbm, sp.freight_term,
-               sp.raw, sp.trucking_detail, sp.issuing_company, sp.trucking_arrange, sp.customs_arrange, sp.customer, sp.customer_en,
-               sp.factory_submitted, sp.factory_cargo_ready, sp.factory_container_type,
-               sp.factory_cargo_type, sp.factory_remarks, sp.factory_submitted_at,
-               sp.customer_submitted, sp.customer_selected_sailing, sp.customer_reference_no,
-               sp.customer_remarks, sp.customer_submitted_at`,
-    [planId]
-  );
-  if (!planRes.rows.length) return null;
-
-  const sailingsRes = await pool.query(
-    `SELECT id, carrier, vessel, voyage, etd, eta, cutoff_date, rate_usd, currency, is_recommended
-       FROM plan_sailings
-      WHERE shipping_plan_id = $1
-      ORDER BY etd ASC`,
-    [planId]
-  );
-
-  const cbRaw = await pool.query(
-    `SELECT cb.container_no, cb.seal_no, cb.container_type, cb.tare_weight_kg, cb.cargo_weight_kg,
-            NULLIF(cb.truck_plate,'') AS plate, NULLIF(cb.trailer_plate,'') AS trailer_plate,
-            cb.driver_name, cb.driver_phone, cb.driver_id_no, cb.pickup_time,
-            NULLIF(cb.loading_address,'') AS loading_address, NULLIF(cb.loading_contact,'') AS loading_contact,
-            NULLIF(cb.declaration_cargo_name,'') AS decl_name,
-            o.order_no, o.total_qty AS cartons, o.gross_weight AS order_gw
-       FROM container_bookings cb
-       LEFT JOIN orders o ON o.contract_no = cb.contract_no AND o.shipping_plan_id = cb.shipping_plan_id
-      WHERE cb.shipping_plan_id = $1 ORDER BY cb.container_no, cb.id`,
-    [planId]
-  );
-  const cbMap = new Map();
-  for (const r of cbRaw.rows) {
-    const cur = cbMap.get(r.container_no) || { container_no: r.container_no, cargo: [] };
-    for (const k of ["seal_no","container_type","tare_weight_kg","plate","trailer_plate","driver_name","driver_phone","driver_id_no","pickup_time","loading_address","loading_contact"])
-      if (r[k] != null && cur[k] == null) cur[k] = r[k];
-    if (r.decl_name || r.order_no)
-      cur.cargo.push({
-        name: r.decl_name || null,
-        order_no: r.order_no || null,
-        cartons: r.cartons != null ? Number(r.cartons) : null,
-        gw_kg: r.cargo_weight_kg != null ? Number(r.cargo_weight_kg) : (r.order_gw != null ? Number(r.order_gw) : null),
-      });
-    cbMap.set(r.container_no, cur);
-  }
-
-  const sheet = { ...planRes.rows[0], sailings: sailingsRes.rows, containers_live: [...cbMap.values()] };
-  if (!(sheet.trucking_detail && Array.isArray(sheet.trucking_detail.vehicles) && sheet.trucking_detail.vehicles.length)) {
-    const vehs = sheet.containers_live.filter(r => r.plate || r.trailer_plate || r.driver_phone).map(r => ({
-      plate: r.plate || r.trailer_plate || "", trailer_plate: r.trailer_plate || "",
-      driver: r.driver_name || "", driver_phone: r.driver_phone || "", driver_id_no: r.driver_id_no || "",
-      pickup_time: r.pickup_time || "", cntr: r.container_no, seal_no: r.seal_no || "",
-      tare_kg: r.tare_weight_kg != null ? Number(r.tare_weight_kg) : null,
-      loading_address: r.loading_address || "", loading_contact: r.loading_contact || "",
-      cargo: r.cargo || [],
-    }));
-    if (vehs.length) sheet.trucking_detail = { ...(sheet.trucking_detail || {}), vehicles: vehs, source: "container_bookings" };
-  }
-  return { role, booking_sheet: sheet };
-}
-
-function filledState(done, returned) {
-  if (returned) return "已回";
-  return done ? "已填" : "待填";
-}
-
-function buildMasterPayload(bundle) {
-  const s = bundle.booking_sheet || {};
-  const truckingOwner = s.trucking_arrange || "agent";
-  const customsOwner = s.customs_arrange || "agent";
-  const truckingDone = !!(s.trucking_detail && (
-    s.trucking_detail.plate ||
-    (Array.isArray(s.trucking_detail.vehicles) && s.trucking_detail.vehicles.some(v => v.plate || v.driver_phone))
-  ));
-  const brokerDone = !!(s.broker_ack && (s.broker_ack.confirmed || s.broker_ack.submitted_at || s.broker_ack.remarks || s.broker_ack.missing_docs));
-  const oceanDone = !!(s.so_no || s.bl_no || s.vessel || s.voyage);
-  return scrubCollabInternal({
-    ok: true,
-    view: "master",
-    booking_sheet: s,
-    owners: {
-      ocean: "self",
-      factory: "self",
-      customer: "self",
-      trucking: truckingOwner,
-      customs: customsOwner,
-    },
-    statuses: {
-      ocean: { state: filledState(oceanDone, false), done: oceanDone },
-      factory: { state: filledState(!!s.factory_submitted, false), done: !!s.factory_submitted },
-      customer: { state: filledState(!!s.customer_submitted, false), done: !!s.customer_submitted },
-      trucking: { state: filledState(truckingDone, truckingOwner === "agent" && truckingDone), done: truckingDone },
-      customs: { state: filledState(brokerDone, customsOwner === "agent" && brokerDone), done: brokerDone },
-    },
-    segments: {
-      ocean: { plan: s, sailings: s.sailings || [] },
-      factory: { cargo: s.factory_cargo || [], attrs: s.factory_attrs || {}, submitted: !!s.factory_submitted },
-      customer: { selected_sailing: s.customer_selected_sailing || null, submitted: !!s.customer_submitted },
-      trucking: { detail: s.trucking_detail || null, containers: s.containers_live || [] },
-      customs: { broker_ack: s.broker_ack || null },
-    },
-  });
-}
-
-async function handleMasterView(req, res, pool) {
-  if (!requireAuth(req, res)) return;
-  const body = req.body || {};
-  const planRef = (req.query && (req.query.plan_id || req.query._id)) || body.plan_id || body._id;
-  const planId = await resolvePlanId(pool, planRef);
-  if (!planId) return res.status(400).json({ ok: false, error: "plan_id/_id 必填或无效" });
-
-  if (req.method === "POST") {
-    const action = String(body.action || "").trim();
-    if (action === "factory-submit") {
-      await pool.query(
-        `UPDATE shipping_plans SET
-           factory_submitted = true,
-           factory_cargo_ready = $1,
-           factory_container_type = $2,
-           factory_cargo_type = $3,
-           factory_remarks = $4,
-           factory_submitted_at = NOW(),
-           freight_term = COALESCE($5, freight_term),
-           trucking_arrange = COALESCE($6, trucking_arrange),
-           customs_arrange = COALESCE($7, customs_arrange),
-           raw = COALESCE(raw,'{}'::jsonb)
-             || CASE WHEN $8::jsonb IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('factory_cargo', $8::jsonb) END
-             || CASE WHEN $9::jsonb IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('factory_attrs', $9::jsonb) END
-             || jsonb_build_object('factory_submits',
-                  COALESCE(raw->'factory_submits','{}'::jsonb)
-                  || jsonb_build_object('_master', jsonb_build_object('cargo_ready', $11::text, 'at', to_char(now(),'YYYY-MM-DD HH24:MI'))))
-         WHERE id = $10`,
-        [
-          body.cargo_ready_date || null,
-          body.container_type || null,
-          body.cargo_type || null,
-          body.remarks || null,
-          ["FOB","EXW","FCA","CIF","DDP","CNF"].includes(body.freight_term) ? body.freight_term : null,
-          ["self","agent"].includes(body.trucking_arrange) ? body.trucking_arrange : null,
-          ["self","agent"].includes(body.customs_arrange) ? body.customs_arrange : null,
-          Array.isArray(body.containers) ? JSON.stringify(body.containers) : null,
-          body.attrs && typeof body.attrs === "object" && !Array.isArray(body.attrs) ? JSON.stringify(body.attrs) : null,
-          planId,
-          body.cargo_ready_date || null,
-        ]
-      );
-    } else if (action === "customer-submit") {
-      if (!body.selected_sailing || typeof body.selected_sailing !== "object")
-        return res.status(400).json({ ok: false, error: "selected_sailing 必填" });
-      const x = body.selected_sailing;
-      await pool.query(
-        `UPDATE shipping_plans SET
-           customer_submitted = true,
-           customer_selected_sailing = $1,
-           customer_reference_no = $2,
-           customer_remarks = $3,
-           customer_submitted_at = NOW(),
-           vessel = $4,
-           voyage = $5,
-           etd = $6,
-           freight_term = COALESCE($7, freight_term)
-         WHERE id = $8`,
-        [JSON.stringify(x), body.reference_no || null, body.remarks || null,
-         x.vessel || null, x.voyage || null, x.etd || null,
-         ["FOB","EXW","FCA","CIF","DDP","CNF"].includes(body.freight_term) ? body.freight_term : null,
-         planId]
-      );
-    } else if (action === "trucking-submit") {
-      const vehicles = Array.isArray(body.vehicles) ? body.vehicles.map((v, i) => ({
-        seq: i + 1,
-        plate: String(v.plate || "").trim() || null,
-        driver: String(v.driver || "").trim() || null,
-        driver_phone: String(v.driver_phone || "").trim() || null,
-        pickup_time: v.pickup_time || null,
-        loading_time: v.loading_time || null,
-        cntr: String(v.cntr || "").trim().toUpperCase() || null,
-        seal_no: String(v.seal_no || "").trim().toUpperCase() || null,
-        trailer_plate: String(v.trailer_plate || "").trim() || null,
-        driver_id_no: String(v.driver_id_no || "").trim() || null,
-        weigh_kg: v.weigh_kg !== "" && v.weigh_kg != null ? Number(v.weigh_kg) : null,
-      })).filter(v => v.plate || v.driver_phone) : [];
-      if (!vehicles.length) return res.status(400).json({ ok: false, error: "至少一辆车需填车牌或司机电话" });
-      const detail = { vehicles, remarks: body.remarks || null, submitted_at: new Date().toISOString(), source: "master_view" };
-      await pool.query(
-        `UPDATE shipping_plans
-            SET trucking_detail = COALESCE(trucking_detail, '{}'::jsonb) || $1::jsonb,
-                updated_at = now()
-          WHERE id = $2`,
-        [JSON.stringify(detail), planId]
-      );
-    } else if (action === "broker-submit") {
-      const ack = { broker_ack: {
-        confirmed: body.confirmed !== false,
-        remarks: body.remarks || null,
-        missing_docs: body.missing_docs || null,
-        submitted_at: new Date().toISOString(),
-        source: "master_view",
-      }};
-      await pool.query(
-        `UPDATE shipping_plans SET raw = COALESCE(raw,'{}'::jsonb) || $1::jsonb, updated_at = now() WHERE id = $2`,
-        [JSON.stringify(ack), planId]
-      );
-    } else {
-      return res.status(400).json({ ok: false, error: "未知 action" });
-    }
-  }
-
-  const bundle = await loadCollabPlanBundle(pool, planId, "master");
-  if (!bundle) return res.status(404).json({ ok: false, error: "找不到出货计划" });
-  return res.json(buildMasterPayload(bundle));
 }
 
 // ── GET /validate?token=<raw> ──────────────────────────────────
@@ -391,6 +87,15 @@ async function handleValidate(req, res, pool) {
             sp.factory_cargo_type, sp.factory_remarks, sp.factory_submitted_at,
             sp.customer_submitted, sp.customer_selected_sailing, sp.customer_reference_no,
             sp.customer_remarks, sp.customer_submitted_at,
+            sp.raw->'factory_bill_versions' AS factory_bill_versions,
+            sp.raw->>'factory_bill_current_version' AS factory_bill_current_version,
+            sp.raw->>'finance_bill_sent_at' AS finance_bill_sent_at,
+            sp.raw->>'finance_bill_sent_by' AS finance_bill_sent_by,
+            sp.raw->>'factory_bill_confirmed_at' AS factory_bill_confirmed_at,
+            sp.raw->>'factory_bill_confirmed_by' AS factory_bill_confirmed_by,
+            sp.raw->>'prebill_status' AS prebill_status,
+            sp.raw->>'prebill_confirmed_at' AS prebill_confirmed_at,
+            sp.raw->'pricing_decisions' AS pricing_decisions,
             COALESCE(
               json_agg(
                 json_build_object(
@@ -475,6 +180,8 @@ async function handleValidate(req, res, pool) {
   return res.json({
     valid: true,
     role,
+    is_preview: meta.preview === true,                                   // 内部预览 token（master-preview-token 生成）
+    preview_godview: meta.preview === true && !(factoryScope && factoryScope.label), // 无 scope 的全貌预览
     factory_progress: await (async (roleX) => {
       // 分厂确认进度：有 scoped 链接才有意义（拼柜/分柜）
       const { rows: fl } = await pool.query(
@@ -532,15 +239,56 @@ async function handleValidate(req, res, pool) {
         delete sheet.customer_name; delete sheet.customer_en;
         delete sheet.pod; delete sheet.customer_selected_sailing;
       }
-      if (role === "factory_booking") {
+      // 🔓 内部预览(preview:true)且未限定工厂 = Sanlyn 本人全貌预览，跳过工厂裁剪/fail-close；
+      // 真正发给工厂的 7 天链接不带 preview，照常受租户隔离铁律约束(防跳单)。
+      const _adminPreview = meta.preview === true && !(factoryScope && factoryScope.label);
+      if (role === "factory_booking" && !_adminPreview) {
         delete sheet.customer_name; delete sheet.customer_en;   // 工厂只见下游 issuing_company
         delete sheet.customer_selected_sailing;
-        // 拼柜隔离：分厂链接只看自己厂的订单明细（互不可见对方品名）
-        if (factoryScope && factoryScope.label && Array.isArray(sheet.orders)) {
+        // 🔒 防跳单租户隔离：scoped 才返回本厂数据；无 scope = fail-closed（绝不返回任何工厂货物）
+        if (factoryScope && factoryScope.label) {
           const lab = String(factoryScope.label);
-          sheet.orders = sheet.orders.filter(o => o && o.factory &&
-            (String(o.factory).includes(lab) || lab.includes(String(o.factory))));
+          const seqs = new Set((factoryScope.seqs || []).map(Number).filter(Boolean));
+          const matchFac = f => f && (String(f).includes(lab) || lab.includes(String(f)));
+          // 1) 订单：只本厂（互不可见对方品名/订单号）
+          if (Array.isArray(sheet.orders)) sheet.orders = sheet.orders.filter(o => o && matchFac(o.factory));
+          const myOrderNos = new Set((sheet.orders || []).map(o => o && o.order_no).filter(Boolean));
+          // 2) factory_cargo（可编辑货物申报层）：只本厂 label
+          if (Array.isArray(sheet.factory_cargo))
+            sheet.factory_cargo = sheet.factory_cargo.filter(x => !x.factory_label || x.factory_label === lab);
+          // 3) factory_entry（入厂要求）：只本厂
+          if (sheet.factory_entry && typeof sheet.factory_entry === "object" && !Array.isArray(sheet.factory_entry))
+            sheet.factory_entry = sheet.factory_entry[lab] ? { [lab]: sheet.factory_entry[lab] } : {};
+          // 4) containers_live：只本厂负责的柜（按 seq 顺序 或 柜内含本厂订单号）
+          if (Array.isArray(sheet.containers_live))
+            sheet.containers_live = sheet.containers_live.filter((c, i) =>
+              (seqs.size ? seqs.has(i + 1) : false) ||
+              (Array.isArray(c.cargo) && c.cargo.some(g => g && myOrderNos.has(g.order_no))));
+          // 5) 别厂订单号也是跳单线索：柜内 cargo 只留本厂行
+          (sheet.containers_live || []).forEach(c => {
+            if (Array.isArray(c.cargo) && myOrderNos.size) c.cargo = c.cargo.filter(g => g && myOrderNos.has(g.order_no));
+          });
+          // 6) containers_detail（车队/柜号/封号/皮重）：只本厂负责的 seq
+          if (Array.isArray(sheet.containers_detail))
+            sheet.containers_detail = sheet.containers_detail
+              .filter(c => c && (seqs.size ? seqs.has(Number(c.seq)) : matchFac(c.factory)));
+          else sheet.containers_detail = [];
+          // 7) factory_loading_done：只本厂 label 的装货完毕状态
+          if (sheet.factory_loading_done && typeof sheet.factory_loading_done === "object")
+            sheet.factory_loading_done = sheet.factory_loading_done[lab] ? { [lab]: sheet.factory_loading_done[lab] } : {};
+        } else {
+          // ⛔ fail-closed：未限定工厂范围的链接绝不返回任何货物/订单/柜
+          sheet.orders = []; sheet.factory_cargo = []; sheet.factory_entry = {};
+          sheet.containers_live = []; sheet.containers_detail = []; sheet.factory_loading_done = {}; sheet.scope_missing = true;
         }
+      }
+      // supplier_portal 居间人/承包段：上游供应商(工厂/车队/报关)不得见下游客户。
+      // 仅货代居间人(含 ocean 段) 与 出口商(field_profile=upstream_downstream) 可见。
+      if (role === "supplier_portal") {
+        const psegs = (portalScope && portalScope.segments) || [];
+        const fprof = meta.field_profile || null;
+        const seesCustomer = psegs.includes("ocean") || fprof === "upstream_downstream";
+        if (!seesCustomer) { delete sheet.customer_name; delete sheet.customer_en; }
       }
       return sheet;
     })(),
@@ -647,6 +395,127 @@ async function handleSendCustomerLink(req, res, pool) {
   return res.json({ ok: true, magic_link: link });
 }
 
+// ── POST /set-factory-bill (Sanlyn内部) ───────────────────────
+async function handleSetFactoryBill(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const { plan_id, amount_cny, pdf_url, note, sent_by } = req.body || {};
+  if (!plan_id) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  if (amount_cny === undefined || amount_cny === null || amount_cny === "")
+    return res.status(400).json({ ok: false, error: "amount_cny 必填" });
+
+  const amount = Number(amount_cny);
+  if (!Number.isFinite(amount))
+    return res.status(400).json({ ok: false, error: "amount_cny 无效" });
+
+  const planRow = await pool.query(
+    `SELECT id, raw->>'factory_bill_current_version' AS factory_bill_current_version
+       FROM shipping_plans
+      WHERE _id = $1 OR id::text = $1
+      LIMIT 1`,
+    [String(plan_id)]
+  );
+  if (!planRow.rows.length)
+    return res.status(404).json({ ok: false, error: "找不到出货计划" });
+
+  const numericId = planRow.rows[0].id;
+  const currentVersion = parseInt(planRow.rows[0].factory_bill_current_version || "0", 10) || 0;
+  const newVersion = currentVersion + 1;
+  const billVersion = {
+    version: newVersion,
+    amount_cny: amount,
+    pdf_url: pdf_url || null,
+    note: note || null,
+    sent_by: sent_by || null,
+    sent_at: new Date().toISOString(),
+  };
+
+  await pool.query(
+    `UPDATE shipping_plans SET raw = COALESCE(raw,'{}'::jsonb) || jsonb_build_object(
+       'factory_bill_versions', COALESCE(raw->'factory_bill_versions','[]'::jsonb) || jsonb_build_array($1::jsonb),
+       'factory_bill_current_version', $2::text,
+       'finance_bill_sent_at', to_char(now(),'YYYY-MM-DD HH24:MI'),
+       'finance_bill_sent_by', $3::text
+     ), updated_at = now()
+     WHERE id = $4`,
+    [JSON.stringify(billVersion), String(newVersion), sent_by || null, numericId]
+  );
+
+  await emitBillTask(pool, numericId, newVersion, amount);
+  return res.json({ ok: true, version: newVersion });
+}
+
+// ── POST /confirm-factory-bill (工厂 token) ───────────────────
+async function handleConfirmFactoryBill(req, res, pool) {
+  const { token, version } = req.body || {};
+  if (!token) return res.status(400).json({ ok: false, error: "token 必填" });
+
+  const hash = rawToHash(token);
+  const { rows } = await pool.query(
+    `SELECT meta FROM magic_links
+      WHERE token_hash = $1
+        AND recipient_role = 'factory_booking'
+        AND expires_at > NOW()
+        AND revoked_at IS NULL
+      LIMIT 1`,
+    [hash]
+  );
+  if (!rows.length)
+    return res.status(403).json({ ok: false, error: "链接无效或已过期" });
+
+  const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
+  const planId = parseInt(meta.shipment_id, 10);
+  if (!planId) return res.status(500).json({ ok: false, error: "链接数据异常" });
+
+  const billRes = await pool.query(
+    `SELECT raw->>'factory_bill_current_version' AS factory_bill_current_version,
+            raw->'factory_bill_versions' AS factory_bill_versions
+       FROM shipping_plans
+      WHERE id = $1
+      LIMIT 1`,
+    [planId]
+  );
+  if (!billRes.rows.length)
+    return res.status(404).json({ ok: false, error: "找不到出货计划" });
+
+  const currentVersion = parseInt(billRes.rows[0].factory_bill_current_version || "0", 10) || 0;
+  const confirmVersion = parseInt(version || currentVersion, 10);
+  if (!confirmVersion) return res.status(400).json({ ok: false, error: "无可确认账单版本" });
+
+  const versions = Array.isArray(billRes.rows[0].factory_bill_versions)
+    ? billRes.rows[0].factory_bill_versions
+    : [];
+  const idx = versions.findIndex(v => parseInt(v && v.version, 10) === confirmVersion);
+  if (idx < 0) return res.status(404).json({ ok: false, error: "找不到账单版本" });
+
+  const confirmedAt = new Date().toISOString();
+  const nextVersions = versions.map((v, i) => i === idx
+    ? { ...v, confirmed_at: confirmedAt, confirmed_by: "factory" }
+    : v);
+
+  await pool.query(
+    `UPDATE shipping_plans
+        SET raw = jsonb_set(COALESCE(raw,'{}'::jsonb), '{factory_bill_versions}', $1::jsonb, true) ||
+                  jsonb_build_object(
+                    'factory_bill_confirmed_at', to_char(now(),'YYYY-MM-DD HH24:MI'),
+                    'factory_bill_confirmed_by', 'factory'
+                  ),
+            updated_at = now()
+      WHERE id = $2`,
+    [JSON.stringify(nextVersions), planId]
+  );
+
+  await pool.query(
+    `UPDATE tasks
+        SET status = 'done', updated_at = NOW()
+      WHERE raw->>'plan_id' = $1
+        AND task_type = '账单确认'
+        AND status <> 'done'`,
+    [String(planId)]
+  );
+
+  return res.json({ ok: true });
+}
+
 // ── POST /factory-submit ──────────────────────────────────────
 async function handleFactorySubmit(req, res, pool) {
   const { token, cargo_ready_date, container_type, cargo_type, remarks } = req.body || {};
@@ -701,6 +570,41 @@ async function handleFactorySubmit(req, res, pool) {
   const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
   const planId = parseInt(meta.shipment_id, 10);
   const fScope = meta.factory_scope || null;
+
+  // 工厂关联订单（"选择订单"按钮 → factory_booking token 可用）
+  if (req.body && req.body.action === "link-order") {
+    const rawNo = String(req.body.order_no || req.body.contract_no || "").trim();
+    if (!rawNo) return res.status(400).json({ ok: false, error: "order_no 必填" });
+    const normNo = rawNo.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    const { rows: ords } = await pool.query(
+      `SELECT id, order_no, contract_no FROM orders
+        WHERE upper(regexp_replace(COALESCE(contract_no,''),'[^A-Za-z0-9]','','g')) = $1
+           OR upper(regexp_replace(COALESCE(order_no,''),'[^A-Za-z0-9]','','g')) = $1
+        ORDER BY id LIMIT 20`,
+      [normNo]
+    );
+    const addNo = (ords[0] && (ords[0].contract_no || ords[0].order_no)) || rawNo;
+    const { rows: planRows } = await pool.query(
+      "SELECT order_contract_nos FROM shipping_plans WHERE id = $1 LIMIT 1", [planId]);
+    const rawVal = planRows[0] && planRows[0].order_contract_nos;
+    const wasJson = typeof rawVal === "string" && rawVal.trim().startsWith("[");
+    const parseNos = (v) => {
+      if (Array.isArray(v)) return v;
+      const s = String(v || "").trim(); if (!s) return [];
+      if (s.startsWith("[")) { try { return JSON.parse(s); } catch (_) { return [s]; } }
+      return s.split(",").map(x => x.trim());
+    };
+    const nos = [...new Set([...parseNos(rawVal), addNo].filter(Boolean))];
+    // 保持原存储格式（JSON 数组 vs 逗号串），避免破坏订单解析
+    const store = wasJson ? JSON.stringify(nos) : nos.join(",");
+    await pool.query(
+      "UPDATE shipping_plans SET order_contract_nos = $1, updated_at = now() WHERE id = $2",
+      [store, planId]);
+    if (ords.length)
+      await pool.query("UPDATE orders SET shipping_plan_id = $1 WHERE id = ANY($2::int[])",
+        [planId, ords.map(o => o.id)]);
+    return res.json({ ok: true, order_no: addNo, linked: ords.length, order_contract_nos: nos });
+  }
 
   // 绑单柜行写回订单主表 OLI（关联铁律：工厂补的就是订单明细，不进侧表死数据）
   if (factoryCargo) {
@@ -1060,6 +964,15 @@ async function handleGetPlan(req, res, pool, planId) {
             sp.factory_cargo_type, sp.factory_remarks, sp.factory_submitted_at,
             sp.customer_submitted, sp.customer_selected_sailing, sp.customer_reference_no,
             sp.customer_remarks, sp.customer_submitted_at,
+            sp.raw->'factory_bill_versions' AS factory_bill_versions,
+            sp.raw->>'factory_bill_current_version' AS factory_bill_current_version,
+            sp.raw->>'finance_bill_sent_at' AS finance_bill_sent_at,
+            sp.raw->>'finance_bill_sent_by' AS finance_bill_sent_by,
+            sp.raw->>'factory_bill_confirmed_at' AS factory_bill_confirmed_at,
+            sp.raw->>'factory_bill_confirmed_by' AS factory_bill_confirmed_by,
+            sp.raw->>'prebill_status' AS prebill_status,
+            sp.raw->>'prebill_confirmed_at' AS prebill_confirmed_at,
+            sp.raw->'pricing_decisions' AS pricing_decisions,
             COALESCE(
               json_agg(
                 json_build_object(
@@ -1194,6 +1107,20 @@ async function handleSendRoleLink(req, res, pool, role) {
 async function handleCustomerNotes(req, res, pool) {
   const { token, notes, freight_term, fe_request } = req.body || {};
   if (!token) return res.status(400).json({ ok: false, error: "token 必填" });
+  if (req.body.prebill_status === 'confirmed') {
+    const hashPb = rawToHash(token);
+    const { rows: mlPb } = await pool.query(
+      `SELECT meta FROM magic_links WHERE token_hash=$1 AND recipient_role='customer_booking'
+       AND expires_at > NOW() AND revoked_at IS NULL LIMIT 1`, [hashPb]);
+    if (!mlPb.length) return res.status(403).json({ ok: false, error: "链接无效或已过期" });
+    const pidPb = parseInt((typeof mlPb[0].meta==='string'?JSON.parse(mlPb[0].meta):mlPb[0].meta).shipment_id,10);
+    await pool.query(
+      `UPDATE shipping_plans SET raw = COALESCE(raw,'{}') || jsonb_build_object(
+         'prebill_status','confirmed',
+         'prebill_confirmed_at', to_char(now(),'YYYY-MM-DD HH24:MI')
+       ) WHERE id = $1`, [pidPb]);
+    return res.json({ ok: true });
+  }
   // FE 东南亚原产地证申请：费率走 local_charges 标准（FE_CERT_SERVICE），邮费到付自费
   if (fe_request !== undefined && fe_request !== null) {
     const hashF = rawToHash(token);
@@ -1755,6 +1682,27 @@ async function handleGetContacts(req, res, pool) {
   return res.json({ ok: true, contacts: out });
 }
 
+async function emitBillTask(pool, planId, version, amountCny) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT _id, shipment_no FROM shipping_plans WHERE id = $1 LIMIT 1`, [planId]);
+    if (!rows.length) return;
+    const { _id, shipment_no } = rows[0];
+    const taskId = 't-bill-' + Date.now().toString(36);
+    await pool.query(
+      `INSERT INTO tasks (id, title, task_type, level, status, risk_level, raw, created_at, updated_at)
+       VALUES ($1, $2, '账单确认', 'logi', 'open', 'mid', $3::jsonb, NOW(), NOW())
+       ON CONFLICT DO NOTHING`,
+      [taskId,
+       `待确认账单 · ${shipment_no || _id} · CNY ${Number(amountCny).toLocaleString()}`,
+       JSON.stringify({ plan_id: String(planId), plan_business_id: _id, version, amount_cny: amountCny })
+      ]
+    );
+  } catch (e) {
+    console.error('[emitBillTask]', e.message);
+  }
+}
+
 
 // ── GET /plan-factories?plan_id=<_id> ── 弹窗分厂行：哪些厂、各管几柜
 async function handlePlanFactories(req, res, pool) {
@@ -1794,6 +1742,448 @@ async function handlePlanFactories(req, res, pool) {
     container_qty: plan.container_qty, factories });
 }
 
+// ── GET /supply-chain-options?plan_id=xxx ────────────────────────────────────
+// Returns company lists by type (forwarders/trucking/brokers/factories/customers)
+// for the CollabLinkPopup dropdowns.
+async function handleSupplyChainOptions(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const byType = async (type) => {
+    const r = await pool.query(
+      `SELECT id, name_cn, COALESCE(name_en, name_cn) AS name, code
+         FROM companies
+        WHERE type = $1 AND (active IS NULL OR active = true)
+        ORDER BY name_cn NULLS LAST LIMIT 120`,
+      [type]
+    );
+    return r.rows;
+  };
+  const [forwarders, trucking, brokers, factories, customers] = await Promise.all([
+    byType("forwarder"),
+    byType("trucking"),
+    byType("customs_broker"),
+    byType("factory"),
+    byType("customer"),
+  ]);
+  return res.json({ ok: true, companies: { forwarders, trucking, brokers, factories, customers } });
+}
+
+// ── GET /party-defaults ──────────────────────────────────────────────────────
+// Returns per-party default company from collab_party_defaults.
+async function handlePartyDefaults(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const r = await pool.query(
+    `SELECT party_type, company_id, company_cn FROM collab_party_defaults ORDER BY updated_at DESC`
+  );
+  const defaults = {};
+  for (const row of r.rows) {
+    if (!defaults[row.party_type]) {
+      defaults[row.party_type] = { id: row.company_id, cn: row.company_cn };
+    }
+  }
+  return res.json({ ok: true, defaults });
+}
+
+// ── POST /set-party-default ──────────────────────────────────────────────────
+// Upsert a default party company into collab_party_defaults.
+async function handleSetPartyDefault(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const { party_type, company_id, company_cn } = req.body || {};
+  if (!party_type || !company_id) return res.status(400).json({ ok: false, error: "party_type/company_id 必填" });
+  await pool.query(
+    `INSERT INTO collab_party_defaults (party_type, company_id, company_cn, updated_at, updated_by)
+     VALUES ($1, $2, $3, NOW(), $4)
+     ON CONFLICT (party_type) DO UPDATE
+       SET company_id = EXCLUDED.company_id,
+           company_cn = EXCLUDED.company_cn,
+           updated_at = NOW(),
+           updated_by = EXCLUDED.updated_by`,
+    [party_type, company_id, company_cn || "", req.user && req.user.username ? req.user.username : "admin"]
+  );
+  return res.json({ ok: true });
+}
+
+// ── GET /collab-messages?plan_id=xxx ─────────────────────────────────────────
+// Returns message threads grouped by party from collab_party_messages.
+async function handleCollabMessages(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const planId = req.query && req.query.plan_id;
+  if (!planId) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  const planRow = await pool.query(
+    `SELECT id FROM shipping_plans WHERE _id = $1 OR id::text = $1 LIMIT 1`, [planId]);
+  if (!planRow.rows.length) return res.json({ ok: true, threads: {} });
+  const numId = planRow.rows[0].id;
+  const r = await pool.query(
+    `SELECT id, party, direction, body, author, created_at
+       FROM collab_party_messages
+      WHERE shipping_plan_id = $1
+      ORDER BY created_at ASC`, [numId]);
+  const threads = {};
+  for (const m of r.rows) {
+    if (!threads[m.party]) threads[m.party] = [];
+    threads[m.party].push({ id: m.id, direction: m.direction || "sanlyn", body: m.body, author: m.author, created_at: m.created_at });
+  }
+  return res.json({ ok: true, threads });
+}
+
+// ── POST /collab-message ─────────────────────────────────────────────────────
+// Send a message to a party (direction="sanlyn" = outbound from us).
+async function handlePostCollabMessage(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const { plan_id, party, from: dir, body: msgBody } = req.body || {};
+  if (!plan_id || !party || !msgBody) return res.status(400).json({ ok: false, error: "plan_id/party/body 必填" });
+  const planRow = await pool.query(
+    `SELECT id FROM shipping_plans WHERE _id = $1 OR id::text = $1 LIMIT 1`, [plan_id]);
+  if (!planRow.rows.length) return res.status(404).json({ ok: false, error: "找不到出货计划" });
+  const numId = planRow.rows[0].id;
+  await pool.query(
+    `INSERT INTO collab_party_messages (shipping_plan_id, party, direction, body, author, created_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())`,
+    [numId, party, dir || "sanlyn", msgBody, dir || "sanlyn"]);
+  return res.json({ ok: true });
+}
+
+// ── GET /shipment-orders?plan_id=xxx ─────────────────────────────────────────
+// Returns orders currently in this plan + unassigned candidates for same customer.
+async function handleShipmentOrders(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const planId = req.query && req.query.plan_id;
+  if (!planId) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  const planRow = await pool.query(
+    `SELECT id, _id, customer, customer_en, pol, pod, raw FROM shipping_plans WHERE _id = $1 OR id::text = $1 LIMIT 1`,
+    [planId]);
+  if (!planRow.rows.length) return res.json({ ok: true, current: [], candidates: [], plan: null });
+  const plan = planRow.rows[0];
+  const raw = (typeof plan.raw === "string" ? JSON.parse(plan.raw) : plan.raw) || {};
+
+  // current: orders with shipping_plan_id pointing here
+  const curR = await pool.query(
+    `SELECT o.id, o.order_no, o.factory, o.customer, o.company_code,
+            COALESCE(o.company_name_en, o.company_name_cn, o.customer, o.company_code, '') AS customer_label,
+            COALESCE((SELECT SUM(qty_ctn) FROM order_line_items WHERE order_id = o.id), 0)::int AS total_qty
+       FROM orders o
+      WHERE o.shipping_plan_id = $1 AND (o.status IS NULL OR o.status NOT IN ('cancelled'))
+      ORDER BY o.order_no`,
+    [plan.id]);
+
+  // candidates: active orders for same customer not yet assigned to any plan
+  const custName = plan.customer_en || plan.customer || "";
+  let candR = { rows: [] };
+  if (custName) {
+    candR = await pool.query(
+      `SELECT o.id, o.order_no, o.factory, o.customer, o.pol, o.pod, o.company_code,
+              COALESCE(o.company_name_en, o.company_name_cn, o.customer, o.company_code, '') AS customer_label,
+              COALESCE((SELECT SUM(qty_ctn) FROM order_line_items WHERE order_id = o.id), 0)::int AS total_qty
+         FROM orders o
+        WHERE o.shipping_plan_id IS NULL
+          AND o.status IN ('confirmed', 'ready')
+          AND (o.customer ILIKE $1 OR o.customer_en ILIKE $1 OR o.company_name_en ILIKE $1
+               OR o.company_code IN (
+                 SELECT company_code FROM companies
+                  WHERE name_en ILIKE $1 OR name_cn ILIKE $1 LIMIT 5
+               ))
+        ORDER BY o.order_no LIMIT 20`,
+      [`%${custName.trim()}%`]);
+  }
+
+  const candidates = candR.rows.map(o => {
+    const reasons = [];
+    if (plan.pol && o.pol && o.pol !== plan.pol) reasons.push(`POL不符(${o.pol}≠${plan.pol})`);
+    if (plan.pod && o.pod && o.pod !== plan.pod) reasons.push(`POD不符(${o.pod}≠${plan.pod})`);
+    return { ...o, match: { ok: reasons.length === 0, reasons } };
+  });
+
+  const shipDate = raw.shipment_date || null;
+  const shipped = raw.shipped === true || !!shipDate;
+  return res.json({
+    ok: true,
+    current: curR.rows,
+    candidates,
+    plan: { id: plan.id, _id: plan._id, version: raw.version || 1, shipped, shipment_date: shipDate },
+  });
+}
+
+// ── GET|POST /master-preview-token ───────────────────────────────────────────
+// Generates a short-lived magic_link so Sanlyn staff can open a party's view.
+// Returns { ok: true, url: "https://ai.sanlyn.cn/public/collab-*.html?token=..." }
+async function handleMasterPreviewToken(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const isPost = req.method === "POST";
+  const src = isPost ? (req.body || {}) : (req.query || {});
+  const { plan_id, party, segments, company_label } = src;
+  if (!plan_id) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+
+  const planRow = await pool.query(
+    `SELECT id FROM shipping_plans WHERE _id = $1 LIMIT 1`, [plan_id]);
+  if (!planRow.rows.length) return res.status(404).json({ ok: false, error: "找不到出货计划" });
+  const numericId = planRow.rows[0].id;
+
+  let page = "collab-portal.html";
+  let role = "supplier_portal";
+  const meta = { shipment_id: numericId, plan_business_id: plan_id, preview: true };
+
+  if (party === "customer") {
+    page = "collab-customer.html";
+    role = "customer_booking";
+  } else if (party === "factory") {
+    // 工厂预览必须开真工厂页(collab-factory.html)+ factory_booking 角色，
+    // 与 handleSendFactoryLink 对齐；collab-portal 没有工厂段内容会显示成海运界面
+    page = "collab-factory.html";
+    role = "factory_booking";
+    if (company_label) meta.factory_scope = { label: String(company_label).slice(0, 60) };
+  } else {
+    const segs = Array.isArray(segments) ? segments.filter(s => ["ocean","truck","customs","factory"].includes(s))
+      : [party].filter(s => ["ocean","truck","customs"].includes(s));
+    meta.segments = segs.length ? segs : ["ocean", "truck", "customs"];
+    if (company_label) meta.company_label = String(company_label).slice(0, 60);
+  }
+
+  const raw = genRaw();
+  await pool.query(
+    `INSERT INTO magic_links (token_hash, recipient_role, meta, expires_at, access_log, created_at)
+     VALUES ($1, $2, $3, NOW() + INTERVAL '2 hours', '[]'::jsonb, NOW())`,
+    [rawToHash(raw), role, JSON.stringify(meta)]);
+
+  return res.json({ ok: true, url: `${APP_BASE}/public/${page}?token=${raw}` });
+}
+
+
+
+// ── POST /send-intermediary-link — 洋宝宝(货代居间人) / 巴匕(出口商) ──
+const INTERMEDIARY_CONFIG = {
+  oceanbaby: { company_label: "上海洋宝宝国际物流", segments: ["ocean"], field_profile: "shipping_booking" },
+  babi: { company_label: "厦门巴匕进出口", segments: ["ocean","truck","customs","factory"], field_profile: "upstream_downstream" }
+};
+async function handleSendIntermediaryLink(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const { plan_id, intermediary } = req.body || {};
+  if (!plan_id) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  if (!INTERMEDIARY_CONFIG[intermediary])
+    return res.status(400).json({ ok: false, error: "intermediary 必须是 oceanbaby 或 babi" });
+  const planRow = await pool.query(
+    `SELECT id FROM shipping_plans WHERE _id = $1 LIMIT 1`, [plan_id]);
+  if (!planRow.rows.length)
+    return res.status(404).json({ ok: false, error: "找不到出货计划" });
+  const numericId = planRow.rows[0].id;
+  const cfg = INTERMEDIARY_CONFIG[intermediary];
+  await pool.query(
+    `UPDATE magic_links SET revoked_at = NOW()
+      WHERE recipient_role = 'supplier_portal'
+        AND (meta->>'shipment_id')::int = $1 AND revoked_at IS NULL
+        AND meta->>'field_profile' = $2`,
+    [numericId, cfg.field_profile]);
+  const raw = genRaw();
+  await pool.query(
+    `INSERT INTO magic_links (token_hash, recipient_role, meta, expires_at, access_log, created_at)
+     VALUES ($1, 'supplier_portal', $2, NOW() + INTERVAL '7 days', '[]'::jsonb, NOW())`,
+    [rawToHash(raw), JSON.stringify({
+      shipment_id: numericId, plan_business_id: plan_id,
+      segments: cfg.segments, company_label: cfg.company_label,
+      field_profile: cfg.field_profile,
+      party_scope: { mode: "upstream_downstream" },
+    })]);
+  const page = intermediary === "babi" ? "collab-factory.html" : "collab-portal.html";
+  return res.json({ ok: true, magic_link: `${APP_BASE}/public/${page}?token=${raw}` });
+}
+
+// ── GET /collab-pricing — 洋宝宝费用成本/销售视图（只读）──
+async function handleCollabPricing(req, res, pool) {
+  const { token: raw } = req.query || {};
+  if (!raw) return res.status(400).json({ ok: false, error: "token 必填" });
+  const { rows: ml } = await pool.query(
+    `SELECT meta FROM magic_links
+      WHERE token_hash = $1
+        AND recipient_role = 'supplier_portal'
+        AND expires_at > NOW() AND revoked_at IS NULL LIMIT 1`,
+    [rawToHash(raw)]);
+  if (!ml.length) return res.status(403).json({ ok: false, error: "链接无效" });
+  const meta = typeof ml[0].meta === "string" ? JSON.parse(ml[0].meta) : ml[0].meta;
+  // 仅货代居间人(含 ocean 段)或出口商可看运费成本/销售+下游客户；工厂/车队/报关一律拒绝
+  const psegs = Array.isArray(meta.segments) ? meta.segments : [];
+  const seesPricing = psegs.includes("ocean") || meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream";
+  if (!seesPricing) return res.status(403).json({ ok: false, error: "无权访问运费价格" });
+  const planId = parseInt(meta.shipment_id, 10);
+  if (!planId) return res.status(400).json({ ok: false, error: "plan 无效" });
+
+  // 从 shipping_plans 取 bl_no + 客户信息
+  const { rows: plan } = await pool.query(
+    `SELECT bl_no, hbl_no, trucking_arrange, customs_arrange, customer_en, customer,
+            pol, pod, freight_term
+     FROM shipping_plans WHERE id = $1 LIMIT 1`, [planId]);
+  if (!plan.length) return res.status(404).json({ ok: false, error: "计划不存在" });
+  const blNo = plan[0].bl_no || plan[0].hbl_no;
+  if (!blNo) return res.json({ ok: true, items: [], note: "BL 尚未录入" });
+  const customerName = plan[0].customer_en || plan[0].customer || "";
+
+  // 自理段判断
+  const selfHandled = {
+    trucking: plan[0].trucking_arrange === "factory" || plan[0].trucking_arrange === "self",
+    customs:  plan[0].customs_arrange  === "factory" || plan[0].customs_arrange  === "self",
+  };
+
+  const { rows: bills } = await pool.query(
+    `SELECT id, cost_category, charge_basis, unit_price, qty, amount, sale_amount,
+            currency, supplier, incoterm, rebill_to_name
+       FROM freight_supplier_bills
+      WHERE bl_no = $1
+      ORDER BY created_at`, [blNo]);
+
+  const items = bills.map(b => {
+    const amt  = b.amount      != null ? Number(b.amount)      : null;
+    const sale = b.sale_amount != null ? Number(b.sale_amount) : null;
+    return {
+      id:            b.id,
+      cost_category: b.cost_category,
+      charge_basis:  b.charge_basis || "per_bl",
+      unit_price:    b.unit_price != null ? Number(b.unit_price) : null,
+      qty:           b.qty        != null ? Number(b.qty)        : null,
+      amount:        amt,
+      sale_amount:   sale,
+      gross_profit:  (sale != null && amt != null) ? sale - amt : null,
+      currency:      b.currency || "CNY",
+      supplier:      b.supplier,
+      incoterm:      b.incoterm,
+      rebill_to:     b.rebill_to_name || customerName,
+      self_handled:  (b.cost_category === "trucking" && selfHandled.trucking) ||
+                     (b.cost_category === "customs_declaration" && selfHandled.customs),
+    };
+  });
+
+  // 分币种汇总
+  const makeTotals = (cur) => items.filter(i => i.currency === cur).reduce(
+    (acc, i) => ({ cost: acc.cost + (i.amount||0), sales: acc.sales + (i.sale_amount||0), profit: acc.profit + (i.gross_profit||0) }),
+    { cost: 0, sales: 0, profit: 0 }
+  );
+  const totals = { USD: makeTotals("USD"), CNY: makeTotals("CNY") };
+
+  return res.json({ ok: true, bl_no: blNo, customer: customerName,
+                    pol: plan[0].pol, pod: plan[0].pod, freight_term: plan[0].freight_term,
+                    items, totals, self_handled: selfHandled });
+}
+
+// ── GET /collab-order-pricing — 巴匕采购/销售价视图（只读）──
+async function handleCollabOrderPricing(req, res, pool) {
+  const { token: raw } = req.query || {};
+  if (!raw) return res.status(400).json({ ok: false, error: "token 必填" });
+  const { rows: ml } = await pool.query(
+    `SELECT meta FROM magic_links
+      WHERE token_hash = $1
+        AND recipient_role = 'supplier_portal'
+        AND expires_at > NOW() AND revoked_at IS NULL LIMIT 1`,
+    [rawToHash(raw)]);
+  if (!ml.length) return res.status(403).json({ ok: false, error: "链接无效" });
+  const meta = typeof ml[0].meta === "string" ? JSON.parse(ml[0].meta) : ml[0].meta;
+  if (meta.field_profile !== "upstream_downstream")
+    return res.status(403).json({ ok: false, error: "无权访问价格" });
+  const planId = parseInt(meta.shipment_id, 10);
+  if (!planId) return res.status(400).json({ ok: false, error: "plan 无效" });
+
+  // 拉本票关联订单的行项目（采购价=settle_after_tax_per_unit，销售价=unit_price）
+  const { rows } = await pool.query(
+    `SELECT o.order_no, o.customer_en AS customer,
+            oli.product_name, oli.product_sku,
+            oli.quantity, oli.unit,
+            oli.settle_after_tax   AS purchase_unit_price,
+            oli.unit_price         AS sales_unit_price,
+            oli.total_amount       AS sales_total,
+            (oli.settle_after_tax * oli.quantity) AS purchase_total,
+            ((oli.unit_price - oli.settle_after_tax) * oli.quantity) AS gross_profit,
+            oli.currency
+       FROM orders o
+       JOIN order_line_items oli ON oli.order_id = o.id
+      WHERE o.shipping_plan_id = $1
+      ORDER BY o.order_no, oli.id`, [planId]);
+
+  const totals = rows.reduce((acc, r) => ({
+    purchase: acc.purchase + (Number(r.purchase_total) || 0),
+    sales:    acc.sales    + (Number(r.sales_total)    || 0),
+    profit:   acc.profit   + (Number(r.gross_profit)   || 0),
+  }), { purchase: 0, sales: 0, profit: 0 });
+
+  return res.json({ ok: true, items: rows, totals });
+}
+
+// ── POST /collab-pricing-submit — 洋宝宝补录运费销售价（写 freight_supplier_bills.sale_amount）──
+async function handleCollabPricingSubmit(req, res, pool) {
+  const { token: raw, updates } = req.body || {};
+  if (!raw) return res.status(400).json({ ok: false, error: "token 必填" });
+  if (!Array.isArray(updates) || !updates.length)
+    return res.status(400).json({ ok: false, error: "updates 必填" });
+
+  // 校验 token（与 handleCollabPricing 完全一致）
+  const { rows: ml } = await pool.query(
+    `SELECT meta FROM magic_links
+      WHERE token_hash = $1
+        AND recipient_role = 'supplier_portal'
+        AND expires_at > NOW() AND revoked_at IS NULL LIMIT 1`,
+    [rawToHash(raw)]);
+  if (!ml.length) return res.status(403).json({ ok: false, error: "链接无效" });
+  const meta = typeof ml[0].meta === "string" ? JSON.parse(ml[0].meta) : ml[0].meta;
+  // 仅货代居间人/出口商可补录运费销售价；工厂/车队/报关拒绝
+  const psegs = Array.isArray(meta.segments) ? meta.segments : [];
+  const seesPricing = psegs.includes("ocean") || meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream";
+  if (!seesPricing) return res.status(403).json({ ok: false, error: "无权补录运费价格" });
+  const planId = parseInt(meta.shipment_id, 10);
+  if (!planId) return res.status(400).json({ ok: false, error: "plan 无效" });
+
+  // 取本票 bl_no（只能改本票的账单行，防越权）
+  const { rows: plan } = await pool.query(
+    `SELECT bl_no, hbl_no FROM shipping_plans WHERE id = $1 LIMIT 1`, [planId]);
+  if (!plan.length) return res.status(404).json({ ok: false, error: "计划不存在" });
+  const blNo = plan[0].bl_no || plan[0].hbl_no;
+  if (!blNo) return res.status(400).json({ ok: false, error: "BL 尚未录入" });
+
+  // 逐条更新：bill id 必须属于本票 bl_no，sale_amount 必须是非负数字
+  let updated = 0;
+  for (const u of updates) {
+    if (!u || !u.bill_id) continue;
+    const sale = Number(u.sale_amount);
+    if (!isFinite(sale) || sale < 0) continue;
+    const r = await pool.query(
+      `UPDATE freight_supplier_bills
+          SET sale_amount = $1, updated_at = NOW()
+        WHERE id = $2 AND bl_no = $3`,
+      [sale, u.bill_id, blNo]);
+    updated += r.rowCount || 0;
+  }
+
+  return res.json({ ok: true, updated });
+// ── POST /factory-self-token  (工厂 JWT 自助生成协同表链接) ──────────────────
+async function handleFactoryToken(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const companyCodes = ((req.user.companyCodes && req.user.companyCodes.length)
+    ? req.user.companyCodes
+    : req.user.companyCode ? [req.user.companyCode] : []
+  ).map(c => String(c).toLowerCase());
+  if (!companyCodes.length) return res.status(403).json({ ok: false, error: "no_scope" });
+
+  const body = req.body || {};
+  const shipping_plan_id = parseInt(body.shipping_plan_id);
+  if (!shipping_plan_id || isNaN(shipping_plan_id))
+    return res.status(400).json({ ok: false, error: "shipping_plan_id required" });
+
+  const ownerRow = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM orders
+     WHERE shipping_plan_id = $1
+       AND LOWER(raw->>'factoryCompanyCode') = ANY($2::text[])`,
+    [shipping_plan_id, companyCodes]
+  );
+  if (parseInt(ownerRow.rows[0]?.cnt || 0) === 0)
+    return res.status(403).json({ ok: false, error: "scope_mismatch" });
+
+  const rawTok = genRaw();
+  const hash = rawToHash(rawTok);
+  const factoryLabel = companyCodes[0].toUpperCase();
+  await pool.query(
+    `INSERT INTO magic_links (token_hash, recipient_role, meta, expires_at, access_log, created_at)
+     VALUES ($1, 'factory_booking', $2, NOW() + INTERVAL '7 days', '[]'::jsonb, NOW())`,
+    [hash, JSON.stringify({ shipment_id: shipping_plan_id, factory_scope: { label: factoryLabel } })]
+  );
+
+  return res.json({ ok: true, link: `${APP_BASE}/public/collab-factory.html?token=${rawTok}`, expires_in: "7 days" });
+}
+
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -1809,7 +2199,6 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === "GET"    && pathSuffix === "plan-factories")     return await handlePlanFactories(req, res, pool);
-    if ((req.method === "GET" || req.method === "POST") && pathSuffix === "master-view") return await handleMasterView(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "validate")           return await handleValidate(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-factory-link")  return await handleSendFactoryLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-customer-link") return await handleSendCustomerLink(req, res, pool);
@@ -1830,6 +2219,20 @@ export default async function handler(req, res) {
     if (req.method === "GET"    && pathSuffix  === "plans-list")        return await handlePlansList(req, res, pool);
     if (req.method === "GET"    && parentSuffix === "plan")             return await handleGetPlan(req, res, pool, pathSuffix);
     if (req.method === "PATCH"  && parentSuffix === "plan")             return await handlePatchPlan(req, res, pool, pathSuffix);
+    if (req.method === "POST"   && pathSuffix === "set-factory-bill")   return await handleSetFactoryBill(req, res, pool);
+    if (req.method === "POST"   && pathSuffix === "confirm-factory-bill") return await handleConfirmFactoryBill(req, res, pool);
+    if (req.method === "GET"  && pathSuffix === "supply-chain-options")  return await handleSupplyChainOptions(req, res, pool);
+    if (req.method === "GET"  && pathSuffix === "party-defaults")         return await handlePartyDefaults(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "set-party-default")      return await handleSetPartyDefault(req, res, pool);
+    if (req.method === "GET"  && pathSuffix === "collab-messages")        return await handleCollabMessages(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "collab-message")         return await handlePostCollabMessage(req, res, pool);
+    if (req.method === "GET"  && pathSuffix === "shipment-orders")        return await handleShipmentOrders(req, res, pool);
+    if ((req.method === "GET" || req.method === "POST") && pathSuffix === "master-preview-token") return await handleMasterPreviewToken(req, res, pool);
+    if (req.method === "GET" && pathSuffix === "collab-pricing")       return await handleCollabPricing(req, res, pool);
+    if (req.method === "GET" && pathSuffix === "collab-order-pricing") return await handleCollabOrderPricing(req, res, pool);
+    if (req.method === "POST"   && pathSuffix === "send-intermediary-link")  return await handleSendIntermediaryLink(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "factory-self-token")  return await handleFactoryToken(req, res, pool);
+    if (req.method === "POST"   && pathSuffix === "collab-pricing-submit")    return await handleCollabPricingSubmit(req, res, pool);
 
     return res.status(404).json({ error: "Not found" });
   } catch (e) {

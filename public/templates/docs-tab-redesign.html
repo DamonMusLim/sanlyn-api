@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Documents Tab · Mobile Redesign — 2026-05-02</title>
+<style>
+  :root {
+    --bg: #060A14; --card: #0F1629; --surface: #0C1222;
+    --border: rgba(255,255,255,0.06); --border-hi: rgba(255,255,255,0.12);
+    --t1: #E2E8F0; --t2: #94A3B8; --t3: #64748B;
+    --blue: #38BDF8; --green: #10B981; --amber: #F59E0B;
+    --red: #EF4444; --purple: #A78BFA; --cyan: #22D3EE;
+  }
+  body { margin:0; background:var(--bg); color:var(--t1); font-family:-apple-system, system-ui, sans-serif; padding:20px; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  .sub { color:var(--t2); font-size:12px; margin-bottom:30px; }
+  .layout { display:grid; grid-template-columns: repeat(4, 360px); gap:20px; align-items:flex-start; }
+  @media (max-width: 1500px) { .layout { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 800px)  { .layout { grid-template-columns: 1fr; } }
+
+  .col h2 { font-size:13px; color:var(--purple); margin:0 0 4px; }
+  .col .meta { color:var(--t3); font-size:11px; margin-bottom:12px; line-height:1.5; }
+
+  .phone {
+    background:var(--bg); border:6px solid #1f2937; border-radius:24px;
+    overflow:hidden; height:720px; display:flex; flex-direction:column;
+    box-shadow:0 12px 30px rgba(0,0,0,0.6);
+  }
+  .phone-head { padding:14px 14px 8px; display:flex; align-items:center; gap:10px; flex-shrink:0; border-bottom:1px solid var(--border); background:rgba(15,21,32,0.7); }
+  .back { background:rgba(255,255,255,0.04); border:1px solid var(--border); color:var(--t2); padding:5px 10px; border-radius:6px; font-size:10.5px; }
+  .so-num { font-family:'Menlo',monospace; font-size:14px; font-weight:800; }
+  .so-label { font-size:9px; color:var(--t3); padding:2px 7px; background:rgba(148,163,184,0.10); border-radius:6px; margin-left:auto; }
+  .phase-badge { padding:3px 10px; border-radius:14px; font-size:10px; font-weight:800; margin-left:6px; }
+  .phase-badge.pending { background:rgba(167,139,250,0.20); color:#c4b5fd; }
+  .phase-badge.shipping { background:rgba(56,189,248,0.20); color:#7dd3fc; }
+  .phase-badge.delivered { background:rgba(34,197,94,0.20); color:#86efac; }
+
+  .scroll { flex:1; overflow-y:auto; padding-bottom:20px; }
+
+  /* ── filter chips ── */
+  .chips-row { padding:10px 14px; display:flex; gap:6px; overflow-x:auto; border-bottom:1px solid var(--border); background:rgba(15,21,32,0.4); position:sticky; top:0; z-index:5; -ms-overflow-style:none; scrollbar-width:none; }
+  .chips-row::-webkit-scrollbar { display:none; }
+  .chip { padding:6px 12px; border-radius:14px; font-size:11px; font-weight:700; white-space:nowrap; cursor:pointer; flex-shrink:0; }
+  .chip.on { background:#3b82f6; color:#fff; }
+  .chip.off { background:rgba(255,255,255,0.04); color:var(--t2); border:1px solid var(--border); }
+  .chip .n { opacity:0.7; font-family:'Menlo',monospace; font-size:10px; margin-left:5px; }
+
+  /* ── section ── */
+  .section { border-bottom:1px solid var(--border); }
+  .section-head { padding:11px 14px; display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; background:rgba(255,255,255,0.015); }
+  .section-head:hover { background:rgba(255,255,255,0.03); }
+  .section-icon { font-size:13px; }
+  .section-title { font-size:11px; font-weight:800; letter-spacing:.06em; flex:1; }
+  .section-title.green { color:#86efac; }
+  .section-title.blue { color:#7dd3fc; }
+  .section-title.amber { color:#fcd34d; }
+  .section-title.purple { color:#c4b5fd; }
+  .section-status { font-size:10px; color:var(--t3); margin-left:auto; }
+  .section-status.ready { color:#86efac; }
+  .section-status.pending { color:#fcd34d; }
+  .section-toggle { color:var(--t3); font-size:11px; font-family:'Menlo',monospace; }
+
+  /* ── doc row ── */
+  .doc { padding:10px 14px 10px 18px; display:flex; gap:11px; align-items:center; }
+  .doc-icon { width:32px; height:32px; flex-shrink:0; border-radius:6px; background:rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:var(--t2); }
+  .doc-icon.iv { background:rgba(167,139,250,0.15); color:#c4b5fd; }
+  .doc-icon.pl { background:rgba(245,158,11,0.15); color:#fcd34d; }
+  .doc-icon.bl { background:rgba(56,189,248,0.15); color:#7dd3fc; }
+  .doc-icon.cd { background:rgba(34,197,94,0.15); color:#86efac; }
+  .doc-icon.vc { background:rgba(239,68,68,0.15); color:#fca5a5; }
+  .doc-body { flex:1; min-width:0; }
+  .doc-name { font-size:12.5px; font-weight:700; color:var(--t1); display:flex; align-items:center; gap:6px; }
+  .doc-name .gen { background:rgba(34,197,94,0.18); color:#86efac; padding:1px 6px; border-radius:4px; font-size:9px; font-weight:800; }
+  .doc-meta { font-size:10px; color:var(--t3); margin-top:1px; font-family:'Menlo',monospace; }
+  .doc-actions { display:flex; gap:6px; align-items:center; flex-shrink:0; }
+  .doc-btn { padding:4px 10px; border-radius:5px; font-size:10px; font-weight:700; cursor:pointer; border:1px solid var(--border); background:transparent; color:var(--t2); }
+  .doc-btn.remind { background:rgba(245,158,11,0.10); color:#fcd34d; border:1px solid rgba(245,158,11,0.25); }
+  .doc-btn.disabled { background:rgba(148,163,184,0.05); color:var(--t3); border:1px solid var(--border); cursor:not-allowed; }
+  .doc-btn.das { background:rgba(167,139,250,0.10); color:#c4b5fd; border:1px solid rgba(167,139,250,0.30); display:flex; align-items:center; gap:4px; }
+  .doc-btn.das:hover { background:rgba(167,139,250,0.20); }
+  .doc-btn.icon { padding:4px 7px; }
+  .doc-btn.icon:hover { background:rgba(255,255,255,0.06); color:var(--t1); }
+
+  /* ── DAS drawer (4th column) ── */
+  .das-drawer { background:var(--surface); border:1px solid rgba(167,139,250,0.25); border-radius:10px; padding:16px; }
+  .das-head { display:flex; align-items:center; gap:10px; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:12px; }
+  .das-head .ic { width:36px; height:36px; border-radius:7px; background:rgba(167,139,250,0.18); color:#c4b5fd; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; }
+  .das-head .ti { font-size:13px; font-weight:800; color:var(--t1); }
+  .das-head .sub { font-size:10px; color:var(--t3); margin-top:2px; font-family:'Menlo',monospace; }
+  .das-head .badge { margin-left:auto; padding:3px 8px; border-radius:10px; font-size:9px; font-weight:800; background:rgba(34,197,94,0.18); color:#86efac; }
+
+  .das-section-label { font-size:9px; color:var(--t3); font-weight:800; letter-spacing:.08em; margin:14px 0 6px; }
+  .das-action-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .das-action { padding:9px 11px; background:rgba(255,255,255,0.025); border:1px solid var(--border); border-radius:7px; font-size:11px; color:var(--t1); cursor:pointer; display:flex; align-items:center; gap:7px; }
+  .das-action:hover { background:rgba(255,255,255,0.05); border-color:var(--border-hi); }
+  .das-action .icon { font-size:13px; }
+  .das-action .label { flex:1; font-weight:600; }
+  .das-action .meta { font-size:9px; color:var(--t3); font-family:'Menlo',monospace; }
+  .das-action.primary { background:rgba(56,189,248,0.10); border-color:rgba(56,189,248,0.30); color:#7dd3fc; }
+  .das-action.ai { background:rgba(167,139,250,0.08); border-color:rgba(167,139,250,0.25); color:#c4b5fd; }
+  .das-action.ai .label { font-weight:700; }
+
+  .das-history { padding:8px 10px; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:6px; font-size:10.5px; color:var(--t2); display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .das-history .when { color:var(--t3); font-family:'Menlo',monospace; font-size:9.5px; }
+  .das-history .who { color:var(--cyan); font-size:9.5px; }
+  .das-history .v { background:rgba(167,139,250,0.15); color:#c4b5fd; padding:1px 6px; border-radius:4px; font-size:9px; font-weight:800; font-family:'Menlo',monospace; }
+
+  /* ── empty placeholder ── */
+  .stub { padding:14px 18px; color:var(--t3); font-size:11px; font-style:italic; line-height:1.6; }
+  .stub b { color:var(--t2); font-style:normal; }
+
+  /* ── pending block — collapsed summary ── */
+  .pending-summary { padding:10px 14px; display:flex; gap:10px; align-items:center; background:rgba(245,158,11,0.04); }
+  .pending-summary .icon { width:28px; height:28px; border-radius:50%; background:rgba(245,158,11,0.15); color:#fcd34d; display:flex; align-items:center; justify-content:center; font-size:13px; }
+  .pending-summary .text { flex:1; font-size:11px; color:var(--t2); }
+  .pending-summary .text b { color:var(--amber); }
+  .pending-summary .btn { padding:4px 10px; border-radius:5px; font-size:10px; font-weight:700; background:rgba(245,158,11,0.15); color:#fcd34d; border:1px solid rgba(245,158,11,0.3); cursor:pointer; }
+
+  .verdict-row { background:rgba(167,139,250,0.06); border:1px solid rgba(167,139,250,0.2); padding:10px 14px; border-radius:8px; font-size:11px; line-height:1.5; color:var(--t2); margin-top:10px; }
+  .verdict-row b { color:#c4b5fd; }
+</style>
+</head>
+<body>
+
+<h1>📄 Documents Tab — Mobile Redesign</h1>
+<div class="sub">Compare current vs. proposed. Phase-aware sections + filter chips at top.</div>
+
+<div class="layout">
+
+  <!-- ════════════════════════════════════════════════
+       BEFORE — current state (flat long list)
+       ════════════════════════════════════════════════ -->
+  <div class="col">
+    <h2>❌ NOW · pending order</h2>
+    <div class="meta">All 13 docs shown flat. Scrolls forever. Most are "Not yet available" with non-functional Remind buttons. Nothing tells the user the doc isn't relevant at this stage.</div>
+
+    <div class="phone">
+      <div class="phone-head">
+        <button class="back">←</button>
+        <span class="so-num">38-XM-250</span>
+        <span class="so-label">SO 46</span>
+        <span class="phase-badge pending">pending</span>
+      </div>
+
+      <div class="scroll" style="font-size:11px; color:var(--t3); padding:10px 14px;">
+        <div style="margin-bottom:8px;">→ Sales Contract <span style="color:#86efac;">Generated</span></div>
+        <div style="margin-bottom:8px;">→ Commercial Invoice <span style="color:#86efac;">Generated</span></div>
+        <div style="margin-bottom:8px;">→ Packing List <span style="color:#86efac;">Generated</span></div>
+        <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+        <div style="color:#fcd34d;font-weight:800;margin-bottom:6px;">🚢 SHIPPING — pending</div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Bill of Lading · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Draft B/L · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Loading Photos · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+        <div style="color:#7dd3fc;font-weight:800;margin-bottom:6px;">🛂 CUSTOMS — pending</div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Customs Declaration · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Cert of Origin · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+        <div style="color:#86efac;font-weight:800;margin-bottom:6px;">🔬 INSPECTION — pending</div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Vet Cert · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Phytosanitary · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ MSDS · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Health Cert · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="margin-left:14px;margin-bottom:6px;">→ Quarantine · <span style="color:var(--t3);">Not yet available</span></div>
+        <div style="height:1px;background:var(--border);margin:8px 0;"></div>
+        <div style="color:#c4b5fd;font-weight:800;">📋 Proforma Invoice</div>
+        <div style="margin-top:14px;color:var(--red);">⚠ User scrolls 13 rows to find anything actionable.</div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════
+       AFTER — pending phase (most sections collapsed)
+       ════════════════════════════════════════════════ -->
+  <div class="col">
+    <h2>✅ NEW · pending</h2>
+    <div class="meta">For pending: only the docs that can exist <b>right now</b> are expanded. Future-stage sections collapse into a single "Coming up" stub. Filter chips on top jump to category.</div>
+
+    <div class="phone">
+      <div class="phone-head">
+        <button class="back">←</button>
+        <span class="so-num">38-XM-250</span>
+        <span class="so-label">SO 46</span>
+        <span class="phase-badge pending">pending</span>
+      </div>
+
+      <div class="scroll">
+        <div class="chips-row">
+          <span class="chip on">All <span class="n">3</span></span>
+          <span class="chip off">📋 Order <span class="n">3</span></span>
+          <span class="chip off" style="opacity:0.4;">🚢 Shipping <span class="n">—</span></span>
+          <span class="chip off" style="opacity:0.4;">🛂 Customs <span class="n">—</span></span>
+          <span class="chip off" style="opacity:0.4;">🔬 Inspection <span class="n">—</span></span>
+        </div>
+
+        <!-- Order docs (active) -->
+        <div class="section">
+          <div class="section-head">
+            <span class="section-icon">📋</span>
+            <span class="section-title purple">ORDER DOCS</span>
+            <span class="section-status ready">3 ready</span>
+            <span class="section-toggle">▾</span>
+          </div>
+          <div class="doc">
+            <div class="doc-icon iv">SC</div>
+            <div class="doc-body">
+              <div class="doc-name">Sales Contract <span class="gen">Generated</span></div>
+              <div class="doc-meta">SC-FS20260220045.html</div>
+            </div>
+            <div class="doc-actions"><button class="doc-btn das">📁 DAS</button></div>
+          </div>
+          <div class="doc">
+            <div class="doc-icon iv">IV</div>
+            <div class="doc-body">
+              <div class="doc-name">Commercial Invoice <span class="gen">Generated</span></div>
+              <div class="doc-meta">IV-FS20260220045.html</div>
+            </div>
+            <div class="doc-actions"><button class="doc-btn das">📁 DAS</button></div>
+          </div>
+          <div class="doc">
+            <div class="doc-icon pl">PL</div>
+            <div class="doc-body">
+              <div class="doc-name">Packing List <span class="gen">Generated</span></div>
+              <div class="doc-meta">PL-FS20260220045.html</div>
+            </div>
+            <div class="doc-actions"><button class="doc-btn das">📁 DAS</button></div>
+          </div>
+        </div>
+
+        <!-- Coming up — collapsed stub -->
+        <div class="section">
+          <div class="section-head">
+            <span class="section-icon">⏳</span>
+            <span class="section-title" style="color:var(--t2);">COMING UP — 10 docs</span>
+            <span class="section-status">collapsed</span>
+            <span class="section-toggle">▸</span>
+          </div>
+        </div>
+
+        <!-- Pending summary card -->
+        <div class="pending-summary" style="margin:14px;border-radius:8px;border:1px solid rgba(245,158,11,0.2);">
+          <div class="icon">📦</div>
+          <div class="text">
+            10 more docs <b>auto-generate</b> as your order progresses (Shipping → Customs → Inspection). Nothing for you to do now.
+          </div>
+        </div>
+
+        <div style="padding:14px;color:var(--t3);font-size:10.5px;line-height:1.5;text-align:center;">
+          ✓ User sees only what matters at this phase.<br/>
+          Phase changes? Sections auto-expand.
+        </div>
+      </div>
+    </div>
+
+    <div class="verdict-row">
+      <b>Pending phase view</b>: 3 actionable docs visible · 10 future docs collapsed into 1 line · zero scroll spam.
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════
+       AFTER — shipping phase (more sections expanded)
+       ════════════════════════════════════════════════ -->
+  <div class="col">
+    <h2>✅ NEW · in_transit (later)</h2>
+    <div class="meta">Once shipping booked + on water, more sections become real. Same UI, more sections active. Filter chips light up by relevance.</div>
+
+    <div class="phone">
+      <div class="phone-head">
+        <button class="back">←</button>
+        <span class="so-num">38-XM-250</span>
+        <span class="so-label">SO 46</span>
+        <span class="phase-badge shipping">in_transit</span>
+      </div>
+
+      <div class="scroll">
+        <div class="chips-row">
+          <span class="chip on">All <span class="n">9</span></span>
+          <span class="chip off">📋 Order <span class="n">3</span></span>
+          <span class="chip off">🚢 Shipping <span class="n">3</span></span>
+          <span class="chip off">🛂 Customs <span class="n">2</span></span>
+          <span class="chip off" style="opacity:0.5;">🔬 Inspection <span class="n">1</span></span>
+        </div>
+
+        <!-- Order docs (collapsed — already done) -->
+        <div class="section">
+          <div class="section-head">
+            <span class="section-icon">📋</span>
+            <span class="section-title" style="color:var(--t2);">ORDER DOCS</span>
+            <span class="section-status ready">3 ready</span>
+            <span class="section-toggle">▸</span>
+          </div>
+        </div>
+
+        <!-- Shipping (expanded — most relevant now) -->
+        <div class="section">
+          <div class="section-head">
+            <span class="section-icon">🚢</span>
+            <span class="section-title blue">SHIPPING DOCS</span>
+            <span class="section-status ready">3 / 3</span>
+            <span class="section-toggle">▾</span>
+          </div>
+          <div class="doc">
+            <div class="doc-icon bl">BL</div>
+            <div class="doc-body">
+              <div class="doc-name">Bill of Lading <span class="gen">Confirmed</span></div>
+              <div class="doc-meta">YMJAI228525573 · CALLAO BRIDGE</div>
+            </div>
+            <div class="doc-actions"><button class="doc-btn das">📁 DAS</button></div>
+          </div>
+          <div class="doc">
+            <div class="doc-icon bl">DBL</div>
+            <div class="doc-body">
+              <div class="doc-name">Draft B/L <span class="gen">Signed</span></div>
+              <div class="doc-meta">v3 · 2026-04-26</div>
+            </div>
+            <div class="doc-actions"><button class="doc-btn das">📁 DAS</button></div>
+          </div>
+          <div class="doc">
+            <div class="doc-icon" style="background:rgba(245,158,11,0.15);color:#fcd34d;">📷</div>
+            <div class="doc-body">
+              <div class="doc-name">Loading Photos</div>
+              <div class="doc-meta">12 photos · 2026-04-25</div>
+            </div>
+            <div class="doc-actions"><button class="doc-btn das">📁 DAS</button></div>
+          </div>
+        </div>
+
+        <!-- Customs (collapsed - in progress) -->
+        <div class="section">
+          <div class="section-head">
+            <span class="section-icon">🛂</span>
+            <span class="section-title amber">CUSTOMS</span>
+            <span class="section-status pending">in progress</span>
+            <span class="section-toggle">▸</span>
+          </div>
+        </div>
+
+        <!-- Inspection (collapsed - 1 ready) -->
+        <div class="section">
+          <div class="section-head">
+            <span class="section-icon">🔬</span>
+            <span class="section-title green">INSPECTION</span>
+            <span class="section-status">1 / 5 issued</span>
+            <span class="section-toggle">▸</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="verdict-row">
+      <b>In-transit view</b>: shipping section auto-expands (most relevant), prior phases collapse, future sections show counts. Tap a chip to jump.
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════
+       DAS — drawer that opens on doc tap
+       ════════════════════════════════════════════════ -->
+  <div class="col">
+    <h2>📁 DAS · drawer (opens from any doc)</h2>
+    <div class="meta">Tap any doc row → DAS drawer slides in. <b>One central place</b> for view / sign / forward / AI review / history. Business modules carry no file logic.</div>
+
+    <div class="das-drawer">
+      <div class="das-head">
+        <div class="ic">SC</div>
+        <div>
+          <div class="ti">Sales Contract</div>
+          <div class="sub">SC-FS20260220045.html · v2 · 12 KB</div>
+        </div>
+        <span class="badge">Generated</span>
+      </div>
+
+      <div class="das-section-label">📄 PREVIEW</div>
+      <div style="background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:6px; padding:14px; font-size:10px; color:var(--t3); line-height:1.6; font-family:'Menlo',monospace;">
+        SALES CONTRACT<br/>
+        Buyer: PETSOME GROUP SDN BHD<br/>
+        Seller: XIAMEN PET BABY IMPORT &amp; EXPORT<br/>
+        Total: CNY 184,800.00<br/>
+        Terms: T/T 30% / 70% vs. B/L<br/>
+        ...
+      </div>
+
+      <div class="das-section-label">⚡ ACTIONS</div>
+      <div class="das-action-grid">
+        <button class="das-action primary">
+          <span class="icon">👁</span>
+          <span class="label">Open</span>
+        </button>
+        <button class="das-action">
+          <span class="icon">📥</span>
+          <span class="label">Download PDF</span>
+        </button>
+        <button class="das-action">
+          <span class="icon">📊</span>
+          <span class="label">Download Excel</span>
+        </button>
+        <button class="das-action">
+          <span class="icon">📤</span>
+          <span class="label">Forward</span>
+        </button>
+        <button class="das-action">
+          <span class="icon">✍</span>
+          <span class="label">E-Stamp</span>
+        </button>
+        <button class="das-action">
+          <span class="icon">🔒</span>
+          <span class="label">Permission</span>
+        </button>
+      </div>
+
+      <div class="das-section-label" style="color:#c4b5fd;">✨ AI SMART REVIEW</div>
+      <button class="das-action ai" style="grid-column:span 2; width:100%;">
+        <span class="icon">🤖</span>
+        <span class="label">Cross-check vs PI / IV / PL · find mismatches</span>
+        <span class="meta">→</span>
+      </button>
+
+      <div class="das-section-label">📜 HISTORY</div>
+      <div class="das-history">
+        <span class="v">v2</span>
+        <span style="flex:1;">Auto-generated after spec adjust</span>
+        <span class="when">2026-04-26 14:32</span>
+      </div>
+      <div class="das-history">
+        <span class="v">v1</span>
+        <span style="flex:1;">Initial generation</span>
+        <span class="when">2026-04-19 09:14</span>
+        <span class="who">Sanlyn AI</span>
+      </div>
+    </div>
+
+    <div class="verdict-row">
+      <b>DAS = single file UI</b>: every doc (SC / IV / PL / BL / Customs / Vet …) opens this same drawer. Business modules just call <code>openDASPanel({ ownerType:'order', orderNo:'...', fileType:'SC' })</code>.
+    </div>
+  </div>
+
+</div>
+
+<!-- KEY POINTS -->
+<div style="max-width:900px; margin:40px auto 0; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px 22px;">
+  <h2 style="font-size:14px; color:var(--purple); margin:0 0 12px;">📐 Design rules</h2>
+  <ol style="margin:0; padding-left:22px; line-height:1.8; font-size:12.5px; color:var(--t2);">
+    <li><b style="color:var(--t1);">Sticky chip filter on top</b> — All / Order / Shipping / Customs / Inspection. Tap to scroll/jump. Disabled chips (no docs yet) dim to 40% opacity.</li>
+    <li><b style="color:var(--t1);">Phase-aware default expand</b>:
+      <ul style="margin:4px 0 6px; padding-left:18px;">
+        <li><code>pending</code> / <code>confirmed</code> → only ORDER expanded</li>
+        <li><code>producing</code> → ORDER collapsed, INSPECTION (QC) expanded</li>
+        <li><code>shipping_booked</code> / <code>in_transit</code> → SHIPPING expanded</li>
+        <li><code>arrived</code> / <code>customs</code> → CUSTOMS expanded</li>
+        <li><code>delivered</code> → all collapsed (read-only summary)</li>
+      </ul>
+    </li>
+    <li><b style="color:var(--t1);">"Coming up" stub</b> — when a section has no docs yet, show 1 collapsed row with count instead of N "Not yet available" rows. <code>Remind</code> buttons hide too (no factory to remind on doc that doesn't exist yet).</li>
+    <li><b style="color:var(--t1);">Generated docs always available</b> — Order section always renders on the strength of having SC/IV/PL auto-generated.</li>
+    <li><b style="color:var(--t1);">Section header click = expand/collapse</b> — caret <code>▾</code> open / <code>▸</code> closed. State remembered while panel open.</li>
+    <li><b style="color:var(--t1);">No drilling — everything is at most 2 taps</b>: open detail panel → tap section / chip → see doc. No nested modals.</li>
+  </ol>
+</div>
+
+</body>
+</html>

@@ -1,7 +1,8 @@
 // api/db/shipment-completeness.js — 出运完整度「专项单」只读端点
 // GET /api/db/shipment-completeness?ref=<str>&by=auto|order_no|contract_no|bl_no|container_no|shipping_plan_id
 // 铁律：只读、参数化、绝不造数。ref 不猜——唯一命中=resolved / 多命中=ambiguous(列candidates) / 无=missing。
-// 订单↔海运 join 用 contract_no（shipping_plan_orders 表为空，不可用）。
+// 订单↔海运 join 真实键 = shipping_plans.order_nos[] → orders.order_no（task 1817, 2026-06-24）。
+// 标量 contract_no 仅作兜底(常为脏值 "FS.../FS..." 或 NULL, 匹配 0 单 → 旧逻辑误报「缺单」)。
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
@@ -73,8 +74,10 @@ export default async function handler(req, res) {
       addPlans(await safe(pool, `SELECT * FROM shipping_plans WHERE container_no ILIKE $1`, [`%${ref}%`]));
     }
     if (wantBl)       addPlans(await safe(pool, `SELECT * FROM shipping_plans WHERE bl_no = $1`, [ref]));
-    if (wantContract) addPlans(await safe(pool, `SELECT * FROM shipping_plans WHERE contract_no = $1`, [ref]));
+    if (wantContract) addPlans(await safe(pool, `SELECT * FROM shipping_plans WHERE contract_no = $1 OR $1 = ANY(contract_nos)`, [ref]));
     if (wantPlanId)   addPlans(await safe(pool, `SELECT * FROM shipping_plans WHERE id::text = $1 OR _id = $1`, [ref]));
+    // task 1817: 真实关联键是 order_nos[] → orders.order_no。ref 是订单号时, 直接回溯命中该单的 plans。
+    if (wantOrder)    addPlans(await safe(pool, `SELECT * FROM shipping_plans WHERE $1 = ANY(order_nos)`, [ref]));
 
     // orders 候选：order_no / contract_no / customer_po
     if (wantOrder || wantContract) {
@@ -83,14 +86,30 @@ export default async function handler(req, res) {
       if (has(o)) orderRows.push(...o.rows);
     }
 
-    // 用 contract_no 把 order 候选连到 plans（订单↔海运真实连接键）
+    // ── task 1817: 真实连接键是 shipping_plans.order_nos[] → orders.order_no ──────────
+    // 旧逻辑只用标量 contract_no join orders。但 order_nos[] 有值而 contract_no 为脏值
+    // (如 "FS.../FS...")或 NULL 时, 标量匹配命中 0 单 → 订单明明有却报「缺」(误报根因)。
+    // 现在先用每个 plan 的 order_nos[] 拉关联订单, contract_no 仅作兜底。
+    const orderNoSet = new Set();
+    for (const p of plansById.values()) {
+      if (Array.isArray(p.order_nos)) for (const on of p.order_nos) { const v = String(on || "").trim(); if (v) orderNoSet.add(v); }
+    }
+    if (orderNoSet.size) {
+      const o3 = await safe(pool, `SELECT * FROM orders WHERE order_no = ANY($1::text[])`, [[...orderNoSet]]);
+      if (has(o3)) { const seen = new Set(orderRows.map(x=>x.id)); for (const r of o3.rows) if (!seen.has(r.id)) orderRows.push(r); }
+    }
+
+    // 兜底/反向: 用 contract_no(标量 + contract_nos[]) 把 order 候选连到 plans
     const contractSet = new Set();
-    for (const p of plansById.values()) if (p.contract_no) contractSet.add(p.contract_no);
+    for (const p of plansById.values()) {
+      if (p.contract_no) contractSet.add(p.contract_no);
+      if (Array.isArray(p.contract_nos)) for (const c of p.contract_nos) { const v = String(c || "").trim(); if (v) contractSet.add(v); }
+    }
     for (const o of orderRows) if (o.contract_no) contractSet.add(o.contract_no);
     // 反向补：orders 命中合同 → 拉该合同的 plans；plans 命中合同 → 拉该合同的 orders
     if (contractSet.size) {
       const arr = [...contractSet];
-      addPlans(await safe(pool, `SELECT * FROM shipping_plans WHERE contract_no = ANY($1::text[])`, [arr]));
+      addPlans(await safe(pool, `SELECT * FROM shipping_plans WHERE contract_no = ANY($1::text[]) OR contract_nos && $1::text[]`, [arr]));
       const o2 = await safe(pool, `SELECT * FROM orders WHERE contract_no = ANY($1::text[])`, [arr]);
       if (has(o2)) { const seen = new Set(orderRows.map(x=>x.id)); for (const r of o2.rows) if (!seen.has(r.id)) orderRows.push(r); }
     }
@@ -98,9 +117,25 @@ export default async function handler(req, res) {
     const plans = [...plansById.values()];
 
     // ── 2. resolution 判定（不猜） ──
-    // 统一票 = contract_no；无合同的散 plan 用 plan 标识。
-    const groups = new Set([...contractSet]);
-    const noContractPlans = plans.filter(p => !p.contract_no);
+    // 统一票 = contract_no；无合同的散 plan 用 __plan_N 标识。
+    // task 1817 关键: 经 order_nos[] 连到某 plan 的订单, 它们的 contract_no 不得另立 group
+    // (否则「无合同 plan + 它的订单合同号」会被误判成多票 ambiguous)。先算出「已被 plan 经
+    // order_nos[] 认领的订单合同号」, 从 contractSet 里剔除。
+    const planOrderNos = new Set();
+    for (const p of plans) if (Array.isArray(p.order_nos)) for (const on of p.order_nos) { const v = String(on||"").trim(); if (v) planOrderNos.add(v); }
+    const claimedContractNos = new Set();
+    for (const o of orderRows) if (planOrderNos.has(String(o.order_no||"").trim()) && o.contract_no) claimedContractNos.add(o.contract_no);
+
+    // contract group 只保留「干净且能匹配到订单」的 contract_no。
+    // 一个 plan 的 contract_no 若匹配不到任何 order(脏值 "FS.../FS..." 或单纯没录),
+    // 不立 contract group, 改走该 plan 的 __plan_N 组 + order_nos[] 连单(task 1817)。
+    const orderContractNos = new Set(orderRows.map(o => o.contract_no).filter(Boolean));
+    const groups = new Set();
+    for (const c of contractSet) if (!claimedContractNos.has(c) && orderContractNos.has(c)) groups.add(c);
+    // 散 plan(无干净匹配 contract_no)用 __plan_N。判据: contract_no 为空, 或其 contract_no
+    // 匹配不到订单(脏值)。这类 plan 靠 order_nos[] 连单。
+    const planHasCleanContract = (p) => p.contract_no && orderContractNos.has(p.contract_no) && !claimedContractNos.has(p.contract_no);
+    const noContractPlans = plans.filter(p => !planHasCleanContract(p));
     for (const p of noContractPlans) groups.add(`__plan_${p.id}`);
 
     if (plans.length === 0 && orderRows.length === 0) {
@@ -129,7 +164,19 @@ export default async function handler(req, res) {
     const isContract = !groupKey.startsWith("__plan_");
     const contractNo = isContract ? groupKey : null;
     const myPlans  = isContract ? plans.filter(p => p.contract_no === contractNo) : plans.filter(p => `__plan_${p.id}` === groupKey);
-    const myOrders = isContract ? orderRows.filter(o => o.contract_no === contractNo) : [];
+    // task 1817: 用 order_nos[] 把该票的订单连进来 — 不再只靠 contract_no。
+    // 收集本票所有 plan 的 order_nos[] + (合同票时)contract_no, 据此从候选订单里挑出 myOrders。
+    const myOrderNos = new Set();
+    for (const p of myPlans) if (Array.isArray(p.order_nos)) for (const on of p.order_nos) { const v = String(on||"").trim(); if (v) myOrderNos.add(v); }
+    const myOrders = (() => {
+      const seen = new Set(); const out = [];
+      const push = (o) => { if (o && !seen.has(o.id)) { seen.add(o.id); out.push(o); } };
+      for (const o of orderRows) {
+        if (myOrderNos.has(String(o.order_no || "").trim())) push(o);           // 主键: order_nos[]
+        else if (isContract && o.contract_no === contractNo) push(o);            // 兜底: contract_no
+      }
+      return out;
+    })();
     const matchedBy = by !== "auto" ? by
       : (ISO_CONTAINER.test(ref) ? "container_no"
       : myOrders.some(o=>o.order_no===ref) ? "order_no"
@@ -150,7 +197,7 @@ export default async function handler(req, res) {
       const li = await safe(pool, `SELECT count(*)::int AS n FROM order_line_items WHERE order_id = ANY($1::int[])`, [orderIds]);
       lineCount = has(li) ? li.rows[0].n : 0;
     }
-    if (!myOrders.length) setDim("order","missing","无关联订单","orders.contract_no");
+    if (!myOrders.length) setDim("order","missing","无关联订单","shipping_plans.order_nos[] → orders.order_no");
     else if (lineCount === 0) setDim("order","partial",`${myOrders.length} 订单但无明细行`,"order_line_items");
     else setDim("order","ok",`${myOrders.length} 订单 / ${lineCount} 明细行`,"orders + order_line_items");
 

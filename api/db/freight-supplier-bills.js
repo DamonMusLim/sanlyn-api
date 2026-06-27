@@ -1,9 +1,11 @@
 // api/db/freight-supplier-bills.js
 // GET /api/db/freight-supplier-bills
 //
-// Read-only access to freight_supplier_bills table.
-// No writes: POST / PUT / PATCH / DELETE all return 405.
-// No finance state changes. No DB writes of any kind.
+// Read/Write access to freight_supplier_bills table.
+// POST: admin only — create new bill row.
+// PATCH: admin/finance — correct amount, sale_amount, category.
+// DELETE: admin only.
+// No finance state changes beyond this table.
 //
 // Query params:
 //   bl_no          — filter by BL number (exact)
@@ -22,8 +24,28 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, PATCH, DELETE, OPTIONS");
+  setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+
+  // ── POST: admin only — create new bill row ──
+  if (req.method === "POST") {
+    if (req.user?.role !== "admin") return res.status(403).json({ error: "admin role required" });
+    try {
+      const b = req.body || {};
+      if (!b.bl_no || !b.cost_category || b.amount == null || !b.currency)
+        return res.status(400).json({ error: "bl_no, cost_category, amount, currency required" });
+      const pool = getPool();
+      const r = await pool.query(
+        `INSERT INTO freight_supplier_bills
+           (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, rebill_status, supplier, bill_month, raw, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) RETURNING *`,
+        [b.bl_no, b.link_plan_id ?? null, b.cost_category, b.amount, b.currency,
+         b.sale_amount ?? null, b.rebill_status ?? null, b.supplier ?? "待补",
+         b.bill_month ?? null, b.raw ? JSON.stringify(b.raw) : null]
+      );
+      return res.status(201).json({ success: true, data: r.rows[0] });
+    } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  }
 
   // ── PATCH: admin/finance only — correct FSB records (amount, category, notes) ──
   if (req.method === "PATCH") {
@@ -34,7 +56,7 @@ export default async function handler(req, res) {
     try {
       const body = req.body || {};
       if (!body.id) return res.status(400).json({ success: false, error: "id required" });
-      const PATCHABLE = ["amount","cost_category","rebill_status","reconcile_note","container_no","link_plan_id","incoterm","supplier_type","currency"];
+      const PATCHABLE = ["amount","sale_amount","cost_category","rebill_status","reconcile_note","container_no","link_plan_id","incoterm","supplier_type","currency","rebill_to_type","rebill_to_name","rebill_dn_no","rebill_finance_slip_id","confirmed_at","confirmed_by","unit_price","qty","charge_basis","remarks"];
       const pool = getPool();
       const params = [], sets = [];
       for (const col of PATCHABLE) {
@@ -178,9 +200,12 @@ export default async function handler(req, res) {
          container_no,
          cost_category,
          amount,
+         sale_amount,
          currency,
          qty,
          unit_price,
+         charge_basis,
+         remarks,
          pair_id,
          rebill_status,
          incoterm,
@@ -189,6 +214,8 @@ export default async function handler(req, res) {
          reconciled,
          reconcile_note,
          source_row,
+         confirmed_at,
+         confirmed_by,
          created_at,
          updated_at
        FROM freight_supplier_bills

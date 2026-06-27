@@ -89,15 +89,13 @@ const PUBLIC_PATHS = [
   "/health",
   // "/api/db/accounts", // REMOVED 2026-04-22 P0 — no longer public; use /api/db/auth-login
   "/api/db/auth-login",   // 主应用登录接口
-  "/api/db/register",     // 公开自助注册(2026-06-05)
-  "/api/db/exchange-rate", // 公开:每日实时汇率(非敏感)
   "/api/db/test-fixture-login", // Dev-only fixture login (returns 404 in production)
   "/api/db/check-username", // 注册页查重（只返回 {exists:bool}，不泄露其他字段）
   "/api/portal/login",    // Portal 登录（portal token 在此签发，登录前无 token）
   "/api/driver-evidence", // 司机扫 QR 上传装柜证据（无登录；凭 bl_no+container_no 授权）
   "/api/db/magic-link",   // Driver Magic Link (Air-A): 司机点 SMS 链接，凭 raw token + SHA-256 比对授权
   "/api/factory-fill",    // 工厂 token 填单（无登录；凭 _idx_tokens 授权）
-  "/api/factory-invoice-request", // 工厂开票申请（无登录；凭 _idx_tokens purpose=invoice_request 授权）
+  "/api/factory-confirm", // 工厂订单确认（无登录；凭 _idx_tokens 授权）
   "/api/pending-confirm", // 工厂确认交期（无登录；凭 _idx_tokens 授权，purpose=pending_confirm）
   "/api/track/verify",    // Public supply-chain tracking card — token validated inside handler
   "/api/track/confirm",   // Customer delivery confirmation — token validated inside handler
@@ -106,18 +104,6 @@ const PUBLIC_PATHS = [
   // Customer Magic Link (public validate/use — handler verifies token internally)
   "/api/db/customer-magic-link/validate",
   "/api/db/customer-magic-link/use",
-  // Booking Collab Sheet — magic-link token-gated, no JWT
-  "/api/db/booking-collab/validate",
-  "/api/db/booking-collab/factory-submit",
-  "/api/db/booking-collab/customer-submit",
-  "/api/db/booking-collab/trucking-submit",
-  "/api/db/booking-collab/broker-submit",
-  "/api/db/booking-collab/customer-notes",
-  "/api/db/booking-collab/file",
-  "/api/db/booking-collab/upload",
-  "/api/db/booking-collab/sailings",
-  // 代购协同表 — opaque token-gated, GET/PATCH public; POST requires JWT (handled inside)
-  "/api/db/collab-sheets",
   // Customer Invite: validate + activate are public (token is credential); generate requires admin JWT
   "/api/db/customer-invite/validate",
   "/api/db/customer-invite/activate",
@@ -127,13 +113,27 @@ const PUBLIC_PATHS = [
   "/api/db/customs-broker-checkin",
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
+  "/api/db/factory-portal", // 工厂门户:resolve/upload公开,gen内部校admin JWT
   // Team invite accept — public (token in URL is the credential, validated server-side)
   "/api/db/team-join",
-  "/api/db/migrate-employees",  // DDL migration — no data
-  "/api/db/employees",          // Employee list — admin internal, authGate protected
-  "/api/db/migrate-payroll",    // DDL migration — no data
-  "/api/db/payroll-sheets",     // Payroll CRUD — authGate protected
-  "/api/db/workbench-kpi", // Admin workbench KPI — aggregate totals only, no PII
+  "/api/db/kp",
+  "/api/db/invoice-portal",
+  // Booking Collab Sheet — magic-link token-gated, no JWT（2026-06-22 恢复:被部署冲掉过,全站协同链接曾登录墙故障）
+  "/api/db/booking-collab/validate",
+  "/api/db/booking-collab/factory-submit",
+  "/api/db/booking-collab/customer-submit",
+  "/api/db/booking-collab/trucking-submit",
+  "/api/db/booking-collab/broker-submit",
+  "/api/db/booking-collab/update-bl-no",
+  "/api/db/booking-collab/confirm-telex",
+  "/api/db/booking-collab/confirm-payment",
+  "/api/db/booking-collab/customer-notes",
+  "/api/db/booking-collab/file",
+  "/api/db/booking-collab/upload",
+  "/api/db/booking-collab/sailings",
+  "/api/db/booking-collab/collab-pricing",
+  "/api/db/booking-collab/collab-order-pricing",
+  "/api/db/booking-collab/collab-pricing-submit",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
@@ -189,10 +189,12 @@ export async function authMiddleware(req, res, next) {
 
   // 静态文件 /public/* 直通（driver-evidence.html / dispatch-paste.html 等）
   if (req.path.startsWith("/public/")) return next();
-  if (req.path.startsWith("/api/so/collab-public/")) return next(); // public magic-link token-gated
 
   // Factory short link /f/<token> → redirect to /public/factory-fill.html, no auth
   if (req.path.startsWith("/f/")) return next();
+
+  // Factory confirm short link /fc/<token> → redirect to /public/factory-confirm.html, no auth
+  if (req.path.startsWith("/fc/")) return next();
 
   // Doc share recipient download: GET /api/db/doc-share?token=...&password=...
   // External recipients have no JWT — handler verifies via token + password instead.
@@ -201,9 +203,6 @@ export async function authMiddleware(req, res, next) {
 
   // Portal 路由体系：使用独立 HMAC token，由 portalGate 负责校验，跳过内部 JWT
   if (req.path.startsWith(PORTAL_ROUTES_PREFIX)) return next();
-
-  // Partner portal /api/p/:token — token-in-URL auth, no JWT
-  if (req.path.startsWith("/api/p/")) return next();
 
   // Cron endpoints: allow if x-cron-secret header matches env secret
   // (handler still validates; this just skips JWT requirement)
@@ -224,18 +223,6 @@ export async function authMiddleware(req, res, next) {
     req.path === "/api/minimax-chat"
   ) {
     req.user = { role: "system", sub: "dev-bypass", account: "dev-local" };
-    return next();
-  }
-
-  // 单据长期书签钥匙（Damon 2026-06-12：改完数据刷新旧链接不再 401）
-  // 仅 GET 渲染类端点 + ?key= 匹配 env DOC_VIEW_KEY 才放行，只读 logistics 身份。
-  if (
-    req.method === "GET" &&
-    process.env.DOC_VIEW_KEY &&
-    req.query && req.query.key === process.env.DOC_VIEW_KEY &&
-    (req.path === "/api/db/shipping-plan-pdf" || req.path === "/api/db/documents")
-  ) {
-    req.user = { role: "logistics", sub: "doc-view-key", account: "doc-view-key" };
     return next();
   }
 

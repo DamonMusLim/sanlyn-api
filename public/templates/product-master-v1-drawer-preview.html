@@ -1,0 +1,979 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Product Master V1 · Drawer Preview</title>
+<style>
+/* ─── Tokens ──────────────────────────────────────────────────── */
+:root{
+  --bg:#f4f6fb;--card:#fff;--border:#dbe2ec;
+  --t1:#0f172a;--t2:#475569;--t3:#94a3b8;
+  --admin:#7c3aed;--factory:#16a34a;--customer:#2563eb;--logistics:#ea580c;
+  --ok:#15803d;--warn:#b45309;--err:#b91c1c;
+  --accent:#0f172a;
+  /* drawer */
+  --d-bg:#0f172a;--d-card:#1e293b;--d-border:#334155;
+  --d-t1:#f1f5f9;--d-t2:#94a3b8;--d-t3:#64748b;
+  --d-ok:#22c55e;--d-warn:#f59e0b;--d-err:#ef4444;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--t1);
+  font-family:-apple-system,BlinkMacSystemFont,"Inter","PingFang SC","Microsoft Yahei",sans-serif;
+  font-size:14px;line-height:1.55}
+
+/* ─── Top chrome ─────────────────────────────────────────────── */
+.top-banner{background:#fde68a;color:#78350f;padding:7px 16px;font-size:11.5px;
+  text-align:center;font-weight:700;letter-spacing:.02em}
+.role-banner{padding:9px 16px;text-align:center;font-weight:700;color:#fff;
+  font-size:12.5px;letter-spacing:.04em}
+.role-banner.admin{background:var(--admin)}
+.role-banner.factory{background:var(--factory)}
+.role-banner.customer{background:var(--customer)}
+.role-banner.logistics{background:var(--logistics)}
+
+.container{max-width:1320px;margin:18px auto;padding:0 20px 80px}
+
+/* ─── Page header ────────────────────────────────────────────── */
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;
+  flex-wrap:wrap;gap:14px;margin-bottom:18px}
+.page-head h1{font-size:22px;letter-spacing:-.01em;margin-bottom:4px}
+.page-head .meta{font-size:12px;color:var(--t3);font-family:ui-monospace,monospace}
+.role-switch{display:inline-flex;background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:3px;gap:2px}
+.role-switch button{background:transparent;border:none;padding:7px 14px;border-radius:7px;
+  font-size:12px;font-weight:600;color:var(--t2);cursor:pointer;letter-spacing:.02em}
+.role-switch button.active{background:var(--t1);color:#fff}
+.role-switch button:not(.active):hover{background:#f1f5f9}
+
+/* ─── Filter bar ─────────────────────────────────────────────── */
+.filter-bar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:center}
+.filter-bar input[type=search]{flex:1;min-width:220px;padding:8px 12px;
+  border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff}
+.filter-bar select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;
+  font-size:12.5px;background:#fff;color:var(--t1)}
+.filter-bar .count{font-size:11.5px;color:var(--t3);margin-left:auto;
+  font-family:ui-monospace,monospace}
+
+/* ─── Table ──────────────────────────────────────────────────── */
+.table-wrap{background:var(--card);border:1px solid var(--border);
+  border-radius:12px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{text-align:left;font-weight:600;padding:11px 12px;
+  background:#f8fafc;color:var(--t2);font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody td{padding:11px 12px;border-bottom:1px solid #eef2f6;vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr{cursor:pointer;transition:background .12s}
+tbody tr:hover{background:#f8fafc}
+tbody tr.selected{background:#eff6ff}
+td.img-cell{width:48px;padding-right:0}
+td.img-cell .ph{width:36px;height:36px;border-radius:6px;background:#e2e8f0;
+  display:flex;align-items:center;justify-content:center;color:#94a3b8;
+  font-size:9px;font-weight:700}
+td.sku{font-family:ui-monospace,monospace;color:var(--t2);font-size:12px}
+td.name{font-weight:600;color:var(--t1)}
+td.name .cn{display:block;font-weight:400;color:var(--t3);font-size:11.5px;margin-top:2px}
+td.num{font-family:ui-monospace,monospace;text-align:right;color:var(--t2);font-size:12px}
+td.act{text-align:right;white-space:nowrap}
+
+/* role-column visibility */
+.col-factory,.col-pricing,.col-margin,.col-qc{transition:none}
+body[data-role=customer] .col-factory,
+body[data-role=customer] .col-pricing,
+body[data-role=customer] .col-margin,
+body[data-role=customer] .col-qc{display:none}
+body[data-role=factory] .col-pricing,
+body[data-role=factory] .col-margin{display:none}
+body[data-role=logistics] .col-pricing,
+body[data-role=logistics] .col-margin{display:none}
+
+/* ─── Pills ──────────────────────────────────────────────────── */
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;
+  font-size:10.5px;font-weight:700;letter-spacing:.02em}
+.pill.ok{background:#dcfce7;color:#15803d}
+.pill.warn{background:#fef3c7;color:#92400e}
+.pill.err{background:#fee2e2;color:#991b1b}
+.pill.muted{background:#e2e8f0;color:#475569}
+.pill.info{background:#dbeafe;color:#1d4ed8}
+
+/* ─── Btn ────────────────────────────────────────────────────── */
+button.btn{padding:7px 13px;border:none;border-radius:7px;background:var(--accent);
+  color:#fff;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.02em}
+button.btn:hover{background:#1e293b}
+button.btn.sec{background:#fff;color:var(--t1);border:1px solid var(--border)}
+button.btn.sec:hover{background:#f1f5f9}
+button.btn.ghost{background:transparent;color:var(--t2);padding:6px 10px;border:none}
+button.btn.ghost:hover{background:#f1f5f9}
+.fab{position:fixed;right:24px;bottom:24px;width:52px;height:52px;border-radius:50%;
+  background:var(--accent);color:#fff;border:none;font-size:24px;cursor:pointer;
+  box-shadow:0 6px 20px rgba(15,23,42,.18);z-index:5}
+.fab:hover{background:#1e293b}
+
+.demo{margin-bottom:14px;padding:10px 14px;background:#eff6ff;
+  border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e40af}
+.demo strong{color:#1e3a8a}
+
+/* ══════════════════════════════════════════════════════════════
+   DRAWER / MODAL — dark theme
+══════════════════════════════════════════════════════════════ */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100;
+  display:none;align-items:center;justify-content:center;padding:20px}
+.overlay.open{display:flex}
+
+.drawer{background:var(--d-bg);border-radius:16px;width:100%;max-width:920px;
+  max-height:90vh;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 24px 64px rgba(0,0,0,.5)}
+
+/* drawer header */
+.d-header{padding:18px 22px 0;flex-shrink:0}
+.d-title-row{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:14px}
+.d-title-row h2{font-size:17px;font-weight:700;color:var(--d-t1)}
+.d-title-row .d-meta{font-family:ui-monospace,monospace;font-size:11px;
+  color:var(--d-t3);margin-top:3px}
+.d-close{background:transparent;border:none;color:var(--d-t2);cursor:pointer;
+  font-size:22px;line-height:1;padding:4px 6px;border-radius:6px}
+.d-close:hover{background:#334155;color:var(--d-t1)}
+
+/* drawer tabs */
+.d-tabs{display:flex;gap:2px;border-bottom:1px solid var(--d-border);padding-bottom:0}
+.d-tab{background:transparent;border:none;color:var(--d-t2);padding:9px 16px;
+  font-size:12.5px;font-weight:600;cursor:pointer;letter-spacing:.02em;
+  border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.d-tab:hover{color:var(--d-t1)}
+.d-tab.active{color:#f8fafc;border-bottom-color:#6366f1}
+.d-tab.locked{color:var(--d-t3);cursor:not-allowed}
+.d-tab.locked span{font-size:9px;vertical-align:super;opacity:.6}
+
+/* drawer body */
+.d-body{display:flex;gap:0;flex:1;overflow:hidden}
+.d-left{width:200px;flex-shrink:0;padding:20px 16px;
+  border-right:1px solid var(--d-border);display:flex;flex-direction:column;gap:16px}
+.d-img-box{width:168px;height:168px;border-radius:10px;background:#1e293b;
+  border:1px solid var(--d-border);display:flex;align-items:center;
+  justify-content:center;color:var(--d-t3);font-size:11px;text-align:center;
+  flex-shrink:0}
+.d-badges{display:flex;flex-direction:column;gap:6px}
+.d-badge{display:flex;align-items:center;justify-content:space-between;
+  background:#1e293b;border:1px solid var(--d-border);border-radius:8px;
+  padding:8px 10px}
+.d-badge .label{font-size:10px;color:var(--d-t3);font-weight:600;
+  letter-spacing:.04em;text-transform:uppercase}
+.d-badge .val{font-size:12px;font-weight:700;color:var(--d-t1)}
+
+.d-right{flex:1;overflow-y:auto;padding:20px 22px}
+.d-right::-webkit-scrollbar{width:4px}
+.d-right::-webkit-scrollbar-track{background:transparent}
+.d-right::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+
+/* tab panes */
+.d-pane{display:none}
+.d-pane.active{display:block}
+
+/* field grid */
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
+.field-grid.cols3{grid-template-columns:1fr 1fr 1fr}
+.field-grid.cols1{grid-template-columns:1fr}
+.field-item{display:flex;flex-direction:column;gap:3px}
+.field-item.span2{grid-column:span 2}
+.field-item.span3{grid-column:span 3}
+.fi-label{font-size:10px;font-weight:700;color:var(--d-t3);
+  letter-spacing:.06em;text-transform:uppercase}
+.fi-val{font-size:13.5px;color:var(--d-t1);font-weight:500}
+.fi-val.mono{font-family:ui-monospace,monospace;font-size:12.5px}
+.fi-val.muted{color:var(--d-t2)}
+.fi-val.empty{color:var(--d-t3);font-style:italic;font-size:12px}
+
+/* section divider */
+.d-section{margin-top:22px;margin-bottom:12px}
+.d-section-title{font-size:11px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--d-t3);border-bottom:1px solid var(--d-border);
+  padding-bottom:6px}
+
+/* logistics card */
+.logistics-card{background:#1e293b;border:1px solid var(--d-border);
+  border-radius:10px;padding:14px;margin-top:10px}
+.lc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.lc-item .label{font-size:10px;color:var(--d-t3);font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase;margin-bottom:3px}
+.lc-item .val{font-size:14px;font-weight:700;color:var(--d-t1)}
+.lc-item .sub{font-size:11px;color:var(--d-t2);margin-top:1px}
+
+/* container capacity card */
+.capacity-card{background:#1a2942;border:1px solid #1e4080;
+  border-radius:10px;padding:14px;margin-top:12px}
+.capacity-card .cc-title{font-size:11px;color:#60a5fa;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase;margin-bottom:10px}
+.cc-row{display:flex;gap:12px;flex-wrap:wrap}
+.cc-item{flex:1;min-width:80px;background:rgba(30,64,175,.2);
+  border:1px solid rgba(96,165,250,.2);border-radius:8px;padding:8px 10px}
+.cc-item .ct{font-size:10px;color:#93c5fd;font-weight:600;margin-bottom:2px}
+.cc-item .cv{font-size:14px;font-weight:700;color:#f0f9ff}
+.cc-item .cs{font-size:10px;color:#7dd3fc;margin-top:1px}
+
+/* QC tab */
+.qc-entry{background:#1e293b;border:1px solid var(--d-border);border-radius:8px;
+  padding:12px 14px;margin-bottom:10px}
+.qc-entry-head{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:8px}
+.qc-entry-head .batch{font-family:ui-monospace,monospace;font-size:12.5px;
+  color:var(--d-t1);font-weight:600}
+.qc-entry-body{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+
+/* Packaging tab */
+.pkg-item{background:#1e293b;border:1px solid var(--d-border);border-radius:8px;
+  padding:12px 14px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.pkg-icon{width:36px;height:36px;background:#334155;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.pkg-detail{flex:1}
+.pkg-detail .pname{font-size:13px;font-weight:600;color:var(--d-t1)}
+.pkg-detail .pspec{font-size:11.5px;color:var(--d-t2);margin-top:2px}
+.pkg-qty{text-align:right}
+.pkg-qty .pqty{font-size:14px;font-weight:700;color:var(--d-t1);
+  font-family:ui-monospace,monospace}
+.pkg-qty .punit{font-size:11px;color:var(--d-t3)}
+
+/* Design tab */
+.design-files{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.design-file{background:#1e293b;border:1px solid var(--d-border);
+  border-radius:8px;padding:10px;text-align:center;cursor:pointer}
+.design-file:hover{border-color:#6366f1}
+.design-file .df-icon{font-size:28px;margin-bottom:6px}
+.design-file .df-name{font-size:11px;color:var(--d-t1);font-weight:600;
+  word-break:break-all;line-height:1.4}
+.design-file .df-meta{font-size:10px;color:var(--d-t3);margin-top:3px}
+
+/* Pricing tab */
+.pricing-gate{background:#1e293b;border:1px solid #4c1d95;border-radius:10px;
+  padding:20px;text-align:center;margin-bottom:16px}
+.pricing-gate .pg-icon{font-size:32px;margin-bottom:8px}
+.pricing-gate .pg-msg{font-size:13px;color:var(--d-t2)}
+
+.price-block{background:#1e293b;border:1px solid var(--d-border);
+  border-radius:10px;padding:14px;margin-bottom:10px}
+.price-block-head{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:12px}
+.price-block-head .ph-label{font-size:11px;font-weight:700;color:var(--d-t3);
+  letter-spacing:.06em;text-transform:uppercase}
+.price-block-head .ph-val{font-size:20px;font-weight:700;color:var(--d-t1)}
+.price-block-head .ph-currency{font-size:12px;color:var(--d-t2);margin-left:4px}
+.profit-bar{background:#334155;border-radius:999px;height:8px;overflow:hidden;
+  margin-top:12px}
+.profit-fill{height:100%;background:linear-gradient(90deg,#22c55e,#4ade80);
+  border-radius:999px}
+
+/* drawer footer */
+.d-footer{padding:14px 22px;border-top:1px solid var(--d-border);flex-shrink:0;
+  display:flex;justify-content:space-between;align-items:center;background:var(--d-bg)}
+.d-footer .d-footer-left{font-size:11px;color:var(--d-t3);
+  font-family:ui-monospace,monospace}
+.d-footer-btns{display:flex;gap:8px}
+button.d-btn{padding:8px 16px;border-radius:8px;font-size:12.5px;font-weight:600;
+  cursor:pointer;letter-spacing:.02em}
+button.d-btn.pri{background:#4f46e5;color:#fff;border:none}
+button.d-btn.pri:hover{background:#6366f1}
+button.d-btn.sec{background:transparent;color:var(--d-t2);
+  border:1px solid var(--d-border)}
+button.d-btn.sec:hover{background:#1e293b;color:var(--d-t1)}
+button.d-btn.danger{background:transparent;color:#ef4444;
+  border:1px solid #7f1d1d}
+button.d-btn.danger:hover{background:#7f1d1d}
+
+/* empty state */
+.empty-pane{padding:32px 16px;text-align:center;color:var(--d-t3)}
+.empty-pane .ep-icon{font-size:36px;margin-bottom:10px}
+.empty-pane .ep-msg{font-size:13px}
+.empty-pane .ep-sub{font-size:11.5px;margin-top:5px;opacity:.7}
+
+/* ─── d-pill ─────────────────────────────────────────────────── */
+.d-pill{display:inline-block;padding:2px 8px;border-radius:999px;
+  font-size:10.5px;font-weight:700;letter-spacing:.02em}
+.d-pill.ok{background:rgba(34,197,94,.15);color:#4ade80}
+.d-pill.warn{background:rgba(245,158,11,.15);color:#fbbf24}
+.d-pill.err{background:rgba(239,68,68,.15);color:#f87171}
+.d-pill.muted{background:rgba(100,116,139,.15);color:var(--d-t2)}
+.d-pill.info{background:rgba(99,102,241,.2);color:#a5b4fc}
+
+</style>
+</head>
+<body data-role="admin">
+
+<div class="top-banner">PRODUCT MASTER V1 · Drawer Preview · Role-aware columns · Mock data only</div>
+<div id="role-banner" class="role-banner admin">Acting as: ADMIN</div>
+
+<div class="container">
+
+  <div class="page-head">
+    <div>
+      <h1>Product Master</h1>
+      <div class="meta">v1.0 · 874 SKU · Last sync 2026-05-20 08:42 · PETSOME / DIBAQ / JJ Pet</div>
+    </div>
+    <div class="role-switch" id="roleSwitch">
+      <button data-r="admin" class="active">Admin</button>
+      <button data-r="factory">Factory</button>
+      <button data-r="logistics">Logistics</button>
+      <button data-r="customer">Customer</button>
+    </div>
+  </div>
+
+  <div class="demo">
+    <strong>Drawer preview.</strong>
+    Click any row to open product drawer. Role switcher hides/shows columns and changes what's visible inside the drawer.
+    Tabs: <strong>Product · Customs · QC · Packaging · Design · Pricing*</strong>
+    (Pricing tab locked for Customer / Logistics roles.)
+  </div>
+
+  <div class="filter-bar">
+    <input type="search" placeholder="Search SKU / barcode / product name / brand…">
+    <select><option>All brands</option><option>PETSOME</option><option>DIBAQ</option><option>JJ Pet</option></select>
+    <select><option>All categories</option><option>Cat Food</option><option>Dog Food</option><option>Treats</option></select>
+    <select><option>Status: Active</option><option>All</option><option>Archived</option></select>
+    <span class="count">6 of 874</span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th style="width:44px">#</th>
+          <th>SKU</th>
+          <th>Product</th>
+          <th class="col-factory">Brand / Factory</th>
+          <th>Spec</th>
+          <th class="num col-factory">NW kg</th>
+          <th class="num col-factory">CBM</th>
+          <th class="col-qc">QC</th>
+          <th class="col-pricing">Pricing</th>
+          <th class="col-margin">Margin</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="productTable"></tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:10px;font-size:11px;color:var(--t3);text-align:center;
+    font-family:ui-monospace,monospace">
+    Product Master V1 · Drawer preview · Light table + dark modal
+  </div>
+
+</div><!-- /container -->
+
+<button class="fab" onclick="openDrawer(PRODUCTS[0])">+</button>
+
+<!-- ─────────────────────────────────────────────────────────────
+     DRAWER MODAL
+───────────────────────────────────────────────────────────── -->
+<div class="overlay" id="overlay" onclick="closeDrawerOnBg(event)">
+<div class="drawer" id="drawer">
+
+  <div class="d-header">
+    <div class="d-title-row">
+      <div>
+        <h2 id="d-title">—</h2>
+        <div class="d-meta" id="d-meta">—</div>
+      </div>
+      <button class="d-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="d-tabs" id="dTabs">
+      <button class="d-tab active" data-tab="product">📋 Product</button>
+      <button class="d-tab" data-tab="customs">🛃 Customs</button>
+      <button class="d-tab" data-tab="qc">🔬 QC</button>
+      <button class="d-tab" data-tab="packaging">📦 Packaging</button>
+      <button class="d-tab" data-tab="design">🎨 Design</button>
+      <button class="d-tab" id="pricingTab" data-tab="pricing">💰 Pricing</button>
+    </div>
+  </div>
+
+  <div class="d-body">
+    <!-- Left sidebar -->
+    <div class="d-left">
+      <div class="d-img-box">
+        <div style="text-align:center">
+          <div style="font-size:28px;margin-bottom:6px">📷</div>
+          <div style="font-size:10px">Product Image</div>
+        </div>
+      </div>
+      <div class="d-badges" id="d-badges">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- Right pane area -->
+    <div class="d-right">
+
+      <!-- ── TAB: PRODUCT ── -->
+      <div class="d-pane active" id="pane-product">
+        <div class="field-grid" id="product-fields">
+          <!-- populated by JS -->
+        </div>
+
+        <div class="d-section"><div class="d-section-title">Logistics Spec</div></div>
+        <div class="logistics-card">
+          <div class="lc-grid" id="logistics-fields">
+            <!-- populated by JS -->
+          </div>
+        </div>
+
+        <div class="capacity-card" id="capacity-card">
+          <div class="cc-title">📦 Container Capacity</div>
+          <div class="cc-row" id="cc-row">
+            <!-- populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- ── TAB: CUSTOMS ── -->
+      <div class="d-pane" id="pane-customs">
+        <div class="field-grid cols1" id="customs-fields">
+          <!-- populated by JS -->
+        </div>
+        <div class="d-section"><div class="d-section-title">Port & Origin</div></div>
+        <div class="field-grid" id="customs-port-fields"></div>
+      </div>
+
+      <!-- ── TAB: QC ── -->
+      <div class="d-pane" id="pane-qc">
+        <div id="qc-content"></div>
+      </div>
+
+      <!-- ── TAB: PACKAGING ── -->
+      <div class="d-pane" id="pane-packaging">
+        <div id="packaging-content"></div>
+      </div>
+
+      <!-- ── TAB: DESIGN ── -->
+      <div class="d-pane" id="pane-design">
+        <div id="design-content"></div>
+      </div>
+
+      <!-- ── TAB: PRICING ── -->
+      <div class="d-pane" id="pane-pricing">
+        <div id="pricing-content"></div>
+      </div>
+
+    </div><!-- /d-right -->
+  </div><!-- /d-body -->
+
+  <div class="d-footer">
+    <div class="d-footer-left" id="d-footer-info">—</div>
+    <div class="d-footer-btns" id="d-footer-btns">
+      <button class="d-btn sec" onclick="closeDrawer()">Close</button>
+    </div>
+  </div>
+
+</div><!-- /drawer -->
+</div><!-- /overlay -->
+
+<script>
+// ─── Mock data ──────────────────────────────────────────────────────
+const PRODUCTS = [
+  {
+    id: 1, sku: "WP-62-M",
+    name_en: "Sniffly Dog Tray 200g", name_cn: "嗅嗅狗狗餐盘 200g",
+    brand: "PETSOME", factory: "XIAMEN PET BABY", factory_code: "CN-F001",
+    category: "Dog Food", spec: "200g × 24", barcode: "6927749820000",
+    nw: 0.20, gw: 0.26, cbm: 0.0042, carton_qty: 24,
+    shelf_life: 730, hs_code: "2309.10", declaration_name: "PET FOODS",
+    material: "Chicken, Pork", origin: "XIAMEN, CHINA", port: "XIAMEN",
+    production_status: "Active", moq: 2000,
+    qc_status: "ok", pricing_status: "ok", margin_status: "ok",
+    factory_product_code: "XPB-WP62M", moq_display: "2,000 units",
+    qc: [
+      { id: "QC-2024-12", batch: "BATCH-2024-1201", date: "2024-12-01",
+        result: "ok", label: "Passed", checks: { weight: "ok", seal: "ok", bb: "2026-12-01" } },
+      { id: "QC-2024-08", batch: "BATCH-2024-0814", date: "2024-08-14",
+        result: "ok", label: "Passed", checks: { weight: "ok", seal: "ok", bb: "2026-08-14" } }
+    ],
+    packaging: [
+      { icon: "📦", name: "Master Carton", spec: "610×410×310 mm", qty: 1500, unit: "pcs" },
+      { icon: "🏷", name: "Inner Label (ZH)", spec: "90×60 mm, 4c print", qty: 36000, unit: "pcs" },
+      { icon: "🏷", name: "Outer Label (EN)", spec: "110×70 mm, 4c print", qty: 1500, unit: "pcs" }
+    ],
+    design: [
+      { icon: "🖼", name: "WP-62-M_Label_v4.ai", type: "Illustrator", size: "14.2 MB", date: "2025-11-03" },
+      { icon: "📄", name: "WP-62-M_Carton_v2.pdf", type: "PDF", size: "3.1 MB", date: "2025-09-15" },
+      { icon: "🖼", name: "WP-62-M_Product_Photo.jpg", type: "JPEG", size: "8.7 MB", date: "2025-10-22" }
+    ],
+    pricing: { factory_price: { value: 1.42, currency: "CNY", unit: "per unit" },
+               sales_price:   { value: 2.10, currency: "USD", unit: "per unit" },
+               margin_pct: 34.2, margin_status: "ok" }
+  },
+  {
+    id: 2, sku: "ZC-16",
+    name_en: "Chicken Pâté 85g", name_cn: "鸡肉慕斯 85g",
+    brand: "PETSOME", factory: "XIAMEN PET BABY", factory_code: "CN-F001",
+    category: "Cat Food", spec: "85g × 48", barcode: "6927749821001",
+    nw: 0.085, gw: 0.110, cbm: 0.0019, carton_qty: 48,
+    shelf_life: 730, hs_code: "2309.10", declaration_name: "PET FOODS",
+    material: "Chicken", origin: "XIAMEN, CHINA", port: "XIAMEN",
+    production_status: "Active", moq: 3000,
+    qc_status: "ok", pricing_status: "warn", margin_status: "muted",
+    factory_product_code: "XPB-ZC16", moq_display: "3,000 units",
+    qc: [
+      { id: "QC-2025-02", batch: "BATCH-2025-0218", date: "2025-02-18",
+        result: "ok", label: "Passed", checks: { weight: "ok", seal: "ok", bb: "2027-02-18" } }
+    ],
+    packaging: [
+      { icon: "📦", name: "Master Carton", spec: "580×380×280 mm", qty: 800, unit: "pcs" }
+    ],
+    design: [],
+    pricing: { factory_price: null, sales_price: { value: 1.55, currency: "USD", unit: "per unit" },
+               margin_pct: null, margin_status: "muted" }
+  },
+  {
+    id: 3, sku: "CP-4",
+    name_en: "Cat Treats Tuna 50g", name_cn: "猫零食金枪鱼 50g",
+    brand: "DIBAQ", factory: "FX-DIBAQ-001", factory_code: "CN-F002",
+    category: "Treats", spec: "50g × 60", barcode: "6932001140041",
+    nw: 0.050, gw: 0.072, cbm: 0.0010, carton_qty: 60,
+    shelf_life: 540, hs_code: "2309.90", declaration_name: "PET FOODS",
+    material: "Tuna, Tapioca", origin: "GUANGDONG, CHINA", port: "GUANGZHOU",
+    production_status: "Active", moq: 5000,
+    qc_status: "warn", pricing_status: "ok", margin_status: "warn",
+    factory_product_code: "DIBAQ-CP4", moq_display: "5,000 units",
+    qc: [
+      { id: "QC-2025-01", batch: "BATCH-2025-0112", date: "2025-01-12",
+        result: "warn", label: "Conditional", checks: { weight: "ok", seal: "warn", bb: "2026-07-12" } }
+    ],
+    packaging: [
+      { icon: "📦", name: "Master Carton", spec: "540×360×260 mm", qty: 1200, unit: "pcs" },
+      { icon: "🏷", name: "Product Label (EN+CN)", spec: "80×55 mm", qty: 72000, unit: "pcs" }
+    ],
+    design: [
+      { icon: "🖼", name: "CP-4_Label_EN_v2.ai", type: "Illustrator", size: "9.6 MB", date: "2025-08-11" }
+    ],
+    pricing: { factory_price: { value: 0.62, currency: "CNY", unit: "per unit" },
+               sales_price:   { value: 0.98, currency: "USD", unit: "per unit" },
+               margin_pct: 18.4, margin_status: "warn" }
+  },
+  {
+    id: 4, sku: "JJ-PET-22",
+    name_en: "Premium Kibble 5kg", name_cn: "高级粮 5kg",
+    brand: "JJ Pet", factory: "JJ-FACTORY-A", factory_code: "CN-F003",
+    category: "Dog Food", spec: "5kg × 4", barcode: "6900001220040",
+    nw: 5.000, gw: 5.400, cbm: 0.0260, carton_qty: 4,
+    shelf_life: 548, hs_code: "2309.10", declaration_name: "PET FOODS",
+    material: "Chicken, Corn, Rice", origin: "JIANGSU, CHINA", port: "SHANGHAI",
+    production_status: "Active", moq: 1000,
+    qc_status: "ok", pricing_status: "ok", margin_status: "ok",
+    factory_product_code: "JJF-22", moq_display: "1,000 units",
+    qc: [
+      { id: "QC-2025-03", batch: "BATCH-2025-0310", date: "2025-03-10",
+        result: "ok", label: "Passed", checks: { weight: "ok", seal: "ok", bb: "2027-03-10" } }
+    ],
+    packaging: [
+      { icon: "📦", name: "Master Carton", spec: "720×480×360 mm", qty: 600, unit: "pcs" },
+      { icon: "🏷", name: "Bag Label (EN)", spec: "200×120 mm", qty: 2400, unit: "pcs" }
+    ],
+    design: [
+      { icon: "🖼", name: "JJ-PET-22_Bag_v3.ai", type: "Illustrator", size: "18.2 MB", date: "2025-12-01" },
+      { icon: "📄", name: "JJ-PET-22_Spec_Sheet.pdf", type: "PDF", size: "1.2 MB", date: "2025-11-20" }
+    ],
+    pricing: { factory_price: { value: 28.50, currency: "CNY", unit: "per unit" },
+               sales_price:   { value: 5.80, currency: "USD", unit: "per unit" },
+               margin_pct: 28.7, margin_status: "ok" }
+  },
+  {
+    id: 5, sku: "CP-5",
+    name_en: "Hairball Control Treats", name_cn: "化毛球零食",
+    brand: "DIBAQ", factory: null, factory_code: null,
+    category: "Treats", spec: "30g × 80", barcode: null,
+    nw: 0.030, gw: 0.042, cbm: 0.0008, carton_qty: 80,
+    shelf_life: 365, hs_code: "2309.90", declaration_name: "PET FOODS",
+    material: "Chicken, Malt Extract", origin: null, port: null,
+    production_status: "Active", moq: null,
+    qc_status: "muted", pricing_status: "err", margin_status: "err",
+    factory_product_code: null, moq_display: "—",
+    qc: [],
+    packaging: [],
+    design: [],
+    pricing: { factory_price: null, sales_price: null, margin_pct: null, margin_status: "err" }
+  },
+  {
+    id: 6, sku: "WP-99",
+    name_en: "Catnip Spray 50ml", name_cn: "猫薄荷喷雾 50ml",
+    brand: "PETSOME", factory: "XIAMEN PET BABY", factory_code: "CN-F001",
+    category: "Accessories", spec: "50ml × 36", barcode: "6927749899000",
+    nw: 0.050, gw: 0.070, cbm: 0.0012, carton_qty: 36,
+    shelf_life: 365, hs_code: "3307.49", declaration_name: "CAT TOY SPRAY",
+    material: "Catnip Extract, Water, Alcohol", origin: "XIAMEN, CHINA", port: "XIAMEN",
+    production_status: "Active", moq: 2000,
+    qc_status: "ok", pricing_status: "ok", margin_status: "ok",
+    factory_product_code: "XPB-WP99", moq_display: "2,000 units",
+    qc: [
+      { id: "QC-2025-04", batch: "BATCH-2025-0408", date: "2025-04-08",
+        result: "ok", label: "Passed", checks: { weight: "ok", seal: "ok", bb: "2026-04-08" } }
+    ],
+    packaging: [
+      { icon: "📦", name: "Master Carton", spec: "500×340×240 mm", qty: 1200, unit: "pcs" },
+      { icon: "🏷", name: "Spray Label", spec: "60×40 mm", qty: 43200, unit: "pcs" }
+    ],
+    design: [
+      { icon: "🖼", name: "WP-99_Label_v1.ai", type: "Illustrator", size: "5.8 MB", date: "2024-10-05" }
+    ],
+    pricing: { factory_price: { value: 3.20, currency: "CNY", unit: "per unit" },
+               sales_price:   { value: 0.75, currency: "USD", unit: "per unit" },
+               margin_pct: 31.5, margin_status: "ok" }
+  }
+];
+
+// ─── Current state ──────────────────────────────────────────────────
+let currentRole = "admin";
+let currentProduct = null;
+let currentTab = "product";
+
+// ─── Role switcher ──────────────────────────────────────────────────
+document.querySelectorAll('#roleSwitch button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#roleSwitch button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentRole = b.dataset.r;
+    document.body.dataset.role = currentRole;
+    const banner = document.getElementById('role-banner');
+    banner.className = 'role-banner ' + currentRole;
+    banner.textContent = 'Acting as: ' + currentRole.toUpperCase();
+    renderTable();
+    // refresh drawer if open
+    if (currentProduct) { populateDrawer(currentProduct); }
+    updatePricingTabVis();
+  });
+});
+
+// ─── Pill helpers ───────────────────────────────────────────────────
+const STATUS_MAP = {
+  ok: { cls: 'ok', labels: { qc: 'Passed', pricing: 'Configured', margin: 'Healthy' } },
+  warn: { cls: 'warn', labels: { qc: 'Pending', pricing: 'Incomplete', margin: 'Low' } },
+  err: { cls: 'err', labels: { qc: 'Failed', pricing: 'Missing', margin: 'Loss risk' } },
+  muted: { cls: 'muted', labels: { qc: 'N/A', pricing: 'N/A', margin: 'No data' } }
+};
+function pill(status, type) {
+  const m = STATUS_MAP[status] || STATUS_MAP.muted;
+  return `<span class="pill ${m.cls}">${m.labels[type] || status}</span>`;
+}
+function dpill(status, text) {
+  return `<span class="d-pill ${status}">${text}</span>`;
+}
+
+// ─── Table render ───────────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById('productTable');
+  tbody.innerHTML = PRODUCTS.map((p, i) => `
+    <tr onclick="openDrawer(PRODUCTS[${i}])" ${currentProduct?.id===p.id?'class="selected"':''}>
+      <td class="img-cell"><div class="ph">IMG</div></td>
+      <td class="num">${i+1}</td>
+      <td class="sku">${p.sku}</td>
+      <td class="name">${p.name_en}<span class="cn">${p.name_cn}</span></td>
+      <td class="col-factory">${p.brand}${p.factory?`<br><span style="font-size:11px;color:var(--t3)">${p.factory}</span>`:`<br><em style="color:var(--t3);font-size:11px">— unassigned</em>`}</td>
+      <td>${p.spec}</td>
+      <td class="num col-factory">${p.nw.toFixed(3)}</td>
+      <td class="num col-factory">${p.cbm.toFixed(4)}</td>
+      <td class="col-qc">${pill(p.qc_status,'qc')}</td>
+      <td class="col-pricing">${pill(p.pricing_status,'pricing')}</td>
+      <td class="col-margin">${pill(p.margin_status,'margin')}</td>
+      <td class="act"><button class="btn ghost" onclick="event.stopPropagation();openDrawer(PRODUCTS[${i}])">View →</button></td>
+    </tr>
+  `).join('');
+}
+
+// ─── Drawer open/close ──────────────────────────────────────────────
+function openDrawer(p) {
+  currentProduct = p;
+  document.querySelector('.overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  populateDrawer(p);
+  renderTable(); // update selected row
+  switchTab('product');
+}
+function closeDrawer() {
+  document.querySelector('.overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  currentProduct = null;
+  renderTable();
+}
+function closeDrawerOnBg(e) {
+  if (e.target === document.querySelector('.overlay')) closeDrawer();
+}
+
+// ─── Tab switching ──────────────────────────────────────────────────
+document.querySelectorAll('.d-tab').forEach(t => {
+  t.addEventListener('click', () => {
+    if (t.classList.contains('locked')) return;
+    switchTab(t.dataset.tab);
+  });
+});
+function switchTab(name) {
+  currentTab = name;
+  document.querySelectorAll('.d-tab').forEach(t => t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.d-pane').forEach(p => p.classList.toggle('active', p.id==='pane-'+name));
+}
+function updatePricingTabVis() {
+  const ptab = document.getElementById('pricingTab');
+  const locked = currentRole === 'customer' || currentRole === 'logistics';
+  ptab.classList.toggle('locked', locked);
+  if (locked) ptab.innerHTML = '💰 Pricing <span>🔒</span>';
+  else ptab.textContent = '💰 Pricing';
+}
+updatePricingTabVis();
+
+// ─── Populate drawer ────────────────────────────────────────────────
+function fi(label, val, cls='') {
+  const display = (val===null||val===undefined||val==='') ?
+    `<span class="fi-val empty">—</span>` :
+    `<div class="fi-val ${cls}">${val}</div>`;
+  return `<div class="field-item"><div class="fi-label">${label}</div>${display}</div>`;
+}
+function fiSpan(label, val, cls='', span=2) {
+  const display = (val===null||val===undefined||val==='') ?
+    `<span class="fi-val empty">—</span>` :
+    `<div class="fi-val ${cls}">${val}</div>`;
+  return `<div class="field-item span${span}"><div class="fi-label">${label}</div>${display}</div>`;
+}
+
+function populateDrawer(p) {
+  // title
+  document.getElementById('d-title').textContent = p.name_en;
+  document.getElementById('d-meta').textContent =
+    `SKU: ${p.sku}  ·  ${p.brand}  ·  ${p.category}`;
+
+  // sidebar badges
+  const badges = document.getElementById('d-badges');
+  const showFactory = currentRole !== 'customer';
+  badges.innerHTML = `
+    <div class="d-badge">
+      <div><div class="label">SKU</div><div class="val mono" style="font-size:13px">${p.sku}</div></div>
+    </div>
+    ${showFactory && p.factory_product_code ? `
+    <div class="d-badge">
+      <div><div class="label">Factory Code</div><div class="val mono" style="font-size:11px">${p.factory_product_code}</div></div>
+    </div>` : ''}
+    <div class="d-badge">
+      <div><div class="label">QC Status</div></div>
+      ${dpill(p.qc_status === 'ok' ? 'ok' : p.qc_status === 'warn' ? 'warn' : p.qc_status === 'err' ? 'err' : 'muted',
+        p.qc_status === 'ok' ? 'Passed' : p.qc_status === 'warn' ? 'Pending' : p.qc_status === 'err' ? 'Failed' : 'N/A')}
+    </div>
+    ${(currentRole==='admin'||currentRole==='factory') ? `
+    <div class="d-badge">
+      <div><div class="label">MOQ</div><div class="val">${p.moq_display}</div></div>
+    </div>` : ''}
+  `;
+
+  // ── PRODUCT TAB ──
+  const showFactoryFields = currentRole !== 'customer';
+  document.getElementById('product-fields').innerHTML = `
+    ${fi('Barcode', p.barcode, 'mono')}
+    ${fi('Category', p.category)}
+    ${fi('Brand', p.brand)}
+    ${showFactoryFields ? fi('Factory', p.factory || '<span class="fi-val empty">— unassigned</span>') : ''}
+    ${fiSpan('Product Name (EN)', p.name_en, '', 2)}
+    ${fiSpan('Product Name (CN)', p.name_cn, '', 2)}
+    ${fi('Spec / Pack Size', p.spec)}
+    ${fi('Carton Qty', p.carton_qty ? `${p.carton_qty} units/ctn` : null)}
+    ${fi('Shelf Life', p.shelf_life ? `${p.shelf_life} days` : null)}
+    ${fi('Material', p.material)}
+  `;
+
+  document.getElementById('logistics-fields').innerHTML = `
+    <div class="lc-item">
+      <div class="label">NW / unit</div>
+      <div class="val">${p.nw} kg</div>
+      <div class="sub">Net weight</div>
+    </div>
+    <div class="lc-item">
+      <div class="label">GW / CTN</div>
+      <div class="val">${p.gw} kg</div>
+      <div class="sub">Gross / carton</div>
+    </div>
+    <div class="lc-item">
+      <div class="label">CBM / CTN</div>
+      <div class="val">${p.cbm}</div>
+      <div class="sub">m³ per carton</div>
+    </div>
+    <div class="lc-item">
+      <div class="label">Shelf Life</div>
+      <div class="val">${p.shelf_life || '—'}</div>
+      <div class="sub">days</div>
+    </div>
+  `;
+
+  // container capacity
+  const ctns20 = p.cbm ? Math.floor(25.0 / p.cbm) : '—';
+  const ctns40 = p.cbm ? Math.floor(55.0 / p.cbm) : '—';
+  const ctns40hq = p.cbm ? Math.floor(67.0 / p.cbm) : '—';
+  document.getElementById('cc-row').innerHTML = `
+    <div class="cc-item">
+      <div class="ct">20'GP</div>
+      <div class="cv">${ctns20.toLocaleString()}</div>
+      <div class="cs">cartons</div>
+    </div>
+    <div class="cc-item">
+      <div class="ct">40'GP</div>
+      <div class="cv">${ctns40.toLocaleString()}</div>
+      <div class="cs">cartons</div>
+    </div>
+    <div class="cc-item">
+      <div class="ct">40'HQ</div>
+      <div class="cv">${ctns40hq.toLocaleString()}</div>
+      <div class="cs">cartons</div>
+    </div>
+    <div class="cc-item" style="background:rgba(30,64,175,.1)">
+      <div class="ct">Units/CTN</div>
+      <div class="cv">${p.carton_qty || '—'}</div>
+      <div class="cs">pcs</div>
+    </div>
+  `;
+
+  // ── CUSTOMS TAB ──
+  document.getElementById('customs-fields').innerHTML = `
+    ${fi('HS Code', p.hs_code, 'mono')}
+    ${fi('Declaration Name', p.declaration_name)}
+    ${fi('Material / Ingredients', p.material)}
+    ${fi('Shelf Life', p.shelf_life ? `${p.shelf_life} days` : null)}
+  `;
+  document.getElementById('customs-port-fields').innerHTML = `
+    ${fi('Origin City', p.origin)}
+    ${fi('Load Port', p.port)}
+  `;
+
+  // ── QC TAB ──
+  const qcEl = document.getElementById('qc-content');
+  if (!p.qc || p.qc.length === 0) {
+    qcEl.innerHTML = `<div class="empty-pane">
+      <div class="ep-icon">🔬</div>
+      <div class="ep-msg">No QC records</div>
+      <div class="ep-sub">QC checks will appear here once the factory submits inspection results.</div>
+    </div>`;
+  } else {
+    qcEl.innerHTML = p.qc.map(q => `
+      <div class="qc-entry">
+        <div class="qc-entry-head">
+          <span class="batch">${q.batch}</span>
+          ${dpill(q.result==='ok'?'ok':q.result==='warn'?'warn':'err', q.label)}
+        </div>
+        <div class="qc-entry-body">
+          ${fi('QC Date', q.date)}
+          ${fi('Weight Check', q.checks.weight==='ok' ? '✅ Pass' : '⚠️ Fail')}
+          ${fi('Seal Check', q.checks.seal==='ok' ? '✅ Pass' : '⚠️ Flag')}
+          ${fi('Best Before', q.checks.bb)}
+          ${fi('Record ID', q.id, 'mono')}
+        </div>
+      </div>`).join('');
+  }
+
+  // ── PACKAGING TAB ──
+  const pkgEl = document.getElementById('packaging-content');
+  if (!p.packaging || p.packaging.length === 0) {
+    pkgEl.innerHTML = `<div class="empty-pane">
+      <div class="ep-icon">📦</div>
+      <div class="ep-msg">No packaging records</div>
+      <div class="ep-sub">Carton specs and label materials will appear here once linked.</div>
+    </div>`;
+  } else {
+    pkgEl.innerHTML = p.packaging.map(pk => `
+      <div class="pkg-item">
+        <div class="pkg-icon">${pk.icon}</div>
+        <div class="pkg-detail">
+          <div class="pname">${pk.name}</div>
+          <div class="pspec">${pk.spec}</div>
+        </div>
+        <div class="pkg-qty">
+          <div class="pqty">${pk.qty.toLocaleString()}</div>
+          <div class="punit">${pk.unit} in stock</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // ── DESIGN TAB ──
+  const dsEl = document.getElementById('design-content');
+  if (!p.design || p.design.length === 0) {
+    dsEl.innerHTML = `<div class="empty-pane">
+      <div class="ep-icon">🎨</div>
+      <div class="ep-msg">No design files</div>
+      <div class="ep-sub">Artwork, label files and product photos will appear here.</div>
+    </div>`;
+  } else {
+    dsEl.innerHTML = `<div class="design-files">` +
+      p.design.map(d => `
+        <div class="design-file">
+          <div class="df-icon">${d.icon}</div>
+          <div class="df-name">${d.name}</div>
+          <div class="df-meta">${d.type} · ${d.size}</div>
+          <div class="df-meta" style="margin-top:2px;color:var(--d-t3)">${d.date}</div>
+        </div>`).join('') +
+      `</div>`;
+  }
+
+  // ── PRICING TAB ──
+  const prEl = document.getElementById('pricing-content');
+  const locked = currentRole === 'customer' || currentRole === 'logistics';
+  if (locked) {
+    prEl.innerHTML = `<div class="pricing-gate">
+      <div class="pg-icon">🔒</div>
+      <div class="pg-msg">Pricing information is not available for your role.<br>
+        <span style="font-size:11.5px;color:var(--d-t3);margin-top:4px;display:block">Contact your Sanlyn account manager for pricing enquiries.</span>
+      </div>
+    </div>`;
+  } else {
+    const pr = p.pricing;
+    const showFP = currentRole === 'admin' || currentRole === 'factory';
+    const showSP = currentRole === 'admin';
+    const fp = pr.factory_price;
+    const sp = pr.sales_price;
+    prEl.innerHTML = `
+      ${showFP ? `
+      <div class="price-block">
+        <div class="price-block-head">
+          <div class="ph-label">Factory Price</div>
+          <div>
+            ${fp ? `<span class="ph-val">${fp.value.toFixed(2)}</span><span class="ph-currency">${fp.currency} / ${fp.unit}</span>`
+                : `<span style="color:var(--d-err);font-size:13px">⚠ Missing — request from factory</span>`}
+          </div>
+        </div>
+        ${fi('Source', fp ? 'factory_writein_v1' : null, 'mono')}
+      </div>` : ''}
+
+      ${showSP ? `
+      <div class="price-block">
+        <div class="price-block-head">
+          <div class="ph-label">Sales Price</div>
+          <div>
+            ${sp ? `<span class="ph-val">${sp.value.toFixed(2)}</span><span class="ph-currency">${sp.currency} / ${sp.unit}</span>`
+                : `<span style="color:var(--d-t3);font-size:13px">Not configured</span>`}
+          </div>
+        </div>
+
+        ${pr.margin_pct !== null ? `
+        <div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:5px">
+            <span style="font-size:11px;color:var(--d-t3)">Gross Margin</span>
+            <span style="font-size:13px;font-weight:700;color:${pr.margin_pct>25?'#4ade80':pr.margin_pct>15?'#fbbf24':'#f87171'}">${pr.margin_pct.toFixed(1)}%</span>
+          </div>
+          <div class="profit-bar"><div class="profit-fill" style="width:${Math.min(pr.margin_pct,100)}%"></div></div>
+        </div>
+        ` : `<div style="margin-top:6px;font-size:11.5px;color:var(--d-t3)">Margin unavailable — factory price missing</div>`}
+      </div>` : ''}
+    `;
+  }
+
+  // footer
+  document.getElementById('d-footer-info').textContent =
+    `ID: ${p.id}  ·  ${p.sku}  ·  Updated 2026-05-18`;
+
+  const footerBtns = document.getElementById('d-footer-btns');
+  if (currentRole === 'admin' || currentRole === 'factory') {
+    footerBtns.innerHTML = `
+      <button class="d-btn sec" onclick="closeDrawer()">Close</button>
+      <button class="d-btn pri">✏ Edit Profile</button>
+    `;
+  } else {
+    footerBtns.innerHTML = `<button class="d-btn sec" onclick="closeDrawer()">Close</button>`;
+  }
+}
+
+// ─── Init ────────────────────────────────────────────────────────────
+renderTable();
+</script>
+</body>
+</html>

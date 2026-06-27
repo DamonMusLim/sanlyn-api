@@ -166,3 +166,25 @@ export async function sendShipmentNotifications(pool, row, { force = false } = {
 
   return results;
 }
+
+// ── Cancellation notice → factory (WeCom) ─────────────────────
+// 取消通知工厂 (Damon 2026-06-26: 取消海运计划必须通知工厂)。复用同一企微渠道。
+export async function sendCancellationNotice(pool, row, actor) {
+  const contractNos = getContractNos(row);
+  const md = [
+    `## 海运计划已取消 ⚠️`,
+    ``,
+    `| 字段 | 内容 |`,
+    `|---|---|`,
+    `| **订单合同** | ${contractNos} |`,
+    `| **计划号** | ${row.shipment_no || "—"} |`,
+    `| **柜号** | ${row.container_no || "—"} (${row.container_type || "—"}) |`,
+    `| **船名航次** | ${row.vessel || "—"} ${row.voyage || ""} |`,
+    `| **起运港 → 目的港** | ${row.pol || "—"} → ${row.pod || "—"} |`,
+    `| **操作人** | ${actor || "admin"} |`,
+    ``,
+    `该票已取消，请工厂停止相关安排，如有疑问请联系船务。`,
+  ].join("\n");
+  const res = await sendWecom(md);
+  return res;
+}

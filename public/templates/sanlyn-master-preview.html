@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sanlyn Design Master — Templates & Cards</title>
+<style>
+/* ─── Base tokens ─── */
+:root {
+  --bg: #060e1a; --card: #0d1626; --card2: #0b1422;
+  --border: rgba(255,255,255,0.07);
+  --text: #e2e8f0; --text-sm: #94a3b8; --text-xs: #64748b;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --blue: #60a5fa; --cyan: #7dd3fc; --green: #86efac;
+  --amber: #fcd34d; --red: #fca5a5; --purple: #d8b4fe;
+  --nav-h: 52px;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, system-ui, sans-serif; padding-top: var(--nav-h); }
+
+/* ─── Sticky top nav ─── */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  height: var(--nav-h);
+  background: rgba(6,14,26,0.95); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 20px; gap: 0;
+}
+.nav-brand {
+  font-size: 13px; font-weight: 800; color: var(--text);
+  margin-right: 20px; white-space: nowrap;
+}
+.nav-brand span { color: var(--blue); }
+.nav-links {
+  display: flex; gap: 2px; overflow-x: auto; flex: 1;
+  scrollbar-width: none;
+}
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-link {
+  padding: 5px 12px; border-radius: 6px;
+  font-size: 11.5px; font-weight: 700; cursor: pointer;
+  white-space: nowrap; text-decoration: none;
+  color: var(--text-sm); transition: background .15s, color .15s;
+}
+.nav-link:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.nav-link.cust  { color: #93c5fd; }
+.nav-link.fact  { color: #6ee7b7; }
+.nav-link.admin { color: #c4b5fd; }
+.nav-link.share { color: #fde68a; }
+.nav-sep { width: 1px; background: var(--border); margin: 8px 6px; flex-shrink: 0; }
+.nav-meta {
+  font-size: 10px; color: var(--text-xs); margin-left: 10px;
+  white-space: nowrap; font-family: var(--mono);
+}
+
+/* ─── Page layout ─── */
+.page { max-width: 1200px; margin: 0 auto; padding: 28px 20px 60px; }
+
+/* ─── Section headers ─── */
+.portal-header {
+  margin: 40px 0 6px;
+  padding: 16px 20px;
+  border-radius: 10px;
+  display: flex; align-items: center; gap: 12px;
+}
+.portal-header.cust  { background: rgba(96,165,250,0.06); border: 1px solid rgba(96,165,250,0.18); }
+.portal-header.fact  { background: rgba(52,211,153,0.06); border: 1px solid rgba(52,211,153,0.18); }
+.portal-header.admin { background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.18); }
+.portal-header.share { background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.18); }
+.portal-icon { font-size: 22px; flex-shrink: 0; }
+.portal-title { font-size: 16px; font-weight: 800; }
+.portal-title.cust  { color: #93c5fd; }
+.portal-title.fact  { color: #6ee7b7; }
+.portal-title.admin { color: #c4b5fd; }
+.portal-title.share { color: #fde68a; }
+.portal-sub { font-size: 11px; color: var(--text-xs); margin-top: 2px; line-height: 1.5; }
+.portal-badge {
+  margin-left: auto; font-size: 9px; font-weight: 800;
+  padding: 3px 8px; border-radius: 4px; letter-spacing: .06em;
+}
+.portal-badge.cust  { background: rgba(96,165,250,0.15); color: #93c5fd; border: 1px solid rgba(96,165,250,0.3); }
+.portal-badge.fact  { background: rgba(52,211,153,0.15); color: #6ee7b7; border: 1px solid rgba(52,211,153,0.3); }
+.portal-badge.admin { background: rgba(167,139,250,0.15); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.3); }
+.portal-badge.share { background: rgba(251,191,36,0.15); color: #fde68a; border: 1px solid rgba(251,191,36,0.3); }
+
+.module-label {
+  font-size: 10px; font-weight: 800; letter-spacing: .10em; text-transform: uppercase;
+  margin: 22px 0 10px; color: var(--text-xs);
+  display: flex; align-items: center; gap: 10px;
+}
+.module-label::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.module-tag {
+  font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.05); color: var(--text-xs);
+  border: 1px solid var(--border); letter-spacing: .04em; text-transform: none;
+}
+
+/* ─── Grid ─── */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px,1fr)); gap: 12px; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px,1fr)); gap: 12px; }
+.placeholder-card {
+  border: 1px dashed rgba(255,255,255,0.1); border-radius: 12px;
+  padding: 40px 24px; text-align: center;
+  color: var(--text-xs); font-size: 12px; font-style: italic;
+}
+.placeholder-card b { color: var(--text-sm); display: block; font-size: 14px; margin-bottom: 8px; font-style: normal; }
+
+/* ─── Changelog ─── */
+.changelog {
+  margin-top: 40px; background: var(--card2); border-radius: 12px;
+  border: 1px solid var(--border); overflow: hidden;
+}
+.changelog-header {
+  padding: 12px 16px; font-size: 12px; font-weight: 800;
+  background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border);
+  color: var(--blue);
+}
+.changelog-row {
+  display: grid; grid-template-columns: 90px 120px 1fr;
+  gap: 12px; padding: 9px 16px; font-size: 11.5px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  align-items: start;
+}
+.changelog-row:last-child { border-bottom: none; }
+.cl-date { color: var(--text-xs); font-family: var(--mono); }
+.cl-section { color: var(--blue); font-weight: 700; }
+.cl-note { color: var(--text-sm); line-height: 1.5; }
+
+/* ══════════════════════════════════════════════
+   CARD STYLES — V2 locked spec (2026-05-01)
+   ══════════════════════════════════════════════ */
+.card {
+  background: var(--card); border-radius: 12px; overflow: hidden;
+  display: flex; flex-direction: column; border: 1px solid var(--border);
+  transition: transform .15s, box-shadow .15s;
+}
+.card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+.alert {
+  padding: 5px 12px; font-size: 10.5px; font-weight: 700;
+  background: linear-gradient(90deg,rgba(245,158,11,0.18),rgba(245,158,11,0.04)); color: var(--amber);
+}
+.alert.blue   { background: linear-gradient(90deg,rgba(56,189,248,0.18),rgba(56,189,248,0.04));   color: var(--cyan); }
+.alert.green  { background: linear-gradient(90deg,rgba(34,197,94,0.18),rgba(34,197,94,0.04));     color: var(--green); }
+.alert.purple { background: linear-gradient(90deg,rgba(167,139,250,0.18),rgba(167,139,250,0.04)); color: var(--purple); }
+.alert.red    { background: linear-gradient(90deg,rgba(239,68,68,0.18),rgba(239,68,68,0.04));     color: var(--red); }
+
+.tab-hub-hint {
+  padding: 4px 12px; background: rgba(96,165,250,0.04);
+  border-bottom: 1px solid rgba(96,165,250,0.12);
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  font-size: 9px; color: rgba(96,165,250,0.55);
+  font-weight: 700; letter-spacing: .04em; cursor: pointer;
+}
+.tab-hub-hint:hover { background: rgba(96,165,250,0.08); color: rgba(96,165,250,0.85); }
+.dot { color: rgba(96,165,250,0.25); }
+
+.body { padding: 11px 12px; flex: 1; display: flex; flex-direction: column; gap: 7px; cursor: pointer; }
+.typechip {
+  font-size: 9px; font-weight: 800; letter-spacing: .08em;
+  padding: 2px 7px; border-radius: 4px; display: inline-block;
+}
+.typechip.prod { background: rgba(96,165,250,0.12); color: #60a5fa; border: 1px solid rgba(96,165,250,0.25); }
+.typechip.ship { background: rgba(56,189,248,0.12); color: var(--cyan); border: 1px solid rgba(56,189,248,0.25); }
+.subco {
+  font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+  display: inline-block; margin-left: 6px;
+  background: rgba(148,163,184,0.1); color: #94a3b8;
+  border: 1px solid rgba(148,163,184,0.2);
+}
+.route-hint { font-size: 10px; color: var(--text-xs); margin-left: 8px; }
+.id { font-family: var(--mono); font-size: 15px; font-weight: 800; color: var(--text); line-height: 1.2; transition: color .15s; }
+.body:hover .id { color: var(--cyan); }
+.subid { font-size: 11px; color: var(--text-sm); font-family: var(--mono); margin-top: 2px; }
+.subid b { color: var(--text); font-weight: 600; }
+
+.sku-summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border-radius: 7px;
+  border: 1px solid var(--border); background: rgba(255,255,255,0.018); cursor: pointer;
+}
+.sku-summary:hover { background: rgba(96,165,250,0.05); border-color: rgba(96,165,250,0.4); }
+.sku-name { font-size: 11.5px; color: var(--cyan); font-weight: 700; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sku-meta { margin-top: 3px; font-size: 9.5px; color: var(--text-xs); }
+.sku-view { font-size: 10px; color: var(--text-xs); flex-shrink: 0; }
+
+.mini-map {
+  background: linear-gradient(180deg,#071220,#040c18);
+  border: 1px solid rgba(56,189,248,0.2);
+  border-radius: 8px; padding: 8px 10px; cursor: pointer;
+  transition: border-color .15s;
+}
+.mini-map:hover { border-color: rgba(56,189,248,0.6); }
+.mini-map svg { width: 100%; height: 56px; display: block; }
+.mini-map.preview { border-color: rgba(148,163,184,0.2); opacity: 0.78; }
+.mini-map .mhint { font-size: 9px; color: rgba(56,189,248,0.6); text-align: center; margin-top: 2px; }
+.mini-map.preview .mhint { color: rgba(148,163,184,0.7); }
+
+.spec { display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--text); font-weight: 600; align-items: center; }
+.spec span > span { color: var(--text-xs); font-weight: 400; margin-right: 2px; }
+.ctr-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 5px;
+  font-size: 11px; font-weight: 800; font-family: var(--mono);
+  background: rgba(56,189,248,0.12); color: var(--cyan); border: 1px solid rgba(56,189,248,0.3);
+}
+
+.statusbar { margin-top: 4px; padding: 8px 0 0; border-top: 1px dashed var(--border); }
+.statusbar-track { display: flex; gap: 3px; margin-bottom: 6px; }
+.statusbar-track div { flex: 1; height: 4px; border-radius: 2px; }
+.statusbar-label { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; font-weight: 700; gap: 8px; flex-wrap: wrap; }
+.step { color: var(--blue); }
+.step.done { color: var(--green); }
+.pos { color: var(--text-xs); font-family: var(--mono); font-size: 9.5px; }
+.inline-time { font-family: var(--mono); font-size: 10px; color: var(--text-sm); margin-left: 6px; }
+.inline-time b { color: var(--blue); }
+
+@keyframes breath {
+  0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(96,165,250,0); }
+  50%      { opacity: 0.55; box-shadow: 0 0 6px 1px rgba(96,165,250,0.55); }
+}
+.breath { animation: breath 1.6s ease-in-out infinite; }
+
+.daterow {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; color: var(--text-sm);
+  padding: 6px 0 0; border-top: 1px dashed var(--border); margin-top: 4px;
+}
+.daterow b { color: var(--text); font-family: var(--mono); }
+
+.milestones {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 8px 12px; border-top: 1px solid var(--border);
+  background: rgba(255,255,255,0.012);
+}
+.m { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; }
+.m.done { color: #a78bfa; }
+.m.pending { color: rgba(148,163,184,0.45); }
+.msep { color: rgba(148,163,184,0.18); font-size: 10px; }
+
+/* ── Workflow nodes ── */
+.nodes { border-top: 1px solid var(--border); padding: 9px 12px; display: flex; flex-direction: column; gap: 6px; background: rgba(255,255,255,0.012); }
+.nodes-label { font-size: 9px; font-weight: 800; color: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; gap: 5px; }
+.nodes-label::before { content: "⚡"; font-size: 10px; }
+.nodes-row { display: grid; gap: 6px; }
+.r1 { grid-template-columns: 1fr; }
+.r2 { grid-template-columns: 1fr 1fr; }
+.node-btn {
+  padding: 9px 10px; border-radius: 7px; font-size: 11.5px; font-weight: 700;
+  cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  border: 1px solid; text-align: left;
+}
+.node-btn .arrow { font-size: 11px; opacity: 0.5; }
+.node-btn.amber  { background: rgba(245,158,11,0.10);  color: var(--amber);  border-color: rgba(245,158,11,0.32); }
+.node-btn.red    { background: rgba(239,68,68,0.10);   color: var(--red);    border-color: rgba(239,68,68,0.32); }
+.node-btn.blue   { background: rgba(56,189,248,0.10);  color: var(--cyan);   border-color: rgba(56,189,248,0.32); }
+.node-btn.green  { background: rgba(34,197,94,0.10);   color: var(--green);  border-color: rgba(34,197,94,0.32); }
+.node-btn.purple { background: rgba(167,139,250,0.10); color: var(--purple); border-color: rgba(167,139,250,0.32); }
+.node-btn.muted  { background: rgba(255,255,255,0.03); color: var(--text-sm); border-color: var(--border); }
+.node-empty { text-align: center; padding: 10px; font-size: 11px; color: var(--text-xs); font-style: italic; }
+
+/* Map drawer */
+.overlay { position: fixed; inset: 0; z-index: 9000; background: rgba(0,0,0,0.55); display: none; justify-content: flex-end; backdrop-filter: blur(2px); }
+.overlay.open { display: flex; }
+@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.drawer { width: min(460px,100vw); height: 100vh; background: #080f1a; border-left: 1px solid rgba(56,189,248,0.18); display: flex; flex-direction: column; animation: slideIn .26s cubic-bezier(0.34,1.56,0.64,1); }
+.drawer-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+.drawer-title { font-size: 15px; font-weight: 800; }
+.drawer-vessel { font-size: 11px; color: var(--blue); margin-top: 2px; font-family: var(--mono); }
+.drawer-close { background: none; border: none; color: var(--text-sm); font-size: 20px; cursor: pointer; padding: 4px 8px; }
+.drawer-body { padding: 20px; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.drawer-map { background: linear-gradient(180deg,#071220,#040c18); border-radius: 12px; padding: 20px; border: 1px solid rgba(56,189,248,0.18); }
+.drawer-map svg { width: 100%; height: 180px; display: block; }
+.drawer-map-status { font-size: 11px; color: rgba(56,189,248,0.6); text-align: center; margin-top: 6px; }
+.drawer-rows { background: rgba(255,255,255,0.02); border-radius: 10px; padding: 14px 16px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+.drawer-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-sm); }
+.drawer-row .lbl { font-weight: 600; }
+.drawer-row .val { color: var(--text); font-weight: 700; font-family: var(--mono); }
+.drawer-link { display: block; text-align: center; padding: 12px; background: rgba(56,189,248,0.08); color: var(--cyan); border-radius: 8px; border: 1px solid rgba(56,189,248,0.25); text-decoration: none; font-size: 12px; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- ── Sticky Nav ── -->
+<nav>
+  <div class="nav-brand">🧱 <span>Sanlyn</span> Design</div>
+  <div class="nav-links">
+    <a class="nav-link cust"  href="#cust-orders">🔵 Customer · Orders</a>
+    <a class="nav-link cust"  href="#cust-finance">🔵 Customer · Finance</a>
+    <div class="nav-sep"></div>
+    <a class="nav-link fact"  href="#fact-delivery">🟢 Factory · Delivery</a>
+    <a class="nav-link fact"  href="#fact-qc">🟢 Factory · QC</a>
+    <div class="nav-sep"></div>
+    <a class="nav-link admin" href="#admin-dashboard">🟣 Admin · Dashboard</a>
+    <div class="nav-sep"></div>
+    <a class="nav-link share" href="#shared-atoms">⚪ Shared Atoms</a>
+    <div class="nav-sep"></div>
+    <div class="nav-sep"></div>
+    <a class="nav-link share" href="#partner-onboard">🤝 Partner Invite</a>
+    <div class="nav-sep"></div>
+    <a class="nav-link"       href="#changelog">📋 Changelog</a>
+  </div>
+  <div class="nav-meta">Last updated: 2026-05-02</div>
+</nav>
+
+<div class="page">
+
+<!-- ══════════════════════════════════════════════════════════
+     🔵 CUSTOMER PORTAL
+     ══════════════════════════════════════════════════════════ -->
+<div class="portal-header cust" id="cust-orders">
+  <div class="portal-icon">🛒</div>
+  <div>
+    <div class="portal-title cust">Customer Portal</div>
+    <div class="portal-sub">ai.sanlyn.cn · 外贸客户 / 集团分公司 · 订单/物流/财务/单证</div>
+  </div>
+  <div class="portal-badge cust">CUSTOMER-SPECIFIC</div>
+</div>
+
+<!-- Module: Order Cards -->
+<div class="module-label">
+  📦 Order Cards — OrderCardV2
+  <span class="module-tag">src/screens/customer/v2/cards/OrderCardV2.jsx</span>
+  <span class="module-tag">8 lifecycle phases</span>
+</div>
+
+<div class="grid">
+
+  <!-- 1. PENDING -->
+  <div class="card">
+    <div class="alert">📝 New PI · awaiting your confirmation</div>
+    <div class="tab-hub-hint">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div class="body">
+      <div><span class="typechip prod">PRODUCTION</span><span class="subco">🏢 PETSOME</span></div>
+      <div><div class="id">XM-270</div><div class="subid">Contract <b>FS20260501001</b></div></div>
+      <div class="sku-summary">
+        <div style="min-width:0;flex:1;"><span class="sku-name">📦 CATSOME LAMB POUCH 70G (+9 more)</span><div class="sku-meta">10 SKUs</div></div>
+        <span class="sku-view">View ›</span>
+      </div>
+      <div class="spec"><span><span>CTN</span><b>1,920</b></span><span class="ctr-chip">1 × 40HQ</span><span><span>GW</span><b>11,520 KG</b></span></div>
+      <div class="statusbar">
+        <div class="statusbar-track">
+          <div class="breath" style="background:linear-gradient(90deg,#60a5fa 0%,#60a5fa 60%,rgba(255,255,255,0.07) 60%);"></div>
+          <div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div>
+        </div>
+        <div class="statusbar-label"><span class="breath step">● To Confirm</span><span class="pos">1 / 3</span></div>
+      </div>
+    </div>
+    <div class="milestones">
+      <span class="m done">✓ PI Confirmed</span><span class="msep">|</span>
+      <span class="m pending">· Producing</span><span class="msep">|</span>
+      <span class="m pending">· Ready to Ship</span>
+    </div>
+    <div class="nodes">
+      <div class="nodes-label">Next action</div>
+      <div class="nodes-row r2">
+        <button class="node-btn green">✅ Confirm Order <span class="arrow">›</span></button>
+        <button class="node-btn muted">📝 Adjust Spec <span class="arrow">›</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. PRODUCING -->
+  <div class="card">
+    <div class="alert">🔬 QC photos uploaded · please review</div>
+    <div class="tab-hub-hint">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div class="body">
+      <div><span class="typechip prod">PRODUCTION</span><span class="subco">🏢 PETSOME</span></div>
+      <div><div class="id">XM-258</div><div class="subid">Contract <b>FS20260220053</b></div></div>
+      <div class="sku-summary">
+        <div style="min-width:0;flex:1;"><span class="sku-name">📦 CATSOME GF CHICKEN POUCH 80G (+12 more)</span><div class="sku-meta">13 SKUs</div></div>
+        <span class="sku-view">View ›</span>
+      </div>
+      <div class="spec"><span><span>CTN</span><b>1,920</b></span><span class="ctr-chip">1 × 40HQ</span><span><span>GW</span><b>11,520 KG</b></span></div>
+      <div class="statusbar">
+        <div class="statusbar-track">
+          <div style="background:#22c55e;"></div>
+          <div class="breath" style="background:linear-gradient(90deg,#22c55e 0%,#22c55e 60%,#60a5fa 60%);"></div>
+          <div style="background:rgba(255,255,255,0.07);"></div>
+        </div>
+        <div class="statusbar-label"><span class="breath step">● Producing</span><span class="pos">2 / 3</span></div>
+      </div>
+      <div class="daterow"><span>📅 Est. <b>2026-05-22</b></span><span>✅ Actual <b style="color:var(--text-xs);">Pending</b></span></div>
+    </div>
+    <div class="milestones">
+      <span class="m done">✓ PI Confirmed</span><span class="msep">|</span>
+      <span class="m done">✓ Producing</span><span class="msep">|</span>
+      <span class="m pending">· Ready to Ship</span>
+    </div>
+    <div class="nodes">
+      <div class="nodes-label">Next action</div>
+      <div class="nodes-row r2">
+        <button class="node-btn amber">🔬 Review QC Photos <span class="arrow">›</span></button>
+        <button class="node-btn muted">💬 Ask Factory <span class="arrow">›</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. READY TO SHIP -->
+  <div class="card">
+    <div class="alert green">📋 Packing list ready · please approve</div>
+    <div class="tab-hub-hint">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div class="body">
+      <div><span class="typechip prod">PRODUCTION</span><span class="subco">🏢 PETSOME EU</span></div>
+      <div><div class="id">XM-260</div><div class="subid">Contract <b>FS20260220055</b></div></div>
+      <div class="sku-summary">
+        <div style="min-width:0;flex:1;"><span class="sku-name">📦 SNIFFLY CAT CHICKEN POUCH 70G (+8 more)</span><div class="sku-meta">9 SKUs</div></div>
+        <span class="sku-view">View ›</span>
+      </div>
+      <div class="spec"><span><span>CTN</span><b>1,920</b></span><span class="ctr-chip">1 × 40HQ</span><span><span>GW</span><b>11,520 KG</b></span></div>
+      <div class="statusbar">
+        <div class="statusbar-track">
+          <div style="background:#22c55e;"></div><div style="background:#22c55e;"></div>
+          <div class="breath" style="background:linear-gradient(90deg,#22c55e 0%,#22c55e 70%,#60a5fa 70%);"></div>
+        </div>
+        <div class="statusbar-label"><span class="breath step">● Ready to Ship</span><span class="pos">3 / 3</span></div>
+      </div>
+    </div>
+    <div class="milestones">
+      <span class="m done">✓ PI Confirmed</span><span class="msep">|</span>
+      <span class="m done">✓ Producing</span><span class="msep">|</span>
+      <span class="m done">✓ Ready to Ship</span>
+    </div>
+    <div class="nodes">
+      <div class="nodes-label">Next action</div>
+      <div class="nodes-row r2">
+        <button class="node-btn green">📋 Approve Packing List <span class="arrow">›</span></button>
+        <button class="node-btn blue">🚚 Confirm Pickup Date <span class="arrow">›</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. BOOKED / BL Draft -->
+  <div class="card">
+    <div class="alert blue">📄 B/L draft from carrier · please verify</div>
+    <div class="tab-hub-hint">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div class="body">
+      <div><span class="typechip ship">SHIPPING</span><span class="subco">🏢 DIBAQ</span><span class="route-hint">QINGDAO → PORT_KLANG</span></div>
+      <div><div class="id">B/L MAEU9988776655</div><div class="subid">PO <b>BIG-001</b> · Contract <b>FS20260301001</b></div></div>
+      <div class="sku-summary">
+        <div style="min-width:0;flex:1;"><span class="sku-name">📦 Mixed Pet Food Variety Pack (+38 more)</span><div class="sku-meta">39 SKUs</div></div>
+        <span class="sku-view">View ›</span>
+      </div>
+      <div class="mini-map" onclick='openMap("transit");event.stopPropagation();'>
+        <svg viewBox="0 0 100 50"><path d="M10,18 Q50,4 90,32" stroke="rgba(56,189,248,0.5)" stroke-width="0.9" stroke-dasharray="2,1.5" fill="none"/><circle cx="10" cy="18" r="2" fill="#22c55e"/><circle cx="90" cy="32" r="2" fill="#3b82f6"/><text x="22" y="20" font-size="7" text-anchor="middle">🚢</text><text x="10" y="13" font-size="3.8" fill="#86efac" text-anchor="middle" font-weight="700">QINGDAO</text><text x="90" y="40" font-size="3.8" fill="#7dd3fc" text-anchor="middle" font-weight="700">PORT_KLANG</text></svg>
+        <div class="mhint">🔍 Tap to open full route tracker</div>
+      </div>
+      <div class="spec"><span><span>CTN</span><b>24,000</b></span><span class="ctr-chip">10 × 40HQ ›</span><span><span>GW</span><b>261,600 KG</b></span></div>
+      <div class="statusbar">
+        <div class="statusbar-track">
+          <div class="breath" style="background:linear-gradient(90deg,#22c55e 0%,#22c55e 60%,#60a5fa 60%);"></div>
+          <div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div>
+        </div>
+        <div class="statusbar-label"><span><span class="breath step">● Booked</span><span class="inline-time">ETD <b style="color:var(--text);">2026-05-08</b> · ETA <b>2026-06-02</b></span></span><span class="pos">1 / 5</span></div>
+      </div>
+    </div>
+    <div class="milestones">
+      <span class="m done">✓ BL Confirmed</span><span class="msep">|</span>
+      <span class="m pending">· Customs Cleared</span><span class="msep">|</span>
+      <span class="m pending">· Payment</span>
+    </div>
+    <div class="nodes">
+      <div class="nodes-label">Next action</div>
+      <div class="nodes-row r1">
+        <button class="node-btn amber">📄 Review B/L Draft <span class="arrow">›</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. IN TRANSIT -->
+  <div class="card">
+    <div class="alert blue">🚢 Vessel on schedule · ETA 2026-02-03</div>
+    <div class="tab-hub-hint">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div class="body">
+      <div><span class="typechip ship">SHIPPING</span><span class="subco">🏢 PETSOME EU</span><span class="route-hint">QINGDAO → PORT_KLANG</span></div>
+      <div><div class="id">B/L COAU7265736800</div><div class="subid">PO <b>WP-58</b> · Contract <b>FS20260219033</b></div></div>
+      <div class="sku-summary">
+        <div style="min-width:0;flex:1;"><span class="sku-name">📦 Dogsome duck 375g (+4 more)</span><div class="sku-meta">5 SKUs</div></div>
+        <span class="sku-view">View ›</span>
+      </div>
+      <div class="mini-map" onclick='openMap("transit");event.stopPropagation();'>
+        <svg viewBox="0 0 100 50"><path d="M10,18 Q50,4 90,32" stroke="rgba(56,189,248,0.5)" stroke-width="0.9" stroke-dasharray="2,1.5" fill="none"/><circle cx="10" cy="18" r="2" fill="#22c55e"/><circle cx="90" cy="32" r="2" fill="#3b82f6"/><text x="62" y="20" font-size="7" text-anchor="middle">🚢</text><text x="10" y="13" font-size="3.8" fill="#86efac" text-anchor="middle" font-weight="700">QINGDAO</text><text x="90" y="40" font-size="3.8" fill="#7dd3fc" text-anchor="middle" font-weight="700">PORT_KLANG</text></svg>
+        <div class="mhint">🔍 Tap to open full route tracker</div>
+      </div>
+      <div class="spec"><span><span>CTN</span><b>2,400</b></span><span class="ctr-chip">1 × 40HQ</span><span><span>GW</span><b>26,160 KG</b></span></div>
+      <div class="statusbar">
+        <div class="statusbar-track">
+          <div style="background:#22c55e;"></div>
+          <div class="breath" style="background:linear-gradient(90deg,#22c55e 0%,#22c55e 60%,#60a5fa 60%);"></div>
+          <div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div>
+        </div>
+        <div class="statusbar-label"><span><span class="breath step">● In Transit</span><span class="inline-time">ETD <b style="color:var(--text);">2026-01-12</b> · ETA <b>2026-02-03</b></span></span><span class="pos">2 / 5</span></div>
+      </div>
+    </div>
+    <div class="milestones">
+      <span class="m done">✓ BL Confirmed</span><span class="msep">|</span>
+      <span class="m pending">· Customs Cleared</span><span class="msep">|</span>
+      <span class="m pending">· Payment</span>
+    </div>
+    <div class="nodes">
+      <div class="nodes-label">Next action</div>
+      <div class="nodes-row r1">
+        <button class="node-btn purple" style="font-size:12.5px;">
+          <span>💰 Pay Balance · T/T</span>
+          <span style="font-family:var(--mono);font-weight:800;">USD 18,500 ›</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. CUSTOMS / AT PORT -->
+  <div class="card">
+    <div class="alert purple">⚓ Arrived · Customs clearance in progress</div>
+    <div class="tab-hub-hint">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div class="body">
+      <div><span class="typechip ship">SHIPPING</span><span class="subco">🏢 PETSOME EU</span><span class="route-hint">QINGDAO → PORT_KLANG</span></div>
+      <div><div class="id">B/L MEDU8841299100</div><div class="subid">PO <b>WP-56</b> · Contract <b>FS20260219032</b></div></div>
+      <div class="sku-summary">
+        <div style="min-width:0;flex:1;"><span class="sku-name">📦 Dogsome duck 375g (+4 more)</span><div class="sku-meta">5 SKUs</div></div>
+        <span class="sku-view">View ›</span>
+      </div>
+      <div class="mini-map" onclick='openMap("customs");event.stopPropagation();'>
+        <svg viewBox="0 0 100 50"><path d="M10,18 Q50,4 90,32" stroke="rgba(56,189,248,0.5)" stroke-width="0.9" stroke-dasharray="2,1.5" fill="none"/><circle cx="10" cy="18" r="2" fill="#22c55e"/><circle cx="90" cy="32" r="3" fill="#a78bfa"/><text x="90" y="34" font-size="7" text-anchor="middle">⚓</text><text x="10" y="13" font-size="3.8" fill="#86efac" text-anchor="middle" font-weight="700">QINGDAO</text><text x="90" y="40" font-size="3.8" fill="#7dd3fc" text-anchor="middle" font-weight="700">PORT_KLANG</text></svg>
+        <div class="mhint">⚓ Arrived · clearance in progress</div>
+      </div>
+      <div class="spec"><span><span>CTN</span><b>2,400</b></span><span class="ctr-chip">1 × 40HQ</span><span><span>GW</span><b>26,160 KG</b></span></div>
+      <div class="statusbar">
+        <div class="statusbar-track">
+          <div style="background:#22c55e;"></div><div style="background:#22c55e;"></div><div style="background:#22c55e;"></div>
+          <div class="breath" style="background:linear-gradient(90deg,#22c55e 0%,#22c55e 60%,#60a5fa 60%);"></div>
+          <div style="background:rgba(255,255,255,0.07);"></div>
+        </div>
+        <div class="statusbar-label"><span><span class="breath step">● Customs</span><span class="inline-time">ETA <b>2026-02-01</b></span></span><span class="pos">4 / 5</span></div>
+      </div>
+    </div>
+    <div class="milestones">
+      <span class="m done">✓ BL Confirmed</span><span class="msep">|</span>
+      <span class="m pending">· Customs Cleared</span><span class="msep">|</span>
+      <span class="m pending">· Payment</span>
+    </div>
+    <div class="nodes">
+      <div class="nodes-label">Next action</div>
+      <div class="nodes-row r1">
+        <button class="node-btn purple" style="font-size:12.5px;">
+          <span>💰 Pay Balance · T/T</span>
+          <span style="font-family:var(--mono);font-weight:800;">USD 42,800 ›</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. OVERDUE PAYMENT -->
+  <div class="card">
+    <div class="alert red">🔴 Balance overdue · 5 days past due</div>
+    <div class="tab-hub-hint">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div class="body">
+      <div><span class="typechip ship">SHIPPING</span><span class="subco">🏢 PETSOME</span><span class="route-hint">QINGDAO → PORT_KLANG</span></div>
+      <div><div class="id">B/L MSCU1234567890</div><div class="subid">PO <b>MIX-002</b> · Contract <b>FS20260301002</b></div></div>
+      <div class="sku-summary">
+        <div style="min-width:0;flex:1;"><span class="sku-name">📦 Sniffly cat treat assorted (+22 more)</span><div class="sku-meta">23 SKUs</div></div>
+        <span class="sku-view">View ›</span>
+      </div>
+      <div class="spec"><span><span>CTN</span><b>15,840</b></span><span class="ctr-chip">9 containers ›</span><span><span>GW</span><b>168,300 KG</b></span></div>
+      <div class="statusbar">
+        <div class="statusbar-track">
+          <div style="background:#22c55e;"></div><div style="background:#22c55e;"></div><div style="background:#22c55e;"></div><div style="background:#22c55e;"></div>
+          <div class="breath" style="background:linear-gradient(90deg,#22c55e 0%,#22c55e 70%,#a78bfa 70%);"></div>
+        </div>
+        <div class="statusbar-label"><span class="breath step" style="color:#a78bfa;">● Delivered (unpaid)</span><span class="pos">5 / 5</span></div>
+      </div>
+    </div>
+    <div class="milestones">
+      <span class="m done">✓ BL Confirmed</span><span class="msep">|</span>
+      <span class="m done">✓ Customs Cleared</span><span class="msep">|</span>
+      <span class="m pending" style="color:#fca5a5;">✗ Payment</span>
+    </div>
+    <div class="nodes">
+      <div class="nodes-label">Next action</div>
+      <div class="nodes-row r1">
+        <button class="node-btn purple" style="background:rgba(167,139,250,0.18);font-size:12.5px;">
+          <span>💰 Pay Balance Now · OVERDUE</span>
+          <span style="font-family:var(--mono);font-weight:800;">USD 42,800 ›</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. DELIVERED & PAID -->
+  <div class="card" style="opacity:0.78;">
+    <div class="alert green">✅ Delivered &amp; paid · order complete</div>
+    <div class="tab-hub-hint">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div class="body">
+      <div><span class="typechip ship">SHIPPING</span><span class="subco">🏢 PETSOME EU</span><span class="route-hint">QINGDAO → PORT_KLANG</span></div>
+      <div><div class="id">B/L OOLU5544332211</div><div class="subid">PO <b>WP-50</b> · Contract <b>FS20260118003</b></div></div>
+      <div class="sku-summary">
+        <div style="min-width:0;flex:1;"><span class="sku-name">📦 Dogsome chicken bites (+2 more)</span><div class="sku-meta">3 SKUs</div></div>
+        <span class="sku-view">View ›</span>
+      </div>
+      <div class="spec"><span><span>CTN</span><b>1,800</b></span><span class="ctr-chip">1 × 40HQ</span></div>
+      <div class="statusbar">
+        <div class="statusbar-track">
+          <div style="background:#22c55e;"></div><div style="background:#22c55e;"></div><div style="background:#22c55e;"></div><div style="background:#22c55e;"></div><div style="background:#22c55e;"></div>
+        </div>
+        <div class="statusbar-label"><span class="step done">✓ Delivered</span><span class="pos">5 / 5</span></div>
+      </div>
+    </div>
+    <div class="milestones">
+      <span class="m done">✓ BL Confirmed</span><span class="msep">|</span>
+      <span class="m done">✓ Customs Cleared</span><span class="msep">|</span>
+      <span class="m done">✓ Payment</span>
+    </div>
+    <div class="nodes"><div class="node-empty">No action needed · order archived</div></div>
+  </div>
+
+</div><!-- /grid order cards -->
+
+<!-- Module: Finance Cards — implemented 2026-05-01 -->
+<div class="module-label" id="cust-finance">
+  💰 Finance Badges — CustomerOverview.jsx (on Completed cards)
+  <span class="module-tag">src/screens/customer/CustomerOverview.jsx · _payBadge</span>
+  <span class="module-tag">live on Delivered / Completed orders</span>
+</div>
+<div class="grid">
+  <!-- Paid badge example -->
+  <div class="order-card" style="border-color:rgba(34,197,94,0.3)">
+    <div class="card-head">
+      <div class="head-left">
+        <div class="id-row">
+          <span class="id-label">B/L</span>
+          <span class="id-val">COAU3829174</span>
+          <span class="status-chip" style="background:rgba(34,197,94,0.12);color:#86efac;border-color:rgba(134,239,172,0.3)">Delivered</span>
+          <span class="status-chip" style="background:rgba(34,197,94,0.15);color:#86efac;border-color:rgba(134,239,172,0.44)">Paid</span>
+        </div>
+        <div class="sub-row"><span class="mono-chip">FS20260310-01</span></div>
+      </div>
+      <button class="sku-btn" style="background:rgba(34,197,94,0.08);color:#86efac;border-color:rgba(34,197,94,0.25)">3 SKU ›</button>
+    </div>
+    <div class="spec-box">
+      <div class="spec-item"><span class="spec-label">Product</span><span class="spec-val">DIBAQ Balance Dog Food</span></div>
+      <div class="spec-item"><span class="spec-label">Route</span><span class="spec-val">CNSHA → ESVLC</span></div>
+      <div class="spec-item"><span class="spec-label">Arrived</span><span class="spec-val">Mar 28, 2026</span></div>
+    </div>
+  </div>
+  <!-- Partial badge -->
+  <div class="order-card" style="border-color:rgba(251,191,36,0.3)">
+    <div class="card-head">
+      <div class="head-left">
+        <div class="id-row">
+          <span class="id-val mono" style="font-size:12.5px">FS20260215-02</span>
+          <span class="status-chip" style="background:rgba(34,197,94,0.12);color:#86efac;border-color:rgba(134,239,172,0.3)">Delivered</span>
+          <span class="status-chip" style="background:rgba(251,191,36,0.15);color:#fcd34d;border-color:rgba(252,211,77,0.44)">Partial</span>
+        </div>
+        <div class="sub-row"><span class="mono-chip">PETSOME · EUR</span></div>
+      </div>
+      <button class="sku-btn" style="background:rgba(251,191,36,0.08);color:#fcd34d;border-color:rgba(252,211,77,0.25)">5 SKU ›</button>
+    </div>
+    <div class="spec-box">
+      <div class="spec-item"><span class="spec-label">Product</span><span class="spec-val">Wet Food · Pouch</span></div>
+      <div class="spec-item"><span class="spec-label">Route</span><span class="spec-val">CNNGB → NLRTM</span></div>
+      <div class="spec-item"><span class="spec-label">Balance</span><span class="spec-val" style="color:#fcd34d">€ 12,480 due</span></div>
+    </div>
+  </div>
+  <!-- Unpaid badge -->
+  <div class="order-card" style="border-color:rgba(239,68,68,0.3)">
+    <div class="card-head">
+      <div class="head-left">
+        <div class="id-row">
+          <span class="id-val mono" style="font-size:12.5px">PS20260118-03</span>
+          <span class="status-chip" style="background:rgba(34,197,94,0.12);color:#86efac;border-color:rgba(134,239,172,0.3)">Delivered</span>
+          <span class="status-chip" style="background:rgba(239,68,68,0.15);color:#fca5a5;border-color:rgba(252,165,165,0.44)">Unpaid</span>
+        </div>
+        <div class="sub-row"><span class="mono-chip">PETSOME International · USD</span></div>
+      </div>
+      <button class="sku-btn" style="background:rgba(239,68,68,0.08);color:#fca5a5;border-color:rgba(252,165,165,0.25)">2 SKU ›</button>
+    </div>
+    <div class="spec-box">
+      <div class="spec-item"><span class="spec-label">Product</span><span class="spec-val">Dog Treats · Jerky</span></div>
+      <div class="spec-item"><span class="spec-label">Arrived</span><span class="spec-val">Jan 30, 2026 · 47 days ago</span></div>
+      <div class="spec-item"><span class="spec-label">Amount</span><span class="spec-val" style="color:#fca5a5">$ 28,900 outstanding</span></div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     🟢 FACTORY PORTAL V3
+     ══════════════════════════════════════════════════════════ -->
+<div class="portal-header fact" id="fact-delivery">
+  <div class="portal-icon">🏭</div>
+  <div>
+    <div class="portal-title fact">Factory Portal V3</div>
+    <div class="portal-sub">ai.sanlyn.cn/factory · 签约工厂常驻 App · 5 tab (Orders / Delivery / Docs / QC / Profile)</div>
+  </div>
+  <div class="portal-badge fact">FACTORY-SPECIFIC</div>
+</div>
+
+<div class="module-label" id="fact-delivery-card">
+  📦 Delivery Center Card — OrderCardCompact
+  <span class="module-tag">src/screens/factory-portal-v3/components/OrderCardCompact.jsx</span>
+</div>
+<div class="grid">
+  <!-- In-transit delivery card -->
+  <div class="order-card" style="border-color:rgba(34,197,94,0.3);background:rgba(15,23,42,0.9)">
+    <div style="background:rgba(56,189,248,0.08);border-bottom:1px solid rgba(56,189,248,0.15);padding:5px 12px;font-size:10px;color:#7dd3fc;font-weight:700;letter-spacing:.04em">⚡ ETA in 3 days — review B/L draft now</div>
+    <div class="card-head" style="padding:10px 12px 6px">
+      <div class="head-left">
+        <div class="id-row">
+          <span class="id-label">B/L</span>
+          <span class="id-val">COSU7749281</span>
+          <span class="status-chip" style="background:rgba(34,197,94,0.1);color:#4ade80;border-color:rgba(74,222,128,0.3)">已发货</span>
+          <span class="status-chip" style="background:rgba(96,165,250,0.1);color:#93c5fd;border-color:rgba(147,197,253,0.3)">CIF · 代理出货</span>
+        </div>
+        <div class="sub-row"><span class="mono-chip">PS20260428-01</span> <span style="color:rgba(255,255,255,0.35);font-size:10px">PETSOME International</span></div>
+      </div>
+      <button class="sku-btn" style="background:rgba(34,197,94,0.08);color:#4ade80;border-color:rgba(74,222,128,0.25)">2 CT · 3 SKU ›</button>
+    </div>
+    <div class="spec-box" style="margin:0 10px 10px;padding:8px 10px">
+      <div class="spec-item"><span class="spec-label">Route</span><span class="spec-val">CNSHA → NLRTM</span></div>
+      <div class="spec-item"><span class="spec-label">Vessel</span><span class="spec-val">CSCL PACIFIC OCEAN · 026W</span></div>
+      <div class="spec-item"><span class="spec-label">ETD / ETA</span><span class="spec-val">Apr 10 → May 5</span></div>
+      <div class="spec-item"><span class="spec-label">Container</span><span class="spec-val">COAU1234567 · COAU7654321 · 40HQ</span></div>
+    </div>
+    <!-- SVG route map -->
+    <div style="margin:0 10px 10px;background:linear-gradient(180deg,#071220,#040c18);border-radius:10px;padding:14px;border:1px solid rgba(56,189,248,0.15)">
+      <svg viewBox="0 0 100 40" width="100%" height="80" preserveAspectRatio="none">
+        <line x1="0" y1="0" x2="100%" y2="0" stroke="rgba(56,189,248,0.08)" stroke-width="0.5"/>
+        <line x1="0" y1="20" x2="100%" y2="20" stroke="rgba(56,189,248,0.08)" stroke-width="0.5"/>
+        <line x1="0" y1="40" x2="100%" y2="40" stroke="rgba(56,189,248,0.08)" stroke-width="0.5"/>
+        <path d="M8,30 Q50,8 92,24" stroke="rgba(56,189,248,0.55)" stroke-width="1" stroke-dasharray="2,1.5" fill="none"/>
+        <circle cx="8" cy="30" r="2.5" fill="#22c55e"/>
+        <circle cx="92" cy="24" r="2.5" fill="#3b82f6"/>
+        <text x="66" y="14" font-size="7" text-anchor="middle">🚢</text>
+        <text x="8" y="24" font-size="4.5" fill="#86efac" text-anchor="middle" font-weight="700">CNSHA</text>
+        <text x="92" y="31" font-size="4.5" fill="#7dd3fc" text-anchor="middle" font-weight="700">NLRTM</text>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Producing card -->
+  <div class="order-card" style="border-color:rgba(251,191,36,0.3);background:rgba(15,23,42,0.9)">
+    <div class="card-head" style="padding:10px 12px 6px">
+      <div class="head-left">
+        <div class="id-row">
+          <span class="id-val mono" style="font-size:13px">DB20260502-02</span>
+          <span class="status-chip" style="background:rgba(251,191,36,0.1);color:#fcd34d;border-color:rgba(252,211,77,0.3)">生产中</span>
+          <span class="status-chip" style="background:rgba(148,163,184,0.08);color:#94a3b8;border-color:rgba(148,163,184,0.2)">FOB · 我方出货</span>
+        </div>
+        <div class="sub-row"><span style="color:rgba(255,255,255,0.35);font-size:10px">DIBAQ Spain · 计划交期 May 20</span></div>
+      </div>
+      <button class="sku-btn" style="background:rgba(251,191,36,0.08);color:#fcd34d;border-color:rgba(252,211,77,0.25)">4 SKU ›</button>
+    </div>
+    <div class="spec-box" style="margin:0 10px 10px;padding:8px 10px">
+      <div class="spec-item"><span class="spec-label">Product</span><span class="spec-val">Balance Grain-Free · Adult</span></div>
+      <div class="spec-item"><span class="spec-label">Qty</span><span class="spec-val">840 CTN · 40HQ × 1</span></div>
+      <div class="spec-item"><span class="spec-label">GW</span><span class="spec-val">21,400 kg</span></div>
+      <div class="spec-item"><span class="spec-label">Factory</span><span class="spec-val">ZHONGCHONG Ningbo</span></div>
+    </div>
+    <div style="margin:0 10px 10px;display:flex;gap:6px">
+      <div style="flex:1;background:rgba(251,191,36,0.08);border-radius:8px;padding:8px;text-align:center;border:1px solid rgba(251,191,36,0.2)">
+        <div style="font-size:20px;font-weight:800;color:#fcd34d">68<span style="font-size:11px">%</span></div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px">Production</div>
+      </div>
+      <div style="flex:1;background:rgba(148,163,184,0.04);border-radius:8px;padding:8px;text-align:center;border:1px solid rgba(148,163,184,0.1)">
+        <div style="font-size:20px;font-weight:800;color:#94a3b8">18</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px">Days left</div>
+      </div>
+      <div style="flex:1;background:rgba(34,197,94,0.04);border-radius:8px;padding:8px;text-align:center;border:1px solid rgba(34,197,94,0.1)">
+        <div style="font-size:20px;font-weight:800;color:#4ade80">0</div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px">Exceptions</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="module-label" id="fact-qc">
+  🔬 QC Check Card — Phase 2 (live 2026-05-01)
+  <span class="module-tag">src/screens/factory/FactoryProfile.jsx · inspection tab</span>
+  <span class="module-tag">API: /api/db/qc-checks</span>
+</div>
+<div class="grid">
+  <!-- QC Pass record -->
+  <div class="order-card" style="border-color:rgba(34,197,94,0.3)">
+    <div class="card-head">
+      <div class="head-left">
+        <div class="id-row">
+          <span class="id-val mono" style="font-size:13px">DB20260428-01</span>
+          <span class="status-chip" style="background:rgba(34,197,94,0.12);color:#86efac;border-color:rgba(134,239,172,0.35)">✓ Pass</span>
+          <span class="status-chip" style="background:rgba(34,197,94,0.08);color:#4ade80;border-color:rgba(74,222,128,0.25)">✓ Reviewed</span>
+        </div>
+        <div class="sub-row"><span style="color:rgba(255,255,255,0.4);font-size:10px">DIBAQ-Balance-Adult · Batch B2604-22</span></div>
+      </div>
+    </div>
+    <div class="spec-box">
+      <div class="spec-item"><span class="spec-label">QC Date</span><span class="spec-val">2026-04-28</span></div>
+      <div class="spec-item"><span class="spec-label">Prod Date</span><span class="spec-val">2026-04-25</span></div>
+      <div class="spec-item"><span class="spec-label">Best Before</span><span class="spec-val">2027-04-25</span></div>
+      <div class="spec-item"><span class="spec-label">Qty</span><span class="spec-val">840 CTN</span></div>
+    </div>
+    <div style="display:flex;gap:6px;margin:6px 0 4px;flex-wrap:wrap">
+      <div style="width:52px;height:52px;border-radius:8px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);display:flex;align-items:center;justify-content:center;font-size:20px">📸</div>
+      <div style="width:52px;height:52px;border-radius:8px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);display:flex;align-items:center;justify-content:center;font-size:20px">📸</div>
+      <div style="width:52px;height:52px;border-radius:8px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.2);display:flex;align-items:center;justify-content:center;font-size:20px">📸</div>
+    </div>
+  </div>
+  <!-- QC Fail record -->
+  <div class="order-card" style="border-color:rgba(239,68,68,0.35)">
+    <div style="background:rgba(239,68,68,0.08);border-bottom:1px solid rgba(239,68,68,0.15);padding:5px 12px;font-size:10px;color:#fca5a5;font-weight:700;letter-spacing:.04em">⚠ QC Failed · Awaiting Sanlyn Review</div>
+    <div class="card-head">
+      <div class="head-left">
+        <div class="id-row">
+          <span class="id-val mono" style="font-size:13px">PS20260430-03</span>
+          <span class="status-chip" style="background:rgba(239,68,68,0.12);color:#fca5a5;border-color:rgba(252,165,165,0.35)">✗ Fail</span>
+          <span class="status-chip" style="background:rgba(251,191,36,0.08);color:#fcd34d;border-color:rgba(252,211,77,0.25)">Awaiting review</span>
+        </div>
+        <div class="sub-row"><span style="color:rgba(255,255,255,0.4);font-size:10px">PetsomeWetPouch · Batch B2604-31</span></div>
+      </div>
+    </div>
+    <div class="spec-box">
+      <div class="spec-item"><span class="spec-label">QC Date</span><span class="spec-val">2026-04-30</span></div>
+      <div class="spec-item"><span class="spec-label">Qty</span><span class="spec-val">420 CTN</span></div>
+    </div>
+    <div style="margin:6px 0 4px;padding:7px 10px;border-radius:7px;background:rgba(239,68,68,0.1);color:#fca5a5;font-size:11px">⚠ Packaging misalignment on lot 3 — repack required before shipment</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     🟣 ADMIN / INTERNAL
+     ══════════════════════════════════════════════════════════ -->
+<div class="portal-header admin" id="admin-dashboard">
+  <div class="portal-icon">🛡</div>
+  <div>
+    <div class="portal-title admin">Admin / Internal Workbench</div>
+    <div class="portal-sub">business-v1 · supply-chain-v2 · fulfillment-v2 · Admin Panel</div>
+  </div>
+  <div class="portal-badge admin">INTERNAL-ONLY</div>
+</div>
+
+<div class="module-label">
+  🏢 Business V1 Cards
+  <span class="module-tag">src/screens/business-v1/cards/</span>
+  <span class="module-tag">9 cards</span>
+</div>
+<div class="grid">
+  <div class="placeholder-card"><b>AIAssistantCard · CRMCard</b>Today's AI alerts · CRM activity feed</div>
+  <div class="placeholder-card"><b>DocsCard · FactoryCard · FreightCard</b>Doc status summary · Factory performance · Freight rate matrix</div>
+  <div class="placeholder-card"><b>ExceptionsCard · TodayQueueCard · TradingCard</b>Exception flags · Today's action queue · Trading overview</div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     ⚪ SHARED ATOMS
+     ══════════════════════════════════════════════════════════ -->
+<div class="portal-header share" id="shared-atoms">
+  <div class="portal-icon">🧩</div>
+  <div>
+    <div class="portal-title share">Shared Atoms — V2 Building Blocks</div>
+    <div class="portal-sub">Used by OrderCardV2 and all future V2 cards. Customer + Factory + Admin.</div>
+  </div>
+  <div class="portal-badge share">CROSS-PORTAL</div>
+</div>
+
+<div class="module-label">
+  🔬 Component Anatomy
+  <span class="module-tag">cardStyles.js · OrderCardV2.jsx</span>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;">
+
+  <!-- TabHubHint atom -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+    <div style="padding:8px 12px;background:rgba(251,191,36,0.06);border-bottom:1px solid rgba(251,191,36,0.15);font-size:10px;font-weight:800;color:#fde68a;letter-spacing:.06em;">TAB-HUB HINT</div>
+    <div class="tab-hub-hint" style="margin:10px;">↑ INFO HUB <span class="dot">·</span> AI <span class="dot">·</span> INFO <span class="dot">·</span> PRODUCTS <span class="dot">·</span> ACTIVITY <span class="dot">·</span> MAP</div>
+    <div style="padding:6px 12px 10px;font-size:10px;color:var(--text-xs);">Clickable strip → opens detail panel. Hover = brighter.</div>
+  </div>
+
+  <!-- SKU Summary atom -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+    <div style="padding:8px 12px;background:rgba(251,191,36,0.06);border-bottom:1px solid rgba(251,191,36,0.15);font-size:10px;font-weight:800;color:#fde68a;letter-spacing:.06em;">SKU SUMMARY BOX</div>
+    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:6px;">
+      <div class="sku-summary"><div style="min-width:0;flex:1;"><span class="sku-name">📦 CATSOME LAMB POUCH 70G (+9 more)</span><div class="sku-meta">10 SKUs</div></div><span class="sku-view">View ›</span></div>
+      <div class="sku-summary" style="border-color:rgba(96,165,250,0.35);"><div style="min-width:0;flex:1;"><span class="sku-name">📦 Mixed Pet Food Variety Pack (+38)</span><div class="sku-meta">39 SKUs · <span style="color:#60a5fa;">Edit ✏</span></div></div><span class="sku-view">View ›</span></div>
+    </div>
+    <div style="padding:4px 12px 10px;font-size:10px;color:var(--text-xs);">Name = primary (cyan). Count = secondary. Factory role shows edit pen.</div>
+  </div>
+
+  <!-- StatusBar atom -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+    <div style="padding:8px 12px;background:rgba(251,191,36,0.06);border-bottom:1px solid rgba(251,191,36,0.15);font-size:10px;font-weight:800;color:#fde68a;letter-spacing:.06em;">STATUS BAR</div>
+    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:10px;">
+      <div class="statusbar"><div class="statusbar-track"><div class="breath" style="background:linear-gradient(90deg,#60a5fa 0%,#60a5fa 60%,rgba(255,255,255,0.07) 60%);"></div><div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div></div><div class="statusbar-label"><span class="breath step">● To Confirm</span><span class="pos">1 / 3</span></div></div>
+      <div class="statusbar"><div class="statusbar-track"><div style="background:#22c55e;"></div><div style="background:#22c55e;"></div><div class="breath" style="background:linear-gradient(90deg,#22c55e 0%,#22c55e 70%,#60a5fa 70%);"></div></div><div class="statusbar-label"><span class="breath step">● Ready to Ship</span><span class="pos">3 / 3</span></div></div>
+      <div class="statusbar"><div class="statusbar-track"><div style="background:#22c55e;"></div><div class="breath" style="background:linear-gradient(90deg,#22c55e 0%,#22c55e 60%,#60a5fa 60%);"></div><div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div><div style="background:rgba(255,255,255,0.07);"></div></div><div class="statusbar-label"><span class="breath step">● In Transit</span><span class="pos">2 / 5</span></div></div>
+    </div>
+  </div>
+
+  <!-- WorkflowNode atom -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+    <div style="padding:8px 12px;background:rgba(251,191,36,0.06);border-bottom:1px solid rgba(251,191,36,0.15);font-size:10px;font-weight:800;color:#fde68a;letter-spacing:.06em;">⚡ WORKFLOW NODE — 3 variants</div>
+    <div style="display:flex;flex-direction:column;gap:0;">
+      <div class="nodes" style="border-top:none;">
+        <div class="nodes-label">Balance due → Pay</div>
+        <div class="nodes-row r1"><button class="node-btn purple" style="font-size:12px;"><span>💰 Pay Balance · T/T</span><span style="font-family:var(--mono);font-weight:800;">USD 42,800 ›</span></button></div>
+      </div>
+      <div class="nodes">
+        <div class="nodes-label">Booked → Review BL</div>
+        <div class="nodes-row r1"><button class="node-btn amber">📄 Review B/L Draft <span class="arrow">›</span></button></div>
+      </div>
+      <div class="nodes">
+        <div class="nodes-label">Fallback</div>
+        <div class="nodes-row r2"><button class="node-btn muted">📄 Docs <span class="arrow">›</span></button><button class="node-btn muted">📋 Timeline <span class="arrow">›</span></button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MiniRouteMap atom -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+    <div style="padding:8px 12px;background:rgba(251,191,36,0.06);border-bottom:1px solid rgba(251,191,36,0.15);font-size:10px;font-weight:800;color:#fde68a;letter-spacing:.06em;">MINI ROUTE MAP</div>
+    <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;">
+      <div class="mini-map"><svg viewBox="0 0 100 50"><path d="M10,18 Q50,4 90,32" stroke="rgba(56,189,248,0.5)" stroke-width="0.9" stroke-dasharray="2,1.5" fill="none"/><circle cx="10" cy="18" r="2" fill="#22c55e"/><circle cx="90" cy="32" r="2" fill="#3b82f6"/><text x="62" y="20" font-size="7" text-anchor="middle">🚢</text><text x="10" y="13" font-size="3.8" fill="#86efac" text-anchor="middle" font-weight="700">QINGDAO</text><text x="90" y="40" font-size="3.8" fill="#7dd3fc" text-anchor="middle" font-weight="700">PORT_KLANG</text></svg><div class="mhint">🔍 In Transit</div></div>
+      <div class="mini-map" style="border-color:rgba(167,139,250,0.3);"><svg viewBox="0 0 100 50"><path d="M10,18 Q50,4 90,32" stroke="rgba(56,189,248,0.5)" stroke-width="0.9" stroke-dasharray="2,1.5" fill="none"/><circle cx="10" cy="18" r="2" fill="#22c55e"/><circle cx="90" cy="32" r="3" fill="#a78bfa"/><text x="90" y="34" font-size="7" text-anchor="middle">⚓</text><text x="10" y="13" font-size="3.8" fill="#86efac" text-anchor="middle" font-weight="700">QINGDAO</text><text x="90" y="40" font-size="3.8" fill="#7dd3fc" text-anchor="middle" font-weight="700">PORT_KLANG</text></svg><div class="mhint" style="color:rgba(167,139,250,0.7);">⚓ Arrived · at port</div></div>
+    </div>
+  </div>
+
+  <!-- MilestoneStrip atom -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+    <div style="padding:8px 12px;background:rgba(251,191,36,0.06);border-bottom:1px solid rgba(251,191,36,0.15);font-size:10px;font-weight:800;color:#fde68a;letter-spacing:.06em;">MILESTONE STRIP</div>
+    <div style="display:flex;flex-direction:column;gap:0;">
+      <div class="milestones"><span class="m done">✓ PI Confirmed</span><span class="msep">|</span><span class="m done">✓ Producing</span><span class="msep">|</span><span class="m pending">· Ready to Ship</span></div>
+      <div class="milestones"><span class="m done">✓ BL Confirmed</span><span class="msep">|</span><span class="m pending">· Customs Cleared</span><span class="msep">|</span><span class="m pending">· Payment</span></div>
+      <div class="milestones"><span class="m done">✓ BL Confirmed</span><span class="msep">|</span><span class="m done">✓ Customs Cleared</span><span class="msep">|</span><span class="m done">✓ Payment</span></div>
+    </div>
+  </div>
+
+</div><!-- /shared atoms -->
+
+
+<!-- ══════════════════════════════════════════════════════════
+     🤝 PARTNER ONBOARDING — Invite Card + Registration Form
+     ══════════════════════════════════════════════════════════ -->
+<div class="portal-header share" id="partner-onboard" style="margin-top:40px;">
+  <div class="portal-icon">🤝</div>
+  <div>
+    <div class="portal-title share">Partner Invite Card + Registration</div>
+    <div class="portal-sub">Role-gated invite link generator · Simplified onboarding form · Email or copy-link send</div>
+  </div>
+  <div class="portal-badge share">ONBOARDING</div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+
+  <!-- ── LEFT: Invite Card (Sender) ── -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+    <div style="padding:8px 14px;background:rgba(251,191,36,0.06);border-bottom:1px solid rgba(251,191,36,0.15);font-size:10px;font-weight:800;color:#fde68a;letter-spacing:.06em;display:flex;align-items:center;justify-content:space-between;">
+      📤 INVITE CARD — SENDER
+      <select id="inv-role" onchange="invSetRole(this.value)" style="background:#1e293b;border:1px solid rgba(255,255,255,0.1);border-radius:5px;color:#f1f5f9;padding:2px 8px;font-size:10px;cursor:pointer;">
+        <option value="customer">Customer</option>
+        <option value="factory">Factory</option>
+        <option value="trader">Trader</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div style="padding:16px;">
+      <!-- Type buttons -->
+      <div style="font-size:10px;font-weight:700;color:#475569;letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;">Partner Type</div>
+      <div id="inv-type-grid" style="display:grid;gap:6px;margin-bottom:14px;"></div>
+
+      <!-- No permission -->
+      <div id="inv-no-perm" style="display:none;padding:12px;background:rgba(248,113,113,0.07);border:1px solid rgba(248,113,113,0.2);border-radius:8px;color:#f87171;font-size:12px;text-align:center;">
+        🚫 This role cannot send invitations
+      </div>
+
+      <!-- Fields -->
+      <div id="inv-fields">
+        <div style="margin-bottom:10px;">
+          <div style="font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px;">Company Name *</div>
+          <input id="inv-company" placeholder="e.g. Fuxin Trading Co." style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:8px 10px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:10px;">
+          <div style="font-size:10px;font-weight:600;color:#64748b;margin-bottom:4px;">Contact Name *</div>
+          <input id="inv-contact" placeholder="Full name" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:8px 10px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;">
+        </div>
+        <!-- Send method -->
+        <div style="font-size:10px;font-weight:700;color:#475569;letter-spacing:.07em;text-transform:uppercase;margin-bottom:6px;margin-top:4px;">Send Via</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;">
+          <div id="inv-send-email" onclick="invSelSend('email')" style="padding:10px;border-radius:8px;border:1.5px solid #60a5fa;background:rgba(96,165,250,0.1);cursor:pointer;text-align:center;">
+            <div style="font-size:16px;margin-bottom:3px;">📧</div>
+            <div style="font-size:11px;font-weight:700;color:#60a5fa;">Email</div>
+            <div style="font-size:9px;color:#475569;margin-top:1px;">Auto-sends link</div>
+          </div>
+          <div id="inv-send-link" onclick="invSelSend('link')" style="padding:10px;border-radius:8px;border:1.5px solid rgba(255,255,255,0.1);background:transparent;cursor:pointer;text-align:center;">
+            <div style="font-size:16px;margin-bottom:3px;">🔗</div>
+            <div style="font-size:11px;font-weight:700;color:#94a3b8;">Copy Link</div>
+            <div style="font-size:9px;color:#475569;margin-top:1px;">Forward yourself</div>
+          </div>
+        </div>
+        <input id="inv-channel-input" placeholder="partner@company.com" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:8px 10px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;margin-bottom:12px;">
+        <button id="inv-btn" onclick="invGenerate()" style="width:100%;padding:11px;border-radius:8px;border:none;background:linear-gradient(135deg,#2563eb,#4f46e5);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">
+          ✉️ Generate Invite Link
+        </button>
+        <div id="inv-err" style="display:none;margin-top:8px;padding:8px 12px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;border-radius:7px;font-size:12px;"></div>
+      </div>
+
+      <!-- Result -->
+      <div id="inv-result" style="display:none;margin-top:12px;padding:14px;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.25);border-radius:10px;">
+        <div style="font-size:13px;font-weight:700;color:#34d399;margin-bottom:6px;">🎉 Link Ready — valid 7 days</div>
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07);border-radius:7px;padding:8px 10px;">
+          <span id="inv-link-text" style="flex:1;font-size:10px;color:#64748b;font-family:monospace;word-break:break-all;"></span>
+          <button id="inv-copy-btn" onclick="invCopyLink()" style="padding:3px 10px;border-radius:5px;border:none;background:#1e3a5f;color:#60a5fa;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;">Copy</button>
+        </div>
+        <div id="inv-status-note" style="font-size:10px;color:#64748b;margin-top:6px;"></div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <button onclick="invOpenEmail()" style="flex:1;padding:7px;border-radius:7px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#94a3b8;font-size:11px;cursor:pointer;">📧 Email</button>
+          <button onclick="invCopyLink()" style="flex:1;padding:7px;border-radius:7px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#94a3b8;font-size:11px;cursor:pointer;">💬 WeChat / Forward</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: Registration Form (Recipient) ── -->
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+    <div style="padding:8px 14px;background:rgba(52,211,153,0.06);border-bottom:1px solid rgba(52,211,153,0.15);font-size:10px;font-weight:800;color:#6ee7b7;letter-spacing:.06em;">
+      📋 REGISTRATION FORM — RECIPIENT (no login needed)
+    </div>
+    <div style="padding:16px;">
+      <!-- Header invite card -->
+      <div style="background:linear-gradient(135deg,rgba(37,99,235,0.12),rgba(99,102,241,0.06));border:1px solid rgba(99,102,241,0.25);border-radius:10px;padding:16px;text-align:center;margin-bottom:14px;">
+        <div style="font-size:32px;margin-bottom:6px;">🤝</div>
+        <div style="font-size:9px;font-weight:700;color:#64748b;letter-spacing:.1em;text-transform:uppercase;">You've been invited as a</div>
+        <div style="font-size:17px;font-weight:800;color:#f1f5f9;margin:4px 0;">Trading Partner</div>
+        <div style="font-size:11px;color:#94a3b8;">Complete this form to start collaborating on <strong style="color:#cbd5e1">Sanlyn OS</strong></div>
+        <div style="margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.04);border-left:2px solid #60a5fa;border-radius:5px;color:#cbd5e1;font-size:11px;font-style:italic;text-align:left;">"Hi Zhang Wei, welcome! Please complete to start working with us."</div>
+        <div style="display:flex;gap:6px;justify-content:center;margin-top:10px;flex-wrap:wrap;">
+          <span style="padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;background:rgba(96,165,250,0.12);color:#60a5fa;border:1px solid rgba(96,165,250,0.25);">⏱ 7 days</span>
+          <span style="padding:2px 8px;border-radius:20px;font-size:9px;font-weight:700;background:rgba(96,165,250,0.12);color:#60a5fa;border:1px solid rgba(96,165,250,0.25);">🔒 One-time</span>
+        </div>
+      </div>
+
+      <!-- Form fields -->
+      <div style="font-size:10px;font-weight:700;color:#475569;letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.05);">🏢 Company</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div>
+          <div style="font-size:9px;font-weight:600;color:#64748b;margin-bottom:3px;">Company Name *</div>
+          <input value="Fuxin Trading Co." style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 9px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;">
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:600;color:#64748b;margin-bottom:3px;">营业执照 <span style="color:#475569;">(optional)</span></div>
+          <label style="display:flex;align-items:center;gap:6px;padding:7px 9px;border:1.5px dashed rgba(255,255,255,0.12);border-radius:6px;cursor:pointer;background:rgba(255,255,255,0.02);color:#64748b;font-size:11px;">
+            📎 Upload
+          </label>
+        </div>
+      </div>
+
+      <div style="font-size:10px;font-weight:700;color:#475569;letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.05);">👤 Contact</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div>
+          <div style="font-size:9px;font-weight:600;color:#64748b;margin-bottom:3px;">Contact Name *</div>
+          <input value="Zhang Wei" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 9px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;">
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:600;color:#64748b;margin-bottom:3px;">Email (login) *</div>
+          <input value="zhang@fuxin.cn" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 9px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;">
+        </div>
+      </div>
+
+      <div style="font-size:10px;font-weight:700;color:#475569;letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,0.05);">🔒 Password</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;">
+        <div>
+          <div style="font-size:9px;font-weight:600;color:#64748b;margin-bottom:3px;">Password *</div>
+          <input type="password" value="••••••••" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 9px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;">
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:600;color:#64748b;margin-bottom:3px;">Confirm *</div>
+          <input type="password" value="••••••••" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:7px 9px;color:#f1f5f9;font-size:12px;outline:none;box-sizing:border-box;">
+        </div>
+      </div>
+
+      <label style="display:flex;align-items:flex-start;gap:8px;padding:10px;background:rgba(37,99,235,0.06);border:1px solid rgba(37,99,235,0.15);border-radius:7px;cursor:pointer;margin-bottom:12px;">
+        <input type="checkbox" checked style="margin-top:2px;flex-shrink:0;">
+        <span style="color:#cbd5e1;font-size:11px;line-height:1.5;">I accept the <a href="#" style="color:#60a5fa;">Terms of Service</a> and confirm all info is accurate.</span>
+      </label>
+
+      <button style="width:100%;padding:11px;border-radius:8px;border:none;background:linear-gradient(135deg,#059669,#047857);color:#fff;font-size:13px;font-weight:700;cursor:pointer;">
+        Submit Registration →
+      </button>
+      <div style="font-size:10px;color:#475569;text-align:center;margin-top:8px;">Account activated within 1 business day after document review</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Role permission summary row -->
+<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;">
+  <div style="font-size:10px;font-weight:800;color:#fde68a;letter-spacing:.07em;text-transform:uppercase;margin-bottom:12px;">🔐 Role Permission Matrix</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:11px;">
+    <div style="padding:10px;background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.18);border-radius:8px;">
+      <div style="font-weight:700;color:#93c5fd;margin-bottom:6px;">🛒 Customer</div>
+      <div style="color:#64748b;font-size:10px;line-height:1.6;">Can invite:<br>🤝 Trader <span style="color:#fbbf24;font-size:9px;">(default)</span><br>🏭 Factory</div>
+    </div>
+    <div style="padding:10px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.18);border-radius:8px;">
+      <div style="font-weight:700;color:#6ee7b7;margin-bottom:6px;">🏭 Factory</div>
+      <div style="color:#64748b;font-size:10px;line-height:1.6;">Can invite:<br>🛒 Customer <span style="color:#fbbf24;font-size:9px;">(default)</span><br>🌾 Raw material suppliers</div>
+    </div>
+    <div style="padding:10px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.18);border-radius:8px;">
+      <div style="font-weight:700;color:#fde68a;margin-bottom:6px;">🤝 Trader 外贸</div>
+      <div style="color:#64748b;font-size:10px;line-height:1.6;">Can invite:<br>🏭 Factory + 🛒 Customer<br>🌾 Supply chain</div>
+    </div>
+    <div style="padding:10px;background:rgba(167,139,250,0.06);border:1px solid rgba(167,139,250,0.18);border-radius:8px;">
+      <div style="font-weight:700;color:#c4b5fd;margin-bottom:6px;">🚢 Ocean / 🚛 Truck / 报关</div>
+      <div style="color:#64748b;font-size:10px;line-height:1.6;">Partners 只看到洋宝宝<br>🔒 不能邀请任何人<br>只能通过平台接单</div>
+    </div>
+  </div>
+</div>
+
+<script>
+var INV_ROLES = {
+  customer: { types: [{k:"trader",i:"🤝",l:"Trading Partner",d:"贸易商 / 工贸一体",def:true},{k:"factory",i:"🏭",l:"Factory",d:"纯工厂"}] },
+  factory:  { types: [{k:"customer",i:"🛒",l:"Buyer / Customer",d:"采购商",def:true},{k:"service",i:"🌾",l:"Raw Material Supplier",d:"原材料供应商"}] },
+  trader:   { types: [{k:"customer",i:"🛒",l:"Buyer",d:"采购商",def:true},{k:"factory",i:"🏭",l:"Factory",d:"工厂"},{k:"service",i:"🌾",l:"Supplier",d:"原材料/服务"}] },
+  admin:    { types: [{k:"trader",i:"🤝",l:"Trader",d:""},{k:"factory",i:"🏭",l:"Factory",d:""},{k:"customer",i:"🛒",l:"Buyer",d:""},{k:"service",i:"🌾",l:"Supplier",d:""},{k:"colleague",i:"👥",l:"Team",d:""}] },
+};
+function invSetRole(role) {
+  var cfg = INV_ROLES[role];
+  var grid = document.getElementById('inv-type-grid');
+  var noPerm = document.getElementById('inv-no-perm');
+  var fields = document.getElementById('inv-fields');
+  if (!cfg || !cfg.types.length) {
+    grid.innerHTML=''; noPerm.style.display='block'; fields.style.display='none'; return;
+  }
+  noPerm.style.display='none'; fields.style.display='block';
+  var cols = cfg.types.length <= 2 ? cfg.types.length : 3;
+  grid.style.gridTemplateColumns = 'repeat('+cols+',1fr)';
+  grid.innerHTML = cfg.types.map(function(t) {
+    return '<div data-key="'+t.k+'" onclick="invSelType(this)" style="padding:10px 6px;border-radius:8px;border:1.5px solid '+(t.def?'#60a5fa':'rgba(255,255,255,0.08)')+';background:'+(t.def?'rgba(96,165,250,0.1)':'rgba(255,255,255,0.03)')+';cursor:pointer;text-align:center;">'
+      +'<div style="font-size:20px;margin-bottom:3px;">'+t.i+'</div>'
+      +'<div style="font-size:11px;font-weight:700;color:'+(t.def?'#60a5fa':'#94a3b8')+'">'+t.l+'</div>'
+      +'<div style="font-size:9px;color:#475569;margin-top:1px;">'+t.d+'</div>'
+      +'</div>';
+  }).join('');
+  document.getElementById('inv-result').style.display='none';
+  document.getElementById('inv-err').style.display='none';
+}
+function invSelType(el) {
+  el.parentNode.querySelectorAll('[data-key]').forEach(function(b){
+    b.style.border='1.5px solid rgba(255,255,255,0.08)';
+    b.style.background='rgba(255,255,255,0.03)';
+    b.querySelector('div:nth-child(2)').style.color='#94a3b8';
+  });
+  el.style.border='1.5px solid #60a5fa';
+  el.style.background='rgba(96,165,250,0.1)';
+  el.querySelector('div:nth-child(2)').style.color='#60a5fa';
+}
+function invSelSend(type) {
+  var emailBtn = document.getElementById('inv-send-email');
+  var linkBtn  = document.getElementById('inv-send-link');
+  var inp = document.getElementById('inv-channel-input');
+  if (type === 'email') {
+    emailBtn.style.border='1.5px solid #60a5fa'; emailBtn.style.background='rgba(96,165,250,0.1)';
+    emailBtn.querySelector('div:nth-child(2)').style.color='#60a5fa';
+    linkBtn.style.border='1.5px solid rgba(255,255,255,0.1)'; linkBtn.style.background='transparent';
+    linkBtn.querySelector('div:nth-child(2)').style.color='#94a3b8';
+    inp.placeholder='partner@company.com'; inp.type='email';
+  } else {
+    linkBtn.style.border='1.5px solid #60a5fa'; linkBtn.style.background='rgba(96,165,250,0.1)';
+    linkBtn.querySelector('div:nth-child(2)').style.color='#60a5fa';
+    emailBtn.style.border='1.5px solid rgba(255,255,255,0.1)'; emailBtn.style.background='transparent';
+    emailBtn.querySelector('div:nth-child(2)').style.color='#94a3b8';
+    inp.placeholder='(optional) add a personal message'; inp.type='text';
+  }
+}
+var _invLink = '';
+function invGenerate() {
+  var company = (document.getElementById('inv-company').value || '').trim();
+  var contact = (document.getElementById('inv-contact').value || '').trim();
+  var chanVal  = (document.getElementById('inv-channel-input').value || '').trim();
+  var role     = document.getElementById('inv-role').value;
+  var errEl    = document.getElementById('inv-err');
+  var btn      = document.getElementById('inv-btn');
+
+  // Get selected type key
+  var selType = document.querySelector('#inv-type-grid [data-key]');
+  var activeType = document.querySelector('#inv-type-grid [data-key][style*="rgba(96,165,250,0.1)"]');
+  var typeKey = activeType ? activeType.getAttribute('data-key')
+    : (selType ? selType.getAttribute('data-key') : '');
+
+  errEl.style.display='none';
+  if (!company) { errEl.textContent='⚠ Company name is required'; errEl.style.display='block'; return; }
+  if (!contact) { errEl.textContent='⚠ Contact name is required'; errEl.style.display='block'; return; }
+
+  var isSendEmail = document.getElementById('inv-send-email').style.borderColor.includes('165');
+  var channel = isSendEmail ? 'email' : 'link';
+  if (channel === 'email' && !chanVal) {
+    errEl.textContent='⚠ Email address is required'; errEl.style.display='block'; return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Generating…';
+
+  fetch('https://api.sanlyn.cn/api/db/factory-invite', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type:          typeKey || 'trader',
+      factory_name:  company,
+      contact_name:  contact,
+      channel:       channel,
+      channel_value: chanVal || company,
+      invited_by:    'template-preview',
+    }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(j) {
+    btn.disabled = false; btn.textContent = '✉️ Generate Invite Link';
+    if (j.success) {
+      _invLink = j.link || '';
+      document.getElementById('inv-link-text').textContent = _invLink;
+      document.getElementById('inv-status-note').textContent =
+        j.status === 'approved' ? '✅ Approved — link is live immediately'
+        : '⏳ Pending admin review — link will activate after approval';
+      document.getElementById('inv-result').style.display = 'block';
+    } else {
+      errEl.textContent = '⚠ ' + (j.error || j.message || 'API error');
+      errEl.style.display = 'block';
+    }
+  })
+  .catch(function(e) {
+    btn.disabled = false; btn.textContent = '✉️ Generate Invite Link';
+    errEl.textContent = '⚠ Network error: ' + e.message;
+    errEl.style.display = 'block';
+  });
+}
+function invCopyLink() {
+  if (!_invLink) return;
+  navigator.clipboard && navigator.clipboard.writeText(_invLink);
+  var btn = document.getElementById('inv-copy-btn');
+  if (btn) { var orig = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(function(){ btn.textContent = orig; }, 1500); }
+}
+function invOpenEmail() {
+  if (!_invLink) return;
+  window.open('mailto:?subject=Sanlyn OS Invitation&body=' + encodeURIComponent(_invLink));
+}
+invSetRole('customer');
+</script>
+
+<!-- ── Changelog ── -->
+<div class="changelog" id="changelog">
+  <div class="changelog-header">📋 Changelog — 每次改完在这里追加一行</div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-13</span>
+    <span class="cl-section">Partner Invite · 真实联通</span>
+    <span class="cl-note">Generate Invite Link 改为真实 POST api.sanlyn.cn/api/db/factory-invite；返回真实 token/link；Copy / Email / WeChat 按钮全部接真实链接；approved/pending 状态显示；错误提示</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-01</span>
+    <span class="cl-section">Customer · OrderCardV2</span>
+    <span class="cl-note">TabHubHint + SkuSummary 双段 + 🏢 subco chip + GW label + ⚡ WorkflowNode (Pay/BL/fallback) + 8 lifecycle phases 全覆盖</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-01</span>
+    <span class="cl-section">Master Preview</span>
+    <span class="cl-note">创建此文件。统一所有模板进一张 HTML。按 Customer / Factory / Admin / Shared 分区。Nav 快速跳转。</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-01</span>
+    <span class="cl-section">Customer · Finance badges</span>
+    <span class="cl-note">CustomerOverview: fetch payments, Paid 🟢 / Partial 🟡 / Unpaid 🔴 badge on Delivered/Completed cards</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-01</span>
+    <span class="cl-section">Factory Portal V3 · QC Phase 2</span>
+    <span class="cl-note">FactoryProfile 新 🔬 QC tab: factory 录入 QC check, OSS 照片上传, review_status 显示; CustomerOrderDetail QCRecords 取消注释上线; migrate-qc 加 factory_code 列</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-01</span>
+    <span class="cl-section">Master Preview</span>
+    <span class="cl-note">填充 Finance badge cards + Factory Portal V3 Delivery/QC cards, 替换占位符</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-02</span>
+    <span class="cl-section">🔴 SECURITY · Tenant scoping</span>
+    <span class="cl-note">CRITICAL fix: finance_payments / orders / finance-records 改成 fail-closed (JWT 缺 role/companyCodes → 403, 不再 fail-open). 起因: ENRICH 登录看到 PETSOME 财务. 客户端传 company_code 已忽略, 强制按 JWT scope 注入. 用户需重登一次刷新 JWT.</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-02</span>
+    <span class="cl-section">Shared · Finance 公版</span>
+    <span class="cl-note">4 个 Finance 组件 (Customer/Factory/Logistics/Vendor) 合并成一个 CustomerFinanceWorkbench + FINANCE_ROLE_CFG (action label / gradient / counterparty term). 路由层按 role 传 prop. SOA 模板共用. 老组件保留, 等公版稳定再删.</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-02</span>
+    <span class="cl-section">Customer · OrderCardV2</span>
+    <span class="cl-note">PRODUCTION_PHASES 加白名单: 生产中 (pending/confirmed/awaiting_factory/producing) 即使 BL 已预订也不 flip 成 shipping mode. 解决"In Production 卡片显示 BL/vessel/route map"的 bug.</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-02</span>
+    <span class="cl-section">Customer · Order list</span>
+    <span class="cl-note">usePortalData 加 60-day archive filter: arrived/delivered/completed 且 ETA 超 60 天的订单自动从工作台隐藏 (订单历史仍可查). 减少老订单堆积.</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-02</span>
+    <span class="cl-section">Customer · Tasks</span>
+    <span class="cl-note">deriveTasksFromOrders 上限 6 → 100, CustomerTaskHub 默认折叠 6 个, 底部 "View all X tasks →" 展开. 之前 18 个 pending 只显示 6 个的问题修了.</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-02</span>
+    <span class="cl-section">Customer · Network V2</span>
+    <span class="cl-note">NetworkWorkbench: (1) partnerId resolution fix (from_code 时 viewerCompanyId=null 导致显示自己), (2) InviteModal 简化版: 3 channel (Email/Phone+WeChat/Share Link) + 1 input, 不要公司名/联系人字段, (3) role-based tab 可见性: customer 只看 Factories+Logistics+Ask AI / factory 只看 Buyers+Logistics+Ask AI / trader 全开 / logistics 只看 Logistics+Ask AI, (4) Ask AI tab 接 claude-chat-proxy (api.sanlyn.cn/api/chat) 注入 viewer 公司+角色到 system prompt, (5) PartnerSnapshot 三处 fetch 换 apiFetch 修 401, (6) 左侧名字截短到 3 词, composer flex 修复.</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-02</span>
+    <span class="cl-section">Data · PETSOME pending refresh</span>
+    <span class="cl-note">18 个 PETSOME pending 订单 (CN-00037/CN-00038/PS) created_at → 2026-05-08, delivery_date 清空. 等工厂回填交期.</span>
+  </div>
+  <div class="changelog-row">
+    <span class="cl-date">2026-05-13</span>
+    <span class="cl-section">🤝 Partner Invite Card</span>
+    <span class="cl-note">新增 Partner Onboarding 模块。邀请卡：发送方式 Email / Copy Link；表单简化为 公司名+营业执照(选填)+联系人+邮箱+密码；角色矩阵：Customer→Factory/Trader，Factory→Customer/原材料，Trader→全向，Ocean/Truck/报关→无权邀请只看洋宝宝。后端加 trader 类型 + ROLE_INVITE_MAP server-side 校验。</span>
+  </div>
+  <!-- Add rows below as you make changes: copy one row and update date + section + note -->
+</div>
+
+</div><!-- /page -->
+
+<!-- Map Drawer -->
+<div class="overlay" id="overlay" onclick="closeMap()">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="drawer-header">
+      <div><div class="drawer-title">🗺 Route Tracker</div><div class="drawer-vessel" id="d-vessel"></div></div>
+      <button class="drawer-close" onclick="closeMap()">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-map">
+        <svg viewBox="0 0 100 50" preserveAspectRatio="none">
+          <path d="M10,18 Q50,4 90,32" stroke="rgba(56,189,248,0.5)" stroke-width="0.9" stroke-dasharray="2,1.5" fill="none"/>
+          <circle cx="10" cy="18" r="2" fill="#22c55e"/>
+          <circle id="d-pod" cx="90" cy="32" r="2" fill="#3b82f6"/>
+          <text id="d-ship" x="62" y="20" font-size="7" text-anchor="middle">🚢</text>
+          <text x="10" y="13" font-size="5" fill="#86efac" text-anchor="middle" font-weight="700">QINGDAO</text>
+          <text x="90" y="40" font-size="5" fill="#7dd3fc" text-anchor="middle" font-weight="700">PORT_KLANG</text>
+        </svg>
+        <div class="drawer-map-status" id="d-status"></div>
+      </div>
+      <div class="drawer-rows" id="d-rows"></div>
+      <a class="drawer-link" id="d-link" target="_blank">🔍 Track on MarineTraffic →</a>
+    </div>
+  </div>
+</div>
+
+<script>
+const SCN = {
+  transit: { vessel:"TIAN CHANG HE", isPort:false, status:"🚢 TIAN CHANG HE · In transit",
+    rows:[["Route","QINGDAO → PORT_KLANG"],["Vessel","TIAN CHANG HE"],["ETD","2026-01-12"],["ETA","2026-02-03"],["B/L","COAU7265736800"],["Container","1 × 40HQ"]] },
+  customs: { vessel:"MSC ARIES", isPort:true, status:"⚓ Arrived · clearance in progress",
+    rows:[["Route","QINGDAO → PORT_KLANG"],["Vessel","MSC ARIES"],["ETD","2026-01-08"],["ETA","2026-02-01"],["B/L","MEDU8841299100"],["Container","1 × 40HQ"]] },
+};
+function openMap(k){
+  const s=SCN[k]; document.getElementById('overlay').classList.add('open');
+  document.getElementById('d-vessel').textContent=s.vessel;
+  document.getElementById('d-status').textContent=s.status;
+  document.getElementById('d-rows').innerHTML=s.rows.map(([l,v])=>`<div class="drawer-row"><span class="lbl">${l}</span><span class="val">${v}</span></div>`).join('');
+  document.getElementById('d-link').href='https://www.marinetraffic.com/en/ais/details/ships/shipname:'+encodeURIComponent(s.vessel);
+  const pod=document.getElementById('d-pod'),ship=document.getElementById('d-ship');
+  if(s.isPort){pod.setAttribute('r','3');pod.setAttribute('fill','#a78bfa');ship.textContent='⚓';ship.setAttribute('x','90');ship.setAttribute('y','34');}
+  else{pod.setAttribute('r','2');pod.setAttribute('fill','#3b82f6');ship.textContent='🚢';ship.setAttribute('x','62');ship.setAttribute('y','20');}
+}
+function closeMap(){ document.getElementById('overlay').classList.remove('open'); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeMap(); });
+</script>
+</body>
+</html>

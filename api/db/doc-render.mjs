@@ -42,6 +42,10 @@ export default async function handler(req, res){
   const oR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR order_no=$1 OR customer_po=$1 LIMIT 1",[id]);
   if(!oR.rows.length) return res.status(404).send('<h1>订单未找到: '+esc(id)+'</h1>');
   const o=oR.rows[0];
+  // 下单日：从 contract_no 格式 FSyyyyMMdd 提取
+  const cnMatch=String(o.contract_no||"").match(/FS(\d{4})(\d{2})(\d{2})/);
+  const cnDate=cnMatch?(cnMatch[1]+"-"+cnMatch[2]+"-"+cnMatch[3]):"";
+
   const liR=await pool.query("SELECT oli.declaration_name, oli.product_name, oli.hs_code, oli.qty_ctn, oli.nw_ctn, (SELECT factory_name FROM products WHERE sku=oli.sku AND factory_name IS NOT NULL LIMIT 1) AS factory_name, (SELECT size FROM products WHERE sku=oli.sku LIMIT 1) AS product_size FROM order_line_items oli WHERE oli.order_id=$1 ORDER BY oli.sort_order, oli.id",[o.id||o._id]);
   const lines=liR.rows||[];
   const factory=pick((lines.find(l=>l.factory_name)||{}).factory_name, o.factory, '____________________');
@@ -51,8 +55,14 @@ export default async function handler(req, res){
   const qtyCtn=lines.reduce((s,l)=>s+(Number(l.qty_ctn)||0),0) || pick(o.total_qty,o.total_ctn,'');
   const nwKg=lines.reduce((s,l)=>s+(Number(l.nw_ctn)||0)*(Number(l.qty_ctn)||0),0) || pick(o.total_net_weight,o.net_weight,'');
   const qtyWeight=(qtyCtn?qtyCtn+'箱':'')+(qtyCtn&&nwKg?'/':'')+(nwKg?Math.round(Number(nwKg))+'kg':'');
-  const prodDate=fmtD(pick(o.delivery_date,o.etd));
-  const inspDate=prodDate;
+  const prodDate=fmtD(pick(o.delivery_date,o.etd))||cnDate;
+  // 检验日期=实际发货日，从 shipping_plans 取 etd/atd/shipment_date
+  let inspDate=prodDate;
+  try{
+    const idR=await pool.query("SELECT etd,atd,shipment_date FROM shipping_plans WHERE order_contract_nos=$1 OR $2=ANY(order_nos) LIMIT 1",[o.contract_no||"",o.order_no||""]);
+    const idSp=idR.rows[0]||{};
+    inspDate=fmtD(idSp.atd||idSp.etd||idSp.shipment_date)||prodDate;
+  }catch(_){}
   const orderNo=pick(o.order_no,o.contract_no,id);
   const reportNo=pick(o.contract_no,'');
   // 产品规格：从 OLI 取第一行 product_size
@@ -82,7 +92,7 @@ export default async function handler(req, res){
   try{ const bp=await pool.query("SELECT batch_prefix, official_name FROM factories WHERE (company_code=$1 OR name=$2) LIMIT 1",[cc,factory]); batchPrefix=(bp.rows[0]&&bp.rows[0].batch_prefix)||''; officialName=(bp.rows[0]&&bp.rows[0].official_name)||''; }catch(_){}
   const factoryDisplay = officialName || factory;
   const ymd = String(prodDate||'').replace(/[^0-9]/g,'');
-  const batchNo = pick(resultsMap['生产批号'], resultsMap['批号'], ymd?((orderMid||batchPrefix)+ymd):'', '____________');
+  const batchNo = pick(resultsMap['生产批号'], resultsMap['批号'], ymd?((orderMid||batchPrefix)+ymd):'', '');
 
   let sealUrl='';
   try{
@@ -194,8 +204,8 @@ ${isQC?`<div class=ti-en>QC INSPECTION REPORT · ${esc(showSample)}</div>
     <tr><td>样品/合同编号</td><td>${esc(orderNo)}</td></tr>
     <tr><td>产品名称</td><td>${esc(showSample)}</td></tr>
     <tr><td>规格</td><td>${esc(productSpec||'&nbsp;')}</td></tr>
-    <tr><td>生产批号</td><td>${esc(batchNo)}</td></tr>
-    <tr><td>生产日期</td><td>${esc(prodDate||'&nbsp;')}</td></tr>
+    <tr><td>生产批号</td><td>${batchNo ? esc(batchNo) : '<span style="color:#dc2626;font-weight:700">&#9888; 待填（需工厂批次记录）</span>'}</td></tr>
+    <tr><td>生产日期</td><td>${prodDate ? esc(prodDate) : '<span style="color:#dc2626;font-weight:700">&#9888; 待填（需工厂批次记录）</span>'}</td></tr>
     <tr><td>数/重量</td><td>${esc(qtyWeight||'&nbsp;')}</td></tr>
   </tbody></table>
   <div style="display:flex;flex-direction:column">

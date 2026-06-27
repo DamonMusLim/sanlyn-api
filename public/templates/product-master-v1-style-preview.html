@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Product Master V1 · Style Preview</title>
+<style>
+  :root{
+    --bg:#f4f6fb;--card:#fff;--border:#dbe2ec;
+    --t1:#0f172a;--t2:#475569;--t3:#94a3b8;
+    --admin:#7c3aed;--factory:#16a34a;--customer:#2563eb;--logistics:#ea580c;
+    --ok:#15803d;--warn:#b45309;--err:#b91c1c;--muted:#64748b;
+    --accent:#0f172a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--t1);
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","PingFang SC","Microsoft Yahei",sans-serif;
+    font-size:14px;line-height:1.55}
+  .top-banner{background:#fde68a;color:#78350f;padding:7px 16px;font-size:11.5px;text-align:center;font-weight:700;letter-spacing:.02em}
+  .role-banner{padding:9px 16px;text-align:center;font-weight:700;color:#fff;font-size:12.5px;letter-spacing:.04em}
+  .role-banner.admin{background:var(--admin)}
+  .role-banner.factory{background:var(--factory)}
+  .role-banner.customer{background:var(--customer)}
+  .role-banner.logistics{background:var(--logistics)}
+
+  .container{max-width:1280px;margin:18px auto;padding:0 20px 80px}
+
+  /* ─── Page header ─── */
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px}
+  .page-head h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+  .page-head .meta{font-size:12px;color:var(--t3);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  /* ─── Role switcher (segmented) ─── */
+  .role-switch{display:inline-flex;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px}
+  .role-switch button{background:transparent;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;color:var(--t2);cursor:pointer;letter-spacing:.02em}
+  .role-switch button.active{background:var(--t1);color:#fff}
+  .role-switch button:not(.active):hover{background:#f1f5f9}
+
+  /* ─── Filter row ─── */
+  .filter-bar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:center}
+  .filter-bar input[type=search]{flex:1;min-width:220px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff}
+  .filter-bar select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;background:#fff;color:var(--t1)}
+  .filter-bar .count{font-size:11.5px;color:var(--t3);margin-left:auto;font-family:ui-monospace,monospace}
+
+  /* ─── Table ─── */
+  .table-wrap{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{
+    text-align:left;font-weight:600;padding:11px 12px;
+    background:#f8fafc;color:var(--t2);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    border-bottom:1px solid var(--border);white-space:nowrap;
+  }
+  tbody td{padding:12px;border-bottom:1px solid #eef2f6;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr{cursor:pointer;transition:background .12s}
+  tbody tr:hover{background:#f8fafc}
+  tbody tr.selected{background:#eff6ff}
+  td.img{width:48px;padding-right:0}
+  td.img .ph{width:36px;height:36px;border-radius:6px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:10px;font-weight:600}
+  td.sku{font-family:ui-monospace,monospace;color:var(--t2);font-size:12px}
+  td.name{font-weight:600;color:var(--t1)}
+  td.name .cn{display:block;font-weight:400;color:var(--t3);font-size:11.5px;margin-top:2px}
+  td.num{font-family:ui-monospace,monospace;text-align:right;color:var(--t2);font-size:12px}
+  td.actions{text-align:right;white-space:nowrap}
+
+  /* ─── Pills ─── */
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.02em}
+  .pill.ok{background:#dcfce7;color:#15803d}
+  .pill.warn{background:#fef3c7;color:#92400e}
+  .pill.err{background:#fee2e2;color:#991b1b}
+  .pill.muted{background:#e2e8f0;color:#475569}
+  .pill.info{background:#dbeafe;color:#1d4ed8}
+  .pill.role{background:#f3e8ff;color:#6b21a8}
+
+  /* ─── Buttons ─── */
+  button.btn{padding:7px 13px;border:none;border-radius:7px;background:var(--accent);color:#fff;
+    font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.02em}
+  button.btn:hover{background:#1e293b}
+  button.btn.sec{background:#fff;color:var(--t1);border:1px solid var(--border)}
+  button.btn.sec:hover{background:#f1f5f9}
+  button.btn.ghost{background:transparent;color:var(--t2);padding:6px 10px}
+  button.btn.ghost:hover{background:#f1f5f9}
+  .fab{position:fixed;right:24px;bottom:24px;width:52px;height:52px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:24px;cursor:pointer;box-shadow:0 6px 20px rgba(15,23,42,.18)}
+  .fab:hover{background:#1e293b}
+
+  /* ─── Demo banner row ─── */
+  .demo{margin-bottom:14px;padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:12px;color:#1e40af}
+  .demo strong{color:#1e3a8a}
+
+  /* ─── Footer note ─── */
+  .footnote{margin-top:18px;font-size:11px;color:var(--t3);text-align:center;font-family:ui-monospace,monospace}
+</style>
+</head>
+<body>
+
+<div class="top-banner">PRODUCT MASTER V1 · Style preview only · 127.0.0.1 · No DB · No write · Mock data</div>
+<div id="role-banner" class="role-banner admin">Acting as: ADMIN</div>
+
+<div class="container">
+
+  <div class="page-head">
+    <div>
+      <h1>Product Master</h1>
+      <div class="meta">v1.0 · 874 SKU · Last sync: 2026-05-20 08:42</div>
+    </div>
+    <div class="role-switch" id="roleSwitch">
+      <button data-r="admin" class="active">Admin</button>
+      <button data-r="factory">Factory</button>
+      <button data-r="logistics">Logistics</button>
+      <button data-r="customer">Customer</button>
+    </div>
+  </div>
+
+  <div class="demo">
+    <strong>Style preview.</strong> Pick visual direction first.
+    Role switcher only swaps the banner color for now; full role-aware columns + drawer come in v0 build.
+  </div>
+
+  <div class="filter-bar">
+    <input type="search" placeholder="Search SKU / barcode / product name / brand">
+    <select><option>All brands</option><option>PETSOME</option><option>DIBAQ</option><option>JJ Pet</option></select>
+    <select><option>All categories</option><option>Cat Food</option><option>Dog Food</option><option>Treats</option></select>
+    <select><option>Status: Active</option><option>All</option><option>Archived</option></select>
+    <span class="count">6 of 874</span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th style="width:60px">#</th>
+          <th>SKU</th>
+          <th>Product</th>
+          <th>Brand</th>
+          <th>Factory</th>
+          <th>Spec</th>
+          <th class="num">NW kg</th>
+          <th class="num">CBM</th>
+          <th>QC</th>
+          <th>Pricing</th>
+          <th>Margin</th>
+          <th class="actions"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="img"><div class="ph">IMG</div></td>
+          <td class="num">1</td>
+          <td class="sku">WP-62-M</td>
+          <td class="name">Sniffly Dog Tray 200g <span class="cn">嗅嗅狗狗餐盘 200g</span></td>
+          <td>PETSOME</td>
+          <td>XIAMEN PET BABY</td>
+          <td>200g × 24</td>
+          <td class="num">0.20</td>
+          <td class="num">0.0042</td>
+          <td><span class="pill ok">Passed</span></td>
+          <td><span class="pill ok">Configured</span></td>
+          <td><span class="pill ok">Healthy</span></td>
+          <td class="actions"><button class="btn ghost">View →</button></td>
+        </tr>
+        <tr class="selected">
+          <td class="img"><div class="ph">IMG</div></td>
+          <td class="num">2</td>
+          <td class="sku">ZC-16</td>
+          <td class="name">Chicken Pâté 85g <span class="cn">鸡肉慕斯 85g</span></td>
+          <td>PETSOME</td>
+          <td>XIAMEN PET BABY</td>
+          <td>85g × 48</td>
+          <td class="num">0.085</td>
+          <td class="num">0.0019</td>
+          <td><span class="pill ok">Passed</span></td>
+          <td><span class="pill warn">Missing factory price</span></td>
+          <td><span class="pill muted">Data short</span></td>
+          <td class="actions"><button class="btn ghost">View →</button></td>
+        </tr>
+        <tr>
+          <td class="img"><div class="ph">IMG</div></td>
+          <td class="num">3</td>
+          <td class="sku">CP-4</td>
+          <td class="name">Cat Treats Tuna 50g <span class="cn">猫零食金枪鱼 50g</span></td>
+          <td>DIBAQ</td>
+          <td>FX-DIBAQ-001</td>
+          <td>50g × 60</td>
+          <td class="num">0.050</td>
+          <td class="num">0.0010</td>
+          <td><span class="pill warn">Pending</span></td>
+          <td><span class="pill ok">Configured</span></td>
+          <td><span class="pill warn">Low</span></td>
+          <td class="actions"><button class="btn ghost">View →</button></td>
+        </tr>
+        <tr>
+          <td class="img"><div class="ph">IMG</div></td>
+          <td class="num">4</td>
+          <td class="sku">JJ-PET-22</td>
+          <td class="name">Premium Kibble 5kg <span class="cn">高级粮 5kg</span></td>
+          <td>JJ Pet</td>
+          <td>JJ-FACTORY-A</td>
+          <td>5kg × 4</td>
+          <td class="num">5.000</td>
+          <td class="num">0.0260</td>
+          <td><span class="pill ok">Passed</span></td>
+          <td><span class="pill ok">Configured</span></td>
+          <td><span class="pill ok">Healthy</span></td>
+          <td class="actions"><button class="btn ghost">View →</button></td>
+        </tr>
+        <tr>
+          <td class="img"><div class="ph">IMG</div></td>
+          <td class="num">5</td>
+          <td class="sku">CP-5</td>
+          <td class="name">Hairball Control Treats <span class="cn">化毛球零食</span></td>
+          <td>DIBAQ</td>
+          <td><em style="color:var(--t3)">— unassigned</em></td>
+          <td>30g × 80</td>
+          <td class="num">0.030</td>
+          <td class="num">0.0008</td>
+          <td><span class="pill muted">N/A</span></td>
+          <td><span class="pill err">Missing</span></td>
+          <td><span class="pill err">Loss risk</span></td>
+          <td class="actions"><button class="btn ghost">View →</button></td>
+        </tr>
+        <tr>
+          <td class="img"><div class="ph">IMG</div></td>
+          <td class="num">6</td>
+          <td class="sku">WP-99</td>
+          <td class="name">Catnip Spray 50ml <span class="cn">猫薄荷喷雾 50ml</span></td>
+          <td>PETSOME</td>
+          <td>XIAMEN PET BABY</td>
+          <td>50ml × 36</td>
+          <td class="num">0.050</td>
+          <td class="num">0.0012</td>
+          <td><span class="pill ok">Passed</span></td>
+          <td><span class="pill ok">Configured</span></td>
+          <td><span class="pill ok">Healthy</span></td>
+          <td class="actions"><button class="btn ghost">View →</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footnote">
+    Style preview · Light theme inspired by pet-store-daily-report.html · Dark theme alt available
+  </div>
+</div>
+
+<button class="fab" title="Edit factory profile (factory / admin / logistics only)">+</button>
+
+<script>
+  document.querySelectorAll('#roleSwitch button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#roleSwitch button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const r = b.dataset.r;
+      const banner = document.getElementById('role-banner');
+      banner.className = 'role-banner ' + r;
+      banner.textContent = 'Acting as: ' + r.toUpperCase();
+    });
+  });
+</script>
+</body>
+</html>

@@ -143,3 +143,11 @@ export default async function handler(req, res) {
     res.end(JSON.stringify({ error: e.message }));
   } finally { client.release(); }
 }
+
+
+// Named export so order-create-v2.js can recompute order pricing right after
+// inserting line items. recalcOrderPricing(poolOrClient, orderId) — a pg Pool
+// works as a client here (pool.query exists). Reuses recomputeOne (no duplication).
+export async function recalcOrderPricing(poolOrClient, orderId) {
+  return recomputeOne(poolOrClient, orderId);
+}

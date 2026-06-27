@@ -1,245 +1,456 @@
 {
-  "version": 1,
+  "generated": "2026-06-19",
   "templates": [
     {
-      "code": "HT001",
-      "name": "purchase-contract-template.html",
-      "label": "购销合同-鑫宝凌汽车",
+      "name": "pi-template.html",
+      "code": "HT-PI-001",
+      "label": "Proforma Invoice (动态)",
+      "cat": "trade-doc",
+      "desc": "外贸PI模版，?order_no=XX&token=YY 自动拉数据"
+    },
+    {
+      "name": "packing-list-template.html",
+      "code": "HT-PL-001",
+      "label": "Packing List 装箱单（动态+横版）",
+      "cat": "trade-doc",
+      "desc": "横版装箱单，?order_no=XX&token=YY 自动拉数据，内置字段库可搜索自定义"
+    },
+    {
+      "name": "po-template.html",
+      "code": "HT-PO-001",
+      "label": "Purchase Order 采购订单（动态）",
+      "cat": "trade-doc",
+      "desc": "竖版采购订单，?order_no=XX\\&token=YY 自动拉数据，买方/供应商信息+产品明细+签章"
+    },
+    {
+      "name": "iv-template.html",
+      "code": "HT-IV-001",
+      "label": "Commercial Invoice 商业发票（动态）",
+      "cat": "trade-doc",
+      "desc": "商业发票，自动拉订单数据，含金额大写+收款银行+签章"
+    },
+    {
+      "name": "sc-template.html",
+      "code": "HT-SC-001",
+      "label": "Sales Contract 销售合同（动态）",
+      "cat": "trade-doc",
+      "desc": "出口销售合同，?order_no=XX\\&token=YY 自动拉数据，买卖双方+产品明细+条款+签章"
+    },
+    {
+      "name": "seal-designer.html",
+      "code": "seal_designer",
+      "cat": "工具",
+      "label": "公章设计器",
+      "desc": "自定义公章/财务章/合同章/私章，实时预览，支持下载 SVG/PNG，可存入印章库",
+      "mtime": "2026-06-19",
+      "size": 16163,
+      "size_label": "15.8 KB"
+    },
+    {
+      "name": "CN_贷记通知单_模板.html",
+      "code": "cn_贷记通知单_模板",
+      "cat": "CN",
+      "mtime": "2026-05-04",
+      "size": 10516,
+      "size_label": "10.3 KB",
+      "label": "Cn 贷记通知单 模板"
+    },
+    {
+      "name": "admin-data-wiring-reference.html",
+      "code": "admin_data_wiring_reference",
       "cat": "其他",
-      "desc": "可编辑字段，DAS公章选择/制作/上传，打印即可签约",
-      "size": 24520
+      "mtime": "2026-05-24",
+      "size": 19072,
+      "size_label": "18.6 KB",
+      "label": "Admin Data Wiring Reference"
     },
     {
-      "code": "HT003",
-      "name": "cn-credit-note.html",
-      "label": "贷记通知单 CN",
-      "cat": "外贸单证",
-      "desc": "贷记通知单标准模板，按最小单位填写数量",
-      "size": 10516
+      "name": "admin-nav-cleanup-preview.html",
+      "code": "admin_nav_cleanup_preview",
+      "cat": "其他",
+      "mtime": "2026-05-18",
+      "size": 17731,
+      "size_label": "17.3 KB",
+      "label": "Admin Nav Cleanup Preview"
     },
     {
-      "code": "HT004",
-      "name": "finance-card-po-primary.html",
-      "label": "财务PO卡片",
-      "cat": "外贸单证",
-      "desc": "财务视角采购订单，含付款状态跟踪",
-      "size": 22496
-    },
-    {
-      "code": "HT005",
-      "name": "landed-cost-preview-2026-05-18.html",
-      "label": "到岸成本预览",
-      "cat": "外贸单证",
-      "desc": "DDP到岸成本拆解：运费/关税/保险/代理费",
-      "size": 12273
-    },
-    {
-      "code": "HT006",
-      "name": "ocean-freight-service-agreement-v1.html",
-      "label": "海运货代服务协议书",
-      "cat": "海运货运",
-      "desc": "海运服务合同标准模板，含条款与签章区",
-      "size": 20532
-    },
-    {
-      "code": "HT007",
-      "name": "ocean-freight-billing-preview.html",
-      "label": "海运费用账单",
-      "cat": "海运货运",
-      "desc": "货代开具账单，含海运费/港杂/附加费",
-      "size": 26869
-    },
-    {
-      "code": "HT008",
-      "name": "freight-marketplace-v1.html",
-      "label": "货代比价市场 v1",
-      "cat": "海运货运",
-      "desc": "多货代报价比价，含折扣率与有效期",
-      "size": 34931
-    },
-    {
-      "code": "HT009",
-      "name": "freight-quote-table-v1.html",
-      "label": "货运报价表",
-      "cat": "海运货运",
-      "desc": "按港口/船公司/柜型呈现",
-      "size": 12635
-    },
-    {
-      "code": "HT010",
-      "name": "shipping-plan-v1-yangbaobao.html",
-      "label": "出运计划确认单",
-      "cat": "海运货运",
-      "desc": "含箱量/重量/ETD/ETA",
-      "size": 20497
-    },
-    {
-      "code": "HT011",
-      "name": "freight-dn-enrich-2026-04.html",
-      "label": "货运借记通知单",
-      "cat": "海运货运",
-      "desc": "货代向Sanlyn开具的运费借记通知单",
-      "size": 11702
-    },
-    {
-      "code": "HT012",
-      "name": "freight-quote-enrich-2026-04.html",
-      "label": "货运报价单（丰聪）",
-      "cat": "海运货运",
-      "desc": "丰聪货代报价，含各费用拆分",
-      "size": 8813
-    },
-    {
-      "code": "HT013",
-      "name": "logistics-marketplace-v1.html",
-      "label": "物流市场 v1",
-      "cat": "海运货运",
-      "desc": "物流服务市场，货代信息聚合",
-      "size": 24038
-    },
-    {
-      "code": "HT014",
-      "name": "logistics-marketplace-v2.html",
-      "label": "物流市场 v2（含评分）",
-      "cat": "海运货运",
-      "desc": "升级版，含评分与历史成交价",
-      "size": 44217
-    },
-    {
-      "code": "HT015",
       "name": "booking-instruction-v3.html",
-      "label": "订舱指令单 v3",
+      "code": "booking_instruction_v3",
       "cat": "报关订舱",
-      "desc": "向货代下达订舱，含船期/品名/柜型/HS码",
-      "size": 101606
+      "mtime": "2026-05-10",
+      "size": 101606,
+      "size_label": "99.2 KB",
+      "label": "Booking Instruction V3"
     },
     {
-      "code": "HT017",
-      "name": "doc-action-sheet-preview.html",
-      "label": "单证操作面板（DAS）",
+      "name": "booking-v3-copy.html",
+      "code": "booking_v3_copy",
       "cat": "报关订舱",
-      "desc": "DAS弹窗：AI审核/签章/下载",
-      "size": 18859
+      "mtime": "2026-06-09",
+      "size": 101606,
+      "size_label": "99.2 KB",
+      "label": "Booking V3 Copy"
     },
     {
-      "code": "HT018",
-      "name": "step3-containers-preview.html",
-      "label": "整柜出运确认",
-      "cat": "报关订舱",
-      "desc": "整柜出运Step3，含装箱单与货物清单",
-      "size": 25782
-    },
-    {
-      "code": "HT019",
-      "name": "step3-pinjui-preview.html",
-      "label": "拼柜出运确认",
-      "cat": "报关订舱",
-      "desc": "拼柜出运Step3，含分拨与货代信息",
-      "size": 32178
-    },
-    {
-      "code": "HT020",
       "name": "brand-authorization-mapper.html",
-      "label": "品牌授权映射表",
+      "code": "brand_authorization_mapper",
       "cat": "品牌授权",
-      "desc": "品牌→授权工厂→产品SKU三层授权关系",
-      "size": 22075
+      "mtime": "2026-05-18",
+      "size": 22075,
+      "size_label": "21.6 KB",
+      "label": "Brand Authorization Mapper"
     },
     {
-      "code": "HT021",
-      "name": "order-card-v2.4-role-aware.html",
-      "label": "订单卡片 v2.4（角色）",
-      "cat": "订单管理",
-      "desc": "不同角色看不同操作入口",
-      "size": 45522
-    },
-    {
-      "code": "HT022",
-      "name": "order-card-v2.5-supply-chain.html",
-      "label": "订单卡片 v2.5（供应链）",
-      "cat": "订单管理",
-      "desc": "含工厂/货代/报关进度",
-      "size": 33649
-    },
-    {
-      "code": "HT023",
-      "name": "order-create-v4-2step.html",
-      "label": "建单流程 v4（两步）",
-      "cat": "订单管理",
-      "desc": "Step1基本信息→Step2产品明细",
-      "size": 26345
-    },
-    {
-      "code": "HT024",
-      "name": "quote-card-v1-role-aware.html",
-      "label": "报价卡片 v1",
-      "cat": "订单管理",
-      "desc": "含审批与转订单功能",
-      "size": 35207
-    },
-    {
-      "code": "HT025",
-      "name": "quote-order-unified-v3.html",
-      "label": "报价/订单统一视图 v3",
-      "cat": "订单管理",
-      "desc": "全流程状态跟踪",
-      "size": 179788
-    },
-    {
-      "code": "HT026",
-      "name": "order-product-picker-preview.html",
-      "label": "建单产品选择器",
-      "cat": "订单管理",
-      "desc": "建单时选产品，支持搜索与多选",
-      "size": 24613
-    },
-    {
-      "code": "HT027",
       "name": "collab-sheet-v4-roles.html",
-      "label": "协同填表（角色隔离）",
-      "cat": "其他",
-      "desc": "工厂/货代/Sanlyn各自填写区域隔离",
-      "size": 35224
+      "code": "collab_sheet_v4_roles",
+      "cat": "品牌授权",
+      "mtime": "2026-05-10",
+      "size": 35224,
+      "size_label": "34.4 KB",
+      "label": "Collab Sheet V4 Roles"
     },
     {
-      "code": "HT028",
+      "name": "collab-sheet-v5-draft.html",
+      "code": "collab_sheet_v5_draft",
+      "cat": "品牌授权",
+      "mtime": "2026-06-08",
+      "size": 42266,
+      "size_label": "41.3 KB",
+      "label": "Collab Sheet V5 Draft"
+    },
+    {
+      "name": "das-final-v2.html",
+      "code": "das_final_v2",
+      "cat": "报关订舱",
+      "mtime": "2026-05-02",
+      "size": 20785,
+      "size_label": "20.3 KB",
+      "label": "Das Final V2"
+    },
+    {
+      "name": "doc-action-sheet-preview.html",
+      "code": "doc_action_sheet_preview",
+      "cat": "其他",
+      "mtime": "2026-05-13",
+      "size": 18859,
+      "size_label": "18.4 KB",
+      "label": "Doc Action Sheet Preview"
+    },
+    {
+      "name": "docs-tab-redesign.html",
+      "code": "docs_tab_redesign",
+      "cat": "报关订舱",
+      "mtime": "2026-05-02",
+      "size": 26609,
+      "size_label": "26.0 KB",
+      "label": "Docs Tab Redesign"
+    },
+    {
+      "name": "finance-card-po-primary.html",
+      "code": "finance_card_po_primary",
+      "cat": "其他",
+      "mtime": "2026-05-14",
+      "size": 22496,
+      "size_label": "22.0 KB",
+      "label": "Finance Card Po Primary"
+    },
+    {
+      "name": "freight-debit-note-v1.html",
+      "code": "freight_debit_note_v1",
+      "cat": "海运货运",
+      "mtime": "2026-06-09",
+      "size": 20220,
+      "size_label": "19.7 KB",
+      "label": "Freight Debit Note V1"
+    },
+    {
+      "name": "freight-invoice-fob-v1.html",
+      "code": "freight_invoice_fob_v1",
+      "cat": "海运货运",
+      "mtime": "2026-06-08",
+      "size": 12033,
+      "size_label": "11.8 KB",
+      "label": "Freight Invoice Fob V1"
+    },
+    {
       "name": "jdy-style-order-editor-preview.html",
-      "label": "建单编辑器（简道云风格）",
-      "cat": "其他",
-      "desc": "字段分组与校验",
-      "size": 45224
-    },
-    {
-      "code": "HT029",
-      "name": "partner-workbench-v1.html",
-      "label": "合作伙伴工作台 v1",
-      "cat": "其他",
-      "desc": "含任务/单据/消息中心",
-      "size": 34981
-    },
-    {
-      "code": "HT030",
-      "name": "packaging-inventory.html",
-      "label": "包装规格与库存",
-      "cat": "其他",
-      "desc": "产品包装规格与库存跟踪，含箱规与重量",
-      "size": 33938
-    },
-    {
-      "code": "HT031",
-      "name": "Operation_Letter_PBXHQ-20250918.pdf",
-      "label": "操作流程说明信-PBXHQ-20250918",
-      "cat": "外贸单证",
-      "desc": "DDP西班牙出运说明信，含出口港/到达港/Incoterm",
-      "size": 5499
-    },
-    {
-      "code": "HT032",
-      "name": "Operation_Letter_PBXHQ-20250918.pdf",
-      "label": "Operation Letter PBXHQ 20250918",
+      "code": "jdy_style_order_editor_preview",
       "cat": "订单管理",
-      "desc": "交易模版。",
-      "size": 5499
+      "mtime": "2026-05-18",
+      "size": 45224,
+      "size_label": "44.2 KB",
+      "label": "Jdy Style Order Editor Preview"
+    },
+    {
+      "name": "knowledge-tree-preview.html",
+      "code": "knowledge_tree_preview",
+      "cat": "其他",
+      "mtime": "2026-05-19",
+      "size": 11951,
+      "size_label": "11.7 KB",
+      "label": "Knowledge Tree Preview"
+    },
+    {
+      "name": "landed-cost-preview-2026-05-18.html",
+      "code": "landed_cost_preview_2026_05_18",
+      "cat": "其他",
+      "mtime": "2026-05-18",
+      "size": 12273,
+      "size_label": "12.0 KB",
+      "label": "Landed Cost Preview 2026 05 18"
+    },
+    {
+      "name": "live-pi-37-WP-60.html",
+      "code": "live_pi_37_wp_60",
+      "cat": "其他",
+      "mtime": "2026-05-18",
+      "size": 5077,
+      "size_label": "5.0 KB",
+      "label": "Live Pi 37 Wp 60"
+    },
+    {
+      "name": "logistics-marketplace-v1.html",
+      "code": "logistics_marketplace_v1",
+      "cat": "其他",
+      "mtime": "2026-05-16",
+      "size": 24038,
+      "size_label": "23.5 KB",
+      "label": "Logistics Marketplace V1"
+    },
+    {
+      "name": "logistics-marketplace-v2.html",
+      "code": "logistics_marketplace_v2",
+      "cat": "其他",
+      "mtime": "2026-05-16",
+      "size": 44217,
+      "size_label": "43.2 KB",
+      "label": "Logistics Marketplace V2"
+    },
+    {
+      "name": "ocean-baby-portal-v1.1.html",
+      "code": "ocean_baby_portal_v1.1",
+      "cat": "其他",
+      "mtime": "2026-05-16",
+      "size": 25509,
+      "size_label": "24.9 KB",
+      "label": "Ocean Baby Portal V1.1"
+    },
+    {
+      "name": "order-card-v2.4-role-aware.html",
+      "code": "order_card_v2.4_role_aware",
+      "cat": "订单管理",
+      "mtime": "2026-05-10",
+      "size": 45522,
+      "size_label": "44.5 KB",
+      "label": "Order Card V2.4 Role Aware"
+    },
+    {
+      "name": "order-card-v2.5-supply-chain.html",
+      "code": "order_card_v2.5_supply_chain",
+      "cat": "订单管理",
+      "mtime": "2026-05-10",
+      "size": 33649,
+      "size_label": "32.9 KB",
+      "label": "Order Card V2.5 Supply Chain"
+    },
+    {
+      "name": "order-create-v4-2step.html",
+      "code": "order_create_v4_2step",
+      "cat": "订单管理",
+      "mtime": "2026-05-14",
+      "size": 26345,
+      "size_label": "25.7 KB",
+      "label": "Order Create V4 2Step"
+    },
+    {
+      "name": "order-product-picker-preview.html",
+      "code": "order_product_picker_preview",
+      "cat": "订单管理",
+      "mtime": "2026-05-02",
+      "size": 24613,
+      "size_label": "24.0 KB",
+      "label": "Order Product Picker Preview"
+    },
+    {
+      "name": "overview-V1.1.html",
+      "code": "overview_v1.1",
+      "cat": "其他",
+      "mtime": "2026-05-16",
+      "size": 65528,
+      "size_label": "64.0 KB",
+      "label": "Overview V1.1"
+    },
+    {
+      "name": "packaging-inventory.html",
+      "code": "packaging_inventory",
+      "cat": "其他",
+      "mtime": "2026-05-03",
+      "size": 33938,
+      "size_label": "33.1 KB",
+      "label": "Packaging Inventory"
+    },
+    {
+      "name": "partner-invite-preview.html",
+      "code": "partner_invite_preview",
+      "cat": "其他",
+      "mtime": "2026-05-13",
+      "size": 31652,
+      "size_label": "30.9 KB",
+      "label": "Partner Invite Preview"
+    },
+    {
+      "name": "partner-workbench-v1.html",
+      "code": "partner_workbench_v1",
+      "cat": "其他",
+      "mtime": "2026-05-10",
+      "size": 34981,
+      "size_label": "34.2 KB",
+      "label": "Partner Workbench V1"
+    },
+    {
+      "name": "permissions-matrix.html",
+      "code": "permissions_matrix",
+      "cat": "其他",
+      "mtime": "2026-05-10",
+      "size": 30203,
+      "size_label": "29.5 KB",
+      "label": "Permissions Matrix"
+    },
+    {
+      "name": "product-master-v1-drawer-preview.html",
+      "code": "product_master_v1_drawer_preview",
+      "cat": "订单管理",
+      "mtime": "2026-05-20",
+      "size": 45465,
+      "size_label": "44.4 KB",
+      "label": "Product Master V1 Drawer Preview"
+    },
+    {
+      "name": "product-master-v1-modular-preview.html",
+      "code": "product_master_v1_modular_preview",
+      "cat": "订单管理",
+      "mtime": "2026-05-20",
+      "size": 32878,
+      "size_label": "32.1 KB",
+      "label": "Product Master V1 Modular Preview"
+    },
+    {
+      "name": "product-master-v1-style-preview.html",
+      "code": "product_master_v1_style_preview",
+      "cat": "订单管理",
+      "mtime": "2026-05-20",
+      "size": 11991,
+      "size_label": "11.7 KB",
+      "label": "Product Master V1 Style Preview"
+    },
+    {
+      "name": "purchase-contract-template.html",
+      "code": "purchase_contract_template",
+      "cat": "合同模版",
+      "mtime": "2026-06-20",
+      "size": 28785,
+      "size_label": "28.1 KB",
+      "label": "购销合同 · 鑫宝凌",
+      "desc": "鑫宝凌汽车座套采购合同，支持 DAS 盖章 / 在线制作印章 / 上传图片，每月采购专用"
+    },
+    {
+      "name": "quote-card-v1-role-aware.html",
+      "code": "quote_card_v1_role_aware",
+      "cat": "其他",
+      "mtime": "2026-05-12",
+      "size": 35207,
+      "size_label": "34.4 KB",
+      "label": "Quote Card V1 Role Aware"
+    },
+    {
+      "name": "quote-order-unified-v3.html",
+      "code": "quote_order_unified_v3",
+      "cat": "订单管理",
+      "mtime": "2026-05-12",
+      "size": 179788,
+      "size_label": "175.6 KB",
+      "label": "Quote Order Unified V3"
+    },
+    {
+      "name": "sanlyn-master-preview.html",
+      "code": "sanlyn_master_preview",
+      "cat": "其他",
+      "mtime": "2026-05-13",
+      "size": 90741,
+      "size_label": "88.6 KB",
+      "label": "Sanlyn Master Preview"
+    },
+    {
+      "name": "shipping-instruction-托书-v1.html",
+      "code": "shipping_instruction_托书_v1",
+      "cat": "其他",
+      "mtime": "2026-06-09",
+      "size": 18580,
+      "size_label": "18.1 KB",
+      "label": "Shipping Instruction 托书 V1"
+    },
+    {
+      "name": "shipping-plan-v1-yangbaobao.html",
+      "code": "shipping_plan_v1_yangbaobao",
+      "cat": "其他",
+      "mtime": "2026-05-18",
+      "size": 20497,
+      "size_label": "20.0 KB",
+      "label": "Shipping Plan V1 Yangbaobao"
+    },
+    {
+      "name": "stamp-on-doc-v2.html",
+      "code": "stamp_on_doc_v2",
+      "cat": "其他",
+      "mtime": "2026-05-13",
+      "size": 77543,
+      "size_label": "75.7 KB",
+      "label": "Stamp On Doc V2"
+    },
+    {
+      "name": "stamp-on-doc.html",
+      "code": "stamp_on_doc",
+      "cat": "其他",
+      "mtime": "2026-05-13",
+      "size": 29203,
+      "size_label": "28.5 KB",
+      "label": "Stamp On Doc"
+    },
+    {
+      "name": "step3-containers-preview.html",
+      "code": "step3_containers_preview",
+      "cat": "其他",
+      "mtime": "2026-05-02",
+      "size": 25782,
+      "size_label": "25.2 KB",
+      "label": "Step3 Containers Preview"
+    },
+    {
+      "name": "step3-pinjui-preview.html",
+      "code": "step3_pinjui_preview",
+      "cat": "其他",
+      "mtime": "2026-05-02",
+      "size": 32178,
+      "size_label": "31.4 KB",
+      "label": "Step3 Pinjui Preview"
+    },
+    {
+      "name": "tuoshu-v1.html",
+      "code": "tuoshu_v1",
+      "cat": "其他",
+      "mtime": "2026-06-09",
+      "size": 17687,
+      "size_label": "17.3 KB",
+      "label": "Tuoshu V1"
+    },
+    {
+      "name": "vendor-pricing-original-design.html",
+      "code": "vendor_pricing_original_design",
+      "cat": "其他",
+      "mtime": "2026-05-10",
+      "size": 26137,
+      "size_label": "25.5 KB",
+      "label": "Vendor Pricing Original Design"
     }
   ]
 }

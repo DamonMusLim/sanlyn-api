@@ -154,6 +154,31 @@ async function applyAction(pool, task, actionName, payload, user) {
     );
     r.taskClosed = false;  // 单纯传件不自动关闭，由用户或规则决定
   }
+  else if (actionName === "claim") {
+    const me = user.username || user.name || user.id || "unknown";
+    if ((task.domain || "general") === "general")
+      throw new Error("此任务非业务领取池（domain=general），不可领取");
+    if (task.assigned_to && task.assigned_to !== me)
+      throw new Error("已被 " + task.assigned_to + " 领取");
+    await pool.query(
+      "UPDATE tasks SET assigned_to=$1, status=CASE WHEN status='open' THEN 'doing' ELSE status END, updated_at=NOW() WHERE id=$2",
+      [me, task.id]
+    );
+    r.claimedBy = me;
+  }
+  else if (actionName === "unclaim") {
+    const me = user.username || user.name || user.id || "unknown";
+    if (task.assigned_to && task.assigned_to !== me && user.role !== "admin")
+      throw new Error("非本人任务，无法退回");
+    await pool.query(
+      "UPDATE tasks SET assigned_to=NULL, status=CASE WHEN status='doing' THEN 'open' ELSE status END, updated_at=NOW() WHERE id=$1",
+      [task.id]
+    );
+    r.unclaimed = true;
+  }
+  else if (actionName === "complete") {
+    r.taskClosed = true;
+  }
   else {
     throw new Error("Unsupported action: " + actionName);
   }

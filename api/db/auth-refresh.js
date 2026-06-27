@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   var auth = req.headers.authorization || "";
   var token = auth.startsWith("Bearer ") ? auth.slice(7) : (req.query?.token || "");
-  var payload = verifyToken(token);
+  var payload = verifyToken(token, { ignoreExpiration: true });
   if (!payload) return res.status(401).json({ error: "invalid_token", message: "Token 已过期或无效，请重新登录" });
 
   // 用同一份用户信息签发新 token

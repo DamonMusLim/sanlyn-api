@@ -187,10 +187,23 @@ textarea.form-input { resize: vertical; min-height: 60px; }
           <a class="dl-btn" id="dlSO" target="_blank">📋 <span style="flex:1;">托书 / Booking Instruction（订舱委托）</span><span style="color:#1a73e8;">下载 ↗</span></a>
           <div id="oceanDocs"></div>
           <div id="fl_ocean"></div>
-          <div class="up-zone" onclick="pickFile('ocean')">＋ 回传 SO / BL格式件 / 非危声明 / 确认BL / VGM（≤8MB 可多次）</div>
+          <div class="up-zone" onclick="pickFile('ocean')">＋ 回传 SO / BL草稿 / 非危声明 / 确认BL / VGM（≤8MB 可多次）</div>
+          <div id="blNoSection" style="margin-top:10px;"></div>
           <div style="font-size:10px;color:#9ca3af;margin-top:6px;">运价报价请走报价中心（您的运价卡）· 上传即存无需提交</div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- 💰 价格链 · 账单与费用责任（海运段内第二卡） -->
+  <div class="hidden step-card" id="priceChainCard" style="margin-bottom:14px;">
+    <div class="step-head"><div style="display:flex;align-items:center;gap:10px;">
+      <div class="step-num">💰</div>
+      <div><div class="step-title">价格链 / Price Chain</div><div class="step-sub">本票费用责任 · 账单状态</div></div>
+    </div></div>
+    <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+      <div class="section" id="priceChainBody"></div>
+      <div id="pricingSection" style="padding:0 8px 4px"></div>
     </div>
   </div>
 
@@ -255,6 +268,7 @@ textarea.form-input { resize: vertical; min-height: 60px; }
   </div>
   <div style="text-align:center;font-size:11px;color:#9ca3af;margin:20px 0 40px;">
     🔒 此链接仅限本票 · 只显示贵司承包的段 · 上传与提交即自动保存
+    <div style="margin-top:6px;color:#cbd5e1;font-size:10px;">collab-portal v1.1.0 · 2026-06-22</div>
   </div>
 </div>
 </div>
@@ -274,7 +288,7 @@ function gv(id){ return ($(id)?.value||'').trim(); }
 function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
 
-const SEG_META = { ocean:{icon:'🚢',label:'海运'}, truck:{icon:'🚛',label:'车队'}, customs:{icon:'🛂',label:'报关'} };
+const SEG_META = { ocean:{icon:'🚢',label:'海运'}, truck:{icon:'🚛',label:'车队'}, customs:{icon:'🛂',label:'报关'}, factory:{icon:'🏭',label:'工厂'} };
 let segs = [], curSeg = null, uploads = [], vehs = [{}], upZone = 'ocean';
 
 function goSeg(s, el){
@@ -517,9 +531,6 @@ async function boot(){
     if (!box) return;
     const upBtn = (label) => `<span style="color:#b45309;font-weight:700;cursor:pointer;margin-right:14px;font-size:12px;" onclick="event.preventDefault();_cntrZone='${label}';pickFile('ocean')">上传盖章件</span>`;
     const rows = [];
-    rows.push(dlRow('🛡️', '非危险品声明 <span style="font-size:10px;color:#9ca3af;">出单公司抬头</span>', fileURL('nondg'), pv(fileURL('nondg')) + upBtn('非危声明')));
-    if ((s.release_type||'').toLowerCase()==='telex' || (s.release_type||'')==='电放')
-      rows.push(dlRow('📠', '电放保函', fileURL('telex'), pv(fileURL('telex')) + upBtn('电放保函')));
     if (s.is_transfer)
       rows.push(dlRow('🔁', '内转外信息表 <span style="font-size:10px;color:#9ca3af;">第二程</span>', fileURL('transfer'), pv(fileURL('transfer')) + upBtn('内转外')));
     const ups = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
@@ -539,6 +550,24 @@ async function boot(){
   if (soUps.length) soUps.forEach(u => { dl += dlRow('📋', '排载单 / SO · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
   else dl += `<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:6px;font-size:12px;color:#9ca3af;">📋 排载单 / SO（入货通知）· 货代上传后自动出现在这里</div>`;
   if (blUps.length) blUps.forEach(u => { dl += dlRow('📄', 'BL · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
+  // BL number entry section
+  (function(){
+    const sec = $('blNoSection');
+    if (!sec) return;
+    if (s.bl_no) {
+      sec.innerHTML = `<div style="background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 提单号已提交：<span style="color:#1a1d23;">${esc(s.bl_no)}</span> · 客户已可查看草稿</div>`;
+    } else if (blUps.length) {
+      sec.innerHTML = `<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:10px 14px;">
+        <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px;">📄 BL已上传 — 请填写提单号通知客户确认</div>
+        <div style="display:flex;gap:8px;">
+          <input id="blNoInput" type="text" placeholder="B/L No.（如 OOLU2345678）" style="flex:1;border:1px solid #fde68a;border-radius:6px;padding:7px 10px;font-size:12px;font-family:inherit;outline:none;" value="${esc(s.bl_no||'')}">
+          <button onclick="submitBlNo()" style="padding:7px 16px;border-radius:6px;border:none;background:#d97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">提交</button>
+        </div>
+      </div>`;
+    } else {
+      sec.innerHTML = `<div style="background:#f8fafc;border:1.5px dashed #e0e4ea;border-radius:8px;padding:9px 14px;font-size:12px;color:#9ca3af;">📄 上传BL草稿后，填写提单号即可推送给客户确认</div>`;
+    }
+  })();
   dl += dlRow('🛂', '报关单（海关格式·数据已填）', fileURL('customs_decl'), pv(fileURL('customs_decl')));
   dl += dlRow('📋', 'PL·SC·IV 合并版', fileURL('pack', '', 'customs'), pv(fileURL('pack', '', 'customs')));
   const quar = (Array.isArray(s.collab_uploads)?s.collab_uploads:[]).filter(u=>/检疫|植检|动检|兽医|quarantine/i.test(u.filename||''));
@@ -596,11 +625,65 @@ async function boot(){
     if ($('soInfoC')) $('soInfoC').innerHTML = html;
   })();
   renderVehs();
+  // 价格链视图
+  (function(){
+    const card = $('priceChainCard');
+    const body = $('priceChainBody');
+    if (!card || !body) return;
+    const termLabel = { CIF:'CIF（我方承担运费）', FOB:'FOB（买方承担运费）',
+      CFR:'CFR（我方承担运费）', DDP:'DDP（我方全包）', EXW:'EXW（买方自提）', FCA:'FCA' };
+    // 商业字段（交易条款/提单类型/下游客户）只给货代居间人(ocean段=洋宝宝)；
+    // 工厂/车队/报关属上游供应商，绝不暴露下游客户与交易条款
+    const isOcean = segs.includes('ocean');
+    const isFactory = segs.includes('factory');
+    const rows = [];
+    if (isOcean && s.freight_term) rows.push(['交易条款', termLabel[s.freight_term] || s.freight_term]);
+    if (s.carrier_code || s.vessel) rows.push(['船名航次', [s.carrier_code, s.vessel, s.voyage].filter(Boolean).join(' / ')]);
+    if (s.etd) rows.push(['预计开船 ETD', s.etd.slice(0,10)]);
+    if (s.eta) rows.push(['预计到港 ETA', s.eta.slice(0,10)]);
+    if (isOcean && s.release_type) rows.push(['提单类型', s.release_type === 'SWB' ? '🟢 海运单(SWB) · 无需电放' : s.release_type === 'TELEX' ? '⚡ 电放提单 · 已电放' : s.release_type === 'OBL' ? '📄 正本提单' : s.release_type]);
+    if (isOcean && (s.customer_en || s.customer_name)) rows.push(['下游客户', s.customer_en || s.customer_name]);
+    if (isFactory && s.finance_bill_sent_at) {
+      const confirmed = s.factory_bill_confirmed_at;
+      rows.push(['工厂账单', confirmed
+        ? `✅ 工厂已确认 · ${String(confirmed).slice(0,10)}`
+        : `📤 已发出 · ${String(s.finance_bill_sent_at).slice(0,16)} · 等待确认`]);
+    }
+    if (!rows.length) return;
+    card.classList.remove('hidden');
+    body.innerHTML = '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 20px;align-items:baseline;">'
+      + rows.map(r => `<span style="font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap;">${esc(r[0])}</span>`
+        + `<span style="font-size:12px;font-weight:700;color:#1a1d23;">${esc(r[1])}</span>`).join('')
+      + '</div>';
+    // 🛰 实时船位（免费 VesselFinder 外链，按船名；第三方仅供参考）
+    if (s.vessel) {
+      const vfUrl = 'https://www.vesselfinder.com/vessels?name=' + encodeURIComponent(s.vessel);
+      body.innerHTML += '<div style="margin-top:12px;"><a href="' + vfUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#2563eb;text-decoration:none;padding:7px 13px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;">🛰 实时船位 <span style="font-size:10px;color:#94a3b8;font-weight:400;">第三方AIS · 仅供参考</span></a></div>';
+    }
+  })();
   show('stateForm');
+  if (segs.includes('ocean')) loadPricing();
 }
 
 function showPreview(href){ $('pvFrame').src = href; $('pvModal').style.display='block'; }
 // 回传框支持 拖拽 + 粘贴截图
+async function submitBlNo(){
+  const val = ($('blNoInput')||{}).value||'';
+  if(!val.trim()){toast('请输入提单号');return;}
+  const btn = document.querySelector('#blNoSection button');
+  if(btn){btn.disabled=true;btn.textContent='提交中…';}
+  try{
+    const r = await fetch(`${API}/update-bl-no`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token, bl_no: val.trim()})});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error||'失败');
+    s.bl_no = d.bl_no;
+    const sec=$('blNoSection');
+    if(sec) sec.innerHTML=`<div style="background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 提单号已提交：<span style="color:#1a1d23;">${esc(d.bl_no)}</span> · 客户已可查看草稿</div>`;
+    toast('✓ 提单号已提交，客户可确认');
+  }catch(e){toast('提交失败：'+e.message);if(btn){btn.disabled=false;btn.textContent='提交';}}
+}
+
 async function ingestFiles(list, zone){
   for(const f of list){ await uploadOne(f, zone); }
 }
@@ -626,6 +709,97 @@ document.addEventListener('paste', e=>{
   const zone = document.getElementById('seg-customs') && !document.getElementById('seg-customs').classList.contains('hidden') ? 'customs' : 'truck';
   ingestFiles(fs, zone); toast('📎 已捕获粘贴文件，上传中…');
 });
+
+async function loadPricing() {
+  const token = new URLSearchParams(location.search).get('token');
+  if (!token) return;
+  try {
+    const r = await fetch(`/api/db/booking-collab/collab-pricing?token=${encodeURIComponent(token)}`);
+    const d = await r.json();
+    const sec = document.getElementById('pricingSection');
+    if (!sec) return;
+    if (!d.ok) {
+      sec.innerHTML = '<div style="margin:8px 0 4px;padding:10px 12px;background:rgba(251,191,36,0.08);border-radius:8px;border:1px solid rgba(251,191,36,0.3);font-size:12px;color:#fbbf24">⚠️ ' + (d.error||'数据加载失败') + '</div>';
+      return;
+    }
+    if (!d.items || !d.items.length) {
+      sec.innerHTML = '<div style="margin:8px 0 4px;padding:10px 12px;background:rgba(251,191,36,0.08);border-radius:8px;border:1px solid rgba(251,191,36,0.3)"><span style="font-size:12px;font-weight:700;color:#fbbf24">💰 上下游费用</span><span style="font-size:11px;color:#94a3b8;margin-left:8px">' + (d.note || '费用尚未录入') + ' · 请供应链团队补充录入</span></div>';
+      return;
+    }
+    const n2 = (v, cur) => v == null ? '—' : Number(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}) + (cur ? ' ' + cur : '');
+    const basisTag = b => b === 'per_container' ? '<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(99,102,241,0.2);color:#a5b4fc">每柜</span>' : '<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(148,163,184,0.15);color:#94a3b8">整票</span>';
+    const termLabel = t => t ? `<span style="font-size:10px;color:#94a3b8">${t}·买方</span>` : '';
+    const rows = d.items.map(it => `
+      <tr style="border-bottom:1px solid rgba(148,163,184,0.1)">
+        <td style="padding:7px 8px;font-size:12px;color:#e2e8f0;font-weight:600">${esc(it.cost_category||'—')}</td>
+        <td style="padding:7px 8px;text-align:center">${basisTag(it.charge_basis)}</td>
+        <td style="padding:7px 8px;font-size:12px;color:#cbd5e1;text-align:right">${it.unit_price != null ? n2(it.unit_price, it.currency) : '—'}</td>
+        <td style="padding:7px 8px;font-size:12px;color:#cbd5e1;text-align:center">${it.qty != null ? it.qty : '1'}</td>
+        <td style="padding:7px 8px;font-size:12px;font-weight:700;color:#e2e8f0;text-align:right">${n2(it.amount, it.currency)}</td>
+        <td style="padding:7px 8px;font-size:11px;color:#64748b;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.supplier||'—')}</td>
+        <td style="padding:7px 8px">${termLabel(it.incoterm)}</td>
+        <td style="padding:7px 8px;font-size:12px;text-align:right">${it.self_handled ? '<span style="font-size:10px;color:#64748b">自理</span>' : it.sale_amount != null ? '<span style="font-weight:700;color:#e2e8f0">' + n2(it.sale_amount, it.currency) + '</span>' + (it.rebill_to ? '<br><span style="font-size:10px;color:#64748b">↳ ' + esc(it.rebill_to) + '</span>' : '') : '<input type="number" step="0.01" min="0" class="price-fill-input" data-bill-id="' + esc(it.id) + '" placeholder="' + esc(it.currency||'CNY') + '" style="width:84px;padding:4px 6px;font-size:12px;text-align:right;background:#0f172a;border:1px solid rgba(251,191,36,0.45);border-radius:5px;color:#fbbf24;outline:none">'}</td>
+        <td style="padding:7px 8px;font-size:12px;font-weight:700;text-align:right;color:${it.gross_profit==null||it.self_handled?'#475569':it.gross_profit>=0?'#34d399':'#f87171'}">${it.self_handled||it.gross_profit==null ? '—' : n2(it.gross_profit, it.currency)}</td>
+      </tr>`).join('');
+    const fillCount = d.items.filter(it => !it.self_handled && it.sale_amount == null).length;
+    const fillBar = fillCount ? `<div style="padding:10px 12px;background:rgba(251,191,36,0.06);border-top:1px solid rgba(251,191,36,0.18);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <span style="font-size:11px;color:#fbbf24">⚠️ ${fillCount} 项销售价待补充 · 填好对客户的收费金额</span>
+      <button onclick="submitPricingFill()" style="padding:6px 14px;font-size:12px;font-weight:700;background:#fbbf24;color:#1a1d23;border:none;border-radius:6px;cursor:pointer">💾 提交销售价</button>
+    </div>` : '';
+    const tfoot = ['USD','CNY'].filter(cur => d.totals[cur] && (d.totals[cur].cost||d.totals[cur].sales)).map(cur => `
+      <tr style="background:rgba(148,163,184,0.08)">
+        <td colspan="4" style="padding:8px 8px;font-size:12px;font-weight:800;color:#94a3b8">合计 (${cur})</td>
+        <td style="padding:8px 8px;font-size:12px;font-weight:800;color:#e2e8f0;text-align:right">${n2(d.totals[cur].cost, cur)}</td>
+        <td colspan="2"></td>
+        <td style="padding:8px 8px;font-size:12px;font-weight:800;color:#e2e8f0;text-align:right">${n2(d.totals[cur].sales, cur)}</td>
+        <td style="padding:8px 8px;font-size:12px;font-weight:800;text-align:right;color:${d.totals[cur].profit>=0?'#34d399':'#f87171'}">${n2(d.totals[cur].profit, cur)}</td>
+      </tr>`).join('');
+    const custLine = d.customer ? `<span style="font-size:11px;color:#94a3b8;margin-left:10px">收款对象：<span style="color:#e2e8f0;font-weight:700">${esc(d.customer)}</span></span>` : '';
+    sec.innerHTML = `<div style="margin:10px 0 4px;overflow:hidden;border-radius:8px;border:1px solid rgba(148,163,184,0.18)">
+      <div style="padding:10px 12px;background:rgba(15,23,42,0.6);border-bottom:1px solid rgba(148,163,184,0.12);display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+        <span style="font-size:13px;font-weight:800;color:#e2e8f0">💰 上下游费用</span>
+        <span style="font-size:11px;color:#64748b">${esc(d.bl_no)}</span>${custLine}
+      </div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;min-width:600px">
+        <thead><tr style="background:rgba(148,163,184,0.06)">
+          <th style="padding:7px 8px;text-align:left;font-size:10px;color:#64748b;font-weight:700;white-space:nowrap">费用项</th>
+          <th style="padding:7px 8px;text-align:center;font-size:10px;color:#64748b;font-weight:700">计费</th>
+          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">单价</th>
+          <th style="padding:7px 8px;text-align:center;font-size:10px;color:#64748b;font-weight:700">数量</th>
+          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">合计(成本)</th>
+          <th style="padding:7px 8px;text-align:left;font-size:10px;color:#64748b;font-weight:700">付款对象(上游)</th>
+          <th style="padding:7px 8px;text-align:left;font-size:10px;color:#64748b;font-weight:700">承担方</th>
+          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">销售(下游)</th>
+          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">毛利</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot>${tfoot}</tfoot>
+      </table></div>${fillBar}</div>`;
+  } catch(e) { console.warn('pricing fetch failed', e); }
+}
+
+async function submitPricingFill() {
+  const token = new URLSearchParams(location.search).get('token');
+  if (!token) return;
+  const inputs = document.querySelectorAll('.price-fill-input');
+  const updates = [];
+  inputs.forEach(el => {
+    const v = (el.value || '').trim();
+    if (v !== '' && isFinite(Number(v)) && Number(v) >= 0)
+      updates.push({ bill_id: el.getAttribute('data-bill-id'), sale_amount: Number(v) });
+  });
+  if (!updates.length) { toast('请先填写至少一项销售价'); return; }
+  try {
+    const r = await fetch('/api/db/booking-collab/collab-pricing-submit', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token, updates })
+    });
+    const d = await r.json();
+    if (d.ok) { toast(`✅ 已补录 ${d.updated} 项`); loadPricing(); }
+    else toast('提交失败：' + (d.error||''));
+  } catch(e) { toast('网络错误'); }
+}
 boot();
 </script>
 </body>

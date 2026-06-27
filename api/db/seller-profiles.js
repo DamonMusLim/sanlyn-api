@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   try {
     const r = await pool.query(
       `SELECT code, name_en, name_cn, address, tel, email,
-              bank_name, bank_swift, bank_addr, usd_account, rmb_account, is_default
+              bank_name, bank_name_cn, bank_swift, bank_addr, usd_account, rmb_account, tax_no, is_default
        FROM seller_profiles ORDER BY is_default DESC, code`
     );
     res.json({ success: true, data: r.rows, count: r.rows.length });

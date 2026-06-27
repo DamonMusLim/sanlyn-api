@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ocean Baby Portal · V1.1</title>
+<style>
+  /* ── TOKENS ─────────────────────────────────────── */
+  :root {
+    --bg:        #0B1120;
+    --bg2:       #101828;
+    --bg3:       #1A2540;
+    --border:    rgba(255,255,255,0.08);
+    --accent:    #6366F1;
+    --accent2:   #818CF8;
+    --teal:      #14B8A6;
+    --amber:     #F59E0B;
+    --green:     #22C55E;
+    --red:       #EF4444;
+    --text:      #F1F5F9;
+    --text2:     #94A3B8;
+    --text3:     #475569;
+    --card:      #131F35;
+    --r:         10px;
+    --r-sm:      6px;
+    --font:      -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── TOP NAV ─────────────────────────────────────── */
+  .topbar {
+    height: 52px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, #6366F1, #14B8A6);
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .logo-text {
+    font-size: 14px; font-weight: 700; color: var(--text);
+    letter-spacing: 0.01em;
+  }
+  .logo-ver {
+    font-size: 10px; color: var(--text3);
+    background: var(--bg3); padding: 2px 6px;
+    border-radius: 4px; font-weight: 600;
+  }
+  .spacer { flex: 1; }
+  .user-chip {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    cursor: pointer;
+  }
+  .user-avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: linear-gradient(135deg, #6366F1, #14B8A6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+  }
+  .user-name { font-size: 12px; color: var(--text2); font-weight: 500; }
+  .notif {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: var(--bg3); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; cursor: pointer; position: relative;
+  }
+  .notif-dot {
+    position: absolute; top: 6px; right: 6px;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--red); border: 1.5px solid var(--bg2);
+  }
+
+  /* ── BOTTOM NAV (5 tabs) ─────────────────────────── */
+  .bottomnav {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    z-index: 100;
+  }
+  .nav-tab {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 3px;
+    cursor: pointer;
+    padding: 6px 0;
+    position: relative;
+    transition: all 0.15s;
+  }
+  .nav-tab.active .nav-icon { color: var(--accent2); }
+  .nav-tab.active .nav-label { color: var(--accent2); }
+  .nav-tab.active::after {
+    content: '';
+    position: absolute; bottom: 0; left: 25%; right: 25%;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px 2px 0 0;
+  }
+  .nav-icon { font-size: 18px; color: var(--text3); transition: color 0.15s; }
+  .nav-label { font-size: 10px; color: var(--text3); font-weight: 500; transition: color 0.15s; }
+  .nav-badge {
+    position: absolute; top: 4px; right: calc(50% - 14px);
+    background: var(--red); color: #fff;
+    font-size: 9px; font-weight: 700;
+    padding: 1px 4px; border-radius: 8px;
+    min-width: 14px; text-align: center;
+  }
+
+  /* ── PAGE CONTENT ────────────────────────────────── */
+  .page { display: none; flex: 1; overflow-y: auto; padding: 16px 16px 80px; }
+  .page.active { display: block; }
+
+  /* ── SECTION HEADER ──────────────────────────────── */
+  .sec-title {
+    font-size: 11px; font-weight: 700; color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    margin: 20px 0 10px;
+  }
+  .sec-title:first-child { margin-top: 0; }
+
+  /* ── STAT ROW ────────────────────────────────────── */
+  .stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 14px 12px;
+  }
+  .stat-label { font-size: 10px; color: var(--text3); font-weight: 600; margin-bottom: 6px; }
+  .stat-val { font-size: 22px; font-weight: 800; color: var(--text); }
+  .stat-val.accent { color: var(--accent2); }
+  .stat-val.amber  { color: var(--amber); }
+  .stat-val.red    { color: var(--red); }
+  .stat-val.green  { color: var(--green); }
+  .stat-sub { font-size: 10px; color: var(--text3); margin-top: 4px; }
+
+  /* ── TASK CARD ───────────────────────────────────── */
+  .task-list { display: flex; flex-direction: column; gap: 8px; }
+  .task-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px;
+    cursor: pointer;
+  }
+  .task-card:hover { border-color: var(--accent); }
+  .task-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .task-body { flex: 1; min-width: 0; }
+  .task-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+  .task-meta  { font-size: 11px; color: var(--text2); }
+  .task-arrow { color: var(--text3); font-size: 14px; }
+
+  /* ── SHIP CARD ───────────────────────────────────── */
+  .ship-list { display: flex; flex-direction: column; gap: 10px; }
+  .ship-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .ship-card:hover { border-color: var(--accent2); }
+  .ship-head {
+    padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .ship-bl { font-size: 13px; font-weight: 700; color: var(--text); font-family: monospace; }
+  .ship-body { padding: 10px 14px; }
+  .ship-route {
+    font-size: 11px; color: var(--text2);
+    display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+  }
+  .ship-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .ship-field-label { font-size: 10px; color: var(--text3); }
+  .ship-field-val   { font-size: 12px; color: var(--text); font-weight: 600; margin-top: 2px; }
+  .ship-foot {
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 8px;
+  }
+
+  /* ── STATUS CHIP ─────────────────────────────────── */
+  .chip {
+    font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border-radius: 12px;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .chip-dot { width: 5px; height: 5px; border-radius: 50%; }
+  .chip.transit  { background: rgba(99,102,241,0.15); color: var(--accent2); }
+  .chip.draft    { background: rgba(148,163,184,0.15); color: var(--text2); }
+  .chip.pending  { background: rgba(245,158,11,0.15);  color: var(--amber); }
+  .chip.done     { background: rgba(34,197,94,0.15);   color: var(--green); }
+  .chip.alert    { background: rgba(239,68,68,0.15);   color: var(--red); }
+
+  /* ── BTN ─────────────────────────────────────────── */
+  .btn {
+    padding: 6px 14px; border-radius: var(--r-sm);
+    font-size: 12px; font-weight: 600;
+    cursor: pointer; border: none; font-family: var(--font);
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-primary  { background: var(--accent);  color: #fff; }
+  .btn-outline  { background: transparent; color: var(--accent2); border: 1px solid var(--accent2) !important; }
+  .btn-ghost    { background: var(--bg3); color: var(--text2); }
+  .btn-teal     { background: var(--teal); color: #fff; }
+
+  /* ── FINANCE ROW ─────────────────────────────────── */
+  .fin-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .fin-head {
+    padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .fin-bl { font-size: 12px; font-weight: 700; color: var(--text); font-family: monospace; }
+  .fin-amount { font-size: 16px; font-weight: 800; color: var(--amber); }
+  .fin-body { padding: 10px 14px; }
+  .fin-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 1px solid var(--border);
+  }
+  .fin-row:last-child { border-bottom: none; }
+  .fin-label { font-size: 11px; color: var(--text2); }
+  .fin-val   { font-size: 12px; color: var(--text); font-weight: 600; }
+  .slip-box {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    background: rgba(245,158,11,0.06);
+    border: 1px dashed rgba(245,158,11,0.3);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .slip-icon { font-size: 18px; }
+  .slip-text { flex: 1; font-size: 11px; color: var(--text2); }
+  .slip-received {
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    background: rgba(34,197,94,0.06);
+    border: 1px solid rgba(34,197,94,0.2);
+    display: flex; align-items: center; gap: 10px;
+    margin: 10px 0 0;
+  }
+
+  /* ── DOC ITEM ────────────────────────────────────── */
+  .doc-list { display: flex; flex-direction: column; gap: 8px; }
+  .doc-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px;
+    cursor: pointer;
+  }
+  .doc-icon { font-size: 22px; flex-shrink: 0; }
+  .doc-body { flex: 1; }
+  .doc-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .doc-meta  { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .doc-action { color: var(--text3); font-size: 14px; }
+
+  /* ── COLLAB ITEM ─────────────────────────────────── */
+  .collab-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+  .collab-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .collab-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .collab-party { font-size: 11px; color: var(--text2); margin-bottom: 8px; }
+  .collab-steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .collab-step {
+    font-size: 10px; padding: 3px 8px; border-radius: 10px;
+    border: 1px solid var(--border); color: var(--text3);
+  }
+  .collab-step.done  { background: rgba(34,197,94,0.1);  color: var(--green); border-color: rgba(34,197,94,0.3); }
+  .collab-step.cur   { background: rgba(99,102,241,0.1); color: var(--accent2); border-color: var(--accent); }
+  .collab-step.wait  { color: var(--text3); }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-icon">🌊</div>
+    <span class="logo-text">Ocean Baby</span>
+    <span class="logo-ver">V1.1</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="notif">🔔<div class="notif-dot"></div></div>
+  <div class="user-chip">
+    <div class="user-avatar">OB</div>
+    <span class="user-name">上海洋宝宝</span>
+  </div>
+</div>
+
+<!-- ══════════ PAGE 1: 工作台 ══════════ -->
+<div class="page active" id="page-workbench">
+
+  <div class="sec-title">Overview · Today</div>
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-label">In Transit</div>
+      <div class="stat-val accent">6</div>
+      <div class="stat-sub">Shipments</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Receivable</div>
+      <div class="stat-val amber">$40.8K</div>
+      <div class="stat-sub">USD unpaid</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Exceptions</div>
+      <div class="stat-val red">2</div>
+      <div class="stat-sub">Need action</div>
+    </div>
+  </div>
+
+  <div class="sec-title">Action Required</div>
+  <div class="task-list">
+    <div class="task-card">
+      <div class="task-dot" style="background:var(--amber)"></div>
+      <div class="task-body">
+        <div class="task-title">Payment slip received · WP-62</div>
+        <div class="task-meta">PETSOME SDN BHD · USD 1,300 · Awaiting confirmation</div>
+      </div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-card">
+      <div class="task-dot" style="background:var(--red)"></div>
+      <div class="task-body">
+        <div class="task-title">BL not uploaded · ZC-20</div>
+        <div class="task-meta">ETD May 8 · MEDUWZ495807 · Docs missing</div>
+      </div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-card">
+      <div class="task-dot" style="background:var(--accent)"></div>
+      <div class="task-body">
+        <div class="task-title">Collab task pending · WP-55</div>
+        <div class="task-meta">Customs clearance · Assigned to 厦门报关行</div>
+      </div>
+      <div class="task-arrow">›</div>
+    </div>
+  </div>
+
+  <div class="sec-title">Recent Shipments</div>
+  <div class="ship-list">
+    <div class="ship-card">
+      <div class="ship-head">
+        <span class="ship-bl">MEDUWZ495799</span>
+        <span class="chip transit"><span class="chip-dot" style="background:var(--accent2)"></span>In Transit</span>
+      </div>
+      <div class="ship-body">
+        <div class="ship-route">🇨🇳 Qingdao → 🇲🇾 Port Klang Westport <span style="color:var(--text3)">· MSC ELBA III</span></div>
+        <div class="ship-fields">
+          <div><div class="ship-field-label">Order</div><div class="ship-field-val">WP-62</div></div>
+          <div><div class="ship-field-label">ETD</div><div class="ship-field-val">May 7</div></div>
+          <div><div class="ship-field-label">Container</div><div class="ship-field-val">40HQ</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════ PAGE 2: 运单 ══════════ -->
+<div class="page" id="page-shipments">
+
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <button class="btn btn-primary" style="font-size:11px">All</button>
+    <button class="btn btn-ghost" style="font-size:11px">In Transit · 6</button>
+    <button class="btn btn-ghost" style="font-size:11px">Draft · 3</button>
+    <button class="btn btn-ghost" style="font-size:11px">Arrived · 1</button>
+  </div>
+
+  <div class="ship-list">
+    <div class="ship-card">
+      <div class="ship-head">
+        <span class="ship-bl">MEDUWZ495799</span>
+        <span class="chip transit"><span class="chip-dot" style="background:var(--accent2)"></span>In Transit</span>
+      </div>
+      <div class="ship-body">
+        <div class="ship-route">🇨🇳 Qingdao → 🇲🇾 Port Klang Westport</div>
+        <div class="ship-fields">
+          <div><div class="ship-field-label">Order</div><div class="ship-field-val">WP-62</div></div>
+          <div><div class="ship-field-label">ETD</div><div class="ship-field-val">May 7</div></div>
+          <div><div class="ship-field-label">Freight</div><div class="ship-field-val">$1,300</div></div>
+        </div>
+      </div>
+      <div class="ship-foot">
+        <button class="btn btn-outline" style="flex:1">View Details</button>
+        <button class="btn btn-ghost">📎 Docs</button>
+      </div>
+    </div>
+
+    <div class="ship-card">
+      <div class="ship-head">
+        <span class="ship-bl">MEDUWX422340</span>
+        <span class="chip transit"><span class="chip-dot" style="background:var(--accent2)"></span>In Transit</span>
+      </div>
+      <div class="ship-body">
+        <div class="ship-route">🇨🇳 Qingdao → 🇲🇾 Port Klang Westport</div>
+        <div class="ship-fields">
+          <div><div class="ship-field-label">Order</div><div class="ship-field-val">WP-55</div></div>
+          <div><div class="ship-field-label">ETD</div><div class="ship-field-val">Mar 24</div></div>
+          <div><div class="ship-field-label">Freight</div><div class="ship-field-val">$1,500</div></div>
+        </div>
+      </div>
+      <div class="ship-foot">
+        <button class="btn btn-outline" style="flex:1">View Details</button>
+        <button class="btn btn-ghost">📎 Docs</button>
+      </div>
+    </div>
+
+    <div class="ship-card" style="border-color:rgba(148,163,184,0.15)">
+      <div class="ship-head">
+        <span class="ship-bl" style="color:var(--text2)">— Draft</span>
+        <span class="chip draft">Draft</span>
+      </div>
+      <div class="ship-body">
+        <div class="ship-route" style="color:var(--text3)">Qingdao → Port Klang Westport</div>
+        <div class="ship-fields">
+          <div><div class="ship-field-label">Order</div><div class="ship-field-val" style="color:var(--text2)">WP-62</div></div>
+          <div><div class="ship-field-label">ETD</div><div class="ship-field-val" style="color:var(--text3)">—</div></div>
+          <div><div class="ship-field-label">Quote</div><div class="ship-field-val" style="color:var(--text3)">$2,500</div></div>
+        </div>
+      </div>
+      <div class="ship-foot">
+        <button class="btn btn-ghost" style="flex:1;color:var(--text3)">Edit Draft</button>
+        <button class="btn btn-ghost" style="color:var(--red)">Discard</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════ PAGE 3: 财务 ══════════ -->
+<div class="page" id="page-finance">
+
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-label">Unpaid</div>
+      <div class="stat-val amber">$40.8K</div>
+      <div class="stat-sub">14 shipments</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Slip Pending</div>
+      <div class="stat-val accent">1</div>
+      <div class="stat-sub">To confirm</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Collected</div>
+      <div class="stat-val green">134</div>
+      <div class="stat-sub">This year</div>
+    </div>
+  </div>
+
+  <div class="sec-title">Awaiting Confirmation</div>
+  <div class="fin-card" style="border-color:rgba(245,158,11,0.3)">
+    <div class="fin-head">
+      <div>
+        <div class="fin-bl">MEDUWZ495799 · WP-62</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">PETSOME SDN BHD</div>
+      </div>
+      <div class="fin-amount">USD 1,300</div>
+    </div>
+    <div class="fin-body">
+      <div class="slip-received">
+        <div class="slip-icon">📎</div>
+        <div class="slip-text">
+          <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:2px">Payment slip received</div>
+          <div style="font-size:10px;color:var(--text2)">Uploaded May 16 · remittance_wp62.pdf</div>
+        </div>
+        <button class="btn btn-teal" style="font-size:11px">Confirm ✓</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-title">Unpaid · All</div>
+  <div class="fin-card">
+    <div class="fin-head">
+      <div>
+        <div class="fin-bl">MEDUWX422340 · WP-55</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">PETSOME SDN BHD</div>
+      </div>
+      <div class="fin-amount">USD 1,500</div>
+    </div>
+    <div class="fin-body">
+      <div class="slip-box">
+        <div class="slip-icon">⏳</div>
+        <div class="slip-text">Awaiting customer payment slip</div>
+        <button class="btn btn-ghost" style="font-size:11px">Remind</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════ PAGE 4: 单证 ══════════ -->
+<div class="page" id="page-docs">
+
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <button class="btn btn-primary" style="font-size:11px">All</button>
+    <button class="btn btn-ghost" style="font-size:11px">BL</button>
+    <button class="btn btn-ghost" style="font-size:11px">Invoice</button>
+    <button class="btn btn-ghost" style="font-size:11px">Customs</button>
+  </div>
+
+  <div class="doc-list">
+    <div class="doc-item">
+      <div class="doc-icon">📄</div>
+      <div class="doc-body">
+        <div class="doc-name">Bill of Lading · MEDUWZ495799</div>
+        <div class="doc-meta">WP-62 · Uploaded May 7 · PDF</div>
+      </div>
+      <span class="chip done" style="margin-right:8px">✓ Done</span>
+      <div class="doc-action">›</div>
+    </div>
+    <div class="doc-item">
+      <div class="doc-icon">🧾</div>
+      <div class="doc-body">
+        <div class="doc-name">Freight Invoice · WP-55</div>
+        <div class="doc-meta">MEDUWX422340 · Pending issue · USD 1,500</div>
+      </div>
+      <span class="chip pending">Pending</span>
+      <div class="doc-action" style="margin-left:8px">›</div>
+    </div>
+    <div class="doc-item">
+      <div class="doc-icon">📦</div>
+      <div class="doc-body">
+        <div class="doc-name">Packing List · WP-62</div>
+        <div class="doc-meta">CP26031413 · Uploaded May 6</div>
+      </div>
+      <span class="chip done" style="margin-right:8px">✓ Done</span>
+      <div class="doc-action">›</div>
+    </div>
+    <div class="doc-item" style="border-style:dashed;cursor:pointer;justify-content:center;gap:8px;color:var(--text3)">
+      <span style="font-size:16px">➕</span>
+      <span style="font-size:13px">Upload Document</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════ PAGE 5: 协同表 ══════════ -->
+<div class="page" id="page-collab">
+
+  <div class="sec-title">Active Collaborations</div>
+
+  <div class="collab-card">
+    <div class="collab-head">
+      <span class="collab-title">WP-62 · 出口协同</span>
+      <span class="chip transit">Active</span>
+    </div>
+    <div class="collab-party">Parties: PETSOME SDN BHD · 厦门巴匕 · 洋宝宝 · 厦门报关行</div>
+    <div class="collab-steps">
+      <span class="collab-step done">✓ Booking</span>
+      <span class="collab-step done">✓ Loading</span>
+      <span class="collab-step done">✓ BL Issue</span>
+      <span class="collab-step cur">→ Payment</span>
+      <span class="collab-step wait">Clearance</span>
+      <span class="collab-step wait">Delivery</span>
+    </div>
+  </div>
+
+  <div class="collab-card">
+    <div class="collab-head">
+      <span class="collab-title">WP-55 · 出口协同</span>
+      <span class="chip transit">Active</span>
+    </div>
+    <div class="collab-party">Parties: PETSOME SDN BHD · 厦门巴匕 · 洋宝宝</div>
+    <div class="collab-steps">
+      <span class="collab-step done">✓ Booking</span>
+      <span class="collab-step done">✓ Loading</span>
+      <span class="collab-step cur">→ BL Issue</span>
+      <span class="collab-step wait">Payment</span>
+      <span class="collab-step wait">Clearance</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- BOTTOM NAV -->
+<div class="bottomnav">
+  <div class="nav-tab active" onclick="switchTab('workbench')">
+    <span class="nav-icon">🏠</span>
+    <span class="nav-label">工作台</span>
+    <span class="nav-badge">3</span>
+  </div>
+  <div class="nav-tab" onclick="switchTab('shipments')">
+    <span class="nav-icon">🚢</span>
+    <span class="nav-label">运单</span>
+  </div>
+  <div class="nav-tab" onclick="switchTab('finance')">
+    <span class="nav-icon">💰</span>
+    <span class="nav-label">财务</span>
+    <span class="nav-badge">1</span>
+  </div>
+  <div class="nav-tab" onclick="switchTab('docs')">
+    <span class="nav-icon">📎</span>
+    <span class="nav-label">单证</span>
+  </div>
+  <div class="nav-tab" onclick="switchTab('collab')">
+    <span class="nav-icon">🤝</span>
+    <span class="nav-label">协同表</span>
+  </div>
+</div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+  window.scrollTo(0, 0);
+}
+</script>
+</body>
+</html>

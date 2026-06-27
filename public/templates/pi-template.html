@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Proforma Invoice · Sanlyn</title>
+<style>
+/* ── 版式 1:1 照搬 documents.js type=pi（你认可的灰白版），勿改观感 ── */
+body{font-family:-apple-system,'Helvetica Neue','Helvetica','Arial','PingFang SC','Microsoft YaHei',sans-serif;color:#111;margin:0;padding:0;font-size:11px;line-height:1.4;background:#f0f2f5;}
+.container{max-width:800px;margin:0 auto;background:#fff;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.12);}
+.header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1.5px solid #111;padding-bottom:10px;margin-bottom:16px;}
+.seller-info{flex:1;min-width:0;}
+.seller-name{font-weight:700;color:#111;letter-spacing:0.01em;margin:0 0 4px;text-transform:uppercase;font-size:14px;}
+.seller-info p{font-size:10px;color:#555;margin:2px 0;line-height:1.5;}
+.doc-type{text-align:right;flex-shrink:0;margin-left:24px;}
+.doc-type h1{margin:0;font-size:22px;font-weight:800;letter-spacing:0.06em;color:#111;line-height:1;}
+.meta-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:28px;margin-bottom:14px;}
+.section-label{font-size:9px;font-weight:700;color:#666;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 4px;padding-bottom:4px;border-bottom:1px solid #ddd;}
+.buyer-name{font-size:12px;font-weight:700;color:#111;margin:6px 0 3px;}
+.buyer-addr{font-size:10px;color:#444;line-height:1.5;margin:2px 0;}
+.meta-list{list-style:none;padding:0;margin:6px 0 0;}
+.meta-list li{margin-bottom:3px;display:flex;justify-content:space-between;font-size:10.5px;}
+.meta-list li b{font-weight:normal;color:#777;}
+.meta-list li .v{color:#111;font-family:'SF Mono',Menlo,monospace;text-align:right;}
+table{width:100%;border-collapse:collapse;margin-bottom:14px;margin-top:4px;}
+th{background:#f5f5f5;border-top:1.5px solid #111;border-bottom:1px solid #111;padding:7px 8px;font-size:9px;font-weight:700;color:#333;letter-spacing:0.06em;text-transform:uppercase;text-align:left;}
+td{padding:8px;font-size:10.5px;border-bottom:1px solid #ececec;vertical-align:top;color:#222;}
+.text-right{text-align:right;font-family:'SF Mono',Menlo,monospace;}
+tr.group-header td{background:#f0f4ff;font-weight:700;color:#1e40af;padding:6px 8px;font-size:11px;letter-spacing:.02em;}
+.total-row td{border-top:1.5px solid #111;border-bottom:1.5px solid #111;font-weight:800;font-size:11px;background:#fafafa;}
+.details-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:12px;}
+.details-box{border:1px solid #e5e5e5;background:#fafafa;padding:10px 12px;font-size:10px;line-height:1.6;color:#333;}
+.details-box h4{margin:0 0 6px 0;font-size:9px;font-weight:700;color:#666;letter-spacing:0.1em;text-transform:uppercase;}
+.signature-grid{display:flex;justify-content:space-between;margin-top:36px;}
+.sig-box{width:46%;border-top:1px solid #111;padding-top:8px;text-align:center;font-size:9px;font-weight:700;color:#444;letter-spacing:0.08em;text-transform:uppercase;}
+.sig-box .sub{font-weight:normal;font-size:8.5px;color:#888;text-transform:none;letter-spacing:normal;display:block;margin-top:3px;}
+.seal-slot{position:relative;height:92px;margin-top:6px;display:flex;align-items:center;justify-content:center;}
+.seal-slot img{max-width:96px;max-height:96px;object-fit:contain;display:none;transform-origin:center;}
+.seal-hint{font-size:9px;color:#bbb;cursor:pointer;border:1px dashed #ddd;border-radius:50%;width:78px;height:78px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.3;}
+.brand-slogan{text-align:center;margin-top:14px;font-size:8.5px;color:#aaa;letter-spacing:0.1em;}
+.brand-slogan b{color:#888;font-weight:600;}
+[contenteditable]:focus{outline:1px dashed #93c5fd;background:#fefce8;}
+.ed:empty:before{content:attr(data-ph);color:#cbd5e1;font-style:italic;}
+
+.toolbar{padding:8px 20px;display:flex;gap:7px;align-items:center;flex-wrap:wrap;background:#fff;border-bottom:1px solid #e2e8f0;}
+.toolbar button{padding:6px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;}
+.btn-print{background:#1d4ed8;color:#fff;}.btn-dl{background:#7c3aed;color:#fff;}.btn-save{background:#059669;color:#fff;}.btn-seal{background:#dc2626;color:#fff;}
+.banner{max-width:800px;margin:8px auto 0;padding:7px 14px;border-radius:7px;font-size:12px;display:none;}
+.banner.err{background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;}
+.banner.info{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;}
+@media print{body{background:#fff;}.toolbar,.banner{display:none!important;}.container{max-width:100%;box-shadow:none;padding:0;}.seal-hint{display:none!important;}}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button class="btn-print" onclick="window.print()">🖨 打印/PDF</button>
+  <button class="btn-dl" onclick="downloadPng()">📥 下载图片</button>
+  <button class="btn-save" onclick="saveDraft()">💾 保存草稿</button>
+  <button class="btn-seal" onclick="pickSeal()">🔴 卖方盖章</button>
+</div>
+<div class="banner info" id="infoBanner">⏳ 正在拉取订单数据…</div>
+<div class="banner err" id="errBanner"></div>
+
+<div class="container" id="page">
+  <div class="header">
+    <div class="seller-info">
+      <div class="seller-name ed" id="sellerName" contenteditable data-ph="SELLER COMPANY"></div>
+      <p class="ed" id="sellerAddr" contenteditable data-ph="seller address"></p>
+    </div>
+    <div class="doc-type"><h1>PROFORMA INVOICE</h1></div>
+  </div>
+
+  <div class="meta-grid">
+    <div>
+      <div class="section-label">BUYER (BILL TO)</div>
+      <div class="buyer-name ed" id="buyerName" contenteditable data-ph="[BUYER]"></div>
+      <div class="buyer-addr ed" id="buyerAddr" contenteditable data-ph="[ADDRESS]"></div>
+    </div>
+    <div>
+      <div class="section-label">DETAILS</div>
+      <ul class="meta-list">
+        <li><b>No.:</b> <span class="v ed" id="contractNo" contenteditable data-ph="—"></span></li>
+        <li><b>PO No.:</b> <span class="v ed" id="poNo" contenteditable data-ph="—"></span></li>
+        <li><b>Date:</b> <span class="v ed" id="docDate" contenteditable data-ph="—"></span></li>
+        <li><b>Currency:</b> <span class="v ed" id="curr" contenteditable data-ph="—"></span></li>
+      </ul>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:36px">NO.</th><th>Description &amp; Size</th>
+      <th style="width:70px;text-align:center">QTY</th>
+      <th style="width:95px;text-align:right">Unit Price (<span id="curH1">CNY</span>)</th>
+      <th style="width:110px;text-align:right">Amount (<span id="curH2">CNY</span>)</th>
+    </tr></thead>
+    <tbody id="piBody"><tr><td colspan="5" style="text-align:center;padding:16px;color:#94a3b8">加载中…</td></tr></tbody>
+  </table>
+
+  <div class="footer-block">
+    <div class="details-grid">
+      <div class="details-box"><h4>TERMS &amp; CONDITIONS</h4><div class="ed" id="terms" contenteditable></div></div>
+      <div class="details-box"><h4>BANKING INFORMATION</h4><div class="ed" id="banking" contenteditable></div></div>
+    </div>
+    <div class="signature-grid">
+      <div class="sig-box"><span>BUYER AUTHORIZED SIGNATURE</span><span class="sub">(Signature / Company Seal)</span><div class="seal-slot"></div></div>
+      <div class="sig-box">
+        <span>SELLER AUTHORIZED SIGNATURE</span><span class="sub">(Signature / Company Seal)</span>
+        <div class="seal-slot"><img id="sellerSeal"><span class="seal-hint" id="sealHint" onclick="pickSeal()">点击<br>盖章</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div>
+</div>
+
+<input type="file" id="sealFile" accept="image/*" style="display:none" onchange="onSealFile(event)">
+<script src="pi-template.js"></script>
+</body>
+</html>

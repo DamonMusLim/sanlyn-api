@@ -1,4 +1,5 @@
 // customs-consolidated.js
+// OLI(order_line_items) is the SSOT for quantity-derived totals: gw_ctn/nw_ctn/cbm_ctn × qty_ctn; raw/products master are fallback only when an order has no OLI.
 // Multi-container consolidated customs declaration
 // Groups ALL line items across orders in one shipment (BL) by 报关品名 (declaration_name),
 // summing quantities/weights/amounts, keeping declared price SEPARATE from customer sale price.
@@ -164,30 +165,6 @@ function sumCustomerDocs(orders, liByOrder, skuMasterMap) {
 
   for (const ord of orders) {
     const orderNo = ord.order_no || ord.contract_no || "(unknown)";
-    const rawProducts = rawProductsOf(ord);
-    if (rawProducts.length) {
-      rawProducts.forEach((item, idx) => {
-        const sku = skuOf(item);
-        const master = sku ? skuMasterMap[sku] : null;
-        const qty = rawQty(item);
-
-        const cbm = rawCbmTotal(item, qty, master);
-        if (cbm != null) sums.cbm += cbm;
-        else mark("cbm", orderNo, idx, "cbm(raw+master均无)");
-
-        const nwRaw = firstPresent(item.netWeight, item.net_weight, item.nw);
-        const nw = finiteOrNull(fillFromMaster(nwRaw, master?.net_weight));
-        if (nw != null) sums.nw_kg += (nw * qty) || nw;
-        else mark("nw_kg", orderNo, idx, "nw(raw+master均无)");
-
-        const gwRaw = firstPresent(item.grossWeight, item.gross_weight, item.gw);
-        const gw = finiteOrNull(fillFromMaster(gwRaw, master?.gross_weight));
-        if (gw != null) sums.gw_kg += (gw * qty) || gw;
-        else mark("gw_kg", orderNo, idx, "gw(raw+master均无)");
-      });
-      continue;
-    }
-
     const oli = liByOrder[ord.id];
     if (Array.isArray(oli) && oli.length) {
       oli.forEach((li, idx) => {
@@ -210,6 +187,30 @@ function sumCustomerDocs(orders, liByOrder, skuMasterMap) {
         const gwCtn = finiteOrNull(li.gw_ctn);
         if (gwCtn != null) sums.gw_kg += gwCtn * qty;
         else mark("gw_kg", orderNo, idx, "gw_ctn");
+      });
+      continue;
+    }
+
+    const rawProducts = rawProductsOf(ord);
+    if (rawProducts.length) {
+      rawProducts.forEach((item, idx) => {
+        const sku = skuOf(item);
+        const master = sku ? skuMasterMap[sku] : null;
+        const qty = rawQty(item);
+
+        const cbm = rawCbmTotal(item, qty, master);
+        if (cbm != null) sums.cbm += cbm;
+        else mark("cbm", orderNo, idx, "cbm(raw+master均无)");
+
+        const nwRaw = firstPresent(item.netWeight, item.net_weight, item.nw);
+        const nw = finiteOrNull(fillFromMaster(nwRaw, master?.net_weight));
+        if (nw != null) sums.nw_kg += (nw * qty) || nw;
+        else mark("nw_kg", orderNo, idx, "nw(raw+master均无)");
+
+        const gwRaw = firstPresent(item.grossWeight, item.gross_weight, item.gw);
+        const gw = finiteOrNull(fillFromMaster(gwRaw, master?.gross_weight));
+        if (gw != null) sums.gw_kg += (gw * qty) || gw;
+        else mark("gw_kg", orderNo, idx, "gw(raw+master均无)");
       });
       continue;
     }
@@ -256,7 +257,7 @@ export default async function handler(req, res) {
 
       // Also check shipping_plans.order_contract_nos for additional orders on same BL
       const { rows: plans } = await pool.query(
-        `SELECT order_contract_nos FROM shipping_plans WHERE bl_no = $1`,
+        `SELECT order_contract_nos, order_nos FROM shipping_plans WHERE bl_no = $1`,
         [bl_no]
       );
 
@@ -369,6 +370,7 @@ export default async function handler(req, res) {
       const items = (Array.isArray(_liItems) && _liItems.length)
         ? _liItems.map(r => ({
             sku: r.sku, qty: r.qty_ctn, bg_bx: r.bg_bx, _perCtnCanonical: true,
+            _oliSource: true,
             cbm: r.cbm_ctn, net_weight: r.nw_ctn, gross_weight: r.gw_ctn,
             unit_price: r.unit_price, subtotal: r.subtotal,
             declaration_name: r.declaration_name, declaration_name_en: r.declaration_name_en, name: r.product_name,
@@ -385,6 +387,7 @@ export default async function handler(req, res) {
           sku,
           order_no: ord.order_no,
           issuing_company: ord.issuing_company || null,   // 出单公司(境内发货人) → 报关单边界
+          contract_no:    ord.contract_no   || null,   // FS合同号 = 拆票�b�度(报关负责人)
           // Quantities — qty is cartons
           qty:         parseFloat(item.qty || item.cartons || item.boxes || 0),
           bgBxRaw:     item.bg_bx || item.bgBx || null,
@@ -423,6 +426,7 @@ export default async function handler(req, res) {
           declElementsRaw:      item.declaration_elements || null,
           // Size/spec string from order item (e.g. "70G X 72/CTN")
           sizeRaw:              item.size || item.spec || item.specification || null,
+          fromOli:              item._oliSource === true,
         });
       }
     }
@@ -440,7 +444,7 @@ export default async function handler(req, res) {
       const { rows: prods } = await pool.query(
         `SELECT DISTINCT ON (sku) sku,
                 declaration_name, declaration_name_en, hs_code, declaration_elements,
-                origin_country, factory_name, factory_city,
+                origin_country, factory_name, factory_city, factory_code,
                 declaration_amount,
                 transaction_unit, legal_unit_1, legal_unit_2, quarantine_required,
                 net_weight, gross_weight, cbm, bg_bx
@@ -495,20 +499,31 @@ export default async function handler(req, res) {
       // Origin + factory
       const origin  = master?.origin_country || null;
       const factory = master?.factory_name   || null;
-      const city    = master?.factory_city   || null;
+      const city        = master?.factory_city   || null;
       // 计量单位/检疫 — 报关权威库(customs_hs_authority)按HS覆盖进 products
       const txnUnit   = master?.transaction_unit || null;   // 成交计量单位
       const legalU1   = master?.legal_unit_1 || null;        // 法定第一计量单位
       const legalU2   = master?.legal_unit_2 || null;
       // 出单公司(境内发货人)=报关单边界(Damon 2026-06-04):出单公司不同才算独立报关单。
       const issuingCompany = line.issuing_company || null;
+      const contractNo    = line.contract_no    || null;
 
       // 报关按工厂拆(Damon铁律 feedback_customs_split_by_factory_show_city:
       // 同HS两厂必拆,不跨厂合并)。bucket key = 报关品名 + 工厂(无则城市兜底);
       // 显示层(报关资料表/PDF)仍只露 境内货源地(城市),绝不印工厂公司名(防跳单)。
       // 1行/HS铁律(customs_doc_format 2026-05-02定版, 2026-06-11落码):
       // 聚合键=出单公司+HS+工厂, 品名不参与拆行(同HS多品名合并, 品名取净重占比最大者)
-      const key = (issuingCompany || "") + "" + (hsFinal || ("NOHS:" + declNameFinal)) + "" + (factory || city || "");
+      const needsQuarantine = master?.quarantine_required === true;
+      // 拆票维度 = FS合同号(contract_no) — 每个FS独立一张报关单;无FS回退工厂名/城市
+      // Split dimensions array -- append new dims to extend splitting logic
+      const _keySegs = [
+        issuingCompany || "",                    // 1. issuing company
+        hsFinal || ("NOHS:" + declNameFinal),   // 2. HS code
+        contractNo || factory || city || "",     // 3. FS contract > factory > city
+        needsQuarantine ? "Q" : "",              // 4. quarantine flag
+        // << slot 5+ : add new split dimensions here >>
+      ];
+      const key = _keySegs.join("");
 
       // Quantities
       const qtyCtn = line.qty;
@@ -517,9 +532,13 @@ export default async function handler(req, res) {
       const bgBx    = parseBgBx(bgBxStr);
       const minUnitQty = qtyCtn * bgBx;
 
-      // Weights: master per-unit > line item per-carton
-      const nwPerCtn = master?.net_weight   ? parseFloat(master.net_weight)   : line.nwPerCtn;
-      const gwPerCtn = master?.gross_weight ? parseFloat(master.gross_weight) : line.gwPerCtn;
+      // Quantity-derived totals anchor to OLI. Only raw-only external orders may fall back to products master.
+      const nwPerCtn = line.fromOli
+        ? line.nwPerCtn
+        : (master?.net_weight ? parseFloat(master.net_weight) : line.nwPerCtn);
+      const gwPerCtn = line.fromOli
+        ? line.gwPerCtn
+        : (master?.gross_weight ? parseFloat(master.gross_weight) : line.gwPerCtn);
 
       const totalNw  = nwPerCtn  * qtyCtn;
       const totalGw  = gwPerCtn  * qtyCtn;
@@ -557,6 +576,7 @@ export default async function handler(req, res) {
           legal_unit_1:         legalU1,
           legal_unit_2:         legalU2,
           origin_country:       origin,
+          quarantine_required:  needsQuarantine,
           _nameNw: {},            // 品名→净重累计(同HS多品名时取净重最大者)
           _nameEn: {},            // 品名→英文名
           _txnUnits: new Set(),   // 成交单位冲突检测:同bucket混不同单位则标红不静默取一个

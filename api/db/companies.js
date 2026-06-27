@@ -114,7 +114,7 @@ export default async function handler(req, res) {
     try {
       const { id, ...patch } = req.body || {};
       if (!id) return res.status(400).json({ error: "id required" });
-      const allowed = ["name_en","name_cn","type","country","registration_no","tax_id","bank_accounts","address","stamps","default_seller","notes"];
+      const allowed = ["name_en","name_cn","type","country","registration_no","tax_id","bank_accounts","address","stamps","default_seller","notes","msic_code","einvoice_email","compliance_info","contact_phone","contact_name"];
       const sets = [], vals = [];
       for (const k of allowed) {
         if (patch[k] !== undefined) {

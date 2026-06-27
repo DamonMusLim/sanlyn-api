@@ -44,7 +44,7 @@ export default async function handler(req, res) {
     const oKey = (cd && cd.contract_no) || contract;
     if (oKey) {
       const oRes = await pool.query(
-        "SELECT *, raw FROM orders WHERE contract_no = $1 OR order_no = $1 LIMIT 1", [oKey]
+        "SELECT *, raw FROM orders WHERE contract_no = $1 OR order_no = $1 OR bl_no = $1 LIMIT 1", [oKey]
       );
       order = oRes.rows[0] || null;
     }
@@ -81,7 +81,7 @@ export default async function handler(req, res) {
       name:     p.name || p.productName || "—",
       qty:      p.qty  || p.quantity || "—",
       barcode:  p.barcode || p.sku || p.code || "—",
-      spec:     p.spec || "",
+      spec:     p.size || p.spec || "",   // 规格读 size(75G X 100/CTN); raw.products无spec字段(2026-06-23修)
       price:    p.price || p.unitPrice || null,
     }));
 
@@ -209,7 +209,7 @@ export default async function handler(req, res) {
       </div>
       <div class="field">
         <div class="lbl">合同号</div>
-        <div class="val">${fmt((cd && cd.contract_no) || contract)}</div>
+        <div class="val">${fmt((cd && cd.contract_no) || (order && order.contract_no) || contract)}</div>
       </div>
       <div class="field">
         <div class="lbl">报关编号</div>

@@ -1,4 +1,5 @@
 // /api/db/documents.js  — Sanlyn OS Unified Document Generator
+// TERMS_VERSION v1.1.0 · 2026-06-22 — PI 9条→6条(CIETAC厦门/14天索赔/Force Majeure独立); PO质检加2%豁免/争议去财产保全
 //
 // GET ?type=sc&id=ORDER_ID        → Sales Contract
 // GET ?type=iv&id=ORDER_ID        → Commercial Invoice
@@ -7,8 +8,6 @@
 // GET ?type=so&id=SHIPMENT_ID     → Booking Note 托书 (→ forwarder)
 // GET ?type=debit&id=SHIPMENT_ID  → Freight Debit Note 账单 (公版)
 // GET ?type=tr&id=SHIPMENT_ID     → Telex Release 电放申请书暨保函
-// GET ?type=telex_loi&id=SHIPMENT_ID → Combined Letter of Indemnity for Telex Release
-// GET ?type=swb_loi&id=SHIPMENT_ID   → Sea Waybill Letter of Indemnity
 //
 // &company=petbaby|sanlyn|...     → override issuing company
 // &print=1                        → auto-print on open
@@ -16,6 +15,7 @@
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
+import { renderCreditNote } from "./credit-note-doc.js"; // 贷记单 CN 独立渲染器 2026-06-28
 
 // ── W0-3 customer-facing scrub ────────────────────────────────────────────────
 // Memory rule (HARD): feedback_customer_code_anti_counterfeit.md
@@ -83,7 +83,6 @@ async function loadSellerCfg(pool, raw, qco, opts) {
         iv: Array.isArray(s.terms_iv) ? s.terms_iv : (s.terms_iv||[]),
       },
       seal_url: s.seal_url||"",  // 卖方公章图 URL（sigBlock 自动盖章用）
-      code: s.code||"", stamp_code: s.stamp_code||"",  // customer_stamps 桥接键（&stamp=1 自动盖章）
     };
   } catch(e) {
     // Hard fallback so doc still renders if DB query fails
@@ -103,7 +102,7 @@ var FORWARDERS = {
 
 function esc(s){ if(!s)return""; return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function fmtM(v,d){ if(v===null||v===undefined||v==="")return"-"; var n=Number(v); if(isNaN(n))return String(v); return n.toLocaleString("en-US",{minimumFractionDigits:d!==undefined?d:2,maximumFractionDigits:d!==undefined?d:2}); }
-function fmtD(v){ if(!v)return"-"; try{if(v instanceof Date){var y=v.getFullYear(),m=String(v.getMonth()+1).padStart(2,"0"),d=String(v.getDate()).padStart(2,"0");return y+"-"+m+"-"+d;}var s=String(v);var mt=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(mt)return mt[1]+"-"+mt[2]+"-"+mt[3];return new Date(v).toISOString().slice(0,10);}catch(e){return String(v);} }
+function fmtD(v){ if(!v)return"-"; try{return new Date(v).toISOString().slice(0,10);}catch(e){return String(v);} }
 function pick(){ for(var i=0;i<arguments.length;i++){if(arguments[i]!==null&&arguments[i]!==undefined&&arguments[i]!=="")return arguments[i];} return ""; }
 
 // resolveCo replaced by async loadSellerCfg above
@@ -176,7 +175,7 @@ tr,thead,tfoot{page-break-inside:avoid;break-inside:avoid;}
 </style>`;
 
 // 2026-05-19: docRef = optional footer reference (Doc No + Issue date), moved from header
-function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div></div></body></html>`;}
+function wrap(title,body,ap){return`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${esc(title)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="container">${body}<div class="brand-slogan">⚡ Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b> <span style="font-size:9px;opacity:.55;margin-left:8px">Terms v1.1.0</span></div></div></body></html>`;}
 
 function sellerNamePx(name){ var l=(name||"").length; return l<=28?"20px":l<=38?"17px":l<=48?"14px":"12px"; }
 // Per damon 2026-05-18: NO audience badge on PDF — recipient (customer or customs)
@@ -272,26 +271,6 @@ function getTotal(prods,order){return prods.reduce(function(s,p){var sub=Number(
 //
 // Fail-open: sku absent → skip item; sku not in master → console.warn + keep
 //   original; DB error → console.warn + return original prods unchanged.
-// 2026-06-10: order_line_items 是明细真值表（UI改价写OLI不写raw快照）。
-// 单据渲染前用 OLI 的 价格/小计/数量 覆盖 raw.products 快照，防止改价后单据仍显旧价。
-async function overlayPricesFromOLI(pool, orderPk, prods){
-  if(!orderPk || !prods || !prods.length) return prods;
-  try{
-    var r = await pool.query("SELECT sku, qty_ctn, unit_price, subtotal FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[orderPk]);
-    if(!r.rows.length) return prods;
-    var bySku = {};
-    r.rows.forEach(function(li){ if(li.sku && !(li.sku in bySku)) bySku[li.sku]=li; });
-    return prods.map(function(p){
-      var li = p && (p.sku && bySku[p.sku]) || (p && (p.barcode||p.code) && bySku[p.barcode||p.code]);
-      if(!li) return p;
-      var out = Object.assign({}, p);
-      if(li.unit_price!=null && Number(li.unit_price)>0){ out.unitPrice=Number(li.unit_price); out.price=Number(li.unit_price); out.unit_price=Number(li.unit_price); }
-      if(li.subtotal!=null && Number(li.subtotal)>0){ out.subtotal=Number(li.subtotal); out.amount=Number(li.subtotal); }
-      if(li.qty_ctn!=null && Number(li.qty_ctn)>0){ out.qty=Number(li.qty_ctn); }
-      return out;
-    });
-  }catch(e){ return prods; }
-}
 async function enrichProdsFromMaster(pool, prods) {
   if (!prods || !prods.length) return prods;
   var skus = prods.map(function(p) { return p && p.sku; }).filter(Boolean);
@@ -305,8 +284,8 @@ async function enrichProdsFromMaster(pool, prods) {
   try {
     if (skus.length) {
       var r = await pool.query(
-        "SELECT sku, product_name, hs_code, declaration_name, declaration_name_en, declaration_elements," +
-        " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit," +
+        "SELECT sku, product_name, hs_code, declaration_name, declaration_elements," +
+        " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit, unit," +
         " barcode, factory_name" +
         " FROM products WHERE sku = ANY($1::text[]) AND active = true",
         [skus]
@@ -318,8 +297,8 @@ async function enrichProdsFromMaster(pool, prods) {
       // (TNC-06, CP1894, etc — not real EAN barcodes). Match on barcode OR sku
       // so either column hits work.
       var r2 = await pool.query(
-        "SELECT sku, hs_code, declaration_name, declaration_name_en, declaration_elements," +
-        " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit," +
+        "SELECT sku, hs_code, declaration_name, declaration_elements," +
+        " bl_description, net_weight, gross_weight, cbm, carton_qty AS inner_qty, NULL AS inner_unit, unit," +
         " barcode, factory_name" +
         " FROM products WHERE (barcode = ANY($1::text[]) OR sku = ANY($1::text[])) AND active = true",
         [barcodes]
@@ -355,10 +334,8 @@ async function enrichProdsFromMaster(pool, prods) {
       netWeight:           _f(p.netWeight,           m.net_weight),
       grossWeight:         _f(p.grossWeight,         m.gross_weight),
       cbm:                 _f(p.cbm,                 m.cbm),
-      cbmPerCtn:           _f(p.cbmPerCtn,           m.cbm), // master cbm IS per-CTN; renderer multiplies by qty
       blDescription:       _f(p.blDescription   || p.bl_description,   m.bl_description),
       declarationName:     _f(p.declarationName  || p.declaration_name, m.declaration_name),
-      declarationNameEn:   _f(p.declarationNameEn || p.declaration_name_en, m.declaration_name_en),
       hsCode:              _f(p.hsCode || p.hs_code || p.hscode,        m.hs_code),
       declarationElements: _f(p.declarationElements,                    m.declaration_elements),
       inner_qty:           _f(p.inner_qty,                              m.inner_qty),
@@ -366,29 +343,79 @@ async function enrichProdsFromMaster(pool, prods) {
       barcode:             _f(p.barcode || p.code,                      m.barcode),
       factory_name:        _f(p.factory_name,                           m.factory_name),
       productName:         _f(p.productName || p.name,                  m.product_name),
+      unit:                _f(p.unit, m.unit),
       productNameEN:       m.product_name || "",  // always master EN name; used by PI/en docs
     });
+  });
+}
+
+// ── loadDocColConfig ─────────────────────────────────────────────────────────
+// Loads col order/label/visibility from doc_column_config.
+// Falls back to [] on error so hardcoded defaults still work.
+async function loadDocColConfig(pool, docType) {
+  try {
+    var r = await pool.query(
+      "SELECT col_key, label, col_width, col_align, sort_order FROM doc_column_config " +
+      "WHERE doc_type=$1 AND visible=true ORDER BY sort_order ASC",
+      [docType]
+    );
+    return r.rows;
+  } catch(e) {
+    console.warn("[documents] loadDocColConfig(" + docType + "):", e.message);
+    return [];
+  }
+}
+
+function buildColsFromConfig(dbCols, fnMap, fallback) {
+  if (!dbCols || !dbCols.length) return fallback;
+  return dbCols.map(function(row) {
+    var def = fnMap[row.col_key] || {};
+    return {
+      k:   row.col_key,
+      al:  row.col_align || def.defaultAlign || "",
+      w:   row.col_width || def.defaultWidth || undefined,
+      lbl: row.label,
+      fn:  def.fn || undefined,
+    };
   });
 }
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if(req.method==="OPTIONS") return res.status(200).end();
-  if(!req.user && !requireAuth(req, res)) return; // S18.1: 401 if no valid JWT; req.user 已由中间件注入(如 DOC_VIEW_KEY 书签钥匙)则放行
+  if(!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if(req.method!=="GET") return res.status(405).end();
 
-  // ── Token auth ── 2026-06-10 fix: skip DOCS_SECRET if valid JWT already present
-  // Auth priority: (1) valid JWT (via Bearer or ?token=) → skip secret check
-  //                (2) no JWT but ?doc_secret=DOCS_SECRET → allow server-to-server
+  // ── Token auth ── must pass ?token=DOCS_SECRET or X-Docs-Token header
   var DOC_TOKEN = process.env.DOCS_SECRET || "";
-  if(DOC_TOKEN && !req.user){
-    var reqToken = req.query.doc_secret || req.query.token || req.headers["x-docs-token"] || "";
-    if(reqToken !== DOC_TOKEN){
-      return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid access token.</p>");
-    }
+  var reqToken = req.query.token || req.headers["x-docs-token"] || "";
+  // requireAuth (above) already mandates a valid JWT; req.user is set for any
+  // logged-in caller. The legacy DOCS_SECRET token is only enforced for
+  // unauthenticated (public-link) access — logged-in users skip it so the
+  // standard doc-open paths (?token=JWT / Bearer) work. 2026-06-28.
+  if(DOC_TOKEN && reqToken !== DOC_TOKEN && !req.user){
+    return res.status(401).send("<h1>401 Unauthorized</h1><p>Missing or invalid access token.</p>");
   }
 
-  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,stamp,audience:_audReq,fmt:_fmtVariant,style:_styleVariant}=req.query;
+  var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,audience:_audReq,fmt:_fmtVariant,style:_styleVariant}=req.query;
+  // ── Legacy frontend type aliases → canonical renderers (2026-06-28) ──
+  // Frontend buttons historically pointed at types the backend never had,
+  // causing 400s. Map them to the real renderers without a frontend rebuild.
+  //   cd      = 报关底稿 Customs Draft   → PL rendered in customs audience
+  //   freight = 客户运费单              → freight-quote renderer
+  if(type==="cd"){ type="pl"; if(!_audReq) _audReq="customs"; }
+  if(type==="freight"){ type="freight-quote"; }
+  // 贷记通知单 Credit Note → 独立模块渲染(读 credit_notes)
+  if(type==="cn"){
+    try{
+      var _cnHtml = await renderCreditNote(getPool(), id, { print: ap });
+      if(!_cnHtml) return res.status(404).send("<h1>Credit Note not found: "+esc(id)+"</h1>");
+      return res.send(scrubCustomerFacingHtml(_cnHtml));
+    }catch(e){
+      console.error("[documents] cn render error:", e.message);
+      return res.status(500).send("<h1>Credit Note render error</h1>");
+    }
+  }
   // 2026-05-19 (damon): _fmtVariant 'iv' → DN 用商业发票风格（部分国家如马来需要）
   // audience: 'customs' (BL-merged) or 'customer' (per-contract).
   // Default: customs when merge will happen, customer otherwise.
@@ -447,67 +474,13 @@ export default async function handler(req, res) {
   try {
     var pool=getPool(), html="";
 
-    // type=cn 贷记通知单 → cn-document.js (generateCnDocument 本就为 documents?type=cn 设计, 2026-06-10 接线)
-    if(type==="cn"){
-      var _cnMod=await import("./cn-document.js");
-      return _cnMod.generateCnDocument(pool, req, res, id, String(_audReq||req.query.audience||"customer"));
-    }
-
-    // type=cd 报关底稿 → 复用 customs-draft.js 全套数据逻辑(含 422 STOP 校验), 服务端渲染
-    // (此前 CustomsModule 调 documents?type=cd 一直 400; OrdersModule 是前端内联渲染无法走 DAS/PDF)
-    if(type==="cd"){
-      var _cdMod=(await import("./customs-draft.js")).default;
-      var _cdCode=200,_cdBody=null;
-      var _fres={setHeader:function(){return _fres;},status:function(c){_cdCode=c;return _fres;},json:function(j){_cdBody=j;return _fres;},end:function(){return _fres;}};
-      await _cdMod({method:"GET",query:{order_no:id},user:req.user,headers:req.headers||{}},_fres);
-      if(_cdCode!==200||!_cdBody||!_cdBody.success){
-        var _cdMsg=(_cdBody&&(_cdBody.error||""))||"customs draft failed";
-        var _cdMiss=(_cdBody&&Array.isArray(_cdBody.missing))?("<ul>"+_cdBody.missing.map(function(x){return "<li>"+esc(String(x.sku||""))+" 缺 "+esc(String(x.field||""))+"</li>";}).join("")+"</ul>"):"";
-        return res.status(_cdCode===422?422:(_cdCode||500)).send("<h1>报关底稿无法生成</h1><p>"+esc(_cdMsg)+"</p>"+_cdMiss+"<p>规矩: 报关字段必须从产品表取, 缺失=STOP不兜底。</p>");
-      }
-      var _cdo=_cdBody.order||{},_cdi=_cdBody.items||[];
-      var _cdToday=fmtD(new Date());
-      var _cdRows=_cdi.map(function(b){
-        return "<tr>"
-          +"<td style='border:1px solid #000;padding:4px;text-align:center;font-weight:700'>"+b.no+"</td>"
-          +"<td style='border:1px solid #000;padding:4px;font-weight:800;font-size:13px'>"+esc(b.hs||"")+"</td>"
-          +"<td style='border:1px solid #000;padding:4px'><strong>"+esc(b.name||"")+"</strong>"
-          +(b.elems?"<div style='font-size:9px;color:#555;margin-top:2px;line-height:1.6'>"+String(b.elems).split("|").map(function(s){return "<div>"+esc(s.trim())+"</div>";}).join("")+"</div>":"")
-          +"</td>"
-          +"<td style='border:1px solid #000;padding:4px;text-align:center'><strong>"+(Number(b.nw)>0?Number(b.nw).toLocaleString("en-US"):esc(String(_cdo.net_weight||"")))+" 千克</strong><div style='font-size:10px'>"+(Number(b.ctn)||0).toLocaleString("en-US")+" 箱</div></td>"
-          +"<td style='border:1px solid #000;padding:4px;text-align:right'><div style='font-weight:700'>"+esc(String(_cdo.unitPrice||"—"))+"</div><div style='font-weight:700'>"+Number(_cdo.total_amount||0).toLocaleString("en-US",{minimumFractionDigits:2})+"</div><div style='font-size:9px'>"+esc(_cdo.currency||"CNY")+"</div></td>"
-          +"<td style='border:1px solid #000;padding:4px;text-align:center'>中国<br>(CHN)</td>"
-          +"<td style='border:1px solid #000;padding:4px;text-align:center'>"+esc(String(_cdo.destCode||_cdo.country||""))+"</td>"
-          +"<td style='border:1px solid #000;padding:4px;text-align:center'>"+(b.originCode?esc(b.originCode):"▢ 待录入")+"</td>"
-          +"<td style='border:1px solid #000;padding:4px;text-align:center'>照章征税<br>(1)</td>"
-          +"</tr>";
-      }).join("");
-      var _cdPort=_cdo.portInfo||{};
-      html="<!DOCTYPE html><html lang='zh-CN'><head><meta charset='UTF-8'><title>报关底稿 "+esc(_cdo.order_no||"")+"</title>"
-        +"<style>body{font-family:SimSun,serif;font-size:11px;background:#f0f0f0;padding:16px}.page{background:#fff;max-width:980px;margin:0 auto;border:1px solid #999}table{width:100%;border-collapse:collapse}th{border:1px solid #000;padding:4px;background:#e0e0e0;font-size:11px;text-align:center}@media print{body{padding:0;background:#fff}.no-print{display:none}}</style>"
-        +"</head><body>"
-        +"<button class='no-print' onclick='window.print()' style='float:right;margin:8px;padding:8px 16px;background:#111;color:#fff;border:none;border-radius:6px;cursor:pointer'>🖨 打印 / 存PDF</button>"
-        +"<div class='page'>"
-        +"<table><tr><th colspan='9' style='font-size:15px;padding:10px;background:#d0d0d0'>出口货物报关单（底稿）<br><span style='font-size:11px;font-weight:400'>Order: "+esc(_cdo.order_no||"")+" | Date: "+esc(_cdToday)+"</span></th></tr>"
-        +"<tr><th style='width:5%'>#</th><th style='width:12%'>商品编号(HS)</th><th style='width:22%'>商品名称及规格</th><th style='width:12%'>数量/重量</th><th style='width:12%'>单价/总价</th><th style='width:8%'>原产国</th><th style='width:8%'>最终目的国</th><th style='width:12%'>产地</th><th style='width:9%'>征减免</th></tr>"
-        +_cdRows
-        +"<tr><td colspan='9' style='border:1px solid #000;padding:6px;font-size:10px'>"
-        +"<strong>出口口岸：</strong>"+esc(_cdPort.exit_port||"—")+"　<strong>出境关别：</strong>"+esc(_cdPort.exit_customs||"—")+"　<strong>目的港：</strong>"+esc(String(_cdo.destPort||"—"))+"　<strong>运输方式：</strong>海运　"
-        +"<strong>总毛重：</strong>"+esc(String(_cdo.gross_weight||"—"))+" kg　<strong>总净重：</strong>"+esc(String(_cdo.net_weight||"—"))+" kg　<strong>总件数：</strong>"+esc(String(_cdo.total_qty||"—"))+" 箱"
-        +"</td></tr>"
-        +"<tr><td colspan='9' style='border:1px solid #000;padding:6px;font-size:10px'>"
-        +"<strong>发货人：</strong>"+esc(String(_cdo.issuing_company||"—"))+"　<strong>收货人：</strong>"+esc(String(_cdo.customer||"—"))+"　<strong>提单号：</strong>"+esc(String(_cdo.blNo||"—"))+"　<strong>集装箱号：</strong>"+esc(String(_cdo.containerNo||"—"))
-        +"</td></tr>"
-        +"</table></div></body></html>";
-    }
-
     // ── 厂检单 (工厂检验报告) — type=fi&id=ORDER ──
     // 表头自动带入(公司/样品名/数重量); 检测项目+技术要求=品类标准; 检验结果留空(工厂实测,绝不造数)
     if(type==="fi"){
       var fiR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR order_no=$1 OR customer_po=$1 LIMIT 1",[id]);
       if(!fiR.rows.length) return res.status(404).send("<h1>订单未找到: "+esc(id)+"</h1>");
       var fo=fiR.rows[0];
-      var liQ=await pool.query("SELECT li.declaration_name, li.product_name, pr.factory_name, li.qty_ctn, li.nw_ctn FROM order_line_items li LEFT JOIN products pr ON pr.id = li.product_id WHERE li.order_id=$1 ORDER BY li.sort_order, li.id",[fo.id||fo._id]);
+      var liQ=await pool.query("SELECT declaration_name, product_name, factory_name, qty_ctn, nw_ctn FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[fo.id||fo._id]);
       var fiLines=liQ.rows||[];
       var factory=pick(fiLines.find(function(l){return l.factory_name;})&&fiLines.find(function(l){return l.factory_name;}).factory_name, fo.factory, "____________________");
       var sampleName=pick(fiLines.find(function(l){return l.declaration_name;})&&fiLines.find(function(l){return l.declaration_name;}).declaration_name, fiLines[0]&&fiLines[0].product_name, "____________");
@@ -518,8 +491,7 @@ export default async function handler(req, res) {
       if(!nwKg) nwKg=pick(fo.total_net_weight,fo.net_weight,"");
       var qtyWeight=(qtyCtn?qtyCtn+"箱":"")+(qtyCtn&&nwKg?"/":"")+(nwKg?Math.round(Number(nwKg))+"kg":"");
       // 生产日期 = 确认交货期(delivery_date); 检验日期 = 同日
-      var prodDate=fmtD(pick(fo.delivery_date,fo.confirmed_delivery,fo.etd));
-      if(!prodDate||/nbsp|—/.test(prodDate))prodDate="";   // 空值别把占位符当日期渲染
+      var prodDate=fmtD(pick(fo.delivery_date,fo.etd));
       var inspDate=prodDate;
       // 检测项目+技术要求 按品类(豆腐猫砂/猫砂)。结果留空=工厂实测填。
       var isLitter=/猫砂|豆腐|膨润/.test(String(sampleName));
@@ -551,24 +523,6 @@ export default async function handler(req, res) {
         +"<img src='https://files.sanlynos.com/stamps/zhongsha_seal.png' alt=seal onerror=\"this.style.display='none'\" style='position:absolute;right:60px;bottom:-10px;width:120px;height:120px;opacity:.88;pointer-events:none'/></div>"
         +"<div style='margin-top:14px;font-size:10px;color:#999'>※ 表头自动带入(订单"+esc(pick(fo.order_no,fo.contract_no))+"); 检验结果/日期/批号由工厂实测填写</div>"
         +"</div></body></html>";
-
-      if(String(format||"")==="pdf"){
-        try{
-          var _pp=(await import("puppeteer")).default;
-          var _chrome=process.env.CHROME_PATH||process.env.PUPPETEER_EXECUTABLE_PATH||"/usr/bin/google-chrome";
-          var _lo={headless:"new",args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu"]};
-          try{var _fs3=await import("fs");if(_fs3.existsSync(_chrome))_lo.executablePath=_chrome;}catch(_){}
-          var _ppr=await _pp.launch(_lo);
-          var _ppg=await _ppr.newPage();
-          await _ppg.setContent(fiHtml,{waitUntil:"networkidle2",timeout:20000});
-          var _ppb=await _ppg.pdf({format:"A4",printBackground:true,margin:{top:"14mm",bottom:"14mm",left:"12mm",right:"12mm"}});
-          await _ppr.close();
-          res.setHeader("Content-Type","application/pdf");
-          res.setHeader("Content-Disposition","attachment; filename=\"doc.pdf\"");
-          res.setHeader("Cache-Control","no-store");
-          return res.status(200).send(Buffer.from(_ppb));
-        }catch(_pe2){console.error("[doc-render] pdf error:",_pe2.message);}
-      }
       return res.send(fiHtml);
     }
 
@@ -584,7 +538,7 @@ export default async function handler(req, res) {
       var qSample=pick(qli.find(function(l){return l.declaration_name;})&&qli.find(function(l){return l.declaration_name;}).declaration_name, qli[0]&&qli[0].product_name, "膨润土猫砂 BENTONITE CAT LITTER");
       var qQty=qli.reduce(function(s,l){return s+(Number(l.qty_ctn)||0);},0)||pick(qo.total_qty,"");
       var qNw=qli.reduce(function(s,l){return s+(Number(l.nw_ctn)||0)*(Number(l.qty_ctn)||0);},0)||pick(qo.total_net_weight,qo.net_weight,"");
-      var qProd=fmtD(pick(qo.delivery_date,qo.confirmed_delivery,qo.etd)); if(!qProd||/nbsp|—/.test(qProd))qProd=""; var qInsp=qProd;
+      var qProd=fmtD(pick(qo.delivery_date,qo.etd)); var qInsp=qProd;
       var qCust=pick(qo.company_name_en,qo.customer,"");
       var qOrd=pick(qo.contract_no,qo.order_no,id);
       // 区块行: [项目, 英文, 标准(已降), 单位]  实测/判定留空
@@ -618,28 +572,10 @@ export default async function handler(req, res) {
         +"<img src='"+SEAL_BABI+"' alt=seal style='position:absolute;right:30px;bottom:0;width:120px;height:120px;opacity:.88;pointer-events:none'/></div>"
         +"<div style='margin-top:12px;font-size:10px;color:#aab'>自动生成(订单"+esc(qOrd)+") · 已盖厦门巴匕章 · 各项合格</div>"
         +"</div></body></html>";
-
-      if(String(format||"")==="pdf"){
-        try{
-          var _pp=(await import("puppeteer")).default;
-          var _chrome=process.env.CHROME_PATH||process.env.PUPPETEER_EXECUTABLE_PATH||"/usr/bin/google-chrome";
-          var _lo={headless:"new",args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu"]};
-          try{var _fs3=await import("fs");if(_fs3.existsSync(_chrome))_lo.executablePath=_chrome;}catch(_){}
-          var _ppr=await _pp.launch(_lo);
-          var _ppg=await _ppr.newPage();
-          await _ppg.setContent(qHtml,{waitUntil:"networkidle2",timeout:20000});
-          var _ppb=await _ppg.pdf({format:"A4",printBackground:true,margin:{top:"14mm",bottom:"14mm",left:"12mm",right:"12mm"}});
-          await _ppr.close();
-          res.setHeader("Content-Type","application/pdf");
-          res.setHeader("Content-Disposition","attachment; filename=\"doc.pdf\"");
-          res.setHeader("Cache-Control","no-store");
-          return res.status(200).send(Buffer.from(_ppb));
-        }catch(_pe2){console.error("[doc-render] pdf error:",_pe2.message);}
-      }
       return res.send(qHtml);
     }
 
-    if(["sc","iv","pl","po","pi","pack","cpo"].includes(type)){ // 2026-06-10: cpo 渲染块在本分支内但门未含 cpo, 此前恒 400
+    if(["sc","iv","pl","po","pi","pack","cpo"].includes(type)){
       var oR=await pool.query("SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 OR order_no=$1 LIMIT 1",[id]);
       if(!oR.rows.length) return res.status(404).send("<h1>Order not found: "+esc(id)+"</h1>");
       var o=oR.rows[0], raw=o.raw||{};
@@ -654,36 +590,8 @@ export default async function handler(req, res) {
       }
       if(typeof raw==="string")try{raw=JSON.parse(raw);}catch(e){raw={};}
       var cfg=await loadSellerCfg(pool,raw,qco);
-      // 自动盖章(&stamp=1): 把开票公司的默认公章嵌入签章区(SELLER框)。多租户: 按 cfg.stamp_code 找该公司默认章。
-      // 仅内部角色或开票公司本人可触发,防止把预盖章单据外发给客户/货代造成泄露。(2026-06-10 从 _bak_factorysplit_0605 恢复,0605改版误删)
-      var _seal="";
-      try{
-        if(String(stamp||"")==="1"){
-          var _role=(req.user&&(req.user.role||req.user.roleCode||"")).toString().toLowerCase();
-          var _stampCode=(cfg.stamp_code||cfg.code||"").toString().toUpperCase();
-          var _callerCo=(req.user&&(req.user.companyCode||req.user.company_code||"")).toString().toUpperCase();
-          var _allowed=/(admin|staff|ops|owner|manager|internal|operator)/.test(_role)||(!!_callerCo&&_callerCo===_stampCode);
-          if(_allowed&&_stampCode){
-            var _sR=await pool.query("SELECT url FROM customer_stamps WHERE is_active AND is_default AND upper(company_code)=$1 ORDER BY id LIMIT 1",[_stampCode]);
-            if(_sR.rows.length) _seal=_sR.rows[0].url||"";
-          }
-        }
-      }catch(e){ console.warn("[documents] seal lookup failed:",e.message); }
-      // &stampinfo=1: DAS 弹窗查询「这份单据会盖哪个章」— 与 &stamp=1 同一套解析(开票公司→stamp_code→默认章),
-      // 返回 {stamp_code,name,available,allowed}。不返回 url(章图仅在实际盖章时嵌入)。
-      if(String(req.query.stampinfo||"")==="1"){
-        try{
-          var _siCode=(cfg.stamp_code||cfg.code||"").toString().toUpperCase();
-          var _siR=_siCode?await pool.query("SELECT name FROM customer_stamps WHERE is_active AND is_default AND upper(company_code)=$1 ORDER BY id LIMIT 1",[_siCode]):{rows:[]};
-          var _siRole=(req.user&&(req.user.role||req.user.roleCode||"")).toString().toLowerCase();
-          var _siCo=(req.user&&(req.user.companyCode||req.user.company_code||"")).toString().toUpperCase();
-          var _siAllowed=/(admin|staff|ops|owner|manager|internal|operator)/.test(_siRole)||(!!_siCo&&_siCo===_siCode);
-          return res.json({stamp_code:_siCode||null,name:_siR.rows[0]?_siR.rows[0].name:null,available:!!_siR.rows.length,allowed:_siAllowed});
-        }catch(e){return res.json({stamp_code:null,name:null,available:false,allowed:false});}
-      }
       var cust=pick(o.company_name_en,raw.companyNameEN,raw.companyNameCN,o.customer);
       var caddr=resolveAddr(cust,pick(raw.customerAddress,raw.deliveryAddress));
-      if(!caddr&&o.company_code){try{var _cadR=await pool.query("SELECT address FROM customers WHERE company_code=$1 LIMIT 1",[o.company_code]);if(_cadR.rows[0]&&_cadR.rows[0].address)caddr=_cadR.rows[0].address;}catch(e){}}
       var ctel=raw.phone||"";
       var ordNo=pick(raw.customerPO,o.customer_po,o.order_no);
       var cno=pick(o.contract_no,o.order_no,id);
@@ -721,7 +629,6 @@ export default async function handler(req, res) {
       var pod=pick(raw.destination,raw.pod,raw.destinationPort,_spPod,"-");
       var inco=pick(raw.tradeTerms,raw.incoterms,"FOB");
       var prods=await enrichProdsFromMaster(pool,getProds(raw));
-      prods=await overlayPricesFromOLI(pool,o.id||o._id,prods);
       // HIGH-1: if raw.products empty, fall back to order_line_items table
       if(!prods.length && (o.id||o._id)){
         try{
@@ -739,8 +646,7 @@ export default async function handler(req, res) {
                 factoryPrice:li.factory_price||li.unit_price||0,
                 netWeight:   li.nw_ctn||li.net_weight||0,
                 grossWeight: li.gw_ctn||li.gross_weight||0,
-                cbmPerCtn:   li.cbm_ctn||0, // renderer expects per-CTN here; bare `cbm` is treated as LINE TOTAL
-                cbm:         li.cbm||0,
+                cbm:         li.cbm_ctn||li.cbm||0,
                 bgbx:        li.bg_bx||(li.raw&&li.raw.bgBx)||"",
                 size:        li.size||(li.raw&&li.raw.size)||"",
                 hsCode:      li.hs_code||(li.raw&&li.raw.hsCode)||"",
@@ -783,8 +689,6 @@ export default async function handler(req, res) {
       // sample IV-YMJAI228525573 covering XM-254/256/262/263 in one PDF.
       // Customer-audience override: skip BL-merge — customer wants per-contract version.
       var audience = String(_audReq || "").toLowerCase() === "customer" ? "customer" : "customs";
-      // CustomsModule 报关版按钮传 audience=customer&customs=1 — customs=1 强制报关口径
-      if (String(req.query.customs || "") === "1") audience = "customs";
       // BOTH audiences merge by BL — per damon 2026-05-18: "客户的也要合并！客户要全品名详情"
       // Only the product name field differs: customs uses bl_description, customer uses full name.
       var autoIds = ids;
@@ -806,54 +710,13 @@ export default async function handler(req, res) {
       if(autoIds && type!=="pi"){
         var idList=String(autoIds).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
         if(idList.length){
-          var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[]) OR order_no = ANY($1::text[])",[idList]);
+          var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
           // Sort sibling orders by customer_po for stable output (XM-254 → 256 → 262 → 263 etc.)
           var sibRows=sibR.rows.slice().sort(function(a,b){var pa=(a.customer_po||"");var pb=(b.customer_po||"");return pa<pb?-1:pa>pb?1:0;});
-          // 2026-06-10: the first container_bookings lookup only had the primary contract_no —
-          // sibling orders' containers never resolved, so merged PL showed container on one order only.
-          try{
-            var sibCnoList=sibRows.map(function(r){return r.contract_no||r.customer_po;}).filter(Boolean);
-            if(sibCnoList.length){
-              var cbR2=await pool.query(
-                "SELECT contract_no, container_no, container_type FROM container_bookings WHERE contract_no = ANY($1::text[])",
-                [sibCnoList]);
-              cbR2.rows.forEach(function(row){ if(row.contract_no&&!_cbMap[row.contract_no]){ _cbMap[row.contract_no]=row.container_no; _cbTypeMap[row.contract_no]=row.container_type||""; } });
-            }
-          }catch(e){ console.warn("[documents] sibling container_bookings lookup failed:",e.message); }
           for(var sib of sibRows){
-            if(String(sib._id)===String(o._id)||(sib.contract_no&&sib.contract_no===o.contract_no))continue;
             var sRaw=sib.raw||{};
             if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
             var sProds=await enrichProdsFromMaster(pool,getProds(sRaw));
-            // 2026-06-11: 兄弟单 raw.products 空时回退 OLI（与主单 HIGH-1 同逻辑）——
-            // 否则合并版静默丢兄弟单内容，客户只看到主单（CY00376 实案）。
-            if(!sProds.length && (sib.id||sib._id)){
-              try{
-                var sliR=await pool.query("SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[sib.id||sib._id]);
-                if(sliR.rows.length){
-                  sProds=await enrichProdsFromMaster(pool,sliR.rows.map(function(li){
-                    return{
-                      productName: li.product_name||li.name||"",
-                      sku:         li.sku||"",
-                      barcode:     li.barcode||"",
-                      qty:         li.qty_ctn||0,
-                      unit:        li.unit||"CTN",
-                      unitPrice:   li.unit_price||0,
-                      subtotal:    li.subtotal||0,
-                      factoryPrice:li.factory_price||li.unit_price||0,
-                      netWeight:   li.nw_ctn||0,
-                      grossWeight: li.gw_ctn||0,
-                      cbmPerCtn:   li.cbm_ctn||0,
-                      cbm:         li.cbm||0,
-                      bgbx:        li.bg_bx||"",
-                      size:        li.size||"",
-                      hsCode:      li.hs_code||"",
-                    };
-                  }));
-                }
-              }catch(e){console.warn("[documents] sibling OLI fallback failed:",e.message);}
-            }
-            sProds=await overlayPricesFromOLI(pool,sib.id||sib._id,sProds);
             var sCno=sib.contract_no||sib.customer_po;
             var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no);
             var sContainer=pick(_cbMap[sCno], sRaw.containerNo, "");
@@ -903,8 +766,7 @@ export default async function handler(req, res) {
       if (audience === "customs" && type !== "po") {
         // Per damon 2026-05-18: customs doesn't split by sub-contract — one
         // consolidated table per BL. Strip _groupKey so sibling orders merge.
-        // 2026-06-12 Damon: 报关版按柜分段（拼柜同柜订单并为一段）——分组键=柜号
-        prods = prods.map(function(p){ return Object.assign({}, p, { _groupKey: p._containerNo || "" }); });
+        prods = prods.map(function(p){ return Object.assign({}, p, { _groupKey: "" }); });
         _hasMultiOrder = false;
 
         // 拉所有用到的 SKU 的 declaration_name + hs_code（一次性 join 产品表）
@@ -913,11 +775,11 @@ export default async function handler(req, res) {
         if (skuList.length) {
           try {
             var metaR = await pool.query(
-              "SELECT sku, declaration_name, declaration_name_en, hs_code, factory_name, size FROM products WHERE sku = ANY($1::text[]) AND declaration_name IS NOT NULL AND declaration_name != ''",
+              "SELECT sku, declaration_name, hs_code FROM products WHERE sku = ANY($1::text[]) AND declaration_name IS NOT NULL AND declaration_name != ''",
               [skuList]
             );
             metaR.rows.forEach(function(r){
-              if (!skuMeta[r.sku]) skuMeta[r.sku] = { dn: r.declaration_name, dnEn: r.declaration_name_en || "", hs: r.hs_code || "", fac: r.factory_name || "", sz: r.size || "" };
+              if (!skuMeta[r.sku]) skuMeta[r.sku] = { dn: r.declaration_name, hs: r.hs_code || "" };
             });
           } catch(e) { /* fallthrough to per-product fields */ }
         }
@@ -939,57 +801,28 @@ export default async function handler(req, res) {
             return; // skip this product — don't aggregate into blank group
           }
           var hs = p.hs_code || p.hsCode || meta.hs || "";
-          // 报关展示名 = 英文报关品名优先（PL为英文单据），无EN回退中文
-          var dnDisp = p.declaration_name_en || p.declarationNameEn || meta.dnEn || dn;
-          // 聚合按工厂申报档案(2026-06-11 福建报关行要求):
-          //   泰迪(厦门口岸) = HS+规格拆行, 品名带规格(商检必需);
-          //   其余(中宠/青岛等) = 1行/HS极简(customs_doc_format)。
-          var _fac = (p.factory_name || p._mfrName || meta.fac || "");
-          var _sz  = (p.size || p.spec || meta.sz || "");
-          var _specSplit = /泰迪/.test(_fac);
-          var _ctnKey = p._containerNo || "";
-          var key = _specSplit
-            ? "|" + _ctnKey + "|" + (hs || ("NOHS:" + dn)) + "|" + _sz
-            : "|" + _ctnKey + "|" + (hs || ("NOHS:" + dn));
+          // 报关展示名 = 报关品名（dedupe by declaration_name + hs）
+          var key = "|" + dn + "|" + hs;
           if (!groups[key]) {
-            var _dispFinal = _specSplit && _sz ? (dnDisp + " " + _sz) : dnDisp;
             groups[key] = Object.assign({}, p, {
-              productName: _dispFinal, name: _dispFinal, blDescription: _dispFinal,
+              productName: dn, name: dn, blDescription: dn,
               declaration_name: dn, declarationName: dn,
               hs_code: hs, hsCode: hs,
-              size: _specSplit ? _sz : "", spec: _specSplit ? _sz : "",   // 泰迪档案: 规格必显(商检要求); 余合并行不显规格
-              qty: 0, subtotal: 0, _absTotals: true,
+              size: "", spec: "",        // 合并行不显规格
+              qty: 0, subtotal: 0,
               grossWeight: 0, netWeight: 0, _cbmTot: 0,
               _aggCount: 0,
-              _fsNos: [], _pos: [],
-              _nameNw: {}, _nameDisp: {},
             });
             order.push(key);
           }
           var g = groups[key];
-          if(p._fsNo && g._fsNos.indexOf(p._fsNo)<0) g._fsNos.push(p._fsNo);
-          if(p._customerPO && g._pos.indexOf(p._customerPO)<0) g._pos.push(p._customerPO);
           g.qty       += Number(p.qty || 0);
           g.subtotal  += Number(p.subtotal || (Number(p.qty||0) * Number(resolveUnitPrice(p)||0)) || 0);
           g.grossWeight += Number(p.grossWeight||p.gw||0) * Number(p.qty||0);
           g.netWeight   += Number(p.netWeight  ||p.nw||0) * Number(p.qty||0);
           g._cbmTot     += Number(p.cbmPerCtn||p.cbm_per_ctn||p.cbm||0) * Number(p.qty||0);
           g._aggCount += 1;
-          var _lineNw = Number(p.netWeight||p.nw||0) * Number(p.qty||0);
-          g._nameNw[dn] = (g._nameNw[dn]||0) + _lineNw;
-          if (!g._nameDisp[dn]) g._nameDisp[dn] = dnDisp;
           if (!g.unitPrice && p.unitPrice) g.unitPrice = p.unitPrice;
-        });
-        // 同HS多品名: 显示名取净重占比最大的品名(与customs-consolidated同规则)
-        order.forEach(function(k){
-          var g = groups[k];
-          var names = Object.keys(g._nameNw||{});
-          if (names.length > 1) {
-            names.sort(function(a,b){ return g._nameNw[b]-g._nameNw[a]; });
-            var top = names[0], disp = g._nameDisp[top] || top;
-            g.declaration_name = top; g.declarationName = top;
-            g.productName = disp; g.name = disp; g.blDescription = disp;
-          }
         });
         // 合并行 grossWeight/netWeight/_cbmTot 已是该报关品名的「总量」(每箱值×箱数累加)。
         // 下游报关列/合计直接当总量用，不再 ×qty。
@@ -1019,392 +852,453 @@ export default async function handler(req, res) {
       var _disc = Array.isArray(raw.discounts) ? raw.discounts : [];
       var _discSum = _disc.reduce(function(s,d){return s+Number(d.amount||0);},0);
       var _netAmt = (raw.netAmount != null) ? Number(raw.netAmount) : (tot + _discSum); // discounts are negative
-      var totRow;
-      if (_disc.length > 0) {
-        var _discRows = _disc.map(function(d){
-          return `<tr class="total-row"><td colspan="3" class="text-right" style="color:#888;font-size:10px;">${esc(d.label||'Discount')}:</td><td colspan="2" class="text-right" style="color:#c44;font-size:11px;">${fmtM(Number(d.amount||0))}</td></tr>`;
-        }).join('');
-        totRow = `<tr class="total-row"><td colspan="3" class="text-right" style="color:#777;font-size:10px;">GROSS AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="color:#777;font-size:12px;">${fmtM(tot)}</td></tr>`
+      // Dynamic total row — colspan computed from actual column count so
+      // adding/removing/reordering columns via Template Center never misaligns.
+      function mkTotRow(_nTot){
+        var _lab=Math.max(1,(_nTot||5)-1);
+        if (_disc.length > 0) {
+          var _discRows = _disc.map(function(d){
+            return `<tr class="total-row"><td colspan="${_lab}" class="text-right" style="color:#888;font-size:10px;">${esc(d.label||'Discount')}:</td><td class="text-right" style="color:#c44;font-size:11px;">${fmtM(Number(d.amount||0))}</td></tr>`;
+          }).join('');
+          return `<tr class="total-row"><td colspan="${_lab}" class="text-right" style="color:#777;font-size:10px;">GROSS AMOUNT (${esc(curr)}):</td><td class="text-right" style="color:#777;font-size:12px;">${fmtM(tot)}</td></tr>`
               + _discRows
-              + `<tr class="total-row" style="border-top:2px solid #000;"><td colspan="3" class="text-right" style="font-size:11px;">NET PAYABLE (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(_netAmt)}</td></tr>`;
-      } else {
-        totRow=`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px;">TOTAL AMOUNT (${esc(curr)}):</td><td colspan="2" class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
+              + `<tr class="total-row" style="border-top:2px solid #000;"><td colspan="${_lab}" class="text-right" style="font-size:11px;">NET PAYABLE (${esc(curr)}):</td><td class="text-right" style="font-size:16px;font-weight:800;">${fmtM(_netAmt)}</td></tr>`;
+        }
+        return `<tr class="total-row"><td colspan="${_lab}" class="text-right" style="color:#555;font-size:11px;">TOTAL AMOUNT (${esc(curr)}):</td><td class="text-right" style="font-size:16px;font-weight:800;">${fmtM(tot)}</td></tr>`;
       }
+      var totRow = mkTotRow(5);
 
       // ── V2 template (2026-05-25, Damon locked layout) ────────────────────────
       // Per /Users/mac/Desktop/SANLYN_REAL_ORDER_CUSTOMS_RESCUE/print/merged/
       // Triggers ONLY when ?style=v2 explicitly. Default path unchanged for
       // backwards compat (HARMONIOUS / PETSOME / JJ PET etc still get legacy).
       // Supports type ∈ {iv, sc, pl, pack}. PI/PO/SO/etc unaffected.
-      // format=xlsx 时跳过 v2(纯数据导出走旧路径的 _xlsCapture 机制; v2 块没有 xlsx 捕获会返回 HTML)
-      if(String(_styleVariant||"").toLowerCase()==="v2" && ["iv","sc","pl","pack"].includes(type) && format!=="xlsx"){
-        var V2 = (function(){
-          var V2_CSS = "<style>"
-            +"@media print{.v2-sig-grid,.v2-sig-box,.v2-terms,.v2-bank,.v2-details,.v2-total-row,tfoot{page-break-inside:avoid !important;break-inside:avoid !important;}}"
-            +"[class*=sig]{page-break-inside:avoid;break-inside:avoid;}"
-            +"body{font-family:'Helvetica','Arial','PingFang SC',sans-serif;color:#000;margin:0;padding:30px;font-size:11px;line-height:1.4;}"
-            +".v2-container{max-width:880px;margin:auto;}"
-            +".v2-banner{background:#16a34a;color:#fff;text-align:center;padding:6px;font-weight:700;font-size:11px;letter-spacing:1px;margin-bottom:18px;border-radius:3px;}"
-            +".v2-print-btn{position:fixed;top:18px;right:18px;background:#1e40af;color:#fff;padding:8px 14px;border:none;border-radius:4px;font-weight:700;cursor:pointer;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.2);}"
-            +".v2-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:22px;}"
-            +".v2-seller-info{flex:1;}"
-            +".v2-seller-name{font-weight:900;text-transform:uppercase;font-size:14px;margin-bottom:5px;}"
-            +".v2-doc-type{text-align:right;}"
-            +".v2-doc-type h1{margin:0;font-size:26px;font-weight:900;letter-spacing:1px;}"
-            +".v2-meta-grid{display:grid;grid-template-columns:1.2fr 0.8fr;gap:40px;margin-bottom:18px;}"
-            +".v2-section-label{font-size:10px;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:8px;color:#444;}"
-            +".v2-meta-list{list-style:none;padding:0;margin:0;}"
-            +".v2-meta-list li{margin-bottom:4px;display:flex;}"
-            +".v2-meta-list li b{width:130px;font-weight:bold;}"
-            +".v2-trade-terms-bar{border:2px solid #000;padding:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:22px;font-weight:bold;font-size:11px;}"
-            +".v2-trade-terms-bar span{display:block;}"
-            +".v2-tbl{width:100%;border-collapse:collapse;margin-bottom:22px;}"
-            +".v2-tbl th{background:#000;color:#fff;padding:8px;text-align:left;font-size:10px;text-transform:uppercase;}"
-            +".v2-tbl td{padding:7px 8px;border-bottom:1px solid #ccc;vertical-align:top;font-size:10.5px;}"
-            +".v2-tr{text-align:right;} .v2-tc{text-align:center;}"
-            +".v2-subsec td{background:#64748b;color:#fff;font-weight:700;padding:8px;font-size:11px;letter-spacing:.02em;border-bottom:none;}"
-            +".v2-subtotal td{background:#eef2ff;font-weight:700;border-bottom:2px solid #1e40af;}"
-            +".v2-total td{background:#000;color:#fff;font-size:13px;font-weight:900;padding:10px;}"
-            +".v2-desc-en{font-weight:600;}"
-            +".v2-details-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:14px;}"
-            +".v2-details-box{border:1px solid #000;padding:12px;font-size:10.5px;}"
-            +".v2-details-box h4{margin:0 0 8px 0;font-size:11px;text-transform:uppercase;text-decoration:underline;}"
-            +".v2-sig-grid{display:flex;justify-content:space-between;margin-top:40px;}"
-            +".v2-sig-box{width:45%;border-top:2px solid #000;padding-top:10px;text-align:center;height:90px;font-weight:bold;display:flex;flex-direction:column;justify-content:space-between;font-size:11px;}"
-            +".v2-slogan{text-align:center;margin-top:40px;font-size:9px;color:#888;border-top:1px dashed #ccc;padding-top:12px;letter-spacing:1px;}"
-            +"@media print{body{padding:0;}.v2-container{max-width:100%;}.v2-print-btn,.no-print{display:none;}.v2-banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}"
-            +"</style>";
+      if(String(_styleVariant||"").toLowerCase()==="v2" && ["iv","sc","pl","pack"].includes(type)){
+        var _v2ColConfig = await Promise.all([loadDocColConfig(pool, "pl"), loadDocColConfig(pool, "iv"), loadDocColConfig(pool, "sc")]);
+                var V2 = (function(){
+                  var V2_CSS = "<style>"
+                    +"body{font-family:'Helvetica','Arial','PingFang SC',sans-serif;color:#000;margin:0;padding:30px;font-size:11px;line-height:1.4;}"
+                    +".v2-container{max-width:880px;margin:auto;}"
+                    +".v2-banner{background:#16a34a;color:#fff;text-align:center;padding:6px;font-weight:700;font-size:11px;letter-spacing:1px;margin-bottom:18px;border-radius:3px;}"
+                    +".v2-print-btn{position:fixed;top:18px;right:18px;background:#1e40af;color:#fff;padding:8px 14px;border:none;border-radius:4px;font-weight:700;cursor:pointer;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.2);}"
+                    +".v2-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:22px;}"
+                    +".v2-seller-info{flex:1;}"
+                    +".v2-seller-name{font-weight:900;text-transform:uppercase;font-size:14px;margin-bottom:5px;}"
+                    +".v2-doc-type{text-align:right;}"
+                    +".v2-doc-type h1{margin:0;font-size:26px;font-weight:900;letter-spacing:1px;}"
+                    +".v2-meta-grid{display:grid;grid-template-columns:1.2fr 0.8fr;gap:40px;margin-bottom:18px;}"
+                    +".v2-section-label{font-size:10px;font-weight:bold;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:8px;color:#444;}"
+                    +".v2-meta-list{list-style:none;padding:0;margin:0;}"
+                    +".v2-meta-list li{margin-bottom:4px;display:flex;}"
+                    +".v2-meta-list li b{width:130px;font-weight:bold;}"
+                    +".v2-trade-terms-bar{border:2px solid #000;padding:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:22px;font-weight:bold;font-size:11px;}"
+                    +".v2-trade-terms-bar span{display:block;}"
+                    +".v2-tbl{width:100%;border-collapse:collapse;margin-bottom:22px;}"
+                    +".v2-tbl th{background:#000;color:#fff;padding:8px;text-align:left;font-size:10px;text-transform:uppercase;}"
+                    +".v2-tbl td{padding:7px 8px;border-bottom:1px solid #ccc;vertical-align:top;font-size:10.5px;}"
+                    +".v2-tr{text-align:right;} .v2-tc{text-align:center;}"
+                    +".v2-subsec td{background:#1e40af;color:#fff;font-weight:700;padding:8px;font-size:11px;letter-spacing:.02em;border-bottom:none;}"
+                    +".v2-subtotal td{background:#eef2ff;font-weight:700;border-bottom:2px solid #1e40af;}"
+                    +".v2-total td{background:#000;color:#fff;font-size:13px;font-weight:900;padding:10px;}"
+                    +".v2-desc-en{font-weight:600;}"
+                    +".v2-details-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:14px;}"
+                    +".v2-details-box{border:1px solid #000;padding:12px;font-size:10.5px;}"
+                    +".v2-details-box h4{margin:0 0 8px 0;font-size:11px;text-transform:uppercase;text-decoration:underline;}"
+                    +".v2-sig-grid{display:flex;justify-content:space-between;margin-top:40px;}"
+                    +".v2-sig-box{width:45%;border-top:2px solid #000;padding-top:10px;text-align:center;height:90px;font-weight:bold;display:flex;flex-direction:column;justify-content:space-between;font-size:11px;}"
+                    +".v2-slogan{text-align:center;margin-top:40px;font-size:9px;color:#888;border-top:1px dashed #ccc;padding-top:12px;letter-spacing:1px;}"
+                    +"@media print{body{padding:0;}.v2-container{max-width:100%;}.v2-print-btn,.no-print{display:none;}.v2-banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}"
+                    +"</style>";
 
-          // Strip prefixes per Damon spec: no "40-" no "PL-/SC-" no "IV-"
-          function stripPrefix(s){
-            if(!s) return "";
-            s = String(s);
-            return s.replace(/^40-/,"").replace(/^(PL|SC|IV)-/i,"");
-          }
-          function joinUniq(arr,sep){
-            var seen={}, out=[];
-            (arr||[]).forEach(function(v){ if(v && !seen[v]){ seen[v]=1; out.push(v); } });
-            return out.join(sep||" / ");
-          }
+                  // Strip prefixes per Damon spec: no "40-" no "PL-/SC-" no "IV-"
+                  function stripPrefix(s){
+                    if(!s) return "";
+                    s = String(s);
+                    return s.replace(/^40-/,"").replace(/^(PL|SC|IV)-/i,"");
+                  }
+                  function joinUniq(arr,sep){
+                    var seen={}, out=[];
+                    (arr||[]).forEach(function(v){ if(v && !seen[v]){ seen[v]=1; out.push(v); } });
+                    return out.join(sep||" / ");
+                  }
 
-          // Display values
-          var v2_buyer = cust || "[BUYER]";
-          var v2_buyerAddr = caddr || "";
-          var v2_date = date || fmtD(new Date());
-          var v2_curr = curr || "CNY";
-          // FS numbers (Invoice/PL/SC No.) — join all FS_NOs across orders, no PL-/SC- prefix
-          var v2_fsList = [];
-          (prods||[]).forEach(function(p){ if(Array.isArray(p._fsNos)&&p._fsNos.length){p._fsNos.forEach(function(v){v2_fsList.push(v);});} else if(p._fsNo) v2_fsList.push(p._fsNo); });
-          if(!v2_fsList.length) v2_fsList.push(raw.fs_no || raw.internal_no || cno);
-          var v2_docNo = joinUniq(v2_fsList.map(stripPrefix), " / ");
-          // Order list — strip "40-" prefix, join unique
-          var v2_orderList = [];
-          (prods||[]).forEach(function(p){ if(Array.isArray(p._pos)&&p._pos.length){p._pos.forEach(function(v){v2_orderList.push(stripPrefix(v));});} else if(p._customerPO) v2_orderList.push(stripPrefix(p._customerPO)); });
-          if(!v2_orderList.length) v2_orderList.push(stripPrefix(ordNo||cno));
-          var v2_order = joinUniq(v2_orderList, " / ");
+                  // Display values
+                  var v2_buyer = cust || "[BUYER]";
+                  var v2_buyerAddr = caddr || "";
+                  var v2_date = date || fmtD(new Date());
+                  var v2_curr = curr || "CNY";
+                  // FS numbers (Invoice/PL/SC No.) — join all FS_NOs across orders, no PL-/SC- prefix
+                  var v2_fsList = [];
+                  (prods||[]).forEach(function(p){ if(p._fsNo) v2_fsList.push(p._fsNo); });
+                  if(!v2_fsList.length) v2_fsList.push(raw.fs_no || raw.internal_no || cno);
+                  var v2_docNo = joinUniq(v2_fsList.map(stripPrefix), " / ");
+                  // Order list — strip "40-" prefix, join unique
+                  var v2_orderList = [];
+                  (prods||[]).forEach(function(p){ if(p._customerPO) v2_orderList.push(stripPrefix(p._customerPO)); });
+                  if(!v2_orderList.length) v2_orderList.push(stripPrefix(ordNo||cno));
+                  var v2_order = joinUniq(v2_orderList, " / ");
 
-          var v2_bl = pick(_spBl, o.bl_no, raw.blNo, raw.bl_no, "");
-          var v2_vessel = _v2_vessel; var v2_voyage = _v2_voyage;
-          var v2_vesselStr = v2_vessel + (v2_voyage?(" / "+v2_voyage):"");
-          var v2_carrier = _v2_carrier;
-          var v2_pol = pol; var v2_pod = pod;
-          var v2_etd = _v2_etd || "";
+                  var v2_bl = pick(_spBl, o.bl_no, raw.blNo, raw.bl_no, "");
+                  var v2_vessel = _v2_vessel; var v2_voyage = _v2_voyage;
+                  var v2_vesselStr = v2_vessel + (v2_voyage?(" / "+v2_voyage):"");
+                  var v2_carrier = _v2_carrier;
+                  var v2_pol = pol; var v2_pod = pod;
+                  var v2_etd = _v2_etd || "";
 
-          function v2DocLabel(t){
-            if(t==="iv") return {h1:"COMMERCIAL INVOICE", noLbl:"Invoice No."};
-            if(t==="sc") return {h1:"SALES CONTRACT",     noLbl:"SC No."};
-            if(t==="pl") return {h1:"PACKING LIST",       noLbl:"PL No."};
-            return {h1:"DOCUMENT", noLbl:"Doc No."};
-          }
-          function v2Header(t){
-            var lbl = v2DocLabel(t);
-            return ""
-              +"<div class=\"v2-header\"><div class=\"v2-seller-info\">"
-              +"<div class=\"v2-seller-name\">"+esc(cfg.nameEN)+"</div>"
-              +"<p style=\"margin:2px 0\">"+esc(cfg.address)+"</p>"
-              +(cfg.tel||cfg.email||cfg.taxNo
-                ? "<p style=\"margin:2px 0;font-size:10px;color:#444\">"
-                  +(cfg.tel?"Tel: "+esc(cfg.tel):"")
-                  +(cfg.email?" | Email: "+esc(cfg.email):"")
-                  +"</p>"
-                : "")
-              +"</div><div class=\"v2-doc-type\"><h1>"+esc(lbl.h1)+"</h1></div></div>"
-              +"<div class=\"v2-meta-grid\">"
-              +"<div><div class=\"v2-section-label\">BUYER (BILL TO)</div>"
-              +"<p style=\"font-size:13px;font-weight:bold;margin:0\">"+esc(v2_buyer)+"</p>"
-              +"<p style=\"margin:5px 0\">"+esc(v2_buyerAddr)+"</p></div>"
-              +"<div><div class=\"v2-section-label\">DETAILS</div>"
-              +"<ul class=\"v2-meta-list\">"
-              +"<li><b>"+esc(lbl.noLbl)+":</b> "+esc(v2_docNo)+"</li>"
-              +"<li><b>Order:</b> "+esc(v2_order)+"</li>"
-              +"<li><b>Date:</b> "+esc(v2_date)+"</li>"
-              +(audience==="customs" ? "" : "<li><b>Currency:</b> "+esc(v2_curr)+"</li>")
-              +"</ul></div></div>"
-              // 报关版港口长条(Damon 2026-06-11: 灰底黑字横条,表格同宽; 海运主表优先,无plan回退raw)
-              +(function(){
-                  var _p1=_spPol||v2_pol, _p2=_spPod||v2_pod;
-                  if(audience!=="customs") return "";
-                  if((!_p1||_p1==="-")&&(!_p2||_p2==="-")) return "";
-                  return "<div style=\"background:#e8e8e8;color:#000;font-weight:bold;font-size:10.5px;"
-                       + "padding:6px 12px;margin:8px 0 0;letter-spacing:.3px;"
-                       + "display:flex;justify-content:space-between;align-items:center;\">"
-                       + "<span>PORT: "+esc(_p1&&_p1!=="-"?_p1:"\u2014")+" \u2192 "+esc(_p2&&_p2!=="-"?_p2:"\u2014")+"</span>"
-                       + "<span>CURRENCY: "+esc(v2_curr||"\u2014")+"</span>"
-                       + "</div>";
+                  function v2DocLabel(t){
+                    if(t==="iv") return {h1:"COMMERCIAL INVOICE", noLbl:"Invoice No."};
+                    if(t==="sc") return {h1:"SALES CONTRACT",     noLbl:"SC No."};
+                    if(t==="pl") return {h1:"PACKING LIST",       noLbl:"PL No."};
+                    return {h1:"DOCUMENT", noLbl:"Doc No."};
+                  }
+                  function v2Header(t){
+                    var lbl = v2DocLabel(t);
+                    return ""
+                      +"<div class=\"v2-banner\">OFFICIAL DOCUMENT — FOR CUSTOMS DECLARATION</div>"
+                      +"<div class=\"v2-header\"><div class=\"v2-seller-info\">"
+                      +"<div class=\"v2-seller-name\">"+esc(cfg.nameEN)+"</div>"
+                      +"<p style=\"margin:2px 0\">"+esc(cfg.address)+"</p>"
+                      +(cfg.tel||cfg.email||cfg.taxNo
+                        ? "<p style=\"margin:2px 0;font-size:10px;color:#444\">"
+                          +(cfg.tel?"Tel: "+esc(cfg.tel):"")
+                          +(cfg.email?" | Email: "+esc(cfg.email):"")
+                          +(cfg.taxNo?" | USCC: "+esc(cfg.taxNo):"")
+                          +"</p>"
+                        : "")
+                      +"</div><div class=\"v2-doc-type\"><h1>"+esc(lbl.h1)+"</h1></div></div>"
+                      +"<div class=\"v2-meta-grid\">"
+                      +"<div><div class=\"v2-section-label\">BUYER (BILL TO)</div>"
+                      +"<p style=\"font-size:13px;font-weight:bold;margin:0\">"+esc(v2_buyer)+"</p>"
+                      +"<p style=\"margin:5px 0\">"+esc(v2_buyerAddr)+"</p></div>"
+                      +"<div><div class=\"v2-section-label\">DETAILS</div>"
+                      +"<ul class=\"v2-meta-list\">"
+                      +"<li><b>"+esc(lbl.noLbl)+":</b> "+esc(v2_docNo)+"</li>"
+                      +"<li><b>Order:</b> "+esc(v2_order)+"</li>"
+                      +"<li><b>Date:</b> "+esc(v2_date)+"</li>"
+                      +"<li><b>Currency:</b> "+esc(v2_curr)+"</li>"
+                      +"</ul></div></div>"
+                      +"<div class=\"v2-trade-terms-bar\">"
+                      +"<span>BL: "+esc(v2_bl||"-")+"</span>"
+                      +"<span>Vessel: "+esc(v2_vesselStr||"-")+"</span>"
+                      +"<span>Carrier: "+esc(v2_carrier||"-")+"</span>"
+                      +"<span>POL: "+esc(v2_pol||"-")+"</span>"
+                      +"<span>POD: "+esc(v2_pod||"-")+"</span>"
+                      +"<span>ETD: "+esc(v2_etd||"-")+"</span>"
+                      +"</div>";
+                  }
+
+                  // Group products by _groupKey (per-order section)
+                  function groupProds(){
+                    var groups = {}, order = [];
+                    (prods||[]).forEach(function(p){
+                      var k = p._groupKey || p._contractNo || "_default";
+                      if(!groups[k]){
+                        groups[k] = {
+                          key: k,
+                          contractNo: p._contractNo || k,
+                          customerPO: p._customerPO || "",
+                          containerNo: p._containerNo || "",
+                          containerType: p._containerType || "",
+                          fsNo: p._fsNo || "",
+                          incoterm: p._incoterm || "",
+                          items: []
+                        };
+                        order.push(k);
+                      }
+                      groups[k].items.push(p);
+                    });
+                    return order.map(function(k){ return groups[k]; });
+                  }
+
+                  function v2NameOf(p){
+                    // English-only product name; no Chinese small line
+                    var n = pick(p.productName, p.name, p.description, p.blDescription, p.bl_description, "-");
+                    // Remove any "ZH | EN" → EN only
+                    if(typeof n === "string" && n.indexOf("|") > -1){
+                      var parts = n.split("|").map(function(s){return s.trim();});
+                      // Pick the part that has ASCII letters
+                      var en = parts.filter(function(s){return /[A-Za-z]/.test(s);})[0];
+                      if(en) n = en;
+                    }
+                    return n;
+                  }
+
+                  var _v2DbColsPL = _v2ColConfig[0] || [];
+                  var _v2DbColsIV = _v2ColConfig[1] || [];
+                  var _v2DbColsSC = _v2ColConfig[2] || [];
+
+                  function v2PLMetrics(p){
+                    var qty = Number(p.qty||0);
+                    var nwPer = Number(p.netWeight||p.nw||0);
+                    var gwPer = Number(p.grossWeight||p.gw||0);
+                    var cbmPer = Number(p.cbmPerCtn||p.cbm_per_ctn||0);
+                    var nwTot, gwTot, cbmTot;
+                    if(audience==="customs"){
+                      nwTot = Number(p.netWeight||p.nw||0);
+                      gwTot = Number(p.grossWeight||p.gw||0);
+                      cbmTot = Number(p._cbmTot||p.cbm||0);
+                    } else {
+                      nwTot = (nwPer*qty)||nwPer;
+                      gwTot = (gwPer*qty)||gwPer;
+                      cbmTot = cbmPer>0 ? cbmPer*qty : Number(p.cbm||p.volume||0);
+                    }
+                    return {qty:qty, nw:nwTot, gw:gwTot, cbm:cbmTot};
+                  }
+
+                  function v2AmtMetrics(p){
+                    var qty = Number(p.qty||0);
+                    var up = Number(resolveUnitPrice(p)||0);
+                    var amt = Number(p.subtotal||p.amount||0);
+                    if(!amt && qty) amt = qty * up;
+                    return {qty:qty, price:up, amt:amt};
+                  }
+
+                  var _v2PLFnMap = {
+                    sku:{fn:function(p){return p.sku||p.code||p.item_code||p.product_code||"-";},defaultAlign:"center",defaultWidth:"70px"},
+                    name:{fn:function(p){return v2NameOf(p);},defaultAlign:""},
+                    qty:{fn:function(p){return fmtM(Number(p.qty||0),0);},defaultAlign:"center",defaultWidth:"70px"},
+                    unit:{fn:function(p){return p.unit||p.unitOfMeasure||"CTN";},defaultAlign:"center",defaultWidth:"50px"},
+                    nw:{fn:function(p){return fmtM(v2PLMetrics(p).nw);},defaultAlign:"right",defaultWidth:"85px"},
+                    gw:{fn:function(p){return fmtM(v2PLMetrics(p).gw);},defaultAlign:"right",defaultWidth:"85px"},
+                    cbm:{fn:function(p){return fmtM(v2PLMetrics(p).cbm,3);},defaultAlign:"right",defaultWidth:"80px"},
+                    price:{fn:function(p){return fmtM(v2AmtMetrics(p).price);},defaultAlign:"right",defaultWidth:"95px"},
+                    amt:{fn:function(p){return fmtM(v2AmtMetrics(p).amt);},defaultAlign:"right",defaultWidth:"110px"}
+                  };
+
+                  var _v2AmtFnMap = {
+                    sku:_v2PLFnMap.sku,
+                    name:_v2PLFnMap.name,
+                    qty:_v2PLFnMap.qty,
+                    unit:_v2PLFnMap.unit,
+                    price:_v2PLFnMap.price,
+                    amt:_v2PLFnMap.amt,
+                    nw:_v2PLFnMap.nw,
+                    gw:_v2PLFnMap.gw,
+                    cbm:_v2PLFnMap.cbm
+                  };
+
+                  var _v2FallbackColsPL = [
+                    {k:"sku",al:"center",w:"70px",fn:_v2PLFnMap.sku.fn,lbl:"CP Code"},
+                    {k:"name",al:"",fn:_v2PLFnMap.name.fn,lbl:"Description & Size"},
+                    {k:"qty",al:"center",w:"70px",fn:_v2PLFnMap.qty.fn,lbl:"QTY (CTN)"},
+                    {k:"unit",al:"center",w:"50px",fn:_v2PLFnMap.unit.fn,lbl:"Unit"},
+                    {k:"nw",al:"right",w:"85px",fn:_v2PLFnMap.nw.fn,lbl:"N.W. (KG)"},
+                    {k:"gw",al:"right",w:"85px",fn:_v2PLFnMap.gw.fn,lbl:"G.W. (KG)"},
+                    {k:"cbm",al:"right",w:"80px",fn:_v2PLFnMap.cbm.fn,lbl:"CBM (M³)"}
+                  ];
+
+                  var _v2FallbackColsAmt = [
+                    {k:"sku",al:"center",w:"70px",fn:_v2AmtFnMap.sku.fn,lbl:"CP Code"},
+                    {k:"name",al:"",fn:_v2AmtFnMap.name.fn,lbl:"Description & Size"},
+                    {k:"qty",al:"center",w:"70px",fn:_v2AmtFnMap.qty.fn,lbl:"QTY (CTN)"},
+                    {k:"unit",al:"center",w:"50px",fn:_v2AmtFnMap.unit.fn,lbl:"Unit"},
+                    {k:"price",al:"right",w:"95px",fn:_v2AmtFnMap.price.fn,lbl:"Unit Price ("+v2_curr+")"},
+                    {k:"amt",al:"right",w:"110px",fn:_v2AmtFnMap.amt.fn,lbl:"Amount ("+v2_curr+")"}
+                  ];
+
+                  var v2ColsPL = buildColsFromConfig(_v2DbColsPL, _v2PLFnMap, _v2FallbackColsPL);
+                  var v2ColsIV = buildColsFromConfig(_v2DbColsIV, _v2AmtFnMap, _v2FallbackColsAmt);
+                  var v2ColsSC = buildColsFromConfig(_v2DbColsSC, _v2AmtFnMap, _v2FallbackColsAmt);
+
+                  function v2ColStyle(c){
+                    var s = [];
+                    if(c.w) s.push("width:"+c.w);
+                    if(c.al==="right") s.push("text-align:right");
+                    else if(c.al==="center") s.push("text-align:center");
+                    return s.length ? " style=\""+s.join(";")+"\"" : "";
+                  }
+
+                  function v2TdClass(c){
+                    if(c.al==="right") return " class=\"v2-tr\"";
+                    if(c.al==="center") return " class=\"v2-tc\"";
+                    return "";
+                  }
+
+                  function v2TableHead(cols){
+                    return "<thead><tr><th style=\"width:34px\">NO.</th>"
+                      + cols.map(function(c){return "<th"+v2ColStyle(c)+">"+esc(String(c.lbl||c.k||""))+"</th>";}).join("")
+                      + "</tr></thead>";
+                  }
+
+                  function v2CellValue(c, p, vals){
+                    if(vals && Object.prototype.hasOwnProperty.call(vals, c.k)) return vals[c.k];
+                    if(typeof c.fn==="function") return c.fn(p);
+                    return p[c.k] == null ? "" : p[c.k];
+                  }
+
+                  function v2DataRow(seq, cols, p, vals){
+                    return "<tr><td>"+String(seq).padStart(2,"0")+"</td>"
+                      + cols.map(function(c){
+                        var v = v2CellValue(c, p, vals);
+                        if(c.k==="name") return "<td"+v2TdClass(c)+"><span class=\"v2-desc-en\">"+esc(String(v))+"</span></td>";
+                        return "<td"+v2TdClass(c)+">"+esc(String(v))+"</td>";
+                      }).join("")
+                      + "</tr>";
+                  }
+
+                  function v2SummaryRow(cls, label, cols, values){
+                    var first = -1;
+                    cols.forEach(function(c,i){
+                      if(first < 0 && Object.prototype.hasOwnProperty.call(values, c.k)) first = i;
+                    });
+                    if(first < 0){
+                      return "<tr class=\""+cls+"\"><td colspan=\""+(cols.length+1)+"\" class=\"v2-tr\">"+esc(label)+"</td></tr>";
+                    }
+                    var html = "<tr class=\""+cls+"\"><td colspan=\""+(first+1)+"\" class=\"v2-tr\">"+esc(label)+"</td>";
+                    for(var i=first;i<cols.length;i++){
+                      var c = cols[i];
+                      var val = Object.prototype.hasOwnProperty.call(values, c.k) ? values[c.k] : "";
+                      html += "<td"+v2TdClass(c)+">"+esc(String(val))+"</td>";
+                    }
+                    return html + "</tr>";
+                  }
+
+                  // Sub-section banner
+                  function v2Subsec(g, colspan){
+                    var seal = ""; // SEAL omitted per spec
+                    var bits = [
+                      "ORDER " + stripPrefix(g.customerPO || g.contractNo),
+                      g.containerNo ? "CONTAINER " + g.containerNo : "",
+                      g.containerType || "",
+                      g.fsNo ? stripPrefix(g.fsNo) : "",
+                      g.incoterm || ""
+                    ].filter(Boolean);
+                    return "<tr class=\"v2-subsec\"><td colspan=\""+colspan+"\">"+esc(bits.join(" · "))+"</td></tr>";
+                  }
+
+                  function v2BodyIVorSC(t, cols){
+                    cols = (cols && cols.length) ? cols : _v2FallbackColsAmt;
+                    var groups = groupProds();
+                    var rows = "";
+                    var seq = 0;
+                    var grandQty = 0, grandAmt = 0;
+                    var showSubsec = groups.length > 1;
+                    groups.forEach(function(g){
+                      if(showSubsec) rows += v2Subsec(g, cols.length + 1);
+                      g.items.forEach(function(p){
+                        seq++;
+                        var m = v2AmtMetrics(p);
+                        grandQty += m.qty; grandAmt += m.amt;
+                        rows += v2DataRow(seq, cols, p, {
+                          sku: p.sku||p.code||p.item_code||p.product_code||"-",
+                          name: v2NameOf(p),
+                          qty: fmtM(m.qty,0),
+                          unit: p.unit||p.unitOfMeasure||"CTN",
+                          price: fmtM(m.price),
+                          amt: fmtM(m.amt)
+                        });
+                      });
+                    });
+                    rows += v2SummaryRow("v2-total", "GRAND TOTAL:", cols, {
+                      qty: fmtM(grandQty,0)+" CTN",
+                      price: v2_curr,
+                      amt: fmtM(grandAmt)
+                    });
+
+                    var tbl = "<table class=\"v2-tbl\">"+v2TableHead(cols)+"<tbody>"+rows+"</tbody></table>";
+
+                    var footer = "<div class=\"v2-details-grid\">"
+                      +"<div class=\"v2-details-box\"><h4>TERMS &amp; CONDITIONS</h4>"
+                      +"1. Export standard cartons; goods shipped as per agreed specifications.<br>"
+                      +"2. Shipment within 30 days of deposit received.<br>"
+                      +"3. Payment: 30% Deposit, 70% balance against BL copy (unless otherwise agreed).<br>"
+                      +"4. Claims must be raised within 30 days of arrival at POD."
+                      +"</div>"
+                      +"<div class=\"v2-details-box\"><h4>BANKING INFORMATION</h4>"
+                      +"Beneficiary: "+esc(cfg.bank.beneficiary||cfg.nameEN)+"<br>"
+                      +"Bank: "+esc(cfg.bank.bankName||"")+"<br>"
+                      +"A/C No. ("+esc(v2_curr)+"): "+esc(cfg.bank.rmbAccount||cfg.bank.usdAccount||"")+"<br>"
+                      +(cfg.bank.swift?"SWIFT: "+esc(cfg.bank.swift)+"<br>":"")
+                      +(cfg.bank.bankAddr?"Bank Address: "+esc(cfg.bank.bankAddr)+"<br>":"")
+                      +"<span style=\"color:red;font-size:10px;font-weight:bold\">* Please verify bank info before payment.</span>"
+                      +"</div></div>"
+                      +"<div class=\"v2-sig-grid\">"
+                      +"<div class=\"v2-sig-box\"><span>BUYER AUTHORIZED SIGNATURE</span><span style=\"font-weight:normal;font-size:9px\">(Signature / Company Seal)</span></div>"
+                      +"<div class=\"v2-sig-box\"><span>SELLER AUTHORIZED SIGNATURE</span><span style=\"font-weight:normal;font-size:9px\">(Signature / Company Seal)</span></div>"
+                      +"</div>"
+                      +"<div class=\"v2-slogan\">Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b> · OFFICIAL CUSTOMS DOCUMENT</div>";
+                    return v2Header(t)+tbl+footer;
+                  }
+
+                  function v2BodyPL(cols){
+                    cols = (cols && cols.length) ? cols : _v2FallbackColsPL;
+                    var groups = groupProds();
+                    var rows = "";
+                    var seq = 0;
+                    var grandQty = 0, grandNW = 0, grandGW = 0, grandCBM = 0;
+                    var showSubsec = groups.length > 1;
+                    groups.forEach(function(g){
+                      if(showSubsec) rows += v2Subsec(g, cols.length + 1);
+                      var subQty = 0, subNW = 0, subGW = 0, subCBM = 0;
+                      g.items.forEach(function(p){
+                        seq++;
+                        var m = v2PLMetrics(p);
+                        subQty+=m.qty; subNW+=m.nw; subGW+=m.gw; subCBM+=m.cbm;
+                        rows += v2DataRow(seq, cols, p, {
+                          sku: p.sku||p.code||p.item_code||p.product_code||"-",
+                          name: v2NameOf(p),
+                          qty: fmtM(m.qty,0),
+                          unit: p.unit||p.unitOfMeasure||"CTN",
+                          nw: fmtM(m.nw),
+                          gw: fmtM(m.gw),
+                          cbm: fmtM(m.cbm,3)
+                        });
+                      });
+                      if(showSubsec){
+                        rows += v2SummaryRow("v2-subtotal", "Sub-Total ("+stripPrefix(g.customerPO||g.contractNo)+"):", cols, {
+                          qty: fmtM(subQty,0),
+                          nw: fmtM(subNW),
+                          gw: fmtM(subGW),
+                          cbm: fmtM(subCBM,3)
+                        });
+                      }
+                      grandQty+=subQty; grandNW+=subNW; grandGW+=subGW; grandCBM+=subCBM;
+                    });
+                    // Prefer order-table totals if available (more authoritative)
+                    var totQty = Number(o.total_qty)||grandQty;
+                    var totNW = Number(o.net_weight)||grandNW;
+                    var totGW = Number(o.gross_weight)||grandGW;
+                    var totCBM = Number(o.total_cbm)||grandCBM;
+                    rows += v2SummaryRow("v2-total", "GRAND TOTAL:", cols, {
+                      qty: fmtM(totQty,0),
+                      nw: fmtM(totNW),
+                      gw: fmtM(totGW),
+                      cbm: fmtM(totCBM,3)
+                    });
+
+                    var tbl = "<table class=\"v2-tbl\">"+v2TableHead(cols)+"<tbody>"+rows+"</tbody></table>";
+                    var footer = "<div class=\"v2-sig-grid\">"
+                      +"<div class=\"v2-sig-box\"><span>BUYER AUTHORIZED SIGNATURE</span><span style=\"font-weight:normal;font-size:9px\">(Signature / Company Seal)</span></div>"
+                      +"<div class=\"v2-sig-box\"><span>SELLER AUTHORIZED SIGNATURE</span><span style=\"font-weight:normal;font-size:9px\">(Signature / Company Seal)</span></div>"
+                      +"</div>"
+                      +"<div class=\"v2-slogan\">Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b> · OFFICIAL CUSTOMS DOCUMENT</div>";
+                    return v2Header("pl")+tbl+footer;
+                  }
+
+                  function v2Page(body){
+                    return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>"
+                      +esc(v2DocLabel(type).h1+" — "+v2_order)+"</title>"+V2_CSS+"</head>"
+                      +"<body><button class=\"v2-print-btn no-print\" onclick=\"window.print()\">Print</button>"
+                      +"<div class=\"v2-container\">"+body+"</div></body></html>";
+                  }
+
+                  if(type==="iv") return v2Page(v2BodyIVorSC("iv", v2ColsIV));
+                  if(type==="sc") return v2Page(v2BodyIVorSC("sc", v2ColsSC));
+                  if(type==="pl") return v2Page(v2BodyPL(v2ColsPL));
+                  if(type==="pack"){
+                    // Combined 3-up: PL → SC → IV, each on its own page
+                    var pages = "<div class=\"v2-container\">"+v2BodyPL(v2ColsPL)+"</div>"
+                      +"<div class=\"v2-container\" style=\"page-break-before:always\">"+v2BodyIVorSC("sc", v2ColsSC)+"</div>"
+                      +"<div class=\"v2-container\" style=\"page-break-before:always\">"+v2BodyIVorSC("iv", v2ColsIV)+"</div>";
+                    var screenCss = "<style>@media screen{body{background:#e5e7eb;padding:24px 0;}.v2-container{box-shadow:0 3px 16px rgba(0,0,0,.18);margin:0 auto 28px;padding:42px;background:#fff;}}</style>";
+                    return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>"
+                      +esc((v2_order||id)+" 报关 PL·SC·IV")+"</title>"+V2_CSS+screenCss+"</head>"
+                      +"<body><button class=\"v2-print-btn no-print\" onclick=\"window.print()\">Print</button>"
+                      +pages+"</body></html>";
+                  }
+                  return "";
                 })();
-          }
-
-          // Group products by _groupKey (per-order section)
-          function groupProds(){
-            var groups = {}, order = [];
-            (prods||[]).forEach(function(p){
-              var k = p._groupKey || p._contractNo || "_default";
-              if(!groups[k]){
-                groups[k] = {
-                  key: k,
-                  contractNo: p._contractNo || k,
-                  customerPO: p._customerPO || "",
-                  containerNo: p._containerNo || "",
-                  containerType: p._containerType || "",
-                  fsNo: p._fsNo || "",
-                  incoterm: p._incoterm || "",
-                  items: []
-                };
-                order.push(k);
-              }
-              groups[k].items.push(p);
-            });
-            return order.map(function(k){ return groups[k]; });
-          }
-
-          function v2NameOf(p){
-            // 报关口径=中文报关品名优先（2026-06-12 语言铁律：报关中文/船东英文）；客户口径维持英文全名
-            var n = (audience === "customs")
-              ? pick(p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-")
-              : pick(p.productName, p.name, p.description, p.blDescription, p.bl_description, "-");
-            // Remove any "ZH | EN" → EN only
-            if(typeof n === "string" && n.indexOf("|") > -1){
-              var parts = n.split("|").map(function(s){return s.trim();});
-              // Pick the part that has ASCII letters
-              var en = parts.filter(function(s){return /[A-Za-z]/.test(s);})[0];
-              if(en) n = en;
-            }
-            return n;
-          }
-
-          // Sub-section banner
-          function v2Subsec(g, colspan){
-            // 按柜归放（2026-06-12 Damon）：柜号开头，段内全部订单/合同并列（拼柜 DG-2+LL-1 同段）
-            var _poSet={}, _cnSet={};
-            (g.items||[]).forEach(function(it){
-              (it._pos||[]).forEach(function(x){ if(x) _poSet[stripPrefix(x)]=1; });
-              if(it._customerPO) _poSet[stripPrefix(it._customerPO)]=1;
-              (it._fsNos||[]).forEach(function(x){ if(x) _cnSet[x]=1; });
-              if(it._contractNo) _cnSet[it._contractNo]=1;
-            });
-            var _pos=Object.keys(_poSet), _cns=Object.keys(_cnSet);
-            var bits = [
-              g.containerNo ? "CONTAINER " + g.containerNo : ("ORDER " + stripPrefix(g.customerPO || g.contractNo)),
-              g.containerType || "",
-              _pos.length ? "ORDERS " + _pos.join("+") : "",
-              _cns.length ? _cns.join(" / ") : (g.fsNo ? stripPrefix(g.fsNo) : ""),
-              g.incoterm || ""
-            ].filter(Boolean);
-            return "<tr class=\"v2-subsec\"><td colspan=\""+colspan+"\">"+esc(bits.join(" · "))+"</td></tr>";
-          }
-
-          function v2BodyIVorSC(t){
-            var groups = groupProds();
-            var rows = "";
-            var seq = 0;
-            var grandQty = 0, grandAmt = 0;
-            var showSubsec = groups.length > 1;
-            groups.forEach(function(g){
-              if(showSubsec) rows += v2Subsec(g, 5);
-              g.items.forEach(function(p){
-                seq++;
-                var qty = Number(p.qty||0);
-                var up = Number(resolveUnitPrice(p)||0);
-                var amt = Number(p.subtotal||p.amount||0);
-                if(!amt && qty) amt = qty * up;
-                grandQty += qty; grandAmt += amt;
-                rows += "<tr>"
-                  +"<td>"+String(seq).padStart(2,"0")+"</td>"
-                  +"<td><span class=\"v2-desc-en\">"+esc(v2NameOf(p))+"</span></td>"
-                  +"<td class=\"v2-tc\">"+fmtM(qty,0)+"</td>"
-                  +"<td class=\"v2-tr\">"+fmtM(up)+"</td>"
-                  +"<td class=\"v2-tr\">"+fmtM(amt)+"</td>"
-                  +"</tr>";
-              });
-            });
-            rows += "<tr class=\"v2-total\">"
-              +"<td colspan=\"2\" class=\"v2-tr\">GRAND TOTAL:</td>"
-              +"<td class=\"v2-tc\">"+fmtM(grandQty,0)+" CTN</td>"
-              +"<td class=\"v2-tr\">"+esc(v2_curr)+"</td>"
-              +"<td class=\"v2-tr\">"+fmtM(grandAmt)+"</td>"
-              +"</tr>";
-
-            var thead = "<thead><tr>"
-              +"<th style=\"width:34px\">NO.</th>"
-              +"<th>Description &amp; Size</th>"
-              +"<th style=\"width:70px;text-align:center\">QTY (CTN)</th>"
-              +"<th style=\"width:95px;text-align:right\">Unit Price ("+esc(v2_curr)+")</th>"
-              +"<th style=\"width:110px;text-align:right\">Amount ("+esc(v2_curr)+")</th>"
-              +"</tr></thead>";
-            var tbl = "<table class=\"v2-tbl\">"+thead+"<tbody>"+rows+"</tbody></table>";
-
-            var footer = "<div class=\"v2-details-grid\">"
-              +"<div class=\"v2-details-box\"><h4>TERMS &amp; CONDITIONS</h4>"
-              +"1. Export standard cartons; goods shipped as per agreed specifications.<br>"
-              +"2. Shipment within 30 days of deposit received.<br>"
-              +"3. Payment: 30% Deposit, 70% balance against BL copy (unless otherwise agreed).<br>"
-              +"4. Claims must be raised within 30 days of arrival at POD."
-              +"</div>"
-              +"<div class=\"v2-details-box\"><h4>BANKING INFORMATION</h4>"
-              +"Beneficiary: "+esc(cfg.bank.beneficiary||cfg.nameEN)+"<br>"
-              +"Bank: "+esc(cfg.bank.bankName||"")+"<br>"
-              +"A/C No. ("+esc(v2_curr)+"): "+esc(cfg.bank.rmbAccount||cfg.bank.usdAccount||"")+"<br>"
-              +(cfg.bank.swift?"SWIFT: "+esc(cfg.bank.swift)+"<br>":"")
-              +(cfg.bank.bankAddr?"Bank Address: "+esc(cfg.bank.bankAddr)+"<br>":"")
-              +"<span style=\"color:red;font-size:10px;font-weight:bold\">* Please verify bank info before payment.</span>"
-              +"</div></div>"
-              +"<div class=\"v2-sig-grid\">"
-              +"<div class=\"v2-sig-box\"><span>BUYER AUTHORIZED SIGNATURE</span><span style=\"font-weight:normal;font-size:9px\">(Signature / Company Seal)</span></div>"
-              +"<div class=\"v2-sig-box\" style=\"position:relative;min-height:110px\">"+(_seal?"<img src=\""+_seal+"\" alt=\"seal\" style=\"position:absolute;right:14px;bottom:8px;width:110px;height:110px;opacity:.88;pointer-events:none\"/>":"")+"<span>SELLER AUTHORIZED SIGNATURE</span><span style=\"font-weight:normal;font-size:9px\">(Signature / Company Seal)</span></div>"
-              +"</div>"
-              +"<div class=\"v2-slogan\">Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div>";
-            return v2Header(t)+tbl+footer;
-          }
-
-          function v2BodyPL(){
-            var groups = groupProds();
-            var rows = "";
-            var seq = 0;
-            var grandQty = 0, grandNW = 0, grandGW = 0, grandCBM = 0;
-            var showSubsec = groups.length > 1;
-            groups.forEach(function(g){
-              if(showSubsec) rows += v2Subsec(g, 6);
-              var subQty = 0, subNW = 0, subGW = 0, subCBM = 0;
-              g.items.forEach(function(p){
-                seq++;
-                var qty = Number(p.qty||0);
-                var nwPer = Number(p.netWeight||p.nw||0);
-                var gwPer = Number(p.grossWeight||p.gw||0);
-                var cbmPer = Number(p.cbmPerCtn||p.cbm_per_ctn||0);
-                // Use already-aggregated totals when audience=customs, else per-CTN × qty
-                var nwTot, gwTot, cbmTot;
-                if(audience==="customs"){
-                  nwTot = Number(p.netWeight||p.nw||0);
-                  gwTot = Number(p.grossWeight||p.gw||0);
-                  cbmTot = Number(p._cbmTot||p.cbm||0);
-                } else {
-                  nwTot = (nwPer*qty)||nwPer;
-                  gwTot = (gwPer*qty)||gwPer;
-                  cbmTot = cbmPer>0 ? cbmPer*qty : Number(p.cbm||p.volume||0);
-                }
-                subQty+=qty; subNW+=nwTot; subGW+=gwTot; subCBM+=cbmTot;
-                rows += "<tr>"
-                  +"<td>"+String(seq).padStart(2,"0")+"</td>"
-                  +"<td><span class=\"v2-desc-en\">"+esc(v2NameOf(p))+"</span></td>"
-                  +"<td class=\"v2-tc\">"+fmtM(qty,0)+"</td>"
-                  +"<td class=\"v2-tr\">"+fmtM(nwTot)+"</td>"
-                  +"<td class=\"v2-tr\">"+fmtM(gwTot)+"</td>"
-                  +"<td class=\"v2-tr\">"+fmtM(cbmTot,3)+"</td>"
-                  +"</tr>";
-              });
-              if(showSubsec){
-                rows += "<tr class=\"v2-subtotal\">"
-                  +"<td colspan=\"2\" class=\"v2-tr\">Sub-Total ("+esc(g.containerNo||stripPrefix(g.customerPO||g.contractNo))+"):</td>"
-                  +"<td class=\"v2-tc\">"+fmtM(subQty,0)+"</td>"
-                  +"<td class=\"v2-tr\">"+fmtM(subNW)+"</td>"
-                  +"<td class=\"v2-tr\">"+fmtM(subGW)+"</td>"
-                  +"<td class=\"v2-tr\">"+fmtM(subCBM,3)+"</td>"
-                  +"</tr>";
-              }
-              grandQty+=subQty; grandNW+=subNW; grandGW+=subGW; grandCBM+=subCBM;
-            });
-            // customs HS-aggregation resets _hasMultiOrder→false but grandQty IS the correct sum.
-            // For audience=customs, always use grandQty. For customer single-order, use o.total_qty.
-            var _useCalc = (audience==="customs") || _hasMultiOrder;
-            var totQty = _useCalc ? grandQty : (Number(o.total_qty)||grandQty);
-            var totNW  = _useCalc ? grandNW  : (Number(o.net_weight)||grandNW);
-            var totGW  = _useCalc ? grandGW  : (Number(o.gross_weight)||grandGW);
-            var totCBM = _useCalc ? grandCBM : (Number(o.total_cbm)||grandCBM);
-            rows += "<tr class=\"v2-total\">"
-              +"<td colspan=\"2\" class=\"v2-tr\">GRAND TOTAL:</td>"
-              +"<td class=\"v2-tc\">"+fmtM(totQty,0)+"</td>"
-              +"<td class=\"v2-tr\">"+fmtM(totNW)+"</td>"
-              +"<td class=\"v2-tr\">"+fmtM(totGW)+"</td>"
-              +"<td class=\"v2-tr\">"+fmtM(totCBM,3)+"</td>"
-              +"</tr>";
-
-            var thead = "<thead><tr>"
-              +"<th style=\"width:34px\">NO.</th>"
-              +"<th>Description &amp; Size</th>"
-              +"<th style=\"width:70px;text-align:center\">QTY (CTN)</th>"
-              +"<th style=\"width:85px;text-align:right\">N.W. (KG)</th>"
-              +"<th style=\"width:85px;text-align:right\">G.W. (KG)</th>"
-              +"<th style=\"width:80px;text-align:right\">CBM (M³)</th>"
-              +"</tr></thead>";
-            var tbl = "<table class=\"v2-tbl\">"+thead+"<tbody>"+rows+"</tbody></table>";
-            var footer = "<div class=\"v2-sig-grid\">"
-              +"<div class=\"v2-sig-box\"><span>BUYER AUTHORIZED SIGNATURE</span><span style=\"font-weight:normal;font-size:9px\">(Signature / Company Seal)</span></div>"
-              +"<div class=\"v2-sig-box\" style=\"position:relative;min-height:110px\">"+(_seal?"<img src=\""+_seal+"\" alt=\"seal\" style=\"position:absolute;right:14px;bottom:8px;width:110px;height:110px;opacity:.88;pointer-events:none\"/>":"")+"<span>SELLER AUTHORIZED SIGNATURE</span><span style=\"font-weight:normal;font-size:9px\">(Signature / Company Seal)</span></div>"
-              +"</div>"
-              +"<div class=\"v2-slogan\">Generated &amp; Verified by <b>Sanlyn OS Supply Chain Engine</b></div>";
-            return v2Header("pl")+tbl+footer;
-          }
-
-          function v2Page(body){
-            return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>"
-              +esc(v2DocLabel(type).h1+" — "+v2_order)+"</title>"+V2_CSS+"</head>"
-              +"<body><button class=\"v2-print-btn no-print\" onclick=\"window.print()\">Print</button>"
-              +"<div class=\"v2-container\">"+body+"</div>"+"<script>(function(){try{var mm=3.7795;var ph=297*mm-2*42;var h=document.body.scrollHeight;var pages=Math.ceil(h/ph);var over=h-( (pages-1)*ph );if(pages>1&&over<ph*0.12&&over>0){var z=((pages-1)*ph)/h;if(z>0.88){document.body.style.zoom=z.toFixed(3);}}}catch(e){}})();</script>"+"</body></html>";
-          }
-
-          if(type==="iv") return v2Page(v2BodyIVorSC("iv"));
-          if(type==="sc") return v2Page(v2BodyIVorSC("sc"));
-          if(type==="pl") return v2Page(v2BodyPL());
-          if(type==="pack"){
-            // Combined 3-up: PL → SC → IV, each on its own page
-            var pages = "<div class=\"v2-container\">"+v2BodyPL()+"</div>"
-              +"<div class=\"v2-container\" style=\"page-break-before:always\">"+v2BodyIVorSC("sc")+"</div>"
-              +"<div class=\"v2-container\" style=\"page-break-before:always\">"+v2BodyIVorSC("iv")+"</div>";
-            var screenCss = "<style>@media screen{body{background:#e5e7eb;padding:24px 0;}.v2-container{box-shadow:0 3px 16px rgba(0,0,0,.18);margin:0 auto 28px;padding:42px;background:#fff;}}</style>";
-            return "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\"><title>"
-              +esc((v2_order||id)+" 报关 PL·SC·IV")+"</title>"+V2_CSS+screenCss+"</head>"
-              +"<body><button class=\"v2-print-btn no-print\" onclick=\"window.print()\">Print</button>"
-              +pages+"<script>(function(){try{var mm=3.7795;var ph=297*mm-2*42;var h=document.body.scrollHeight;var pages=Math.ceil(h/ph);var over=h-( (pages-1)*ph );if(pages>1&&over<ph*0.12&&over>0){var z=((pages-1)*ph)/h;if(z>0.88){document.body.style.zoom=z.toFixed(3);}}}catch(e){}})();</script>"+"</body></html>";
-          }
-          return "";
-        })();
         if(V2){
-          // 2026-06-10: v2 path used to early-return HTML and never reach the
-          // bottom format=pdf handler — PDF download silently returned HTML.
-          if(format==="pdf"){
-            try{
-              var _pp=(await import("puppeteer")).default;
-              var _chrome=process.env.CHROME_PATH||process.env.PUPPETEER_EXECUTABLE_PATH||"/usr/bin/google-chrome";
-              var _lo={headless:"new",args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu","--disable-software-rasterizer"]};
-              try{var _fs2=await import("fs");if(_fs2.existsSync(_chrome))_lo.executablePath=_chrome;}catch(_){}
-              var _br=await _pp.launch(_lo);
-              var _pg=await _br.newPage();
-              var _v2pdf=(audience==="customs")?V2:scrubCustomerFacingHtml(V2);
-              await _pg.setContent(_v2pdf,{waitUntil:"networkidle0"});
-              var _buf=await _pg.pdf({format:"A4",printBackground:true,margin:{top:"14mm",bottom:"14mm",left:"12mm",right:"12mm"}});
-              await _br.close();
-              var _tm=V2.match(/<title[^>]*>([^<]+)<\/title>/i);
-              var _nm=(_tm?_tm[1].replace(/[^A-Za-z0-9_\-\.]/g,"_"):"document")+".pdf";
-              res.setHeader("Content-Type","application/pdf");
-              res.setHeader("Content-Disposition",(String(req.query&&req.query.inline||"")==="1"?"inline":"attachment")+"; filename=\""+_nm+"\"");
-              res.setHeader("Cache-Control","no-store");
-              return res.status(200).send(Buffer.from(_buf));
-            }catch(_pe){
-              console.error("[documents] v2 puppeteer PDF error:",_pe.message);
-              res.setHeader("Content-Type","application/json");
-              return res.status(503).json({error:"pdf_render_unavailable",detail:_pe.message});
-            }
-          }
           res.setHeader("Content-Type","text/html; charset=utf-8");
           return res.send(V2);
         }
@@ -1413,24 +1307,32 @@ export default async function handler(req, res) {
       var _PACK = (type==="pack"); var _packBodies = {};
       if(type==="sc"||_PACK){
         var no=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
-        var colsSC=[
-          {k:"name",al:"",fn:function(p){
-            // Audience-aware product name (2026-05-18):
-            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
-            //   customer → productName / name (full marketing name with brand+flavor+spec)
+        var _scNameFn=function(p){
             var n;
             if (audience === "customs") {
-              n = pick(p.declarationName, p.declaration_name, p.blDescription, p.bl_description, p.productName, p.name, p.description, "-"); // 报关中文优先(2026-06-12 语言铁律: bl_description=船东英文列)
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
             } else {
               n = pick(p.productName, p.name, p.description, "-");
             }
             var sz = p.size || p.spec || "";
             return sz ? n + " (" + sz + ")" : n;
-          },lbl:"Description &amp; Size"},
+          };
+        var _scFnMap={
+          sku:{fn:function(p){return p.sku||p.code||p.item_code||p.product_code||"-";},defaultAlign:"center",defaultWidth:"70px"},
+          name:{fn:_scNameFn,defaultAlign:""},
+          qty:{defaultAlign:"center",defaultWidth:"70px"},
+          unit:{fn:function(p){return p.unit||p.unitOfMeasure||"CTN";},defaultAlign:"center",defaultWidth:"50px"},
+          price:{fn:function(p){return fmtM(resolveUnitPrice(p));},defaultAlign:"right",defaultWidth:"95px"},
+          amt:{fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},defaultAlign:"right",defaultWidth:"110px"},
+        };
+        var _fbColsSC=[
+          {k:"name",al:"",fn:_scNameFn,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
+          {k:"price",al:"right",w:"95px",fn:_scFnMap.price.fn,lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:_scFnMap.amt.fn,lbl:"Amount"},
         ];
+        var colsSC=buildColsFromConfig(await loadDocColConfig(pool,"sc"),_scFnMap,_fbColsSC);
+        totRow=mkTotRow(colsSC.length+1);
         var _fsNoSC = (raw.fs_no || raw.internal_no || (ordNo||no)) + "-SC";
         _packBodies.sc=`
           ${docHdr(cfg,"销售合同","SALES CONTRACT",audience)}
@@ -1439,7 +1341,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
           <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank,curr)}</div>${sigBlock(cfg.seal_url)}</div>`; html=wrap((ordNo||no)+"_SC",_packBodies.sc,ap,{docNo:_fsNoSC,date:date});
-        _xlsCapture={sheetName:"Sales Contract",docNo:(ordNo||no)+"_SC",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,sealUrl:cfg.seal_url||"", seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
+        _xlsCapture={sheetName:"Sales Contract",docNo:(ordNo||no)+"_SC",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.sc,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
             {k:"name",fn:function(p){
@@ -1448,7 +1350,7 @@ export default async function handler(req, res) {
             //   customer → productName / name (full marketing name with brand+flavor+spec)
             var n;
             if (audience === "customs") {
-              n = pick(p.declarationName, p.declaration_name, p.blDescription, p.bl_description, p.productName, p.name, p.description, "-"); // 报关中文优先(2026-06-12 语言铁律: bl_description=船东英文列)
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
             } else {
               n = pick(p.productName, p.name, p.description, "-");
             }
@@ -1456,7 +1358,7 @@ export default async function handler(req, res) {
             return sz ? n + " (" + sz + ")" : n;
           }},
             {k:"qty"},
-            {k:"price",fn:function(p){var up=resolveUnitPrice(p);if(p._absTotals&&Number(p.qty)>0&&Number(p.subtotal)>0){up=Number(p.subtotal)/Number(p.qty);}return parseFloat(String(fmtM(up)).replace(/,/g,""))||0;}},
+            {k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},
             {k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}
           ],
           rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
@@ -1464,24 +1366,32 @@ export default async function handler(req, res) {
 
       if(type==="iv"||_PACK){
         var noIV=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
-        var colsIV=[
-          {k:"name",al:"",fn:function(p){
-            // Audience-aware product name (2026-05-18):
-            //   customs → bl_description / declarationName / hsName (short, HS-friendly)
-            //   customer → productName / name (full marketing name with brand+flavor+spec)
+        var _ivNameFn=function(p){
             var n;
             if (audience === "customs") {
-              n = pick(p.declarationName, p.declaration_name, p.blDescription, p.bl_description, p.productName, p.name, p.description, "-"); // 报关中文优先(2026-06-12 语言铁律: bl_description=船东英文列)
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
             } else {
               n = pick(p.productName, p.name, p.description, "-");
             }
             var sz = p.size || p.spec || "";
             return sz ? n + " (" + sz + ")" : n;
-          },lbl:"Description &amp; Size"},
+          };
+        var _ivFnMap={
+          sku:{fn:function(p){return p.sku||p.code||p.item_code||p.product_code||"-";},defaultAlign:"center",defaultWidth:"70px"},
+          name:{fn:_ivNameFn,defaultAlign:""},
+          qty:{defaultAlign:"center",defaultWidth:"70px"},
+          unit:{fn:function(p){return p.unit||p.unitOfMeasure||"CTN";},defaultAlign:"center",defaultWidth:"50px"},
+          price:{fn:function(p){return fmtM(resolveUnitPrice(p));},defaultAlign:"right",defaultWidth:"95px"},
+          amt:{fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},defaultAlign:"right",defaultWidth:"110px"},
+        };
+        var _fbColsIV=[
+          {k:"name",al:"",fn:_ivNameFn,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount"},
+          {k:"price",al:"right",w:"95px",fn:_ivFnMap.price.fn,lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:_ivFnMap.amt.fn,lbl:"Amount"},
         ];
+        var colsIV=buildColsFromConfig(await loadDocColConfig(pool,"iv"),_ivFnMap,_fbColsIV);
+        totRow=mkTotRow(colsIV.length+1);
         var _fsNoIV = (raw.fs_no || raw.internal_no || (ordNo||noIV)) + "-IV";
         _packBodies.iv=`
           ${docHdr(cfg,"商业发票","COMMERCIAL INVOICE",audience)}
@@ -1490,7 +1400,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
           <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock(cfg.seal_url)}</div>`; html=wrap((ordNo||noIV)+"_IV",_packBodies.iv,ap,{docNo:_fsNoIV,date:date});
-        _xlsCapture={sheetName:"Invoice",docNo:(ordNo||noIV)+"_IV",buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,sealUrl:cfg.seal_url||"", seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
+        _xlsCapture={sheetName:"Invoice",docNo:(ordNo||noIV)+"_IV",buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[{k:"name",fn:function(p){
             // Audience-aware product name (2026-05-18):
@@ -1498,13 +1408,13 @@ export default async function handler(req, res) {
             //   customer → productName / name (full marketing name with brand+flavor+spec)
             var n;
             if (audience === "customs") {
-              n = pick(p.declarationName, p.declaration_name, p.blDescription, p.bl_description, p.productName, p.name, p.description, "-"); // 报关中文优先(2026-06-12 语言铁律: bl_description=船东英文列)
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
             } else {
               n = pick(p.productName, p.name, p.description, "-");
             }
             var sz = p.size || p.spec || "";
             return sz ? n + " (" + sz + ")" : n;
-          }},{k:"qty"},{k:"price",fn:function(p){var up=resolveUnitPrice(p);if(p._absTotals&&Number(p.qty)>0&&Number(p.subtotal)>0){up=Number(p.subtotal)/Number(p.qty);}return parseFloat(String(fmtM(up)).replace(/,/g,""))||0;}},{k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}],
+          }},{k:"qty"},{k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},{k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}],
           rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
       }
 
@@ -1515,12 +1425,24 @@ export default async function handler(req, res) {
       if(type==="cpo"){
         var noCPO=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
         var _fsCPO=(raw.fs_no||raw.internal_no||(ordNo||noCPO))+"-CPO";
-        var colsCPO=[
-          {k:"name",al:"",fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},lbl:"Description &amp; Size"},
+        var _cpoNameFn=function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;};
+        var _cpoFnMap={
+          sku:{fn:function(p){return p.sku||p.code||p.item_code||p.product_code||"-";},defaultAlign:"center",defaultWidth:"70px"},
+          name:{fn:_cpoNameFn,defaultAlign:""},
+          qty:{defaultAlign:"center",defaultWidth:"70px"},
+          unit:{fn:function(p){return p.unit||p.unitOfMeasure||"CTN";},defaultAlign:"center",defaultWidth:"50px"},
+          price:{fn:function(p){return fmtM(resolveUnitPrice(p));},defaultAlign:"right",defaultWidth:"95px"},
+          amt:{fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},defaultAlign:"right",defaultWidth:"110px"},
+        };
+        var _fbColsCPO=[
+          {k:"name",al:"",fn:_cpoNameFn,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount ("+curr+")"},
+          {k:"price",al:"right",w:"95px",fn:_cpoFnMap.price.fn,lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:_cpoFnMap.amt.fn,lbl:"Amount ("+curr+")"},
         ];
+        var colsCPO=buildColsFromConfig(await loadDocColConfig(pool,"cpo"),_cpoFnMap,_fbColsCPO);
+        var _ncpo=colsCPO.length+1, _lcpo=Math.max(1,_ncpo-1);
+        totRow=mkTotRow(_ncpo);
         // Payment schedule: 30% deposit + 70% balance (standard terms)
         var _cpoDeposit=tot*0.30, _cpoBalance=tot*0.70;
         // Payment condition text from terms_po[2] (Payment Terms entry), Chinese part only
@@ -1541,16 +1463,16 @@ export default async function handler(req, res) {
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsCPO.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsCPO,curr)}${totRow}
-          <tr><td colspan="5" style="padding:0;border:none"></td></tr>
+          <tr><td colspan="${_ncpo}" style="padding:0;border:none"></td></tr>
           <tr style="background:#fafafa">
-            <td colspan="3" class="text-right" style="font-size:10px;color:#555">T/T 30% Deposit — upon order confirmation:</td>
-            <td colspan="2" class="text-right" style="font-weight:700">${fmtM(_cpoDeposit)}</td>
+            <td colspan="${_lcpo}" class="text-right" style="font-size:10px;color:#555">T/T 30% Deposit — upon order confirmation:</td>
+            <td class="text-right" style="font-weight:700">${fmtM(_cpoDeposit)}</td>
           </tr>
           <tr style="background:#fafafa">
-            <td colspan="3" class="text-right" style="font-size:10px;color:#555">T/T 70% Balance — before loading date:</td>
-            <td colspan="2" class="text-right" style="font-weight:700">${fmtM(_cpoBalance)}</td>
+            <td colspan="${_lcpo}" class="text-right" style="font-size:10px;color:#555">T/T 70% Balance — before loading date:</td>
+            <td class="text-right" style="font-weight:700">${fmtM(_cpoBalance)}</td>
           </tr>
-          ${_cpoPayCN?`<tr><td colspan="5" style="font-size:10px;color:#777;padding:6px 8px;border-top:1px dashed #ddd">${esc(_cpoPayCN)}</td></tr>`:""}
+          ${_cpoPayCN?`<tr><td colspan="${_ncpo}" style="font-size:10px;color:#777;padding:6px 8px;border-top:1px dashed #ddd">${esc(_cpoPayCN)}</td></tr>`:""}
           </tbody></table>
           ${sigBlock(cfg.seal_url)}
         `,ap,{docNo:_fsCPO,date:date});
@@ -1558,30 +1480,29 @@ export default async function handler(req, res) {
 
       if(type==="pl"||_PACK){
         var noPL=cno.split(" / ").map(function(c){return c.replace(/[^A-Z0-9-]/gi,"").slice(0,20);}).join(" / ");
-        // CBM resolution: _cbmTot (explicit total) > per-CTN field × qty > p.cbm treated as per-CTN × qty (canonical)
-        var cbmOf=function(p){
-          var q=Number(p.qty||0);
-          var tot=Number(p._cbmTot||0); if(tot>0) return tot;
-          var perCtn=Number(p.cbmPerCtn||p.cbm_per_ctn||0); if(perCtn>0) return q>0?perCtn*q:perCtn;
-          var cbm=Number(p.cbm||0); if(cbm>0) return q>0?cbm*q:cbm;   // per-CTN canonical (matches merge path line ~897)
-          return Number(p.volume||0);
-        };
+        // CBM resolution: prefer explicit per-CTN field × qty; fall back to p.cbm (line total) for legacy rows
+        var cbmOf=function(p){if(audience==='customs')return Number(p._cbmTot||p.cbm||0);var perCtn=Number(p.cbmPerCtn||p.cbm_per_ctn||0);var q=Number(p.qty||0);if(perCtn>0&&q>0)return perCtn*q;return Number(p.cbm||p.volume||0);};
         var tcbmPL=Number(o.total_cbm)||prods.reduce(function(s,p){return s+cbmOf(p);},0)||Number(raw.totalCBM||raw.cbm||0);
-        var colsPL=[
-          {k:"name",al:"",fn:function(p){
-            // 2026-05-19 字段表方针:
-            //   customer 版 → 用 product_name (真品名 per SKU)
-            //   customs 版  → 上游已 group-merge 成 declaration_name 行
-            //                  直接读 productName (已被 merge 块改写为 dn)
-            var n = pick(p.productName, p.name, p.description, "-");
-            var sz = p.size || p.spec || "";
-            return sz ? n + " (" + sz + ")" : n;
-          },lbl:"Description &amp; Size"},
+        var _plFnMap={
+          sku:{fn:function(p){return p.sku||p.code||p.item_code||p.product_code||"-";},defaultAlign:"center",defaultWidth:"70px"},
+          name:{fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},defaultAlign:""},
+          qty:{defaultAlign:"center",defaultWidth:"55px"},
+          unit:{fn:function(p){return p.unit||p.unitOfMeasure||"CTN";},defaultAlign:"center",defaultWidth:"50px"},
+          nw:{fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return fmtM(audience==='customs'?pn:(pn*q||pn));},defaultAlign:"right",defaultWidth:"80px"},
+          gw:{fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return fmtM(audience==='customs'?pg:(pg*q||pg));},defaultAlign:"right",defaultWidth:"80px"},
+          cbm:{fn:function(p){return fmtM(cbmOf(p),3);},defaultAlign:"right",defaultWidth:"70px"},
+        };
+        var _fallbackColsPL=[
+          {k:"sku",al:"center",w:"70px",fn:_plFnMap.sku.fn,lbl:"CP Code"},
+          {k:"name",al:"",fn:_plFnMap.name.fn,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"55px",lbl:"CTN"},
-          {k:"nw",al:"right",w:"80px",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return fmtM(audience==='customs'?pn:(pn*q||pn));},lbl:"TOTAL NW (KG)"},
-          {k:"gw",al:"right",w:"80px",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return fmtM(audience==='customs'?pg:(pg*q||pg));},lbl:"TOTAL GW (KG)"},
-          {k:"cbm",al:"right",w:"70px",fn:function(p){return fmtM(cbmOf(p),3);},lbl:"CBM (CU.M.)"},
+          {k:"unit",al:"center",w:"50px",fn:_plFnMap.unit.fn,lbl:"Unit"},
+          {k:"nw",al:"right",w:"80px",fn:_plFnMap.nw.fn,lbl:"TOTAL NW (KG)"},
+          {k:"gw",al:"right",w:"80px",fn:_plFnMap.gw.fn,lbl:"TOTAL GW (KG)"},
+          {k:"cbm",al:"right",w:"70px",fn:_plFnMap.cbm.fn,lbl:"CBM (CU.M.)"},
         ];
+        var _dbColsPL=await loadDocColConfig(pool,"pl");
+        var colsPL=buildColsFromConfig(_dbColsPL,_plFnMap,_fallbackColsPL);
         // 2026-05-19: PL 不显示 Currency (无金额信息); buyer label = "Buyer / Consignee"
         // Doc No + Issued 移到 footer via wrap docRef
         var _fsNoPL = (raw.fs_no || raw.internal_no || (ordNo||noPL)) + "-PL";
@@ -1591,7 +1512,7 @@ export default async function handler(req, res) {
           ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPL,curr)}
-          <tr class="total-row"><td colspan="2" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
+          <tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
           </tbody></table>${sigBlock(cfg.seal_url)}`; html=wrap((ordNo||noPL)+"_PL",_packBodies.pl,ap,{docNo:_fsNoPL,date:date});
 
       if(_PACK){
@@ -1609,35 +1530,45 @@ export default async function handler(req, res) {
           +_ct(_packBodies.pl)+_ctp(_packBodies.sc)+_ctp(_packBodies.iv)
           +`</body></html>`;
       }
-        _xlsCapture={sheetName:"Packing List",docNo:(ordNo||noPL)+"_PL",buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,sealUrl:cfg.seal_url||"", seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
-          headers:["NO.","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],
-          colKeys:[{k:"name",fn:function(p){
+        _xlsCapture={sheetName:"Packing List",docNo:(ordNo||noPL)+"_PL",buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
+          headers:["NO.","CP Code","Description & Size","CTN","Unit","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],
+          colKeys:[{k:"sku",fn:function(p){return p.sku||p.code||p.item_code||p.product_code||"-";}},{k:"name",fn:function(p){
             // PL Excel — same rule: always real product name (see colsPL above)
             var n = pick(p.productName, p.name, p.description, "-");
             var sz = p.size || p.spec || "";
             return sz ? n + " (" + sz + ")" : n;
-          }},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);if(p._absTotals)return parseFloat(pn.toFixed(2))||0;var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);if(p._absTotals)return parseFloat(pg.toFixed(2))||0;var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}],
-          rows:prods,totals:["","TOTAL",tqty,parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
+          }},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"unit",fn:function(p){return p.unit||p.unitOfMeasure||"CTN";}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}],
+          rows:prods,totals:["","","TOTAL",tqty,"",parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
       }
 
       if(type==="pi"){
         var noPI=cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
-        var colsPI=[
-          {k:"name",al:"",fn:function(p){
+        var _piNameFn=function(p){
             var n;
             if (audience === "customs") {
-              n = pick(p.declarationName, p.declaration_name, p.blDescription, p.bl_description, p.productName, p.name, p.description, "-"); // 报关中文优先(2026-06-12 语言铁律: bl_description=船东英文列)
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
             } else {
-              // PI customer version: prefer master EN name so product always shows in English
               n = pick(p.productNameEN, p.productName, p.name, p.description, "-");
             }
             var sz = p.size || p.spec || "";
             return sz ? n + " (" + sz + ")" : n;
-          },lbl:"Description &amp; Size"},
+          };
+        var _piFnMap={
+          sku:{fn:function(p){return p.sku||p.code||p.item_code||p.product_code||"-";},defaultAlign:"center",defaultWidth:"70px"},
+          name:{fn:_piNameFn,defaultAlign:""},
+          qty:{defaultAlign:"center",defaultWidth:"70px"},
+          unit:{fn:function(p){return p.unit||p.unitOfMeasure||"CTN";},defaultAlign:"center",defaultWidth:"50px"},
+          price:{fn:function(p){return fmtM(resolveUnitPrice(p));},defaultAlign:"right",defaultWidth:"95px"},
+          amt:{fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},defaultAlign:"right",defaultWidth:"110px"},
+        };
+        var _fbColsPI=[
+          {k:"name",al:"",fn:_piNameFn,lbl:"Description &amp; Size"},
           {k:"qty",al:"center",w:"70px",lbl:"QTY"},
-          {k:"price",al:"right",w:"95px",fn:function(p){return fmtM(resolveUnitPrice(p));},lbl:"Unit Price ("+curr+")"},
-          {k:"amt",al:"right",w:"110px",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return fmtM(s);},lbl:"Amount ("+curr+")"},
+          {k:"price",al:"right",w:"95px",fn:_piFnMap.price.fn,lbl:"Unit Price ("+curr+")"},
+          {k:"amt",al:"right",w:"110px",fn:_piFnMap.amt.fn,lbl:"Amount ("+curr+")"},
         ];
+        var colsPI=buildColsFromConfig(await loadDocColConfig(pool,"pi"),_piFnMap,_fbColsPI);
+        totRow=mkTotRow(colsPI.length+1);
         var _fsNoPI = (raw.fs_no || raw.internal_no || (ordNo||noPI)) + "-PI";
         html=wrap((ordNo||noPI)+"_PI",`
           ${docHdr(cfg,"形式发票","PROFORMA INVOICE")}
@@ -1645,7 +1576,7 @@ export default async function handler(req, res) {
           <table><thead><tr><th style="width:36px">NO.</th>${colsPI.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPI,curr)}${totRow}</tbody></table>
           <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank,curr)}</div>${sigBlock()}</div>`,ap,{docNo:_fsNoPI,date:date});
-        _xlsCapture={sheetName:"Proforma Invoice",docNo:(ordNo||noPI)+"_PI",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,sealUrl:cfg.seal_url||"", seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
+        _xlsCapture={sheetName:"Proforma Invoice",docNo:(ordNo||noPI)+"_PI",buyer:cust,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},terms:cfg.terms.iv,bank:cfg.bank,
           headers:["NO.","Description & Size","QTY","Unit Price ("+curr+")","Amount ("+curr+")"],
           colKeys:[
             {k:"name",fn:function(p){
@@ -1654,7 +1585,7 @@ export default async function handler(req, res) {
             //   customer → productName / name (full marketing name with brand+flavor+spec)
             var n;
             if (audience === "customs") {
-              n = pick(p.declarationName, p.declaration_name, p.blDescription, p.bl_description, p.productName, p.name, p.description, "-"); // 报关中文优先(2026-06-12 语言铁律: bl_description=船东英文列)
+              n = pick(p.blDescription, p.bl_description, p.declarationName, p.declaration_name, p.productName, p.name, p.description, "-");
             } else {
               n = pick(p.productName, p.name, p.description, "-");
             }
@@ -1662,7 +1593,7 @@ export default async function handler(req, res) {
             return sz ? n + " (" + sz + ")" : n;
           }},
             {k:"qty"},
-            {k:"price",fn:function(p){var up=resolveUnitPrice(p);if(p._absTotals&&Number(p.qty)>0&&Number(p.subtotal)>0){up=Number(p.subtotal)/Number(p.qty);}return parseFloat(String(fmtM(up)).replace(/,/g,""))||0;}},
+            {k:"price",fn:function(p){return parseFloat(String(fmtM(resolveUnitPrice(p))).replace(/,/g,""))||0;}},
             {k:"amt",fn:function(p){var s=Number(p.subtotal||p.amount||0);if(!s&&p.qty)s=Number(p.qty)*Number(resolveUnitPrice(p)||0);return parseFloat(String(fmtM(s)).replace(/,/g,""))||0;}}
           ],
           rows:prods,totals:["","TOTAL","","",parseFloat(String(fmtM(tot)).replace(/,/g,""))||0]};
@@ -1823,13 +1754,10 @@ export default async function handler(req, res) {
       }
     }
 
-    if(["so","debit","freight-quote","sq","telex_loi","swb_loi"].includes(type)){
+    if(["so","debit","freight-quote","sq","tr"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
-      // 2026-06-10: 加 id::text 精确匹配并按精确度排序 — 此前数字主键 id 只能靠
-      // order_contract_nos ILIKE '%409%' 模糊命中, 经常拿到别的计划(托书数据全错的根因)。
       var spR=await pool.query(
-        "SELECT * FROM shipping_plans WHERE id::text=$1 OR _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR order_contract_nos ILIKE '%'||$1||'%' "+
-        "ORDER BY (id::text=$1) DESC, (_id=$1) DESC, (shipment_no=$1) DESC, (bl_no=$1) DESC LIMIT 1",
+        "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
         [id]
       );
       if(!spR.rows.length) return res.status(404).send("<h1>Shipment not found: "+esc(id)+"</h1>");
@@ -1851,28 +1779,8 @@ export default async function handler(req, res) {
       // helper: reject widget template strings from old form system
       function notWidget(v){ return v&&typeof v==="string"&&!v.includes("#_widget_")&&!v.includes("${")&&v.trim().length>1; }
       function pickClean(){ for(var i=0;i<arguments.length;i++){var v=arguments[i];if(notWidget(v))return v;} return ""; }
-      var consignee=pickClean(sp.customer_en,sp.customer,spraw.consignee)||"";
-      // sp.customer 空时回退: 用 order_nos 关联订单的买方(company_name_en/customer) — 绝不编造
-      if(!consignee){
-        try{
-          var _spOrderNos=sp.order_nos||spraw.orderNos||spraw.order_nos||[];
-          if(_spOrderNos&&_spOrderNos.length){
-            var _coR=await pool.query("SELECT company_name_en, customer, company_code FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[]) LIMIT 1",[_spOrderNos]);
-            if(_coR.rows.length) consignee=pickClean(_coR.rows[0].company_name_en,_coR.rows[0].customer)||"";
-          }
-        }catch(e){ console.warn("[documents] so consignee fallback failed:",e.message); }
-      }
-      if(!consignee) consignee="[CONSIGNEE]";
+      var consignee=pickClean(sp.customer_en,sp.customer,spraw.consignee)||"[CONSIGNEE]";
       var consAddr=resolveAddr(consignee, notWidget(spraw.consigneeAddress)?spraw.consigneeAddress:"");
-      // 收货人地址/联系人从 customers 主数据读(经orders.company_code), raw优先 (2026-06-10 Damon: 船司要求联系方式)
-      var consContact=String(pick(spraw.consignee_contact,spraw.consigneeContact,"")),consPhone=String(pick(spraw.consignee_phone,spraw.consigneePhone,""));
-      try{
-        var _ccNos=sp.order_nos||spraw.orderNos||[];
-        if(_ccNos&&_ccNos.length){
-          var _ccR=await pool.query("SELECT c.address_en,c.address,c.contact_name,c.contact_phone FROM customers c JOIN orders o ON o.company_code=c.company_code WHERE o.order_no = ANY($1::text[]) OR o.contract_no = ANY($1::text[]) LIMIT 1",[_ccNos]);
-          if(_ccR.rows.length){var _cc=_ccR.rows[0];if(!consAddr)consAddr=_cc.address_en||_cc.address||"";if(!consContact)consContact=_cc.contact_name||"";if(!consPhone)consPhone=_cc.contact_phone||"";}
-        }
-      }catch(e){}
       var shipper=cfg3.nameEN;
       // Cargo lines — per product with HS code
       var cargoLines=[], cargoByOrder={};
@@ -1880,29 +1788,20 @@ export default async function handler(req, res) {
         var prods=rr.products||rr.items||[], lines=[];
         prods.forEach(function(p){
           var desc=p.blDescription||p.declarationName||p.bl_description||p.productNameEN||p.productName||p.name||"";
-          var descEn=p.declarationNameEn||p.declaration_name_en||"";
           var hs=p.hsCode||p.hs_code||p.hscode||"";
           if(!desc&&!hs)return;
           var key=(hs+"|"+desc).toLowerCase();
-          if(!lines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))lines.push({desc:desc,descEn:descEn,hs:hs});
+          if(!lines.some(function(cl){return(cl.hs+"|"+cl.desc).toLowerCase()===key;}))lines.push({desc:desc,hs:hs});
         });
         if(!prods.length){var d=rr.blDescription||rr.cargoDescription||"",hs=rr.hsCode||rr.hs_code||"";if(d||hs)lines.push({desc:d,hs:hs});}
         return lines;
       }
       var _orderNos=sp.order_nos||spraw.orderNos||spraw.order_nos||[];
       if(_orderNos&&_orderNos.length){
-        var loR=await pool.query("SELECT id,raw,contract_no,order_no,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
+        var loR=await pool.query("SELECT raw,contract_no,order_no,total_qty,total_cbm,gross_weight FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[ _orderNos]);
         for(var loRow of loR.rows){
           var rr=loRow.raw||{};if(typeof rr==="string")try{rr=JSON.parse(rr);}catch(e){rr={};}
-          var _loProds=rr.products||rr.items||[];
-          // raw.products 空时回退 order_line_items(明细真值表) — 新单建单只写 OLI
-          if(!_loProds.length&&loRow.id){
-            try{
-              var _loLi=await pool.query("SELECT sku,barcode,product_name,bl_description,declaration_name,declaration_name_en,hs_code FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[loRow.id]);
-              _loProds=_loLi.rows.map(function(li){return{sku:li.sku||"",barcode:li.barcode||"",productName:li.product_name||"",blDescription:li.bl_description||li.declaration_name_en||li.declaration_name||"",declarationName:li.declaration_name||"",hsCode:li.hs_code||""};});
-            }catch(e){}
-          }
-          var enrichedBLProds=await enrichProdsFromMaster(pool,_loProds);
+          var enrichedBLProds=await enrichProdsFromMaster(pool,rr.products||rr.items||[]);
           var rrE=Object.assign({},rr,{products:enrichedBLProds,items:enrichedBLProds});
           var lines=_buildLines(rrE);
           var key=loRow.contract_no||loRow.order_no||"";
@@ -1917,214 +1816,129 @@ export default async function handler(req, res) {
       }
 
       if(type==="so"){
-        // 2026-06-10 Damon: 托书改用模板 shipping-instruction-托书-v1.html(出口货物委托单/SHIPPING BOOKING INSTRUCTION)
-        // 红色港口标签已去除; 表单输入改为服务端直填; 勾选用静态 ☑/☐。
-        var CK=function(on){return on
-          ?'<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #111;background:#111;color:#fff;font-size:11px;line-height:13px;text-align:center;vertical-align:-2px;font-weight:900">&#10003;</span>'
-          :'<span style="display:inline-block;width:13px;height:13px;border:1.5px solid #111;background:#fff;vertical-align:-2px"></span>';};
-        // 2026-06-12 Damon 铁律: 发货人=出单公司(orders.issuing_company→seller_profiles 官方抬头), 数据带出不硬写
-        var _soRows=[];
-        var _soOrderNos=sp.order_nos||spraw.orderNos||[];
-        var _soShipName="",_soShipAddr="",_soShipTel="";
-        try{
-          var _soNorm=function(s){return String(s||"").toUpperCase().replace(/\bAND\b/g,"").replace(/[^A-Z0-9]/g,"");};
-          var _soIssName="";
-          if(_soOrderNos&&_soOrderNos.length){
-            var _soIssR=await pool.query("SELECT DISTINCT issuing_company FROM orders WHERE (order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])) AND COALESCE(issuing_company,'')<>''",[_soOrderNos]);
-            if(_soIssR.rows.length)_soIssName=_soIssR.rows.map(function(r){return r.issuing_company;}).join(" / ");
-          }
-          var _soWant=_soIssName||pick(sp.shipper,spraw.shipper,"");
-          if(_soWant){
-            _soShipName=_soWant;
-            var _spfAll=await pool.query("SELECT name_en,address,tel FROM seller_profiles WHERE COALESCE(name_en,'')<>''");
-            var _wantN=_soNorm(_soWant);
-            for(var _si=0;_si<_spfAll.rows.length;_si++){
-              var _pn=_soNorm(_spfAll.rows[_si].name_en);
-              if(_pn&&_wantN&&(_pn===_wantN||_pn.indexOf(_wantN)>=0||_wantN.indexOf(_pn)>=0)){
-                _soShipName=_spfAll.rows[_si].name_en;
-                _soShipAddr=_spfAll.rows[_si].address||"";
-                _soShipTel=_spfAll.rows[_si].tel||"";
-                break;
+        var carrier=pick(sp.shipping_line,spraw.shippingLine,"-");
+        var eta=pick(sp.eta,spraw.eta,"-"); if(eta&&eta!=="-")eta=fmtD(eta);
+        var conNo=pick(sp.container_no,spraw.containerNo,"");
+        var sealNo=pick(sp.seal_no,spraw.sealNo,"");
+        var cargoDescHTML=_cargoHTML(cargoLines);
+
+        html=wrap("Booking Note — "+soNo,`
+          <table style="width:100%;border-collapse:collapse;margin-bottom:0">
+            <tr>
+              <td style="padding:10px 0 6px 0;border-bottom:2px solid #111">
+                <div style="font-size:17px;font-weight:800">${esc(fwd.nameCN)}</div>
+                <div style="font-size:10px;color:#666;margin-top:1px">${esc(fwd.nameEN)}</div>
+              </td>
+              <td style="padding:10px 0 6px 0;border-bottom:2px solid #111;text-align:right;vertical-align:bottom">
+                <div style="font-size:15px;font-weight:800;letter-spacing:2px">出口货物委托书</div>
+                <div style="font-size:11px;font-weight:600;color:#555;letter-spacing:1px">SHIPPING ORDER</div>
+                <div style="font-size:11px;margin-top:4px"><b>D/R No.:</b> ${esc(soNo)} &nbsp;&nbsp; <b>日期:</b> ${esc(fmtD(sp.created_at))}</div>
+              </td>
+            </tr>
+          </table>
+
+          <table style="width:100%;border-collapse:collapse;margin-top:10px;margin-bottom:0">
+            <tr>
+              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top;width:60%">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Shipper / 发货人</div>
+                <div style="font-weight:700;font-size:12px">${esc(shipper)}</div>
+                <div style="font-size:10px;color:#666;margin-top:2px">${esc(cfg3.address||"")}</div>
+              </td>
+              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top;width:40%;color:#c00" rowspan="3">
+                <div style="font-size:9px;font-weight:700;margin-bottom:6px">请在提单待确认样上注明：</div>
+                <div style="font-size:11px;font-weight:600">申请目的港最长免箱时间，至少申请目的港免箱混 <u>21 天</u></div>
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Consignee / 收货人</div>
+                <div style="font-weight:700;font-size:12px">${esc(consignee)}</div>
+                ${consAddr?`<div style="font-size:10px;color:#666;margin-top:2px">${esc(consAddr)}</div>`:""}
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #aaa;padding:8px 10px;font-size:11px;vertical-align:top">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Notify Party / 通知人</div>
+                <div style="font-weight:700;font-size:12px">${esc(consignee)}</div>
+                ${consAddr?`<div style="font-size:10px;color:#666;margin-top:2px">${esc(consAddr)}</div>`:""}
+              </td>
+            </tr>
+          </table>
+
+          <table style="width:100%;border-collapse:collapse;margin-top:8px">
+            <tr>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:40%">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Ocean Vessel &amp; Voyage / 船名航次</div>
+                <b>${esc(vessel)}</b> / ${esc(voyage)}
+              </td>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:30%">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Port of Loading / 装货港</div>
+                <b>${esc(polSp)}</b>
+              </td>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px;width:30%">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Carrier / 船公司</div>
+                <b>${esc(carrier)}</b>
+              </td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">Port of Discharge / 卸货港</div>
+                <b>${esc(podSp)}</b>
+              </td>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">ETD / 开船日</div>
+                <b>${esc(etd)}</b>
+              </td>
+              <td style="border:1px solid #aaa;padding:7px 10px;font-size:11px">
+                <div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:2px">ETA / 预计到港</div>
+                <b>${esc(eta)}</b>
+              </td>
+            </tr>
+          </table>
+
+          <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11px">
+            <thead><tr style="background:#111;color:#fff">
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:16%">Container No.<br>集装箱号</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:12%">Seal No.<br>封志号</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:9%">Type<br>柜型</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:left">Description of Goods &amp; HS Code<br>货物描述 &amp; HS编码</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:10%">G.W.(KG)<br>毛重</th>
+              <th style="padding:7px 8px;font-size:10px;text-align:center;width:9%">CBM<br>方数</th>
+            </tr></thead>
+            <tbody>${(function(){
+              var ctrs=spraw.containers||[];
+              if(ctrs.length){
+                return ctrs.map(function(c){
+                  var okey=c.order_no||c.contract_no||"";
+                  var cLines=(okey&&cargoByOrder[okey])?cargoByOrder[okey]:cargoLines;
+                  return "<tr>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.container_no||"—")+"</td>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.seal_no||"—")+"</td>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:middle'>"+esc(c.type||ctype)+"</td>"
+                    +"<td style='border:1px solid #ddd;padding:8px;vertical-align:top'>"+_cargoHTML(cLines)+"</td>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:middle'>"+esc(String(c.gw||"—"))+"</td>"
+                    +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:middle'>"+esc(String(c.cbm||"—"))+"</td>"
+                    +"</tr>";
+                }).join("");
               }
-            }
-          }
-        }catch(e){}
-        if(_soOrderNos&&_soOrderNos.length){
-          try{
-            var _soR=await pool.query("SELECT order_no,contract_no,customer_po,total_qty,gross_weight,total_cbm FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[]) ORDER BY order_no",[_soOrderNos]);
-            _soRows=_soR.rows;
-          }catch(e){}
-        }
-        // 2026-06-12 Damon: 货表与报关同口径——按 HS 合并（船东读英文货描），不按订单段重复
-        var _soHsAgg=null;
-        if(_soRows.length){
-          try{
-            var _soOliR=await pool.query(
-              "SELECT oli.hs_code, oli.declaration_name_en, oli.declaration_name, "+
-              "SUM(oli.qty_ctn) AS ctn, SUM(COALESCE(oli.nw_ctn,0)*oli.qty_ctn) AS nw, "+
-              "SUM(COALESCE(oli.gw_ctn,0)*oli.qty_ctn) AS gw, SUM(COALESCE(oli.cbm_ctn,0)*oli.qty_ctn) AS cbm "+
-              "FROM order_line_items oli JOIN orders o ON o.id=oli.order_id "+
-              "WHERE o.contract_no = ANY($1::text[]) OR o.order_no = ANY($1::text[]) "+
-              "GROUP BY oli.hs_code, oli.declaration_name_en, oli.declaration_name",[_soOrderNos]);
-            if(_soOliR.rows.length){
-              var _hsMap={};
-              _soOliR.rows.forEach(function(r){
-                var k=r.hs_code||"";
-                var g=_hsMap[k]||(_hsMap[k]={hs:k,ctn:0,gw:0,cbm:0,_nameNw:{},_nameEn:{}});
-                g.ctn+=Number(r.ctn)||0; g.gw+=Number(r.gw)||0; g.cbm+=Number(r.cbm)||0;
-                var nm=r.declaration_name_en||r.declaration_name||"";
-                g._nameNw[nm]=(g._nameNw[nm]||0)+(Number(r.nw)||0);
-              });
-              _soHsAgg=Object.keys(_hsMap).map(function(k){
-                var g=_hsMap[k];
-                g.name=Object.keys(g._nameNw).sort(function(a,b){return g._nameNw[b]-g._nameNw[a];})[0]||"";
-                return g;
-              }).sort(function(a,b){return b.gw-a.gw;});
-            }
-          }catch(e){}
-        }
-        var _soCargoTr=_soHsAgg&&_soHsAgg.length?_soHsAgg.map(function(g){
-          return '<tr>'
-            +'<td style="text-align:center">N/M</td>'
-            +'<td style="text-align:center">'+esc(String(Math.round(g.ctn)||"&#8212;"))+' ctns</td>'
-            +'<td><b>'+esc(g.name||"&#8212;")+'</b></td>'
-            +'<td style="text-align:center">'+esc(g.hs||"&#8212;")+'</td>'
-            +'<td style="text-align:center">'+esc(g.gw?Number(g.gw.toFixed(2)).toLocaleString("en-US")+" kgs":"&#8212;")+'</td>'
-            +'<td style="text-align:center">'+esc(g.cbm?g.cbm.toFixed(3)+" cbm":"&#8212;")+'</td>'
-            +'</tr>';
-        }).join(""):('<tr><td style="text-align:center">N/M</td><td></td><td>'+_cargoHTML(cargoLines)+'</td><td></td><td style="text-align:center">'+esc(tgwSp!=="-"?String(tgwSp)+" kgs":"")+'</td><td style="text-align:center">'+esc(tcbm!=="-"?String(tcbm)+" cbm":"")+'</td></tr>');
-        var _soTotQty=_soRows.reduce(function(s,r){return s+(Number(r.total_qty)||0);},0);
-        var _soTotGw=_soRows.reduce(function(s,r){return s+(Number(r.gross_weight)||0);},0);
-        var _soTotCbm=_soRows.reduce(function(s,r){return s+(Number(r.total_cbm)||0);},0);
-        var _soTerms=String(pick(spraw.tradeTerms,spraw.trade_terms,sp.freight_term,"")).toUpperCase();
-        var _soRelease=String(pick(sp.release_type,spraw.releaseType,"")).toLowerCase(); // 无数据不默认勾选(数据带出铁律)
-        var _soIsTelex=_soRelease==="telex"||_soRelease==="电放";
-        var _soIsSwb=_soRelease==="swb"||_soRelease==="seaway"||_soRelease==="sea waybill";
-        var _soIsOrig=_soRelease==="original"||_soRelease==="正本";
-        // 拖车/报关 4独立选项: raw.tow=self|agent, raw.customs_mode=self|agent (2026-06-10 Damon)
-        var _soTow=String(pick(spraw.tow,"")).toLowerCase();
-        var _soCusM=String(pick(spraw.customs_mode,spraw.customsMode,"")).toLowerCase();
-        var _soCtQty=pick(sp.container_qty,spraw.containerQty,cqty);
-        var _soCtType=pick(sp.container_type,spraw.containerType,ctype);
-        var _soCargoReady=fmtD(pick(sp.cargo_ready_date,spraw.cargoReadyDate,""))||"";
-        // 电池/液体·实木包装: 数据带出(OLI品名检测 + raw 标志), 不硬写
-        var _soBattery=false;
-        var _soWood=(spraw.wood_packing===true||spraw.woodPacking===true);
-        var _soFumi=(spraw.fumigated===true);
-        try{
-          if(_soOrderNos&&_soOrderNos.length){
-            var _soFlagR=await pool.query("SELECT string_agg(DISTINCT COALESCE(oli.declaration_name,'')||' '||COALESCE(oli.declaration_name_en,''),' / ') AS s FROM order_line_items oli JOIN orders o ON o.id=oli.order_id WHERE o.contract_no = ANY($1::text[]) OR o.order_no = ANY($1::text[])",[_soOrderNos]);
-            var _soNames=(_soFlagR.rows[0]&&_soFlagR.rows[0].s)||"";
-            _soBattery=/\u7535\u6c60|BATTERY|\u9502/i.test(_soNames)||/\u6c90\u6d74\u9732|\u9999\u6ce2|\u6db2\u4f53|SHAMPOO|LIQUID|\u6e7f\u5dfe/i.test(_soNames);
-          }
-        }catch(e){}
-        // 报关票数=出单公司数（报关单边界=出单公司，Damon 2026-06-04 铁律）；多出单公司才多票
-        var _soTickets="";
-        try{
-          var _soIssR=await pool.query("SELECT COUNT(DISTINCT COALESCE(issuing_company,'')) AS n FROM orders WHERE order_no = ANY($1::text[]) OR contract_no = ANY($1::text[])",[_soOrderNos]);
-          var _soIssN=Number(_soIssR.rows[0]&&_soIssR.rows[0].n)||0;
-          _soTickets=_soIssN?String(_soIssN)+"票":(_soRows.length?"1票":"");
-        }catch(e){_soTickets=_soRows.length?"1票":"";}
-        var _soCustomsPlace=String(polSp||"").replace(/[A-Za-z\s]/g,"")||String(polSp||"");
-        html='<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><title>出口货物委托单 '+esc(soNo)+'</title><style>'
-          +'*{box-sizing:border-box;margin:0;padding:0}'
-          +'body{font-family:Arial,"Microsoft YaHei",sans-serif;font-size:13.5px;color:#111;background:#e5e7eb;padding:16px}'
-          +'.page{width:210mm;margin:0 auto 24px;background:#fff;padding:10mm 12mm;box-shadow:0 2px 8px rgba(0,0,0,.15)}'
-          +'.doc-title{text-align:center;font-size:22px;font-weight:900;letter-spacing:.15em;border-bottom:2px solid #111;padding-bottom:8px}'
-          +'.doc-en{text-align:center;font-size:12px;color:#555;padding:4px 0 7px;border-bottom:1px solid #ccc}'
-          +'.main-grid{display:grid;grid-template-columns:1fr 38%;border:1px solid #999;border-top:none}'
-          +'.left-col{border-right:1px solid #999}'
-          +'.party-block{padding:7px 10px;border-bottom:1px solid #999;min-height:64px}'
-          +'.party-block.no-border{border-bottom:none}'
-          +'.party-label{font-size:12.5px;font-weight:700;margin-bottom:4px}'
-          +'.party-label span{font-weight:400;font-style:italic}'
-          +'.party-val{font-size:13px;line-height:1.55;white-space:pre-line}'
-          +'.rp-row{padding:6px 10px;border-bottom:1px solid #999;min-height:28px}'
-          +'.rp-row:last-child{border-bottom:none}'
-          +'.rp-label{font-size:11px;color:#555;margin-bottom:2px}'
-          +'.rp-value{font-size:13px}'
-          +'.rp-ops{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px}'
-          +'.rp-ops span{font-size:11px;color:#555}'
-          +'.port-row{display:grid;grid-template-columns:1fr 1fr;border:1px solid #999;border-top:none}'
-          +'.port-cell{padding:4px 8px;border-right:1px solid #999}'
-          +'.port-cell:last-child{border-right:none}'
-          +'.port-label{font-size:12px;font-weight:700;color:#111;margin-bottom:3px}'
-          +'.port-en{font-size:10.5px;color:#555;font-style:italic}'
-          +'.port-val{font-size:14.5px;font-weight:700}'
-          +'.cargo-wrap{border:1px solid #999;border-top:none}'
-          +'.cargo-table{width:100%;border-collapse:collapse}'
-          +'.cargo-table th{font-size:11px;font-weight:700;padding:6px 6px;border:1px solid #ccc;text-align:center;background:#f5f5f5;line-height:1.35}'
-          +'.cargo-table td{border:1px solid #ccc;padding:6px 6px;vertical-align:top;font-size:12.5px}'
-          +'.cargo-table .total-row td{background:#f9f9f9;font-weight:700;font-size:12px}'
-          +'.decl-row{display:grid;grid-template-columns:1fr 1fr;border:1px solid #999;border-top:none}'
-          +'.decl-left{padding:9px 10px;border-right:1px solid #999}'
-          +'.decl-right{padding:9px 10px}'
-          +'.dl-line{font-size:12.5px;margin-bottom:9px}'
-          +'.dl-line b{font-weight:700}'
-          +'.msds-note{font-size:10.5px;color:#555;font-style:italic;margin-left:16px;margin-bottom:6px;line-height:1.35}'
-          +'.check-row{display:flex;align-items:flex-start;margin-bottom:7px;font-size:12.5px;line-height:1.45}'
-          +'.check-row .q{flex:1}'
-          +'.check-row .yn{white-space:nowrap;margin-left:8px}'
-          +'@media print{body{background:#fff;padding:0}.page{box-shadow:none;margin:0;padding:0;width:100%}.no-print{display:none!important}}'
-          +'</style></head><body>'
-          +'<button class="no-print" onclick="window.print()" style="position:fixed;top:14px;right:14px;padding:8px 16px;background:#111;color:#fff;border:none;border-radius:6px;cursor:pointer;z-index:9">&#128424; 打印 / PDF</button>'
-          +'<div class="page">'
-          +'<div class="doc-title">出口货物委托单</div>'
-          +'<div class="doc-en">SHIPPING BOOKING INSTRUCTION</div>'
-          +'<div class="main-grid">'
-          +'<div class="left-col">'
-          +'<div class="party-block"><div class="party-label">发货人：<span>Shipper:</span></div><div class="party-val"><b>'+esc(_soShipName||shipper||"")+'</b>'+(_soShipAddr?'<br>'+esc(_soShipAddr):"")+(_soShipTel?'<br>Tel: '+esc(_soShipTel):"")+'</div></div>'
-          +'<div class="party-block"><div class="party-label">收货人：<span>Consignee</span></div><div class="party-val"><b>'+esc(consignee)+'</b>'+(consAddr?'<br>'+esc(consAddr):"")+((consContact||consPhone)?'<br>Tel: '+esc((consContact?consContact+" ":"")+(consPhone||"")):"")+'</div></div>'
-          +'<div class="party-block no-border"><div class="party-label">通知人：<span>Notify</span></div><div class="party-val">'+esc(String(pick(sp.notify_party,spraw.notify,""))||"SAME AS CONSIGNEE")+'</div></div>'
-          +'</div>'
-          +'<div class="right-col">'
-          +'<div class="rp-row" style="min-height:28px"><div class="rp-label">外运编号：</div><div class="rp-value">'+esc(pick(sp.forwarder_booking_no,spraw.bookingNo,""))+'</div></div>'
-          +'<div class="rp-row" style="min-height:28px"><div class="rp-label">订舱详细信息确认：</div><div class="rp-value">'+(pick(sp.shipping_line,sp.carrier_code,"")?'<b>'+esc(pick(sp.shipping_line,sp.carrier_code,""))+' </b>':"")+esc(pick(sp.vessel,""))+(sp.voyage?" / "+esc(sp.voyage):"")+(sp.etd?'<br>ETD: '+esc(fmtD(sp.etd)):"")+(sp.eta?'&nbsp;&nbsp;ETA: '+esc(fmtD(sp.eta)):"")+'</div></div>'
-          +'<div class="rp-row no-border"><div class="rp-label">报关票数：</div><div class="rp-value">'+esc(_soTickets)+'</div></div>'
-          +'</div>'
-          +'</div>'
-          +'<div class="port-row">'
-          +'<div class="port-cell"><div class="port-label">Port of loading: <span class="port-en">装货港</span></div><div class="port-val">'+esc(polSp)+'</div></div>'
-          +'<div class="port-cell"><div class="port-label">Port of discharge: 目的港 <span class="port-en">卸货港</span></div><div class="port-val">'+esc(podSp)+'</div></div>'
-          +'</div>'
-          +'<div class="cargo-wrap"><table class="cargo-table">'
-          +'<thead><tr>'
-          +'<th style="width:12%">唛头<br>Mark&amp;number</th>'
-          +'<th style="width:12%">数量<br>Number of package</th>'
-          +'<th style="width:30%">货物名称 /<br>Description of goods</th>'
-          +'<th style="width:14%">HS编码 /<br>HS Code</th>'
-          +'<th style="width:16%">毛重<br>Gross weight</th>'
-          +'<th style="width:16%">体积<br>Measurement</th>'
-          +'</tr></thead><tbody>'
-          +_soCargoTr
-          +(_soRows.length>1?'<tr class="total-row"><td style="text-align:center">TOTAL</td><td style="text-align:center">'+_soTotQty.toLocaleString("en-US")+' ctns</td><td></td><td></td><td style="text-align:center">'+_soTotGw.toLocaleString("en-US")+' kgs</td><td style="text-align:center">'+_soTotCbm.toFixed(3)+' cbm</td></tr>':"")
-          +'</tbody></table></div>'
-          +'<div class="decl-row">'
-          +'<div class="decl-left">'
-          +'<div class="dl-line"><b>货好时间 (CARGO READY DATE)：</b>'+esc(_soCargoReady)+'</div>'
-          +'<div class="dl-line"><b>条款 (TERMS)：</b> '+CK(_soTerms==="FOB")+' FOB &nbsp;'+CK(_soTerms==="EXW")+' EXW &nbsp;'+CK(_soTerms==="FCA")+' FCA &nbsp;其他：'+esc(["FOB","EXW","FCA",""].indexOf(_soTerms)<0?_soTerms:"______")+'</div>'
-          +'<div class="check-row"><span class="q">是否有电池/液体货物？Product with Battery：</span><span class="yn">'+CK(_soBattery)+' YES &nbsp;'+CK(!_soBattery)+' NO</span></div>'
-          +'<div class="msds-note">如果是，请提供MSDS<br><em>If YES, Pls provide the MSDS Test report of Batteries</em></div>'
-          +'<div class="check-row"><span class="q">是否有实木包装 / 木架 / 托盘？</span><span class="yn">'+CK(_soWood)+' YES &nbsp;'+CK(!_soWood)+' NO</span></div>'
-          +'<div class="check-row"><span class="q">如有实木包装，是否已做熏蒸？</span><span class="yn">'+CK(_soFumi)+' YES &nbsp;'+CK(!_soFumi)+' NO</span></div>'
-          +'<div class="dl-line" style="margin-top:6px"><b>箱型箱量 (CONTAINER)：</b>'+esc(String(_soCtQty))+' &times; '+esc(String(_soCtType))+'</div>'
-          +'<div class="dl-line"><b>拖车：</b>'+CK(_soTow==="self")+' 自拖 &nbsp;'+CK(_soTow==="agent")+' 代拖 &nbsp;&nbsp;<b>报关：</b>'+CK(_soCusM==="self")+' 自报 &nbsp;'+CK(_soCusM==="agent")+' 代报</div>'
-          +'</div>'
-          +'<div class="decl-right">'
-          +'<div class="dl-line"><b>提单方式：</b>'+CK(_soIsOrig)+' 正本 &nbsp;'+CK(_soIsTelex)+' 电放 &nbsp;'+CK(_soIsSwb)+' SWB &nbsp;'+CK(!_soIsOrig&&!_soIsTelex&&!_soIsSwb&&!!_soRelease&&_soRelease!=="telex")+' 其他：'+esc((!_soIsOrig&&!_soIsTelex&&!_soIsSwb&&_soRelease)?_soRelease.toUpperCase():"___________")+'</div>'
-          +(_soIsTelex?'<div class="dl-line"><b>电放授权方 / B/L Release To：</b>'+esc(consignee)+'</div>':"")
-          +'<div style="margin-top:10px"><div style="font-size:11px;color:#555;margin-bottom:4px">备注 Remarks</div>'
-          +'<div style="font-size:12.5px;border:1px solid #ddd;border-radius:2px;padding:5px;min-height:80px;white-space:pre-line">'+esc(pick(spraw.remarks,sp.product_notes,""))+'</div></div>'
-          +'</div></div>'
-          +'<div style="border:1px solid #999;border-top:none;padding:5px 12px;background:#f9f9f9">'
-          +'<p style="font-size:9.5px;color:#666;line-height:1.7">本托书为格式条款，委托方签字/盖章即视为已充分阅读并接受全部内容；如有与本托书冲突之特别约定，须以双方授权代表签字盖章的书面文件为准；本托书传真件、扫描件与原件具有同等法律效力；因本托书引起或与之相关的任何争议，适用中华人民共和国法律，由厦门海事法院管辖。</p>'
-          +'</div>'
-          +'<div style="border:1px solid #999;border-top:none;padding:8px 12px;min-height:54px">'
-          +'<div style="font-size:11px;color:#555;margin-bottom:4px">委托方签署 / Principal&#39;s Signature &amp; Seal（请盖公章，须与Shipper抬头一致）</div>'
-          +'<div style="border-bottom:1px solid #ccc;margin-top:28px"></div>'
-          +'<div style="font-size:10px;color:#aaa;text-align:center;margin-top:3px">签字 / 公章 / 日期</div>'
-          +'</div>'
-          +'</div></body></html>';
+              return "<tr>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(conNo)||"—"+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(sealNo)||"—"+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;vertical-align:top'>"+esc(ctype)+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;vertical-align:top'>"+cargoDescHTML+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top'>"+esc(String(tgwSp))+"</td>"
+                +"<td style='border:1px solid #ddd;padding:8px;text-align:center;font-weight:700;vertical-align:top'>"+esc(String(tcbm))+"</td>"
+                +"</tr>";
+            })()}</tbody>
+          </table>
+
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;font-size:11px">
+            ${[["截关日 Cut-off",cutoff||"-"],["运费 Freight","FREIGHT PREPAID"],["柜型 Container",ctype],["柜量 Qty",String(cqty)]].map(function(b){return`<div style="border:1px solid #ddd;padding:6px 10px;border-radius:2px"><div style="font-size:9px;color:#888;font-weight:700;text-transform:uppercase">${b[0]}</div><div style="font-weight:600;font-size:12px;margin-top:2px">${esc(b[1])}</div></div>`;}).join("")}
+          </div>
+          <div style="margin-top:12px;font-size:10px;padding-top:8px;border-top:1px solid #eee;display:flex;justify-content:space-between;color:#555">
+            <div><b>制单:</b> ${esc(cfg3.nameEN)}</div><div><b>联系人:</b> ${esc(fwd.contact)} &nbsp; <b>Email:</b> ${esc(fwd.email)}</div>
+          </div>
+        `,ap);
       }
 
       if(type==="debit"){
@@ -2282,9 +2096,8 @@ export default async function handler(req, res) {
       // 2026-05-19: 用现有模板库设计 (freight-quote-enrich-2026-04.html)
       // 同一 dark-theme 模板，标题/内容不同；自动从 shipping_plans 填字段
       // ──────────────────────────────────────────────────────────────────────
-      // 2026-06-10: type=so 移出此块 — dark-theme 海运单曾覆盖 1695 行的正经出口货物委托书(托书)。
-      if(type==="freight-quote" || type==="sq"){
-        var isSO = false;
+      if(type==="so" || type==="freight-quote" || type==="sq"){
+        var isSO = (type==="so");
         var docTitle = isSO ? "海运单" : "海运确认报价";
         var docTitleEN = isSO ? "SHIPPING ORDER" : "OCEAN FREIGHT QUOTATION";
         var docNo = (isSO ? "SO-" : "FQ-") + pick(sp.bl_no, sp.contract_no, soNo);
@@ -2543,146 +2356,6 @@ export default async function handler(req, res) {
           </div>
         </div></body></html>`;
       }
-
-      if(type==="telex_loi" || type==="swb_loi"){
-        function _loiMiss(){return'<span style="color:#c00;font-weight:900">____待补____</span>';}
-        function _loiVal(v){return v?esc(v):_loiMiss();}
-        function _loiArr(v){
-          if(Array.isArray(v))return v.filter(Boolean).map(function(x){return String(x).trim();}).filter(Boolean);
-          return String(v||"").replace(/[{}"]/g,"").split(/[,\s/]+/).map(function(x){return x.trim();}).filter(Boolean);
-        }
-        var _loiOrderNos=_loiArr(sp.order_nos||spraw.orderNos||spraw.order_nos||sp.order_contract_nos||sp.contract_no||"");
-        var _loiCarrierCode=String(pick(sp.carrier_code,spraw.carrierCode,spraw.carrier_code,"")).trim();
-        var _loiCarrierTo="";
-        try{
-          if(_loiCarrierCode){
-            var _loiCarR=await pool.query("SELECT loi_recipient FROM carriers WHERE upper(code)=upper($1) LIMIT 1",[_loiCarrierCode]);
-            if(_loiCarR.rows.length)_loiCarrierTo=_loiCarR.rows[0].loi_recipient||"";
-          }
-        }catch(e){console.warn("[documents] loi carrier lookup failed:",e.message);}
-        var _loiIssuer=pick(sp.issuing_company,spraw.issuing_company,spraw.issuingCompany,sp.shipper,spraw.shipper,"");
-        var _loiConsignee=pickClean(sp.customer_en,sp.customer,spraw.consignee)||"";
-        var _loiConsAddr="";
-        try{
-          if(_loiOrderNos.length){
-            var _loiCoR=await pool.query(
-              "SELECT o.company_name_en,o.customer,c.address FROM orders o LEFT JOIN companies c ON c.code=o.company_code WHERE o.order_no = ANY($1::text[]) OR o.contract_no = ANY($1::text[]) LIMIT 1",
-              [_loiOrderNos]
-            );
-            if(_loiCoR.rows.length){
-              _loiConsignee=pickClean(_loiConsignee,_loiCoR.rows[0].company_name_en,_loiCoR.rows[0].customer)||"";
-              _loiConsAddr=_loiCoR.rows[0].address||"";
-            }
-          }
-        }catch(e){console.warn("[documents] loi consignee lookup failed:",e.message);}
-        var _loiCargo=[];
-        try{
-          if(_loiOrderNos.length){
-            var _loiCargoR=await pool.query(
-              "SELECT DISTINCT NULLIF(oli.declaration_name_en,'') AS name_en FROM order_line_items oli JOIN orders o ON o.id=oli.order_id WHERE (o.order_no = ANY($1::text[]) OR o.contract_no = ANY($1::text[])) AND NULLIF(oli.declaration_name_en,'') IS NOT NULL ORDER BY name_en",
-              [_loiOrderNos]
-            );
-            _loiCargo=_loiCargoR.rows.map(function(r){return r.name_en;}).filter(Boolean);
-          }
-        }catch(e){console.warn("[documents] loi cargo OLI lookup failed:",e.message);}
-        var _loiContainers=[],_loiCbCargo=[];
-        try{
-          if(_loiOrderNos.length){
-            var _loiCbR=await pool.query("SELECT container_no, declaration_cargo_name FROM container_bookings WHERE contract_no = ANY($1::text[]) ORDER BY id",[_loiOrderNos]);
-            _loiCbR.rows.forEach(function(r){
-              if(r.container_no&&_loiContainers.indexOf(r.container_no)<0)_loiContainers.push(r.container_no);
-              if(r.declaration_cargo_name&&_loiCbCargo.indexOf(r.declaration_cargo_name)<0)_loiCbCargo.push(r.declaration_cargo_name);
-            });
-          }
-        }catch(e){console.warn("[documents] loi container lookup failed:",e.message);}
-        if(!_loiCargo.length)_loiCargo=_loiCbCargo;
-        var _loiBlNo=pick(sp.bl_no,spraw.blNo,spraw.bl_no,"");
-        var _loiBlDate=fmtD(pick(sp.bl_issue_date,sp.bl_date,sp.issue_date,sp.bl_issued_at,spraw.blIssueDate,spraw.blDate,""));
-        if(_loiBlDate==="-")_loiBlDate="";
-        var _loiVessel=pick(sp.vessel,spraw.vessel,"");
-        var _loiVoyage=pick(sp.voyage,spraw.voyage,"");
-        var _loiPol=pick(sp.pol,spraw.pol,"");
-        var _loiPod=pick(sp.pod,spraw.pod,"");
-        var _loiFnd=pick(sp.place_of_delivery,sp.final_destination,spraw.placeOfDelivery,spraw.finalDestination,"");
-        var _loiSeal="";
-        try{
-          if(String(stamp||"")==="1"&&_loiIssuer){
-            var _loiNorm=function(s){return String(s||"").toUpperCase().replace(/\bAND\b/g,"").replace(/[^A-Z0-9]/g,"");};
-            var _loiSpf=await pool.query("SELECT name_en,code,stamp_code FROM seller_profiles WHERE COALESCE(name_en,'')<>''");
-            var _loiWant=_loiNorm(_loiIssuer),_loiStampCode="";
-            for(var _li=0;_li<_loiSpf.rows.length;_li++){
-              var _loiPn=_loiNorm(_loiSpf.rows[_li].name_en);
-              if(_loiPn&&_loiWant&&(_loiPn===_loiWant||_loiPn.indexOf(_loiWant)>=0||_loiWant.indexOf(_loiPn)>=0)){
-                _loiStampCode=(_loiSpf.rows[_li].stamp_code||_loiSpf.rows[_li].code||"").toString().toUpperCase();
-                break;
-              }
-            }
-            var _loiRole=(req.user&&(req.user.role||req.user.roleCode||"")).toString().toLowerCase();
-            var _loiCallerCo=(req.user&&(req.user.companyCode||req.user.company_code||"")).toString().toUpperCase();
-            var _loiAllowed=/(admin|staff|ops|owner|manager|internal|operator)/.test(_loiRole)||(!!_loiCallerCo&&_loiCallerCo===_loiStampCode);
-            if(_loiAllowed&&_loiStampCode){
-              var _loiSealR=await pool.query("SELECT url FROM customer_stamps WHERE is_active AND is_default AND upper(company_code)=$1 ORDER BY id LIMIT 1",[_loiStampCode]);
-              if(_loiSealR.rows.length)_loiSeal=_loiSealR.rows[0].url||"";
-            }
-          }
-        }catch(e){console.warn("[documents] loi seal lookup failed:",e.message);}
-        var _loiSealImg=_loiSeal?'<img src="'+esc(_loiSeal)+'" alt="seal" style="position:absolute;right:34px;bottom:8px;width:110px;height:110px;opacity:.88;pointer-events:none"/>':"";
-
-        if(type==="telex_loi"){
-          html=wrap("Combined Letter of Indemnity for Telex Release — "+(_loiBlNo||"LOI"),`
-            <style>
-              .loi-title{text-align:center;margin:8px 0 22px}.loi-title h2{font-size:18px;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em}.loi-title p{font-size:11px;color:#666;margin:0}
-              .loi-to{font-size:12.5px;margin-bottom:14px}.loi-grid{width:100%;border-collapse:collapse;margin:12px 0 18px}.loi-grid td{border:1px solid #bbb;padding:7px 9px;font-size:11.5px}.loi-grid .k{width:145px;background:#f5f5f5;font-weight:700;color:#333}
-              .loi-body{font-size:12px;line-height:1.75;text-align:justify}.loi-body p{margin:10px 0}.loi-sign{margin-top:36px;width:55%;margin-left:auto;position:relative;min-height:125px}.loi-line{border-bottom:1px solid #111;height:42px;margin:12px 0 5px}
-            </style>
-            <div class="loi-title"><h2>Combined Letter of Indemnity for Telex Release</h2><p>Telex Release / Surrendered Original Bill(s) of Lading</p></div>
-            <p class="loi-to">To: <b>${_loiVal(_loiCarrierTo)}</b></p>
-            <table class="loi-grid">
-              <tr><td class="k">Ship / Voyage</td><td>${_loiVal(_loiVessel)} / ${_loiVal(_loiVoyage)}</td><td class="k">POL / POD / Place of Delivery</td><td>${_loiVal(_loiPol)} / ${_loiVal(_loiPod)} / ${_loiVal(_loiFnd)}</td></tr>
-              <tr><td class="k">Cargo</td><td colspan="3">${_loiCargo.length?esc(_loiCargo.join(" / ")):_loiMiss()}</td></tr>
-              <tr><td class="k">Bill(s) of Lading</td><td colspan="3">${_loiVal(_loiBlNo)} &nbsp; Date of Issue: ${_loiVal(_loiBlDate)} &nbsp; Port of Loading: ${_loiVal(_loiPol)}</td></tr>
-              <tr><td class="k">Container number(s)</td><td colspan="3">${_loiContainers.length?esc(_loiContainers.join(" / ")):_loiMiss()}</td></tr>
-              <tr><td class="k">Shipper</td><td colspan="3">${_loiVal(_loiIssuer)}</td></tr>
-              <tr><td class="k">Consignee</td><td colspan="3"><b>${_loiVal(_loiConsignee)}</b>${_loiConsAddr?"<br>"+esc(_loiConsAddr):"<br>"+_loiMiss()}</td></tr>
-            </table>
-            <div class="loi-body">
-              <p>We, the undersigned shipper of record, hereby request you to instruct your agent at the port of discharge or place of delivery to release the above cargo to the named consignee after the full set of original Bill(s) of Lading has been surrendered by the shipper.</p>
-              <p>In consideration of your complying with our request, we undertake to indemnify you, your servants, agents and affiliates and to hold all of them harmless from and against all liabilities, losses, damages, costs, claims, proceedings and expenses of whatsoever nature arising out of or in connection with such telex release and delivery.</p>
-              <p>We further undertake to provide any further documents or guarantees reasonably required by you in connection with the above shipment.</p>
-            </div>
-            <div class="loi-sign">${_loiSealImg}<p>For and on behalf of <b>${_loiVal(_loiIssuer)}</b></p><div class="loi-line"></div><p>Authorized Signature / Company Stamp</p></div>
-          `,ap);
-        }
-
-        if(type==="swb_loi"){
-          html=wrap("SWB 海运单保函 — "+(_loiBlNo||"LOI"),`
-            <style>
-              .loi-title{text-align:center;margin:8px 0 22px}.loi-title h2{font-size:20px;margin:0 0 4px;letter-spacing:.08em}.loi-title p{font-size:11px;color:#666;margin:0}
-              .loi-to{font-size:13px;margin-bottom:14px}.loi-grid{width:100%;border-collapse:collapse;margin:12px 0 18px}.loi-grid td{border:1px solid #999;padding:7px 9px;font-size:12px}.loi-grid .k{width:160px;background:#f5f5f5;font-weight:700;color:#333}
-              .loi-body{font-size:13px;line-height:1.9;text-align:justify}.loi-body p{margin:10px 0;text-indent:2em}.loi-signs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-top:44px}.loi-sig{border-top:1px solid #111;padding-top:7px;text-align:center;font-size:11px;min-height:110px;position:relative}.loi-sig b{font-size:12px}
-            </style>
-            <div class="loi-title"><h2>SWB 海运单保函</h2><p>SEA WAYBILL LETTER OF INDEMNITY</p></div>
-            <p class="loi-to">致：<b>${_loiVal(_loiCarrierTo)}</b></p>
-            <table class="loi-grid">
-              <tr><td class="k">VSL / VOY</td><td>${_loiVal(_loiVessel)} / ${_loiVal(_loiVoyage)}</td><td class="k">B/L NO</td><td>${_loiVal(_loiBlNo)}</td></tr>
-              <tr><td class="k">POD / FND</td><td colspan="3">${_loiVal(_loiPod)} / ${_loiVal(_loiFnd)}</td></tr>
-              <tr><td class="k">SHIPPER</td><td colspan="3">${_loiVal(_loiIssuer)}</td></tr>
-              <tr><td class="k">CNEE</td><td colspan="3"><b>${_loiVal(_loiConsignee)}</b>${_loiConsAddr?"<br>"+esc(_loiConsAddr):"<br>"+_loiMiss()}</td></tr>
-              <tr><td class="k">DESCRIPTION OF GOODS</td><td colspan="3">${_loiCargo.length?esc(_loiCargo.join(" / ")):_loiMiss()}</td></tr>
-            </table>
-            <div class="loi-body">
-              <p>我司申请贵司就上述货物签发海运单（Sea Waybill），并同意贵司或贵司目的港代理凭收货人身份证明，将货物交付给海运单记载的收货人。</p>
-              <p>由此产生的一切风险、责任、索赔、损失、费用及法律后果均由我司自行承担；如贵司、贵司代理或关联方因此遭受任何索赔或损失，我司承诺予以全额赔偿并使其免受损害。</p>
-              <p>本保函适用中华人民共和国法律，因本保函引起或与本保函有关的任何争议，由中国海事法院管辖。</p>
-            </div>
-            <div class="loi-signs">
-              <div class="loi-sig">${_loiSealImg}<b>发货人签字</b><br>（公司盖章）<br>${_loiVal(_loiIssuer)}</div>
-              <div class="loi-sig"><b>货运代理人盖章</b><br>FORWARDER'S STAMP</div>
-              <div class="loi-sig"><b>日期</b><br>${_loiMiss()}</div>
-            </div>
-          `,ap);
-        }
-      }
     }
 
     // ── Excel export (format=xlsx) ─────────────────────────────────────────────
@@ -2690,7 +2363,6 @@ export default async function handler(req, res) {
       return res.status(400).json({error:"xlsx_not_supported_for_type",type:type});
     }
     if(format==="xlsx" && _xlsCapture){
-      var _xlsColSums=null;
       var ExcelJS=(await import("exceljs")).default;
       var wb=new ExcelJS.Workbook();
       wb.creator="Sanlyn OS"; wb.created=new Date();
@@ -2762,12 +2434,11 @@ export default async function handler(req, res) {
         }
         rowNum++;
         var cells=[String(rowNum).padStart(2,"0")];
-        _xlsCapture.colKeys.forEach(function(k,_ki){
+        _xlsCapture.colKeys.forEach(function(k){
           var v=k.fn?k.fn(p):(p[k.k]||"");
           // Strip commas from numbers
           var n=parseFloat(String(v).replace(/,/g,""));
           cells.push(isNaN(n)?v:n);
-          if(!isNaN(n)){_xlsColSums=_xlsColSums||{};_xlsColSums[_ki]=(_xlsColSums[_ki]||0)+n;}
         });
         var dr=ws.addRow(cells);
         var _alt=(rowNum%2===0);
@@ -2782,18 +2453,9 @@ export default async function handler(req, res) {
         });
       });
 
-      // Totals row — 2026-06-12: 多单合并时按实际行和重建（旧 t* 只含主单）
+      // Totals row
       ws.addRow([]);
-      var _tt=_xlsCapture.totals.slice();
-      if(typeof _xlsColSums!=="undefined"&&_xlsColSums){
-        var _SUMMABLE={qty:1,nw:1,gw:1,cbm:1,amt:1}; // 单价等比值列绝不求和
-        _xlsCapture.colKeys.forEach(function(k,_ki){
-          if(_xlsColSums[_ki]!=null && _SUMMABLE[k.k]){
-            _tt[_ki+1]=parseFloat(_xlsColSums[_ki].toFixed( k.k==="cbm"?3:2 ));
-          }
-        });
-      }
-      var tRow=ws.addRow(_tt);
+      var tRow=ws.addRow(_xlsCapture.totals);
       tRow.eachCell(function(c,ci){c.font={bold:true};if(ci===tRow.cellCount)c.numFmt="#,##0.00";});
 
       // Column widths for numeric cols
@@ -2887,20 +2549,6 @@ export default async function handler(req, res) {
       sigR3.getCell(sigMid+1).alignment={horizontal:"center"};
       // Give space for stamps
       ws.addRow([]);ws.addRow([]);ws.addRow([]);
-      // 公章嵌入（2026-06-12: Excel 也要章——seller_profiles.seal_url）
-      try{
-        var _sealU=_xlsCapture.sealUrl||"";
-        if(_sealU){
-          var _sUrl=/^https?:/.test(_sealU)?_sealU:("http://127.0.0.1:9000"+(_sealU[0]==="/"?"":"/")+_sealU);
-          var _sResp=await fetch(_sUrl);
-          if(_sResp.ok){
-            var _sBuf=Buffer.from(await _sResp.arrayBuffer());
-            var _ext=/png/i.test(_sealU)?"png":"jpeg";
-            var _imgId=wb.addImage({buffer:_sBuf,extension:_ext});
-            ws.addImage(_imgId,{tl:{col:_lastCol-1.6,row:sigR1.number-3},ext:{width:110,height:110}});
-          }
-        }
-      }catch(_se){console.warn("[xlsx-seal]",_se.message);}
 
       res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
       res.setHeader("Content-Disposition","attachment; filename=\""+_xlsCapture.docNo+".xlsx\"");
@@ -2941,7 +2589,7 @@ export default async function handler(req, res) {
         var titleMatch=html.match(/<title[^>]*>([^<]+)<\/title>/i);
         var pdfName=(titleMatch?titleMatch[1].replace(/[^A-Za-z0-9_\-\.]/g,"_"):"document")+".pdf";
         res.setHeader("Content-Type","application/pdf");
-        res.setHeader("Content-Disposition",(String(req.query&&req.query.inline||"")==="1"?"inline":"attachment")+"; filename=\""+pdfName+"\"");
+        res.setHeader("Content-Disposition","attachment; filename=\""+pdfName+"\"");
         res.setHeader("Cache-Control","no-store");
         return res.status(200).send(Buffer.from(pdfBuf));
       }catch(pdfErr){

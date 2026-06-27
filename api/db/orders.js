@@ -168,6 +168,10 @@ const PATCH_ALLOWED_COLS = [
   "factory_price_total","middleman_code","middleman_markup_total","middleman_markup_pct","customer_price_total",
   // Exchange rate: factory prices in USD → customer prices in CNY conversion (2026-05-10)
   "exchange_rate",
+  // 客户确认 + 洋宝宝价格 (2026-06-22)
+  "customer_confirmed_at",
+  "oceanbaby_price",
+  // is_locked 不在此列——只允许通过专属锁单端点修改
 ];
 
 // Order_no prefix must match company_code numeric suffix.
@@ -577,6 +581,24 @@ async function handleCancelReview(req, res) {
   });
 }
 
+// POST /api/db/orders?action=lock
+// body: { order_no, is_locked: boolean }
+async function handleLock(req, res) {
+  const { role } = req.user || {};
+  if (role !== "admin") return res.status(403).json({ error: "admin only" });
+  const { order_no, is_locked } = req.body || {};
+  if (!order_no || typeof is_locked !== "boolean") {
+    return res.status(400).json({ error: "order_no and is_locked required" });
+  }
+  const pool = getPool();
+  await pool.query(
+    "UPDATE orders SET is_locked=$1 WHERE order_no=$2",
+    [is_locked, order_no]
+  );
+  // TODO: write to audit_log if table exists
+  return res.status(200).json({ ok: true, order_no, is_locked });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -598,6 +620,24 @@ export default async function handler(req, res) {
     if (action === "cancel_review") {
       try { return await handleCancelReview(req, res); }
       catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
+    if (action === "lock") {
+      try { return await handleLock(req, res); }
+      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    }
+    if (action === "hard_delete") {
+      if (!req.user || req.user.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden: admin only" });
+      }
+      const { order_no } = req.body || {};
+      if (!order_no) return res.status(400).json({ error: "order_no required" });
+      const pool = getPool();
+      const row = await pool.query(`SELECT id FROM orders WHERE order_no=$1`, [order_no]);
+      if (!row.rows.length) return res.status(404).json({ error: "Order not found" });
+      const oid = row.rows[0].id;
+      await pool.query(`DELETE FROM order_line_items WHERE order_id=$1`, [oid]);
+      await pool.query(`DELETE FROM orders WHERE id=$1`, [oid]);
+      return res.json({ success: true, deleted: order_no });
     }
     if (action) return res.status(400).json({ error: "unknown action: " + action });
     // No action = create new order
@@ -635,6 +675,7 @@ export default async function handler(req, res) {
              sp.current_status_cn   AS sp_status_cn,
              sp.tracking_updated_at AS sp_tracking_updated_at,
              sp.container_type      AS sp_container_type,
+             sp.container_qty       AS sp_container_qty,
              sp.carrier_code       AS sp_shipping_line,
              COALESCE(NULLIF(o.raw->>'containerType',''), sp.container_type) AS container_type_raw,
              COALESCE(NULLIF(o.raw->>'shippingLine',''), sp.carrier_code) AS shipping_line,
@@ -653,7 +694,7 @@ export default async function handler(req, res) {
         -- fresh via /api/vessel-callback). ONE row only (LIMIT 1) — never fan out
         -- per container, which would both inflate rows and over-bill Portun.
         LEFT JOIN LATERAL (
-          SELECT s.bl_no, s.etd, s.eta, s.pol, s.pod, s.current_status_cn, s.tracking_updated_at, s.container_type, s.carrier_code
+          SELECT s.bl_no, s.etd, s.eta, s.pol, s.pod, s.current_status_cn, s.tracking_updated_at, s.container_type, s.container_qty, s.carrier_code
             FROM shipping_plans s
            WHERE (NULLIF(o.bl_no,'') IS NOT NULL AND s.bl_no = o.bl_no)
               OR (s.contract_no IS NOT NULL AND o.contract_no IS NOT NULL AND s.contract_no = o.contract_no)

@@ -3,7 +3,39 @@
 // GET: fetch form helpers (customers list, products list)
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { runOrderAudit } from "./order-audit.js";
+var ENSURE_LINE_ITEMS = `
+  CREATE TABLE IF NOT EXISTS order_line_items (
+    id              SERIAL PRIMARY KEY,
+    order_id        INTEGER NOT NULL,
+    sku             TEXT,
+    product_id      INTEGER,
+    barcode         TEXT,
+    product_name    TEXT,
+    brand           TEXT,
+    bg_bx           INTEGER,
+    qty_ctn         NUMERIC(10,2),
+    unit            TEXT DEFAULT 'CTN',
+    unit_price      NUMERIC(14,4),
+    factory_price   NUMERIC(14,4),
+    subtotal        NUMERIC(14,2),
+    factory_subtotal NUMERIC(14,2),
+    nw_ctn          NUMERIC(10,4),
+    gw_ctn          NUMERIC(10,4),
+    cbm_ctn         NUMERIC(10,6),
+    size            TEXT,
+    hs_code         TEXT,
+    declaration_name TEXT,
+    bl_description  TEXT,
+    vat_rate        NUMERIC(6,4),
+    tax_rebate_rate NUMERIC(6,4),
+    declare_amount_per_box NUMERIC(14,4),
+    sort_order      INTEGER DEFAULT 0,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS order_line_items_order_id_idx ON order_line_items(order_id);
+`;
+
 
 function generateOrderNo() {
   var d = new Date();
@@ -101,6 +133,7 @@ export default async function handler(req, res) {
   }
 
   var pool = getPool();
+  await pool.query(ENSURE_LINE_ITEMS).catch(function() {});
 
   // ── GET: return form data ──
   // ?action=customers → customer list
@@ -247,7 +280,7 @@ export default async function handler(req, res) {
       }
 
       // ── Factories authorized for a specific buyer ──
-      if (action === "factory-by-buyer" && req.query.buyerCode) {
+if (action === "factory-by-buyer" && req.query.buyerCode) {
         var buyerCode = req.query.buyerCode;
         var subEntityCode = (req.query.subEntityCode || "").trim();   // optional — when set, use sub-entity's signed factories
 
@@ -279,14 +312,16 @@ export default async function handler(req, res) {
         }
 
         var factories = [];
+        var issuingCandidates = [];  // 出单主体候选(seller_profiles)——关系驱动,与工厂分开(Damon:自由平台,有上下游才能选)
         var fromRelationships = false;
 
         // ── Layer 1: partner_relationships (new) — customer_factory edges ─────
-        // Resolves company_code_b to factories OR seller_profiles (so 巴匕/洋宝宝-style entries also surface).
+        // Resolves company_code_b to supply candidates. role_at_hop distinguishes factory vs trader.
         // If subEntityCode given, query sub-entity's relations; otherwise parent buyer.
         var lookupCode = subEntityCode || buyerCode;
         var partnerRes = await pool.query(
-          `SELECT pr.company_code_b AS code
+          `SELECT pr.company_code_b AS code,
+                  pr.role_at_hop
              FROM partner_relationships pr
             WHERE pr.company_code_a = $1
               AND pr.relationship_type = 'customer_factory'
@@ -295,61 +330,129 @@ export default async function handler(req, res) {
         ).catch(function() { return { rows: [] }; });
 
         if (partnerRes.rows.length) {
-          var codes = partnerRes.rows.map(function(r){ return r.code; });
-          // Hydrate from factories table + customers (for name_en)
-          var factHydrate = await pool.query(
-            `SELECT f.company_code, f.name AS name_cn, f.name_short, f.po_prefix, f.ports, f.address,
-                    c.name_en, c.address_cn, c.address_en, c.currency, c.addresses
-               FROM factories f
-               LEFT JOIN customers c ON (c.company_code = f.company_code OR c.name_cn = f.name)
-              WHERE f.company_code = ANY($1::text[])`,
-            [codes]
-          ).catch(function() { return { rows: [] }; });
-          var seenCodes = new Set();
-          factHydrate.rows.forEach(function(row) {
-            seenCodes.add(row.company_code);
-            factories.push({
-              company_code: row.company_code,
-              name_cn:      row.name_cn || "",
-              name_en:      row.name_en || "",
-              name_short:   row.name_short || "",
-              po_prefix:    row.po_prefix || "",
-              port_default: Array.isArray(row.ports) && row.ports.length ? row.ports[0] : "",
-              export_mode:  null,
-              address:      row.address_en || row.address_cn || row.address || "",
-              addresses:    row.addresses || null,
-              currency:     row.currency || "CNY",
-            });
+          var relationshipRows = partnerRes.rows.map(function(r) {
+            return {
+              code: r.code,
+              roleAtHop: (r.role_at_hop || "").toLowerCase(),
+            };
           });
-          // Hydrate any remaining codes from seller_profiles (e.g. petbaby)
+
+          var codes = relationshipRows.map(function(r){ return r.code; });
+          var roleByCode = {};
+          relationshipRows.forEach(function(r) {
+            roleByCode[r.code] = r.roleAtHop;
+          });
+
+          var traderCodes = relationshipRows
+            .filter(function(r) {
+              return r.roleAtHop === "trader" || (r.code || "").toUpperCase() === "BABI";
+            })
+            .map(function(r) { return r.code; });
+
+          var factoryCandidateCodes = relationshipRows
+            .filter(function(r) {
+              return traderCodes.indexOf(r.code) === -1;
+            })
+            .map(function(r) { return r.code; });
+
+          var seenCodes = new Set();
+
+          // Hydrate trader supply candidates from companies. Traders are suppliers, not factories.
+          if (traderCodes.length) {
+            var traderHydrate = await pool.query(
+              `SELECT code AS company_code, name_cn, name_en, address
+                 FROM companies
+                WHERE code = ANY($1::text[])`,
+              [traderCodes]
+            ).catch(function() { return { rows: [] }; });
+
+            traderHydrate.rows.forEach(function(row) {
+              seenCodes.add(row.company_code);
+              factories.push({
+                company_code: row.company_code,
+                name_cn:      row.name_cn || "",
+                name_en:      row.name_en || "",
+                name_short:   row.company_code || "",
+                po_prefix:    row.company_code || "",
+                port_default: "",
+                export_mode:  null,
+                address:      row.address || "",
+                addresses:    null,
+                currency:     row.currency || "CNY",
+                supplierKind: "trader",
+                catalogScope: "authorized_brand_all_factories",
+                roleAtHop:    "trader",
+              });
+            });
+          }
+
+          // Hydrate factory supply candidates from factories table + customers (for name_en)
+          if (factoryCandidateCodes.length) {
+            var factHydrate = await pool.query(
+              `SELECT f.company_code, f.name AS name_cn, f.name_short, f.po_prefix, f.ports, f.address,
+                      c.name_en, c.address_cn, c.address_en, c.currency, c.addresses
+                 FROM factories f
+                 LEFT JOIN customers c ON (c.company_code = f.company_code OR c.name_cn = f.name)
+                WHERE f.company_code = ANY($1::text[])`,
+              [factoryCandidateCodes]
+            ).catch(function() { return { rows: [] }; });
+
+            factHydrate.rows.forEach(function(row) {
+              seenCodes.add(row.company_code);
+              factories.push({
+                company_code: row.company_code,
+                name_cn:      row.name_cn || "",
+                name_en:      row.name_en || "",
+                name_short:   row.name_short || "",
+                po_prefix:    row.po_prefix || "",
+                port_default: Array.isArray(row.ports) && row.ports.length ? row.ports[0] : "",
+                export_mode:  null,
+                address:      row.address_en || row.address_cn || row.address || "",
+                addresses:    row.addresses || null,
+                currency:     row.currency || "CNY",
+                supplierKind: "factory",
+                catalogScope: "own_factory",
+                roleAtHop:    "factory",
+              });
+            });
+          }
+
+          // Hydrate unresolved non-trader codes from seller_profiles for issuing candidates only.
           var missing = codes.filter(function(c){ return !seenCodes.has(c); });
-          if (missing.length) {
+          var missingNonTrader = missing.filter(function(c) {
+            return traderCodes.indexOf(c) === -1;
+          });
+
+          if (missingNonTrader.length) {
             var spHydrate = await pool.query(
               `SELECT code, name_cn, name_en
                  FROM seller_profiles
                 WHERE code = ANY($1::text[])`,
-              [missing]
+              [missingNonTrader]
             ).catch(function() { return { rows: [] }; });
+
             spHydrate.rows.forEach(function(row) {
               seenCodes.add(row.code);
-              factories.push({
-                company_code: row.code,
-                name_cn:      row.name_cn || "",
-                name_en:      row.name_en || "",
-                name_short:   row.name_cn || row.code,
-                port_default: "",
-                export_mode:  "proxy",  // seller_profile entries default to proxy export
-                address:      "",
-              });
-            });
-            // Codes not resolved anywhere — still surface them as raw entries so UI can show them
-            missing.filter(function(c){ return !seenCodes.has(c); }).forEach(function(c) {
-              factories.push({
-                company_code: c, name_cn: c, name_en: "", name_short: c,
-                port_default: "", export_mode: null, address: "",
+              // 角色分开:seller_profile 不再混进工厂下拉,改为独立的「出单主体候选」
+              issuingCandidates.push({
+                code:    row.code,
+                nameCN:  row.name_cn || "",
+                nameEN:  row.name_en || "",
               });
             });
           }
+
+          // Codes not resolved anywhere — still surface non-trader codes as raw factory entries so UI can show them.
+          missingNonTrader.filter(function(c){ return !seenCodes.has(c); }).forEach(function(c) {
+            factories.push({
+              company_code: c, name_cn: c, name_en: "", name_short: c,
+              port_default: "", export_mode: null, address: "",
+              supplierKind: "factory",
+              catalogScope: "own_factory",
+              roleAtHop: roleByCode[c] || "factory",
+            });
+          });
+
           fromRelationships = true;
         }
 
@@ -370,32 +473,41 @@ export default async function handler(req, res) {
           ).catch(function() { return { rows: [] }; });
 
           if (relRes.rows.length) {
-            factories = relRes.rows;
+            factories = relRes.rows.map(function(row) {
+              row.supplierKind = row.supplierKind || "factory";
+              row.catalogScope = row.catalogScope || "own_factory";
+              row.roleAtHop = row.roleAtHop || "factory";
+              return row;
+            });
             fromRelationships = true;
           }
         }
 
-        // Fallback: all factories from customers table
-        // AUTHZ-GUARD-001: external callers (non-admin) are FAIL-CLOSED —
-        // they must have an explicit buyer↔factory relationship in the relationships table.
-        // Only admin/internal callers may see the full factory list when no relationship is set.
-        if (!factories.length) {
-          if (!isAdmin) {
-            // External customer / agent: no authorized factories → return empty, do NOT leak full list
-            return res.status(200).json({
-              success: true,
-              factories: [],
-              authorizedCount: 0,
-              fromRelationships: false,
-              fallbackBlocked: true,
-              message: "No authorized factories configured for this buyer. Contact Sanlyn to set up factory authorization.",
-            });
-          }
-          // Admin / internal only: fallback to full factory list for internal order creation
+        // 供应商可选范围:
+        //  - 外部客户:仅自己的上游关系(fail-closed,无则空)。
+        //  - 内部 admin:关系供应商(含 BABI 贸易) + 全部工厂(可代选任意工厂),去重。
+        if (isAdmin) {
           var allFactRes = await pool.query(
             "SELECT id, company_code, name_cn, name_en, name_short, port_default, export_mode, address, address_cn, address_en, currency, addresses FROM customers WHERE portal_role = 'factory' ORDER BY name_en"
           ).catch(function() { return { rows: [] }; });
-          factories = allFactRes.rows;
+          var existingCodes = new Set(factories.map(function(f){ return f.company_code; }));
+          allFactRes.rows.forEach(function(row) {
+            if (existingCodes.has(row.company_code)) return;
+            row.supplierKind = "factory";
+            row.catalogScope = "own_factory";
+            row.roleAtHop = "factory";
+            factories.push(row);
+          });
+        } else if (!factories.length) {
+          // External customer / agent: no authorized suppliers → return empty, do NOT leak full list
+          return res.status(200).json({
+            success: true,
+            factories: [],
+            authorizedCount: 0,
+            fromRelationships: false,
+            fallbackBlocked: true,
+            message: "No authorized suppliers configured for this buyer. Contact Sanlyn to set up authorization.",
+          });
         }
 
         var factoryList = factories.map(function(row) {
@@ -414,6 +526,9 @@ export default async function handler(req, res) {
             address: row.address_cn || row.address_en || row.address || "",
             addresses: row.addresses || null,
             defaultCurrency: row.currency || "CNY",
+            supplierKind: row.supplierKind || "factory",
+            catalogScope: row.catalogScope || "own_factory",
+            roleAtHop: row.roleAtHop || "factory",
           };
         });
 
@@ -422,6 +537,9 @@ export default async function handler(req, res) {
           factories: factoryList,
           authorizedCount: factoryList.length,
           fromRelationships: fromRelationships,
+          // 出单主体候选(关系驱动):该客户已建上下游关系的出口主体。0候选=未关联,前端给「去关联」入口,不默认兜底。
+          issuingCandidates: issuingCandidates,
+          issuingDefault: issuingCandidates.length === 1 ? issuingCandidates[0].code : null,
         });
       }
 
@@ -833,12 +951,11 @@ export default async function handler(req, res) {
     // NEVER fetched from master (forbidden — financial / settlement fields):
     //   factory_price, price_usd, profit, declaration_amount, vat_rate, rebate_rate
     var skuMasterMap = {};
-    var skuVariantsMap = {};  // 多规格: 每SKU全部active变体行
     var incomingSkus = (products || []).map(function(p) { return (p.sku || p.code || "").trim(); }).filter(Boolean);
     if (incomingSkus.length) {
       try {
         var masterRes = await pool.query(
-          "SELECT id, sku, product_name, net_weight, gross_weight, cbm, hs_code, declaration_name, bl_description, barcode, sale_price_cny, factory_price, bg_bx, declaration_amount, size, spec, updated_at FROM products WHERE sku = ANY($1) AND active = true",
+          "SELECT id, sku, product_name, net_weight, gross_weight, cbm, hs_code, declaration_name, bl_description, barcode, updated_at FROM products WHERE sku = ANY($1) AND active = true",
           [incomingSkus]
         );
 
@@ -875,7 +992,6 @@ export default async function handler(req, res) {
             );
           }
           skuMasterMap[sku] = selected;
-          skuVariantsMap[sku] = group;  // 存全部规格行供按bg_bx选
         });
 
         if (Object.keys(skuMasterMap).length) {
@@ -893,6 +1009,7 @@ export default async function handler(req, res) {
       if (!master) return p;
       var filled = [];
       var result = Object.assign({}, p);
+      if (master && master.id) result.product_id = master.id;  // 根因修复2026-06-24:挂产品关联
 
       // Each entry: [products_col, p_camelKey, p_snakeKey (optional alias)]
       // Only columns verified to exist in products table are listed here.
@@ -903,9 +1020,6 @@ export default async function handler(req, res) {
         ["hs_code",          "hsCode",           "hs_code"],
         ["declaration_name", "declarationName",  "declaration_name"],
         ["barcode",          "barcode",          null],
-        ["product_name",     "productName",      "product_name"],
-        ["size",             "size",             null],
-        ["spec",             "spec",             null],
         // bl_description: direct column in products (not derived from declaration_name)
         ["bl_description",   "blDescription",    "bl_description"],
       ];
@@ -935,65 +1049,17 @@ export default async function handler(req, res) {
     var totalCBM = 0, grossWeight = 0, netWeight = 0;
     var declareAmount = 0;
 
-    // 多规格选行(2026-06-06): 同SKU多个规格行,按本行bg_bx(=数量÷箱数)选对应变体取价,否则多规格共用一价。见 product-management skill。
-    function pickVariant(sku, clientBg, p) {
-      if (!sku) return null;
-      var group = skuVariantsMap[sku];
-      if (!group || !group.length) return skuMasterMap[sku] || null;
-      if (group.length === 1) return group[0];
-      if (clientBg && clientBg > 0) {
-        var byBg = group.filter(function(r){ return parseInt(r.bg_bx, 10) === clientBg; });
-        if (byBg.length) return byBg[0];
-      }
-      var cnw = parseFloat(p && (p.netWeight || p.net_weight));
-      if (cnw > 0) {
-        var best=null, bd=1e9;
-        group.forEach(function(r){ var d=Math.abs((parseFloat(r.net_weight)||0)-cnw); if(d<bd){bd=d;best=r;} });
-        if (best && bd < 0.5) return best;
-      }
-      return skuMasterMap[sku] || group[0];
-    }
     var cleanProducts = products.map(function(p) {
       // Enrich p with product master data before extracting fields (fail-open)
       var skuKey = (p.sku || p.code || "").trim();
-      var _clientBg = parseInt(p.bgBx) || parseInt(p.bg_bx) || parseInt(p.carton_qty) || parseInt(p.bagsPerBox);
-      var _variant = pickVariant(skuKey, _clientBg, p);  // 按规格选对应变体行
-      if (_variant) {
-        p = fillFromMaster(p, _variant);
+      if (skuKey && skuMasterMap[skuKey]) {
+        p = fillFromMaster(p, skuMasterMap[skuKey]);
       }
       var qty = parseInt(p.qty) || 0;
-      // 单价铁律(2026-06-03): 后端按主数据权威重算。单价(每箱) = sale_price_cny(每个) × bg_bx(每箱个数)。
-      // 杜绝前端口径错(曾把每个价当每箱价、漏乘bg_bx导致金额×bg偏小)。详见记忆 feedback_order_create_v2_line_items_factory。
-      var _master = _variant || (skuKey && skuMasterMap[skuKey]) || null;
-      // ── GW/CBM 估值 (Workstream A, 2026-06-07) ──────────────────────────────
-      // fillFromMaster 已从产品主数据回填 grossWeight/cbm；若仍为空则按 NW×1.15 估算，
-      // 并在 p._gwEstimated=true 上标记（写入 OLI raw，前端据此标黄）。
-      // 规则：禁止留 null 出单；估算比 0 更准；完全无 NW/GW 的行写入警告。
-      var _gw = parseFloat(p.grossWeight) || parseFloat(p.gross_weight) || 0;
-      var _nw = parseFloat(p.netWeight)   || parseFloat(p.net_weight)   || 0;
-      if (!_gw && _nw > 0) {
-        _gw = +(_nw * 1.15).toFixed(2);
-        p.grossWeight = _gw; p.gross_weight = _gw;
-        p._gwEstimated = true;
-      }
-      // CBM: 暂无尺寸数据时不估算，保持 null（触发器不依赖CBM求和；前端标黄提示）
-      // ─────────────────────────────────────────────────────────────────────────
-      // bg_bx 消歧(2026-06-06): 同一SKU在products可能有多个active行(bg_bx不同),master按updated_at任意挑会选错每箱个数;
-      // 且同一SKU在同票不同行装箱数可能不同 → 每箱个数以客户端(装箱单 数量/箱数)为权威。仅影响bg_bx,sale_price仍master-first(单价铁律不变)。
-      var _clientBg = parseInt(p.bgBx) || parseInt(p.bg_bx) || parseInt(p.carton_qty) || parseInt(p.bagsPerBox);
-      var bgBx = (_clientBg && _clientBg > 0) ? _clientBg : (parseInt(_master && _master.bg_bx) || 1);
-      var unitPrice, factoryPrice, _priceFromMaster = false;
-      if (_master && parseFloat(_master.sale_price_cny) > 0) {
-        unitPrice    = +(parseFloat(_master.sale_price_cny) * bgBx).toFixed(4);
-        factoryPrice = +((parseFloat(_master.factory_price) || parseFloat(_master.sale_price_cny)) * bgBx).toFixed(4);
-        _priceFromMaster = true;
-      } else {
-        // 主数据无价 → 用客户端传入价(可能不准，下方 priceWarnings 会标红)
-        unitPrice    = parseFloat(p.unitPrice) || parseFloat(p.price) || 0;
-        factoryPrice = parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || unitPrice;
-      }
-      var subtotal = +(unitPrice * qty).toFixed(2);
-      var factorySubtotal = +(factoryPrice * qty).toFixed(2);
+      var unitPrice = parseFloat(p.unitPrice) || parseFloat(p.price) || 0;
+      var factoryPrice = parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || unitPrice;
+      var subtotal = parseFloat(p.subtotal) || (unitPrice * qty);
+      var factorySubtotal = factoryPrice * qty;
       var pCbm = (parseFloat(p.cbm) || 0) * qty;
       var pGW = (parseFloat(p.grossWeight) || parseFloat(p.gross_weight) || 0) * qty;
       var pNW = (parseFloat(p.netWeight) || parseFloat(p.net_weight) || 0) * qty;
@@ -1019,8 +1085,6 @@ export default async function handler(req, res) {
         unit: p.unit || "CTN",
         unitPrice: unitPrice,
         factoryPrice: factoryPrice,
-        bgBx: bgBx,
-        _priceFromMaster: _priceFromMaster,
         subtotal: subtotal,
         factorySubtotal: factorySubtotal,
         cbm: parseFloat(p.cbm) || 0,
@@ -1036,64 +1100,11 @@ export default async function handler(req, res) {
         sku: p.sku || "",
         // Track which fields were auto-filled from product master (for audit in raw)
         _masterFilled: p._masterFilled || undefined,
-        _gwEstimated: p._gwEstimated || false,
         declareAmountPerBox: parseFloat(p.declareAmount) || parseFloat(p.declareAmountPerBox) || 0,
         vatRate: parseFloat(p.vatRate) || parseFloat(p.vat_rate) || 0,
         taxRebateRate: parseFloat(p.taxRebateRate) || parseFloat(p.tax_rebate_rate) || 0,
       };
     });
-
-    // 历史价防呆: 单价非主数据来源(或为0)的行标红返回，提醒人工核对，避免错价出货。
-    // (不依赖历史脏数据对比——主数据已是权威；这里只兜住"没用上主数据价"的风险行)
-    var priceWarnings = cleanProducts
-      .filter(function(cp){ return cp.sku && (!cp._priceFromMaster || !(cp.unitPrice > 0)); })
-      .map(function(cp){ return { sku: cp.sku, name: cp.name, unitPrice: cp.unitPrice,
-        reason: cp.unitPrice > 0 ? "单价非主数据来源，请核对" : "缺单价" }; });
-    if (priceWarnings.length) console.warn("[order-create-v2] price_warnings:", JSON.stringify(priceWarnings));
-
-    // GW/CBM 估值警告 (Workstream A, 2026-06-07): 前端展示黄标
-    var gwWarnings = cleanProducts
-      .filter(function(cp){ return cp.sku && (cp._gwEstimated || !(parseFloat(cp.grossWeight) > 0)); })
-      .map(function(cp){ return {
-        sku: cp.sku, name: cp.name,
-        gw_ctn: cp.grossWeight || null,
-        cbm_ctn: cp.cbm || null,
-        reason: cp._gwEstimated ? "GW从NW×1.15估算，建议补充工厂实测数据" : "缺GW/CBM，请补充产品主数据"
-      }; });
-    if (gwWarnings.length) console.warn("[order-create-v2] gw_warnings:", JSON.stringify(gwWarnings));
-
-    // ── 数据完整性预警 (2026-06-07) ─────────────────────────────────────────
-    // 建单后自动检查关键字段缺失，返回 dataWarnings 供前端红标提醒。不阻断建单。
-    var dataWarnings = cleanProducts
-      .filter(function(cp){ return cp.sku; })
-      .reduce(function(acc, cp) {
-        var missing = [];
-        if (!cp.barcode && !(skuMasterMap[(cp.sku||"").trim()] || {}).barcode) missing.push("BARCODE");
-        if (!cp.size && !cp.spec && !(skuMasterMap[(cp.sku||"").trim()] || {}).size && !(skuMasterMap[(cp.sku||"").trim()] || {}).spec) missing.push("SIZE");
-        if (missing.length) acc.push({ sku: cp.sku, name: cp.name || "", missing: missing, action: "请在产品主数据补充后重建单或人工核实" });
-        return acc;
-      }, []);
-    if (dataWarnings.length) console.warn("[order-create-v2] data_warnings:", JSON.stringify(dataWarnings));
-
-    // 落库前最终审计闸门(复用 order-audit 模块): BLOCK 级问题(缺主数据/数量非法/单价口径错)直接 422，绝不建错单。
-    // 价格已在上方按主数据重算，故此处主要兜住 数量非法 / SKU不在主数据 等重算救不了的。审计本身报错则 fail-open 不挡建单。
-    try {
-      var _auditLines = cleanProducts.map(function (cp) {
-        return { sku: cp.sku, qty: cp.qty, unitPrice: cp.unitPrice, subtotal: cp.subtotal };
-      });
-      var _audit = await runOrderAudit(pool, _auditLines);
-      if (_audit && _audit.summary && _audit.summary.blockCount > 0) {
-        console.warn("[order-create-v2] ORDER_AUDIT_BLOCKED:", JSON.stringify(_audit.findings));
-        return res.status(422).json({
-          error: "订单审计未通过，存在阻断级问题，未建单",
-          code: "ORDER_AUDIT_BLOCKED",
-          findings: _audit.findings,
-          canonicalLines: _audit.canonicalLines,
-        });
-      }
-    } catch (auditErr) {
-      console.warn("[order-create-v2] order audit failed (non-fatal):", auditErr.message);
-    }
 
     // Auto container type
     var containerType = body.containerType || (totalCBM < 30 ? "20GP" : "40HQ");
@@ -1195,9 +1206,10 @@ export default async function handler(req, res) {
     var extraCols = ["factory_code"];
     var extraVals = [factoryCodeForCol];
     if (hasBlNoCol) { extraCols.push("bl_no"); extraVals.push(blNoForCol); }
-    // 代购单=特殊单型（2026-06-11 Damon）：daigou 标记驱动 DG徽章/FE必办/价格三件套/客户×1.02
-    var _exportMode = (body.export_mode === "daigou" || body.daigou === true) ? "daigou" : "direct";
-    extraCols.push("export_mode"); extraVals.push(_exportMode);
+    // 出单主体权威码(seller_profiles.code,如 petbaby/yangbaobao)。前端按上下游关系带出,不默认兜底。
+    // 用 extraCols 动态追加,占位符自动偏移($49+),避免手排 $1-$48 错位。
+    var sellerCodeForCol = (body.seller_code || body.sellerCode || "").toString().trim().toLowerCase() || null;
+    extraCols.push("seller_code"); extraVals.push(sellerCodeForCol);
     // Build $49, $50, ... placeholders for the extras
     var extraPlaceholders = extraVals.map(function(_v, i){ return "$" + (48 + i + 1); }).join(",");
 
@@ -1276,7 +1288,7 @@ export default async function handler(req, res) {
       /*$38*/ "pending",
       /*$39*/ null,
       /*$40*/ JSON.stringify(cleanProducts),
-      /*$41*/ _mfrName || factory || "",  // FIX(工厂列): 优先产品映射工厂名 _mfrName(=products[0].factory_name)，杜绝误写买方/巴匕
+      /*$41*/ factory || "",
       /*$42*/ issuingCompany || "",
       /*$43*/ issuingCompanyEN || "",
       /*$44*/ remarks || "",
@@ -1291,51 +1303,54 @@ export default async function handler(req, res) {
     var result = await pool.query(sql, vals);
     var order = result.rows[0];
 
-    // ─────────────────────────────────────────────────────────────────
-    // FIX(line_items): 把产品写进 order_line_items 表（之前只写了 products jsonb 列，
-    // 导致订单详情「产品行」网格永远空）。非致命：失败不阻断建单。
-    // 字段映射与 raw.products 一致，单据(PI/PO)与UI网格共用同一真值。
+    // ── Sync products to order_line_items (fail-open) ─────────────────────
     try {
-      var _num = function(v){ var n = Number(String(v == null ? "" : v).replace(/[^0-9.\-]/g, "")); return isNaN(n) ? null : n; };
-      var _li = Array.isArray(cleanProducts) ? cleanProducts : [];
-      for (var _i = 0; _i < _li.length; _i++) {
-        var p = _li[_i] || {};
-        var _qty = _num(p.qty) || 0;
-        var _up  = _num(p.unitPrice); if (_up == null) _up = _num(p.price);
-        var _fp  = _num(p.factoryPrice); if (_fp == null) _fp = _num(p.factory_price); if (_fp == null) _fp = _up;
-        var _bg  = _num(p.bgBx); if (_bg == null) _bg = _num(p.carton_qty); if (_bg == null) _bg = _num(p.bg_bx); if (_bg == null) _bg = _num(p.bagsPerBox);
-        // FIX 2026-06-03 forge: declare_amount_per_box(每箱申报额)从products主数据带,报关SSOT用,缺=null由报关端点STOP
-        var _declPerBox = _num((skuMasterMap[(p.sku||p.code||"").trim()]||{}).declaration_amount);
-        if (_declPerBox == null) _declPerBox = _num(p.declareAmountPerBox);
-        if (_declPerBox == null) _declPerBox = _num(p.declare_amount_per_box);
+      if (Array.isArray(cleanProducts) && cleanProducts.length > 0) {
+        var liVals = [];
+        var liRows = cleanProducts.map(function(p, idx) {
+          var base = liVals.length;
+          liVals.push(
+            order.id,
+            p.sku            || null,
+            p.barcode        || p.code       || null,
+            p.name           || null,
+            p.brand          || null,
+            parseInt(p.innerQty)  || null,
+            parseFloat(p.qty)     || 0,
+            p.unit           || 'CTN',
+            parseFloat(p.unitPrice)           || 0,
+            parseFloat(p.factoryPrice)        || parseFloat(p.unitPrice) || 0,
+            parseFloat(p.subtotal)            || 0,
+            parseFloat(p.factorySubtotal)     || null,
+            parseFloat(p.netWeight)           || null,
+            parseFloat(p.grossWeight)         || null,
+            parseFloat(p.cbm)                 || null,
+            p.size                            || null,
+            p.hsCode         || p.hs_code     || null,
+            p.declarationName || p.declaration_name || null,
+            p.blDescription  || p.bl_description   || null,
+            parseFloat(p.vatRate)             || null,
+            parseFloat(p.taxRebateRate)       || null,
+            parseFloat(p.declareAmountPerBox) || null,
+            idx,
+            parseInt(p.product_id) || null
+          );
+          var n = base + 1;
+          return '($' + [n,n+1,n+2,n+3,n+4,n+5,n+6,n+7,n+8,n+9,n+10,n+11,n+12,n+13,n+14,n+15,n+16,n+17,n+18,n+19,n+20,n+21,n+22,n+23].join(',$') + ')';
+        });
         await pool.query(
           `INSERT INTO order_line_items
-            (order_id, sku, barcode, product_name, brand, bg_bx, qty_ctn, unit, unit_price, factory_price,
-             subtotal, factory_subtotal, nw_ctn, gw_ctn, cbm_ctn, size, hs_code, declaration_name, bl_description,
-             vat_rate, tax_rebate_rate, sort_order, declare_amount_per_box)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
-          [ order.id,
-            p.sku || p.productCode || null,
-            p.barcode || p.code || (skuMasterMap[(p.sku||p.productCode||"").trim()] || {}).barcode || null,
-            p.name || p.productName || null,
-            p.brand || null,
-            _bg, _qty, p.unit || "CTN", _up, _fp,
-            (_qty && _up != null) ? +(_qty * _up).toFixed(2) : null,
-            (_qty && _fp != null) ? +(_qty * _fp).toFixed(2) : null,
-            _num(p.netWeight) != null ? _num(p.netWeight) : _num(p.net_weight),
-            _num(p.grossWeight) != null ? _num(p.grossWeight) : _num(p.gross_weight),
-            _num(p.cbm),
-            p.size || p.spec || (skuMasterMap[(p.sku||p.productCode||"").trim()] || {}).size || (skuMasterMap[(p.sku||p.productCode||"").trim()] || {}).spec || null,
-            p.hs_code || p.hsCode || null,
-            p.declaration_name || p.declarationName || (p.raw && p.raw.declareName) || null,
-            p.bl_description || p.blDescription || (p.raw && p.raw.blDesc) || null,
-            _num(p.vat_rate) != null ? _num(p.vat_rate) : _num(p.vatRate),
-            _num(p.tax_rebate_rate),
-            _i + 1, _declPerBox ]
+            (order_id, sku, barcode, product_name, brand, bg_bx,
+             qty_ctn, unit, unit_price, factory_price,
+             subtotal, factory_subtotal, nw_ctn, gw_ctn, cbm_ctn, size,
+             hs_code, declaration_name, bl_description,
+             vat_rate, tax_rebate_rate, declare_amount_per_box, sort_order, product_id)
+           VALUES ` + liRows.join(','),
+          liVals
         );
       }
     } catch (liErr) {
-      console.warn("[order-create-v2] order_line_items insert failed (non-fatal):", liErr.message);
+      console.error('[order-create-v2] order_line_items batch insert failed (non-fatal):', liErr.message);
     }
 
     // Save trade_terms to order row + update customer's last-used value (non-fatal)
@@ -1472,9 +1487,6 @@ export default async function handler(req, res) {
       totalCBM: totalCBM,
       containerType: containerType,
       productCount: cleanProducts.length,
-      priceWarnings: priceWarnings,  // 单价非主数据来源/缺价的行，前端可红标提醒
-      gwWarnings: gwWarnings,        // GW估算/缺失的行，前端可黄标提醒（不阻断建单）
-      dataWarnings: dataWarnings,    // 建单后字段缺失预警(BARCODE/SIZE等)，前端红标，不阻断建单
     };
     var summaryFull = Object.assign({}, summaryPublic, {
       totalAmountFactory: totalAmountFactory,

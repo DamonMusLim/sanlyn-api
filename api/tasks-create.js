@@ -35,6 +35,7 @@ const VALID_LEVELS      = ["order", "factory", "doc", "logi", "approve"];
 const VALID_OWNER_TYPES = ["order", "factory", "document", "logistics"];
 const VALID_RISK        = ["low", "mid", "high", "urgent"];
 const VALID_MODE        = ["owned", "agent", "agent_compliance"];
+const VALID_DOMAINS     = ["ocean", "customs", "finance", "procurement", "docs", "general"];
 
 function genTaskId() {
   return "t-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
@@ -75,6 +76,7 @@ export default async function handler(req, res) {
   if (b.owner_object_type && !VALID_OWNER_TYPES.includes(b.owner_object_type)) return res.status(400).json({ success: false, error: "owner_object_type must be " + VALID_OWNER_TYPES.join("|") });
   if (b.risk_level        && !VALID_RISK.includes(b.risk_level))         return res.status(400).json({ success: false, error: "risk_level must be " + VALID_RISK.join("|") });
   if (b.mode              && !VALID_MODE.includes(b.mode))               return res.status(400).json({ success: false, error: "mode must be " + VALID_MODE.join("|") });
+  if (b.domain            && !VALID_DOMAINS.includes(b.domain))         return res.status(400).json({ success: false, error: "domain must be " + VALID_DOMAINS.join("|") });
 
   // ── order 级一致性校验 ──
   let ownerObjectId  = b.owner_object_id || null;
@@ -163,12 +165,12 @@ export default async function handler(req, res) {
          id, title, task_type, level, status, risk_level, mode,
          owner_object_type, owner_object_id, owner_object_label,
          related_order_no, related_po_no, company_code, factory_company_code,
-         due_at, reason, raw
+         due_at, reason, raw, domain
        ) VALUES (
          $1, $2, $3, $4, 'open', $5, $6,
          $7, $8, $9,
          $10, $11, $12, $13,
-         $14, $15, $16
+         $14, $15, $16, $17
        ) RETURNING *`,
       [
         taskId,
@@ -187,6 +189,7 @@ export default async function handler(req, res) {
         b.due_at || null,
         b.reason || null,
         JSON.stringify(rawBlob),
+        b.domain || 'general',
       ]
     );
     const task = insTask.rows[0];

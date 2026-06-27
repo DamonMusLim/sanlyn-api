@@ -57,6 +57,37 @@ var ENSURE_COLS = `
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS remarks TEXT;
 `;
 
+// 软删 + 取消 + 审计列 (2026-06-26: 取消后才能删 / 删除可找回 / 操作留痕)
+var SOFT_COLS = `
+  ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+  ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS deleted_by TEXT;
+  ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
+  ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS cancelled_by TEXT;
+`;
+var AUDIT_DDL = `
+  CREATE TABLE IF NOT EXISTS shipping_plan_audit (
+    id BIGSERIAL PRIMARY KEY,
+    plan_id INTEGER,
+    plan_uid TEXT,
+    action TEXT NOT NULL,
+    actor TEXT,
+    detail JSONB,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );
+`;
+async function writeAudit(pool, plan, action, actor, detail) {
+  try {
+    await pool.query(
+      "INSERT INTO shipping_plan_audit (plan_id, plan_uid, action, actor, detail) VALUES ($1,$2,$3,$4,$5::jsonb)",
+      [plan && plan.id != null ? plan.id : null, plan && plan._id ? plan._id : null, action, actor || "admin", JSON.stringify(detail || {})]
+    );
+  } catch (e) { console.warn("[shipping audit]", e.message); }
+}
+function actorOf(req) {
+  var u = req.user || {};
+  return u.name || u.username || u.email || u.role || "admin";
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -76,6 +107,20 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     try {
       var action = req.query.action || "init";
+
+      if (action === "migrate") {
+        await pool.query(SOFT_COLS).catch(function(e){ console.warn("[migrate soft_cols]", e.message); });
+        await pool.query(AUDIT_DDL).catch(function(e){ console.warn("[migrate audit_ddl]", e.message); });
+        return res.status(200).json({ success: true, migrated: ["deleted_at","deleted_by","cancelled_at","cancelled_by","shipping_plan_audit"] });
+      }
+
+      if (action === "audit") {
+        var aid = req.query.id;
+        var aq = aid
+          ? await pool.query("SELECT * FROM shipping_plan_audit WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 100", [aid])
+          : await pool.query("SELECT * FROM shipping_plan_audit ORDER BY created_at DESC LIMIT 100");
+        return res.status(200).json({ success: true, data: aq.rows });
+      }
 
       if (action === "detail" && req.query.id) {
         var plan = await pool.query("SELECT * FROM shipping_plans WHERE _id = $1", [req.query.id]);
@@ -100,6 +145,17 @@ export default async function handler(req, res) {
   // ── PATCH: update existing plan ──
   if (req.method === "PATCH") {
     try {
+      // 找回(恢复软删) — PATCH ?action=restore&id=<int id>
+      if (req.query.action === "restore") {
+        var rid = req.query.id || (req.body || {}).id;
+        if (!rid) return res.status(400).json({ error: "id required" });
+        var ractor = actorOf(req);
+        var rr = await pool.query("UPDATE shipping_plans SET deleted_at = NULL, deleted_by = NULL, updated_at = now() WHERE id = $1 RETURNING id, _id, shipment_no", [rid]);
+        if (!rr.rows.length) return res.status(404).json({ error: "Not found" });
+        await writeAudit(pool, rr.rows[0], "restore", ractor, { shipment_no: rr.rows[0].shipment_no });
+        return res.status(200).json({ success: true, restored: rr.rows[0].id });
+      }
+
       var id = req.query.id || (req.body || {})._id;
       if (!id) return res.status(400).json({ error: "_id required for update" });
 
@@ -146,14 +202,31 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── DELETE ──
+  // ── DELETE (软删=移入回收站，可找回；取消后才能删；有报关记录则拦截) ──
   if (req.method === "DELETE") {
     try {
       var id = req.query.id;
-      if (!id) return res.status(400).json({ error: "_id required" });
-      var del = await pool.query("DELETE FROM shipping_plans WHERE _id = $1 RETURNING _id", [id]);
-      if (!del.rows.length) return res.status(404).json({ error: "Not found" });
-      return res.status(200).json({ success: true, deleted: del.rows[0]._id });
+      if (!id) return res.status(400).json({ error: "id required" });
+      await pool.query(SOFT_COLS).catch(function(){});   // 幂等保列存在
+      var cur = await pool.query("SELECT id, _id, shipment_no, bl_no, flow_status, deleted_at FROM shipping_plans WHERE id = $1", [id]);
+      if (!cur.rows.length) return res.status(404).json({ error: "Not found" });
+      var plan = cur.rows[0];
+      if (plan.deleted_at) return res.status(409).json({ error: "already_deleted", message: "该记录已在回收站中。" });
+      // 闸1: 取消后才能删
+      var st = String(plan.flow_status || "");
+      var isCancelled = /cancel/i.test(st) || st.indexOf("已取消") >= 0 || st === "取消";
+      if (!isCancelled) return res.status(409).json({ error: "must_cancel_first", message: "请先「取消订单」，取消后才能删除。" });
+      // 闸2: 已有报关汇总记录则拦截(防报关失锚)，确需删除加 ?force=1
+      var force = req.query.force === "1";
+      if (plan.bl_no && !force) {
+        var cc = await pool.query("SELECT 1 FROM customs_consolidated WHERE bl_no = $1 LIMIT 1", [plan.bl_no]).catch(function(){ return { rows: [] }; });
+        if (cc.rows.length) return res.status(409).json({ error: "has_customs_records", message: "该票已有报关汇总(customs_consolidated)，删除会造成报关失锚。确需删除请加 ?force=1。" });
+      }
+      var actor = actorOf(req);
+      var del = await pool.query("UPDATE shipping_plans SET deleted_at = now(), deleted_by = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING id, _id", [id, actor]);
+      if (!del.rows.length) return res.status(409).json({ error: "already_deleted", message: "该记录已在回收站中。" });
+      await writeAudit(pool, plan, "delete", actor, { bl_no: plan.bl_no, shipment_no: plan.shipment_no, force: force });
+      return res.status(200).json({ success: true, soft_deleted: del.rows[0].id, recoverable: true, message: "已移入回收站，可找回。" });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }

@@ -1,7 +1,8 @@
 // proxy-file.js — server-side proxy for JDY / external file URLs
 // Fixes CORS: frontend can't fetch files.jiandaoyun.com directly
 // Usage: GET /api/proxy-file?url=https://files.jiandaoyun.com/...
-import fetch from "node-fetch";
+// (2026-06-22) Use Node 18+ built-in global fetch; node-fetch dependency removed.
+import { Readable } from "node:stream";
 
 const ALLOWED_HOSTS = [
   "files.jiandaoyun.com",
@@ -35,7 +36,7 @@ export default async function handler(req, res) {
       method: req.method === "HEAD" ? "HEAD" : "GET",
       headers: { "User-Agent": "SanlynOS/1.0" },
       redirect: "follow",
-      timeout: 15000,
+      signal: AbortSignal.timeout(15000),
     });
 
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -51,7 +52,12 @@ export default async function handler(req, res) {
     }
 
     res.status(upstream.status);
-    upstream.body.pipe(res);
+    // Built-in fetch returns a WHATWG ReadableStream (no Node .pipe); bridge it.
+    if (upstream.body) {
+      Readable.fromWeb(upstream.body).pipe(res);
+    } else {
+      res.end();
+    }
   } catch (err) {
     res.status(502).json({ error: "Proxy fetch failed: " + err.message });
   }

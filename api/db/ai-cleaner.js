@@ -133,6 +133,12 @@ async function taskFactoryCodeInfer(pool, limit, dryRun) {
   var knownByName = {};
   fc.forEach(r => { if (r.factory_name) knownByName[r.factory_name] = r.factory_code; });
 
+  // CANONICAL-CODE GUARD (2026-06-13): factory_code 只允许写 companies.code 已注册值。
+  // 历史病根：AI 自造 2 字母简码（ZS/ZC/TD）与 companies 编码脱钩，导致 orders JOIN 挂空。
+  var canonByUpper = {};
+  (await pool.query("SELECT code FROM companies WHERE active IS NOT FALSE")).rows
+    .forEach(r => { canonByUpper[String(r.code).toUpperCase()] = r.code; });
+
   var rows = (await pool.query(
     `SELECT id, sku, product_name, brand, factory_name
      FROM products WHERE (factory_code IS NULL OR factory_code = '') AND active = true LIMIT $1`,
@@ -149,22 +155,24 @@ async function taskFactoryCodeInfer(pool, limit, dryRun) {
       continue;
     }
     // Fallback: AI 推断（少见，多数 factory_name 都有值）
-    var prompt = `从产品信息推断工厂代号（2 个大写字母）。
+    var prompt = `从产品信息推断工厂代号。只能从下面「已注册编码」中选择一个；无法确定就返回空 code。
 
 product_name: ${p.product_name}
 brand: ${p.brand}
 factory_name: ${p.factory_name || "—"}
 sku: ${p.sku}
 
-参考：DIBAQ→DB / FARMINA→FM / WANPY→WP / Josera→JR / Petcurean→PC
+已注册编码: ${Object.values(canonByUpper).join(" / ")}
 
-输出 JSON: {"code":"XX","confidence":0.0-1.0}`;
+输出 JSON: {"code":"已注册编码之一或空","confidence":0.0-1.0}`;
     var ans = await callMM(prompt);
-    if (ans && ans.code && ans.confidence >= 0.7) {
-      if (!dryRun) await pool.query("UPDATE products SET factory_code = $1 WHERE id = $2", [ans.code.toUpperCase(), p.id]);
-      results.push({ id: p.id, sku: p.sku, factory_code: ans.code, source: "ai", confidence: ans.confidence });
+    // 写库前强校验：必须命中 companies 注册码（大小写归一到注册原样），否则跳过
+    var canonCode = ans && ans.code ? canonByUpper[String(ans.code).trim().toUpperCase()] : null;
+    if (canonCode && ans.confidence >= 0.7) {
+      if (!dryRun) await pool.query("UPDATE products SET factory_code = $1 WHERE id = $2", [canonCode, p.id]);
+      results.push({ id: p.id, sku: p.sku, factory_code: canonCode, source: "ai", confidence: ans.confidence });
     } else {
-      results.push({ id: p.id, sku: p.sku, status: "skipped", reason: "AI 信心不足" });
+      results.push({ id: p.id, sku: p.sku, status: "skipped", reason: ans && ans.code ? "AI 给出未注册编码 " + ans.code : "AI 信心不足" });
     }
   }
   return { task: "factory-code-infer", scanned: rows.length, written: dryRun ? 0 : results.filter(r => r.factory_code).length, results };

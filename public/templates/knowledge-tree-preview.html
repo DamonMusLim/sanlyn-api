@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>知识树 · Sanlyn · 信息分类预览</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"PingFang SC",sans-serif;background:#0f172a;color:#e2e8f0;padding:20px;font-size:13px}
+  .wrap{max-width:1400px;margin:0 auto}
+  h1{font-size:20px;font-weight:600;margin-bottom:4px;color:#fff}
+  .sub{color:#94a3b8;font-size:12px;margin-bottom:16px}
+
+  .toolbar{display:flex;justify-content:space-between;align-items:center;background:#1e293b;padding:10px 14px;border-radius:8px;margin-bottom:14px}
+  .toolbar .filters{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{padding:4px 10px;background:rgba(148,163,184,0.1);color:#94a3b8;border-radius:14px;font-size:11px;cursor:pointer;border:1px solid transparent}
+  .pill.active{background:#2563eb;color:#fff;border-color:#3b82f6}
+  .stats{font-size:11px;color:#94a3b8}
+  .stats strong{color:#fde68a}
+
+  .tree{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .branch{background:#1e293b;border-radius:8px;border:1px solid #334155;overflow:hidden;transition:all .2s}
+  .branch:hover{border-color:#3b82f6;transform:translateY(-1px)}
+  .branch.expanded{grid-column:span 2;border-color:#3b82f6}
+
+  .branch-head{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;background:linear-gradient(135deg,#0f172a,#1e293b);border-bottom:1px solid #334155}
+  .branch-head .name{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;color:#fff}
+  .branch-head .name .ico{font-size:18px}
+  .branch-head .name .badge{background:rgba(59,130,246,0.15);color:#93c5fd;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-left:4px}
+  .branch-head .name .badge.urgent{background:rgba(239,68,68,0.18);color:#fca5a5}
+  .branch-head .chev{color:#64748b;font-size:11px;transition:transform .15s}
+  .branch.expanded .chev{transform:rotate(90deg)}
+
+  .branch-body{padding:8px 14px 12px}
+  .item{padding:7px 0;border-bottom:1px solid rgba(51,65,85,0.5);font-size:12px;line-height:1.5}
+  .item:last-of-type{border-bottom:none}
+  .item .row1{color:#e2e8f0;display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .item .row1 .id{font-family:ui-monospace,monospace;color:#7dd3fc;font-size:11px;flex-shrink:0}
+  .item .row1 .title{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .item .row1 .amt{color:#fde68a;font-weight:600;font-family:ui-monospace,monospace;flex-shrink:0}
+  .item .row2{color:#94a3b8;font-size:10px;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap}
+  .item .row2 .tag{padding:0 4px;background:rgba(148,163,184,0.1);border-radius:2px}
+  .item .row2 .tag.urgent{background:rgba(239,68,68,0.15);color:#fca5a5}
+  .item .row2 .tag.ok{background:rgba(16,185,129,0.15);color:#86efac}
+  .item .row2 .tag.warn{background:rgba(251,191,36,0.15);color:#fde68a}
+
+  .branch-foot{padding:8px 14px;border-top:1px solid rgba(51,65,85,0.5);display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#64748b;background:#0f172a}
+  .branch-foot a{color:#60a5fa;text-decoration:none;cursor:pointer}
+  .branch-foot a:hover{text-decoration:underline}
+
+  /* Hidden items in collapsed mode */
+  .branch:not(.expanded) .item.more{display:none}
+
+  /* Accent colors per branch category */
+  .branch.order{border-top:3px solid #f59e0b}
+  .branch.ship{border-top:3px solid #06b6d4}
+  .branch.finance{border-top:3px solid #ec4899}
+  .branch.product{border-top:3px solid #8b5cf6}
+  .branch.customer{border-top:3px solid #3b82f6}
+  .branch.factory{border-top:3px solid #22c55e}
+  .branch.customs{border-top:3px solid #f97316}
+  .branch.doc{border-top:3px solid #a855f7}
+  .branch.perm{border-top:3px solid #ef4444}
+  .branch.task{border-top:3px solid #14b8a6}
+  .branch.audit{border-top:3px solid #fbbf24}
+  .branch.partner{border-top:3px solid #6366f1}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🌳 Sanlyn 知识树</h1>
+  <div class="sub">12 类信息分类·每类预览 3 条·点 chevron 展开看全部</div>
+
+  <div class="toolbar">
+    <div class="filters">
+      <div class="pill active">全部</div>
+      <div class="pill">今日新</div>
+      <div class="pill">⚠️ 需处理</div>
+      <div class="pill">📌 收藏</div>
+    </div>
+    <div class="stats">总条目 <strong>1,247</strong> · 异常 <strong>7</strong> · 今日新增 <strong>23</strong></div>
+  </div>
+
+  <div class="tree" id="tree"></div>
+
+</div>
+
+<script>
+const BRANCHES = [
+  { cat:'order', ico:'📦', name:'订单', count:93, badge:'19 待办', urgent:false, items:[
+    {id:'WP-60',  title:'PETSOME EU · Dogsome 5SKU × 2400 CTN', amt:'¥164,736', tags:[['warn','待开船']]},
+    {id:'CP-3',   title:'DIBAQ · SNIFFLY 12SKU',                amt:'¥500,531', tags:[['ok','已发船']]},
+    {id:'ZC-19',  title:'PETSOME · WANPY 150CTN',               amt:'¥45,200',  tags:[['ok','已到港']]},
+    {id:'XM-235', title:'PETSOME EU · 4×40HQ 8,800CTN',         amt:'¥1,420,000',tags:[['warn','清关中']], more:true},
+    {id:'WP-62',  title:'PETSOME EU · 4×40HQ',                  amt:'¥2,100,000',tags:[['ok','已发船']], more:true},
+  ]},
+  { cat:'ship', ico:'🚢', name:'海运计划', count:254, badge:'14 在途', urgent:false, items:[
+    {id:'SP-LL2', title:'XMN→LAX · COSCO MEDUWX608047',   amt:'$1,540', tags:[['ok','在途'],['','ETA 6/15']]},
+    {id:'SP-CP1', title:'XMN→LAX · MSC MEDUWX551155',      amt:'$1,540', tags:[['ok','在途']]},
+    {id:'SP-WP60',title:'QIN→PKG · COSCO COAU9504228840',  amt:'¥3,500', tags:[['warn','待 ATA']]},
+    {id:'SP-XM',  title:'XMN→LAX · 4×40HQ',                amt:'$6,160', tags:[['ok','已到港']], more:true},
+  ]},
+  { cat:'finance', ico:'💰', name:'财务', count:432, badge:'3 高优', urgent:true, items:[
+    {id:'INV-CP3',title:'⚠️ ENRICH · 海运费 IV 超 30 天未付', amt:'$1,540', tags:[['urgent','逾期 32d']]},
+    {id:'INV-WP59',title:'PETSOME · 待开 IV',                 amt:'¥164,736',tags:[['warn','待开票']]},
+    {id:'PAY-zc', title:'付中宠 · CP-2 货款',                  amt:'¥358,000',tags:[['ok','已付']]},
+    {id:'CN-001', title:'CN 贷记单 · DIBAQ 退货',              amt:'¥12,500', tags:[['warn','待确认']], more:true},
+  ]},
+  { cat:'product', ico:'🏷', name:'产品 / SKU', count:874, badge:'22 品牌', urgent:false, items:[
+    {id:'9551016', title:'Dogsome duck 375g · 375G×24/CTN',     amt:'¥2.86', tags:[['ok','factory_price']]},
+    {id:'9551014', title:"PET'S ACADEMY BENTONITE · 1.3KG×12",  amt:'¥15.36',tags:[['ok','NDA']]},
+    {id:'TNC-24',  title:'WANPY MEAT LOAF CHICKEN 375g',        amt:'¥3.50', tags:[['ok','OEM']]},
+    {id:'8885565', title:'WANPY VENISON 375g',                  amt:'¥4.20', tags:[['ok','OEM']], more:true},
+  ]},
+  { cat:'customer', ico:'🤝', name:'客户 (买家)', count:16, badge:'16 active', urgent:false, items:[
+    {id:'CN-00037', title:'🇲🇾 PETSOME SDN BHD · 28 orders',     amt:'¥5.4M',  tags:[['ok','VIP']]},
+    {id:'CN-00040', title:'🇲🇾 ENRICH CHAMPION · 25 orders',     amt:'¥3.8M',  tags:[['ok','NDA']]},
+    {id:'CN-00038', title:'🇲🇾 PETSOME (EU) · 19 orders',        amt:'¥3.2M',  tags:[['ok','VIP']]},
+    {id:'CN-00048', title:'🇲🇾 HARMONIOUS · 7 orders',           amt:'¥1.1M',  tags:[], more:true},
+  ]},
+  { cat:'factory', ico:'🏭', name:'工厂', count:11, badge:'8 active', urgent:false, items:[
+    {id:'zc-oem', title:'烟台中宠 OEM · 7 品牌',             amt:'',  tags:[['ok','合作 5y']]},
+    {id:'FX',     title:'宣城福新 · 1 品牌 SNIFFLY',         amt:'',  tags:[['ok','合作 3y']]},
+    {id:'LL',     title:'连云港中砂 · 10 品牌',              amt:'',  tags:[['ok','合作 4y']]},
+    {id:'CL',     title:'辽宁宠爱 · 4 品牌 (ENRICH族)',      amt:'',  tags:[['warn','NDA']], more:true},
+  ]},
+  { cat:'customs', ico:'🛂', name:'报关', count:129, badge:'2 待审', urgent:false, items:[
+    {id:'PB-2509', title:'⚠️ 待补料 · HS 0511 申报要素缺',  amt:'',  tags:[['urgent','待补']]},
+    {id:'PB-WP60', title:'XMN PETSOME EU · 已申报',         amt:'',  tags:[['ok','已放行']]},
+    {id:'PB-CP3',  title:'XMN DIBAQ · 已申报',              amt:'',  tags:[['ok','已放行']]},
+  ]},
+  { cat:'doc', ico:'📑', name:'单证文件', count:386, badge:'4 待签', urgent:false, items:[
+    {id:'PI-WP60', title:'PI · PETSOME EU FS20260428002',  amt:'',  tags:[['warn','0/3 已签']]},
+    {id:'BL-LL2',  title:'BL · MEDUWX608047 (LL-2+CP-3)',  amt:'',  tags:[['ok','已签发']]},
+    {id:'IV-CP3',  title:'商业 IV · CP-3 (CN+EN 双语)',    amt:'',  tags:[['ok','已发']]},
+    {id:'PL-WP62', title:'装箱单 PL · 新版含 CBM',         amt:'',  tags:[['ok','已发']], more:true},
+  ]},
+  { cat:'perm', ico:'🔒', name:'权限 / 授权', count:60, badge:'13 routes', urgent:false, items:[
+    {id:'BR-1',   title:'中宠品牌部 → WANPY → PETSOME',     amt:'', tags:[['ok','active']]},
+    {id:'BR-2',   title:'中宠 OEM → SNIFFLY → PETSOME EU',  amt:'', tags:[['ok','active']]},
+    {id:'BR-3',   title:'宠爱 → ENRICH → ENRICH CHAMPION',  amt:'', tags:[['warn','NDA']]},
+    {id:'BR-4',   title:'恒安 → AMD → HARMONIOUS',          amt:'', tags:[['ok','active']], more:true},
+  ]},
+  { cat:'task', ico:'📋', name:'任务大厅', count:7, badge:'7 待办', urgent:true, items:[
+    {id:'T-184',  title:'⚠️ ENRICH 海运费催款 (32d 逾期)',  amt:'', tags:[['urgent','高优']]},
+    {id:'T-183',  title:'同步 WP-62 BL 状态到客户',         amt:'', tags:[['warn','中']]},
+    {id:'T-182',  title:'更新中宠 zc-brand 品牌池',         amt:'', tags:[['','低']]},
+  ]},
+  { cat:'audit', ico:'⚖️', name:'审计 / 改动', count:218, badge:'今日 5', urgent:false, items:[
+    {id:'A-512',  title:'Damon 改 SP-LL2 港杂费 ¥3950→4450', amt:'+¥500', tags:[['','5min']]},
+    {id:'A-511',  title:'Lyn 改 SP-WP60 ETA 6/12→6/15',       amt:'', tags:[['','1h']]},
+    {id:'A-510',  title:'Damon 改 CN-00037 brand_routes',    amt:'+4', tags:[['','3h']], more:true},
+  ]},
+  { cat:'partner', ico:'🔗', name:'合作关系网', count:28, badge:'26 buyer-fac', urgent:false, items:[
+    {id:'PR-PB',  title:'petbaby → 16 买家 (代出口主)',     amt:'', tags:[['ok','core']]},
+    {id:'PR-FX',  title:'FX 福新 → 3 买家 (PETSOME 系)',    amt:'', tags:[['ok','active']]},
+    {id:'PR-LL',  title:'LL 中砂 → 1 买家 (Eversparkles)',  amt:'', tags:[['ok','active']]},
+  ]},
+];
+
+function render() {
+  const wrap = document.getElementById('tree');
+  wrap.innerHTML = '';
+  BRANCHES.forEach((b, i) => {
+    const items = b.items.map(it => `
+      <div class="item ${it.more?'more':''}">
+        <div class="row1">
+          <span class="id">${it.id}</span>
+          <span class="title">${it.title}</span>
+          ${it.amt ? `<span class="amt">${it.amt}</span>` : ''}
+        </div>
+        ${it.tags && it.tags.length ? `<div class="row2">${it.tags.map(t=>`<span class="tag ${t[0]}">${t[1]||t[0]}</span>`).join('')}</div>` : ''}
+      </div>
+    `).join('');
+    const totalShown = b.items.filter(x=>!x.more).length;
+    wrap.insertAdjacentHTML('beforeend', `
+      <div class="branch ${b.cat}" data-idx="${i}">
+        <div class="branch-head" onclick="this.parentElement.classList.toggle('expanded')">
+          <div class="name">
+            <span class="ico">${b.ico}</span>
+            <span>${b.name}</span>
+            <span class="badge ${b.urgent?'urgent':''}">${b.badge}</span>
+          </div>
+          <span class="chev">▶</span>
+        </div>
+        <div class="branch-body">${items}</div>
+        <div class="branch-foot">
+          <span>显示 ${totalShown} / 共 ${b.count}</span>
+          <a>查看全部 →</a>
+        </div>
+      </div>
+    `);
+  });
+}
+render();
+</script>
+</body>
+</html>

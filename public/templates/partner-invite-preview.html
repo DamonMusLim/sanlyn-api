@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Partner Invite Card — Sanlyn OS Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #060A14; color: #e2e8f0; min-height: 100vh; }
+
+  .nav { display: flex; gap: 0; background: #0a1628; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 0 32px; overflow-x: auto; }
+  .nav-tab { padding: 14px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
+    color: #64748b; border-bottom: 2px solid transparent; transition: all .2s; white-space: nowrap; }
+  .nav-tab.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+  .nav-tab:hover:not(.active) { color: #94a3b8; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── Sender view ── */
+  .sender-wrap { max-width: 580px; margin: 0 auto; padding: 32px 16px; }
+
+  /* Role switcher for simulator */
+  .sim-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 24px;
+    padding: 10px 14px; background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.2);
+    border-radius: 10px; }
+  .sim-bar label { font-size: 11px; font-weight: 700; color: #fbbf24; white-space: nowrap; }
+  .sim-bar select { background: #1e293b; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px;
+    color: #f1f5f9; padding: 5px 10px; font-size: 12px; cursor: pointer; outline: none; }
+
+  .invite-header { margin-bottom: 20px; }
+  .invite-header h2 { font-size: 18px; font-weight: 800; color: #f1f5f9; margin-bottom: 4px; }
+  .invite-header p { font-size: 13px; color: #64748b; }
+
+  /* Type grid */
+  .type-grid { display: grid; gap: 8px; margin-bottom: 20px; }
+  .type-btn { padding: 14px 10px; border-radius: 10px; border: 1.5px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03); cursor: pointer; text-align: center; transition: all .15s;
+    position: relative; }
+  .type-btn:hover { border-color: rgba(96,165,250,0.4); background: rgba(96,165,250,0.06); }
+  .type-btn.selected { border-color: #60a5fa; background: rgba(96,165,250,0.1); }
+  .type-btn.default-badge::after { content: "Default"; position: absolute; top: 6px; right: 8px;
+    font-size: 9px; font-weight: 700; color: #fbbf24; background: rgba(251,191,36,0.12);
+    border: 1px solid rgba(251,191,36,0.3); padding: 1px 6px; border-radius: 10px; }
+  .type-btn .icon { font-size: 24px; display: block; margin-bottom: 5px; }
+  .type-btn .lbl { font-size: 12px; font-weight: 700; color: #94a3b8; }
+  .type-btn .desc { font-size: 10px; color: #475569; margin-top: 2px; }
+  .type-btn.selected .lbl { color: #60a5fa; }
+
+  .no-permission { padding: 24px; text-align: center; background: rgba(248,113,113,0.06);
+    border: 1px solid rgba(248,113,113,0.2); border-radius: 12px; color: #f87171; font-size: 13px; }
+
+  .form-card { background: #0f172a; border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 24px; }
+  .sec { font-size: 10px; font-weight: 700; color: #475569; letter-spacing: .08em; text-transform: uppercase;
+    margin: 20px 0 12px; display: flex; align-items: center; gap: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 6px; }
+  .sec:first-child { margin-top: 0; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 10px; font-weight: 600; color: #64748b; margin-bottom: 4px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px; padding: 9px 12px; color: #f1f5f9; font-size: 13px; outline: none; }
+  .field select option { background: #1e293b; }
+  .field textarea { min-height: 68px; resize: vertical; font-family: inherit; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .req { color: #f87171; }
+
+  .chan-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+  .ctab { padding: 4px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.1);
+    background: transparent; color: #64748b; font-size: 11px; font-weight: 700; cursor: pointer; }
+  .ctab.on { background: rgba(96,165,250,0.12); border-color: rgba(96,165,250,0.3); color: #60a5fa; }
+
+  .btn-gen { width: 100%; padding: 13px; border-radius: 10px; border: none;
+    background: linear-gradient(135deg, #2563eb, #4f46e5); color: #fff;
+    font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 18px; }
+  .btn-gen:hover { opacity: .87; }
+
+  .result { margin-top: 20px; padding: 18px 20px;
+    background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(5,150,105,0.04));
+    border: 1px solid rgba(16,185,129,0.25); border-radius: 12px; display: none; }
+  .result.show { display: block; }
+  .result h3 { font-size: 14px; font-weight: 700; color: #34d399; margin-bottom: 4px; }
+  .result .link-row { display: flex; align-items: center; gap: 8px; margin-top: 12px;
+    background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px; }
+  .result .link-text { flex: 1; font-size: 11px; color: #94a3b8; font-family: monospace; word-break: break-all; }
+  .btn-copy { padding: 5px 12px; border-radius: 6px; border: none;
+    background: #1e3a5f; color: #60a5fa; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .share-row { display: flex; gap: 8px; margin-top: 10px; }
+  .share-btn { flex: 1; padding: 8px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.1);
+    background: transparent; color: #94a3b8; font-size: 11px; font-weight: 600; cursor: pointer; }
+  .share-btn:hover { border-color: rgba(96,165,250,0.4); color: #60a5fa; }
+  .result .note { font-size: 11px; color: #475569; margin-top: 10px; line-height: 1.5; }
+
+  /* ── Recipient view ── */
+  .reg-wrap { max-width: 640px; margin: 0 auto; padding: 32px 16px; display: flex; flex-direction: column; gap: 16px; }
+  .header-card { background: linear-gradient(135deg, rgba(37,99,235,0.14), rgba(99,102,241,0.07));
+    border: 1px solid rgba(99,102,241,0.28); border-radius: 16px; padding: 32px 28px; text-align: center; }
+  .header-card .p-icon { font-size: 46px; display: block; margin-bottom: 10px; }
+  .header-card .kicker { font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: .12em; text-transform: uppercase; }
+  .header-card h1 { font-size: 22px; font-weight: 800; color: #f1f5f9; margin: 8px 0 4px; }
+  .header-card .sub { color: #94a3b8; font-size: 13px; line-height: 1.6; }
+  .header-card .msg-box { margin-top: 14px; padding: 10px 16px;
+    background: rgba(255,255,255,0.04); border-left: 3px solid #60a5fa;
+    border-radius: 6px; color: #cbd5e1; font-size: 13px; font-style: italic; text-align: left; }
+  .meta-tags { display: flex; gap: 8px; justify-content: center; margin-top: 14px; flex-wrap: wrap; }
+  .mtag { padding: 3px 10px; border-radius: 20px; font-size: 10px; font-weight: 700;
+    background: rgba(96,165,250,0.12); color: #60a5fa; border: 1px solid rgba(96,165,250,0.25); }
+  .reg-card { background: #0f172a; border: 1px solid rgba(255,255,255,0.06); border-radius: 16px; padding: 28px; }
+  .rsec { font-size: 10px; font-weight: 700; color: #475569; letter-spacing: .08em; text-transform: uppercase;
+    margin: 24px 0 14px; display: flex; align-items: center; gap: 7px;
+    border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 7px; }
+  .rsec:first-child { margin-top: 0; }
+  .file-box { display: block; padding: 12px 16px; border: 1.5px dashed rgba(255,255,255,0.12);
+    border-radius: 8px; cursor: pointer; background: rgba(255,255,255,0.02);
+    text-align: center; color: #64748b; font-size: 13px; margin-bottom: 10px; }
+  .file-box.ok { border-color: rgba(52,211,153,0.4); color: #34d399; border-style: solid; }
+  .tos-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 20px; padding: 12px;
+    background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.18); border-radius: 8px; cursor: pointer; }
+  .tos-row span { color: #cbd5e1; font-size: 12px; line-height: 1.5; }
+  .tos-row a { color: #60a5fa; }
+  .btn-sub { width: 100%; padding: 13px; border-radius: 10px; border: none;
+    background: linear-gradient(135deg, #059669, #047857); color: #fff;
+    font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 16px; }
+  .review-note { color: #64748b; font-size: 11px; text-align: center; margin-top: 10px; line-height: 1.5; }
+
+  /* ── Success ── */
+  .suc-wrap { max-width: 440px; margin: 0 auto; padding: 80px 24px; text-align: center; }
+  .suc-wrap .big { font-size: 72px; display: block; margin-bottom: 20px; }
+  .suc-wrap h2 { font-size: 24px; font-weight: 800; color: #f1f5f9; margin-bottom: 12px; }
+  .suc-wrap p { color: #94a3b8; font-size: 14px; line-height: 1.7; }
+  .steps-card { margin-top: 28px; text-align: left; background: #0f172a;
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 20px 24px; }
+  .steps-card h4 { font-size: 10px; font-weight: 700; color: #475569; letter-spacing: .08em;
+    text-transform: uppercase; margin-bottom: 14px; }
+  .step { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+  .step-n { width: 22px; height: 22px; border-radius: 50%; background: rgba(96,165,250,0.15);
+    color: #60a5fa; font-size: 11px; font-weight: 800; display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0; }
+  .step-t { font-size: 13px; color: #94a3b8; line-height: 1.5; }
+  .btn-back { display: inline-block; margin-top: 24px; padding: 10px 24px;
+    background: rgba(96,165,250,0.1); border: 1px solid rgba(96,165,250,0.3);
+    color: #60a5fa; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+
+  /* ── API ── */
+  .api-wrap { max-width: 680px; margin: 0 auto; padding: 32px 16px; }
+  .api-card { background: #0f172a; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 22px; margin-bottom: 14px; }
+  .api-title { font-size: 11px; font-weight: 700; color: #60a5fa; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 14px; }
+  .api-row { display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; }
+  .badge { padding: 2px 9px; border-radius: 4px; font-size: 10px; font-weight: 700; font-family: monospace; white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+  .b-post { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+  .b-get  { background: rgba(96,165,250,0.15); color: #60a5fa; border: 1px solid rgba(96,165,250,0.3); }
+  .b-res  { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+  .b-err  { background: rgba(248,113,113,0.12); color: #f87171; border: 1px solid rgba(248,113,113,0.25); }
+  .api-desc { font-size: 12px; color: #94a3b8; line-height: 1.7; }
+  .api-desc code { background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px; font-family: monospace; color: #e2e8f0; font-size: 11px; }
+  .arrow { text-align: center; color: #334155; font-size: 20px; margin: 2px 0 10px; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px;
+    border-radius: 20px; font-size: 10px; font-weight: 700; }
+  .p-pend { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+  .p-appr { background: rgba(52,211,153,0.12); color: #34d399; border: 1px solid rgba(52,211,153,0.25); }
+  .perm-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  .perm-table th { text-align: left; font-size: 10px; font-weight: 700; color: #475569; letter-spacing:.06em; text-transform:uppercase; padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .perm-table td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #94a3b8; vertical-align: top; }
+  .perm-table td:first-child { color: #f1f5f9; font-weight: 600; }
+  .ok-tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 700;
+    background: rgba(52,211,153,0.1); color: #34d399; border: 1px solid rgba(52,211,153,0.25); margin: 1px; }
+  .def-tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 700;
+    background: rgba(251,191,36,0.1); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); margin: 1px; }
+  .no-tag { color: #334155; font-size: 12px; }
+  .todo-box { padding: 14px 16px; background: rgba(251,191,36,0.07); border: 1px solid rgba(251,191,36,0.2); border-radius: 10px; font-size: 12px; color: #fbbf24; margin-top: 14px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <div class="nav-tab active" onclick="switchView('sender')">📤 Invite Card — Sender</div>
+  <div class="nav-tab" onclick="switchView('recipient')">📋 Registration — Recipient</div>
+  <div class="nav-tab" onclick="switchView('success')">✅ Success</div>
+  <div class="nav-tab" onclick="switchView('api')">🔌 API + Permissions</div>
+</div>
+
+<!-- ════════════════════════════════
+  VIEW 1 — Sender
+════════════════════════════════ -->
+<div id="view-sender" class="view active">
+<div class="sender-wrap">
+
+  <!-- Role simulator -->
+  <div class="sim-bar">
+    <label>🎭 Simulate role:</label>
+    <select onchange="setRole(this.value)">
+      <option value="customer" selected>Customer (采购商)</option>
+      <option value="factory">Factory (工厂)</option>
+      <option value="admin">Admin</option>
+      <option value="other">Other role</option>
+    </select>
+    <span id="role-hint" style="font-size:11px; color:#94a3b8; margin-left:4px;">Can invite: Factory · Trader (default)</span>
+  </div>
+
+  <div class="invite-header">
+    <h2>Invite a Partner</h2>
+    <p>Generate a secure 7-day registration link and forward it to your new partner.</p>
+  </div>
+
+  <!-- No permission state -->
+  <div id="no-perm" class="no-permission" style="display:none;">
+    🚫 Your current role does not have permission to send partner invitations.
+    Contact admin if you need to invite a partner.
+  </div>
+
+  <!-- Type selector -->
+  <div id="type-section">
+    <div style="font-size:10px; font-weight:700; color:#475569; letter-spacing:.08em; text-transform:uppercase; margin-bottom:10px;">Select Partner Type</div>
+    <div id="type-grid" class="type-grid"></div>
+  </div>
+
+  <!-- Form -->
+  <div class="form-card" id="invite-form" style="margin-top:16px;">
+    <div class="sec">🏢 Company Details</div>
+    <div class="row2">
+      <div class="field">
+        <label>Company Name <span class="req">*</span></label>
+        <input type="text" placeholder="e.g. Fuxin Trading Co.">
+      </div>
+      <div class="field">
+        <label>Tax ID (optional · dedup)</label>
+        <input type="text" placeholder="For duplicate check">
+      </div>
+    </div>
+
+    <div class="sec">👤 Contact Person</div>
+    <div class="row2">
+      <div class="field">
+        <label>Contact Name <span class="req">*</span></label>
+        <input type="text" placeholder="Full name">
+      </div>
+      <div class="field">
+        <label>Send via <span class="req">*</span></label>
+        <div class="chan-tabs">
+          <div class="ctab on" onclick="selChan(this)">Email</div>
+          <div class="ctab" onclick="selChan(this)">WeChat</div>
+          <div class="ctab" onclick="selChan(this)">Phone</div>
+        </div>
+        <input type="email" id="chan-input" placeholder="partner@company.com">
+      </div>
+    </div>
+
+    <div class="sec">💬 Message (Optional)</div>
+    <div class="field">
+      <textarea placeholder="e.g. Hi, please complete registration to start working with us on Sanlyn OS."></textarea>
+    </div>
+
+    <button class="btn-gen" onclick="showResult()">✉️ Generate Invite Link</button>
+
+    <div class="result" id="result">
+      <h3>🎉 Invite Link Ready</h3>
+      <div style="font-size:12px; color:#6ee7b7; margin-top:2px;">
+        Valid 7 days · <span class="pill p-appr">✓ Auto-approved (admin)</span>
+      </div>
+      <div class="link-row">
+        <span class="link-text">https://ai.sanlyn.cn/partner/register?token=a8f3c2d1e7b04a9f2c6d8e1b3a5f7c9d2e4b6a8f0c2d4e6</span>
+        <button class="btn-copy" onclick="this.textContent='✓ Copied!'">Copy</button>
+      </div>
+      <div class="share-row">
+        <button class="share-btn">📧 Send Email</button>
+        <button class="share-btn">💬 WeChat</button>
+        <button class="share-btn">📱 SMS</button>
+      </div>
+      <div class="note">Admin role → link auto-approved and sent immediately. Non-admin roles → pending Sanlyn review (usually same day).</div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ════════════════════════════════
+  VIEW 2 — Recipient
+════════════════════════════════ -->
+<div id="view-recipient" class="view">
+<div class="reg-wrap">
+  <div class="header-card">
+    <span class="p-icon">🤝</span>
+    <div class="kicker">You've been invited as a</div>
+    <h1>Trading Partner</h1>
+    <p class="sub"><strong>Petsome Sdn Bhd</strong> — complete this form to place orders on Sanlyn OS.</p>
+    <div class="msg-box">"Hi Echo, welcome to Sanlyn OS! Please complete this form to start placing orders with us."</div>
+    <div class="meta-tags">
+      <span class="mtag">⏱ Expires in 7 days</span>
+      <span class="mtag">🔒 One-time use</span>
+      <span class="mtag">✓ Pre-verified</span>
+    </div>
+  </div>
+
+  <div class="reg-card">
+
+    <div class="rsec">🏢 Company</div>
+    <div class="row2">
+      <div class="field">
+        <label>Company Name / 公司名称 <span class="req">*</span></label>
+        <input id="reg-company" value="Petsome Sdn Bhd">
+      </div>
+      <div class="field">
+        <label>营业执照 <span style="color:#475569;font-weight:400;">(optional)</span></label>
+        <label id="lic-box" style="display:flex;align-items:center;gap:6px;padding:8px 10px;border:1.5px dashed rgba(255,255,255,0.12);border-radius:8px;cursor:pointer;background:rgba(255,255,255,0.02);color:#64748b;font-size:12px;">
+          <input type="file" accept="image/*,application/pdf" style="display:none" onchange="licPick(this)">
+          <span id="lic-label">📎 Click to upload (image or PDF)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="rsec">👤 Contact</div>
+    <div class="row2">
+      <div class="field">
+        <label>Contact Name / 联系人 <span class="req">*</span></label>
+        <input id="reg-contact" value="Echo Leong">
+      </div>
+      <div class="field">
+        <label>Phone / 电话 <span class="req">*</span></label>
+        <input id="reg-phone" type="tel" value="+60 12-345 6789" placeholder="+60 / +86 …">
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Email / 邮箱 <span class="req">*</span></label>
+        <input id="reg-email" type="email" value="echo@petsome.com.my">
+      </div>
+      <div class="field">
+        <label>WeChat / WhatsApp <span style="color:#475569;font-weight:400;">(选填)</span></label>
+        <input id="reg-wechat" placeholder="微信号 or WhatsApp">
+      </div>
+    </div>
+
+    <div class="rsec">🔒 Password / 密码</div>
+    <div class="row2">
+      <div class="field">
+        <label>Password / 密码 <span class="req">*</span></label>
+        <input id="reg-pw" type="password" placeholder="至少 8 位 / min 8 characters">
+      </div>
+      <div class="field">
+        <label>Confirm / 确认密码 <span class="req">*</span></label>
+        <input id="reg-pw2" type="password" placeholder="重复密码 / repeat password">
+      </div>
+    </div>
+
+    <label class="tos-row">
+      <input type="checkbox" id="reg-tos" style="margin-top:2px; flex-shrink:0;">
+      <span>I accept the <a href="#">Terms of Service</a> and confirm all information is accurate.</span>
+    </label>
+
+    <div id="reg-err" style="display:none;margin-top:10px;padding:9px 12px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;border-radius:8px;font-size:12px;"></div>
+
+    <button class="btn-sub" onclick="regSubmit()">Submit Registration →</button>
+    <div class="review-note">Sanlyn will review and activate your account within 1 business day.</div>
+  </div>
+</div>
+</div>
+
+<!-- ════════════════════════════════
+  VIEW 3 — Success
+════════════════════════════════ -->
+<div id="view-success" class="view">
+<div class="suc-wrap">
+  <span class="big">✅</span>
+  <h2>Registration Submitted</h2>
+  <p>Thank you, Zhang Wei! Your documents have been received.<br>
+  Sanlyn will review and activate your account within <strong style="color:#f1f5f9">1 business day</strong>.</p>
+  <div class="steps-card">
+    <h4>What happens next</h4>
+    <div class="step">
+      <div class="step-n">1</div>
+      <div class="step-t"><strong style="color:#cbd5e1">Document review</strong> — Sanlyn admin verifies your business license and ID</div>
+    </div>
+    <div class="step">
+      <div class="step-n">2</div>
+      <div class="step-t"><strong style="color:#cbd5e1">Account activated</strong> — email with your login credentials</div>
+    </div>
+    <div class="step">
+      <div class="step-n">3</div>
+      <div class="step-t"><strong style="color:#cbd5e1">Auto-linked as partner</strong> — appears in the inviter's Partners section automatically</div>
+    </div>
+  </div>
+  <div class="btn-back" onclick="switchView('sender')">← Back to Invite Card</div>
+</div>
+</div>
+
+<!-- ════════════════════════════════
+  VIEW 4 — API + Permissions
+════════════════════════════════ -->
+<div id="view-api" class="view">
+<div class="api-wrap">
+  <div style="font-size:18px; font-weight:800; color:#f1f5f9; margin-bottom:4px;">Partner Invite — API & Permission Map</div>
+  <div style="font-size:13px; color:#64748b; margin-bottom:24px;">Endpoints live on api.sanlyn.cn · JWT required for POST</div>
+
+  <!-- Permission matrix -->
+  <div class="api-card">
+    <div class="api-title">Role Permission Matrix</div>
+    <table class="perm-table">
+      <thead><tr>
+        <th>Sender Role</th>
+        <th>Can Invite Types</th>
+        <th>Default</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>Customer 采购商</td>
+          <td><span class="ok-tag">factory</span> <span class="ok-tag">trader</span></td>
+          <td><span class="def-tag">trader</span> (大概率)</td>
+        </tr>
+        <tr>
+          <td>Factory 工厂</td>
+          <td><span class="ok-tag">customer</span> <span class="ok-tag">ocean</span> <span class="ok-tag">trucking</span> <span class="ok-tag">service</span></td>
+          <td><span class="def-tag">customer</span></td>
+        </tr>
+        <tr>
+          <td>Admin</td>
+          <td><span class="ok-tag">all 7 types</span></td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>Other roles</td>
+          <td><span class="no-tag">❌ no permission</span></td>
+          <td>—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="api-card">
+    <div class="api-title">Step 1 — Generate invite token</div>
+    <div class="api-row">
+      <div class="badge b-post">POST</div>
+      <div class="api-desc"><code>/api/db/factory-invite</code><br>
+        Body: <code>{ type, factory_name, contact_name, channel, channel_value, message? }</code><br>
+        Admin → <span class="pill p-appr">approved</span> · others → <span class="pill p-pend">pending review</span><br>
+        403 if type not in sender's allowed list</div>
+    </div>
+    <div class="api-row">
+      <div class="badge b-res">RES</div>
+      <div class="api-desc"><code>{ token, link, status, expires_at }</code> — link valid 7 days</div>
+    </div>
+  </div>
+
+  <div class="arrow">↓ partner clicks link</div>
+
+  <div class="api-card">
+    <div class="api-title">Step 2 — Verify token (no auth)</div>
+    <div class="api-row">
+      <div class="badge b-get">GET</div>
+      <div class="api-desc"><code>/api/db/factory-invite?token=&lt;tok&gt;</code><br>
+        Public · returns invite details for pre-filling form<br>
+        410 if expired / used / rejected</div>
+    </div>
+  </div>
+
+  <div class="arrow">↓ partner fills & submits</div>
+
+  <div class="api-card">
+    <div class="api-title">Step 3 — Upload docs + complete registration</div>
+    <div class="api-row">
+      <div class="badge b-post">POST</div>
+      <div class="api-desc"><code>/api/oss-upload</code> — per file · returns <code>{ url }</code></div>
+    </div>
+    <div class="api-row">
+      <div class="badge b-post">POST</div>
+      <div class="api-desc"><code>/api/db/factory-invite-complete</code><br>
+        Creates <code>customers</code> row + login account · marks token <code>used_at</code></div>
+    </div>
+  </div>
+
+  <div class="arrow">↓ auto-link (TODO)</div>
+
+  <div class="api-card">
+    <div class="api-title">Step 4 — Auto-link as partner ⚠️ TODO</div>
+    <div class="api-row">
+      <div class="badge b-post">POST</div>
+      <div class="api-desc"><code>/api/db/relationships</code><br>
+        <code>{ from_company_id: inviter_id, to_company_id: new_partner_id, type: "buys_from" | "sells_to" }</code><br>
+        Should fire inside <code>factory-invite-complete.js</code> after account is created</div>
+    </div>
+    <div class="todo-box">
+      ⚠️ Not yet implemented. After <code>factory-invite-complete</code> succeeds, need to auto-POST
+      to <code>/api/db/relationships</code> using the invite's <code>invited_by</code> company_id + new partner's id.
+      Type derived from invite type: <code>factory/trader → buys_from</code> · <code>customer → sells_to</code>.
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+var ROLE_CONFIG = {
+  customer: {
+    hint: "Can invite: Factory · Trader (default)",
+    types: [
+      { key:"trader",  icon:"🤝", label:"Trading Partner",  desc:"贸易商 / 工贸一体", isDefault:true },
+      { key:"factory", icon:"🏭", label:"Factory Partner",  desc:"纯工厂" },
+    ]
+  },
+  factory: {
+    hint: "Can invite: Customer · Supply chain",
+    types: [
+      { key:"customer", icon:"🛒", label:"Buyer",             desc:"采购商", isDefault:true },
+      { key:"ocean",    icon:"🚢", label:"Shipping Partner",  desc:"货代 / 船公司" },
+      { key:"trucking", icon:"🚛", label:"Trucking Partner",  desc:"拖车 / 陆运" },
+      { key:"service",  icon:"🛠", label:"Service Partner",   desc:"报关 / 服务商" },
+    ]
+  },
+  admin: {
+    hint: "Admin — all types",
+    types: [
+      { key:"trader",   icon:"🤝", label:"Trading Partner",  desc:"贸易商" },
+      { key:"factory",  icon:"🏭", label:"Factory Partner",  desc:"工厂" },
+      { key:"customer", icon:"🛒", label:"Buyer",            desc:"采购商" },
+      { key:"ocean",    icon:"🚢", label:"Shipping",         desc:"货代 / 船公司" },
+      { key:"trucking", icon:"🚛", label:"Trucking",         desc:"拖车" },
+      { key:"service",  icon:"🛠", label:"Service",          desc:"服务商" },
+      { key:"colleague",icon:"👥", label:"Team Member",      desc:"内部成员" },
+    ]
+  },
+  other: { hint: "No invite permission", types: [] }
+};
+
+var currentRole = "customer";
+
+function setRole(role) {
+  currentRole = role;
+  var cfg = ROLE_CONFIG[role];
+  document.getElementById("role-hint").textContent = cfg.hint;
+
+  var noPerm = document.getElementById("no-perm");
+  var typeSection = document.getElementById("type-section");
+  var inviteForm = document.getElementById("invite-form");
+
+  if (cfg.types.length === 0) {
+    noPerm.style.display = "block";
+    typeSection.style.display = "none";
+    inviteForm.style.display = "none";
+    return;
+  }
+  noPerm.style.display = "none";
+  typeSection.style.display = "block";
+  inviteForm.style.display = "block";
+
+  var grid = document.getElementById("type-grid");
+  var cols = cfg.types.length <= 2 ? cfg.types.length : cfg.types.length <= 4 ? 2 : 3;
+  grid.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
+  grid.innerHTML = "";
+  cfg.types.forEach(function(t) {
+    var div = document.createElement("div");
+    div.className = "type-btn" + (t.isDefault ? " selected default-badge" : "");
+    div.onclick = function() {
+      document.querySelectorAll(".type-btn").forEach(function(b) { b.classList.remove("selected"); });
+      div.classList.add("selected");
+    };
+    div.innerHTML = '<span class="icon">' + t.icon + '</span><div class="lbl">' + t.label + '</div><div class="desc">' + t.desc + '</div>';
+    grid.appendChild(div);
+  });
+
+  document.getElementById("result").classList.remove("show");
+}
+
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(function(v) { v.classList.remove('active'); });
+  document.querySelectorAll('.nav-tab').forEach(function(t) { t.classList.remove('active'); });
+  document.getElementById('view-' + name).classList.add('active');
+  var map = { sender:0, recipient:1, success:2, api:3 };
+  document.querySelectorAll('.nav-tab')[map[name]].classList.add('active');
+}
+
+function selChan(el) {
+  document.querySelectorAll('.ctab').forEach(function(t) { t.classList.remove('on'); });
+  el.classList.add('on');
+  var placeholders = { Email:"partner@company.com", WeChat:"WeChat ID", Phone:"+86 138 0000 0000" };
+  document.getElementById("chan-input").placeholder = placeholders[el.textContent] || "";
+}
+
+function showResult() {
+  document.getElementById("result").classList.add("show");
+}
+
+function licPick(inp) {
+  var f = inp.files[0];
+  if (!f) return;
+  var box = document.getElementById('lic-box');
+  var lbl = document.getElementById('lic-label');
+  box.style.borderColor = 'rgba(52,211,153,0.5)';
+  box.style.borderStyle = 'solid';
+  lbl.textContent = '✓ ' + f.name + ' (' + Math.round(f.size/1024) + ' KB)';
+  lbl.style.color = '#34d399';
+}
+
+function regSubmit() {
+  var company = (document.getElementById('reg-company').value||'').trim();
+  var contact = (document.getElementById('reg-contact').value||'').trim();
+  var email   = (document.getElementById('reg-email').value||'').trim();
+  var pw      = document.getElementById('reg-pw').value;
+  var pw2     = document.getElementById('reg-pw2').value;
+  var tos     = document.getElementById('reg-tos').checked;
+  var errEl   = document.getElementById('reg-err');
+  errEl.style.display='none';
+
+  if (!company) { errEl.textContent='⚠ Company name is required'; errEl.style.display='block'; return; }
+  if (!contact) { errEl.textContent='⚠ Contact name is required'; errEl.style.display='block'; return; }
+  if (!email)   { errEl.textContent='⚠ Email is required'; errEl.style.display='block'; return; }
+  if (pw.length < 8) { errEl.textContent='⚠ Password must be at least 8 characters'; errEl.style.display='block'; return; }
+  if (pw !== pw2) { errEl.textContent='⚠ Passwords do not match'; errEl.style.display='block'; return; }
+  if (!tos) { errEl.textContent='⚠ Please accept the Terms of Service'; errEl.style.display='block'; return; }
+
+  // In real app: POST /api/db/factory-invite-complete with token from URL
+  switchView('success');
+}
+
+// Init
+setRole("customer");
+</script>
+</body>
+</html>

@@ -59,7 +59,12 @@ export default async function handler(req, res) {
     const pool = getPool();
     const q = await pool.query(
       `SELECT _id, bl_no, eta, ata, current_status_cn, raw FROM shipping_plans
-       WHERE bl_no=$1 OR _id=$1 LIMIT 1`,
+       WHERE bl_no=$1 OR _id=$1 OR booking_no=$1
+         OR EXISTS (
+           SELECT 1 FROM jsonb_array_elements(COALESCE(containers_detail,'[]'::jsonb)) c
+           WHERE c->>'container_no' = $1
+         )
+       LIMIT 1`,
       [blNo]
     );
     if (q.rows.length > 0) {
@@ -91,21 +96,7 @@ export default async function handler(req, res) {
           });
         }
       }
-      // (a2) 严格白名单：raw.portun_allowed != true 且无缓存 → 拒绝订阅
-      //      (已有缓存 subscriptionId 可以继续复用，不触发收费)
-      const isAllowed = p.raw?.portun_allowed === true || p.raw?.portun_allowed === "true";
-      const hasCache  = !!p.raw?.portun_subscription_id;
-      if (!forceRefresh && !isAllowed && !hasCache) {
-        return res.status(200).json({
-          cached: false,
-          denied: true,
-          reason: "bl_not_in_portun_allowlist",
-          token: null,
-          subscriptionId: null,
-          appId: APP_ID, carrierCode, blNo,
-          hint: "Set shipping_plans.raw.portun_allowed=true to enable tracking for this BL",
-        });
-      }
+      // (a2) 白名单已移除：点击📍即视为授权，订阅成功后自动写入 portun_allowed=true
       // (b) 有缓存且未过 30 天 → 返回缓存
       const cachedId = p.raw?.portun_subscription_id;
       const cachedAt = p.raw?.portun_subscribed_at;
@@ -124,7 +115,7 @@ export default async function handler(req, res) {
         token: null,
         subscriptionId: null,
         appId: APP_ID, carrierCode, blNo,
-        hint: "BL must exist in shipping_plans with raw.portun_allowed=true",
+        hint: "No match in shipping_plans by bl_no / booking_no / container_no",
       });
     }
   } catch (dbErr) {
@@ -188,10 +179,15 @@ export default async function handler(req, res) {
            SET raw = COALESCE(raw,'{}'::jsonb) || jsonb_build_object(
              'portun_subscription_id', $1::text,
              'portun_subscribed_at',    NOW()::text,
-             'portun_carrier_code',     $2::text
+             'portun_carrier_code',     $2::text,
+             'portun_allowed',          true
            ),
            updated_at = NOW()
-           WHERE bl_no=$3 OR _id=$3`,
+           WHERE bl_no=$3 OR _id=$3 OR booking_no=$3
+             OR EXISTS (
+               SELECT 1 FROM jsonb_array_elements(COALESCE(containers_detail,'[]'::jsonb)) c
+               WHERE c->>'container_no' = $3
+             )`,
           [subscriptionId, carrierCode, blNo]
         );
       } catch (dbErr) {

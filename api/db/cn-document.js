@@ -88,7 +88,7 @@ const STATUS_LABELS = {
   acknowledged:             'Acknowledged',
 };
 
-function buildCnHtml({ cn, raw, seller, audience }) {
+function buildCnHtml({ cn, raw, seller, audience, recipientAddr }) {
   const isCustomer = audience === 'customer';
   const isFactory  = audience === 'factory';
   const isInternal = audience === 'internal';
@@ -121,52 +121,59 @@ function buildCnHtml({ cn, raw, seller, audience }) {
   const sigs = raw.tri_party_signatures || {};
   const statusLabel = STATUS_LABELS[cn.status] || cn.status;
 
+  // 编号铁律(sanlyn_id_hierarchy_rule): 工厂合同号(CP开头)对客户 hidden；
+  // 客户版只显非 CP 的号(如 FS 内部号，客户可见)。工厂/内部版照显。
+  const contractVisible = (isFactory || isInternal)
+    ? (cn.contract_no || '')
+    : (cn.contract_no && !/^CP/i.test(String(cn.contract_no).trim()) ? cn.contract_no : '');
+
   return `<!DOCTYPE html>
 <html lang="${isFactory ? 'zh' : 'en'}">
 <head>
 <meta charset="UTF-8">
 <title>${esc(cn.cn_no)} — Credit Note</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  /* ── 版式 1:1 照搬 documents.js type=pi/iv（灰白版），勿改观感；数据逻辑不动 ── */
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 28px 36px; max-width: 820px; margin: 0 auto; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #1a73e8; padding-bottom: 16px; margin-bottom: 20px; }
-  .seller-block { flex: 1; }
-  .seller-name { font-size: 16px; font-weight: 700; color: #1a1a1a; }
-  .seller-sub { font-size: 10px; color: #555; margin-top: 2px; }
-  .doc-title { text-align: right; }
-  .doc-title h1 { font-size: 18px; font-weight: 800; color: #c62828; letter-spacing: .04em; }
-  .doc-title .cn-no { font-size: 11px; color: #555; margin-top: 4px; }
-  .doc-title .status-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; background: #e3f2fd; color: #1565c0; font-size: 10px; font-weight: 700; margin-top: 4px; }
-  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 18px; padding: 12px 14px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #1a73e8; }
-  .meta-row { display: flex; gap: 8px; font-size: 11px; }
-  .meta-label { color: #666; min-width: 110px; }
-  .meta-value { font-weight: 600; color: #1a1a1a; }
-  .section-title { font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: .05em; margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e0e0e0; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 12px; }
-  thead th { background: #1a73e8; color: #fff; padding: 7px 10px; text-align: left; font-weight: 600; }
-  tbody tr { border-bottom: 1px solid #f0f0f0; }
-  tbody tr:nth-child(even) { background: #fafafa; }
-  td { padding: 6px 10px; vertical-align: middle; }
-  .text-right { text-align: right; }
-  .total-row td { border-top: 2px solid #1a73e8; font-weight: 700; font-size: 13px; padding-top: 10px; }
-  .total-credit { color: #c62828; }
-  .sig-grid { display: grid; grid-template-columns: 1fr 1fr ${isInternal ? '1fr' : ''}; gap: 20px; margin-top: 28px; }
-  .sig-box { border-top: 2px solid #1a1a1a; padding-top: 8px; text-align: center; }
-  .sig-title { font-weight: 700; font-size: 11px; color: #333; }
-  .sig-sub { font-size: 9px; color: #888; margin-top: 2px; }
-  .sig-stamp { width: 80px; height: 80px; border-radius: 50%; border: 3px dashed ${isInternal || isFactory ? '#aaa' : '#e53935'}; margin: 8px auto; display: flex; align-items: center; justify-content: center; font-size: 9px; color: ${isInternal || isFactory ? '#aaa' : '#e53935'}; font-weight: 700; }
-  .sig-date { font-size: 10px; color: #555; margin-top: 4px; }
-  .footer { margin-top: 20px; border-top: 1px solid #e0e0e0; padding-top: 8px; display: flex; justify-content: space-between; font-size: 9px; color: #888; }
-  .reason-box { background: #fff8e1; border-left: 4px solid #ffa000; padding: 8px 12px; border-radius: 4px; margin-bottom: 14px; font-size: 11px; }
-  .reason-label { font-weight: 700; color: #e65100; }
-  .internal-badge { background: #f3e5f5; color: #6a1b9a; padding: 4px 10px; border-radius: 4px; font-size: 10px; font-weight: 700; display: inline-block; margin-bottom: 12px; }
-  .dl-btn { position: fixed; top: 16px; right: 16px; z-index: 50; padding: 9px 16px; border-radius: 8px; border: none; background: #1a73e8; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
-  @media print { body { padding: 0; } .dl-btn { display: none !important; } }
+  body { font-family: -apple-system,'Helvetica Neue','Helvetica','Arial','PingFang SC','Microsoft YaHei',sans-serif; font-size: 11px; line-height: 1.4; color: #111; background: #f0f2f5; padding: 28px 0; }
+  .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 24px 28px; box-shadow: 0 4px 20px rgba(0,0,0,.12); }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1.5px solid #111; padding-bottom: 10px; margin-bottom: 16px; }
+  .seller-block { flex: 1; min-width: 0; }
+  .seller-name { font-size: 14px; font-weight: 700; color: #111; letter-spacing: .01em; text-transform: uppercase; }
+  .seller-sub { font-size: 10px; color: #555; margin-top: 3px; line-height: 1.5; }
+  .doc-title { text-align: right; flex-shrink: 0; margin-left: 24px; }
+  .doc-title h1 { font-size: 18px; font-weight: 800; color: #111; letter-spacing: .05em; line-height: 1.1; }
+  .doc-title .cn-no { font-size: 10px; color: #777; margin-top: 4px; font-family: 'SF Mono',Menlo,monospace; }
+  .doc-title .status-pill { display: inline-block; padding: 2px 9px; border-radius: 3px; background: #f0f0f0; color: #555; border: 1px solid #ddd; font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-top: 5px; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 28px; margin-bottom: 16px; padding: 10px 12px; background: #fafafa; border: 1px solid #eee; }
+  .meta-row { display: flex; gap: 8px; font-size: 10.5px; }
+  .meta-label { color: #777; min-width: 120px; }
+  .meta-value { font-weight: 600; color: #111; }
+  .section-title { font-size: 9px; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: .12em; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
+  table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin-bottom: 12px; }
+  thead th { background: #f5f5f5; border-top: 1.5px solid #111; border-bottom: 1px solid #111; color: #333; padding: 7px 8px; text-align: left; font-weight: 700; font-size: 9px; letter-spacing: .06em; text-transform: uppercase; }
+  tbody td { padding: 8px; border-bottom: 1px solid #ececec; color: #222; vertical-align: middle; }
+  .text-right { text-align: right; font-family: 'SF Mono',Menlo,monospace; }
+  .total-row td { border-top: 1.5px solid #111; border-bottom: 1.5px solid #111; font-weight: 800; font-size: 11px; background: #fafafa; padding-top: 9px; }
+  .total-credit { color: #111; }
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr ${isInternal ? '1fr' : ''}; gap: 24px; margin-top: 32px; }
+  .sig-box { border-top: 1px solid #111; padding-top: 8px; text-align: center; }
+  .sig-title { font-weight: 700; font-size: 9px; color: #444; letter-spacing: .08em; text-transform: uppercase; }
+  .sig-sub { font-size: 8.5px; color: #888; margin-top: 3px; }
+  .sig-stamp { width: 78px; height: 78px; border-radius: 50%; border: 1px dashed #ccc; margin: 8px auto; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #bbb; font-weight: 700; text-align: center; line-height: 1.3; }
+  .sig-date { font-size: 9px; color: #888; margin-top: 4px; }
+  .seal-area { margin-top: 40px; min-height: 130px; position: relative; }
+  .seal-img { width: 124px; height: 124px; object-fit: contain; position: absolute; left: 56px; top: 0; transform: rotate(-7deg); }
+  .reason-box { background: #fafafa; border-left: 3px solid #999; padding: 8px 12px; margin-bottom: 14px; font-size: 10.5px; color: #333; }
+  .reason-label { font-weight: 700; color: #555; }
+  .internal-badge { background: #f0f0f0; color: #555; border: 1px solid #ddd; padding: 4px 10px; border-radius: 3px; font-size: 9px; font-weight: 700; letter-spacing: .04em; display: inline-block; margin-bottom: 12px; }
+  .dl-btn { position: fixed; top: 16px; right: 16px; z-index: 50; padding: 9px 16px; border-radius: 6px; border: none; background: #333; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  @media print { body { background: #fff; padding: 0; } .container { max-width: 100%; box-shadow: none; padding: 0; } .dl-btn { display: none !important; } }
 </style>
 </head>
 <body>
 <button class="dl-btn" onclick="(function(){var u=new URL(window.location.href);u.searchParams.set('format','pdf');window.location.href=u.toString();})()">⬇ 下载 PDF / Download</button>
+<div class="container">
 ${isInternal ? '<div class="internal-badge">⚙ INTERNAL COPY — CONFIDENTIAL / 内部用途 — 保密</div>' : ''}
 <div class="header">
   <div class="seller-block">
@@ -182,9 +189,10 @@ ${isInternal ? '<div class="internal-badge">⚙ INTERNAL COPY — CONFIDENTIAL /
 
 <div class="meta-grid">
   <div class="meta-row"><span class="meta-label">${isFactory ? '收件方 Recipient:' : 'Issued To:'}</span><span class="meta-value">${recipientName}</span></div>
+  ${!isFactory && recipientAddr ? `<div class="meta-row" style="grid-column:1/-1"><span class="meta-label">Address:</span><span class="meta-value" style="font-weight:400;color:#444">${esc(recipientAddr)}</span></div>` : ''}
   <div class="meta-row"><span class="meta-label">${isFactory ? '开单日期 Date:' : 'Issue Date:'}</span><span class="meta-value">${fmtDate(cn.issued_date)}</span></div>
   <div class="meta-row"><span class="meta-label">${isFactory ? '参考订单 Order:' : 'Reference Order:'}</span><span class="meta-value">${esc(cn.order_no || '—')}</span></div>
-  <div class="meta-row"><span class="meta-label">${isFactory ? '合同编号 Contract:' : 'Contract No.:'}</span><span class="meta-value">${esc(cn.contract_no || '—')}</span></div>
+  ${contractVisible ? `<div class="meta-row"><span class="meta-label">${isFactory ? '合同编号 Contract:' : 'Contract No.:'}</span><span class="meta-value">${esc(contractVisible)}</span></div>` : ''}
   <div class="meta-row"><span class="meta-label">${isFactory ? '发票参考 Invoice:' : 'Source Invoice:'}</span><span class="meta-value">${esc(cn.invoice_no || '—')}</span></div>
   <div class="meta-row"><span class="meta-label">${isFactory ? '货币 Currency:' : 'Currency:'}</span><span class="meta-value">${esc(curr)}</span></div>
 </div>
@@ -217,14 +225,16 @@ ${reasonKey ? `<div class="reason-box"><span class="reason-label">${isFactory ? 
       var pdiff = (it.unit_price_diff != null) ? it.unit_price_diff
                 : (it.price_diff != null) ? it.price_diff : null;
       var qtyStr = (it.qty != null && it.qty !== '') ? String(it.qty) : '—';
+      // 逐项说明: 价格变动/赠品原因等(it.note)，真实存于 items[]，放在品名下一行灰字
+      var lineNote = it.note || it.remark || '';
       return `
     <tr>
       <td>${String(i + 1).padStart(2, '0')}</td>
-      <td>${esc(desc)}</td>
+      <td>${esc(desc)}${lineNote ? `<div style="font-size:9.5px;color:#888;margin-top:2px;font-weight:400">${esc(lineNote)}</div>` : ''}</td>
       <td class="text-right">${esc(qtyStr)}</td>
       <td>${esc(unit)}</td>
       <td class="text-right">${pdiff != null ? curr + ' ' + Number(pdiff).toFixed(2) : '—'}</td>
-      <td class="text-right" style="color:#c62828;font-weight:600">${fmtAmt(it.amount, curr)}</td>
+      <td class="text-right" style="font-weight:600">${fmtAmt(it.amount, curr)}</td>
     </tr>`;
     }).join('')}
     <tr class="total-row">
@@ -247,43 +257,18 @@ ${(function(){
     // customer + internal: English first, Chinese under it
     var parts = [];
     if (enNote) parts.push('<div>' + esc(enNote) + '</div>');
-    if (cnNote) parts.push('<div style="margin-top:4px;color:#33691e">' + esc(cnNote) + '</div>');
+    if (cnNote) parts.push('<div style="margin-top:4px;color:#555">' + esc(cnNote) + '</div>');
     body = parts.join('');
   }
-  return `<div class="reason-box" style="background:#e8f5e9;border-color:#43a047"><span class="reason-label" style="color:#2e7d32">${isFactory ? '备注 Note: ' : 'Notes / 备注: '}</span>${body}</div>`;
+  return `<div class="reason-box" style="border-left-color:#bbb"><span class="reason-label">${isFactory ? '备注 Note: ' : 'Notes / 备注: '}</span>${body}</div>`;
 })()}
 
-<div class="sig-grid">
-  <div class="sig-box">
-    ${(function(){
-      // CN-SEAL-EMBED-2026-05-20: pre-printed issuing-party chop. Real PNG when
-      // available (BABI / OCEANBABY), else dashed text placeholder.
-      var sealImg = sealForSeller(seller);
-      if (sealImg) return `<img src="${sealImg}" alt="seal" style="width:90px;height:90px;object-fit:contain;margin:0 auto;display:block" />`;
-      return `<div class="sig-stamp">${seller.nameEN?.slice(0, 6) || 'SELLER'}<br>SEAL</div>`;
-    })()}
-    <div class="sig-title">${isFactory ? '出单方 ISSUING PARTY' : 'ISSUING PARTY'}</div>
-    <div class="sig-sub">${esc(seller.nameEN || '')}</div>
-    ${sigs.seller_signed_at ? `<div class="sig-date">Signed: ${fmtDate(sigs.seller_signed_at)}</div>` : ''}
-  </div>
-  <div class="sig-box">
-    <div class="sig-stamp" style="border-style:dashed;border-color:#aaa;color:#aaa">${isFactory ? '工厂' : 'RCPT'}<br>SEAL</div>
-    <div class="sig-title">${isFactory ? '工厂确认 FACTORY CONFIRMATION' : 'CUSTOMER ACKNOWLEDGEMENT'}</div>
-    <div class="sig-sub">${recipientName}</div>
-    ${isFactory && sigs.factory_signed_at ? `<div class="sig-date">Signed: ${fmtDate(sigs.factory_signed_at)}</div>` : ''}
-    ${!isFactory && sigs.customer_signed_at ? `<div class="sig-date">Signed: ${fmtDate(sigs.customer_signed_at)}</div>` : ''}
-  </div>
-  ${isInternal ? `
-  <div class="sig-box">
-    <div class="sig-stamp" style="border-style:dashed;border-color:#aaa;color:#aaa">AUDIT<br>SEAL</div>
-    <div class="sig-title">FINANCE AUDIT / 财务审核</div>
-    <div class="sig-sub">Internal Use Only</div>
-  </div>` : ''}
-</div>
-
-<div class="footer">
-  <span>${esc(cn.cn_no)} · Issued ${fmtDate(cn.issued_date)} · Source: ${esc(cn.invoice_no || cn.order_no || '—')}</span>
-  <span>Generated by Sanlyn OS · ${new Date().toISOString().slice(0,10)}</span>
+${(function(){
+  // 出单方实体红章（已预埋 base64），自然放置带轻微角度（Damon: 圈/字/底部文字都去掉，盖章可随机）。
+  var sealImg = sealForSeller(seller);
+  if (!sealImg) return '';
+  return `<div class="seal-area"><img src="${sealImg}" alt="seal" class="seal-img" /></div>`;
+})()}
 </div>
 </body>
 </html>`;
@@ -322,7 +307,16 @@ export async function generateCnDocument(pool, req, res, id, audience) {
     }
   } catch (e) { /* use default */ }
 
-  const html = buildCnHtml({ cn, raw, seller, audience: aud });
+  // 收件方（客户）公司地址：按 company_code 查 companies 主表，缺则留空（绝不编造）
+  let recipientAddr = '';
+  try {
+    if (cn.company_code) {
+      const cr = await pool.query('SELECT address FROM companies WHERE code=$1 LIMIT 1', [cn.company_code]);
+      if (cr.rows.length) recipientAddr = cr.rows[0].address || '';
+    }
+  } catch (e) { /* leave blank */ }
+
+  const html = buildCnHtml({ cn, raw, seller, audience: aud, recipientAddr });
 
   // CN-PDF-DOWNLOAD-2026-05-20: format=pdf → puppeteer renders真·PDF 文件下载
   // (system Chrome /usr/bin/google-chrome). Same pattern as documents.js.

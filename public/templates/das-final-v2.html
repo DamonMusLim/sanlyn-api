@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DAS Final · V2 · Desktop + Mobile</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050810;
+    color: #e2e8f0;
+    font-family: -apple-system, "PingFang SC", "SF Pro Text", sans-serif;
+    padding: 32px 16px 80px;
+    min-height: 100vh;
+  }
+  .page-title {
+    text-align: center;
+    margin-bottom: 8px;
+    font-size: 22px;
+    font-weight: 900;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .page-sub {
+    text-align: center;
+    margin-bottom: 40px;
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.6;
+  }
+
+  .compare-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 48px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .device-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .device-label {
+    margin-bottom: 16px;
+    font-size: 11px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .device-label .icon { font-size: 18px; }
+  .device-label .size {
+    color: #64748b;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    margin-left: 4px;
+  }
+
+  /* DAS card base */
+  .das {
+    background: #0d1117;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  }
+
+  /* Desktop wider */
+  .das.desktop { width: 540px; }
+
+  /* Mobile narrower (with phone frame) */
+  .phone-frame {
+    width: 380px;
+    background: #1a1d29;
+    border: 8px solid #1a1d29;
+    border-radius: 36px;
+    padding: 6px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    position: relative;
+  }
+  .phone-frame::before {
+    content: '';
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90px;
+    height: 22px;
+    background: #0a0c14;
+    border-radius: 14px;
+    z-index: 10;
+  }
+  .das.mobile {
+    border-radius: 28px;
+    width: 100%;
+    padding-top: 38px;
+  }
+
+  /* Header */
+  .h {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .h-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: rgba(96, 165, 250, 0.12);
+    border: 1px solid rgba(96, 165, 250, 0.3);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 900;
+    color: #93c5fd;
+    flex-shrink: 0;
+  }
+  .das.mobile .h-icon { width: 34px; height: 34px; font-size: 11px; }
+
+  .h-text { flex: 1; min-width: 0; }
+  .h-title {
+    font-size: 16px; font-weight: 900; color: #fff;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .das.mobile .h-title { font-size: 14px; }
+
+  .h-sub {
+    font-size: 10px; color: #64748b; margin-top: 2px;
+    font-family: 'Courier New', monospace;
+  }
+  .h-badge {
+    background: rgba(34, 197, 94, 0.15);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    color: #4ade80;
+    padding: 4px 10px; border-radius: 12px;
+    font-size: 10px; font-weight: 800;
+    flex-shrink: 0;
+  }
+  .das.mobile .h-badge { font-size: 9px; padding: 3px 8px; }
+
+  /* Section title */
+  .section-title {
+    font-size: 9px; color: #64748b;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    font-weight: 700;
+    padding: 14px 16px 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  /* Preview */
+  .preview {
+    margin: 0 16px 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #94a3b8;
+    line-height: 1.7;
+  }
+  .das.mobile .preview { font-size: 10px; padding: 10px 12px; }
+  .preview b { color: #cbd5e1; font-weight: 700; }
+
+  /* Actions grid */
+  .actions { padding: 0 16px; }
+  .actions-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .btn {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 14px 12px;
+    color: #cbd5e1;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .das.mobile .btn { padding: 11px 8px; font-size: 12px; }
+
+  .btn:hover {
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.18);
+  }
+  .btn.primary {
+    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.4);
+    color: #93c5fd;
+  }
+  .btn-icon { font-size: 15px; }
+
+  /* AI review */
+  .ai {
+    margin: 14px 16px 0;
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(59, 130, 246, 0.06));
+    border: 1px solid rgba(167, 139, 250, 0.3);
+    border-radius: 10px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  /* AI result block (after run) */
+  .ai-result {
+    margin: 8px 16px 0;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .ai-result.ok    { background: rgba(34,197,94,0.06); border-color: rgba(34,197,94,0.25); }
+  .ai-result.warn  { background: rgba(245,158,11,0.06); border-color: rgba(245,158,11,0.25); }
+  .ai-result.error { background: rgba(239,68,68,0.06); border-color: rgba(239,68,68,0.3); }
+
+  .ai-result-head {
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+  }
+  .ai-status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .ai-status-dot.ok    { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+  .ai-status-dot.warn  { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+  .ai-status-dot.error { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+  .ai-status-text {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .ai-status-text.ok    { color: #4ade80; }
+  .ai-status-text.warn  { color: #fbbf24; }
+  .ai-status-text.error { color: #fca5a5; }
+  .ai-result-meta {
+    font-size: 9px;
+    color: #64748b;
+    font-family: 'Courier New', monospace;
+  }
+  .ai-result-toggle {
+    color: #94a3b8;
+    font-size: 10px;
+    transition: transform 0.2s;
+  }
+  .ai-result-body {
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding: 10px 14px 12px;
+  }
+  .ai-finding {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 11px;
+    color: #cbd5e1;
+    line-height: 1.5;
+  }
+  .ai-finding:last-child { border-bottom: none; }
+  .ai-finding-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+  .ai-finding-text { flex: 1; }
+  .ai-finding-text b { color: #fff; font-weight: 700; }
+  .ai-finding-text .pill {
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px; border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: #93c5fd;
+    margin: 0 2px;
+  }
+  .ai-rerun {
+    margin-top: 8px;
+    width: 100%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 8px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .ai-rerun:hover { background: rgba(255,255,255,0.08); color: #cbd5e1; }
+  .ai:hover {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(59, 130, 246, 0.12));
+    border-color: rgba(167, 139, 250, 0.5);
+  }
+  .ai-row {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .ai-text {
+    font-size: 13px; font-weight: 800;
+    color: #c4b5fd;
+  }
+  .das.mobile .ai-text { font-size: 12px; }
+  .ai-arrow { color: #a78bfa; font-size: 16px; }
+  .ai-label {
+    font-size: 9px; color: #a78bfa;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    font-weight: 700; margin-bottom: 4px;
+  }
+
+  /* History */
+  .history { padding: 0 16px 16px; }
+  .history-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 8px;
+    margin-bottom: 4px;
+  }
+  .history-ver {
+    background: rgba(167, 139, 250, 0.15);
+    color: #c4b5fd;
+    font-size: 9px; font-weight: 800;
+    padding: 3px 8px; border-radius: 8px;
+    font-family: 'Courier New', monospace;
+  }
+  .history-msg {
+    flex: 1;
+    font-size: 11px; color: #cbd5e1;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .das.mobile .history-msg { font-size: 10px; }
+  .history-time {
+    font-size: 9px; color: #64748b;
+    font-family: 'Courier New', monospace;
+  }
+  .history-by { color: #60a5fa; font-weight: 700; }
+
+  /* Footer note */
+  .meta {
+    max-width: 1100px;
+    margin: 60px auto 0;
+    background: linear-gradient(135deg, rgba(34,197,94,0.06), rgba(59,130,246,0.04));
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: 14px;
+    padding: 18px 22px;
+  }
+  .meta-title {
+    font-size: 13px; font-weight: 900;
+    color: #4ade80;
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .meta-body {
+    font-size: 12px; color: #cbd5e1;
+    line-height: 1.8;
+  }
+  .meta-body code {
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    color: #93c5fd;
+    font-size: 11px;
+  }
+
+  /* Width labels */
+  .width-marker {
+    text-align: center;
+    font-size: 9px;
+    color: #475569;
+    margin-top: 12px;
+    font-family: 'Courier New', monospace;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-title">DAS Final · V2 (recommended)</div>
+<div class="page-sub">
+  Sales Contract · SC-FS20260220045 · v2 · 12 KB<br>
+  无 Trade Chain · 无 Parties · 干净的"单个文件操作面板"
+</div>
+
+<div class="compare-row">
+
+  <!-- ═══ DESKTOP ═══ -->
+  <div class="device-block">
+    <div class="device-label">
+      <span class="icon">💻</span>
+      <span>Desktop View</span>
+      <span class="size">540 × auto</span>
+    </div>
+
+    <div class="das desktop">
+      <div class="h">
+        <div class="h-icon">SC</div>
+        <div class="h-text">
+          <div class="h-title">Sales Contract</div>
+          <div class="h-sub">SC-FS20260220045.html · v2 · 12 KB</div>
+        </div>
+        <div class="h-badge">Generated</div>
+      </div>
+
+      <div class="section-title">📄 Preview</div>
+      <div class="preview">
+        SALES CONTRACT<br>
+        Buyer: PETSOME GROUP SDN BHD<br>
+        Seller: XIAMEN PET BABY IMPORT &amp; EXPORT<br>
+        Total: CNY 184,800.00<br>
+        Terms: T/T 30% / 70% vs. B/L<br>
+        ...
+      </div>
+
+      <div class="section-title">⚡ Actions</div>
+      <div class="actions">
+        <div class="actions-grid">
+          <button class="btn primary"><span class="btn-icon">👁️</span>Open</button>
+          <button class="btn"><span class="btn-icon">📄</span>Download PDF</button>
+          <button class="btn"><span class="btn-icon">📊</span>Download Excel</button>
+          <button class="btn"><span class="btn-icon">📤</span>Forward</button>
+          <button class="btn"><span class="btn-icon">🔏</span>E-Stamp</button>
+          <button class="btn"><span class="btn-icon">🔒</span>Permission</button>
+        </div>
+      </div>
+
+      <div class="ai">
+        <div class="ai-label">✨ AI Smart Review</div>
+        <div class="ai-row">
+          <div class="ai-text">Cross-check vs PI / IV / PL · find mismatches</div>
+          <div class="ai-arrow">→</div>
+        </div>
+      </div>
+
+      <!-- AI Result · WARN state (most realistic example) -->
+      <div class="ai-result warn">
+        <div class="ai-result-head">
+          <div class="ai-status-dot warn"></div>
+          <div class="ai-status-text warn">2 minor issues found</div>
+          <div class="ai-result-meta">Reviewed · 2 min ago</div>
+          <div class="ai-result-toggle">▼</div>
+        </div>
+        <div class="ai-result-body">
+          <div class="ai-finding">
+            <span class="ai-finding-icon">🟡</span>
+            <div class="ai-finding-text">
+              <b>Buyer name spacing differs</b> — SC says <span class="pill">PETSOME GROUP SDN BHD</span> but PI says <span class="pill">PETSOME GROUP SDN. BHD.</span> (extra periods)
+            </div>
+          </div>
+          <div class="ai-finding">
+            <span class="ai-finding-icon">🟡</span>
+            <div class="ai-finding-text">
+              <b>Payment terms phrasing</b> — SC: <span class="pill">T/T 30%/70% vs B/L</span>, PI: <span class="pill">30 percent advance, balance against B/L copy</span>. Same meaning, but recommend unify.
+            </div>
+          </div>
+          <div class="ai-finding">
+            <span class="ai-finding-icon">✅</span>
+            <div class="ai-finding-text">
+              <b>NW / Total / Currency / Incoterm</b> — all 4 docs match exactly
+            </div>
+          </div>
+          <button class="ai-rerun">🔄 Re-run review</button>
+        </div>
+      </div>
+
+      <div class="section-title">📜 History</div>
+      <div class="history">
+        <div class="history-row">
+          <div class="history-ver">v2</div>
+          <div class="history-msg">Auto-generated after spec adjust</div>
+          <div class="history-time">2026-04-26 14:32</div>
+        </div>
+        <div class="history-row">
+          <div class="history-ver">v1</div>
+          <div class="history-msg">Initial generation</div>
+          <div class="history-time"><span class="history-by">Sanlyn AI</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="width-marker">540 px · with AI result (warn state)</div>
+  </div>
+
+  <!-- ═══ MOBILE ═══ -->
+  <div class="device-block">
+    <div class="device-label">
+      <span class="icon">📱</span>
+      <span>Mobile View</span>
+      <span class="size">iPhone · 380 px</span>
+    </div>
+
+    <div class="phone-frame">
+      <div class="das mobile">
+        <div class="h">
+          <div class="h-icon">SC</div>
+          <div class="h-text">
+            <div class="h-title">Sales Contract</div>
+            <div class="h-sub">SC-FS20260220045 · v2</div>
+          </div>
+          <div class="h-badge">Gen.</div>
+        </div>
+
+        <div class="section-title">📄 Preview</div>
+        <div class="preview">
+          SALES CONTRACT<br>
+          Buyer: PETSOME GROUP SDN BHD<br>
+          Seller: XIAMEN PET BABY...<br>
+          Total: CNY 184,800.00<br>
+          Terms: T/T 30% / 70%<br>
+          ...
+        </div>
+
+        <div class="section-title">⚡ Actions</div>
+        <div class="actions">
+          <div class="actions-grid">
+            <button class="btn primary"><span class="btn-icon">👁️</span>Open</button>
+            <button class="btn"><span class="btn-icon">📄</span>PDF</button>
+            <button class="btn"><span class="btn-icon">📊</span>Excel</button>
+            <button class="btn"><span class="btn-icon">📤</span>Forward</button>
+            <button class="btn"><span class="btn-icon">🔏</span>E-Stamp</button>
+            <button class="btn"><span class="btn-icon">🔒</span>Perm</button>
+          </div>
+        </div>
+
+        <div class="ai">
+          <div class="ai-label">✨ AI Smart Review</div>
+          <div class="ai-row">
+            <div class="ai-text">Cross-check vs PI / IV / PL</div>
+            <div class="ai-arrow">→</div>
+          </div>
+        </div>
+
+        <!-- AI Result · OK state (collapsed) -->
+        <div class="ai-result ok">
+          <div class="ai-result-head">
+            <div class="ai-status-dot ok"></div>
+            <div class="ai-status-text ok">All clear · 6/6 checks passed</div>
+            <div class="ai-result-meta">2 min</div>
+            <div class="ai-result-toggle">▼</div>
+          </div>
+        </div>
+
+        <div class="section-title">📜 History</div>
+        <div class="history">
+          <div class="history-row">
+            <div class="history-ver">v2</div>
+            <div class="history-msg">Auto after spec adjust</div>
+            <div class="history-time">04-26</div>
+          </div>
+          <div class="history-row">
+            <div class="history-ver">v1</div>
+            <div class="history-msg">Initial generation</div>
+            <div class="history-time"><span class="history-by">Sanlyn</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="width-marker">380 px (iPhone Pro)</div>
+  </div>
+
+</div>
+
+<!-- AI Result States Reference -->
+<div style="max-width:1100px;margin:60px auto 32px;">
+  <div style="text-align:center;font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.16em;font-weight:700;margin-bottom:24px;">🤖 AI Result · 4 States</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;">
+
+    <!-- State 1: Never run -->
+    <div>
+      <div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">① Never run (default)</div>
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(167,139,250,0.3);border-radius:10px;padding:12px;font-size:11px;color:#c4b5fd;text-align:center;font-weight:700;">
+        ✨ Cross-check vs PI / IV / PL →
+      </div>
+    </div>
+
+    <!-- State 2: Running -->
+    <div>
+      <div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">② Running</div>
+      <div style="background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.3);border-radius:10px;padding:12px;display:flex;align-items:center;gap:10px;">
+        <div style="width:14px;height:14px;border:2px solid rgba(96,165,250,0.3);border-top-color:#60a5fa;border-radius:50%;animation:spin 1s linear infinite;"></div>
+        <div style="flex:1;font-size:11px;color:#93c5fd;font-weight:700;">Reviewing 4 documents…</div>
+      </div>
+    </div>
+
+    <!-- State 3: OK -->
+    <div>
+      <div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">③ All clear ✅</div>
+      <div style="background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.3);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;">
+        <div style="width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 6px #22c55e;"></div>
+        <div style="flex:1;font-size:11px;color:#4ade80;font-weight:800;">All clear · 6/6 passed</div>
+        <div style="font-size:9px;color:#64748b;font-family:monospace;">2 min</div>
+      </div>
+    </div>
+
+    <!-- State 4: Warn / Error -->
+    <div>
+      <div style="font-size:10px;color:#64748b;font-weight:700;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;">④ Issues 🟡 / 🔴</div>
+      <div style="background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.3);border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:8px;">
+        <div style="width:8px;height:8px;border-radius:50%;background:#ef4444;box-shadow:0 0 6px #ef4444;"></div>
+        <div style="flex:1;font-size:11px;color:#fca5a5;font-weight:800;">1 critical · 2 minor</div>
+        <div style="font-size:9px;color:#94a3b8;">▼</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg);}}</style>
+
+<!-- Footer -->
+<div class="meta">
+  <div class="meta-title">✅ V2 锁定方案</div>
+  <div class="meta-body">
+    <b>组件名：</b><code>DASCompactView.jsx</code> — 子组件，挂在现版 <code>DocActionSheet.jsx</code> 容器里<br>
+    <b>布局：</b>Header → Preview → Actions (2×3) → AI Review → History — 桌面手机同结构，只调字号/间距<br>
+    <b>调用：</b><code>openDASPanel({ ownerType:'order', orderNo:'FS...', fileType:'SC' })</code> — Documents Tab 点任何一个文件都进来<br>
+    <b>覆盖范围：</b>Trade 类 / Compliance 类 (MSDS, COA, Vet) / Logistics 类 — 全部用同一个 view，不区分类目（保持极简）<br>
+    <b>工厂端不受影响：</b>继续用现版 <code>DocActionSheet</code>（含 Stage selector + Feedback upload + AI Hint）
+  </div>
+</div>
+
+</body>
+</html>

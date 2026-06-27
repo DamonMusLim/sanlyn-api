@@ -91,12 +91,14 @@ export default async function handler(req, res) {
         SELECT cost_total, company_name, charge_code FROM local_charges lc
         WHERE lower(btrim(lc.pol))=lower(btrim(f.pol)) AND lower(btrim(lc.pod))=lower(btrim(f.pod))
           AND lower(btrim(lc.carrier))=lower(btrim(f.carrier)) AND lc.container_type ~* '20'
+          AND (f.forwarder IS NULL OR lower(btrim(lc.company_name))=lower(btrim(f.forwarder)))
         ORDER BY updated_at DESC NULLS LAST LIMIT 1
       ) lc20 ON TRUE
       LEFT JOIN LATERAL (
         SELECT cost_total, company_name, charge_code FROM local_charges lc
         WHERE lower(btrim(lc.pol))=lower(btrim(f.pol)) AND lower(btrim(lc.pod))=lower(btrim(f.pod))
           AND lower(btrim(lc.carrier))=lower(btrim(f.carrier)) AND lc.container_type ~* '40|HQ|45'
+          AND (f.forwarder IS NULL OR lower(btrim(lc.company_name))=lower(btrim(f.forwarder)))
         ORDER BY updated_at DESC NULLS LAST LIMIT 1
       ) lc40 ON TRUE`;
     const params = [], conds = [];

@@ -10,3 +10,34 @@ node_modules/
 *.pfx
 id_rsa
 id_ed25519
+.secrets-*
+
+# ── 2026-06-22 工作树治理（防垃圾再生 · 文件不删，只是 git 不追踪）──
+node_modules/
+uploads/
+backups/
+_unused/
+_archive*/
+_ARCHIVE*/
+# admin-v1 旧前端构建产物（前端真源在 ~/Desktop/Sanlyn-OS，已迁 /opt/sanlyn-admin-v1）
+public/assets/
+assets/
+web/
+# 上传/临时数据
+api/files/
+*.tgz
+# .bak 类备份
+*.bak
+*.bak-*
+*.bak_*
+*._bak*
+*.GOODBAK*
+*.reverted*
+*.CLOBBERED*
+*.broken*
+server.js.*
+# 根目录一次性调试脚本（check_/chk/audit/pv/fix/find/mktoken/patch_ 等手动跑的）
+/*.cjs
+*.js.bak*
+*.bak.*
+*bak[0-9]*

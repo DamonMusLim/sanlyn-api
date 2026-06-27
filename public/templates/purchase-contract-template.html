@@ -2,92 +2,124 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>购销合同模板</title>
+<title>购销合同模板 · 鑫宝凌</title>
 <style>
 @font-face { font-family:'FangSong'; src:url('https://api.sanlyn.cn/public/FangSong.ttf') format('truetype'); }
 * { box-sizing:border-box; margin:0; padding:0; }
 body { font-family:"STSongti-SC","Songti SC","SimSun","宋体",serif; background:#f0f2f5; padding:24px; color:#111; }
 .toolbar { max-width:800px; margin:0 auto 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .toolbar button { padding:8px 18px; border-radius:7px; border:none; cursor:pointer; font-size:13px; font-weight:700; }
-.btn-print{background:#1d4ed8;color:#fff;} .btn-seal{background:#16a34a;color:#fff;} .btn-clear{background:#64748b;color:#fff;}
-.hint{font-size:11px;color:#64748b;}
+.btn-print { background:#1d4ed8; color:#fff; }
+.btn-seal  { background:#16a34a; color:#fff; }
+.btn-clear { background:#64748b; color:#fff; }
+.hint { font-size:11px; color:#64748b; }
 .page { max-width:800px; margin:0 auto; background:#fff; padding:60px 70px; box-shadow:0 4px 24px rgba(0,0,0,.15); min-height:1120px; }
-h1{text-align:center;font-size:28px;font-weight:900;letter-spacing:4px;margin-bottom:28px;}
-.meta{font-size:15px;line-height:2.1;margin-bottom:18px;}
-.editable{display:inline-block;border-bottom:1px solid #bbb;min-width:60px;padding:0 4px;color:#111;outline:none;}
-.intro{font-size:15px;margin-bottom:14px;}
-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;}
-th,td{border:1px solid #333;padding:7px 8px;text-align:center;} th{font-weight:700;}
-td input{width:100%;border:none;outline:none;text-align:center;font-size:13px;font-family:inherit;background:#f0f7ff;padding:2px 4px;border-radius:3px;}
-td input.left{text-align:left;}
-.clauses{font-size:15px;line-height:2.1;margin:16px 0;} .clauses p{margin-bottom:4px;}
-.sig-row{display:flex;justify-content:space-between;margin-top:60px;}
-.sig-box{width:46%;font-size:14px;} .sig-label{margin-bottom:10px;font-weight:700;}
-.seal-area{width:188px;height:188px;border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:10px auto;cursor:pointer;position:relative;overflow:hidden;transition:border .15s;}
-.seal-area.empty{border:2px dashed #e2e8f0;}
-.seal-area.empty:hover{border-color:#94a3b8;}
-.seal-area:hover{border-color:#60a5fa;}
-.seal-area img{width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;}
-.seal-hint{font-size:11px;color:#94a3b8;pointer-events:none;text-align:center;line-height:1.5;}
-.sig-date{font-size:13px;margin-top:14px;color:#444;}
-/* Modal */
-#sealModal{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;}
-#sealModal.open{display:flex;}
-.modal-box{background:#fff;border-radius:0;padding:0;width:100vw;height:100vh;overflow:hidden;box-shadow:none;display:flex;flex-direction:column;}
-@media(min-width:700px){.modal-box{border-radius:12px;width:96vw;height:94vh;max-width:1300px;box-shadow:0 20px 60px rgba(0,0,0,.3);}}
-.modal-title{font-size:16px;font-weight:800;padding:18px 24px 0;display:flex;justify-content:space-between;align-items:center;}
-.modal-close{cursor:pointer;font-size:20px;color:#94a3b8;background:none;border:none;}
-.modal-tabs{display:flex;gap:4px;padding:10px 24px;margin-bottom:0;border-bottom:1px solid #e2e8f0;}
-.modal-tab{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#f1f5f9;color:#64748b;}
-.modal-body{flex:1;overflow:hidden;}
-#tab-das-content,#tab-upload-content{padding:16px 24px;overflow-y:auto;height:100%;}
-#tab-make-content{height:100%;}
-.modal-tab.active{background:#3b82f6;color:#fff;}
-.stamp-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
-.stamp-card{border:2px solid #e2e8f0;border-radius:10px;padding:10px;cursor:pointer;text-align:center;position:relative;}
-.stamp-card:hover{border-color:#3b82f6;background:#eff6ff;}
-.stamp-card img{width:80px;height:80px;object-fit:contain;}
-.stamp-name{font-size:11px;color:#475569;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.stamp-del{position:absolute;top:4px;right:4px;font-size:13px;color:#ef4444;background:none;border:none;cursor:pointer;display:none;padding:2px 4px;border-radius:4px;}
-.stamp-card:hover .stamp-del{display:block;}
-.stamp-match{border-color:#16a34a!important;box-shadow:0 0 0 2px #bbf7d0;}
-.stamp-match-badge{position:absolute;top:4px;left:4px;background:#16a34a;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;z-index:2;}
-.stamp-empty{grid-column:1/-1;text-align:center;color:#94a3b8;font-size:13px;padding:24px;line-height:1.8;}
-/* Upload tab */
-.upload-zone{border:2px dashed #cbd5e1;border-radius:12px;padding:20px;text-align:center;cursor:pointer;margin-bottom:12px;}
-.upload-zone:hover{border-color:#3b82f6;background:#f0f7ff;}
-.upload-preview{width:100px;height:100px;object-fit:contain;margin:0 auto 8px;display:block;border-radius:8px;}
-.row{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
-.row input{flex:1;padding:8px 12px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;}
-.row label{font-size:13px;color:#475569;white-space:nowrap;}
-.btn-save{padding:9px 20px;background:#3b82f6;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;}
-.btn-save:disabled{background:#94a3b8;cursor:not-allowed;}
-.btn-use{padding:9px 20px;background:#16a34a;color:#fff;border:none;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer;margin-left:8px;}
-.upload-status{font-size:12px;margin-top:8px;text-align:center;}
+h1 { text-align:center; font-size:28px; font-weight:900; letter-spacing:4px; margin-bottom:28px; }
+.meta { font-size:15px; line-height:2.1; margin-bottom:18px; }
+.editable { display:inline-block; border-bottom:1px solid #aaa; min-width:60px; padding:0 4px; color:#111; outline:none; }
+.intro { font-size:15px; margin-bottom:14px; }
+table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:8px; }
+th,td { border:1px solid #333; padding:7px 8px; text-align:center; } th { font-weight:700; }
+td input { width:100%; border:none; outline:none; text-align:center; font-size:13px; font-family:inherit; background:#f0f7ff; padding:2px 4px; border-radius:3px; }
+td input.left { text-align:left; }
+.clauses { font-size:15px; line-height:2.1; margin:16px 0; } .clauses p { margin-bottom:4px; }
+.sig-row { display:flex; justify-content:space-between; margin-top:60px; }
+.sig-box { width:46%; font-size:14px; }
+.sig-label { margin-bottom:10px; font-weight:700; }
+.seal-area { width:150px; height:150px; border:none; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:10px auto; cursor:default; position:relative; overflow:visible; }
+.seal-clip { position:absolute; inset:0; border-radius:50%; overflow:hidden; pointer-events:none; }
+.seal-clip img { width:100%; height:100%; object-fit:contain; display:none; transform-origin:center center; pointer-events:auto; cursor:grab; }
+.seal-hint { font-size:11px; color:#94a3b8; text-align:center; line-height:1.5; cursor:pointer; }
+.rot-handle { position:absolute; bottom:-12px; right:-12px; width:26px; height:26px; background:#3b82f6; color:#fff; border-radius:50%; display:none; align-items:center; justify-content:center; font-size:15px; cursor:grab; z-index:10; box-shadow:0 2px 8px rgba(0,0,0,.3); user-select:none; }
+.rot-handle:active { cursor:grabbing; background:#1d4ed8; }
+.sig-date { font-size:13px; margin-top:14px; color:#444; }
+
+/* ── Modal ── */
+#sealModal { display:none; position:fixed; inset:0; z-index:9999; background:#f8fafc; align-items:flex-start; justify-content:center; overflow-y:auto; }
+#sealModal.open { display:flex; }
+.modal-box { background:#fff; border-radius:0; padding:32px 40px; width:100%; min-height:100vh; box-shadow:none; max-width:860px; margin:0 auto; }
+.modal-title { font-size:16px; font-weight:800; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; }
+.modal-close { cursor:pointer; font-size:20px; color:#94a3b8; background:none; border:none; }
+.modal-tabs { display:flex; gap:4px; margin-bottom:16px; }
+.modal-tab { padding:6px 14px; border-radius:6px; border:none; cursor:pointer; font-size:12px; font-weight:700; background:#f1f5f9; color:#64748b; }
+.modal-tab.active { background:#3b82f6; color:#fff; }
+
+/* DAS grid */
+.stamp-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.stamp-card { border:2px solid #e2e8f0; border-radius:10px; padding:10px; cursor:pointer; text-align:center; position:relative; }
+.stamp-card:hover { border-color:#3b82f6; background:#eff6ff; }
+.stamp-card img { width:80px; height:80px; object-fit:contain; }
+.stamp-name { font-size:11px; color:#475569; margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stamp-del { position:absolute; top:4px; right:4px; font-size:13px; color:#ef4444; background:none; border:none; cursor:pointer; display:none; padding:2px 4px; border-radius:4px; }
+.stamp-card:hover .stamp-del { display:block; }
+.stamp-empty { grid-column:1/-1; text-align:center; color:#94a3b8; font-size:13px; padding:24px; line-height:1.8; }
+
 /* Make tab */
-.make-section{margin-bottom:14px;}
-.make-section label{display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:4px;}
-.make-section input[type=text]{width:100%;padding:8px 12px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;}
-.make-section input[type=range]{width:100%;accent-color:#3b82f6;}
-.canvas-wrap{text-align:center;margin:12px 0;background:#fafafa;border-radius:10px;padding:12px;}
-#makeCanvas{border-radius:8px;}
-.make-btns{display:flex;gap:8px;margin-top:12px;}
-@media print{
-  body{background:#fff;padding:0;}
-  .toolbar,#sealModal{display:none!important;}
-  .page{box-shadow:none;padding:40px 60px;}
-  td input{background:transparent;}
-  .seal-area{border:none;} .seal-hint{display:none;}
+.make-section { margin-bottom:12px; }
+.make-section label { display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:4px; }
+.make-section input[type=text] { width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:7px; font-size:13px; }
+.make-section input[type=range] { width:100%; accent-color:#3b82f6; }
+.type-pills { display:flex; gap:6px; flex-wrap:wrap; }
+.type-pill { padding:5px 12px; border-radius:20px; border:1.5px solid #e2e8f0; background:#f8fafc; font-size:12px; font-weight:700; cursor:pointer; color:#64748b; transition:all .15s; }
+.type-pill.active { border-color:#dc2626; background:#fef2f2; color:#dc2626; }
+.color-swatches { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.color-dot { width:22px; height:22px; border-radius:50%; cursor:pointer; border:2.5px solid transparent; transition:border .15s; }
+.color-dot.active { border-color:#1d4ed8; }
+.svg-preview { text-align:center; margin:14px 0; background:#fafafa; border-radius:10px; padding:14px; }
+.make-btns { display:flex; gap:8px; margin-top:10px; }
+
+/* Upload tab */
+.upload-zone { border:2px dashed #cbd5e1; border-radius:12px; padding:20px; text-align:center; cursor:pointer; margin-bottom:12px; }
+.upload-zone:hover { border-color:#3b82f6; background:#f0f7ff; }
+.upload-preview { width:100px; height:100px; object-fit:contain; margin:0 auto 8px; display:block; border-radius:8px; }
+.row { display:flex; gap:8px; align-items:center; margin-bottom:10px; }
+.row input { flex:1; padding:8px 12px; border:1px solid #cbd5e1; border-radius:7px; font-size:13px; }
+.row label { font-size:13px; color:#475569; white-space:nowrap; }
+.btn-save { padding:9px 20px; background:#3b82f6; color:#fff; border:none; border-radius:7px; font-size:13px; font-weight:700; cursor:pointer; }
+.btn-save:disabled { background:#94a3b8; cursor:not-allowed; }
+.btn-use { padding:9px 20px; background:#16a34a; color:#fff; border:none; border-radius:7px; font-size:13px; font-weight:700; cursor:pointer; }
+.upload-status { font-size:12px; margin-top:8px; text-align:center; }
+.btn-local { padding:9px 20px; background:#f59e0b; color:#fff; border:none; border-radius:7px; font-size:13px; font-weight:700; cursor:pointer; }
+
+/* Seal status bar */
+.seal-status-wrap { display:flex; align-items:center; gap:18px; flex:1; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:6px 14px; }
+.seal-status-item { display:flex; align-items:center; gap:6px; font-size:12px; color:#475569; }
+.seal-status-label { font-weight:700; color:#374151; white-space:nowrap; }
+.seal-status-img { width:26px; height:26px; object-fit:contain; border-radius:50%; border:1px solid #e2e8f0; }
+.seal-status-name { color:#1d4ed8; font-weight:600; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.seal-status-name.empty { color:#9ca3af; font-weight:400; }
+.seal-status-btn { font-size:11px; padding:3px 10px; border:1px solid #6ee7b7; border-radius:5px; background:#fff; color:#059669; cursor:pointer; font-weight:700; }
+.seal-status-btn:hover { background:#ecfdf5; }
+.seal-status-sep { color:#d1d5db; }
+
+@media print {
+  body { background:#fff; padding:0; }
+  .toolbar, #sealModal { display:none!important; }
+  .page { box-shadow:none; padding:40px 60px; }
+  td input { background:transparent; }
+  .seal-area { border:none; } .seal-hint,.rot-handle { display:none !important; }
 }
 </style>
 </head>
 <body>
 <div class="toolbar">
   <button class="btn-print" onclick="window.print()">🖨 打印 / 导出PDF</button>
-  <button class="btn-seal" onclick="openSealPicker('buyer')">🔴 盖买方章</button>
-  <button class="btn-seal" onclick="openSealPicker('seller')">🔴 盖卖方章</button>
-  <button class="btn-clear" onclick="clearSeals()">✕ 清除印章</button>
-  <span class="hint">蓝色字段点击编辑 · 印章从 DAS 选取或在线制作</span>
+  <div class="seal-status-wrap">
+    <div class="seal-status-item">
+      <span class="seal-status-label">卖方章：</span>
+      <img class="seal-status-img" id="statusSellerImg" style="display:none">
+      <span class="seal-status-name empty" id="statusSellerName">未选择</span>
+      <button class="seal-status-btn" onclick="openSealPicker('seller')">更改</button>
+    </div>
+    <span class="seal-status-sep">|</span>
+    <div class="seal-status-item">
+      <span class="seal-status-label">买方章：</span>
+      <img class="seal-status-img" id="statusBuyerImg" style="display:none">
+      <span class="seal-status-name empty" id="statusBuyerName">未选择</span>
+      <button class="seal-status-btn" onclick="openSealPicker('buyer')">更改</button>
+    </div>
+  </div>
+  <button class="btn-clear" onclick="clearSeals()">✕ 清除</button>
 </div>
 
 <div class="page">
@@ -130,24 +162,28 @@ td input.left{text-align:left;}
   <div class="sig-row">
     <div class="sig-box">
       <div class="sig-label">买方（公司盖章）：</div>
-      <div class="seal-area empty" id="sealBuyer" onclick="openSealPicker('buyer')" ondragover="event.preventDefault()" ondrop="dropSeal(event,'buyer')">
-        <img id="sealBuyerImg" src="" style="display:none"/>
-        <span class="seal-hint" id="sealBuyerHint">点击选择<br>DAS 印章</span>
+      <div class="seal-area" id="sealBuyer" ondragover="event.preventDefault()" ondrop="dropSeal(event,'buyer')">
+        <div class="seal-clip">
+          <img id="sealBuyerImg" src=""/>
+        </div>
+        <span class="seal-hint" id="sealBuyerHint" onclick="openSealPicker('buyer')">点击选择<br>DAS 印章</span>
       </div>
       <div class="sig-date">日期：<span class="editable" contenteditable="true">2026年&nbsp;&nbsp;月&nbsp;&nbsp;日</span></div>
     </div>
     <div class="sig-box">
       <div class="sig-label">卖方（公司盖章）：</div>
-      <div class="seal-area empty" id="sealSeller" onclick="openSealPicker('seller')" ondragover="event.preventDefault()" ondrop="dropSeal(event,'seller')">
-        <img id="sealSellerImg" src="" style="display:none"/>
-        <span class="seal-hint" id="sealSellerHint">点击选择<br>DAS 印章</span>
+      <div class="seal-area" id="sealSeller" ondragover="event.preventDefault()" ondrop="dropSeal(event,'seller')">
+        <div class="seal-clip">
+          <img id="sealSellerImg" src=""/>
+        </div>
+        <span class="seal-hint" id="sealSellerHint" onclick="openSealPicker('seller')">点击选择<br>DAS 印章</span>
       </div>
       <div class="sig-date">日期：<span class="editable" contenteditable="true">2026年&nbsp;&nbsp;月&nbsp;&nbsp;日</span></div>
     </div>
   </div>
 </div>
 
-<!-- Modal -->
+<!-- ── Seal Modal ── -->
 <div id="sealModal">
   <div class="modal-box">
     <div class="modal-title">
@@ -155,20 +191,31 @@ td input.left{text-align:left;}
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-tabs">
-      <button class="modal-tab active" id="tab-das" onclick="switchTab('das')">DAS 共享库</button>
-      <button class="modal-tab" id="tab-make" onclick="switchTab('make')">🎨 制作印章</button>
+      <button class="modal-tab" id="tab-das" onclick="switchTab('das')" style="display:none">DAS 共享库</button>
+      <button class="modal-tab" id="tab-local" onclick="switchTab('local')">📱 本地章库</button>
+      <button class="modal-tab active" id="tab-make" onclick="switchTab('make')">🎨 制作印章</button>
       <button class="modal-tab" id="tab-upload" onclick="switchTab('upload')">上传图片</button>
     </div>
-    <div class="modal-body">
+
     <!-- DAS Library -->
-    <div id="tab-das-content">
+    <div id="tab-das-content" style="display:none;">
       <div id="stampGrid" class="stamp-grid"><div class="stamp-empty">加载中…</div></div>
     </div>
 
-    <!-- Make Seal - full designer iframe -->
-    <div id="tab-make-content" style="display:none;height:100%;">
-      <iframe id="sealDesignerFrame" style="width:100%;height:100%;border:none;display:block;" title="印章设计器"></iframe>
+    <!-- Local Library -->
+    <div id="tab-local-content" style="display:none;">
+      <div style="font-size:11px;color:#64748b;padding:4px 0 12px;">已保存到本设备的印章 · 制作或上传后点「保存到本地」即可复用，无需登录</div>
+      <div id="localStampGrid" class="stamp-grid"><div class="stamp-empty">暂无本地章。制作或上传后点「保存到本地」。</div></div>
     </div>
+
+    <!-- Make Seal (DrawStampUtils full designer) -->
+    <div id="tab-make-content" style="margin:0 -16px;">
+      <iframe id="sealDesignerFrame"
+        src="https://ai.sanlyn.cn/seal-designer-full.html?embed=1"
+        style="width:100%;height:600px;border:none;display:block;"
+        allow="clipboard-write"></iframe>
+    </div>
+
     <!-- Upload -->
     <div id="tab-upload-content" style="display:none;">
       <input type="file" id="sealFileInput" accept="image/*" style="display:none" onchange="onFileChosen(event)">
@@ -182,142 +229,250 @@ td input.left{text-align:left;}
       </div>
       <div class="row">
         <label>印章名称：</label>
-        <input id="uploadSealName" type="text" placeholder="例：厦门巴匕合同章" maxlength="64"/>
+        <input id="uploadSealName" type="text" placeholder="例：厦门鑫宝凌合同章" maxlength="64"/>
       </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn-save" id="uploadSaveBtn" disabled onclick="saveSealToDas()">⬆ 保存到 DAS</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn-use" id="uploadUseBtn" disabled onclick="useUploadedSeal()">✓ 直接使用</button>
+        <button class="btn-local" id="uploadLocalBtn" disabled onclick="saveSealToLocal()">💾 保存到本地</button>
+        <button class="btn-save" id="uploadSaveBtn" disabled onclick="saveSealToDas()">⬆ 保存到 DAS</button>
       </div>
       <div class="upload-status" id="uploadStatus"></div>
     </div>
-    </div><!-- /.modal-body -->
   </div>
 </div>
 
-<script src="https://api.sanlyn.cn/public/DrawStampUtils.js"></script>
 <script>
 var API_BASE = 'https://api.sanlyn.cn';
 var _sealTarget = null;
-var _sealPartyName = '';
 var _stamps = [];
+var _localStamps = [];
 var _pendingFile = null;
 var _renderTimer = null;
-var _dsuLoaded = false;
+var _makeType = 'official';
+var _makeColor = '#E10000';
+var _sealRotation = { buyer: 0, seller: 0 };
 
-/* seal template picker */
-function loadTplPicker() {
-  var sel = document.getElementById('tplSelect');
-  if (!sel) return;
-
-  var _mergedTpls = []; // accessible to applyTplPreset via closure won't work — use window
-  function buildOpts(extraTpls) {
-    while (sel.options.length > 1) sel.remove(1);
-    var stored = [];
-    try { stored = JSON.parse(localStorage.getItem('sanlyn_seal_templates') || '[]'); } catch(e) {}
-    var seen = {};
-    stored.forEach(function(t) { if(t.label) seen[t.label]=true; });
-    (extraTpls||[]).forEach(function(t) { if(t.label && !seen[t.label]) { stored.push(t); seen[t.label]=true; } });
-    // Store merged list globally so applyTplPreset can look up any template
-    window._tplCache = stored;
-    stored.forEach(function(t) {
-      if (!t.label) return;
-      var opt = document.createElement('option');
-      opt.value = t.label;
-      opt.textContent = t.label;
-      sel.appendChild(opt);
-    });
-    if (sel.options.length === 1) {
-      var hint = document.createElement('option');
-      hint.disabled = true;
-      hint.textContent = '请先在「印章设计」tab保存模板';
-      sel.appendChild(hint);
+/* ── Rotation: 直接在印章上拖动旋转（去掉单独的旋转小标）── */
+function initRotHandle(who) {
+  var key = who === 'buyer' ? 'Buyer' : 'Seller';
+  var area = document.getElementById('seal' + key);
+  var img  = document.getElementById('seal' + key + 'Img');
+  if (!img) return;
+  img.style.cursor = 'grab';
+  img.title = '拖动印章旋转';
+  img.onmousedown = function(e) {
+    e.preventDefault(); e.stopPropagation();
+    img.style.cursor = 'grabbing';
+    var rect = area.getBoundingClientRect();
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top  + rect.height / 2;
+    var startAngleMouse = Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI;
+    var startRot = _sealRotation[who] || 0;
+    function onMove(ev) {
+      var a = Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180 / Math.PI;
+      _sealRotation[who] = startRot + (a - startAngleMouse);
+      img.style.transform = 'rotate(' + _sealRotation[who].toFixed(1) + 'deg)';
     }
-  }
-
-  // Always fetch server default to guarantee at least one option
-  fetch('https://api.sanlyn.cn/public/seal-template-default.json?v=' + Date.now())
-    .then(function(r) { return r.json(); })
-    .then(function(d) { buildOpts(d.label ? [d] : (Array.isArray(d) ? d : [])); })
-    .catch(function() { buildOpts([]); });
-}
-function applyTplPreset(sel) {
-  var name = sel.value;
-  if (!name) return;
-  // Try localStorage first, then server default
-  var arr = [];
-  try { arr = JSON.parse(localStorage.getItem('sanlyn_seal_templates') || '[]'); } catch(e) {}
-  var t = arr.find(function(x){ return x.label === name; });
-  if (!t && window._tplCache) t = window._tplCache.find(function(x){ return x.label === name; });
-  if (!t) { scheduleRender(); return; }
-  _activeTpl = t; // store full params for renderSeal()
-  var c = t.companies && t.companies[0];
-  var s = t.stampTypes && t.stampTypes[0];
-  var nameEl = document.getElementById('makeName');
-  if (nameEl && !nameEl.value.trim() && c) nameEl.value = c.name;
-  if (s) {
-    var typeEl = document.getElementById('makeType');
-    if (typeEl) { var opts=Array.from(typeEl.options).map(function(o){return o.value;}); if(opts.indexOf(s.type)>=0) typeEl.value=s.type; }
-  }
-  if (c) {
-    var set = function(id, valId, v) {
-      var el=document.getElementById(id), vl=document.getElementById(valId);
-      if(el && v!=null){el.value=v; if(vl)vl.textContent=v;}
-    };
-    set('makeFontSize',    'fontSizeVal',    c.fontHeight);
-    set('makeDistFactor',  'distFactorVal',  c.distFactor||6);
-    set('makeBorderOffset','borderOffsetVal',c.borderOffset);
-    set('makeCompression', 'compressionVal', c.compression);
-  }
-  scheduleRender();
+    function onUp() {
+      img.style.cursor = 'grab';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
 }
 
+/* ── Local stamp library (no login needed) ── */
+function loadLocalStamps() {
+  try { _localStamps = JSON.parse(localStorage.getItem('pc_local_stamps') || '[]'); } catch(e) { _localStamps = []; }
+}
+function saveLocalStampsStore() {
+  localStorage.setItem('pc_local_stamps', JSON.stringify(_localStamps.slice(0, 30)));
+}
+function saveToLocal(url, name) {
+  loadLocalStamps();
+  var label = name || '本地印章';
+  var idx = _localStamps.findIndex(function(s){ return s.name === label; });
+  var stamp = { id: 'local_' + label, name: label, url: url };
+  if (idx >= 0) _localStamps[idx] = stamp; else _localStamps.unshift(stamp);
+  saveLocalStampsStore();
+  renderLocalStamps();
+}
+function renderLocalStamps() {
+  var grid = document.getElementById('localStampGrid');
+  if (!grid) return;
+  loadLocalStamps();
+  if (!_localStamps.length) {
+    grid.innerHTML = '<div class="stamp-empty">暂无本地章。<br>制作或上传后点「保存到本地」即可复用。</div>';
+    return;
+  }
+  grid.innerHTML = _localStamps.map(function(s, i) {
+    return '<div class="stamp-card" onclick="selectLocalStamp(' + i + ')">'
+      + '<button class="stamp-del" onclick="event.stopPropagation();deleteLocalStamp(' + i + ')" title="删除">✕</button>'
+      + '<img src="' + s.url + '" width="80" height="80" style="object-fit:contain" alt="' + s.name + '">'
+      + '<div class="stamp-name">' + s.name + '</div></div>';
+  }).join('');
+}
+function selectLocalStamp(idx) {
+  loadLocalStamps();
+  var s = _localStamps[idx];
+  if (s) { applySeal(_sealTarget, s.url, s.name); closeModal(); }
+}
+function deleteLocalStamp(idx) {
+  loadLocalStamps();
+  _localStamps.splice(idx, 1);
+  saveLocalStampsStore();
+  renderLocalStamps();
+}
+function saveMadeSealLocal() {
+  var name = document.getElementById('makeName').value.trim();
+  if (!name) { alert('请先输入公司名称'); return; }
+  var size = parseInt(document.getElementById('sizeSlider').value, 10);
+  var typeLabel = { official:'公章', contract:'合同章', finance:'财务章', personal:'私章' };
+  var label = name + '（' + (typeLabel[_makeType] || _makeType) + '）';
+  var svg = _generateSeal({ type: _makeType, name: name, color: _makeColor, size: size });
+  saveToLocal(svgToDataUrl(svg), label);
+  var st = document.getElementById('makeStatus');
+  st.textContent = '✓ 已保存到本地章库'; st.style.color = '#16a34a';
+  setTimeout(function(){ switchTab('local'); }, 600);
+}
+function saveSealToLocal() {
+  if (!_pendingFile) return;
+  var name = document.getElementById('uploadSealName').value.trim() || _pendingFile.name.replace(/\.[^.]+$/,'');
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    saveToLocal(ev.target.result, name);
+    var st = document.getElementById('uploadStatus');
+    st.textContent = '✓ 已保存到本地章库'; st.style.color = '#16a34a';
+    setTimeout(function(){ switchTab('local'); }, 600);
+  };
+  reader.readAsDataURL(_pendingFile);
+}
+
+/* ── Status bar update ── */
+function updateStatusBar(who, url, name) {
+  var key = who === 'buyer' ? 'Buyer' : 'Seller';
+  var si = document.getElementById('status' + key + 'Img');
+  var sn = document.getElementById('status' + key + 'Name');
+  if (si) { si.src = url; si.style.display = 'inline'; }
+  if (sn) { sn.textContent = name || (who === 'buyer' ? '买方章' : '卖方章'); sn.classList.remove('empty'); }
+}
+
+/* ── SVG 印章生成器 ── */
+function _generateSeal(opts) {
+  var type = opts.type || 'official';
+  var name = opts.name || '公司名称';
+  var color = opts.color || '#E10000';
+  var size = opts.size || 160;
+  var font = opts.font || 'FangSong,"仿宋",SimSun,"宋体",serif';
+  var half = size / 2;
+  var outerR = half * 0.90;
+  var innerR = half * 0.84;
+  var stroke = size * 0.022;
+  var starR = half * 0.28, starr = half * 0.12;
+  var nameFontSize = size * 0.095;
+  var subFontSize = size * 0.085;
+  var nameArcR = outerR * 0.80;
+  var subArcR = outerR * 0.68;
+  var uid = Math.random().toString(36).slice(2, 8);
+  var topId = 'st_' + uid, botId = 'sb_' + uid;
+
+  var defaultSub = { official:'', finance:'财务专用章', contract:'合同专用章', personal:'' };
+  var centerLabel = opts.subText !== undefined ? opts.subText : (defaultSub[type] || '');
+
+  function starPath(cx, cy, R, r) {
+    var pts = [];
+    for (var i = 0; i < 10; i++) {
+      var a = (Math.PI / 5) * i - Math.PI / 2;
+      var rad = i % 2 === 0 ? R : r;
+      pts.push((cx + rad * Math.cos(a)).toFixed(2) + ',' + (cy + rad * Math.sin(a)).toFixed(2));
+    }
+    return 'M ' + pts.join(' L ') + ' Z';
+  }
+
+  if (type === 'personal') {
+    var rx = half * 0.85, ry = half * 0.55;
+    var fs = size * 0.20;
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">'
+      + '<ellipse cx="' + half + '" cy="' + half + '" rx="' + rx + '" ry="' + ry + '" fill="none" stroke="' + color + '" stroke-width="' + stroke + '"/>'
+      + '<text x="' + half + '" y="' + (half + fs * 0.38) + '" font-family="' + font + '" font-size="' + fs + '" fill="' + color + '" text-anchor="middle" letter-spacing="4">' + name + '</text>'
+      + '</svg>';
+  }
+
+  var ls = (size * 0.008).toFixed(2);
+  var ls2 = (size * 0.006).toFixed(2);
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '">'
+    + '<defs>'
+    + '<path id="' + topId + '" d="M ' + (half - nameArcR) + ',' + half + ' A ' + nameArcR + ',' + nameArcR + ' 0 0,1 ' + (half + nameArcR) + ',' + half + '"/>'
+    + '<path id="' + botId + '" d="M ' + (half - subArcR) + ',' + half + ' A ' + subArcR + ',' + subArcR + ' 0 0,0 ' + (half + subArcR) + ',' + half + '"/>'
+    + '</defs>'
+    + '<circle cx="' + half + '" cy="' + half + '" r="' + outerR + '" fill="none" stroke="' + color + '" stroke-width="' + stroke + '"/>'
+    + '<circle cx="' + half + '" cy="' + half + '" r="' + (innerR * 0.60) + '" fill="none" stroke="' + color + '" stroke-width="' + (stroke * 0.5) + '" opacity="0.6"/>'
+    + '<path d="' + starPath(half, half, starR, starr) + '" fill="' + color + '"/>'
+    + '<text font-family="' + font + '" font-size="' + nameFontSize + '" fill="' + color + '" text-anchor="middle" letter-spacing="' + ls + '">'
+    + '<textPath href="#' + topId + '" startOffset="50%">' + name + '</textPath></text>'
+    + (centerLabel
+      ? '<text font-family="' + font + '" font-size="' + subFontSize + '" fill="' + color + '" text-anchor="middle" letter-spacing="' + ls2 + '">'
+        + '<textPath href="#' + botId + '" startOffset="50%">' + centerLabel + '</textPath></text>'
+      : '')
+    + '</svg>';
+}
+
+function svgToDataUrl(svgStr) {
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
+}
+
+/* ── Auth ── */
 function getToken() {
   try {
-    var m = location.search.match(/[?&]_t=([^&]+)/);
-    if (m) return decodeURIComponent(m[1]);
-    return localStorage.getItem('sanlyn_jwt') || localStorage.getItem('sanlyn_token') || '';
+    var p = new URLSearchParams(window.location.search).get('token');
+    return p || localStorage.getItem('sanlyn_jwt') || localStorage.getItem('sanlyn_token') || '';
   } catch(e) { return ''; }
 }
 function authHeaders() {
-  var h = {'Content-Type':'application/json'};
+  var h = { 'Content-Type': 'application/json' };
   var t = getToken(); if (t) h['Authorization'] = 'Bearer ' + t;
   return h;
 }
 
-function getPartyName(who) {
-  try {
-    var spans = document.querySelectorAll('.meta .editable');
-    if (who === 'buyer'  && spans[0]) return spans[0].textContent.trim();
-    if (who === 'seller' && spans[1]) return spans[1].textContent.trim();
-  } catch(e) {}
-  return '';
+/* ── Modal ── */
+function switchTab(name) {
+  ['das','local','make','upload'].forEach(function(t) {
+    var btn = document.getElementById('tab-' + t);
+    var cnt = document.getElementById('tab-' + t + '-content');
+    if (btn) btn.classList.toggle('active', t === name);
+    if (cnt) cnt.style.display = t === name ? '' : 'none';
+  });
+  if (name === 'das') loadDasStamps();
+  if (name === 'local') renderLocalStamps();
 }
 
 function openSealPicker(who) {
   _sealTarget = who;
-  _sealPartyName = getPartyName(who);
   document.getElementById('sealModal').classList.add('open');
-  switchTab('das');
-  loadDasStamps();
-}
-function closeModal() { document.getElementById('sealModal').classList.remove('open'); }
-
-function switchTab(tab) {
-  ['das','make','upload'].forEach(function(t) {
-    document.getElementById('tab-'+t).classList.toggle('active', t === tab);
-    document.getElementById('tab-'+t+'-content').style.display = t === tab ? '' : 'none';
-  });
-  if (tab === 'das') loadDasStamps();
-  if (tab === 'make') {
-    var tok = getToken();
-    var frame = document.getElementById('sealDesignerFrame');
-    if (frame) {
-      var company = encodeURIComponent(_sealPartyName || '');
-      var url = API_BASE + '/public/seal-designer.html?embed=1' + (tok ? '&_t=' + encodeURIComponent(tok) : '') + (company ? '&company=' + company : '');
-      frame.src = url; // reload each time so company name is fresh
+  var tok = getToken();
+  var dasTab = document.getElementById('tab-das');
+  if (tok) {
+    dasTab.style.display = '';
+    switchTab('das');
+  } else {
+    dasTab.style.display = 'none';
+    loadLocalStamps();
+    if (_localStamps.length > 0) {
+      switchTab('local');
+    } else {
+      switchTab('make');
     }
   }
 }
+function closeModal() { document.getElementById('sealModal').classList.remove('open'); }
+
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'seal-ready') return;
+  applySeal(_sealTarget, e.data.dataUrl, e.data.label || '制作印章');
+  closeModal();
+});
 
 /* ── DAS Library ── */
 function loadDasStamps() {
@@ -332,166 +487,100 @@ function loadDasStamps() {
         return;
       }
       _stamps = stamps;
-      var matchIdx = -1;
-      if (_sealPartyName) {
-        matchIdx = stamps.findIndex(function(s) {
-          return s.name && (s.name.indexOf(_sealPartyName) >= 0 || _sealPartyName.indexOf(s.name) >= 0);
-        });
-      }
-      grid.innerHTML = stamps.map(function(s,i) {
-        var isMatch = i === matchIdx;
-        return '<div class="stamp-card' + (isMatch ? ' stamp-match' : '') + '" onclick="selectStamp('+i+')" title="'+(s.name||'')+(isMatch?' · 自动匹配':'')+ '">' +
-          (isMatch ? '<div class="stamp-match-badge">匹配</div>' : '') +
-          '<button class="stamp-del" onclick="event.stopPropagation();deleteSeal('+s.id+')" title="删除">✕</button>' +
-          '<img src="'+s.url+'" onerror="this.style.opacity=0.3"/>' +
-          '<div class="stamp-name">'+(s.name||'印章')+'</div></div>';
+      grid.innerHTML = stamps.map(function(s, i) {
+        return '<div class="stamp-card" onclick="selectStamp(' + i + ')">'
+          + '<button class="stamp-del" onclick="event.stopPropagation();deleteSeal(' + s.id + ')" title="删除">✕</button>'
+          + '<img src="' + s.url + '" onerror="this.style.opacity=0.3"/>'
+          + '<div class="stamp-name">' + (s.name || '印章') + '</div></div>';
       }).join('');
-      // scroll matched card into view
-      if (matchIdx >= 0) {
-        var cards = grid.querySelectorAll('.stamp-card');
-        if (cards[matchIdx]) cards[matchIdx].scrollIntoView({block:'nearest'});
-      }
     })
     .catch(function() {
       grid.innerHTML = '<div class="stamp-empty">加载失败，请先登录 ai.sanlyn.cn</div>';
     });
 }
-function selectStamp(idx) { applySeal(_sealTarget, _stamps[idx].url); closeModal(); }
+function selectStamp(idx) { applySeal(_sealTarget, _stamps[idx].url, _stamps[idx].name); closeModal(); }
 function deleteSeal(id) {
   if (!confirm('从 DAS 共享库删除此印章？')) return;
-  fetch(API_BASE + '/api/db/customer-stamps', { method:'DELETE', headers:authHeaders(), body:JSON.stringify({id:id}) })
+  fetch(API_BASE + '/api/db/customer-stamps', { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ id: id }) })
     .then(function() { loadDasStamps(); });
 }
 
 /* ── Make Seal Tab ── */
-var _dsuUtils = null;
-var _activeTpl = null; // stores full template params when user picks one
-function initDSU() {
-  if (_dsuLoaded) return;
-  if (typeof DSU === 'undefined') { document.getElementById('makeStatus').textContent = '正在加载印章引擎…'; return; }
-  var canvas = document.getElementById('makeCanvas');
-  var MM = 400 / 40;
-  _dsuUtils = new DSU.DrawStampUtils(canvas, MM);
-  _dsuLoaded = true;
+function setType(el) {
+  document.querySelectorAll('.type-pill').forEach(function(p) { p.classList.remove('active'); });
+  el.classList.add('active');
+  _makeType = el.dataset.type;
+  scheduleRender();
+}
+function setColor(el) {
+  document.querySelectorAll('.color-dot').forEach(function(d) { d.classList.remove('active'); });
+  el.classList.add('active');
+  _makeColor = el.dataset.color;
+  document.getElementById('colorPicker').value = _makeColor;
+  scheduleRender();
+}
+function setColorDirect(val) {
+  document.querySelectorAll('.color-dot').forEach(function(d) { d.classList.remove('active'); });
+  _makeColor = val;
+  scheduleRender();
 }
 
 function scheduleRender() {
   clearTimeout(_renderTimer);
-  _renderTimer = setTimeout(renderSeal, 300);
+  _renderTimer = setTimeout(renderSeal, 250);
 }
 
 function renderSeal() {
-  if (typeof DSU === 'undefined') { document.getElementById('makeStatus').textContent = '印章引擎加载中…'; return; }
   var name = document.getElementById('makeName').value.trim();
-  var type = document.getElementById('makeType').value;
-  if (!name) { document.getElementById('makeStatus').textContent = '请输入公司名称'; return; }
-
-  // Read from sliders (populated by applyTplPreset or user drag)
-  var fontSize     = parseFloat(document.getElementById('makeFontSize').value)    || 4.2;
-  var distFactor   = parseFloat(document.getElementById('makeDistFactor').value)  || 6;
-  var borderOffset = parseFloat(document.getElementById('makeBorderOffset').value)|| 0.3;
-  var compression  = parseFloat(document.getElementById('makeCompression').value) || 1;
-
-  // Recreate DSU with correct MM each render
-  var canvas = document.getElementById('makeCanvas');
-  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); // clear before new instance
-  var w = (_activeTpl && _activeTpl.width)  || 40;
-  var h = (_activeTpl && _activeTpl.height) || 40;
-  var side = Math.max(w, h);
-  var MM = canvas.width / (side + 10);
-  _dsuUtils = new DSU.DrawStampUtils(canvas, MM);
-  var cfg = _dsuUtils.getDrawConfigs();
-  var tc = _activeTpl && _activeTpl.companies && _activeTpl.companies[0];
-  var ts = _activeTpl && _activeTpl.stampTypes && _activeTpl.stampTypes[0];
-  cfg.primaryColor = (_activeTpl && _activeTpl.color) || '#cc0000';
-  cfg.width  = (_activeTpl && _activeTpl.width)  || 40;
-  cfg.height = (_activeTpl && _activeTpl.height) || 40;
-  cfg.borderWidth = (_activeTpl && _activeTpl.borderWidth != null) ? _activeTpl.borderWidth : 1;
-  cfg.companyList = [{
-    companyName: name,
-    compression:            compression,
-    borderOffset:           borderOffset,
-    textDistributionFactor: distFactor,
-    fontFamily:             (tc && tc.fontFamily) || 'FangSong, 仿宋, SimSun',
-    fontHeight:             fontSize,
-    fontWeight: 'bold', shape: 'ellipse',
-    adjustEllipseText: false, adjustEllipseTextFactor: 0.5
-  }];
-  cfg.stampTypeList = [{
-    stampType:    type,
-    fontHeight:   ts ? ts.fontHeight   : 3.8,
-    fontFamily:   ts ? ts.fontFamily   : 'FangSong, 仿宋, SimSun',
-    fontWeight:   'bold',
-    compression:  ts ? ts.compression  : 1,
-    letterSpacing:ts ? ts.letterSpacing: 0,
-    positionY:    ts ? ts.positionY    : 3,
-    fontWidth: 1, lineSpacing: 1
-  }];
-  cfg.stampCode.code = ''; cfg.taxNumber.code = '';
-  cfg.drawStar.drawStar      = _activeTpl ? !!_activeTpl.star     : true;
-  cfg.drawStar.useImage      = false;
-  cfg.drawStar.starDiameter  = _activeTpl ? (_activeTpl.starD||14): 14;
-  cfg.drawStar.starPositionY = _activeTpl ? (_activeTpl.starY||-2): -2;
-  cfg.roughEdge.drawRoughEdge        = _activeTpl ? !!_activeTpl.roughEdge : false;
-  cfg.agingEffect.applyAging         = _activeTpl ? !!_activeTpl.aging     : false;
-  cfg.agingEffect.agingIntensity     = _activeTpl ? (_activeTpl.agingInt||20) : 50;
-  cfg.securityPattern.openSecurityPattern = _activeTpl ? !!_activeTpl.security : false;
-  cfg.roughEdge.drawRoughEdge = false;
-  cfg.agingEffect.applyAging = false;
-  cfg.innerCircle.drawInnerCircle = false;
-  cfg.outThinCircle.drawInnerCircle = false;
-  cfg.ruler.showRuler = false; cfg.ruler.showFullRuler = false;
-  cfg.shouldDrawRuler = false;
-
-  _dsuUtils.setDrawConfigs(cfg);
-  _dsuUtils.refreshStamp(false, false);
-  document.getElementById('makeStatus').textContent = '预览就绪 — 可调整后保存或直接使用';
-}
-
-function getMadeDataUrl() {
-  return document.getElementById('makeCanvas').toDataURL('image/png');
+  var size = parseInt(document.getElementById('sizeSlider').value, 10);
+  var preview = document.getElementById('sealSvgPreview');
+  var status = document.getElementById('makeStatus');
+  if (!name) {
+    preview.innerHTML = '';
+    status.textContent = '输入公司名称后预览';
+    return;
+  }
+  var svg = _generateSeal({ type: _makeType, name: name, color: _makeColor, size: size });
+  preview.innerHTML = svg;
+  status.textContent = '预览就绪 — 可调整后保存或直接使用';
 }
 
 function useMadeSeal() {
-  if (!document.getElementById('makeName').value.trim()) { alert('请先输入公司名称'); return; }
-  applySeal(_sealTarget, getMadeDataUrl());
+  var name = document.getElementById('makeName').value.trim();
+  if (!name) { alert('请先输入公司名称'); return; }
+  var size = parseInt(document.getElementById('sizeSlider').value, 10);
+  var typeLabel = { official:'公章', contract:'合同章', finance:'财务章', personal:'私章' };
+  var label = name + '（' + (typeLabel[_makeType] || _makeType) + '）';
+  var svg = _generateSeal({ type: _makeType, name: name, color: _makeColor, size: size });
+  applySeal(_sealTarget, svgToDataUrl(svg), label);
   closeModal();
 }
 
 function saveMadeSealToDas() {
   var name = document.getElementById('makeName').value.trim();
   if (!name) { alert('请先输入公司名称'); return; }
-  var type = document.getElementById('makeType').value;
-  var label = name + '（' + type + '）';
-  var dataUrl = getMadeDataUrl();
+  var typeLabel = { official:'公章', contract:'合同章', finance:'财务章', personal:'私章' };
+  var label = name + '（' + (typeLabel[_makeType] || _makeType) + '）';
+  var svg = _generateSeal({ type: _makeType, name: name, color: _makeColor, size: 200 });
+  var blob = new Blob([svg], { type: 'image/svg+xml' });
   var btn = document.getElementById('makeSaveBtn');
   btn.disabled = true; btn.textContent = '保存中…';
-
-  // Convert canvas dataURL to blob → upload to OSS
-  fetch(dataUrl).then(function(r) { return r.blob(); })
-    .then(function(blob) {
-      var form = new FormData();
-      form.append('file', blob, name + '.png');
-      form.append('path', 'stamps/' + Date.now() + '_' + name + '.png');
-      return fetch(API_BASE + '/api/oss-upload', { method:'POST', body:form });
-    })
+  var form = new FormData();
+  form.append('file', blob, name + '-' + _makeType + '.svg');
+  form.append('name', label);
+  form.append('type', _makeType);
+  fetch(API_BASE + '/api/db/customer-stamps', {
+    method: 'POST',
+    headers: { 'Authorization': getToken() ? 'Bearer ' + getToken() : '' },
+    body: form
+  })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      if (!d.success || !d.url) throw new Error(d.error || '上传OSS失败');
-      return fetch(API_BASE + '/api/db/customer-stamps', {
-        method:'POST', headers:authHeaders(),
-        body:JSON.stringify({ name:label, url:d.url })
-      }).then(function(r) { return r.json(); });
-    })
-    .then(function(d2) {
-      if (!d2.success) throw new Error(d2.error || '保存失败');
+      if (!d.success && !d.id) throw new Error(d.error || '保存失败');
       btn.textContent = '✓ 已保存'; btn.style.background = '#16a34a';
-      setTimeout(function() { switchTab('das'); btn.disabled=false; btn.textContent='⬆ 保存到 DAS'; btn.style.background=''; }, 800);
+      setTimeout(function() { switchTab('das'); btn.disabled = false; btn.textContent = '⬆ 保存到 DAS'; btn.style.background = ''; }, 800);
     })
-    .catch(function(err) {
-      alert('保存失败：' + err.message);
-      btn.disabled = false; btn.textContent = '⬆ 保存到 DAS';
-    });
+    .catch(function(err) { alert('保存失败：' + err.message); btn.disabled = false; btn.textContent = '⬆ 保存到 DAS'; });
 }
 
 /* ── Upload Tab ── */
@@ -506,20 +595,20 @@ function onFileChosen(e) {
   };
   reader.readAsDataURL(file);
   if (!document.getElementById('uploadSealName').value)
-    document.getElementById('uploadSealName').value = file.name.replace(/\.[^.]+$/,'');
+    document.getElementById('uploadSealName').value = file.name.replace(/\.[^.]+$/, '');
   document.getElementById('uploadSaveBtn').disabled = false;
   document.getElementById('uploadUseBtn').disabled = false;
+  document.getElementById('uploadLocalBtn').disabled = false;
   document.getElementById('uploadStatus').textContent = '';
   e.target.value = '';
 }
-
-(function(){
+(function() {
   var zone = document.getElementById('uploadZone');
-  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.style.borderColor='#3b82f6'; });
-  zone.addEventListener('dragleave', function() { zone.style.borderColor=''; });
+  zone.addEventListener('dragover', function(e) { e.preventDefault(); zone.style.borderColor = '#3b82f6'; });
+  zone.addEventListener('dragleave', function() { zone.style.borderColor = ''; });
   zone.addEventListener('drop', function(e) {
-    e.preventDefault(); zone.style.borderColor='';
-    var file = e.dataTransfer.files[0]; if (!file||!file.type.startsWith('image/')) return;
+    e.preventDefault(); zone.style.borderColor = '';
+    var file = e.dataTransfer.files[0]; if (!file || !file.type.startsWith('image/')) return;
     _pendingFile = file;
     var reader = new FileReader();
     reader.onload = function(ev) {
@@ -529,19 +618,19 @@ function onFileChosen(e) {
     };
     reader.readAsDataURL(file);
     if (!document.getElementById('uploadSealName').value)
-      document.getElementById('uploadSealName').value = file.name.replace(/\.[^.]+$/,'');
+      document.getElementById('uploadSealName').value = file.name.replace(/\.[^.]+$/, '');
     document.getElementById('uploadSaveBtn').disabled = false;
     document.getElementById('uploadUseBtn').disabled = false;
+    document.getElementById('uploadLocalBtn').disabled = false;
   });
 })();
-
 function useUploadedSeal() {
   if (!_pendingFile) return;
+  var name = document.getElementById('uploadSealName').value.trim() || _pendingFile.name.replace(/\.[^.]+$/,'');
   var reader = new FileReader();
-  reader.onload = function(ev) { applySeal(_sealTarget, ev.target.result); closeModal(); };
+  reader.onload = function(ev) { applySeal(_sealTarget, ev.target.result, name); closeModal(); };
   reader.readAsDataURL(_pendingFile);
 }
-
 function saveSealToDas() {
   if (!_pendingFile) return;
   var name = document.getElementById('uploadSealName').value.trim() || _pendingFile.name;
@@ -550,132 +639,75 @@ function saveSealToDas() {
   btn.disabled = true; status.textContent = '上传中…'; status.style.color = '#3b82f6';
   var form = new FormData();
   form.append('file', _pendingFile);
-  form.append('path', 'stamps/' + Date.now() + '_' + _pendingFile.name);
-  fetch(API_BASE + '/api/oss-upload', { method:'POST', body:form })
+  form.append('name', name);
+  fetch(API_BASE + '/api/db/customer-stamps', {
+    method: 'POST',
+    headers: { 'Authorization': getToken() ? 'Bearer ' + getToken() : '' },
+    body: form
+  })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      if (!d.success||!d.url) throw new Error(d.error||'上传失败');
-      return fetch(API_BASE + '/api/db/customer-stamps', {
-        method:'POST', headers:authHeaders(), body:JSON.stringify({name:name, url:d.url})
-      }).then(function(r) { return r.json(); });
-    })
-    .then(function(d2) {
-      if (!d2.success) throw new Error(d2.error||'保存失败');
+      if (!d.success && !d.id) throw new Error(d.error || '保存失败');
       status.textContent = '✓ 已保存到 DAS'; status.style.color = '#16a34a';
       _pendingFile = null;
       setTimeout(function() { switchTab('das'); }, 800);
     })
-    .catch(function(err) {
-      status.textContent = '✗ ' + err.message; status.style.color = '#ef4444';
-      btn.disabled = false;
-    });
+    .catch(function(err) { status.textContent = '✗ ' + err.message; status.style.color = '#ef4444'; btn.disabled = false; });
 }
 
 /* ── Common ── */
 function dropSeal(e, who) {
   e.preventDefault();
-  var file = e.dataTransfer.files[0]; if (!file||!file.type.startsWith('image/')) return;
+  var file = e.dataTransfer.files[0]; if (!file || !file.type.startsWith('image/')) return;
   var reader = new FileReader();
   reader.onload = function(ev) { applySeal(who, ev.target.result); };
   reader.readAsDataURL(file);
 }
-
-/* ── Invisible LSB Watermark ── */
-function getJwtUser() {
-  try {
-    var tok = getToken(); if (!tok) return 'anon';
-    var payload = JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-    return payload.username || payload.sub || payload.email || 'user';
-  } catch(e) { return 'user'; }
-}
-
-function embedSealWatermark(dataUrl, meta) {
-  return new Promise(function(resolve) {
-    var img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = function() {
-      var c = document.createElement('canvas');
-      c.width = img.width; c.height = img.height;
-      var ctx = c.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-      try {
-        var str = JSON.stringify(meta);
-        var bytes = [];
-        for (var i = 0; i < str.length; i++) bytes.push(str.charCodeAt(i));
-        var bits = [];
-        // Magic header 0xAB (8 bits) + length (16 bits)
-        var magic = 0xAB;
-        for (var b = 7; b >= 0; b--) bits.push((magic >> b) & 1);
-        for (var b = 15; b >= 0; b--) bits.push((bytes.length >> b) & 1);
-        bytes.forEach(function(byt) {
-          for (var b = 7; b >= 0; b--) bits.push((byt >> b) & 1);
-        });
-        var imgData = ctx.getImageData(0, 0, c.width, c.height);
-        var d = imgData.data;
-        var bi = 0;
-        for (var i = 0; i < d.length && bi < bits.length; i += 4) {
-          if (d[i+3] > 64) { d[i+2] = (d[i+2] & 0xFE) | bits[bi++]; }
-        }
-        ctx.putImageData(imgData, 0, 0);
-      } catch(e) {}
-      resolve(c.toDataURL('image/png'));
-    };
-    img.onerror = function() { resolve(dataUrl); }; // fallback
-    img.src = dataUrl;
-  });
-}
-
-function applySeal(who, src) {
+function applySeal(who, src, sealName) {
   var key = who === 'buyer' ? 'Buyer' : 'Seller';
-  var meta = { t: Math.floor(Date.now()/1000), u: getJwtUser(), w: who,
-               doc: (document.querySelector('.meta .editable') || {}).textContent || '' };
-  embedSealWatermark(src, meta).then(function(marked) {
-    document.getElementById('seal'+key+'Img').src = marked;
-    document.getElementById('seal'+key+'Img').style.display = 'block';
-  document.getElementById('seal'+key).classList.remove('empty');
-    document.getElementById('seal'+key+'Hint').style.display = 'none';
-    try { localStorage.setItem('sanlyn_seal_applied_'+who, marked); } catch(e){}
-  });
+  var img  = document.getElementById('seal' + key + 'Img');
+  var hint = document.getElementById('seal' + key + 'Hint');
+  _sealRotation[who] = 0;
+  img.src = src; img.style.display = 'block'; img.style.transform = '';
+  hint.style.display = 'none';
+  try { localStorage.setItem('pc_seal_' + who, JSON.stringify({ url: src, name: sealName || key })); } catch(e) {}
+  updateStatusBar(who, src, sealName);
+  initRotHandle(who);
 }
 function clearSeals() {
-  ['buyer','seller'].forEach(function(who) {
-    var key = who === 'buyer' ? 'Buyer' : 'Seller';
-    document.getElementById('seal'+key+'Img').src = '';
-    document.getElementById('seal'+key+'Img').style.display = 'none';
-    document.getElementById('seal'+key+'Hint').style.display = 'block';
-    document.getElementById('seal'+key).classList.add('empty');
-    try { localStorage.removeItem('sanlyn_seal_applied_'+who); } catch(e){}
+  ['buyer', 'seller'].forEach(function(w) {
+    var key = w === 'buyer' ? 'Buyer' : 'Seller';
+    var img  = document.getElementById('seal' + key + 'Img');
+    var hint = document.getElementById('seal' + key + 'Hint');
+    img.src = ''; img.style.display = 'none'; img.style.transform = '';
+    img.onmousedown = null; img.style.cursor = '';
+    hint.style.display = '';
+    _sealRotation[w] = 0;
+    try { localStorage.removeItem('pc_seal_' + w); } catch(e) {}
+    var si = document.getElementById('status' + key + 'Img');
+    var sn = document.getElementById('status' + key + 'Name');
+    if (si) { si.src = ''; si.style.display = 'none'; }
+    if (sn) { sn.textContent = '未选择'; sn.classList.add('empty'); }
   });
 }
-// Restore persisted seals on load
-(function(){
-  ['buyer','seller'].forEach(function(who){
-    var key = who==='buyer'?'Buyer':'Seller';
-    try {
-      var src = localStorage.getItem('sanlyn_seal_applied_'+who);
-      if(src){
-        document.getElementById('seal'+key+'Img').src=src;
-        document.getElementById('seal'+key+'Img').style.display='block';
-        document.getElementById('seal'+key+'Hint').style.display='none';
-        document.getElementById('seal'+key).classList.remove('empty');
-      }
-    } catch(e){}
-  });
-})();
 function calcAmount() {
-  var qty = parseFloat((document.getElementById('qty').value||'').replace(/,/g,''))||0;
-  var price = parseFloat((document.getElementById('unitPrice').value||'').replace(/,/g,''))||0;
-  var fmt = (qty*price).toLocaleString('zh-CN');
+  var qty = parseFloat((document.getElementById('qty').value || '').replace(/,/g, '')) || 0;
+  var price = parseFloat((document.getElementById('unitPrice').value || '').replace(/,/g, '')) || 0;
+  var fmt = (qty * price).toLocaleString('zh-CN');
   document.getElementById('amount').value = fmt;
   document.getElementById('amountTotal').value = fmt;
 }
-document.getElementById('sealModal').addEventListener('click', function(e) { if(e.target===this)closeModal(); });
+document.getElementById('sealModal').addEventListener('click', function(e) { if (e.target === this) closeModal(); });
 
-window.addEventListener('message', function(e) {
-  if (e.data && e.data.type === 'seal-apply') {
-    applySeal(_sealTarget, e.data.dataUrl);
-    closeModal();
-  }
+/* ── Auto-restore saved seals on page load ── */
+document.addEventListener('DOMContentLoaded', function() {
+  loadLocalStamps();
+  ['buyer', 'seller'].forEach(function(who) {
+    try {
+      var saved = JSON.parse(localStorage.getItem('pc_seal_' + who) || 'null');
+      if (saved && saved.url) applySeal(who, saved.url, saved.name);
+    } catch(e) {}
+  });
 });
 </script>
 </body>

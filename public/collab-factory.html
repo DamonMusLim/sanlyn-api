@@ -5,141 +5,68 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sanlyn OS · 订舱协同填报</title>
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
-  background: #f0f2f5; color: #111; font-size: 13px; }
-
-.portal-bar { background: #1a1d23; padding: 0 24px; display: flex; align-items: center;
-  position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
-.portal-brand { color: #f1f5f9; font-size: 14px; font-weight: 800;
-  letter-spacing: 1px; padding: 14px 0; margin-right: 24px; }
-.portal-login-badge { margin-left: auto; font-size: 10px; color: #64748b; padding: 14px 0; }
-
-.shell-narrow { max-width: 760px; margin: 0 auto; padding: 20px 16px; }
-.shell-tight  { max-width: 460px; margin: 0 auto; padding: 60px 16px; }
-
-.card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
-  overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 14px; }
-.section { padding: 14px 16px; border-bottom: 1px solid #f0f2f5; }
-.section:last-child { border-bottom: none; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
-.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px;
-  border-radius: 20px; font-size: 11px; font-weight: 800; }
-.badge-green  { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-.badge-amber  { background: #fef9c3; color: #a16207; border: 1px solid #fde68a; }
-.badge-red    { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
-.badge-blue   { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
-
-.btn { padding: 7px 16px; border-radius: 7px; border: none;
-  font-size: 12px; font-weight: 700; cursor: pointer; }
-.btn-blue  { background: #1a73e8; color: #fff; }
-.btn-green { background: #059669; color: #fff; }
-.btn-ghost { background: #f3f4f6; color: #374151; border: 1px solid #e0e4ea; }
-.btn-sm { padding: 5px 12px; font-size: 11px; }
-.btn-lg { padding: 10px 24px; font-size: 13px; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-
-/* ── Step card ── */
-.step-card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
-  margin-bottom: 14px; overflow: hidden; transition: border-color .2s; }
-.step-card.required { border-color: #fbbf24; }
-.step-card.done     { border-color: #86efac; }
-.step-card.alert    { border-color: #fca5a5; }
-
-.step-head { padding: 12px 16px; display: flex; align-items: center;
-  justify-content: space-between; background: #fff;
-  border-bottom: 1px solid #f0f2f5; transition: background .15s; user-select: none; }
-/* 收起态：整行可点击展开 */
-.step-card.done .step-head { cursor: pointer; }
-.step-card.done .step-head:hover { background: #f8fafc; }
-
-.step-num { width: 26px; height: 26px; border-radius: 50%; background: #1a1d23;
-  color: #fff; display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800; flex-shrink: 0; }
-.step-num.done  { background: #059669; }
-.step-num.alert { background: #dc2626; }
-
-.step-title { font-size: 13px; font-weight: 800; color: #1a1d23; }
-.step-sub   { font-size: 11px; color: #6b7280; margin-top: 1px; }
-
-/* 收起摘要行 */
-.step-summary { display: none; font-size: 11px; font-weight: 700;
-  color: #059669; flex: 1; margin: 0 10px; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; }
-.step-card.done .step-summary { display: block; }
-.step-card.done .step-title { font-size: 12px; color: #6b7280; font-weight: 600; }
-.step-card.done .step-sub   { display: none; }
-
-/* 折叠箭头 */
-.chevron { font-size: 12px; color: #9ca3af; transition: transform .25s; flex-shrink: 0; }
-.step-card.done .chevron { transform: rotate(0deg); }      /* ▼ 收起 */
-.step-card:not(.done) .chevron { transform: rotate(180deg); } /* ▲ 展开 */
-
-/* 内容区折叠 */
-.step-body { overflow: hidden; transition: max-height .3s ease, opacity .3s ease; }
-.step-card.done .step-body { max-height: 0 !important; opacity: 0; }
-.step-card:not(.done) .step-body { max-height: 2000px; opacity: 1; }
-
-.form-field { margin-bottom: 10px; }
-.form-label { font-size: 11px; font-weight: 700; color: #374151;
-  margin-bottom: 4px; display: block; }
-.form-label .req { color: #dc2626; }
-.form-input { width: 100%; border: 1.5px solid #c8cdd6; border-radius: 6px;
-  padding: 8px 10px; font-size: 13px; outline: none; font-family: inherit; background: #fff; }
-.form-input:focus { border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
-.form-input.alert { border-color: #dc2626; background: #fef2f2; }
-textarea.form-input { resize: vertical; min-height: 60px; }
-
-.toggle-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.tog { padding: 8px 16px; border-radius: 7px; border: 1.5px solid #c8cdd6;
-  background: #fff; font-size: 12px; font-weight: 700; color: #4b5563;
-  cursor: pointer; text-align: center; }
-.tog.on-green { border-color: #059669; background: #d1fae5; color: #059669; }
-.tog.on-blue  { border-color: #1a73e8; background: #dbeafe; color: #1d4ed8; }
-.tog.on-red   { border-color: #dc2626; background: #fee2e2; color: #b91c1c; }
-
-.cargo-t { width: 100%; border-collapse: collapse; font-size: 11px; }
-.cargo-t th { background: #f8fafc; padding: 6px 8px; text-align: left;
-  border: 1px solid #c8cdd6; font-size: 10px; font-weight: 800; color: #374151; }
-.cargo-t td { padding: 4px 6px; border: 1px solid #e0e4ea; }
-.cargo-t tr.alert-row td { border-color: #fca5a5; background: #fef2f2; }
-.cargo-t tr.total { font-weight: 800; background: #f8f8f8; }
-.cargo-t input.cell-in { width: 100%; border: 1px solid transparent; border-radius: 4px;
-  padding: 4px 6px; font-size: 11px; outline: none; font-family: inherit; background: transparent; }
-.cargo-t input.cell-in:focus { border-color: #1a73e8; background: #fff; }
-
-.landing-card { background: #fff; border-radius: 14px;
-  box-shadow: 0 4px 24px rgba(0,0,0,.10); overflow: hidden; }
-.landing-head { background: linear-gradient(135deg,#059669,#10b981);
-  padding: 24px; text-align: center; color: #fff; }
-.landing-head h1 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
-.landing-head p { font-size: 12px; opacity: .9; }
-
-.alert-callout { padding: 10px 14px; background: #fef2f2;
-  border-left: 4px solid #dc2626; border-radius: 6px;
-  margin: 10px 16px; font-size: 12px; color: #991b1b; }
-
-.chip { background: #fff; border: 1px solid #e0e4ea; border-radius: 8px;
-  padding: 8px 14px; font-size: 12px; }
-.chip b { color: #1a1d23; }
-.chip span { color: #6b7280; }
-
-.ctn-group { border: 1.5px solid #e0e4ea; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
-.ctn-group.alert { border-color: #fca5a5; }
-.ctn-group-head { background: #f8fafc; padding: 7px 12px; display: flex;
-  align-items: center; justify-content: space-between; border-bottom: 1px solid #e0e4ea; }
-.ctn-group-title { font-size: 11px; font-weight: 800; color: #374151; }
-.ctn-group-sub { font-size: 10px; color: #6b7280; }
-
-.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  background: #1a1d23; color: #fff; padding: 10px 22px; border-radius: 20px;
-  font-size: 12px; font-weight: 700; display: none; z-index: 999; }
-.toast.show { display: block; }
-.hidden { display: none !important; }
-.center-state { text-align: center; padding: 70px 20px; color: #6b7280; }
-.center-state .big { font-size: 44px; margin-bottom: 14px; }
-.center-state h2 { font-size: 17px; font-weight: 800; color: #1a1d23; margin-bottom: 6px; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color:#111;font-size:13px;}
+.portal-bar{background:#1a1d23;padding:0 24px;display:flex;align-items:center;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3);}
+.portal-brand{color:#f1f5f9;font-size:14px;font-weight:800;letter-spacing:1px;padding:14px 0;margin-right:24px;}
+.portal-login-badge{margin-left:auto;font-size:10px;color:#64748b;padding:14px 0;}
+.shell-narrow{max-width:800px;margin:0 auto;padding:20px 16px;}
+.card{background:#fff;border-radius:10px;border:1px solid #e0e4ea;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:14px;}
+.section{padding:14px 16px;border-bottom:1px solid #f0f2f5;}.section:last-child{border-bottom:none;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;}
+.badge-green{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0;}
+.badge-amber{background:#fef9c3;color:#a16207;border:1px solid #fde68a;}
+.badge-red{background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;}
+.badge-blue{background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;}
+.badge-gray{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb;}
+.badge-cyan{background:#ecfeff;color:#0891b2;border:1px solid #a5f3fc;}
+.btn{padding:7px 16px;border-radius:7px;border:none;font-size:12px;font-weight:700;cursor:pointer;}
+.btn-blue{background:#1a73e8;color:#fff;}.btn-green{background:#059669;color:#fff;}.btn-teal{background:#0ea5e9;color:#fff;}
+.btn-ghost{background:#f3f4f6;color:#374151;border:1px solid #e0e4ea;}
+.btn-sm{padding:5px 12px;font-size:11px;}.btn-lg{padding:10px 24px;font-size:13px;}.btn:disabled{opacity:.5;cursor:not-allowed;}
+.step-card{background:#fff;border-radius:10px;border:1px solid #e0e4ea;margin-bottom:14px;overflow:hidden;}
+.step-card.required{border-color:#fbbf24;}.step-card.done{border-color:#86efac;}.step-card.alert{border-color:#fca5a5;}
+.step-head{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid #f0f2f5;user-select:none;}
+.step-card.done .step-head{cursor:pointer;}.step-card.done .step-head:hover{background:#f8fafc;}
+.step-num{width:26px;height:26px;border-radius:50%;background:#1a1d23;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;}
+.step-num.done{background:#059669;}.step-num.alert{background:#dc2626;}
+.step-title{font-size:13px;font-weight:800;color:#1a1d23;}.step-sub{font-size:11px;color:#6b7280;margin-top:1px;}
+.step-summary{display:none;font-size:11px;font-weight:700;color:#059669;flex:1;margin:0 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.step-card.done .step-summary{display:block;}.step-card.done .step-title{font-size:12px;color:#6b7280;font-weight:600;}.step-card.done .step-sub{display:none;}
+.chevron{font-size:12px;color:#9ca3af;transition:transform .25s;flex-shrink:0;}
+.step-card.done .chevron{transform:rotate(0deg);}.step-card:not(.done) .chevron{transform:rotate(180deg);}
+.step-body{overflow:hidden;transition:max-height .3s ease,opacity .3s ease;}
+.step-card.done .step-body{max-height:0!important;opacity:0;}.step-card:not(.done) .step-body{max-height:4000px;opacity:1;}
+.form-field{margin-bottom:10px;}.form-label{font-size:11px;font-weight:700;color:#374151;margin-bottom:4px;display:block;}.form-label .req{color:#dc2626;}
+.form-input{width:100%;border:1.5px solid #c8cdd6;border-radius:6px;padding:8px 10px;font-size:13px;outline:none;font-family:inherit;background:#fff;}
+.form-input:focus{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.12);}textarea.form-input{resize:vertical;min-height:60px;}
+.toggle-row{display:flex;gap:8px;flex-wrap:wrap;}
+.tog{padding:8px 16px;border-radius:7px;border:1.5px solid #c8cdd6;background:#fff;font-size:12px;font-weight:700;color:#4b5563;cursor:pointer;text-align:center;}
+.tog.on-green{border-color:#059669;background:#d1fae5;color:#059669;}.tog.on-blue{border-color:#1a73e8;background:#dbeafe;color:#1d4ed8;}.tog.on-red{border-color:#dc2626;background:#fee2e2;color:#b91c1c;}
+.cargo-t{width:100%;border-collapse:collapse;font-size:11px;}
+.cargo-t th{background:#f8fafc;padding:6px 8px;text-align:left;border:1px solid #c8cdd6;font-size:10px;font-weight:800;color:#374151;}
+.cargo-t td{padding:4px 6px;border:1px solid #e0e4ea;}
+.cargo-t tr.row-total td{font-weight:800;background:#f0fdf4;color:#15803d;border-color:#bbf7d0;}
+.cargo-t input.cell-in{width:100%;border:1px solid transparent;border-radius:4px;padding:4px 6px;font-size:11px;outline:none;font-family:inherit;background:transparent;}
+.cargo-t input.cell-in:focus{border-color:#1a73e8;background:#fff;}
+.ctn-group{border:1.5px solid #e0e4ea;border-radius:10px;margin-bottom:16px;overflow:hidden;transition:border-color .2s;}
+.ctn-group.confirmed{border-color:#86efac;}
+.ctn-group.in-progress{border-color:#93c5fd;}
+.photo-grid{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;background:#fafafa;}
+.photo-cell{position:relative;width:60px;height:60px;border-radius:6px;overflow:hidden;border:1px solid #e0e4ea;background:#f1f5f9;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.photo-cell img,.photo-cell video{width:100%;height:100%;object-fit:cover;}
+.photo-cell.add{cursor:pointer;border-style:dashed;border-color:#cbd5e1;}
+.photo-cell .play-ov{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;}
+.photo-cell .del-btn{position:absolute;top:1px;right:1px;width:16px;height:16px;background:#dc2626;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;font-weight:800;line-height:1;}
+.finance-bar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:#f0fdf4;border-top:1px solid #bbf7d0;flex-wrap:wrap;}
+.finance-label{font-size:11px;font-weight:700;color:#374151;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1d23;color:#fff;padding:10px 22px;border-radius:20px;font-size:12px;font-weight:700;display:none;z-index:999;}
+.toast.show{display:block;}.hidden{display:none!important;}
+.center-state{text-align:center;padding:70px 20px;color:#6b7280;}
+.center-state .big{font-size:44px;margin-bottom:14px;}.center-state h2{font-size:17px;font-weight:800;color:#1a1d23;margin-bottom:6px;}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9999;display:none;align-items:center;justify-content:center;cursor:zoom-out;}
+.lightbox img,.lightbox video{max-width:94%;max-height:94%;border-radius:8px;object-fit:contain;}
 </style>
 </head>
 <body>
@@ -154,20 +81,39 @@ textarea.form-input { resize: vertical; min-height: 60px; }
 <div class="hidden" id="stateForm">
 <div class="shell-narrow">
 
+  <!-- Banner -->
   <div class="card" style="border:2px solid #fbbf24;">
     <div style="background:#fffbeb;padding:14px 16px;display:flex;align-items:center;gap:12px;">
       <div style="font-size:24px;">🏭</div>
       <div style="flex:1;">
         <div style="font-size:13px;font-weight:800;color:#92400e;" id="bannerTitle">— 工厂货物确认</div>
-        <div style="font-size:11px;color:#a16207;margin-top:2px;">确认货好日期与柜型 · 已选项可点击展开修改</div>
       </div>
       <div class="badge badge-amber">需要您操作</div>
     </div>
+    <!-- 财务状态预留区 -->
+    <div class="finance-bar" id="financeBar">
+      <span style="font-size:13px;">💰</span>
+      <span class="finance-label">工厂预付款：</span>
+      <span class="badge badge-gray" id="finBadge1">待财务确认</span>
+      <span style="color:#e0e4ea;">|</span>
+      <span class="finance-label">客户付款：</span>
+      <span class="badge badge-gray" id="finBadge2">待财务确认</span>
+      <span id="finNote" style="font-size:11px;color:#6b7280;margin-left:4px;"></span>
+    </div>
+    <!-- 财务·开票板块（缺料+含税开票申请+上传发票，复用退税缺口+mt端点） -->
+    <div class="card" id="finBoard" style="margin:10px 0 0;display:none;">
+      <div class="section">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">
+          <div><div style="font-size:13px;font-weight:800;color:#111827;">财务 · 开票</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">请按含税金额开具增值税专用发票后上传</div></div>
+          <span class="badge badge-amber" id="finBoardBadge">加载中</span>
+        </div>
+        <div id="finBoardBody" style="font-size:12px;color:#6b7280;">加载中…</div>
+      </div>
+    </div>
   </div>
 
-
-
-  <!-- STEP 1 货好日期+柜型（填好自动收起） -->
+  <!-- STEP 1 -->
   <div class="step-card required" id="step1">
     <div class="step-head" onclick="toggleStep(1)">
       <div style="display:flex;align-items:center;gap:10px;min-width:0;">
@@ -203,37 +149,43 @@ textarea.form-input { resize: vertical; min-height: 60px; }
           </div>
         </div>
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f2f5;">
-          <div class="form-label" style="margin-bottom:6px;">交易条款 <span style="font-weight:400;color:#9ca3af;" id="ttHint">（先选先定 · 对方已选则锁定）</span></div>
-          <div class="toggle-row" id="ttRow">
-            <div class="tog" data-tt="FOB">FOB</div><div class="tog" data-tt="EXW">EXW</div>
-            <div class="tog" data-tt="FCA">FCA</div><div class="tog" data-tt="CIF">CIF</div>
-            <div class="tog" data-tt="DDP">DDP</div><div class="tog" data-tt="CNF">CNF/CFR</div>
+          <div id="ttSummary" class="hidden" onclick="expandTradeTerms()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 11px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+            <span style="font-size:12px;font-weight:700;color:#15803d;">✓ 交易条款 · <span id="ttSummaryText"></span></span>
+            <span style="margin-left:auto;font-size:11px;color:#2563eb;font-weight:600;">修改 ▾</span>
           </div>
-          <div id="fobSub" style="display:none;margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-              <div>
-                <div class="form-label" style="margin-bottom:6px;">🚛 拖车 · 委托 Sanlyn？</div>
-                <div class="toggle-row" id="trkRow">
-                  <div class="tog" data-trk="agent">✅ 委托（代拖）</div>
-                  <div class="tog" data-trk="self">自行安排（自拖）</div>
-                </div>
-              </div>
-              <div>
-                <div class="form-label" style="margin-bottom:6px;">🛂 报关 · 委托 Sanlyn？</div>
-                <div class="toggle-row" id="cusRow">
-                  <div class="tog" data-cus="agent">✅ 委托（代报）</div>
-                  <div class="tog" data-cus="self">自行安排（自报）</div>
-                </div>
-              </div>
+          <div id="ttEdit">
+            <div class="form-label" style="margin-bottom:6px;">交易条款 <span style="font-weight:400;color:#9ca3af;" id="ttHint">（先选先定）</span></div>
+            <div class="toggle-row" id="ttRow">
+              <div class="tog" data-tt="FOB">FOB</div><div class="tog" data-tt="EXW">EXW</div>
+              <div class="tog" data-tt="FCA">FCA</div><div class="tog" data-tt="CIF">CIF</div>
+              <div class="tog" data-tt="DDP">DDP</div><div class="tog" data-tt="CNF">CNF/CFR</div>
             </div>
-            <div id="selfNote" style="display:none;font-size:11px;color:#6b7280;margin-top:8px;"></div>
+            <div id="fobSub" style="display:none;margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div>
+                  <div class="form-label" style="margin-bottom:6px;">🚛 拖车 · 委托 Sanlyn？</div>
+                  <div class="toggle-row" id="trkRow">
+                    <div class="tog" data-trk="agent">✅ 委托（代拖）</div>
+                    <div class="tog" data-trk="self">自行安排（自拖）</div>
+                  </div>
+                </div>
+                <div>
+                  <div class="form-label" style="margin-bottom:6px;">🛂 报关 · 委托 Sanlyn？</div>
+                  <div class="toggle-row" id="cusRow">
+                    <div class="tog" data-cus="agent">✅ 委托（代报）</div>
+                    <div class="tog" data-cus="self">自行安排（自报）</div>
+                  </div>
+                </div>
+              </div>
+              <div id="selfNote" style="display:none;font-size:11px;color:#6b7280;margin-top:8px;"></div>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- STEP 2 货物明细：有订单=只读真值；没订单=工厂自填（柜分层·一行一品名） -->
+  <!-- STEP 2 -->
   <div class="step-card" id="step2">
     <div class="step-head">
       <div style="display:flex;align-items:center;gap:10px;">
@@ -243,23 +195,27 @@ textarea.form-input { resize: vertical; min-height: 60px; }
           <div class="step-sub" id="cargoSub">每柜一层 · 一行一个品名</div>
         </div>
       </div>
-      <div class="badge badge-red" id="missBadge" style="display:none;"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="btn btn-ghost btn-sm" onclick="pickOrder()">🔗 选择订单</button>
+        <button class="btn btn-blue btn-sm" onclick="pickCargoDoc()">📤 上传货单</button>
+        <button class="btn btn-ghost btn-sm" onclick="openEntryModal()">🏭 入厂要求</button>
+        <button class="btn btn-ghost btn-sm" onclick="openDriverModal()">🚛 司机图片</button>
+        <div class="badge badge-red" id="missBadge" style="display:none;"></div>
+      </div>
     </div>
     <div class="step-body" style="max-height:none !important;opacity:1 !important;">
-      <!-- 只读模式（订单已挂） -->
       <div class="section" id="cargoRead" style="display:none;"></div>
-      <!-- 可编辑模式（订单缺明细，工厂自填） -->
-      <div class="section" id="cargoEdit" style="display:none;">
+      <div id="cargoEdit" style="display:none;">
         <div id="ctnGroups"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-          <button class="btn btn-ghost btn-sm" onclick="snapshot();addCtn()">＋ 添加一柜</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid #f0f2f5;">
+          <button class="btn btn-ghost btn-sm" id="btnAddCtn" onclick="snapshot();addCtn()">＋ 添加一柜</button>
           <div style="font-size:11px;font-weight:800;color:#374151;" id="grandTotal"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- STEP 3 货物属性 + 备注 -->
+  <!-- STEP 3 -->
   <div class="step-card" id="step3">
     <div class="step-head" onclick="toggleStep(3)">
       <div style="display:flex;align-items:center;gap:10px;">
@@ -281,18 +237,17 @@ textarea.form-input { resize: vertical; min-height: 60px; }
           <div class="tog" data-cgt="危险品">⚠️ 危险品</div>
           <div class="tog" data-cgt="其他">❓ 其他</div>
         </div>
-        <!-- 托书三问：与托书格式件一一对应 -->
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-top:10px;border-top:1px solid #f0f2f5;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
           <span style="flex:1;font-size:12px;font-weight:700;color:#374151;">是否有电池 / 液体货物？</span>
           <div class="toggle-row" id="batRow"><div class="tog" data-bat="yes">YES</div><div class="tog" data-bat="no">NO</div></div>
         </div>
-        <div id="msdsNote" style="display:none;font-size:11px;color:#b91c1c;margin:-4px 0 10px;">⚠️ 请提供 MSDS（电池安全数据表），运输费可能上调。</div>
+        <div id="msdsNote" style="display:none;font-size:11px;color:#b91c1c;margin:-4px 0 10px;">⚠️ 请提供 MSDS，运输费可能上调。</div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
           <span style="flex:1;font-size:12px;font-weight:700;color:#374151;">是否有实木包装 / 木架 / 托盘木托？</span>
           <div class="toggle-row" id="woodRow"><div class="tog" data-wood="yes">YES</div><div class="tog" data-wood="no">NO</div></div>
         </div>
         <div id="fumWrap" style="display:none;align-items:center;gap:10px;margin-bottom:10px;">
-          <span style="flex:1;font-size:12px;font-weight:700;color:#374151;">如有实木包装，是否已做熏蒸？</span>
+          <span style="flex:1;font-size:12px;font-weight:700;color:#374151;">是否已做熏蒸？</span>
           <div class="toggle-row" id="fumRow"><div class="tog" data-fum="yes">已熏蒸</div><div class="tog" data-fum="no">未熏蒸</div></div>
         </div>
         <div id="fumNote" style="display:none;font-size:11px;color:#a16207;margin:-4px 0 10px;">⚠️ 未熏蒸实木包装无法出口，需先做 IPPC 熏蒸。</div>
@@ -301,45 +256,65 @@ textarea.form-input { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
-  <!-- 入厂要求登记（工厂固定属性·填一次永久复用） -->
-  <div class="card" id="entryCard">
+  <div style="display:none;"><span id="erSavedTip"></span></div>
+
+</div>
+</div>
+
+<!-- 入厂要求弹窗 -->
+<div class="hidden" id="entryModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:flex-end;justify-content:center;">
+  <div style="background:#fff;width:100%;max-width:800px;border-radius:14px 14px 0 0;max-height:88vh;overflow:auto;">
+    <div style="position:sticky;top:0;background:#fff;padding:14px 16px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:10px;">
+      <div style="font-size:14px;font-weight:800;flex:1;">🏭 到场考试 · 入厂要求 <span style="font-weight:400;color:#9ca3af;font-size:11px;">填一次即固定，司机/车队提柜前自动看到</span></div>
+      <span style="cursor:pointer;font-size:22px;line-height:1;color:#9ca3af;" onclick="closeEntryModal()">×</span>
+    </div>
     <div class="section">
-      <div style="font-size:13px;font-weight:800;margin-bottom:2px;">🏭 入厂要求登记 <span style="font-weight:400;color:#9ca3af;font-size:11px;">（填一次即固定，司机/车队提柜前自动看到）</span></div>
-      <div class="grid2" style="margin-top:10px;">
-        <div class="form-field" style="margin:0;"><label class="form-label">厂内联系人</label>
-          <input class="form-input" id="er_contact" placeholder="装货对接人"></div>
-        <div class="form-field" style="margin:0;"><label class="form-label">联系电话</label>
-          <input class="form-input" id="er_phone" type="tel" placeholder="司机到厂联系"></div>
+      <div class="grid2" style="margin-top:2px;">
+        <div class="form-field" style="margin:0;"><label class="form-label">厂内联系人</label><input class="form-input" id="er_contact" placeholder="装货对接人"></div>
+        <div class="form-field" style="margin:0;"><label class="form-label">联系电话</label><input class="form-input" id="er_phone" type="tel" placeholder="司机到厂联系"></div>
       </div>
-      <div class="form-field" style="margin-top:10px;"><label class="form-label">入厂要求 <span style="font-weight:400;color:#9ca3af;">（如：不收国四拖车 / 禁拖鞋 / 需扫码答题）</span></label>
-        <input class="form-input" id="er_note" placeholder="司机需要知道的入厂规定"></div>
-      <div class="form-field" style="margin-top:10px;"><label class="form-label">入厂考试/扫码链接 <span style="font-weight:400;color:#9ca3af;">（有就贴，二维码图片用下方上传）</span></label>
-        <input class="form-input" id="er_url" placeholder="https://..."></div>
-      <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
-        <button class="btn btn-blue btn-sm" onclick="saveEntryReq()">💾 保存入厂要求</button>
-        <span class="up-zone" style="flex:1;margin:0;padding:8px;font-size:11px;" onclick="pickQR()">📷 上传入厂二维码图片</span>
+      <div class="form-field" style="margin-top:10px;"><label class="form-label">入厂要求 <span style="font-weight:400;color:#9ca3af;">（如：不收国四拖车 / 禁拖鞋 / 需扫码答题）</span></label><input class="form-input" id="er_note" placeholder="司机需要知道的入厂规定"></div>
+      <div class="form-field" style="margin-top:10px;"><label class="form-label">到场考试 / 扫码链接</label><input class="form-input" id="er_url" placeholder="https://..."></div>
+      <div style="display:flex;gap:10px;align-items:center;margin-top:14px;">
+        <button class="btn btn-blue btn-sm" onclick="saveEntryReq()">💾 保存联系人/要求（固化到本厂）</button>
+        <span class="btn btn-ghost btn-sm" onclick="pickQR()">📷 上传二维码图片</span>
         <span id="erSaved" style="font-size:11px;color:#059669;"></span>
       </div>
     </div>
   </div>
+</div>
 
-    <div style="display:flex;gap:10px;margin-bottom:30px;">
-    <button class="btn btn-green btn-lg" style="flex:1;" id="btnSubmit" onclick="save()">📦 提交货物信息</button>
+<!-- 司机图片弹窗 -->
+<div class="hidden" id="driverModal" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:flex-end;justify-content:center;">
+  <div style="background:#fff;width:100%;max-width:800px;border-radius:14px 14px 0 0;max-height:88vh;overflow:auto;">
+    <div style="position:sticky;top:0;background:#fff;padding:14px 16px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;gap:10px;">
+      <div style="font-size:14px;font-weight:800;flex:1;">🚛 司机 / 车牌图片 <span style="font-weight:400;color:#9ca3af;font-size:11px;">车队派车后上传，工厂门卫核对人/车一致</span></div>
+      <span style="cursor:pointer;font-size:22px;line-height:1;color:#9ca3af;" onclick="closeDriverModal()">×</span>
+    </div>
+    <div class="section" id="driverModalBody"></div>
   </div>
-  <div style="text-align:center;font-size:11px;color:#9ca3af;margin-bottom:40px;">
-    🔒 此链接仅限本次委托使用 · 数据仅您与 Sanlyn 可见
+</div>
+
+<!-- 确认装货弹窗 -->
+<div class="hidden" id="confirmModal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:600;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;width:100%;max-width:480px;border-radius:14px;overflow:hidden;">
+    <div style="background:#059669;padding:16px 20px;color:#fff;"><div style="font-size:15px;font-weight:800;">✅ 确认本柜装货完毕？</div><div style="font-size:11px;opacity:.85;margin-top:4px;">确认后货物数据锁定，如需修改请联系 Sanlyn 运营</div></div>
+    <div style="padding:16px 20px;" id="confirmChecklist"></div>
+    <div style="display:flex;gap:10px;padding:12px 20px;border-top:1px solid #f0f2f5;">
+      <button class="btn btn-ghost" style="flex:1;" onclick="closeConfirmModal()">取消</button>
+      <button class="btn btn-green" style="flex:2;" id="btnConfirmOk" onclick="doConfirm()">✅ 确认装货完毕</button>
+    </div>
   </div>
 </div>
+
+<!-- 图片灯箱 -->
+<div class="lightbox" id="lightbox" onclick="if(event.target.id!=='lbVid'){this.style.display='none';var v=document.getElementById('lbVid');if(v){v.pause();}}">
+  <img id="lbImg" src="" alt="">
+  <video id="lbVid" controls playsinline style="display:none;"></video>
 </div>
 
-<div class="center-state hidden" id="stateDone">
-  <div class="big">✅</div><h2>已提交</h2>
-  <p>Sanlyn 已收到货物信息。如需修改可重新打开本链接，修改后再次提交即覆盖更新。</p>
-</div>
-<div class="center-state hidden" id="stateDead">
-  <div class="big">⛔️</div><h2>链接无效</h2><p>链接已过期或被重发作废，请联系 Sanlyn 重新获取。</p>
-</div>
-
+<div class="center-state hidden" id="stateDone"><div class="big">✅</div><h2>已提交</h2><p>Sanlyn 已收到货物信息。如需修改可重新打开本链接，修改后再次提交即覆盖更新。</p></div>
+<div class="center-state hidden" id="stateDead"><div class="big">⛔️</div><h2>链接无效</h2><p>链接已过期或被重发作废，请联系 Sanlyn 重新获取。</p></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -347,428 +322,529 @@ const API = '/api/db/booking-collab';
 const token = new URLSearchParams(location.search).get('token') || '';
 const $ = id => document.getElementById(id);
 const states = ['stateLoading','stateForm','stateDone','stateDead'];
-const show = id => { states.forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
-function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+const show = id => { states.forEach(s=>$(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800); }
 function gv(id){ return ($(id)?.value||'').trim(); }
 function gn(id){ const v=parseFloat($(id)?.value); return isNaN(v)?null:v; }
 function gi(id){ const v=parseInt($(id)?.value); return isNaN(v)?null:v; }
 function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+function imgLightbox(url,isVideo){ const img=$('lbImg'),vid=$('lbVid'); if(isVideo){ img.style.display='none'; vid.src=url; vid.style.display='block'; } else { vid.style.display='none'; vid.removeAttribute('src'); img.src=url; img.style.display='block'; } $('lightbox').style.display='flex'; }
 
 let sel = { ct:null, cgt:'普通货物', tt:null, trk:null, cus:null, bat:'no', wood:'no', fum:null };
 let locked = { tt:false, trk:false, cus:false };
-let editMode = false, groups = [], lineSeq = 0, SCOPE = null;
+let editMode=false, groups=[], lineSeq=0, SCOPE=null;
+window._uploadedPhotos={};  // groupKey -> [{url,filename,type}]
+window._confirmedKeys=new Set();
+window._pendingConfirmKey=null;
 
-/* ── 折叠 ── */
-function collapseStep(n, summary){
-  const card=$('step'+n);
-  card.classList.add('done'); card.classList.remove('required','alert');
-  $('sn'+n).classList.add('done');
-  $('sum'+n).textContent='✓ '+summary;
-  const b=$('badge'+n); if(b) b.style.display='none';
-}
-function reopenStep(n){
-  $('step'+n).classList.remove('done'); $('sn'+n).classList.remove('done');
-  const b=$('badge'+n); if(b) b.style.display='';
-}
+function collapseStep(n,summary){ const c=$('step'+n); c.classList.add('done'); c.classList.remove('required','alert'); $('sn'+n).classList.add('done'); $('sum'+n).textContent='✓ '+summary; const b=$('badge'+n); if(b) b.style.display='none'; }
+function reopenStep(n){ $('step'+n).classList.remove('done'); $('sn'+n).classList.remove('done'); const b=$('badge'+n); if(b) b.style.display=''; }
 function toggleStep(n){ if($('step'+n).classList.contains('done')) reopenStep(n); }
 let t1,t3;
 function checkStep1(immediate){
-  clearTimeout(t1);
-  if((!window._loading && !gv('cargo_ready_date'))||!sel.ct||!sel.tt) return;
+  clearTimeout(t1); if((!window._loading&&!gv('cargo_ready_date'))||!sel.ct||!sel.tt) return;
   if((sel.tt==='FOB'||sel.tt==='EXW')&&(!sel.trk||!sel.cus)) return;
-  const fn=()=>{
-    let s = (window._loading?'装柜中':gv('cargo_ready_date'))+' · '+sel.ct+' · '+sel.tt;
-    if(sel.tt==='FOB'||sel.tt==='EXW') s += ' · '+(sel.trk==='agent'?'代拖':'自拖')+(sel.cus==='agent'?'代报':'自报');
-    collapseStep(1, s);
-  };
+  const fn=()=>{ let s=(window._loading?'装柜中':gv('cargo_ready_date'))+' · '+sel.ct+' · '+sel.tt; if(sel.tt==='FOB'||sel.tt==='EXW') s+=' · '+(sel.trk==='agent'?'代拖':'自拖')+(sel.cus==='agent'?'代报':'自报'); collapseStep(1,s); };
   if(immediate) fn(); else t1=setTimeout(fn,600);
 }
 function checkStep3(immediate){
-  clearTimeout(t3);
-  if(sel.cgt!=='普通货物') return;          // 危险品保持展开
-  if(sel.bat==='yes') return;               // 有电池要MSDS，保持展开
-  if(sel.wood==='yes'&&sel.fum!=='yes') return; // 木包装必须已熏蒸才收
-  const fn=()=>{
-    let s='普通货物 · '+(sel.bat==='no'?'无电池液体':'')+' · '+(sel.wood==='no'?'无木包装':'木包装已熏蒸');
-    collapseStep(3, s.replace(' ·  · ',' · '));
-  };
+  clearTimeout(t3); if(sel.cgt!=='普通货物'||sel.bat==='yes'||(sel.wood==='yes'&&sel.fum!=='yes')) return;
+  const fn=()=>{ let s='普通货物 · '+(sel.bat==='no'?'无电池液体':'')+' · '+(sel.wood==='no'?'无木包装':'木包装已熏蒸'); collapseStep(3,s.replace(' ·  · ',' · ')); };
   if(immediate) fn(); else t3=setTimeout(fn,600);
 }
-
-function bindTog(rowId, attr, key, onChange){
-  $(rowId).addEventListener('click', e=>{
-    const el = e.target.closest('[data-'+attr+']');
-    if(!el) return;
-    sel[key]=el.dataset[attr];
-    [...$(rowId).querySelectorAll('[data-'+attr+']')].forEach(t=>{
-      t.classList.remove('on-blue','on-green','on-red');
-      if(t===el) t.classList.add(attr==='cgt'?(el.dataset[attr]==='普通货物'?'on-green':el.dataset[attr]==='危险品'?'on-red':'on-blue'):'on-blue');
-    });
-    if(onChange) onChange();
-  });
+function bindTog(rowId,attr,key,onChange){
+  $(rowId).addEventListener('click',e=>{ const el=e.target.closest('[data-'+attr+']'); if(!el) return; sel[key]=el.dataset[attr]; [...$(rowId).querySelectorAll('[data-'+attr+']')].forEach(t=>{ t.classList.remove('on-blue','on-green','on-red'); if(t===el) t.classList.add(attr==='cgt'?(el.dataset[attr]==='普通货物'?'on-green':el.dataset[attr]==='危险品'?'on-red':'on-blue'):'on-blue'); }); if(onChange) onChange(); });
 }
 bindTog('ctRow','ct','ct',()=>checkStep1());
 bindTog('cgtRow','cgt','cgt',()=>checkStep3());
-function bindSel(rowId, attr, key, cb){
-  $(rowId).addEventListener('click', e=>{
-    const el = e.target.closest('[data-'+attr+']');
-    if(!el) return;
-    // 2026-06-11 纠正：协同三方都能改，无唯一方——不再锁定，改了即提交生效并留痕
-    if(locked[key]){ locked[key]=false; toast('此项对方已选过（'+sel[key]+'），您的修改提交后生效并通知各方'); }
-    sel[key]=el.dataset[attr];
-    [...$(rowId).querySelectorAll('[data-'+attr+']')].forEach(t=>{
-      t.classList.remove('on-blue','on-green','on-red');
-      if(t===el) t.classList.add('on-blue');
-    });
-    if(cb) cb(sel[key]);
-  });
+function bindSel(rowId,attr,key,cb){
+  $(rowId).addEventListener('click',e=>{ const el=e.target.closest('[data-'+attr+']'); if(!el) return; if(locked[key]){ locked[key]=false; toast('此项对方已选过，您的修改提交后生效'); } sel[key]=el.dataset[attr]; [...$(rowId).querySelectorAll('[data-'+attr+']')].forEach(t=>{ t.classList.remove('on-blue','on-green','on-red'); if(t===el) t.classList.add('on-blue'); }); if(cb) cb(sel[key]); });
 }
-bindSel('ttRow','tt','tt',v=>{ $('fobSub').style.display=(v==='FOB'||v==='EXW')?'block':'none'; checkStep1(); });
-bindSel('trkRow','trk','trk',()=>{selfNote();checkStep1();});
-bindSel('cusRow','cus','cus',()=>{selfNote();checkStep1();});
+bindSel('ttRow','tt','tt',v=>{ $('fobSub').style.display=(v==='FOB'||v==='EXW')?'block':'none'; checkStep1(); schedTT(); });
+bindSel('trkRow','trk','trk',()=>{selfNote();checkStep1();schedTT();});
+bindSel('cusRow','cus','cus',()=>{selfNote();checkStep1();schedTT();});
+let ttT; function schedTT(){ clearTimeout(ttT); ttT=setTimeout(collapseTradeTerms,500); }
+function collapseTradeTerms(){ if(!sel.tt) return; if((sel.tt==='FOB'||sel.tt==='EXW')&&(!sel.trk||!sel.cus)) return; let s=sel.tt; if(sel.tt==='FOB'||sel.tt==='EXW') s+=' · '+(sel.trk==='agent'?'代拖':'自拖')+' · '+(sel.cus==='agent'?'代报':'自报'); if($('ttSummaryText')) $('ttSummaryText').textContent=s; if($('ttEdit')) $('ttEdit').classList.add('hidden'); if($('ttSummary')) $('ttSummary').classList.remove('hidden'); }
+function expandTradeTerms(){ if($('ttEdit'))$('ttEdit').classList.remove('hidden'); if($('ttSummary'))$('ttSummary').classList.add('hidden'); }
 bindSel('batRow','bat','bat',v=>{ $('msdsNote').style.display=v==='yes'?'block':'none'; checkStep3(); });
 bindSel('woodRow','wood','wood',v=>{ $('fumWrap').style.display=v==='yes'?'flex':'none'; if(v==='no'){sel.fum=null;$('fumNote').style.display='none';} checkStep3(); });
 bindSel('fumRow','fum','fum',v=>{ $('fumNote').style.display=v==='no'?'block':'none'; checkStep3(); });
-function selfNote(){
-  const p=[];
-  if(sel.trk==='self')p.push('自拖请提供：车牌 / 进港预约 / 装柜磅单');
-  if(sel.cus==='self')p.push('自报请提供：出口报关单 / 装箱单 / 发票');
-  $('selfNote').textContent=p.join('　·　');
-  $('selfNote').style.display=p.length?'block':'none';
-}
-function preset(rowId, attr, val, cls){
-  const el=$(rowId).querySelector(`[data-${attr}="${val}"]`);
-  if(el) el.classList.add(cls||'on-blue');
-}
-function setTog(rowId,attr,val){ if(!val) return; const el=$(rowId).querySelector(`[data-${attr}="${val}"]`); if(el) el.click(); }
+function selfNote(){ const p=[]; if(sel.trk==='self')p.push('自拖请提供：车牌/进港预约/磅单'); if(sel.cus==='self')p.push('自报请提供：报关单/装箱单/发票'); $('selfNote').textContent=p.join('　·　'); $('selfNote').style.display=p.length?'block':'none'; }
+function preset(rowId,attr,val,cls){ const el=$(rowId).querySelector('[data-'+attr+'="'+val+'"]'); if(el) el.classList.add(cls||'on-blue'); }
+function setTog(rowId,attr,val){ if(!val) return; const el=$(rowId).querySelector('[data-'+attr+'="'+val+'"]'); if(el) el.click(); }
 
-/* ── 分柜分层（工厂自填模式） ── */
-function groupIsDG(seq){
-  // 价格三列只对 DG/代购单：本柜绑定的本厂订单含 export_mode=daigou 才显示
-  const ci = window._cntrBySeq && window._cntrBySeq[seq];
-  const ords = (ci&&ci.cargo||[]).map(x=>x.order_no).filter(Boolean);
-  const arr = (window._ordersArr||[]);
-  return ords.some(no=>{ const o=arr.find(z=>z.order_no===no); return o&&o.export_mode==='daigou'; });
+function groupIsDG(seq){ const ci=window._cntrBySeq&&window._cntrBySeq[seq]; return (ci&&ci.cargo||[]).map(x=>x.order_no).filter(Boolean).some(no=>{ const o=(window._ordersArr||[]).find(z=>z.order_no===no); return o&&o.export_mode==='daigou'; }); }
+function lineHtml(id,d={},sp){
+  return '<tr id="line_'+id+'">'+
+    '<td><input class="cell-in" id="cargo_name_'+id+'" value="'+esc(d.cargo_name)+'" placeholder="写清是什么货就行"></td>'+
+    '<td style="text-align:center;"><input type="checkbox" id="fe_'+id+'" '+(d.fe?'checked':'')+' onchange="window._feFac=window._feFac||{};window._feFac['+id+']=this.checked;" style="width:15px;height:15px;cursor:pointer;accent-color:#1a73e8;"></td>'+
+    '<td><input class="cell-in" id="pkg_qty_'+id+'" type="number" min="1" value="'+esc(d.pkg_qty)+'"></td>'+
+    '<td><input class="cell-in" id="nw_kg_'+id+'" type="number" step="0.01" value="'+esc(d.nw_kg)+'"></td>'+
+    '<td><input class="cell-in" id="gw_kg_'+id+'" type="number" step="0.01" value="'+esc(d.gw_kg)+'"></td>'+
+    '<td><input class="cell-in" id="cbm_m3_'+id+'" type="number" step="0.001" value="'+esc(d.cbm_m3)+'"></td>'+
+    (sp?'<td><input class="cell-in" id="price_'+id+'" type="number" step="0.01" value="'+esc(d.price)+'" placeholder="单价"></td><td><select class="cell-in" id="ptype_'+id+'" style="padding:4px 2px;"><option value="untaxed" '+(d.price_type!=='taxed'?'selected':'')+'>未含税</option><option value="taxed" '+(d.price_type==='taxed'?'selected':'')+'>含税</option></select></td><td><input class="cell-in" id="ppts_'+id+'" type="number" step="0.5" min="0" max="20" value="'+esc(d.tax_points!=null?d.tax_points:11)+'" style="min-width:44px;text-align:center;"></td>':'')+
+    '<td style="text-align:center;"><span style="cursor:pointer;color:#dc2626;font-weight:800;" onclick="delLine('+id+')">×</span></td></tr>';
 }
-function lineHtml(id, d={}, showPrice){
-  return `<tr id="line_${id}">
-    <td><input class="cell-in" id="cargo_name_${id}" value="${esc(d.cargo_name)}" placeholder="写清是什么货就行"></td>
-    <td><input class="cell-in" id="hs_code_${id}" value="${esc(d.hs_code)}" placeholder="不知可留空"></td>
-    <td><input class="cell-in" id="pkg_qty_${id}" type="number" min="1" value="${esc(d.pkg_qty)}"></td>
-    <td><input class="cell-in" id="nw_kg_${id}" type="number" step="0.01" value="${esc(d.nw_kg)}"></td>
-    <td><input class="cell-in" id="gw_kg_${id}" type="number" step="0.01" value="${esc(d.gw_kg)}"></td>
-    <td><input class="cell-in" id="cbm_m3_${id}" type="number" step="0.001" value="${esc(d.cbm_m3)}"></td>
-    ${showPrice?`<td><input class="cell-in" id="price_${id}" type="number" step="0.01" value="${esc(d.price)}" placeholder="单价"></td>
-    <td><select class="cell-in" id="ptype_${id}" style="padding:4px 2px;">
-      <option value="untaxed" ${d.price_type!=='taxed'?'selected':''}>未含税</option>
-      <option value="taxed" ${d.price_type==='taxed'?'selected':''}>含税</option></select></td>
-    <td><input class="cell-in" id="ppts_${id}" type="number" step="0.5" min="0" max="20" value="${esc(d.tax_points!=null?d.tax_points:11)}" style="min-width:44px;text-align:center;"></td>`:''}
-    <td style="text-align:center;"><span style="cursor:pointer;color:#dc2626;font-weight:800;" onclick="delLine(${id})">×</span></td>
-  </tr>`;
+function addCtn(linesData,seq,factory){ const g={lines:[],seq:seq||(groups.length?Math.max(...groups.map(x=>x.seq))+1:1),factory:factory||null,key:'g'+(window._gkCounter=(window._gkCounter||0)+1)}; groups.push(g); (linesData&&linesData.length?linesData:[{}]).forEach(d=>g.lines.push({id:lineSeq++,data:d})); renderGroups(); }
+function addLine(gi_){ groups[gi_].lines.push({id:lineSeq++,data:{}}); renderGroups(); }
+function delLine(id){ snapshot(); groups.forEach(g=>{ g.lines=g.lines.filter(l=>l.id!==id); }); groups=groups.filter(g=>g.lines.length); if(!groups.length) addCtn(); else renderGroups(); }
+function delCtn(gi_){ snapshot(); groups.splice(gi_,1); if(!groups.length) addCtn(); else renderGroups(); }
+function snapshot(){ groups.forEach(g=>g.lines.forEach(l=>{ if(!$('line_'+l.id)) return; l.data={oli_id:(l.data&&l.data.oli_id)||null,cargo_name:gv('cargo_name_'+l.id),hs_code:($('hs_code_'+l.id)?gv('hs_code_'+l.id):((l.data&&l.data.hs_code)||'')),pkg_qty:gi('pkg_qty_'+l.id),nw_kg:gn('nw_kg_'+l.id),gw_kg:gn('gw_kg_'+l.id),cbm_m3:gn('cbm_m3_'+l.id),price:gv('price_'+l.id),price_type:gv('ptype_'+l.id),tax_points:gv('ppts_'+l.id),fe:!!($('fe_'+l.id)&&$('fe_'+l.id).checked)}; })); }
+
+function buildPhotoGrid(key,seq){
+  const local=window._uploadedPhotos[key]||[];
+  const cd=(window._cntrDetailBySeq&&window._cntrDetailBySeq[seq])||{};
+  const existing=(cd.pickup_photos||[]).map(u=>({url:u,type:'image'}));
+  const all=[...existing,...local];
+  const cells=all.map((p,i)=>{
+    const isVid=p.type==='video';
+    return '<div class="photo-cell" onclick="imgLightbox(\''+esc(p.url)+'\','+(isVid?'true':'false')+')">'+
+      (isVid?'<video src="'+esc(p.url)+'" muted preload="metadata"></video><div class="play-ov">▶</div>':'<img src="'+esc(p.url)+'" alt="" loading="lazy">')+
+      '<div class="del-btn" onclick="event.stopPropagation();removePhoto(\''+key+'\','+seq+','+i+')">×</div></div>';
+  });
+  cells.push('<div class="photo-cell add" onclick="pickPhoto(\''+key+'\','+seq+')" title="添加图片/视频"><div style="text-align:center;color:#94a3b8;font-size:9px;line-height:1.15;"><div style="font-size:18px;">＋</div>图/视频</div></div>');
+  return '<div class="photo-grid">'+cells.join('')+'</div>';
 }
-function addCtn(linesData, seq){
-  const g={lines:[], seq: seq || (groups.length ? Math.max(...groups.map(x=>x.seq))+1 : 1)};
-  groups.push(g);
-  (linesData&&linesData.length?linesData:[{}]).forEach(d=>{ g.lines.push({id:lineSeq++, data:d}); });
+function removePhoto(key,seq,idx){
+  const cd=(window._cntrDetailBySeq&&window._cntrDetailBySeq[seq])||{};
+  const existing=(cd.pickup_photos||[]);
+  if(idx<existing.length){ toast('已上传文件请联系 Sanlyn 删除'); return; }
+  const localIdx=idx-existing.length;
+  window._uploadedPhotos[key]=(window._uploadedPhotos[key]||[]).filter((_,i)=>i!==localIdx);
   renderGroups();
 }
-function addLine(gi_){ groups[gi_].lines.push({id:lineSeq++, data:{}}); renderGroups(); }
-function delLine(id){
-  snapshot();
-  groups.forEach(g=>{ g.lines=g.lines.filter(l=>l.id!==id); });
-  groups=groups.filter(g=>g.lines.length);
-  if(!groups.length) addCtn(); else renderGroups();
-}
-function delCtn(gi_){ snapshot(); groups.splice(gi_,1); if(!groups.length) addCtn(); else renderGroups(); }
-function snapshot(){
-  groups.forEach(g=>g.lines.forEach(l=>{
-    if(!$('line_'+l.id)) return;
-    l.data={oli_id:(l.data&&l.data.oli_id)||null,cargo_name:gv('cargo_name_'+l.id),hs_code:gv('hs_code_'+l.id),
-      pkg_qty:gi('pkg_qty_'+l.id),nw_kg:gn('nw_kg_'+l.id),gw_kg:gn('gw_kg_'+l.id),cbm_m3:gn('cbm_m3_'+l.id),price:gv('price_'+l.id),price_type:gv('ptype_'+l.id),tax_points:gv('ppts_'+l.id)};
-  }));
-}
+
 function renderGroups(){
-  $('ctnGroups').innerHTML = groups.map((g,gi_)=>`
-    <div class="ctn-group" id="grp_${gi_}">
-      <div class="ctn-group-head">
-        <div class="ctn-group-title">🥡 柜 ${g.seq}${(window._cntrBySeq&&window._cntrBySeq[g.seq])?(c=>` · <span style="color:#111827;">${esc(c.container_no||'')}</span>${c.seal_no?` · 封 ${esc(c.seal_no)}`:''}${c.plate?` · 🚛 ${esc(c.plate)}`:''}${c.driver_phone?` · <a href="tel:${esc(c.driver_phone)}" style="color:#1a73e8;">${esc(c.driver_name||'司机')} ${esc(c.driver_phone)}</a>`:''}`)(window._cntrBySeq[g.seq]):''} <span class="ctn-group-sub" id="gsub_${gi_}"></span></div>
-        <div style="display:flex;gap:10px;align-items:center;">
-          <span style="font-size:10px;color:#9ca3af;">过磅</span><input id="fw_${g.seq}" type="number" step="0.01" value="${(window._fwVals&&window._fwVals[g.seq])||''}" placeholder="kg" style="width:74px;border:1px solid #e0e4ea;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;" onchange="window._fwVals=window._fwVals||{};window._fwVals[${g.seq}]=this.value;">
-          <span style="cursor:pointer;color:#1a73e8;font-size:11px;font-weight:700;" onclick="snapshot();addLine(${gi_})">＋ 加一个品名</span>
-          ${(groups.length>1&&!SCOPE)?`<span style="cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;" onclick="delCtn(${gi_})">× 删柜</span>`:''}
-        </div>
-      </div>
-      ${(window._cntrBySeq&&window._cntrBySeq[g.seq]&&window._cntrBySeq[g.seq].loading_address)?`<div style="font-size:11px;color:#6b7280;padding:4px 12px;background:#fffbeb;border-bottom:1px solid #fde68a;">📍 装货地址：<b style="color:#92400e;">${esc(window._cntrBySeq[g.seq].loading_address)}</b>（写错了及时沟通司机）</div>`:''}
-      ${(()=>{const ci=window._cntrBySeq&&window._cntrBySeq[g.seq];
-        const myOrds=(window._ordersArr||[]).map(o=>o.order_no);
-        const cg=(ci&&ci.cargo||[]).filter(x=>x.order_no&&(!myOrds.length||myOrds.includes(x.order_no)));if(!cg.length)return '';
-        return `<div style="font-size:11px;padding:5px 12px;background:#ecfdf5;border-bottom:1px solid #a7f3d0;color:#047857;font-weight:700;">✓ 本柜已关联订单：${cg.map(x=>esc((x.order_no||'').replace(/^\d+-/,''))+(x.name?' · '+esc(x.name):'')+(x.cartons?' · '+x.cartons+'箱':'')).join('　')} — 明细已录入系统，无需重复填写（有补充再加行）</div>`;})()}
-      <table class="cargo-t">
-        <thead><tr><th>品名 *</th><th style="width:64px;" title="不知道可留空，Sanlyn 报关时统一归整">HS<span style="font-weight:400;color:#9ca3af;font-size:9px;">选填</span></th><th style="width:64px;">箱数 *</th>
-          <th style="width:66px;">NW kg</th><th style="width:66px;">GW kg</th><th style="width:58px;">CBM</th>
-          ${groupIsDG(g.seq)?`<th style="width:60px;" title="必须注明未含税或含税">单价 *</th><th style="width:60px;">税别 *</th><th style="width:54px;" title="开票点数%">点数%</th>`:''}<th style="width:24px;"></th></tr></thead>
-        <tbody>${g.lines.map(l=>lineHtml(l.id,l.data,groupIsDG(g.seq))).join('')}</tbody>
-      </table>
-    </div>`).join('');
-  document.querySelectorAll('#ctnGroups input').forEach(i=>i.addEventListener('input',recalc));
+  const facColorPalette=['#1d4ed8','#059669','#b45309','#7c3aed','#b91c1c','#0891b2'];
+  const allFacs=[...new Set(groups.map(g=>g.factory).filter(Boolean))];
+  $('ctnGroups').innerHTML = groups.map((g,gi_)=>{
+    const cd=(window._cntrDetailBySeq&&window._cntrDetailBySeq[g.seq])||{};
+    const ci=window._cntrBySeq&&window._cntrBySeq[g.seq];
+    const sp=groupIsDG(g.seq);
+    const facLabel=g.factory||'';
+    const facColorIdx=facLabel?allFacs.indexOf(facLabel):-1;
+    const facColor=facColorIdx>=0?facColorPalette[facColorIdx%facColorPalette.length]:'#374151';
+    const confirmed=window._confirmedKeys.has(g.key);
+    const hasMedia=((window._uploadedPhotos[g.key]||[]).length>0)||((cd.pickup_photos||[]).length>0);
+    const statusText=confirmed?'✅ 已完成':hasMedia?'🔄 装柜中':'⏳ 待装柜';
+    const statusColor=confirmed?'#059669':hasMedia?'#0891b2':'#6b7280';
+    const myOrds=g.factory&&!SCOPE ? (window._ordersArr||[]).filter(o=>(o.factory||o.supplier_name||o.factory_name)===g.factory).map(o=>o.order_no) : (window._ordersArr||[]).map(o=>o.order_no);
+    const cg=(ci&&ci.cargo||[]).filter(x=>x.order_no&&(!myOrds.length||myOrds.includes(x.order_no)));
+    const plate=[esc(cd.plate||cd.truck_plate),esc(cd.trailer_plate)].filter(Boolean).join('/');
+    const driverLink=cd.driver_phone?'<a href="tel:'+esc(cd.driver_phone)+'" style="color:#1a73e8;font-weight:700;">'+esc(cd.driver_name||cd.driver_phone)+'</a>':esc(cd.driver_name||'—');
+    // 司机车牌信息（车牌/司机/柜号/封铅/皮重）— 替代原柜汇总行
+    const chip=(label,val)=>'<span style="background:#fff;border:1px solid #cbd5e1;border-radius:5px;padding:3px 8px;font-size:10.5px;"><span style="color:#94a3b8;">'+label+'</span> '+val+'</span>';
+    const chips=[];
+    if(plate) chips.push(chip('车牌','<b>'+plate+'</b>'));
+    if(cd.driver_name||cd.driver_phone) chips.push(chip('司机',driverLink));
+    if(cd.container_no) chips.push(chip('柜号','<b>'+esc(cd.container_no)+'</b>'));
+    if(cd.seal_no) chips.push(chip('封铅','<b>'+esc(cd.seal_no)+'</b>'));
+    if(cd.tare_weight_kg!=null) chips.push(chip('皮重','<b>'+esc(cd.tare_weight_kg)+'kg</b>'));
+    const groupHtml=
+    '<div class="ctn-group'+(confirmed?' confirmed':hasMedia?' in-progress':'')+'" id="grp_'+gi_+'">' +
+    // Header: 工厂名 + status
+    '<div style="background:'+(confirmed?'#f0fdf4':hasMedia?'#eff6ff':'#f8fafc')+';border-bottom:1px solid '+(confirmed?'#bbf7d0':hasMedia?'#dbeafe':'#e0e4ea')+';padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">' +
+    '<div style="flex:1;min-width:0;">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+    (facLabel?'<span style="background:'+facColor+';color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:12px;">🏭 '+esc(facLabel)+'</span>':'')+
+    '<span style="font-size:12px;font-weight:800;color:'+(confirmed?'#15803d':hasMedia?'#1e40af':'#374151')+';">柜'+g.seq+(cd.declaration_cargo_name?' · '+esc(cd.declaration_cargo_name):'')+'</span>'+
+    (cd.loading_address?'<span style="font-size:10.5px;color:#64748b;">📍 '+esc(cd.loading_address)+'</span>':'<span style="font-size:10.5px;color:#94a3b8;">📍 装货地址待填（走错位置请联系工厂）</span>')+
+    '</div></div>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+    '<span style="font-size:11px;font-weight:700;color:'+statusColor+';">'+statusText+'</span>' +
+    (!window._lockCtnCount&&groups.length>1?'<span onclick="delCtn('+gi_+')" style="cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;padding:3px 6px;">× 删</span>':'')+
+    '</div></div>' +
+    // 司机车牌信息行（车牌/司机/柜号/封铅/皮重）— 替代原柜汇总
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-bottom:1px solid #f0f2f5;background:#fff;"><span style="font-size:10px;color:#94a3b8;font-weight:700;align-self:center;">🚛 司机/车牌</span>'+(chips.length?chips.join(''):'<span style="font-size:10.5px;color:#94a3b8;">待车队派车后显示</span>')+'</div>'+
+    // Linked orders
+    (cg.length?'<div style="font-size:11px;padding:5px 14px;background:#ecfdf5;border-bottom:1px solid #a7f3d0;color:#047857;font-weight:700;">✓ 已关联：'+cg.map(x=>esc((x.order_no||'').replace(/^\d+-/,''))+(x.cartons?' · '+x.cartons+'箱':'')).join('　')+'</div>':'')+
+    // Cargo table
+    '<div style="padding:0 0 8px;">' +
+    '<table class="cargo-t"><thead><tr>' +
+    '<th>品名 * <span style="cursor:pointer;color:#1a73e8;font-weight:700;font-size:10px;margin-left:4px;" onclick="snapshot();addLine('+gi_+')">＋加</span></th>' +
+    '<th style="width:30px;" title="Form E产地证">FE</th><th style="width:56px;">箱数 *</th>' +
+    '<th style="width:64px;">NW kg</th><th style="width:64px;">GW kg</th><th style="width:54px;">CBM</th>' +
+    (sp?'<th style="width:56px;">单价 *</th><th style="width:52px;">税别</th><th style="width:46px;">点%</th>':'')+
+    '<th style="width:22px;"></th></tr></thead>' +
+    '<tbody id="tbody_'+gi_+'">'+g.lines.map(l=>lineHtml(l.id,l.data,sp)).join('')+'</tbody>' +
+    '<tfoot><tr class="row-total" id="tfoot_'+gi_+'"><td colspan="2" style="font-size:10px;color:#6b7280;">TOTAL（来自订单原值'+(editMode?' · 工厂可编辑':'')+'）</td><td id="ft_q_'+gi_+'">—</td><td id="ft_nw_'+gi_+'">—</td><td id="ft_gw_'+gi_+'">—</td><td id="ft_cbm_'+gi_+'">—</td>'+(sp?'<td id="ft_amt_'+gi_+'" colspan="3">—</td>':'')+'<td></td></tr></tfoot>' +
+    '</table></div>' +
+    // 装柜信息：照片/视频缩略图 + 上传 + 过磅 + 确认
+    '<div style="padding:8px 14px;border-top:1px solid #eef0f3;background:#fafafa;"' +
+    ' ondragover="event.preventDefault();this.style.background=\'#eff6ff\';" ondragleave="this.style.background=\'#fafafa\';" ondrop="event.preventDefault();this.style.background=\'#fafafa\';uploadLoadingFiles(event.dataTransfer.files,\''+g.key+'\','+g.seq+')">' +
+    '<div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:6px;">📦 装柜信息（照片/视频点击放大）</div>' +
+    buildPhotoGrid(g.key,g.seq).replace('class="photo-grid"','class="photo-grid" style="padding:0 0 8px;background:transparent;"')+
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">'+
+    '<button onclick="pickLoadingPhoto(\''+g.key+'\','+g.seq+',\'image\')" style="font-size:11px;padding:5px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;font-weight:700;">📦 装箱图</button>' +
+    '<button onclick="pickLoadingPhoto(\''+g.key+'\','+g.seq+',\'video\')" style="font-size:11px;padding:5px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;font-weight:700;">🎬 视频</button>' +
+    '<button onclick="pickLoadingPhoto(\''+g.key+'\','+g.seq+',\'doc\')" style="font-size:11px;padding:5px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;font-weight:700;">📋 磅单</button>' +
+    '<span id="lpTip_'+g.key+'" style="font-size:10px;color:#059669;"></span>' +
+    '<span style="color:#64748b;margin-left:4px;">VGM(kg)</span><input id="vgm_'+g.key+'" type="number" step="0.01" value="'+((window._vgmVals&&window._vgmVals[g.key])||'')+'" placeholder="含柜皮重" style="width:80px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;" onchange="window._vgmVals=window._vgmVals||{};window._vgmVals[\''+g.key+'\']=this.value;">' +
+    '<span style="color:#64748b;">过磅(kg)</span><input id="fw_'+g.key+'" type="number" step="0.01" value="'+((window._fwVals&&window._fwVals[g.key])||'')+'" placeholder="实重" style="width:72px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;" onchange="window._fwVals=window._fwVals||{};window._fwVals[\''+g.key+'\']=this.value;">' +
+    (!confirmed?'<button onclick="openConfirmModal(\''+g.key+'\')" class="btn btn-green btn-sm" style="margin-left:auto;">✅ 确认本柜装货完毕</button>':'<span style="font-size:11px;font-weight:700;color:#059669;margin-left:auto;">✅ 本柜已确认</span>')+
+    '</div></div></div>';
+    return groupHtml;
+  }).join('');
+  document.querySelectorAll('#ctnGroups input.cell-in').forEach(i=>i.addEventListener('input',recalc));
   recalc();
 }
+
 function recalc(){
-  let Q=0,GW=0,CBM=0;
+  let TQ=0,TNW=0,TGW=0,TCBM=0,TAMT=0;
   groups.forEach((g,gi_)=>{
-    let q=0,gw=0,cbm=0,amt=0;
-    g.lines.forEach(l=>{
-      if(!$('line_'+l.id)) return;
-      q+=gi('pkg_qty_'+l.id)||0; gw+=gn('gw_kg_'+l.id)||0; cbm+=gn('cbm_m3_'+l.id)||0; amt+=(gn('price_'+l.id)||0)*(gi('pkg_qty_'+l.id)||0);
-    });
-    Q+=q;GW+=gw;CBM+=cbm;
-    const el=$('gsub_'+gi_); if(el) el.textContent=q?` ${q}箱 · GW ${gw.toLocaleString()} · ${cbm.toFixed(2)} CBM${amt?` · 未含税合计 ¥${amt.toLocaleString(undefined,{maximumFractionDigits:2})}`:''}`:'';
+    let q=0,nw=0,gw=0,cbm=0,amt=0;
+    g.lines.forEach(l=>{ if(!$('line_'+l.id)) return; q+=gi('pkg_qty_'+l.id)||0; nw+=gn('nw_kg_'+l.id)||0; gw+=gn('gw_kg_'+l.id)||0; cbm+=gn('cbm_m3_'+l.id)||0; amt+=(gn('price_'+l.id)||0)*(gi('pkg_qty_'+l.id)||0); });
+    TQ+=q;TNW+=nw;TGW+=gw;TCBM+=cbm;TAMT+=amt;
+    const sub=$('gsub_'+gi_); if(sub&&q) sub.textContent=q+'箱 · NW '+nw.toLocaleString()+' · GW '+gw.toLocaleString()+' · '+cbm.toFixed(2)+' CBM';
+    const setF=(id,v)=>{ const el=$(id); if(el) el.textContent=v; };
+    setF('ft_q_'+gi_,q||'—');
+    setF('ft_nw_'+gi_,nw?nw.toLocaleString(undefined,{maximumFractionDigits:2}):'—');
+    setF('ft_gw_'+gi_,gw?gw.toLocaleString(undefined,{maximumFractionDigits:2}):'—');
+    setF('ft_cbm_'+gi_,cbm?cbm.toFixed(3):'—');
+    if($('ft_amt_'+gi_)) $('ft_amt_'+gi_).textContent=amt?'¥'+amt.toLocaleString(undefined,{maximumFractionDigits:2}):'—';
   });
-  $('grandTotal').textContent=Q?`TOTAL · ${groups.length} 柜 · ${Q}箱 · GW ${GW.toLocaleString()} · ${CBM.toFixed(2)} CBM`:`${groups.length} 柜`;
+  $('grandTotal').textContent=TQ?'TOTAL · '+groups.length+'柜 · '+TQ+'箱 · NW '+TNW.toLocaleString()+' · GW '+TGW.toLocaleString()+' · '+TCBM.toFixed(2)+' CBM'+(TAMT?' · ¥'+TAMT.toLocaleString(undefined,{maximumFractionDigits:2}):''):groups.length+'柜';
+}
+
+function openConfirmModal(key){
+  window._pendingConfirmKey=key;
+  const g=groups.find(x=>x.key===key)||{};
+  const cd=(window._cntrDetailBySeq&&window._cntrDetailBySeq[g.seq])||{};
+  const hasMedia=((window._uploadedPhotos[key]||[]).length>0)||((cd.pickup_photos||[]).length>0);
+  snapshot();
+  let q=0,nw=0,gw=0,cbm=0;
+  (g.lines||[]).forEach(l=>{ q+=gi('pkg_qty_'+l.id)||0; nw+=gn('nw_kg_'+l.id)||0; gw+=gn('gw_kg_'+l.id)||0; cbm+=gn('cbm_m3_'+l.id)||0; });
+  const items=[
+    {label:'工厂',val:g.factory||'—',ok:!!g.factory},
+    {label:'柜号',val:cd.container_no||'待派车',ok:true},
+    {label:'封铅',val:cd.seal_no||'待派车',ok:true},
+    {label:'箱数',val:q||'—',ok:q>0},
+    {label:'总重(NW/GW)',val:(nw||'—')+' / '+(gw||'—')+' kg',ok:nw>0},
+    {label:'CBM',val:cbm?cbm.toFixed(3):'—',ok:cbm>0},
+    {label:'装柜照片/视频',val:hasMedia?'✓ 已上传':'⚠️ 未上传（建议拍照）',ok:hasMedia},
+  ];
+  $('confirmChecklist').innerHTML='<div style="font-size:12px;margin-bottom:10px;color:#374151;">以下信息将被锁定，请确认无误：</div>'+
+    items.map(it=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f2f5;font-size:12px;">'+
+      '<span style="color:#6b7280;">'+it.label+'</span><span style="font-weight:700;color:'+(it.ok?'#15803d':'#b91c1c')+';">'+it.val+'</span></div>').join('');
+  const m=$('confirmModal'); m.classList.remove('hidden'); m.style.display='flex';
+}
+function closeConfirmModal(){ const m=$('confirmModal'); m.classList.add('hidden'); m.style.display=''; window._pendingConfirmKey=null; }
+function doConfirm(){
+  const key=window._pendingConfirmKey; if(!key) return;
+  window._confirmedKeys.add(key);
+  closeConfirmModal();
+  save(true, groups.find(x=>x.key===key));
 }
 
 async function boot(){
   if(!token){ show('stateDead'); return; }
-  const r = await fetch(`${API}/validate?token=${encodeURIComponent(token)}`);
-  const d = await r.json().catch(()=>({}));
-  if(!d.valid || d.role!=='factory_booking'){ show('stateDead'); return; }
-  const s = d.booking_sheet || {};
-  window._cntrBySeq = {};
+  const r=await fetch(API+'/validate?token='+encodeURIComponent(token));
+  const d=await r.json().catch(()=>({}));
+  if(!d.valid||d.role!=='factory_booking'){ show('stateDead'); return; }
+  const s=d.booking_sheet||{};
+  if(s.scope_missing){
+    $('stateDead').innerHTML='<div style="text-align:center;padding:48px 22px;"><div style="font-size:44px;">🔒</div><div style="font-size:15px;font-weight:800;color:#92400e;margin-top:12px;">此链接未限定贵厂范围</div><div style="font-size:12px;color:#6b7280;margin-top:10px;line-height:1.7;">为防止信息串单，本链接已停用。<br>请联系 Sanlyn 重新发送专属链接。</div></div>';
+    show('stateDead'); return;
+  }
+  window._cntrBySeq={};
+  (function(){ const order=Array.isArray(s.containers_order)?s.containers_order:[]; const live=Array.isArray(s.containers_live)?s.containers_live:[]; order.forEach((no,i)=>{ const hit=live.find(x=>x.container_no===no); if(hit) window._cntrBySeq[i+1]=hit; }); if(!order.length) live.forEach((x,i)=>{ window._cntrBySeq[i+1]=x; }); })();
+  window._cntrDetailBySeq={};
+  (Array.isArray(s.containers_detail)?s.containers_detail:[]).forEach(c=>{ if(c) window._cntrDetailBySeq[c.seq||1]=c; });
+  SCOPE=d.factory_scope||null;
+  $('topBadge').textContent=s.shipment_no||'工厂协同';
+  const ordersArr=Array.isArray(s.orders)?s.orders:[]; window._ordersArr=ordersArr;
+  const facList=[...new Set(ordersArr.map(o=>o.factory||o.supplier_name||o.factory_name).filter(Boolean))];
+  // 工厂专属链接只显本厂名；管理视角多厂时不合并显示，提示各厂独立确认
+  const facName=SCOPE?SCOPE.label:facList.join(' / ');
+  $('bannerTitle').textContent=(s.shipment_no||'—')+' — 工厂货物确认'+(facName?'（'+facName+'）':'');
+  // banner: preview identity (v1.1.0 2026-06-23)
   (function(){
-    const order = Array.isArray(s.containers_order) ? s.containers_order : [];
-    const live = Array.isArray(s.containers_live) ? s.containers_live : [];
-    order.forEach((no, i) => {
-      const hit = live.find(x => x.container_no === no);
-      if (hit) window._cntrBySeq[i+1] = hit;
-    });
-    if (!order.length) live.forEach((x, i) => { window._cntrBySeq[i+1] = x; });
+    var el=document.getElementById('previewBanner');
+    if(!el){ el=document.createElement('div'); el.id='previewBanner'; document.body.insertBefore(el, document.body.firstChild); }
+    if(d.is_preview && d.preview_godview){
+      el.style.cssText='background:#fef2f2;border-bottom:2px solid #dc2626;color:#991b1b;font-weight:800;font-size:13px;padding:10px 16px;text-align:center;position:sticky;top:0;z-index:50;';
+      el.textContent='\uD83D\uDD13 \u5168\u7968\u603b\u89c8 \u00b7 \u4ec5\u5185\u90e8\u6838\u5bf9 \u00b7 \u8bf7\u52ff\u53d1\u7ed9\u4efb\u4f55\u5de5\u5382\uff08\u6b64\u89c6\u56fe\u542b\u5168\u90e8\u5de5\u5382\u8d27\u7269\uff09';
+    } else if(d.is_preview && SCOPE){
+      el.style.cssText='background:#eff6ff;border-bottom:2px solid #2563eb;color:#1e40af;font-weight:800;font-size:13px;padding:10px 16px;text-align:center;position:sticky;top:0;z-index:50;';
+      el.textContent='\uD83D\uDC41 \u5185\u90e8\u9884\u89c8 \u00b7 \u4f60\u6b63\u4ee5\u3010'+(SCOPE.label||'')+'\u3011\u8eab\u4efd\u67e5\u770b \u2014 \u8fd9\u5c31\u662f\u8be5\u5de5\u5382\u4f1a\u770b\u5230\u7684\u5168\u90e8';
+    } else { el.style.display='none'; }
   })();
-
-  SCOPE = d.factory_scope || null;
-  $('topBadge').textContent = s.shipment_no || '工厂协同';
-  const ordersArr = Array.isArray(s.orders)?s.orders:[]; window._ordersArr = ordersArr;
-  const facName = SCOPE ? SCOPE.label
-    : [...new Set(ordersArr.map(o=>o.factory).filter(Boolean))].join(' / ');
-  $('bannerTitle').textContent = (s.shipment_no||'—') + ' — 工厂货物确认' + (facName?`（${facName}）`:'');
-  // 分柜/拼柜进度：N/M 厂已确认
-  const fp = d.factory_progress;
-  if(fp && fp.total > 1){
-    document.querySelector('.portal-login-badge').textContent =
-      `${s.shipment_no||''} · ${fp.submitted}/${fp.total} 厂已确认`;
-  }
-  if(SCOPE){
-    document.querySelector('#step1 .step-sub').textContent =
-      `您负责柜 ${SCOPE.seqs.join('、')} · 其他柜由另一工厂填写，互不可见`;
-  }
-  const cells=[];
-  const cell=(l,d)=>`<div style="border:1px solid #f0f2f5;background:#f8fafc;border-radius:8px;padding:7px 10px;"><div style="font-size:9px;color:#9ca3af;font-weight:700;">${l}</div><div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:2px;">${d}</div></div>`;
+  const fp=d.factory_progress; if(fp&&fp.total>1) document.querySelector('.portal-login-badge').textContent=(s.shipment_no||'')+' · '+fp.submitted+'/'+fp.total+'厂已确认';
+  if(SCOPE) document.querySelector('#step1 .step-sub').textContent='请确认贵厂货柜信息 · 仅您与 Sanlyn 可见';
+  // 财务预留区
+  if(s.finance){ const fi=s.finance; if(fi.factory_payment) $('finBadge1').textContent=fi.factory_payment; if(fi.customer_payment) $('finBadge2').textContent=fi.customer_payment; if(fi.note) $('finNote').textContent=fi.note; if(fi.factory_payment==='已预付') $('finBadge1').className='badge badge-green'; if(fi.customer_payment==='已到账') $('finBadge2').className='badge badge-green'; }
+  const cells=[], cell=(l,v)=>'<div style="border:1px solid #f0f2f5;background:#f8fafc;border-radius:8px;padding:7px 10px;"><div style="font-size:9px;color:#9ca3af;font-weight:700;">'+l+'</div><div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:2px;">'+v+'</div></div>';
   if(s.issuing_company) cells.push(cell('客户(下游)',esc(s.issuing_company)));
   if(s.pol) cells.push(cell('送港',esc(s.pol)));
   if(s.etd) cells.push(cell('ETD',fmtD(s.etd)));
-  if(s.customer_submitted) cells.push(cell('客户','✓ 已确认航班'));
   if(s.factory_submitted) cells.push(cell('状态','✓ 已提交 · 可修改重交'));
-  // 总箱数/总重：直接读订单总量字段（铁律：不现算），多单求和
-  const _q = ordersArr.reduce((t,o)=>t+(Number(o.total_qty)||0),0);
-  const _g = ordersArr.reduce((t,o)=>t+(Number(o.gross_weight)||0),0);
-  if(_q && !SCOPE) cells.push(cell('总箱数', _q.toLocaleString()+' 箱'+(_g?' · '+_g.toLocaleString()+' kg':'')));
-  $('infoGrid').innerHTML = cells.join('');
-  if(s.freight_term){ sel.tt=s.freight_term; locked.tt=true;
-    preset('ttRow','tt',s.freight_term,'on-green');
-    $('ttHint').textContent='（已选定：'+s.freight_term+'）';
-    $('fobSub').style.display=(s.freight_term==='FOB'||s.freight_term==='EXW')?'block':'none'; }
+  const _q=ordersArr.reduce((t,o)=>t+(Number(o.total_qty)||0),0), _g=ordersArr.reduce((t,o)=>t+(Number(o.gross_weight)||0),0);
+  if(_q&&!SCOPE) cells.push(cell('总箱数',_q.toLocaleString()+'箱'+(_g?' · '+_g.toLocaleString()+' kg':'')));
+  $('infoGrid').innerHTML=cells.join('');
+  if(s.freight_term){ sel.tt=s.freight_term; locked.tt=true; preset('ttRow','tt',s.freight_term,'on-green'); $('ttHint').textContent='（已选定：'+s.freight_term+'）'; $('fobSub').style.display=(s.freight_term==='FOB'||s.freight_term==='EXW')?'block':'none'; }
   if(s.trucking_arrange){ sel.trk=s.trucking_arrange; locked.trk=true; preset('trkRow','trk',s.trucking_arrange,'on-green'); }
   if(s.customs_arrange){ sel.cus=s.customs_arrange; locked.cus=true; preset('cusRow','cus',s.customs_arrange,'on-green'); }
-  const fa = s.factory_attrs || {};
-  sel.bat = fa.battery==='yes'?'yes':'no'; preset('batRow','bat',sel.bat, sel.bat==='no'?'on-green':'on-red');
-  if(sel.bat==='yes') $('msdsNote').style.display='block';
-  sel.wood = fa.wood_packaging==='yes'?'yes':'no'; preset('woodRow','wood',sel.wood, sel.wood==='no'?'on-green':'on-blue');
-  if(sel.wood==='yes'){ $('fumWrap').style.display='flex';
-    if(fa.fumigation){ sel.fum=fa.fumigation; preset('fumRow','fum',sel.fum, sel.fum==='yes'?'on-green':'on-red');
-      if(sel.fum==='no') $('fumNote').style.display='block'; } }
-
-  // 货物明细：有订单=只读真值；没有=工厂自填（预填上次提交的 factory_cargo）
-  const items = ordersArr.flatMap(o=>(o.items||[]).map(it=>({...it,order_no:o.order_no})));
-  // 分柜/拼柜模式：无论订单有无明细，本厂都必须能填自己的柜（订单明细只作参考）
-  if(items.length && !SCOPE){
-    $('cargoRead').style.display='block';
-    $('cargoSub').textContent='只读 · 来自订单数据，如有出入请备注';
-    $('cargoRead').innerHTML = `<table class="cargo-t"><thead><tr>
-      <th>订单</th><th>品名</th><th style="width:60px;">箱数</th><th style="width:80px;">GW kg</th></tr></thead><tbody>` +
-      items.map(it=>`<tr><td>${esc(it.order_no)}</td><td>${esc(it.product_name||it.description||it.sku)}${it.size?` <span style="color:#9ca3af;font-size:10px;">${esc(it.size)}</span>`:''}</td>
-        <td>${esc(it.ctns)}</td><td>${esc(it.gw_kgs)}</td></tr>`).join('') +
-      `<tr style="font-weight:800;background:#f8f8f8;"><td></td><td>TOTAL</td>
-        <td>${items.reduce((t,x)=>t+(Number(x.ctns)||0),0).toLocaleString()}</td>
-        <td>${items.reduce((t,x)=>t+(Number(x.gw_kgs)||0),0).toLocaleString()}</td></tr></tbody></table>`;
+  collapseTradeTerms();
+  const fa=s.factory_attrs||{};
+  sel.bat=fa.battery==='yes'?'yes':'no'; preset('batRow','bat',sel.bat,sel.bat==='no'?'on-green':'on-red'); if(sel.bat==='yes') $('msdsNote').style.display='block';
+  sel.wood=fa.wood_packaging==='yes'?'yes':'no'; preset('woodRow','wood',sel.wood,sel.wood==='no'?'on-green':'on-blue');
+  if(sel.wood==='yes'){ $('fumWrap').style.display='flex'; if(fa.fumigation){ sel.fum=fa.fumigation; preset('fumRow','fum',sel.fum,sel.fum==='yes'?'on-green':'on-red'); if(sel.fum==='no') $('fumNote').style.display='block'; } }
+  // 货物明细 — 始终可编辑，工厂可修改箱数，【按工厂分区，一厂一卡，绝不串】
+  editMode=true; $('cargoEdit').style.display='block'; $('cargoSub').textContent='按工厂分区 · 箱数可修改 · 各厂独立确认';
+  let fc=Array.isArray(s.factory_cargo)?s.factory_cargo:[];
+  const facOf=o=>o.factory||o.supplier_name||o.factory_name||'未指定工厂';
+  const mapItem=it=>({oli_id:it.oli_id,cargo_name:it.product_name||it.description||'',hs_code:it.hs_code||'',pkg_qty:it.ctns||'',nw_kg:Number(it.nw_kgs)||'',gw_kg:Number(it.gw_kgs)||'',cbm_m3:Number(it.cbm)||''});
+  const mapFc=x=>({oli_id:x.oli_id,cargo_name:x.cargo_name||'',hs_code:x.hs_code||'',pkg_qty:x.pkg_qty!=null?x.pkg_qty:'',nw_kg:x.nw_kg!=null?x.nw_kg:'',gw_kg:x.gw_kg!=null?x.gw_kg:'',cbm_m3:x.cbm_m3!=null?x.cbm_m3:'',price:x.price,price_type:x.price_type,tax_points:x.tax_points,fe:x.fe});
+  // 找出某工厂订单所在的柜 seq（拼柜则多厂同 seq）
+  const seqForOrders=ordNos=>{ const seqs=Object.keys(window._cntrBySeq||{}).map(Number); for(const k of seqs){ const ci=window._cntrBySeq[k]; const cnos=(ci&&ci.cargo||[]).map(x=>x.order_no); if(ordNos.some(n=>cnos.includes(n))) return k; } return seqs[0]||1; };
+  window._lockCtnCount=true; $('btnAddCtn').style.display='none';
+  if(SCOPE){
+    // 工厂专属链接：只看本厂本柜
+    const fac=SCOPE.label;
+    // v1.1.1: scope 只有 label 无 seqs(如按公司名预览)时兜底——从已被后端裁剪的本厂数据推柜号,仍安全不破隔离
+    let mySeqs=(Array.isArray(SCOPE.seqs)&&SCOPE.seqs.length)?SCOPE.seqs:null;
+    if(!mySeqs){ const a=[...new Set(fc.map(x=>x.container_seq||1))]; const b=Object.keys(window._cntrBySeq||{}).map(Number); mySeqs=a.length?a:(b.length?b:[1]); }
+    let myFc=fc.filter(x=>mySeqs.includes(x.container_seq||1)&&(!x.factory_label||x.factory_label===fac));
+    const bySeq={}; myFc.forEach(x=>{ const k=x.container_seq||1; (bySeq[k]=bySeq[k]||[]).push(mapFc(x)); });
+    mySeqs.forEach(k=>{ if(!(bySeq[k]&&bySeq[k].length)){ const ci=window._cntrBySeq&&window._cntrBySeq[k]; let ords=(ci&&ci.cargo||[]).map(x=>x.order_no).filter(Boolean); if(!ords.length&&mySeqs.length===1) ords=ordersArr.map(o=>o.order_no).filter(Boolean); if(ords.length){ const pre=ordersArr.filter(o=>ords.includes(o.order_no)).flatMap(o=>(o.items||[]).map(mapItem)); if(pre.length) bySeq[k]=pre; } } });
+    mySeqs.forEach(k=>addCtn(bySeq[k]||[{}],k,fac));
   } else {
-    editMode = true;
-    $('cargoEdit').style.display='block';
-    let fc = Array.isArray(s.factory_cargo)?s.factory_cargo:[];
-    if(SCOPE){
-      const mySeqs = SCOPE.seqs;
-      // 只见本厂行：柜号在范围内 且 厂标是自己（拼柜同柜也看不到对方品名）
-      fc = fc.filter(x=>mySeqs.includes(x.container_seq||1) && (!x.factory_label || x.factory_label===SCOPE.label));
-      const bySeq={};
-      fc.forEach(x=>{ const k=x.container_seq||1; (bySeq[k]=bySeq[k]||[]).push(x); });
-      // 绑单柜：订单明细(OLI)直接预填进柜行——工厂原位补 NW/GW/CBM/价格，提交写回订单主表
-      mySeqs.forEach(k=>{
-        if(!(bySeq[k]&&bySeq[k].length)){
-          const ci = window._cntrBySeq && window._cntrBySeq[k];
-          const ords = (ci&&ci.cargo||[]).map(x=>x.order_no).filter(Boolean);
-          if(ords.length){
-            const pre = ordersArr.filter(o=>ords.includes(o.order_no))
-              .flatMap(o=>(o.items||[]).map(it=>({
-                oli_id: it.oli_id, cargo_name: it.product_name||it.description||'',
-                hs_code: it.hs_code||'', pkg_qty: it.ctns||'',
-                nw_kg: Number(it.nw_kgs)||'', gw_kg: Number(it.gw_kgs)||'', cbm_m3: Number(it.cbm)||'',
-              })));
-            if(pre.length) bySeq[k]=pre;
-          }
-        }
-      });
-      mySeqs.forEach(k=>addCtn(bySeq[k]||[{}], k));             // 固定柜号，不能加别人的柜
-      document.querySelector('#cargoEdit .btn-ghost').style.display='none'; // 隐藏“添加一柜”
-    } else if(fc.length){
-      const bySeq={};
-      fc.forEach(x=>{ const k=x.container_seq||1; (bySeq[k]=bySeq[k]||[]).push(x); });
-      Object.keys(bySeq).map(Number).sort((a,b)=>a-b).forEach(k=>addCtn(bySeq[k], k));
-    } else addCtn();
+    // 内部/管理视角：每个工厂一张卡（绝不合并）
+    const groupsToAdd=[];
+    if(fc.length){
+      // 已有保存的明细：按 factory_label 分组（无标签退回柜号）
+      const byFac={};
+      fc.forEach(x=>{ const f=x.factory_label||('柜'+(x.container_seq||1)); if(!byFac[f]) byFac[f]={factory:x.factory_label||null,seq:x.container_seq||1,lines:[]}; byFac[f].lines.push(mapFc(x)); });
+      Object.values(byFac).forEach(grp=>groupsToAdd.push(grp));
+    } else if(ordersArr.length){
+      // 无保存明细：按工厂聚合订单明细预填
+      const byFac={};
+      ordersArr.forEach(o=>{ const f=facOf(o); if(!byFac[f]) byFac[f]={factory:f,orderNos:[],lines:[]}; byFac[f].orderNos.push(o.order_no); (o.items||[]).forEach(it=>byFac[f].lines.push(mapItem(it))); });
+      Object.values(byFac).forEach(grp=>{ if(grp.lines.length) groupsToAdd.push({factory:grp.factory,seq:seqForOrders(grp.orderNos),lines:grp.lines}); });
+    }
+    if(groupsToAdd.length) groupsToAdd.forEach(grp=>addCtn(grp.lines,grp.seq,grp.factory));
+    else addCtn();
   }
-
-  // 预填上次提交
-  if(s.factory_submitted){
-    if(s.factory_cargo_ready) $('cargo_ready_date').value=fmtD(s.factory_cargo_ready);
-    if(s.factory_container_type) setTog('ctRow','ct',s.factory_container_type);
-    if(s.factory_cargo_type) setTog('cgtRow','cgt',s.factory_cargo_type);
-    if(s.factory_remarks) $('remarks').value=s.factory_remarks;
-  } else if(s.container_type) setTog('ctRow','ct',String(s.container_type).toUpperCase().replace('HC','HQ'));
-  // 默认普通货物（已选/默认都直接亮绿）
+  if(s.factory_submitted){ if(s.factory_cargo_ready) $('cargo_ready_date').value=fmtD(s.factory_cargo_ready); if(s.factory_container_type) setTog('ctRow','ct',s.factory_container_type); if(s.factory_cargo_type) setTog('cgtRow','cgt',s.factory_cargo_type); if(s.factory_remarks) $('remarks').value=s.factory_remarks; }
+  else if(s.container_type) setTog('ctRow','ct',String(s.container_type).toUpperCase().replace('HC','HQ'));
   if(!sel.cgt||sel.cgt==='普通货物'){ sel.cgt='普通货物'; const el=$('cgtRow').querySelector('[data-cgt="普通货物"]'); if(el) el.classList.add('on-green'); }
-  // 已订舱=柜型锁定；已提柜=装柜中，货好不再要求
-  window._booked = !!(s.so_no || s.bl_no);
-  (function(){
-    const fe = s.factory_entry || {};
-    const mine = (SCOPE && fe[SCOPE.label]) || fe['default'] || Object.values(fe)[0];
-    if(mine){
-      if($('er_contact')) $('er_contact').value = mine.contact||'';
-      if($('er_phone')) $('er_phone').value = mine.phone||'';
-      if($('er_note')) $('er_note').value = mine.note||'';
-      if($('er_url')) $('er_url').value = mine.exam_url||'';
-      if($('erSaved')) $('erSaved').textContent='✓ 已登记';
-    }
-  })();
-  window._loading = Array.isArray(s.containers_live) && s.containers_live.length > 0;
-  if (window._booked) {
-    sel.ct = s.container_type || sel.ct;
-    const ctRow = $('ctRow');
-    if (ctRow) {
-      ctRow.querySelectorAll('.tog').forEach(t => {
-        t.style.pointerEvents = 'none'; t.style.opacity = (t.dataset.ct === sel.ct) ? '1' : '.3';
-        if (t.dataset.ct === sel.ct) t.classList.add('on');
-      });
-    }
-  }
-  if (window._booked || window._loading) {
-    const bits = [];
-    if (window._booked) bits.push('⚓ 已订舱 · 柜型 ' + (s.container_type || '') + ' × ' + (s.container_qty || '') + ' 已锁定');
-    if (window._loading) bits.push('🚛 柜已提 · 装柜进行中，货好日期免填');
-    $('bookedBar').innerHTML = '<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#047857;">' + bits.join('　') + '</div>';
-    if (window._loading) { const cf = $('cargo_ready_date'); if (cf) cf.closest('.form-field').style.display = 'none'; }
-  }
-  checkStep1(true); checkStep3(true);
-  show('stateForm');
-  // 选了即存：条款/拖报点击后立刻 partial 保存，刷新不丢
-  window._autoSaveTerms = async function(){
-    try{
-      await fetch(`${API}/factory-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token, partial:true,
-          freight_term: sel.tt||null,
-          trucking_arrange: sel.trk||null,
-          customs_arrange: sel.cus||null })});
-    }catch(e){}
-  };
-  ['ttRow','trkRow','cusRow'].forEach(id=>{
-    const el=$(id); if(el) el.addEventListener('click', ()=>setTimeout(window._autoSaveTerms, 50));
-  });
+  const fe=s.factory_entry||{}, mine=(SCOPE&&fe[SCOPE.label])||fe['default']||Object.values(fe)[0];
+  if(mine){ if($('er_contact')) $('er_contact').value=mine.contact||''; if($('er_phone')) $('er_phone').value=mine.phone||''; if($('er_note')) $('er_note').value=mine.note||''; if($('er_url')) $('er_url').value=mine.exam_url||''; if($('erSaved')) $('erSaved').textContent='✓ 已登记'; }
+  window._booked=!!(s.so_no||s.bl_no); window._loading=Array.isArray(s.containers_live)&&s.containers_live.length>0;
+  if(window._booked){ sel.ct=s.container_type||sel.ct; const ctRow=$('ctRow'); if(ctRow) ctRow.querySelectorAll('.tog').forEach(t=>{ t.style.pointerEvents='none'; t.style.opacity=(t.dataset.ct===sel.ct)?'1':'.3'; }); }
+  if(window._booked||window._loading){ const bits=[]; if(window._booked) bits.push('⚓ 已订舱 · 柜型 '+(s.container_type||'')+' × '+(s.container_qty||'')+' 已锁定'); if(window._loading) bits.push('🚛 柜已提 · 装柜进行中'); $('bookedBar').innerHTML='<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#047857;">'+bits.join('　')+'</div>'; if(window._loading){ const cf=$('cargo_ready_date'); if(cf) cf.closest('.form-field').style.display='none'; } }
+  checkStep1(true); checkStep3(true); show('stateForm');
+  window._autoSaveTerms=async function(){ try{ await fetch(API+'/factory-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,partial:true,freight_term:sel.tt||null,trucking_arrange:sel.trk||null,customs_arrange:sel.cus||null})}); }catch(e){} };
+  ['ttRow','trkRow','cusRow'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('click',()=>setTimeout(window._autoSaveTerms,50)); });
 }
 
-async function save(){
-  if(!window._loading && !gv('cargo_ready_date')){ reopenStep(1); toast('请选择货好日期'); return; }
+async function save(loadingDone, confirmedGroup){
+  if(!window._loading&&!gv('cargo_ready_date')){ reopenStep(1); toast('请选择货好日期'); return; }
   if(!sel.ct){ reopenStep(1); toast('请选择柜型'); return; }
   if(!sel.tt){ reopenStep(1); toast('请选择交易条款'); return; }
-  if((sel.tt==='FOB'||sel.tt==='EXW')&&(!sel.trk||!sel.cus)){ reopenStep(1); toast('FOB/EXW 请确认拖车与报关由谁安排'); return; }
+  if((sel.tt==='FOB'||sel.tt==='EXW')&&(!sel.trk||!sel.cus)){ reopenStep(1); toast('FOB/EXW 请确认拖车与报关安排'); return; }
   if(sel.wood==='yes'&&!sel.fum){ toast('实木包装请确认是否已熏蒸'); return; }
-  let containers = null;
-  if(editMode){
-    snapshot();
-    containers = [];
-    groups.forEach((g)=>g.lines.forEach(l=>{
-      const d=l.data;
-      if(d.cargo_name||d.pkg_qty!=null) containers.push({container_seq:g.seq,...d});
-    }));
-    const bad = containers.find(x=>!x.cargo_name||x.pkg_qty==null);
-    if(bad){ toast('品名和箱数必填，填了一部分的行请补全或清空'); return; }
-  }
-  $('btnSubmit').disabled = true;
+  let containers=null;
+  if(editMode){ snapshot(); containers=[]; groups.forEach(g=>g.lines.forEach(l=>{ const d=l.data; if(d.cargo_name||d.pkg_qty!=null) containers.push({container_seq:g.seq,factory_label:g.factory||null,...d}); })); const bad=containers.find(x=>!x.cargo_name||x.pkg_qty==null); if(bad){ toast('品名和箱数必填'); return; } }
   try{
-    const body = {token,cargo_ready_date:gv('cargo_ready_date'),container_type:sel.ct,cargo_type:sel.cgt,remarks:gv('remarks'),
-      freight_term: sel.tt,
-      trucking_arrange: sel.trk,
-      customs_arrange: sel.cus,
-      attrs: {battery:sel.bat, wood_packaging:sel.wood, fumigation:sel.fum}};
-    if(containers&&containers.length) body.containers = containers;
-    const _fw = Object.entries(window._fwVals||{}).filter(([s,k])=>k).map(([s,k])=>({seq:s,weigh_kg:k}));
-    if(_fw.length) body.container_weights = _fw;
-    const r = await fetch(`${API}/factory-submit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    const d = await r.json();
-    $('btnSubmit').disabled = false;
-    if(!r.ok||!d.ok){ toast(d.error||'提交失败'); return; }
-    // 先选先定回话：我选的没生效（对方先定了）要明说
-    if(sel.tt && d.freight_term && d.freight_term !== sel.tt){
-      alert(`提示：本票条款当前为 ${d.freight_term}（协同各方均可修改，以最新提交为准）。`);
-    }
-    show('stateDone');
-  }catch(e){ $('btnSubmit').disabled=false; toast('网络错误，请重试'); }
+    const body={token,loading_done:!!loadingDone,cargo_ready_date:gv('cargo_ready_date'),container_type:sel.ct,cargo_type:sel.cgt,remarks:gv('remarks'),freight_term:sel.tt,trucking_arrange:sel.trk,customs_arrange:sel.cus,attrs:{battery:sel.bat,wood_packaging:sel.wood,fumigation:sel.fum}};
+    if(containers&&containers.length) body.containers=containers;
+    if(confirmedGroup){ body.confirmed_seq=confirmedGroup.seq; body.confirmed_factory=confirmedGroup.factory||null; }
+    // 过磅/VGM 按组(key)收集，回填 seq + 工厂
+    const _vgm=window._vgmVals||{}, _fw=window._fwVals||{}, cw=[];
+    groups.forEach(g=>{ const v=_vgm[g.key], w=_fw[g.key]; if(v||w) cw.push({seq:g.seq,factory_label:g.factory||null,weigh_kg:w||null,vgm_kg:v||null}); });
+    if(cw.length) body.container_weights=cw;
+    const resp=await fetch(API+'/factory-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const rd=await resp.json();
+    if(!resp.ok||!rd.ok){ toast(rd.error||'提交失败'); return; }
+    if(loadingDone){ renderGroups(); toast('✅ '+(confirmedGroup&&confirmedGroup.factory?confirmedGroup.factory+' ':'')+'装货完毕，已通知 Sanlyn'); }
+    else show('stateDone');
+  }catch(e){ toast('网络错误，请重试'); }
 }
 
 $('cargo_ready_date').addEventListener('change',()=>checkStep1());
-
-let _qrInput = null;
-function pickQR(){
-  if(!_qrInput){
-    _qrInput = document.createElement('input'); _qrInput.type='file'; _qrInput.accept='image/*';
-    _qrInput.addEventListener('change', async e=>{
-      const f = e.target.files[0]; if(!f) return;
-      try{
-        const b64 = await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(f);});
-        const r = await fetch(`${API}/upload`,{method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({token,filename:'[入厂二维码]'+f.name,mime:f.type,data_base64:b64})});
-        const d = await r.json();
-        if(!r.ok||!d.ok){ toast(d.error||'上传失败'); return; }
-        toast('✓ 入厂二维码已上传'); $('erSaved').textContent='✓ 已登记+二维码';
-      }catch(err){ toast('网络错误'); }
-      e.target.value='';
-    });
+function openEntryModal(){ const m=$('entryModal'); if(m){ m.classList.remove('hidden'); m.style.display='flex'; } }
+function closeEntryModal(){ const m=$('entryModal'); if(m){ m.classList.add('hidden'); m.style.display=''; } }
+window._driverPhotos={};
+function renderDriverModal(){
+  const body=$('driverModalBody'); if(!body) return;
+  body.innerHTML=groups.map(g=>{
+    const cd=(window._cntrDetailBySeq&&window._cntrDetailBySeq[g.seq])||{};
+    const plate=[esc(cd.plate||cd.truck_plate),esc(cd.trailer_plate)].filter(Boolean).join('/');
+    const info=[];
+    if(g.factory) info.push('🏭 '+esc(g.factory));
+    info.push('柜'+g.seq+(cd.container_no?' · '+esc(cd.container_no):''));
+    if(plate) info.push('车牌 '+plate);
+    if(cd.driver_name) info.push('司机 '+esc(cd.driver_name));
+    if(cd.driver_phone) info.push('<a href="tel:'+esc(cd.driver_phone)+'" style="color:#1a73e8;font-weight:700;">'+esc(cd.driver_phone)+'</a>');
+    if(cd.seal_no) info.push('封铅 '+esc(cd.seal_no));
+    if(cd.tare_weight_kg!=null) info.push('皮重 '+esc(cd.tare_weight_kg)+'kg');
+    const dispatchPhotos=[].concat(cd.driver_photos||[],cd.plate_photos||[]).map(u=>({url:u,type:'image'}));
+    const local=window._driverPhotos[g.key]||[];
+    const all=[...dispatchPhotos,...local];
+    const thumbs=all.map(p=>{const isVid=p.type==='video';return '<div class="photo-cell" onclick="imgLightbox(\''+esc(p.url)+'\','+(isVid?'true':'false')+')">'+(isVid?'<video src="'+esc(p.url)+'" muted preload="metadata"></video><div class="play-ov">▶</div>':'<img src="'+esc(p.url)+'" loading="lazy">')+'</div>';}).join('');
+    return '<div style="border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px;margin-bottom:10px;">'+
+      '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px;">'+info.join(' · ')+'</div>'+
+      '<div class="photo-grid" style="padding:0 0 8px;background:transparent;">'+thumbs+'</div>'+
+      '<button onclick="pickDriverPhoto(\''+g.key+'\')" style="font-size:11px;padding:5px 12px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;font-weight:700;">📷 上传司机/车牌照片</button>'+
+      '<span id="dpTip_'+g.key+'" style="font-size:10px;color:#059669;margin-left:8px;"></span>'+
+      '</div>';
+  }).join('')||'<div style="font-size:12px;color:#94a3b8;text-align:center;padding:20px;">暂无货柜</div>';
+}
+function openDriverModal(){ renderDriverModal(); const m=$('driverModal'); if(m){ m.classList.remove('hidden'); m.style.display='flex'; } }
+function closeDriverModal(){ const m=$('driverModal'); if(m){ m.classList.add('hidden'); m.style.display=''; } }
+const _dpInputs={};
+function pickDriverPhoto(key){
+  if(!_dpInputs[key]){ const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*,video/*'; inp.multiple=true;
+    inp.addEventListener('change',async e=>{ const files=[...e.target.files]; e.target.value=''; const tip=$('dpTip_'+key); if(tip) tip.textContent='上传中…'; let ok=0;
+      for(const f of files){ try{ const isVid=/^video\//.test(f.type); const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);}); const resp=await fetch(API+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,filename:'[司机车牌]'+f.name,mime:f.type,data_base64:b64})}); const rd=await resp.json(); if(resp.ok&&rd.ok){ ok++; window._driverPhotos[key]=window._driverPhotos[key]||[]; window._driverPhotos[key].push({url:b64,filename:f.name,type:isVid?'video':'image'}); } }catch(err){} }
+      if(tip) tip.textContent='✓ 已上传 '+ok+' 个'; renderDriverModal(); });
+    _dpInputs[key]=inp;
   }
+  _dpInputs[key].click();
+}
+document.addEventListener('click',e=>{ if(e.target&&e.target.id==='entryModal') closeEntryModal(); if(e.target&&e.target.id==='confirmModal') closeConfirmModal(); if(e.target&&e.target.id==='driverModal') closeDriverModal(); });
+
+const _lpInputs={};
+async function uploadLoadingFiles(files, key, seq){
+  files=[...(files||[])].filter(f=>f&&(/^image\//.test(f.type)||/^video\//.test(f.type)||/pdf|msword|spreadsheet|excel|openxml/.test(f.type)));
+  if(!files.length) return;
+  const tip=$('lpTip_'+key); if(tip) tip.textContent='上传中…';
+  let ok=0;
+  for(const f of files){
+    try{
+      const isVid=/^video\//.test(f.type), isDoc=!/^image\/|^video\//.test(f.type);
+      const prefix=isVid?'[装柜视频]':isDoc?'[磅单]':'[装箱图]';
+      const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
+      const resp=await fetch(API+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,filename:prefix+f.name,mime:f.type,data_base64:b64})});
+      const rd=await resp.json();
+      if(resp.ok&&rd.ok){ ok++; if(!isDoc){ window._uploadedPhotos[key]=window._uploadedPhotos[key]||[]; window._uploadedPhotos[key].push({url:b64,filename:f.name,type:isVid?'video':'image'}); } }
+    }catch(err){}
+  }
+  if(tip) tip.textContent='✓ 已上传 '+ok+' 个'; toast('✓ 上传 '+ok+' 个');
+  if(ok>0) renderGroups();
+}
+function pickLoadingPhoto(key, seq, type){
+  const ik=key+'_'+type;
+  if(!_lpInputs[ik]){
+    const inp=document.createElement('input'); inp.type='file';
+    if(type==='image') inp.accept='image/*'; else if(type==='video') inp.accept='video/*'; else inp.accept='.pdf,.xlsx,.xls,.doc,.docx,image/*';
+    inp.multiple=(type==='image');
+    inp.addEventListener('change',e=>{ uploadLoadingFiles(e.target.files,key,seq); e.target.value=''; });
+    _lpInputs[ik]=inp;
+  }
+  _lpInputs[ik].click();
+}
+function pickPhoto(key, seq){
+  const ik=key+'_mix';
+  if(!_lpInputs[ik]){
+    const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*,video/*'; inp.multiple=true;
+    inp.addEventListener('change',e=>{ uploadLoadingFiles(e.target.files,key,seq); e.target.value=''; });
+    _lpInputs[ik]=inp;
+  }
+  _lpInputs[ik].click();
+}
+document.addEventListener('paste',e=>{ const sf=$('stateForm'); if(!sf||sf.classList.contains('hidden')) return; const imgs=((e.clipboardData&&e.clipboardData.files)?[...e.clipboardData.files]:[]).filter(f=>/^image\//.test(f.type)); if(imgs.length){ e.preventDefault(); if(groups.length===1) uploadLoadingFiles(imgs,groups[0].key,groups[0].seq); else toast('多个工厂/柜时请点对应卡片的📦按钮上传'); } });
+
+let _qrInput=null;
+function pickQR(){
+  if(!_qrInput){ _qrInput=document.createElement('input'); _qrInput.type='file'; _qrInput.accept='image/*'; _qrInput.addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f) return; try{ const b64=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(f);}); const resp=await fetch(API+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,filename:'[入厂二维码]'+f.name,mime:f.type,data_base64:b64})}); const rd=await resp.json(); if(!resp.ok||!rd.ok){ toast(rd.error||'上传失败'); return; } toast('✓ 入厂二维码已上传'); $('erSaved').textContent='✓ 已登记+二维码'; }catch(err){ toast('网络错误'); } e.target.value=''; }); }
   _qrInput.click();
 }
 async function saveEntryReq(){
-  try{
-    const r = await fetch(`${API}/factory-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token, entry_req:{contact:gv('er_contact'),phone:gv('er_phone'),note:gv('er_note'),exam_url:gv('er_url')}})});
-    const d = await r.json();
-    if(!r.ok||!d.ok){ toast(d.error||'保存失败'); return; }
-    $('erSaved').textContent='✓ 已登记（固定档案）';
-    toast('✓ 入厂要求已登记');
-  }catch(e){ toast('网络错误'); }
+  try{ const resp=await fetch(API+'/factory-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,entry_req:{contact:gv('er_contact'),phone:gv('er_phone'),note:gv('er_note'),exam_url:gv('er_url')}})}); const rd=await resp.json(); if(!resp.ok||!rd.ok){ toast(rd.error||'保存失败'); return; } $('erSaved').textContent='✓ 已登记（固化到本厂）'; toast('✓ 入厂要求已登记'); setTimeout(closeEntryModal,700); }catch(e){ toast('网络错误'); }
 }
-(function(){
-  // 回显已登记的入厂要求
-  try{
-    const fe = (window._sheet&&window._sheet.factory_entry)||null;
-  }catch(e){}
-})();
+function pickOrder(){
+  var no=prompt('输入订单号或合同号（如：37-WP-61）：'); if(!no||!no.trim()) return;
+  fetch(API+'/factory-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,action:'link-order',order_no:no.trim()})})
+    .then(r=>r.json()).then(d=>{ if(!d.ok){ toast('关联失败：'+(d.error||'未知')); return; } toast('✓ 已关联 '+d.order_no+(d.linked?' · 命中'+d.linked+'条':'（新增）')); setTimeout(()=>location.reload(),1200); }).catch(()=>toast('网络错误'));
+}
+var _cargoDocInput=null;
+function pickCargoDoc(){
+  if(!_cargoDocInput){ _cargoDocInput=document.createElement('input'); _cargoDocInput.type='file'; _cargoDocInput.accept='.pdf,.xlsx,.xls,.doc,.docx,image/*'; _cargoDocInput.addEventListener('change',async function(e){ var f=e.target.files[0]; if(!f) return; toast('上传中…'); try{ var b64=await new Promise(function(ok,no){var r=new FileReader();r.onload=function(){ok(r.result);};r.onerror=no;r.readAsDataURL(f);}); var resp=await fetch(API+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,filename:'[cargo]'+f.name,mime:f.type,data_base64:b64})}); var rd=await resp.json(); if(!resp.ok||!rd.ok){ toast(rd.error||'上传失败'); return; } toast('✓ 货单已上传：'+f.name); var bar=$('cargoUploadBar'); if(!bar){ bar=document.createElement('div'); bar.id='cargoUploadBar'; bar.style.cssText='margin:8px 16px 4px;padding:8px 12px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:7px;font-size:11px;color:#047857;'; var cr=$('cargoRead'); if(cr&&cr.parentNode) cr.parentNode.insertBefore(bar,cr.nextSibling); } bar.innerHTML+='<div>📎 <b>'+((rd.file&&rd.file.filename)?rd.file.filename.replace('[cargo]',''):f.name)+'</b></div>'; }catch(err){ toast('网络错误'); } e.target.value=''; }); }
+  _cargoDocInput.click();
+}
+
 boot();
+
+// ===== 财务·开票板块（工厂只见含税价）=====
+const FIN_API='/api/db/factory-portal';
+let _finData=null, _finInput=null;
+function _money(v){const n=Number(v||0);return n?'¥'+n.toLocaleString(undefined,{maximumFractionDigits:2}):'—';}
+async function loadFinance(){
+  if(!token) return;
+  try{
+    const r=await fetch(FIN_API+'?mt='+encodeURIComponent(token));
+    if(!r.ok) return;
+    _finData=await r.json();
+    if(!_finData||!_finData.factory) return;
+    $('finBoard').style.display='block';
+    renderFinance();
+  }catch(e){}
+}
+function renderFinance(){
+  const gaps=Array.isArray(_finData.gaps)?_finData.gaps:[];
+  const up=Array.isArray(_finData.uploaded)?_finData.uploaded:[];
+  $('finBoardBadge').textContent=gaps.length?('缺 '+gaps.length+' 单'):'已齐';
+  $('finBoardBadge').className='badge '+(gaps.length?'badge-red':'badge-green');
+  let h='';
+  if(!gaps.length){ h='<div style="color:#059669;font-size:12px;">✅ 本厂进项票已齐，无待开。</div>'; }
+  gaps.forEach((g,i)=>{
+    const goods=(g.goods||[]).map(x=>x.name_cn+(x.qty2_ctn?(' '+x.qty2_ctn+'箱'):'')).join('、')||'—';
+    h+='<div style="border:1px solid #eef0f3;border-radius:8px;padding:10px;margin-bottom:8px;">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-size:12px;font-weight:800;color:#111827;">'+(g.contract_no||'—')+'</span>'
+      +'<span style="font-size:11px;color:#b45309;">待开</span></div>'
+      +'<div style="font-size:11.5px;color:#374151;margin:4px 0;">'+goods+'</div>'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;background:#eff6ff;border-radius:6px;padding:7px 10px;margin:6px 0;">'
+      +'<span style="font-size:12px;color:#1d4ed8;font-weight:700;">请开含税金额</span>'
+      +'<span style="font-size:15px;color:#1d4ed8;font-weight:800;">'+_money(g.amount_incl_tax)+'</span></div>'
+      +'<div style="font-size:10.5px;color:#9ca3af;margin-bottom:8px;">'+(g.tax_rate_label||'')+' · 不含税/税额由贵司开票系统自动拆分</div>'
+      +'<div style="display:flex;gap:8px;">'
+      +'<button class="btn btn-sm" style="flex:1;" onclick="finApply('+i+')">📄 开票申请</button>'
+      +'<button class="btn btn-green btn-sm" style="flex:1;" onclick="finUpload('+i+')">📎 上传发票</button></div>'
+      +'<div id="finMsg'+i+'" style="font-size:11px;margin-top:6px;color:#059669;"></div></div>';
+  });
+  if(up.length){
+    h+='<div style="font-size:11px;font-weight:700;color:#374151;margin:8px 0 4px;">已上传（待财务核对）</div>';
+    up.forEach(u=>{ h+='<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:4px 0;border-bottom:1px solid #f3f4f6;">'
+      +'<span>'+(u.invoice_no||'—')+'</span><span style="color:#b45309;">'+(u.review_status||'pending')+'</span></div>'; });
+  }
+  $('finBoardBody').innerHTML=h;
+}
+function finApply(i){
+  const g=_finData.gaps[i]; if(!g) return;
+  const m=$('finMsg'+i); m.style.color='#374151';
+  m.innerHTML='<div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;margin-top:4px;background:#fafafa;">'
+    +'<div style="font-weight:700;text-align:center;">开票申请</div>'
+    +'<div style="margin:4px 0;">购买方：厦门巴匕进出口有限公司</div>'
+    +'<div>销售方：'+(_finData.factory.name||'')+'</div>'
+    +'<div>合同：'+(g.contract_no||'')+'</div>'
+    +'<div style="margin-top:4px;font-weight:700;color:#1d4ed8;">请开含税金额 '+_money(g.amount_incl_tax)+'（'+(g.tax_rate_label||'')+'）</div></div>';
+}
+function finUpload(i){
+  const g=_finData.gaps[i]; if(!g) return;
+  if(!_finInput){ _finInput=document.createElement('input'); _finInput.type='file'; _finInput.accept='application/pdf,image/*'; document.body.appendChild(_finInput); }
+  _finInput.onchange=async e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const inv=prompt('请输入发票号码：'); if(!inv){ e.target.value=''; return; }
+    const amt=prompt('请输入价税合计（含税金额）：', g.amount_incl_tax||'');
+    const msg=$('finMsg'+i); msg.style.color='#374151'; msg.textContent='上传中…';
+    try{
+      const b64=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(file);});
+      const resp=await fetch(FIN_API+'?mt='+encodeURIComponent(token)+'&action=upload',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({invoice_no:inv,amount_incl_tax:amt,contract_nos:g.contract_no,customs_nos:g.customs_no,file_base64:b64,file_name:file.name,mime_type:file.type})});
+      const rd=await resp.json();
+      if(resp.ok&&rd.ok){ msg.style.color='#059669'; msg.textContent='✓ 已上传，待财务核对'; loadFinance(); }
+      else { msg.style.color='#dc2626'; msg.textContent='上传失败：'+(rd.error||resp.status); }
+    }catch(err){ msg.style.color='#dc2626'; msg.textContent='网络错误'; }
+    e.target.value='';
+  };
+  _finInput.click();
+}
+if(token) setTimeout(loadFinance, 600);
+
 </script>
+  <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.1.1 · 2026-06-23</div>
 </body>
 </html>

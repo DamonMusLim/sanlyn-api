@@ -30,7 +30,7 @@ const PORTAL_PUBLIC_PATHS = new Set(["/login"]);
 const PORTAL_INTERNAL_BYPASS_PATHS = new Set(["/orders"]);
 
 // 仅允许 logistics 和 customer 访问 portal；internal 暂不开放
-const ALLOWED_USER_TYPES  = new Set(["logistics", "customer", "admin"]);
+const ALLOWED_USER_TYPES  = new Set(["logistics", "customer", "admin", "factory"]);
 
 /**
  * portalGate

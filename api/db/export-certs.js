@@ -9,7 +9,7 @@
 import { getPool, setCors } from "../db.js";
 import { writeAudit } from "./audit-helper.js";
 
-var CERT_TYPES = ["ciq","vet_health","phyto","fumigation","co","other"];
+var CERT_TYPES = ["ciq","vet_health","phyto","fumigation","co","fe","other"];
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
@@ -59,20 +59,25 @@ export default async function handler(req, res) {
   try {
     // ── GET ──
     if (req.method === "GET") {
-      var { plan_id, company_code } = req.query || {};
+      var { plan_id, company_code, cert_type: filterType, list } = req.query || {};
       var where = [], vals = [];
       if (plan_id)      { vals.push(plan_id);      where.push(`ec.shipping_plan_id = $${vals.length}`); }
       if (company_code) {
-        // W0-2: non-admin cannot query foreign company_code
         if (!isAdmin && !userCodes.includes(company_code)) {
           return res.status(403).json({ error: "cross-company access denied" });
         }
         vals.push(company_code); where.push(`ec.company_code = $${vals.length}`);
       }
-      if (!where.length) return res.status(400).json({ error: "plan_id or company_code required" });
+      if (filterType) { vals.push(filterType); where.push(`ec.cert_type = $${vals.length}`); }
 
-      // W0-2: enforce caller-scope as additional WHERE for non-admin (covers
-      // plan_id queries where the plan belongs to a different company).
+      // FE list view: admin or scoped — allow listing all FE certs without plan_id
+      if (!where.length && !isAdmin) {
+        vals.push(userCodes);
+        where.push(`ec.company_code = ANY($${vals.length}::text[])`);
+      } else if (!where.length && isAdmin) {
+        // admin with no filters → return all (for FE台账 list)
+      }
+
       if (!isAdmin) {
         vals.push(userCodes);
         where.push(`ec.company_code = ANY($${vals.length}::text[])`);
@@ -80,12 +85,25 @@ export default async function handler(req, res) {
 
       var r = await pool.query(`
         SELECT ec.*,
-               sp.bl_no, sp.vessel, sp.voyage, sp.etd, sp.pod,
-               sp.order_contract_nos
+               sp.bl_no  AS plan_bl_no,
+               sp.vessel, sp.voyage,
+               sp.etd    AS plan_etd,
+               sp.pod,
+               sp.order_contract_nos,
+               -- docs_ready: check document_uploads by contract_no
+               bool_or(du.doc_type = 'iv')                                              AS iv_ready,
+               bool_or(du.doc_type = 'bl')                                              AS bl_ready,
+               bool_or(du.doc_type IN ('customs_decl','customs_declaration'))           AS customs_ready,
+               max(CASE WHEN du.doc_type='iv' THEN COALESCE(du.stamped_url, du.url) END) AS iv_url,
+               max(CASE WHEN du.doc_type='bl' THEN COALESCE(du.stamped_url, du.url) END) AS bl_url,
+               max(CASE WHEN du.doc_type IN ('customs_decl','customs_declaration')
+                        THEN COALESCE(du.stamped_url, du.url) END)                       AS customs_url
         FROM export_certs ec
         LEFT JOIN shipping_plans sp ON sp.id = ec.shipping_plan_id
-        WHERE ${where.join(" AND ")}
-        ORDER BY ec.cert_type, ec.created_at DESC
+        LEFT JOIN document_uploads du ON du.contract_no = ec.contract_no
+        ${where.length ? "WHERE " + where.join(" AND ") : ""}
+        GROUP BY ec.id, sp.bl_no, sp.vessel, sp.voyage, sp.etd, sp.pod, sp.order_contract_nos
+        ORDER BY ec.created_at DESC
       `, vals);
 
       // W0-2: admin cross-company access → audit log
@@ -106,10 +124,20 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       var b = req.body || {};
       var { shipping_plan_id, cert_type, cert_no, issue_date, expire_date,
-            issuing_authority, file_url, status, ocr_raw, note, company_code } = b;
+            issuing_authority, file_url, status, ocr_raw, note, company_code,
+            contract_no, po_no, shipper_name, consignee_name,
+            bl_no_fe, vessel_voyage, etd_fe, eta_fe,
+            invoice_no, cert_application_id, applied_date,
+            printed_at, mailed_at, tracking_no,
+            issues, is_external, fee_cny, fee_status,
+            postage_by_client, mailing_address, requested_by } = b;
 
-      if (!shipping_plan_id || !cert_type) {
-        return res.status(400).json({ error: "shipping_plan_id + cert_type required" });
+      if (!cert_type) {
+        return res.status(400).json({ error: "cert_type required" });
+      }
+      // FE certs may not have a shipping_plan_id (external client)
+      if (cert_type !== "fe" && !shipping_plan_id) {
+        return res.status(400).json({ error: "shipping_plan_id required for non-FE certs" });
       }
       if (!CERT_TYPES.includes(cert_type)) {
         return res.status(400).json({ error: "invalid cert_type: " + CERT_TYPES.join("|") });
@@ -151,11 +179,16 @@ export default async function handler(req, res) {
       var r = await pool.query(`
         INSERT INTO export_certs
           (shipping_plan_id, company_code, cert_type, cert_no, issue_date, expire_date,
-           issuing_authority, file_url, status, ocr_raw, note, created_by, updated_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+           issuing_authority, file_url, status, ocr_raw, note, created_by, updated_at,
+           contract_no, po_no, shipper_name, consignee_name,
+           bl_no_fe, vessel_voyage, etd_fe, eta_fe,
+           invoice_no, cert_application_id, applied_date,
+           issues, is_external, fee_cny, fee_status,
+           postage_by_client, mailing_address, requested_by)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),
+                $13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,
+                $24,$25,$26,$27,$28,$29,$30)
         ON CONFLICT (shipping_plan_id, cert_type) DO UPDATE SET
-          -- W0-2 review fix 2: backfill company_code on existing legacy null rows
-          -- so re-upserting an unscoped row inherits its plan's scope.
           company_code      = COALESCE(export_certs.company_code, EXCLUDED.company_code),
           cert_no           = COALESCE(EXCLUDED.cert_no, export_certs.cert_no),
           issue_date        = COALESCE(EXCLUDED.issue_date, export_certs.issue_date),
@@ -166,12 +199,25 @@ export default async function handler(req, res) {
           ocr_raw           = CASE WHEN EXCLUDED.ocr_raw != '{}'::jsonb
                                    THEN EXCLUDED.ocr_raw ELSE export_certs.ocr_raw END,
           note              = COALESCE(EXCLUDED.note, export_certs.note),
+          contract_no       = COALESCE(EXCLUDED.contract_no, export_certs.contract_no),
+          invoice_no        = COALESCE(EXCLUDED.invoice_no, export_certs.invoice_no),
+          status            = COALESCE(EXCLUDED.status, export_certs.status),
+          issues            = COALESCE(EXCLUDED.issues, export_certs.issues),
+          is_external       = COALESCE(EXCLUDED.is_external, export_certs.is_external),
+          fee_cny           = COALESCE(EXCLUDED.fee_cny, export_certs.fee_cny),
+          fee_status        = COALESCE(EXCLUDED.fee_status, export_certs.fee_status),
           updated_at        = NOW()
         RETURNING *
-      `, [shipping_plan_id, company_code, cert_type, cert_no, issue_date, expire_date,
+      `, [shipping_plan_id || null, company_code, cert_type, cert_no, issue_date, expire_date,
           issuing_authority, file_url, status || "pending",
           ocr_raw ? JSON.stringify(ocr_raw) : "{}", note,
-          req.user.username || req.user.email]);
+          req.user.username || req.user.email,
+          contract_no || null, po_no || null, shipper_name || null, consignee_name || null,
+          bl_no_fe || null, vessel_voyage || null, etd_fe || null, eta_fe || null,
+          invoice_no || null, cert_application_id || null, applied_date || null,
+          issues ? JSON.stringify(issues) : "[]",
+          is_external || false, fee_cny || 0, fee_status || (is_external ? "待收款" : "免费"),
+          postage_by_client !== false, mailing_address || null, requested_by || null]);
 
       writeAudit(pool, req, {
         action: "export_cert.upsert", entity_type: "export_cert",
@@ -208,7 +254,13 @@ export default async function handler(req, res) {
       var b2 = req.body || {};
       var sets = [], vals2 = [];
       var allowed = ["cert_no","issue_date","expire_date","issuing_authority",
-                     "file_url","status","ocr_raw","ocr_confirmed","note"];
+                     "file_url","status","ocr_raw","ocr_confirmed","note",
+                     "contract_no","po_no","shipper_name","consignee_name",
+                     "bl_no_fe","vessel_voyage","etd_fe","eta_fe",
+                     "invoice_no","cert_application_id","applied_date",
+                     "printed_at","mailed_at","tracking_no",
+                     "issues","is_external","fee_cny","fee_status",
+                     "postage_by_client","mailing_address","requested_by"];
       for (var k of allowed) {
         if (b2[k] !== undefined) {
           vals2.push(k === "ocr_raw" ? JSON.stringify(b2[k]) : b2[k]);

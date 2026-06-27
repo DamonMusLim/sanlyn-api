@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Product Master V1 · Modular Preview</title>
+<style>
+  :root{
+    --bg:#f4f6fb;--card:#fff;--border:#dbe2ec;
+    --t1:#0f172a;--t2:#475569;--t3:#94a3b8;
+    --admin:#7c3aed;--factory:#16a34a;--customer:#2563eb;--logistics:#ea580c;
+    --accent:#0f172a;
+    --mod-product:#2563eb; --mod-qc:#dc2626; --mod-pack:#0891b2; --mod-design:#7c3aed;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--t1);
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","PingFang SC",sans-serif;
+    font-size:14px;line-height:1.55}
+  .top-banner{background:#fde68a;color:#78350f;padding:7px 16px;font-size:11.5px;text-align:center;font-weight:700;letter-spacing:.02em}
+
+  /* ─── Module nav (top tabs) ─── */
+  .mod-nav{background:var(--card);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:stretch;gap:0}
+  .mod-nav .brand{padding:14px 16px 14px 0;font-weight:800;font-size:14px;color:var(--t1);letter-spacing:-.01em;border-right:1px solid var(--border);margin-right:8px}
+  .mod-tab{padding:14px 18px;font-size:13px;font-weight:600;color:var(--t2);cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .mod-tab:hover{background:#f8fafc;color:var(--t1)}
+  .mod-tab.active{color:var(--t1);border-bottom-color:var(--accent)}
+  .mod-tab .dot{width:6px;height:6px;border-radius:50%;background:var(--t3);flex-shrink:0}
+  .mod-tab[data-m=product] .dot{background:var(--mod-product)}
+  .mod-tab[data-m=qc] .dot{background:var(--mod-qc)}
+  .mod-tab[data-m=pack] .dot{background:var(--mod-pack)}
+  .mod-tab[data-m=design] .dot{background:var(--mod-design)}
+  .mod-tab .badge{margin-left:4px;background:#e2e8f0;color:var(--t2);padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:700}
+  .mod-nav .role-switch{margin-left:auto;display:flex;align-items:center;gap:0;padding:8px 0}
+  .role-switch button{background:transparent;border:1px solid var(--border);padding:6px 11px;font-size:11.5px;font-weight:600;color:var(--t2);cursor:pointer;letter-spacing:.02em}
+  .role-switch button:first-child{border-radius:6px 0 0 6px}
+  .role-switch button:last-child{border-radius:0 6px 6px 0}
+  .role-switch button + button{border-left:none}
+  .role-switch button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  /* ─── Module page ─── */
+  .container{max-width:1320px;margin:0 auto;padding:18px 20px 80px}
+  .mod-head{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+  .mod-head h1{font-size:21px;margin:0 0 3px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  .mod-head h1 .chip{display:inline-block;padding:2px 9px;border-radius:6px;color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;vertical-align:middle}
+  .chip.product{background:var(--mod-product)}
+  .chip.qc{background:var(--mod-qc)}
+  .chip.pack{background:var(--mod-pack)}
+  .chip.design{background:var(--mod-design)}
+  .mod-head .sub{font-size:12px;color:var(--t3);font-family:ui-monospace,monospace}
+  .mod-head .source{font-size:11.5px;color:var(--t3);font-family:ui-monospace,monospace;margin-top:4px}
+  .mod-head .source code{background:#f1f5f9;padding:1px 6px;border-radius:4px;color:var(--t1);font-size:11px}
+
+  .filter-bar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;align-items:center}
+  .filter-bar input[type=search]{flex:1;min-width:200px;padding:7px 11px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff}
+  .filter-bar select{padding:7px 9px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:#fff;color:var(--t1)}
+  .filter-bar .count{font-size:11px;color:var(--t3);margin-left:auto;font-family:ui-monospace,monospace}
+
+  /* ─── Table ─── */
+  .table-wrap{background:var(--card);border:1px solid var(--border);border-radius:11px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{text-align:left;font-weight:600;padding:10px 12px;background:#f8fafc;color:var(--t2);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap}
+  tbody td{padding:11px 12px;border-bottom:1px solid #eef2f6;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr{cursor:pointer;transition:background .12s}
+  tbody tr:hover{background:#f8fafc}
+  td.num{font-family:ui-monospace,monospace;text-align:right;color:var(--t2);font-size:11.5px}
+  td.sku-link{font-family:ui-monospace,monospace;color:var(--mod-product);font-size:12px;font-weight:600}
+  td.sku-link:hover{text-decoration:underline}
+  td.mono{font-family:ui-monospace,monospace;color:var(--t2);font-size:11.5px}
+  td.name{font-weight:600;color:var(--t1)}
+  td.name .cn{display:block;font-weight:400;color:var(--t3);font-size:11px;margin-top:2px}
+  td.right{text-align:right}
+  td.img .ph{width:32px;height:32px;border-radius:5px;background:#e2e8f0;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:9px;font-weight:600}
+
+  /* ─── Pills ─── */
+  .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+  .pill.ok{background:#dcfce7;color:#15803d}
+  .pill.warn{background:#fef3c7;color:#92400e}
+  .pill.err{background:#fee2e2;color:#991b1b}
+  .pill.muted{background:#e2e8f0;color:#475569}
+  .pill.info{background:#dbeafe;color:#1d4ed8}
+  .pill.qc{background:#fee2e2;color:#991b1b}
+  .pill.pack{background:#cffafe;color:#155e75}
+  .pill.design{background:#f3e8ff;color:#6b21a8}
+
+  /* ─── Architecture diagram (top of each module) ─── */
+  .rel-diagram{background:#f8fafc;border:1px dashed var(--border);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:var(--t2);font-family:ui-monospace,monospace;line-height:1.7}
+  .rel-diagram strong{color:var(--t1);font-family:inherit;font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+  .rel-diagram code{background:#fff;padding:1px 5px;border-radius:3px;color:var(--mod-product);font-size:11px}
+  .rel-diagram .arrow{color:var(--t3);margin:0 6px}
+
+  /* ─── Page ─── */
+  .page{display:none}
+  .page.active{display:block}
+
+  /* ─── Drawer ─── */
+  .drawer-mask{position:fixed;inset:0;background:rgba(15,23,42,.4);z-index:90;display:none}
+  .drawer-mask.open{display:block}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:#fff;z-index:91;box-shadow:-12px 0 30px rgba(15,23,42,.15);transform:translateX(100%);transition:transform .22s ease;display:flex;flex-direction:column}
+  .drawer.open{transform:translateX(0)}
+  .drawer-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .drawer-head h2{margin:0 0 3px;font-size:16px;letter-spacing:-.01em}
+  .drawer-head .meta{font-size:11px;color:var(--t3);font-family:ui-monospace,monospace}
+  .drawer-head button{background:transparent;border:none;color:var(--t3);cursor:pointer;font-size:18px;padding:0;line-height:1}
+  .drawer-body{flex:1;overflow:auto;padding:14px 20px 20px}
+  .draw-section{margin-bottom:18px}
+  .draw-section h3{margin:0 0 8px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--t3);font-weight:700;display:flex;align-items:center;gap:8px}
+  .draw-section h3 .chip{padding:1px 6px;border-radius:4px;color:#fff;font-size:9.5px;letter-spacing:.06em}
+  .draw-section .kv{display:grid;grid-template-columns:120px 1fr;gap:5px 12px;font-size:12.5px}
+  .draw-section .kv .k{color:var(--t3);font-size:11.5px}
+  .draw-section .related-table{width:100%;border-collapse:collapse;font-size:11.5px;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+  .draw-section .related-table th,.draw-section .related-table td{padding:6px 9px;text-align:left;border-bottom:1px solid #eef2f6}
+  .draw-section .related-table thead th{background:#f8fafc;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--t2);font-weight:600}
+  .draw-section .related-table tbody tr:last-child td{border-bottom:none}
+  .draw-section .empty{font-size:11.5px;color:var(--t3);padding:10px;background:#f8fafc;border-radius:6px;text-align:center}
+</style>
+</head>
+<body>
+
+<div class="top-banner">PRODUCT MASTER V1 · Modular preview · Each module pulls only what it needs by product_id/sku</div>
+
+<nav class="mod-nav">
+  <div class="brand">Sanlyn OS</div>
+  <div class="mod-tab active" data-m="product"><span class="dot"></span> Products <span class="badge">874</span></div>
+  <div class="mod-tab" data-m="qc"><span class="dot"></span> QC Records <span class="badge">312</span></div>
+  <div class="mod-tab" data-m="pack"><span class="dot"></span> Packaging <span class="badge">158</span></div>
+  <div class="mod-tab" data-m="design"><span class="dot"></span> Design & Files <span class="badge">2,041</span></div>
+  <div class="role-switch" id="roleSwitch">
+    <button data-r="admin" class="active">Admin</button>
+    <button data-r="factory">Factory</button>
+    <button data-r="customer">Customer</button>
+  </div>
+</nav>
+
+<div class="container">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODULE 1: Products (master table)
+       Backend: GET /api/db/products
+       This is the SOURCE of product master data; other modules join in.
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="page active" id="page-product">
+    <div class="mod-head">
+      <div>
+        <h1><span class="chip product">Module 1</span> Products</h1>
+        <div class="sub">Master table · 874 active SKU · the single source of truth</div>
+        <div class="source">data: <code>GET /api/db/products</code> · pulls: <code>products.*</code></div>
+      </div>
+    </div>
+
+    <div class="rel-diagram">
+      <strong>Relation map</strong><br>
+      <code>products</code> <span class="arrow">←</span> qc_checks.product_id
+      <span class="arrow">·</span> packaging_materials.product_skus[]
+      <span class="arrow">·</span> documents.subject_id (when subject_type='product')
+    </div>
+
+    <div class="filter-bar">
+      <input type="search" placeholder="Search SKU / barcode / product name">
+      <select><option>All brands</option><option>PETSOME</option><option>DIBAQ</option><option>JJ Pet</option></select>
+      <select><option>Status: Active</option></select>
+      <span class="count">6 of 874</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th></th><th>SKU</th><th>Product</th><th>Brand</th><th>Factory</th>
+          <th>Spec</th><th class="right">NW kg</th><th class="right">CBM</th>
+          <th>QC</th><th>Pack</th><th>Files</th>
+        </tr></thead>
+        <tbody>
+          <tr onclick="openDrawer('WP-62-M')">
+            <td class="img"><div class="ph">IMG</div></td>
+            <td class="sku-link">WP-62-M</td>
+            <td class="name">Sniffly Dog Tray 200g <span class="cn">嗅嗅狗狗餐盘</span></td>
+            <td>PETSOME</td><td>XIAMEN PET BABY</td><td class="mono">200g × 24</td>
+            <td class="num">0.20</td><td class="num">0.0042</td>
+            <td><span class="pill ok">Passed</span></td>
+            <td><span class="pill ok">OK</span></td>
+            <td><span class="pill muted">4</span></td>
+          </tr>
+          <tr onclick="openDrawer('ZC-16')">
+            <td class="img"><div class="ph">IMG</div></td>
+            <td class="sku-link">ZC-16</td>
+            <td class="name">Chicken Pâté 85g <span class="cn">鸡肉慕斯</span></td>
+            <td>PETSOME</td><td>XIAMEN PET BABY</td><td class="mono">85g × 48</td>
+            <td class="num">0.085</td><td class="num">0.0019</td>
+            <td><span class="pill ok">Passed</span></td>
+            <td><span class="pill warn">Low</span></td>
+            <td><span class="pill muted">3</span></td>
+          </tr>
+          <tr onclick="openDrawer('CP-4')">
+            <td class="img"><div class="ph">IMG</div></td>
+            <td class="sku-link">CP-4</td>
+            <td class="name">Cat Treats Tuna 50g <span class="cn">猫零食金枪鱼</span></td>
+            <td>DIBAQ</td><td>FX-DIBAQ-001</td><td class="mono">50g × 60</td>
+            <td class="num">0.050</td><td class="num">0.0010</td>
+            <td><span class="pill warn">Pending</span></td>
+            <td><span class="pill ok">OK</span></td>
+            <td><span class="pill muted">2</span></td>
+          </tr>
+          <tr onclick="openDrawer('CP-5')">
+            <td class="img"><div class="ph">IMG</div></td>
+            <td class="sku-link">CP-5</td>
+            <td class="name">Hairball Treats 30g <span class="cn">化毛球零食</span></td>
+            <td>DIBAQ</td><td><em style="color:var(--t3)">— unassigned</em></td><td class="mono">30g × 80</td>
+            <td class="num">0.030</td><td class="num">0.0008</td>
+            <td><span class="pill muted">N/A</span></td>
+            <td><span class="pill err">Out</span></td>
+            <td><span class="pill err">0</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODULE 2: QC Records (cross-product)
+       Backend: GET /api/db/qc-checks
+       Pulls only sku + product_name from products via join
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="page" id="page-qc">
+    <div class="mod-head">
+      <div>
+        <h1><span class="chip qc">Module 2</span> QC Records</h1>
+        <div class="sub">Quality batches · 312 records this quarter · 8 failed</div>
+        <div class="source">data: <code>GET /api/db/qc-checks</code> · joins: <code>products.sku, product_name</code></div>
+      </div>
+    </div>
+
+    <div class="rel-diagram">
+      <strong>What this module pulls from Products</strong><br>
+      <code>products.sku</code> <span class="arrow">·</span>
+      <code>products.product_name</code> <span class="arrow">·</span>
+      <code>products.shelf_life_days</code>
+      <span class="arrow">→</span> joined into each QC row · NO pricing, NO factory price, NO alias
+    </div>
+
+    <div class="filter-bar">
+      <input type="search" placeholder="Search SKU or batch ID">
+      <select><option>All statuses</option><option>Failed only</option><option>Pending</option></select>
+      <select><option>Last 30 days</option><option>Last 90 days</option></select>
+      <span class="count">12 of 312</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>QC Batch</th><th>Product (joined)</th><th>SKU</th><th>Production Date</th>
+          <th>QC Date</th><th>Result</th><th>Failed Items</th><th>Photos</th><th>Inspector</th>
+        </tr></thead>
+        <tbody>
+          <tr onclick="openDrawer('WP-62-M')">
+            <td class="mono">QC-2026-0421-A</td>
+            <td class="name">Sniffly Dog Tray 200g</td>
+            <td class="sku-link">WP-62-M</td>
+            <td class="mono">2026-04-15</td><td class="mono">2026-04-21</td>
+            <td><span class="pill ok">Passed</span></td>
+            <td class="mono">—</td><td class="mono">12</td><td>Lin Wei</td>
+          </tr>
+          <tr onclick="openDrawer('ZC-16')">
+            <td class="mono">QC-2026-0418-B</td>
+            <td class="name">Chicken Pâté 85g</td>
+            <td class="sku-link">ZC-16</td>
+            <td class="mono">2026-04-12</td><td class="mono">2026-04-18</td>
+            <td><span class="pill ok">Passed</span></td>
+            <td class="mono">—</td><td class="mono">8</td><td>Lin Wei</td>
+          </tr>
+          <tr onclick="openDrawer('CP-4')">
+            <td class="mono">QC-2026-0510-C</td>
+            <td class="name">Cat Treats Tuna 50g</td>
+            <td class="sku-link">CP-4</td>
+            <td class="mono">2026-05-05</td><td class="mono">2026-05-10</td>
+            <td><span class="pill warn">Pending</span></td>
+            <td class="mono">Awaiting lab</td><td class="mono">5</td><td>Zhao Min</td>
+          </tr>
+          <tr onclick="openDrawer('JJ-PET-22')">
+            <td class="mono">QC-2026-0503-D</td>
+            <td class="name">Premium Kibble 5kg</td>
+            <td class="sku-link">JJ-PET-22</td>
+            <td class="mono">2026-04-28</td><td class="mono">2026-05-03</td>
+            <td><span class="pill err">Failed</span></td>
+            <td class="mono" style="color:#b91c1c">Moisture > 12%</td><td class="mono">15</td><td>Zhao Min</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODULE 3: Packaging Materials
+       Backend: GET /api/db/packaging
+       Pulls product_skus[] (which SKUs use this material)
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="page" id="page-pack">
+    <div class="mod-head">
+      <div>
+        <h1><span class="chip pack">Module 3</span> Packaging Materials</h1>
+        <div class="sub">158 materials · 6 low stock · 2 out</div>
+        <div class="source">data: <code>GET /api/db/packaging</code> · related products: <code>packaging_materials.product_skus[]</code></div>
+      </div>
+    </div>
+
+    <div class="rel-diagram">
+      <strong>What this module pulls from Products</strong><br>
+      Each material row carries <code>product_skus[]</code> JSONB · joined to <code>products.sku, product_name</code> on render
+      <span class="arrow">→</span> click an SKU chip to jump back to Module 1
+    </div>
+
+    <div class="filter-bar">
+      <input type="search" placeholder="Search material name / SKU">
+      <select><option>All suppliers</option><option>XIAMEN PACK CO</option><option>JJ Carton</option></select>
+      <select><option>Stock status</option><option>Low</option><option>Out</option></select>
+      <span class="count">6 of 158</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Material SKU</th><th>Material Name</th><th>Type</th><th>Supplier</th>
+          <th class="right">On Hand</th><th class="right">Safety</th><th>Status</th>
+          <th>Used by (products)</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">PKG-CTN-200G-24</td>
+            <td class="name">Outer carton · 200g × 24 std</td>
+            <td><span class="pill pack">Carton</span></td>
+            <td>XIAMEN PACK CO</td>
+            <td class="num">2,840</td><td class="num">500</td>
+            <td><span class="pill ok">OK</span></td>
+            <td>
+              <span class="sku-link" onclick="openDrawer('WP-62-M')">WP-62-M</span> ·
+              <span class="sku-link" onclick="openDrawer('WP-99')">WP-99</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono">PKG-CAN-85G</td>
+            <td class="name">Tin can · 85g pull-tab</td>
+            <td><span class="pill pack">Container</span></td>
+            <td>JJ Metal</td>
+            <td class="num">420</td><td class="num">1,000</td>
+            <td><span class="pill warn">Low</span></td>
+            <td>
+              <span class="sku-link" onclick="openDrawer('ZC-16')">ZC-16</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono">PKG-LABEL-CP4</td>
+            <td class="name">Sticker label · Cat Treats Tuna</td>
+            <td><span class="pill pack">Label</span></td>
+            <td>XIAMEN PACK CO</td>
+            <td class="num">12,500</td><td class="num">2,000</td>
+            <td><span class="pill ok">OK</span></td>
+            <td>
+              <span class="sku-link" onclick="openDrawer('CP-4')">CP-4</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="mono">PKG-LABEL-CP5</td>
+            <td class="name">Sticker label · Hairball Treats</td>
+            <td><span class="pill pack">Label</span></td>
+            <td>XIAMEN PACK CO</td>
+            <td class="num">0</td><td class="num">2,000</td>
+            <td><span class="pill err">Out</span></td>
+            <td>
+              <span class="sku-link" onclick="openDrawer('CP-5')">CP-5</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       MODULE 4: Design & Files (DAS)
+       Backend: GET /api/db/documents?subject_type=product
+       Pulls products.sku, product_name for display
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="page" id="page-design">
+    <div class="mod-head">
+      <div>
+        <h1><span class="chip design">Module 4</span> Design & Files</h1>
+        <div class="sub">2,041 files · DAS · packaging design / labels / COA / spec sheets</div>
+        <div class="source">data: <code>GET /api/db/documents?subject_type=product</code> · joined: <code>products.sku, product_name</code></div>
+      </div>
+    </div>
+
+    <div class="rel-diagram">
+      <strong>What this module pulls from Products</strong><br>
+      Each file row has <code>subject_type='product'</code> + <code>subject_id=product.id</code>
+      <span class="arrow">·</span> joins to <code>products.sku, product_name</code> for display
+      <span class="arrow">·</span> no pricing, no factory profile
+    </div>
+
+    <div class="filter-bar">
+      <input type="search" placeholder="Search filename / SKU">
+      <select><option>All types</option><option>Packaging</option><option>Label</option><option>COA</option><option>Spec sheet</option></select>
+      <select><option>Customer visible: any</option><option>Yes</option><option>No</option></select>
+      <span class="count">7 of 2,041</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Type</th><th>Filename</th><th>Product (joined)</th><th>SKU</th>
+          <th>Version</th><th>Uploaded by</th><th>Customer-visible</th><th>DAS ID</th>
+        </tr></thead>
+        <tbody>
+          <tr onclick="openDrawer('WP-62-M')">
+            <td><span class="pill design">Packaging</span></td>
+            <td class="mono">WP-62-M_carton_v3.ai</td>
+            <td class="name">Sniffly Dog Tray 200g</td>
+            <td class="sku-link">WP-62-M</td>
+            <td class="mono">v3</td><td>Lin Wei</td>
+            <td><span class="pill muted">No</span></td>
+            <td class="mono">DAS-A4F7…</td>
+          </tr>
+          <tr onclick="openDrawer('WP-62-M')">
+            <td><span class="pill design">Label</span></td>
+            <td class="mono">WP-62-M_label_en.pdf</td>
+            <td class="name">Sniffly Dog Tray 200g</td>
+            <td class="sku-link">WP-62-M</td>
+            <td class="mono">v2</td><td>Lin Wei</td>
+            <td><span class="pill ok">Yes</span></td>
+            <td class="mono">DAS-91C2…</td>
+          </tr>
+          <tr onclick="openDrawer('ZC-16')">
+            <td><span class="pill design">COA</span></td>
+            <td class="mono">ZC-16_COA_2026Q1.pdf</td>
+            <td class="name">Chicken Pâté 85g</td>
+            <td class="sku-link">ZC-16</td>
+            <td class="mono">2026-Q1</td><td>Zhao Min</td>
+            <td><span class="pill ok">Yes</span></td>
+            <td class="mono">DAS-7B11…</td>
+          </tr>
+          <tr onclick="openDrawer('CP-4')">
+            <td><span class="pill design">Spec sheet</span></td>
+            <td class="mono">CP-4_spec_v1.pdf</td>
+            <td class="name">Cat Treats Tuna 50g</td>
+            <td class="sku-link">CP-4</td>
+            <td class="mono">v1</td><td>Lin Wei</td>
+            <td><span class="pill ok">Yes</span></td>
+            <td class="mono">DAS-F0E5…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════
+     Shared Drawer — accepts product SKU and pulls from all 4 modules
+═══════════════════════════════════════════════════════════════════ -->
+<div class="drawer-mask" id="drawerMask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div>
+      <h2 id="drawerTitle">Product</h2>
+      <div class="meta" id="drawerMeta">SKU · brand · factory</div>
+    </div>
+    <button onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body">
+
+    <div class="draw-section">
+      <h3><span class="chip product" style="background:var(--mod-product)">Module 1</span> Product master <span style="margin-left:auto;color:var(--t3);font-weight:400;font-family:ui-monospace,monospace">GET /api/db/products/:sku</span></h3>
+      <div class="kv" id="drawerKv">
+        <div class="k">SKU</div><div id="d-sku" class="mono"></div>
+        <div class="k">Name</div><div id="d-name"></div>
+        <div class="k">Brand</div><div id="d-brand"></div>
+        <div class="k">Factory</div><div id="d-factory"></div>
+        <div class="k">Spec</div><div id="d-spec"></div>
+        <div class="k">NW / GW / CBM</div><div id="d-phys" class="mono"></div>
+      </div>
+    </div>
+
+    <div class="draw-section">
+      <h3><span class="chip qc" style="background:var(--mod-qc)">Module 2</span> QC history <span style="margin-left:auto;color:var(--t3);font-weight:400;font-family:ui-monospace,monospace">GET /api/db/qc-checks?sku=…</span></h3>
+      <table class="related-table" id="d-qc">
+        <thead><tr><th>Batch</th><th>QC date</th><th>Result</th><th>Photos</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="draw-section">
+      <h3><span class="chip pack" style="background:var(--mod-pack)">Module 3</span> Packaging used <span style="margin-left:auto;color:var(--t3);font-weight:400;font-family:ui-monospace,monospace">GET /api/db/packaging?product_sku=…</span></h3>
+      <table class="related-table" id="d-pack">
+        <thead><tr><th>Material</th><th>Type</th><th>On hand</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="draw-section">
+      <h3><span class="chip design" style="background:var(--mod-design)">Module 4</span> Files <span style="margin-left:auto;color:var(--t3);font-weight:400;font-family:ui-monospace,monospace">GET /api/db/documents?subject_id=…</span></h3>
+      <table class="related-table" id="d-files">
+        <thead><tr><th>Type</th><th>Filename</th><th>Version</th><th>Visible</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ─── Module tab switching ───
+  document.querySelectorAll('.mod-tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.mod-tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById('page-' + t.dataset.m).classList.add('active');
+    });
+  });
+
+  // ─── Role switcher (cosmetic for preview) ───
+  document.querySelectorAll('#roleSwitch button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#roleSwitch button').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+    });
+  });
+
+  // ─── Shared drawer with cross-module data pull ───
+  const MOCK = {
+    'WP-62-M': {
+      sku: 'WP-62-M', name: 'Sniffly Dog Tray 200g', cn: '嗅嗅狗狗餐盘',
+      brand: 'PETSOME', factory: 'XIAMEN PET BABY', spec: '200g × 24', phys: 'NW 0.20 · GW 0.25 · CBM 0.0042',
+      qc:    [['QC-2026-0421-A', '2026-04-21', 'Passed', 12]],
+      pack:  [['PKG-CTN-200G-24', 'Carton', 2840, 'OK']],
+      files: [['Packaging', 'WP-62-M_carton_v3.ai', 'v3', 'No'],
+              ['Label', 'WP-62-M_label_en.pdf', 'v2', 'Yes']],
+    },
+    'ZC-16': {
+      sku: 'ZC-16', name: 'Chicken Pâté 85g', cn: '鸡肉慕斯',
+      brand: 'PETSOME', factory: 'XIAMEN PET BABY', spec: '85g × 48', phys: 'NW 0.085 · GW 0.11 · CBM 0.0019',
+      qc:    [['QC-2026-0418-B', '2026-04-18', 'Passed', 8]],
+      pack:  [['PKG-CAN-85G', 'Container', 420, 'Low']],
+      files: [['COA', 'ZC-16_COA_2026Q1.pdf', '2026-Q1', 'Yes']],
+    },
+    'CP-4': {
+      sku: 'CP-4', name: 'Cat Treats Tuna 50g', cn: '猫零食金枪鱼',
+      brand: 'DIBAQ', factory: 'FX-DIBAQ-001', spec: '50g × 60', phys: 'NW 0.05 · GW 0.07 · CBM 0.0010',
+      qc:    [['QC-2026-0510-C', '2026-05-10', 'Pending', 5]],
+      pack:  [['PKG-LABEL-CP4', 'Label', 12500, 'OK']],
+      files: [['Spec sheet', 'CP-4_spec_v1.pdf', 'v1', 'Yes']],
+    },
+    'CP-5': {
+      sku: 'CP-5', name: 'Hairball Treats 30g', cn: '化毛球零食',
+      brand: 'DIBAQ', factory: '— unassigned', spec: '30g × 80', phys: 'NW 0.03 · GW 0.04 · CBM 0.0008',
+      qc: [], pack: [['PKG-LABEL-CP5', 'Label', 0, 'Out']], files: [],
+    },
+    'JJ-PET-22': {
+      sku: 'JJ-PET-22', name: 'Premium Kibble 5kg', cn: '高级粮',
+      brand: 'JJ Pet', factory: 'JJ-FACTORY-A', spec: '5kg × 4', phys: 'NW 5.00 · GW 5.30 · CBM 0.0260',
+      qc:    [['QC-2026-0503-D', '2026-05-03', 'Failed', 15]],
+      pack:  [], files: [],
+    },
+    'WP-99': {
+      sku: 'WP-99', name: 'Catnip Spray 50ml', cn: '猫薄荷喷雾',
+      brand: 'PETSOME', factory: 'XIAMEN PET BABY', spec: '50ml × 36', phys: 'NW 0.05 · GW 0.06 · CBM 0.0012',
+      qc: [], pack: [['PKG-CTN-200G-24', 'Carton', 2840, 'OK']], files: [],
+    },
+  };
+
+  function pill(text) {
+    const m = { 'Passed':'ok','Pending':'warn','Failed':'err','OK':'ok','Low':'warn','Out':'err','Yes':'ok','No':'muted' };
+    return `<span class="pill ${m[text]||'muted'}">${text}</span>`;
+  }
+  function renderTable(rows, tbody, cols) {
+    tbody.innerHTML = rows.length === 0
+      ? `<tr><td colspan="${cols}" style="color:var(--t3);text-align:center;padding:14px;font-size:11.5px">No related records</td></tr>`
+      : rows.map(r => '<tr>' + r.map((c,i) => {
+          if (i === cols-1) return `<td>${pill(c)}</td>`;
+          if (typeof c === 'number') return `<td class="mono right">${c.toLocaleString()}</td>`;
+          return `<td>${c}</td>`;
+        }).join('') + '</tr>').join('');
+  }
+  window.openDrawer = function(sku) {
+    const p = MOCK[sku];
+    if (!p) return;
+    document.getElementById('drawerTitle').textContent = p.name;
+    document.getElementById('drawerMeta').textContent = `${p.sku} · ${p.brand} · ${p.factory}`;
+    document.getElementById('d-sku').textContent = p.sku;
+    document.getElementById('d-name').innerHTML = `${p.name} <span style="color:var(--t3)">${p.cn}</span>`;
+    document.getElementById('d-brand').textContent = p.brand;
+    document.getElementById('d-factory').textContent = p.factory;
+    document.getElementById('d-spec').textContent = p.spec;
+    document.getElementById('d-phys').textContent = p.phys;
+    renderTable(p.qc,    document.querySelector('#d-qc tbody'), 4);
+    renderTable(p.pack,  document.querySelector('#d-pack tbody'), 4);
+    renderTable(p.files, document.querySelector('#d-files tbody'), 4);
+    document.getElementById('drawer').classList.add('open');
+    document.getElementById('drawerMask').classList.add('open');
+  };
+  window.closeDrawer = function() {
+    document.getElementById('drawer').classList.remove('open');
+    document.getElementById('drawerMask').classList.remove('open');
+  };
+</script>
+</body>
+</html>

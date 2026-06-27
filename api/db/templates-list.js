@@ -14,6 +14,7 @@ import os from "os";
 var TEMPLATES_DIR = path.join(os.homedir(), "Desktop", "Sanlyn", "templates");
 // On prod server, fall back to a static copy if installed
 var PROD_MANIFEST_PATH = "/opt/sanlyn-templates/manifest.json";
+var PUBLIC_MANIFEST_PATH = "/opt/sanlyn-api-test/public/templates/manifest.json";
 
 function categorize(name) {
   var n = name.toLowerCase();
@@ -59,12 +60,8 @@ function buildManifest() {
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (!requireAuth(req, res)) return;
 
-  var isAdmin = req.user && req.user.role === "admin";
-  if (!isAdmin) return res.status(403).json({ error: "Admin only" });
-
-  // ── Preview endpoint: /api/db/templates-list/preview?file=<name> ──
+  // ── Preview: no auth needed (internal HTML templates) ──
   var isPreview = (req.url || "").includes("/preview");
   if (isPreview) {
     var fileName = (req.query.file || "").replace(/\//g, "").replace(/\.\./g, "");
@@ -78,12 +75,19 @@ export default async function handler(req, res) {
       return res.status(403).json({ error: "Path traversal blocked" });
     }
     if (!fs.existsSync(resolved)) {
-      return res.status(404).json({ error: "File not found: " + fileName });
+      // Try public/templates fallback
+      var pubPath = path.join("/opt/sanlyn-api-test/public/templates", fileName);
+      if (fs.existsSync(pubPath)) { resolved = pubPath; }
+      else { return res.status(404).json({ error: "File not found: " + fileName }); }
     }
     var content = fs.readFileSync(resolved, "utf8");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.status(200).send(content);
   }
+
+  if (!requireAuth(req, res)) return;
+  var isAdmin = req.user && req.user.role === "admin";
+  if (!isAdmin) return res.status(403).json({ error: "Admin only" });
 
   // ── Manifest endpoint: GET /api/db/templates-list ──
   if (req.method === "GET") {
@@ -99,6 +103,17 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, ...data, source: "static_copy" });
       } catch(e) {
         return res.status(500).json({ success: false, error: "Manifest parse error: " + e.message });
+      }
+    }
+    // Public templates dir fallback (production canonical path)
+    var publicManifestPath = PUBLIC_MANIFEST_PATH;
+    if (fs.existsSync(publicManifestPath)) {
+      try {
+        var pubData = JSON.parse(fs.readFileSync(publicManifestPath, "utf8"));
+        var pubFiles = pubData.templates || pubData.files || [];
+        return res.status(200).json({ success: true, total: pubFiles.length, files: pubFiles, generated: pubData.generated || new Date().toISOString().slice(0, 10), source: "public_manifest" });
+      } catch(e) {
+        return res.status(500).json({ success: false, error: "Public manifest parse error: " + e.message });
       }
     }
     // Nothing available
