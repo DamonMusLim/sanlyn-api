@@ -38,7 +38,7 @@ function App(){
   const c=code(), [data,setData]=React.useState(null), [err,setErr]=React.useState(""), [ok,setOk]=React.useState(""), [busy,setBusy]=React.useState(""), [detail,setDetail]=React.useState(null), [ocr,setOcr]=React.useState({});
   const rows=Array.isArray(data?.rows)?data.rows:[];
   const groups=React.useMemo(()=>rows.reduce((m,r)=>{const k=r.period||String(r.export_date||"").slice(0,7)||"未分月";(m[k]=m[k]||[]).push(r);return m},{}),[rows]);
-  async function load(){setErr("");try{setData(await api(API+"?"+qs({action:"factory_list",c})))}catch(e){setErr(e.message||String(e))}}
+  async function load(){setErr("");try{setData(await api(API+"?"+qs({action:"factory_list",c,from:"2026-01",to:"2026-12"})))}catch(e){setErr(e.message||String(e))}}
   React.useEffect(()=>{load()},[]);
   async function confirmRow(no){setBusy(no);setErr("");setOk("");try{await api(API+"?"+qs({action:"confirm",c}),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customs_no:no})});setOk("已确认");await load()}catch(e){setErr(e.message||String(e))}finally{setBusy("")}}
   async function upload(no,file){if(!file)return;setBusy(no);setErr("");setOk("");try{const fd=new FormData();fd.append("customs_no",no);fd.append("file",file);const res=await api(API+"?"+qs({action:"upload",c}),{method:"POST",body:fd});setOcr(x=>({...x,[no]:res.ocr||res.result||res}));setOk("发票已上传");await load()}catch(e){setErr(e.message||String(e))}finally{setBusy("")}}
