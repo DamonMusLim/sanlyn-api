@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, initial-scale=1" />
+<title>Logistics Marketplace v2 · Sanlyn OS · Customer View</title>
+<style>
+  :root {
+    --bg: #060A14; --surface: #0C1426; --surface2: #111B30; --line: #1F2D44;
+    --t1: #E2E8F0; --t2: #94A3B8; --t3: #64748B;
+    --blue: #38BDF8; --teal: #2DD4BF; --green: #10B981;
+    --amber: #F59E0B; --rose: #FB7185; --violet: #A78BFA; --orange: #FB923C;
+    --best: #FBBF24;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--t1); font-family: Inter,-apple-system,system-ui,sans-serif; font-size: 13px; padding: 24px 32px 80px; }
+  h1 { font-size: 22px; font-weight: 800; margin: 0 0 4px; color: #C084FC; }
+  .sub { color: var(--t3); font-size: 12px; margin-bottom: 22px; }
+
+  /* === Full Trust Banner (keep as-is) === */
+  .trust-banner { display: flex; align-items: center; gap: 14px; padding: 14px 18px; background: linear-gradient(135deg, rgba(139,92,246,.10), rgba(56,189,248,.05)); border: 1px solid rgba(139,92,246,.35); border-radius: 14px; margin-bottom: 14px; }
+  .trust-icon { font-size: 20px; padding: 8px 10px; background: rgba(139,92,246,.18); border-radius: 10px; }
+  .trust-title { font-weight: 700; font-size: 14px; color: #E9D5FF; }
+  .trust-pill { display: inline-block; padding: 2px 8px; background: rgba(139,92,246,.25); color: #DDD6FE; font-size: 10px; font-weight: 700; border-radius: 5px; margin-left: 6px; }
+  .trust-chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .trust-chip { padding: 3px 9px; background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: 6px; font-size: 10.5px; color: var(--t2); }
+  .trust-cta { margin-left: auto; padding: 8px 16px; background: rgba(139,92,246,.2); border: 1px solid rgba(139,92,246,.5); color: #C084FC; border-radius: 8px; font-weight: 700; font-size: 11.5px; cursor: pointer; }
+  .trust-aside { display: flex; gap: 6px; align-items: center; padding: 6px 12px; background: rgba(45,212,191,.08); border: 1px solid rgba(45,212,191,.25); border-radius: 10px; font-size: 11px; color: var(--teal); margin-left: 8px; }
+  .pill-express { padding: 2px 7px; background: var(--amber); color: #1A1300; font-size: 9.5px; font-weight: 800; border-radius: 4px; }
+
+  /* === Marketplace shell === */
+  .market { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .market-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .market-title { font-size: 15px; font-weight: 800; color: var(--t1); }
+  .market-sub { font-size: 11px; color: var(--t3); margin-top: 2px; }
+  .market-actions { margin-left: auto; display: flex; gap: 8px; }
+  .market-btn { padding: 6px 12px; border-radius: 7px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--t2); }
+  .market-btn.primary { background: rgba(56,189,248,.12); border-color: rgba(56,189,248,.4); color: var(--blue); }
+
+  /* === Region tabs === */
+  .regions { display: flex; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line); margin-bottom: 14px; flex-wrap: wrap; }
+  .region { padding: 6px 12px; border-radius: 7px; font-size: 11.5px; font-weight: 700; cursor: pointer; background: rgba(255,255,255,.03); border: 1px solid var(--line); color: var(--t2); display: inline-flex; align-items: center; gap: 5px; }
+  .region.on { background: rgba(56,189,248,.15); color: var(--blue); border-color: rgba(56,189,248,.4); }
+  .region .cnt { font-size: 9.5px; padding: 1px 5px; background: rgba(255,255,255,.08); border-radius: 4px; color: var(--t1); }
+  .filter-info { margin-left: auto; font-size: 10.5px; color: var(--t3); }
+
+  /* === Route card grid === */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .route { background: var(--surface2); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .route-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .lane { font-size: 14px; font-weight: 800; color: var(--t1); display: flex; align-items: center; gap: 6px; }
+  .lane .arrow { color: var(--t3); }
+  .badge { padding: 2px 7px; border-radius: 5px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+  .b-hot   { background: rgba(251,113,133,.15); color: var(--rose); border: 1px solid rgba(251,113,133,.35); }
+  .b-urgent{ background: rgba(245,158,11,.15); color: var(--amber); border: 1px solid rgba(245,158,11,.35); }
+  .b-normal{ background: rgba(100,116,139,.15); color: var(--t2); border: 1px solid rgba(100,116,139,.3); }
+  .b-exw   { background: rgba(167,139,250,.15); color: var(--violet); border: 1px solid rgba(167,139,250,.35); }
+  .detail-btn { margin-left: auto; padding: 4px 10px; background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.3); color: var(--blue); border-radius: 6px; font-size: 10.5px; font-weight: 700; cursor: pointer; }
+
+  /* Recent shipment summary */
+  .rec { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(255,255,255,.02); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; font-size: 11.5px; }
+  .rec b { color: var(--t1); }
+  .rec .cargo { padding: 1px 6px; background: rgba(167,139,250,.12); color: var(--violet); border-radius: 4px; font-size: 10px; font-weight: 700; }
+  .rec .clock { margin-left: auto; padding: 2px 7px; background: rgba(251,191,36,.12); color: var(--best); border-radius: 4px; font-size: 10px; font-weight: 700; font-family: 'SF Mono',monospace; }
+
+  /* Carrier price block */
+  .carrier { background: rgba(255,255,255,.015); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .carrier.best { border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.04); }
+  .carrier-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .carrier-name { font-weight: 800; font-size: 12.5px; color: var(--t1); font-family: 'SF Mono',monospace; letter-spacing: .02em; }
+  .voyage { color: var(--t3); font-size: 11px; font-family: 'SF Mono',monospace; }
+  .best-flag { margin-left: auto; padding: 2px 7px; background: var(--best); color: #1A1300; font-size: 9.5px; font-weight: 800; border-radius: 4px; }
+  .booked-flag { padding: 2px 7px; background: rgba(16,185,129,.18); color: var(--green); font-size: 9.5px; font-weight: 800; border-radius: 4px; border: 1px solid rgba(16,185,129,.35); }
+  .port-fee { margin-left: auto; padding: 2px 7px; background: rgba(167,139,250,.12); border-radius: 4px; font-size: 9.5px; color: var(--violet); font-family: 'SF Mono',monospace; border: 1px solid rgba(167,139,250,.25); }
+  .port-fee::before { content: 'EXW · '; opacity: .7; }
+
+  /* Price grid */
+  .pgrid { display: grid; grid-template-columns: 38px repeat(3, 1fr); gap: 4px; font-size: 11px; font-family: 'SF Mono',monospace; }
+  .pgrid .head { color: var(--t3); font-size: 10px; padding: 3px 6px; text-align: right; font-weight: 700; }
+  .pgrid .head.cur { color: var(--blue); }
+  .pgrid .ctype { color: var(--t2); padding: 4px 6px; font-weight: 700; }
+  .pgrid .cell { padding: 4px 6px; border-radius: 4px; text-align: right; color: var(--t1); background: rgba(255,255,255,.02); }
+  .pgrid .cell.empty { color: var(--t3); background: rgba(255,255,255,.01); }
+  .pgrid .cell.win { background: rgba(251,191,36,.12); color: var(--best); font-weight: 800; }
+
+  /* Auto-matched order strip (replaces old "Your target") */
+  .matched { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: rgba(56,189,248,.06); border: 1px solid rgba(56,189,248,.3); border-radius: 7px; margin: 8px 0 10px; font-size: 11.5px; }
+  .matched-icon { color: var(--blue); font-size: 16px; }
+  .matched-text { color: #BAE6FD; flex: 1; }
+  .matched-text b { color: var(--blue); font-family: 'SF Mono',monospace; }
+  .matched-swap { padding: 3px 8px; background: rgba(56,189,248,.15); border: 1px solid rgba(56,189,248,.3); color: var(--blue); border-radius: 5px; font-size: 10px; font-weight: 700; cursor: pointer; }
+  .matched.none { background: rgba(167,139,250,.06); border-color: rgba(167,139,250,.3); }
+  .matched.none .matched-icon { color: var(--violet); }
+  .matched.none .matched-text { color: #DDD6FE; }
+  .matched.none .matched-text b { color: var(--violet); }
+
+  /* Customer CTAs */
+  .ctas { display: flex; gap: 6px; margin-top: 4px; }
+  .cta { flex: 1; padding: 9px 10px; border-radius: 7px; font-size: 11.5px; font-weight: 800; cursor: pointer; border: none; text-align: center; }
+  .cta-book { background: linear-gradient(135deg, var(--blue), var(--teal)); color: #03101A; }
+  .cta-target { background: rgba(167,139,250,.15); border: 1px solid rgba(167,139,250,.4); color: var(--violet); }
+  .cta-send { background: linear-gradient(135deg, var(--violet), #F472B6); color: #1A0A2E; }
+
+  /* === RIGHT SIDEBAR === */
+  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 14px; align-items: start; }
+  .side-stack { display: flex; flex-direction: column; gap: 12px; }
+  .ship-box { background: var(--surface); border: 1px solid rgba(16,185,129,.25); border-radius: 12px; padding: 14px; }
+  .ship-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .ship-title { font-weight: 800; font-size: 13px; color: var(--t1); }
+  .ship-cnt { margin-left: auto; padding: 2px 8px; background: rgba(16,185,129,.15); color: var(--green); border-radius: 5px; font-size: 10px; font-weight: 800; }
+  .ship-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; background: rgba(255,255,255,.025); border-radius: 8px; margin-bottom: 6px; font-size: 11.5px; cursor: pointer; }
+  .ship-row .po { font-weight: 800; color: var(--t1); font-family: 'SF Mono',monospace; }
+  .ship-row .cargo-sm { font-size: 10px; color: var(--t3); flex: 1; }
+  .ship-row .cu { padding: 2px 7px; background: rgba(56,189,248,.12); color: var(--blue); border-radius: 4px; font-size: 9.5px; font-weight: 800; }
+  .ship-foot { text-align: center; margin-top: 8px; font-size: 10.5px; color: var(--t3); }
+
+  /* Shipment Map (NEW) */
+  .map-box { background: var(--surface); border: 1px solid rgba(56,189,248,.25); border-radius: 12px; padding: 14px; }
+  .map-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .map-title { font-weight: 800; font-size: 13px; color: var(--t1); }
+  .map-cnt { margin-left: auto; padding: 2px 8px; background: rgba(56,189,248,.15); color: var(--blue); border-radius: 5px; font-size: 10px; font-weight: 800; }
+  .map-svg { width: 100%; height: 180px; background: linear-gradient(180deg, #0B1A2E 0%, #06101F 100%); border-radius: 8px; border: 1px solid var(--line); }
+  .map-legend { display: flex; gap: 10px; margin-top: 8px; font-size: 10px; color: var(--t3); justify-content: space-between; }
+  .map-legend .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; vertical-align: middle; margin-right: 4px; }
+
+  /* === Notes block === */
+  .notes { margin-top: 22px; padding: 14px 18px; background: rgba(167,139,250,.04); border: 1px dashed rgba(167,139,250,.3); border-radius: 10px; font-size: 11.5px; color: var(--t2); line-height: 1.7; }
+  .notes h3 { margin: 0 0 6px; font-size: 12px; color: var(--violet); }
+  .notes code { background: rgba(255,255,255,.05); padding: 1px 5px; border-radius: 3px; font-size: 10.5px; color: #FBBF24; }
+  .notes ul { margin: 6px 0 0; padding-left: 18px; }
+  .notes li { margin-bottom: 4px; }
+
+  .changelog { margin-top: 18px; font-size: 11px; color: var(--t3); }
+
+  /* === Order Picker Modal (mock — visible as embed for review) === */
+  .picker { margin-top: 22px; padding: 16px 18px; background: var(--surface); border: 1px solid rgba(56,189,248,.4); border-radius: 12px; max-width: 560px; }
+  .picker h3 { margin: 0 0 12px; font-size: 14px; color: var(--blue); }
+  .picker-sub { color: var(--t3); font-size: 11px; margin-bottom: 10px; }
+  .picker-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: rgba(255,255,255,.025); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 6px; cursor: pointer; font-size: 11.5px; }
+  .picker-row.match { border-color: rgba(56,189,248,.45); background: rgba(56,189,248,.06); }
+  .picker-row .po2 { font-weight: 800; color: var(--t1); font-family: 'SF Mono',monospace; }
+  .picker-row .meta { color: var(--t3); font-size: 10px; }
+  .picker-row .chip-match { padding: 2px 7px; background: rgba(56,189,248,.18); color: var(--blue); border-radius: 4px; font-size: 9.5px; font-weight: 800; }
+  .picker-row .chip-no { padding: 2px 7px; background: rgba(100,116,139,.15); color: var(--t3); border-radius: 4px; font-size: 9.5px; }
+  .picker-empty { padding: 16px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; color: var(--t3); font-size: 11.5px; margin-top: 8px; }
+  .picker-empty .cta-send { display: inline-block; margin-top: 10px; padding: 8px 14px; }
+</style>
+</head>
+<body>
+
+<h1>🌊 Logistics Marketplace · v2 mockup</h1>
+<div class="sub">Customer view · v2 incorporates: trade-term-conditional 港杂 · auto-matched order · Send to Factory CTA · shipment map sidebar · pruned info · file <code style="color: var(--blue); font-family: 'SF Mono',monospace;">~/Desktop/Sanlyn/templates/logistics-marketplace-v2.html</code></div>
+
+<!-- ═══ FULL TRUST BANNER (keep as-is, no API) ═══ -->
+<div class="trust-banner">
+  <div class="trust-icon">⭐</div>
+  <div>
+    <div class="trust-title">All-in · Sanlyn Full Management <span class="trust-pill">FULL TRUST</span></div>
+    <div class="trust-chips">
+      <span class="trust-chip">📦 Booking</span>
+      <span class="trust-chip">🚛 Trucking</span>
+      <span class="trust-chip">📋 Customs</span>
+      <span class="trust-chip">🏭 Port & Docs</span>
+      <span class="trust-chip">🦠 Fumigation</span>
+      <span class="trust-chip">🛡 Insurance</span>
+    </div>
+  </div>
+  <button class="trust-cta">We Handle It All →</button>
+  <div class="trust-aside">✈ Air & DDP · from $4.50/kg <span class="pill-express">EXPRESS</span></div>
+</div>
+
+<!-- ═══ MAIN LAYOUT ═══ -->
+<div class="layout">
+
+  <!-- ═══ OCEAN MARKETPLACE ═══ -->
+  <div class="market">
+    <div class="market-head">
+      <div>
+        <div class="market-title">🌊 Ocean Marketplace</div>
+        <div class="market-sub">Compare carriers per lane · 港杂 shown only when your order is EXW · cheapest per voyage wins</div>
+      </div>
+      <div class="market-actions">
+        <button class="market-btn">📊 Sort: ⏱ Cutoff</button>
+        <button class="market-btn primary">+ Add Custom Route</button>
+      </div>
+    </div>
+
+    <!-- Region tabs -->
+    <div class="regions">
+      <div class="region on">🌐 全部 <span class="cnt">3</span></div>
+      <div class="region">🌏 东南亚 <span class="cnt">1</span></div>
+      <div class="region">🌍 中东 <span class="cnt">0</span></div>
+      <div class="region">🇺🇸 北美 <span class="cnt">1</span></div>
+      <div class="region">🇪🇺 欧洲 <span class="cnt">1</span></div>
+      <div class="region">🇯🇵 日韩 <span class="cnt">0</span></div>
+      <div class="region">🧭 其他 <span class="cnt">0</span></div>
+      <div class="filter-info">🔥 紧急 + 临期单优先显示</div>
+    </div>
+
+    <!-- Route cards grid -->
+    <div class="grid">
+
+      <!-- ─── ROUTE 1: Qingdao → Port Klang (EXW order matched) ─── -->
+      <div class="route">
+        <div class="route-head">
+          <div class="lane">🇨🇳 Qingdao <span class="arrow">→</span> 🇲🇾 Port Klang</div>
+          <span class="badge b-hot">🔥 Hot</span>
+          <button class="detail-btn">📋 More sailings →</button>
+        </div>
+
+        <div class="rec">
+          📦 Next sailing <b>5/28</b> · 5×40HQ
+          <span class="cargo">食品</span>
+          <span class="clock">⏱ 4h 36m</span>
+        </div>
+
+        <!-- Carrier 1: COSCO V2324 — booked + best -->
+        <div class="carrier best">
+          <div class="carrier-head">
+            <span class="carrier-name">COSCO</span><span class="voyage">V2324</span>
+            <span class="best-flag">★ BEST</span>
+            <span class="booked-flag">✓ BOOKED</span>
+            <span class="port-fee">¥4,000</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">5/28 ↓</div>
+            <div class="head">6/9 ↓</div>
+            <div class="head">6/22</div>
+            <div class="ctype">20GP</div>
+            <div class="cell win">$400</div>
+            <div class="cell">$420</div>
+            <div class="cell empty">未报</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell win">$500</div>
+            <div class="cell">$520</div>
+            <div class="cell empty">未报</div>
+          </div>
+        </div>
+
+        <!-- Carrier 2: MSC V324 (alternative, EXW port surcharge) -->
+        <div class="carrier">
+          <div class="carrier-head">
+            <span class="carrier-name">MSC</span><span class="voyage">V324</span>
+            <span class="port-fee" style="margin-left:auto;">¥4,000</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">5/28 ↓</div>
+            <div class="head">6/9 ↓</div>
+            <div class="head">6/22</div>
+            <div class="ctype">20GP</div>
+            <div class="cell">$420</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell">$540</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+          </div>
+        </div>
+
+        <!-- Auto-matched order: WP-62 EXW 4×40HQ -->
+        <div class="matched">
+          <span class="matched-icon">📦</span>
+          <span class="matched-text">Auto-matched · <b>WP-62</b> · 4×40HQ · <b>EXW</b> (港杂自付)</span>
+          <button class="matched-swap">↕ Swap</button>
+        </div>
+
+        <div class="ctas">
+          <button class="cta cta-book">📅 Book COSCO V2324 for WP-62</button>
+          <button class="cta cta-target">🎯 Adjust target</button>
+        </div>
+      </div>
+
+      <!-- ─── ROUTE 2: Shanghai → LA (FOB order, port surcharge HIDDEN) ─── -->
+      <div class="route">
+        <div class="route-head">
+          <div class="lane">🇨🇳 Shanghai <span class="arrow">→</span> 🇺🇸 Los Angeles</div>
+          <span class="badge b-urgent">⚠ 临期</span>
+          <button class="detail-btn">📋 More sailings →</button>
+        </div>
+
+        <div class="rec">
+          📦 Next sailing <b>6/14</b> · 3×40HQ
+          <span class="cargo">一般货</span>
+          <span class="clock">⏱ 1d 8h</span>
+        </div>
+
+        <!-- Carrier 1: EMC (BEST) - NO 港杂 line (FOB) -->
+        <div class="carrier best">
+          <div class="carrier-head">
+            <span class="carrier-name">EMC</span><span class="voyage">EVER GIVEN</span>
+            <span class="best-flag">★ BEST</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">6/7</div>
+            <div class="head">6/14 ↓</div>
+            <div class="head">6/21</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell empty">未报</div>
+            <div class="cell win">$2,080</div>
+            <div class="cell empty">未报</div>
+            <div class="ctype">40HC</div>
+            <div class="cell empty">未报</div>
+            <div class="cell win">$2,100</div>
+            <div class="cell empty">未报</div>
+          </div>
+        </div>
+
+        <!-- Carrier 2: ONE - no quote yet -->
+        <div class="carrier">
+          <div class="carrier-head">
+            <span class="carrier-name">ONE</span><span class="voyage">ALMERIA</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">6/7</div>
+            <div class="head">6/14 ↓</div>
+            <div class="head">6/21</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="ctype">40HC</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+          </div>
+        </div>
+
+        <!-- Auto-matched order: LL-ORDER-20 FOB - no 港杂 in label -->
+        <div class="matched">
+          <span class="matched-icon">📦</span>
+          <span class="matched-text">Auto-matched · <b>LL-ORDER-20</b> · 1×40HQ · <b>FOB</b> (港杂含在运费内)</span>
+          <button class="matched-swap">↕ Swap</button>
+        </div>
+
+        <div class="ctas">
+          <button class="cta cta-book">📅 Book EMC for LL-ORDER-20</button>
+          <button class="cta cta-target">🎯 Adjust target</button>
+        </div>
+      </div>
+
+      <!-- ─── ROUTE 3: Ningbo → Hamburg (NO matching order - shows Send to Factory) ─── -->
+      <div class="route">
+        <div class="route-head">
+          <div class="lane">🇨🇳 Ningbo <span class="arrow">→</span> 🇩🇪 Hamburg</div>
+          <span class="badge b-normal">一般货</span>
+          <button class="detail-btn">📋 More sailings →</button>
+        </div>
+
+        <div class="rec">
+          📦 Next sailing <b>6/17</b> · 4×40HQ
+          <span class="cargo">一般货</span>
+          <span class="clock" style="background:rgba(56,189,248,.12); color:var(--blue);">⏱ 5d 2h</span>
+        </div>
+
+        <div class="carrier best">
+          <div class="carrier-head">
+            <span class="carrier-name">HAPAG</span><span class="voyage">RIO BLANCO</span>
+            <span class="best-flag">★ BEST</span>
+          </div>
+          <div class="pgrid">
+            <div class="head"></div>
+            <div class="head">6/3</div>
+            <div class="head">6/10</div>
+            <div class="head">6/17 ↓</div>
+            <div class="ctype">40HQ</div>
+            <div class="cell empty">未报</div>
+            <div class="cell empty">未报</div>
+            <div class="cell win">$1,650</div>
+          </div>
+        </div>
+
+        <!-- NO matching order — Send-to-Factory state -->
+        <div class="matched none">
+          <span class="matched-icon">🏭</span>
+          <span class="matched-text">No matching order for this route · <b>Send to Factory</b> to coordinate production around 6/17 sailing</span>
+        </div>
+
+        <div class="ctas">
+          <button class="cta cta-send">📤 Send to Factory · 协同排产</button>
+          <button class="cta cta-target">🎯 Set target & invite quotes</button>
+        </div>
+      </div>
+
+      <!-- Placeholder for "+ New Lane" -->
+      <div class="route" style="border-style: dashed; opacity: .55; display:flex; align-items:center; justify-content:center; min-height:240px; cursor:pointer;">
+        <div style="text-align:center;">
+          <div style="font-size: 32px;">➕</div>
+          <div style="font-weight:800; color:var(--violet); margin-top:6px;">Add Custom Route</div>
+          <div style="font-size:11px; color:var(--t3); margin-top:3px;">无现成航线？发起询价 / 抢单池</div>
+        </div>
+      </div>
+
+    </div><!-- /grid -->
+  </div><!-- /market -->
+
+  <!-- ═══ RIGHT SIDEBAR ═══ -->
+  <div class="side-stack">
+
+    <!-- Shippable Orders (KEPT, compact) -->
+    <div class="ship-box">
+      <div class="ship-head">
+        <span style="font-size:16px;">📦</span>
+        <span class="ship-title">Shippable Orders</span>
+        <span class="ship-cnt">3 READY</span>
+      </div>
+      <div class="ship-row">
+        <span class="po">WP-62</span>
+        <span class="cargo-sm">EXW · 食品</span>
+        <span class="cu">4×40HQ</span>
+      </div>
+      <div class="ship-row">
+        <span class="po">LL-21</span>
+        <span class="cargo-sm">FOB · 豆腐猫砂 1600 CTN</span>
+        <span class="cu">1×40HQ</span>
+      </div>
+      <div class="ship-row">
+        <span class="po">LL-ORDER-20</span>
+        <span class="cargo-sm">FOB · 豆腐猫砂 1600 CTN</span>
+        <span class="cu">1×40HQ</span>
+      </div>
+      <div class="ship-foot">3 of 3 ready · 36 producing · View all orders →</div>
+    </div>
+
+    <!-- NEW: Shipment Map (replaces empty area in your screenshot) -->
+    <div class="map-box">
+      <div class="map-head">
+        <span style="font-size:16px;">🗺</span>
+        <span class="map-title">Live Shipment Map</span>
+        <span class="map-cnt">14 IN TRANSIT</span>
+      </div>
+      <svg class="map-svg" viewBox="0 0 320 180" xmlns="http://www.w3.org/2000/svg">
+        <!-- Simplified world outline -->
+        <path d="M40,80 L70,70 L95,72 L120,80 L140,75 L160,82 L180,78 L200,72 L225,75 L260,80 L290,85" stroke="#1F3A5A" stroke-width="0.6" fill="none" />
+        <!-- China landmass approx -->
+        <path d="M195,70 Q205,68 215,72 Q220,78 218,82 Q210,86 200,84 Q193,80 195,70 Z" fill="#142940" stroke="#1F3A5A" stroke-width="0.5" />
+        <!-- Europe landmass approx -->
+        <path d="M120,60 Q135,58 145,65 Q142,70 130,72 Q122,68 120,60 Z" fill="#142940" stroke="#1F3A5A" stroke-width="0.5" />
+        <!-- USA landmass approx -->
+        <path d="M30,60 Q55,55 70,62 Q75,72 60,75 Q40,72 30,60 Z" fill="#142940" stroke="#1F3A5A" stroke-width="0.5" />
+        <!-- Routes: Qingdao→Port Klang (SE Asia) -->
+        <path d="M210,75 Q215,100 200,120" stroke="#FBBF24" stroke-width="1" stroke-dasharray="2,2" fill="none" opacity="0.7" />
+        <!-- Routes: Shanghai→LA (Pacific) -->
+        <path d="M212,80 Q140,55 60,68" stroke="#38BDF8" stroke-width="1" stroke-dasharray="2,2" fill="none" opacity="0.7" />
+        <!-- Routes: Ningbo→Hamburg (via Suez) -->
+        <path d="M210,82 Q170,110 130,95 Q120,80 130,68" stroke="#A78BFA" stroke-width="1" stroke-dasharray="2,2" fill="none" opacity="0.7" />
+        <!-- Vessels (with little ship glyphs / dots) -->
+        <circle cx="207" cy="98"  r="3" fill="#FBBF24" opacity="0.9"><title>COSCO V2324 · Qingdao→Port Klang · 4h to ETA</title></circle>
+        <circle cx="118" cy="64"  r="3" fill="#38BDF8" opacity="0.9"><title>EMC EVER GIVEN · Shanghai→LA · in transit</title></circle>
+        <circle cx="155" cy="105" r="3" fill="#A78BFA" opacity="0.9"><title>HAPAG RIO BLANCO · Ningbo→Hamburg · Suez canal</title></circle>
+        <circle cx="225" cy="85"  r="3" fill="#10B981" opacity="0.9"><title>MEDUWZ495807 · Departed Xiamen 6h ago</title></circle>
+        <circle cx="92"  cy="68"  r="3" fill="#38BDF8" opacity="0.9"><title>Pacific crossing</title></circle>
+        <!-- Origin/destination dots -->
+        <circle cx="212" cy="80" r="2" fill="#94A3B8" /><text x="216" y="78" font-size="6" fill="#94A3B8" font-family="SF Mono">CN</text>
+        <circle cx="200" cy="122" r="2" fill="#94A3B8" /><text x="180" y="135" font-size="6" fill="#94A3B8" font-family="SF Mono">MY</text>
+        <circle cx="60" cy="68" r="2" fill="#94A3B8" /><text x="38" y="64" font-size="6" fill="#94A3B8" font-family="SF Mono">USA</text>
+        <circle cx="130" cy="65" r="2" fill="#94A3B8" /><text x="132" y="60" font-size="6" fill="#94A3B8" font-family="SF Mono">EU</text>
+      </svg>
+      <div class="map-legend">
+        <span><span class="dot" style="background:#FBBF24"></span>SE Asia 5</span>
+        <span><span class="dot" style="background:#38BDF8"></span>N. America 4</span>
+        <span><span class="dot" style="background:#A78BFA"></span>Europe 3</span>
+        <span><span class="dot" style="background:#10B981"></span>Just shipped 2</span>
+      </div>
+    </div>
+
+  </div><!-- /side-stack -->
+
+</div><!-- /layout -->
+
+<!-- ═══ Step 2A · ORDER PICKER — has matching orders (multi-select) ═══ -->
+<div class="picker">
+  <h3>📋 Step 2A · Pick orders for Qingdao→Port Klang (has matches)</h3>
+  <div class="picker-sub">Filter = this route's POL + POD only · multi-select checkboxes · one Book button at the bottom commits all selected · orders that don't match this route are hidden (they belong to their own route cards on the Marketplace)</div>
+
+  <!-- Matched orders — multi-select with checkboxes -->
+  <label class="picker-row match" style="cursor:pointer;">
+    <input type="checkbox" checked style="width:16px; height:16px; accent-color: var(--blue);" />
+    <span class="po2">WP-62</span>
+    <span class="meta" style="flex:1;">EXW · 4×40HQ · 食品 · Ready 5/26</span>
+    <span class="chip-match">✓ MATCH</span>
+  </label>
+  <label class="picker-row match" style="cursor:pointer;">
+    <input type="checkbox" checked style="width:16px; height:16px; accent-color: var(--blue);" />
+    <span class="po2">LL-21</span>
+    <span class="meta" style="flex:1;">FOB · 1×40HQ · 豆腐猫砂 · Ready 5/27</span>
+    <span class="chip-match">✓ MATCH</span>
+  </label>
+  <label class="picker-row" style="cursor:pointer; opacity:0.7;">
+    <input type="checkbox" style="width:16px; height:16px; accent-color: var(--t3);" />
+    <span class="po2">LL-ORDER-20</span>
+    <span class="meta" style="flex:1;">FOB · 1×40HQ · 豆腐猫砂 · Ready 6/2 ⚠ later than 5/28 cutoff</span>
+    <span class="chip-no">⚠ late</span>
+  </label>
+
+  <!-- Collapsed: orders for OTHER routes (not relevant here) -->
+  <div style="margin-top:10px; padding:8px 12px; background:rgba(255,255,255,.015); border:1px dashed var(--line); border-radius:7px; font-size:10.5px; color:var(--t3); text-align:center;">
+    🔽 2 other orders hidden (different routes — see Marketplace cards for those)
+  </div>
+
+  <!-- Single Book CTA + summary -->
+  <div style="margin-top:14px; padding:12px 14px; background:rgba(56,189,248,.06); border:1px solid rgba(56,189,248,.3); border-radius:8px; display:flex; align-items:center; gap:10px;">
+    <div style="flex:1;">
+      <div style="font-size:11px; color:var(--t3);">SELECTED</div>
+      <div style="font-weight:800; font-size:13px; color:var(--blue);">2 orders · 5×40HQ · COSCO V2324 · ETD 5/28</div>
+      <div style="font-size:10.5px; color:var(--violet); margin-top:2px;">EXW · 港杂 ¥4,000/柜 (1 of 2 orders is EXW)</div>
+    </div>
+    <button class="cta cta-book" style="padding:10px 18px; flex:0 0 auto; font-size:12.5px;">📅 Book Selected (2)</button>
+  </div>
+</div>
+
+<!-- ═══ Step 2B · NO matching orders → Send to Factory form ═══ -->
+<div class="picker" style="margin-top:18px; border-color:rgba(167,139,250,.4);">
+  <h3 style="color:var(--violet);">📤 Step 2B · Send to Factory (zero matching orders)</h3>
+  <div class="picker-sub">Shown only when this route has <b>no order at all</b> in Sanlyn (e.g. customer wants to try a new lane Ningbo→Hamburg). Customer just supplies a factory contact; Sanlyn forwards an empty <code>shipping_arrangement</code> collab sheet for the factory to fill.</div>
+
+  <!-- Route summary (already chosen) -->
+  <div style="padding:10px 12px; background:rgba(56,189,248,.04); border:1px solid rgba(56,189,248,.2); border-radius:7px; margin-bottom:14px; font-size:11.5px;">
+    <span style="color:var(--t3);">Route:</span> <b style="color:var(--t1);">🇨🇳 Ningbo → 🇩🇪 Hamburg</b> · HAPAG RIO BLANCO · ETD 6/17 · USD 1,650/40HQ
+  </div>
+
+  <!-- Factory contact form -->
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
+    <div>
+      <div style="font-size:10px; color:var(--t3); margin-bottom:4px; font-weight:700;">FACTORY EMAIL *</div>
+      <input type="email" placeholder="factory@example.com" style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:6px; padding:8px 10px; color:var(--t1); font-size:12px;" />
+    </div>
+    <div>
+      <div style="font-size:10px; color:var(--t3); margin-bottom:4px; font-weight:700;">FACTORY PHONE / WECHAT *</div>
+      <input type="text" placeholder="+86 138-0000-0000" style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:6px; padding:8px 10px; color:var(--t1); font-size:12px;" />
+    </div>
+    <div style="grid-column:1/-1;">
+      <div style="font-size:10px; color:var(--t3); margin-bottom:4px; font-weight:700;">FACTORY NAME (optional, helps tag the collab sheet)</div>
+      <input type="text" placeholder="e.g. 宁波某某宠物食品有限公司" style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:6px; padding:8px 10px; color:var(--t1); font-size:12px;" />
+    </div>
+  </div>
+
+  <!-- Collab link (auto-generated, copy + share) -->
+  <div style="padding:10px 12px; background:rgba(167,139,250,.06); border:1px solid rgba(167,139,250,.25); border-radius:7px; margin-bottom:14px;">
+    <div style="font-size:10px; color:var(--violet); margin-bottom:6px; font-weight:700;">📎 SHARE LINK (auto-generated after submit)</div>
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input type="text" readonly value="https://collab.sanlyn.cn/s/ARR-XXXX-XXXX" style="flex:1; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:5px; padding:6px 8px; color:var(--t2); font-family:'SF Mono',monospace; font-size:11px;" />
+      <button style="padding:6px 12px; background:rgba(167,139,250,.18); border:1px solid rgba(167,139,250,.4); color:var(--violet); border-radius:5px; font-size:11px; font-weight:700; cursor:pointer;">📋 Copy</button>
+      <button style="padding:6px 12px; background:rgba(45,212,191,.15); border:1px solid rgba(45,212,191,.4); color:var(--teal); border-radius:5px; font-size:11px; font-weight:700; cursor:pointer;">💬 WeChat</button>
+    </div>
+    <div style="font-size:10px; color:var(--t3); margin-top:6px;">Factory clicks this link → no-login token-gated form to fill (route info pre-populated). Sanlyn ops sees their submission instantly.</div>
+  </div>
+
+  <button class="cta cta-send" style="width:100%; padding:11px;">📤 Send to Factory & email/SMS the link</button>
+</div>
+
+<!-- ═══ FACTORY-SIDE FOLLOW-UP (separate flow — customer is already done at Step 2) ═══ -->
+<div style="margin-top: 28px; padding: 18px 22px; background: var(--surface); border: 2px solid rgba(167,139,250,.4); border-radius: 14px; max-width: 720px;">
+  <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+    <span style="font-size:20px;">🏭</span>
+    <div>
+      <div style="font-weight:800; font-size:15px; color: var(--violet);">Factory follow-up sheet · separate flow</div>
+      <div style="font-size:11px; color: var(--t3);">Customer is done after Step 2 click. This is what the factory sees when the <code style="background:rgba(255,255,255,.05); padding:1px 5px; border-radius:3px; color:#FBBF24; font-family:'SF Mono',monospace;">shipping_arrangement</code> collab sheet drops into their portal — for reference only, not part of customer flow</div>
+    </div>
+    <span style="margin-left:auto; padding:3px 8px; background:rgba(167,139,250,.18); border:1px solid rgba(167,139,250,.4); color:var(--violet); border-radius:5px; font-size:10px; font-weight:800;">⚙ FACTORY VIEW</span>
+  </div>
+
+  <!-- Top route summary (factory-safe — no customer name, no $ value) -->
+  <div style="padding:12px 14px; background:rgba(56,189,248,.06); border:1px solid rgba(56,189,248,.3); border-radius:8px; margin-bottom:14px;">
+    <div style="display:flex; gap:10px; align-items:center; margin-bottom:6px;">
+      <span style="font-weight:800; color:var(--t1); font-family:'SF Mono',monospace; font-size:14px;">📦 F-218</span>
+      <span style="padding:2px 7px; background:rgba(251,191,36,.15); color:var(--best); border-radius:4px; font-size:10px; font-weight:800;">🚢 Ship by 5/28</span>
+      <span style="padding:2px 7px; background:rgba(167,139,250,.12); color:var(--violet); border-radius:4px; font-size:10px; font-weight:700;">食品</span>
+      <span style="margin-left:auto; padding:2px 7px; background:rgba(251,113,133,.15); color:var(--rose); border-radius:4px; font-size:10px; font-weight:700;">⏱ 4h 36m until cutoff</span>
+    </div>
+    <div style="font-size:11.5px; color:var(--t2);">
+      🇨🇳 Qingdao → 🇲🇾 Port Klang · COSCO V2324 · <b style="color:var(--t1);">4 × 40HQ</b> · ETD <b style="color:var(--t1);">5/28</b> · ETA 6/9
+    </div>
+    <div style="font-size:10.5px; color:var(--t3); margin-top:4px;">
+      🔒 Customer & price hidden per privacy isolation · order code <b style="color:var(--t2);">F-218</b> only
+    </div>
+  </div>
+
+  <!-- Factory fields to fill -->
+  <div style="font-size:11px; font-weight:800; color:var(--t3); letter-spacing:.06em; text-transform:uppercase; margin-bottom:8px;">📝 Factory: fill 3 fields to confirm</div>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
+    <div style="background:rgba(255,255,255,.025); border:1px solid var(--line); border-radius:8px; padding:10px 12px;">
+      <div style="font-size:10px; color:var(--t3); margin-bottom:4px;">1. CAN YOU SHIP BY 5/28?</div>
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <button style="flex:1; padding:7px; background:rgba(16,185,129,.18); border:1px solid rgba(16,185,129,.5); color:var(--green); border-radius:6px; font-weight:800; font-size:11px; cursor:pointer;">✓ Yes, on time</button>
+        <button style="flex:1; padding:7px; background:rgba(245,158,11,.12); border:1px solid rgba(245,158,11,.35); color:var(--amber); border-radius:6px; font-weight:800; font-size:11px; cursor:pointer;">↗ Propose date</button>
+        <button style="flex:1; padding:7px; background:rgba(100,116,139,.1); border:1px solid var(--line); color:var(--t2); border-radius:6px; font-weight:800; font-size:11px; cursor:pointer;">✕ Can't</button>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,.025); border:1px solid var(--line); border-radius:8px; padding:10px 12px;">
+      <div style="font-size:10px; color:var(--t3); margin-bottom:4px;">2. CARTONS READY</div>
+      <input type="text" value="2,400 CTN" style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:5px; padding:6px 8px; color:var(--t1); font-family:'SF Mono',monospace; font-size:12px; font-weight:700;" />
+    </div>
+    <div style="grid-column:1/-1; background:rgba(255,255,255,.025); border:1px solid var(--line); border-radius:8px; padding:10px 12px;">
+      <div style="font-size:10px; color:var(--t3); margin-bottom:4px;">3. PICKUP CONTACT + ADDRESS (DRIVER WILL SEE THIS)</div>
+      <input type="text" value="王厂长 · 138-0000-0000 · 青岛市黄岛区前湾港路 88 号" style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:5px; padding:6px 8px; color:var(--t1); font-size:11.5px;" />
+    </div>
+  </div>
+
+  <!-- Optional uploads -->
+  <div style="font-size:10.5px; color:var(--t3); margin-bottom:6px;">📎 Optional uploads (装柜照片 / 铅封号 — submit at loading time)</div>
+  <div style="display:flex; gap:8px; margin-bottom:14px;">
+    <button style="padding:6px 12px; background:rgba(255,255,255,.04); border:1px dashed var(--line); color:var(--t3); border-radius:6px; font-size:11px; cursor:pointer;">📷 Container photo</button>
+    <button style="padding:6px 12px; background:rgba(255,255,255,.04); border:1px dashed var(--line); color:var(--t3); border-radius:6px; font-size:11px; cursor:pointer;">🔒 Seal number</button>
+    <button style="padding:6px 12px; background:rgba(255,255,255,.04); border:1px dashed var(--line); color:var(--t3); border-radius:6px; font-size:11px; cursor:pointer;">📋 Packing list</button>
+  </div>
+
+  <!-- Notes channel (factory-visible only) -->
+  <div style="background:rgba(167,139,250,.04); border:1px solid rgba(167,139,250,.2); border-radius:8px; padding:10px 12px; margin-bottom:14px;">
+    <div style="font-size:10px; color:var(--violet); margin-bottom:4px; font-weight:700;">💬 NOTES TO SANLYN OPS (not seen by customer)</div>
+    <textarea placeholder="e.g. 第 3 柜需要换 40HC，缺一个标准 40HQ" style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:5px; padding:6px 8px; color:var(--t1); font-size:11.5px; resize:vertical; min-height:42px;"></textarea>
+  </div>
+
+  <!-- Submit -->
+  <div style="display:flex; gap:8px;">
+    <button style="flex:1; padding:11px; background:linear-gradient(135deg, var(--violet), #F472B6); color:#1A0A2E; border:none; border-radius:8px; font-weight:800; font-size:13px; cursor:pointer;">📤 Confirm & Send to Sanlyn</button>
+    <button style="padding:11px 14px; background:rgba(255,255,255,.04); border:1px solid var(--line); color:var(--t2); border-radius:8px; font-weight:700; font-size:12px; cursor:pointer;">💾 Save draft</button>
+  </div>
+
+  <div style="margin-top:10px; padding:8px 10px; background:rgba(45,212,191,.06); border:1px solid rgba(45,212,191,.25); border-radius:7px; font-size:10.5px; color:var(--teal);">
+    ℹ Once factory submits → Sanlyn ops reviews → drives <code style="background:rgba(0,0,0,.3); padding:1px 4px; border-radius:3px; color:#FBBF24; font-family:'SF Mono',monospace;">factory_loading_confirmation</code> chain (existing) for trucking pickup + customs draft + BL submission. 工厂只需要填这一次。
+  </div>
+</div>
+
+<!-- ═══ Design notes (for review) ═══ -->
+<div class="notes">
+  <h3>📝 v2 changes vs v1 — please confirm</h3>
+  <ul>
+    <li><b>Auto-matched order</b> (red box in 图1): bottom of each card now shows the auto-picked customer order (e.g. <code>Auto-matched · WP-62 · 4×40HQ · EXW</code>). Match logic = destination port + container type + cargo category. ↕ Swap button lets user pick a different one.</li>
+    <li><b>港杂 conditional rendering</b>: shown only when matched order is <code>EXW</code> (customer pays port charges). FOB/CIF/CFR/DDP → hidden (already in carrier rate). Visual cue: violet chip with "EXW · ¥4,000" prefix instead of plain yellow text.</li>
+    <li><b>Shipment Map</b>: replaces the empty dark area in 图2. SVG world view with color-coded vessels by region. Hover tooltips show carrier + ETA. Pulls from <code>shipping_plans</code> joined with vessel-tracking (Portun / 4portun).</li>
+    <li><b>Send to Factory CTA</b>: when no order matches the route, the matched-order strip switches to violet "No matching order · Send to Factory to coordinate production around 6/17 sailing", and the primary CTA becomes <code>📤 Send to Factory · 协同排产</code>. Backend = creates a new <code>shipping_arrangement</code> collab sheet (new sheet_type to add to <code>sheetTemplates.js</code>).</li>
+    <li><b>Order Picker modal</b>: clicking 📅 Book opens this modal — matched orders highlighted ✓, partial matches shown as ~, empty-state offers Send to Factory.</li>
+    <li><b>Removed</b>: "2 orders" count chip (redundant — picker shows them), <code>⚖ Compare</code> button (whole card IS comparison), 客户预期 text (replaced by Auto-matched strip).</li>
+    <li><b>Kept</b>: Region tabs · ★ BEST / ✓ BOOKED flags · per-carrier price grid · 📋 More sailings link (top-right of card per your ack).</li>
+    <li><b>New collab sheet type needed</b>: <code>shipping_arrangement</code> in <code>screens/portal/v2/collab/sheetTemplates.js</code>. Target = order. Roles: customer (initiator) + factory (responder). Fields: route, ETD, container count, cargo type, target sailing.</li>
+  </ul>
+</div>
+
+<div class="changelog">
+  Changelog · v2 (2026-05-16) — added auto-matched order + EXW-conditional 港杂 + shipment map + Send-to-Factory flow + order picker modal mock + pruned info. v1 still at <code>logistics-marketplace-v1.html</code> for comparison.
+</div>
+
+</body>
+</html>

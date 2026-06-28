@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Sanlyn Customer Portal · overview-V1.1</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:       #060A14;
+    --surface:  #0C1222;
+    --card:     #0F1629;
+    --border:   rgba(255,255,255,0.06);
+    --borderHi: rgba(255,255,255,0.10);
+    --t1:       #E2E8F0;
+    --t2:       #94A3B8;
+    --t3:       #64748B;
+    --blue:     #38BDF8;
+    --cyan:     #22D3EE;
+    --red:      #EF4444;
+    --amber:    #F59E0B;
+    --green:    #10B981;
+    --purple:   #A78BFA;
+    --sans:     -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:     "SF Mono","Fira Code",Consolas,monospace;
+  }
+  body { background: var(--bg); color: var(--t1); font-family: var(--sans); font-size: 14px; }
+  button { cursor: pointer; font-family: inherit; }
+  input, select, textarea { font-family: inherit; outline: none; }
+
+  /* ── Version badge strip ── */
+  .version-strip {
+    background: rgba(56,189,248,0.08);
+    border-bottom: 1px solid rgba(56,189,248,0.18);
+    padding: 6px 20px;
+    display: flex; align-items: center; gap: 12;
+    font-size: 11px; color: var(--t3);
+  }
+  .version-strip b { color: var(--blue); }
+
+  /* ── Shell grid ── */
+  .shell {
+    display: grid;
+    grid-template-columns: 240px 1fr 300px;
+    min-height: calc(100vh - 30px);
+  }
+  @media (max-width: 1100px) {
+    .shell { grid-template-columns: 200px 1fr; }
+    .rail-right { display: none; }
+  }
+  @media (max-width: 700px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail-left { display: none; }
+  }
+
+  /* ── Left nav ── */
+  .rail-left {
+    border-right: 1px solid var(--border);
+    padding: 20px 14px;
+    position: sticky; top: 30px; height: calc(100vh - 30px);
+    overflow-y: auto;
+  }
+  .brand { display: flex; align-items: center; gap: 10; padding: 4px 8px; margin-bottom: 22px; }
+  .brand-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--blue), var(--cyan));
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; color: #0B1426; font-size: 16px; flex-shrink: 0;
+  }
+  .brand-name { font-size: 14px; font-weight: 800; letter-spacing: 0.4px; }
+  .brand-sub  { font-size: 10px; color: var(--t3); }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 12;
+    width: 100%; padding: 10px 14px;
+    background: transparent; border: 1px solid transparent;
+    border-radius: 10; color: var(--t1);
+    font-size: 13px; font-weight: 600; text-align: left;
+    margin-bottom: 4px; transition: background 0.12s;
+    border-radius: 10px;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.04); }
+  .nav-item.active {
+    background: rgba(56,189,248,0.12);
+    border-color: rgba(56,189,248,0.35);
+    color: var(--blue);
+  }
+  .nav-icon { width: 18px; text-align: center; opacity: 0.85; flex-shrink: 0; }
+  .nav-badge {
+    margin-left: auto; background: var(--red); color: white;
+    font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+  }
+  .ai-hint {
+    margin-top: 22px; padding: 10px 12px;
+    background: rgba(167,139,250,0.06);
+    border: 1px solid rgba(167,139,250,0.18);
+    border-radius: 10px; font-size: 11px; color: var(--t2); line-height: 1.55;
+  }
+  .ai-hint-label { color: var(--purple); font-weight: 700; margin-bottom: 4px; }
+
+  /* ── Main content ── */
+  .main { padding: 20px 24px; min-width: 0; }
+
+  /* ── Right rail ── */
+  .rail-right {
+    border-left: 1px solid var(--border);
+    padding: 20px 16px;
+    position: sticky; top: 30px; height: calc(100vh - 30px);
+    overflow-y: auto;
+  }
+  .rail-section { margin-bottom: 20px; }
+  .rail-section-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 1px;
+    color: var(--t3); margin-bottom: 10px; text-transform: uppercase;
+  }
+  .priority-row {
+    display: flex; align-items: flex-start; gap: 10;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 6px; margin-bottom: 8px;
+  }
+  .priority-bar { width: 3px; border-radius: 2px; align-self: stretch; flex-shrink: 0; }
+  .priority-title { font-size: 12px; font-weight: 700; color: var(--t1); margin-bottom: 3px; }
+  .priority-desc  { font-size: 11px; color: var(--t2); line-height: 1.5; }
+  .update-row {
+    padding: 8px 10px; margin-bottom: 6px;
+    background: rgba(255,255,255,0.02); border-radius: 6px;
+    font-size: 11px; color: var(--t2); line-height: 1.55;
+  }
+  .update-tag { font-weight: 700; margin-right: 6px; color: var(--cyan); }
+  .contact-card {
+    padding: 12px 14px;
+    background: linear-gradient(135deg, rgba(56,189,248,0.10), rgba(34,211,238,0.06));
+    border: 1px solid rgba(56,189,248,0.25);
+    border-radius: 10px;
+  }
+  .contact-card h4 { font-size: 12px; font-weight: 700; color: var(--t1); margin-bottom: 4px; }
+  .contact-card p  { font-size: 11px; color: var(--t2); margin-bottom: 10px; line-height: 1.5; }
+  .btn-msg {
+    width: 100%; padding: 8px 10px;
+    background: var(--blue); color: #0B1426;
+    border: none; border-radius: 8px;
+    font-size: 12px; font-weight: 700;
+  }
+
+  /* ── Tab panels ── */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Shared components ── */
+  .page-title { font-size: 22px; font-weight: 800; color: var(--t1); margin-bottom: 4px; }
+  .page-sub   { font-size: 12px; color: var(--t2); margin-bottom: 20px; }
+
+  /* stat tiles */
+  .stat-row { display: flex; gap: 12; flex-wrap: wrap; margin-bottom: 22px; }
+  .stat-tile {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; flex: 1; min-width: 130px;
+  }
+  .stat-label { font-size: 10px; color: var(--t3); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .stat-value { font-size: 22px; font-weight: 800; }
+  .stat-hint  { font-size: 11px; color: var(--t2); margin-top: 4px; }
+
+  /* section header */
+  .section-hdr { display: flex; align-items: center; gap: 8; margin-bottom: 10; }
+  .section-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .section-title { font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+  .section-count  { font-size: 11px; color: var(--t3); }
+
+  /* task grid */
+  .task-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: 12; margin-bottom: 24px; }
+
+  /* task card */
+  .task-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px;
+    display: flex; flex-direction: column; gap: 10;
+  }
+  .task-card-top { display: flex; align-items: center; gap: 8; }
+  .task-tag {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+    padding: 2px 8px; border-radius: 999px;
+  }
+  .task-meta { font-size: 11px; color: var(--t3); margin-left: auto; }
+  .task-title { font-size: 13px; font-weight: 700; color: var(--t1); line-height: 1.4; }
+  .task-body  { font-size: 12px; color: var(--t2); line-height: 1.55; min-height: 36px; }
+  .task-actions { display: flex; gap: 8; margin-top: 4px; }
+  .btn-primary {
+    padding: 7px 14px; border: none; border-radius: 8px;
+    font-size: 12px; font-weight: 700;
+  }
+  .btn-ghost {
+    padding: 7px 14px; background: transparent; color: var(--t2);
+    border: 1px solid var(--borderHi); border-radius: 8px;
+    font-size: 12px; font-weight: 600;
+  }
+
+  /* sub-tabs */
+  .sub-tabs {
+    display: flex; gap: 6; padding: 4px;
+    background: var(--surface); border-radius: 10px;
+    border: 1px solid var(--border);
+    margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .sub-tab {
+    padding: 8px 14px; border-radius: 8px;
+    background: transparent; color: var(--t2);
+    border: none; font-size: 12px; font-weight: 700;
+    transition: background 0.12s;
+  }
+  .sub-tab:hover { background: rgba(255,255,255,0.04); }
+  .sub-tab.active { background: rgba(56,189,248,0.15); color: var(--blue); }
+
+  /* card box */
+  .card-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin-bottom: 14px;
+  }
+  .card-h { font-size: 14px; font-weight: 800; color: var(--t1); margin-bottom: 10px; }
+  .field-label { font-size: 11px; color: var(--t2); font-weight: 600; margin-bottom: 4px; display: block; }
+  .field-inp {
+    width: 100%; padding: 9px 12px;
+    background: var(--surface); border: 1px solid var(--borderHi);
+    border-radius: 8px; color: var(--t1); font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12; }
+
+  /* Finance table */
+  .fin-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .fin-table th {
+    text-align: left; padding: 10px 12px;
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    color: var(--t3); text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .fin-table td {
+    padding: 11px 12px; border-bottom: 1px solid var(--border);
+    color: var(--t2); vertical-align: middle;
+  }
+  .fin-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .fin-table .amount { color: var(--t1); font-weight: 700; font-family: var(--mono); }
+  .fin-table .balance-owed { color: var(--red); font-weight: 700; font-family: var(--mono); }
+  .fin-table .balance-zero { color: var(--green); font-weight: 700; font-family: var(--mono); }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 700;
+  }
+
+  /* Finance dual-pane */
+  .fin-pane { display: grid; grid-template-columns: 35% 65%; gap: 14; align-items: start; }
+  @media (max-width: 900px) { .fin-pane { grid-template-columns: 1fr; } }
+  .fin-card-list { display: flex; flex-direction: column; gap: 8; }
+  .fin-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px;
+    cursor: pointer; transition: border-color 0.12s;
+  }
+  .fin-card:hover { border-color: var(--borderHi); }
+  .fin-card.selected { border-color: rgba(56,189,248,0.5); background: rgba(56,189,248,0.06); }
+  .fin-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .fin-card-id { font-size: 12px; font-weight: 800; color: var(--t1); }
+  .fin-card-po  { font-size: 11px; color: var(--t3); }
+  .fin-card-amt { font-size: 17px; font-weight: 800; font-family: var(--mono); color: var(--t1); margin: 4px 0; }
+  .fin-card-meta{ font-size: 11px; color: var(--t2); display: flex; gap: 10; flex-wrap: wrap; }
+
+  /* Upgrade strip */
+  .upgrade-strip {
+    display: flex; gap: 8; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .upgrade-item {
+    flex: 1; min-width: 160px;
+    background: rgba(56,189,248,0.05);
+    border: 1px dashed rgba(56,189,248,0.22);
+    border-radius: 10px; padding: 12px;
+    display: flex; align-items: flex-start; gap: 10;
+  }
+  .upgrade-icon { font-size: 18px; }
+  .upgrade-title { font-size: 12px; font-weight: 700; color: var(--t1); margin-bottom: 3px; }
+  .upgrade-sub   { font-size: 11px; color: var(--t3); line-height: 1.4; }
+  .upgrade-badge {
+    margin-top: 6px; display: inline-block;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+    padding: 2px 6px; border-radius: 4px;
+    background: rgba(56,189,248,0.15); color: var(--blue);
+  }
+
+  /* Documents */
+  .doc-group { background: var(--card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+  .doc-group-hdr {
+    display: flex; align-items: center; gap: 10; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); cursor: pointer;
+  }
+  .doc-group-order { font-size: 13px; font-weight: 800; color: var(--t1); }
+  .doc-group-po    { font-size: 11px; color: var(--t3); }
+  .doc-row {
+    display: flex; align-items: center; gap: 10;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .doc-row:last-child { border-bottom: none; }
+  .doc-type { font-weight: 700; color: var(--t1); width: 110px; flex-shrink: 0; }
+  .doc-updated { color: var(--t3); font-size: 11px; flex: 1; }
+  .doc-actions { display: flex; gap: 6; margin-left: auto; }
+  .btn-xs {
+    padding: 4px 10px; border-radius: 6px;
+    font-size: 11px; font-weight: 600;
+    background: transparent; border: 1px solid var(--borderHi); color: var(--t2);
+  }
+  .btn-xs:hover { background: rgba(255,255,255,0.05); }
+
+  /* Logistics hub */
+  .logistics-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; margin-bottom: 14px;
+  }
+  .route-vis {
+    display: flex; align-items: center; gap: 0;
+    margin: 10px 0 14px; overflow: hidden;
+  }
+  .route-port { text-align: center; min-width: 80px; }
+  .route-port-code { font-size: 18px; font-weight: 900; color: var(--blue); font-family: var(--mono); letter-spacing: 2px; }
+  .route-port-name { font-size: 10px; color: var(--t3); margin-top: 2px; }
+  .route-line { flex: 1; position: relative; height: 2px; background: var(--border); margin: 0 8px; }
+  .route-ship { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 18px; }
+  .route-days { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--t3); white-space: nowrap; }
+  .rate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr)); gap: 10; }
+  .rate-cell { background: var(--surface); border-radius: 8px; padding: 10px 12px; }
+  .rate-unit  { font-size: 10px; color: var(--t3); font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+  .rate-price { font-size: 18px; font-weight: 800; color: var(--t1); font-family: var(--mono); }
+  .rate-inc   { font-size: 11px; color: var(--green); margin-top: 2px; }
+
+  /* Products */
+  .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 12; }
+  .product-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .product-img {
+    width: 100%; height: 120px;
+    background: linear-gradient(135deg, rgba(56,189,248,0.08), rgba(34,211,238,0.04));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px;
+  }
+  .product-body { padding: 12px; }
+  .product-name { font-size: 13px; font-weight: 700; color: var(--t1); margin-bottom: 4px; }
+  .product-sku  { font-size: 10px; color: var(--t3); font-family: var(--mono); margin-bottom: 8px; }
+  .product-price{ font-size: 15px; font-weight: 800; color: var(--blue); font-family: var(--mono); }
+  .product-moq  { font-size: 11px; color: var(--t2); margin-top: 2px; }
+
+  /* Profile */
+  .profile-section { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 14px; }
+  .profile-avatar {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--blue), var(--cyan));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; font-weight: 800; color: #0B1426;
+  }
+  .profile-name { font-size: 18px; font-weight: 800; color: var(--t1); margin-bottom: 2px; }
+  .profile-role { font-size: 12px; color: var(--t3); }
+  .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14; }
+  .info-field { }
+  .info-key { font-size: 11px; color: var(--t3); font-weight: 600; margin-bottom: 3px; }
+  .info-val { font-size: 13px; color: var(--t1); }
+
+  /* scroll */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- Version strip -->
+<div class="version-strip">
+  <b>overview-V1.1</b>
+  <span>· Sanlyn Customer Portal · Static HTML render for visual iteration · 2026-05-16</span>
+  <span style="margin-left:auto; color: var(--purple);">Switch tabs in left nav ↓</span>
+</div>
+
+<!-- Shell -->
+<div class="shell">
+
+  <!-- ══════════════════════════════════════════
+       LEFT NAV
+  ══════════════════════════════════════════ -->
+  <aside class="rail-left">
+    <div class="brand">
+      <div class="brand-icon">S</div>
+      <div>
+        <div class="brand-name">Sanlyn</div>
+        <div class="brand-sub">Customer Portal</div>
+      </div>
+    </div>
+
+    <button class="nav-item active" onclick="switchTab('overview')" id="nav-overview">
+      <span class="nav-icon">▣</span>
+      <span>Overview</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('logistics')" id="nav-logistics">
+      <span class="nav-icon">⛵</span>
+      <span>Logistics</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('orders')" id="nav-orders">
+      <span class="nav-icon">+</span>
+      <span>Order Center</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('finance')" id="nav-finance">
+      <span class="nav-icon">$</span>
+      <span>Finance</span>
+      <span class="nav-badge">3</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('documents')" id="nav-documents">
+      <span class="nav-icon">▤</span>
+      <span>Documents</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('products')" id="nav-products">
+      <span class="nav-icon">■</span>
+      <span>Products</span>
+    </button>
+    <button class="nav-item" onclick="switchTab('profile')" id="nav-profile">
+      <span class="nav-icon">○</span>
+      <span>Profile</span>
+    </button>
+
+    <div class="ai-hint">
+      <div class="ai-hint-label">AI hint</div>
+      ETA in 2 days for ZC-16. Suggest confirming packaging label.
+    </div>
+  </aside>
+
+  <!-- ══════════════════════════════════════════
+       MAIN CONTENT
+  ══════════════════════════════════════════ -->
+  <main class="main">
+
+    <!-- ─────────────── OVERVIEW ─────────────── -->
+    <div class="tab-panel active" id="panel-overview">
+      <div class="page-title">Overview</div>
+      <div class="page-sub">Welcome back, PETSOME GROUP.</div>
+
+      <div class="stat-row">
+        <div class="stat-tile">
+          <div class="stat-label">In Production</div>
+          <div class="stat-value" style="color:var(--amber)">4</div>
+          <div class="stat-hint">orders being made</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">In Transit</div>
+          <div class="stat-value" style="color:var(--blue)">2</div>
+          <div class="stat-hint">shipments on the water</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Completed</div>
+          <div class="stat-value" style="color:var(--green)">11</div>
+          <div class="stat-hint">last 90 days</div>
+        </div>
+        <div class="stat-tile">
+          <div class="stat-label">Action Needed</div>
+          <div class="stat-value" style="color:var(--red)">6</div>
+          <div class="stat-hint">tasks waiting on you</div>
+        </div>
+      </div>
+
+      <!-- Blocking -->
+      <div class="section-hdr">
+        <span class="section-dot" style="background:var(--red)"></span>
+        <span class="section-title" style="color:var(--t1)">Blocking</span>
+        <span class="section-count">· 4</span>
+      </div>
+      <div class="task-grid">
+        <div class="task-card" style="border-left:3px solid var(--red)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Vet Cert</span>
+            <span class="task-meta">ZC-16</span>
+          </div>
+          <div class="task-title">Vet certificate pending confirm</div>
+          <div class="task-body">Order ZC-16. Health certificate uploaded by factory; please confirm details match the IV/PL.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--red);color:white">Confirm</button>
+            <button class="btn-ghost">View</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--red)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(239,68,68,0.15);color:var(--red)">B/L</span>
+            <span class="task-meta">JJ-1</span>
+          </div>
+          <div class="task-title">Bill of Lading pending sign</div>
+          <div class="task-body">Telex release on JJ-1. E-sign required to authorize release.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--red);color:white">Sign</button>
+            <button class="btn-ghost">View</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--red)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(239,68,68,0.15);color:var(--red)">PI</span>
+            <span class="task-meta">CP-2</span>
+          </div>
+          <div class="task-title">Proforma Invoice pending sign</div>
+          <div class="task-body">PI for CP-2 awaiting your signature before production can begin.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--red);color:white">Sign</button>
+            <button class="btn-ghost">View</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--red)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(239,68,68,0.15);color:var(--red)">Payment</span>
+            <span class="task-meta">IV-260318</span>
+          </div>
+          <div class="task-title">Payment overdue</div>
+          <div class="task-body">Invoice IV-260318 is 7 days overdue. $9,840 balance outstanding.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--red);color:white">Pay now</button>
+            <button class="btn-ghost">View</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- To Do -->
+      <div class="section-hdr" style="margin-top:8px">
+        <span class="section-dot" style="background:var(--amber)"></span>
+        <span class="section-title" style="color:var(--t1)">To Do</span>
+        <span class="section-count">· 4</span>
+      </div>
+      <div class="task-grid">
+        <div class="task-card" style="border-left:3px solid var(--amber)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(245,158,11,0.15);color:var(--amber)">ETA</span>
+            <span class="task-meta">ZC-16</span>
+          </div>
+          <div class="task-title">ETA in 3 days for ZC-16</div>
+          <div class="task-body">Prepare destination clearance documents. Vessel COSCO YANTAI arrives Klang Jun 11.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--amber);color:#0B1426">View</button>
+            <button class="btn-ghost">Track</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--amber)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(245,158,11,0.15);color:var(--amber)">Customs</span>
+            <span class="task-meta">CP-2</span>
+          </div>
+          <div class="task-title">Customs document missing</div>
+          <div class="task-body">Packing list awaiting upload for CP-2 customs filing.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--amber);color:#0B1426">Upload</button>
+            <button class="btn-ghost">View</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--amber)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(245,158,11,0.15);color:var(--amber)">Sample</span>
+            <span class="task-meta">SAMPLE-018</span>
+          </div>
+          <div class="task-title">Sample request reply needed</div>
+          <div class="task-body">Beef chunks 100g — 3 size variations sent for review.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--amber);color:#0B1426">Reply</button>
+            <button class="btn-ghost">View</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--amber)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(245,158,11,0.15);color:var(--amber)">Packaging</span>
+            <span class="task-meta">JJ-1</span>
+          </div>
+          <div class="task-title">Packaging confirm</div>
+          <div class="task-body">New artwork uploaded for tuna pouch — please confirm before printing.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--amber);color:#0B1426">Confirm</button>
+            <button class="btn-ghost">View</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notice -->
+      <div class="section-hdr" style="margin-top:8px">
+        <span class="section-dot" style="background:var(--t3)"></span>
+        <span class="section-title" style="color:var(--t1)">Notice</span>
+        <span class="section-count">· 4</span>
+      </div>
+      <div class="task-grid">
+        <div class="task-card" style="border-left:3px solid var(--t3)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(100,116,139,0.15);color:var(--t3)">Quote</span>
+            <span class="task-meta">Q-260420</span>
+          </div>
+          <div class="task-title">New quote available</div>
+          <div class="task-body">FCL Xiamen → Klang. $1,850 / 20GP · $2,420 / 40HQ. Valid until next Friday.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--t3);color:white">View</button>
+            <button class="btn-ghost">Book</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--t3)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(100,116,139,0.15);color:var(--t3)">Shipped</span>
+            <span class="task-meta">ZC-15</span>
+          </div>
+          <div class="task-title">Order shipped</div>
+          <div class="task-body">Container released to vessel COSCO YANTAI. BL MEDUWZ495799.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--t3);color:white">View</button>
+            <button class="btn-ghost">Track</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--t3)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(100,116,139,0.15);color:var(--t3)">QC</span>
+            <span class="task-meta">BATCH-0418</span>
+          </div>
+          <div class="task-title">Batch QC ready</div>
+          <div class="task-body">QC report for batch #20260418 is now available for download.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--t3);color:white">View</button>
+            <button class="btn-ghost">Download</button>
+          </div>
+        </div>
+        <div class="task-card" style="border-left:3px solid var(--t3)">
+          <div class="task-card-top">
+            <span class="task-tag" style="background:rgba(100,116,139,0.15);color:var(--t3)">Doc</span>
+            <span class="task-meta">IV-260418</span>
+          </div>
+          <div class="task-title">Document updated</div>
+          <div class="task-body">Invoice IV-260418 has been re-issued with corrected NW.</div>
+          <div class="task-actions">
+            <button class="btn-primary" style="background:var(--t3);color:white">View</button>
+            <button class="btn-ghost">Download</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /overview -->
+
+    <!-- ─────────────── LOGISTICS ─────────────── -->
+    <div class="tab-panel" id="panel-logistics">
+      <div class="page-title">Logistics</div>
+      <div class="page-sub">Ocean freight · Market rates · Vessel schedule</div>
+
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="switchSubTab(this,'logistics')">Hub</button>
+        <button class="sub-tab" onclick="switchSubTab(this,'logistics')">Ocean Freight</button>
+        <button class="sub-tab" onclick="switchSubTab(this,'logistics')">Air & DDP</button>
+        <button class="sub-tab" onclick="switchSubTab(this,'logistics')">Quote Request</button>
+        <button class="sub-tab" onclick="switchSubTab(this,'logistics')">Order Tracker</button>
+      </div>
+
+      <!-- Market rates board -->
+      <div class="card-box" style="margin-bottom:14px">
+        <div class="card-h">📈 Market Rate Board</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+          <div style="background:var(--surface);border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--t3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">XMN → KLANG</div>
+            <div style="display:flex;gap:10;align-items:flex-end">
+              <span style="font-size:18px;font-weight:900;color:var(--t1);font-family:var(--mono)">$1,850</span>
+              <span style="font-size:11px;color:var(--t3);margin-bottom:3px">20GP</span>
+              <span style="font-size:18px;font-weight:900;color:var(--t1);font-family:var(--mono);margin-left:8px">$2,420</span>
+              <span style="font-size:11px;color:var(--t3);margin-bottom:3px">40HQ</span>
+            </div>
+            <div style="font-size:11px;color:var(--green);margin-top:4px">✓ Local charges included · 24d TT</div>
+          </div>
+          <div style="background:var(--surface);border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--t3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">XMN → LAX</div>
+            <div style="display:flex;gap:10;align-items:flex-end">
+              <span style="font-size:18px;font-weight:900;color:var(--t1);font-family:var(--mono)">$3,200</span>
+              <span style="font-size:11px;color:var(--t3);margin-bottom:3px">20GP</span>
+              <span style="font-size:18px;font-weight:900;color:var(--t1);font-family:var(--mono);margin-left:8px">$4,100</span>
+              <span style="font-size:11px;color:var(--t3);margin-bottom:3px">40HQ</span>
+            </div>
+            <div style="font-size:11px;color:var(--amber);margin-top:4px">⚠ Local charge: confirm needed · 18d TT</div>
+          </div>
+          <div style="background:var(--surface);border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--t3);font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">QIN → SYDNEY</div>
+            <div style="display:flex;gap:10;align-items:flex-end">
+              <span style="font-size:18px;font-weight:900;color:var(--t1);font-family:var(--mono)">$2,100</span>
+              <span style="font-size:11px;color:var(--t3);margin-bottom:3px">20GP</span>
+              <span style="font-size:18px;font-weight:900;color:var(--t1);font-family:var(--mono);margin-left:8px">$2,780</span>
+              <span style="font-size:11px;color:var(--t3);margin-bottom:3px">40HQ</span>
+            </div>
+            <div style="font-size:11px;color:var(--green);margin-top:4px">✓ Local charges included · 22d TT</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active shipments -->
+      <div class="card-h" style="margin-bottom:10px">Active Shipments</div>
+      <div class="logistics-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:800;color:var(--t1)">ZC-16 · MEDUWZ495799</span>
+          <span class="pill" style="background:rgba(56,189,248,0.15);color:var(--blue)">IN TRANSIT</span>
+        </div>
+        <div class="route-vis">
+          <div class="route-port">
+            <div class="route-port-code">XMN</div>
+            <div class="route-port-name">Xiamen</div>
+            <div style="font-size:10px;color:var(--t3);margin-top:2px">ETD May 18</div>
+          </div>
+          <div class="route-line" style="position:relative;flex:1;height:2px;background:var(--border);margin:0 8px">
+            <span class="route-ship">🚢</span>
+            <span class="route-days">24 days</span>
+          </div>
+          <div class="route-port">
+            <div class="route-port-code">KLANG</div>
+            <div class="route-port-name">Port Klang</div>
+            <div style="font-size:10px;color:var(--t3);margin-top:2px">ETA Jun 11</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--t2)">Vessel: COSCO YANTAI · Container: CSNU1234567 · COSCO</div>
+      </div>
+      <div class="logistics-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:800;color:var(--t1)">JJ-1 · MAEU2207800</span>
+          <span class="pill" style="background:rgba(167,139,250,0.15);color:var(--purple)">CUSTOMS CLEARANCE</span>
+        </div>
+        <div class="route-vis">
+          <div class="route-port">
+            <div class="route-port-code">QIN</div>
+            <div class="route-port-name">Qingdao</div>
+            <div style="font-size:10px;color:var(--t3);margin-top:2px">ETD Apr 20</div>
+          </div>
+          <div class="route-line" style="position:relative;flex:1;height:2px;background:var(--border);margin:0 8px">
+            <span class="route-ship">🚢</span>
+            <span class="route-days">18 days</span>
+          </div>
+          <div class="route-port">
+            <div class="route-port-code">LAX</div>
+            <div class="route-port-name">Los Angeles</div>
+            <div style="font-size:10px;color:var(--t3);margin-top:2px">ETA May 08</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--t2)">Vessel: MAERSK ENFIELD · Container: MSKU9876543 · Maersk</div>
+      </div>
+    </div><!-- /logistics -->
+
+    <!-- ─────────────── ORDER CENTER ─────────────── -->
+    <div class="tab-panel" id="panel-orders">
+      <div class="page-title">Order Center</div>
+      <div class="page-sub">Place orders · Track history · Product catalog</div>
+
+      <div class="sub-tabs">
+        <button class="sub-tab active" onclick="switchSubTab(this,'orders')">Place Order</button>
+        <button class="sub-tab" onclick="switchSubTab(this,'orders')">Order History</button>
+        <button class="sub-tab" onclick="switchSubTab(this,'orders')">Product Catalog</button>
+        <button class="sub-tab" onclick="switchSubTab(this,'orders')">QC & Batch</button>
+        <button class="sub-tab" onclick="switchSubTab(this,'orders')">Sample Request</button>
+      </div>
+
+      <div class="card-box">
+        <div class="card-h">New Purchase Order</div>
+        <div class="field-row">
+          <div>
+            <label class="field-label">Customer PO No.</label>
+            <input class="field-inp" placeholder="Your PO reference number"/>
+          </div>
+          <div>
+            <label class="field-label">Factory</label>
+            <select class="field-inp" style="appearance:none">
+              <option>Select factory…</option>
+              <option>Xiamen Pet Baby Co., Ltd.</option>
+              <option>JJ Pet Factory</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div>
+            <label class="field-label">Incoterm</label>
+            <select class="field-inp" style="appearance:none">
+              <option>CIF</option><option>FOB</option><option>EXW</option><option>DDP</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">Destination Port</label>
+            <input class="field-inp" placeholder="e.g. Port Klang Westport"/>
+          </div>
+        </div>
+        <label class="field-label">Products</label>
+        <div style="background:var(--surface);border:1px dashed var(--borderHi);border-radius:8px;padding:14px;text-align:center;color:var(--t3);font-size:12px;margin-bottom:12px">
+          + Add product line items
+        </div>
+        <div style="display:flex;gap:8">
+          <button class="btn-primary" style="background:var(--blue);color:#0B1426;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;border:none">Submit Order</button>
+          <button class="btn-ghost">Save Draft</button>
+        </div>
+      </div>
+
+      <!-- Order history list -->
+      <div style="margin-top:20px">
+        <div class="card-h" style="margin-bottom:10px">Recent Orders</div>
+        <table class="fin-table">
+          <thead>
+            <tr>
+              <th>Order No.</th><th>Product</th><th>Factory</th><th>Status</th><th>ETA</th><th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b style="color:var(--t1)">ZC-16</b></td>
+              <td style="color:var(--t2)">Tuna Flakes 80g × 2,400 ctn</td>
+              <td style="color:var(--t3)">Xiamen Pet Baby</td>
+              <td><span class="pill" style="background:rgba(56,189,248,0.15);color:var(--blue)">In Transit</span></td>
+              <td style="color:var(--t3);font-family:var(--mono)">Jun 11</td>
+              <td class="amount">$28,450</td>
+            </tr>
+            <tr>
+              <td><b style="color:var(--t1)">JJ-1</b></td>
+              <td style="color:var(--t2)">Salmon Mousse 75g × 1,800 ctn</td>
+              <td style="color:var(--t3)">JJ Pet Factory</td>
+              <td><span class="pill" style="background:rgba(167,139,250,0.15);color:var(--purple)">Clearance</span></td>
+              <td style="color:var(--t3);font-family:var(--mono)">May 08</td>
+              <td class="amount">$16,720</td>
+            </tr>
+            <tr>
+              <td><b style="color:var(--t1)">CP-2</b></td>
+              <td style="color:var(--t2)">Beef Chunks 100g × 960 ctn</td>
+              <td style="color:var(--t3)">Xiamen Pet Baby</td>
+              <td><span class="pill" style="background:rgba(245,158,11,0.15);color:var(--amber)">Production</span></td>
+              <td style="color:var(--t3);font-family:var(--mono)">Jul 02</td>
+              <td class="amount">$9,840</td>
+            </tr>
+            <tr>
+              <td><b style="color:var(--t1)">WP-62</b></td>
+              <td style="color:var(--t2)">Mixed Wet Pack × 480 ctn</td>
+              <td style="color:var(--t3)">Xiamen Pet Baby</td>
+              <td><span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Completed</span></td>
+              <td style="color:var(--t3);font-family:var(--mono)">Apr 22</td>
+              <td class="amount">$22,100</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div><!-- /orders -->
+
+    <!-- ─────────────── FINANCE ─────────────── -->
+    <div class="tab-panel" id="panel-finance">
+      <div class="page-title">Finance & Billing</div>
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="font-size:12px;color:var(--t2)">Total outstanding</div>
+        <div style="font-size:22px;font-weight:900;color:var(--red);font-family:var(--mono)">$29,755 USD</div>
+        <div style="font-size:18px;font-weight:900;color:var(--amber);font-family:var(--mono)">22,100 MYR</div>
+        <button class="btn-ghost" style="margin-left:auto;font-size:12px">Download SOA</button>
+      </div>
+
+      <div class="upgrade-strip">
+        <div class="upgrade-item">
+          <div class="upgrade-icon">🧾</div>
+          <div>
+            <div class="upgrade-title">Auto Invoice</div>
+            <div class="upgrade-sub">Auto-generate IV from PI on shipment confirmation.</div>
+            <div class="upgrade-badge">PRO</div>
+          </div>
+        </div>
+        <div class="upgrade-item">
+          <div class="upgrade-icon">📊</div>
+          <div>
+            <div class="upgrade-title">Tax Filing Assist</div>
+            <div class="upgrade-sub">Auto-pack export tax filing bundles for your accountant.</div>
+            <div class="upgrade-badge">PRO</div>
+          </div>
+        </div>
+        <div class="upgrade-item">
+          <div class="upgrade-icon">💸</div>
+          <div>
+            <div class="upgrade-title">Tax Refund Assist</div>
+            <div class="upgrade-sub">Track export tax refund status — no spreadsheet hell.</div>
+            <div class="upgrade-badge">PRO</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fin-pane">
+        <!-- Left: card list -->
+        <div class="fin-card-list">
+          <div class="fin-card selected" onclick="selectFinCard(this)">
+            <div class="fin-card-top">
+              <span class="fin-card-id">ZC-16</span>
+              <span class="pill" style="background:rgba(245,158,11,0.15);color:var(--amber)">Partial</span>
+            </div>
+            <div class="fin-card-po">PO-260418-1 · IV-260418</div>
+            <div class="fin-card-amt">$28,450 USD</div>
+            <div class="fin-card-meta">
+              <span>Paid $8,535</span>
+              <span style="color:var(--red)">Balance $19,915</span>
+              <span>Due May 12</span>
+            </div>
+          </div>
+          <div class="fin-card" onclick="selectFinCard(this)">
+            <div class="fin-card-top">
+              <span class="fin-card-id">JJ-1</span>
+              <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Paid</span>
+            </div>
+            <div class="fin-card-po">PO-260408-2 · IV-260408</div>
+            <div class="fin-card-amt">$16,720 USD</div>
+            <div class="fin-card-meta">
+              <span style="color:var(--green)">Fully paid</span>
+              <span>Due Apr 22</span>
+            </div>
+          </div>
+          <div class="fin-card" onclick="selectFinCard(this)">
+            <div class="fin-card-top">
+              <span class="fin-card-id">CP-2</span>
+              <span class="pill" style="background:rgba(239,68,68,0.15);color:var(--red)">Overdue</span>
+            </div>
+            <div class="fin-card-po">PO-260318-3 · IV-260318</div>
+            <div class="fin-card-amt">$9,840 USD</div>
+            <div class="fin-card-meta">
+              <span>Paid $0</span>
+              <span style="color:var(--red)">Balance $9,840</span>
+              <span style="color:var(--red)">Overdue Apr 18</span>
+            </div>
+          </div>
+          <div class="fin-card" onclick="selectFinCard(this)">
+            <div class="fin-card-top">
+              <span class="fin-card-id">WP-62</span>
+              <span class="pill" style="background:rgba(100,116,139,0.15);color:var(--t3)">Unpaid</span>
+            </div>
+            <div class="fin-card-po">PO-260420-4 · IV-260420</div>
+            <div class="fin-card-amt">22,100 MYR</div>
+            <div class="fin-card-meta">
+              <span>Paid MYR 0</span>
+              <span style="color:var(--amber)">Balance MYR 22,100</span>
+              <span>Due May 20</span>
+            </div>
+          </div>
+          <div class="fin-card" onclick="selectFinCard(this)">
+            <div class="fin-card-top">
+              <span class="fin-card-id">ZC-15</span>
+              <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Paid</span>
+            </div>
+            <div class="fin-card-po">PO-260301-5 · IV-260301</div>
+            <div class="fin-card-amt">$5,380 USD</div>
+            <div class="fin-card-meta">
+              <span style="color:var(--green)">Fully paid</span>
+              <span>Due Mar 22</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: detail table -->
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+          <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:14px;font-weight:800;color:var(--t1)">ZC-16 · Billing Detail</div>
+              <div style="font-size:11px;color:var(--t3)">IV-260418 · T/T 30%/70% · Due May 12</div>
+            </div>
+            <div style="display:flex;gap:8">
+              <button class="btn-ghost" style="font-size:12px">Download IV</button>
+              <button class="btn-primary" style="background:var(--blue);color:#0B1426;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700">Submit Payment</button>
+            </div>
+          </div>
+          <table class="fin-table" style="width:100%">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Reference</th>
+                <th>Contract</th>
+                <th>Amount</th>
+                <th>Paid</th>
+                <th>Balance</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Goods</td>
+                <td style="font-family:var(--mono);font-size:11px">IV-260418</td>
+                <td style="font-family:var(--mono);font-size:11px">ZC-16</td>
+                <td class="amount">$27,150</td>
+                <td class="amount">$8,145</td>
+                <td class="balance-owed">$19,005</td>
+                <td><span class="pill" style="background:rgba(245,158,11,0.15);color:var(--amber)">Partial</span></td>
+              </tr>
+              <tr>
+                <td>Ocean Freight</td>
+                <td style="font-family:var(--mono);font-size:11px">BL-MEDUWZ495799</td>
+                <td style="font-family:var(--mono);font-size:11px">ZC-16</td>
+                <td class="amount">$1,300</td>
+                <td class="amount">$390</td>
+                <td class="balance-owed">$910</td>
+                <td><span class="pill" style="background:rgba(245,158,11,0.15);color:var(--amber)">Partial</span></td>
+              </tr>
+              <tr>
+                <td>Beneficiary</td>
+                <td colspan="2" style="color:var(--t3);font-size:11px">Shanghai Ocean Baby International Logistics Co.,Ltd.</td>
+                <td colspan="3" style="font-size:11px;color:var(--t3)">Bank: Bank of China · USD Account</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="padding:14px 16px;border-top:1px solid var(--border);display:flex;gap:20;font-size:12px;color:var(--t2)">
+            <span>Payment term: T/T 30% deposit / 70% before shipment</span>
+            <span style="margin-left:auto">Upload TT slip after transfer →</span>
+            <button class="btn-ghost" style="font-size:11px">Upload Remittance</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /finance -->
+
+    <!-- ─────────────── DOCUMENTS ─────────────── -->
+    <div class="tab-panel" id="panel-documents">
+      <div class="page-title">Documents Center</div>
+      <div class="page-sub">All trade and quality documents grouped by order.</div>
+
+      <div style="display:flex;gap:8;margin-bottom:14px;flex-wrap:wrap">
+        <select class="field-inp" style="max-width:160px;margin:0">
+          <option>All types</option>
+          <option>PI</option><option>SC</option><option>IV</option><option>PL</option>
+          <option>B/L</option><option>VC</option><option>QC Report</option><option>Packaging File</option>
+        </select>
+        <select class="field-inp" style="max-width:160px;margin:0">
+          <option>All statuses</option>
+          <option>Ready</option><option>Need Confirm</option><option>Missing</option>
+        </select>
+        <input class="field-inp" style="max-width:200px;margin:0" placeholder="Search order…"/>
+      </div>
+
+      <!-- ZC-16 -->
+      <div class="doc-group">
+        <div class="doc-group-hdr">
+          <span class="doc-group-order">ZC-16</span>
+          <span class="doc-group-po" style="margin-left:8px">· PO-260418-1</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--t3)">7 documents · 1 need confirm</span>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">PI</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-18</span>
+          <div class="doc-actions">
+            <button class="btn-xs">View</button><button class="btn-xs">Download</button>
+          </div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">SC</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-19</span>
+          <div class="doc-actions">
+            <button class="btn-xs">View</button><button class="btn-xs">Download</button>
+          </div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">IV</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-20</span>
+          <div class="doc-actions">
+            <button class="btn-xs">View</button><button class="btn-xs">Download</button>
+          </div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">PL</span>
+          <span class="pill" style="background:rgba(245,158,11,0.15);color:var(--amber)">Need Confirm</span>
+          <span class="doc-updated">2026-04-21</span>
+          <div class="doc-actions">
+            <button class="btn-xs" style="border-color:var(--amber);color:var(--amber)">Confirm</button><button class="btn-xs">View</button>
+          </div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">B/L</span>
+          <span class="pill" style="background:rgba(245,158,11,0.15);color:var(--amber)">Need Confirm</span>
+          <span class="doc-updated">2026-04-22</span>
+          <div class="doc-actions">
+            <button class="btn-xs" style="border-color:var(--amber);color:var(--amber)">Sign</button><button class="btn-xs">View</button>
+          </div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">VC</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-22</span>
+          <div class="doc-actions">
+            <button class="btn-xs">View</button><button class="btn-xs">Download</button>
+          </div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">QC Report</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-22</span>
+          <div class="doc-actions">
+            <button class="btn-xs">View</button><button class="btn-xs">Download</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- JJ-1 -->
+      <div class="doc-group">
+        <div class="doc-group-hdr">
+          <span class="doc-group-order">JJ-1</span>
+          <span class="doc-group-po" style="margin-left:8px">· PO-260408-2</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--t3)">7 documents · 2 missing</span>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">PI</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-08</span>
+          <div class="doc-actions"><button class="btn-xs">View</button><button class="btn-xs">Download</button></div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">SC</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-09</span>
+          <div class="doc-actions"><button class="btn-xs">View</button><button class="btn-xs">Download</button></div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">IV</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-10</span>
+          <div class="doc-actions"><button class="btn-xs">View</button><button class="btn-xs">Download</button></div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">B/L</span>
+          <span class="pill" style="background:rgba(239,68,68,0.15);color:var(--red)">Missing</span>
+          <span class="doc-updated">—</span>
+          <div class="doc-actions"><button class="btn-xs">Request</button></div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">VC</span>
+          <span class="pill" style="background:rgba(239,68,68,0.15);color:var(--red)">Missing</span>
+          <span class="doc-updated">—</span>
+          <div class="doc-actions"><button class="btn-xs">Request</button></div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">Packaging File</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-09</span>
+          <div class="doc-actions"><button class="btn-xs">View</button><button class="btn-xs">Download</button></div>
+        </div>
+      </div>
+
+      <!-- CP-2 -->
+      <div class="doc-group">
+        <div class="doc-group-hdr">
+          <span class="doc-group-order">CP-2</span>
+          <span class="doc-group-po" style="margin-left:8px">· PO-260318-3</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--t3)">2 documents</span>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">PI</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-03-18</span>
+          <div class="doc-actions"><button class="btn-xs">View</button><button class="btn-xs">Download</button></div>
+        </div>
+        <div class="doc-row">
+          <span class="doc-type">Batch Report</span>
+          <span class="pill" style="background:rgba(16,185,129,0.15);color:var(--green)">Ready</span>
+          <span class="doc-updated">2026-04-12</span>
+          <div class="doc-actions"><button class="btn-xs">View</button><button class="btn-xs">Download</button></div>
+        </div>
+      </div>
+    </div><!-- /documents -->
+
+    <!-- ─────────────── PRODUCTS ─────────────── -->
+    <div class="tab-panel" id="panel-products">
+      <div class="page-title">Products</div>
+      <div class="page-sub">Your authorized product catalog · Click to place order</div>
+
+      <div style="display:flex;gap:8;margin-bottom:14px;flex-wrap:wrap">
+        <input class="field-inp" style="max-width:240px;margin:0" placeholder="Search products…"/>
+        <select class="field-inp" style="max-width:160px;margin:0">
+          <option>All categories</option>
+          <option>Wet Food — Pouch</option>
+          <option>Wet Food — Can</option>
+          <option>Dry Food</option>
+          <option>Treats</option>
+        </select>
+      </div>
+
+      <div class="product-grid">
+        <div class="product-card">
+          <div class="product-img">🐟</div>
+          <div class="product-body">
+            <div class="product-name">Tuna Flakes in Jelly 80g</div>
+            <div class="product-sku">SKU: PB-TF-080G</div>
+            <div style="font-size:11px;color:var(--t3);margin-bottom:8px">HS: 1604.20 · NW 80g · GW 140g</div>
+            <div class="product-price">$0.82 / pcs</div>
+            <div class="product-moq">MOQ: 2,400 pcs (1 ctn)</div>
+          </div>
+        </div>
+        <div class="product-card">
+          <div class="product-img">🐟</div>
+          <div class="product-body">
+            <div class="product-name">Salmon Mousse 75g Pouch</div>
+            <div class="product-sku">SKU: PB-SM-075G</div>
+            <div style="font-size:11px;color:var(--t3);margin-bottom:8px">HS: 1604.20 · NW 75g · GW 130g</div>
+            <div class="product-price">$0.91 / pcs</div>
+            <div class="product-moq">MOQ: 2,400 pcs (1 ctn)</div>
+          </div>
+        </div>
+        <div class="product-card">
+          <div class="product-img">🥩</div>
+          <div class="product-body">
+            <div class="product-name">Beef Chunks in Broth 100g</div>
+            <div class="product-sku">SKU: PB-BC-100G</div>
+            <div style="font-size:11px;color:var(--t3);margin-bottom:8px">HS: 1604.20 · NW 100g · GW 160g</div>
+            <div class="product-price">$1.05 / pcs</div>
+            <div class="product-moq">MOQ: 1,920 pcs (1 ctn)</div>
+          </div>
+        </div>
+        <div class="product-card">
+          <div class="product-img">🐔</div>
+          <div class="product-body">
+            <div class="product-name">Chicken & Tuna Mix 85g</div>
+            <div class="product-sku">SKU: PB-CT-085G</div>
+            <div style="font-size:11px;color:var(--t3);margin-bottom:8px">HS: 1604.20 · NW 85g · GW 145g</div>
+            <div class="product-price">$0.88 / pcs</div>
+            <div class="product-moq">MOQ: 2,400 pcs (1 ctn)</div>
+          </div>
+        </div>
+        <div class="product-card">
+          <div class="product-img">🐟</div>
+          <div class="product-body">
+            <div class="product-name">Tuna & Shrimp Deluxe 80g</div>
+            <div class="product-sku">SKU: PB-TS-080G</div>
+            <div style="font-size:11px;color:var(--t3);margin-bottom:8px">HS: 1604.20 · NW 80g · GW 140g</div>
+            <div class="product-price">$0.94 / pcs</div>
+            <div class="product-moq">MOQ: 2,400 pcs (1 ctn)</div>
+          </div>
+        </div>
+        <div class="product-card">
+          <div class="product-img">🐾</div>
+          <div class="product-body">
+            <div class="product-name">Mixed Variety Pack 85g × 12</div>
+            <div class="product-sku">SKU: PB-MV-12PK</div>
+            <div style="font-size:11px;color:var(--t3);margin-bottom:8px">HS: 1604.20 · NW 1.02kg · GW 1.5kg</div>
+            <div class="product-price">$9.60 / set</div>
+            <div class="product-moq">MOQ: 480 sets (1 ctn)</div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /products -->
+
+    <!-- ─────────────── PROFILE ─────────────── -->
+    <div class="tab-panel" id="panel-profile">
+      <div class="page-title">My Profile</div>
+      <div class="page-sub">Account information and preferences</div>
+
+      <div class="profile-section">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+          <div class="profile-avatar">P</div>
+          <div>
+            <div class="profile-name">PETSOME GROUP SDN BHD</div>
+            <div class="profile-role">Customer · Verified · KYC Approved</div>
+          </div>
+          <button class="btn-ghost" style="margin-left:auto;font-size:12px">Edit</button>
+        </div>
+        <div class="info-row">
+          <div class="info-field">
+            <div class="info-key">Company Code</div>
+            <div class="info-val" style="font-family:var(--mono)">PETSOME</div>
+          </div>
+          <div class="info-field">
+            <div class="info-key">Country</div>
+            <div class="info-val">Malaysia</div>
+          </div>
+          <div class="info-field">
+            <div class="info-key">Contact Email</div>
+            <div class="info-val">buyer@petsome.com</div>
+          </div>
+          <div class="info-field">
+            <div class="info-key">Phone</div>
+            <div class="info-val">+60 3-XXXX XXXX</div>
+          </div>
+          <div class="info-field">
+            <div class="info-key">Payment Terms</div>
+            <div class="info-val">T/T 30% / 70%</div>
+          </div>
+          <div class="info-field">
+            <div class="info-key">Account Manager</div>
+            <div class="info-val">Damon · Sanlyn</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-section">
+        <div class="card-h">Notification Preferences</div>
+        <div style="display:flex;flex-direction:column;gap:10">
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
+            <span style="color:var(--t2)">Shipment status updates</span>
+            <span style="color:var(--green);font-weight:700">On</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
+            <span style="color:var(--t2)">Payment reminders</span>
+            <span style="color:var(--green);font-weight:700">On</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
+            <span style="color:var(--t2)">Document ready alerts</span>
+            <span style="color:var(--green);font-weight:700">On</span>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
+            <span style="color:var(--t2)">New product catalog</span>
+            <span style="color:var(--t3);font-weight:700">Off</span>
+          </div>
+        </div>
+      </div>
+    </div><!-- /profile -->
+
+  </main><!-- /main -->
+
+  <!-- ══════════════════════════════════════════
+       RIGHT RAIL
+  ══════════════════════════════════════════ -->
+  <aside class="rail-right">
+    <div class="rail-section">
+      <div class="rail-section-label">Priority Tasks</div>
+      <div class="priority-row">
+        <div class="priority-bar" style="background:var(--red)"></div>
+        <div>
+          <div class="priority-title">Vet certificate pending confirm</div>
+          <div class="priority-desc">Order ZC-16  -  please review and confirm</div>
+        </div>
+      </div>
+      <div class="priority-row">
+        <div class="priority-bar" style="background:var(--red)"></div>
+        <div>
+          <div class="priority-title">B/L pending sign</div>
+          <div class="priority-desc">Order JJ-1  -  e-sign required to release</div>
+        </div>
+      </div>
+      <div class="priority-row">
+        <div class="priority-bar" style="background:var(--amber)"></div>
+        <div>
+          <div class="priority-title">ETA in 3 days</div>
+          <div class="priority-desc">Order CP-2  -  prepare clearance docs</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rail-section">
+      <div class="rail-section-label">Sanlyn Updates</div>
+      <div class="update-row"><span class="update-tag">QC</span>Batch report for ZC-16 is now available.</div>
+      <div class="update-row"><span class="update-tag">DOC</span>Invoice IV-260418 has been issued.</div>
+      <div class="update-row"><span class="update-tag">ETA</span>Vessel COSCO YANTAI delayed by 1 day.</div>
+    </div>
+
+    <div class="contact-card">
+      <h4>Need help?</h4>
+      <p>Reach your Sanlyn account team directly.</p>
+      <button class="btn-msg">Message Sanlyn</button>
+    </div>
+  </aside>
+
+</div><!-- /shell -->
+
+<script>
+  function switchTab(id) {
+    // Hide all panels
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    // Remove active from all nav items
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    // Show target panel
+    var panel = document.getElementById('panel-' + id);
+    if (panel) panel.classList.add('active');
+    var nav = document.getElementById('nav-' + id);
+    if (nav) nav.classList.add('active');
+  }
+
+  function switchSubTab(btn, group) {
+    // find parent .sub-tabs and deactivate siblings
+    var parent = btn.parentElement;
+    parent.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  function selectFinCard(card) {
+    document.querySelectorAll('.fin-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+  }
+</script>
+</body>
+</html>

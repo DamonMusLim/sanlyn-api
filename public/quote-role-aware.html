@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QuoteCard v1 · Role-Aware · Sanlyn OS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060A14;color:#e2e8f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px;min-height:100vh}
+.shell{max-width:1340px;margin:0 auto}
+.title{font-size:24px;font-weight:900;letter-spacing:-.01em;margin-bottom:6px;background:linear-gradient(90deg,#60a5fa,#c084fc,#34d399);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:#64748b;font-size:12px;margin-bottom:8px}
+.banner{background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:12px 16px;font-size:12px;color:#cbd5e1;margin-bottom:28px;line-height:1.7}
+.banner b{color:#7dd3fc}
+.banner code{background:rgba(15,23,42,.7);color:#fbbf24;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"SF Mono",monospace}
+
+h2.section{font-size:16px;font-weight:900;color:#f8fafc;margin:36px 0 14px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+h2.section::before{content:"";width:3px;height:18px;background:linear-gradient(180deg,#38bdf8,#a78bfa);border-radius:2px}
+h2.section .tag{font-size:10px;font-weight:800;color:#94a3b8;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.15);padding:3px 8px;border-radius:5px;letter-spacing:.04em}
+
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.cell{display:flex;flex-direction:column;gap:8px}
+.cell-label{font-size:10px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase}
+.cell-desc{font-size:11px;color:#64748b;font-weight:600;margin-top:-3px}
+
+/* ─── QuoteCard ─── */
+.qcard{background:#0B1120;border:1px solid rgba(148,163,184,.1);border-radius:14px;overflow:hidden;position:relative;transition:.2s}
+.qcard:hover{transform:translateY(-2px);border-color:rgba(56,189,248,.4);box-shadow:0 8px 28px rgba(56,189,248,.12)}
+.qcard.internal::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#f43f5e,#a855f7);z-index:3}
+
+/* ━━━━━━ Hero (140px) ━━━━━━ */
+.hero{position:relative;height:140px;border-bottom:1px solid rgba(148,163,184,.08);overflow:hidden;padding:10px 14px}
+.hero-bg-ocean{background:linear-gradient(180deg,#0c1e3a,#0a1628)}
+.hero-bg-bid{background:linear-gradient(180deg,#1c1535,#120e22)}
+.hero-bg-review{background:linear-gradient(180deg,#2a1f0a,#1a1408)}
+.hero-bg-booked{background:linear-gradient(180deg,#0a1d3a,#081224)}
+.hero-bg-draft{background:linear-gradient(180deg,#141a26,#0a0f18)}
+
+.status{position:absolute;top:10px;left:10px;font-size:9.5px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;padding:4px 9px;border-radius:5px;display:inline-flex;align-items:center;gap:6px;backdrop-filter:blur(6px);z-index:4}
+.status .dot{width:6px;height:6px;border-radius:50%}
+.s-available{background:rgba(16,185,129,.16);border:1px solid rgba(16,185,129,.45);color:#6ee7b7}
+.s-available .dot{background:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.22)}
+.s-review{background:rgba(245,158,11,.16);border:1px solid rgba(245,158,11,.45);color:#fcd34d}
+.s-review .dot{background:#f59e0b}
+.s-bid{background:rgba(167,139,250,.18);border:1px solid rgba(167,139,250,.45);color:#c4b5fd}
+.s-bid .dot{background:#a78bfa;animation:pulse 1.6s infinite}
+.s-target{background:rgba(167,139,250,.18);border:1px solid rgba(167,139,250,.45);color:#c4b5fd}
+.s-target .dot{background:#a78bfa}
+.s-booked{background:rgba(59,130,246,.18);border:1px solid rgba(59,130,246,.45);color:#93c5fd}
+.s-booked .dot{background:#3b82f6}
+.s-draft{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.3);color:#cbd5e1}
+.s-draft .dot{background:#94a3b8}
+
+.internal-tag{position:absolute;top:10px;left:115px;font-size:9px;font-weight:900;letter-spacing:.08em;padding:4px 8px;border-radius:5px;background:rgba(244,63,94,.14);border:1px solid rgba(244,63,94,.4);color:#fda4af;z-index:4}
+
+.qid{position:absolute;top:10px;right:10px;font-size:10px;font-weight:800;color:#cbd5e1;background:rgba(15,23,42,.85);padding:4px 9px;border-radius:5px;font-family:"SF Mono",monospace;letter-spacing:.02em;display:flex;align-items:center;gap:6px;backdrop-filter:blur(6px);z-index:4}
+.qid .timer{color:#fbbf24}
+
+/* Route diagram */
+.route{position:absolute;left:0;right:0;bottom:0;height:100px;display:flex;align-items:center;padding:0 18px}
+.port{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:80px}
+.port.right{align-items:flex-end}
+.port .code{font-family:"SF Mono",monospace;font-size:18px;font-weight:900;color:#f8fafc;letter-spacing:.04em}
+.port .name{font-size:10px;color:#94a3b8;font-weight:700}
+.port .when{font-size:9.5px;color:#cbd5e1;font-weight:800;font-family:"SF Mono",monospace;margin-top:4px}
+.port .when b{color:#fbbf24;font-weight:900}
+
+.path{flex:1;position:relative;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px}
+.path .line{width:100%;height:1.5px;background:linear-gradient(90deg,transparent,#475569 12%,#475569 88%,transparent);position:relative}
+.path .line::before,.path .line::after{content:"";position:absolute;top:50%;width:6px;height:6px;border-radius:50%;background:#64748b;transform:translateY(-50%)}
+.path .line::before{left:8%}
+.path .line::after{right:8%}
+.path .vehicle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:18px;background:#0B1120;padding:0 8px;line-height:1}
+.path .tt{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:.04em}
+.path .tt b{color:#7dd3fc;font-family:"SF Mono",monospace;font-weight:900}
+
+.carrier-mark{position:absolute;bottom:8px;right:14px;font-size:9.5px;font-weight:900;color:#cbd5e1;background:rgba(15,23,42,.85);padding:3px 9px;border-radius:5px;letter-spacing:.04em;border:1px solid rgba(148,163,184,.2);backdrop-filter:blur(6px)}
+
+/* Identity */
+.idrow{padding:10px 14px 4px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.idrow .lhs{font-family:"SF Mono",monospace;font-size:13px;font-weight:900;color:#f8fafc}
+.idrow .rhs{font-size:10px;color:#64748b;font-weight:700;font-family:"SF Mono",monospace}
+.idrow .rhs b{color:#cbd5e1}
+.subtitle{padding:0 14px 10px;font-size:11px;color:#94a3b8;font-weight:600;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.subtitle .dot{color:#334155}
+.subtitle b{color:#cbd5e1;font-weight:700}
+
+/* Price block */
+.prices{padding:10px 14px 12px;border-top:1px solid rgba(148,163,184,.06);background:rgba(15,23,42,.3)}
+.price-row{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:10px;align-items:end}
+.pcell{display:flex;flex-direction:column;gap:3px}
+.pcell .lbl{font-size:9px;font-weight:800;color:#64748b;letter-spacing:.08em;text-transform:uppercase}
+.pcell .val{font-family:"SF Mono",monospace;font-size:18px;font-weight:900;color:#f8fafc;letter-spacing:.01em;line-height:1}
+.pcell .val.small{font-size:14px}
+.pcell .val.muted{color:#94a3b8}
+.pcell .sub{font-size:10px;color:#94a3b8;font-weight:700;margin-top:2px}
+.lc-ok{color:#6ee7b7}
+.lc-warn{color:#fcd34d}
+.lc-err{color:#fca5a5}
+
+.price-row.internal{grid-template-columns:60px 1fr 1fr 1.1fr;font-size:11px;border-top:1px dashed rgba(148,163,184,.12);padding-top:8px;margin-top:8px}
+.price-row.internal .rlabel{font-size:9.5px;font-weight:900;color:#64748b;letter-spacing:.06em;text-transform:uppercase;align-self:center}
+.price-row.internal .val{font-size:13px}
+.margin-good{color:#6ee7b7}
+.margin-warn{color:#fcd34d}
+.margin-bad{color:#fca5a5}
+
+/* Target block (supplier) */
+.target{padding:10px 14px;border-top:1px solid rgba(148,163,184,.06);background:rgba(167,139,250,.05)}
+.target-lbl{font-size:9.5px;font-weight:900;color:#c4b5fd;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.target-row{display:flex;gap:18px;align-items:baseline}
+.target-row .v{font-family:"SF Mono",monospace;font-size:16px;font-weight:900;color:#f8fafc}
+.target-row .v .u{font-size:10px;color:#94a3b8;font-weight:700;margin-right:4px}
+.scope-line{font-size:10.5px;color:#94a3b8;margin-top:6px;font-weight:600}
+.scope-line b{color:#cbd5e1}
+.scope-line .opt{color:#64748b}
+
+/* Capability strip */
+.caps{padding:9px 14px;border-top:1px solid rgba(148,163,184,.06);display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.cap{font-size:10px;font-weight:700;color:#cbd5e1;background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.18);padding:2px 7px;border-radius:4px;letter-spacing:.02em}
+.cap.match{color:#6ee7b7;background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.3)}
+.cap.more{color:#64748b;background:transparent;border-style:dashed}
+.match-flag{font-size:10px;font-weight:900;color:#6ee7b7;margin-left:auto;letter-spacing:.04em}
+
+/* Meta row (internal) */
+.meta{padding:8px 14px;border-top:1px solid rgba(148,163,184,.06);font-size:10.5px;color:#94a3b8;font-family:"SF Mono",monospace;display:flex;gap:14px;flex-wrap:wrap;background:rgba(244,63,94,.02)}
+.meta b{color:#cbd5e1;font-weight:800}
+.meta .audit-pending{color:#fcd34d}
+.meta .audit-ok{color:#6ee7b7}
+
+.compete{padding:8px 14px;border-top:1px solid rgba(148,163,184,.06);font-size:10.5px;color:#94a3b8;display:flex;align-items:center;gap:6px}
+.compete b{color:#c4b5fd;font-weight:800}
+
+/* CTA bar */
+.cta{padding:10px 12px;border-top:1px solid rgba(148,163,184,.08);display:flex;gap:8px;align-items:center;background:rgba(15,23,42,.4)}
+.btn{flex:1;font-size:11px;font-weight:800;padding:8px 10px;border-radius:7px;border:1px solid transparent;cursor:pointer;letter-spacing:.01em;transition:.15s;text-align:center;white-space:nowrap}
+.btn-primary{background:linear-gradient(180deg,#10b981,#059669);color:#fff;border-color:rgba(16,185,129,.6);box-shadow:0 2px 8px rgba(16,185,129,.25)}
+.btn-primary.violet{background:linear-gradient(180deg,#a78bfa,#7c3aed);border-color:rgba(167,139,250,.6);box-shadow:0 2px 8px rgba(167,139,250,.25)}
+.btn-primary.blue{background:linear-gradient(180deg,#3b82f6,#2563eb);border-color:rgba(59,130,246,.6);box-shadow:0 2px 8px rgba(59,130,246,.25)}
+.btn-primary.rose{background:linear-gradient(180deg,#f43f5e,#e11d48);border-color:rgba(244,63,94,.6);box-shadow:0 2px 8px rgba(244,63,94,.25)}
+.btn-secondary{background:transparent;border-color:rgba(148,163,184,.3);color:#cbd5e1}
+.btn-secondary:hover{border-color:rgba(56,189,248,.5);color:#7dd3fc}
+.btn-ghost{background:transparent;border:none;color:#94a3b8;flex:0}
+.btn-overflow{flex:0;padding:8px 10px;background:transparent;border:1px solid rgba(148,163,184,.2);color:#94a3b8;border-radius:7px;cursor:pointer;font-weight:900}
+
+/* Section spacer */
+.spacer{height:8px}
+
+/* Comparison row label */
+.view-tag{font-size:10px;font-weight:900;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.view-tag .pill{padding:2px 8px;border-radius:4px;font-size:9.5px}
+.view-tag.customer .pill{background:rgba(16,185,129,.12);color:#6ee7b7;border:1px solid rgba(16,185,129,.3)}
+.view-tag.internal .pill{background:rgba(244,63,94,.12);color:#fda4af;border:1px solid rgba(244,63,94,.3)}
+.view-tag.supplier .pill{background:rgba(167,139,250,.12);color:#c4b5fd;border:1px solid rgba(167,139,250,.3)}
+
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.95)}}
+
+/* Footer rules */
+.rules{margin-top:48px;padding:20px 24px;background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:12px;font-size:11.5px;color:#94a3b8;line-height:1.7}
+.rules h3{font-size:13px;font-weight:900;color:#f8fafc;margin-bottom:10px;letter-spacing:-.01em}
+.rules ul{padding-left:18px}
+.rules li{margin-bottom:4px}
+.rules b{color:#cbd5e1}
+.rules code{background:rgba(15,23,42,.7);color:#fbbf24;padding:1px 5px;border-radius:3px;font-size:10.5px;font-family:"SF Mono",monospace}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="title">QuoteCard v1 · Role-Aware Master</div>
+  <div class="sub">Sanlyn OS · Supply-chain quote card · ocean / truck / customs / insurance / DDP shared skeleton</div>
+
+  <div class="banner">
+    <b>One card, three viewers.</b> Same <code>&lt;QuoteCard&gt;</code> renders <b>Customer · Internal · Supplier</b>.
+    Field visibility resolves via <code>quoteCardVis(viewer, field)</code> — never <code>if(role===)</code>.
+    Hero = <b>route + price</b>, never decorative ship art. Cost/margin/supplier_name are hard-redacted on the customer surface.
+  </div>
+
+  <!-- ═══════════════ CUSTOMER VIEW ═══════════════ -->
+  <h2 class="section">Customer view <span class="tag">3 states</span></h2>
+  <div class="grid">
+
+    <!-- Customer · AVAILABLE -->
+    <div>
+      <div class="view-tag customer"><span class="pill">CUSTOMER</span> Available rate</div>
+      <div class="qcard">
+        <div class="hero hero-bg-ocean">
+          <div class="status s-available"><span class="dot"></span>Available</div>
+          <div class="qid">QT-…018 <span class="timer">⏱ 8d</span></div>
+          <div class="route">
+            <div class="port">
+              <div class="code">XMN</div><div class="name">Xiamen</div>
+              <div class="when">ETD <b>May 18</b></div>
+            </div>
+            <div class="path">
+              <div class="line"><span class="vehicle">🚢</span></div>
+              <div class="tt"><b>24d</b> transit</div>
+            </div>
+            <div class="port right">
+              <div class="code">LAX</div><div class="name">Los Angeles</div>
+              <div class="when">ETA <b>Jun 11</b></div>
+            </div>
+          </div>
+          <div class="carrier-mark">COSCO</div>
+        </div>
+        <div class="idrow"><div class="lhs">QT-2026-0512-018</div><div class="rhs">Valid until <b>2026-05-20</b></div></div>
+        <div class="subtitle"><b>Sanlyn Ocean</b><span class="dot">·</span>FCL<span class="dot">·</span>CIF</div>
+        <div class="prices">
+          <div class="price-row">
+            <div class="pcell"><div class="lbl">20GP</div><div class="val">$1,850</div></div>
+            <div class="pcell"><div class="lbl">40HQ</div><div class="val">$2,420</div></div>
+            <div class="pcell"><div class="lbl">Local Charge</div><div class="val small lc-ok">✓ Included</div></div>
+          </div>
+        </div>
+        <div class="caps">
+          <span class="cap">Ocean</span><span class="cap">Local Charge</span><span class="cap">Customs</span>
+          <span class="cap">Trucking</span><span class="cap">Insurance</span><span class="cap more">+1</span>
+        </div>
+        <div class="cta">
+          <button class="btn btn-primary">Book this rate</button>
+          <button class="btn btn-secondary">Set target</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Customer · TARGET PRICE (心理价已设) -->
+    <div>
+      <div class="view-tag customer"><span class="pill">CUSTOMER</span> Target price set</div>
+      <div class="qcard">
+        <div class="hero hero-bg-bid">
+          <div class="status s-target"><span class="dot"></span>Target Price</div>
+          <div class="qid">QT-…022 <span class="timer">⏱ 5d</span></div>
+          <div class="route">
+            <div class="port"><div class="code">NGB</div><div class="name">Ningbo</div><div class="when">ETD <b>May 20–24</b></div></div>
+            <div class="path"><div class="line"><span class="vehicle">🚢</span></div><div class="tt"><b>28d</b> transit</div></div>
+            <div class="port right"><div class="code">NYC</div><div class="name">New York</div><div class="when">ETA <b>~Jun 20</b></div></div>
+          </div>
+          <div class="carrier-mark">Open · 3 suppliers</div>
+        </div>
+        <div class="idrow"><div class="lhs">My target on QT-…022</div><div class="rhs">Closes <b>2026-05-17</b></div></div>
+        <div class="subtitle">FCL<span class="dot">·</span>CIF<span class="dot">·</span>Ocean + Local Charge</div>
+        <div class="prices">
+          <div class="price-row">
+            <div class="pcell"><div class="lbl">My target 20GP</div><div class="val">$1,750</div></div>
+            <div class="pcell"><div class="lbl">My target 40HQ</div><div class="val">$2,300</div></div>
+            <div class="pcell"><div class="lbl">Best offer</div><div class="val small muted">Waiting…</div></div>
+          </div>
+        </div>
+        <div class="caps">
+          <span class="cap">Ocean</span><span class="cap">Local Charge</span>
+          <span class="match-flag">3 quoting</span>
+        </div>
+        <div class="cta">
+          <button class="btn btn-primary violet">View my target</button>
+          <button class="btn btn-secondary">Adjust</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Customer · BOOKED -->
+    <div>
+      <div class="view-tag customer"><span class="pill">CUSTOMER</span> Booked → order flow</div>
+      <div class="qcard">
+        <div class="hero hero-bg-booked">
+          <div class="status s-booked"><span class="dot"></span>Booked</div>
+          <div class="qid">QT-…011 → ORD-2204</div>
+          <div class="route">
+            <div class="port"><div class="code">SHA</div><div class="name">Shanghai</div><div class="when">ETD <b>May 14</b></div></div>
+            <div class="path"><div class="line"><span class="vehicle">🚢</span></div><div class="tt"><b>22d</b> transit</div></div>
+            <div class="port right"><div class="code">LGB</div><div class="name">Long Beach</div><div class="when">ETA <b>Jun 5</b></div></div>
+          </div>
+          <div class="carrier-mark">ONE Line</div>
+        </div>
+        <div class="idrow"><div class="lhs">ORD-2204 · 40HQ × 2</div><div class="rhs">Booked <b>2026-05-09</b></div></div>
+        <div class="subtitle"><b>Sanlyn Ocean</b><span class="dot">·</span>FCL<span class="dot">·</span>CIF</div>
+        <div class="prices">
+          <div class="price-row">
+            <div class="pcell"><div class="lbl">20GP</div><div class="val muted">—</div></div>
+            <div class="pcell"><div class="lbl">40HQ × 2</div><div class="val">$4,840</div></div>
+            <div class="pcell"><div class="lbl">Local Charge</div><div class="val small lc-ok">✓ Included</div></div>
+          </div>
+        </div>
+        <div class="caps">
+          <span class="cap">Ocean</span><span class="cap">Local Charge</span><span class="cap">Customs</span><span class="cap">Trucking</span>
+        </div>
+        <div class="cta">
+          <button class="btn btn-primary blue">Open order</button>
+          <button class="btn btn-secondary">Track</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ INTERNAL VIEW ═══════════════ -->
+  <h2 class="section">Internal view <span class="tag">3 states · cost + margin visible</span></h2>
+  <div class="grid">
+
+    <!-- Internal · NEEDS REVIEW -->
+    <div>
+      <div class="view-tag internal"><span class="pill">INTERNAL</span> Needs review (LC unbound)</div>
+      <div class="qcard internal">
+        <div class="hero hero-bg-review">
+          <div class="status s-review"><span class="dot"></span>Needs Review</div>
+          <div class="internal-tag">🔒 INTERNAL</div>
+          <div class="qid">RATE-FX-2204 <span class="timer">⏱ 8d</span></div>
+          <div class="route">
+            <div class="port"><div class="code">XMN</div><div class="name">Xiamen</div><div class="when">ETD <b>May 18</b></div></div>
+            <div class="path"><div class="line"><span class="vehicle">🚢</span></div><div class="tt"><b>24d</b> transit</div></div>
+            <div class="port right"><div class="code">LAX</div><div class="name">Los Angeles</div><div class="when">ETA <b>Jun 11</b></div></div>
+          </div>
+          <div class="carrier-mark">福新FX · COSCO</div>
+        </div>
+        <div class="idrow"><div class="lhs">QT-2026-0512-018</div><div class="rhs">Supplier <b>福新货代</b></div></div>
+        <div class="subtitle">FCL<span class="dot">·</span>CIF<span class="dot">·</span>Carrier <b>COSCO</b></div>
+        <div class="prices">
+          <div class="price-row">
+            <div class="pcell"><div class="lbl">20GP</div><div class="val">$1,850</div></div>
+            <div class="pcell"><div class="lbl">40HQ</div><div class="val">$2,420</div></div>
+            <div class="pcell"><div class="lbl">Local Charge</div><div class="val small lc-warn">Need bind</div></div>
+          </div>
+          <div class="price-row internal">
+            <div class="rlabel">Cost</div>
+            <div class="pcell"><div class="val muted">$1,620</div></div>
+            <div class="pcell"><div class="val muted">$2,180</div></div>
+            <div class="pcell"><div class="sub">— unbound —</div></div>
+          </div>
+          <div class="price-row internal">
+            <div class="rlabel">Margin</div>
+            <div class="pcell"><div class="val margin-good">+$230 · 12.4%</div></div>
+            <div class="pcell"><div class="val margin-warn">+$240 · 11.0%</div></div>
+            <div class="pcell"><div class="sub">awaiting LC</div></div>
+          </div>
+        </div>
+        <div class="meta">
+          <span>Audit <b class="audit-pending">Pending Damon</b></span>
+          <span>Publish <b>Draft</b></span>
+          <span>Bound LC <b>—</b></span>
+        </div>
+        <div class="cta">
+          <button class="btn btn-primary rose">Bind LC + Publish</button>
+          <button class="btn btn-secondary">Edit rate</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Internal · AVAILABLE (已发布) -->
+    <div>
+      <div class="view-tag internal"><span class="pill">INTERNAL</span> Published & live</div>
+      <div class="qcard internal">
+        <div class="hero hero-bg-ocean">
+          <div class="status s-available"><span class="dot"></span>Available</div>
+          <div class="internal-tag">🔒 INTERNAL</div>
+          <div class="qid">RATE-FX-2199 <span class="timer">⏱ 12d</span></div>
+          <div class="route">
+            <div class="port"><div class="code">SHA</div><div class="name">Shanghai</div><div class="when">ETD <b>May 22</b></div></div>
+            <div class="path"><div class="line"><span class="vehicle">🚢</span></div><div class="tt"><b>22d</b> transit</div></div>
+            <div class="port right"><div class="code">LGB</div><div class="name">Long Beach</div><div class="when">ETA <b>Jun 13</b></div></div>
+          </div>
+          <div class="carrier-mark">福新FX · ONE</div>
+        </div>
+        <div class="idrow"><div class="lhs">QT-2026-0512-014</div><div class="rhs">Supplier <b>福新货代</b></div></div>
+        <div class="subtitle">FCL<span class="dot">·</span>CIF<span class="dot">·</span>Carrier <b>ONE Line</b></div>
+        <div class="prices">
+          <div class="price-row">
+            <div class="pcell"><div class="lbl">20GP</div><div class="val">$1,920</div></div>
+            <div class="pcell"><div class="lbl">40HQ</div><div class="val">$2,480</div></div>
+            <div class="pcell"><div class="lbl">Local Charge</div><div class="val small lc-ok">GZ00009</div></div>
+          </div>
+          <div class="price-row internal">
+            <div class="rlabel">Cost</div>
+            <div class="pcell"><div class="val muted">$1,700</div></div>
+            <div class="pcell"><div class="val muted">$2,250</div></div>
+            <div class="pcell"><div class="sub">bundled</div></div>
+          </div>
+          <div class="price-row internal">
+            <div class="rlabel">Margin</div>
+            <div class="pcell"><div class="val margin-good">+$220 · 12.9%</div></div>
+            <div class="pcell"><div class="val margin-good">+$230 · 10.2%</div></div>
+            <div class="pcell"><div class="sub">healthy</div></div>
+          </div>
+        </div>
+        <div class="meta">
+          <span>Audit <b class="audit-ok">Passed</b></span>
+          <span>Publish <b>Live</b></span>
+          <span>LC <b>GZ00009</b></span>
+          <span>Views <b>14</b></span>
+        </div>
+        <div class="cta">
+          <button class="btn btn-secondary">Withdraw</button>
+          <button class="btn btn-secondary">Duplicate</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Internal · DRAFT (cost-only) -->
+    <div>
+      <div class="view-tag internal"><span class="pill">INTERNAL</span> Draft · cost only</div>
+      <div class="qcard internal">
+        <div class="hero hero-bg-draft">
+          <div class="status s-draft"><span class="dot"></span>Draft</div>
+          <div class="internal-tag">🔒 INTERNAL</div>
+          <div class="qid">RATE-AS-1108</div>
+          <div class="route">
+            <div class="port"><div class="code">QDG</div><div class="name">Qingdao</div><div class="when">ETD <b>—</b></div></div>
+            <div class="path"><div class="line"><span class="vehicle">🚢</span></div><div class="tt"><b>—</b> transit</div></div>
+            <div class="port right"><div class="code">SEA</div><div class="name">Seattle</div><div class="when">ETA <b>—</b></div></div>
+          </div>
+          <div class="carrier-mark">爱舒乐AS · TBD</div>
+        </div>
+        <div class="idrow"><div class="lhs">RATE-AS-1108</div><div class="rhs">Supplier <b>爱舒乐</b></div></div>
+        <div class="subtitle">FCL<span class="dot">·</span>CIF<span class="dot">·</span>Carrier <b>TBD</b></div>
+        <div class="prices">
+          <div class="price-row">
+            <div class="pcell"><div class="lbl">20GP price</div><div class="val muted small">— set price</div></div>
+            <div class="pcell"><div class="lbl">40HQ price</div><div class="val muted small">— set price</div></div>
+            <div class="pcell"><div class="lbl">Local Charge</div><div class="val small lc-err">Need bind</div></div>
+          </div>
+          <div class="price-row internal">
+            <div class="rlabel">Cost</div>
+            <div class="pcell"><div class="val muted">$1,580</div></div>
+            <div class="pcell"><div class="val muted">$2,120</div></div>
+            <div class="pcell"><div class="sub">—</div></div>
+          </div>
+        </div>
+        <div class="meta">
+          <span>Audit <b>—</b></span>
+          <span>Publish <b>Draft</b></span>
+          <span>Source <b>Agency-lite</b></span>
+        </div>
+        <div class="cta">
+          <button class="btn btn-primary rose">Set price</button>
+          <button class="btn btn-secondary">Bind LC</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ SUPPLIER VIEW ═══════════════ -->
+  <h2 class="section">Supplier view <span class="tag">3 states · bid pool</span></h2>
+  <div class="grid">
+
+    <!-- Supplier · OPEN FOR BID -->
+    <div>
+      <div class="view-tag supplier"><span class="pill">SUPPLIER</span> Open for bid</div>
+      <div class="qcard">
+        <div class="hero hero-bg-bid">
+          <div class="status s-bid"><span class="dot"></span>Open for Bid</div>
+          <div class="qid">REQ-…22 <span class="timer">⏱ 2h</span></div>
+          <div class="route">
+            <div class="port"><div class="code">XMN</div><div class="name">Xiamen</div><div class="when">ETD <b>May 18–22</b></div></div>
+            <div class="path"><div class="line"><span class="vehicle">🚢</span></div><div class="tt">window</div></div>
+            <div class="port right"><div class="code">LAX</div><div class="name">Los Angeles</div><div class="when">ETA <b>~Jun 11</b></div></div>
+          </div>
+          <div class="carrier-mark">Any carrier</div>
+        </div>
+        <div class="idrow"><div class="lhs">REQ-2026-0512-22</div><div class="rhs">Bids close <b>14:00 today</b></div></div>
+        <div class="subtitle">FCL<span class="dot">·</span>CIF<span class="dot">·</span>Buyer anonymous</div>
+        <div class="target">
+          <div class="target-lbl">Target by buyer</div>
+          <div class="target-row">
+            <div class="v"><span class="u">20GP</span>$1,750</div>
+            <div class="v"><span class="u">40HQ</span>$2,300</div>
+          </div>
+          <div class="scope-line">Need: <b>Ocean</b> + <b>Local Charge</b> &nbsp;<span class="opt">(opt: Trucking, Customs)</span></div>
+        </div>
+        <div class="caps">
+          <span class="cap match">Ocean</span><span class="cap match">Local Charge</span><span class="cap match">Customs</span>
+          <span class="match-flag">✓ Match</span>
+        </div>
+        <div class="compete"><b>3 others</b> are quoting (anonymous)</div>
+        <div class="cta">
+          <button class="btn btn-primary violet">Accept target</button>
+          <button class="btn btn-secondary">Counter</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Supplier · MY QUOTE LIVE -->
+    <div>
+      <div class="view-tag supplier"><span class="pill">SUPPLIER</span> My quote (self)</div>
+      <div class="qcard">
+        <div class="hero hero-bg-ocean">
+          <div class="status s-available"><span class="dot"></span>Quoting</div>
+          <div class="qid">BID-FX-0091 <span class="timer">⏱ 1h</span></div>
+          <div class="route">
+            <div class="port"><div class="code">NGB</div><div class="name">Ningbo</div><div class="when">ETD <b>May 20</b></div></div>
+            <div class="path"><div class="line"><span class="vehicle">🚢</span></div><div class="tt"><b>28d</b> transit</div></div>
+            <div class="port right"><div class="code">NYC</div><div class="name">New York</div><div class="when">ETA <b>Jun 17</b></div></div>
+          </div>
+          <div class="carrier-mark">My quote · COSCO</div>
+        </div>
+        <div class="idrow"><div class="lhs">BID-FX-0091</div><div class="rhs">on REQ-…22</div></div>
+        <div class="subtitle">FCL<span class="dot">·</span>CIF<span class="dot">·</span>Carrier <b>COSCO</b></div>
+        <div class="prices">
+          <div class="price-row">
+            <div class="pcell"><div class="lbl">My 20GP</div><div class="val">$1,780</div></div>
+            <div class="pcell"><div class="lbl">My 40HQ</div><div class="val">$2,340</div></div>
+            <div class="pcell"><div class="lbl">Local Charge</div><div class="val small lc-ok">Included</div></div>
+          </div>
+        </div>
+        <div class="caps">
+          <span class="cap">Ocean</span><span class="cap">Local Charge</span><span class="cap">Customs</span>
+        </div>
+        <div class="compete">Buyer target <b>$1,750 / $2,300</b> · you are <b>+$30</b> above</div>
+        <div class="cta">
+          <button class="btn btn-secondary">Edit my quote</button>
+          <button class="btn btn-secondary">Withdraw</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Supplier · AWARDED -->
+    <div>
+      <div class="view-tag supplier"><span class="pill">SUPPLIER</span> Awarded → fulfill</div>
+      <div class="qcard">
+        <div class="hero hero-bg-booked">
+          <div class="status s-booked"><span class="dot"></span>Awarded</div>
+          <div class="qid">BID-FX-0088 → ORD-2204</div>
+          <div class="route">
+            <div class="port"><div class="code">SHA</div><div class="name">Shanghai</div><div class="when">ETD <b>May 14</b></div></div>
+            <div class="path"><div class="line"><span class="vehicle">🚢</span></div><div class="tt"><b>22d</b> transit</div></div>
+            <div class="port right"><div class="code">LGB</div><div class="name">Long Beach</div><div class="when">ETA <b>Jun 5</b></div></div>
+          </div>
+          <div class="carrier-mark">ONE Line</div>
+        </div>
+        <div class="idrow"><div class="lhs">BID-FX-0088</div><div class="rhs">Order <b>ORD-2204</b></div></div>
+        <div class="subtitle">FCL<span class="dot">·</span>CIF<span class="dot">·</span>40HQ × 2</div>
+        <div class="prices">
+          <div class="price-row">
+            <div class="pcell"><div class="lbl">Awarded 40HQ</div><div class="val">$2,420</div></div>
+            <div class="pcell"><div class="lbl">Containers</div><div class="val small">× 2</div></div>
+            <div class="pcell"><div class="lbl">Total</div><div class="val">$4,840</div></div>
+          </div>
+        </div>
+        <div class="caps">
+          <span class="cap">Ocean</span><span class="cap">Local Charge</span><span class="cap">Customs</span><span class="cap">Trucking</span>
+        </div>
+        <div class="compete">SI cut-off <b>May 11 17:00</b> · BL release <b>May 16</b></div>
+        <div class="cta">
+          <button class="btn btn-primary blue">Submit SI</button>
+          <button class="btn btn-secondary">Open order</button>
+          <button class="btn btn-overflow">⋯</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════════ RULES FOOTER ═══════════════ -->
+  <div class="rules">
+    <h3>Master rules (excerpt from plan)</h3>
+    <ul>
+      <li><b>P1</b> · Hero = route + price. Never decorative ship art. 3-second recognition test.</li>
+      <li><b>P2</b> · One component <code>&lt;QuoteCard&gt;</code>, three viewers. No forks. Molecule layer takes <code>vis</code>/<code>cta</code> derived data, not <code>role</code>.</li>
+      <li><b>P3</b> · Field visibility via <code>quoteCardVis(viewer, field)</code> — same 4-layer pattern as v3.2 Registry.</li>
+      <li><b>P5</b> · One highlight color per card (by status). No rainbow tag walls.</li>
+      <li><b>P6</b> · Capability tags = only what the supplier HAS. Never grey-out absent caps. Max 5 visible + <code>+N</code>.</li>
+      <li><b>P7</b> · Customer surface: <b>cost / margin / supplier_id / real supplier name / internal notes</b> always redacted. Supplier name = <code>"Sanlyn Ocean"</code> or <code>"Verified · COSCO"</code>.</li>
+      <li><b>P8</b> · Cross-category. Swap <code>&lt;RouteDiagram mode&gt;</code> + <code>&lt;PriceBlock units&gt;</code> to render truck / customs / insurance / DDP from the same skeleton.</li>
+      <li><b>States</b> · DRAFT · NEEDS_REVIEW · AVAILABLE · TARGET_PRICE · QUOTING · BOOKED · EXPIRED · HIDDEN · INTERNAL_ONLY.</li>
+      <li><b>CTA cap</b> · Max 3 visible buttons + <code>⋯</code> overflow. Max 1 filled primary per card.</li>
+      <li><b>Mobile fold</b> · Hero 140→96px, prices 3→2 col, caps 5→3+N, meta collapse, CTA → primary + <code>⋯</code>. Never hide: status / quote_id / 20GP price / primary CTA.</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

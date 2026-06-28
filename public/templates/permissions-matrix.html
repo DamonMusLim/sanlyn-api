@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>协同表 · 权限矩阵</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0d14;color:#e2e8f0;font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:24px;font-size:13px}
+.wrap{max-width:1380px;margin:auto}
+h1{font-size:20px;font-weight:900;margin-bottom:6px;color:#fff;letter-spacing:-.01em}
+.sub{font-size:12px;color:#64748b;margin-bottom:18px}
+
+/* legend */
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;padding:12px 14px;background:#0e131e;border:1px solid rgba(255,255,255,.06);border-radius:10px}
+.legend .leg-it{display:flex;align-items:center;gap:6px;font-size:11px;color:#cbd5e1}
+.leg-it .ic{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;font-weight:900}
+.ic-V{background:rgba(56,189,248,.15);color:#38bdf8}
+.ic-E{background:rgba(16,185,129,.15);color:#10b981}
+.ic-U{background:rgba(167,139,250,.15);color:#a78bfa}
+.ic-S{background:rgba(245,158,11,.15);color:#f59e0b}
+.ic-X{background:rgba(255,255,255,.04);color:#475569}
+.legend b{color:#e2e8f0}
+
+/* table */
+.tbl{width:100%;border-collapse:separate;border-spacing:0;background:#0e131e;border:1px solid rgba(255,255,255,.06);border-radius:12px;overflow:hidden}
+.tbl th, .tbl td{padding:9px 8px;font-size:11.5px;text-align:left;border-right:1px solid rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.04);vertical-align:middle}
+.tbl thead th{background:#070a11;font-size:11px;font-weight:900;color:#94a3b8;letter-spacing:.04em;position:sticky;top:0;z-index:10;text-align:center}
+.tbl thead th:first-child{text-align:left}
+.tbl tbody td{text-align:center}
+.tbl tbody td:first-child{text-align:left;font-weight:700;color:#e2e8f0;background:rgba(255,255,255,.02);padding-left:14px}
+.tbl tbody td:nth-child(2){text-align:left;font-size:10px;color:#94a3b8;font-weight:600;line-height:1.4}
+.tbl tbody tr:hover td{background:rgba(255,255,255,.025)}
+.tbl tbody tr:hover td:first-child{background:rgba(167,139,250,.06)}
+
+/* phase header rows */
+.phase-row td{background:linear-gradient(135deg,rgba(167,139,250,.08),rgba(56,189,248,.03)) !important;font-size:11px !important;font-weight:900;color:#c4b5fd !important;letter-spacing:.06em;text-transform:uppercase;padding:8px 14px !important}
+
+/* role headers */
+.tbl thead th.r-sl{color:#c4b5fd;background:linear-gradient(180deg,rgba(167,139,250,.08),rgba(167,139,250,.02))}
+.tbl thead th.r-fc{color:#10b981;background:linear-gradient(180deg,rgba(16,185,129,.08),rgba(16,185,129,.02))}
+.tbl thead th.r-tr{color:#34d399;background:linear-gradient(180deg,rgba(52,211,153,.08),rgba(52,211,153,.02))}
+.tbl thead th.r-cb{color:#38bdf8;background:linear-gradient(180deg,rgba(56,189,248,.08),rgba(56,189,248,.02))}
+.tbl thead th.r-dr{color:#f59e0b;background:linear-gradient(180deg,rgba(245,158,11,.08),rgba(245,158,11,.02))}
+.tbl thead th.r-fw{color:#06b6d4;background:linear-gradient(180deg,rgba(6,182,212,.08),rgba(6,182,212,.02))}
+.tbl thead th.r-in{color:#a78bfa;background:linear-gradient(180deg,rgba(167,139,250,.08),rgba(167,139,250,.02))}
+.tbl thead th.r-cu{color:#f472b6;background:linear-gradient(180deg,rgba(244,114,182,.08),rgba(244,114,182,.02))}
+
+/* cells */
+.cells{display:inline-flex;gap:3px;flex-wrap:wrap;justify-content:center}
+.c{font-size:10px;font-weight:900;width:22px;height:22px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center}
+.c-V{background:rgba(56,189,248,.18);color:#38bdf8;border:1px solid rgba(56,189,248,.3)}
+.c-E{background:rgba(16,185,129,.18);color:#10b981;border:1px solid rgba(16,185,129,.3)}
+.c-U{background:rgba(167,139,250,.22);color:#c4b5fd;border:1px solid rgba(167,139,250,.4)}
+.c-S{background:linear-gradient(135deg,rgba(245,158,11,.25),rgba(244,114,182,.15));color:#f59e0b;border:1px solid rgba(245,158,11,.4);font-weight:900;box-shadow:0 0 0 1px rgba(245,158,11,.1)}
+.c-X{background:transparent;color:#374151;border:1px dashed rgba(255,255,255,.06)}
+
+/* notes */
+.notes{margin-top:18px;padding:14px 16px;background:#0e131e;border:1px solid rgba(255,255,255,.06);border-radius:12px}
+.notes h3{font-size:13px;font-weight:900;color:#e2e8f0;margin-bottom:10px}
+.notes ul{list-style:none}
+.notes li{font-size:11.5px;color:#cbd5e1;padding:5px 0;line-height:1.5;display:flex;gap:8px;align-items:flex-start}
+.notes li b{color:#f59e0b;font-weight:900}
+.notes li code{background:rgba(167,139,250,.1);color:#c4b5fd;padding:1px 5px;border-radius:4px;font-family:'JetBrains Mono','SF Mono',monospace;font-size:10.5px}
+
+.section-title{font-size:14px;font-weight:900;color:#fff;margin:18px 0 8px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+.section-title .num{background:linear-gradient(135deg,#a78bfa,#38bdf8);color:#fff;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>🎯 协同表 · 权限矩阵 v1.0</h1>
+<p class="sub">每个角色 × 每份单据/数据 × 4 种动作（看 / 改 / 传 / 签）。落地前的源头协议。</p>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="leg-it"><span class="ic ic-V">V</span><b>View 看</b> · 只读访问</div>
+  <div class="leg-it"><span class="ic ic-E">E</span><b>Edit 改</b> · 字段级修改/批注</div>
+  <div class="leg-it"><span class="ic ic-U">U</span><b>Upload 传</b> · 上传扫描件/照片</div>
+  <div class="leg-it"><span class="ic ic-S">S</span><b>Sign 签</b> · 必须本主体盖章</div>
+  <div class="leg-it"><span class="ic ic-X">—</span><span style="color:#475569">不可见</span></div>
+</div>
+
+<!-- ═══ TABLE ═══ -->
+<table class="tbl">
+  <thead>
+    <tr>
+      <th style="min-width:160px">单据 / 数据</th>
+      <th style="min-width:200px">说明</th>
+      <th class="r-sl">🤝 Sanlyn</th>
+      <th class="r-fc">🏭 工厂</th>
+      <th class="r-tr">📑 贸易公司<br><span style="font-weight:600;font-size:9.5px;opacity:.7">SHIPPER</span></th>
+      <th class="r-cb">📜 报关行</th>
+      <th class="r-dr">🚛 司机</th>
+      <th class="r-fw">🚢 货代</th>
+      <th class="r-in">🛡 保险</th>
+      <th class="r-cu">👤 客户</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <!-- ─── PHASE A: 订单/订舱 ─── -->
+    <tr class="phase-row"><td colspan="10">A. 订单 + 订舱（订单成立到船公司确认）</td></tr>
+
+    <tr>
+      <td>客户 PO / 销售合同 SC</td>
+      <td>客户下单凭证</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span><span class="c c-S">S</span></div></td>
+    </tr>
+
+    <tr>
+      <td>商业发票 IV</td>
+      <td>商业开票（贸易公司开给客户）</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <tr>
+      <td>装箱单 PL</td>
+      <td>箱号/数量/重量明细</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <tr>
+      <td>订舱托书 Booking Note</td>
+      <td>Sanlyn 发给船司/货代</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <tr>
+      <td>S/O 订舱单</td>
+      <td>船司/货代回的 Shipping Order</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <!-- ─── PHASE B: 报关 + 检疫 ─── -->
+    <tr class="phase-row"><td colspan="10">B. 报关 + 检疫（食品出口绑定）</td></tr>
+
+    <tr>
+      <td>报关底稿（AI 生成）</td>
+      <td>HS Code / 申报要素 / 申报金额</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>检疫底稿</td>
+      <td>出境货物报检单</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>报关委托书</td>
+      <td>盖工厂/贸易公司章 → 报关行</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>正本报关单</td>
+      <td>报关行出，海关批后</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>检疫证 / 卫生证 HC</td>
+      <td>海关/动检出</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <tr>
+      <td>原产地证 CO / Form E</td>
+      <td>CCPIT/海关出</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <!-- ─── PHASE C: 船司单据（SHIPPER ONLY）─── -->
+    <tr class="phase-row"><td colspan="10">C. 船司单据 · 仅 SHIPPER 签章（涉法律责任）</td></tr>
+
+    <tr>
+      <td>电放保函 LOG</td>
+      <td>无 BL 放货保函（致船司）</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>非危险品保证书</td>
+      <td>普货证明（致船司）</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>木质包装声明</td>
+      <td>无木 / 已熏蒸（致船司）</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>改航通知书</td>
+      <td>变船时 SHIPPER 出具（条件触发）</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <tr>
+      <td>BL 草稿 / 预览</td>
+      <td>船司草拟，签发前</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <tr>
+      <td>正本 BL / 电放 BL</td>
+      <td>船司签发</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <!-- ─── PHASE D: 拖车 + 装柜 ─── -->
+    <tr class="phase-row"><td colspan="10">D. 拖车 + 装柜（现场作业）</td></tr>
+
+    <tr>
+      <td>司机/拖车信息</td>
+      <td>车牌/电话/到厂时间</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>柜号 / 封号</td>
+      <td>装柜时确定</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <tr>
+      <td>装柜照片（4 类）</td>
+      <td>空柜/装载/封箱/铅封近照</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>实际重量 / 过磅单</td>
+      <td>磅房出</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <!-- ─── PHASE E: 财务 / 商业 ─── -->
+    <tr class="phase-row"><td colspan="10">E. 财务 / 商业（高敏感）</td></tr>
+
+    <tr>
+      <td>客户付款 (TT 水单)</td>
+      <td>客户付款凭证</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+    </tr>
+
+    <tr>
+      <td>内部成本 / 利润</td>
+      <td>Sanlyn 内部</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>保险单</td>
+      <td>投保 → 保单</td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-U">U</span><span class="c c-S">S</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span></div></td>
+    </tr>
+
+    <!-- ─── PHASE F: 内部 / 讨论 ─── -->
+    <tr class="phase-row"><td colspan="10">F. 协同 / 讨论</td></tr>
+
+    <tr>
+      <td>内部备注 (Sanlyn 频道)</td>
+      <td>协调记录、客户难处理标记</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>讨论区 · 工厂频道</td>
+      <td>Sanlyn ↔ 工厂</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>讨论区 · 司机频道</td>
+      <td>司机看到的对话窗</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+    <tr>
+      <td>讨论区 · 报关频道</td>
+      <td>Sanlyn ↔ 工厂 ↔ 报关行</td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-V">V</span><span class="c c-E">E</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+      <td><div class="cells"><span class="c c-X">—</span></div></td>
+    </tr>
+
+  </tbody>
+</table>
+
+<!-- KEY PRINCIPLES -->
+<div class="notes">
+  <h3>🔑 核心原则（落地前必须钉死）</h3>
+  <ul>
+    <li><b>1.</b> <b>S 签章 = 物理强制</b>。<code>document.shipper_id == current_user.company_id</code> 才能上传，DAS 模板锁住公司抬头字段不可改。Sanlyn 居间人就算是 admin 也不能签 — fail-closed。</li>
+    <li><b>2.</b> <b>司机最小可见集</b>。司机视角 = 1 个节点（拖车）。客户名/价格/利润/其他订单 = <code>data-hidden-for="driver"</code>。永远不见，前端一查 role 就过滤。</li>
+    <li><b>3.</b> <b>报关行只见报关相关</b>。能看 IV/PL/SC + 报关底稿 + 装柜数据（柜号/封号/重量），<b>看不见</b>客户名/利润/拖车细节/内部备注。</li>
+    <li><b>4.</b> <b>AI 生成默认可改</b>。报关底稿/检疫底稿是 AI 草拟，工厂/贸易/报关行三方都 V+E（点开可改），任何一方改都进操作日志。</li>
+    <li><b>5.</b> <b>BL 草稿三方核对</b>。Sanlyn / 工厂 / 贸易 三方 V+E，谁先确认谁先冻结，最后船司签发后变成 V-only。</li>
+    <li><b>6.</b> <b>讨论分频道权限隔离</b>。司机看不见报关频道，报关看不见拖车频道，客户看不见工厂频道，Sanlyn 全见 + 内部专属频道。</li>
+    <li><b>7.</b> <b>财务硬隔离</b>。客户付款仅 Sanlyn / 贸易 / 客户三方可见。工厂/报关/司机/货代/保险均不可见 — 防跳单。</li>
+    <li><b>8.</b> <b>模板防串台</b>。SHIPPER 抬头字段从 <code>order.shipper_id</code> 锁定写入，下载时已固化，<b>不允许在客户端改</b>。</li>
+  </ul>
+</div>
+
+<!-- DELIVERABLES -->
+<div class="notes" style="border-color:rgba(245,158,11,.25);background:linear-gradient(135deg,rgba(245,158,11,.05),rgba(245,158,11,.01))">
+  <h3 style="color:#f59e0b">📋 落地清单（按这个矩阵打代码）</h3>
+  <ul>
+    <li><b>后端：</b><code>permissions(role, doc_type, action) → bool</code> 一个查询函数 + 数据表 <code>permission_matrix</code> 映射上面的 V/E/U/S。</li>
+    <li><b>前端：</b><code>&lt;CanI action="upload" doc="telex_log"&gt;</code> 包装组件，按角色出按钮 / 隐藏区块。</li>
+    <li><b>API：</b>每个写操作必须先校验 <code>shipper_id</code> + <code>action</code>，fail-closed。</li>
+    <li><b>讨论频道：</b><code>discussion_messages.channel</code> 字段 + 频道权限表 — 不写到消息体内的 metadata。</li>
+    <li><b>UI 视图：</b>报关行端 = 简化版（只 4 节点：报关底稿 / 报关委托书 / 正本报关单 / 报关频道讨论）；司机端 = 1 节点 + 1 频道；其他角色按矩阵渲染。</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

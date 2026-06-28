@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Collab Sheet v1 · 6 角色实物对照</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060A14;color:#e2e8f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px;min-height:100vh}
+.shell{max-width:1400px;margin:0 auto}
+.title{font-size:24px;font-weight:900;letter-spacing:-.01em;margin-bottom:6px;background:linear-gradient(90deg,#60a5fa,#c084fc,#34d399);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:#64748b;font-size:12px;margin-bottom:8px}
+.banner{background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.2);border-radius:10px;padding:12px 16px;font-size:12px;color:#cbd5e1;margin-bottom:24px;line-height:1.7}
+.banner b{color:#7dd3fc}
+.banner code{background:rgba(15,23,42,.7);color:#fbbf24;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"SF Mono",monospace}
+
+h2.section{font-size:16px;font-weight:900;color:#f8fafc;margin:36px 0 14px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+h2.section::before{content:"";width:3px;height:18px;background:linear-gradient(180deg,#38bdf8,#a78bfa);border-radius:2px}
+
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-bottom:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-bottom:18px}
+
+.role-tag{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:5px;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px}
+.rt-factory{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);color:#fcd34d}
+.rt-trader{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.35);color:#94a3b8}
+.rt-direct{background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);color:#86efac}
+.rt-truck{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#86efac}
+.rt-customs{background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.35);color:#67e8f9}
+.rt-import{background:rgba(168,85,247,.12);border:1px solid rgba(168,85,247,.35);color:#d8b4fe}
+.rt-ocean{background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.35);color:#7dd3fc}
+
+/* sheet shell */
+.sheet{background:#0B1120;border:1px solid rgba(148,163,184,.15);border-radius:14px;overflow:hidden}
+
+/* header */
+.s-head{padding:12px 16px;border-bottom:1px solid rgba(148,163,184,.1);background:rgba(15,23,42,.5)}
+.s-head .row1{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.s-head .col-code{font-family:"SF Mono",monospace;font-size:14px;font-weight:900;color:#f8fafc}
+.s-head .role-view{font-size:10px;color:#94a3b8;font-weight:700}
+.s-head .closebtn{font-size:12px;color:#64748b;cursor:pointer}
+
+.progress{display:flex;align-items:center;gap:0;margin:6px 0 4px}
+.pn{flex:1;display:flex;flex-direction:column;align-items:center;position:relative;font-size:7.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.pn .b{width:8px;height:8px;border-radius:50%;background:#1e293b;border:1.2px solid #334155;margin-bottom:3px;z-index:2}
+.pn.done .b{background:#22c55e;border-color:#22c55e}
+.pn.now .b{background:#38bdf8;border-color:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.18)}
+.pn.locked .b{background:#0f172a;border-color:#475569;opacity:.4}
+.pn:not(:last-child)::after{content:"";position:absolute;top:4px;left:60%;right:-40%;height:1px;background:#1e293b;z-index:1}
+.pn.done:not(:last-child)::after{background:#22c55e}
+.pn .l{color:#475569;text-align:center;line-height:1.1;max-width:48px}
+.pn.done .l{color:#86efac}
+.pn.now .l{color:#7dd3fc}
+.pn.locked .l{color:#1e293b;opacity:.5}
+
+.summary-line{font-size:11.5px;color:#cbd5e1;font-weight:700;margin-top:6px}
+
+/* tabs */
+.s-tabs{display:flex;background:rgba(2,6,23,.5);border-bottom:1px solid rgba(148,163,184,.1);padding:0 8px}
+.t{padding:9px 14px;font-size:10.5px;font-weight:800;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.04em;display:flex;align-items:center;gap:5px;position:relative}
+.t.active{color:#7dd3fc;border-bottom-color:#38bdf8}
+.t .badge{background:#ef4444;color:#fff;font-size:8.5px;padding:1px 5px;border-radius:8px;font-weight:900;margin-left:3px}
+.t.locked{opacity:.3;cursor:not-allowed}
+
+/* body */
+.s-body{padding:14px 16px;min-height:280px;font-size:11.5px;color:#cbd5e1}
+.b-title{font-size:12px;font-weight:900;color:#f8fafc;margin-bottom:10px}
+
+/* task item */
+.task{padding:8px 10px;background:rgba(15,23,42,.4);border-radius:7px;margin-bottom:6px;border-left:3px solid #f59e0b;display:flex;align-items:center;gap:8px}
+.task.done{border-left-color:#22c55e;color:#86efac;opacity:.7}
+.task.exception{border-left-color:#ef4444;background:rgba(239,68,68,.06)}
+.task .num{font-size:10px;color:#94a3b8;font-weight:900;font-family:"SF Mono",monospace;flex-shrink:0}
+.task .body{flex:1}
+.task .label{font-size:11.5px;font-weight:700;color:#f8fafc}
+.task .meta{font-size:9px;color:#64748b;margin-top:2px}
+.task .actbtn{font-size:10px;font-weight:900;padding:4px 9px;background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;border:none;border-radius:5px;cursor:pointer;flex-shrink:0}
+.task .actbtn.warn{background:linear-gradient(135deg,#ef4444,#f59e0b)}
+.task .actbtn.success{background:linear-gradient(135deg,#22c55e,#10b981)}
+.task .actbtn.disabled{background:#1e293b;color:#475569;cursor:not-allowed}
+
+/* file row */
+.fr{display:flex;align-items:center;gap:8px;padding:6px 10px;background:rgba(15,23,42,.4);border-radius:6px;margin-bottom:4px;font-size:11px}
+.fr .ic{font-size:13px}
+.fr .nm{flex:1;color:#e2e8f0;font-weight:700}
+.fr .meta{font-size:9px;color:#64748b;font-family:"SF Mono",monospace}
+.fr .dl{color:#7dd3fc;font-size:11px;font-weight:800;cursor:pointer}
+
+/* event row */
+.ev{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:10.5px;color:#94a3b8;border-bottom:1px dashed rgba(148,163,184,.08)}
+.ev .dt{font-family:"SF Mono",monospace;color:#64748b;flex-shrink:0;width:54px}
+.ev .lb{flex:1;color:#cbd5e1}
+.ev .src{font-size:9px;color:#64748b}
+.ev.exc{color:#fca5a5;background:rgba(239,68,68,.04);padding:6px 8px;border-radius:5px;border-bottom:none}
+.ev.exc .lb{color:#fca5a5;font-weight:700}
+
+/* msg bubble */
+.msg{padding:7px 10px;border-radius:10px;margin-bottom:5px;font-size:11.5px;line-height:1.5;max-width:88%}
+.msg.in{background:rgba(56,189,248,.08);color:#cbd5e1;align-self:flex-start;border-top-left-radius:3px}
+.msg.out{background:rgba(167,139,250,.1);color:#cbd5e1;align-self:flex-end;border-top-right-radius:3px;margin-left:auto}
+.msg .hdr{font-size:9px;color:#64748b;font-weight:700;margin-bottom:2px}
+
+/* empty state */
+.empty{text-align:center;padding:40px 20px;color:#475569;font-size:11px}
+.empty .ic{font-size:30px;margin-bottom:8px;opacity:.5}
+
+/* note panel */
+.note{background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:10px;padding:12px 14px;font-size:11px;color:#94a3b8;line-height:1.6;margin-bottom:8px}
+.note h4{font-size:11.5px;color:#f8fafc;font-weight:900;margin-bottom:6px;letter-spacing:.02em}
+.note ul{padding-left:14px;margin:0}
+.note li{margin-bottom:3px;font-size:10.5px}
+.note b{color:#cbd5e1}
+
+/* trader_blind 灰禁全屏 */
+.locked-overlay{padding:50px 20px;text-align:center;color:#475569;font-size:12px;background:rgba(15,23,42,.5);border-radius:8px;margin:14px 16px}
+.locked-overlay .ic{font-size:36px;margin-bottom:10px;opacity:.4}
+.locked-overlay .ttl{font-size:13px;color:#94a3b8;font-weight:800;margin-bottom:6px}
+
+/* matrix table */
+.matrix{margin-top:24px;background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:10px;padding:14px 18px;overflow-x:auto}
+.matrix h3{font-size:13px;font-weight:900;color:#f8fafc;margin-bottom:10px}
+.matrix table{width:100%;font-size:10.5px;border-collapse:collapse;min-width:900px}
+.matrix th{text-align:left;color:#94a3b8;font-weight:800;padding:6px 8px;border-bottom:1px solid rgba(148,163,184,.15);font-size:10px;letter-spacing:.04em;text-transform:uppercase}
+.matrix td{padding:6px 8px;border-bottom:1px dashed rgba(148,163,184,.08);color:#cbd5e1}
+.matrix td.tg{font-weight:800}
+.matrix .yes{color:#86efac}
+.matrix .summary{color:#fcd34d}
+.matrix .no{color:#475569}
+.matrix .read{color:#7dd3fc}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="title">Collab Sheet v1 · 6 角色实物对照</div>
+  <div class="sub">同一张订单 · 6 个不同角色打开 /collab/F-218 · 看到的内容完全不同</div>
+
+  <div class="banner">
+    <b>对照场景：</b>订单 <code>F-218</code>（PETSOME EU 客户）· 当前阶段 <b>装柜/拖车 (loading_trucking)</b> · 已发生异常 <b>quantity_mismatch</b>（数量不符）。
+    工厂报装 1,200 CTN，车队称重对应 1,180 CTN，差 20 箱。Sanlyn 请相关方核对。
+  </div>
+
+  <!-- ━━━━━━━━━━ Section A · 工厂三类对比 ━━━━━━━━━━ -->
+  <h2 class="section">A · 工厂三类（同一订单看到完全不同）</h2>
+
+  <div class="grid3">
+    <!-- ─── factory_supplier_limited ─── -->
+    <div>
+      <span class="role-tag rt-factory">🏭 factory_supplier_limited</span>
+      <div class="sheet">
+        <div class="s-head">
+          <div class="row1">
+            <span class="col-code">F-218</span>
+            <span class="role-view">Factory ABC 视角</span>
+            <span class="closebtn">✕</span>
+          </div>
+          <div class="progress">
+            <div class="pn done"><div class="b"></div><div class="l">Inquiry</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">Schedule</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">Production</div></div>
+            <div class="pn now"><div class="b"></div><div class="l">Loading</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">Customs</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">Ocean</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">Done</div></div>
+          </div>
+          <div class="summary-line">⚠ 数量不符 · 你需要核对</div>
+        </div>
+        <div class="s-tabs">
+          <div class="t">📄 Files</div>
+          <div class="t active">✅ My tasks <span class="badge">3</span></div>
+          <div class="t">💬 Messages</div>
+          <div class="t">📊 Status</div>
+        </div>
+        <div class="s-body">
+          <div class="b-title">你需要做的 3 件事</div>
+          <div class="task exception">
+            <div class="num">!</div>
+            <div class="body">
+              <div class="label">核对装柜数量差异</div>
+              <div class="meta">factory 1200 vs trucker 1180 · 差 20 箱</div>
+            </div>
+            <button class="actbtn warn">→ 核对</button>
+          </div>
+          <div class="task">
+            <div class="num">①</div>
+            <div class="body">
+              <div class="label">上传装柜照片</div>
+              <div class="meta">关联事件 loading_complete · 截止今天 17:00</div>
+            </div>
+            <button class="actbtn">📤 上传</button>
+          </div>
+          <div class="task">
+            <div class="num">②</div>
+            <div class="body">
+              <div class="label">填写商检申报数据</div>
+              <div class="meta">出口报关需要</div>
+            </div>
+            <button class="actbtn">→ 填写</button>
+          </div>
+          <div class="task done">
+            <div class="num">✓</div>
+            <div class="body">
+              <div class="label">QC 抽检通过</div>
+              <div class="meta">已上传 (Apr 21)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── factory_trader_blind (装船后全屏蔽) ─── -->
+    <div>
+      <span class="role-tag rt-trader">🏭 factory_trader_blind</span>
+      <div class="sheet">
+        <div class="s-head">
+          <div class="row1">
+            <span class="col-code">F-218</span>
+            <span class="role-view">Factory XYZ 视角</span>
+            <span class="closebtn">✕</span>
+          </div>
+          <div class="progress">
+            <div class="pn done"><div class="b"></div><div class="l">Schedule</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">Production</div></div>
+            <div class="pn now"><div class="b"></div><div class="l">Loading</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+          </div>
+          <div class="summary-line">装柜并交接给 Sanlyn · 后续不可见</div>
+        </div>
+        <div class="s-tabs">
+          <div class="t">📄 Files</div>
+          <div class="t active">✅ My tasks <span class="badge">2</span></div>
+          <div class="t">💬 Messages</div>
+          <div class="t">📊 Status</div>
+        </div>
+        <div class="s-body">
+          <div class="b-title">你需要做的 2 件事</div>
+          <div class="task exception">
+            <div class="num">!</div>
+            <div class="body">
+              <div class="label">核对装柜数量</div>
+              <div class="meta">factory 1200 vs Sanlyn 收 1180</div>
+            </div>
+            <button class="actbtn warn">→ 核对</button>
+          </div>
+          <div class="task">
+            <div class="num">①</div>
+            <div class="body">
+              <div class="label">交接 Sanlyn — 移交装柜资料</div>
+              <div class="meta">完成后该订单从协同卡撤下</div>
+            </div>
+            <button class="actbtn">→ 交接</button>
+          </div>
+          <div class="note" style="margin-top:14px">
+            <h4>⚠ 装船后内容</h4>
+            ⛔ 看不到 BL · 客户 · ETA · POD · 海运详情<br>
+            ⛔ 看不到其他订单 / peer<br>
+            后续由 <b>Sanlyn</b> 负责处理
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── factory_direct_export ─── -->
+    <div>
+      <span class="role-tag rt-direct">🏭 factory_direct_export</span>
+      <div class="sheet">
+        <div class="s-head">
+          <div class="row1">
+            <span class="col-code">F-218</span>
+            <span class="role-view">Factory DEF 视角</span>
+            <span class="closebtn">✕</span>
+          </div>
+          <div class="progress">
+            <div class="pn done"><div class="b"></div><div class="l">Schedule</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">Production</div></div>
+            <div class="pn now"><div class="b"></div><div class="l">Loading</div></div>
+            <div class="pn"><div class="b"></div><div class="l">Customs</div></div>
+            <div class="pn"><div class="b"></div><div class="l">Ocean</div></div>
+            <div class="pn"><div class="b"></div><div class="l">Done</div></div>
+          </div>
+          <div class="summary-line">直接出口 · 全链路可见（除客户报价）</div>
+        </div>
+        <div class="s-tabs">
+          <div class="t">📄 Files</div>
+          <div class="t active">✅ My tasks <span class="badge">3</span></div>
+          <div class="t">💬 Messages</div>
+          <div class="t">📊 Status</div>
+        </div>
+        <div class="s-body">
+          <div class="b-title">你需要做的 3 件事</div>
+          <div class="task exception">
+            <div class="num">!</div>
+            <div class="body">
+              <div class="label">核对装柜数量差异</div>
+              <div class="meta">差 20 箱 · 出口报关需对齐</div>
+            </div>
+            <button class="actbtn warn">→ 核对</button>
+          </div>
+          <div class="task">
+            <div class="num">①</div>
+            <div class="body">
+              <div class="label">配合报关行准备申报资料</div>
+              <div class="meta">需 IV/PL/装柜照片 + 申报要素</div>
+            </div>
+            <button class="actbtn">→ 准备</button>
+          </div>
+          <div class="task">
+            <div class="num">②</div>
+            <div class="body">
+              <div class="label">订舱：配合海运公司 cut-off</div>
+              <div class="meta">截关 Apr 22 14:00</div>
+            </div>
+            <button class="actbtn">→ 查看船期</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-bottom:30px">
+    <h4>关键差异（同一订单同阶段）</h4>
+    <ul>
+      <li><b>supplier_limited</b>: 看到 Loading 阶段后 4 个被 lock（visual locked）— 不参与出口</li>
+      <li><b>trader_blind</b>: Loading 节点是终点，后续阶段从进度条<b>消失</b>（不显示存在）</li>
+      <li><b>direct_export</b>: 全 7 个阶段可见，但 Files / Messages 仍按 Field Visibility 裁剪</li>
+    </ul>
+  </div>
+
+  <!-- ━━━━━━━━━━ Section B · 车队 / 报关 / 海运 ━━━━━━━━━━ -->
+  <h2 class="section">B · 物流伙伴（车队 / 报关 / 海运）</h2>
+  <div class="grid3">
+
+    <!-- 车队 -->
+    <div>
+      <span class="role-tag rt-truck">🚚 trucking_partner</span>
+      <div class="sheet">
+        <div class="s-head">
+          <div class="row1">
+            <span class="col-code">F-218</span>
+            <span class="role-view">福通拖运 视角</span>
+            <span class="closebtn">✕</span>
+          </div>
+          <div class="progress">
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">Pickup</div></div>
+            <div class="pn now"><div class="b"></div><div class="l">Loading</div></div>
+            <div class="pn"><div class="b"></div><div class="l">→ Port</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+          </div>
+          <div class="summary-line">送达港口堆场后任务结束</div>
+        </div>
+        <div class="s-tabs">
+          <div class="t">📄 Files</div>
+          <div class="t active">✅ My tasks <span class="badge">2</span></div>
+          <div class="t">💬 Messages</div>
+          <div class="t">📊 Status</div>
+        </div>
+        <div class="s-body">
+          <div class="b-title">你需要做的 2 件事</div>
+          <div class="task">
+            <div class="num">①</div>
+            <div class="body">
+              <div class="label">填写封条号 + 装柜后箱重</div>
+              <div class="meta">车牌 闽D-12345 · 司机 张师傅</div>
+            </div>
+            <button class="actbtn">→ 填写</button>
+          </div>
+          <div class="task">
+            <div class="num">②</div>
+            <div class="body">
+              <div class="label">送达港口堆场（Xiamen CY）</div>
+              <div class="meta">预计 3h 后到达 · 提交 GPS 时间戳</div>
+            </div>
+            <button class="actbtn">→ 确认</button>
+          </div>
+          <div class="note" style="margin-top:14px">
+            <h4>看不到</h4>
+            ⛔ 客户名 · 客户价格 · 海运 BL/ETA<br>
+            ⛔ 工厂利润 · 报关行
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 报关行 -->
+    <div>
+      <span class="role-tag rt-customs">🛂 customs_broker</span>
+      <div class="sheet">
+        <div class="s-head">
+          <div class="row1">
+            <span class="col-code">F-218</span>
+            <span class="role-view">厦门通关 视角</span>
+            <span class="closebtn">✕</span>
+          </div>
+          <div class="progress">
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">Loading→</div></div>
+            <div class="pn now"><div class="b"></div><div class="l">Customs</div></div>
+            <div class="pn"><div class="b"></div><div class="l">→ Carrier</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+          </div>
+          <div class="summary-line">查验中 · 等放行</div>
+        </div>
+        <div class="s-tabs">
+          <div class="t">📄 Files</div>
+          <div class="t active">✅ My tasks <span class="badge">2</span></div>
+          <div class="t">💬 Messages</div>
+          <div class="t">📊 Status</div>
+        </div>
+        <div class="s-body">
+          <div class="b-title">你需要做的 2 件事</div>
+          <div class="task">
+            <div class="num">①</div>
+            <div class="body">
+              <div class="label">提交申报要素到海关</div>
+              <div class="meta">PBTDP-20260509 · 含 HS 码 + 件毛体</div>
+            </div>
+            <button class="actbtn">→ 提交</button>
+          </div>
+          <div class="task">
+            <div class="num">②</div>
+            <div class="body">
+              <div class="label">查验跟进 + 上传放行通知</div>
+              <div class="meta">x-ray 抽到，可能 1-2 天</div>
+            </div>
+            <button class="actbtn">→ 跟进</button>
+          </div>
+          <div class="note" style="margin-top:14px">
+            <h4>看到</h4>
+            ✓ HS / 件毛体 / 装柜照片 / 报关 BL<br>
+            <h4>看不到</h4>
+            ⛔ 客户 · 客户价格 · 工厂报价<br>
+            ⛔ 海运 ETA · 目的港
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 海运 -->
+    <div>
+      <span class="role-tag rt-ocean">🚢 ocean_partner</span>
+      <div class="sheet">
+        <div class="s-head">
+          <div class="row1">
+            <span class="col-code">F-218</span>
+            <span class="role-view">中远海运 视角</span>
+            <span class="closebtn">✕</span>
+          </div>
+          <div class="progress">
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn locked"><div class="b"></div><div class="l">—</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">Pickup</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">→Port</div></div>
+            <div class="pn done"><div class="b"></div><div class="l">Released</div></div>
+            <div class="pn now"><div class="b"></div><div class="l">Ocean</div></div>
+            <div class="pn"><div class="b"></div><div class="l">ETA</div></div>
+          </div>
+          <div class="summary-line">柜已交,装船排期 May 9</div>
+        </div>
+        <div class="s-tabs">
+          <div class="t">📄 Files</div>
+          <div class="t active">✅ My tasks <span class="badge">2</span></div>
+          <div class="t">💬 Messages</div>
+          <div class="t">📊 Status</div>
+        </div>
+        <div class="s-body">
+          <div class="b-title">你需要做的 2 件事</div>
+          <div class="task">
+            <div class="num">①</div>
+            <div class="body">
+              <div class="label">确认装船 + 出 MBL 草本</div>
+              <div class="meta">Vessel COSCO ROSE 118E · ETD May 9</div>
+            </div>
+            <button class="actbtn">→ 确认</button>
+          </div>
+          <div class="task">
+            <div class="num">②</div>
+            <div class="body">
+              <div class="label">实时位置同步（4portun 自动）</div>
+              <div class="meta">每 6h 推送 ATD/位置/ETA 更新</div>
+            </div>
+            <button class="actbtn disabled">自动</button>
+          </div>
+          <div class="note" style="margin-top:14px">
+            <h4>看到</h4>
+            ✓ MBL · 船期 · POL/POD · ATD/ETA<br>
+            <h4>看不到</h4>
+            ⛔ 客户 · 工厂产品价 · 报关 BL<br>
+            ⛔ 客户加价
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━ Section C · trader_blind 在不同阶段 ━━━━━━━━━━ -->
+  <h2 class="section">C · trader_blind 工厂 — 装船后整页只读</h2>
+
+  <div class="grid2">
+    <div>
+      <span class="role-tag rt-trader">🏭 trader_blind · 装柜阶段（可工作）</span>
+      <div class="sheet">
+        <div class="s-head">
+          <div class="row1">
+            <span class="col-code">F-218</span>
+            <span class="role-view">Factory XYZ 视角 · loading</span>
+          </div>
+          <div class="summary-line">装柜并交接给 Sanlyn</div>
+        </div>
+        <div class="s-tabs">
+          <div class="t">📄 Files</div>
+          <div class="t active">✅ My tasks <span class="badge">2</span></div>
+          <div class="t">💬 Messages</div>
+          <div class="t">📊 Status</div>
+        </div>
+        <div class="s-body" style="min-height:200px">
+          <div class="task">
+            <div class="num">①</div><div class="body"><div class="label">上传装柜照</div></div>
+            <button class="actbtn">📤</button>
+          </div>
+          <div class="task">
+            <div class="num">②</div><div class="body"><div class="label">交接 Sanlyn</div></div>
+            <button class="actbtn">→</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <span class="role-tag rt-trader">🏭 trader_blind · 装船后（全屏蔽）</span>
+      <div class="sheet">
+        <div class="s-head">
+          <div class="row1">
+            <span class="col-code">F-218</span>
+            <span class="role-view">Factory XYZ 视角 · ocean</span>
+          </div>
+          <div class="summary-line" style="color:#475569">订单已交接 · 后续 Sanlyn 处理</div>
+        </div>
+        <div class="s-tabs">
+          <div class="t locked">📄 Files</div>
+          <div class="t locked">✅ My tasks</div>
+          <div class="t locked">💬 Messages</div>
+          <div class="t locked">📊 Status</div>
+        </div>
+        <div class="locked-overlay">
+          <div class="ic">🔒</div>
+          <div class="ttl">订单已完成出厂交接</div>
+          后续由 <b style="color:#7dd3fc">Sanlyn</b> 处理。<br>
+          需要查询请联系 Sanlyn 客服。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━ Section D · Files tab 对比 ━━━━━━━━━━ -->
+  <h2 class="section">D · Files tab — 同一订单不同角色看到的文件</h2>
+
+  <div class="grid3">
+
+    <div>
+      <span class="role-tag rt-direct">🏭 factory_direct_export</span>
+      <div class="sheet">
+        <div class="s-body">
+          <div class="b-title">我能看的文件 (5)</div>
+          <div class="fr"><span class="ic">📄</span><span class="nm">Invoice IV-218.pdf</span><span class="meta">v3</span><span class="dl">⬇</span></div>
+          <div class="fr"><span class="ic">📦</span><span class="nm">Packing List PL-218.pdf</span><span class="meta">v3</span><span class="dl">⬇</span></div>
+          <div class="fr"><span class="ic">🛂</span><span class="nm">Customs Draft.pdf</span><span class="meta">—</span><span class="dl">⬇</span></div>
+          <div class="fr"><span class="ic">📜</span><span class="nm">Sales Contract SC-218.pdf</span><span class="meta">—</span><span class="dl">⬇</span></div>
+          <div class="fr"><span class="ic">🚢</span><span class="nm">MBL TEMP-118.pdf</span><span class="meta">draft</span><span class="dl">⬇</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <span class="role-tag rt-trader">🏭 factory_trader_blind</span>
+      <div class="sheet">
+        <div class="s-body">
+          <div class="b-title">我能看的文件 (3)</div>
+          <div class="fr"><span class="ic">📄</span><span class="nm">Invoice (factory side) IV-FAC-218.pdf</span><span class="meta">—</span><span class="dl">⬇</span></div>
+          <div class="fr"><span class="ic">📦</span><span class="nm">Packing List PL-218.pdf</span><span class="meta">—</span><span class="dl">⬇</span></div>
+          <div class="fr"><span class="ic">📷</span><span class="nm">Loading Photos (12).zip</span><span class="meta">—</span><span class="dl">⬇</span></div>
+          <div class="note" style="margin-top:10px">
+            <b>看不到</b>: SC（含客户名）· MBL · HBL · 报关单 · 客户 IV
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <span class="role-tag rt-truck">🚚 trucking_partner</span>
+      <div class="sheet">
+        <div class="s-body">
+          <div class="b-title">我能看的文件 (2)</div>
+          <div class="fr"><span class="ic">📋</span><span class="nm">Pickup Order F-218.pdf</span><span class="meta">—</span><span class="dl">⬇</span></div>
+          <div class="fr"><span class="ic">📷</span><span class="nm">Loading Photos (我自己拍).zip</span><span class="meta">—</span><span class="dl">⬇</span></div>
+          <div class="note" style="margin-top:10px">
+            <b>看不到</b>: IV · PL · BL · SC · 客户任何资料
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━ Section E · Messages 防跳单 ━━━━━━━━━━ -->
+  <h2 class="section">E · Messages tab — 单向通道（防跳单）</h2>
+
+  <div class="grid2">
+
+    <div>
+      <span class="role-tag rt-factory">🏭 factory · 跟谁能聊？</span>
+      <div class="sheet">
+        <div class="s-body">
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div class="msg in"><div class="hdr">📥 Sanlyn · May 8 14:23</div>请优先完成 244 单，客户催了。</div>
+            <div class="msg out"><div class="hdr">📤 我 · May 8 15:01</div>好的，明天能装柜。</div>
+            <div class="msg in"><div class="hdr">📥 Sanlyn · May 9 11:50</div>装柜数量你那边再核对一下，差 20 箱。</div>
+          </div>
+          <div class="note" style="margin-top:14px">
+            <h4>规则</h4>
+            ✓ 工厂 ↔ Sanlyn 单向通道<br>
+            ⛔ 工厂 ↔ 客户 不能直连<br>
+            ⛔ 工厂 ↔ 车队 不能直连<br>
+            ⛔ 工厂 ↔ 报关行 不能直连
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <span class="role-tag rt-customs">🛂 customs_broker · 跟谁能聊？</span>
+      <div class="sheet">
+        <div class="s-body">
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <div class="msg in"><div class="hdr">📥 Sanlyn · May 9 09:00</div>F-218 装柜照已上传，可以准备申报。</div>
+            <div class="msg out"><div class="hdr">📤 我 · May 9 10:15</div>HS 码 23099090 对吗？</div>
+            <div class="msg in"><div class="hdr">📥 Sanlyn · May 9 10:20</div>对的，按申报要素填。</div>
+          </div>
+          <div class="note" style="margin-top:14px">
+            <h4>规则</h4>
+            ✓ 报关行 ↔ Sanlyn<br>
+            ⛔ 报关行 ↔ 客户<br>
+            ⛔ 报关行 ↔ 工厂<br>
+            ⛔ 报关行 ↔ 海运公司
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="banner" style="background:rgba(167,139,250,.06);border-color:rgba(167,139,250,.2)">
+    <b>核心铁律：</b>所有协同卡内的消息<b>必须 Sanlyn 中转</b>。
+    工厂 ↔ Sanlyn ↔ 客户。报关行 ↔ Sanlyn ↔ 客户。
+    如果允许 peer 直连，工厂能直接拿到客户联系方式 → 防跳单失败。
+    集成 WeCom：消息同步对方微信群。
+  </div>
+
+  <!-- ━━━━━━━━━━ Matrix ━━━━━━━━━━ -->
+  <div class="matrix">
+    <h3>🎛 7 角色 × 4 tabs × 7 主阶段（visible / readonly / hidden）</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>inquiry</th>
+          <th>contract</th>
+          <th>production</th>
+          <th>loading</th>
+          <th>customs</th>
+          <th>ocean</th>
+          <th>delivered</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="tg" style="color:#fcd34d">factory_supplier_limited</td>
+          <td class="no">—</td><td class="summary">摘要</td>
+          <td class="yes">✓ 全 4 tab</td><td class="yes">✓ 全 4 tab</td>
+          <td class="no">—</td><td class="no">—</td><td class="no">—</td>
+        </tr>
+        <tr>
+          <td class="tg" style="color:#94a3b8">factory_trader_blind</td>
+          <td class="no">—</td><td class="summary">摘要</td>
+          <td class="yes">✓</td><td class="yes">✓</td>
+          <td class="no">🔒 全锁</td><td class="no">🔒 全锁</td><td class="no">🔒 全锁</td>
+        </tr>
+        <tr>
+          <td class="tg" style="color:#86efac">factory_direct_export</td>
+          <td class="no">—</td><td class="summary">摘要</td>
+          <td class="yes">✓</td><td class="yes">✓</td>
+          <td class="read">✓ readonly</td><td class="read">✓ readonly</td><td class="read">✓ readonly</td>
+        </tr>
+        <tr>
+          <td class="tg" style="color:#86efac">trucking_partner</td>
+          <td class="no">—</td><td class="no">—</td><td class="no">—</td>
+          <td class="yes">✓ 全 4 tab</td>
+          <td class="no">—</td><td class="no">—</td><td class="no">—</td>
+        </tr>
+        <tr>
+          <td class="tg" style="color:#67e8f9">customs_broker</td>
+          <td class="no">—</td><td class="no">—</td><td class="no">—</td>
+          <td class="summary">触发</td><td class="yes">✓ 全 4 tab</td>
+          <td class="read">readonly</td><td class="no">—</td>
+        </tr>
+        <tr>
+          <td class="tg" style="color:#7dd3fc">ocean_partner</td>
+          <td class="no">—</td><td class="no">—</td><td class="no">—</td>
+          <td class="summary">预报</td><td class="summary">触发</td>
+          <td class="yes">✓ 全 4 tab</td><td class="read">readonly</td>
+        </tr>
+        <tr>
+          <td class="tg" style="color:#d8b4fe">import_broker</td>
+          <td class="no">—</td><td class="no">—</td><td class="no">—</td>
+          <td class="no">—</td><td class="no">—</td>
+          <td class="yes">✓</td><td class="yes">✓ 全 4 tab</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>

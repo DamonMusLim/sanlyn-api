@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Freight Debit Note</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d2e;
+      --card-2: #20243a;
+      --line: #323851;
+      --text: #f4f6fb;
+      --muted: #9aa3b8;
+      --soft: #c8cedd;
+      --accent: #d83b45;
+      --accent-2: #57b6ff;
+      --pill: #252a3f;
+      --input: #121522;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, "Microsoft YaHei", "PingFang SC", sans-serif;
+      line-height: 1.45;
+    }
+
+    .page {
+      width: min(1120px, calc(100% - 32px));
+      margin: 28px auto;
+      padding: 28px;
+      background: linear-gradient(180deg, #151827 0%, var(--bg) 160px);
+      border: 1px solid #24283a;
+    }
+
+    .top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 24px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .company h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+
+    .company .en {
+      margin-top: 3px;
+      color: var(--soft);
+      font-size: 15px;
+    }
+
+    .company .tagline {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 12px 16px;
+      border-radius: 4px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 800;
+      font-size: 14px;
+      letter-spacing: .08em;
+      text-align: center;
+      box-shadow: 0 10px 24px rgba(216, 59, 69, .24);
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(140px, 1fr));
+      gap: 10px;
+      margin: 18px 0 22px;
+    }
+
+    .pill {
+      min-height: 44px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: var(--pill);
+      border: 1px solid #31364f;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pill label {
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+      text-transform: uppercase;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid #3a405b;
+      border-radius: 4px;
+      background: var(--input);
+      color: var(--text);
+      font: inherit;
+      outline: none;
+    }
+
+    input,
+    select {
+      height: 31px;
+      padding: 5px 8px;
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+      padding: 8px;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent-2);
+      box-shadow: 0 0 0 2px rgba(87, 182, 255, .15);
+    }
+
+    .columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card h2 {
+      margin: 0 0 12px;
+      color: #fff;
+      font-size: 15px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .fixed-lines {
+      color: var(--soft);
+      font-size: 14px;
+    }
+
+    .fixed-lines strong {
+      display: block;
+      color: var(--text);
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 8px;
+    }
+
+    th,
+    td {
+      padding: 11px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 14px;
+    }
+
+    th {
+      background: #242941;
+      color: #dfe5f3;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    tbody tr {
+      background: var(--card);
+    }
+
+    tbody tr:nth-child(even) {
+      background: #181b2b;
+    }
+
+    .amount-cell {
+      width: 190px;
+    }
+
+    .money-input {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .currency {
+      color: var(--muted);
+      text-align: right;
+      font-weight: 700;
+    }
+
+    .subtotal-row td {
+      background: #232844;
+      font-weight: 800;
+      border-bottom: none;
+    }
+
+    .subtotal-value {
+      text-align: right;
+      color: #fff;
+      font-size: 16px;
+    }
+
+    .section-title {
+      margin: 22px 0 10px;
+      color: #fff;
+      font-size: 16px;
+    }
+
+    .ocean-grid {
+      display: grid;
+      grid-template-columns: 1.4fr .7fr 1fr 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin: 18px 0;
+    }
+
+    .summary-box {
+      background: var(--card-2);
+      border: 1px solid #3a405b;
+      border-radius: 8px;
+      padding: 18px;
+    }
+
+    .summary-box .label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .summary-box .value {
+      margin-top: 6px;
+      font-size: 26px;
+      font-weight: 800;
+    }
+
+    .bank-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px 18px;
+      color: var(--soft);
+      font-size: 14px;
+    }
+
+    .bank-grid span {
+      color: var(--muted);
+      display: inline-block;
+      min-width: 110px;
+    }
+
+    .terms {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .overdue {
+      grid-column: 1 / -1;
+      margin: -8px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .confirm {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .signature {
+      height: 66px;
+      border-bottom: 1px solid #6f7895;
+      margin: 18px 0 8px;
+    }
+
+    .caption {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .disclaimer {
+      margin-top: 18px;
+      color: #8e96aa;
+      font-size: 6pt;
+      line-height: 1.55;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 820px) {
+      .page {
+        width: calc(100% - 18px);
+        margin: 9px auto;
+        padding: 16px;
+      }
+
+      .top,
+      .columns,
+      .summary,
+      .terms,
+      .confirm {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .meta,
+      .ocean-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .badge {
+        justify-self: start;
+      }
+
+      th,
+      td {
+        padding: 9px 7px;
+        font-size: 12px;
+      }
+
+      .amount-cell {
+        width: 150px;
+      }
+
+      .bank-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        width: 100%;
+        margin: 0;
+        border: 0;
+        background: #fff;
+        color: #111;
+      }
+
+      .card,
+      tbody tr,
+      tbody tr:nth-child(even),
+      .summary-box,
+      .subtotal-row td {
+        background: #fff;
+        color: #111;
+      }
+
+      input,
+      select,
+      textarea {
+        color: #111;
+        background: #fff;
+        border-color: #bbb;
+      }
+
+      th {
+        background: #eee;
+        color: #111;
+      }
+
+      .company .en,
+      .company .tagline,
+      .fixed-lines,
+      .field label,
+      .caption,
+      .overdue,
+      .bank-grid,
+      .bank-grid span,
+      .disclaimer,
+      .label,
+      .currency {
+        color: #333;
+      }
+
+      .no-print {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="top">
+      <div class="company">
+        <h1>厦门巴匕进出口有限公司</h1>
+        <div class="en">Xiamen BABI Import &amp; Export Co., Ltd.</div>
+        <div class="tagline">Ocean Freight · Customs · Trucking</div>
+      </div>
+      <div class="badge">FREIGHT DEBIT NOTE</div>
+    </header>
+
+    <section class="meta" aria-label="Shipment Information">
+      <div class="pill">
+        <label for="bl-no">BL No.</label>
+        <input id="bl-no" type="text" placeholder="BL No.">
+      </div>
+      <div class="pill">
+        <label for="etd">ETD</label>
+        <input id="etd" type="date">
+      </div>
+      <div class="pill">
+        <label for="container">Container</label>
+        <input id="container" type="text" placeholder="1 x 40HQ">
+      </div>
+      <div class="pill">
+        <label for="pod">POD</label>
+        <input id="pod" type="text" placeholder="Port of Discharge">
+      </div>
+      <div class="pill">
+        <label for="incoterm">Incoterm</label>
+        <select id="incoterm">
+          <option>FCA</option>
+          <option selected>FOB</option>
+          <option>CFR</option>
+          <option>CIF</option>
+          <option>DDP</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="columns">
+      <div class="card">
+        <h2>FROM / 出账方</h2>
+        <div class="fixed-lines">
+          <strong>厦门巴匕进出口有限公司</strong>
+          Xiamen BABI Import &amp; Export Co., Ltd.<br>
+          Ocean Freight · Customs · Trucking
+        </div>
+      </div>
+      <div class="card">
+        <h2>TO / 收账方</h2>
+        <div class="stack">
+          <input type="text" placeholder="Customer English Name">
+          <input type="text" placeholder="Full Company Name">
+          <textarea placeholder="Remarks / 备注"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="section-title">CNY Local Charges / 港杂费</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>费用项目</th>
+            <th>英文名</th>
+            <th>单位</th>
+            <th>金额</th>
+          </tr>
+        </thead>
+        <tbody id="charges-body">
+          <tr data-terms="FCA,FOB,CFR,CIF,DDP">
+            <td>EDI费</td>
+            <td>EDI Fee</td>
+            <td>/票</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FCA,FOB,CFR,CIF,DDP">
+            <td>报关费</td>
+            <td>Customs Declaration Fee</td>
+            <td>/票</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FCA,FOB,CFR,CIF,DDP">
+            <td>单证费</td>
+            <td>Documentation Fee</td>
+            <td>/票</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FOB,CFR,CIF,DDP">
+            <td>电子装箱费</td>
+            <td>E-Packing List Fee</td>
+            <td>/票</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="CFR,CIF,DDP">
+            <td>订舱费</td>
+            <td>Booking Fee</td>
+            <td>/票</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FCA,FOB,CFR,CIF,DDP">
+            <td>条形码费</td>
+            <td>Barcode Fee</td>
+            <td>/票</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FCA,FOB,CFR,CIF,DDP">
+            <td>箱单费</td>
+            <td>Packing List Fee</td>
+            <td>/票</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FOB,CFR,CIF,DDP">
+            <td>THC码头操作费</td>
+            <td>Terminal Handling Charge</td>
+            <td>/箱</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FOB,CFR,CIF,DDP">
+            <td>吊机费</td>
+            <td>Crane Fee</td>
+            <td>/箱</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="DDP">
+            <td>堆存费</td>
+            <td>Storage Fee</td>
+            <td>/箱</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FOB,CFR,CIF,DDP">
+            <td>进港费</td>
+            <td>Port Entry Fee</td>
+            <td>/箱</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FCA,FOB,CFR,CIF,DDP">
+            <td>提箱费</td>
+            <td>Container Pick-up Fee</td>
+            <td>/箱</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="DDP">
+            <td>停车费</td>
+            <td>Parking Fee</td>
+            <td>/箱</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr data-terms="FOB,CFR,CIF,DDP">
+            <td>拖车费</td>
+            <td>Trucking Fee</td>
+            <td>/箱</td>
+            <td class="amount-cell"><div class="money-input"><span class="currency">¥</span><input class="cny-amount" type="number" min="0" step="0.01"></div></td>
+          </tr>
+          <tr class="subtotal-row">
+            <td colspan="3">CNY Subtotal / 港杂费小计</td>
+            <td class="subtotal-value">¥ <span id="cny-subtotal">0.00</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="ocean-section" class="card">
+      <div class="ocean-grid">
+        <div class="field">
+          <label>Ocean Freight / 海运费</label>
+          <strong>🚢 Ocean Freight · 海运费</strong>
+        </div>
+        <div class="field">
+          <label for="ocean-containers">Container数量</label>
+          <input id="ocean-containers" type="text" placeholder="1 x 40HQ">
+        </div>
+        <div class="field">
+          <label for="ocean-pod">POD</label>
+          <input id="ocean-pod" type="text" placeholder="POD">
+        </div>
+        <div class="field">
+          <label for="ocean-ref">Ref</label>
+          <input id="ocean-ref" type="text" placeholder="Ref">
+        </div>
+        <div class="field">
+          <label for="usd-amount">Amount</label>
+          <div class="money-input"><span class="currency">$</span><input id="usd-amount" type="number" min="0" step="0.01"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="summary">
+      <div class="summary-box">
+        <div class="label">港杂合计 CNY</div>
+        <div class="value">¥ <span id="summary-cny">0.00</span></div>
+      </div>
+      <div class="summary-box">
+        <div class="label">海运费合计 USD</div>
+        <div class="value">$ <span id="summary-usd">N/A</span></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Bank Information / 银行信息</h2>
+      <div class="bank-grid">
+        <div><span>Bank:</span> BANK OF CHINA XIAMEN BRANCH</div>
+        <div><span>Swift:</span> BKCHCNBI73A</div>
+        <div><span>USD A/C:</span> 433849630299</div>
+        <div><span>CNY A/C:</span> 433849860868</div>
+        <div><span>Account Name:</span> XIAMEN BABI IMPORT &amp; EXPORT CO., LTD.</div>
+      </div>
+    </section>
+
+    <section class="terms">
+      <div class="field">
+        <label for="payment-terms">Payment Terms</label>
+        <input id="payment-terms" type="text" value="Net 7 days">
+      </div>
+      <div class="field">
+        <label for="due-date">Due Date</label>
+        <input id="due-date" type="date">
+      </div>
+      <p class="overdue">Overdue accounts subject to 0.05% daily interest</p>
+    </section>
+
+    <section class="confirm">
+      <div class="card">
+        <h2>委托方确认 / Customer Confirmation</h2>
+        <div class="signature"></div>
+        <div class="caption">盖章/日期</div>
+      </div>
+      <div class="card">
+        <h2>代理方 / Agent</h2>
+        <div class="fixed-lines"><strong>厦门巴匕</strong></div>
+        <div class="signature"></div>
+        <div class="caption">经办人/日期</div>
+      </div>
+    </section>
+
+    <footer class="disclaimer">
+      本账单须配合正式增值税发票使用。客户在收到账单7个工作日内未提出书面异议，视为确认。因本账单引起的争议，适用中华人民共和国法律，由厦门海事法院管辖。港杂费以人民币结算，海运费以美元结算。
+    </footer>
+  </main>
+
+  <script>
+    const incotermSelect = document.getElementById('incoterm');
+    const chargeRows = Array.from(document.querySelectorAll('[data-terms]'));
+    const cnyInputs = Array.from(document.querySelectorAll('.cny-amount'));
+    const cnySubtotal = document.getElementById('cny-subtotal');
+    const summaryCny = document.getElementById('summary-cny');
+    const oceanSection = document.getElementById('ocean-section');
+    const usdInput = document.getElementById('usd-amount');
+    const summaryUsd = document.getElementById('summary-usd');
+    const dueDate = document.getElementById('due-date');
+
+    function formatMoney(value) {
+      return value.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function isOceanApplicable(term) {
+      return ['CFR', 'CIF', 'DDP'].includes(term);
+    }
+
+    function recalculate() {
+      let cnyTotal = 0;
+
+      chargeRows.forEach(row => {
+        if (row.classList.contains('hidden')) {
+          return;
+        }
+
+        const input = row.querySelector('.cny-amount');
+        const value = Number.parseFloat(input.value);
+        if (!Number.isNaN(value)) {
+          cnyTotal += value;
+        }
+      });
+
+      cnySubtotal.textContent = formatMoney(cnyTotal);
+      summaryCny.textContent = formatMoney(cnyTotal);
+
+      if (isOceanApplicable(incotermSelect.value)) {
+        const usdValue = Number.parseFloat(usdInput.value);
+        summaryUsd.textContent = Number.isNaN(usdValue) ? '0.00' : formatMoney(usdValue);
+      } else {
+        summaryUsd.textContent = 'N/A';
+      }
+    }
+
+    function applyIncotermFilter() {
+      const term = incotermSelect.value;
+
+      chargeRows.forEach(row => {
+        const terms = row.dataset.terms.split(',').map(item => item.trim());
+        row.classList.toggle('hidden', !terms.includes(term));
+      });
+
+      oceanSection.classList.toggle('hidden', !isOceanApplicable(term));
+      recalculate();
+    }
+
+    function setDefaultDueDate() {
+      const date = new Date();
+      date.setDate(date.getDate() + 7);
+      dueDate.value = date.toISOString().slice(0, 10);
+    }
+
+    incotermSelect.addEventListener('change', applyIncotermFilter);
+    cnyInputs.forEach(input => input.addEventListener('input', recalculate));
+    usdInput.addEventListener('input', recalculate);
+
+    setDefaultDueDate();
+    applyIncotermFilter();
+    // Codex: freight-debit-note-v1
+  </script>
+</body>
+</html>

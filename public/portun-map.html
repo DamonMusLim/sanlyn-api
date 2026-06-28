@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>船期追踪 · Portun</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #07090f; color: #e2e8f0; font-family: 'PingFang SC', 'SF Pro Text', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  #header { background: rgba(8,12,22,0.99); border-bottom: 1px solid rgba(255,255,255,0.08); padding: 12px 16px; display: flex; align-items: center; gap: 12; flex-shrink: 0; }
+  #header .label { font-size: 11px; color: #38bdf8; font-weight: 700; letter-spacing: 0.07em; }
+  #header .blno { font-size: 15px; font-weight: 800; color: #e2e8f0; margin-top: 2px; }
+  #header .carrier { font-size: 12px; color: #94a3b8; margin-top: 1px; }
+  #map-wrap { flex: 1; position: relative; overflow: hidden; }
+  #portun-map-container { width: 100%; height: 100%; }
+  #overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12; background: #07090f; }
+  #overlay .icon { font-size: 36px; }
+  #overlay .msg { font-size: 13px; color: #94a3b8; font-weight: 600; }
+  #overlay .sub { font-size: 11px; color: #4b5563; max-width: 320px; text-align: center; line-height: 1.6; }
+  #overlay .mono { font-family: monospace; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #94a3b8; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="header">
+  <div>
+    <div class="label">🚢 VESSEL TRACKING · Portun</div>
+    <div class="blno" id="hdr-blno">—</div>
+    <div class="carrier" id="hdr-carrier"></div>
+  </div>
+</div>
+<div id="map-wrap">
+  <div id="overlay">
+    <div class="icon">🗺️</div>
+    <div class="msg">正在加载船期追踪…</div>
+    <div class="sub" id="overlay-sub"></div>
+  </div>
+  <div id="portun-map-container"></div>
+</div>
+
+<script>
+(async function () {
+  const params = new URLSearchParams(location.search);
+  const blNo          = params.get("blNo") || "";
+  const carrierCode   = params.get("carrierCode") || "";
+  const appId         = params.get("appId") || "SHYBB";
+  const token         = params.get("token") || "";
+  const subscriptionId = params.get("subscriptionId") || "";
+
+  document.getElementById("hdr-blno").textContent    = blNo || "—";
+  document.getElementById("hdr-carrier").textContent = carrierCode || "";
+
+  function showError(msg, detail) {
+    const ov = document.getElementById("overlay");
+    ov.querySelector(".icon").textContent = "⚠️";
+    ov.querySelector(".msg").style.color  = "#fca5a5";
+    ov.querySelector(".msg").textContent  = msg;
+    ov.querySelector(".sub").textContent  = detail || "";
+    if (blNo) {
+      const mono = document.createElement("div");
+      mono.className = "mono";
+      mono.textContent = blNo;
+      ov.appendChild(mono);
+    }
+  }
+
+  function loadSdk(aid) {
+    return new Promise((resolve, reject) => {
+      const existing = document.getElementById("portun-sdk");
+      if (existing) existing.remove();   // 每次重新加载确保 appId 正确
+      const s = document.createElement("script");
+      s.id  = "portun-sdk";
+      s.src = "https://tracking.4portun.com/sgld.umd.min.js?appId=" + encodeURIComponent(aid) + "&version=1.0.3";
+      s.onload  = resolve;
+      s.onerror = () => reject(new Error("Portun SDK load failed"));
+      document.body.appendChild(s);
+    });
+  }
+
+  async function initMap(tok, subId) {
+    // 加载 SDK（保证 appId 在 script URL 里）
+    await loadSdk(appId);
+
+    if (!window.Sgld) throw new Error("window.Sgld 未定义");
+
+    // 尝试初始化（部分版本需要显式 init）
+    if (typeof window.Sgld.init === "function") {
+      window.Sgld.init({ appId });
+    }
+
+    // 隐藏 overlay，显示地图容器
+    document.getElementById("overlay").style.display = "none";
+
+    // 找到可用的渲染函数
+    const fnName = ["createTrackingBySubscriptionId","createTracking","render","mount"]
+      .find(n => typeof window.Sgld[n] === "function");
+
+    if (!fnName) {
+      throw new Error("Sgld 可用方法: " + Object.keys(window.Sgld).join(", "));
+    }
+
+    window.Sgld[fnName]({
+      id: "portun-map-container",
+      appId,
+      token: tok,
+      subscriptionId: subId,
+      language: "cn",
+    });
+  }
+
+  try {
+    if (!blNo) { showError("缺少提单号 / 柜号", "请从系统内通过 📍 按钮打开"); return; }
+
+    // 如果 URL 已携带 token + subscriptionId，直接渲染（不再请求后端）
+    if (token && subscriptionId) {
+      await initMap(token, subscriptionId);
+      return;
+    }
+
+    // 否则调后端拿 token
+    document.getElementById("overlay-sub").textContent = blNo;
+    const apiBase = params.get("api") || (location.origin + "/api/vessel-map");
+    const r = await fetch(apiBase, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blNo, carrierCode }),
+    });
+    const data = await r.json();
+
+    if (data.arrived) {
+      showError("货物可能已到港", data.reason || "ETA+3 天已过");
+      return;
+    }
+    if (!data.token) {
+      showError("获取追踪 Token 失败", data.error || data.hint || JSON.stringify(data).slice(0,120));
+      return;
+    }
+
+    await initMap(data.token, data.subscriptionId);
+
+  } catch (e) {
+    showError("加载失败", e.message || String(e));
+  }
+})();
+</script>
+</body>
+</html>

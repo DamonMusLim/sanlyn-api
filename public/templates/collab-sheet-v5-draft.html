@@ -1,0 +1,858 @@
+<!-- Collab Sheet v5 Draft · forge GPT起草 · 2026-06-08 -->
+<!-- React 组件已生成: SoDispatchHub / FactoryCollabCard / TruckingCollabCard / CustomsBrokerCard / OceanCarrierCard -->
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>协同表 v5 · SO 分发 · CY00359</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060A14;color:#e2e8f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px 20px;min-height:100vh}
+.shell{max-width:1600px;margin:0 auto}
+
+/* ── HEADER ── */
+.page-header{background:rgba(255,255,255,0.03);border:1px solid rgba(148,163,184,0.12);border-radius:12px;padding:16px 20px;margin-bottom:20px}
+.page-header h1{font-size:18px;font-weight:900;letter-spacing:-.01em;background:linear-gradient(90deg,#60a5fa,#c084fc,#34d399);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.header-meta{display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:#94a3b8;margin-bottom:14px}
+.header-meta span{display:flex;align-items:center;gap:5px}
+.header-meta .val{color:#e2e8f0;font-weight:700}
+
+/* progress bar */
+.progress-bar{display:flex;align-items:flex-start;gap:0;padding:0 8px}
+.pnode{flex:1;display:flex;flex-direction:column;align-items:center;position:relative;font-size:10px;font-weight:700;letter-spacing:.03em}
+.pnode:not(:last-child)::after{content:'';position:absolute;top:10px;left:55%;right:-45%;height:2px;background:#1e293b;z-index:1}
+.pnode.done:not(:last-child)::after{background:#60a5fa}
+.pnode .dot{width:20px;height:20px;border-radius:50%;background:#1e293b;border:2px solid #334155;z-index:2;display:flex;align-items:center;justify-content:center;font-size:9px;margin-bottom:5px}
+.pnode.done .dot{background:#60a5fa;border-color:#60a5fa;color:#fff}
+.pnode.active .dot{background:#0ea5e9;border-color:#38bdf8;color:#fff;box-shadow:0 0 0 4px rgba(56,189,248,.2);animation:pulse 1.5s infinite}
+.pnode.pending .dot{background:#0f172a;border-color:#334155;color:#475569}
+.pnode .plabel{color:#64748b;text-align:center;line-height:1.2;max-width:60px}
+.pnode.done .plabel{color:#93c5fd}
+.pnode.active .plabel{color:#7dd3fc}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(56,189,248,.2)}50%{box-shadow:0 0 0 7px rgba(56,189,248,.08)}}
+
+/* ── ROLE TABS ── */
+.role-tabs{display:flex;background:rgba(2,6,23,.6);border:1px solid rgba(148,163,184,.1);border-radius:10px;padding:4px;margin-bottom:20px;gap:4px;flex-wrap:wrap}
+.rtab{padding:8px 18px;font-size:12px;font-weight:800;color:#64748b;cursor:pointer;border-radius:7px;letter-spacing:.04em;transition:all .15s}
+.rtab:hover{color:#94a3b8;background:rgba(255,255,255,.04)}
+.rtab.active{color:#60a5fa;background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.2)}
+
+/* ── CARD GRID ── */
+.card-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:start}
+@media(max-width:1100px){.card-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.card-grid{grid-template-columns:1fr}}
+.card-grid.single-view{grid-template-columns:1fr}
+.card-grid.single-view .collab-card{max-width:720px;margin:0 auto;width:100%}
+
+/* ── COLLAB CARD ── */
+.collab-card{background:rgba(255,255,255,0.04);border:1px solid rgba(148,163,184,0.12);border-radius:12px;overflow:hidden;min-width:280px}
+.card-head{padding:12px 16px;border-bottom:1px solid rgba(148,163,184,.1);background:rgba(15,23,42,.4)}
+.card-head-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.card-title{font-size:13px;font-weight:900;color:#f1f5f9}
+.card-subtitle{font-size:11px;color:#64748b;margin-top:2px}
+.status-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:800;white-space:nowrap;flex-shrink:0}
+.pill-yellow{background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.3);color:#fcd34d}
+.pill-gray{background:rgba(100,116,139,.1);border:1px solid rgba(100,116,139,.3);color:#94a3b8}
+.pill-green{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);color:#4ade80}
+.pill-blue{background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.3);color:#60a5fa}
+.pill-dot{width:6px;height:6px;border-radius:50%;animation:dot-pulse 1.2s infinite}
+.dot-yellow{background:#fbbf24}
+.dot-gray{background:#64748b;animation:none}
+.dot-green{background:#4ade80;animation:none}
+.dot-blue{background:#60a5fa;animation:none}
+@keyframes dot-pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.cutoff-bar{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.25);padding:7px 14px;font-size:11px;color:#fca5a5;font-weight:700;display:flex;align-items:center;gap:6px}
+.cutoff-bar.warn{background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.2);color:#fcd34d}
+
+/* card tabs */
+.ctabs{display:flex;background:rgba(2,6,23,.4);border-bottom:1px solid rgba(148,163,184,.08);padding:0 6px}
+.ctab{padding:8px 12px;font-size:10.5px;font-weight:800;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.03em;transition:all .15s;white-space:nowrap}
+.ctab.active{color:#60a5fa;border-bottom-color:#60a5fa}
+.ctab:hover:not(.active){color:#94a3b8}
+.ctab-panel{display:none;padding:14px 16px}
+.ctab-panel.active{display:block}
+
+/* info grid */
+.info-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:11.5px}
+.info-label{color:#64748b;font-weight:600;white-space:nowrap;padding-top:1px}
+.info-val{color:#e2e8f0;font-weight:600}
+.info-val.mono{font-family:'SF Mono',monospace;font-size:11px;color:#93c5fd}
+
+/* product table */
+.ptable{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
+.ptable th{background:rgba(15,23,42,.6);color:#64748b;font-weight:800;padding:6px 8px;text-align:left;border-bottom:1px solid rgba(148,163,184,.1);white-space:nowrap;letter-spacing:.03em}
+.ptable td{padding:6px 8px;border-bottom:1px solid rgba(148,163,184,.06);color:#cbd5e1;vertical-align:middle}
+.ptable tr:last-child td{border-bottom:none}
+.ptable tr:hover td{background:rgba(255,255,255,.02)}
+.ptable input{background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);border-radius:5px;color:#e2e8f0;padding:3px 7px;font-size:11px;width:70px;outline:none;transition:border .15s}
+.ptable input:focus{border-color:#60a5fa;box-shadow:0 0 0 2px rgba(96,165,250,.15)}
+.missing-val{color:#f87171;font-weight:700;font-size:10px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:800;cursor:pointer;border:none;letter-spacing:.02em;transition:all .15s}
+.btn-primary{background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff}
+.btn-primary:hover{background:linear-gradient(135deg,#1d4ed8,#2563eb)}
+.btn-green{background:linear-gradient(135deg,#059669,#10b981);color:#fff}
+.btn-green:hover{background:linear-gradient(135deg,#047857,#059669)}
+.btn-ghost{background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.15);color:#94a3b8}
+.btn-ghost:hover{background:rgba(148,163,184,.12);color:#e2e8f0}
+.btn-danger{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.25);color:#f87171}
+.btn-sm{padding:5px 11px;font-size:11px}
+.btn-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+
+/* form fields */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:10.5px;color:#64748b;font-weight:700;letter-spacing:.04em}
+.form-input{background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);border-radius:7px;color:#e2e8f0;padding:7px 11px;font-size:12px;outline:none;transition:border .15s;width:100%}
+.form-input:focus{border-color:#60a5fa;box-shadow:0 0 0 2px rgba(96,165,250,.12)}
+.form-textarea{resize:vertical;min-height:60px}
+
+/* file list */
+.file-item{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:8px;margin-bottom:6px}
+.file-info{display:flex;align-items:center;gap:8px;font-size:11.5px}
+.file-icon{font-size:16px}
+.file-name{color:#e2e8f0;font-weight:700}
+.file-status{font-size:10px;color:#64748b;margin-top:1px}
+.file-status.ok{color:#4ade80}
+.file-actions{display:flex;gap:6px}
+
+/* trucking card */
+.info-box{background:rgba(15,23,42,.4);border:1px solid rgba(148,163,184,.1);border-radius:8px;padding:12px 14px;margin-bottom:12px}
+.info-box-label{font-size:10px;color:#64748b;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
+.price-confirm-box{background:rgba(74,222,128,.04);border:1px solid rgba(74,222,128,.2);border-radius:8px;padding:14px 16px;margin-bottom:12px}
+.price-val{font-size:20px;font-weight:900;color:#4ade80;margin:6px 0}
+.price-sub{font-size:11px;color:#6ee7b7;display:flex;align-items:center;gap:4px}
+.negotiate-panel{background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.1);border-radius:8px;padding:12px;margin-top:10px;display:none}
+.negotiate-panel.open{display:block;animation:slideDown .2s ease}
+@keyframes slideDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.security-note{background:rgba(251,191,36,.05);border:1px solid rgba(251,191,36,.15);border-radius:8px;padding:10px 12px;font-size:11px;color:#fcd34d;display:flex;align-items:flex-start;gap:7px}
+
+/* customs completeness */
+.completeness-header{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.ring-wrap{position:relative;width:56px;height:56px;flex-shrink:0}
+.ring-wrap svg{transform:rotate(-90deg)}
+.ring-center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column}
+.ring-score{font-size:14px;font-weight:900;color:#fbbf24;line-height:1}
+.ring-max{font-size:9px;color:#64748b}
+.completeness-meta{flex:1}
+.completeness-meta h3{font-size:12px;font-weight:900;color:#f1f5f9;margin-bottom:4px}
+.completeness-meta p{font-size:11px;color:#94a3b8}
+.warn-bar{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2);border-radius:8px;padding:9px 12px;font-size:11px;color:#fcd34d;margin-bottom:12px;display:flex;align-items:flex-start;gap:6px}
+.timeline-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.tl-item{display:flex;flex-direction:column;gap:3px}
+.tl-item .tl-label{font-size:10px;color:#64748b;font-weight:700;letter-spacing:.04em}
+.tl-item .tl-val{font-size:12px;font-weight:800;color:#e2e8f0}
+.tl-item .tl-val.warn{color:#fbbf24}
+.tl-item .tl-val.muted{color:#475569}
+
+/* ocean card */
+.portun-card{background:rgba(96,165,250,.04);border:1px solid rgba(96,165,250,.15);border-radius:8px;padding:11px 14px;margin-top:12px;font-size:11.5px;color:#93c5fd;display:flex;align-items:flex-start;gap:8px}
+
+/* confirmed state */
+.confirmed-btn{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);color:#4ade80;cursor:default}
+.confirmed-btn:hover{background:rgba(74,222,128,.1)}
+
+/* section divider */
+.sdiv{height:1px;background:rgba(148,163,184,.08);margin:10px 0}
+
+/* spacing helpers */
+.mt8{margin-top:8px}.mt12{margin-top:12px}.mt4{margin-top:4px}
+.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}
+.text-warn{color:#fbbf24}
+.text-danger{color:#f87171}
+.text-green{color:#4ade80}
+.text-blue{color:#60a5fa}
+.text-muted{color:#64748b}
+.font-mono{font-family:'SF Mono',monospace;font-size:11px}
+.badge-orange{display:inline-block;padding:2px 8px;border-radius:20px;font-size:9px;font-weight:900;background:rgba(249,115,22,.12);border:1px solid rgba(249,115,22,.3);color:#fb923c;letter-spacing:.05em}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ══ PAGE HEADER ══════════════════════════════════════════════════ -->
+  <!-- shipping_plans.shipment_no, etd, container_type, container_qty, cargo_cutoff -->
+  <div class="page-header">
+    <h1>协同表 v5 · SO 分发</h1>
+    <div class="header-meta">
+      <span>🗂 运单号 <span class="val font-mono">CY00359</span></span>
+      <span>📅 ETD <span class="val">2026-04-19</span></span>
+      <span>📦 <span class="val">40HQ × 1</span></span>
+      <!-- shipping_plans.cargo_cutoff -->
+      <span>⚓ 集港 <span class="val text-warn">2026-04-16</span></span>
+      <span class="badge-orange">外单</span>
+    </div>
+
+    <!-- 4-node progress bar -->
+    <div class="progress-bar">
+      <!-- derived from shipping_plans.factory_confirm_status, trucking_status, customs_status, etd -->
+      <div class="pnode pending">
+        <div class="dot"></div>
+        <div class="plabel">🏭 工厂<br>待填写</div>
+      </div>
+      <div class="pnode active">
+        <div class="dot">⏳</div>
+        <div class="plabel">🚛 车队<br>待确认</div>
+      </div>
+      <div class="pnode pending">
+        <div class="dot">📋</div>
+        <div class="plabel">报关<br>资料中</div>
+      </div>
+      <div class="pnode pending">
+        <div class="dot">🚢</div>
+        <div class="plabel">开船<br>待出单</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ ROLE TABS ════════════════════════════════════════════════════ -->
+  <div class="role-tabs">
+    <div class="rtab active" onclick="switchRole('all',this)">全览</div>
+    <div class="rtab" onclick="switchRole('factory',this)">🏭 工厂</div>
+    <div class="rtab" onclick="switchRole('trucking',this)">🚛 车队</div>
+    <div class="rtab" onclick="switchRole('customs',this)">📋 报关行</div>
+    <div class="rtab" onclick="switchRole('ocean',this)">🚢 船东</div>
+  </div>
+
+  <!-- ══ CARD GRID ════════════════════════════════════════════════════ -->
+  <div class="card-grid" id="cardGrid">
+
+    <!-- ── CARD 1: 工厂协同卡 ──────────────────────────────────────── -->
+    <!-- data source: factories, shipping_plans, order_line_items -->
+    <div class="collab-card" id="card-factory">
+      <div class="card-head">
+        <div class="card-head-row">
+          <div>
+            <!-- factories.name -->
+            <div class="card-title">🏭 福建泰迪宠物食品有限公司</div>
+            <!-- factories.city, factories.province -->
+            <div class="card-subtitle">华安县 · 福建省</div>
+          </div>
+          <div class="status-pill pill-yellow">
+            <span class="pill-dot dot-yellow"></span>
+            filling...
+          </div>
+        </div>
+      </div>
+      <!-- shipping_plans.cargo_cutoff -->
+      <div class="cutoff-bar">
+        ⏰ 集港截止：2026-04-16 23:00 · 还有 3 天
+      </div>
+
+      <!-- sub-tabs -->
+      <div class="ctabs">
+        <div class="ctab active" onclick="switchCtab('f','info',this)">基本信息</div>
+        <div class="ctab" onclick="switchCtab('f','items',this)">产品明细</div>
+        <div class="ctab" onclick="switchCtab('f','time',this)">装柜时间</div>
+        <div class="ctab" onclick="switchCtab('f','files',this)">文件上传</div>
+      </div>
+
+      <!-- tab: 基本信息 -->
+      <div class="ctab-panel active" id="f-info">
+        <div class="info-grid">
+          <!-- orders.order_no -->
+          <span class="info-label">订单号</span>
+          <span class="info-val mono">48-PBCAM-2025071102</span>
+          <!-- orders.contract_no -->
+          <span class="info-label">合同号</span>
+          <span class="info-val mono">FS20260220049</span>
+          <!-- shipping_plans.pod -->
+          <span class="info-label">目的港</span>
+          <span class="info-val">Port Klang Westport</span>
+          <!-- orders.trade_terms -->
+          <span class="info-label">贸易条款</span>
+          <span class="info-val">CIF</span>
+          <!-- shipping_plans.container_type, container_qty -->
+          <span class="info-label">柜型/柜量</span>
+          <span class="info-val">40HQ × 1</span>
+          <!-- shipping_plans.etd -->
+          <span class="info-label">ETD</span>
+          <span class="info-val">2026-04-19</span>
+          <!-- shipping_plans.port_open_date -->
+          <span class="info-label">开港</span>
+          <span class="info-val">2026-04-14</span>
+          <!-- shipping_plans.cargo_cutoff -->
+          <span class="info-label">集港截止</span>
+          <span class="info-val text-danger">2026-04-16 23:00</span>
+          <!-- shipping_plans.vgm_cutoff -->
+          <span class="info-label">VGM截止</span>
+          <span class="info-val text-warn">2026-04-16 12:00</span>
+          <!-- factories.address -->
+          <span class="info-label">工厂地址</span>
+          <span class="info-val">福建省漳州市华安县</span>
+          <!-- factories.contact_name -->
+          <span class="info-label">联系人</span>
+          <span class="info-val">李经理</span>
+          <!-- factories.contact_phone -->
+          <span class="info-label">联系电话</span>
+          <span class="info-val mono">13800138001</span>
+        </div>
+      </div>
+
+      <!-- tab: 产品明细 -->
+      <div class="ctab-panel" id="f-items">
+        <div style="font-size:11px;color:#fbbf24;background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.15);border-radius:6px;padding:7px 10px;margin-bottom:10px">
+          ⚠️ 只能修改净重/毛重/材积，不能增删产品行
+        </div>
+        <div style="overflow-x:auto">
+          <!-- order_line_items: sku, product_name, cartons, nw_per_ctn, gw_per_ctn, cbm_per_ctn, hs_code -->
+          <table class="ptable">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>品名</th>
+                <th>箱数</th>
+                <th>净重/箱(kg)</th>
+                <th>毛重/箱(kg)</th>
+                <th>材积/箱(m³)</th>
+                <th>HS码</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="font-mono">TDPF-001</td>
+                <td>宠物干粮</td>
+                <td>120</td>
+                <td><input type="number" value="12.5" id="nw1" step="0.1"></td>
+                <td><input type="number" value="13.2" id="gw1" step="0.1"></td>
+                <td><input type="number" value="0.062" id="cbm1" step="0.001"></td>
+                <td class="font-mono">2309.10</td>
+              </tr>
+              <tr>
+                <td class="font-mono">TDPF-002</td>
+                <td>猫罐头</td>
+                <td>80</td>
+                <td><input type="number" value="8.0" id="nw2" step="0.1"></td>
+                <td><input type="number" value="8.8" id="gw2" step="0.1"></td>
+                <td><input type="number" value="0.045" id="cbm2" step="0.001"></td>
+                <td class="font-mono">2309.90</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost btn-sm" onclick="saveFactoryItems()">💾 暂存</button>
+          <button class="btn btn-green btn-sm" id="factorySubmitBtn" onclick="submitFactoryItems()">✅ 确认提交</button>
+          <button class="btn btn-ghost btn-sm" id="factoryWithdrawBtn" style="display:none" onclick="withdrawFactory()">📝 申请撤回</button>
+        </div>
+        <div id="factorySubmittedNote" style="display:none;font-size:11px;color:#4ade80;margin-top:8px">✅ 已锁定提交，如需修改请申请撤回</div>
+      </div>
+
+      <!-- tab: 装柜时间 -->
+      <div class="ctab-panel" id="f-time">
+        <div class="form-row">
+          <div class="form-group" style="grid-column:1/-1">
+            <label>计划装柜日期</label>
+            <!-- collab_sheet_responses.stuffing_date -->
+            <input type="date" class="form-input" value="2026-04-15">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>开始时间</label>
+            <input type="time" class="form-input" value="08:00">
+          </div>
+          <div class="form-group">
+            <label>结束时间</label>
+            <input type="time" class="form-input" value="17:00">
+          </div>
+        </div>
+        <div class="form-group mb8">
+          <label>备注</label>
+          <textarea class="form-input form-textarea" placeholder="如有特殊情况请注明..."></textarea>
+        </div>
+        <button class="btn btn-primary btn-sm">📅 提交装柜时间</button>
+      </div>
+
+      <!-- tab: 文件上传 -->
+      <div class="ctab-panel" id="f-files">
+        <!-- das_files / shipping_documents -->
+        <div class="file-item">
+          <div class="file-info">
+            <span class="file-icon">📄</span>
+            <div>
+              <div class="file-name">装箱单照片</div>
+              <div class="file-status">未上传</div>
+            </div>
+          </div>
+          <div class="file-actions">
+            <button class="btn btn-ghost btn-sm">+ 上传</button>
+          </div>
+        </div>
+        <div class="file-item">
+          <div class="file-info">
+            <span class="file-icon">📄</span>
+            <div>
+              <div class="file-name">工厂发票</div>
+              <div class="file-status">未上传</div>
+            </div>
+          </div>
+          <div class="file-actions">
+            <button class="btn btn-ghost btn-sm">+ 上传</button>
+          </div>
+        </div>
+        <div class="file-item">
+          <div class="file-info">
+            <span class="file-icon">📄</span>
+            <div>
+              <div class="file-name">报关底单</div>
+              <div class="file-status">未上传</div>
+            </div>
+          </div>
+          <div class="file-actions">
+            <button class="btn btn-ghost btn-sm">+ 上传</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /card-factory -->
+
+
+    <!-- ── CARD 2: 车队精简卡 ──────────────────────────────────────── -->
+    <!-- data source: trucking_vendors, shipping_plans, freight_quotes -->
+    <div class="collab-card" id="card-trucking">
+      <div class="card-head">
+        <div class="card-head-row">
+          <div>
+            <!-- trucking_vendors.name -->
+            <div class="card-title">🚛 厦门瀚龙国际物流有限公司</div>
+            <div class="card-subtitle">厦门 · 内陆拖车</div>
+          </div>
+          <!-- collab_sheet_responses.trucking_status -->
+          <div class="status-pill pill-gray">
+            <span class="pill-dot dot-gray"></span>
+            待确认
+          </div>
+        </div>
+      </div>
+
+      <div class="ctab-panel active" style="padding:14px 16px">
+        <!-- 只读信息区 -->
+        <div class="info-box">
+          <div class="info-box-label">📦 装柜信息（工厂已确认）</div>
+          <div class="info-grid">
+            <!-- factories.name -->
+            <span class="info-label">工厂名称</span>
+            <span class="info-val">福建泰迪宠物食品有限公司</span>
+            <!-- factories.address -->
+            <span class="info-label">工厂地址</span>
+            <span class="info-val">福建省漳州市华安县</span>
+            <!-- factories.contact_name, contact_phone -->
+            <span class="info-label">联系人</span>
+            <span class="info-val">李经理 <span class="font-mono">13800138001</span></span>
+            <!-- collab_sheet_responses.stuffing_date, stuffing_start, stuffing_end -->
+            <span class="info-label">装柜时间</span>
+            <span class="info-val text-green">2026-04-15 &nbsp;08:00–17:00 ✅</span>
+          </div>
+        </div>
+        <div class="info-box">
+          <div class="info-box-label">🕐 关键时间</div>
+          <div class="info-grid">
+            <!-- shipping_plans.cargo_cutoff -->
+            <span class="info-label">集港截止</span>
+            <span class="info-val text-danger">2026-04-16 23:00 ‼️ 明天截止！</span>
+            <!-- shipping_plans.etd -->
+            <span class="info-label">ETD</span>
+            <span class="info-val">2026-04-19</span>
+            <!-- shipping_plans.port_open_date -->
+            <span class="info-label">开港</span>
+            <span class="info-val">2026-04-14</span>
+            <!-- shipping_plans.pol_terminal -->
+            <span class="info-label">港区/码头</span>
+            <span class="info-val">胜狮海沧 / 海沧港区</span>
+            <!-- trucking_vendors.distance_km -->
+            <span class="info-label">距离</span>
+            <span class="info-val">约 85 km</span>
+          </div>
+        </div>
+
+        <!-- 价格确认区 -->
+        <!-- freight_quotes.price_cny, tax_included -->
+        <div class="price-confirm-box">
+          <div style="font-size:10.5px;color:#6ee7b7;font-weight:800;letter-spacing:.04em">40HQ 基准报价（含税）</div>
+          <div class="price-val">¥1,150</div>
+          <div class="price-sub">✅ 含税</div>
+        </div>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn btn-green" id="confirmPriceBtn" onclick="confirmPrice()" style="flex:1;justify-content:center">
+            ✅ 确认报价 ¥1,150
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleNegotiate()">✏️ 协商价格</button>
+        </div>
+
+        <!-- 协商展开区 -->
+        <div class="negotiate-panel" id="negotiatePanel">
+          <div class="form-group">
+            <label>实际含税价格（CNY）</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="number" class="form-input" placeholder="请输入实际含税价" style="flex:1">
+              <button class="btn btn-primary btn-sm">提交</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sdiv"></div>
+        <!-- 安全警告 -->
+        <div class="security-note">
+          🔒
+          <span>提单号、航次、货代信息已隐藏——防跳单</span>
+        </div>
+      </div>
+    </div><!-- /card-trucking -->
+
+
+    <!-- ── CARD 3: 报关行卡 ─────────────────────────────────────────── -->
+    <!-- data source: customs_brokers, order_line_items, shipping_plans, orders -->
+    <div class="collab-card" id="card-customs">
+      <div class="card-head">
+        <div class="card-head-row">
+          <div>
+            <!-- customs_brokers.name -->
+            <div class="card-title">📋 厦门通关报关行</div>
+            <div class="card-subtitle">厦门 · 进出口报关</div>
+          </div>
+          <!-- derived: completeness_score from order_line_items -->
+          <div style="display:flex;align-items:center;gap:6px">
+            <div class="ring-wrap">
+              <svg width="56" height="56" viewBox="0 0 56 56">
+                <!-- total circumference of r=22: 2π×22 ≈ 138.2 -->
+                <!-- 67% filled = 138.2 × 0.67 ≈ 92.6 -->
+                <circle cx="28" cy="28" r="22" fill="none" stroke="#1e293b" stroke-width="4"/>
+                <circle cx="28" cy="28" r="22" fill="none" stroke="#fbbf24" stroke-width="4"
+                  stroke-dasharray="92.6 138.2" stroke-linecap="round"/>
+              </svg>
+              <div class="ring-center">
+                <span class="ring-score">67</span>
+                <span class="ring-max">/100</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 完整度警告 -->
+      <!-- order_line_items: decl_name completeness -->
+      <div class="warn-bar">
+        ⚠️ 19 行中有 <strong style="color:#f87171">19 行</strong> 缺少「报关品名」→ 请联系 Sanlyn 补充后再提交报关
+      </div>
+
+      <div class="ctab-panel active" style="padding:14px 16px">
+        <!-- 时间节点 -->
+        <div class="timeline-row">
+          <!-- shipping_plans.customs_cutoff (暂无) -->
+          <div class="tl-item">
+            <span class="tl-label">报关截止</span>
+            <span class="tl-val muted">—（暂无）</span>
+          </div>
+          <!-- shipping_plans.si_cutoff (暂无) -->
+          <div class="tl-item">
+            <span class="tl-label">SI截止</span>
+            <span class="tl-val muted">—（暂无）</span>
+          </div>
+          <!-- shipping_plans.etd -->
+          <div class="tl-item">
+            <span class="tl-label">ETD</span>
+            <span class="tl-val warn">2026-04-19 ⚠️ 还有 11 天</span>
+          </div>
+          <!-- shipping_plans.pol, pod -->
+          <div class="tl-item">
+            <span class="tl-label">航线</span>
+            <span class="tl-val">厦门(XMN) → 巴生(KUL)</span>
+          </div>
+          <!-- shipping_plans.vessel -->
+          <div class="tl-item">
+            <span class="tl-label">船名/航次</span>
+            <span class="tl-val muted">暂未确定</span>
+          </div>
+        </div>
+
+        <div class="sdiv"></div>
+
+        <!-- 货物明细 -->
+        <!-- order_line_items: decl_name, hs_code, spec, cartons, nw_per_ctn, tax_rebate_rate -->
+        <div style="overflow-x:auto;margin-bottom:12px">
+          <table class="ptable">
+            <thead>
+              <tr>
+                <th>报关品名</th>
+                <th>HS码</th>
+                <th>规格</th>
+                <th>箱数</th>
+                <th>净重/箱</th>
+                <th>退税率</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <!-- order_line_items.decl_name = NULL -->
+                <td><span class="missing-val">⚠ 缺失</span></td>
+                <td class="font-mono">2309.10</td>
+                <td>20KG/CTN</td>
+                <td>120</td>
+                <td>12.5 kg</td>
+                <td class="text-green">9%</td>
+              </tr>
+              <tr>
+                <!-- order_line_items.decl_name = NULL -->
+                <td><span class="missing-val">⚠ 缺失</span></td>
+                <td class="font-mono">2309.90</td>
+                <td>12罐/CTN</td>
+                <td>80</td>
+                <td>8.0 kg</td>
+                <td class="text-green">9%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sdiv"></div>
+
+        <!-- 贸易信息 -->
+        <div class="info-grid mb8">
+          <!-- orders.trade_terms -->
+          <span class="info-label">贸易条款</span>
+          <span class="info-val">CIF</span>
+          <!-- orders.contract_no -->
+          <span class="info-label">合同号</span>
+          <span class="info-val mono">FS20260220049</span>
+          <!-- shipping_plans.pod -->
+          <span class="info-label">目的港</span>
+          <span class="info-val">Port Klang Westport</span>
+          <!-- orders.total_amount -->
+          <span class="info-label">总金额</span>
+          <span class="info-val text-blue">USD 48,000.00</span>
+        </div>
+
+        <div class="btn-row mt12">
+          <button class="btn btn-primary btn-sm">📦 下载报关资料包</button>
+          <button class="btn btn-green btn-sm" id="customsReceivedBtn" onclick="confirmCustomsReceived()">✅ 已收到材料</button>
+        </div>
+        <div id="customsReceivedNote" style="display:none;font-size:11px;color:#4ade80;margin-top:8px;font-weight:700">✅ 已于 2026-06-08 10:30 确认收到材料</div>
+      </div>
+    </div><!-- /card-customs -->
+
+
+    <!-- ── CARD 4: 船东/海运卡 ─────────────────────────────────────── -->
+    <!-- data source: shipping_plans, carriers, das_files -->
+    <div class="collab-card" id="card-ocean">
+      <div class="card-head">
+        <div class="card-head-row">
+          <div>
+            <!-- shipping_plans.carrier / carriers.name -->
+            <div class="card-title">🚢 中运 / COSCO</div>
+            <div class="card-subtitle">集装箱海运</div>
+          </div>
+          <!-- portun tracking status: derived from shipping_plans.bl_no -->
+          <div class="status-pill pill-gray">
+            <span class="pill-dot dot-gray"></span>
+            等待开船后激活
+          </div>
+        </div>
+      </div>
+
+      <div class="ctab-panel active" style="padding:14px 16px">
+        <!-- 航运信息 -->
+        <div class="info-grid mb12">
+          <!-- shipping_plans.vessel -->
+          <span class="info-label">船名/航次</span>
+          <span class="info-val muted">暂未确定</span>
+          <!-- shipping_plans.booking_no -->
+          <span class="info-label">Booking No</span>
+          <span class="info-val mono">JDFQ508073</span>
+          <!-- shipping_plans.bl_no (NULL) -->
+          <span class="info-label">BL No</span>
+          <span class="info-val muted">—（未出单）</span>
+          <!-- shipping_plans.etd -->
+          <span class="info-label">ETD</span>
+          <span class="info-val">2026-04-19</span>
+          <!-- shipping_plans.eta (NULL) -->
+          <span class="info-label">ETA</span>
+          <span class="info-val muted">—</span>
+          <!-- shipping_plans.pol -->
+          <span class="info-label">装货港</span>
+          <span class="info-val">厦门(XMN)</span>
+          <!-- shipping_plans.pod -->
+          <span class="info-label">目的港</span>
+          <span class="info-val">Port Klang Westport(KUL)</span>
+          <!-- shipping_plans.container_type, container_qty -->
+          <span class="info-label">柜型/柜量</span>
+          <span class="info-val">40HQ × 1</span>
+          <!-- shipping_plans.gross_weight_kg -->
+          <span class="info-label">毛重(kg)</span>
+          <span class="info-val">2,430 kg</span>
+          <!-- shipping_plans.total_cbm -->
+          <span class="info-label">总 CBM</span>
+          <span class="info-val">14.04 m³</span>
+          <!-- shipping_plans.total_cartons -->
+          <span class="info-label">总箱数</span>
+          <span class="info-val">200 CTN</span>
+        </div>
+
+        <!-- Portun 提示 -->
+        <div class="portun-card">
+          📡
+          <span>BL 号录入后自动开启实时 ETA 追踪（由 <strong>4portun</strong> 提供）</span>
+        </div>
+
+        <div class="sdiv" style="margin-top:14px"></div>
+
+        <!-- 文件上传 -->
+        <!-- das_files: doc_type='bl', 'booking_confirmation' -->
+        <div style="font-size:10.5px;color:#64748b;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px">文件</div>
+        <div class="file-item">
+          <div class="file-info">
+            <span class="file-icon">📄</span>
+            <div>
+              <div class="file-name">提单 (BL)</div>
+              <div class="file-status">未上传</div>
+            </div>
+          </div>
+          <div class="file-actions">
+            <button class="btn btn-ghost btn-sm">+ 上传</button>
+          </div>
+        </div>
+        <div class="file-item">
+          <div class="file-info">
+            <span class="file-icon">📄</span>
+            <div>
+              <div class="file-name">订舱确认</div>
+              <div class="file-status ok">✅ 已上传 JDFQ508073.pdf</div>
+            </div>
+          </div>
+          <div class="file-actions">
+            <button class="btn btn-ghost btn-sm">下载</button>
+            <button class="btn btn-ghost btn-sm">替换</button>
+          </div>
+        </div>
+      </div>
+    </div><!-- /card-ocean -->
+
+  </div><!-- /card-grid -->
+
+</div><!-- /shell -->
+
+<script>
+// ── 角色切换 ──────────────────────────────────────────────────────────
+function switchRole(role, el) {
+  // update tab active
+  document.querySelectorAll('.rtab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+
+  const grid = document.getElementById('cardGrid');
+  const cards = {
+    factory: document.getElementById('card-factory'),
+    trucking: document.getElementById('card-trucking'),
+    customs: document.getElementById('card-customs'),
+    ocean: document.getElementById('card-ocean'),
+  };
+
+  if (role === 'all') {
+    grid.className = 'card-grid';
+    Object.values(cards).forEach(c => { c.style.display = ''; });
+  } else {
+    grid.className = 'card-grid single-view';
+    Object.entries(cards).forEach(([k, c]) => {
+      c.style.display = (k === role) ? '' : 'none';
+    });
+  }
+}
+
+// ── 卡片内 Tab 切换 ────────────────────────────────────────────────────
+function switchCtab(prefix, panel, el) {
+  // deactivate all tabs in the same card
+  el.closest('.collab-card').querySelectorAll('.ctab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  // hide all panels matching prefix
+  document.querySelectorAll('[id^="' + prefix + '-"]').forEach(p => p.classList.remove('active'));
+  document.getElementById(prefix + '-' + panel).classList.add('active');
+}
+
+// ── 工厂产品明细操作 ───────────────────────────────────────────────────
+function saveFactoryItems() {
+  const btn = event.currentTarget;
+  const orig = btn.textContent;
+  btn.textContent = '✅ 已暂存';
+  btn.style.color = '#4ade80';
+  setTimeout(() => { btn.textContent = orig; btn.style.color = ''; }, 1500);
+}
+
+function submitFactoryItems() {
+  document.querySelectorAll('.ptable input').forEach(inp => inp.disabled = true);
+  document.getElementById('factorySubmitBtn').style.display = 'none';
+  document.getElementById('factoryWithdrawBtn').style.display = '';
+  document.getElementById('factorySubmittedNote').style.display = 'block';
+  // update card status pill
+  const pill = document.getElementById('card-factory').querySelector('.status-pill');
+  pill.className = 'status-pill pill-green';
+  pill.innerHTML = '<span class="pill-dot dot-green"></span>已提交';
+}
+
+function withdrawFactory() {
+  document.querySelectorAll('.ptable input').forEach(inp => inp.disabled = false);
+  document.getElementById('factorySubmitBtn').style.display = '';
+  document.getElementById('factoryWithdrawBtn').style.display = 'none';
+  document.getElementById('factorySubmittedNote').style.display = 'none';
+  const pill = document.getElementById('card-factory').querySelector('.status-pill');
+  pill.className = 'status-pill pill-yellow';
+  pill.innerHTML = '<span class="pill-dot dot-yellow"></span>filling...';
+}
+
+// ── 车队报价确认 ──────────────────────────────────────────────────────
+function confirmPrice() {
+  const btn = document.getElementById('confirmPriceBtn');
+  const btnRow = btn.parentElement;
+  // replace button row with green confirmed bar
+  btnRow.innerHTML = '<div style="flex:1;background:rgba(74,222,128,.12);border:1px solid rgba(74,222,128,.35);border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800;color:#4ade80;display:flex;align-items:center;gap:6px">✅ 已确认 · ¥1,150 · 厦门瀚龙 · 2026-06-08 17:36</div>';
+  // update status pill on trucking card
+  const pill = document.getElementById('card-trucking').querySelector('.status-pill');
+  pill.className = 'status-pill pill-green';
+  pill.innerHTML = '<span class="pill-dot dot-green"></span>已确认';
+  // update progress bar trucking node to done (blue solid)
+  const pnodes = document.querySelectorAll('.pnode');
+  // nodes order: factory(0), trucking(1), customs(2), ocean(3)
+  if (pnodes[1]) {
+    pnodes[1].classList.remove('active','pending');
+    pnodes[1].classList.add('done');
+    pnodes[1].querySelector('.dot').textContent = '✓';
+    pnodes[1].querySelector('.plabel').textContent = '🚛 车队 · 已确认';
+  }
+}
+
+// ── 协商价格展开 ──────────────────────────────────────────────────────
+function toggleNegotiate() {
+  const panel = document.getElementById('negotiatePanel');
+  panel.classList.toggle('open');
+}
+
+// ── 报关行确认收到材料 ─────────────────────────────────────────────────
+function confirmCustomsReceived() {
+  const btn = document.getElementById('customsReceivedBtn');
+  btn.disabled = true;
+  btn.className = 'btn btn-sm confirmed-btn';
+  btn.textContent = '✅ 已确认';
+  // show timestamp note
+  const note = document.getElementById('customsReceivedNote');
+  const now = new Date();
+  const ts = now.getFullYear() + '-' +
+    String(now.getMonth()+1).padStart(2,'0') + '-' +
+    String(now.getDate()).padStart(2,'0') + ' ' +
+    String(now.getHours()).padStart(2,'0') + ':' +
+    String(now.getMinutes()).padStart(2,'0');
+  note.textContent = '✅ 已于 ' + ts + ' 确认收到材料';
+  note.style.display = 'block';
+  // update card status pill
+  const pill = document.getElementById('card-customs').querySelector('.status-pill') ||
+    (() => { // customs card has no top pill, add one dynamically
+      const headRow = document.getElementById('card-customs').querySelector('.card-head-row');
+      const p = document.createElement('div');
+      p.className = 'status-pill pill-green';
+      p.innerHTML = '<span class="pill-dot dot-green" style="animation:none"></span>已确认';
+      headRow.appendChild(p);
+      return null;
+    })();
+}
+</script>
+</body>
+</html>

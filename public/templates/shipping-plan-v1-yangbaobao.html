@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Shipping Plan v1 · 洋宝宝 · 2026-05-18</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f4f6f9; color: #1f2937; padding: 16px; }
+  .wrap { max-width: 1500px; margin: 0 auto; }
+
+  .top-toolbar { background: #fff; border-radius: 8px; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); position: sticky; top: 0; z-index: 10; }
+  .tb-title { font-size: 17px; font-weight: 600; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-left: 6px; }
+  .badge-yb { background: #ede9fe; color: #6d28d9; }
+  .badge-edit { background: #fef3c7; color: #92400e; }
+  .btn { padding: 7px 14px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-ghost { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+  .btn-warning { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+  .layout { display: grid; grid-template-columns: 1fr 320px; gap: 12px; align-items: start; }
+
+  .section { background: #fff; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); overflow: hidden; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; user-select: none; border-bottom: 1px solid #f3f4f6; background: linear-gradient(to right, #f9fafb, #fff); }
+  .section-title { font-size: 13px; font-weight: 600; color: #111827; display: flex; align-items: center; gap: 8px; }
+  .field-count { background: #e0e7ff; color: #3730a3; padding: 1px 8px; border-radius: 10px; font-size: 10px; font-weight: 500; }
+  .chevron { color: #9ca3af; transition: transform 0.2s; font-size: 11px; }
+  .section-header.collapsed .chevron { transform: rotate(-90deg); }
+  .section-body { padding: 14px 16px; }
+  .section-body.collapsed { display: none; }
+
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field-label { font-size: 11px; color: #6b7280; font-weight: 500; }
+  .field-input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: #fff; }
+  .field-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  .field-input.amount { font-weight: 600; color: #b91c1c; }
+  .field-input.changed { background: #fef3c7; border-color: #fbbf24; }
+
+  .section-route .section-header { border-left: 3px solid #06b6d4; }
+  .section-cost .section-header { border-left: 3px solid #ec4899; }
+  .section-sale .section-header { border-left: 3px solid #10b981; }
+  .section-orders .section-header { border-left: 3px solid #3b82f6; }
+  .section-bills .section-header { border-left: 3px solid #f59e0b; }
+
+  .bill-row { display: grid; grid-template-columns: 60px 1fr 100px 100px 90px; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; align-items: center; }
+  .bill-row .type-pill { font-size: 10px; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+  .bill-row .type-pill.dn { background: #fee2e2; color: #991b1b; }
+  .bill-row .type-pill.iv { background: #d1fae5; color: #065f46; }
+  .bill-row .type-pill.cn { background: #dbeafe; color: #1e40af; }
+  .bill-row .bill-status { font-size: 11px; }
+  .bill-row .bill-status.draft { color: #9ca3af; }
+  .bill-row .bill-status.sent { color: #2563eb; }
+  .bill-row .bill-status.paid { color: #16a34a; }
+  .bill-row .bill-status.revised { color: #dc2626; font-weight: 600; }
+
+  /* Audit trail panel */
+  .audit-card { background: #fff; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .audit-title { font-size: 12px; font-weight: 600; color: #111827; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 10px; }
+  .audit-item { padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: 11px; }
+  .audit-item:last-child { border-bottom: none; }
+  .audit-who { color: #111827; font-weight: 500; }
+  .audit-time { color: #9ca3af; font-size: 10px; }
+  .audit-diff { font-family: ui-monospace, monospace; font-size: 10px; margin-top: 4px; padding: 4px 8px; background: #f9fafb; border-radius: 3px; }
+  .audit-diff .old { color: #dc2626; text-decoration: line-through; }
+  .audit-diff .new { color: #16a34a; font-weight: 600; }
+
+  .doc-pill { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 4px; font-size: 11px; margin-bottom: 4px; cursor: pointer; }
+  .doc-pill .xl { background: #16a34a; color: #fff; padding: 1px 4px; border-radius: 2px; font-size: 9px; font-weight: 700; }
+
+  .orders-grid { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .orders-grid th { background: #f3f4f6; padding: 6px 8px; text-align: left; font-weight: 600; color: #374151; font-size: 10px; }
+  .orders-grid td { padding: 6px 8px; border-bottom: 1px solid #f3f4f6; }
+
+  .totals-box { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 12px 16px; border-radius: 6px; display: flex; justify-content: space-around; margin-top: 12px; }
+  .totals-box .item { text-align: center; }
+  .totals-box .item .label { font-size: 10px; color: #78350f; text-transform: uppercase; letter-spacing: 0.05em; }
+  .totals-box .item .value { font-size: 18px; font-weight: 700; color: #78350f; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top-toolbar">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div class="tb-title">海运计划 SP-2026-0518-001 <span class="badge badge-yb">洋宝宝</span> <span class="badge badge-edit">EDIT</span></div>
+      <div style="font-size:12px;color:#6b7280;">⏱ ETD 2026-05-22 · COSCO XINPUDONG / 156W</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-ghost">🖨 打印计划单</button>
+      <button class="btn btn-ghost">📤 发船代</button>
+      <button class="btn btn-warning">⚠️ 改账单</button>
+      <button class="btn btn-primary">保存</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div>
+
+      <!-- 1 · 航线/船期 -->
+      <div class="section section-route">
+        <div class="section-header" onclick="toggleSection(this)">
+          <div class="section-title">🚢 航线 & 船期 <span class="field-count">11 字段</span></div>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="section-body">
+          <div class="grid-4">
+            <div class="field"><label class="field-label">承运公司</label>
+              <select class="field-input"><option>上海洋宝宝</option><option>厦门巴匕</option></select>
+            </div>
+            <div class="field"><label class="field-label">船公司 *</label>
+              <select class="field-input"><option>COSCO 中远海运</option><option>MSC 地中海</option><option>EMC 长荣</option><option>OOCL 东方海外</option></select>
+            </div>
+            <div class="field"><label class="field-label">Vessel 船名</label><input class="field-input" value="XINPUDONG"></div>
+            <div class="field"><label class="field-label">Voyage 航次</label><input class="field-input" value="156W"></div>
+            <div class="field"><label class="field-label">POL 起运港</label>
+              <select class="field-input"><option>Shanghai 上海</option><option>Qingdao 青岛</option><option>Xiamen 厦门</option><option>Ningbo 宁波</option></select>
+            </div>
+            <div class="field"><label class="field-label">POD 目的港</label>
+              <select class="field-input"><option>Port Klang Westport</option><option>Los Angeles</option><option>Long Beach</option></select>
+            </div>
+            <div class="field"><label class="field-label">ETD 开船日</label><input class="field-input" type="date" value="2026-05-22"></div>
+            <div class="field"><label class="field-label">ETA 到港日</label><input class="field-input" type="date" value="2026-06-15"></div>
+            <div class="field"><label class="field-label">截关日 cargo_cutoff</label><input class="field-input" type="date" value="2026-05-20"></div>
+            <div class="field"><label class="field-label">柜型</label>
+              <select class="field-input"><option>40HQ</option><option>40GP</option><option>20GP</option></select>
+            </div>
+            <div class="field"><label class="field-label">柜号 container_no</label><input class="field-input" value="MEDUWX608047"></div>
+            <div class="field"><label class="field-label">封号 seal_no</label><input class="field-input" value=""></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 · 关联订单 -->
+      <div class="section section-orders">
+        <div class="section-header" onclick="toggleSection(this)">
+          <div class="section-title">📦 关联订单 (同柜不同单) <span class="field-count">2 张订单</span></div>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="section-body">
+          <table class="orders-grid">
+            <thead>
+              <tr>
+                <th>合同号</th><th>客户</th><th>产品</th><th>CTN</th><th>CBM</th><th>毛重</th><th>金额</th><th>状态</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>FS-LL-2</td><td>ENRICH</td><td>PET'S ACADEMY × 8</td>
+                <td>1472</td><td>29.44</td><td>23404.8</td><td>$1,200</td><td><span class="bill-status sent">已发船</span></td>
+                <td><a href="#" style="color:#dc2626;font-size:11px;">解绑</a></td>
+              </tr>
+              <tr>
+                <td>FS-CP-3</td><td>DIBAQ</td><td>SNIFFLY × 12</td>
+                <td>200</td><td>9.0</td><td>2400</td><td>$340</td><td><span class="bill-status sent">已发船</span></td>
+                <td><a href="#" style="color:#dc2626;font-size:11px;">解绑</a></td>
+              </tr>
+            </tbody>
+          </table>
+          <button class="btn btn-ghost" style="margin-top:8px;">+ 挂订单</button>
+          <div class="totals-box">
+            <div class="item"><div class="label">总 CTN</div><div class="value">1,672</div></div>
+            <div class="item"><div class="label">总 CBM</div><div class="value">38.44</div></div>
+            <div class="item"><div class="label">总毛重 (kg)</div><div class="value">25,804</div></div>
+            <div class="item"><div class="label">订单总金额</div><div class="value">$1,540</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 · 成本（货代成本 / 港杂 / 拖车 / 报关 / 保险）-->
+      <div class="section section-cost">
+        <div class="section-header" onclick="toggleSection(this)">
+          <div class="section-title">💸 成本明细 (内部) <span class="field-count">12 字段</span></div>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="section-body">
+          <div class="grid-3">
+            <div class="field"><label class="field-label">货代</label><select class="field-input"><option>万汇恒通 (CN-00028)</option><option>瀚龙</option></select></div>
+            <div class="field"><label class="field-label">海运成本 freight_cost ($)</label><input class="field-input amount" value="1200"></div>
+            <div class="field"><label class="field-label">货代订舱号 forwarder_booking_no</label><input class="field-input" value="MEDUWX608047"></div>
+          </div>
+          <div style="margin-top:14px;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;">港杂明细 (Port Surcharges)</div>
+          <div class="grid-4" style="margin-top:6px;">
+            <div class="field"><label class="field-label">BKG 订舱费</label><input class="field-input amount" value="100"></div>
+            <div class="field"><label class="field-label">DOC 单证费</label><input class="field-input amount" value="200"></div>
+            <div class="field"><label class="field-label">TLX 电放费</label><input class="field-input amount" value="50"></div>
+            <div class="field"><label class="field-label">THC 港杂</label><input class="field-input amount" value="3500"></div>
+            <div class="field"><label class="field-label">EIR 设备交接</label><input class="field-input amount" value="80"></div>
+            <div class="field"><label class="field-label">SEAL 封条</label><input class="field-input amount" value="50"></div>
+            <div class="field"><label class="field-label">VGM 称重</label><input class="field-input amount" value="120"></div>
+            <div class="field"><label class="field-label">customs_declare 报关</label><input class="field-input amount" value="350"></div>
+          </div>
+          <div style="margin-top:14px;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;">其他成本</div>
+          <div class="grid-4" style="margin-top:6px;">
+            <div class="field"><label class="field-label">拖车 trucking_cost ($)</label><input class="field-input amount" value="280"></div>
+            <div class="field"><label class="field-label">报关 customs_cost ($)</label><input class="field-input amount" value="40"></div>
+            <div class="field"><label class="field-label">保险 insurance_premium ($)</label><input class="field-input amount" value="25"></div>
+            <div class="field"><label class="field-label">保险费率 insurance_rate</label><input class="field-input" value="0.0008"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 · 销售（给客户的报价）-->
+      <div class="section section-sale">
+        <div class="section-header" onclick="toggleSection(this)">
+          <div class="section-title">💵 销售价 (给客户) <span class="field-count">5 字段</span></div>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="section-body">
+          <div class="grid-4">
+            <div class="field"><label class="field-label">海运售价 freight_sale_usd</label><input class="field-input amount" value="1540"></div>
+            <div class="field"><label class="field-label">海运售价 (CNY)</label><input class="field-input amount" value="0"></div>
+            <div class="field"><label class="field-label">售价币种</label><select class="field-input"><option>USD</option><option>CNY</option></select></div>
+            <div class="field"><label class="field-label">报价编号 quote_ref</label><input class="field-input" value="FQ-ENRICH-2026-04"></div>
+            <div class="field"><label class="field-label">条款 freight_term</label><select class="field-input"><option>CIF</option><option>FOB</option><option>CFR</option></select></div>
+          </div>
+          <div class="totals-box" style="background:linear-gradient(135deg,#d1fae5 0%,#86efac 100%);">
+            <div class="item" style="color:#065f46;"><div class="label" style="color:#065f46;">成本合计</div><div class="value" style="color:#065f46;">$1,265</div></div>
+            <div class="item" style="color:#065f46;"><div class="label" style="color:#065f46;">售价</div><div class="value" style="color:#065f46;">$1,540</div></div>
+            <div class="item" style="color:#065f46;"><div class="label" style="color:#065f46;">毛利</div><div class="value" style="color:#065f46;">$275 (17.9%)</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 · 账单 BILLS（关键模块·改单留痕）-->
+      <div class="section section-bills">
+        <div class="section-header" onclick="toggleSection(this)">
+          <div class="section-title">📑 账单 / Bills <span class="field-count">4 张 · 改单全留痕</span></div>
+          <span class="chevron">▼</span>
+        </div>
+        <div class="section-body">
+          <div style="background:#fef3c7;border-left:3px solid #f59e0b;padding:8px 12px;font-size:11px;color:#78350f;border-radius:3px;margin-bottom:10px;">
+            ⚠️ 每改一次金额/收款方/币种都会自动生成审计记录（右栏可见）。改前的 PDF 会标"作废"+保留。
+          </div>
+
+          <div style="margin-bottom:8px;font-size:11px;color:#6b7280;font-weight:600;">⬆️ 应收账单（给客户/订单方）</div>
+          <div class="bill-row">
+            <span class="type-pill iv">IV 发票</span>
+            <span>FQ-ENRICH-2026-04 · 给 ENRICH · 海运费</span>
+            <span>$1,540</span>
+            <span class="bill-status sent">已发</span>
+            <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;">改</button>
+          </div>
+          <div class="bill-row">
+            <span class="type-pill dn">DN 借记单</span>
+            <span>DB-SP-MEDUWX608047 · 给 ENRICH · 港杂补差</span>
+            <span>¥3,500</span>
+            <span class="bill-status sent">已发</span>
+            <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;">改</button>
+          </div>
+
+          <div style="margin:14px 0 8px;font-size:11px;color:#6b7280;font-weight:600;">⬇️ 应付账单（货代/拖车/报关）</div>
+          <div class="bill-row">
+            <span class="type-pill iv">IV 发票</span>
+            <span>万汇恒通-海运 · MEDUWX608047</span>
+            <span>$1,200</span>
+            <span class="bill-status paid">已付</span>
+            <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;">查看</button>
+          </div>
+          <div class="bill-row">
+            <span class="type-pill iv">IV 发票</span>
+            <span>万汇恒通-港杂</span>
+            <span>¥4,450</span>
+            <span class="bill-status revised">已改 1 次</span>
+            <button class="btn btn-warning" style="font-size:11px;padding:3px 8px;">查看改动</button>
+          </div>
+
+          <button class="btn btn-ghost" style="margin-top:10px;">+ 新建账单</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 右栏：审计追溯 + 单据 -->
+    <div>
+      <div class="audit-card">
+        <div class="audit-title">📂 单据 (5)</div>
+        <div class="doc-pill"><span class="xl">PDF</span>booking-instruction.pdf</div>
+        <div class="doc-pill"><span class="xl">PDF</span>BL-MEDUWX608047.pdf</div>
+        <div class="doc-pill"><span class="xl">PDF</span>报关委托书.pdf</div>
+        <div class="doc-pill"><span class="xl">XLSX</span>港杂明细.xlsx</div>
+        <div class="doc-pill"><span class="xl">XLSX</span>客户 IV-DN.xlsx</div>
+      </div>
+
+      <div class="audit-card">
+        <div class="audit-title">⚠️ 改单留痕 (audit trail)</div>
+        <div class="audit-item">
+          <div><span class="audit-who">Damon</span> 改了「万汇恒通-港杂」金额</div>
+          <div class="audit-time">2026-05-18 22:42 · 5min ago</div>
+          <div class="audit-diff">¥<span class="old">3,950</span> → ¥<span class="new">4,450</span> <span style="color:#6b7280;">(+500 漏算 VGM)</span></div>
+        </div>
+        <div class="audit-item">
+          <div><span class="audit-who">Lyn</span> 改了「ETA 到港日」</div>
+          <div class="audit-time">2026-05-17 14:20</div>
+          <div class="audit-diff"><span class="old">2026-06-12</span> → <span class="new">2026-06-15</span> <span style="color:#6b7280;">(船延 3 天)</span></div>
+        </div>
+        <div class="audit-item">
+          <div><span class="audit-who">Damon</span> 挂订单 FS-CP-3</div>
+          <div class="audit-time">2026-05-16 11:08</div>
+        </div>
+        <div class="audit-item">
+          <div><span class="audit-who">Damon</span> 创建计划 SP-2026-0518-001</div>
+          <div class="audit-time">2026-05-15 09:00</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function toggleSection(header) {
+  header.classList.toggle('collapsed');
+  header.nextElementSibling.classList.toggle('collapsed');
+}
+</script>
+</body>
+</html>

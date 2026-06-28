@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Place Order — Product Picker · Design Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #020817;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  /* ── Stepper ── */
+  .stepper {
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    background: #0f172a; border: 1px solid #1e293b;
+    border-radius: 10px; padding: 6px; margin-bottom: 20px;
+  }
+  .step-btn {
+    padding: 8px 14px; border-radius: 7px; border: none;
+    background: transparent; color: #64748b;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .step-btn.active { background: rgba(56,189,248,0.18); color: #7dd3fc; }
+  .step-btn.done   { color: #86efac; }
+  .step-num {
+    width: 20px; height: 20px; border-radius: 4px; font-size: 11px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #1e293b; color: #fff; font-weight: 800;
+  }
+  .step-btn.active .step-num { background: #3b82f6; }
+  .step-btn.done   .step-num { background: #22c55e; }
+  .step-arrow { color: #334155; font-size: 12px; }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+  }
+  .search-input {
+    flex: 1; padding: 9px 14px; border-radius: 8px;
+    background: #0f172a; border: 1px solid #1e293b;
+    color: #f1f5f9; font-size: 12px; outline: none;
+  }
+  .search-input::placeholder { color: #475569; }
+  .count-label { font-size: 11px; color: #475569; white-space: nowrap; }
+
+  /* ── Product Grid ── */
+  .product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  .product-card {
+    background: #0f1a2e;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .product-card:hover {
+    border-color: rgba(56,189,248,0.4);
+    box-shadow: 0 0 0 1px rgba(56,189,248,0.15);
+  }
+  .product-card.added {
+    border-color: rgba(34,197,94,0.45);
+    box-shadow: 0 0 0 1px rgba(34,197,94,0.12);
+  }
+
+  /* ── Product Image ── */
+  .product-img-wrap {
+    position: relative;
+    width: 100%; aspect-ratio: 1;
+    background: #020d1f;
+    overflow: hidden;
+  }
+  .product-img-wrap img {
+    width: 100%; height: 100%; object-fit: contain;
+    padding: 10px;
+    transition: transform .25s;
+  }
+  .product-card:hover .product-img-wrap img {
+    transform: scale(1.04);
+  }
+  .product-img-fallback {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 40px; color: #334155;
+    background: linear-gradient(180deg,#0a1628,#07111e);
+  }
+
+  /* ── Stock Badge (包材库存) ── */
+  .stock-badge {
+    position: absolute; bottom: 7px; right: 7px;
+    padding: 3px 8px; border-radius: 5px;
+    font-size: 10px; font-weight: 700;
+    letter-spacing: .03em;
+    backdrop-filter: blur(6px);
+    line-height: 1.4;
+  }
+  .stock-badge.in-stock {
+    background: rgba(34,197,94,0.18);
+    border: 1px solid rgba(34,197,94,0.35);
+    color: #86efac;
+  }
+  .stock-badge.low-stock {
+    background: rgba(245,158,11,0.18);
+    border: 1px solid rgba(245,158,11,0.35);
+    color: #fcd34d;
+  }
+  .stock-badge.no-stock {
+    background: rgba(100,116,139,0.22);
+    border: 1px solid rgba(100,116,139,0.3);
+    color: #94a3b8;
+  }
+
+  /* ── Card Body ── */
+  .card-body {
+    padding: 12px; display: flex; flex-direction: column; gap: 6px; flex: 1;
+  }
+  .card-name {
+    font-size: 12.5px; font-weight: 800; color: #f1f5f9; line-height: 1.3;
+  }
+  .card-code {
+    font-size: 10.5px; color: #64748b; font-family: 'SF Mono', monospace;
+  }
+  .card-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10.5px; color: #64748b;
+  }
+  .card-row span { color: #f1f5f9; }
+  .card-price {
+    font-size: 13px; font-weight: 800; color: #7dd3fc;
+    font-family: 'SF Mono', monospace; margin-top: 2px;
+  }
+  .card-price-sub { font-size: 10px; color: #64748b; font-weight: 500; }
+
+  /* ── Packaging Info Row ── */
+  .pkg-row {
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(15,23,42,0.7);
+    border: 1px solid #1e293b;
+    border-radius: 6px; padding: 5px 8px;
+    font-size: 10.5px;
+  }
+  .pkg-icon { font-size: 12px; }
+  .pkg-label { color: #64748b; }
+  .pkg-val { color: #cbd5e1; font-weight: 700; font-family: monospace; }
+  .pkg-divider { color: #334155; }
+
+  /* ── Add Button ── */
+  .add-btn {
+    margin: 0 12px 12px; padding: 9px;
+    border-radius: 8px; font-weight: 800; font-size: 11.5px;
+    cursor: pointer; width: calc(100% - 24px);
+    background: #3b82f6; color: #fff;
+    border: 1px solid #3b82f6;
+    transition: background .15s, opacity .15s;
+  }
+  .add-btn:hover { background: #2563eb; }
+  .add-btn.added {
+    background: rgba(34,197,94,0.15); color: #86efac;
+    border: 1px solid rgba(34,197,94,0.4);
+    cursor: default;
+  }
+
+  /* ═══════ CART SECTION ═══════ */
+  .section-title {
+    font-size: 13px; font-weight: 800; color: #94a3b8;
+    letter-spacing: .06em; text-transform: uppercase;
+    margin: 32px 0 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after {
+    content: ''; flex: 1; height: 1px; background: #1e293b;
+  }
+
+  .cart-table {
+    background: #0f1a2e; border: 1px solid #1e293b;
+    border-radius: 12px; overflow: hidden;
+  }
+  .cart-header {
+    display: grid;
+    grid-template-columns: 52px minmax(180px,2fr) 90px 130px 110px 110px 36px;
+    gap: 10px; padding: 10px 14px;
+    background: #0f172a; border-bottom: 1px solid #1e293b;
+    font-size: 10.5px; font-weight: 700; color: #64748b;
+    letter-spacing: .05em; text-transform: uppercase;
+  }
+  .cart-row {
+    display: grid;
+    grid-template-columns: 52px minmax(180px,2fr) 90px 130px 110px 110px 36px;
+    gap: 10px; padding: 11px 14px;
+    border-bottom: 1px solid #1e293b;
+    align-items: center; font-size: 12px;
+  }
+  .cart-row:last-child { border-bottom: none; }
+
+  /* thumbnail in cart */
+  .cart-thumb {
+    width: 44px; height: 44px; border-radius: 7px;
+    background: #020d1f; border: 1px solid #1e293b;
+    overflow: hidden; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cart-thumb img {
+    width: 100%; height: 100%; object-fit: contain; padding: 3px;
+  }
+  .cart-thumb .no-img { font-size: 20px; }
+
+  .cart-name { font-weight: 700; color: #f1f5f9; font-size: 12px; line-height: 1.3; }
+  .cart-meta { font-size: 10.5px; color: #64748b; font-family: monospace; margin-top: 1px; }
+
+  /* ── packaging stock inline ── */
+  .cart-pkg-stock {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-top: 4px; font-size: 10px;
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .cart-pkg-stock.ok  { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.25); }
+  .cart-pkg-stock.low { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.25); }
+  .cart-pkg-stock.nil { background: rgba(100,116,139,0.15); color: #94a3b8; border: 1px solid rgba(100,116,139,0.2); }
+
+  input.cart-input {
+    padding: 6px 8px; border-radius: 6px;
+    background: #0f172a; border: 1px solid #1e293b;
+    color: #f1f5f9; font-size: 12px; outline: none; width: 100%;
+  }
+  input.cart-input:focus { border-color: #3b82f6; }
+
+  .cart-subtotal {
+    text-align: right; font-family: monospace; font-weight: 800; color: #7dd3fc;
+  }
+  .remove-btn {
+    background: transparent; border: none; color: #ef4444;
+    cursor: pointer; font-size: 18px; padding: 0; line-height: 1;
+  }
+  .cart-footer {
+    padding: 12px 14px; background: #0f172a;
+    display: flex; justify-content: flex-end; gap: 18px;
+    font-size: 12px; font-family: monospace;
+    border-top: 1px solid #1e293b;
+  }
+  .cart-total-label { color: #64748b; }
+  .cart-total-val   { color: #f1f5f9; font-weight: 800; }
+
+  /* ── Navigation ── */
+  .nav-row {
+    display: flex; justify-content: space-between; margin-top: 18px; gap: 10px;
+  }
+  .btn-primary {
+    padding: 10px 20px; border-radius: 8px;
+    background: #3b82f6; border: 1px solid #3b82f6;
+    color: #fff; font-weight: 800; font-size: 12px; cursor: pointer;
+  }
+  .btn-secondary {
+    padding: 10px 20px; border-radius: 8px;
+    background: #0f172a; border: 1px solid #1e293b;
+    color: #f1f5f9; font-weight: 700; font-size: 12px; cursor: pointer;
+  }
+
+  /* ── Tab switcher for preview ── */
+  .preview-tabs {
+    display: flex; gap: 8px; margin-bottom: 20px;
+  }
+  .ptab {
+    padding: 7px 18px; border-radius: 7px; border: 1px solid #1e293b;
+    background: transparent; color: #64748b; font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+  }
+  .ptab.active {
+    background: rgba(56,189,248,0.14);
+    border-color: rgba(56,189,248,0.35);
+    color: #7dd3fc;
+  }
+  .pane { display: none; }
+  .pane.show { display: block; }
+
+  /* annotation callout */
+  .callout {
+    background: rgba(56,189,248,0.07);
+    border: 1px solid rgba(56,189,248,0.2);
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 11.5px; color: #94a3b8; line-height: 1.6;
+    margin-bottom: 16px;
+  }
+  .callout b { color: #7dd3fc; }
+</style>
+</head>
+<body>
+
+<!-- ── Preview Tabs ── -->
+<div style="max-width:1200px; margin:0 auto;">
+  <div style="font-size:11px;color:#475569;margin-bottom:16px;letter-spacing:.08em;text-transform:uppercase;">
+    Sanlyn OS · Place Order · Design Preview — 2026-05-02
+  </div>
+
+  <div class="preview-tabs">
+    <button class="ptab active" onclick="showTab('step1')">Step 1 · Select Products</button>
+    <button class="ptab" onclick="showTab('step2')">Step 2 · Quantity & Cart</button>
+  </div>
+
+  <!-- ═══ STEP 1 ═══ -->
+  <div id="pane-step1" class="pane show">
+
+    <!-- Stepper -->
+    <div class="stepper">
+      <button class="step-btn active">
+        <span class="step-num">1</span> Select products
+      </button>
+      <span class="step-arrow">→</span>
+      <button class="step-btn">
+        <span class="step-num">2</span> Quantity &amp; packaging
+      </button>
+      <span class="step-arrow">→</span>
+      <button class="step-btn">
+        <span class="step-num">3</span> Documents &amp; requirements
+      </button>
+      <span class="step-arrow">→</span>
+      <button class="step-btn">
+        <span class="step-num">4</span> Review &amp; submit
+      </button>
+    </div>
+
+    <div class="callout">
+      <b>新增 · 图片</b>：产品卡片使用真实 OSS 图片，无图时 fallback 📦 占位。
+      &nbsp;|&nbsp; <b>新增 · 包材库存</b>：图片右下角 badge 显示当前可用库存（绿=充足 / 橙=偏少 / 灰=无库存），点选后 Cart 里同步显示。
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <input class="search-input" placeholder="Search products by name / code / HS" />
+      <span class="count-label">6 / 341 products</span>
+    </div>
+
+    <!-- Product Grid -->
+    <div class="product-grid">
+
+      <!-- Card 1: has image, in-stock -->
+      <div class="product-card">
+        <div class="product-img-wrap">
+          <img src="https://files.sanlynos.com/products/CA-03H/raw.jpg"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+               alt="product" />
+          <div class="product-img-fallback" style="display:none">📦</div>
+          <div class="stock-badge in-stock">📦 Stock 240 ctns</div>
+        </div>
+        <div class="card-body">
+          <div class="card-name">WANPY CHICKEN JERKY STEAKS</div>
+          <div class="card-code">CA-03H · HS 2309.90</div>
+          <div class="pkg-row">
+            <span class="pkg-icon">🧃</span>
+            <span class="pkg-label">Spec</span>
+            <span class="pkg-val">100G</span>
+            <span class="pkg-divider">|</span>
+            <span class="pkg-label">CTN</span>
+            <span class="pkg-val">100 bags</span>
+          </div>
+          <div class="card-price">USD 0.38 <span class="card-price-sub">/ bag</span></div>
+        </div>
+        <button class="add-btn">+ Add to cart</button>
+      </div>
+
+      <!-- Card 2: has image, added to cart -->
+      <div class="product-card added">
+        <div class="product-img-wrap">
+          <img src="https://files.sanlynos.com/products/RAC-01/raw.jpg"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+               alt="product" />
+          <div class="product-img-fallback" style="display:none">📦</div>
+          <div class="stock-badge in-stock">📦 Stock 180 ctns</div>
+        </div>
+        <div class="card-body">
+          <div class="card-name">WANPY CREAMY TREAT CHICKEN FOR CAT</div>
+          <div class="card-code">RAC-01 · HS 2309.90</div>
+          <div class="pkg-row">
+            <span class="pkg-icon">🧃</span>
+            <span class="pkg-label">Spec</span>
+            <span class="pkg-val">14G</span>
+            <span class="pkg-divider">|</span>
+            <span class="pkg-label">CTN</span>
+            <span class="pkg-val">50 bags</span>
+          </div>
+          <div class="card-price">USD 0.38 <span class="card-price-sub">/ bag</span></div>
+        </div>
+        <button class="add-btn added">✓ Added</button>
+      </div>
+
+      <!-- Card 3: low stock -->
+      <div class="product-card">
+        <div class="product-img-wrap">
+          <img src="https://files.sanlynos.com/products/CD-04H/raw.jpg"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+               alt="product" />
+          <div class="product-img-fallback" style="display:none">📦</div>
+          <div class="stock-badge low-stock">⚠ Stock 12 ctns</div>
+        </div>
+        <div class="card-body">
+          <div class="card-name">WANPY CHICKEN JERKY DUMBBELLS</div>
+          <div class="card-code">CD-04H · HS 2309.90</div>
+          <div class="pkg-row">
+            <span class="pkg-icon">🧃</span>
+            <span class="pkg-label">Spec</span>
+            <span class="pkg-val">100G</span>
+            <span class="pkg-divider">|</span>
+            <span class="pkg-label">CTN</span>
+            <span class="pkg-val">100 bags</span>
+          </div>
+          <div class="card-price">USD 0.37 <span class="card-price-sub">/ bag</span></div>
+        </div>
+        <button class="add-btn">+ Add to cart</button>
+      </div>
+
+      <!-- Card 4: no stock -->
+      <div class="product-card">
+        <div class="product-img-wrap">
+          <img src="https://files.sanlynos.com/products/DA-01H/raw.jpg"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+               alt="product" />
+          <div class="product-img-fallback" style="display:none">📦</div>
+          <div class="stock-badge no-stock">— Out of stock</div>
+        </div>
+        <div class="card-body">
+          <div class="card-name">WANPY CHICKEN INSERT RAWHIDE</div>
+          <div class="card-code">DA-01H · HS 2309.90</div>
+          <div class="pkg-row">
+            <span class="pkg-icon">🧃</span>
+            <span class="pkg-label">Spec</span>
+            <span class="pkg-val">100G</span>
+            <span class="pkg-divider">|</span>
+            <span class="pkg-label">CTN</span>
+            <span class="pkg-val">60 bags</span>
+          </div>
+          <div class="card-price">Contact for price</div>
+        </div>
+        <button class="add-btn">+ Add to cart</button>
+      </div>
+
+      <!-- Card 5: no image fallback -->
+      <div class="product-card">
+        <div class="product-img-wrap">
+          <!-- intentionally no valid img to show fallback -->
+          <img src="https://files.sanlynos.com/products/NOIMG/raw.jpg"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+               alt="product" />
+          <div class="product-img-fallback" style="display:flex">📦</div>
+          <div class="stock-badge in-stock">📦 Stock 600 ctns</div>
+        </div>
+        <div class="card-body">
+          <div class="card-name">WANPY CHICKEN JERKY (Image Pending)</div>
+          <div class="card-code">CA-01H · HS 2309.90</div>
+          <div class="pkg-row">
+            <span class="pkg-icon">🧃</span>
+            <span class="pkg-label">Spec</span>
+            <span class="pkg-val">100G</span>
+            <span class="pkg-divider">|</span>
+            <span class="pkg-label">CTN</span>
+            <span class="pkg-val">100 bags</span>
+          </div>
+          <div class="card-price">USD 0.36 <span class="card-price-sub">/ bag</span></div>
+        </div>
+        <button class="add-btn">+ Add to cart</button>
+      </div>
+
+      <!-- Card 6: added, large jar -->
+      <div class="product-card added">
+        <div class="product-img-wrap">
+          <img src="https://files.sanlynos.com/products/CD-04HJ/raw.jpg"
+               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+               alt="product" />
+          <div class="product-img-fallback" style="display:none">📦</div>
+          <div class="stock-badge in-stock">📦 Stock 48 ctns</div>
+        </div>
+        <div class="card-body">
+          <div class="card-name">WANPY CHICKEN JERKY DUMBBELLS LARGE JAR</div>
+          <div class="card-code">CD-04HJ · HS 2309.90</div>
+          <div class="pkg-row">
+            <span class="pkg-icon">🧃</span>
+            <span class="pkg-label">Spec</span>
+            <span class="pkg-val">1000G</span>
+            <span class="pkg-divider">|</span>
+            <span class="pkg-label">CTN</span>
+            <span class="pkg-val">6 jars</span>
+          </div>
+          <div class="card-price">USD 7.72 <span class="card-price-sub">/ jar</span></div>
+        </div>
+        <button class="add-btn added">✓ Added</button>
+      </div>
+
+    </div><!-- /product-grid -->
+
+    <!-- nav -->
+    <div class="nav-row">
+      <button class="btn-secondary" disabled style="opacity:.4;cursor:not-allowed">← Back</button>
+      <button class="btn-primary">Next → <span style="opacity:.7;font-size:10px;font-weight:500">(2 selected)</span></button>
+    </div>
+  </div><!-- /pane-step1 -->
+
+
+  <!-- ═══ STEP 2 ═══ -->
+  <div id="pane-step2" class="pane">
+
+    <!-- Stepper -->
+    <div class="stepper">
+      <button class="step-btn done">
+        <span class="step-num">✓</span> Select products
+      </button>
+      <span class="step-arrow">→</span>
+      <button class="step-btn active">
+        <span class="step-num">2</span> Quantity &amp; packaging
+      </button>
+      <span class="step-arrow">→</span>
+      <button class="step-btn">
+        <span class="step-num">3</span> Documents &amp; requirements
+      </button>
+      <span class="step-arrow">→</span>
+      <button class="step-btn">
+        <span class="step-num">4</span> Review &amp; submit
+      </button>
+    </div>
+
+    <div class="callout">
+      <b>新增 · 缩略图</b>：Cart 行首增加 44×44px 缩略图，选品后一眼确认是正确货品。
+      &nbsp;|&nbsp; <b>新增 · 包材库存</b>：品名下方显示可用库存 badge（绿/橙/灰），Qty 超出库存数时自动高亮提示。
+    </div>
+
+    <!-- PO row -->
+    <div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;">Your PO / Reference</span>
+      <input class="cart-input" placeholder="e.g. XM-259 (optional)" style="flex:1;min-width:180px;font-family:monospace;"/>
+    </div>
+
+    <!-- Cart Table -->
+    <div class="cart-table">
+      <!-- header -->
+      <div class="cart-header">
+        <div></div>
+        <div>Product</div>
+        <div style="text-align:right">Qty (ctns)</div>
+        <div>Packaging</div>
+        <div style="text-align:right">Unit price</div>
+        <div style="text-align:right">Subtotal</div>
+        <div></div>
+      </div>
+
+      <!-- Row 1 -->
+      <div class="cart-row">
+        <div class="cart-thumb">
+          <img src="https://files.sanlynos.com/products/RAC-01/raw.jpg"
+               onerror="this.style.display='none';this.parentElement.innerHTML='<span class=no-img>📦</span>';"
+               alt="" />
+        </div>
+        <div>
+          <div class="cart-name">WANPY CREAMY TREAT CHICKEN FOR CAT</div>
+          <div class="cart-meta">RAC-01 · HS 2309.90</div>
+          <div class="cart-pkg-stock ok">📦 180 ctns available</div>
+        </div>
+        <input type="number" class="cart-input" value="60" style="text-align:right;" />
+        <input class="cart-input" value="14G × 50/CTN" />
+        <input type="number" class="cart-input" value="14.00" style="text-align:right;font-family:monospace;" />
+        <div class="cart-subtotal">USD 840.00</div>
+        <button class="remove-btn">×</button>
+      </div>
+
+      <!-- Row 2 -->
+      <div class="cart-row">
+        <div class="cart-thumb">
+          <img src="https://files.sanlynos.com/products/CD-04HJ/raw.jpg"
+               onerror="this.style.display='none';this.parentElement.innerHTML='<span class=no-img>📦</span>';"
+               alt="" />
+        </div>
+        <div>
+          <div class="cart-name">WANPY CHICKEN JERKY DUMBBELLS LARGE JAR</div>
+          <div class="cart-meta">CD-04HJ · HS 2309.90</div>
+          <div class="cart-pkg-stock ok">📦 48 ctns available</div>
+        </div>
+        <input type="number" class="cart-input" value="24" style="text-align:right;" />
+        <input class="cart-input" value="1000G × 6/CTN" />
+        <input type="number" class="cart-input" value="46.40" style="text-align:right;font-family:monospace;" />
+        <div class="cart-subtotal">USD 1,113.60</div>
+        <button class="remove-btn">×</button>
+      </div>
+
+      <!-- Row 3: qty > stock → warning -->
+      <div class="cart-row" style="background:rgba(245,158,11,0.03);">
+        <div class="cart-thumb">
+          <img src="https://files.sanlynos.com/products/CA-01H/raw.jpg"
+               onerror="this.style.display='none';this.parentElement.innerHTML='<span class=no-img>📦</span>';"
+               alt="" />
+        </div>
+        <div>
+          <div class="cart-name">WANPY CHICKEN JERKY 100G</div>
+          <div class="cart-meta">CA-01H · HS 2309.90</div>
+          <div class="cart-pkg-stock low">⚠ Only 12 ctns available</div>
+        </div>
+        <input type="number" class="cart-input" value="30"
+          style="text-align:right;border-color:rgba(245,158,11,0.5);background:rgba(245,158,11,0.06);" />
+        <input class="cart-input" value="100G × 100/CTN" />
+        <input type="number" class="cart-input" value="36.00" style="text-align:right;font-family:monospace;" />
+        <div class="cart-subtotal" style="color:#fcd34d;">USD 1,080.00</div>
+        <button class="remove-btn">×</button>
+      </div>
+
+      <!-- footer total -->
+      <div class="cart-footer">
+        <span class="cart-total-label">Total:</span>
+        <span class="cart-total-val">USD 3,033.60</span>
+      </div>
+    </div>
+
+    <!-- stock warning notice -->
+    <div style="margin-top:10px;padding:10px 14px;border-radius:8px;background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.3);font-size:11.5px;color:#fcd34d;display:flex;align-items:center;gap:8px;">
+      ⚠ <span><b>CA-01H</b> qty (30) exceeds available packaging stock (12 ctns). Sanlyn will confirm lead time before production.</span>
+    </div>
+
+    <!-- nav -->
+    <div class="nav-row">
+      <button class="btn-secondary">← Back</button>
+      <button class="btn-primary">Next →</button>
+    </div>
+  </div><!-- /pane-step2 -->
+
+</div><!-- /max-width wrapper -->
+
+<script>
+function showTab(id) {
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('show'));
+  document.querySelectorAll('.ptab').forEach(t => t.classList.remove('active'));
+  document.getElementById('pane-' + id).classList.add('show');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

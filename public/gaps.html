@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>补资料清单</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { font-family:-apple-system,"PingFang SC",sans-serif; background:#0a0e1a; color:#e2e8f0; padding-bottom:40px; }
+  .hd { position:sticky; top:0; z-index:10; background:#0c1222; padding:14px 16px; border-bottom:1px solid #1e293b; }
+  .hd h1 { font-size:17px; font-weight:800; }
+  .hd .sub { font-size:12px; color:#64748b; margin-top:3px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; padding:10px 16px; }
+  .chip { font-size:11px; padding:4px 10px; border-radius:14px; background:#1e293b; color:#94a3b8; font-weight:700; }
+  .chip.on { background:#38bdf822; color:#7dd3fc; border:1px solid #38bdf855; }
+  .list { padding:6px 12px; }
+  .card { background:#111827; border:1px solid #1e293b; border-radius:12px; padding:13px 14px; margin-bottom:10px; transition:opacity .2s; }
+  .card.done { opacity:.4; }
+  .row1 { display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .icon { font-size:17px; }
+  .title { font-size:14px; font-weight:700; flex:1; }
+  .dom { font-size:10px; padding:2px 7px; border-radius:8px; background:#1e293b; color:#94a3b8; }
+  .detail { font-size:12px; color:#94a3b8; line-height:1.5; margin-bottom:9px; }
+  .acts { display:flex; gap:8px; align-items:center; }
+  .skill { font-size:10px; padding:2px 8px; border-radius:8px; background:#a78bfa18; color:#a78bfa; border:1px solid #a78bfa33; }
+  .btn { flex:1; padding:8px; border-radius:8px; border:none; font-size:12px; font-weight:700; cursor:pointer; }
+  .copy { background:#38bdf8; color:#0c1222; }
+  .ok { background:#1e293b; color:#34d399; border:1px solid #34d39944; min-width:70px; flex:none; }
+  .empty { text-align:center; padding:60px 20px; color:#64748b; }
+  .loading { text-align:center; padding:60px; color:#64748b; }
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#34d399; color:#06281c; padding:9px 18px; border-radius:20px; font-size:13px; font-weight:700; opacity:0; transition:opacity .3s; z-index:99; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+  <div class="hd">
+    <h1>📋 补资料清单</h1>
+    <div class="sub" id="sub">加载中…</div>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="list" id="list"><div class="loading">⏳ 扫描缺口中…</div></div>
+  <div class="toast" id="toast"></div>
+
+<script>
+const DONE_KEY = "gaps_done_v1";
+let done = {}; try { done = JSON.parse(localStorage.getItem(DONE_KEY)||"{}"); } catch(e){}
+let allTasks = [], filter = "全部";
+
+function jwt(){ try { return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||""; } catch(e){ return ""; } }
+function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.className="toast show"; setTimeout(()=>t.className="toast",1500); }
+function key(t){ return t.domain+"|"+t.ref+"|"+t.title; }
+
+async function load(){
+  try {
+    const r = await fetch("/api/db/data-gaps", { headers:{ Authorization:"Bearer "+jwt() } });
+    const d = await r.json();
+    if (!d.tasks){ document.getElementById("list").innerHTML='<div class="empty">'+(d.message||d.error||"无数据，请先在电脑端登录")+'</div>'; return; }
+    allTasks = d.tasks;
+    render(d.summary);
+  } catch(e){ document.getElementById("list").innerHTML='<div class="empty">⚠️ '+e.message+'</div>'; }
+}
+
+function render(summary){
+  const pending = allTasks.filter(t=>!done[key(t)]);
+  document.getElementById("sub").textContent = "共 "+allTasks.length+" 条，待补 "+pending.length+" 条";
+  // chips
+  const doms = ["全部", ...Object.keys(summary||{})];
+  document.getElementById("chips").innerHTML = doms.map(dm=>{
+    const n = dm==="全部"?allTasks.length:(summary[dm]||0);
+    return '<span class="chip '+(filter===dm?"on":"")+'" onclick="setF(\''+dm+'\')">'+dm+" "+n+'</span>';
+  }).join("");
+  // list
+  const show = allTasks.filter(t=>filter==="全部"||t.domain===filter);
+  if (!show.length){ document.getElementById("list").innerHTML='<div class="empty">🎉 这类全齐了</div>'; return; }
+  document.getElementById("list").innerHTML = show.map((t,i)=>{
+    const k = key(t), isDone = !!done[k];
+    return '<div class="card'+(isDone?" done":"")+'" id="c'+i+'">'
+      +'<div class="row1"><span class="icon">'+t.icon+'</span><span class="title">'+t.title+'</span><span class="dom">'+t.domain+'</span></div>'
+      +'<div class="detail">'+(t.detail||"")+'</div>'
+      +'<div class="acts"><span class="skill">'+t.skill+'</span>'
+      +'<button class="btn copy" onclick="cp('+i+')">📋 复制补法</button>'
+      +'<button class="btn ok" onclick="mark('+i+')">'+(isDone?"↺撤销":"✓完成")+'</button></div></div>';
+  }).join("");
+  window._show = show;
+}
+function setF(dm){ filter=dm; render(_summary); }
+let _summary={}; const _origRender=render; render=function(s){ if(s)_summary=s; _origRender(_summary); };
+function cp(i){ const t=window._show[i]; navigator.clipboard.writeText(t.trigger).then(()=>toast("已复制：去Claude对话粘贴")); }
+function mark(i){ const t=window._show[i], k=key(t); if(done[k])delete done[k]; else done[k]=Date.now(); localStorage.setItem(DONE_KEY,JSON.stringify(done)); render(); }
+load();
+</script>
+</body>
+</html>

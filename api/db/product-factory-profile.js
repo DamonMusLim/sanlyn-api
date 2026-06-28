@@ -1,0 +1,347 @@
+// api/db/product-factory-profile.js — Factory Write-in V1 (2026-05-20)
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/db/products/:sku/factory-profile
+//
+// Lets a factory (or an admin/finance/logistics acting as proxy) write the
+// factory-side product profile into products.raw. V1 transition surface;
+// future versions migrate this to a normalized product_factory_profile table.
+//
+// Hard constraints (Damon 2026-05-20):
+//   • Only writes raw.factory_profile and raw.aliases.factory[<code>].
+//   • Never writes raw.pricing, customer aliases, top-level columns, or
+//     anything outside the FACTORY_PROFILE_WRITABLE_KEYS allow-list.
+//   • Read-modify-write under SELECT … FOR UPDATE so the merge is atomic
+//     and cannot stomp another writer's concurrent changes.
+//   • Backup of the row's raw BEFORE write to /tmp/product-factory-
+//     writein-backup-<ts>.jsonl (one line per request).
+//   • audit_log via api/audit.js writeAuditLog with
+//       action = "PRODUCT_FACTORY_PROFILE_UPDATED"
+//
+// Permission: api/lib/product-scope.js canWriteFactoryProfile().
+//   - admin / finance / logistics / platform_* → must pass target_factory_company_code
+//   - factory → locked to own company_code (body's target is IGNORED)
+//   - everyone else → 403
+
+import fs from "node:fs";
+import path from "node:path";
+import { getPool, setCors } from "../db.js";
+import { extractUser } from "../auth.js";
+import { writeAuditLog, getClientInfo } from "../audit.js";
+import {
+  canWriteFactoryProfile,
+  FACTORY_PROFILE_WRITABLE_KEYS,
+  FACTORY_PROFILE_REJECTED_KEYS,
+} from "../lib/product-scope.js";
+
+const SOURCE_TAG = "factory_writein_v1";
+const BACKUP_DIR = "/tmp";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function isPlainObject(v) {
+  return v != null && typeof v === "object" && !Array.isArray(v);
+}
+
+// Pulls the SKU from the route param, falling back to ?sku= or body.sku for
+// flat-mount setups. SKU is treated as a literal value (parameterized in SQL),
+// never interpolated.
+function extractSku(req) {
+  const fromParam = req.params && (req.params.sku || req.params[0]);
+  if (fromParam) return String(fromParam).trim();
+  if (req.query && req.query.sku) return String(req.query.sku).trim();
+  if (req.body && req.body.sku) return String(req.body.sku).trim();
+  return "";
+}
+
+// Whitelists the body. Returns { patch, rejected } where:
+//   patch    = object of accepted writable keys
+//   rejected = array of keys that appeared but are not on the allow-list
+function pickWritablePatch(body) {
+  if (!isPlainObject(body)) return { patch: {}, rejected: [] };
+  const patch = {};
+  const rejected = [];
+  for (const [k, v] of Object.entries(body)) {
+    if (k === "target_factory_company_code") continue; // routing field
+    if (FACTORY_PROFILE_WRITABLE_KEYS.includes(k)) {
+      if (v !== undefined) patch[k] = v;
+    } else {
+      // Surface unknown keys as rejected. Explicit rejection of obviously
+      // dangerous keys (factory_price, pricing, aliases, raw, …) is clearer
+      // than silent ignore.
+      if (FACTORY_PROFILE_REJECTED_KEYS.includes(k) || k.startsWith("_")) {
+        rejected.push(k);
+      } else {
+        rejected.push(k);
+      }
+    }
+  }
+  return { patch, rejected };
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+// Append a JSONL backup record. Best-effort: if /tmp is unwritable we surface
+// the error so the caller can decide. We do NOT swallow this — the rule is
+// "backup before write". If backup fails we reject the request.
+function writeBackup(record) {
+  const ts = record.timestamp.replace(/[:.]/g, "-");
+  const file = path.join(BACKUP_DIR, `product-factory-writein-backup-${ts.slice(0, 10)}.jsonl`);
+  fs.appendFileSync(file, JSON.stringify(record) + "\n", { encoding: "utf8" });
+  return file;
+}
+
+// Merge the patch into existing raw.factory_profile. Returns the new
+// factory_profile object (caller is responsible for assigning it back to raw).
+//
+// CODEX-REVIEW P2 (2026-05-20): if the existing profile belongs to a
+// different factory_company_code (e.g. admin proxy-writing for factory B
+// where the previous profile was written by factory A), spreading the old
+// values would attribute A's product code / name / spec / moq to B for any
+// key the patch did NOT include. Detect that mismatch and start from an
+// empty base so partial updates can never leak another factory's fields.
+function buildFactoryProfile(prevProfile, patch, targetCode, factoryName, actor) {
+  const prevCode = isPlainObject(prevProfile) ? prevProfile.factory_company_code : null;
+  const sameFactory = prevCode && String(prevCode) === String(targetCode);
+  const base = sameFactory ? { ...prevProfile } : {};
+  // Apply only the whitelisted keys
+  for (const k of FACTORY_PROFILE_WRITABLE_KEYS) {
+    if (patch[k] !== undefined) base[k] = patch[k];
+  }
+  base.factory_company_code = targetCode;
+  if (factoryName) base.factory_name = factoryName;
+  base.updated_by_user_id = actor.user_id;
+  base.updated_by_role = actor.role;
+  base.updated_by_company_code = actor.company_code;
+  base.updated_at = nowIso();
+  base.source = SOURCE_TAG;
+  return base;
+}
+
+function buildFactoryAlias(prevAlias, patch, actor) {
+  const base = isPlainObject(prevAlias) ? { ...prevAlias } : {};
+  if (patch.factory_product_code !== undefined) base.code = patch.factory_product_code;
+  if (patch.factory_product_name !== undefined) base.name = patch.factory_product_name;
+  if (patch.factory_spec        !== undefined) base.spec = patch.factory_spec;
+  base.updated_by_user_id = actor.user_id;
+  base.updated_at = nowIso();
+  base.source = SOURCE_TAG;
+  return base;
+}
+
+// ── Handler ──────────────────────────────────────────────────────────────────
+
+export default async function handler(req, res) {
+  setCors(req, res, "PATCH, OPTIONS");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "PATCH") {
+    return res.status(405).json({ error: "Method not allowed", method: req.method });
+  }
+
+  try {
+    // CODEX-REVIEW P2 (2026-05-20): when this handler is reached through the
+    // Vercel file-based route (api/db/products/[sku]/factory-profile.js),
+    // server.js's authMiddleware has NOT run, so req.user is unset. Run the
+    // same JWT extraction here as a defense-in-depth. Idempotent under
+    // Express — if authMiddleware already ran, req.user is already set and
+    // extractUser is a cheap no-op refresh.
+    if (!req.user) {
+      try { extractUser(req); } catch (_) { /* swallow */ }
+    }
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized", message: "no req.user" });
+    }
+
+    const body = req.body || {};
+    const requestedTarget = typeof body.target_factory_company_code === "string"
+      ? body.target_factory_company_code.trim()
+      : "";
+
+    const auth = canWriteFactoryProfile(req.user, requestedTarget);
+    if (!auth.ok) {
+      return res.status(403).json({ error: "Forbidden", message: auth.reason });
+    }
+    const targetCode = auth.targetFactoryCompanyCode;
+
+    const sku = extractSku(req);
+    if (!sku) return res.status(400).json({ error: "sku required" });
+
+    const { patch, rejected } = pickWritablePatch(body);
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({
+        error: "no writable fields",
+        message: "body must contain at least one of: " + FACTORY_PROFILE_WRITABLE_KEYS.join(", "),
+        rejected,
+      });
+    }
+
+    const actor = {
+      user_id: req.user.id || req.user.uid || req.user.sub || null,
+      role: String(req.user.role || "").toLowerCase(),
+      company_code: req.user.companyCode || req.user.company_code || null,
+      user_name: req.user.name || req.user.account || null,
+    };
+
+    const pool = getPool();
+    const client = await pool.connect();
+    let backupFile = null;
+    try {
+      await client.query("BEGIN");
+
+      // SELECT FOR UPDATE — atomic read-modify-write.
+      // CODEX-REVIEW P1 (2026-05-20): factories must not be able to write
+      // products that belong to a different factory. canWriteFactoryProfile
+      // only proves the actor writes under their own company code; it does
+      // NOT prove they own the product row. Mirror the GET-side factory
+      // ownership check (factory_code OR raw->>'factoryCode' = caller's code)
+      // here in the SELECT so an attacker who knows another factory's SKU
+      // cannot mutate the row.
+      // CODEX-REVIEW round 5 P1 (2026-05-20): use the normalized role from
+      // canWriteFactoryProfile (auth.role) instead of re-folding req.user.role
+      // here — eliminates the casing-mismatch bypass surface.
+      let sel;
+      const factoryActsAsSelf = auth.role === "factory";
+      if (factoryActsAsSelf) {
+        sel = await client.query(
+          "SELECT id, sku, raw, factory_name, factory_code FROM products " +
+          " WHERE sku = $1 " +
+          "   AND (factory_code = $2 OR raw->>'factoryCode' = $2) " +
+          " FOR UPDATE",
+          [sku, targetCode]
+        );
+      } else {
+        // admin / finance / logistics: proxy write — target was supplied
+        // explicitly; SKU ownership is verified by the audit trail, not by a
+        // hard SQL guard (admins can correct cross-factory data).
+        sel = await client.query(
+          "SELECT id, sku, raw, factory_name, factory_code FROM products WHERE sku = $1 FOR UPDATE",
+          [sku]
+        );
+      }
+      if (sel.rows.length === 0) {
+        await client.query("ROLLBACK");
+        // For factory mode, return 403 — do not confirm whether the SKU
+        // exists for another factory.
+        if (factoryActsAsSelf) {
+          return res.status(403).json({ error: "Forbidden", message: "product not in your factory scope" });
+        }
+        return res.status(404).json({ error: "product not found", sku });
+      }
+      const row = sel.rows[0];
+      // CODEX-REVIEW round 5 P2 (2026-05-20): proxy writes (admin/finance/
+      // logistics) must not stamp factory B's profile onto a row whose
+      // primary factory_code is factory A. The singleton raw.factory_profile
+      // would then leak B's product code/name/spec to A on GET. Guard:
+      // target_factory_company_code MUST equal the row's factory ownership
+      // (factory_code column or raw.factoryCode legacy path). If they don't
+      // match, the admin needs to reassign factory_code first via a separate
+      // flow; this endpoint refuses to mix.
+      if (!factoryActsAsSelf) {
+        const rowFactoryCode = row.factory_code ||
+          (isPlainObject(row.raw) && row.raw.factoryCode) || null;
+        if (!rowFactoryCode || String(rowFactoryCode) !== String(targetCode)) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            error: "factory_mismatch",
+            message: "target_factory_company_code does not match the product's factory ownership; reassign factory_code first",
+            product_factory_code: rowFactoryCode,
+            target_factory_company_code: targetCode,
+          });
+        }
+      }
+      const prevRaw = isPlainObject(row.raw) ? row.raw : {};
+      const prevProfile = isPlainObject(prevRaw.factory_profile) ? prevRaw.factory_profile : {};
+      const prevAliases = isPlainObject(prevRaw.aliases) ? prevRaw.aliases : {};
+      const prevFactoryMap = isPlainObject(prevAliases.factory) ? prevAliases.factory : {};
+      const prevAlias = isPlainObject(prevFactoryMap[targetCode]) ? prevFactoryMap[targetCode] : {};
+
+      const newProfile = buildFactoryProfile(
+        prevProfile, patch, targetCode, row.factory_name, actor
+      );
+      const newAlias = buildFactoryAlias(prevAlias, patch, actor);
+
+      // Build new raw by merging only the two whitelisted sub-paths. Never
+      // assign `raw = body.raw`; we structurally know what's going in.
+      const newRaw = { ...prevRaw };
+      newRaw.factory_profile = newProfile;
+      newRaw.aliases = {
+        ...(isPlainObject(prevRaw.aliases) ? prevRaw.aliases : {}),
+        factory: {
+          ...prevFactoryMap,
+          [targetCode]: newAlias,
+        },
+      };
+
+      // ── Backup BEFORE commit ──────────────────────────────────────────
+      const timestamp = nowIso();
+      const backupRecord = {
+        timestamp,
+        product_id: row.id,
+        sku: row.sku,
+        actor,
+        target_factory_company_code: targetCode,
+        requested_patch: patch,
+        rejected_keys: rejected,
+        raw_before: prevRaw,
+      };
+      try {
+        backupFile = writeBackup(backupRecord);
+      } catch (e) {
+        await client.query("ROLLBACK");
+        return res.status(500).json({
+          error: "backup_failed",
+          message: "refusing to write without backup: " + e.message,
+        });
+      }
+
+      const upd = await client.query(
+        "UPDATE products SET raw = $1::jsonb, updated_at = NOW() WHERE id = $2 RETURNING id, sku",
+        [JSON.stringify(newRaw), row.id]
+      );
+
+      await client.query("COMMIT");
+
+      // ── Audit log (best-effort; writeAuditLog swallows its own errors) ─
+      const changedKeys = Object.keys(patch);
+      const clientInfo = getClientInfo(req);
+      await writeAuditLog({
+        tenant_id: "SANLYN",
+        user_id: actor.user_id,
+        user_name: actor.user_name,
+        user_role: actor.role,
+        table_name: "products",
+        record_id: String(row.id),
+        action: "PRODUCT_FACTORY_PROFILE_UPDATED",
+        old_values: { factory_profile: prevProfile, alias: prevAlias },
+        new_values: { factory_profile: newProfile, alias: newAlias },
+        changes: {
+          target_factory_company_code: targetCode,
+          changed_keys: changedKeys,
+          source: SOURCE_TAG,
+        },
+        ip_address: clientInfo.ip_address,
+        user_agent: clientInfo.user_agent,
+        note: `factory_writein_v1 by ${actor.role} ${actor.company_code || ""}`,
+      });
+
+      return res.status(200).json({
+        success: true,
+        id: upd.rows[0].id,
+        sku: upd.rows[0].sku,
+        target_factory_company_code: targetCode,
+        changed_keys: changedKeys,
+        rejected_keys: rejected,
+        backup_file: backupFile,
+        source: SOURCE_TAG,
+      });
+    } catch (err) {
+      try { await client.query("ROLLBACK"); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}

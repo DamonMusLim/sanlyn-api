@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New Order · 2-Step Flow Preview (Plan A v2)</title>
+<style>
+  :root{
+    --bg:#0B1120; --panel:rgba(28,35,55,.96); --panelSoft:rgba(255,255,255,.04);
+    --line:rgba(255,255,255,.10); --text:#E2E8F0; --textSoft:#94A3B8; --textMuted:#64748B;
+    --primary:#3B82F6; --amber:#F59E0B; --success:#22C55E; --danger:#EF4444; --violet:#A855F7;
+    --gradPrimary:linear-gradient(135deg,#3B82F6,#2563EB);
+    --gradSuccess:linear-gradient(135deg,#22C55E,#16A34A);
+    --gradDanger:linear-gradient(135deg,#EF4444,#DC2626);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+  .page{max-width:1320px;margin:0 auto;padding:24px 16px;display:flex;gap:20px;align-items:flex-start}
+  .main{flex:1;min-width:0}
+  .side{width:280px;flex-shrink:0;position:sticky;top:78px}
+
+  .topbar{display:flex;align-items:center;gap:14px;padding:14px 22px;background:rgba(11,17,32,.85);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  .topbar .title{font-size:17px;font-weight:800;color:var(--primary)}
+  .stepper{display:flex;gap:10px;flex:1;justify-content:center;align-items:center}
+  .step{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--textMuted)}
+  .step .num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.06);font-weight:700;font-size:12px}
+  .step.active{color:var(--primary)}
+  .step.active .num{background:var(--gradPrimary);color:#fff;box-shadow:0 0 0 3px rgba(59,130,246,.25)}
+  .step.done .num{background:var(--success);color:#fff}
+  .badge-proxy{padding:5px 12px;border-radius:20px;background:var(--gradDanger);color:#fff;font-size:11px;font-weight:800}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+  .card.compact{padding:14px 18px}
+  .card h3{margin:0 0 4px;font-size:19px;font-weight:800}
+  .card h3.sm{font-size:14px;font-weight:700;color:var(--textSoft);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px}
+  .card .sub{font-size:12px;color:var(--textSoft);margin-bottom:14px}
+
+  .lbl{font-size:10px;font-weight:700;color:var(--textMuted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;display:block}
+  .inp,.sel{width:100%;padding:9px 12px;background:var(--panelSoft);border:1px solid var(--line);border-radius:7px;color:var(--text);font-size:13px;outline:none}
+  .inp:focus,.sel:focus{border-color:var(--primary)}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .span3{grid-column:span 3}
+  .span2{grid-column:span 2}
+
+  /* COMPACT BUYER ROW */
+  .deal-row{display:grid;grid-template-columns:1.1fr 36px 1fr;gap:12px;align-items:stretch}
+  .buyer-compact{background:linear-gradient(135deg,rgba(59,130,246,.18),rgba(37,99,235,.06));border:1px solid rgba(59,130,246,.32);border-radius:10px;padding:12px 14px}
+  .buyer-compact .top{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .buyer-compact .name{font-size:15px;font-weight:800}
+  .buyer-compact .chips{display:flex;gap:5px;flex-wrap:wrap}
+  .chip{padding:2px 9px;border-radius:14px;background:rgba(255,255,255,.10);font-size:10px;font-weight:700}
+  .chip.country{background:rgba(245,158,11,.18);color:#fcd34d}
+  .chip.currency{background:rgba(59,130,246,.18);color:#93c5fd}
+
+  /* ORDER-UNDER as DROPDOWN (compact) */
+  .order-under{margin-top:10px;padding-top:10px;border-top:1px dashed rgba(255,255,255,.08)}
+  .order-under .lbl{margin-bottom:6px}
+  .ou-select-wrap{display:flex;gap:10px;align-items:center}
+  .ou-select-wrap .sel{flex:1}
+  .ou-tags{display:flex;gap:4px;flex-shrink:0}
+  .invoice-note{margin-top:8px;font-size:10px;color:var(--textMuted);padding:5px 8px;background:rgba(0,0,0,.18);border-radius:5px}
+  .invoice-note b{color:var(--text)}
+
+  .factory-compact{background:linear-gradient(135deg,rgba(245,158,11,.10),rgba(180,83,9,.04));border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 14px}
+  .factory-compact .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .factory-compact .top .label{font-size:10px;font-weight:800;color:#fcd34d;text-transform:uppercase;letter-spacing:.06em}
+  .factory-compact .ok{font-size:10px;color:#86efac;font-weight:700}
+
+  .connector{display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--primary);font-weight:700}
+
+  /* Source hint (新客户/介绍人引导) */
+  .source-hint{margin-top:12px;padding:10px 12px;background:rgba(168,85,247,.10);border:1px solid rgba(168,85,247,.30);border-radius:8px;font-size:12px;color:#d8b4fe;display:flex;align-items:center;gap:8px}
+  .source-hint b{color:#e9d5ff}
+
+  /* Action grid */
+  .actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+  .act{padding:14px;border-radius:10px;cursor:pointer;border:1px solid var(--line)}
+  .act.catalog{background:linear-gradient(135deg,rgba(59,130,246,.13),rgba(37,99,235,.04));border-color:rgba(59,130,246,.28)}
+  .act.source{background:linear-gradient(135deg,rgba(34,197,94,.13),rgba(22,163,74,.04));border-color:rgba(34,197,94,.28)}
+  .act-title{font-size:14px;font-weight:700;margin-bottom:3px}
+  .act-sub{font-size:11px;color:var(--textSoft)}
+
+  .nav{display:flex;justify-content:flex-end;gap:12px;align-items:center;margin-bottom:32px}
+  .nav.split{justify-content:space-between}
+  .btn{padding:11px 24px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--textSoft);font-size:14px;font-weight:600;cursor:pointer}
+  .btn-primary{padding:11px 30px;border:none;background:var(--gradPrimary);color:#fff;font-size:15px;font-weight:700;box-shadow:0 0 0 4px rgba(59,130,246,.2),0 8px 28px rgba(59,130,246,.45);border-radius:8px;cursor:pointer}
+  .btn-success{padding:13px 32px;border:none;background:var(--gradSuccess);color:#fff;font-size:16px;font-weight:800;box-shadow:0 0 0 5px rgba(34,197,94,.22),0 14px 32px rgba(34,197,94,.35);border-radius:8px;cursor:pointer}
+  .btn-mini{padding:5px 10px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--textSoft);font-size:11px;font-weight:600;border-radius:6px;cursor:pointer}
+
+  /* Container tabs */
+  .ctabs{display:flex;gap:4px;flex-wrap:wrap}
+  .ctab{padding:9px 18px;border-radius:8px 8px 0 0;font-size:13px;font-weight:500;background:rgba(255,255,255,.04);color:var(--textMuted);border:1px solid transparent;cursor:pointer}
+  .ctab.active{background:var(--panel);color:var(--primary);font-weight:700;border-color:var(--line);border-bottom-color:var(--panel)}
+  .ctab.add{border:1px dashed var(--primary);color:var(--primary);background:transparent}
+  .cbody{background:var(--panel);border:1px solid var(--line);border-top:none;border-radius:0 0 12px 12px;padding:18px;margin-bottom:16px}
+  .factory-bar{background:linear-gradient(135deg,rgba(245,158,11,.18),rgba(180,83,9,.12));border:1px solid rgba(245,158,11,.4);border-radius:10px;padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:12px}
+  .factory-bar-lbl{font-size:12px;color:#FCD34D;font-weight:700}
+
+  .hist{padding:12px;background:linear-gradient(135deg,rgba(34,197,94,.1),rgba(22,163,74,.06));border:1px solid rgba(34,197,94,.22);border-radius:10px;margin-bottom:14px}
+  .hist-title{font-size:12px;font-weight:700;color:#4ADE80;margin-bottom:8px}
+  .hist-chip{display:inline-block;padding:4px 11px;border-radius:14px;border:1px solid rgba(34,197,94,.32);background:rgba(34,197,94,.06);color:#86EFAC;font-size:11px;font-weight:600;margin:3px;cursor:pointer}
+
+  .add-row{display:flex;gap:10px;margin-top:10px}
+  .btn-add{padding:8px 16px;border-radius:7px;border:1px solid var(--primary);background:rgba(59,130,246,.1);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer}
+  .empty{text-align:center;padding:32px;color:var(--textMuted);font-size:13px;border-top:1px solid var(--line);margin-top:12px}
+
+  .summary-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+  .summary-cell{padding:14px 10px;background:rgba(255,255,255,.04);border-radius:10px;text-align:center;border:1px solid rgba(255,255,255,.08)}
+  .summary-cell .label{font-size:10px;color:var(--textMuted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+  .summary-cell .val{font-size:17px;font-weight:800;color:var(--primary)}
+
+  /* DELIVERY collapsible */
+  .delivery-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:16px;overflow:hidden}
+  .delivery-summary{padding:14px 18px;display:flex;align-items:center;gap:12px;cursor:pointer;justify-content:space-between}
+  .delivery-summary .left{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+  .delivery-summary .icon{font-size:18px}
+  .delivery-summary .meta{flex:1;min-width:0}
+  .delivery-summary .meta .l1{font-size:13px;color:var(--text);font-weight:600}
+  .delivery-summary .meta .l2{font-size:11px;color:var(--textMuted);margin-top:2px}
+  .delivery-summary .edit{font-size:12px;color:var(--primary);font-weight:700;cursor:pointer}
+  .delivery-body{padding:0 18px 18px;border-top:1px solid var(--line)}
+  .delivery-body.open{display:block}
+
+  /* Address chooser */
+  .addr-chooser{margin-top:14px;background:rgba(0,0,0,.20);border-radius:8px;padding:10px;border:1px solid var(--line)}
+  .addr-chooser-head{font-size:11px;color:var(--textMuted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+  .addr-row{padding:9px 10px;border-radius:7px;border:1px solid transparent;cursor:pointer;font-size:12px;display:flex;gap:10px;align-items:center}
+  .addr-row.sel{background:rgba(59,130,246,.10);border-color:rgba(59,130,246,.32)}
+  .addr-row .rdo{width:14px;height:14px;border-radius:50%;border:2px solid var(--textMuted);flex-shrink:0}
+  .addr-row.sel .rdo{border-color:var(--primary);background:var(--primary);box-shadow:inset 0 0 0 3px var(--panel)}
+  .addr-row .badge-def{font-size:9px;padding:2px 7px;border-radius:10px;background:rgba(34,197,94,.18);color:#86efac;font-weight:700;margin-left:auto;flex-shrink:0}
+  .addr-add{padding:9px 10px;border-radius:7px;border:1px dashed var(--primary);color:var(--primary);text-align:center;font-size:12px;font-weight:600;cursor:pointer;margin-top:6px}
+
+  /* Sidebar */
+  .profile{background:linear-gradient(135deg,rgba(59,130,246,.18),rgba(37,99,235,.06));border:1px solid rgba(59,130,246,.3);border-radius:12px;padding:18px;margin-bottom:14px}
+  .profile h4{margin:0 0 4px;font-size:16px;font-weight:800}
+  .profile .code{display:inline-block;padding:2px 8px;border-radius:6px;background:rgba(255,255,255,.10);font-size:10px;font-weight:700;margin-right:6px;font-family:ui-monospace,monospace}
+  .profile .country{font-size:11px;color:var(--textSoft);font-weight:600}
+  .profile-row{padding:9px 0;border-top:1px solid rgba(255,255,255,.08);font-size:12px;display:flex;justify-content:space-between}
+  .profile-row .k{color:var(--textMuted);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.04em}
+  .profile-row .v{color:var(--text);font-weight:600}
+  .alert{background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px;font-size:11px;color:#FCA5A5;margin-bottom:14px}
+  .alert-title{font-weight:700;margin-bottom:3px}
+  .factory-mini{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px;font-size:12px}
+
+  .switcher{position:fixed;top:14px;right:20px;z-index:10;display:flex;gap:6px;background:rgba(0,0,0,.6);padding:6px;border-radius:8px;border:1px solid var(--line)}
+  .switcher button{padding:6px 14px;background:transparent;border:none;color:var(--textSoft);font-size:12px;font-weight:600;cursor:pointer;border-radius:5px}
+  .switcher button.active{background:var(--primary);color:#fff}
+
+  .view{display:none}
+  .view.active{display:block}
+  .section-h{font-size:11px;color:#fcd34d;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px;padding-left:6px;border-left:3px solid #f59e0b}
+</style>
+</head>
+<body>
+
+<div class="switcher">
+  <button class="active" data-view="step1">Step 1 · Buyer & Factory</button>
+  <button data-view="step2">Step 2 · Products & Delivery</button>
+</div>
+
+<!-- ════════════════════════════════════════════════ -->
+<!-- STEP 1 - COMPACT -->
+<!-- ════════════════════════════════════════════════ -->
+<div class="view active" id="step1">
+  <div class="topbar">
+    <button class="btn" style="padding:7px 14px">← Back</button>
+    <div class="title">New Order</div>
+    <div class="stepper">
+      <div class="step active"><div class="num">1</div>Buyer & Factory</div>
+      <div style="width:60px;height:2px;background:var(--line)"></div>
+      <div class="step"><div class="num">2</div>Products & Delivery</div>
+    </div>
+    <div class="badge-proxy">🛒 Proxy Export</div>
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--gradPrimary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#fff">PE</div>
+  </div>
+
+  <div class="page">
+    <div class="main">
+
+      <div class="card">
+        <h3>Set up the deal</h3>
+        <div class="sub">Pick <b>who is buying</b> and <b>who is supplying</b> — this binds the buyer ↔ factory relationship for this order.</div>
+
+        <div class="deal-row">
+
+          <!-- COMPACT BUYER CARD -->
+          <div class="buyer-compact">
+            <div class="top">
+              <span style="font-size:11px;font-weight:800;color:var(--textMuted);text-transform:uppercase;letter-spacing:.06em">🏬 Buyer</span>
+              <span class="name">PETSOME GROUP</span>
+            </div>
+            <div class="chips">
+              <span class="chip country">MALAYSIA</span>
+              <span class="chip">Grade —</span>
+              <span class="chip currency">USD</span>
+            </div>
+
+            <div class="order-under">
+              <label class="lbl">Order Under · 下单主体</label>
+              <div class="ou-select-wrap">
+                <select class="sel">
+                  <option>DIBAQ (M) SDN BHD</option>
+                  <option>PETSOME SDN BHD</option>
+                  <option>PETSOME (EU) SDN BHD</option>
+                </select>
+                <div class="ou-tags">
+                  <span class="chip country">MALAYSIA</span>
+                  <span class="chip currency">CNY</span>
+                </div>
+              </div>
+              <div class="invoice-note">Invoice header: <b>DIBAQ (M) SDN BHD</b></div>
+            </div>
+          </div>
+
+          <div class="connector">↔</div>
+
+          <!-- FACTORY (unchanged) -->
+          <div class="factory-compact">
+            <div class="top">
+              <span class="label">🏭 Primary Factory</span>
+              <span class="ok">✅ 2 authorized</span>
+            </div>
+            <select class="sel" style="margin-bottom:10px"><option>宣城福新宠物食品有限公司 (福新)</option></select>
+            <button class="btn-mini" style="width:100%">+ Invite a Factory</button>
+          </div>
+        </div>
+
+        <!-- Browse / Source CTAs -->
+        <div class="actions">
+          <div class="act catalog">
+            <div class="act-title">📚 Browse Product Catalog</div>
+            <div class="act-sub">Browse SKUs — price shown for authorized brands only</div>
+          </div>
+          <div class="act source">
+            <div class="act-title">🔍 Source New Product · Request Sample</div>
+            <div class="act-sub">Tell us spec / qty / budget — we'll find factories</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav">
+        <button class="btn-primary">Next: Products & Delivery →</button>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="profile">
+        <h4>PETSOME GROUP</h4>
+        <div><span class="code">CN-00037</span><span class="country">MALAYSIA</span></div>
+        <div style="margin-top:10px;font-size:11px;color:#86EFAC;font-weight:700">Grade —</div>
+        <div class="profile-row"><span class="k">Currency</span><span class="v">USD</span></div>
+        <div class="profile-row"><span class="k">Default Port</span><span class="v">Port Klang Westport</span></div>
+        <div class="profile-row"><span class="k">BL Type</span><span class="v" style="color:var(--textMuted)">—</span></div>
+        <div class="profile-row"><span class="k">Contact</span><span class="v" style="color:var(--textMuted)">—</span></div>
+      </div>
+      <div class="alert">
+        <div class="alert-title">⚠ Proxy Export Active</div>
+        PI / SC / Invoice / 报关单 will all use Sanlyn header. An internal alert will be generated for the Sanlyn ops team.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════ -->
+<!-- STEP 2 - Products + collapsible Delivery -->
+<!-- ════════════════════════════════════════════════ -->
+<div class="view" id="step2">
+  <div class="topbar">
+    <button class="btn" style="padding:7px 14px">← Back</button>
+    <div class="title">New Order</div>
+    <div class="stepper">
+      <div class="step done"><div class="num">✓</div>Buyer & Factory</div>
+      <div style="width:60px;height:2px;background:var(--success)"></div>
+      <div class="step active"><div class="num">2</div>Products & Delivery</div>
+    </div>
+    <div class="badge-proxy">🛒 Proxy Export</div>
+    <button class="btn-success" style="padding:9px 22px;font-size:13px">✓ Place Order</button>
+  </div>
+
+  <div class="page">
+    <div class="main">
+
+      <!-- Container tabs -->
+      <div class="ctabs">
+        <div class="ctab active">Container 1 <span style="font-size:11px;color:#94a3b8">(福新-?)</span></div>
+        <div class="ctab add">+ Add container</div>
+      </div>
+
+      <div class="cbody">
+        <div class="factory-bar">
+          <span class="factory-bar-lbl">🏭 Factory:</span>
+          <select class="sel" style="flex:1;max-width:340px"><option>宣城福新宠物食品有限公司 (福新)</option></select>
+          <span style="font-size:11px;color:#fcd34d;font-weight:700;margin-left:auto">View price in:</span>
+          <select class="sel" style="width:90px"><option>CNY</option><option>USD</option><option>EUR</option><option>MYR</option></select>
+          <button class="btn-add">📋 Browse Catalog</button>
+        </div>
+
+        <p class="section-h">3-col Logistics · Destination Port lives in Delivery section</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label class="lbl">PO Number</label>
+            <input class="inp" placeholder="福新-?" style="font-weight:600">
+          </div>
+          <div>
+            <label class="lbl">Port of Loading</label>
+            <input class="inp" value="Shanghai 上海" placeholder="Auto from factory">
+          </div>
+          <div>
+            <label class="lbl">Container Type · auto by CBM</label>
+            <select class="sel" style="font-weight:600;color:var(--primary)"><option>20GP</option><option>40GP</option><option>40HQ</option></select>
+          </div>
+        </div>
+
+        <div class="hist">
+          <div class="hist-title">⭐ Previously ordered (150 products)</div>
+          <span class="hist-chip">Dogsome duck 375g</span>
+          <span class="hist-chip">Dogsome salmon 375g</span>
+          <span class="hist-chip">Dogsome codfish 375g</span>
+          <span class="hist-chip">Dogsome lamb 375g</span>
+          <span class="hist-chip">Dogsome chicken 375g</span>
+          <span class="hist-chip">CATSOME KITCHEN SALMON POUCH 70G</span>
+          <span class="hist-chip">CATSOME KITCHEN TUNA POUCH 70G</span>
+          <span class="hist-chip">CATSOME KITCHEN CHICKEN POUCH 70G</span>
+        </div>
+
+        <div class="add-row">
+          <button class="btn-add">+ Add Product</button>
+          <button class="btn-add" style="border-color:var(--violet);color:var(--violet);background:rgba(168,85,247,.1)">+ Custom Product</button>
+        </div>
+
+        <div class="empty">No products added yet — click "+ Add Product" or select from history above.</div>
+      </div>
+
+      <!-- Order summary -->
+      <div class="card">
+        <div style="font-size:13px;font-weight:600;color:var(--textMuted);margin-bottom:12px">Order Summary · 1 container(s)</div>
+        <div class="summary-row">
+          <div class="summary-cell"><div class="label">Containers</div><div class="val">1</div></div>
+          <div class="summary-cell"><div class="label">Total Qty</div><div class="val">0 CTN</div></div>
+          <div class="summary-cell"><div class="label">Total Amount</div><div class="val">CNY 0.00</div></div>
+        </div>
+      </div>
+
+      <!-- ────────── DELIVERY (collapsible, prefilled) ────────── -->
+      <p class="section-h">Delivery & Schedule — 自动带出默认地址，支持多地址</p>
+      <div class="delivery-card" id="delivery">
+
+        <div class="delivery-summary" onclick="toggleDel()">
+          <div class="left">
+            <div class="icon">📦</div>
+            <div class="meta">
+              <div class="l1">Ship to: <b>PETSOME GROUP</b> · Port Klang Westport, MALAYSIA</div>
+              <div class="l2">Default address · Auto-filled from buyer profile · No ETD/ETA yet</div>
+            </div>
+          </div>
+          <div class="edit">Edit ▼</div>
+        </div>
+
+        <div class="delivery-body" id="delBody">
+
+          <div class="grid3" style="margin-top:14px">
+            <div>
+              <label class="lbl">Consignee</label>
+              <input class="inp" value="PETSOME GROUP">
+            </div>
+            <div>
+              <label class="lbl">Country / Region</label>
+              <input class="inp" value="MALAYSIA">
+            </div>
+            <div>
+              <label class="lbl">Destination Port</label>
+              <input class="inp" value="Port Klang Westport">
+            </div>
+            <div class="span3">
+              <label class="lbl">Delivery Address *</label>
+              <textarea class="inp" rows="2" style="resize:vertical;min-height:42px">Lot 123, Jalan Industri 5, 47000 Sungai Buloh, Selangor, Malaysia</textarea>
+            </div>
+            <div>
+              <label class="lbl">ETD — Est. Departure</label>
+              <input class="inp" type="date">
+            </div>
+            <div>
+              <label class="lbl">ETA — Est. Arrival</label>
+              <input class="inp" type="date">
+            </div>
+          </div>
+
+          <!-- Address book -->
+          <div class="addr-chooser">
+            <div class="addr-chooser-head">Saved Delivery Addresses · 3 on file</div>
+            <div class="addr-row sel">
+              <div class="rdo"></div>
+              <div style="flex:1">Lot 123, Jalan Industri 5, 47000 Sungai Buloh, Selangor</div>
+              <span class="badge-def">DEFAULT</span>
+            </div>
+            <div class="addr-row">
+              <div class="rdo"></div>
+              <div style="flex:1">Warehouse B · No. 88, Persiaran Tropicana, 47410 PJ</div>
+            </div>
+            <div class="addr-row">
+              <div class="rdo"></div>
+              <div style="flex:1">Klang Port FTZ Bonded Area · Gate 3, Block C</div>
+            </div>
+            <div class="addr-add">+ Use another delivery address</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Remarks -->
+      <div class="card compact">
+        <label class="lbl">Remarks</label>
+        <textarea class="inp" rows="2" placeholder="Optional — notes for ops, factory, customs..." style="resize:vertical;min-height:42px"></textarea>
+      </div>
+
+      <div class="nav split">
+        <button class="btn">← Back</button>
+        <button class="btn-success">✓ Place Order</button>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="profile">
+        <h4>PETSOME GROUP</h4>
+        <div><span class="code">CN-00037</span><span class="country">MALAYSIA</span></div>
+        <div style="margin-top:10px;font-size:11px;color:#86EFAC;font-weight:700">Grade —</div>
+        <div class="profile-row"><span class="k">Currency</span><span class="v">USD</span></div>
+        <div class="profile-row"><span class="k">Default Port</span><span class="v">Port Klang Westport</span></div>
+        <div class="profile-row"><span class="k">BL Type</span><span class="v" style="color:var(--textMuted)">—</span></div>
+      </div>
+      <div class="factory-mini">
+        <div style="font-weight:700;margin-bottom:6px">宣城福新宠物食品有限公司</div>
+        <div><span class="code">福新</span><span style="font-size:11px;color:var(--textSoft)">Shanghai 上海</span></div>
+        <div style="margin-top:8px;color:#86EFAC;font-weight:700;font-size:12px">✅ Direct Export (自营)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.switcher button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.switcher button').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+      b.classList.add('active');
+      document.getElementById(b.dataset.view).classList.add('active');
+      window.scrollTo(0,0);
+    });
+  });
+  // Delivery toggle
+  let delOpen = true;
+  document.getElementById('delBody').style.display = 'block';
+  function toggleDel(){
+    delOpen = !delOpen;
+    document.getElementById('delBody').style.display = delOpen ? 'block' : 'none';
+    const btn = document.querySelector('#delivery .edit');
+    btn.textContent = delOpen ? 'Close ▲' : 'Edit ▼';
+  }
+</script>
+</body>
+</html>

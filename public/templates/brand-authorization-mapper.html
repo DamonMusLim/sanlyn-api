@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Brand Routes · 公版 SaaS 模板 · Tenant-scoped</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f4f6f9; color: #1f2937; padding: 20px; }
+  .wrap { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: #6b7280; font-size: 13px; margin-bottom: 16px; }
+
+  .saas-banner { background: linear-gradient(135deg,#1e293b,#334155); color:#fff; padding:14px 18px; border-radius:8px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; }
+  .saas-banner .left { font-size:13px; }
+  .saas-banner .left strong { color:#fde68a; }
+  .saas-banner .right { display:flex; gap:8px; align-items:center; font-size:11px; color:#cbd5e1; }
+  .saas-banner code { background: rgba(255,255,255,0.1); padding:2px 6px; border-radius:3px; font-family:ui-monospace,monospace; font-size:11px; color:#a7f3d0; }
+
+  .alert { background: #fef3c7; border-left: 3px solid #f59e0b; padding: 10px 14px; border-radius: 4px; font-size: 12px; color: #78350f; margin-bottom: 14px; }
+  .api-list { background:#0f172a; color:#e2e8f0; padding:12px 16px; border-radius:6px; font-family:ui-monospace,monospace; font-size:11px; line-height:1.8; margin-bottom:14px; }
+  .api-list .verb { color:#86efac; }
+  .api-list .path { color:#fde68a; }
+  .api-list .desc { color:#94a3b8; }
+
+  .toolbar { background: #fff; padding: 12px 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 100; }
+  .btn { padding: 8px 16px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-ghost { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+  .btn-warning { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+
+  .factory-group { background: #fff; border-radius: 8px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
+  .factory-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; background: linear-gradient(135deg, #1e293b, #334155); color: #fff; }
+  .factory-name { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  .factory-name .code { background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 3px; font-size: 10px; font-family: ui-monospace, monospace; font-weight: 400; }
+  .factory-meta { font-size: 11px; color: #cbd5e1; display: flex; gap: 14px; }
+  .factory-meta strong { color: #fde68a; font-weight: 600; }
+
+  .dept-row { padding: 8px 18px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+  .dept-row .pill { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+  .dept-row .pill.brand { background: #ede9fe; color: #6d28d9; }
+  .dept-row .pill.oem   { background: #dcfce7; color: #15803d; }
+  .dept-row .pill.simple{ background: #f3f4f6; color: #4b5563; }
+
+  .routes { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .routes th { background: #f3f4f6; padding: 8px 10px; text-align: left; font-weight: 600; color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #e5e7eb; }
+  .routes td { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+  .routes tbody tr:hover { background: #fafbfc; }
+  .routes select { width: 100%; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: #fff; }
+  .routes .nda-cell { text-align: center; }
+  .routes .nda-cell input { transform: scale(1.15); cursor: pointer; }
+  .routes .actions { text-align: center; }
+  .routes .actions button { background: transparent; border: none; cursor: pointer; color: #dc2626; font-size: 16px; }
+  .routes .add-row td { padding: 8px 10px; background: #f0fdf4; }
+  .routes .add-row button { background: transparent; border: none; color: #16a34a; cursor: pointer; font-weight: 600; font-size: 12px; }
+
+  .cust-cell { padding: 4px 6px !important; }
+  .cust-multi { position: relative; }
+  .cust-trigger { width: 100%; min-height: 30px; padding: 4px 28px 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 12px; background: #fff; cursor: pointer; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+  .cust-trigger::after { content: "▼"; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 9px; color: #9ca3af; }
+  .cust-trigger.open { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  .cust-trigger .ph { color: #9ca3af; }
+  .cust-trigger .chip { background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 500; display: inline-flex; align-items: center; gap: 3px; }
+  .cust-trigger .chip .x { cursor: pointer; color: #6b7280; }
+  .cust-trigger .chip .x:hover { color: #dc2626; }
+  .cust-menu { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d1d5db; border-radius: 4px; margin-top: 2px; max-height: 260px; overflow-y: auto; z-index: 50; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: none; }
+  .cust-menu.show { display: block; }
+  .cust-menu .opt { padding: 6px 10px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .cust-menu .opt:hover { background: #f3f4f6; }
+  .cust-menu .opt.checked { background: #eff6ff; color: #1e40af; font-weight: 600; }
+  .cust-menu .opt .check { color: #2563eb; }
+  .cust-menu .opt:not(.checked) .check { visibility: hidden; }
+  .cust-menu .search { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; position: sticky; top: 0; background: #fff; }
+  .cust-menu .search input { width: 100%; border: 1px solid #d1d5db; padding: 4px 8px; border-radius: 3px; font-size: 11px; }
+
+  .empty-state { background:#fff; padding:40px 30px; border-radius:8px; text-align:center; color:#6b7280; box-shadow:0 1px 3px rgba(0,0,0,0.05); }
+  .empty-state .ico { font-size:40px; margin-bottom:10px; }
+  .empty-state h3 { font-size:16px; color:#111827; margin-bottom:6px; }
+
+  .output { background: #0f172a; color: #e2e8f0; padding: 14px; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 11px; white-space: pre; max-height: 400px; overflow: auto; margin-top: 12px; }
+  .status { font-size: 12px; color: #6b7280; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🏭 Brand Routes · 公版 SaaS 模板</h1>
+  <div class="sub">每行 = 一条规则：<strong>工厂(部门) + 品牌 → 客户列表(多选)</strong>。所有数据按 tenant_id 隔离，从 API 实时加载。</div>
+
+  <div class="saas-banner">
+    <div class="left">
+      🏢 <strong>租户：</strong> <code id="tenant-id">从 JWT.tenant_id 解析</code>
+      &nbsp;&nbsp;|&nbsp;&nbsp; 当前用户角色：<code>admin</code>
+    </div>
+    <div class="right">
+      公版 SaaS · 无硬编码 · fail-closed
+    </div>
+  </div>
+
+  <div class="alert">
+    💡 <strong>每条规则必须显式</strong>：工厂 + 品牌 + 客户。工厂有权选择不授权某客户。<br>
+    ❌ 没有「默认走某主体 = 所有客户都可」的兜底 — 数据库无此 (工厂, 品牌, 客户) 三元组 = 客户在产品页看不到。
+  </div>
+
+  <div class="api-list">
+    <div><span class="verb">GET</span> <span class="path">/api/db/factories?tenant_id=X</span> <span class="desc">→ 加载本租户的工厂 + 部门</span></div>
+    <div><span class="verb">GET</span> <span class="path">/api/db/distinct?col=brand&tenant_id=X</span> <span class="desc">→ 加载本租户的所有品牌</span></div>
+    <div><span class="verb">GET</span> <span class="path">/api/db/customers?role=buyer&tenant_id=X</span> <span class="desc">→ 加载本租户的所有买家</span></div>
+    <div><span class="verb">GET</span> <span class="path">/api/db/customer-brand-routes?tenant_id=X</span> <span class="desc">→ 加载现有规则</span></div>
+    <div><span class="verb">POST</span> <span class="path">/api/db/customer-brand-routes</span> <span class="desc">→ 保存/更新规则（强制带 tenant_id）</span></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="status">共 <strong id="cnt">0</strong> 条规则 · <strong id="custCnt">0</strong> 客户授权 · <strong id="ndaCnt">0</strong> NDA</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-warning" onclick="toggleDemo()" id="demoBtn">🧪 加载示例数据</button>
+      <button class="btn btn-ghost" onclick="resetAll()">🗑 清空</button>
+      <button class="btn btn-primary" onclick="exportSQL()">⬇ 导出 SQL</button>
+    </div>
+  </div>
+
+  <div id="factory-groups">
+    <div class="empty-state">
+      <div class="ico">🏭</div>
+      <h3>无工厂数据</h3>
+      <div>实际部署时此处从 <code>GET /api/db/factories?tenant_id=X</code> 加载本租户工厂列表。</div>
+      <div style="margin-top:10px;font-size:12px;">→ 点上方「🧪 加载示例数据」可看演示效果（fixture only）</div>
+    </div>
+  </div>
+
+  <div class="output" id="output">-- 编辑完点「导出 SQL」</div>
+
+</div>
+
+<script>
+// ============================================================
+// 公版 SaaS 模板 — 所有数据按 tenant_id 隔离
+// 生产环境从 API 加载（按当前 tenant 过滤）
+// 下面是 tenant=sanlyn 的 seed 数据（仅 1 工厂 + 3 品牌示例）
+// ============================================================
+let FACTORIES = [
+  { code:'zc', name:'烟台中宠食品 (Zhong Chong)', depts:[
+    { code:'zc-brand', label:'品牌部',  type:'brand' },
+    { code:'zc-oem',   label:'OEM 部门', type:'oem' },
+  ]},
+  { code:'petbaby', name:'厦门巴匕 (Pet Baby)', depts:[
+    { code:'petbaby', label:'生产/代出口', type:'simple' },
+  ]},
+];
+let BRANDS = ['SNIFFLY','CATSOME','DOGSOME','WANPY','TRULY','JERKYTIME','TING TIME','SOUPTIME','ENRICH','PROPAW','DACO',"PET'S ACADEMY",'AMD','爱舒乐','宠银','天缘','SANLYN','NATURAL WORLD','ECO','Signature7',"PLAY N' BOND",'NU'];
+let CUSTOMERS = [
+  { code:'CN-00036', name:'Eversparkles',         flag:'🇸🇬' },
+  { code:'CN-00037', name:'PETSOME SDN BHD',       flag:'🇲🇾' },
+  { code:'CN-00038', name:'PETSOME (EU) SDN BHD', flag:'🇲🇾' },
+  { code:'CN-00039', name:'DIBAQ (M) SDN BHD',    flag:'🇲🇾' },
+  { code:'CN-00040', name:'ENRICH CHAMPION',      flag:'🇲🇾' },
+  { code:'CN-00041', name:'BIRDS PALACE',         flag:'🌐' },
+  { code:'CN-00042', name:'JJ PET GROUP',         flag:'🌐' },
+  { code:'CN-00043', name:'CONSIGNA SPA',         flag:'🇨🇱' },
+  { code:'CN-00044', name:'Giant Mei Global',     flag:'🇹🇼' },
+  { code:'CN-00045', name:'ESENCIA SPA',          flag:'🇨🇱' },
+  { code:'CN-00046', name:'PRO FEEDS PET',        flag:'🌐' },
+  { code:'CN-00047', name:'PET UNIVERSE NOURISH', flag:'🌐' },
+  { code:'CN-00048', name:'HARMONIOUS HAPPY',     flag:'🇲🇾' },
+  { code:'CN-00049', name:'Global UnitedTech',    flag:'🇸🇬' },
+  { code:'CN-00050', name:'PET UNIVERSE NOURISH (M)', flag:'🇲🇾' },
+  { code:'CN-00032', name:'Magros Petcare',       flag:'🇪🇸' },
+];
+let RULES = [
+  // 按你之前描述
+  { factory:'zc', dept:'zc-oem',   brand:'SNIFFLY',  customers:['CN-00038'], nda:false },
+  { factory:'zc', dept:'zc-brand', brand:'CATSOME',  customers:['CN-00037'], nda:false },
+  { factory:'zc', dept:'zc-oem',   brand:'DOGSOME',  customers:['CN-00037'], nda:false },
+];
+
+// ============================================================
+// FIXTURE DATA — 仅供演示，生产代码不应包含
+// ============================================================
+const DEMO_FACTORIES = [
+  { code:'FAC-A', name:'Factory A (Multi-Brand)', depts:[
+    { code:'FAC-A-brand', label:'品牌部',  type:'brand' },
+    { code:'FAC-A-oem',   label:'OEM 部门', type:'oem' },
+  ]},
+  { code:'FAC-B', name:'Factory B', depts:[{code:'FAC-B',label:'生产',type:'simple'}]},
+  { code:'FAC-C', name:'Factory C', depts:[{code:'FAC-C',label:'生产',type:'simple'}]},
+  { code:'TRADE-1', name:'Trader 1 (代出口)', depts:[{code:'TRADE-1',label:'代出口',type:'simple'}]},
+];
+const DEMO_BRANDS = ['Brand 1','Brand 2','Brand 3','Brand 4','Brand 5','Brand 6'];
+const DEMO_CUSTOMERS = [
+  { code:'CUST-001', name:'Customer A', flag:'🌐' },
+  { code:'CUST-002', name:'Customer B', flag:'🌐' },
+  { code:'CUST-003', name:'Customer C', flag:'🌐' },
+  { code:'CUST-004', name:'Customer D', flag:'🌐' },
+];
+const DEMO_RULES = [
+  { factory:'FAC-A', dept:'FAC-A-brand', brand:'Brand 1', customers:['CUST-001'], nda:false },
+  { factory:'FAC-A', dept:'FAC-A-oem',   brand:'Brand 2', customers:['CUST-002','CUST-003'], nda:false },
+  { factory:'FAC-B', dept:'FAC-B',       brand:'Brand 3', customers:['CUST-001'], nda:true },
+];
+
+let demoMode = false;
+function toggleDemo() {
+  demoMode = !demoMode;
+  if (demoMode) {
+    FACTORIES = JSON.parse(JSON.stringify(DEMO_FACTORIES));
+    BRANDS = [...DEMO_BRANDS];
+    CUSTOMERS = JSON.parse(JSON.stringify(DEMO_CUSTOMERS));
+    RULES = JSON.parse(JSON.stringify(DEMO_RULES));
+    document.getElementById('demoBtn').textContent = '🧪 清空示例（回到空状态）';
+    document.getElementById('demoBtn').classList.remove('btn-warning');
+    document.getElementById('demoBtn').classList.add('btn-ghost');
+  } else {
+    FACTORIES = []; BRANDS = []; CUSTOMERS = []; RULES = [];
+    document.getElementById('demoBtn').textContent = '🧪 加载示例数据';
+    document.getElementById('demoBtn').classList.add('btn-warning');
+    document.getElementById('demoBtn').classList.remove('btn-ghost');
+  }
+  render();
+}
+
+// ============================================================
+// 渲染
+// ============================================================
+function render() {
+  const wrap = document.getElementById('factory-groups');
+  if (!FACTORIES.length) {
+    wrap.innerHTML = `
+      <div class="empty-state">
+        <div class="ico">🏭</div>
+        <h3>无工厂数据</h3>
+        <div>实际部署时此处从 <code>GET /api/db/factories?tenant_id=X</code> 加载本租户工厂列表。</div>
+        <div style="margin-top:10px;font-size:12px;">→ 点上方「🧪 加载示例数据」可看演示效果（fixture only）</div>
+      </div>`;
+    document.getElementById('cnt').textContent = 0;
+    document.getElementById('custCnt').textContent = 0;
+    document.getElementById('ndaCnt').textContent = 0;
+    return;
+  }
+
+  wrap.innerHTML = '';
+  FACTORIES.forEach(f => {
+    const facRules = RULES.filter(r => r.factory === f.code);
+    let totalCust = 0;
+    facRules.forEach(r => totalCust += r.customers.length);
+
+    let inner = '';
+    f.depts.forEach(d => {
+      const dRules = facRules.filter(r => r.dept === d.code);
+      inner += `
+        <div class="dept-row">
+          <span>📂 部门：${d.label} <span class="pill ${d.type}">${d.code}</span></span>
+          <span style="color:#9ca3af;">${dRules.length} 条规则</span>
+        </div>
+        <table class="routes">
+          <thead><tr>
+            <th style="width:24%;">🏷 品牌</th>
+            <th style="width:60%;">🏢 客户（多选）</th>
+            <th style="width:10%;text-align:center;">🔒NDA</th>
+            <th style="width:6%;"></th>
+          </tr></thead>
+          <tbody>
+            ${dRules.length ? dRules.map(r => ruleRowHtml(r, RULES.indexOf(r))).join('') : `<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:14px;font-style:italic;">（无规则）</td></tr>`}
+            <tr class="add-row"><td colspan="4"><button onclick="addRule('${f.code}','${d.code}')">+ 添加规则</button></td></tr>
+          </tbody>
+        </table>
+      `;
+    });
+
+    wrap.insertAdjacentHTML('beforeend', `
+      <div class="factory-group">
+        <div class="factory-head">
+          <div class="factory-name"><span>🏭 ${f.name}</span><span class="code">${f.code}</span></div>
+          <div class="factory-meta">
+            <span><strong>${facRules.length}</strong> 条规则</span>
+            <span><strong>${totalCust}</strong> 客户授权</span>
+            <span>${f.depts.length} 部门</span>
+          </div>
+        </div>
+        ${inner}
+      </div>
+    `);
+  });
+
+  document.getElementById('cnt').textContent = RULES.length;
+  document.getElementById('custCnt').textContent = RULES.reduce((s,r)=>s+r.customers.length,0);
+  document.getElementById('ndaCnt').textContent = RULES.filter(r=>r.nda).length;
+}
+
+function ruleRowHtml(r, idx) {
+  const brandOpts = BRANDS.map(b => `<option value="${b}" ${r.brand===b?'selected':''}>${b}</option>`).join('');
+  const custChips = r.customers.length
+    ? r.customers.map(c => {
+        const cu = CUSTOMERS.find(x=>x.code===c);
+        return `<span class="chip">${cu?cu.flag:''} ${cu?cu.name:c}<span class="x" onclick="event.stopPropagation();removeCust(${idx},'${c}')">×</span></span>`;
+      }).join('')
+    : '<span class="ph">— 选客户（可多选） —</span>';
+  const custOpts = CUSTOMERS.map(c => {
+    const checked = r.customers.includes(c.code);
+    return `<div class="opt ${checked?'checked':''}" onclick="toggleCust(${idx},'${c.code}')">${c.flag} ${c.name} <span style="color:#9ca3af;font-size:10px;">${c.code}</span> <span class="check">✓</span></div>`;
+  }).join('');
+  return `
+    <tr>
+      <td><select onchange="setRule(${idx},'brand',this.value)"><option value="">— 选品牌 —</option>${brandOpts}</select></td>
+      <td class="cust-cell">
+        <div class="cust-multi">
+          <div class="cust-trigger" onclick="toggleMenu(this,event)">${custChips}</div>
+          <div class="cust-menu">
+            <div class="search"><input type="text" placeholder="搜索客户..." onclick="event.stopPropagation()" oninput="filterCust(this)"></div>
+            ${custOpts}
+          </div>
+        </div>
+      </td>
+      <td class="nda-cell"><input type="checkbox" ${r.nda?'checked':''} onchange="setRule(${idx},'nda',this.checked)"></td>
+      <td class="actions"><button onclick="removeRule(${idx})" title="删除">×</button></td>
+    </tr>
+  `;
+}
+
+function toggleMenu(trigger, e) {
+  e.stopPropagation();
+  document.querySelectorAll('.cust-trigger.open').forEach(t => { if (t !== trigger) { t.classList.remove('open'); t.nextElementSibling.classList.remove('show'); } });
+  trigger.classList.toggle('open');
+  trigger.nextElementSibling.classList.toggle('show');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.cust-multi')) {
+    document.querySelectorAll('.cust-trigger.open').forEach(t => { t.classList.remove('open'); t.nextElementSibling.classList.remove('show'); });
+  }
+});
+function filterCust(input) {
+  const q = input.value.toLowerCase();
+  input.closest('.cust-menu').querySelectorAll('.opt').forEach(o => {
+    o.style.display = o.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function setRule(idx, field, value) { RULES[idx][field] = value; render(); }
+function toggleCust(idx, code) {
+  const arr = RULES[idx].customers;
+  const i = arr.indexOf(code);
+  if (i >= 0) arr.splice(i, 1); else arr.push(code);
+  render();
+}
+function removeCust(idx, code) {
+  const i = RULES[idx].customers.indexOf(code);
+  if (i >= 0) RULES[idx].customers.splice(i, 1);
+  render();
+}
+function removeRule(idx) { if (confirm('删这条?')) { RULES.splice(idx, 1); render(); } }
+function addRule(factory, dept) { RULES.push({ factory, dept, brand:'', customers:[], nda:false }); render(); }
+
+function resetAll() {
+  if (!confirm('清空所有规则?')) return;
+  RULES = [];
+  render();
+}
+
+function exportSQL() {
+  let sql = '-- ============================================================\n';
+  sql += '-- CUSTOMER × BRAND × FACTORY ROUTES · ' + new Date().toISOString().slice(0,10) + '\n';
+  sql += '-- 公版 SaaS schema · 必带 tenant_id\n';
+  sql += '-- ============================================================\n\n';
+
+  sql += `CREATE TABLE IF NOT EXISTS customer_brand_routes (
+  id            SERIAL PRIMARY KEY,
+  tenant_id     BIGINT NOT NULL,                    -- ⚠️ 多租户隔离必填
+  customer_code VARCHAR(50) NOT NULL,
+  brand         VARCHAR(120) NOT NULL,
+  factory_code  VARCHAR(50) NOT NULL,
+  signed_nda    BOOLEAN DEFAULT false,
+  status        VARCHAR(20) DEFAULT 'active',
+  granted_at    TIMESTAMP DEFAULT NOW(),
+  notes         TEXT,
+  UNIQUE(tenant_id, customer_code, brand, factory_code)
+);
+CREATE INDEX IF NOT EXISTS idx_cbr_tenant_cust ON customer_brand_routes(tenant_id, customer_code) WHERE status='active';
+CREATE INDEX IF NOT EXISTS idx_cbr_tenant_brand ON customer_brand_routes(tenant_id, brand) WHERE status='active';\n\n`;
+
+  const rows = [];
+  RULES.forEach(r => {
+    if (!r.brand || !r.customers.length) return;
+    r.customers.forEach(c => {
+      const brand = r.brand.replace(/'/g, "''");
+      rows.push(`  (:tenant_id, '${c}', '${brand}', '${r.dept}', ${r.nda}, 'active', NOW())`);
+    });
+  });
+
+  if (rows.length) {
+    sql += `-- ${rows.length} 条客户授权（${RULES.length} 条规则展开）· :tenant_id 由后端从 JWT 注入\n`;
+    sql += 'INSERT INTO customer_brand_routes (tenant_id, customer_code, brand, factory_code, signed_nda, status, granted_at) VALUES\n';
+    sql += rows.join(',\n') + '\n';
+    sql += 'ON CONFLICT (tenant_id, customer_code, brand, factory_code) DO UPDATE SET signed_nda=EXCLUDED.signed_nda, status=EXCLUDED.status;\n';
+  } else { sql += '-- 没有有效规则\n'; }
+
+  document.getElementById('output').textContent = sql;
+  document.getElementById('output').scrollIntoView({behavior:'smooth'});
+}
+
+render();
+</script>
+</body>
+</html>

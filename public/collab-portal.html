@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sanlyn OS · 订舱协同填报</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  background: #f0f2f5; color: #111; font-size: 13px; }
+
+.portal-bar { background: #1a1d23; padding: 0 24px; display: flex; align-items: center;
+  position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+.portal-brand { color: #f1f5f9; font-size: 14px; font-weight: 800;
+  letter-spacing: 1px; padding: 14px 0; margin-right: 24px; }
+.portal-login-badge { margin-left: auto; font-size: 10px; color: #64748b; padding: 14px 0; }
+
+.shell-narrow { max-width: 760px; margin: 0 auto; padding: 20px 16px; }
+.shell-tight  { max-width: 460px; margin: 0 auto; padding: 60px 16px; }
+
+.card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 14px; }
+.section { padding: 14px 16px; border-bottom: 1px solid #f0f2f5; }
+.section:last-child { border-bottom: none; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px;
+  border-radius: 20px; font-size: 11px; font-weight: 800; }
+.badge-green  { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.badge-amber  { background: #fef9c3; color: #a16207; border: 1px solid #fde68a; }
+.badge-red    { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+.badge-blue   { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+.btn { padding: 7px 16px; border-radius: 7px; border: none;
+  font-size: 12px; font-weight: 700; cursor: pointer; }
+.btn-blue  { background: #1a73e8; color: #fff; }
+.btn-green { background: #059669; color: #fff; }
+.btn-ghost { background: #f3f4f6; color: #374151; border: 1px solid #e0e4ea; }
+.btn-sm { padding: 5px 12px; font-size: 11px; }
+.btn-lg { padding: 10px 24px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Step card ── */
+.step-card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  margin-bottom: 14px; overflow: hidden; transition: border-color .2s; }
+.step-card.required { border-color: #fbbf24; }
+.step-card.done     { border-color: #86efac; }
+.step-card.alert    { border-color: #fca5a5; }
+
+.step-head { padding: 12px 16px; display: flex; align-items: center;
+  justify-content: space-between; background: #fff;
+  border-bottom: 1px solid #f0f2f5; transition: background .15s; user-select: none; }
+/* 收起态：整行可点击展开 */
+.step-card.done .step-head { cursor: pointer; }
+.step-card.done .step-head:hover { background: #f8fafc; }
+
+.step-num { width: 26px; height: 26px; border-radius: 50%; background: #1a1d23;
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; flex-shrink: 0; }
+.step-num.done  { background: #059669; }
+.step-num.alert { background: #dc2626; }
+
+.step-title { font-size: 13px; font-weight: 800; color: #1a1d23; }
+.step-sub   { font-size: 11px; color: #6b7280; margin-top: 1px; }
+
+/* 收起摘要行 */
+.step-summary { display: none; font-size: 11px; font-weight: 700;
+  color: #059669; flex: 1; margin: 0 10px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.step-card.done .step-summary { display: block; }
+.step-card.done .step-title { font-size: 12px; color: #6b7280; font-weight: 600; }
+.step-card.done .step-sub   { display: none; }
+
+/* 折叠箭头 */
+.chevron { font-size: 12px; color: #9ca3af; transition: transform .25s; flex-shrink: 0; }
+.step-card.done .chevron { transform: rotate(0deg); }      /* ▼ 收起 */
+.step-card:not(.done) .chevron { transform: rotate(180deg); } /* ▲ 展开 */
+
+/* 内容区折叠 */
+.step-body { overflow: hidden; transition: max-height .3s ease, opacity .3s ease; }
+.step-card.done .step-body { max-height: 0 !important; opacity: 0; }
+.step-card:not(.done) .step-body { max-height: 2000px; opacity: 1; }
+
+.form-field { margin-bottom: 10px; }
+.form-label { font-size: 11px; font-weight: 700; color: #374151;
+  margin-bottom: 4px; display: block; }
+.form-label .req { color: #dc2626; }
+.form-input { width: 100%; border: 1.5px solid #c8cdd6; border-radius: 6px;
+  padding: 8px 10px; font-size: 13px; outline: none; font-family: inherit; background: #fff; }
+.form-input:focus { border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
+.form-input.alert { border-color: #dc2626; background: #fef2f2; }
+textarea.form-input { resize: vertical; min-height: 60px; }
+
+.toggle-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.tog { padding: 8px 16px; border-radius: 7px; border: 1.5px solid #c8cdd6;
+  background: #fff; font-size: 12px; font-weight: 700; color: #4b5563;
+  cursor: pointer; text-align: center; }
+.tog.on-green { border-color: #059669; background: #d1fae5; color: #059669; }
+.tog.on-blue  { border-color: #1a73e8; background: #dbeafe; color: #1d4ed8; }
+.tog.on-red   { border-color: #dc2626; background: #fee2e2; color: #b91c1c; }
+
+.cargo-t { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cargo-t th { background: #f8fafc; padding: 6px 8px; text-align: left;
+  border: 1px solid #c8cdd6; font-size: 10px; font-weight: 800; color: #374151; }
+.cargo-t td { padding: 4px 6px; border: 1px solid #e0e4ea; }
+.cargo-t tr.alert-row td { border-color: #fca5a5; background: #fef2f2; }
+.cargo-t tr.total { font-weight: 800; background: #f8f8f8; }
+.cargo-t input.cell-in { width: 100%; border: 1px solid transparent; border-radius: 4px;
+  padding: 4px 6px; font-size: 11px; outline: none; font-family: inherit; background: transparent; }
+.cargo-t input.cell-in:focus { border-color: #1a73e8; background: #fff; }
+
+.landing-card { background: #fff; border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.10); overflow: hidden; }
+.landing-head { background: linear-gradient(135deg,#059669,#10b981);
+  padding: 24px; text-align: center; color: #fff; }
+.landing-head h1 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+.landing-head p { font-size: 12px; opacity: .9; }
+
+.alert-callout { padding: 10px 14px; background: #fef2f2;
+  border-left: 4px solid #dc2626; border-radius: 6px;
+  margin: 10px 16px; font-size: 12px; color: #991b1b; }
+.ctn-group { border: 1.5px solid #e0e4ea; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+.ctn-group-head { background: #f8fafc; padding: 7px 12px; display: flex;
+  align-items: center; justify-content: space-between; border-bottom: 1px solid #e0e4ea; }
+.ctn-group-title { font-size: 11px; font-weight: 800; color: #374151; }
+.chip { background: #fff; border: 1px solid #e0e4ea; border-radius: 8px; padding: 8px 14px; font-size: 12px; }
+.chip b { color: #1a1d23; }
+.chip span { color: #6b7280; }
+.dl-btn { display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 12px 14px; border: 1.5px solid #e0e4ea; border-radius: 9px;
+  background: #fff; cursor: pointer; font-size: 12px; font-weight: 700;
+  color: #1a1d23; margin-bottom: 8px; text-align: left; text-decoration: none; }
+.dl-btn:hover { border-color: #93c5fd; }
+.up-zone { border: 2px dashed #c8cdd6; border-radius: 10px; padding: 18px;
+  text-align: center; cursor: pointer; color: #6b7280; font-size: 12px; }
+.up-zone:hover { border-color: #1a73e8; color: #1a73e8; }
+.file-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border: 1px solid #d1fae5; background: #f0fdf4; border-radius: 8px;
+  font-size: 12px; margin-bottom: 6px; }
+.seg-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 2px solid #e0e4ea; }
+.seg-tab { padding: 10px 22px; font-size: 13px; font-weight: 800; color: #6b7280;
+  cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.seg-tab.active { color: #059669; border-bottom-color: #059669; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #1a1d23; color: #fff; padding: 10px 22px; border-radius: 20px;
+  font-size: 12px; font-weight: 700; display: none; z-index: 999; }
+.toast.show { display: block; }
+.hidden { display: none !important; }
+.center-state { text-align: center; padding: 70px 20px; color: #6b7280; }
+.center-state .big { font-size: 44px; margin-bottom: 14px; }
+.center-state h2 { font-size: 17px; font-weight: 800; color: #1a1d23; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<div class="portal-bar"><div class="portal-brand">SANLYN OS</div><div class="portal-login-badge" id="topBadge">供应链端口</div></div>
+
+<div class="center-state" id="stateLoading"><div class="big">⏳</div><p>正在加载…</p></div>
+
+<div class="hidden" id="stateForm">
+<div class="shell-narrow">
+
+  <div class="card" style="border:2px solid #fbbf24;">
+    <div style="background:#fffbeb;padding:14px 16px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:24px;">🏢</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:800;color:#92400e;" id="bannerTitle">— 供应链端口</div>
+        <div style="font-size:11px;color:#a16207;margin-top:2px;" id="bannerSub">承包段一个口全干：下载 · 回填 · 回传</div>
+      </div>
+      <div class="badge badge-amber">需要您操作</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="chips"></div>
+
+  <div class="seg-tabs" id="segTabs"></div>
+
+  <!-- 🚢 海运段：单据口 -->
+  <div class="hidden" id="seg-ocean">
+    <div class="step-card">
+      <div class="step-head"><div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num">🚢</div>
+        <div><div class="step-title">海运 · 单据</div><div class="step-sub">下载托书 · 回传 SO / BL格式件 / 非危声明 / 确认BL / VGM</div></div>
+      </div></div>
+      <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+        <div class="section">
+          <a class="dl-btn" id="dlSO" target="_blank">📋 <span style="flex:1;">托书 / Booking Instruction（订舱委托）</span><span style="color:#1a73e8;">下载 ↗</span></a>
+          <div id="oceanDocs"></div>
+          <div id="fl_ocean"></div>
+          <div class="up-zone" onclick="pickFile('ocean')">＋ 回传 SO / BL草稿 / 非危声明 / 确认BL / VGM（≤8MB 可多次）</div>
+          <div id="blNoSection" style="margin-top:10px;"></div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:6px;">运价报价请走报价中心（您的运价卡）· 上传即存无需提交</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 💰 价格链 · 账单与费用责任（海运段内第二卡） -->
+  <div class="hidden step-card" id="priceChainCard" style="margin-bottom:14px;">
+    <div class="step-head"><div style="display:flex;align-items:center;gap:10px;">
+      <div class="step-num">💰</div>
+      <div><div class="step-title">价格链 / Price Chain</div><div class="step-sub">本票费用责任 · 账单状态</div></div>
+    </div></div>
+    <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+      <div class="section" id="priceChainBody"></div>
+      <div id="pricingSection" style="padding:0 8px 4px"></div>
+    </div>
+  </div>
+
+  <!-- 🚛 车队段 -->
+  <div class="hidden" id="seg-truck">
+    <div class="step-card required" id="trkCard">
+      <div class="step-head"><div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num">🚛</div>
+        <div><div class="step-title">车队 · 提柜回填</div><div class="step-sub">车牌/司机/电话/提箱时间 · 提交即存</div></div>
+      </div></div>
+      <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+        <div class="section">
+          <div id="soInfo"></div>
+          <div id="vehGroups"></div>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:4px;">
+            <button class="btn btn-ghost btn-sm" onclick="snapV();addVeh()">＋ 加一辆车</button>
+            <button class="btn btn-green btn-sm" style="margin-left:auto;" id="btnVeh" onclick="saveVeh()">🚛 提交车辆信息</button>
+          </div>
+          <div id="fl_truck" style="margin-top:10px;"></div>
+          
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 🛂 报关段 -->
+  <div class="hidden" id="seg-customs">
+    <div class="step-card">
+      <div class="step-head"><div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num">🛂</div>
+        <div><div class="step-title">报关 · 下载与回传</div><div class="step-sub">排载单(SO) · 报关资料 · 回传报关单/放行截图</div></div>
+      </div></div>
+      <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+        <div class="section">
+          <div id="soInfoC"></div>
+          <div id="dlBox"></div>
+          <div id="cdTable" style="margin:10px 0;"></div>
+          <div id="fl_customs"></div>
+          <div class="up-zone" onclick="pickFile('customs')">＋ 回传报关单 / 放行截图</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="fileInput" multiple accept="image/*,.pdf" style="display:none;">
+  <div id="qfModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:998;" onclick="this.style.display='none'">
+    <div style="position:absolute;left:50%;top:18%;transform:translateX(-50%);width:min(520px,92vw);background:#fff;border-radius:12px;padding:18px;" onclick="event.stopPropagation()">
+      <div style="font-size:14px;font-weight:800;margin-bottom:8px;">📋 快捷填写 — 粘贴派车信息</div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">把微信里的派车文本整段粘进来（车号/挂号/手机/姓名/证号/箱号/封号/箱皮重），自动识别填入。</div>
+      <textarea id="qfText" style="width:100%;height:160px;border:1.5px solid #e0e4ea;border-radius:8px;padding:10px;font-size:13px;box-sizing:border-box;" placeholder="沛县&#10;车号：苏CLH515&#10;挂号：鲁BBE59挂&#10;手机：13305226532&#10;姓名：黄青军&#10;证号：320322198111151174&#10;箱号：EITU1919705&#10;封号：EMCFHV9835&#10;箱皮重：3820kg"></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px;justify-content:flex-end;">
+        <button class="btn btn-ghost btn-sm" onclick="$('qfModal').style.display='none'">取消</button>
+        <button class="btn btn-green btn-sm" onclick="parseQuickFill()">✓ 解析填入</button>
+      </div>
+    </div>
+  </div>
+  <div id="pvModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:999;" onclick="this.style.display='none'">
+    <div style="position:absolute;inset:4% 6%;background:#fff;border-radius:10px;overflow:hidden;" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:flex-end;padding:6px 10px;border-bottom:1px solid #eee;"><span style="cursor:pointer;font-weight:800;color:#6b7280;" onclick="$('pvModal').style.display='none'">✕ 关闭</span></div>
+      <iframe id="pvFrame" style="width:100%;height:calc(100% - 36px);border:none;"></iframe>
+    </div>
+  </div>
+  <div style="text-align:center;font-size:11px;color:#9ca3af;margin:20px 0 40px;">
+    🔒 此链接仅限本票 · 只显示贵司承包的段 · 上传与提交即自动保存
+    <div style="margin-top:6px;color:#cbd5e1;font-size:10px;">collab-portal v1.1.0 · 2026-06-22</div>
+  </div>
+</div>
+</div>
+
+<div class="center-state hidden" id="stateDead">
+  <div class="big">⛔️</div><h2>链接无效</h2><p>链接已过期或被重发作废，请联系 Sanlyn 重新获取。</p>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api/db/booking-collab';
+const token = new URLSearchParams(location.search).get('token') || '';
+const $ = id => document.getElementById(id);
+const show = id => { ['stateLoading','stateForm','stateDead'].forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+function gv(id){ return ($(id)?.value||'').trim(); }
+function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+
+const SEG_META = { ocean:{icon:'🚢',label:'海运'}, truck:{icon:'🚛',label:'车队'}, customs:{icon:'🛂',label:'报关'}, factory:{icon:'🏭',label:'工厂'} };
+let segs = [], curSeg = null, uploads = [], vehs = [{}], upZone = 'ocean';
+
+function goSeg(s, el){
+  curSeg = s;
+  document.querySelectorAll('.seg-tab').forEach(t=>t.classList.remove('active'));
+  if(el) el.classList.add('active');
+  ['ocean','truck','customs'].forEach(k=>$('seg-'+k).classList.toggle('hidden', k!==s));
+}
+
+function renderFiles(){
+  // 上传按段归档显示（rec.role=supplier，文件名带段前缀）
+  ['ocean','truck','customs'].forEach(seg=>{
+    const mine = uploads.filter(u=>String(u.filename||'').startsWith('['+seg+']') ||
+      (seg==='ocean' && !/^\[(truck|customs)\]/.test(String(u.filename||''))&& u.role!=='trucking' && u.role!=='broker' && String(u.filename||'').startsWith('[ocean]')));
+    const el = $('fl_'+seg); if(!el) return;
+    el.innerHTML = uploads.filter(u=>String(u.filename||'').startsWith('['+seg+']')).map(u=>`
+      <div class="file-row"><span>📄</span><span style="flex:1;font-weight:700;">${esc(String(u.filename).replace('['+seg+']',''))}</span>
+      <span style="color:#047857;font-size:10px;">${esc(String(u.uploaded_at).replace('T',' ').slice(5,16))} ✓</span></div>`).join('');
+  });
+}
+
+function pickFile(zone){ upZone = zone; $('fileInput').click(); }
+$('fileInput').addEventListener('change', async e=>{
+  for(const f of e.target.files){
+    if(f.size > 8*1024*1024){ toast(f.name+' 超过 8MB'); continue; }
+    const b64 = await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(f); });
+    try{
+      const r = await fetch(`${API}/upload`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token,filename:'['+upZone+']'+(typeof _cntrZone==='string'&&_cntrZone?('['+_cntrZone+']'):'')+f.name,mime:f.type,data_base64:b64})});
+      const d = await r.json();
+      if(!r.ok||!d.ok){ toast(f.name+' 上传失败: '+(d.error||'')); continue; }
+      uploads.push(d.file); renderFiles(); toast('✓ '+f.name+' 已上传');
+    }catch(err){ toast(f.name+' 网络错误'); }
+  }
+  e.target.value='';
+});
+
+/* 车队回填（复用 trucking-submit） */
+function entryFor(d){
+  const sP = window._sheetP || {}; const fe = sP.factory_entry || {};
+  const keys = Object.keys(fe);
+  if(!keys.length) return null;
+  // 柜货对应订单→工厂名 含 登记厂标 即匹配；匹配不到给 default/唯一一条
+  const ords = (d.cargo||[]).map(x=>x.order_no).filter(Boolean);
+  const facs = (Array.isArray(sP.orders)?sP.orders:[]).filter(o=>ords.includes(o.order_no)).map(o=>o.factory||'');
+  for(const k of keys){ if(facs.some(f=>f.includes(k)||k.includes(f))) return fe[k]; }
+  return fe['default'] || (keys.length===1 ? fe[keys[0]] : null);
+}
+function cargoLine(cg){
+  if(!Array.isArray(cg)||!cg.length) return '<span style="color:#b45309;">待工厂确认</span>';
+  return cg.map(x=>{
+    const parts=[x.name||x.order_no||'—'];
+    if(x.cartons) parts.push(x.cartons+'箱');
+    if(x.gw_kg) parts.push(Number(x.gw_kg).toLocaleString()+'kg');
+    return esc(parts.join(' '));
+  }).join(' ＋ ');
+}
+function quickText(i){
+  const d = vehs[i]||{};
+  const L=[];
+  L.push(d.loading_address||'提货地见托书');
+  if(gv('plate_'+i)) L.push('车号：'+gv('plate_'+i));
+  if(d.trailer_plate) L.push('挂号：'+d.trailer_plate);
+  if(gv('phone_'+i)) L.push('手机：'+gv('phone_'+i));
+  if(gv('driver_'+i)) L.push('姓名：'+gv('driver_'+i));
+  if(d.driver_id_no) L.push('证号：'+d.driver_id_no);
+  if(d.cntr) L.push('箱号：'+d.cntr);
+  if(d.seal_no) L.push('封号：'+d.seal_no);
+  if(d.tare_kg) L.push('箱皮重：'+d.tare_kg+'kg');
+  return L.join('\n');
+}
+function copyQuick(i){
+  navigator.clipboard.writeText(quickText(i)).then(()=>toast('✓ 车'+(i+1)+' 派车信息已复制，微信直接粘贴'))
+    .catch(()=>{ prompt('手动复制：', quickText(i)); });
+}
+function infoCell(label, val){
+  return `<div style="font-size:11px;"><span style="color:#9ca3af;">${label}</span> <span style="font-weight:700;color:#111827;">${esc(val||'—')}</span></div>`;
+}
+function vehHtml(i, d={}){
+  return `<div class="ctn-group"><div class="ctn-group-head">
+    <div class="ctn-group-title" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">🚛 车 ${i+1}${((d.cargo||[]).reduce((s,x)=>s+(Number(x.gw_kg)||0),0)>25000)?`<span style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:800;">⚠️超重柜>25T·订舱需备注</span>`:''}
+      <span style="color:#9ca3af;font-weight:400;font-size:10px;">箱号</span>
+      <input id="cntr_${i}" value="${esc(d.cntr)}" placeholder="点击填写" style="border:none;border-bottom:1.5px dashed #cbd5e1;background:transparent;font-size:12px;font-weight:800;color:#111827;width:118px;outline:none;font-family:monospace;text-transform:uppercase;">
+      <span style="color:#9ca3af;font-weight:400;font-size:10px;">封号</span>
+      <input id="seal_${i}" value="${esc(d.seal_no)}" placeholder="点击填写" style="border:none;border-bottom:1.5px dashed #cbd5e1;background:transparent;font-size:12px;font-weight:800;color:#111827;width:108px;outline:none;font-family:monospace;text-transform:uppercase;">
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <span style="cursor:pointer;color:#1a73e8;font-size:11px;font-weight:700;" onclick="openQuickFill(${i})">📋 快捷填写</span>
+      <span style="cursor:pointer;color:#6b7280;font-size:11px;" onclick="copyQuick(${i})" title="复制派车信息文本">复制</span>
+      ${vehs.length>1?`<span style="cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;" onclick="delVeh(${i})">× 删除</span>`:''}
+    </div></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px 12px;background:#f9fafb;border-radius:8px;margin:8px 12px 0;padding:10px 12px;">
+      <div style="grid-column:1/-1;font-size:11px;"><span style="color:#9ca3af;">提货地</span> <span style="font-weight:700;color:#111827;">${esc(d.loading_address||'—')}</span></div>
+      ${infoCell('挂号', d.trailer_plate)}
+      ${infoCell('证号', d.driver_id_no)}
+      ${infoCell('箱皮重', d.tare_kg?d.tare_kg+'kg':'')}
+      ${(c2=>{const t=String(c2||'');const ph=(t.match(/1\d{10}/)||[''])[0];const nm=t.replace(ph,'').replace(/[:：\s]+$/,'').trim();
+        return infoCell('工厂联系人', nm) + (ph?`<div style="font-size:11px;"><span style="color:#9ca3af;">工厂电话</span> <a href="tel:${ph}" style="font-weight:700;color:#1a73e8;">${ph}</a></div>`:infoCell('工厂电话',''));})(d.loading_contact)}
+      <div style="grid-column:1/-1;font-size:11px;"><span style="color:#9ca3af;">货品</span> <span style="font-weight:700;color:#111827;">${cargoLine(d.cargo)}</span></div>
+      ${(()=>{const er=entryFor(d);if(!er)return '';
+        const qr=(Array.isArray((window._sheetP||{}).collab_uploads)?window._sheetP.collab_uploads:[]).find(u=>/入厂|二维码|考试/.test(u.filename||''));
+        return `<div style="grid-column:1/-1;font-size:11px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;">
+          <span style="color:#92400e;font-weight:800;">🏭 入厂要求</span>
+          ${er.note?` <span style="color:#92400e;">${esc(er.note)}</span>`:''}
+          ${er.contact||er.phone?` · 厂内对接 <b>${esc(er.contact||'')}</b>${er.phone?` <a href="tel:${esc(er.phone)}" style="color:#1a73e8;font-weight:700;">${esc(er.phone)}</a>`:''}`:''}
+          ${er.exam_url?` · <a href="${esc(er.exam_url)}" target="_blank" style="color:#1a73e8;font-weight:700;">📝 入厂考试/扫码 ↗</a>`:''}
+          ${qr&&window._fileURL?` · <a href="${window._fileURL('upload', qr.stored)}" target="_blank" style="color:#1a73e8;font-weight:700;">🔲 二维码图片</a>`:''}
+        </div>`;})()}
+    </div>
+    <div style="padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="form-field" style="margin:0;"><label class="form-label">车牌号 *</label>
+        <input class="form-input" id="plate_${i}" value="${esc(d.plate)}" placeholder="例：闽D12345"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">司机姓名</label>
+        <input class="form-input" id="driver_${i}" value="${esc(d.driver)}"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">司机电话 *</label>
+        <input class="form-input" id="phone_${i}" type="tel" value="${esc(d.driver_phone)}"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">提箱时间</label>
+        <input class="form-input" id="pickup_${i}" type="datetime-local" value="${esc(d.pickup_time)}"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">装柜时间 <span style="font-weight:400;color:#9ca3af;">(工厂已选则跟随，不合适打工厂电话)</span></label>
+        <input class="form-input" id="loadtime_${i}" type="datetime-local" value="${esc(d.loading_time)}"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">过磅重(kg) <span style="font-weight:400;color:#9ca3af;">(磅单整车重−车重，对不上会预警)</span></label>
+        <input class="form-input" id="weigh_${i}" type="number" step="0.01" value="${esc(d.weigh_kg||'')}" placeholder="磅单读数"></div>
+    </div>
+    <div class="up-zone" style="margin:0 12px 12px;" onclick="pickFileCntr('${esc(d.cntr||('车'+(i+1)))}')">📷 本柜 装柜照 / 磅单 / EIR</div>
+  </div>`;
+}
+// 粘贴派车文本 → 自动解析填写（标准格式正则；解析不出再人工）
+let _qfIdx = 0;
+function openQuickFill(i){ _qfIdx = i; $('qfText').value=''; $('qfModal').style.display='block'; $('qfText').focus(); }
+function parseQuickFill(){
+  const t = $('qfText').value || '';
+  const pick = (re) => { const m = t.match(re); return m ? m[1].trim() : ''; };
+  const got = {
+    plate: pick(/车号[:：\s]*([^\s\n]+)/),
+    trailer: pick(/挂号?[:：\s]*([^\s\n]+)/),
+    phone: pick(/(?:手机|电话)[:：\s]*(1\d{10})/),
+    name: pick(/姓名[:：\s]*([^\s\n]+)/),
+    idno: pick(/证号[:：\s]*(\d{15,17}[\dXx])/),
+    cntr: pick(/箱号[:：\s]*([A-Z]{4}\d{7})/i),
+    seal: pick(/封号[:：\s]*([^\s\n]+)/),
+    tare: pick(/箱?皮重[:：\s]*([\d.]+)/),
+  };
+  if(!got.plate && !got.phone){ toast('没解析出车号/电话，请检查格式'); return; }
+  const i = _qfIdx;
+  if(got.plate) { const el=$('plate_'+i); if(el) el.value=got.plate; }
+  if(got.name)  { const el=$('driver_'+i); if(el) el.value=got.name; }
+  if(got.phone) { const el=$('phone_'+i); if(el) el.value=got.phone; }
+  snapV();
+  const v = vehs[i]||{};
+  if(got.trailer) v.trailer_plate=got.trailer;
+  if(got.idno) v.driver_id_no=got.idno;
+  if(got.seal && !v.seal_no) v.seal_no=got.seal;
+  if(got.tare && !v.tare_kg) v.tare_kg=Number(got.tare);
+  if(got.cntr && v.cntr && got.cntr.toUpperCase()!==String(v.cntr).toUpperCase()){
+    toast('⚠️ 粘贴箱号 '+got.cntr+' 与本柜 '+v.cntr+' 不符，请核对！'); }
+  else if(got.cntr && !v.cntr) v.cntr=got.cntr.toUpperCase();
+  vehs[i]=v; renderVehs();
+  $('qfModal').style.display='none';
+  toast('✓ 已解析填入，确认后提交');
+}
+let _cntrZone = null;
+function pickFileCntr(cntr){ _cntrZone = cntr; pickFile('truck'); }
+function snapV(){ vehs = vehs.map((v,i)=>$('plate_'+i)!==null?{...v,plate:gv('plate_'+i),driver:gv('driver_'+i),driver_phone:gv('phone_'+i),pickup_time:gv('pickup_'+i),loading_time:gv('loadtime_'+i)||v.loading_time||'',cntr:(gv('cntr_'+i)||'').toUpperCase()||v.cntr||'',seal_no:(gv('seal_'+i)||'').toUpperCase()||v.seal_no||'',weigh_kg:gv('weigh_'+i)||v.weigh_kg||''}:v); }
+function renderVehs(){ $('vehGroups').innerHTML = vehs.map((v,i)=>vehHtml(i,v)).join(''); }
+function addVeh(){ vehs.push({}); renderVehs(); }
+function delVeh(i){ snapV(); vehs.splice(i,1); if(!vehs.length) vehs.push({}); renderVehs(); }
+async function saveVeh(){
+  snapV();
+  const vehicles = vehs.filter(v=>v.plate||v.driver_phone);
+  if(!vehicles.length){ toast('至少一辆车需填车牌和司机电话'); return; }
+  $('btnVeh').disabled = true;
+  try{
+    const r = await fetch(`${API}/trucking-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,vehicles,remarks:''})});
+    const d = await r.json();
+    $('btnVeh').disabled = false;
+    if(!r.ok||!d.ok){ toast(d.error||'提交失败'); return; }
+    toast('✓ 车辆信息已提交');
+  }catch(e){ $('btnVeh').disabled=false; toast('网络错误'); }
+}
+
+async function boot(){
+  if(!token){ show('stateDead'); return; }
+  const r = await fetch(`${API}/validate?token=${encodeURIComponent(token)}`);
+  const d = await r.json().catch(()=>({}));
+  if(!d.valid || d.role!=='supplier_portal'){ show('stateDead'); return; }
+  const s = d.booking_sheet || {};
+  const ps = d.portal_scope || {};
+  window._sheetP = s;
+  // 单据链接构造（海运/报关段共用）
+  const orders = Array.isArray(s.orders)?s.orders:[];
+  const dlRow = (icon, label, href, extra='') =>
+    `<a class="dl-btn" href="${href}" target="_blank">${icon} <span style="flex:1;">${label}</span>${extra}<span style="color:#1a73e8;">下载 ↗</span></a>`;
+  const pv = (href) => `<span style="color:#059669;font-weight:700;cursor:pointer;margin-right:14px;" onclick="event.preventDefault();showPreview('${href}')">预览</span>`;
+  window._fileURL = (type, ref, aud) => `${API}/file?token=${encodeURIComponent(token)}&type=${type}${ref?`&ref=${encodeURIComponent(ref)}`:''}${aud?`&aud=${aud}`:''}`;
+  const fileURL = window._fileURL;
+
+  segs = ps.segments || ['ocean','truck','customs'];
+  $('topBadge').textContent = s.shipment_no || '供应链端口';
+  $('bannerTitle').textContent = (s.shipment_no||'—') + ' — ' + segs.map(x=>SEG_META[x].label).join('+') + (ps.company_label?`（${esc(ps.company_label)}）`:'');
+  $('bannerSub').textContent = '贵司承包：' + segs.map(x=>SEG_META[x].label).join('+') + ' ＝ ' + (ps.company_label || '贵司') + (segs.length>=3 ? ' · 一个口全干' : '');
+  const chips=[];
+  if(s.pol||s.pod) chips.push(`<div class="chip"><span>航线 </span><b>${esc(s.pol||'—')} → ${esc(s.pod||'—')}</b></div>`);
+  if(s.container_type) chips.push(`<div class="chip"><span>柜型 </span><b>${esc(s.container_type)}${s.container_qty?' × '+s.container_qty:''}</b></div>`);
+  if(s.factory_cargo_ready) chips.push(`<div class="chip"><span>货好 </span><b>${fmtD(s.factory_cargo_ready)}</b></div>`);
+  if(s.etd) chips.push(`<div class="chip"><span>ETD </span><b>${fmtD(s.etd)}</b></div>`);
+  $('chips').innerHTML = chips.join('');
+  // 阶段进度：现在到哪步、谁该干活
+  (function(){
+    const ups0 = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
+    const live0 = Array.isArray(s.containers_live)?s.containers_live:[];
+    const soX = s.so_info||{};
+    const declared = ups0.some(u=>/报关单|放行/i.test(u.filename||''));
+    const stages = [
+      { label:'订舱', done: !!(s.so_no||s.bl_no) },
+      { label:'提柜/装柜', done: live0.some(x=>x.plate||x.trailer_plate) },
+      { label:'截单/VGM', done: false, due: (soX.doc_cutoff||'').slice(0,16) },
+      { label:'报关放行', done: declared },
+      { label:'开船', done: false, due: s.etd?('ETD '+fmtD(s.etd)):'' },
+    ];
+    let curIdx = stages.findIndex(x=>!x.done); if(curIdx<0) curIdx = stages.length-1;
+    const bar = stages.map((x,i)=>{
+      const on = x.done, cur = i===curIdx;
+      return `<span style="font-size:11px;font-weight:${cur?'800':'600'};color:${on?'#047857':cur?'#b45309':'#9ca3af'};">`
+        + (on?'✅':cur?'🔶':'◯') + ' ' + x.label + (x.due&&(cur||!on)?`<span style="font-weight:400;color:#6b7280;"> ${x.due}</span>`:'') + '</span>';
+    }).join('<span style="color:#d1d5db;margin:0 6px;">→</span>');
+    const div = document.createElement('div');
+    div.style.cssText = 'margin:10px 0 2px;padding:8px 14px;background:#fff;border:1px solid #e5e7eb;border-radius:9px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;';
+    div.innerHTML = bar;
+    $('chips').parentNode.insertBefore(div, $('chips').nextSibling);
+  })();
+  // 段 tab
+  $('segTabs').innerHTML = segs.map((x,i)=>
+    `<div class="seg-tab ${i===0?'active':''}" onclick="goSeg('${x}',this)">${SEG_META[x].icon} ${SEG_META[x].label}</div>`).join('');
+  goSeg(segs[0], document.querySelector('.seg-tab'));
+  // 海运下载
+  $('dlSO').href = `${API}/file?token=${encodeURIComponent(token)}&type=so`;
+  (function(){
+    const box = document.getElementById('oceanDocs');
+    if (!box) return;
+    const upBtn = (label) => `<span style="color:#b45309;font-weight:700;cursor:pointer;margin-right:14px;font-size:12px;" onclick="event.preventDefault();_cntrZone='${label}';pickFile('ocean')">上传盖章件</span>`;
+    const rows = [];
+    if (s.is_transfer)
+      rows.push(dlRow('🔁', '内转外信息表 <span style="font-size:10px;color:#9ca3af;">第二程</span>', fileURL('transfer'), pv(fileURL('transfer')) + upBtn('内转外')));
+    const ups = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
+    const isLiquid = !!(s.factory_attrs && (s.factory_attrs.liquid==='yes'));
+    const msds = ups.filter(u=>/msds|鉴定/i.test(u.filename||''));
+    if (isLiquid && !msds.length)
+      rows.push(`<div style="border:1.5px solid #fca5a5;background:#fef2f2;border-radius:8px;padding:9px 14px;margin-top:6px;font-size:12px;color:#b91c1c;font-weight:700;">🧪 本票含液体货：MSDS + 海运运输条件鉴定报告 <b>必传</b>（订舱备注需注明液体货）——从下方回传口上传</div>`);
+    if (msds.length) msds.forEach(u => rows.push(dlRow('🧪', (/鉴定/.test(u.filename)?'海运鉴定报告':'MSDS')+' · '+esc(u.filename), fileURL('upload', u.stored))));
+    else if (!isLiquid) rows.push(`<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:9px 14px;margin-top:6px;font-size:12px;color:#9ca3af;">🧪 MSDS / 海运鉴定报告 · 上传后自动出现（电池/液体货需要）</div>`);
+    box.innerHTML = rows.join('');
+  })();
+  // （单据链接构造已上移至 boot 顶部）
+  const upsAll = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
+  const soUps = upsAll.filter(u=>/(^|[^A-Z])S\/?O([^A-Z]|$)|入货|排载|配舱/i.test(u.filename||''));
+  const blUps = upsAll.filter(u=>/\bBL\b|提单/i.test(u.filename||''));
+  let dl = '';
+  if (soUps.length) soUps.forEach(u => { dl += dlRow('📋', '排载单 / SO · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
+  else dl += `<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:6px;font-size:12px;color:#9ca3af;">📋 排载单 / SO（入货通知）· 货代上传后自动出现在这里</div>`;
+  if (blUps.length) blUps.forEach(u => { dl += dlRow('📄', 'BL · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
+  // BL number entry section
+  (function(){
+    const sec = $('blNoSection');
+    if (!sec) return;
+    if (s.bl_no) {
+      sec.innerHTML = `<div style="background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 提单号已提交：<span style="color:#1a1d23;">${esc(s.bl_no)}</span> · 客户已可查看草稿</div>`;
+    } else if (blUps.length) {
+      sec.innerHTML = `<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:10px 14px;">
+        <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px;">📄 BL已上传 — 请填写提单号通知客户确认</div>
+        <div style="display:flex;gap:8px;">
+          <input id="blNoInput" type="text" placeholder="B/L No.（如 OOLU2345678）" style="flex:1;border:1px solid #fde68a;border-radius:6px;padding:7px 10px;font-size:12px;font-family:inherit;outline:none;" value="${esc(s.bl_no||'')}">
+          <button onclick="submitBlNo()" style="padding:7px 16px;border-radius:6px;border:none;background:#d97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">提交</button>
+        </div>
+      </div>`;
+    } else {
+      sec.innerHTML = `<div style="background:#f8fafc;border:1.5px dashed #e0e4ea;border-radius:8px;padding:9px 14px;font-size:12px;color:#9ca3af;">📄 上传BL草稿后，填写提单号即可推送给客户确认</div>`;
+    }
+  })();
+  dl += dlRow('🛂', '报关单（海关格式·数据已填）', fileURL('customs_decl'), pv(fileURL('customs_decl')));
+  dl += dlRow('📋', 'PL·SC·IV 合并版', fileURL('pack', '', 'customs'), pv(fileURL('pack', '', 'customs')));
+  const quar = (Array.isArray(s.collab_uploads)?s.collab_uploads:[]).filter(u=>/检疫|植检|动检|兽医|quarantine/i.test(u.filename||''));
+  if (quar.length) quar.forEach(u => { dl += dlRow('🌿', '检疫报告 · '+esc(u.filename), '#'); });
+  else dl += `<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:12px;color:#9ca3af;">🌿 检疫报告 · 出证后自动出现在这里</div>`;
+  $('dlBox').innerHTML = dl;
+  // 申报字段表（直接带过来，免开文件）：品名/HS/箱数/净毛/CBM/申报金额 — 来自订单明细真值
+  (function(){
+    const agg = new Map();
+    orders.forEach(o => (o.items||[]).forEach(it => {
+      const key = (it.description||'')+'|'+(it.hs_code||'');
+      const a = agg.get(key) || { name: it.description||'—', hs: it.hs_code||'', ctns:0, nw:0, gw:0, cbm:0, amt:0 };
+      a.ctns += Number(it.ctns||0); a.nw += Number(it.nw_kgs||0); a.gw += Number(it.gw_kgs||0);
+      a.cbm += Number(it.cbm||0); a.amt += Number(it.declare_amount||0);
+      agg.set(key, a);
+    }));
+    const rows = [...agg.values()].filter(a => a.name !== '—' || a.ctns);
+    if (!rows.length) { $('cdTable').innerHTML=''; return; }
+    const fmt = n => n ? Number(n.toFixed(2)).toLocaleString() : '—';
+    $('cdTable').innerHTML = '<div style="font-size:12px;font-weight:800;color:#374151;margin-bottom:6px;">📑 申报字段（本票汇总）</div>'
+      + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;">'
+      + '<tr style="background:#f9fafb;color:#6b7280;">' + ['报关品名','HS','箱数','净重kg','毛重kg','CBM','申报金额'].map(h=>`<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb;">${h}</th>`).join('') + '</tr>'
+      + rows.map(a=>`<tr><td style="padding:6px 8px;font-weight:700;">${esc(a.name)}</td><td style="padding:6px 8px;">${esc(a.hs)}</td><td style="padding:6px 8px;">${a.ctns||'—'}</td><td style="padding:6px 8px;">${fmt(a.nw)}</td><td style="padding:6px 8px;">${fmt(a.gw)}</td><td style="padding:6px 8px;">${a.cbm?a.cbm.toFixed(3):'—'}</td><td style="padding:6px 8px;font-weight:700;">${fmt(a.amt)}</td></tr>`).join('')
+      + '</table></div>';
+  })();
+  // 已有数据回显
+  uploads = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
+  renderFiles();
+  const td = s.trucking_detail || {};
+  if(Array.isArray(td.vehicles)&&td.vehicles.length) vehs = td.vehicles.map(v=>({...v,plate:v.plate||'',driver:v.driver||'',driver_phone:v.driver_phone||'',pickup_time:v.pickup_time||''}));
+  // SO/下单信息块（车队+报关行都要：厦门口岸信息多，他们要自己做排载单）
+  (function(){
+    const raw = s.so_info||s.raw||{}; const so = s.so_no || (raw.so_source||'').replace(/^入货通知/,'') || s.bl_no || '';
+    const rows=[];
+    if(so) rows.push(['SO/入货通知', so]);
+    if(s.vessel||raw.vessel) rows.push(['船名航次', (s.vessel||'')+' '+(s.voyage||'')]);
+    if(raw.ship_agent) rows.push(['船代', raw.ship_agent]);
+    if(raw.terminal) rows.push(['场站', raw.terminal + (raw.terminal_tel?' · '+raw.terminal_tel:'')]);
+    if(raw.cutoff_port) rows.push(['截港', raw.cutoff_port]);
+    if(raw.doc_cutoff) rows.push(['截单', raw.doc_cutoff]);
+    if(raw.vgm_cutoff) rows.push(['截VGM', raw.vgm_cutoff]);
+    if(raw.free_days) rows.push(['免箱期', raw.free_days]);
+    if(raw.telex_note) rows.push(['电放', raw.telex_note]);
+    if(raw.split_note) rows.push(['分票', raw.split_note]);
+    if(raw.vgm_note) rows.push(['VGM', raw.vgm_note]);
+    if(raw.truck_req) rows.push(['🚛要求', raw.truck_req]);
+    if(!rows.length) return;
+    const html = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:10px;">'
+      + '<div style="font-size:12px;font-weight:800;color:#1d4ed8;margin-bottom:6px;">⚓ SO / 下单信息 <span style="font-weight:400;color:#60a5fa;font-size:10px;">排载单按此做</span>'
+      + (raw.tracking?` <a href="${esc(raw.tracking)}" target="_blank" style="float:right;font-size:11px;color:#1a73e8;">📍 场站货物追踪 ↗</a>`:'') + '</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px 14px;">'
+      + rows.map(r=>'<div style="font-size:11px;"><span style="color:#6b7280;">'+r[0]+'</span> <span style="font-weight:700;color:#111827;">'+esc(String(r[1]))+'</span></div>').join('')
+      + '</div></div>';
+    if ($('soInfo')) $('soInfo').innerHTML = html;
+    if ($('soInfoC')) $('soInfoC').innerHTML = html;
+  })();
+  renderVehs();
+  // 价格链视图
+  (function(){
+    const card = $('priceChainCard');
+    const body = $('priceChainBody');
+    if (!card || !body) return;
+    const termLabel = { CIF:'CIF（我方承担运费）', FOB:'FOB（买方承担运费）',
+      CFR:'CFR（我方承担运费）', DDP:'DDP（我方全包）', EXW:'EXW（买方自提）', FCA:'FCA' };
+    // 商业字段（交易条款/提单类型/下游客户）只给货代居间人(ocean段=洋宝宝)；
+    // 工厂/车队/报关属上游供应商，绝不暴露下游客户与交易条款
+    const isOcean = segs.includes('ocean');
+    const isFactory = segs.includes('factory');
+    const rows = [];
+    if (isOcean && s.freight_term) rows.push(['交易条款', termLabel[s.freight_term] || s.freight_term]);
+    if (s.carrier_code || s.vessel) rows.push(['船名航次', [s.carrier_code, s.vessel, s.voyage].filter(Boolean).join(' / ')]);
+    if (s.etd) rows.push(['预计开船 ETD', s.etd.slice(0,10)]);
+    if (s.eta) rows.push(['预计到港 ETA', s.eta.slice(0,10)]);
+    if (isOcean && s.release_type) rows.push(['提单类型', s.release_type === 'SWB' ? '🟢 海运单(SWB) · 无需电放' : s.release_type === 'TELEX' ? '⚡ 电放提单 · 已电放' : s.release_type === 'OBL' ? '📄 正本提单' : s.release_type]);
+    if (isOcean && (s.customer_en || s.customer_name)) rows.push(['下游客户', s.customer_en || s.customer_name]);
+    if (isFactory && s.finance_bill_sent_at) {
+      const confirmed = s.factory_bill_confirmed_at;
+      rows.push(['工厂账单', confirmed
+        ? `✅ 工厂已确认 · ${String(confirmed).slice(0,10)}`
+        : `📤 已发出 · ${String(s.finance_bill_sent_at).slice(0,16)} · 等待确认`]);
+    }
+    if (!rows.length) return;
+    card.classList.remove('hidden');
+    body.innerHTML = '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 20px;align-items:baseline;">'
+      + rows.map(r => `<span style="font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap;">${esc(r[0])}</span>`
+        + `<span style="font-size:12px;font-weight:700;color:#1a1d23;">${esc(r[1])}</span>`).join('')
+      + '</div>';
+    // 🛰 实时船位（免费 VesselFinder 外链，按船名；第三方仅供参考）
+    if (s.vessel) {
+      const vfUrl = 'https://www.vesselfinder.com/vessels?name=' + encodeURIComponent(s.vessel);
+      body.innerHTML += '<div style="margin-top:12px;"><a href="' + vfUrl + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#2563eb;text-decoration:none;padding:7px 13px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;">🛰 实时船位 <span style="font-size:10px;color:#94a3b8;font-weight:400;">第三方AIS · 仅供参考</span></a></div>';
+    }
+  })();
+  show('stateForm');
+  if (segs.includes('ocean')) loadPricing();
+}
+
+function showPreview(href){ $('pvFrame').src = href; $('pvModal').style.display='block'; }
+// 回传框支持 拖拽 + 粘贴截图
+async function submitBlNo(){
+  const val = ($('blNoInput')||{}).value||'';
+  if(!val.trim()){toast('请输入提单号');return;}
+  const btn = document.querySelector('#blNoSection button');
+  if(btn){btn.disabled=true;btn.textContent='提交中…';}
+  try{
+    const r = await fetch(`${API}/update-bl-no`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token, bl_no: val.trim()})});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error||'失败');
+    s.bl_no = d.bl_no;
+    const sec=$('blNoSection');
+    if(sec) sec.innerHTML=`<div style="background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 提单号已提交：<span style="color:#1a1d23;">${esc(d.bl_no)}</span> · 客户已可查看草稿</div>`;
+    toast('✓ 提单号已提交，客户可确认');
+  }catch(e){toast('提交失败：'+e.message);if(btn){btn.disabled=false;btn.textContent='提交';}}
+}
+
+async function ingestFiles(list, zone){
+  for(const f of list){ await uploadOne(f, zone); }
+}
+async function uploadOne(f, zone){
+  try{
+    const b64 = await new Promise((ok,no)=>{ const r=new FileReader(); r.onload=()=>ok(r.result); r.onerror=no; r.readAsDataURL(f); });
+    const r = await fetch(`${API}/upload`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token,filename:'['+zone+']'+(f.name||'pasted.png'),mime:f.type,data_base64:b64})});
+    const d = await r.json();
+    if(!r.ok||!d.ok){ toast((f.name||'文件')+' 上传失败: '+(d.error||'')); return; }
+    uploads.push(d.file); renderFiles(); toast('✓ '+(f.name||'截图')+' 已上传');
+  }catch(e){ toast('网络错误'); }
+}
+document.querySelectorAll('.up-zone').forEach(z=>{
+  const zone = (z.getAttribute('onclick')||'').includes('truck') ? 'truck' : 'customs';
+  z.addEventListener('dragover', e=>{ e.preventDefault(); z.style.background='#eff6ff'; });
+  z.addEventListener('dragleave', ()=>{ z.style.background=''; });
+  z.addEventListener('drop', e=>{ e.preventDefault(); z.style.background=''; ingestFiles([...e.dataTransfer.files], zone); });
+});
+document.addEventListener('paste', e=>{
+  const fs = [...(e.clipboardData?.files||[])];
+  if(!fs.length) return;
+  const zone = document.getElementById('seg-customs') && !document.getElementById('seg-customs').classList.contains('hidden') ? 'customs' : 'truck';
+  ingestFiles(fs, zone); toast('📎 已捕获粘贴文件，上传中…');
+});
+
+async function loadPricing() {
+  const token = new URLSearchParams(location.search).get('token');
+  if (!token) return;
+  try {
+    const r = await fetch(`/api/db/booking-collab/collab-pricing?token=${encodeURIComponent(token)}`);
+    const d = await r.json();
+    const sec = document.getElementById('pricingSection');
+    if (!sec) return;
+    if (!d.ok) {
+      sec.innerHTML = '<div style="margin:8px 0 4px;padding:10px 12px;background:rgba(251,191,36,0.08);border-radius:8px;border:1px solid rgba(251,191,36,0.3);font-size:12px;color:#fbbf24">⚠️ ' + (d.error||'数据加载失败') + '</div>';
+      return;
+    }
+    if (!d.items || !d.items.length) {
+      sec.innerHTML = '<div style="margin:8px 0 4px;padding:10px 12px;background:rgba(251,191,36,0.08);border-radius:8px;border:1px solid rgba(251,191,36,0.3)"><span style="font-size:12px;font-weight:700;color:#fbbf24">💰 上下游费用</span><span style="font-size:11px;color:#94a3b8;margin-left:8px">' + (d.note || '费用尚未录入') + ' · 请供应链团队补充录入</span></div>';
+      return;
+    }
+    const n2 = (v, cur) => v == null ? '—' : Number(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2}) + (cur ? ' ' + cur : '');
+    const basisTag = b => b === 'per_container' ? '<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(99,102,241,0.2);color:#a5b4fc">每柜</span>' : '<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:rgba(148,163,184,0.15);color:#94a3b8">整票</span>';
+    const termLabel = t => t ? `<span style="font-size:10px;color:#94a3b8">${t}·买方</span>` : '';
+    const rows = d.items.map(it => `
+      <tr style="border-bottom:1px solid rgba(148,163,184,0.1)">
+        <td style="padding:7px 8px;font-size:12px;color:#e2e8f0;font-weight:600">${esc(it.cost_category||'—')}</td>
+        <td style="padding:7px 8px;text-align:center">${basisTag(it.charge_basis)}</td>
+        <td style="padding:7px 8px;font-size:12px;color:#cbd5e1;text-align:right">${it.unit_price != null ? n2(it.unit_price, it.currency) : '—'}</td>
+        <td style="padding:7px 8px;font-size:12px;color:#cbd5e1;text-align:center">${it.qty != null ? it.qty : '1'}</td>
+        <td style="padding:7px 8px;font-size:12px;font-weight:700;color:#e2e8f0;text-align:right">${n2(it.amount, it.currency)}</td>
+        <td style="padding:7px 8px;font-size:11px;color:#64748b;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.supplier||'—')}</td>
+        <td style="padding:7px 8px">${termLabel(it.incoterm)}</td>
+        <td style="padding:7px 8px;font-size:12px;text-align:right">${it.self_handled ? '<span style="font-size:10px;color:#64748b">自理</span>' : it.sale_amount != null ? '<span style="font-weight:700;color:#e2e8f0">' + n2(it.sale_amount, it.currency) + '</span>' + (it.rebill_to ? '<br><span style="font-size:10px;color:#64748b">↳ ' + esc(it.rebill_to) + '</span>' : '') : '<input type="number" step="0.01" min="0" class="price-fill-input" data-bill-id="' + esc(it.id) + '" placeholder="' + esc(it.currency||'CNY') + '" style="width:84px;padding:4px 6px;font-size:12px;text-align:right;background:#0f172a;border:1px solid rgba(251,191,36,0.45);border-radius:5px;color:#fbbf24;outline:none">'}</td>
+        <td style="padding:7px 8px;font-size:12px;font-weight:700;text-align:right;color:${it.gross_profit==null||it.self_handled?'#475569':it.gross_profit>=0?'#34d399':'#f87171'}">${it.self_handled||it.gross_profit==null ? '—' : n2(it.gross_profit, it.currency)}</td>
+      </tr>`).join('');
+    const fillCount = d.items.filter(it => !it.self_handled && it.sale_amount == null).length;
+    const fillBar = fillCount ? `<div style="padding:10px 12px;background:rgba(251,191,36,0.06);border-top:1px solid rgba(251,191,36,0.18);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <span style="font-size:11px;color:#fbbf24">⚠️ ${fillCount} 项销售价待补充 · 填好对客户的收费金额</span>
+      <button onclick="submitPricingFill()" style="padding:6px 14px;font-size:12px;font-weight:700;background:#fbbf24;color:#1a1d23;border:none;border-radius:6px;cursor:pointer">💾 提交销售价</button>
+    </div>` : '';
+    const tfoot = ['USD','CNY'].filter(cur => d.totals[cur] && (d.totals[cur].cost||d.totals[cur].sales)).map(cur => `
+      <tr style="background:rgba(148,163,184,0.08)">
+        <td colspan="4" style="padding:8px 8px;font-size:12px;font-weight:800;color:#94a3b8">合计 (${cur})</td>
+        <td style="padding:8px 8px;font-size:12px;font-weight:800;color:#e2e8f0;text-align:right">${n2(d.totals[cur].cost, cur)}</td>
+        <td colspan="2"></td>
+        <td style="padding:8px 8px;font-size:12px;font-weight:800;color:#e2e8f0;text-align:right">${n2(d.totals[cur].sales, cur)}</td>
+        <td style="padding:8px 8px;font-size:12px;font-weight:800;text-align:right;color:${d.totals[cur].profit>=0?'#34d399':'#f87171'}">${n2(d.totals[cur].profit, cur)}</td>
+      </tr>`).join('');
+    const custLine = d.customer ? `<span style="font-size:11px;color:#94a3b8;margin-left:10px">收款对象：<span style="color:#e2e8f0;font-weight:700">${esc(d.customer)}</span></span>` : '';
+    sec.innerHTML = `<div style="margin:10px 0 4px;overflow:hidden;border-radius:8px;border:1px solid rgba(148,163,184,0.18)">
+      <div style="padding:10px 12px;background:rgba(15,23,42,0.6);border-bottom:1px solid rgba(148,163,184,0.12);display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+        <span style="font-size:13px;font-weight:800;color:#e2e8f0">💰 上下游费用</span>
+        <span style="font-size:11px;color:#64748b">${esc(d.bl_no)}</span>${custLine}
+      </div>
+      <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;min-width:600px">
+        <thead><tr style="background:rgba(148,163,184,0.06)">
+          <th style="padding:7px 8px;text-align:left;font-size:10px;color:#64748b;font-weight:700;white-space:nowrap">费用项</th>
+          <th style="padding:7px 8px;text-align:center;font-size:10px;color:#64748b;font-weight:700">计费</th>
+          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">单价</th>
+          <th style="padding:7px 8px;text-align:center;font-size:10px;color:#64748b;font-weight:700">数量</th>
+          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">合计(成本)</th>
+          <th style="padding:7px 8px;text-align:left;font-size:10px;color:#64748b;font-weight:700">付款对象(上游)</th>
+          <th style="padding:7px 8px;text-align:left;font-size:10px;color:#64748b;font-weight:700">承担方</th>
+          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">销售(下游)</th>
+          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">毛利</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot>${tfoot}</tfoot>
+      </table></div>${fillBar}</div>`;
+  } catch(e) { console.warn('pricing fetch failed', e); }
+}
+
+async function submitPricingFill() {
+  const token = new URLSearchParams(location.search).get('token');
+  if (!token) return;
+  const inputs = document.querySelectorAll('.price-fill-input');
+  const updates = [];
+  inputs.forEach(el => {
+    const v = (el.value || '').trim();
+    if (v !== '' && isFinite(Number(v)) && Number(v) >= 0)
+      updates.push({ bill_id: el.getAttribute('data-bill-id'), sale_amount: Number(v) });
+  });
+  if (!updates.length) { toast('请先填写至少一项销售价'); return; }
+  try {
+    const r = await fetch('/api/db/booking-collab/collab-pricing-submit', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ token, updates })
+    });
+    const d = await r.json();
+    if (d.ok) { toast(`✅ 已补录 ${d.updated} 项`); loadPricing(); }
+    else toast('提交失败：' + (d.error||''));
+  } catch(e) { toast('网络错误'); }
+}
+boot();
+</script>
+</body>
+</html>

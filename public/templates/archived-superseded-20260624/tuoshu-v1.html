@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>出口货物委托单 / Shipping Instruction</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Arial', 'Microsoft YaHei', sans-serif; font-size: 11px; color: #111; background: #e5e7eb; padding: 16px; }
+
+.page { width: 210mm; margin: 0 auto 24px; background: #fff; padding: 10mm 12mm; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+
+/* Title */
+.doc-title { text-align: center; font-size: 16px; font-weight: 900; letter-spacing: .15em; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 0; }
+.doc-en { text-align: center; font-size: 10px; color: #555; padding: 3px 0 6px; border-bottom: 1px solid #ccc; margin-bottom: 0; }
+
+/* Main layout: left content + right info panel */
+.main-grid { display: grid; grid-template-columns: 1fr 38%; border: 1px solid #999; border-top: none; }
+.left-col { border-right: 1px solid #999; }
+.right-col { }
+
+/* Party blocks */
+.party-block { padding: 5px 8px; border-bottom: 1px solid #999; min-height: 52px; }
+.party-block.no-border { border-bottom: none; }
+.party-label { font-size: 10px; font-weight: 700; color: #111; margin-bottom: 3px; }
+.party-label span { font-weight: 400; font-style: italic; }
+textarea, input[type=text], input[type=date], input[type=number] {
+  width: 100%; border: none; outline: none; font-family: inherit; background: transparent; color: #111; resize: none;
+}
+textarea { font-size: 10.5px; line-height: 1.5; }
+input[type=text], input[type=date] { font-size: 10.5px; border-bottom: 1px dotted #bbb; padding: 1px 2px; }
+textarea::placeholder, input::placeholder { color: #bbb; }
+
+/* Right panel rows */
+.rp-row { padding: 4px 8px; border-bottom: 1px solid #999; min-height: 22px; }
+.rp-row:last-child { border-bottom: none; }
+.rp-label { font-size: 9px; color: #555; margin-bottom: 1px; }
+.rp-value { font-size: 10.5px; }
+.rp-ops { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; }
+.rp-ops span { font-size: 9px; color: #555; }
+
+/* Port row */
+.port-row { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #999; border-top: none; }
+.port-cell { padding: 4px 8px; border-right: 1px solid #999; }
+.port-cell:last-child { border-right: none; }
+.port-label { font-size: 9.5px; font-weight: 700; color: #c00; margin-bottom: 2px; }
+.port-en { font-size: 8.5px; color: #555; font-style: italic; }
+
+/* Cargo table */
+.cargo-wrap { border: 1px solid #999; border-top: none; }
+.cargo-table { width: 100%; border-collapse: collapse; }
+.cargo-table th { font-size: 9px; font-weight: 700; color: #111; padding: 4px 5px; border: 1px solid #ccc; text-align: center; background: #f5f5f5; line-height: 1.3; }
+.cargo-table td { border: 1px solid #ccc; padding: 3px 5px; vertical-align: top; }
+.cargo-table td input, .cargo-table td textarea { font-size: 10px; }
+.cargo-table .total-row td { background: #f9f9f9; font-weight: 700; font-size: 9.5px; }
+
+/* Declaration section */
+.decl-row { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #999; border-top: none; }
+.decl-left { padding: 6px 8px; border-right: 1px solid #999; }
+.decl-right { padding: 6px 8px; }
+
+.cargo-ready { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 10px; font-weight: 700; color: #111; }
+.cargo-ready input { width: 130px; font-size: 10.5px; color: #111; }
+
+.terms-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 10px; font-weight: 700; color: #111; flex-wrap: wrap; }
+.terms-row .term-item { display: flex; align-items: center; gap: 3px; font-size: 10px; color: #111; font-weight: 400; }
+.terms-row .other-label { font-size: 10px; color: #111; font-weight: 400; }
+.terms-row input.other-input { width: 60px; border-bottom: 1px solid #999; font-size: 10px; }
+
+.check-row { display: flex; align-items: flex-start; margin-bottom: 4px; font-size: 10px; line-height: 1.4; }
+.check-row .q { flex: 1; }
+.check-row .yn { display: flex; align-items: center; gap: 10px; white-space: nowrap; margin-left: 8px; }
+.check-row .yn label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+.check-row .yn input[type=checkbox] { width: auto; }
+.msds-note { font-size: 9px; color: #555; font-style: italic; margin-left: 14px; margin-bottom: 4px; line-height: 1.3; }
+
+.container-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 10px; font-weight: 700; color: #111; }
+.container-row .ct-inputs { display: flex; align-items: center; gap: 6px; font-weight: 400; color: #111; }
+.container-row input.ct-qty { width: 36px; }
+.container-row select.ct-type { width: 60px; font-size: 10px; border: 1px solid #ccc; border-radius: 2px; background: #fff; }
+.tow-row { display: flex; align-items: center; gap: 16px; margin-top: 5px; font-size: 10px; }
+.tow-row label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+.tow-row input[type=checkbox] { width: auto; }
+
+/* Payment section */
+.pay-section { border: 1px solid #999; border-top: none; padding: 5px 8px; }
+.pay-label { font-size: 9.5px; color: #111; font-weight: 700; margin-bottom: 4px; }
+.pay-rows { display: flex; flex-direction: column; gap: 3px; }
+.pay-line { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.pay-line .pay-name { min-width: 120px; color: #555; }
+.pay-line label { display: flex; align-items: center; gap: 3px; cursor: pointer; }
+.pay-line input[type=checkbox] { width: auto; }
+.bl-type-line { display: flex; align-items: center; gap: 12px; margin-top: 4px; font-size: 10px; font-weight: 700; }
+.bl-type-line label { display: flex; align-items: center; gap: 3px; cursor: pointer; font-weight: 400; }
+.bl-type-line input[type=checkbox] { width: auto; }
+
+/* Sig */
+.sig-row { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #999; border-top: none; min-height: 50px; }
+.sig-cell { padding: 8px 8px; border-right: 1px solid #999; }
+.sig-cell:last-child { border-right: none; }
+.sig-cell .sig-label { font-size: 9px; color: #555; margin-bottom: 4px; }
+.sig-line { border-bottom: 1px solid #ccc; margin-top: 22px; }
+.sig-hint { font-size: 8px; color: #aaa; text-align: center; margin-top: 2px; }
+
+/* Focus highlight */
+input:focus, textarea:focus, select:focus { background: #fffde7 !important; }
+
+/* Print */
+@media print {
+  body { background: #fff; padding: 0; }
+  .page { box-shadow: none; margin: 0; padding: 8mm 10mm; }
+  .no-print { display: none !important; }
+  input:focus, textarea:focus { background: transparent !important; }
+}
+
+/* Buttons */
+.btn-bar { text-align: center; margin: 12px 0 6px; }
+.btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; margin: 0 5px; }
+.btn-print { background: #111; color: #fff; }
+.btn-clear { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+</style>
+</head>
+<body>
+
+<div class="btn-bar no-print">
+  <button class="btn btn-clear" onclick="clearForm()">🗑 清空</button>
+  <button class="btn btn-print" onclick="window.print()">🖨 打印 / PDF</button>
+</div>
+
+<div class="page">
+
+  <div class="doc-title">出口货物委托单</div>
+  <div class="doc-en">SHIPPING BOOKING INSTRUCTION</div>
+
+  <!-- Main 2-col grid -->
+  <div class="main-grid">
+
+    <!-- LEFT -->
+    <div class="left-col">
+      <div class="party-block">
+        <div class="party-label">发货人：<span>Shipper:</span></div>
+        <textarea id="shipper" rows="4" placeholder="公司名称（英文）&#10;地址&#10;联系人 / 电话"></textarea>
+      </div>
+      <div class="party-block">
+        <div class="party-label">收货人：<span>Consignee</span></div>
+        <textarea id="consignee" rows="4" placeholder="公司名称&#10;地址&#10;联系人 / 电话"></textarea>
+      </div>
+      <div class="party-block no-border">
+        <div class="party-label">通知人：<span>Notify</span></div>
+        <textarea id="notify" rows="3" placeholder="如与收货人相同可留空"></textarea>
+      </div>
+    </div>
+
+    <!-- RIGHT panel -->
+    <div class="right-col">
+      <div class="rp-row" style="min-height:28px;">
+        <div class="rp-label">外运编号：</div>
+        <input type="text" id="ref_no" placeholder="Reference No." />
+      </div>
+      <div class="rp-row" style="min-height:28px;">
+        <div class="rp-label">CY单号（内部）：</div>
+        <input type="text" id="cy_no" placeholder="SHP-CY00___" />
+      </div>
+      <div class="rp-row" style="min-height:28px;">
+        <div class="rp-label">订舱详细信息确认：</div>
+        <textarea rows="2" id="booking_confirm" placeholder="订舱确认信息"></textarea>
+      </div>
+      <div class="rp-row">
+        <div class="rp-label">报关地点：</div>
+        <input type="text" id="customs_place" placeholder="如：厦门 / 青岛" />
+      </div>
+      <div class="rp-row">
+        <div class="rp-label">报关票数：</div>
+        <input type="text" id="customs_tickets" placeholder="如：1票" />
+      </div>
+      <div class="rp-row">
+        <div class="rp-ops">
+          <div><span>联系方式：</span><br><input type="text" id="contact" placeholder="电话/微信" /></div>
+          <div><span>操作：</span><br><input type="text" id="operator" /></div>
+          <div><span>单证：</span><br><input type="text" id="doc_clerk" /></div>
+        </div>
+      </div>
+      <div class="rp-row no-border" style="min-height:60px;">
+        <div class="rp-label">委托我们代理拖车报关请填写：</div>
+        <textarea rows="3" id="tow_detail" placeholder="拖车联系人 / 电话&#10;装货地址&#10;货好时间"></textarea>
+      </div>
+    </div>
+
+  </div><!-- /main-grid -->
+
+  <!-- Port row -->
+  <div class="port-row">
+    <div class="port-cell">
+      <div class="port-label">Port of loading: <span class="port-en">装货港</span></div>
+      <input type="text" id="pol" placeholder="如：QingDao / Xiamen" />
+    </div>
+    <div class="port-cell">
+      <div class="port-label">Port of discharge: 目的港 <span class="port-en">卸货港</span></div>
+      <input type="text" id="pod" placeholder="如：PORT KLANG, WEST, MALAYSIA" />
+    </div>
+  </div>
+
+  <!-- Cargo table -->
+  <div class="cargo-wrap">
+    <table class="cargo-table">
+      <thead>
+        <tr>
+          <th style="width:12%">唛头<br>Mark&amp;number</th>
+          <th style="width:12%">数量<br>Number of package</th>
+          <th style="width:44%">货物名称 / HS编码<br>Description of goods</th>
+          <th style="width:16%">毛重<br>Gross weight</th>
+          <th style="width:16%">体积<br>Measurement</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><input type="text" placeholder="N/M" /></td>
+          <td><input type="text" placeholder="1200 ctns" /></td>
+          <td><textarea rows="3" placeholder="货物英文品名&#10;HS: 2309109000"></textarea></td>
+          <td><input type="text" placeholder="22000 kgs" /></td>
+          <td><input type="text" placeholder="67.8 cbm" /></td>
+        </tr>
+        <tr>
+          <td><input type="text" /></td>
+          <td><input type="text" /></td>
+          <td><textarea rows="2"></textarea></td>
+          <td><input type="text" /></td>
+          <td><input type="text" /></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Declaration section -->
+  <div class="decl-row">
+    <div class="decl-left">
+
+      <div class="cargo-ready">
+        <span>货好时间 (CARGO READY DATE)：</span>
+        <input type="date" id="cargo_ready" />
+      </div>
+
+      <div class="terms-row">
+        <span>条款 (TERMS)：</span>
+        <label class="term-item"><input type="checkbox" id="t_fob" /> FOB</label>
+        <label class="term-item"><input type="checkbox" id="t_exw" /> EXW</label>
+        <label class="term-item"><input type="checkbox" id="t_fca" /> FCA</label>
+        <span class="other-label">其他：<input class="other-input" type="text" id="t_other" placeholder="______" /></span>
+      </div>
+
+      <div class="check-row">
+        <span class="q">是否有电池/液体货物？Product with Battery：</span>
+        <span class="yn">
+          <label><input type="checkbox" id="battery_yes" onchange="syncChk(this,'battery_no')" /> YES</label>
+          <label><input type="checkbox" id="battery_no" onchange="syncChk(this,'battery_yes')" /> NO</label>
+        </span>
+      </div>
+      <div class="msds-note">如果是，请提供MSDS<br><em>If YES, Pls provide the MSDS Test report of Batteries</em></div>
+
+      <div class="check-row">
+        <span class="q">是否有实木包装 / 木架 / 托盘？</span>
+        <span class="yn">
+          <label><input type="checkbox" id="wood_yes" onchange="syncChk(this,'wood_no')" /> YES</label>
+          <label><input type="checkbox" id="wood_no" onchange="syncChk(this,'wood_yes')" /> NO</label>
+        </span>
+      </div>
+
+      <div class="check-row">
+        <span class="q">如有实木包装，是否已做熏蒸？</span>
+        <span class="yn">
+          <label><input type="checkbox" id="fumig_yes" onchange="syncChk(this,'fumig_no')" /> YES</label>
+          <label><input type="checkbox" id="fumig_no" onchange="syncChk(this,'fumig_yes')" /> NO</label>
+        </span>
+      </div>
+
+      <div class="container-row">
+        <span>箱型箱量 (CONTAINER)：</span>
+        <div class="ct-inputs">
+          <input class="ct-qty" type="text" id="ct_qty" placeholder="1" />
+          <span>×</span>
+          <select class="ct-type" id="ct_type">
+            <option>40HC</option>
+            <option>40GP</option>
+            <option>20GP</option>
+            <option>45HC</option>
+            <option>LCL</option>
+          </select>
+        </div>
+      </div>
+      <div class="tow-row">
+        <label><input type="checkbox" id="self_tow" onchange="syncChk(this,'agent_tow')" /> 自拖自报</label>
+        <label><input type="checkbox" id="agent_tow" onchange="syncChk(this,'self_tow')" /> 代拖代报</label>
+      </div>
+
+    </div><!-- /decl-left -->
+
+    <div class="decl-right">
+
+      <div class="bl-type-line" style="margin-top:4px;">
+        <span style="font-size:9.5px;font-weight:700;color:#111;margin-right:8px;">提单方式：</span>
+        <label><input type="checkbox" id="bl_orig" onchange="syncChk2(this,['bl_telex','bl_other_chk'])" /> 正本</label>
+        <label><input type="checkbox" id="bl_telex" onchange="syncChk2(this,['bl_orig','bl_other_chk'])" /> 电放</label>
+        <label><input type="checkbox" id="bl_other_chk" onchange="syncChk2(this,['bl_orig','bl_telex'])" /> 其他：</label>
+        <input type="text" id="bl_other_txt" placeholder="___________" style="width:80px;font-size:10px;border-bottom:1px solid #999;" />
+      </div>
+
+      <div style="margin-top:10px;">
+        <div style="font-size:9px;color:#555;margin-bottom:3px;">备注 Remarks</div>
+        <textarea rows="6" id="remarks" placeholder="特殊要求 / 换单 / 报检等" style="font-size:10px;border:1px solid #ddd;border-radius:2px;padding:3px;background:#fff;width:100%;"></textarea>
+      </div>
+
+    </div><!-- /decl-right -->
+  </div>
+
+  <!-- Legal footer -->
+  <div style="border: 1px solid #999; border-top: none; padding: 5px 12px; background:#f9f9f9;">
+    <p style="font-size:8px;color:#666;line-height:1.6;">
+      本托书为格式条款，委托方签字/盖章即视为已充分阅读并接受全部内容；如有与本托书冲突之特别约定，须以双方授权代表签字盖章的书面文件为准；本托书传真件、扫描件与原件具有同等法律效力；因本托书引起或与之相关的任何争议，适用中华人民共和国法律，由厦门海事法院管辖。
+    </p>
+  </div>
+
+  <!-- Signature -->
+  <div style="border: 1px solid #999; border-top: none; padding: 8px 12px; min-height: 54px;">
+    <div style="font-size:9px;color:#555;margin-bottom:4px;">委托方签署 / Principal's Signature &amp; Seal（请盖公章，须与Shipper抬头一致）</div>
+    <div style="border-bottom:1px solid #ccc;margin-top:28px;"></div>
+    <div style="font-size:8px;color:#aaa;text-align:center;margin-top:2px;">签字 / 公章 / 日期</div>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+// 自动今天
+document.getElementById('cargo_ready').value = new Date().toISOString().split('T')[0];
+
+// 单选模拟（checkbox互斥）
+function syncChk(el, otherId) {
+  if (el.checked) document.getElementById(otherId).checked = false;
+}
+// 多互斥：一选其余全清
+function syncChk2(el, otherIds) {
+  if (el.checked) otherIds.forEach(id => document.getElementById(id).checked = false);
+}
+
+// 默认勾选 NO（安全默认）
+document.getElementById('battery_no').checked = true;
+document.getElementById('wood_no').checked = true;
+document.getElementById('fumig_no').checked = true;
+document.getElementById('bl_telex').checked = true;
+
+// 清空
+function clearForm() {
+  if (!confirm('确定清空？')) return;
+  document.querySelectorAll('textarea, input[type=text], input[type=date]').forEach(el => el.value = '');
+  document.querySelectorAll('input[type=checkbox]').forEach(el => el.checked = false);
+  document.getElementById('cargo_ready').value = new Date().toISOString().split('T')[0];
+  // reset defaults
+  document.getElementById('battery_no').checked = true;
+  document.getElementById('wood_no').checked = true;
+  document.getElementById('fumig_no').checked = true;
+  document.getElementById('bl_telex').checked = true;
+  document.getElementById('bl_telex').checked = true;
+}
+</script>
+</body>
+</html>

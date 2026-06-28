@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Partner Workbench v1 · COSCO vs 青岛报关行 (能力化渲染)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#060A14;color:#e2e8f0;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:32px;min-height:100vh}
+.shell{max-width:1380px;margin:0 auto}
+.h1{font-size:24px;font-weight:900;letter-spacing:-.01em;margin-bottom:6px;background:linear-gradient(90deg,#3b82f6,#7c3aed);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.sub{color:#64748b;font-size:12px;margin-bottom:18px}
+.banner{background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.25);border-radius:10px;padding:12px 16px;font-size:12px;color:#cbd5e1;margin-bottom:24px;line-height:1.7}
+.banner b{color:#c4b5fd}
+.banner code{background:rgba(15,23,42,.7);color:#fcd34d;padding:1px 5px;border-radius:3px;font-size:11px;font-family:"SF Mono",monospace}
+
+h2.section{font-size:18px;font-weight:900;color:#f8fafc;margin:32px 0 14px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+h2.section::before{content:"";width:4px;height:22px;background:linear-gradient(180deg,#3b82f6,#7c3aed);border-radius:2px}
+
+.dual{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+
+/* portal frame */
+.portal{background:#0a0e1a;border:1px solid rgba(148,163,184,.12);border-radius:14px;overflow:hidden}
+
+/* App nav (top) */
+.nav-bar{display:flex;background:rgba(15,23,42,.7);border-bottom:1px solid rgba(148,163,184,.1);padding:0}
+.nav-item{flex:1;padding:14px 12px;font-size:12px;font-weight:800;color:#64748b;cursor:pointer;text-align:center;border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px;transition:.15s}
+.nav-item.active{color:#7dd3fc;border-bottom-color:#38bdf8}
+.nav-item .ic{font-size:14px}
+.nav-item .badge{background:#ef4444;color:#fff;font-size:9px;padding:1px 5px;border-radius:7px;font-weight:900;margin-left:3px}
+
+/* Welcome 身份区 */
+.welcome{padding:16px 20px;background:linear-gradient(135deg,rgba(59,130,246,.05),rgba(124,58,237,.04));border-bottom:1px solid rgba(148,163,184,.08);display:flex;align-items:center;gap:14px}
+.welcome.cosco{background:linear-gradient(135deg,rgba(56,189,248,.08),rgba(99,102,241,.04))}
+.welcome.broker{background:linear-gradient(135deg,rgba(6,182,212,.06),rgba(167,139,250,.04))}
+.welcome .av{width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:14px;flex-shrink:0}
+.welcome.cosco .av{background:linear-gradient(135deg,#0ea5e9,#0c4a6e)}
+.welcome.broker .av{background:linear-gradient(135deg,#06b6d4,#0891b2)}
+.welcome .col{flex:1}
+.welcome .col .nm{font-size:18px;font-weight:900;color:#f8fafc;margin-bottom:4px}
+.welcome .col .greet{color:#cbd5e1;font-weight:700;font-size:13px}
+.welcome .role-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px}
+.role-tag{font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:5px;letter-spacing:.04em;text-transform:uppercase}
+.tag-ocean{background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.3);color:#7dd3fc}
+.tag-customs{background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.3);color:#67e8f9}
+.tag-trucking{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#86efac}
+.tag-insurance{background:rgba(167,139,250,.12);border:1px solid rgba(167,139,250,.3);color:#c4b5fd}
+.tag-ddp{background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#fcd34d}
+.welcome .verified{font-size:10px;color:#86efac;font-weight:700;display:inline-flex;align-items:center;gap:4px;margin-top:2px}
+.welcome .stat{margin-left:auto;text-align:right;font-size:10px;color:#94a3b8}
+.welcome .stat .num{font-size:16px;font-weight:900;color:#7dd3fc;font-family:"SF Mono",monospace;display:block}
+
+/* 任务条 */
+.task-bar{padding:14px 20px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;border-bottom:1px solid rgba(148,163,184,.08)}
+.task-card{background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.1);border-radius:8px;padding:10px;text-align:center;cursor:pointer;transition:.15s}
+.task-card:hover{border-color:rgba(56,189,248,.3)}
+.task-card.urgent{border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.04)}
+.task-card.due{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)}
+.task-card .num{font-size:20px;font-weight:900;color:#f8fafc;font-family:"SF Mono",monospace;display:block}
+.task-card .lbl{font-size:9.5px;color:#94a3b8;font-weight:700;letter-spacing:.04em;margin-top:2px}
+.task-card.urgent .num{color:#fca5a5}
+.task-card.due .num{color:#fcd34d}
+
+/* 主内容 */
+.body{padding:14px 18px}
+.body h4{font-size:12px;font-weight:900;color:#f8fafc;margin-bottom:10px;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
+.body h4 .count{font-size:10px;font-weight:800;color:#7dd3fc;background:rgba(56,189,248,.1);padding:2px 7px;border-radius:5px}
+.body h4 .stat{font-size:10px;font-weight:700;color:#64748b;margin-left:auto;font-family:"SF Mono",monospace}
+
+/* 状态卡 (订单卡, 复用 v3.2) */
+.state-card{background:#0B1120;border:1px solid rgba(148,163,184,.1);border-radius:10px;overflow:hidden;margin-bottom:8px;display:grid;grid-template-columns:auto 1fr auto auto;gap:12px;padding:10px 12px;align-items:center;cursor:pointer;transition:.15s}
+.state-card:hover{border-color:rgba(56,189,248,.3)}
+.state-tag{font-size:9.5px;font-weight:900;padding:3px 8px;border-radius:5px;letter-spacing:.04em;text-transform:uppercase;flex-shrink:0}
+.state-tag.ocean{background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.3);color:#7dd3fc}
+.state-tag.customs{background:rgba(6,182,212,.12);border:1px solid rgba(6,182,212,.3);color:#67e8f9}
+.state-tag.loading{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#86efac}
+.state-card .id{font-family:"SF Mono",monospace;font-size:11.5px;font-weight:800;color:#f8fafc}
+.state-card .id .meta{font-size:9.5px;color:#64748b;font-weight:700;margin-top:2px}
+.state-card .route{font-family:"SF Mono",monospace;font-size:11px;color:#94a3b8}
+.state-card .next-btn{padding:5px 11px;background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;font-size:10px;font-weight:900;border-radius:5px;border:none;cursor:pointer;flex-shrink:0}
+
+/* 报价小卡 (5 区块) */
+.quote-card{background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.12);border-radius:10px;overflow:hidden;margin-bottom:8px}
+.quote-card.hot{border-color:rgba(245,158,11,.4);box-shadow:0 0 12px rgba(245,158,11,.08)}
+
+.qc-1{padding:7px 12px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(148,163,184,.06);background:rgba(0,0,0,.2)}
+.qc-1 .id{font-family:"SF Mono",monospace;font-size:11px;font-weight:900;color:#f8fafc}
+.qc-1 .type{font-size:9px;font-weight:900;padding:2px 7px;border-radius:5px;letter-spacing:.06em}
+.qc-1 .type.hot{background:#ef4444;color:#fff}
+.qc-1 .type.rfq{background:rgba(56,189,248,.12);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)}
+.qc-1 .countdown{margin-left:auto;font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;background:rgba(239,68,68,.12);color:#fca5a5;font-family:"SF Mono",monospace}
+
+.qc-2{padding:8px 12px;border-bottom:1px solid rgba(148,163,184,.06)}
+.qc-2 .route{font-family:"SF Mono",monospace;font-size:13px;font-weight:900;color:#f8fafc;margin-bottom:3px}
+.qc-2 .meta{font-size:10.5px;color:#94a3b8;font-family:"SF Mono",monospace}
+
+.qc-3{padding:8px 12px;border-bottom:1px solid rgba(148,163,184,.06)}
+.qc-3 .price-row{display:flex;align-items:center;gap:8px;font-size:11px;color:#cbd5e1;margin-bottom:3px;font-family:"SF Mono",monospace}
+.qc-3 .price-row .ct{display:inline-block;width:42px;color:#94a3b8;font-weight:700}
+.qc-3 .price-row .price{font-weight:900;color:#86efac;font-size:12.5px}
+.qc-3 .ports{font-size:10px;color:#94a3b8;margin-top:6px;display:flex;align-items:center;gap:4px}
+.qc-3 .ports .lbl{color:#64748b;font-weight:700}
+.qc-3 .caps{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap}
+.qc-3 .cap-chip{font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);color:#86efac}
+.qc-3 .cap-chip.no{background:rgba(148,163,184,.08);border-color:rgba(148,163,184,.2);color:#475569}
+
+.qc-4{padding:7px 12px;border-bottom:1px solid rgba(148,163,184,.06);font-size:10.5px;color:#94a3b8;display:flex;align-items:center;justify-content:space-between}
+.qc-4 .others{color:#fcd34d;font-weight:800}
+.qc-4 .me{color:#94a3b8}
+
+.qc-5{padding:8px 12px;background:rgba(15,23,42,.4);display:flex;align-items:center;gap:6px}
+.qc-5 .grab{flex:1;padding:7px 12px;background:linear-gradient(135deg,#ef4444,#f59e0b);color:#fff;font-size:11px;font-weight:900;border-radius:6px;border:none;cursor:pointer;letter-spacing:.04em;text-transform:uppercase}
+.qc-5 .grab.normal{background:linear-gradient(135deg,#3b82f6,#7c3aed)}
+.qc-5 .detail{padding:7px 11px;background:rgba(148,163,184,.1);color:#94a3b8;font-size:10.5px;font-weight:700;border-radius:6px;border:none;cursor:pointer}
+
+/* 报价中心 capability 筛选 */
+.cap-filter{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.cap-pill{padding:5px 12px;font-size:10.5px;font-weight:800;border-radius:6px;background:rgba(15,23,42,.4);border:1px solid rgba(148,163,184,.15);color:#94a3b8;cursor:pointer}
+.cap-pill.active{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.4);color:#7dd3fc}
+
+/* 抽屉示例 */
+.drawer-demo{background:rgba(15,23,42,.7);border:1px solid rgba(148,163,184,.15);border-radius:12px;padding:18px 22px;margin-top:14px}
+.drawer-demo h3{font-size:13px;font-weight:900;color:#f8fafc;margin-bottom:12px}
+.drawer-demo .grp{margin-bottom:14px;border-bottom:1px dashed rgba(148,163,184,.1);padding-bottom:10px}
+.drawer-demo .grp:last-child{border:none}
+.drawer-demo .grp h5{font-size:11px;font-weight:900;color:#7dd3fc;margin-bottom:6px;letter-spacing:.04em;text-transform:uppercase;display:flex;align-items:center;gap:5px}
+.drawer-demo .grp .ic{font-size:13px}
+.drawer-demo .field{display:grid;grid-template-columns:80px 100px;gap:8px;align-items:center;font-size:11px;margin-bottom:4px}
+.drawer-demo .field label{color:#94a3b8;font-weight:700}
+.drawer-demo .field input,.drawer-demo .field select{background:rgba(255,255,255,.04);border:1px solid rgba(148,163,184,.2);border-radius:5px;padding:5px 8px;color:#f8fafc;font-size:11px;font-family:"SF Mono",monospace}
+.drawer-demo .submit{margin-top:10px;width:100%;padding:10px;background:linear-gradient(135deg,#ef4444,#f59e0b);color:#fff;font-size:12px;font-weight:900;border-radius:7px;border:none;cursor:pointer}
+
+/* compare table */
+.compare{margin-top:24px;background:rgba(15,23,42,.5);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:16px 22px}
+.compare h3{font-size:13px;font-weight:900;color:#f8fafc;margin-bottom:10px}
+.compare table{width:100%;font-size:11px;border-collapse:collapse}
+.compare th{text-align:left;color:#94a3b8;font-weight:800;padding:7px 10px;border-bottom:1px solid rgba(148,163,184,.15);font-size:10px;letter-spacing:.04em;text-transform:uppercase;background:rgba(15,23,42,.6)}
+.compare td{padding:6px 10px;border-bottom:1px dashed rgba(148,163,184,.08);color:#cbd5e1}
+.compare td.k{color:#94a3b8;width:30%}
+.compare .yes{color:#86efac;font-weight:700}
+.compare .no{color:#475569}
+.compare .partial{color:#fcd34d;font-weight:700}
+
+/* mobile preview */
+.mobile-pv{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:14px}
+.mobile-frame{background:#0a0e1a;border:1px solid rgba(148,163,184,.15);border-radius:18px;overflow:hidden;width:100%;max-width:300px;margin:0 auto}
+.mobile-content{padding:12px}
+.mobile-bar{display:flex;background:rgba(2,6,23,.8);border-top:1px solid rgba(148,163,184,.1);padding:6px 0}
+.mb-item{flex:1;padding:8px 4px;text-align:center;font-size:9.5px;color:#64748b;font-weight:700;cursor:pointer}
+.mb-item.active{color:#7dd3fc}
+.mb-item .ic{font-size:18px;display:block;margin-bottom:2px}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="h1">Partner Workbench v1 · COSCO ↔ 青岛报关行</div>
+  <div class="sub">同一套外壳 · 4 导航统一 · 卡片按 capability 渲染 · 单/多能力合作方看到完全不同界面</div>
+
+  <div class="banner">
+    <b>核心：</b>4 导航 (<code>首页/任务/订单/账单</code>) 跟工厂端统一 · 卡片按 capability 渲染,不按公司名写死<br>
+    <b>本图：</b>左 COSCO (5 能力 ocean/customs/trucking/insurance/ddp) · 右 青岛报关行 (1 能力 customs)
+  </div>
+
+  <!-- ━━━━━━━━━━ 双视角对照 ━━━━━━━━━━ -->
+  <h2 class="section">🎬 同一系统 · 两种合作方视角</h2>
+
+  <div class="dual">
+
+    <!-- ─── COSCO ─── -->
+    <div class="portal">
+      <div class="nav-bar">
+        <div class="nav-item active"><span class="ic">🏠</span>首页</div>
+        <div class="nav-item"><span class="ic">✅</span>任务<span class="badge">8</span></div>
+        <div class="nav-item"><span class="ic">📦</span>订单</div>
+        <div class="nav-item"><span class="ic">💰</span>账单</div>
+      </div>
+
+      <!-- 身份区 -->
+      <div class="welcome cosco">
+        <div class="av">CO</div>
+        <div class="col">
+          <div class="nm"><span class="greet">Welcome back,</span> COSCO 中远海运</div>
+          <div class="role-tags">
+            <span class="role-tag tag-ocean">Ocean Partner</span>
+            <span class="role-tag tag-customs">Customs</span>
+            <span class="role-tag tag-trucking">Trucking</span>
+            <span class="role-tag tag-insurance">Insurance</span>
+            <span class="role-tag tag-ddp">DDP</span>
+          </div>
+          <span class="verified">✓ 已认证合作伙伴 · 5 项能力</span>
+        </div>
+        <div class="stat">
+          <span class="num">12</span>
+          可接 RFQ
+        </div>
+      </div>
+
+      <!-- 任务条 -->
+      <div class="task-bar">
+        <div class="task-card urgent"><span class="num">3</span><div class="lbl">待处理</div></div>
+        <div class="task-card due"><span class="num">2</span><div class="lbl">今日截止</div></div>
+        <div class="task-card"><span class="num">1</span><div class="lbl">异常</div></div>
+        <div class="task-card"><span class="num">+6</span><div class="lbl">更多</div></div>
+      </div>
+
+      <div class="body">
+
+        <!-- 我的订单 -->
+        <h4>📦 我负责的订单 <span class="count">5</span><span class="stat">本月命中 14 单</span></h4>
+
+        <div class="state-card">
+          <span class="state-tag ocean">🚢 海运</span>
+          <div>
+            <div class="id">SO-2604-001</div>
+            <div class="meta">CNTSN → USLGB · 3×40HQ · ETA Jun 8</div>
+          </div>
+          <div class="route">vessel COSCO ROSE</div>
+          <button class="next-btn">→ MBL</button>
+        </div>
+
+        <div class="state-card">
+          <span class="state-tag customs">🛂 报关</span>
+          <div>
+            <div class="id">SO-2604-005</div>
+            <div class="meta">CNNGB → DEHAM · 2×40HQ · 申报中</div>
+          </div>
+          <div class="route">查验中</div>
+          <button class="next-btn">→ 跟进</button>
+        </div>
+
+        <div class="state-card">
+          <span class="state-tag loading">🚚 拖车</span>
+          <div>
+            <div class="id">SO-2604-008</div>
+            <div class="meta">3×40HQ · 司机已派 · 装柜中</div>
+          </div>
+          <div class="route">闽D-***</div>
+          <button class="next-btn">→ 上传封条</button>
+        </div>
+
+        <!-- 报价机会 -->
+        <h4 style="margin-top:18px">💹 报价机会 <span class="count">3</span></h4>
+
+        <!-- capability 筛选 -->
+        <div class="cap-filter">
+          <span class="cap-pill active">全部</span>
+          <span class="cap-pill">海运</span>
+          <span class="cap-pill">报关</span>
+          <span class="cap-pill">拖车</span>
+          <span class="cap-pill">保险</span>
+          <span class="cap-pill">DDP</span>
+        </div>
+
+        <!-- COSCO 看到的报价小卡 -->
+        <div class="quote-card hot">
+          <div class="qc-1">
+            <span class="id">HOT-2604-A</span>
+            <span class="type hot">🔥 HOT</span>
+            <span class="countdown">38 min</span>
+          </div>
+          <div class="qc-2">
+            <div class="route">CNTSN → USLGB</div>
+            <div class="meta">3×40HQ · 食品 · ETD May 8</div>
+          </div>
+          <div class="qc-3">
+            <div class="price-row"><span class="ct">20GP</span><span class="price">USD 1,200</span></div>
+            <div class="price-row"><span class="ct">40HQ</span><span class="price">USD 2,480</span></div>
+            <div class="price-row"><span class="ct">40HC</span><span class="price">USD 2,480</span></div>
+            <div class="ports"><span class="lbl">港杂:</span>THC included · Doc USD 50</div>
+            <div class="caps">
+              <span class="cap-chip">报关 ✓</span>
+              <span class="cap-chip">拖车 ✓</span>
+              <span class="cap-chip">保险 ✓</span>
+              <span class="cap-chip">DDP ✓</span>
+            </div>
+          </div>
+          <div class="qc-4">
+            <span class="others">3 家在抢</span>
+            <span class="me">我未报价</span>
+          </div>
+          <div class="qc-5">
+            <button class="grab">⚡ 立即报价</button>
+            <button class="detail">详情</button>
+          </div>
+        </div>
+
+        <div class="quote-card">
+          <div class="qc-1">
+            <span class="id">RFQ-2604-019</span>
+            <span class="type rfq">RFQ</span>
+            <span class="countdown" style="background:rgba(56,189,248,.12);color:#7dd3fc;border-color:rgba(56,189,248,.3)">截止 1d</span>
+          </div>
+          <div class="qc-2">
+            <div class="route">CNNGB → DEHAM</div>
+            <div class="meta">2×40HQ · 食品 · ETD May 2</div>
+          </div>
+          <div class="qc-3">
+            <div class="price-row"><span class="ct">40HQ</span><span style="color:#64748b">— 待我报</span></div>
+            <div class="caps">
+              <span class="cap-chip">报关 ✓</span>
+              <span class="cap-chip">拖车 ✓</span>
+              <span class="cap-chip no">保险 ✗</span>
+              <span class="cap-chip">DDP ✓</span>
+            </div>
+          </div>
+          <div class="qc-4"><span class="others">2 家在报</span><span class="me">我未报价</span></div>
+          <div class="qc-5">
+            <button class="grab normal">📤 提交报价</button>
+            <button class="detail">详情</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ─── 青岛报关行 ─── -->
+    <div class="portal">
+      <div class="nav-bar">
+        <div class="nav-item active"><span class="ic">🏠</span>首页</div>
+        <div class="nav-item"><span class="ic">✅</span>任务<span class="badge">3</span></div>
+        <div class="nav-item"><span class="ic">📦</span>订单</div>
+        <div class="nav-item"><span class="ic">💰</span>账单</div>
+      </div>
+
+      <!-- 身份区 -->
+      <div class="welcome broker">
+        <div class="av">QD</div>
+        <div class="col">
+          <div class="nm"><span class="greet">Welcome back,</span> 青岛报关行</div>
+          <div class="role-tags">
+            <span class="role-tag tag-customs">Customs Broker</span>
+          </div>
+          <span class="verified">✓ 已认证报关合作方 · AEO 一般</span>
+        </div>
+        <div class="stat">
+          <span class="num">5</span>
+          可接 RFQ
+        </div>
+      </div>
+
+      <!-- 任务条 -->
+      <div class="task-bar">
+        <div class="task-card urgent"><span class="num">2</span><div class="lbl">待申报</div></div>
+        <div class="task-card due"><span class="num">1</span><div class="lbl">查验中</div></div>
+        <div class="task-card"><span class="num">0</span><div class="lbl">异常</div></div>
+        <div class="task-card"><span class="num">+3</span><div class="lbl">更多</div></div>
+      </div>
+
+      <div class="body">
+
+        <!-- 我负责的订单(只显示报关相关阶段) -->
+        <h4>📦 我负责的订单 <span class="count">4</span><span class="stat">本月放行 18 单</span></h4>
+
+        <div class="state-card">
+          <span class="state-tag customs">📋 待申报</span>
+          <div>
+            <div class="id">F-218</div>
+            <div class="meta">PBTDP-2025... · 装柜照已齐</div>
+          </div>
+          <div class="route">CNTAO 出口</div>
+          <button class="next-btn">→ 申报</button>
+        </div>
+
+        <div class="state-card">
+          <span class="state-tag customs">🔍 查验中</span>
+          <div>
+            <div class="id">F-220</div>
+            <div class="meta">x-ray 抽查 · 12h 前</div>
+          </div>
+          <div class="route">等放行</div>
+          <button class="next-btn">→ 跟进</button>
+        </div>
+
+        <div class="state-card">
+          <span class="state-tag customs">✅ 待放行</span>
+          <div>
+            <div class="id">F-215</div>
+            <div class="meta">查验完毕 · 等海关放行</div>
+          </div>
+          <div class="route">2h 内放行</div>
+          <button class="next-btn">→ 上传通知</button>
+        </div>
+
+        <!-- 报价机会(只显示报关) -->
+        <h4 style="margin-top:18px">💹 报价机会 <span class="count">2</span></h4>
+
+        <!-- capability 筛选 (只显示报关一项,因为只有这能力) -->
+        <div class="cap-filter">
+          <span class="cap-pill active">报关</span>
+        </div>
+
+        <!-- 青岛报关行的报价小卡 -->
+        <div class="quote-card">
+          <div class="qc-1">
+            <span class="id">RFQ-2604-021</span>
+            <span class="type rfq">RFQ</span>
+            <span class="countdown" style="background:rgba(56,189,248,.12);color:#7dd3fc;border-color:rgba(56,189,248,.3)">截止 4h</span>
+          </div>
+          <div class="qc-2">
+            <div class="route">CNTAO 出口报关</div>
+            <div class="meta">3×40HQ · 食品 · ETD May 8</div>
+          </div>
+          <div class="qc-3">
+            <div class="price-row" style="font-size:12px">
+              <span class="ct">按票</span>
+              <span style="color:#64748b">RMB</span>
+              <span class="price">_____</span>
+              <span style="color:#64748b;font-size:10px">/ 票</span>
+            </div>
+            <div class="caps">
+              <span class="cap-chip">查验处理 ✓</span>
+              <span class="cap-chip">放行跟进 ✓</span>
+              <span class="cap-chip">退税 ✓</span>
+              <span class="cap-chip">食品 ✓</span>
+            </div>
+          </div>
+          <div class="qc-4"><span class="others">1 家在报</span><span class="me">我未报价</span></div>
+          <div class="qc-5">
+            <button class="grab normal">📤 提交报价</button>
+            <button class="detail">详情</button>
+          </div>
+        </div>
+
+        <div class="quote-card">
+          <div class="qc-1">
+            <span class="id">RFQ-2604-022</span>
+            <span class="type rfq">RFQ</span>
+            <span class="countdown" style="background:rgba(56,189,248,.12);color:#7dd3fc;border-color:rgba(56,189,248,.3)">截止 2d</span>
+          </div>
+          <div class="qc-2">
+            <div class="route">CNTAO 进口报关</div>
+            <div class="meta">2×20GP · 化工品 · 已到港</div>
+          </div>
+          <div class="qc-3">
+            <div class="price-row" style="font-size:12px">
+              <span class="ct">按票</span>
+              <span style="color:#64748b">RMB</span>
+              <span class="price">_____</span>
+              <span style="color:#64748b;font-size:10px">/ 票</span>
+            </div>
+            <div class="caps">
+              <span class="cap-chip">化工品 ✓</span>
+              <span class="cap-chip">危险品 ✗</span>
+            </div>
+          </div>
+          <div class="qc-4"><span class="others">3 家在报</span><span class="me">我未报价</span></div>
+          <div class="qc-5">
+            <button class="grab normal">📤 提交报价</button>
+            <button class="detail">详情</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ━━━━━━━━━━ 抽屉展开示例 ━━━━━━━━━━ -->
+  <h2 class="section">📋 抽屉展开 · 结构化报价 (点 [立即报价] 后弹出)</h2>
+
+  <div class="dual">
+    <div class="drawer-demo">
+      <h3>COSCO (多能力) · HOT-2604-A 完整报价</h3>
+
+      <div class="grp">
+        <h5><span class="ic">🚢</span>海运费</h5>
+        <div class="field"><label>20GP</label><input type="number" value="1200" /></div>
+        <div class="field"><label>40HQ</label><input type="number" value="2480" /></div>
+        <div class="field"><label>40HC</label><input type="number" value="2480" /></div>
+      </div>
+
+      <div class="grp">
+        <h5><span class="ic">⚓</span>本地费 / 港杂</h5>
+        <div class="field"><label>THC</label><input type="number" value="280" /></div>
+        <div class="field"><label>Doc fee</label><input type="number" value="50" /></div>
+        <div class="field"><label>AMS/ENS</label><input type="number" value="35" /></div>
+      </div>
+
+      <div class="grp">
+        <h5><span class="ic">⚙</span>附加服务 (按 capability)</h5>
+        <div class="field"><label>报关费</label><input type="number" value="350" /></div>
+        <div class="field"><label>拖车费</label><input type="number" value="800" /></div>
+        <div class="field"><label>保险费</label><input type="number" value="120" /></div>
+        <div class="field"><label>DDP 费</label><input type="number" value="1200" /></div>
+      </div>
+
+      <div class="grp">
+        <h5><span class="ic">🚢</span>船司 / 航程</h5>
+        <div class="field"><label>Carrier</label><select><option>COSCO</option></select></div>
+        <div class="field"><label>Transit</label><input type="number" value="23" /></div>
+        <div class="field"><label>ETD</label><input type="date" value="2026-05-07" /></div>
+        <div class="field"><label>有效期</label><input type="date" value="2026-05-12" /></div>
+      </div>
+
+      <button class="submit">⚡ 立即抢单 · 提交结构化报价</button>
+    </div>
+
+    <div class="drawer-demo">
+      <h3>青岛报关行 (单能力) · RFQ-2604-021 完整报价</h3>
+
+      <div class="grp">
+        <h5><span class="ic">🛂</span>报关费</h5>
+        <div class="field"><label>按票</label><input type="number" value="320" /></div>
+        <div class="field"><label>加急</label><input type="number" value="150" /></div>
+      </div>
+
+      <div class="grp">
+        <h5><span class="ic">⚙</span>附加服务</h5>
+        <div class="field"><label>查验处理</label><input type="number" value="200" /></div>
+        <div class="field"><label>放行跟进</label><input type="number" value="0" /></div>
+        <div class="field"><label>退税</label><input type="number" value="500" /></div>
+      </div>
+
+      <div class="grp">
+        <h5><span class="ic">📋</span>申报范围</h5>
+        <div class="field"><label>食品</label><select><option>✓ 可接</option></select></div>
+        <div class="field"><label>化工</label><select><option>✓ 可接</option></select></div>
+        <div class="field"><label>危险品</label><select><option>✗ 不接</option></select></div>
+      </div>
+
+      <div class="grp">
+        <h5><span class="ic">📅</span>时效 / 有效期</h5>
+        <div class="field"><label>普通</label><input type="text" value="1d" /></div>
+        <div class="field"><label>加急</label><input type="text" value="2h" /></div>
+        <div class="field"><label>有效期</label><input type="date" value="2026-05-30" /></div>
+      </div>
+
+      <button class="submit">📤 提交报价</button>
+    </div>
+  </div>
+
+  <!-- ━━━━━━━━━━ 关键差异对比表 ━━━━━━━━━━ -->
+  <div class="compare">
+    <h3>关键差异 · COSCO vs 青岛报关行</h3>
+    <table>
+      <thead>
+        <tr><th>元素</th><th>COSCO (5 能力)</th><th>青岛报关行 (1 能力)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="k">capability tags</td><td class="yes">5 个 (Ocean/Customs/Trucking/Insurance/DDP)</td><td class="partial">1 个 (Customs)</td></tr>
+        <tr><td class="k">订单卡 stage 类型</td><td>海运/报关/拖车/保险/DDP</td><td>报关相关 4 阶段</td></tr>
+        <tr><td class="k">报价小卡主价</td><td class="yes">3 行 (20GP/40HQ/40HC)</td><td class="partial">单行 (按票)</td></tr>
+        <tr><td class="k">货币</td><td>USD</td><td>RMB</td></tr>
+        <tr><td class="k">港杂费摘要</td><td class="yes">显示 (THC/Doc)</td><td class="no">不显示 (报关行没有)</td></tr>
+        <tr><td class="k">附加能力 chip</td><td class="yes">4 个 (报关/拖车/保险/DDP)</td><td class="partial">2 个 (查验/放行 自身能力)</td></tr>
+        <tr><td class="k">capability 筛选条</td><td class="yes">6 个 pill</td><td class="partial">1 个 (报关)</td></tr>
+        <tr><td class="k">能否抢 HOT</td><td class="yes">能</td><td class="partial">仅报关 HOT</td></tr>
+        <tr><td class="k">看不到</td><td>客户名 / 客户成交价 / 其他货代价</td><td>客户名 / 海运报价 / 其他报关行价</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ━━━━━━━━━━ 移动端预览 ━━━━━━━━━━ -->
+  <h2 class="section">📱 移动端 · 底部 fixed bar</h2>
+
+  <div class="mobile-pv">
+
+    <div class="mobile-frame">
+      <div class="welcome cosco" style="padding:10px 12px;font-size:11px">
+        <div class="av" style="width:36px;height:36px;font-size:11px">CO</div>
+        <div class="col">
+          <div class="nm" style="font-size:12.5px"><span class="greet">Hi,</span> COSCO</div>
+          <div class="role-tags" style="margin-top:4px">
+            <span class="role-tag tag-ocean" style="font-size:8px">Ocean</span>
+            <span class="role-tag tag-customs" style="font-size:8px">+4</span>
+          </div>
+        </div>
+      </div>
+      <div class="mobile-content">
+        <div class="quote-card hot">
+          <div class="qc-1">
+            <span class="id">HOT-A</span>
+            <span class="type hot">🔥</span>
+            <span class="countdown">38m</span>
+          </div>
+          <div class="qc-2">
+            <div class="route" style="font-size:12px">CNTSN → USLGB</div>
+            <div class="meta" style="font-size:9px">3×40HQ · ETD May 8</div>
+          </div>
+          <div class="qc-3" style="padding:6px 10px">
+            <div class="price-row" style="font-size:11px"><span class="ct">40HQ</span><span class="price">USD 2,480</span></div>
+            <div class="caps">
+              <span class="cap-chip">报关✓</span>
+              <span class="cap-chip">DDP✓</span>
+              <span class="cap-chip">+2</span>
+            </div>
+          </div>
+          <div class="qc-5">
+            <button class="grab" style="font-size:10px">⚡ 立即报价</button>
+          </div>
+        </div>
+      </div>
+      <div class="mobile-bar">
+        <div class="mb-item active"><span class="ic">🏠</span>首页</div>
+        <div class="mb-item"><span class="ic">✅</span>任务</div>
+        <div class="mb-item"><span class="ic">📦</span>订单</div>
+        <div class="mb-item"><span class="ic">💰</span>账单</div>
+      </div>
+    </div>
+
+    <div class="mobile-frame">
+      <div class="welcome broker" style="padding:10px 12px;font-size:11px">
+        <div class="av" style="width:36px;height:36px;font-size:11px">QD</div>
+        <div class="col">
+          <div class="nm" style="font-size:12.5px"><span class="greet">Hi,</span> 青岛报关行</div>
+          <div class="role-tags" style="margin-top:4px">
+            <span class="role-tag tag-customs" style="font-size:8px">Customs</span>
+          </div>
+        </div>
+      </div>
+      <div class="mobile-content">
+        <div class="quote-card">
+          <div class="qc-1">
+            <span class="id">RFQ-021</span>
+            <span class="type rfq">RFQ</span>
+            <span class="countdown" style="background:rgba(56,189,248,.12);color:#7dd3fc;border-color:rgba(56,189,248,.3)">4h</span>
+          </div>
+          <div class="qc-2">
+            <div class="route" style="font-size:12px">CNTAO 出口报关</div>
+            <div class="meta" style="font-size:9px">3×40HQ · 食品</div>
+          </div>
+          <div class="qc-3" style="padding:6px 10px">
+            <div class="price-row" style="font-size:11px"><span class="ct">按票</span><span style="color:#64748b">RMB ___</span></div>
+            <div class="caps">
+              <span class="cap-chip">查验✓</span>
+              <span class="cap-chip">放行✓</span>
+            </div>
+          </div>
+          <div class="qc-5">
+            <button class="grab normal" style="font-size:10px">📤 提交报价</button>
+          </div>
+        </div>
+      </div>
+      <div class="mobile-bar">
+        <div class="mb-item active"><span class="ic">🏠</span>首页</div>
+        <div class="mb-item"><span class="ic">✅</span>任务</div>
+        <div class="mb-item"><span class="ic">📦</span>订单</div>
+        <div class="mb-item"><span class="ic">💰</span>账单</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ━━━━━━━━━━ 收尾说明 ━━━━━━━━━━ -->
+  <div class="banner" style="margin-top:24px;background:rgba(167,139,250,.04)">
+    <b>架构总结</b><br>
+    1. 4 导航统一 (首页/任务/订单/账单),跟工厂端同壳<br>
+    2. 卡片按 capability 渲染,不写死公司名<br>
+    3. 报价中心**不是一级导航**,作为入口嵌入首页/订单<br>
+    4. 主卡只显主价 + 附加能力 chip,详细在抽屉<br>
+    5. 单能力合作方:筛选条收起,只见自己能力的内容<br>
+    6. 移动端底部 fixed bar (4 图标),不复用桌面顶部<br>
+    7. 同一 RFQ 不同 capability 看到完全不同的卡<br><br>
+    <b>视觉对照已存:</b> <code>~/Desktop/Sanlyn/templates/partner-workbench-v1.html</code><br>
+    <b>规范锁版:</b> <code>~/Desktop/Sanlyn-OS/docs/architecture/PARTNER-WORKBENCH-v1.md</code>
+  </div>
+
+</div>
+</body>
+</html>

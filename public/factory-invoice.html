@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工厂开票门户</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f8;color:#18212f;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}.wrap{max-width:1120px;margin:0 auto;padding:22px 14px 56px}.top{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:14px}.brand{font-size:22px;font-weight:800}.sub{font-size:13px;color:#667085;margin-top:4px}.tag{border:1px solid #cfd8e3;background:#fff;border-radius:6px;padding:7px 10px;font-size:13px}.card{background:#fff;border:1px solid #d9e0e8;border-radius:8px;margin:14px 0;padding:14px;box-shadow:0 1px 2px rgba(16,24,40,.04)}.empty{text-align:center;padding:42px 12px;color:#667085}.invoice{border:2px solid #b91c1c;padding:14px;color:#6b1d1d;background:#fffdfb}.invTitle{text-align:center;font-size:24px;font-weight:800;color:#9f1239;letter-spacing:0;margin:4px 0 14px}.meta{display:flex;justify-content:space-between;color:#7f1d1d;font-size:13px;margin-bottom:8px}.banner{border-radius:6px;padding:10px 12px;margin:10px 0;font-weight:700}.red{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}.orange{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}.party{display:grid;grid-template-columns:84px 1fr;border:1px solid #efb5b5;border-bottom:0;min-height:92px}.party:last-of-type{border-bottom:1px solid #efb5b5}.pLabel{display:flex;align-items:center;justify-content:center;border-right:1px solid #efb5b5;color:#9f1239;font-weight:800}.pGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;padding:10px 12px}.field{font-size:14px}.field b{font-weight:700;color:#4b1111}.small{font-size:12px;color:#7f1d1d}.tableBox{overflow:auto;border-left:1px solid #efb5b5;border-right:1px solid #efb5b5}table{width:100%;border-collapse:collapse;min-width:780px}th,td{border-bottom:1px solid #efb5b5;border-right:1px solid #f3caca;padding:8px 9px;font-size:13px;text-align:left}th:last-child,td:last-child{border-right:0}th{color:#9f1239;background:#fff7f7;text-align:center;font-weight:800}.num{text-align:right;font-variant-numeric:tabular-nums}.sum{display:grid;grid-template-columns:1fr 160px 160px;border:1px solid #efb5b5;border-top:0}.sum div{padding:9px;border-right:1px solid #efb5b5}.sum div:last-child{border-right:0}.grand{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid #efb5b5;border-top:0;padding:10px 12px;font-size:15px}.money{font-size:20px;font-weight:900;color:#991b1b}.btn{border:1px solid #cbd5e1;background:#fff;color:#1f2937;border-radius:6px;padding:8px 11px;cursor:pointer;font-weight:700}.primary{border:0;background:#1d4ed8;color:#fff}.btn:disabled{opacity:.5;cursor:not-allowed}.upload{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}.upload input{border:1px solid #cbd5e1;border-radius:6px;padding:8px;background:#fff}.status{margin-top:8px;font-size:13px;color:#475467}.ok{color:#15803d}.err{color:#b91c1c}.uploaded{display:grid;gap:8px}.uprow{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #e6ebf2;padding-top:8px;font-size:13px}@media(max-width:760px){.top,.meta,.grand{display:block}.pGrid{grid-template-columns:1fr}.sum{grid-template-columns:1fr}.upload{display:grid}.upload input,.btn{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="brand">SANLYN 工厂开票门户</div><div class="sub" id="factory">加载中...</div></div><div class="tag">增值税专用发票模板</div></div>
+  <div id="msg" class="card empty">正在读取待开发票...</div>
+  <div id="app" style="display:none"></div>
+</div>
+<script>
+const qs=new URLSearchParams(location.search),CODE=qs.get("c")||"",MT=qs.get("mt")||"",API="/api/db/factory-portal";
+let DATA=null;
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const money=n=>(Number(n)||0).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const qty=n=>(Number(n)||0).toLocaleString("zh-CN",{maximumFractionDigits:3});
+const rate=n=>Number(n||0).toLocaleString("zh-CN",{style:"percent",maximumFractionDigits:0});
+function q(){return MT?"mt="+encodeURIComponent(MT):"c="+encodeURIComponent(CODE)}
+function show(t,cls=""){ $("msg").className="card empty "+cls;$("msg").style.display="";$("msg").textContent=t;$("app").style.display="none" }
+async function load(){
+  if(!CODE&&!MT)return show("链接缺少参数，请联系我司重新发送。","err");
+  try{const r=await fetch(API+"?"+q()),d=await r.json();if(!r.ok)throw new Error(d.error||"链接无效或已过期");DATA=d;$("factory").textContent=(d.factory?.name||d.factory?.code||"工厂")+" · 待开发票";render()}
+  catch(e){show(e.message||"网络错误，请稍后重试。","err")}
+}
+function render(){
+  const gaps=DATA.gaps||[],ups=DATA.uploaded||[];$("msg").style.display="none";$("app").style.display="";
+  $("app").innerHTML=(gaps.length?gaps.map(renderGap).join(""):'<div class="card empty ok">暂无待开发票</div>')+renderUploaded(ups);
+}
+function party(label,rows){
+  return `<div class="party"><div class="pLabel">${label}</div><div class="pGrid">${rows.map(r=>`<div class="field"><b>${r[0]}：</b>${esc(r[1]||"")}</div>`).join("")}</div></div>`;
+}
+function renderGap(g,i){
+  const lines=g.invoice_lines||[],buyer=g.buyer||{},seller=g.seller||{},total=Number(g.total_incl??g.amount_incl_tax)||0;
+  const ex=Number(g.amount_ex)||lines.reduce((s,l)=>s+Number(l.subtotal_ex||0),0),tax=Number(g.tax_amount)||lines.reduce((s,l)=>s+Number(l.tax_amount||0),0);
+  const miss=g.buyer_missing||g.seller_missing,missText=[g.buyer_missing?"购买方":"",g.seller_missing?"销售方":""].filter(Boolean).join("/");
+  const rows=lines.map(l=>`<tr><td>${esc(l.goods_name)}</td><td style="text-align:center">${esc(l.unit||"包")}</td><td class="num">${qty(l.qty_bags)}</td><td class="num">${Number(l.unit_price_ex||0).toFixed(10).replace(/0+$/,"").replace(/\.$/,"")}</td><td class="num">${money(l.subtotal_ex)}</td><td class="num">${rate(l.tax_rate)}</td><td class="num">${money(l.tax_amount)}</td></tr>`).join("");
+  return `<div class="card" data-i="${i}">${miss?`<div class="banner red">⚠️ ${missText}开票信息未维护，暂不能开票，请联系我司</div>`:""}<div class="invoice"><div class="invTitle">增值税专用发票（开票模板）</div><div class="meta"><span>合同号：${esc(g.contract_no||"-")}</span><span>报关单：${esc(g.customs_no||"-")}</span></div>${party("购买方",[["名称",buyer.name],["统一社会信用代码/纳税人识别号",buyer.tax_id],["地址",buyer.address]])}<div class="tableBox"><table><thead><tr><th>项目名称</th><th>单位</th><th>数量</th><th>单价(不含税)</th><th>金额(不含税)</th><th>税率</th><th>税额</th></tr></thead><tbody>${rows||'<tr><td colspan="7">暂无明细，请联系我司确认。</td></tr>'}</tbody></table></div><div class="sum"><div>合计</div><div class="num">¥${money(ex)}</div><div class="num">¥${money(tax)}</div></div><div class="grand"><div>价税合计（小写） <span class="money">¥${money(total)}</span></div><button class="btn" onclick="copyTotal(${i})">复制金额</button></div>${party("销售方",[["名称",seller.name],["税号",seller.tax_id],["地址",seller.address],["开户行/账号",(seller.bank_name||"")+(seller.bank_account?" / "+seller.bank_account:"")]])}</div><div class="upload"><input id="file${i}" type="file" accept=".pdf,image/*" ${miss?"disabled":""}><button class="btn primary" onclick="upload(${i})" ${miss?"disabled":""}>上传发票</button></div><div id="st${i}" class="status"></div></div>`;
+}
+function renderUploaded(ups){
+  if(!ups.length)return "";
+  return `<div class="card"><b>已上传发票</b><div class="uploaded">${ups.map(u=>`<div class="uprow"><span>${esc(u.invoice_no)} · ${esc((u.contract_nos||[]).join(","))} · ${esc(u.review_status)}</span><b>¥${money(u.amount_incl_tax)}</b></div>`).join("")}</div></div>`;
+}
+async function copyTotal(i){const g=DATA.gaps[i],total=Number(g.total_incl??g.amount_incl_tax)||0;await navigator.clipboard.writeText(total.toFixed(2));$("st"+i).textContent="金额已复制"}
+async function upload(i){
+  const g=DATA.gaps[i],f=$("file"+i).files[0],st=$("st"+i);if(g.buyer_missing||g.seller_missing){st.textContent="开票信息未维护，暂不能上传";st.className="status err";return}
+  if(!f){st.textContent="请选择发票文件";st.className="status err";return}
+  const fd=new FormData();fd.append("file",f);fd.append("contract_no",g.contract_no||"");fd.append("customs_no",g.customs_no||"");
+  st.textContent="识别中...";st.className="status";
+  try{const r=await fetch(API+"?action=upload&"+q(),{method:"POST",body:fd}),d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||"上传失败");st.className="status "+(d.warning?"err":"ok");st.innerHTML=`识别结果：发票号 ${esc(d.invoice_no||"-")}，金额 ¥${money(d.amount_incl_tax)}，状态 ${esc(d.review_status||"-")}${d.warning?"；"+esc(d.warning):""}`}
+  catch(e){st.textContent=e.message||"上传失败";st.className="status err"}
+}
+load();
+</script>
+</body>
+</html>

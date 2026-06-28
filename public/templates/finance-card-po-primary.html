@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Finance Card v4 · All Variants</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #060d1a; font-family: -apple-system,'SF Pro Display',sans-serif; padding: 28px 20px; color: #f1f5f9; }
+h3 { font-size: 10px; color: #334155; letter-spacing: .08em; text-transform: uppercase; margin: 24px 0 10px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; max-width: 1200px; }
+
+/* ── shell ── */
+.card { border-radius: 12px; overflow: hidden; cursor: pointer; background: #0B1120;
+  display: flex; flex-direction: column; transition: transform .15s, border-color .15s;
+  border: 1px solid rgba(109,40,217,0.28); }
+.card:hover { transform: translateY(-2px); border-color: rgba(139,92,246,0.5); }
+.card.ocean   { border-color: rgba(56,189,248,0.22); }
+.card.partial { border-color: rgba(245,158,11,0.28); }
+.card.paid    { border-color: rgba(16,185,129,0.2); }
+.card.overdue { border-color: rgba(239,68,68,0.38); }
+
+/* alert */
+.alert { padding: 6px 12px; display: flex; align-items: center; position: relative; min-height: 32px;
+  background: rgba(139,92,246,0.09); border-bottom: 1px solid rgba(109,40,217,0.18); }
+.alert.ocean   { background: rgba(56,189,248,0.07);  border-color: rgba(56,189,248,0.18); }
+.alert.partial { background: rgba(245,158,11,0.08);  border-color: rgba(245,158,11,0.18); }
+.alert.paid    { background: rgba(16,185,129,0.08);  border-color: rgba(16,185,129,0.18); }
+.alert.overdue { background: rgba(239,68,68,0.10);   border-color: rgba(239,68,68,0.25); }
+.al { font-size: 10.5px; font-weight: 800; }
+.al.u { color: #a78bfa; } .al.o { color: #7dd3fc; } .al.p { color: #fcd34d; }
+.al.d { color: #34d399; } .al.r { color: #f87171; }
+.bl-chip { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  font-size: 9px; font-weight: 800; color: #7dd3fc; background: rgba(15,23,42,0.9);
+  border: 1px solid rgba(56,189,248,0.4); border-radius: 4px; padding: 2px 6px;
+  letter-spacing: .04em; font-family: 'SF Mono', monospace; }
+
+/* lang toggle */
+.lang-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  display: flex; gap: 2px; }
+.lang-btn { font-size: 9px; font-weight: 800; padding: 2px 5px; border-radius: 3px;
+  cursor: pointer; border: 1px solid transparent; }
+.lang-btn.active { background: rgba(56,189,248,0.2); color: #7dd3fc; border-color: rgba(56,189,248,0.4); }
+.lang-btn.idle   { color: #334155; }
+
+/* body */
+.body { padding: 10px 12px 0; display: flex; flex-direction: column; gap: 7px; }
+
+/* chips */
+.chips { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.chip { font-size: 9.5px; font-weight: 800; border-radius: 4px; padding: 2px 6px; letter-spacing: .04em; white-space: nowrap; }
+.chip.cargo  { color: #fcd34d; background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.22); }
+.chip.ocean  { color: #7dd3fc; background: rgba(56,189,248,0.10); border: 1px solid rgba(56,189,248,0.22); }
+.chip.inco   { color: #fbbf24; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.22); }
+.chip.term   { color: #c4b5fd; background: rgba(109,40,217,0.12); border: 1px solid rgba(139,92,246,0.25); font-weight: 700; }
+
+/* ── Identity: 3 rows ── */
+.identity { display: flex; flex-direction: column; gap: 1px; }
+.po   { font-size: 15px; font-weight: 900; color: #f8fafc; letter-spacing: .01em; font-family: 'SF Mono', monospace; }
+.cat3 { font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: .01em; }
+.fs   { font-size: 10px; color: #2d3f52; font-family: 'SF Mono', monospace; margin-top: 1px; }
+
+/* cargo line */
+.cargo-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  font-family: 'SF Mono', monospace; font-size: 10.5px; color: #94a3b8; }
+.ctn-chip { font-size: 10px; font-weight: 700; color: #93c5fd;
+  background: rgba(59,130,246,0.10); border: 1px solid rgba(59,130,246,0.22);
+  border-radius: 4px; padding: 2px 7px; }
+.sep { color: #1e293b; } .v { color: #cbd5e1; font-weight: 700; }
+
+/* route line (ocean) */
+.route-line { font-size: 10.5px; color: #94a3b8; font-family: 'SF Mono', monospace; }
+.route-v    { color: #7dd3fc; font-weight: 700; }
+
+/* ── Amount block ── */
+.amt-block { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; }
+.amt-total { font-size: 16px; font-weight: 900; font-family: 'SF Mono', monospace; }
+.amt-cur   { font-size: 11px; color: #64748b; font-weight: 600; margin-right: 4px; }
+
+/* split rows */
+.split { display: flex; flex-direction: column; gap: 4px; }
+.srow  { display: flex; justify-content: space-between; align-items: center; }
+.slabel { font-size: 10px; color: #64748b; display: flex; align-items: center; gap: 4px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+.dot.g { background: #10b981; } .dot.s { background: #475569; }
+.dot.y { background: #f59e0b; } .dot.r { background: #ef4444; }
+.samt { font-size: 10.5px; font-weight: 700; font-family: 'SF Mono', monospace; }
+.samt.g { color: #34d399; } .samt.s { color: #475569; } .samt.y { color: #fcd34d; } .samt.r { color: #f87171; }
+
+/* due date row */
+.due-row { font-size: 10px; color: #64748b; display: flex; justify-content: space-between; align-items: center; }
+.due-val  { font-family: 'SF Mono', monospace; font-size: 10.5px; font-weight: 700; color: #94a3b8; }
+
+/* progress */
+.prog-wrap { display: flex; align-items: center; gap: 8px; }
+.track { flex: 1; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.06); overflow: hidden; }
+.fill  { height: 100%; border-radius: 2px; }
+.pct   { font-size: 10px; font-family: monospace; white-space: nowrap; color: #475569; }
+
+/* parties */
+.parties { padding: 6px 12px 9px; border-top: 1px solid rgba(255,255,255,0.04);
+  display: flex; flex-direction: column; gap: 1px; }
+.party { font-size: 10px; color: #3d4f63; }
+.party b { color: #94a3b8; font-weight: 700; }
+
+/* cta */
+.cta { margin: 0 12px 12px; padding: 10px; border-radius: 8px; border: none;
+  font-size: 12px; font-weight: 800; color: #fff; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px; letter-spacing: .02em; }
+.cta.cargo   { background: linear-gradient(135deg,#5b21b6,#7c3aed,#a78bfa); }
+.cta.ocean   { background: linear-gradient(135deg,#0369a1,#0ea5e9); }
+.cta.paid    { background: linear-gradient(135deg,#059669,#10b981); }
+.cta.overdue { background: linear-gradient(135deg,#dc2626,#f97316); }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════ -->
+<h3>① Identity: PO · L3品名 · FS — 付款条款完整变体</h3>
+<div class="grid">
+
+<!-- TT 30/70 · Unpaid -->
+<div class="card">
+  <div class="alert"><span class="al u">⚠ Awaiting payment</span></div>
+  <div class="body">
+    <div class="chips">
+      <span class="chip cargo">CARGO INVOICE</span>
+      <span class="chip inco">FOB</span>
+      <span class="chip term">⚡ TT 30/70</span>
+    </div>
+    <div class="identity">
+      <div class="po">XM-247</div>
+      <div class="cat3">猫罐头 · 宠物食品</div>
+      <div class="fs">FS20260220043</div>
+    </div>
+    <div class="cargo-line">
+      <span class="ctn-chip">40hq×1</span>
+      <span class="sep">·</span><span><span class="v">3,089</span> CTN</span>
+      <span class="sep">·</span><span><span class="v">11</span> SKUs</span>
+      <span class="sep">·</span><span><span class="v">14.3</span>t GW</span>
+    </div>
+    <div class="amt-block">
+      <div><span class="amt-cur">CNY</span><span class="amt-total" style="color:#f8fafc">196,049.60</span></div>
+      <div class="split">
+        <div class="srow">
+          <span class="slabel"><span class="dot s"></span>Deposit · 30%</span>
+          <span class="samt s">CNY 58,814.88</span>
+        </div>
+        <div class="srow">
+          <span class="slabel"><span class="dot s"></span>Balance · 70%</span>
+          <span class="samt s">CNY 137,234.72</span>
+        </div>
+      </div>
+      <div class="prog-wrap"><div class="track"></div><span class="pct">0% paid</span></div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">Buyer <b>PETSOME SDN BHD</b></div>
+    <div class="party">Seller <b>XIAMEN PET BABY IMPORT AND EXPORT CO.,LTD</b></div>
+  </div>
+  <button class="cta cargo">💳 Pay Balance →</button>
+</div>
+
+<!-- TT 30/70 · Deposit paid, balance pending -->
+<div class="card partial">
+  <div class="alert partial"><span class="al p">⏳ Partial · awaiting balance</span></div>
+  <div class="body">
+    <div class="chips">
+      <span class="chip cargo">CARGO INVOICE</span>
+      <span class="chip inco">EXW</span>
+      <span class="chip term">⚡ TT 30/70</span>
+    </div>
+    <div class="identity">
+      <div class="po">WP-60</div>
+      <div class="cat3">猫罐头 · 宠物食品</div>
+      <div class="fs">FS20251229059</div>
+    </div>
+    <div class="cargo-line">
+      <span class="ctn-chip">40hq×1</span>
+      <span class="sep">·</span><span><span class="v">2,908</span> CTN</span>
+      <span class="sep">·</span><span><span class="v">13</span> SKUs</span>
+      <span class="sep">·</span><span><span class="v">13.4</span>t GW</span>
+    </div>
+    <div class="amt-block">
+      <div><span class="amt-cur">CNY</span><span class="amt-total" style="color:#f8fafc">185,168.00</span></div>
+      <div class="split">
+        <div class="srow">
+          <span class="slabel"><span class="dot g"></span>Deposit · 30%</span>
+          <span class="samt g">CNY 55,550.40 ✓</span>
+        </div>
+        <div class="srow">
+          <span class="slabel"><span class="dot s"></span>Balance · 70%</span>
+          <span class="samt s">CNY 129,617.60</span>
+        </div>
+      </div>
+      <div class="prog-wrap">
+        <div class="track"><div class="fill" style="width:30%;background:#7c3aed"></div></div>
+        <span class="pct">30% paid</span>
+      </div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">Buyer <b>PETSOME SDN BHD</b></div>
+    <div class="party">Seller <b>XIAMEN PET BABY IMPORT AND EXPORT CO.,LTD</b></div>
+  </div>
+  <button class="cta cargo">💳 Pay Balance →</button>
+</div>
+
+<!-- TT 100% Full advance -->
+<div class="card">
+  <div class="alert"><span class="al u">⚠ Awaiting payment</span></div>
+  <div class="body">
+    <div class="chips">
+      <span class="chip cargo">CARGO INVOICE</span>
+      <span class="chip inco">FOB</span>
+      <span class="chip term">⚡ TT 100% Advance</span>
+    </div>
+    <div class="identity">
+      <div class="po">XM-260</div>
+      <div class="cat3">狗零食 · 宠物食品</div>
+      <div class="fs">FS20260220055</div>
+    </div>
+    <div class="cargo-line">
+      <span class="ctn-chip">40hq×1</span>
+      <span class="sep">·</span><span><span class="v">1,920</span> CTN</span>
+      <span class="sep">·</span><span><span class="v">9</span> SKUs</span>
+      <span class="sep">·</span><span><span class="v">11.7</span>t GW</span>
+    </div>
+    <div class="amt-block">
+      <div><span class="amt-cur">CNY</span><span class="amt-total" style="color:#f8fafc">145,497.60</span></div>
+      <div class="split">
+        <div class="srow">
+          <span class="slabel"><span class="dot s"></span>Full payment in advance</span>
+          <span class="samt s">CNY 145,497.60</span>
+        </div>
+      </div>
+      <div class="prog-wrap"><div class="track"></div><span class="pct">0% paid</span></div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">Buyer <b>PETSOME (EU) SDN BHD</b></div>
+    <div class="party">Seller <b>XIAMEN PET BABY IMPORT AND EXPORT CO.,LTD</b></div>
+  </div>
+  <button class="cta cargo">💳 Pay Balance →</button>
+</div>
+
+<!-- Deposit + B/L Balance (no fixed %) -->
+<div class="card partial">
+  <div class="alert partial"><span class="al p">⏳ Partial · balance on B/L</span></div>
+  <div class="body">
+    <div class="chips">
+      <span class="chip cargo">CARGO INVOICE</span>
+      <span class="chip inco">CIF</span>
+      <span class="chip term">⚡ Deposit + B/L</span>
+    </div>
+    <div class="identity">
+      <div class="po">XM-243</div>
+      <div class="cat3">猫罐头 · 宠物食品</div>
+      <div class="fs">FS20260220039</div>
+    </div>
+    <div class="cargo-line">
+      <span class="ctn-chip">40hq×1</span>
+      <span class="sep">·</span><span><span class="v">1,920</span> CTN</span>
+      <span class="sep">·</span><span><span class="v">4</span> SKUs</span>
+      <span class="sep">·</span><span><span class="v">13.4</span>t GW</span>
+    </div>
+    <div class="amt-block">
+      <div><span class="amt-cur">CNY</span><span class="amt-total" style="color:#f8fafc">185,168.00</span></div>
+      <div class="split">
+        <div class="srow">
+          <span class="slabel"><span class="dot g"></span>Deposit (upfront)</span>
+          <span class="samt g">Paid ✓</span>
+        </div>
+        <div class="srow">
+          <span class="slabel"><span class="dot s"></span>Balance · against B/L</span>
+          <span class="samt s">Pending B/L release</span>
+        </div>
+      </div>
+      <div class="prog-wrap">
+        <div class="track"><div class="fill" style="width:30%;background:#7c3aed"></div></div>
+        <span class="pct">~30% paid</span>
+      </div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">Buyer <b>PETSOME SDN BHD</b></div>
+    <div class="party">Seller <b>XIAMEN PET BABY IMPORT AND EXPORT CO.,LTD</b></div>
+  </div>
+  <button class="cta cargo">💳 Pay Balance →</button>
+</div>
+
+<!-- Monthly 30 -->
+<div class="card">
+  <div class="alert"><span class="al u">⚠ Awaiting payment</span></div>
+  <div class="body">
+    <div class="chips">
+      <span class="chip cargo">CARGO INVOICE</span>
+      <span class="chip inco">FOB</span>
+      <span class="chip term">⚡ 月结 30</span>
+    </div>
+    <div class="identity">
+      <div class="po">LL-21</div>
+      <div class="cat3">猫条 · 宠物食品</div>
+      <div class="fs">FS20251230062</div>
+    </div>
+    <div class="cargo-line">
+      <span class="ctn-chip">40hq×1</span>
+      <span class="sep">·</span><span><span class="v">1,600</span> CTN</span>
+      <span class="sep">·</span><span><span class="v">6</span> SKUs</span>
+      <span class="sep">·</span><span><span class="v">25.3</span>t GW</span>
+    </div>
+    <div class="amt-block">
+      <div><span class="amt-cur">CNY</span><span class="amt-total" style="color:#f8fafc">98,400.00</span></div>
+      <div class="split">
+        <div class="srow">
+          <span class="slabel"><span class="dot s"></span>Monthly statement · 30 days net</span>
+        </div>
+      </div>
+      <div class="due-row">
+        <span>Due date</span>
+        <span class="due-val">2026-06-14</span>
+      </div>
+      <div class="prog-wrap"><div class="track"></div><span class="pct">0% paid</span></div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">Buyer <b>LL TRADING SDN BHD</b></div>
+    <div class="party">Seller <b>XIAMEN PET BABY IMPORT AND EXPORT CO.,LTD</b></div>
+  </div>
+  <button class="cta cargo">💳 Pay Balance →</button>
+</div>
+
+<!-- Paid in full -->
+<div class="card paid">
+  <div class="alert paid"><span class="al d">✅ Paid in full</span></div>
+  <div class="body">
+    <div class="chips">
+      <span class="chip cargo">CARGO INVOICE</span>
+      <span class="chip inco">FOB</span>
+      <span class="chip term">⚡ TT 30/70</span>
+    </div>
+    <div class="identity">
+      <div class="po">XM-244</div>
+      <div class="cat3">猫罐头 · 宠物食品</div>
+      <div class="fs">FS20260220042</div>
+    </div>
+    <div class="cargo-line">
+      <span class="ctn-chip">40hq×1</span>
+      <span class="sep">·</span><span><span class="v">2,400</span> CTN</span>
+      <span class="sep">·</span><span><span class="v">9</span> SKUs</span>
+      <span class="sep">·</span><span><span class="v">11.8</span>t GW</span>
+    </div>
+    <div class="amt-block" style="border-color:rgba(16,185,129,0.15)">
+      <div><span class="amt-cur">CNY</span><span class="amt-total" style="color:#34d399">164,736.00</span></div>
+      <div class="split">
+        <div class="srow">
+          <span class="slabel"><span class="dot g"></span>Deposit · 30%</span>
+          <span class="samt g">CNY 49,420.80 ✓</span>
+        </div>
+        <div class="srow">
+          <span class="slabel"><span class="dot g"></span>Balance · 70%</span>
+          <span class="samt g">CNY 115,315.20 ✓</span>
+        </div>
+      </div>
+      <div class="prog-wrap">
+        <div class="track"><div class="fill" style="width:100%;background:#10b981"></div></div>
+        <span class="pct" style="color:#10b981">100% paid</span>
+      </div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">Buyer <b>PETSOME SDN BHD</b></div>
+    <div class="party">Seller <b>XIAMEN PET BABY IMPORT AND EXPORT CO.,LTD</b></div>
+  </div>
+  <button class="cta paid">✓ View Receipt →</button>
+</div>
+
+</div>
+
+<!-- ════════════════════════════════════════ -->
+<h3>② Ocean Freight · 双语切换（EN / 中文）— 字段来源: pol · pod · vessel · etd · eta</h3>
+<div class="grid">
+
+<!-- Ocean EN -->
+<div class="card ocean">
+  <div class="alert ocean">
+    <span class="al o">⚠ Awaiting payment</span>
+    <span class="bl-chip">BL 177HJYJYQ14652V</span>
+  </div>
+  <div class="body">
+    <div class="chips">
+      <span class="chip ocean">OCEAN FREIGHT</span>
+      <span class="chip inco">FOB</span>
+      <span class="chip term">⚡ TT 30/70</span>
+      <!-- lang toggle -->
+      <span style="margin-left:auto;display:flex;gap:2px">
+        <span style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:3px;background:rgba(56,189,248,0.2);color:#7dd3fc;border:1px solid rgba(56,189,248,0.4)">EN</span>
+        <span style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:3px;color:#334155;cursor:pointer">中文</span>
+      </span>
+    </div>
+    <div class="identity">
+      <div class="po">ZC-20 · ORDER62</div>
+      <div class="cat3">Qingdao → Port Klang · Westports</div>
+      <div class="fs">CP26031415 · CP26031413</div>
+    </div>
+    <div class="cargo-line">
+      <span class="ctn-chip">1×40HQ</span>
+      <span class="sep">·</span>
+      <span style="color:#475569;font-family:'SF Mono',monospace;font-size:10px">GAOU7783871</span>
+      <span class="sep">·</span><span>COSCO <span class="v">HARMONY</span></span>
+    </div>
+    <div class="route-line">ETD <span class="route-v">May 1</span> → ETA <span class="route-v">May 28</span> · 24d transit</div>
+    <div class="amt-block">
+      <div><span class="amt-cur">USD</span><span class="amt-total" style="color:#f8fafc">6,200.00</span></div>
+      <div class="split">
+        <div class="srow">
+          <span class="slabel"><span class="dot g"></span>Deposit · 30%</span>
+          <span class="samt g">USD 1,860.00 ✓</span>
+        </div>
+        <div class="srow">
+          <span class="slabel"><span class="dot s"></span>Balance · 70%</span>
+          <span class="samt s">USD 4,340.00</span>
+        </div>
+      </div>
+      <div class="prog-wrap">
+        <div class="track"><div class="fill" style="width:30%;background:#0ea5e9"></div></div>
+        <span class="pct">30% paid</span>
+      </div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">Buyer <b>PETSOME SDN BHD</b></div>
+    <div class="party">Forwarder <b>上海洋贝国际物流有限公司</b></div>
+  </div>
+  <button class="cta ocean">🚢 Pay Freight →</button>
+</div>
+
+<!-- Ocean 中文 -->
+<div class="card ocean">
+  <div class="alert ocean">
+    <span class="al o">⚠ 待付款</span>
+    <span class="bl-chip">BL 177HJYJYQ14652V</span>
+  </div>
+  <div class="body">
+    <div class="chips">
+      <span class="chip ocean">海运费</span>
+      <span class="chip inco">FOB</span>
+      <span class="chip term">⚡ TT 30/70</span>
+      <span style="margin-left:auto;display:flex;gap:2px">
+        <span style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:3px;color:#334155;cursor:pointer">EN</span>
+        <span style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:3px;background:rgba(56,189,248,0.2);color:#7dd3fc;border:1px solid rgba(56,189,248,0.4)">中文</span>
+      </span>
+    </div>
+    <div class="identity">
+      <div class="po">ZC-20 · ORDER62</div>
+      <div class="cat3">青岛 → 巴生港（马来西亚）</div>
+      <div class="fs">CP26031415 · CP26031413</div>
+    </div>
+    <div class="cargo-line">
+      <span class="ctn-chip">1×40HQ</span>
+      <span class="sep">·</span>
+      <span style="color:#475569;font-family:'SF Mono',monospace;font-size:10px">GAOU7783871</span>
+      <span class="sep">·</span><span>中远海运 <span class="route-v">和谐轮</span></span>
+    </div>
+    <div class="route-line">预计开船 <span class="route-v">5月1日</span> → 预计到港 <span class="route-v">5月28日</span> · 航行 24天</div>
+    <div class="amt-block">
+      <div><span class="amt-cur">USD</span><span class="amt-total" style="color:#f8fafc">6,200.00</span></div>
+      <div class="split">
+        <div class="srow">
+          <span class="slabel"><span class="dot g"></span>预付 · 30%</span>
+          <span class="samt g">USD 1,860.00 ✓</span>
+        </div>
+        <div class="srow">
+          <span class="slabel"><span class="dot s"></span>尾款 · 70%</span>
+          <span class="samt s">USD 4,340.00</span>
+        </div>
+      </div>
+      <div class="prog-wrap">
+        <div class="track"><div class="fill" style="width:30%;background:#0ea5e9"></div></div>
+        <span class="pct">30% 已付</span>
+      </div>
+    </div>
+  </div>
+  <div class="parties">
+    <div class="party">收款方 <b>上海洋贝国际物流有限公司</b></div>
+    <div class="party">客户 <b>PETSOME SDN BHD</b></div>
+  </div>
+  <button class="cta ocean">🚢 付尾款 →</button>
+</div>
+
+</div>
+
+<p style="font-size:10px;color:#1e293b;margin-top:24px">
+  finance-card v4 · 3-row identity (PO / L3 / FS) · 5 term variants · ocean bilingual · 2026-05-14
+</p>
+</body>
+</html>

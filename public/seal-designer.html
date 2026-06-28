@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sanlyn · 公章设计器</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'PingFang SC','SF Pro Text',sans-serif;background:#07090f;color:#e2e8f0;min-height:100vh;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid rgba(255,255,255,0.07);background:#0B1120}
+.topbar-logo{font-size:17px;font-weight:900;color:#3b82f6}
+.topbar-title{font-size:13px;font-weight:700;color:#e2e8f0}
+.topbar-sub{font-size:11px;color:#4b5563;margin-left:auto}
+.layout{display:flex;flex:1;min-height:0}
+.panel{width:340px;min-width:300px;padding:24px 20px;border-right:1px solid rgba(255,255,255,0.07);overflow-y:auto;background:#090e1c;display:flex;flex-direction:column;gap:18px}
+.preview-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:24px}
+.section-label{font-size:10px;font-weight:800;color:#4b5563;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.form-group{display:flex;flex-direction:column;gap:6px}
+label{font-size:11.5px;color:#94a3b8;font-weight:600}
+input[type=text],select,input[type=number]{width:100%;padding:9px 12px;background:#111827;border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:#e2e8f0;font-size:13px;font-family:inherit;outline:none;transition:border-color .15s}
+input[type=text]:focus,select:focus,input[type=number]:focus{border-color:rgba(59,130,246,0.5)}
+select option{background:#111827}
+.type-pills{display:flex;gap:6px;flex-wrap:wrap}
+.type-pill{padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid rgba(255,255,255,0.1);background:transparent;color:#64748b;transition:all .15s}
+.type-pill.active{background:rgba(239,68,68,0.18);border-color:rgba(239,68,68,0.5);color:#fca5a5}
+.color-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.color-swatch{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .12s;flex-shrink:0}
+.color-swatch.active{border-color:#fff;transform:scale(1.15)}
+.color-custom{display:flex;align-items:center;gap:6px}
+input[type=color]{width:32px;height:32px;border:none;background:none;cursor:pointer;border-radius:50%;padding:0}
+.slider-row{display:flex;align-items:center;gap:10px}
+input[type=range]{flex:1;accent-color:#3b82f6}
+.slider-val{font-size:12px;color:#64748b;width:36px;text-align:right}
+.seal-canvas{background:transparent;display:flex;align-items:center;justify-content:center;padding:20px}
+.seal-shadow{filter:drop-shadow(0 4px 24px rgba(220,38,38,0.25))}
+.actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.btn{padding:10px 20px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:none;transition:all .15s}
+.btn-primary{background:rgba(59,130,246,0.85);color:#fff}
+.btn-primary:hover{background:#3b82f6}
+.btn-ghost{background:rgba(255,255,255,0.07);color:#94a3b8;border:1px solid rgba(255,255,255,0.1)}
+.btn-ghost:hover{background:rgba(255,255,255,0.12);color:#e2e8f0}
+.btn-red{background:rgba(239,68,68,0.18);color:#fca5a5;border:1px solid rgba(239,68,68,0.3)}
+.btn-red:hover{background:rgba(239,68,68,0.28)}
+.preview-label{font-size:11px;color:#4b5563;font-weight:600;text-align:center}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25)}
+.divider{height:1px;background:rgba(255,255,255,0.06)}
+.save-row{display:flex;gap:8px;align-items:flex-end}
+.save-row input{flex:1}
+.toast{position:fixed;bottom:28px;right:28px;padding:12px 20px;border-radius:10px;background:#1e293b;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;font-size:13px;font-weight:600;z-index:999;opacity:0;transform:translateY(10px);transition:all .25s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="topbar-logo">✦ Sanlyn</span>
+  <span class="topbar-title">公章设计器</span>
+  <span class="topbar-sub">seal-generator.js v1 · 实时预览</span>
+</div>
+
+<div class="layout">
+
+  <!-- 左侧参数面板 -->
+  <div class="panel">
+
+    <div>
+      <div class="section-label">章型</div>
+      <div class="type-pills" id="typePills">
+        <button class="type-pill active" data-type="official">公章</button>
+        <button class="type-pill" data-type="finance">财务章</button>
+        <button class="type-pill" data-type="contract">合同章</button>
+        <button class="type-pill" data-type="personal">私章</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="form-group">
+      <label>公司名称 / 姓名</label>
+      <input type="text" id="nameInput" value="厦门三凛进出口有限公司" placeholder="输入公司全称或姓名">
+    </div>
+
+    <div class="form-group" id="subTextGroup">
+      <label>下弧副文字 <span style="color:#4b5563;font-weight:400">（留空用默认）</span></label>
+      <input type="text" id="subTextInput" placeholder="合同专用章 / 财务专用章 / 自定义...">
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="form-group">
+      <div class="section-label">颜色</div>
+      <div class="color-row">
+        <div class="color-swatch active" data-color="#E10000" style="background:#E10000" title="标准红"></div>
+        <div class="color-swatch" data-color="#CC0000" style="background:#CC0000" title="深红"></div>
+        <div class="color-swatch" data-color="#1a56db" style="background:#1a56db" title="蓝章"></div>
+        <div class="color-swatch" data-color="#0f6b35" style="background:#0f6b35" title="绿章"></div>
+        <div class="color-swatch" data-color="#1a1a1a" style="background:#1a1a1a;border:1px solid #333" title="黑章"></div>
+        <div class="color-custom">
+          <input type="color" id="colorPicker" value="#E10000" title="自定义颜色">
+          <span style="font-size:11px;color:#64748b">自定义</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>尺寸 <span style="font-size:10px;color:#4b5563">（PDF 贴章建议 200px ≈ 40mm）</span></label>
+      <div class="slider-row">
+        <input type="range" id="sizeSlider" min="100" max="400" value="200">
+        <span class="slider-val" id="sizeVal">200</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="section-label">导出 / 保存</div>
+      <div class="actions" style="justify-content:flex-start;gap:8px">
+        <button class="btn btn-red" onclick="downloadSVG()">↓ SVG</button>
+        <button class="btn btn-ghost" onclick="copySVG()">⎘ 复制 SVG</button>
+        <button class="btn btn-ghost" onclick="downloadPNG()">↓ PNG</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div>
+      <div class="section-label">存入系统印章库</div>
+      <div class="save-row">
+        <div class="form-group" style="flex:1">
+          <label>章名称</label>
+          <input type="text" id="saveLabel" placeholder="例：公章 · 三凛">
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:8px">
+        <label>公司编码</label>
+        <input type="text" id="saveCode" placeholder="例：CN-00001">
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:10px" onclick="saveToSystem()">存入印章库</button>
+    </div>
+
+  </div>
+
+  <!-- 右侧预览区 -->
+  <div class="preview-area">
+    <div class="preview-label">实时预览</div>
+    <div class="seal-canvas seal-shadow" id="sealPreview"></div>
+    <div class="preview-label" id="previewInfo" style="color:#4b5563"></div>
+    <div class="badge" id="statusBadge">✓ 已就绪</div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── 内嵌 seal-generator.js ───────────────────────────────────
+function arcTextPath(cx, cy, r, text, side) {
+  if (side === 'top') return 'M '+(cx-r)+','+cy+' A '+r+','+r+' 0 0,1 '+(cx+r)+','+cy;
+  return 'M '+(cx-r)+','+cy+' A '+r+','+r+' 0 0,0 '+(cx+r)+','+cy;
+}
+
+function starPath(cx, cy, R, r) {
+  var pts = [];
+  for (var i = 0; i < 10; i++) {
+    var angle = (Math.PI / 5) * i - Math.PI / 2;
+    var radius = i % 2 === 0 ? R : r;
+    pts.push((cx + radius * Math.cos(angle)).toFixed(3) + ',' + (cy + radius * Math.sin(angle)).toFixed(3));
+  }
+  return 'M ' + pts.join(' L ') + ' Z';
+}
+
+function generateSeal(opts) {
+  opts = opts || {};
+  var type    = opts.type    || 'official';
+  var name    = opts.name    || '公司名称';
+  var subText = opts.subText;
+  var color   = opts.color   || '#E10000';
+  var size    = opts.size    || 200;
+  var font    = opts.font    || 'SimSun, "宋体", serif';
+
+  var half    = size / 2;
+  var outerR  = half * 0.90;
+  var innerR  = half * 0.84;
+  var stroke  = size * 0.022;
+  var starR   = half * 0.28;
+  var starr   = half * 0.12;
+  var nameFontSize = size * 0.095;
+  var subFontSize  = size * 0.085;
+  var subArcR = outerR * 0.68;
+  var uid     = Math.random().toString(36).slice(2, 8);
+  var topId   = 'sealTop_' + uid;
+  var botId   = 'sealBot_' + uid;
+  var nameArcR = outerR * 0.80;
+
+  var defaultSub = { official: '', finance: '财务专用章', contract: '合同专用章', personal: '' };
+  var centerLabel = (subText !== undefined && subText !== null) ? subText : (defaultSub[type] || '');
+
+  if (type === 'personal') {
+    var rx = half * 0.85, ry = half * 0.55;
+    var fs = size * 0.20;
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'
+      + '<ellipse cx="'+half+'" cy="'+half+'" rx="'+rx+'" ry="'+ry+'" fill="none" stroke="'+color+'" stroke-width="'+stroke+'"/>'
+      + '<text x="'+half+'" y="'+(half + fs * 0.38)+'" font-family="'+font+'" font-size="'+fs+'" fill="'+color+'" text-anchor="middle" letter-spacing="4">'+name+'</text>'
+      + '</svg>';
+  }
+
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'
+    + '<defs>'
+    + '<path id="'+topId+'" d="M '+(half-nameArcR)+','+half+' A '+nameArcR+','+nameArcR+' 0 0,1 '+(half+nameArcR)+','+half+'"/>'
+    + '<path id="'+botId+'" d="M '+(half-subArcR)+','+half+' A '+subArcR+','+subArcR+' 0 0,0 '+(half+subArcR)+','+half+'"/>'
+    + '</defs>'
+    + '<circle cx="'+half+'" cy="'+half+'" r="'+outerR+'" fill="none" stroke="'+color+'" stroke-width="'+stroke+'"/>'
+    + '<circle cx="'+half+'" cy="'+half+'" r="'+(innerR*0.60)+'" fill="none" stroke="'+color+'" stroke-width="'+(stroke*0.5)+'" opacity="0.6"/>'
+    + '<path d="'+starPath(half, half, starR, starr)+'" fill="'+color+'"/>'
+    + '<text font-family="'+font+'" font-size="'+nameFontSize+'" fill="'+color+'" text-anchor="middle" letter-spacing="'+(size*0.008)+'">'
+    + '<textPath href="#'+topId+'" startOffset="50%">'+name+'</textPath></text>'
+    + (centerLabel ? '<text font-family="'+font+'" font-size="'+subFontSize+'" fill="'+color+'" text-anchor="middle" letter-spacing="'+(size*0.006)+'">'
+      + '<textPath href="#'+botId+'" startOffset="50%">'+centerLabel+'</textPath></text>' : '')
+    + '</svg>';
+}
+// ── 设计器逻辑 ───────────────────────────────────────────────
+
+var state = {
+  type: 'official',
+  name: '厦门三凛进出口有限公司',
+  subText: undefined,
+  color: '#E10000',
+  size: 200,
+};
+
+function render() {
+  var svg = generateSeal(state);
+  document.getElementById('sealPreview').innerHTML = svg;
+  document.getElementById('previewInfo').textContent = state.type === 'personal'
+    ? '椭圆私章 · ' + state.size + 'px'
+    : '圆章 · ' + state.size + 'px · ' + (state.name.length > 12 ? '长名称（建议缩短）' : '字数正常');
+}
+
+// 章型切换
+document.getElementById('typePills').addEventListener('click', function(e) {
+  var pill = e.target.closest('.type-pill');
+  if (!pill) return;
+  document.querySelectorAll('.type-pill').forEach(function(p) { p.classList.remove('active'); });
+  pill.classList.add('active');
+  state.type = pill.dataset.type;
+  // 私章提示
+  document.getElementById('subTextGroup').style.opacity = state.type === 'personal' ? '0.3' : '1';
+  render();
+});
+
+// 公司名
+document.getElementById('nameInput').addEventListener('input', function() {
+  state.name = this.value || '公司名称';
+  render();
+});
+
+// 副文字
+document.getElementById('subTextInput').addEventListener('input', function() {
+  state.subText = this.value || undefined;
+  render();
+});
+
+// 颜色色块
+document.querySelectorAll('.color-swatch').forEach(function(sw) {
+  sw.addEventListener('click', function() {
+    document.querySelectorAll('.color-swatch').forEach(function(s) { s.classList.remove('active'); });
+    sw.classList.add('active');
+    state.color = sw.dataset.color;
+    document.getElementById('colorPicker').value = state.color;
+    render();
+  });
+});
+
+// 颜色 picker
+document.getElementById('colorPicker').addEventListener('input', function() {
+  state.color = this.value;
+  document.querySelectorAll('.color-swatch').forEach(function(s) { s.classList.remove('active'); });
+  render();
+});
+
+// 尺寸滑块
+document.getElementById('sizeSlider').addEventListener('input', function() {
+  state.size = parseInt(this.value);
+  document.getElementById('sizeVal').textContent = state.size;
+  render();
+});
+
+// 下载 SVG
+function downloadSVG() {
+  var svg = generateSeal(state);
+  var blob = new Blob([svg], { type: 'image/svg+xml' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (state.name || 'seal') + '_' + state.type + '.svg';
+  a.click();
+  toast('SVG 已下载');
+}
+
+// 复制 SVG
+function copySVG() {
+  var svg = generateSeal(state);
+  navigator.clipboard.writeText(svg).then(function() { toast('SVG 已复制到剪贴板'); });
+}
+
+// 下载 PNG（canvas 转换）
+function downloadPNG() {
+  var svg = generateSeal(state);
+  var img = new Image();
+  var blob = new Blob([svg], { type: 'image/svg+xml' });
+  var url = URL.createObjectURL(blob);
+  img.onload = function() {
+    var canvas = document.createElement('canvas');
+    canvas.width = state.size * 2;
+    canvas.height = state.size * 2;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(2, 2);
+    ctx.drawImage(img, 0, 0);
+    URL.revokeObjectURL(url);
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = (state.name || 'seal') + '_' + state.type + '.png';
+    a.click();
+    toast('PNG 已下载（2×清晰度）');
+  };
+  img.src = url;
+}
+
+// 存入系统
+function saveToSystem() {
+  var label = document.getElementById('saveLabel').value.trim();
+  var code  = document.getElementById('saveCode').value.trim().toUpperCase();
+  if (!label) { toast('请填写章名称'); return; }
+  if (!code)  { toast('请填写公司编码'); return; }
+  var svg = generateSeal(state);
+  var tok = localStorage.getItem('sanlyn_jwt') || localStorage.getItem('sanlyn_token') || '';
+  fetch('/api/db/customer-stamps', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(tok ? { 'Authorization': 'Bearer ' + tok } : {}) },
+    body: JSON.stringify({
+      company_code: code,
+      name: label,
+      svg_content: svg,
+      is_active: true,
+      is_default: false,
+      stamp_type: state.type,
+    }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.success || d.id) toast('✓ 已存入印章库：' + label);
+    else toast('存入失败：' + (d.error || '未知错误'));
+  })
+  .catch(function(e) { toast('请求失败：' + e.message); });
+}
+
+function toast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 2800);
+}
+
+// 初始渲染
+render();
+</script>
+</body>
+</html>

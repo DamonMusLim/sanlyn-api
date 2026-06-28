@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Step 3 · Containers 拼柜 — Live Preview</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0e1a;color:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.bg{min-height:100vh;background:radial-gradient(ellipse 1200px 700px at 18% -10%,rgba(124,58,237,.32) 0%,transparent 55%),radial-gradient(ellipse 900px 600px at 110% 5%,rgba(59,130,246,.28) 0%,transparent 55%),radial-gradient(ellipse 700px 500px at 50% 100%,rgba(245,158,11,.14) 0%,transparent 55%),linear-gradient(180deg,#0a0e1a 0%,#0f1424 60%,#0a0e1a 100%)}
+
+/* header */
+.hdr{position:sticky;top:0;z-index:200;background:rgba(10,14,26,.88);backdrop-filter:blur(20px);border-bottom:1px solid rgba(255,255,255,.08);padding:10px 20px;display:flex;align-items:center;gap:12px}
+.hdr-title{font-size:15px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(135deg,#93c5fd,#60a5fa,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hdr-ref{font-size:10px;color:#64748b;font-family:monospace}
+.stepbar{flex:1;display:flex;justify-content:center;align-items:center;gap:0}
+.sdot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;flex-shrink:0}
+.sdot.done{background:linear-gradient(135deg,#4ade80,#22c55e,#16a34a);box-shadow:0 0 0 4px rgba(34,197,94,.22),0 8px 28px rgba(34,197,94,.5)}
+.sdot.active{background:linear-gradient(135deg,#60a5fa,#3b82f6,#1d4ed8);box-shadow:0 0 0 4px rgba(59,130,246,.2),0 8px 28px rgba(59,130,246,.45)}
+.sline{width:32px;height:2px;margin:0 6px;border-radius:2px}
+
+/* layout */
+.body{max-width:1320px;margin:0 auto;padding:22px 16px;display:flex;gap:18px;align-items:flex-start}
+.main{flex:1;min-width:0}
+.aside{width:284px;flex-shrink:0}
+
+/* container tabs */
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tab-active{padding:8px 14px;border-radius:8px 8px 0 0;font-size:12px;font-weight:700;background:rgba(28,35,55,.85);color:#3b82f6;border:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(28,35,55,.85);white-space:nowrap;cursor:pointer;display:flex;align-items:center;gap:5px}
+.tab-add{padding:8px 14px;border-radius:8px 8px 0 0;border:1px dashed #3b82f6;background:transparent;color:#3b82f6;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap}
+.badge-pinjui{font-size:9px;padding:1px 6px;border-radius:8px;background:rgba(167,139,250,.22);color:#ddd6fe;font-weight:700}
+.badge-count{font-size:10px;padding:1px 6px;border-radius:8px;background:linear-gradient(135deg,#4ade80,#22c55e);color:#fff;font-weight:700}
+
+/* container body */
+.ctn{background:rgba(28,35,55,.85);border:1px solid rgba(255,255,255,.08);border-top:none;border-radius:0 0 14px 14px;margin-bottom:16px;overflow:hidden}
+
+/* CBM gauge */
+.gauge{padding:11px 18px 10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.gauge-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px}
+.gauge-left{display:flex;align-items:center;gap:8px}
+.ctn-select{font-size:11px;font-weight:700;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08);color:#f1f5f9;border-radius:5px;padding:3px 7px;cursor:pointer}
+.gauge-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.slot-legend{font-size:10px;display:flex;align-items:center;gap:4px}
+.legend-dot{display:inline-block;width:8px;height:8px;border-radius:2px}
+.gauge-total{font-size:11px;font-weight:800;color:#86efac}
+.gauge-pct{font-size:10px;color:#64748b}
+.gauge-track{height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden}
+.gauge-fill{display:flex;height:100%;border-radius:3px;overflow:hidden}
+.gf-wp{width:37%;background:linear-gradient(90deg,#fbbf24,#f59e0b);transition:width .4s}
+.gf-zc{width:40%;background:linear-gradient(90deg,#60a5fa,#3b82f6);transition:width .4s}
+
+/* slot */
+.slot{border-bottom:1px solid rgba(255,255,255,.08)}
+.slot:last-of-type{border-bottom:none}
+
+/* slot header */
+.slot-hdr{padding:10px 18px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;position:relative}
+.slot-hdr::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.slot-hdr.wp{background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(180,83,9,.08))}
+.slot-hdr.wp::before{background:linear-gradient(90deg,#fbbf24,#f59e0b)}
+.slot-hdr.zc{background:linear-gradient(135deg,rgba(59,130,246,.15),rgba(29,78,216,.08))}
+.slot-hdr.zc::before{background:linear-gradient(90deg,#60a5fa,#3b82f6)}
+.slot-fac-sel{flex:1;min-width:170px;max-width:320px;height:32px;font-weight:700;border-radius:6px;font-size:11px;padding:0 8px;cursor:pointer}
+.slot-fac-sel.wp{border:1px solid rgba(245,158,11,.4);background:rgba(0,0,0,.22);color:#fcd34d}
+.slot-fac-sel.zc{border:1px solid rgba(59,130,246,.4);background:rgba(0,0,0,.22);color:#93c5fd}
+.slot-cbm-tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap}
+.slot-cbm-tag.wp{background:rgba(245,158,11,.14);color:#fbbf24;border:1px solid rgba(245,158,11,.3)}
+.slot-cbm-tag.zc{background:rgba(59,130,246,.14);color:#7dd3fc;border:1px solid rgba(59,130,246,.3)}
+.slot-right{display:flex;align-items:center;gap:6px;margin-left:auto}
+.slot-po-lbl{font-size:10px;color:#64748b}
+.slot-po{width:108px;padding:4px 8px;border:1px solid rgba(255,255,255,.08);border-radius:5px;font-size:11px;background:rgba(0,0,0,.25);color:#f1f5f9;font-family:monospace;outline:none}
+.slot-send{padding:5px 11px;border-radius:6px;border:none;color:#fff;cursor:pointer;font-size:11px;font-weight:700;white-space:nowrap}
+.slot-send.wp{background:linear-gradient(90deg,#fbbf24,#f59e0b)}
+.slot-send.zc{background:linear-gradient(90deg,#60a5fa,#3b82f6)}
+.slot-remove{padding:3px 8px;border-radius:5px;border:1px solid rgba(239,68,68,.3);background:transparent;color:rgba(239,68,68,.8);cursor:pointer;font-size:10px;font-weight:600}
+
+/* slot actions */
+.slot-acts{padding:8px 18px;display:flex;gap:7px;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,.05)}
+.sact{padding:5px 10px;border-radius:5px;cursor:pointer;font-size:10.5px;font-weight:600}
+
+/* product table */
+.tbl-wrap{overflow-x:auto;padding:0 18px}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:600px}
+thead tr{background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.14)}
+th{padding:6px 8px;text-align:left;font-size:9px;color:#64748b;font-weight:700;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em}
+th.r{text-align:right}
+tbody tr{border-bottom:1px solid rgba(255,255,255,.05)}
+tbody tr:last-child{border-bottom:none}
+td{padding:9px 8px;vertical-align:middle}
+td.r{text-align:right}
+
+/* thumbnail */
+.thumb{width:40px;height:40px;border-radius:7px;background:rgba(2,13,31,.8);border:1px solid rgba(255,255,255,.08);overflow:hidden;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.thumb img{width:100%;height:100%;object-fit:contain;padding:3px}
+.thumb .fb{font-size:20px;opacity:.4}
+
+/* product info */
+.pname{font-weight:600;color:#f1f5f9;font-size:12px;line-height:1.3}
+.pcode{font-size:10px;color:#64748b;font-family:monospace;margin-top:1px}
+
+/* pkg stock badges */
+.pkg{display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.pkg.ok  {background:rgba(34,197,94,.12);color:#86efac;border:1px solid rgba(34,197,94,.25)}
+.pkg.low {background:rgba(245,158,11,.12);color:#fcd34d;border:1px solid rgba(245,158,11,.25)}
+.pkg.none{background:rgba(239,68,68,.12);color:#fca5a5;border:1px solid rgba(239,68,68,.25)}
+.pkg.nil {background:rgba(100,116,139,.12);color:#64748b;border:1px solid rgba(100,116,139,.2)}
+
+/* incoterm */
+.inco{font-size:10px;padding:2px 7px;border-radius:4px;font-weight:700;background:#dbeafe;color:#1d4ed8;border:none;cursor:pointer}
+
+/* inputs */
+.minp{padding:4px 7px;border:1px solid rgba(255,255,255,.08);border-radius:4px;font-size:11px;background:rgba(0,0,0,.25);color:#f1f5f9;outline:none}
+.minp.warn{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.07)}
+.subtotal{font-weight:700;font-family:monospace;font-size:11px;white-space:nowrap}
+.rmx{background:transparent;border:none;color:#ef4444;cursor:pointer;font-size:17px;padding:0 2px;line-height:1}
+
+/* slot totals */
+.slot-totals{display:flex;gap:12px;padding:7px 18px;font-size:10.5px;color:#64748b;background:rgba(0,0,0,.12);flex-wrap:wrap}
+
+/* add-slot btn */
+.add-slot{margin:12px 18px;padding:10px 16px;border-radius:8px;border:1px dashed rgba(167,139,250,.45);background:rgba(167,139,250,.06);color:#c4b5fd;cursor:pointer;font-size:12px;font-weight:700;display:flex;align-items:center;gap:10px;width:calc(100% - 36px);text-align:left;transition:background .15s}
+.add-slot:hover{background:rgba(167,139,250,.12)}
+
+/* stock warning */
+.stock-warn{margin:0 18px 10px;padding:9px 14px;border-radius:8px;background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.3);font-size:11px;color:#fcd34d;line-height:1.7}
+
+/* ctn totals */
+.ctn-totals{display:flex;gap:14px;padding:10px 18px;font-size:11px;color:#64748b;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,.08)}
+.pinjui-badge{padding:2px 8px;border-radius:8px;background:rgba(167,139,250,.18);color:#ddd6fe;font-size:10px;font-weight:700}
+
+/* summary card */
+.summ{background:rgba(20,26,42,.78);backdrop-filter:blur(14px);border-radius:14px;border:1px solid rgba(255,255,255,.08);padding:20px;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,.4)}
+.summ-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+.summ-cell{padding:12px 8px;background:rgba(255,255,255,.04);border-radius:8px;text-align:center;border:1px solid rgba(255,255,255,.08)}
+.summ-lbl{font-size:9px;color:#64748b;margin-bottom:4px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.summ-val{font-size:15px;font-weight:800;letter-spacing:-.02em}
+
+/* action row */
+.act-row{display:flex;justify-content:space-between;margin-bottom:80px;gap:10px;flex-wrap:wrap}
+.btn-back  {padding:11px 22px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);cursor:pointer;font-size:13px;font-weight:600;color:#cbd5e1}
+.btn-draft {padding:10px 18px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#cbd5e1;cursor:pointer;font-size:13px;font-weight:600}
+.btn-send  {padding:10px 20px;border-radius:8px;border:none;background:linear-gradient(135deg,#fbbf24,#f59e0b,#b45309);color:#fff;cursor:pointer;font-size:13px;font-weight:800;box-shadow:0 0 0 4px rgba(245,158,11,.2),0 8px 28px rgba(245,158,11,.45)}
+.btn-place {padding:11px 28px;border-radius:8px;border:none;background:linear-gradient(135deg,#4ade80,#22c55e,#16a34a);color:#fff;cursor:pointer;font-size:14px;font-weight:800;box-shadow:0 0 0 4px rgba(34,197,94,.22),0 8px 28px rgba(34,197,94,.5)}
+
+/* aside cards */
+.aside-card{background:rgba(28,35,55,.85);border-radius:14px;border:1px solid rgba(255,255,255,.08);overflow:hidden;margin-bottom:12px}
+.aside-hdr {padding:10px 16px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.08)}
+.aside-body{padding:8px 16px}
+.aside-row {display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px}
+.aside-row:last-child{border-bottom:none}
+.mini-gauge{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+.mini-bar-track{height:5px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:4px}
+.mini-bar-fill{display:flex;height:100%;border-radius:3px;overflow:hidden}
+
+/* AI card */
+.ai-card{background:linear-gradient(135deg,rgba(167,139,250,.10),rgba(124,58,237,.06));border:1px solid rgba(167,139,250,.30);border-radius:14px;padding:14px}
+.ai-tip{padding:8px 10px;background:rgba(0,0,0,.25);border-radius:6px;margin-bottom:5px;font-size:11px;line-height:1.5;border:1px solid rgba(167,139,250,.18)}
+.ai-tip:last-child{margin-bottom:0}
+
+/* buyer card (top of aside) */
+.buyer-card{background:rgba(28,35,55,.85);border-radius:14px;border:1px solid rgba(255,255,255,.08);overflow:hidden;margin-bottom:12px}
+.buyer-hdr{background:linear-gradient(135deg,#60a5fa,#3b82f6,#1d4ed8);padding:16px 18px;position:relative;overflow:hidden}
+.buyer-hdr::before{content:'';position:absolute;top:-50%;right:-50%;width:200%;height:200%;background:radial-gradient(circle,rgba(255,255,255,.15) 0%,transparent 35%);pointer-events:none}
+.buyer-body{padding:11px 18px}
+.buyer-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px}
+.buyer-row:last-child{border-bottom:none}
+</style>
+</head>
+<body class="bg">
+
+<!-- Header -->
+<div class="hdr">
+  <button style="padding:6px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);cursor:pointer;font-size:12px;color:#cbd5e1;">← Back</button>
+  <div><div class="hdr-title">New Order</div><div class="hdr-ref">Ref: SC-20260502-957</div></div>
+  <div class="stepbar">
+    <div class="sdot done">✓</div>
+    <span style="font-size:12px;font-weight:600;color:#16a34a;margin-left:6px;">Buyer</span>
+    <div class="sline" style="background:linear-gradient(135deg,#4ade80,#22c55e)"></div>
+    <div class="sdot done">✓</div>
+    <span style="font-size:12px;font-weight:600;color:#16a34a;margin-left:6px;">Shipment</span>
+    <div class="sline" style="background:rgba(255,255,255,.08)"></div>
+    <div class="sdot active">3</div>
+    <span style="font-size:12px;font-weight:700;color:#3b82f6;margin-left:6px;">Containers</span>
+  </div>
+  <button style="padding:6px 12px;border-radius:8px;border:none;background:linear-gradient(135deg,#4ade80,#22c55e,#16a34a);color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 0 0 4px rgba(34,197,94,.22)">Place Order</button>
+</div>
+
+<div class="body">
+<div class="main">
+
+  <!-- Container tabs -->
+  <div class="tabs">
+    <div class="tab-active">
+      CTN 1 · 40HQ
+      <span class="badge-pinjui">拼柜</span>
+      <span class="badge-count">5</span>
+    </div>
+    <div style="padding:8px 14px;border-radius:8px 8px 0 0;font-size:12px;font-weight:500;background:rgba(255,255,255,.04);color:#64748b;border:1px solid transparent;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;cursor:pointer;">CTN 2 · 40HQ <span class="badge-count">2</span></div>
+    <button class="tab-add">+ Add Container</button>
+  </div>
+
+  <!-- Container body -->
+  <div class="ctn">
+
+    <!-- CBM Gauge -->
+    <div class="gauge">
+      <div class="gauge-row">
+        <div class="gauge-left">
+          <select class="ctn-select"><option>40HQ · 76 CBM</option><option>40GP · 60 CBM</option><option>20GP · 28 CBM</option></select>
+          <span style="font-size:11px;color:#64748b;">CBM usage</span>
+        </div>
+        <div class="gauge-right">
+          <span class="slot-legend"><span class="legend-dot" style="background:#f59e0b"></span><span style="color:#cbd5e1">WP</span><strong style="color:#f1f5f9;margin-left:3px">28.4</strong></span>
+          <span class="slot-legend"><span class="legend-dot" style="background:#3b82f6"></span><span style="color:#cbd5e1">ZC</span><strong style="color:#f1f5f9;margin-left:3px">30.2</strong></span>
+          <span class="gauge-total">58.6 / 76 CBM</span>
+          <span class="gauge-pct">77%</span>
+        </div>
+      </div>
+      <div class="gauge-track">
+        <div class="gauge-fill">
+          <div class="gf-wp"></div>
+          <div class="gf-zc"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ SLOT 1 · WANPY (WP) ══ -->
+    <div class="slot">
+      <div class="slot-hdr wp">
+        <select class="slot-fac-sel wp"><option>山东万谷 WANPY (WP) · Qingdao 青岛</option></select>
+        <span class="slot-cbm-tag wp">28.4 CBM</span>
+        <div class="slot-right">
+          <span class="slot-po-lbl">PO</span>
+          <input class="slot-po" value="WP-20260502">
+          <button class="slot-send wp">📤 Send to WP</button>
+        </div>
+      </div>
+
+      <div class="slot-acts">
+        <button class="sact" style="border:1px solid #3b82f6;background:rgba(59,130,246,.08);color:#3b82f6;">+ Add Product</button>
+        <button class="sact" style="border:1px solid #a78bfa;background:rgba(167,139,250,.08);color:#a78bfa;">+ Custom Product</button>
+        <button class="sact" style="border:1px solid #10b981;background:rgba(16,185,129,.08);color:#34d399;">📤 Import Excel</button>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px">#</th>
+              <th style="width:48px"></th>
+              <th>Product</th>
+              <th style="width:76px">Incoterm</th>
+              <th class="r" style="width:88px">Unit Price</th>
+              <th class="r" style="width:76px">Qty (CTN)</th>
+              <th class="r" style="width:92px">Subtotal</th>
+              <th style="width:26px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Row 1: OK stock -->
+            <tr>
+              <td style="color:#64748b;font-size:10px;text-align:center">1</td>
+              <td style="padding:6px 4px 6px 0">
+                <div class="thumb">
+                  <img src="https://files.sanlynos.com/products/CA-03H/raw.jpg"
+                       onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" alt="">
+                  <span class="fb" style="display:none">📦</span>
+                </div>
+              </td>
+              <td>
+                <div class="pname">WANPY CHICKEN JERKY STEAKS</div>
+                <div class="pcode">CA-03H · HS 2309.90</div>
+                <div class="pkg ok">📦 240 ctns avail.</div>
+              </td>
+              <td><select class="inco"><option>FOB</option><option>EXW</option><option>CIF</option></select></td>
+              <td class="r"><input class="minp" value="36.00" style="width:74px;text-align:right;font-family:monospace"></td>
+              <td class="r"><input class="minp" value="60" style="width:56px;text-align:center;font-weight:700"></td>
+              <td class="r"><span class="subtotal" style="color:#60a5fa">USD 2,160.00</span></td>
+              <td><button class="rmx">×</button></td>
+            </tr>
+            <!-- Row 2: low stock + qty exceeds (warn) -->
+            <tr>
+              <td style="color:#64748b;font-size:10px;text-align:center">2</td>
+              <td style="padding:6px 4px 6px 0">
+                <div class="thumb">
+                  <img src="https://files.sanlynos.com/products/RAC-01/raw.jpg"
+                       onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" alt="">
+                  <span class="fb" style="display:none">📦</span>
+                </div>
+              </td>
+              <td>
+                <div class="pname">WANPY CREAMY TREAT CHICKEN FOR CAT</div>
+                <div class="pcode">RAC-01 · HS 2309.90</div>
+                <div class="pkg low">⚠ Only 12 ctns avail.</div>
+              </td>
+              <td><select class="inco"><option>FOB</option></select></td>
+              <td class="r"><input class="minp" value="14.00" style="width:74px;text-align:right;font-family:monospace"></td>
+              <td class="r"><input class="minp warn" value="20" style="width:56px;text-align:center;font-weight:700"></td>
+              <td class="r"><span class="subtotal" style="color:#fcd34d">USD 280.00</span></td>
+              <td><button class="rmx">×</button></td>
+            </tr>
+            <!-- Row 3: no image fallback + no pkg record (gray) -->
+            <tr>
+              <td style="color:#64748b;font-size:10px;text-align:center">3</td>
+              <td style="padding:6px 4px 6px 0">
+                <div class="thumb">
+                  <span class="fb" style="display:flex">📦</span>
+                </div>
+              </td>
+              <td>
+                <div class="pname">WANPY CHEWY PUFF STICKS CHICKEN</div>
+                <div class="pcode">KK-33 · HS 2309.90</div>
+                <div class="pkg nil">— 库存待录入</div>
+              </td>
+              <td><select class="inco"><option>FOB</option></select></td>
+              <td class="r"><input class="minp" value="4.65" style="width:74px;text-align:right;font-family:monospace"></td>
+              <td class="r"><input class="minp" value="40" style="width:56px;text-align:center;font-weight:700"></td>
+              <td class="r"><span class="subtotal" style="color:#60a5fa">USD 186.00</span></td>
+              <td><button class="rmx">×</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="slot-totals">
+        <span style="color:#fcd34d;font-weight:700">WP</span>
+        <span>Qty: <strong style="color:#f1f5f9">120 CTN</strong></span>
+        <span>Amount: <strong style="color:#60a5fa">USD 2,626</strong></span>
+        <span>CBM: <strong style="color:#f1f5f9">28.4</strong></span>
+      </div>
+    </div><!-- /slot WP -->
+
+    <!-- ══ SLOT 2 · Zhongchong (ZC) ══ -->
+    <div class="slot">
+      <div class="slot-hdr zc">
+        <select class="slot-fac-sel zc"><option>烟台中宠 Yantai Zhongchong (ZC) · Qingdao 青岛</option></select>
+        <span class="slot-cbm-tag zc">30.2 CBM</span>
+        <div class="slot-right">
+          <span class="slot-po-lbl">PO</span>
+          <input class="slot-po" value="ZC-20260502">
+          <button class="slot-send zc">📤 Send to ZC</button>
+          <button class="slot-remove">✕ Remove</button>
+        </div>
+      </div>
+
+      <div class="slot-acts">
+        <button class="sact" style="border:1px solid #3b82f6;background:rgba(59,130,246,.08);color:#3b82f6;">+ Add Product</button>
+        <button class="sact" style="border:1px solid #a78bfa;background:rgba(167,139,250,.08);color:#a78bfa;">+ Custom Product</button>
+        <button class="sact" style="border:1px solid #10b981;background:rgba(16,185,129,.08);color:#34d399;">📤 Import Excel</button>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px">#</th><th style="width:48px"></th><th>Product</th>
+              <th style="width:76px">Incoterm</th><th class="r" style="width:88px">Unit Price</th>
+              <th class="r" style="width:76px">Qty (CTN)</th><th class="r" style="width:92px">Subtotal</th><th style="width:26px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- ZC Row 1 -->
+            <tr>
+              <td style="color:#64748b;font-size:10px;text-align:center">1</td>
+              <td style="padding:6px 4px 6px 0">
+                <div class="thumb"><span class="fb" style="display:flex">📦</span></div>
+              </td>
+              <td>
+                <div class="pname">ENRICH ADULT DRY DOG FOOD CHICKEN</div>
+                <div class="pcode">ZC-DRY-01 · HS 2309.10</div>
+                <div class="pkg ok">📦 180 ctns avail.</div>
+              </td>
+              <td><select class="inco"><option>FOB</option></select></td>
+              <td class="r"><input class="minp" value="42.00" style="width:74px;text-align:right;font-family:monospace"></td>
+              <td class="r"><input class="minp" value="80" style="width:56px;text-align:center;font-weight:700"></td>
+              <td class="r"><span class="subtotal" style="color:#60a5fa">USD 3,360.00</span></td>
+              <td><button class="rmx">×</button></td>
+            </tr>
+            <!-- ZC Row 2: no stock -->
+            <tr>
+              <td style="color:#64748b;font-size:10px;text-align:center">2</td>
+              <td style="padding:6px 4px 6px 0">
+                <div class="thumb"><span class="fb" style="display:flex">📦</span></div>
+              </td>
+              <td>
+                <div class="pname">ENRICH CAT FOOD TUNA IN GRAVY</div>
+                <div class="pcode">ZC-WET-14 · HS 2309.10</div>
+                <div class="pkg none">🔴 No packaging stock</div>
+              </td>
+              <td><select class="inco"><option>FOB</option></select></td>
+              <td class="r"><input class="minp" value="28.50" style="width:74px;text-align:right;font-family:monospace"></td>
+              <td class="r"><input class="minp warn" value="20" style="width:56px;text-align:center;font-weight:700"></td>
+              <td class="r"><span class="subtotal" style="color:#fcd34d">USD 570.00</span></td>
+              <td><button class="rmx">×</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="slot-totals">
+        <span style="color:#93c5fd;font-weight:700">ZC</span>
+        <span>Qty: <strong style="color:#f1f5f9">100 CTN</strong></span>
+        <span>Amount: <strong style="color:#60a5fa">USD 3,930</strong></span>
+        <span>CBM: <strong style="color:#f1f5f9">30.2</strong></span>
+      </div>
+    </div><!-- /slot ZC -->
+
+    <!-- Add slot button -->
+    <button class="add-slot">
+      <span style="font-size:18px;line-height:1">＋</span>
+      <div>
+        <div style="font-weight:800">拼柜 · Add Factory Slot</div>
+        <div style="font-size:10px;color:#64748b;font-weight:500;margin-top:1px">Remaining capacity: ~17.4 CBM · Add another factory's cargo to this container</div>
+      </div>
+    </button>
+
+    <!-- Stock warnings -->
+    <div class="stock-warn">
+      ⚠ <b>RAC-01</b> qty (20) exceeds available packaging stock (12 ctns). Sanlyn will confirm lead time before production.<br>
+      ⚠ <b>ZC-WET-14</b> qty (20) exceeds available packaging stock (0 ctns). Sanlyn will confirm lead time before production.
+    </div>
+
+    <!-- Container totals -->
+    <div class="ctn-totals">
+      <span>Total Qty: <strong style="color:#f1f5f9">220 CTN</strong></span>
+      <span>Amount: <strong style="color:#60a5fa">USD 6,556</strong></span>
+      <span>CBM: <strong style="color:#86efac">58.6 / 76</strong></span>
+      <span style="font-weight:700;color:#f59e0b">40HQ</span>
+      <span class="pinjui-badge">2 Factories · 拼柜</span>
+    </div>
+  </div><!-- /ctn -->
+
+  <!-- Summary card -->
+  <div class="summ">
+    <div style="font-size:12px;font-weight:600;color:#64748b;margin-bottom:12px">Order Summary · 2 containers · 3 factory slots</div>
+    <div class="summ-grid">
+      <div class="summ-cell"><div class="summ-lbl">Containers</div><div class="summ-val" style="color:#60a5fa">2</div></div>
+      <div class="summ-cell"><div class="summ-lbl">Factory Slots</div><div class="summ-val" style="color:#c4b5fd">3</div></div>
+      <div class="summ-cell"><div class="summ-lbl">Amount</div><div class="summ-val" style="color:#60a5fa">$10.5K</div></div>
+      <div class="summ-cell"><div class="summ-lbl">Total CBM</div><div class="summ-val">82.4</div></div>
+      <div class="summ-cell"><div class="summ-lbl">Total GW</div><div class="summ-val">— KG</div></div>
+      <div class="summ-cell"><div class="summ-lbl">Total NW</div><div class="summ-val">— KG</div></div>
+    </div>
+  </div>
+
+  <!-- Action row -->
+  <div class="act-row">
+    <button class="btn-back">← Back</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-draft">💾 Save Draft</button>
+      <button class="btn-send">📤 Send All to Factories</button>
+      <button class="btn-place">✓ Place Order</button>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- Aside -->
+<div class="aside">
+
+  <!-- Buyer card -->
+  <div class="buyer-card">
+    <div class="buyer-hdr">
+      <div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2;position:relative">PETSOME (EU) SDN BHD</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;position:relative">
+        <span style="font-size:10px;padding:2px 9px;border-radius:12px;background:rgba(255,255,255,.22);color:#fff;font-weight:700">CN-00038</span>
+        <span style="font-size:11px;color:rgba(255,255,255,.9)">📍 MALAYSIA</span>
+      </div>
+    </div>
+    <div class="buyer-body">
+      <div class="buyer-row"><span style="color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:10px">Currency</span><span style="font-size:12px;font-weight:600">USD</span></div>
+      <div class="buyer-row"><span style="color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:10px">Default Incoterm</span><span style="font-size:12px;font-weight:600">FOB</span></div>
+      <div class="buyer-row"><span style="color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:10px">BL Type</span><span style="font-size:12px;font-weight:600">Telex Release</span></div>
+      <div class="buyer-row" style="border-bottom:none"><span style="color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:10px">Connected Factories</span><span style="font-size:12px;font-weight:700;color:#22c55e">4</span></div>
+    </div>
+  </div>
+
+  <!-- CTN 1 slot summary -->
+  <div class="aside-card">
+    <div class="aside-hdr">
+      <div style="font-size:11px;font-weight:800;color:#f1f5f9">CTN 1 · 40HQ</div>
+      <div style="font-size:10px;color:#c4b5fd;margin-top:1px">2 factories · 拼柜</div>
+    </div>
+    <div class="mini-gauge">
+      <div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px">
+        <span style="color:#64748b">CBM Used</span>
+        <span style="font-weight:800;color:#86efac">58.6 / 76</span>
+      </div>
+      <div class="mini-bar-track">
+        <div class="mini-bar-fill">
+          <div style="width:37%;background:linear-gradient(90deg,#fbbf24,#f59e0b)"></div>
+          <div style="width:40%;background:linear-gradient(90deg,#60a5fa,#3b82f6)"></div>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:5px">
+        <span style="font-size:9.5px;color:#fbbf24">■ WP 28.4</span>
+        <span style="font-size:9.5px;color:#60a5fa">■ ZC 30.2</span>
+        <span style="font-size:9.5px;color:#475569">□ Free 17.4</span>
+      </div>
+    </div>
+    <div class="aside-body">
+      <div class="aside-row">
+        <span style="color:#fbbf24;font-weight:700">🏭 WP · 山东万谷</span>
+        <span style="font-size:10px;color:#64748b;font-family:monospace">3 SKU · $2,626</span>
+      </div>
+      <div class="aside-row" style="border-bottom:none">
+        <span style="color:#7dd3fc;font-weight:700">🏭 ZC · 烟台中宠</span>
+        <span style="font-size:10px;color:#64748b;font-family:monospace">2 SKU · $3,930</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dynamic AI suggestions -->
+  <div class="ai-card">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px">
+      <strong style="font-size:13px;color:#ddd6fe;font-weight:800">🤖 Smart Suggestions</strong>
+      <span style="font-size:9px;padding:2px 7px;border-radius:8px;background:rgba(167,139,250,.3);color:#ddd6fe;font-weight:700">拼柜模式</span>
+    </div>
+
+    <!-- 拼柜 同港口 OK -->
+    <div class="ai-tip" style="color:#86efac">
+      拼柜可行 ✅ — Qingdao 装柜，WP + ZC 共享陆运费，报关费约 CNY 800–1,200/批次。
+    </div>
+    <!-- 拼柜 建议 -->
+    <div class="ai-tip" style="color:#fcd34d">
+      💰 拼柜建议：货量少的工厂拼入货量大的路线。除非客户指定拆柜，优先合并报关降低单票成本。
+    </div>
+    <!-- Free space -->
+    <div class="ai-tip" style="color:#c4b5fd">
+      📦 CTN 1 剩余约 17.4 CBM — 可额外拼入约 248 ctns 零食类产品，点「拼柜」按钮添加工厂。
+    </div>
+    <!-- Lead time + pkg warning -->
+    <div class="ai-tip" style="color:#fcd34d">
+      ⏱ 有 2 款产品包材不足，补货约需 14–21 天。预计总交期 45–75 天，建议提前 3 周确认包材。
+    </div>
+  </div>
+
+</div><!-- /aside -->
+</div><!-- /body -->
+
+</body>
+</html>

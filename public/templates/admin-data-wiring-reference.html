@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Data Wiring Reference · Admin · Sanlyn</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; line-height: 1.6; }
+  .wrap { max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; color: #60a5fa; }
+  .sub { color: #94a3b8; font-size: 13px; margin-bottom: 24px; }
+
+  .section { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 18px 22px; margin-bottom: 16px; }
+  .section h2 { font-size: 15px; color: #fde68a; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .section h3 { font-size: 13px; color: #c4b5fd; margin: 12px 0 8px 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+  th { background: #0f172a; color: #94a3b8; padding: 8px 10px; text-align: left; font-weight: 600; border-bottom: 1px solid #334155; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td { padding: 8px 10px; border-bottom: 1px solid #334155; vertical-align: top; font-size: 12px; }
+  td.col { color: #7dd3fc; font-family: ui-monospace, monospace; white-space: nowrap; }
+  td.purpose { color: #cbd5e1; }
+  td.example { color: #94a3b8; font-family: ui-monospace, monospace; font-size: 11px; }
+
+  .flow { background: #0f172a; padding: 14px 18px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 12px; color: #86efac; white-space: pre; overflow-x: auto; margin: 8px 0; }
+  .pill { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin: 0 2px; }
+  .pill-table { background: #1e3a8a; color: #93c5fd; }
+  .pill-field { background: #14532d; color: #86efac; }
+  .pill-derive { background: #78350f; color: #fcd34d; }
+  .pill-write { background: #7f1d1d; color: #fca5a5; }
+
+  .nav { position: sticky; top: 0; background: #0f172a; padding: 12px 0; margin-bottom: 16px; border-bottom: 1px solid #334155; z-index: 10; }
+  .nav-link { display: inline-block; padding: 4px 12px; margin-right: 4px; font-size: 11px; color: #94a3b8; text-decoration: none; border-radius: 4px; }
+  .nav-link:hover { background: #334155; color: #e2e8f0; }
+  code { background: #0f172a; padding: 1px 6px; border-radius: 3px; color: #fde68a; font-family: ui-monospace, monospace; font-size: 11px; }
+  .warn { background: #422006; border-left: 3px solid #fbbf24; padding: 10px 14px; border-radius: 4px; margin: 10px 0; font-size: 12px; color: #fde68a; }
+  .good { background: #052e16; border-left: 3px solid #16a34a; padding: 10px 14px; border-radius: 4px; margin: 10px 0; font-size: 12px; color: #86efac; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="nav">
+    <a href="#tables" class="nav-link">📋 主表</a>
+    <a href="#perms" class="nav-link">🔐 权限链</a>
+    <a href="#fields" class="nav-link">📐 字段索引</a>
+    <a href="#sellers" class="nav-link">🏢 出单方</a>
+    <a href="#templates" class="nav-link">📄 模板入口</a>
+    <a href="#sql" class="nav-link">⚙️ SQL 文件</a>
+  </div>
+
+  <h1>📚 Data Wiring Reference · 数据脉络索引</h1>
+  <div class="sub">Last updated: 2026-05-18 · admin 永久文档 — 防止以后忘记字段在哪、权限怎么走</div>
+
+  <div class="warn">⚠️ <strong>SUPERSEDED 2026-05-24</strong>：本页旧版表述 "customers — 唯一公司主表，禁止造副本" 已由 partner_master_data_model v2.0 取代。<br>
+  v2.0 三表模型：<br>
+  &nbsp;&nbsp;• <code>companies</code> = 法务主体 / FK truth / 财务结算（legal_name, tax_id, bank*, invoice*, company_code, company_type discriminator: supplier/factory/forwarder/trucking/customs_broker/buyer/seller/own_entity）<br>
+  &nbsp;&nbsp;• <code>customers</code> = CRM / profile / portal（display_name, company_id FK→companies, sales_owner, contact_*, portal_role, brand_scope）<br>
+  &nbsp;&nbsp;• <code>company_customer_bridge</code> = (company_id, customer_id, relationship_type, scope, valid_from, valid_to, status)<br>
+  所有跨模块 FK 指向 <code>companies(id)</code>，不指 customers。factories/forwarders/suppliers 仍不建副本表，全走 <code>companies.company_type</code>。详见 <code>~/.claude/projects/-Users-mac-Desktop/memory/partner_master_data_model.md</code>。</div>
+
+  <!-- ========== 主表清单 ========== -->
+  <div class="section" id="tables">
+    <h2>📋 核心表（Single Source of Truth）</h2>
+    <table>
+      <tr><th>表名</th><th>用途</th><th>主要字段</th></tr>
+      <tr>
+        <td class="col">customers</td>
+        <td class="purpose">⚠️ SUPERSEDED 2026-05-24: 不再是"唯一公司主表"。v2.0 模型中 customers = CRM/portal profile（display_name, company_id FK→companies, sales_owner, portal_role）；FK truth/法务/财务结算转移到 companies 表</td>
+        <td class="example">company_code, name_en, name_cn, role, default_currency*, address_*</td>
+      </tr>
+      <tr>
+        <td class="col">factories</td>
+        <td class="purpose">工厂工艺信息（不是公司表，挂在 customers 下）</td>
+        <td class="example">company_code, name, po_prefix, ports, portal_type*</td>
+      </tr>
+      <tr>
+        <td class="col">products</td>
+        <td class="purpose">SKU 主数据 · brand + factory_code 决定可见性</td>
+        <td class="example">sku, brand, factory_code, factory_price, hs_code, declaration_name</td>
+      </tr>
+      <tr>
+        <td class="col">orders</td>
+        <td class="purpose">订单主表 · 100+ 字段 · 大量挂 raw JSONB</td>
+        <td class="example">order_no, contract_no, company_code, company_name_en, raw</td>
+      </tr>
+      <tr>
+        <td class="col">shipping_plans</td>
+        <td class="purpose">海运计划（含拖车/报关/港杂/保险全部）</td>
+        <td class="example">bl_no, vessel, etd, eta, freight_cost, port surcharges (8 项)</td>
+      </tr>
+      <tr>
+        <td class="col">partner_relationships</td>
+        <td class="purpose">买家 × 工厂关系（决定下单页能选哪些工厂）</td>
+        <td class="example">company_code_a (买家), company_code_b (工厂), relationship_type</td>
+      </tr>
+      <tr>
+        <td class="col">customer_brand_authorizations <span class="pill pill-derive">2026-05-18 新</span></td>
+        <td class="purpose">客户能买哪些品牌（决定客户看到哪些 SKU）</td>
+        <td class="example">customer_code, brand, signed_nda, status</td>
+      </tr>
+      <tr>
+        <td class="col">factory_brand_authorizations <span class="pill pill-derive">2026-05-18 新 · 自动</span></td>
+        <td class="purpose">工厂能管哪些品牌（auto-seed from products.factory_code）</td>
+        <td class="example">factory_code, brand, status</td>
+      </tr>
+      <tr>
+        <td class="col">seller_profiles</td>
+        <td class="purpose">出单主体（巴匕/洋宝宝等）补充档</td>
+        <td class="example">code (e.g. petbaby), name_cn, name_en</td>
+      </tr>
+      <tr>
+        <td class="col">bank_accounts</td>
+        <td class="purpose">每个出单公司的银行账户</td>
+        <td class="example">company_code, currency, account_holder, account_no</td>
+      </tr>
+    </table>
+    <div class="warn">⚠️ <strong>v2.0 红线 (2026-05-24, SUPERSEDES v1.0.2)</strong>：companies = FK truth / 法务 / 财务结算主体（含 company_code 防伪 + company_type discriminator）；customers = CRM / portal profile（FK → companies）；company_customer_bridge 关联表；factories/forwarders/suppliers/trucking/customs_broker 仍不建副本表，全部走 <code>companies.company_type</code>。旧 v1.0.2 "所有公司只在 customers 里" 已 SUPERSEDED。</div>
+  </div>
+
+  <!-- ========== 权限链 ========== -->
+  <div class="section" id="perms">
+    <h2>🔐 权限链 · 谁能看到什么</h2>
+
+    <h3>下单页看到哪些工厂（买家视角）</h3>
+    <div class="flow">买家 = ENRICH (CN-00040)
+  ↓
+<span style="color:#7dd3fc;">SELECT company_code_b FROM partner_relationships</span>
+<span style="color:#7dd3fc;">  WHERE company_code_a = 'CN-00040'</span>
+<span style="color:#7dd3fc;">    AND relationship_type = 'customer_factory'</span>
+  ↓
+[petbaby]  ← 这个买家只能选 1 个工厂
+  ↓
+hydrate from <span class="pill pill-table">factories</span> + <span class="pill pill-table">seller_profiles</span> (petbaby 在这里)
+  ↓
+下单页 dropdown 显示: "厦门巴匕进出口有限公司"</div>
+
+    <h3>下单页看到哪些产品（买家 ∩ 工厂）</h3>
+    <div class="flow">products WHERE
+  brand ∈ <span class="pill pill-table">customer_brand_authorizations</span> (WHERE customer_code = 当前买家)
+  AND
+  brand ∈ <span class="pill pill-table">factory_brand_authorizations</span> (WHERE factory_code = 选中工厂)
+  ↓
+交集 = 客户授权 + 工厂能管 — 全部满足才显示</div>
+
+    <h3>工厂登录后看到哪些订单</h3>
+    <div class="flow">工厂 = 中宠 (zc-oem)
+  ↓
+看自己管的品牌: <span class="pill pill-table">factory_brand_authorizations</span> WHERE factory_code='zc-oem'
+  → [WANPY, TRULY, SNIFFLY, ...]
+  ↓
+查这些品牌的订单: orders → products → brand ∈ 上面列表
+  ↓
+显示订单，但客户名脱敏成 "Sanlyn Customer #001"</div>
+
+    <h3>外贸 vs 工贸一体 — 谁定价</h3>
+    <div class="flow">factories.portal_type = ?
+  ├ 'integrated'    (工贸一体: 福新 FX, 泰迪 td) → 工厂自填 factory_price
+  └ 'foreign_trade' (外贸代出口: 中宠 zc-oem, 宠爱 CL) → 巴匕/洋宝宝填外贸价 (已含代理费)</div>
+  </div>
+
+  <!-- ========== 字段索引 ========== -->
+  <div class="section" id="fields">
+    <h2>📐 常用字段去哪里改</h2>
+    <table>
+      <tr><th>想改什么</th><th>表</th><th>字段</th><th>UI 入口</th></tr>
+      <tr><td>客户公司名</td><td>customers</td><td class="col">name_en, name_cn</td><td>/admin/customers</td></tr>
+      <tr><td>客户默认币种 <span class="pill pill-derive">2026-05-18 新</span></td><td>customers</td><td class="col">default_currency</td><td>/admin/customers（需补 UI）</td></tr>
+      <tr><td>工厂报价模式 <span class="pill pill-derive">2026-05-18 新</span></td><td>factories</td><td class="col">portal_type</td><td>/admin/factories（需补 UI）</td></tr>
+      <tr><td>产品单价（工厂）</td><td>products</td><td class="col">factory_price</td><td>/admin/products</td></tr>
+      <tr><td>产品品牌</td><td>products</td><td class="col">brand</td><td>/admin/products</td></tr>
+      <tr><td>HS Code / 申报名称</td><td>products</td><td class="col">hs_code, declaration_name</td><td>/admin/products</td></tr>
+      <tr><td>订单单价（临时改）</td><td>orders.raw.products[]</td><td class="col">price</td><td>JDY-style Editor → 产品行 inline</td></tr>
+      <tr><td>订单数量 / 重量</td><td>orders.raw.products[]</td><td class="col">qty, net, gross</td><td>JDY-style Editor → 产品行 inline</td></tr>
+      <tr><td>出单公司</td><td>orders</td><td class="col">issuing_company</td><td>JDY-style Editor → 卖方信息（集团类才能改）</td></tr>
+      <tr><td>收款账户</td><td>bank_accounts</td><td class="col">account_no, swift</td><td>/admin/bank-accounts（与币种联动）</td></tr>
+      <tr><td>海运 BL 号</td><td>shipping_plans</td><td class="col">bl_no</td><td>海运计划页（minimax-booking API）</td></tr>
+      <tr><td>港杂明细 8 项</td><td>shipping_plans</td><td class="col">bkg_fee, doc_fee, tlx_fee, thc_fee, eir_fee, seal_fee, vgm_fee, customs_declare_fee</td><td>海运计划 → 成本段</td></tr>
+      <tr><td>海运报价</td><td>freight_rates</td><td class="col">gp20, hq40 (成本), customer_gp20, customer_hq40 (售价)</td><td>海运报价表</td></tr>
+    </table>
+  </div>
+
+  <!-- ========== 出单方 ========== -->
+  <div class="section" id="sellers">
+    <h2>🏢 出单公司（卖方主体）4 选 1</h2>
+    <table>
+      <tr><th>code</th><th>名称</th><th>用途</th></tr>
+      <tr><td class="col">BABI</td><td>厦门巴匕进出口有限公司</td><td>主出单 / 国内贸易代出口</td></tr>
+      <tr><td class="col">OCEANBABY / yangbaobao</td><td>上海洋宝宝国际物流</td><td>海运计划主体 / 货代票据</td></tr>
+      <tr><td class="col">CN-00004 / FortuneSanlyn</td><td>富城山凌集团</td><td>大客户合同 / 集团抬头</td></tr>
+      <tr><td class="col">SANLYN</td><td>Sanlyn 集团总部</td><td>预留 · 软件运营</td></tr>
+    </table>
+    <div class="warn">⚠️ 改「出单公司」会触发法务通知（避免临时换主体没人知道）。改「报关主体」可以临时改单。</div>
+  </div>
+
+  <!-- ========== 模板入口 ========== -->
+  <div class="section" id="templates">
+    <h2>📄 永久模板入口</h2>
+    <table>
+      <tr><th>模板</th><th>位置</th><th>用途</th></tr>
+      <tr><td>JDY-style Order Editor</td><td class="col">templates/jdy-style-order-editor-preview.html</td><td>订单 60+ 字段全可改</td></tr>
+      <tr><td>Brand × Customer Authorization Mapper</td><td class="col">templates/brand-authorization-mapper.html</td><td>勾品牌→客户授权 → 导出 SQL</td></tr>
+      <tr><td>Shipping Plan v1</td><td class="col">templates/shipping-plan-v1-yangbaobao.html</td><td>海运计划 + 改单留痕</td></tr>
+      <tr><td>Freight Quote Table</td><td class="col">templates/freight-quote-table-v1.html</td><td>报价含成本对比 + 亏本告警</td></tr>
+      <tr><td>Sanlyn Master Preview</td><td class="col">templates/sanlyn-master-preview.html</td><td>所有模板的索引页</td></tr>
+      <tr><td>Templates INDEX</td><td class="col">templates/INDEX.md</td><td>模板文字目录 + Changelog</td></tr>
+    </table>
+  </div>
+
+  <!-- ========== SQL 文件 ========== -->
+  <div class="section" id="sql">
+    <h2>⚙️ 数据操作 SQL 文件</h2>
+    <table>
+      <tr><th>文件</th><th>用途</th><th>状态</th></tr>
+      <tr><td class="col">data-ops/reset-partner-relationships-2026-05-18.sql</td><td>买家×工厂关系（26 条）</td><td class="purpose"><span class="pill pill-write">已执行 2026-05-18</span></td></tr>
+      <tr><td class="col">data-ops/brand-authorizations-2026-05-18.sql</td><td>建 2 张品牌授权表 + ALTER customers/factories</td><td><span class="pill pill-write">已执行 2026-05-18</span></td></tr>
+      <tr><td class="col">data-ops/audit-fix-sql-2026-05-16.sql</td><td>company_name_en backfill + bank_accounts</td><td>已执行</td></tr>
+      <tr><td class="col">data-ops/data-fixes-2026-05-18.sql</td><td>gross_weight / HS code / 数据修正</td><td>已执行</td></tr>
+      <tr><td class="col">data-ops/seed-partner-relationships-2026-05-18.sql</td><td>首次从 orders 历史 seed 关系</td><td>已被 reset 替代</td></tr>
+    </table>
+    <div class="good">✅ <strong>已生效到生产</strong>：partner_relationships 26 条 · customer_brand_authorizations 表 (空，等 Damon 勾) · factory_brand_authorizations 34 条 (auto-seed) · customers.default_currency · factories.portal_type</div>
+  </div>
+
+  <!-- ========== 工厂上下游 ========== -->
+  <div class="section">
+    <h2>🏭 工厂上下游捆绑（已隐含在现有数据）</h2>
+    <div class="good">✅ 不需要新建表 — 上下游已经在 <code>partner_relationships</code> 和 <code>products</code> 里。这里直接反向查给你看。</div>
+
+    <h3>工厂下游 = 卖给哪些买家（partner_relationships customer_factory 反查）</h3>
+    <table>
+      <tr><th>工厂</th><th>下游买家</th><th>买家数</th></tr>
+      <tr><td class="col">petbaby (厦门巴匕)</td><td class="purpose">PETSOME · PETSOME EU · DIBAQ · ENRICH · BIRDS · JJ PET · CONSIGNA · Giant Mei · ESENCIA · PRO FEEDS · PET UNIVERSE · HARMONIOUS · UnitedTech · PET UNIVERSE M · Magros · Eversparkles</td><td>16</td></tr>
+      <tr><td class="col">FX (福新)</td><td class="purpose">PETSOME · PETSOME EU · DIBAQ</td><td>3</td></tr>
+      <tr><td class="col">td (泰迪)</td><td class="purpose">PETSOME · PETSOME EU</td><td>2</td></tr>
+      <tr><td class="col">zc-brand (中宠品牌)</td><td class="purpose">PETSOME</td><td>1</td></tr>
+      <tr><td class="col">zc-oem (中宠 OEM)</td><td class="purpose">PETSOME EU</td><td>1</td></tr>
+      <tr><td class="col">AL (爱舒乐)</td><td class="purpose">Giant Mei</td><td>1</td></tr>
+      <tr><td class="col">CY (宠银)</td><td class="purpose">Giant Mei</td><td>1</td></tr>
+      <tr><td class="col">CN-00061 (恒安)</td><td class="purpose">HARMONIOUS</td><td>1</td></tr>
+    </table>
+
+    <h3>工厂上游 = 货代 / 原料供应商</h3>
+    <div class="warn">⚠️ DB 里 <code>partner_relationships</code> 目前只有 <strong>1 条</strong> factory_forwarder（FX→洋宝宝）。其他工厂的上游货代关系还没建。<br>
+    👉 海运计划里走 <code>shipping_plans.forwarder_cn</code> 临时绑定，但没建主关系。如果需要硬关联（每家工厂指定默认货代），加新行到 partner_relationships 即可。</div>
+
+    <h3>派生关系查询（admin 调试用）</h3>
+    <div class="flow"><span style="color:#7dd3fc;">-- 某工厂的全量下游买家</span>
+SELECT c.name_en, pr.granted_at
+FROM partner_relationships pr
+JOIN customers c ON c.company_code = pr.company_code_a
+WHERE pr.company_code_b = 'zc-oem'
+  AND pr.relationship_type = 'customer_factory';
+
+<span style="color:#7dd3fc;">-- 某工厂的全量上游货代</span>
+SELECT c.name_en
+FROM partner_relationships pr
+LEFT JOIN customers c ON c.company_code = pr.company_code_b
+WHERE pr.company_code_a = 'FX'
+  AND pr.relationship_type = 'factory_forwarder';
+
+<span style="color:#7dd3fc;">-- 某工厂的全量品牌（产出能力）</span>
+SELECT DISTINCT brand FROM products WHERE factory_code = 'zc-oem';</div>
+  </div>
+
+  <div class="section">
+    <h2>🧭 常见问题速查</h2>
+    <table>
+      <tr><th>问题</th><th>看哪里</th></tr>
+      <tr><td>客户下单看不到某个产品</td><td>1️⃣ customer_brand_authorizations 是否含该品牌 2️⃣ partner_relationships 是否含该工厂 3️⃣ products.brand 拼写对不对</td></tr>
+      <tr><td>工厂登录后没有订单</td><td>factory_brand_authorizations 该工厂是否管对应品牌</td></tr>
+      <tr><td>下单页工厂下拉为空</td><td>partner_relationships 该买家是否有关联工厂</td></tr>
+      <tr><td>账单总额改不动</td><td>JDY-style Editor → 产品行单价是 fx 公式，改单价小计自动算；底部总额也可手动覆盖</td></tr>
+      <tr><td>客户能不能看到工厂名</td><td>不能。客户视图永远 redact，走 redactForAI(viewer)</td></tr>
+      <tr><td>海运计划改 BL 号同步不到订单</td><td>必须走 /api/minimax-booking，不要直接 SQL UPDATE orders</td></tr>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>

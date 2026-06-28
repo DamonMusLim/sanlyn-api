@@ -1,0 +1,1724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>货物信息填报 – Sanlyn Logistics × Petsome</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0b1120;
+    --card: rgba(15,23,42,0.65);
+    --card-border: rgba(255,255,255,0.06);
+    --blue: #2563eb;
+    --blue-light: #3b82f6;
+    --blue-dark: #1d4ed8;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --dim: #475569;
+    --input-bg: rgba(255,255,255,0.04);
+    --input-border: rgba(255,255,255,0.10);
+    --input-focus: rgba(37,99,235,0.5);
+    --petsome: #f97316;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'DM Sans', -apple-system, 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(37,99,235,0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 100%, rgba(16,185,129,0.07) 0%, transparent 55%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  #root { position: relative; z-index: 1; }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(28px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes popIn {
+    0%   { opacity: 0; transform: scale(0.8); }
+    70%  { transform: scale(1.05); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-5px); }
+  }
+
+  .anim-slideup { animation: slideUp 0.45s cubic-bezier(0.22,1,0.36,1) both; }
+
+  /* ── Header ── */
+  .header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(11,17,32,0.9);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--card-border);
+    padding: 0 20px;
+    animation: fadeIn 0.4s ease both;
+  }
+
+  .header-top {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+
+  .logo-mark {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--blue) 0%, #1e40af 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 13px; color: #fff;
+    flex-shrink: 0; box-shadow: 0 0 16px rgba(37,99,235,0.3);
+  }
+
+  .header-brand { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 16px; color: var(--text); letter-spacing: -0.4px; }
+  .header-brand sub { font-size: 11px; font-weight: 400; vertical-align: baseline; color: var(--blue-light); font-family: 'DM Mono', monospace; letter-spacing: 0; }
+  .header-brand-sub { font-size: 11px; color: var(--muted); letter-spacing: 0.1px; margin-top: 2px; font-weight: 400; }
+
+  .header-bottom { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+
+  .client-pill {
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(249,115,22,0.1);
+    border: 1px solid rgba(249,115,22,0.25);
+    border-radius: 99px; padding: 4px 12px 4px 6px;
+  }
+
+  .client-avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800; color: #fff;
+    font-family: 'Syne', sans-serif; flex-shrink: 0;
+  }
+
+  .client-name { font-size: 12px; font-weight: 600; color: #fdba74; }
+
+  .header-badge {
+    margin-left: auto;
+    font-size: 10px; font-weight: 500;
+    padding: 3px 9px; border-radius: 99px;
+    background: rgba(37,99,235,0.15); color: var(--blue-light);
+    border: 1px solid rgba(37,99,235,0.2);
+    white-space: nowrap; letter-spacing: 0.3px;
+  }
+
+  /* ── Welcome Banner ── */
+  .welcome-banner {
+    background: linear-gradient(135deg, rgba(249,115,22,0.1) 0%, rgba(249,115,22,0.03) 100%);
+    border: 1px solid rgba(249,115,22,0.2);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 14px;
+    display: flex; gap: 13px; align-items: flex-start;
+    animation: slideUp 0.45s 0.05s ease both;
+  }
+
+  .welcome-emoji { font-size: 26px; flex-shrink: 0; line-height: 1; margin-top: 2px; }
+
+  .welcome-text-main { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.5; margin-bottom: 5px; }
+  .welcome-text-main em { color: #fdba74; font-style: normal; }
+  .welcome-text-sub { font-size: 12px; color: var(--muted); line-height: 1.65; }
+
+  /* ── Page ── */
+  .page { max-width: 600px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  /* ── Step Indicator ── */
+  .step-indicator { display: flex; align-items: center; margin-bottom: 20px; animation: fadeIn 0.4s 0.1s ease both; }
+
+  .step-item { display: flex; flex-direction: column; align-items: center; flex: 1; position: relative; }
+
+  .step-item:not(:last-child)::after {
+    content: ''; position: absolute; top: 16px; left: 50%; width: 100%; height: 2px;
+    background: var(--card-border); z-index: 0; transition: background 0.4s ease;
+  }
+
+  .step-item.done:not(:last-child)::after,
+  .step-item.active:not(:last-child)::after {
+    background: linear-gradient(90deg, var(--blue) 0%, rgba(37,99,235,0.3) 100%);
+  }
+
+  .step-dot {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 2px solid var(--card-border); background: var(--card);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; color: var(--dim);
+    position: relative; z-index: 1;
+    transition: all 0.35s cubic-bezier(0.22,1,0.36,1);
+  }
+
+  .step-item.active .step-dot { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: 0 0 0 4px rgba(37,99,235,0.2), 0 0 20px rgba(37,99,235,0.3); }
+  .step-item.done  .step-dot  { background: var(--green); border-color: var(--green); color: #fff; }
+
+  .step-label { font-size: 10px; color: var(--dim); margin-top: 6px; text-align: center; font-weight: 500; transition: color 0.3s; }
+  .step-item.active .step-label { color: var(--blue-light); }
+  .step-item.done  .step-label  { color: var(--green); }
+
+  /* ── Card ── */
+  .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); overflow: hidden; }
+
+  .card-header { padding: 18px 20px 14px; border-bottom: 1px solid var(--card-border); }
+
+  .card-title { font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+  .card-subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
+
+  .card-body { padding: 20px; }
+
+  /* ── Order Info ── */
+  .info-grid { display: flex; flex-direction: column; }
+
+  .info-row {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.04); gap: 12px;
+    animation: slideUp 0.4s ease both;
+  }
+  .info-row:last-child { border-bottom: none; }
+
+  .info-key { font-size: 11px; font-weight: 500; color: var(--muted); flex-shrink: 0; padding-top: 1px; min-width: 86px; line-height: 1.5; }
+  .info-key-cn { display: block; font-size: 10px; color: var(--dim); margin-top: 1px; }
+
+  .info-val { font-size: 13px; color: var(--text); text-align: right; line-height: 1.5; }
+  .info-val.mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--blue-light); }
+
+  .tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 3px 9px; border-radius: 99px; font-weight: 500; }
+  .tag-blue  { background: rgba(37,99,235,0.15);  color: var(--blue-light); border: 1px solid rgba(37,99,235,0.2); }
+  .tag-amber { background: rgba(245,158,11,0.15); color: var(--amber);      border: 1px solid rgba(245,158,11,0.2); }
+  .tag-green { background: rgba(16,185,129,0.15); color: var(--green);      border: 1px solid rgba(16,185,129,0.2); }
+
+  /* ── Form ── */
+  .form-group { margin-bottom: 18px; }
+  .form-label { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 7px; }
+  .form-label span { color: #ef4444; margin-left: 2px; }
+  .form-hint { font-size: 11px; color: var(--dim); margin-top: 5px; line-height: 1.6; }
+
+  .form-input,
+  .form-textarea {
+    width: 100%; background: var(--input-bg); border: 1px solid var(--input-border);
+    border-radius: 8px; padding: 11px 14px; font-size: 14px;
+    font-family: 'DM Sans', -apple-system, 'PingFang SC', sans-serif;
+    color: var(--text); outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    -webkit-appearance: none; appearance: none;
+  }
+
+  .form-input:focus, .form-textarea:focus {
+    border-color: var(--blue); box-shadow: 0 0 0 3px var(--input-focus);
+    background: rgba(255,255,255,0.06);
+  }
+
+  .form-input.mono { font-family: 'DM Mono', monospace; font-size: 13px; }
+  .form-input.error, .form-textarea.error { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,0.2); }
+  .form-input::placeholder, .form-textarea::placeholder { color: var(--dim); }
+
+  input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.6); cursor: pointer; }
+  .form-textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
+
+  .error-msg { font-size: 11px; color: #ef4444; margin-top: 5px; display: flex; align-items: center; gap: 4px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ── Cargo ── */
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .section-title { font-size: 14px; font-weight: 600; color: var(--text); }
+
+  .btn-add {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 500; color: var(--blue-light);
+    background: rgba(37,99,235,0.1); border: 1px solid rgba(37,99,235,0.2);
+    border-radius: 7px; padding: 6px 12px; cursor: pointer;
+    transition: all 0.2s; font-family: 'DM Sans', sans-serif;
+  }
+  .btn-add:hover { background: rgba(37,99,235,0.18); }
+
+  .cargo-item {
+    background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px; padding: 14px; margin-bottom: 10px;
+    animation: slideUp 0.3s cubic-bezier(0.22,1,0.36,1) both;
+  }
+
+  .cargo-item-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .cargo-item-num { font-size: 11px; font-weight: 600; color: var(--dim); letter-spacing: 0.3px; }
+
+  .btn-remove {
+    width: 26px; height: 26px; border-radius: 6px;
+    border: 1px solid rgba(239,68,68,0.2); background: rgba(239,68,68,0.08);
+    color: #ef4444; font-size: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; font-family: 'DM Sans', sans-serif; line-height: 1;
+  }
+  .btn-remove:hover { background: rgba(239,68,68,0.15); }
+
+  .cargo-nums { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .cargo-num-label { font-size: 10px; color: var(--dim); margin-bottom: 5px; }
+
+  /* ── Divider / Sep ── */
+  .divider { height: 1px; background: var(--card-border); margin: 20px 0; }
+
+  .section-sep { display: flex; align-items: center; gap: 10px; margin: 18px 0; }
+  .section-sep-line { flex: 1; height: 1px; background: var(--card-border); }
+  .section-sep-text { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; white-space: nowrap; }
+
+  /* ── Buttons ── */
+  .btn {
+    width: 100%; padding: 14px 20px; border-radius: 10px;
+    font-size: 15px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+    cursor: pointer; border: none; outline: none;
+    transition: all 0.22s cubic-bezier(0.22,1,0.36,1);
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+
+  .btn-primary { background: linear-gradient(135deg, var(--blue) 0%, var(--blue-dark) 100%); color: #fff; box-shadow: 0 4px 20px rgba(37,99,235,0.3); }
+  .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(37,99,235,0.4); }
+
+  .btn-success { background: linear-gradient(135deg, #059669 0%, var(--green) 100%); color: #fff; box-shadow: 0 4px 20px rgba(16,185,129,0.25); }
+  .btn-success:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(16,185,129,0.35); }
+
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+
+  /* ── Homepage CTA ── */
+  .home-cta {
+    margin-top: 14px;
+    background: linear-gradient(135deg, rgba(37,99,235,0.1) 0%, rgba(30,64,175,0.05) 100%);
+    border: 1px solid rgba(37,99,235,0.22); border-radius: 12px;
+    padding: 18px 18px 16px; position: relative; overflow: hidden;
+    animation: slideUp 0.5s 0.18s ease both;
+  }
+
+  .home-cta::before {
+    content: ''; position: absolute; top: -30px; right: -30px;
+    width: 100px; height: 100px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(37,99,235,0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .home-cta-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+
+  .home-cta-icon {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+    animation: float 3s ease-in-out infinite;
+  }
+
+  .home-cta-title { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800; color: var(--text); letter-spacing: -0.3px; line-height: 1.2; }
+  .home-cta-title span { display: block; font-size: 11px; color: var(--muted); font-family: 'DM Sans', sans-serif; font-weight: 400; margin-top: 2px; }
+
+  .home-cta-feats { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; }
+
+  .home-cta-feat {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--muted);
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 6px; padding: 4px 9px;
+  }
+
+  .btn-cta-home {
+    width: 100%; padding: 12px 20px;
+    background: linear-gradient(135deg, var(--blue) 0%, #1e40af 100%);
+    color: #fff; border: none; border-radius: 9px;
+    font-size: 14px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px;
+    box-shadow: 0 4px 18px rgba(37,99,235,0.35);
+    transition: all 0.22s ease;
+  }
+  .btn-cta-home:hover { transform: translateY(-2px); box-shadow: 0 8px 26px rgba(37,99,235,0.45); }
+
+  .cta-signin { text-align: center; margin-top: 10px; font-size: 11px; color: var(--dim); }
+  .cta-signin a { color: var(--blue-light); text-decoration: none; font-weight: 500; cursor: pointer; }
+
+  /* ── Success ── */
+  .success-icon-wrap { display: flex; justify-content: center; margin-bottom: 18px; }
+
+  .success-icon {
+    width: 76px; height: 76px; border-radius: 50%;
+    background: linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(16,185,129,0.05) 100%);
+    border: 2px solid rgba(16,185,129,0.3);
+    display: flex; align-items: center; justify-content: center; font-size: 34px;
+    animation: popIn 0.6s cubic-bezier(0.22,1,0.36,1) both;
+    box-shadow: 0 0 40px rgba(16,185,129,0.2);
+  }
+
+  .success-title { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 700; color: var(--text); text-align: center; letter-spacing: -0.4px; margin-bottom: 5px; animation: slideUp 0.45s 0.1s ease both; }
+  .success-sub { font-size: 13px; color: var(--muted); text-align: center; line-height: 1.7; animation: slideUp 0.45s 0.15s ease both; }
+
+  .summary-box {
+    background: rgba(255,255,255,0.03); border: 1px solid var(--card-border);
+    border-radius: 10px; padding: 15px; margin-top: 18px;
+    display: flex; justify-content: space-around; gap: 8px;
+    animation: slideUp 0.45s 0.2s ease both;
+  }
+
+  .summary-stat { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .summary-val { font-family: 'DM Mono', monospace; font-size: 17px; font-weight: 500; color: var(--text); }
+  .summary-key { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 500; text-align: center; }
+  .summary-divider { width: 1px; background: var(--card-border); align-self: stretch; }
+
+  /* ── Final CTA ── */
+  .cta-card {
+    margin-top: 14px;
+    background: linear-gradient(135deg, rgba(37,99,235,0.12) 0%, rgba(37,99,235,0.04) 100%);
+    border: 1px solid rgba(37,99,235,0.25); border-radius: 12px;
+    padding: 22px 20px; position: relative; overflow: hidden;
+    animation: slideUp 0.5s 0.3s ease both;
+  }
+
+  .cta-card::before {
+    content: ''; position: absolute; top: -40px; right: -40px;
+    width: 120px; height: 120px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(37,99,235,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .cta-title { font-family: 'Syne', sans-serif; font-size: 17px; font-weight: 800; color: var(--text); letter-spacing: -0.4px; margin-bottom: 5px; }
+  .cta-sub { font-size: 12px; color: var(--muted); line-height: 1.7; margin-bottom: 16px; }
+  .cta-features { display: flex; flex-direction: column; gap: 9px; margin-bottom: 18px; }
+  .cta-feature { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); font-weight: 500; }
+  .cta-feature-icon { width: 30px; height: 30px; border-radius: 8px; background: rgba(37,99,235,0.15); border: 1px solid rgba(37,99,235,0.2); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+
+  .btn-cta {
+    width: 100%; padding: 14px 20px;
+    background: linear-gradient(135deg, var(--blue) 0%, #1e40af 100%);
+    color: #fff; border: none; border-radius: 10px;
+    font-size: 15px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 4px 24px rgba(37,99,235,0.4);
+    transition: all 0.25s ease;
+    animation: float 3s 1s ease-in-out infinite;
+  }
+  .btn-cta:hover { transform: translateY(-3px); box-shadow: 0 10px 34px rgba(37,99,235,0.5); animation: none; }
+
+  @media (max-width: 400px) {
+    .cargo-nums { grid-template-columns: 1fr 1fr; }
+    .grid-2 { grid-template-columns: 1fr; }
+    .summary-box { flex-direction: column; align-items: center; }
+    .summary-divider { width: 40px; height: 1px; }
+    .home-cta-feats { gap: 5px; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState } = React;
+
+const ORDER = {
+  ref: 'ORD-2603-001',
+  customer: 'Petsome (Malaysia) Sdn Bhd',
+  route: '厦门 Xiamen → 巴生港 Port Klang',
+  vessel: 'COSCO STAR V.2603E',
+  etd: '2026-03-08',
+  eta: '2026-03-22',
+  container: '1×40HQ',
+};
+
+function StepIndicator({ step }) {
+  const steps = ['填写托书', '联系确认', '提交完成'];
+  return (
+    <div className="step-indicator">
+      {steps.map((s, i) => {
+        const n = i + 1, isDone = step > n, isActive = step === n;
+        return (
+          <div key={i} className={`step-item ${isDone?'done':''} ${isActive?'active':''}`}>
+            <div className="step-dot">{isDone ? '✓' : n}</div>
+            <div className="step-label">{s}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function HomeCTA() {
+  return (
+    <div style={{marginTop:14,position:'relative',overflow:'hidden',borderRadius:14}}>
+
+      {/* Main ad card */}
+      <div style={{
+        background:'linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%)',
+        border:'1px solid rgba(99,102,241,0.3)',
+        borderRadius:14,
+        padding:'24px 20px 20px',
+        position:'relative',
+        overflow:'hidden',
+        animation:'slideUp 0.5s 0.2s ease both',
+      }}>
+        {/* Background glow orbs */}
+        <div style={{position:'absolute',top:-40,right:-20,width:160,height:160,borderRadius:'50%',background:'radial-gradient(circle,rgba(99,102,241,0.2) 0%,transparent 70%)',pointerEvents:'none'}}/>
+        <div style={{position:'absolute',bottom:-30,left:-20,width:120,height:120,borderRadius:'50%',background:'radial-gradient(circle,rgba(16,185,129,0.12) 0%,transparent 70%)',pointerEvents:'none'}}/>
+
+        {/* Badge */}
+        <div style={{display:'inline-flex',alignItems:'center',gap:5,background:'rgba(99,102,241,0.15)',border:'1px solid rgba(99,102,241,0.3)',borderRadius:99,padding:'3px 10px',marginBottom:14}}>
+          <span style={{width:6,height:6,borderRadius:'50%',background:'#818cf8',display:'inline-block',boxShadow:'0 0 6px #818cf8'}}/>
+          <span style={{fontSize:10,fontWeight:700,color:'#a5b4fc',letterSpacing:0.8,textTransform:'uppercase'}}>Sanlyn OS · 智能货代平台</span>
+        </div>
+
+        {/* Headline */}
+        <div style={{fontFamily:'Syne,sans-serif',fontSize:22,fontWeight:800,color:'#f8fafc',lineHeight:1.25,marginBottom:8,letterSpacing:-0.5}}>
+          货一出门，<br/>
+          <span style={{background:'linear-gradient(90deg,#818cf8,#34d399)',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}}>剩下的交给我们。</span>
+        </div>
+
+        <div style={{fontSize:13,color:'#94a3b8',lineHeight:1.7,marginBottom:18}}>
+          从装柜到签收，AI 全程盯着你的货。<br/>
+          <span style={{color:'#cbd5e1'}}>单证、追踪、通知，一个都不漏。</span>
+        </div>
+
+        {/* Feature pills */}
+        <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:20}}>
+          {[
+            {icon:'🤖',text:'AI 自动跟单'},
+            {icon:'📍',text:'实时货物追踪'},
+            {icon:'📄',text:'单证一键下载'},
+            {icon:'🔔',text:'到港短信提醒'},
+            {icon:'⚡',text:'30秒完成下单'},
+          ].map((f,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:5,background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:8,padding:'5px 11px',fontSize:12,color:'#e2e8f0'}}>
+              <span>{f.icon}</span>{f.text}
+            </div>
+          ))}
+        </div>
+
+        {/* CTA button */}
+        <button style={{
+          width:'100%',padding:'14px 20px',
+          background:'linear-gradient(135deg,#6366f1 0%,#4f46e5 100%)',
+          color:'#fff',border:'none',borderRadius:10,
+          fontSize:15,fontWeight:700,fontFamily:'DM Sans,sans-serif',
+          cursor:'pointer',
+          display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+          boxShadow:'0 4px 24px rgba(99,102,241,0.4)',
+          transition:'all 0.22s ease',
+          animation:'float 3s 1s ease-in-out infinite',
+        }}
+          onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 8px 32px rgba(99,102,241,0.55)';e.currentTarget.style.animation='none';}}
+          onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)';e.currentTarget.style.boxShadow='0 4px 24px rgba(99,102,241,0.4)';e.currentTarget.style.animation='float 3s ease-in-out infinite';}}>
+          免费开通账号，告别手动跟单 →
+        </button>
+
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16,marginTop:12}}>
+          <span style={{fontSize:11,color:'#475569'}}>完全免费</span>
+          <span style={{width:3,height:3,borderRadius:'50%',background:'#334155',display:'inline-block'}}/>
+          <span style={{fontSize:11,color:'#475569'}}>无需信用卡</span>
+          <span style={{width:3,height:3,borderRadius:'50%',background:'#334155',display:'inline-block'}}/>
+          <a style={{fontSize:11,color:'#818cf8',cursor:'pointer',textDecoration:'none',fontWeight:500}}>已有账号登录</a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Step1({ onNext }) {
+  const [readyDate, setReadyDate]     = useState('');
+  const [tradeTerms, setTradeTerms]   = useState('');
+  const [serviceMode, setServiceMode] = useState('allin'); // 'allin' | 'custom'
+  const [services, setServices]       = useState(['booking','trucking','customs','portdocs']);
+  const [insurance, setInsurance]     = useState(false);
+  const [declaredValue, setDeclaredValue] = useState('');
+  const [items, setItems]             = useState([{ name:'', qty:'', weight:'', cbm:'', hs:'' }]);
+  const [locationImg, setLocationImg] = useState(null);
+  const [packingList, setPackingList] = useState(null);
+  const [contact, setContact]         = useState('');
+  const [phone, setPhone]             = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [licenseData, setLicenseData] = useState(null);
+  const [taxId, setTaxId]             = useState('');
+  const [legalPerson, setLegalPerson] = useState('');
+  const [regAddress, setRegAddress]   = useState('');
+  const [errors, setErrors]           = useState({});
+  const [submitting, setSubmitting]   = useState(false);
+
+  const addItem = () => { if (items.length < 10) setItems([...items, { name:'', qty:'', weight:'', cbm:'', hs:'' }]); };
+  const updItem = (i, f, v) => { const n=[...items]; n[i]={...n[i],[f]:v}; setItems(n); };
+  const delItem = (i) => setItems(items.filter((_,idx)=>idx!==i));
+
+  const toggleSvc = (s) => setServices(prev => prev.includes(s) ? prev.filter(x=>x!==s) : [...prev,s]);
+
+  const validate = () => {
+    const e = {};
+    if (!readyDate) e.readyDate = '请选择交货日期';
+    if (!tradeTerms) e.tradeTerms = '请选择贸易条款';
+    if (!items.some(it => it.name.trim())) e.items = '请至少填写一条货物品名';
+    if (!phone && !contact) e.contact = '请填写联系人姓名或手机号';
+    return e;
+  };
+
+  const handleNext = async () => {
+    const e = validate();
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setSubmitting(true);
+    setErrors({});
+    try {
+      var payload = { readyDate, tradeTerms, serviceMode, services, insurance, declaredValue, items, locationImg, packingList, contact, phone, companyName, taxId, legalPerson, regAddress, licenseUrl: licenseData ? licenseData.licenseUrl : null };
+      var resp = await fetch('https://sanlyn-api.vercel.app/api/db/factory-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      var result = await resp.json();
+      if (!result.success) {
+        setErrors({ submit: result.error || '提交失败，请重试' });
+        setSubmitting(false);
+        return;
+      }
+      onNext({ readyDate, tradeTerms, serviceMode, services, insurance, declaredValue, items, locationImg, packingList, contact, phone, companyName, taxId, legalPerson, regAddress, licenseUrl: licenseData ? licenseData.licenseUrl : null, apiResult: result });
+    } catch (err) {
+      setErrors({ submit: '网络错误，请重试 / Network error, please retry' });
+      setSubmitting(false);
+    }
+  };
+
+  const TERMS = [
+    { code:'FOB', cn:'装运港船上交货', hint:'货交船舷后由买方负责' },
+    { code:'EXW', cn:'工厂交货',       hint:'工厂门口，运费全部买方承担' },
+    { code:'CIF', cn:'成本+保险+运费', hint:'卖方负责运费及保险至目的港' },
+    { code:'CFR', cn:'成本加运费',     hint:'卖方负责运费，保险买方购买' },
+    { code:'DAP', cn:'目的地交货',     hint:'卖方负责运至指定目的地' },
+    { code:'DDP', cn:'完税后交货',     hint:'卖方承担全程含关税费用' },
+  ];
+
+  const SVC_LIST = [
+    { id:'booking',  icon:'📦', label:'订舱 Booking' },
+    { id:'trucking', icon:'🚛', label:'拖车 Trucking' },
+    { id:'customs',  icon:'📋', label:'报关 Customs' },
+    { id:'portdocs', icon:'📮', label:'港杂单证' },
+    { id:'fumigation',icon:'🌿',label:'熏蒸 Fumigation' },
+  ];
+
+  const premium = insurance && declaredValue ? (parseFloat(declaredValue.replace(/,/g,''))*0.005).toFixed(2) : null;
+
+  return (
+    <div className="anim-slideup">
+      {/* Welcome */}
+      <div className="welcome-banner">
+        <div className="welcome-emoji">👋</div>
+        <div>
+          <div className="welcome-text-main">您好！这是来自 <em>Petsome</em> 的出货请求</div>
+          <div className="welcome-text-sub">
+            Sanlyn Logistics 受客户 <strong style={{color:'#fdba74'}}>Petsome (Malaysia) Sdn Bhd</strong> 委托发起本次出货协调。<br/>
+            请填写以下托书资料，填完即可提交，报价将发送至您的邮箱 🙏
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">托书资料填写</div>
+          <div className="card-subtitle">Booking Note · 请如实填写以下出货信息，方便我司统一安排</div>
+        </div>
+        <div className="card-body">
+
+          {/* ── 交货日期 ── */}
+          <div className="form-group">
+            <label className="form-label">交货日期 Ready Date <span>*</span></label>
+            <input type="date"
+              className={`form-input mono ${errors.readyDate?'error':''}`}
+              value={readyDate}
+              onChange={e=>{ setReadyDate(e.target.value); setErrors(p=>({...p,readyDate:''})); }} />
+            <div className="form-hint">货物在工厂备妥、可供提货的日期</div>
+            {errors.readyDate && <div className="error-msg">⚠ {errors.readyDate}</div>}
+          </div>
+
+          {/* ── 贸易条款 ── */}
+          <div className="form-group">
+            <label className="form-label">贸易条款 Trade Terms <span>*</span></label>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              {TERMS.map(t=>(
+                <div key={t.code} onClick={()=>{ setTradeTerms(t.code); setErrors(p=>({...p,tradeTerms:''})); }}
+                  style={{
+                    padding:'10px 12px', borderRadius:9, cursor:'pointer',
+                    border:`1.5px solid ${tradeTerms===t.code?'var(--blue)':'rgba(255,255,255,0.07)'}`,
+                    background: tradeTerms===t.code?'rgba(37,99,235,0.12)':'rgba(255,255,255,0.02)',
+                    transition:'all 0.18s',
+                  }}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3}}>
+                    <span style={{fontFamily:'DM Mono,monospace',fontSize:13,fontWeight:700,color: tradeTerms===t.code?'var(--blue-light)':'var(--text)'}}>{t.code}</span>
+                    {tradeTerms===t.code && <span style={{fontSize:10,color:'var(--blue-light)'}}>✓</span>}
+                  </div>
+                  <div style={{fontSize:11,color:'var(--muted)',lineHeight:1.4}}>{t.cn}</div>
+                  <div style={{fontSize:10,color:'var(--dim)',marginTop:2,lineHeight:1.4}}>{t.hint}</div>
+                </div>
+              ))}
+            </div>
+            {errors.tradeTerms && <div className="error-msg" style={{marginTop:6}}>⚠ {errors.tradeTerms}</div>}
+          </div>
+
+          {/* ── 服务模式 ── */}
+          <div className="section-sep"><div className="section-sep-line"/><div className="section-sep-text">服务选择 Services</div><div className="section-sep-line"/></div>
+
+          {/* All-in card */}
+          <div onClick={()=>setServiceMode('allin')} style={{
+            borderRadius:11, padding:'14px 16px', cursor:'pointer', marginBottom:10,
+            border:`1.5px solid ${serviceMode==='allin'?'rgba(99,102,241,0.6)':'rgba(255,255,255,0.08)'}`,
+            background: serviceMode==='allin'
+              ? 'linear-gradient(135deg,rgba(99,102,241,0.18) 0%,rgba(79,70,229,0.1) 100%)'
+              : 'rgba(255,255,255,0.02)',
+            transition:'all 0.2s',
+            position:'relative', overflow:'hidden'
+          }}>
+            {serviceMode==='allin' && <div style={{position:'absolute',top:0,right:0,width:60,height:60,background:'radial-gradient(circle,rgba(99,102,241,0.2),transparent 70%)',pointerEvents:'none'}}/>}
+            <div style={{display:'flex',alignItems:'flex-start',gap:12}}>
+              <div style={{width:40,height:40,borderRadius:10,background:'linear-gradient(135deg,#6366f1,#4f46e5)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0,boxShadow:'0 4px 14px rgba(99,102,241,0.35)'}}>⭐</div>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:3}}>
+                  <span style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>All-in · Sanlyn 一站全包</span>
+                  {serviceMode==='allin' && <span style={{fontSize:10,fontWeight:700,background:'rgba(99,102,241,0.25)',color:'#a5b4fc',border:'1px solid rgba(99,102,241,0.35)',borderRadius:99,padding:'2px 8px'}}>已选 ✓</span>}
+                </div>
+                <div style={{fontSize:11,color:'var(--muted)',marginBottom:10}}>We handle everything, door to door · 全程无忧，报价含所有费用</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:7}}>
+                  {SVC_LIST.map(s=>(
+                    <span key={s.id} style={{fontSize:11,background:'rgba(99,102,241,0.15)',border:'1px solid rgba(99,102,241,0.25)',borderRadius:7,padding:'4px 10px',color:'#c7d2fe',display:'flex',alignItems:'center',gap:4}}>
+                      {s.icon} {s.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Custom pick */}
+          <div onClick={()=>setServiceMode('custom')} style={{
+            borderRadius:11, padding:'12px 16px', cursor:'pointer',
+            border:`1.5px solid ${serviceMode==='custom'?'rgba(37,99,235,0.5)':'rgba(255,255,255,0.07)'}`,
+            background: serviceMode==='custom'?'rgba(37,99,235,0.08)':'rgba(255,255,255,0.02)',
+            transition:'all 0.2s'
+          }}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom: serviceMode==='custom'?10:0}}>
+              <span style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>🔧 自定义服务</span>
+              <span style={{fontSize:11,color:'var(--dim)'}}>按需勾选</span>
+              {serviceMode==='custom' && <span style={{marginLeft:'auto',fontSize:10,color:'var(--blue-light)'}}>✓ 已选</span>}
+            </div>
+            {serviceMode==='custom' && (
+              <div style={{display:'flex',flexWrap:'wrap',gap:7,animation:'fadeIn 0.2s ease both'}}>
+                {SVC_LIST.map(s=>{
+                  const on = services.includes(s.id);
+                  return (
+                    <span key={s.id} onClick={e=>{e.stopPropagation();toggleSvc(s.id);}}
+                      style={{fontSize:11,borderRadius:7,padding:'5px 11px',cursor:'pointer',transition:'all 0.15s',display:'flex',alignItems:'center',gap:4,
+                        background: on?'rgba(37,99,235,0.18)':'rgba(255,255,255,0.04)',
+                        border:`1px solid ${on?'rgba(37,99,235,0.4)':'rgba(255,255,255,0.08)'}`,
+                        color: on?'var(--blue-light)':'var(--muted)'
+                      }}>
+                      {s.icon} {s.label} {on&&<span style={{fontSize:9}}>✓</span>}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── 货运保险 ── */}
+          <div style={{
+            marginTop:12, borderRadius:10, padding:'12px 14px',
+            border:`1px solid ${insurance?'rgba(239,68,68,0.35)':'rgba(255,255,255,0.07)'}`,
+            background: insurance?'rgba(239,68,68,0.06)':'rgba(255,255,255,0.02)',
+            transition:'all 0.2s'
+          }}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:20}}>🛡️</span>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>货运保险 Cargo Insurance</div>
+                  <div style={{fontSize:11,color:'var(--dim)'}}>保额的 0.5% · Optional · 强烈推荐</div>
+                </div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontSize:11,fontWeight:700,color:'#fca5a5',background:'rgba(239,68,68,0.15)',border:'1px solid rgba(239,68,68,0.25)',borderRadius:99,padding:'2px 8px'}}>推荐</span>
+                <div onClick={()=>setInsurance(v=>!v)} style={{
+                  width:40,height:22,borderRadius:99,cursor:'pointer',transition:'all 0.25s',position:'relative',
+                  background: insurance?'var(--green)':'rgba(255,255,255,0.12)',
+                  boxShadow: insurance?'0 0 12px rgba(16,185,129,0.4)':'none'
+                }}>
+                  <div style={{position:'absolute',top:3,left: insurance?20:3,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left 0.25s',boxShadow:'0 1px 4px rgba(0,0,0,0.3)'}}/>
+                </div>
+              </div>
+            </div>
+            {insurance && (
+              <div style={{marginTop:12,animation:'slideUp 0.25s ease both'}}>
+                <div style={{fontSize:11,color:'var(--muted)',marginBottom:6,textTransform:'uppercase',letterSpacing:0.5}}>货物申报价值 Declared Value (USD)</div>
+                <div style={{display:'flex',gap:10,alignItems:'center'}}>
+                  <div style={{position:'relative',flex:1}}>
+                    <span style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',fontSize:13,color:'var(--dim)',fontFamily:'DM Mono,monospace'}}>$</span>
+                    <input className="form-input mono" style={{paddingLeft:26}}
+                      placeholder="e.g. 50,000"
+                      value={declaredValue}
+                      onChange={e=>setDeclaredValue(e.target.value)} />
+                  </div>
+                  <div style={{flexShrink:0,textAlign:'right'}}>
+                    <div style={{fontSize:10,color:'var(--dim)'}}>Est. Premium</div>
+                    <div style={{fontFamily:'DM Mono,monospace',fontSize:14,fontWeight:600,color: premium?'var(--amber)':'var(--dim)'}}>
+                      {premium ? `$${premium}` : '—'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── 发货地点 ── */}
+          <div className="section-sep"><div className="section-sep-line"/><div className="section-sep-text">发货地点 Pickup Location</div><div className="section-sep-line"/></div>
+
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.65,background:'rgba(245,158,11,0.07)',border:'1px solid rgba(245,158,11,0.18)',borderRadius:8,padding:'10px 14px'}}>
+            ✨ 直接把工厂地址文字粘贴进来，AI 自动识别整理，无需手动输入格式。<br/>
+            <span style={{fontSize:11,color:'var(--dim)'}}>Just paste any address text — AI will parse &amp; structure it for you.</span>
+          </div>
+          <LocationUpload locationImg={locationImg} setLocationImg={setLocationImg} />
+
+          {/* ── 货物明细 ── */}
+          <div className="section-sep"><div className="section-sep-line"/><div className="section-sep-text">货物明细 Cargo Details</div><div className="section-sep-line"/></div>
+
+          <div className="section-head">
+            <span className="section-title">品名列表 <span style={{color:'var(--dim)',fontWeight:400}}>({items.length}/10)</span></span>
+            {items.length < 10 && <button className="btn-add" onClick={addItem}>＋ 添加品名</button>}
+          </div>
+
+          {errors.items && <div className="error-msg" style={{marginBottom:10}}>⚠ {errors.items}</div>}
+
+          {items.map((item, i) => (
+            <div key={i} className="cargo-item" style={{animationDelay:`${i*0.05}s`}}>
+              <div className="cargo-item-header">
+                <span className="cargo-item-num">品名 {i+1} · Item {i+1}</span>
+                {items.length > 1 && <button className="btn-remove" onClick={()=>delItem(i)}>×</button>}
+              </div>
+              <div style={{marginBottom:10}}>
+                <input className="form-input"
+                  placeholder="货物品名 Product Name（如：LED Flood Light）"
+                  value={item.name} onChange={e=>updItem(i,'name',e.target.value)} />
+              </div>
+              <div style={{marginBottom:10}}>
+                <div className="cargo-num-label" style={{marginBottom:5}}>HS 编码 HS Code</div>
+                <input className="form-input mono" placeholder="如 / e.g. 8543.70.9900"
+                  value={item.hs} onChange={e=>updItem(i,'hs',e.target.value)} />
+              </div>
+              <div className="cargo-nums">
+                <div><div className="cargo-num-label">箱数 Cartons</div>
+                  <input type="number" className="form-input mono" placeholder="0" min="0"
+                    value={item.qty} onChange={e=>updItem(i,'qty',e.target.value)} /></div>
+                <div><div className="cargo-num-label">毛重 G.W. (kg)</div>
+                  <input type="number" className="form-input mono" placeholder="0.00" min="0" step="0.01"
+                    value={item.weight} onChange={e=>updItem(i,'weight',e.target.value)} /></div>
+                <div><div className="cargo-num-label">体积 CBM (m³)</div>
+                  <input type="number" className="form-input mono" placeholder="0.00" min="0" step="0.01"
+                    value={item.cbm} onChange={e=>updItem(i,'cbm',e.target.value)} /></div>
+              </div>
+            </div>
+          ))}
+
+          {/* ── 装箱单 AI ── */}
+          <div className="section-sep"><div className="section-sep-line"/><div className="section-sep-text">装箱单 Packing List · AI 自动识别</div><div className="section-sep-line"/></div>
+
+          <PackingListAI onParsed={(parsed) => {
+            if (parsed && parsed.length > 0) setItems(parsed.map(p=>({ name:p.name||'', hs:p.hs||'', qty:p.qty||'', weight:p.weight||'', cbm:p.cbm||'' })));
+          }} packingList={packingList} setPackingList={setPackingList} />
+
+          <div className="divider" />
+
+          {/* ── 公司资质 Company Info ── */}
+          <div className="section-sep"><div className="section-sep-line"/><div className="section-sep-text">公司资质 Company Credentials</div><div className="section-sep-line"/></div>
+
+          <LicenseUploadOCR onResult={(data) => {
+            setLicenseData(data);
+            if (data) {
+              if (data.companyName) setCompanyName(data.companyName);
+              if (data.taxId) setTaxId(data.taxId);
+              if (data.legalPerson) setLegalPerson(data.legalPerson);
+              if (data.address) setRegAddress(data.address);
+            }
+          }} />
+
+          <div style={{marginTop:14,marginBottom:12}}>
+            <div className="cargo-num-label" style={{marginBottom:5}}>公司名称 Company Name *</div>
+            <input className="form-input" placeholder="上传营业执照自动填写 / Auto-filled from license"
+              value={companyName} onChange={e=>setCompanyName(e.target.value)}
+              style={companyName && licenseData ? {borderColor:'rgba(16,185,129,0.4)',background:'rgba(16,185,129,0.04)'} : (errors.companyName ? {borderColor:'#ef4444'} : {})} />
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <div>
+              <div className="cargo-num-label" style={{marginBottom:5}}>统一信用代码 Tax ID</div>
+              <input className="form-input mono" placeholder="自动识别 / Auto-filled"
+                value={taxId} onChange={e=>setTaxId(e.target.value)}
+                style={taxId && licenseData ? {borderColor:'rgba(16,185,129,0.4)',background:'rgba(16,185,129,0.04)'} : {}} />
+            </div>
+            <div>
+              <div className="cargo-num-label" style={{marginBottom:5}}>法定代表人 Legal Rep.</div>
+              <input className="form-input" placeholder="自动识别 / Auto-filled"
+                value={legalPerson} onChange={e=>setLegalPerson(e.target.value)}
+                style={legalPerson && licenseData ? {borderColor:'rgba(16,185,129,0.4)',background:'rgba(16,185,129,0.04)'} : {}} />
+            </div>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div className="cargo-num-label" style={{marginBottom:5}}>注册地址 Registered Address</div>
+            <input className="form-input" placeholder="自动识别 / Auto-filled"
+              value={regAddress} onChange={e=>setRegAddress(e.target.value)}
+              style={regAddress && licenseData ? {borderColor:'rgba(16,185,129,0.4)',background:'rgba(16,185,129,0.04)'} : {}} />
+          </div>
+
+          {/* ── 联系方式 Contact Info ── */}
+          <div className="section-sep"><div className="section-sep-line"/><div className="section-sep-text">联系方式 Contact Info</div><div className="section-sep-line"/></div>
+
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+            <div>
+              <div className="cargo-num-label" style={{marginBottom:5}}>联系人 Contact *</div>
+              <input className="form-input" placeholder="姓名 Name"
+                value={contact} onChange={e=>setContact(e.target.value)}
+                style={errors.contact ? {borderColor:'#ef4444'} : {}} />
+            </div>
+            <div>
+              <div className="cargo-num-label" style={{marginBottom:5}}>手机号 Phone *</div>
+              <input className="form-input mono" placeholder="138xxxx1234" type="tel"
+                value={phone} onChange={e=>setPhone(e.target.value)}
+                style={errors.contact ? {borderColor:'#ef4444'} : {}} />
+            </div>
+          </div>
+          {errors.contact && <div style={{fontSize:11,color:'#ef4444',marginBottom:10}}>{errors.contact}</div>}
+
+          <div className="divider" />
+
+          {/* 自动发送提示 */}
+          <div style={{background:'linear-gradient(135deg,rgba(16,185,129,0.08),rgba(16,185,129,0.03))',border:'1px solid rgba(16,185,129,0.2)',borderRadius:10,padding:'12px 14px',marginBottom:16,display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:20}}>📋</span>
+            <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.6}}>
+              资料提交后我司将在 <strong style={{color:'var(--green)'}}>1 个工作日内</strong> 联系您确认出货安排。<br/>
+              <span style={{fontSize:11,color:'var(--dim)'}}>We'll follow up within 1 business day to confirm shipment arrangements.</span>
+            </div>
+          </div>
+
+          {errors.submit && (
+            <div style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.3)',borderRadius:10,padding:'10px 14px',marginBottom:12,fontSize:12,color:'#ef4444'}}>
+              {errors.submit}
+            </div>
+          )}
+
+          <button className="btn btn-primary" onClick={handleNext} disabled={submitting}>
+            {submitting ? <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,0.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin 0.7s linear infinite',display:'inline-block',marginRight:8,verticalAlign:'middle'}} /> 提交中…</> : '确认提交出货资料 →'}
+          </button>
+          <div style={{textAlign:'center',marginTop:8,fontSize:11,color:'var(--dim)'}}>
+            提交后我司将尽快跟进安排，请注意查收邮件 📬
+          </div>
+
+          <RegisterPreview />
+        </div>
+      </div>
+
+      <HomeCTA />
+    </div>
+  );
+}
+
+function CargoItem({ item, index, onChange, onRemove, canRemove }) {
+  const upd = (f, v) => onChange(index, { ...item, [f]: v });
+  return (
+    <div className="cargo-item">
+      <div className="cargo-item-header">
+        <span className="cargo-item-num">品名 {index+1} · Item {index+1}</span>
+        {canRemove && <button className="btn-remove" onClick={() => onRemove(index)}>×</button>}
+      </div>
+      <div className="form-group" style={{ marginBottom:10 }}>
+        <input className="form-input"
+          placeholder="货物品名 Product Name（如：LED Flood Light）"
+          value={item.name} onChange={e => upd('name', e.target.value)} />
+      </div>
+      <div className="cargo-nums">
+        <div>
+          <div className="cargo-num-label">箱数 Cartons</div>
+          <input type="number" className="form-input mono" placeholder="0"
+            min="0" value={item.cartons} onChange={e => upd('cartons', e.target.value)} />
+        </div>
+        <div>
+          <div className="cargo-num-label">毛重 G.W. (kg)</div>
+          <input type="number" className="form-input mono" placeholder="0.00"
+            min="0" step="0.01" value={item.weight} onChange={e => upd('weight', e.target.value)} />
+        </div>
+        <div>
+          <div className="cargo-num-label">体积 CBM (m³)</div>
+          <input type="number" className="form-input mono" placeholder="0.00"
+            min="0" step="0.01" value={item.cbm} onChange={e => upd('cbm', e.target.value)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RegisterPreview() {
+  const [open, setOpen] = React.useState(false);
+
+  return (
+    <div style={{marginTop:16, borderTop:'1px solid rgba(255,255,255,0.05)', paddingTop:14}}>
+
+      {/* Toggle button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width:'100%', background:'none',
+          border:'1px solid rgba(37,99,235,0.28)',
+          borderRadius:9, color:'var(--blue-light)',
+          fontSize:13, fontWeight:600, padding:'10px 16px',
+          cursor:'pointer', fontFamily:'DM Sans,sans-serif',
+          display:'flex', alignItems:'center', justifyContent:'center', gap:7,
+          transition:'all 0.2s',
+          background: open ? 'rgba(37,99,235,0.08)' : 'transparent',
+        }}
+        onMouseEnter={e=>e.currentTarget.style.background='rgba(37,99,235,0.1)'}
+        onMouseLeave={e=>e.currentTarget.style.background= open ? 'rgba(37,99,235,0.08)':'transparent'}
+      >
+        <span>注册后是什么样子？点击查看</span>
+        <span style={{fontSize:14, transition:'transform 0.3s', display:'inline-block', transform: open ? 'rotate(180deg)':'rotate(0deg)'}}>↓</span>
+      </button>
+
+      {/* Preview panel */}
+      {open && (
+        <div style={{marginTop:12, animation:'slideUp 0.35s cubic-bezier(0.22,1,0.36,1) both'}}>
+
+          {/* Mock dashboard card */}
+          <div style={{
+            background:'rgba(15,23,42,0.9)',
+            border:'1px solid rgba(255,255,255,0.08)',
+            borderRadius:12, overflow:'hidden',
+            boxShadow:'0 8px 40px rgba(0,0,0,0.4)'
+          }}>
+            {/* Mini top bar */}
+            <div style={{background:'rgba(37,99,235,0.12)', borderBottom:'1px solid rgba(37,99,235,0.15)', padding:'10px 14px', display:'flex', alignItems:'center', gap:8}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:'var(--blue)',boxShadow:'0 0 8px rgba(37,99,235,0.6)'}}/>
+              <span style={{fontSize:11,fontWeight:700,color:'var(--blue-light)',fontFamily:'Syne,sans-serif',letterSpacing:0.5}}>SANLYN OS  ·  工厂账号</span>
+              <span style={{marginLeft:'auto',fontSize:10,color:'var(--green)',background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.2)',borderRadius:99,padding:'2px 8px'}}>● 在线</span>
+            </div>
+
+            <div style={{padding:'14px'}}>
+
+              {/* Saved info row */}
+              <div style={{fontSize:11,color:'var(--dim)',marginBottom:8,textTransform:'uppercase',letterSpacing:0.5}}>📁 已保存的工厂资料</div>
+              <div style={{background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:8,padding:'10px 12px',marginBottom:12}}>
+                <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+                  <div>
+                    <div style={{fontSize:10,color:'var(--dim)',marginBottom:2}}>工厂地址</div>
+                    <div style={{fontSize:12,color:'var(--text)',fontWeight:500}}>广东省广州市白云区 ···</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:'var(--dim)',marginBottom:2}}>联系人</div>
+                    <div style={{fontSize:12,color:'var(--text)',fontWeight:500}}>张工  ·  138 ···</div>
+                  </div>
+                </div>
+                <div style={{marginTop:8,display:'flex',gap:6}}>
+                  {['LED Flood Light','Solar Panel','Cable Reel'].map((t,i)=>(
+                    <span key={i} style={{fontSize:10,background:'rgba(37,99,235,0.1)',border:'1px solid rgba(37,99,235,0.18)',borderRadius:5,padding:'2px 7px',color:'var(--blue-light)'}}>{t}</span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Shipment tracker mock */}
+              <div style={{fontSize:11,color:'var(--dim)',marginBottom:8,textTransform:'uppercase',letterSpacing:0.5}}>🚢 货物追踪</div>
+              {[
+                { ref:'ORD-2603-001', status:'在途', color:'var(--amber)', eta:'03-22', progress:60 },
+                { ref:'ORD-2511-008', status:'已到港', color:'var(--green)', eta:'完成', progress:100 },
+              ].map((o,i)=>(
+                <div key={i} style={{background:'rgba(255,255,255,0.02)',border:'1px solid rgba(255,255,255,0.05)',borderRadius:8,padding:'10px 12px',marginBottom:8}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                    <span style={{fontSize:12,fontFamily:'DM Mono,monospace',color:'var(--text)',fontWeight:500}}>{o.ref}</span>
+                    <span style={{fontSize:10,fontWeight:600,color:o.color,background:`rgba(${o.color==='var(--green)'?'16,185,129':'245,158,11'},0.12)`,border:`1px solid ${o.color}33`,borderRadius:99,padding:'2px 8px'}}>{o.status}</span>
+                  </div>
+                  <div style={{height:4,background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${o.progress}%`,background:o.color==='var(--green)'?'linear-gradient(90deg,#059669,#10b981)':'linear-gradient(90deg,#d97706,#f59e0b)',borderRadius:99,transition:'width 1s ease'}}/>
+                  </div>
+                  <div style={{fontSize:10,color:'var(--dim)',marginTop:4}}>ETA: {o.eta}</div>
+                </div>
+              ))}
+
+              {/* One-click reorder */}
+              <div style={{marginTop:4,background:'linear-gradient(135deg,rgba(37,99,235,0.12),rgba(37,99,235,0.05))',border:'1px solid rgba(37,99,235,0.2)',borderRadius:8,padding:'10px 12px',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div>
+                  <div style={{fontSize:12,fontWeight:600,color:'var(--text)'}}>下次出货</div>
+                  <div style={{fontSize:11,color:'var(--dim)',marginTop:1}}>地址 · 品名 · 重量一键带入，30秒提交</div>
+                </div>
+                <div style={{fontSize:18}}>⚡</div>
+              </div>
+            </div>
+          </div>
+
+          {/* CTA */}
+          <button style={{
+            marginTop:12, width:'100%', padding:'13px 20px',
+            background:'linear-gradient(135deg,var(--blue),#1e40af)',
+            color:'#fff', border:'none', borderRadius:10,
+            fontSize:14, fontWeight:700, fontFamily:'DM Sans,sans-serif',
+            cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+            boxShadow:'0 4px 20px rgba(37,99,235,0.35)', transition:'all 0.22s'
+          }}
+            onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-2px)';e.currentTarget.style.boxShadow='0 8px 28px rgba(37,99,235,0.45)';}}
+            onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)';e.currentTarget.style.boxShadow='0 4px 20px rgba(37,99,235,0.35)';}}>
+            免费注册，开启我的账号 →
+          </button>
+          <div style={{textAlign:'center',marginTop:8,fontSize:11,color:'var(--dim)'}}>
+            完全免费 · 无需信用卡 · 已有账号？<a style={{color:'var(--blue-light)',cursor:'pointer',textDecoration:'none'}}>立即登录</a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PackingListAI({ onParsed, packingList, setPackingList }) {
+  const fileRef = React.useRef();
+  const [parsing, setParsing] = React.useState(false);
+  const [parsed, setParsed] = React.useState(false);
+  const [errMsg, setErrMsg] = React.useState('');
+
+  const toBase64 = (file) => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setPackingList({ name: file.name, size: (file.size/1024).toFixed(0)+'KB', type: file.type });
+    setParsing(true);
+    setParsed(false);
+    setErrMsg('');
+
+    try {
+      const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf';
+      let messages;
+
+      const prompt = `你是一个货代托书识别助手。请从这份装箱单/产品清单中提取所有货物行，返回纯 JSON 数组，不加任何说明或 markdown：
+[{ "name": "货物品名", "hs": "HS编码（如有）", "qty": 箱数数字, "weight": 毛重kg数字, "cbm": 体积m³数字 }]
+如果某项没有数据填 null。`;
+
+      if (isImage || isPdf) {
+        const b64 = await toBase64(file);
+        const mediaType = file.type;
+        messages = [{
+          role: 'user',
+          content: [
+            { type: isImage ? 'image' : 'document', source: { type: 'base64', media_type: mediaType, data: b64 } },
+            { type: 'text', text: prompt }
+          ]
+        }];
+      } else {
+        // For Excel/CSV, read as text and send as text
+        const text = await file.text().catch(() => '无法读取文件内容');
+        messages = [{ role: 'user', content: `${prompt}\n\n文件内容（CSV/文字格式）：\n${text.slice(0, 8000)}` }];
+      }
+
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, messages })
+      });
+
+      const data = await res.json();
+      const raw = data.content?.[0]?.text || '[]';
+      const clean = raw.replace(/```json|```/g,'').trim();
+      const result = JSON.parse(clean);
+      onParsed(result);
+      setParsed(true);
+    } catch(e) {
+      setErrMsg('AI 识别遇到问题，请手动填写，或联系我们协助处理');
+    }
+    setParsing(false);
+  };
+
+  if (packingList) {
+    return (
+      <div style={{borderRadius:10,overflow:'hidden',border:`1px solid ${parsed?'rgba(16,185,129,0.3)':'rgba(245,158,11,0.3)'}`,background:parsed?'rgba(16,185,129,0.05)':'rgba(245,158,11,0.05)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:22}}>
+              {parsing ? '⏳' : parsed ? '🤖' : '📋'}
+            </span>
+            <div>
+              {parsing && <div style={{fontSize:12,fontWeight:600,color:'var(--amber)',display:'flex',alignItems:'center',gap:5}}><div style={{width:10,height:10,border:'2px solid rgba(245,158,11,0.3)',borderTopColor:'var(--amber)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}}/> AI 正在识别装箱单…</div>}
+              {parsed && <div style={{fontSize:12,fontWeight:600,color:'var(--green)'}}>✨ AI 已识别并自动填写货物明细</div>}
+              {!parsing && !parsed && <div style={{fontSize:12,fontWeight:600,color:'var(--muted)'}}>文件已上传</div>}
+              <div style={{fontSize:11,color:'var(--dim)',marginTop:2}}>{packingList.name} · {packingList.size}</div>
+            </div>
+          </div>
+          <button onClick={()=>{ setPackingList(null); setParsed(false); }} style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:6,color:'#ef4444',fontSize:11,padding:'4px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:500}}>
+            重新上传
+          </button>
+        </div>
+        {parsed && (
+          <div style={{borderTop:'1px solid rgba(16,185,129,0.15)',padding:'8px 14px',fontSize:11,color:'var(--green)',background:'rgba(16,185,129,0.04)'}}>
+            ✅ 货物明细已自动填写，请滚动上方检查并确认
+          </div>
+        )}
+        {errMsg && <div style={{borderTop:'1px solid rgba(239,68,68,0.1)',padding:'8px 14px',fontSize:11,color:'#ef4444'}}>{errMsg}</div>}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        onClick={() => fileRef.current.click()}
+        style={{border:'1.5px dashed rgba(255,255,255,0.12)',borderRadius:10,padding:'22px 16px',textAlign:'center',cursor:'pointer',background:'rgba(255,255,255,0.02)',transition:'all 0.2s'}}
+        onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(37,99,235,0.4)';e.currentTarget.style.background='rgba(37,99,235,0.05)';}}
+        onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(255,255,255,0.12)';e.currentTarget.style.background='rgba(255,255,255,0.02)';}}>
+        <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv,image/*" style={{display:'none'}}
+          onChange={e=>handleFile(e.target.files[0])} />
+        <div style={{fontSize:28,marginBottom:8}}>🤖</div>
+        <div style={{fontSize:13,fontWeight:700,color:'var(--text)',marginBottom:5}}>
+          上传装箱单，AI 自动填写
+        </div>
+        <div style={{fontSize:11,color:'var(--dim)',lineHeight:1.8}}>
+          上传后 AI 自动识别品名、HS 编码、箱数、重量<br/>
+          <span style={{color:'var(--blue-light)'}}>无需手动输入</span> · 支持 Excel / PDF / 图片<br/>
+          <span style={{fontSize:10}}>Upload packing list · AI auto-fills the form for you</span>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:'var(--dim)',textAlign:'center',marginTop:8}}>
+        没有装箱单？也可以手动在上方填写品名和重量
+      </div>
+    </div>
+  );
+}
+
+function LocationUpload({ locationImg, setLocationImg }) {
+  // locationImg here repurposed to store { text, confirmed }
+  const [text, setText] = React.useState(locationImg?.text || '');
+  const [aiParsing, setAiParsing] = React.useState(false);
+  const [aiResult, setAiResult] = React.useState(locationImg?.aiResult || null);
+
+  const handleAIParse = async () => {
+    if (!text.trim()) return;
+    setAiParsing(true);
+    setAiResult(null);
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `你是一个物流地址解析助手。请从以下文字中提取并整理出标准的发货地址信息，返回纯 JSON，不要加任何说明或 markdown：
+{ "province": "省份", "city": "城市", "district": "区/县", "street": "街道/镇/园区", "detail": "详细地址", "formatted": "完整格式化地址" }
+
+输入内容：${text}`
+          }]
+        })
+      });
+      const data = await res.json();
+      const raw = data.content?.[0]?.text || '';
+      const clean = raw.replace(/```json|```/g,'').trim();
+      const parsed = JSON.parse(clean);
+      setAiResult(parsed);
+      setLocationImg({ text, aiResult: parsed });
+    } catch(e) {
+      setAiResult({ formatted: text, error: true });
+      setLocationImg({ text, aiResult: { formatted: text } });
+    }
+    setAiParsing(false);
+  };
+
+  return (
+    <div>
+      <div style={{position:'relative'}}>
+        <textarea
+          className="form-textarea"
+          style={{minHeight:80, paddingBottom:40}}
+          placeholder={'直接粘贴地址文字即可，AI 自动识别 ✨\n\n例：广东省广州市白云区太和镇XX工业园A栋\nOr paste any text with the factory address...'}
+          value={text}
+          onChange={e => { setText(e.target.value); setAiResult(null); setLocationImg(null); }}
+        />
+        <button
+          onClick={handleAIParse}
+          disabled={!text.trim() || aiParsing}
+          style={{
+            position:'absolute', right:10, bottom:10,
+            display:'flex', alignItems:'center', gap:5,
+            background: text.trim() ? 'linear-gradient(135deg,#2563eb,#1d4ed8)' : 'rgba(255,255,255,0.05)',
+            border:'none', borderRadius:7, color: text.trim() ? '#fff' : 'var(--dim)',
+            fontSize:12, fontWeight:600, padding:'6px 12px', cursor: text.trim() ? 'pointer' : 'default',
+            fontFamily:'DM Sans,sans-serif', transition:'all 0.2s',
+            boxShadow: text.trim() ? '0 2px 12px rgba(37,99,235,0.3)' : 'none'
+          }}
+        >
+          {aiParsing ? (
+            <><div style={{width:11,height:11,border:'2px solid rgba(255,255,255,0.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin 0.7s linear infinite'}} /> 识别中…</>
+          ) : (
+            <>✨ AI 识别地址</>
+          )}
+        </button>
+      </div>
+
+      {aiResult && !aiResult.error && (
+        <div style={{marginTop:10,background:'rgba(16,185,129,0.07)',border:'1px solid rgba(16,185,129,0.25)',borderRadius:9,padding:'12px 14px',animation:'slideUp 0.3s ease both'}}>
+          <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+            <span style={{fontSize:14}}>✅</span>
+            <span style={{fontSize:12,fontWeight:600,color:'var(--green)'}}>AI 已识别地址</span>
+          </div>
+          <div style={{fontSize:13,color:'var(--text)',lineHeight:1.8,fontWeight:500}}>{aiResult.formatted}</div>
+          {aiResult.province && (
+            <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:8}}>
+              {[aiResult.province, aiResult.city, aiResult.district, aiResult.street].filter(Boolean).map((t,i)=>(
+                <span key={i} style={{fontSize:11,background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.2)',borderRadius:5,padding:'2px 8px',color:'var(--green)'}}>{t}</span>
+              ))}
+            </div>
+          )}
+          <div style={{fontSize:11,color:'var(--dim)',marginTop:8}}>如有偏差，请直接修改上方文字重新识别</div>
+        </div>
+      )}
+      {aiResult && aiResult.error && (
+        <div style={{marginTop:8,fontSize:11,color:'var(--amber)'}}>⚠ 识别失败，已保存原始文字，我们会人工核对</div>
+      )}
+    </div>
+  );
+}
+
+function LicenseUploadOCR({ onResult }) {
+  const fileRef = React.useRef(null);
+  const [uploading, setUploading] = React.useState(false);
+  const [stage, setStage] = React.useState(''); // '' | 'uploading' | 'recognizing' | 'done' | 'error'
+  const [preview, setPreview] = React.useState(null);
+  const [ocrData, setOcrData] = React.useState(null);
+  const [errMsg, setErrMsg] = React.useState('');
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      setErrMsg('请上传图片或 PDF 格式的营业执照');
+      return;
+    }
+    setErrMsg('');
+    setStage('uploading');
+    setPreview(file.type.startsWith('image/') ? URL.createObjectURL(file) : null);
+
+    try {
+      // Step 1: Upload to OSS
+      var fd = new FormData();
+      var ext = file.name.split('.').pop() || 'jpg';
+      var ossPath = 'license/factory/' + Date.now() + '.' + ext;
+      fd.append('file', file);
+      fd.append('path', ossPath);
+
+      var uploadRes = await fetch('https://sanlyn-api.vercel.app/api/oss-upload', { method: 'POST', body: fd });
+      var uploadData = await uploadRes.json();
+      if (!uploadData.success) throw new Error(uploadData.error || '上传失败');
+      var ossUrl = 'https://files.sanlynos.com/' + ossPath;
+
+      // Step 2: Call OCR
+      setStage('recognizing');
+      var ocrRes = await fetch('https://sanlyn-api.vercel.app/api/ocr-license', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ossUrl: ossUrl }),
+      });
+      var ocrResult = await ocrRes.json();
+      if (!ocrResult.success) throw new Error(ocrResult.error || 'OCR 识别失败');
+
+      setOcrData(ocrResult.data);
+      setStage('done');
+      if (onResult) onResult({ ...ocrResult.data, licenseUrl: ossUrl });
+    } catch (e) {
+      setErrMsg(e.message || '处理失败，请重试');
+      setStage('error');
+    }
+  };
+
+  const reset = () => {
+    setStage('');
+    setPreview(null);
+    setOcrData(null);
+    setErrMsg('');
+    if (onResult) onResult(null);
+  };
+
+  // ── Not uploaded yet ──
+  if (!stage || stage === 'error') {
+    return (
+      <div>
+        <div
+          onClick={() => fileRef.current.click()}
+          style={{border:'1.5px dashed rgba(255,255,255,0.12)',borderRadius:10,padding:'20px 16px',textAlign:'center',cursor:'pointer',background:'rgba(255,255,255,0.02)',transition:'all 0.2s'}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(37,99,235,0.4)';e.currentTarget.style.background='rgba(37,99,235,0.05)';}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(255,255,255,0.12)';e.currentTarget.style.background='rgba(255,255,255,0.02)';}}>
+          <input ref={fileRef} type="file" accept="image/*,.pdf" capture="environment" style={{display:'none'}}
+            onChange={e=>handleFile(e.target.files[0])} />
+          <div style={{fontSize:28,marginBottom:6}}>📸</div>
+          <div style={{fontSize:13,fontWeight:700,color:'var(--text)',marginBottom:4}}>
+            上传营业执照 Upload Business License
+          </div>
+          <div style={{fontSize:11,color:'var(--dim)',lineHeight:1.7}}>
+            拍照或选择图片，AI 自动识别公司信息<br/>
+            <span style={{color:'var(--blue-light)'}}>自动提取：公司名 · 税号 · 地址 · 法人</span><br/>
+            <span style={{fontSize:10}}>Take a photo or select image · AI auto-extracts company info</span>
+          </div>
+        </div>
+        {errMsg && <div style={{fontSize:11,color:'#ef4444',marginTop:8,textAlign:'center'}}>{errMsg}</div>}
+      </div>
+    );
+  }
+
+  // ── Uploading / Recognizing ──
+  if (stage === 'uploading' || stage === 'recognizing') {
+    return (
+      <div style={{border:'1px solid rgba(37,99,235,0.3)',borderRadius:10,padding:'16px',background:'rgba(37,99,235,0.04)',animation:'slideUp 0.3s ease both'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          {preview && <img src={preview} style={{width:48,height:48,borderRadius:8,objectFit:'cover',border:'1px solid rgba(255,255,255,0.1)'}} />}
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,fontWeight:600,color:'var(--blue-light)',display:'flex',alignItems:'center',gap:6}}>
+              <div style={{width:12,height:12,border:'2px solid rgba(37,99,235,0.3)',borderTopColor:'var(--blue-light)',borderRadius:'50%',animation:'spin 0.7s linear infinite'}} />
+              {stage === 'uploading' ? '正在上传营业执照…' : '🤖 AI 正在识别公司信息…'}
+            </div>
+            <div style={{fontSize:11,color:'var(--dim)',marginTop:3}}>
+              {stage === 'uploading' ? 'Uploading license image...' : 'Extracting company name, tax ID, address...'}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Done ──
+  return (
+    <div style={{border:'1px solid rgba(16,185,129,0.3)',borderRadius:10,overflow:'hidden',background:'rgba(16,185,129,0.04)',animation:'slideUp 0.3s ease both'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 14px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          {preview && <img src={preview} style={{width:40,height:40,borderRadius:8,objectFit:'cover',border:'1px solid rgba(255,255,255,0.1)'}} />}
+          <div>
+            <div style={{fontSize:12,fontWeight:600,color:'var(--green)'}}>✅ 营业执照已识别</div>
+            <div style={{fontSize:11,color:'var(--dim)',marginTop:2}}>License recognized · Info auto-filled below</div>
+          </div>
+        </div>
+        <button onClick={reset} style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.2)',borderRadius:6,color:'#ef4444',fontSize:11,padding:'4px 10px',cursor:'pointer',fontFamily:'DM Sans,sans-serif',fontWeight:500}}>
+          重新上传
+        </button>
+      </div>
+      {ocrData && (
+        <div style={{borderTop:'1px solid rgba(16,185,129,0.15)',padding:'10px 14px',fontSize:12,color:'var(--text)',lineHeight:2}}>
+          {ocrData.companyName && <div><span style={{color:'var(--muted)',fontSize:11}}>公司名称：</span>{ocrData.companyName}</div>}
+          {ocrData.taxId && <div><span style={{color:'var(--muted)',fontSize:11}}>统一信用代码：</span><span style={{fontFamily:'DM Mono,monospace',fontSize:11}}>{ocrData.taxId}</span></div>}
+          {ocrData.legalPerson && <div><span style={{color:'var(--muted)',fontSize:11}}>法定代表人：</span>{ocrData.legalPerson}</div>}
+          {ocrData.address && <div><span style={{color:'var(--muted)',fontSize:11}}>注册地址：</span>{ocrData.address}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Step2({ onSubmit }) {
+  const [readyDate, setReadyDate] = useState('');
+  const [items, setItems] = useState([{ name:'', cartons:'', weight:'', cbm:'' }]);
+  const [contact, setContact] = useState('');
+  const [locationImg, setLocationImg] = useState(null);
+  const [phone, setPhone] = useState('');
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  const addItem = () => { if (items.length < 5) setItems([...items, { name:'', cartons:'', weight:'', cbm:'' }]); };
+  const updateItem = (i, v) => { const n = [...items]; n[i] = v; setItems(n); };
+  const removeItem = (i) => setItems(items.filter((_, idx) => idx !== i));
+
+  const validate = () => {
+    const e = {};
+    if (!readyDate) e.readyDate = '请选择货物准备日期 / Please select factory ready date';
+    if (!items.some(it => it.name.trim())) e.items = '请至少填写一条货物品名 / Please add at least one item';
+    return e;
+  };
+
+  const handleSubmit = () => {
+    const e = validate();
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setErrors({});
+    setLoading(true);
+    setTimeout(() => {
+      onSubmit({
+        readyDate, items, contact, phone, locationImg,
+        totalCartons: items.reduce((s, it) => s + (parseFloat(it.cartons)||0), 0),
+        totalWeight:  items.reduce((s, it) => s + (parseFloat(it.weight) ||0), 0),
+      });
+    }, 1500);
+  };
+
+  return (
+    <div className="anim-slideup">
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">填写货物 &amp; 交货信息</div>
+          <div className="card-subtitle">Cargo &amp; Delivery Details · 请如实填写，方便安排拖车及备货</div>
+        </div>
+        <div className="card-body">
+
+          <div className="form-group">
+            <label className="form-label">货物准备日期 Factory Ready Date <span>*</span></label>
+            <input type="date"
+              className={`form-input mono ${errors.readyDate ? 'error' : ''}`}
+              value={readyDate}
+              onChange={e => { setReadyDate(e.target.value); setErrors(p => ({...p, readyDate:''})); }} />
+            <div className="form-hint">请填写货物在工厂备齐可提货的日期 · Date cargo is ready at factory for pickup</div>
+            {errors.readyDate && <div className="error-msg">⚠ {errors.readyDate}</div>}
+          </div>
+
+          <div className="section-sep">
+            <div className="section-sep-line" />
+            <div className="section-sep-text">货物明细 Cargo Items</div>
+            <div className="section-sep-line" />
+          </div>
+
+          <div className="section-head">
+            <span className="section-title">品名列表 <span style={{color:'var(--dim)',fontWeight:400}}>({items.length}/5)</span></span>
+            {items.length < 5 && <button className="btn-add" onClick={addItem}>＋ 添加品名</button>}
+          </div>
+
+          {errors.items && <div className="error-msg" style={{marginBottom:10}}>⚠ {errors.items}</div>}
+
+          {items.map((item, i) => (
+            <CargoItem key={i} item={item} index={i}
+              onChange={updateItem} onRemove={removeItem} canRemove={items.length > 1} />
+          ))}
+
+          <div className="section-sep">
+            <div className="section-sep-line" />
+            <div className="section-sep-text">提货地址 Pickup Location</div>
+            <div className="section-sep-line" />
+          </div>
+
+          <div style={{fontSize:12, color:'var(--muted)', marginBottom:14, lineHeight:1.6, background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.18)', borderRadius:8, padding:'10px 14px'}}>
+            📍 请上传工厂地址截图（地图截图、门头照片均可），方便我司安排拖车并为您精准报价。<br/>
+            <span style={{fontSize:11, color:'var(--dim)'}}>Upload a screenshot of your factory location (map or entrance photo) so we can arrange pickup &amp; quote accurately.</span>
+          </div>
+
+          {/* Location upload */}
+          <LocationUpload locationImg={locationImg} setLocationImg={setLocationImg} />
+
+          <div style={{marginTop:14}} className="grid-2">
+            <div className="form-group" style={{marginBottom:0}}>
+              <label className="form-label">联系人 Contact Person</label>
+              <input className="form-input" placeholder="姓名 Full name"
+                value={contact} onChange={e => setContact(e.target.value)} />
+            </div>
+            <div className="form-group" style={{marginBottom:0}}>
+              <label className="form-label">电话 / 微信号</label>
+              <input className="form-input mono" placeholder="手机号或微信号"
+                value={phone} onChange={e => setPhone(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="divider" />
+
+          <button className="btn btn-success" onClick={handleSubmit} disabled={loading}>
+            {loading ? <><div className="spinner" /> 提交中，请稍候…</> : <>提交货物信息 Submit →</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Step3({ data }) {
+  const totalCtns   = data && data.items ? data.items.reduce((s,it)=>s+(parseFloat(it.qty)||0),0) : 0;
+  const totalWeight = data && data.items ? data.items.reduce((s,it)=>s+(parseFloat(it.weight)||0),0) : 0;
+  const itemCount   = data && data.items ? data.items.filter(it=>it.name.trim()).length : 0;
+  const api         = data && data.apiResult ? data.apiResult : null;
+  const acct        = api && api.account ? api.account : null;
+
+  return (
+    <div className="anim-slideup">
+      <div className="card">
+        <div className="card-body" style={{ padding:'28px 20px 24px' }}>
+          <div className="success-icon-wrap">
+            <div className="success-icon">✅</div>
+          </div>
+          <div className="success-title">托书已提交！</div>
+          <div className="success-sub">
+            感谢配合！我们已收到您的托书资料，将尽快安排拖车并联系报价。<br/>
+            <span style={{fontSize:11, color:'var(--dim)'}}>Thank you! Booking note received. We'll arrange pickup &amp; send you a quote shortly.</span>
+          </div>
+
+          {/* Shipment reference */}
+          {api && api.shipment_no && (
+            <div style={{textAlign:'center',margin:'12px 0 4px'}}>
+              <span style={{fontSize:10,color:'var(--dim)',letterSpacing:'0.06em',textTransform:'uppercase'}}>Shipment No.</span>
+              <div style={{fontSize:18,fontWeight:700,fontFamily:'DM Mono,monospace',color:'var(--blue-light)',letterSpacing:1,marginTop:2}}>{api.shipment_no}</div>
+            </div>
+          )}
+
+          <div className="summary-box">
+            <div className="summary-stat">
+              <div className="summary-val" style={{fontSize:12,letterSpacing:0}}>{data ? data.readyDate : '--'}</div>
+              <div className="summary-key">交货日期<br/>Ready Date</div>
+            </div>
+            <div className="summary-divider" />
+            <div className="summary-stat">
+              <div className="summary-val">{itemCount}</div>
+              <div className="summary-key">货物品名<br/>Items</div>
+            </div>
+            <div className="summary-divider" />
+            <div className="summary-stat">
+              <div className="summary-val">{totalCtns}</div>
+              <div className="summary-key">总箱数<br/>Cartons</div>
+            </div>
+            <div className="summary-divider" />
+            <div className="summary-stat">
+              <div className="summary-val">{totalWeight.toFixed(0)}</div>
+              <div className="summary-key">毛重 kg<br/>G.W.</div>
+            </div>
+          </div>
+
+          {/* 上传状态 */}
+          {data && (data.locationImg || data.packingList) && (
+            <div style={{marginTop:14,display:'flex',flexDirection:'column',gap:8}}>
+              {data.locationImg && (
+                <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--green)'}}>
+                  <span>📍</span> 发货地点截图已上传
+                </div>
+              )}
+              {data.packingList && (
+                <div style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:'var(--green)'}}>
+                  <span>📋</span> 产品清单已上传 · {data.packingList.name}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Account credentials card ── */}
+      {acct && acct.is_new && (
+        <div className="card" style={{marginTop:12}}>
+          <div className="card-body" style={{padding:'20px 18px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+              <span style={{fontSize:18}}>🔑</span>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:'var(--text)'}}>您的追踪账号已自动创建</div>
+                <div style={{fontSize:11,color:'var(--dim)'}}>Your tracking account has been created</div>
+              </div>
+            </div>
+            <div style={{background:'rgba(37,99,235,0.06)',border:'1px solid rgba(37,99,235,0.2)',borderRadius:10,padding:'14px 16px',marginBottom:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
+                <span style={{fontSize:11,color:'var(--muted)'}}>用户名 Username</span>
+                <span style={{fontSize:13,fontWeight:700,fontFamily:'DM Mono,monospace',color:'var(--text)'}}>{acct.username}</span>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between'}}>
+                <span style={{fontSize:11,color:'var(--muted)'}}>密码 Password</span>
+                <span style={{fontSize:13,fontWeight:700,fontFamily:'DM Mono,monospace',color:'var(--text)'}}>{acct.password}</span>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:'var(--dim)',lineHeight:1.6,marginBottom:12}}>
+              请妥善保存。登录后可追踪货物状态、查看提单、下载单证。<br/>
+              Save these credentials. Log in to track shipments, view B/L, and download documents.
+            </div>
+            <a href="https://ai.sanlynos.com" target="_blank" rel="noopener"
+              style={{display:'block',textAlign:'center',padding:'12px 20px',background:'linear-gradient(135deg,#2563eb,#1d4ed8)',color:'#fff',borderRadius:10,fontWeight:700,fontSize:14,textDecoration:'none',boxShadow:'0 4px 20px rgba(37,99,235,0.35)'}}>
+              立即登录追踪 · Log In Now →
+            </a>
+          </div>
+        </div>
+      )}
+
+      {acct && !acct.is_new && (
+        <div className="card" style={{marginTop:12}}>
+          <div className="card-body" style={{padding:'18px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+              <span style={{fontSize:16}}>👤</span>
+              <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>已关联到您的现有账号</div>
+            </div>
+            <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.6,marginBottom:12}}>
+              本次提交已自动关联到您的账号，登录即可查看最新货物动态。<br/>
+              <span style={{fontSize:11,color:'var(--dim)'}}>This submission is linked to your existing account.</span>
+            </div>
+            <a href="https://ai.sanlynos.com" target="_blank" rel="noopener"
+              style={{display:'block',textAlign:'center',padding:'12px 20px',background:'linear-gradient(135deg,#2563eb,#1d4ed8)',color:'#fff',borderRadius:10,fontWeight:700,fontSize:14,textDecoration:'none',boxShadow:'0 4px 20px rgba(37,99,235,0.35)'}}>
+              登录查看 · Log In →
+            </a>
+          </div>
+        </div>
+      )}
+
+      {!acct && (
+        <div className="cta-card">
+          <div className="cta-title">📡 随时追踪货物动态</div>
+          <div className="cta-sub">
+            注册免费账号，实时查看物流进度、在线下载提单，一个平台管理所有出货订单。<br/>
+            <span style={{fontSize:11, opacity:0.8}}>Register to track shipments, download B/L &amp; documents, manage all orders.</span>
+          </div>
+          <div className="cta-features">
+            <div className="cta-feature"><div className="cta-feature-icon">📍</div>实时物流追踪 Real-time tracking</div>
+            <div className="cta-feature"><div className="cta-feature-icon">📄</div>在线下载提单 Document download</div>
+            <div className="cta-feature"><div className="cta-feature-icon">📦</div>历史订单查询 Order history</div>
+          </div>
+          <button className="btn-cta" onClick={()=>window.open('https://ai.sanlynos.com','_blank')}>免费注册账号  ·  Create Free Account →</button>
+          <div className="cta-signin" style={{marginTop:12}}>已有账号？<a href="https://ai.sanlynos.com" target="_blank">立即登录 Sign in</a></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const [step, setStep] = useState(1);
+  const [formData, setFormData] = useState(null);
+
+  return (
+    <>
+      <header className="header">
+        <div className="header-top">
+          <div className="logo-mark">SL</div>
+          <div>
+            <div className="header-brand">Sanlyn <sub>OS</sub></div>
+            <div className="header-brand-sub">AI-Powered Global Freight Intelligence Platform</div>
+          </div>
+        </div>
+        <div className="header-bottom">
+          <div className="client-pill">
+            <div className="client-avatar">P</div>
+            <div className="client-name">Petsome 委托订单</div>
+          </div>
+          <div className="header-badge">工厂填报</div>
+        </div>
+      </header>
+
+      <div className="page">
+        <StepIndicator step={step} />
+        {step === 1 && <Step1 onNext={(data) => { setFormData(data); setStep(3); }} />}
+        {step === 3 && <Step3 data={formData} />}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -1,0 +1,1891 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sanlyn OS · 三端协同视图</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+  background: #f0f2f5; color: #111; font-size: 13px; }
+
+/* ── Portal Switcher ── */
+.portal-bar {
+  background: #1a1d23; padding: 0 24px;
+  display: flex; align-items: center; gap: 0;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.portal-brand { color: #f1f5f9; font-size: 14px; font-weight: 800;
+  letter-spacing: 1px; padding: 14px 0; margin-right: 24px; }
+.portal-tab {
+  padding: 14px 18px; font-size: 12px; font-weight: 600; color: #94a3b8;
+  cursor: pointer; border-bottom: 3px solid transparent;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.portal-tab:hover { color: #e2e8f0; }
+.portal-tab.active { color: #fff; }
+.portal-tab.t-factory.active   { border-bottom-color: #6ee7b7; color: #6ee7b7; }
+.portal-tab.t-customer.active  { border-bottom-color: #fcd34d; color: #fcd34d; }
+.portal-tab.t-admin.active     { border-bottom-color: #93c5fd; color: #93c5fd; }
+.role-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 800; }
+.t-factory  .role-badge { background: #059669; color: #fff; }
+.t-customer .role-badge { background: #d97706; color: #fff; }
+.t-admin    .role-badge { background: #1d4ed8; color: #fff; }
+.portal-priority { font-size: 9px; background: #ef4444; color: #fff;
+  padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+
+.portal-login-badge { margin-left: auto; font-size: 10px; color: #64748b;
+  padding: 14px 0; }
+
+/* Sub-tab */
+.subtab-bar { background: #fff; border-bottom: 1px solid #e0e4ea;
+  padding: 0 20px; display: flex; gap: 0; }
+.subtab { padding: 10px 16px; font-size: 11px; font-weight: 700; color: #6b7280;
+  cursor: pointer; border-bottom: 2px solid transparent; }
+.subtab.active { color: #1a1d23; border-bottom-color: #1a1d23; }
+.subtab .pip { background:#fef3c7;color:#a16207;font-size:9px;padding:1px 5px;
+  border-radius:3px;margin-left:5px; }
+
+/* ── Panels ── */
+.panel { display: none; }
+.panel.active { display: block; }
+.shell { max-width: 1100px; margin: 0 auto; padding: 20px 16px; }
+.shell-narrow { max-width: 760px; margin: 0 auto; padding: 20px 16px; }
+.shell-tight  { max-width: 460px; margin: 0 auto; padding: 60px 16px; }
+.subpanel { display: none; }
+.subpanel.active { display: block; }
+
+/* ── Common ── */
+.card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 14px; }
+.card-header { padding: 12px 16px; background: linear-gradient(135deg,#1a1d23,#2d3748);
+  display: flex; align-items: center; justify-content: space-between; }
+.card-title { color: #f1f5f9; font-size: 12px; font-weight: 800; }
+.card-sub { color: #94a3b8; font-size: 10px; margin-top: 2px; }
+.section { padding: 14px 16px; border-bottom: 1px solid #f0f2f5; }
+.section:last-child { border-bottom: none; }
+.sec-label { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase;
+  letter-spacing: .6px; margin-bottom: 10px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px;
+  border-radius: 20px; font-size: 11px; font-weight: 800; }
+.badge-green  { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.badge-amber  { background: #fef9c3; color: #a16207; border: 1px solid #fde68a; }
+.badge-gray   { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
+.badge-blue   { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.badge-red    { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+.badge-purple { background: #ede9fe; color: #6d28d9; border: 1px solid #c4b5fd; }
+
+.btn { padding: 7px 16px; border-radius: 7px; border: none;
+  font-size: 12px; font-weight: 700; cursor: pointer; }
+.btn-blue   { background: #1a73e8; color: #fff; }
+.btn-green  { background: #059669; color: #fff; }
+.btn-purple { background: #7c3aed; color: #fff; }
+.btn-amber  { background: #d97706; color: #fff; }
+.btn-red    { background: #dc2626; color: #fff; }
+.btn-ghost  { background: #f3f4f6; color: #374151; border: 1px solid #e0e4ea; }
+.btn-sm { padding: 5px 12px; font-size: 11px; }
+.btn-lg { padding: 10px 24px; font-size: 13px; }
+
+/* Step header */
+.step-card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
+  margin-bottom: 14px; overflow: hidden; }
+.step-card.required { border-color: #fbbf24; }
+.step-card.done     { border-color: #86efac; }
+.step-card.alert    { border-color: #fca5a5; }
+.step-head { padding: 12px 16px; display: flex; align-items: center;
+  justify-content: space-between; border-bottom: 1px solid #f0f2f5; }
+.step-num { width: 26px; height: 26px; border-radius: 50%; background: #1a1d23;
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 800; }
+.step-num.done   { background: #059669; }
+.step-num.alert  { background: #dc2626; }
+.step-title { font-size: 13px; font-weight: 800; color: #1a1d23; }
+.step-sub { font-size: 11px; color: #6b7280; margin-top: 1px; }
+
+/* Form */
+.form-field { margin-bottom: 10px; }
+.form-label { font-size: 11px; font-weight: 700; color: #374151;
+  margin-bottom: 4px; display: block; }
+.form-label .req { color: #dc2626; }
+.form-input { width: 100%; border: 1.5px solid #c8cdd6; border-radius: 6px;
+  padding: 8px 10px; font-size: 13px; outline: none; font-family: inherit;
+  background: #fff; }
+.form-input:focus { border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,.12); }
+.form-input.alert { border-color: #dc2626; background: #fef2f2; }
+.form-input[readonly] { background: #f8fafc; }
+textarea.form-input { resize: vertical; min-height: 60px; }
+
+/* Toggle group */
+.toggle-row { display: flex; gap: 8px; }
+.tog { padding: 8px 16px; border-radius: 7px; border: 1.5px solid #c8cdd6;
+  background: #fff; font-size: 12px; font-weight: 700; color: #4b5563;
+  cursor: pointer; flex: 1; text-align: center; }
+.tog.on-green  { border-color: #059669; background: #d1fae5; color: #059669; }
+.tog.on-amber  { border-color: #d97706; background: #fef3c7; color: #d97706; }
+.tog.on-blue   { border-color: #1a73e8; background: #dbeafe; color: #1d4ed8; }
+.tog.on-red    { border-color: #dc2626; background: #fee2e2; color: #b91c1c; }
+
+/* Info row */
+.info-row { display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid #f0f2f5; font-size: 12px; }
+.info-row:last-child { border-bottom: none; }
+.info-key { color: #6b7280; font-weight: 600; }
+.info-val { color: #1a1d23; font-weight: 700; }
+
+/* Portal header (after login) */
+.portal-header { background: #fff; border-bottom: 1px solid #e0e4ea;
+  padding: 12px 20px; display: flex; align-items: center;
+  justify-content: space-between; position: sticky; top: 52px; z-index: 90; }
+.ph-logo { font-size: 14px; font-weight: 800; color: #1a1d23; }
+.ph-user { font-size: 11px; color: #6b7280;
+  display: flex; align-items: center; gap: 8px; }
+.ph-avatar { width: 28px; height: 28px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 11px; font-weight: 800; }
+
+/* Cargo table */
+.cargo-t { width: 100%; border-collapse: collapse; font-size: 11px; }
+.cargo-t th { background: #f8fafc; padding: 6px 8px; text-align: left;
+  border: 1px solid #c8cdd6; font-size: 10px; font-weight: 800; color: #374151; }
+.cargo-t td { padding: 6px 8px; border: 1px solid #e0e4ea; }
+.cargo-t tr.alert-row { background: #fef2f2; }
+.cargo-t tr.alert-row td { border-color: #fca5a5; }
+.cargo-t tr.total { font-weight: 800; background: #f8f8f8; }
+
+/* Product picker */
+.product-tile { display: flex; align-items: center; gap: 10px; padding: 10px;
+  border: 1.5px solid #e0e4ea; border-radius: 8px; cursor: pointer; }
+.product-tile:hover { border-color: #93c5fd; background: #eff6ff; }
+.product-tile.selected { border-color: #059669; background: #f0fdf4; }
+.product-thumb { width: 40px; height: 40px; border-radius: 6px;
+  background: #f3f4f6; display: flex; align-items: center;
+  justify-content: center; font-size: 18px; flex-shrink: 0; }
+
+/* Login landing */
+.landing-card { background: #fff; border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.10); overflow: hidden; }
+.landing-head { background: linear-gradient(135deg,#059669,#10b981);
+  padding: 24px; text-align: center; color: #fff; }
+.landing-head h1 { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+.landing-head p { font-size: 12px; opacity: .9; }
+
+/* Quote cards */
+.quote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  padding: 14px 16px; }
+.quote-card { border: 2px solid #e0e4ea; border-radius: 8px; padding: 14px;
+  cursor: pointer; position: relative; }
+.quote-card:hover { border-color: #93c5fd; }
+.quote-card.selected { border-color: #059669; background: #f0fdf4; }
+.quote-card.selected::after { content: '✓ 已选'; position: absolute; top: 8px;
+  right: 8px; font-size: 9px; font-weight: 800; background: #059669;
+  color: #fff; padding: 2px 6px; border-radius: 8px; }
+.q-tag { display: inline-block; padding: 1px 7px; border-radius: 3px;
+  font-size: 10px; font-weight: 800; margin-bottom: 8px; }
+.q-name { font-size: 12px; font-weight: 800; color: #1a1d23; margin-bottom: 8px; }
+.q-row { font-size: 11px; color: #4b5563; margin-bottom: 4px;
+  display: flex; justify-content: space-between; }
+.q-row b { color: #1a1d23; font-weight: 700; }
+
+/* Doc mini */
+.doc-mini { font-family: Arial, sans-serif; font-size: 11px;
+  border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
+.doc-mini-title { text-align: center; font-size: 13px; font-weight: 800;
+  letter-spacing: 2px; padding: 10px; border-bottom: 2px solid #000; }
+.doc-mini-grid { display: grid; grid-template-columns: 1fr 1fr;
+  border: 1px solid #000; border-top: none; font-size: 10px; }
+.doc-cell { padding: 6px 8px; border: 1px solid #aaa; }
+.doc-cell.full { grid-column: 1/-1; }
+.doc-lbl { font-size: 8px; font-weight: 800; color: #444;
+  text-transform: uppercase; display: block; margin-bottom: 2px;
+  padding-bottom: 2px; border-bottom: 1px solid #ddd; }
+.doc-val { font-size: 10px; color: #111; line-height: 1.5; }
+
+/* Trade-term branch */
+.tt-branch { padding: 14px 16px; background: #f0f9ff;
+  border: 1.5px solid #bae6fd; border-radius: 8px; margin: 14px 16px; }
+.tt-branch.warn { background: #fffbeb; border-color: #fde68a; }
+
+/* Alert callout */
+.alert-callout { padding: 10px 14px; background: #fef2f2;
+  border-left: 4px solid #dc2626; border-radius: 6px;
+  margin: 10px 16px; font-size: 12px; color: #991b1b; }
+.alert-callout b { color: #7f1d1d; }
+
+.timeline { display: flex; padding: 10px 16px; background: #f8fafc;
+  border-top: 1px solid #f0f2f5; }
+.tl-step { flex: 1; text-align: center; position: relative; }
+.tl-step::after { content: ''; position: absolute; top: 10px; left: 60%;
+  width: 80%; height: 2px; background: #e0e4ea; z-index: 0; }
+.tl-step:last-child::after { display: none; }
+.tl-step.done::after { background: #059669; }
+.tl-dot { width: 20px; height: 20px; border-radius: 50%; margin: 0 auto 4px;
+  display: flex; align-items: center; justify-content: center; font-size: 9px;
+  font-weight: 800; position: relative; z-index: 1; }
+.tl-dot.done   { background: #059669; color: #fff; }
+.tl-dot.active { background: #1a73e8; color: #fff; box-shadow: 0 0 0 3px #dbeafe; }
+.tl-dot.idle   { background: #e5e7eb; color: #9ca3af; }
+.tl-label { font-size: 9px; color: #9ca3af; }
+.tl-label.active { color: #1a73e8; font-weight: 700; }
+.tl-label.done   { color: #059669; }
+
+/* Party row */
+.party-row { display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px; border-bottom: 1px solid #f0f2f5; }
+.party-row:last-child { border-bottom: none; }
+.party-avatar { width: 36px; height: 36px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- Portal Tab Bar -->
+<div class="portal-bar">
+  <div class="portal-brand">SANLYN OS</div>
+  <div class="portal-tab t-factory active" onclick="switchTab('factory', this)">
+    <span class="role-badge">工厂</span> 工厂端
+    <span class="portal-priority">优先 PRIORITY</span>
+  </div>
+  <div class="portal-tab t-customer" onclick="switchTab('customer', this)">
+    <span class="role-badge">客户</span> 客户端
+  </div>
+  <div class="portal-tab t-admin" onclick="switchTab('admin', this)">
+    <span class="role-badge">ADMIN</span> Sanlyn 内部
+  </div>
+  <div class="portal-login-badge">🌐 ai.sanlyn.cn · 登录后按角色隔离</div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     PANEL 1: FACTORY (PRIORITY)
+     工厂驱动一切 — 没货好日期客户也没法选
+══════════════════════════════════════════ -->
+<div class="panel active" id="panel-factory">
+
+  <!-- Sub-tabs: 未登录 / 已登录 -->
+  <div class="subtab-bar">
+    <div class="subtab active" onclick="switchSub('factory', 'guest', this)">
+      🔐 首次访问 · 未登录
+    </div>
+    <div class="subtab" onclick="switchSub('factory', 'auth', this)">
+      📋 已登录 · 工厂操作面板
+    </div>
+  </div>
+
+  <!-- Sub-panel: 未登录 (magic link landing) -->
+  <div class="subpanel active" id="sub-factory-guest">
+    <div class="shell-tight">
+
+      <!-- STEP A: Phone verification (default shown) -->
+      <div id="login-step-a">
+      <div class="landing-card">
+        <div class="landing-head">
+          <div style="font-size:36px;margin-bottom:8px;">🏭</div>
+          <h1>Sanlyn 工厂协同端</h1>
+          <p>Welcome to Sanlyn Factory Portal</p>
+        </div>
+        <div style="padding:24px;">
+          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;
+            padding:12px;margin-bottom:16px;">
+            <div style="font-size:11px;color:#a16207;font-weight:700;margin-bottom:4px;">
+              📨 您已收到 Sanlyn 的协同邀请
+            </div>
+            <div style="font-size:11px;color:#92400e;">
+              Sanlyn 邀请您协作 SHP-CY00047 出货安排
+              <br>请验证身份后进入工厂面板
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label">手机号 / Mobile <span class="req">*</span></label>
+            <input class="form-input" placeholder="+86 1XX XXXX XXXX" />
+          </div>
+          <div class="form-field">
+            <label class="form-label">短信验证码</label>
+            <div style="display:flex;gap:8px;">
+              <input class="form-input" placeholder="6 位验证码" style="flex:1;" />
+              <button class="btn btn-ghost btn-sm">获取验证码</button>
+            </div>
+          </div>
+
+          <button class="btn btn-green btn-lg" style="width:100%;margin-top:8px;"
+            onclick="showLoginStepB()">
+            ✓ 验证并继续
+          </button>
+
+          <div style="text-align:center;font-size:11px;color:#6b7280;margin-top:14px;
+            padding-top:14px;border-top:1px solid #f0f2f5;">
+            首次登录将绑定本设备 · 仅限<b>单一设备</b>登录<br>
+            <span style="color:#9ca3af;">绑定后无需重复验证，换设备需联系 Sanlyn</span>
+          </div>
+        </div>
+      </div>
+      </div><!-- /login-step-a -->
+
+      <!-- STEP B: First-time only — Business license + device binding (hidden by default) -->
+      <div id="login-step-b" style="display:none;">
+      <div class="landing-card">
+        <div class="landing-head" style="background:linear-gradient(135deg,#1d4ed8,#3b82f6);">
+          <div style="font-size:28px;margin-bottom:6px;">📋</div>
+          <h1 style="font-size:16px;">首次登录 · 完善工厂资料</h1>
+          <p>First Login — Factory Profile Setup</p>
+        </div>
+        <div style="padding:20px;">
+
+          <!-- Device binding notice -->
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;
+            padding:12px;margin-bottom:16px;display:flex;align-items:flex-start;gap:10px;">
+            <div style="font-size:20px;flex-shrink:0;">🔒</div>
+            <div>
+              <div style="font-size:12px;font-weight:800;color:#1e40af;margin-bottom:3px;">
+                设备绑定 / Device Binding
+              </div>
+              <div style="font-size:11px;color:#1d4ed8;line-height:1.5;">
+                本次登录将绑定您的设备。<b>每个账号仅限 1 台设备</b>，防止账号共享。<br>
+                换设备请联系 Sanlyn 管理员重置。
+              </div>
+              <div style="margin-top:8px;font-size:10px;color:#3b82f6;background:#dbeafe;
+                border-radius:4px;padding:4px 8px;display:inline-block;">
+                📱 当前设备：iPhone / Safari · 已识别
+              </div>
+            </div>
+          </div>
+
+          <!-- Business license upload -->
+          <div class="form-field">
+            <label class="form-label">
+              营业执照 / Business License <span class="req">*</span>
+            </label>
+            <div id="lic-upload-zone" onclick="simulateLicUpload()"
+              style="border:2px dashed #c8cdd6;border-radius:8px;padding:20px;
+              text-align:center;cursor:pointer;background:#f8fafc;transition:all .2s;"
+              onmouseover="this.style.borderColor='#059669';this.style.background='#f0fdf4'"
+              onmouseout="this.style.borderColor='#c8cdd6';this.style.background='#f8fafc'">
+              <div style="font-size:28px;margin-bottom:6px;">📄</div>
+              <div style="font-size:12px;font-weight:700;color:#374151;">点击上传营业执照</div>
+              <div style="font-size:10px;color:#9ca3af;margin-top:3px;">支持 JPG · PNG · PDF · 不超过 5MB</div>
+            </div>
+
+            <!-- After AI parsing (shown after simulated upload) -->
+            <div id="lic-parsed" style="display:none;margin-top:10px;">
+              <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:12px;">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                  <span style="font-size:11px;background:linear-gradient(135deg,#059669,#10b981);
+                    color:#fff;padding:2px 8px;border-radius:4px;font-weight:800;">
+                    ✨ Sanlyn AI 识别完成
+                  </span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">
+                  <div><span style="color:#6b7280;">公司名称：</span><b>宣城福新宠物食品有限公司</b></div>
+                  <div><span style="color:#6b7280;">统一社会信用代码：</span><b>91340800MA2X...</b></div>
+                  <div><span style="color:#6b7280;">法定代表人：</span><b>张XX</b></div>
+                  <div><span style="color:#6b7280;">注册地址：</span><b>安徽省宣城市</b></div>
+                  <div><span style="color:#6b7280;">有效期：</span><b style="color:#059669;">长期有效</b></div>
+                  <div><span style="color:#6b7280;">经营范围：</span><b>宠物食品生产...</b></div>
+                </div>
+                <div style="margin-top:8px;font-size:10px;color:#059669;">✓ 信息已自动填入工厂档案，后续订单无需重复提供</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Contact person -->
+          <div class="form-field">
+            <label class="form-label">联系人姓名 <span class="req">*</span></label>
+            <input class="form-input" placeholder="例：王晓明" />
+          </div>
+          <div class="form-field">
+            <label class="form-label">职位 / Title</label>
+            <input class="form-input" placeholder="例：外贸跟单" />
+          </div>
+
+          <!-- Agreement -->
+          <div style="background:#f8fafc;border:1px solid #e0e4ea;border-radius:6px;
+            padding:10px 12px;font-size:11px;color:#374151;margin-bottom:14px;">
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+              <input type="checkbox" checked style="margin-top:2px;flex-shrink:0;" />
+              <span>我已阅读并同意 <a href="#" style="color:#1a73e8;">Sanlyn 工厂协同协议</a> 及 <a href="#" style="color:#1a73e8;">数据保护声明</a>，授权 Sanlyn 在协同出货中使用工厂信息。</span>
+            </label>
+          </div>
+
+          <button class="btn btn-green btn-lg" style="width:100%;"
+            onclick="document.getElementById('login-step-b').style.display='none'; switchSub('factory','auth', document.querySelectorAll('#panel-factory .subtab')[1]);">
+            ✅ 完成设置 · 进入工厂面板
+          </button>
+
+          <div style="text-align:center;font-size:10px;color:#9ca3af;margin-top:12px;">
+            资料只需提供一次 · 设备已绑定 · 下次直接登录
+          </div>
+        </div>
+      </div>
+      </div><!-- /login-step-b -->
+
+      <div style="text-align:center;font-size:10px;color:#94a3b8;margin-top:16px;">
+        Powered by Sanlyn OS · ai.sanlyn.cn<br>
+        🔒 您的数据按公司隔离，仅您可访问
+      </div>
+    </div>
+  </div>
+
+  <!-- Sub-panel: 已登录工厂 -->
+  <div class="subpanel" id="sub-factory-auth">
+    <div class="portal-header">
+      <div class="ph-logo">🏭 Sanlyn 工厂协同端</div>
+      <div class="ph-user">
+        <span>已登录：</span>
+        <div class="ph-avatar" style="background:#059669;">福</div>
+        <b>宣城福新宠物食品有限公司</b>
+        <span style="font-size:10px;color:#9ca3af;">· 今日 2026-05-27</span>
+      </div>
+    </div>
+
+    <div class="shell-narrow">
+
+      <!-- Action banner -->
+      <div class="card" style="border:2px solid #fbbf24;">
+        <div style="background:#fffbeb;padding:14px 16px;border-bottom:1px solid #fde68a;
+          display:flex;align-items:center;gap:12px;">
+          <div style="font-size:24px;">⚡</div>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:800;color:#92400e;">
+              SHP-CY00047 — 客户 HARMONIOUS · PORT KLANG
+            </div>
+            <div style="font-size:11px;color:#a16207;margin-top:2px;">
+              ⚠️ <b>没有货好日期 → 后续步骤无法解锁</b>。请优先确认 Step 1。
+            </div>
+          </div>
+          <div class="badge badge-amber">需要您操作</div>
+        </div>
+      </div>
+
+      <!-- STEP 1: Cargo ready date + container -->
+      <div class="step-card required">
+        <div class="step-head">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="step-num">1</div>
+            <div>
+              <div class="step-title">货好日期 + 柜型 / Cargo Ready Date &amp; Container</div>
+              <div class="step-sub">必填 · 客户和后续步骤都依赖这一项</div>
+            </div>
+          </div>
+          <div class="badge badge-red">必填 第一步</div>
+        </div>
+        <div class="section">
+          <div class="grid2">
+            <div class="form-field">
+              <label class="form-label">货好日期 <span class="req">*</span></label>
+              <input type="date" class="form-input" value="2026-06-05" />
+              <div style="font-size:10px;color:#6b7280;margin-top:3px;">距今 9 天 · 客户 ETD 期望 2026-06-12</div>
+            </div>
+            <div class="form-field">
+              <label class="form-label">备注（可选）</label>
+              <input class="form-input" placeholder="如分批发货 / 假期 / 优先级" />
+            </div>
+          </div>
+          <!-- Container type selector -->
+          <div style="margin-top:4px;">
+            <div class="form-label" style="margin-bottom:8px;">
+              柜型 / Container Type <span class="req">*</span>
+              <span style="font-size:10px;font-weight:400;color:#6b7280;margin-left:6px;">
+                如有出入请修改，影响报价和订舱
+              </span>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <div class="tog" id="ct-20gp" onclick="togContainer('20gp')"
+                style="flex:0 0 auto;padding:8px 14px;">
+                <div style="font-size:12px;font-weight:800;">20GP</div>
+                <div style="font-size:9px;color:#6b7280;margin-top:1px;">≈ 25 CBM</div>
+              </div>
+              <div class="tog" id="ct-40gp" onclick="togContainer('40gp')"
+                style="flex:0 0 auto;padding:8px 14px;">
+                <div style="font-size:12px;font-weight:800;">40GP</div>
+                <div style="font-size:9px;color:#6b7280;margin-top:1px;">≈ 55 CBM</div>
+              </div>
+              <div class="tog on-blue" id="ct-40hq" onclick="togContainer('40hq')"
+                style="flex:0 0 auto;padding:8px 14px;">
+                <div style="font-size:12px;font-weight:800;">40HQ</div>
+                <div style="font-size:9px;margin-top:1px;">≈ 68 CBM · 当前选</div>
+              </div>
+              <div class="tog" id="ct-lcl" onclick="togContainer('lcl')"
+                style="flex:0 0 auto;padding:8px 14px;">
+                <div style="font-size:12px;font-weight:800;">LCL</div>
+                <div style="font-size:9px;color:#6b7280;margin-top:1px;">拼箱 / 散货</div>
+              </div>
+              <div class="tog" id="ct-multi" onclick="togContainer('multi')"
+                style="flex:0 0 auto;padding:8px 14px;">
+                <div style="font-size:12px;font-weight:800;">多柜</div>
+                <div style="font-size:9px;color:#6b7280;margin-top:1px;">填写数量</div>
+              </div>
+            </div>
+            <div id="ct-multi-note" style="display:none;margin-top:8px;">
+              <input class="form-input" placeholder="例：40HQ × 2  或  40HQ × 1 + 20GP × 1" style="max-width:280px;" />
+            </div>
+          </div>
+
+          <!-- Port of Loading — auto from factory profile -->
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f2f5;">
+            <div class="form-label" style="margin-bottom:6px;">
+              装运港 / Port of Loading
+            </div>
+            <!-- Default: auto-detected from registered address -->
+            <div id="pol-auto" style="display:flex;align-items:center;gap:10px;">
+              <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;
+                padding:8px 14px;display:flex;align-items:center;gap:10px;flex:1;max-width:340px;">
+                <div style="font-size:18px;">📍</div>
+                <div>
+                  <div class="pol-port-name" style="font-size:12px;font-weight:800;color:#065f46;">
+                    宁波港 / Ningbo · CNNGB
+                  </div>
+                  <div class="pol-port-sub" style="font-size:10px;color:#059669;margin-top:1px;">
+                    从注册地址自动推断 · 安徽宣城 → 宁波最近
+                  </div>
+                </div>
+                <div style="font-size:10px;background:#d1fae5;color:#059669;
+                  padding:1px 6px;border-radius:3px;font-weight:700;white-space:nowrap;">
+                  ✓ 已确认
+                </div>
+              </div>
+              <button onclick="showPOLSelector()" class="btn btn-ghost btn-sm"
+                style="font-size:10px;white-space:nowrap;">
+                换港口 / 多工厂
+              </button>
+            </div>
+
+            <!-- Expanded selector (hidden by default) -->
+            <div id="pol-selector" style="display:none;margin-top:10px;
+              background:#f8fafc;border:1px solid #e0e4ea;border-radius:8px;padding:12px;">
+              <div style="font-size:10px;font-weight:800;color:#374151;text-transform:uppercase;
+                letter-spacing:.5px;margin-bottom:8px;">选择装运港 或 多工厂合并</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                <div class="tog" id="pol-fz" onclick="togPOL('fz')" style="flex:0 0 auto;">福州 CNFOC</div>
+                <div class="tog" id="pol-xm" onclick="togPOL('xm')" style="flex:0 0 auto;">厦门 CNXMN</div>
+                <div class="tog on-blue" id="pol-nb" onclick="togPOL('nb')" style="flex:0 0 auto;">宁波 CNNGB</div>
+                <div class="tog" id="pol-sh" onclick="togPOL('sh')" style="flex:0 0 auto;">上海 CNSHA</div>
+                <div class="tog" id="pol-gz" onclick="togPOL('gz')" style="flex:0 0 auto;">广州 CNGZH</div>
+                <div class="tog" id="pol-qd" onclick="togPOL('qd')" style="flex:0 0 auto;">青岛 CNTAO</div>
+                <div class="tog" id="pol-other" onclick="togPOL('other')" style="flex:0 0 auto;">其他</div>
+              </div>
+              <div id="pol-other-input" style="display:none;margin-bottom:8px;">
+                <input class="form-input" placeholder="港口名称 或 UN/LOCODE" style="max-width:240px;" />
+              </div>
+              <!-- Multi-factory option -->
+              <div style="padding-top:8px;border-top:1px solid #e0e4ea;">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:#374151;">
+                  <input type="checkbox" id="pol-multi-check" onchange="togPOLMulti(this.checked)" />
+                  多工厂 / 多地址合并出货
+                </label>
+                <div id="pol-multi-note" style="display:none;margin-top:8px;">
+                  <textarea class="form-input" rows="2"
+                    placeholder="例：A 厂宣城（5 CTNS）+ B 厂杭州（12 CTNS），统一送宁波港"></textarea>
+                </div>
+              </div>
+              <div style="margin-top:8px;display:flex;gap:6px;">
+                <button class="btn btn-blue btn-sm" onclick="confirmPOL()">确认</button>
+                <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pol-selector').style.display='none'">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: Dangerous goods? -->
+      <div class="step-card">
+        <div class="step-head">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="step-num">2</div>
+            <div>
+              <div class="step-title">货物属性 / Cargo Type</div>
+              <div class="step-sub">是否为危险品（电池/液体/易燃等）</div>
+            </div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="toggle-row">
+            <div class="tog on-green" id="cgt-normal" onclick="togCargo('normal')">✅ 普通货物 / Non-Dangerous</div>
+            <div class="tog" id="cgt-dg" onclick="togCargo('dg')">⚠️ 危险品 / Dangerous</div>
+            <div class="tog" id="cgt-other" onclick="togCargo('other')">❓ 其他 / Other</div>
+          </div>
+          <div style="font-size:11px;color:#6b7280;margin-top:8px;">
+            危险品需提供 MSDS 安全数据表，运输费会上调。如类型不确定请选「其他」并备注。
+          </div>
+          <div id="cgt-other-note" style="display:none;margin-top:10px;">
+            <textarea class="form-input" rows="2"
+              placeholder="请说明货物类型，如：含蓄电池（非危险品量级）/ 液体但无腐蚀性 / 其他特殊情况..."></textarea>
+          </div>
+          <div id="cgt-dg-note" style="display:none;margin-top:10px;
+            background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:10px 12px;
+            font-size:11px;color:#991b1b;">
+            ⚠️ 危险品需额外提供：<b>MSDS 安全数据表</b>（中英文）· <b>危险品声明书</b>。
+            运输成本将相应上调，Sanlyn 会与您单独确认报价。
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 3: Select products -->
+      <div class="step-card">
+        <div class="step-head">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="step-num">3</div>
+            <div>
+              <div class="step-title">本批货物 / Products in This Shipment</div>
+              <div class="step-sub">从产品库选择 或 上传 PI/PL（Minimax 自动识别）</div>
+            </div>
+          </div>
+        </div>
+        <div class="section">
+          <div style="display:flex;gap:8px;margin-bottom:10px;">
+            <button class="btn btn-blue btn-sm">📚 从产品库选择</button>
+            <button class="btn btn-purple btn-sm">📎 上传 PI / PL → AI 识别</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="product-tile selected">
+              <div class="product-thumb">🦴</div>
+              <div style="flex:1;">
+                <div style="font-size:12px;font-weight:700;">FB-001 · 鸡肉狗咬胶 1kg</div>
+                <div style="font-size:10px;color:#6b7280;">HS 2309109000 · 1240 CTNS · 8,960 KGS</div>
+              </div>
+              <div style="font-size:11px;color:#059669;font-weight:700;">✓</div>
+            </div>
+            <div class="product-tile selected">
+              <div class="product-thumb">🐈</div>
+              <div style="flex:1;">
+                <div style="font-size:12px;font-weight:700;">FB-118 · 豆腐猫砂 6L</div>
+                <div style="font-size:10px;color:#6b7280;">HS 3825490000 · 380 CTNS · 7,600 KGS</div>
+              </div>
+              <div style="font-size:11px;color:#059669;font-weight:700;">✓</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 4: Customs declaration (auto + red flags) -->
+      <div class="step-card alert">
+        <div class="step-head">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="step-num alert">4</div>
+            <div>
+              <div class="step-title">报关货描自动生成 / Customs Declaration</div>
+              <div class="step-sub">Sanlyn OS AI 自动识别 · 红色 = 信息缺失需补充</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div class="badge badge-red">
+              <span style="display:inline-block;width:7px;height:7px;border-radius:50%;
+                background:#dc2626;margin-right:3px;animation:pulse 1.2s infinite;"></span>
+              2 项需补充
+            </div>
+          </div>
+        </div>
+
+        <!-- AI branding banner -->
+        <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);
+          padding:12px 16px;border-bottom:1px solid #1e40af;
+          display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:32px;height:32px;border-radius:8px;
+              background:linear-gradient(135deg,#6366f1,#8b5cf6);
+              display:flex;align-items:center;justify-content:center;
+              font-size:16px;flex-shrink:0;">✨</div>
+            <div>
+              <div style="font-size:12px;font-weight:800;color:#f1f5f9;letter-spacing:.5px;">
+                Sanlyn OS · AI 报关自动识别
+              </div>
+              <div style="font-size:10px;color:#94a3b8;margin-top:1px;">
+                已从产品主数据库自动带入 HS Code · 申报要素 · 重量。标红字段需您补充。
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:9px;color:#64748b;font-weight:700;text-transform:uppercase;
+              letter-spacing:.5px;margin-bottom:3px;">识别率</div>
+            <div style="font-size:18px;font-weight:800;color:#34d399;">94%</div>
+          </div>
+        </div>
+
+        <div class="alert-callout">
+          ⚠️ <b>FB-118 缺申报要素</b>。可先提交，但<b>正式报关前必须补全</b>，否则出运卡关。
+        </div>
+        <div class="section" style="padding:0;">
+          <table class="cargo-t">
+            <thead>
+              <tr>
+                <th>SKU</th><th>报关品名</th><th>HS Code</th><th>申报要素</th>
+                <th>箱数</th><th>NW</th><th>GW</th><th style="width:56px;"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>FB-001</td>
+                <td>鸡肉狗咬胶</td>
+                <td>2309109000</td>
+                <td>品牌:无;成分:鸡肉;包装:袋装</td>
+                <td>1240</td><td>8500</td><td>8960</td>
+                <td style="text-align:center;">
+                  <button onclick="openEdit('fb001')" class="btn btn-ghost btn-sm"
+                    style="padding:3px 8px;font-size:10px;">✏️ 修改</button>
+                </td>
+              </tr>
+              <!-- Inline edit for FB-001 -->
+              <tr id="edit-fb001" style="display:none;background:#eff6ff;">
+                <td colspan="8" style="padding:12px 14px;">
+                  <div style="font-size:11px;font-weight:700;color:#1d4ed8;margin-bottom:8px;">
+                    修改 FB-001 申报信息
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+                    <div>
+                      <div class="form-label">报关品名</div>
+                      <input class="form-input" value="鸡肉狗咬胶" />
+                    </div>
+                    <div>
+                      <div class="form-label">HS Code</div>
+                      <input class="form-input" value="2309109000" />
+                    </div>
+                    <div>
+                      <div class="form-label">申报要素</div>
+                      <input class="form-input" value="品牌:无;成分:鸡肉;包装:袋装" />
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <button class="btn btn-blue btn-sm" onclick="closeEdit('fb001')">保存</button>
+                    <button class="btn btn-ghost btn-sm" onclick="closeEdit('fb001')">取消</button>
+                    <span style="margin-left:8px;font-size:10px;color:#6b7280;">|</span>
+                    <button onclick="openReport('fb001')" class="btn btn-sm"
+                      style="background:none;border:none;color:#dc2626;font-size:10px;padding:0 4px;cursor:pointer;">
+                      数据有误？上报错误
+                    </button>
+                  </div>
+                  <!-- Error report inline -->
+                  <div id="report-fb001" style="display:none;margin-top:10px;
+                    background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:10px;">
+                    <div style="font-size:11px;font-weight:700;color:#991b1b;margin-bottom:6px;">
+                      上报数据错误 — Sanlyn 将在 24h 内更新产品主数据
+                    </div>
+                    <textarea class="form-input" rows="2" style="font-size:11px;"
+                      placeholder="描述错误内容，例：HS 编码应为 xxxx，或品名有误..."></textarea>
+                    <div style="display:flex;gap:6px;margin-top:6px;">
+                      <button class="btn btn-red btn-sm" style="font-size:10px;">提交错误报告</button>
+                      <button class="btn btn-ghost btn-sm" style="font-size:10px;"
+                        onclick="document.getElementById('report-fb001').style.display='none'">取消</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+
+              <tr class="alert-row">
+                <td>FB-118</td>
+                <td>豆腐猫砂</td>
+                <td>3825490000</td>
+                <td onclick="openEdit('fb118')"
+                  style="color:#dc2626;font-weight:700;cursor:pointer;">
+                  ⚠️ 待补全 — 点此填写
+                </td>
+                <td>380</td><td>7200</td><td>7600</td>
+                <td style="text-align:center;">
+                  <button onclick="openEdit('fb118')" class="btn btn-amber btn-sm"
+                    style="padding:3px 8px;font-size:10px;">✏️ 填写</button>
+                </td>
+              </tr>
+              <!-- Inline edit for FB-118 -->
+              <tr id="edit-fb118" style="display:none;background:#fffbeb;">
+                <td colspan="8" style="padding:12px 14px;">
+                  <div style="font-size:11px;font-weight:700;color:#a16207;margin-bottom:8px;">
+                    补全 FB-118 申报要素（必填）
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;">
+                    <div>
+                      <div class="form-label">报关品名 <span class="req">*</span></div>
+                      <input class="form-input" value="豆腐猫砂" />
+                    </div>
+                    <div>
+                      <div class="form-label">HS Code <span class="req">*</span></div>
+                      <input class="form-input" value="3825490000" />
+                    </div>
+                    <div>
+                      <div class="form-label">申报要素 <span class="req">*</span></div>
+                      <input class="form-input alert" placeholder="例：品牌:无;成分:豆腐渣;用途:猫砂" />
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <button class="btn btn-green btn-sm" onclick="saveEdit('fb118')">✓ 保存补全</button>
+                    <button class="btn btn-ghost btn-sm" onclick="closeEdit('fb118')">取消</button>
+                    <span style="margin-left:8px;font-size:10px;color:#6b7280;">|</span>
+                    <button onclick="openReport('fb118')" class="btn btn-sm"
+                      style="background:none;border:none;color:#dc2626;font-size:10px;padding:0 4px;cursor:pointer;">
+                      数据有误？上报错误
+                    </button>
+                  </div>
+                  <div id="report-fb118" style="display:none;margin-top:10px;
+                    background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:10px;">
+                    <div style="font-size:11px;font-weight:700;color:#991b1b;margin-bottom:6px;">
+                      上报数据错误 — Sanlyn 将在 24h 内更新产品主数据
+                    </div>
+                    <textarea class="form-input" rows="2" style="font-size:11px;"
+                      placeholder="描述错误内容，例：HS 编码不对，或货描跟实际产品不符..."></textarea>
+                    <div style="display:flex;gap:6px;margin-top:6px;">
+                      <button class="btn btn-red btn-sm" style="font-size:10px;">提交错误报告</button>
+                      <button class="btn btn-ghost btn-sm" style="font-size:10px;"
+                        onclick="document.getElementById('report-fb118').style.display='none'">取消</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+
+              <tr class="total">
+                <td colspan="4">TOTAL · 1,620 CTNS</td>
+                <td>1620</td><td>15,700</td><td>16,560</td><td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:10px 16px;display:flex;gap:8px;background:#f8fafc;
+          border-top:1px solid #f0f2f5;flex-wrap:wrap;">
+          <button class="btn btn-amber btn-sm" onclick="openEdit('fb118')">📝 现在补全申报要素</button>
+          <button class="btn btn-ghost btn-sm">先提交，稍后补（系统会提醒）</button>
+        </div>
+      </div>
+
+      <!-- STEP 5: Trade Terms — card selection -->
+      <div class="step-card">
+        <div class="step-head">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="step-num">5</div>
+            <div>
+              <div class="step-title">贸易条款 / Trade Terms</div>
+              <div class="step-sub">订单预设条款已高亮 · 如有出入可重新选择</div>
+            </div>
+          </div>
+          <div id="tt-badge" class="badge badge-blue">FOB</div>
+        </div>
+        <div class="section">
+
+          <!-- All-in (featured/top) -->
+          <div id="tt-allin" onclick="selectTT('allin')"
+            style="border:2.5px solid #7c3aed;border-radius:10px;padding:14px;
+            background:linear-gradient(135deg,#faf5ff,#ede9fe);cursor:pointer;
+            margin-bottom:10px;position:relative;box-shadow:0 0 0 3px #7c3aed22;">
+            <div style="position:absolute;top:10px;right:10px;font-size:9px;font-weight:800;
+              background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;
+              padding:2px 8px;border-radius:20px;">⭐ 推荐 RECOMMENDED</div>
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <div style="font-size:24px;flex-shrink:0;">🚀</div>
+              <div style="flex:1;">
+                <div style="font-size:13px;font-weight:800;color:#5b21b6;">Sanlyn OS All-in 全包</div>
+                <div style="font-size:11px;color:#6d28d9;margin-top:3px;line-height:1.5;">
+                  拖车 + 出口报关 + 订舱 + 单证 + 进口清关 · 一条龙全搞定<br>
+                  <b>工厂只管备货</b>，其余 Sanlyn 全部包办。最省心，不出错。
+                </div>
+                <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                  <span style="font-size:10px;background:#ede9fe;color:#6d28d9;border-radius:4px;padding:2px 7px;font-weight:700;">🏭→📦→🚢→🏢 全流程</span>
+                  <span style="font-size:10px;background:#ede9fe;color:#6d28d9;border-radius:4px;padding:2px 7px;font-weight:700;">报关单自动生成</span>
+                  <span style="font-size:10px;background:#ede9fe;color:#6d28d9;border-radius:4px;padding:2px 7px;font-weight:700;">实时物流追踪</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Grid: EXW / FOB / DDP / CNF -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div id="tt-exw" onclick="selectTT('exw')"
+              style="border:1.5px solid #c8cdd6;border-radius:8px;padding:11px;cursor:pointer;background:#fff;">
+              <div style="font-size:12px;font-weight:800;color:#374151;">EXW · 工厂交货</div>
+              <div style="font-size:10px;color:#6b7280;margin-top:3px;">工厂仓库门口交货，买方承担所有后续费用</div>
+            </div>
+            <div id="tt-fob" onclick="selectTT('fob')"
+              style="border:1.5px solid #c8cdd6;border-radius:8px;padding:11px;cursor:pointer;background:#fff;">
+              <div style="font-size:12px;font-weight:800;color:#374151;">FOB · 离岸价</div>
+              <div style="font-size:10px;color:#6b7280;margin-top:3px;">工厂负责出口报关 + 装船前，买方承担海运费</div>
+            </div>
+            <div id="tt-ddp" onclick="selectTT('ddp')"
+              style="border:1.5px solid #c8cdd6;border-radius:8px;padding:11px;cursor:pointer;background:#fff;">
+              <div style="font-size:12px;font-weight:800;color:#374151;">DDP · 完税交货</div>
+              <div style="font-size:10px;color:#6b7280;margin-top:3px;">含目的地关税，Sanlyn 全程包干</div>
+            </div>
+            <div id="tt-cnf" onclick="selectTT('cnf')"
+              style="border:1.5px solid #c8cdd6;border-radius:8px;padding:11px;cursor:pointer;background:#fff;">
+              <div style="font-size:12px;font-weight:800;color:#374151;">CNF / CFR · 成本+运费</div>
+              <div style="font-size:10px;color:#6b7280;margin-top:3px;">含海运费，不含保险，到港后买方负责</div>
+            </div>
+          </div>
+
+          <!-- Expansion: FOB — who arranges trucking + customs -->
+          <div id="ttx-fob" style="margin-top:10px;">
+            <div style="font-size:11px;font-weight:800;color:#374151;margin-bottom:8px;">
+              FOB 条款 · 拖车 + 出口报关 · 由谁来安排？
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div id="fob-sanlyn" onclick="togFOB('sanlyn')"
+                style="border:2.5px solid #059669;border-radius:8px;padding:12px;cursor:pointer;
+                background:#f0fdf4;box-shadow:0 0 0 3px #05966922;">
+                <div style="font-size:12px;font-weight:800;color:#065f46;">🤝 委托 Sanlyn</div>
+                <div style="font-size:10px;color:#047857;margin-top:4px;line-height:1.4;">
+                  Sanlyn 统一安排拖车 + 报关行<br>一站式，工厂只等装箱通知
+                </div>
+              </div>
+              <div id="fob-self" onclick="togFOB('self')"
+                style="border:1.5px solid #e0e4ea;border-radius:8px;padding:12px;cursor:pointer;background:#fff;">
+                <div style="font-size:12px;font-weight:800;color:#374151;">🏭 工厂自行安排</div>
+                <div style="font-size:10px;color:#6b7280;margin-top:4px;line-height:1.4;">
+                  自己联系拖车和报关行<br>完成后提供报关单 + 箱单给 Sanlyn
+                </div>
+              </div>
+            </div>
+            <div id="fob-sanlyn-sub" style="margin-top:8px;background:#f0fdf4;
+              border:1px solid #bbf7d0;border-radius:8px;padding:12px;">
+              <div style="font-size:11px;color:#065f46;margin-bottom:8px;">
+                ✓ 委托 Sanlyn · 请确认工厂装货地址
+              </div>
+              <!-- Address: pre-filled from registration profile -->
+              <div id="fob-addr-display" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;
+                background:#fff;border:1px solid #bbf7d0;border-radius:6px;padding:7px 10px;">
+                <div style="flex:1;font-size:11px;color:#065f46;">
+                  📍 安徽省宣城市经济开发区XX路XX号
+                  <span style="font-size:9px;color:#6b7280;margin-left:4px;">从注册档案读取</span>
+                </div>
+                <button onclick="toggleFOBAddrEdit()" class="btn btn-ghost btn-sm"
+                  style="font-size:9px;padding:2px 8px;white-space:nowrap;">修改</button>
+              </div>
+              <div id="fob-addr-edit" style="display:none;margin-bottom:8px;">
+                <input class="form-input" id="fob-addr-input" value="安徽省宣城市经济开发区XX路XX号"
+                  placeholder="工厂详细装货地址" style="font-size:12px;" />
+                <button onclick="saveFOBAddr()" class="btn btn-blue btn-sm"
+                  style="margin-top:4px;font-size:10px;">保存</button>
+              </div>
+              <div style="font-size:11px;color:#047857;margin-bottom:6px;">需要进口清关协助吗？</div>
+              <div style="display:flex;gap:8px;">
+                <div class="tog" id="imp-yes" onclick="togImport(true)" style="flex:0 0 auto;">是，请协助安排</div>
+                <div class="tog on-blue" id="imp-no" onclick="togImport(false)" style="flex:0 0 auto;">否，买方自理</div>
+              </div>
+              <div style="margin-top:8px;font-size:11px;color:#065f46;background:#fff;
+                border-radius:6px;padding:8px 12px;border:1px solid #bbf7d0;">
+                提交后 Sanlyn 将与您联系确认拖车安排时间。
+              </div>
+            </div>
+            <div id="fob-self-sub" style="display:none;margin-top:8px;background:#f8fafc;
+              border:1px solid #e0e4ea;border-radius:8px;padding:12px;">
+              <div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px;">
+                自行安排后，请提供以下单据给 Sanlyn：
+              </div>
+              <div style="font-size:11px;color:#6b7280;display:flex;flex-direction:column;gap:4px;">
+                <div>☐ 出口报关单（已通关版）</div>
+                <div>☐ 装箱单 Packing List</div>
+                <div>☐ 形式发票 PI</div>
+                <div>☐ 车牌号 / 进港预约信息</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expansion: EXW — minimal, just confirm -->
+          <div id="ttx-exw" style="display:none;margin-top:10px;">
+            <div style="background:#f8fafc;border:1px solid #e0e4ea;border-radius:8px;
+              padding:12px 14px;font-size:11px;color:#374151;">
+              EXW 条款下，<b>工厂只需备好货</b>，等待买方或 Sanlyn 的拖车到厂装载。无需安排任何报关或运输手续。
+            </div>
+            <div style="margin-top:8px;display:flex;gap:8px;">
+              <button class="btn btn-ghost btn-sm">需要 Sanlyn 协助出口手续 · 提交申请</button>
+              <button class="btn btn-ghost btn-sm">不需要</button>
+            </div>
+          </div>
+
+          <!-- Expansion: DDP — Sanlyn arranges freight, factory confirms sailing -->
+          <div id="ttx-ddp" style="display:none;margin-top:10px;">
+            <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;
+              padding:10px 12px;font-size:11px;color:#065f46;margin-bottom:10px;">
+              DDP 条款由 Sanlyn 全程包干。<b>工厂只管备货和配合装箱</b>，其余 Sanlyn 负责。<br>
+              请确认 Sanlyn 拟订的船期，货好后我们安排拖车。
+            </div>
+            <div style="font-size:11px;font-weight:800;color:#374151;margin-bottom:6px;">确认船期 / Confirm Sailing</div>
+            <div id="sail-ddp-cards" style="display:flex;flex-direction:column;gap:8px;">
+              <!-- Sailing A -->
+              <div id="ddp-sail-a" onclick="selectFactSailing('ddp','a')"
+                style="border:2.5px solid #059669;border-radius:10px;padding:11px 14px;cursor:pointer;
+                  background:#f0fdf4;box-shadow:0 0 0 3px #05966922;position:relative;">
+                <div style="position:absolute;top:8px;right:10px;font-size:9px;background:#059669;
+                  color:#fff;padding:2px 7px;border-radius:20px;font-weight:700;" class="sail-selected-badge">已选 SELECTED</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:13px;">🚢</span>
+                  <div style="font-size:12px;font-weight:800;color:#065f46;">COSCO · CSCL SATURN</div>
+                  <div style="font-size:9px;background:#d1fae5;color:#059669;padding:1px 6px;
+                    border-radius:10px;font-weight:700;">推荐 RECOMMENDED</div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETD 宁波</div>
+                    <div style="font-size:11px;font-weight:800;color:#065f46;">Jun 12</div>
+                  </div>
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETA 目的港</div>
+                    <div style="font-size:11px;font-weight:800;color:#1d4ed8;">Jun 19</div>
+                  </div>
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">截关 Cut-off</div>
+                    <div style="font-size:11px;font-weight:800;color:#dc2626;">Jun 10</div>
+                  </div>
+                </div>
+              </div>
+              <!-- Sailing B -->
+              <div id="ddp-sail-b" onclick="selectFactSailing('ddp','b')"
+                style="border:1.5px solid #e0e4ea;border-radius:10px;padding:11px 14px;
+                  cursor:pointer;background:#fff;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:13px;">🚢</span>
+                  <div style="font-size:12px;font-weight:800;color:#374151;">ONE LINE · SHOGUN</div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETD 宁波</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 19</div>
+                  </div>
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETA 目的港</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 26</div>
+                  </div>
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">截关 Cut-off</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 17</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expansion: All-in — Sanlyn arranges freight, factory confirms sailing -->
+          <div id="ttx-allin" style="display:none;margin-top:10px;">
+            <div style="background:#faf5ff;border:1px solid #c4b5fd;border-radius:8px;
+              padding:10px 12px;font-size:11px;color:#5b21b6;margin-bottom:10px;">
+              Sanlyn OS All-in 全包：拖车 + 出口报关 + 订舱 + 单证全部由 Sanlyn 负责。<b>工厂只管备货</b>。<br>
+              请确认 Sanlyn 拟订的船期。
+            </div>
+            <div style="font-size:11px;font-weight:800;color:#374151;margin-bottom:6px;">确认船期 / Confirm Sailing</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div id="allin-sail-a" onclick="selectFactSailing('allin','a')"
+                style="border:2.5px solid #059669;border-radius:10px;padding:11px 14px;cursor:pointer;
+                  background:#f0fdf4;box-shadow:0 0 0 3px #05966922;position:relative;">
+                <div style="position:absolute;top:8px;right:10px;font-size:9px;background:#059669;
+                  color:#fff;padding:2px 7px;border-radius:20px;font-weight:700;" class="sail-selected-badge">已选 SELECTED</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:13px;">🚢</span>
+                  <div style="font-size:12px;font-weight:800;color:#065f46;">COSCO · CSCL SATURN</div>
+                  <div style="font-size:9px;background:#d1fae5;color:#059669;padding:1px 6px;
+                    border-radius:10px;font-weight:700;">推荐 RECOMMENDED</div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETD 宁波</div>
+                    <div style="font-size:11px;font-weight:800;color:#065f46;">Jun 12</div>
+                  </div>
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETA 目的港</div>
+                    <div style="font-size:11px;font-weight:800;color:#1d4ed8;">Jun 19</div>
+                  </div>
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">截关 Cut-off</div>
+                    <div style="font-size:11px;font-weight:800;color:#dc2626;">Jun 10</div>
+                  </div>
+                </div>
+              </div>
+              <div id="allin-sail-b" onclick="selectFactSailing('allin','b')"
+                style="border:1.5px solid #e0e4ea;border-radius:10px;padding:11px 14px;
+                  cursor:pointer;background:#fff;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:13px;">🚢</span>
+                  <div style="font-size:12px;font-weight:800;color:#374151;">ONE LINE · SHOGUN</div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETD 宁波</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 19</div>
+                  </div>
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETA 目的港</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 26</div>
+                  </div>
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">截关 Cut-off</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 17</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expansion: CNF/CFR — Sanlyn books freight, factory handles export customs -->
+          <div id="ttx-cnf" style="display:none;margin-top:10px;">
+            <div style="font-size:11px;font-weight:800;color:#374151;margin-bottom:8px;">
+              出口报关 · 由谁来安排？
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+              <div id="cnf-customs-sanlyn" onclick="togCNFCustoms('sanlyn')"
+                style="border:2.5px solid #0891b2;border-radius:8px;padding:11px;cursor:pointer;
+                  background:#ecfeff;box-shadow:0 0 0 3px #0891b222;">
+                <div style="font-size:12px;font-weight:800;color:#0e7490;">🤝 委托 Sanlyn 报关</div>
+                <div style="font-size:10px;color:#0891b2;margin-top:3px;">Sanlyn 代办出口报关，工厂配合提供单证</div>
+              </div>
+              <div id="cnf-customs-self" onclick="togCNFCustoms('self')"
+                style="border:1.5px solid #e0e4ea;border-radius:8px;padding:11px;cursor:pointer;background:#fff;">
+                <div style="font-size:12px;font-weight:800;color:#374151;">🏭 工厂自行报关</div>
+                <div style="font-size:10px;color:#6b7280;margin-top:3px;">完成后提供报关单给 Sanlyn</div>
+              </div>
+            </div>
+            <div style="font-size:11px;font-weight:800;color:#374151;margin-bottom:6px;">
+              确认船期 / Confirm Sailing <span style="font-size:9px;color:#6b7280;font-weight:400;">（Sanlyn 订舱）</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div id="cnf-sail-a" onclick="selectFactSailing('cnf','a')"
+                style="border:2.5px solid #059669;border-radius:10px;padding:11px 14px;cursor:pointer;
+                  background:#f0fdf4;box-shadow:0 0 0 3px #05966922;position:relative;">
+                <div style="position:absolute;top:8px;right:10px;font-size:9px;background:#059669;
+                  color:#fff;padding:2px 7px;border-radius:20px;font-weight:700;" class="sail-selected-badge">已选 SELECTED</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:13px;">🚢</span>
+                  <div style="font-size:12px;font-weight:800;color:#065f46;">COSCO · CSCL SATURN</div>
+                  <div style="font-size:9px;background:#d1fae5;color:#059669;padding:1px 6px;
+                    border-radius:10px;font-weight:700;">推荐 RECOMMENDED</div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETD 宁波</div>
+                    <div style="font-size:11px;font-weight:800;color:#065f46;">Jun 12</div>
+                  </div>
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETA 目的港</div>
+                    <div style="font-size:11px;font-weight:800;color:#1d4ed8;">Jun 19</div>
+                  </div>
+                  <div style="background:#fff;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">截关 Cut-off</div>
+                    <div style="font-size:11px;font-weight:800;color:#dc2626;">Jun 10</div>
+                  </div>
+                </div>
+              </div>
+              <div id="cnf-sail-b" onclick="selectFactSailing('cnf','b')"
+                style="border:1.5px solid #e0e4ea;border-radius:10px;padding:11px 14px;
+                  cursor:pointer;background:#fff;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:13px;">🚢</span>
+                  <div style="font-size:12px;font-weight:800;color:#374151;">ONE LINE · SHOGUN</div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETD 宁波</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 19</div>
+                  </div>
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">ETA 目的港</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 26</div>
+                  </div>
+                  <div style="background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;">
+                    <div style="font-size:9px;color:#6b7280;">截关 Cut-off</div>
+                    <div style="font-size:11px;font-weight:800;color:#374151;">Jun 17</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- STEP 6: Contract Number -->
+      <div class="step-card">
+        <div class="step-head">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="step-num">6</div>
+            <div>
+              <div class="step-title">合同号 / Contract Number</div>
+              <div class="step-sub">本批货物对应的采购合同编号（选填）</div>
+            </div>
+          </div>
+        </div>
+        <div class="section">
+          <div class="grid2">
+            <div class="form-field">
+              <label class="form-label">合同号 / Contract No.</label>
+              <input class="form-input" placeholder="例：SL-2026-HY-031" />
+            </div>
+            <div class="form-field">
+              <label class="form-label">合同日期 / Contract Date</label>
+              <input type="date" class="form-input" />
+            </div>
+          </div>
+          <div style="font-size:11px;color:#6b7280;margin-top:-4px;">
+            填写后将自动显示在托书、发票及报关单的合同号栏。如无合同号可跳过。
+          </div>
+        </div>
+      </div>
+
+      <!-- Submit row -->
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin:20px 0;">
+        <button class="btn btn-ghost">暂存草稿</button>
+        <button class="btn btn-green btn-lg">
+          ✅ 确认全部 → 通知客户
+        </button>
+      </div>
+
+      <div style="text-align:center;font-size:10px;color:#94a3b8;margin-bottom:30px;">
+        提交后，客户将看到您的货好日期、产品清单、贸易条款选择<br>
+        客户确认接货时间后，Sanlyn 将向您发送正式订舱通知
+      </div>
+    </div>
+  </div>
+
+</div><!-- /panel-factory -->
+
+
+<!-- ══════════════════════════════════════════
+     PANEL 2: CUSTOMER  (all-English)
+══════════════════════════════════════════ -->
+<div class="panel" id="panel-customer">
+  <div class="portal-header">
+    <div class="ph-logo">🌐 Sanlyn Customer Portal</div>
+    <div class="ph-user">
+      <span>Logged in:</span>
+      <div class="ph-avatar" style="background:#d97706;">H</div>
+      <b>HARMONIOUS HAPPY VENTURES</b>
+      <span style="font-size:10px;color:#9ca3af;">· Your shipments only</span>
+    </div>
+  </div>
+
+  <div class="shell-narrow">
+
+    <!-- Shipment status card -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">My Shipment</div>
+          <div class="card-sub">SHP-CY00047 · Fuzhou → Port Klang · ETD 2026-06-12</div>
+        </div>
+        <div class="badge badge-amber">Action Required</div>
+      </div>
+      <div class="section">
+        <div class="info-row"><span class="info-key">Orders</span><span class="info-val">HY-2026-031 / HY-2026-032</span></div>
+        <div class="info-row"><span class="info-key">Factory Ready</span><span class="info-val" style="color:#059669;">Confirmed — 2026-06-05</span></div>
+        <div class="info-row"><span class="info-key">Cargo</span><span class="info-val">1,620 CTNS · 16,560 KGS · 62.0 CBM</span></div>
+        <div class="info-row"><span class="info-key">Container</span><span class="info-val">40HQ × 1</span></div>
+        <div class="info-row"><span class="info-key">Incoterms</span><span class="info-val">FOB</span></div>
+      </div>
+      <div class="timeline">
+        <div class="tl-step done"><div class="tl-dot done">✓</div><div class="tl-label done">Factory Ready</div></div>
+        <div class="tl-step done"><div class="tl-dot done">✓</div><div class="tl-label done">Booking Filed</div></div>
+        <div class="tl-step"><div class="tl-dot active">3</div><div class="tl-label active">Your Confirmation</div></div>
+        <div class="tl-step"><div class="tl-dot idle">4</div><div class="tl-label">In Transit</div></div>
+      </div>
+    </div>
+
+    <!-- Cargo Description + save preferences -->
+    <div class="card">
+      <div style="padding:12px 16px;border-bottom:1px solid #f0f2f5;
+        display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#1a1d23;">Cargo Description</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">
+            Review before booking. Add notes in the last column — the shipping line and Sanlyn will see them.
+          </div>
+        </div>
+      </div>
+      <div style="padding:0;">
+        <table class="cargo-t">
+          <thead>
+            <tr>
+              <th>SKU</th><th>Description</th><th>HS Code</th><th>CTNS</th>
+              <th>GW (KGS)</th><th>Your Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>FB-001</td>
+              <td>PET PRODUCTS (DOG TREATS)</td>
+              <td>2309109000</td>
+              <td>1,240</td>
+              <td>8,960</td>
+              <td><input class="form-input" id="note-fb001"
+                placeholder="e.g. adjust description, labelling preference..."
+                style="font-size:11px;padding:5px 8px;" /></td>
+            </tr>
+            <tr>
+              <td>FB-118</td>
+              <td>PET PRODUCTS (CAT LITTER)</td>
+              <td>3825490000</td>
+              <td>380</td>
+              <td>7,600</td>
+              <td><input class="form-input" id="note-fb118"
+                value="Request HS 3825100000 instead?" style="font-size:11px;padding:5px 8px;border-color:#fbbf24;" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:10px 16px;background:#f8fafc;border-top:1px solid #f0f2f5;
+        display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <div style="font-size:11px;color:#6b7280;">
+          Notes sync to the shipping line and Sanlyn customs. You can also mention packaging, marking, or labelling preferences here.
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="saveNotePrefs()"
+          style="white-space:nowrap;flex-shrink:0;">
+          Save Preferences
+        </button>
+      </div>
+      <div id="notes-saved" style="display:none;padding:8px 16px;
+        background:#f0fdf4;border-top:1px solid #bbf7d0;
+        font-size:11px;color:#059669;font-weight:700;">
+        Preferences saved — Sanlyn has been notified.
+      </div>
+    </div>
+
+    <!-- Sailing Schedule — card style -->
+    <div class="card">
+      <div style="padding:12px 16px;border-bottom:1px solid #f0f2f5;
+        display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:13px;font-weight:800;color:#1a1d23;">Available Sailings</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">
+            Factory ready <b>2026-06-05</b> · Tap a card to select your preferred sailing.
+          </div>
+        </div>
+        <div class="badge badge-blue">3 Options</div>
+      </div>
+      <div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px;">
+
+        <!-- Card A — COSCO (default selected) -->
+        <div id="sail-a" onclick="selectSailing('a')" style="cursor:pointer;
+          border:2.5px solid #059669;border-radius:10px;padding:13px 14px;
+          background:#f0fdf4;box-shadow:0 0 0 3px #05966922;position:relative;">
+          <div style="position:absolute;top:10px;right:12px;">
+            <span id="sail-a-tick" style="font-size:10px;font-weight:800;
+              background:#059669;color:#fff;padding:2px 8px;border-radius:10px;">Selected</span>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <div style="width:38px;height:38px;border-radius:8px;background:#d1fae5;
+              display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🚢</div>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <span style="font-size:13px;font-weight:800;color:#1a1d23;">COSCO</span>
+                <span style="font-size:9px;font-weight:700;background:#dbeafe;color:#1d4ed8;
+                  padding:1px 6px;border-radius:3px;">Sanlyn Recommended</span>
+              </div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:8px;">COSCO SHIPPING ROSE V.0026E</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+                <div style="background:#fff;border-radius:6px;padding:6px 8px;border:1px solid #d1fae5;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">ETD Fuzhou</div>
+                  <div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:1px;">Jun 12</div>
+                </div>
+                <div style="background:#fff;border-radius:6px;padding:6px 8px;border:1px solid #d1fae5;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">ETA Port Klang</div>
+                  <div style="font-size:12px;font-weight:800;color:#1d4ed8;margin-top:1px;">Jun 19</div>
+                </div>
+                <div style="background:#fff;border-radius:6px;padding:6px 8px;border:1px solid #d1fae5;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">Cut-off</div>
+                  <div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:1px;">Jun 10</div>
+                </div>
+                <div style="background:#fff;border-radius:6px;padding:6px 8px;border:1px solid #d1fae5;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">Rate / 40HQ</div>
+                  <div style="font-size:12px;font-weight:800;color:#059669;margin-top:1px;">USD 1,850</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card B — ONE LINE -->
+        <div id="sail-b" onclick="selectSailing('b')" style="cursor:pointer;
+          border:1.5px solid #e0e4ea;border-radius:10px;padding:13px 14px;background:#fff;">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <div style="width:38px;height:38px;border-radius:8px;background:#f3f4f6;
+              display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🚢</div>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <span style="font-size:13px;font-weight:800;color:#1a1d23;">ONE LINE</span>
+                <span id="sail-b-tick" style="display:none;font-size:9px;font-weight:800;
+                  background:#059669;color:#fff;padding:2px 8px;border-radius:10px;">Selected</span>
+              </div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:8px;">ONE COMMITMENT 014E</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+                <div style="background:#f8fafc;border-radius:6px;padding:6px 8px;border:1px solid #e0e4ea;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">ETD Fuzhou</div>
+                  <div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:1px;">Jun 15</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:6px;padding:6px 8px;border:1px solid #e0e4ea;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">ETA Port Klang</div>
+                  <div style="font-size:12px;font-weight:800;color:#374151;margin-top:1px;">Jun 22</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:6px;padding:6px 8px;border:1px solid #e0e4ea;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">Cut-off</div>
+                  <div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:1px;">Jun 13</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:6px;padding:6px 8px;border:1px solid #e0e4ea;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">Rate / 40HQ</div>
+                  <div style="font-size:12px;font-weight:800;color:#374151;margin-top:1px;">USD 1,720</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card C — EVERGREEN -->
+        <div id="sail-c" onclick="selectSailing('c')" style="cursor:pointer;
+          border:1.5px solid #e0e4ea;border-radius:10px;padding:13px 14px;background:#fff;">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <div style="width:38px;height:38px;border-radius:8px;background:#f3f4f6;
+              display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🚢</div>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                <span style="font-size:13px;font-weight:800;color:#1a1d23;">EVERGREEN</span>
+                <span id="sail-c-tick" style="display:none;font-size:9px;font-weight:800;
+                  background:#059669;color:#fff;padding:2px 8px;border-radius:10px;">Selected</span>
+              </div>
+              <div style="font-size:10px;color:#6b7280;margin-bottom:8px;">EVER GOLDEN 0028-014W</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+                <div style="background:#f8fafc;border-radius:6px;padding:6px 8px;border:1px solid #e0e4ea;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">ETD Fuzhou</div>
+                  <div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:1px;">Jun 19</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:6px;padding:6px 8px;border:1px solid #e0e4ea;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">ETA Port Klang</div>
+                  <div style="font-size:12px;font-weight:800;color:#374151;margin-top:1px;">Jun 26</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:6px;padding:6px 8px;border:1px solid #e0e4ea;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">Cut-off</div>
+                  <div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:1px;">Jun 17</div>
+                </div>
+                <div style="background:#f8fafc;border-radius:6px;padding:6px 8px;border:1px solid #e0e4ea;">
+                  <div style="font-size:9px;color:#6b7280;font-weight:600;">Rate / 40HQ</div>
+                  <div style="font-size:12px;font-weight:800;color:#374151;margin-top:1px;">USD 1,680</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div style="padding:10px 16px;background:#eff6ff;border-top:1px solid #bfdbfe;
+        font-size:11px;color:#1d4ed8;">
+        Sanlyn recommends <b>COSCO Jun-12</b> — fastest to hit your Jun-19 ETA. Rates valid 48 hrs.
+      </div>
+    </div>
+
+    <!-- Quote / confirm -->
+    <div class="card">
+      <div style="padding:12px 16px;border-bottom:1px solid #f0f2f5;">
+        <div style="font-size:13px;font-weight:800;color:#1a1d23;">Confirm Booking</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:2px;">
+          Selected: <b>COSCO · Jun-12 · ETA Jun-19 · USD 1,850 / 40HQ</b>
+        </div>
+      </div>
+      <div style="padding:12px 16px;display:flex;justify-content:space-between;
+        align-items:center;background:#fffbeb;border-bottom:1px solid #fde68a;">
+        <div style="font-size:11px;color:#92400e;">
+          Rate too high? <a href="#" style="color:#1a73e8;font-weight:700;">Submit your target price →</a>
+        </div>
+      </div>
+      <div style="padding:12px 16px;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost">Decide Later</button>
+        <button class="btn btn-green">Confirm &amp; Lock Booking</button>
+      </div>
+    </div>
+
+    <!-- Footer note -->
+    <div style="background:#f8fafc;border:1px dashed #c8cdd6;border-radius:8px;
+      padding:12px 16px;font-size:11px;color:#6b7280;text-align:center;margin-bottom:20px;">
+      The Booking Instruction (BI) is an internal document between Sanlyn and the freight forwarder — not shared with customers.<br>
+      After departure you will receive: <b>Shipping Notice</b> · Commercial Invoice · Packing List · B/L Copy.
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     PANEL 3: ADMIN
+══════════════════════════════════════════ -->
+<div class="panel" id="panel-admin">
+<div class="shell">
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">协同卡 · COLLAB CARD</div>
+        <div class="card-sub">SHP-CY00047 · HARMONIOUS · PORT KLANG · ETD 2026-06-12</div>
+      </div>
+      <div class="badge badge-amber">⏳ 三方协同进行中</div>
+    </div>
+
+    <div class="party-row">
+      <div class="party-avatar" style="background:#d1fae5;">🏭</div>
+      <div style="flex:1;">
+        <div style="font-size:12px;font-weight:800;">宣城福新宠物食品有限公司</div>
+        <div style="font-size:10px;color:#6b7280;">生产方 · 货好日期 + 产品清单 + 贸易条款</div>
+        <div style="font-size:11px;color:#374151;margin-top:3px;">货好 2026-06-05 · FOB 委托 Sanlyn 拖报</div>
+      </div>
+      <div>
+        <div class="badge badge-green">✅ 已完成</div>
+        <div style="font-size:10px;color:#6b7280;text-align:right;margin-top:3px;">2026-05-27</div>
+      </div>
+    </div>
+
+    <div class="party-row">
+      <div class="party-avatar" style="background:#dbeafe;">🏢</div>
+      <div style="flex:1;">
+        <div style="font-size:12px;font-weight:800;">Sanlyn Trade</div>
+        <div style="font-size:10px;color:#6b7280;">中间方 · 协调 + 比价 + 报关</div>
+        <div style="font-size:11px;color:#374151;margin-top:3px;">已为客户准备 2 份报价（A/B）</div>
+      </div>
+      <div>
+        <div class="badge badge-green">✅ 进行中</div>
+      </div>
+    </div>
+
+    <div class="party-row">
+      <div class="party-avatar" style="background:#fef3c7;">🌏</div>
+      <div style="flex:1;">
+        <div style="font-size:12px;font-weight:800;">HARMONIOUS HAPPY VENTURES</div>
+        <div style="font-size:10px;color:#6b7280;">收货方 · 选报价 + 接货时间 + 货描备注</div>
+        <div style="font-size:11px;color:#374151;margin-top:3px;">查看货描 → 选 A/B → 锁定订舱</div>
+      </div>
+      <div>
+        <div class="badge badge-amber">⏳ 待确认</div>
+      </div>
+    </div>
+
+    <div class="timeline">
+      <div class="tl-step done"><div class="tl-dot done">✓</div><div class="tl-label done">工厂确认</div></div>
+      <div class="tl-step done"><div class="tl-dot done">✓</div><div class="tl-label done">Sanlyn 比价</div></div>
+      <div class="tl-step"><div class="tl-dot active">3</div><div class="tl-label active">客户选报价</div></div>
+      <div class="tl-step"><div class="tl-dot idle">★</div><div class="tl-label">订舱 + 出货</div></div>
+    </div>
+  </div>
+
+  <!-- Doc preview -->
+  <div class="card">
+    <div style="padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e0e4ea;
+      display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:11px;color:#6b7280;">Sanlyn OS · Trade Document</div>
+        <div style="font-size:18px;font-weight:800;letter-spacing:1px;">BOOKING INSTRUCTION</div>
+        <div style="font-size:12px;color:#1a73e8;font-weight:700;">托书 / REF: SHP-CY00047</div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost">🖨️ 打印</button>
+        <button class="btn btn-blue">⬇️ 下载 PDF</button>
+        <button class="btn btn-green">📤 发送给货代</button>
+      </div>
+    </div>
+    <div style="padding:16px;">
+      <div class="doc-mini">
+        <div class="doc-mini-title">SHIPPING BOOKING INSTRUCTION</div>
+        <div class="doc-mini-grid">
+          <div class="doc-cell"><span class="doc-lbl">SHIPPER</span>
+            <div class="doc-val"><b>FUJIAN SANLYN INDUSTRIAL CO., LTD</b></div></div>
+          <div class="doc-cell"><span class="doc-lbl">REF NO.</span>
+            <div class="doc-val"><b>SHP-CY00047</b></div></div>
+          <div class="doc-cell"><span class="doc-lbl">CONSIGNEE</span>
+            <div class="doc-val"><b>HARMONIOUS HAPPY VENTURES SDN. BHD.</b><br>43200 CHERAS, MALAYSIA</div></div>
+          <div class="doc-cell"><span class="doc-lbl">VESSEL & ETD</span>
+            <div class="doc-val"><b>COSCO SHIPPING ROSE V.0026E</b><br>2026-06-12</div></div>
+          <div class="doc-cell full"><span class="doc-lbl">CARGO</span>
+            <div class="doc-val">1,620 CTNS · 16,560 KGS · 62.0 CBM · 40HQ × 1</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+
+<style>
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+</style>
+<script>
+function switchTab(name, el) {
+  document.querySelectorAll('.portal-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('panel-' + name).classList.add('active');
+}
+function switchSub(panel, name, el) {
+  el.parentElement.querySelectorAll('.subtab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll(`#panel-${panel} .subpanel`).forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`sub-${panel}-${name}`).classList.add('active');
+}
+function selectQuote(card) {
+  card.parentElement.querySelectorAll('.quote-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+}
+
+// Login flow: phone OTP → step B (license + device binding)
+function showLoginStepB() {
+  document.getElementById('login-step-a').style.display = 'none';
+  document.getElementById('login-step-b').style.display = 'block';
+}
+
+// Simulate license OCR upload
+function simulateLicUpload() {
+  const zone = document.getElementById('lic-upload-zone');
+  zone.innerHTML = '<div style="font-size:22px;margin-bottom:6px;">⏳</div>'
+    + '<div style="font-size:12px;font-weight:700;color:#1d4ed8;">Sanlyn AI 正在识别…</div>'
+    + '<div style="font-size:10px;color:#9ca3af;margin-top:3px;">MiniMax VL · 约 3 秒</div>';
+  zone.style.borderColor = '#6366f1';
+  zone.style.background = '#f5f3ff';
+  setTimeout(() => {
+    zone.innerHTML = '<div style="font-size:22px;margin-bottom:4px;">✅</div>'
+      + '<div style="font-size:12px;font-weight:700;color:#059669;">识别完成</div>'
+      + '<div style="font-size:10px;color:#9ca3af;margin-top:2px;">宣城福新宠物食品有限公司.jpg</div>';
+    zone.style.borderColor = '#059669';
+    zone.style.borderStyle = 'solid';
+    zone.style.background = '#f0fdf4';
+    document.getElementById('lic-parsed').style.display = 'block';
+  }, 2200);
+}
+
+// Cargo type toggle (green=normal, red=DG, amber=other)
+function togCargo(type) {
+  ['normal','dg','other'].forEach(k => {
+    const el = document.getElementById('cgt-' + k);
+    el.classList.remove('on-green','on-red','on-amber','on-blue');
+  });
+  const colors = { normal:'on-green', dg:'on-red', other:'on-amber' };
+  document.getElementById('cgt-' + type).classList.add(colors[type]);
+  document.getElementById('cgt-other-note').style.display = (type === 'other') ? 'block' : 'none';
+  document.getElementById('cgt-dg-note').style.display   = (type === 'dg')    ? 'block' : 'none';
+}
+
+// Save cargo note preferences (simulate)
+function saveNotePrefs() {
+  const saved = document.getElementById('notes-saved');
+  saved.style.display = 'block';
+  setTimeout(() => { saved.style.display = 'none'; }, 3000);
+}
+
+// Sailing card selection
+function selectSailing(key) {
+  const cfgOn  = { border:'2.5px solid #059669', bg:'#f0fdf4', shadow:'0 0 0 3px #05966922' };
+  const cfgOff = { border:'1.5px solid #e0e4ea', bg:'#fff', shadow:'none' };
+  ['a','b','c'].forEach(k => {
+    const card = document.getElementById('sail-' + k);
+    const tick = document.getElementById('sail-' + k + '-tick');
+    if (!card) return;
+    const on = (k === key);
+    const cfg = on ? cfgOn : cfgOff;
+    card.style.border = cfg.border;
+    card.style.background = cfg.bg;
+    card.style.boxShadow = cfg.shadow;
+    if (tick) tick.style.display = on ? 'inline' : 'none';
+  });
+  // For card A tick is always visible — handle separately
+  const tickA = document.getElementById('sail-a-tick');
+  if (tickA) {
+    tickA.style.display = 'inline';
+    tickA.style.background = (key === 'a') ? '#059669' : '#9ca3af';
+  }
+}
+
+// Port of Loading toggle (factory Step 1)
+function togPOL(key) {
+  ['fz','xm','nb','sh','gz','qd','other'].forEach(k => {
+    const el = document.getElementById('pol-' + k);
+    if (el) el.classList.remove('on-blue','on-green');
+  });
+  const el = document.getElementById('pol-' + key);
+  if (el) el.classList.add('on-blue');
+  const oi = document.getElementById('pol-other-input');
+  if (oi) oi.style.display = (key === 'other') ? 'block' : 'none';
+}
+
+// Step 5: card-based trade term selection
+const TT_COLORS = {
+  allin:{ border:'#7c3aed', bg:'linear-gradient(135deg,#faf5ff,#ede9fe)', shadow:'#7c3aed22' },
+  exw:  { border:'#374151', bg:'#f9fafb', shadow:'#37415122' },
+  fob:  { border:'#059669', bg:'#f0fdf4', shadow:'#05966922' },
+  ddp:  { border:'#d97706', bg:'#fffbeb', shadow:'#d9770622' },
+  cnf:  { border:'#0891b2', bg:'#ecfeff', shadow:'#0891b222' },
+};
+const TT_LABELS = { allin:'All-in', exw:'EXW', fob:'FOB', ddp:'DDP', cnf:'CNF/CFR' };
+function selectTT(key) {
+  ['allin','exw','fob','ddp','cnf'].forEach(k => {
+    const el = document.getElementById('tt-' + k);
+    if (!el) return;
+    if (k === key) {
+      const c = TT_COLORS[k] || { border:'#6b7280', bg:'#f9fafb', shadow:'#6b728022' };
+      el.style.border = '2.5px solid ' + c.border;
+      el.style.background = c.bg;
+      el.style.boxShadow = '0 0 0 3px ' + c.shadow;
+    } else {
+      el.style.border = '1.5px solid #c8cdd6';
+      el.style.background = '#fff';
+      el.style.boxShadow = 'none';
+    }
+    const xp = document.getElementById('ttx-' + k);
+    if (xp) xp.style.display = (k === key) ? 'block' : 'none';
+  });
+  const badge = document.getElementById('tt-badge');
+  if (badge) badge.textContent = TT_LABELS[key] || key.toUpperCase();
+}
+selectTT('fob'); // default: FOB pre-selected from order
+function closeSel() {}
+// FOB sub-question
+function togFOB(who) {
+  const sanlyn = document.getElementById('fob-sanlyn');
+  const self = document.getElementById('fob-self');
+  const sub_s = document.getElementById('fob-sanlyn-sub');
+  const sub_f = document.getElementById('fob-self-sub');
+  if (who === 'sanlyn') {
+    sanlyn.style.border = '2.5px solid #059669'; sanlyn.style.background = '#f0fdf4'; sanlyn.style.boxShadow = '0 0 0 3px #05966922';
+    self.style.border = '1.5px solid #e0e4ea'; self.style.background = '#fff'; self.style.boxShadow = 'none';
+    sub_s.style.display = 'block'; sub_f.style.display = 'none';
+  } else {
+    self.style.border = '2.5px solid #374151'; self.style.background = '#f8fafc'; self.style.boxShadow = '0 0 0 3px #37415122';
+    sanlyn.style.border = '1.5px solid #e0e4ea'; sanlyn.style.background = '#fff'; sanlyn.style.boxShadow = 'none';
+    sub_f.style.display = 'block'; sub_s.style.display = 'none';
+  }
+}
+function togImport(yes) {
+  ['imp-yes','imp-no'].forEach(id => document.getElementById(id).classList.remove('on-blue'));
+  document.getElementById(yes ? 'imp-yes' : 'imp-no').classList.add('on-blue');
+}
+
+// Step 4: inline edit helpers
+function openEdit(id) {
+  document.getElementById('edit-' + id).style.display = '';
+  document.getElementById('edit-' + id).scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+function closeEdit(id) { document.getElementById('edit-' + id).style.display = 'none'; }
+function saveEdit(id) {
+  closeEdit(id);
+  // In real app: PATCH to API
+}
+function openReport(id) {
+  const r = document.getElementById('report-' + id);
+  r.style.display = r.style.display === 'none' ? 'block' : 'none';
+}
+
+// Container toggle
+function togContainer(key) {
+  ['20gp','40gp','40hq','lcl','multi'].forEach(k => {
+    const el = document.getElementById('ct-' + k);
+    el.classList.remove('on-green','on-blue','on-amber');
+  });
+  document.getElementById('ct-' + key).classList.add('on-blue');
+  document.getElementById('ct-multi-note').style.display = (key === 'multi') ? 'block' : 'none';
+}
+
+// Port toggle (inside partial trade terms)
+function togPort(key) {
+  ['nb','sh','fz','gz','other'].forEach(k => {
+    const el = document.getElementById('port-' + k);
+    if (el) { el.classList.remove('on-blue','on-green'); }
+  });
+  const el = document.getElementById('port-' + key);
+  if (el) el.classList.add('on-blue');
+  const oi = document.getElementById('port-other-input');
+  if (oi) oi.style.display = (key === 'other') ? 'block' : 'none';
+}
+
+// Multi-address toggle
+function togMultiAddr(yes) {
+  ['multi-addr-no','multi-addr-yes'].forEach(id => {
+    const el = document.getElementById(id);
+    el.classList.remove('on-blue','on-green');
+  });
+  document.getElementById(yes ? 'multi-addr-yes' : 'multi-addr-no').classList.add('on-blue');
+  document.getElementById('multi-addr-note').style.display = yes ? 'block' : 'none';
+}
+
+// Factory sailing selection (for DDP / All-in / CNF panels)
+function selectFactSailing(prefix, key) {
+  ['a','b'].forEach(k => {
+    const el = document.getElementById(prefix + '-sail-' + k);
+    if (!el) return;
+    const badge = el.querySelector('.sail-selected-badge');
+    if (k === key) {
+      el.style.border = '2.5px solid #059669';
+      el.style.background = '#f0fdf4';
+      el.style.boxShadow = '0 0 0 3px #05966922';
+      if (badge) badge.style.display = 'block';
+    } else {
+      el.style.border = '1.5px solid #e0e4ea';
+      el.style.background = '#fff';
+      el.style.boxShadow = 'none';
+      if (badge) badge.style.display = 'none';
+    }
+  });
+}
+
+// CNF customs toggle
+function togCNFCustoms(who) {
+  const s = document.getElementById('cnf-customs-sanlyn');
+  const f = document.getElementById('cnf-customs-self');
+  if (who === 'sanlyn') {
+    s.style.border = '2.5px solid #0891b2'; s.style.background = '#ecfeff'; s.style.boxShadow = '0 0 0 3px #0891b222';
+    f.style.border = '1.5px solid #e0e4ea'; f.style.background = '#fff'; f.style.boxShadow = 'none';
+  } else {
+    f.style.border = '2.5px solid #374151'; f.style.background = '#f8fafc'; f.style.boxShadow = '0 0 0 3px #37415122';
+    s.style.border = '1.5px solid #e0e4ea'; s.style.background = '#fff'; s.style.boxShadow = 'none';
+  }
+}
+
+// FOB address: toggle edit mode
+function toggleFOBAddrEdit() {
+  const display = document.getElementById('fob-addr-display');
+  const edit = document.getElementById('fob-addr-edit');
+  const isEditing = edit.style.display !== 'none';
+  display.style.display = isEditing ? 'flex' : 'none';
+  edit.style.display = isEditing ? 'none' : 'block';
+}
+function saveFOBAddr() {
+  const input = document.getElementById('fob-addr-input');
+  const display = document.getElementById('fob-addr-display');
+  const addrText = display.querySelector('div');
+  if (addrText && input.value.trim()) {
+    addrText.innerHTML = '📍 ' + input.value.trim() +
+      ' <span style="font-size:9px;color:#6b7280;margin-left:4px;">已修改</span>';
+  }
+  document.getElementById('fob-addr-edit').style.display = 'none';
+  document.getElementById('fob-addr-display').style.display = 'flex';
+}
+
+// POL: show/hide port selector
+function showPOLSelector() {
+  const sel = document.getElementById('pol-selector');
+  sel.style.display = sel.style.display === 'none' ? 'block' : 'none';
+}
+
+// POL: toggle port buttons
+function togPOL(key) {
+  ['fz','xm','nb','sh','gz','qd','other'].forEach(k => {
+    const el = document.getElementById('pol-' + k);
+    if (el) el.classList.remove('on-blue','on-green');
+  });
+  const el = document.getElementById('pol-' + key);
+  if (el) el.classList.add('on-blue');
+  const oi = document.getElementById('pol-other-input');
+  if (oi) oi.style.display = (key === 'other') ? 'block' : 'none';
+}
+
+// POL: multi-factory checkbox
+function togPOLMulti(checked) {
+  const note = document.getElementById('pol-multi-note');
+  if (note) note.style.display = checked ? 'block' : 'none';
+}
+
+// POL: confirm selection and update the display card
+function confirmPOL() {
+  const ports = { fz:'福州港 / Fuzhou · CNFOC', xm:'厦门港 / Xiamen · CNXMN',
+    nb:'宁波港 / Ningbo · CNNGB', sh:'上海港 / Shanghai · CNSHA',
+    gz:'广州港 / Guangzhou · CNGZH', qd:'青岛港 / Qingdao · CNTAO' };
+  let selectedPort = null;
+  ['fz','xm','nb','sh','gz','qd'].forEach(k => {
+    const el = document.getElementById('pol-' + k);
+    if (el && el.classList.contains('on-blue')) selectedPort = k;
+  });
+  const nameEl = document.querySelector('#pol-auto .pol-port-name');
+  const subEl = document.querySelector('#pol-auto .pol-port-sub');
+  if (nameEl && selectedPort && ports[selectedPort]) {
+    nameEl.textContent = ports[selectedPort];
+    if (subEl) subEl.textContent = '已手动选择';
+  }
+  document.getElementById('pol-selector').style.display = 'none';
+}
+</script>
+</body>
+</html>
