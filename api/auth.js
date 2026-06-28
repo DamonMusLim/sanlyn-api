@@ -114,6 +114,7 @@ const PUBLIC_PATHS = [
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
   "/api/db/factory-portal", // 工厂门户:resolve/upload公开,gen内部校admin JWT
+  "/api/db/factory-invoice-reconcile", // 工厂开票对账台:internal自校JWT,factory c/mt token-gated
   // Team invite accept — public (token in URL is the credential, validated server-side)
   "/api/db/team-join",
   "/api/db/kp",
