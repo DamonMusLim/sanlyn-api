@@ -16,6 +16,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 import { renderCreditNote } from "./credit-note-doc.js"; // 贷记单 CN 独立渲染器 2026-06-28
+import { htmlToPdf } from "./_html-to-pdf.js"; // format=pdf 真PDF渲染 2026-06-28
 
 // ── W0-3 customer-facing scrub ────────────────────────────────────────────────
 // Memory rule (HARD): feedback_customer_code_anti_counterfeit.md
@@ -398,6 +399,25 @@ export default async function handler(req, res) {
   }
 
   var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,audience:_audReq,fmt:_fmtVariant,style:_styleVariant}=req.query;
+
+  // PDF 输出拦截(2026-06-28):后续各单据仍 return res.send(html),这里统一渲染成真 PDF。
+  // 只处理 format=pdf 且 body 是 HTML;format=xlsx 和普通 HTML 不受影响。
+  if ((Array.isArray(format) ? format : [format]).some(function(f){ return String(f).toLowerCase() === "pdf"; })) {
+    const origSend = res.send.bind(res);
+    res.send = (body) => {
+      if (typeof body === "string" && /<html|<!doctype/i.test(body)) {
+        htmlToPdf(body)
+          .then((pdf) => {
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader("Content-Disposition", 'attachment; filename="' + (type || "document") + "-" + (id || "") + '.pdf"');
+            origSend(pdf);
+          })
+          .catch((e) => { console.error("[pdf]", e.message); origSend(body); });
+        return res;
+      }
+      return origSend(body);
+    };
+  }
   // ── Legacy frontend type aliases → canonical renderers (2026-06-28) ──
   // Frontend buttons historically pointed at types the backend never had,
   // causing 400s. Map them to the real renderers without a frontend rebuild.
@@ -1300,6 +1320,7 @@ export default async function handler(req, res) {
                 })();
         if(V2){
           res.setHeader("Content-Type","text/html; charset=utf-8");
+          res.setHeader("Cache-Control","no-store");
           return res.send(V2);
         }
       }
