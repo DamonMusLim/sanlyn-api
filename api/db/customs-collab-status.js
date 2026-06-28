@@ -82,7 +82,7 @@ export async function ensureCustomsStatus(client, customsNo) {
         status, expected_amount_source, created_at, updated_at)
      SELECT customs_no, factory_code, contract_no, system_expected_amount,
             CASE WHEN system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END,
-            CASE WHEN system_expected_amount IS NULL THEN NULL ELSE 'system' END,
+            'system',
             NOW(), NOW()
        FROM fac
      ON CONFLICT (customs_no) DO UPDATE SET
