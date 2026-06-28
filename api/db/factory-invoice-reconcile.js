@@ -225,7 +225,7 @@ async function fetchReconcile(pool, opts) {
       SELECT fo.period, fo.factory_code, MAX(fo.factory_name) AS factory_name,
              fo.contract_no, fo.order_id,
              array_agg(DISTINCT fo.customs_no) FILTER (WHERE fo.customs_no IS NOT NULL) AS customs_arr,
-             COALESCE(NULLIF(SUM(oli.factory_subtotal), 0), MAX(fo.total_amount_factory)) AS expected_amount,
+             COALESCE(NULLIF(SUM(oli.declare_amount_per_box * oli.qty_ctn), 0), NULLIF(SUM(oli.factory_subtotal), 0), NULLIF(SUM(oli.subtotal), 0), MAX(fo.total_amount_factory)) AS expected_amount,
              SUM(COALESCE(oli.qty_ctn, 0)) AS qty_ctn
         FROM fer_orders fo
         LEFT JOIN order_line_items oli ON oli.order_id = fo.order_id
@@ -239,7 +239,7 @@ async function fetchReconcile(pool, opts) {
              oli.declaration_name,
              CASE WHEN COALESCE(oli.hs_code, '') LIKE '2309%' THEN 0.09 ELSE 0.13 END AS tax_rate,
              SUM(COALESCE(oli.qty_ctn, 0)) AS qty_ctn,
-             NULLIF(SUM(oli.factory_subtotal), 0) AS amount_incl_tax
+             COALESCE(NULLIF(SUM(oli.declare_amount_per_box * oli.qty_ctn), 0), NULLIF(SUM(oli.factory_subtotal), 0), NULLIF(SUM(oli.subtotal), 0)) AS amount_incl_tax
         FROM order_amounts oa
         JOIN order_line_items oli ON oli.order_id = oa.order_id
        GROUP BY oa.period, oa.factory_code, oa.contract_no, oa.customs_arr,
