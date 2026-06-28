@@ -55,7 +55,7 @@ function App(){
             <div className="kv"><div className="k">报关单号</div><div className="v">{r.customs_no||"—"}</div></div>
             <div className="kv"><div className="k">合同号</div><div className="v">{r.contract_no||"—"}</div></div>
             <div className="kv"><div className="k">箱数</div><div className="v">{num(r.qty_ctn||r.cartons)}</div></div>
-            <div className="kv"><div className="k">含税应开</div><div className="v">{money(r.effective_expected_amount??r.manual_expected_amount??r.system_expected_amount,"待填")}</div></div>
+            <div className="kv"><div className="k">含税应开</div><div className="v">{money(r.expected_amount,"待填")}</div></div>
           </div>
           <div className="actions">
             <button className="btn green" disabled={busy===r.customs_no} onClick={()=>confirmRow(r.customs_no)}>确认</button>
