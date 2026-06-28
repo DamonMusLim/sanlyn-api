@@ -278,8 +278,8 @@ async function fetchReconcile(pool, opts) {
           FROM finance_invoices_in fii
          WHERE fii.seller_company_code = g.factory_code
            AND COALESCE(fii.review_status, '') NOT IN ('void', 'red_ink')
-           AND (COALESCE(fii.contract_nos, '{}'::text[]) && g.contracts
-             OR COALESCE(fii.customs_nos, '{}'::text[]) && COALESCE(g.customs, '{}'::text[]))
+           AND (COALESCE(fii.contract_nos::text[], '{}'::text[]) && g.contracts::text[]
+             OR COALESCE(fii.customs_nos::text[], '{}'::text[]) && COALESCE(g.customs::text[], '{}'::text[]))
       ) inv ON true
       LEFT JOIN LATERAL (
         SELECT jsonb_agg(jsonb_build_object(
@@ -309,8 +309,8 @@ async function fetchReconcile(pool, opts) {
             FROM finance_invoices_in fii
            WHERE fii.seller_company_code = l.factory_code
              AND COALESCE(fii.review_status, '') NOT IN ('void', 'red_ink')
-             AND (COALESCE(fii.contract_nos, '{}'::text[]) @> ARRAY[l.contract_no]::text[]
-               OR COALESCE(fii.customs_nos, '{}'::text[]) && COALESCE(l.customs_arr, '{}'::text[]))
+             AND (COALESCE(fii.contract_nos::text[], '{}'::text[]) @> ARRAY[l.contract_no]::text[]
+               OR COALESCE(fii.customs_nos::text[], '{}'::text[]) && COALESCE(l.customs_arr::text[], '{}'::text[]))
         ) li ON true
         WHERE l.period = g.period AND l.factory_code = g.factory_code
       ) lines ON true
