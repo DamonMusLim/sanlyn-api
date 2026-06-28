@@ -158,6 +158,7 @@ function normalizeGroups(rows, detail) {
       uploaded_amount: uploaded,
       diff_amount: diff,
       qty_ctn: money(r.qty_ctn) || 0,
+      contracts_detail: Array.isArray(r.contracts_detail) ? r.contracts_detail.map(c => ({ contract_no: c.contract_no, qty_ctn: money(c.qty_ctn) || 0, amount_incl_tax: money(c.amount_incl_tax) })) : [],
       contract_count: Number(r.contract_count) || 0,
       invoice_count: Number(r.invoice_count) || 0,
       status: statusOf(expected, uploaded, Number(r.invoice_count) || 0, hasPending),
@@ -199,52 +200,53 @@ async function fetchReconcile(pool, opts) {
   let factoryWhere = "";
   if (opts.factoryCode) {
     params.push(opts.factoryCode);
-    factoryWhere = `AND COALESCE(o.factory_code, c_id.code, p.factory_code) = $${params.length}`;
+    factoryWhere = `AND factory_code = $${params.length}`;
   }
 
   const sql = `
-    WITH fer_orders AS (
-      SELECT DISTINCT
-             to_char(fer.export_date, 'YYYY-MM') AS period,
-             fer.customs_no, fer.contract_no, o.id AS order_id,
-             COALESCE(o.factory_code, c_id.code, p.factory_code) AS factory_code,
-             COALESCE(c.name_cn, c_id.name_cn, o.factory, COALESCE(o.factory_code, c_id.code, p.factory_code)) AS factory_name,
-             o.total_amount_factory
-        FROM finance_export_rebates fer
-        JOIN orders o ON o.contract_no = fer.contract_no
-        LEFT JOIN order_line_items oli0 ON oli0.order_id = o.id
-        LEFT JOIN products p ON p.id = oli0.product_id
+    WITH range_contracts AS (
+      SELECT DISTINCT contract_no, to_char(export_date,'YYYY-MM') AS period, customs_no
+        FROM finance_export_rebates
+       WHERE export_date >= $1::date AND export_date < $2::date
+    ),
+    oli_order AS (
+      SELECT order_id,
+             NULLIF(SUM(declare_amount_per_box * qty_ctn), 0) AS decl_sum,
+             NULLIF(SUM(factory_subtotal), 0) AS fs_sum,
+             NULLIF(SUM(subtotal), 0) AS st_sum,
+             SUM(COALESCE(qty_ctn, 0)) AS qty_ctn
+        FROM order_line_items GROUP BY order_id
+    ),
+    oli_sku AS (
+      SELECT order_id, COALESCE(sku, product_id::text) AS item_code,
+             MAX(declaration_name) AS declaration_name,
+             SUM(COALESCE(qty_ctn, 0)) AS qty_ctn,
+             COALESCE(NULLIF(SUM(declare_amount_per_box * qty_ctn), 0),
+                      NULLIF(SUM(factory_subtotal), 0),
+                      NULLIF(SUM(subtotal), 0)) AS amount_incl_tax,
+             MAX(CASE WHEN COALESCE(hs_code,'') LIKE '2309%' THEN 0.09 ELSE 0.13 END) AS tax_rate
+        FROM order_line_items GROUP BY order_id, COALESCE(sku, product_id::text)
+    ),
+    ord AS (
+      SELECT o.id AS order_id, rc.contract_no, rc.period,
+             COALESCE(o.factory_code, c_id.code,
+               (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
+                 WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
+             COALESCE(c.name_cn, c_id.name_cn, o.factory) AS factory_name,
+             COALESCE(oo.decl_sum, oo.fs_sum, oo.st_sum, o.total_amount_factory) AS expected_amount,
+             COALESCE(oo.qty_ctn, 0) AS qty_ctn,
+             array_agg(DISTINCT rc.customs_no) FILTER (WHERE rc.customs_no IS NOT NULL) AS customs_arr
+        FROM range_contracts rc
+        JOIN orders o ON o.contract_no = rc.contract_no AND COALESCE(o.status,'') <> 'cancelled'
+        LEFT JOIN oli_order oo ON oo.order_id = o.id
         LEFT JOIN companies c ON c.code = o.factory_code
         LEFT JOIN companies c_id ON c_id.id = o.factory_company_id
-       WHERE fer.export_date >= $1::date
-         AND fer.export_date < $2::date
-         AND COALESCE(o.status, '') <> 'cancelled'
-         ${factoryWhere}
+       GROUP BY o.id, rc.contract_no, rc.period, o.factory_code, c_id.code,
+                c.name_cn, c_id.name_cn, o.factory,
+                oo.decl_sum, oo.fs_sum, oo.st_sum, o.total_amount_factory, oo.qty_ctn
     ),
-    order_amounts AS (
-      SELECT fo.period, fo.factory_code, MAX(fo.factory_name) AS factory_name,
-             fo.contract_no, fo.order_id,
-             array_agg(DISTINCT fo.customs_no) FILTER (WHERE fo.customs_no IS NOT NULL) AS customs_arr,
-             COALESCE(NULLIF(SUM(oli.declare_amount_per_box * oli.qty_ctn), 0), NULLIF(SUM(oli.factory_subtotal), 0), NULLIF(SUM(oli.subtotal), 0), MAX(fo.total_amount_factory)) AS expected_amount,
-             SUM(COALESCE(oli.qty_ctn, 0)) AS qty_ctn
-        FROM fer_orders fo
-        LEFT JOIN order_line_items oli ON oli.order_id = fo.order_id
-       GROUP BY fo.period, fo.factory_code, fo.contract_no, fo.order_id
-    ),
-    line_rows AS (
-      SELECT oa.period, oa.factory_code, MAX(oa.factory_name) AS factory_name,
-             oa.contract_no, oa.customs_arr,
-             array_to_string(oa.customs_arr, ',') AS customs_no,
-             COALESCE(oli.sku, oli.product_id::text) AS item_code,
-             oli.declaration_name,
-             CASE WHEN COALESCE(oli.hs_code, '') LIKE '2309%' THEN 0.09 ELSE 0.13 END AS tax_rate,
-             SUM(COALESCE(oli.qty_ctn, 0)) AS qty_ctn,
-             COALESCE(NULLIF(SUM(oli.declare_amount_per_box * oli.qty_ctn), 0), NULLIF(SUM(oli.factory_subtotal), 0), NULLIF(SUM(oli.subtotal), 0)) AS amount_incl_tax
-        FROM order_amounts oa
-        JOIN order_line_items oli ON oli.order_id = oa.order_id
-       GROUP BY oa.period, oa.factory_code, oa.contract_no, oa.customs_arr,
-                COALESCE(oli.sku, oli.product_id::text), oli.declaration_name,
-                CASE WHEN COALESCE(oli.hs_code, '') LIKE '2309%' THEN 0.09 ELSE 0.13 END
+    ord_f AS (
+      SELECT * FROM ord WHERE factory_code IS NOT NULL ${factoryWhere}
     ),
     group_keys AS (
       SELECT period, factory_code, MAX(factory_name) AS factory_name,
@@ -252,16 +254,16 @@ async function fetchReconcile(pool, opts) {
              SUM(qty_ctn) AS qty_ctn,
              COUNT(DISTINCT contract_no) AS contract_count,
              array_agg(DISTINCT contract_no) AS contracts,
-             array_agg(DISTINCT x.customs_no) FILTER (WHERE x.customs_no IS NOT NULL) AS customs
-        FROM order_amounts oa
-        LEFT JOIN LATERAL unnest(oa.customs_arr) AS x(customs_no) ON true
+             array_agg(DISTINCT cu) FILTER (WHERE cu IS NOT NULL) AS customs
+        FROM ord_f LEFT JOIN LATERAL unnest(ord_f.customs_arr) AS cu ON true
        GROUP BY period, factory_code
     )
     SELECT g.period, g.factory_code, g.factory_name, g.expected_amount, g.qty_ctn, g.contract_count,
            COALESCE(inv.uploaded_amount, 0) AS uploaded_amount,
            COALESCE(inv.invoice_count, 0) AS invoice_count,
            COALESCE(inv.invoices, '[]'::jsonb) AS invoices,
-           COALESCE(lines.lines, '[]'::jsonb) AS lines
+           COALESCE(lines.lines, '[]'::jsonb) AS lines,
+           COALESCE(cdetail.contracts_detail, '[]'::jsonb) AS contracts_detail
       FROM group_keys g
       LEFT JOIN LATERAL (
         SELECT SUM(fii.amount_incl_tax) AS uploaded_amount,
@@ -283,37 +285,28 @@ async function fetchReconcile(pool, opts) {
       ) inv ON true
       LEFT JOIN LATERAL (
         SELECT jsonb_agg(jsonb_build_object(
-          'contract_no', l.contract_no,
-          'customs_no', l.customs_no,
-          'item_code', l.item_code,
-          'declaration_name', l.declaration_name,
-          'qty_ctn', l.qty_ctn,
-          'amount_incl_tax', l.amount_incl_tax,
-          'tax_rate', l.tax_rate,
-          'uploaded_amount', COALESCE(li.uploaded_amount, 0),
-          'diff_amount', CASE WHEN l.amount_incl_tax IS NULL THEN NULL ELSE l.amount_incl_tax - COALESCE(li.uploaded_amount, 0) END,
-          'invoices', COALESCE(li.invoices, '[]'::jsonb)
-        ) ORDER BY l.contract_no, l.item_code) AS lines
-        FROM line_rows l
-        LEFT JOIN LATERAL (
-          SELECT SUM(fii.amount_incl_tax) AS uploaded_amount,
-                 jsonb_agg(DISTINCT jsonb_build_object(
-                   'id', fii.id, 'invoice_no', fii.invoice_no,
-                   'amount_incl_tax', fii.amount_incl_tax,
-                   'review_status', fii.review_status,
-                   'file_url', CASE
-                     WHEN jsonb_typeof(fii.attachments)='array' THEN COALESCE(fii.attachments->0->>'oss_url', fii.attachments->0->>'url')
-                     WHEN jsonb_typeof(fii.attachments)='object' THEN COALESCE(fii.attachments->>'oss_url', fii.attachments->>'url')
-                     ELSE NULL END
-                 )) AS invoices
-            FROM finance_invoices_in fii
-           WHERE fii.seller_company_code = l.factory_code
-             AND COALESCE(fii.review_status, '') NOT IN ('void', 'red_ink')
-             AND (COALESCE(fii.contract_nos::text[], '{}'::text[]) @> ARRAY[l.contract_no]::text[]
-               OR COALESCE(fii.customs_nos::text[], '{}'::text[]) && COALESCE(l.customs_arr::text[], '{}'::text[]))
-        ) li ON true
-        WHERE l.period = g.period AND l.factory_code = g.factory_code
+          'contract_no', d.contract_no, 'customs_no', d.customs_no,
+          'item_code', d.item_code, 'declaration_name', d.declaration_name,
+          'qty_ctn', d.qty_ctn, 'amount_incl_tax', d.amount_incl_tax, 'tax_rate', d.tax_rate,
+          'uploaded_amount', 0, 'diff_amount', NULL, 'invoices', '[]'::jsonb
+        ) ORDER BY d.contract_no, d.item_code) AS lines
+        FROM (
+          SELECT o2.contract_no, array_to_string(o2.customs_arr, ',') AS customs_no,
+                 s.item_code, s.declaration_name, s.qty_ctn, s.amount_incl_tax, s.tax_rate
+            FROM ord_f o2 JOIN oli_sku s ON s.order_id = o2.order_id
+           WHERE o2.period = g.period AND o2.factory_code = g.factory_code
+        ) d
       ) lines ON true
+      LEFT JOIN LATERAL (
+        SELECT jsonb_agg(jsonb_build_object(
+          'contract_no', cc.contract_no, 'qty_ctn', cc.q, 'amount_incl_tax', cc.amt
+        ) ORDER BY cc.contract_no) AS contracts_detail
+        FROM (
+          SELECT contract_no, SUM(qty_ctn) AS q, SUM(expected_amount) AS amt
+            FROM ord_f o3 WHERE o3.period = g.period AND o3.factory_code = g.factory_code
+           GROUP BY contract_no
+        ) cc
+      ) cdetail ON true
      ORDER BY g.period DESC, g.factory_name, g.factory_code`;
   return (await pool.query(sql, params)).rows;
 }
@@ -336,6 +329,8 @@ function factoryVisible(groups) {
     factory_code: g.factory_code,
     factory_name: g.factory_name,
     uploaded_amount: g.uploaded_amount,
+    expected_amount: g.expected_amount,
+    contracts_detail: g.contracts_detail || [],
     status: g.status,
     lines: (g.lines || []).map((l) => {
       const row = {

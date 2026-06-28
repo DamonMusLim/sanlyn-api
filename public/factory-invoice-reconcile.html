@@ -42,12 +42,12 @@ function render(){
   let html="";
   groups.forEach((g,gi)=>{
     const lines=g.lines||[];
-    // 按合同汇总
-    const byC={};
-    lines.forEach(l=>{const k=l.contract_no||"—";(byC[k]=byC[k]||{ctn:0,amt:0,rate:l.tax_rate,has:false});byC[k].ctn+=Number(l.qty_ctn||0);if(l.amount_incl_tax!=null){byC[k].amt+=Number(l.amount_incl_tax);byC[k].has=true;}});
-    const rows=Object.entries(byC).map(([c,v])=>`<tr><td>${esc(c)}</td><td class="num">${v.ctn.toLocaleString()}</td><td class="num">${v.has?money(v.amt):"待我司确认"}</td><td class="num">${v.rate?(v.rate*100).toFixed(0)+"%":"—"}</td></tr>`).join("");
-    const totCtn=Object.values(byC).reduce((s,v)=>s+v.ctn,0);
-    const totAmt=Object.values(byC).reduce((s,v)=>s+(v.has?v.amt:0),0);
+    // 按合同汇总(用后端正确的 contracts_detail,非sum行)
+    const rateByC={};lines.forEach(l=>{if(l.contract_no&&l.tax_rate!=null)rateByC[l.contract_no]=l.tax_rate;});
+    const cd=g.contracts_detail||[];
+    const rows=cd.map(c=>{const rate=rateByC[c.contract_no];return `<tr><td>${esc(c.contract_no)}</td><td class="num">${Number(c.qty_ctn||0).toLocaleString()}</td><td class="num">${c.amount_incl_tax!=null?money(c.amount_incl_tax):"待我司确认"}</td><td class="num">${rate?(rate*100).toFixed(0)+"%":"—"}</td></tr>`;}).join("");
+    const totCtn=cd.reduce((s,c)=>s+Number(c.qty_ctn||0),0);
+    const totAmt=cd.reduce((s,c)=>s+(c.amount_incl_tax!=null?Number(c.amount_incl_tax):0),0);
     const ups=(g.lines||[]).flatMap(l=>l.uploaded||[]);
     const upSeen={},upList=ups.filter(u=>u&&u.invoice_no&&!upSeen[u.id||u.invoice_no]&&(upSeen[u.id||u.invoice_no]=1));
     html+=`<div class="card"><div class="mhead"><div class="mtitle">📅 ${esc(g.period)}</div>
