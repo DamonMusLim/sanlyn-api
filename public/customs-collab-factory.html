@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>报关单开票协同</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b1120;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}.header{position:sticky;top:0;z-index:5;background:rgba(11,17,32,.92);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.08);padding:14px 18px}.brand{font-weight:850;font-size:17px}.sub{font-size:12px;color:#94a3b8;margin-top:4px}.page{max-width:980px;margin:0 auto;padding:18px 14px 60px}.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}.pill{display:inline-flex;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:800;border:1px solid rgba(255,255,255,.12)}.card{background:rgba(15,23,42,.72);border:1px solid rgba(255,255,255,.08);border-radius:12px;margin-bottom:14px;overflow:hidden}.month{padding:12px 14px;font-weight:850;border-bottom:1px solid rgba(255,255,255,.07);color:#38bdf8}.row{padding:14px;border-bottom:1px solid rgba(255,255,255,.06)}.row:last-child{border-bottom:none}.top{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}.no{font-weight:850;font-size:15px}.meta{font-size:12px;color:#94a3b8;margin-top:5px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}.kv{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:9px}.k{font-size:10px;color:#64748b;font-weight:800;margin-bottom:5px}.v{font-size:13px;font-weight:750}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.btn{border:1px solid rgba(56,189,248,.45);background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 11px;font-weight:850;font-size:12px;cursor:pointer}.btn.green{border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.14);color:#4ade80}.btn:disabled{opacity:.55;cursor:not-allowed}.err{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);color:#fca5a5;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}.ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#86efac;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}.empty{text-align:center;color:#64748b;padding:54px 0}.modalMask{position:fixed;inset:0;background:rgba(0,0,0,.64);z-index:20;display:flex;align-items:center;justify-content:center;padding:16px}.modal{width:720px;max-width:100%;max-height:86vh;overflow:auto;background:#111827;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:16px}.mh{display:flex;align-items:center;margin-bottom:12px}.mt{font-weight:850}.close{margin-left:auto}.table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px}th,td{text-align:left;padding:8px;border-bottom:1px solid rgba(255,255,255,.07);vertical-align:top}th{color:#94a3b8;font-size:11px}.upload{display:none}.fileName{font-size:12px;color:#94a3b8;margin-left:4px}.ocr{margin-top:8px;font-size:12px;color:#cbd5e1;background:rgba(255,255,255,.04);border-radius:8px;padding:8px;white-space:pre-wrap}@media(max-width:760px){.grid{grid-template-columns:1fr 1fr}.top{display:block}.page{padding:14px 10px}.modal{padding:12px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const API = "/api/db/customs-collab";
+const STATUS = {
+  pending_confirm:["待确认","#94a3b8","rgba(148,163,184,.12)"],
+  need_amount:["待填金额","#60a5fa","rgba(96,165,250,.14)"],
+  confirmed_wait_invoice:["已确认待开票","#38bdf8","rgba(56,189,248,.14)"],
+  partial_uploaded:["少开","#fbbf24","rgba(251,191,36,.14)"],
+  over_issued:["多开","#f87171","rgba(239,68,68,.18)"],
+  amount_mismatch:["金额不符","#fb923c","rgba(251,146,60,.16)"],
+  matched:["已核对","#4ade80","rgba(74,222,128,.14)"],
+  completed:["已完成","#22c55e","rgba(34,197,94,.20)"],
+  void:["已作废","#94a3b8","rgba(100,116,139,.18)"],
+  red_ink:["已红冲","#f87171","rgba(239,68,68,.16)"]
+};
+const EV = {confirm:"确认",upload:"上传发票",review_match:"核对通过",review_mismatch:"核对不符",complete:"完成"};
+function code(){return new URLSearchParams(location.search).get("c")||""}
+function qs(o){const p=new URLSearchParams();Object.entries(o).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=="")p.set(k,v)});return p.toString()}
+async function api(path,opt){const r=await fetch(path,opt);const b=await r.json().catch(()=>({}));if(!r.ok||b.success===false)throw new Error(b.error||`HTTP ${r.status}`);return b}
+function money(v,t="—"){if(v==null||v==="")return t;const n=Number(v);return Number.isFinite(n)?"¥"+n.toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2}):"—"}
+function num(v){if(v==null||v==="")return "—";const n=Number(v);return Number.isFinite(n)?n.toLocaleString("zh-CN"):"—"}
+function Pill({s}){const m=STATUS[s]||[s||"—","#94a3b8","rgba(255,255,255,.06)"];return <span className="pill" style={{color:m[1],background:m[2],borderColor:m[1]+"66"}}>{m[0]}</span>}
+function App(){
+  const c=code(), [data,setData]=React.useState(null), [err,setErr]=React.useState(""), [ok,setOk]=React.useState(""), [busy,setBusy]=React.useState(""), [detail,setDetail]=React.useState(null), [ocr,setOcr]=React.useState({});
+  const rows=Array.isArray(data?.rows)?data.rows:[];
+  const groups=React.useMemo(()=>rows.reduce((m,r)=>{const k=r.period||String(r.export_date||"").slice(0,7)||"未分月";(m[k]=m[k]||[]).push(r);return m},{}),[rows]);
+  async function load(){setErr("");try{setData(await api(API+"?"+qs({action:"factory_list",c})))}catch(e){setErr(e.message||String(e))}}
+  React.useEffect(()=>{load()},[]);
+  async function confirmRow(no){setBusy(no);setErr("");setOk("");try{await api(API+"?"+qs({action:"confirm",c}),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customs_no:no})});setOk("已确认");await load()}catch(e){setErr(e.message||String(e))}finally{setBusy("")}}
+  async function upload(no,file){if(!file)return;setBusy(no);setErr("");setOk("");try{const fd=new FormData();fd.append("customs_no",no);fd.append("file",file);const res=await api(API+"?"+qs({action:"upload",c}),{method:"POST",body:fd});setOcr(x=>({...x,[no]:res.ocr||res.result||res}));setOk("发票已上传");await load()}catch(e){setErr(e.message||String(e))}finally{setBusy("")}}
+  async function openDetail(no){setErr("");try{setDetail(await api(API+"?"+qs({action:"detail",customs_no:no,c})))}catch(e){setErr(e.message||String(e))}}
+  return <><div className="header"><div className="brand">Sanlyn 报关单开票协同</div><div className="sub">请按报关单确认含税应开金额并上传发票</div></div>
+    <main className="page">
+      <div className="toolbar"><span className="pill" style={{color:"#38bdf8",background:"rgba(56,189,248,.12)"}}>工厂短码 {c||"缺失"}</span><button className="btn" onClick={load}>刷新</button></div>
+      {err&&<div className="err">{err}</div>}{ok&&<div className="ok">{ok}</div>}
+      {!c?<div className="empty">链接缺少 c 参数</div>:!rows.length?<div className="empty">暂无报关单</div>:Object.entries(groups).map(([month,list])=><section className="card" key={month}>
+        <div className="month">{month}</div>
+        {list.map(r=><div className="row" key={r.customs_no}>
+          <div className="top"><div><div className="no">{r.customs_no||"—"}</div><div className="meta">合同 {r.contract_no||"—"}</div></div><Pill s={r.status}/></div>
+          <div className="grid">
+            <div className="kv"><div className="k">报关单号</div><div className="v">{r.customs_no||"—"}</div></div>
+            <div className="kv"><div className="k">合同号</div><div className="v">{r.contract_no||"—"}</div></div>
+            <div className="kv"><div className="k">箱数</div><div className="v">{num(r.qty_ctn||r.cartons)}</div></div>
+            <div className="kv"><div className="k">含税应开</div><div className="v">{money(r.effective_expected_amount??r.manual_expected_amount??r.system_expected_amount,"待填")}</div></div>
+          </div>
+          <div className="actions">
+            <button className="btn green" disabled={busy===r.customs_no} onClick={()=>confirmRow(r.customs_no)}>确认</button>
+            <label className="btn">上传发票<input className="upload" type="file" accept="image/*,.pdf" onChange={e=>upload(r.customs_no,e.target.files[0])}/></label>
+            <button className="btn" onClick={()=>openDetail(r.customs_no)}>查看详情</button>
+            {busy===r.customs_no&&<span className="fileName">处理中...</span>}
+          </div>
+          {ocr[r.customs_no]&&<div className="ocr">OCR识别结果：{JSON.stringify(ocr[r.customs_no],null,2)}</div>}
+        </div>)}
+      </section>)}
+    </main>{detail&&<DetailModal data={detail} onClose={()=>setDetail(null)}/>}</>
+}
+function DetailModal({data,onClose}){
+  const items=Array.isArray(data.items)?data.items:[], invoices=Array.isArray(data.invoices)?data.invoices:[], events=Array.isArray(data.events)?data.events:[];
+  return <div className="modalMask" onMouseDown={onClose}><div className="modal" onMouseDown={e=>e.stopPropagation()}>
+    <div className="mh"><div className="mt">{data.customs?.customs_no||"报关单详情"}</div><button className="btn close" onClick={onClose}>关闭</button></div>
+    <h4>申报明细</h4><table className="table"><thead><tr><th>品名</th><th>数量</th><th>单位</th></tr></thead><tbody>{items.length?items.map((it,i)=><tr key={i}><td>{it.declaration_name||it.product_name||it.goods_name||"—"}</td><td>{num(it.qty||it.quantity)}</td><td>{it.unit||"—"}</td></tr>):<tr><td colSpan="3">暂无明细</td></tr>}</tbody></table>
+    <h4>已传发票</h4><table className="table"><thead><tr><th>发票号</th><th>日期</th><th>金额</th><th>状态</th></tr></thead><tbody>{invoices.length?invoices.map(inv=><tr key={inv.id||inv.invoice_no}><td>{inv.invoice_no||"未编号"}</td><td>{String(inv.issue_date||"").slice(0,10)||"—"}</td><td>{money(inv.amount_incl_tax)}</td><td><Pill s={inv.link_status||inv.review_status}/></td></tr>):<tr><td colSpan="4">暂无发票</td></tr>}</tbody></table>
+    <h4>状态历史</h4><table className="table"><tbody>{events.length?events.map((ev,i)=><tr key={ev.id||i}><td>{EV[ev.event_type]||ev.event_type||"事件"}</td><td>{ev.created_at||ev.event_at||"—"}</td><td>{ev.actor_name||ev.created_by||"—"}</td><td>{ev.reason||""}</td></tr>):<tr><td>暂无历史</td></tr>}</tbody></table>
+  </div></div>
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
