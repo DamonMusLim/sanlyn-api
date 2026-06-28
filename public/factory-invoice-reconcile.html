@@ -1,0 +1,77 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工厂开票对账</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f8;color:#18212f;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:22px 14px 56px}
+.top{margin-bottom:14px}.brand{font-size:22px;font-weight:800}.sub{font-size:13px;color:#667085;margin-top:4px}
+.card{background:#fff;border:1px solid #d9e0e8;border-radius:10px;margin:14px 0;padding:16px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.mhead{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.mtitle{font-size:17px;font-weight:800}.kv{font-size:13px;color:#475467}.kv b{color:#111}
+table{width:100%;border-collapse:collapse;min-width:520px}th,td{border-bottom:1px solid #eef1f5;padding:9px 10px;font-size:13px;text-align:left}
+th{color:#667085;background:#fafbfc;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.num{text-align:right;font-variant-numeric:tabular-nums}.tableBox{overflow:auto;border:1px solid #eef1f5;border-radius:8px}
+.tot{font-weight:800}.totrow td{background:#f8fafc;font-weight:800;border-top:2px solid #e2e8f0}
+.pill{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:700}
+.empty{text-align:center;padding:42px;color:#667085}
+.upload{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.upload input[type=file]{border:1px solid #cbd5e1;border-radius:6px;padding:8px;background:#fff}
+.btn{border:1px solid #cbd5e1;background:#fff;color:#1f2937;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:700}
+.primary{border:0;background:#1d4ed8;color:#fff}.btn:disabled{opacity:.5;cursor:not-allowed}
+.status{margin-top:8px;font-size:13px}.ok{color:#15803d}.err{color:#b91c1c}
+.uprow{display:flex;justify-content:space-between;gap:10px;border-top:1px solid #eef1f5;padding-top:8px;margin-top:8px;font-size:13px}
+@media(max-width:640px){.mhead{display:block}}
+</style></head><body><div class="wrap">
+<div class="top"><div class="brand" id="fname">工厂开票对账</div><div class="sub">请按下列合同·含税金额开具增值税专用发票并上传。如有疑问请联系我司。</div></div>
+<div id="app"><div class="card"><div class="empty" id="msg">加载中…</div></div></div>
+</div><script>
+const qs=new URLSearchParams(location.search),CODE=qs.get("c")||"",MT=qs.get("mt")||"";
+const API="/api/db/factory-invoice-reconcile",PAPI="/api/db/factory-portal";
+const MONTHS="2026-04,2026-05,2026-06";
+const q=()=>(MT?("mt="+encodeURIComponent(MT)):("c="+encodeURIComponent(CODE)))+"&months="+MONTHS;
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money=v=>v==null?"—":"¥"+Number(v).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
+let DATA=null;
+async function load(){
+  try{const r=await fetch(API+"?action=factory&"+q());const d=await r.json();if(!r.ok)throw new Error(d.error||"链接无效或已过期");DATA=d;
+    document.getElementById("fname").textContent=(d.factory&&d.factory.name||"工厂")+" · 开票对账";render();
+  }catch(e){document.getElementById("msg").textContent=e.message;document.getElementById("msg").className="empty err";}
+}
+function render(){
+  const groups=(DATA.groups||[]).slice().sort((a,b)=>(b.period||"").localeCompare(a.period||""));
+  if(!groups.length){document.getElementById("app").innerHTML='<div class="card"><div class="empty">本期暂无需开票的合同</div></div>';return;}
+  let html="";
+  groups.forEach((g,gi)=>{
+    const lines=g.lines||[];
+    // 按合同汇总
+    const byC={};
+    lines.forEach(l=>{const k=l.contract_no||"—";(byC[k]=byC[k]||{ctn:0,amt:0,rate:l.tax_rate,has:false});byC[k].ctn+=Number(l.qty_ctn||0);if(l.amount_incl_tax!=null){byC[k].amt+=Number(l.amount_incl_tax);byC[k].has=true;}});
+    const rows=Object.entries(byC).map(([c,v])=>`<tr><td>${esc(c)}</td><td class="num">${v.ctn.toLocaleString()}</td><td class="num">${v.has?money(v.amt):"待我司确认"}</td><td class="num">${v.rate?(v.rate*100).toFixed(0)+"%":"—"}</td></tr>`).join("");
+    const totCtn=Object.values(byC).reduce((s,v)=>s+v.ctn,0);
+    const totAmt=Object.values(byC).reduce((s,v)=>s+(v.has?v.amt:0),0);
+    const ups=(g.lines||[]).flatMap(l=>l.uploaded||[]);
+    const upSeen={},upList=ups.filter(u=>u&&u.invoice_no&&!upSeen[u.id||u.invoice_no]&&(upSeen[u.id||u.invoice_no]=1));
+    html+=`<div class="card"><div class="mhead"><div class="mtitle">📅 ${esc(g.period)}</div>
+      <div class="kv">应开合计 <b>${money(totAmt)}</b> · 已开 <b>${money(g.uploaded_amount)}</b> · 共 <b>${totCtn.toLocaleString()}</b> 箱</div></div>
+      <div class="tableBox"><table><thead><tr><th>合同号</th><th class="num">箱数</th><th class="num">含税应开金额</th><th class="num">税率</th></tr></thead>
+      <tbody>${rows}<tr class="totrow"><td>合计</td><td class="num">${totCtn.toLocaleString()}</td><td class="num">${money(totAmt)}</td><td></td></tr></tbody></table></div>
+      ${upList.length?`<div style="margin-top:10px"><b style="font-size:13px">已上传发票</b>${upList.map(u=>`<div class="uprow"><span>${esc(u.invoice_no)} · ${esc(u.review_status||"")}</span><b>${money(u.amount_incl_tax)}</b></div>`).join("")}</div>`:""}
+      <div class="upload"><input id="f${gi}" type="file" accept=".pdf,image/*"><button class="btn primary" onclick="up(${gi},'${esc(g.period)}')">上传该月发票</button></div>
+      <div id="s${gi}" class="status"></div></div>`;
+  });
+  document.getElementById("app").innerHTML=html;
+}
+async function up(gi,period){
+  const inp=document.getElementById("f"+gi),st=document.getElementById("s"+gi);
+  if(!inp.files||!inp.files[0]){st.className="status err";st.textContent="请先选择发票文件";return;}
+  const g=(DATA.groups||[]).find(x=>x.period===period)||{};
+  const contracts=[...new Set((g.lines||[]).map(l=>l.contract_no).filter(Boolean))];
+  st.className="status";st.textContent="上传识别中…";
+  const fd=new FormData();fd.append("file",inp.files[0]);fd.append("contract_nos",contracts.join(","));fd.append("expected_period",period);
+  try{const r=await fetch(PAPI+"?action=upload&"+(MT?("mt="+encodeURIComponent(MT)):("c="+encodeURIComponent(CODE))),{method:"POST",body:fd});const d=await r.json();
+    if(!r.ok||!d.ok)throw new Error(d.error||"上传失败");
+    st.className="status "+(d.warning?"err":"ok");st.innerHTML="发票号 "+esc(d.invoice_no||"-")+"，金额 "+money(d.amount_incl_tax)+"，状态 "+esc(d.review_status||"-")+(d.warning?"；"+esc(d.warning):"");
+    setTimeout(load,900);
+  }catch(e){st.className="status err";st.textContent=e.message;}
+}
+load();
+</script></body></html>
