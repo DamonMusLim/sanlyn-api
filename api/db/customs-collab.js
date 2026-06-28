@@ -196,7 +196,8 @@ async function fetchRows(pool, opts) {
              MAX(fer.contract_no) AS contract_no,
              MIN(fer.export_date) AS export_date,
              CASE WHEN COUNT(i.item)=0 THEN NULL
-                  ELSE ROUND(SUM(NULLIF(i.item->>'amount','')::numeric), 2) END AS system_expected_amount
+                  ELSE ROUND(SUM(NULLIF(i.item->>'amount','')::numeric), 2) END AS system_expected_amount,
+             ROUND(SUM(NULLIF(i.item->>'qty2','')::numeric), 2) AS qty
         FROM finance_export_rebates fer
         LEFT JOIN LATERAL jsonb_array_elements(
           CASE WHEN jsonb_typeof(fer.raw->'items')='array' THEN fer.raw->'items' ELSE '[]'::jsonb END
@@ -209,7 +210,8 @@ async function fetchRows(pool, opts) {
              COALESCE(o.factory_code, c_id.code,
                (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
                  WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
-             COALESCE(c.name_cn, c.factory_name, c_id.name_cn, c_id.factory_name, o.factory) AS factory_name
+             COALESCE(c.name_cn, c.factory_name, c_id.name_cn, c_id.factory_name, o.factory) AS factory_name,
+             o.order_no
         FROM fer_base f
         LEFT JOIN orders o ON o.contract_no=f.contract_no AND COALESCE(o.status,'') <> 'cancelled'
         LEFT JOIN companies c ON c.code=o.factory_code
@@ -217,7 +219,7 @@ async function fetchRows(pool, opts) {
     )
     SELECT b.customs_no, b.contract_no, b.export_date,
            to_char(b.export_date,'YYYY-MM') AS period,
-           b.factory_code, b.factory_name,
+           b.factory_code, b.factory_name, b.order_no, b.qty,
            COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END) AS status,
            b.system_expected_amount,
            s.manual_expected_amount,
@@ -252,6 +254,8 @@ async function fetchRows(pool, opts) {
     uploaded_amount: money(r.uploaded_amount) || 0,
     diff_amount: money(r.diff_amount),
     valid_invoice_count: Number(r.valid_invoice_count) || 0,
+    order_no: r.order_no || null,
+    qty: Number(r.qty) || null,
   }));
 }
 
@@ -298,6 +302,9 @@ function factoryRow(r) {
     expected_amount: r.effective_expected_amount,
     uploaded_amount: r.uploaded_amount,
     valid_invoice_count: r.valid_invoice_count,
+    order_no: r.order_no,
+    qty: r.qty,
+    has_invoice: (r.valid_invoice_count || 0) > 0,
     diff_amount: r.diff_amount,
     last_event_at: r.last_event_at,
   };

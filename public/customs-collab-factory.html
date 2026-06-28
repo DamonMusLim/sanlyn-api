@@ -3,81 +3,613 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>报关单开票协同</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<title>工厂开票上传</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#0b1120;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}.header{position:sticky;top:0;z-index:5;background:rgba(11,17,32,.92);backdrop-filter:blur(14px);border-bottom:1px solid rgba(255,255,255,.08);padding:14px 18px}.brand{font-weight:850;font-size:17px}.sub{font-size:12px;color:#94a3b8;margin-top:4px}.page{max-width:980px;margin:0 auto;padding:18px 14px 60px}.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}.pill{display:inline-flex;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:800;border:1px solid rgba(255,255,255,.12)}.card{background:rgba(15,23,42,.72);border:1px solid rgba(255,255,255,.08);border-radius:12px;margin-bottom:14px;overflow:hidden}.month{padding:12px 14px;font-weight:850;border-bottom:1px solid rgba(255,255,255,.07);color:#38bdf8}.row{padding:14px;border-bottom:1px solid rgba(255,255,255,.06)}.row:last-child{border-bottom:none}.top{display:flex;gap:10px;align-items:flex-start;justify-content:space-between}.no{font-weight:850;font-size:15px}.meta{font-size:12px;color:#94a3b8;margin-top:5px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}.kv{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;padding:9px}.k{font-size:10px;color:#64748b;font-weight:800;margin-bottom:5px}.v{font-size:13px;font-weight:750}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.btn{border:1px solid rgba(56,189,248,.45);background:rgba(56,189,248,.15);color:#38bdf8;border-radius:8px;padding:7px 11px;font-weight:850;font-size:12px;cursor:pointer}.btn.green{border-color:rgba(34,197,94,.45);background:rgba(34,197,94,.14);color:#4ade80}.btn:disabled{opacity:.55;cursor:not-allowed}.err{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);color:#fca5a5;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}.ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#86efac;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}.empty{text-align:center;color:#64748b;padding:54px 0}.modalMask{position:fixed;inset:0;background:rgba(0,0,0,.64);z-index:20;display:flex;align-items:center;justify-content:center;padding:16px}.modal{width:720px;max-width:100%;max-height:86vh;overflow:auto;background:#111827;border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:16px}.mh{display:flex;align-items:center;margin-bottom:12px}.mt{font-weight:850}.close{margin-left:auto}.table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px}th,td{text-align:left;padding:8px;border-bottom:1px solid rgba(255,255,255,.07);vertical-align:top}th{color:#94a3b8;font-size:11px}.upload{display:none}.fileName{font-size:12px;color:#94a3b8;margin-left:4px}.ocr{margin-top:8px;font-size:12px;color:#cbd5e1;background:rgba(255,255,255,.04);border-radius:8px;padding:8px;white-space:pre-wrap}@media(max-width:760px){.grid{grid-template-columns:1fr 1fr}.top{display:block}.page{padding:14px 10px}.modal{padding:12px}}
+*{box-sizing:border-box}
+:root{
+  --bg:#f6f8fb;
+  --panel:#ffffff;
+  --text:#172033;
+  --muted:#667085;
+  --line:#e6eaf0;
+  --soft:#f1f5f9;
+  --blue:#2563eb;
+  --green:#16a34a;
+  --green-bg:#ecfdf3;
+  --red:#dc2626;
+  --red-bg:#fff1f2;
+  --shadow:0 10px 30px rgba(15,23,42,.08);
+}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Arial,sans-serif;
+}
+button,input{font:inherit}
+.page{max-width:1120px;margin:0 auto;padding:22px 16px 56px}
+.hero{
+  background:linear-gradient(135deg,#ffffff 0%,#eef6ff 100%);
+  border:1px solid var(--line);
+  box-shadow:var(--shadow);
+  border-radius:18px;
+  padding:22px;
+  margin-bottom:18px;
+}
+.heroTop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.factoryName{font-size:30px;line-height:1.15;font-weight:850;letter-spacing:0;margin:0 0 8px}
+.subtitle{margin:0;color:var(--muted);font-size:14px}
+.heroAmount{text-align:right;min-width:230px}
+.heroMonth{color:var(--muted);font-size:13px;margin-bottom:5px}
+.heroTotal{font-size:30px;font-weight:900;color:var(--blue);line-height:1.1}
+.toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin:14px 0 18px;
+}
+.monthInputs{display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:13px}
+.monthInputs input{
+  height:36px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:0 10px;
+  background:#fff;
+  color:var(--text);
+}
+.btn{
+  border:1px solid transparent;
+  border-radius:10px;
+  height:38px;
+  padding:0 14px;
+  background:var(--blue);
+  color:#fff;
+  font-weight:750;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  white-space:nowrap;
+}
+.btn.secondary{background:#fff;color:var(--text);border-color:var(--line)}
+.btn.ghost{background:transparent;color:var(--blue);border-color:#bfdbfe}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.notice{
+  border-radius:12px;
+  padding:12px 14px;
+  margin-bottom:14px;
+  font-size:14px;
+}
+.notice.err{background:var(--red-bg);color:var(--red);border:1px solid #fecdd3}
+.notice.ok{background:var(--green-bg);color:var(--green);border:1px solid #bbf7d0}
+.empty{
+  text-align:center;
+  color:var(--muted);
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:56px 18px;
+}
+.monthBlock{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:18px;
+  box-shadow:var(--shadow);
+  margin-bottom:18px;
+  overflow:hidden;
+}
+.monthHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:18px 20px;
+  border-bottom:1px solid var(--line);
+  background:#fbfdff;
+}
+.monthTitle{font-size:20px;font-weight:900}
+.monthSum{text-align:right}
+.monthSumLabel{font-size:12px;color:var(--muted)}
+.monthSumValue{font-size:22px;font-weight:900;color:var(--blue)}
+.rows{display:flex;flex-direction:column}
+.invoiceRow{
+  display:grid;
+  grid-template-columns:minmax(170px,1.2fr) minmax(90px,.55fr) minmax(130px,.8fr) minmax(132px,.7fr) auto;
+  gap:14px;
+  align-items:center;
+  padding:16px 20px;
+  border-bottom:1px solid var(--line);
+}
+.invoiceRow:last-child{border-bottom:0}
+.invoiceRow.unopened{background:linear-gradient(90deg,rgba(255,241,242,.9),#fff 46%)}
+.cellLabel{display:none;color:var(--muted);font-size:12px;margin-bottom:4px}
+.orderNo{font-size:16px;font-weight:850;word-break:break-word}
+.qty,.amount{font-size:16px;font-weight:800}
+.amount.unopened{color:var(--red)}
+.badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:54px;
+  height:28px;
+  border-radius:999px;
+  padding:0 10px;
+  font-size:13px;
+  font-weight:850;
+}
+.badge.red{color:var(--red);background:var(--red-bg);border:1px solid #fecdd3}
+.badge.green{color:var(--green);background:var(--green-bg);border:1px solid #bbf7d0}
+.invoiceInfo{color:var(--muted);font-size:12px;margin-top:5px;line-height:1.45}
+.actions{display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap}
+.fileInput{display:none}
+.ocrBox{
+  grid-column:1/-1;
+  background:#f8fafc;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px 12px;
+  color:#334155;
+  font-size:13px;
+  line-height:1.55;
+}
+.modalMask{
+  position:fixed;
+  inset:0;
+  background:rgba(15,23,42,.5);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  z-index:50;
+}
+.modalMask.show{display:flex}
+.modal{
+  width:680px;
+  max-width:100%;
+  max-height:86vh;
+  overflow:auto;
+  background:#fff;
+  border-radius:18px;
+  box-shadow:0 24px 80px rgba(15,23,42,.22);
+  border:1px solid var(--line);
+}
+.modalHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:16px 18px;
+  border-bottom:1px solid var(--line);
+}
+.modalTitle{font-size:18px;font-weight:900}
+.modalBody{padding:16px 18px}
+.detailGrid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+  margin-bottom:16px;
+}
+.detailCard{background:var(--soft);border-radius:12px;padding:11px}
+.detailK{font-size:12px;color:var(--muted);margin-bottom:5px}
+.detailV{font-size:15px;font-weight:850}
+.sectionTitle{font-weight:900;margin:18px 0 10px}
+.invoiceLine{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  padding:11px 0;
+  border-bottom:1px solid var(--line);
+  font-size:14px;
+}
+.invoiceLine:last-child{border-bottom:0}
+.linkBtn{
+  border:0;
+  background:transparent;
+  color:var(--blue);
+  padding:0;
+  cursor:pointer;
+  font-weight:800;
+}
+@media(max-width:760px){
+  .page{padding:12px 10px 42px}
+  .hero{padding:18px 16px;border-radius:16px}
+  .heroTop{display:block}
+  .factoryName{font-size:25px}
+  .heroAmount{text-align:left;margin-top:18px;min-width:0}
+  .heroTotal{font-size:28px}
+  .toolbar{display:block}
+  .monthInputs{margin-bottom:10px}
+  .toolbar .btn{width:100%}
+  .monthHead{align-items:flex-start;padding:16px}
+  .monthTitle{font-size:18px}
+  .monthSumValue{font-size:20px}
+  .invoiceRow{
+    grid-template-columns:1fr 1fr;
+    gap:12px;
+    padding:15px 16px;
+  }
+  .cellLabel{display:block}
+  .orderCell,.statusCell,.actions,.ocrBox{grid-column:1/-1}
+  .statusCell{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .actions{justify-content:stretch}
+  .actions .btn,.actions label{flex:1}
+  .detailGrid{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel">
-const API = "/api/db/customs-collab";
-const STATUS = {
-  pending_confirm:["待确认","#94a3b8","rgba(148,163,184,.12)"],
-  need_amount:["待填金额","#60a5fa","rgba(96,165,250,.14)"],
-  confirmed_wait_invoice:["已确认待开票","#38bdf8","rgba(56,189,248,.14)"],
-  partial_uploaded:["少开","#fbbf24","rgba(251,191,36,.14)"],
-  over_issued:["多开","#f87171","rgba(239,68,68,.18)"],
-  amount_mismatch:["金额不符","#fb923c","rgba(251,146,60,.16)"],
-  matched:["已核对","#4ade80","rgba(74,222,128,.14)"],
-  completed:["已完成","#22c55e","rgba(34,197,94,.20)"],
-  void:["已作废","#94a3b8","rgba(100,116,139,.18)"],
-  red_ink:["已红冲","#f87171","rgba(239,68,68,.16)"]
-};
-const EV = {confirm:"确认",upload:"上传发票",review_match:"核对通过",review_mismatch:"核对不符",complete:"完成"};
-function code(){return new URLSearchParams(location.search).get("c")||""}
-function qs(o){const p=new URLSearchParams();Object.entries(o).forEach(([k,v])=>{if(v!==undefined&&v!==null&&v!=="")p.set(k,v)});return p.toString()}
-async function api(path,opt){const r=await fetch(path,opt);const b=await r.json().catch(()=>({}));if(!r.ok||b.success===false)throw new Error(b.error||`HTTP ${r.status}`);return b}
-function money(v,t="—"){if(v==null||v==="")return t;const n=Number(v);return Number.isFinite(n)?"¥"+n.toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2}):"—"}
-function num(v){if(v==null||v==="")return "—";const n=Number(v);return Number.isFinite(n)?n.toLocaleString("zh-CN"):"—"}
-function Pill({s}){const m=STATUS[s]||[s||"—","#94a3b8","rgba(255,255,255,.06)"];return <span className="pill" style={{color:m[1],background:m[2],borderColor:m[1]+"66"}}>{m[0]}</span>}
-function App(){
-  const c=code(), [data,setData]=React.useState(null), [err,setErr]=React.useState(""), [ok,setOk]=React.useState(""), [busy,setBusy]=React.useState(""), [detail,setDetail]=React.useState(null), [ocr,setOcr]=React.useState({});
-  const rows=Array.isArray(data?.rows)?data.rows:[];
-  const groups=React.useMemo(()=>rows.reduce((m,r)=>{const k=r.period||String(r.export_date||"").slice(0,7)||"未分月";(m[k]=m[k]||[]).push(r);return m},{}),[rows]);
-  async function load(){setErr("");try{setData(await api(API+"?"+qs({action:"factory_list",c,from:"2026-01",to:"2026-12"})))}catch(e){setErr(e.message||String(e))}}
-  React.useEffect(()=>{load()},[]);
-  async function confirmRow(no){setBusy(no);setErr("");setOk("");try{await api(API+"?"+qs({action:"confirm",c}),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customs_no:no})});setOk("已确认");await load()}catch(e){setErr(e.message||String(e))}finally{setBusy("")}}
-  async function upload(no,file){if(!file)return;setBusy(no);setErr("");setOk("");try{const fd=new FormData();fd.append("customs_no",no);fd.append("file",file);const res=await api(API+"?"+qs({action:"upload",c}),{method:"POST",body:fd});setOcr(x=>({...x,[no]:res.ocr||res.result||res}));setOk("发票已上传");await load()}catch(e){setErr(e.message||String(e))}finally{setBusy("")}}
-  async function openDetail(no){setErr("");try{setDetail(await api(API+"?"+qs({action:"detail",customs_no:no,c})))}catch(e){setErr(e.message||String(e))}}
-  return <><div className="header"><div className="brand">Sanlyn 报关单开票协同</div><div className="sub">请按报关单确认含税应开金额并上传发票</div></div>
-    <main className="page">
-      <div className="toolbar"><span className="pill" style={{color:"#38bdf8",background:"rgba(56,189,248,.12)"}}>工厂短码 {c||"缺失"}</span><button className="btn" onClick={load}>刷新</button></div>
-      {err&&<div className="err">{err}</div>}{ok&&<div className="ok">{ok}</div>}
-      {!c?<div className="empty">链接缺少 c 参数</div>:!rows.length?<div className="empty">暂无报关单</div>:Object.entries(groups).map(([month,list])=><section className="card" key={month}>
-        <div className="month">{month}</div>
-        {list.map(r=><div className="row" key={r.customs_no}>
-          <div className="top"><div><div className="no">{r.customs_no||"—"}</div><div className="meta">合同 {r.contract_no||"—"}</div></div><Pill s={r.status}/></div>
-          <div className="grid">
-            <div className="kv"><div className="k">报关单号</div><div className="v">{r.customs_no||"—"}</div></div>
-            <div className="kv"><div className="k">合同号</div><div className="v">{r.contract_no||"—"}</div></div>
-            <div className="kv"><div className="k">箱数</div><div className="v">{num(r.qty_ctn||r.cartons)}</div></div>
-            <div className="kv"><div className="k">含税应开</div><div className="v">{money(r.expected_amount,"待填")}</div></div>
+<main class="page">
+  <section class="hero">
+    <div class="heroTop">
+      <div>
+        <h1 class="factoryName" id="factoryName">工厂开票上传</h1>
+        <p class="subtitle">按订单上传已开具发票；红色“未开”请优先处理。</p>
+      </div>
+      <div class="heroAmount">
+        <div class="heroMonth" id="rangeLabel">本期</div>
+        <div class="heroTotal" id="rangeTotal">¥0.00</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="toolbar">
+    <div class="monthInputs">
+      <span>月份</span>
+      <input id="fromMonth" type="month" value="2026-01" />
+      <span>至</span>
+      <input id="toMonth" type="month" value="2026-12" />
+    </div>
+    <button class="btn secondary" id="reloadBtn" type="button">刷新</button>
+  </div>
+
+  <div id="message"></div>
+  <div id="content" class="empty">加载中...</div>
+</main>
+
+<div class="modalMask" id="detailMask">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modalHead">
+      <div class="modalTitle">订单详情</div>
+      <button class="btn secondary" type="button" id="closeDetail">关闭</button>
+    </div>
+    <div class="modalBody" id="detailBody"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const API = "/api/db/customs-collab";
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const code = params.get("c") || "";
+  const mt = params.get("mt") || "";
+
+  const state = {
+    rows: [],
+    factoryName: "",
+    busyKey: "",
+    ocr: {}
+  };
+
+  function query(obj){
+    const p = new URLSearchParams();
+    Object.entries(obj).forEach(([k,v]) => {
+      if (v !== undefined && v !== null && v !== "") p.set(k, v);
+    });
+    return p.toString();
+  }
+
+  async function request(url, options){
+    const res = await fetch(url, options);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body.success === false) throw new Error(body.error || "请求失败");
+    return body;
+  }
+
+  function money(v){
+    if (v === null || v === undefined || v === "") return "¥0.00";
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "¥0.00";
+    return "¥" + n.toLocaleString("zh-CN", { minimumFractionDigits:2, maximumFractionDigits:2 });
+  }
+
+  function plainMoney(v){
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function numberText(v){
+    if (v === null || v === undefined || v === "") return "-";
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toLocaleString("zh-CN") : String(v);
+  }
+
+  function monthName(ym){
+    if (!/^\d{4}-\d{2}$/.test(String(ym || ""))) return ym || "未分月";
+    const y = ym.slice(0,4);
+    const m = String(Number(ym.slice(5,7)));
+    return y + "年" + m + "月";
+  }
+
+  function showMessage(type, text){
+    $("message").innerHTML = text ? `<div class="notice ${type}">${escapeHtml(text)}</div>` : "";
+  }
+
+  function escapeHtml(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, ch => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[ch]));
+  }
+
+  function hasInvoice(row){
+    if (typeof row.has_invoice === "boolean") return row.has_invoice;
+    if (Array.isArray(row.invoices) && row.invoices.length) return true;
+    return Number(row.valid_invoice_count || 0) > 0;
+  }
+
+  function invoiceText(row){
+    const invoices = Array.isArray(row.invoices) ? row.invoices : [];
+    if (!invoices.length) return "";
+    return invoices.map(inv => {
+      const no = inv.invoice_no || "发票";
+      const amt = inv.amount_incl_tax || inv.amount || "";
+      return amt ? `${no} ${money(amt)}` : no;
+    }).join("；");
+  }
+
+  function visibleOrderNo(row){
+    return row.order_no || row.contract_no || "-";
+  }
+
+  function visibleQty(row){
+    return row.qty || row.qty_ctn || row.cartons || "-";
+  }
+
+  function rowAmount(row){
+    return row.expected_amount ?? row.effective_expected_amount ?? 0;
+  }
+
+  function groupRows(rows){
+    const map = {};
+    rows.forEach(row => {
+      const key = row.period || String(row.export_date || "").slice(0,7) || "未分月";
+      if (!map[key]) map[key] = [];
+      map[key].push(row);
+    });
+    return Object.keys(map).sort().reverse().map(month => ({
+      month,
+      rows: map[month],
+      total: map[month].reduce((sum, row) => sum + plainMoney(rowAmount(row)), 0)
+    }));
+  }
+
+  function refreshTop(groups){
+    const rows = state.rows;
+    const factory = state.factoryName || rows[0]?.factory_name || "工厂开票上传";
+    const total = rows.reduce((sum, row) => sum + plainMoney(rowAmount(row)), 0);
+    const from = $("fromMonth").value;
+    const to = $("toMonth").value;
+
+    $("factoryName").textContent = factory;
+    $("rangeLabel").textContent = from === to ? monthName(from) + " 报关金额合计" : monthName(from) + " - " + monthName(to) + " 报关金额合计";
+    $("rangeTotal").textContent = money(total);
+  }
+
+  function render(){
+    const content = $("content");
+    const groups = groupRows(state.rows);
+    refreshTop(groups);
+
+    if (!code && !mt) {
+      content.className = "empty";
+      content.textContent = "链接缺少短码";
+      return;
+    }
+
+    if (!state.rows.length) {
+      content.className = "empty";
+      content.textContent = "当前月份暂无需要开票上传的订单";
+      return;
+    }
+
+    content.className = "";
+    content.innerHTML = groups.map(group => `
+      <section class="monthBlock">
+        <div class="monthHead">
+          <div class="monthTitle">📅 ${escapeHtml(monthName(group.month))}</div>
+          <div class="monthSum">
+            <div class="monthSumLabel">该月报关金额合计</div>
+            <div class="monthSumValue">${money(group.total)}</div>
           </div>
-          <div className="actions">
-            <button className="btn green" disabled={busy===r.customs_no} onClick={()=>confirmRow(r.customs_no)}>确认</button>
-            <label className="btn">上传发票<input className="upload" type="file" accept="image/*,.pdf" onChange={e=>upload(r.customs_no,e.target.files[0])}/></label>
-            <button className="btn" onClick={()=>openDetail(r.customs_no)}>查看详情</button>
-            {busy===r.customs_no&&<span className="fileName">处理中...</span>}
+        </div>
+        <div class="rows">
+          ${group.rows.map(renderRow).join("")}
+        </div>
+      </section>
+    `).join("");
+  }
+
+  function renderRow(row){
+    const key = row.customs_no || "";
+    const opened = hasInvoice(row);
+    const rowClass = opened ? "invoiceRow" : "invoiceRow unopened";
+    const amountClass = opened ? "amount" : "amount unopened";
+    const badge = opened ? `<span class="badge green">已开</span>` : `<span class="badge red">未开</span>`;
+    const invText = opened ? (invoiceText(row) || "已上传发票") : "尚未上传发票";
+    const busy = state.busyKey === key;
+    const ocr = state.ocr[key] ? `<div class="ocrBox">${state.ocr[key]}</div>` : "";
+
+    return `
+      <div class="${rowClass}">
+        <div class="orderCell">
+          <div class="cellLabel">订单号</div>
+          <div class="orderNo">${escapeHtml(visibleOrderNo(row))}</div>
+        </div>
+        <div>
+          <div class="cellLabel">数量</div>
+          <div class="qty">${escapeHtml(numberText(visibleQty(row)))}</div>
+        </div>
+        <div>
+          <div class="cellLabel">金额</div>
+          <div class="${amountClass}">${money(rowAmount(row))}</div>
+        </div>
+        <div class="statusCell">
+          <div>
+            ${badge}
+            <div class="invoiceInfo">${escapeHtml(invText)}</div>
           </div>
-          {ocr[r.customs_no]&&<div className="ocr">OCR识别结果：{JSON.stringify(ocr[r.customs_no],null,2)}</div>}
-        </div>)}
-      </section>)}
-    </main>{detail&&<DetailModal data={detail} onClose={()=>setDetail(null)}/>}</>
-}
-function DetailModal({data,onClose}){
-  const items=Array.isArray(data.items)?data.items:[], invoices=Array.isArray(data.invoices)?data.invoices:[], events=Array.isArray(data.events)?data.events:[];
-  return <div className="modalMask" onMouseDown={onClose}><div className="modal" onMouseDown={e=>e.stopPropagation()}>
-    <div className="mh"><div className="mt">{data.customs?.customs_no||"报关单详情"}</div><button className="btn close" onClick={onClose}>关闭</button></div>
-    <h4>申报明细</h4><table className="table"><thead><tr><th>品名</th><th>数量</th><th>单位</th></tr></thead><tbody>{items.length?items.map((it,i)=><tr key={i}><td>{it.declaration_name||it.product_name||it.goods_name||"—"}</td><td>{num(it.qty||it.quantity)}</td><td>{it.unit||"—"}</td></tr>):<tr><td colSpan="3">暂无明细</td></tr>}</tbody></table>
-    <h4>已传发票</h4><table className="table"><thead><tr><th>发票号</th><th>日期</th><th>金额</th><th>状态</th></tr></thead><tbody>{invoices.length?invoices.map(inv=><tr key={inv.id||inv.invoice_no}><td>{inv.invoice_no||"未编号"}</td><td>{String(inv.issue_date||"").slice(0,10)||"—"}</td><td>{money(inv.amount_incl_tax)}</td><td><Pill s={inv.link_status||inv.review_status}/></td></tr>):<tr><td colSpan="4">暂无发票</td></tr>}</tbody></table>
-    <h4>状态历史</h4><table className="table"><tbody>{events.length?events.map((ev,i)=><tr key={ev.id||i}><td>{EV[ev.event_type]||ev.event_type||"事件"}</td><td>{ev.created_at||ev.event_at||"—"}</td><td>{ev.actor_name||ev.created_by||"—"}</td><td>{ev.reason||""}</td></tr>):<tr><td>暂无历史</td></tr>}</tbody></table>
-  </div></div>
-}
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+        </div>
+        <div class="actions">
+          <label class="btn" data-upload="${escapeHtml(key)}">
+            ${busy ? "上传中..." : "上传发票"}
+            <input class="fileInput" type="file" accept="image/*,.pdf" ${busy ? "disabled" : ""} />
+          </label>
+          <button class="btn ghost" type="button" data-detail="${escapeHtml(key)}">查看详情</button>
+        </div>
+        ${ocr}
+      </div>
+    `;
+  }
+
+  async function load(){
+    showMessage("", "");
+    $("content").className = "empty";
+    $("content").textContent = "加载中...";
+
+    try {
+      const data = await request(API + "?" + query({
+        action:"factory_list",
+        c:code,
+        mt:mt,
+        from:$("fromMonth").value || "2026-01",
+        to:$("toMonth").value || "2026-12"
+      }));
+      state.rows = Array.isArray(data.rows) ? data.rows : [];
+      state.factoryName = data.factory?.name || state.rows[0]?.factory_name || "";
+      render();
+    } catch (err) {
+      $("content").className = "empty";
+      $("content").textContent = "加载失败";
+      showMessage("err", err.message || String(err));
+    }
+  }
+
+  async function upload(customsNo, file){
+    if (!customsNo || !file) return;
+
+    state.busyKey = customsNo;
+    showMessage("", "");
+    render();
+
+    try {
+      const fd = new FormData();
+      fd.append("customs_no", customsNo);
+      fd.append("file", file);
+
+      const result = await request(API + "?" + query({ action:"upload", c:code, mt:mt }), {
+        method:"POST",
+        body:fd
+      });
+
+      const parts = [];
+      if (result.invoice_no) parts.push("发票号：" + result.invoice_no);
+      if (result.amount_incl_tax !== null && result.amount_incl_tax !== undefined) parts.push("金额：" + money(result.amount_incl_tax));
+      if (result.warning) parts.push("提示：" + result.warning);
+      if (!parts.length) parts.push("发票已上传，等待识别结果入库");
+
+      state.ocr[customsNo] = "OCR识别结果：" + parts.join("；");
+      showMessage("ok", "发票已上传");
+      await load();
+    } catch (err) {
+      showMessage("err", err.message || String(err));
+    } finally {
+      state.busyKey = "";
+      render();
+    }
+  }
+
+  async function openDetail(customsNo){
+    if (!customsNo) return;
+    showMessage("", "");
+
+    try {
+      const data = await request(API + "?" + query({
+        action:"detail",
+        customs_no:customsNo,
+        c:code,
+        mt:mt
+      }));
+
+      const row = state.rows.find(x => x.customs_no === customsNo) || {};
+      const invoices = Array.isArray(data.invoices) ? data.invoices : [];
+      const body = $("detailBody");
+
+      body.innerHTML = `
+        <div class="detailGrid">
+          <div class="detailCard">
+            <div class="detailK">订单号</div>
+            <div class="detailV">${escapeHtml(visibleOrderNo(row))}</div>
+          </div>
+          <div class="detailCard">
+            <div class="detailK">数量</div>
+            <div class="detailV">${escapeHtml(numberText(visibleQty(row)))}</div>
+          </div>
+          <div class="detailCard">
+            <div class="detailK">金额</div>
+            <div class="detailV">${money(rowAmount(row))}</div>
+          </div>
+        </div>
+        <div class="sectionTitle">已上传发票</div>
+        ${
+          invoices.length
+          ? invoices.map(inv => `
+            <div class="invoiceLine">
+              <div>
+                <strong>${escapeHtml(inv.invoice_no || "发票")}</strong>
+                <div class="invoiceInfo">${escapeHtml(String(inv.issue_date || "").slice(0,10) || "")}</div>
+              </div>
+              <div>
+                ${money(inv.amount_incl_tax)}
+                ${inv.file_url ? `<div><a class="linkBtn" href="${escapeHtml(inv.file_url)}" target="_blank" rel="noopener">查看文件</a></div>` : ""}
+              </div>
+            </div>
+          `).join("")
+          : `<div class="invoiceInfo">暂无发票</div>`
+        }
+      `;
+
+      $("detailMask").classList.add("show");
+    } catch (err) {
+      showMessage("err", err.message || String(err));
+    }
+  }
+
+  $("reloadBtn").addEventListener("click", load);
+  $("fromMonth").addEventListener("change", load);
+  $("toMonth").addEventListener("change", load);
+  $("closeDetail").addEventListener("click", () => $("detailMask").classList.remove("show"));
+  $("detailMask").addEventListener("click", e => {
+    if (e.target === $("detailMask")) $("detailMask").classList.remove("show");
+  });
+
+  document.addEventListener("change", e => {
+    const input = e.target.closest(".fileInput");
+    if (!input) return;
+    const label = input.closest("[data-upload]");
+    upload(label.getAttribute("data-upload"), input.files[0]);
+    input.value = "";
+  });
+
+  document.addEventListener("click", e => {
+    const btn = e.target.closest("[data-detail]");
+    if (!btn) return;
+    openDetail(btn.getAttribute("data-detail"));
+  });
+
+  load();
+})();
 </script>
 </body>
 </html>
