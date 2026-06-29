@@ -722,6 +722,17 @@ async function handleDetail(req, res) {
           [customsNo]
         );
       }
+      if (!orderResult.rows[0]) {
+        orderResult = await client.query(
+          `SELECT id, order_no, contract_no, issuing_company, company_code
+             FROM orders
+            WHERE bl_no=$1
+              AND COALESCE(status,'') <> 'cancelled'
+            ORDER BY id DESC
+            LIMIT 1`,
+          [customsNo]
+        );
+      }
       const order = orderResult.rows[0] || null;
 
       let buyer = { name: null, tax_id: null };
