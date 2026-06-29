@@ -754,10 +754,11 @@ async function handleDetail(req, res) {
           )
         : { rows: [] };
 
+      const unitMap = { CTN: "箱", PCS: "件", KG: "千克", BAG: "包", SET: "套" };
       const lines = lineResult.rows.map((l) => ({
         name: l.name || null,
         spec: l.spec || null,
-        unit: l.unit || "箱",
+        unit: unitMap[String(l.unit || "").toUpperCase()] || l.unit || "箱",
         qty: money(l.qty) || 0,
         amount: money(l.amount) || 0,
         vat_rate: Number(l.vat_rate) || 0.13,
