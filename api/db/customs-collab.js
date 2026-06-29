@@ -212,7 +212,8 @@ export async function fetchRows(pool, opts) {
                  WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
              COALESCE(c.name_cn, c.factory_name, c_id.name_cn, c_id.factory_name, o.factory) AS factory_name,
              o.order_no,
-             COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id), o.total_amount_factory) AS system_expected_amount
+             COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id), o.total_amount_factory) AS system_expected_amount,
+             (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli
         FROM fer_base f
         LEFT JOIN orders o ON o.contract_no=f.contract_no AND COALESCE(o.status,'') <> 'cancelled'
         LEFT JOIN companies c ON c.code=o.factory_code
@@ -220,7 +221,7 @@ export async function fetchRows(pool, opts) {
     )
     SELECT b.customs_no, b.contract_no, b.export_date,
            to_char(b.export_date,'YYYY-MM') AS period,
-           b.factory_code, b.factory_name, b.order_no, b.qty,
+           b.factory_code, b.factory_name, b.order_no, COALESCE(NULLIF(b.qty,0), b.qty_oli) AS qty,
            COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END) AS status,
            b.system_expected_amount,
            b.declare_amount,
