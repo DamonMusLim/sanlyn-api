@@ -2404,39 +2404,34 @@ export default async function handler(req, res) {
       var _NAVY="FF1F3A5F",_GREY="FF8A94A6",_DARK="FF1A1A1A",_LIGHT="FFEEF2F7",_LINE="FFC8D0DA";
       var _thin={style:"thin",color:{argb:_LINE}}, _bd={top:_thin,bottom:_thin,left:_thin,right:_thin};
 
-      // Title band — company name left, doc title right
-      ws.mergeCells("A1:"+_CL(Math.max(1,_LC-2))+"2");
-      ws.getCell("A1").value=(_sel.nameEN||"SANLYN").toUpperCase();
-      ws.getCell("A1").font={bold:true,size:11,color:{argb:_DARK}};ws.getCell("A1").alignment={vertical:"middle"};
-      ws.mergeCells("A3:"+_CL(Math.max(1,_LC-2))+"3");
-      ws.getCell("A3").value=_sel.address||"";ws.getCell("A3").font={size:8,color:{argb:_GREY}};
-      ws.mergeCells(_CL(_LC-1)+"1:"+_lc+"2");
-      var _tc=ws.getCell(_CL(_LC-1)+"1");_tc.value=(_xlsCapture.sheetName||"").toUpperCase();_tc.font={bold:true,size:12,color:{argb:_NAVY}};_tc.alignment={horizontal:"right",vertical:"middle"};
-      ws.mergeCells(_CL(_LC-1)+"3:"+_lc+"3");
-      var _dn=ws.getCell(_CL(_LC-1)+"3");_dn.value="No. "+_xlsCapture.docNo;_dn.font={size:8.5,color:{argb:_GREY}};_dn.alignment={horizontal:"right"};
-      ws.getRow(1).height=15;ws.getRow(2).height=2;ws.getRow(3).height=13;
-      // navy rule (row 4)
-      for(var _c4=1;_c4<=_LC;_c4++)ws.getCell(4,_c4).fill={type:"pattern",pattern:"solid",fgColor:{argb:_NAVY}};
-      ws.getRow(4).height=2;
-
-      // Shipper / Consignee two-block (rows 5-8)
-      function _ptitle(rr,c1,c2,txt){ws.mergeCells(rr,c1,rr,c2);var cc=ws.getCell(rr,c1);cc.value=txt;cc.font={bold:true,size:8,color:{argb:"FFFFFFFF"}};cc.fill={type:"pattern",pattern:"solid",fgColor:{argb:_NAVY}};cc.alignment={vertical:"middle"};}
-      _ptitle(5,1,_half,"SHIPPER / EXPORTER");_ptitle(5,_half+1,_LC,"CONSIGNEE");ws.getRow(5).height=14;
-      function _pbody(r0,c1,c2,nm,ad){ws.mergeCells(r0,c1,r0,c2);ws.getCell(r0,c1).value=nm;ws.getCell(r0,c1).font={bold:true,size:8.5,color:{argb:_DARK}};ws.mergeCells(r0+1,c1,r0+2,c2);var ac=ws.getCell(r0+1,c1);ac.value=ad;ac.font={size:8,color:{argb:_DARK}};ac.alignment={wrapText:true,vertical:"top"};}
-      _pbody(6,1,_half,(_sel.nameEN||""),(_sel.address||""));
-      _pbody(6,_half+1,_LC,(_xlsCapture.buyer||""),(_xlsCapture.buyerAddr||""));
-      ws.getRow(7).height=22;
-      for(var _rr=5;_rr<=8;_rr++)for(var _cc2=1;_cc2<=_LC;_cc2++)ws.getCell(_rr,_cc2).border=_bd;
-
-      // Compact meta row (row 9) — Date / Contract / Currency / Terms / POL / POD
-      var _meta=[["Date:",_xlsCapture.date],["Contract:",_xlsCapture.cno],["Currency:",_xlsCapture.curr],["Terms:",_xlsCapture.incoterm],["POL:",_xlsCapture.pol],["POD:",_xlsCapture.pod]];
-      _meta.slice(0,_LC).forEach(function(kv,i){
-        var cc=ws.getCell(9,i+1);
-        cc.value={richText:[{text:kv[0]+" ",font:{bold:true,size:8,color:{argb:_GREY}}},{text:String(kv[1]||""),font:{size:8.5,color:{argb:_DARK}}}]};
-        cc.fill={type:"pattern",pattern:"solid",fgColor:{argb:_LIGHT}};cc.border=_bd;cc.alignment={vertical:"middle"};
-      });
-      ws.getRow(9).height=14;
-      ws.addRow([]);
+      // ── 紧凑头部 + A4打印(2026-06-29 对齐Damon参考模板,去SHIPPER/CONSIGNEE蓝块)──
+      ws.pageSetup={paperSize:9,orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0,
+        margins:{left:0.4,right:0.4,top:0.45,bottom:0.45,header:0.2,footer:0.2}};
+      var _RC=_CL(_LC), _HC=_CL(_half), _RC2=_CL(_half+1);
+      ws.mergeCells("A1:"+_HC+"1");
+      var _co=ws.getCell("A1");
+      _co.value={richText:[{text:(_sel.nameEN||"SANLYN").toUpperCase()+"\n",font:{bold:true,size:10,color:{argb:_DARK}}},{text:(_sel.address||""),font:{size:7.5,color:{argb:_GREY}}}]};
+      _co.alignment={vertical:"middle",wrapText:true};
+      ws.mergeCells(_RC2+"1:"+_RC+"1");
+      var _tt=ws.getCell(_RC2+"1");_tt.value=(_xlsCapture.sheetName||"").toUpperCase();
+      _tt.font={bold:true,size:18,color:{argb:_DARK}};_tt.alignment={horizontal:"right",vertical:"middle"};
+      ws.getRow(1).height=40;
+      ws.mergeCells("A2:"+_HC+"2");ws.mergeCells(_RC2+"2:"+_RC+"2");
+      var _b2=ws.getCell("A2");_b2.value="BUYER (BILL TO)";_b2.font={bold:true,size:7.5,color:{argb:_GREY}};
+      var _d2=ws.getCell(_RC2+"2");_d2.value="DETAILS";_d2.font={bold:true,size:7.5,color:{argb:_GREY}};
+      ws.getRow(2).height=13;
+      ws.mergeCells("A3:"+_HC+"3");ws.mergeCells(_RC2+"3:"+_RC+"3");
+      var _bn=ws.getCell("A3");_bn.value=_xlsCapture.buyer||"";_bn.font={bold:true,size:9,color:{argb:_DARK}};
+      ws.getCell(_RC2+"3").value={richText:[{text:"No.: ",font:{bold:true,size:8,color:{argb:_GREY}}},{text:String(_xlsCapture.docNo||""),font:{size:8.5,color:{argb:_DARK}}}]};
+      ws.getRow(3).height=13;
+      ws.mergeCells("A4:"+_HC+"5");
+      var _ba=ws.getCell("A4");_ba.value=_xlsCapture.buyerAddr||"";_ba.font={size:8,color:{argb:_DARK}};_ba.alignment={wrapText:true,vertical:"top"};
+      ws.mergeCells(_RC2+"4:"+_RC+"4");
+      ws.getCell(_RC2+"4").value={richText:[{text:"Order: ",font:{bold:true,size:8,color:{argb:_GREY}}},{text:String(_xlsCapture.poNo||_xlsCapture.cno||""),font:{size:8.5,color:{argb:_DARK}}}]};
+      ws.mergeCells(_RC2+"5:"+_RC+"5");
+      ws.getCell(_RC2+"5").value={richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY}}},{text:String(_xlsCapture.date||""),font:{size:8.5,color:{argb:_DARK}}},{text:"   Currency: ",font:{bold:true,size:8,color:{argb:_GREY}}},{text:String(_xlsCapture.curr||""),font:{size:8.5,color:{argb:_DARK}}}]};
+      ws.getRow(4).height=13;ws.getRow(5).height=13;
+      for(var _sc=1;_sc<=_LC;_sc++){ws.getCell(5,_sc).border={bottom:{style:"thin",color:{argb:_DARK}}};}
 
       // Header
       var hdrRow=ws.addRow(_xlsCapture.headers);
