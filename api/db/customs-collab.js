@@ -196,7 +196,7 @@ export async function fetchRows(pool, opts) {
              MAX(fer.contract_no) AS contract_no,
              MIN(fer.export_date) AS export_date,
              CASE WHEN COUNT(i.item)=0 THEN NULL
-                  ELSE ROUND(SUM(NULLIF(i.item->>'amount','')::numeric), 2) END AS system_expected_amount,
+                  ELSE ROUND(SUM(NULLIF(i.item->>'amount','')::numeric), 2) END AS declare_amount,
              ROUND(SUM(NULLIF(i.item->>'qty2','')::numeric), 2) AS qty
         FROM finance_export_rebates fer
         LEFT JOIN LATERAL jsonb_array_elements(
@@ -211,7 +211,8 @@ export async function fetchRows(pool, opts) {
                (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
                  WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
              COALESCE(c.name_cn, c.factory_name, c_id.name_cn, c_id.factory_name, o.factory) AS factory_name,
-             o.order_no
+             o.order_no,
+             COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id), o.total_amount_factory) AS system_expected_amount
         FROM fer_base f
         LEFT JOIN orders o ON o.contract_no=f.contract_no AND COALESCE(o.status,'') <> 'cancelled'
         LEFT JOIN companies c ON c.code=o.factory_code
@@ -222,6 +223,7 @@ export async function fetchRows(pool, opts) {
            b.factory_code, b.factory_name, b.order_no, b.qty,
            COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END) AS status,
            b.system_expected_amount,
+           b.declare_amount,
            s.manual_expected_amount,
            COALESCE(s.manual_expected_amount, b.system_expected_amount) AS effective_expected_amount,
            COALESCE(u.uploaded_amount,0) AS uploaded_amount,
@@ -249,6 +251,7 @@ export async function fetchRows(pool, opts) {
   return (await pool.query(sql, params)).rows.map((r) => ({
     ...r,
     system_expected_amount: money(r.system_expected_amount),
+    declare_amount: money(r.declare_amount),
     manual_expected_amount: money(r.manual_expected_amount),
     effective_expected_amount: money(r.effective_expected_amount),
     uploaded_amount: money(r.uploaded_amount) || 0,

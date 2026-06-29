@@ -233,7 +233,7 @@ async function fetchReconcile(pool, opts) {
                (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
                  WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
              COALESCE(c.name_cn, c_id.name_cn, o.factory) AS factory_name,
-             COALESCE(oo.decl_sum, oo.fs_sum, oo.st_sum, o.total_amount_factory) AS expected_amount,
+             COALESCE(oo.fs_sum, o.total_amount_factory, oo.st_sum) AS expected_amount,
              COALESCE(oo.qty_ctn, 0) AS qty_ctn,
              array_agg(DISTINCT rc.customs_no) FILTER (WHERE rc.customs_no IS NOT NULL) AS customs_arr
         FROM range_contracts rc
