@@ -852,6 +852,7 @@ async function handleDetail(req, res) {
         || rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.unit
         || null;
 
+      const isDg = /-DG-/i.test(mergedOrderNos || order?.order_no || "");
       const lineResult = orderIds.length
         ? await client.query(
             `SELECT
@@ -862,7 +863,7 @@ async function handleDetail(req, res) {
                 COALESCE(NULLIF(BTRIM(p.spec), ''), NULLIF(BTRIM(oli.size), '')) AS spec,
                 COALESCE(NULLIF(BTRIM(p.transaction_unit), ''), NULLIF($2, ''), NULLIF(BTRIM(oli.unit), ''), '箱') AS unit,
                 ROUND(SUM(COALESCE(oli.qty_ctn, 0))::numeric, 2) AS qty,
-                ROUND(SUM(COALESCE(oli.factory_subtotal, COALESCE(oli.qty_ctn, 0) * COALESCE(oli.factory_price, 0), 0))::numeric, 2) AS amount,
+                ROUND(SUM(CASE WHEN $3 THEN COALESCE(NULLIF(oli.declare_amount_per_box*oli.qty_ctn,0), oli.factory_subtotal, oli.qty_ctn*oli.factory_price, 0) ELSE COALESCE(oli.factory_subtotal, oli.qty_ctn*oli.factory_price, 0) END)::numeric, 2) AS amount,
                 CASE
                   WHEN COALESCE(NULLIF(BTRIM(oli.hs_code), ''), NULLIF(BTRIM(p.hs_code), '')) LIKE '2309%' THEN 0.09
                   ELSE 0.13
@@ -882,7 +883,7 @@ async function handleDetail(req, res) {
                   ELSE 0.13
                 END
               ORDER BY MIN(oli.sort_order) NULLS LAST, MIN(oli.id)`,
-            [orderIds, rawUnit]
+            [orderIds, rawUnit, isDg]
           )
         : { rows: [] };
 
