@@ -16,7 +16,7 @@ function hasOwn(o, k) {
 }
 
 async function withTx(poolOrClient, fn) {
-  if (typeof poolOrClient.connect !== "function") return fn(poolOrClient);
+  if (typeof poolOrClient.release === "function") return fn(poolOrClient);
   const client = await poolOrClient.connect();
   try {
     await client.query("BEGIN");
