@@ -28,7 +28,7 @@ export default async function handler(req, res) {
     // ── Fetch shipping plan ──
     const planRes = id
       ? await pool.query(
-          "SELECT * FROM shipping_plans WHERE _id = $1 OR shipment_no = $1 LIMIT 1",
+          "SELECT * FROM shipping_plans WHERE _id = $1 OR shipment_no = $1 OR id::text = $1 LIMIT 1",
           [id]
         )
       : await pool.query(

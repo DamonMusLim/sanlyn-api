@@ -17,6 +17,8 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 import { renderCreditNote } from "./credit-note-doc.js"; // 贷记单 CN 独立渲染器 2026-06-28
 import { htmlToPdf } from "./_html-to-pdf.js"; // format=pdf 真PDF渲染 2026-06-28
+import { renderPureFreightDoc } from "./doc-pure-freight.js";
+import { renderPurePortChargeDoc } from "./doc-pure-portcharge.js";
 
 // ── W0-3 customer-facing scrub ────────────────────────────────────────────────
 // Memory rule (HARD): feedback_customer_code_anti_counterfeit.md
@@ -425,6 +427,14 @@ export default async function handler(req, res) {
   //   freight = 客户运费单              → freight-quote renderer
   if(type==="cd"){ type="pl"; if(!_audReq) _audReq="customs"; }
   if(type==="freight"){ type="freight-quote"; }
+  if (type === "freight_only" || type === "portcharge_only") {
+    const html = type === "freight_only"
+      ? await renderPureFreightDoc(getPool(), id)
+      : await renderPurePortChargeDoc(getPool(), id);
+    if (!html) return res.status(404).send("<h1>Shipment not found: " + esc(id) + "</h1>");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    return res.send(html);
+  }
   // 贷记通知单 Credit Note → 独立模块渲染(读 credit_notes)
   if(type==="cn"){
     try{
@@ -1775,7 +1785,7 @@ export default async function handler(req, res) {
     if(["so","debit","freight-quote","sq","tr"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
       var spR=await pool.query(
-        "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
+        "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
         [id]
       );
       if(!spR.rows.length) return res.status(404).send("<h1>Shipment not found: "+esc(id)+"</h1>");
