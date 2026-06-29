@@ -1019,6 +1019,30 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         } catch(_) {}
       }
 
+      // ── 标准港杂费率卡（Damon 2026-06-29 定，覆盖系统脏数据）整票×1 / 每柜×柜量 ──
+      {
+        const PORT_CHARGE_CARD = [
+          { name:"舱单费",            basis:"整票", price:100,  perCtn:false },
+          { name:"码头操作费(THC)",    basis:"每柜", price:1100, perCtn:true  },
+          { name:"铅封费",            basis:"每柜", price:55,   perCtn:true  },
+          { name:"单证费",            basis:"整票", price:400,  perCtn:false },
+          { name:"港杂费",            basis:"每柜", price:50,   perCtn:true  },
+          { name:"提箱费",            basis:"每柜", price:307,  perCtn:true  },
+          { name:"电放费",            basis:"整票", price:450,  perCtn:false },
+          { name:"设备交接单费",       basis:"每柜", price:50,   perCtn:true  },
+          { name:"燃油附加费",         basis:"每柜", price:50,   perCtn:true  },
+          { name:"订舱费",            basis:"整票", price:100,  perCtn:false },
+          { name:"码头信息服务费",     basis:"每柜", price:7,    perCtn:true  },
+          { name:"EDI",              basis:"每柜", price:3.90, perCtn:true  },
+          { name:"场站费用",          basis:"每柜", price:400,  perCtn:true  },
+        ];
+        const ctnQtyPC = parseInt(p.container_qty) || 1;
+        portChargeRows = PORT_CHARGE_CARD.map(c => {
+          const qty = c.perCtn ? ctnQtyPC : 1;
+          return { cost_category:c.name, charge_basis:c.basis, currency:"CNY", qty, unit_price:c.price, amount:Number((c.price*qty).toFixed(2)) };
+        });
+      }
+
       // ── 方案A: 同BL多个shipping_plan → 每个plan一柜 ──
       // ── 方案B: 单plan多PO → 查orders表取每PO的CTN/GW/CBM ──
       let siblingPlans = [];
