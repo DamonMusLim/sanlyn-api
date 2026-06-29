@@ -2442,8 +2442,9 @@ export default async function handler(req, res) {
       var hdrRow=ws.addRow(_xlsCapture.headers);
       hdrRow.eachCell(function(c){c.font={bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF111111"}};c.alignment={horizontal:"center",vertical:"middle"};c.border={top:{style:"thin",color:{argb:"FF999999"}},bottom:{style:"thin",color:{argb:"FF999999"}},left:{style:"thin",color:{argb:"FFCCCCCC"}},right:{style:"thin",color:{argb:"FFCCCCCC"}}};});hdrRow.height=20;
       ws.getColumn(1).width=6;
-      ws.getColumn(2).width=46;
-      ws.getColumn(2).alignment={wrapText:true,vertical:"top"};
+      // 动态定位品名列(col1=NO,之后按colKeys顺序;加了CP Code后品名不再固定在col2)
+      var _nameIdx=2+_xlsCapture.colKeys.findIndex(function(k){return k.k==="name";});
+      if(_nameIdx>=2){ws.getColumn(_nameIdx).width=46;ws.getColumn(_nameIdx).alignment={wrapText:true,vertical:"top"};}
 
       // Data rows
       var rowNum=0;
@@ -2454,7 +2455,7 @@ export default async function handler(req, res) {
         if(grp&&grp!==lastGrp){
           var gRow=ws.addRow(["","ORDER "+(p._customerPO||"")+(p._containerNo?" · "+p._containerNo:"")+(p._contractNo?" · "+p._contractNo:"")]);
           gRow.eachCell(function(c){c.font={bold:true,color:{argb:"FF1e40af"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFe8eeff"}};});
-          ws.mergeCells("B"+gRow.number+":F"+gRow.number);
+          ws.mergeCells("B"+gRow.number+":"+_CL(_LC)+gRow.number);
           lastGrp=grp;
         }
         rowNum++;
@@ -2469,10 +2470,11 @@ export default async function handler(req, res) {
         var _alt=(rowNum%2===0);
         dr.eachCell(function(c,ci){
           c.border={top:{style:"hair",color:{argb:"FFDDDDDD"}},bottom:{style:"hair",color:{argb:"FFDDDDDD"}},left:{style:"hair",color:{argb:"FFEEEEEE"}},right:{style:"hair",color:{argb:"FFEEEEEE"}}};
-          var h=(ci===1)?"center":(ci===2)?"left":"right";
+          var _key=(ci>=2&&_xlsCapture.colKeys[ci-2])?_xlsCapture.colKeys[ci-2].k:null;
+          var h=(ci===1)?"center":(_key==="name")?"left":(_key==="sku"||_key==="unit"||_key==="qty")?"center":"right";
           // ALIGN-FIX-2026-05-20: keep vertical:middle for ALL cells incl. numeric
           // (the old override loop dropped it → numbers floated to bottom).
-          c.alignment={horizontal:h,vertical:"middle",wrapText:(ci===2)};
+          c.alignment={horizontal:h,vertical:"middle",wrapText:(_key==="name")};
           if(!c.font)c.font={size:10};
           if(_alt)c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFAFAFA"}};
         });
@@ -2484,7 +2486,7 @@ export default async function handler(req, res) {
       tRow.eachCell(function(c,ci){c.font={bold:true};if(ci===tRow.cellCount)c.numFmt="#,##0.00";});
 
       // Column widths for numeric cols
-      for(var ci=3;ci<=_xlsCapture.headers.length;ci++) ws.getColumn(ci).width=16;
+      for(var ci=3;ci<=_xlsCapture.headers.length;ci++){ if(ci!==_nameIdx) ws.getColumn(ci).width=16; }
 
       // ── Footer: Incoterm / Terms & Conditions / Banking / Signatures ─────
       var _lastCol=_xlsCapture.headers.length; // e.g. 5 for SC/IV/PI, 6 for PL
