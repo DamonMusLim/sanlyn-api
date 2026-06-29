@@ -103,12 +103,12 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
       </section>`).join("");
   }
   function renderRow(row){
-    const key=row.customs_no||"";const opened=hasInvoice(row);const rowClass=opened?"invoiceRow":"invoiceRow unopened";const amountClass=opened?"amount":"amount unopened";const badge=opened?`<span class="badge green">已开</span>`:`<span class="badge red">未开</span>`;const invText=opened?(invoiceText(row)||"已上传发票"):"尚未上传发票";const busy=state.busyKey===key;const ocr=state.ocr[key]?`<div class="ocrBox">${state.ocr[key]}</div>`:"";
+    const key=row.customs_no||"";const opened=hasInvoice(row);const rowClass=opened?"invoiceRow":"invoiceRow unopened";const amountClass=opened?"amount":"amount unopened";const badge=opened?`<span class="badge green">已开</span>`:`<span class="badge red">未开</span>`;const invText=opened?(invoiceText(row)||"已上传发票"):"尚未上传发票";const busy=state.busyKey===key;const ocr=state.ocr[key]?`<div class="ocrBox">${state.ocr[key]}</div>`:"";const paid=Number(row.paid_amount||0);const slips=Number(row.slip_count||0);const paidBadge=paid>0?`<span class="badge green">已付</span>`:`<span class="badge red">未付</span>`;const paidText=paid>0?("我司已付 "+money(paid)+(slips?" · "+slips+"张水单":"")):"我司尚未付款";
     return `<div class="${rowClass}">
       <div class="orderCell"><div class="cellLabel">订单号</div><div class="orderNo">${escapeHtml(visibleOrderNo(row))}</div></div>
       <div><div class="cellLabel">箱数</div><div class="qty">${escapeHtml(numberText(visibleQty(row)))}</div></div>
       <div><div class="cellLabel">开票金额</div><div class="${amountClass}">${rowAmount(row)?money(rowAmount(row)):"待我司确认"}</div></div>
-      <div class="statusCell"><div>${badge}<div class="invoiceInfo">${escapeHtml(invText)}</div></div></div>
+      <div class="statusCell"><div class="cellLabel">开票</div><div>${badge}<span class="invoiceInfo"> ${escapeHtml(invText)}</span></div><div class="cellLabel" style="margin-top:8px">付款</div><div>${paidBadge}<span class="invoiceInfo"> ${escapeHtml(paidText)}</span></div></div>
       <div class="actions">
         <label class="btn" data-upload="${escapeHtml(key)}">${busy?"上传中...":"上传发票"}<input class="fileInput" type="file" accept="image/*,.pdf" ${busy?"disabled":""} /></label>
         <button class="btn redLine" type="button" data-detail="${escapeHtml(key)}">开票模板</button>
