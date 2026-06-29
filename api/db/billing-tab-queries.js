@@ -101,9 +101,14 @@ export async function getCompanyBilling(pool, { company_code, direction, role, s
   }
 
   const safeLimit = Math.min(Math.max(parseInt(limit || "200", 10) || 200, 1), 500);
-  const params = [companyCode];
-  const conds = [`b.${s.code} = $1`, `COALESCE(b.${s.total}, 0) > 0`]
-    .concat(buildScopedWhere(role, scopeCode, params));
+  const params = [];
+  const conds = [];
+  if (role === "internal" || role === "oceanbaby") {
+    params.push(companyCode);
+    conds.push(`b.${s.code} = $${params.length}`);
+  }
+  conds.push(`COALESCE(b.${s.total}, 0) > 0`);
+  conds.push(...buildScopedWhere(role, scopeCode, params));
   params.push(safeLimit);
 
   const sql = `
