@@ -393,7 +393,7 @@ button,input{font:inherit}
     const to = $("toMonth").value;
 
     $("factoryName").textContent = factory;
-    $("rangeLabel").textContent = from === to ? monthName(from) + " 报关金额合计" : monthName(from) + " - " + monthName(to) + " 报关金额合计";
+    $("rangeLabel").textContent = from === to ? monthName(from) + " 应开金额合计" : monthName(from) + " - " + monthName(to) + " 应开金额合计";
     $("rangeTotal").textContent = money(total);
   }
 
@@ -420,7 +420,7 @@ button,input{font:inherit}
         <div class="monthHead">
           <div class="monthTitle">📅 ${escapeHtml(monthName(group.month))}</div>
           <div class="monthSum">
-            <div class="monthSumLabel">该月报关金额合计</div>
+            <div class="monthSumLabel">该月应开金额合计</div>
             <div class="monthSumValue">${money(group.total)}</div>
           </div>
         </div>
