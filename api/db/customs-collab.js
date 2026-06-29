@@ -266,6 +266,8 @@ export async function fetchRows(pool, opts) {
                 THEN NULL
                 ELSE ROUND(COALESCE(s.manual_expected_amount, b.system_expected_amount) - COALESCE(u.uploaded_amount,0), 2)
             END AS diff_amount,
+           COALESCE(pay.paid_amount,0) AS paid_amount,
+           COALESCE(pay.slip_count,0)::int AS slip_count,
            ev.created_at AS last_event_at
       FROM b
       LEFT JOIN customs_invoice_status s ON s.customs_no=b.customs_no
@@ -278,6 +280,15 @@ export async function fetchRows(pool, opts) {
            AND l.link_status='active'
            AND COALESCE(fii.review_status,'') NOT IN ('void','red_ink')
       ) u ON true
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(COALESCE(bl.amount_alloc, bs.amount)),0) AS paid_amount,
+               COUNT(DISTINCT bs.id) AS slip_count
+          FROM bank_slip_links bl
+          JOIN bank_slips bs ON bs.id=bl.slip_id
+         WHERE bl.bl_no = b.customs_no
+            OR (b.contract_no IS NOT NULL AND bl.contract_no = b.contract_no)
+            OR (b.order_no IS NOT NULL AND bl.order_no = ANY(string_to_array(b.order_no, ',')))
+      ) pay ON true
       LEFT JOIN invoice_events ev ON ev.id=s.last_event_id
      WHERE ${where.join(" AND ")}
      ORDER BY b.export_date DESC NULLS LAST, b.customs_no`;
@@ -293,6 +304,8 @@ export async function fetchRows(pool, opts) {
     valid_invoice_count: Number(r.valid_invoice_count) || 0,
     order_no: r.order_no || null,
     qty: Number(r.qty) || null,
+    paid_amount: money(r.paid_amount) || 0,
+    slip_count: Number(r.slip_count) || 0,
   }));
 }
 
@@ -342,6 +355,8 @@ function factoryRow(r) {
     order_no: r.order_no,
     qty: r.qty,
     has_invoice: (r.valid_invoice_count || 0) > 0,
+    paid_amount: r.paid_amount || 0,
+    slip_count: r.slip_count || 0,
     diff_amount: r.diff_amount,
     last_event_at: r.last_event_at,
   };
