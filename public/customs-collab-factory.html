@@ -67,7 +67,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
   const API="/api/db/customs-collab";
   const $=id=>document.getElementById(id);
   const params=new URLSearchParams(location.search);
-  const code=params.get("c")||"";
+  const code=params.get("c")||(location.pathname.match(/\/f\/([^\/?#]+)/)||[])[1]||"";
   const mt=params.get("mt")||"";
   const state={rows:[],factoryName:"",busyKey:"",ocr:{},toastTimer:null};
 
