@@ -20,6 +20,10 @@ function addMissing(set, label) {
   if (label) set.add(label);
 }
 
+function hasDanger(verdicts) {
+  return verdicts.some(v => v.level === "danger");
+}
+
 async function tableColumns(pool, table) {
   const r = await pool.query(
     `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
@@ -75,7 +79,7 @@ function normalizeCompany(row, fallback) {
 }
 
 async function loadPlan(pool, blNo, planCols) {
-  const wanted = ["id", "customer_company_id", "customer_cn", "customer", "customer_en"];
+  const wanted = ["id", "customer_company_id", "customer_cn", "customer", "customer_en", "freight_rate_id"];
   const cols = wanted.filter(c => planCols.has(c));
   if (!cols.length) return null;
   const orderBy = planCols.has("created_at") ? "created_at DESC NULLS LAST, id DESC" : "id DESC";
@@ -140,6 +144,75 @@ function normalizeTransportLines(lines) {
   }));
 }
 
+async function loadQuoteAmount(pool, plan, rateCols) {
+  if (!plan?.freight_rate_id) return null;
+  const quoteCols = [
+    "trucking_quote_amount",
+    "trucking_amount",
+    "truck_quote_amount",
+    "trucking_sale_amount",
+    "customer_trucking_amount",
+  ].filter(c => rateCols.has(c));
+  if (!quoteCols.length) return null;
+  const quoteExpr = quoteCols.length === 1
+    ? `${quoteCols[0]}::numeric`
+    : `COALESCE(${quoteCols.map(c => `${c}::numeric`).join(", ")})`;
+  const r = await pool.query(
+    `SELECT ${quoteExpr} AS quote_amount
+       FROM freight_rates
+      WHERE id = $1
+      LIMIT 1`,
+    [plan.freight_rate_id]
+  );
+  const n = Number(r.rows[0]?.quote_amount);
+  return Number.isFinite(n) && n > 0 ? round2(n) : null;
+}
+
+export async function computePriceCheck(pool, { bl_no, invoice_amount, bill_cols, plan, rate_cols }) {
+  const blNo = clean(bl_no);
+  const invoiceAmount = invoice_amount == null ? null : round2(invoice_amount);
+  let costAmount = null;
+  if (bill_cols?.has("amount")) {
+    const r = await pool.query(
+      `SELECT SUM(amount)::numeric AS cost_amount
+         FROM freight_supplier_bills
+        WHERE bl_no = $1
+          AND cost_category = ANY($2::text[])
+          AND COALESCE(rebill_status, '') <> 'voided'`,
+      [blNo, TRUCKING_CATEGORIES]
+    );
+    costAmount = r.rows[0]?.cost_amount == null ? null : round2(r.rows[0].cost_amount);
+  }
+  const quoteAmount = await loadQuoteAmount(pool, plan, rate_cols || new Set());
+  const grossProfit = invoiceAmount == null || costAmount == null ? null : round2(invoiceAmount - costAmount);
+  const grossMargin = invoiceAmount > 0 && grossProfit != null ? round2(grossProfit / invoiceAmount) : null;
+  const verdicts = [];
+
+  if (invoiceAmount == null) verdicts.push({ level: "danger", label: "未录开票额(拖车销售额),不能开票" });
+  if (costAmount == null) verdicts.push({ level: "warn", label: "未录拖车成本,无法核毛利" });
+  if (invoiceAmount != null && costAmount != null && invoiceAmount < costAmount) {
+    verdicts.push({ level: "danger", label: "倒挂:开票额<成本" });
+  }
+  if (grossMargin != null) {
+    if (grossMargin < 0) verdicts.push({ level: "danger", label: "毛利率为负" });
+    else if (grossMargin > 0.5) verdicts.push({ level: "warn", label: "毛利率偏高需复核" });
+    else verdicts.push({ level: "ok", label: "毛利率正常" });
+  }
+  if (quoteAmount != null && invoiceAmount != null && Math.abs(invoiceAmount - quoteAmount) / quoteAmount > 0.05) {
+    verdicts.push({ level: "warn", label: "偏离报价>5%" });
+  }
+
+  return {
+    invoice_amount: invoiceAmount,
+    cost_amount: costAmount,
+    gross_profit: grossProfit,
+    gross_margin: grossMargin,
+    quote_amount: quoteAmount,
+    verdicts,
+    pass: !hasDanger(verdicts),
+  };
+}
+
 export function numberToRMB(value) {
   const n = Number(value);
   if (!isFinite(n)) return "人民币零元整";
@@ -178,6 +251,7 @@ export async function buildInvoiceBData(pool, opts) {
     tableColumns(pool, "freight_supplier_bills"),
     tableColumns(pool, "shipping_plans"),
   ]);
+  const rateCols = await tableColumns(pool, "freight_rates");
   const [sellerRow, plan, summary] = await Promise.all([
     companyByCode(pool, sellerCode),
     loadPlan(pool, blNo, planCols),
@@ -231,6 +305,13 @@ export async function buildInvoiceBData(pool, opts) {
     transport_lines: transportLines,
     missing: Array.from(missing),
   };
+  data.price_check = await computePriceCheck(pool, {
+    bl_no: blNo,
+    invoice_amount: amountIncl,
+    bill_cols: billCols,
+    plan,
+    rate_cols: rateCols,
+  });
   data.can_issue = data.missing.length === 0 && amountIncl > 0;
   return data;
 }
