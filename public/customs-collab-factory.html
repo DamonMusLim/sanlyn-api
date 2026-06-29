@@ -125,9 +125,9 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
     catch(err){showMessage("err",err.message||String(err))}
     finally{state.busyKey="";render()}
   }
-  function taxAmount(line){const amt=moneyNum(line.amount);const rate=Number(line.vat_rate)||0;return rate>0?amt-amt/(1+rate):0}
+  function taxAmount(line){const amt=moneyNum(line.amount);const rate=Number(line.vat_rate)||0;return rate>0?amt*rate:0}
   function renderInvoiceTemplate(tpl,customsNo,invoices){
-    const lines=Array.isArray(tpl?.lines)?tpl.lines:[];const total=tpl?.total_incl??lines.reduce((s,l)=>s+moneyNum(l.amount),0);const taxTotal=lines.reduce((s,l)=>s+taxAmount(l),0);
+    const lines=Array.isArray(tpl?.lines)?tpl.lines:[];const total=lines.reduce((s,l)=>s+moneyNum(l.amount),0);const taxTotal=lines.reduce((s,l)=>s+taxAmount(l),0);const grossTotal=total+taxTotal;
     return `<div class="invoiceTpl">
       <h2 class="invoiceTplTitle">电子发票（增值税专用发票）</h2>
       <div class="partyGrid">
@@ -154,7 +154,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
         </tr>`).join(""):`<tr><td colspan="8" class="c">暂无产品行</td></tr>`}</tbody>
       </table></div>
       <div class="totalBar"><div class="totalCell">合计</div><div class="totalCell">${copyField(money(total),"合计金额")}</div><div class="totalCell">${copyField(money(taxTotal),"合计税额")}</div></div>
-      <div class="grandTotal"><span>价税合计（小写）</span><strong>${copyField(money(total),"价税合计")}</strong></div>
+      <div class="grandTotal"><span>价税合计（小写）</span><strong>${copyField(money(grossTotal),"价税合计")}</strong></div>
       <div class="remarkBox"><div class="remarkLabel">备注</div><div class="remarkValue">订单号：${copyField(tpl?.order_no||"-","备注订单号")}</div></div>
       <div class="tplActions">
         <label class="btn" data-upload="${escapeHtml(customsNo)}">上传已开发票<input class="fileInput" type="file" accept="image/*,.pdf" /></label>
