@@ -1,0 +1,60 @@
+{
+  "template_key": "ocean_freight",
+  "name": "海运应付对账",
+  "roles": [
+    { "role": "finance", "scope": "all" },
+    { "role": "forwarder", "scope_field": "factory_code", "token": ["magic_links"] }
+  ],
+  "expected": {
+    "source_type": "sql",
+    "period_field": "etd",
+    "sql": "WITH fx AS (SELECT (SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' AND fetched_at < (sp.etd::date + INTERVAL '1 day') ORDER BY fetched_at DESC LIMIT 1) AS rate, sp.* FROM shipping_plans sp WHERE sp.etd >= $1::date AND sp.etd < $2::date AND NULLIF(sp.bl_no,'') IS NOT NULL) SELECT bl_no AS customs_no, bl_no, container_no, contract_no, forwarder_cn AS factory_name, forwarder_company_id AS factory_code, pol, pod, etd, freight_term, container_qty, ROUND(COALESCE(freight_cost,0) * COALESCE(rate, (SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' ORDER BY fetched_at DESC LIMIT 1)) + COALESCE(port_surcharge_total,0), 2) AS expected_amount, NULL::timestamptz AS confirmed_at, 'CNY' AS currency FROM fx"
+  },
+  "actual": {
+    "source_type": "sql",
+    "sql": "SELECT sp.bl_no, p.id AS payment_id, p.payment_date, COALESCE(p.this_amount, p.amount, p.paid_amount) AS actual_amount, p.pay_item, p.pay_type FROM finance_payments p JOIN shipping_plans sp ON (sp.id::text = p.plan_id::text OR sp._id::text = p.plan_id::text) WHERE p.direction='out' AND (p.pay_item IN ('freight','运费') OR p.pay_type IN ('货代海运费','货代港杂费','货代物流费') OR p.pay_item ILIKE '%海运%') AND NULLIF(sp.bl_no,'') IS NOT NULL"
+  },
+  "match_keys": ["bl_no"],
+  "amount_fields": {
+    "expected": "expected_amount",
+    "actual": "actual_amount",
+    "tolerance": 10
+  },
+  "status_machine": {
+    "initial": "pending_confirm",
+    "terminal": ["completed"],
+    "rules": [
+      { "when": "expected_amount == null", "status": "need_amount" },
+      { "when": "confirmed_at == null && actual_amount == 0", "status": "pending_confirm" },
+      { "when": "confirmed_at != null && actual_amount == 0", "status": "confirmed_wait_invoice" },
+      { "when": "abs(diff_amount) <= tolerance_amount", "status": "matched" },
+      { "when": "actual_amount < expected_amount - tolerance_amount", "status": "partial_uploaded" },
+      { "when": "actual_amount > expected_amount + tolerance_amount", "status": "over_issued" }
+    ],
+    "manual_transitions": ["completed", "reopen", "override_amount"]
+  },
+  "field_schema": [
+    { "key": "customs_no", "label": "提单号", "source": "expected.customs_no" },
+    { "key": "bl_no", "label": "提单号", "source": "expected.bl_no" },
+    { "key": "container_no", "label": "柜号", "source": "expected.container_no" },
+    { "key": "contract_no", "label": "合同号", "source": "expected.contract_no" },
+    { "key": "factory_code", "label": "货代编码", "source": "expected.factory_code" },
+    { "key": "factory_name", "label": "货代", "source": "expected.factory_name" },
+    { "key": "pol", "label": "起运港", "source": "expected.pol" },
+    { "key": "pod", "label": "目的港", "source": "expected.pod" },
+    { "key": "etd", "label": "开船日期", "source": "expected.etd" },
+    { "key": "freight_term", "label": "运费条款", "source": "expected.freight_term" },
+    { "key": "container_qty", "label": "柜量", "source": "expected.container_qty" },
+    { "key": "expected_amount", "label": "应付金额", "source": "expected.expected_amount" },
+    { "key": "uploaded_amount", "label": "已付金额", "source": "actual.actual_amount" },
+    { "key": "diff_amount", "label": "未付差额", "source": "computed" },
+    { "key": "currency", "label": "币种", "source": "expected.currency" }
+  ],
+  "visibility_rules": {
+    "finance": { "include": ["*"] },
+    "forwarder": {
+      "include": ["customs_no", "container_no", "factory_name", "expected_amount", "uploaded_amount", "diff_amount", "status"],
+      "exclude": ["internal_margin", "customer_price", "other_forwarder_rows", "raw", "ocr_payload"]
+    }
+  }
+}
