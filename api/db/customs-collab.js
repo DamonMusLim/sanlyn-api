@@ -191,7 +191,21 @@ export async function fetchRows(pool, opts) {
   }
 
   const sql = `
-    WITH fer_base AS (
+    WITH ord AS (
+      SELECT o.id AS order_id, o.order_no, o.contract_no,
+             COALESCE(o.factory_code, c_id.code,
+               (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
+                 WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
+             COALESCE(c.name_cn, c.factory_name, c_id.name_cn, c_id.factory_name, o.factory) AS factory_name,
+             o.created_at::date AS order_date,
+             COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id), o.total_amount_factory) AS system_expected_amount,
+             (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli
+        FROM orders o
+        LEFT JOIN companies c ON c.code=o.factory_code
+        LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
+       WHERE COALESCE(o.status,'') IN ('shipped','delivered','completed','closed','archived','done','received')
+    ),
+    fer_base AS (
       SELECT fer.customs_no,
              MAX(fer.contract_no) AS contract_no,
              MIN(fer.export_date) AS export_date,
@@ -202,22 +216,22 @@ export async function fetchRows(pool, opts) {
         LEFT JOIN LATERAL jsonb_array_elements(
           CASE WHEN jsonb_typeof(fer.raw->'items')='array' THEN fer.raw->'items' ELSE '[]'::jsonb END
         ) AS i(item) ON true
-       WHERE fer.export_date >= $1::date AND fer.export_date < $2::date
        GROUP BY fer.customs_no
     ),
     b AS (
-      SELECT f.*,
-             COALESCE(o.factory_code, c_id.code,
-               (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
-                 WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
-             COALESCE(c.name_cn, c.factory_name, c_id.name_cn, c_id.factory_name, o.factory) AS factory_name,
-             o.order_no,
-             COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id), o.total_amount_factory) AS system_expected_amount,
-             (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli
-        FROM fer_base f
-        LEFT JOIN orders o ON o.contract_no=f.contract_no AND COALESCE(o.status,'') <> 'cancelled'
-        LEFT JOIN companies c ON c.code=o.factory_code
-        LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
+      SELECT
+        COALESCE(f.customs_no, ord.order_no) AS customs_no,
+        ord.contract_no,
+        COALESCE(f.export_date, ord.order_date) AS export_date,
+        ord.factory_code,
+        ord.factory_name,
+        ord.order_no,
+        f.qty,
+        ord.qty_oli,
+        ord.system_expected_amount,
+        f.declare_amount
+        FROM ord
+        LEFT JOIN fer_base f ON f.contract_no=ord.contract_no
     )
     SELECT b.customs_no, b.contract_no, b.export_date,
            to_char(b.export_date,'YYYY-MM') AS period,
@@ -667,7 +681,7 @@ async function handleDetail(req, res) {
     let invoiceTemplate;
     if (factoryMode) {
       const contractNo = st.contract_no || row.contract_no || null;
-      const orderResult = contractNo
+      let orderResult = contractNo
         ? await client.query(
             `SELECT id, order_no, contract_no, issuing_company, company_code
                FROM orders
@@ -678,6 +692,17 @@ async function handleDetail(req, res) {
             [contractNo]
           )
         : { rows: [] };
+      if (!orderResult.rows[0]) {
+        orderResult = await client.query(
+          `SELECT id, order_no, contract_no, issuing_company, company_code
+             FROM orders
+            WHERE order_no=$1
+              AND COALESCE(status,'') <> 'cancelled'
+            ORDER BY id DESC
+            LIMIT 1`,
+          [customsNo]
+        );
+      }
       const order = orderResult.rows[0] || null;
 
       let buyer = { name: null, tax_id: null };

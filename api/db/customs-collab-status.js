@@ -52,30 +52,33 @@ export async function ensureCustomsStatus(client, customsNo) {
     `WITH fer_one AS (
        SELECT fer.customs_no,
               MAX(fer.contract_no) AS contract_no,
-              MIN(fer.export_date) AS export_date,
-              CASE
-                WHEN COUNT(i.item) = 0 THEN NULL
-                ELSE ROUND(SUM(NULLIF(i.item->>'amount','')::numeric), 2)
-              END AS system_expected_amount
+              MIN(fer.export_date) AS export_date
          FROM finance_export_rebates fer
-         LEFT JOIN LATERAL jsonb_array_elements(
-           CASE WHEN jsonb_typeof(fer.raw->'items')='array' THEN fer.raw->'items' ELSE '[]'::jsonb END
-         ) AS i(item) ON true
         WHERE fer.customs_no = $1
         GROUP BY fer.customs_no
      ),
-     fac AS (
-       SELECT f.customs_no, f.contract_no, f.system_expected_amount,
+     ord AS (
+       SELECT o.id, o.order_no, o.contract_no,
               COALESCE(o.factory_code, c_id.code,
                 (SELECT p.factory_code
                    FROM order_line_items x JOIN products p ON p.id=x.product_id
                   WHERE x.order_id=o.id AND p.factory_code IS NOT NULL
-                  LIMIT 1)) AS factory_code
-         FROM fer_one f
-         LEFT JOIN orders o ON o.contract_no=f.contract_no AND COALESCE(o.status,'') <> 'cancelled'
+                  LIMIT 1)) AS factory_code,
+              COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
+                       o.total_amount_factory) AS purchase_amount
+         FROM orders o
          LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
-        ORDER BY o.id NULLS LAST
+        WHERE COALESCE(o.status,'') <> 'cancelled'
+          AND (o.contract_no = (SELECT contract_no FROM fer_one) OR o.order_no = $1)
+        ORDER BY CASE WHEN o.order_no = $1 THEN 0 ELSE 1 END, o.id DESC
         LIMIT 1
+     ),
+     fac AS (
+       SELECT $1::text AS customs_no,
+              COALESCE((SELECT contract_no FROM fer_one), (SELECT contract_no FROM ord)) AS contract_no,
+              (SELECT purchase_amount FROM ord) AS system_expected_amount,
+              (SELECT factory_code FROM ord) AS factory_code
+        WHERE EXISTS (SELECT 1 FROM ord) OR EXISTS (SELECT 1 FROM fer_one)
      )
      INSERT INTO customs_invoice_status
        (customs_no, factory_code, contract_no, system_expected_amount,
