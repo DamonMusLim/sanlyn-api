@@ -173,7 +173,7 @@ function fileUrl(row) {
   return null;
 }
 
-async function fetchRows(pool, opts) {
+export async function fetchRows(pool, opts) {
   const params = [opts.start, opts.end];
   const where = [`b.export_date >= $1::date`, `b.export_date < $2::date`];
 

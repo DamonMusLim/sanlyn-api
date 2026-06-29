@@ -1,0 +1,55 @@
+{
+  "template_key": "customs_invoice",
+  "name": "工厂开票对账",
+  "roles": [
+    { "role": "finance", "scope": "all" },
+    { "role": "factory", "scope_field": "factory_code", "token": ["invoice_links", "magic_links"] }
+  ],
+  "expected": {
+    "source_type": "sql",
+    "period_field": "export_date",
+    "sql": "WITH fer_base AS (SELECT fer.customs_no, MAX(fer.contract_no) AS contract_no, MIN(fer.export_date) AS export_date, CASE WHEN COUNT(i.item)=0 THEN NULL ELSE ROUND(SUM(NULLIF(i.item->>'amount','')::numeric), 2) END AS expected_amount, ROUND(SUM(NULLIF(i.item->>'qty2','')::numeric), 2) AS qty FROM finance_export_rebates fer LEFT JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(fer.raw->'items')='array' THEN fer.raw->'items' ELSE '[]'::jsonb END) AS i(item) ON true WHERE fer.export_date >= $1::date AND fer.export_date < $2::date GROUP BY fer.customs_no), b AS (SELECT f.*, COALESCE(o.factory_code, c_id.code, (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code, COALESCE(c.name_cn, c.factory_name, c_id.name_cn, c_id.factory_name, o.factory) AS factory_name, o.order_no FROM fer_base f LEFT JOIN orders o ON o.contract_no=f.contract_no AND COALESCE(o.status,'') <> 'cancelled' LEFT JOIN companies c ON c.code=o.factory_code LEFT JOIN companies c_id ON c_id.id=o.factory_company_id) SELECT *, 'CNY' AS currency FROM b"
+  },
+  "actual": {
+    "source_type": "sql",
+    "sql": "SELECT l.customs_no, fii.id invoice_id, fii.invoice_no, fii.issue_date, fii.amount_incl_tax actual_amount, l.allocated_amount, fii.review_status, l.link_status FROM invoice_customs_links l JOIN finance_invoices_in fii ON fii.id=l.invoice_id WHERE l.link_status='active' AND COALESCE(fii.review_status,'') NOT IN('void','red_ink')"
+  },
+  "match_keys": ["customs_no"],
+  "amount_fields": {
+    "expected": "expected_amount",
+    "actual": "actual_amount",
+    "tolerance": 1
+  },
+  "status_machine": {
+    "initial": "pending_confirm",
+    "terminal": ["completed"],
+    "rules": [
+      { "when": "expected_amount == null", "status": "need_amount" },
+      { "when": "confirmed_at == null && actual_amount == 0", "status": "pending_confirm" },
+      { "when": "confirmed_at != null && actual_amount == 0", "status": "confirmed_wait_invoice" },
+      { "when": "abs(diff_amount) <= tolerance_amount", "status": "matched" },
+      { "when": "actual_amount < expected_amount - tolerance_amount", "status": "partial_uploaded" },
+      { "when": "actual_amount > expected_amount + tolerance_amount", "status": "over_issued" }
+    ],
+    "manual_transitions": ["completed", "reopen", "red_ink", "void", "override_amount"]
+  },
+  "field_schema": [
+    { "key": "customs_no", "label": "报关单号", "source": "expected.customs_no" },
+    { "key": "contract_no", "label": "合同号", "source": "expected.contract_no" },
+    { "key": "export_date", "label": "出口日期", "source": "expected.export_date" },
+    { "key": "factory_code", "label": "工厂编码", "source": "expected.factory_code" },
+    { "key": "factory_name", "label": "工厂", "source": "expected.factory_name" },
+    { "key": "order_no", "label": "订单号", "source": "expected.order_no" },
+    { "key": "qty", "label": "数量", "source": "expected.qty" },
+    { "key": "expected_amount", "label": "应开金额", "source": "expected.expected_amount" },
+    { "key": "uploaded_amount", "label": "已开金额", "source": "actual.actual_amount" },
+    { "key": "diff_amount", "label": "差额", "source": "computed" }
+  ],
+  "visibility_rules": {
+    "finance": { "include": ["*"] },
+    "factory": {
+      "include": ["customs_no", "contract_no", "export_date", "factory_code", "factory_name", "status", "expected_amount", "uploaded_amount", "valid_invoice_count", "order_no", "qty", "diff_amount"],
+      "exclude": ["raw", "ocr_payload", "other_factory_rows"]
+    }
+  }
+}
