@@ -59,7 +59,7 @@ async function queryRows(pool, planId) {
       COALESCE(cb.cargo_weight_kg, o.gross_weight, 0)::numeric AS gw_kg,
       COALESCE(o.net_weight,  0)::numeric AS nw_kg,
       COALESCE(o.total_cbm,  0)::numeric AS cbm,
-      COALESCE(o.total_ctn,  0)::int     AS total_ctn
+      COALESCE(o.qty_ctn,  0)::int     AS total_ctn
     FROM shipping_plans sp
     JOIN container_bookings cb ON cb.shipping_plan_id = sp.id
     LEFT JOIN orders o ON o.contract_no = cb.contract_no
