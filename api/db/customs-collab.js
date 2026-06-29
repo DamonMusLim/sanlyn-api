@@ -663,6 +663,115 @@ async function handleDetail(req, res) {
       ? rawItems.map((x) => ({ name_cn: x.name_cn || x.name || null, qty1: x.qty1 || null, qty2: x.qty2 || null }))
       : rawItems;
 
+    let invoiceTemplate;
+    if (factoryMode) {
+      const contractNo = st.contract_no || row.contract_no || null;
+      const orderResult = contractNo
+        ? await client.query(
+            `SELECT id, order_no, contract_no, issuing_company, company_code
+               FROM orders
+              WHERE contract_no=$1
+                AND COALESCE(status,'') <> 'cancelled'
+              ORDER BY id DESC
+              LIMIT 1`,
+            [contractNo]
+          )
+        : { rows: [] };
+      const order = orderResult.rows[0] || null;
+
+      let buyer = { name: null, tax_id: null };
+      if (order) {
+        const buyerKey = cleanString(order.issuing_company);
+        const companyCode = cleanString(order.company_code);
+        const buyerResult = await client.query(
+          `SELECT name_cn, tax_id
+             FROM companies
+            WHERE ($1 <> '' AND (code=$1 OR name_cn=$1))
+               OR ($2 <> '' AND code=$2)
+            ORDER BY CASE
+              WHEN $1 <> '' AND name_cn=$1 THEN 0
+              WHEN $1 <> '' AND code=$1 THEN 1
+              WHEN $2 <> '' AND code=$2 THEN 2
+              ELSE 9
+            END, id ASC
+            LIMIT 1`,
+          [buyerKey, companyCode]
+        );
+        const b = buyerResult.rows[0];
+        buyer = { name: b?.name_cn || buyerKey || null, tax_id: b?.tax_id || null };
+      }
+
+      const sellerResult = await client.query(
+        `SELECT name_cn, tax_id
+           FROM companies
+          WHERE code=$1
+          LIMIT 1`,
+        [st.factory_code]
+      );
+      const sellerRow = sellerResult.rows[0] || {};
+      const seller = {
+        name: sellerRow.name_cn || scope.factory.name || null,
+        tax_id: sellerRow.tax_id || null,
+      };
+
+      const rawUnit = rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.unit2
+        || rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.transaction_unit
+        || rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.unit
+        || null;
+
+      const lineResult = order?.id
+        ? await client.query(
+            `SELECT
+                COALESCE(NULLIF(BTRIM(oli.declaration_name), ''),
+                         NULLIF(BTRIM(oli.product_name), ''),
+                         NULLIF(BTRIM(p.declaration_name), ''),
+                         NULLIF(BTRIM(p.product_name), '')) AS name,
+                COALESCE(NULLIF(BTRIM(p.spec), ''), NULLIF(BTRIM(oli.size), '')) AS spec,
+                COALESCE(NULLIF(BTRIM(p.transaction_unit), ''), NULLIF($2, ''), NULLIF(BTRIM(oli.unit), ''), '箱') AS unit,
+                ROUND(SUM(COALESCE(oli.qty_ctn, 0))::numeric, 2) AS qty,
+                ROUND(SUM(COALESCE(oli.factory_subtotal, COALESCE(oli.qty_ctn, 0) * COALESCE(oli.factory_price, 0), 0))::numeric, 2) AS amount,
+                CASE
+                  WHEN COALESCE(NULLIF(BTRIM(oli.hs_code), ''), NULLIF(BTRIM(p.hs_code), '')) LIKE '2309%' THEN 0.09
+                  ELSE 0.13
+                END AS vat_rate
+               FROM order_line_items oli
+               LEFT JOIN products p ON p.id=oli.product_id
+              WHERE oli.order_id=$1
+              GROUP BY
+                COALESCE(NULLIF(BTRIM(oli.declaration_name), ''),
+                         NULLIF(BTRIM(oli.product_name), ''),
+                         NULLIF(BTRIM(p.declaration_name), ''),
+                         NULLIF(BTRIM(p.product_name), '')),
+                COALESCE(NULLIF(BTRIM(p.spec), ''), NULLIF(BTRIM(oli.size), '')),
+                COALESCE(NULLIF(BTRIM(p.transaction_unit), ''), NULLIF($2, ''), NULLIF(BTRIM(oli.unit), ''), '箱'),
+                CASE
+                  WHEN COALESCE(NULLIF(BTRIM(oli.hs_code), ''), NULLIF(BTRIM(p.hs_code), '')) LIKE '2309%' THEN 0.09
+                  ELSE 0.13
+                END
+              ORDER BY MIN(oli.sort_order) NULLS LAST, MIN(oli.id)`,
+            [order.id, rawUnit]
+          )
+        : { rows: [] };
+
+      const lines = lineResult.rows.map((l) => ({
+        name: l.name || null,
+        spec: l.spec || null,
+        unit: l.unit || "箱",
+        qty: money(l.qty) || 0,
+        amount: money(l.amount) || 0,
+        vat_rate: Number(l.vat_rate) || 0.13,
+      }));
+      const linesTotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+
+      invoiceTemplate = {
+        buyer,
+        seller,
+        lines,
+        order_no: order?.order_no || null,
+        total_incl: money(linesTotal) || effective || null,
+      };
+    }
+
     return res.json({
       success: true,
       factory: factoryMode ? scope.factory : undefined,
@@ -680,6 +789,7 @@ async function handleDetail(req, res) {
         diff_amount: effective === null ? null : money(effective - up.uploaded_amount),
       },
       items,
+      invoice_template: invoiceTemplate,
       invoices: inv.rows.map((r) => ({
         id: r.id,
         invoice_no: r.invoice_no,
