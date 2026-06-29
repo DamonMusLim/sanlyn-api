@@ -92,6 +92,10 @@ export async function ensureCustomsStatus(client, customsNo) {
        factory_code = COALESCE(customs_invoice_status.factory_code, EXCLUDED.factory_code),
        contract_no = COALESCE(customs_invoice_status.contract_no, EXCLUDED.contract_no),
        system_expected_amount = EXCLUDED.system_expected_amount,
+       status = CASE
+         WHEN customs_invoice_status.status='need_amount' AND EXCLUDED.system_expected_amount IS NOT NULL THEN 'pending_confirm'
+         ELSE customs_invoice_status.status
+       END,
        expected_amount_source = CASE
          WHEN customs_invoice_status.manual_expected_amount IS NOT NULL THEN 'manual'
          WHEN EXCLUDED.system_expected_amount IS NOT NULL THEN 'system'

@@ -236,7 +236,11 @@ export async function fetchRows(pool, opts) {
     SELECT b.customs_no, b.contract_no, b.export_date,
            to_char(b.export_date,'YYYY-MM') AS period,
            b.factory_code, b.factory_name, b.order_no, COALESCE(NULLIF(b.qty,0), b.qty_oli) AS qty,
-           COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END) AS status,
+           CASE
+             WHEN COALESCE(s.manual_expected_amount, b.system_expected_amount) IS NOT NULL
+                  AND COALESCE(s.status,'need_amount')='need_amount' THEN 'pending_confirm'
+             ELSE COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END)
+           END AS status,
            b.system_expected_amount,
            b.declare_amount,
            s.manual_expected_amount,
