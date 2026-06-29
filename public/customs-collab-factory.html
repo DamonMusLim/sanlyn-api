@@ -453,7 +453,7 @@ button,input{font:inherit}
         </div>
         <div>
           <div class="cellLabel">金额</div>
-          <div class="${amountClass}">${money(rowAmount(row))}</div>
+          <div class="${amountClass}">${rowAmount(row) ? money(rowAmount(row)) : '待我司确认'}</div>
         </div>
         <div class="statusCell">
           <div>
@@ -558,7 +558,7 @@ button,input{font:inherit}
           </div>
           <div class="detailCard">
             <div class="detailK">金额</div>
-            <div class="detailV">${money(rowAmount(row))}</div>
+            <div class="detailV">${rowAmount(row) ? money(rowAmount(row)) : '待我司确认'}</div>
           </div>
         </div>
         <div class="sectionTitle">已上传发票</div>
