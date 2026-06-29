@@ -4,6 +4,7 @@
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { emitFreightReceivable } from "./_freight-receivable-emit.js";
 
 const ALLOWED_ROLES = new Set(["admin", "finance"]);
 
@@ -92,7 +93,8 @@ export default async function handler(req, res) {
         SELECT
           id, container_type, container_qty, freight_rate_id,
           freight_cost, freight_sale_usd, quote_ref,
-          order_nos, contract_nos, raw, forwarder_cn, shipping_line
+          order_nos, contract_nos, raw, forwarder_cn, shipping_line,
+          bl_no, customer_company_id, forwarder_company_id
         FROM shipping_plans
         WHERE id = $1
         FOR UPDATE
@@ -205,6 +207,15 @@ export default async function handler(req, res) {
       ]
     );
 
+    const emittedBill = await emitFreightReceivable(client, {
+      freightRateId: rate.id,
+      shippingPlanId: plan.id,
+      totalCost,
+      unitCost,
+      totalSale,
+      qty,
+    });
+
     // 回链订单是尽力操作：0 条匹配也成功，但 SQL/字段异常不影响采用运价主事务。
     let linkedOrders = [];
     try {
@@ -238,6 +249,7 @@ export default async function handler(req, res) {
         currency: "USD",
       },
       linked_orders: linkedOrders,
+      freight_receivable_bill: emittedBill,
     });
   } catch (err) {
     try {

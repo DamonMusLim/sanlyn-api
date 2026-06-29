@@ -136,6 +136,8 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/collab-pricing",
   "/api/db/booking-collab/collab-order-pricing",
   "/api/db/booking-collab/collab-pricing-submit",
+  "/api/db/bill-center/collab/validate",
+  "/api/db/bill-center/collab/submit",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）

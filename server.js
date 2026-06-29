@@ -232,6 +232,16 @@ mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplie
 mount("/api/db/freight-bill-intake",      () => import("./api/db/freight-bill-intake.js"));
 mount("/api/db/order-intake-validate", () => import("./api/db/order-intake-validate.js"));
 mount("/api/db/freight-rate-adopt",      () => import("./api/db/freight-rate-adopt.js"));
+app.all("/api/db/bill-center/*", async (req, res) => {
+  try {
+    const mod = await import("./api/db/bill-center.js");
+    await (mod.default || mod)(req, res);
+  } catch (err) {
+    console.error("[bill-center] Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+mount("/api/db/bill-center",      () => import("./api/db/bill-center.js"));
 mount("/api/db/freight-cost-audit",   () => import("./api/db/freight-cost-audit.js")); // freight cost vs sale audit + set-par (2026-06-17)
 mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 工厂协同门户·财务板块(短码+collab mt)
