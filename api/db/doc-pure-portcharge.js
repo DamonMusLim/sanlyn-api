@@ -24,18 +24,20 @@ function basisText(v) {
 export async function renderPurePortChargeDoc(pool, id) {
   const plan = await loadShippingPlan(pool, id);
   if (!plan) return null;
-  const factory = await loadFactory(pool, plan);
-  const factoryCode = factory && factory.code;
   const blNo = pick(plan.bl_no, id);
-  const billR = factoryCode ? await pool.query(
-    `SELECT bl_no,cost_category,amount,currency,qty,unit_price,charge_basis
+  const billR = await pool.query(
+    `SELECT bl_no,cost_category,amount,currency,qty,unit_price,charge_basis,payer_company_code
        FROM active_freight_supplier_bills
       WHERE bl_no=$1
-        AND payer_company_code=$2
         AND (cost_category !~* '海运|ocean|freight')
+        AND COALESCE(amount,0)>0
       ORDER BY id`,
-    [blNo, factoryCode]
-  ) : { rows: [] };
+    [blNo]
+  );
+  const payerCode = (billR.rows.find(r => r.payer_company_code) || {}).payer_company_code || null;
+  const factory = payerCode
+    ? (await pool.query('SELECT code,name_cn,name_en,tax_id FROM companies WHERE code=$1 LIMIT 1', [payerCode])).rows[0]
+    : await loadFactory(pool, plan);
   const lines = billR.rows.map((r) => ({
     item: pick(r.cost_category, "港杂费"),
     basis: basisText(r.charge_basis),
