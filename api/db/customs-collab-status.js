@@ -64,8 +64,12 @@ export async function ensureCustomsStatus(client, customsNo) {
                    FROM order_line_items x JOIN products p ON p.id=x.product_id
                   WHERE x.order_id=o.id AND p.factory_code IS NOT NULL
                   LIMIT 1)) AS factory_code,
-              COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
-                       o.total_amount_factory) AS purchase_amount
+              COALESCE(
+                (SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
+                CASE WHEN o.order_no ILIKE '%-DG-%'
+                     THEN (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id)
+                     ELSE NULL END,
+                o.total_amount_factory) AS purchase_amount
          FROM orders o
          LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
         WHERE COALESCE(o.status,'') <> 'cancelled'
