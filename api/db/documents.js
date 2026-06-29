@@ -1993,7 +1993,7 @@ export default async function handler(req, res) {
 
         // Build fee rows: [label_en, label_cn, qty, currency, amount]
         var feeList=[
-          ["OCEAN FREIGHT","海运费",1,"USD",fUSD],
+          ["OCEAN FREIGHT","海运费",cqty,"USD",fUSD],
           ["THC","码头操作费",1,"CNY",thcF],
           ["DOCUMENTATION FEE","文件费",1,"CNY",docF],
           ["SEAL FEE","铅封费",cqty,"CNY",sealF],
