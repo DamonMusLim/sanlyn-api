@@ -37,10 +37,10 @@ function summarize(rows, role) {
 
   return Object.entries(byCurrency).map(([currency, sums]) => {
     const out = { currency };
-    if (role === "internal" || role === "oceanbaby" || role === "forwarder") {
+    if (role === "internal" || role === "oceanbaby" || role === "forwarder" || role === "factory") {
       out.payable = round2(sums.payable);
     }
-    if (role === "internal" || role === "oceanbaby" || role === "customer" || role === "factory") {
+    if (role === "internal" || role === "oceanbaby" || role === "customer") {
       out.receivable = round2(sums.receivable);
     }
     if (role === "internal" || role === "oceanbaby") {
