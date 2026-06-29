@@ -735,6 +735,25 @@ async function handleDetail(req, res) {
       }
       const order = orderResult.rows[0] || null;
 
+      // 合并报关单: 该报关单/BL下同工厂的全部订单(合并开票,产品全列)
+      let orderIds = order?.id ? [order.id] : [];
+      let mergedOrderNos = order?.order_no || null;
+      if (order) {
+        const grpR = await client.query(
+          `SELECT array_agg(o.id) AS ids, string_agg(o.order_no, ',' ORDER BY o.order_no) AS order_nos
+             FROM orders o
+            WHERE COALESCE(o.status,'') <> 'cancelled'
+              AND (o.bl_no=$1 OR o.order_no=$1 OR o.contract_no=$2)
+              AND ($3::text IS NULL OR COALESCE(o.factory_code,
+                    (SELECT code FROM companies WHERE id=o.factory_company_id)) = $3)`,
+          [customsNo, order.contract_no, factoryMode ? scope.factory.code : null]
+        );
+        if (grpR.rows[0]?.ids?.length) {
+          orderIds = grpR.rows[0].ids;
+          mergedOrderNos = grpR.rows[0].order_nos;
+        }
+      }
+
       let buyer = { name: null, tax_id: null };
       if (order) {
         const buyerKey = cleanString(order.issuing_company);
@@ -775,7 +794,7 @@ async function handleDetail(req, res) {
         || rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.unit
         || null;
 
-      const lineResult = order?.id
+      const lineResult = orderIds.length
         ? await client.query(
             `SELECT
                 COALESCE(NULLIF(BTRIM(oli.declaration_name), ''),
@@ -792,7 +811,7 @@ async function handleDetail(req, res) {
                 END AS vat_rate
                FROM order_line_items oli
                LEFT JOIN products p ON p.id=oli.product_id
-              WHERE oli.order_id=$1
+              WHERE oli.order_id = ANY($1::int[])
               GROUP BY
                 COALESCE(NULLIF(BTRIM(oli.declaration_name), ''),
                          NULLIF(BTRIM(oli.product_name), ''),
@@ -805,7 +824,7 @@ async function handleDetail(req, res) {
                   ELSE 0.13
                 END
               ORDER BY MIN(oli.sort_order) NULLS LAST, MIN(oli.id)`,
-            [order.id, rawUnit]
+            [orderIds, rawUnit]
           )
         : { rows: [] };
 
@@ -824,7 +843,7 @@ async function handleDetail(req, res) {
         buyer,
         seller,
         lines,
-        order_no: order?.order_no || null,
+        order_no: mergedOrderNos || order?.order_no || null,
         total_incl: money(linesTotal) || effective || null,
       };
     }
