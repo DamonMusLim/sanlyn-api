@@ -200,10 +200,12 @@ export async function fetchRows(pool, opts) {
              o.created_at::date AS order_date,
              COALESCE(
                (SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
+               NULLIF(o.total_amount_factory,0),
                CASE WHEN o.order_no ILIKE '%-DG-%'
-                    THEN (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id)
-                    ELSE NULL END,
-               o.total_amount_factory) AS system_expected_amount,
+                    THEN COALESCE(
+                      (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id),
+                      NULLIF(o.total_amount,0))
+                    ELSE NULL END) AS system_expected_amount,
              (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli
         FROM orders o
         LEFT JOIN companies c ON c.code=o.factory_code
