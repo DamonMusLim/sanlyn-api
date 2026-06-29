@@ -654,6 +654,49 @@ async function handleCorrection(req, res) {
   }
 }
 
+async function handleUploadSlip(req, res) {
+  const pool = getPool();
+  const scope = await resolveFactory(req, pool);
+  if (!scope) return failClosed(res);
+  if (!rateLimit(req, scope.factory.code)) return json(res, 429, { error: "请求过于频繁，请稍后再试" });
+
+  const { fields, file } = await readUploadPayload(req);
+  const err = validateFile(file);
+  if (err) return json(res, 400, { error: err });
+  const customsNo = cleanString(fields.customs_no || fields.customsNo);
+  if (!customsNo) return json(res, 400, { error: "customs_no required" });
+  const amount = money(fields.amount);
+
+  const client = await pool.connect();
+  try {
+    const st = await assertFactoryCustoms(client, scope.factory.code, customsNo);
+    const oss = await uploadToOss(scope.factory.code, "SLIP_UPLOAD", file);
+    await client.query("BEGIN");
+    const slip = await client.query(
+      `INSERT INTO bank_slips
+         (beneficiary_name, beneficiary_company_code, amount, currency, file_url, status, raw, created_by, created_at, updated_at)
+       VALUES ($1,$2,$3,'CNY',$4,'recorded',$5::jsonb,$6,NOW(),NOW())
+       RETURNING id`,
+      [scope.factory.name, scope.factory.code, amount, oss.url,
+       JSON.stringify({ source: "factory-collab-slip", customs_no: customsNo, file_name: file.fileName }),
+       "factory:" + scope.factory.code]
+    );
+    const slipId = slip.rows[0].id;
+    await client.query(
+      `INSERT INTO bank_slip_links (slip_id, contract_no, bl_no, amount_alloc, note, created_at)
+       VALUES ($1,$2,$3,$4,$5,NOW())`,
+      [slipId, st.contract_no || null, customsNo, amount, "工厂协同上传水单"]
+    );
+    await client.query("COMMIT");
+    return res.json({ success: true, slip_id: slipId, customs_no: customsNo, amount, file_url: oss.url });
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    return json(res, e.status || 500, { error: e.message });
+  } finally {
+    client.release();
+  }
+}
+
 async function handleDetail(req, res) {
   const pool = getPool();
   const factoryMode = !!cleanString(req.query?.c || req.query?.mt);
@@ -910,6 +953,7 @@ export default async function handler(req, res) {
     if (req.method === "GET" && action === "detail") return handleDetail(req, res);
     if (req.method === "POST" && action === "confirm") return handleConfirm(req, res);
     if (req.method === "POST" && action === "upload") return handleUpload(req, res);
+    if (req.method === "POST" && action === "upload_slip") return handleUploadSlip(req, res);
     if (req.method === "POST" && action === "correction") return handleCorrection(req, res);
     return json(res, 404, { error: "unknown action" });
   } catch (err) {
