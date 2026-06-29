@@ -57,7 +57,7 @@ async function queryRows(pool, planId) {
       cb.contract_no,
       cb.container_type,
       COALESCE(cb.cargo_weight_kg, o.gross_weight, 0)::numeric AS gw_kg,
-      COALESCE(cb.tare_weight_kg, NULL)::numeric                   AS tare_kg,
+      cb.tare_kg::numeric                                           AS tare_kg,
       COALESCE(o.net_weight,  0)::numeric AS nw_kg,
       COALESCE(o.total_cbm,  0)::numeric AS cbm,
       COALESCE((SELECT SUM(li.qty_ctn) FROM order_line_items li WHERE li.order_id = o.id), 0)::int AS total_ctn
