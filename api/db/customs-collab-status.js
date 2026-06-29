@@ -58,22 +58,24 @@ export async function ensureCustomsStatus(client, customsNo) {
         GROUP BY fer.customs_no
      ),
      ord AS (
-       SELECT
-              MAX(COALESCE(o.factory_code, c_id.code,
-                (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
-                  WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1))) AS factory_code,
-              MAX(o.contract_no) AS contract_no,
-              COALESCE(
-                NULLIF(SUM(CASE WHEN o.order_no ILIKE '%-DG-%'
-                  THEN (SELECT SUM(oli.declare_amount_per_box*oli.qty_ctn) FROM order_line_items oli WHERE oli.order_id=o.id)
-                  ELSE NULL END),0),
-                NULLIF(SUM(COALESCE((SELECT SUM(oli.factory_subtotal) FROM order_line_items oli WHERE oli.order_id=o.id), o.total_amount_factory)),0)
-              ) AS purchase_amount,
+       SELECT MAX(per.factory_code) AS factory_code,
+              MAX(per.contract_no) AS contract_no,
+              COALESCE(NULLIF(SUM(per.declare_value),0), NULLIF(SUM(per.purchase_value),0)) AS purchase_amount,
               COUNT(*) AS n
-         FROM orders o
-         LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
-        WHERE COALESCE(o.status,'') <> 'cancelled'
-          AND (o.contract_no = (SELECT contract_no FROM fer_one) OR o.order_no = $1 OR o.bl_no = $1)
+         FROM (
+           SELECT o.id, o.order_no, o.contract_no,
+                  COALESCE(o.factory_code, c_id.code,
+                    (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
+                      WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
+                  CASE WHEN o.order_no ILIKE '%-DG-%'
+                       THEN (SELECT SUM(oli.declare_amount_per_box*oli.qty_ctn) FROM order_line_items oli WHERE oli.order_id=o.id)
+                       ELSE NULL END AS declare_value,
+                  COALESCE((SELECT SUM(oli.factory_subtotal) FROM order_line_items oli WHERE oli.order_id=o.id), o.total_amount_factory) AS purchase_value
+             FROM orders o
+             LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
+            WHERE COALESCE(o.status,'') <> 'cancelled'
+              AND (o.contract_no = (SELECT contract_no FROM fer_one) OR o.order_no = $1 OR o.bl_no = $1)
+         ) per
      ),
      fac AS (
        SELECT $1::text AS customs_no,
