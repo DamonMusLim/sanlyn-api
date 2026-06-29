@@ -192,20 +192,17 @@ export async function fetchRows(pool, opts) {
 
   const sql = `
     WITH ord AS (
-      SELECT o.id AS order_id, o.order_no, o.contract_no,
+      SELECT o.id AS order_id, o.order_no, o.contract_no, o.bl_no,
              COALESCE(o.factory_code, c_id.code,
                (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
                  WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
              COALESCE(c.name_cn, c.factory_name, c_id.name_cn, c_id.factory_name, o.factory) AS factory_name,
              o.created_at::date AS order_date,
-             COALESCE(
-               (SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
-               NULLIF(o.total_amount_factory,0),
-               CASE WHEN o.order_no ILIKE '%-DG-%'
-                    THEN COALESCE(
-                      (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id),
-                      NULLIF(o.total_amount,0))
-                    ELSE NULL END) AS system_expected_amount,
+             CASE WHEN o.order_no ILIKE '%-DG-%'
+                  THEN (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id)
+                  ELSE NULL END AS declare_value,
+             COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
+                      NULLIF(o.total_amount_factory,0)) AS purchase_value,
              (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli
         FROM orders o
         LEFT JOIN companies c ON c.code=o.factory_code
@@ -227,24 +224,33 @@ export async function fetchRows(pool, opts) {
         ) AS i(item) ON true
        GROUP BY fer.customs_no
     ),
-    b AS (
-      SELECT
-        COALESCE(f.customs_no, ord.order_no) AS customs_no,
-        ord.contract_no,
-        COALESCE(f.export_date, ord.order_date) AS export_date,
-        ord.factory_code,
-        ord.factory_name,
-        ord.order_no,
-        f.qty,
-        ord.qty_oli,
-        ord.system_expected_amount,
-        f.declare_amount
+    keyed AS (
+      SELECT ord.*,
+             f.customs_no AS real_customs_no,
+             f.declare_amount AS fer_declare,
+             f.qty AS fer_qty,
+             f.export_date AS fer_export_date,
+             COALESCE(f.customs_no, NULLIF(ord.bl_no,''), ord.order_no) AS decl_key
         FROM ord
         LEFT JOIN fer_base f ON f.contract_no=ord.contract_no
+    ),
+    b AS (
+      SELECT
+        decl_key AS customs_no,
+        MAX(contract_no) AS contract_no,
+        COALESCE(MIN(fer_export_date), MIN(order_date)) AS export_date,
+        factory_code,
+        MAX(factory_name) AS factory_name,
+        STRING_AGG(DISTINCT order_no, ',' ORDER BY order_no) AS order_no,
+        COALESCE(NULLIF(MAX(fer_qty),0), NULLIF(SUM(qty_oli),0)) AS qty,
+        COALESCE(MAX(fer_declare), NULLIF(SUM(declare_value),0), NULLIF(SUM(purchase_value),0)) AS system_expected_amount,
+        MAX(fer_declare) AS declare_amount
+        FROM keyed
+       GROUP BY factory_code, decl_key
     )
     SELECT b.customs_no, b.contract_no, b.export_date,
            to_char(b.export_date,'YYYY-MM') AS period,
-           b.factory_code, b.factory_name, b.order_no, COALESCE(NULLIF(b.qty,0), b.qty_oli) AS qty,
+           b.factory_code, b.factory_name, b.order_no, b.qty AS qty,
            CASE
              WHEN COALESCE(s.manual_expected_amount, b.system_expected_amount) IS NOT NULL
                   AND COALESCE(s.status,'need_amount')='need_amount' THEN 'pending_confirm'
