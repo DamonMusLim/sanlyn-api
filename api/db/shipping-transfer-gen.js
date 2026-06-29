@@ -130,26 +130,22 @@ async function uploadOSS(buffer, blNo) {
   };
 }
 
-async function saveDocUpload(req, { planId, contractNo, ossUrl, ossPath, size, startDate }) {
-  const port = process.env.PORT || 3721;
-  const resp = await fetch(`http://localhost:${port}/api/db/doc-uploads`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: req.headers.authorization || "",
-    },
-    body: JSON.stringify({
-      docId:      planId,
-      docType:    "shipping_transfer",
-      contractNo: contractNo || "",
-      url:        ossUrl,
-      name:       ossPath.split("/").pop(),
-      size,
-      note:       `内转外自动生成 双拖2柜/天 start=${startDate}`,
-    }),
-  });
-  const j = await resp.json().catch(() => ({}));
-  return j.id || null;
+async function saveDocUpload(pool, { planId, contractNo, ossUrl, ossPath, size, startDate }) {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS document_uploads (
+       id SERIAL PRIMARY KEY, doc_id TEXT NOT NULL, doc_type TEXT,
+       contract_no TEXT, url TEXT NOT NULL, name TEXT, size BIGINT,
+       note TEXT, uploader TEXT, uploaded_at TIMESTAMPTZ DEFAULT now()
+     )`,
+  );
+  const { rows } = await pool.query(
+    `INSERT INTO document_uploads (doc_id, doc_type, contract_no, url, name, size, note, uploader)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+    [planId, "shipping_transfer", contractNo || null, ossUrl,
+     ossPath.split("/").pop(), size,
+     `内转外自动生成 双拖2柜/天 start=${startDate}`, "system"],
+  );
+  return rows[0]?.id || null;
 }
 
 export default async function handler(req, res) {
@@ -177,7 +173,7 @@ export default async function handler(req, res) {
     const blNo = rows[0].export_bl || planId;
     const { ossUrl, ossPath } = await uploadOSS(Buffer.from(buffer), blNo);
 
-    const docUploadId = await saveDocUpload(req, {
+    const docUploadId = await saveDocUpload(pool, {
       planId,
       contractNo: rows[0].contract_no,
       ossUrl,
