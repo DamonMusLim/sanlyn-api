@@ -86,15 +86,16 @@ export default async function handler(req, res) {
     const isBooking    = type === "booking";
     const isBlDraft    = type === "bl_draft";
     const isFreight    = type === "freight_invoice";
+    const isFobInvoice = type === "fob_invoice";
     const isDebitNote  = type === "freight_debit_note";
-    const isConfirm    = !isCost && !isSI && !isBooking && !isBlDraft && !isFreight && !isDebitNote;
+    const isConfirm    = !isCost && !isSI && !isBooking && !isBlDraft && !isFreight && !isFobInvoice && !isDebitNote;
 
     const generatedAt = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     const genDate = new Date().toISOString().slice(0, 10);
 
     // ── Fetch customer/consignee info for docs that need it ──
     let cust = null;
-    if (isBooking || isBlDraft || isFreight) {
+    if (isBooking || isBlDraft || isFreight || isFobInvoice) {
       const customerName = p.customer_en || p.customer_cn || p.customer || "";
       if (customerName) {
         try {
@@ -603,6 +604,355 @@ ${printBtn}
 </div>${autoprint}</body></html>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       return res.status(200).send(html);
+    }
+
+
+    // ══════════════════════════════════════════
+    // FOB 海运费发票 (客户版·对外)
+    // GET ?id=xxx&type=fob_invoice
+    // 只含海运费USD + 当日汇率+0.1 CNY等值，不含港杂费
+    // ══════════════════════════════════════════
+    if (isFobInvoice) {
+      // 拉最新汇率 USD_CNY
+      const fxRes = await pool.query(
+        `SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' ORDER BY fetched_at DESC LIMIT 1`
+      );
+      const baseRate = fxRes.rows.length ? parseFloat(fxRes.rows[0].rate) : 7.0;
+      const fxRate   = Math.round((baseRate + 0.1) * 10000) / 10000; // +0.1，保留4位
+
+      const billTo    = cust ? (cust.name_en || cust.name_cn || "") : (p.customer_en || "");
+      const billAddr  = cust ? (cust.address || "") : "";
+      const blNo      = p.bl_no || "—";
+      const scNo      = p.contract_no || "—";
+      const orderNo   = p.raw?.customerPO || "—";
+      const vessel    = [p.vessel, p.voyage].filter(Boolean).join(" / ") || "—";
+      const ctnQty    = parseInt(p.container_qty || 1);
+      const ctnType   = p.container_type || "40HQ";
+      // 箱号处理：支持逗号/斜杠分隔的多柜
+      const ctnNos       = (p.container_no || "").split(/[,/]\s*/).map(s=>s.trim()).filter(Boolean);
+      const rawSealNos   = (p.raw?.sealNo || "").split(/[,/;]\s*/).map(s=>s.trim()).filter(Boolean);
+      const totalCartons = p.total_cartons || p.raw?.totalCtns || null;
+      const totalGW      = p.gross_weight_kg || null;
+      const totalCBM     = p.total_cbm || null;
+      const freightTerm  = "PREPAID";
+
+      // ── 方案A: 同BL多个shipping_plan → 每个plan一柜 ──
+      // ── 方案B: 单plan多PO → 查orders表取每PO的CTN/GW/CBM ──
+      let siblingPlans = [];
+      try {
+        const sibRes = await pool.query(
+          `SELECT id, container_no,
+                  COALESCE(raw->>'customerPO', '') AS po,
+                  COALESCE(raw->>'sealNo', '') AS seal,
+                  total_cartons, gross_weight_kg, total_cbm
+           FROM shipping_plans WHERE bl_no = $1 AND id != $2 ORDER BY id`,
+          [p.bl_no, p.id]
+        );
+        siblingPlans = sibRes.rows;
+      } catch(_) {}
+
+      // ── 优先用 container_bookings（多柜单plan场景）──
+      let cbookings = [];
+      try {
+        const cbRes = await pool.query(
+          `SELECT container_no, seal_no, contract_no,
+                  cargo_weight_kg::numeric AS gross_weight_kg,
+                  container_type
+           FROM container_bookings WHERE shipping_plan_id = $1 ORDER BY id`,
+          [p.id]
+        );
+        cbookings = cbRes.rows;
+      } catch(_) {}
+
+      const isMultiPlan = siblingPlans.length > 0;
+      const useBookings = cbookings.length > 1; // 有多行柜子记录才用，单行退回老逻辑
+
+      let ctnRows = [];
+      let sumCartons = 0, sumGW = 0, sumCBM = 0;
+
+      if (useBookings) {
+        // 从 container_bookings 读多柜（每行一柜，有 contract_no/cargo_weight_kg）
+        // 总量字段从 shipping_plans 读（total_cartons/cbm 不在 container_bookings 里）
+        const perCtnCartons = p.total_cartons ? Math.round(parseInt(p.total_cartons) / cbookings.length) : null;
+        const perCtnCBM     = p.total_cbm     ? parseFloat(p.total_cbm) / cbookings.length : null;
+        ctnRows = cbookings.map((cb, i) => {
+          const gwVal  = cb.gross_weight_kg ? parseFloat(cb.gross_weight_kg) : null;
+          const ctnVal = perCtnCartons;
+          const cbmVal = perCtnCBM ? parseFloat(perCtnCBM.toFixed(3)) : null;
+          sumCartons += ctnVal || 0;
+          sumGW      += gwVal  || 0;
+          sumCBM     += cbmVal || 0;
+          return {
+            no:   (cb.container_no || "").trim(),
+            seal: (cb.seal_no || "").trim(),
+            po:   stripCompanyPrefix(cb.contract_no) || orderNo || scNo,
+            ctn:  ctnVal,
+            gw:   gwVal,
+            cbm:  cbmVal,
+          };
+        });
+      } else if (isMultiPlan) {
+        // 每个 sibling plan 对应一柜
+        const allPlans = [
+          { container_no: ctnNos[0] || "", po: orderNo !== "—" ? orderNo : scNo, seal: rawSealNos[0] || "",
+            total_cartons: p.total_cartons, gross_weight_kg: p.gross_weight_kg, total_cbm: p.total_cbm },
+          ...siblingPlans.map(s => ({
+            container_no: (s.container_no || "").trim(),
+            po: s.po || "",
+            seal: (s.seal || "").trim(),
+            total_cartons: s.total_cartons,
+            gross_weight_kg: s.gross_weight_kg,
+            total_cbm: s.total_cbm,
+          }))
+        ];
+        ctnRows = allPlans.map(pl => {
+          const ctnVal = pl.total_cartons ? parseInt(pl.total_cartons) : null;
+          const gwVal  = pl.gross_weight_kg ? parseFloat(pl.gross_weight_kg) : null;
+          const cbmVal = pl.total_cbm ? parseFloat(pl.total_cbm) : null;
+          sumCartons += ctnVal || 0;
+          sumGW      += gwVal  || 0;
+          sumCBM     += cbmVal || 0;
+          return { no: pl.container_no, seal: pl.seal, po: pl.po || "—", ctn: ctnVal, gw: gwVal, cbm: cbmVal };
+        });
+      } else {
+        // 单plan：多PO时查orders表
+        const poList = orderNo !== "—"
+          ? orderNo.split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
+          : [];
+        let orderDataMap = {};
+        if (poList.length > 1) {
+          try {
+            const ordRes = await pool.query(
+              `SELECT customer_po, total_cartons, gross_weight, total_cbm FROM orders WHERE customer_po = ANY($1)`,
+              [poList]
+            );
+            ordRes.rows.forEach(r => { orderDataMap[r.customer_po] = r; });
+          } catch(_) {}
+        }
+        ctnRows = ctnNos.map((no, i) => {
+          const seal  = rawSealNos[i] || "—";
+          const po    = poList[i] || (orderNo !== "—" ? orderNo : scNo) || "—";
+          const ord   = orderDataMap[po] || {};
+          const isSingle = ctnNos.length === 1;
+          const ctnVal = ord.total_cartons ? parseInt(ord.total_cartons) : (isSingle && totalCartons ? parseInt(totalCartons) : null);
+          const gwVal  = ord.gross_weight  ? parseFloat(ord.gross_weight) : (isSingle && totalGW ? parseFloat(totalGW) : null);
+          const cbmVal = ord.total_cbm     ? parseFloat(ord.total_cbm)    : (isSingle && totalCBM ? parseFloat(totalCBM) : null);
+          sumCartons += ctnVal || 0;
+          sumGW      += gwVal  || 0;
+          sumCBM     += cbmVal || 0;
+          return { no, seal, po, ctn: ctnVal, gw: gwVal, cbm: cbmVal };
+        });
+      }
+
+      const actualCtnQty = ctnRows.length || ctnNos.length;
+      const footerCartons = sumCartons > 0 ? sumCartons : (totalCartons ? parseInt(totalCartons) : null);
+      const footerGW      = sumGW > 0 ? sumGW : (totalGW ? parseFloat(totalGW) : null);
+      const footerCBM     = sumCBM > 0 ? sumCBM : (totalCBM ? parseFloat(totalCBM) : null);
+
+      const ctnRowsHtml = ctnRows.map((r, i) => `<tr class="ctn-row">
+          <td class="ctn-idx">Container ${i+1}</td>
+          <td class="ctn-no">${esc(r.no)}</td>
+          <td class="ctn-seal">${esc(r.seal)}</td>
+          <td style="padding:5px 8px;font-weight:700;color:#111;font-size:9.5px">${esc(r.po)}</td>
+          <td class="ctn-ctn">${r.ctn ? r.ctn.toLocaleString('en') : '—'}</td>
+          <td class="ctn-gw">${r.gw ? fmtNum(r.gw)+' KGS' : '—'}</td>
+          <td class="ctn-cbm">${r.cbm ? r.cbm.toFixed(3)+' CBM' : '—'}</td>
+        </tr>`).join("");
+
+      const unitPrice = parseFloat(p.freight_sale_usd || 0);
+      const totalUsd  = unitPrice * ctnQty;
+      const totalCny  = Math.round(totalUsd * fxRate * 100) / 100;
+
+      // 发票号：FI-{shipment_no}-{YYYYMMDD}
+      const fobInvNo = "FI-" + (p.shipment_no || String(p.id)) + "-" + genDate.replace(/-/g, "");
+
+      const fobHtml = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<title>Freight Invoice — ${esc(p.shipment_no || blNo)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-size:11px;color:#111;background:#e5e7eb;padding:0}
+.page{max-width:200mm;margin:14px auto;padding:11mm 13mm;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:14px}
+.hdr-l .co-en{font-size:15px;font-weight:900;color:#111;letter-spacing:.01em;line-height:1.2}
+.hdr-l .co-cn{font-size:10px;color:#555;margin-top:3px}
+.hdr-l .tag{font-size:8.5px;color:#888;margin-top:4px}
+.hdr-r{text-align:right}
+.hdr-r .doc-en{font-size:18px;font-weight:900;color:#111;letter-spacing:.05em}
+.hdr-r .doc-cn{font-size:10px;color:#555;margin-top:1px}
+.hdr-r .inv-no{display:inline-block;font-size:11px;font-weight:800;color:#111;font-family:monospace;border:2px solid #111;border-radius:3px;padding:2px 9px;margin-top:4px;letter-spacing:.03em}
+.info-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:0 12px;margin-bottom:12px;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden}
+.info-box{font-size:10px}
+.info-box .row{display:grid;grid-template-columns:118px 1fr;border-bottom:1px solid #efefef;min-height:22px}
+.info-box .row:last-child{border-bottom:none}
+.info-box .lbl{background:#f7f7f7;color:#666;font-weight:700;padding:4px 8px;border-right:1px solid #efefef;display:flex;align-items:center}
+.info-box .val{color:#111;font-weight:600;padding:4px 8px;display:flex;align-items:center}
+.info-box .val.big{font-size:12px;font-weight:900}
+table.charges{width:100%;border-collapse:collapse;margin-bottom:0;font-size:10px;border:1px solid #ccc}
+table.charges thead th{background:#111;color:#fff;padding:7px 9px;text-align:left;font-weight:700;font-size:9.5px;letter-spacing:.04em}
+table.charges thead th.r{text-align:right}
+table.charges thead th.c{text-align:center}
+table.charges tr.section td{background:#333;color:#fff;font-weight:800;letter-spacing:.05em;font-size:9.5px;text-transform:uppercase;padding:5px 9px}
+table.charges tbody td{padding:7px 9px;border-bottom:1px solid #efefef;font-family:monospace;color:#111}
+table.charges tbody td.label{font-family:inherit;color:#222}
+table.charges tbody td.r{text-align:right}
+table.charges tbody td.c{text-align:center}
+table.charges tfoot{border-top:2px solid #111}
+table.charges tfoot tr td{padding:7px 9px;font-weight:800;font-family:monospace;color:#111;background:#f7f7f7}
+table.charges tfoot tr.total-usd td{font-size:12px}
+table.charges tfoot tr td:last-child{text-align:right}
+table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:10px}
+.fx-note{text-align:right;font-size:8.5px;color:#666;margin:6px 0 10px;font-style:italic}
+.fx-note strong{color:#111;font-style:normal}
+.pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.pay-box{padding:12px 14px;border-radius:4px;border:2px solid #111}
+.pay-box.usd{background:#f7f7f7}
+.pay-box.cny{background:#efefef}
+.pay-box .plbl{font-size:8.5px;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:#111;margin-bottom:5px}
+.pay-box .pamt{font-size:20px;font-weight:900;font-family:monospace;color:#111}
+.pay-box .psub{font-size:8px;color:#666;margin-top:3px}
+.bottom{display:grid;grid-template-columns:1.05fr 1fr;gap:10px}
+.box-tt,.box-bk{padding:9px 11px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;font-size:9px;line-height:1.8;color:#444}
+.box-tt strong,.box-bk strong{color:#111}
+.box-tt .title,.box-bk .title{font-size:9.5px;font-weight:900;color:#111;letter-spacing:.05em;margin-bottom:4px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px}
+.warn{color:#c00;font-size:8px}
+.footer-bar{display:flex;justify-content:space-between;margin-top:10px;padding-top:6px;border-top:1px solid #ddd;font-size:8px;color:#999;font-family:monospace}
+@media print{body{padding:0;background:#fff}.page{margin:0;padding:8mm 10mm;box-shadow:none}}
+@media screen{body{background:#f1f5f9}.page{box-shadow:0 4px 32px rgba(0,0,0,.12);margin:20px auto;border-radius:8px}}
+</style></head><body>
+<div class="page">
+  <div class="hdr">
+    <div class="hdr-l">
+      <div class="co-en">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</div>
+      <div class="co-cn">上海洋宝宝国际物流有限公司</div>
+      <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
+    </div>
+    <div class="hdr-r">
+      <div class="doc-en">INVOICE</div>
+      <div class="doc-cn">运费发票</div>
+      <div class="inv-no">No. ${esc(fobInvNo)}</div>
+    </div>
+  </div>
+
+  <div class="info-grid">
+    <div class="info-box">
+      <div class="row"><div class="lbl">TO (客户名称):</div><div class="val big">${esc(billTo)}</div></div>
+      <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
+      <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
+      <div class="row"><div class="lbl">P.O.L (起运港):</div><div class="val">${esc(p.pol || "—")}</div></div>
+    </div>
+    <div class="info-box">
+      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${genDate}</div></div>
+      <div class="row"><div class="lbl">Vessel/Voyage (船名航次):</div><div class="val">${esc(vessel)}</div></div>
+      <div class="row"><div class="lbl">ETD (离港日):</div><div class="val">${fmtDate(p.etd)}</div></div>
+      <div class="row"><div class="lbl">P.O.D (目的港):</div><div class="val">${esc(p.pod || "—")}</div></div>
+    </div>
+  </div>
+
+  <!-- ── CONTAINER SECTION ── -->
+  <div style="margin-bottom:12px;border:1px solid #ddd;border-radius:4px;overflow:hidden;font-size:10px">
+    <div style="background:#111;color:#fff;font-weight:800;font-size:9.5px;letter-spacing:.05em;padding:6px 10px;display:flex;justify-content:space-between;align-items:center">
+      <span>Containers / 集装箱明细 (${actualCtnQty} × ${ctnType})</span>
+      <span style="font-weight:700;letter-spacing:.03em">Freight Term: ${freightTerm}</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="background:#333;color:#fff;font-size:9px;font-weight:700;letter-spacing:.03em">
+          <th style="padding:5px 8px;text-align:left;width:70px">Container #</th>
+          <th style="padding:5px 8px;text-align:left;width:120px">Container No.</th>
+          <th style="padding:5px 8px;text-align:left;width:100px">Seal No.</th>
+          <th style="padding:5px 8px;text-align:left;width:90px">PO / 合同号</th>
+          <th style="padding:5px 8px;text-align:right;width:70px">CTN</th>
+          <th style="padding:5px 8px;text-align:right;width:95px">Gross Weight</th>
+          <th style="padding:5px 8px;text-align:right;width:75px">Volume</th>
+        </tr>
+      </thead>
+      <tbody>${ctnRowsHtml}</tbody>
+      <tfoot>
+        <tr style="background:#f7f7f7;font-weight:900;border-top:2px solid #111;font-size:9.5px">
+          <td style="padding:6px 8px;color:#666;font-size:9px">${actualCtnQty} × ${ctnType}</td>
+          <td style="padding:6px 8px" colspan="3"></td>
+          <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerCartons ? footerCartons.toLocaleString('en') : '—'}</td>
+          <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerGW ? fmtNum(footerGW)+' KGS' : '—'}</td>
+          <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerCBM ? footerCBM.toFixed(3)+' CBM' : '—'}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <style>
+    tr.ctn-row td{padding:5px 10px;border-bottom:1px solid #efefef;color:#111}
+    tr.ctn-row td.ctn-idx{color:#888;font-size:9px}
+    tr.ctn-row td.ctn-no{font-family:monospace;font-weight:800;font-size:10px}
+    tr.ctn-row td.ctn-seal{font-family:monospace;color:#555;font-size:9.5px}
+    tr.ctn-row td.ctn-ctn,tr.ctn-row td.ctn-gw,tr.ctn-row td.ctn-cbm{font-family:monospace;text-align:right;font-size:9.5px}
+  </style>
+
+  <table class="charges">
+    <thead>
+      <tr>
+        <th>Charge Item (费用明细)</th>
+        <th>Charge Unit / 计费单位</th>
+        <th class="c">Currency / 币种</th>
+        <th class="c">Qty / 数量</th>
+        <th class="r">Price / 单价</th>
+        <th class="r">Amount / 合计</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="section"><td colspan="6">Ocean Freight | 海运费</td></tr>
+      <tr>
+        <td>海运费 Ocean Freight</td>
+        <td>Per Container / 箱</td>
+        <td class="c">USD</td>
+        <td class="c">${ctnQty}</td>
+        <td class="r">${fmtNum(unitPrice)}</td>
+        <td class="r">${fmtNum(totalUsd)}</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr class="total-usd"><td class="label" colspan="5">TOTAL USD (美元合计)</td><td>$ ${fmtNum(totalUsd)}</td></tr>
+    </tfoot>
+  </table>
+
+  <div class="fx-note">* Please remit the full amount in ONE of the following currencies. / 请选择以下一种币种全额支付。</div>
+  <div class="fx-note">开票日期汇率 Invoice Date Rate (<strong>${genDate}</strong>): <strong>1 USD = ${fxRate.toFixed(4)} CNY</strong></div>
+
+  <div class="pay-grid">
+    <div class="pay-box usd">
+      <div class="plbl">TOTAL PAYABLE IN USD · 如全用美元支付</div>
+      <div class="pamt">$ ${fmtNum(totalUsd)}</div>
+      <div class="psub">Ocean freight only · Remit to USD A/C below</div>
+    </div>
+    <div class="pay-box cny">
+      <div class="plbl">TOTAL PAYABLE IN CNY · 如全用人民币支付</div>
+      <div class="pamt">¥ ${fmtNum(totalCny)}</div>
+      <div class="psub">USD ${fmtNum(totalUsd)} × ${fxRate.toFixed(4)} = ¥ ${fmtNum(totalCny)}</div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="box-tt">
+      <div class="title">TERMS &amp; CONDITIONS (法律声明与条款)</div>
+      1. PAYMENT DUE: Please arrange payment strictly within the agreed credit term. Late payment may result in delayed release of the Bill of Lading or cargo.<br>
+      2. EXCHANGE RATE: For USD charges settled in RMB, the exchange rate shall be subject to our company's notification.<br>
+      3. LIABILITY: All business is transacted under our Standard Trading Conditions.
+    </div>
+    <div class="box-bk">
+      <div class="title">BANKING INFORMATION (银行信息)</div>
+      Bank Name: <strong>BANK OF CHINA XIAMEN BRANCH</strong><br>
+      Account Name: <strong>SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</strong><br>
+      Swift Code: <strong>BKCHCNBI73A</strong><br>
+      Bank Addr: No. 40 North Hubin Road, Xiamen<br>
+      USD Account (美金账号): <strong>433849630299</strong><br>
+      CNY Account (人民币账号): <strong>433849860868</strong><br>
+      <span style="color:#c00;font-size:8px">* Please check the account number carefully before remittance.</span>
+    </div>
+  </div>
+
+
+</div>${autoprint}</body></html>`;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(200).send(fobHtml);
     }
 
     // ══════════════════════════════════════════
