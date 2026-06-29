@@ -231,6 +231,7 @@ mount("/api/db/finance-receivables",      () => import("./api/db/finance-records
 mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplier-bills.js"));
 mount("/api/db/freight-invoice-b",        () => import("./api/db/freight-invoice-b.js"));
 mount("/api/db/freight-bill-intake",      () => import("./api/db/freight-bill-intake.js"));
+mount("/api/db/canonical-doc",            () => import("./api/db/canonical-doc.js"));
 mount("/api/db/order-intake-validate", () => import("./api/db/order-intake-validate.js"));
 mount("/api/db/freight-rate-adopt",      () => import("./api/db/freight-rate-adopt.js"));
 app.all("/api/db/billing-tab/*", async (req, res) => {
