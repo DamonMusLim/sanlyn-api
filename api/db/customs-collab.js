@@ -157,7 +157,7 @@ async function resolveFactory(req, pool) {
 }
 
 async function assertFactoryCustoms(client, factoryCode, customsNo) {
-  const st = await ensureCustomsStatus(client, customsNo);
+  const st = await ensureCustomsStatus(client, customsNo, factoryCode);
   if (st.factory_code !== factoryCode) {
     const e = new Error("customs_no not in factory scope");
     e.status = 403;

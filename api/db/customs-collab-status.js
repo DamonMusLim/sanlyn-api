@@ -47,7 +47,7 @@ export async function computeSystemExpected(client, customsNo) {
   return money(r.rows[0]?.amount);
 }
 
-export async function ensureCustomsStatus(client, customsNo) {
+export async function ensureCustomsStatus(client, customsNo, factoryCode = null) {
   const r = await client.query(
     `WITH fer_one AS (
        SELECT fer.customs_no,
@@ -75,6 +75,9 @@ export async function ensureCustomsStatus(client, customsNo) {
              LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
             WHERE COALESCE(o.status,'') <> 'cancelled'
               AND (o.contract_no = (SELECT contract_no FROM fer_one) OR o.order_no = $1 OR o.bl_no = $1)
+              AND ($2::text IS NULL OR COALESCE(o.factory_code, c_id.code,
+                    (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
+                      WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) = $2)
          ) per
      ),
      fac AS (
@@ -107,7 +110,7 @@ export async function ensureCustomsStatus(client, customsNo) {
        END,
        updated_at = NOW()
      RETURNING *`,
-    [customsNo]
+    [customsNo, factoryCode]
   );
   if (!r.rows[0]) throw new Error("customs_no not found");
   return r.rows[0];
