@@ -136,7 +136,7 @@ export function scopeWhere(role, scopeCode, startIndex = 1) {
   }
   if (role === "factory") {
     return {
-      where: [`b.payer_company_code = ${p}`, "COALESCE(b.amount, 0) > 0", factoryCategorySql()],
+      where: [`b.payer_company_code = ${p}`, "COALESCE(b.amount, 0) > 0"],
       params: [String(scopeCode)],
     };
   }
