@@ -1358,7 +1358,6 @@ export default async function handler(req, res) {
         _packBodies.sc=`
           ${docHdr(cfg,"销售合同","SALES CONTRACT",audience)}
           ${buyerBlock(cust,caddr,ctel,no,"Contract No.",ordNo,date,curr)}
-          ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
           <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank,curr)}</div>${sigBlock(cfg.seal_url)}</div>`; html=wrap((ordNo||no)+"_SC",_packBodies.sc,ap,{docNo:_fsNoSC,date:date});
@@ -1417,7 +1416,6 @@ export default async function handler(req, res) {
         _packBodies.iv=`
           ${docHdr(cfg,"商业发票","COMMERCIAL INVOICE",audience)}
           ${buyerBlock(cust,caddr,ctel,noIV,"Invoice No.",ordNo,date,curr)}
-          ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
           <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock(cfg.seal_url)}</div>`; html=wrap((ordNo||noIV)+"_IV",_packBodies.iv,ap,{docNo:_fsNoIV,date:date});
@@ -1530,7 +1528,6 @@ export default async function handler(req, res) {
         _packBodies.pl=`
           ${docHdr(cfg,"装箱单","PACKING LIST",audience)}
           ${buyerBlock(cust,caddr,ctel,noPL,"Contract No.",ordNo,date,"")}
-          ${portBar(pol,pod,inco)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsPL,curr)}
           <tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>
