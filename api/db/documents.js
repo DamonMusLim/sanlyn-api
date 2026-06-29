@@ -1983,7 +1983,10 @@ export default async function handler(req, res) {
         var customs=Number(pick(sp.customs_cost_total,0));
         var ins=Number(pick(sp.insurance_cost,0));
         var blNo=pick(sp.bl_no,spraw.blNo,spraw.bl_no,"");
-        var totCNY=fCNY+thcF+docF+sealF+blF+eirF+vgmF+bkgF+truck+customs;
+        var _isFob = ['FOB','FCA'].indexOf(String(freightTerm||'').toUpperCase().trim())>=0;
+        var _portMisc = ['THC','DOCUMENTATION FEE','SEAL FEE','B/L FEE','EIR','VGM','BOOKING FEE'];
+        var _portMiscCNY = thcF+docF+sealF+blF+eirF+vgmF+bkgF;
+        var totCNY=(_isFob ? 0 : _portMiscCNY)+fCNY+truck+customs;
         var totUSD=fUSD+ins;
         // 2026-05-19: DN 默认 "DB-" 前缀；fmt=iv 时改 "INV-" + 标题切 INVOICE
         var _isIvFmt = (_fmtVariant === "iv");
@@ -2004,7 +2007,11 @@ export default async function handler(req, res) {
           ["TRUCKING","拖车费",1,"CNY",truck],
           ["CUSTOMS","报关费",1,"CNY",customs],
           ["INSURANCE","保险费",1,"USD",ins],
-        ].filter(function(r){return r[4]>0;});
+        ].filter(function(r){
+          if(r[4]<=0) return false;
+          if(_isFob && _portMisc.indexOf(r[0])>=0) return false; // FOB: 港杂归工厂, 不上客户账单
+          return true;
+        });
 
         var CSS2=`<style>
           *{box-sizing:border-box;margin:0;padding:0}
