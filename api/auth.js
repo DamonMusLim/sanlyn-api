@@ -109,6 +109,10 @@ const PUBLIC_PATHS = [
   "/api/db/customer-invite/activate",
   // Forwarder Booking Submit — token-authenticated, no JWT
   "/api/db/forwarder-booking-submit",
+  // Billing tab read-only lens — handler validates raw magic-link token itself
+  "/api/db/billing-tab",
+  "/api/db/billing-tab/shipment",
+  "/api/db/billing-tab/company",
   // Customs Broker Magic Link — token-authenticated, no JWT
   "/api/db/customs-broker-checkin",
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT

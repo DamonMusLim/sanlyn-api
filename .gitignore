@@ -41,3 +41,4 @@ server.js.*
 *.js.bak*
 *.bak.*
 *bak[0-9]*
+query_orders.mjs
