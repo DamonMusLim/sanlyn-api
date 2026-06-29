@@ -233,6 +233,15 @@ mount("/api/db/freight-invoice-b",        () => import("./api/db/freight-invoice
 mount("/api/db/freight-bill-intake",      () => import("./api/db/freight-bill-intake.js"));
 mount("/api/db/order-intake-validate", () => import("./api/db/order-intake-validate.js"));
 mount("/api/db/freight-rate-adopt",      () => import("./api/db/freight-rate-adopt.js"));
+app.all("/api/db/billing-tab/*", async (req, res) => {
+  try {
+    const mod = await import("./api/db/billing-tab.js");
+    await (mod.default || mod)(req, res);
+  } catch (err) {
+    console.error("[billing-tab] Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
 app.all("/api/db/bill-center/*", async (req, res) => {
   try {
     const mod = await import("./api/db/bill-center.js");
