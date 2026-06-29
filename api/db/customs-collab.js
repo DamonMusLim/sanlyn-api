@@ -203,7 +203,9 @@ export async function fetchRows(pool, opts) {
         FROM orders o
         LEFT JOIN companies c ON c.code=o.factory_code
         LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
-       WHERE COALESCE(o.status,'') IN ('shipped','delivered','completed','closed','archived','done','received')
+       WHERE (COALESCE(o.status,'') IN ('shipped','delivered','completed','closed','archived','done','received')
+              OR COALESCE(o.bl_no,'') <> '')
+         AND COALESCE(o.status,'') <> 'cancelled'
     ),
     fer_base AS (
       SELECT fer.customs_no,
