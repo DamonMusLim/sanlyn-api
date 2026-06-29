@@ -759,8 +759,8 @@ ${printBtn}
           <td class="ctn-cbm">${r.cbm ? r.cbm.toFixed(3)+' CBM' : '—'}</td>
         </tr>`).join("");
 
-      const unitPrice = parseFloat(p.freight_sale_usd || 0);
-      const totalUsd  = unitPrice * ctnQty;
+      const totalUsd  = parseFloat(p.freight_sale_usd || 0);
+      const unitPrice = ctnQty > 0 ? totalUsd / ctnQty : totalUsd;
       const totalCny  = Math.round(totalUsd * fxRate * 100) / 100;
 
       // 发票号：FI-{shipment_no}-{YYYYMMDD}
