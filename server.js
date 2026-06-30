@@ -258,6 +258,7 @@ mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upl
 mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 工厂协同门户·财务板块(短码+collab mt)
 mount("/api/db/factory-invoice-reconcile", () => import("./api/db/factory-invoice-reconcile.js")); // 工厂开票对账台
 mount("/api/db/customs-collab", () => import("./api/db/customs-collab.js")); // 报关单开票协同
+mount("/api/db/collab-closure", () => import("./api/db/collab-closure.js")); // 协同闭环视图(催办)
 mount("/api/db/recon-shadow", () => import("./api/db/recon-shadow.js")); // 对账框架影子端点
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
