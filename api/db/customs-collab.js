@@ -203,7 +203,8 @@ export async function fetchRows(pool, opts) {
                   ELSE NULL END AS declare_value,
              COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
                       NULLIF(o.total_amount_factory,0)) AS purchase_value,
-             (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli
+             (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli,
+             (SELECT NULLIF(SUM(oli.subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS sales_value
         FROM orders o
         LEFT JOIN companies c ON c.code=o.factory_code
         LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
@@ -244,7 +245,8 @@ export async function fetchRows(pool, opts) {
         STRING_AGG(DISTINCT order_no, ',' ORDER BY order_no) AS order_no,
         COALESCE(NULLIF(MAX(fer_qty),0), NULLIF(SUM(qty_oli),0)) AS qty,
         COALESCE(MAX(fer_declare), NULLIF(SUM(declare_value),0), NULLIF(SUM(purchase_value),0)) AS system_expected_amount,
-        MAX(fer_declare) AS declare_amount
+        MAX(fer_declare) AS declare_amount,
+        NULLIF(SUM(sales_value),0) AS sales_amount
         FROM keyed
        GROUP BY factory_code, decl_key
     )
@@ -257,6 +259,9 @@ export async function fetchRows(pool, opts) {
              ELSE COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END)
            END AS status,
            b.system_expected_amount,
+           b.sales_amount,
+           CASE WHEN b.sales_amount > 0 AND COALESCE(s.manual_expected_amount, b.system_expected_amount) > b.sales_amount * 1.5
+                THEN ROUND((COALESCE(s.manual_expected_amount, b.system_expected_amount) / b.sales_amount)::numeric, 2) ELSE NULL END AS ratio_alert,
            b.declare_amount,
            s.manual_expected_amount,
            COALESCE(s.manual_expected_amount, b.system_expected_amount) AS effective_expected_amount,
@@ -306,6 +311,8 @@ export async function fetchRows(pool, opts) {
     qty: Number(r.qty) || null,
     paid_amount: money(r.paid_amount) || 0,
     slip_count: Number(r.slip_count) || 0,
+    sales_amount: money(r.sales_amount),
+    ratio_alert: r.ratio_alert != null ? Number(r.ratio_alert) : null,
   }));
 }
 
@@ -357,6 +364,7 @@ function factoryRow(r) {
     has_invoice: (r.valid_invoice_count || 0) > 0,
     paid_amount: r.paid_amount || 0,
     slip_count: r.slip_count || 0,
+    ratio_alert: r.ratio_alert ?? null,
     diff_amount: r.diff_amount,
     last_event_at: r.last_event_at,
   };
