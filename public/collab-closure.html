@@ -1,0 +1,112 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>退税·财务协同闭环</title>
+<style>
+:root{--red:#dc2626;--red-bg:#fef2f2;--green:#16a34a;--green-bg:#f0fdf4;--info:#2563eb;--info-bg:#eff6ff;--muted:#64748b;--line:#e5e7eb;--bg:#f8fafc;--card:#fff}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"PingFang SC",sans-serif;background:var(--bg);color:#0f172a}
+.wrap{max-width:980px;margin:0 auto;padding:18px}
+.top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:14px}
+.title{font-size:22px;font-weight:800}.sub{font-size:13px;color:var(--muted);margin-top:3px}
+.filters{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+input,button{font:inherit}input[type=month]{padding:7px 10px;border:1px solid var(--line);border-radius:8px}
+.btn{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+.btn.primary{background:var(--info);color:#fff;border-color:var(--info)}
+.sumbar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.sumcard{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}.sumcard .n{font-size:22px;font-weight:800}.sumcard .l{font-size:12px;color:var(--muted)}
+.row{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+.rhead{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.fac{font-size:16px;font-weight:700}.cn{font-size:11px;color:#94a3b8;font-family:ui-monospace,monospace}
+.amt{text-align:right}.amt .a{font-size:16px;font-weight:700}.amt .r{font-size:12px;color:var(--muted)}
+.stage{text-align:center;min-width:96px}.stage .s{font-size:13px;font-weight:700}.stage .d{font-size:11px;color:#94a3b8}
+.stage.urgent .s,.stage.overdue .s{color:var(--red)}
+.chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.chip{font-size:13px;border-radius:8px;padding:5px 11px;cursor:pointer;display:inline-flex;gap:4px;align-items:center;border:1px solid transparent}
+.chip.done{color:var(--green);background:var(--green-bg);border-color:#bbf7d0}
+.chip.missing{color:var(--red);background:var(--red-bg);border-color:#fecaca}
+.remind{margin-left:auto;font-size:13px}
+#msg{position:fixed;top:14px;left:50%;transform:translateX(-50%);padding:9px 18px;border-radius:10px;font-size:14px;display:none;z-index:50}
+#msg.ok{background:#dcfce7;color:#166534}#msg.err{background:#fee2e2;color:#991b1b}
+#login{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:100}
+#login .box{background:#fff;border-radius:14px;padding:26px;width:300px}#login input{width:100%;margin-bottom:10px;padding:9px;border:1px solid var(--line);border-radius:8px}
+.fileInput{display:none}
+</style></head><body>
+<div id="msg"></div>
+<div id="login"><div class="box"><div style="font-size:17px;font-weight:700;margin-bottom:14px">退税协同闭环 · 登录</div>
+<input id="u" placeholder="账号" value="damon_sl"><input id="p" type="password" placeholder="密码"><button class="btn primary" style="width:100%" onclick="doLogin()">登录</button></div></div>
+<div class="wrap">
+<div class="top"><div><div class="title">退税 · 财务协同闭环</div><div class="sub">每张报关单集齐 报关单+进项票+采购合同+水单 = 闭环 · 红色✗点击补料上传</div></div>
+<button class="btn" onclick="load()">刷新</button></div>
+<div class="filters">月份 <input type="month" id="from" value="2026-05"> 至 <input type="month" id="to" value="2026-05"></div>
+<div class="sumbar" id="sumbar"></div>
+<div id="rows"></div>
+</div>
+<script>
+const API="/api/db/collab-closure";
+const FAC_LINK={'VEN-ZC':'zc1f815498f9','VEN-LL':'ll8fc6f06e44','CL':'qHMcFUB3UyNx','td':'tdc2483010be','VEN-DS':'ds19dfdb51caec'};
+function tok(){return sessionStorage.getItem('jwt')||''}
+function msg(t,k){const m=document.getElementById('msg');m.textContent=t;m.className=k;m.style.display='block';setTimeout(()=>m.style.display='none',3000)}
+function money(v){if(v==null||v==='')return null;return '¥'+Number(v).toLocaleString('zh',{maximumFractionDigits:2})}
+async function doLogin(){
+  try{const r=await fetch('/api/db/auth-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:document.getElementById('u').value,password:document.getElementById('p').value})});
+  const d=await r.json();const t=d.token||d.access_token||(d.data&&d.data.token);
+  if(!t){msg('登录失败','err');return}sessionStorage.setItem('jwt',t);document.getElementById('login').style.display='none';load()}
+  catch(e){msg('登录失败 '+e.message,'err')}
+}
+const monthEnd=m=>{const[y,mo]=m.split('-').map(Number);return `${m}-${new Date(y,mo,0).getDate()}`};
+async function load(){
+  if(!tok()){document.getElementById('login').style.display='flex';return}
+  const from=document.getElementById('from').value+'-01', to=monthEnd(document.getElementById('to').value);
+  try{const r=await fetch(`${API}?action=list&from=${from}&to=${to}`,{headers:{Authorization:'Bearer '+tok()}});
+  if(r.status===401){sessionStorage.removeItem('jwt');document.getElementById('login').style.display='flex';return}
+  const d=await r.json();render(d)}catch(e){msg('加载失败 '+e.message,'err')}
+}
+function chip(label,doc,row){
+  const done=doc&&doc.status==='done';
+  return `<span class="chip ${done?'done':'missing'}" data-doc="${label}" data-cn="${row.key}" data-url="${done&&doc.doc_url?encodeURIComponent(doc.doc_url):''}">${done?'✓':'✗'} ${label}</span>`;
+}
+function render(d){
+  const s=d.summary||{};
+  document.getElementById('sumbar').innerHTML=[['报关单',s.total||0],['卡进项票',s['进项票']||0],['卡水单',s['水单']||0],['已闭环',s['已闭环']||0]]
+    .map(([l,n])=>`<div class="sumcard"><div class="l">${l}</div><div class="n">${n}</div></div>`).join('');
+  document.getElementById('rows').innerHTML=(d.rows||[]).map(r=>{
+    const urg=r.urgency==='overdue'||r.urgency==='urgent'?r.urgency:'';
+    const dl=r.days_to_deadline!=null?` · 距死线${r.days_to_deadline}天`:'';
+    return `<div class="row">
+      <div class="rhead">
+        <div style="flex:1"><div class="fac">${r.factory||''}</div><div class="cn">${r.key}</div></div>
+        <div class="amt"><div class="a">${money(r.fob_cny)||'待补'}</div><div class="r">退税 ${money(r.rebate_expected)||'—'}</div></div>
+        <div class="stage ${urg}"><div class="s">${r.stage}${r.owner?'·'+r.owner:''}</div><div class="d">卡${r.stuck_days}天${dl}</div></div>
+      </div>
+      <div class="chips">
+        ${chip('报关单',r.items['报关单'],r)}${chip('进项票',r.items['进项票'],r)}${chip('采购合同',r.items['采购合同'],r)}${chip('水单',r.items['水单'],r)}
+        <button class="btn remind" onclick="remind('${r.factory}','${r.stage}','${r.owner}','${r.key}')">提醒${r.owner||''} ↗</button>
+      </div>
+    </div>`;
+  }).join('')||'<div style="color:#94a3b8;padding:30px;text-align:center">本月无报关单</div>';
+}
+const DOC2ACTION={'进项票':'upload_invoice','水单':'upload_slip','采购合同':'upload_contract'};
+let pending=null;
+document.addEventListener('click',e=>{
+  const c=e.target.closest('.chip');if(!c)return;
+  const url=c.getAttribute('data-url');
+  if(c.classList.contains('done')){if(url)window.open(decodeURIComponent(url),'_blank');return}
+  const doc=c.getAttribute('data-doc');if(doc==='报关单'){msg('报关单是源头,不在这补','err');return}
+  pending={cn:c.getAttribute('data-cn'),action:DOC2ACTION[doc],doc};
+  const fi=document.getElementById('fi');fi.value='';fi.click();
+});
+async function doUpload(file){
+  if(!file||!pending)return;
+  let amount='';
+  if(pending.action!=='upload_contract'){amount=prompt(`输入${pending.doc}金额(元,可留空):`,'')||''}
+  msg('上传中…','ok');
+  const fd=new FormData();fd.append('customs_no',pending.cn);fd.append('file',file);if(amount)fd.append('amount',amount);
+  try{const r=await fetch(`${API}?action=${pending.action}`,{method:'POST',headers:{Authorization:'Bearer '+tok()},body:fd});
+  const d=await r.json();if(d.success){msg(pending.doc+'已上传','ok');load()}else{msg(d.error||'上传失败','err')}}
+  catch(e){msg('上传失败 '+e.message,'err')}finally{pending=null}
+}
+function remind(fac,stage,owner,cn){
+  const code=Object.entries(FAC_LINK).find(([k])=>true);
+  const link=Object.values(FAC_LINK); // 简化:提示文案+链接由通知中心发,这里先弹出
+  alert(`催办：${fac} 缺「${stage}」（报关单 ${cn}）\n该催：${owner}\n\n（初期手动：复制该工厂协同链接转发；自动推送待微信通道接通）`);
+}
+window.onload=()=>{const fi=document.createElement('input');fi.type='file';fi.id='fi';fi.className='fileInput';fi.accept='image/*,.pdf';fi.onchange=e=>doUpload(e.target.files[0]);document.body.appendChild(fi);load()};
+</script></body></html>
