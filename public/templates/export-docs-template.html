@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Export Documents · Sanlyn</title>
+<style>
+@page { size: A4 portrait; margin:14mm 15mm; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;background:#eef0f3;color:#111;font-size:12px;}
+.toolbar{padding:8px 18px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:#fff;border-bottom:1px solid #e2e8f0;margin-bottom:14px;}
+.toolbar button{padding:6px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;}
+.btn-print{background:#1d4ed8;color:#fff;}.btn-dl{background:#7c3aed;color:#fff;}
+.btn-save{background:#059669;color:#fff;}.btn-seal{background:#dc2626;color:#fff;}
+.btn-mode{background:#0891b2;color:#fff;}
+.banner{max-width:820px;margin:0 auto 8px;padding:7px 12px;border-radius:6px;font-size:12px;display:none;}
+.banner.info{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;}
+.banner.err{background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;}
+.ed{outline:none;}
+.ed:empty:before{content:attr(data-ph);color:#c7ccd4;font-style:italic;}
+[contenteditable]:focus{background:#fefce8!important;outline:none;}
+
+.doc-page{background:#fff;max-width:820px;margin:0 auto 22px;padding:30px 40px;box-shadow:0 4px 18px rgba(0,0,0,.12);min-height:1080px;}
+/* Header */
+.dhead{display:flex;justify-content:space-between;align-items:flex-start;}
+.dh-seller{font-size:15px;font-weight:800;letter-spacing:.2px;}
+.dh-addr{font-size:11px;color:#333;margin-top:3px;}
+.dh-title{font-size:30px;font-weight:900;letter-spacing:1px;text-align:right;white-space:nowrap;}
+.rule{border:none;border-top:2px solid #111;margin:10px 0 0;}
+/* Buyer + Details */
+.mid{display:flex;justify-content:space-between;padding:12px 0 4px;gap:30px;}
+.mid-l{flex:1;}.mid-r{width:300px;}
+.mid-lbl{font-size:10px;font-weight:800;letter-spacing:.5px;color:#555;border-bottom:1px solid #ddd;padding-bottom:4px;margin-bottom:6px;}
+.buyer-name{font-size:13px;font-weight:800;margin-bottom:3px;}
+.buyer-addr{font-size:11.5px;color:#333;line-height:1.5;max-width:340px;}
+.drow{display:flex;font-size:12px;margin-bottom:4px;}
+.drow>span:first-child{width:90px;font-weight:700;color:#333;}
+/* Port bar */
+.portbar{display:flex;justify-content:space-between;align-items:center;background:#f1f3f5;border-top:1px solid #d5d9de;border-bottom:1px solid #d5d9de;padding:6px 10px;margin-top:6px;font-size:12px;font-weight:700;}
+.portbar .cur{color:#111;}
+/* Table */
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:2px;}
+thead th{background:#111;color:#fff;padding:8px 7px;text-align:right;font-size:10.5px;font-weight:800;}
+thead th.l{text-align:left;}thead th.c{text-align:center;}
+tbody td{padding:9px 7px;border-bottom:1px solid #e2e5e9;text-align:right;vertical-align:top;}
+tbody td.l{text-align:left;}tbody td.c{text-align:center;}
+.desc-name{font-weight:700;}
+.desc-size{color:#555;font-weight:400;margin-left:6px;}
+tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9px 7px;border:none;}
+/* SC/IV boxes */
+.boxes{display:flex;gap:16px;margin-top:16px;}
+.box{flex:1;border:1px solid #111;padding:8px 11px;font-size:10.5px;line-height:1.55;}
+.box-t{font-weight:800;text-decoration:underline;margin-bottom:5px;font-size:11px;}
+.box .red{color:#dc2626;font-weight:700;}
+.bank-line{white-space:pre-line;}
+/* Signatures */
+.sigs{display:flex;justify-content:space-between;margin-top:40px;gap:40px;}
+.sig{flex:1;text-align:center;position:relative;}
+.sig-t{font-weight:800;font-size:12px;border-bottom:1px solid #111;padding-bottom:44px;}
+.sig-sub{font-size:10.5px;color:#555;margin-top:8px;}
+.seal-wrap{position:absolute;right:6px;top:-6px;width:96px;height:96px;}
+.seal-wrap img{width:100%;height:100%;object-fit:contain;display:none;}
+.seal-hint{position:absolute;right:20px;top:14px;font-size:9px;color:#b6bcc4;cursor:pointer;}
+.genfoot{margin-top:26px;border-top:1px dashed #ccc;padding-top:8px;font-size:9.5px;color:#9aa1a9;text-align:center;letter-spacing:.5px;}
+@media print{
+  body{background:#fff;}
+  .toolbar,.banner{display:none!important;}
+  .doc-page{box-shadow:none;padding:0;margin:0;max-width:100%;min-height:unset;page-break-after:always;}
+  .doc-page:last-child{page-break-after:auto;}
+  .seal-hint{display:none!important;}
+  thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  tr.grand td{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .portbar{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button class="btn-print" onclick="window.print()">🖨 打印/PDF</button>
+  <button class="btn-dl"    onclick="downloadPng()">📥 下载图片</button>
+  <button class="btn-save"  onclick="saveDraft()">💾 保存草稿</button>
+  <button class="btn-mode"  id="btnMode" onclick="toggleMode()">📋 明细模式</button>
+  <button class="btn-seal"  onclick="pickSeal()">🔴 盖章</button>
+  <input type="file" id="sealFile" accept="image/*" style="display:none" onchange="onSealFile(event)">
+  <span style="font-size:11px;color:#64748b;margin-left:8px" id="orderLabel">—</span>
+</div>
+<div class="banner info" id="infoBanner"></div>
+<div class="banner err"  id="errBanner"></div>
+
+<!-- PAGE 1 · PACKING LIST -->
+<div class="doc-page" id="pagePL">
+  <div class="dhead">
+    <div><div class="dh-seller ed" id="pl-sellerName" contenteditable></div><div class="dh-addr ed" id="pl-sellerAddr" contenteditable></div></div>
+    <div class="dh-title">PACKING LIST</div>
+  </div>
+  <hr class="rule">
+  <div class="mid">
+    <div class="mid-l"><div class="mid-lbl">BUYER (BILL TO)</div><div class="buyer-name ed" id="pl-buyerName" contenteditable data-ph="Buyer"></div><div class="buyer-addr ed" id="pl-buyerAddr" contenteditable data-ph="Buyer Address"></div></div>
+    <div class="mid-r"><div class="mid-lbl">DETAILS</div>
+      <div class="drow"><span>PL No.:</span><span class="ed" id="pl-no" contenteditable data-ph="FS号"></span></div>
+      <div class="drow"><span>Order:</span><span class="ed" id="pl-order" contenteditable data-ph="Order No."></span></div>
+      <div class="drow"><span>Date:</span><span class="ed" id="pl-date" contenteditable data-ph="YYYY-MM-DD"></span></div>
+    </div>
+  </div>
+  <div class="portbar"><span>PORT: <span class="ed" id="pl-port" contenteditable data-ph="POL → POD"></span></span><span class="cur">CURRENCY: <span class="ed" id="pl-cur" contenteditable>CNY</span></span></div>
+  <table><thead><tr><th class="c" style="width:36px">NO.</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:80px">QTY (CTN)</th><th style="width:100px">N.W. (KG)</th><th style="width:100px">G.W. (KG)</th><th style="width:90px">CBM (M³)</th></tr></thead>
+  <tbody id="pl-body"><tr><td colspan="6" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
+  <div class="sigs">
+    <div class="sig"><div class="sig-t">BUYER AUTHORIZED SIGNATURE</div><div class="sig-sub">(Signature / Company Seal)</div></div>
+    <div class="sig"><div class="sig-t">SELLER AUTHORIZED SIGNATURE<span class="seal-wrap"><img id="pl-seal"></span><span class="seal-hint" onclick="pickSeal()">click seal</span></div><div class="sig-sub">(Signature / Company Seal)</div></div>
+  </div>
+  <div class="genfoot">Generated &amp; Verified by Sanlyn OS Supply Chain Engine</div>
+</div>
+
+<!-- PAGE 2 · SALES CONTRACT -->
+<div class="doc-page" id="pageSC">
+  <div class="dhead">
+    <div><div class="dh-seller ed" id="sc-sellerName" contenteditable></div><div class="dh-addr ed" id="sc-sellerAddr" contenteditable></div></div>
+    <div class="dh-title">SALES CONTRACT</div>
+  </div>
+  <hr class="rule">
+  <div class="mid">
+    <div class="mid-l"><div class="mid-lbl">BUYER (BILL TO)</div><div class="buyer-name ed" id="sc-buyerName" contenteditable></div><div class="buyer-addr ed" id="sc-buyerAddr" contenteditable></div></div>
+    <div class="mid-r"><div class="mid-lbl">DETAILS</div>
+      <div class="drow"><span>SC No.:</span><span class="ed" id="sc-no" contenteditable></span></div>
+      <div class="drow"><span>Order:</span><span class="ed" id="sc-order" contenteditable></span></div>
+      <div class="drow"><span>Date:</span><span class="ed" id="sc-date" contenteditable></span></div>
+    </div>
+  </div>
+  <div class="portbar"><span>PORT: <span class="ed" id="sc-port" contenteditable></span></span><span class="cur">CURRENCY: <span class="ed" id="sc-cur" contenteditable>CNY</span></span></div>
+  <table><thead><tr><th class="c" style="width:36px">NO.</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:80px">QTY (CTN)</th><th style="width:130px">UNIT PRICE (<span id="sc-curh1">CNY</span>)</th><th style="width:140px">AMOUNT (<span id="sc-curh2">CNY</span>)</th></tr></thead>
+  <tbody id="sc-body"><tr><td colspan="5" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
+  <div class="boxes">
+    <div class="box"><div class="box-t">TERMS &amp; CONDITIONS</div><div class="ed" id="sc-terms" contenteditable></div></div>
+    <div class="box"><div class="box-t">BANKING INFORMATION</div><div class="bank-line ed" id="sc-bank" contenteditable></div></div>
+  </div>
+  <div class="sigs">
+    <div class="sig"><div class="sig-t">BUYER AUTHORIZED SIGNATURE</div><div class="sig-sub">(Signature / Company Seal)</div></div>
+    <div class="sig"><div class="sig-t">SELLER AUTHORIZED SIGNATURE<span class="seal-wrap"><img id="sc-seal"></span><span class="seal-hint" onclick="pickSeal()">click seal</span></div><div class="sig-sub">(Signature / Company Seal)</div></div>
+  </div>
+  <div class="genfoot">Generated &amp; Verified by Sanlyn OS Supply Chain Engine</div>
+</div>
+
+<!-- PAGE 3 · COMMERCIAL INVOICE -->
+<div class="doc-page" id="pageIV">
+  <div class="dhead">
+    <div><div class="dh-seller ed" id="iv-sellerName" contenteditable></div><div class="dh-addr ed" id="iv-sellerAddr" contenteditable></div></div>
+    <div class="dh-title">COMMERCIAL INVOICE</div>
+  </div>
+  <hr class="rule">
+  <div class="mid">
+    <div class="mid-l"><div class="mid-lbl">BUYER (BILL TO)</div><div class="buyer-name ed" id="iv-buyerName" contenteditable></div><div class="buyer-addr ed" id="iv-buyerAddr" contenteditable></div></div>
+    <div class="mid-r"><div class="mid-lbl">DETAILS</div>
+      <div class="drow"><span>Invoice No.:</span><span class="ed" id="iv-no" contenteditable></span></div>
+      <div class="drow"><span>Order:</span><span class="ed" id="iv-order" contenteditable></span></div>
+      <div class="drow"><span>Date:</span><span class="ed" id="iv-date" contenteditable></span></div>
+    </div>
+  </div>
+  <div class="portbar"><span>PORT: <span class="ed" id="iv-port" contenteditable></span></span><span class="cur">CURRENCY: <span class="ed" id="iv-cur" contenteditable>CNY</span></span></div>
+  <table><thead><tr><th class="c" style="width:36px">NO.</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:80px">QTY (CTN)</th><th style="width:130px">UNIT PRICE (<span id="iv-curh1">CNY</span>)</th><th style="width:140px">AMOUNT (<span id="iv-curh2">CNY</span>)</th></tr></thead>
+  <tbody id="iv-body"><tr><td colspan="5" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
+  <div class="boxes">
+    <div class="box"><div class="box-t">TERMS &amp; CONDITIONS</div><div class="ed" id="iv-terms" contenteditable></div></div>
+    <div class="box"><div class="box-t">BANKING INFORMATION</div><div class="bank-line ed" id="iv-bank" contenteditable></div></div>
+  </div>
+  <div class="sigs">
+    <div class="sig"><div class="sig-t">BUYER AUTHORIZED SIGNATURE</div><div class="sig-sub">(Signature / Company Seal)</div></div>
+    <div class="sig"><div class="sig-t">SELLER AUTHORIZED SIGNATURE<span class="seal-wrap"><img id="iv-seal"></span><span class="seal-hint" onclick="pickSeal()">click seal</span></div><div class="sig-sub">(Signature / Company Seal)</div></div>
+  </div>
+  <div class="genfoot">Generated &amp; Verified by Sanlyn OS Supply Chain Engine</div>
+</div>
+
+<script src="export-docs-template.js"></script>
+</body>
+</html>
