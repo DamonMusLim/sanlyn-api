@@ -99,93 +99,144 @@ async function ocr(imgBytes) {
   return JSON.parse(m[0]);
 }
 
+
+export async function runCustomsOcr(pool, { doc_id, declaration_no, dry_run = false, contract_no: bodyContractNo } = {}) {
+  const q = doc_id
+    ? await pool.query(`SELECT id, doc_id, url, name, contract_no FROM document_uploads WHERE doc_id=$1 AND doc_type IN ('customs_decl','customs_declaration') ORDER BY uploaded_at DESC LIMIT 1`, [doc_id])
+    : await pool.query(`SELECT id, doc_id, url, name, contract_no FROM document_uploads WHERE (name ILIKE '%'||$1||'%' OR url ILIKE '%'||$1||'%') AND doc_type IN ('customs_decl','customs_declaration') ORDER BY uploaded_at DESC LIMIT 1`, [declaration_no || ""]);
+  if (!q.rows.length) {
+    const err = new Error("找不到报关单PDF (document_uploads)");
+    err.status = 404;
+    throw err;
+  }
+  const doc = q.rows[0];
+
+  const ord = await pool.query(`SELECT shipping_plan_id, contract_no, factory_company_id FROM orders WHERE order_no=$1 LIMIT 1`, [doc.doc_id]);
+  const shippingPlanId = ord.rows[0]?.shipping_plan_id || null;
+  const contractNo = ord.rows[0]?.contract_no || doc.contract_no || bodyContractNo || null;
+
+  let objKey = doc.url;
+  try { objKey = new URL(doc.url).pathname.replace(/^\/+/, ""); } catch {}
+  const obj = await ossClient().get(objKey);
+  const tmpPdf = path.join(os.tmpdir(), "cdecl_" + process.pid + ".pdf");
+  fs.writeFileSync(tmpPdf, obj.content);
+  let jpeg;
+  try { jpeg = await pdfToJpeg(tmpPdf); } finally { try { fs.unlinkSync(tmpPdf); } catch {} }
+
+  const parsed = await ocr(jpeg);
+  if (dry_run) return { success: true, dry_run: true, doc: doc.doc_id, parsed };
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const declNo = s(parsed.declaration_no) || s(declaration_no);
+
+    let rebateMatched = 0;
+    let fobCnyAction = "need_manual";
+    let fobCnyWritten = null;
+
+    if (contractNo) {
+      const u = await client.query(
+        `UPDATE finance_export_rebates SET raw=$1, updated_at=NOW() WHERE contract_no=$2 RETURNING id`,
+        [JSON.stringify(parsed), contractNo]
+      );
+      rebateMatched = u.rows.length;
+
+      const currency = s(parsed.total_currency).toUpperCase();
+      const isCny = ["CNY", "RMB", "人民币"].includes(currency);
+      const cny = num(parsed.total_amount);
+
+      if (!isCny) {
+        fobCnyAction = "skip_non_cny";
+      } else if (rebateMatched !== 1 || cny == null) {
+        fobCnyAction = "need_manual";
+      } else {
+        const f = await client.query(
+          `UPDATE finance_export_rebates
+              SET fob_cny=$1,
+                  rebate_expected=ROUND(($1 * COALESCE(rebate_rate,0.09))::numeric, 2),
+                  updated_at=NOW()
+            WHERE contract_no=$2
+              AND COALESCE(fob_cny,0)=0
+            RETURNING fob_cny`,
+          [cny, contractNo]
+        );
+        if (f.rows.length) {
+          fobCnyAction = "filled";
+          fobCnyWritten = Number(f.rows[0].fob_cny);
+        } else {
+          fobCnyAction = "already";
+        }
+      }
+    }
+
+    let declId = null;
+    if (shippingPlanId) {
+      const h = await client.query(`
+        INSERT INTO customs_declarations
+          (declaration_no, shipping_plan_id, trade_country, arrive_country, transaction_term, transport_mode,
+           supervision_mode, duty_exemption, total_declaration_amount, total_declaration_currency,
+           container_nos, declared_at, source_system, raw, created_at, updated_at)
+        VALUES ($1,$13,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'customs-ocr',$12,NOW(),NOW())
+        ON CONFLICT (declaration_no) DO UPDATE SET
+          total_declaration_amount=EXCLUDED.total_declaration_amount, raw=EXCLUDED.raw, updated_at=NOW()
+        RETURNING id`,
+        [declNo || ("SP" + shippingPlanId), s(parsed.trade_country), s(parsed.arrive_country), s(parsed.transaction_term),
+         s(parsed.transport_mode), s(parsed.supervision_mode), s(parsed.duty_exemption),
+         num(parsed.total_amount), s(parsed.total_currency) || "CNY",
+         s(parsed.container_nos) ? s(parsed.container_nos).split(/[,，\s]+/).filter(Boolean) : null,
+         parsed.export_date || null, JSON.stringify(parsed), shippingPlanId]);
+      declId = h.rows[0].id;
+
+      await client.query(`DELETE FROM customs_declaration_items WHERE declaration_id=$1 AND source_system='customs-ocr'`, [declId]);
+      let sort = 0;
+      for (const it of (parsed.items || [])) {
+        await client.query(`
+          INSERT INTO customs_declaration_items
+            (declaration_id, hs_code, declaration_name_cn, declaration_elements,
+             qty, unit, gross_weight_kg, net_weight_kg, declaration_amount, declaration_currency,
+             unit_price, country_of_origin, destination_country, factory_address,
+             source_type, sort_order, source_system, raw, created_at, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'customs_ocr',$15,'customs-ocr',$16,NOW(),NOW())`,
+          [declId, s(it.hs_code), s(it.name_cn), s(it.spec),
+           num(it.qty1), s(it.unit1), num(parsed.gross_weight_kg), num(parsed.net_weight_kg),
+           num(it.amount), s(it.currency) || s(parsed.total_currency) || "CNY",
+           num(it.unit_price), s(it.origin_country), s(it.dest_country), s(it.source_region),
+           sort++, JSON.stringify({ qty2: it.qty2, unit2: it.unit2, total_packages: parsed.total_packages })]);
+      }
+    }
+
+    await client.query(`UPDATE document_uploads SET ocr_status='done', ocr_raw=$1 WHERE id=$2`, [JSON.stringify(parsed), doc.id]);
+    await client.query("COMMIT");
+
+    return {
+      success: true,
+      declaration_no: declNo,
+      contract_no: contractNo,
+      rebate_matched: rebateMatched,
+      customs_decl_id: declId,
+      items: (parsed.items || []).length,
+      fob_cny_action: fobCnyAction,
+      fob_cny_written: fobCnyWritten,
+      parsed,
+    };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ success: false, error: "POST only" });
 
-  const pool = getPool();
-  const { doc_id, declaration_no, dry_run, contract_no: bodyContractNo } = req.body || {};
   try {
-    // 1. locate customs PDF in document_uploads
-    const q = doc_id
-      ? await pool.query(`SELECT id, doc_id, url, name, contract_no FROM document_uploads WHERE doc_id=$1 AND doc_type IN ('customs_decl','customs_declaration') ORDER BY uploaded_at DESC LIMIT 1`, [doc_id])
-      : await pool.query(`SELECT id, doc_id, url, name, contract_no FROM document_uploads WHERE (name ILIKE '%'||$1||'%' OR url ILIKE '%'||$1||'%') AND doc_type IN ('customs_decl','customs_declaration') ORDER BY uploaded_at DESC LIMIT 1`, [declaration_no || ""]);
-    if (!q.rows.length) return res.status(404).json({ success: false, error: "找不到报关单PDF (document_uploads)" });
-    const doc = q.rows[0];
-
-    // resolve order → contract_no (for 退税 rebate link) + shipping_plan_id (for customs_declarations, optional)
-    const ord = await pool.query(`SELECT shipping_plan_id, contract_no, factory_company_id FROM orders WHERE order_no=$1 LIMIT 1`, [doc.doc_id]);
-    const shippingPlanId = ord.rows[0]?.shipping_plan_id || null;
-    const contractNo = ord.rows[0]?.contract_no || doc.contract_no || bodyContractNo || null;
-
-    // 2. OSS download → temp pdf → jpeg
-    const obj = await ossClient().get(doc.url);
-    const tmpPdf = path.join(os.tmpdir(), "cdecl_" + process.pid + ".pdf");
-    fs.writeFileSync(tmpPdf, obj.content);
-    let jpeg;
-    try { jpeg = await pdfToJpeg(tmpPdf); } finally { try { fs.unlinkSync(tmpPdf); } catch {} }
-
-    // 3. OCR
-    const parsed = await ocr(jpeg);
-    if (dry_run) return res.status(200).json({ success: true, dry_run: true, doc: doc.doc_id, parsed });
-
-    // 4. upsert header (customs_declarations) + items
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      const declNo = s(parsed.declaration_no) || s(declaration_no);
-      // ── PRIMARY (退税镜像源): write OCR'd 报关 data into finance_export_rebates.raw, by contract_no ──
-      let rebateMatched = 0;
-      if (contractNo) {
-        const u = await client.query(
-          `UPDATE finance_export_rebates SET raw=$1, updated_at=NOW() WHERE contract_no=$2 RETURNING id`,
-          [JSON.stringify(parsed), contractNo]);
-        rebateMatched = u.rows.length;
-      }
-
-      // ── OPTIONAL (报关行门户/运营流程): customs_declarations + items, only if shipping plan exists ──
-      let declId = null;
-      if (shippingPlanId) {
-        const h = await client.query(`
-          INSERT INTO customs_declarations
-            (declaration_no, shipping_plan_id, trade_country, arrive_country, transaction_term, transport_mode,
-             supervision_mode, duty_exemption, total_declaration_amount, total_declaration_currency,
-             container_nos, declared_at, source_system, raw, created_at, updated_at)
-          VALUES ($1,$13,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'customs-ocr',$12,NOW(),NOW())
-          ON CONFLICT (declaration_no) DO UPDATE SET
-            total_declaration_amount=EXCLUDED.total_declaration_amount, raw=EXCLUDED.raw, updated_at=NOW()
-          RETURNING id`,
-          [declNo || ("SP" + shippingPlanId), s(parsed.trade_country), s(parsed.arrive_country), s(parsed.transaction_term),
-           s(parsed.transport_mode), s(parsed.supervision_mode), s(parsed.duty_exemption),
-           num(parsed.total_amount), s(parsed.total_currency) || "CNY",
-           s(parsed.container_nos) ? s(parsed.container_nos).split(/[,，\s]+/).filter(Boolean) : null,
-           parsed.export_date || null, JSON.stringify(parsed), shippingPlanId]);
-        declId = h.rows[0].id;
-        await client.query(`DELETE FROM customs_declaration_items WHERE declaration_id=$1 AND source_system='customs-ocr'`, [declId]);
-        let sort = 0;
-        for (const it of (parsed.items || [])) {
-          await client.query(`
-            INSERT INTO customs_declaration_items
-              (declaration_id, hs_code, declaration_name_cn, declaration_elements,
-               qty, unit, gross_weight_kg, net_weight_kg, declaration_amount, declaration_currency,
-               unit_price, country_of_origin, destination_country, factory_address,
-               source_type, sort_order, source_system, raw, created_at, updated_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'customs_ocr',$15,'customs-ocr',$16,NOW(),NOW())`,
-            [declId, s(it.hs_code), s(it.name_cn), s(it.spec),
-             num(it.qty1), s(it.unit1), num(parsed.gross_weight_kg), num(parsed.net_weight_kg),
-             num(it.amount), s(it.currency) || s(parsed.total_currency) || "CNY",
-             num(it.unit_price), s(it.origin_country), s(it.dest_country), s(it.source_region),
-             sort++, JSON.stringify({ qty2: it.qty2, unit2: it.unit2, total_packages: parsed.total_packages })]);
-        }
-      }
-      await client.query(`UPDATE document_uploads SET ocr_status='done', ocr_raw=$1 WHERE id=$2`, [JSON.stringify(parsed), doc.id]);
-      await client.query("COMMIT");
-      return res.status(200).json({ success: true, declaration_no: declNo, contract_no: contractNo,
-        rebate_matched: rebateMatched, customs_decl_id: declId, items: (parsed.items || []).length, parsed });
-    } catch (e) { await client.query("ROLLBACK"); throw e; }
-    finally { client.release(); }
+    const result = await runCustomsOcr(getPool(), req.body || {});
+    return res.status(200).json(result);
   } catch (e) {
-    return res.status(500).json({ success: false, error: e.message });
+    return res.status(e.status || 500).json({ success: false, error: e.message });
   }
 }

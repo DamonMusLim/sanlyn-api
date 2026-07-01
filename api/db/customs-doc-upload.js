@@ -1,6 +1,7 @@
 import OSS from "ali-oss";
 import crypto from "node:crypto";
-import { setCors } from "../db.js";
+import { getPool, setCors } from "../db.js";
+import { runCustomsOcr } from "./customs-ocr.js";
 
 export const config = { api: { bodyParser: false } };
 
@@ -135,7 +136,30 @@ export default async function handler(req, res) {
     if (dryRun) return send(res, 200, { dry_run: true, key, size, sha256 });
 
     const r = await ossClient().put(key, file.buffer);
-    return send(res, 200, { url: r.url, key, size, sha256 });
+    const pool = getPool();
+
+    const ord = await pool.query(
+      `SELECT contract_no FROM orders WHERE order_no=$1 LIMIT 1`,
+      [docId]
+    );
+    const contractNo = String(fields.contract_no || fields.contractNo || ord.rows[0]?.contract_no || "").trim() || null;
+
+    const ins = await pool.query(
+      `INSERT INTO document_uploads
+         (doc_id, doc_type, contract_no, url, name, size, note, uploader)
+       VALUES ($1,'customs_decl',$2,$3,$4,$5,$6,$7)
+       RETURNING id`,
+      [docId, contractNo, r.url, file.name, size, JSON.stringify({ customs_no: customsNo, sha256 }), req.user?.email || req.user?.name || "admin"]
+    );
+
+    let ocr = null;
+    try {
+      ocr = await runCustomsOcr(pool, { doc_id: docId, contract_no: contractNo });
+    } catch (e) {
+      ocr = { success: false, error: e.message };
+    }
+
+    return send(res, 200, { url: r.url, key, size, sha256, upload_id: ins.rows[0]?.id, ocr });
   } catch (err) {
     return send(res, err.status || 500, { error: err.message || "upload failed" });
   }

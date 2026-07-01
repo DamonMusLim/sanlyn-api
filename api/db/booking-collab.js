@@ -27,6 +27,57 @@ function genRaw() {
 }
 
 // ── GET /validate?token=<raw> ──────────────────────────────────
+async function handleCustomsDocStatus(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+
+  const { plan_id, contract_no } = req.query || {};
+  if (!plan_id && !contract_no) {
+    return res.status(400).json({ ok: false, error: "plan_id or contract_no required" });
+  }
+
+  const vals = [];
+  const where = [];
+  if (plan_id) {
+    vals.push(String(plan_id));
+    where.push(`(sp._id = $${vals.length} OR sp.id::text = $${vals.length})`);
+  }
+  if (contract_no) {
+    vals.push(String(contract_no));
+    where.push(`o.contract_no = $${vals.length}`);
+  }
+
+  const { rows } = await pool.query(`
+    SELECT sp.id,
+           sp.customs_arrange,
+           min(o.order_no) AS doc_id,
+           min(o.contract_no) AS contract_no,
+           count(DISTINCT o.contract_no) FILTER (WHERE o.contract_no IS NOT NULL AND o.contract_no <> '') AS contract_count,
+           bool_or(du.doc_type IN ('customs_decl','customs_declaration')) AS uploaded,
+           max(CASE WHEN du.doc_type IN ('customs_decl','customs_declaration')
+                    THEN COALESCE(du.stamped_url, du.url) END) AS customs_url
+      FROM shipping_plans sp
+      LEFT JOIN orders o ON o.shipping_plan_id = sp.id
+      LEFT JOIN document_uploads du ON du.contract_no = o.contract_no
+     WHERE ${where.join(" AND ")}
+     GROUP BY sp.id, sp.customs_arrange
+     LIMIT 1`,
+    vals
+  );
+
+  if (!rows.length) return res.status(404).json({ ok: false, error: "not_found" });
+
+  const row = rows[0];
+  return res.json({
+    ok: true,
+    show: row.customs_arrange !== "self",
+    uploaded: !!row.uploaded,
+    customs_url: row.customs_url || null,
+    need_manual: Number(row.contract_count || 0) > 1,
+    doc_id: row.doc_id || null,
+    contract_no: row.contract_no || contract_no || null,
+  });
+}
+
 async function handleValidate(req, res, pool) {
   const raw = req.query && req.query.token;
   if (!raw || raw.length < 16)
@@ -624,6 +675,7 @@ async function handleFactorySubmit(req, res, pool) {
         if (wb.length) wbOrders.add(wb[0].order_id);
       } catch (e) { console.error('[oli-writeback]', e.message); }
     }
+  }
 
   // 工厂装柜过磅：container_weights=[{seq,weigh_kg}] → raw.factory_weights 留痕 + 柜表货重只填空
   if (Array.isArray(req.body.container_weights) && req.body.container_weights.length) {
@@ -2184,6 +2236,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET"    && pathSuffix === "plan-factories")     return await handlePlanFactories(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "validate")           return await handleValidate(req, res, pool);
+    if (req.method === "GET"    && pathSuffix === "customs-doc-status") return await handleCustomsDocStatus(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-factory-link")  return await handleSendFactoryLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-customer-link") return await handleSendCustomerLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "factory-submit")     return await handleFactorySubmit(req, res, pool);
