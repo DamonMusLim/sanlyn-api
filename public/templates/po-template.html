@@ -12,6 +12,7 @@ body { font-family:'PingFang SC','Microsoft YaHei','Noto Sans SC',Arial,sans-ser
 .toolbar button { padding:6px 13px; border-radius:6px; border:none; cursor:pointer; font-size:12px; font-weight:700; }
 .btn-print    { background:#1d4ed8; color:#fff; }
 .btn-download { background:#7c3aed; color:#fff; }
+.btn-excel    { background:#16a34a; color:#fff; }
 .btn-save     { background:#059669; color:#fff; }
 .btn-addrow   { background:#f59e0b; color:#fff; }
 .btn-addgroup { background:#0891b2; color:#fff; }
@@ -111,6 +112,7 @@ tbody tr:not(.group-header):hover .row-actions { display:flex; }
 <div class="toolbar">
   <button class="btn-print"    onclick="window.print()">🖨 打印/PDF</button>
   <button class="btn-download" onclick="downloadPng()">📥 下载图片</button>
+  <button class="btn-excel" onclick="exportExcel()">📊 下载Excel</button>
   <button class="btn-save"     onclick="saveDraft()">💾 保存草稿</button>
   <button class="btn-addrow"   onclick="addRow()">＋ 加产品行</button>
   <button class="btn-addgroup" onclick="addGroup()">＋ 加ORDER组</button>

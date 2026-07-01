@@ -190,7 +190,7 @@ function init(){
       });
     });
     document.getElementById('poBody').innerHTML=html||'<tr><td colspan="8" style="text-align:center;padding:12px;color:#64748b;border:1px solid #bbb">无产品数据，可点击"＋加产品行"手动添加</td></tr>';
-    recalcTotals();hideBanner();
+    recalcTotals();hideBanner();setTimeout(handleHashAction,300);
   }).catch(function(e){showBanner('err',e.message);});
   ['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem('po_seal_'+w)||'null');if(s&&s.url)applySeal(w,s.url,s.name);}catch(e){}});
 }
@@ -244,4 +244,24 @@ function downloadPng(){
 function showBanner(type,msg){['infoBanner','errBanner','okBanner'].forEach(function(id){document.getElementById(id).style.display='none';});var m={info:'infoBanner',err:'errBanner',ok:'okBanner'};var el=document.getElementById(m[type]);if(el){el.textContent=(type==='err'?'⚠ ':'')+msg;el.style.display='block';}}
 function hideBanner(){['infoBanner','errBanner','okBanner'].forEach(function(id){document.getElementById(id).style.display='none';});}
 
+function exportExcel(){
+  var btn=document.querySelector('.btn-excel');if(btn){btn.textContent='生成中...';btn.disabled=true;}
+  function reset(){if(btn){btn.textContent='下载Excel';btn.disabled=false;}}
+  function run(){try{
+    var g=function(id){var e=document.getElementById(id);return e?e.textContent.trim():'';};
+    var aoa=[['采购合同 PURCHASE ORDER'],['买方',g('buyerName'),'卖方',g('sellerName')],['单号',g('orderNo'),'合同号',g('contractNo'),'日期',g('orderDate')],[]];
+    var heads=[].map.call(document.querySelectorAll('table thead th'),function(t){return t.textContent.replace(/\s+/g,' ').trim();}).filter(function(x){return x;});
+    aoa.push(heads);
+    [].forEach.call(document.querySelectorAll('#poBody tr'),function(tr){
+      if(tr.classList.contains('group-header')){aoa.push([tr.textContent.trim()]);return;}
+      var cells=[].map.call(tr.querySelectorAll('td[contenteditable]'),function(td){var v=td.textContent.trim(),n=Number(v.replace(/,/g,''));return v&&/^[\d,.]+$/.test(v)?n:v;});
+      if(cells.length)aoa.push(cells);
+    });
+    var tot=document.querySelector('.total-row');if(tot)aoa.push([].map.call(tot.querySelectorAll('td:not(.no-print)'),function(td){return td.textContent.trim();}));
+    var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=heads.map(function(h,i){return {wch:i===1?36:14};});
+    XLSX.utils.book_append_sheet(wb,ws,'PO');XLSX.writeFile(wb,'PO-'+(qp('order_no')||'draft')+'.xlsx');
+  }catch(e){alert('导出失败: '+e.message);}reset();}
+  if(window.XLSX)return run();var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=run;s.onerror=function(){alert('Excel库加载失败');reset();};document.head.appendChild(s);
+}
+function handleHashAction(){var h=(location.hash||'').toLowerCase();if(h.indexOf('excel')>=0)exportExcel();else if(h.indexOf('seal')>=0||h.indexOf('stamp')>=0)openSealPicker('seller');else if(h.indexOf('print')>=0)window.print();}
 init();
