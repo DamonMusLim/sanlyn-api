@@ -1,11 +1,11 @@
 var API='https://api.sanlyn.cn';
 var TYPE=(qp('type')||'pi').toLowerCase(),_cfg,_sealTarget=null,_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={buyer:0,seller:0};
 var CFG={
-  po:{code:'PO',title:'采购合同 PURCHASE ORDER',cols:['行号','品名','数量','单价(袋)','箱价','金额','条形码'],price:'factoryPrice',parties:'po',bank:false,terms:false},
-  sc:{code:'SC',title:'销售合同 SALES CONTRACT',cols:['No','Description','Qty','Unit Price','Amount'],price:'sellingPrice',parties:'client',bank:true,terms:true},
-  iv:{code:'IV',title:'商业发票 COMMERCIAL INVOICE',cols:['No','Description','Qty','Unit Price','Amount'],price:'sellingPrice',parties:'client',bank:false,terms:false},
-  pl:{code:'PL',title:'装箱单 PACKING LIST',cols:['CP Code','Description','CTN','NW(KG)','GW(KG)','CBM'],price:null,parties:'client',bank:false,terms:false},
-  pi:{code:'PI',title:'形式发票 PROFORMA INVOICE',cols:['No','Description','Qty','Unit Price','Amount'],price:'sellingPrice',parties:'client',bank:false,terms:false}
+  po:{code:'PO',title:'采购合同 PURCHASE ORDER',cols:['行号','品名','数量','单价(袋)','箱价','金额','条形码'],price:'factoryPrice',parties:'po',bank:false,terms:false,qtyCol:2},
+  sc:{code:'SC',title:'销售合同 SALES CONTRACT',cols:['No','Description','Qty','Unit Price','Amount'],price:'sellingPrice',parties:'client',bank:true,terms:true,qtyCol:2},
+  iv:{code:'IV',title:'商业发票 COMMERCIAL INVOICE',cols:['No','CP Code','Description & Size','QTY','Unit','Unit Price','Amount'],price:'sellingPrice',parties:'client',bank:false,terms:false,qtyCol:3},
+  pl:{code:'PL',title:'装箱单 PACKING LIST',cols:['CP Code','Description','CTN','NW(KG)','GW(KG)','CBM'],price:null,parties:'client',bank:false,terms:false,qtyCol:2},
+  pi:{code:'PI',title:'形式发票 PROFORMA INVOICE',cols:['No','CP Code','Description & Size','QTY','Unit','Unit Price','Amount'],price:'sellingPrice',parties:'client',bank:false,terms:false,qtyCol:3}
 };
 function qp(n){return new URLSearchParams(location.search).get(n)||'';}
 function getToken(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
@@ -31,7 +31,7 @@ function renderShell(){
   document.getElementById('bankSection').style.display=_cfg.bank?'':'none';document.getElementById('termsSection').style.display=_cfg.terms?'':'none';
   document.getElementById('partyGrid').innerHTML=partyBox('buyer','Buyer')+partyBox('seller',TYPE==='po'?'Vendor':'Seller');
   if(TYPE!=='po')[].forEach.call(document.querySelectorAll('.po-only'),function(e){e.style.display='none';});
-  var th=_cfg.cols.map(function(c,i){var st=i===1?'text-align:left;min-width:170px':'';return '<th style="'+st+'">'+esc(c)+'</th>';}).join('')+'<th class="no-print" style="width:16px;background:#374151;border:none"></th>';
+  var th=_cfg.cols.map(function(c,i){var st=i===(_cfg.qtyCol-1)?'text-align:left;min-width:170px':'';return '<th style="'+st+'">'+esc(c)+'</th>';}).join('')+'<th class="no-print" style="width:16px;background:#374151;border:none"></th>';
   document.getElementById('tableHead').innerHTML=th;
   document.getElementById('docFoot').innerHTML='<tr class="total-row" id="totalRow"></tr>';
 }
@@ -73,30 +73,76 @@ function fillBankAndTerms(p,cur){
   document.getElementById('terms').innerText=p.terms_sc||'1. Packing: Export seaworthy cartons per approved specification.\n2. Shipment: Per confirmed schedule.\n3. Payment: Per confirmed commercial terms.\n4. Claims: Written notice with evidence within 14 days of arrival.\n5. Governing documents: PI > SC > IV.';
 }
 
+function prodName(p){
+  // Full marketing name for customer-facing docs; declaration name only as last resort
+  var n=p.name||p.name_en||p.productName||p.product_name||p.name_cn||p.declarationName||p.declaration_name||p.sku||'';
+  var sz=p.size||p.spec||'';return sz?n+' ('+sz+')':n;
+}
+
 function renderRows(all){
   var html='',idx=1,tot={qty:0,amt:0,nw:0,gw:0,cbm:0};
-  all.forEach(function(o){var ps=o.products||(o.raw&&o.raw.products)||[];if(typeof ps==='string')try{ps=JSON.parse(ps);}catch(e){ps=[];}ps=(ps||[]).filter(function(p){return p&&(p.name||p.name_en||p.name_cn);});if(!ps.length)return;html+=groupRow('ORDER '+shortNo(o.order_no||o.contract_no));ps.forEach(function(p){html+=productRow(p,idx++,tot);});});
-  document.getElementById('docBody').innerHTML=html||'<tr><td colspan="'+(_cfg.cols.length+1)+'" style="text-align:center;padding:14px;color:#94a3b8">无产品数据，可点击“加产品行”手动添加</td></tr>';
+  all.forEach(function(o){
+    var ps=o.products||(o.raw&&o.raw.products)||[];
+    if(typeof ps==='string')try{ps=JSON.parse(ps);}catch(e){ps=[];}
+    // include daigou products that might only have sku/declarationName
+    ps=(ps||[]).filter(function(p){return p&&(p.name||p.name_en||p.name_cn||p.productName||p.declarationName||p.sku);});
+    if(!ps.length)return;
+    html+=groupRow('ORDER '+shortNo(o.order_no||o.contract_no));
+    ps.forEach(function(p){html+=productRow(p,idx++,tot);});
+  });
+  document.getElementById('docBody').innerHTML=html||'<tr><td colspan="'+(_cfg.cols.length+1)+'" style="text-align:center;padding:14px;color:#94a3b8">无产品数据，可点击"加产品行"手动添加</td></tr>';
   recalcTotals();
 }
 function groupRow(label){return '<tr class="group-header"><td colspan="'+_cfg.cols.length+'" contenteditable>'+esc(label)+'</td><td class="no-print" style="background:#dbeafe;border:none"></td></tr>';}
 function productRow(p,idx,tot){
-  var name=p.name||p.name_en||p.name_cn||'';if(p.size)name+=' ('+p.size+')';
+  var name=prodName(p);
   var qty=Number(p.qty||p.qty_ctn||0)||0,bg=Number(p.bgBx||p.bg_bx||1)||1,unit=0,amt=0,cells;
-  if(TYPE==='pl'){var nw=(Number(p.netWeight||p.net_weight||0)||0)*qty,gw=(Number(p.grossWeight||p.gross_weight||0)||0)*qty,cbm=(Number(p.cbm||p.cbmPerCtn||p.cbm_per_ctn||0)||0)*qty;tot.qty+=qty;tot.nw+=nw;tot.gw+=gw;tot.cbm+=cbm;cells=[p.code||p.cp_code||('0'+idx).slice(-2),name,qty,fmt(nw),fmt(gw),fmt(cbm,3)];}
-  else if(TYPE==='po'){unit=Number(p.factoryPrice||p.factory_price||p.unitPrice||p.unit_price||0)||0;amt=Number(p.factorySubtotal||p.factory_subtotal||p.subtotal||(qty*unit))||0;tot.qty+=qty;tot.amt+=amt;cells=[('0'+idx).slice(-2),name,qty,fmt(bg?unit/bg:unit),fmt(unit),fmt(amt),p.barcode||p.code||p.ean||''];}
-  else{unit=Number(p.sellingPrice||p.selling_price||p.unitPrice||p.unit_price||0)||0;amt=Number(p.sellingSubtotal||p.selling_subtotal||p.subtotal||(qty*unit))||0;tot.qty+=qty;tot.amt+=amt;cells=[('0'+idx).slice(-2),name,qty,fmt(unit),fmt(amt)];}
-  return '<tr>'+cells.map(function(c,i){var dv=(i===2?' data-v="qty"':(i===4&&TYPE!=='pl'?' data-v="amt"':''));return '<td contenteditable class="'+(i===1?'left':'')+'"'+dv+'>'+esc(c)+'</td>';}).join('')+'<td class="no-print" style="padding:2px;border-left:none"><div class="row-actions"><button class="row-btn row-btn-del" onclick="delRow(this)">×</button><button class="row-btn row-btn-dup" onclick="dupRow(this)">⧉</button></div></td></tr>';
+  var qc=_cfg.qtyCol||2;
+  if(TYPE==='pl'){
+    var nw=(Number(p.netWeight||p.net_weight||0)||0)*qty,gw=(Number(p.grossWeight||p.gross_weight||0)||0)*qty,cbm=(Number(p.cbm||p.cbmPerCtn||p.cbm_per_ctn||0)||0)*qty;
+    tot.qty+=qty;tot.nw+=nw;tot.gw+=gw;tot.cbm+=cbm;
+    cells=[p.sku||p.code||p.cp_code||('0'+idx).slice(-2),name,qty,fmt(nw),fmt(gw),fmt(cbm,3)];
+  } else if(TYPE==='po'){
+    unit=Number(p.factoryPrice||p.factory_price||p.unitPrice||p.unit_price||0)||0;
+    amt=Number(p.factorySubtotal||p.factory_subtotal||p.subtotal||(qty*unit))||0;
+    tot.qty+=qty;tot.amt+=amt;
+    cells=[('0'+idx).slice(-2),name,qty,fmt(bg?unit/bg:unit),fmt(unit),fmt(amt),p.barcode||p.code||p.ean||''];
+  } else if(TYPE==='pi'||TYPE==='iv'){
+    unit=Number(p.sellingPrice||p.selling_price||p.unitPrice||p.unit_price||0)||0;
+    amt=Number(p.sellingSubtotal||p.selling_subtotal||p.subtotal||(qty*unit))||0;
+    tot.qty+=qty;tot.amt+=amt;
+    cells=[('0'+idx).slice(-2),p.sku||p.cp_code||p.code||'',name,qty,p.unit||'CTN',fmt(unit),fmt(amt)];
+  } else {
+    unit=Number(p.sellingPrice||p.selling_price||p.unitPrice||p.unit_price||0)||0;
+    amt=Number(p.sellingSubtotal||p.selling_subtotal||p.subtotal||(qty*unit))||0;
+    tot.qty+=qty;tot.amt+=amt;
+    cells=[('0'+idx).slice(-2),name,qty,fmt(unit),fmt(amt)];
+  }
+  return '<tr>'+cells.map(function(c,i){
+    var dv=(i===qc?' data-v="qty"':(i===cells.length-1&&TYPE!=='pl'?' data-v="amt"':''));
+    return '<td contenteditable class="'+(i===qc-1?'left':'')+'"'+dv+'>'+esc(c)+'</td>';
+  }).join('')+'<td class="no-print" style="padding:2px;border-left:none"><div class="row-actions"><button class="row-btn row-btn-del" onclick="delRow(this)">×</button><button class="row-btn row-btn-dup" onclick="dupRow(this)">⧉</button></div></td></tr>';
 }
 function addRow(){document.getElementById('docBody').insertAdjacentHTML('beforeend',emptyRow());recalcTotals();}
-function emptyRow(){var n=_cfg.cols.length;return '<tr>'+Array.from({length:n}).map(function(_,i){return '<td contenteditable class="'+(i===1?'left':'')+'"'+(i===2?' data-v="qty"':(i===n-1&&TYPE!=='pl'?' data-v="amt"':''))+'></td>';}).join('')+'<td class="no-print" style="padding:2px;border-left:none"><div class="row-actions"><button class="row-btn row-btn-del" onclick="delRow(this)">×</button><button class="row-btn row-btn-dup" onclick="dupRow(this)">⧉</button></div></td></tr>';}
+function emptyRow(){
+  var n=_cfg.cols.length,qc=_cfg.qtyCol||2;
+  return '<tr>'+Array.from({length:n}).map(function(_,i){
+    var dv=(i===qc?' data-v="qty"':(i===n-1&&TYPE!=='pl'?' data-v="amt"':''));
+    return '<td contenteditable class="'+(i===qc-1?'left':'')+'"'+dv+'></td>';
+  }).join('')+'<td class="no-print" style="padding:2px;border-left:none"><div class="row-actions"><button class="row-btn row-btn-del" onclick="delRow(this)">×</button><button class="row-btn row-btn-dup" onclick="dupRow(this)">⧉</button></div></td></tr>';
+}
 function addGroup(){document.getElementById('docBody').insertAdjacentHTML('beforeend',groupRow('ORDER '));}
 function delRow(btn){btn.closest('tr').remove();recalcTotals();}
 function dupRow(btn){var tr=btn.closest('tr');tr.after(tr.cloneNode(true));recalcTotals();}
 function recalcTotals(){
-  var rows=[].slice.call(document.querySelectorAll('#docBody tr:not(.group-header)')),qty=0,amt=0,nw=0,gw=0,cbm=0,n=_cfg.cols.length;
-  rows.forEach(function(tr){var t=tr.children;if(TYPE==='pl'){qty+=Number(t[2].textContent)||0;nw+=Number(String(t[3].textContent).replace(/,/g,''))||0;gw+=Number(String(t[4].textContent).replace(/,/g,''))||0;cbm+=Number(String(t[5].textContent).replace(/,/g,''))||0;}else{qty+=Number(t[2].textContent)||0;amt+=Number(String(t[n-1].textContent).replace(/,/g,''))||0;}});
-  document.getElementById('totalRow').innerHTML=TYPE==='pl'?'<td colspan="2" class="text-right">TOTAL:</td><td>'+fmt(qty,0)+'</td><td class="text-right">'+fmt(nw)+'</td><td class="text-right">'+fmt(gw)+'</td><td class="text-right">'+fmt(cbm,3)+'</td><td class="no-print" style="border:none;background:#f8fafc"></td>':'<td colspan="'+(n-2)+'" class="text-right">TOTAL AMOUNT:</td><td>'+fmt(qty,0)+'</td><td class="text-right">'+fmt(amt)+'</td><td class="no-print" style="border:none;background:#f8fafc"></td>';
+  var rows=[].slice.call(document.querySelectorAll('#docBody tr:not(.group-header)')),qty=0,amt=0,nw=0,gw=0,cbm=0,n=_cfg.cols.length,qc=_cfg.qtyCol||2;
+  rows.forEach(function(tr){var t=tr.children;
+    if(TYPE==='pl'){qty+=Number(t[qc].textContent)||0;nw+=Number(String(t[qc+1].textContent).replace(/,/g,''))||0;gw+=Number(String(t[qc+2].textContent).replace(/,/g,''))||0;cbm+=Number(String(t[qc+3].textContent).replace(/,/g,''))||0;}
+    else{qty+=Number(t[qc].textContent)||0;amt+=Number(String(t[n-1].textContent).replace(/,/g,''))||0;}
+  });
+  document.getElementById('totalRow').innerHTML=TYPE==='pl'?
+    '<td colspan="'+qc+'" class="text-right">TOTAL:</td><td>'+fmt(qty,0)+'</td><td class="text-right">'+fmt(nw)+'</td><td class="text-right">'+fmt(gw)+'</td><td class="text-right">'+fmt(cbm,3)+'</td><td class="no-print" style="border:none;background:#f8fafc"></td>':
+    '<td colspan="'+(n-2)+'" class="text-right">TOTAL AMOUNT:</td><td>'+fmt(qty,0)+'</td><td class="text-right">'+fmt(amt)+'</td><td class="no-print" style="border:none;background:#f8fafc"></td>';
 }
 document.addEventListener('input',function(e){if(e.target.closest&&e.target.closest('#docBody'))recalcTotals();});
 
