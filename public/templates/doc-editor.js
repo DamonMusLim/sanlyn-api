@@ -60,7 +60,7 @@ function fillDoc(primary,all){
   if(!fs&&/^FS/i.test(primary.contract_no||''))fs=primary.contract_no;
   renderShell(cur);setText('contractNo',TYPE==='po'?(primary.contract_no||raw.contractNo||fs):fs,true);
   setText('orderNo',uniq(all.map(function(o){return shortNo(o.order_no);})).join(' / '),true);
-  setText('poNo',uniq(all.map(function(o){return o.customer_po||shortNo(o.order_no);})).join(' / '),true);
+  var _po=uniq(all.map(function(o){return o.customer_po;}).filter(Boolean)).join(' / ');var _poLi=document.getElementById('poNoLi');if(_po){setText('poNo',_po,true);if(_poLi)_poLi.style.display='';}else if(_poLi){_poLi.style.display='none';}
   setText('docDate',(primary.order_date||primary.created_at||'').slice(0,10)||new Date().toISOString().slice(0,10),true);
   setText('curr',cur,true);setText('curH1',cur,true);setText('curH2',cur,true);
   if(TYPE==='po')fillPoParties(primary);else fillClientParties(primary,cur);

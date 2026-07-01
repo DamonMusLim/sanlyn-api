@@ -96,7 +96,7 @@ tr.group-header td{background:#f0f4ff;font-weight:700;color:#1e40af;padding:6px 
       <ul class="meta-list">
         <li><b>No.:</b> <span class="v ed" id="contractNo" contenteditable data-ph="—"></span></li>
         <li><b>Order No.:</b> <span class="v ed" id="orderNo" contenteditable data-ph="—"></span></li>
-        <li><b>PO No.:</b> <span class="v ed" id="poNo" contenteditable data-ph="—"></span></li>
+        <li id="poNoLi"><b>PO No.:</b> <span class="v ed" id="poNo" contenteditable data-ph="—"></span></li>
         <li><b>Date:</b> <span class="v ed" id="docDate" contenteditable data-ph="—"></span></li>
         <li id="currencyWrap"><b>Currency:</b> <span class="v ed" id="curr" contenteditable data-ph="CNY"></span></li>
       </ul>
@@ -118,11 +118,11 @@ tr.group-header td{background:#f0f4ff;font-weight:700;color:#1e40af;padding:6px 
   <div class="signature-grid">
     <div class="sig-box">
       <span>BUYER AUTHORIZED SIGNATURE</span><span class="sub">(Signature / Company Seal)</span>
-      <div class="seal-slot" id="sealBuyer" ondragover="event.preventDefault()" ondrop="dropSeal(event,'buyer')"><div class="seal-clip"><img id="sealBuyerImg" src=""></div><span class="seal-hint" id="sealBuyerHint" onclick="openSealPicker('buyer')">点击<br>盖章</span></div>
+      <div class="seal-slot" id="sealBuyer" ondragover="event.preventDefault()" ondrop="dropSeal(event,'buyer')"><div class="seal-clip"><img id="sealBuyerImg" src=""></div><span class="seal-hint" id="sealBuyerHint"></span></div>
     </div>
     <div class="sig-box">
       <span>SELLER AUTHORIZED SIGNATURE</span><span class="sub">(Signature / Company Seal)</span>
-      <div class="seal-slot" id="sealSeller" ondragover="event.preventDefault()" ondrop="dropSeal(event,'seller')"><div class="seal-clip"><img id="sealSellerImg" src=""></div><span class="seal-hint" id="sealSellerHint" onclick="openSealPicker('seller')">点击<br>盖章</span></div>
+      <div class="seal-slot" id="sealSeller" ondragover="event.preventDefault()" ondrop="dropSeal(event,'seller')"><div class="seal-clip"><img id="sealSellerImg" src=""></div><span class="seal-hint" id="sealSellerHint"></span></div>
     </div>
   </div>
 
