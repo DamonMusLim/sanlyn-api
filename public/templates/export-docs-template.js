@@ -13,7 +13,7 @@ function uniq(a){return a.filter(function(v,i){return v&&a.indexOf(v)===i;});}
 function skuKey(v){return String(v||'').toUpperCase().replace(/\s+/g,'');}
 function masterName(p){var ks=[p.sku,p.cp_code,p.code,p.item_code];for(var i=0;i<ks.length;i++){var k=skuKey(ks[i]);if(k&&_pmMap[k])return _pmMap[k];}return '';}
 function pName(p){return p.productName||p.name||masterName(p)||p.product_name||p.name_en||p.sku||'';}
-function hasProd(p){return p&&(p.productName||p.product_name||p.name||p.name_en||p.declarationName||p.blDescription||p.sku);}
+function hasProd(p){return p&&(p.productName||p.product_name||p.name||p.name_en||p.declarationName||p.declaration_name||p.blDescription||p.bl_description||p.sku);}
 function arr(d){return d&&Array.isArray(d.data)?d.data:(d&&Array.isArray(d.companies)?d.companies:(Array.isArray(d)?d:(d&&d.data?[d.data]:[])));}
 function firstText(v){
   if(!v)return '';
@@ -23,6 +23,13 @@ function firstText(v){
   return String(v||'');
 }
 function declName(p){return p.declarationName||p.declaration_name||p.blDescription||p.bl_description||'宠物食品';}
+function lineItems(o){return (o&&o._lineItems)||[];}
+function qty(p){return Number(p.qty_ctn||p.qty||0)||0;}
+function nwCtn(p){return Number(p.nw_ctn||p.netWeight||p.net_weight||0)||0;}
+function gwCtn(p){return Number(p.gw_ctn||p.grossWeight||p.gross_weight||0)||0;}
+function cbmCtn(p){return Number(p.cbm_ctn||p.cbm||p.cbmPerCtn||p.cbm_per_ctn||0)||0;}
+function unitPrice(p){return Number(p.unit_price||p.unitPrice||0)||0;}
+function amount(p){var q=qty(p),u=unitPrice(p);return Number(p.subtotal||(q*u))||0;}
 
 function loadOrder(no){
   return fetch(API+'/api/db/orders?order_no='+encodeURIComponent(no),{headers:authH()})
@@ -31,6 +38,12 @@ function loadOrder(no){
       if(rows.length)return rows;
       return fetch(API+'/api/db/orders?contract_no='+encodeURIComponent(no),{headers:authH()}).then(function(r){return r.json();}).then(function(d){return d.data||d.orders||(Array.isArray(d)?d:[]);});
     });
+}
+function loadOrderLineItems(order){
+  var id=Number(order&&order.id);
+  if(!id)return Promise.resolve([]);
+  return fetch(API+'/api/db/order-line-items?order_id='+encodeURIComponent(id),{headers:authH()})
+    .then(function(r){return r.json();}).then(arr);
 }
 function fetchProductMaster(){
   return fetch(API+'/api/db/products?limit=5000',{headers:authH()}).then(function(r){return r.json();}).then(arr).then(function(rows){
@@ -45,19 +58,15 @@ function fetchProductMaster(){
 function aggregate(all){
   var groups={},rows=[],total={qty:0,nw:0,gw:0,cbm:0,amt:0};
   all.forEach(function(o){
-    (o.products||(o.raw&&o.raw.products)||[]).filter(hasProd).forEach(function(p){
-      var q=Number(p.qty||p.qty_ctn||0)||0;
-      var nw=(Number(p.netWeight||p.net_weight||0)||0)*q;
-      var gw=(Number(p.grossWeight||p.gross_weight||0)||0)*q;
-      var cbm=(Number(p.cbm||p.cbmPerCtn||p.cbm_per_ctn||0)||0)*q;
-      var amt=Number(p.subtotal||(q*(Number(p.unitPrice||p.unit_price||0)||0)))||0;
+    lineItems(o).filter(hasProd).forEach(function(p){
+      var q=qty(p),nw=nwCtn(p)*q,gw=gwCtn(p)*q,cbm=cbmCtn(p)*q,amt=amount(p);
       var key=declName(p);
       var g=groups[key]||(groups[key]={name:key,sizes:{},qty:0,nw:0,gw:0,cbm:0,amt:0});
       g.qty+=q;g.nw+=nw;g.gw+=gw;g.cbm+=cbm;g.amt+=amt;if(p.size)g.sizes[p.size]=1;
       total.qty+=q;total.nw+=nw;total.gw+=gw;total.cbm+=cbm;total.amt+=amt;
     });
   });
-  Object.keys(groups).forEach(function(k){var g=groups[k];rows.push({name:g.name,size:Object.keys(g.sizes).join(' / '),qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,amt:g.amt,up:(g.qty?g.amt/g.qty:0)});});
+  Object.keys(groups).forEach(function(k){var g=groups[k];rows.push({name:g.name,size:(Object.keys(g.sizes).length===1?Object.keys(g.sizes)[0]:''),qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,amt:g.amt,up:(g.qty?g.amt/g.qty:0)});});
   total.rows=rows;total.up=(total.qty?total.amt/total.qty:0);return total;
 }
 
@@ -65,14 +74,14 @@ function aggregate(all){
 function detailRows(all,mode){
   var rows=[];
   all.forEach(function(o){
-    (o.products||(o.raw&&o.raw.products)||[]).filter(hasProd).forEach(function(p){
-      var q=Number(p.qty||p.qty_ctn||0)||0;
+    lineItems(o).filter(hasProd).forEach(function(p){
+      var q=qty(p);
       rows.push({name:pName(p),size:p.size||'',qty:q,
-        nw:(Number(p.netWeight||p.net_weight||0)||0)*q,
-        gw:(Number(p.grossWeight||p.gross_weight||0)||0)*q,
-        cbm:(Number(p.cbm||p.cbmPerCtn||0)||0)*q,
-        up:Number(p.unitPrice||p.unit_price||0)||0,
-        amt:Number(p.subtotal||(q*(Number(p.unitPrice||p.unit_price||0)||0)))||0});
+        nw:nwCtn(p)*q,
+        gw:gwCtn(p)*q,
+        cbm:cbmCtn(p)*q,
+        up:unitPrice(p),
+        amt:amount(p)});
     });
   });
   return rows;
@@ -249,10 +258,12 @@ function init(){
     var cur=primary.currency||'CNY';
     var port=buildPort(primary);
     document.getElementById('orderLabel').textContent=orderNo;
-    window._agg=aggregate(all);window._rows=detailRows(all);window._cur=cur;
-    var sellerP=fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).catch(function(){return [];});
-    var addrP=fetchBuyerAddr(primary);
-    Promise.all([sellerP,addrP]).then(function(rr){
+    return Promise.all(all.map(loadOrderLineItems)).then(function(lineSets){
+      lineSets.forEach(function(lines,i){all[i]._lineItems=lines;});
+      window._agg=aggregate(all);window._rows=detailRows(all);window._cur=cur;
+      var sellerP=fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).catch(function(){return [];});
+      var addrP=fetchBuyerAddr(primary);
+      return Promise.all([sellerP,addrP]).then(function(rr){
       var d=rr[0],addr=rr[1];if(addr)primary._buyerAddr=addr;
       var ps=Array.isArray(d)?d:(d.data||[]);
       var sp=(primary.seller_code&&ps.find(function(x){return x.code===primary.seller_code;}))||ps.find(function(x){return x.name_cn===primary.issuing_company||x.name_en===primary.issuing_company;})||ps.find(function(x){return x.is_default;});
@@ -261,6 +272,7 @@ function init(){
       renderAll();
       if(sp&&sp.seal_url)applySeal('all:seller',sp.seal_url,sp.name_en||sp.name_cn||'Seller seal');
       banner('','');
+      });
     });
   }).catch(function(e){banner('err',e.message);});
   ['pl','sc','iv'].forEach(function(p){['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey(p+':'+w))||'null');if(s&&s.url)applySeal(p+':'+w,s.url,s.name);}catch(e){}});});

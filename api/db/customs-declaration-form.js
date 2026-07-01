@@ -176,19 +176,43 @@ async function loadOrders(pool, plan) {
 async function loadLines(pool, orderIds) {
   if (!orderIds.length) return [];
   var r = await pool.query(
-    `SELECT
-       NULLIF(btrim(COALESCE(oli.hs_code, p.hs_code, '')), '') AS hs_code,
-       COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), '')) AS declaration_name,
-       string_agg(DISTINCT NULLIF(btrim(p.declaration_elements), ''), E'\\n') AS declaration_elements,
-       SUM(oli.qty_ctn) AS qty_ctn,
-       SUM(CASE WHEN oli.nw_ctn IS NOT NULL AND oli.qty_ctn IS NOT NULL THEN oli.nw_ctn * oli.qty_ctn ELSE NULL END) AS net_weight_kg,
-       MIN(oli.unit_price) AS unit_price,
-       SUM(oli.subtotal) AS total_amount
-     FROM order_line_items oli
-     LEFT JOIN products p ON p.sku = oli.sku
-     WHERE oli.order_id = ANY($1::int[])
-     GROUP BY NULLIF(btrim(COALESCE(oli.hs_code, p.hs_code, '')), ''),
-              COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), ''))
+    `WITH product_one AS (
+       SELECT DISTINCT ON (sku)
+              sku, hs_code, declaration_name, declaration_elements
+       FROM products
+       WHERE NULLIF(btrim(sku), '') IS NOT NULL
+       ORDER BY sku, active DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC
+     ),
+     keyed AS (
+       SELECT
+         NULLIF(btrim(COALESCE(oli.hs_code, p.hs_code, '')), '') AS hs_code,
+         COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), '')) AS declaration_name,
+         NULLIF(btrim(p.declaration_elements), '') AS declaration_elements,
+         oli.qty_ctn,
+         oli.nw_ctn,
+         oli.unit_price,
+         oli.subtotal
+       FROM order_line_items oli
+       LEFT JOIN product_one p ON p.sku = oli.sku
+       WHERE oli.order_id = ANY($1::int[])
+     ),
+     hs_elements AS (
+       SELECT hs_code, MIN(declaration_elements) AS declaration_elements
+       FROM keyed
+       WHERE declaration_elements IS NOT NULL
+       GROUP BY hs_code
+     )
+     SELECT
+       k.hs_code,
+       k.declaration_name,
+       MAX(h.declaration_elements) AS declaration_elements,
+       SUM(k.qty_ctn) AS qty_ctn,
+       SUM(CASE WHEN k.nw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.nw_ctn * k.qty_ctn ELSE NULL END) AS net_weight_kg,
+       MIN(k.unit_price) AS unit_price,
+       SUM(k.subtotal) AS total_amount
+     FROM keyed k
+     LEFT JOIN hs_elements h ON h.hs_code IS NOT DISTINCT FROM k.hs_code
+     GROUP BY k.hs_code, k.declaration_name
      ORDER BY hs_code, declaration_name`,
     [orderIds]
   );
@@ -207,6 +231,7 @@ function cargoRows(lines, destination) {
   if (!lines.length) {
     return `<tr><td colspan="9" class="empty-row">无货物明细</td></tr>`;
   }
+  var seenHs = new Set();
   return lines.map(function (l, i) {
     var qty = [
       fmtM(l.net_weight_kg, 0) ? fmtM(l.net_weight_kg, 0) + "千克" : "",
@@ -217,10 +242,10 @@ function cargoRows(lines, destination) {
       fmtM(l.total_amount, 2),
       "人民币",
     ].filter(Boolean).join("<br>");
-    var name = [
-      clean(l.declaration_name),
-      clean(l.declaration_elements),
-    ].filter(Boolean).map(esc).join("<br>");
+    var hs = clean(l.hs_code) || "__row_" + i;
+    var elements = seenHs.has(hs) ? "" : clean(l.declaration_elements);
+    seenHs.add(hs);
+    var name = [clean(l.declaration_name), elements].filter(Boolean).map(esc).join("<br>");
     return `<tr>
       <td>${i + 1}</td>
       <td>${blank(l.hs_code)}</td>
