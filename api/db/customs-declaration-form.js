@@ -250,7 +250,15 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var shipper = sellerLabel(issuer, company);
 
   var customer = firstOrderValue(orders, "customer", "customer");
-  var contractNo = firstOrderValue(orders, "contract_no", "contractNo");
+  // 合同协议号用我们的 FS 号(内部号),优先取 FS 开头的合同号;都没有才退回原始 contract_no
+  var contractNo = (function () {
+    for (var i = 0; i < orders.length; i++) {
+      var raw = parseRaw(orders[i].raw);
+      var v = clean(pick(orders[i].fs_no, raw.fs_no, orders[i].contract_no, orders[i].contractNo, raw.contractNo));
+      if (/^FS/i.test(v)) return v;
+    }
+    return firstOrderValue(orders, "contract_no", "contractNo");
+  })();
   var currency = firstOrderValue(orders, "currency", "currency") || "CNY";
   var tradeMode = "0110 一般贸易";
   var levyNature = "101 一般征税";
