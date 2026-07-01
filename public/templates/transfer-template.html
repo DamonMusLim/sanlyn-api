@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>内转外装箱资料</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #111827;
+      background: #f3f4f6;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      font-size: 13px;
+    }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid #d1d5db;
+      background: #ffffff;
+    }
+    .toolbar button {
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid #9ca3af;
+      border-radius: 4px;
+      background: #ffffff;
+      color: #111827;
+      cursor: pointer;
+    }
+    .toolbar button:hover { background: #f9fafb; }
+    .toolbar .status {
+      margin-left: auto;
+      color: #6b7280;
+      font-size: 12px;
+    }
+    #doc {
+      position: relative;
+      width: 1180px;
+      min-height: 760px;
+      margin: 18px auto;
+      padding: 28px 32px 44px;
+      background: #ffffff;
+      box-shadow: 0 1px 8px rgba(0,0,0,.12);
+    }
+    h1 {
+      margin: 0 0 18px;
+      text-align: center;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px 14px;
+      margin-bottom: 16px;
+    }
+    .field {
+      min-height: 28px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #9ca3af;
+      white-space: nowrap;
+    }
+    .field b { margin-right: 4px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    th, td {
+      min-height: 28px;
+      padding: 6px 5px;
+      border: 1px solid #374151;
+      text-align: center;
+      vertical-align: middle;
+      word-break: break-word;
+    }
+    th {
+      background: #f3f4f6;
+      font-weight: 700;
+    }
+    .left { text-align: left; }
+    .seal {
+      position: absolute;
+      right: 76px;
+      bottom: 56px;
+      max-width: 150px;
+      max-height: 150px;
+      pointer-events: none;
+    }
+    body.preview [contenteditable="true"] { outline: none; }
+    body.preview .toolbar { display: none; }
+    @media print {
+      body { background: #ffffff; }
+      .toolbar { display: none; }
+      #doc {
+        width: auto;
+        min-height: 0;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+      }
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script defer src="/templates/transfer-template.js"></script>
+</head>
+<body>
+  <div class="toolbar">
+    <button type="button" onclick="togglePreview()" id="previewBtn">预览</button>
+    <button type="button" onclick="toggleMode()" id="modeBtn">切到截单明细</button>
+    <button type="button" onclick="saveDraft()">保存草稿</button>
+    <button type="button" onclick="downloadPng()">下载 PNG</button>
+    <button type="button" onclick="window.print()">打印</button>
+    <button type="button" onclick="pickSeal()">盖章</button>
+    <span class="status" id="status"></span>
+  </div>
+
+  <main id="doc" contenteditable="true">
+    <h1>内转外装箱资料</h1>
+
+    <section class="meta">
+      <div class="field"><b>船名航次：</b><span id="vesselVoyage"></span></div>
+      <div class="field"><b>外贸提单号：</b><span id="exportBl"></span></div>
+      <div class="field"><b>截单/ETD：</b><span id="etd"></span></div>
+      <div class="field"><b>Shipment No：</b><span id="shipmentNo"></span></div>
+    </section>
+
+    <section id="transferView">
+      <table id="transferTable">
+        <thead>
+          <tr>
+            <th style="width:42px">序号</th>
+            <th>进口船名航次</th>
+            <th>内贸到港时间</th>
+            <th>进口内贸提单号</th>
+            <th style="width:70px">柜型</th>
+            <th>柜号</th>
+            <th>封铅</th>
+            <th>外贸出口港口</th>
+            <th>对应外贸提单号</th>
+            <th>对应船名航次</th>
+            <th style="width:64px">件数</th>
+            <th>柜重 GW</th>
+            <th>皮重 TARE</th>
+            <th>VGM</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section id="cutoffView" hidden>
+      <table id="cutoffTable">
+        <thead>
+          <tr>
+            <th style="width:42px">序号</th>
+            <th>提单号</th>
+            <th>产品</th>
+            <th style="width:64px">箱数</th>
+            <th>毛重 GW</th>
+            <th>CBM</th>
+            <th>柜号</th>
+            <th>封铅</th>
+            <th>皮重</th>
+            <th>VGM</th>
+            <th>HS CODE</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
