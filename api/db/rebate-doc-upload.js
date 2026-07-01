@@ -32,13 +32,15 @@ async function handleUploadInvoice(req, res) {
   const oss = await uploadToOss(customsNo, "INVOICE", file);
   const invoiceNo = (fields.invoice_no || "").trim() || `MANUAL_${Date.now()}`;
   const amount = fields.amount ? parseFloat(String(fields.amount).replace(/[^\d.]/g, "")) : null;
-  await pool.query(
+  // 幂等:同报关号的手工补票只留一张(防双击/重放插多张)
+  const ins = await pool.query(
     `INSERT INTO finance_invoices_in (invoice_no, issue_date, customs_nos, seller_name, amount_incl_tax, attachments, source, created_at, updated_at)
      SELECT $1, $2::date, ARRAY[$3::varchar], $4, $5, $6::jsonb, 'collab-rebate-manual', now(), now()
-     WHERE NOT EXISTS (SELECT 1 FROM finance_invoices_in WHERE invoice_no=$1 AND customs_nos @> ARRAY[$3::varchar])`,
+     WHERE NOT EXISTS (SELECT 1 FROM finance_invoices_in WHERE customs_nos @> ARRAY[$3::varchar] AND source='collab-rebate-manual')
+     RETURNING invoice_no`,
     [invoiceNo, fields.issue_date || null, customsNo, (fields.seller_name || "").trim() || null, amount,
      JSON.stringify([{ url: oss.url, name: file.fileName }])]);
-  return res.json({ success: true, customs_no: customsNo, invoice_no: invoiceNo, file_url: oss.url });
+  return res.json({ success: true, customs_no: customsNo, invoice_no: invoiceNo, inserted: ins.rowCount > 0, file_url: oss.url });
 }
 
 async function handleUploadContract(req, res) {
@@ -52,7 +54,7 @@ async function handleUploadContract(req, res) {
     contractNo = fer.rows[0]?.contract_no || "";
   }
   if (!contractNo) return json(res, 400, { error: "contract_no required" });
-  const exist = await pool.query(`SELECT id FROM contracts WHERE contract_no=$1 AND file_url IS NOT NULL LIMIT 1`, [contractNo]);
+  const exist = await pool.query(`SELECT id FROM contracts WHERE contract_no=$1 AND type='采购合同' AND file_url IS NOT NULL LIMIT 1`, [contractNo]);
   if (exist.rows.length) return json(res, 409, { error: "该合同采购合同已上传" });
   const facCode = await factoryCodeFor(pool, { contractNo, customsNo });
   const oss = await uploadToOss(facCode || contractNo, "CONTRACT", file);
@@ -71,11 +73,20 @@ async function handleUploadSlip(req, res) {
   const contractNo = (fields.contract_no || "").trim();
   if (!customsNo && !contractNo) return json(res, 400, { error: "customs_no or contract_no required" });
   const facCode = await factoryCodeFor(pool, { contractNo, customsNo });
+  // 判定按 beneficiary=工厂,查不到工厂则传了也永远显缺→先阻断
+  if (!facCode) return json(res, 400, { error: "无法确定工厂,请先在协同中枢关联工厂再补收汇" });
   const amount = fields.amount ? parseFloat(String(fields.amount).replace(/[^\d.]/g, "")) : null;
-  const oss = await uploadToOss(facCode || customsNo || contractNo, "SLIP", file);
+  const oss = await uploadToOss(facCode, "SLIP", file);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // 幂等:同报关号/合同的协同补收汇已存在则跳过(防重复插库)
+    const dup = await client.query(
+      `SELECT 1 FROM bank_slip_links l JOIN bank_slips bs ON bs.id=l.slip_id
+        WHERE bs.raw->>'source'='collab-rebate-slip'
+          AND ( ($1::text <> '' AND l.bl_no=$1) OR ($2::text <> '' AND l.contract_no=$2) ) LIMIT 1`,
+      [customsNo || "", contractNo || ""]);
+    if (dup.rows.length) { await client.query("ROLLBACK"); return res.json({ success: true, skipped: true, file_url: oss.url }); }
     const slip = await client.query(
       `INSERT INTO bank_slips (beneficiary_company_code, amount, currency, file_url, status, raw, created_by, created_at, updated_at)
        VALUES ($1,$2,'CNY',$3,'recorded',$4::jsonb,'collab-rebate',now(),now()) RETURNING id`,

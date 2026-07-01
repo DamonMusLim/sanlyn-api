@@ -75,9 +75,9 @@ async function handleCustomsDocStatus(req, res, pool) {
     const fc = await pool.query(`SELECT factory_code FROM orders WHERE contract_no=$1 AND factory_code IS NOT NULL LIMIT 1`, [rContractNo]);
     rFactory = fc.rows[0]?.factory_code || null;
   }
-  const _done = async (sql, params) => { try { const r = await pool.query(sql, params); return r.rows[0] || null; } catch { return null; } };
-  const _inv = rCustomsNo ? await _done(`SELECT true AS done, fii.attachments::text AS doc_url FROM finance_invoices_in fii WHERE fii.customs_nos @> ARRAY[$1]::varchar[] AND COALESCE(fii.review_status,'') NOT IN ('void','red_ink') LIMIT 1`, [rCustomsNo]) : null;
-  const _con = rContractNo ? await _done(`SELECT true AS done, c.file_url AS doc_url FROM contracts c WHERE c.contract_no=$1 AND c.file_url IS NOT NULL LIMIT 1`, [rContractNo]) : null;
+  const _done = async (sql, params) => { try { const r = await pool.query(sql, params); return r.rows[0] || null; } catch (e) { console.error('[rebate-docs]', e.message); return null; } };
+  const _inv = rCustomsNo ? await _done(`SELECT true AS done, fii.attachments->0->>'url' AS doc_url FROM finance_invoices_in fii WHERE fii.customs_nos @> ARRAY[$1]::varchar[] AND COALESCE(fii.review_status,'') NOT IN ('void','red_ink') LIMIT 1`, [rCustomsNo]) : null;
+  const _con = rContractNo ? await _done(`SELECT true AS done, c.file_url AS doc_url FROM contracts c WHERE c.contract_no=$1 AND c.type='采购合同' AND c.file_url IS NOT NULL LIMIT 1`, [rContractNo]) : null;
   const _slp = (rCustomsNo || rContractNo) ? await _done(`SELECT true AS done, bs.file_url AS doc_url FROM bank_slip_links l JOIN bank_slips bs ON bs.id=l.slip_id WHERE (l.bl_no=$1 OR ($2::text IS NOT NULL AND l.contract_no=$2)) AND bs.beneficiary_company_code=$3 LIMIT 1`, [rCustomsNo, rContractNo, rFactory]) : null;
   const rebate_docs = [
     { key: "进项票", label: "进项票·工厂专票", owner: "工厂", done: !!_inv, doc_url: _inv?.doc_url || null },
