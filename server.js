@@ -229,11 +229,36 @@ mount("/api/db/finance-records",          () => import("./api/db/finance-records
 mount("/api/db/finance-receivables",      () => import("./api/db/finance-records.js"));
 // FINANCE-WORKSPACE-UI-IMPL-001: read-only freight AP bills (GET only, no writes)
 mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplier-bills.js"));
+mount("/api/db/freight-invoice-b",        () => import("./api/db/freight-invoice-b.js"));
 mount("/api/db/freight-bill-intake",      () => import("./api/db/freight-bill-intake.js"));
+mount("/api/db/canonical-doc",            () => import("./api/db/canonical-doc.js"));
 mount("/api/db/order-intake-validate", () => import("./api/db/order-intake-validate.js"));
+mount("/api/db/freight-rate-adopt",      () => import("./api/db/freight-rate-adopt.js"));
+app.all("/api/db/billing-tab/*", async (req, res) => {
+  try {
+    const mod = await import("./api/db/billing-tab.js");
+    await (mod.default || mod)(req, res);
+  } catch (err) {
+    console.error("[billing-tab] Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+app.all("/api/db/bill-center/*", async (req, res) => {
+  try {
+    const mod = await import("./api/db/bill-center.js");
+    await (mod.default || mod)(req, res);
+  } catch (err) {
+    console.error("[bill-center] Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+mount("/api/db/bill-center",      () => import("./api/db/bill-center.js"));
 mount("/api/db/freight-cost-audit",   () => import("./api/db/freight-cost-audit.js")); // freight cost vs sale audit + set-par (2026-06-17)
 mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 工厂协同门户·财务板块(短码+collab mt)
+mount("/api/db/factory-invoice-reconcile", () => import("./api/db/factory-invoice-reconcile.js")); // 工厂开票对账台
+mount("/api/db/customs-collab", () => import("./api/db/customs-collab.js")); // 报关单开票协同
+mount("/api/db/recon-shadow", () => import("./api/db/recon-shadow.js")); // 对账框架影子端点
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
@@ -307,6 +332,7 @@ mount("/api/db/forwarder-booking-submit", () => import("./api/db/forwarder-booki
 mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"));
 mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
 mount("/api/db/shipping-plan-rebook", () => import("./api/db/shipping-plan-rebook.js")); // 换航次原子操作: 旧航次进raw.booking_history+新航次写主表 2026-06-10
+mount("/api/db/shipping-transfer-gen", () => import("./api/db/shipping-transfer-gen.js")); // 内转外Excel自动生成
 mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));
 // Product Master V1 — Factory Write-in (PATCH only; raw.factory_profile +
@@ -466,6 +492,7 @@ mount("/api/db/product-image-update", () => import("./api/db/product-image-updat
 mount("/api/db/migrate-rfq",   () => import("./api/db/migrate-rfq.js"));    // table migration
 mount("/api/db/rfq-requests",  () => import("./api/db/rfq-requests.js"));   // CRUD
 mount("/api/db/rfq-items",     () => import("./api/db/rfq-items.js"));      // forwarder quote lines
+mount("/api/public/freight-quote/:itemId", () => import("./api/public/freight-quote.js")); // 货代公开报价页(免登录,token=freight_rfq_items.id)
 mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
@@ -550,6 +577,7 @@ mount("/api/db/packaging-consume",  () => import("./api/db/packaging-consume.js"
 mount("/api/db/daigou-promote",  () => import("./api/db/daigou-promote.js"));
 mount("/api/db/customs-ocr",  () => import("./api/db/customs-ocr.js"));
 mount("/api/db/customs-doc-upload", () => import("./api/db/customs-doc-upload.js"));
+mount("/api/db/rebate-doc-upload", () => import("./api/db/rebate-doc-upload.js"));
 mount("/api/db/kp",  () => import("./api/db/kp.js"));
 mount("/api/db/invoice-portal",  () => import("./api/db/invoice-portal.js"));
 mount("/api/db/invoice-bind",  () => import("./api/db/invoice-bind.js"));

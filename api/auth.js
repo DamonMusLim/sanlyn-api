@@ -109,11 +109,18 @@ const PUBLIC_PATHS = [
   "/api/db/customer-invite/activate",
   // Forwarder Booking Submit — token-authenticated, no JWT
   "/api/db/forwarder-booking-submit",
+  // Billing tab read-only lens — handler validates raw magic-link token itself
+  "/api/db/billing-tab",
+  "/api/db/billing-tab/shipment",
+  "/api/db/billing-tab/company",
   // Customs Broker Magic Link — token-authenticated, no JWT
   "/api/db/customs-broker-checkin",
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
   "/api/db/factory-portal", // 工厂门户:resolve/upload公开,gen内部校admin JWT
+  "/api/db/factory-invoice-reconcile", // 工厂开票对账台:internal自校JWT,factory c/mt token-gated
+  "/api/db/customs-collab", // 报关单开票协同:internal自校JWT,factory c/mt token-gated
+  "/api/db/recon-shadow", // 对账框架影子: handler内admin自校
   // Team invite accept — public (token in URL is the credential, validated server-side)
   "/api/db/team-join",
   "/api/db/kp",
@@ -134,6 +141,8 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/collab-pricing",
   "/api/db/booking-collab/collab-order-pricing",
   "/api/db/booking-collab/collab-pricing-submit",
+  "/api/db/bill-center/collab/validate",
+  "/api/db/bill-center/collab/submit",
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
@@ -189,6 +198,9 @@ export async function authMiddleware(req, res, next) {
 
   // 静态文件 /public/* 直通（driver-evidence.html / dispatch-paste.html 等）
   if (req.path.startsWith("/public/")) return next();
+
+  // Public forwarder freight quote page — token = freight_rfq_items.id (UUID), 处理器自校验
+  if (req.path.startsWith("/api/public/")) return next();
 
   // Factory short link /f/<token> → redirect to /public/factory-fill.html, no auth
   if (req.path.startsWith("/f/")) return next();

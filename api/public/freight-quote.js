@@ -17,7 +17,19 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.end();
 
   const pool = getPool();
-  const itemId = req.url.split("/").pop().split("?")[0];
+  let itemId = req.url.split("/").pop().split("?")[0];
+
+  // 短码解析: 非 UUID 视为短码 → 查 freight_quote_shortlinks + 校验过期(一周)
+  if (itemId && !/^[0-9a-f-]{36}$/i.test(itemId)) {
+    const { rows: slRows } = await pool.query(
+      "SELECT item_id, expires_at FROM freight_quote_shortlinks WHERE code = $1", [itemId]
+    );
+    if (!slRows.length) { res.writeHead(404); return res.end(JSON.stringify({ error: "Not found" })); }
+    if (new Date(slRows[0].expires_at) < new Date()) {
+      res.writeHead(410); return res.end(JSON.stringify({ error: "expired", message: "链接已过期" }));
+    }
+    itemId = slRows[0].item_id;
+  }
 
   if (!itemId || !/^[0-9a-f-]{36}$/i.test(itemId)) {
     res.writeHead(400); return res.end(JSON.stringify({ error: "Invalid token" }));

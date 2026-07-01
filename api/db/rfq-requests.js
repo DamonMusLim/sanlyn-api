@@ -25,14 +25,30 @@ export default async function handler(req, res) {
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const sql = `
       SELECT r.id, r.order_id, r.pol, r.pod, r.ctnr_type, r.status,
-             r.awarded_item_id, r.markup_usd, r.client_rate_usd,
+             r.awarded_item_id,
              r.created_by, r.created_at, r.updated_at, r.etd, r.route,
              r.shipping_plan_id, r.service_type,
-             o.order_no, o.customer,
-             sp.shipment_no AS plan_shipment_no
+             o.order_no,
+             sp.container_qty AS ctnr_count,
+             sp.gross_weight AS gross_weight_kg,
+             sp.shipment_no AS plan_shipment_no,
+             (SELECT string_agg(t.label, ' / ')
+                FROM (
+                  SELECT (COALESCE(oi.product_name, '') || '×' || oi.qty_ctn || '箱') AS label
+                    FROM order_line_items oi
+                   WHERE oi.order_id = r.order_id
+                   ORDER BY oi.sort_order NULLS LAST
+                   LIMIT 3
+                ) t
+             ) AS product_summary
       FROM freight_rfqs r
       LEFT JOIN orders o ON o.id = r.order_id
-      LEFT JOIN shipping_plans sp ON sp.id = r.shipping_plan_id
+      LEFT JOIN LATERAL (
+        SELECT container_qty, gross_weight, shipment_no
+          FROM shipping_plans
+         WHERE order_id = r.order_id
+         ORDER BY id DESC LIMIT 1
+      ) sp ON TRUE
       ${clause}
       ORDER BY r.created_at DESC
       LIMIT $${vals.length+1}`;
