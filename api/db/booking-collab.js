@@ -16,6 +16,7 @@ import fs from "fs";
 import path from "path";
 import { getPool, setCors } from "../db.js";
 import { requireAuth, generateToken } from "../auth.js";
+import { registerBookingCollabView, derivePlanFactories } from "./booking-collab-view.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 
@@ -27,6 +28,57 @@ function genRaw() {
 }
 
 // ── GET /validate?token=<raw> ──────────────────────────────────
+async function handleCustomsDocStatus(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+
+  const { plan_id, contract_no } = req.query || {};
+  if (!plan_id && !contract_no) {
+    return res.status(400).json({ ok: false, error: "plan_id or contract_no required" });
+  }
+
+  const vals = [];
+  const where = [];
+  if (plan_id) {
+    vals.push(String(plan_id));
+    where.push(`(sp._id = $${vals.length} OR sp.id::text = $${vals.length})`);
+  }
+  if (contract_no) {
+    vals.push(String(contract_no));
+    where.push(`o.contract_no = $${vals.length}`);
+  }
+
+  const { rows } = await pool.query(`
+    SELECT sp.id,
+           sp.customs_arrange,
+           min(o.order_no) AS doc_id,
+           min(o.contract_no) AS contract_no,
+           count(DISTINCT o.contract_no) FILTER (WHERE o.contract_no IS NOT NULL AND o.contract_no <> '') AS contract_count,
+           bool_or(du.doc_type IN ('customs_decl','customs_declaration')) AS uploaded,
+           max(CASE WHEN du.doc_type IN ('customs_decl','customs_declaration')
+                    THEN COALESCE(du.stamped_url, du.url) END) AS customs_url
+      FROM shipping_plans sp
+      LEFT JOIN orders o ON o.shipping_plan_id = sp.id
+      LEFT JOIN document_uploads du ON du.contract_no = o.contract_no
+     WHERE ${where.join(" AND ")}
+     GROUP BY sp.id, sp.customs_arrange
+     LIMIT 1`,
+    vals
+  );
+
+  if (!rows.length) return res.status(404).json({ ok: false, error: "not_found" });
+
+  const row = rows[0];
+  return res.json({
+    ok: true,
+    show: row.customs_arrange !== "self",
+    uploaded: !!row.uploaded,
+    customs_url: row.customs_url || null,
+    need_manual: Number(row.contract_count || 0) > 1,
+    doc_id: row.doc_id || null,
+    contract_no: row.contract_no || contract_no || null,
+  });
+}
+
 async function handleValidate(req, res, pool) {
   const raw = req.query && req.query.token;
   if (!raw || raw.length < 16)
@@ -624,19 +676,6 @@ async function handleFactorySubmit(req, res, pool) {
         if (wb.length) wbOrders.add(wb[0].order_id);
       } catch (e) { console.error('[oli-writeback]', e.message); }
     }
-    // 订单总量随明细刷新（只填空，绝不覆盖已有真值）
-    for (const oid of wbOrders) {
-      await pool.query(
-        `UPDATE orders o SET
-           net_weight   = COALESCE(o.net_weight,   s.nw),
-           gross_weight = COALESCE(o.gross_weight, s.gw),
-           total_cbm    = COALESCE(o.total_cbm,    s.cbm)
-         FROM (SELECT ROUND(SUM(COALESCE(nw_ctn,0)*qty_ctn)::numeric,2) nw,
-                      ROUND(SUM(COALESCE(gw_ctn,0)*qty_ctn)::numeric,2) gw,
-                      ROUND(SUM(COALESCE(cbm_ctn,0)*qty_ctn)::numeric,3) cbm
-                 FROM order_line_items WHERE order_id = $1) s
-         WHERE o.id = $1`, [oid]).catch(() => {});
-    }
   }
 
   // 工厂装柜过磅：container_weights=[{seq,weigh_kg}] → raw.factory_weights 留痕 + 柜表货重只填空
@@ -674,8 +713,6 @@ async function handleFactorySubmit(req, res, pool) {
                 await pool.query(
                   `UPDATE order_line_items SET gw_ctn = $1, cbm_source = COALESCE(cbm_source,'') || ' gw:weigh-derived'
                     WHERE order_id = $2 AND COALESCE(gw_ctn,0)=0`, [per, b.oid]);
-                await pool.query(
-                  `UPDATE orders SET gross_weight = $1 WHERE id = $2 AND COALESCE(gross_weight,0)=0`, [w.kg, b.oid]);
               }
             }
           } catch (e) { console.error('[weigh-normalize]', e.message); }
@@ -1736,8 +1773,9 @@ async function handlePlanFactories(req, res, pool) {
   for (const name of (Array.isArray(raw.factories) ? raw.factories : [])) put(name, {});
   // 4) 已提交的厂标
   for (const label of Object.keys(fs)) put(label, {});
-  const factories = [...map.values()].map(f => ({ ...f,
+  let factories = [...map.values()].map(f => ({ ...f,
     qty: f.qty || (f.seqs || []).length || null, submitted: !!fs[f.label] }));
+  if (!factories.length) factories = await derivePlanFactories(pool, plan.id);
   return res.json({ ok: true, container_type: plan.container_type,
     container_qty: plan.container_qty, factories });
 }
@@ -1870,13 +1908,13 @@ async function handleShipmentOrders(req, res, pool) {
   let candR = { rows: [] };
   if (custName) {
     candR = await pool.query(
-      `SELECT o.id, o.order_no, o.factory, o.customer, o.pol, o.pod, o.company_code,
+      `SELECT o.id, o.order_no, o.factory, o.customer, o.pol, o.company_code,
               COALESCE(o.company_name_en, o.company_name_cn, o.customer, o.company_code, '') AS customer_label,
               COALESCE((SELECT SUM(qty_ctn) FROM order_line_items WHERE order_id = o.id), 0)::int AS total_qty
-         FROM orders o
-        WHERE o.shipping_plan_id IS NULL
+        FROM orders o
+       WHERE o.shipping_plan_id IS NULL
           AND o.status IN ('confirmed', 'ready')
-          AND (o.customer ILIKE $1 OR o.customer_en ILIKE $1 OR o.company_name_en ILIKE $1
+          AND (o.customer ILIKE $1 OR o.company_name_en ILIKE $1 OR o.company_name_cn ILIKE $1
                OR o.company_code IN (
                  SELECT company_code FROM companies
                   WHERE name_en ILIKE $1 OR name_cn ILIKE $1 LIMIT 5
@@ -2200,6 +2238,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET"    && pathSuffix === "plan-factories")     return await handlePlanFactories(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "validate")           return await handleValidate(req, res, pool);
+    if (req.method === "GET"    && pathSuffix === "customs-doc-status") return await handleCustomsDocStatus(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-factory-link")  return await handleSendFactoryLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-customer-link") return await handleSendCustomerLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "factory-submit")     return await handleFactorySubmit(req, res, pool);
@@ -2227,6 +2266,7 @@ export default async function handler(req, res) {
     if (req.method === "GET"  && pathSuffix === "collab-messages")        return await handleCollabMessages(req, res, pool);
     if (req.method === "POST" && pathSuffix === "collab-message")         return await handlePostCollabMessage(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "shipment-orders")        return await handleShipmentOrders(req, res, pool);
+    if (await registerBookingCollabView(req, res, pool, { pathSuffix, parentSuffix, requireAuth })) return;
     if ((req.method === "GET" || req.method === "POST") && pathSuffix === "master-preview-token") return await handleMasterPreviewToken(req, res, pool);
     if (req.method === "GET" && pathSuffix === "collab-pricing")       return await handleCollabPricing(req, res, pool);
     if (req.method === "GET" && pathSuffix === "collab-order-pricing") return await handleCollabOrderPricing(req, res, pool);
