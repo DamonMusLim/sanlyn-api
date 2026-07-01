@@ -624,20 +624,6 @@ async function handleFactorySubmit(req, res, pool) {
         if (wb.length) wbOrders.add(wb[0].order_id);
       } catch (e) { console.error('[oli-writeback]', e.message); }
     }
-    // 订单总量随明细刷新（只填空，绝不覆盖已有真值）
-    for (const oid of wbOrders) {
-      await pool.query(
-        `UPDATE orders o SET
-           net_weight   = COALESCE(o.net_weight,   s.nw),
-           gross_weight = COALESCE(o.gross_weight, s.gw),
-           total_cbm    = COALESCE(o.total_cbm,    s.cbm)
-         FROM (SELECT ROUND(SUM(COALESCE(nw_ctn,0)*qty_ctn)::numeric,2) nw,
-                      ROUND(SUM(COALESCE(gw_ctn,0)*qty_ctn)::numeric,2) gw,
-                      ROUND(SUM(COALESCE(cbm_ctn,0)*qty_ctn)::numeric,3) cbm
-                 FROM order_line_items WHERE order_id = $1) s
-         WHERE o.id = $1`, [oid]).catch(() => {});
-    }
-  }
 
   // 工厂装柜过磅：container_weights=[{seq,weigh_kg}] → raw.factory_weights 留痕 + 柜表货重只填空
   if (Array.isArray(req.body.container_weights) && req.body.container_weights.length) {
@@ -674,8 +660,6 @@ async function handleFactorySubmit(req, res, pool) {
                 await pool.query(
                   `UPDATE order_line_items SET gw_ctn = $1, cbm_source = COALESCE(cbm_source,'') || ' gw:weigh-derived'
                     WHERE order_id = $2 AND COALESCE(gw_ctn,0)=0`, [per, b.oid]);
-                await pool.query(
-                  `UPDATE orders SET gross_weight = $1 WHERE id = $2 AND COALESCE(gross_weight,0)=0`, [w.kg, b.oid]);
               }
             }
           } catch (e) { console.error('[weigh-normalize]', e.message); }
