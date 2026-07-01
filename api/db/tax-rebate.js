@@ -193,6 +193,7 @@ export default async function handler(req, res) {
       COALESCE(fer.rebate_lifecycle_status, '未退税') AS rebate_lifecycle_status,
       fer.note, fer.contract_no,
       STRING_AGG(DISTINCT o.order_no, ', ') AS order_nos,
+      (ARRAY_AGG(sp._id::text) FILTER (WHERE sp._id IS NOT NULL))[1] AS shipping_plan_id,
       STRING_AGG(DISTINCT COALESCE(o.company_name_en, o.customer), ', ')
         FILTER (WHERE COALESCE(o.company_name_en, o.customer) IS NOT NULL) AS customers,
       STRING_AGG(DISTINCT oli.declaration_name, '、')
@@ -202,6 +203,7 @@ export default async function handler(req, res) {
     const BASE_FROM = `
       FROM finance_export_rebates fer
       LEFT JOIN orders o ON o.contract_no = fer.contract_no AND o.status != 'cancelled'
+      LEFT JOIN shipping_plans sp ON sp.id = o.shipping_plan_id
       LEFT JOIN order_line_items oli ON oli.order_id = o.id
       LEFT JOIN products p ON p.id = oli.product_id
       LEFT JOIN companies comp ON comp.code = p.factory_code
@@ -309,7 +311,7 @@ export default async function handler(req, res) {
     const ferRows = ferR.rows;
     if (!ferRows.length) {
       return res.json({ success: true, period: label, generated_at: new Date().toISOString(),
-        summary: { total_orders: 0, est_rebate: 0, materials_ok: 0, materials_missing: 0 },
+        summary: { total_orders: 0, est_rebate: 0, materials_ok: 0, materials_missing: 0, materials_or_invoice_missing: 0 },
         orders: [] });
     }
 
@@ -373,8 +375,8 @@ export default async function handler(req, res) {
       sumRebate += rebate;
       const linkedOrders = (r.order_nos || "").split(", ").map(s => s.trim()).filter(Boolean);
       const matchedOrder = linkedOrders.find(ono => declByOrder[ono]);
-      const hasDecl = !!(matchedOrder || r.customs_no);
-      if (hasDecl) okCount++; else missCount++;
+      const reportUploaded = !!matchedOrder;
+      if (reportUploaded) okCount++; else missCount++;
       const noteParts = (r.note || "").split("|");
       const notePort = noteParts[0] || "";
       const noteHint = (noteParts[1] || "").trim();
@@ -403,6 +405,7 @@ export default async function handler(req, res) {
       return {
         customs_no: r.customs_no,
         order_nos: r.order_nos || "—",
+        shipping_plan_id: r.shipping_plan_id || null,
         customers: customerDisplay,
         port: notePort,
         export_date: r.export_date,
@@ -412,7 +415,8 @@ export default async function handler(req, res) {
         declaration_names: r.declaration_names || "—",
         invoice_status: invoiceStatus,
         invoice_nos: invoiceNos,
-        materials_ok: hasDecl,
+        materials_ok: reportUploaded,
+        report_uploaded: reportUploaded,
         input_invoice_ok: hasInputInv,
         input_invoices: inputInvoices,
         doc_ref: matchedOrder ? {
@@ -436,6 +440,7 @@ export default async function handler(req, res) {
         materials_missing: missCount,
         input_inv_ok: invOkCount,
         input_inv_missing: rows.length - invOkCount,
+        materials_or_invoice_missing: rows.filter(x => !x.report_uploaded || !x.input_invoice_ok).length,
         note: "预估退税=税局接收金额×退税率。精确额待进项票匹配(P2)。",
       },
       orders: rows,
