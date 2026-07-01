@@ -7,7 +7,8 @@ import { getPool, setCors } from "../db.js";
 import { isInternalRole } from "../lib/viewmodel-adapter.js";
 
 const ALLOWED_PATCH = ["forwarder_co","vessel","voyage","etd","usd_rate",
-                       "transit_days","notes","is_lowest","selected","currency"];
+                       "transit_days","notes","is_lowest","selected","currency",
+                       "container_type","carrier"];
 
 // 供应商身份（fail-closed）：非内部角色只能以自己公司身份读/写报价
 function supplierIdentity(user) {
@@ -25,6 +26,15 @@ export default async function handler(req, res) {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
   const pool = getPool();
+  await pool.query(`
+    ALTER TABLE freight_rfq_items
+      ADD COLUMN IF NOT EXISTS port_charges_json jsonb,
+      ADD COLUMN IF NOT EXISTS free_pol_days     int,
+      ADD COLUMN IF NOT EXISTS free_pod_days     int,
+      ADD COLUMN IF NOT EXISTS dnd_usd           numeric,
+      ADD COLUMN IF NOT EXISTS container_type    text,
+      ADD COLUMN IF NOT EXISTS carrier           text
+  `);
 
   // ── GET ──
   if (req.method === "GET") {
@@ -57,7 +67,9 @@ export default async function handler(req, res) {
   // ── POST ──
   if (req.method === "POST") {
     const { rfq_id, vessel, voyage, etd, usd_rate,
-            transit_days, notes, currency } = req.body || {};
+            transit_days, notes, currency,
+            port_charges_json, free_pol_days, free_pod_days, dnd_usd,
+            container_type, carrier } = req.body || {};
     const who = supplierIdentity(req.user);
     // 非内部角色：报价公司强制 = 登录身份（不可冒名）；内部可代录指定公司
     let forwarder_co = (req.body || {}).forwarder_co;
@@ -74,11 +86,16 @@ export default async function handler(req, res) {
     const { rows } = await pool.query(
       `INSERT INTO freight_rfq_items
          (rfq_id, forwarder_co, forwarder_company_id, vessel, voyage, etd,
-          usd_rate, currency, transit_days, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          usd_rate, currency, transit_days, notes,
+          port_charges_json, free_pol_days, free_pod_days, dnd_usd,
+          container_type, carrier)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16)
        RETURNING *`,
       [rfq_id, forwarder_co, forwarder_company_id, vessel || null, voyage || null, etd || null,
-       usd_rate, ccy, transit_days || null, notes || null]
+       usd_rate, ccy, transit_days || null, notes || null,
+       port_charges_json ? JSON.stringify(port_charges_json) : null,
+       free_pol_days || null, free_pod_days || null, dnd_usd || null,
+       container_type || null, carrier || null]
     );
     // Recompute is_lowest across all items for this rfq
     await pool.query(
