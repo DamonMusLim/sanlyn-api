@@ -22,7 +22,7 @@ function init(){
   _cfg=CFG[TYPE]||CFG.pi;document.title=_cfg.code+' · Sanlyn';renderShell();
   var orderNo=qp('order_no')||qp('orderNo');if(!orderNo){banner('err','未传 order_no，请加 ?type='+TYPE+'&order_no=XX');return;}
   banner('info','正在拉取订单数据...');
-  loadOrder(orderNo).then(function(rows){if(!rows.length)throw new Error('订单 "'+orderNo+'" 未找到或无权限');fillDoc(rows[0],[rows[0]]);hideBanner();}).catch(function(e){banner('err',e.message);});
+  loadOrder(orderNo).then(function(rows){if(!rows.length)throw new Error('订单 "'+orderNo+'" 未找到或无权限');fillDoc(rows[0],[rows[0]]);hideBanner();setTimeout(handleHashAction,300);}).catch(function(e){banner('err',e.message);});
   ['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey(w))||'null');if(s&&s.url)applySeal(w,s.url,s.name);}catch(e){}});
 }
 function renderShell(){
@@ -185,6 +185,12 @@ function exportExcel(){
   var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=run;s.onerror=function(){alert('Excel库加载失败');if(btn){btn.textContent='下载Excel';btn.disabled=false;}};document.head.appendChild(s);
 }
 
+function handleHashAction(){
+  var h=(location.hash||'').toLowerCase();
+  if(h.indexOf('excel')>=0){exportExcel();}
+  else if(h.indexOf('seal')>=0||h.indexOf('stamp')>=0){openSealPicker('seller');}
+  else if(h.indexOf('print')>=0){window.print();}
+}
 function sealKey(w){return 'doc_editor_seal_'+w;}
 function initRotHandle(who){var key=who==='buyer'?'Buyer':'Seller',area=document.getElementById('seal'+key),img=document.getElementById('seal'+key+'Img');if(!img)return;img.onmousedown=function(e){e.preventDefault();e.stopPropagation();img.style.cursor='grabbing';var r=area.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,sm=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI,sr=_sealRotation[who]||0;function mv(ev){var a=Math.atan2(ev.clientY-cy,ev.clientX-cx)*180/Math.PI;_sealRotation[who]=sr+(a-sm);img.style.transform='rotate('+_sealRotation[who].toFixed(1)+'deg)';}function up(){img.style.cursor='grab';document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);}document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);};}
 function applySeal(who,url,name){var key=who==='buyer'?'Buyer':'Seller',img=document.getElementById('seal'+key+'Img'),hint=document.getElementById('seal'+key+'Hint');_sealRotation[who]=0;if(img){img.src=url;img.style.display='block';img.style.transform='';}if(hint)hint.style.display='none';var si=document.getElementById('status'+key+'Img'),sn=document.getElementById('status'+key+'Name');if(si){si.src=url;si.style.display='inline';}if(sn){sn.textContent=name||(who==='buyer'?'买方章':'卖方章');sn.classList.remove('empty');}try{localStorage.setItem(sealKey(who),JSON.stringify({url:url,name:name||''}));}catch(e){}initRotHandle(who);}
