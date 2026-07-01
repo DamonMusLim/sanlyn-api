@@ -3,6 +3,7 @@
 // ctnr_type, status, awarded_item_id, markup_usd, client_rate_usd, created_by, created_at
 
 import { getPool, setCors } from "../db.js";
+import { isInternalRole } from "../lib/viewmodel-adapter.js";
 
 const ALLOWED_PATCH = ["pol","pod","ctnr_type","status","awarded_item_id",
                        "markup_usd","client_rate_usd","order_id","etd","route"];
@@ -17,8 +18,11 @@ export default async function handler(req, res) {
   // ── GET ──
   if (req.method === "GET") {
     const { status, order_id, service_type, limit = 200 } = req.query;
+    const internal = isInternalRole(req.user?.role);
+    const companyId = req.user?.company_id || req.user?.companyId || null;
+    const companyName = req.user?.company_name || req.user?.companyName || req.user?.company || null;
     const where = [];
-    const vals = [];
+    const vals = [internal, companyId, companyName];
     if (status) { where.push(`r.status = $${vals.length+1}`); vals.push(status); }
     if (order_id) { where.push(`r.order_id = $${vals.length+1}`); vals.push(order_id); }
     if (service_type) { where.push(`COALESCE(r.service_type,'ocean') = $${vals.length+1}`); vals.push(service_type); }
@@ -28,10 +32,13 @@ export default async function handler(req, res) {
              r.awarded_item_id,
              r.created_by, r.created_at, r.updated_at, r.etd, r.route,
              r.shipping_plan_id, r.service_type,
+             CASE WHEN $1::boolean THEN r.markup_usd ELSE NULL END AS markup_usd,
+             CASE WHEN $1::boolean THEN r.client_rate_usd ELSE NULL END AS client_rate_usd,
              o.order_no,
              sp.container_qty AS ctnr_count,
              sp.gross_weight AS gross_weight_kg,
              sp.shipment_no AS plan_shipment_no,
+             COALESCE(items.items, '[]'::json) AS items,
              (SELECT string_agg(p.name_cn || '×' || oi.qty || '箱', ' / ')
                 FROM order_items oi
                 JOIN products p ON p.id = oi.product_id
@@ -46,6 +53,20 @@ export default async function handler(req, res) {
          WHERE order_id = r.order_id
          ORDER BY id DESC LIMIT 1
       ) sp ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT json_agg(row_to_json(x) ORDER BY x.usd_rate ASC) AS items
+          FROM (
+            SELECT i.id, i.rfq_id, i.forwarder_co, i.vessel, i.voyage, i.etd,
+                   i.usd_rate, i.port_charges_json, i.free_pol_days, i.free_pod_days,
+                   i.dnd_usd, i.currency, i.selected, i.submitted_at,
+                   i.container_type, i.carrier
+              FROM freight_rfq_items i
+             WHERE i.rfq_id = r.id
+               AND ($1::boolean
+                 OR (($2::int IS NOT NULL AND i.forwarder_company_id = $2)
+                   OR ($3::text IS NOT NULL AND i.forwarder_co = $3)))
+          ) x
+      ) items ON TRUE
       ${clause}
       ORDER BY r.created_at DESC
       LIMIT $${vals.length+1}`;
