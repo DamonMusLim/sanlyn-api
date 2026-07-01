@@ -62,6 +62,19 @@ export default async function handler(req, res) {
 
   var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,audience:_audReq,fmt:_fmtVariant,style:_styleVariant}=req.query;
 
+  // 2026-07-01 type=pack 浏览器视图 → 正版可编辑模版(export-docs-template)：海关单行(产品汇总真值)+PORT+可编辑+盖章。
+  // PDF/xlsx 导出仍走下方服务端渲染,不受影响。&mode=detail 走逐SKU明细。
+  if (type === "pack") {
+    var _pf = (Array.isArray(format) ? format : [format]).map(function(f){ return String(f||"").toLowerCase(); });
+    if (_pf.indexOf("pdf") === -1 && _pf.indexOf("xlsx") === -1) {
+      var _ptok = req.query.token || reqToken || "";
+      var _pmode = (req.query.mode === "detail") ? "&mode=detail" : "";
+      return res.redirect(302, "/templates/export-docs-template.html?order_no=" + encodeURIComponent(id||"")
+        + "&ids=" + encodeURIComponent(ids||id||"") + _pmode
+        + "&token=" + encodeURIComponent(_ptok));
+    }
+  }
+
   // PDF 输出拦截(2026-06-28):后续各单据仍 return res.send(html),这里统一渲染成真 PDF。
   // 只处理 format=pdf 且 body 是 HTML;format=xlsx 和普通 HTML 不受影响。
   if ((Array.isArray(format) ? format : [format]).some(function(f){ return String(f).toLowerCase() === "pdf"; })) {
