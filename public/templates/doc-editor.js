@@ -1,5 +1,5 @@
 var API='https://api.sanlyn.cn';
-var TYPE=(qp('type')||'pi').toLowerCase(),_cfg,_sealTarget='seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={buyer:0,seller:0};
+var TYPE=(qp('type')||'pi').toLowerCase(),_cfg,_pmMap={},_sealTarget='seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={buyer:0,seller:0};
 var CFG={
   pi:{code:'PI',title:'PROFORMA INVOICE',cols:function(c){return ['NO.','DESCRIPTION & SIZE','QTY','PER BAG ('+c+')','CTN PRICE ('+c+')','AMOUNT ('+c+')'];},price:'selling'},
   sc:{code:'SC',title:'SALES CONTRACT',cols:function(c){return ['NO.','DESCRIPTION & SIZE','QTY','PER BAG ('+c+')','CTN PRICE ('+c+')','AMOUNT ('+c+')'];},price:'selling'},
@@ -25,9 +25,10 @@ function init(){
   var orderNo=qp('order_no')||qp('orderNo');if(!orderNo){banner('err','未传 order_no，请加 ?type='+TYPE+'&order_no=XX&token=YY');return;}
   var sibs=(qp('ids')||'').split(',').map(function(s){return s.trim();}).filter(function(s){return s&&s!==orderNo;});
   banner('info','正在拉取订单数据...');
-  Promise.all([loadOrder(orderNo)].concat(sibs.map(loadOrder))).then(function(res){
+  Promise.all([loadOrder(orderNo),fetchProductMaster()].concat(sibs.map(loadOrder))).then(function(res){
     if(!res[0].length)throw new Error('订单 "'+orderNo+'" 未找到或无权限');
-    var primary=res[0][0],all=[primary].concat(res.slice(1).map(function(r){return r[0];}).filter(Boolean));
+    _pmMap=res[1]||{};
+    var primary=res[0][0],all=[primary].concat(res.slice(2).map(function(r){return r[0];}).filter(Boolean));
     all.sort(function(a,b){return String(a.order_no||'').localeCompare(String(b.order_no||''));});
     fillDoc(primary,all);hideBanner();setTimeout(handleHashAction,300);
   }).catch(function(e){banner('err',e.message);});
@@ -45,6 +46,11 @@ function loadOrder(no){
     var rows=arr(d);if(rows.length)return rows;
     return fetch(API+'/api/db/orders?contract_no='+encodeURIComponent(no),{headers:authH()}).then(function(r){return r.json();}).then(arr);
   });
+}
+function fetchProductMaster(){
+  return fetch(API+'/api/db/products?limit=5000',{headers:authH()}).then(function(r){return r.json();}).then(arr).then(function(rows){
+    var m={};rows.forEach(function(p){var k=String(p.code||p.cp_code||p.sku||p.item_code||'').toUpperCase().replace(/\s+/g,''),v=p.name||p.name_en||p.product_name;if(k&&v)m[k]=v;});return m;
+  }).catch(function(){return {};});
 }
 function fetchSellers(){return fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).then(arr).catch(function(){return[];});}
 function fetchVendor(name){if(!name)return Promise.resolve([]);return fetch(API+'/api/db/companies?q='+encodeURIComponent(name),{headers:authH()}).then(function(r){return r.json();}).then(arr).catch(function(){return[];});}
@@ -84,7 +90,7 @@ function setDefaultTerms(){
   el.innerText='1. PACKING Export seaworthy cartons and inner packaging per approved specification.\n2. SHIPMENT Within confirmed production schedule after deposit and written specification approval.\n3. PAYMENT Per confirmed commercial terms stated on this document.\n4. DOCUMENTS Commercial invoice, packing list, bill of lading and other agreed export documents.\n5. QUALITY Goods shall conform to approved samples and specifications.\n6. CLAIMS Written notice with evidence shall be made within 14 days after arrival.\n7. FORCE MAJEURE Delays caused by events beyond reasonable control shall be exempted to the affected extent.\n8. GOVERNING TERMS This document and confirmed amendments prevail over prior discussions.\n9. DISPUTE Chinese law applies; disputes shall be resolved by friendly negotiation or arbitration in Xiamen.';
 }
 function productsOf(o){var ps=o.products||(o.raw&&o.raw.products)||[];if(typeof ps==='string')try{ps=JSON.parse(ps);}catch(e){ps=[];}return (ps||[]).filter(function(p){return p&&(p.name||p.name_en||p.productName||p.product_name||p.name_cn||p.declarationName||p.declaration_name||p.sku);});}
-function prodName(p){var n=p.name||p.name_en||p.productName||p.product_name||p.name_cn||p.declarationName||p.declaration_name||p.sku||'';var sz=p.size||p.spec||p.specification||'';return sz?n+' ('+sz+')':n;}
+function prodName(p){var k=String(p.code||p.cp_code||p.sku||p.item_code||'').toUpperCase().replace(/\s+/g,''),masterName=_pmMap[k];var n=p.name||p.name_en||p.productName||p.product_name||p.name_cn||masterName||p.declarationName||p.declaration_name||p.sku||'';var sz=p.size||p.spec||p.specification||'';return sz?n+' ('+sz+')':n;}
 function rowActions(){return '<td class="no-print" style="padding:2px;border-left:none"><div class="row-actions"><button class="row-btn row-btn-del" onclick="delRow(this)">×</button><button class="row-btn row-btn-dup" onclick="dupRow(this)">⧉</button></div></td>';}
 function groupRow(label){return '<tr class="group-header"><td colspan="6" contenteditable>'+esc(label)+'</td><td class="no-print" style="background:#dbeafe;border:none"></td></tr>';}
 function renderRows(all){
