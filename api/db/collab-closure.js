@@ -6,6 +6,10 @@ import { requireAuth } from "../auth.js";
 import { getClosure } from "./collab-closure-engine.js";
 import { FINANCE_DOMAIN } from "./collab-domains.js";
 import { readUploadPayload, validateFile, uploadToOss } from "./factory-invoice-upload.js";
+import { ocrCustoms } from "./customs-ocr-minimax.js";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 export const config = { api: { bodyParser: false } };
 
@@ -39,9 +43,14 @@ async function handleList(req, res) {
     `SELECT customs_no, fob_cny, rebate_expected FROM finance_export_rebates
       WHERE ($1::date IS NULL OR export_date>=$1) AND ($2::date IS NULL OR export_date<=$2)`, [from, to]);
   const amtMap = new Map(amts.rows.map((r) => [r.customs_no, r]));
+  // 报关单原件(OCR上传落 customs_docs),让报关单chip能打开原件
+  await ensureCustomsDocsTable(pool);
+  const cd = await pool.query(`SELECT customs_no, file_url FROM customs_docs`);
+  const custDocMap = new Map(cd.rows.map((r) => [r.customs_no, r.file_url]));
 
   const summary = { total: rows.length };
   const out = rows.map((r) => {
+    if (custDocMap.has(r.key) && r.items["报关单"]) r.items["报关单"].doc_url = custDocMap.get(r.key);
     summary[r.stage] = (summary[r.stage] || 0) + 1;
     const a = amtMap.get(r.key) || {};
     return { ...r, factory: FAC[r.key] || r.label || r.key, fob_cny: a.fob_cny, rebate_expected: a.rebate_expected };
@@ -123,6 +132,83 @@ async function handleUploadSlip(req, res) {
   finally { client.release(); }
 }
 
+async function ensureCustomsDocsTable(pool) {
+  await pool.query(`CREATE TABLE IF NOT EXISTS customs_docs (
+    id serial PRIMARY KEY, customs_no varchar UNIQUE, file_url text, file_name text,
+    ocr jsonb, cny_total numeric, created_by text,
+    created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now())`).catch(() => {});
+}
+
+// 报关单上传 → MiniMax M3 OCR → fer仅补空填报关货值 + 存原件(事件驱动,无cron)
+async function handleUploadCustoms(req, res) {
+  const pool = getPool();
+  const { fields, file } = await readUploadPayload(req);
+  const verr = validateFile(file); if (verr) return json(res, 400, { error: verr });
+  const dry = String(req.query.dry || fields.dry || "") === "1";
+  // 落临时文件(PDF需路径给pdftoppm)
+  const tmp = path.join(os.tmpdir(), `custup_${Date.now()}_${String(file.fileName || "f").replace(/[^\w.]/g, "_")}`);
+  fs.writeFileSync(tmp, file.buffer);
+  let ocr;
+  try { ocr = await ocrCustoms(file.buffer, file.fileName || "x.pdf", tmp); }
+  finally { try { fs.existsSync(tmp) && fs.unlinkSync(tmp); } catch {} }
+
+  const customsNo = String(ocr.customs_no || fields.customs_no || "").replace(/\D/g, "");
+  if (customsNo.length < 10) return json(res, 422, { error: "OCR未识别到有效海关编号", ocr_raw: ocr.raw });
+  const cny = Number(ocr.cny_total) || 0;
+
+  const cur = await pool.query(
+    `SELECT fob_cny, rebate_rate FROM finance_export_rebates WHERE customs_no=$1 LIMIT 1`, [customsNo]);
+  const exists = cur.rows.length > 0;
+  const curCny = exists ? Number(cur.rows[0].fob_cny) || 0 : 0;
+  const rate = exists ? (Number(cur.rows[0].rebate_rate) || 0.09) : 0.09;
+  const willFill = cny > 0 && curCny === 0;
+  const plan = { customs_no: customsNo, cny_total: cny, by_source: ocr.by_source,
+    fer_exists: exists, cur_fob_cny: curCny, will_fill: willFill, will_insert: !exists && cny > 0,
+    rebate_would: +(cny * rate).toFixed(2) };
+  if (dry) return res.json({ success: true, dry: true, plan, ocr_items: ocr.items });
+
+  const oss = await uploadToOss(customsNo, "CUSTOMS", file);
+  await ensureCustomsDocsTable(pool);
+  await pool.query(
+    `INSERT INTO customs_docs (customs_no, file_url, file_name, ocr, cny_total, created_by, updated_at)
+     VALUES ($1,$2,$3,$4::jsonb,$5,'collab-ocr',now())
+     ON CONFLICT (customs_no) DO UPDATE SET file_url=EXCLUDED.file_url, file_name=EXCLUDED.file_name,
+       ocr=EXCLUDED.ocr, cny_total=EXCLUDED.cny_total, updated_at=now()`,
+    [customsNo, oss.url, file.fileName || null, JSON.stringify(ocr), cny || null]);
+
+  let ferAction = "unchanged";
+  if (!exists && cny > 0) {
+    await pool.query(
+      `INSERT INTO finance_export_rebates (customs_no, fob_cny, rebate_rate, rebate_expected, export_date, source, created_at)
+       VALUES ($1,$2,$3,$4,CURRENT_DATE,'ocr-collab',now())`,
+      [customsNo, cny, rate, +(cny * rate).toFixed(2)]);
+    ferAction = "inserted";
+  } else if (exists && willFill) {
+    await pool.query(
+      `UPDATE finance_export_rebates SET fob_cny=$2, rebate_expected=ROUND($2*COALESCE(rebate_rate,0.09),2)
+        WHERE customs_no=$1 AND COALESCE(fob_cny,0)=0`, [customsNo, cny]);
+    ferAction = "filled";
+  }
+  return res.json({ success: true, customs_no: customsNo, cny_total: cny,
+    by_source: ocr.by_source, fer_action: ferAction, file_url: oss.url });
+}
+
+// 删除报关单原件(重传/清理测试;revert_fer=1 才回滚OCR新建的fer行)
+async function handleDeleteCustomsDoc(req, res) {
+  const pool = getPool();
+  const customsNo = String(req.query.customs_no || "").replace(/\D/g, "");
+  if (!customsNo) return json(res, 400, { error: "customs_no required" });
+  await ensureCustomsDocsTable(pool);
+  const del = await pool.query(`DELETE FROM customs_docs WHERE customs_no=$1 RETURNING id`, [customsNo]);
+  let ferReverted = 0;
+  if (String(req.query.revert_fer || "") === "1") {
+    const r = await pool.query(
+      `DELETE FROM finance_export_rebates WHERE customs_no=$1 AND source='ocr-collab' RETURNING customs_no`, [customsNo]);
+    ferReverted = r.rows.length;
+  }
+  return res.json({ success: true, deleted: del.rows.length, fer_reverted: ferReverted });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -143,6 +229,14 @@ export default async function handler(req, res) {
     if (req.method === "POST" && action === "upload_slip") {
       if (!requireAuth(req, res)) return;
       return handleUploadSlip(req, res);
+    }
+    if (req.method === "POST" && action === "upload_customs") {
+      if (!requireAuth(req, res)) return;
+      return handleUploadCustoms(req, res);
+    }
+    if (req.method === "POST" && action === "delete_customs_doc") {
+      if (!requireAuth(req, res)) return;
+      return handleDeleteCustomsDoc(req, res);
     }
     return json(res, 404, { error: "unknown action" });
   } catch (e) {
