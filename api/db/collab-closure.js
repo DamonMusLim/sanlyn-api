@@ -42,14 +42,6 @@ async function handleList(req, res) {
 
   const summary = { total: rows.length };
   const out = rows.map((r) => {
-    if (contractMap.has(r.key) && r.items["采购合同"]) {
-      r.items["采购合同"] = { status: "done", doc_url: contractMap.get(r.key) };
-      if (r.stage === "采购合同") { // 重算环节:采购合同有了往后推
-        const order = ["报关单", "进项票", "水单", "采购合同"];
-        r.stage = order.find((k) => r.items[k]?.status === "missing") || "已闭环";
-        r.owner = r.stage === "已闭环" ? null : (r.stage === "水单" ? "财务" : "工厂");
-      }
-    }
     summary[r.stage] = (summary[r.stage] || 0) + 1;
     const a = amtMap.get(r.key) || {};
     return { ...r, factory: FAC[r.key] || r.label || r.key, fob_cny: a.fob_cny, rebate_expected: a.rebate_expected };
@@ -64,15 +56,18 @@ async function handleUploadContract(req, res) {
   if (err) return json(res, 400, { error: err });
   const customsNo = (fields.customs_no || fields.customsNo || "").trim();
   if (!customsNo) return json(res, 400, { error: "customs_no required" });
-  await ensureContractTable(pool);
-  const exist = await pool.query(`SELECT id FROM purchase_contracts WHERE customs_no=$1 LIMIT 1`, [customsNo]);
-  if (exist.rows.length) return json(res, 409, { error: "该报关单采购合同已上传" });
-  const oss = await uploadToOss(customsNo, "CONTRACT", file);
+  // 采购合同=我们的PO,存入 contracts 表(唯一真源)
+  const fer = await pool.query(`SELECT contract_no FROM finance_export_rebates WHERE customs_no=$1 LIMIT 1`, [customsNo]);
+  const contractNo = fer.rows[0]?.contract_no || customsNo;
+  const exist = await pool.query(`SELECT id FROM contracts WHERE contract_no=$1 AND file_url IS NOT NULL LIMIT 1`, [contractNo]);
+  if (exist.rows.length) return json(res, 409, { error: "该合同采购合同已上传" });
+  const facCode = await factoryCodeFor(pool, customsNo);
+  const oss = await uploadToOss(facCode || customsNo, "CONTRACT", file);
   await pool.query(
-    `INSERT INTO purchase_contracts (customs_no, file_url, file_name, created_by, created_at)
-     VALUES ($1,$2,$3,$4,now())`,
-    [customsNo, oss.url, file.fileName || null, "finance"]);
-  return res.json({ success: true, customs_no: customsNo, file_url: oss.url });
+    `INSERT INTO contracts (contract_no, type, status, party_b_code, file_url, file_name, created_by, created_at, updated_at)
+     VALUES ($1,'采购合同','active',$2,$3,$4,'finance',now(),now())`,
+    [contractNo, facCode, oss.url, file.fileName || null]);
+  return res.json({ success: true, customs_no: customsNo, contract_no: contractNo, file_url: oss.url });
 }
 
 // 内部补料:工厂code(从订单按合同号取)

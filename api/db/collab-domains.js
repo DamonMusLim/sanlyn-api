@@ -11,7 +11,7 @@ export const FINANCE_DOMAIN = {
       doneSql: "SELECT true AS done, bs.file_url AS doc_url FROM bank_slip_links l JOIN bank_slips bs ON bs.id=l.slip_id WHERE (l.bl_no=src.customs_no OR (src.contract_no IS NOT NULL AND l.contract_no=src.contract_no)) AND bs.beneficiary_company_code = (SELECT o.factory_code FROM orders o WHERE o.contract_no=src.contract_no AND o.factory_code IS NOT NULL LIMIT 1) LIMIT 1" },
     // 采购合同排最后:暂无真源(恒missing),不遮挡水单环节。TODO接采购合同表。
     { key: "采购合同", label: "采购合同", owner: "工厂",
-      doneSql: "SELECT false AS done, NULL::text AS doc_url WHERE false" },
+      doneSql: "SELECT true AS done, c.file_url AS doc_url FROM contracts c WHERE c.contract_no=src.contract_no AND c.file_url IS NOT NULL LIMIT 1" },
   ],
 };
 
