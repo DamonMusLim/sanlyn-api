@@ -59,8 +59,7 @@ function fillDoc(primary,all){
   var raw=primary.raw||{},cur=primary.currency||'CNY',fs=primary.fs_no||raw.fs_no||primary.internal_no||raw.internal_no||'';
   if(!fs&&/^FS/i.test(primary.contract_no||''))fs=primary.contract_no;
   renderShell(cur);setText('contractNo',TYPE==='po'?(primary.contract_no||raw.contractNo||fs):fs,true);
-  setText('orderNo',uniq(all.map(function(o){return shortNo(o.order_no);})).join(' / '),true);
-  var _po=uniq(all.map(function(o){return o.customer_po;}).filter(Boolean)).join(' / ');var _poLi=document.getElementById('poNoLi');if(_po){setText('poNo',_po,true);if(_poLi)_poLi.style.display='';}else if(_poLi){_poLi.style.display='none';}
+  var _ons=all.map(function(o){return shortNo(o.order_no);});var _po=uniq(all.map(function(o){return o.customer_po;}).filter(Boolean).filter(function(po){return _ons.indexOf(po)<0;})).join(' / ');var _poLi=document.getElementById('poNoLi');if(_po){setText('poNo',_po,true);if(_poLi)_poLi.style.display='';}else if(_poLi){_poLi.style.display='none';}
   setText('docDate',(primary.order_date||primary.created_at||'').slice(0,10)||new Date().toISOString().slice(0,10),true);
   setText('curr',cur,true);setText('curH1',cur,true);setText('curH2',cur,true);
   if(TYPE==='po')fillPoParties(primary);else fillClientParties(primary,cur);
@@ -68,6 +67,7 @@ function fillDoc(primary,all){
 }
 function fillClientParties(primary,cur){
   setText('buyerName',primary.customer||primary.company_name_en||'',true);setText('buyerAddr',primary.customer_address||'',true);
+  if(!primary.customer_address){fetch(API+'/api/db/customers?q='+encodeURIComponent(primary.customer||''),{headers:authH()}).then(function(r){return r.json();}).then(function(d){var cs=arr(d);var c=cs.find(function(x){return (x.name_en||x.name)===primary.customer||x.name_cn===primary.customer;})||cs[0];if(c)setText('buyerAddr',c.address_en||c.address||c.address_cn||'',true);}).catch(function(){});}
   fetchSellers().then(function(ps){
     var p=(primary.seller_code&&ps.find(function(x){return x.code===primary.seller_code;}))||ps.find(function(x){return x.name_cn===primary.issuing_company||x.name_en===primary.issuing_company;})||ps.find(function(x){return x.is_default;});
     if(p){setText('sellerName',p.name_en||p.name_cn||primary.issuing_company||'',true);setText('sellerAddr',p.address_en||p.address||'',true);fillBankAndTerms(p,cur);if(p.seal_url)applySeal('seller',p.seal_url,p.name_en||p.name_cn||'Seller seal');}
@@ -138,7 +138,7 @@ function exportExcel(){
   function reset(){if(btn){btn.textContent='下载Excel';btn.disabled=false;}}
   function run(){try{
     var aoa=[],heads=[].map.call(document.querySelectorAll('#tableHead th'),function(t){return t.textContent.trim();}).filter(Boolean);
-    aoa.push([document.getElementById('docTitleEn').textContent]);aoa.push(['No.',document.getElementById('contractNo').textContent,'Order No.',document.getElementById('orderNo').textContent,'Date',document.getElementById('docDate').textContent]);aoa.push(['Buyer',document.getElementById('buyerName').textContent,'Seller',document.getElementById('sellerName').textContent]);aoa.push([]);aoa.push(heads);
+    aoa.push([document.getElementById('docTitleEn').textContent]);aoa.push(['No.',document.getElementById('contractNo').textContent,'Order No.',(qp('order_no')||''),'Date',document.getElementById('docDate').textContent]);aoa.push(['Buyer',document.getElementById('buyerName').textContent,'Seller',document.getElementById('sellerName').textContent]);aoa.push([]);aoa.push(heads);
     [].forEach.call(document.querySelectorAll('#docBody tr'),function(tr){if(tr.classList.contains('group-header')){aoa.push([tr.textContent.trim()]);return;}var cells=[].map.call(tr.querySelectorAll('td[contenteditable]'),function(td){var v=td.textContent.trim(),n=num(v);return v&&/^[\d,.]+$/.test(v)?n:v;});if(cells.length)aoa.push(cells);});
     var total=[].map.call(document.querySelectorAll('#totalRow td:not(.no-print)'),function(td){return td.textContent.trim();});if(total.length)aoa.push(total);
     var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=heads.map(function(h,i){return {wch:i===1?38:16};});XLSX.utils.book_append_sheet(wb,ws,_cfg.code);XLSX.writeFile(wb,_cfg.code+'-'+(qp('order_no')||'draft')+'.xlsx');
