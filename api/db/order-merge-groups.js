@@ -1,9 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-// 实测 orders.status 仅: shipped/pending/confirmed/draft/ready/cancelled (无 in_transit/customs/delivered)。
-// 已发货=shipped。出口报关在装船前完成,shipped 已隐含已报关。报关级独立锁(查 customs 表)留作后续。
-const LOCKED_STATUSES = ["shipped"];
 const ORDER_COLS = [
   "id", "_id", "order_no", "contract_no", "customer", "issuing_company",
   "status", "version", "updated_at",
@@ -232,11 +229,6 @@ async function dissolveGroup(req, res) {
     const items = before.items || [];
     const orderIds = items.map((x) => x.order_id);
     const loaded = await loadOrders(client, orderIds);
-    const locked = loaded.rows.filter((o) => LOCKED_STATUSES.includes(norm(o.status)));
-    if (locked.length) {
-      await client.query("ROLLBACK");
-      return res.status(403).json({ error: "order_shipped_or_declared", lockedStatuses: LOCKED_STATUSES, orders: locked });
-    }
 
     await client.query(
       `UPDATE order_merge_groups
@@ -283,11 +275,6 @@ async function removeItem(req, res) {
     if (!item) throw Object.assign(new Error("order is not in merge group"), { status: 404 });
 
     const loaded = await loadOrders(client, [orderId, item.order_id, item.order_no, item.contract_no]);
-    const locked = loaded.rows.filter((o) => LOCKED_STATUSES.includes(norm(o.status)));
-    if (locked.length) {
-      await client.query("ROLLBACK");
-      return res.status(403).json({ error: "order_shipped_or_declared", lockedStatuses: LOCKED_STATUSES, orders: locked });
-    }
 
     await client.query(
       `DELETE FROM order_merge_group_items
