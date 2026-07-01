@@ -67,6 +67,23 @@ async function handleCustomsDocStatus(req, res, pool) {
   if (!rows.length) return res.status(404).json({ ok: false, error: "not_found" });
 
   const row = rows[0];
+  const rContractNo = row.contract_no || contract_no || null;
+  let rCustomsNo = null, rFactory = null;
+  if (rContractNo) {
+    const cn = await pool.query(`SELECT customs_no FROM finance_export_rebates WHERE contract_no=$1 AND customs_no IS NOT NULL LIMIT 1`, [rContractNo]);
+    rCustomsNo = cn.rows[0]?.customs_no || null;
+    const fc = await pool.query(`SELECT factory_code FROM orders WHERE contract_no=$1 AND factory_code IS NOT NULL LIMIT 1`, [rContractNo]);
+    rFactory = fc.rows[0]?.factory_code || null;
+  }
+  const _done = async (sql, params) => { try { const r = await pool.query(sql, params); return r.rows[0] || null; } catch { return null; } };
+  const _inv = rCustomsNo ? await _done(`SELECT true AS done, fii.attachments::text AS doc_url FROM finance_invoices_in fii WHERE fii.customs_nos @> ARRAY[$1]::varchar[] AND COALESCE(fii.review_status,'') NOT IN ('void','red_ink') LIMIT 1`, [rCustomsNo]) : null;
+  const _con = rContractNo ? await _done(`SELECT true AS done, c.file_url AS doc_url FROM contracts c WHERE c.contract_no=$1 AND c.file_url IS NOT NULL LIMIT 1`, [rContractNo]) : null;
+  const _slp = (rCustomsNo || rContractNo) ? await _done(`SELECT true AS done, bs.file_url AS doc_url FROM bank_slip_links l JOIN bank_slips bs ON bs.id=l.slip_id WHERE (l.bl_no=$1 OR ($2::text IS NOT NULL AND l.contract_no=$2)) AND bs.beneficiary_company_code=$3 LIMIT 1`, [rCustomsNo, rContractNo, rFactory]) : null;
+  const rebate_docs = [
+    { key: "进项票", label: "进项票·工厂专票", owner: "工厂", done: !!_inv, doc_url: _inv?.doc_url || null },
+    { key: "采购合同", label: "采购合同/PO", owner: "巴匕", done: !!_con, doc_url: _con?.doc_url || null },
+    { key: "收汇", label: "收汇水单", owner: "财务", done: !!_slp, doc_url: _slp?.doc_url || null },
+  ];
   return res.json({
     ok: true,
     show: row.customs_arrange !== "self",
@@ -74,7 +91,9 @@ async function handleCustomsDocStatus(req, res, pool) {
     customs_url: row.customs_url || null,
     need_manual: Number(row.contract_count || 0) > 1,
     doc_id: row.doc_id || null,
-    contract_no: row.contract_no || contract_no || null,
+    contract_no: rContractNo,
+    customs_no: rCustomsNo,
+    rebate_docs,
   });
 }
 
