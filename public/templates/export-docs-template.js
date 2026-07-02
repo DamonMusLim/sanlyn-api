@@ -12,7 +12,7 @@ function banner(t,m){var i=document.getElementById('infoBanner'),e=document.getE
 function uniq(a){return a.filter(function(v,i){return v&&a.indexOf(v)===i;});}
 function skuKey(v){return String(v||'').toUpperCase().replace(/\s+/g,'');}
 function masterName(p){var ks=[p.sku,p.cp_code,p.code,p.item_code];for(var i=0;i<ks.length;i++){var k=skuKey(ks[i]);if(k&&_pmMap[k])return _pmMap[k];}return '';}
-function pName(p){return p.productName||p.name||masterName(p)||p.product_name||p.name_en||p.sku||'';}
+function pName(p){return p.product_name||p.productName||p.blDescription||p.bl_description||p.name_en||p.name||masterName(p)||p.sku||'';}
 function hasProd(p){return p&&(p.productName||p.product_name||p.name||p.name_en||p.declarationName||p.declaration_name||p.blDescription||p.bl_description||p.sku);}
 function arr(d){return d&&Array.isArray(d.data)?d.data:(d&&Array.isArray(d.companies)?d.companies:(Array.isArray(d)?d:(d&&d.data?[d.data]:[])));}
 function firstText(v){
@@ -70,20 +70,28 @@ function aggregate(all){
   total.rows=rows;total.up=(total.qty?total.amt/total.qty:0);return total;
 }
 
-// 明细行（切「明细模式」时用），ctnMap = {order_no → container_bookings row}
+function orderTerms(o){return o.trade_terms||(o.raw&&o.raw.trade_terms)||o.incoterm||(o.raw&&o.raw.incoterm)||'';}
+function containerBits(rows,k){
+  var vals=uniq((rows||[]).map(function(r){return String(r&&r[k]||'').trim();}));
+  return vals.join(' / ');
+}
+function groupLabel(o,ctns){
+  var cno=containerBits(ctns,'container_no'),seal=containerBits(ctns,'seal_no');
+  return ['ORDER '+shortNo(o.order_no||o.contract_no),cno?'CONTAINER '+cno:'',containerBits(ctns,'container_type'),seal?'封签 '+seal:'',orderTerms(o)].filter(Boolean).join(' · ');
+}
+
+// 明细行（切「明细模式」时用），ctnMap = {contract_no → container_bookings rows[]}
 function detailRows(all,ctnMap){
   var rows=[];
   ctnMap=ctnMap||{};
   all.forEach(function(o){
-    var ctn=ctnMap[o.order_no]||{};
-    if(ctn.container_no){rows.push({isHeader:true,orderNo:o.order_no,ctnNo:ctn.container_no,sealNo:ctn.seal_no,ctnType:ctn.container_type});}
-    var sub={qty:0,nw:0,gw:0,cbm:0};
+    var ctns=ctnMap[o.contract_no]||ctnMap[o.order_no]||[];
+    if(!Array.isArray(ctns))ctns=ctns?[ctns]:[];
+    rows.push({isHeader:true,label:groupLabel(o,ctns)});
     lineItems(o).filter(hasProd).forEach(function(p){
       var q=qty(p),rn=nwCtn(p)*q,rg=gwCtn(p)*q,rc=cbmCtn(p)*q;
-      sub.qty+=q;sub.nw+=rn;sub.gw+=rg;sub.cbm+=rc;
       rows.push({name:pName(p),size:p.size||'',qty:q,nw:rn,gw:rg,cbm:rc,up:unitPrice(p),amt:amount(p)});
     });
-    if(ctn.container_no){rows.push({isSubtotal:true,orderNo:o.order_no,qty:sub.qty,nw:sub.nw,gw:sub.gw,cbm:sub.cbm});}
   });
   return rows;
 }
@@ -99,9 +107,7 @@ function renderPL(agg,rows){
     var idx=0;
     rows.forEach(function(r){
       if(r.isHeader){
-        body+='<tr style="background:#dbeafe"><td colspan="6" style="padding:6px 10px;font-weight:800;font-size:11px;color:#1e3a8a">🚢 CTN: '+esc(r.ctnNo)+(r.sealNo?' &nbsp;·&nbsp; SEAL: '+esc(r.sealNo):'')+(r.ctnType?' ('+esc(r.ctnType)+')':'')+'&nbsp;&nbsp;&nbsp;ORDER: '+esc(shortNo(r.orderNo))+'</td></tr>';
-      }else if(r.isSubtotal){
-        body+='<tr style="background:#eff6ff"><td colspan="2" class="l" style="padding:5px 10px;font-style:italic;color:#1d4ed8;font-size:11px">Sub-Total ('+esc(shortNo(r.orderNo))+')</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
+        body+='<tr class="group-header"><td colspan="6">'+esc(r.label)+'</td></tr>';
       }else{
         idx++;
         body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
@@ -116,8 +122,15 @@ function renderPriced(pfx,agg,rows,cur){
   if(_customsMode){
     (agg.rows||[]).forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
   }else{
-    var drows=rows.filter(function(r){return !r.isHeader&&!r.isSubtotal;});
-    drows.forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
+    var idx=0;
+    rows.forEach(function(r){
+      if(r.isHeader){
+        body+='<tr class="group-header"><td colspan="5">'+esc(r.label)+'</td></tr>';
+      }else{
+        idx++;
+        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';
+      }
+    });
   }
   body+='<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+' CTN</td><td>'+cur+'</td><td>'+fmt(agg.amt)+'</td></tr>';
   document.getElementById(pfx+'-body').innerHTML=body;
@@ -166,13 +179,18 @@ function fetchBuyerAddr(primary){
     return firstText(row.address_en)||firstText(row.address)||firstText(row.addresses)||firstText(row.raw&&row.raw.address)||'';
   }).catch(function(){return '';});
 }
-function loadContainerInfo(blNo){
-  return fetch(API+'/api/db/container-bookings?bl_no='+encodeURIComponent(blNo),{headers:authH()})
-    .then(function(r){return r.json();}).then(function(d){
-      var rows=Array.isArray(d)?d:(d.data||[]);
-      var map={};rows.forEach(function(b){if(b.contract_no)map[b.contract_no]=b;});
-      return map;
-    }).catch(function(){return {};});
+function loadContainerInfo(all){
+  var contracts=uniq((all||[]).map(function(o){return o.contract_no;}).filter(Boolean));
+  if(!contracts.length)return Promise.resolve({});
+  return Promise.all(contracts.map(function(no){
+    return fetch(API+'/api/db/container-bookings?contract_no='+encodeURIComponent(no),{headers:authH()})
+      .then(function(r){return r.json();}).then(function(d){return {no:no,rows:arr(d)};})
+      .catch(function(){return {no:no,rows:[]};});
+  })).then(function(sets){
+    var map={};
+    sets.forEach(function(s){map[s.no]=s.rows||[];});
+    return map;
+  }).catch(function(){return {};});
 }
 
 function renderAll(){
@@ -283,7 +301,7 @@ function init(){
       window._agg=aggregate(all);window._cur=cur;
       var sellerP=fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).catch(function(){return [];});
       var addrP=fetchBuyerAddr(primary);
-      var ctnP=(!_customsMode&&primary.bl_no)?loadContainerInfo(primary.bl_no):Promise.resolve({});
+      var ctnP=!_customsMode?loadContainerInfo(all):Promise.resolve({});
       return Promise.all([sellerP,addrP,ctnP]).then(function(rr){
       var d=rr[0],addr=rr[1],ctnMap=rr[2]||{};if(addr)primary._buyerAddr=addr;
       window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
