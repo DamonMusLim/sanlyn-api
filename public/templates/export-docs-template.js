@@ -282,6 +282,22 @@ function onFileChosen(e){
 }
 function useUploadedSeal(){if(!_pendingFile)return;var name=document.getElementById('uploadSealName').value.trim()||'印章';var r=new FileReader();r.onload=function(ev){applySeal(_sealTarget,ev.target.result,name);closeModal();};r.readAsDataURL(_pendingFile);}
 function saveSealToLocal(){if(!_pendingFile)return;var name=document.getElementById('uploadSealName').value.trim()||'印章';var r=new FileReader();r.onload=function(ev){loadLocalStamps();_localStamps.unshift({id:'local_'+Date.now(),name:name,url:ev.target.result});localStorage.setItem('pc_local_stamps',JSON.stringify(_localStamps.slice(0,30)));document.getElementById('uploadStatus').textContent='✓ 已保存本地';document.getElementById('uploadStatus').style.color='#16a34a';setTimeout(function(){switchTab('local');},600);};r.readAsDataURL(_pendingFile);}
+function _docUrl(fmt){
+  var oid=qp('order_no')||qp('orderNo'), ids=qp('ids')||oid;
+  var u='/api/db/documents?type=pack&id='+encodeURIComponent(oid)+'&ids='+encodeURIComponent(ids)+'&audience=customer';
+  if(typeof _customsMode!=='undefined'&&_customsMode)u+='&customs=1';
+  var pg=qp('page'); if(pg==='pl'||pg==='sc'||pg==='iv')u+='&page='+pg;
+  if(fmt)u+='&format='+fmt;
+  u+='&token='+encodeURIComponent(tok());
+  return u;
+}
+function dlDoc(fmt){window.open(_docUrl(fmt),'_blank');}
+function fwdDoc(){
+  var link=location.href;
+  var done=function(){banner('info','✓ 链接已复制,可转发');setTimeout(function(){banner('','');},2000);};
+  var fb=function(){prompt('复制此链接转发:',link);};
+  try{navigator.clipboard.writeText(link).then(done,fb);}catch(e){fb();}
+}
 function saveDraft(){try{localStorage.setItem('export_docs_draft_'+(qp('order_no')||'manual'),JSON.stringify({pl:document.getElementById('pagePL').innerHTML,sc:document.getElementById('pageSC').innerHTML,iv:document.getElementById('pageIV').innerHTML}));banner('info','✓ 草稿已保存');setTimeout(function(){banner('','');},1500);}catch(e){}}
 function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;document.querySelector('.toolbar').style.display='none';

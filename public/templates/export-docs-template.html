@@ -12,6 +12,7 @@ body{font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;background:#ee
 .btn-print{background:#1d4ed8;color:#fff;}.btn-dl{background:#7c3aed;color:#fff;}
 .btn-save{background:#059669;color:#fff;}.btn-seal{background:#dc2626;color:#fff;}
 .btn-mode{background:#0891b2;color:#fff;}
+.btn-pdf{background:#be123c;color:#fff;}.btn-xls{background:#15803d;color:#fff;}.btn-fwd{background:#0369a1;color:#fff;}
 .banner{max-width:820px;margin:0 auto 8px;padding:7px 12px;border-radius:6px;font-size:12px;display:none;}
 .banner.info{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;}
 .banner.err{background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;}
@@ -80,6 +81,9 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   <button class="btn-print" onclick="window.print()">🖨 打印/PDF</button>
   <button class="btn-dl"    onclick="downloadPng()">📥 下载图片</button>
   <button class="btn-save"  onclick="saveDraft()">💾 保存草稿</button>
+  <button class="btn-pdf"   onclick="dlDoc('pdf')">📄 PDF下载</button>
+  <button class="btn-xls"   onclick="dlDoc('xlsx')">📊 Excel下载</button>
+  <button class="btn-fwd"   onclick="fwdDoc()">🔗 转发</button>
   <button class="btn-mode"  id="btnMode" onclick="toggleMode()">📋 明细模式</button>
   <button class="btn-seal"  onclick="openSealPicker('all:seller')">🔴 卖方章</button>
   <button class="btn-seal"  onclick="openSealPicker('all:buyer')">🔴 买方章</button>
