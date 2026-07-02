@@ -546,7 +546,8 @@ export default async function handler(req, res) {
 
       var _xlsCapture=null; // populated by sc/iv/pl blocks for xlsx export
       async function _buildPackXlsCaptureFromOLI(){
-        var _customsMode = (String(req.query.mode||"") !== "detail");
+        var _mode=String(req.query.mode||"").toLowerCase();
+        var _customsMode = (String(req.query.customs||"")==="1" || _mode==="customs");
         function _n(v){ return Number(v)||0; }
         function _lineRaw(li){ var r=li&&li.raw; if(typeof r==="string")try{return JSON.parse(r)||{};}catch(e){return{};} return (r&&typeof r==="object")?r:{}; }
         function _cp(li){ var r=_lineRaw(li); return pick(li.cp_code,li.sku,li.code,li.item_code,r.cp_code,r.sku,r.code,r.item_code,""); }
@@ -554,12 +555,14 @@ export default async function handler(req, res) {
         function _pname(li){ var r=_lineRaw(li); return pick(li.product_name,li.productName,r.productName,r.product_name,li.blDescription,li.bl_description,r.blDescription,r.bl_description,li.name_en,r.name_en,li.sku,r.sku,""); }
         function _size(li){ var r=_lineRaw(li); return pick(li.size,li.spec,r.size,r.spec,""); }
         function _uniqJoin(a){ var seen={},out=[]; (a||[]).forEach(function(v){ v=String(v||"").trim(); if(v&&!seen[v]){seen[v]=1;out.push(v);} }); return out.join(" / "); }
+        function _shortNo(no){ return String(no||"").replace(/^\d+-/,""); }
         function _orderRaw(orow){ var r=orow&&orow.raw; if(typeof r==="string")try{return JSON.parse(r)||{};}catch(e){return{};} return (r&&typeof r==="object")?r:{}; }
         function _fsFromOrder(orow){
           var r=_orderRaw(orow), vals=[r.fs_no,r.fsNo,r.internal_no,r.internalNo,orow&&orow.fs_no,orow&&orow.internal_no,orow&&orow.contract_no,orow&&orow.order_no];
           for(var i=0;i<vals.length;i++){ var m=String(vals[i]||"").match(/\bFS[0-9A-Z-]+\b/i); if(m) return m[0].toUpperCase(); }
           return "";
         }
+        function _orderTerms(orow){ var r=_orderRaw(orow); return pick(orow&&orow.trade_terms,r.trade_terms,orow&&orow.incoterm,r.incoterm,""); }
         function _rowFromLine(li){
           var q=_n(li.qty_ctn||li.qty), nw=_n(li.nw_ctn||li.net_weight)*q, gw=_n(li.gw_ctn||li.gross_weight)*q, cbm=_n(li.cbm_ctn||li.cbm)*q;
           var up=_n(li.unit_price||li.unitPrice), amt=_n(li.subtotal); if(!amt) amt=q*up;
@@ -578,6 +581,23 @@ export default async function handler(req, res) {
           });
           return order.map(function(k){ var g=groups[k]; return {cp:_uniqJoin(g.cp),name:g.name,qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,price:g.qty?g.amt/g.qty:0,amt:g.amt}; });
         }
+        function _ctnBits(rows,k){ return _uniqJoin((rows||[]).map(function(r){return r&&r[k];})); }
+        function _groupLabel(orow,ctns){
+          ctns=Array.isArray(ctns)?ctns:[];
+          var cno=_ctnBits(ctns,"container_no"), seal=_ctnBits(ctns,"seal_no");
+          return ["ORDER "+_shortNo((orow&&orow.order_no)||(orow&&orow.contract_no)),cno?"CONTAINER "+cno:"",_ctnBits(ctns,"container_type"),seal?"封签 "+seal:"",_orderTerms(orow)].filter(Boolean).join(" · ");
+        }
+        function _detailRows(orderRows,lines,ctnMap){
+          var byOrder={};
+          (lines||[]).forEach(function(li){ var k=String(li.order_id||""); (byOrder[k]||(byOrder[k]=[])).push(li); });
+          var out=[];
+          (orderRows||[]).forEach(function(orow){
+            var oid=String(orow.id||orow._id||""), ctns=ctnMap[orow.contract_no]||ctnMap[orow.order_no]||[];
+            out.push({isHeader:true,label:_groupLabel(orow,ctns)});
+            (byOrder[oid]||[]).map(_rowFromLine).filter(function(r){return r.name||r.qty;}).forEach(function(r){out.push(r);});
+          });
+          return out;
+        }
         var orderRows=[o], xids=String(autoIds||ids||"").split(",").map(function(s){return s.trim();}).filter(function(s){return s&&s!==id;});
         if(xids.length){
           var xr=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[]) OR order_no = ANY($1::text[])",[xids]);
@@ -589,17 +609,28 @@ export default async function handler(req, res) {
           var lr=await pool.query("SELECT * FROM order_line_items WHERE order_id = ANY($1::int[]) ORDER BY order_id, sort_order, id",[orderIds]);
           lines=lr.rows||[];
         }
-        var rows=_customsMode?_aggregate(lines):lines.map(_rowFromLine).filter(function(r){return r.name||r.qty;});
+        var ctnMap={};
+        if(!_customsMode){
+          var contracts=orderRows.map(function(r){return r&&r.contract_no;}).filter(Boolean);
+          if(contracts.length){
+            try{
+              var cr=await pool.query("SELECT contract_no, container_no, container_type, seal_no FROM container_bookings WHERE contract_no = ANY($1::text[]) ORDER BY contract_no, id",[contracts]);
+              (cr.rows||[]).forEach(function(r){ (ctnMap[r.contract_no]||(ctnMap[r.contract_no]=[])).push(r); });
+            }catch(e){ console.warn("[documents] pack xlsx container_bookings lookup failed:",e.message); }
+          }
+        }
+        var rows=_customsMode?_aggregate(lines):_detailRows(orderRows,lines,ctnMap);
         var total=_tot(rows), baseNo=(ordNo||cno||id||"PACK");
         var fsNo=_uniqJoin(orderRows.map(_fsFromOrder)) || _fsFromOrder(o) || baseNo;
         var packCurr=_uniqJoin(orderRows.map(function(orow){return orow&&orow.currency;})) || o.currency || curr || "CNY";
+        var orderNoText=_uniqJoin(orderRows.map(function(orow){return _shortNo((orow&&orow.order_no)||(orow&&orow.contract_no));}));
         function _money(v){ return parseFloat((_n(v)).toFixed(2))||0; }
         function _qty(v){ return parseFloat((_n(v)).toFixed(0))||0; }
         function _cbm(v){ return parseFloat((_n(v)).toFixed(3))||0; }
-        var common={buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:packCurr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email}};
+        var common={buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:packCurr,pol:pol,pod:pod,incoterm:inco,poNo:(orderNoText||ordNo),seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email}};
         var pricedKeys=[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"price",fn:function(p){return _money(p.price);}},{k:"amt",fn:function(p){return _money(p.amt);}}];
         return {docNo:baseNo+"_PACK",sheets:[
-          Object.assign({},common,{sheetName:"Packing List",docNo:fsNo,noLabel:"PL No.:",showOrder:false,incoterm:"",headers:["NO.","CP Code","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],colKeys:[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}],rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),_money(total.nw),_money(total.gw),_cbm(total.cbm)]}),
+          Object.assign({},common,{sheetName:"Packing List",docNo:fsNo,noLabel:"PL No.:",hideCurrency:true,incoterm:"",headers:["NO.","CP Code","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],colKeys:[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}],rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),_money(total.nw),_money(total.gw),_cbm(total.cbm)]}),
           Object.assign({},common,{sheetName:"Sales Contract",docNo:fsNo,noLabel:"SC No.:",terms:cfg.terms.sc,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]}),
           Object.assign({},common,{sheetName:"Invoice",docNo:fsNo,noLabel:"Invoice No.:",terms:cfg.terms.iv,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]})
         ]};
@@ -2162,12 +2193,10 @@ export default async function handler(req, res) {
           ws.mergeCells("A4:"+_HC+"5");
           ws.getCell("A4").value=cap.buyerAddr||""; ws.getCell("A4").font={size:8,color:{argb:_DARK2}}; ws.getCell("A4").alignment={wrapText:true,vertical:"top"};
           ws.mergeCells(_RC2+"4:"+_RC+"4");
-          ws.getCell(_RC2+"4").value=cap.showOrder===false
-            ? {richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}}]}
-            : {richText:[{text:"Order: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.poNo||cap.cno||""),font:{size:8.5,color:{argb:_DARK2}}}]};
+          ws.getCell(_RC2+"4").value={richText:[{text:"Order: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.poNo||cap.cno||""),font:{size:8.5,color:{argb:_DARK2}}}]};
           ws.mergeCells(_RC2+"5:"+_RC+"5");
-          ws.getCell(_RC2+"5").value=cap.showOrder===false
-            ? {richText:[{text:"Currency: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.curr||""),font:{size:8.5,color:{argb:_DARK2}}}]}
+          ws.getCell(_RC2+"5").value=cap.hideCurrency
+            ? {richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}}]}
             : {richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}},{text:"   Currency: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.curr||""),font:{size:8.5,color:{argb:_DARK2}}}]};
           for(var _sc=1;_sc<=_LC;_sc++){ ws.getCell(5,_sc).border={bottom:{style:"thin",color:{argb:_DARK2}}}; }
 
@@ -2176,8 +2205,19 @@ export default async function handler(req, res) {
           ws.getColumn(1).width=6;
           var _nameIdx=2+cap.colKeys.findIndex(function(k){return k.k==="name";});
           if(_nameIdx>=2){ws.getColumn(_nameIdx).width=42;ws.getColumn(_nameIdx).alignment={wrapText:true,vertical:"top"};}
+          var _lastColL=_CLM(_LC);
           var rowNum=0;
           (cap.rows||[]).forEach(function(p){
+            if(p&&p.isHeader){
+              var gr=ws.addRow([p.label||""]);
+              ws.mergeCells("A"+gr.number+":"+_lastColL+gr.number);
+              gr.height=18;
+              gr.getCell(1).font={bold:true,size:9,color:{argb:"FF1e40af"}};
+              gr.getCell(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFe8eeff"}};
+              gr.getCell(1).alignment={horizontal:"left",vertical:"middle",wrapText:true};
+              gr.getCell(1).border={top:{style:"thin",color:{argb:"FFb8c4e8"}},bottom:{style:"thin",color:{argb:"FFb8c4e8"}}};
+              return;
+            }
             rowNum++;
             var cells=[String(rowNum).padStart(2,"0")];
             cap.colKeys.forEach(function(k){ var v=k.fn?k.fn(p):(p[k.k]||""); var n=parseFloat(String(v).replace(/,/g,"")); cells.push(isNaN(n)?v:n); });
@@ -2194,7 +2234,6 @@ export default async function handler(req, res) {
           var tRow=ws.addRow(cap.totals);
           tRow.eachCell(function(c){c.font={bold:true};});
           for(var ci=3;ci<=_LC;ci++){ if(ci!==_nameIdx) ws.getColumn(ci).width=16; }
-          var _lastColL=_CLM(_LC);
           function _sec(title){ ws.addRow([]); var r=ws.addRow([title]); ws.mergeCells("A"+r.number+":"+_lastColL+r.number); r.getCell(1).font={bold:true,size:11,color:{argb:"FFFFFFFF"}}; r.getCell(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF111111"}}; }
           function _kv(label,value){ var r=ws.addRow([label,value]); r.getCell(1).font={bold:true,size:10}; r.getCell(2).font={size:10}; ws.mergeCells("B"+r.number+":"+_lastColL+r.number); }
           if(cap.incoterm){ ws.addRow([]); _kv("Trade Terms:","("+cap.incoterm+") Incoterms® 2020"); }
