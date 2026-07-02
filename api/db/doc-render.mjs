@@ -116,10 +116,10 @@ export default async function handler(req, res){
       <tr><th>序号</th><th>检验项目</th><th>计量单位</th><th>技术要求</th><th>检验结果</th><th>单项评价</th></tr>
       ${items.map(it=>{
         const rv=resultsMap[it.name]; const has=rv!==undefined&&rv!==''&&rv!==null;
-        const actual=has?esc(rv):esc(typicalVal(it.spec));
+        const actual=has?esc(rv):(kind==='qc'?'':esc(typicalVal(it.spec)));
         let verdict='&nbsp;';
         if(has){const ok=checkSpec(it.spec,rv);verdict=ok===null?'&nbsp;':(ok?'<span style="color:#16a34a;font-weight:700">合格</span>':'<span style="color:#dc2626;font-weight:700">⚠ 超标</span>');}
-        else if(actual) verdict='<span style="color:#16a34a;font-weight:700">合格</span>';
+        else if(kind!=='qc'&&actual) verdict='<span style="color:#16a34a;font-weight:700">合格</span>';
         return `<tr><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td><td>${esc(it.spec)}</td><td>${actual||'&nbsp;'}</td><td>${verdict}</td></tr>`;
       }).join('')}
     </table>`;
@@ -156,10 +156,10 @@ export default async function handler(req, res){
           <tr><th style="width:6%">项目</th><th style="text-align:left;padding-left:8px">Item</th><th>标准 Standard</th><th>实测 Actual</th><th>单位 Unit</th><th>判定 Result</th></tr>
           ${secItems.map(it=>{
             const rv=resultsMap[it.name]; const has=rv!==undefined&&rv!==''&&rv!==null;
-            const actual=has?esc(rv):esc(typicalVal(it.spec));
+            const actual=has?esc(rv):(kind==='qc'?'':esc(typicalVal(it.spec)));
             let verdict='&nbsp;';
             if(has){const ok=checkSpec(it.spec,rv);verdict=ok===null?'&nbsp;':(ok?'<span style="color:#16a34a;font-weight:700">□ 合格</span>':'<span style="color:#dc2626;font-weight:700">⚠ 超标</span>');}
-            else verdict='<span style="color:#16a34a;font-weight:700">□ 合格</span>';
+            else if(kind!=='qc') verdict='<span style="color:#16a34a;font-weight:700">□ 合格</span>';
             return `<tr><td>${esc(it.no)}</td><td style="text-align:left;padding-left:8px">${esc(it.name)}</td><td>${esc(it.spec)}</td><td>${actual||'&nbsp;'}</td><td>${esc(it.unit)}</td><td>${verdict}</td></tr>`;
           }).join('')}
         </table>`;
