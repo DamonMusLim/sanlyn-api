@@ -68,7 +68,7 @@ export default async function handler(req, res) {
     var _pf = (Array.isArray(format) ? format : [format]).map(function(f){ return String(f||"").toLowerCase(); });
     if (_pf.indexOf("pdf") === -1 && _pf.indexOf("xlsx") === -1) {
       var _ptok = req.query.token || reqToken || "";
-      var _pmode = (req.query.mode === "detail") ? "&mode=detail" : "";
+      var _pmode = (req.query.customs === "1" || req.query.mode === "customs") ? "" : "&mode=detail";
       return res.redirect(302, "/templates/export-docs-template.html?order_no=" + encodeURIComponent(id||"")
         + "&ids=" + encodeURIComponent(ids||id||"") + _pmode
         + "&token=" + encodeURIComponent(_ptok));
