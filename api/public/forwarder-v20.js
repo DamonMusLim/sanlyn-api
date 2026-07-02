@@ -65,6 +65,7 @@ function publicRfq(row){
     status:row.status,
     etd:row.etd,
     product_summary:row.product_summary || "",
+    order_carrier:row.order_carrier || null,
     from:{ port:row.pol || "", code:row.pol || "", flag:"" },
     to:{ port:row.pod || "", code:row.pod || "", flag:"" },
     cargoInfo:{
@@ -86,13 +87,39 @@ function groupRows(rows){
         key:key,
         pol:row.pol || "",
         pod:row.pod || "",
-        carrier_options:CARRIER_OPTIONS.slice(0, 3),
+        carrier_options:[],
+        _orderCarriers:{},
         rfqs:[],
       };
     }
     groups[key].rfqs.push(publicRfq(row));
+    if (row.order_carrier) groups[key]._orderCarriers[String(row.order_carrier).trim().toUpperCase()] = 1;
   });
   return Object.keys(groups).map(function(k){ return groups[k]; });
+}
+
+async function resolveCarriers(pool, forwarderCo, lanes){
+  var agMap = {}; var byPol = {};
+  try {
+    var r = await pool.query(
+      "SELECT UPPER(TRIM(carrier_code)) AS code, UPPER(TRIM(COALESCE(pol,''))) AS pol, UPPER(TRIM(COALESCE(pod,''))) AS pod FROM forwarder_carrier_agreements WHERE forwarder_co=$1 AND active IS TRUE",
+      [forwarderCo]);
+    r.rows.forEach(function(row){
+      var k = normPort(row.pol) + "::" + normPort(row.pod);
+      (agMap[k] = agMap[k] || {})[row.code] = 1;
+      (byPol[normPort(row.pol)] = byPol[normPort(row.pol)] || {})[row.code] = 1;
+    });
+  } catch(e){}
+  (lanes || []).forEach(function(lane){
+    var key = normPort(lane.pol) + "::" + normPort(lane.pod);
+    var set = {};
+    Object.keys(agMap[key] || {}).forEach(function(c){ set[c] = 1; });      // 协议(航线级)
+    Object.keys(byPol[normPort(lane.pol)] || {}).forEach(function(c){ set[c] = 1; }); // 协议(起运港级)
+    Object.keys(lane._orderCarriers || {}).forEach(function(c){ if (c) set[c] = 1; }); // 客户订单指定
+    lane.carrier_options = Object.keys(set);
+    delete lane._orderCarriers;
+  });
+  return lanes;
 }
 
 async function attachOfficialPortCharges(pool, lanes){
@@ -103,7 +130,7 @@ async function attachOfficialPortCharges(pool, lanes){
       ctypes[rfq.ctnr_type || "40HQ"] = true;
     });
     Object.keys(ctypes).forEach(function(ct){
-      CARRIER_OPTIONS.forEach(function(carrier){
+      (lane.carrier_options || []).forEach(function(carrier){
         pairs.push({ carrier:carrier, pol:lane.pol, containerType:ct });
       });
     });
@@ -111,7 +138,7 @@ async function attachOfficialPortCharges(pool, lanes){
   var rateMap = await officialPortChargesMap(pool, pairs);
   (lanes || []).forEach(function(lane){
     var official = {};
-    CARRIER_OPTIONS.forEach(function(carrier){
+    (lane.carrier_options || []).forEach(function(carrier){
       official[carrier] = {};
       (lane.rfqs || []).forEach(function(rfq){
         var ct = rfq.ctnr_type || "40HQ";
@@ -132,6 +159,7 @@ async function handleGet(pool, token, res){
            COALESCE(r.service_type, 'ocean') AS service_type,
            sp.container_qty AS ctnr_count,
            sp.gross_weight_kg AS gross_weight_kg,
+           sp.order_carrier AS order_carrier,
            (SELECT string_agg(t.label, ' / ')
               FROM (
                 SELECT (COALESCE(oi.product_name, '') || '×' || oi.qty_ctn || '箱') AS label
@@ -143,7 +171,7 @@ async function handleGet(pool, token, res){
            ) AS product_summary
       FROM freight_rfqs r
       LEFT JOIN LATERAL (
-        SELECT container_qty, gross_weight_kg
+        SELECT container_qty, gross_weight_kg, carrier_code AS order_carrier
           FROM shipping_plans
          WHERE order_id = r.order_id
          ORDER BY id DESC LIMIT 1
@@ -154,7 +182,9 @@ async function handleGet(pool, token, res){
      ORDER BY r.etd NULLS LAST, r.created_at DESC
      LIMIT 300
   `);
-  var lanes = await attachOfficialPortCharges(pool, groupRows(rows));
+  var lanes = groupRows(rows);
+  lanes = await resolveCarriers(pool, token.forwarder_co, lanes);
+  lanes = await attachOfficialPortCharges(pool, lanes);
   return send(res, 200, {
     ok:true,
     forwarder_co:token.forwarder_co,
