@@ -2279,11 +2279,20 @@ export default async function handler(req, res) {
         }catch(_){}
         var browser=await puppeteer.launch(launchOpts);
         var page=await browser.newPage();
-        // W0-3: scrub leaked codes BEFORE rendering to PDF (default = customer-facing).
-        // 'customs' audience (internal customs broker) keeps codes if explicitly requested.
-        var _pdfHtml = (String(_audReq||"").toLowerCase() === "customs") ? html : scrubCustomerFacingHtml(html);
-        // Pass HTML directly — no circular HTTP request needed
-        await page.setContent(_pdfHtml,{waitUntil:"networkidle0"});
+        // 2026-07-02 type=pack 的 PDF 改成 puppeteer 直接 goto 正版可编辑模版(export-docs)
+        // 渲染,与浏览器视图/在线查看一致(海关分组/品名明细/港口回退/自动盖章),不再用旧服务端HTML。
+        if (type === "pack") {
+          var _pmode2 = (req.query.customs === "1" || req.query.mode === "customs") ? "" : "&mode=detail";
+          var _ptok2 = req.query.token || reqToken || "";
+          var _tplUrl = "https://api.sanlyn.cn/templates/export-docs-template.html?order_no=" + encodeURIComponent(id||"")
+            + "&ids=" + encodeURIComponent(ids||id||"") + _pmode2 + "&token=" + encodeURIComponent(_ptok2);
+          await page.goto(_tplUrl, {waitUntil:"networkidle0", timeout:60000});
+          await new Promise(function(r){ setTimeout(r, 1800); });
+        } else {
+          // W0-3: scrub leaked codes BEFORE rendering to PDF (default = customer-facing).
+          var _pdfHtml = (String(_audReq||"").toLowerCase() === "customs") ? html : scrubCustomerFacingHtml(html);
+          await page.setContent(_pdfHtml,{waitUntil:"networkidle0"});
+        }
         var pdfBuf=await page.pdf({
           format:"A4",
           printBackground:true,
