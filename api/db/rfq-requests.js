@@ -90,7 +90,7 @@ export default async function handler(req, res) {
                    i.usd_rate, i.port_charges_json, i.free_pol_days, i.free_pod_days,
                    i.dnd_usd, i.currency, i.selected, i.submitted_at,
                    i.container_type, i.carrier, i.customs_included, i.customs_fee,
-                   i.trucking_included, i.trucking_fee
+                   i.trucking_included, i.trucking_fee, i.si_cutoff_at, i.cy_cutoff_at
               FROM freight_rfq_items i
              WHERE i.rfq_id = r.id
                AND ($1::boolean
