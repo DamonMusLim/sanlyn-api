@@ -585,7 +585,7 @@ export default async function handler(req, res) {
         function _groupLabel(orow,ctns){
           ctns=Array.isArray(ctns)?ctns:[];
           var cno=_ctnBits(ctns,"container_no"), seal=_ctnBits(ctns,"seal_no");
-          return ["ORDER "+_shortNo((orow&&orow.order_no)||(orow&&orow.contract_no)),cno?"CONTAINER "+cno:"",_ctnBits(ctns,"container_type"),seal?"封签 "+seal:"",_orderTerms(orow)].filter(Boolean).join(" · ");
+          return ["ORDER "+_shortNo((orow&&orow.order_no)||(orow&&orow.contract_no)),cno||"",_ctnBits(ctns,"container_type"),seal||"",_orderTerms(orow)].filter(Boolean).join(" · ");
         }
         function _detailRows(orderRows,lines,ctnMap){
           var byOrder={};

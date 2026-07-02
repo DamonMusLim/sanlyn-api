@@ -77,7 +77,7 @@ function containerBits(rows,k){
 }
 function groupLabel(o,ctns){
   var cno=containerBits(ctns,'container_no'),seal=containerBits(ctns,'seal_no');
-  return ['ORDER '+shortNo(o.order_no||o.contract_no),cno?'CONTAINER '+cno:'',containerBits(ctns,'container_type'),seal?'封签 '+seal:'',orderTerms(o)].filter(Boolean).join(' · ');
+  return ['ORDER '+shortNo(o.order_no||o.contract_no),cno||'',containerBits(ctns,'container_type'),seal||'',orderTerms(o)].filter(Boolean).join(' · ');
 }
 
 // 明细行（切「明细模式」时用），ctnMap = {contract_no → container_bookings rows[]}
