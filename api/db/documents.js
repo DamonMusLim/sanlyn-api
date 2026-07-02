@@ -545,6 +545,57 @@ export default async function handler(req, res) {
       }
 
       var _xlsCapture=null; // populated by sc/iv/pl blocks for xlsx export
+      async function _buildPackXlsCaptureFromOLI(){
+        var _customsMode = (String(req.query.mode||"") !== "detail");
+        function _n(v){ return Number(v)||0; }
+        function _lineRaw(li){ var r=li&&li.raw; if(typeof r==="string")try{return JSON.parse(r)||{};}catch(e){return{};} return (r&&typeof r==="object")?r:{}; }
+        function _cp(li){ var r=_lineRaw(li); return pick(li.cp_code,li.sku,li.code,li.item_code,r.cp_code,r.sku,r.code,r.item_code,""); }
+        function _decl(li){ var r=_lineRaw(li); return pick(li.declaration_name,li.declarationName,r.declaration_name,r.declarationName,r.blDescription,r.bl_description,"宠物食品"); }
+        function _pname(li){ var r=_lineRaw(li); return pick(li.product_name,li.productName,r.productName,r.product_name,li.blDescription,li.bl_description,r.blDescription,r.bl_description,li.name_en,r.name_en,li.sku,r.sku,""); }
+        function _size(li){ var r=_lineRaw(li); return pick(li.size,li.spec,r.size,r.spec,""); }
+        function _uniqJoin(a){ var seen={},out=[]; (a||[]).forEach(function(v){ v=String(v||"").trim(); if(v&&!seen[v]){seen[v]=1;out.push(v);} }); return out.join(" / "); }
+        function _rowFromLine(li){
+          var q=_n(li.qty_ctn||li.qty), nw=_n(li.nw_ctn||li.net_weight)*q, gw=_n(li.gw_ctn||li.gross_weight)*q, cbm=_n(li.cbm_ctn||li.cbm)*q;
+          var up=_n(li.unit_price||li.unitPrice), amt=_n(li.subtotal); if(!amt) amt=q*up;
+          var name=_pname(li)||_cp(li)||"-", sz=_size(li); if(sz) name += " ("+sz+")";
+          return {cp:_cp(li),name:name,qty:q,nw:nw,gw:gw,cbm:cbm,price:up,amt:amt};
+        }
+        function _tot(rows){ return (rows||[]).reduce(function(t,r){ t.qty+=_n(r.qty);t.nw+=_n(r.nw);t.gw+=_n(r.gw);t.cbm+=_n(r.cbm);t.amt+=_n(r.amt);return t; },{qty:0,nw:0,gw:0,cbm:0,amt:0}); }
+        function _aggregate(lines){
+          var groups={},order=[];
+          lines.forEach(function(li){
+            var q=_n(li.qty_ctn||li.qty); if(!q) return;
+            var name=_decl(li), key=name;
+            if(!groups[key]){ groups[key]={cp:[],name:name,qty:0,nw:0,gw:0,cbm:0,amt:0}; order.push(key); }
+            var g=groups[key], up=_n(li.unit_price||li.unitPrice), amt=_n(li.subtotal); if(!amt) amt=q*up;
+            g.cp.push(_cp(li)); g.qty+=q; g.nw+=_n(li.nw_ctn||li.net_weight)*q; g.gw+=_n(li.gw_ctn||li.gross_weight)*q; g.cbm+=_n(li.cbm_ctn||li.cbm)*q; g.amt+=amt;
+          });
+          return order.map(function(k){ var g=groups[k]; return {cp:_uniqJoin(g.cp),name:g.name,qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,price:g.qty?g.amt/g.qty:0,amt:g.amt}; });
+        }
+        var orderRows=[o], xids=String(autoIds||ids||"").split(",").map(function(s){return s.trim();}).filter(function(s){return s&&s!==id;});
+        if(xids.length){
+          var xr=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[]) OR order_no = ANY($1::text[])",[xids]);
+          xr.rows.forEach(function(r){ if(!orderRows.some(function(or){return String(or.id)===String(r.id);})){ orderRows.push(r); } });
+        }
+        var orderIds=orderRows.map(function(r){return Number(r.id||r._id)||0;}).filter(Boolean);
+        var lines=[];
+        if(orderIds.length){
+          var lr=await pool.query("SELECT * FROM order_line_items WHERE order_id = ANY($1::int[]) ORDER BY order_id, sort_order, id",[orderIds]);
+          lines=lr.rows||[];
+        }
+        var rows=_customsMode?_aggregate(lines):lines.map(_rowFromLine).filter(function(r){return r.name||r.qty;});
+        var total=_tot(rows), baseNo=(ordNo||cno||id||"PACK");
+        function _money(v){ return parseFloat((_n(v)).toFixed(2))||0; }
+        function _qty(v){ return parseFloat((_n(v)).toFixed(0))||0; }
+        function _cbm(v){ return parseFloat((_n(v)).toFixed(3))||0; }
+        var common={buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email}};
+        var pricedKeys=[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"price",fn:function(p){return _money(p.price);}},{k:"amt",fn:function(p){return _money(p.amt);}}];
+        return {docNo:baseNo+"_PACK",sheets:[
+          Object.assign({},common,{sheetName:"Packing List",docNo:baseNo+"_PL",curr:"",headers:["NO.","CP Code","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],colKeys:[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}],rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),_money(total.nw),_money(total.gw),_cbm(total.cbm)]}),
+          Object.assign({},common,{sheetName:"Sales Contract",docNo:baseNo+"_SC",terms:cfg.terms.sc,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+curr+")","Amount ("+curr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]}),
+          Object.assign({},common,{sheetName:"Invoice",docNo:baseNo+"_IV",terms:cfg.terms.iv,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+curr+")","Amount ("+curr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]})
+        ]};
+      }
       var tot=getTotal(prods,o);
       // 总箱数/总净重/总毛重：直接带订单字段表（total_qty/net_weight/gross_weight），不重算。
       var tqty=Number(o.total_qty)||prods.reduce(function(s,p){return s+Number(p.qty||0);},0)||Number(raw.totalQty||0);
@@ -1240,6 +1291,9 @@ export default async function handler(req, res) {
             return sz ? n + " (" + sz + ")" : n;
           }},{k:"qty",fn:function(p){return Number(p.qty)||0;}},{k:"unit",fn:function(p){return p.unit||p.unitOfMeasure||"CTN";}},{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}],
           rows:prods,totals:["","","TOTAL",tqty,"",parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
+        if(_PACK && format==="xlsx"){
+          _xlsCapture=await _buildPackXlsCaptureFromOLI();
+        }
       }
 
       if(type==="pi"){
@@ -2074,6 +2128,81 @@ export default async function handler(req, res) {
       var ExcelJS=(await import("exceljs")).default;
       var wb=new ExcelJS.Workbook();
       wb.creator="Sanlyn OS"; wb.created=new Date();
+      if(Array.isArray(_xlsCapture.sheets)&&_xlsCapture.sheets.length){
+        var _CLM=function(n){var s="";while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26);}return s;};
+        var _GREY2="FF8A94A6",_DARK2="FF1A1A1A";
+        function _stripCN2(t){var s=String(t||"");if(s.indexOf("/")>=0)s=s.split("/").pop();return s.replace(/[\u4e00-\u9fff:：]/g,"").trim();}
+        function _addSheet(cap){
+          var ws=wb.addWorksheet(cap.sheetName||cap.docNo);
+          var _sel=cap.seller||{}, _LC=(cap.headers||[]).length||5, _RC=_CLM(_LC), _half=Math.max(1,Math.floor(_LC/2)), _HC=_CLM(_half), _RC2=_CLM(_half+1);
+          ws.pageSetup={paperSize:9,orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0,
+            margins:{left:0.4,right:0.4,top:0.45,bottom:0.45,header:0.2,footer:0.2}};
+          ws.mergeCells("A1:"+_HC+"1");
+          var _co=ws.getCell("A1");
+          _co.value={richText:[{text:(_sel.nameEN||"SANLYN").toUpperCase()+"\n",font:{bold:true,size:10,color:{argb:_DARK2}}},{text:(_sel.address||""),font:{size:7.5,color:{argb:_GREY2}}}]};
+          _co.alignment={vertical:"middle",wrapText:true};
+          ws.mergeCells(_RC2+"1:"+_RC+"1");
+          var _tt=ws.getCell(_RC2+"1"); _tt.value=(cap.sheetName||"").toUpperCase();
+          _tt.font={bold:true,size:18,color:{argb:_DARK2}}; _tt.alignment={horizontal:"right",vertical:"middle"};
+          ws.getRow(1).height=40;
+          ws.mergeCells("A2:"+_HC+"2"); ws.mergeCells(_RC2+"2:"+_RC+"2");
+          ws.getCell("A2").value="BUYER (BILL TO)"; ws.getCell("A2").font={bold:true,size:7.5,color:{argb:_GREY2}};
+          ws.getCell(_RC2+"2").value="DETAILS"; ws.getCell(_RC2+"2").font={bold:true,size:7.5,color:{argb:_GREY2}};
+          ws.mergeCells("A3:"+_HC+"3"); ws.mergeCells(_RC2+"3:"+_RC+"3");
+          ws.getCell("A3").value=cap.buyer||""; ws.getCell("A3").font={bold:true,size:9,color:{argb:_DARK2}};
+          ws.getCell(_RC2+"3").value={richText:[{text:"No.: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.docNo||""),font:{size:8.5,color:{argb:_DARK2}}}]};
+          ws.mergeCells("A4:"+_HC+"5");
+          ws.getCell("A4").value=cap.buyerAddr||""; ws.getCell("A4").font={size:8,color:{argb:_DARK2}}; ws.getCell("A4").alignment={wrapText:true,vertical:"top"};
+          ws.mergeCells(_RC2+"4:"+_RC+"4");
+          ws.getCell(_RC2+"4").value={richText:[{text:"Order: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.poNo||cap.cno||""),font:{size:8.5,color:{argb:_DARK2}}}]};
+          ws.mergeCells(_RC2+"5:"+_RC+"5");
+          ws.getCell(_RC2+"5").value={richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}},{text:"   Currency: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.curr||""),font:{size:8.5,color:{argb:_DARK2}}}]};
+          for(var _sc=1;_sc<=_LC;_sc++){ ws.getCell(5,_sc).border={bottom:{style:"thin",color:{argb:_DARK2}}}; }
+
+          var hdrRow=ws.addRow(cap.headers);
+          hdrRow.eachCell(function(c){c.font={bold:true,color:{argb:"FFFFFFFF"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF111111"}};c.alignment={horizontal:"center",vertical:"middle"};c.border={top:{style:"thin",color:{argb:"FF999999"}},bottom:{style:"thin",color:{argb:"FF999999"}},left:{style:"thin",color:{argb:"FFCCCCCC"}},right:{style:"thin",color:{argb:"FFCCCCCC"}}};});
+          ws.getColumn(1).width=6;
+          var _nameIdx=2+cap.colKeys.findIndex(function(k){return k.k==="name";});
+          if(_nameIdx>=2){ws.getColumn(_nameIdx).width=42;ws.getColumn(_nameIdx).alignment={wrapText:true,vertical:"top"};}
+          var rowNum=0;
+          (cap.rows||[]).forEach(function(p){
+            rowNum++;
+            var cells=[String(rowNum).padStart(2,"0")];
+            cap.colKeys.forEach(function(k){ var v=k.fn?k.fn(p):(p[k.k]||""); var n=parseFloat(String(v).replace(/,/g,"")); cells.push(isNaN(n)?v:n); });
+            var dr=ws.addRow(cells), alt=(rowNum%2===0);
+            dr.eachCell(function(c,ci){
+              c.border={top:{style:"hair",color:{argb:"FFDDDDDD"}},bottom:{style:"hair",color:{argb:"FFDDDDDD"}},left:{style:"hair",color:{argb:"FFEEEEEE"}},right:{style:"hair",color:{argb:"FFEEEEEE"}}};
+              var k=(ci>=2&&cap.colKeys[ci-2])?cap.colKeys[ci-2].k:null;
+              c.alignment={horizontal:(ci===1||k==="cp"||k==="qty")?"center":(k==="name"?"left":"right"),vertical:"middle",wrapText:(k==="name"||k==="cp")};
+              if(!c.font)c.font={size:10};
+              if(alt)c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFFAFAFA"}};
+            });
+          });
+          ws.addRow([]);
+          var tRow=ws.addRow(cap.totals);
+          tRow.eachCell(function(c){c.font={bold:true};});
+          for(var ci=3;ci<=_LC;ci++){ if(ci!==_nameIdx) ws.getColumn(ci).width=16; }
+          var _lastColL=_CLM(_LC);
+          function _sec(title){ ws.addRow([]); var r=ws.addRow([title]); ws.mergeCells("A"+r.number+":"+_lastColL+r.number); r.getCell(1).font={bold:true,size:11,color:{argb:"FFFFFFFF"}}; r.getCell(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF111111"}}; }
+          function _kv(label,value){ var r=ws.addRow([label,value]); r.getCell(1).font={bold:true,size:10}; r.getCell(2).font={size:10}; ws.mergeCells("B"+r.number+":"+_lastColL+r.number); }
+          if(cap.incoterm){ ws.addRow([]); _kv("Trade Terms:","("+cap.incoterm+") Incoterms® 2020"); }
+          if(Array.isArray(cap.terms)&&cap.terms.length){ _sec("TERMS & CONDITIONS"); cap.terms.forEach(function(t,i){ var r=ws.addRow([(i+1)+". "+_stripCN2(t)]); ws.mergeCells("A"+r.number+":"+_lastColL+r.number); r.getCell(1).alignment={wrapText:true,vertical:"top"}; r.getCell(1).font={size:10}; }); }
+          var bk=cap.bank;
+          if(bk&&(bk.beneficiary||bk.accountName||bk.bankName||bk.swift)){ _sec("BANKING INFORMATION"); _kv("Beneficiary:",bk.beneficiary||bk.accountName||""); if(bk.bankName)_kv("Bank:",bk.bankName); if(bk.swift)_kv("SWIFT:",bk.swift); if(bk.bankAddr)_kv("Bank Address:",bk.bankAddr); if(bk.usdAccount)_kv("Account No.:",bk.usdAccount); }
+          ws.addRow([]); ws.addRow([]);
+          var sigMid=Math.max(2,Math.ceil(_LC/2)), sigR1=ws.addRow([]);
+          for(var si=1;si<=_LC;si++){ sigR1.getCell(si).border={top:{style:"medium",color:{argb:"FF000000"}}}; }
+          var sigR2=ws.addRow([]); sigR2.getCell(1).value="BUYER AUTHORIZED SIGNATURE"; sigR2.getCell(sigMid+1).value="SELLER AUTHORIZED SIGNATURE";
+          ws.mergeCells("A"+sigR2.number+":"+_CLM(sigMid)+sigR2.number); ws.mergeCells(_CLM(sigMid+1)+sigR2.number+":"+_lastColL+sigR2.number);
+          sigR2.getCell(1).font={bold:true,size:10}; sigR2.getCell(sigMid+1).font={bold:true,size:10}; sigR2.getCell(1).alignment={horizontal:"center"}; sigR2.getCell(sigMid+1).alignment={horizontal:"center"};
+        }
+        _xlsCapture.sheets.forEach(_addSheet);
+        res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition","attachment; filename=\""+(_xlsCapture.docNo||"PACK")+".xlsx\"");
+        res.setHeader("Cache-Control","no-store");
+        var mbuf=await wb.xlsx.writeBuffer();
+        return res.status(200).send(Buffer.from(mbuf));
+      }
       var ws=wb.addWorksheet(_xlsCapture.sheetName||_xlsCapture.docNo);
       var _sel=_xlsCapture.seller||{};
 
