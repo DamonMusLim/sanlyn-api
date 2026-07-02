@@ -161,6 +161,7 @@ export async function fetchGaps(pool, factoryCode, factoryName) {
     return {
       contract_no: row.contract_no,
       customs_no: row.customs_no,
+      issuing_company: row.issuing_company || null,
       goods: normalizeItems(raw),
       lines,
       invoice_lines: invoiceLines,
@@ -242,3 +243,4 @@ export async function fetchUploaded(pool, factoryCode) {
     }));
   }
 }
+// 本次改动：fetchGaps 返回 issuing_company 供工厂确认门户过滤巴匕单。

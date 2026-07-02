@@ -494,6 +494,8 @@ mount("/api/db/migrate-rfq",   () => import("./api/db/migrate-rfq.js"));    // t
 mount("/api/db/rfq-requests",  () => import("./api/db/rfq-requests.js"));   // CRUD
 mount("/api/db/rfq-items",     () => import("./api/db/rfq-items.js"));      // forwarder quote lines
 mount("/api/public/freight-quote/:itemId", () => import("./api/public/freight-quote.js")); // 货代公开报价页(免登录,token=freight_rfq_items.id)
+mount("/api/public/forwarder-lanes/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开多航线报价页
+mount("/api/public/forwarder-quote/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开报价提交
 mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));

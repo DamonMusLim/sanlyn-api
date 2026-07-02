@@ -70,19 +70,20 @@ function aggregate(all){
   total.rows=rows;total.up=(total.qty?total.amt/total.qty:0);return total;
 }
 
-// 明细行（切「明细模式」时用）
-function detailRows(all,mode){
+// 明细行（切「明细模式」时用），ctnMap = {order_no → container_bookings row}
+function detailRows(all,ctnMap){
   var rows=[];
+  ctnMap=ctnMap||{};
   all.forEach(function(o){
+    var ctn=ctnMap[o.order_no]||{};
+    if(ctn.container_no){rows.push({isHeader:true,orderNo:o.order_no,ctnNo:ctn.container_no,sealNo:ctn.seal_no,ctnType:ctn.container_type});}
+    var sub={qty:0,nw:0,gw:0,cbm:0};
     lineItems(o).filter(hasProd).forEach(function(p){
-      var q=qty(p);
-      rows.push({name:pName(p),size:p.size||'',qty:q,
-        nw:nwCtn(p)*q,
-        gw:gwCtn(p)*q,
-        cbm:cbmCtn(p)*q,
-        up:unitPrice(p),
-        amt:amount(p)});
+      var q=qty(p),rn=nwCtn(p)*q,rg=gwCtn(p)*q,rc=cbmCtn(p)*q;
+      sub.qty+=q;sub.nw+=rn;sub.gw+=rg;sub.cbm+=rc;
+      rows.push({name:pName(p),size:p.size||'',qty:q,nw:rn,gw:rg,cbm:rc,up:unitPrice(p),amt:amount(p)});
     });
+    if(ctn.container_no){rows.push({isSubtotal:true,orderNo:o.order_no,qty:sub.qty,nw:sub.nw,gw:sub.gw,cbm:sub.cbm});}
   });
   return rows;
 }
@@ -95,7 +96,17 @@ function renderPL(agg,rows){
   if(_customsMode){
     (agg.rows||[]).forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';});
   }else{
-    rows.forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';});
+    var idx=0;
+    rows.forEach(function(r){
+      if(r.isHeader){
+        body+='<tr style="background:#dbeafe"><td colspan="6" style="padding:6px 10px;font-weight:800;font-size:11px;color:#1e3a8a">🚢 CTN: '+esc(r.ctnNo)+(r.sealNo?' &nbsp;·&nbsp; SEAL: '+esc(r.sealNo):'')+(r.ctnType?' ('+esc(r.ctnType)+')':'')+'&nbsp;&nbsp;&nbsp;ORDER: '+esc(shortNo(r.orderNo))+'</td></tr>';
+      }else if(r.isSubtotal){
+        body+='<tr style="background:#eff6ff"><td colspan="2" class="l" style="padding:5px 10px;font-style:italic;color:#1d4ed8;font-size:11px">Sub-Total ('+esc(shortNo(r.orderNo))+')</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
+      }else{
+        idx++;
+        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
+      }
+    });
   }
   body+='<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+'</td><td>'+fmt(agg.nw)+'</td><td>'+fmt(agg.gw)+'</td><td>'+fmt(agg.cbm,3)+'</td></tr>';
   document.getElementById('pl-body').innerHTML=body;
@@ -105,7 +116,8 @@ function renderPriced(pfx,agg,rows,cur){
   if(_customsMode){
     (agg.rows||[]).forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
   }else{
-    rows.forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
+    var drows=rows.filter(function(r){return !r.isHeader&&!r.isSubtotal;});
+    drows.forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
   }
   body+='<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+' CTN</td><td>'+cur+'</td><td>'+fmt(agg.amt)+'</td></tr>';
   document.getElementById(pfx+'-body').innerHTML=body;
@@ -153,6 +165,14 @@ function fetchBuyerAddr(primary){
     var rows=arr(d),row=rows.find(function(x){return x.code===code||x.company_code===code;})||rows[0]||{};
     return firstText(row.address_en)||firstText(row.address)||firstText(row.addresses)||firstText(row.raw&&row.raw.address)||'';
   }).catch(function(){return '';});
+}
+function loadContainerInfo(blNo){
+  return fetch(API+'/api/db/container-bookings?bl_no='+encodeURIComponent(blNo),{headers:authH()})
+    .then(function(r){return r.json();}).then(function(d){
+      var rows=Array.isArray(d)?d:(d.data||[]);
+      var map={};rows.forEach(function(b){if(b.contract_no)map[b.contract_no]=b;});
+      return map;
+    }).catch(function(){return {};});
 }
 
 function renderAll(){
@@ -260,11 +280,13 @@ function init(){
     document.getElementById('orderLabel').textContent=orderNo;
     return Promise.all(all.map(loadOrderLineItems)).then(function(lineSets){
       lineSets.forEach(function(lines,i){all[i]._lineItems=lines;});
-      window._agg=aggregate(all);window._rows=detailRows(all);window._cur=cur;
+      window._agg=aggregate(all);window._cur=cur;
       var sellerP=fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).catch(function(){return [];});
       var addrP=fetchBuyerAddr(primary);
-      return Promise.all([sellerP,addrP]).then(function(rr){
-      var d=rr[0],addr=rr[1];if(addr)primary._buyerAddr=addr;
+      var ctnP=(!_customsMode&&primary.bl_no)?loadContainerInfo(primary.bl_no):Promise.resolve({});
+      return Promise.all([sellerP,addrP,ctnP]).then(function(rr){
+      var d=rr[0],addr=rr[1],ctnMap=rr[2]||{};if(addr)primary._buyerAddr=addr;
+      window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
       var ps=Array.isArray(d)?d:(d.data||[]);
       var sp=(primary.seller_code&&ps.find(function(x){return x.code===primary.seller_code;}))||ps.find(function(x){return x.name_cn===primary.issuing_company||x.name_en===primary.issuing_company;})||ps.find(function(x){return x.is_default;});
       ['pl','sc','iv'].forEach(function(pfx){fillHeader(pfx,primary,all,sp,cur,port);});

@@ -4,9 +4,31 @@
 
 import { getPool, setCors } from "../db.js";
 import { isInternalRole } from "../lib/viewmodel-adapter.js";
+import { officialPortChargeKey, officialPortChargesMap } from "./_official-port-charges.js";
 
 const ALLOWED_PATCH = ["pol","pod","ctnr_type","status","awarded_item_id",
                        "markup_usd","client_rate_usd","order_id","etd","route"];
+const OFFICIAL_CARRIERS = ["OOCL", "EMC", "COSCO", "MSC", "KMTC", "ESL", "HAPAG", "MSK", "CMA", "ONE"];
+
+async function attachOfficialPortCharges(pool, rows){
+  var pairs = [];
+  (rows || []).forEach(function(row){
+    OFFICIAL_CARRIERS.forEach(function(carrier){
+      pairs.push({ carrier:carrier, pol:row.pol, containerType:row.ctnr_type || "40HQ" });
+    });
+  });
+  var rateMap = await officialPortChargesMap(pool, pairs);
+  (rows || []).forEach(function(row){
+    var ct = String(row.ctnr_type || "40HQ").toUpperCase().replace("HC", "HQ");
+    var official = {};
+    OFFICIAL_CARRIERS.forEach(function(carrier){
+      official[carrier] = {};
+      official[carrier][ct] = rateMap[officialPortChargeKey(carrier, row.pol, ct)];
+    });
+    row.official_port_charges = official;
+  });
+  return rows;
+}
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
@@ -14,6 +36,11 @@ export default async function handler(req, res) {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
   const pool = getPool();
+  await pool.query(`
+    ALTER TABLE freight_rfq_items
+      ADD COLUMN IF NOT EXISTS trucking_included boolean DEFAULT false,
+      ADD COLUMN IF NOT EXISTS trucking_fee      numeric
+  `);
 
   // ── GET ──
   if (req.method === "GET") {
@@ -39,11 +66,14 @@ export default async function handler(req, res) {
              sp.gross_weight AS gross_weight_kg,
              sp.shipment_no AS plan_shipment_no,
              COALESCE(items.items, '[]'::json) AS items,
-             (SELECT string_agg(p.name_cn || '×' || oi.qty || '箱', ' / ')
-                FROM order_items oi
-                JOIN products p ON p.id = oi.product_id
-               WHERE oi.order_id = r.order_id
-               LIMIT 3
+             (SELECT string_agg(t.label, ' / ')
+                FROM (
+                  SELECT (COALESCE(oi.product_name, '') || '×' || oi.qty_ctn || '箱') AS label
+                    FROM order_line_items oi
+                   WHERE oi.order_id = r.order_id
+                   ORDER BY oi.sort_order NULLS LAST
+                   LIMIT 3
+                ) t
              ) AS product_summary
       FROM freight_rfqs r
       LEFT JOIN orders o ON o.id = r.order_id
@@ -59,7 +89,8 @@ export default async function handler(req, res) {
             SELECT i.id, i.rfq_id, i.forwarder_co, i.vessel, i.voyage, i.etd,
                    i.usd_rate, i.port_charges_json, i.free_pol_days, i.free_pod_days,
                    i.dnd_usd, i.currency, i.selected, i.submitted_at,
-                   i.container_type, i.carrier
+                   i.container_type, i.carrier, i.customs_included, i.customs_fee,
+                   i.trucking_included, i.trucking_fee, i.si_cutoff_at, i.cy_cutoff_at
               FROM freight_rfq_items i
              WHERE i.rfq_id = r.id
                AND ($1::boolean
@@ -72,12 +103,13 @@ export default async function handler(req, res) {
       LIMIT $${vals.length+1}`;
     vals.push(limit);
     const { rows } = await pool.query(sql, vals);
+    await attachOfficialPortCharges(pool, rows);
     return res.status(200).json({ success: true, data: rows, count: rows.length });
   }
 
-  // ── POST action=sweep：出货计划缺运价 → 自动生成 open RFQ ──
-  // 条件：freight_cost 为空 + 有 pol/pod + (etd 未到 或 14天内新建) + 未取消
-  // 防重：同 shipping_plan_id 已有未关闭 RFQ 则跳过。绝不为老旧计划造需求。
+  // ── POST action=sweep：出货计划缺成本 → 自动生成 open RFQ ──
+  // 条件：成本为空 + 必要路线信息 + 未取消/未完成/未关闭
+  // 防重：同 shipping_plan_id + service_type 已有未关闭 RFQ 则跳过。
   if (req.method === "POST" && (req.body || {}).action === "sweep") {
     const { rows: cands } = await pool.query(`
       SELECT sp.id, sp.shipment_no, sp.pol, sp.pod, sp.container_type, sp.etd
@@ -85,32 +117,47 @@ export default async function handler(req, res) {
        WHERE sp.freight_cost IS NULL
          AND sp.pol IS NOT NULL AND sp.pod IS NOT NULL
          AND COALESCE(sp.status,'') NOT IN ('cancelled','completed','closed')
-         AND ( sp.etd >= CURRENT_DATE
-               OR (sp.etd IS NULL AND sp.created_at > now() - interval '14 days') )
+         AND (sp.etd >= CURRENT_DATE OR sp.collab_status = 'collab_open' OR sp.created_at > now() - interval '21 days')
          AND NOT EXISTS (
            SELECT 1 FROM freight_rfqs r
-            WHERE r.shipping_plan_id = sp.id AND r.status NOT IN ('closed','cancelled') )
-       ORDER BY sp.etd NULLS LAST
-       LIMIT 50`);
-    // 车队/报关需求：对应成本为空 + 非自拖/自报（arrange_mode=self 排除）
+            WHERE r.shipping_plan_id = sp.id
+              AND COALESCE(r.service_type,'ocean') = 'ocean'
+              AND r.status NOT IN ('closed','cancelled') )
+       ORDER BY sp.etd NULLS LAST`);
+    // 车队/报关/保险需求：对应成本为空 + 非自拖/自报（arrange_mode=self 排除）
+    // 若同票海运报价已勾选含拖车/含报关，对应服务由海运一口价覆盖，不再自动生成 RFQ，避免双算。
     const { rows: svcCands } = await pool.query(`
       SELECT sp.id, sp.shipment_no, sp.pol, sp.pod, sp.container_type, sp.etd,
-             (sp.trucking_cost_total IS NULL) AS need_truck,
-             (sp.customs_cost_total  IS NULL) AS need_customs
+             (sp.trucking_cost_total IS NULL AND NOT EXISTS (
+                SELECT 1
+                  FROM freight_rfqs r
+                  JOIN freight_rfq_items i ON i.rfq_id = r.id
+                 WHERE COALESCE(r.service_type,'ocean') = 'ocean'
+                   AND i.trucking_included IS TRUE
+                   AND r.shipping_plan_id = sp.id
+              )) AS need_truck,
+             (sp.customs_cost_total IS NULL AND NOT EXISTS (
+                SELECT 1
+                  FROM freight_rfqs r
+                  JOIN freight_rfq_items i ON i.rfq_id = r.id
+                 WHERE COALESCE(r.service_type,'ocean') = 'ocean'
+                   AND i.customs_included IS TRUE
+                   AND r.shipping_plan_id = sp.id
+              )) AS need_customs,
+             (sp.insurance_cost IS NULL) AS need_insurance
         FROM shipping_plans sp
        WHERE sp.pol IS NOT NULL
          AND COALESCE(sp.arrange_mode,'agent') <> 'self'
          AND COALESCE(sp.status,'') NOT IN ('cancelled','completed','closed')
-         AND ( sp.etd >= CURRENT_DATE
-               OR (sp.etd IS NULL AND sp.created_at > now() - interval '14 days') )
-         AND (sp.trucking_cost_total IS NULL OR sp.customs_cost_total IS NULL)
-       ORDER BY sp.etd NULLS LAST
-       LIMIT 50`);
+         AND (sp.trucking_cost_total IS NULL OR sp.customs_cost_total IS NULL OR sp.insurance_cost IS NULL)
+         AND (sp.etd >= CURRENT_DATE OR sp.collab_status = 'collab_open' OR sp.created_at > now() - interval '21 days')
+       ORDER BY sp.etd NULLS LAST`);
     const created = [];
     const insertRfq = async (sp, svc) => {
       const ct = (sp.container_type || "40HQ").toUpperCase().replace("HC", "HQ");
       const route = svc === "ocean" ? `${sp.pol}→${sp.pod}`
-        : svc === "truck" ? `装柜→${sp.pol}` : `${sp.pol} 出口报关`;
+        : svc === "truck" ? `装柜→${sp.pol}`
+        : svc === "insurance" ? `${sp.pol} 货物投保` : `${sp.pol} 出口报关`;
       const { rows } = await pool.query(
         `INSERT INTO freight_rfqs (pol, pod, ctnr_type, status, etd, route,
            shipping_plan_id, service_type, created_by)
@@ -129,6 +176,7 @@ export default async function handler(req, res) {
     for (const sp of svcCands) {
       if (sp.need_truck)   await insertRfq(sp, "truck");
       if (sp.need_customs) await insertRfq(sp, "customs");
+      if (sp.need_insurance) await insertRfq(sp, "insurance");
     }
     return res.status(200).json({ success: true,
       scanned: cands.length + svcCands.length, created });

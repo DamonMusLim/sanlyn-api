@@ -169,28 +169,40 @@ function init(){
       var c=cs.find(function(x){return x.name_cn===primary.factory;})||cs[0];
       if(c){setText('sellerName',c.name_cn||'');setText('sellerTaxNo',c.tax_id||c.tax_no||'');setText('sellerBank',c.bank_name||'');setText('sellerAccount',c.bank_account||'');}
     }).catch(function(){});
-    // ── 产品+价格：全部取 orders 主表 products 字段（camelCase 真值列）────
+    // ── 产品+价格：优先 order_line_items（有 product_name），降级到 orders.products ────
     var allOrders=[primary].concat(results.slice(1).map(function(r){return r[0];}).filter(Boolean));
-    var html='',rowIdx=1;
-    allOrders.forEach(function(order){
-      if(!order)return;
-      if(order!==primary){appendText('orderNo',order.order_no||'');}
-      // FS 多合同条件筛选：按本订单 contract_no 取它自己的产品行
-      var prods=(order.products||(order.raw&&order.raw.products)||[]).filter(function(p){return p&&(p.name||p.name_en||p.name_cn);});
-      if(!prods.length)return;
-      html+=makeGroupRow('单号 '+(order.order_no||order.contract_no||'')); // FS合同号只在顶部显示一次,组内不重复
-      prods.forEach(function(p){
-        var name=p.name||p.name_en||p.name_cn||'';if(p.size)name+=' ('+p.size+')';
-        var qty=parseFloat(p.qty||p.qty_ctn||0)||0;
-        var bg=parseFloat(p.bgBx||p.bg_bx||1)||1;
-        var ctnP=parseFloat(p.factoryPrice||p.unitPrice||p.factory_price||p.unit_price||0)||0; // 采购合同=工厂价
-        var perB=bg?ctnP/bg:ctnP;
-        var amt=parseFloat(p.factorySubtotal||p.subtotal||(qty*ctnP))||0;
-        html+=makeProductRow(('0'+(rowIdx++)).slice(-2),name,qty,perB.toFixed(2),ctnP.toFixed(2),amt.toFixed(2),p.barcode||p.code||p.ean||'');
+    return Promise.all(allOrders.map(function(o){
+      if(!o||!o.id)return Promise.resolve(null);
+      return fetch(API+'/api/db/order-line-items?order_id='+encodeURIComponent(o.id),{headers:authH()})
+        .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
+    })).then(function(oliResults){
+      var html='',rowIdx=1;
+      allOrders.forEach(function(order,idx){
+        if(!order)return;
+        if(order!==primary){appendText('orderNo',order.order_no||'');}
+        var oli=oliResults[idx];
+        var oliRows=oli&&Array.isArray(oli.data)?oli.data:[];
+        var prods;
+        if(oliRows.length){
+          prods=oliRows.map(function(r){return{name:r.product_name||r.sku||'',qty:r.qty_ctn,bgBx:r.bg_bx||1,factoryPrice:r.factory_price||r.unit_price||0,factorySubtotal:r.factory_subtotal||r.subtotal||0,barcode:r.barcode||'',size:r.size||''};}).filter(function(p){return p.name;});
+        }else{
+          prods=(order.products||(order.raw&&order.raw.products)||[]).filter(function(p){return p&&(p.name||p.name_en||p.name_cn||p.sku);});
+        }
+        if(!prods.length)return;
+        html+=makeGroupRow('单号 '+(order.order_no||order.contract_no||''));
+        prods.forEach(function(p){
+          var name=p.name||p.name_en||p.name_cn||p.sku||'';if(p.size)name+=' ('+p.size+')';
+          var qty=parseFloat(p.qty||p.qty_ctn||0)||0;
+          var bg=parseFloat(p.bgBx||p.bg_bx||1)||1;
+          var ctnP=parseFloat(p.factoryPrice||p.unitPrice||p.factory_price||p.unit_price||0)||0;
+          var perB=bg?ctnP/bg:ctnP;
+          var amt=qty*ctnP;
+          html+=makeProductRow(('0'+(rowIdx++)).slice(-2),name,qty,perB.toFixed(2),ctnP.toFixed(2),amt.toFixed(2),p.barcode||p.code||p.ean||'');
+        });
       });
+      document.getElementById('poBody').innerHTML=html||'<tr><td colspan="8" style="text-align:center;padding:12px;color:#64748b;border:1px solid #bbb">无产品数据，可点击"＋加产品行"手动添加</td></tr>';
+      recalcTotals();hideBanner();setTimeout(handleHashAction,300);
     });
-    document.getElementById('poBody').innerHTML=html||'<tr><td colspan="8" style="text-align:center;padding:12px;color:#64748b;border:1px solid #bbb">无产品数据，可点击"＋加产品行"手动添加</td></tr>';
-    recalcTotals();hideBanner();setTimeout(handleHashAction,300);
   }).catch(function(e){showBanner('err',e.message);});
   ['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem('po_seal_'+w)||'null');if(s&&s.url)applySeal(w,s.url,s.name);}catch(e){}});
 }

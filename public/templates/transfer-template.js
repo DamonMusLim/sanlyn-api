@@ -64,7 +64,9 @@ function renderTransferRows(containers) {
       <td>${esc(row.export_port)}</td>
       <td>${esc(row.export_bl)}</td>
       <td>${esc(row.vessel_voyage)}</td>
+      <td class="left">${esc(row.goods_desc)}</td>
       <td>${fmt(row.pieces, 0)}</td>
+      <td>${fmt(row.cbm)}</td>
       <td>${fmt(row.gross_weight_kg)}</td>
       <td>${fmt(row.tare_kg)}</td>
       <td>${fmt(row.vgm_kg)}</td>

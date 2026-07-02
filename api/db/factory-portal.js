@@ -374,6 +374,7 @@ async function resolveFactoryByMt(pool, mt) {
 
 async function handleMtData(req, res, scope) {
   const pool = getPool();
+  // 2026-07-02 Damon改口径:外单也要工厂对账(去掉"只巴匕单"过滤);报关门控由前端按customs_no("报关后才亮开票")统一处理,巴匕/外单一视同仁
   const gaps = await fetchGaps(pool, scope.factory.code, scope.factory.name);
   const uploaded = await fetchUploaded(pool, scope.factory.code);
   return json(res, 200, { factory: scope.factory, gaps, uploaded });
@@ -407,3 +408,4 @@ export default async function handler(req, res) {
     return json(res, 500, { error: "Internal server error", detail: err.message });
   }
 }
+// 2026-07-02: handleMtData 返回全部工厂开票缺口(巴匕+外单),报关门控在前端按 customs_no。

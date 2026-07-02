@@ -199,6 +199,9 @@ export async function authMiddleware(req, res, next) {
   // 静态文件 /public/* 直通（driver-evidence.html / dispatch-paste.html 等）
   if (req.path.startsWith("/public/")) return next();
 
+  // Public forwarder freight quote page — token = freight_rfq_items.id (UUID), 处理器自校验
+  if (req.path.startsWith("/api/public/")) return next();
+
   // Factory short link /f/<token> → redirect to /public/factory-fill.html, no auth
   if (req.path.startsWith("/f/")) return next();
 

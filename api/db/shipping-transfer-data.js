@@ -14,22 +14,26 @@ const SQL = `
     cb.seal_no,
     cb.contract_no,
     cb.container_type,
+    cb.declaration_cargo_name AS goods_desc,
     COALESCE(cb.cargo_weight_kg, 0)::numeric AS cb_cargo_weight_kg,
-    COALESCE(cb.tare_kg, 0)::numeric AS tare_kg,
+    COALESCE(cb.tare_weight_kg, cb.tare_kg, 0)::numeric AS tare_kg,
 
     li.id AS li_id,
     COALESCE(li.qty_ctn, 0)::numeric AS qty_ctn,
     li.hs_code AS li_hs_code,
+    li.product_name AS li_product_name,
     COALESCE(li.gw_ctn, 0)::numeric AS li_gw_ctn,
+    COALESCE(li.cbm_ctn, 0)::numeric AS li_cbm_ctn,
 
     p.hs_code AS product_hs_code,
     p.declaration_name,
     p.bl_description,
     COALESCE(p.gross_weight, 0)::numeric AS product_gw_ctn,
     COALESCE(p.cbm, 0)::numeric AS product_cbm
+    ,COALESCE(o.total_cbm, 0)::numeric AS order_cbm
   FROM shipping_plans sp
   JOIN container_bookings cb ON cb.shipping_plan_id = sp.id
-  LEFT JOIN orders o ON o.contract_no = cb.contract_no
+  LEFT JOIN orders o ON (o.order_no = cb.contract_no OR o.contract_no = cb.contract_no) AND o.bl_no = sp.bl_no
   LEFT JOIN order_line_items li ON li.order_id = o.id
   LEFT JOIN products p ON p.id = li.product_id
   WHERE sp.id::text = $1 OR sp._id = $1
@@ -100,7 +104,10 @@ export default async function handler(req, res) {
           pieces: 0,
           gross_weight_kg: 0,
           cbm: 0,
+          cbm_official: num(row.order_cbm),
           tare_kg: num(row.tare_kg),
+          goods_desc: text(row.goods_desc),
+          _blDescSet: new Set(),
           vgm_kg: 0,
           _hasProductRows: false,
           _fallbackCargoWeight: num(row.cb_cargo_weight_kg),
@@ -113,11 +120,12 @@ export default async function handler(req, res) {
       const qty = num(row.qty_ctn);
       const unitGw = num(row.li_gw_ctn) || num(row.product_gw_ctn);
       const lineGw = qty * unitGw;
-      const lineCbm = qty * num(row.product_cbm);
-      const product = text(row.declaration_name || row.bl_description);
+      const lineCbm = qty * (num(row.li_cbm_ctn) || num(row.product_cbm));
+      const product = text(row.declaration_name || row.bl_description || row.li_product_name);
       const hsCode = text(row.li_hs_code || row.product_hs_code);
 
       container._hasProductRows = true;
+      if (row.bl_description) container._blDescSet.add(text(row.bl_description));
       container.pieces += qty;
       container.gross_weight_kg += lineGw;
       container.cbm += lineCbm;
@@ -145,9 +153,9 @@ export default async function handler(req, res) {
     }
 
     const containers = Array.from(containersById.values()).map((container) => {
-      const gross = container._hasProductRows
-        ? container.gross_weight_kg
-        : container._fallbackCargoWeight;
+      const gross = container._fallbackCargoWeight > 0
+        ? container._fallbackCargoWeight
+        : container.gross_weight_kg;
       const vgm = gross + container.tare_kg;
 
       return {
@@ -159,9 +167,11 @@ export default async function handler(req, res) {
         export_port: container.export_port,
         export_bl: container.export_bl,
         vessel_voyage: container.vessel_voyage,
+        goods_desc: container.goods_desc || Array.from(container._blDescSet).join(" / "),
         import_arrival_date: container.import_arrival_date,
         import_bl_no: container.import_bl_no,
         pieces: round(container.pieces, 0),
+        cbm: round(container.cbm_official, 3),
         gross_weight_kg: round(gross, 3),
         tare_kg: round(container.tare_kg, 3),
         vgm_kg: round(vgm, 3),

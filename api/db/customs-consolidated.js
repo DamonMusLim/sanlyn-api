@@ -72,6 +72,34 @@ function hasValue(v) {
   return v !== null && v !== undefined && v !== "";
 }
 
+function parsePlanOrderTokens(value) {
+  let candidates = [];
+  if (Array.isArray(value)) {
+    candidates = value.map(String).map(s => s.trim()).filter(Boolean);
+  } else if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed) {
+      if (trimmed.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            candidates = parsed.map(String).map(s => s.trim()).filter(Boolean);
+          } else {
+            candidates = trimmed.split(/[|,\s]+/);
+          }
+        } catch (_err) {
+          candidates = trimmed.split(/[|,\s]+/);
+        }
+      } else {
+        candidates = trimmed.split(/[|,\s]+/);
+      }
+    }
+  }
+  return candidates
+    .map(s => String(s).trim().replace(/^[\[\]"'\s]+|[\[\]"'\s]+$/g, ""))
+    .filter(Boolean);
+}
+
 function finiteOrNull(v) {
   if (!hasValue(v)) return null;
   const n = Number(v);
@@ -243,6 +271,7 @@ export default async function handler(req, res) {
 
   try {
     let orders = [];
+    let shipmentPlans = [];
 
     // ── 1. Resolve orders for this shipment ────────────────────────────────
     if (bl_no) {
@@ -260,21 +289,21 @@ export default async function handler(req, res) {
         `SELECT order_contract_nos, order_nos FROM shipping_plans WHERE bl_no = $1`,
         [bl_no]
       );
+      shipmentPlans = plans;
 
       const linkedNos = new Set(directOrders.map(o => o.order_no).filter(Boolean));
       const linkedContracts = new Set(directOrders.map(o => o.contract_no).filter(Boolean));
 
       for (const plan of plans) {
-        const nos = plan.order_contract_nos;
-        if (!nos) continue;
+        if (Array.isArray(plan.order_nos)) {
+          for (const no of plan.order_nos) {
+            const cleanNo = String(no).trim();
+            if (cleanNo) linkedNos.add(cleanNo);
+          }
+        }
         // order_contract_nos may be a string like "FS20260206018" or "48-5|FS20260509001"
         // or JSON array ["CP26031606-1"] — handle all forms
-        let candidates = [];
-        if (typeof nos === "string") {
-          candidates = nos.split(/[|,\s]+/).map(s => s.trim()).filter(Boolean);
-        } else if (Array.isArray(nos)) {
-          candidates = nos.map(String).filter(Boolean);
-        }
+        const candidates = parsePlanOrderTokens(plan.order_contract_nos);
         for (const c of candidates) {
           if (!linkedNos.has(c) && !linkedContracts.has(c)) {
             linkedNos.add(c);
@@ -330,6 +359,28 @@ export default async function handler(req, res) {
     }
 
     if (!orders.length) {
+      if (bl_no && shipmentPlans.length > 0) {
+        return res.status(200).json({
+          success: true,
+          bl_no: bl_no || null,
+          lines: [],
+          totals: { ctn: 0, min_unit_qty: 0, nw_kg: 0, gw_kg: 0, cbm: 0, declared_amount: 0, customer_amount: 0 },
+          cross_check: {
+            orders_snapshot: { cbm: null, nw_kg: null, gw_kg: null, per_order: [], missing: ["该BL有海运计划但订单解析为空"] },
+            customer_docs: { cbm: null, nw_kg: null, gw_kg: null, missing: ["该BL有海运计划但订单解析为空"] },
+          },
+          orders_included: [],
+          missing_skus: [],
+          missing_weight: [],
+          data_integrity_error: true,
+          message: "该提单有海运计划但订单解析为空，数据链可能断裂（检查 shipping_plans.order_nos / order_contract_nos 与 orders 的对应）",
+          debug: {
+            plan_order_nos: shipmentPlans.map(p => p.order_nos),
+            plan_order_contract_nos: shipmentPlans.map(p => p.order_contract_nos),
+          },
+          generated_at: new Date().toISOString(),
+        });
+      }
       return res.status(200).json({
         success: true,
         bl_no: bl_no || null,
@@ -608,8 +659,7 @@ export default async function handler(req, res) {
       if (line.sku) b._skus.add(line.sku);   // SKU 列表(给权威认证/回灌用)
 
       if (factory) {
-        const factoryStr = city ? `${factory} (${city})` : factory;
-        b._factories.add(factoryStr);
+        b._factories.add(factory);   // city in _cities; strip to deduplicate inconsistent factory_city
       }
       if (city) b._cities.add(city);   // 境内货源地(城市), 报关单字段, 不露工厂公司名
 

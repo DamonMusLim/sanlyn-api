@@ -8,7 +8,8 @@ import { isInternalRole } from "../lib/viewmodel-adapter.js";
 
 const ALLOWED_PATCH = ["forwarder_co","vessel","voyage","etd","usd_rate",
                        "transit_days","notes","is_lowest","selected","currency",
-                       "container_type","carrier"];
+                       "container_type","carrier","customs_included","customs_fee",
+                       "trucking_included","trucking_fee","si_cutoff_at","cy_cutoff_at"];
 
 // 供应商身份（fail-closed）：非内部角色只能以自己公司身份读/写报价
 function supplierIdentity(user) {
@@ -33,7 +34,9 @@ export default async function handler(req, res) {
       ADD COLUMN IF NOT EXISTS free_pod_days     int,
       ADD COLUMN IF NOT EXISTS dnd_usd           numeric,
       ADD COLUMN IF NOT EXISTS container_type    text,
-      ADD COLUMN IF NOT EXISTS carrier           text
+      ADD COLUMN IF NOT EXISTS carrier           text,
+      ADD COLUMN IF NOT EXISTS trucking_included boolean DEFAULT false,
+      ADD COLUMN IF NOT EXISTS trucking_fee      numeric
   `);
 
   // ── GET ──
@@ -69,7 +72,8 @@ export default async function handler(req, res) {
     const { rfq_id, vessel, voyage, etd, usd_rate,
             transit_days, notes, currency,
             port_charges_json, free_pol_days, free_pod_days, dnd_usd,
-            container_type, carrier } = req.body || {};
+            container_type, carrier, customs_included, customs_fee,
+            trucking_included, trucking_fee, si_cutoff_at, cy_cutoff_at } = req.body || {};
     const who = supplierIdentity(req.user);
     // 非内部角色：报价公司强制 = 登录身份（不可冒名）；内部可代录指定公司
     let forwarder_co = (req.body || {}).forwarder_co;
@@ -88,14 +92,20 @@ export default async function handler(req, res) {
          (rfq_id, forwarder_co, forwarder_company_id, vessel, voyage, etd,
           usd_rate, currency, transit_days, notes,
           port_charges_json, free_pol_days, free_pod_days, dnd_usd,
-          container_type, carrier)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16)
+          container_type, carrier, customs_included, customs_fee,
+          trucking_included, trucking_fee, si_cutoff_at, cy_cutoff_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
        RETURNING *`,
       [rfq_id, forwarder_co, forwarder_company_id, vessel || null, voyage || null, etd || null,
        usd_rate, ccy, transit_days || null, notes || null,
        port_charges_json ? JSON.stringify(port_charges_json) : null,
        free_pol_days || null, free_pod_days || null, dnd_usd || null,
-       container_type || null, carrier || null]
+       container_type || null, carrier || null, !!customs_included,
+       customs_fee == null || customs_fee === "" ? null : customs_fee,
+       !!trucking_included,
+       trucking_fee == null || trucking_fee === "" ? null : trucking_fee,
+       si_cutoff_at && si_cutoff_at !== "" ? si_cutoff_at : null,
+       cy_cutoff_at && cy_cutoff_at !== "" ? cy_cutoff_at : null]
     );
     // Recompute is_lowest across all items for this rfq
     await pool.query(
