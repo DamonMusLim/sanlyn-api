@@ -498,6 +498,7 @@ mount("/api/public/forwarder-lanes/:code", () => import("./api/public/forwarder-
 mount("/api/public/forwarder-quote/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开报价提交
 mount("/api/public/forwarder-services/:code", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务(拖车)列表
 mount("/api/public/forwarder-services/:code/quote", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务报价提交
+mount("/api/public/forwarder-shipments/:code", () => import("./api/public/forwarder-services.js")); // v3d 按票四服务全貌
 mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));

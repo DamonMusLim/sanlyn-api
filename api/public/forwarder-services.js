@@ -152,13 +152,43 @@ async function doPost(req, res, pool, code){
   }
   return res.json({ ok:true, item_id:itemId, usd_rate:normalized.total, currency:ccy, detail:normalized.detail });
 }
+async function doShipments(req, res, pool, code){
+  var auth = await validateToken(pool, code);
+  if (auth.err) return res.status(auth.err[0]).json(auth.err[1]);
+  var q = await pool.query(
+    `SELECT r.id AS rfq_id, r.service_type, r.status, r.shipping_plan_id AS plan_id,
+            to_jsonb(sp) AS plan_json,
+            i.id AS item_id, i.usd_rate, i.currency, i.quote_detail_json
+       FROM freight_rfqs r
+       JOIN shipping_plans sp ON sp.id = r.shipping_plan_id
+       LEFT JOIN freight_rfq_items i ON i.rfq_id = r.id AND i.forwarder_co = $1
+      WHERE r.service_type IN ('ocean','truck','customs','insurance') AND r.status = 'open'
+      ORDER BY COALESCE(sp.etd, NOW()) ASC`,
+    [auth.token.forwarder_co]);
+  var byPlan = {};
+  q.rows.forEach(function(row){
+    var pid = row.plan_id;
+    if (!byPlan[pid]) byPlan[pid] = { plan_id:pid, shipment:buildShipment(row.plan_json),
+      services:{ ocean:null, truck:null, customs:null, insurance:null } };
+    byPlan[pid].services[row.service_type] = {
+      rfq_id:row.rfq_id, status:row.status,
+      quoted: !!row.item_id,
+      my_amount: row.item_id ? (row.usd_rate == null ? null : Number(row.usd_rate)) : null,
+      currency: row.currency || null,
+    };
+  });
+  var shipments = Object.keys(byPlan).map(function(k){ return byPlan[k]; });
+  return res.json({ ok:true, forwarder_co:auth.token.forwarder_co, shipments:shipments });
+}
 export default async function handler(req, res){
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.end();
   const pool = getPool();
   var code = (req.params && req.params.code) || String(req.url || "").split("?")[0].split("/").filter(Boolean)[2];
   var isQuote = /\/quote(\?|$)/.test(req.url || "");
+  var isShipments = /forwarder-shipments/.test(req.url || "");
   try {
+    if (req.method === "GET" && isShipments) return await doShipments(req, res, pool, decodeURIComponent(code));
     if (req.method === "POST" && isQuote) return await doPost(req, res, pool, decodeURIComponent(code));
     if (req.method === "GET") return await doGet(req, res, pool, decodeURIComponent(code));
     return res.status(404).json({ ok:false, error:"Not found" });
