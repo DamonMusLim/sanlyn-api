@@ -449,6 +449,7 @@ function preset(rowId,attr,val,cls){ const el=$(rowId).querySelector('[data-'+at
 function setTog(rowId,attr,val){ if(!val) return; const el=$(rowId).querySelector('[data-'+attr+'="'+val+'"]'); if(el) el.click(); }
 
 function groupIsDG(seq){ const ci=window._cntrBySeq&&window._cntrBySeq[seq]; return (ci&&ci.cargo||[]).map(x=>x.order_no).filter(Boolean).some(no=>{ const o=(window._ordersArr||[]).find(z=>z.order_no===no); return o&&o.export_mode==='daigou'; }); }
+function groupShowWeights(g){ return groupIsDG(g.seq) || !(g.lines||[]).some(l=>Number(l.data&&l.data.nw_kg)>0 || Number(l.data&&l.data.gw_kg)>0); }
 function numVal(v){ if(v==null||v==='') return 0; const n=Number(v); return isNaN(n)?0:n; }
 function fmtCargoNum(v,digits){
   if(v==null||v==='') return '—';
@@ -457,13 +458,15 @@ function fmtCargoNum(v,digits){
   const opt=digits==null?{maximumFractionDigits:3}:{minimumFractionDigits:0,maximumFractionDigits:digits};
   return n.toLocaleString(undefined,opt);
 }
-function lineHtml(id,d={},sp,gi_,li_){
+function lineHtml(id,d={},sp,showWeights,gi_,li_){
+  const txt=v=>v?esc(v):'<span style="color:#cbd5e1;">—</span>';
   return '<tr id="line_'+id+'">'+
     '<td class="td-name">'+(d.cargo_name?esc(d.cargo_name):'<span style="color:#cbd5e1;">未填写</span>')+'</td>'+
+    '<td>'+txt(d.sku)+'</td>'+
+    '<td>'+txt(d.barcode)+'</td>'+
+    '<td>'+txt(d.size)+'</td>'+
     '<td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.pkg_qty,0)+'</span></td>'+
-    '<td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.nw_kg,2)+'</span></td>'+
-    '<td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.gw_kg,2)+'</span></td>'+
-    '<td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.cbm_m3,3)+'</span></td>'+
+    (showWeights?'<td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.nw_kg,2)+'</span></td><td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.gw_kg,2)+'</span></td><td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.cbm_m3,3)+'</span></td>':'')+
     (sp?'<td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.price,2)+'</span></td><td class="td-num" style="text-align:center;">'+(d.price_type==='taxed'?'含税':'未含税')+'</td><td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.tax_points!=null?d.tax_points:11,1)+'</span></td>':'')+
     '<td class="td-act"><button type="button" class="btn btn-ghost btn-sm" style="padding:4px 7px;margin-right:4px;" onclick="openCargoEditModal('+gi_+','+li_+')">✏️ 改</button><span style="cursor:pointer;color:#dc2626;font-weight:800;" onclick="delLine('+id+')">×</span></td></tr>';
 }
@@ -476,16 +479,19 @@ function snapshot(){ groups.forEach(g=>g.lines.forEach(l=>{ l.data=l.data||{}; }
 function openCargoEditModal(gi_,li_){
   const g=groups[gi_], l=g&&g.lines&&g.lines[li_]; if(!l) return;
   const d=l.data||{}, sp=groupIsDG(g.seq);
-  window._pendingCargoEdit={gi:gi_,li:li_,sp:sp};
+  const showWeights=groupShowWeights(g);
+  window._pendingCargoEdit={gi:gi_,li:li_,sp:sp,showWeights:showWeights};
   const editVal=v=>v==null?'':v;
   const fld=(label,id,type,val,step)=>'<div class="form-field"><label class="form-label">'+label+'</label><input class="form-input" id="'+id+'" '+(type?'type="'+type+'"':'')+(step?' step="'+step+'"':'')+' value="'+esc(val)+'"></div>';
+  const ro=(label,val)=>'<div class="form-field"><label class="form-label">'+label+'</label><input class="form-input" value="'+esc(val||'—')+'" disabled></div>';
   $('cargoEditBody').innerHTML=
     fld('品名','ce_cargo_name','text',editVal(d.cargo_name))+
     '<div class="grid2">'+
+    ro('货号',d.sku)+
+    ro('条码',d.barcode)+
+    ro('规格',d.size)+
     fld('箱数','ce_pkg_qty','number',editVal(d.pkg_qty),'1')+
-    fld('NW kg','ce_nw_kg','number',editVal(d.nw_kg),'0.01')+
-    fld('GW kg','ce_gw_kg','number',editVal(d.gw_kg),'0.01')+
-    fld('CBM','ce_cbm_m3','number',editVal(d.cbm_m3),'0.001')+
+    (showWeights?fld('NW kg','ce_nw_kg','number',editVal(d.nw_kg),'0.01')+fld('GW kg','ce_gw_kg','number',editVal(d.gw_kg),'0.01')+fld('CBM','ce_cbm_m3','number',editVal(d.cbm_m3),'0.001'):'')+
     '</div>'+
     (sp?'<div class="grid2">'+
       fld('单价','ce_price','number',editVal(d.price),'0.01')+
@@ -503,9 +509,11 @@ function commitCargoEdit(){
   const d=l.data||{};
   d.cargo_name=gv('ce_cargo_name');
   d.pkg_qty=gi('ce_pkg_qty');
-  d.nw_kg=gn('ce_nw_kg');
-  d.gw_kg=gn('ce_gw_kg');
-  d.cbm_m3=gn('ce_cbm_m3');
+  if(p.showWeights){
+    d.nw_kg=gn('ce_nw_kg');
+    d.gw_kg=gn('ce_gw_kg');
+    d.cbm_m3=gn('ce_cbm_m3');
+  }
   if(p.sp){
     d.price=gv('ce_price');
     d.price_type=gv('ce_price_type')||'untaxed';
@@ -553,6 +561,7 @@ function renderGroups(){
     const cd=(window._cntrDetailBySeq&&window._cntrDetailBySeq[g.seq])||{};
     const ci=window._cntrBySeq&&window._cntrBySeq[g.seq];
     const sp=groupIsDG(g.seq);
+    const showWeights=groupShowWeights(g);
     const facLabel=g.factory||'';
     const facColorIdx=facLabel?allFacs.indexOf(facLabel):-1;
     const facColor=facColorIdx>=0?facColorPalette[facColorIdx%facColorPalette.length]:'#374151';
@@ -606,12 +615,15 @@ function renderGroups(){
     '<div class="cargo-scroll" style="padding:0 0 8px;">' +
     '<table class="cargo-t"><thead><tr>' +
     '<th>品名 * <span style="cursor:pointer;color:#1a73e8;font-weight:700;font-size:10px;margin-left:4px;" onclick="snapshot();addLine('+gi_+')">＋加</span></th>' +
+    '<th style="width:76px;">货号</th>' +
+    '<th style="width:120px;">条码</th>' +
+    '<th style="width:72px;">规格</th>' +
     '<th style="width:86px;">箱数 *</th>' +
-    '<th style="width:96px;">NW kg</th><th style="width:96px;">GW kg</th><th style="width:88px;">CBM</th>' +
+    (showWeights?'<th style="width:96px;">NW kg</th><th style="width:96px;">GW kg</th><th style="width:88px;">CBM</th>':'')+
     (sp?'<th style="width:88px;">单价 *</th><th style="width:72px;">税别</th><th style="width:68px;">点%</th>':'')+
     '<th style="width:72px;"></th></tr></thead>' +
-    '<tbody id="tbody_'+gi_+'">'+g.lines.map((l,li_)=>lineHtml(l.id,l.data,sp,gi_,li_)).join('')+'</tbody>' +
-    '<tfoot><tr class="row-total" id="tfoot_'+gi_+'"><td colspan="1" style="font-size:10px;color:#6b7280;">TOTAL（来自订单原值'+(editMode?' · 点「改」编辑':'')+'）</td><td class="td-num" id="ft_q_'+gi_+'">—</td><td class="td-num" id="ft_nw_'+gi_+'">—</td><td class="td-num" id="ft_gw_'+gi_+'">—</td><td class="td-num" id="ft_cbm_'+gi_+'">—</td>'+(sp?'<td class="td-num" id="ft_amt_'+gi_+'" colspan="3">—</td>':'')+'<td></td></tr></tfoot>' +
+    '<tbody id="tbody_'+gi_+'">'+g.lines.map((l,li_)=>lineHtml(l.id,l.data,sp,showWeights,gi_,li_)).join('')+'</tbody>' +
+    '<tfoot><tr class="row-total" id="tfoot_'+gi_+'"><td colspan="4" style="font-size:10px;color:#6b7280;">TOTAL（来自订单原值'+(editMode?' · 点「改」编辑':'')+'）</td><td class="td-num" id="ft_q_'+gi_+'">—</td>'+(showWeights?'<td class="td-num" id="ft_nw_'+gi_+'">—</td><td class="td-num" id="ft_gw_'+gi_+'">—</td><td class="td-num" id="ft_cbm_'+gi_+'">—</td>':'')+(sp?'<td class="td-num" id="ft_amt_'+gi_+'" colspan="3">—</td>':'')+'<td></td></tr></tfoot>' +
     '</table></div>' +
     // 装柜信息：照片/视频缩略图 + 上传 + 过磅 + 确认
     '<div style="padding:8px 14px;border-top:1px solid #eef0f3;background:#fafafa;"' +
@@ -738,8 +750,8 @@ async function boot(){
   editMode=true; $('cargoEdit').style.display='block'; $('cargoSub').textContent='按工厂分区 · 箱数可修改 · 各厂独立确认';
   let fc=Array.isArray(s.factory_cargo)?s.factory_cargo:[];
   const facOf=o=>o.factory||o.supplier_name||o.factory_name||'未指定工厂';
-  const mapItem=it=>({oli_id:it.oli_id,cargo_name:it.product_name||it.description||'',hs_code:it.hs_code||'',pkg_qty:it.ctns||'',nw_kg:Number(it.nw_kgs)||'',gw_kg:Number(it.gw_kgs)||'',cbm_m3:Number(it.cbm)||''});
-  const mapFc=x=>({oli_id:x.oli_id,cargo_name:x.cargo_name||'',hs_code:x.hs_code||'',pkg_qty:x.pkg_qty!=null?x.pkg_qty:'',nw_kg:x.nw_kg!=null?x.nw_kg:'',gw_kg:x.gw_kg!=null?x.gw_kg:'',cbm_m3:x.cbm_m3!=null?x.cbm_m3:'',price:x.price,price_type:x.price_type,tax_points:x.tax_points,fe:x.fe});
+  const mapItem=it=>({oli_id:it.oli_id,cargo_name:it.product_name||it.description||'',sku:it.sku||'',barcode:it.barcode||'',size:it.size||'',hs_code:it.hs_code||'',pkg_qty:it.ctns||'',nw_kg:Number(it.nw_kgs)||'',gw_kg:Number(it.gw_kgs)||'',cbm_m3:Number(it.cbm)||''});
+  const mapFc=x=>({oli_id:x.oli_id,cargo_name:x.cargo_name||'',sku:x.sku||'',barcode:x.barcode||'',size:x.size||'',hs_code:x.hs_code||'',pkg_qty:x.pkg_qty!=null?x.pkg_qty:'',nw_kg:x.nw_kg!=null?x.nw_kg:'',gw_kg:x.gw_kg!=null?x.gw_kg:'',cbm_m3:x.cbm_m3!=null?x.cbm_m3:'',price:x.price,price_type:x.price_type,tax_points:x.tax_points,fe:x.fe});
   // 找出某工厂订单所在的柜 seq（拼柜则多厂同 seq）
   const seqForOrders=ordNos=>{ const seqs=Object.keys(window._cntrBySeq||{}).map(Number); for(const k of seqs){ const ci=window._cntrBySeq[k]; const cnos=(ci&&ci.cargo||[]).map(x=>x.order_no); if(ordNos.some(n=>cnos.includes(n))) return k; } return seqs[0]||1; };
   window._lockCtnCount=true; $('btnAddCtn').style.display='none';
@@ -1076,8 +1088,13 @@ function finUpload(i){
 if(token) setTimeout(loadFinance, 600);
 
 </script>
-  <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.6.0 · 2026-07-02</div>
+  <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.7.0 · 2026-07-02</div>
 <!--
+2026-07-02 v1.7.0 cargo recognition columns:
+- L452-L471: add groupShowWeights and render sku/barcode/size columns while gating NW/GW/CBM cells by DG or missing weights.
+- L479-L520: show sku/barcode/size as read-only modal fields and only render/write weight inputs when showWeights is true.
+- L563-L626: compute showWeights per group and align cargo thead/tbody/tfoot columns, with TOTAL colspan=4 before box total.
+- L753-L754: map sku/barcode/size from order items and saved factory cargo for product-master backfill.
 2026-07-02 v1.4.0 cargo table edit/display fixes:
 - L47-L55: add horizontal cargo-table scroll and non-wrapping numeric cells so large values remain fully visible.
 - L344-L365: add cargo edit modal and second-confirm modal, reusing the page modal style.
