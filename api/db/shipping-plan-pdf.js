@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   // 内转外→装箱资料可编辑模版(带token重定向,治type=transfer渲染错单)
   if (type === "transfer") {
     const _tk = req.query.token ? "&token=" + encodeURIComponent(req.query.token) : "";
-    res.writeHead(302, { Location: "/templates/transfer-template.html?plan_id=" + encodeURIComponent(id || bl) + _tk });
+    res.writeHead(302, { Location: "https://api.sanlyn.cn/templates/transfer-template.html?plan_id=" + encodeURIComponent(id || bl) + _tk });
     return res.end();
   }
 
