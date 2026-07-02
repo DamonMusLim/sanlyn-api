@@ -99,7 +99,7 @@ async function handleGet(pool, token, res){
     SELECT r.id, r.pol, r.pod, r.ctnr_type, r.status, r.etd,
            COALESCE(r.service_type, 'ocean') AS service_type,
            sp.container_qty AS ctnr_count,
-           sp.gross_weight AS gross_weight_kg,
+           sp.gross_weight_kg AS gross_weight_kg,
            (SELECT string_agg(t.label, ' / ')
               FROM (
                 SELECT (COALESCE(oi.product_name, '') || '×' || oi.qty_ctn || '箱') AS label
@@ -111,7 +111,7 @@ async function handleGet(pool, token, res){
            ) AS product_summary
       FROM freight_rfqs r
       LEFT JOIN LATERAL (
-        SELECT container_qty, gross_weight
+        SELECT container_qty, gross_weight_kg
           FROM shipping_plans
          WHERE order_id = r.order_id
          ORDER BY id DESC LIMIT 1
