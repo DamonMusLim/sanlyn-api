@@ -63,7 +63,7 @@ async function doGet(req, res, pool, code){
   var q = await pool.query(
     `SELECT r.id AS rfq_id, r.service_type, r.shipping_plan_id AS plan_id, r.status,
             to_jsonb(sp) AS plan_json,
-            i.id AS item_id, i.usd_rate, i.currency, i.notes, i.quote_detail_json, i.created_at AS item_created_at
+            i.id AS item_id, i.usd_rate, i.currency, i.notes, i.quote_detail_json, i.submitted_at AS item_created_at
        FROM freight_rfqs r
        JOIN shipping_plans sp ON sp.id = r.shipping_plan_id
        LEFT JOIN freight_rfq_items i ON i.rfq_id = r.id AND i.forwarder_co = $1
