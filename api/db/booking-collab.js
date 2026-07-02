@@ -131,6 +131,7 @@ async function handleValidate(req, res, pool) {
               'terminal_tel', sp.raw->>'terminal_tel', 'vgm_cutoff', sp.raw->>'vgm_cutoff',
               'so_source', sp.raw->>'so_source') || COALESCE(sp.raw->'so_extra','{}'::jsonb) AS so_info,
             sp.raw->'collab_uploads' AS collab_uploads,
+            sp.raw->'factory_loading_done' AS factory_loading_done,
             sp.trucking_detail,
             sp.issuing_company,
             sp.customer AS customer_name,
@@ -206,7 +207,7 @@ async function handleValidate(req, res, pool) {
 
   // 柜/车队真值实时关联：container_bookings 是柜数据 SSOT，trucking_detail 缺时自动派生
   const cbRaw = await pool.query(
-    `SELECT cb.container_no, cb.seal_no, cb.container_type, cb.tare_weight_kg, cb.cargo_weight_kg,
+    `SELECT cb.container_no, cb.seal_no, cb.container_type, cb.tare_weight_kg, cb.cargo_weight_kg, cb.vgm_weight_kg,
             NULLIF(cb.truck_plate,'') AS plate, NULLIF(cb.trailer_plate,'') AS trailer_plate,
             cb.driver_name, cb.driver_phone, cb.driver_id_no, cb.pickup_time,
             NULLIF(cb.loading_address,'') AS loading_address, NULLIF(cb.loading_contact,'') AS loading_contact,
@@ -219,7 +220,7 @@ async function handleValidate(req, res, pool) {
   const cbMap = new Map();
   for (const r of cbRaw.rows) {
     const cur = cbMap.get(r.container_no) || { container_no: r.container_no, cargo: [] };
-    for (const k of ['seal_no','container_type','tare_weight_kg','plate','trailer_plate','driver_name','driver_phone','driver_id_no','pickup_time','loading_address','loading_contact'])
+    for (const k of ['seal_no','container_type','tare_weight_kg','cargo_weight_kg','vgm_weight_kg','plate','trailer_plate','driver_name','driver_phone','driver_id_no','pickup_time','loading_address','loading_contact'])
       if (r[k] != null && cur[k] == null) cur[k] = r[k];
     if (r.decl_name || r.order_no)
       cur.cargo.push({ name: r.decl_name || null, order_no: r.order_no || null,
@@ -228,6 +229,19 @@ async function handleValidate(req, res, pool) {
     cbMap.set(r.container_no, cur);
   }
   const cbRes = { rows: [...cbMap.values()] };
+
+  let factoryProfileAddress = null;
+  if (role === "factory_booking" && meta.preview !== true && factoryScope && factoryScope.label) {
+    const { rows: fpRows } = await pool.query(
+      `SELECT id AS company_id, code, name_cn, address
+         FROM companies
+        WHERE name_cn = $1 AND type = 'factory'
+        ORDER BY id
+        LIMIT 2`,
+      [String(factoryScope.label)]
+    );
+    if (fpRows.length === 1) factoryProfileAddress = fpRows[0];
+  }
 
   return res.json({
     valid: true,
@@ -255,6 +269,109 @@ async function handleValidate(req, res, pool) {
     booking_sheet: (() => {
       const sheet = { ...planRes.rows[0], sailings: sailingsRes.rows };
       sheet.containers_live = cbRes.rows;
+      // ── containers_detail：稳定 seq=1..N 柜槽（前端渲染/皮重/司机/地址读它）──
+      const toNumOrNull = v => (v === undefined || v === null || v === "" || Number.isNaN(Number(v))) ? null : Number(v);
+      const vehicleRows = (sheet.trucking_detail && Array.isArray(sheet.trucking_detail.vehicles)) ? sheet.trucking_detail.vehicles : [];
+      const uploads = Array.isArray(sheet.collab_uploads)
+        ? sheet.collab_uploads
+        : ((sheet.raw && Array.isArray(sheet.raw.collab_uploads)) ? sheet.raw.collab_uploads : []);
+      const slotQty = parseInt(sheet.container_qty, 10);
+      const slotCount = slotQty > 0 ? slotQty : Math.max(sheet.containers_live.length, vehicleRows.length, 0);
+      const uploadSeq = u => {
+        const direct = parseInt(u && (u.container_seq || u.seq || u.containerSeq), 10);
+        if (direct > 0) return direct;
+        const s = String((u && u.filename) || "");
+        const m = s.match(/(?:seq|柜|container|cntr)[^\d]{0,8}(\d+)/i) || s.match(/(?:^|[^\d])#?(\d+)(?:柜|号柜)/);
+        return m ? parseInt(m[1], 10) : 1; // 老上传无 seq，先挂 seq1，输出保留 container_seq 供后续精确归柜
+      };
+      const uploadPurpose = u => {
+        const p = String((u && (u.purpose || u.type || u.category)) || "");
+        const fn = String((u && u.filename) || "");
+        const txt = `${p} ${fn}`;
+        return { driver: /司机|driver/i.test(txt), plate: /车牌|plate/i.test(txt) };
+      };
+      const photoFor = (u, purpose, seq) => ({ ...u, purpose, container_seq: seq });
+      // 装柜资料（装箱图/视频/磅单）按柜归集 — 返回 stored 引用，前端用 token 拼 /file?type=upload 显示
+      const kindOf = u => {
+        const p = String((u && (u.purpose || u.type || u.category)) || "");
+        const fn = String((u && u.filename) || "");
+        const txt = `${p} ${fn}`;
+        if (/装柜视频|video|\.(mp4|mov|avi)/i.test(txt)) return "video";
+        if (/磅单|过磅|weigh|\.(pdf|xlsx?|docx?)/i.test(txt)) return "doc";
+        return "image"; // 默认装箱图
+      };
+      const pickupFor = seq => {
+        const out = { pickup_photos: [], pickup_videos: [], pickup_docs: [] };
+        uploads.forEach(u => {
+          if (!u || uploadSeq(u) !== seq) return;
+          const pp = uploadPurpose(u);
+          if (pp.driver || pp.plate) return; // 司机/车牌图归 driver_photos，不进装柜格
+          const ref = { stored: u.stored || null, filename: u.filename || "", mime: u.mime || null };
+          if (!ref.stored) return;
+          const k = kindOf(u);
+          if (k === "video") out.pickup_videos.push(ref);
+          else if (k === "doc") out.pickup_docs.push(ref);
+          else out.pickup_photos.push(ref);
+        });
+        return out;
+      };
+      const doneState = seq => {
+        const fd = sheet.factory_loading_done;
+        if (!fd || typeof fd !== "object") return { loading_done: false, loading_done_at: null };
+        const pickTime = v => (v && typeof v === "object")
+          ? (v.at || v.done_at || v.loading_done_at || v.confirmed_at || v.time || null)
+          : null;
+        const direct = Array.isArray(fd)
+          ? fd.find(x => Number(x && (x.seq || x.container_seq)) === seq)
+          : (fd[seq] || fd[`seq${seq}`] || fd[`container_${seq}`]);
+        if (direct) return { loading_done: true, loading_done_at: pickTime(direct) };
+        if (!Array.isArray(fd)) {
+          for (const v of Object.values(fd)) {
+            if (!v || typeof v !== "object") continue;
+            const dseqs = Array.isArray(v.seqs) ? v.seqs : (Array.isArray(v.container_seqs) ? v.container_seqs : []);
+            if (dseqs.map(Number).includes(seq)) return { loading_done: true, loading_done_at: pickTime(v) };
+          }
+          if (factoryScope && factoryScope.label && fd[factoryScope.label] && (factoryScope.seqs || []).map(Number).includes(seq))
+            return { loading_done: true, loading_done_at: pickTime(fd[factoryScope.label]) };
+        }
+        return { loading_done: false, loading_done_at: null };
+      };
+      // 柜→工厂(按柜内货物所属订单的工厂),供分厂token按厂名过滤containers_detail(无seqs时)
+      const _ordFac = {}; (Array.isArray(sheet.orders) ? sheet.orders : []).forEach(o => { if (o && o.order_no) _ordFac[o.order_no] = o.factory || null; });
+      const factoryOfSeq = lv => { const cg = Array.isArray(lv && lv.cargo) ? lv.cargo : []; for (const g of cg) { const f = g && _ordFac[g.order_no]; if (f) return f; } return null; };
+      sheet.containers_detail = Array.from({ length: slotCount }, (_, i) => {
+        const seq = i + 1;
+        const live = sheet.containers_live[i] || {};
+        const veh = vehicleRows[i] || {};
+        const driverPhotos = [];
+        const platePhotos = [];
+        uploads.forEach(u => {
+          if (!u || uploadSeq(u) !== seq) return;
+          const p = uploadPurpose(u);
+          if (p.driver) driverPhotos.push(photoFor(u, "driver", seq));
+          if (p.plate) platePhotos.push(photoFor(u, "plate", seq));
+        });
+        return {
+          seq,
+          factory: factoryOfSeq(live),
+          container_no: live.container_no || "",
+          seal_no: live.seal_no || veh.seal_no || null,
+          container_type: live.container_type || sheet.container_type || null,
+          tare_weight_kg: toNumOrNull(live.tare_weight_kg != null ? live.tare_weight_kg : veh.tare_kg),
+          cargo_weight_kg: toNumOrNull(live.cargo_weight_kg != null ? live.cargo_weight_kg : veh.weigh_kg),
+          vgm_weight_kg: toNumOrNull(live.vgm_weight_kg),
+          driver_name: live.driver_name || veh.driver || null,
+          driver_phone: live.driver_phone || veh.driver_phone || null,
+          driver_id_no: live.driver_id_no || veh.driver_id_no || null,
+          plate: live.plate || live.trailer_plate || veh.plate || veh.trailer_plate || null,
+          loading_address: live.loading_address || veh.loading_address || (factoryProfileAddress && factoryProfileAddress.address) || null,
+          loading_contact: live.loading_contact || veh.loading_contact || null,
+          driver_photos: driverPhotos,
+          plate_photos: platePhotos,
+          ...pickupFor(seq),
+          ...doneState(seq),
+        };
+      });
       // 价格：只有客户能看，且只给卖价——cost 一律不出 API
       const costLines = Array.isArray(sheet._cost_lines_raw) ? sheet._cost_lines_raw : [];
       delete sheet._cost_lines_raw;
@@ -284,6 +401,7 @@ async function handleValidate(req, res, pool) {
         (sheet.orders || []).forEach(o => (o.items || []).forEach(it => { delete it.declare_amount; }));
         ((sheet.trucking_detail && sheet.trucking_detail.vehicles) || []).forEach(v => { delete v.driver_phone; delete v.driver_id_no; });
         sheet.containers_live.forEach(cx => { delete cx.driver_phone; });
+        (sheet.containers_detail || []).forEach(cx => { delete cx.driver_phone; });
       }
       // need-to-know 裁剪：航班运价(rate_usd=客户卖价)只给客户端
       if (role !== "customer_booking") sheet.sailings = [];
@@ -344,6 +462,7 @@ async function handleValidate(req, res, pool) {
       }
       return sheet;
     })(),
+    ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
     factory_scope: factoryScope,
     portal_scope: portalScope,
   });
@@ -503,7 +622,7 @@ async function handleConfirmFactoryBill(req, res, pool) {
 
   const hash = rawToHash(token);
   const { rows } = await pool.query(
-    `SELECT meta FROM magic_links
+    `SELECT recipient_role, meta FROM magic_links
       WHERE token_hash = $1
         AND recipient_role = 'factory_booking'
         AND expires_at > NOW()
@@ -568,6 +687,50 @@ async function handleConfirmFactoryBill(req, res, pool) {
   return res.json({ ok: true });
 }
 
+// 工厂"选择订单"候选：fail-closed 只返回本 plan 已挂 ∪ 同客户未挂(confirmed/ready)，scoped 再按工厂过滤
+async function loadFactoryOrderCandidates(pool, planId, fScope) {
+  const { rows } = await pool.query(
+    `SELECT o.id, o.order_no, o.contract_no, o.customer, o.factory,
+            o.total_qty AS cartons, COUNT(oli.id)::int AS item_count
+       FROM shipping_plans sp
+       JOIN orders o ON (
+              o.shipping_plan_id = sp.id
+              OR (
+                o.shipping_plan_id IS NULL
+                AND LOWER(COALESCE(o.status,'')) IN ('confirmed','ready')
+                AND (
+                  (BTRIM(COALESCE(sp.customer,'')) <> ''
+                    AND LOWER(BTRIM(COALESCE(o.customer,''))) = LOWER(BTRIM(sp.customer)))
+                  OR (BTRIM(COALESCE(sp.customer_en,'')) <> ''
+                    AND LOWER(BTRIM(COALESCE(o.customer,''))) = LOWER(BTRIM(sp.customer_en)))
+                )
+              )
+            )
+       LEFT JOIN order_line_items oli ON oli.order_id = o.id
+      WHERE sp.id = $1
+      GROUP BY sp.id, o.id, o.order_no, o.contract_no, o.customer, o.factory, o.total_qty, o.shipping_plan_id
+      ORDER BY (o.shipping_plan_id = sp.id) DESC, o.id DESC
+      LIMIT 300`,
+    [planId]
+  );
+  const lab = fScope && fScope.label ? String(fScope.label) : "";
+  const matchFac = f => f && (String(f).includes(lab) || lab.includes(String(f)));
+  const filtered = lab ? rows.filter(o => o && matchFac(o.factory)) : rows;
+  return filtered.map(o => ({
+    id: o.id,
+    order_no: o.order_no || null,
+    contract_no: o.contract_no || null,
+    customer: o.customer || null,
+    factory: o.factory || null,
+    cartons: o.cartons != null ? Number(o.cartons) : null,
+    item_count: Number(o.item_count || 0),
+  }));
+}
+
+function normOrderNo(v) {
+  return String(v || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
 // ── POST /factory-submit ──────────────────────────────────────
 async function handleFactorySubmit(req, res, pool) {
   const { token, cargo_ready_date, container_type, cargo_type, remarks } = req.body || {};
@@ -608,7 +771,7 @@ async function handleFactorySubmit(req, res, pool) {
 
   const hash = rawToHash(token);
   const { rows } = await pool.query(
-    `SELECT meta FROM magic_links
+    `SELECT recipient_role, meta FROM magic_links
       WHERE token_hash = $1
         AND recipient_role = 'factory_booking'
         AND expires_at > NOW()
@@ -619,22 +782,84 @@ async function handleFactorySubmit(req, res, pool) {
   if (!rows.length)
     return res.status(403).json({ ok: false, error: "链接无效或已过期" });
 
+  const role = rows[0].recipient_role;
   const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
   const planId = parseInt(meta.shipment_id, 10);
   const fScope = meta.factory_scope || null;
+
+  // 工厂"选择订单"候选（token scope 内，只读，不含金额）
+  if (req.body && req.body.action === "list-orders") {
+    const orders = await loadFactoryOrderCandidates(pool, planId, fScope);
+    return res.json({ ok: true, orders: orders.map(o => ({
+      order_no: o.order_no,
+      contract_no: o.contract_no,
+      customer: o.customer,
+      factory: o.factory,
+      cartons: o.cartons,
+      item_count: o.item_count,
+    })) });
+  }
+
+  // 工厂永久档案地址纠错：只能用工厂专属 token 推导本厂 companies 行，二次确认后写主数据并留痕。
+  if (req.body && req.body.action === "update-factory-address") {
+    if (role !== "factory_booking" || meta.preview === true || !(fScope && fScope.label))
+      return res.status(403).json({ ok: false, error: "需工厂专属链接" });
+    if (!planId)
+      return res.status(400).json({ ok: false, error: "链接数据异常 — 缺少 shipment_id" });
+    if (req.body.confirm !== true)
+      return res.status(400).json({ ok: false, error: "需二次确认" });
+    const newAddress = String(req.body.address || "").trim();
+    if (!newAddress || newAddress.length > 200)
+      return res.status(400).json({ ok: false, error: "地址不能为空且不能超过200字" });
+    const label = String(fScope.label);
+    const { rows: comps } = await pool.query(
+      `SELECT id, name_cn, address
+         FROM companies
+        WHERE name_cn = $1 AND type = 'factory'
+        ORDER BY id
+        LIMIT 2`,
+      [label]
+    );
+    if (!comps.length) return res.status(404).json({ ok: false, error: "未找到本厂档案" });
+    if (comps.length > 1) return res.status(409).json({ ok: false, error: "档案不唯一，请联系 Sanlyn" });
+    const company = comps[0];
+    const audit = {
+      at: new Date().toISOString(),
+      factory_label: label,
+      company_id: company.id,
+      old: company.address || "",
+      new: newAddress,
+      source: "factory_portal",
+      token_role: role,
+    };
+    await pool.query(
+      `UPDATE companies SET address = $1, updated_at = now() WHERE id = $2`,
+      [newAddress, company.id]
+    );
+    await pool.query(
+      `UPDATE shipping_plans
+          SET raw = jsonb_set(
+            COALESCE(raw, '{}'::jsonb),
+            '{factory_address_changes}',
+            COALESCE(raw->'factory_address_changes', '[]'::jsonb) || jsonb_build_array($1::jsonb),
+            true
+          ),
+          updated_at = now()
+        WHERE id = $2`,
+      [JSON.stringify(audit), planId]
+    );
+    return res.json({ ok: true, address: newAddress });
+  }
 
   // 工厂关联订单（"选择订单"按钮 → factory_booking token 可用）
   if (req.body && req.body.action === "link-order") {
     const rawNo = String(req.body.order_no || req.body.contract_no || "").trim();
     if (!rawNo) return res.status(400).json({ ok: false, error: "order_no 必填" });
-    const normNo = rawNo.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-    const { rows: ords } = await pool.query(
-      `SELECT id, order_no, contract_no FROM orders
-        WHERE upper(regexp_replace(COALESCE(contract_no,''),'[^A-Za-z0-9]','','g')) = $1
-           OR upper(regexp_replace(COALESCE(order_no,''),'[^A-Za-z0-9]','','g')) = $1
-        ORDER BY id LIMIT 20`,
-      [normNo]
-    );
+    const normNo = normOrderNo(rawNo);
+    const candidates = await loadFactoryOrderCandidates(pool, planId, fScope);
+    const ords = candidates.filter(o => normOrderNo(o.contract_no) === normNo || normOrderNo(o.order_no) === normNo);
+    if (!ords.length)
+      return res.status(403).json({ ok: false, error: "订单不在本链接可选范围内" });
     const addNo = (ords[0] && (ords[0].contract_no || ords[0].order_no)) || rawNo;
     const { rows: planRows } = await pool.query(
       "SELECT order_contract_nos FROM shipping_plans WHERE id = $1 LIMIT 1", [planId]);
@@ -820,8 +1045,8 @@ async function handleFactorySubmit(req, res, pool) {
     [effectiveReady, container_type || null, cargo_type || null, remarks || null, planId,
      factoryCargo ? JSON.stringify(factoryCargo) : null,
      ["FOB","EXW","FCA","CIF","DDP","CNF"].includes(req.body.freight_term) ? req.body.freight_term : null,
-     ["self","agent"].includes(req.body.trucking_arrange) ? req.body.trucking_arrange : null,
-     ["self","agent"].includes(req.body.customs_arrange) ? req.body.customs_arrange : null,
+     ["agent","babi","factory","self"].includes(req.body.trucking_arrange) ? req.body.trucking_arrange : null,
+     ["agent","babi","factory","self"].includes(req.body.customs_arrange) ? req.body.customs_arrange : null,
      (req.body.attrs && typeof req.body.attrs === "object" && !Array.isArray(req.body.attrs))
        ? JSON.stringify({
            battery: req.body.attrs.battery === "yes" ? "yes" : "no",
@@ -1467,17 +1692,18 @@ async function resolveRoleToken(pool, raw, roles) {
   const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId) return null;
-  return { role: rows[0].recipient_role, planId, segments: meta.segments || null };
+  return { role: rows[0].recipient_role, planId, segments: meta.segments || null, meta };
 }
 
 // ── GET /file?token=&type=so|cd&ref= — 文档下载代理 ─────────
 // magic token 换内部 JWT，服务端转发 documents 渲染，JWT 不出服务器。
 // 车队只能拿 SO（托书）；报关行 SO + CD（报关底稿，ref 必须是本票挂的订单号）。
 const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl"], customer_booking: ["pack"],
+  factory_booking: ["upload"],
   supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl"] };
 async function handleFileProxy(req, res, pool) {
   const { token: raw, type, ref, aud } = req.query || {};
-  const auth = await resolveRoleToken(pool, raw, ["trucking_booking", "broker_booking", "supplier_portal", "customer_booking"]);
+  const auth = await resolveRoleToken(pool, raw, ["trucking_booking", "broker_booking", "supplier_portal", "customer_booking", "factory_booking"]);
   if (!auth) return res.status(403).json({ ok: false, error: "链接无效或已过期" });
   const allowed = FILE_TYPES_BY_ROLE[auth.role] || [];
   if (!allowed.includes(type)) return res.status(403).json({ ok: false, error: "无权下载该类型" });
@@ -1606,6 +1832,13 @@ async function handleCollabUpload(req, res, pool) {
   const auth = await resolveRoleToken(pool, raw, ["trucking_booking", "broker_booking", "supplier_portal", "factory_booking", "customer_booking"]);
   if (!auth) return res.status(403).json({ ok: false, error: "链接无效或已过期" });
   if (!filename || !data_base64) return res.status(400).json({ ok: false, error: "filename / data_base64 必填" });
+  const purpose = String((req.body && req.body.purpose) || "").slice(0, 40) || null;
+  const seqRaw = parseInt(req.body && req.body.container_seq, 10);
+  const containerSeq = seqRaw > 0 ? seqRaw : null;
+  const fScope = auth.role === "factory_booking" && auth.meta ? auth.meta.factory_scope : null;
+  const scopeSeqs = fScope && Array.isArray(fScope.seqs) ? fScope.seqs.map(Number).filter(Boolean) : [];
+  if (containerSeq && scopeSeqs.length && !scopeSeqs.includes(containerSeq))
+    return res.status(403).json({ ok: false, error: "无权上传该柜文件" });
 
   let buf;
   try { buf = Buffer.from(String(data_base64).replace(/^data:[^,]*,/, ""), "base64"); }
@@ -1624,6 +1857,8 @@ async function handleCollabUpload(req, res, pool) {
     mime: String(mime || "").slice(0, 60) || null, size: buf.length,
     uploaded_at: new Date().toISOString(),
   };
+  if (purpose) rec.purpose = purpose;
+  if (containerSeq) rec.container_seq = containerSeq;
   await pool.query(
     `UPDATE shipping_plans
         SET raw = COALESCE(raw,'{}'::jsonb) ||
@@ -1790,6 +2025,7 @@ async function handleSupplyChainOptions(req, res, pool) {
       `SELECT id, name_cn, COALESCE(name_en, name_cn) AS name, code
          FROM companies
         WHERE type = $1 AND (active IS NULL OR active = true)
+          AND merged_into_code IS NULL
         ORDER BY name_cn NULLS LAST LIMIT 120`,
       [type]
     );
@@ -1838,6 +2074,206 @@ async function handleSetPartyDefault(req, res, pool) {
     [party_type, company_id, company_cn || "", req.user && req.user.username ? req.user.username : "admin"]
   );
   return res.json({ ok: true });
+}
+
+function normBillCode(v) { return String(v || "").trim(); }
+function uniqBillVals(arr) { return [...new Set(arr.map(normBillCode).filter(Boolean))]; }
+function noBillSummary(direction) {
+  return {
+    status: "no_bill", label: "无账单", tone: "gray",
+    line_count: 0, total: 0, confirmed_at: null,
+    paid_status: "unpaid", reconciled: false, direction,
+  };
+}
+function billHasCollabPending(row) {
+  const pending = row && row.collab_pending;
+  if (!pending) return false;
+  if (typeof pending === "string") return pending.trim() !== "" && pending.trim() !== "{}";
+  if (typeof pending === "object") return Object.keys(pending).length > 0;
+  return true;
+}
+function partyBillSummary(rows, direction) {
+  const totalField = direction === "receivable" ? "sale_amount" : "amount";
+  const statusField = direction === "receivable" ? "ar_status" : "ap_status";
+  const amountRows = rows.filter(r => Number(r[totalField] || 0) > 0);
+  const lineCount = amountRows.length;
+  if (!lineCount) return noBillSummary(direction);
+
+  const total = amountRows.reduce((sum, r) => sum + Number(r[totalField] || 0), 0);
+  const confirmed = amountRows.filter(r => r.confirmed_at && !billHasCollabPending(r)).length;
+  const reconciledCount = amountRows.filter(r => r.reconciled === true).length;
+  const paidCount = amountRows.filter(r => String(r[statusField] || "").toLowerCase() === "paid").length;
+  const rawStatuses = uniqBillVals(amountRows.map(r => String(r[statusField] || "unpaid").toLowerCase() || "unpaid"));
+  const paidStatus = paidCount === lineCount ? "paid" : paidCount > 0 ? "partial" : (rawStatuses.length === 1 ? rawStatuses[0] : "partial");
+
+  let status;
+  let label;
+  let tone;
+  if (paidCount === lineCount) {
+    status = direction === "receivable" ? "received" : "paid";
+    label = direction === "receivable" ? "已收款" : "已付款";
+    tone = "green";
+  } else if (confirmed < lineCount) {
+    status = "pending_confirm";
+    label = confirmed > 0 ? `${confirmed}/${lineCount}已确认` : "待确认";
+    tone = "yellow";
+  } else if (reconciledCount === lineCount) {
+    status = "reconciled";
+    label = "已核对";
+    tone = "green";
+  } else {
+    status = "confirmed";
+    label = "对方已确认";
+    tone = "yellow";
+  }
+
+  return {
+    status, label, tone,
+    line_count: lineCount,
+    total,
+    confirmed_at: amountRows.map(r => r.confirmed_at).filter(Boolean).sort().at(-1) || null,
+    paid_status: paidStatus,
+    reconciled: lineCount > 0 && reconciledCount === lineCount,
+    direction,
+  };
+}
+function partyKeyFromFactoryLabel(label) {
+  const s = String(label || "").trim();
+  return s ? `factory_${s}` : "factory";
+}
+function companyCodeMatches(a, b) {
+  return normBillCode(a) && normBillCode(a) === normBillCode(b);
+}
+
+// ── GET /party-billing-status?plan_id=xxx ───────────────────────────────────
+// Read-only billing badges from active_freight_supplier_bills; shipping_plans.party_billing is ignored.
+async function handlePartyBillingStatus(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const planId = req.query && req.query.plan_id;
+  if (!planId) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  const spColR = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'shipping_plans'`);
+  const spCols = new Set(spColR.rows.map(row => row.column_name));
+  const spCol = (name) => spCols.has(name) ? `sp.${name}` : `NULL`;
+  const companyJoin = (alias, col) => spCols.has(col) ? `LEFT JOIN companies ${alias} ON ${alias}.id = sp.${col}` : `LEFT JOIN companies ${alias} ON false`;
+  const r = await pool.query(
+    `SELECT sp.id, sp._id, sp.bl_no, sp.hbl_no,
+            ${spCol("forwarder_company_id")} AS forwarder_company_id,
+            ${spCol("trucking_company_id")} AS trucking_company_id,
+            ${spCol("customs_broker_id")} AS customs_broker_id,
+            ${spCol("customer_company_id")} AS customer_company_id,
+            ${spCol("intermediary_company_id")} AS intermediary_company_id,
+            ${spCol("exporter_company_id")} AS exporter_company_id,
+            cf.code AS forwarder_code, ct.code AS trucking_code, cb.code AS broker_code,
+            cc.code AS customer_code, ci.code AS intermediary_code, ce.code AS exporter_code,
+            COALESCE(ce.name_cn, ce.name_en) AS exporter_name
+       FROM shipping_plans sp
+       ${companyJoin("cf", "forwarder_company_id")}
+       ${companyJoin("ct", "trucking_company_id")}
+       ${companyJoin("cb", "customs_broker_id")}
+       ${companyJoin("cc", "customer_company_id")}
+       ${companyJoin("ci", "intermediary_company_id")}
+       ${companyJoin("ce", "exporter_company_id")}
+      WHERE sp._id = $1 OR sp.id::text = $1
+      LIMIT 1`, [String(planId)]);
+  if (!r.rows.length) return res.status(404).json({ ok: false, error: "找不到出货计划" });
+  const plan = r.rows[0];
+  const blNo = plan.bl_no || plan.hbl_no;
+  if (!blNo) return res.json({ ok: true, party_billing: {} });
+
+  const fsbColR = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'freight_supplier_bills'`);
+  const fsbCols = new Set(fsbColR.rows.map(row => row.column_name));
+  const optional = (name, fallback = "NULL") => fsbCols.has(name) ? `b.${name}` : `${fallback} AS ${name}`;
+  const bills = await pool.query(
+    `SELECT b.id, b.bl_no, b.cost_category, b.amount, b.sale_amount,
+            b.supplier_company_code, b.payer_company_code,
+            b.confirmed_at, b.reconciled, b.ap_status, b.ap_paid_amount, b.ar_status, b.ar_paid_amount,
+            ${optional("rebill_to_type")}, ${optional("rebill_to_name")}, ${optional("rebill_to_code")},
+            b.raw->'collab_pending' AS collab_pending
+       FROM active_freight_supplier_bills b
+      WHERE b.bl_no = $1
+      ORDER BY b.id`, [blNo]);
+  const rows = bills.rows;
+
+  const factoryCodeR = await pool.query(
+    `SELECT DISTINCT
+            COALESCE(c_id.code, NULLIF(o.factory_code, ''), c_name.code) AS code,
+            COALESCE(c_id.name_cn, c_id.name_en, c_name.name_cn, c_name.name_en, o.factory) AS label
+       FROM orders o
+       LEFT JOIN companies c_id ON c_id.id = o.factory_company_id
+       LEFT JOIN companies c_name ON c_name.name_cn = o.factory OR c_name.name_en = o.factory
+      WHERE o.shipping_plan_id = $1`, [plan.id]);
+  const factoryCodes = factoryCodeR.rows.map(row => ({ code: normBillCode(row.code), label: String(row.label || "").trim() })).filter(row => row.code || row.label);
+  let factoryRows = [];
+  try {
+    factoryRows = await derivePlanFactories(pool, plan.id);
+  } catch (_) {
+    factoryRows = [];
+  }
+  const supplierRows = (code) => rows.filter(row => code && companyCodeMatches(row.supplier_company_code, code) && Number(row.amount || 0) > 0);
+  const payerRows = (code) => rows.filter(row => code && companyCodeMatches(row.payer_company_code, code) && Number(row.sale_amount || 0) > 0);
+  const factorySupplierCodes = uniqBillVals(factoryCodes.map(row => row.code));
+  const party_billing = {
+    factory: partyBillSummary(rows.filter(row => factorySupplierCodes.includes(normBillCode(row.supplier_company_code)) && Number(row.amount || 0) > 0), "payable"),
+    ocean: partyBillSummary(supplierRows(plan.forwarder_code), "payable"),
+    trucking: partyBillSummary(supplierRows(plan.trucking_code), "payable"),
+    broker: partyBillSummary(supplierRows(plan.broker_code), "payable"),
+    intermediary: partyBillSummary(supplierRows(plan.intermediary_code), "payable"),
+    customer: partyBillSummary(payerRows(plan.customer_code), "receivable"),
+    exporter: noBillSummary("receivable"),
+  };
+
+  for (const f of factoryRows) {
+    const label = String(f.label || "").trim();
+    const hit = factoryCodes.find(row => row.label === label) || factoryCodes.find(row => label && row.label && (row.label.includes(label) || label.includes(row.label)));
+    party_billing[partyKeyFromFactoryLabel(label)] = partyBillSummary(hit && hit.code ? supplierRows(hit.code) : [], "payable");
+  }
+
+  if (plan.exporter_code) {
+    const exporterName = String(plan.exporter_name || "").trim();
+    const exporterRows = payerRows(plan.exporter_code).filter(row =>
+      companyCodeMatches(row.rebill_to_code, plan.exporter_code) ||
+      (exporterName && String(row.rebill_to_name || "").includes(exporterName)) ||
+      String(row.rebill_to_type || "").toLowerCase() === "exporter"
+    );
+    party_billing.exporter = partyBillSummary(exporterRows, "receivable");
+  }
+
+  return res.json({ ok: true, party_billing });
+}
+
+// ── POST /set-party-billing ─────────────────────────────────────────────────
+async function handleSetPartyBilling(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const { plan_id, party, billed, paid } = req.body || {};
+  const allowed = new Set(["factory", "ocean", "customer", "trucking", "broker", "intermediary", "exporter"]);
+  if (!plan_id || !party) return res.status(400).json({ ok: false, error: "plan_id/party 必填" });
+  if (!allowed.has(party)) return res.status(400).json({ ok: false, error: "party 无效" });
+
+  const r = await pool.query(
+    `SELECT id, COALESCE(party_billing, '{}'::jsonb) AS party_billing
+       FROM shipping_plans
+      WHERE _id = $1 OR id::text = $1
+      LIMIT 1`, [String(plan_id)]);
+  if (!r.rows.length) return res.status(404).json({ ok: false, error: "找不到出货计划" });
+
+  const partyBilling = (typeof r.rows[0].party_billing === "string"
+    ? JSON.parse(r.rows[0].party_billing)
+    : r.rows[0].party_billing) || {};
+  partyBilling[party] = {
+    billed: !!billed,
+    paid: !!paid,
+    amount: null,
+    source: "manual",
+    updated_at: new Date().toISOString(),
+    updated_by: req.user && req.user.username ? req.user.username : "admin",
+  };
+  await pool.query(
+    `UPDATE shipping_plans
+        SET party_billing = $2::jsonb
+      WHERE id = $1`,
+    [r.rows[0].id, JSON.stringify(partyBilling)]
+  );
+  return res.json({ ok: true, party_billing: partyBilling });
 }
 
 // ── GET /collab-messages?plan_id=xxx ─────────────────────────────────────────
@@ -1896,6 +2332,7 @@ async function handleShipmentOrders(req, res, pool) {
   // current: orders with shipping_plan_id pointing here
   const curR = await pool.query(
     `SELECT o.id, o.order_no, o.factory, o.customer, o.company_code,
+            o.trade_terms, o.issuing_company,
             COALESCE(o.company_name_en, o.company_name_cn, o.customer, o.company_code, '') AS customer_label,
             COALESCE((SELECT SUM(qty_ctn) FROM order_line_items WHERE order_id = o.id), 0)::int AS total_qty
        FROM orders o
@@ -1932,10 +2369,21 @@ async function handleShipmentOrders(req, res, pool) {
 
   const shipDate = raw.shipment_date || null;
   const shipped = raw.shipped === true || !!shipDate;
+  // 读时派生:本票挂着的订单里一致的值,供前端自动带(只在计划字段空时用,不落库)
+  const uniq = (f) => [...new Set(curR.rows.map(r => (r[f] == null ? "" : String(r[f]).trim())).filter(Boolean))];
+  const one = (f) => { const a = uniq(f); return a.length === 1 ? a[0] : null; };
+  const derived = {
+    freight_term: one("trade_terms"),
+    issuing_company: one("issuing_company"),
+    factory: one("factory"),
+    customer: one("customer"),
+    freight_term_conflict: uniq("trade_terms").length > 1 ? uniq("trade_terms") : null,
+  };
   return res.json({
     ok: true,
     current: curR.rows,
     candidates,
+    derived,
     plan: { id: plan.id, _id: plan._id, version: raw.version || 1, shipped, shipment_date: shipDate },
   });
 }
@@ -2076,7 +2524,6 @@ async function handleCollabPricing(req, res, pool) {
       qty:           b.qty        != null ? Number(b.qty)        : null,
       amount:        amt,
       sale_amount:   sale,
-      gross_profit:  (sale != null && amt != null) ? sale - amt : null,
       currency:      b.currency || "CNY",
       supplier:      b.supplier,
       incoterm:      b.incoterm,
@@ -2088,8 +2535,8 @@ async function handleCollabPricing(req, res, pool) {
 
   // 分币种汇总
   const makeTotals = (cur) => items.filter(i => i.currency === cur).reduce(
-    (acc, i) => ({ cost: acc.cost + (i.amount||0), sales: acc.sales + (i.sale_amount||0), profit: acc.profit + (i.gross_profit||0) }),
-    { cost: 0, sales: 0, profit: 0 }
+    (acc, i) => ({ cost: acc.cost + (i.amount||0), sales: acc.sales + (i.sale_amount||0) }),
+    { cost: 0, sales: 0 }
   );
   const totals = { USD: makeTotals("USD"), CNY: makeTotals("CNY") };
 
@@ -2263,6 +2710,8 @@ export default async function handler(req, res) {
     if (req.method === "GET"  && pathSuffix === "supply-chain-options")  return await handleSupplyChainOptions(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "party-defaults")         return await handlePartyDefaults(req, res, pool);
     if (req.method === "POST" && pathSuffix === "set-party-default")      return await handleSetPartyDefault(req, res, pool);
+    if (req.method === "GET"  && pathSuffix === "party-billing-status")   return await handlePartyBillingStatus(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "set-party-billing")      return await handleSetPartyBilling(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "collab-messages")        return await handleCollabMessages(req, res, pool);
     if (req.method === "POST" && pathSuffix === "collab-message")         return await handlePostCollabMessage(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "shipment-orders")        return await handleShipmentOrders(req, res, pool);
@@ -2277,6 +2726,12 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: "Not found" });
   } catch (e) {
     console.error("[booking-collab]", e.message, e.stack);
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: "internal_error" });
   }
 }
+
+/*
+2026-07-01 factory profile address correction:
+- L232-L243, L360: validate returns factory_profile_address only for non-preview scoped factory tokens with one exact companies.name_cn match.
+- L625-L688: factory-submit update-factory-address requires scoped factory token, confirm=true, <=200-char address, unique companies row by token label, and appends audit to shipping_plans.raw.factory_address_changes.
+*/
