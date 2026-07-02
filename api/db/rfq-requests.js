@@ -98,7 +98,7 @@ export default async function handler(req, res) {
     // 车队/报关/保险需求：对应成本为空 + 非自拖/自报（arrange_mode=self 排除）
     // 若同票海运报价已勾选含报关，报关由海运一口价覆盖，不再自动生成 customs RFQ，避免双算。
     const { rows: svcCands } = await pool.query(`
-      SELECT sp.id, sp.order_id, sp.shipment_no, sp.pol, sp.pod, sp.container_type, sp.etd,
+      SELECT sp.id, sp.shipment_no, sp.pol, sp.pod, sp.container_type, sp.etd,
              (sp.trucking_cost_total IS NULL) AS need_truck,
              (sp.customs_cost_total IS NULL AND NOT EXISTS (
                 SELECT 1
@@ -106,8 +106,7 @@ export default async function handler(req, res) {
                   JOIN freight_rfq_items i ON i.rfq_id = r.id
                  WHERE COALESCE(r.service_type,'ocean') = 'ocean'
                    AND i.customs_included IS TRUE
-                   AND (r.shipping_plan_id = sp.id
-                     OR (sp.order_id IS NOT NULL AND r.order_id = sp.order_id))
+                   AND r.shipping_plan_id = sp.id
               )) AS need_customs,
              (sp.insurance_cost IS NULL) AS need_insurance
         FROM shipping_plans sp
