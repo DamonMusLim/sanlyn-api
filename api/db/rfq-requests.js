@@ -14,6 +14,11 @@ export default async function handler(req, res) {
   if (!req.user) return res.status(401).json({ error: "Unauthorized" });
 
   const pool = getPool();
+  await pool.query(`
+    ALTER TABLE freight_rfq_items
+      ADD COLUMN IF NOT EXISTS trucking_included boolean DEFAULT false,
+      ADD COLUMN IF NOT EXISTS trucking_fee      numeric
+  `);
 
   // ── GET ──
   if (req.method === "GET") {
@@ -62,7 +67,8 @@ export default async function handler(req, res) {
             SELECT i.id, i.rfq_id, i.forwarder_co, i.vessel, i.voyage, i.etd,
                    i.usd_rate, i.port_charges_json, i.free_pol_days, i.free_pod_days,
                    i.dnd_usd, i.currency, i.selected, i.submitted_at,
-                   i.container_type, i.carrier, i.customs_included, i.customs_fee
+                   i.container_type, i.carrier, i.customs_included, i.customs_fee,
+                   i.trucking_included, i.trucking_fee
               FROM freight_rfq_items i
              WHERE i.rfq_id = r.id
                AND ($1::boolean
@@ -96,10 +102,17 @@ export default async function handler(req, res) {
               AND r.status NOT IN ('closed','cancelled') )
        ORDER BY sp.etd NULLS LAST`);
     // 车队/报关/保险需求：对应成本为空 + 非自拖/自报（arrange_mode=self 排除）
-    // 若同票海运报价已勾选含报关，报关由海运一口价覆盖，不再自动生成 customs RFQ，避免双算。
+    // 若同票海运报价已勾选含拖车/含报关，对应服务由海运一口价覆盖，不再自动生成 RFQ，避免双算。
     const { rows: svcCands } = await pool.query(`
       SELECT sp.id, sp.shipment_no, sp.pol, sp.pod, sp.container_type, sp.etd,
-             (sp.trucking_cost_total IS NULL) AS need_truck,
+             (sp.trucking_cost_total IS NULL AND NOT EXISTS (
+                SELECT 1
+                  FROM freight_rfqs r
+                  JOIN freight_rfq_items i ON i.rfq_id = r.id
+                 WHERE COALESCE(r.service_type,'ocean') = 'ocean'
+                   AND i.trucking_included IS TRUE
+                   AND r.shipping_plan_id = sp.id
+              )) AS need_truck,
              (sp.customs_cost_total IS NULL AND NOT EXISTS (
                 SELECT 1
                   FROM freight_rfqs r
