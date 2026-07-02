@@ -333,6 +333,7 @@ mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"
 mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
 mount("/api/db/shipping-plan-rebook", () => import("./api/db/shipping-plan-rebook.js")); // 换航次原子操作: 旧航次进raw.booking_history+新航次写主表 2026-06-10
 mount("/api/db/shipping-transfer-gen", () => import("./api/db/shipping-transfer-gen.js")); // 内转外Excel自动生成
+mount("/api/db/shipping-transfer-data", () => import("./api/db/shipping-transfer-data.js")); // 内转外合并数据(可编辑模版用)
 mount("/api/db/customs-doc-pdf",    () => import("./api/db/customs-doc-pdf.js"));
 mount("/api/db/products",          () => import("./api/db/products.js"));
 // Product Master V1 — Factory Write-in (PATCH only; raw.factory_profile +
@@ -493,6 +494,8 @@ mount("/api/db/migrate-rfq",   () => import("./api/db/migrate-rfq.js"));    // t
 mount("/api/db/rfq-requests",  () => import("./api/db/rfq-requests.js"));   // CRUD
 mount("/api/db/rfq-items",     () => import("./api/db/rfq-items.js"));      // forwarder quote lines
 mount("/api/public/freight-quote/:itemId", () => import("./api/public/freight-quote.js")); // 货代公开报价页(免登录,token=freight_rfq_items.id)
+mount("/api/public/forwarder-lanes/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开多航线报价页
+mount("/api/public/forwarder-quote/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开报价提交
 mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
