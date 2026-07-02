@@ -4,9 +4,31 @@
 
 import { getPool, setCors } from "../db.js";
 import { isInternalRole } from "../lib/viewmodel-adapter.js";
+import { officialPortChargeKey, officialPortChargesMap } from "./_official-port-charges.js";
 
 const ALLOWED_PATCH = ["pol","pod","ctnr_type","status","awarded_item_id",
                        "markup_usd","client_rate_usd","order_id","etd","route"];
+const OFFICIAL_CARRIERS = ["OOCL", "EMC", "COSCO", "MSC", "KMTC", "ESL", "HAPAG", "MSK", "CMA", "ONE"];
+
+async function attachOfficialPortCharges(pool, rows){
+  var pairs = [];
+  (rows || []).forEach(function(row){
+    OFFICIAL_CARRIERS.forEach(function(carrier){
+      pairs.push({ carrier:carrier, pol:row.pol, containerType:row.ctnr_type || "40HQ" });
+    });
+  });
+  var rateMap = await officialPortChargesMap(pool, pairs);
+  (rows || []).forEach(function(row){
+    var ct = String(row.ctnr_type || "40HQ").toUpperCase().replace("HC", "HQ");
+    var official = {};
+    OFFICIAL_CARRIERS.forEach(function(carrier){
+      official[carrier] = {};
+      official[carrier][ct] = rateMap[officialPortChargeKey(carrier, row.pol, ct)];
+    });
+    row.official_port_charges = official;
+  });
+  return rows;
+}
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
@@ -81,6 +103,7 @@ export default async function handler(req, res) {
       LIMIT $${vals.length+1}`;
     vals.push(limit);
     const { rows } = await pool.query(sql, vals);
+    await attachOfficialPortCharges(pool, rows);
     return res.status(200).json({ success: true, data: rows, count: rows.length });
   }
 

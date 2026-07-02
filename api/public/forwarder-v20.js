@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { officialPortChargeKey, officialPortChargesMap } from "../db/_official-port-charges.js";
 
 const CARRIER_OPTIONS = ["OOCL", "EMC", "COSCO", "MSC", "KMTC", "ESL", "HAPAG", "MSK", "CMA", "ONE"];
 
@@ -94,6 +95,37 @@ function groupRows(rows){
   return Object.keys(groups).map(function(k){ return groups[k]; });
 }
 
+async function attachOfficialPortCharges(pool, lanes){
+  var pairs = [];
+  (lanes || []).forEach(function(lane){
+    var ctypes = {};
+    (lane.rfqs || []).forEach(function(rfq){
+      ctypes[rfq.ctnr_type || "40HQ"] = true;
+    });
+    Object.keys(ctypes).forEach(function(ct){
+      CARRIER_OPTIONS.forEach(function(carrier){
+        pairs.push({ carrier:carrier, pol:lane.pol, containerType:ct });
+      });
+    });
+  });
+  var rateMap = await officialPortChargesMap(pool, pairs);
+  (lanes || []).forEach(function(lane){
+    var official = {};
+    CARRIER_OPTIONS.forEach(function(carrier){
+      official[carrier] = {};
+      (lane.rfqs || []).forEach(function(rfq){
+        var ct = rfq.ctnr_type || "40HQ";
+        official[carrier][ct] = rateMap[officialPortChargeKey(carrier, lane.pol, ct)];
+      });
+    });
+    lane.official_port_charges = official;
+    (lane.rfqs || []).forEach(function(rfq){
+      rfq.official_port_charges = official;
+    });
+  });
+  return lanes;
+}
+
 async function handleGet(pool, token, res){
   const { rows } = await pool.query(`
     SELECT r.id, r.pol, r.pod, r.ctnr_type, r.status, r.etd,
@@ -122,11 +154,12 @@ async function handleGet(pool, token, res){
      ORDER BY r.etd NULLS LAST, r.created_at DESC
      LIMIT 300
   `);
+  var lanes = await attachOfficialPortCharges(pool, groupRows(rows));
   return send(res, 200, {
     ok:true,
     forwarder_co:token.forwarder_co,
     expires_at:token.expires_at,
-    lanes:groupRows(rows),
+    lanes:lanes,
   });
 }
 
