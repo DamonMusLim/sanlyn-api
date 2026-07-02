@@ -62,7 +62,7 @@ export default async function handler(req, res) {
             SELECT i.id, i.rfq_id, i.forwarder_co, i.vessel, i.voyage, i.etd,
                    i.usd_rate, i.port_charges_json, i.free_pol_days, i.free_pod_days,
                    i.dnd_usd, i.currency, i.selected, i.submitted_at,
-                   i.container_type, i.carrier
+                   i.container_type, i.carrier, i.customs_included, i.customs_fee
               FROM freight_rfq_items i
              WHERE i.rfq_id = r.id
                AND ($1::boolean
@@ -96,10 +96,19 @@ export default async function handler(req, res) {
        ORDER BY sp.etd NULLS LAST
        LIMIT 50`);
     // 车队/报关需求：对应成本为空 + 非自拖/自报（arrange_mode=self 排除）
+    // 若同票海运报价已勾选含报关，报关由海运一口价覆盖，不再自动生成 customs RFQ，避免双算。
     const { rows: svcCands } = await pool.query(`
-      SELECT sp.id, sp.shipment_no, sp.pol, sp.pod, sp.container_type, sp.etd,
+      SELECT sp.id, sp.order_id, sp.shipment_no, sp.pol, sp.pod, sp.container_type, sp.etd,
              (sp.trucking_cost_total IS NULL) AS need_truck,
-             (sp.customs_cost_total  IS NULL) AS need_customs
+             (sp.customs_cost_total IS NULL AND NOT EXISTS (
+                SELECT 1
+                  FROM freight_rfqs r
+                  JOIN freight_rfq_items i ON i.rfq_id = r.id
+                 WHERE COALESCE(r.service_type,'ocean') = 'ocean'
+                   AND i.customs_included IS TRUE
+                   AND (r.shipping_plan_id = sp.id
+                     OR (sp.order_id IS NOT NULL AND r.order_id = sp.order_id))
+              )) AS need_customs
         FROM shipping_plans sp
        WHERE sp.pol IS NOT NULL
          AND COALESCE(sp.arrange_mode,'agent') <> 'self'
