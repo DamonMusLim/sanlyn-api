@@ -112,6 +112,7 @@ async function doGet(req, res, pool, code){
     return { rfq_id:row.rfq_id, service_type:row.service_type, plan_id:row.plan_id,
       shipment:buildShipment(row.plan_json), my_quote:buildMyQuote(row), status:row.status };
   });
+  if (service === "truck" || service === "customs") rfqs = await scopeFilter(pool, auth.token.forwarder_co, service, rfqs);
   return res.json({ ok:true, service:service, forwarder_co:auth.token.forwarder_co, rfqs:rfqs });
 }
 async function doPost(req, res, pool, code){
@@ -180,6 +181,33 @@ async function doShipments(req, res, pool, code){
   var shipments = Object.keys(byPlan).map(function(k){ return byPlan[k]; });
   return res.json({ ok:true, forwarder_co:auth.token.forwarder_co, shipments:shipments });
 }
+async function scopeFilter(pool, forwarderCo, service, rfqs){
+  try {
+    var r = await pool.query(
+      "SELECT scope_pol, scope_region, scope_customs_zone FROM provider_service_scopes WHERE forwarder_co=$1 AND service_type=$2 AND active IS TRUE",
+      [forwarderCo, service]);
+    if (!r.rows.length) return rfqs; // 没配范围=不限制(安全兜底,Damon后续加scope才收窄)
+    var pols = {};
+    r.rows.forEach(function(x){ if (x.scope_pol) pols[String(x.scope_pol).trim().toUpperCase()] = 1; });
+    if (!Object.keys(pols).length) return rfqs;
+    return rfqs.filter(function(rf){
+      var pol = String((rf.shipment && rf.shipment.pol) || "").trim().toUpperCase();
+      return pols[pol];
+    });
+  } catch(e){ return rfqs; }
+}
+async function doGrab(req, res, pool, code){
+  var auth = await validateToken(pool, code);
+  if (auth.err) return res.status(auth.err[0]).json(auth.err[1]);
+  var body = req.body || {};
+  var rfqId = cleanText(body.rfq_id, 80);
+  var price = asNumber(body.price, NaN);
+  if (!rfqId || !Number.isFinite(price)) return res.status(400).json({ ok:false, error:"rfq_id/price 必填" });
+  var ins = await pool.query(
+    "INSERT INTO grab_offers (rfq_id, forwarder_co, tier, price, currency, valid_until) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id",
+    [rfqId, auth.token.forwarder_co, cleanText(body.tier,40) || null, price, cleanText(body.currency,8) || "USD", body.valid_until || null]);
+  return res.json({ ok:true, id: ins.rows[0] && ins.rows[0].id });
+}
 export default async function handler(req, res){
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.end();
@@ -187,7 +215,9 @@ export default async function handler(req, res){
   var code = (req.params && req.params.code) || String(req.url || "").split("?")[0].split("/").filter(Boolean)[2];
   var isQuote = /\/quote(\?|$)/.test(req.url || "");
   var isShipments = /forwarder-shipments/.test(req.url || "");
+  var isGrab = /forwarder-grab/.test(req.url || "");
   try {
+    if (req.method === "POST" && isGrab) return await doGrab(req, res, pool, decodeURIComponent(code));
     if (req.method === "GET" && isShipments) return await doShipments(req, res, pool, decodeURIComponent(code));
     if (req.method === "POST" && isQuote) return await doPost(req, res, pool, decodeURIComponent(code));
     if (req.method === "GET") return await doGet(req, res, pool, decodeURIComponent(code));
