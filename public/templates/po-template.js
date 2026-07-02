@@ -182,9 +182,10 @@ function init(){
         if(order!==primary){appendText('orderNo',order.order_no||'');}
         var oli=oliResults[idx];
         var oliRows=oli&&Array.isArray(oli.data)?oli.data:[];
+        var validOliRows=oliRows.filter(function(r){return r&&String(r.product_name||'').trim();});
         var prods;
-        if(oliRows.length){
-          prods=oliRows.map(function(r){return{name:r.product_name||r.sku||'',qty:r.qty_ctn,bgBx:r.bg_bx||1,factoryPrice:r.factory_price||r.unit_price||0,factorySubtotal:r.factory_subtotal||r.subtotal||0,barcode:r.barcode||'',size:r.size||''};}).filter(function(p){return p.name;});
+        if(validOliRows.length){
+          prods=validOliRows.map(function(r){return{name:r.product_name||'',qty:r.qty_ctn,bgBx:r.bg_bx||1,factoryPrice:r.factory_price||r.unit_price||0,factorySubtotal:r.factory_subtotal,subtotal:r.subtotal,barcode:r.barcode||'',size:r.size||''};});
         }else{
           prods=(order.products||(order.raw&&order.raw.products)||[]).filter(function(p){return p&&(p.name||p.name_en||p.name_cn||p.sku);});
         }
@@ -196,7 +197,8 @@ function init(){
           var bg=parseFloat(p.bgBx||p.bg_bx||1)||1;
           var ctnP=parseFloat(p.factoryPrice||p.unitPrice||p.factory_price||p.unit_price||0)||0;
           var perB=bg?ctnP/bg:ctnP;
-          var amt=qty*ctnP;
+          var amtSource=p.factorySubtotal!=null&&p.factorySubtotal!==''?p.factorySubtotal:(p.subtotal!=null&&p.subtotal!==''?p.subtotal:null);
+          var amt=amtSource!=null?(parseFloat(amtSource)||0):(qty*ctnP);
           html+=makeProductRow(('0'+(rowIdx++)).slice(-2),name,qty,perB.toFixed(2),ctnP.toFixed(2),amt.toFixed(2),p.barcode||p.code||p.ean||'');
         });
       });

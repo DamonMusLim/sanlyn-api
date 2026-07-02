@@ -268,7 +268,7 @@ textarea.form-input { resize: vertical; min-height: 60px; }
   </div>
   <div style="text-align:center;font-size:11px;color:#9ca3af;margin:20px 0 40px;">
     🔒 此链接仅限本票 · 只显示贵司承包的段 · 上传与提交即自动保存
-    <div style="margin-top:6px;color:#cbd5e1;font-size:10px;">collab-portal v1.1.0 · 2026-06-22</div>
+    <div style="margin-top:6px;color:#cbd5e1;font-size:10px;">collab-portal v1.2.0 · 2026-06-22</div>
   </div>
 </div>
 </div>
@@ -739,7 +739,6 @@ async function loadPricing() {
         <td style="padding:7px 8px;font-size:11px;color:#64748b;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.supplier||'—')}</td>
         <td style="padding:7px 8px">${termLabel(it.incoterm)}</td>
         <td style="padding:7px 8px;font-size:12px;text-align:right">${it.sale_amount != null ? '<span style="font-weight:700;color:#e2e8f0">' + n2(it.sale_amount, it.currency) + '</span>' + (it.rebill_to ? '<br><span style="font-size:10px;color:#64748b">↳ ' + esc(it.rebill_to) + '</span>' : '') : it.self_handled ? '<span style="font-size:10px;color:#64748b">自理</span>' : '<input type="number" step="0.01" min="0" class="price-fill-input" data-bill-id="' + esc(it.id) + '" placeholder="' + esc(it.currency||'CNY') + '" style="width:84px;padding:4px 6px;font-size:12px;text-align:right;background:#0f172a;border:1px solid rgba(251,191,36,0.45);border-radius:5px;color:#fbbf24;outline:none">'}</td>
-        <td style="padding:7px 8px;font-size:12px;font-weight:700;text-align:right;color:${it.gross_profit==null?'#475569':it.gross_profit>=0?'#34d399':'#f87171'}">${it.gross_profit==null ? '—' : n2(it.gross_profit, it.currency)}</td>
       </tr>`).join('');
     const fillCount = d.items.filter(it => !it.self_handled && it.sale_amount == null).length;
     const fillBar = fillCount ? `<div style="padding:10px 12px;background:rgba(251,191,36,0.06);border-top:1px solid rgba(251,191,36,0.18);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -752,7 +751,6 @@ async function loadPricing() {
         <td style="padding:8px 8px;font-size:12px;font-weight:800;color:#e2e8f0;text-align:right">${n2(d.totals[cur].cost, cur)}</td>
         <td colspan="2"></td>
         <td style="padding:8px 8px;font-size:12px;font-weight:800;color:#e2e8f0;text-align:right">${n2(d.totals[cur].sales, cur)}</td>
-        <td style="padding:8px 8px;font-size:12px;font-weight:800;text-align:right;color:${d.totals[cur].profit>=0?'#34d399':'#f87171'}">${n2(d.totals[cur].profit, cur)}</td>
       </tr>`).join('');
     const custLine = d.customer ? `<span style="font-size:11px;color:#94a3b8;margin-left:10px">收款对象：<span style="color:#e2e8f0;font-weight:700">${esc(d.customer)}</span></span>` : '';
     sec.innerHTML = `<div style="margin:10px 0 4px;overflow:hidden;border-radius:8px;border:1px solid rgba(148,163,184,0.18)">
@@ -771,7 +769,6 @@ async function loadPricing() {
           <th style="padding:7px 8px;text-align:left;font-size:10px;color:#64748b;font-weight:700">付款对象(上游)</th>
           <th style="padding:7px 8px;text-align:left;font-size:10px;color:#64748b;font-weight:700">承担方</th>
           <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">销售(下游)</th>
-          <th style="padding:7px 8px;text-align:right;font-size:10px;color:#64748b;font-weight:700">毛利</th>
         </tr></thead>
         <tbody>${rows}</tbody>
         <tfoot>${tfoot}</tfoot>
