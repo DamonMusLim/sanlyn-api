@@ -45,6 +45,7 @@ tbody td{padding:9px 7px;border-bottom:1px solid #e2e5e9;text-align:right;vertic
 tbody td.l{text-align:left;}tbody td.c{text-align:center;}
 .desc-name{font-weight:700;}
 .desc-size{color:#555;font-weight:400;margin-left:6px;}
+tr.group-header td{background:#dbeafe;color:#1e3a8a;font-weight:900;font-size:11px;text-align:left;padding:6px 10px;border:1px solid #93c5fd;letter-spacing:.3px;}
 tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9px 7px;border:none;}
 /* SC/IV boxes */
 .boxes{display:flex;gap:16px;margin-top:16px;}
@@ -68,6 +69,7 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   .doc-page:last-child{page-break-after:auto;}
   .seal-hint{display:none!important;}
   thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  tr.group-header td{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   tr.grand td{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .portbar{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 }
@@ -96,7 +98,7 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   <div class="mid">
     <div class="mid-l"><div class="mid-lbl">BUYER (BILL TO)</div><div class="buyer-name ed" id="pl-buyerName" contenteditable data-ph="Buyer"></div><div class="buyer-addr ed" id="pl-buyerAddr" contenteditable data-ph="Buyer Address"></div></div>
     <div class="mid-r"><div class="mid-lbl">DETAILS</div>
-      <div class="drow"><span>PL No.:</span><span class="ed" id="pl-no" contenteditable data-ph="FS号"></span></div>
+      <div class="drow"><span>No.:</span><span class="ed" id="pl-no" contenteditable data-ph="FS号"></span></div>
       <div class="drow"><span>Order:</span><span class="ed" id="pl-order" contenteditable data-ph="Order No."></span></div>
       <div class="drow"><span>Date:</span><span class="ed" id="pl-date" contenteditable data-ph="YYYY-MM-DD"></span></div>
     </div>
@@ -120,7 +122,7 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   <div class="mid">
     <div class="mid-l"><div class="mid-lbl">BUYER (BILL TO)</div><div class="buyer-name ed" id="sc-buyerName" contenteditable></div><div class="buyer-addr ed" id="sc-buyerAddr" contenteditable></div></div>
     <div class="mid-r"><div class="mid-lbl">DETAILS</div>
-      <div class="drow"><span>SC No.:</span><span class="ed" id="sc-no" contenteditable></span></div>
+      <div class="drow"><span>No.:</span><span class="ed" id="sc-no" contenteditable></span></div>
       <div class="drow"><span>Order:</span><span class="ed" id="sc-order" contenteditable></span></div>
       <div class="drow"><span>Date:</span><span class="ed" id="sc-date" contenteditable></span></div>
     </div>
@@ -149,7 +151,7 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   <div class="mid">
     <div class="mid-l"><div class="mid-lbl">BUYER (BILL TO)</div><div class="buyer-name ed" id="iv-buyerName" contenteditable></div><div class="buyer-addr ed" id="iv-buyerAddr" contenteditable></div></div>
     <div class="mid-r"><div class="mid-lbl">DETAILS</div>
-      <div class="drow"><span>Invoice No.:</span><span class="ed" id="iv-no" contenteditable></span></div>
+      <div class="drow"><span>No.:</span><span class="ed" id="iv-no" contenteditable></span></div>
       <div class="drow"><span>Order:</span><span class="ed" id="iv-order" contenteditable></span></div>
       <div class="drow"><span>Date:</span><span class="ed" id="iv-date" contenteditable></span></div>
     </div>
