@@ -1,5 +1,5 @@
 import { getPool, setCors } from "../db.js";
-import { officialPortChargeKey, officialPortChargesMap } from "../db/_official-port-charges.js";
+import { officialPortChargeKey, officialPortChargesMap, normalizePort } from "../db/_official-port-charges.js";
 
 const CARRIER_OPTIONS = ["OOCL", "EMC", "COSCO", "MSC", "KMTC", "ESL", "HAPAG", "MSK", "CMA", "ONE"];
 
@@ -105,16 +105,16 @@ async function resolveCarriers(pool, forwarderCo, lanes){
       "SELECT UPPER(TRIM(carrier_code)) AS code, UPPER(TRIM(COALESCE(pol,''))) AS pol, UPPER(TRIM(COALESCE(pod,''))) AS pod FROM forwarder_carrier_agreements WHERE forwarder_co=$1 AND active IS TRUE",
       [forwarderCo]);
     r.rows.forEach(function(row){
-      var k = normPort(row.pol) + "::" + normPort(row.pod);
+      var k = normalizePort(row.pol) + "::" + normalizePort(row.pod);
       (agMap[k] = agMap[k] || {})[row.code] = 1;
-      (byPol[normPort(row.pol)] = byPol[normPort(row.pol)] || {})[row.code] = 1;
+      (byPol[normalizePort(row.pol)] = byPol[normalizePort(row.pol)] || {})[row.code] = 1;
     });
   } catch(e){}
   (lanes || []).forEach(function(lane){
-    var key = normPort(lane.pol) + "::" + normPort(lane.pod);
+    var key = normalizePort(lane.pol) + "::" + normalizePort(lane.pod);
     var set = {};
     Object.keys(agMap[key] || {}).forEach(function(c){ set[c] = 1; });      // 协议(航线级)
-    Object.keys(byPol[normPort(lane.pol)] || {}).forEach(function(c){ set[c] = 1; }); // 协议(起运港级)
+    Object.keys(byPol[normalizePort(lane.pol)] || {}).forEach(function(c){ set[c] = 1; }); // 协议(起运港级)
     Object.keys(lane._orderCarriers || {}).forEach(function(c){ if (c) set[c] = 1; }); // 客户订单指定
     lane.carrier_options = Object.keys(set);
     delete lane._orderCarriers;
