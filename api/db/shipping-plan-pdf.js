@@ -16,6 +16,13 @@ export default async function handler(req, res) {
   const { id, bl, type = "confirm" } = req.query;
   if (!id && !bl) return res.status(400).send("<h1>Missing id or bl</h1>");
 
+  // 内转外→装箱资料可编辑模版(带token重定向,治type=transfer渲染错单)
+  if (type === "transfer") {
+    const _tk = req.query.token ? "&token=" + encodeURIComponent(req.query.token) : "";
+    res.writeHead(302, { Location: "/templates/transfer-template.html?plan_id=" + encodeURIComponent(id || bl) + _tk });
+    return res.end();
+  }
+
   try {
     const pool = getPool();
     // 海关出口货物报关单(官方版式)→ 独立模块。原 customs_decl 无 handler 会 fallback 成确认书(错单),这里正式接上。

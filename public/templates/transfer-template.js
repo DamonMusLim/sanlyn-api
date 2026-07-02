@@ -121,7 +121,7 @@ function toggleMode() {
   el("cutoffView").hidden = mode !== "cutoff";
 
   const btn = el("modeBtn");
-  if (btn) btn.textContent = mode === "transfer" ? "切到截单明细" : "切到内转外汇总";
+  if (btn) btn.textContent = mode === "transfer" ? "切到截单明细" : "切到装箱汇总";
 }
 
 function togglePreview() {
@@ -144,7 +144,7 @@ async function downloadPng() {
   const a = document.createElement("a");
   const plan = currentData?.plan || {};
   const name = plan.export_bl || plan.plan_id || planId || "transfer";
-  a.download = `内转外-${name}.png`;
+  a.download = `装箱资料-${name}.png`;
   a.href = canvas.toDataURL("image/png");
   a.click();
   setStatus("PNG 已生成");
