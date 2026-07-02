@@ -573,6 +573,10 @@ function renderGroups(){
     if(cd.container_no) chips.push(chip('柜号','<b>'+esc(cd.container_no)+'</b>'));
     if(cd.seal_no) chips.push(chip('封铅','<b>'+esc(cd.seal_no)+'</b>'));
     if(cd.tare_weight_kg!=null) chips.push(chip('皮重','<b>'+esc(cd.tare_weight_kg)+'kg</b>'));
+    // 折叠态也带货物合计(图2那行:箱数/NW/GW/CBM)
+    const _gt=(g.lines||[]).reduce((a,l)=>{const d=(l&&l.data)||{};a.q+=Number(d.pkg_qty)||0;a.nw+=Number(d.nw_kg)||0;a.gw+=Number(d.gw_kg)||0;a.cbm+=Number(d.cbm_m3)||0;return a;},{q:0,nw:0,gw:0,cbm:0});
+    const _fmtN=n=>n?Number(n).toLocaleString(undefined,{maximumFractionDigits:3}):'—';
+    const collapsedTotal='<div style="display:flex;flex-wrap:wrap;gap:12px;padding:6px 14px;background:#f0fdf4;font-size:12px;color:#15803d;font-weight:800;"><span style="color:#94a3b8;font-weight:700;">合计</span><span>'+_fmtN(_gt.q)+' 箱</span><span>NW '+_fmtN(_gt.nw)+'</span><span>GW '+_fmtN(_gt.gw)+'</span><span>'+_fmtN(_gt.cbm)+' CBM</span></div>';
     const localVgm=window._vgmVals&&Object.prototype.hasOwnProperty.call(window._vgmVals,g.key)?window._vgmVals[g.key]:'';
     const vgmVal=localVgm!==''?localVgm:(cd.vgm_weight_kg!=null?cd.vgm_weight_kg:((cd.cargo_weight_kg!=null&&cd.tare_weight_kg!=null)?Number(cd.cargo_weight_kg)+Number(cd.tare_weight_kg):''));
     const addressFix=factoryProfileAddress
@@ -593,7 +597,7 @@ function renderGroups(){
     '<span style="font-size:11px;font-weight:700;color:'+statusColor+';">'+statusText+'</span>' +
     (!window._lockCtnCount&&groups.length>1?'<span onclick="event.stopPropagation();delCtn('+gi_+')" style="cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;padding:3px 6px;">× 删</span>':'')+
     '</div></div>' +
-    (collapsed?'<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;background:#f0fdf4;border-top:1px solid #dcfce7;font-size:12px;align-items:center;">'+(chips.length?chips.join(''):'')+'<span style="color:#15803d;font-weight:700;align-self:center;">✅ 已确认装货完毕 · 点此展开</span></div></div>':
+    (collapsed?'<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;background:#f0fdf4;border-top:1px solid #dcfce7;font-size:12px;align-items:center;">'+(chips.length?chips.join(''):'')+'<span style="color:#15803d;font-weight:700;align-self:center;">✅ 已确认装货完毕 · 点此展开</span></div>'+collapsedTotal+'</div>':
     // 司机车牌信息行（车牌/司机/柜号/封铅/皮重）— 替代原柜汇总
     '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px;border-bottom:1px solid #f0f2f5;background:#fff;"><span style="font-size:10px;color:#94a3b8;font-weight:700;align-self:center;">🚛 司机/车牌</span>'+(chips.length?chips.join(''):'<span style="font-size:10.5px;color:#94a3b8;">待车队派车后显示</span>')+'</div>'+
     // Linked orders
@@ -1072,7 +1076,7 @@ function finUpload(i){
 if(token) setTimeout(loadFinance, 600);
 
 </script>
-  <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.5.0 · 2026-07-02</div>
+  <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.6.0 · 2026-07-02</div>
 <!--
 2026-07-02 v1.4.0 cargo table edit/display fixes:
 - L47-L55: add horizontal cargo-table scroll and non-wrapping numeric cells so large values remain fully visible.
