@@ -107,7 +107,7 @@ function renderPL(agg,rows){
     var idx=0;
     rows.forEach(function(r){
       if(r.isHeader){
-        body+='<tr class="group-header"><td colspan="6">'+esc(r.label)+'</td></tr>';
+        body+='<tr class="group-header"><td colspan="6" style="text-align:left">'+esc(r.label)+'</td></tr>';
       }else{
         idx++;
         body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
@@ -125,7 +125,7 @@ function renderPriced(pfx,agg,rows,cur){
     var idx=0;
     rows.forEach(function(r){
       if(r.isHeader){
-        body+='<tr class="group-header"><td colspan="5">'+esc(r.label)+'</td></tr>';
+        body+='<tr class="group-header"><td colspan="5" style="text-align:left">'+esc(r.label)+'</td></tr>';
       }else{
         idx++;
         body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';
