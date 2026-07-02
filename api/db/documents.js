@@ -69,8 +69,10 @@ export default async function handler(req, res) {
     if (_pf.indexOf("pdf") === -1 && _pf.indexOf("xlsx") === -1) {
       var _ptok = req.query.token || reqToken || "";
       var _pmode = (req.query.customs === "1" || req.query.mode === "customs") ? "" : "&mode=detail";
+      var _ppage = /^(pl|sc|iv)$/.test(String(req.query.page||"").toLowerCase()) ? String(req.query.page).toLowerCase() : "";
       return res.redirect(302, "/templates/export-docs-template.html?order_no=" + encodeURIComponent(id||"")
         + "&ids=" + encodeURIComponent(ids||id||"") + _pmode
+        + (_ppage ? "&page=" + encodeURIComponent(_ppage) : "")
         + "&token=" + encodeURIComponent(_ptok));
     }
   }
@@ -2464,8 +2466,11 @@ export default async function handler(req, res) {
         if (type === "pack") {
           var _pmode2 = (req.query.customs === "1" || req.query.mode === "customs") ? "" : "&mode=detail";
           var _ptok2 = req.query.token || reqToken || "";
+          var _ppage2 = /^(pl|sc|iv)$/.test(String(req.query.page||"").toLowerCase()) ? String(req.query.page).toLowerCase() : "";
           var _tplUrl = "https://api.sanlyn.cn/templates/export-docs-template.html?order_no=" + encodeURIComponent(id||"")
-            + "&ids=" + encodeURIComponent(ids||id||"") + _pmode2 + "&token=" + encodeURIComponent(_ptok2);
+            + "&ids=" + encodeURIComponent(ids||id||"") + _pmode2
+            + (_ppage2 ? "&page=" + encodeURIComponent(_ppage2) : "")
+            + "&token=" + encodeURIComponent(_ptok2);
           await page.goto(_tplUrl, {waitUntil:"networkidle0", timeout:60000});
           await new Promise(function(r){ setTimeout(r, 1800); });
         } else {

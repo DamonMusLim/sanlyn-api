@@ -2,6 +2,13 @@
 // 铁律：海关单行 = 汇总产品行（禁用 orders 顶层 total_qty/net_weight，那是脏值）。字段只对应不编造。
 var API='https://api.sanlyn.cn',_pmMap={},_sealTarget='all:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={};
 function qp(n){return new URLSearchParams(location.search).get(n)||'';}
+function docPageParam(){var p=String(qp('page')||'').toLowerCase();return /^(pl|sc|iv)$/.test(p)?p:'';}
+function applyPageFilter(){
+  var only=docPageParam(),map={pl:'pagePL',sc:'pageSC',iv:'pageIV'};
+  Object.keys(map).forEach(function(k){
+    var el=document.getElementById(map[k]);if(el)el.style.display=(!only||only===k)?'':'none';
+  });
+}
 function tok(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
 function authH(){var h={'Content-Type':'application/json'};var t=tok();if(t)h.Authorization='Bearer '+t;return h;}
 function setT(id,v){var e=document.getElementById(id);if(e&&v!=null&&String(v).trim().length)e.textContent=v;}
@@ -196,6 +203,7 @@ function loadContainerInfo(all){
 function renderAll(){
   var A=window._agg,R=window._rows,cur=window._cur;
   renderPL(A,R);renderPriced('sc',A,R,cur);renderPriced('iv',A,R,cur);
+  applyPageFilter();
 }
 function toggleMode(){
   _customsMode=!_customsMode;
@@ -278,11 +286,12 @@ function saveDraft(){try{localStorage.setItem('export_docs_draft_'+(qp('order_no
 function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;document.querySelector('.toolbar').style.display='none';
   var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-  s.onload=function(){var pages=['pagePL','pageSC','pageIV'],i=0;(function nx(){if(i>=pages.length){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;return;}html2canvas(document.getElementById(pages[i]),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){var a=document.createElement('a');a.download=pages[i]+'-'+(qp('order_no')||'draft')+'.png';a.href=c.toDataURL('image/png');a.click();i++;setTimeout(nx,400);}).catch(function(){i++;nx();});})();};
+  s.onload=function(){var only=docPageParam(),pages=only?[{pl:'pagePL',sc:'pageSC',iv:'pageIV'}[only]]:['pagePL','pageSC','pageIV'],i=0;(function nx(){if(i>=pages.length){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;return;}html2canvas(document.getElementById(pages[i]),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){var a=document.createElement('a');a.download=pages[i]+'-'+(qp('order_no')||'draft')+'.png';a.href=c.toDataURL('image/png');a.click();i++;setTimeout(nx,400);}).catch(function(){i++;nx();});})();};
   if(window.html2canvas)s.onload();else document.head.appendChild(s);
 }
 
 function init(){
+  applyPageFilter();
   var orderNo=qp('order_no')||qp('orderNo');
   if(!orderNo){banner('err','请加 ?order_no=XX&token=YY');return;}
   var sibs=(qp('ids')||'').split(',').map(function(s){return s.trim();}).filter(function(s){return s&&s!==orderNo;});
