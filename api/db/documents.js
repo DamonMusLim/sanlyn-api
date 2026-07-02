@@ -554,6 +554,12 @@ export default async function handler(req, res) {
         function _pname(li){ var r=_lineRaw(li); return pick(li.product_name,li.productName,r.productName,r.product_name,li.blDescription,li.bl_description,r.blDescription,r.bl_description,li.name_en,r.name_en,li.sku,r.sku,""); }
         function _size(li){ var r=_lineRaw(li); return pick(li.size,li.spec,r.size,r.spec,""); }
         function _uniqJoin(a){ var seen={},out=[]; (a||[]).forEach(function(v){ v=String(v||"").trim(); if(v&&!seen[v]){seen[v]=1;out.push(v);} }); return out.join(" / "); }
+        function _orderRaw(orow){ var r=orow&&orow.raw; if(typeof r==="string")try{return JSON.parse(r)||{};}catch(e){return{};} return (r&&typeof r==="object")?r:{}; }
+        function _fsFromOrder(orow){
+          var r=_orderRaw(orow), vals=[r.fs_no,r.fsNo,r.internal_no,r.internalNo,orow&&orow.fs_no,orow&&orow.internal_no,orow&&orow.contract_no,orow&&orow.order_no];
+          for(var i=0;i<vals.length;i++){ var m=String(vals[i]||"").match(/\bFS[0-9A-Z-]+\b/i); if(m) return m[0].toUpperCase(); }
+          return "";
+        }
         function _rowFromLine(li){
           var q=_n(li.qty_ctn||li.qty), nw=_n(li.nw_ctn||li.net_weight)*q, gw=_n(li.gw_ctn||li.gross_weight)*q, cbm=_n(li.cbm_ctn||li.cbm)*q;
           var up=_n(li.unit_price||li.unitPrice), amt=_n(li.subtotal); if(!amt) amt=q*up;
@@ -585,15 +591,17 @@ export default async function handler(req, res) {
         }
         var rows=_customsMode?_aggregate(lines):lines.map(_rowFromLine).filter(function(r){return r.name||r.qty;});
         var total=_tot(rows), baseNo=(ordNo||cno||id||"PACK");
+        var fsNo=_uniqJoin(orderRows.map(_fsFromOrder)) || _fsFromOrder(o) || baseNo;
+        var packCurr=_uniqJoin(orderRows.map(function(orow){return orow&&orow.currency;})) || o.currency || curr || "CNY";
         function _money(v){ return parseFloat((_n(v)).toFixed(2))||0; }
         function _qty(v){ return parseFloat((_n(v)).toFixed(0))||0; }
         function _cbm(v){ return parseFloat((_n(v)).toFixed(3))||0; }
-        var common={buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:curr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email}};
+        var common={buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:packCurr,pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email}};
         var pricedKeys=[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"price",fn:function(p){return _money(p.price);}},{k:"amt",fn:function(p){return _money(p.amt);}}];
         return {docNo:baseNo+"_PACK",sheets:[
-          Object.assign({},common,{sheetName:"Packing List",docNo:baseNo+"_PL",curr:"",headers:["NO.","CP Code","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],colKeys:[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}],rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),_money(total.nw),_money(total.gw),_cbm(total.cbm)]}),
-          Object.assign({},common,{sheetName:"Sales Contract",docNo:baseNo+"_SC",terms:cfg.terms.sc,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+curr+")","Amount ("+curr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]}),
-          Object.assign({},common,{sheetName:"Invoice",docNo:baseNo+"_IV",terms:cfg.terms.iv,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+curr+")","Amount ("+curr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]})
+          Object.assign({},common,{sheetName:"Packing List",docNo:fsNo,noLabel:"PL No.:",showOrder:false,incoterm:"",headers:["NO.","CP Code","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],colKeys:[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}],rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),_money(total.nw),_money(total.gw),_cbm(total.cbm)]}),
+          Object.assign({},common,{sheetName:"Sales Contract",docNo:fsNo,noLabel:"SC No.:",terms:cfg.terms.sc,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]}),
+          Object.assign({},common,{sheetName:"Invoice",docNo:fsNo,noLabel:"Invoice No.:",terms:cfg.terms.iv,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]})
         ]};
       }
       var tot=getTotal(prods,o);
@@ -2150,13 +2158,17 @@ export default async function handler(req, res) {
           ws.getCell(_RC2+"2").value="DETAILS"; ws.getCell(_RC2+"2").font={bold:true,size:7.5,color:{argb:_GREY2}};
           ws.mergeCells("A3:"+_HC+"3"); ws.mergeCells(_RC2+"3:"+_RC+"3");
           ws.getCell("A3").value=cap.buyer||""; ws.getCell("A3").font={bold:true,size:9,color:{argb:_DARK2}};
-          ws.getCell(_RC2+"3").value={richText:[{text:"No.: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.docNo||""),font:{size:8.5,color:{argb:_DARK2}}}]};
+          ws.getCell(_RC2+"3").value={richText:[{text:(cap.noLabel||"No.:")+" ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.docNo||""),font:{size:8.5,color:{argb:_DARK2}}}]};
           ws.mergeCells("A4:"+_HC+"5");
           ws.getCell("A4").value=cap.buyerAddr||""; ws.getCell("A4").font={size:8,color:{argb:_DARK2}}; ws.getCell("A4").alignment={wrapText:true,vertical:"top"};
           ws.mergeCells(_RC2+"4:"+_RC+"4");
-          ws.getCell(_RC2+"4").value={richText:[{text:"Order: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.poNo||cap.cno||""),font:{size:8.5,color:{argb:_DARK2}}}]};
+          ws.getCell(_RC2+"4").value=cap.showOrder===false
+            ? {richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}}]}
+            : {richText:[{text:"Order: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.poNo||cap.cno||""),font:{size:8.5,color:{argb:_DARK2}}}]};
           ws.mergeCells(_RC2+"5:"+_RC+"5");
-          ws.getCell(_RC2+"5").value={richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}},{text:"   Currency: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.curr||""),font:{size:8.5,color:{argb:_DARK2}}}]};
+          ws.getCell(_RC2+"5").value=cap.showOrder===false
+            ? {richText:[{text:"Currency: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.curr||""),font:{size:8.5,color:{argb:_DARK2}}}]}
+            : {richText:[{text:"Date: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.date||""),font:{size:8.5,color:{argb:_DARK2}}},{text:"   Currency: ",font:{bold:true,size:8,color:{argb:_GREY2}}},{text:String(cap.curr||""),font:{size:8.5,color:{argb:_DARK2}}}]};
           for(var _sc=1;_sc<=_LC;_sc++){ ws.getCell(5,_sc).border={bottom:{style:"thin",color:{argb:_DARK2}}}; }
 
           var hdrRow=ws.addRow(cap.headers);
