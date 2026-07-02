@@ -709,6 +709,8 @@ async function boot(){
   factoryProfileAddress=d.factory_profile_address||null;
   $('topBadge').textContent=s.shipment_no||'工厂协同';
   const ordersArr=Array.isArray(s.orders)?s.orders:[]; window._ordersArr=ordersArr;
+  // oli_id → 货号/条码/规格(产品主数据),给已存明细(factory_cargo无这几个字段)按oli_id补认货码
+  window._oliMeta={}; ordersArr.forEach(o=>(o.items||[]).forEach(it=>{ if(it&&it.oli_id!=null) window._oliMeta[it.oli_id]={sku:it.sku||'',barcode:it.barcode||'',size:it.size||''}; }));
   const facList=[...new Set(ordersArr.map(o=>o.factory||o.supplier_name||o.factory_name).filter(Boolean))];
   // 工厂专属链接只显本厂名；管理视角多厂时不合并显示，提示各厂独立确认
   const facName=SCOPE?SCOPE.label:facList.join(' / ');
@@ -751,7 +753,8 @@ async function boot(){
   let fc=Array.isArray(s.factory_cargo)?s.factory_cargo:[];
   const facOf=o=>o.factory||o.supplier_name||o.factory_name||'未指定工厂';
   const mapItem=it=>({oli_id:it.oli_id,cargo_name:it.product_name||it.description||'',sku:it.sku||'',barcode:it.barcode||'',size:it.size||'',hs_code:it.hs_code||'',pkg_qty:it.ctns||'',nw_kg:Number(it.nw_kgs)||'',gw_kg:Number(it.gw_kgs)||'',cbm_m3:Number(it.cbm)||''});
-  const mapFc=x=>({oli_id:x.oli_id,cargo_name:x.cargo_name||'',sku:x.sku||'',barcode:x.barcode||'',size:x.size||'',hs_code:x.hs_code||'',pkg_qty:x.pkg_qty!=null?x.pkg_qty:'',nw_kg:x.nw_kg!=null?x.nw_kg:'',gw_kg:x.gw_kg!=null?x.gw_kg:'',cbm_m3:x.cbm_m3!=null?x.cbm_m3:'',price:x.price,price_type:x.price_type,tax_points:x.tax_points,fe:x.fe});
+  const _om=id=>(window._oliMeta&&window._oliMeta[id])||{};
+  const mapFc=x=>({oli_id:x.oli_id,cargo_name:x.cargo_name||'',sku:x.sku||_om(x.oli_id).sku||'',barcode:x.barcode||_om(x.oli_id).barcode||'',size:x.size||_om(x.oli_id).size||'',hs_code:x.hs_code||'',pkg_qty:x.pkg_qty!=null?x.pkg_qty:'',nw_kg:x.nw_kg!=null?x.nw_kg:'',gw_kg:x.gw_kg!=null?x.gw_kg:'',cbm_m3:x.cbm_m3!=null?x.cbm_m3:'',price:x.price,price_type:x.price_type,tax_points:x.tax_points,fe:x.fe});
   // 找出某工厂订单所在的柜 seq（拼柜则多厂同 seq）
   const seqForOrders=ordNos=>{ const seqs=Object.keys(window._cntrBySeq||{}).map(Number); for(const k of seqs){ const ci=window._cntrBySeq[k]; const cnos=(ci&&ci.cargo||[]).map(x=>x.order_no); if(ordNos.some(n=>cnos.includes(n))) return k; } return seqs[0]||1; };
   window._lockCtnCount=true; $('btnAddCtn').style.display='none';
@@ -1088,7 +1091,7 @@ function finUpload(i){
 if(token) setTimeout(loadFinance, 600);
 
 </script>
-  <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.7.0 · 2026-07-02</div>
+  <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.7.1 · 2026-07-02</div>
 <!--
 2026-07-02 v1.7.0 cargo recognition columns:
 - L452-L471: add groupShowWeights and render sku/barcode/size columns while gating NW/GW/CBM cells by DG or missing weights.
