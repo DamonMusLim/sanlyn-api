@@ -184,6 +184,7 @@ async function handleGet(pool, token, res){
   `);
   var lanes = groupRows(rows);
   lanes = await resolveCarriers(pool, token.forwarder_co, lanes);
+  lanes = lanes.filter(function(l){ return (l.carrier_options||[]).length > 0; }); // 其他不显示:无协议无订单指定船司的航线整条隐藏
   lanes = await attachOfficialPortCharges(pool, lanes);
   return send(res, 200, {
     ok:true,
