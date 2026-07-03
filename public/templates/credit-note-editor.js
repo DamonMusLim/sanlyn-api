@@ -81,7 +81,17 @@ function fwdDoc(){
     }).catch(function(e){banner('err',e.message);});
 }
 function snapshot(){return {sellerName:txt('cn-sellerName'),sellerAddr:txt('cn-sellerAddr'),buyerName:txt('cn-buyerName'),buyerAddr:txt('cn-buyerAddr'),no:txt('cn-no'),order:txt('cn-order'),contract:txt('cn-contract'),date:txt('cn-date'),remarks:txt('cn-remarks'),bank:document.getElementById('cn-bank').innerText,items:rowsData()};}
-function saveDraft(){try{localStorage.setItem('cn_draft_'+_cnNo,JSON.stringify(snapshot()));banner('info','✓ 草稿已保存(本机)');setTimeout(function(){banner('','');},1500);}catch(e){banner('err','保存失败');}}
+function saveDraft(){
+  try{localStorage.setItem('cn_draft_'+_cnNo,JSON.stringify(snapshot()));}catch(e){}
+  var items=rowsData().map(function(r){return {desc:r.desc,qty:parseInt(r.qty)||0,qty_unit:r.unit,price_diff:parseFloat(r.diff)||0,amount:parseFloat(r.amount)||0,type:'CREDIT'};});
+  banner('info','正在保存到单据…');
+  fetch(API+'/api/db/credit-notes?cn_no='+encodeURIComponent(_cnNo),{method:'PATCH',headers:authH(),body:JSON.stringify({note:txt('cn-remarks'),items:items})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.success){banner('info','✓ 已保存进 CN 记录 — 备注和明细已入库,PDF/下载/别处打开都在');}
+      else{banner('err','保存失败: '+(d.error||'')+'(草稿已存本机)');}
+      setTimeout(function(){banner('','');},2800);
+    }).catch(function(e){banner('err','保存失败: '+e.message);});
+}
 function applyDraft(){
   try{var d=JSON.parse(localStorage.getItem('cn_draft_'+_cnNo)||'null');if(!d)return;
     var map={sellerName:'cn-sellerName',sellerAddr:'cn-sellerAddr',buyerName:'cn-buyerName',buyerAddr:'cn-buyerAddr',no:'cn-no',order:'cn-order',contract:'cn-contract',date:'cn-date',remarks:'cn-remarks'};
@@ -222,7 +232,6 @@ function init(){
     _sellerSealName = cn._seller_seal_name || ''; _sellerSealId = cn._seller_seal_id || null;
     if(cn._seller_seal){ applySeal('cn:seller', cn._seller_seal, _sellerSealName||'公司锁定章'); _curSeal.seller={name:_sellerSealName||'公司锁定章',id:_sellerSealId}; }
     updateSealStatus();
-    applyDraft();
     banner('','');
   }).catch(function(e){banner('err',e.message);});
   // 卖方章始终=公司锁定默认章(在loadCN里盖),不从localStorage恢复;只买方章可本地留存
