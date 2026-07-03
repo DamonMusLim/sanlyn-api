@@ -170,6 +170,11 @@ export default async function handler(req, res) {
       const r = await pool.query('SELECT * FROM credit_notes WHERE cn_no=$1', [cn_no]);
       if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
       const cn = r.rows[0];
+      // Display helpers for editable template — keep consistent with rendered doc
+      let _po = '', _fs = '', _baddr = '', _idisp = '';
+      try { const _o = await pool.query("SELECT customer_po, customer_po_no, raw->>'fs_no' AS fs_no FROM orders WHERE order_no=$1 LIMIT 1", [cn.order_no]); if (_o.rows[0]) { _po = _o.rows[0].customer_po || _o.rows[0].customer_po_no || ''; _fs = _o.rows[0].fs_no || ''; } } catch (e) {}
+      try { const _c = await pool.query('SELECT address FROM companies WHERE code=$1 LIMIT 1', [cn.company_code]); if (_c.rows[0]) _baddr = _c.rows[0].address || ''; } catch (e) {}
+      try { const _d = cn.issued_date ? new Date(cn.issued_date) : null; if (_d) _idisp = _d.getFullYear() + '-' + String(_d.getMonth()+1).padStart(2,'0') + '-' + String(_d.getDate()).padStart(2,'0'); } catch (e) {}
       // Fail-closed: customer role only sees own CNs, and factory_cn field is stripped
       if (req.user?.role !== 'admin' && req.user?.role !== 'finance') {
         const codes = req.user?.companyCodes || (req.user?.companyCode ? [req.user.companyCode] : []);
@@ -178,9 +183,9 @@ export default async function handler(req, res) {
         const raw = getRaw(cn);
         delete raw.factory_cn;
         delete raw.factory_decision;
-        return res.json({ success: true, data: { ...cn, raw, outstanding: calcOutstanding(cn) } });
+        return res.json({ success: true, data: { ...cn, raw, outstanding: calcOutstanding(cn), _po, _fs, _buyer_addr: _baddr, _issued_display: _idisp } });
       }
-      return res.json({ success: true, data: { ...cn, outstanding: calcOutstanding(cn) } });
+      return res.json({ success: true, data: { ...cn, outstanding: calcOutstanding(cn), _po, _fs, _buyer_addr: _baddr, _issued_display: _idisp } });
     }
 
     // List
