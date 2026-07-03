@@ -37,8 +37,8 @@ export async function renderCreditNote(pool, cnNo, opts){
   var cfg = await loadSeller(pool, _issuer);
   var buyer = {};
   try { var _br = await pool.query("SELECT address FROM companies WHERE code=$1 LIMIT 1", [cn.company_code]); buyer = (_br.rows && _br.rows[0]) || {}; } catch(e){}
-  var custPo = "";
-  try { var _or = await pool.query("SELECT customer_po, customer_po_no FROM orders WHERE order_no=$1 LIMIT 1", [cn.order_no]); if(_or.rows && _or.rows[0]) custPo = _or.rows[0].customer_po || _or.rows[0].customer_po_no || ""; } catch(e){}
+  var custPo = "", fsNo = "";
+  try { var _or = await pool.query("SELECT customer_po, customer_po_no, raw->>'fs_no' AS fs_no FROM orders WHERE order_no=$1 LIMIT 1", [cn.order_no]); if(_or.rows && _or.rows[0]) { custPo = _or.rows[0].customer_po || _or.rows[0].customer_po_no || ""; fsNo = _or.rows[0].fs_no || ""; } } catch(e){}
   var contractDisplay = custPo || cn.contract_no || "";
   var curr = cn.currency || "CNY";
   var total = Number(cn.net_amount||0);
@@ -103,8 +103,8 @@ export async function renderCreditNote(pool, cnNo, opts){
         <div class="section-label">单据详情 / DETAILS</div>
         <ul class="meta-list">
           <li><b>贷记单号 CN No.:</b>${esc(cn.cn_no)}</li>
-          ${cn.order_no?`<li><b>订单号 Order No.:</b>${esc(cn.order_no)}</li>`:""}
-          ${contractDisplay?`<li><b>合同号 Contract:</b>${esc(contractDisplay)}</li>`:""}
+          ${contractDisplay?`<li><b>订单号 Order No.:</b>${esc(contractDisplay)}</li>`:""}
+          ${fsNo?`<li><b>合同号 Contract:</b>${esc(fsNo)}</li>`:""}
           ${cn.invoice_no?`<li><b>关联发票 Invoice:</b>${esc(cn.invoice_no)}</li>`:""}
           <li><b>日期 Date:</b>${fmtD(cn.issued_date||cn.created_at)}</li>
         </ul>

@@ -58,7 +58,7 @@ function renderItems(items){
 /* ── data loaders ───────────────────────────────────── */
 function loadCN(cnNo){return fetch(API+'/api/db/credit-notes?cn_no='+encodeURIComponent(cnNo),{headers:authH()}).then(function(r){return r.json();}).then(function(d){return d.data||d;});}
 function fetchBuyerAddr(code){if(!code)return Promise.resolve('');return fetch(API+'/api/db/companies?q='+encodeURIComponent(code),{headers:authH()}).then(function(r){return r.json();}).then(function(d){var rows=Array.isArray(d)?d:(d.data||d.companies||[]);var row=rows.find(function(x){return x.code===code||x.company_code===code;})||rows[0]||{};return row.address||'';}).catch(function(){return '';});}
-function fetchCustomerPo(orderNo){if(!orderNo)return Promise.resolve('');return fetch(API+'/api/db/orders?order_no='+encodeURIComponent(orderNo),{headers:authH()}).then(function(r){return r.json();}).then(function(d){var rows=d.data||d.orders||(Array.isArray(d)?d:[]);var o=rows[0]||{};return o.customer_po||o.customer_po_no||'';}).catch(function(){return '';});}
+function fetchOrderRefs(orderNo){if(!orderNo)return Promise.resolve({po:'',fs:''});return fetch(API+'/api/db/orders?order_no='+encodeURIComponent(orderNo),{headers:authH()}).then(function(r){return r.json();}).then(function(d){var rows=d.data||d.orders||(Array.isArray(d)?d:[]);var o=rows[0]||{};var raw=o.raw||{};return {po:(o.customer_po||o.customer_po_no||''),fs:(raw.fs_no||o.fs_no||'')};}).catch(function(){return {po:'',fs:''};});}
 
 /* ── toolbar actions ────────────────────────────────── */
 function _docUrl(f){var u='/api/db/documents?type=cn&id='+encodeURIComponent(_cnNo)+'&audience=customer';if(f)u+='&format='+f;u+='&token='+encodeURIComponent(tok());return u;}
@@ -179,7 +179,7 @@ function init(){
     if(!items.length)items=[{}];
     renderItems(items);
     fetchBuyerAddr(cn.company_code).then(function(a){if(a&&!txt('cn-buyerAddr').trim())setT('cn-buyerAddr',a);});
-    fetchCustomerPo(cn.order_no).then(function(po){setT('cn-contract',po||cn.contract_no||'');});
+    fetchOrderRefs(cn.order_no).then(function(rf){setT('cn-order',rf.po||cn.order_no||'');setT('cn-contract',rf.fs||cn.contract_no||'');});
     fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).then(function(d){var ps=Array.isArray(d)?d:(d.data||[]);var sp=ps.find(function(x){return x.is_default;})||ps[0];if(sp&&sp.seal_url&&!localStorage.getItem(sealKey('cn:seller')))applySeal('cn:seller',sp.seal_url,sp.name_en||sp.name_cn||'Seller seal');}).catch(function(){});
     applyDraft();
     banner('','');
