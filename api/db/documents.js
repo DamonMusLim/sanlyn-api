@@ -112,6 +112,51 @@ export default async function handler(req, res) {
   }
   // 贷记通知单 Credit Note → 独立模块渲染(读 credit_notes)
   if(type==="cn"){
+    var _cnXlsx = (Array.isArray(format)?format:[format]).some(function(f){return String(f).toLowerCase()==="xlsx";});
+    if(_cnXlsx){
+      try{
+        var _pool=getPool();
+        var _cr=await _pool.query("SELECT * FROM credit_notes WHERE cn_no=$1 OR id::text=$1 LIMIT 1",[id]);
+        if(!_cr.rows.length) return res.status(404).send("Credit Note not found");
+        var _cn=_cr.rows[0];
+        var _items=Array.isArray(_cn.items)?_cn.items:(typeof _cn.items==="string"?(function(){try{return JSON.parse(_cn.items);}catch(e){return [];}})():[]);
+        var _po="";
+        try{var _o=await _pool.query("SELECT customer_po,customer_po_no FROM orders WHERE order_no=$1 LIMIT 1",[_cn.order_no]);if(_o.rows[0])_po=_o.rows[0].customer_po||_o.rows[0].customer_po_no||"";}catch(e){}
+        var _addr="";
+        try{var _c=await _pool.query("SELECT address FROM companies WHERE code=$1 LIMIT 1",[_cn.company_code]);if(_c.rows[0])_addr=_c.rows[0].address||"";}catch(e){}
+        var ExcelJS=(await import("exceljs")).default;
+        var wb=new ExcelJS.Workbook();
+        var ws=wb.addWorksheet("Credit Note "+_cn.cn_no);
+        ws.columns=[{width:6},{width:46},{width:12},{width:10},{width:14},{width:16}];
+        ws.addRow(["XIAMEN PET BABY IMPORT AND EXPORT CO., LTD"]);
+        ws.addRow(["贷记通知单 / CREDIT NOTE"]);
+        ws.addRow([]);
+        ws.addRow(["收款方 TO:", _cn.company_name||""]);
+        if(_addr) ws.addRow(["地址 Address:", _addr]);
+        ws.addRow(["贷记单号 CN No.:", _cn.cn_no]);
+        ws.addRow(["订单号 Order:", _cn.order_no||""]);
+        ws.addRow(["合同号 Contract:", _po||_cn.contract_no||""]);
+        ws.addRow(["日期 Date:", (_cn.issued_date?String(_cn.issued_date).slice(0,10):"")]);
+        ws.addRow([]);
+        var hdr=ws.addRow(["NO.","货物 DESCRIPTION","数量 QTY","单位 UNIT","单价差 DIFF","贷记金额 AMOUNT"]);
+        hdr.font={bold:true};
+        var _tot=0;
+        _items.forEach(function(it,i){
+          var amt=Number(it.amount)||0;_tot+=amt;
+          ws.addRow([i+1,(it.desc||it.product||it.product_name||""),(it.qty!=null?it.qty:""),(it.qty_unit||it.unit||""),(it.price_diff!=null?it.price_diff:(it.unit_price_diff!=null?it.unit_price_diff:"")),amt]);
+        });
+        var tr=ws.addRow(["","贷记总额 TOTAL CREDIT ("+(_cn.currency||"CNY")+")","","","",Number(_tot.toFixed(2))]);
+        tr.font={bold:true};
+        if(_cn.note){ws.addRow([]);ws.addRow(["备注 Remarks:", _cn.note]);}
+        var buf=await wb.xlsx.writeBuffer();
+        res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition",'attachment; filename="CN-'+String(_cn.cn_no).replace(/[^A-Za-z0-9._-]/g,"_")+'.xlsx"');
+        return res.send(Buffer.from(buf));
+      }catch(e){
+        console.error("[documents] cn xlsx error:", e.message);
+        return res.status(500).send("CN xlsx error: "+e.message);
+      }
+    }
     try{
       var _cnHtml = await renderCreditNote(getPool(), id, { print: ap });
       if(!_cnHtml) return res.status(404).send("<h1>Credit Note not found: "+esc(id)+"</h1>");
