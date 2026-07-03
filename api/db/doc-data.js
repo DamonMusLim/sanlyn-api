@@ -3,7 +3,7 @@
 export function scrubCustomerFacingHtml(html) {
   if (typeof html !== "string" || !html) return html;
   // 1. CN-000XX codes (Sanlyn internal company codes) → blank
-  html = html.replace(/\bCN-?\d{4,6}\b/g, "");
+  html = html.replace(/\bCN-?\d{4,6}\b(?!-\d)/g, "");
   // 2. Stray "company_code: ..." or "companyCode: ..." token tails in JSON-ish output
   html = html.replace(/&quot;(?:company_code|companyCode|issuing_company_code|factory_code|middleman_code|middleman_markup_total|middleman_markup_pct|profit|margin_amount|margin_pct|pricing_snapshot|vault|tax_rebate_amount)&quot;\s*:\s*&quot;[^&]*&quot;,?/g, "");
   html = html.replace(/"(?:company_code|companyCode|issuing_company_code|factory_code|middleman_code|middleman_markup_total|middleman_markup_pct|profit|margin_amount|margin_pct|pricing_snapshot|vault|tax_rebate_amount)"\s*:\s*"[^"]*",?/g, "");
