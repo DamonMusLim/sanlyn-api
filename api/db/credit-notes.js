@@ -175,6 +175,9 @@ export default async function handler(req, res) {
       try { const _o = await pool.query("SELECT customer_po, customer_po_no, raw->>'fs_no' AS fs_no FROM orders WHERE order_no=$1 LIMIT 1", [cn.order_no]); if (_o.rows[0]) { _po = _o.rows[0].customer_po || _o.rows[0].customer_po_no || ''; _fs = _o.rows[0].fs_no || ''; } } catch (e) {}
       try { const _c = await pool.query('SELECT address FROM companies WHERE code=$1 LIMIT 1', [cn.company_code]); if (_c.rows[0]) _baddr = _c.rows[0].address || ''; } catch (e) {}
       try { const _d = cn.issued_date ? new Date(cn.issued_date) : null; if (_d) _idisp = _d.getFullYear() + '-' + String(_d.getMonth()+1).padStart(2,'0') + '-' + String(_d.getDate()).padStart(2,'0'); } catch (e) {}
+      // 出单公司(卖方)=巴匕 BABI;取其锁定默认章供单据自动盖
+      let _sellerCode = 'BABI', _sellerSeal = '';
+      try { const _ss = await pool.query("SELECT url FROM customer_stamps WHERE company_code=$1 AND is_default=true AND is_active=true LIMIT 1", [_sellerCode]); if (_ss.rows[0]) _sellerSeal = _ss.rows[0].url || ''; } catch (e) {}
       // Fail-closed: customer role only sees own CNs, and factory_cn field is stripped
       if (req.user?.role !== 'admin' && req.user?.role !== 'finance') {
         const codes = req.user?.companyCodes || (req.user?.companyCode ? [req.user.companyCode] : []);
@@ -183,9 +186,9 @@ export default async function handler(req, res) {
         const raw = getRaw(cn);
         delete raw.factory_cn;
         delete raw.factory_decision;
-        return res.json({ success: true, data: { ...cn, raw, outstanding: calcOutstanding(cn), _po, _fs, _buyer_addr: _baddr, _issued_display: _idisp } });
+        return res.json({ success: true, data: { ...cn, raw, outstanding: calcOutstanding(cn), _po, _fs, _buyer_addr: _baddr, _issued_display: _idisp, _seller_code: _sellerCode, _seller_seal: _sellerSeal } });
       }
-      return res.json({ success: true, data: { ...cn, outstanding: calcOutstanding(cn), _po, _fs, _buyer_addr: _baddr, _issued_display: _idisp } });
+      return res.json({ success: true, data: { ...cn, outstanding: calcOutstanding(cn), _po, _fs, _buyer_addr: _baddr, _issued_display: _idisp, _seller_code: _sellerCode, _seller_seal: _sellerSeal } });
     }
 
     // List

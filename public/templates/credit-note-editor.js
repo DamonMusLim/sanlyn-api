@@ -1,5 +1,5 @@
 // credit-note-editor.js — 独立 CN 可编辑单据模版 (复用 export-docs 的印章/导出机制,数据源=credit_notes)
-var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='',_dlName='';
+var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='',_dlName='',_sellerCode='BABI',_buyerCode='';
 function qp(n){return new URLSearchParams(location.search).get(n)||'';}
 function tok(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
 function authH(){var h={'Content-Type':'application/json'};var t=tok();if(t)h.Authorization='Bearer '+t;return h;}
@@ -140,7 +140,8 @@ function renderLocalStamps(){
 function selLocal(i){loadLocalStamps();applySeal(_sealTarget,_localStamps[i].url,_localStamps[i].name);closeModal();}
 function loadDasStamps(){
   var g=document.getElementById('stampGrid');g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">加载中…</div>';
-  fetch(API+'/api/db/customer-stamps',{headers:authH()}).then(function(r){return r.json();}).then(function(d){
+  var _cc=(_sealTarget&&_sealTarget.indexOf('buyer')>=0)?_buyerCode:_sellerCode;
+  fetch(API+'/api/db/customer-stamps'+(_cc?('?company_code='+encodeURIComponent(_cc)):''),{headers:authH()}).then(function(r){return r.json();}).then(function(d){
     var stamps=Array.isArray(d)?d:(d.stamps||d.data||[]);
     if(!stamps.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">DAS暂无印章</div>';return;}
     _stamps=stamps;
@@ -181,7 +182,8 @@ function init(){
     var items=raws.map(function(it){return {desc:it.desc||it.product||it.product_name||'',qty:(it.qty!=null?it.qty:''),unit:it.qty_unit||it.unit||'',diff:(it.price_diff!=null?it.price_diff:(it.unit_price_diff!=null?it.unit_price_diff:'')),amount:(it.amount!=null?it.amount:'')};});
     if(!items.length)items=[{}];
     renderItems(items);
-    fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).then(function(d){var ps=Array.isArray(d)?d:(d.data||[]);var sp=ps.find(function(x){return x.is_default;})||ps[0];if(sp&&sp.seal_url&&!localStorage.getItem(sealKey('cn:seller')))applySeal('cn:seller',sp.seal_url,sp.name_en||sp.name_cn||'Seller seal');}).catch(function(){});
+    _sellerCode = cn._seller_code || 'BABI'; _buyerCode = cn.company_code || '';
+    if(cn._seller_seal && !localStorage.getItem(sealKey('cn:seller'))) applySeal('cn:seller', cn._seller_seal, '公司锁定章');
     applyDraft();
     banner('','');
   }).catch(function(e){banner('err',e.message);});
