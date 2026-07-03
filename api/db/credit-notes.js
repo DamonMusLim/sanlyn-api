@@ -14,11 +14,14 @@
 import { getPool, setCors } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { createWriteStream, mkdirSync, unlinkSync } from 'fs';
-import { createHash } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import path from 'path';
 import { IncomingForm } from 'formidable';
 import { pipeline } from 'stream/promises';
 import fs from 'fs';
+import { renderCreditNote } from './credit-note-doc.js';
+import { scrubCustomerFacingHtml } from './doc-data.js';
+import { htmlToPdf } from './_html-to-pdf.js';
 
 const UPLOADS_DIR = '/opt/sanlyn-uploads/cn';
 const WECOM_WEBHOOK = process.env.WECOM_WEBHOOK_URL || '';
@@ -331,6 +334,42 @@ export default async function handler(req, res) {
       return res.json({ success: true, data: { ...updated.rows[0], outstanding: newOutstanding } });
     }
 
+    // Generate password-gated external share link (renders CN → static PDF → doc_share_links)
+    if (action === 'share') {
+      const targetCn = req.query.cn_no || cn_no;
+      if (!targetCn) return res.status(400).json({ error: 'cn_no required' });
+      const cnRow = (await pool.query('SELECT contract_no FROM credit_notes WHERE cn_no=$1', [targetCn])).rows[0];
+      if (!cnRow) return res.status(404).json({ error: 'CN not found' });
+      const html = await renderCreditNote(pool, targetCn, {});
+      if (!html) return res.status(404).json({ error: 'CN render failed' });
+      let pdf;
+      try { pdf = await htmlToPdf(scrubCustomerFacingHtml(html)); }
+      catch (e) { return res.status(500).json({ error: 'PDF render failed: ' + e.message }); }
+      const cnDir = path.join(UPLOADS_DIR, targetCn);
+      mkdirSync(cnDir, { recursive: true });
+      const fileTok = randomBytes(12).toString('hex');
+      const fname = 'share-' + fileTok + '.pdf';
+      fs.writeFileSync(path.join(cnDir, fname), pdf);
+      const fileUrl = 'https://api.sanlyn.cn/uploads/cn/' + encodeURIComponent(targetCn) + '/' + fname;
+      const linkTok = randomBytes(6).toString('hex');
+      const PW = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+      const seg = (n) => Array.from({ length: n }, () => PW[Math.floor(Math.random() * PW.length)]).join('');
+      const password = seg(3) + '-' + seg(3) + '-' + seg(3);
+      const by = (req.user && (req.user.username || req.user.name)) || 'admin';
+      await pool.query(
+        `INSERT INTO doc_share_links
+           (token, contract_no, doc_key, doc_url, doc_name, password,
+            created_by, expires_at, max_downloads, download_count, downloaded_log)
+         VALUES ($1,$2,$3,$4,$5,$6,$7, NOW()+INTERVAL '7 days', 50, 0, $8::jsonb)`,
+        [linkTok, (cnRow.contract_no || ''), 'cn:' + targetCn, fileUrl,
+         'Credit Note ' + targetCn, password, by,
+         JSON.stringify([{ action: 'created', by, doc: 'cn:' + targetCn, ts: new Date().toISOString() }])]
+      );
+      const quickUrl = 'https://api.sanlyn.cn/api/db/doc-share?token=' + linkTok + '&password=' + encodeURIComponent(password);
+      const shareUrl = 'https://api.sanlyn.cn/api/db/doc-share?token=' + linkTok;
+      return res.json({ ok: true, quickUrl, shareUrl, password, expiresInDays: 7 });
+    }
+
     // Multipart attachment upload
     if (action === 'attachments') {
       const targetCn = req.query.cn_no || cn_no;
@@ -406,10 +445,9 @@ export default async function handler(req, res) {
       order_no, contract_no, invoice_no,
       issued_date, currency = 'CNY',
       net_amount, note, items = [],
-      reason, reason_detail, apply_method,
+      reason, reason_detail, apply_method, direction,
     } = req.body;
 
-    if (!bodyCnNo)     return res.status(400).json({ error: 'cn_no required' });
     if (!bodyCompany)  return res.status(400).json({ error: 'company_code required' });
     if (net_amount === undefined || net_amount === null) return res.status(400).json({ error: 'net_amount required' });
     if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'items[] required' });
@@ -421,6 +459,7 @@ export default async function handler(req, res) {
     }
 
     const rawInit = {
+      direction: direction || null,
       reason: reason || null,
       reason_detail: reason_detail || null,
       apply_method: apply_method || null,
@@ -434,24 +473,38 @@ export default async function handler(req, res) {
       }],
     };
 
-    const created = await pool.query(`
-      INSERT INTO credit_notes
-        (cn_no, company_code, company_name, order_no, contract_no, invoice_no,
-         issued_date, currency, net_amount, status, note, items, created_by, raw)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft',$10,$11,$12,$13)
-      ON CONFLICT (cn_no) DO NOTHING
-      RETURNING *
-    `, [
-      bodyCnNo, bodyCompany, company_name,
-      order_no, contract_no, invoice_no,
-      issued_date || new Date().toISOString().slice(0, 10),
-      currency, net_amount, note,
-      JSON.stringify(items),
-      req.user?.username || null,
-      JSON.stringify(rawInit),
-    ]);
+    // 自动编号:未传 cn_no → 生成下一个纯顺序号 CN-000xx(仅 ^CN-[0-9]+$ 参与序列,老的带字母的不算);撞号自动重试
+    let finalCnNo = bodyCnNo;
+    let created;
+    for (let attempt = 0; attempt < (bodyCnNo ? 1 : 6); attempt++) {
+      if (!bodyCnNo) {
+        const _yr = String(new Date().getFullYear());
+        const seqR = await pool.query(
+          "SELECT COALESCE(MAX(split_part(cn_no,'-',3)::int),0) AS mx FROM credit_notes WHERE cn_no ~ ('^CN-' || $1 || '-[0-9]+$')",
+          [_yr]
+        );
+        finalCnNo = 'CN-' + _yr + '-' + String((Number(seqR.rows[0].mx) || 0) + 1).padStart(4, '0');
+      }
+      created = await pool.query(`
+        INSERT INTO credit_notes
+          (cn_no, company_code, company_name, order_no, contract_no, invoice_no,
+           issued_date, currency, net_amount, status, note, items, created_by, raw)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft',$10,$11,$12,$13)
+        ON CONFLICT (cn_no) DO NOTHING
+        RETURNING *
+      `, [
+        finalCnNo, bodyCompany, company_name,
+        order_no, contract_no, invoice_no,
+        issued_date || new Date().toISOString().slice(0, 10),
+        currency, net_amount, note,
+        JSON.stringify(items),
+        req.user?.username || null,
+        JSON.stringify(rawInit),
+      ]);
+      if (created.rows.length) break;
+    }
 
-    if (!created.rows.length) return res.status(409).json({ error: 'CN number already exists' });
+    if (!created.rows.length) return res.status(409).json({ error: 'CN number already exists (auto-number exhausted)' });
     return res.status(201).json({ success: true, data: created.rows[0] });
   }
 
