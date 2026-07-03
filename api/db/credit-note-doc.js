@@ -51,7 +51,7 @@ export async function renderCreditNote(pool, cnNo, opts){
     .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:25px;}
     .seller-name{font-size:18px;font-weight:900;text-transform:uppercase;margin-bottom:4px;}
     .seller-sub{font-size:10px;color:#666;}
-    .doc-type h1{margin:0;font-size:26px;font-weight:900;letter-spacing:1px;text-align:right;color:#b91c1c;}
+    .doc-type h1{margin:0;font-size:26px;font-weight:900;letter-spacing:1px;text-align:right;color:#111;}
     .doc-type p{font-size:13px;font-weight:700;margin:3px 0;text-align:right;color:#444;}
     .meta-grid{display:grid;grid-template-columns:1.2fr 0.8fr;gap:40px;margin-bottom:20px;}
     .section-label{font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:8px;color:#444;}
@@ -62,7 +62,7 @@ export async function renderCreditNote(pool, cnNo, opts){
     th{background:#000;color:#fff;padding:9px 8px;text-align:left;font-size:10px;text-transform:uppercase;}
     td{padding:8px;border-bottom:1px solid #ccc;vertical-align:top;}
     .tc{text-align:center;} .tr{text-align:right;}
-    tfoot td{font-size:14px;font-weight:900;border-top:2px solid #000;border-bottom:none;color:#b91c1c;}
+    tfoot td{font-size:14px;font-weight:900;border-top:2px solid #000;border-bottom:none;color:#111;}
     .details-box{border:1px solid #000;padding:12px;margin-top:10px;}
     .details-box h4{margin:0 0 8px 0;font-size:11px;text-transform:uppercase;text-decoration:underline;}
     .sig-row{display:flex;justify-content:space-between;margin-top:46px;}
