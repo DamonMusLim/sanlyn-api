@@ -629,7 +629,7 @@ export default async function handler(req, res) {
         var orderIds=orderRows.map(function(r){return Number(r.id||r._id)||0;}).filter(Boolean);
         var lines=[];
         if(orderIds.length){
-          var lr=await pool.query("SELECT li.*, p.barcode AS product_barcode, p.factory_code AS product_factory_code FROM order_line_items li LEFT JOIN products p ON (p.id = li.product_id OR p.sku = li.sku) WHERE li.order_id = ANY($1::int[]) ORDER BY li.order_id, li.sort_order, li.id",[orderIds]);
+          var lr=await pool.query("SELECT li.*, p.barcode AS product_barcode, p.factory_code AS product_factory_code FROM order_line_items li LEFT JOIN LATERAL (SELECT barcode, factory_code FROM products WHERE (id = li.product_id) OR (li.product_id IS NULL AND sku = li.sku) LIMIT 1) p ON true WHERE li.order_id = ANY($1::int[]) ORDER BY li.order_id, li.sort_order, li.id",[orderIds]);
           lines=lr.rows||[];
         }
         var ctnMap={};
