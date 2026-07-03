@@ -581,6 +581,7 @@ mount("/api/db/daigou-promote",  () => import("./api/db/daigou-promote.js"));
 mount("/api/db/customs-ocr",  () => import("./api/db/customs-ocr.js"));
 mount("/api/db/customs-doc-upload", () => import("./api/db/customs-doc-upload.js"));
 mount("/api/db/rebate-doc-upload", () => import("./api/db/rebate-doc-upload.js"));
+mount("/api/db/po-contract", () => import("./api/db/po-contract.js"));
 mount("/api/db/kp",  () => import("./api/db/kp.js"));
 mount("/api/db/invoice-portal",  () => import("./api/db/invoice-portal.js"));
 mount("/api/db/invoice-bind",  () => import("./api/db/invoice-bind.js"));
