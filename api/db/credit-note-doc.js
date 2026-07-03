@@ -40,6 +40,8 @@ export async function renderCreditNote(pool, cnNo, opts){
   var custPo = "", fsNo = "";
   try { var _or = await pool.query("SELECT customer_po, customer_po_no, raw->>'fs_no' AS fs_no FROM orders WHERE order_no=$1 LIMIT 1", [cn.order_no]); if(_or.rows && _or.rows[0]) { custPo = _or.rows[0].customer_po || _or.rows[0].customer_po_no || ""; fsNo = _or.rows[0].fs_no || ""; } } catch(e){}
   var contractDisplay = custPo || cn.contract_no || "";
+  var sellerSeal = "";
+  try { var _sq = await pool.query("SELECT url FROM customer_stamps WHERE company_code=$1 AND is_default=true AND is_active=true LIMIT 1", ["BABI"]); if (_sq.rows[0]) sellerSeal = _sq.rows[0].url || ""; } catch(e){}
   var curr = cn.currency || "CNY";
   var total = Number(cn.net_amount||0);
   var ap = opts.print;
@@ -129,7 +131,7 @@ export async function renderCreditNote(pool, cnNo, opts){
     </div>
     <div class="sig-row">
       <div class="sig-b">客户确认 / CUSTOMER<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span></div>
-      <div class="sig-b">我司签发 / ISSUED BY<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span></div>
+      <div class="sig-b" style="position:relative">我司签发 / ISSUED BY<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span>${sellerSeal?`<img src="${esc(sellerSeal)}" style="position:absolute;right:12%;top:-30px;width:88px;height:88px;object-fit:contain;opacity:.92">`:""}</div>
     </div>
     <div class="footer-slogan">Generated &amp; Verified by Sanlyn OS</div>
   </div></body></html>`;
