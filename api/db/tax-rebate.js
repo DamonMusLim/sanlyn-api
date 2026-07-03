@@ -6,6 +6,7 @@
 // PATCH /api/db/tax-rebate { customs_no, status } → 改退税状态
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { loadInvoiceGapByCustoms } from "./tax-rebate-invoice-gap.js";
 
 const REBATE_STATUSES = ["未退税", "待退税", "已申报", "已退税", "已到账"];
 
@@ -311,7 +312,7 @@ export default async function handler(req, res) {
     const ferRows = ferR.rows;
     if (!ferRows.length) {
       return res.json({ success: true, period: label, generated_at: new Date().toISOString(),
-        summary: { total_orders: 0, est_rebate: 0, materials_ok: 0, materials_missing: 0, materials_or_invoice_missing: 0 },
+        summary: { total_orders: 0, est_rebate: 0, materials_ok: 0, materials_missing: 0, materials_or_invoice_missing: 0, invoice_gap_total: 0 },
         orders: [] });
     }
 
@@ -367,6 +368,8 @@ export default async function handler(req, res) {
       }
     }
 
+    const invoiceGapByCustoms = await loadInvoiceGapByCustoms(pool, ferRows);
+
     let sumRebate = 0, okCount = 0, missCount = 0, invOkCount = 0;
     const rows = ferRows.map(r => {
       const invoiceNos = Array.isArray(r.invoice_nos) ? r.invoice_nos : [];
@@ -402,6 +405,12 @@ export default async function handler(req, res) {
       for (const c of ferContracts) addInputInvoices(inputInvByContract.get(c));
       const hasInputInv = inputInvoices.length > 0 || invByCustoms.has(r.customs_no) || ferContracts.some(c => invByContract.has(c));
       if (hasInputInv) invOkCount++;
+      const invoiceGap = invoiceGapByCustoms.get(r.customs_no) || {
+        invoice_due_amount: null,
+        invoice_received_amount: 0,
+        invoice_gap: null,
+        invoice_gap_factories: [],
+      };
       return {
         customs_no: r.customs_no,
         order_nos: r.order_nos || "—",
@@ -419,6 +428,10 @@ export default async function handler(req, res) {
         report_uploaded: reportUploaded,
         input_invoice_ok: hasInputInv,
         input_invoices: inputInvoices,
+        invoice_due_amount: invoiceGap.invoice_due_amount,
+        invoice_received_amount: invoiceGap.invoice_received_amount,
+        invoice_gap: invoiceGap.invoice_gap,
+        invoice_gap_factories: invoiceGap.invoice_gap_factories,
         doc_ref: matchedOrder ? {
           order_no: matchedOrder,
           name: declByOrder[matchedOrder]?.name || "",
@@ -441,6 +454,7 @@ export default async function handler(req, res) {
         input_inv_ok: invOkCount,
         input_inv_missing: rows.length - invOkCount,
         materials_or_invoice_missing: rows.filter(x => !x.report_uploaded || !x.input_invoice_ok).length,
+        invoice_gap_total: Math.round(rows.reduce((s, x) => s + (Number(x.invoice_gap) || 0), 0) * 100) / 100,
         note: "预估退税=税局接收金额×退税率。精确额待进项票匹配(P2)。",
       },
       orders: rows,
