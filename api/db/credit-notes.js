@@ -522,7 +522,6 @@ export default async function handler(req, res) {
       const _amt = Math.abs(Number(_cn.net_amount) || 0);
       const _meta = { cn_no:_cn.cn_no, reason:_reason, reason_label:_rl, amount:Number(_cn.net_amount)||0, currency:_cn.currency||'CNY', company:_cn.company_name, company_code:_cn.company_code, order_no:_cn.order_no, contract_no:_cn.contract_no, direction:_raw.direction||null };
       const _summary = '贷记单 ' + _cn.cn_no + ' · ' + (_cn.company_name||_cn.company_code||'') + ' 冲减 ' + _amt + ' ' + (_cn.currency||'CNY') + '｜事由:' + _rl + (_cn.order_no?('｜单:'+_cn.order_no):'') + '｜' + String(_cn.note||'').slice(0,220) + '｜教训:此类损失需追根因、纳入SOP防再犯。';
-      await pool.query("INSERT INTO business_events (event_type, subject_type, subject_id, source_table, source_record_id, idempotency_key, payload, occurred_at, created_at) VALUES ('credit_note.issued','credit_note',$1,'credit_notes',$1,$2,$3::jsonb,NOW(),NOW()) ON CONFLICT DO NOTHING", [_cn.cn_no, 'cn_issued_'+_cn.cn_no, JSON.stringify(_meta)]);
       await pool.query("INSERT INTO ai_memory_records (domain, entity_type, entity_id, summary, outcome, occurred_at, ingested_at, metadata) VALUES ('finance','credit_note',$1,$2,$3,NOW(),NOW(),$4::jsonb)", [_cn.cn_no, _summary, _cn.status||'draft', JSON.stringify(_meta)]);
     } catch (e) { console.error('[credit-notes] CN event/memory emit failed:', e.message); }
     return res.status(201).json({ success: true, data: created.rows[0] });
