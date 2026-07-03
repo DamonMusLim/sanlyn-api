@@ -131,6 +131,6 @@ export async function renderCreditNote(pool, cnNo, opts){
       <div class="sig-b">客户确认 / CUSTOMER<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span></div>
       <div class="sig-b">我司签发 / ISSUED BY<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span></div>
     </div>
-    <div class="footer-slogan">Generated &amp; Verified by Sanlyn OS · CREDIT NOTE ${esc(cn.cn_no)}</div>
+    <div class="footer-slogan">Generated &amp; Verified by Sanlyn OS</div>
   </div></body></html>`;
 }
