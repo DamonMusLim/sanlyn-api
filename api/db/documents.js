@@ -120,8 +120,8 @@ export default async function handler(req, res) {
         if(!_cr.rows.length) return res.status(404).send("Credit Note not found");
         var _cn=_cr.rows[0];
         var _items=Array.isArray(_cn.items)?_cn.items:(typeof _cn.items==="string"?(function(){try{return JSON.parse(_cn.items);}catch(e){return [];}})():[]);
-        var _po="";
-        try{var _o=await _pool.query("SELECT customer_po,customer_po_no FROM orders WHERE order_no=$1 LIMIT 1",[_cn.order_no]);if(_o.rows[0])_po=_o.rows[0].customer_po||_o.rows[0].customer_po_no||"";}catch(e){}
+        var _po="",_fs="";
+        try{var _o=await _pool.query("SELECT customer_po,customer_po_no,raw->>'fs_no' AS fs_no FROM orders WHERE order_no=$1 LIMIT 1",[_cn.order_no]);if(_o.rows[0]){_po=_o.rows[0].customer_po||_o.rows[0].customer_po_no||"";_fs=_o.rows[0].fs_no||"";}}catch(e){}
         var _addr="";
         try{var _c=await _pool.query("SELECT address FROM companies WHERE code=$1 LIMIT 1",[_cn.company_code]);if(_c.rows[0])_addr=_c.rows[0].address||"";}catch(e){}
         var ExcelJS=(await import("exceljs")).default;
@@ -134,8 +134,8 @@ export default async function handler(req, res) {
         ws.addRow(["收款方 TO:", _cn.company_name||""]);
         if(_addr) ws.addRow(["地址 Address:", _addr]);
         ws.addRow(["贷记单号 CN No.:", _cn.cn_no]);
-        ws.addRow(["订单号 Order:", _cn.order_no||""]);
-        ws.addRow(["合同号 Contract:", _po||_cn.contract_no||""]);
+        ws.addRow(["订单号 Order:", _po||_cn.order_no||""]);
+        ws.addRow(["合同号 Contract:", _fs||_cn.contract_no||""]);
         ws.addRow(["日期 Date:", (_cn.issued_date?String(_cn.issued_date).slice(0,10):"")]);
         ws.addRow([]);
         var hdr=ws.addRow(["NO.","货物 DESCRIPTION","数量 QTY","单位 UNIT","单价差 DIFF","贷记金额 AMOUNT"]);
