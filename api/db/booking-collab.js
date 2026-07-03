@@ -1006,7 +1006,13 @@ async function handleFactorySubmit(req, res, pool) {
   } else if (fScope && !factoryCargo) {
     // scope 厂没交明细也不能清掉别人的
   }
-  const myLabel = fScope ? fScope.label : "_single";
+  let myLabel = fScope ? fScope.label : "_single";
+  if (!fScope) {
+    // 无scope提交:单厂票归真实厂名,杜绝"_single"幽灵工厂(2026-07-03)
+    const { rows: facR } = await pool.query(
+      `SELECT DISTINCT factory FROM orders WHERE shipping_plan_id=$1 AND factory IS NOT NULL AND factory<>''`, [planId]);
+    if (facR.length === 1 && facR[0].factory) myLabel = facR[0].factory;
+  }
   const submitRec = JSON.stringify({ [myLabel]: {
     cargo_ready: cargo_ready_date || null, at: new Date().toISOString() } });
 
