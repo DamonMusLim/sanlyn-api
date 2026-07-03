@@ -1,5 +1,5 @@
 // credit-note-editor.js — 独立 CN 可编辑单据模版 (复用 export-docs 的印章/导出机制,数据源=credit_notes)
-var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='';
+var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='',_dlName='';
 function qp(n){return new URLSearchParams(location.search).get(n)||'';}
 function tok(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
 function authH(){var h={'Content-Type':'application/json'};var t=tok();if(t)h.Authorization='Bearer '+t;return h;}
@@ -87,7 +87,7 @@ function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;document.querySelector('.toolbar').style.display='none';
   var done=function(){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;};
   var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-  s.onload=function(){html2canvas(document.getElementById('pageCN'),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){var a=document.createElement('a');a.download='CN-'+(_cnNo||'draft')+'.png';a.href=c.toDataURL('image/png');a.click();done();}).catch(done);};
+  s.onload=function(){html2canvas(document.getElementById('pageCN'),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){var a=document.createElement('a');a.download=(_dlName||_cnNo||'CN')+'.png';a.href=c.toDataURL('image/png');a.click();done();}).catch(done);};
   if(window.html2canvas)s.onload();else document.head.appendChild(s);
 }
 
@@ -170,7 +170,8 @@ function init(){
     setT('cn-sellerAddr','4th Floor, 26-9# Huarong Road, Huli, Xiamen, China');
     setT('cn-buyerName',cn.company_name||'');
     setT('cn-buyerAddr',cn._buyer_addr||'');
-    setT('cn-no',cn.cn_no);
+    _dlName = cn._po ? ('CN-'+cn._po) : cn.cn_no;
+    setT('cn-no',_dlName);
     setT('cn-order',cn._po||cn.order_no||'');
     setT('cn-contract',cn._fs||cn.contract_no||'');
     setT('cn-date',cn._issued_display||(cn.issued_date||'').slice(0,10));

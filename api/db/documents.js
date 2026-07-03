@@ -77,6 +77,7 @@ export default async function handler(req, res) {
     }
   }
 
+  let _dlBase = null; // 自定义下载文件名(CN单据用 CN-{客户PO})
   // PDF 输出拦截(2026-06-28):后续各单据仍 return res.send(html),这里统一渲染成真 PDF。
   // 只处理 format=pdf 且 body 是 HTML;format=xlsx 和普通 HTML 不受影响。
   if ((Array.isArray(format) ? format : [format]).some(function(f){ return String(f).toLowerCase() === "pdf"; })) {
@@ -86,7 +87,7 @@ export default async function handler(req, res) {
         htmlToPdf(body)
           .then((pdf) => {
             res.setHeader("Content-Type", "application/pdf");
-            res.setHeader("Content-Disposition", 'attachment; filename="' + (type || "document") + "-" + (id || "") + '.pdf"');
+            res.setHeader("Content-Disposition", 'attachment; filename="' + (_dlBase || ((type || "document") + "-" + (id || ""))) + '.pdf"');
             origSend(pdf);
           })
           .catch((e) => { console.error("[pdf]", e.message); origSend(body); });
@@ -112,6 +113,7 @@ export default async function handler(req, res) {
   }
   // 贷记通知单 Credit Note → 独立模块渲染(读 credit_notes)
   if(type==="cn"){
+    try{ const _pq = await getPool().query("SELECT o.customer_po, o.customer_po_no FROM credit_notes c LEFT JOIN orders o ON o.order_no=c.order_no WHERE c.cn_no=$1 OR c.id::text=$1 LIMIT 1", [id]); const _pr=_pq.rows[0]; const _ppo=_pr && (_pr.customer_po || _pr.customer_po_no); _dlBase = _ppo ? ('CN-'+_ppo) : String(id||''); }catch(e){ _dlBase = String(id||''); }
     var _cnXlsx = (Array.isArray(format)?format:[format]).some(function(f){return String(f).toLowerCase()==="xlsx";});
     if(_cnXlsx){
       try{
@@ -150,7 +152,7 @@ export default async function handler(req, res) {
         if(_cn.note){ws.addRow([]);ws.addRow(["备注 Remarks:", _cn.note]);}
         var buf=await wb.xlsx.writeBuffer();
         res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        res.setHeader("Content-Disposition",'attachment; filename="CN-'+String(_cn.cn_no).replace(/[^A-Za-z0-9._-]/g,"_")+'.xlsx"');
+        res.setHeader("Content-Disposition",'attachment; filename="'+String(_dlBase||("CN-"+_cn.cn_no)).replace(/[^A-Za-z0-9._-]/g,"_")+'.xlsx"');
         return res.send(Buffer.from(buf));
       }catch(e){
         console.error("[documents] cn xlsx error:", e.message);

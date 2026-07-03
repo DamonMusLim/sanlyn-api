@@ -102,7 +102,7 @@ export async function renderCreditNote(pool, cnNo, opts){
       <div>
         <div class="section-label">单据详情 / DETAILS</div>
         <ul class="meta-list">
-          <li><b>贷记单号 CN No.:</b>${esc(cn.cn_no)}</li>
+          <li><b>贷记单号 CN No.:</b>${esc(custPo ? ('CN-'+custPo) : cn.cn_no)}</li>
           ${contractDisplay?`<li><b>订单号 Order No.:</b>${esc(contractDisplay)}</li>`:""}
           ${fsNo?`<li><b>合同号 Contract:</b>${esc(fsNo)}</li>`:""}
           ${cn.invoice_no?`<li><b>关联发票 Invoice:</b>${esc(cn.invoice_no)}</li>`:""}
