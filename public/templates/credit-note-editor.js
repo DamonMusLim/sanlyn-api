@@ -1,5 +1,6 @@
 // credit-note-editor.js — 独立 CN 可编辑单据模版 (复用 export-docs 的印章/导出机制,数据源=credit_notes)
-var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='',_dlName='',_sellerCode='BABI',_buyerCode='';
+var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='',_dlName='',_sellerCode='BABI',_buyerCode='',_sellerSealName='',_sellerSealId=null;
+function updateSealStatus(){var el=document.getElementById('sealStatus');if(!el)return;if(_sellerSealName){el.textContent='卖方章: '+_sellerSealName+' 🔒';el.style.background='#fef2f2';el.style.borderColor='#fecaca';el.style.color='#b91c1c';}else{el.textContent='卖方章: 未设置';el.style.background='#f1f5f9';el.style.borderColor='#cbd5e1';el.style.color='#334155';}}
 function qp(n){return new URLSearchParams(location.search).get(n)||'';}
 function tok(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
 function authH(){var h={'Content-Type':'application/json'};var t=tok();if(t)h.Authorization='Bearer '+t;return h;}
@@ -145,10 +146,30 @@ function loadDasStamps(){
     var stamps=Array.isArray(d)?d:(d.stamps||d.data||[]);
     if(!stamps.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">DAS暂无印章</div>';return;}
     _stamps=stamps;
-    g.innerHTML=stamps.map(function(s,i){return '<div onclick="selStamp('+i+')" style="border:2px solid #e2e8f0;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><img src="'+esc(s.url)+'" style="width:64px;height:64px;object-fit:contain" onerror="this.style.opacity=0.3"><div style="font-size:11px;color:#475569;margin-top:4px">'+esc(s.name||'印章')+'</div></div>';}).join('');
+    var forSeller=!(_sealTarget&&_sealTarget.indexOf('buyer')>=0);
+    g.innerHTML=stamps.map(function(s,i){
+      var isDef=!!s.is_default;
+      return '<div style="border:2px solid '+(isDef?'#dc2626':'#e2e8f0')+';border-radius:10px;padding:10px;text-align:center;position:relative">'
+        +(isDef?'<div style="position:absolute;top:5px;right:7px;font-size:10px;color:#dc2626;font-weight:800">🔒 锁定</div>':'')
+        +'<img onclick="selStamp('+i+')" src="'+esc(s.url)+'" style="width:64px;height:64px;object-fit:contain;cursor:pointer" title="点击盖章" onerror="this.style.opacity=0.3">'
+        +'<div style="font-size:11px;color:#475569;margin-top:4px">'+esc(s.name||'印章')+'</div>'
+        +((forSeller&&!isDef)?'<button onclick="setDefaultStamp('+s.id+')" style="margin-top:6px;font-size:10px;padding:3px 8px;border:1px solid #dc2626;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;font-weight:700">设为默认 🔒</button>':'')
+        +'</div>';
+    }).join('');
   }).catch(function(){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">加载失败</div>';});
 }
 function selStamp(i){applySeal(_sealTarget,_stamps[i].url,_stamps[i].name);closeModal();}
+function setDefaultStamp(id){
+  fetch(API+'/api/db/customer-stamps',{method:'PATCH',headers:authH(),body:JSON.stringify({id:id,set_default:true})})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.success){
+        var s=_stamps.filter(function(x){return x.id===id;})[0];
+        if(s){_sellerSealName=s.name||'';_sellerSealId=s.id;applySeal('cn:seller',s.url,s.name);updateSealStatus();}
+        loadDasStamps();
+        banner('info','✓ 已锁定为该公司默认章,以后自动盖');setTimeout(function(){banner('','');},2000);
+      } else banner('err',d.error||'设置失败');
+    }).catch(function(e){banner('err',e.message);});
+}
 function onFileChosen(e){
   var file=e.target.files[0];if(!file)return;_pendingFile=file;
   var r=new FileReader();r.onload=function(ev){document.getElementById('uploadPreview').src=ev.target.result;document.getElementById('uploadPreview').style.display='block';document.getElementById('uploadPlaceholder').style.display='none';};r.readAsDataURL(file);
@@ -183,10 +204,13 @@ function init(){
     if(!items.length)items=[{}];
     renderItems(items);
     _sellerCode = cn._seller_code || 'BABI'; _buyerCode = cn.company_code || '';
-    if(cn._seller_seal && !localStorage.getItem(sealKey('cn:seller'))) applySeal('cn:seller', cn._seller_seal, '公司锁定章');
+    _sellerSealName = cn._seller_seal_name || ''; _sellerSealId = cn._seller_seal_id || null;
+    if(cn._seller_seal) applySeal('cn:seller', cn._seller_seal, _sellerSealName||'公司锁定章');
+    updateSealStatus();
     applyDraft();
     banner('','');
   }).catch(function(e){banner('err',e.message);});
-  ['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey('cn:'+w))||'null');if(s&&s.url)applySeal('cn:'+w,s.url,s.name);}catch(e){}});
+  // 卖方章始终=公司锁定默认章(在loadCN里盖),不从localStorage恢复;只买方章可本地留存
+  ['buyer'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey('cn:'+w))||'null');if(s&&s.url)applySeal('cn:'+w,s.url,s.name);}catch(e){}});
 }
 init();
