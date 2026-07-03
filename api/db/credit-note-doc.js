@@ -68,11 +68,14 @@ export async function renderCreditNote(pool, cnNo, opts){
 
   var rows = items.map(function(it,i){
     var no = it.no!=null?it.no:(i+1);
-    var prod = it.product_en ? (esc(it.product)+(it.product_en?` <span style="color:#777">/ ${esc(it.product_en)}</span>`:"")) : esc(it.product||"-");
-    var diff = it.unit_price_diff!=null ? fmtM(it.unit_price_diff) : "—";
+    var prodName = it.product||it.desc||it.product_name||it.name||"-";
+    var prod = it.product_en ? (esc(prodName)+` <span style="color:#777">/ ${esc(it.product_en)}</span>`) : esc(prodName);
+    var pdiffVal = it.unit_price_diff!=null ? it.unit_price_diff : (it.price_diff!=null ? it.price_diff : null);
+    var diff = pdiffVal!=null ? fmtM(pdiffVal) : "—";
+    var unitStr = it.unit||it.qty_unit||"-";
     var qty = it.qty!=null ? it.qty : "—";
     return `<tr><td>${String(no).padStart(2,"0")}</td><td>${prod}${it.note?`<div style="color:#777;font-size:9.5px;margin-top:2px">${esc(it.note)}</div>`:""}</td>`
-      +`<td class="tc">${qty}</td><td class="tc">${esc(it.unit||"-")}</td><td class="tr">${diff}</td>`
+      +`<td class="tc">${qty}</td><td class="tc">${esc(unitStr)}</td><td class="tr">${diff}</td>`
       +`<td class="tr">${fmtM(it.amount)}</td></tr>`;
   }).join("") || `<tr><td colspan="6" style="text-align:center;color:#ccc;font-style:italic;padding:20px">— 无明细 —</td></tr>`;
 
