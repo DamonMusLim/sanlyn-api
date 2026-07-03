@@ -138,6 +138,8 @@ function detailRows(all,ctnMap){
 var _customsMode=(qp("mode")!=="detail"); // 默认海关单行（正版）; mode=detail→逐SKU明细
 var _langEn=(qp('lang')==='en'); // lang=en → 全英文版:品名=报关英文名
 function dispName(r){if(!_langEn)return {name:r.name,miss:false};var n=r.nameEn||'';return n?{name:n,miss:false}:{name:'⚠ EN NAME MISSING',miss:true};}
+function enUnit(u){if(!_langEn)return u;var m={'组':'SET','套':'SET','个':'PCS','件':'PCS','只':'PCS','条':'PCS','箱':'CTN'};return m[String(u||'').trim()]||u;}
+function enSize(s){if(!_langEn)return s;return String(s||'').replace(/层/g,'-LAYER').replace(/米/g,'M');}
 function descCell(name,size,miss){return '<span class="desc-name ed"'+(miss?' style="color:#dc2626"':'')+' contenteditable>'+esc(name)+'</span>'+(size?'<span class="desc-size ed" contenteditable>'+esc(size)+'</span>':'');}
 function setPLHeader(detail){
   var tb=document.querySelector('#pagePL table thead tr');if(!tb)return;
@@ -150,7 +152,7 @@ function renderPL(agg,rows){
   var body='';
   if(_customsMode){
     setPLHeader(false);
-    (agg.rows||[]).forEach(function(r,i){var dn=dispName(r);body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(dn.name,r.size,dn.miss)+'</td><td>'+qtyUnit(r.qty,'CTN')+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';});
+    (agg.rows||[]).forEach(function(r,i){var dn=dispName(r);body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(dn.name,enSize(r.size),dn.miss)+'</td><td>'+qtyUnit(r.qty,'CTN')+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';});
   }else{
     setPLHeader(true);
     var idx=0;
@@ -160,7 +162,7 @@ function renderPL(agg,rows){
       }else{
         idx++;
         var dn=dispName(r);
-        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="c">'+esc(r.barcode)+'</td><td class="l">'+descCell(dn.name,r.size,dn.miss)+'</td><td>'+qtyUnit(r.qty,r.unit)+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
+        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="c">'+esc(r.barcode)+'</td><td class="l">'+descCell(dn.name,enSize(r.size),dn.miss)+'</td><td>'+qtyUnit(r.qty,enUnit(r.unit))+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
       }
     });
   }
@@ -172,7 +174,7 @@ function renderPL(agg,rows){
 function renderPriced(pfx,agg,rows,cur){
   var body='';
   if(_customsMode){
-    (agg.rows||[]).forEach(function(r,i){var dn=dispName(r);body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(dn.name,r.size,dn.miss)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
+    (agg.rows||[]).forEach(function(r,i){var dn=dispName(r);body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(dn.name,enSize(r.size),dn.miss)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
   }else{
     var idx=0;
     rows.forEach(function(r){
@@ -181,7 +183,7 @@ function renderPriced(pfx,agg,rows,cur){
       }else{
         idx++;
         var dn=dispName(r);
-        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(dn.name,r.size,dn.miss)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';
+        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(dn.name,enSize(r.size),dn.miss)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';
       }
     });
   }
