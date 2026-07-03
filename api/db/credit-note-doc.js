@@ -35,6 +35,8 @@ export async function renderCreditNote(pool, cnNo, opts){
   // issuer. Seller = issuing company: prefer raw.issuing_company, else default.
   var _issuer = (cn.raw && (cn.raw.issuing_company||cn.raw.issuingCompany)) || null;
   var cfg = await loadSeller(pool, _issuer);
+  var buyer = {};
+  try { var _br = await pool.query("SELECT address FROM companies WHERE code=$1 LIMIT 1", [cn.company_code]); buyer = (_br.rows && _br.rows[0]) || {}; } catch(e){}
   var curr = cn.currency || "CNY";
   var total = Number(cn.net_amount||0);
   var ap = opts.print;
@@ -84,14 +86,15 @@ export async function renderCreditNote(pool, cnNo, opts){
       <div class="seller-info">
         <div class="seller-name">${esc(cfg.nameEN)}</div>
         <div class="seller-sub">${esc(cfg.address)}</div>
-        <div class="seller-sub">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</div>
+        ${(cfg.tel||cfg.email)?`<div class="seller-sub">${cfg.tel?`Tel: ${esc(cfg.tel)}`:""}${cfg.tel&&cfg.email?" | ":""}${cfg.email?`Email: ${esc(cfg.email)}`:""}</div>`:""}
       </div>
       <div class="doc-type"><h1>贷记通知单</h1><p>CREDIT NOTE</p></div>
     </div>
     <div class="meta-grid">
       <div>
         <div class="section-label">收款方 / TO</div>
-        <p style="font-size:13px;font-weight:700;margin:0 0 5px 0">${esc(cn.company_name||"")}</p>
+        <p style="font-size:13px;font-weight:700;margin:0 0 4px 0">${esc(cn.company_name||"")}</p>
+        ${buyer.address?`<p style="font-size:10px;color:#555;margin:0;line-height:1.5">${esc(buyer.address)}</p>`:""}
       </div>
       <div>
         <div class="section-label">单据详情 / DETAILS</div>
@@ -101,7 +104,6 @@ export async function renderCreditNote(pool, cnNo, opts){
           ${cn.contract_no?`<li><b>合同号 Contract:</b>${esc(cn.contract_no)}</li>`:""}
           ${cn.invoice_no?`<li><b>关联发票 Invoice:</b>${esc(cn.invoice_no)}</li>`:""}
           <li><b>日期 Date:</b>${fmtD(cn.issued_date||cn.created_at)}</li>
-          <li><b>币种 Currency:</b>${esc(curr)}</li>
         </ul>
       </div>
     </div>
