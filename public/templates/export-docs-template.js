@@ -35,6 +35,8 @@ function firstText(v){
 function declName(p){return p.declarationName||p.declaration_name||p.blDescription||p.bl_description||'宠物食品';}
 function lineItems(o){return (o&&o._lineItems)||[];}
 function qty(p){return Number(p.qty_ctn||p.qty||0)||0;}
+function unitOf(p){return p.unit||p.unitOfMeasure||'CTN';}
+function qtyUnit(q,u){return String(Math.round(Number(q)||0))+(u||'CTN');}
 function nwCtn(p){return Number(p.nw_ctn||p.netWeight||p.net_weight||0)||0;}
 function gwCtn(p){return Number(p.gw_ctn||p.grossWeight||p.gross_weight||0)||0;}
 function cbmCtn(p){return Number(p.cbm_ctn||p.cbm||p.cbmPerCtn||p.cbm_per_ctn||0)||0;}
@@ -116,7 +118,7 @@ function detailRows(all,ctnMap){
     if(!g.terms)g.terms=orderTerms(o);
     var itemRows=lineItems(o).filter(hasProd).map(function(p){
       var q=qty(p),rn=nwCtn(p)*q,rg=gwCtn(p)*q,rc=cbmCtn(p)*q;
-      return {code:codeOf(p),barcode:barcodeOf(p),name:pName(p),size:p.size||'',qty:q,nw:rn,gw:rg,cbm:rc,up:unitPrice(p),amt:amount(p)};
+      return {code:codeOf(p),barcode:barcodeOf(p),name:pName(p),size:p.size||'',qty:q,unit:unitOf(p),nw:rn,gw:rg,cbm:rc,up:unitPrice(p),amt:amount(p)};
     });
     if(itemRows.length)g.orders.push(o);else g.emptyOrders.push(o);
     itemRows.forEach(function(r){g.items.push(r);});
@@ -135,7 +137,7 @@ function descCell(name,size){return '<span class="desc-name ed" contenteditable>
 function setPLHeader(detail){
   var tb=document.querySelector('#pagePL table thead tr');if(!tb)return;
   tb.innerHTML=detail
-    ? '<th class="c" style="width:36px">NO.</th><th style="width:70px">CODE</th><th style="width:110px">BARCODE</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:70px">QTY (CTN)</th><th style="width:85px">N.W. (KG)</th><th style="width:85px">G.W. (KG)</th><th style="width:75px">CBM (M³)</th>'
+    ? '<th class="c" style="width:36px">NO.</th><th style="width:120px">BARCODE</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:75px">QTY</th><th style="width:85px">N.W. (KG)</th><th style="width:85px">G.W. (KG)</th><th style="width:75px">CBM (M³)</th>'
     : '<th class="c" style="width:36px">NO.</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:80px">QTY (CTN)</th><th style="width:100px">N.W. (KG)</th><th style="width:100px">G.W. (KG)</th><th style="width:90px">CBM (M³)</th>';
 }
 
@@ -143,22 +145,22 @@ function renderPL(agg,rows){
   var body='';
   if(_customsMode){
     setPLHeader(false);
-    (agg.rows||[]).forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';});
+    (agg.rows||[]).forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+qtyUnit(r.qty,'CTN')+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';});
   }else{
     setPLHeader(true);
     var idx=0;
     rows.forEach(function(r){
       if(r.isHeader){
-        body+='<tr class="group-header"><td colspan="8" style="text-align:left">'+esc(r.label)+'</td></tr>';
+        body+='<tr class="group-header"><td colspan="7" style="text-align:left">'+esc(r.label)+'</td></tr>';
       }else{
         idx++;
-        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="c">'+esc(r.code)+'</td><td class="c">'+esc(r.barcode)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
+        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="c">'+esc(r.barcode)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+qtyUnit(r.qty,r.unit)+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
       }
     });
   }
   body+=_customsMode
-    ? '<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+'</td><td>'+fmt(agg.nw)+'</td><td>'+fmt(agg.gw)+'</td><td>'+fmt(agg.cbm,3)+'</td></tr>'
-    : '<tr class="grand"><td></td><td></td><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+'</td><td>'+fmt(agg.nw)+'</td><td>'+fmt(agg.gw)+'</td><td>'+fmt(agg.cbm,3)+'</td></tr>';
+    ? '<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+qtyUnit(agg.qty,'CTN')+'</td><td>'+fmt(agg.nw)+'</td><td>'+fmt(agg.gw)+'</td><td>'+fmt(agg.cbm,3)+'</td></tr>'
+    : '<tr class="grand"><td></td><td></td><td class="l">GRAND TOTAL:</td><td>'+qtyUnit(agg.qty,'CTN')+'</td><td>'+fmt(agg.nw)+'</td><td>'+fmt(agg.gw)+'</td><td>'+fmt(agg.cbm,3)+'</td></tr>';
   document.getElementById('pl-body').innerHTML=body;
 }
 function renderPriced(pfx,agg,rows,cur){

@@ -599,6 +599,8 @@ export default async function handler(req, res) {
         function _lineRaw(li){ var r=li&&li.raw; if(typeof r==="string")try{return JSON.parse(r)||{};}catch(e){return{};} return (r&&typeof r==="object")?r:{}; }
         function _cp(li){ var r=_lineRaw(li); return pick(li.cp_code,li.sku,li.code,li.item_code,r.cp_code,r.sku,r.code,r.item_code,""); }
         function _plBarcode(li){ var r=_lineRaw(li), sku=_cp(li); return pick(li.barcode,li.bar_code,r.barcode,r.bar_code,li.product_barcode,li.product_factory_code,sku,""); }
+        function _unit(li){ var r=_lineRaw(li); return pick(li.unit,r.unit,li.unitOfMeasure,r.unitOfMeasure,"CTN"); }
+        function _qtyUnit(q,u){ return String(_qty(q))+(u||"CTN"); }
         function _decl(li){ var r=_lineRaw(li); return pick(li.declaration_name,li.declarationName,r.declaration_name,r.declarationName,r.blDescription,r.bl_description,"宠物食品"); }
         function _pname(li){ var r=_lineRaw(li); return pick(li.product_name,li.productName,r.productName,r.product_name,li.blDescription,li.bl_description,r.blDescription,r.bl_description,li.name_en,r.name_en,li.sku,r.sku,""); }
         function _size(li){ var r=_lineRaw(li); return pick(li.size,li.spec,r.size,r.spec,""); }
@@ -616,7 +618,7 @@ export default async function handler(req, res) {
           var up=_n(li.unit_price||li.unitPrice), amt=_n(li.subtotal); if(!amt) amt=q*up;
           var name=_pname(li)||_cp(li)||"-", sz=_size(li); if(sz) name += " ("+sz+")";
           var cp=_cp(li);
-          return {cp:cp,code:cp,barcode:_plBarcode(li),name:name,qty:q,nw:nw,gw:gw,cbm:cbm,price:up,amt:amt};
+          return {cp:cp,code:cp,barcode:_plBarcode(li),name:name,qty:q,unit:_unit(li),nw:nw,gw:gw,cbm:cbm,price:up,amt:amt};
         }
         function _tot(rows){ return (rows||[]).reduce(function(t,r){ t.qty+=_n(r.qty);t.nw+=_n(r.nw);t.gw+=_n(r.gw);t.cbm+=_n(r.cbm);t.amt+=_n(r.amt);return t; },{qty:0,nw:0,gw:0,cbm:0,amt:0}); }
         function _aggregate(lines){
@@ -716,9 +718,9 @@ export default async function handler(req, res) {
         function _cbm(v){ return parseFloat((_n(v)).toFixed(3))||0; }
         var common={buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:packCurr,pol:pol,pod:pod,incoterm:inco,poNo:(orderNoText||ordNo),seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email}};
         var pricedKeys=[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"price",fn:function(p){return _money(p.price);}},{k:"amt",fn:function(p){return _money(p.amt);}}];
-        var plHeaders=_customsMode?["NO.","CP Code","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"]:["NO.","CODE","BARCODE","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"];
-        var plColKeys=_customsMode?[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}]:[{k:"code"},{k:"barcode"},{k:"name"},{k:"qty",fn:function(p){return _qty(p.qty);}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}];
-        var plTotals=_customsMode?["","","GRAND TOTAL:",_qty(total.qty),_money(total.nw),_money(total.gw),_cbm(total.cbm)]:["","","","GRAND TOTAL:",_qty(total.qty),_money(total.nw),_money(total.gw),_cbm(total.cbm)];
+        var plHeaders=_customsMode?["NO.","CP Code","Description & Size","QTY","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"]:["NO.","BARCODE","Description & Size","QTY","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"];
+        var plColKeys=_customsMode?[{k:"cp"},{k:"name"},{k:"qty",fn:function(p){return _qtyUnit(p.qty,"CTN");}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}]:[{k:"barcode"},{k:"name"},{k:"qty",fn:function(p){return _qtyUnit(p.qty,p.unit||"CTN");}},{k:"nw",fn:function(p){return _money(p.nw);}},{k:"gw",fn:function(p){return _money(p.gw);}},{k:"cbm",fn:function(p){return _cbm(p.cbm);}}];
+        var plTotals=_customsMode?["","","GRAND TOTAL:",_qtyUnit(total.qty,"CTN"),_money(total.nw),_money(total.gw),_cbm(total.cbm)]:["","","GRAND TOTAL:",_qtyUnit(total.qty,"CTN"),_money(total.nw),_money(total.gw),_cbm(total.cbm)];
         return {docNo:baseNo+"_PACK",sheets:[
           Object.assign({},common,{sheetName:"Packing List",docNo:fsNo,noLabel:"No.:",hideCurrency:true,incoterm:"",headers:plHeaders,colKeys:plColKeys,rows:rows,totals:plTotals}),
           Object.assign({},common,{sheetName:"Sales Contract",docNo:fsNo,noLabel:"No.:",terms:cfg.terms.sc,bank:cfg.bank,headers:["NO.","CP Code","Description & Size","CTN","Unit Price ("+packCurr+")","Amount ("+packCurr+")"],colKeys:pricedKeys,rows:rows,totals:["","","GRAND TOTAL:",_qty(total.qty),"",_money(total.amt)]}),
@@ -935,12 +937,14 @@ export default async function handler(req, res) {
                     if(!amt && qty) amt = qty * up;
                     return {qty:qty, price:up, amt:amt};
                   }
+                  function v2UnitOf(p){ return p.unit||p.unitOfMeasure||"CTN"; }
+                  function v2QtyUnit(q,u){ return String(Math.round(Number(q)||0))+(u||"CTN"); }
 
                   var _v2PLFnMap = {
                     sku:{fn:function(p){return p.sku||p.code||p.item_code||p.product_code||"-";},defaultAlign:"center",defaultWidth:"70px"},
                     name:{fn:function(p){return v2NameOf(p);},defaultAlign:""},
-                    qty:{fn:function(p){return fmtM(Number(p.qty||0),0);},defaultAlign:"center",defaultWidth:"70px"},
-                    unit:{fn:function(p){return p.unit||p.unitOfMeasure||"CTN";},defaultAlign:"center",defaultWidth:"50px"},
+                    qty:{fn:function(p){return v2QtyUnit(p.qty,audience==="customs"?"CTN":v2UnitOf(p));},defaultAlign:"center",defaultWidth:"70px"},
+                    unit:{fn:v2UnitOf,defaultAlign:"center",defaultWidth:"50px"},
                     nw:{fn:function(p){return fmtM(v2PLMetrics(p).nw);},defaultAlign:"right",defaultWidth:"85px"},
                     gw:{fn:function(p){return fmtM(v2PLMetrics(p).gw);},defaultAlign:"right",defaultWidth:"85px"},
                     cbm:{fn:function(p){return fmtM(v2PLMetrics(p).cbm,3);},defaultAlign:"right",defaultWidth:"80px"},
@@ -1120,8 +1124,8 @@ export default async function handler(req, res) {
                         rows += v2DataRow(seq, cols, p, {
                           sku: p.sku||p.code||p.item_code||p.product_code||"-",
                           name: v2NameOf(p),
-                          qty: fmtM(m.qty,0),
-                          unit: p.unit||p.unitOfMeasure||"CTN",
+                          qty: v2QtyUnit(m.qty,audience==="customs"?"CTN":v2UnitOf(p)),
+                          unit: v2UnitOf(p),
                           nw: fmtM(m.nw),
                           gw: fmtM(m.gw),
                           cbm: fmtM(m.cbm,3)
@@ -1129,7 +1133,7 @@ export default async function handler(req, res) {
                       });
                       if(showSubsec){
                         rows += v2SummaryRow("v2-subtotal", "Sub-Total ("+stripPrefix(g.customerPO||g.contractNo)+"):", cols, {
-                          qty: fmtM(subQty,0),
+                          qty: v2QtyUnit(subQty,"CTN"),
                           nw: fmtM(subNW),
                           gw: fmtM(subGW),
                           cbm: fmtM(subCBM,3)
@@ -1143,7 +1147,7 @@ export default async function handler(req, res) {
                     var totGW = Number(o.gross_weight)||grandGW;
                     var totCBM = Number(o.total_cbm)||grandCBM;
                     rows += v2SummaryRow("v2-total", "GRAND TOTAL:", cols, {
-                      qty: fmtM(totQty,0),
+                      qty: v2QtyUnit(totQty,"CTN"),
                       nw: fmtM(totNW),
                       gw: fmtM(totGW),
                       cbm: fmtM(totCBM,3)
@@ -1375,13 +1379,15 @@ export default async function handler(req, res) {
 	        }
 	        function _plSkuOf(p){ return p.sku||p.code||p.item_code||p.product_code||"-"; }
 	        function _plBarcodeOf(p){ var sku=_plSkuOf(p), m=_plMaster[sku]||{}; return pick(p.barcode,p.bar_code,m.barcode,m.factory_code,sku,""); }
+	        function _plUnitOf(p){ return p.unit||p.unitOfMeasure||"CTN"; }
+	        function _plQtyUnit(q,u){ return String(Math.round(Number(q)||0))+(u||"CTN"); }
 	        var _plFnMap={
 	          sku:{fn:function(p){return _plSkuOf(p);},defaultAlign:"center",defaultWidth:"70px"},
 	          code:{fn:function(p){return _plSkuOf(p);},defaultAlign:"center",defaultWidth:"70px"},
 	          barcode:{fn:function(p){return _plBarcodeOf(p);},defaultAlign:"center",defaultWidth:"110px"},
 	          name:{fn:function(p){var n=pick(p.productName,p.name,p.description,"-");var sz=p.size||p.spec||"";return sz?n+" ("+sz+")":n;},defaultAlign:""},
-          qty:{defaultAlign:"center",defaultWidth:"55px"},
-          unit:{fn:function(p){return p.unit||p.unitOfMeasure||"CTN";},defaultAlign:"center",defaultWidth:"50px"},
+          qty:{fn:function(p){return _plQtyUnit(p.qty,audience==="customs"?"CTN":_plUnitOf(p));},defaultAlign:"center",defaultWidth:"55px"},
+          unit:{fn:_plUnitOf,defaultAlign:"center",defaultWidth:"50px"},
           nw:{fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return fmtM(audience==='customs'?pn:(pn*q||pn));},defaultAlign:"right",defaultWidth:"80px"},
           gw:{fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return fmtM(audience==='customs'?pg:(pg*q||pg));},defaultAlign:"right",defaultWidth:"80px"},
           cbm:{fn:function(p){return fmtM(cbmOf(p),3);},defaultAlign:"right",defaultWidth:"70px"},
@@ -1395,10 +1401,9 @@ export default async function handler(req, res) {
 	          {k:"gw",al:"right",w:"80px",fn:_plFnMap.gw.fn,lbl:"TOTAL GW (KG)"},
 	          {k:"cbm",al:"right",w:"70px",fn:_plFnMap.cbm.fn,lbl:"CBM (CU.M.)"},
 	        ]:[
-	          {k:"code",al:"center",w:"70px",fn:_plFnMap.code.fn,lbl:"CODE"},
-	          {k:"barcode",al:"center",w:"110px",fn:_plFnMap.barcode.fn,lbl:"BARCODE"},
+	          {k:"barcode",al:"center",w:"120px",fn:_plFnMap.barcode.fn,lbl:"BARCODE"},
 	          {k:"name",al:"",fn:_plFnMap.name.fn,lbl:"Description &amp; Size"},
-	          {k:"qty",al:"center",w:"70px",lbl:"QTY (CTN)"},
+	          {k:"qty",al:"center",w:"75px",fn:_plFnMap.qty.fn,lbl:"QTY"},
 	          {k:"nw",al:"right",w:"85px",fn:_plFnMap.nw.fn,lbl:"N.W. (KG)"},
 	          {k:"gw",al:"right",w:"85px",fn:_plFnMap.gw.fn,lbl:"G.W. (KG)"},
 	          {k:"cbm",al:"right",w:"75px",fn:_plFnMap.cbm.fn,lbl:"CBM (M³)"},
@@ -1413,7 +1418,7 @@ export default async function handler(req, res) {
           ${buyerBlock(cust,caddr,ctel,noPL,"Contract No.",ordNo,date,"")}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
 	          <tbody>${productRows(prods,colsPL,curr)}
-	          ${audience==="customs"?`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td></td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>`:`<tr class="total-row"><td colspan="4" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${fmtM(tqty,0)}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>`}
+	          ${audience==="customs"?`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${_plQtyUnit(tqty,"CTN")}</td><td></td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>`:`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${_plQtyUnit(tqty,"CTN")}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>`}
 	          </tbody></table>${sigBlock(cfg.seal_url)}`; html=wrap((ordNo||noPL)+"_PL",_packBodies.pl,ap,{docNo:_fsNoPL,date:date});
 
       if(_PACK){
@@ -1433,14 +1438,14 @@ export default async function handler(req, res) {
       }
 	        var _plDetailXlsx=(audience!=="customs");
 	        _xlsCapture={sheetName:"Packing List",docNo:(ordNo||noPL)+"_PL",buyer:cust,buyerAddr:caddr,date:date,cno:cno,curr:"",pol:pol,pod:pod,incoterm:inco,poNo:ordNo,seller:{nameEN:cfg.nameEN,address:cfg.address,tel:cfg.tel,email:cfg.email},
-	          headers:_plDetailXlsx?["NO.","CODE","BARCODE","Description & Size","CTN","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"]:["NO.","CP Code","Description & Size","CTN","Unit","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],
-	          colKeys:(_plDetailXlsx?[{k:"code",fn:function(p){return _plSkuOf(p);}},{k:"barcode",fn:function(p){return _plBarcodeOf(p);}}]:[{k:"sku",fn:function(p){return _plSkuOf(p);}}]).concat([{k:"name",fn:function(p){
+	          headers:_plDetailXlsx?["NO.","BARCODE","Description & Size","QTY","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"]:["NO.","CP Code","Description & Size","QTY","Unit","TOTAL NW (KG)","TOTAL GW (KG)","CBM (CU.M.)"],
+	          colKeys:(_plDetailXlsx?[{k:"barcode",fn:function(p){return _plBarcodeOf(p);}}]:[{k:"sku",fn:function(p){return _plSkuOf(p);}}]).concat([{k:"name",fn:function(p){
 	            // PL Excel — same rule: always real product name (see colsPL above)
 	            var n = pick(p.productName, p.name, p.description, "-");
 	            var sz = p.size || p.spec || "";
 	            return sz ? n + " (" + sz + ")" : n;
-	          }},{k:"qty",fn:function(p){return Number(p.qty)||0;}}]).concat(_plDetailXlsx?[]:[{k:"unit",fn:function(p){return p.unit||p.unitOfMeasure||"CTN";}}]).concat([{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}]),
-	          rows:prods,totals:_plDetailXlsx?["","","","TOTAL",tqty,parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]:["","","TOTAL",tqty,"",parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
+	          }},{k:"qty",fn:function(p){return _plQtyUnit(p.qty,_plDetailXlsx?_plUnitOf(p):"CTN");}}]).concat(_plDetailXlsx?[]:[{k:"unit",fn:function(p){return p.unit||p.unitOfMeasure||"CTN";}}]).concat([{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}]),
+	          rows:prods,totals:_plDetailXlsx?["","","GRAND TOTAL:",_plQtyUnit(tqty,"CTN"),parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]:["","","GRAND TOTAL:",_plQtyUnit(tqty,"CTN"),"",parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
         if(_PACK && format==="xlsx"){
           _xlsCapture=await _buildPackXlsCaptureFromOLI();
         }
@@ -2336,7 +2341,7 @@ export default async function handler(req, res) {
             }
             rowNum++;
             var cells=[String(rowNum).padStart(2,"0")];
-	            cap.colKeys.forEach(function(k){ var v=k.fn?k.fn(p):(p[k.k]||""); var n=parseFloat(String(v).replace(/,/g,"")); cells.push((k.k==="barcode"||k.k==="code")?String(v||""):(isNaN(n)?v:n)); });
+	            cap.colKeys.forEach(function(k){ var v=k.fn?k.fn(p):(p[k.k]||""); var s=String(v).replace(/,/g,""); var n=/^-?\d+(\.\d+)?$/.test(s)?parseFloat(s):NaN; cells.push((k.k==="barcode"||k.k==="code")?String(v||""):(isNaN(n)?v:n)); });
             var dr=ws.addRow(cells), alt=(rowNum%2===0);
             dr.eachCell(function(c,ci){
               c.border={top:{style:"hair",color:{argb:"FFDDDDDD"}},bottom:{style:"hair",color:{argb:"FFDDDDDD"}},left:{style:"hair",color:{argb:"FFEEEEEE"}},right:{style:"hair",color:{argb:"FFEEEEEE"}}};
@@ -2448,7 +2453,8 @@ export default async function handler(req, res) {
         _xlsCapture.colKeys.forEach(function(k){
 	          var v=k.fn?k.fn(p):(p[k.k]||"");
 	          // Strip commas from numbers
-	          var n=parseFloat(String(v).replace(/,/g,""));
+	          var s=String(v).replace(/,/g,"");
+	          var n=/^-?\d+(\.\d+)?$/.test(s)?parseFloat(s):NaN;
 	          cells.push((k.k==="barcode"||k.k==="code")?String(v||""):(isNaN(n)?v:n));
         });
         var dr=ws.addRow(cells);
