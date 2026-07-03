@@ -1,6 +1,13 @@
 // credit-note-editor.js — 独立 CN 可编辑单据模版 (复用 export-docs 的印章/导出机制,数据源=credit_notes)
-var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='',_dlName='',_sellerCode='BABI',_buyerCode='',_sellerSealName='',_sellerSealId=null;
-function updateSealStatus(){var el=document.getElementById('sealStatus');if(!el)return;if(_sellerSealName){el.textContent='卖方章: '+_sellerSealName+' 🔒';el.style.background='#fef2f2';el.style.borderColor='#fecaca';el.style.color='#b91c1c';}else{el.textContent='卖方章: 未设置';el.style.background='#f1f5f9';el.style.borderColor='#cbd5e1';el.style.color='#334155';}}
+var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='',_dlName='',_sellerCode='BABI',_buyerCode='',_sellerSealName='',_sellerSealId=null,_dasMode='company',_curSeal={seller:null,buyer:null};
+function updateSealStatus(){
+  var el=document.getElementById('sealStatus');if(!el)return;
+  var se=_curSeal.seller, bu=_curSeal.buyer;
+  var seTxt=se?(se.name+(se.id&&se.id===_sellerSealId?' 🔒':'')):'未设置';
+  var buTxt=bu?bu.name:'未盖(客户自签)';
+  el.innerHTML='🔴 卖方章: <b>'+esc(seTxt)+'</b> &nbsp;·&nbsp; 买方章: '+esc(buTxt);
+  el.style.background=se?'#fef2f2':'#f1f5f9';el.style.borderColor=se?'#fecaca':'#cbd5e1';el.style.color=se?'#b91c1c':'#334155';
+}
 function qp(n){return new URLSearchParams(location.search).get(n)||'';}
 function tok(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
 function authH(){var h={'Content-Type':'application/json'};var t=tok();if(t)h.Authorization='Bearer '+t;return h;}
@@ -139,32 +146,40 @@ function renderLocalStamps(){
   g.innerHTML=_localStamps.map(function(s,i){return '<div onclick="selLocal('+i+')" style="border:2px solid #e2e8f0;border-radius:10px;padding:10px;cursor:pointer;text-align:center"><img src="'+esc(s.url)+'" style="width:64px;height:64px;object-fit:contain"><div style="font-size:11px;color:#475569;margin-top:4px">'+esc(s.name||'印章')+'</div></div>';}).join('');
 }
 function selLocal(i){loadLocalStamps();applySeal(_sealTarget,_localStamps[i].url,_localStamps[i].name);closeModal();}
+function setDasMode(m){_dasMode=m;loadDasStamps();}
 function loadDasStamps(){
   var g=document.getElementById('stampGrid');g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">加载中…</div>';
-  var _cc=(_sealTarget&&_sealTarget.indexOf('buyer')>=0)?_buyerCode:_sellerCode;
-  fetch(API+'/api/db/customer-stamps'+(_cc?('?company_code='+encodeURIComponent(_cc)):''),{headers:authH()}).then(function(r){return r.json();}).then(function(d){
+  var forSeller=!(_sealTarget&&_sealTarget.indexOf('buyer')>=0);
+  var side=forSeller?'seller':'buyer';
+  var _cc=forSeller?_sellerCode:_buyerCode;
+  var url=API+'/api/db/customer-stamps'+(_dasMode==='all'?'?scope=all':(_cc?('?company_code='+encodeURIComponent(_cc)):''));
+  fetch(url,{headers:authH()}).then(function(r){return r.json();}).then(function(d){
     var stamps=Array.isArray(d)?d:(d.stamps||d.data||[]);
-    if(!stamps.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">DAS暂无印章</div>';return;}
     _stamps=stamps;
-    var forSeller=!(_sealTarget&&_sealTarget.indexOf('buyer')>=0);
-    g.innerHTML=stamps.map(function(s,i){
-      var isDef=!!s.is_default;
-      return '<div style="border:2px solid '+(isDef?'#dc2626':'#e2e8f0')+';border-radius:10px;padding:10px;text-align:center;position:relative">'
-        +(isDef?'<div style="position:absolute;top:5px;right:7px;font-size:10px;color:#dc2626;font-weight:800">🔒 锁定</div>':'')
-        +'<img onclick="selStamp('+i+')" src="'+esc(s.url)+'" style="width:64px;height:64px;object-fit:contain;cursor:pointer" title="点击盖章" onerror="this.style.opacity=0.3">'
-        +'<div style="font-size:11px;color:#475569;margin-top:4px">'+esc(s.name||'印章')+'</div>'
-        +((forSeller&&!isDef)?'<button onclick="setDefaultStamp('+s.id+')" style="margin-top:6px;font-size:10px;padding:3px 8px;border:1px solid #dc2626;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;font-weight:700">设为默认 🔒</button>':'')
+    var seg=function(m,lbl){return '<button onclick="setDasMode(\''+m+'\')" style="padding:4px 12px;border-radius:20px;border:1px solid '+(_dasMode===m?'#3b82f6':'#cbd5e1')+';background:'+(_dasMode===m?'#3b82f6':'#fff')+';color:'+(_dasMode===m?'#fff':'#475569')+';font-size:11px;font-weight:700;cursor:pointer">'+lbl+'</button>';};
+    var toggle='<div style="grid-column:1/-1;display:flex;gap:6px;margin-bottom:6px">'+seg('company','🏢 本公司章')+seg('all','📚 全部我的章')+'</div>';
+    if(!stamps.length){g.innerHTML=toggle+'<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">此范围暂无印章</div>';return;}
+    var cur=_curSeal[side];
+    g.innerHTML=toggle+stamps.map(function(s,i){
+      var isDef=!!s.is_default, inUse=cur&&cur.id===s.id;
+      return '<div style="border:2px solid '+(inUse?'#16a34a':(isDef?'#dc2626':'#e2e8f0'))+';border-radius:10px;padding:10px;text-align:center;position:relative">'
+        +(inUse?'<div style="position:absolute;top:5px;left:7px;font-size:10px;color:#16a34a;font-weight:800">✓ 使用中</div>':'')
+        +(isDef?'<div style="position:absolute;top:5px;right:7px;font-size:10px;color:#dc2626;font-weight:800">🔒</div>':'')
+        +'<img onclick="selStamp('+i+')" src="'+esc(s.url)+'" style="width:60px;height:60px;object-fit:contain;cursor:pointer" title="点击盖章" onerror="this.style.opacity=0.3">'
+        +'<div style="font-size:11px;color:#334155;margin-top:4px;font-weight:600">'+esc(s.name||'印章')+'</div>'
+        +(s.company_code?'<div style="font-size:9px;color:#94a3b8;font-family:ui-monospace,monospace">'+esc(s.company_code)+'</div>':'')
+        +((forSeller&&!isDef&&s.company_code===_sellerCode)?'<button onclick="setDefaultStamp('+s.id+')" style="margin-top:5px;font-size:10px;padding:3px 8px;border:1px solid #dc2626;background:#fff;color:#dc2626;border-radius:6px;cursor:pointer;font-weight:700">设为默认 🔒</button>':'')
         +'</div>';
     }).join('');
   }).catch(function(){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">加载失败</div>';});
 }
-function selStamp(i){applySeal(_sealTarget,_stamps[i].url,_stamps[i].name);closeModal();}
+function selStamp(i){var s=_stamps[i];var side=(_sealTarget&&_sealTarget.indexOf('buyer')>=0)?'buyer':'seller';_curSeal[side]={name:s.name||'印章',id:s.id};applySeal(_sealTarget,s.url,s.name);updateSealStatus();closeModal();}
 function setDefaultStamp(id){
   fetch(API+'/api/db/customer-stamps',{method:'PATCH',headers:authH(),body:JSON.stringify({id:id,set_default:true})})
     .then(function(r){return r.json();}).then(function(d){
       if(d.success){
         var s=_stamps.filter(function(x){return x.id===id;})[0];
-        if(s){_sellerSealName=s.name||'';_sellerSealId=s.id;applySeal('cn:seller',s.url,s.name);updateSealStatus();}
+        if(s){_sellerSealName=s.name||'';_sellerSealId=s.id;_curSeal.seller={name:s.name||'',id:s.id};applySeal('cn:seller',s.url,s.name);updateSealStatus();}
         loadDasStamps();
         banner('info','✓ 已锁定为该公司默认章,以后自动盖');setTimeout(function(){banner('','');},2000);
       } else banner('err',d.error||'设置失败');
@@ -205,12 +220,12 @@ function init(){
     renderItems(items);
     _sellerCode = cn._seller_code || 'BABI'; _buyerCode = cn.company_code || '';
     _sellerSealName = cn._seller_seal_name || ''; _sellerSealId = cn._seller_seal_id || null;
-    if(cn._seller_seal) applySeal('cn:seller', cn._seller_seal, _sellerSealName||'公司锁定章');
+    if(cn._seller_seal){ applySeal('cn:seller', cn._seller_seal, _sellerSealName||'公司锁定章'); _curSeal.seller={name:_sellerSealName||'公司锁定章',id:_sellerSealId}; }
     updateSealStatus();
     applyDraft();
     banner('','');
   }).catch(function(e){banner('err',e.message);});
   // 卖方章始终=公司锁定默认章(在loadCN里盖),不从localStorage恢复;只买方章可本地留存
-  ['buyer'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey('cn:'+w))||'null');if(s&&s.url)applySeal('cn:'+w,s.url,s.name);}catch(e){}});
+  ['buyer'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey('cn:'+w))||'null');if(s&&s.url){applySeal('cn:'+w,s.url,s.name);_curSeal.buyer={name:s.name||'买方章'};}}catch(e){}});
 }
 init();

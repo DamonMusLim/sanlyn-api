@@ -55,7 +55,9 @@ export default async function handler(req, res) {
       const _cc = req.query.company_code ? String(req.query.company_code).trim() : '';
       const _cols = `SELECT id, username, company_code, name, url, uploaded_at, is_default, shape FROM customer_stamps`;
       let result;
-      if (_cc) {
+      if (req.query.scope === 'all' && isAdmin) {
+        result = await pool.query(`${_cols} WHERE is_active = true ORDER BY (company_code IS NULL), company_code, is_default DESC, uploaded_at DESC`);
+      } else if (_cc) {
         result = isAdmin
           ? await pool.query(`${_cols} WHERE company_code = $1 AND is_active = true ORDER BY is_default DESC, uploaded_at DESC`, [_cc])
           : await pool.query(`${_cols} WHERE username = $1 AND company_code = $2 AND is_active = true ORDER BY is_default DESC, uploaded_at DESC`, [targetUsername, _cc]);
