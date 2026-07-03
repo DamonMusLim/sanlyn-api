@@ -584,19 +584,38 @@ export default async function handler(req, res) {
           return order.map(function(k){ var g=groups[k]; return {cp:_uniqJoin(g.cp),name:g.name,qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,price:g.qty?g.amt/g.qty:0,amt:g.amt}; });
         }
         function _ctnBits(rows,k){ return _uniqJoin((rows||[]).map(function(r){return r&&r[k];})); }
-        function _groupLabel(orow,ctns){
+        function _groupLabel(orders,ctns,terms){
+          orders=Array.isArray(orders)?orders:[orders];
           ctns=Array.isArray(ctns)?ctns:[];
+          var nos=_uniqJoin(orders.map(function(orow){return _shortNo((orow&&orow.order_no)||(orow&&orow.contract_no));}));
           var cno=_ctnBits(ctns,"container_no"), seal=_ctnBits(ctns,"seal_no");
-          return ["ORDER "+_shortNo((orow&&orow.order_no)||(orow&&orow.contract_no)),cno||"",_ctnBits(ctns,"container_type"),seal||"",_orderTerms(orow)].filter(Boolean).join(" · ");
+          return ["ORDER "+nos,cno||"",_ctnBits(ctns,"container_type"),seal||"",terms||""].filter(Boolean).join(" · ");
+        }
+        function _orderContainers(orow,ctnMap){
+          var ctns=ctnMap[orow&&orow.contract_no]||ctnMap[orow&&orow.order_no]||ctnMap[orow&&orow.id]||[];
+          return Array.isArray(ctns)?ctns:(ctns?[ctns]:[]);
         }
         function _detailRows(orderRows,lines,ctnMap){
           var byOrder={};
           (lines||[]).forEach(function(li){ var k=String(li.order_id||""); (byOrder[k]||(byOrder[k]=[])).push(li); });
-          var out=[];
+          var out=[],groups={},order=[];
           (orderRows||[]).forEach(function(orow){
-            var oid=String(orow.id||orow._id||""), ctns=ctnMap[orow.contract_no]||ctnMap[orow.order_no]||[];
-            out.push({isHeader:true,label:_groupLabel(orow,ctns)});
-            (byOrder[oid]||[]).map(_rowFromLine).filter(function(r){return r.name||r.qty;}).forEach(function(r){out.push(r);});
+            var oid=String(orow.id||orow._id||""), ctns=_orderContainers(orow,ctnMap);
+            var cnos=(ctns||[]).map(function(c){return String(c&&c.container_no||"").trim();}).filter(Boolean);
+            var key=_uniqJoin(cnos)||("__order__"+(orow.id||orow._id||orow.contract_no||orow.order_no||order.length));
+            if(!groups[key]){ groups[key]={orders:[],emptyOrders:[],ctns:[],terms:"",items:[]}; order.push(key); }
+            var g=groups[key];
+            (ctns||[]).forEach(function(c){g.ctns.push(c);});
+            if(!g.terms)g.terms=_orderTerms(orow);
+            var itemRows=(byOrder[oid]||[]).map(_rowFromLine).filter(function(r){return r.name||r.qty;});
+            if(itemRows.length)g.orders.push(orow);else g.emptyOrders.push(orow);
+            itemRows.forEach(function(r){g.items.push(r);});
+          });
+          order.forEach(function(k){
+            var g=groups[k];
+            if(!g.items.length)return;
+            out.push({isHeader:true,label:_groupLabel(g.orders.concat(g.emptyOrders),g.ctns,g.terms)});
+            g.items.forEach(function(r){out.push(r);});
           });
           return out;
         }
@@ -613,12 +632,31 @@ export default async function handler(req, res) {
         }
         var ctnMap={};
         if(!_customsMode){
-          var contracts=orderRows.map(function(r){return r&&r.contract_no;}).filter(Boolean);
-          if(contracts.length){
+          var contracts=orderRows.map(function(r){return r&&r.contract_no;}).filter(Boolean), byId={};
+          orderRows.forEach(function(r){ if(r&&r.id)byId[String(r.id)]=r; });
+          if(orderIds.length){
             try{
-              var cr=await pool.query("SELECT contract_no, container_no, container_type, seal_no FROM container_bookings WHERE contract_no = ANY($1::text[]) ORDER BY contract_no, id",[contracts]);
+              var oc=await pool.query(
+                "SELECT oc.order_id, c.id AS container_id, c.container_no, c.container_type, c.seal_no FROM order_containers oc JOIN containers c ON c.id=oc.container_id WHERE oc.order_id = ANY($1::int[]) ORDER BY oc.order_id, c.id",
+                [orderIds]
+              );
+              (oc.rows||[]).forEach(function(r){
+                var orow=byId[String(r.order_id)]||{};
+                if(orow.contract_no)(ctnMap[orow.contract_no]||(ctnMap[orow.contract_no]=[])).push(r);
+                if(orow.order_no)(ctnMap[orow.order_no]||(ctnMap[orow.order_no]=[])).push(r);
+                if(orow.id)(ctnMap[orow.id]||(ctnMap[orow.id]=[])).push(r);
+              });
+            }catch(e){ console.warn("[documents] pack xlsx order_containers lookup failed:",e.message); }
+          }
+          var fallbackContracts=contracts.filter(function(cn){
+            var orow=orderRows.find(function(r){return r&&r.contract_no===cn;});
+            return !(_orderContainers(orow,ctnMap).length);
+          });
+          if(fallbackContracts.length){
+            try{
+              var cr=await pool.query("SELECT contract_no, container_no, container_type, seal_no FROM container_bookings WHERE contract_no = ANY($1::text[]) ORDER BY contract_no, id",[fallbackContracts]);
               (cr.rows||[]).forEach(function(r){ (ctnMap[r.contract_no]||(ctnMap[r.contract_no]=[])).push(r); });
-            }catch(e){ console.warn("[documents] pack xlsx container_bookings lookup failed:",e.message); }
+            }catch(e){ console.warn("[documents] pack xlsx container_bookings fallback lookup failed:",e.message); }
           }
         }
         var rows=_customsMode?_aggregate(lines):_detailRows(orderRows,lines,ctnMap);
@@ -2310,6 +2348,12 @@ export default async function handler(req, res) {
       var rowNum=0;
       var lastGrp="";
       _xlsCapture.rows.forEach(function(p){
+        if(p&&p.isHeader){
+          var hRow=ws.addRow(["",p.label||""]);
+          hRow.eachCell(function(c){c.font={bold:true,color:{argb:"FF1e40af"}};c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFe8eeff"}};c.alignment={horizontal:"left",vertical:"middle"};});
+          ws.mergeCells("B"+hRow.number+":"+_CL(_LC)+hRow.number);
+          return;
+        }
         // Group header
         var grp=p._groupKey||"";
         if(grp&&grp!==lastGrp){

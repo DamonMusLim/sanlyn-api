@@ -54,7 +54,7 @@ export default async function handler(req, res) {
                   oc.ctn_count, oc.cbm AS order_cbm
              FROM order_containers oc
              JOIN containers c      ON c.id = oc.container_id
-             JOIN shipment_group sg ON sg.id = c.shipment_group_id
+             LEFT JOIN shipment_group sg ON sg.id = c.shipment_group_id
             WHERE oc.order_id = $1
             ORDER BY c.id`,
           [order_id]

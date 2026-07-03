@@ -82,23 +82,46 @@ function containerBits(rows,k){
   var vals=uniq((rows||[]).map(function(r){return String(r&&r[k]||'').trim();}));
   return vals.join(' / ');
 }
-function groupLabel(o,ctns){
+function groupLabel(orders,ctns,terms){
+  orders=Array.isArray(orders)?orders:[orders];
+  var nos=uniq(orders.map(function(o){return shortNo((o&&o.order_no)||(o&&o.contract_no));}));
   var cno=containerBits(ctns,'container_no'),seal=containerBits(ctns,'seal_no');
-  return ['ORDER '+shortNo(o.order_no||o.contract_no),cno||'',containerBits(ctns,'container_type'),seal||'',orderTerms(o)].filter(Boolean).join(' · ');
+  return ['ORDER '+nos.join(' / '),cno||'',containerBits(ctns,'container_type'),seal||'',terms||''].filter(Boolean).join(' · ');
 }
 
-// 明细行（切「明细模式」时用），ctnMap = {contract_no → container_bookings rows[]}
+function orderContainersFromMap(o,ctnMap){
+  var ctns=ctnMap[o.contract_no]||ctnMap[o.order_no]||ctnMap[o.id]||[];
+  if(!Array.isArray(ctns))ctns=ctns?[ctns]:[];
+  return ctns;
+}
+
+// 明细行（切「明细模式」时用），ctnMap = {contract_no/order_id → container rows[]}
 function detailRows(all,ctnMap){
-  var rows=[];
+  var rows=[],groups={},order=[];
   ctnMap=ctnMap||{};
   all.forEach(function(o){
-    var ctns=ctnMap[o.contract_no]||ctnMap[o.order_no]||[];
-    if(!Array.isArray(ctns))ctns=ctns?[ctns]:[];
-    rows.push({isHeader:true,label:groupLabel(o,ctns)});
-    lineItems(o).filter(hasProd).forEach(function(p){
+    var ctns=orderContainersFromMap(o,ctnMap);
+    var cnos=uniq(ctns.map(function(c){return String(c&&c.container_no||'').trim();}));
+    var key=cnos.length?cnos.join(' / '):('__order__'+(o.id||o._id||o.contract_no||o.order_no||order.length));
+    if(!groups[key]){
+      groups[key]={orders:[],emptyOrders:[],ctns:[],terms:'',items:[]};
+      order.push(key);
+    }
+    var g=groups[key];
+    ctns.forEach(function(c){g.ctns.push(c);});
+    if(!g.terms)g.terms=orderTerms(o);
+    var itemRows=lineItems(o).filter(hasProd).map(function(p){
       var q=qty(p),rn=nwCtn(p)*q,rg=gwCtn(p)*q,rc=cbmCtn(p)*q;
-      rows.push({name:pName(p),size:p.size||'',qty:q,nw:rn,gw:rg,cbm:rc,up:unitPrice(p),amt:amount(p)});
+      return {name:pName(p),size:p.size||'',qty:q,nw:rn,gw:rg,cbm:rc,up:unitPrice(p),amt:amount(p)};
     });
+    if(itemRows.length)g.orders.push(o);else g.emptyOrders.push(o);
+    itemRows.forEach(function(r){g.items.push(r);});
+  });
+  order.forEach(function(k){
+    var g=groups[k];
+    if(!g.items.length)return;
+    rows.push({isHeader:true,label:groupLabel(g.orders.concat(g.emptyOrders),g.ctns,g.terms)});
+    g.items.forEach(function(r){rows.push(r);});
   });
   return rows;
 }
@@ -187,15 +210,26 @@ function fetchBuyerAddr(primary){
   }).catch(function(){return '';});
 }
 function loadContainerInfo(all){
-  var contracts=uniq((all||[]).map(function(o){return o.contract_no;}).filter(Boolean));
-  if(!contracts.length)return Promise.resolve({});
-  return Promise.all(contracts.map(function(no){
-    return fetch(API+'/api/db/container-bookings?contract_no='+encodeURIComponent(no),{headers:authH()})
-      .then(function(r){return r.json();}).then(function(d){return {no:no,rows:arr(d)};})
-      .catch(function(){return {no:no,rows:[]};});
+  if(!(all||[]).length)return Promise.resolve({});
+  return Promise.all((all||[]).map(function(o){
+    var oid=o&&o.id, no=o&&o.contract_no;
+    var primary=oid?fetch(API+'/api/db/containers?action=list_by_order&order_id='+encodeURIComponent(oid),{headers:authH()})
+      .then(function(r){return r.ok?r.json():{data:[]};}).then(arr).catch(function(){return [];}):Promise.resolve([]);
+    return primary.then(function(rows){
+      if(rows&&rows.length)return {order:o,rows:rows};
+      if(!no)return {order:o,rows:[]};
+      return fetch(API+'/api/db/container-bookings?contract_no='+encodeURIComponent(no),{headers:authH()})
+        .then(function(r){return r.json();}).then(function(d){return {order:o,rows:arr(d)};})
+        .catch(function(){return {order:o,rows:[]};});
+    });
   })).then(function(sets){
     var map={};
-    sets.forEach(function(s){map[s.no]=s.rows||[];});
+    sets.forEach(function(s){
+      var o=s.order||{};
+      if(o.contract_no)map[o.contract_no]=s.rows||[];
+      if(o.order_no)map[o.order_no]=s.rows||[];
+      if(o.id)map[o.id]=s.rows||[];
+    });
     return map;
   }).catch(function(){return {};});
 }
