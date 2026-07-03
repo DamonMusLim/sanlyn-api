@@ -33,6 +33,8 @@ function firstText(v){
   return String(v||'');
 }
 function declName(p){return p.declarationName||p.declaration_name||p.blDescription||p.bl_description||'宠物食品';}
+// 铁律(2026-07-04 Damon拍板):英文版品名一律=报关英文名 declaration_name_en,缺失红标绝不现场翻译造词
+function declNameEn(p){var m=masterMeta(p)||{};return p.declaration_name_en||p.declarationNameEn||m.decl_en||'';}
 function lineItems(o){return (o&&o._lineItems)||[];}
 function qty(p){return Number(p.qty_ctn||p.qty||0)||0;}
 function unitOf(p){return p.unit||p.unitOfMeasure||'CTN';}
@@ -61,7 +63,7 @@ function fetchProductMaster(){
   return fetch(API+'/api/db/products?limit=5000',{headers:authH()}).then(function(r){return r.json();}).then(arr).then(function(rows){
     var m={};rows.forEach(function(p){
       var v=String(p.product_name||p.productName||p.name||p.name_en||'').trim();
-      var meta={name:v,barcode:String(p.barcode||p.bar_code||'').trim(),factory_code:String(p.factory_code||p.factoryCode||'').trim()};
+      var meta={name:v,barcode:String(p.barcode||p.bar_code||'').trim(),factory_code:String(p.factory_code||p.factoryCode||'').trim(),decl_en:String(p.declaration_name_en||'').trim()};
       [p.sku,p.cp_code,p.code,p.item_code].forEach(function(c){var k=skuKey(c);if(k)m[k]=meta;});
     });return m;
   }).catch(function(){return {};});
@@ -75,11 +77,12 @@ function aggregate(all){
       var q=qty(p),nw=nwCtn(p)*q,gw=gwCtn(p)*q,cbm=cbmCtn(p)*q,amt=amount(p);
       var key=declName(p);
       var g=groups[key]||(groups[key]={name:key,sizes:{},qty:0,nw:0,gw:0,cbm:0,amt:0});
+      if(!g.nameEn)g.nameEn=declNameEn(p);
       g.qty+=q;g.nw+=nw;g.gw+=gw;g.cbm+=cbm;g.amt+=amt;if(p.size)g.sizes[p.size]=1;
       total.qty+=q;total.nw+=nw;total.gw+=gw;total.cbm+=cbm;total.amt+=amt;
     });
   });
-  Object.keys(groups).forEach(function(k){var g=groups[k];rows.push({name:g.name,size:(Object.keys(g.sizes).length===1?Object.keys(g.sizes)[0]:''),qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,amt:g.amt,up:(g.qty?g.amt/g.qty:0)});});
+  Object.keys(groups).forEach(function(k){var g=groups[k];rows.push({name:g.name,nameEn:g.nameEn||(g.name==='宠物食品'?'PET FOOD':''),size:(Object.keys(g.sizes).length===1?Object.keys(g.sizes)[0]:''),qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,amt:g.amt,up:(g.qty?g.amt/g.qty:0)});});
   total.rows=rows;total.up=(total.qty?total.amt/total.qty:0);return total;
 }
 
@@ -118,7 +121,7 @@ function detailRows(all,ctnMap){
     if(!g.terms)g.terms=orderTerms(o);
     var itemRows=lineItems(o).filter(hasProd).map(function(p){
       var q=qty(p),rn=nwCtn(p)*q,rg=gwCtn(p)*q,rc=cbmCtn(p)*q;
-      return {code:codeOf(p),barcode:barcodeOf(p),name:pName(p),size:p.size||'',qty:q,unit:unitOf(p),nw:rn,gw:rg,cbm:rc,up:unitPrice(p),amt:amount(p)};
+      return {code:codeOf(p),barcode:barcodeOf(p),name:pName(p),nameEn:declNameEn(p),size:p.size||'',qty:q,unit:unitOf(p),nw:rn,gw:rg,cbm:rc,up:unitPrice(p),amt:amount(p)};
     });
     if(itemRows.length)g.orders.push(o);else g.emptyOrders.push(o);
     itemRows.forEach(function(r){g.items.push(r);});
@@ -133,7 +136,9 @@ function detailRows(all,ctnMap){
 }
 
 var _customsMode=(qp("mode")!=="detail"); // 默认海关单行（正版）; mode=detail→逐SKU明细
-function descCell(name,size){return '<span class="desc-name ed" contenteditable>'+esc(name)+'</span>'+(size?'<span class="desc-size ed" contenteditable>'+esc(size)+'</span>':'');}
+var _langEn=(qp('lang')==='en'); // lang=en → 全英文版:品名=报关英文名
+function dispName(r){if(!_langEn)return {name:r.name,miss:false};var n=r.nameEn||'';return n?{name:n,miss:false}:{name:'⚠ EN NAME MISSING',miss:true};}
+function descCell(name,size,miss){return '<span class="desc-name ed"'+(miss?' style="color:#dc2626"':'')+' contenteditable>'+esc(name)+'</span>'+(size?'<span class="desc-size ed" contenteditable>'+esc(size)+'</span>':'');}
 function setPLHeader(detail){
   var tb=document.querySelector('#pagePL table thead tr');if(!tb)return;
   tb.innerHTML=detail
@@ -145,7 +150,7 @@ function renderPL(agg,rows){
   var body='';
   if(_customsMode){
     setPLHeader(false);
-    (agg.rows||[]).forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+qtyUnit(r.qty,'CTN')+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';});
+    (agg.rows||[]).forEach(function(r,i){var dn=dispName(r);body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(dn.name,r.size,dn.miss)+'</td><td>'+qtyUnit(r.qty,'CTN')+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';});
   }else{
     setPLHeader(true);
     var idx=0;
@@ -154,7 +159,8 @@ function renderPL(agg,rows){
         body+='<tr class="group-header"><td colspan="7" style="text-align:left">'+esc(r.label)+'</td></tr>';
       }else{
         idx++;
-        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="c">'+esc(r.barcode)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+qtyUnit(r.qty,r.unit)+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
+        var dn=dispName(r);
+        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="c">'+esc(r.barcode)+'</td><td class="l">'+descCell(dn.name,r.size,dn.miss)+'</td><td>'+qtyUnit(r.qty,r.unit)+'</td><td>'+fmt(r.nw)+'</td><td>'+fmt(r.gw)+'</td><td>'+fmt(r.cbm,3)+'</td></tr>';
       }
     });
   }
@@ -166,7 +172,7 @@ function renderPL(agg,rows){
 function renderPriced(pfx,agg,rows,cur){
   var body='';
   if(_customsMode){
-    (agg.rows||[]).forEach(function(r,i){body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
+    (agg.rows||[]).forEach(function(r,i){var dn=dispName(r);body+='<tr><td class="c">'+('0'+(i+1)).slice(-2)+'</td><td class="l">'+descCell(dn.name,r.size,dn.miss)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';});
   }else{
     var idx=0;
     rows.forEach(function(r){
@@ -174,7 +180,8 @@ function renderPriced(pfx,agg,rows,cur){
         body+='<tr class="group-header"><td colspan="5" style="text-align:left">'+esc(r.label)+'</td></tr>';
       }else{
         idx++;
-        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(r.name,r.size)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';
+        var dn=dispName(r);
+        body+='<tr><td class="c">'+('0'+idx).slice(-2)+'</td><td class="l">'+descCell(dn.name,r.size,dn.miss)+'</td><td>'+r.qty+'</td><td>'+fmt(r.up)+'</td><td>'+fmt(r.amt)+'</td></tr>';
       }
     });
   }
@@ -261,6 +268,12 @@ function toggleMode(){
   if(b){b.textContent=_customsMode?'📋 明细模式':'🗃 海关模式';b.style.background=_customsMode?'#0891b2':'#059669';}
   renderAll();
 }
+function syncLangBtn(){var b=document.getElementById('btnLang');if(b){b.textContent=_langEn?'🌐 中文版':'🌐 English';b.style.background=_langEn?'#059669':'#475569';}}
+function toggleLang(){
+  _langEn=!_langEn;syncLangBtn();
+  try{var u=new URL(location.href);if(_langEn)u.searchParams.set('lang','en');else u.searchParams.delete('lang');history.replaceState(null,'',u.toString());}catch(e){}
+  renderAll();
+}
 
 function sealTargets(t){
   if(!t)return[];
@@ -337,6 +350,7 @@ function _docUrl(fmt){
   var u='/api/db/documents?type=pack&id='+encodeURIComponent(oid)+'&ids='+encodeURIComponent(ids)+'&audience=customer';
   if(typeof _customsMode!=='undefined'&&_customsMode)u+='&customs=1';
   var pg=qp('page'); if(pg==='pl'||pg==='sc'||pg==='iv')u+='&page='+pg;
+  if(_langEn)u+='&lang=en';
   if(fmt)u+='&format='+fmt;
   u+='&token='+encodeURIComponent(tok());
   return u;
@@ -357,7 +371,7 @@ function downloadPng(){
 }
 
 function init(){
-  applyPageFilter();
+  applyPageFilter();syncLangBtn();
   var orderNo=qp('order_no')||qp('orderNo');
   if(!orderNo){banner('err','请加 ?order_no=XX&token=YY');return;}
   var sibs=(qp('ids')||'').split(',').map(function(s){return s.trim();}).filter(function(s){return s&&s!==orderNo;});
