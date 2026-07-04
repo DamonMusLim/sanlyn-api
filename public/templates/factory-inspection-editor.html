@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>厂检单编辑器 · Sanlyn</title>
+<style>
+@page { size: A4 portrait; margin:12mm 12mm; }
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;background:#eef0f3;color:#111;font-size:12px;}
+.toolbar{padding:8px 18px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:#fff;border-bottom:1px solid #e2e8f0;margin-bottom:14px;}
+.toolbar button{padding:6px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;}
+.btn-print{background:#1d4ed8;color:#fff;}.btn-dl{background:#7c3aed;color:#fff;}
+.btn-save{background:#059669;color:#fff;}.btn-seal{background:#dc2626;color:#fff;}
+.btn-pdf{background:#be123c;color:#fff;}.btn-fwd{background:#0369a1;color:#fff;}
+.banner{max-width:820px;margin:0 auto 8px;padding:7px 12px;border-radius:6px;font-size:12px;display:none;}
+.banner.info{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;}
+.banner.err{background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;}
+[contenteditable]:focus{background:#fefce8!important;outline:none;}
+.ed:empty:before{content:attr(data-ph);color:#c7ccd4;font-style:italic;}
+.page{max-width:820px;margin:0 auto 22px;background:#fff;padding:24px 30px;box-shadow:0 4px 18px rgba(0,0,0,.12);min-height:900px;font-family:'SimSun','Noto Serif SC',serif;color:#000;}
+.ti-cn{text-align:center;font-size:20px;font-weight:800;letter-spacing:1px;}
+.ti-sub{text-align:center;font-size:14px;color:#333;margin-top:4px;}
+.std{text-align:center;font-size:10.5px;color:#666;border-bottom:2px solid #000;padding-bottom:8px;margin:8px 0 10px;}
+.hgrid{display:grid;grid-template-columns:1fr 300px;gap:0 24px;border:1px solid #ccc;font-size:12px;margin-bottom:12px;}
+.hgrid table{width:100%;border-collapse:collapse;}
+.hgrid td{padding:4px 8px;border-bottom:1px solid #eee;}
+.hgrid td:first-child{color:#555;width:100px;white-space:nowrap;}
+.hgrid .right{border-left:1px solid #ccc;}
+table.t{width:100%;border-collapse:collapse;font-size:12px;}
+table.t td,table.t th{border:1px solid #999;padding:5px 5px;text-align:center;}
+table.t th{background:#e8e8e8;font-weight:700;}
+td.res{background:#fffdf0;font-weight:700;min-width:60px;}
+.verdict-ok{color:#16a34a;font-weight:700;}
+.verdict-bad{color:#dc2626;font-weight:700;}
+.verdict-na{color:#bbb;}
+.note{font-size:11.5px;margin:10px 0;color:#333;}
+.sig{display:flex;justify-content:space-between;font-size:12px;margin-top:24px;position:relative;min-height:90px;}
+.seal-wrap{position:absolute;right:30px;bottom:-6px;width:110px;height:110px;display:flex;align-items:center;justify-content:center;overflow:visible;}
+.seal-wrap img{width:100%;height:100%;object-fit:contain;display:none;transform-origin:center;}
+.seal-hint{position:absolute;right:60px;bottom:66px;font-size:9px;color:#b6bcc4;cursor:pointer;}
+@media print{body{background:#fff;}.toolbar,.banner{display:none!important;}.page{box-shadow:none;padding:0;margin:0;}.seal-hint{display:none!important;}}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button class="btn-print" onclick="window.print()">🖨 打印/PDF</button>
+  <button class="btn-dl"    onclick="downloadPng()">📥 下载图片</button>
+  <button class="btn-save"  onclick="saveResults()">💾 保存检验结果</button>
+  <button class="btn-pdf"   onclick="dlPdf()">📄 PDF下载</button>
+  <button class="btn-fwd"   onclick="fwdLink()">🔗 复制链接</button>
+  <button class="btn-seal"  onclick="openSealPicker('fi:seller')">🔴 盖工厂章</button>
+  <span id="sealStatus" style="font-size:11px;color:#334155;margin-left:6px;padding:3px 10px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:20px;font-weight:700">章: —</span>
+  <span style="font-size:11px;color:#64748b;margin-left:8px" id="lbl">—</span>
+</div>
+<div class="banner info" id="infoBanner"></div>
+<div class="banner err"  id="errBanner"></div>
+
+<div class="page" id="page">
+  <div class="ti-cn ed" id="fi-factory" contenteditable data-ph="工厂名"></div>
+  <div class="ti-sub"><span class="ed" id="fi-sample" contenteditable data-ph="样品名"></span>检验报告</div>
+  <div class="std ed" id="fi-std" contenteditable></div>
+  <div class="hgrid">
+    <table><tbody>
+      <tr><td>报告编号</td><td class="ed" id="fi-report" contenteditable></td></tr>
+      <tr><td>样品/合同编号</td><td class="ed" id="fi-order" contenteditable></td></tr>
+      <tr><td>产品名称</td><td class="ed" id="fi-prod" contenteditable></td></tr>
+      <tr><td>规格</td><td class="ed" id="fi-spec" contenteditable data-ph="规格"></td></tr>
+      <tr><td>生产批号</td><td class="ed" id="fi-batch" contenteditable data-ph="批号"></td></tr>
+      <tr><td>生产日期</td><td class="ed" id="fi-proddate" contenteditable data-ph="YYYY-MM-DD"></td></tr>
+      <tr><td>数/重量</td><td class="ed" id="fi-qtywt" contenteditable></td></tr>
+    </tbody></table>
+    <table class="right"><tbody>
+      <tr><td>检验日期</td><td class="ed" id="fi-inspdate" contenteditable data-ph="YYYY-MM-DD"></td></tr>
+      <tr><td>检验地点</td><td class="ed" id="fi-place" contenteditable>仓库</td></tr>
+      <tr><td>送检批量(袋)</td><td class="ed" id="fi-sampleqty" contenteditable></td></tr>
+    </tbody></table>
+  </div>
+  <table class="t"><thead><tr>
+    <th style="width:44px">序号</th><th>检验项目</th><th style="width:90px">计量单位</th><th style="width:110px">技术要求</th><th style="width:100px">检验结果</th><th style="width:100px">单项评价</th>
+  </tr></thead>
+  <tbody id="fi-body"><tr><td colspan="6" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
+  <div class="note ed" id="fi-note" contenteditable data-ph="备注/结论"></div>
+  <div class="sig">
+    <span>检测人员：<span class="ed" id="fi-inspector" contenteditable></span></span>
+    <span>复检人员：<span class="ed" id="fi-reviewer" contenteditable></span></span>
+    <span class="seal-wrap" id="fi-seller-seal-area" ondragover="event.preventDefault()" ondrop="dropSeal(event,'fi:seller')"><img id="fi-seller-seal"></span>
+    <span class="seal-hint" id="fi-seller-seal-hint" onclick="openSealPicker('fi:seller')">点此盖章</span>
+  </div>
+</div>
+
+<div id="sealModal" style="display:none;position:fixed;inset:0;z-index:9999;background:#f8fafc;align-items:flex-start;justify-content:center;overflow-y:auto;">
+<div style="background:#fff;padding:28px 36px;width:100%;min-height:100vh;max-width:820px;margin:0 auto;">
+  <div style="font-size:15px;font-weight:800;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">
+    <span>🔴 印章管理</span><button onclick="closeModal()" style="font-size:20px;color:#94a3b8;background:none;border:none;cursor:pointer">✕</button>
+  </div>
+  <div style="display:flex;gap:4px;margin-bottom:12px;">
+    <button id="tab-das"    onclick="switchTab('das')"    style="display:none;padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#f1f5f9;color:#64748b">DAS 共享库</button>
+    <button id="tab-local"  onclick="switchTab('local')"  style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#f1f5f9;color:#64748b">📱 本地章库</button>
+    <button id="tab-make"   onclick="switchTab('make')"   style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#3b82f6;color:#fff">🎨 制作印章</button>
+    <button id="tab-upload" onclick="switchTab('upload')" style="padding:5px 13px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;background:#f1f5f9;color:#64748b">上传图片</button>
+  </div>
+  <div id="tab-das-content"    style="display:none"><div id="stampGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"><div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">加载中…</div></div></div>
+  <div id="tab-local-content"  style="display:none"><div id="localGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"><div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">暂无本地章</div></div></div>
+  <div id="tab-make-content"   style="margin:0 -36px"><iframe src="https://ai.sanlyn.cn/seal-designer-full.html?embed=1" style="width:100%;height:600px;border:none;display:block;" allow="clipboard-write"></iframe></div>
+  <div id="tab-upload-content" style="display:none">
+    <input type="file" id="sealFileInput" accept="image/*" style="display:none" onchange="onFileChosen(event)">
+    <div onclick="document.getElementById('sealFileInput').click()" style="border:2px dashed #cbd5e1;border-radius:10px;padding:20px;text-align:center;cursor:pointer;margin-bottom:12px">
+      <img id="uploadPreview" style="width:80px;height:80px;object-fit:contain;display:none;margin:0 auto">
+      <div id="uploadPlaceholder" style="font-size:13px;color:#64748b">点击选择图片</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:8px"><label style="font-size:13px;white-space:nowrap">印章名称：</label><input id="uploadSealName" style="flex:1;padding:7px;border:1px solid #cbd5e1;border-radius:6px" placeholder="如：中砂公章"></div>
+    <div style="display:flex;gap:8px">
+      <button id="uploadUseBtn"   disabled onclick="useUploadedSeal()"  style="flex:1;padding:8px;border:none;border-radius:6px;background:#16a34a;color:#fff;font-weight:700;cursor:pointer">✓ 使用</button>
+      <button id="uploadLocalBtn" disabled onclick="saveSealToLocal()"  style="flex:1;padding:8px;border:none;border-radius:6px;background:#f59e0b;color:#fff;font-weight:700;cursor:pointer">💾 本地</button>
+    </div>
+    <div id="uploadStatus" style="font-size:12px;margin-top:8px;text-align:center"></div>
+  </div>
+</div>
+</div>
+
+<script src="factory-inspection-editor.js"></script>
+</body>
+</html>
