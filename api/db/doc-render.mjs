@@ -31,9 +31,20 @@ async function factoryCompanyOf(pool, orderId){
 }
 
 export default async function handler(req, res){
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, OPTIONS");
   if(req.method==='OPTIONS') return res.status(204).end();
   const pool=getPool();
+  // POST: 手动保存厂检/QC 实测结果 → 写 factory_doc_results(替代/补充OCR,真人填的真值)
+  if(req.method==='POST'){
+    if(!req.user) return res.status(401).json({error:'unauthorized'});
+    const b=req.body||{};
+    const saveOrder=(b.order_no||b.id||'').toString();
+    const saveKind=(b.kind||'fi').toString();
+    if(!saveOrder) return res.status(400).json({error:'order_no required'});
+    const results=(b.results&&typeof b.results==='object')?b.results:{};
+    await pool.query(`INSERT INTO factory_doc_results(order_no,doc_kind,results,source,filled_by) VALUES($1,$2,$3::jsonb,'manual',$4) ON CONFLICT(order_no,doc_kind) DO UPDATE SET results=EXCLUDED.results, source=EXCLUDED.source, filled_at=now()`,[saveOrder,saveKind,JSON.stringify(results),(req.user.username||'manual')]);
+    return res.json({success:true, order_no:saveOrder, kind:saveKind, count:Object.keys(results).length});
+  }
   const q=req.query||{};
   const kind=(q.kind||'fi').toString();
   const id=(q.id||'').toString();
@@ -103,6 +114,20 @@ export default async function handler(req, res){
       if(u) sealUrl=u.replace(/sanlyn-files\.oss-cn-[a-z0-9-]*\.aliyuncs\.com/i,'files.sanlynos.com');
     }
   }catch(_){}
+
+  // format=json → 返回结构化数据(供可编辑模版编辑器加载)
+  if((q.format||'').toString()==='json'){
+    res.setHeader('Cache-Control','no-store');
+    return res.json({
+      kind, order_no:orderNo, report_no:reportNo, sample_name:showSample, product_spec:productSpec,
+      batch_no:batchNo, prod_date:prodDate, qty_weight:qtyWeight, insp_date:inspDate, sample_qty:sampleQty,
+      factory_display:factoryDisplay, factory_company:cc||'', hs4,
+      note, inspector:pick(tpl&&tpl.inspector,'宫海霞'), reviewer:pick(tpl&&tpl.reviewer,'林彩云'),
+      seal_url:sealUrl, has_template:!!tpl,
+      ref_std:'GB/T 31410-2015《宠物用品 猫砂》/ GB/T 3838-2002《重金属限量》',
+      items: items.map(it=>({ no:it.no, name:it.name, unit:it.unit, spec:it.spec, section:it.section||'', type:it.type||'', result: (resultsMap[it.name]!==undefined&&resultsMap[it.name]!==null?String(resultsMap[it.name]):'') }))
+    });
+  }
 
   // — 分节渲染 —
   // 按 section 字段分组；无 section 字段则视为单节旧格式
