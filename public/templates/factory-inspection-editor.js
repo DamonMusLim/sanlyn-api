@@ -70,6 +70,11 @@ function collectResults(){
   });
   var sq=txt('fi-sampleqty');if(sq)results['送检批量']=sq;
   var bn=txt('fi-batch');if(bn)results['生产批号']=bn;
+  // 表头字段也入库，保证 PDF下载/别处打开与编辑器一致
+  [['fi-report','报告编号'],['fi-prod','产品名称'],['fi-spec','规格'],
+   ['fi-proddate','生产日期'],['fi-qtywt','数重量'],['fi-inspdate','检验日期'],
+   ['fi-place','检验地点'],['fi-note','备注'],['fi-inspector','检测人员'],
+   ['fi-reviewer','复检人员']].forEach(function(p){var v=txt(p[0]);if(v)results[p[1]]=v;});
   return results;
 }
 function saveResults(){

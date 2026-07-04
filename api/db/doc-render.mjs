@@ -119,10 +119,10 @@ export default async function handler(req, res){
   if((q.format||'').toString()==='json'){
     res.setHeader('Cache-Control','no-store');
     return res.json({
-      kind, order_no:orderNo, report_no:reportNo, sample_name:showSample, product_spec:productSpec,
-      batch_no:batchNo, prod_date:prodDate, qty_weight:qtyWeight, insp_date:inspDate, sample_qty:sampleQty,
+      kind, order_no:orderNo, report_no:pick(resultsMap['报告编号'],reportNo), sample_name:pick(resultsMap['产品名称'],showSample), product_spec:pick(resultsMap['规格'],productSpec),
+      batch_no:batchNo, prod_date:pick(resultsMap['生产日期'],prodDate), qty_weight:pick(resultsMap['数重量'],qtyWeight), insp_date:pick(resultsMap['检验日期'],inspDate), sample_qty:sampleQty, insp_place:pick(resultsMap['检验地点'],'仓库'),
       factory_display:factoryDisplay, factory_company:cc||'', hs4,
-      note, inspector:pick(tpl&&tpl.inspector,'宫海霞'), reviewer:pick(tpl&&tpl.reviewer,'林彩云'),
+      note:pick(resultsMap['备注'],note), inspector:pick(resultsMap['检测人员'],tpl&&tpl.inspector,'宫海霞'), reviewer:pick(resultsMap['复检人员'],tpl&&tpl.reviewer,'林彩云'),
       seal_url:sealUrl, has_template:!!tpl,
       ref_std:'GB/T 31410-2015《宠物用品 猫砂》/ GB/T 3838-2002《重金属限量》',
       items: items.map(it=>({ no:it.no, name:it.name, unit:it.unit, spec:it.spec, section:it.section||'', type:it.type||'', result: (resultsMap[it.name]!==undefined&&resultsMap[it.name]!==null?String(resultsMap[it.name]):'') }))
@@ -139,9 +139,9 @@ export default async function handler(req, res){
       ws.addRow([factoryDisplay]); ws.addRow([showSample+(kind==='qc'?' QC质检报告':'检验报告')]);
       ws.addRow(['参考标准', 'GB/T 31410-2015《宠物用品 猫砂》/ GB/T 3838-2002《重金属限量》']);
       ws.addRow([]);
-      ws.addRow(['报告编号', reportNo]); ws.addRow(['样品/合同编号', orderNo]); ws.addRow(['产品名称', showSample]);
+      ws.addRow(['报告编号', pick(resultsMap['报告编号'],reportNo)]); ws.addRow(['样品/合同编号', orderNo]); ws.addRow(['产品名称', pick(resultsMap['产品名称'],showSample)]);
       ws.addRow(['规格', productSpec]); ws.addRow(['生产批号', batchNo]); ws.addRow(['生产日期', prodDate]);
-      ws.addRow(['数/重量', qtyWeight]); ws.addRow(['检验日期', inspDate]); ws.addRow(['检验地点', '仓库']); ws.addRow(['送检批量(袋)', sampleQty]);
+      ws.addRow(['数/重量', pick(resultsMap['数重量'],qtyWeight)]); ws.addRow(['检验日期', pick(resultsMap['检验日期'],inspDate)]); ws.addRow(['检验地点', pick(resultsMap['检验地点'],'仓库')]); ws.addRow(['送检批量(袋)', sampleQty]);
       ws.addRow([]);
       const hdr=ws.addRow(['序号','检验项目','计量单位','技术要求','检验结果','单项评价']); hdr.font={bold:true};
       items.forEach((it,i)=>{
@@ -256,19 +256,19 @@ ${isQC?`<div class=ti-en>QC INSPECTION REPORT · ${esc(showSample)}</div>
 
 <div class=header-grid>
   <table class=header-left style="border:none"><tbody>
-    <tr><td>报告编号</td><td>${esc(reportNo||'&nbsp;')}</td></tr>
+    <tr><td>报告编号</td><td>${esc(pick(resultsMap['报告编号'],reportNo)||'&nbsp;')}</td></tr>
     <tr><td>样品/合同编号</td><td>${esc(orderNo)}</td></tr>
-    <tr><td>产品名称</td><td>${esc(showSample)}</td></tr>
-    <tr><td>规格</td><td>${esc(productSpec||'&nbsp;')}</td></tr>
+    <tr><td>产品名称</td><td>${esc(pick(resultsMap['产品名称'],showSample))}</td></tr>
+    <tr><td>规格</td><td>${esc(pick(resultsMap['规格'],productSpec)||'&nbsp;')}</td></tr>
     <tr><td>生产批号</td><td>${batchNo ? esc(batchNo) : '<span style="color:#dc2626;font-weight:700">&#9888; 待填（需工厂批次记录）</span>'}</td></tr>
-    <tr><td>生产日期</td><td>${prodDate ? esc(prodDate) : '<span style="color:#dc2626;font-weight:700">&#9888; 待填（需工厂批次记录）</span>'}</td></tr>
-    <tr><td>数/重量</td><td>${esc(qtyWeight||'&nbsp;')}</td></tr>
+    <tr><td>生产日期</td><td>${pick(resultsMap['生产日期'],prodDate) ? esc(pick(resultsMap['生产日期'],prodDate)) : '<span style="color:#dc2626;font-weight:700">&#9888; 待填（需工厂批次记录）</span>'}</td></tr>
+    <tr><td>数/重量</td><td>${esc(pick(resultsMap['数重量'],qtyWeight)||'&nbsp;')}</td></tr>
   </tbody></table>
   <div style="display:flex;flex-direction:column">
     ${isQC?`<div class=qc-badge>QC REPORT<span class=sub>质检报告单</span></div>`:''}
     <table class=header-right style="border:none;flex:1"><tbody>
-      <tr><td>检验日期</td><td>${esc(inspDate||'&nbsp;')}</td></tr>
-      <tr><td>检验地点</td><td>仓库</td></tr>
+      <tr><td>检验日期</td><td>${esc(pick(resultsMap['检验日期'],inspDate)||'&nbsp;')}</td></tr>
+      <tr><td>检验地点</td><td>${esc(pick(resultsMap['检验地点'],'仓库'))}</td></tr>
       <tr><td>送检批量(袋)</td><td>${esc(sampleQty)}</td></tr>
     </tbody></table>
   </div>
@@ -276,11 +276,11 @@ ${isQC?`<div class=ti-en>QC INSPECTION REPORT · ${esc(showSample)}</div>
 
 ${bodyRows}
 
-<div class=note>${esc(note)}</div>
-<div class=sig>
-  <span>检测人员：${esc(pick(tpl&&tpl.inspector,'宫海霞'))}</span>
-  <span>复检人员：${esc(pick(tpl&&tpl.reviewer,'林彩云'))}</span>
-  ${sealUrl?`<img src="${esc(sealUrl)}" alt="公章" onerror="this.style.display='none'" style="position:absolute;right:40px;bottom:-8px;width:110px;height:110px;opacity:.9;pointer-events:none"/>`:''}
+<div class=note>${esc(pick(resultsMap['备注'],note))}</div>
+<div class=sig style="min-height:110px">
+  <span>检测人员：${esc(pick(resultsMap['检测人员'],tpl&&tpl.inspector,'宫海霞'))}</span>
+  <span>复检人员：${esc(pick(resultsMap['复检人员'],tpl&&tpl.reviewer,'林彩云'))}</span>
+  ${sealUrl?`<img src="${esc(sealUrl)}" alt="公章" onerror="this.style.display='none'" style="position:absolute;right:130px;bottom:-62px;width:100px;height:100px;opacity:.9;pointer-events:none"/>`:''}
 </div>
 </div></body></html>`;
 
