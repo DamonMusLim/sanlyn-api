@@ -129,6 +129,37 @@ export default async function handler(req, res){
     });
   }
 
+  // format=xlsx → 厂检/QC Excel 导出(ExcelJS)
+  if((q.format||'').toString()==='xlsx'){
+    try{
+      const ExcelJS=(await import('exceljs')).default;
+      const wb=new ExcelJS.Workbook();
+      const ws=wb.addWorksheet((kind==='qc'?'QC':'FI')+' '+orderNo);
+      ws.columns=[{width:6},{width:34},{width:12},{width:14},{width:14},{width:12}];
+      ws.addRow([factoryDisplay]); ws.addRow([showSample+(kind==='qc'?' QC质检报告':'检验报告')]);
+      ws.addRow(['参考标准', 'GB/T 31410-2015《宠物用品 猫砂》/ GB/T 3838-2002《重金属限量》']);
+      ws.addRow([]);
+      ws.addRow(['报告编号', reportNo]); ws.addRow(['样品/合同编号', orderNo]); ws.addRow(['产品名称', showSample]);
+      ws.addRow(['规格', productSpec]); ws.addRow(['生产批号', batchNo]); ws.addRow(['生产日期', prodDate]);
+      ws.addRow(['数/重量', qtyWeight]); ws.addRow(['检验日期', inspDate]); ws.addRow(['检验地点', '仓库']); ws.addRow(['送检批量(袋)', sampleQty]);
+      ws.addRow([]);
+      const hdr=ws.addRow(['序号','检验项目','计量单位','技术要求','检验结果','单项评价']); hdr.font={bold:true};
+      items.forEach((it,i)=>{
+        const rv=resultsMap[it.name]; const has=rv!==undefined&&rv!==''&&rv!==null;
+        const actual=has?String(rv):''; let verdict='';
+        if(has){const ok=checkSpec(it.spec,rv);verdict=ok===null?'':(ok?'合格':'超标');}
+        ws.addRow([it.no,it.name,it.unit,it.spec,actual,verdict]);
+      });
+      ws.addRow([]); ws.addRow(['备注', note]);
+      ws.addRow(['检测人员', pick(tpl&&tpl.inspector,'宫海霞'), '', '复检人员', pick(tpl&&tpl.reviewer,'林彩云')]);
+      const buf=await wb.xlsx.writeBuffer();
+      res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition','attachment; filename="'+encodeURIComponent((kind==='qc'?'QC质检报告_':'厂检单_')+showSample+'_'+orderNo)+'.xlsx"');
+      res.setHeader('Cache-Control','no-store');
+      return res.status(200).send(Buffer.from(buf));
+    }catch(xe){ console.error('[doc-render] xlsx error:',xe&&xe.message); return res.status(500).json({error:'xlsx_failed',detail:xe&&xe.message}); }
+  }
+
   // — 分节渲染 —
   // 按 section 字段分组；无 section 字段则视为单节旧格式
   const hasSections = items.some(it => it.section);
