@@ -188,7 +188,13 @@ function renderPriced(pfx,agg,rows,cur){
       }
     });
   }
-  body+='<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+' CTN</td><td>'+cur+'</td><td>'+fmt(agg.amt)+'</td></tr>';
+  // 运费/杂费行(仅SC/IV,不进PL;不含税,金额直接进合计)——存 primary.raw.inland_freight
+  var frt=Number(window._freight||0)||0, grand=Number(agg.amt||0)+frt;
+  if(frt>0){
+    var flbl=_langEn?(window._freightLabelEn||'INLAND FREIGHT'):(window._freightLabel||'提货运费');
+    body+='<tr><td></td><td class="l">'+esc(flbl)+'</td><td></td><td></td><td>'+fmt(frt)+'</td></tr>';
+  }
+  body+='<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+' CTN</td><td>'+cur+'</td><td>'+fmt(grand)+'</td></tr>';
   document.getElementById(pfx+'-body').innerHTML=body;
 }
 
@@ -387,6 +393,10 @@ function init(){
     all.sort(function(a,b){return String(a.order_no).localeCompare(String(b.order_no));});
     var cur=primary.currency||'CNY';
     var port=buildPort(primary);
+    var _praw=primary.raw||{};
+    window._freight=Number(primary.inland_freight||_praw.inland_freight||0)||0;
+    window._freightLabel=primary.inland_freight_label||_praw.inland_freight_label||'提货运费';
+    window._freightLabelEn=primary.inland_freight_label_en||_praw.inland_freight_label_en||'INLAND FREIGHT';
     document.getElementById('orderLabel').textContent=orderNo;
     return Promise.all(all.map(loadOrderLineItems)).then(function(lineSets){
       lineSets.forEach(function(lines,i){all[i]._lineItems=lines;});
