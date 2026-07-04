@@ -518,11 +518,18 @@ export default async function handler(req, res) {
       const _cn = created.rows[0];
       const _raw = getRaw(_cn) || {};
       const _reason = _raw.reason || 'other';
-      const _rl = { price_error:'标价错误', quality:'质量问题', damage:'货损', qty_short:'数量短少/短装', freight_over:'运费多收', goodwill:'客户关系', other:'其他' }[_reason] || _reason;
+      const _rl = { price_error:'标价错误', quality:'质量问题', damage:'货损', qty_short:'数量短少/短装', freight_over:'运费多收', delay:'延误(文件/交期)', goodwill:'客户关系', other:'其他' }[_reason] || _reason;
       const _amt = Math.abs(Number(_cn.net_amount) || 0);
       const _meta = { cn_no:_cn.cn_no, reason:_reason, reason_label:_rl, amount:Number(_cn.net_amount)||0, currency:_cn.currency||'CNY', company:_cn.company_name, company_code:_cn.company_code, order_no:_cn.order_no, contract_no:_cn.contract_no, direction:_raw.direction||null };
       const _summary = '贷记单 ' + _cn.cn_no + ' · ' + (_cn.company_name||_cn.company_code||'') + ' 冲减 ' + _amt + ' ' + (_cn.currency||'CNY') + '｜事由:' + _rl + (_cn.order_no?('｜单:'+_cn.order_no):'') + '｜' + String(_cn.note||'').slice(0,220) + '｜教训:此类损失需追根因、纳入SOP防再犯。';
       await pool.query("INSERT INTO ai_memory_records (domain, entity_type, entity_id, summary, outcome, occurred_at, ingested_at, metadata) VALUES ('finance','credit_note',$1,$2,$3,NOW(),NOW(),$4::jsonb)", [_cn.cn_no, _summary, _cn.status||'draft', JSON.stringify(_meta)]);
+      // 失败类CN(非纯客情) → 自动建"复盘防再犯"闭环任务:Hermes生成根因+SOP,信息不足回问Damon补充
+      if (_reason !== 'goodwill') {
+        const _tid = 't-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,6);
+        const _tRaw = { entity_type:'credit_note', entity_id:_cn.cn_no, issue_type:_reason, issue_label:_rl, root_cause:String(_cn.note||''), recommended_action:'Hermes分析根因并生成防再犯SOP;信息不足则回问Damon补充', amount:Number(_cn.net_amount)||0, currency:_cn.currency||'CNY', generated_by:'cn_auto_review' };
+        const _ttl = '复盘防再犯: ' + _cn.cn_no + ' ' + _rl + ' ' + _amt + (_cn.currency||'CNY') + ' (' + (_cn.company_name||_cn.company_code||'') + ')';
+        await pool.query("INSERT INTO tasks (id, title, task_type, level, status, risk_level, owner_object_type, owner_object_id, related_order_no, company_code, mode, due_at, reason, raw, source, dedupe_key, priority, notify_stage) VALUES ($1,$2,'notification_closure','doc','open','high','document',$3,$4,$5,'owned',NULL,$6,$7::jsonb,'credit_note_review',$8,'P1',0) ON CONFLICT (source, dedupe_key) WHERE status NOT IN ('done','cancelled') DO NOTHING", [_tid, _ttl, _cn.cn_no, _cn.order_no||null, _cn.company_code||null, (String(_cn.note||'')||_rl), JSON.stringify(_tRaw), _cn.cn_no]);
+      }
     } catch (e) { console.error('[credit-notes] CN event/memory emit failed:', e.message); }
     return res.status(201).json({ success: true, data: created.rows[0] });
   }
