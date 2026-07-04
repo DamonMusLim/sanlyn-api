@@ -1,5 +1,6 @@
 // factory-inspection-editor.js — 厂检单/QC 可编辑模版(填检验值+盖章+保存入库),复用CN编辑器印章系统
-var API='https://api.sanlyn.cn',_sealTarget='fi:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_order='',_kind='fi',_items=[],_sampleName='',_sellerCode='',_dasMode='all',_curSealName='';
+var API='https://api.sanlyn.cn',_sealTarget='fi:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_order='',_kind='fi',_items=[],_sampleName='',_sellerCode='',_dasMode='all',_curSealName='',_lang='zh';
+var _EN={'水分':'Moisture','结团性':'Clumping','吸水率':'Water Absorption','结团强度':'Clump Strength','硬度':'Hardness','pH':'pH','pH值':'pH','白度':'Whiteness','容重':'Bulk Density','粉尘率':'Dust Rate','粉尘':'Dust','气味':'Odor','除臭效果':'Deodorization','颗粒度':'Granule Size','外观':'Appearance','包装':'Packaging','净含量':'Net Content'};
 function qp(n){return new URLSearchParams(location.search).get(n)||'';}
 function tok(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
 function authH(){var h={'Content-Type':'application/json'};var t=tok();if(t)h.Authorization='Bearer '+t;return h;}
@@ -15,21 +16,27 @@ function checkSpec(spec,val){var v=parseFloat(val);if(isNaN(v))return null;spec=
   if((m=spec.match(/^[≥>]=?([\d.]+)$/)))return v>=parseFloat(m[1]);
   if((m=spec.match(/^([\d.]+)[-~]([\d.]+)$/)))return v>=parseFloat(m[1])&&v<=parseFloat(m[2]);
   return null;}
-function verdictHtml(spec,val){if(val===''||val==null)return '<span class="verdict-na">—</span>';var ok=checkSpec(spec,val);if(ok===null)return '<span class="verdict-na">—</span>';return ok?'<span class="verdict-ok">合格</span>':'<span class="verdict-bad">⚠ 超标</span>';}
+function verdictHtml(spec,val){if(val===''||val==null)return '<span class="verdict-na">—</span>';var ok=checkSpec(spec,val);if(ok===null)return '<span class="verdict-na">—</span>';var P=_lang==='en'?'PASS':'合格',F=_lang==='en'?'⚠ FAIL':'⚠ 超标';return ok?'<span class="verdict-ok">'+P+'</span>':'<span class="verdict-bad">'+F+'</span>';}
 function recompute(el){var tr=el.closest('tr');var spec=tr.querySelector('[data-f="spec"]').textContent.trim();var val=tr.querySelector('[data-f="result"]').textContent.trim();tr.querySelector('[data-f="verdict"]').innerHTML=verdictHtml(spec,val);}
 function renderItems(items){
   _items=items||[];
   document.getElementById('fi-body').innerHTML=_items.map(function(it){
+    var nm=(_lang==='en'&&_EN[it.name])?_EN[it.name]:it.name;
     return '<tr>'
       +'<td>'+esc(it.no)+'</td>'
-      +'<td class="ed" contenteditable data-f="name">'+esc(it.name)+'</td>'
+      +'<td class="ed" contenteditable data-f="name" data-zhname="'+esc(it.name)+'">'+esc(nm)+'</td>'
       +'<td class="ed" contenteditable data-f="unit">'+esc(it.unit)+'</td>'
       +'<td class="ed" contenteditable data-f="spec">'+esc(it.spec)+'</td>'
-      +'<td class="res ed" contenteditable data-f="result" data-ph="填检验值" oninput="recompute(this)">'+esc(it.result)+'</td>'
+      +'<td class="res ed" contenteditable data-f="result" data-ph="'+(_lang==='en'?'fill value':'填检验值')+'" oninput="recompute(this)">'+esc(it.result)+'</td>'
       +'<td data-f="verdict">'+verdictHtml(it.spec,it.result)+'</td>'
       +'</tr>';
   }).join('');
 }
+/* ── 中英切换 ── */
+function captureResults(){document.querySelectorAll('#fi-body tr').forEach(function(tr,i){if(_items[i]){var rs=tr.querySelector('[data-f="result"]');if(rs)_items[i].result=rs.textContent.trim();var sp=tr.querySelector('[data-f="spec"]');if(sp)_items[i].spec=sp.textContent.trim();var un=tr.querySelector('[data-f="unit"]');if(un)_items[i].unit=un.textContent.trim();}});}
+function applyLang(){document.querySelectorAll('[data-en]').forEach(function(el){if(!el.hasAttribute('data-zh'))el.setAttribute('data-zh',el.textContent);el.textContent=(_lang==='en')?el.getAttribute('data-en'):el.getAttribute('data-zh');});var b=document.getElementById('langBtn');if(b)b.textContent=_lang==='en'?'🌐 中文':'🌐 English';}
+function toggleLang(){captureResults();_lang=(_lang==='en')?'zh':'en';renderItems(_items);applyLang();}
+function dlExcel(){saveResults().then(function(){window.open(API+'/api/db/doc-render?kind='+encodeURIComponent(_kind)+'&id='+encodeURIComponent(_order)+'&format=xlsx&token='+encodeURIComponent(tok()),'_blank');});}
 
 /* ── 加载 ── */
 function load(){
@@ -59,7 +66,7 @@ function collectResults(){
   var results={};
   document.querySelectorAll('#fi-body tr').forEach(function(tr){
     var nm=tr.querySelector('[data-f="name"]'),rs=tr.querySelector('[data-f="result"]');
-    if(nm&&rs){var name=nm.textContent.trim(),val=rs.textContent.trim();if(name)results[name]=val;}
+    if(nm&&rs){var name=(nm.getAttribute('data-zhname')||nm.textContent).trim(),val=rs.textContent.trim();if(name)results[name]=val;}
   });
   var sq=txt('fi-sampleqty');if(sq)results['送检批量']=sq;
   var bn=txt('fi-batch');if(bn)results['生产批号']=bn;

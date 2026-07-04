@@ -11,7 +11,7 @@ body{font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;background:#ee
 .toolbar button{padding:6px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;}
 .btn-print{background:#1d4ed8;color:#fff;}.btn-dl{background:#7c3aed;color:#fff;}
 .btn-save{background:#059669;color:#fff;}.btn-seal{background:#dc2626;color:#fff;}
-.btn-pdf{background:#be123c;color:#fff;}.btn-fwd{background:#0369a1;color:#fff;}
+.btn-pdf{background:#be123c;color:#fff;}.btn-fwd{background:#0369a1;color:#fff;}.btn-xls{background:#15803d;color:#fff;}.btn-mode{background:#0891b2;color:#fff;}
 .banner{max-width:820px;margin:0 auto 8px;padding:7px 12px;border-radius:6px;font-size:12px;display:none;}
 .banner.info{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;}
 .banner.err{background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;}
@@ -47,7 +47,9 @@ td.res{background:#fffdf0;font-weight:700;min-width:60px;}
   <button class="btn-dl"    onclick="downloadPng()">📥 下载图片</button>
   <button class="btn-save"  onclick="saveResults()">💾 保存检验结果</button>
   <button class="btn-pdf"   onclick="dlPdf()">📄 PDF下载</button>
+  <button class="btn-xls"   onclick="dlExcel()">📊 Excel下载</button>
   <button class="btn-fwd"   onclick="fwdLink()">🔗 复制链接</button>
+  <button class="btn-mode"  id="langBtn" onclick="toggleLang()">🌐 English</button>
   <button class="btn-seal"  onclick="openSealPicker('fi:seller')">🔴 盖工厂章</button>
   <span id="sealStatus" style="font-size:11px;color:#334155;margin-left:6px;padding:3px 10px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:20px;font-weight:700">章: —</span>
   <span style="font-size:11px;color:#64748b;margin-left:8px" id="lbl">—</span>
@@ -57,32 +59,32 @@ td.res{background:#fffdf0;font-weight:700;min-width:60px;}
 
 <div class="page" id="page">
   <div class="ti-cn ed" id="fi-factory" contenteditable data-ph="工厂名"></div>
-  <div class="ti-sub"><span class="ed" id="fi-sample" contenteditable data-ph="样品名"></span>检验报告</div>
+  <div class="ti-sub"><span class="ed" id="fi-sample" contenteditable data-ph="样品名"></span><span data-en="Inspection Report">检验报告</span></div>
   <div class="std ed" id="fi-std" contenteditable></div>
   <div class="hgrid">
     <table><tbody>
-      <tr><td>报告编号</td><td class="ed" id="fi-report" contenteditable></td></tr>
-      <tr><td>样品/合同编号</td><td class="ed" id="fi-order" contenteditable></td></tr>
-      <tr><td>产品名称</td><td class="ed" id="fi-prod" contenteditable></td></tr>
-      <tr><td>规格</td><td class="ed" id="fi-spec" contenteditable data-ph="规格"></td></tr>
-      <tr><td>生产批号</td><td class="ed" id="fi-batch" contenteditable data-ph="批号"></td></tr>
-      <tr><td>生产日期</td><td class="ed" id="fi-proddate" contenteditable data-ph="YYYY-MM-DD"></td></tr>
-      <tr><td>数/重量</td><td class="ed" id="fi-qtywt" contenteditable></td></tr>
+      <tr><td data-en="Report No.">报告编号</td><td class="ed" id="fi-report" contenteditable></td></tr>
+      <tr><td data-en="Sample/Contract No.">样品/合同编号</td><td class="ed" id="fi-order" contenteditable></td></tr>
+      <tr><td data-en="Product">产品名称</td><td class="ed" id="fi-prod" contenteditable></td></tr>
+      <tr><td data-en="Specification">规格</td><td class="ed" id="fi-spec" contenteditable data-ph="规格"></td></tr>
+      <tr><td data-en="Batch No.">生产批号</td><td class="ed" id="fi-batch" contenteditable data-ph="批号"></td></tr>
+      <tr><td data-en="Prod. Date">生产日期</td><td class="ed" id="fi-proddate" contenteditable data-ph="YYYY-MM-DD"></td></tr>
+      <tr><td data-en="Qty/Weight">数/重量</td><td class="ed" id="fi-qtywt" contenteditable></td></tr>
     </tbody></table>
     <table class="right"><tbody>
-      <tr><td>检验日期</td><td class="ed" id="fi-inspdate" contenteditable data-ph="YYYY-MM-DD"></td></tr>
-      <tr><td>检验地点</td><td class="ed" id="fi-place" contenteditable>仓库</td></tr>
-      <tr><td>送检批量(袋)</td><td class="ed" id="fi-sampleqty" contenteditable></td></tr>
+      <tr><td data-en="Insp. Date">检验日期</td><td class="ed" id="fi-inspdate" contenteditable data-ph="YYYY-MM-DD"></td></tr>
+      <tr><td data-en="Place">检验地点</td><td class="ed" id="fi-place" contenteditable>仓库</td></tr>
+      <tr><td data-en="Sample Qty (bag)">送检批量(袋)</td><td class="ed" id="fi-sampleqty" contenteditable></td></tr>
     </tbody></table>
   </div>
   <table class="t"><thead><tr>
-    <th style="width:44px">序号</th><th>检验项目</th><th style="width:90px">计量单位</th><th style="width:110px">技术要求</th><th style="width:100px">检验结果</th><th style="width:100px">单项评价</th>
+    <th style="width:44px" data-en="No.">序号</th><th data-en="Inspection Item">检验项目</th><th style="width:90px" data-en="Unit">计量单位</th><th style="width:110px" data-en="Standard">技术要求</th><th style="width:100px" data-en="Result">检验结果</th><th style="width:100px" data-en="Verdict">单项评价</th>
   </tr></thead>
   <tbody id="fi-body"><tr><td colspan="6" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
   <div class="note ed" id="fi-note" contenteditable data-ph="备注/结论"></div>
   <div class="sig">
-    <span>检测人员：<span class="ed" id="fi-inspector" contenteditable></span></span>
-    <span>复检人员：<span class="ed" id="fi-reviewer" contenteditable></span></span>
+    <span><span data-en="Inspector">检测人员</span>：<span class="ed" id="fi-inspector" contenteditable></span></span>
+    <span><span data-en="Reviewer">复检人员</span>：<span class="ed" id="fi-reviewer" contenteditable></span></span>
     <span class="seal-wrap" id="fi-seller-seal-area" ondragover="event.preventDefault()" ondrop="dropSeal(event,'fi:seller')"><img id="fi-seller-seal"></span>
     <span class="seal-hint" id="fi-seller-seal-hint" onclick="openSealPicker('fi:seller')">点此盖章</span>
   </div>
