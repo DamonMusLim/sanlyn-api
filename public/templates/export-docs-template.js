@@ -227,9 +227,12 @@ function fillPriced(pfx,seller,cur){
     te.innerText=(seller&&seller.terms_sc)?seller.terms_sc:'1. Export standard cartons; goods shipped as per agreed specifications.\n2. Shipment within 30 days of deposit received.\n3. Payment: 30% Deposit, 70% balance against BL copy (unless otherwise agreed).\n4. Claims must be raised within 30 days of arrival at POD.';
   }
 }
+// 港口名中→英规范化：认识的转英文大写，不认识的原样保留(绝不乱翻/造词)
+var PORT_EN={'青岛':'QINGDAO','上海':'SHANGHAI','宁波':'NINGBO','宁波北仑':'NINGBO','深圳':'SHENZHEN','厦门':'XIAMEN','天津':'TIANJIN','大连':'DALIAN','广州':'GUANGZHOU','连云港':'LIANYUNGANG','蛇口':'SHEKOU','盐田':'YANTIAN','南沙':'NANSHA','泉州':'QUANZHOU','锦州':'JINZHOU','福州':'FUZHOU','巴生':'PORT KLANG','巴生港':'PORT KLANG','巴生西':'PORT KLANG (WESTPORT)','巴生西港':'PORT KLANG (WESTPORT)','巴生北':'PORT KLANG (NORTHPORT)'};
+function normPort(x){if(!x)return '';var t=String(x).trim();if(PORT_EN[t])return PORT_EN[t];var t2=t.replace(/港$/,'');if(PORT_EN[t2])return PORT_EN[t2];return /[\u4e00-\u9fa5]/.test(t)?t:t.toUpperCase();}
 function buildPort(primary){
-  var pol=primary.pol||primary.sp_pol||(primary.raw&&primary.raw.sp_pol)||'';
-  var pod=primary.destination_port||primary.pod||primary.sp_pod||(primary.raw&&(primary.raw.destination_port||primary.raw.pod||primary.raw.sp_pod))||'';
+  var pol=normPort(primary.pol||primary.sp_pol||(primary.raw&&primary.raw.sp_pol)||'');
+  var pod=normPort(primary.destination_port||primary.pod||primary.sp_pod||(primary.raw&&(primary.raw.destination_port||primary.raw.pod||primary.raw.sp_pod))||'');
   return (pol&&pod)?(pol+' → '+pod):(pol||pod||'');
 }
 function fetchBuyerAddr(primary){
