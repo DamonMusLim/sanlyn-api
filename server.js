@@ -141,6 +141,11 @@ app.use((req, res, next) => {
 // ── MCP Server (no JWT — uses x-mcp-key) ──
 mount("/api/mcp", () => import("./api/mcp.js"));
 
+// ── Task Ingest (no JWT — uses TASK_INGEST_SECRET) ──
+mount("/api/tasks-ingest", () => import("./api/tasks-ingest.js"));
+mount("/api/wx-mini-login", () => import("./api/wx-mini-login.js"));
+mount("/api/brief-notes", () => import("./api/brief-notes.js"));
+
 // ── JWT 鉴权中间件 ──
 app.use(authMiddleware);
 // ── Portal 专用鉴权网关（/api/portal 路由组，Phase 3 Fix1）──
@@ -167,6 +172,9 @@ function mount(route, handlerModule) {
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
 mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
+mount("/api/tasks-closure", () => import("./api/tasks-closure.js"));
+mount("/api/db/account-identities", () => import("./api/db/account-identities.js"));
+mount("/api/db/ybb-recon", () => import("./api/db/ybb-recon.js"));
 // Dev-only fixture login — endpoint self-guards (404 in production, 403 without ENABLE_TEST_AUTH=1)
 // TOOLCHAIN-TEST-ACCOUNT-FIXTURE-001
 mount("/api/db/test-fixture-login", () => import("./api/db/test-fixture-login.js"));
@@ -259,6 +267,9 @@ mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 
 mount("/api/db/factory-invoice-reconcile", () => import("./api/db/factory-invoice-reconcile.js")); // 工厂开票对账台
 mount("/api/db/customs-collab", () => import("./api/db/customs-collab.js")); // 报关单开票协同
 mount("/api/db/recon-shadow", () => import("./api/db/recon-shadow.js")); // 对账框架影子端点
+mount("/api/db/recon-persist", () => import("./api/db/recon-persist.js")); // 对账P1落库/确认/核销
+mount("/api/db/invoice-drafts", () => import("./api/db/invoice-drafts.js")); // P2待开票卡
+mount("/api/db/recon-board", () => import("./api/db/recon-board.js")); // P1.5收付全景板
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
@@ -274,6 +285,7 @@ mount("/api/db/field-bindings",        () => import("./api/db/field-bindings.js"
 mount("/api/db/field-catalog/resolve", () => import("./api/db/field-catalog-resolve.js"));
 mount("/api/db/field-catalog",         () => import("./api/db/field-catalog.js"));
 mount("/api/db/template-form",          () => import("./api/db/template-form.js"));
+mount("/api/db/invoice-orphan-match", () => import("./api/db/invoice-orphan-match.js"));
 mount("/api/db/field-layout",           () => import("./api/db/field-layout.js"));
 mount("/api/db/migrate-collab-fields", () => import("./api/db/migrate-collab-fields.js"));
 // customer-invite: self-service activation links for customer accounts — needs prefix match
@@ -496,10 +508,12 @@ mount("/api/db/rfq-items",     () => import("./api/db/rfq-items.js"));      // f
 mount("/api/public/freight-quote/:itemId", () => import("./api/public/freight-quote.js")); // 货代公开报价页(免登录,token=freight_rfq_items.id)
 mount("/api/public/forwarder-lanes/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开多航线报价页
 mount("/api/public/forwarder-quote/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开报价提交
-mount("/api/public/forwarder-services/:code", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务(拖车)列表
-mount("/api/public/forwarder-services/:code/quote", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务报价提交
+mount("/api/public/forwarder-services/:code", () => import("./api/public/forwarder-services.js")); // v3a 拖车/报关/保险 公开服务列表
+mount("/api/public/forwarder-services/:code/quote", () => import("./api/public/forwarder-services.js")); // v3a 服务报价提交
 mount("/api/public/forwarder-shipments/:code", () => import("./api/public/forwarder-services.js")); // v3d 按票四服务全貌
-mount("/api/public/forwarder-grab/:code", () => import("./api/public/forwarder-services.js")); // 立即抢单两口价 grab_offers
+mount("/api/public/forwarder-grab/:code", () => import("./api/public/forwarder-services.js")); // 立即抢单 grab_offers
+mount("/api/db/customs-advice",          () => import("./api/db/customs-advice.js")); // 报关归类建议书(内部管理) 2026-07-03
+mount("/api/public/customs-advice/:token", () => import("./api/public/customs-advice-confirm.js")); // 客户免登录确认外链 2026-07-03
 mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
@@ -585,6 +599,7 @@ mount("/api/db/daigou-promote",  () => import("./api/db/daigou-promote.js"));
 mount("/api/db/customs-ocr",  () => import("./api/db/customs-ocr.js"));
 mount("/api/db/customs-doc-upload", () => import("./api/db/customs-doc-upload.js"));
 mount("/api/db/rebate-doc-upload", () => import("./api/db/rebate-doc-upload.js"));
+mount("/api/db/po-contract", () => import("./api/db/po-contract.js"));
 mount("/api/db/kp",  () => import("./api/db/kp.js"));
 mount("/api/db/invoice-portal",  () => import("./api/db/invoice-portal.js"));
 mount("/api/db/invoice-bind",  () => import("./api/db/invoice-bind.js"));
