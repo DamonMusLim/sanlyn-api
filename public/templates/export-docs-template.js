@@ -75,7 +75,8 @@ function aggregate(all){
   all.forEach(function(o){
     lineItems(o).filter(hasProd).forEach(function(p){
       var q=qty(p),nw=nwCtn(p)*q,gw=gwCtn(p)*q,cbm=cbmCtn(p)*q,amt=amount(p);
-      var key=declName(p);
+      // 英文版按报关英文名聚合(对齐提单9品名:猫砂盆/自动猫砂盆/指甲剪/宠物用品都归PET PRODUCTS);中文版按中文报关名
+      var key=(_langEn&&declNameEn(p))?declNameEn(p):declName(p);
       var g=groups[key]||(groups[key]={name:key,sizes:{},qty:0,nw:0,gw:0,cbm:0,amt:0});
       if(!g.nameEn)g.nameEn=declNameEn(p);
       g.qty+=q;g.nw+=nw;g.gw+=gw;g.cbm+=cbm;g.amt+=amt;if(p.size)g.sizes[p.size]=1;
