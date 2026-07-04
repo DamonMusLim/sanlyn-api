@@ -1,5 +1,8 @@
 // credit-note-editor.js — 独立 CN 可编辑单据模版 (复用 export-docs 的印章/导出机制,数据源=credit_notes)
 var API='https://api.sanlyn.cn',_sealTarget='cn:seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={},_cnNo='',_dlName='',_sellerCode='BABI',_buyerCode='',_sellerSealName='',_sellerSealId=null,_dasMode='company',_curSeal={seller:null,buyer:null};
+var _lang='zh';
+function applyLang(){document.querySelectorAll('[data-en]').forEach(function(el){if(!el.hasAttribute('data-zh'))el.setAttribute('data-zh',el.textContent);el.textContent=(_lang==='en')?el.getAttribute('data-en'):el.getAttribute('data-zh');});var b=document.getElementById('langBtn');if(b)b.textContent=_lang==='en'?'🌐 中文':'🌐 English';}
+function toggleLang(){_lang=(_lang==='en')?'zh':'en';applyLang();}
 function updateSealStatus(){
   var el=document.getElementById('sealStatus');if(!el)return;
   var se=_curSeal.seller, bu=_curSeal.buyer;

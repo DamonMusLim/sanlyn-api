@@ -11,7 +11,7 @@ body{font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;background:#ee
 .toolbar button{padding:6px 12px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:700;}
 .btn-print{background:#1d4ed8;color:#fff;}.btn-dl{background:#7c3aed;color:#fff;}
 .btn-save{background:#059669;color:#fff;}.btn-seal{background:#dc2626;color:#fff;}
-.btn-pdf{background:#be123c;color:#fff;}.btn-xls{background:#15803d;color:#fff;}.btn-fwd{background:#0369a1;color:#fff;}
+.btn-pdf{background:#be123c;color:#fff;}.btn-xls{background:#15803d;color:#fff;}.btn-fwd{background:#0369a1;color:#fff;}.btn-mode{background:#0891b2;color:#fff;}
 .banner{max-width:820px;margin:0 auto 8px;padding:7px 12px;border-radius:6px;font-size:12px;display:none;}
 .banner.info{background:#eff6ff;border:1px solid #93c5fd;color:#1d4ed8;}
 .banner.err{background:#fef2f2;border:1px solid #fca5a5;color:#dc2626;}
@@ -71,6 +71,7 @@ tr.grand td.red{color:#fff;}
   <button class="btn-pdf"   onclick="dlDoc('pdf')">📄 PDF下载</button>
   <button class="btn-xls"   onclick="dlDoc('xlsx')">📊 Excel下载</button>
   <button class="btn-fwd"   onclick="fwdDoc()">🔗 转发/共享</button>
+  <button class="btn-mode" id="langBtn" onclick="toggleLang()">🌐 English</button>
   <button class="btn-seal"  onclick="openSealPicker('cn:seller')">🔴 卖方章</button>
   <button class="btn-seal"  onclick="openSealPicker('cn:buyer')">🔴 买方章</button>
   <span id="sealStatus" style="font-size:11px;color:#334155;margin-left:6px;padding:3px 10px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:20px;font-weight:700">卖方章: —</span>
@@ -86,8 +87,8 @@ tr.grand td.red{color:#fff;}
   </div>
   <hr class="rule">
   <div class="mid">
-    <div class="mid-l"><div class="mid-lbl">收款方 / TO</div><div class="buyer-name ed" id="cn-buyerName" contenteditable data-ph="Buyer"></div><div class="buyer-addr ed" id="cn-buyerAddr" contenteditable data-ph="Buyer Address"></div></div>
-    <div class="mid-r"><div class="mid-lbl">单据详情 / DETAILS</div>
+    <div class="mid-l"><div class="mid-lbl" data-en="TO">收款方 / TO</div><div class="buyer-name ed" id="cn-buyerName" contenteditable data-ph="Buyer"></div><div class="buyer-addr ed" id="cn-buyerAddr" contenteditable data-ph="Buyer Address"></div></div>
+    <div class="mid-r"><div class="mid-lbl" data-en="DETAILS">单据详情 / DETAILS</div>
       <div class="drow"><span>CN No.:</span><span class="ed" id="cn-no" contenteditable data-ph="CN-YYYY-XXXX"></span></div>
       <div class="drow"><span>Order:</span><span class="ed" id="cn-order" contenteditable data-ph="Order No."></span></div>
       <div class="drow"><span>Contract:</span><span class="ed" id="cn-contract" contenteditable data-ph="合同/PO"></span></div>
@@ -96,18 +97,18 @@ tr.grand td.red{color:#fff;}
   </div>
   <table><thead><tr>
     <th class="c" style="width:34px">NO.</th>
-    <th class="l">货物 / DESCRIPTION</th>
-    <th style="width:70px">数量 QTY</th>
-    <th style="width:60px">单位 UNIT</th>
-    <th style="width:100px">单价差 DIFF</th>
-    <th style="width:120px">贷记金额 AMOUNT</th>
+    <th class="l" data-en="DESCRIPTION">货物 / DESCRIPTION</th>
+    <th style="width:70px" data-en="QTY">数量 QTY</th>
+    <th style="width:60px" data-en="UNIT">单位 UNIT</th>
+    <th style="width:100px" data-en="DIFF">单价差 DIFF</th>
+    <th style="width:120px" data-en="AMOUNT">贷记金额 AMOUNT</th>
     <th style="width:24px" class="c"></th>
   </tr></thead>
   <tbody id="cn-body"><tr><td colspan="7" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
   <div class="addrow" onclick="addRow()">+ 添加一行</div>
   <div class="boxes">
-    <div class="box"><div class="box-t">备注 / REMARKS</div><div class="ed" id="cn-remarks" contenteditable data-ph="事由 / 说明"></div></div>
-    <div class="box"><div class="box-t">退款账户 / BANKING</div><div class="bank-line ed" id="cn-bank" contenteditable></div></div>
+    <div class="box"><div class="box-t" data-en="REMARKS">备注 / REMARKS</div><div class="ed" id="cn-remarks" contenteditable data-ph="事由 / 说明"></div></div>
+    <div class="box"><div class="box-t" data-en="BANKING">退款账户 / BANKING</div><div class="bank-line ed" id="cn-bank" contenteditable></div></div>
   </div>
   <div class="sigs">
     <div class="sig"><div class="sig-t">客户确认 / CUSTOMER<span class="seal-wrap" id="cn-buyer-seal-area" ondragover="event.preventDefault()" ondrop="dropSeal(event,'cn:buyer')"><img id="cn-buyer-seal"></span><span class="seal-hint" id="cn-buyer-seal-hint" onclick="openSealPicker('cn:buyer')">click seal</span></div><div class="sig-sub">(签字/盖章 Signature)</div></div>
