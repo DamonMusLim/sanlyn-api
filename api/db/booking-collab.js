@@ -1842,8 +1842,28 @@ async function handlePlanFactories(req, res, pool) {
   for (const name of (Array.isArray(raw.factories) ? raw.factories : [])) put(name, {});
   // 4) 已提交的厂标
   for (const label of Object.keys(fs)) put(label, {});
-  const factories = [...map.values()].map(f => ({ ...f,
+  let factories = [...map.values()].map(f => ({ ...f,
     qty: f.qty || (f.seqs || []).length || null, submitted: !!fs[f.label] }));
+  // 2026-07-06 根治: raw 四个来源都空时(没人手动分厂),兜底从 orders 表按 shipping_plan_id 派生真实工厂
+  // (订单本就有 factory 字段,只是没人往 raw.factories_alloc 里录入分厂分配)。不覆盖任何已有人工数据。
+  if (!factories.length) {
+    const { rows: fo } = await pool.query(
+      `SELECT NULLIF(TRIM(factory), '') AS label,
+              COUNT(*)::int AS order_count,
+              COALESCE(SUM(total_qty), 0)::int AS total_qty
+         FROM orders
+        WHERE shipping_plan_id = $1
+          AND NULLIF(TRIM(factory), '') IS NOT NULL
+          AND (status IS NULL OR status NOT IN ('cancelled'))
+        GROUP BY NULLIF(TRIM(factory), '')
+        ORDER BY label`,
+      [plan.id]);
+    factories = fo.map(r => ({
+      label: r.label, seqs: [], qty: r.order_count || null, note: null,
+      submitted: false, source: "derived_from_orders",
+      order_count: r.order_count || 0, total_qty: r.total_qty || 0,
+    }));
+  }
   return res.json({ ok: true, container_type: plan.container_type,
     container_qty: plan.container_qty, factories });
 }
