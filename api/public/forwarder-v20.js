@@ -80,7 +80,7 @@ function publicRfq(row){
 function groupRows(rows){
   var groups = {};
   rows.forEach(function(row){
-    var key = normPort(row.pol) + "::" + normPort(row.pod);
+    var key = normalizePort(row.pol) + "::" + normalizePort(row.pod); // 别名归一(青岛=Qingdao) 合并同航线
     if (key === "::") return;
     if (!groups[key]) {
       groups[key] = {
