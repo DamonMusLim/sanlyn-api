@@ -141,6 +141,11 @@ app.use((req, res, next) => {
 // ── MCP Server (no JWT — uses x-mcp-key) ──
 mount("/api/mcp", () => import("./api/mcp.js"));
 
+// ── Task Ingest (no JWT — uses TASK_INGEST_SECRET, 供mini检测器写PG闭环任务) ──
+mount("/api/tasks-ingest", () => import("./api/tasks-ingest.js"));
+mount("/api/wx-mini-login", () => import("./api/wx-mini-login.js"));
+mount("/api/brief-notes", () => import("./api/brief-notes.js"));
+
 // ── JWT 鉴权中间件 ──
 app.use(authMiddleware);
 // ── Portal 专用鉴权网关（/api/portal 路由组，Phase 3 Fix1）──
@@ -167,6 +172,9 @@ function mount(route, handlerModule) {
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
 mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
+mount("/api/db/account-identities", () => import("./api/db/account-identities.js"));
+mount("/api/db/migrate-account-identities", () => import("./api/db/migrate-account-identities.js"));
+mount("/api/tasks-closure", () => import("./api/tasks-closure.js"));
 // Dev-only fixture login — endpoint self-guards (404 in production, 403 without ENABLE_TEST_AUTH=1)
 // TOOLCHAIN-TEST-ACCOUNT-FIXTURE-001
 mount("/api/db/test-fixture-login", () => import("./api/db/test-fixture-login.js"));
@@ -259,6 +267,9 @@ mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 
 mount("/api/db/factory-invoice-reconcile", () => import("./api/db/factory-invoice-reconcile.js")); // 工厂开票对账台
 mount("/api/db/customs-collab", () => import("./api/db/customs-collab.js")); // 报关单开票协同
 mount("/api/db/recon-shadow", () => import("./api/db/recon-shadow.js")); // 对账框架影子端点
+mount("/api/db/recon-persist", () => import("./api/db/recon-persist.js"));
+mount("/api/db/invoice-drafts", () => import("./api/db/invoice-drafts.js"));
+mount("/api/db/recon-board", () => import("./api/db/recon-board.js"));
 mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
 mount("/api/db/orders",            () => import("./api/db/orders.js"));
 mount("/api/db/payments",          () => import("./api/db/payments.js"));
@@ -429,6 +440,7 @@ mount("/api/db/field-visibility",           () => import("./api/db/field-visibil
 mount("/api/db/customs-draft-sheets",       () => import("./api/db/customs-draft-sheets.js"));
 mount("/api/db/inspection-request-sheets",  () => import("./api/db/inspection-request-sheets.js"));
 mount("/api/db/inspection-status",          () => import("./api/db/inspection-status.js")); // 检疫状态查询
+mount("/api/db/inspection-ocr",             () => import("./api/db/inspection-ocr.js")); // 商检单/报检单 OCR (MiniMax-M3) 2026-07-05
 mount("/api/db/cert-application-sheets",    () => import("./api/db/cert-application-sheets.js"));
 mount("/api/db/trucking-pickup-sheets",     () => import("./api/db/trucking-pickup-sheets.js"));
 mount("/api/db/trucking-evidence-sheets",   () => import("./api/db/trucking-evidence-sheets.js"));
@@ -496,6 +508,10 @@ mount("/api/db/rfq-items",     () => import("./api/db/rfq-items.js"));      // f
 mount("/api/public/freight-quote/:itemId", () => import("./api/public/freight-quote.js")); // 货代公开报价页(免登录,token=freight_rfq_items.id)
 mount("/api/public/forwarder-lanes/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开多航线报价页
 mount("/api/public/forwarder-quote/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开报价提交
+mount("/api/public/forwarder-services/:code", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务(拖车)列表
+mount("/api/public/forwarder-services/:code/quote", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务报价提交
+mount("/api/public/forwarder-shipments/:code", () => import("./api/public/forwarder-services.js")); // v3d 按票四服务全貌
+mount("/api/public/forwarder-grab/:code", () => import("./api/public/forwarder-services.js")); // 立即抢单两口价 grab_offers
 mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
@@ -529,6 +545,8 @@ mount("/api/ocr-review",      () => import("./api/ocr-review.js"));
 mount("/api/oss-upload",      () => import("./api/oss-upload.js"));
 mount("/api/proxy-file",      () => import("./api/proxy-file.js"));
 mount("/api/send-email",      () => import("./api/send-email.js"));
+mount("/api/db/email-templates", () => import("./api/db/email-templates.js")); // 邮件模版中心 CRUD
+mount("/api/db/email-senders", () => import("./api/db/email-senders.js")); // 发件公司主体
 mount("/api/notify/order-created", () => import("./api/notify/order-created.js"));
 mount("/api/setup-finance",   () => import("./api/setup-finance.js"));
 mount("/api/vessel-callback", () => import("./api/vessel-callback.js"));
