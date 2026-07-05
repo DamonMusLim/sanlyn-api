@@ -27,6 +27,13 @@ function uniqPush(list, seen, value){
   list.push(s);
 }
 
+function mergePayStatus(current, next){
+  var s = cleanText(next).toLowerCase();
+  if (!s) return current || "";
+  if (s === "unpaid") return "unpaid";
+  return current || s;
+}
+
 async function loadToken(pool, code){
   if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
   const { rows } = await pool.query(
@@ -58,9 +65,16 @@ function makeBucket(blNo){
     usd_total:0,
     cny_total:0,
     line_count:0,
+    reconciled:true,
+    confirmed:false,
+    ap_status:"",
+    ar_status:"",
+    has_port_charge:false,
+    incomplete:false,
     _months:{},
     _containers:{},
     _planIds:{},
+    _hasOceanCharge:false,
     _lastMonth:"",
   };
 }
@@ -76,6 +90,14 @@ function groupBills(rows){
     if (month > g._lastMonth) g._lastMonth = month;
     uniqPush(g.containers, g._containers, row.container_no);
     if (row.link_plan_id != null && cleanText(row.link_plan_id)) g._planIds[cleanText(row.link_plan_id)] = true;
+
+    var category = cleanText(row.cost_category);
+    if (category.indexOf("海运费") !== -1) g._hasOceanCharge = true;
+    if (category && category.indexOf("海运费") === -1) g.has_port_charge = true;
+    if (row.reconciled !== true) g.reconciled = false;
+    if (row.confirmed_at) g.confirmed = true;
+    g.ap_status = mergePayStatus(g.ap_status, row.ap_status);
+    g.ar_status = mergePayStatus(g.ar_status, row.ar_status);
 
     var amount = row.amount == null ? null : money(row.amount);
     var currency = cleanText(row.currency).toUpperCase();
@@ -151,6 +173,8 @@ function finalize(byBl){
     delete g._months;
     delete g._containers;
     delete g._planIds;
+    g.incomplete = g._hasOceanCharge && !g.has_port_charge;
+    delete g._hasOceanCharge;
     return g;
   });
   history.sort(function(a, b){
@@ -170,7 +194,8 @@ async function handleGet(pool, token, res){
   if (!supplierName) return send(res, 404, { ok:false, error:"company_not_found" });
 
   const bills = await pool.query(
-    `SELECT bl_no, container_no, bill_month, cost_category, amount, currency, link_plan_id
+    `SELECT bl_no, container_no, bill_month, cost_category, amount, currency, link_plan_id,
+            reconciled, confirmed_at, ap_status, ar_status
        FROM freight_supplier_bills
       WHERE supplier = $1
         AND bl_no IS NOT NULL
@@ -188,8 +213,10 @@ async function handleGet(pool, token, res){
     acc.bl_count += 1;
     acc.usd_total = money(acc.usd_total + item.usd_total);
     acc.cny_total = money(acc.cny_total + item.cny_total);
+    if (item.reconciled) acc.reconciled_count += 1;
+    if (item.incomplete) acc.incomplete_count += 1;
     return acc;
-  }, { bl_count:0, usd_total:0, cny_total:0 });
+  }, { bl_count:0, usd_total:0, cny_total:0, reconciled_count:0, incomplete_count:0 });
 
   return send(res, 200, {
     ok:true,
