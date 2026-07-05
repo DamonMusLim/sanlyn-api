@@ -19,6 +19,11 @@ export default async function handler(req, res) {
   // 内转外→装箱资料可编辑模版(带token重定向,治type=transfer渲染错单)
   if (type === "transfer") {
     const _tk = req.query.token ? "&token=" + encodeURIComponent(req.query.token) : "";
+    var _fmt = String(req.query.format || "");
+    if (_fmt === "xlsx") {
+      res.writeHead(302, { Location: "https://api.sanlyn.cn/api/db/shipping-transfer-data?plan_id=" + encodeURIComponent(id || bl) + "&format=xlsx" + _tk });
+      return res.end();
+    }
     res.writeHead(302, { Location: "https://api.sanlyn.cn/templates/transfer-template.html?plan_id=" + encodeURIComponent(id || bl) + _tk });
     return res.end();
   }
@@ -27,7 +32,9 @@ export default async function handler(req, res) {
     const pool = getPool();
     // 海关出口货物报关单(官方版式)→ 独立模块。原 customs_decl 无 handler 会 fallback 成确认书(错单),这里正式接上。
     if (type === "customs_decl") {
-      const _cdHtml = await renderCustomsDeclaration(pool, id || bl, req.query);
+      const _cdQuery = { ...req.query };
+      _cdQuery.container_no = _cdQuery.container_no || _cdQuery.container || "";
+      const _cdHtml = await renderCustomsDeclaration(pool, id || bl, _cdQuery);
       if (!_cdHtml) return res.status(404).send("<h1>Shipment not found</h1>");
       return res.status(200).send(_cdHtml);
     }
