@@ -99,24 +99,36 @@ function groupRows(rows){
 }
 
 async function resolveCarriers(pool, forwarderCo, lanes){
-  // 定义(Damon 2026-07-03): 只显示 ①客户订单指定的船司 ②本货代已主动报过价的船司(freight_rfq_items)。
-  // 不再按起运港/航线协议全铺——避免把所有 open 单都冒出来。其余船司由前端"+航班/船期"手动添加。
-  var quotedByRfq = {};
+  // 定义(Damon 2026-07-03 "只看自己相关的"): 船司 = ①本货代该航线级协议(精确 pol+pod) ②客户订单指定 ③本货代已报价。
+  // 去掉"起运港级协议全铺"(byPol)——那会把该港所有 open 单冒出来(89单→太多)。0船司的航线由上层过滤隐藏。
+  var agMap = {};        // 航线级协议 pol::pod -> {carrier}
+  var quotedByRfq = {};  // rfq_id -> {carrier}
   try {
     var r = await pool.query(
-      "SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier FROM freight_rfq_items WHERE forwarder_co=$1 AND carrier IS NOT NULL AND TRIM(carrier) <> ''",
+      "SELECT UPPER(TRIM(carrier_code)) AS code, UPPER(TRIM(COALESCE(pol,''))) AS pol, UPPER(TRIM(COALESCE(pod,''))) AS pod FROM forwarder_carrier_agreements WHERE forwarder_co=$1 AND active IS TRUE AND pod IS NOT NULL AND TRIM(pod) <> ''",
       [forwarderCo]);
     r.rows.forEach(function(row){
+      var k = normalizePort(row.pol) + "::" + normalizePort(row.pod);
+      (agMap[k] = agMap[k] || {})[row.code] = 1;
+    });
+  } catch(e){}
+  try {
+    var q = await pool.query(
+      "SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier FROM freight_rfq_items WHERE forwarder_co=$1 AND carrier IS NOT NULL AND TRIM(carrier) <> ''",
+      [forwarderCo]);
+    q.rows.forEach(function(row){
       if (!row.rfq_id) return;
       (quotedByRfq[String(row.rfq_id)] = quotedByRfq[String(row.rfq_id)] || {})[row.carrier] = 1;
     });
   } catch(e){}
   (lanes || []).forEach(function(lane){
+    var key = normalizePort(lane.pol) + "::" + normalizePort(lane.pod);
     var set = {};
-    Object.keys(lane._orderCarriers || {}).forEach(function(c){ if (c) set[c] = 1; }); // ①客户订单指定
-    (lane.rfqs || []).forEach(function(rfq){                                            // ②本货代已报价
-      var q = quotedByRfq[String(rfq.id || rfq._rfqId || "")];
-      if (q) Object.keys(q).forEach(function(c){ set[c] = 1; });
+    Object.keys(agMap[key] || {}).forEach(function(c){ set[c] = 1; });                  // ①航线级协议(精确)
+    Object.keys(lane._orderCarriers || {}).forEach(function(c){ if (c) set[c] = 1; });   // ②客户订单指定
+    (lane.rfqs || []).forEach(function(rfq){                                             // ③本货代已报价
+      var qc = quotedByRfq[String(rfq.id || rfq._rfqId || "")];
+      if (qc) Object.keys(qc).forEach(function(c){ set[c] = 1; });
     });
     lane.carrier_options = Object.keys(set);
     delete lane._orderCarriers;
