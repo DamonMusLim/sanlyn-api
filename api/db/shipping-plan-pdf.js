@@ -8,6 +8,7 @@
 import { getPool, setCors } from "../db.js";
 import { renderCustomsDeclaration } from "./customs-declaration-form.js"; // 海关报关单 2026-06-28
 import { renderInboundNotice } from "./inbound-notice.js"; // 入货通知/订舱确认单 2026-07-05
+import { renderInspectionRequest } from "./inspection-request-form.js"; // 出境货物检验检疫申请/报检单 2026-07-05
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -45,6 +46,15 @@ export default async function handler(req, res) {
       const _inHtml = await renderInboundNotice(pool, id || bl, req.query);
       if (!_inHtml) return res.status(404).send("<h1>Shipment not found</h1>");
       return res.status(200).send(_inHtml);
+    }
+
+    // 出境货物检验检疫申请 / 报检单 (按柜, 货物与报关单同源) → 独立模块
+    if (type === "inspection_request") {
+      const _irQuery = { ...req.query };
+      _irQuery.container_no = _irQuery.container_no || _irQuery.container || "";
+      const _irHtml = await renderInspectionRequest(pool, id || bl, _irQuery);
+      if (!_irHtml) return res.status(404).send("<h1>Shipment not found</h1>");
+      return res.status(200).send(_irHtml);
     }
 
     // ── Fetch shipping plan ──
