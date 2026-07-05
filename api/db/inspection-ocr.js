@@ -54,7 +54,8 @@ const OCR_PROMPT = `这是一张中华人民共和国海关"出境货物检验�
   "license_no": "许可证/审批号",
   "departure_place": "启运地",
   "arrival_port": "到达口岸",
-  "producer_reg_no": "生产单位注册号",
+  "producer_reg_no": "生产单位注册号(只要编号本身,别带公司名)",
+  "producer_name": "生产单位名称",
   "transport": "运输工具名称号码",
   "trade_mode": "贸易方式",
   "storage_place": "货物存放地点",
@@ -64,7 +65,8 @@ const OCR_PROMPT = `这是一张中华人民共和国海关"出境货物检验�
     { "name_cn": "货物名称中文", "name_en": "货物名称外文", "hs_code": "H.S.编码", "origin": "产地", "weight": "数/重量(数字)", "weight_unit": "重量单位(如千克)", "value": "货物总值(数字)", "value_currency": "币种(如人民币)", "package": "包装种类及数量(整段照抄)" }
   ],
   "certs": [ { "name": "证单名称(如兽医卫生证书)", "orig": "正份数(数字)", "copy": "副份数(数字)" } ]
-}`;
+}
+特别注意: "需要证单名称"栏只抽**打了勾(☑/√/■)的**那几项证单,没打勾的空项一律不要放进 certs。`;
 
 async function ocr(imgBytes, mediaType) {
   const key = process.env.MINIMAX_API_KEY;
@@ -112,7 +114,7 @@ async function resolveImage(pool, { doc_id, image_url, pdf_url }) {
   if (doc_id) {
     const q = await pool.query(
       `SELECT id, doc_id, url, name, contract_no FROM document_uploads
-        WHERE doc_id=$1 AND doc_type IN ('ciq_inspection','inspection','商检','报检单')
+        WHERE doc_id=$1 AND doc_type IN ('ciq_inspection','inspection','inspection_application','phyto_inspection_app','quarantine_report','商检','报检单')
         ORDER BY uploaded_at DESC LIMIT 1`, [doc_id]);
     if (!q.rows.length) { const e = new Error("找不到报检单/商检单文件 (document_uploads doc_type=ciq_inspection)"); e.status = 404; throw e; }
     const doc = q.rows[0];
@@ -153,13 +155,14 @@ export async function runInspectionOcr(pool, body = {}) {
 
     const certNames = Array.isArray(parsed.certs) ? parsed.certs.map(c => s(c.name)).filter(Boolean) : [];
 
-    // 回填工厂检验检疫主数据(生产单位注册号) — 只在空时填,不覆盖
+    // 回填工厂检验检疫主数据(生产单位注册号) — 只在空时填,不覆盖。注册号剥掉可能粘连的公司名(取"/"前)
+    const prodReg = s(parsed.producer_reg_no).split(/[\/／]/)[0].trim();
     let factoryFilled = null;
-    if (ord && ord.factory_code && s(parsed.producer_reg_no)) {
+    if (ord && ord.factory_code && prodReg) {
       const f = await client.query(
         `UPDATE companies SET registration_no=$1, updated_at=NOW()
           WHERE code=$2 AND (registration_no IS NULL OR btrim(registration_no)='') RETURNING code`,
-        [s(parsed.producer_reg_no), ord.factory_code]);
+        [prodReg, ord.factory_code]);
       factoryFilled = f.rows.length ? ord.factory_code : "already";
     }
 
