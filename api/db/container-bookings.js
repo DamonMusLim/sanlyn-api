@@ -54,7 +54,8 @@ export default async function handler(req,res){
       var enrich =
         ", (SELECT o.order_no FROM orders o WHERE o.contract_no=cb.contract_no ORDER BY o.id LIMIT 1) AS order_no_derived" +
         ", (SELECT o.total_cbm FROM orders o WHERE o.contract_no=cb.contract_no ORDER BY o.id LIMIT 1) AS order_cbm" +
-        ", (SELECT SUM(oli.qty_ctn) FROM order_line_items oli JOIN orders o ON o.id=oli.order_id WHERE o.contract_no=cb.contract_no) AS order_cartons";
+        ", (SELECT SUM(oli.qty_ctn) FROM order_line_items oli JOIN orders o ON o.id=oli.order_id WHERE o.contract_no=cb.contract_no) AS order_cartons" +
+        ", (SELECT COALESCE(o.factory_address, (SELECT c.address FROM companies c WHERE (c.name_cn=o.factory OR c.code=o.factory_code) AND c.address IS NOT NULL LIMIT 1)) FROM orders o WHERE o.contract_no=cb.contract_no ORDER BY o.id LIMIT 1) AS order_factory_addr";
       var q="SELECT cb.*"+enrich+" FROM container_bookings cb", w=[], p=[];
       if(bl_no){        p.push(bl_no);        w.push("cb.bl_no=$"+p.length); }
       if(contract_no){  p.push(contract_no);  w.push("cb.contract_no=$"+p.length); }
