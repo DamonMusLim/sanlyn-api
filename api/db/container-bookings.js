@@ -50,12 +50,17 @@ export default async function handler(req,res){
         var r=await pool.query("SELECT * FROM container_bookings WHERE id=$1",[id]);
         return res.json({ success:true, data:r.rows[0]||null });
       }
-      var q="SELECT * FROM container_bookings", w=[], p=[];
-      if(bl_no){        p.push(bl_no);        w.push("bl_no=$"+p.length); }
-      if(contract_no){  p.push(contract_no);  w.push("contract_no=$"+p.length); }
-      if(container_no){ p.push(container_no); w.push("container_no=$"+p.length); }
+      // 2026-07-05 根治: 每柜按 contract_no 关联订单,附加 订单号/CBM/件数(Σqty_ctn) 三列(additive,不动现有列)
+      var enrich =
+        ", (SELECT o.order_no FROM orders o WHERE o.contract_no=cb.contract_no ORDER BY o.id LIMIT 1) AS order_no_derived" +
+        ", (SELECT o.total_cbm FROM orders o WHERE o.contract_no=cb.contract_no ORDER BY o.id LIMIT 1) AS order_cbm" +
+        ", (SELECT SUM(oli.qty_ctn) FROM order_line_items oli JOIN orders o ON o.id=oli.order_id WHERE o.contract_no=cb.contract_no) AS order_cartons";
+      var q="SELECT cb.*"+enrich+" FROM container_bookings cb", w=[], p=[];
+      if(bl_no){        p.push(bl_no);        w.push("cb.bl_no=$"+p.length); }
+      if(contract_no){  p.push(contract_no);  w.push("cb.contract_no=$"+p.length); }
+      if(container_no){ p.push(container_no); w.push("cb.container_no=$"+p.length); }
       if(w.length) q+=" WHERE "+w.join(" AND ");
-      q+=" ORDER BY pickup_time ASC NULLS LAST, id ASC";
+      q+=" ORDER BY cb.pickup_time ASC NULLS LAST, cb.id ASC";
       var rl=await pool.query(q,p);
       return res.json({ success:true, data:rl.rows, count:rl.rowCount });
     }
