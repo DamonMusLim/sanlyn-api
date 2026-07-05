@@ -43,13 +43,15 @@ async function loadOrdersByIds(pool, ids) {
 }
 
 // 找该柜订单已上传的**真商检单原件**(不重画)。每 doc_id 取最新一份。
+// 🚨只按订单号(doc_id)匹配,不按 contract_no——CP-6/CP-7 共用合同号 CP26052851,
+// 按合同匹配会把别柜的商检也拉进来(同分票柜号碰撞坑)。doc_id=order_no,存的就是订单号。
 async function loadInspectionUploads(pool, orders) {
-  const nos = [...new Set(orders.flatMap(o => [o.order_no, o.contract_no, String(o.order_no || "").replace(/^\d+-/, "")]).filter(Boolean))];
+  const nos = [...new Set(orders.flatMap(o => [o.order_no, String(o.order_no || "").replace(/^\d+-/, "")]).filter(Boolean))];
   if (!nos.length) return [];
   const r = await pool.query(
     `SELECT DISTINCT ON (doc_id) doc_id, url, name FROM document_uploads
       WHERE doc_type IN ('ciq_inspection','inspection','inspection_application','phyto_inspection_app','quarantine_report','商检','报检单')
-        AND (doc_id = ANY($1::text[]) OR contract_no = ANY($1::text[]))
+        AND doc_id = ANY($1::text[])
       ORDER BY doc_id, uploaded_at DESC`, [nos]);
   return r.rows || [];
 }
