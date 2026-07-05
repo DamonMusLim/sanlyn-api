@@ -7,6 +7,7 @@
 
 import { getPool, setCors } from "../db.js";
 import { renderCustomsDeclaration } from "./customs-declaration-form.js"; // 海关报关单 2026-06-28
+import { renderInboundNotice } from "./inbound-notice.js"; // 入货通知/订舱确认单 2026-07-05
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -37,6 +38,13 @@ export default async function handler(req, res) {
       const _cdHtml = await renderCustomsDeclaration(pool, id || bl, _cdQuery);
       if (!_cdHtml) return res.status(404).send("<h1>Shipment not found</h1>");
       return res.status(200).send(_cdHtml);
+    }
+
+    // 入货通知 / 订舱确认单 (给工厂/车队: 收箱/截港/截关/截单/VGM + 箱量) → 独立模块
+    if (type === "inbound_notice") {
+      const _inHtml = await renderInboundNotice(pool, id || bl, req.query);
+      if (!_inHtml) return res.status(404).send("<h1>Shipment not found</h1>");
+      return res.status(200).send(_inHtml);
     }
 
     // ── Fetch shipping plan ──
