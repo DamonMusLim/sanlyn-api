@@ -167,6 +167,39 @@ async function attachOfficialPortCharges(pool, lanes){
   return lanes;
 }
 
+async function attachForwarderQuotes(pool, forwarderCo, lanes){
+  // 接真实数据(Damon 2026-07-05 去mock): 把本货代 freight_rfq_items 真实报价 按 rfq_id+carrier attach。
+  // 只含真报过的船司(voyage/vessel/免柜/rate/cutoff),没报的carrier无键 → 前端显空,绝不造假voyage。
+  var byKey = {};
+  try {
+    var r = await pool.query(
+      "SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier, vessel, voyage, to_char(etd,'MM/DD') AS etd, usd_rate, transit_days, free_pol_days, free_pod_days, to_char(si_cutoff_at,'MM/DD') AS si_cutoff, to_char(cy_cutoff_at,'MM/DD') AS cy_cutoff, container_type FROM freight_rfq_items WHERE forwarder_co=$1 AND carrier IS NOT NULL AND TRIM(carrier) <> ''",
+      [forwarderCo]);
+    r.rows.forEach(function(row){
+      byKey[String(row.rfq_id) + "::" + row.carrier] = {
+        vessel: row.vessel || "", voyage: row.voyage || "",
+        etd: row.etd || "", usd_rate: row.usd_rate == null ? "" : String(row.usd_rate),
+        transit_days: row.transit_days == null ? "" : String(row.transit_days),
+        container_type: row.container_type || "",
+        free_pol_days: row.free_pol_days == null ? "" : String(row.free_pol_days),
+        free_pod_days: row.free_pod_days == null ? "" : String(row.free_pod_days),
+        si_cutoff: row.si_cutoff || "", cy_cutoff: row.cy_cutoff || "",
+      };
+    });
+  } catch(e){}
+  (lanes || []).forEach(function(lane){
+    var q = {};
+    (lane.carrier_options || []).forEach(function(carrier){
+      (lane.rfqs || []).forEach(function(rfq){
+        var hit = byKey[String(rfq.id || rfq._rfqId) + "::" + String(carrier).toUpperCase()];
+        if (hit && !q[carrier]) q[carrier] = hit;
+      });
+    });
+    lane.carrier_quotes = q;
+  });
+  return lanes;
+}
+
 async function handleGet(pool, token, res){
   const { rows } = await pool.query(`
     SELECT r.id, r.pol, r.pod, r.ctnr_type, r.status, r.etd,
@@ -200,6 +233,7 @@ async function handleGet(pool, token, res){
   lanes = await resolveCarriers(pool, token.forwarder_co, lanes);
   lanes = lanes.filter(function(l){ return (l.carrier_options||[]).length > 0; }); // 其他不显示:无协议无订单指定船司的航线整条隐藏
   lanes = await attachOfficialPortCharges(pool, lanes);
+  lanes = await attachForwarderQuotes(pool, token.forwarder_co, lanes);
   return send(res, 200, {
     ok:true,
     forwarder_co:token.forwarder_co,
