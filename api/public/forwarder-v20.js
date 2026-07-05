@@ -99,23 +99,25 @@ function groupRows(rows){
 }
 
 async function resolveCarriers(pool, forwarderCo, lanes){
-  var agMap = {}; var byPol = {};
+  // 定义(Damon 2026-07-03): 只显示 ①客户订单指定的船司 ②本货代已主动报过价的船司(freight_rfq_items)。
+  // 不再按起运港/航线协议全铺——避免把所有 open 单都冒出来。其余船司由前端"+航班/船期"手动添加。
+  var quotedByRfq = {};
   try {
     var r = await pool.query(
-      "SELECT UPPER(TRIM(carrier_code)) AS code, UPPER(TRIM(COALESCE(pol,''))) AS pol, UPPER(TRIM(COALESCE(pod,''))) AS pod FROM forwarder_carrier_agreements WHERE forwarder_co=$1 AND active IS TRUE",
+      "SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier FROM freight_rfq_items WHERE forwarder_co=$1 AND carrier IS NOT NULL AND TRIM(carrier) <> ''",
       [forwarderCo]);
     r.rows.forEach(function(row){
-      var k = normalizePort(row.pol) + "::" + normalizePort(row.pod);
-      (agMap[k] = agMap[k] || {})[row.code] = 1;
-      (byPol[normalizePort(row.pol)] = byPol[normalizePort(row.pol)] || {})[row.code] = 1;
+      if (!row.rfq_id) return;
+      (quotedByRfq[String(row.rfq_id)] = quotedByRfq[String(row.rfq_id)] || {})[row.carrier] = 1;
     });
   } catch(e){}
   (lanes || []).forEach(function(lane){
-    var key = normalizePort(lane.pol) + "::" + normalizePort(lane.pod);
     var set = {};
-    Object.keys(agMap[key] || {}).forEach(function(c){ set[c] = 1; });      // 协议(航线级)
-    Object.keys(byPol[normalizePort(lane.pol)] || {}).forEach(function(c){ set[c] = 1; }); // 协议(起运港级)
-    Object.keys(lane._orderCarriers || {}).forEach(function(c){ if (c) set[c] = 1; }); // 客户订单指定
+    Object.keys(lane._orderCarriers || {}).forEach(function(c){ if (c) set[c] = 1; }); // ①客户订单指定
+    (lane.rfqs || []).forEach(function(rfq){                                            // ②本货代已报价
+      var q = quotedByRfq[String(rfq.id || rfq._rfqId || "")];
+      if (q) Object.keys(q).forEach(function(c){ set[c] = 1; });
+    });
     lane.carrier_options = Object.keys(set);
     delete lane._orderCarriers;
   });
