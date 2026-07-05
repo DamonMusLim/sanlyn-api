@@ -132,7 +132,7 @@ function requireAdminJwt(req, res) {
 async function resolveFactoryScope(pool, code) {
   if (!code) return null;
   const r = await pool.query(
-    `SELECT code, scope_type, scope_value, expires_at
+    `SELECT code, scope_type, scope_value, order_no, expires_at
        FROM invoice_links
       WHERE code = $1
         AND purpose = 'portal'
@@ -148,16 +148,62 @@ async function resolveFactoryScope(pool, code) {
   return { link, factory };
 }
 
+async function filterGapsByOrder(pool, gaps, orderNo) {
+  const no = cleanString(orderNo);
+  if (!no) return gaps;
+  const r = await pool.query(
+    `SELECT contract_no
+       FROM orders
+      WHERE order_no = $1 OR contract_no = $1
+      LIMIT 1`,
+    [no]
+  );
+  const contractNo = cleanString(r.rows[0]?.contract_no || no);
+  return gaps.filter((g) => cleanString(g.contract_no) === contractNo);
+}
+
+function filterUploadedByGaps(uploaded, gaps, orderNo) {
+  if (!cleanString(orderNo)) return uploaded;
+  const contracts = new Set(gaps.map((g) => cleanString(g.contract_no)).filter(Boolean));
+  const customs = new Set(gaps.map((g) => cleanString(g.customs_no)).filter(Boolean));
+  return uploaded.filter((u) =>
+    (u.contract_nos || []).some((n) => contracts.has(cleanString(n))) ||
+    (u.customs_nos || []).some((n) => customs.has(cleanString(n)))
+  );
+}
+
+async function fetchScopedGaps(pool, scope) {
+  const gaps = await fetchGaps(pool, scope.factory.code, scope.factory.name);
+  return filterGapsByOrder(pool, gaps, scope.link?.order_no);
+}
+
 async function handleGen(req, res) {
   const user = requireAdminJwt(req, res);
   if (!user) return;
 
-  const factoryCode = cleanString(req.query?.factory_code);
-  if (!factoryCode) return json(res, 400, { error: "factory_code required" });
-
+  let factoryCode = cleanString(req.query?.factory_code);
+  const orderNo = cleanString(req.query?.order_no) || "";
   const pool = getPool();
+  // 2026-07-05 factory_code 可选: 协同弹窗开票入口只传 order_no, 从订单派生工厂
+  if (!factoryCode && orderNo) {
+    const d = await pool.query(
+      "SELECT factory_code FROM orders WHERE order_no=$1 OR contract_no=$1 LIMIT 1", [orderNo]);
+    factoryCode = cleanString(d.rows[0]?.factory_code);
+  }
+  if (!factoryCode) return json(res, 400, { error: "factory_code required" });
   const factory = await getFactoryInfo(pool, factoryCode);
   if (!factory) return json(res, 404, { error: "factory not found" });
+  if (orderNo) {
+    const order = await pool.query(
+      `SELECT contract_no
+         FROM orders
+        WHERE (order_no = $1 OR contract_no = $1)
+          AND (factory_code = $2 OR factory = $3)
+        LIMIT 1`,
+      [orderNo, factoryCode, factory.name]
+    );
+    if (!order.rows[0]) return json(res, 404, { error: "order not found for factory" });
+  }
 
   const reusable = await pool.query(
     `SELECT code, expires_at
@@ -165,10 +211,11 @@ async function handleGen(req, res) {
       WHERE purpose = 'portal'
         AND scope_type = 'factory'
         AND scope_value = $1
+        AND order_no IS NOT DISTINCT FROM $2
         AND expires_at > NOW() + INTERVAL '1 day'
       ORDER BY expires_at DESC
       LIMIT 1`,
-    [factoryCode]
+    [factoryCode, orderNo]
   );
 
   let code;
@@ -183,10 +230,10 @@ async function handleGen(req, res) {
       try {
         await pool.query(
           `INSERT INTO invoice_links
-             (code, purpose, scope_type, scope_value, expires_at, created_by, created_at)
+             (code, purpose, scope_type, scope_value, order_no, expires_at, created_by, created_at)
            VALUES
-             ($1, 'portal', 'factory', $2, $3, $4, NOW())`,
-          [code, factoryCode, expiresAt, user.uid || user.id || user.account || null]
+             ($1, 'portal', 'factory', $2, $3, $4, $5, NOW())`,
+          [code, factoryCode, orderNo, expiresAt, user.uid || user.id || user.account || null]
         );
         break;
       } catch (e) {
@@ -210,8 +257,8 @@ async function handlePortalData(req, res) {
   const scope = await resolveFactoryScope(pool, code);
   if (!scope) return failClosed(res);
 
-  const gaps = await fetchGaps(pool, scope.factory.code, scope.factory.name);
-  const uploaded = await fetchUploaded(pool, scope.factory.code);
+  const gaps = await fetchScopedGaps(pool, scope);
+  const uploaded = filterUploadedByGaps(await fetchUploaded(pool, scope.factory.code), gaps, scope.link?.order_no);
 
   return json(res, 200, {
     factory: scope.factory,
@@ -236,11 +283,12 @@ async function handleUpload(req, res, preScope) {
   const customsNos = cleanArray(fields.customs_no || fields.customs_nos || fields.customsNos);
   if (!contractNos.length && !customsNos.length) return json(res, 400, { error: "contract_no or customs_no required" });
 
-  const gaps = await fetchGaps(pool, scope.factory.code, scope.factory.name);
+  const gaps = await fetchScopedGaps(pool, scope);
   const gap = gaps.find((g) =>
     (g.contract_no && contractNos.includes(g.contract_no)) ||
     (g.customs_no && customsNos.includes(g.customs_no))
   );
+  if (scope.link?.order_no && !gap) return json(res, 403, { error: "订单专属链接不能上传其他订单发票" });
   if (gap && !gap.can_invoice) return json(res, 400, { error: "开票信息未维护，暂不能上传" });
 
   const targetIncl = Number(gap?.total_incl || gap?.amount_incl_tax || 0) || 0;
@@ -409,3 +457,6 @@ export default async function handler(req, res) {
   }
 }
 // 2026-07-02: handleMtData 返回全部工厂开票缺口(巴匕+外单),报关门控在前端按 customs_no。
+// 本次改动：portal 短码支持可选 order_no，复用/生成均按 scope_value + order_no 区分，URL 仍为 /fc/<code>。
+// 本次改动：resolve 读取 link.order_no，并在展示与上传校验前按该订单合同号过滤缺口和已上传记录。
+// 原因：保留工厂级链接行为不变，同时让订单专属链接只暴露对应订单，防止工厂开错别的单。

@@ -1857,6 +1857,131 @@ async function handleSetPartyDefault(req, res, pool) {
   return res.json({ ok: true });
 }
 
+const BILL_CATEGORY_SCOPE = {
+  ocean: ["ocean_freight", "freight", "海运费"],
+  trucking: ["trucking", "拖车费", "内陆拖车费", "拖车运费", "拖车+铁路运费"],
+  broker: ["customs_declaration", "customs", "报关费", "报关"],
+};
+
+function normBillCode(v) { return String(v || "").trim(); }
+function uniqBillVals(arr) { return [...new Set(arr.map(normBillCode).filter(Boolean))]; }
+function costMatches(row, cats) {
+  if (!cats || !cats.length) return true;
+  const vals = [row.cost_category, row.canonical_category].map(v => String(v || "").toLowerCase());
+  return cats.some(c => vals.includes(String(c).toLowerCase()) || vals.some(v => v.includes(String(c).toLowerCase())));
+}
+function partyBillSummary(rows, direction, cats) {
+  const totalField = direction === "receivable" ? "sale_amount" : "amount";
+  const statusField = direction === "receivable" ? "ar_status" : "ap_status";
+  const amountRows = rows.filter(r => Number(r[totalField] || 0) > 0 && costMatches(r, cats));
+  const lineCount = amountRows.length;
+  const total = amountRows.reduce((sum, r) => sum + Number(r[totalField] || 0), 0);
+  const confirmed = amountRows.filter(r => r.confirmed_at && r.collab_pending_status !== "pending_finance_review").length;
+  const reconciled = amountRows.filter(r => r.reconciled === true).length;
+  const paid = amountRows.filter(r => String(r[statusField] || "").toLowerCase() === "paid").length;
+  const status = !lineCount ? "no_bill" : paid === lineCount ? (direction === "receivable" ? "received" : "paid")
+    : paid > 0 ? (direction === "receivable" ? "partial_received" : "partial_paid")
+    : reconciled === lineCount ? "reconciled" : reconciled > 0 ? "partial_reconciled"
+    : confirmed === lineCount ? "confirmed" : confirmed > 0 ? "partial_confirmed" : "pending_confirm";
+  const label = !lineCount ? "无账单" : status === "paid" ? "已付" : status === "received" ? "已收"
+    : status === "partial_paid" ? `${paid}/${lineCount}已付` : status === "partial_received" ? `${paid}/${lineCount}已收`
+    : status === "reconciled" ? "已核对" : status === "partial_reconciled" ? `${reconciled}/${lineCount}已核对`
+    : status === "confirmed" ? "对方已确认" : status === "partial_confirmed" ? `${confirmed}/${lineCount}已确认` : "待确认";
+  return {
+    status, label,
+    tone: status === "no_bill" ? "gray" : status.includes("partial") ? "yellow" : ["paid", "received", "reconciled"].includes(status) ? "green" : status === "confirmed" ? "yellow" : "gray",
+    line_count: lineCount,
+    total,
+    confirmed_at: amountRows.map(r => r.confirmed_at).filter(Boolean).sort().at(-1) || null,
+    reconciled: lineCount > 0 && reconciled === lineCount,
+    paid_status: paid === lineCount && lineCount > 0 ? "paid" : paid > 0 ? "partial" : "unpaid",
+    direction,
+    scope: {
+      direction,
+      bl_no: amountRows[0]?.bl_no || null,
+      payer_company_code: uniqBillVals(amountRows.map(r => r.payer_company_code))[0] || null,
+      supplier_company_code: direction === "payable" ? (uniqBillVals(amountRows.map(r => r.supplier_company_code))[0] || null) : null,
+      allowed_categories: cats || [],
+    },
+  };
+}
+
+// ── GET /party-billing-status?plan_id=xxx ───────────────────────────────────
+// Read-only billing badges from freight_supplier_bills; shipping_plans.party_billing is ignored.
+async function handlePartyBillingStatus(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const planId = req.query && req.query.plan_id;
+  if (!planId) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  const spColR = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'shipping_plans'`);
+  const spCols = new Set(spColR.rows.map(row => row.column_name));
+  const spCol = (name) => spCols.has(name) ? `sp.${name}` : `NULL`;
+  const companyJoin = (alias, col) => spCols.has(col) ? `LEFT JOIN companies ${alias} ON ${alias}.id = sp.${col}` : `LEFT JOIN companies ${alias} ON false`;
+  const r = await pool.query(
+    `SELECT sp.id, sp._id, sp.bl_no, sp.hbl_no,
+            ${spCol("forwarder_company_id")} AS forwarder_company_id,
+            ${spCol("trucking_company_id")} AS trucking_company_id,
+            ${spCol("customs_broker_id")} AS customs_broker_id,
+            ${spCol("customer_company_id")} AS customer_company_id,
+            ${spCol("intermediary_company_id")} AS intermediary_company_id,
+            ${spCol("exporter_company_id")} AS exporter_company_id,
+            cf.code AS forwarder_code, ct.code AS trucking_code, cb.code AS broker_code,
+            cc.code AS customer_code, ci.code AS intermediary_code, ce.code AS exporter_code
+       FROM shipping_plans sp
+       ${companyJoin("cf", "forwarder_company_id")}
+       ${companyJoin("ct", "trucking_company_id")}
+       ${companyJoin("cb", "customs_broker_id")}
+       ${companyJoin("cc", "customer_company_id")}
+       ${companyJoin("ci", "intermediary_company_id")}
+       ${companyJoin("ce", "exporter_company_id")}
+      WHERE sp._id = $1 OR sp.id::text = $1
+      LIMIT 1`, [String(planId)]);
+  if (!r.rows.length) return res.status(404).json({ ok: false, error: "找不到出货计划" });
+  const plan = r.rows[0];
+  const blNo = plan.bl_no || plan.hbl_no;
+  if (!blNo) return res.json({ ok: true, party_billing: {} });
+  const colR = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'freight_supplier_bills'`);
+  const cols = new Set(colR.rows.map(row => row.column_name));
+  const optional = (name, fallback = "NULL") => cols.has(name) ? `b.${name}` : `${fallback} AS ${name}`;
+  const bills = await pool.query(
+    `SELECT b.id, b.bl_no, b.cost_category, ${optional("canonical_category")},
+            b.amount, b.sale_amount, b.currency, b.supplier_company_code, b.payer_company_code,
+            b.confirmed_at, b.reconciled, b.ap_status, b.ar_status,
+            ${optional("rebill_to_type")}, ${optional("rebill_to_name")}, ${optional("rebill_to_code")},
+            b.raw->'collab_pending'->>'status' AS collab_pending_status
+       FROM active_freight_supplier_bills b
+      WHERE b.bl_no = $1
+      ORDER BY b.id`, [blNo]);
+  const rows = bills.rows;
+  const factoryCodes = await pool.query(
+    `SELECT DISTINCT COALESCE(NULLIF(o.factory_code, ''), c.code) AS code
+       FROM orders o
+       LEFT JOIN companies c ON c.name = o.factory OR c.name_cn = o.factory
+      WHERE o.shipping_plan_id = $1`, [plan.id]);
+  const supplierRows = (code, cats) => rows.filter(row => (!code || row.supplier_company_code === code) && costMatches(row, cats));
+  const payerRows = (code) => rows.filter(row => (!code || row.payer_company_code === code));
+  const factorySupplierCodes = uniqBillVals(factoryCodes.rows.map(row => row.code));
+  const party_billing = {
+    factory: partyBillSummary(rows.filter(row => factorySupplierCodes.includes(row.supplier_company_code)), "payable"),
+    ocean: partyBillSummary(supplierRows(plan.forwarder_code || plan.intermediary_code, BILL_CATEGORY_SCOPE.ocean), "payable", BILL_CATEGORY_SCOPE.ocean),
+    trucking: partyBillSummary(supplierRows(plan.trucking_code || plan.forwarder_code, BILL_CATEGORY_SCOPE.trucking), "payable", BILL_CATEGORY_SCOPE.trucking),
+    broker: partyBillSummary(supplierRows(plan.broker_code || plan.forwarder_code, BILL_CATEGORY_SCOPE.broker), "payable", BILL_CATEGORY_SCOPE.broker),
+    intermediary: partyBillSummary(supplierRows(plan.intermediary_code, BILL_CATEGORY_SCOPE.ocean), "payable", BILL_CATEGORY_SCOPE.ocean),
+    customer: partyBillSummary(payerRows(plan.customer_code), "receivable"),
+    exporter: partyBillSummary(rows.filter(row => plan.exporter_code && (
+      row.payer_company_code === plan.exporter_code ||
+      row.rebill_to_code === plan.exporter_code ||
+      String(row.rebill_to_name || "").includes("巴匕") ||
+      String(row.rebill_to_type || "").toLowerCase() === "exporter"
+    )), "receivable"),
+  };
+  return res.json({ ok: true, party_billing });
+}
+
+async function handleSetPartyBilling(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  return res.status(410).json({ ok: false, error: "party billing is read-only; use bill-center-collab" });
+}
+
 // ── GET /collab-messages?plan_id=xxx ─────────────────────────────────────────
 // Returns message threads grouped by party from collab_party_messages.
 async function handleCollabMessages(req, res, pool) {
@@ -1925,13 +2050,13 @@ async function handleShipmentOrders(req, res, pool) {
   let candR = { rows: [] };
   if (custName) {
     candR = await pool.query(
-      `SELECT o.id, o.order_no, o.factory, o.customer, o.pol, o.pod, o.company_code,
+      `SELECT o.id, o.order_no, o.factory, o.customer, o.pol, o.destination_port AS pod, o.company_code,
               COALESCE(o.company_name_en, o.company_name_cn, o.customer, o.company_code, '') AS customer_label,
               COALESCE((SELECT SUM(qty_ctn) FROM order_line_items WHERE order_id = o.id), 0)::int AS total_qty
          FROM orders o
         WHERE o.shipping_plan_id IS NULL
           AND o.status IN ('confirmed', 'ready')
-          AND (o.customer ILIKE $1 OR o.customer_en ILIKE $1 OR o.company_name_en ILIKE $1
+          AND (o.customer ILIKE $1 OR o.company_name_en ILIKE $1
                OR o.company_code IN (
                  SELECT company_code FROM companies
                   WHERE name_en ILIKE $1 OR name_cn ILIKE $1 LIMIT 5
@@ -2134,7 +2259,7 @@ async function handleCollabOrderPricing(req, res, pool) {
 
   // 拉本票关联订单的行项目（采购价=settle_after_tax_per_unit，销售价=unit_price）
   const { rows } = await pool.query(
-    `SELECT o.order_no, o.customer_en AS customer,
+    `SELECT o.order_no, o.customer AS customer,
             oli.product_name, oli.product_sku,
             oli.quantity, oli.unit,
             oli.settle_after_tax   AS purchase_unit_price,
@@ -2280,6 +2405,8 @@ export default async function handler(req, res) {
     if (req.method === "GET"  && pathSuffix === "supply-chain-options")  return await handleSupplyChainOptions(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "party-defaults")         return await handlePartyDefaults(req, res, pool);
     if (req.method === "POST" && pathSuffix === "set-party-default")      return await handleSetPartyDefault(req, res, pool);
+    if (req.method === "GET"  && pathSuffix === "party-billing-status")   return await handlePartyBillingStatus(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "set-party-billing")      return await handleSetPartyBilling(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "collab-messages")        return await handleCollabMessages(req, res, pool);
     if (req.method === "POST" && pathSuffix === "collab-message")         return await handlePostCollabMessage(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "shipment-orders")        return await handleShipmentOrders(req, res, pool);
@@ -2296,3 +2423,9 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e.message });
   }
 }
+
+/*
+Changed lines:
+- 1859-1970: added FSB-backed party billing aggregation/status labels and disabled manual party billing writes.
+- 2400-2401: mounted party-billing-status and read-only set-party-billing compatibility route.
+*/
