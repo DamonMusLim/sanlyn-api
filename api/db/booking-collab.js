@@ -1066,6 +1066,57 @@ async function handleGetPlan(req, res, pool, planId) {
 }
 
 // ── PATCH /plan/:id (Sanlyn内部 JWT) — 直接改字段 ────────────
+// 2026-07-05 补: master-view 之前只在孤儿文件 booking-collab-view.js 里实现,从未挂路由,
+// 前端 CollabLinkPopup 调用一直 404(GET读中间商/出口商信息静默失败catch吞掉;POST写委托方式点按钮报错)。
+// 真实数据流: shipping_plans.release_type/freight_term/trucking_arrange/customs_arrange 均为真实列(已核实存在)。
+async function handleMasterView(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const source = req.method === "POST" ? (req.body || {}) : (req.query || {});
+  const planRef = source.plan_id;
+  if (!planRef) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  const planRow = await pool.query(
+    `SELECT * FROM shipping_plans WHERE _id = $1 OR id::text = $1 LIMIT 1`, [String(planRef)]);
+  const plan = planRow.rows[0];
+  if (!plan) return res.status(404).json({ ok: false, error: "找不到计划" });
+
+  if (req.method === "POST") {
+    const action = source.action || "";
+    if (action === "set-trade-terms") {
+      const payload = source.payload || {};
+      const ALLOWED = ["release_type", "freight_term", "trucking_arrange", "customs_arrange"];
+      const sets = [], vals = [];
+      for (const k of ALLOWED) {
+        if (Object.prototype.hasOwnProperty.call(payload, k)) {
+          vals.push(payload[k] || null);
+          sets.push(`${k} = $${vals.length}`);
+        }
+      }
+      if (sets.length) {
+        vals.push(plan.id);
+        await pool.query(`UPDATE shipping_plans SET ${sets.join(", ")} WHERE id = $${vals.length}`, vals);
+      }
+    }
+    return res.json({ ok: true });
+  }
+
+  // GET: 中间商/出口商展示信息(来自 raw JSON,列表页/弹窗打开时读)
+  let raw = {};
+  try { raw = (typeof plan.raw === "string" ? JSON.parse(plan.raw) : plan.raw) || {}; } catch (_) { raw = {}; }
+  const companyNameById = async (id) => {
+    if (!id) return null;
+    const r = await pool.query(`SELECT name, name_cn FROM companies WHERE id = $1 LIMIT 1`, [id]);
+    const row = r.rows[0];
+    return row ? (row.name_cn || row.name) : null;
+  };
+  return res.json({
+    ok: true,
+    intermediary_company_id: raw.intermediary_company_id || null,
+    intermediary_cn: await companyNameById(raw.intermediary_company_id),
+    exporter_company_id: raw.exporter_company_id || null,
+    exporter_cn: await companyNameById(raw.exporter_company_id),
+  });
+}
+
 async function handlePatchPlan(req, res, pool, planId) {
   if (!requireAuth(req, res)) return;
   const numId = parseInt(planId, 10);
@@ -2416,6 +2467,7 @@ export default async function handler(req, res) {
     if (req.method === "POST"   && pathSuffix === "send-intermediary-link")  return await handleSendIntermediaryLink(req, res, pool);
     if (req.method === "POST" && pathSuffix === "factory-self-token")  return await handleFactoryToken(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "collab-pricing-submit")    return await handleCollabPricingSubmit(req, res, pool);
+    if ((req.method === "GET" || req.method === "POST") && pathSuffix === "master-view") return await handleMasterView(req, res, pool);
 
     return res.status(404).json({ error: "Not found" });
   } catch (e) {
