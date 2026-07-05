@@ -351,17 +351,20 @@ function shipmentFact(row, selectedOrderNos) {
   const parent = orderNos.find(no => selectedOrderNos.has(no)) || null;
   const refs = { shipment_id: row._id || row.id, shipment_no: row.shipment_no, bl_no: row.bl_no, order_nos: orderNos, parent_order_no: parent };
   const settlementLines = [];
-  const missingForwarder = Boolean(row.missing_forwarder);
+  const firstText = (...xs) => xs.find(hasText) || null;
+  const displayForwarderName = firstText(...billGroups.map(g => g.supplier_name), row.forwarder);
+  const missingForwarder = !hasText(displayForwarderName);
   for (const g of billGroups) {
     const groupBills = Array.isArray(g.bills) ? g.bills : [];
-    const forwarderMissingReason = missingForwarder ? "缺货代" : null;
+    const lineForwarderName = firstText(g.supplier_name, row.forwarder);
+    const lineForwarderMissing = !hasText(lineForwarderName);
     settlementLines.push(settlementLine({
       sourceType: "shipment",
       counterpartyType: "forwarder",
       direction: "ap",
       ownEntity: row.issuing_company,
       ownEntityCode: g.payer_company_code || null,
-      counterpartyName: g.supplier_name || row.forwarder,
+      counterpartyName: lineForwarderName,
       counterpartyCode: g.supplier_company_code || null,
       total: g.ap_total,
       paid: g.ap_paid,
@@ -370,8 +373,8 @@ function shipmentFact(row, selectedOrderNos) {
       status: aggregateStatus(groupBills, "ap_status"),
       tone: apTone,
       invoiceStatus: row.ap_invoice || "pending",
-      dataMissing: missingForwarder,
-      missingReason: forwarderMissingReason,
+      dataMissing: lineForwarderMissing,
+      missingReason: lineForwarderMissing ? "缺货代" : null,
     }));
     if ((money(g.ar_total) || 0) > TOLERANCE || (money(g.ar_paid) || 0) > TOLERANCE) {
       settlementLines.push(settlementLine({
@@ -419,7 +422,7 @@ function shipmentFact(row, selectedOrderNos) {
     bl_no: row.bl_no,
     order_nos: orderNos,
     title: row.shipment_no || row.bl_no || "未编号CY",
-    subtitle: [row.bl_no || "无BL", row.forwarder || "缺货代", parent ? `挂 ${parent}` : (orderNos.length ? "关联订单未在当前列表" : "纯海运票")].join(" · "),
+    subtitle: [row.bl_no || "无BL", displayForwarderName || "缺货代", parent ? `挂 ${parent}` : (orderNos.length ? "关联订单未在当前列表" : "纯海运票")].join(" · "),
     currency: row.bill_currency || "CNY",
     owner: "未指派",
     last_action_at: row.updated_at || row.forwarder_price_confirmed_at || row.created_at || null,
