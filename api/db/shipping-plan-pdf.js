@@ -9,6 +9,7 @@ import { getPool, setCors } from "../db.js";
 import { renderCustomsDeclaration } from "./customs-declaration-form.js"; // 海关报关单 2026-06-28
 import { renderInboundNotice } from "./inbound-notice.js"; // 入货通知/订舱确认单 2026-07-05
 import { renderInspectionRequest } from "./inspection-request-form.js"; // 出境货物检验检疫申请/报检单 2026-07-05
+import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -55,6 +56,23 @@ export default async function handler(req, res) {
       const _irHtml = await renderInspectionRequest(pool, id || bl, _irQuery);
       if (!_irHtml) return res.status(404).send("<h1>Shipment not found</h1>");
       return res.status(200).send(_irHtml);
+    }
+
+    // 一次性报关: 报关单 + PL·SC·IV报关版 + 报检单 合成一份多页 PDF (按柜)
+    if (type === "customs_bundle") {
+      const _parts = String(req.query.parts || "").split(",").map(x => x.trim()).filter(Boolean);
+      const _bundle = await renderCustomsBundle(pool, {
+        shipmentId: id || bl,
+        container_no: req.query.container_no || req.query.container || "",
+        token: req.query.token || "",
+        apiBase: "https://api.sanlyn.cn",
+        parts: _parts,
+      });
+      if (!_bundle) return res.status(404).send("<h1>报关全套: 未找到船务计划或组件</h1>");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent(_bundle.filename));
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).send(_bundle.buffer);
     }
 
     // ── Fetch shipping plan ──
