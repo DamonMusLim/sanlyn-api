@@ -95,12 +95,20 @@
       if(l.invoice_status==="issued"||l.invoice_status==="invoiced")return"已开票";
       return "";
     }
+    function overpayChip(l){
+      const over=Number(l.paid||0)-Number(l.total||0);
+      if(over<=1)return"";
+      if(l.direction==="ar")return tag(`超收¥${fmt(over)}`,"risk");
+      if(l.direction==="ap")return tag(`超付¥${fmt(over)}`,"risk");
+      return"";
+    }
     function settlementHtml(l){
       const side=l.direction==="ap"?"应付":"应收";
       const chips=[];
       if(l.data_missing)chips.push(tag(l.missing_reason||"数据缺失","risk"));
       const inv=invoiceLabel(l); if(inv)chips.push(tag(inv,l.tone||"todo"));
       chips.push(tag(lineStatusLabel(l),l.tone||"todo"));
+      const over=overpayChip(l); if(over)chips.push(over);
       return `<button type="button" class="settle ${esc(l.tone||"")}" data-line-id="${esc(l.id)}" title="打开具体记录">
         <div><div class="rel">${esc(l.relation_label||"结算关系")}</div><div class="party">${esc(l.counterparty_name||l.missing_reason||"未补录")} ${l.counterparty_code?`· ${esc(l.counterparty_code)}`:""}</div><div class="dir">${side} · ${esc(l.counterparty_label||"对方")}</div></div>
         <div class="amt"><span><em>${side}${esc(l.currency)}</em>${money(l.currency,l.total)}</span><span><em>已结${esc(l.currency)}</em>${money(l.currency,l.paid)}</span><span><em>待结${esc(l.currency)}</em>${money(l.currency,l.due)}</span></div>
@@ -162,6 +170,7 @@
       const chips=[]; if(l.data_missing)chips.push(tag(l.missing_reason||"数据缺失","risk"));
       const inv=invoiceLabel(l); if(inv)chips.push(tag(inv,l.tone||"todo"));
       chips.push(tag(lineStatusLabel(l),l.tone||"todo"));
+      const over=overpayChip(l); if(over)chips.push(over);
       return `<button type="button" class="settle ${esc(l.tone||"")}" data-row-id="${esc(r.id)}" data-line-id="${esc(l.id)}" title="打开具体记录">
         <div><div class="ref">${esc(lineRef(l))}</div><div class="party">${esc(l.relation_label||"结算关系")}</div><div class="dir">${esc(r.title||"")} ${r.subtitle?`· ${esc(r.subtitle)}`:""}</div></div>
         <div class="amt"><span><em>${side}${esc(l.currency)}</em>${money(l.currency,l.total)}</span><span><em>${paid}${esc(l.currency)}</em>${money(l.currency,l.paid)}</span><span><em>${due}${esc(l.currency)}</em>${money(l.currency,l.due)}</span></div>
