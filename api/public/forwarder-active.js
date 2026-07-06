@@ -88,6 +88,7 @@ async function loadPlans(pool, companyId){
   const { rows } = await pool.query(
     // TODO: Also keep lanes with future open freight_rfqs when that signal is needed.
     `SELECT sp.id, sp.bl_no, sp.pol, sp.pod, sp.etd, sp.container_qty, sp.container_type,
+            sp.carrier_code,
             COALESCE(sp.gross_weight_kg, li.gross_weight_kg) AS gross_weight_kg,
             COALESCE(NULLIF(BTRIM(sp.cargo_description), ''), li.cargo_description) AS cargo_description,
             sp.vessel, sp.voyage, sp.customer_en
@@ -126,6 +127,21 @@ async function loadPlans(pool, companyId){
 function boxType(v){
   var s = cleanText(v).toUpperCase().replace(/\s+/g, "");
   return s ? s.replace("HC", "HQ") : "";
+}
+
+function formatMD(v){
+  var t = dateTime(v);
+  if (t == null) return null;
+  var d = new Date(t);
+  var mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  var dd = String(d.getUTCDate()).padStart(2, "0");
+  return mm + "/" + dd;
+}
+
+function addDays(v, days){
+  var t = dateTime(v);
+  if (t == null) return null;
+  return new Date(t + days * 24 * 60 * 60 * 1000);
 }
 
 function cargoCategory(v){
@@ -168,8 +184,10 @@ function makeLane(row){
     countdown_hint:null,
     shipments:[],
     missing:[],
+    carriers:[],
     _box:{},
     _cargo:{},
+    _carriers:{},
     _etds:[],
     _futureEtds:[],
     _missing:{},
@@ -192,6 +210,7 @@ function addPlan(lane, row, closed){
     var ct = boxType(row.container_type);
     if (ct) lane._box[ct] = (lane._box[ct] || 0) + qty;
   }
+  addCarrier(lane, row);
   var gw = s.gross_weight_kg;
   if (gw != null) lane.gw_total += gw;
 
@@ -213,6 +232,22 @@ function addPlan(lane, row, closed){
   markMissing(lane, "container", qty == null);
 }
 
+function addCarrier(lane, row){
+  var code = cleanText(row.carrier_code).toUpperCase();
+  if (!code) return;
+  var carrier = lane._carriers[code] || (lane._carriers[code] = {
+    name:code,
+    boxes:{},
+    latest:null,
+  });
+  var ct = boxType(row.container_type);
+  if (ct) carrier.boxes[ct] = true;
+  var t = dateTime(row.etd);
+  if (t != null && (!carrier.latest || t > carrier.latest.t)) {
+    carrier.latest = { t:t, v:row.etd };
+  }
+}
+
 function startOfToday(){
   var d = new Date();
   d.setHours(0, 0, 0, 0);
@@ -223,6 +258,21 @@ function earliest(list){
   if (!list.length) return null;
   list.sort(function(a, b){ return a.t - b.t; });
   return list[0];
+}
+
+function finishCarriers(lane){
+  lane.carriers = Object.keys(lane._carriers).sort().map(function(code){
+    var carrier = lane._carriers[code];
+    var etd = carrier.latest ? carrier.latest.v : null;
+    return {
+      name:carrier.name,
+      boxes:Object.keys(carrier.boxes).sort(),
+      etd:formatMD(etd),
+      eta:formatMD(addDays(etd, 8)),
+      voyage:"",
+      quoted:false,
+    };
+  });
 }
 
 function finishLane(lane){
@@ -243,9 +293,11 @@ function finishLane(lane){
   var now = Date.now();
   lane.hot = t != null && t >= now && t <= now + 7 * 24 * 60 * 60 * 1000;
   lane.missing = Object.keys(lane._missing).sort();
+  finishCarriers(lane);
 
   delete lane._box;
   delete lane._cargo;
+  delete lane._carriers;
   delete lane._etds;
   delete lane._futureEtds;
   delete lane._missing;
