@@ -285,10 +285,20 @@ async function loadLines(pool, orderIds) {
        FROM keyed
        WHERE declaration_elements IS NOT NULL
        GROUP BY hs_code
+     ),
+     -- 2026-07-06: 同HS只报一行(照商检单口径,别按品名再拆),品名取该HS下箱数最大的那个
+     name_by_hs AS (
+       SELECT DISTINCT ON (hs_code) hs_code, declaration_name AS dominant_name
+       FROM (
+         SELECT hs_code, declaration_name, SUM(qty_ctn) AS qty_sum
+         FROM keyed
+         GROUP BY hs_code, declaration_name
+       ) g
+       ORDER BY hs_code, qty_sum DESC NULLS LAST
      )
      SELECT
        k.hs_code,
-       k.declaration_name,
+       n.dominant_name AS declaration_name,
        MAX(h.declaration_elements) AS declaration_elements,
        SUM(k.qty_ctn) AS qty_ctn,
        SUM(CASE WHEN k.nw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.nw_ctn * k.qty_ctn ELSE NULL END) AS net_weight_kg,
@@ -296,8 +306,9 @@ async function loadLines(pool, orderIds) {
        SUM(k.subtotal) AS total_amount
      FROM keyed k
      LEFT JOIN hs_elements h ON h.hs_code IS NOT DISTINCT FROM k.hs_code
-     GROUP BY k.hs_code, k.declaration_name
-     ORDER BY hs_code, declaration_name`,
+     LEFT JOIN name_by_hs n ON n.hs_code IS NOT DISTINCT FROM k.hs_code
+     GROUP BY k.hs_code, n.dominant_name
+     ORDER BY hs_code`,
     [orderIds]
   );
   return r.rows;
@@ -315,7 +326,8 @@ function cargoRows(lines, destination) {
   if (!lines.length) {
     return `<tr><td colspan="9" class="empty-row">无货物明细</td></tr>`;
   }
-  var seenHs = new Set();
+  // 2026-07-06: SQL已按hs_code唯一分组(见loadLines name_by_hs),每行天然对应唯一HS,不再需要按HS去重申报要素
+  // (旧逻辑按"见过的HS"清空后续行文字,同HS下不同品名如"宠物罐头/宠物软罐头"被误判成重复行,第二行整段申报要素被清空——已改成SQL层合并解决)
   return lines.map(function (l, i) {
     var qty = [
       fmtM(l.net_weight_kg, 0) ? fmtM(l.net_weight_kg, 0) + "千克" : "",
@@ -326,9 +338,7 @@ function cargoRows(lines, destination) {
       fmtM(l.total_amount, 2),
       "人民币",
     ].filter(Boolean).join("<br>");
-    var hs = clean(l.hs_code) || "__row_" + i;
-    var elements = seenHs.has(hs) ? "" : clean(l.declaration_elements);
-    seenHs.add(hs);
+    var elements = clean(l.declaration_elements);
     var name = [clean(l.declaration_name), elements].filter(Boolean).map(esc).join("<br>");
     return `<tr>
       <td>${i + 1}</td>
