@@ -18,9 +18,10 @@
     .chip{display:inline-flex;align-items:center;min-height:24px;border-radius:999px;padding:3px 9px;border:1px solid transparent;font-size:12px;white-space:nowrap;max-width:100%}.chip.risk{background:#35191d;color:#f2a3aa;border-color:#7c2e35}.chip.todo{background:#332513;color:#f2c57e;border-color:#7b541d}.chip.done{background:#102c23;color:#9de2c1;border-color:#236a50}.chip.stale{background:#252b31;color:#c4ccd4;border-color:#4c5762}
     .amt{display:grid;grid-template-columns:repeat(3,minmax(92px,1fr));gap:6px;width:100%}.amt span{background:#10151a;border:1px solid #26313a;border-radius:6px;padding:5px 7px;color:#cdd6df;font-size:12px}.amt em{display:block;color:var(--muted);font-style:normal;font-size:11px}.action{width:100%;height:auto;min-height:34px;white-space:normal}.empty{padding:30px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:8px}#error{color:#ffb3b8;margin-left:8px}
     .typetabs{display:flex;gap:4px}.tt{height:32px;padding:0 14px;border:1px solid var(--line);background:#161c22;color:var(--muted);border-radius:6px;cursor:pointer;font-size:13px;font-weight:700}.tt.active{background:#243040;color:#cfe3ff;border-color:#3d6fa0}
+    .acct-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}.acct-title{font-size:15px;font-weight:760;color:var(--text)}.totals{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}.totalbox{min-width:300px;background:#10151a;border:1px solid #2c3a45;border-radius:6px;padding:6px}.acct-lines{display:flex;flex-direction:column;gap:7px;margin-top:8px}.ref{font-size:13px;font-weight:760;color:var(--text)}
     .actions{display:flex;flex-direction:column;gap:5px}.actions .action{width:100%;height:auto;min-height:30px;white-space:normal;font-size:12px;padding:5px 8px}.actions .action.done{opacity:.45;cursor:default}
     dialog{border:1px solid var(--line);border-radius:8px;background:#171c21;color:var(--text);padding:0;max-width:460px;width:calc(100% - 28px)}dialog::backdrop{background:rgba(0,0,0,.55)}.modal{padding:16px}.modal h3{margin:0 0 8px;font-size:16px}.modal p{margin:0 0 14px;color:#cbd5df}.modal-actions{display:flex;justify-content:flex-end;gap:8px}
-    @media(max-width:960px){.queues{grid-template-columns:repeat(2,1fr)}.line{grid-template-columns:1fr}.settle{grid-template-columns:1fr}.linechips{justify-content:flex-start}.row.child{margin-left:12px}.amt{grid-template-columns:1fr 1fr}input{min-width:120px}}
+    @media(max-width:960px){.queues{grid-template-columns:repeat(2,1fr)}.line{grid-template-columns:1fr}.settle{grid-template-columns:1fr}.linechips{justify-content:flex-start}.row.child{margin-left:12px}.amt{grid-template-columns:1fr 1fr}input{min-width:120px}.acct-head{flex-direction:column}.totals{justify-content:flex-start}}
   </style>
 </head>
 <body>
@@ -39,7 +40,7 @@
     <div class="notice" id="notice"></div>
     <div class="toolbar">
       <form class="search" id="searchForm"><input id="q" placeholder="搜索订单/合同/客户/CY单"><button>查询</button></form>
-      <div class="typetabs" id="typetabs"><button class="tt active" data-type="all" type="button">全部</button><button class="tt" data-type="order" type="button">订单</button><button class="tt" data-type="shipment" type="button">海运</button></div>
+      <div class="typetabs" id="typetabs"><button class="tt" data-view="cust" type="button">应收·客户</button><button class="tt" data-view="factory" type="button">应付·工厂</button><button class="tt" data-view="forwarder" type="button">应付·货代</button><button class="tt active" data-view="order" type="button">订单闭环</button></div>
       <div><button class="ghost" id="clearFilter" type="button">清筛选</button> <span class="muted" id="count"></span></div>
     </div>
     <section class="list" id="list"><div class="empty">登录后加载数据</div></section>
@@ -47,7 +48,7 @@
   <dialog id="modal"><div class="modal"><h3 id="modalTitle"></h3><p id="modalText"></p><div class="modal-actions"><button class="ghost" id="modalSecond">取消</button><button id="modalMain">知道了</button></div></div></dialog>
   <script>
     const $=id=>document.getElementById(id);
-    const state={token:localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||"",rows:[],summary:[],filter:"all",type_filter:"all"};
+    const state={token:localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||"",rows:[],summary:[],filter:"all",view:"order"};
     const labels={ar_due:"今日应收未收",ap_due:"今日应付未付",invoice_pending:"资料齐待开票",slip_pending:"客户水单待认领",risk:"异常待核"};
     function authHeaders(){return state.token?{Authorization:"Bearer "+state.token}:{}}
     async function api(path,opts={}){
@@ -138,6 +139,62 @@
         hash?`<button class="action" data-goto="${esc(hash)}" title="到 ${esc(label)} 环节">${esc(label)} ↗</button>`
             :`<button class="action done" disabled>${esc(label)}</button>`).join("")+`</div>`;
     }
+    function objectLineInFilter(l,view){
+      if(state.filter==="all")return true;
+      if(state.filter==="ar_due")return view==="cust"&&l.due>1;
+      if(state.filter==="ap_due")return view!=="cust"&&l.due>1;
+      if(state.filter==="risk")return l.tone==="risk"||l.data_missing;
+      return true;
+    }
+    function objectLines(view){
+      return state.rows.flatMap(r=>linesOf(r).map(l=>({l,r}))).filter(({l})=>{
+        if(view==="cust")return l.direction==="ar"&&objectLineInFilter(l,view);
+        if(view==="factory")return l.direction==="ap"&&l.counterparty_type==="factory"&&objectLineInFilter(l,view);
+        return l.direction==="ap"&&l.counterparty_type==="forwarder"&&objectLineInFilter(l,view);
+      });
+    }
+    function lineRef(l){
+      const refs=l.refs||{};
+      return refs.order_no||refs.shipment_no||l.relation_label||"关联记录";
+    }
+    function objectLineHtml(item,view){
+      const {l,r}=item,side=view==="cust"?"应收":"应付",paid=view==="cust"?"已收":"已付",due=view==="cust"?"待收":"待付";
+      const chips=[]; if(l.data_missing)chips.push(tag(l.missing_reason||"数据缺失","risk"));
+      const inv=invoiceLabel(l); if(inv)chips.push(tag(inv,l.tone||"todo"));
+      chips.push(tag(lineStatusLabel(l),l.tone||"todo"));
+      return `<button type="button" class="settle ${esc(l.tone||"")}" data-row-id="${esc(r.id)}" data-line-id="${esc(l.id)}" title="打开具体记录">
+        <div><div class="ref">${esc(lineRef(l))}</div><div class="party">${esc(l.relation_label||"结算关系")}</div><div class="dir">${esc(r.title||"")} ${r.subtitle?`· ${esc(r.subtitle)}`:""}</div></div>
+        <div class="amt"><span><em>${side}${esc(l.currency)}</em>${money(l.currency,l.total)}</span><span><em>${paid}${esc(l.currency)}</em>${money(l.currency,l.paid)}</span><span><em>${due}${esc(l.currency)}</em>${money(l.currency,l.due)}</span></div>
+        <div class="linechips">${chips.join("")}</div>
+      </button>`;
+    }
+    function objectCardHtml(group,view){
+      const first=group.items[0].l,side=view==="cust"?"应收":"应付",paid=view==="cust"?"已收":"已付",due=view==="cust"?"待收":"待付";
+      const name=first.counterparty_name||first.missing_reason||"未补录",code=first.counterparty_code?` · ${first.counterparty_code}`:"";
+      const totals=new Map();
+      group.items.forEach(({l})=>{
+        const t=totals.get(l.currency||"CNY")||{total:0,paid:0,due:0};
+        t.total+=Number(l.total||0);t.paid+=Number(l.paid||0);t.due+=Number(l.due||0);totals.set(l.currency||"CNY",t);
+      });
+      const sums=[...totals.entries()].map(([cur,t])=>`<div class="amt totalbox"><span><em>${side}${esc(cur)}</em>${money(cur,t.total)}</span><span><em>${paid}${esc(cur)}</em>${money(cur,t.paid)}</span><span><em>${due}${esc(cur)}</em>${money(cur,t.due)}</span></div>`).join("");
+      return `<article class="row ${esc(group.tone)}">
+        <div class="acct-head"><div><div class="acct-title">${esc(name+code)}</div><div class="sub">${esc(first.relation_label||first.counterparty_label||"结算对象")} · ${group.items.length} 笔</div></div><div class="totals">${sums}</div></div>
+        <div class="acct-lines">${group.items.map(x=>objectLineHtml(x,view)).join("")}</div>
+      </article>`;
+    }
+    function renderObjectView(view){
+      const groups=new Map();
+      objectLines(view).forEach(item=>{
+        const l=item.l,key=l.counterparty_code||l.counterparty_name||l.missing_reason||"未补录";
+        if(!groups.has(key))groups.set(key,{key,items:[],due:0,tone:"done"});
+        const g=groups.get(key);g.items.push(item);g.due+=Number(l.due||0);
+        if(l.tone==="risk"||l.data_missing)g.tone="risk";else if(g.tone!=="risk"&&l.tone)g.tone=l.tone;
+      });
+      const list=[...groups.values()].sort((a,b)=>b.due-a.due);
+      $("list").innerHTML=list.map(g=>objectCardHtml(g,view)).join("")||'<div class="empty">没有匹配数据</div>';
+      const lineCount=list.reduce((n,g)=>n+g.items.length,0);
+      $("count").textContent=`${list.length} 个对象 · ${lineCount} 笔`;
+    }
     function gotoModule(hash){
       if(!hash)return;
       try{ if(window.parent&&window.parent!==window){window.parent.location.hash=hash;} else {window.location.href="/data#"+hash;} }
@@ -160,7 +217,8 @@
     }
     function render(){
       renderQueues();
-      const tf=state.type_filter;
+      if(state.view!=="order")return renderObjectView(state.view);
+      const tf="all";
       const childrenOf=o=>state.rows.filter(x=>x.type==="shipment"&&x.parent_order_no===o.order_no);
       let html="",shown=0;
       if(tf==="shipment"){
@@ -193,13 +251,17 @@
     $("searchForm").addEventListener("submit",e=>{e.preventDefault();load().catch(err=>$("error").textContent=err.message)});
     $("queues").addEventListener("click",e=>{const b=e.target.closest("[data-filter]");if(!b)return;state.filter=state.filter===b.dataset.filter?"all":b.dataset.filter;render()});
     $("clearFilter").addEventListener("click",()=>{state.filter="all";render()});
-    $("typetabs").addEventListener("click",e=>{const b=e.target.closest("[data-type]");if(!b)return;state.type_filter=b.dataset.type;[...$("typetabs").children].forEach(c=>c.classList.toggle("active",c===b));render()});
+    $("typetabs").addEventListener("click",e=>{const b=e.target.closest("[data-view]");if(!b)return;state.view=b.dataset.view;[...$("typetabs").children].forEach(c=>c.classList.toggle("active",c===b));render()});
     $("list").addEventListener("click",e=>{
       const g=e.target.closest("[data-goto]");if(g){gotoModule(g.dataset.goto);return;}
       const b=e.target.closest("[data-action]");if(b){openModal(b.dataset.title,b.dataset.text);return;}
+      const lineEl=e.target.closest("[data-line-id]");
+      if(lineEl&&lineEl.dataset.rowId){
+        const row=state.rows.find(x=>x.id===lineEl.dataset.rowId);if(!row)return;
+        return gotoRecord(row,linesOf(row).find(x=>x.id===lineEl.dataset.lineId));
+      }
       const rowEl=e.target.closest(".row");if(!rowEl)return;
       const row=state.rows.find(x=>x.id===rowEl.dataset.id);if(!row)return;
-      const lineEl=e.target.closest("[data-line-id]");
       const line=lineEl?linesOf(row).find(x=>x.id===lineEl.dataset.lineId):null;
       gotoRecord(row,line);
     });
