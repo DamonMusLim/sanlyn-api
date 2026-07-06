@@ -518,6 +518,8 @@ mount("/api/public/forwarder-services/:code", () => import("./api/public/forward
 mount("/api/public/forwarder-services/:code/quote", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务报价提交
 mount("/api/public/forwarder-shipments/:code", () => import("./api/public/forwarder-services.js")); // v3d 按票四服务全貌
 mount("/api/public/forwarder-grab/:code", () => import("./api/public/forwarder-services.js")); // 立即抢单两口价 grab_offers
+mount("/api/public/forwarder-history/:code", () => import("./api/public/forwarder-history.js")); // 货代门户历史业务(只读账单)
+mount("/api/public/forwarder-active/:code", () => import("./api/public/forwarder-active.js")); // 货代门户活跃业务(真实海运计划)
 mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
