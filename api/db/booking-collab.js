@@ -2037,14 +2037,28 @@ async function handleSupplyChainOptions(req, res, pool) {
     );
     return r.rows;
   };
-  const [forwarders, trucking, brokers, factories, customers] = await Promise.all([
+  // 2026-07-06 根治: "货代"(中间人/intermediary,如上海洋宝宝)公司类型是 sanlyn_entity 不是 forwarder,
+  // 之前intermediary选择器复用forwarders列表(只查type=forwarder)导致洋宝宝这类中间人永远选不到。
+  const byTypeIn = async (types) => {
+    const r = await pool.query(
+      `SELECT id, name_cn, COALESCE(name_en, name_cn) AS name, code
+         FROM companies
+        WHERE type = ANY($1::text[]) AND (active IS NULL OR active = true)
+          AND merged_into_code IS NULL
+        ORDER BY name_cn NULLS LAST LIMIT 120`,
+      [types]
+    );
+    return r.rows;
+  };
+  const [forwarders, trucking, brokers, factories, customers, intermediaries] = await Promise.all([
     byType("forwarder"),
     byType("trucking"),
     byType("customs_broker"),
     byType("factory"),
     byType("customer"),
+    byTypeIn(["forwarder", "sanlyn_entity"]),
   ]);
-  return res.json({ ok: true, companies: { forwarders, trucking, brokers, factories, customers } });
+  return res.json({ ok: true, companies: { forwarders, trucking, brokers, factories, customers, intermediaries } });
 }
 
 // ── GET /party-defaults ──────────────────────────────────────────────────────

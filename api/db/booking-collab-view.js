@@ -229,7 +229,13 @@ async function handleMasterView(req, res, pool) {
   const orders = await getOrders(pool, freshPlan.id);
   const factories = await getFactories(pool, freshPlan);
   const customs = await getCustoms(pool, freshPlan.id, orders);
-  return res.json(buildSummary(freshPlan, orders, factories, customs));
+  const summary = buildSummary(freshPlan, orders, factories, customs);
+  const rawp2 = parseRaw(freshPlan.raw);
+  summary.intermediary_company_id = rawp2.intermediary_company_id || null;
+  summary.intermediary_cn = await companyName(pool, rawp2.intermediary_company_id);
+  summary.exporter_company_id = rawp2.exporter_company_id || null;
+  summary.exporter_cn = await companyName(pool, rawp2.exporter_company_id);
+  return res.json(summary);
 }
 
 async function companyName(pool, id) {
