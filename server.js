@@ -264,6 +264,10 @@ mount("/api/db/bill-center",      () => import("./api/db/bill-center.js"));
 mount("/api/db/freight-cost-audit",   () => import("./api/db/freight-cost-audit.js")); // freight cost vs sale audit + set-par (2026-06-17)
 mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 工厂协同门户·财务板块(短码+collab mt)
+mount("/api/db/invoice-collab-confirm", () => import("./api/db/invoice-collab-confirm.js")); // 港杂费开票确认(booking collab token)
+mount("/api/db/customer-invoice", () => import("./api/db/customer-invoice.js")); // B3 客户销项发票门户(短码 /ci)
+mount("/api/db/rate-configs", () => import("./api/db/rate-configs.js")); // 税率/汇率配置编辑器+改动历史(admin only)
+mount("/api/db/migrate-rate-configs", () => import("./api/db/migrate-rate-configs.js"));
 mount("/api/db/factory-invoice-reconcile", () => import("./api/db/factory-invoice-reconcile.js")); // 工厂开票对账台
 mount("/api/db/customs-collab", () => import("./api/db/customs-collab.js")); // 报关单开票协同
 mount("/api/db/recon-shadow", () => import("./api/db/recon-shadow.js")); // 对账框架影子端点
@@ -360,6 +364,9 @@ mount("/api/db/factory-brands",    () => import("./api/db/factory-brands.js"));
 mount("/api/db/brand-applications",() => import("./api/db/brand-applications.js"));
 mount("/api/db/raw-patch",         () => import("./api/db/raw-patch.js"));
 mount("/api/db/shipping",          () => import("./api/db/shipping.js"));
+mount("/api/shipping/:id/insurance/prepare", () => import("./api/db/insurance.js"));
+mount("/api/insurance/:policyId/mark-filled", () => import("./api/db/insurance.js"));
+mount("/api/insurance/:policyId/mark-submitted", () => import("./api/db/insurance.js"));
 mount("/api/db/shipping-notify",   () => import("./api/db/shipping-notify.js")); // BL录入双轨通知
 mount("/api/db/vendor-quotes",     () => import("./api/db/vendor-quotes.js"));
 mount("/api/db/stamp-permissions", () => import("./api/db/stamp-permissions.js"));
@@ -512,6 +519,8 @@ mount("/api/public/forwarder-services/:code", () => import("./api/public/forward
 mount("/api/public/forwarder-services/:code/quote", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务报价提交
 mount("/api/public/forwarder-shipments/:code", () => import("./api/public/forwarder-services.js")); // v3d 按票四服务全貌
 mount("/api/public/forwarder-grab/:code", () => import("./api/public/forwarder-services.js")); // 立即抢单两口价 grab_offers
+mount("/api/public/forwarder-history/:code", () => import("./api/public/forwarder-history.js")); // 货代门户历史业务(只读账单)
+mount("/api/public/forwarder-active/:code", () => import("./api/public/forwarder-active.js")); // 货代门户活跃业务(真实海运计划)
 mount("/api/db/etd-delay-notify", () => import("./api/db/etd-delay-notify.js")); // ETD delay WeCom notify
 // ── /api/jdy/* endpoints ──
 mount("/api/jdy/customer-addresses",  () => import("./api/jdy/customer-addresses.js"));
@@ -590,6 +599,14 @@ app.get("/f/:token", (req, res) => {
 // Short link for factory order confirmation: /fc/<token> → confirm page
 app.get("/fc/:token", (req, res) => {
   res.redirect("/public/factory-confirm.html?t=" + encodeURIComponent(req.params.token));
+});
+// B2: /fi/<code> -> 工厂红票门户(与 /ci 对称; 修复点🧾开票误开成订单确认页的 bug)
+app.get("/fi/:token", (req, res) => {
+  res.redirect("/public/factory-invoice.html?c=" + encodeURIComponent(req.params.token));
+});
+// B3: /ci/<code> -> 客户销项发票门户
+app.get("/ci/:token", (req, res) => {
+  res.redirect("/public/customer-invoice.html?c=" + encodeURIComponent(req.params.token));
 });
 mount("/api/db/packaging",             () => import("./api/db/packaging.js"));
 mount("/api/db/packaging-move",        () => import("./api/db/packaging-move.js"));
