@@ -1104,9 +1104,9 @@ async function handleMasterView(req, res, pool) {
   try { raw = (typeof plan.raw === "string" ? JSON.parse(plan.raw) : plan.raw) || {}; } catch (_) { raw = {}; }
   const companyNameById = async (id) => {
     if (!id) return null;
-    const r = await pool.query(`SELECT name, name_cn FROM companies WHERE id = $1 LIMIT 1`, [id]);
+    const r = await pool.query(`SELECT name_en, name_cn FROM companies WHERE id = $1 LIMIT 1`, [id]);
     const row = r.rows[0];
-    return row ? (row.name_cn || row.name) : null;
+    return row ? (row.name_cn || row.name_en) : null;
   };
   return res.json({
     ok: true,
@@ -1737,7 +1737,7 @@ async function handleGetContacts(req, res, pool) {
     );
     const c = r.rows[0];
     if (c) out.customer = {
-      name: c.name, contact: c.contact_name || null,
+      name: COALESCE(c.name_cn, c.name_en), contact: c.contact_name || null,
       phone: c.phone_e164 || c.contact_phone || null,
       email: c.contact_email || null,
       registered: !!c.phone_e164,
@@ -1751,7 +1751,7 @@ async function handleGetContacts(req, res, pool) {
     const r = await pool.query(
       `SELECT o.factory, c.contact_name, c.contact_phone
          FROM orders o
-         LEFT JOIN companies c ON (c.name = o.factory OR c.name_cn = o.factory)
+         LEFT JOIN companies c ON (c.name_en = o.factory OR c.name_cn = o.factory)
         WHERE o.contract_no = ANY($1) AND o.factory IS NOT NULL
         LIMIT 1`, [contracts]
     );
@@ -1871,6 +1871,41 @@ async function handlePlanFactories(req, res, pool) {
 // ── GET /supply-chain-options?plan_id=xxx ────────────────────────────────────
 // Returns company lists by type (forwarders/trucking/brokers/factories/customers)
 // for the CollabLinkPopup dropdowns.
+// 2026-07-06 补: /supply-chain POST 之前从未挂路由(前端 savePartyCompany 一直调用它来写
+// forwarder_company_id/trucking_company_id/customs_broker_id/customer_company_id/factory_company_id,
+// 以及存在raw JSON里的 intermediary_company_id/exporter_company_id——系统性"关联"按钮点了全部失败)。
+async function handleSupplyChain(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const body = req.body || {};
+  const planRef = body.plan_id;
+  if (!planRef) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  const planRow = await pool.query(
+    `SELECT * FROM shipping_plans WHERE _id = $1 OR id::text = $1 LIMIT 1`, [String(planRef)]);
+  const plan = planRow.rows[0];
+  if (!plan) return res.status(404).json({ ok: false, error: "找不到计划" });
+
+  const REAL_COLS = ["forwarder_company_id", "trucking_company_id", "customs_broker_id", "customer_company_id", "factory_company_id"];
+  const RAW_KEYS = ["intermediary_company_id", "exporter_company_id"];
+
+  const sets = [], vals = [];
+  for (const k of REAL_COLS) {
+    if (Object.prototype.hasOwnProperty.call(body, k)) {
+      vals.push(body[k] || null);
+      sets.push(`${k} = $${vals.length}`);
+    }
+  }
+  for (const k of RAW_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(body, k)) {
+      vals.push(body[k] == null ? null : String(body[k]));
+      sets.push(`raw = jsonb_set(COALESCE(raw, '{}'::jsonb), '{${k}}', to_jsonb($${vals.length}::text), true)`);
+    }
+  }
+  if (!sets.length) return res.status(400).json({ ok: false, error: "没有可更新的字段" });
+  vals.push(plan.id);
+  await pool.query(`UPDATE shipping_plans SET ${sets.join(", ")} WHERE id = $${vals.length}`, vals);
+  return res.json({ ok: true });
+}
+
 async function handleSupplyChainOptions(req, res, pool) {
   if (!requireAuth(req, res)) return;
   const byType = async (type) => {
@@ -1883,14 +1918,27 @@ async function handleSupplyChainOptions(req, res, pool) {
     );
     return r.rows;
   };
-  const [forwarders, trucking, brokers, factories, customers] = await Promise.all([
+  // 2026-07-06 根治: "货代"(中间人/intermediary,如上海洋宝宝)的公司类型是 sanlyn_entity 不是 forwarder,
+  // 之前intermediary选择器复用forwarders列表(只查type=forwarder)导致洋宝宝这类中间人永远选不到。
+  const byTypeIn = async (types) => {
+    const r = await pool.query(
+      `SELECT id, name_cn, COALESCE(name_en, name_cn) AS name, code
+         FROM companies
+        WHERE type = ANY($1::text[]) AND (active IS NULL OR active = true)
+        ORDER BY name_cn NULLS LAST LIMIT 120`,
+      [types]
+    );
+    return r.rows;
+  };
+  const [forwarders, trucking, brokers, factories, customers, intermediaries] = await Promise.all([
     byType("forwarder"),
     byType("trucking"),
     byType("customs_broker"),
     byType("factory"),
     byType("customer"),
+    byTypeIn(["forwarder", "sanlyn_entity"]),
   ]);
-  return res.json({ ok: true, companies: { forwarders, trucking, brokers, factories, customers } });
+  return res.json({ ok: true, companies: { forwarders, trucking, brokers, factories, customers, intermediaries } });
 }
 
 // ── GET /party-defaults ──────────────────────────────────────────────────────
@@ -2026,7 +2074,7 @@ async function handlePartyBillingStatus(req, res, pool) {
   const factoryCodes = await pool.query(
     `SELECT DISTINCT COALESCE(NULLIF(o.factory_code, ''), c.code) AS code
        FROM orders o
-       LEFT JOIN companies c ON c.name = o.factory OR c.name_cn = o.factory
+       LEFT JOIN companies c ON c.name_en = o.factory OR c.name_cn = o.factory
       WHERE o.shipping_plan_id = $1`, [plan.id]);
   const supplierRows = (code, cats) => rows.filter(row => (!code || row.supplier_company_code === code) && costMatches(row, cats));
   const payerRows = (code) => rows.filter(row => (!code || row.payer_company_code === code));
@@ -2474,6 +2522,7 @@ export default async function handler(req, res) {
     if (req.method === "POST"   && pathSuffix === "set-factory-bill")   return await handleSetFactoryBill(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "confirm-factory-bill") return await handleConfirmFactoryBill(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "supply-chain-options")  return await handleSupplyChainOptions(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "supply-chain")          return await handleSupplyChain(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "party-defaults")         return await handlePartyDefaults(req, res, pool);
     if (req.method === "POST" && pathSuffix === "set-party-default")      return await handleSetPartyDefault(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "party-billing-status")   return await handlePartyBillingStatus(req, res, pool);
