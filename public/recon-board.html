@@ -93,7 +93,7 @@
       if(l.invoice_status==="pending")return l.counterparty_type==="forwarder"?"运费待开票":"待开票";
       if(l.invoice_status==="confirmed")return"待确认";
       if(l.invoice_status==="issued"||l.invoice_status==="invoiced")return"已开票";
-      return l.invoice_status;
+      return "";
     }
     function settlementHtml(l){
       const side=l.direction==="ap"?"应付":"应收";
