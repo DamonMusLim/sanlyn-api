@@ -86,11 +86,38 @@ async function loadClosedMap(pool, supplierName){
 
 async function loadPlans(pool, companyId){
   const { rows } = await pool.query(
-    `SELECT id, bl_no, pol, pod, etd, container_qty, container_type,
-            gross_weight_kg, cargo_description, vessel, voyage, customer_en
-       FROM shipping_plans
-      WHERE forwarder_company_id = $1
-      ORDER BY etd NULLS LAST, id DESC`,
+    // TODO: Also keep lanes with future open freight_rfqs when that signal is needed.
+    `SELECT sp.id, sp.bl_no, sp.pol, sp.pod, sp.etd, sp.container_qty, sp.container_type,
+            COALESCE(sp.gross_weight_kg, li.gross_weight_kg) AS gross_weight_kg,
+            COALESCE(NULLIF(BTRIM(sp.cargo_description), ''), li.cargo_description) AS cargo_description,
+            sp.vessel, sp.voyage, sp.customer_en
+       FROM shipping_plans sp
+       LEFT JOIN LATERAL (
+         SELECT
+           (SELECT string_agg(t.label, ' / ' ORDER BY t.label)
+              FROM (
+                SELECT DISTINCT COALESCE(NULLIF(BTRIM(oi.bl_description), ''), NULLIF(BTRIM(oi.product_name), '')) AS label
+                  FROM order_line_items oi
+                 WHERE oi.order_id = ANY(
+                   SELECT o.id
+                     FROM orders o
+                    WHERE o.order_no = ANY(sp.order_nos)
+                 )
+                 ORDER BY label
+                 LIMIT 3
+              ) t
+             WHERE t.label IS NOT NULL) AS cargo_description,
+           (SELECT SUM(oi.gw_ctn * oi.qty_ctn)
+              FROM order_line_items oi
+             WHERE oi.order_id = ANY(
+               SELECT o.id
+                 FROM orders o
+                WHERE o.order_no = ANY(sp.order_nos)
+             )) AS gross_weight_kg
+       ) li ON TRUE
+      WHERE sp.forwarder_company_id = $1
+        AND (sp.etd >= CURRENT_DATE - interval '6 months' OR sp.etd IS NULL)
+      ORDER BY sp.etd NULLS LAST, sp.id DESC`,
     [companyId]
   );
   return rows;
@@ -165,10 +192,10 @@ function addPlan(lane, row, closed){
     var ct = boxType(row.container_type);
     if (ct) lane._box[ct] = (lane._box[ct] || 0) + qty;
   }
-  var gw = numOrNull(row.gross_weight_kg);
+  var gw = s.gross_weight_kg;
   if (gw != null) lane.gw_total += gw;
 
-  var cat = cargoCategory(row.cargo_description);
+  var cat = cargoCategory(s.cargo_description);
   if (cat && !lane._cargo[cat]) {
     lane._cargo[cat] = true;
     lane.cargo_types.push(cat);
@@ -181,7 +208,7 @@ function addPlan(lane, row, closed){
   }
 
   markMissing(lane, "gw", gw == null);
-  markMissing(lane, "cargo", !cleanText(row.cargo_description));
+  markMissing(lane, "cargo", !cleanText(s.cargo_description));
   markMissing(lane, "etd", t == null);
   markMissing(lane, "container", qty == null);
 }
