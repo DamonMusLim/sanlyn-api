@@ -49,7 +49,7 @@
   <script>
     const $=id=>document.getElementById(id);
     const state={token:localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||"",rows:[],summary:[],filter:"all",view:"order"};
-    const labels={ar_due:"今日应收未收",ap_due:"今日应付未付",invoice_pending:"资料齐待开票",slip_pending:"客户水单待认领",risk:"异常待核"};
+    const labels={ar_due:"今日应收未收",ap_due:"今日应付未付",invoice_pending:"资料齐待开票",slip_pending:"客户水单待认领",price_review:"改价待审",risk:"异常待核"};
     function authHeaders(){return state.token?{Authorization:"Bearer "+state.token}:{}}
     async function api(path,opts={}){
       const r=await fetch(path,{...opts,headers:{"Content-Type":"application/json",...authHeaders(),...(opts.headers||{})}});
@@ -71,6 +71,7 @@
       if(state.filter==="ap_due")return linesOf(r).some(l=>l.direction==="ap"&&l.due>1);
       if(state.filter==="invoice_pending")return r.customer_side?.invoice_status==="pending";
       if(state.filter==="slip_pending")return r.type==="order"&&r.amounts.receivable_due>1&&!r.signals.customer_slip_uploaded;
+      if(state.filter==="price_review")return r.type==="shipment"&&r.pending_price_review;
       if(state.filter==="risk")return r.tone==="risk"||linesOf(r).some(l=>l.tone==="risk"||l.data_missing);
       return true;
     }
@@ -102,6 +103,15 @@
       if(l.direction==="ap")return tag(`超付¥${fmt(over)}`,"risk");
       return"";
     }
+    function invoiceConfirmChip(r){
+      if(r.type!=="shipment")return"";
+      const status=r.invoice_confirm_status||"none";
+      const actor=r.confirm_actor?` · ${r.confirm_actor}`:"";
+      const at=r.confirm_at?` · ${relTime(r.confirm_at)}`:"";
+      if(status==="pending_our_review")return chip("⚠改价待审","risk",`港杂费改价待我方审批${actor}${at}`);
+      if(status==="external_confirmed")return chip("已确认","done",`对方已确认港杂费开票信息${actor}${at}`);
+      return chip("待对方确认","stale","对方尚未确认港杂费开票信息");
+    }
     function settlementHtml(l){
       const side=l.direction==="ap"?"应付":"应收";
       const chips=[];
@@ -119,7 +129,7 @@
       const child=r.type==="shipment"&&!r.is_top_level;
       return `<article class="row ${r.tone} ${child?"child":""}" data-id="${esc(r.id)}">
         <div class="line">
-          <div><div class="title">${esc(r.title)}</div><div class="sub">${esc(r.subtitle)}</div><div class="meta">经手:${esc(r.owner||"未指派")} · ${relTime(r.last_action_at)}</div></div>
+          <div><div class="title">${esc(r.title)}</div><div class="sub">${esc(r.subtitle)}</div><div class="meta">经手:${esc(r.owner||"未指派")} · ${relTime(r.last_action_at)}</div><div class="linechips" style="justify-content:flex-start;margin-top:7px">${invoiceConfirmChip(r)}</div></div>
           <div class="settlements">${linesOf(r).map(settlementHtml).join("")||'<div class="muted">无结算线</div>'}</div>
           ${rowActionsHtml(r)}
         </div>
@@ -143,7 +153,8 @@
       return acts;
     }
     function rowActionsHtml(r){
-      return `<div class="actions">`+rowActions(r).map(([label,hash])=>
+      const review=r.type==="shipment"&&r.pending_price_review?`<button class="action" data-review="approve" data-row-id="${esc(r.id)}">通过改价</button><button class="action" data-review="reject" data-row-id="${esc(r.id)}">驳回改价</button>`:"";
+      return `<div class="actions">`+review+rowActions(r).map(([label,hash])=>
         hash?`<button class="action" data-goto="${esc(hash)}" title="到 ${esc(label)} 环节">${esc(label)} ↗</button>`
             :`<button class="action done" disabled>${esc(label)}</button>`).join("")+`</div>`;
     }
@@ -252,6 +263,18 @@
       $("notice").textContent=`另有 ${board.unclassified_payments_count||0} 笔未标方向付款，未计入收/付状态，待治理方向字段后归位。`;
       render();
     }
+    async function reviewPrice(row,decision){
+      const refs=(row.invoice_confirm_refs||[]).filter(x=>x.status==="pending_our_review");
+      if(!refs.length)return openModal("无法审批","这票当前没有待审改价。");
+      let note="";
+      if(decision==="reject"){
+        const v=window.prompt("驳回备注（可选）","");
+        if(v===null)return;
+        note=v;
+      }
+      await Promise.all(refs.map(x=>api("/api/db/recon-board?action=review-price",{method:"POST",body:JSON.stringify({ref:x.ref,kind:x.kind,decision,note})})));
+      await load();
+    }
     function openModal(title,text){$("modalTitle").textContent=title;$("modalText").textContent=text;$("modal").showModal()}
     $("loginForm").addEventListener("submit",async e=>{
       e.preventDefault();$("error").textContent="";
@@ -262,6 +285,8 @@
     $("clearFilter").addEventListener("click",()=>{state.filter="all";render()});
     $("typetabs").addEventListener("click",e=>{const b=e.target.closest("[data-view]");if(!b)return;state.view=b.dataset.view;[...$("typetabs").children].forEach(c=>c.classList.toggle("active",c===b));render()});
     $("list").addEventListener("click",e=>{
+      const review=e.target.closest("[data-review]");
+      if(review){const row=state.rows.find(x=>x.id===review.dataset.rowId);if(row)reviewPrice(row,review.dataset.review).catch(err=>$("error").textContent=err.message);return;}
       const g=e.target.closest("[data-goto]");if(g){gotoModule(g.dataset.goto);return;}
       const b=e.target.closest("[data-action]");if(b){openModal(b.dataset.title,b.dataset.text);return;}
       const lineEl=e.target.closest("[data-line-id]");

@@ -5,6 +5,7 @@ import {
   hasText, relationTypeLabel, relationTitle, settlementLine, aggregateStatus, baseTone,
   worstTone, ageChip, nextAction, amountMapAdd, amountList,
 } from "./recon-board-helpers.js";
+import { INVOICE_CONFIRM_SQL, reviewPriceOverride } from "./recon-board-invoice-confirm.js";
 
 const FINANCE_ROLES = new Set(["admin", "finance"]);
 
@@ -74,6 +75,7 @@ bill_groups AS (
    WHERE br.id IS NOT NULL
    GROUP BY br.plan_id, COALESCE(br.supplier_company_code, br.supplier), COALESCE(br.currency_norm, br.currency, 'CNY')
 ),
+${INVOICE_CONFIRM_SQL},
 shipment_sum AS (
   SELECT sp.id, sp._id, sp.shipment_no, sp.bl_no, sp.order_nos, sp.issuing_company,
          sp.forwarder_cn AS forwarder, sp.forwarder_company_id, sp.customer, sp.company_code, sp.customer_company_id,
@@ -83,12 +85,20 @@ shipment_sum AS (
          COUNT(DISTINCT bg.currency) FILTER (WHERE bg.party_key IS NOT NULL) AS bill_currency_count,
          MIN(bg.currency) FILTER (WHERE bg.party_key IS NOT NULL) AS bill_currency,
          COALESCE(jsonb_agg(to_jsonb(bg) ORDER BY bg.party_key, bg.currency) FILTER (WHERE bg.party_key IS NOT NULL), '[]'::jsonb) AS bill_groups,
+         COALESCE(icg.invoice_confirm_status, 'none') AS invoice_confirm_status,
+         COALESCE(icg.pending_price_review, false) AS pending_price_review,
+         icg.confirm_actor,
+         icg.confirm_at,
+         COALESCE(icg.invoice_confirm_refs, '[]'::jsonb) AS invoice_confirm_refs,
          (NULLIF(BTRIM(COALESCE(sp.forwarder_cn, '')), '') IS NULL) AS missing_forwarder,
          CASE WHEN EXISTS (SELECT 1 FROM recon_lines rl WHERE rl.template_key='ap_forwarder' AND sp.bl_no IS NOT NULL AND rl.line_key LIKE '%' || sp.bl_no || '%' AND COALESCE(rl.actual_amount,0)>0) THEN 'invoiced' ELSE 'pending' END AS ap_invoice
-    FROM selected_shipments sp LEFT JOIN bill_groups bg ON bg.plan_id=sp.id
+    FROM selected_shipments sp
+    LEFT JOIN bill_groups bg ON bg.plan_id=sp.id
+    LEFT JOIN invoice_confirm_groups icg ON icg.shipment_id=sp.id
    GROUP BY sp.id, sp._id, sp.shipment_no, sp.bl_no, sp.order_nos, sp.issuing_company,
             sp.forwarder_cn, sp.forwarder_company_id, sp.customer, sp.company_code, sp.customer_company_id,
-            sp.created_at, sp.updated_at, sp.forwarder_price_confirmed_at
+            sp.created_at, sp.updated_at, sp.forwarder_price_confirmed_at,
+            icg.invoice_confirm_status, icg.pending_price_review, icg.confirm_actor, icg.confirm_at, icg.invoice_confirm_refs
 )
 SELECT
   (SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x.last_action_at DESC NULLS LAST), '[]'::jsonb) FROM (
@@ -275,6 +285,11 @@ function shipmentFact(row, selectedOrderNos) {
     age_chip: ageChip(age, due(ap, apPaid) > TOLERANCE || due(ar, arPaid) > TOLERANCE),
     bill_currency_count: Number(row.bill_currency_count || 0),
     freight_confirmed: Boolean(row.forwarder_price_confirmed_at),
+    invoice_confirm_status: row.invoice_confirm_status || "none",
+    pending_price_review: Boolean(row.pending_price_review),
+    confirm_actor: row.confirm_actor || null,
+    confirm_at: row.confirm_at || null,
+    invoice_confirm_refs: Array.isArray(row.invoice_confirm_refs) ? row.invoice_confirm_refs : [],
     amounts: { payable: ap, paid: apPaid, payable_due: due(ap, apPaid), receivable: ar, received: arPaid, receivable_due: due(ar, arPaid) },
     settlement_lines: settlementLines,
     data_missing: missingForwarder,
@@ -313,6 +328,7 @@ function buildSummary(facts) {
     ap_due: { key: "ap_due", label: "今日应付未付", amounts: new Map(), count: 0 },
     invoice_pending: { key: "invoice_pending", label: "资料齐待开票", amounts: new Map(), count: 0 },
     slip_pending: { key: "slip_pending", label: "客户水单待认领", amounts: new Map(), count: 0 },
+    price_review: { key: "price_review", label: "改价待审", amounts: new Map(), count: 0 },
     risk: { key: "risk", label: "异常待核", amounts: new Map(), count: 0 },
   };
   for (const r of rows) {
@@ -322,6 +338,7 @@ function buildSummary(facts) {
       if (line.data_missing || line.tone === "risk") { queues.risk.count++; amountMapAdd(queues.risk.amounts, line.currency, line.due || line.total || 0); }
     }
     if (r.type === "order" && r.amounts.receivable_due > TOLERANCE && !r.signals.customer_slip_uploaded) { queues.slip_pending.count++; amountMapAdd(queues.slip_pending.amounts, r.currency, r.amounts.receivable_due); }
+    if (r.type === "shipment" && r.pending_price_review) queues.price_review.count++;
   }
   for (const d of facts.invoice_drafts || []) {
     if (d.status === "pending") { queues.invoice_pending.count++; amountMapAdd(queues.invoice_pending.amounts, d.currency || "CNY", d.amount_invoice ?? d.amount_declared ?? d.amount_order); }
@@ -344,16 +361,22 @@ async function handleSummary(req, res) {
   return res.json({ success: true, summary: { queues: buildSummary(facts), generated_at: new Date().toISOString() } });
 }
 
+async function handleReviewPrice(req, res) {
+  const result = await reviewPriceOverride(getPool(), req);
+  return json(res, result.status, result.payload);
+}
+
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   try {
     if (!requireAuth(req, res)) return;
     if (!FINANCE_ROLES.has(req.user?.role)) return json(res, 403, { error: "Forbidden", message: "仅财务/管理员可访问" });
-    if (req.method !== "GET") return json(res, 405, { error: "Method not allowed" });
     const action = String(req.query?.action || "board").trim();
-    if (action === "board") return handleBoard(req, res);
-    if (action === "summary") return handleSummary(req, res);
+    if (req.method === "GET" && action === "board") return handleBoard(req, res);
+    if (req.method === "GET" && action === "summary") return handleSummary(req, res);
+    if (req.method === "POST" && action === "review-price") return handleReviewPrice(req, res);
+    if (!["GET", "POST"].includes(req.method)) return json(res, 405, { error: "Method not allowed" });
     return json(res, 404, { error: "unknown action" });
   } catch (err) {
     console.error("[recon-board]", err);
