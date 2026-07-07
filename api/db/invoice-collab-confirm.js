@@ -82,7 +82,8 @@ async function loadShipment(pool, ctx) {
   if (!sp) return null;
   const orders = (sp.orders || []).filter(o => matchFactory(ctx.scope.label, o.factory));
   if (!orders.length) return null;
-  return { ...sp, orders };
+  const factory = await loadCompany(pool, ctx.scope.label);
+  return { ...sp, orders, factory_company_code: factory.code || "" };
 }
 
 async function loadCompany(pool, nameOrCode) {
@@ -117,38 +118,41 @@ function containerSummary(sp) {
   return qty ? `${qty}×${type}` : "";
 }
 
-function defaultLines(sp) {
-  // TODO: replace raw.cost_lines/demo fallback with freight_supplier_bills when monthly merged invoicing lands.
-  const raw = Array.isArray(sp.cost_lines) ? sp.cost_lines : [];
-  const lines = raw
-    .filter(x => x && x.name !== "海运费" && x.sale !== undefined && x.sale !== null && String(x.sale) !== "")
-    .map(x => ({
-      name: clean(x.name || "港杂费", 80),
-      basis: clean(x.basis || x.unit || "整票", 24),
-      unit_price: money(x.unit_price ?? x.sale),
-      qty: money(x.qty || 1) || 1,
-      amount: money(x.sale),
-      currency: clean(x.currency || "CNY", 8).toUpperCase(),
-    }));
-  if (lines.length) return lines;
-  if (clean(sp.bl_no) === "AXI0359737") {
-    return [
-      ["THC 码头操作费", "每柜", 825, 5],
-      ["单证费", "整票", 450, 1],
-      ["电放费", "整票", 450, 1],
-      ["设备交接费", "每柜", 35, 5],
-      ["封签费", "每柜", 30, 5],
-      ["订舱费", "整票", 105, 1],
-      ["VGM + 申报费", "整票", 200, 1],
-    ].map(([name, basis, unit_price, qty]) => ({
-      name, basis, unit_price, qty, amount: money(unit_price * qty), currency: "CNY",
-    }));
-  }
-  return [{ name: "港杂费", basis: "整票", unit_price: 0, qty: 1, amount: 0, currency: "CNY" }];
+async function defaultLines(pool, sp) {
+  const blNo = clean(sp.bl_no || sp.shipment_no || "", 80);
+  const payerCode = clean(sp.factory_company_code, 40);
+  if (!blNo || !payerCode) return [];
+
+  const r = await pool.query(
+    `SELECT bl_no, cost_category, amount, sale_amount, currency, unit_price, qty, charge_basis
+       FROM active_freight_supplier_bills
+      WHERE bl_no=$1
+        AND payer_company_code=$2
+        AND (cost_category !~* '海运|ocean|freight')
+        AND COALESCE(amount,0)>0
+      ORDER BY id`,
+    [blNo, payerCode]
+  );
+
+  return r.rows.map(row => {
+    const lineAmount = row.sale_amount !== null && row.sale_amount !== undefined && String(row.sale_amount) !== ""
+      ? row.sale_amount
+      : row.amount;
+    return {
+      bl_no: clean(row.bl_no || blNo, 80),
+      name: clean(row.cost_category || "港杂费", 80),
+      basis: clean(row.charge_basis || "整票", 24),
+      unit_price: money(row.unit_price),
+      qty: money(row.qty || 1) || 1,
+      amount: money(lineAmount),
+      currency: clean(row.currency || "CNY", 8).toUpperCase(),
+    };
+  });
 }
 
-function buildPayload(sp, buyer, seller, saved) {
-  const billLines = defaultLines(sp);
+async function buildPayload(pool, sp, buyer, seller, saved) {
+  const billLines = await defaultLines(pool, sp);
+  const billLineNotice = billLines.length ? "" : "该票暂无港杂账单,请财务核对";
   const currency = billLines[0]?.currency || "CNY";
   const total = money(billLines.filter(l => l.currency === currency).reduce((s, l) => s + Number(l.amount || 0), 0));
   const exTax = money(total / 1.01);
@@ -172,6 +176,8 @@ function buildPayload(sp, buyer, seller, saved) {
     },
     seller,
     bill_lines: saved?.payload?.bill_lines || billLines,
+    bill_line_notice: saved?.payload?.bill_line_notice || billLineNotice,
+    needs_finance_review: saved?.payload?.needs_finance_review ?? !billLines.length,
     invoices: saved?.payload?.invoices || [{
       id: "invoice-1",
       currency,
@@ -203,7 +209,7 @@ async function handleGet(req, res, pool, ctx) {
       WHERE ref=$1 AND kind=$2 LIMIT 1`,
     [ref, KIND]
   );
-  return res.json({ ok: true, ref, kind: KIND, data: buildPayload(sp, buyer, seller, saved.rows[0]) });
+  return res.json({ ok: true, ref, kind: KIND, data: await buildPayload(pool, sp, buyer, seller, saved.rows[0]) });
 }
 
 function sanitizeDraft(body) {
@@ -212,6 +218,7 @@ function sanitizeDraft(body) {
   return {
     buyer: { name: clean(d.buyer?.name, 120), tax_id: clean(d.buyer?.tax_id, 40) },
     bill_lines: Array.isArray(d.bill_lines) ? d.bill_lines.map(l => ({
+      bl_no: clean(l.bl_no, 80),
       name: clean(l.name, 80), basis: clean(l.basis, 24),
       unit_price: money(l.unit_price), qty: money(l.qty) || 1,
       amount: money(l.amount), currency: clean(l.currency || "CNY", 8).toUpperCase(),
