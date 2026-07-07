@@ -4,6 +4,7 @@
 // parts 可选(decl,pack,inspect[,inbound]),默认前三。复用现成渲染器,不重造。
 import { renderCustomsDeclaration, resolveOrdersForContainer } from "./customs-declaration-form.js";
 import { renderInboundNotice } from "./inbound-notice.js";
+import { checkContainerCoverage, checkAmountReconciliation, renderGateBanner } from "./customs-doc-quality-gate.js";
 import OSS from "ali-oss";
 
 function clean(v) { return String(v ?? "").trim(); }
@@ -89,6 +90,13 @@ export async function renderCustomsBundle(pool, opts) {
     orders = await loadOrdersByIds(pool, ids);
   }
   const orderNos = orders.map(o => o.order_no).filter(Boolean);
+  const orderIds = orders.map(o => Number(o.id)).filter(Boolean);
+
+  // 🚦 质量门禁(P0): 柜覆盖完整性 + 报关↔商检金额比对。查不到就标缺数据,不静默放行,也不阻断生成——
+  // 用横幅把结果焊在 PDF 首页,谁都能看到"这份能不能正式用"。
+  const coverage = await checkContainerCoverage(pool, plan, { requestedContainerNo: containerNo, coveredOrderIds: orderIds });
+  const recon = await checkAmountReconciliation(pool, orderIds);
+  const gateBannerHtml = renderGateBanner(coverage, recon);
 
   // 组件 HTML / URL
   const inHtml = partsWanted.includes("inbound") ? await renderInboundNotice(pool, shipmentId, {}) : null;
@@ -115,6 +123,16 @@ export async function renderCustomsBundle(pool, opts) {
   const margin = { top: "12mm", bottom: "12mm", left: "10mm", right: "10mm" };
   try {
     const page = await browser.newPage();
+    if (gateBannerHtml) {
+      const bannerHtml = `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:16px;font-family:sans-serif">
+        <div style="font-size:14px;font-weight:800;margin-bottom:10px">报关全套质量门禁结果</div>
+        ${gateBannerHtml}
+        <div style="font-size:10px;color:#64748b;margin-top:10px">此页由系统自动生成,仅供内部核对;正式对外前请人工确认差异原因。</div>
+      </body></html>`;
+      await page.setContent(bannerHtml, { waitUntil: "load", timeout: 20000 });
+      await page.emulateMediaType("print");
+      rendered.push({ slot: "gate_banner", buf: await page.pdf({ format: "A4", printBackground: true, margin }) });
+    }
     if (inHtml) { await page.setContent(inHtml, { waitUntil: "load", timeout: 30000 }); await page.emulateMediaType("print"); rendered.push({ slot: "inbound", buf: await page.pdf({ format: "A4", printBackground: true, margin }) }); }
     if (cdHtml) { await page.setContent(cdHtml, { waitUntil: "load", timeout: 30000 }); await page.emulateMediaType("print"); rendered.push({ slot: "decl", buf: await page.pdf({ format: "A4", landscape: true, printBackground: true, margin }) }); }
     if (packUrl) { await page.goto(packUrl, { waitUntil: "networkidle0", timeout: 60000 }); await new Promise(r => setTimeout(r, 2000)); await page.emulateMediaType("print"); rendered.push({ slot: "pack", buf: await page.pdf({ format: "A4", printBackground: true, margin }) }); }
@@ -155,5 +173,9 @@ export async function renderCustomsBundle(pool, opts) {
   if (!merged.getPageCount()) return null;
   const out = Buffer.from(await merged.save());
   const nameKey = containerNo || clean(plan.bl_no) || clean(plan.shipment_no) || "bundle";
-  return { buffer: out, filename: "报关全套_" + nameKey + ".pdf", pages: merged.getPageCount(), inspection_docs: inspEmbedded };
+  const gateStatus = (!coverage.ok || recon.status === "blocked") ? "blocked" : (recon.status === "warning" ? "warning" : "pass");
+  return {
+    buffer: out, filename: "报关全套_" + nameKey + ".pdf", pages: merged.getPageCount(), inspection_docs: inspEmbedded,
+    gate: { status: gateStatus, coverage, reconciliation: recon },
+  };
 }
