@@ -143,6 +143,9 @@ mount("/api/mcp", () => import("./api/mcp.js"));
 
 // ── Task Ingest (no JWT — uses TASK_INGEST_SECRET, 供mini检测器写PG闭环任务) ──
 mount("/api/tasks-ingest", () => import("./api/tasks-ingest.js"));
+mount("/api/wecom-panel", () => import("./api/wecom-panel.js"));
+mount("/api/wecom-suggest", () => import("./api/wecom-suggest.js"));
+mount("/api/wecom-jssdk-sign", () => import("./api/wecom-jssdk-sign.js"));
 mount("/api/wx-mini-login", () => import("./api/wx-mini-login.js"));
 mount("/api/brief-notes", () => import("./api/brief-notes.js"));
 
@@ -266,6 +269,7 @@ mount("/api/db/freight-cost-audit",   () => import("./api/db/freight-cost-audit.
 mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 工厂协同门户·财务板块(短码+collab mt)
 mount("/api/db/invoice-collab-confirm", () => import("./api/db/invoice-collab-confirm.js")); // 港杂费开票确认(booking collab token)
+mount("/api/db/invoice-monthly-consolidate", () => import("./api/db/invoice-monthly-consolidate.js")); // 月结合并开票聚合(admin/finance JWT)
 mount("/api/db/customer-invoice", () => import("./api/db/customer-invoice.js")); // B3 客户销项发票门户(短码 /ci)
 mount("/api/db/rate-configs", () => import("./api/db/rate-configs.js")); // 税率/汇率配置编辑器+改动历史(admin only)
 mount("/api/db/migrate-rate-configs", () => import("./api/db/migrate-rate-configs.js"));
@@ -635,6 +639,7 @@ mount("/api/db/migrate-forwarder-perf",() => import("./api/db/migrate-forwarder-
 mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-payment-reminder.js"));
 // ── Reconciliation / monthly statement ──
 mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
+mount("/api/db/slip-review", () => import("./api/db/slip-review.js")); // 水单OCR人工确认闸 2026-07-07
 // tax-rebate 子路由: 进项票×报关单分配 N:M
 app.all("/api/db/tax-rebate/*", async (req, res) => {
   try {

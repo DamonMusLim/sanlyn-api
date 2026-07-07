@@ -3,18 +3,18 @@ import { getPool, setCors } from "../db.js";
 
 const KIND = "port_charge_invoice_confirmation";
 const SELLER_NAME = "上海洋宝宝国际物流有限公司";
-const SELLER_BANK = "中国银行厦门文灶支行";
-const ACCOUNTS = { CNY: "433849860868", USD: "433849630299" };
+export const SELLER_BANK = "中国银行厦门文灶支行";
+export const ACCOUNTS = { CNY: "433849860868", USD: "433849630299" };
 
 function hashToken(raw) {
   return crypto.createHash("sha256").update(String(raw || "")).digest("hex");
 }
 
-function clean(v, max = 200) {
+export function clean(v, max = 200) {
   return String(v || "").trim().slice(0, max);
 }
 
-function money(v) {
+export function money(v) {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
 }
@@ -86,7 +86,7 @@ async function loadShipment(pool, ctx) {
   return { ...sp, orders, factory_company_code: factory.code || "" };
 }
 
-async function loadCompany(pool, nameOrCode) {
+export async function loadCompany(pool, nameOrCode) {
   const key = clean(nameOrCode, 120);
   if (!key) return {};
   const r = await pool.query(
@@ -101,7 +101,7 @@ async function loadCompany(pool, nameOrCode) {
   return r.rows[0] || {};
 }
 
-async function loadSeller(pool) {
+export async function loadSeller(pool) {
   const r = await pool.query(
     `SELECT code, name_cn, name_en, tax_id
        FROM companies
