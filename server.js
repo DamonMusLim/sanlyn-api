@@ -172,6 +172,7 @@ function mount(route, handlerModule) {
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
 mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
+mount("/api/db/version",           () => import("./api/db/version.js")); // 版本自检:commit+部署时间 2026-07-07
 mount("/api/db/account-identities", () => import("./api/db/account-identities.js"));
 mount("/api/db/migrate-account-identities", () => import("./api/db/migrate-account-identities.js"));
 mount("/api/tasks-closure", () => import("./api/tasks-closure.js"));
@@ -556,6 +557,10 @@ mount("/api/proxy-file",      () => import("./api/proxy-file.js"));
 mount("/api/send-email",      () => import("./api/send-email.js"));
 mount("/api/db/email-templates", () => import("./api/db/email-templates.js")); // 邮件模版中心 CRUD
 mount("/api/db/email-senders", () => import("./api/db/email-senders.js")); // 发件公司主体
+mount("/api/db/email-message-log", () => import("./api/db/email-message-log.js")); // 邮件收发记录+统计
+mount("/api/db/notification-projects", () => import("./api/db/notification-projects.js")); // 通知项目中心
+mount("/api/notify/trigger", () => import("./api/notify-trigger.js")); // 统一通知触发
+mount("/api/notify/preview", () => import("./api/notify-preview.js")); // 通知预览(不发送)
 mount("/api/notify/order-created", () => import("./api/notify/order-created.js"));
 mount("/api/setup-finance",   () => import("./api/setup-finance.js"));
 mount("/api/vessel-callback", () => import("./api/vessel-callback.js"));
