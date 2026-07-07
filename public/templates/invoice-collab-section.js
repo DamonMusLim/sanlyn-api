@@ -3,30 +3,60 @@
   const INBOUND_API="/api/db/factory-portal";
   const token=new URLSearchParams(location.search).get("token")||"";
   const app=document.getElementById("app");
-  let state=null, inbound=null, inboundOpen=false, inboundInput=null, dirtyPrice=false, contactOpen=false;
+  let state=null, inbound=null, inboundOpen=false, inboundInput=null, dirtyPrice=false, contactOpen=false, _lang="zh";
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
   const num=v=>Number.isFinite(Number(v))?Number(v):0;
   const money=v=>num(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   const sym=c=>c==="USD"?"$":"¥";
   const rmb=v=>{const n=Number(v||0);return n?"¥"+n.toLocaleString(undefined,{maximumFractionDigits:2}):"—"};
-  const totalLines=()=>state.bill_lines.reduce((s,l)=>s+num(l.amount),0);
+  const totalLines=()=>Array.isArray(state.bill_lines)?state.bill_lines.reduce((s,l)=>s+num(l.amount),0):0;
   const recalcInvoice=()=>{
     const inv=state.invoices[0], total=Math.round(totalLines()*100)/100, ex=Math.round(total/1.01*100)/100;
     inv.total_with_tax=total; inv.amount_ex_tax=ex; inv.tax_amount=Math.round((total-ex)*100)/100;
   };
   function billRows(){
-    return state.bill_lines.map((l,i)=>`<tr>
+    return (state.bill_lines||[]).map((l,i)=>`<tr>
       <td>${esc(l.name)}</td><td><span class="unit">${esc(l.basis||"整票")}</span></td>
       <td class="r"><input class="edit money" data-line="${i}" value="${money(l.unit_price)}"></td>
       <td class="r">${money(l.qty).replace(".00","")}</td><td class="r">${money(l.amount)}</td>
     </tr>`).join("");
   }
+  function billSection(currency){
+    if(!(state.bill_lines||[]).length){
+      return `<div class="sec"><div class="sec-t">① 账单明细 — 请核对</div>
+        <div class="bill-empty">${esc(state.bill_line_notice||"该票暂无港杂账单，请财务核对")}</div></div>`;
+    }
+    return `<div class="sec"><div class="sec-t">① 账单明细 — 请核对</div><table><thead><tr><th>费用项</th><th>计费</th><th class="r">单价 <span class="edithint">可改</span></th><th class="r">数量</th><th class="r">合计 (${esc(currency)})</th></tr></thead>
+      <tbody>${billRows()}<tr class="foot"><td colspan="4">应付合计 · ${esc(currency)} <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r">${money(totalLines())}</td></tr></tbody></table>
+      <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价需我方确认后生效</b>。本确认只保存外部确认草稿，不代表已开票或已付款。</span></div></div>`;
+  }
   function invoiceRows(){
     return state.invoices.map(inv=>`<tr>
-      <td>${esc(inv.item_name)}</td><td>${esc(inv.unit)}</td><td class="r">${inv.qty}</td>
+      <td><span data-en="Brokerage Agency Service Port Charges">${esc(inv.item_name)}</span></td><td>${esc(inv.unit)}</td><td class="r">${inv.qty}</td>
       <td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${money(inv.amount_ex_tax)}</td>
       <td class="r">1%</td><td class="r">${money(inv.tax_amount)}</td>
     </tr>`).join("");
+  }
+  function applyLang(){
+    document.querySelectorAll("[data-en]").forEach(el=>{
+      if(!el.hasAttribute("data-zh")) el.setAttribute("data-zh", el.textContent);
+      el.textContent=_lang==="en"?el.getAttribute("data-en"):el.getAttribute("data-zh");
+    });
+    const b=document.getElementById("langBtn");
+    if(b) b.textContent=_lang==="en"?"中文":"EN";
+  }
+  function toggleLang(){ _lang=_lang==="en"?"zh":"en"; applyLang(); }
+  function applySeal(target,url,name){
+    if(!url){url=target;target="inv:seller";}
+    const img=document.getElementById("inv-seller-seal");
+    if(!img) return;
+    img.src=url;
+    img.style.display="block";
+    try{localStorage.setItem("invoice_seller_seal",JSON.stringify({url,name:name||"洋宝宝公章"}));}catch(e){}
+  }
+  function loadSellerSeal(){
+    const url=state?.seller?.seal_url||"/public/yangbaobao-seal.png";
+    applySeal("inv:seller",url,state?.seller?.name||"洋宝宝公章");
   }
   function contactSummary(){
     const c=state.contacts||{}, f=(c.finance||[]).filter(Boolean).length;
@@ -91,19 +121,17 @@
       <div class="badge ${state.status==="external_confirmed"?"done":""}">${state.status==="pending_our_review"?"待我方确认":state.status==="external_confirmed"?"已收到确认":"待你确认"}</div></div></div>
       <div class="shipbar"><span>提单号 <b>${esc(sp.bl_no||"—")}</b></span><span>船名航次 <b>${esc([sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—")}</b></span>
       <span><b>${esc([sp.pol,sp.pod].filter(Boolean).join(" → ")||"—")}</b></span><span>柜量 <b>${esc(sp.container_summary||"—")}</b></span></div>
-      <div class="sec"><div class="sec-t">① 账单明细 — 请核对</div><table><thead><tr><th>费用项</th><th>计费</th><th class="r">单价 <span class="edithint">可改</span></th><th class="r">数量</th><th class="r">合计 (${esc(currency)})</th></tr></thead>
-      <tbody>${billRows()}<tr class="foot"><td colspan="4">应付合计 · ${esc(currency)} <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r">${money(totalLines())}</td></tr></tbody></table>
-      <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价需我方确认后生效</b>。本确认只保存外部确认草稿，不代表已开票或已付款。</span></div></div>
-      <div class="sec"><div class="sec-t">② 开票 · 港杂费</div><div class="modebar"><span class="mlab">开票方式</span>
+      ${billSection(currency)}
+      <div class="sec invoice-sec"><div class="sec-t">② 开票 · 港杂费</div><div class="modebar"><span class="mlab">开票方式</span>
       <button class="mopt ${inv.mode!=="other"?"on":""}" data-mode="self">我方代开</button><button class="mopt ${inv.mode==="other"?"on":""}" data-mode="other">对方自开</button>
-      <span class="mtip" id="modeTip">${inv.mode==="other"?"对方自开后回传，我们 OCR 核对":"我们开好后发送到财务邮箱"}</span></div>
-      <div class="plaininv"><div class="invtop"><div class="pt">电子发票（<select class="tsel" id="title"><option>增值税普通发票</option><option>增值税专用发票</option></select>）</div></div>
-      <div class="pparty"><div class="pp"><div class="plab">购 买 方</div><div class="prow"><b>名称：</b><input class="edit" id="buyerName" value="${esc(state.buyer.name)}"><span class="edithint">可改</span></div>
-      <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><input class="edit" id="buyerTax" value="${esc(state.buyer.tax_id)}"></div><div class="tip">数电票只打印名称 + 税号</div></div>
-      <div class="pp"><div class="plab">销 售 方</div><div class="prow"><b>名称：</b>${esc(state.seller.name)}</div><div class="prow"><b>统一社会信用代码/纳税人识别号：</b>${esc(state.seller.tax_id||"—")}</div></div></div>
-      <table class="invline"><thead><tr><th>项目名称</th><th>单位</th><th class="r">数量</th><th class="r">单价</th><th class="r">金额(不含税)</th><th class="r">税率/征收率</th><th class="r">税额</th></tr></thead><tbody>${invoiceRows()}</tbody>
-      <tfoot><tr><td colspan="4"></td><td class="r">价税合计</td><td colspan="2" class="r">${sym(currency)} ${money(inv.total_with_tax)}</td></tr></tfoot></table>
-      <div class="remarkline">备注：${esc(inv.remark)}</div></div><button class="addinv" id="addInv">＋ 新增一张发票</button>
+      <span class="mtip" id="modeTip">${inv.mode==="other"?"对方自开后回传，我们 OCR 核对":"我们开好后发送到财务邮箱"}</span><button class="mopt inv-tool" id="langBtn" type="button">EN</button><button class="mopt inv-tool" id="printBtn" type="button">下载PDF/打印</button></div>
+      <div class="plaininv" id="invoicePrintArea"><div class="invtop"><div class="pt"><span data-en="e-Invoice">电子发票</span>（<select class="tsel" id="title"><option data-en="VAT Ordinary e-Invoice">增值税普通发票</option><option data-en="VAT Special e-Invoice">增值税专用发票</option></select>）</div></div>
+      <div class="pparty"><div class="pp"><div class="plab" data-en="Buyer">购 买 方</div><div class="prow"><b data-en="Name:">名称：</b><input class="edit" id="buyerName" value="${esc(state.buyer.name)}"><span class="edithint">可改</span></div>
+      <div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b><input class="edit" id="buyerTax" value="${esc(state.buyer.tax_id)}"></div><div class="tip">数电票只打印名称 + 税号</div></div>
+      <div class="pp"><div class="plab" data-en="Seller">销 售 方</div><div class="prow"><b data-en="Name:">名称：</b>${esc(state.seller.name)}</div><div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b>${esc(state.seller.tax_id||"—")}</div></div></div>
+      <table class="invline"><thead><tr><th data-en="Item">项目名称</th><th data-en="Unit">单位</th><th class="r" data-en="Qty">数量</th><th class="r" data-en="Unit Price">单价</th><th class="r" data-en="Amount Excl. Tax">金额(不含税)</th><th class="r" data-en="Tax Rate">税率/征收率</th><th class="r" data-en="Tax Amount">税额</th></tr></thead><tbody>${invoiceRows()}</tbody>
+      <tfoot><tr><td colspan="4"></td><td class="r" data-en="Total Incl. Tax">价税合计</td><td colspan="2" class="r">${sym(currency)} ${money(inv.total_with_tax)}</td></tr></tfoot></table>
+      <div class="remarkline"><span data-en="Remarks:">备注：</span>${esc(inv.remark)}</div><div class="signature"><span data-en="Seller Seal">销售方签章</span><img id="inv-seller-seal" class="invoice-seal" alt="seller seal"></div></div><button class="addinv" id="addInv">＋ 新增一张发票</button>
       <label class="savedef"><input type="checkbox" id="saveDefault" ${state.save_as_default?"checked":""}> <span>存为该客户默认开票模版，以后固定这样开。</span></label></div>
       <div class="sec"><button class="collapse-hd" id="ctToggle"><span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span><span class="chev">${contactOpen?"收起":"展开填写"} ▾</span></button>
       <div class="sumline" style="${contactOpen?"display:none":""}">${contactSummary()}</div><div id="ctBody" style="${contactOpen?"":"display:none"};margin-top:6px">${contactEditor("finance","财务邮箱","必填 ★","发票发这里")}${contactEditor("ops","操作邮箱","","账单/确认通知")}${contactEditor("business","业务邮箱","","报价 / 砍价")}</div></div>
@@ -130,11 +158,15 @@
     document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>{state.invoices[0].mode=b.dataset.mode;render()}));
     document.getElementById("ctToggle").onclick=()=>{contactOpen=!contactOpen;collect();render()};
     document.getElementById("addInv").onclick=()=>alert("已预留多张发票结构，本轮先确认当前单票。");
+    document.getElementById("langBtn").onclick=toggleLang;
+    document.getElementById("printBtn").onclick=()=>window.print();
     document.getElementById("msgBtn").onclick=()=>alert("请直接联系 Sanlyn 操作，留言入口下一版接入。");
     document.getElementById("submitBtn").onclick=submit;
     document.getElementById("inboundToggle").onclick=()=>{inboundOpen=!inboundOpen;collect();render()};
     document.querySelectorAll("[data-inbound-apply]").forEach(b=>b.addEventListener("click",()=>showInboundApply(Number(b.dataset.inboundApply))));
     document.querySelectorAll("[data-inbound-upload]").forEach(b=>b.addEventListener("click",()=>uploadInbound(Number(b.dataset.inboundUpload))));
+    applyLang();
+    loadSellerSeal();
   }
   async function submit(){
     collect();
