@@ -1,4 +1,5 @@
 var API='https://api.sanlyn.cn';
+var VENDOR=API+'/templates/vendor/';
 var TYPE=(qp('type')||'pi').toLowerCase(),_cfg,_pmMap={},_sealTarget='seller',_stamps=[],_localStamps=[],_pendingFile=null,_sealRotation={buyer:0,seller:0};
 var CFG={
   pi:{code:'PI',title:'PROFORMA INVOICE',cols:function(c){return ['NO.','DESCRIPTION & SIZE','QTY','PER BAG ('+c+')','CTN PRICE ('+c+')','AMOUNT ('+c+')'];},price:'selling'},
@@ -19,6 +20,17 @@ function uniq(a){return a.filter(function(v,i){return v&&a.indexOf(v)===i;});}
 function setText(id,v,force){var e=document.getElementById(id);if(e&&(force||!e.textContent.trim())&&v!=null&&String(v).length)e.textContent=v;}
 function banner(type,msg){['infoBanner','errBanner','okBanner'].forEach(function(id){var e=document.getElementById(id);if(e)e.style.display='none';});var id={info:'infoBanner',err:'errBanner',ok:'okBanner'}[type],e=document.getElementById(id);if(e&&msg){e.textContent=(type==='err'?'⚠ ':'')+msg;e.style.display='block';}}
 function hideBanner(){['infoBanner','errBanner','okBanner'].forEach(function(id){var e=document.getElementById(id);if(e)e.style.display='none';});}
+
+// ── Self-hosted library loader (China-safe: same-origin, no Cloudflare CDN) ──
+function loadScript(src,cb,onerr){var ex=document.querySelector('script[data-vsrc="'+src+'"]');if(ex){if(ex.getAttribute('data-loaded')==='1')return cb();ex.addEventListener('load',cb);ex.addEventListener('error',onerr||function(){});return;}var s=document.createElement('script');s.src=src;s.setAttribute('data-vsrc',src);s.onload=function(){s.setAttribute('data-loaded','1');cb();};s.onerror=onerr||function(){};document.head.appendChild(s);}
+function jsPDFctor(){return (window.jspdf&&window.jspdf.jsPDF)||window.jsPDF||null;}
+function ensureLibs(names,cb,onerr){
+  var map={html2canvas:{has:function(){return !!window.html2canvas;},f:'html2canvas.min.js'},
+           xlsx:{has:function(){return !!window.XLSX;},f:'xlsx.full.min.js'},
+           jspdf:{has:function(){return !!jsPDFctor();},f:'jspdf.umd.min.js'}};
+  var need=names.filter(function(n){return !map[n].has();});
+  var i=0;(function nx(){if(i>=need.length)return cb();loadScript(VENDOR+map[need[i]].f,function(){i++;nx();},onerr);})();
+}
 
 function init(){
   _cfg=CFG[TYPE]||CFG.pi;document.title=_cfg.title+' · Sanlyn';renderShell('CNY');
@@ -127,29 +139,75 @@ document.addEventListener('input',function(e){if(e.target.closest&&e.target.clos
 function draftKey(){return 'doc_draft_'+TYPE+'_'+(qp('order_no')||qp('orderNo')||'manual');}
 function saveDraft(){try{localStorage.setItem(draftKey(),JSON.stringify({html:document.getElementById('printPage').innerHTML,ts:Date.now()}));banner('ok','✓ 草稿已保存');setTimeout(hideBanner,1500);}catch(e){banner('err','草稿保存失败');}}
 function restoreDraft(){try{var d=JSON.parse(localStorage.getItem(draftKey())||'null');if(d&&d.html&&confirm('发现本地草稿，是否恢复？')){document.getElementById('printPage').innerHTML=d.html;recalcTotals();['buyer','seller'].forEach(initRotHandle);}}catch(e){}}
+
+// ── Download PDF (WYSIWYG, self-hosted libs, works in China) ──
+function downloadPdf(){
+  var btn=document.querySelector('.btn-print'),old=btn?btn.textContent:'';if(btn){btn.textContent='生成中...';btn.disabled=true;}
+  var tb=document.querySelector('.toolbar');if(tb)tb.style.display='none';
+  function done(){if(tb)tb.style.display='';if(btn){btn.textContent=old||'下载PDF';btn.disabled=false;}}
+  function run(){
+    html2canvas(document.getElementById('printPage'),{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false}).then(function(canvas){
+      var JsPDF=jsPDFctor();
+      if(!JsPDF){done();banner('err','PDF库缺失，已改用打印窗口');return window.print();}
+      var pdf=new JsPDF('p','mm','a4'),pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight();
+      var imgW=pw,imgH=canvas.height*pw/canvas.width,img=canvas.toDataURL('image/jpeg',0.95);
+      if(imgH<=ph){pdf.addImage(img,'JPEG',0,0,imgW,imgH);}
+      else{var pos=0;while(pos<imgH-0.5){pdf.addImage(img,'JPEG',0,-pos,imgW,imgH);pos+=ph;if(pos<imgH-0.5)pdf.addPage();}}
+      pdf.save(_cfg.code+'-'+(qp('order_no')||'draft')+'.pdf');done();
+    }).catch(function(e){done();banner('err','PDF生成失败，已改用打印窗口');window.print();});
+  }
+  ensureLibs(['html2canvas','jspdf'],run,function(){done();banner('err','PDF库加载失败，已改用打印窗口');window.print();});
+}
 function downloadPng(){
-  var btn=document.querySelector('.btn-download');if(btn){btn.textContent='生成中...';btn.disabled=true;}document.querySelector('.toolbar').style.display='none';
-  function done(){document.querySelector('.toolbar').style.display='';if(btn){btn.textContent='下载图片';btn.disabled=false;}}
+  var btn=document.querySelector('.btn-download'),old=btn?btn.textContent:'';if(btn){btn.textContent='生成中...';btn.disabled=true;}
+  var tb=document.querySelector('.toolbar');if(tb)tb.style.display='none';
+  function done(){if(tb)tb.style.display='';if(btn){btn.textContent=old||'下载图片';btn.disabled=false;}}
   function run(){html2canvas(document.getElementById('printPage'),{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false}).then(function(c){done();var a=document.createElement('a');a.download=_cfg.code+'-'+(qp('order_no')||'draft')+'.png';a.href=c.toDataURL('image/png');a.click();}).catch(done);}
-  if(window.html2canvas)return run();var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';s.onload=run;s.onerror=done;document.head.appendChild(s);
+  ensureLibs(['html2canvas'],run,function(){done();banner('err','图片库加载失败');});
 }
+// ── Export Excel (WYSIWYG: mirrors the on-screen table exactly, self-hosted XLSX) ──
 function exportExcel(){
-  var btn=document.querySelector('.btn-excel');if(btn){btn.textContent='生成中...';btn.disabled=true;}
-  function reset(){if(btn){btn.textContent='下载Excel';btn.disabled=false;}}
+  var btn=document.querySelector('.btn-excel'),old=btn?btn.textContent:'';if(btn){btn.textContent='生成中...';btn.disabled=true;}
+  function reset(){if(btn){btn.textContent=old||'下载Excel';btn.disabled=false;}}
   function run(){try{
-    var aoa=[],heads=[].map.call(document.querySelectorAll('#tableHead th'),function(t){return t.textContent.trim();}).filter(Boolean);
-    aoa.push([document.getElementById('docTitleEn').textContent]);aoa.push(['No.',document.getElementById('contractNo').textContent,'Order No.',(qp('order_no')||''),'Date',document.getElementById('docDate').textContent]);aoa.push(['Buyer',document.getElementById('buyerName').textContent,'Seller',document.getElementById('sellerName').textContent]);aoa.push([]);aoa.push(heads);
-    [].forEach.call(document.querySelectorAll('#docBody tr'),function(tr){if(tr.classList.contains('group-header')){aoa.push([tr.textContent.trim()]);return;}var cells=[].map.call(tr.querySelectorAll('td[contenteditable]'),function(td){var v=td.textContent.trim(),n=num(v);return v&&/^[\d,.]+$/.test(v)?n:v;});if(cells.length)aoa.push(cells);});
-    var total=[].map.call(document.querySelectorAll('#totalRow td:not(.no-print)'),function(td){return td.textContent.trim();});if(total.length)aoa.push(total);
-    var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=heads.map(function(h,i){return {wch:i===1?38:16};});XLSX.utils.book_append_sheet(wb,ws,_cfg.code);XLSX.writeFile(wb,_cfg.code+'-'+(qp('order_no')||'draft')+'.xlsx');
-  }catch(e){alert('导出失败: '+e.message);}reset();}
-  if(window.XLSX)return run();var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=run;s.onerror=function(){alert('Excel库加载失败');reset();};document.head.appendChild(s);
+    var cur=(document.getElementById('curr')||{}).textContent||'CNY';
+    var heads=[].map.call(document.querySelectorAll('#tableHead th:not(.no-print)'),function(t){return t.textContent.trim();});
+    var ncol=heads.length||6;
+    function pad(a){a=(a||[]).slice(0,ncol);while(a.length<ncol)a.push('');return a;}
+    var aoa=[],merges=[];
+    function mergeLast(){var r=aoa.length-1;merges.push({s:{r:r,c:0},e:{r:r,c:ncol-1}});}
+    aoa.push(pad([document.getElementById('docTitleEn').textContent]));mergeLast();
+    aoa.push(pad([]));
+    aoa.push(pad(['Buyer:',document.getElementById('buyerName').textContent]));
+    aoa.push(pad(['Seller:',document.getElementById('sellerName').textContent]));
+    aoa.push(pad(['No.:',document.getElementById('contractNo').textContent,'','Date:',document.getElementById('docDate').textContent]));
+    var poEl=document.getElementById('poNoLi');if(poEl&&poEl.style.display!=='none')aoa.push(pad(['PO No.:',document.getElementById('poNo').textContent]));
+    if(TYPE!=='pl')aoa.push(pad(['Currency:',cur]));
+    aoa.push(pad([]));
+    aoa.push(pad(heads));
+    [].forEach.call(document.querySelectorAll('#docBody tr'),function(tr){
+      if(tr.classList.contains('group-header')){aoa.push(pad([tr.textContent.trim()]));mergeLast();return;}
+      var tds=tr.querySelectorAll('td[contenteditable]');if(!tds.length)return;
+      var cells=[].map.call(tds,function(td,ci){var v=td.textContent.trim();return (ci>=2&&/^-?[\d,]+(\.\d+)?$/.test(v))?num(v):v;});
+      aoa.push(pad(cells));
+    });
+    // aligned total row (recomputed so it always matches the on-screen totals)
+    var qty=0,amt=0,nw=0,gw=0,cbm=0;
+    [].forEach.call(document.querySelectorAll('#docBody tr:not(.group-header)'),function(tr){var t=tr.children;if(t.length<6)return;qty+=num(t[2].textContent);if(TYPE==='pl'){nw+=num(t[3].textContent);gw+=num(t[4].textContent);cbm+=num(t[5].textContent);}else{amt+=num(t[5].textContent);}});
+    aoa.push(pad(TYPE==='pl'?['TOTAL','',qty,nw,gw,cbm]:['TOTAL','',qty,'','',amt]));
+    var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges']=merges;
+    ws['!cols']=heads.map(function(h,i){return {wch:i===1?40:(i===0?6:16)};});
+    XLSX.utils.book_append_sheet(wb,ws,_cfg.code);
+    XLSX.writeFile(wb,_cfg.code+'-'+(qp('order_no')||'draft')+'.xlsx');
+  }catch(e){banner('err','导出失败: '+e.message);}reset();}
+  ensureLibs(['xlsx'],run,function(){banner('err','Excel库加载失败');reset();});
 }
-function handleHashAction(){var h=(location.hash||'').toLowerCase();if(h.indexOf('excel')>=0)exportExcel();else if(h.indexOf('seal')>=0||h.indexOf('stamp')>=0)openSealPicker('seller');else if(h.indexOf('print')>=0)window.print();}
+function handleHashAction(){var h=(location.hash||'').toLowerCase();if(h.indexOf('excel')>=0)exportExcel();else if(h.indexOf('pdf')>=0)downloadPdf();else if(h.indexOf('seal')>=0||h.indexOf('stamp')>=0)openSealPicker('seller');else if(h.indexOf('print')>=0)window.print();}
 
 function sealKey(w){return 'doc_editor_seal_'+w;}
 function initRotHandle(who){var key=who==='buyer'?'Buyer':'Seller',area=document.getElementById('seal'+key),img=document.getElementById('seal'+key+'Img');if(!img||!area)return;img.onmousedown=function(e){e.preventDefault();e.stopPropagation();img.style.cursor='grabbing';var r=area.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,sm=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI,sr=_sealRotation[who]||0;function mv(ev){var a=Math.atan2(ev.clientY-cy,ev.clientX-cx)*180/Math.PI;_sealRotation[who]=sr+(a-sm);img.style.transform='rotate('+_sealRotation[who].toFixed(1)+'deg)';}function up(){img.style.cursor='grab';document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);}document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);};}
-function applySeal(who,url,name){var key=who==='buyer'?'Buyer':'Seller',img=document.getElementById('seal'+key+'Img'),hint=document.getElementById('seal'+key+'Hint');_sealRotation[who]=0;if(img){img.src=url;img.style.display='block';img.style.transform='';}if(hint)hint.style.display='none';var si=document.getElementById('status'+key+'Img'),sn=document.getElementById('status'+key+'Name');if(si){si.src=url;si.style.display='inline';}if(sn){sn.textContent=name||(who==='buyer'?'买方章':'卖方章');sn.classList.remove('empty');}try{localStorage.setItem(sealKey(who),JSON.stringify({url:url,name:name||''}));}catch(e){}initRotHandle(who);}
+function applySeal(who,url,name){var key=who==='buyer'?'Buyer':'Seller',img=document.getElementById('seal'+key+'Img'),hint=document.getElementById('seal'+key+'Hint');_sealRotation[who]=0;if(img){img.crossOrigin='anonymous';img.src=url;img.style.display='block';img.style.transform='';}if(hint)hint.style.display='none';var si=document.getElementById('status'+key+'Img'),sn=document.getElementById('status'+key+'Name');if(si){si.crossOrigin='anonymous';si.src=url;si.style.display='inline';}if(sn){sn.textContent=name||(who==='buyer'?'买方章':'卖方章');sn.classList.remove('empty');}try{localStorage.setItem(sealKey(who),JSON.stringify({url:url,name:name||''}));}catch(e){}initRotHandle(who);}
 function clearSeals(){['buyer','seller'].forEach(function(w){var key=w==='buyer'?'Buyer':'Seller',img=document.getElementById('seal'+key+'Img'),hint=document.getElementById('seal'+key+'Hint'),si=document.getElementById('status'+key+'Img'),sn=document.getElementById('status'+key+'Name');if(img){img.src='';img.style.display='none';img.style.transform='';img.onmousedown=null;}if(hint)hint.style.display='';if(si)si.style.display='none';if(sn){sn.textContent='未选择';sn.classList.add('empty');}_sealRotation[w]=0;try{localStorage.removeItem(sealKey(w));}catch(e){}});}
 function dropSeal(e,who){e.preventDefault();var f=e.dataTransfer.files&&e.dataTransfer.files[0];if(!f||!f.type.startsWith('image/'))return;var r=new FileReader();r.onload=function(ev){applySeal(who,ev.target.result,f.name.replace(/\.[^.]+$/,''));};r.readAsDataURL(f);}
 window.addEventListener('message',function(e){if(!e.data||e.data.type!=='seal-ready')return;applySeal(_sealTarget,e.data.dataUrl,e.data.label||'印章');closeModal();});
