@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>收款证明内部预览（非银行文件）</title>
+<style>
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background:#f2f2f2; margin:0; padding:16px; }
+  .banner { background:#fee2e2; color:#991b1b; padding:8px 12px; border-radius:6px; font-size:13px; margin-bottom:12px; font-weight:bold; }
+  .wrap { display:flex; gap:16px; align-items:flex-start; }
+  .form-panel { width:340px; background:#fff; border-radius:8px; padding:12px; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+  .form-panel h3 { margin:0 0 8px; font-size:14px; }
+  .form-panel label { display:block; font-size:12px; color:#555; margin-top:8px; }
+  .form-panel input, .form-panel select { width:100%; box-sizing:border-box; padding:4px 6px; font-size:13px; margin-top:2px; }
+  .doc { flex:1; background:#fff; padding:20px; font-size:12px; box-shadow:0 1px 4px rgba(0,0,0,.1); }
+  .doc table { width:100%; border-collapse:collapse; font-size:11px; }
+  .doc td { border:1px solid #999; padding:4px 6px; vertical-align:top; }
+  .doc h1 { text-align:center; font-size:16px; }
+  .doc .sub { text-align:center; margin-bottom:10px; }
+  .val { color:#0033cc; font-weight:bold; }
+  .check { display:inline-block; width:14px; }
+</style>
+</head>
+<body>
+  <div class="banner">⚠️ 内部预览工具 —— 不是银行文件，不能打印送银行柜台。真正要出的文件走 receipt-doc.js 用银行原版 docx 生成。</div>
+  <div class="wrap">
+    <div class="form-panel">
+      <h3>字段输入（对应 docx 里的占位符名）</h3>
+      <label>template（模版）
+        <select id="f_template">
+          <option value="template2_shanghai_oceanbaby">模版2·上海洋宝宝(海运费)</option>
+          <option value="template1_xiamen_babi">模版1·厦门巴匕(货物贸易)</option>
+        </select>
+      </label>
+      <label>receipt_date（收款日期）<input id="f_receipt_date" value="2026年07月08日"></label>
+      <label>receipt_company_name（收款企业名称）<input id="f_receipt_company_name"></label>
+      <label>receipt_org_code（组织机构代码后10位）<input id="f_receipt_org_code"></label>
+      <label>payer_name（付款人名称）<input id="f_payer_name"></label>
+      <label>payer_country（付款人国别）<input id="f_payer_country" value="马来西亚"></label>
+      <label>contract_no（合同编号）<input id="f_contract_no"></label>
+      <label>amount_total（收款金额合计）<input id="f_amount_total"></label>
+      <label>goods_desc（货物标的，货物贸易场景用）<input id="f_goods_desc"></label>
+      <label>filler_name（填报人）<input id="f_filler_name" value="林志凌"></label>
+      <label>filler_tel（联系电话）<input id="f_filler_tel" value="18609058888"></label>
+      <label>currency（币种）
+        <select id="f_currency"><option>CNY</option><option>USD</option></select>
+      </label>
+    </div>
+    <div class="doc" id="docPreview"></div>
+  </div>
+
+<script>
+function el(id){ return document.getElementById(id); }
+const ids = ["template","receipt_date","receipt_company_name","receipt_org_code","payer_name","payer_country",
+             "contract_no","amount_total","goods_desc","filler_name","filler_tel","currency"];
+
+function render() {
+  const v = {};
+  ids.forEach(k => v[k] = el("f_" + k).value);
+  const isGoods = v.template === "template1_xiamen_babi";
+  const rmb = isGoods ? (v.currency === "CNY" ? "☑" : "□") : "□";
+  const fx = isGoods ? (v.currency === "CNY" ? "□" : "☑") : "□";
+  const svcAmt = isGoods ? "" : v.amount_total;
+  const goodsAmt = isGoods ? v.amount_total : "";
+  const nature = isGoods ? (v.goods_desc + " 一般贸易") : "出口海运费";
+  const bop = isGoods ? "" : "222011";
+
+  el("docPreview").innerHTML = `
+    <h1>跨境业务人民币结算收款说明（2016版）</h1>
+    <div class="sub">收款日期：<span class="val">${v.receipt_date}</span></div>
+    <table>
+      <tr><td colspan="3"><b>收款企业名称：</b><span class="val">${v.receipt_company_name}</span></td></tr>
+      <tr><td colspan="3"><b>组织机构代码（身份证件号）：</b><span class="val">${v.receipt_org_code}</span></td></tr>
+      <tr>
+        <td><b>付款人名称：</b><span class="val">${v.payer_name}</span></td>
+        <td><b>付款人国别：</b><span class="val">${v.payer_country}</span></td>
+        <td><b>合同编号：</b><span class="val">${v.contract_no}</span></td>
+      </tr>
+      <tr><td colspan="3"><b>收款金额合计：</b><span class="val">${v.amount_total}</span> 元</td></tr>
+      <tr><td colspan="2"><b>货物贸易金额：</b><span class="val">${goodsAmt}</span> 元</td><td><b>货物标的：</b><span class="val">${v.goods_desc}</span></td></tr>
+      <tr>
+        <td>报关经营单位名称：<span class="val">${isGoods ? v.receipt_company_name : ""}</span><br>
+            组织机构代码：<span class="val">${isGoods ? v.receipt_org_code : ""}</span><br>
+            人民币报关 <span class="check">${rmb}</span><br>
+            外币报关 <span class="check">${fx}</span>
+        </td>
+        <td colspan="2">
+          服务贸易：<span class="val">${svcAmt}</span> 元<br>
+          国际收支编码：<span class="val">${bop}</span> 交易合同号：<span class="val">${isGoods ? "" : v.contract_no}</span>
+        </td>
+      </tr>
+      <tr><td colspan="3"><b>收款性质说明：</b><span class="val">${nature}</span></td></tr>
+      <tr><td colspan="3">单位公章或财务专用章 &nbsp;&nbsp; 填报人：<span class="val">${v.filler_name}</span> &nbsp;&nbsp; 联系电话：<span class="val">${v.filler_tel}</span></td></tr>
+    </table>
+  `;
+}
+ids.forEach(k => el("f_" + k).addEventListener("input", render));
+el("f_template").addEventListener("change", () => {
+  if (el("f_template").value === "template1_xiamen_babi") {
+    el("f_receipt_company_name").value = "XIAMEN PET BABY IMPORT AND EXPORT CO., LTD";
+    el("f_receipt_org_code").value = "MA34RW3852";
+  } else {
+    el("f_receipt_company_name").value = "Shanghai Ocean Baby International Logistics Co.,Ltd.";
+    el("f_receipt_org_code").value = "MAE9L4AQ28";
+  }
+  render();
+});
+el("f_template").dispatchEvent(new Event("change"));
+render();
+</script>
+</body>
+</html>

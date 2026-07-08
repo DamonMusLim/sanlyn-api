@@ -39,6 +39,8 @@ function validateKey(input) {
 function canonicalPayload(row) {
   if (!row) return null;
   return {
+    id: row.id,
+    canonical_version_id: row.id,
     status: row.status,
     version: row.version,
     source: row.source,
@@ -59,6 +61,47 @@ async function latestDraft(pool, key) {
     [key.doc_type, key.business_key_type, key.business_key]
   );
   return r.rows[0] || null;
+}
+
+async function listCanonicalCandidates(pool, input) {
+  const key = validateKey(input);
+  if (key.error) {
+    const err = new Error(key.error);
+    err.status = 400;
+    throw err;
+  }
+
+  const canonical = await getCanonicalDoc(pool, key);
+  let uploads = { rows: [] };
+  try {
+    uploads = await pool.query(
+      `SELECT id, doc_id, doc_type, contract_no, url, name, size, note, uploader, uploaded_at
+         FROM document_uploads
+        WHERE doc_id = $1 OR contract_no = $1
+        ORDER BY uploaded_at DESC, id DESC
+        LIMIT 80`,
+      [key.business_key]
+    );
+  } catch (err) {
+    if (err.code !== "42P01") throw err;
+  }
+
+  const candidates = uploads.rows.map((row) => ({
+    candidate_type: "upload",
+    source_ref_id: row.id,
+    doc_id: row.doc_id,
+    doc_type: row.doc_type,
+    contract_no: row.contract_no,
+    storage_uri: row.url,
+    name: row.name,
+    size: row.size,
+    note: row.note,
+    uploader: row.uploader,
+    uploaded_at: row.uploaded_at,
+    is_current_locked: canonical?.status === "locked" && canonical.storage_uri === row.url,
+  }));
+
+  return { ...key, canonical, candidates };
 }
 
 export async function getCanonicalDoc(pool, input) {
@@ -289,6 +332,10 @@ export default async function handler(req, res) {
   const pool = getPool();
   try {
     if (req.method === "GET") {
+      if (norm(req.query?.action) === "candidates") {
+        const data = await listCanonicalCandidates(pool, req.query || {});
+        return res.status(200).json({ success: true, data });
+      }
       const data = await getCanonicalDoc(pool, req.query || {});
       return res.status(200).json({ success: true, data });
     }

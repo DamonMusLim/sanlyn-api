@@ -1,10 +1,22 @@
 // /api/db/field-catalog/resolve - read-only field relation resolver
 // GET /api/db/field-catalog/resolve?relation_key=&parent_id=  (requires JWT)
+// GET /api/db/field-catalog/resolve?mode=search&target_table=&key_field=&display_field=&carry_fields=&q=&limit=
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth }      from "../auth.js";
 
 const ALLOWED_TABLES = new Set(["orders", "order_line_items", "products", "shipping_plans", "companies", "customs"]);
+const SEARCH_ALLOWED_TABLES = new Set([
+  "ports",
+  "countries",
+  "companies",
+  "customers",
+  "products",
+  "orders",
+  "shipping_plans",
+  "order_line_items",
+  "container_bookings",
+]);
 
 class IdentifierError extends Error {}
 
@@ -62,6 +74,81 @@ function verifyColumn(columns, tableName, columnName) {
 
 function hasColumn(columns, tableName, columnName) {
   return ALLOWED_TABLES.has(tableName) && columns.get(tableName)?.has(columnName) === true;
+}
+
+function verifySearchTable(columns, tableName) {
+  if (!SEARCH_ALLOWED_TABLES.has(tableName) || !columns.has(tableName)) {
+    throw new IdentifierError("invalid table");
+  }
+  return quoteIdentifier(tableName);
+}
+
+function verifySearchColumn(columns, tableName, columnName) {
+  verifySearchTable(columns, tableName);
+  if (!columns.get(tableName).has(columnName)) {
+    throw new IdentifierError("invalid column");
+  }
+  return quoteIdentifier(columnName);
+}
+
+function parseCarryFields(value) {
+  if (Array.isArray(value)) return value.map(trimRequired).filter(Boolean);
+  const raw = trimRequired(value);
+  if (!raw) return [];
+  return raw.split(",").map(trimRequired).filter(Boolean);
+}
+
+async function searchReferenceRows(pool, req) {
+  const targetTable = trimRequired(req.query?.target_table);
+  const keyField = trimRequired(req.query?.key_field);
+  const displayField = trimRequired(req.query?.display_field);
+  if (!targetTable || !keyField || !displayField) {
+    return { status: 400, body: { success: false, error: "target_table, key_field and display_field required" } };
+  }
+
+  const columns = await loadColumns(pool, new Set([targetTable]));
+  const tableSql = verifySearchTable(columns, targetTable);
+  const keySql = verifySearchColumn(columns, targetTable, keyField);
+  const displaySql = verifySearchColumn(columns, targetTable, displayField);
+  const carryFields = Array.from(new Set(parseCarryFields(req.query?.carry_fields))).slice(0, 30);
+  const carrySelect = carryFields.map((field, index) => {
+    const columnSql = verifySearchColumn(columns, targetTable, field);
+    return `${columnSql} AS ${quoteIdentifier(`carry_${index}`)}`;
+  });
+
+  const requestedLimit = Number(req.query?.limit);
+  const limit = Math.max(1, Math.min(Number.isFinite(requestedLimit) ? requestedLimit : 20, 50));
+  const q = trimRequired(req.query?.q);
+  const params = [];
+  const where = q
+    ? `WHERE ${displaySql}::text ILIKE $1 OR ${keySql}::text ILIKE $1`
+    : "";
+  if (q) params.push(`%${q}%`);
+  params.push(limit);
+
+  const result = await pool.query(
+    `SELECT ${keySql} AS key, ${displaySql} AS display${carrySelect.length ? `, ${carrySelect.join(", ")}` : ""}
+     FROM ${tableSql}
+     ${where}
+     ORDER BY ${displaySql}::text ASC NULLS LAST
+     LIMIT $${params.length}`,
+    params
+  );
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      rows: result.rows.map(row => ({
+        key: row.key,
+        display: row.display,
+        carry: carryFields.reduce((acc, field, index) => {
+          acc[field] = row[`carry_${index}`];
+          return acc;
+        }, {}),
+      })),
+    },
+  };
 }
 
 function publicRelation(row) {
@@ -199,13 +286,25 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   if (req.method !== "GET") return res.status(405).json({ error: "GET only" });
 
+  const pool = getPool();
+  if (trimRequired(req.query?.mode) === "search") {
+    try {
+      const result = await searchReferenceRows(pool, req);
+      return res.status(result.status).json(result.body);
+    } catch (e) {
+      if (e instanceof IdentifierError) {
+        return res.status(400).json({ success: false, error: e.message });
+      }
+      return res.status(500).json({ success: false, error: "Internal server error" });
+    }
+  }
+
   const relationKey = trimRequired(req.query?.relation_key);
   const parentId = trimRequired(req.query?.parent_id);
   if (!relationKey || !parentId) {
     return res.status(400).json({ success: false, error: "relation_key and parent_id required" });
   }
 
-  const pool = getPool();
   const includeInactive = isTrue(req.query?.include_inactive);
   const generatedAt = new Date().toISOString();
 
@@ -318,3 +417,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ success: false, error: "Internal server error" });
   }
 }
+
+/*
+Change notes:
+- Lines 3,8-18: add search-mode route contract and table allowlist for reference pickers.
+- Lines 79-152: validate search identifiers through information_schema before building read-only SQL.
+- Lines 289-300: dispatch mode=search before legacy relation_key resolver without changing old behavior.
+*/

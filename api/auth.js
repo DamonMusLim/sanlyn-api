@@ -93,6 +93,9 @@ const PUBLIC_PATHS = [
   "/api/db/check-username", // 注册页查重（只返回 {exists:bool}，不泄露其他字段）
   "/api/portal/login",    // Portal 登录（portal token 在此签发，登录前无 token）
   "/api/driver-evidence", // 司机扫 QR 上传装柜证据（无登录；凭 bl_no+container_no 授权）
+  "/api/db/slip-upload", // 客户/内部自助传水单/入账通知（无登录；凭 ?k=SLIP_UPLOAD_KEY 授权，handler内fail-closed）
+  "/api/db/ocean-doc-upload", // 海运单据通用上传（无登录；凭 ?k=SLIP_UPLOAD_KEY 授权，handler内fail-closed）
+  "/api/db/slip-customer-search", // 客户自选票据搜索（无登录；?k=授权+customer参数服务端强制过滤）
   "/api/db/magic-link",   // Driver Magic Link (Air-A): 司机点 SMS 链接，凭 raw token + SHA-256 比对授权
   "/api/factory-fill",    // 工厂 token 填单（无登录；凭 _idx_tokens 授权）
   "/api/factory-confirm", // 工厂订单确认（无登录；凭 _idx_tokens 授权）
@@ -271,6 +274,9 @@ export async function authMiddleware(req, res, next) {
 
   // Factory confirm short link /fc/<token> → redirect to /public/factory-confirm.html, no auth
   if (req.path.startsWith("/fc/")) return next();
+
+  // Factory product price confirm short link /fp/<token> → /public/product-price-confirm.html, no auth
+  if (req.path.startsWith("/fp/")) return next();
 
   // Factory invoice short link /fi/<code> → /public/factory-invoice.html, no auth
   if (req.path.startsWith("/fi/")) return next();

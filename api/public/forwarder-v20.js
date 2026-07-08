@@ -1,5 +1,5 @@
 import { getPool, setCors } from "../db.js";
-import { officialPortChargeKey, officialPortChargesMap } from "../db/_official-port-charges.js";
+import { officialPortChargeKey, officialPortChargesMap, normalizePort } from "../db/_official-port-charges.js";
 
 const CARRIER_OPTIONS = ["OOCL", "EMC", "COSCO", "MSC", "KMTC", "ESL", "HAPAG", "MSK", "CMA", "ONE"];
 
@@ -65,6 +65,7 @@ function publicRfq(row){
     status:row.status,
     etd:row.etd,
     product_summary:row.product_summary || "",
+    order_carrier:row.order_carrier || null,
     from:{ port:row.pol || "", code:row.pol || "", flag:"" },
     to:{ port:row.pod || "", code:row.pod || "", flag:"" },
     cargoInfo:{
@@ -79,20 +80,60 @@ function publicRfq(row){
 function groupRows(rows){
   var groups = {};
   rows.forEach(function(row){
-    var key = normPort(row.pol) + "::" + normPort(row.pod);
+    var key = normalizePort(row.pol) + "::" + normalizePort(row.pod); // 别名归一(青岛=Qingdao) 合并同航线
     if (key === "::") return;
     if (!groups[key]) {
       groups[key] = {
         key:key,
         pol:row.pol || "",
         pod:row.pod || "",
-        carrier_options:CARRIER_OPTIONS.slice(0, 3),
+        carrier_options:[],
+        _orderCarriers:{},
         rfqs:[],
       };
     }
     groups[key].rfqs.push(publicRfq(row));
+    if (row.order_carrier) groups[key]._orderCarriers[String(row.order_carrier).trim().toUpperCase()] = 1;
   });
   return Object.keys(groups).map(function(k){ return groups[k]; });
+}
+
+async function resolveCarriers(pool, forwarderCo, lanes){
+  // 定义(Damon 2026-07-03 "只看自己相关的"): 船司 = ①本货代该航线级协议(精确 pol+pod) ②客户订单指定 ③本货代已报价。
+  // 去掉"起运港级协议全铺"(byPol)——那会把该港所有 open 单冒出来(89单→太多)。0船司的航线由上层过滤隐藏。
+  var agMap = {};        // 航线级协议 pol::pod -> {carrier}
+  var quotedByRfq = {};  // rfq_id -> {carrier}
+  try {
+    var r = await pool.query(
+      "SELECT UPPER(TRIM(carrier_code)) AS code, UPPER(TRIM(COALESCE(pol,''))) AS pol, UPPER(TRIM(COALESCE(pod,''))) AS pod FROM forwarder_carrier_agreements WHERE forwarder_co=$1 AND active IS TRUE AND pod IS NOT NULL AND TRIM(pod) <> ''",
+      [forwarderCo]);
+    r.rows.forEach(function(row){
+      var k = normalizePort(row.pol) + "::" + normalizePort(row.pod);
+      (agMap[k] = agMap[k] || {})[row.code] = 1;
+    });
+  } catch(e){}
+  try {
+    var q = await pool.query(
+      "SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier FROM freight_rfq_items WHERE forwarder_co=$1 AND carrier IS NOT NULL AND TRIM(carrier) <> ''",
+      [forwarderCo]);
+    q.rows.forEach(function(row){
+      if (!row.rfq_id) return;
+      (quotedByRfq[String(row.rfq_id)] = quotedByRfq[String(row.rfq_id)] || {})[row.carrier] = 1;
+    });
+  } catch(e){}
+  (lanes || []).forEach(function(lane){
+    var key = normalizePort(lane.pol) + "::" + normalizePort(lane.pod);
+    var set = {};
+    Object.keys(agMap[key] || {}).forEach(function(c){ set[c] = 1; });                  // ①航线级协议(精确)
+    Object.keys(lane._orderCarriers || {}).forEach(function(c){ if (c) set[c] = 1; });   // ②客户订单指定
+    (lane.rfqs || []).forEach(function(rfq){                                             // ③本货代已报价
+      var qc = quotedByRfq[String(rfq.id || rfq._rfqId || "")];
+      if (qc) Object.keys(qc).forEach(function(c){ set[c] = 1; });
+    });
+    lane.carrier_options = Object.keys(set);
+    delete lane._orderCarriers;
+  });
+  return lanes;
 }
 
 async function attachOfficialPortCharges(pool, lanes){
@@ -103,7 +144,7 @@ async function attachOfficialPortCharges(pool, lanes){
       ctypes[rfq.ctnr_type || "40HQ"] = true;
     });
     Object.keys(ctypes).forEach(function(ct){
-      CARRIER_OPTIONS.forEach(function(carrier){
+      (lane.carrier_options || []).forEach(function(carrier){
         pairs.push({ carrier:carrier, pol:lane.pol, containerType:ct });
       });
     });
@@ -111,7 +152,7 @@ async function attachOfficialPortCharges(pool, lanes){
   var rateMap = await officialPortChargesMap(pool, pairs);
   (lanes || []).forEach(function(lane){
     var official = {};
-    CARRIER_OPTIONS.forEach(function(carrier){
+    (lane.carrier_options || []).forEach(function(carrier){
       official[carrier] = {};
       (lane.rfqs || []).forEach(function(rfq){
         var ct = rfq.ctnr_type || "40HQ";
@@ -126,12 +167,46 @@ async function attachOfficialPortCharges(pool, lanes){
   return lanes;
 }
 
+async function attachForwarderQuotes(pool, forwarderCo, lanes){
+  // 接真实数据(Damon 2026-07-05 去mock): 把本货代 freight_rfq_items 真实报价 按 rfq_id+carrier attach。
+  // 只含真报过的船司(voyage/vessel/免柜/rate/cutoff),没报的carrier无键 → 前端显空,绝不造假voyage。
+  var byKey = {};
+  try {
+    var r = await pool.query(
+      "SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier, vessel, voyage, to_char(etd,'MM/DD') AS etd, usd_rate, transit_days, free_pol_days, free_pod_days, to_char(si_cutoff_at,'MM/DD') AS si_cutoff, to_char(cy_cutoff_at,'MM/DD') AS cy_cutoff, container_type FROM freight_rfq_items WHERE forwarder_co=$1 AND carrier IS NOT NULL AND TRIM(carrier) <> ''",
+      [forwarderCo]);
+    r.rows.forEach(function(row){
+      byKey[String(row.rfq_id) + "::" + row.carrier] = {
+        vessel: row.vessel || "", voyage: row.voyage || "",
+        etd: row.etd || "", usd_rate: row.usd_rate == null ? "" : String(row.usd_rate),
+        transit_days: row.transit_days == null ? "" : String(row.transit_days),
+        container_type: row.container_type || "",
+        free_pol_days: row.free_pol_days == null ? "" : String(row.free_pol_days),
+        free_pod_days: row.free_pod_days == null ? "" : String(row.free_pod_days),
+        si_cutoff: row.si_cutoff || "", cy_cutoff: row.cy_cutoff || "",
+      };
+    });
+  } catch(e){}
+  (lanes || []).forEach(function(lane){
+    var q = {};
+    (lane.carrier_options || []).forEach(function(carrier){
+      (lane.rfqs || []).forEach(function(rfq){
+        var hit = byKey[String(rfq.id || rfq._rfqId) + "::" + String(carrier).toUpperCase()];
+        if (hit && !q[carrier]) q[carrier] = hit;
+      });
+    });
+    lane.carrier_quotes = q;
+  });
+  return lanes;
+}
+
 async function handleGet(pool, token, res){
   const { rows } = await pool.query(`
     SELECT r.id, r.pol, r.pod, r.ctnr_type, r.status, r.etd,
            COALESCE(r.service_type, 'ocean') AS service_type,
            sp.container_qty AS ctnr_count,
            sp.gross_weight_kg AS gross_weight_kg,
+           sp.order_carrier AS order_carrier,
            (SELECT string_agg(t.label, ' / ')
               FROM (
                 SELECT (COALESCE(oi.product_name, '') || '×' || oi.qty_ctn || '箱') AS label
@@ -143,7 +218,7 @@ async function handleGet(pool, token, res){
            ) AS product_summary
       FROM freight_rfqs r
       LEFT JOIN LATERAL (
-        SELECT container_qty, gross_weight_kg
+        SELECT container_qty, gross_weight_kg, carrier_code AS order_carrier
           FROM shipping_plans
          WHERE order_id = r.order_id
          ORDER BY id DESC LIMIT 1
@@ -154,7 +229,11 @@ async function handleGet(pool, token, res){
      ORDER BY r.etd NULLS LAST, r.created_at DESC
      LIMIT 300
   `);
-  var lanes = await attachOfficialPortCharges(pool, groupRows(rows));
+  var lanes = groupRows(rows);
+  lanes = await resolveCarriers(pool, token.forwarder_co, lanes);
+  lanes = lanes.filter(function(l){ return (l.carrier_options||[]).length > 0; }); // 其他不显示:无协议无订单指定船司的航线整条隐藏
+  lanes = await attachOfficialPortCharges(pool, lanes);
+  lanes = await attachForwarderQuotes(pool, token.forwarder_co, lanes);
   return send(res, 200, {
     ok:true,
     forwarder_co:token.forwarder_co,

@@ -31,6 +31,31 @@ function matchFactory(label, factory) {
   return !!a && !!b && (a.includes(b) || b.includes(a));
 }
 
+export function classifyFobScope(canonicalCategory, costCategory) {
+  const canonical = clean(canonicalCategory, 80).toLowerCase();
+  const label = clean(costCategory, 120).toLowerCase();
+  const has = (pattern) => pattern.test(label);
+
+  if (["ocean_freight", "rail_freight", "barge_freight", "fuel_surcharge"].includes(canonical)) return "freight";
+  if (!canonical && has(/海运|运费|铁路|驳船|燃油|baf|ocean|freight/i)) return "freight";
+
+  if (canonical === "customs_declaration") return "declaration";
+  if (!canonical && has(/报关|申报|清关|customs/i)) return "declaration";
+
+  if (!canonical && has(/目的港|destination|dthc|进口港/i)) return "destination";
+
+  if (["storage", "detention", "pending"].includes(canonical)) return "review";
+  if (!canonical && has(/仓储|滞港|滞箱|堆存/i)) return "review";
+
+  if ([
+    "doc", "thc", "booking", "seal", "vgm", "eir", "telex_fee", "manifest",
+    "edi", "isps_security", "chc", "agency", "port_charge", "ptf",
+  ].includes(canonical)) return "origin";
+  if (!canonical && has(/单证|文件|码头|订舱|订仓|封签|铅封|设备交接|电放|放单|舱单|安全|港杂|代理|操作|thc|vgm|eir|edi|isps|chc|doc|seal|booking|telex|manifest/i)) return "origin";
+
+  return "review";
+}
+
 async function ensureTable(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS invoice_collab_confirm_overrides (
@@ -71,6 +96,7 @@ async function loadShipment(pool, ctx) {
   const r = await pool.query(
     `SELECT sp.id, sp.shipment_no, sp.bl_no, sp.pol, sp.pod, sp.vessel, sp.voyage,
             sp.container_type, sp.container_qty, sp.issuing_company,
+            sp.freight_term, sp.customs_arrange,
             sp.raw->'cost_lines' AS cost_lines,
             (SELECT COALESCE(json_agg(json_build_object('order_no', o.order_no, 'factory', o.factory)), '[]'::json)
                FROM orders o WHERE o.shipping_plan_id=sp.id) AS orders
@@ -121,24 +147,30 @@ function containerSummary(sp) {
 async function defaultLines(pool, sp) {
   const blNo = clean(sp.bl_no || sp.shipment_no || "", 80);
   const payerCode = clean(sp.factory_company_code, 40);
-  if (!blNo || !payerCode) return [];
+  const exwTransfer = clean(sp.freight_term, 20).toUpperCase() === "EXW";
+  if (!blNo || !payerCode) return { lines: [], exwTransfer };
 
   const r = await pool.query(
-    `SELECT bl_no, cost_category, amount, sale_amount, currency, unit_price, qty, charge_basis
+    `SELECT bl_no, cost_category, canonical_category, fob_scope,
+            amount, sale_amount, currency, unit_price, qty, charge_basis
        FROM active_freight_supplier_bills
       WHERE bl_no=$1
         AND payer_company_code=$2
-        AND (cost_category !~* '海运|ocean|freight')
         AND COALESCE(amount,0)>0
       ORDER BY id`,
     [blNo, payerCode]
   );
 
-  return r.rows.map(row => {
+  const customsArrange = clean(sp.customs_arrange, 20).toLowerCase();
+  const lines = [];
+  for (const row of r.rows) {
+    const scope = clean(row.fob_scope, 16) || classifyFobScope(row.canonical_category, row.cost_category);
+    if (scope === "freight" || scope === "destination") continue;
+    if (scope === "declaration" && customsArrange === "factory") continue;
     const lineAmount = row.sale_amount !== null && row.sale_amount !== undefined && String(row.sale_amount) !== ""
       ? row.sale_amount
       : row.amount;
-    return {
+    lines.push({
       bl_no: clean(row.bl_no || blNo, 80),
       name: clean(row.cost_category || "港杂费", 80),
       basis: clean(row.charge_basis || "整票", 24),
@@ -146,19 +178,30 @@ async function defaultLines(pool, sp) {
       qty: money(row.qty || 1) || 1,
       amount: money(lineAmount),
       currency: clean(row.currency || "CNY", 8).toUpperCase(),
-    };
-  });
+      fob_scope: scope,
+      review: scope === "review",
+    });
+  }
+  return { lines, exwTransfer };
 }
 
 async function buildPayload(pool, sp, buyer, seller, saved) {
-  const billLines = await defaultLines(pool, sp);
+  const defaults = await defaultLines(pool, sp);
+  const billLines = defaults.lines;
+  const payloadBillLines = saved?.payload?.bill_lines || billLines;
   const billLineNotice = billLines.length ? "" : "该票暂无港杂账单,请财务核对";
-  const currency = billLines[0]?.currency || "CNY";
-  const total = money(billLines.filter(l => l.currency === currency).reduce((s, l) => s + Number(l.amount || 0), 0));
+  const currency = payloadBillLines[0]?.currency || "CNY";
+  const total = money(payloadBillLines.filter(l => l.currency === currency).reduce((s, l) => s + Number(l.amount || 0), 0));
   const exTax = money(total / 1.01);
   const tax = money(total - exTax);
   const bl = clean(sp.bl_no || sp.shipment_no || "");
-  const cntr = containerSummary(sp);
+  const savedCntrs = Array.isArray(saved?.payload?.shipment_containers) && saved.payload.shipment_containers.length
+    ? saved.payload.shipment_containers.map(c => ({ type: clean(c.type, 20), count: money(c.count) })).filter(c => c.type)
+    : null;
+  const containers = savedCntrs || (Number(sp.container_qty) ? [{ type: clean(sp.container_type || "40HC", 20), count: Number(sp.container_qty) }] : []);
+  const cntr = savedCntrs
+    ? containers.filter(c => c.type && Number(c.count)).map(c => `${Number(c.count)}×${c.type}`).join(" + ")
+    : containerSummary(sp);
   return {
     status: saved?.status || "draft",
     shipment: {
@@ -168,16 +211,20 @@ async function buildPayload(pool, sp, buyer, seller, saved) {
       voyage: sp.voyage || "",
       pol: sp.pol || "",
       pod: sp.pod || "",
+      freight_term: sp.freight_term || "",
+      customs_arrange: sp.customs_arrange || "",
       container_summary: cntr,
+      containers,
     },
     buyer: {
       name: saved?.payload?.buyer?.name || buyer.name_cn || buyer.name_en || sp.issuing_company || "",
       tax_id: saved?.payload?.buyer?.tax_id || buyer.tax_id || "",
     },
     seller,
-    bill_lines: saved?.payload?.bill_lines || billLines,
+    bill_lines: payloadBillLines,
     bill_line_notice: saved?.payload?.bill_line_notice || billLineNotice,
     needs_finance_review: saved?.payload?.needs_finance_review ?? !billLines.length,
+    exw_transfer_to_customer: Boolean(defaults.exwTransfer && payloadBillLines.length),
     invoices: saved?.payload?.invoices || [{
       id: "invoice-1",
       currency,
@@ -220,9 +267,15 @@ function sanitizeDraft(body) {
     bill_lines: Array.isArray(d.bill_lines) ? d.bill_lines.map(l => ({
       bl_no: clean(l.bl_no, 80),
       name: clean(l.name, 80), basis: clean(l.basis, 24),
+      container_type: clean(l.container_type, 20),
       unit_price: money(l.unit_price), qty: money(l.qty) || 1,
       amount: money(l.amount), currency: clean(l.currency || "CNY", 8).toUpperCase(),
+      fob_scope: clean(l.fob_scope, 16),
+      review: Boolean(l.review),
     })).slice(0, 80) : [],
+    shipment_containers: Array.isArray(d.shipment_containers) ? d.shipment_containers
+      .map(c => ({ type: clean(c.type, 20), count: money(c.count) }))
+      .filter(c => c.type).slice(0, 20) : [],
     invoices: Array.isArray(d.invoices) ? d.invoices.slice(0, 12) : [],
     contacts: {
       finance: Array.isArray(d.contacts?.finance) ? d.contacts.finance.map(x => clean(x, 120)).filter(Boolean).slice(0, 20) : [],

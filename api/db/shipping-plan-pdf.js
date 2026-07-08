@@ -10,6 +10,14 @@ import { renderCustomsDeclaration } from "./customs-declaration-form.js"; // 海
 import { renderInboundNotice } from "./inbound-notice.js"; // 入货通知/订舱确认单 2026-07-05
 import { renderInspectionRequest } from "./inspection-request-form.js"; // 出境货物检验检疫申请/报检单 2026-07-05
 import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
+import { renderReceiptDoc } from "./receipt-doc.js"; // 收款证明(银行原版docx母版灌数据) 2026-07-07
+
+// 合同号/PO 展示用：去掉前导公司码前缀(如 "38-XM-244" -> "XM-244")，纯展示，不影响任何金额/归属计算。
+// 呼应 documents.js 里同名用途的 stripPrefix()（那边只硬编码strip "40-"，这里适配任意公司码前缀）。
+function stripCompanyPrefix(s) {
+  if (!s) return "";
+  return String(s).replace(/^\d+-/, "");
+}
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -17,7 +25,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();
 
   const { id, bl, type = "confirm" } = req.query;
-  if (!id && !bl) return res.status(400).send("<h1>Missing id or bl</h1>");
+  if (!id && !bl && !(type === "receipt" && req.query.refs)) return res.status(400).send("<h1>Missing id or bl</h1>");
 
   // 内转外→装箱资料可编辑模版(带token重定向,治type=transfer渲染错单)
   if (type === "transfer") {
@@ -73,6 +81,26 @@ export default async function handler(req, res) {
       res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent(_bundle.filename));
       res.setHeader("Cache-Control", "no-store");
       return res.status(200).send(_bundle.buffer);
+    }
+
+    // 收款证明：跨境业务人民币结算收款说明（2016版）— 银行官方合规单据。
+    // 不重画排版：原版 docx 母版 + {字段} 占位符灌数据 → 转 PDF。没数据的字段一律留空，绝不猜。
+    if (type === "receipt") {
+      // ?refs=CY00365,CY00362 支持一笔银行汇款合并覆盖多票；单票沿用 id/bl。
+      const _refs = req.query.refs
+        ? String(req.query.refs).split(",").map(s => s.trim()).filter(Boolean)
+        : (id || bl);
+      // 银行入账通知书(汇入通知)提取到的真实字段——比系统报价更权威，取真实到账金额/汇款人。
+      const _overrides = {};
+      if (req.query.bank_amount) _overrides.amount_total = req.query.bank_amount;
+      if (req.query.bank_payer) _overrides.payer_name = req.query.bank_payer;
+      const _rec = await renderReceiptDoc(pool, _refs, _overrides);
+      if (!_rec) return res.status(404).send("<h1>Shipment not found</h1>");
+      const _asDocx = String(req.query.format || "") === "docx";
+      res.setHeader("Content-Type", _asDocx ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "application/pdf");
+      res.setHeader("Content-Disposition", "inline; filename=" + encodeURIComponent(_asDocx ? _rec.filename.replace(/\.pdf$/, ".docx") : _rec.filename));
+      res.setHeader("Cache-Control", "no-cache");
+      return res.status(200).send(_asDocx ? _rec.docxBuffer : _rec.pdfBuffer);
     }
 
     // ── Fetch shipping plan ──
@@ -992,7 +1020,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       <div class="title">BANKING INFORMATION (银行信息)</div>
       Bank Name: <strong>BANK OF CHINA XIAMEN BRANCH</strong><br>
       Account Name: <strong>SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</strong><br>
-      Swift Code: <strong>BKCHCNBI73A</strong><br>
+      Swift Code: <strong>BKCHCNBJ73A</strong><br>
       Bank Addr: No. 40 North Hubin Road, Xiamen<br>
       USD Account (美金账号): <strong>433849630299</strong><br>
       CNY Account (人民币账号): <strong>433849860868</strong><br>
@@ -1026,15 +1054,18 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
       let factoryCode = "";
       try {
+        // 2026-07-06 根治：外单常见 FSB.bl_no 存的是订舱号原文(如"I228525576")而 shipping_plans.bl_no
+        // 是全称waybill号(如"YMJAI228525576")，纯bl_no精确匹配会找不到，导致误落回写死参考卡。
+        // 改成 bl_no匹配 OR link_plan_id匹配(整数id，更可靠的关联键)。
         const payerRes = await pool.query(
           `SELECT DISTINCT payer_company_code
            FROM active_freight_supplier_bills
-           WHERE bl_no = $1
+           WHERE (bl_no = $1 OR link_plan_id = $2)
              AND (cost_category !~* '海运|ocean|freight')
              AND COALESCE(amount,0) > 0
              AND COALESCE(payer_company_code,'') <> ''
            LIMIT 1`,
-          [blNo]
+          [blNo, String(p.id)]
         );
         factoryCode = payerRes.rows[0]?.payer_company_code || "";
       } catch(_) {}
@@ -1057,20 +1088,24 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
           const chargeRes = await pool.query(
             `SELECT cost_category, amount, currency, qty, unit_price, charge_basis
              FROM active_freight_supplier_bills
-             WHERE bl_no = $1
+             WHERE (bl_no = $1 OR link_plan_id = $3)
                AND payer_company_code = $2
                AND (cost_category !~* '海运|ocean|freight')
                AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
                AND COALESCE(amount,0) > 0
              ORDER BY id`,
-            [blNo, factoryCode]
+            [blNo, factoryCode, String(p.id)]
           );
           portChargeRows = chargeRes.rows;
         } catch(_) {}
       }
 
       // ── 标准港杂费率卡（Damon 2026-06-29 定，覆盖系统脏数据）整票×1 / 每柜×柜量 ──
-      {
+      // 2026-07-06 根治：真实账单(freight_supplier_bills 已挂 payer_company_code)存在时优先用真实数据，
+      // 只有真查不到(historical脏数据/未挂payer)才落回这张写死参考卡兜底，不再无条件覆盖真实值。
+      let usedFallbackCard = false;
+      if (!portChargeRows.length) {
+        usedFallbackCard = true;
         const PORT_CHARGE_CARD = [
           { name:"舱单费",            basis:"整票", price:100,  perCtn:false },
           { name:"码头操作费(THC)",    basis:"每柜", price:1100, perCtn:true  },
@@ -1303,6 +1338,11 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     </div>
   </div>
 
+  ${usedFallbackCard ? `<div style="background:#fff3cd;border:2px solid #c00;border-radius:4px;padding:8px 12px;margin-bottom:12px;font-size:11px;font-weight:800;color:#c00">
+    ⚠️ 系统未查到该票真实账单明细(freight_supplier_bills)，以下为标准参考费率估算，非实际账单数据，出单前请人工核实真实费用！
+    <br>⚠️ NOT ACTUAL BILLED CHARGES — reference rate card only, verify against real supplier invoice before issuing.
+  </div>` : ""}
+
   <div class="info-grid">
     <div class="info-box">
       <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big">${esc(billTo)}</div></div>
@@ -1397,7 +1437,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       <div class="title">BANKING INFORMATION (银行信息)</div>
       Bank Name: <strong>BANK OF CHINA XIAMEN BRANCH</strong><br>
       Account Name: <strong>SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</strong><br>
-      Swift Code: <strong>BKCHCNBI73A</strong><br>
+      Swift Code: <strong>BKCHCNBJ73A</strong><br>
       Bank Addr: No. 40 North Hubin Road, Xiamen<br>
       USD Account (美金账号): <strong>433849630299</strong><br>
       CNY Account (人民币账号): <strong>433849860868</strong><br>
@@ -1561,7 +1601,7 @@ table tr:last-child td{border-bottom:none}
   <!-- Bank info -->
   <div class="bank-box">
     <strong>BANKING INFORMATION · 银行信息</strong><br>
-    Bank: <strong>BANK OF CHINA XIAMEN BRANCH</strong> &nbsp;·&nbsp; Swift: <strong>BKCHCNBI73A</strong><br>
+    Bank: <strong>BANK OF CHINA XIAMEN BRANCH</strong> &nbsp;·&nbsp; Swift: <strong>BKCHCNBJ73A</strong><br>
     USD A/C: <strong>433849630299</strong> &nbsp;·&nbsp; CNY A/C: <strong>433849860868</strong><br>
     Account Name: <strong>SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</strong>
   </div>

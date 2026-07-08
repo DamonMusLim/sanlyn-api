@@ -13,82 +13,15 @@
 
 import { getPool, setCors } from '../db.js';
 import { requireAuth } from '../auth.js';
-import { createWriteStream, mkdirSync, unlinkSync } from 'fs';
-import { createHash, randomBytes } from 'crypto';
+import { mkdirSync } from 'fs';
+import { randomBytes } from 'crypto';
 import path from 'path';
-import { IncomingForm } from 'formidable';
-import { pipeline } from 'stream/promises';
 import fs from 'fs';
 import { renderCreditNote } from './credit-note-doc.js';
 import { scrubCustomerFacingHtml } from './doc-data.js';
 import { htmlToPdf } from './_html-to-pdf.js';
-
-const UPLOADS_DIR = '/opt/sanlyn-uploads/cn';
-const WECOM_WEBHOOK = process.env.WECOM_WEBHOOK_URL || '';
-const BASE_URL = process.env.APP_BASE_URL || 'https://ai.sanlyn.cn';
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_FILES = 10;
-
-// 8-state machine transitions
-const VALID_TRANSITIONS = {
-  draft:                    ['pending_review'],
-  pending_review:           ['approved', 'draft'],
-  approved:                 ['issued_to_customer'],
-  issued_to_customer:       ['signed_by_customer'],
-  signed_by_customer:       ['pending_factory_decision'],
-  pending_factory_decision: ['skip_factory_absorb', 'sent_to_factory'],
-  sent_to_factory:          ['signed_by_factory'],
-  signed_by_factory:        ['applied'],
-  skip_factory_absorb:      ['applied'],
-  applied:                  ['closed'],
-  // legacy statuses kept for backward compat
-  open:                     ['pending_review'],
-  issued:                   ['signed_by_customer'],
-  acknowledged:             ['pending_factory_decision'],
-};
-
-const STATUS_LABELS = {
-  draft:                    'Draft',
-  pending_review:           'Pending Review',
-  approved:                 'Approved',
-  issued_to_customer:       'Issued to Customer',
-  signed_by_customer:       'Signed by Customer',
-  pending_factory_decision: 'Pending Factory Decision',
-  skip_factory_absorb:      'BABI Absorbing',
-  sent_to_factory:          'Sent to Factory',
-  signed_by_factory:        'Signed by Factory',
-  applied:                  'Applied',
-  closed:                   'Closed',
-  open:                     'Open',
-  issued:                   'Issued',
-  acknowledged:             'Acknowledged',
-};
-
-async function pingWecom(msg) {
-  if (!WECOM_WEBHOOK) return;
-  try {
-    await fetch(WECOM_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ msgtype: 'markdown', markdown: { content: msg } }),
-    });
-  } catch (e) { /* non-blocking */ }
-}
-
-function getRaw(cn) {
-  if (!cn.raw) return {};
-  if (typeof cn.raw === 'string') {
-    try { return JSON.parse(cn.raw); } catch { return {}; }
-  }
-  return cn.raw || {};
-}
-
-function calcOutstanding(cn) {
-  const raw = getRaw(cn);
-  const total = Math.abs(parseFloat(cn.net_amount) || 0);
-  const applied = (raw.applied_to || []).reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
-  return Math.max(0, total - applied);
-}
+import { UPLOADS_DIR, BASE_URL, VALID_TRANSITIONS, STATUS_LABELS, pingWecom, getRaw, calcOutstanding } from './credit-notes-lib.js';
+import { uploadAttachments, deleteAttachment } from './credit-notes-attachments.js';
 
 export default async function handler(req, res) {
   setCors(req, res);
@@ -379,73 +312,7 @@ export default async function handler(req, res) {
     }
 
     // Multipart attachment upload
-    if (action === 'attachments') {
-      const targetCn = req.query.cn_no || cn_no;
-      if (!targetCn) return res.status(400).json({ error: 'cn_no required' });
-
-      const r = await pool.query('SELECT * FROM credit_notes WHERE cn_no=$1', [targetCn]);
-      if (!r.rows.length) return res.status(404).json({ error: 'CN not found' });
-      const cn = r.rows[0];
-      const raw = getRaw(cn);
-      const existingAttachments = raw.attachments || [];
-
-      if (existingAttachments.length >= MAX_FILES) {
-        return res.status(422).json({ error: `Max ${MAX_FILES} attachments reached` });
-      }
-
-      const cnDir = path.join(UPLOADS_DIR, targetCn);
-      mkdirSync(cnDir, { recursive: true });
-
-      const form = new IncomingForm({
-        maxFileSize: MAX_FILE_SIZE,
-        maxFiles: MAX_FILES - existingAttachments.length,
-        allowEmptyFiles: false,
-        filter: ({ mimetype }) => {
-          return mimetype && (
-            mimetype.startsWith('image/') ||
-            mimetype === 'application/pdf' ||
-            mimetype.startsWith('video/')
-          );
-        },
-      });
-
-      let fields, files;
-      try {
-        [fields, files] = await form.parse(req);
-      } catch (e) {
-        return res.status(400).json({ error: 'Upload parse error: ' + e.message });
-      }
-
-      const fileList = Array.isArray(files.file) ? files.file : (files.file ? [files.file] : []);
-      if (!fileList.length) return res.status(400).json({ error: 'No files uploaded' });
-
-      const newAttachments = [];
-      for (const f of fileList) {
-        const sha = createHash('sha256').update(f.originalFilename + Date.now()).digest('hex').slice(0, 12);
-        const safeName = sha + '__' + (f.originalFilename || 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const dest = path.join(cnDir, safeName);
-        fs.renameSync(f.filepath, dest);
-
-        newAttachments.push({
-          id: sha,
-          url: `/uploads/cn/${targetCn}/${safeName}`,
-          name: f.originalFilename || 'file',
-          size: f.size,
-          mimetype: f.mimetype,
-          kind: (fields.kind?.[0] || 'doc'),
-          uploaded_by: req.user?.username || null,
-          uploaded_at: new Date().toISOString(),
-        });
-      }
-
-      const allAttachments = [...existingAttachments, ...newAttachments];
-      await pool.query(
-        `UPDATE credit_notes SET raw=raw || $1::jsonb, updated_at=NOW() WHERE cn_no=$2`,
-        [JSON.stringify({ attachments: allAttachments }), targetCn]
-      );
-
-      return res.json({ success: true, data: newAttachments, total: allAttachments.length });
-    }
+    if (action === 'attachments') return uploadAttachments(req, res, pool, cn_no);
 
     // Create new CN (draft)
     const {
@@ -581,32 +448,7 @@ export default async function handler(req, res) {
 
   // ── DELETE ──────────────────────────────────────────────────────
   if (req.method === 'DELETE') {
-    if (action === 'del_attach') {
-      const { attachment_id } = req.query;
-      const targetCn = cn_no;
-      if (!targetCn || !attachment_id) return res.status(400).json({ error: 'cn_no and attachment_id required' });
-
-      const r = await pool.query('SELECT * FROM credit_notes WHERE cn_no=$1', [targetCn]);
-      if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
-      const cn = r.rows[0];
-      const raw = getRaw(cn);
-      const existing = raw.attachments || [];
-      const toRemove = existing.find(a => a.id === attachment_id);
-      if (!toRemove) return res.status(404).json({ error: 'Attachment not found' });
-
-      // Remove file from disk
-      try {
-        const filePath = path.join('/opt/sanlyn-uploads', toRemove.url.replace('/uploads/', ''));
-        unlinkSync(filePath);
-      } catch (e) { /* file may not exist */ }
-
-      raw.attachments = existing.filter(a => a.id !== attachment_id);
-      await pool.query(
-        `UPDATE credit_notes SET raw=raw || $1::jsonb, updated_at=NOW() WHERE cn_no=$2`,
-        [JSON.stringify({ attachments: raw.attachments }), targetCn]
-      );
-      return res.json({ success: true });
-    }
+    if (action === 'del_attach') return deleteAttachment(req, res, pool, cn_no);
     return res.status(405).json({ error: 'Method not allowed' });
   }
 

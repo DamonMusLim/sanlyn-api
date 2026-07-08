@@ -1,43 +1,18 @@
 // api/db/slip-ocr.js
-// Water slip: slip_uploads → MiniMax M3 OCR → bank_slips + bank_slip_links → reconcile
+// Water slip: slip_uploads → MiniMax M3 OCR → bank_slips pending review
 // 2026-06-13
-import { getPool } from "../db.js";
-import { reconcile } from "./freight-recon.js";
+import {
+  linkCanonicalDocument,
+  markCanonicalDocumentFailed,
+  sha256Hex
+} from "./canonical-document-registry.js";
+import { ocrPaymentAdvice } from "./slip-core.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { execFile } from "child_process";
-import os from "os";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BASE_DIR = path.resolve(__dirname, "..", "..");
-
-function mimeOf(filename) {
-  const ext = String(filename).toLowerCase().replace(/.*\./, "");
-  if (ext === "png") return "image/png";
-  if (ext === "webp") return "image/webp";
-  return "image/jpeg";
-}
-
-// Convert first page of PDF to JPEG bytes via pdftoppm
-function pdfToJpeg(pdfPath) {
-  return new Promise((resolve, reject) => {
-    const tmpBase = path.join(os.tmpdir(), "slip_" + Date.now());
-    execFile("pdftoppm", ["-jpeg", "-r", "150", "-f", "1", "-l", "1", pdfPath, tmpBase], (err) => {
-      if (err) return reject(new Error("pdftoppm failed: " + err.message));
-      // pdftoppm writes tmpBase-1.jpg (or tmpBase-01.jpg)
-      const candidates = [tmpBase + "-1.jpg", tmpBase + "-01.jpg", tmpBase + "-001.jpg"];
-      for (const c of candidates) {
-        if (fs.existsSync(c)) {
-          const data = fs.readFileSync(c);
-          fs.unlinkSync(c);
-          return resolve(data);
-        }
-      }
-      reject(new Error("pdftoppm: output file not found"));
-    });
-  });
-}
 
 function num2(v) {
   const n = parseFloat(v);
@@ -51,87 +26,174 @@ function safeDate(v) {
   return isNaN(d.getTime()) ? null : v.slice(0, 10);
 }
 
-const OCR_PROMPT = `Extract all fields from this bank payment advice document. Reply with ONLY valid JSON, no markdown:
-{
-  "bank_source": "bank abbreviation (FTT/CIMB/HLB etc), empty if unknown",
-  "bank_reference_no": "bank-assigned reference/transaction number",
-  "txn_ref": "transaction reference shown to remitter",
-  "sender_name": "remitter/payer full name",
-  "sender_bank": "payer bank name",
-  "sender_country": "2-letter country code or full name",
-  "beneficiary_name": "receiver full name",
-  "beneficiary_bank": "receiver bank name",
-  "beneficiary_account_masked": "last 4 digits of account or masked number",
-  "amount": "numeric string, original currency amount",
-  "currency": "3-letter currency code",
-  "indicative_amount": "numeric string, CNY equivalent if shown",
-  "indicative_currency": "CNY or empty",
-  "exchange_rate": "numeric string, FX rate if shown",
-  "cable_charge": "numeric string or null",
-  "commission_charge": "numeric string or null",
-  "sst_charge": "numeric string or null",
-  "charge_currency": "3-letter code or empty",
-  "purpose_code": "purpose code if shown",
-  "remark_details": "full remark/purpose text verbatim",
-  "beneficiary_reference": "reference field sent to beneficiary (often contains FI numbers like FI-CY00359)",
-  "payment_date": "YYYY-MM-DD",
-  "bank_processing_date": "YYYY-MM-DD or empty",
-  "allocations": [
-    {
-      "contract_no": "contract number or empty",
-      "order_no": "order number or empty",
-      "bl_no": "BL number or empty",
-      "amount_alloc": "numeric string or null if merged payment",
-      "note": "line description verbatim"
-    }
-  ]
+async function markUploadFailed(pool, uploadId, fileSha256, message) {
+  await markCanonicalDocumentFailed(pool, "bank_slip", fileSha256);
+  await pool.query(
+    `UPDATE slip_uploads SET note = COALESCE(note,'') || $1 WHERE id=$2`,
+    [` OCR_FAIL: ${message}`.slice(0, 300), uploadId]
+  );
 }
-Do not invent data. Use empty string for unknown text fields, null for unknown numeric fields.`;
 
-async function ocrSlip(fileBytes, filename, absPath) {
-  const key = process.env.MINIMAX_API_KEY;
-  if (!key) throw new Error("MINIMAX_API_KEY not set");
-  let imgBytes = fileBytes;
-  let media_type = mimeOf(filename);
-  // PDF: convert first page to JPEG
-  if (String(filename).toLowerCase().endsWith(".pdf") && absPath) {
-    try {
-      imgBytes = await pdfToJpeg(absPath);
-      media_type = "image/jpeg";
-    } catch (convErr) {
-      throw new Error("PDF→JPEG conversion failed: " + convErr.message);
+function extractShipmentNos(parsed) {
+  const text = [
+    parsed?.beneficiary_reference,
+    parsed?.remark_details
+  ].filter(Boolean).join(" ");
+  const seen = new Set();
+  const out = [];
+  const re = /\bCY\d+\b/gi;
+  let m;
+  while ((m = re.exec(text))) {
+    const shipmentNo = m[0].toUpperCase();
+    if (!seen.has(shipmentNo)) {
+      seen.add(shipmentNo);
+      out.push(shipmentNo);
     }
   }
-  const b64 = imgBytes.toString("base64");
-  const resp = await fetch("https://api.minimaxi.com/anthropic/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: "MiniMax-M3",
-      max_tokens: 2048,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type, data: b64 } },
-          { type: "text", text: OCR_PROMPT }
-        ]
-      }]
-    }),
-    signal: AbortSignal.timeout(60000)
-  });
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "");
-    throw new Error(`MiniMax OCR HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+  return out;
+}
+
+export async function matchShipmentCandidates(pool, parsed) {
+  const shipmentNos = extractShipmentNos(parsed);
+  if (!shipmentNos.length) return [];
+
+  const candidates = await lookupShipmentCandidatesByNos(pool, shipmentNos);
+  return candidates.map(c => ({ ...c, matched_by: "ocr_extracted" }));
+}
+
+export async function lookupShipmentCandidatesByNos(pool, shipmentNos, matchedBy = null) {
+  const cleanNos = [...new Set((Array.isArray(shipmentNos) ? shipmentNos : [])
+    .map(v => String(v || "").trim().toUpperCase())
+    .filter(Boolean))]
+    .slice(0, 50);
+  if (!cleanNos.length) return [];
+
+  const plans = await pool.query(
+    `SELECT id, shipment_no, customer, customer_cn, customer_en,
+            freight_total_cny, order_nos, bl_no, container_no
+       FROM shipping_plans
+      WHERE shipment_no = ANY($1::text[])
+      ORDER BY array_position($1::text[], shipment_no)`,
+    [cleanNos]
+  );
+  const candidates = [];
+  for (const plan of plans.rows) {
+    const orderNos = Array.isArray(plan.order_nos) ? plan.order_nos.filter(Boolean) : [];
+    let contractNos = [];
+    let issuingCompany = null;
+    if (orderNos.length) {
+      const orders = await pool.query(
+        `SELECT order_no, contract_no,
+                raw->>'issuingCompanyEN' AS issuing_en,
+                raw->>'issuingCompany' AS issuing
+           FROM orders
+          WHERE order_no = ANY($1::text[])
+          ORDER BY array_position($1::text[], order_no)`,
+        [orderNos]
+      );
+      contractNos = [...new Set(orders.rows.map(r => r.contract_no).filter(Boolean))].sort();
+      const issuing = orders.rows
+        .map(r => r.issuing_en || r.issuing)
+        .find(v => String(v || "").trim());
+      issuingCompany = issuing ? String(issuing).trim() : null;
+    }
+    const cb = await pool.query(
+      `SELECT container_no
+         FROM container_bookings
+        WHERE shipping_plan_id = $1
+          AND container_no IS NOT NULL
+          AND container_no <> ''
+        ORDER BY container_no`,
+      [plan.id]
+    );
+    let containerNos = cb.rows.map(r => r.container_no).filter(Boolean);
+    if (!containerNos.length && plan.container_no) {
+      containerNos = String(plan.container_no).split(",").map(s => s.trim()).filter(Boolean);
+    }
+    candidates.push({
+      shipment_no: plan.shipment_no,
+      shipping_plan_id: plan.id,
+      customer: plan.customer || plan.customer_cn || plan.customer_en || null,
+      customer_cn: plan.customer_cn || null,
+      customer_en: plan.customer_en || null,
+      freight_total_cny: plan.freight_total_cny == null ? null : Number(plan.freight_total_cny),
+      order_nos: orderNos,
+      contract_nos: contractNos,
+      container_nos: containerNos,
+      bl_no: plan.bl_no || null,
+      issuing_company: issuingCompany,
+      ...(matchedBy ? { matched_by: matchedBy } : {})
+    });
   }
-  const j = await resp.json();
-  const raw = j.content?.[0]?.text || "";
-  // strip markdown fences if any
-  const clean = raw.replace(/^```json?\s*/i, "").replace(/```\s*$/, "").trim();
-  return { rawText: raw, parsed: JSON.parse(clean) };
+  return candidates;
+}
+
+export async function searchCustomerShipments(pool, customer, q = "", limit = 30) {
+  const customerTerm = String(customer || "").trim();
+  if (!customerTerm) {
+    const err = new Error("customer参数必填");
+    err.status = 400;
+    throw err;
+  }
+  const searchTerm = String(q || "").trim();
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 30, 50));
+  const params = [`%${customerTerm}%`, safeLimit];
+  let qFilter = "";
+  if (searchTerm) {
+    params.splice(1, 0, `%${searchTerm}%`);
+    qFilter = `AND (
+      shipment_no ILIKE $2 OR bl_no ILIKE $2 OR container_no ILIKE $2
+      OR EXISTS (
+        SELECT 1
+          FROM orders o
+         WHERE o.order_no = ANY(COALESCE(sp.order_nos, ARRAY[]::text[]))
+           AND (o.order_no ILIKE $2 OR o.contract_no ILIKE $2)
+      )
+    )`;
+  }
+  const limitParam = params.length;
+  const r = await pool.query(
+    `SELECT sp.id, sp.shipment_no, sp.customer, sp.customer_cn, sp.customer_en,
+            sp.freight_total_cny, sp.order_nos, sp.bl_no, sp.container_no,
+            COALESCE(sp.etd, sp.created_at)::timestamptz AS sort_at,
+            COALESCE((
+              SELECT array_agg(DISTINCT o.contract_no ORDER BY o.contract_no)
+                FROM orders o
+               WHERE o.order_no = ANY(COALESCE(sp.order_nos, ARRAY[]::text[]))
+                 AND o.contract_no IS NOT NULL
+                 AND o.contract_no <> ''
+            ), ARRAY[]::text[]) AS contract_nos
+       FROM shipping_plans sp
+      WHERE (sp.customer ILIKE $1 OR sp.customer_cn ILIKE $1 OR sp.customer_en ILIKE $1)
+        ${qFilter}
+      ORDER BY sort_at DESC NULLS LAST, sp.id DESC
+      LIMIT $${limitParam}`,
+    params
+  );
+  return r.rows.map(row => ({
+    shipment_no: row.shipment_no,
+    shipping_plan_id: row.id,
+    customer: row.customer || row.customer_cn || row.customer_en || null,
+    customer_cn: row.customer_cn || null,
+    customer_en: row.customer_en || null,
+    freight_total_cny: row.freight_total_cny == null ? null : Number(row.freight_total_cny),
+    order_nos: Array.isArray(row.order_nos) ? row.order_nos.filter(Boolean) : [],
+    contract_nos: Array.isArray(row.contract_nos) ? row.contract_nos.filter(Boolean) : [],
+    bl_no: row.bl_no || null
+  }));
+}
+
+async function mergeCustomerSelectedCandidates(pool, baseCandidates, selectedShipmentNos) {
+  const merged = [...(Array.isArray(baseCandidates) ? baseCandidates : [])];
+  const seen = new Set(merged.map(c => String(c?.shipment_no || "").toUpperCase()).filter(Boolean));
+  const extra = await lookupShipmentCandidatesByNos(pool, selectedShipmentNos, "customer_selected");
+  for (const candidate of extra) {
+    const key = String(candidate.shipment_no || "").toUpperCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(candidate);
+  }
+  return merged;
 }
 
 export async function processSlipUpload(pool, uploadRow) {
@@ -139,22 +201,31 @@ export async function processSlipUpload(pool, uploadRow) {
   if (!fs.existsSync(absPath)) throw new Error(`slip file not found: ${absPath}`);
 
   const fileBytes = fs.readFileSync(absPath);
+  const fileSha256 = uploadRow.file_sha256 || sha256Hex(fileBytes);
   let parsed, rawText;
   try {
-    ({ parsed, rawText } = await ocrSlip(fileBytes, uploadRow.filename || uploadRow.stored_path, absPath));
+    ({ parsed, rawText } = await ocrPaymentAdvice(
+      fileBytes,
+      uploadRow.filename || uploadRow.stored_path,
+      absPath,
+      process.env.MINIMAX_API_KEY
+    ));
   } catch (ocrErr) {
-    await pool.query(
-      `UPDATE slip_uploads SET note = COALESCE(note,'') || $1 WHERE id=$2`,
-      [` OCR_FAIL: ${ocrErr.message}`.slice(0, 300), uploadRow.id]
-    );
+    await markUploadFailed(pool, uploadRow.id, fileSha256, ocrErr.message);
     throw ocrErr;
   }
 
   // validate required fields
   const amountNum = num2(parsed.amount);
   const paymentDate = safeDate(parsed.payment_date);
-  if (amountNum === null) throw new Error("OCR: amount missing or invalid");
-  if (!paymentDate) throw new Error("OCR: payment_date missing or invalid");
+  if (amountNum === null) {
+    await markUploadFailed(pool, uploadRow.id, fileSha256, "OCR: amount missing or invalid");
+    throw new Error("OCR: amount missing or invalid");
+  }
+  if (!paymentDate) {
+    await markUploadFailed(pool, uploadRow.id, fileSha256, "OCR: payment_date missing or invalid");
+    throw new Error("OCR: payment_date missing or invalid");
+  }
 
   // deduplicate on bank_reference_no
   const bankRef = String(parsed.bank_reference_no || "").trim();
@@ -165,9 +236,27 @@ export async function processSlipUpload(pool, uploadRow) {
         "UPDATE slip_uploads SET processed=TRUE, slip_id=$1 WHERE id=$2",
         [existing.rows[0].id, uploadRow.id]
       );
+      await linkCanonicalDocument(pool, {
+        domain: "bank_slip",
+        file_sha256: fileSha256,
+        linked_table: "bank_slips",
+        linked_id: existing.rows[0].id
+      });
       return { slip_id: existing.rows[0].id, skipped: true, reason: "duplicate bank_reference_no" };
     }
   }
+
+  const matchCandidates = await mergeCustomerSelectedCandidates(
+    pool,
+    await matchShipmentCandidates(pool, parsed),
+    uploadRow.customer_selected_shipments
+  );
+  const raw = {
+    ocr_raw: rawText,
+    ocr_model: "MiniMax-M3",
+    upload_id: uploadRow.id,
+    match_candidates: matchCandidates
+  };
 
   const slipRes = await pool.query(
     `INSERT INTO bank_slips (
@@ -212,34 +301,12 @@ export async function processSlipUpload(pool, uploadRow) {
       paymentDate,
       safeDate(parsed.bank_processing_date),
       uploadRow.stored_path,
-      "new",
-      JSON.stringify({ ocr_raw: rawText, ocr_model: "MiniMax-M3", upload_id: uploadRow.id }),
+      "pending_review",
+      JSON.stringify(raw),
       "slip_ocr_auto"
     ]
   );
   const slipId = slipRes.rows[0].id;
-
-  // insert allocations → bank_slip_links
-  const allocs = Array.isArray(parsed.allocations) ? parsed.allocations : [];
-  if (allocs.length === 1 && allocs[0].amount_alloc == null) {
-    allocs[0].amount_alloc = String(amountNum);
-  }
-  for (const a of allocs) {
-    if (!a.note && !a.contract_no && !a.bl_no && !a.order_no) continue;
-    await pool.query(
-      `INSERT INTO bank_slip_links (slip_id, contract_no, order_no, bl_no, amount_alloc, alloc_currency, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [
-        slipId,
-        String(a.contract_no || "").trim() || null,
-        String(a.order_no || "").trim() || null,
-        String(a.bl_no || "").trim() || null,
-        num2(a.amount_alloc),
-        String(parsed.currency || "").slice(0, 3).toUpperCase() || null,
-        String(a.note || "").trim().slice(0, 500) || null
-      ]
-    );
-  }
 
   // ensure updated_at column exists
   await pool.query(
@@ -250,16 +317,12 @@ export async function processSlipUpload(pool, uploadRow) {
     [slipId, uploadRow.id]
   );
 
-  // trigger reconcile (non-fatal)
-  let reconResult = null;
-  try {
-    const results = await reconcile(pool, false);
-    const matched = results.filter(r => r.status === "matched").length;
-    const exceptions = results.filter(r => r.status === "exception").length;
-    reconResult = { matched, exceptions };
-  } catch (rErr) {
-    console.warn("[slip-ocr] reconcile error (non-fatal):", rErr.message);
-  }
+  await linkCanonicalDocument(pool, {
+    domain: "bank_slip",
+    file_sha256: fileSha256,
+    linked_table: "bank_slips",
+    linked_id: slipId
+  });
 
-  return { slip_id: slipId, links_inserted: allocs.length, recon: reconResult };
+  return { slip_id: slipId, status: "pending_review", candidates: matchCandidates.length };
 }

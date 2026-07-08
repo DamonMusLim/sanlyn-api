@@ -280,6 +280,36 @@ async function updateInvoiceRecon(db, invoiceNo, paidAmount, paymentId) {
   return { invoiceNo: inv.invoice_no, oldStatus, newStatus };
 }
 
+async function markFreightSupplierBillsReconciled(db, { plan, invoiceNo, paymentId }) {
+  const blNo = plan?.bl_no || plan?.hbl_no || null;
+  if (!blNo) return 0;
+  const payerCode = plan?.company_code || null;
+  const colR = await db.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'freight_supplier_bills' AND column_name = 'canonical_category' LIMIT 1`);
+  const categoryCond = colR.rows.length
+    ? `(cost_category ~* '海运|ocean|freight' OR COALESCE(canonical_category, '') ~* '海运|ocean|freight')`
+    : `cost_category ~* '海运|ocean|freight'`;
+  const params = [blNo, `auto: freight-recon ${invoiceNo || ""} payment=${paymentId || ""}`.trim()];
+  const conds = [
+    `bl_no = $1`,
+    `COALESCE(sale_amount, 0) > 0`,
+    categoryCond,
+  ];
+  if (payerCode) {
+    params.push(payerCode);
+    conds.push(`payer_company_code = $${params.length}`);
+  }
+  const r = await db.query(
+    `UPDATE freight_supplier_bills
+        SET reconciled = true,
+            reconcile_note = CONCAT_WS(E'\n', NULLIF(reconcile_note, ''), $2),
+            updated_at = NOW()
+      WHERE ${conds.join(" AND ")}
+      RETURNING id`,
+    params
+  );
+  return r.rowCount || 0;
+}
+
 export async function recalcPlanFreightTotals(pool, planIdValue) {
   if (!planIdValue) return;
   const r = await pool.query(`SELECT * FROM shipping_plans WHERE id::text = $1::text OR _id::text = $1::text LIMIT 1`, [String(planIdValue)]);
@@ -566,6 +596,7 @@ export async function reconcile(pool, dryRun) {
         const invoiceNo = invoice?.invoice_no || fiRef.invoiceNo;
         const reconChange = await updateInvoiceRecon(db, invoiceNo, actual, paymentId);
         await writeSettlementAndAudit(db, { link, paymentId, invoiceNo, amount: actual, reconChange, opId }, true);
+        await markFreightSupplierBillsReconciled(db, { plan, invoiceNo, paymentId });
         await recalcPlanFreightTotals(db, planId(plan));
       }
       groupPayments.set(groupKey, paymentId);
@@ -672,3 +703,9 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: e.message });
   }
 }
+
+/*
+Changed lines:
+- 283-307: added matched-FI helper to mark matching freight_supplier_bills rows reconciled=true with auto note.
+- 595: call the helper only after automatic matched payment/invoice settlement succeeds.
+*/

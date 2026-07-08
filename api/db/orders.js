@@ -605,25 +605,25 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if (req.method === "PATCH") {
     try { return await handlePatch(req, res); }
-    catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
   }
   if (req.method === "POST") {
     const action = req.query.action;
     if (action === "mark_ready") {
       try { return await handleMarkReady(req, res); }
-      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+      catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action === "cancel_request") {
       try { return await handleCancelRequest(req, res); }
-      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+      catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action === "cancel_review") {
       try { return await handleCancelReview(req, res); }
-      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+      catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action === "lock") {
       try { return await handleLock(req, res); }
-      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+      catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action === "hard_delete") {
       if (!req.user || req.user.role !== "admin") {
@@ -642,7 +642,7 @@ export default async function handler(req, res) {
     if (action) return res.status(400).json({ error: "unknown action: " + action });
     // No action = create new order
     try { return await handleCreate(req, res); }
-    catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
   }
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
@@ -677,6 +677,10 @@ export default async function handler(req, res) {
              sp.container_type      AS sp_container_type,
              sp.container_qty       AS sp_container_qty,
              sp.carrier_code       AS sp_shipping_line,
+             sp.freight_sale_usd   AS sp_freight_sale_usd,
+             sp.freight_sale_cny   AS sp_freight_sale_cny,
+             sp.freight_total_usd  AS sp_freight_total_usd,
+             sp.freight_total_cny  AS sp_freight_total_cny,
              COALESCE(NULLIF(o.raw->>'containerType',''), sp.container_type) AS container_type_raw,
              COALESCE(NULLIF(o.raw->>'shippingLine',''), sp.carrier_code) AS shipping_line,
              o.raw->>'inland_freight'          AS inland_freight,
@@ -697,7 +701,8 @@ export default async function handler(req, res) {
         -- fresh via /api/vessel-callback). ONE row only (LIMIT 1) — never fan out
         -- per container, which would both inflate rows and over-bill Portun.
         LEFT JOIN LATERAL (
-          SELECT s.bl_no, s.etd, s.eta, s.pol, s.pod, s.current_status_cn, s.tracking_updated_at, s.container_type, s.container_qty, s.carrier_code
+          SELECT s.bl_no, s.etd, s.eta, s.pol, s.pod, s.current_status_cn, s.tracking_updated_at, s.container_type, s.container_qty, s.carrier_code,
+                 s.freight_sale_usd, s.freight_sale_cny, s.freight_total_usd, s.freight_total_cny
             FROM shipping_plans s
            WHERE (NULLIF(o.bl_no,'') IS NOT NULL AND s.bl_no = o.bl_no)
               OR (s.contract_no IS NOT NULL AND o.contract_no IS NOT NULL AND s.contract_no = o.contract_no)
@@ -809,6 +814,12 @@ export default async function handler(req, res) {
     // so it is safe to promote here — sensitive fields are already gone.
     const withProducts = filtered.map(function(r) {
       if (!r) return r;
+      const freightKeys = ["sp_freight_sale_usd", "sp_freight_sale_cny", "sp_freight_total_usd", "sp_freight_total_cny"];
+      const hasFreight = freightKeys.some(function(k) { return r[k] !== null && r[k] !== undefined && r[k] !== ""; });
+      if (!hasFreight) {
+        r = Object.assign({}, r);
+        freightKeys.forEach(function(k) { delete r[k]; });
+      }
       const hasTopProducts = Array.isArray(r.products) && r.products.length > 0;
       if (hasTopProducts) return r;
       const rawProducts = r.raw && Array.isArray(r.raw.products) && r.raw.products.length > 0
@@ -824,5 +835,5 @@ export default async function handler(req, res) {
     const safe = serializeOrdersForRole(withProducts, requesterRole);
 
     return res.status(200).json({ success: true, data: safe, count: result.rowCount });
-  } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  } catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
 }

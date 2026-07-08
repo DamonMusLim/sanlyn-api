@@ -8,6 +8,7 @@
 // 认证: ac.sanlyn.cn authGate 保障，此接口无额外requireAuth (同 workbench-kpi 模式)
 import { getPool, setCors } from "../db.js";
 import { randomUUID } from "crypto";
+import { computeFixedProfile } from "./payroll/calc.js";
 
 const SEL = `
   id, employee_id, company_id, period_id,
@@ -97,29 +98,48 @@ export default async function handler(req, res) {
 
       if (action === "calculate") {
         const cur = await pool.query(
-          `SELECT base_salary,bonus,allowance,deduction FROM payroll_sheets WHERE id=$1`, [id]
+          `SELECT ps.base_salary, ps.bonus, ps.allowance, ps.deduction,
+                  ps.personal_social_insurance, ps.personal_medical_insurance,
+                  ps.unemployment_insurance, ps.personal_housing_fund, ps.net_pay,
+                  e.id AS employee_profile_id,
+                  e.pension, e.medical, e.unemployment, e.housing_fund, e.default_net_pay
+           FROM payroll_sheets ps
+           LEFT JOIN employees e ON e.id = ps.employee_id
+           WHERE ps.id=$1`,
+          [id]
         );
         if (cur.rowCount === 0) return res.status(404).json({ ok: false, message: "not found" });
         const row = cur.rows[0];
-        const gross  = round2(+row.base_salary + +row.bonus + +row.allowance - +row.deduction);
-        const pSoc   = round2(gross * 0.08);
-        const pMed   = round2(gross * 0.02);
-        const pHouse = round2(gross * 0.12);
-        const pTax   = round2(gross * 0.05);
-        const net    = round2(gross - pSoc - pMed - pHouse - pTax);
-        const eSoc   = round2(gross * 0.16);
-        const eMed   = round2(gross * 0.08);
-        const eHouse = round2(gross * 0.12);
+        const calc = computeFixedProfile(row, row.employee_profile_id ? row : null);
         const r = await pool.query(
           `UPDATE payroll_sheets SET
              gross_pay=$2, personal_social_insurance=$3, personal_medical_insurance=$4,
-             personal_housing_fund=$5, personal_tax=$6, net_pay=$7,
-             employer_social_insurance=$8, employer_medical_insurance=$9, employer_housing_fund=$10,
+             unemployment_insurance=$5, personal_housing_fund=$6, personal_tax=$7, net_pay=$8,
+             bank_amount=$9, employer_social_insurance=$10, employer_medical_insurance=$11,
+             employer_housing_fund=$12,
              payroll_status='CALCULATED', updated_at=NOW()
            WHERE id=$1 RETURNING ${SEL}`,
-          [id, gross, pSoc, pMed, pHouse, pTax, net, eSoc, eMed, eHouse]
+          [
+            id,
+            calc.grossPay,
+            calc.personalSocialInsurance,
+            calc.personalMedicalInsurance,
+            calc.unemploymentInsurance,
+            calc.personalHousingFund,
+            calc.personalTax,
+            calc.netPay,
+            calc.bankAmount,
+            calc.employerSocialInsurance,
+            calc.employerMedicalInsurance,
+            calc.employerHousingFund,
+          ]
         );
-        return res.status(200).json({ sheet: mapSheet(r.rows[0]) });
+        return res.status(200).json({
+          sheet: mapSheet(r.rows[0]),
+          calculationMethod: calc.calculationMethod,
+          calculationVersion: calc.calculationVersion,
+          warnings: calc.warnings,
+        });
       }
 
       if (action === "approve") {

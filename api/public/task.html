@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>任务详情</title>
+  <style>
+    :root{color-scheme:light;--bg:#f6f7f8;--panel:#fff;--text:#171a1f;--muted:#6b7280;--line:#e5e7eb;--blue:#2563eb;--red:#dc2626;--amber:#d97706;--green:#15803d}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .wrap{max-width:760px;margin:0 auto;padding:16px}
+    .top{display:flex;align-items:center;justify-content:space-between;margin:4px 0 14px}
+    h1{font-size:22px;line-height:1.25;margin:0}
+    h2{font-size:16px;margin:24px 0 10px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:12px}
+    .muted{color:var(--muted)}
+    .row{display:grid;grid-template-columns:86px 1fr;gap:8px;margin:8px 0}
+    .badge{display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:999px;font-size:13px;font-weight:700;background:#eef2ff;color:#3730a3}
+    .p0{background:#fee2e2;color:var(--red)}.p1{background:#fef3c7;color:var(--amber)}.done{background:#dcfce7;color:var(--green)}
+    input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:12px;font:inherit;background:#fff}
+    textarea{min-height:86px;resize:vertical}
+    button{border:0;border-radius:8px;padding:13px 14px;font:inherit;font-weight:700;background:var(--blue);color:#fff}
+    button.secondary{background:#111827}
+    button.light{background:#e5e7eb;color:#111827}
+    button.warn{background:var(--amber)}
+    button.danger{background:var(--red)}
+    button:disabled{opacity:.55}
+    .grid{display:grid;grid-template-columns:1fr;gap:10px}
+    .actions{display:grid;grid-template-columns:1fr;gap:10px}
+    .inline{display:grid;grid-template-columns:1fr auto;gap:8px}
+    .event{border-left:3px solid var(--line);padding:8px 0 8px 12px}
+    .event strong{display:block}
+    .error{background:#fef2f2;color:#991b1b;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-bottom:12px}
+    .ok{background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;border-radius:8px;padding:10px;margin-bottom:12px}
+    .hidden{display:none}
+    @media (min-width:680px){.actions{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="top">
+      <h1>任务详情</h1>
+      <button id="logout" class="light hidden">退出</button>
+    </div>
+    <div id="msg"></div>
+
+    <section id="loginBox" class="panel hidden">
+      <h2>登录</h2>
+      <div class="grid">
+        <input id="username" autocomplete="username" placeholder="用户名">
+        <input id="password" autocomplete="current-password" type="password" placeholder="密码">
+      </div>
+      <div style="height:10px"></div>
+      <button id="loginBtn">登录</button>
+    </section>
+
+    <section id="taskBox" class="hidden">
+      <div class="panel">
+        <div id="title" style="font-size:20px;font-weight:800"></div>
+        <div style="margin-top:10px"><span id="priority" class="badge"></span> <span id="status" class="badge"></span></div>
+        <div class="row"><div class="muted">任务ID</div><div id="taskId"></div></div>
+        <div class="row"><div class="muted">订单号</div><div id="orderNo">-</div></div>
+        <div class="row"><div class="muted">负责人</div><div id="assignee">-</div></div>
+        <div class="row"><div class="muted">建议动作</div><div id="recommended">-</div></div>
+        <div class="row"><div class="muted">原因</div><div id="reason">-</div></div>
+      </div>
+
+      <div class="panel">
+        <h2>一键动作</h2>
+        <textarea id="note" placeholder="备注 / 解决说明 / 忽略原因"></textarea>
+        <div style="height:10px"></div>
+        <textarea id="evidence" placeholder="证据，可填链接、单号或 JSON"></textarea>
+        <div style="height:10px"></div>
+        <div class="inline">
+          <input id="assigneeInput" placeholder="指派用户名">
+          <button data-action="assign" class="secondary">指派</button>
+        </div>
+        <div style="height:10px"></div>
+        <div class="actions">
+          <button data-action="acknowledge">确认收到</button>
+          <button data-action="start" class="secondary">开始处理</button>
+          <button data-action="resolve">已解决</button>
+          <button data-action="snooze" class="warn">延后1天</button>
+          <button data-action="ignore" class="danger">忽略</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>时间线</h2>
+        <div id="events"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const tokenKey = "sanlyn_task_token";
+    const id = new URLSearchParams(location.search).get("id") || new URLSearchParams(location.search).get("task");
+    let task = null;
+
+    function token(){ return localStorage.getItem(tokenKey) || ""; }
+    function setMsg(text, cls){ $("msg").innerHTML = text ? `<div class="${cls || "error"}">${esc(text)}</div>` : ""; }
+    function esc(v){ return String(v == null ? "" : v).replace(/[&<>"']/g, s => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[s])); }
+    function fmt(v){ return v ? new Date(v).toLocaleString("zh-CN") : "-"; }
+    function showLogin(){
+      $("loginBox").classList.remove("hidden");
+      $("taskBox").classList.add("hidden");
+      $("logout").classList.add("hidden");
+    }
+    function showTask(){
+      $("loginBox").classList.add("hidden");
+      $("taskBox").classList.remove("hidden");
+      $("logout").classList.remove("hidden");
+    }
+    async function api(path, opt){
+      const res = await fetch(path, Object.assign({
+        headers: { "Content-Type":"application/json", "Authorization":"Bearer " + token() }
+      }, opt || {}));
+      if (res.status === 401) {
+        localStorage.removeItem(tokenKey);
+        showLogin();
+        throw new Error("登录已失效，请重新登录");
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) throw new Error(data.error || "请求失败");
+      return data;
+    }
+    async function login(){
+      setMsg("");
+      const username = $("username").value.trim();
+      const password = $("password").value;
+      try {
+        const res = await fetch("/api/db/auth-login", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body:JSON.stringify({ username, password })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.token) throw new Error(data.error || "登录失败");
+        localStorage.setItem(tokenKey, data.token);
+        await load();
+      } catch(e) { setMsg(e.message); }
+    }
+    function render(data){
+      task = data.task;
+      const raw = task.raw || {};
+      $("title").textContent = task.title || "(未命名任务)";
+      $("priority").textContent = task.priority || task.risk_level || "普通";
+      $("priority").className = "badge " + ((task.priority || "").toLowerCase());
+      $("status").textContent = task.status || "-";
+      $("status").className = "badge " + (task.status === "done" ? "done" : "");
+      $("taskId").textContent = task.id;
+      $("orderNo").textContent = task.related_order_no || task.owner_object_id || "-";
+      $("assignee").textContent = task.assigned_to || task.assignee_user_id || "-";
+      $("recommended").textContent = raw.recommended_action || raw.primary_action || "-";
+      $("reason").textContent = task.reason || raw.reason || raw.issue || "-";
+      $("events").innerHTML = data.events.length ? data.events.map(ev => `
+        <div class="event">
+          <strong>${esc(ev.event_type)} <span class="muted">${esc(fmt(ev.created_at))}</span></strong>
+          <div>${esc(ev.note || "")}</div>
+          <div class="muted">${esc(ev.actor_type || "")} ${esc(ev.actor_id || "")}</div>
+        </div>`).join("") : `<div class="muted">暂无事件</div>`;
+    }
+    async function load(){
+      setMsg("");
+      if (!token()) return showLogin();
+      if (!id) { showTask(); setMsg("URL 缺少 id 参数"); return; }
+      try {
+        const res = await api("/api/tasks-closure?id=" + encodeURIComponent(id));
+        showTask();
+        render(res.data);
+      } catch(e) { setMsg(e.message); }
+    }
+    function evidenceValue(){
+      const v = $("evidence").value.trim();
+      if (!v) return null;
+      try { return JSON.parse(v); } catch { return v; }
+    }
+    async function doAction(action){
+      setMsg("");
+      const body = { id, action, note:$("note").value.trim(), evidence:evidenceValue() };
+      if (action === "assign") body.assignee = $("assigneeInput").value.trim();
+      if (action === "snooze") body.until = new Date(Date.now() + 86400000).toISOString();
+      try {
+        await api("/api/tasks-closure", { method:"POST", body:JSON.stringify(body) });
+        setMsg("已更新", "ok");
+        await load();
+      } catch(e) { setMsg(e.message); }
+    }
+    $("loginBtn").onclick = login;
+    $("logout").onclick = () => { localStorage.removeItem(tokenKey); showLogin(); };
+    document.querySelectorAll("[data-action]").forEach(btn => btn.onclick = () => doAction(btn.dataset.action));
+    load();
+  </script>
+</body>
+</html>

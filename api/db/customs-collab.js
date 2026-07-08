@@ -201,6 +201,7 @@ export async function fetchRows(pool, opts) {
              CASE WHEN o.order_no ILIKE '%-DG-%'
                   THEN (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id)
                   ELSE NULL END AS declare_value,
+             (SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS factory_expected_value,
              COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
                       NULLIF(o.total_amount_factory,0)) AS purchase_value,
              (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli,
@@ -235,6 +236,30 @@ export async function fetchRows(pool, opts) {
         FROM ord
         LEFT JOIN fer_base f ON f.contract_no=ord.contract_no
     ),
+    brand_rollup AS (
+      SELECT k.factory_code,
+             k.decl_key,
+             UPPER(TRIM(COALESCE(NULLIF(TRIM(oli.brand), ''), NULLIF(TRIM(p.brand), '')))) AS brand,
+             BOOL_OR(ob.company_code IS NOT NULL) AS is_own_brand,
+             SUM(COALESCE(oli.factory_subtotal, 0)) AS brand_amount
+        FROM keyed k
+        JOIN order_line_items oli ON oli.order_id=k.order_id
+        LEFT JOIN products p ON p.id=oli.product_id
+        LEFT JOIN company_own_brands ob
+          ON ob.company_code=k.factory_code
+         AND ob.active IS NOT FALSE
+         AND UPPER(TRIM(ob.brand))=UPPER(TRIM(COALESCE(NULLIF(TRIM(oli.brand), ''), NULLIF(TRIM(p.brand), ''))))
+       WHERE COALESCE(NULLIF(TRIM(oli.brand), ''), NULLIF(TRIM(p.brand), '')) IS NOT NULL
+       GROUP BY k.factory_code, k.decl_key,
+                UPPER(TRIM(COALESCE(NULLIF(TRIM(oli.brand), ''), NULLIF(TRIM(p.brand), ''))))
+    ),
+    brand_pick AS (
+      -- One customs row can contain multiple brands; expose the largest factory-subtotal brand as the list badge.
+      SELECT DISTINCT ON (factory_code, decl_key)
+             factory_code, decl_key, brand, is_own_brand
+        FROM brand_rollup
+       ORDER BY factory_code, decl_key, brand_amount DESC NULLS LAST, brand
+    ),
     b AS (
       SELECT
         decl_key AS customs_no,
@@ -243,7 +268,9 @@ export async function fetchRows(pool, opts) {
         factory_code,
         MAX(factory_name) AS factory_name,
         STRING_AGG(DISTINCT order_no, ',' ORDER BY order_no) AS order_no,
+        STRING_AGG(DISTINCT order_no, ',' ORDER BY order_no) AS order_nos,
         COALESCE(NULLIF(MAX(fer_qty),0), NULLIF(SUM(qty_oli),0)) AS qty,
+        NULLIF(SUM(factory_expected_value),0) AS factory_expected_amount,
         COALESCE(MAX(fer_declare), NULLIF(SUM(declare_value),0), NULLIF(SUM(purchase_value),0)) AS system_expected_amount,
         MAX(fer_declare) AS declare_amount,
         NULLIF(SUM(sales_value),0) AS sales_amount
@@ -252,12 +279,13 @@ export async function fetchRows(pool, opts) {
     )
     SELECT b.customs_no, b.contract_no, b.export_date,
            to_char(b.export_date,'YYYY-MM') AS period,
-           b.factory_code, b.factory_name, b.order_no, b.qty AS qty,
+           b.factory_code, b.factory_name, b.order_no, b.order_nos, bp.brand, COALESCE(bp.is_own_brand,false) AS is_own_brand, b.qty AS qty,
            CASE
              WHEN COALESCE(s.manual_expected_amount, b.system_expected_amount) IS NOT NULL
                   AND COALESCE(s.status,'need_amount')='need_amount' THEN 'pending_confirm'
              ELSE COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END)
            END AS status,
+           b.factory_expected_amount,
            b.system_expected_amount,
            b.sales_amount,
            CASE WHEN b.sales_amount > 0 AND COALESCE(s.manual_expected_amount, b.system_expected_amount) > b.sales_amount * 1.5
@@ -267,6 +295,7 @@ export async function fetchRows(pool, opts) {
            COALESCE(s.manual_expected_amount, b.system_expected_amount) AS effective_expected_amount,
            COALESCE(u.uploaded_amount,0) AS uploaded_amount,
            COALESCE(u.valid_invoice_count,0)::int AS valid_invoice_count,
+           COALESCE(ri.received_amount,0) AS received_amount,
            CASE WHEN COALESCE(s.manual_expected_amount, b.system_expected_amount) IS NULL
                 THEN NULL
                 ELSE ROUND(COALESCE(s.manual_expected_amount, b.system_expected_amount) - COALESCE(u.uploaded_amount,0), 2)
@@ -276,6 +305,7 @@ export async function fetchRows(pool, opts) {
            ev.created_at AS last_event_at
       FROM b
       LEFT JOIN customs_invoice_status s ON s.customs_no=b.customs_no
+      LEFT JOIN brand_pick bp ON bp.factory_code=b.factory_code AND bp.decl_key=b.customs_no
       LEFT JOIN LATERAL (
         SELECT SUM(fii.amount_incl_tax) AS uploaded_amount,
                COUNT(DISTINCT fii.id) AS valid_invoice_count
@@ -285,6 +315,19 @@ export async function fetchRows(pool, opts) {
            AND l.link_status='active'
            AND COALESCE(fii.review_status,'') NOT IN ('void','red_ink')
       ) u ON true
+      LEFT JOIN LATERAL (
+        SELECT SUM(fi.amount_incl_tax) AS received_amount
+          FROM finance_invoices_in fi
+         WHERE COALESCE(fi.review_status,'') NOT IN ('void','red_ink')
+           AND (
+             (b.contract_no IS NOT NULL AND EXISTS (
+               SELECT 1
+                 FROM regexp_split_to_table(b.contract_no, '[\/,，;；\s]+') c
+                WHERE c <> '' AND fi.contract_nos::text ILIKE '%' || c || '%'
+             ))
+             OR (b.customs_no IS NOT NULL AND fi.customs_nos::text LIKE '%' || b.customs_no || '%')
+           )
+      ) ri ON true
       LEFT JOIN LATERAL (
         SELECT COALESCE(SUM(COALESCE(bl.amount_alloc, bs.amount)),0) AS paid_amount,
                COUNT(DISTINCT bs.id) AS slip_count
@@ -300,14 +343,19 @@ export async function fetchRows(pool, opts) {
 
   return (await pool.query(sql, params)).rows.map((r) => ({
     ...r,
+    factory_expected_amount: money(r.factory_expected_amount),
     system_expected_amount: money(r.system_expected_amount),
     declare_amount: money(r.declare_amount),
     manual_expected_amount: money(r.manual_expected_amount),
     effective_expected_amount: money(r.effective_expected_amount),
     uploaded_amount: money(r.uploaded_amount) || 0,
+    received_amount: money(r.received_amount) || 0,
     diff_amount: money(r.diff_amount),
     valid_invoice_count: Number(r.valid_invoice_count) || 0,
     order_no: r.order_no || null,
+    order_nos: r.order_nos || r.order_no || null,
+    brand: r.brand || null,
+    is_own_brand: !!r.is_own_brand,
     qty: Number(r.qty) || null,
     paid_amount: money(r.paid_amount) || 0,
     slip_count: Number(r.slip_count) || 0,
@@ -318,18 +366,22 @@ export async function fetchRows(pool, opts) {
 
 function summarize(rows) {
   const byStatus = {};
-  let expected = 0, uploaded = 0, diff = 0;
+  let expected = 0, uploaded = 0, diff = 0, factoryExpected = 0, received = 0;
   for (const r of rows) {
     byStatus[r.status] = (byStatus[r.status] || 0) + 1;
     expected += r.effective_expected_amount || 0;
     uploaded += r.uploaded_amount || 0;
     diff += r.diff_amount || 0;
+    factoryExpected += r.factory_expected_amount || 0;
+    received += r.received_amount || 0;
   }
   return {
     customs_count: rows.length,
     ...byStatus,
     expected_amount: money(expected) || 0,
+    factory_expected_total: money(factoryExpected) || 0,
     uploaded_amount: money(uploaded) || 0,
+    received_total: money(received) || 0,
     diff_amount: money(diff) || 0,
   };
 }
@@ -357,9 +409,15 @@ function factoryRow(r) {
     factory_name: r.factory_name,
     status: r.status,
     expected_amount: r.effective_expected_amount,
+    factory_expected_amount: r.factory_expected_amount,
+    system_expected_amount: r.system_expected_amount,
+    received_amount: r.received_amount,
     uploaded_amount: r.uploaded_amount,
     valid_invoice_count: r.valid_invoice_count,
     order_no: r.order_no,
+    order_nos: r.order_nos,
+    brand: r.brand,
+    is_own_brand: r.is_own_brand,
     qty: r.qty,
     has_invoice: (r.valid_invoice_count || 0) > 0,
     paid_amount: r.paid_amount || 0,
@@ -970,3 +1028,11 @@ export default async function handler(req, res) {
     return json(res, 500, { error: "Internal server error", detail: err.message });
   }
 }
+
+/*
+Merge batch 1 change log:
+- L204,L273,L288,L346: add factory_expected_amount from SUM(order_line_items.factory_subtotal) for factory-tax due view.
+- L239-L262,L282,L357-L358,L419-L420: add primary brand/is_own_brand badge data; when multiple brands exist, choose largest factory_subtotal brand.
+- L270-L271,L355-L356,L417-L418: add order_nos while preserving existing order_no for old workflows.
+- L318-L330,L352,L369-L384: add received_amount/received_total using finance_invoices_in loose contract/customs matching, leaving uploaded/diff semantics unchanged.
+*/

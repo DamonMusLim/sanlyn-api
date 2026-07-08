@@ -5,6 +5,7 @@
 // GET /api/db/export-pdf?type=iv&id=ORDER_ID   (Invoice)
 // GET /api/db/export-pdf?type=pl&id=ORDER_ID   (Packing List)
 // GET /api/db/export-pdf?type=po&id=ORDER_ID   (Purchase Order)
+// GET /api/db/export-pdf?type=pack&id=ORDER_ID&lang=en (SC+IV+PL pack)
 // GET /api/db/export-pdf?type=shipping&id=SHIPMENT_ID
 // GET /api/db/export-pdf?type=customs&contract=CONTRACT_NO (or &shipment=)
 //
@@ -46,6 +47,7 @@ const DOC_TYPES = {
   iv:       { label: "Invoice",       internalPath: "/api/db/documents" },
   pl:       { label: "Packing-List",  internalPath: "/api/db/documents" },
   po:       { label: "PO",            internalPath: "/api/db/documents" },
+  pack:     { label: "Doc-Pack",      internalPath: "/api/db/documents", directUrl: true },
   shipping: { label: "Shipping-Plan", internalPath: "/api/db/shipping-plan-pdf" },
   customs:  { label: "Customs-Doc",   internalPath: "/api/db/customs-doc-pdf" },
 };
@@ -69,6 +71,18 @@ async function fetchHtml(internalPath, queryParams, authHeader) {
   return resp.text();
 }
 
+function buildInternalUrl(internalPath, queryParams) {
+  const port = process.env.PORT || process.env.API_PORT || 9000;
+  const qs   = new URLSearchParams(queryParams).toString();
+  return `http://127.0.0.1:${port}${internalPath}?${qs}`;
+}
+
+function copyForwardedParams(req, docQuery) {
+  for (const key of ["lang", "style", "audience", "mode", "customs", "page", "ids"]) {
+    if (req.query[key] !== undefined && req.query[key] !== "") docQuery[key] = req.query[key];
+  }
+}
+
 // ── Main handler ──────────────────────────────────────────────
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -81,7 +95,7 @@ export default async function handler(req, res) {
 
   if (!docMeta) {
     return res.status(400).json({
-      error: "type required: pi / sc / iv / pl / po / shipping / customs",
+      error: "type required: pi / sc / iv / pl / po / pack / shipping / customs",
     });
   }
 
@@ -95,16 +109,19 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).json({ error: "id required" });
     docQuery.type = type === "shipping" ? "confirm" : type;
     docQuery.id   = id;
+    copyForwardedParams(req, docQuery);
   }
 
   const authHeader = req.headers.authorization || req.headers.Authorization || "";
 
   let html;
-  try {
-    html = await fetchHtml(docMeta.internalPath, docQuery, authHeader);
-  } catch (err) {
-    const code = err.statusCode || 500;
-    return res.status(code).json({ error: "Document HTML generation failed: " + err.message });
+  if (!docMeta.directUrl) {
+    try {
+      html = await fetchHtml(docMeta.internalPath, docQuery, authHeader);
+    } catch (err) {
+      const code = err.statusCode || 500;
+      return res.status(code).json({ error: "Document HTML generation failed: " + err.message });
+    }
   }
 
   // Puppeteer → PDF
@@ -113,8 +130,15 @@ export default async function handler(req, res) {
     browser = await getBrowser();
     page    = await browser.newPage();
 
-    // Set content and wait for fonts / images to settle
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+    if (docMeta.directUrl) {
+      const token = (authHeader || "").replace(/^Bearer\s+/i, "") || req.query.token || "";
+      if (token && !docQuery.token) docQuery.token = token;
+      await page.goto(buildInternalUrl(docMeta.internalPath, docQuery), { waitUntil: "networkidle0", timeout: 60000 });
+      await new Promise(resolve => setTimeout(resolve, 1800));
+    } else {
+      // Set content and wait for fonts / images to settle
+      await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+    }
 
     // Inject print-trigger styles already in the HTML; ensure @media print is respected
     await page.emulateMediaType("print");
