@@ -251,14 +251,28 @@ function buildPort(primary){
   var pod=normPort(primary.destination_port||primary.pod||primary.sp_pod||(primary.raw&&(primary.raw.destination_port||primary.raw.pod||primary.raw.sp_pod))||'');
   return (pol&&pod)?(pol+' → '+pod):(pol||pod||'');
 }
-// 港口口径分模式(Damon 2026-07-08定案):报关版起运港=XIAMEN(巴匕报关地固定),客户版=实际起运港(sp_pol,如锦州);
-// 目的港两版一致。厦门本地货实际起运港本就=厦门,两版自然一致;异地内转外货(锦州/青岛等)才出现报关版厦门vs客户版实际港的差异。
+// 起运港=货实际起运的港(Damon 2026-07-09定案A:厦门是报关地属报关单另一栏,不占这里,取消硬写XIAMEN)。
+// 来源优先级:①该票orders.pol(实录) ②工厂就近港 factories.ports[0](_factoryPorts map,按factory_code) ③空。
+// 客户版港口条另在renderAll按_customsMode整条隐藏(Damon:客户版不显港口)。
+var _factoryPorts={}; // {company_code → ports数组} 由 loadFactoryPorts() 填
+function factoryFirstPort(factoryCode){
+  var arr=_factoryPorts[factoryCode]||[];
+  if(!arr.length)return '';
+  var item=String(arr[0]||''); // 形如 "Qingdao 青岛"
+  var cn=item.split(/\s+/).filter(function(w){return /[一-龥]/.test(w);})[0];
+  return normPort(cn||item);
+}
 function portLine(primary){
   if(!primary)return '';
-  var actualPol=normPort(primary.pol||primary.sp_pol||(primary.raw&&primary.raw.sp_pol)||'');
-  var pol=_customsMode?'XIAMEN':actualPol;
+  var pol=normPort(primary.pol||primary.sp_pol||(primary.raw&&primary.raw.sp_pol)||'');
+  if(!pol)pol=factoryFirstPort(primary.factory_code||(primary.raw&&primary.raw.factory_code)||'');
   var pod=normPort(primary.destination_port||primary.pod||primary.sp_pod||(primary.raw&&(primary.raw.destination_port||primary.raw.pod||primary.raw.sp_pod))||'');
   return (pol&&pod)?(pol+' → '+pod):(pol||pod||'');
+}
+function loadFactoryPorts(){
+  return fetch(API+'/api/db/factory-ports',{headers:authH()}).then(function(r){return r.ok?r.json():{data:[]};}).then(function(d){
+    (d&&d.data||[]).forEach(function(row){if(row&&row.company_code)_factoryPorts[row.company_code]=row.ports||[];});
+  }).catch(function(){});
 }
 function fetchBuyerAddr(primary){
   if((primary.customer_address||'').trim())return Promise.resolve('');
@@ -412,7 +426,7 @@ function saveDraft(){try{localStorage.setItem('export_docs_draft_'+(qp('order_no
 function docBaseName(){return window._docBaseName||qp('order_no')||'draft';}
 function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;document.querySelector('.toolbar').style.display='none';
-  var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js'; // 2026-07-08 cdnjs→自建vendor(合并forge d152f0a迁移,之前被我6b379e2覆盖回cdnjs)
+  var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
   s.onload=function(){var only=docPageParam(),pages=only?[{pl:'pagePL',sc:'pageSC',iv:'pageIV'}[only]]:['pagePL','pageSC','pageIV'],i=0;(function nx(){if(i>=pages.length){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;return;}html2canvas(document.getElementById(pages[i]),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){var a=document.createElement('a');a.download=pages[i]+'-'+docBaseName()+'.png';a.href=c.toDataURL('image/png');a.click();i++;setTimeout(nx,400);}).catch(function(){i++;nx();});})();};
   if(window.html2canvas)s.onload();else document.head.appendChild(s);
 }
@@ -424,6 +438,7 @@ function init(){
   if(!orderNo){banner('err','请加 ?order_no=XX&token=YY');return;}
   var sibs=(qp('ids')||'').split(',').map(function(s){return s.trim();}).filter(function(s){return s&&s!==orderNo;});
   banner('info','正在拉取订单数据…');
+  var _fpP=loadFactoryPorts();  // 工厂就近港map(起运港pol空时兜底);单独await,不塞进下面Promise.all以免打乱res索引(res.slice(2)是兄弟单)
   Promise.all([loadOrder(orderNo),fetchProductMaster()].concat(sibs.map(loadOrder))).then(function(res){
     if(!res[0].length)throw new Error('订单 "'+orderNo+'" 未找到或无权限');
     _pmMap=res[1]||{};
@@ -431,7 +446,7 @@ function init(){
     var all=[primary].concat(res.slice(2).map(function(r){return r[0];}).filter(Boolean));
     all.sort(function(a,b){return String(a.order_no).localeCompare(String(b.order_no));});
     document.getElementById('orderLabel').textContent=orderNo;
-    return Promise.all(all.map(loadOrderLineItems)).then(function(lineSets){
+    return _fpP.then(function(){return Promise.all(all.map(loadOrderLineItems));}).then(function(lineSets){
       lineSets.forEach(function(lines,i){all[i]._lineItems=lines;});
       var sellerP=fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).catch(function(){return [];});
       var addrP=fetchBuyerAddr(primary);

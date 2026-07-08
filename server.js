@@ -222,6 +222,7 @@ mount("/api/db/factory-prefill",   () => import("./api/db/factory-prefill.js"));
 mount("/api/db/factory-token-create", () => import("./api/db/factory-token-create.js"));
 mount("/api/factory-confirm",         () => import("./api/factory-confirm.js"));
 mount("/api/db/factory-recent",       () => import("./api/db/factory-recent.js"));
+mount("/api/db/factory-ports",        () => import("./api/db/factory-ports.js")); // 工厂就近港口(export-docs起运港来源) 2026-07-09
 mount("/api/db/check-username",       () => import("./api/db/check-username.js"));
 mount("/api/internal/auth-check", () => import("./api/internal/auth-check.js"));
 mount("/api/internal/lookup", () => import("./api/internal/lookup.js"));
