@@ -26,7 +26,7 @@ const WRITABLE = [
   "container_no","container_type","container_qty","seal_no","release_type","freight_term",
   "customer","customer_en","customer_cn","issuing_company","shipper","notify_party",
   "pol","pod","pol_country","pod_country",
-  "contract_no","order_contract_nos","contract_nos","order_nos","sub_order_no","shipment_no",
+  "contract_no","order_contract_nos","contract_nos","order_nos","sub_order_no",
   "forwarder_cn","forwarder_en","forwarder_partner","trucking_cn","customs_cn","insurance_cn",
   "customs_broker_id","customs_broker_cn","trucking_company_id","trucking_company_cn",
   "factory_company_id","trucking_arrange","forwarder_company_id",
@@ -71,6 +71,21 @@ export default async function handler(req, res) {
       const params = [];
       const sets = buildSet(body, params);
       // _id 必填(NOT NULL) → 自动生成；created_by 记录操作者
+      // SHIPMENT_NO_AUTOGEN_20260709 - bare-API creates left shipment_no NULL (no
+      // CY number) and customer empty, making the plan invisible in the list UI.
+      if (!body.shipment_no) {
+        try {
+          const mx = await poolW.query("SELECT COALESCE(MAX(CAST(substring(shipment_no from 3) AS int)),0) AS n FROM shipping_plans WHERE shipment_no LIKE 'CY%' AND length(shipment_no) = 7 AND substring(shipment_no from 3) BETWEEN '00000' AND '99999'");
+          const next = 'CY' + String((mx.rows[0] && mx.rows[0].n || 0) + 1).padStart(5, '0');
+          params.push(next); sets.push('shipment_no = $' + params.length);
+        } catch (_) { /* non-fatal */ }
+      }
+      if (!body.customer && Array.isArray(body.order_nos) && body.order_nos.length) {
+        try {
+          const oc = await poolW.query('SELECT customer FROM orders WHERE order_no = $1 AND deleted_at IS NULL LIMIT 1', [String(body.order_nos[0])]);
+          if (oc.rows[0] && oc.rows[0].customer) { params.push(oc.rows[0].customer); sets.push('customer = $' + params.length); }
+        } catch (_) { /* non-fatal */ }
+      }
       const _id = (body._id && String(body._id)) || ("sp_" + Math.random().toString(36).slice(2) + Date.now().toString(36));
       params.push(_id); sets.push(`_id = $${params.length}`);
       const u = req.user || {};
