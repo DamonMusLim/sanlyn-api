@@ -141,6 +141,9 @@ export default async function handler(req, res) {
 
   const codes = scopeCodes(req);
   if (!codes.length) return res.status(403).json({ success: false, error: "Forbidden: factory scope required" });
+  if (!["factory", "admin"].includes(req.user?.role)) {
+    return res.status(403).json({ success: false, error: "Forbidden: factory role required" });
+  }
 
   const pool = getPool();
   if (req.method === "GET") {

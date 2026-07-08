@@ -158,6 +158,9 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!req.user) extractUser(req);
   if (!req.user) return json(res, 401, { success: false, error: "Unauthorized" });
+  if (!["customer", "admin"].includes(req.user?.role)) {
+    return json(res, 403, { success: false, error: "Forbidden: customer role required" });
+  }
 
   const codes = userCodes(req);
   if (!codes.length) {
