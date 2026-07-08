@@ -452,19 +452,32 @@ async function handleValidate(req, res, pool) {
           sheet.containers_live = []; sheet.containers_detail = []; sheet.factory_loading_done = {}; sheet.scope_missing = true;
         }
       }
-      // supplier_portal 居间人/承包段：上游供应商(工厂/车队/报关)不得见下游客户。
-      // 仅货代居间人(含 ocean 段) 与 出口商(field_profile=upstream_downstream) 可见。
+      // supplier_portal 居间人/承包段：上游供应商(含 ocean 供应商)不得见下游客户/条款。
+      // 仅内部 field_profile=shipping_booking/upstream_downstream 可见。
       if (role === "supplier_portal") {
-        const psegs = (portalScope && portalScope.segments) || [];
         const fprof = meta.field_profile || null;
-        const seesCustomer = psegs.includes("ocean") || fprof === "upstream_downstream";
-        if (!seesCustomer) { delete sheet.customer_name; delete sheet.customer_en; }
+        const seesCustomer = fprof === "shipping_booking" || fprof === "upstream_downstream";
+        if (!seesCustomer) {
+          delete sheet.customer_name; delete sheet.customer_en;
+          delete sheet.freight_term; delete sheet.plan_freight_term;
+        }
       }
       return sheet;
     })(),
     ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
     factory_scope: factoryScope,
     portal_scope: portalScope,
+    billing: {
+      token: raw,
+      show_amount: true,
+      segment: meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream"
+        ? "all"
+        : role === "customer_booking" ? "customer"
+        : role === "factory_booking" ? "factory"
+        : role === "trucking_booking" ? "truck"
+        : role === "broker_booking" ? "customs"
+        : ((portalScope && portalScope.segments && portalScope.segments[0]) || "supplier"),
+    },
   });
 }
 
@@ -2503,9 +2516,8 @@ async function handleCollabPricing(req, res, pool) {
     [rawToHash(raw)]);
   if (!ml.length) return res.status(403).json({ ok: false, error: "链接无效" });
   const meta = typeof ml[0].meta === "string" ? JSON.parse(ml[0].meta) : ml[0].meta;
-  // 仅货代居间人(含 ocean 段)或出口商可看运费成本/销售+下游客户；工厂/车队/报关一律拒绝
-  const psegs = Array.isArray(meta.segments) ? meta.segments : [];
-  const seesPricing = psegs.includes("ocean") || meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream";
+  // 仅内部 field_profile 可看运费成本/销售+下游客户；纯 ocean 供应商不得看销售价/加价
+  const seesPricing = meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream";
   if (!seesPricing) return res.status(403).json({ ok: false, error: "无权访问运费价格" });
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId) return res.status(400).json({ ok: false, error: "plan 无效" });
@@ -2623,9 +2635,8 @@ async function handleCollabPricingSubmit(req, res, pool) {
     [rawToHash(raw)]);
   if (!ml.length) return res.status(403).json({ ok: false, error: "链接无效" });
   const meta = typeof ml[0].meta === "string" ? JSON.parse(ml[0].meta) : ml[0].meta;
-  // 仅货代居间人/出口商可补录运费销售价；工厂/车队/报关拒绝
-  const psegs = Array.isArray(meta.segments) ? meta.segments : [];
-  const seesPricing = psegs.includes("ocean") || meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream";
+  // 仅内部 field_profile 可补录运费销售价；纯供应商方拒绝
+  const seesPricing = meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream";
   if (!seesPricing) return res.status(403).json({ ok: false, error: "无权补录运费价格" });
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId) return res.status(400).json({ ok: false, error: "plan 无效" });
