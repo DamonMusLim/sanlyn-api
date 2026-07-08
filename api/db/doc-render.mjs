@@ -286,7 +286,7 @@ ${bodyRows}
 
   if((q.format||'').toString()==='pdf' || (q.download||'').toString()==='1'){
     try{
-      const puppeteer=(await import('puppeteer')).default;
+      const puppeteer=(await import('puppeteer-core')).default; // 2026-07-08 裸puppeteer→puppeteer-core(tencent只有core,漏改致厂检/PI等PDF下载503)
       const chromePath=process.env.CHROME_PATH||process.env.PUPPETEER_EXECUTABLE_PATH||'/usr/bin/google-chrome';
       const launchOpts={ headless:'new', args:['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-software-rasterizer'] };
       try{ const fs=await import('fs'); if(fs.existsSync(chromePath)) launchOpts.executablePath=chromePath; }catch(_){}

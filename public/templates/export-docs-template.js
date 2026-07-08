@@ -206,7 +206,7 @@ function renderPriced(pfx,agg,rows,cur){
     var flbl=_langEn?(window._freightLabelEn||'INLAND FREIGHT'):(window._freightLabel||'提货运费');
     body+='<tr><td></td><td class="l">'+esc(flbl)+'</td><td></td><td></td><td>'+fmt(frt)+'</td></tr>';
   }
-  body+='<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+' CTN</td><td>'+cur+'</td><td>'+fmt(grand)+'</td></tr>';
+  body+='<tr class="grand"><td></td><td class="l">GRAND TOTAL:</td><td>'+agg.qty+' CTN</td><td>'+(_customsMode?cur:'')+'</td><td>'+fmt(grand)+'</td></tr>';  // 客户版不显CNY
   document.getElementById(pfx+'-body').innerHTML=body;
 }
 
@@ -299,6 +299,12 @@ function renderAll(){
   renderPL(A,R);renderPriced('sc',A,R,cur);renderPriced('iv',A,R,cur);
   // 港口随模式(报关/客户)切换实时更新起运港(报关版XIAMEN/客户版实际港)
   if(window._docPrimary)['pl','sc','iv'].forEach(function(p){var v=portLine(window._docPrimary);var e=document.getElementById(p+'-port');if(e)e.textContent=v;});
+  // 客户版(detail)不要港口条、不要CNY(Damon 2026-07-08):隐藏港口栏 + 表头(CNY)括号;报关版(customs)保留
+  try{
+    var showCur=_customsMode;
+    document.querySelectorAll('.portbar').forEach(function(el){el.style.display=showCur?'':'none';});
+    document.querySelectorAll('.curwrap').forEach(function(el){el.style.display=showCur?'':'none';});
+  }catch(e){}
   applyPageFilter();
 }
 function toggleMode(){
@@ -406,7 +412,7 @@ function saveDraft(){try{localStorage.setItem('export_docs_draft_'+(qp('order_no
 function docBaseName(){return window._docBaseName||qp('order_no')||'draft';}
 function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;document.querySelector('.toolbar').style.display='none';
-  var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js';
+  var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
   s.onload=function(){var only=docPageParam(),pages=only?[{pl:'pagePL',sc:'pageSC',iv:'pageIV'}[only]]:['pagePL','pageSC','pageIV'],i=0;(function nx(){if(i>=pages.length){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;return;}html2canvas(document.getElementById(pages[i]),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){var a=document.createElement('a');a.download=pages[i]+'-'+docBaseName()+'.png';a.href=c.toDataURL('image/png');a.click();i++;setTimeout(nx,400);}).catch(function(){i++;nx();});})();};
   if(window.html2canvas)s.onload();else document.head.appendChild(s);
 }
