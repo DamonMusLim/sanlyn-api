@@ -188,39 +188,6 @@ export default async function handler(req, res) {
       vgm_kg: round(vgmByCbId.get(product.cb_id), 3),
     }));
 
-    if (String(req.query.format || "") === "xlsx") {
-      const ExcelJS = (await import("exceljs")).default;
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("装箱资料");
-      ws.mergeCells("A1:P1");
-      ws.getCell("A1").value = "装箱资料";
-      ws.getCell("A1").font = { bold: true, size: 16 };
-      ws.getCell("A1").alignment = { horizontal: "center" };
-      ws.addRow([]);
-      ws.addRow(["船名航次", [plan.vessel, plan.voyage].filter(Boolean).join(" / "), "", "外贸提单号", plan.export_bl, "", "截单/ETD", plan.etd ? String(plan.etd).slice(0,10) : "", "", "Shipment No", plan.shipment_no]);
-      ws.addRow([]);
-      const header = ["序号","进口船名航次","内贸到港时间","进口内贸提单号","柜型","柜号","封铅","外贸出口港口","对应外贸提单号","对应船名航次","货品描述","件数","CBM","柜重GW","皮重TARE","VGM"];
-      const hr = ws.addRow(header);
-      hr.font = { bold: true };
-      hr.eachCell((c) => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } }; c.border = { top:{style:"thin"}, left:{style:"thin"}, bottom:{style:"thin"}, right:{style:"thin"} }; });
-      (containers || []).forEach((c, i) => {
-        const r = ws.addRow([
-          i + 1, c.vessel_voyage || "", c.import_arrival_date || "", c.import_bl_no || "",
-          c.container_type || "", c.container_no || "", c.seal_no || "", c.export_port || "",
-          c.export_bl || "", c.vessel_voyage || "", c.goods_desc || "",
-          Number(c.pieces) || 0, Number(c.cbm) || 0, Number(c.gross_weight_kg) || 0,
-          Number(c.tare_kg) || 0, Number(c.vgm_kg) || 0,
-        ]);
-        r.eachCell((cell) => { cell.border = { top:{style:"thin"}, left:{style:"thin"}, bottom:{style:"thin"}, right:{style:"thin"} }; });
-      });
-      ws.columns.forEach((col) => { col.width = 14; });
-      const buf = await wb.xlsx.writeBuffer();
-      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      const _fn = (plan.shipment_no || plan.export_bl || "transfer");
-      res.setHeader("Content-Disposition", "attachment; filename=\"PackingList-" + _fn + ".xlsx\"; filename*=UTF-8''" + encodeURIComponent("装箱资料-" + _fn + ".xlsx"));
-      return res.end(Buffer.from(buf));
-    }
-
     return res.json({ plan, containers, products });
   } catch (err) {
     return res.status(500).json({ error: err.message });

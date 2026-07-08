@@ -148,6 +148,7 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/collab-pricing-submit",
   "/api/db/bill-center/collab/validate",
   "/api/db/bill-center/collab/submit",
+  "/api/internal/ar-followup", // 微信文字回复记催款跟进状态；handler内X-Internal-Key强校验fail-closed，不发任何对外消息
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
@@ -274,9 +275,6 @@ export async function authMiddleware(req, res, next) {
 
   // Factory confirm short link /fc/<token> → redirect to /public/factory-confirm.html, no auth
   if (req.path.startsWith("/fc/")) return next();
-
-  // Factory product price confirm short link /fp/<token> → /public/product-price-confirm.html, no auth
-  if (req.path.startsWith("/fp/")) return next();
 
   // Factory invoice short link /fi/<code> → /public/factory-invoice.html, no auth
   if (req.path.startsWith("/fi/")) return next();

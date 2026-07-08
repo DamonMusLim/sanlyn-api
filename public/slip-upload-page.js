@@ -132,9 +132,7 @@ function selectedAllocationRows() {
     input: document.querySelector(`.alloc-amount[data-kind="candidate"][data-idx="${el.dataset.idx}"]`),
     freight: moneyNumber(JSON.parse(el.dataset.json).freight_total_cny)
   }));
-  const manualRef = document.getElementById('manualRef');
-  const manualInput = document.getElementById('manualAmount');
-  if (manualRef?.value.trim()) rows.push({ input: manualInput, freight: 0 });
+  SlipManual.rows().forEach(r => { if (r.ref) rows.push({ input: r.amountInput, freight: 0 }); });
   return rows.filter(r => r.input);
 }
 
@@ -177,7 +175,8 @@ function recalcAllocations(resetTouched = false) {
   });
   if (hint) {
     const rest = Math.max(0, total - allocBase);
-    hint.textContent = missingRows.length ? `其余¥${formatMoney(rest)}请手动分给缺报价的票` : '';
+    const hasCandidate = document.querySelector('.cand:checked');
+    hint.textContent = hasCandidate && missingRows.length ? `其余¥${formatMoney(rest)}请手动分给缺报价的票` : '';
   }
 }
 
@@ -319,13 +318,14 @@ function renderReview(slip) {
           <input type="number" class="alloc-amount" data-kind="candidate" data-idx="${idx}" step="0.01" min="0" placeholder="勾选后自动预填金额" ${one ? '' : 'disabled'}>
         </span>
       </label>`).join('') : '<div class="muted" style="margin:8px 0">系统没找到匹配订单，请手动输入合同号/订单号/BL/CY号。</div>'}</div>
-    <input type="text" id="manualRef" placeholder="手动输入合同号 / 订单号 / BL / CY号（候选为空或需补充时填写）" style="margin-top:10px">
-    <input type="number" id="manualAmount" class="alloc-amount" step="0.01" min="0" placeholder="手动输入金额" disabled>
+    <div id="manualRows" style="margin-top:10px"></div>
+    <a href="#" id="addManualRow" style="display:inline-block;margin-top:8px;font-size:13px;color:#1e3a8a;text-decoration:none">＋ 加一行手动分摊（一笔汇款拆多票；金额可为负，如CN冲减）</a>
+    <div id="manualSumHint" class="alloc-hint"></div>
     <div id="allocHint" class="alloc-hint"></div>
     <div class="actions"><button id="confirmBtn">确认入库</button><button id="rejectBtn" class="secondary">这不是我要的，重来</button></div>`;
   document.querySelectorAll('.cand').forEach(el => el.addEventListener('change', () => recalcAllocations(true)));
   document.querySelectorAll('.alloc-amount').forEach(el => el.addEventListener('input', () => { el.dataset.touched = '1'; }));
-  document.getElementById('manualRef').addEventListener('input', () => recalcAllocations(true));
+  SlipManual.init(document.getElementById('manualRows'), document.getElementById('addManualRow'), document.getElementById('manualSumHint'), () => recalcAllocations(false));
   recalcAllocations(true);
   document.getElementById('confirmBtn').onclick = confirmSlip;
   document.getElementById('rejectBtn').onclick = rejectSlip;
@@ -380,12 +380,12 @@ async function confirmSlip() {
     note: c.shipment_no ? '人工确认候选 ' + c.shipment_no : '人工确认候选',
     selection_source: 'ocr_candidate'
   }));
-  const manual = document.getElementById('manualRef').value.trim();
-  if (manual) {
-    const manualAlloc = allocationFromText(manual, amountInputValue(document.getElementById('manualAmount')));
+  SlipManual.rows().forEach(r => {
+    if (!r.ref) return;
+    const manualAlloc = allocationFromText(r.ref, r.amount);
     manualAlloc.selection_source = 'manual_input';
     allocations.push(manualAlloc);
-  }
+  });
   if (!allocations.length) { showResult('err', '请先选择候选订单，或手动输入合同号/订单号/BL/CY号。'); return; }
   const res = await fetch('/api/db/slip-review?action=confirm', {
     method: 'POST',

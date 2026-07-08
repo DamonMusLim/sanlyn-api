@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sanlyn 简报</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 18px; color: #93c5fd; margin: 8px 0 4px; }
+  .meta { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #1e293b; border-radius: 12px; padding: 16px; font-size: 15px; line-height: 1.7; }
+  .login { margin-top: 60px; text-align: center; }
+  input { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #e2e8f0; font-size: 16px; }
+  button { width: 100%; padding: 14px; margin-top: 12px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font-size: 16px; }
+  .err { color: #f87171; font-size: 13px; min-height: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">加载中…</div>
+<script>
+const API = '';
+const id = new URLSearchParams(location.search).get('id');
+const app = document.getElementById('app');
+
+function showLogin(msg) {
+  app.innerHTML = `<div class="login"><h1>Sanlyn 简报</h1>
+    <input id="u" placeholder="用户名" autocomplete="username">
+    <input id="p" type="password" placeholder="密码" autocomplete="current-password">
+    <div class="err" id="e">${msg || ''}</div>
+    <button onclick="doLogin()">登录查看</button></div>`;
+}
+async function doLogin() {
+  const r = await fetch(API + '/api/db/auth-login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: document.getElementById('u').value.trim(), password: document.getElementById('p').value }) });
+  const d = await r.json();
+  if (d.token) { localStorage.setItem('token', d.token); load(); }
+  else document.getElementById('e').textContent = d.message || d.error || '登录失败';
+}
+async function load() {
+  if (!id) { app.textContent = '缺少 id 参数'; return; }
+  const token = localStorage.getItem('token');
+  if (!token) return showLogin();
+  const r = await fetch(API + '/api/brief-notes?id=' + encodeURIComponent(id), { headers: { Authorization: 'Bearer ' + token } });
+  if (r.status === 401) { localStorage.removeItem('token'); return showLogin('登录已过期，请重新登录'); }
+  if (r.status === 403) { app.textContent = '无权限查看'; return; }
+  const d = await r.json();
+  if (!d.success) { app.textContent = d.error || '加载失败'; return; }
+  const n = d.note;
+  app.innerHTML = `<h1>${n.title || 'Sanlyn 简报'}</h1>
+    <div class="meta">${new Date(n.created_at).toLocaleString('zh-CN')} · ${n.kind}</div>
+    <pre>${n.content.replace(/</g, '&lt;')}</pre>`;
+}
+load();
+</script>
+</body>
+</html>

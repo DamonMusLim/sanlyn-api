@@ -1208,7 +1208,27 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     if (hasBlNoCol) { extraCols.push("bl_no"); extraVals.push(blNoForCol); }
     // 出单主体权威码(seller_profiles.code,如 petbaby/yangbaobao)。前端按上下游关系带出,不默认兜底。
     // 用 extraCols 动态追加,占位符自动偏移($49+),避免手排 $1-$48 错位。
-    var sellerCodeForCol = (body.seller_code || body.sellerCode || "").toString().trim().toLowerCase() || null;
+    var sellerCodeRaw = (body.seller_code || body.sellerCode || "").toString().trim();
+    // SELLER_CODE_FIX_20260709 — orders.seller_code must match seller_profiles.code
+    // (that table holds bank/seal/terms for document generation), NOT companies.code.
+    // Frontend only knows companies.code (e.g. "BABI"); resolve via seller_profiles.stamp_code
+    // (the link column) so we don't point at the near-empty seller_profiles row that
+    // shares the same code casing but has no bank/seal/terms data. Falls back to the raw
+    // lowercased input (old behavior) if no seller_profiles row matches.
+    var sellerCodeForCol = null;
+    if (sellerCodeRaw) {
+      var sellerProfileRes = await pool.query(
+        `SELECT code FROM seller_profiles
+            WHERE UPPER(stamp_code) = UPPER($1) OR UPPER(code) = UPPER($1)
+         ORDER BY COALESCE(UPPER(stamp_code) = UPPER($1), false) DESC, COALESCE(is_default, false) DESC, created_at ASC
+            LIMIT 1`,
+        [sellerCodeRaw]
+      ).catch(function(e) { console.warn("[order-create-v2] seller_profiles lookup failed:", e && e.message); return { rows: [] }; });
+      if (!sellerProfileRes.rows.length) {
+        console.warn("[order-create-v2] seller_code '" + sellerCodeRaw + "' has no matching seller_profiles row (stamp_code/code) - falling back to raw lowercase, document generation may show wrong/missing bank+seal info.");
+      }
+      sellerCodeForCol = sellerProfileRes.rows.length ? sellerProfileRes.rows[0].code : sellerCodeRaw.toLowerCase();
+    }
     extraCols.push("seller_code"); extraVals.push(sellerCodeForCol);
     // Build $49, $50, ... placeholders for the extras
     var extraPlaceholders = extraVals.map(function(_v, i){ return "$" + (48 + i + 1); }).join(",");

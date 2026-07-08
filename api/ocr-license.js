@@ -2,6 +2,8 @@
 // 营业执照 OCR — 阿里云百炼 qwen-vl-plus 识别营业执照图片
 // 输入: ossUrl (营业执照图片的 OSS URL)
 // 输出: { companyName, taxId, address, legalPerson, registeredCapital, businessScope }
+// 2026-07-04 引擎从 qwen 切 MiniMax-M3
+import { visionOcr } from "./lib/minimax-vl.js";
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -10,26 +12,7 @@ function setCors(res) {
 }
 
 async function recognizeLicense(ossUrl) {
-  const apiKey = process.env.QWEN_API_KEY;
-  const res = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "qwen-vl-plus",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: ossUrl },
-            },
-            {
-              type: "text",
-              text: `请识别这张营业执照图片，提取以下信息并以JSON格式返回（只返回JSON，不要其他文字）：
+  const data = await visionOcr(ossUrl, `请识别这张营业执照图片，提取以下信息并以JSON格式返回（只返回JSON，不要其他文字）：
 {
   "companyName": "公司名称",
   "taxId": "统一社会信用代码 / Business Registration Number",
@@ -41,14 +24,7 @@ async function recognizeLicense(ossUrl) {
   "issuedAt": "成立日期 / 注册日期 YYYY-MM-DD（若是境外执照写 Date of Incorporation）",
   "expiresAt": "营业期限截止日期 YYYY-MM-DD（若为长期/无固定期限，填空字符串）"
 }
-如果某个字段无法识别，请填空字符串。日期一定要转成 YYYY-MM-DD 格式。`,
-            },
-          ],
-        },
-      ],
-    }),
-  });
-  const data = await res.json();
+如果某个字段无法识别，请填空字符串。日期一定要转成 YYYY-MM-DD 格式。`);
   const text = data.choices?.[0]?.message?.content || "";
   // Parse JSON from response (might have markdown fences)
   const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();

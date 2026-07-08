@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       if (!moduleKey) return res.status(400).json({ success: false, error: "Invalid module_key" });
 
       const result = await pool.query(
-        `SELECT layout_json, updated_at, updated_by, version
+        `SELECT layout_json
          FROM field_layouts
          WHERE module_key = $1
            AND status = 'active'
@@ -52,9 +52,6 @@ export default async function handler(req, res) {
         success: true,
         module_key: moduleKey,
         layout_json: result.rows[0]?.layout_json ?? null,
-        updated_at: result.rows[0]?.updated_at ?? null,
-        updated_by: result.rows[0]?.updated_by ?? null,
-        version: result.rows[0]?.version ?? null,
       });
     }
 
@@ -70,7 +67,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, error: "layout_json object required" });
       }
 
-      const updatedBy = req.user?.username || req.user?.uid;
+      const updatedBy = req.user.account || req.user.sub;
       const updateResult = await pool.query(
         `UPDATE field_layouts
          SET layout_json = $2,
@@ -78,37 +75,21 @@ export default async function handler(req, res) {
              updated_at = now()
          WHERE module_key = $1
            AND version = 1
-           AND status = 'active'
-         RETURNING module_key, version, updated_at, updated_by`,
+           AND status = 'active'`,
         [moduleKey, layoutJson, updatedBy]
       );
 
-      let row = updateResult.rows[0];
       if (updateResult.rowCount === 0) {
-        const insertResult = await pool.query(
+        await pool.query(
           `INSERT INTO field_layouts (module_key, version, layout_json, status, updated_by)
-           VALUES ($1, 1, $2, 'active', $3)
-           RETURNING module_key, version, updated_at, updated_by`,
+           VALUES ($1, 1, $2, 'active', $3)`,
           [moduleKey, layoutJson, updatedBy]
         );
-        row = insertResult.rows[0];
       }
 
-      return res.json({
-        success: true,
-        module_key: row.module_key,
-        version: row.version,
-        updated_at: row.updated_at,
-        updated_by: row.updated_by,
-      });
+      return res.json({ success: true });
     }
   } catch (e) {
     return res.status(500).json({ success: false, error: "Internal server error" });
   }
 }
-
-/*
-Change log:
-- L37-L58: GET now returns layout audit metadata already stored in field_layouts.
-- L73-L103: PATCH/POST writes req.user username/uid, RETURNING saved audit fields in success JSON.
-*/

@@ -1,4 +1,5 @@
 import { setCors } from "./db.js";
+import { visionOcr } from "./lib/minimax-vl.js";
 
 // POST /api/ddp-ocr-extract
 // Body: { imageData: "data:image/jpeg;base64,..." }  OR  { imageUrl: "https://..." }
@@ -26,41 +27,8 @@ const QWEN_OCR_PROMPT = `你是一个货运单据识别助手，专门为 DDP（
 规则：找不到的字段返回null，不要猜测，数字不加引号，单位已统一为cm和kg。`;
 
 async function callQwenVL(imageInput) {
-  const apiKey = process.env.QWEN_API_KEY;
-  if (!apiKey) throw new Error("QWEN_API_KEY not configured");
-
-  // imageInput is either a data URL (base64) or an https:// URL
-  const imageContent = imageInput.startsWith("data:")
-    ? { type: "image_url", image_url: { url: imageInput } }
-    : { type: "image_url", image_url: { url: imageInput } };
-
-  const response = await fetch(
-    "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "qwen-vl-plus",
-        messages: [
-          {
-            role: "user",
-            content: [imageContent, { type: "text", text: QWEN_OCR_PROMPT }],
-          },
-        ],
-        max_tokens: 800,
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Qwen VL error ${response.status}: ${err.slice(0, 200)}`);
-  }
-
-  const json = await response.json();
+  // imageInput 可为 data:base64 或 https URL，helper 都能处理
+  const json = await visionOcr(imageInput, QWEN_OCR_PROMPT);
   const raw = json.choices?.[0]?.message?.content || "";
 
   // Strip markdown fences if present

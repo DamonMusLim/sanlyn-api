@@ -1,0 +1,125 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>洋宝宝收付对账板</title>
+<style>
+:root{--bg:#0f1420;--card:#1a2130;--line:#2a3346;--txt:#e6ebf5;--mut:#8b97ad;--ok:#2ecc71;--warn:#f1c40f;--bad:#e74c3c;--in:#3fb0ff;--out:#ff9f6b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,"PingFang SC",sans-serif;padding:16px}
+h1{font-size:19px;font-weight:600;margin:0 0 2px}.sub{color:var(--mut);font-size:13px;margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:10px;margin-bottom:16px}
+.c{background:var(--card);border:.5px solid var(--line);border-radius:10px;padding:11px 13px}
+.c .l{color:var(--mut);font-size:12px}.c .v{font-size:20px;font-weight:600;margin-top:3px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 8px;text-align:left;border-bottom:.5px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:500;font-size:12px}
+.chip{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:500;white-space:nowrap}
+.dir-in{background:rgba(63,176,255,.15);color:var(--in)}.dir-out{background:rgba(255,159,107,.15);color:var(--out)}
+.cf-确定{background:rgba(46,204,113,.15);color:var(--ok)}.cf-疑似{background:rgba(241,196,15,.15);color:var(--warn)}.cf-待人工{background:rgba(231,76,60,.15);color:var(--bad)}
+.amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}.pos{color:var(--in)}.neg{color:var(--out)}
+.ord{font-size:12px}.ord b{color:var(--in);font-weight:600}.ord .m{color:var(--mut)}
+.ai .lb{font-weight:500}.ai .bs{color:var(--mut);font-size:11px;margin-top:2px}.ai .nt{color:var(--warn);font-size:11px;margin-top:2px}
+.note{width:100%;padding:4px 7px;background:var(--bg);border:.5px solid var(--line);border-radius:6px;color:var(--txt);font-size:12px;margin-top:5px}
+.btn{padding:4px 12px;background:transparent;border:.5px solid var(--in);color:var(--in);border-radius:6px;font-size:12px;cursor:pointer;margin:0}
+.btn.done{border-color:var(--ok);color:var(--ok);background:rgba(46,204,113,.1)}
+.btn.warn{border-color:var(--warn);color:var(--warn)}.btn:disabled{opacity:.6;cursor:not-allowed}
+.cf-已分摊{background:rgba(46,204,113,.15);color:var(--ok)}
+.alloc{background:#141b28}.allocbox{padding:12px;border:.5px solid var(--line);border-radius:8px;background:rgba(255,255,255,.02)}
+.allocbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.bal.warn{color:var(--warn)}.bal.ok{color:var(--ok)}
+.mini{width:98px;padding:4px 6px;background:var(--bg);border:.5px solid var(--line);border-radius:6px;color:var(--txt);font-size:12px}
+.alloc table{font-size:12px}.alloc th,.alloc td{padding:6px}.alloc input[type=checkbox]{accent-color:var(--in)}
+#login{max-width:300px;margin:60px auto;background:var(--card);padding:24px;border-radius:12px;border:.5px solid var(--line)}
+#login input{width:100%;margin:6px 0;padding:9px;background:var(--bg);border:.5px solid var(--line);border-radius:8px;color:var(--txt)}
+#login button{width:100%;padding:10px;background:var(--in);color:#001;border:0;border-radius:8px;font-weight:600;cursor:pointer;margin-top:8px}
+.mut{color:var(--mut)}.wrap{overflow-x:auto}
+</style></head><body>
+<div id="login"><h1>洋宝宝对账板</h1><p class="sub">登录查看</p>
+<input id="u" placeholder="用户名"><input id="p" type="password" placeholder="密码"><button onclick="doLogin()">登录</button><div id="le" class="mut" style="margin-top:8px"></div></div>
+<div id="app" style="display:none"></div>
+<script>
+function tok(){return localStorage.getItem("sanlyn_token")||""}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
+async function doLogin(){
+  const r=await fetch("/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u.value,password:p.value})});
+  const d=await r.json();if(d.token){localStorage.setItem("sanlyn_token",d.token);load()}else{le.textContent="登录失败"}
+}
+function fmt(n){return Number(n).toLocaleString("zh",{minimumFractionDigits:2,maximumFractionDigits:2})}
+async function patch(body){return fetch("/api/db/ybb-recon",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+tok()},body:JSON.stringify(body)})}
+async function confirm(id,btn){await patch({id,reviewed:true});btn.textContent="已审核 ✓";btn.classList.add("done");btn.disabled=true}
+async function saveNote(id,el){el.style.borderColor="var(--ok)";await patch({id,note:el.value});setTimeout(()=>el.style.borderColor="",1200)}
+const allocCache={};
+async function toggleAlloc(id,btn){
+  const row=document.getElementById("alloc-"+id);
+  if(row){row.remove();btn.textContent="展开分摊";return}
+  btn.textContent="收起分摊";
+  const tr=btn.closest("tr"), nr=document.createElement("tr");nr.id="alloc-"+id;nr.className="alloc";
+  nr.innerHTML=`<td colspan="7"><div class="allocbox">加载候选账单…</div></td>`;tr.after(nr);
+  if(!allocCache[id]){
+    const r=await fetch(`/api/db/ybb-recon?action=candidates&id=${id}`,{headers:{Authorization:"Bearer "+tok()}});
+    allocCache[id]=await r.json();
+  }
+  renderAlloc(id);
+}
+function renderAlloc(id){
+  const d=allocCache[id], row=document.getElementById("alloc-"+id);
+  if(!d?.ok){row.innerHTML=`<td colspan="7"><div class="allocbox">加载失败: ${esc(d?.error||"")}</div></td>`;return}
+  const saved=(window.slipMap[id]?.allocations||[]);
+  const body=d.bills.map((b,i)=>{
+    const old=saved.find(a=>a.bl_no===b.bl_no&&(!a.shipment_no||a.shipment_no===b.shipment_no));
+    const checked=old?"checked":"", val=old?old.alloc_amount:"";
+    return `<tr><td><input type="checkbox" data-i="${i}" ${checked} onchange="recalcAlloc(${id})"></td><td>${esc(b.bl_no||"—")}</td><td>${esc(b.shipment_no||"—")}</td><td>${esc(b.order_no||"—")}</td><td>${esc(b.issuing_company||"—")}</td><td>${esc(b.customer||"—")}</td><td class="amt">${fmt(b.amount)} ${esc(d.currency)}</td><td><input class="mini" data-i="${i}" value="${val}" oninput="this.closest('tr').querySelector('[type=checkbox]').checked=true;recalcAlloc(${id})"></td></tr>`
+  }).join("");
+  row.innerHTML=`<td colspan="7"><div class="allocbox"><div class="allocbar"><b>付款 ${fmt(d.payAmount)} ${esc(d.currency)}</b><span id="alloc-sum-${id}"></span><span id="alloc-bal-${id}" class="bal"></span><button class="btn warn" onclick="applySuggest(${id})">AI推荐</button><button class="btn" onclick="saveAlloc(${id},this)">保存分摊</button></div><div class="wrap"><table><thead><tr><th></th><th>BL</th><th>柜</th><th>订单</th><th>出单公司</th><th>客户</th><th>账单金额</th><th>本次分摊</th></tr></thead><tbody>${body||`<tr><td colspan="8" class="mut">无候选账单</td></tr>`}</tbody></table></div></div></td>`;
+  recalcAlloc(id);
+}
+function allocRows(id){return [...document.querySelectorAll(`#alloc-${id} tbody tr`)].map(tr=>({tr,ck:tr.querySelector("[type=checkbox]"),inp:tr.querySelector(".mini")})).filter(x=>x.ck&&x.inp)}
+function recalcAlloc(id){
+  const d=allocCache[id];let sum=0;
+  allocRows(id).forEach(x=>{if(x.ck.checked)sum+=+(x.inp.value||0)});
+  const bal=d.payAmount-sum;
+  document.getElementById("alloc-sum-"+id).textContent="已分摊 "+fmt(sum);
+  const be=document.getElementById("alloc-bal-"+id);be.textContent="未分摊 "+fmt(bal);be.className="bal "+(Math.abs(bal)<0.01?"ok":"warn");
+}
+function applySuggest(id){
+  const d=allocCache[id], sug=new Set(d.suggested||[]);
+  allocRows(id).forEach((x,i)=>{const b=d.bills[i], yes=sug.has(b.bl_no);x.ck.checked=yes;x.inp.value=yes?b.amount:""});
+  recalcAlloc(id);
+}
+async function saveAlloc(id,btn){
+  const d=allocCache[id], allocations=[];
+  allocRows(id).forEach((x,i)=>{const b=d.bills[i], amt=+(x.inp.value||0);if(x.ck.checked&&amt>0)allocations.push({bl_no:b.bl_no,shipment_no:b.shipment_no,alloc_amount:amt})});
+  btn.disabled=true;await patch({id,allocations});btn.textContent="已保存";window.slipMap[id].allocations=allocations;
+  window.slipMap[id].allocated=allocations.reduce((n,a)=>n+a.alloc_amount,0);window.slipMap[id].unallocated=d.payAmount-window.slipMap[id].allocated;
+  const st=document.getElementById("st-"+id), pr=document.getElementById("pr-"+id);
+  if(Math.abs(window.slipMap[id].unallocated)<0.01){st.textContent="已分摊";st.className="chip cf-已分摊"}
+  pr.textContent=`已分摊¥${fmt(window.slipMap[id].allocated)} / 未分摊¥${fmt(window.slipMap[id].unallocated)}`;
+}
+async function load(){
+  const r=await fetch("/api/db/ybb-recon",{headers:{Authorization:"Bearer "+tok()}});
+  if(r.status===401){document.getElementById("login").style.display="block";document.getElementById("app").style.display="none";return}
+  const d=await r.json();if(!d.ok){document.getElementById("app").innerHTML="加载失败: "+(d.error||"");return}
+  window.slipMap=Object.fromEntries(d.slips.map(x=>[x.id,x]));
+  document.getElementById("login").style.display="none";const app=document.getElementById("app");app.style.display="block";const s=d.summary;
+  const rows=d.slips.map(x=>{
+    const dir=x.direction==="收款";const o=x.order;const ai=x.ai;
+    const cp=(dir?x.sender_name:x.beneficiary_name)||(ai.side==="财务费用"||ai.side==="其他收益"?"银行":"—");
+    const canAlloc=!dir&&ai.conf==="疑似"&&/万汇恒通/.test(cp||"");
+    const doneAlloc=Math.abs(+(x.unallocated||0))<0.01&&+(x.allocated||0)>0;
+    const conf=doneAlloc?"已分摊":ai.conf;
+    const ordCell=o?`<div class="ord"><b>${esc(o.order_no||"")}</b>${o.shipment_no?`<br><span class="m">柜 ${esc(o.shipment_no)}</span>`:""}</div>`:`<span class="mut">—</span>`;
+    const prog=+(x.allocated||0)>0?`<div id="pr-${x.id}" class="nt">已分摊¥${fmt(x.allocated)} / 未分摊¥${fmt(x.unallocated)}</div>`:`<div id="pr-${x.id}" class="nt"></div>`;
+    const aiCell=`<div class="ai"><div class="lb">${esc(ai.label)}</div>${ai.basis?`<div class="bs">${esc(ai.basis)}</div>`:""}${ai.note?`<div class="nt">🟡 ${esc(ai.note)}</div>`:""}${prog}<div style="margin-top:3px"><span id="st-${x.id}" class="chip cf-${conf}">${conf}</span> <span class="mut" style="font-size:11px">→ ${esc(ai.side||"—")}</span></div>${canAlloc?`<button class="btn warn" style="margin-top:6px" onclick="toggleAlloc(${x.id},this)">展开分摊</button>`:""}</div>`;
+    const revCell=`<button class="btn ${x.reviewed?"done":""}" ${x.reviewed?"disabled":""} onclick="confirm(${x.id},this)">${x.reviewed?"已审核 ✓":"确认"}</button>${ai.conf!=="确定"?`<input class="note" value="${esc(x.note||"")}" placeholder="核对说明…" onblur="saveNote(${x.id},this)">`:""}`;
+    return `<tr><td>${(x.payment_date||"").slice(0,10)}</td><td><span class="chip ${dir?"dir-in":"dir-out"}">${x.direction}</span></td>
+      <td class="amt ${dir?"pos":"neg"}">${dir?"+":"−"}${fmt(Math.abs(x.amount))} ${x.currency}</td>
+      <td>${esc(cp)}<div class="mut" style="font-size:11px">${esc((x.purpose_code||x.remark_details||"").slice(0,18))}</div></td>
+      <td>${ordCell}</td><td>${aiCell}</td><td>${revCell}</td></tr>`}).join("");
+  app.innerHTML=`<h1>洋宝宝收付对账板</h1><div class="sub">${d.company} · ${d.period} · ${s.total}笔 · AI已判 <span style="color:var(--ok)">确定${s.sure}</span> / <span style="color:var(--warn)">疑似${s.doubt}</span> · 已审核 ${s.reviewed}/${s.total}</div>
+  <div class="cards">
+    <div class="c"><div class="l">收款(货代运费)</div><div class="v pos">+${fmt(s.inUSD)}<span style="font-size:12px"> USD</span></div><div class="mut" style="font-size:12px">+${fmt(s.inCNY)} CNY</div></div>
+    <div class="c"><div class="l">付款(成本+费用)</div><div class="v neg">−${fmt(s.outUSD)}<span style="font-size:12px"> USD</span></div><div class="mut" style="font-size:12px">−${fmt(s.outCNY)} CNY</div></div>
+    <div class="c"><div class="l">AI疑似·待审</div><div class="v" style="color:var(--warn)">${s.doubt}<span style="font-size:12px;color:var(--mut)"> 笔</span></div><div class="mut" style="font-size:12px">确定${s.sure}笔可直过</div></div>
+    <div class="c"><div class="l">应付未付(万汇恒通)</div><div class="v" style="color:var(--bad)">${s.apUnpaidCount}<span style="font-size:12px;color:var(--mut)"> 笔</span></div><div class="mut" style="font-size:12px">¥${fmt(s.apUnpaidAmt)}</div></div>
+    <div class="c"><div class="l">6月销项(应收)</div><div class="v">${s.arCount}<span style="font-size:12px;color:var(--mut)"> 张</span></div><div class="mut" style="font-size:12px">¥${fmt(s.arAmt)}</div></div>
+  </div>
+  <div class="wrap"><table><thead><tr><th>日期</th><th>方向</th><th>金额</th><th>对手</th><th>订单/柜</th><th>AI匹配(做账口径)</th><th>人工审核</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div class="sub" style="margin-top:12px">AI 自动匹配每笔款项：🟢确定=可直接过账，🟡疑似=请核对后确认。点「确认」审核，疑似的可补一句核对说明。审核完的进下一步生成凭证。</div>`;
+}
+if(tok())load();
+</script></body></html>

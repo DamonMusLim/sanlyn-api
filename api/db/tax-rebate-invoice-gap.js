@@ -32,55 +32,12 @@ export async function loadInvoiceGapByCustoms(pool, ferRows) {
 
   const dueByContract = new Map();
   const factoriesByContract = new Map();
-  const manualExpectedByCustoms = new Map();
-  const linkedReceivedByCustoms = new Map();
-
   // 自有品牌集(company_own_brands): "CODE::BRAND" → 品牌产品;不在集=OEM/代工
   const ownBrandSet = new Set();
   try {
     const ob = await pool.query(`SELECT company_code, UPPER(TRIM(brand)) AS brand FROM company_own_brands WHERE active IS NOT FALSE`);
     for (const r of ob.rows) ownBrandSet.add(`${r.company_code}::${r.brand}`);
   } catch {}
-
-  if (allCustomsNos.length) {
-    const statusR = await pool.query(
-      `SELECT customs_no, manual_expected_amount
-         FROM customs_invoice_status
-        WHERE customs_no = ANY($1::text[])
-          AND manual_expected_amount IS NOT NULL`,
-      [allCustomsNos]
-    ).catch(() => ({ rows: [] }));
-
-    for (const r of statusR.rows) {
-      manualExpectedByCustoms.set(r.customs_no, Number(r.manual_expected_amount));
-    }
-
-    const linkedR = await pool.query(
-      `SELECT l.customs_no,
-              COUNT(*)::int AS link_count,
-              COALESCE(SUM(
-                CASE
-                  WHEN l.link_status = 'active'
-                   AND COALESCE(fii.review_status, '') NOT IN ('void', 'red_ink')
-                  THEN COALESCE(fii.amount_incl_tax, 0)
-                  ELSE 0
-                END
-              ), 0)::numeric AS uploaded_amount
-         FROM invoice_customs_links l
-         LEFT JOIN finance_invoices_in fii ON fii.id = l.invoice_id
-        WHERE l.customs_no = ANY($1::text[])
-        GROUP BY l.customs_no`,
-      [allCustomsNos]
-    ).catch(() => ({ rows: [] }));
-
-    for (const r of linkedR.rows) {
-      linkedReceivedByCustoms.set(r.customs_no, {
-        hasLink: Number(r.link_count || 0) > 0,
-        amount: Number(r.uploaded_amount || 0),
-      });
-    }
-  }
-
   if (allContracts.length) {
     const dueR = await pool.query(
       `SELECT o.contract_no,
@@ -110,17 +67,14 @@ export async function loadInvoiceGapByCustoms(pool, ferRows) {
                 contract_nos::text AS contract_text,
                 customs_nos::text AS customs_text
            FROM finance_invoices_in fi
-          WHERE COALESCE(fi.review_status, '') NOT IN ('void', 'red_ink')
-            AND (
-              ($1::text[] <> '{}'::text[] AND EXISTS (
-                SELECT 1 FROM unnest($1::text[]) c
-                 WHERE fi.contract_nos::text ILIKE '%' || c || '%'
-              ))
-              OR ($2::text[] <> '{}'::text[] AND EXISTS (
-                SELECT 1 FROM unnest($2::text[]) cn
-                 WHERE fi.customs_nos::text LIKE '%' || cn || '%'
-              ))
-            )`,
+          WHERE ($1::text[] <> '{}'::text[] AND EXISTS (
+                  SELECT 1 FROM unnest($1::text[]) c
+                   WHERE fi.contract_nos::text ILIKE '%' || c || '%'
+                ))
+             OR ($2::text[] <> '{}'::text[] AND EXISTS (
+                  SELECT 1 FROM unnest($2::text[]) cn
+                   WHERE fi.customs_nos::text LIKE '%' || cn || '%'
+                ))`,
         [allContracts, allCustomsNos]
       ).catch(() => ({ rows: [] }))
     : { rows: [] };
@@ -128,12 +82,9 @@ export async function loadInvoiceGapByCustoms(pool, ferRows) {
   const byCustoms = new Map();
   for (const item of items) {
     const dueContracts = item.contracts.filter(c => dueByContract.has(c));
-    const systemDue = dueContracts.length
+    const due = dueContracts.length
       ? round2(dueContracts.reduce((sum, c) => sum + Number(dueByContract.get(c) || 0), 0))
       : null;
-    const due = manualExpectedByCustoms.has(item.customs_no)
-      ? round2(manualExpectedByCustoms.get(item.customs_no))
-      : systemDue;
 
     const factoryMap = new Map();
     for (const c of dueContracts) {
@@ -145,16 +96,13 @@ export async function loadInvoiceGapByCustoms(pool, ferRows) {
       .map(x => ({ ...x, due: round2(x.due) }))
       .sort((a, b) => String(a.factory || "").localeCompare(String(b.factory || "")));
 
-    const linkedReceived = linkedReceivedByCustoms.get(item.customs_no);
-    const received = linkedReceived?.hasLink
-      ? round2(linkedReceived.amount)
-      : round2(invR.rows.reduce((sum, inv) => {
-          const contractText = String(inv.contract_text || "").toLowerCase();
-          const customsText = String(inv.customs_text || "");
-          const contractHit = item.contracts.some(c => contractText.includes(c.toLowerCase()));
-          const customsHit = item.customs_no && customsText.includes(item.customs_no);
-          return contractHit || customsHit ? sum + Number(inv.amount_incl_tax || 0) : sum;
-        }, 0));
+    const received = round2(invR.rows.reduce((sum, inv) => {
+      const contractText = String(inv.contract_text || "").toLowerCase();
+      const customsText = String(inv.customs_text || "");
+      const contractHit = item.contracts.some(c => contractText.includes(c.toLowerCase()));
+      const customsHit = item.customs_no && customsText.includes(item.customs_no);
+      return contractHit || customsHit ? sum + Number(inv.amount_incl_tax || 0) : sum;
+    }, 0));
 
     byCustoms.set(item.customs_no, {
       invoice_due_amount: due,

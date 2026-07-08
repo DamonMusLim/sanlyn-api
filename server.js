@@ -269,7 +269,6 @@ mount("/api/db/freight-cost-audit",   () => import("./api/db/freight-cost-audit.
 mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 工厂协同门户·财务板块(短码+collab mt)
 mount("/api/db/invoice-collab-confirm", () => import("./api/db/invoice-collab-confirm.js")); // 港杂费开票确认(booking collab token)
-mount("/api/db/product-price-confirm", () => import("./api/db/product-price-confirm.js"));
 mount("/api/db/invoice-monthly-consolidate", () => import("./api/db/invoice-monthly-consolidate.js")); // 月结合并开票聚合(admin/finance JWT)
 mount("/api/db/customer-invoice", () => import("./api/db/customer-invoice.js")); // B3 客户销项发票门户(短码 /ci)
 mount("/api/db/rate-configs", () => import("./api/db/rate-configs.js")); // 税率/汇率配置编辑器+改动历史(admin only)
@@ -566,11 +565,12 @@ mount("/api/db/email-message-log", () => import("./api/db/email-message-log.js")
 mount("/api/db/notification-projects", () => import("./api/db/notification-projects.js")); // 通知项目中心
 mount("/api/notify/trigger", () => import("./api/notify-trigger.js")); // 统一通知触发
 mount("/api/notify/preview", () => import("./api/notify-preview.js")); // 通知预览(不发送)
-mount("/api/db/order-diary-notes", () => import("./api/db/order-diary-notes.js")); // 订单人工日记
+mount("/api/db/order-diary-notes", () => import("./api/db/order-diary-notes.js"));
 mount("/api/db/order-diary-notes/:id", () => import("./api/db/order-diary-notes.js"));
-mount("/api/orders/:id/timeline", () => import("./api/orders-timeline.js")); // 单票时间轴(内部)
-mount("/api/orders/:id/share-links", () => import("./api/orders-share-links.js")); // 生成客户/工厂时间轴链接
-mount("/api/public/order-timeline", () => import("./api/public-order-timeline.js")); // 单票时间轴(外部,token)
+mount("/api/internal/ar-followup", () => import("./api/internal/ar-followup.js"));
+mount("/api/orders/:id/timeline", () => import("./api/orders-timeline.js"));
+mount("/api/orders/:id/share-links", () => import("./api/orders-share-links.js"));
+mount("/api/public/order-timeline", () => import("./api/public-order-timeline.js"));
 mount("/api/notify/order-created", () => import("./api/notify/order-created.js"));
 mount("/api/setup-finance",   () => import("./api/setup-finance.js"));
 mount("/api/vessel-callback", () => import("./api/vessel-callback.js"));
@@ -614,9 +614,6 @@ app.get("/f/:token", (req, res) => {
 // Short link for factory order confirmation: /fc/<token> → confirm page
 app.get("/fc/:token", (req, res) => {
   res.redirect("/public/factory-confirm.html?t=" + encodeURIComponent(req.params.token));
-});
-app.get("/fp/:token", (req, res) => {
-  res.redirect("/public/product-price-confirm.html?t=" + encodeURIComponent(req.params.token));
 });
 // B2: /fi/<code> -> 工厂红票门户(与 /ci 对称; 修复点🧾开票误开成订单确认页的 bug)
 app.get("/fi/:token", (req, res) => {

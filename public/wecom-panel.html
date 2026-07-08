@@ -1,0 +1,43 @@
+<!DOCTYPE html><html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>识流客户助手 · 看板</title><style>
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+:root{--bg:#0b1220;--card:#151e30;--line:#25314a;--txt:#e6edf6;--sub:#8aa0be;--blue:#3b82f6;--amber:#f59e0b;--red:#ef4444;--green:#22c55e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,"PingFang SC",sans-serif;font-size:14px}
+header{position:sticky;top:0;background:#0b1220ee;backdrop-filter:blur(8px);padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+header h1{font-size:16px;margin:0}.badge{font-size:12px;color:var(--sub)}.mode{margin-left:auto;font-size:11px;padding:3px 9px;border-radius:20px;background:#1f2a44;color:var(--amber)}
+.wrap{max-width:680px;margin:0 auto;padding:12px}
+.row{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:6px}.name{font-weight:700}.type{font-size:11px;color:var(--sub)}
+.chip{font-size:11px;padding:2px 8px;border-radius:20px;margin-left:auto}.chip.confirm{background:#3a2e12;color:var(--amber)}.chip.human{background:#3a1720;color:var(--red)}.chip.auto{background:#12331f;color:var(--green)}
+.msg{color:var(--sub);font-size:13px;margin:5px 0;white-space:pre-wrap;word-break:break-word}
+.draft{background:#0e1830;border-left:3px solid var(--blue);border-radius:8px;padding:9px 11px;font-size:14px;line-height:1.55;white-space:pre-wrap;margin-top:6px}.draft.empty{border-left-color:var(--red);color:var(--sub)}
+.foot{display:flex;gap:10px;margin-top:8px;font-size:12px;color:var(--sub)}.delay{color:var(--amber)}.time{margin-left:auto}
+button{border:0;border-radius:8px;padding:9px 12px;font-size:14px;color:#fff;background:var(--blue)}
+.ghost{background:#1a2540;color:var(--blue);margin-top:6px}
+input{display:block;width:100%;margin:8px 0;padding:11px;border-radius:8px;border:1px solid var(--line);background:#151e30;color:var(--txt);font-size:16px}
+.login{max-width:320px;margin:70px auto;text-align:center}.err{color:var(--red);font-size:13px;min-height:18px}.empty-state{text-align:center;color:var(--sub);padding:70px 20px}
+</style></head><body>
+<header><h1>🤖 客户助手看板</h1><span class="badge" id="count">—</span><span class="mode">只看+守底价草稿</span></header>
+<div class="wrap" id="app">加载中…</div>
+<script>
+const API='';
+function esc(s){return String(s||'').replace(/</g,'&lt;')}
+function chip(e){if(e.human)return '<span class="chip human">转人工</span>';if(e.needs_confirm)return '<span class="chip confirm">🔒待确认</span>';if(e.draft)return '<span class="chip auto">AI已拟</span>';return ''}
+function showLogin(msg){document.getElementById('app').innerHTML=`<div class="login"><input id="u" placeholder="用户名" autocomplete="username"><input id="p" type="password" placeholder="密码" autocomplete="current-password"><div class="err" id="e">${msg||''}</div><button onclick="doLogin()" style="width:100%">登录看看板</button></div>`}
+async function doLogin(){const r=await fetch(API+'/api/db/auth-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:document.getElementById('u').value.trim(),password:document.getElementById('p').value})});const d=await r.json();if(d.token){localStorage.setItem('token',d.token);load()}else document.getElementById('e').textContent=d.message||d.error||'登录失败'}
+async function load(){const t=localStorage.getItem('token');if(!t)return showLogin();
+  let r;try{r=await fetch(API+'/api/wecom-panel',{headers:{Authorization:'Bearer '+t}})}catch(e){document.getElementById('app').textContent='网络错误';return}
+  if(r.status===401){localStorage.removeItem('token');return showLogin('登录已过期，请重新登录')}
+  const d=await r.json();const data=d.list||[];const app=document.getElementById('app');
+  document.getElementById('count').textContent=data.length?data.length+' 条':'暂无';
+  if(!data.length){app.innerHTML='<div class="empty-state">机器人还没读到消息<br>（在电脑上启动识流助手后，草稿会实时显示在这里）</div>';return}
+  app.innerHTML=data.map(e=>`<div class="row"><div class="top"><span class="name">${esc(e.chat_name)}</span><span class="type">${esc(e.chat_type||'')}</span>${chip(e)}</div>
+    <div class="msg">💬 ${esc(e.content||e.customer_msg||'')}</div>
+    <div class="draft ${e.draft?'':'empty'}">${e.draft?('🤖 '+esc(e.draft)):'（转人工，无自动草稿）'}</div>
+    <div class="foot">${e.draft&&!e.human?`<span class="delay">⏱ 拟延迟 ${e.delay_seconds||30}秒</span>`:''}${e.reason?'<span>· '+esc(e.reason)+'</span>':''}<span class="time">${e._t?new Date(e._t).toLocaleTimeString('zh-CN'):(e.time||'')}</span></div>
+    ${e.draft?`<button class="ghost" onclick="cp(this)" data-t="${encodeURIComponent(e.draft)}" style="width:100%">📋 复制草稿</button>`:''}</div>`).join('');
+}
+function cp(b){navigator.clipboard.writeText(decodeURIComponent(b.dataset.t)).then(()=>{b.textContent='✅ 已复制';setTimeout(()=>b.textContent='📋 复制草稿',1500)})}
+load();setInterval(()=>{ if(localStorage.getItem('token')) load(); },6000);
+</script></body></html>

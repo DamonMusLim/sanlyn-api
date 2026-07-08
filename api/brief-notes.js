@@ -31,15 +31,6 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "GET") {
-    // [0709] 只读view-key:微信卡片"查看详情"免登录(key在.env,不配=不开)
-    const vk = process.env.BRIEF_VIEW_KEY || "";
-    if (vk && req.query.k === vk) {
-      const id = parseInt(req.query.id, 10);
-      if (!id) return res.status(400).json({ success: false, error: "id required" });
-      const r = await pool.query("SELECT id, kind, title, content, created_at FROM brief_notes WHERE id=$1", [id]);
-      if (!r.rows[0]) return res.status(404).json({ success: false, error: "not found" });
-      return res.json({ success: true, note: r.rows[0] });
-    }
     const user = extractUser(req);
     if (!user) return res.status(401).json({ error: "Unauthorized", message: "请先登录" });
     if (user.role !== "admin") return res.status(403).json({ error: "Forbidden", message: "仅管理员可看" });

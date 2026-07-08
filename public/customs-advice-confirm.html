@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sanlyn OS · 报关归类建议确认</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;background:#f3f4f6;color:#111827;font-size:13px;line-height:1.45}
+.bar{background:#171b22;color:#f8fafc;padding:0 18px;position:sticky;top:0;z-index:10;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.bar-inner{max-width:980px;margin:0 auto;display:flex;align-items:center;gap:16px;height:48px}
+.brand{font-weight:800;letter-spacing:1px}.badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:800;border:1px solid #d1d5db;background:#f9fafb;color:#374151}
+.badge-rec{background:#dbeafe;color:#1d4ed8;border-color:#bfdbfe}.badge-ok{background:#dcfce7;color:#15803d;border-color:#bbf7d0}.badge-warn{background:#fee2e2;color:#b91c1c;border-color:#fecaca}
+.shell{max-width:980px;margin:0 auto;padding:18px 14px 32px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05);margin-bottom:14px}
+.head{padding:16px;border-bottom:1px solid #eef0f3;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.title{font-size:18px;font-weight:900;color:#111827}.sub{margin-top:4px;color:#6b7280;font-size:12px}
+.options{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.opt{border:2px solid #e5e7eb;border-radius:8px;background:#fff;overflow:hidden;cursor:pointer;position:relative}.opt.selected{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.12)}.opt.disabled{cursor:default}
+.opt-h{padding:12px 14px;background:#f8fafc;border-bottom:1px solid #e5e7eb;display:flex;gap:8px;align-items:center;justify-content:space-between}.opt-title{font-size:14px;font-weight:900}
+.radio{width:18px;height:18px;accent-color:#1a73e8;flex-shrink:0}.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}.t{width:100%;min-width:760px;border-collapse:collapse;font-size:12px}.t th{background:#f9fafb;color:#374151;font-weight:800;text-align:left;border:1px solid #e5e7eb;padding:7px}.t td{border:1px solid #eef0f3;padding:7px;vertical-align:top}.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.name{min-width:120px;font-weight:700}.risk{padding:10px 14px;color:#b91c1c;background:#fff7f7;border-top:1px solid #fecaca;font-weight:700}
+.confirm{padding:14px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.check{display:flex;gap:9px;align-items:flex-start;max-width:680px;color:#374151;font-weight:700}.check input{margin-top:2px;width:17px;height:17px;accent-color:#1a73e8;flex-shrink:0}
+.btn{border:none;border-radius:7px;padding:10px 20px;font-size:13px;font-weight:900;cursor:pointer;background:#1a73e8;color:#fff}.btn:disabled{opacity:.45;cursor:not-allowed}.state{text-align:center;padding:80px 18px;color:#6b7280}.state h2{font-size:18px;color:#111827;margin-bottom:8px}.hidden{display:none!important}.readonly{padding:14px 16px;background:#f0fdf4;color:#166534;font-weight:800;border-top:1px solid #bbf7d0}
+@media (max-width:640px){.bar-inner{height:44px}.shell{padding:12px 10px 24px}.head{display:block}.title{font-size:16px}.confirm{display:block}.btn{width:100%;margin-top:12px}.options{grid-template-columns:1fr}.t{font-size:11px}}
+</style>
+</head>
+<body>
+<div class="bar"><div class="bar-inner"><div class="brand">SANLYN OS</div><div style="margin-left:auto;color:#9ca3af;font-size:11px;">客户确认外链</div></div></div>
+<div id="loading" class="state"><h2>正在加载</h2><p>请稍候…</p></div>
+<div id="error" class="state hidden"><h2>链接失效，请联系业务员</h2><p id="errorText">未找到建议书或链接已过期。</p></div>
+<main id="app" class="shell hidden">
+  <section class="card">
+    <div class="head">
+      <div><div class="title" id="companyName">—</div><div class="sub" id="adviceNo">建议书号：—</div></div>
+      <span class="badge" id="statusBadge">待确认</span>
+    </div>
+    <div id="readonly" class="readonly hidden"></div>
+  </section>
+  <section class="options" id="options"></section>
+  <section class="card" id="confirmBox">
+    <div class="confirm">
+      <label class="check"><input type="checkbox" id="riskAck"><span>我已知晓风险提示，选择该方案的申报责任由我司承担</span></label>
+      <button class="btn" id="submitBtn" disabled>确认选择</button>
+    </div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const token=new URLSearchParams(location.search).get("token")||"";
+let advice=null, selected="";
+function esc(v){return String(v??"").replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[s]))}
+function fmt(v){return v===null||v===undefined||v===""?"—":esc(v)}
+function isConfirmed(){return advice&&advice.status==="confirmed"}
+function money(v){return v===null||v===undefined||v===""?"—":Number(v).toLocaleString("zh-CN",{maximumFractionDigits:2})}
+function updateButton(){ $("submitBtn").disabled=!selected||!$("riskAck").checked||isConfirmed() }
+function render(){
+  $("companyName").textContent=advice.company_name||advice.company_code||"—";
+  $("adviceNo").textContent="建议书号："+(advice.advice_no||"—");
+  $("statusBadge").textContent=isConfirmed()?"已确认":"待确认";
+  $("statusBadge").className="badge "+(isConfirmed()?"badge-ok":"");
+  if(isConfirmed()){
+    $("readonly").classList.remove("hidden");
+    $("readonly").textContent="已确认方案："+advice.chosen+(advice.confirmed_at?"，确认时间："+new Date(advice.confirmed_at).toLocaleString("zh-CN"):"");
+    $("confirmBox").classList.add("hidden");
+    selected=advice.chosen;
+  }
+  $("options").innerHTML=(advice.options||[]).map(o=>optionHtml(o)).join("");
+  document.querySelectorAll(".opt").forEach(el=>{
+    el.onclick=()=>{
+      if(isConfirmed())return;
+      selected=el.dataset.option;
+      document.querySelectorAll(".opt").forEach(x=>x.classList.toggle("selected",x.dataset.option===selected));
+      document.querySelectorAll(".radio").forEach(x=>x.checked=x.value===selected);
+      updateButton();
+    };
+  });
+  updateButton();
+}
+function optionHtml(o){
+  const rec=o.option===advice.recommended;
+  const chosen=o.option===selected;
+  const rows=(o.items||[]).map(i=>`<tr><td class="name">${fmt(i.name)}</td><td>${fmt(i.hs)}</td><td class="num">${fmt(i.ctns)}</td><td class="num">${fmt(i.qty)}</td><td class="num">${fmt(i.gw)}</td><td class="num">${fmt(i.nw)}</td><td class="num">${fmt(i.cbm)}</td><td class="num">${money(i.amount)}</td></tr>`).join("");
+  return `<article class="opt ${chosen?"selected":""} ${isConfirmed()?"disabled":""}" data-option="${esc(o.option)}">
+    <div class="opt-h"><div style="display:flex;align-items:center;gap:8px;"><input class="radio" type="radio" name="option" value="${esc(o.option)}" ${chosen?"checked":""} ${isConfirmed()?"disabled":""}><div class="opt-title">${fmt(o.label||o.option)}</div></div>${rec?'<span class="badge badge-rec">推荐</span>':""}</div>
+    <div class="scroll"><table class="t"><thead><tr><th>品名</th><th>HS</th><th>箱数</th><th>数量</th><th>毛重</th><th>净重</th><th>CBM</th><th>金额</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${o.risk_note?`<div class="risk">${fmt(o.risk_note)}</div>`:""}
+  </article>`;
+}
+async function load(){
+  if(!token)return showError("缺少 token");
+  try{
+    const r=await fetch("/api/public/customs-advice/"+encodeURIComponent(token));
+    if(!r.ok)return showError(r.status===410?"链接已过期":"链接不存在");
+    advice=await r.json();
+    selected=advice.chosen||"";
+    $("loading").classList.add("hidden");$("app").classList.remove("hidden");render();
+  }catch(e){showError("网络异常，请联系业务员")}
+}
+function showError(msg){$("loading").classList.add("hidden");$("app").classList.add("hidden");$("error").classList.remove("hidden");$("errorText").textContent=msg}
+$("riskAck").onchange=updateButton;
+$("submitBtn").onclick=async()=>{
+  if(!selected||!$("riskAck").checked)return;
+  $("submitBtn").disabled=true;$("submitBtn").textContent="提交中…";
+  const r=await fetch("/api/public/customs-advice/"+encodeURIComponent(token),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({chosen:selected,risk_ack:true})});
+  if(r.status===409){await load();return}
+  if(!r.ok){alert("提交失败，请联系业务员");$("submitBtn").textContent="确认选择";updateButton();return}
+  const data=await r.json();
+  advice.status="confirmed";advice.chosen=data.data.chosen;advice.confirmed_at=data.data.confirmed_at;render();
+};
+load();
+</script>
+</body>
+</html>
+

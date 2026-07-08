@@ -7,18 +7,6 @@
 // the response. For now we cross-check fields we already have in `orders.raw`.
 import { getPool, setCors } from "../db.js";
 import { extractUser } from "../auth.js";
-import { getCanonicalDoc } from "./canonical-doc.js";
-
-function _canonicalDocInput(docType, docId, contractNo) {
-  const t = String(docType || "").toLowerCase();
-  if (t === "iv" || t === "invoice" || t === "freight_invoice") {
-    return { doc_type: "freight_invoice", business_key_type: "order_id", business_key: String(contractNo || docId || "") };
-  }
-  if (t === "customs_decl" || t === "customs_declaration" || t === "cd") {
-    return { doc_type: "customs_declaration", business_key_type: "cy_no", business_key: String(contractNo || docId || "").replace(/^(CY|SO):/i, "") };
-  }
-  return null;
-}
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
@@ -77,11 +65,8 @@ export default async function handler(req, res) {
       order = o.rows[0] || null;
     }
 
-    const canonicalInput = _canonicalDocInput(docType, docId, contractNo);
-    const canonical = canonicalInput ? await getCanonicalDoc(pool, canonicalInput).catch(() => null) : null;
-
     // Run rules → list of findings
-    const findings = _runRules({ docType, contractNo, order, canonical });
+    const findings = _runRules({ docType, contractNo, order });
     const status = _statusFromFindings(findings);
     const passed = findings.filter((f) => f.level === "ok").length;
     const total = findings.length;
@@ -106,7 +91,6 @@ export default async function handler(req, res) {
       data: {
         status,
         findings,
-        canonical,
         passed,
         total,
         reviewedAt: ins.rows[0].reviewed_at,
@@ -123,18 +107,9 @@ export default async function handler(req, res) {
 // Rules engine — v1 stub. Real check logic to be expanded.
 // Each rule returns { level: 'high'|'mid'|'low'|'ok', text }
 // ═══════════════════════════════════════════════════════════
-function _runRules({ docType, contractNo, order, canonical }) {
+function _runRules({ docType, contractNo, order }) {
   const out = [];
   const raw = (order && order.raw) || {};
-
-  if (canonical && canonical.status === "locked") {
-    out.push({
-      level: "ok",
-      text: `Canonical doc locked: v${canonical.version || "?"}${canonical.locked_at ? ` @ ${canonical.locked_at}` : ""}`,
-    });
-  } else if (canonical && canonical.status === "no_canonical") {
-    out.push({ level: "mid", text: "当前仅为草稿非定版，不可作为最终单据依据" });
-  }
 
   // Rule 1 — order exists in DB
   if (!order) {
