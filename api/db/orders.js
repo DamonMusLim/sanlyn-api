@@ -152,7 +152,7 @@ function checkComplianceException(row, requester) {
 
 // ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
 const PATCH_ALLOWED_COLS = [
-  "order_no","company_code","company_name_en","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
+  "order_no","company_code","company_name_en","status","etd","pol","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
   // Order totals — auto-derived from raw.products on save (compute-at-write, then docs/list read the stored value) (2026-05-22)
   "total_qty","net_weight","gross_weight","total_cbm",
   // Buyer + commercial refs editable from the order detail Deal section (2026-05-22)
