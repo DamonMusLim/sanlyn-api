@@ -184,6 +184,7 @@ mount("/api/tasks-closure", () => import("./api/tasks-closure.js"));
 mount("/api/db/test-fixture-login", () => import("./api/db/test-fixture-login.js"));
 mount("/api/db/admin",             () => import("./api/db/admin.js"));
 mount("/api/db/accounts",          () => import("./api/db/accounts.js"));
+mount("/api/db/share-link",        () => import("./api/db/share-link.js"));
 mount("/api/db/analytics",         () => import("./api/db/analytics.js"));
 mount("/api/db/audit-log",         () => import("./api/db/audit-log.js"));
 mount("/api/db/bl-control",        () => import("./api/db/bl-control.js"));
