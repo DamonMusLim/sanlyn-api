@@ -68,13 +68,13 @@ table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--li
         </div>
         <div class="form-row two" style="margin-top:10px">
           <div class="form-group"><label class="form-label">引用类型</label><input class="form-input" id="mv-ref-type" value="manual"></div>
-          <div class="form-group"><label class="form-label">引用编号</label><input class="form-input" id="mv-ref-id" placeholder="如订单号/送货单号"></div>
+          <div class="form-group"><label class="form-label">客户端幂等键</label><input class="form-input" id="mv-ref-id" readonly></div>
         </div>
         <div class="form-row two" style="margin-top:10px">
           <div class="form-group"><label class="form-label">经手人</label><input class="form-input" id="mv-operator"></div>
           <div class="form-group"><label class="form-label">备注</label><input class="form-input" id="mv-note"></div>
         </div>
-        <button class="btn btn-success" style="width:100%;margin-top:12px" onclick="submitMove()">确认登记</button>
+        <button class="btn btn-success" id="mv-submit" style="width:100%;margin-top:12px" onclick="submitMove()">确认登记</button>
       </div>
       <div class="card">
         <div class="section-title">新增 SKU 库存</div>
@@ -83,10 +83,7 @@ table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--li
           <div class="form-group"><label class="form-label">仓库 ID</label><input class="form-input" id="new-warehouse" value="1"></div>
           <div class="form-group"><label class="form-label">单位</label><input class="form-input" id="new-unit" placeholder="默认取产品单位"></div>
         </div>
-        <div class="form-row two" style="margin-top:10px">
-          <div class="form-group"><label class="form-label">当前库存</label><input class="form-input" type="number" id="new-stock" step="0.001" value="0"></div>
-          <div class="form-group"><label class="form-label">安全库存</label><input class="form-input" type="number" id="new-safety" step="0.001" value="0"></div>
-        </div>
+        <div class="form-group" style="margin-top:10px"><label class="form-label">安全库存</label><input class="form-input" type="number" id="new-safety" step="0.001" value="0"></div>
         <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="createInventory()">新增</button>
       </div>
     </div>
@@ -114,6 +111,7 @@ table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--li
 <div class="toast" id="toast"></div>
 <script>
 let rows = [];
+let moveRefId = crypto.randomUUID();
 const api = (url, opts={}) => fetch(url, {credentials:"include", headers:{"Content-Type":"application/json"}, ...opts}).then(r => r.json());
 const qs = id => document.getElementById(id);
 const fmt = v => v === null || v === undefined || v === "" ? "—" : v;
@@ -125,6 +123,7 @@ function switchTab(tab){
   if(tab==="logs") loadLogs();
 }
 function params(obj){ const p=new URLSearchParams(); Object.entries(obj).forEach(([k,v])=>{ if(v) p.set(k,v); }); return p.toString(); }
+function showMoveRefId(){ qs("mv-ref-id").value = moveRefId; }
 async function loadInventory(){
   const query = params({sku:qs("q-sku").value, warehouse_id:qs("q-warehouse").value, low_stock:qs("q-low").value});
   const r = await api("/api/db/finished-goods" + (query ? "?" + query : ""));
@@ -141,10 +140,11 @@ function renderInventory(){
     return `<tr class="${low ? "low" : ""}">
       <td class="mono">${r.sku}</td><td>${fmt(r.product_name_cn || r.product_name)}</td>
       <td>${fmt(r.warehouse_name)} <span class="muted mono">#${r.warehouse_id}</span></td><td>${fmt(r.unit)}</td>
-      <td><input class="form-input num" type="number" step="0.001" id="stock-${r.id}" value="${r.current_stock}"></td>
+      <td class="mono">${num(r.current_stock)}</td>
       <td><input class="form-input num" type="number" step="0.001" id="safe-${r.id}" value="${r.safety_stock}"></td>
       <td class="muted">${r.last_move_at ? new Date(r.last_move_at).toLocaleString() : "—"}</td>
-      <td><button class="btn btn-sm" onclick="saveStock(${r.id})">保存</button>
+      <td><button class="btn btn-sm" onclick="adjustStock(${r.id})">调整</button>
+      <button class="btn btn-sm" onclick="saveStock(${r.id})">保存安全库存</button>
       <button class="btn btn-sm btn-danger" onclick="deleteInventory(${r.id})">删除</button></td></tr>`;
   }).join("");
 }
@@ -152,9 +152,25 @@ function fillMoveOptions(){
   qs("mv-inventory").innerHTML = rows.map(r => `<option value="${r.id}">${r.sku} · ${fmt(r.warehouse_name)} · ${num(r.current_stock)} ${fmt(r.unit)}</option>`).join("");
 }
 async function saveStock(id){
-  const body = {id, current_stock:qs("stock-"+id).value, safety_stock:qs("safe-"+id).value};
+  const body = {id, safety_stock:qs("safe-"+id).value};
   const r = await api("/api/db/finished-goods", {method:"PATCH", body:JSON.stringify(body)});
   toast(r.success ? "已保存" : r.error); if(r.success) loadInventory();
+}
+async function adjustStock(id){
+  const row = rows.find(r => Number(r.id) === Number(id));
+  if(!row) return toast("库存记录不存在");
+  const input = prompt("输入目标库存，或输入 +10 / -5 表示增减", row.current_stock);
+  if(input === null) return;
+  const text = input.trim();
+  const isDelta = /^[+-]/.test(text);
+  const value = Number(text);
+  if(!Number.isFinite(value)) return toast("请输入有效数量");
+  if(isDelta && !value) return toast("库存未变化");
+  if(!isDelta && value === Number(row.current_stock || 0)) return toast("库存未变化");
+  const body = {inventory_id:id, type:"adjust", ref_type:"manual", ref_id:crypto.randomUUID(), note:isDelta ? "库存增减调整" : "库存目标调整"};
+  if(isDelta) body.quantity = value; else body.target_stock = value;
+  const r = await api("/api/db/finished-goods-move", {method:"POST", body:JSON.stringify(body)});
+  toast(r.success ? "已调整，库存 " + num(r.after_stock) : r.error); if(r.success) loadInventory();
 }
 async function deleteInventory(id){
   if(!confirm("确认删除这条库存记录？")) return;
@@ -163,15 +179,22 @@ async function deleteInventory(id){
 }
 function openCreate(){ switchTab("move"); qs("new-sku").focus(); }
 async function createInventory(){
-  const body = {sku:qs("new-sku").value.trim(), warehouse_id:qs("new-warehouse").value || 1, unit:qs("new-unit").value || undefined, current_stock:qs("new-stock").value || 0, safety_stock:qs("new-safety").value || 0};
+  const body = {sku:qs("new-sku").value.trim(), warehouse_id:qs("new-warehouse").value || 1, unit:qs("new-unit").value || undefined, safety_stock:qs("new-safety").value || 0};
   const r = await api("/api/db/finished-goods", {method:"POST", body:JSON.stringify(body)});
   toast(r.success ? "已新增" : r.error); if(r.success){ await loadInventory(); switchTab("inventory"); }
 }
 async function submitMove(){
-  const body = {inventory_id:qs("mv-inventory").value, type:qs("mv-type").value, quantity:qs("mv-qty").value, delivery_date:qs("mv-date").value || null, ref_type:qs("mv-ref-type").value || "manual", ref_id:qs("mv-ref-id").value || undefined, operator:qs("mv-operator").value || null, note:qs("mv-note").value || null};
-  const r = await api("/api/db/finished-goods-move", {method:"POST", body:JSON.stringify(body)});
-  toast(r.success ? "已登记，库存 " + num(r.after_stock) : r.error);
-  if(r.success){ qs("mv-qty").value=""; qs("mv-note").value=""; qs("mv-ref-id").value=""; await loadInventory(); }
+  const btn = qs("mv-submit");
+  if(btn.disabled) return;
+  btn.disabled = true;
+  const body = {inventory_id:qs("mv-inventory").value, type:qs("mv-type").value, quantity:qs("mv-qty").value, delivery_date:qs("mv-date").value || null, ref_type:qs("mv-ref-type").value || "manual", ref_id:moveRefId, operator:qs("mv-operator").value || null, note:qs("mv-note").value || null};
+  try {
+    const r = await api("/api/db/finished-goods-move", {method:"POST", body:JSON.stringify(body)});
+    toast(r.success ? "已登记，库存 " + num(r.after_stock) : r.error);
+    if(r.success){ moveRefId = crypto.randomUUID(); showMoveRefId(); qs("mv-qty").value=""; qs("mv-note").value=""; await loadInventory(); }
+  } finally {
+    btn.disabled = false;
+  }
 }
 async function loadLogs(){
   const query = params({sku:qs("log-sku").value, type:qs("log-type").value, date_from:qs("log-from").value, date_to:qs("log-to").value});
@@ -186,6 +209,7 @@ async function loadLogs(){
     <td>${fmt(l.delivery_date ? l.delivery_date.slice(0,10) : "")}</td><td>${fmt(l.operator)}</td><td>${fmt(l.note)}</td>
   </tr>`).join("");
 }
+showMoveRefId();
 loadInventory();
 </script>
 </body>

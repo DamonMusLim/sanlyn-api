@@ -36,6 +36,16 @@ async function lockInventory(client, b) {
   return r.rows[0];
 }
 
+async function findExistingLog(client, { refType, refId, sku, warehouseId }) {
+  if (!refType || !refId) return null;
+  const r = await client.query(
+    `SELECT * FROM inventory_logs
+     WHERE ref_type=$1 AND ref_id=$2 AND sku=$3 AND warehouse_id=$4`,
+    [refType, refId, sku, warehouseId]
+  );
+  return r.rows[0] || null;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -43,17 +53,21 @@ export default async function handler(req, res) {
 
   const pool = getPool();
   const b = req.body || {};
-  if (!b.type || b.quantity === undefined) {
-    return res.status(400).json({ success: false, error: "type, quantity required" });
+  if (!b.type) {
+    return res.status(400).json({ success: false, error: "type required" });
   }
   if (!["in","out","adjust"].includes(b.type)) {
     return res.status(400).json({ success: false, error: "type must be: in/out/adjust" });
+  }
+  const hasTargetStock = b.type === "adjust" && b.target_stock !== undefined;
+  if (b.quantity === undefined && !hasTargetStock) {
+    return res.status(400).json({ success: false, error: "quantity required" });
   }
   if (!b.inventory_id && !b.sku && !b.product_id) {
     return res.status(400).json({ success: false, error: "inventory_id or sku/product_id required" });
   }
   const inputQty = Number(b.quantity);
-  if (!Number.isFinite(inputQty) || inputQty === 0) {
+  if (!hasTargetStock && (!Number.isFinite(inputQty) || inputQty === 0)) {
     return res.status(400).json({ success: false, error: "quantity must be non-zero number" });
   }
 
@@ -63,9 +77,31 @@ export default async function handler(req, res) {
     const inv = await lockInventory(client, b);
     if (!inv) { await client.query("ROLLBACK"); return res.status(404).json({ success: false, error: "Inventory or product not found" }); }
 
+    const refType = b.ref_type || "manual";
+    const refId = b.ref_id === undefined ? makeRefId() : b.ref_id;
+    const existingLog = await findExistingLog(client, {
+      refType,
+      refId,
+      sku: inv.sku,
+      warehouseId: inv.warehouse_id
+    });
+    if (existingLog) {
+      await client.query("COMMIT");
+      return res.status(200).json({ success: true, data: existingLog, after_stock: existingLog.after_stock, idempotent: true });
+    }
+
     const before = Number(inv.current_stock);
     const qtyAbs = Math.abs(inputQty);
-    const signedQty = b.type === "in" ? qtyAbs : b.type === "out" ? -qtyAbs : inputQty;
+    const targetStock = Number(b.target_stock);
+    if (hasTargetStock && !Number.isFinite(targetStock)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ success: false, error: "target_stock must be number" });
+    }
+    const signedQty = b.type === "in" ? qtyAbs : b.type === "out" ? -qtyAbs : hasTargetStock ? targetStock - before : inputQty;
+    if (signedQty === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ success: false, error: "quantity must be non-zero number" });
+    }
     const after = before + signedQty;
     if (after < 0) {
       await client.query("ROLLBACK");
@@ -86,7 +122,7 @@ export default async function handler(req, res) {
        RETURNING *`,
       [
         inv.product_id, inv.sku, b.type, signedQty, b.unit || inv.unit || null,
-        before, after, b.ref_type || "manual", b.ref_id || makeRefId(),
+        before, after, refType, refId,
         inv.warehouse_id, b.factory_code || inv.factory_code || null,
         b.delivery_date || null, b.note || b.notes || null, b.operator || null
       ]

@@ -63,18 +63,23 @@ export default async function handler(req, res) {
         `INSERT INTO finished_goods_inventory
           (product_id, sku, unit, current_stock, safety_stock, factory_code, warehouse_id)
          VALUES($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (sku, warehouse_id) DO UPDATE SET
+           safety_stock = EXCLUDED.safety_stock,
+           unit = EXCLUDED.unit,
+           factory_code = EXCLUDED.factory_code,
+           updated_at = NOW()
          RETURNING *`,
         [
           product.id,
           b.sku || product.sku,
           b.unit || product.unit || null,
-          b.current_stock || 0,
+          0,
           b.safety_stock || 0,
           b.factory_code || product.factory_code || null,
           warehouseId
         ]
       );
-      return res.status(201).json({ success: true, data: r.rows[0] });
+      return res.status(200).json({ success: true, data: r.rows[0] });
     } catch (e) {
       return res.status(500).json({ success: false, error: e.message });
     }
@@ -84,7 +89,7 @@ export default async function handler(req, res) {
     try {
       const { id, ...fields } = req.body || {};
       if (!id) return res.status(400).json({ success: false, error: "id required" });
-      const allowed = ["product_id","sku","unit","current_stock","safety_stock","factory_code","warehouse_id","last_move_at"];
+      const allowed = ["unit","safety_stock","factory_code","warehouse_id"];
       const setClauses = [], params = [];
       for (const [k, v] of Object.entries(fields)) {
         if (!allowed.includes(k)) continue;
@@ -110,6 +115,18 @@ export default async function handler(req, res) {
     try {
       const id = req.query.id || req.body?.id;
       if (!id) return res.status(400).json({ success: false, error: "id required" });
+      const inv = await pool.query(
+        "SELECT sku, warehouse_id FROM finished_goods_inventory WHERE id=$1",
+        [id]
+      );
+      if (!inv.rows.length) return res.status(404).json({ success: false, error: "Inventory not found" });
+      const hasLogs = await pool.query(
+        "SELECT 1 FROM inventory_logs WHERE sku=$1 AND warehouse_id=$2 LIMIT 1",
+        [inv.rows[0].sku, inv.rows[0].warehouse_id]
+      );
+      if (hasLogs.rows.length) {
+        return res.status(409).json({ success: false, error: "有流水不可删,请用adjust清零" });
+      }
       await pool.query("DELETE FROM finished_goods_inventory WHERE id=$1", [id]);
       return res.status(200).json({ success: true });
     } catch (e) {
