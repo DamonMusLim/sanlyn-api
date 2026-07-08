@@ -112,7 +112,8 @@ table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--li
 <script>
 let rows = [];
 let moveRefId = crypto.randomUUID();
-const api = (url, opts={}) => fetch(url, {credentials:"include", headers:{"Content-Type":"application/json"}, ...opts}).then(r => r.json());
+const authTok = () => new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+const api = (url, opts={}) => fetch(url, {credentials:"include", headers:{"Content-Type":"application/json", ...(authTok() ? {Authorization:"Bearer "+authTok()} : {})}, ...opts}).then(r => r.json());
 const qs = id => document.getElementById(id);
 const fmt = v => v === null || v === undefined || v === "" ? "—" : v;
 const num = v => Number(v || 0).toLocaleString("zh-CN", {maximumFractionDigits:3});
