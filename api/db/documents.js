@@ -1784,7 +1784,7 @@ export default async function handler(req, res) {
     // ── PDF export (format=pdf) — puppeteer renders HTML → PDF buffer ────────
     if(format==="pdf"){
       try{
-        var puppeteer=(await import("puppeteer")).default;
+        var puppeteer=(await import("puppeteer-core")).default;
         // Prefer system Chrome (lighter than Puppeteer's bundled Chromium).
         // /usr/bin/google-chrome is installed on the API server; env override for other hosts.
         var chromePath=process.env.CHROME_PATH||process.env.PUPPETEER_EXECUTABLE_PATH||"/usr/bin/google-chrome";
