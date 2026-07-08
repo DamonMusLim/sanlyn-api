@@ -19,6 +19,7 @@ import { renderCreditNote } from "./credit-note-doc.js"; // 贷记单 CN 独立�
 import { htmlToPdf } from "./_html-to-pdf.js"; // format=pdf 真PDF渲染 2026-06-28
 import { renderPureFreightDoc } from "./doc-pure-freight.js";
 import { renderPurePortChargeDoc } from "./doc-pure-portcharge.js";
+import { loadContainerWeightSources, resolveContainerGrossWeight, scaleGrossWeightsToContainer } from "./customs-weight-source.js";
 
 // ── W0-3 customer-facing scrub ────────────────────────────────────────────────
 // Memory rule (HARD): feedback_customer_code_anti_counterfeit.md
@@ -37,7 +38,7 @@ import { scrubCustomerFacingHtml, loadSellerCfg, enrichProdsFromMaster,
 var FORWARDERS = {
   default: {
     nameCN: "上海洋宝宝国际物流有限公司", nameEN: "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.",
-    bank: { accountName: "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.", bankName: "BANK OF CHINA XIAMEN BRANCH", swift: "BKCHCNBI73A", bankAddr: "No. 40 North Hubin Road, Xiamen", usdAccount: "433849630299", cnyAccount: "433849860868" },
+    bank: { accountName: "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.", bankName: "BANK OF CHINA XIAMEN BRANCH", swift: "BKCHCNBJ73A", bankAddr: "No. 40 North Hubin Road, Xiamen", usdAccount: "433849630299", cnyAccount: "433849860868" },
     contact: "Damon", email: "damon@petbaby.cc",
   },
 };
@@ -431,7 +432,16 @@ export default async function handler(req, res) {
       //   • 产品就是 product_name（PL 客户版/IV/SC/PI 客户版 用）
       //   • 报关合并 = declaration_name（"宠物食品"/"宠物玩具"等）+ hs_code 去重
       // ────────────────────────────────────────────────────────────────────
+      var _customsWeightSource = null;
       if (audience === "customs" && type !== "po") {
+        try {
+          _customsWeightSource = await loadContainerWeightSources(pool, {
+            blNo: pick(o.bl_no, raw.blNo, raw.bl_no, _spBl),
+            orderNos: _mergedPOs.concat([o.order_no]).filter(Boolean),
+            contractNos: _mergedCnos.concat([o.contract_no]).filter(Boolean),
+          });
+        } catch(e) { console.warn("[documents] customs gross weight source lookup failed:",e.message); }
+
         // Per damon 2026-05-18: customs doesn't split by sub-contract — one
         // consolidated table per BL. Strip _groupKey so sibling orders merge.
         prods = prods.map(function(p){ return Object.assign({}, p, { _groupKey: "" }); });
@@ -457,6 +467,21 @@ export default async function handler(req, res) {
         // W0-5: track lines whose declaration_name is missing so we can fail
         // the request when audience===customs (review fix #4) — see check below.
         var _missingDecl = [];
+        if (_customsWeightSource) {
+          var _gwGroups = {};
+          prods.forEach(function(p){
+            var key = p._containerNo || _customsWeightSource.containerFor({ contractNo: p._contractNo, orderNo: p._contractNo }) || p._contractNo || "";
+            (_gwGroups[key] || (_gwGroups[key] = [])).push(p);
+          });
+          Object.keys(_gwGroups).forEach(function(k){
+            var rows = _gwGroups[k], oli = rows.map(function(p){ return Number(p.grossWeight||p.gw||0) * Number(p.qty||0); });
+            var oliSum = oli.reduce(function(s,v){ return s + v; }, 0);
+            var first = rows[0] || {};
+            var measured = _customsWeightSource.measuredFor({ containerNo: first._containerNo, contractNo: first._contractNo, orderNo: first._contractNo });
+            var scaled = scaleGrossWeightsToContainer(oli, resolveContainerGrossWeight(measured, oliSum), oliSum);
+            rows.forEach(function(p,i){ p._customsGrossTotal = scaled[i]; });
+          });
+        }
         prods.forEach(function(p){
           var sku = p.sku || p.code || p.product_code || "";
           var meta = skuMeta[sku] || {};
@@ -486,7 +511,7 @@ export default async function handler(req, res) {
           var g = groups[key];
           g.qty       += Number(p.qty || 0);
           g.subtotal  += Number(p.subtotal || (Number(p.qty||0) * Number(resolveUnitPrice(p)||0)) || 0);
-          g.grossWeight += Number(p.grossWeight||p.gw||0) * Number(p.qty||0);
+          g.grossWeight += Number(p._customsGrossTotal != null ? p._customsGrossTotal : Number(p.grossWeight||p.gw||0) * Number(p.qty||0));
           g.netWeight   += Number(p.netWeight  ||p.nw||0) * Number(p.qty||0);
           g._cbmTot     += Number(p.cbmPerCtn||p.cbm_per_ctn||p.cbm||0) * Number(p.qty||0);
           g._aggCount += 1;
@@ -547,7 +572,7 @@ export default async function handler(req, res) {
             var name=_decl(li), key=name;
             if(!groups[key]){ groups[key]={cp:[],name:name,qty:0,nw:0,gw:0,cbm:0,amt:0}; order.push(key); }
             var g=groups[key], up=_n(li.unit_price||li.unitPrice), amt=_n(li.subtotal); if(!amt) amt=q*up;
-            g.cp.push(_cp(li)); g.qty+=q; g.nw+=_n(li.nw_ctn||li.net_weight)*q; g.gw+=_n(li.gw_ctn||li.gross_weight)*q; g.cbm+=_n(li.cbm_ctn||li.cbm)*q; g.amt+=amt;
+            g.cp.push(_cp(li)); g.qty+=q; g.nw+=_n(li.nw_ctn||li.net_weight)*q; g.gw+=_n(li._packCustomsGrossTotal!=null?li._packCustomsGrossTotal:_lineGrossTotal(li)); g.cbm+=_n(li.cbm_ctn||li.cbm)*q; g.amt+=amt;
           });
           return order.map(function(k){ var g=groups[k]; return {cp:_uniqJoin(g.cp),name:g.name,qty:g.qty,nw:g.nw,gw:g.gw,cbm:g.cbm,price:g.qty?g.amt/g.qty:0,amt:g.amt}; });
         }
@@ -567,6 +592,27 @@ export default async function handler(req, res) {
           var want=_normCno(containerNo);
           if(!want)return true;
           return _orderContainers(orow,ctnMap).some(function(c){return _normCno(c&&c.container_no)===want;});
+        }
+        function _lineGrossTotal(li){
+          return _n(li.gw_ctn||li.gross_weight)*_n(li.qty_ctn||li.qty);
+        }
+        function _applyCustomsGrossScale(lines,orderById){
+          if(!_customsMode || !_customsWeightSource)return;
+          var groups={},order=[];
+          (lines||[]).forEach(function(li){
+            var orow=orderById[String(li.order_id||"")]||{};
+            var cno=_customsWeightSource.containerFor({orderNo:orow.order_no,contractNo:orow.contract_no});
+            var key=cno||orow.contract_no||orow.order_no||String(li.order_id||"");
+            if(!groups[key]){ groups[key]={containerNo:cno,orderNo:orow.order_no,contractNo:orow.contract_no,lines:[]}; order.push(key); }
+            groups[key].lines.push(li);
+          });
+          order.forEach(function(k){
+            var g=groups[k], oli=g.lines.map(_lineGrossTotal);
+            var oliSum=oli.reduce(function(s,v){return s+v;},0);
+            var measured=_customsWeightSource.measuredFor({containerNo:g.containerNo,orderNo:g.orderNo,contractNo:g.contractNo});
+            var scaled=scaleGrossWeightsToContainer(oli,resolveContainerGrossWeight(measured,oliSum),oliSum);
+            g.lines.forEach(function(li,i){ li._packCustomsGrossTotal=scaled[i]; });
+          });
         }
         function _detailRows(orderRows,lines,ctnMap){
           var byOrder={};
@@ -597,6 +643,8 @@ export default async function handler(req, res) {
           var xr=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[]) OR order_no = ANY($1::text[])",[xids]);
           xr.rows.forEach(function(r){ if(!orderRows.some(function(or){return String(or.id)===String(r.id);})){ orderRows.push(r); } });
         }
+        var orderById={};
+        orderRows.forEach(function(r){ if(r&&r.id)orderById[String(r.id)]=r; });
         var orderIds=orderRows.map(function(r){return Number(r.id||r._id)||0;}).filter(Boolean);
         var lines=[];
         if(orderIds.length){
@@ -637,6 +685,7 @@ export default async function handler(req, res) {
           var keepIds={}; orderRows.forEach(function(orow){ if(orow&&orow.id)keepIds[String(orow.id)]=1; });
           lines=(lines||[]).filter(function(li){return keepIds[String(li.order_id||"")];});
         }
+        _applyCustomsGrossScale(lines,orderById);
         var rows=_customsMode?_aggregate(lines):_detailRows(orderRows,lines,ctnMap);
         var total=_tot(rows), baseNo=(ordNo||cno||id||"PACK");
         var fsNo=_uniqJoin(orderRows.map(_fsFromOrder)) || _fsFromOrder(o) || baseNo;
@@ -659,7 +708,7 @@ export default async function handler(req, res) {
       var tot=getTotal(prods,o);
       // 总箱数/总净重/总毛重：直接带订单字段表（total_qty/net_weight/gross_weight），不重算。
       var tqty=Number(o.total_qty)||prods.reduce(function(s,p){return s+Number(p.qty||0);},0)||Number(raw.totalQty||0);
-      var tgw=Number(o.gross_weight)||prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0)*Number(p.qty||0);},0)||Number(raw.grossWeight||0);
+      var tgw=(audience==="customs"?prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0);},0):(Number(o.gross_weight)||prods.reduce(function(s,p){return s+Number(p.grossWeight||p.gw||0)*Number(p.qty||0);},0)))||Number(raw.grossWeight||0);
       var tnw=Number(o.net_weight)||prods.reduce(function(s,p){return s+Number(p.netWeight||p.nw||0)*Number(p.qty||0);},0)||Number(raw.netWeight||0);
 
       // 2026-05-19: discount support — read raw.discounts[] {label, amount} and netAmount
@@ -1073,7 +1122,7 @@ export default async function handler(req, res) {
                     // Prefer order-table totals if available (more authoritative)
                     var totQty = Number(o.total_qty)||grandQty;
                     var totNW = Number(o.net_weight)||grandNW;
-                    var totGW = Number(o.gross_weight)||grandGW;
+                    var totGW = audience==="customs" ? grandGW : (Number(o.gross_weight)||grandGW);
                     var totCBM = Number(o.total_cbm)||grandCBM;
                     rows += v2SummaryRow("v2-total", "GRAND TOTAL:", cols, {
                       qty: v2QtyUnit(totQty,"CTN"),
@@ -1322,7 +1371,7 @@ export default async function handler(req, res) {
 	            var n = pick(p.productName, p.name, p.description, "-");
 	            var sz = p.size || p.spec || "";
 	            return sz ? n + " (" + sz + ")" : n;
-	          }},{k:"qty",fn:function(p){return _plQtyUnit(p.qty,_plDetailXlsx?_plUnitOf(p):"CTN");}}]).concat(_plDetailXlsx?[]:[{k:"unit",fn:function(p){return p.unit||p.unitOfMeasure||"CTN";}}]).concat([{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat((pg*q||pg).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}]),
+	          }},{k:"qty",fn:function(p){return _plQtyUnit(p.qty,_plDetailXlsx?_plUnitOf(p):"CTN");}}]).concat(_plDetailXlsx?[]:[{k:"unit",fn:function(p){return p.unit||p.unitOfMeasure||"CTN";}}]).concat([{k:"nw",fn:function(p){var pn=Number(p.netWeight||p.nw||0);var q=Number(p.qty||0);return parseFloat((pn*q||pn).toFixed(2))||0;}},{k:"gw",fn:function(p){var pg=Number(p.grossWeight||p.gw||0);var q=Number(p.qty||0);return parseFloat(((audience==='customs')?pg:(pg*q||pg)).toFixed(2))||0;}},{k:"cbm",fn:function(p){return parseFloat(cbmOf(p).toFixed(3))||0;}}]),
 	          rows:prods,totals:_plDetailXlsx?["","","GRAND TOTAL:",_plQtyUnit(tqty,"CTN"),parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]:["","","GRAND TOTAL:",_plQtyUnit(tqty,"CTN"),"",parseFloat(tnw.toFixed(2)),parseFloat(tgw.toFixed(2)),parseFloat(tcbmPL.toFixed(3))]};
         if(_PACK && format==="xlsx"){
           _xlsCapture=await _buildPackXlsCaptureFromOLI();

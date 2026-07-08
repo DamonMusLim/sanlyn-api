@@ -36,6 +36,7 @@
 // }
 
 import { getPool, setCors } from "../db.js";
+import { isMeasuredSuspicious, loadContainerWeightSources, resolveContainerGrossWeight, scaleGrossWeightsToContainer } from "./customs-weight-source.js";
 
 // 报关品名 merge map — consolidate legacy/variant names to canonical
 const MERGE_MAP = {
@@ -108,6 +109,64 @@ function finiteOrNull(v) {
 
 function roundOrNull(v, digits) {
   return v == null ? null : parseFloat(Number(v).toFixed(digits));
+}
+
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function fmtNum(v, digits = 2) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(digits).replace(/\.?0+$/, "") : "";
+}
+
+function renderCustomsPdfHtml(data) {
+  const rows = (data.lines || []).map((r, i) =>
+    '<tr>'
+    + '<td class="c">' + (i + 1) + '</td>'
+    + '<td><b>' + esc(r.declaration_name || '') + '</b><br><span>' + esc(r.declaration_name_en || '') + '</span></td>'
+    + '<td>' + esc(r.hs_code || '') + '</td>'
+    + '<td>' + esc(r.declaration_elements || '') + '</td>'
+    + '<td>' + esc(r.sizes || '') + '</td>'
+    + '<td>' + esc(r.origin_country || 'China') + '</td>'
+    + '<td>' + esc((r.cities || []).join(' / ')) + '</td>'
+    + '<td class="r">' + fmtNum(r.ctn, 0) + '</td>'
+    + '<td class="r">' + fmtNum(r.min_unit_qty, 0) + '</td>'
+    + '<td class="r">' + fmtNum(r.nw_kg, 2) + '</td>'
+    + '<td class="r">' + fmtNum(r.gw_kg, 2) + '</td>'
+    + '<td class="r">' + fmtNum(r.cbm, 4) + '</td>'
+    + '<td class="r">' + fmtNum(r.declared_amount, 2) + '</td>'
+    + '</tr>').join('');
+  const t = data.totals || {};
+  const missing = [
+    ...(data.missing_skus || []).map(s => 'SKU missing master: ' + s),
+    ...(data.missing_weight || []).map(s => 'SKU missing weight: ' + s),
+    ...(data.missing_declaration_name || []).map(s => 'SKU missing declaration_name: ' + s),
+  ];
+  const missingHtml = missing.length ? '<div class="warn"><b>Missing fields:</b><br>' + missing.map(esc).join('<br>') + '</div>' : '';
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Customs Declaration Elements</title>'
+    + '<style>*{box-sizing:border-box}body{font-family:Arial,"Noto Sans SC",sans-serif;color:#111;margin:0;padding:18px;background:#fff}'
+    + 'h1{font-size:20px;margin:0 0 6px;text-align:center;letter-spacing:0}'
+    + '.meta{font-size:11px;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0 12px}'
+    + '.meta div{border:1px solid #bbb;padding:6px;min-height:28px}.label{color:#666;font-size:9px;text-transform:uppercase}'
+    + 'table{width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed}th,td{border:1px solid #999;padding:4px;vertical-align:top;word-break:break-word}'
+    + 'th{background:#eee;text-align:center}.r{text-align:right}.c{text-align:center}span{font-size:8px;color:#555}'
+    + '.warn{margin-top:10px;border:1px solid #d97706;background:#fff7ed;padding:8px;font-size:10px}.foot{margin-top:8px;font-size:9px;color:#666}'
+    + '</style></head><body><h1>Customs Declaration Elements</h1>'
+    + '<div class="meta"><div><div class="label">BL No.</div>' + esc(data.bl_no || '') + '</div>'
+    + '<div><div class="label">Orders</div>' + esc((data.orders_included || []).join(' / ')) + '</div>'
+    + '<div><div class="label">Generated At</div>' + esc(data.generated_at || '') + '</div>'
+    + '<div><div class="label">Declared Amount</div>' + fmtNum(t.declared_amount, 2) + '</div></div>'
+    + '<table><thead><tr><th style="width:22px">#</th><th style="width:92px">Name / English</th><th style="width:58px">HS</th>'
+    + '<th style="width:135px">Elements</th><th style="width:72px">Spec</th><th style="width:42px">Origin</th><th style="width:58px">City</th>'
+    + '<th style="width:36px">CTN</th><th style="width:48px">Qty</th><th style="width:45px">NW</th><th style="width:45px">GW</th><th style="width:45px">CBM</th><th style="width:58px">Declared</th></tr></thead>'
+    + '<tbody>' + rows + '</tbody><tfoot><tr><th colspan="7">TOTAL</th><th class="r">' + fmtNum(t.ctn, 0) + '</th><th class="r">' + fmtNum(t.min_unit_qty, 0) + '</th>'
+    + '<th class="r">' + fmtNum(t.nw_kg, 2) + '</th><th class="r">' + fmtNum(t.gw_kg, 2) + '</th><th class="r">' + fmtNum(t.cbm, 4) + '</th><th class="r">' + fmtNum(t.declared_amount, 2) + '</th></tr></tfoot></table>'
+    + missingHtml
+    + '<div class="foot">Declared amount is generated from system customs declaration values. Official filing amount must match the original customs declaration document.</div>'
+    + '</body></html>';
 }
 
 function sumOrdersSnapshot(orders) {
@@ -411,6 +470,26 @@ export default async function handler(req, res) {
       );
       for (const r of _liRows) { (liByOrder[r.order_id] = liByOrder[r.order_id] || []).push(r); }
     }
+
+    // 按柜拆报关单:BL→柜映射(container_bookings.contract_no 存的是 order_no)
+    const cbMap = {};
+    let weightSource = null;
+    try {
+      const _blForCb = bl_no || (orders && orders[0] && orders[0].bl_no) || null;
+      weightSource = await loadContainerWeightSources(pool, {
+        blNo: _blForCb,
+        orderNos: orders.map(o => o.order_no).filter(Boolean),
+        contractNos: orders.map(o => o.contract_no).filter(Boolean),
+      });
+      if (_blForCb) {
+        const { rows: _cbRows } = await pool.query(
+          "SELECT contract_no, container_no FROM container_bookings WHERE bl_no = $1 AND container_no IS NOT NULL",
+          [_blForCb]
+        );
+        for (const _cb of _cbRows) { if (_cb.contract_no) cbMap[String(_cb.contract_no).trim()] = _cb.container_no; }
+      }
+    } catch (_e) { /* 无柜信息→cbMap空→按柜拆不生效,行为不变 */ }
+
     // ── 2. Expand all line items, collect SKUs ─────────────────────────────
     const rawLines = [];
     const allSkus = new Set();
@@ -558,6 +637,7 @@ export default async function handler(req, res) {
       // 出单公司(境内发货人)=报关单边界(Damon 2026-06-04):出单公司不同才算独立报关单。
       const issuingCompany = line.issuing_company || null;
       const contractNo    = line.contract_no    || null;
+      const containerNo = cbMap[String(line.order_no || "").trim()] || cbMap[String(contractNo || "").trim()] || null;
 
       // 报关按工厂拆(Damon铁律 feedback_customs_split_by_factory_show_city:
       // 同HS两厂必拆,不跨厂合并)。bucket key = 报关品名 + 工厂(无则城市兜底);
@@ -573,6 +653,7 @@ export default async function handler(req, res) {
         contractNo || factory || city || "",     // 3. FS contract > factory > city
         needsQuarantine ? "Q" : "",              // 4. quarantine flag
         // << slot 5+ : add new split dimensions here >>
+        containerNo || "",                       // 5. container (按柜拆报关单;无柜信息=空,不影响分组)
       ];
       const key = _keySegs.join("");
 
@@ -622,6 +703,8 @@ export default async function handler(req, res) {
           declaration_name: declNameFinal,
           declaration_name_en: declNameEnFinal,
           issuing_company:      issuingCompany,
+          container_no:         containerNo,
+          contract_no:          contractNo,
           hs_code:              hsFinal,
           declaration_elements: elemFinal,
           legal_unit_1:         legalU1,
@@ -678,7 +761,7 @@ export default async function handler(req, res) {
     }
 
     // ── 5. Shape output ───────────────────────────────────────────────────
-    const lines = Object.values(buckets)
+    let lines = Object.values(buckets)
       .map(b => {
         const nameList = Object.keys(b._nameNw);
         if (nameList.length > 1) {
@@ -694,6 +777,8 @@ export default async function handler(req, res) {
         declaration_name_en:  b.declaration_name_en || null,
         merged_names:         b.merged_names || null,
         issuing_company:      b.issuing_company || null,
+        container_no:         b.container_no || null,
+        contract_no:          b.contract_no || null,
         sizes:                [...b._sizes].join(" / "),   // e.g. "70G X 72/CTN / 80G X 24/CTN / 400G X 24/CTN"
         hs_code:              b.hs_code,
         declaration_elements: b.declaration_elements,
@@ -716,6 +801,32 @@ export default async function handler(req, res) {
         customer_amount:      parseFloat(b.customer_amount.toFixed(2)),
       }))
       .sort((a, b) => b.ctn - a.ctn);
+
+    const weightWarnings = [];
+    if (weightSource) {
+      const byContainer = {};
+      for (const line of lines) {
+        const key = line.container_no || weightSource.containerFor({ contractNo: line.contract_no }) || "";
+        (byContainer[key] = byContainer[key] || []).push(line);
+      }
+      for (const group of Object.values(byContainer)) {
+        const oliValues = group.map(r => Number(r.gw_kg) || 0);
+        const oliSum = oliValues.reduce((s, v) => s + v, 0);
+        const first = group[0] || {};
+        const measured = weightSource.measuredFor({ containerNo: first.container_no, contractNo: first.contract_no });
+        if (isMeasuredSuspicious(measured, oliSum)) {
+          weightWarnings.push({
+            container_no: first.container_no || weightSource.containerFor({ contractNo: first.contract_no }) || null,
+            contract_no: first.contract_no || null,
+            measured: parseFloat(Number(measured).toFixed(2)),
+            oli: parseFloat(Number(oliSum).toFixed(2)),
+            ratio: oliSum > 0 ? parseFloat((Number(measured) / oliSum).toFixed(4)) : null,
+          });
+        }
+        const scaled = scaleGrossWeightsToContainer(oliValues, resolveContainerGrossWeight(measured, oliSum), oliSum);
+        group.forEach((r, i) => { r.gw_kg = scaled[i]; });
+      }
+    }
 
     const totals = lines.reduce(
       (acc, r) => ({
@@ -744,19 +855,32 @@ export default async function handler(req, res) {
       });
     }
 
-    return res.status(200).json({
+    const result = {
       success:          true,
       bl_no:            bl_no || null,
       lines,
       totals,
       cross_check:      crossCheck,
+      weight_warnings:  weightWarnings,
       orders_included:  orders.map(o => o.order_no || o.contract_no).filter(Boolean),
       missing_skus:     missingSkus,
       missing_weight:   [...missingWeightSkus],
       missing_declaration_name: [...missingDeclSkus], // W0-5
       missing_fields:   missingDeclSkus.size ? ["declaration_name"] : [],
       generated_at:     new Date().toISOString(),
-    });
+    };
+
+    if (String(req.query.format || "").toLowerCase() === "pdf") {
+      const { htmlToPdf } = await import("./_html-to-pdf.js");
+      const pdf = await htmlToPdf(renderCustomsPdfHtml(result));
+      const ref = bl_no || shipment_id || contract_nos || "customs";
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", 'attachment; filename="Sanlyn-Customs-Elements-' + String(ref).replace(/[^A-Za-z0-9_.-]/g, "_") + '.pdf"');
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).send(pdf);
+    }
+
+    return res.status(200).json(result);
 
   } catch (err) {
     console.error("[customs-consolidated]", err);
