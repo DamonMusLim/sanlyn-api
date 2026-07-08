@@ -31,7 +31,7 @@ import { loadContainerWeightSources, resolveContainerGrossWeight, scaleGrossWeig
 // boxes (订单明细锁定规矩 order_detail_locked_and_shipping_fields).
 import { CSS, esc, fmtM, fmtD, pick, resolveAddr, resolveUnitPrice, wrap, sellerNamePx,
   docHdr, buyerBlock, portBar, bankCard, termsCard, sigBlock, productRows, getProds,
-  getTotal } from "./doc-helpers.js";
+  getCanonicalProds, getTotal } from "./doc-helpers.js";
 import { scrubCustomerFacingHtml, loadSellerCfg, enrichProdsFromMaster,
   loadDocColConfig, buildColsFromConfig } from "./doc-data.js";
 
@@ -297,8 +297,11 @@ export default async function handler(req, res) {
       var pol=pick(raw.pol,raw.portOfLoading,_spPol,_facPol,"-");
       var pod=pick(raw.destination,raw.pod,raw.destinationPort,_spPod,"-");
       var inco=pick(raw.tradeTerms,raw.incoterms,"FOB");
-      var prods=await enrichProdsFromMaster(pool,getProds(raw));
-      // HIGH-1: if raw.products empty, fall back to order_line_items table
+      // SSOT (2026-07-09): read canonical top-level orders.products (same source as the
+      // front-end doc-editor), inheriting rich fields from the raw.products snapshot by SKU.
+      // Fixes stale/partial raw.products (dropped rows + wrong prices, e.g. 40-DG-2).
+      var prods=await enrichProdsFromMaster(pool,getCanonicalProds(o,raw));
+      // HIGH-1: if products empty, fall back to order_line_items table
       if(!prods.length && (o.id||o._id)){
         try{
           var liR=await pool.query("SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[o.id||o._id]);

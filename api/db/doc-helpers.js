@@ -85,6 +85,34 @@ export function productRows(prods,cols){
 }
 
 export function getProds(raw){return Array.isArray(raw.products)?raw.products:Array.isArray(raw.items)?raw.items:[];}
+// getCanonicalProds — SINGLE SOURCE OF TRUTH for document line items.
+// 2026-07-09: server-side exports (documents/export-pdf/export-excel) were reading the
+// stale `raw.products` snapshot (often fewer rows + outdated prices, e.g. 40-DG-2 showed
+// 2 rows @ wrong price instead of 3 @ correct selling price). The canonical array is the
+// TOP-LEVEL orders.products column — exactly what the front-end doc-editor reads
+// (o.products). This aligns all outputs to one source.
+//   • Item SET + qty + selling price/subtotal  ← top-level o.products (authoritative)
+//   • rich fields (hs_code, declaration_*, weights, cbm, factoryPrice) missing from the
+//     lean canonical array are inherited from the raw.products snapshot BY SKU/barcode
+//     (so PO factory pricing etc. are preserved — no regression). Rows only present in the
+//     canonical array (the previously-dropped ones) fall through to enrichProdsFromMaster.
+//   • Legacy orders with no top-level column fall back to raw.products / raw.items.
+export function getCanonicalProds(o, raw){
+  raw = raw || {};
+  var top = (o && Array.isArray(o.products)) ? o.products : null;
+  if(!top && o && typeof o.products === "string"){ try{ var _p=JSON.parse(o.products); if(Array.isArray(_p)) top=_p; }catch(e){} }
+  var rawList = Array.isArray(raw.products) ? raw.products : (Array.isArray(raw.items) ? raw.items : []);
+  if(!Array.isArray(top) || !top.length) return rawList; // legacy: no canonical column
+  var bySku = {};
+  rawList.forEach(function(p){ if(!p) return; if(p.sku) bySku[p.sku]=p; if(p.barcode) bySku[p.barcode]=p; if(p.code) bySku[p.code]=p; });
+  return top.map(function(p){
+    if(!p) return p;
+    var base = (p.sku && bySku[p.sku]) || ((p.barcode||p.code) && bySku[p.barcode||p.code]) || null;
+    // Canonical wins for every key it defines (name/qty/unitPrice/subtotal); inherit the
+    // rest (hs_code, declaration_*, weights, cbm, factoryPrice, ...) from the snapshot.
+    return base ? Object.assign({}, base, p) : p;
+  });
+}
 export function getTotal(prods,order){return prods.reduce(function(s,p){var sub=Number(p.subtotal||p.amount||0);if(!sub&&p.qty)sub=Number(p.qty)*Number(resolveUnitPrice(p));return s+sub;},0)||Number(order.total_amount)||0;}
 
 // ── enrichProdsFromMaster ────────────────────────────────────────────────────
