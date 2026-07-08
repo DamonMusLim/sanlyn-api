@@ -1050,7 +1050,7 @@ async function handleFactorySubmit(req, res, pool) {
      RETURNING freight_term, trucking_arrange, customs_arrange, factory_cargo_ready`,
     [effectiveReady, container_type || null, cargo_type || null, remarks || null, planId,
      factoryCargo ? JSON.stringify(factoryCargo) : null,
-     ["FOB","EXW","FCA","CIF","DDP","CNF"].includes(req.body.freight_term) ? req.body.freight_term : null,
+     ["FOB","CIF","CFR","CNF","EXW","DDP","FCA","CPT","CIP","DAP","DPU"].includes(req.body.freight_term) ? req.body.freight_term : null,
      ["agent","babi","factory","self"].includes(req.body.trucking_arrange) ? req.body.trucking_arrange : null,
      ["agent","babi","factory","self"].includes(req.body.customs_arrange) ? req.body.customs_arrange : null,
      (req.body.attrs && typeof req.body.attrs === "object" && !Array.isArray(req.body.attrs))
@@ -1135,7 +1135,7 @@ async function handleCustomerSubmit(req, res, pool) {
       selected_sailing.voyage || null,
       selected_sailing.etd    || null,
       planId,
-      ["FOB","EXW","FCA","CIF","DDP","CNF"].includes((req.body||{}).freight_term) ? req.body.freight_term : null,
+      ["FOB","CIF","CFR","CNF","EXW","DDP","FCA","CPT","CIP","DAP","DPU"].includes((req.body||{}).freight_term) ? req.body.freight_term : null,
     ]
   );
 
@@ -1478,7 +1478,7 @@ async function handleCustomerNotes(req, res, pool) {
   for (const [k, v] of Object.entries(notes).slice(0, 50)) {
     clean[String(k).slice(0, 64)] = String(v == null ? "" : v).slice(0, 500);
   }
-  const ft = ["FOB","EXW","FCA","CIF","DDP","CNF"].includes(req.body.freight_term)
+  const ft = ["FOB","CIF","CFR","CNF","EXW","DDP","FCA","CPT","CIP","DAP","DPU"].includes(req.body.freight_term)
     ? req.body.freight_term : null;
   const { rows: upd } = await pool.query(
     `UPDATE shipping_plans
