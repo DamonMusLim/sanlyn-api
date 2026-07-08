@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- pgcrypto 不需要: 只用 gen_random_uuid(), PG13+ 内核自带; tencent PG15.16 无 contrib 装不了 extension (2026-07-09)
 
 CREATE TABLE IF NOT EXISTS canonical_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
