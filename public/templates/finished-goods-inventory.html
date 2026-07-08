@@ -101,7 +101,7 @@ table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--li
     </div>
     <div class="card table-wrap">
       <table>
-        <thead><tr><th>时间</th><th>SKU</th><th>类型</th><th>数量</th><th>库存</th><th>仓库</th><th>交货日期</th><th>经手人</th><th>备注</th></tr></thead>
+        <thead><tr><th>时间</th><th>SKU</th><th>品名</th><th>类型</th><th>数量</th><th>库存</th><th>仓库</th><th>交货日期</th><th>经手人</th><th>备注</th></tr></thead>
         <tbody id="logs-body"></tbody>
       </table>
       <div class="empty" id="logs-empty" style="display:none">暂无流水</div>
@@ -203,7 +203,7 @@ async function loadLogs(){
   const logs = r.data || [];
   qs("logs-empty").style.display = logs.length ? "none" : "block";
   qs("logs-body").innerHTML = logs.map(l => `<tr>
-    <td>${new Date(l.at).toLocaleString()}</td><td class="mono">${l.sku}</td>
+    <td>${new Date(l.at).toLocaleString()}</td><td class="mono">${l.sku}</td><td>${fmt(l.product_name_cn||l.product_name)}</td>
     <td><span class="badge ${l.type}">${l.type}</span></td><td>${num(l.quantity)} ${fmt(l.unit)}</td>
     <td>${num(l.before_stock)} → ${num(l.after_stock)}</td><td>${fmt(l.warehouse_name)} #${l.warehouse_id}</td>
     <td>${fmt(l.delivery_date ? l.delivery_date.slice(0,10) : "")}</td><td>${fmt(l.operator)}</td><td>${fmt(l.note)}</td>
