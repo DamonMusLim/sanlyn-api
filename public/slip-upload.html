@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>水单 / 入账通知上传</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:#f1f5f9; margin:0; padding:24px 16px; color:#1a1a2e; }
+  .card { max-width: 480px; margin: 0 auto; background:#fff; border-radius: 12px; padding: 24px; box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { font-size: 13px; color: #64748b; margin-bottom: 20px; }
+  .drop { display: block; border: 2px dashed #cbd5e1; border-radius: 10px; padding: 32px 16px; text-align: center; cursor: pointer; transition: .15s; }
+  .drop.over { border-color: #1e3a8a; background: #eff6ff; }
+  .drop input { display: none; }
+  .drop .hint { color: #64748b; font-size: 13px; margin-top: 6px; }
+  .fname { margin-top: 12px; font-size: 13px; font-weight: 600; word-break: break-all; }
+  textarea { width: 100%; margin-top: 12px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 44px; }
+  button { width: 100%; margin-top: 14px; padding: 12px; border: none; border-radius: 8px; background: #1e3a8a; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+  .result { margin-top: 16px; padding: 12px 14px; border-radius: 8px; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+  .result.ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+  .result.dup { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; }
+  .result.err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  .review { max-width: 720px; margin: 18px auto 0; background:#fff; border-radius:12px; padding:20px; box-shadow:0 4px 24px rgba(0,0,0,.08); display:none; }
+  .review h2 { font-size:17px; margin:0 0 12px; }
+  .token { max-width:720px; margin:18px auto 0; background:#fff; border-radius:12px; padding:16px 20px; box-shadow:0 4px 24px rgba(0,0,0,.08); }
+  input[type="text"], input[type="password"], input[type="number"] { width:100%; border:1px solid #e2e8f0; border-radius:8px; padding:9px 10px; font-size:13px; font-family:inherit; }
+  .customer-search { display:none; margin-top:12px; border:1px solid #e2e8f0; border-radius:8px; padding:10px; background:#f8fafc; }
+  .customer-search .row { display:grid; grid-template-columns:1fr 88px; gap:8px; margin-top:8px; }
+  .customer-search button { margin-top:0; padding:9px 10px; font-size:13px; }
+  .customer-list { margin-top:8px; }
+  .source-tag { display:inline-block; margin-left:6px; padding:1px 5px; border-radius:999px; background:#dbeafe; color:#1e40af; font-size:11px; font-weight:600; }
+  .grid { display:grid; grid-template-columns: 120px 1fr; gap:8px 12px; font-size:13px; margin:12px 0; }
+  .label { color:#64748b; }
+  .candidate { display:flex; gap:10px; align-items:flex-start; border:1px solid #e2e8f0; border-radius:8px; padding:10px; margin-top:8px; }
+  .candidate input { margin-top:3px; }
+  .candidate-body { flex:1; min-width:0; }
+  .candidate strong { display:block; font-size:13px; }
+  .alloc-amount { margin-top:8px; }
+  .alloc-amount:disabled { background:#f8fafc; color:#94a3b8; }
+  .alloc-hint { margin-top:8px; color:#b45309; font-size:12px; line-height:1.5; }
+  .muted { color:#64748b; font-size:12px; line-height:1.5; }
+  .actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .secondary { background:#64748b; }
+  .compare { border:1px solid #cbd5e1; background:#f8fafc; border-radius:8px; padding:10px; font-size:13px; line-height:1.6; }
+  .compare b { color:#0f172a; }
+  .audit { margin-top:14px; border-radius:8px; padding:12px; font-size:13px; line-height:1.6; }
+  .audit.high { background:#fff1f2; border:1px solid #fda4af; color:#7f1d1d; }
+  .audit.medium { background:#fffbeb; border:1px solid #fde68a; color:#78350f; }
+  .audit ul { margin:8px 0 0; padding-left:18px; }
+</style></head>
+<body>
+<div class="card">
+  <h1>💧 水单 / 入账通知上传</h1>
+  <div class="sub">支持 PDF / PNG / JPG，最大15MB。上传后系统自动识别金额、汇款人、匹配订单。</div>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple>
+    <div>📎 点击选择文件，或拖拽到此处</div>
+    <div class="hint">支持 PDF / PNG / JPG / WEBP</div>
+    <div class="fname" id="fname"></div>
+  </label>
+
+  <textarea id="note" placeholder="备注（选填，例如：洋宝宝7月海运费）"></textarea>
+  <div class="customer-search" id="customerSearch">
+    <div class="muted">这笔钱是哪一票？（可选，帮我们更快确认）</div>
+    <div class="row">
+      <input type="text" id="customerQ" placeholder="搜 CY号 / 合同号 / 订单号 / BL">
+      <button id="customerSearchBtn" type="button">搜索</button>
+    </div>
+    <div class="customer-list" id="customerList"></div>
+  </div>
+  <button id="submit" disabled>上传</button>
+  <div id="result"></div>
+</div>
+<div class="token" id="staffToken">
+  <input type="password" id="jwt" placeholder="粘贴内部 JWT token 后查看/确认 OCR 结果">
+  <div class="muted" style="margin-top:8px">确认入库和驳回需要登录态。token 只保存在当前浏览器本页。</div>
+</div>
+<div class="review" id="review"></div>
+
+<script src="/public/slip-upload-manual.js"></script>
+<script src="/public/slip-upload-page.js"></script>
+</body></html>
