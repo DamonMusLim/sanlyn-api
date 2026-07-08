@@ -622,6 +622,7 @@ mount("/api/db/packaging",             () => import("./api/db/packaging.js"));
 mount("/api/db/packaging-move",        () => import("./api/db/packaging-move.js"));
 mount("/api/db/packaging-logs",        () => import("./api/db/packaging-logs.js"));
 mount("/api/db/packaging-consume",  () => import("./api/db/packaging-consume.js"));
+mount("/api/db/factory-bags",          () => import("./api/db/factory-bags.js"));
 mount("/api/db/finished-goods",        () => import("./api/db/finished-goods.js"));
 mount("/api/db/finished-goods-move",   () => import("./api/db/finished-goods-move.js"));
 mount("/api/db/finished-goods-logs",   () => import("./api/db/finished-goods-logs.js"));
