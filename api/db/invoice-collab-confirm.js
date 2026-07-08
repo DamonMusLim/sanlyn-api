@@ -273,7 +273,9 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     ? containers.filter(c => c.type && Number(c.count)).map(c => `${Number(c.count)}×${c.type}`).join(" + ")
     : containerSummary(sp);
   return {
+    is_internal: Boolean(ctx.internal),
     status: saved?.status || "draft",
+    confirmed_at: saved?.confirmed_at || null,
     shipment: {
       shipment_no: sp.shipment_no || "",
       bl_no: bl,
@@ -339,7 +341,7 @@ async function handleGet(req, res, pool, ctx) {
   const { buyer, seller } = await partiesForView(pool, sp, ctx);
   const ref = invoiceRef(ctx);
   const saved = await pool.query(
-    `SELECT status, payload, updated_at FROM invoice_collab_confirm_overrides
+    `SELECT status, payload, confirmed_at, updated_at FROM invoice_collab_confirm_overrides
       WHERE ref=$1 AND kind=$2 LIMIT 1`,
     [ref, KIND]
   );
