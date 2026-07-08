@@ -169,28 +169,42 @@ function init(){
       var c=cs.find(function(x){return x.name_cn===primary.factory;})||cs[0];
       if(c){setText('sellerName',c.name_cn||'');setText('sellerTaxNo',c.tax_id||c.tax_no||'');setText('sellerBank',c.bank_name||'');setText('sellerAccount',c.bank_account||'');}
     }).catch(function(){});
-    // ── 产品+价格：全部取 orders 主表 products 字段（camelCase 真值列）────
+    // ── 产品+价格：优先 order_line_items（有 product_name），降级到 orders.products ────
     var allOrders=[primary].concat(results.slice(1).map(function(r){return r[0];}).filter(Boolean));
-    var html='',rowIdx=1;
-    allOrders.forEach(function(order){
-      if(!order)return;
-      if(order!==primary){appendText('orderNo',order.order_no||'');}
-      // FS 多合同条件筛选：按本订单 contract_no 取它自己的产品行
-      var prods=(order.products||(order.raw&&order.raw.products)||[]).filter(function(p){return p&&(p.name||p.name_en||p.name_cn);});
-      if(!prods.length)return;
-      html+=makeGroupRow('单号 '+(order.order_no||order.contract_no||'')); // FS合同号只在顶部显示一次,组内不重复
-      prods.forEach(function(p){
-        var name=p.name||p.name_en||p.name_cn||'';if(p.size)name+=' ('+p.size+')';
-        var qty=parseFloat(p.qty||p.qty_ctn||0)||0;
-        var bg=parseFloat(p.bgBx||p.bg_bx||1)||1;
-        var ctnP=parseFloat(p.factoryPrice||p.unitPrice||p.factory_price||p.unit_price||0)||0; // 采购合同=工厂价
-        var perB=bg?ctnP/bg:ctnP;
-        var amt=parseFloat(p.factorySubtotal||p.subtotal||(qty*ctnP))||0;
-        html+=makeProductRow(('0'+(rowIdx++)).slice(-2),name,qty,perB.toFixed(2),ctnP.toFixed(2),amt.toFixed(2),p.barcode||p.code||p.ean||'');
+    return Promise.all(allOrders.map(function(o){
+      if(!o||!o.id)return Promise.resolve(null);
+      return fetch(API+'/api/db/order-line-items?order_id='+encodeURIComponent(o.id),{headers:authH()})
+        .then(function(r){return r.ok?r.json():null;}).catch(function(){return null;});
+    })).then(function(oliResults){
+      var html='',rowIdx=1;
+      allOrders.forEach(function(order,idx){
+        if(!order)return;
+        if(order!==primary){appendText('orderNo',order.order_no||'');}
+        var oli=oliResults[idx];
+        var oliRows=oli&&Array.isArray(oli.data)?oli.data:[];
+        var validOliRows=oliRows.filter(function(r){return r&&String(r.product_name||'').trim();});
+        var prods;
+        if(validOliRows.length){
+          prods=validOliRows.map(function(r){return{name:r.product_name||'',qty:r.qty_ctn,bgBx:r.bg_bx||1,factoryPrice:r.factory_price||r.unit_price||0,factorySubtotal:r.factory_subtotal,subtotal:r.subtotal,barcode:r.barcode||'',size:r.size||''};});
+        }else{
+          prods=(order.products||(order.raw&&order.raw.products)||[]).filter(function(p){return p&&(p.name||p.name_en||p.name_cn||p.sku);});
+        }
+        if(!prods.length)return;
+        html+=makeGroupRow('单号 '+(order.order_no||order.contract_no||''));
+        prods.forEach(function(p){
+          var name=p.name||p.name_en||p.name_cn||p.sku||'';if(p.size)name+=' ('+p.size+')';
+          var qty=parseFloat(p.qty||p.qty_ctn||0)||0;
+          var bg=parseFloat(p.bgBx||p.bg_bx||1)||1;
+          var ctnP=parseFloat(p.factoryPrice||p.unitPrice||p.factory_price||p.unit_price||0)||0;
+          var perB=bg?ctnP/bg:ctnP;
+          var amtSource=p.factorySubtotal!=null&&p.factorySubtotal!==''?p.factorySubtotal:(p.subtotal!=null&&p.subtotal!==''?p.subtotal:null);
+          var amt=amtSource!=null?(parseFloat(amtSource)||0):(qty*ctnP);
+          html+=makeProductRow(('0'+(rowIdx++)).slice(-2),name,qty,perB.toFixed(2),ctnP.toFixed(2),amt.toFixed(2),p.barcode||p.code||p.ean||'');
+        });
       });
+      document.getElementById('poBody').innerHTML=html||'<tr><td colspan="8" style="text-align:center;padding:12px;color:#64748b;border:1px solid #bbb">无产品数据，可点击"＋加产品行"手动添加</td></tr>';
+      recalcTotals();hideBanner();setTimeout(handleHashAction,300);
     });
-    document.getElementById('poBody').innerHTML=html||'<tr><td colspan="8" style="text-align:center;padding:12px;color:#64748b;border:1px solid #bbb">无产品数据，可点击"＋加产品行"手动添加</td></tr>';
-    recalcTotals();hideBanner();
   }).catch(function(e){showBanner('err',e.message);});
   ['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem('po_seal_'+w)||'null');if(s&&s.url)applySeal(w,s.url,s.name);}catch(e){}});
 }
@@ -231,7 +245,7 @@ function downloadPng(){
   btn.textContent='⏳ 生成中…';btn.disabled=true;
   document.querySelector('.toolbar').style.display='none';
   var script=document.createElement('script');
-  script.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  script.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js';
   script.onload=function(){
     html2canvas(document.getElementById('printPage'),{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false}).then(function(canvas){
       document.querySelector('.toolbar').style.display='';
@@ -244,4 +258,24 @@ function downloadPng(){
 function showBanner(type,msg){['infoBanner','errBanner','okBanner'].forEach(function(id){document.getElementById(id).style.display='none';});var m={info:'infoBanner',err:'errBanner',ok:'okBanner'};var el=document.getElementById(m[type]);if(el){el.textContent=(type==='err'?'⚠ ':'')+msg;el.style.display='block';}}
 function hideBanner(){['infoBanner','errBanner','okBanner'].forEach(function(id){document.getElementById(id).style.display='none';});}
 
+function exportExcel(){
+  var btn=document.querySelector('.btn-excel');if(btn){btn.textContent='生成中...';btn.disabled=true;}
+  function reset(){if(btn){btn.textContent='下载Excel';btn.disabled=false;}}
+  function run(){try{
+    var g=function(id){var e=document.getElementById(id);return e?e.textContent.trim():'';};
+    var aoa=[['采购合同 PURCHASE ORDER'],['买方',g('buyerName'),'卖方',g('sellerName')],['单号',g('orderNo'),'合同号',g('contractNo'),'日期',g('orderDate')],[]];
+    var heads=[].map.call(document.querySelectorAll('table thead th'),function(t){return t.textContent.replace(/\s+/g,' ').trim();}).filter(function(x){return x;});
+    aoa.push(heads);
+    [].forEach.call(document.querySelectorAll('#poBody tr'),function(tr){
+      if(tr.classList.contains('group-header')){aoa.push([tr.textContent.trim()]);return;}
+      var cells=[].map.call(tr.querySelectorAll('td[contenteditable]'),function(td){var v=td.textContent.trim(),n=Number(v.replace(/,/g,''));return v&&/^[\d,.]+$/.test(v)?n:v;});
+      if(cells.length)aoa.push(cells);
+    });
+    var tot=document.querySelector('.total-row');if(tot)aoa.push([].map.call(tot.querySelectorAll('td:not(.no-print)'),function(td){return td.textContent.trim();}));
+    var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=heads.map(function(h,i){return {wch:i===1?36:14};});
+    XLSX.utils.book_append_sheet(wb,ws,'PO');XLSX.writeFile(wb,'PO-'+(qp('order_no')||'draft')+'.xlsx');
+  }catch(e){alert('导出失败: '+e.message);}reset();}
+  if(window.XLSX)return run();var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/xlsx.full.min.js';s.onload=run;s.onerror=function(){alert('Excel库加载失败');reset();};document.head.appendChild(s);
+}
+function handleHashAction(){var h=(location.hash||'').toLowerCase();if(h.indexOf('excel')>=0)exportExcel();else if(h.indexOf('seal')>=0||h.indexOf('stamp')>=0)openSealPicker('seller');else if(h.indexOf('print')>=0)window.print();}
 init();

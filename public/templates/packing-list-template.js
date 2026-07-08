@@ -91,16 +91,11 @@ function allSum(all,key,fallback){
   return has?s:fallback;
 }
 
-// ── 卖方盖章（点击上传 / 草稿复用，照 pi-template 简化版）──
-function applySeal(url){var img=document.getElementById('sellerSeal'),h=document.getElementById('sealHint');if(img){img.src=url;img.style.display='block';}if(h)h.style.display='none';try{localStorage.setItem('pl_seal',JSON.stringify({url:url}));}catch(e){}}
-function pickSeal(){document.getElementById('sealFile').click();}
-function onSealFile(e){var f=e.target.files[0];if(!f||!f.type.startsWith('image/'))return;var r=new FileReader();r.onload=function(ev){applySeal(ev.target.result);};r.readAsDataURL(f);e.target.value='';}
-
 function saveDraft(){try{localStorage.setItem('pl_draft_'+(qp('order_no')||'manual'),JSON.stringify({html:document.getElementById('page').innerHTML}));banner('info','✓ 草稿已保存');setTimeout(function(){banner('','');},1500);}catch(e){}}
 function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;
   document.querySelector('.toolbar').style.display='none';
-  var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js';
   s.onload=function(){html2canvas(document.getElementById('page'),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){document.querySelector('.toolbar').style.display='';var a=document.createElement('a');a.download='PL-'+(qp('order_no')||'draft')+'.png';a.href=c.toDataURL('image/png');a.click();btn.textContent='📥 下载图片';btn.disabled=false;}).catch(function(){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;});};
   if(window.html2canvas)s.onload();else document.head.appendChild(s);
 }
