@@ -175,7 +175,8 @@ function recalcAllocations(resetTouched = false) {
   });
   if (hint) {
     const rest = Math.max(0, total - allocBase);
-    hint.textContent = missingRows.length ? `其余¥${formatMoney(rest)}请手动分给缺报价的票` : '';
+    const hasCandidate = document.querySelector('.cand:checked');
+    hint.textContent = hasCandidate && missingRows.length ? `其余¥${formatMoney(rest)}请手动分给缺报价的票` : '';
   }
 }
 
