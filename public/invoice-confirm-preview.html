@@ -1,0 +1,434 @@
+<style>
+  :root{
+    --ink:#12212e; --sub:#5a6b78; --faint:#8a99a6; --line:#e2e8ee; --line2:#eef2f6;
+    --paper:#ffffff; --wash:#f6f9fb;
+    --teal:#0d7d74; --teal-wash:#e6f4f2;
+    --recv:#1f7a52; --recv-wash:#e7f4ec;
+    --pay:#a6641a; --pay-wash:#fbf0e2;
+    --cust:#2456a6; --cust-wash:#e8eefb;
+    --warn:#b23b42; --warn-wash:#fbe9ea;
+    --edit:#0d7d74;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--wash);color:var(--ink);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
+  .wrap{max-width:820px;margin:0 auto;padding:22px 18px 60px}
+  .tabs{display:flex;gap:6px;margin-bottom:16px}
+  .tab{flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper);
+    cursor:pointer;font-weight:700;font-size:13.5px;color:var(--sub);text-align:center;transition:.12s}
+  .tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .tab .s{display:block;font-weight:500;font-size:11px;margin-top:2px;opacity:.75}
+  .view{display:none}.view.on{display:block}
+
+  .sheet{background:var(--paper);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    box-shadow:0 1px 3px rgba(18,33,46,.04)}
+  .sheet-hd{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .brand{font-size:15px;font-weight:800;letter-spacing:-.01em}
+  .brand .cn{font-size:11.5px;color:var(--sub);font-weight:600;margin-top:2px}
+  .docmeta{text-align:right}
+  .doctag{font-size:17px;font-weight:800;color:var(--teal)}
+  .docno{font-size:11px;color:var(--faint);font-family:ui-monospace,monospace;margin-top:3px}
+  .badge{display:inline-block;font-size:11px;font-weight:800;padding:3px 10px;border-radius:99px;margin-top:6px}
+  .badge.pending{background:var(--pay-wash);color:var(--pay)}
+
+  .shipbar{display:flex;flex-wrap:wrap;gap:6px 18px;padding:12px 22px;background:var(--wash);
+    border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)}
+  .shipbar b{color:var(--ink);font-weight:700}
+
+  .sec{padding:16px 22px}
+  .sec-t{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin-bottom:10px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:11px;font-weight:700;color:var(--faint);padding:6px 8px;border-bottom:1px solid var(--line);letter-spacing:.02em}
+  th.r,td.r{text-align:right}
+  td{padding:8px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums}
+  td.r{font-family:ui-monospace,monospace}
+  tr:last-child td{border-bottom:none}
+  .unit{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:99px;background:var(--wash);color:var(--sub);font-weight:600}
+  .pack{background:var(--teal-wash);color:var(--teal)}
+  .foot td{border-top:2px solid var(--ink);font-weight:800;font-size:14px;padding-top:10px}
+  .note{font-size:11.5px;color:var(--teal);margin-top:8px;display:flex;gap:6px;align-items:flex-start}
+  .note i{font-style:normal}
+
+  .form{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+  .fld{display:flex;flex-direction:column;gap:4px}
+  .fld.wide{grid-column:1/-1}
+  .fld label{font-size:11px;font-weight:700;color:var(--faint)}
+  .fld .val{border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:13px;background:var(--wash);color:var(--ink);font-weight:600}
+  .fld .val.pre{border-style:dashed;border-color:var(--edit);background:var(--teal-wash);color:var(--teal);position:relative}
+  .fld .val.pre::after{content:"默认·可改";position:absolute;right:9px;top:8px;font-size:9.5px;font-weight:700;color:var(--edit);opacity:.7}
+  .fld .val.empty{color:var(--faint);font-style:italic;font-weight:500}
+
+  .actions{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--line);background:var(--wash)}
+  .btn{flex:1;padding:12px;border-radius:10px;border:none;font-size:14px;font-weight:800;cursor:pointer}
+  .btn.primary{background:var(--recv);color:#fff}
+  .btn.ghost{background:var(--paper);border:1px solid var(--line);color:var(--ink)}
+  .caption{font-size:11px;color:var(--faint);text-align:center;margin-top:14px;line-height:1.7}
+
+  .cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  @media(max-width:680px){.cards{grid-template-columns:1fr}.form{grid-template-columns:1fr}}
+  .pcard{border:1px solid var(--line);border-radius:12px;padding:14px}
+  .pcard .role{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+  .pcard .who{font-size:12.5px;font-weight:700;margin:3px 0 8px;color:var(--ink);line-height:1.35}
+  .pcard .amt{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+  .pcard .amt2{font-size:12.5px;color:var(--sub);font-variant-numeric:tabular-nums;margin-top:2px}
+  .pcard.pay{background:var(--pay-wash)}.pcard.pay .role,.pcard.pay .amt{color:var(--pay)}
+  .pcard.recv{background:var(--recv-wash)}.pcard.recv .role,.pcard.recv .amt{color:var(--recv)}
+  .pcard.cust{background:var(--cust-wash)}.pcard.cust .role,.pcard.cust .amt{color:var(--cust)}
+
+  .recon{margin-top:16px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .recon .rrow{display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr;padding:10px 14px;font-size:13px;border-bottom:1px solid var(--line2);align-items:center}
+  .recon .rrow.h{background:var(--wash);font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.03em}
+  .recon .rrow:last-child{border-bottom:none}
+  .recon .rr{text-align:right;font-variant-numeric:tabular-nums;font-family:ui-monospace,monospace}
+  .gain{color:var(--recv);font-weight:800}.loss{color:var(--warn);font-weight:800}
+  .flag{display:flex;gap:8px;align-items:flex-start;margin:14px 22px 0;padding:11px 13px;border-radius:10px;background:var(--warn-wash);font-size:12px;color:var(--warn);line-height:1.55}
+  .lockrow{display:flex;justify-content:space-between;align-items:center;margin:14px 22px 4px;padding:11px 14px;border-radius:10px;background:var(--teal-wash);font-size:12.5px;color:var(--teal)}
+  .lockrow b{font-weight:800}
+  .lockbtn{font-size:11.5px;font-weight:800;padding:5px 12px;border-radius:8px;border:1px solid var(--teal);background:var(--paper);color:var(--teal);cursor:pointer}
+  .contacts{display:flex;flex-direction:column;gap:9px}
+  .crow{display:grid;grid-template-columns:80px 1.05fr 1.5fr 1fr;gap:10px;align-items:end}
+  .crole{font-size:12.5px;font-weight:800;padding:9px 6px;border-radius:8px;text-align:center;line-height:1.15}
+  .crole span{display:block;font-size:9.5px;font-weight:600;opacity:.8;margin-top:2px}
+  .crole.fin{background:var(--recv-wash);color:var(--recv)}
+  .crole.ops{background:var(--cust-wash);color:var(--cust)}
+  .crole.buy{background:var(--pay-wash);color:var(--pay)}
+  .cf{display:flex;flex-direction:column;gap:3px}
+  .cf label{font-size:10.5px;font-weight:700;color:var(--faint)}
+  .req{color:var(--warn);font-size:9.5px;font-weight:800}
+  .val.reqempty{border-style:solid;border-color:var(--warn);background:var(--warn-wash);color:var(--warn);font-weight:700;font-style:normal}
+  @media(max-width:680px){.crow{grid-template-columns:1fr 1fr;gap:7px}.crole{grid-column:1/-1}}
+  .collapse-hd{width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:none;padding:2px 0;cursor:pointer;text-align:left}
+  .chev{font-size:12px;font-weight:800;color:var(--teal);white-space:nowrap}
+  .emrole{display:grid;grid-template-columns:128px 1fr;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line2)}
+  .emrole:last-of-type{border-bottom:none}
+  .emlabel{font-size:12.5px;font-weight:800}
+  .emlabel em{display:block;font-style:normal;font-size:10px;font-weight:600;color:var(--faint);margin-top:2px}
+  .emlabel.fin{color:var(--recv)}.emlabel.ops{color:var(--cust)}.emlabel.buy{color:var(--pay)}
+  .emlist{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  .chip-em{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:6px 10px;border-radius:8px;background:var(--recv-wash);color:var(--recv);font-weight:600}
+  .chip-em b{cursor:pointer;opacity:.6;font-weight:800}
+  .addem{font-size:11px;font-weight:700;padding:7px 11px;border-radius:8px;border:1px dashed var(--line);background:var(--paper);color:var(--sub);cursor:pointer;white-space:nowrap}
+  .sumline{font-size:12px;color:var(--sub);margin-top:8px}
+  .sumline b{font-weight:700}.sumline .miss{color:var(--warn);font-weight:800}
+  .plaininv{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:13px 15px}
+  .plaininv .pt{text-align:center;font-size:17px;font-weight:800;color:var(--ink);margin-bottom:11px;letter-spacing:1px}
+  .pparty{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+  .pp{padding:10px 13px;font-size:12.5px}.pp+.pp{border-left:1px solid var(--line)}
+  .pp .plab{font-size:10.5px;font-weight:800;color:var(--sub);margin-bottom:6px;letter-spacing:2px}
+  .pp .prow{margin:3px 0;color:var(--ink)}.pp .prow b{font-weight:700}
+  .pp .prow.tip{color:var(--teal);font-size:11px;margin-top:5px}
+  .pp .muted{color:var(--faint)}
+  .raterow{display:flex;align-items:center;gap:10px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line2);flex-wrap:wrap}
+  .raterow .rlab{font-size:12.5px;font-weight:800;color:var(--ink)}
+  .rsel{font-size:12.5px;font-weight:700;padding:7px 10px;border:1px solid var(--edit);border-radius:8px;background:var(--teal-wash);color:var(--teal);cursor:pointer}
+  .raterow .rtip{font-size:11px;color:var(--faint)}
+  .modebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .modebar .mlab{font-size:12px;font-weight:800;color:var(--ink)}
+  .mopt{font-size:12px;font-weight:700;padding:6px 14px;border-radius:99px;border:1.5px solid var(--line);background:var(--paper);color:var(--sub);cursor:pointer}
+  .mopt.on{border-color:var(--teal);background:var(--teal-wash);color:var(--teal)}
+  .modebar .mtip{font-size:11px;color:var(--faint);flex:1;min-width:170px}
+  .invtop{display:flex;justify-content:center;margin-bottom:11px}
+  .tsel{font-size:15px;font-weight:800;color:var(--ink);border:1px solid var(--edit);border-radius:6px;padding:3px 7px;background:var(--teal-wash);cursor:pointer;font-family:inherit}
+  .linebar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px;padding-top:11px;border-top:1px solid var(--line2);font-size:12.5px;color:var(--ink);font-weight:600}
+  .transline{margin-top:10px;font-size:11.5px;color:var(--sub);background:var(--wash);border-radius:8px;padding:8px 11px}.transline b{color:var(--teal)}
+  .remarkline{margin-top:8px;font-size:11.5px;color:var(--ink);border-top:1px solid var(--line2);padding-top:9px}.remarkline .muted{color:var(--faint)}
+  .editable{border-bottom:1px dashed var(--edit);cursor:text;padding:0 2px}
+  .edithint{font-size:10px;color:var(--edit);font-weight:700;margin-left:4px}
+  .invline{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line2)}
+  .invline th{text-align:left;font-size:10px;color:var(--faint);font-weight:700;padding:6px 5px;border-bottom:1px solid var(--line)}
+  .invline th.r,.invline td.r{text-align:right}
+  .invline td{padding:8px 5px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums;color:var(--ink)}
+  .invline tfoot td{font-weight:800;border-top:1px solid var(--ink);border-bottom:none;padding-top:9px;font-size:12.5px}
+  .addinv{width:100%;margin-top:10px;padding:11px;border-radius:9px;border:1.5px dashed var(--teal);background:var(--teal-wash);color:var(--teal);font-size:13px;font-weight:800;cursor:pointer}
+  .savedef{display:flex;gap:9px;align-items:flex-start;margin-top:10px;padding:11px 13px;border-radius:9px;background:var(--recv-wash);border:1px solid #a7d9c4;font-size:12px;color:#155e43;line-height:1.5;cursor:pointer}
+  .savedef input{margin-top:2px;flex:none}.savedef b{font-weight:800}
+  .reuse{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;font-size:11.5px;color:var(--sub);background:var(--wash);border:1px solid var(--line);border-radius:9px;padding:9px 12px}
+  .reuse .rbtn{font-size:11.5px;font-weight:800;padding:6px 12px;border-radius:8px;border:1px solid var(--teal);background:var(--paper);color:var(--teal);cursor:pointer;white-space:nowrap}
+  @media(max-width:680px){.pparty{grid-template-columns:1fr}.pp+.pp{border-left:0;border-top:1px solid var(--line)}.reuse{flex-direction:column;align-items:stretch}}
+</style>
+
+<div class="wrap">
+  <div class="tabs">
+    <div class="tab on" data-v="collab"><i class="ti"></i>🤝 协同确认单<span class="s" id="collabSub">对方打开链接看到的</span></div>
+    <div class="tab" data-v="fin">💰 财务对单表<span class="s">我们内部核账用的</span></div>
+  </div>
+
+  <!-- ============ 协同确认单（对方视图） ============ -->
+  <section class="view on" id="collab">
+    <div class="sheet">
+      <div class="sheet-hd">
+        <div>
+          <div class="brand" id="brandName">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS
+            <div class="cn" id="brandCn">致：费用尚未录入</div>
+          </div>
+        </div>
+        <div class="docmeta">
+          <div class="doctag">港杂费账单</div>
+          <div class="docno" id="docNo">费用尚未录入</div>
+          <div class="badge pending">待你确认</div>
+        </div>
+      </div>
+      <div class="shipbar">
+        <span>提单号 <b id="shipBl">—</b></span>
+        <span>船名航次 <b id="shipVessel">—</b></span>
+        <span><b id="shipRoute">—</b></span>
+        <span>柜量 <b id="shipCntr">—</b></span>
+      </div>
+
+      <div class="sec">
+        <div class="sec-t">① 账单明细 — 请核对</div>
+        <table>
+          <thead><tr><th>费用项</th><th>计费</th><th class="r">单价 <span class="edithint">✎可改</span></th><th class="r">数量</th><th class="r" id="billHeadTotal">合计 (CNY)</th></tr></thead>
+          <tbody id="billBody">
+            <tr><td colspan="5" style="text-align:center;color:var(--faint)">费用尚未录入</td></tr>
+            <tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">CNY</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r" id="billTotal">0.00</td></tr>
+          </tbody>
+        </table>
+        <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价需我方确认后生效</b>。VGM+申报为打包价 ¥200/票。</span></div>
+      </div>
+
+      <div class="sec" style="border-top:1px solid var(--line)">
+        <div class="sec-t">② 开票 · 港杂费</div>
+        <div class="modebar">
+          <span class="mlab">开票方式</span>
+          <button class="mopt on" data-m="self">我方代开</button>
+          <button class="mopt" data-m="other">对方自开</button>
+          <span class="mtip" id="modeTip">我们开好后发送到财务邮箱</span>
+        </div>
+        <div class="plaininv">
+          <div class="invtop"><div class="pt">电子发票（<select class="tsel" id="invoiceTitle"><option>增值税普通发票</option><option>增值税专用发票</option></select>）</div></div>
+          <div class="pparty">
+            <div class="pp">
+              <div class="plab">购 买 方</div>
+              <div class="prow"><b>名称：</b><span class="editable" id="buyerName">费用尚未录入</span><span class="edithint">✎可改</span></div>
+              <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><span class="editable" id="buyerTax">—</span></div>
+              <div class="prow tip">默认带出，名称/税号可改</div>
+            </div>
+            <div class="pp">
+              <div class="plab">销 售 方</div>
+              <div class="prow"><b>名称：</b><span id="sellerName">费用尚未录入</span></div>
+              <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><span class="muted" id="sellerTax">—</span></div>
+            </div>
+          </div>
+          <table class="invline">
+            <thead><tr><th>项目名称</th><th>单位</th><th class="r">数量</th><th class="r">单价</th><th class="r">金额(不含税)</th><th class="r">税率/征收率</th><th class="r">税额</th></tr></thead>
+            <tbody id="invoiceBody"><tr><td colspan="7" style="text-align:center;color:var(--faint)">费用尚未录入</td></tr></tbody>
+            <tfoot><tr><td colspan="4"></td><td class="r">价税合计</td><td colspan="2" class="r" id="invoiceTotal">¥ 0.00</td></tr></tfoot>
+          </table>
+          <div class="remarkline" id="invoiceRemark">备注：费用尚未录入</div>
+        </div>
+        <button class="addinv">＋ 新增一张发票</button>
+        <label class="savedef"><input type="checkbox" checked> <span>存为该客户默认开票模版，以后固定这样开。</span></label>
+      </div>
+
+      <div class="sec" style="border-top:1px solid var(--line)">
+        <button class="collapse-hd" id="ctToggle">
+          <span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span>
+          <span class="chev" id="ctChev">展开填写 ▾</span>
+        </button>
+        <div class="sumline" id="ctSum">收起中 · 财务邮箱 <span class="miss">未填（必填）</span> · 操作 — · 业务 —</div>
+        <div id="ctBody" style="display:none;margin-top:6px">
+          <div class="emrole">
+            <div class="emlabel fin">财务邮箱 <span class="req">必填 ★</span><em>发票发这里</em></div>
+            <div class="emlist"><div class="val reqempty" style="flex:1;min-width:180px">未填 · 不填开不了自动票</div><button class="addem">+ 加邮箱</button></div>
+          </div>
+          <div class="emrole">
+            <div class="emlabel ops">操作邮箱<em>账单/确认通知</em></div>
+            <div class="emlist"><div class="val empty" style="flex:1;min-width:180px">选填</div><button class="addem">+ 加邮箱</button></div>
+          </div>
+          <div class="emrole">
+            <div class="emlabel buy">业务邮箱<em>报价 / 砍价</em></div>
+            <div class="emlist"><div class="val empty" style="flex:1;min-width:180px">选填</div><button class="addem">+ 加邮箱</button></div>
+          </div>
+          <div class="note"><i>ⓘ</i><span>每角色可加多个邮箱。发票发财务、账单发操作、报价发业务。</span></div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn ghost">有疑问 · 留言给我</button>
+        <button class="btn primary" id="submitBtn">确认账单 + 开票信息</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 财务对单表（内部视图） ============ -->
+  <section class="view" id="fin">
+    <div class="sheet">
+      <div class="sheet-hd">
+        <div><div class="brand" id="finTitle">财务对单表 · 费用尚未录入
+          <div class="cn" id="finSub">一票三方账 · 成本 / 销售 / 差额</div></div></div>
+        <div class="docmeta"><div class="doctag" style="color:var(--ink)" id="finTag">—</div>
+          <div class="docno" id="finDoc">—</div></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-t">三方结算关系</div>
+        <div class="cards">
+          <div class="pcard pay">
+            <div class="role" id="payRole">应付</div>
+            <div class="who" id="payWho">费用尚未录入</div>
+            <div class="amt" id="payAmt">¥0.00</div>
+            <div class="amt2" id="paySub">—</div>
+          </div>
+          <div class="pcard recv">
+            <div class="role" id="recvRole">应收</div>
+            <div class="who" id="recvWho">费用尚未录入</div>
+            <div class="amt" id="recvAmt">¥0.00</div>
+            <div class="amt2" id="recvSub">账单合计</div>
+          </div>
+          <div class="pcard cust" id="custCard">
+            <div class="role" id="custRole">相关方</div>
+            <div class="who" id="custWho">data 未返回则不展示</div>
+            <div class="amt" id="custAmt">—</div>
+            <div class="amt2" id="custSub">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec" style="border-top:1px solid var(--line)">
+        <div class="sec-t">成本 ↔ 销售 对账</div>
+        <div class="recon">
+          <div class="rrow h"><span>科目</span><span class="rr">成本侧</span><span class="rr">销售侧</span><span class="rr">差额</span></div>
+          <div id="reconRows"><div class="rrow"><span>费用尚未录入</span><span class="rr">—</span><span class="rr">—</span><span class="rr">—</span></div></div>
+        </div>
+      </div>
+
+      <div class="flag" id="finFlag"><i>⚠</i><span>按 data 返回字段展示，未返回的成本/客户侧不展示。</span></div>
+
+      <div class="lockrow">
+        <span>🔒 港杂锁价 · <b id="lockRoute">—</b>　当前：未锁定（首次）</span>
+        <button class="lockbtn">确认后锁定 · 下票复用</button>
+      </div>
+      <div style="padding:6px 22px 18px"><div class="caption" style="margin:8px 0 0">锁定后同航线下一票自动套此价，偏离即报警。</div></div>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function(){
+    const API="/api/db/invoice-collab-confirm";
+    const token=new URLSearchParams(location.search).get("token")||"";
+    let state={buyer:{},seller:{},shipment:{},bill_lines:[],invoices:[],contacts:{finance:[],ops:[],business:[]},save_as_default:true};
+    let dirtyPrice=false;
+    const $=id=>document.getElementById(id);
+    const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    const num=v=>Number.isFinite(Number(String(v).replace(/,/g,"")))?Number(String(v).replace(/,/g,"")):0;
+    const money=v=>num(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    const sym=c=>c==="USD"?"$":"¥";
+    const basisLabel=v=>{
+      const raw=String(v??"").trim();
+      if(!raw) return "整票";
+      const low=raw.toLowerCase();
+      if(low==="per_bl"||low.includes("bl")||raw.includes("票")) return "整票";
+      if(low==="per_container"||low.includes("cntr")||low.includes("container")||raw.includes("柜")) return "每柜";
+      return raw;
+    };
+    const normalize=d=>({buyer:{},seller:{},shipment:{},bill_lines:[],invoices:[],contacts:{finance:[],ops:[],business:[]},save_as_default:true,...(d||{}),
+      buyer:{...((d||{}).buyer||{})},seller:{...((d||{}).seller||{})},shipment:{...((d||{}).shipment||{})},
+      bill_lines:Array.isArray(d?.bill_lines)?d.bill_lines:[],invoices:Array.isArray(d?.invoices)?d.invoices:[],
+      contacts:{finance:[],ops:[],business:[],...(d?.contacts||{})}});
+    const totalLines=(cur)=>state.bill_lines.filter(l=>!cur||l.currency===cur).reduce((s,l)=>s+num(l.amount),0);
+    const cntrSummary=()=>Array.isArray(state.shipment.containers)&&state.shipment.containers.length
+      ?state.shipment.containers.filter(c=>c.type&&num(c.count)).map(c=>`${num(c.count)} × ${c.type}`).join(" + ")
+      :(state.shipment.container_summary||"");
+    const route=()=>[state.shipment.pol,state.shipment.pod].filter(Boolean).join(" → ");
+    function recalcInvoice(){
+      const inv=state.invoices[0]; if(!inv) return;
+      const cur=inv.currency||state.bill_lines[0]?.currency||"CNY", total=Math.round(totalLines(cur)*100)/100;
+      const rate=Number.isFinite(Number(inv.tax_rate))?Number(inv.tax_rate):0.01;
+      const ex=Math.round(total/(1+rate)*100)/100;
+      inv.currency=cur; inv.total_with_tax=total; inv.amount_ex_tax=ex; inv.tax_amount=Math.round((total-ex)*100)/100;
+    }
+    function ensureInvoice(){
+      if(state.invoices?.length) return;
+      const cur=state.bill_lines[0]?.currency||"CNY", bl=state.shipment.bl_no||state.shipment.shipment_no||"";
+      state.invoices=[{id:"invoice-1",currency:cur,title:"增值税普通发票",mode:"self",item_name:"*经纪代理服务*港杂费",unit:"项",qty:1,tax_rate:0.01,remark:`提单号 ${bl}${cntrSummary()?" · "+cntrSummary():""}`}];
+    }
+    function renderShell(){
+      const sp=state.shipment||{}, buyer=state.buyer||{}, seller=state.seller||{}, cntr=cntrSummary();
+      $("collabSub").textContent=(buyer.name||"对方")+"打开链接看到的";
+      $("brandName").firstChild.nodeValue=seller.name||"费用尚未录入";
+      $("brandCn").textContent="致："+(buyer.name||"费用尚未录入");
+      $("docNo").textContent=sp.shipment_no||sp.bl_no||"费用尚未录入";
+      $("shipBl").textContent=sp.bl_no||"—"; $("shipVessel").textContent=[sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—";
+      $("shipRoute").textContent=route()||"—"; $("shipCntr").textContent=cntr||"—";
+      $("buyerName").textContent=buyer.name||"费用尚未录入"; $("buyerTax").textContent=buyer.tax_id||"—";
+      $("sellerName").textContent=seller.name||"费用尚未录入"; $("sellerTax").textContent=seller.tax_id||"—";
+      $("finTitle").firstChild.nodeValue="财务对单表 · "+(sp.bl_no||sp.shipment_no||"费用尚未录入");
+      $("finSub").textContent=[sp.shipment_no,"一票三方账 · 成本 / 销售 / 差额"].filter(Boolean).join(" · ");
+      $("finTag").textContent=sp.shipment_no||"—"; $("finDoc").textContent=[sp.vessel,cntr].filter(Boolean).join(" · ")||"—";
+      $("lockRoute").textContent=route()||"—";
+    }
+    function renderBills(){
+      const cur=state.bill_lines[0]?.currency||state.invoices[0]?.currency||"CNY";
+      const rows=state.bill_lines.map((l,i)=>`<tr><td>${esc(l.name||"港杂费")}${l.review?` <span class="unit pack">存疑</span>`:""}</td>
+        <td><span class="unit">${esc(basisLabel(l.basis))}</span>${l.container_type?` <span class="unit">${esc(l.container_type)}</span>`:""}</td>
+        <td class="r"><span class="editable" contenteditable data-line="${i}">${money(l.unit_price)}</span></td>
+        <td class="r">${money(l.qty).replace(".00","")}</td><td class="r">${money(l.amount)}</td></tr>`).join("");
+      $("billHeadTotal").textContent=`合计 (${cur})`;
+      $("billBody").innerHTML=(rows||`<tr><td colspan="5" style="text-align:center;color:var(--faint)">${esc(state.bill_line_notice||"费用尚未录入")}</td></tr>`)
+        +`<tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">${esc(cur)}</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r" id="billTotal">${money(totalLines(cur))}</td></tr>`;
+      document.querySelectorAll("[data-line]").forEach(el=>el.addEventListener("blur",e=>changePrice(Number(e.target.dataset.line),e.target.textContent)));
+    }
+    function renderInvoice(){
+      const inv=state.invoices[0]||{}, cur=inv.currency||"CNY", rate=Number(inv.tax_rate||0.01);
+      document.querySelectorAll(".mopt[data-m]").forEach(b=>b.classList.toggle("on",(inv.mode||"self")===b.dataset.m));
+      $("modeTip").textContent=(inv.mode==="other")?"对方自开后回传，我们 OCR 核对":"我们开好后发送到财务邮箱";
+      if(inv.title&&!Array.from($("invoiceTitle").options).some(o=>o.value===inv.title)) $("invoiceTitle").add(new Option(inv.title,inv.title));
+      $("invoiceTitle").value=inv.title||"增值税普通发票";
+      $("invoiceBody").innerHTML=`<tr><td><span class="editable">${esc(inv.item_name||"*经纪代理服务*港杂费")}</span></td><td>${esc(inv.unit||"项")}</td>
+        <td class="r">${money(inv.qty||1).replace(".00","")}</td><td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${money(inv.amount_ex_tax)}</td>
+        <td class="r"><span class="editable">${money(rate*100).replace(".00","")}%</span><span class="edithint">✎</span></td><td class="r">${money(inv.tax_amount)}</td></tr>`;
+      $("invoiceTotal").textContent=`${sym(cur)} ${money(inv.total_with_tax)}`;
+      $("invoiceRemark").textContent="备注："+(inv.remark||"费用尚未录入");
+    }
+    function renderFinance(){
+      const cur=state.bill_lines[0]?.currency||"CNY";
+      const cost=state.bill_lines.reduce((s,l)=>s+num(l.cost_amount??(l.line_side==="payable"?l.amount:0)),0);
+      const sale=state.bill_lines.reduce((s,l)=>s+num(l.sale_amount??(l.line_side==="receivable"?l.amount:0)),0);
+      const visible=totalLines(cur), diff=sale-cost, hasInternal=state.bill_lines.some(l=>"cost_amount"in l||"sale_amount"in l);
+      $("payWho").textContent=state.seller?.name||"—"; $("payAmt").textContent=sym(cur)+money(cost||visible); $("paySub").textContent=hasInternal?"成本侧合计":"按当前 lens 可见金额";
+      $("recvWho").textContent=state.buyer?.name||"—"; $("recvAmt").textContent=sym(cur)+money(sale||visible); $("recvSub").textContent=hasInternal?"销售侧合计":"账单合计";
+      $("custWho").textContent=hasInternal&&state.shipment?.billing_segment==="freight"?(state.buyer?.name||"—"):"data 未返回则不展示";
+      $("custAmt").textContent=hasInternal?sym(cur)+money(Math.max(diff,0)):"—"; $("custSub").textContent=hasInternal?"差额口径":"—";
+      $("custCard").style.display=hasInternal?"block":"none";
+      $("reconRows").innerHTML=hasInternal?`<div class="rrow"><span>${esc(state.shipment.billing_segment||"港杂费")} · ${esc(cur)}</span><span class="rr">${money(cost)}</span><span class="rr">${money(sale)}</span><span class="rr ${diff>=0?"gain":"loss"}">${diff>=0?"+":"−"}${money(Math.abs(diff))}</span></div>`
+        :`<div class="rrow"><span>当前 lens 可见合计 · ${esc(cur)}</span><span class="rr">${money(visible)}</span><span class="rr">data 未返回</span><span class="rr">—</span></div>`;
+      $("finFlag").style.display=hasInternal&&diff<0?"flex":"none";
+    }
+    function renderContacts(){
+      const c=state.contacts||{}, f=(c.finance||[]).filter(Boolean).length, o=(c.ops||[]).filter(Boolean).length, b=(c.business||[]).filter(Boolean).length;
+      $("ctSum").innerHTML=`收起中 · 财务邮箱 ${f?`<b>${f} 个</b>`:`<span class="miss">未填（必填）</span>`} · 操作 ${o||"—"} · 业务 ${b||"—"}`;
+    }
+    function render(){ensureInvoice();recalcInvoice();renderShell();renderBills();renderInvoice();renderFinance();renderContacts();}
+    function changePrice(i,v){
+      const l=state.bill_lines[i]; if(!l) return;
+      l.unit_price=num(v); l.amount=Math.round(l.unit_price*num(l.qty||1)*100)/100; dirtyPrice=true; render();
+    }
+    function collect(){
+      state.buyer={name:$("buyerName").textContent.trim(),tax_id:$("buyerTax").textContent.trim()};
+      state.invoices[0].mode=document.querySelector(".mopt.on[data-m]")?.dataset.m||"self";
+      state.save_as_default=document.querySelector(".savedef input")?.checked!==false;
+    }
+    async function submit(){
+      if(!token){alert("缺少 token，无法提交");return}
+      collect();
+      const body={token,draft:{...state,price_changed:dirtyPrice,invoice_mode:state.invoices[0].mode,shipment_containers:state.shipment.containers||[]}};
+      const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok){alert("保存失败："+(d.error||r.status));return}
+      state.status=d.draft?.status||state.status; dirtyPrice=false; alert(state.status==="pending_our_review"?"已提交改动，待我方确认":"已保存确认草稿");
+    }
+    document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');$(t.dataset.v).classList.add('on')}));
+    $("ctToggle").addEventListener('click',()=>{const b=$("ctBody"),open=b.style.display==='none';b.style.display=open?'block':'none';$("ctChev").textContent=open?'收起 ▴':'展开填写 ▾';$("ctSum").style.display=open?'none':'block'});
+    document.querySelectorAll('.mopt[data-m]').forEach(b=>b.addEventListener('click',()=>{ensureInvoice();state.invoices[0].mode=b.dataset.m;renderInvoice()}));
+    $("buyerName").contentEditable=true; $("buyerTax").contentEditable=true; $("submitBtn").addEventListener("click",submit);
+    async function boot(){
+      if(!token){render();return}
+      try{const r=await fetch(API+"?token="+encodeURIComponent(token));const d=await r.json();if(r.ok&&d.ok){state=normalize(d.data);render();}else render();}
+      catch(e){render();}
+    }
+    boot();
+  })();
+</script>
