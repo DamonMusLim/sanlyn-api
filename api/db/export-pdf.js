@@ -12,7 +12,7 @@
 // internal document endpoints, then renders to PDF via Puppeteer.
 // Returns: application/pdf
 // ═══════════════════════════════════════════════════════════════
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 import { setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
