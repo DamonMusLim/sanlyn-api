@@ -2522,7 +2522,7 @@ async function handleCollabPricing(req, res, pool) {
 
   // 自理段判断
   const selfHandled = {
-    trucking: plan[0].trucking_arrange === "factory" || plan[0].trucking_arrange === "self",
+    trucking: plan[0].trucking_arrange === "factory" || plan[0].trucking_arrange === "self" || plan[0].trucking_arrange === "babi",
     customs:  plan[0].customs_arrange  === "factory" || plan[0].customs_arrange  === "self" || plan[0].customs_arrange  === "babi",
   };
 
