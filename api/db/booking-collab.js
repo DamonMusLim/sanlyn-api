@@ -2453,7 +2453,7 @@ async function handleMasterPreviewToken(req, res, pool) {
     const segs = Array.isArray(segments) ? segments.filter(s => ["ocean","truck","customs","factory"].includes(s))
       : [party].filter(s => ["ocean","truck","customs"].includes(s));
     meta.segments = segs.length ? segs : ["ocean", "truck", "customs"];
-    if (company_label) meta.company_label = String(company_label).slice(0, 60);
+    if (company_label) meta.company_label = String(company_label).slice(0, 60); else meta.field_profile = "shipping_booking";
   }
 
   const raw = genRaw();
