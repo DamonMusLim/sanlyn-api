@@ -412,7 +412,7 @@ function saveDraft(){try{localStorage.setItem('export_docs_draft_'+(qp('order_no
 function docBaseName(){return window._docBaseName||qp('order_no')||'draft';}
 function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;document.querySelector('.toolbar').style.display='none';
-  var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js'; // 2026-07-08 cdnjs→自建vendor(合并forge d152f0a迁移,之前被我6b379e2覆盖回cdnjs)
   s.onload=function(){var only=docPageParam(),pages=only?[{pl:'pagePL',sc:'pageSC',iv:'pageIV'}[only]]:['pagePL','pageSC','pageIV'],i=0;(function nx(){if(i>=pages.length){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;return;}html2canvas(document.getElementById(pages[i]),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){var a=document.createElement('a');a.download=pages[i]+'-'+docBaseName()+'.png';a.href=c.toDataURL('image/png');a.click();i++;setTimeout(nx,400);}).catch(function(){i++;nx();});})();};
   if(window.html2canvas)s.onload();else document.head.appendChild(s);
 }
