@@ -224,7 +224,7 @@ function fillHeader(pfx,primary,all,seller,cur,port){
   setT(pfx+'-no',fs);
   setT(pfx+'-order',uniq(all.map(function(o){return shortNo(o.order_no);})).join(' / '));
   setT(pfx+'-date',(primary.order_date||'').slice(0,10));
-  setT(pfx+'-port',port);
+  setT(pfx+'-port',portLine(primary));  // 分模式:报关版XIAMEN/客户版实际起运港(不再用固定port参数)
   setT(pfx+'-cur',cur);
   var h1=document.getElementById(pfx+'-curh1'),h2=document.getElementById(pfx+'-curh2');
   if(h1)h1.textContent=cur;if(h2)h2.textContent=cur;
@@ -248,6 +248,15 @@ var PORT_EN={'青岛':'QINGDAO','上海':'SHANGHAI','宁波':'NINGBO','宁波北
 function normPort(x){if(!x)return '';var t=String(x).trim();if(PORT_EN[t])return PORT_EN[t];var t2=t.replace(/港$/,'');if(PORT_EN[t2])return PORT_EN[t2];return /[\u4e00-\u9fa5]/.test(t)?t:t.toUpperCase();}
 function buildPort(primary){
   var pol=normPort(primary.pol||primary.sp_pol||(primary.raw&&primary.raw.sp_pol)||'');
+  var pod=normPort(primary.destination_port||primary.pod||primary.sp_pod||(primary.raw&&(primary.raw.destination_port||primary.raw.pod||primary.raw.sp_pod))||'');
+  return (pol&&pod)?(pol+' → '+pod):(pol||pod||'');
+}
+// 港口口径分模式(Damon 2026-07-08定案):报关版起运港=XIAMEN(巴匕报关地固定),客户版=实际起运港(sp_pol,如锦州);
+// 目的港两版一致。厦门本地货实际起运港本就=厦门,两版自然一致;异地内转外货(锦州/青岛等)才出现报关版厦门vs客户版实际港的差异。
+function portLine(primary){
+  if(!primary)return '';
+  var actualPol=normPort(primary.pol||primary.sp_pol||(primary.raw&&primary.raw.sp_pol)||'');
+  var pol=_customsMode?'XIAMEN':actualPol;
   var pod=normPort(primary.destination_port||primary.pod||primary.sp_pod||(primary.raw&&(primary.raw.destination_port||primary.raw.pod||primary.raw.sp_pod))||'');
   return (pol&&pod)?(pol+' → '+pod):(pol||pod||'');
 }
@@ -288,6 +297,8 @@ function loadContainerInfo(all){
 function renderAll(){
   var A=window._agg,R=window._rows,cur=window._cur;
   renderPL(A,R);renderPriced('sc',A,R,cur);renderPriced('iv',A,R,cur);
+  // 港口随模式(报关/客户)切换实时更新起运港(报关版XIAMEN/客户版实际港)
+  if(window._docPrimary)['pl','sc','iv'].forEach(function(p){var v=portLine(window._docPrimary);var e=document.getElementById(p+'-port');if(e)e.textContent=v;});
   applyPageFilter();
 }
 function toggleMode(){
@@ -430,7 +441,7 @@ function init(){
       window._freight=Number(docPrimary.inland_freight||_praw.inland_freight||0)||0;
       window._freightLabel=docPrimary.inland_freight_label||_praw.inland_freight_label||'提货运费';
       window._freightLabelEn=docPrimary.inland_freight_label_en||_praw.inland_freight_label_en||'INLAND FREIGHT';
-      window._agg=aggregate(all);window._cur=cur;
+      window._agg=aggregate(all);window._cur=cur;window._docPrimary=docPrimary;  // 存主订单供切模式重算港口
       var _dlFsOrder=all.filter(function(o){return o&&(String(o.order_no)===orderNo||shortNo(o.order_no)===shortNo(orderNo));})[0]||docPrimary;
       window._docBaseName=fsFromOrder(_dlFsOrder)||shortNo(docPrimary.order_no)||orderNo;  // 下载文件名用URL order_no那单的FS
       document.title='Export Documents · '+window._docBaseName;
