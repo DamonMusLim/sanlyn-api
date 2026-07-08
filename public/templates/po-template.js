@@ -245,7 +245,7 @@ function downloadPng(){
   btn.textContent='⏳ 生成中…';btn.disabled=true;
   document.querySelector('.toolbar').style.display='none';
   var script=document.createElement('script');
-  script.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  script.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js';
   script.onload=function(){
     html2canvas(document.getElementById('printPage'),{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false}).then(function(canvas){
       document.querySelector('.toolbar').style.display='';
@@ -275,7 +275,7 @@ function exportExcel(){
     var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=heads.map(function(h,i){return {wch:i===1?36:14};});
     XLSX.utils.book_append_sheet(wb,ws,'PO');XLSX.writeFile(wb,'PO-'+(qp('order_no')||'draft')+'.xlsx');
   }catch(e){alert('导出失败: '+e.message);}reset();}
-  if(window.XLSX)return run();var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=run;s.onerror=function(){alert('Excel库加载失败');reset();};document.head.appendChild(s);
+  if(window.XLSX)return run();var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/xlsx.full.min.js';s.onload=run;s.onerror=function(){alert('Excel库加载失败');reset();};document.head.appendChild(s);
 }
 function handleHashAction(){var h=(location.hash||'').toLowerCase();if(h.indexOf('excel')>=0)exportExcel();else if(h.indexOf('seal')>=0||h.indexOf('stamp')>=0)openSealPicker('seller');else if(h.indexOf('print')>=0)window.print();}
 init();

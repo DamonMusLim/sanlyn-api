@@ -93,7 +93,7 @@ function fwdLink(){ var u=location.href; try{navigator.clipboard.writeText(u);ba
 function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;document.querySelector('.toolbar').style.display='none';
   var done=function(){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;};
-  var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js';
   s.onload=function(){html2canvas(document.getElementById('page'),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){var a=document.createElement('a');a.download='厂检单_'+(_sampleName||'')+'_'+_order+'.png';a.href=c.toDataURL('image/png');a.click();done();}).catch(done);};
   if(window.html2canvas)s.onload();else document.head.appendChild(s);
 }

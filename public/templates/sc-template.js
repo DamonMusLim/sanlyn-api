@@ -94,7 +94,7 @@ function saveDraft(){try{localStorage.setItem('sc_draft_'+(qp('order_no')||'manu
 function downloadPng(){
   var btn=document.querySelector('.btn-dl');btn.textContent='⏳…';btn.disabled=true;
   document.querySelector('.toolbar').style.display='none';
-  var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+  var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js';
   s.onload=function(){html2canvas(document.getElementById('page'),{scale:2,useCORS:true,backgroundColor:'#fff'}).then(function(c){document.querySelector('.toolbar').style.display='';var a=document.createElement('a');a.download='SC-'+(qp('order_no')||'draft')+'.png';a.href=c.toDataURL('image/png');a.click();btn.textContent='📥 下载图片';btn.disabled=false;}).catch(function(){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;});};
   if(window.html2canvas)s.onload();else document.head.appendChild(s);
 }
