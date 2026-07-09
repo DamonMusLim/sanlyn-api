@@ -785,6 +785,7 @@ async function handleDetail(req, res) {
 
     const fer = await client.query(
       `SELECT fer.customs_no, fer.contract_no, MIN(fer.export_date) AS export_date,
+              MAX(fer.fob_cny) AS fob_cny,
               jsonb_agg(item ORDER BY ord) FILTER (WHERE item IS NOT NULL) AS items
          FROM finance_export_rebates fer
          LEFT JOIN LATERAL jsonb_array_elements(
@@ -826,7 +827,7 @@ async function handleDetail(req, res) {
       const contractNo = st.contract_no || row.contract_no || null;
       let orderResult = contractNo
         ? await client.query(
-            `SELECT id, order_no, contract_no, issuing_company, company_code
+            `SELECT id, order_no, contract_no, issuing_company, company_code, customer_po
                FROM orders
               WHERE contract_no=$1
                 AND COALESCE(status,'') <> 'cancelled'
@@ -837,7 +838,7 @@ async function handleDetail(req, res) {
         : { rows: [] };
       if (!orderResult.rows[0]) {
         orderResult = await client.query(
-          `SELECT id, order_no, contract_no, issuing_company, company_code
+          `SELECT id, order_no, contract_no, issuing_company, company_code, customer_po
              FROM orders
             WHERE order_no=$1
               AND COALESCE(status,'') <> 'cancelled'
@@ -848,7 +849,7 @@ async function handleDetail(req, res) {
       }
       if (!orderResult.rows[0]) {
         orderResult = await client.query(
-          `SELECT id, order_no, contract_no, issuing_company, company_code
+          `SELECT id, order_no, contract_no, issuing_company, company_code, customer_po
              FROM orders
             WHERE bl_no=$1
               AND COALESCE(status,'') <> 'cancelled'
@@ -901,17 +902,14 @@ async function handleDetail(req, res) {
       }
 
       const sellerResult = await client.query(
-        `SELECT name_cn, tax_id
+        `SELECT name_cn, tax_id, bank_name, bank_account
            FROM companies
           WHERE code=$1
           LIMIT 1`,
         [st.factory_code]
       );
       const sellerRow = sellerResult.rows[0] || {};
-      const seller = {
-        name: sellerRow.name_cn || scope.factory.name || null,
-        tax_id: sellerRow.tax_id || null,
-      };
+      const seller = { name: sellerRow.name_cn || scope.factory.name || null, tax_id: sellerRow.tax_id || null, bank_name: sellerRow.bank_name || null, bank_account: sellerRow.bank_account || null };
 
       const rawUnit = rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.unit2
         || rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.transaction_unit
@@ -929,7 +927,7 @@ async function handleDetail(req, res) {
                 COALESCE(NULLIF(BTRIM(p.spec), ''), NULLIF(BTRIM(oli.size), '')) AS spec,
                 COALESCE(NULLIF(BTRIM(p.transaction_unit), ''), NULLIF($2, ''), NULLIF(BTRIM(oli.unit), ''), '箱') AS unit,
                 ROUND(SUM(COALESCE(oli.qty_ctn, 0))::numeric, 2) AS qty,
-                ROUND(SUM(CASE WHEN $3 THEN COALESCE(NULLIF(oli.declare_amount_per_box*oli.qty_ctn,0), oli.factory_subtotal, oli.qty_ctn*oli.factory_price, 0) ELSE COALESCE(oli.factory_subtotal, oli.qty_ctn*oli.factory_price, 0) END)::numeric, 2) AS amount,
+                ROUND(COALESCE(NULLIF(SUM(oli.factory_subtotal),0), NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0), NULLIF(SUM(oli.qty_ctn*p.factory_price),0), 0)::numeric, 2) AS amount,
                 CASE
                   WHEN COALESCE(NULLIF(BTRIM(oli.hs_code), ''), NULLIF(BTRIM(p.hs_code), '')) LIKE '2309%' THEN 0.09
                   ELSE 0.13
@@ -954,30 +952,24 @@ async function handleDetail(req, res) {
         : { rows: [] };
 
       const unitMap = { CTN: "箱", PCS: "件", KG: "千克", BAG: "包", SET: "套" };
-      const lines = lineResult.rows.map((l) => ({
-        name: l.name || null,
-        spec: l.spec || null,
-        unit: unitMap[String(l.unit || "").toUpperCase()] || l.unit || "箱",
-        qty: money(l.qty) || 0,
-        amount: money(l.amount) || 0,
-        vat_rate: Number(l.vat_rate) || 0.13,
-      }));
+      const lines = lineResult.rows.map((l) => ({ name: l.name || null, spec: l.spec || null,
+        unit: unitMap[String(l.unit || "").toUpperCase()] || l.unit || "箱", qty: money(l.qty) || 0,
+        amount: money(l.amount) || 0, unit_price_ex: money(l.qty) ? money((Number(l.amount) || 0) / Number(l.qty)) : null,
+        vat_rate: Number(l.vat_rate) || 0.13 }));
       const linesTotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+      const baoguanAmount = money(row.fob_cny);
 
-      invoiceTemplate = {
-        buyer,
-        seller,
-        lines,
-        order_no: mergedOrderNos || order?.order_no || null,
-        total_incl: money(linesTotal) || effective || null,
-      };
+      invoiceTemplate = { buyer, seller, lines, order_no: mergedOrderNos || order?.order_no || null,
+        po_no: order?.customer_po || null, factory_ref: order?.contract_no || null, baoguan_amount: baoguanAmount,
+        over_baoguan: baoguanAmount !== null && linesTotal > baoguanAmount, total_incl: money(linesTotal) || effective || null };
+      delete invoiceTemplate.baoguan_amount;
     }
 
     return res.json({
       success: true,
       factory: factoryMode ? scope.factory : undefined,
       customs: {
-        customs_no: customsNo,
+        customs_no: factoryMode ? undefined : customsNo,
         contract_no: st.contract_no || row.contract_no || null,
         export_date: row.export_date || null,
         factory_code: st.factory_code,
