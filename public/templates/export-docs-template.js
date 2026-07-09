@@ -220,7 +220,9 @@ function fillHeader(pfx,primary,all,seller,cur,port){
   // 主FS取【URL order_no 指定的那单】(Damon 2026-07-08:多单合并显示主订单的FS),不是排序后的all[0];找不到才退primary
   var _urlNo=qp('order_no')||qp('orderNo');
   var _fsOrder=all.filter(function(o){return o&&(String(o.order_no)===_urlNo||shortNo(o.order_no)===shortNo(_urlNo));})[0]||primary;
-  var fs=fsFromOrder(_fsOrder)||_fsOrder.fs_no||primary.fs_no||praw.fs_no||_fsOrder.contract_no||_fsOrder.customer_po||'';
+  var _fsNum=fsFromOrder(_fsOrder)||_fsOrder.fs_no||primary.fs_no||praw.fs_no||_fsOrder.contract_no||'';
+  var _poNum=_fsOrder.customer_po||orderRaw(_fsOrder).customerPO||shortNo(_fsOrder.order_no)||'';
+  var fs='IV-'+(_customsMode?(_fsNum||_poNum):(_poNum||_fsNum));  // Damon 2026-07-09: 报关版=IV-FS, 客户版=IV-PO(缺退order_no); 标签统一No.:
   setT(pfx+'-no',fs);
   setT(pfx+'-order',uniq(all.map(function(o){return shortNo(o.order_no);})).join(' / '));
   setT(pfx+'-date',(primary.order_date||'').slice(0,10));
@@ -464,7 +466,8 @@ function init(){
       window._freightLabelEn=docPrimary.inland_freight_label_en||_praw.inland_freight_label_en||'INLAND FREIGHT';
       window._agg=aggregate(all);window._cur=cur;window._docPrimary=docPrimary;  // 存主订单供切模式重算港口
       var _dlFsOrder=all.filter(function(o){return o&&(String(o.order_no)===orderNo||shortNo(o.order_no)===shortNo(orderNo));})[0]||docPrimary;
-      window._docBaseName=fsFromOrder(_dlFsOrder)||shortNo(docPrimary.order_no)||orderNo;  // 下载文件名用URL order_no那单的FS
+      var _dlFs=fsFromOrder(_dlFsOrder)||_dlFsOrder.contract_no||'';var _dlPo=(_dlFsOrder&&_dlFsOrder.customer_po)||shortNo(docPrimary.order_no)||orderNo||'';
+      window._docBaseName='IV-'+(_customsMode?(_dlFs||_dlPo):(_dlPo||_dlFs));  // 文件名同No.规则: 报关版IV-FS/客户版IV-PO
       document.title='Export Documents · '+window._docBaseName;
       window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
       var ps=Array.isArray(d)?d:(d.data||[]);
