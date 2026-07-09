@@ -21,9 +21,9 @@ function initRotHandle(who){
 function applySeal(who,url,name){
   var key=who==='buyer'?'Buyer':'Seller';
   var img=document.getElementById('seal'+key+'Img'),hint=document.getElementById('seal'+key+'Hint');
-  _sealRotation[who]=0;img.src=url;img.style.display='block';img.style.transform='';hint.style.display='none';
+  _sealRotation[who]=0;img.crossOrigin='anonymous';img.src=url;img.style.display='block';img.style.transform='';hint.style.display='none';
   var si=document.getElementById('status'+key+'Img'),sn=document.getElementById('status'+key+'Name');
-  if(si){si.src=url;si.style.display='inline';}if(sn){sn.textContent=name||(who==='buyer'?'买方章':'卖方章');sn.classList.remove('empty');}
+  if(si){si.crossOrigin='anonymous';si.src=url;si.style.display='inline';}if(sn){sn.textContent=name||(who==='buyer'?'买方章':'卖方章');sn.classList.remove('empty');}
   try{localStorage.setItem('po_seal_'+who,JSON.stringify({url:url,name:name||''}));}catch(e){}
   initRotHandle(who);
 }

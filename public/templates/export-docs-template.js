@@ -357,7 +357,7 @@ function applySeal(target,url,name){
   if(!url){url=target;target='all:seller';}
   sealTargets(target).forEach(function(t){
     var id=t.replace(':','-'),img=document.getElementById(id+'-seal'),hint=document.getElementById(id+'-seal-hint');
-    if(!img)return;_sealRotation[t]=0;img.src=url;img.style.display='block';img.style.transform='';if(hint)hint.style.display='none';
+    if(!img)return;_sealRotation[t]=0;img.crossOrigin='anonymous';img.src=url;img.style.display='block';img.style.transform='';if(hint)hint.style.display='none';
     try{localStorage.setItem(sealKey(t),JSON.stringify({url:url,name:name||''}));}catch(e){}
     initRotHandle(t);
   });
