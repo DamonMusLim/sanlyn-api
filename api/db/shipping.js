@@ -73,18 +73,22 @@ export default async function handler(req, res) {
       // _id 必填(NOT NULL) → 自动生成；created_by 记录操作者
       // SHIPMENT_NO_AUTOGEN_20260709 - bare-API creates left shipment_no NULL (no
       // CY number) and customer empty, making the plan invisible in the list UI.
+      let _cyParamIdx = -1;
+      async function _nextCy() {
+        const mx = await poolW.query("SELECT COALESCE(MAX(CAST(substring(shipment_no from 3) AS int)),0) AS n FROM shipping_plans WHERE shipment_no LIKE 'CY%' AND substring(shipment_no from 3) ~ '^[0-9]+$'");
+        return 'CY' + String((mx.rows[0] && mx.rows[0].n || 0) + 1).padStart(5, '0');
+      }
       if (!body.shipment_no) {
         try {
-          const mx = await poolW.query("SELECT COALESCE(MAX(CAST(substring(shipment_no from 3) AS int)),0) AS n FROM shipping_plans WHERE shipment_no LIKE 'CY%' AND length(shipment_no) = 7 AND substring(shipment_no from 3) BETWEEN '00000' AND '99999'");
-          const next = 'CY' + String((mx.rows[0] && mx.rows[0].n || 0) + 1).padStart(5, '0');
-          params.push(next); sets.push('shipment_no = $' + params.length);
-        } catch (_) { /* non-fatal */ }
+          params.push(await _nextCy()); sets.push('shipment_no = $' + params.length);
+          _cyParamIdx = params.length - 1;
+        } catch (e) { console.warn('[shipping] CY autogen failed:', e && e.message); }
       }
       if (!body.customer && Array.isArray(body.order_nos) && body.order_nos.length) {
         try {
           const oc = await poolW.query('SELECT customer FROM orders WHERE order_no = $1 AND deleted_at IS NULL LIMIT 1', [String(body.order_nos[0])]);
           if (oc.rows[0] && oc.rows[0].customer) { params.push(oc.rows[0].customer); sets.push('customer = $' + params.length); }
-        } catch (_) { /* non-fatal */ }
+        } catch (e) { console.warn('[shipping] customer derive failed:', e && e.message); }
       }
       const _id = (body._id && String(body._id)) || ("sp_" + Math.random().toString(36).slice(2) + Date.now().toString(36));
       params.push(_id); sets.push(`_id = $${params.length}`);
@@ -95,7 +99,17 @@ export default async function handler(req, res) {
       const cols = sets.map(s => s.split(" = ")[0]);
       const vals = sets.map(s => s.split(" = ")[1]);
       const sql = `INSERT INTO shipping_plans (${cols.join(",")}) VALUES (${vals.join(",")}) RETURNING *`;
-      const r = await poolW.query(sql, params);
+      let r;
+      try {
+        r = await poolW.query(sql, params);
+      } catch (e) {
+        // 23505 on uq_shipping_plans_shipment_no = concurrent POST grabbed the same
+        // auto-generated CY. Regenerate once and retry; rethrow anything else.
+        if (e && e.code === '23505' && _cyParamIdx >= 0) {
+          params[_cyParamIdx] = await _nextCy();
+          r = await poolW.query(sql, params);
+        } else { throw e; }
+      }
       return res.status(201).json({ success:true, data:r.rows[0] });
     } catch (err) { return res.status(500).json({ success:false, error: err.message }); }
   }
