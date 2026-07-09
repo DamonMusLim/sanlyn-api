@@ -481,19 +481,9 @@ export default async function handler(req, res) {
         // the request when audience===customs (review fix #4) — see check below.
         var _missingDecl = [];
         if (_customsWeightSource) {
-          var _gwGroups = {};
-          prods.forEach(function(p){
-            var key = p._containerNo || _customsWeightSource.containerFor({ contractNo: p._contractNo, orderNo: p._contractNo }) || p._contractNo || "";
-            (_gwGroups[key] || (_gwGroups[key] = [])).push(p);
-          });
-          Object.keys(_gwGroups).forEach(function(k){
-            var rows = _gwGroups[k], oli = rows.map(function(p){ return Number(p.grossWeight||p.gw||0) * Number(p.qty||0); });
-            var oliSum = oli.reduce(function(s,v){ return s + v; }, 0);
-            var first = rows[0] || {};
-            var measured = _customsWeightSource.measuredFor({ containerNo: first._containerNo, contractNo: first._contractNo, orderNo: first._contractNo });
-            var scaled = scaleGrossWeightsToContainer(oli, resolveContainerGrossWeight(measured, oliSum), oliSum);
-            rows.forEach(function(p,i){ p._customsGrossTotal = scaled[i]; });
-          });
+          // Damon 2026-07-10(forge任务B): 报关毛重不再按 measured 集装箱实测重缩放(measured 陈旧会偏离真值,本例 104922 != 105915.2),
+          // 统一用 Σ gross×qty 真值(与 PL/报关单 loadLines 同源),保证三方审核一致。
+          prods.forEach(function(p){ p._customsGrossTotal = Number(p.grossWeight || p.gw || 0) * Number(p.qty || 0); });
         }
         prods.forEach(function(p){
           var sku = p.sku || p.code || p.product_code || "";

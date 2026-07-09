@@ -823,8 +823,8 @@ export default async function handler(req, res) {
             ratio: oliSum > 0 ? parseFloat((Number(measured) / oliSum).toFixed(4)) : null,
           });
         }
-        const scaled = scaleGrossWeightsToContainer(oliValues, resolveContainerGrossWeight(measured, oliSum), oliSum);
-        group.forEach((r, i) => { r.gw_kg = scaled[i]; });
+        // Damon 2026-07-10(任务B·真源): 报关毛重不再缩放到 measured 实测重 ——
+        // 与 PL/orders 真值(Σ gw_ctn×qty) 不一致会让三方审核报红。保留 OLI 真值; measured 存疑仅记 weightWarnings。
       }
     }
 
