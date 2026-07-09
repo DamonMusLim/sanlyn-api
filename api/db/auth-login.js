@@ -25,6 +25,17 @@ async function verifyPassword(pool, userId, inputPlain, storedValue) {
   return { ok: true, upgraded: true };
 }
 
+async function queryAccount(pool, sqlWithTokenVersion, sqlWithoutTokenVersion, params) {
+  try {
+    return await pool.query(sqlWithTokenVersion, params);
+  } catch (err) {
+    if (err && err.code === "42703" && String(err.message || "").includes("token_version")) {
+      return pool.query(sqlWithoutTokenVersion, params);
+    }
+    throw err;
+  }
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -37,12 +48,34 @@ export default async function handler(req, res) {
     if (!req.user) return res.status(401).json({ error: "Invalid token" });
 
     try {
-      var acct = await pool.query(
-        "SELECT id, username, role, company, supplier_role, company_code, company_codes, raw FROM accounts WHERE id = $1 OR username = $2 LIMIT 1",
+      var acct = await queryAccount(pool,
+        `SELECT a.id, a.username, a.role, a.company, a.supplier_role, a.company_code,
+                a.company_codes, a.raw, a.token_version, COALESCE(a.is_active, true) AS is_active,
+                BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee
+           FROM accounts a
+      LEFT JOIN employees e ON e.user_id::text = a.id::text
+          WHERE a.id::text = $1::text OR a.username = $2
+       GROUP BY a.id, a.username, a.role, a.company, a.supplier_role, a.company_code,
+                a.company_codes, a.raw, a.token_version, a.is_active
+          LIMIT 1`,
+        `SELECT a.id, a.username, a.role, a.company, a.supplier_role, a.company_code,
+                a.company_codes, a.raw, 1 AS token_version, COALESCE(a.is_active, true) AS is_active,
+                BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee
+           FROM accounts a
+      LEFT JOIN employees e ON e.user_id::text = a.id::text
+          WHERE a.id::text = $1::text OR a.username = $2
+       GROUP BY a.id, a.username, a.role, a.company, a.supplier_role, a.company_code,
+                a.company_codes, a.raw, a.is_active
+          LIMIT 1`,
         [req.user.uid, req.user.username]
       );
       if (!acct.rows[0]) return res.status(401).json({ error: "Account not found" });
       var u = acct.rows[0];
+      if (u.is_active === false) return res.status(401).json({ error: "ACCOUNT_INACTIVE" });
+      if (u.has_inactive_employee) return res.status(401).json({ error: "EMPLOYEE_INACTIVE" });
+      if (Object.prototype.hasOwnProperty.call(req.user, "tv") && Number(req.user.tv) !== Number(u.token_version || 1)) {
+        return res.status(401).json({ error: "TOKEN_REVOKED" });
+      }
       var companyCodes = (u.company_codes && u.company_codes.length) ? u.company_codes : (u.company_code ? [u.company_code] : []);
       var rawObj = u.raw || {};
       if (typeof rawObj === "string") { try { rawObj = JSON.parse(rawObj); } catch { rawObj = {}; } }
@@ -52,7 +85,8 @@ export default async function handler(req, res) {
         uid: u.id, username: u.username, role: u.role,
         company: u.company, supplierRole: u.supplier_role,
         companyCode: u.company_code, companyCodes: companyCodes,
-        access: access
+        access: access,
+        tv: u.token_version || 1
       });
 
       return res.status(200).json({ success: true, token: newToken, user: {
@@ -73,13 +107,34 @@ export default async function handler(req, res) {
     var { username, password } = req.body || {};
     if (!username || !password) return res.status(400).json({ error: "username 和 password 必填" });
 
-    var result = await pool.query(
-      "SELECT id, username, password, role, company, supplier_role, company_code, company_codes, raw FROM accounts WHERE username = $1 LIMIT 1",
+    var result = await queryAccount(pool,
+      `SELECT a.id, a.username, a.password, a.role, a.company, a.supplier_role,
+              a.company_code, a.company_codes, a.raw, a.token_version,
+              COALESCE(a.is_active, true) AS is_active,
+              BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee
+         FROM accounts a
+    LEFT JOIN employees e ON e.user_id::text = a.id::text
+        WHERE a.username = $1
+     GROUP BY a.id, a.username, a.password, a.role, a.company, a.supplier_role,
+              a.company_code, a.company_codes, a.raw, a.token_version, a.is_active
+        LIMIT 1`,
+      `SELECT a.id, a.username, a.password, a.role, a.company, a.supplier_role,
+              a.company_code, a.company_codes, a.raw, 1 AS token_version,
+              COALESCE(a.is_active, true) AS is_active,
+              BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee
+         FROM accounts a
+    LEFT JOIN employees e ON e.user_id::text = a.id::text
+        WHERE a.username = $1
+     GROUP BY a.id, a.username, a.password, a.role, a.company, a.supplier_role,
+              a.company_code, a.company_codes, a.raw, a.is_active
+        LIMIT 1`,
       [username.trim()]
     );
 
     if (!result.rows[0]) return res.status(401).json({ error: "账号不存在" });
     var u = result.rows[0];
+    if (u.is_active === false) return res.status(401).json({ error: "ACCOUNT_INACTIVE" });
+    if (u.has_inactive_employee) return res.status(401).json({ error: "EMPLOYEE_INACTIVE" });
 
     const { ok: passwordOk, upgraded } = await verifyPassword(pool, u.id, password, u.password);
 
@@ -135,7 +190,8 @@ export default async function handler(req, res) {
       uid: u.id, username: u.username, role: u.role,
       company: u.company, supplierRole: u.supplier_role,
       companyCode: u.company_code, companyCodes: companyCodes,
-      access: access
+      access: access,
+      tv: u.token_version || 1
     });
 
     // 登录成功审计

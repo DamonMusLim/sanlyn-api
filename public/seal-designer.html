@@ -85,6 +85,16 @@ input[type=range]{flex:1;accent-color:#3b82f6}
       <input type="text" id="subTextInput" placeholder="合同专用章 / 财务专用章 / 自定义...">
     </div>
 
+    <div class="form-group">
+      <label>外圈英文名 <span style="color:#4b5563;font-weight:400">（留空=普通单圈章，填了=双语章）</span></label>
+      <input type="text" id="nameEnInput" placeholder="XIAMEN XXX IMPORT AND EXPORT CO., LTD.">
+    </div>
+
+    <div class="form-group">
+      <label>统一社会信用代码 <span style="color:#4b5563;font-weight:400">（留空不显示）</span></label>
+      <input type="text" id="creditCodeInput" placeholder="91350206MA34RW3852">
+    </div>
+
     <div class="divider"></div>
 
     <div class="form-group">
@@ -169,14 +179,29 @@ function starPath(cx, cy, R, r) {
   return 'M ' + pts.join(' L ') + ' Z';
 }
 
+// 外圈大弧路径（双语章：几乎绕满一周的英文名，底部留缺口）
+function ringArcPath(cx, cy, r, gapDeg) {
+  gapDeg = gapDeg === undefined ? 30 : gapDeg;
+  var toRad = function(d) { return d * Math.PI / 180; };
+  var startDeg = 90 + gapDeg / 2;
+  var endDeg = 90 - gapDeg / 2 + 360;
+  var x1 = cx + r * Math.cos(toRad(startDeg));
+  var y1 = cy + r * Math.sin(toRad(startDeg));
+  var x2 = cx + r * Math.cos(toRad(endDeg));
+  var y2 = cy + r * Math.sin(toRad(endDeg));
+  return 'M ' + x1 + ',' + y1 + ' A ' + r + ',' + r + ' 0 1,1 ' + x2 + ',' + y2;
+}
+
 function generateSeal(opts) {
   opts = opts || {};
-  var type    = opts.type    || 'official';
-  var name    = opts.name    || '公司名称';
-  var subText = opts.subText;
-  var color   = opts.color   || '#E10000';
-  var size    = opts.size    || 200;
-  var font    = opts.font    || 'SimSun, "宋体", serif';
+  var type       = opts.type    || 'official';
+  var name       = opts.name    || '公司名称';
+  var subText    = opts.subText;
+  var color      = opts.color   || '#E10000';
+  var size       = opts.size    || 200;
+  var font       = opts.font    || 'SimSun, "宋体", serif';
+  var nameEn     = opts.nameEn;
+  var creditCode = opts.creditCode;
 
   var half    = size / 2;
   var outerR  = half * 0.90;
@@ -190,7 +215,12 @@ function generateSeal(opts) {
   var uid     = Math.random().toString(36).slice(2, 8);
   var topId   = 'sealTop_' + uid;
   var botId   = 'sealBot_' + uid;
-  var nameArcR = outerR * 0.80;
+  var enId    = 'sealEn_' + uid;
+  // 双语章（有英文名）时中文弧收窄让位给外圈英文；否则保持原单圈章样式不变
+  var nameArcR = outerR * (nameEn ? 0.62 : 0.80);
+  var enArcR = outerR * 0.90;
+  var enFontSize = size * 0.055;
+  var creditFontSize = size * 0.052;
 
   var defaultSub = { official: '', finance: '财务专用章', contract: '合同专用章', personal: '' };
   var centerLabel = (subText !== undefined && subText !== null) ? subText : (defaultSub[type] || '');
@@ -208,14 +238,18 @@ function generateSeal(opts) {
     + '<defs>'
     + '<path id="'+topId+'" d="M '+(half-nameArcR)+','+half+' A '+nameArcR+','+nameArcR+' 0 0,1 '+(half+nameArcR)+','+half+'"/>'
     + '<path id="'+botId+'" d="M '+(half-subArcR)+','+half+' A '+subArcR+','+subArcR+' 0 0,0 '+(half+subArcR)+','+half+'"/>'
+    + (nameEn ? '<path id="'+enId+'" d="'+ringArcPath(half, half, enArcR, 30)+'"/>' : '')
     + '</defs>'
     + '<circle cx="'+half+'" cy="'+half+'" r="'+outerR+'" fill="none" stroke="'+color+'" stroke-width="'+stroke+'"/>'
     + '<circle cx="'+half+'" cy="'+half+'" r="'+(innerR*0.60)+'" fill="none" stroke="'+color+'" stroke-width="'+(stroke*0.5)+'" opacity="0.6"/>'
     + '<path d="'+starPath(half, half, starR, starr)+'" fill="'+color+'"/>'
+    + (nameEn ? '<text font-family="Arial, Helvetica, sans-serif" font-size="'+enFontSize+'" fill="'+color+'" text-anchor="middle" letter-spacing="'+(size*0.003)+'">'
+      + '<textPath href="#'+enId+'" startOffset="50%">'+nameEn+'</textPath></text>' : '')
     + '<text font-family="'+font+'" font-size="'+nameFontSize+'" fill="'+color+'" text-anchor="middle" letter-spacing="'+(size*0.008)+'">'
     + '<textPath href="#'+topId+'" startOffset="50%">'+name+'</textPath></text>'
     + (centerLabel ? '<text font-family="'+font+'" font-size="'+subFontSize+'" fill="'+color+'" text-anchor="middle" letter-spacing="'+(size*0.006)+'">'
       + '<textPath href="#'+botId+'" startOffset="50%">'+centerLabel+'</textPath></text>' : '')
+    + (creditCode ? '<text x="'+half+'" y="'+(half + half*0.40)+'" font-family="Arial, Helvetica, sans-serif" font-size="'+creditFontSize+'" fill="'+color+'" text-anchor="middle" letter-spacing="'+(size*0.003)+'">'+creditCode+'</text>' : '')
     + '</svg>';
 }
 // ── 设计器逻辑 ───────────────────────────────────────────────
@@ -224,6 +258,8 @@ var state = {
   type: 'official',
   name: '厦门三凛进出口有限公司',
   subText: undefined,
+  nameEn: undefined,
+  creditCode: undefined,
   color: '#E10000',
   size: 200,
 };
@@ -257,6 +293,18 @@ document.getElementById('nameInput').addEventListener('input', function() {
 // 副文字
 document.getElementById('subTextInput').addEventListener('input', function() {
   state.subText = this.value || undefined;
+  render();
+});
+
+// 外圈英文名（双语章）
+document.getElementById('nameEnInput').addEventListener('input', function() {
+  state.nameEn = this.value || undefined;
+  render();
+});
+
+// 统一社会信用代码
+document.getElementById('creditCodeInput').addEventListener('input', function() {
+  state.creditCode = this.value || undefined;
   render();
 });
 

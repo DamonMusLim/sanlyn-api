@@ -162,6 +162,20 @@ export default async function handler(req, res) {
         i++;
       }
     });
+    if ((b.qty_ctn !== undefined || b.unit_price !== undefined) && b.subtotal === undefined) {
+      sets.push(
+        "subtotal = ROUND((CASE WHEN $" + i + " THEN $" + (i + 1) + "::numeric ELSE qty_ctn END) * (CASE WHEN $" + (i + 2) + " THEN $" + (i + 3) + "::numeric ELSE unit_price END), 2)"
+      );
+      vals.push(b.qty_ctn !== undefined, b.qty_ctn !== undefined ? b.qty_ctn : null, b.unit_price !== undefined, b.unit_price !== undefined ? b.unit_price : null);
+      i += 4;
+    }
+    if ((b.qty_ctn !== undefined || b.factory_price !== undefined) && b.factory_subtotal === undefined) {
+      sets.push(
+        "factory_subtotal = ROUND((CASE WHEN $" + i + " THEN $" + (i + 1) + "::numeric ELSE qty_ctn END) * (CASE WHEN $" + (i + 2) + " THEN $" + (i + 3) + "::numeric ELSE factory_price END), 2)"
+      );
+      vals.push(b.qty_ctn !== undefined, b.qty_ctn !== undefined ? b.qty_ctn : null, b.factory_price !== undefined, b.factory_price !== undefined ? b.factory_price : null);
+      i += 4;
+    }
     if (!sets.length) return res.status(400).json({ error: "No fields to update" });
     sets.push("updated_at = NOW()");
     vals.push(id);
@@ -183,7 +197,7 @@ export default async function handler(req, res) {
     var id = parseInt(req.query.id);
     if (!id) return res.status(400).json({ error: "id required" });
     try {
-      await pool.query("DELETE FROM order_line_items WHERE id = $1", [id]);
+      var del = await pool.query("DELETE FROM order_line_items WHERE id = $1 RETURNING order_id", [id]);
       return res.status(200).json({ ok: true });
     } catch (e) {
       return res.status(500).json({ error: e.message });

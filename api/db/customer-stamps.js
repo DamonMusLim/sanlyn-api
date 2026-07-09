@@ -51,13 +51,19 @@ export default async function handler(req, res) {
       if (!targetUsername) {
         return res.status(400).json({ error: 'username required' });
       }
-      const result = await pool.query(
-        `SELECT id, username, company_code, name, url, uploaded_at, is_default, shape
-         FROM customer_stamps
-         WHERE username = $1 AND is_active = true
-         ORDER BY uploaded_at DESC`,
-        [targetUsername]
-      );
+      // 可选 ?company_code= 过滤:公司资产,admin可跨用户查该公司的章;非admin仍锁自己
+      const _cc = req.query.company_code ? String(req.query.company_code).trim() : '';
+      const _cols = `SELECT id, username, company_code, name, url, uploaded_at, is_default, shape FROM customer_stamps`;
+      let result;
+      if (req.query.scope === 'all' && isAdmin) {
+        result = await pool.query(`${_cols} WHERE is_active = true ORDER BY (company_code IS NULL), company_code, is_default DESC, uploaded_at DESC`);
+      } else if (_cc) {
+        result = isAdmin
+          ? await pool.query(`${_cols} WHERE company_code = $1 AND is_active = true ORDER BY is_default DESC, uploaded_at DESC`, [_cc])
+          : await pool.query(`${_cols} WHERE username = $1 AND company_code = $2 AND is_active = true ORDER BY is_default DESC, uploaded_at DESC`, [targetUsername, _cc]);
+      } else {
+        result = await pool.query(`${_cols} WHERE username = $1 AND is_active = true ORDER BY is_default DESC, uploaded_at DESC`, [targetUsername]);
+      }
       return res.status(200).json({ success: true, stamps: result.rows });
     }
 

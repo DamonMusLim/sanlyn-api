@@ -95,28 +95,9 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
       </div>
       <div class="badge badge-amber">需要您操作</div>
     </div>
-    <!-- 财务状态预留区 -->
-    <div class="finance-bar" id="financeBar">
-      <span style="font-size:13px;">💰</span>
-      <span class="finance-label">工厂预付款：</span>
-      <span class="badge badge-gray" id="finBadge1">待财务确认</span>
-      <span style="color:#e0e4ea;">|</span>
-      <span class="finance-label">客户付款：</span>
-      <span class="badge badge-gray" id="finBadge2">待财务确认</span>
-      <span id="finNote" style="font-size:11px;color:#6b7280;margin-left:4px;"></span>
-    </div>
-    <!-- 财务·开票板块（缺料+含税开票申请+上传发票，复用退税缺口+mt端点） -->
-    <div class="card" id="finBoard" style="margin:10px 0 0;display:none;">
-      <div class="section" style="padding:12px 14px;">
-        <div onclick="toggleFinBoard()" style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;">
-          <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:800;color:#111827;">财务 · 开票</span>
-          <span style="font-size:11px;color:#9ca3af;">收起/展开</span></div>
-          <div style="display:flex;align-items:center;gap:8px;"><span class="badge badge-amber" id="finBoardBadge">加载中</span><span id="finBoardChevron" style="color:#9ca3af;font-size:12px;">▸</span></div>
-        </div>
-        <div id="finBoardBody" style="font-size:12px;color:#6b7280;margin-top:10px;display:none;">加载中…</div>
-      </div>
-    </div>
   </div>
+
+  <iframe id="invoiceCollabFrame" title="港杂费开票确认" src="" style="width:100%;height:980px;border:0;margin:10px 0 0;display:block;background:transparent;"></iframe>
 
   <!-- STEP 1 -->
   <div class="step-card required" id="step1">
@@ -729,8 +710,7 @@ async function boot(){
   })();
   const fp=d.factory_progress; if(fp&&fp.total>1) document.querySelector('.portal-login-badge').textContent=(s.shipment_no||'')+' · '+fp.submitted+'/'+fp.total+'厂已确认';
   if(SCOPE) document.querySelector('#step1 .step-sub').textContent='请确认贵厂货柜信息 · 仅您与 Sanlyn 可见';
-  // 财务预留区
-  if(s.finance){ const fi=s.finance; if(fi.factory_payment) $('finBadge1').textContent=fi.factory_payment; if(fi.customer_payment) $('finBadge2').textContent=fi.customer_payment; if(fi.note) $('finNote').textContent=fi.note; if(fi.factory_payment==='已预付') $('finBadge1').className='badge badge-green'; if(fi.customer_payment==='已到账') $('finBadge2').className='badge badge-green'; }
+  const invFrame=$('invoiceCollabFrame'); if(invFrame) invFrame.src='/templates/invoice-collab-section.html?token='+encodeURIComponent(token);
   const cells=[], cell=(l,v)=>'<div style="border:1px solid #f0f2f5;background:#f8fafc;border-radius:8px;padding:7px 10px;"><div style="font-size:9px;color:#9ca3af;font-weight:700;">'+l+'</div><div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:2px;">'+v+'</div></div>';
   if(s.issuing_company) cells.push(cell('客户(下游)',esc(s.issuing_company)));
   if(s.pol) cells.push(cell('送港',esc(s.pol)));
@@ -1000,95 +980,6 @@ function pickCargoDoc(){
 }
 
 boot();
-
-// ===== 财务·开票板块（工厂只见含税价）=====
-const FIN_API='/api/db/factory-portal';
-let _finData=null, _finInput=null;
-function toggleFinBoard(){ const b=$('finBoardBody'),c=$('finBoardChevron'); if(!b) return; const open=b.style.display!=='none'; b.style.display=open?'none':'block'; if(c) c.textContent=open?'▸':'▾'; }
-function _money(v){const n=Number(v||0);return n?'¥'+n.toLocaleString(undefined,{maximumFractionDigits:2}):'—';}
-async function loadFinance(){
-  if(!token) return;
-  try{
-    const r=await fetch(FIN_API+'?mt='+encodeURIComponent(token));
-    if(!r.ok) return;
-    _finData=await r.json();
-    if(!_finData||!_finData.factory) return;
-    $('finBoard').style.display='block';
-    renderFinance();
-  }catch(e){}
-}
-function renderFinance(){
-  const gaps=Array.isArray(_finData.gaps)?_finData.gaps:[];
-  const up=Array.isArray(_finData.uploaded)?_finData.uploaded:[];
-  // 报关后才开票(Damon铁律): 有报关单号(customs_no)才亮"开票",没报关的灰掉显"待报关后开票"
-  const isDeclared=g=>!!(g&&g.customs_no&&String(g.customs_no).trim());
-  const openable=gaps.filter(isDeclared).length, pending=gaps.length-openable;
-  $('finBoardBadge').textContent=gaps.length?(openable?('可开 '+openable+' 单'):'待报关')+(pending?(' · 待报关 '+pending):''):'已齐';
-  $('finBoardBadge').className='badge '+(openable?'badge-red':gaps.length?'badge-gray':'badge-green');
-  let h='';
-  if(!gaps.length){ h='<div style="color:#059669;font-size:12px;">✅ 本厂进项票已齐，无待开。</div>'; }
-  gaps.forEach((g,i)=>{
-    const goods=(g.goods||[]).map(x=>x.name_cn+(x.qty2_ctn?(' '+x.qty2_ctn+'箱'):'')).join('、')||'—';
-    if(!isDeclared(g)){
-      // 未报关：只提示待报关，不催开票、不给按钮
-      h+='<div style="border:1px dashed #e0e4ea;border-radius:8px;padding:10px;margin-bottom:8px;background:#fafafa;opacity:.85;">'
-        +'<div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-size:12px;font-weight:800;color:#6b7280;">'+(g.contract_no||'—')+'</span>'
-        +'<span style="font-size:11px;color:#9ca3af;">待报关</span></div>'
-        +'<div style="font-size:11.5px;color:#9ca3af;margin:4px 0;">'+goods+'</div>'
-        +'<div style="font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;">⏳ 待报关后开票 · 报关完成后此处会亮出开票</div></div>';
-      return;
-    }
-    h+='<div style="border:1px solid #eef0f3;border-radius:8px;padding:10px;margin-bottom:8px;">'
-      +'<div style="display:flex;justify-content:space-between;gap:8px;"><span style="font-size:12px;font-weight:800;color:#111827;">'+(g.contract_no||'—')+'</span>'
-      +'<span style="font-size:11px;color:#b45309;">待开</span></div>'
-      +'<div style="font-size:11.5px;color:#374151;margin:4px 0;">'+goods+'</div>'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;background:#eff6ff;border-radius:6px;padding:7px 10px;margin:6px 0;">'
-      +'<span style="font-size:12px;color:#1d4ed8;font-weight:700;">请开含税金额</span>'
-      +'<span style="font-size:15px;color:#1d4ed8;font-weight:800;">'+_money(g.amount_incl_tax)+'</span></div>'
-      +'<div style="font-size:10.5px;color:#9ca3af;margin-bottom:8px;">'+(g.tax_rate_label||'')+' · 不含税/税额由贵司开票系统自动拆分</div>'
-      +'<div style="display:flex;gap:8px;">'
-      +'<button class="btn btn-sm" style="flex:1;" onclick="finApply('+i+')">📄 开票申请</button>'
-      +'<button class="btn btn-green btn-sm" style="flex:1;" onclick="finUpload('+i+')">📎 上传发票</button></div>'
-      +'<div id="finMsg'+i+'" style="font-size:11px;margin-top:6px;color:#059669;"></div></div>';
-  });
-  if(up.length){
-    h+='<div style="font-size:11px;font-weight:700;color:#374151;margin:8px 0 4px;">已上传（待财务核对）</div>';
-    up.forEach(u=>{ h+='<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:4px 0;border-bottom:1px solid #f3f4f6;">'
-      +'<span>'+(u.invoice_no||'—')+'</span><span style="color:#b45309;">'+(u.review_status||'pending')+'</span></div>'; });
-  }
-  $('finBoardBody').innerHTML=h;
-}
-function finApply(i){
-  const g=_finData.gaps[i]; if(!g) return;
-  const m=$('finMsg'+i); m.style.color='#374151';
-  m.innerHTML='<div style="border:1px solid #e5e7eb;border-radius:6px;padding:8px;margin-top:4px;background:#fafafa;">'
-    +'<div style="font-weight:700;text-align:center;">开票申请</div>'
-    +'<div style="margin:4px 0;">购买方：厦门巴匕进出口有限公司</div>'
-    +'<div>销售方：'+(_finData.factory.name||'')+'</div>'
-    +'<div>合同：'+(g.contract_no||'')+'</div>'
-    +'<div style="margin-top:4px;font-weight:700;color:#1d4ed8;">请开含税金额 '+_money(g.amount_incl_tax)+'（'+(g.tax_rate_label||'')+'）</div></div>';
-}
-function finUpload(i){
-  const g=_finData.gaps[i]; if(!g) return;
-  if(!_finInput){ _finInput=document.createElement('input'); _finInput.type='file'; _finInput.accept='application/pdf,image/*'; document.body.appendChild(_finInput); }
-  _finInput.onchange=async e=>{
-    const file=e.target.files[0]; if(!file) return;
-    const inv=prompt('请输入发票号码：'); if(!inv){ e.target.value=''; return; }
-    const amt=prompt('请输入价税合计（含税金额）：', g.amount_incl_tax||'');
-    const msg=$('finMsg'+i); msg.style.color='#374151'; msg.textContent='上传中…';
-    try{
-      const b64=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(file);});
-      const resp=await fetch(FIN_API+'?mt='+encodeURIComponent(token)+'&action=upload',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({invoice_no:inv,amount_incl_tax:amt,contract_nos:g.contract_no,customs_nos:g.customs_no,file_base64:b64,file_name:file.name,mime_type:file.type})});
-      const rd=await resp.json();
-      if(resp.ok&&rd.ok){ msg.style.color='#059669'; msg.textContent='✓ 已上传，待财务核对'; loadFinance(); }
-      else { msg.style.color='#dc2626'; msg.textContent='上传失败：'+(rd.error||resp.status); }
-    }catch(err){ msg.style.color='#dc2626'; msg.textContent='网络错误'; }
-    e.target.value='';
-  };
-  _finInput.click();
-}
-if(token) setTimeout(loadFinance, 600);
 
 </script>
   <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.7.1 · 2026-07-02</div>

@@ -42,7 +42,7 @@ function dmSign(params, secret) {
   return crypto.createHmac("sha1", secret + "&").update(strToSign).digest("base64");
 }
 
-async function sendViaDM({ fromAlias, fromName, to, subject, htmlBody, replyTo }) {
+export async function sendViaDM({ fromAlias, fromName, to, subject, htmlBody, replyTo }) {
   const ak = process.env.DM_ACCESS_KEY_ID;
   const sk = process.env.DM_ACCESS_KEY_SECRET;
   const region = process.env.DM_REGION || "ap-southeast-1";

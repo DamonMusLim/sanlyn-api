@@ -152,7 +152,7 @@ function checkComplianceException(row, requester) {
 
 // ── PATCH: admin-only field update (status, etd, delivery_date, remarks, raw merge)
 const PATCH_ALLOWED_COLS = [
-  "order_no","company_code","company_name_en","status","etd","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
+  "order_no","company_code","company_name_en","status","etd","pol","delivery_date","remarks","brand","trade_terms","notes","total_amount","currency",
   // Order totals — auto-derived from raw.products on save (compute-at-write, then docs/list read the stored value) (2026-05-22)
   "total_qty","net_weight","gross_weight","total_cbm",
   // Buyer + commercial refs editable from the order detail Deal section (2026-05-22)
@@ -605,25 +605,25 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return; // S18.1: 401 if no valid JWT
   if (req.method === "PATCH") {
     try { return await handlePatch(req, res); }
-    catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
   }
   if (req.method === "POST") {
     const action = req.query.action;
     if (action === "mark_ready") {
       try { return await handleMarkReady(req, res); }
-      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+      catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action === "cancel_request") {
       try { return await handleCancelRequest(req, res); }
-      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+      catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action === "cancel_review") {
       try { return await handleCancelReview(req, res); }
-      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+      catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action === "lock") {
       try { return await handleLock(req, res); }
-      catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+      catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
     }
     if (action === "hard_delete") {
       if (!req.user || req.user.role !== "admin") {
@@ -642,7 +642,7 @@ export default async function handler(req, res) {
     if (action) return res.status(400).json({ error: "unknown action: " + action });
     // No action = create new order
     try { return await handleCreate(req, res); }
-    catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
   }
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
@@ -679,6 +679,9 @@ export default async function handler(req, res) {
              sp.carrier_code       AS sp_shipping_line,
              COALESCE(NULLIF(o.raw->>'containerType',''), sp.container_type) AS container_type_raw,
              COALESCE(NULLIF(o.raw->>'shippingLine',''), sp.carrier_code) AS shipping_line,
+             o.raw->>'inland_freight'          AS inland_freight,
+             o.raw->>'inland_freight_label'    AS inland_freight_label,
+             o.raw->>'inland_freight_label_en' AS inland_freight_label_en,
              fc.name_cn     AS factory_name_cn,
              fc.name_en     AS factory_name_en,
              oe._events,
@@ -821,5 +824,5 @@ export default async function handler(req, res) {
     const safe = serializeOrdersForRole(withProducts, requesterRole);
 
     return res.status(200).json({ success: true, data: safe, count: result.rowCount });
-  } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  } catch (err) { if (res.headersSent) { console.error('[orders] 响应已发后又抛错:', err.message); return; } return res.status(500).json({ success: false, error: err.message }); }
 }

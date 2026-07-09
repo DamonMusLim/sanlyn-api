@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>月结合并开票</title>
+  <style>
+    :root{color-scheme:light;--bg:#f4f6f8;--panel:#fff;--line:#d8dee6;--text:#17202a;--muted:#64717f;--ink:#243447;--ok:#1d7f5f;--warn:#a76116;--blue:#286da8;--soft:#edf2f7}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0}
+    header{position:sticky;top:0;z-index:2;background:#fff;border-bottom:1px solid var(--line);padding:14px 18px}.top{display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap}.brand{font-size:18px;font-weight:760}.muted{color:var(--muted)}
+    main{max-width:1180px;margin:0 auto;padding:18px}.bar,.login{display:flex;gap:8px;align-items:end;flex-wrap:wrap}.field{display:flex;flex-direction:column;gap:5px}.field label{font-size:12px;color:var(--muted)}input{height:36px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);padding:0 10px;min-width:160px}button{height:36px;border:1px solid #9aa8b5;border-radius:6px;background:#263746;color:#fff;padding:0 13px;cursor:pointer}button.secondary{background:#fff;color:#263746}button:hover{filter:brightness(.96)}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-top:14px;padding:14px}.summary{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px}.kpi{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:10px}.kpi b{display:block;font-size:18px;margin-top:3px}.grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.9fr);gap:14px;align-items:start}.empty{padding:28px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:8px;background:#fff}
+    details{border:1px solid var(--line);border-radius:8px;background:#fff;margin-bottom:8px}summary{cursor:pointer;padding:11px 12px;font-weight:720;display:flex;justify-content:space-between;gap:12px}.sub{font-size:12px;color:var(--muted);font-weight:400}table{width:100%;border-collapse:collapse}th,td{padding:8px 10px;border-top:1px solid var(--line);text-align:left}th{font-size:12px;color:var(--muted);background:#fafbfc}.tr{text-align:right}.badge{display:inline-flex;border-radius:999px;background:#e8f2ee;color:var(--ok);padding:2px 8px;font-size:12px}.error{color:#b23b45}.panel-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.preview-tools{display:flex;gap:6px;flex-wrap:wrap}.preview-tools button{height:30px;font-size:12px}.invoice{position:relative;border:1px solid #b9c4cf;background:#fff;padding:16px 16px 86px}.invoice h2{text-align:center;margin:4px 0 12px;font-size:20px}.invrow{display:grid;grid-template-columns:90px 1fr;gap:8px;border-top:1px solid var(--line);padding:8px 0}.amount{font-size:20px;font-weight:780}.actions{display:flex;justify-content:flex-end;margin-top:12px}.currency-block{border-top:4px solid var(--blue);margin-bottom:12px}.notice{border-color:#dfc28c;background:#fff8e8;color:#69420d}.signature{position:absolute;right:18px;bottom:12px;width:150px;height:64px;border-top:1px solid var(--line);padding-top:7px;text-align:center;font-size:11px;color:var(--muted);font-weight:780}.invoice-seal{position:absolute;right:6px;bottom:0;width:108px;height:108px;object-fit:contain;opacity:.72;mix-blend-mode:multiply;display:none;pointer-events:none}
+    @media(max-width:900px){.grid,.summary{grid-template-columns:1fr}.bar,.login{align-items:stretch}.field,input,button{width:100%}summary{display:block}.tr{text-align:left}}
+    @media print{@page{size:A4 portrait;margin:12mm}body{background:#fff}body *{visibility:hidden!important}#preview,#preview *{visibility:visible!important}#preview{position:absolute;left:0;top:0;width:100%}.invoice{border:0!important;padding:0 0 86px!important;break-after:page}.invoice:last-child{break-after:auto}.actions,.preview-tools,header,main>section:not(.grid){display:none!important}.invoice-seal{display:block!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}th{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="top">
+      <div><div class="brand">月结合并开票</div><div class="muted" id="who">未登录</div></div>
+      <form class="login" id="loginForm">
+        <input id="username" autocomplete="username" placeholder="用户名">
+        <input id="password" type="password" autocomplete="current-password" placeholder="密码">
+        <button>登录</button><span class="error" id="loginErr"></span>
+      </form>
+    </div>
+  </header>
+  <main>
+    <section class="panel">
+      <form class="bar" id="queryForm">
+        <div class="field"><label for="payer">发货人 code 或名称</label><input id="payer" placeholder="CN-00061"></div>
+        <div class="field"><label for="month">账单月份</label><input id="month" type="month"></div>
+        <button>拉取月结</button>
+        <button class="secondary" type="button" id="clearBtn">清空</button>
+        <span class="error" id="err"></span>
+      </form>
+    </section>
+    <section class="panel summary" id="summary"></section>
+    <section class="grid">
+      <div class="panel"><h3>本月提单明细</h3><div id="groups" class="empty">请输入发货人和月份</div></div>
+      <div class="panel"><h3 class="panel-title"><span>合并发票预览</span><span class="preview-tools"><button class="secondary" type="button" id="langBtn">EN</button><button type="button" id="printBtn">下载PDF/打印</button></span></h3><div id="preview" class="empty">暂无预览</div></div>
+    </section>
+  </main>
+  <script>
+    const $=id=>document.getElementById(id);
+    const state={token:localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||"",data:null};
+    let _lang="zh";
+    const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+    const fmt=n=>Number(n||0).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    function authHeaders(){return state.token?{Authorization:"Bearer "+state.token}:{}}
+    async function api(path,opts={}){
+      const r=await fetch(path,{...opts,headers:{"Content-Type":"application/json",...authHeaders(),...(opts.headers||{})}});
+      const d=await r.json().catch(()=>({error:"请求失败"}));
+      if(!r.ok)throw new Error(d.message||d.error||"请求失败");
+      return d;
+    }
+    function setDefaultMonth(){const d=new Date();$("month").value=d.toISOString().slice(0,7)}
+    function summaryHtml(d){
+      if(!d)return"";
+      const totals=(d.combined||[]).map(x=>`${esc(x.currency)} ${fmt(x.total_with_tax)}`).join("<br>")||"—";
+      return `<div class="kpi"><span>买方</span><b>${esc(d.payer.name||d.payer.code||"未匹配")}</b><span class="muted">${esc(d.payer.tax_id||"无税号")}</span></div>
+        <div class="kpi"><span>月份</span><b>${esc(d.month)}</b><span class="muted">日期列 ${esc(d.date_column||"bill_month")}</span></div>
+        <div class="kpi"><span>提单数</span><b>${d.bl_count||0}</b><span class="muted">按 bl_no 分组</span></div>
+        <div class="kpi"><span>价税合计</span><b>${totals}</b><span class="muted">多币种分张</span></div>`;
+    }
+    function groupHtml(g){
+      const totals=Object.entries(g.subtotal||{}).map(([c,v])=>`${esc(c)} ${fmt(v)}`).join(" / ")||"—";
+      return `<details><summary><span>${esc(g.bl_no)}<div class="sub">${esc(g.shipment_no||"")} · ${g.lines.length} 行</div></span><span class="badge">${totals}</span></summary>
+        <table><thead><tr><th>费目</th><th class="tr">单价</th><th class="tr">数量</th><th class="tr">金额</th><th>币种</th></tr></thead><tbody>
+        ${g.lines.map(l=>`<tr><td>${esc(l.cost_category)}</td><td class="tr">${fmt(l.unit_price)}</td><td class="tr">${fmt(l.qty)}</td><td class="tr">${fmt(l.amount)}</td><td>${esc(l.currency)}</td></tr>`).join("")}
+        </tbody></table></details>`;
+    }
+    function applyLang(){
+      document.querySelectorAll("[data-en]").forEach(el=>{
+        if(!el.hasAttribute("data-zh"))el.setAttribute("data-zh",el.textContent);
+        el.textContent=_lang==="en"?el.getAttribute("data-en"):el.getAttribute("data-zh");
+      });
+      $("langBtn").textContent=_lang==="en"?"中文":"EN";
+    }
+    function toggleLang(){_lang=_lang==="en"?"zh":"en";applyLang()}
+    function applySeal(target,url,name){
+      if(!url){url=target;target="monthly:seller"}
+      document.querySelectorAll(".invoice-seal").forEach(img=>{img.src=url;img.style.display="block"});
+      try{localStorage.setItem("monthly_invoice_seller_seal",JSON.stringify({url,name:name||"洋宝宝公章"}));}catch(e){}
+    }
+    function loadSellerSeal(){
+      const d=state.data||{}, url=d.seller?.seal_url||"/public/yangbaobao-seal.png";
+      applySeal("monthly:seller",url,d.seller?.name||"洋宝宝公章");
+    }
+    function invoiceHtml(d,x){
+      return `<div class="invoice currency-block">
+        <h2 data-en="VAT Ordinary e-Invoice">增值税普通发票</h2>
+        <div class="invrow"><b data-en="Buyer">购买方</b><span>${esc(d.payer.name||d.payer.code)} ${d.payer.tax_id?`<span class="sub"><span data-en="Tax ID">税号</span> ${esc(d.payer.tax_id)}</span>`:""}</span></div>
+        <div class="invrow"><b data-en="Seller">销售方</b><span>${esc(d.seller.name||"上海洋宝宝国际物流有限公司")} ${d.seller.tax_id?`<span class="sub"><span data-en="Tax ID">税号</span> ${esc(d.seller.tax_id)}</span>`:""}</span></div>
+        <table><thead><tr><th data-en="Item">项目</th><th data-en="Unit">单位</th><th class="tr" data-en="Qty">数量</th><th class="tr" data-en="Amount Excl. Tax">不含税</th><th class="tr" data-en="Tax Amount">税额</th><th class="tr" data-en="Total Incl. Tax">价税合计</th></tr></thead><tbody>
+          <tr><td><span data-en="Brokerage Agency Service Port Charges">${esc(x.item_name)}</span></td><td>${esc(x.unit)}</td><td class="tr">${fmt(x.qty)}</td><td class="tr">${esc(x.currency)} ${fmt(x.amount_ex_tax)}</td><td class="tr">${fmt(x.tax_amount)}</td><td class="tr amount">${esc(x.currency)} ${fmt(x.total_with_tax)}</td></tr>
+        </tbody></table>
+        <div class="invrow"><b data-en="Tax Rate">税率</b><span>${fmt((x.tax_rate||0)*100)}%</span></div>
+        <div class="invrow"><b data-en="Remarks">备注</b><span>${esc(x.remark)}</span></div>
+        <div class="signature"><span data-en="Seller Seal">销售方签章</span><img class="invoice-seal" alt="seller seal"></div>
+        <div class="actions"><button type="button" data-generate="${esc(x.currency)}">生成合并发票</button></div>
+      </div>`;
+    }
+    function render(){
+      const d=state.data;
+      $("summary").innerHTML=summaryHtml(d);
+      if(!d){$("groups").className="empty";$("groups").textContent="请输入发货人和月份";$("preview").className="empty";$("preview").textContent="暂无预览";return}
+      if(d.notice){$("groups").className="empty notice";$("groups").textContent=d.notice}else{$("groups").className="";$("groups").innerHTML=d.groups.map(groupHtml).join("")}
+      if((d.combined||[]).length){$("preview").className="";$("preview").innerHTML=d.combined.map(x=>invoiceHtml(d,x)).join("");applyLang();loadSellerSeal()}else{$("preview").className="empty";$("preview").textContent="没有可预览的合并发票"}
+    }
+    async function load(){
+      $("err").textContent="";
+      const payer=$("payer").value.trim(),month=$("month").value;
+      if(!payer||!month){$("err").textContent="请填写发货人和月份";return}
+      state.data=await api(`/api/db/invoice-monthly-consolidate?payer_code=${encodeURIComponent(payer)}&month=${encodeURIComponent(month)}`);
+      render();
+    }
+    $("loginForm").addEventListener("submit",async e=>{
+      e.preventDefault();$("loginErr").textContent="";
+      try{const d=await api("/api/db/auth-login",{method:"POST",body:JSON.stringify({username:$("username").value,password:$("password").value})});state.token=d.token;localStorage.setItem("sanlyn_token",d.token);$("who").textContent=`${d.user.username} · ${d.user.role}`;$("loginForm").style.display="none"}catch(err){$("loginErr").textContent=err.message}
+    });
+    $("queryForm").addEventListener("submit",e=>{e.preventDefault();load().catch(err=>$("err").textContent=err.message)});
+    $("clearBtn").addEventListener("click",()=>{$("payer").value="";state.data=null;render()});
+    $("langBtn").addEventListener("click",toggleLang);
+    $("printBtn").addEventListener("click",()=>window.print());
+    $("preview").addEventListener("click",e=>{const b=e.target.closest("[data-generate]");if(b)alert(`${b.dataset.generate} 合并发票生成将在柠檬云开票阶段接入，本轮仅预览。`)});
+    setDefaultMonth(); if(state.token){$("who").textContent="已登录（token）";$("loginForm").style.display="none"} render();
+  </script>
+</body>
+</html>

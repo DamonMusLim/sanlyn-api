@@ -143,6 +143,9 @@ mount("/api/mcp", () => import("./api/mcp.js"));
 
 // ── Task Ingest (no JWT — uses TASK_INGEST_SECRET, 供mini检测器写PG闭环任务) ──
 mount("/api/tasks-ingest", () => import("./api/tasks-ingest.js"));
+mount("/api/wecom-panel", () => import("./api/wecom-panel.js"));
+mount("/api/wecom-suggest", () => import("./api/wecom-suggest.js"));
+mount("/api/wecom-jssdk-sign", () => import("./api/wecom-jssdk-sign.js"));
 mount("/api/wx-mini-login", () => import("./api/wx-mini-login.js"));
 mount("/api/brief-notes", () => import("./api/brief-notes.js"));
 
@@ -172,6 +175,7 @@ function mount(route, handlerModule) {
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
 mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
+mount("/api/db/version",           () => import("./api/db/version.js")); // 版本自检:commit+部署时间 2026-07-07
 mount("/api/db/account-identities", () => import("./api/db/account-identities.js"));
 mount("/api/db/migrate-account-identities", () => import("./api/db/migrate-account-identities.js"));
 mount("/api/tasks-closure", () => import("./api/tasks-closure.js"));
@@ -218,6 +222,7 @@ mount("/api/db/factory-prefill",   () => import("./api/db/factory-prefill.js"));
 mount("/api/db/factory-token-create", () => import("./api/db/factory-token-create.js"));
 mount("/api/factory-confirm",         () => import("./api/factory-confirm.js"));
 mount("/api/db/factory-recent",       () => import("./api/db/factory-recent.js"));
+mount("/api/db/factory-ports",        () => import("./api/db/factory-ports.js")); // 工厂就近港口(export-docs起运港来源) 2026-07-09
 mount("/api/db/check-username",       () => import("./api/db/check-username.js"));
 mount("/api/internal/auth-check", () => import("./api/internal/auth-check.js"));
 mount("/api/internal/lookup", () => import("./api/internal/lookup.js"));
@@ -264,6 +269,8 @@ mount("/api/db/bill-center",      () => import("./api/db/bill-center.js"));
 mount("/api/db/freight-cost-audit",   () => import("./api/db/freight-cost-audit.js")); // freight cost vs sale audit + set-par (2026-06-17)
 mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/factory-portal", () => import("./api/db/factory-portal.js")); // 工厂协同门户·财务板块(短码+collab mt)
+mount("/api/db/invoice-collab-confirm", () => import("./api/db/invoice-collab-confirm.js")); // 港杂费开票确认(booking collab token)
+mount("/api/db/invoice-monthly-consolidate", () => import("./api/db/invoice-monthly-consolidate.js")); // 月结合并开票聚合(admin/finance JWT)
 mount("/api/db/customer-invoice", () => import("./api/db/customer-invoice.js")); // B3 客户销项发票门户(短码 /ci)
 mount("/api/db/rate-configs", () => import("./api/db/rate-configs.js")); // 税率/汇率配置编辑器+改动历史(admin only)
 mount("/api/db/migrate-rate-configs", () => import("./api/db/migrate-rate-configs.js"));
@@ -555,6 +562,16 @@ mount("/api/proxy-file",      () => import("./api/proxy-file.js"));
 mount("/api/send-email",      () => import("./api/send-email.js"));
 mount("/api/db/email-templates", () => import("./api/db/email-templates.js")); // 邮件模版中心 CRUD
 mount("/api/db/email-senders", () => import("./api/db/email-senders.js")); // 发件公司主体
+mount("/api/db/email-message-log", () => import("./api/db/email-message-log.js")); // 邮件收发记录+统计
+mount("/api/db/notification-projects", () => import("./api/db/notification-projects.js")); // 通知项目中心
+mount("/api/notify/trigger", () => import("./api/notify-trigger.js")); // 统一通知触发
+mount("/api/notify/preview", () => import("./api/notify-preview.js")); // 通知预览(不发送)
+mount("/api/db/order-diary-notes", () => import("./api/db/order-diary-notes.js"));
+mount("/api/db/order-diary-notes/:id", () => import("./api/db/order-diary-notes.js"));
+mount("/api/internal/ar-followup", () => import("./api/internal/ar-followup.js"));
+mount("/api/orders/:id/timeline", () => import("./api/orders-timeline.js"));
+mount("/api/orders/:id/share-links", () => import("./api/orders-share-links.js"));
+mount("/api/public/order-timeline", () => import("./api/public-order-timeline.js"));
 mount("/api/notify/order-created", () => import("./api/notify/order-created.js"));
 mount("/api/setup-finance",   () => import("./api/setup-finance.js"));
 mount("/api/vessel-callback", () => import("./api/vessel-callback.js"));
@@ -629,6 +646,11 @@ mount("/api/db/migrate-forwarder-perf",() => import("./api/db/migrate-forwarder-
 mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-payment-reminder.js"));
 // ── Reconciliation / monthly statement ──
 mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
+mount("/api/db/slip-upload", () => import("./api/db/slip-upload.js")); // 水单/入账通知上传+MiniMax OCR (补线,2026-07-08二次找回)
+mount("/api/db/slip-review", () => import("./api/db/slip-review.js")); // 水单OCR人工确认闸 2026-07-07
+mount("/api/db/ocean-doc-upload", () => import("./api/db/ocean-doc-upload.js")); // 海运单据通用上传+MiniMax分类 2026-07-08
+mount("/api/db/ocean-doc-review", () => import("./api/db/ocean-doc-review.js")); // 海运单据人工归属确认 2026-07-08
+mount("/api/db/slip-customer-search", () => import("./api/db/slip-customer-search.js")); // 客户自选票据(限定customer) 2026-07-08
 // tax-rebate 子路由: 进项票×报关单分配 N:M
 app.all("/api/db/tax-rebate/*", async (req, res) => {
   try {

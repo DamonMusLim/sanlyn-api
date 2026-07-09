@@ -1,0 +1,64 @@
+{
+  "template_key": "ocean_freight",
+  "name": "海运应付对账",
+  "roles": [
+    { "role": "finance", "scope": "all" },
+    { "role": "forwarder", "scope_field": "factory_code", "token": ["magic_links"] }
+  ],
+  "expected": {
+    "source_type": "sql",
+    "period_field": "etd",
+    "sql": "WITH base AS (SELECT sp.*, GREATEST(COALESCE(sp.container_qty,1),1) AS qty, UPPER(TRIM(COALESCE(sp.freight_term,''))) AS term, (SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' AND fetched_at < (sp.etd::date + INTERVAL '1 day') ORDER BY fetched_at DESC LIMIT 1) AS fx_at, (SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' ORDER BY fetched_at DESC LIMIT 1) AS fx_latest FROM shipping_plans sp WHERE sp.etd >= $1::date AND sp.etd < $2::date AND NULLIF(sp.bl_no,'') IS NOT NULL) SELECT bl_no AS customs_no, bl_no, container_no, contract_no, forwarder_cn AS factory_name, forwarder_company_id AS factory_code, pol, pod, etd, term AS freight_term, qty AS container_qty, (term NOT IN ('FOB','FCA')) AS our_ocean_payable, COALESCE(fx_at, fx_latest) AS fx_rate, COALESCE(freight_cost,0) AS ocean_cost_total_usd, ROUND(COALESCE(freight_cost,0) / qty, 2) AS unit_cost_usd, ROUND((CASE WHEN term IN ('FOB','FCA') THEN 0 ELSE COALESCE(freight_cost,0) END) * COALESCE(fx_at, fx_latest) + COALESCE(port_surcharge_total,0), 2) AS expected_amount, NULL::timestamptz AS confirmed_at, 'CNY' AS currency FROM base"
+  },
+  "actual": {
+    "source_type": "sql",
+    "sql": "WITH cand AS (SELECT p.*, COALESCE(p.this_amount,p.amount,p.paid_amount) AS pay_amount, UPPER(CONCAT_WS(' ', p.pay_item, p.pay_type, p.bank_ref, p.raw->>'bl_no', p.raw->>'note', p.raw->>'memo', p.raw->>'remark')) AS stext FROM finance_payments p WHERE p.direction IN ('out','AP','付款') AND COALESCE(p.status,'') NOT IN ('voided','cancelled','已退回','已冲销') AND (p.pay_item IN ('freight','运费','ocean_freight') OR p.pay_type IN ('货代海运费','货代港杂费','货代物流费') OR p.pay_item ILIKE '%海运%' OR p.pay_item ILIKE '%运费%' OR NULLIF(p.raw->>'bl_no','') IS NOT NULL)), src AS (SELECT 1 srank, p.id payment_id, sp.bl_no, p.payment_date, p.pay_amount actual_amount, p.pay_item, p.pay_type, 'plan_id' match_source FROM cand p JOIN shipping_plans sp ON (sp.id::text=p.plan_id::text OR sp._id::text=p.plan_id::text) WHERE NULLIF(sp.bl_no,'') IS NOT NULL UNION ALL SELECT 2, p.id, sp.bl_no, p.payment_date, p.pay_amount, p.pay_item, p.pay_type, 'raw_bl_no' FROM cand p JOIN shipping_plans sp ON UPPER(sp.bl_no)=UPPER(NULLIF(p.raw->>'bl_no','')) WHERE NULLIF(sp.bl_no,'') IS NOT NULL UNION ALL SELECT 3, p.id, sp.bl_no, p.payment_date, p.pay_amount, p.pay_item, p.pay_type, 'text_bl' FROM cand p JOIN shipping_plans sp ON UPPER(sp.bl_no) = (regexp_match(p.stext, '(?:BL|B/L|提单号?)[:：# ]*([A-Z0-9][A-Z0-9/-]{5,30})'))[1] WHERE NULLIF(sp.bl_no,'') IS NOT NULL) SELECT DISTINCT ON (payment_id, bl_no) bl_no, payment_id, payment_date, actual_amount, pay_item, pay_type, match_source FROM src WHERE COALESCE(actual_amount,0) > 0 ORDER BY payment_id, bl_no, srank"
+  },
+  "match_keys": ["bl_no"],
+  "amount_fields": {
+    "expected": "expected_amount",
+    "actual": "actual_amount",
+    "tolerance": 10
+  },
+  "status_machine": {
+    "initial": "pending_confirm",
+    "terminal": ["completed"],
+    "rules": [
+      { "when": "expected_amount == null", "status": "need_amount" },
+      { "when": "confirmed_at == null && actual_amount == 0", "status": "pending_confirm" },
+      { "when": "confirmed_at != null && actual_amount == 0", "status": "confirmed_wait_invoice" },
+      { "when": "abs(diff_amount) <= tolerance_amount", "status": "matched" },
+      { "when": "actual_amount < expected_amount - tolerance_amount", "status": "partial_uploaded" },
+      { "when": "actual_amount > expected_amount + tolerance_amount", "status": "over_issued" }
+    ],
+    "manual_transitions": ["completed", "reopen", "override_amount"]
+  },
+  "field_schema": [
+    { "key": "customs_no", "label": "提单号", "source": "expected.customs_no" },
+    { "key": "bl_no", "label": "提单号", "source": "expected.bl_no" },
+    { "key": "container_no", "label": "柜号", "source": "expected.container_no" },
+    { "key": "contract_no", "label": "合同号", "source": "expected.contract_no" },
+    { "key": "factory_code", "label": "货代编码", "source": "expected.factory_code" },
+    { "key": "factory_name", "label": "货代", "source": "expected.factory_name" },
+    { "key": "pol", "label": "起运港", "source": "expected.pol" },
+    { "key": "pod", "label": "目的港", "source": "expected.pod" },
+    { "key": "etd", "label": "开船日期", "source": "expected.etd" },
+    { "key": "freight_term", "label": "运费条款", "source": "expected.freight_term" },
+    { "key": "container_qty", "label": "柜数", "source": "expected.container_qty" },
+    { "key": "unit_cost_usd", "label": "每柜成本·内部", "source": "expected.unit_cost_usd" },
+    { "key": "our_ocean_payable", "label": "我方应付", "source": "expected.our_ocean_payable" },
+    { "key": "fx_rate", "label": "汇率·内部", "source": "expected.fx_rate" },
+    { "key": "expected_amount", "label": "应付金额", "source": "expected.expected_amount" },
+    { "key": "uploaded_amount", "label": "已付金额", "source": "actual.actual_amount" },
+    { "key": "match_source", "label": "已付来源·finance内部", "source": "actual.match_source" },
+    { "key": "diff_amount", "label": "未付差额", "source": "computed" },
+    { "key": "currency", "label": "币种", "source": "expected.currency" }
+  ],
+  "visibility_rules": {
+    "finance": { "include": ["*"] },
+    "forwarder": {
+      "include": ["customs_no", "container_no", "container_qty", "factory_name", "expected_amount", "uploaded_amount", "diff_amount", "status"],
+      "exclude": ["internal_margin", "customer_price", "other_forwarder_rows", "raw", "ocr_payload"]
+    }
+  }
+}

@@ -39,8 +39,105 @@ function normalizeItems(raw) {
   }));
 }
 
+function cleanText(v) {
+  return String(v ?? "").trim();
+}
+
+function normalizeTaxRate(v) {
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace("%", "").trim());
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n > 1 ? n / 100 : n;
+}
+
+function pushFreq(map, value) {
+  const key = cleanText(value);
+  if (!key) return;
+  const hit = map.get(key) || { value: key, count: 0, first: map.size };
+  hit.count += 1;
+  map.set(key, hit);
+}
+
+function topValues(map, limit = 1) {
+  return Array.from(map.values())
+    .sort((a, b) => b.count - a.count || a.first - b.first)
+    .slice(0, limit)
+    .map((x) => x.value);
+}
+
+function pickLineName(line) {
+  return cleanText(line?.goods_name || line?.name || line?.name_cn || line?.item_name ||
+    line?.product_name || line?.declaration_name || line?.["货物或应税劳务、服务名称"] || line?.["货物名称"]);
+}
+
+function pickLineUnit(line) {
+  return cleanText(line?.unit || line?.unit_name || line?.measure_unit || line?.["单位"]);
+}
+
+export async function loadInvoiceHistory(pool, factoryCode) {
+  const code = cleanText(factoryCode);
+  if (!code) return null;
+  const baseSql = `
+    SELECT line_items, tax_rate, seller_tax_id, issue_date, created_at,
+           bank_name, bank_account
+      FROM finance_invoices_in
+     WHERE seller_company_code = $1
+       AND COALESCE(review_status, '') NOT IN ('void','red_ink')
+       AND jsonb_typeof(line_items) = 'array'
+       AND jsonb_array_length(line_items) > 0
+     ORDER BY COALESCE(issue_date, created_at) DESC
+     LIMIT 20`;
+  let rows;
+  try {
+    rows = (await pool.query(baseSql, [code])).rows;
+  } catch (e) {
+    if (e.code !== "42703") throw e;
+    rows = (await pool.query(
+      baseSql.replace(",\n           bank_name, bank_account", ""),
+      [code]
+    )).rows;
+  }
+  if (!rows.length) return null;
+
+  const nameFreq = new Map();
+  const unitFreq = new Map();
+  const taxFreq = new Map();
+  let sampleLine = null;
+  let bankName = null;
+  let bankAccount = null;
+  let sellerTaxId = null;
+
+  for (const row of rows) {
+    const items = Array.isArray(row.line_items) ? row.line_items : [];
+    if (!sampleLine && items.length) sampleLine = items[0];
+    if (!bankName && cleanText(row.bank_name)) bankName = cleanText(row.bank_name);
+    if (!bankAccount && cleanText(row.bank_account)) bankAccount = cleanText(row.bank_account);
+    if (!sellerTaxId && cleanText(row.seller_tax_id)) sellerTaxId = cleanText(row.seller_tax_id);
+    for (const line of items) {
+      pushFreq(nameFreq, pickLineName(line));
+      pushFreq(unitFreq, pickLineUnit(line));
+      const rate = normalizeTaxRate(line?.tax_rate ?? row.tax_rate);
+      if (rate != null) pushFreq(taxFreq, String(rate));
+    }
+  }
+
+  return {
+    hist_names: topValues(nameFreq, 5),
+    hist_unit: topValues(unitFreq, 1)[0] || null,
+    hist_tax_rate: normalizeTaxRate(topValues(taxFreq, 1)[0]),
+    last_invoice_date: rows[0]?.issue_date || rows[0]?.created_at || null,
+    sample_line: sampleLine,
+    seller_tax_id: sellerTaxId,
+    bank_name: bankName,
+    bank_account: bankAccount,
+  };
+}
+
 export async function fetchGaps(pool, factoryCode, factoryName) {
-  const sellerInfo = await getFactoryInfo(pool, factoryCode);
+  const [sellerInfo, invoiceHistory] = await Promise.all([
+    getFactoryInfo(pool, factoryCode),
+    loadInvoiceHistory(pool, factoryCode),
+  ]);
   const r = await pool.query(
     `WITH gap_rows AS (
        SELECT r.contract_no, r.customs_no, r.raw, r.rebate_expected, r.fob_cny,
@@ -75,7 +172,13 @@ export async function fetchGaps(pool, factoryCode, factoryName) {
        SELECT o.contract_no,
               oli.declaration_name,
               CASE WHEN COALESCE(oli.hs_code, '') LIKE '2309%' THEN 0.09 ELSE 0.13 END AS tax_rate,
-              SUM(COALESCE(oli.qty_ctn, 0) * COALESCE(NULLIF(oli.bg_bx, 0), 1)) AS qty_bags,
+              SUM(COALESCE(oli.qty_ctn, 0)) AS qty_ctn,
+              SUM(COALESCE(
+                oli.factory_subtotal,
+                oli.subtotal,
+                COALESCE(oli.qty_ctn, 0) * COALESCE(oli.factory_price, oli.unit_price, 0),
+                0
+              )) AS oli_ref_amount,
               MIN(oli.sort_order) AS sort_min,
               MIN(oli.id) AS id_min
          FROM order_line_items oli
@@ -108,8 +211,9 @@ export async function fetchGaps(pool, factoryCode, factoryName) {
                 jsonb_build_object(
                   'goods_name', il.declaration_name,
                   'unit', '包',
-                  'qty_bags', il.qty_bags,
-                  'tax_rate', il.tax_rate
+                  'qty_bags', il.qty_ctn,
+                  'tax_rate', il.tax_rate,
+                  'oli_ref_amount', il.oli_ref_amount
                 )
                 ORDER BY il.sort_min, il.id_min
               )
@@ -129,26 +233,38 @@ export async function fetchGaps(pool, factoryCode, factoryName) {
     const raw = row.raw || {};
     const lines = Array.isArray(row.lines) ? row.lines : [];
     const rawInvoiceLines = Array.isArray(row.invoice_lines) ? row.invoice_lines : [];
-    const totalInclTax = Number(row.total_incl_tax) || 0;
+    const histName = invoiceHistory?.hist_names?.[0] || "";
+    const histRate = normalizeTaxRate(invoiceHistory?.hist_tax_rate);
+    const oliTotalInclTax = Number(row.total_incl_tax) || 0;
     const fobCny = Number(row.fob_cny) || 0;
-    const amountWarning = fobCny > 0 && Math.abs(totalInclTax - fobCny) > 5;
-    const totalIncl = fobCny;
+    const amountSource = fobCny > 0 ? "customs" : "oli_fallback";
+    const totalIncl = amountSource === "customs" ? fobCny : oliTotalInclTax;
+    const amountWarning = amountSource === "oli_fallback";
     const qtyTotal = rawInvoiceLines.reduce((s, l) => s + Math.max(Number(l.qty_bags) || 0, 0), 0);
+    let allocatedIncl = 0;
     const invoiceLines = rawInvoiceLines.map((l, idx) => {
       const qty = Math.max(Number(l.qty_bags) || 0, 0);
-      const rate = Number(l.tax_rate) || 0.13;
-      const lineIncl = qtyTotal > 0
-        ? (idx === rawInvoiceLines.length - 1
-          ? totalIncl - rawInvoiceLines.slice(0, idx).reduce((s, x) => s + (Math.max(Number(x.qty_bags) || 0, 0) / qtyTotal) * totalIncl, 0)
-          : totalIncl * qty / qtyTotal)
-        : 0;
+      const rate = histRate || Number(l.tax_rate) || 0.13;
+      const oliRefAmount = Number(l.oli_ref_amount) || 0;
+      const lineIncl = (() => {
+        if (amountSource === "oli_fallback") return oliRefAmount;
+        if (qtyTotal <= 0) return idx === rawInvoiceLines.length - 1 ? totalIncl - allocatedIncl : 0;
+        if (idx === rawInvoiceLines.length - 1) return totalIncl - allocatedIncl;
+        return totalIncl * qty / qtyTotal;
+      })();
+      allocatedIncl += lineIncl;
       const subtotalEx = Math.round((lineIncl / (1 + rate)) * 100) / 100;
       const taxAmount = Math.round((lineIncl - subtotalEx) * 100) / 100;
       return {
-        goods_name: l.goods_name || "",
+        goods_name: histName || l.goods_name || "",
         unit: "包",
         qty_bags: qty,
         tax_rate: rate,
+        name_source: histName ? "history" : "declaration",
+        amount_source: amountSource,
+        oli_ref_amount: oliRefAmount,
+        customs_amount: fobCny,
+        amount_incl_tax: Math.round(lineIncl * 100) / 100,
         subtotal_ex: subtotalEx,
         tax_amount: taxAmount,
         unit_price_ex: qty > 0 ? subtotalEx / qty : null,
@@ -161,9 +277,11 @@ export async function fetchGaps(pool, factoryCode, factoryName) {
     return {
       contract_no: row.contract_no,
       customs_no: row.customs_no,
+      issuing_company: row.issuing_company || null,
       goods: normalizeItems(raw),
       lines,
       invoice_lines: invoiceLines,
+      invoice_history: invoiceHistory,
       buyer: buyerMissing ? null : {
         name: row.buyer_name,
         tax_id: row.buyer_tax_id,
@@ -181,8 +299,11 @@ export async function fetchGaps(pool, factoryCode, factoryName) {
       total_incl: totalIncl,
       amount_ex: Math.round(amountEx * 100) / 100,
       tax_amount: taxAmount,
-      total_incl_tax: totalInclTax,
+      total_incl_tax: totalIncl,
       amount_incl_tax: totalIncl || null,
+      amount_source: amountSource,
+      oli_ref_amount: Math.round(oliTotalInclTax * 100) / 100,
+      customs_amount: fobCny,
       amount_warning: amountWarning,
       can_invoice: !buyerMissing && !sellerMissing && totalIncl > 0,
       tax_rate: invoiceLines.length ? invoiceLines[0].tax_rate : null,
@@ -242,3 +363,9 @@ export async function fetchUploaded(pool, factoryCode) {
     }));
   }
 }
+// 本次改动：fetchGaps 返回 issuing_company 供工厂确认门户过滤巴匕单。
+// 本次改动：读取 finance_invoices_in 最近真实进项票画像，模板品名/税率历史优先。
+// 原因：红色工厂开票模板需贴近工厂历史开票口径，但单位/数量仍按报关箱数避免折算风险。
+// 本次改动：开票价税合计以 finance_export_rebates.fob_cny 报关申报额为权威，缺失才回退 OLI 采购小计。
+// 本次改动：报关金额按 OLI 报关箱数比例分摊到发票行，并返回 amount_source/oli_ref_amount/customs_amount 供前端提示。
+// 原因/证据：729898 报关 309760 vs OLI 292864、099346 报关 97558 vs OLI 0，开票金额必须按报关资料。

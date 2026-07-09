@@ -13,79 +13,15 @@
 
 import { getPool, setCors } from '../db.js';
 import { requireAuth } from '../auth.js';
-import { createWriteStream, mkdirSync, unlinkSync } from 'fs';
-import { createHash } from 'crypto';
+import { mkdirSync } from 'fs';
+import { randomBytes } from 'crypto';
 import path from 'path';
-import { IncomingForm } from 'formidable';
-import { pipeline } from 'stream/promises';
 import fs from 'fs';
-
-const UPLOADS_DIR = '/opt/sanlyn-uploads/cn';
-const WECOM_WEBHOOK = process.env.WECOM_WEBHOOK_URL || '';
-const BASE_URL = process.env.APP_BASE_URL || 'https://ai.sanlyn.cn';
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_FILES = 10;
-
-// 8-state machine transitions
-const VALID_TRANSITIONS = {
-  draft:                    ['pending_review'],
-  pending_review:           ['approved', 'draft'],
-  approved:                 ['issued_to_customer'],
-  issued_to_customer:       ['signed_by_customer'],
-  signed_by_customer:       ['pending_factory_decision'],
-  pending_factory_decision: ['skip_factory_absorb', 'sent_to_factory'],
-  sent_to_factory:          ['signed_by_factory'],
-  signed_by_factory:        ['applied'],
-  skip_factory_absorb:      ['applied'],
-  applied:                  ['closed'],
-  // legacy statuses kept for backward compat
-  open:                     ['pending_review'],
-  issued:                   ['signed_by_customer'],
-  acknowledged:             ['pending_factory_decision'],
-};
-
-const STATUS_LABELS = {
-  draft:                    'Draft',
-  pending_review:           'Pending Review',
-  approved:                 'Approved',
-  issued_to_customer:       'Issued to Customer',
-  signed_by_customer:       'Signed by Customer',
-  pending_factory_decision: 'Pending Factory Decision',
-  skip_factory_absorb:      'BABI Absorbing',
-  sent_to_factory:          'Sent to Factory',
-  signed_by_factory:        'Signed by Factory',
-  applied:                  'Applied',
-  closed:                   'Closed',
-  open:                     'Open',
-  issued:                   'Issued',
-  acknowledged:             'Acknowledged',
-};
-
-async function pingWecom(msg) {
-  if (!WECOM_WEBHOOK) return;
-  try {
-    await fetch(WECOM_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ msgtype: 'markdown', markdown: { content: msg } }),
-    });
-  } catch (e) { /* non-blocking */ }
-}
-
-function getRaw(cn) {
-  if (!cn.raw) return {};
-  if (typeof cn.raw === 'string') {
-    try { return JSON.parse(cn.raw); } catch { return {}; }
-  }
-  return cn.raw || {};
-}
-
-function calcOutstanding(cn) {
-  const raw = getRaw(cn);
-  const total = Math.abs(parseFloat(cn.net_amount) || 0);
-  const applied = (raw.applied_to || []).reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
-  return Math.max(0, total - applied);
-}
+import { renderCreditNote } from './credit-note-doc.js';
+import { scrubCustomerFacingHtml } from './doc-data.js';
+import { htmlToPdf } from './_html-to-pdf.js';
+import { UPLOADS_DIR, BASE_URL, VALID_TRANSITIONS, STATUS_LABELS, pingWecom, getRaw, calcOutstanding } from './credit-notes-lib.js';
+import { uploadAttachments, deleteAttachment } from './credit-notes-attachments.js';
 
 export default async function handler(req, res) {
   setCors(req, res);
@@ -167,6 +103,14 @@ export default async function handler(req, res) {
       const r = await pool.query('SELECT * FROM credit_notes WHERE cn_no=$1', [cn_no]);
       if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
       const cn = r.rows[0];
+      // Display helpers for editable template — keep consistent with rendered doc
+      let _po = '', _fs = '', _baddr = '', _idisp = '';
+      try { const _o = await pool.query("SELECT customer_po, customer_po_no, raw->>'fs_no' AS fs_no FROM orders WHERE order_no=$1 LIMIT 1", [cn.order_no]); if (_o.rows[0]) { _po = _o.rows[0].customer_po || _o.rows[0].customer_po_no || ''; _fs = _o.rows[0].fs_no || ''; } } catch (e) {}
+      try { const _c = await pool.query('SELECT address FROM companies WHERE code=$1 LIMIT 1', [cn.company_code]); if (_c.rows[0]) _baddr = _c.rows[0].address || ''; } catch (e) {}
+      try { const _d = cn.issued_date ? new Date(cn.issued_date) : null; if (_d) _idisp = _d.getFullYear() + '-' + String(_d.getMonth()+1).padStart(2,'0') + '-' + String(_d.getDate()).padStart(2,'0'); } catch (e) {}
+      // 出单公司(卖方)=巴匕 BABI;取其锁定默认章供单据自动盖
+      let _sellerCode = 'BABI', _sellerSeal = '', _sellerSealName = '', _sellerSealId = null;
+      try { const _ss = await pool.query("SELECT id, name, url FROM customer_stamps WHERE company_code=$1 AND is_default=true AND is_active=true LIMIT 1", [_sellerCode]); if (_ss.rows[0]) { _sellerSeal = _ss.rows[0].url || ''; _sellerSealName = _ss.rows[0].name || ''; _sellerSealId = _ss.rows[0].id; } } catch (e) {}
       // Fail-closed: customer role only sees own CNs, and factory_cn field is stripped
       if (req.user?.role !== 'admin' && req.user?.role !== 'finance') {
         const codes = req.user?.companyCodes || (req.user?.companyCode ? [req.user.companyCode] : []);
@@ -175,9 +119,9 @@ export default async function handler(req, res) {
         const raw = getRaw(cn);
         delete raw.factory_cn;
         delete raw.factory_decision;
-        return res.json({ success: true, data: { ...cn, raw, outstanding: calcOutstanding(cn) } });
+        return res.json({ success: true, data: { ...cn, raw, outstanding: calcOutstanding(cn), _po, _fs, _buyer_addr: _baddr, _issued_display: _idisp, _seller_code: _sellerCode, _seller_seal: _sellerSeal, _seller_seal_name: _sellerSealName, _seller_seal_id: _sellerSealId } });
       }
-      return res.json({ success: true, data: { ...cn, outstanding: calcOutstanding(cn) } });
+      return res.json({ success: true, data: { ...cn, outstanding: calcOutstanding(cn), _po, _fs, _buyer_addr: _baddr, _issued_display: _idisp, _seller_code: _sellerCode, _seller_seal: _sellerSeal, _seller_seal_name: _sellerSealName, _seller_seal_id: _sellerSealId } });
     }
 
     // List
@@ -331,74 +275,44 @@ export default async function handler(req, res) {
       return res.json({ success: true, data: { ...updated.rows[0], outstanding: newOutstanding } });
     }
 
-    // Multipart attachment upload
-    if (action === 'attachments') {
+    // Generate password-gated external share link (renders CN → static PDF → doc_share_links)
+    if (action === 'share') {
       const targetCn = req.query.cn_no || cn_no;
       if (!targetCn) return res.status(400).json({ error: 'cn_no required' });
-
-      const r = await pool.query('SELECT * FROM credit_notes WHERE cn_no=$1', [targetCn]);
-      if (!r.rows.length) return res.status(404).json({ error: 'CN not found' });
-      const cn = r.rows[0];
-      const raw = getRaw(cn);
-      const existingAttachments = raw.attachments || [];
-
-      if (existingAttachments.length >= MAX_FILES) {
-        return res.status(422).json({ error: `Max ${MAX_FILES} attachments reached` });
-      }
-
+      const cnRow = (await pool.query('SELECT contract_no FROM credit_notes WHERE cn_no=$1', [targetCn])).rows[0];
+      if (!cnRow) return res.status(404).json({ error: 'CN not found' });
+      const html = await renderCreditNote(pool, targetCn, {});
+      if (!html) return res.status(404).json({ error: 'CN render failed' });
+      let pdf;
+      try { pdf = await htmlToPdf(scrubCustomerFacingHtml(html)); }
+      catch (e) { return res.status(500).json({ error: 'PDF render failed: ' + e.message }); }
       const cnDir = path.join(UPLOADS_DIR, targetCn);
       mkdirSync(cnDir, { recursive: true });
-
-      const form = new IncomingForm({
-        maxFileSize: MAX_FILE_SIZE,
-        maxFiles: MAX_FILES - existingAttachments.length,
-        allowEmptyFiles: false,
-        filter: ({ mimetype }) => {
-          return mimetype && (
-            mimetype.startsWith('image/') ||
-            mimetype === 'application/pdf' ||
-            mimetype.startsWith('video/')
-          );
-        },
-      });
-
-      let fields, files;
-      try {
-        [fields, files] = await form.parse(req);
-      } catch (e) {
-        return res.status(400).json({ error: 'Upload parse error: ' + e.message });
-      }
-
-      const fileList = Array.isArray(files.file) ? files.file : (files.file ? [files.file] : []);
-      if (!fileList.length) return res.status(400).json({ error: 'No files uploaded' });
-
-      const newAttachments = [];
-      for (const f of fileList) {
-        const sha = createHash('sha256').update(f.originalFilename + Date.now()).digest('hex').slice(0, 12);
-        const safeName = sha + '__' + (f.originalFilename || 'file').replace(/[^a-zA-Z0-9._-]/g, '_');
-        const dest = path.join(cnDir, safeName);
-        fs.renameSync(f.filepath, dest);
-
-        newAttachments.push({
-          id: sha,
-          url: `/uploads/cn/${targetCn}/${safeName}`,
-          name: f.originalFilename || 'file',
-          size: f.size,
-          mimetype: f.mimetype,
-          kind: (fields.kind?.[0] || 'doc'),
-          uploaded_by: req.user?.username || null,
-          uploaded_at: new Date().toISOString(),
-        });
-      }
-
-      const allAttachments = [...existingAttachments, ...newAttachments];
+      const fileTok = randomBytes(12).toString('hex');
+      const fname = 'share-' + fileTok + '.pdf';
+      fs.writeFileSync(path.join(cnDir, fname), pdf);
+      const fileUrl = 'https://api.sanlyn.cn/uploads/cn/' + encodeURIComponent(targetCn) + '/' + fname;
+      const linkTok = randomBytes(6).toString('hex');
+      const PW = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+      const seg = (n) => Array.from({ length: n }, () => PW[Math.floor(Math.random() * PW.length)]).join('');
+      const password = seg(3) + '-' + seg(3) + '-' + seg(3);
+      const by = (req.user && (req.user.username || req.user.name)) || 'admin';
       await pool.query(
-        `UPDATE credit_notes SET raw=raw || $1::jsonb, updated_at=NOW() WHERE cn_no=$2`,
-        [JSON.stringify({ attachments: allAttachments }), targetCn]
+        `INSERT INTO doc_share_links
+           (token, contract_no, doc_key, doc_url, doc_name, password,
+            created_by, expires_at, max_downloads, download_count, downloaded_log)
+         VALUES ($1,$2,$3,$4,$5,$6,$7, NOW()+INTERVAL '7 days', 50, 0, $8::jsonb)`,
+        [linkTok, (cnRow.contract_no || ''), 'cn:' + targetCn, fileUrl,
+         'Credit Note ' + targetCn, password, by,
+         JSON.stringify([{ action: 'created', by, doc: 'cn:' + targetCn, ts: new Date().toISOString() }])]
       );
-
-      return res.json({ success: true, data: newAttachments, total: allAttachments.length });
+      const quickUrl = 'https://api.sanlyn.cn/api/db/doc-share?token=' + linkTok + '&password=' + encodeURIComponent(password);
+      const shareUrl = 'https://api.sanlyn.cn/api/db/doc-share?token=' + linkTok;
+      return res.json({ ok: true, quickUrl, shareUrl, password, expiresInDays: 7 });
     }
+
+    // Multipart attachment upload
+    if (action === 'attachments') return uploadAttachments(req, res, pool, cn_no);
 
     // Create new CN (draft)
     const {
@@ -406,10 +320,9 @@ export default async function handler(req, res) {
       order_no, contract_no, invoice_no,
       issued_date, currency = 'CNY',
       net_amount, note, items = [],
-      reason, reason_detail, apply_method,
+      reason, reason_detail, apply_method, direction,
     } = req.body;
 
-    if (!bodyCnNo)     return res.status(400).json({ error: 'cn_no required' });
     if (!bodyCompany)  return res.status(400).json({ error: 'company_code required' });
     if (net_amount === undefined || net_amount === null) return res.status(400).json({ error: 'net_amount required' });
     if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'items[] required' });
@@ -421,6 +334,7 @@ export default async function handler(req, res) {
     }
 
     const rawInit = {
+      direction: direction || null,
       reason: reason || null,
       reason_detail: reason_detail || null,
       apply_method: apply_method || null,
@@ -434,24 +348,56 @@ export default async function handler(req, res) {
       }],
     };
 
-    const created = await pool.query(`
-      INSERT INTO credit_notes
-        (cn_no, company_code, company_name, order_no, contract_no, invoice_no,
-         issued_date, currency, net_amount, status, note, items, created_by, raw)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft',$10,$11,$12,$13)
-      ON CONFLICT (cn_no) DO NOTHING
-      RETURNING *
-    `, [
-      bodyCnNo, bodyCompany, company_name,
-      order_no, contract_no, invoice_no,
-      issued_date || new Date().toISOString().slice(0, 10),
-      currency, net_amount, note,
-      JSON.stringify(items),
-      req.user?.username || null,
-      JSON.stringify(rawInit),
-    ]);
+    // 自动编号:未传 cn_no → 生成下一个纯顺序号 CN-000xx(仅 ^CN-[0-9]+$ 参与序列,老的带字母的不算);撞号自动重试
+    let finalCnNo = bodyCnNo;
+    let created;
+    for (let attempt = 0; attempt < (bodyCnNo ? 1 : 6); attempt++) {
+      if (!bodyCnNo) {
+        const _yr = String(new Date().getFullYear());
+        const seqR = await pool.query(
+          "SELECT COALESCE(MAX(split_part(cn_no,'-',3)::int),0) AS mx FROM credit_notes WHERE cn_no ~ ('^CN-' || $1 || '-[0-9]+$')",
+          [_yr]
+        );
+        finalCnNo = 'CN-' + _yr + '-' + String((Number(seqR.rows[0].mx) || 0) + 1).padStart(4, '0');
+      }
+      created = await pool.query(`
+        INSERT INTO credit_notes
+          (cn_no, company_code, company_name, order_no, contract_no, invoice_no,
+           issued_date, currency, net_amount, status, note, items, created_by, raw)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft',$10,$11,$12,$13)
+        ON CONFLICT (cn_no) DO NOTHING
+        RETURNING *
+      `, [
+        finalCnNo, bodyCompany, company_name,
+        order_no, contract_no, invoice_no,
+        issued_date || new Date().toISOString().slice(0, 10),
+        currency, net_amount, note,
+        JSON.stringify(items),
+        req.user?.username || null,
+        JSON.stringify(rawInit),
+      ]);
+      if (created.rows.length) break;
+    }
 
-    if (!created.rows.length) return res.status(409).json({ error: 'CN number already exists' });
+    if (!created.rows.length) return res.status(409).json({ error: 'CN number already exists (auto-number exhausted)' });
+    // CN = 有成本的运营事件/教训 → 写 business_events(事件日志) + ai_memory_records(Hermes记忆,供早报/复盘/防再犯)
+    try {
+      const _cn = created.rows[0];
+      const _raw = getRaw(_cn) || {};
+      const _reason = _raw.reason || 'other';
+      const _rl = { price_error:'标价错误', quality:'质量问题', damage:'货损', qty_short:'数量短少/短装', freight_over:'运费多收', delay:'延误(文件/交期)', goodwill:'客户关系', other:'其他' }[_reason] || _reason;
+      const _amt = Math.abs(Number(_cn.net_amount) || 0);
+      const _meta = { cn_no:_cn.cn_no, reason:_reason, reason_label:_rl, amount:Number(_cn.net_amount)||0, currency:_cn.currency||'CNY', company:_cn.company_name, company_code:_cn.company_code, order_no:_cn.order_no, contract_no:_cn.contract_no, direction:_raw.direction||null };
+      const _summary = '贷记单 ' + _cn.cn_no + ' · ' + (_cn.company_name||_cn.company_code||'') + ' 冲减 ' + _amt + ' ' + (_cn.currency||'CNY') + '｜事由:' + _rl + (_cn.order_no?('｜单:'+_cn.order_no):'') + '｜' + String(_cn.note||'').slice(0,220) + '｜教训:此类损失需追根因、纳入SOP防再犯。';
+      await pool.query("INSERT INTO ai_memory_records (domain, entity_type, entity_id, summary, outcome, occurred_at, ingested_at, metadata) VALUES ('finance','credit_note',$1,$2,$3,NOW(),NOW(),$4::jsonb)", [_cn.cn_no, _summary, _cn.status||'draft', JSON.stringify(_meta)]);
+      // 失败类CN(非纯客情) → 自动建"复盘防再犯"闭环任务:Hermes生成根因+SOP,信息不足回问Damon补充
+      if (_reason !== 'goodwill') {
+        const _tid = 't-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,6);
+        const _tRaw = { entity_type:'credit_note', entity_id:_cn.cn_no, issue_type:_reason, issue_label:_rl, root_cause:String(_cn.note||''), recommended_action:'Hermes分析根因并生成防再犯SOP;信息不足则回问Damon补充', amount:Number(_cn.net_amount)||0, currency:_cn.currency||'CNY', generated_by:'cn_auto_review' };
+        const _ttl = '复盘防再犯: ' + _cn.cn_no + ' ' + _rl + ' ' + _amt + (_cn.currency||'CNY') + ' (' + (_cn.company_name||_cn.company_code||'') + ')';
+        await pool.query("INSERT INTO tasks (id, title, task_type, level, status, risk_level, owner_object_type, owner_object_id, related_order_no, company_code, mode, due_at, reason, raw, source, dedupe_key, priority, notify_stage) VALUES ($1,$2,'notification_closure','doc','open','high','document',$3,$4,$5,'owned',NULL,$6,$7::jsonb,'credit_note_review',$8,'P1',0) ON CONFLICT (source, dedupe_key) WHERE status NOT IN ('done','cancelled') DO NOTHING", [_tid, _ttl, _cn.cn_no, _cn.order_no||null, _cn.company_code||null, (String(_cn.note||'')||_rl), JSON.stringify(_tRaw), _cn.cn_no]);
+      }
+    } catch (e) { console.error('[credit-notes] CN event/memory emit failed:', e.message); }
     return res.status(201).json({ success: true, data: created.rows[0] });
   }
 
@@ -502,32 +448,7 @@ export default async function handler(req, res) {
 
   // ── DELETE ──────────────────────────────────────────────────────
   if (req.method === 'DELETE') {
-    if (action === 'del_attach') {
-      const { attachment_id } = req.query;
-      const targetCn = cn_no;
-      if (!targetCn || !attachment_id) return res.status(400).json({ error: 'cn_no and attachment_id required' });
-
-      const r = await pool.query('SELECT * FROM credit_notes WHERE cn_no=$1', [targetCn]);
-      if (!r.rows.length) return res.status(404).json({ error: 'Not found' });
-      const cn = r.rows[0];
-      const raw = getRaw(cn);
-      const existing = raw.attachments || [];
-      const toRemove = existing.find(a => a.id === attachment_id);
-      if (!toRemove) return res.status(404).json({ error: 'Attachment not found' });
-
-      // Remove file from disk
-      try {
-        const filePath = path.join('/opt/sanlyn-uploads', toRemove.url.replace('/uploads/', ''));
-        unlinkSync(filePath);
-      } catch (e) { /* file may not exist */ }
-
-      raw.attachments = existing.filter(a => a.id !== attachment_id);
-      await pool.query(
-        `UPDATE credit_notes SET raw=raw || $1::jsonb, updated_at=NOW() WHERE cn_no=$2`,
-        [JSON.stringify({ attachments: raw.attachments }), targetCn]
-      );
-      return res.json({ success: true });
-    }
+    if (action === 'del_attach') return deleteAttachment(req, res, pool, cn_no);
     return res.status(405).json({ error: 'Method not allowed' });
   }
 

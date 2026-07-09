@@ -12,6 +12,7 @@ body { font-family:'PingFang SC','Microsoft YaHei','Noto Sans SC',Arial,sans-ser
 .toolbar button { padding:6px 13px; border-radius:6px; border:none; cursor:pointer; font-size:12px; font-weight:700; }
 .btn-print    { background:#1d4ed8; color:#fff; }
 .btn-download { background:#7c3aed; color:#fff; }
+.btn-excel    { background:#16a34a; color:#fff; }
 .btn-save     { background:#059669; color:#fff; }
 .btn-addrow   { background:#f59e0b; color:#fff; }
 .btn-addgroup { background:#0891b2; color:#fff; }
@@ -111,6 +112,7 @@ tbody tr:not(.group-header):hover .row-actions { display:flex; }
 <div class="toolbar">
   <button class="btn-print"    onclick="window.print()">🖨 打印/PDF</button>
   <button class="btn-download" onclick="downloadPng()">📥 下载图片</button>
+  <button class="btn-excel" onclick="exportExcel()">📊 下载Excel</button>
   <button class="btn-save"     onclick="saveDraft()">💾 保存草稿</button>
   <button class="btn-addrow"   onclick="addRow()">＋ 加产品行</button>
   <button class="btn-addgroup" onclick="addGroup()">＋ 加ORDER组</button>
@@ -220,10 +222,7 @@ tbody tr:not(.group-header):hover .row-actions { display:flex; }
     </tfoot>
   </table>
 
-  <div class="remarks-row">
-    <span class="remarks-lbl">备注 / Remarks：</span>
-    <span class="ed" id="remarks" contenteditable data-ph="（订单备注，可手填）" style="flex:1"></span>
-  </div>
+
 
   <div class="notes-section">
     <div class="notes-title">合同条款 / Terms &amp; Conditions</div>
@@ -239,7 +238,7 @@ tbody tr:not(.group-header):hover .row-actions { display:flex; }
       <div class="sig-inner">
         <div class="seal-area" id="sealBuyer" ondragover="event.preventDefault()" ondrop="dropSeal(event,'buyer')">
           <div class="seal-clip"><img id="sealBuyerImg" src=""/></div>
-          <span class="seal-hint" id="sealBuyerHint" onclick="openSealPicker('buyer')">点击<br>盖章</span>
+          <span class="seal-hint" id="sealBuyerHint"></span>
         </div>
         <div class="sig-sign"><div class="sig-line">&nbsp;</div><div class="sig-date">（签字 / 盖章）</div></div>
       </div>
@@ -250,7 +249,7 @@ tbody tr:not(.group-header):hover .row-actions { display:flex; }
         <div class="sig-sign"><div class="sig-line">&nbsp;</div><div class="sig-date">（签字 / 盖章）</div></div>
         <div class="seal-area" id="sealSeller" ondragover="event.preventDefault()" ondrop="dropSeal(event,'seller')">
           <div class="seal-clip"><img id="sealSellerImg" src=""/></div>
-          <span class="seal-hint" id="sealSellerHint" onclick="openSealPicker('seller')">点击<br>盖章</span>
+          <span class="seal-hint" id="sealSellerHint"></span>
         </div>
       </div>
     </div>

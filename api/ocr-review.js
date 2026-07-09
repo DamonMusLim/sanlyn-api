@@ -1,6 +1,28 @@
 // /api/ocr-review.js
-// 阿里云百炼 qwen-vl-plus 识别水单 + JDY write-back + PostgreSQL upsert
+// MiniMax-M3 视觉识别水单 + JDY write-back + PostgreSQL upsert
+// 2026-07-04 引擎从 qwen-vl(阿里云DashScope,key丢失全站挂) 切到 MiniMax-M3(MINIMAX_API_KEY,已在用)
 import { getPool } from "./db.js";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { execFile } from "child_process";
+
+// PDF(水单常是回单PDF) 首页转 jpeg 供视觉模型识别
+async function pdfFirstPageToJpeg(pdfBytes) {
+  const tmpPdf = path.join(os.tmpdir(), "slip_" + process.pid + "_" + Date.now() + ".pdf");
+  fs.writeFileSync(tmpPdf, pdfBytes);
+  const tmpBase = tmpPdf.replace(/\.pdf$/, "");
+  await new Promise((resolve, reject) => {
+    execFile("pdftoppm", ["-jpeg", "-r", "160", "-f", "1", "-l", "1", tmpPdf, tmpBase], (err) => err ? reject(new Error("pdftoppm failed: " + err.message)) : resolve());
+  });
+  let jpg = null;
+  for (const c of [tmpBase + "-1.jpg", tmpBase + "-01.jpg", tmpBase + "-001.jpg"]) {
+    if (fs.existsSync(c)) { jpg = fs.readFileSync(c); try { fs.unlinkSync(c); } catch {} break; }
+  }
+  try { fs.unlinkSync(tmpPdf); } catch {}
+  if (!jpg) throw new Error("pdftoppm: output not found");
+  return jpg;
+}
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -8,32 +30,52 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
+const OCR_PROMPT = `你是银行单据识别专家。图片是一张银行回单/水单/凭证，可能是以下任一版式，请先判断版式(docType)与资金方向(direction)，再抽取字段。
+
+【来账/收款类 → direction=收款】
+· 国际结算贷记通知 / INTERNATION SETTLEMENT CREDIT ADVICE（境外汇入收汇）：收款人=我方，汇款人=客户。金额取"小写金额"，币种取"币种CCY"，日期取"日期/Transaction Date"，对方名称取"汇款人名称Remitter's Name"，附言取"汇款信息Remittance Information"。
+· 利息收入回单（银行结息）：收款人=我方。金额取"金额"，对方名称可填"银行结息"。
+· 其它收款回单/到账通知版式。
+【往账/付款类 → direction=付款】
+· 客户付费回单（银行扣手续费/账户维护费）：付款人=我方。对方名称填银行或"费用名称"。
+· 国内支付业务付款回单（对外转账支出）：付款人=我方，收款人=对方。对方名称取"收款人名称"，附言取"用途"。
+· 其它付款水单/转账支出凭证。
+
+判断规则：标题含"贷记通知/利息/收汇/来账/入账/汇入"→收款；标题含"付款回单/付费/支付业务/往账/借记/转账支出/汇出"→付款。
+
+严格只返回如下JSON，不要任何其他文字、解释或markdown：
+{"docType":"单据标题原文或null","direction":"收款或付款或null","amount":金额数字(去掉千分位逗号)或null,"currency":"币种代码如CNY/USD/MYR或null","paymentDate":"YYYY-MM-DD格式或null","bankRef":"交易流水号(优先),否则回单编号或业务编号或null","senderName":"对方名称(收款时=汇款人,付款时=收款人)或null","remittanceInfo":"汇款信息/用途附言或null"}`;
+
+// MiniMax-M3 视觉识别：下载OSS→(PDF转jpeg)→base64→api.minimaxi.com。返回 OpenAI 形状供 parseQwenResponse 复用。
 async function callQwenVL(ossUrl) {
-  const apiKey = process.env.QWEN_API_KEY;
-  const res = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
+  const key = process.env.MINIMAX_API_KEY;
+  if (!key) throw new Error("MINIMAX_API_KEY not set");
+  const dl = await fetch(ossUrl);
+  if (!dl.ok) throw new Error("下载OSS失败 HTTP " + dl.status);
+  let bytes = Buffer.from(await dl.arrayBuffer());
+  let mediaType = "image/jpeg";
+  const isPdf = bytes.slice(0, 5).toString("latin1") === "%PDF-" || /\.pdf(\?|$)/i.test(ossUrl);
+  if (isPdf) {
+    bytes = await pdfFirstPageToJpeg(bytes);
+  } else if (bytes.slice(1, 4).toString("latin1") === "PNG") {
+    mediaType = "image/png";
+  }
+  const b64 = bytes.toString("base64");
+  const resp = await fetch("https://api.minimaxi.com/anthropic/v1/messages", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
-      model: "qwen-vl-plus",
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: ossUrl } },
-            {
-              type: "text",
-              text: `这是一张银行付款水单/转账凭证。请仔细识别所有文字，然后严格只返回如下JSON格式，不要任何其他文字、解释或markdown：
-{"amount":金额数字或null,"currency":"币种代码如CNY/USD/MYR或null","paymentDate":"YYYY-MM-DD格式或null","bankRef":"银行参考号或流水号或null","senderName":"付款方名称或null"}`,
-            },
-          ],
-        },
-      ],
+      model: "MiniMax-M3", max_tokens: 1024,
+      messages: [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
+        { type: "text", text: OCR_PROMPT },
+      ]}],
     }),
   });
-  return res.json();
+  if (!resp.ok) throw new Error("MiniMax HTTP " + resp.status + ": " + (await resp.text()).slice(0, 200));
+  const j = await resp.json();
+  const text = (j.content || []).map(c => c.text || "").join("").trim();
+  return { choices: [{ message: { content: text } }] };
 }
 
 function parseQwenResponse(data) {
@@ -66,6 +108,28 @@ async function updateJDY(jdyId, fields) {
   return res.json();
 }
 
+// ── Resolve fund direction (收款/付款) from doc type ──
+// 修复：旧逻辑写死 direction='收款'，付款单被错记成收款。
+function resolveDirection(fields) {
+  const t = String(fields?.docType || "");
+  // 单据标题是最强信号
+  if (/贷记通知|credit\s*advice|利息|结息|收汇|来账|入账|汇入|收款回单|到账/i.test(t)) return "收款";
+  if (/付款回单|付费|支付业务|往账|借记|转账支出|汇出|扣款/i.test(t)) return "付款";
+  // 退而求其次：信任模型给出的 direction
+  if (fields?.direction === "付款") return "付款";
+  if (fields?.direction === "收款") return "收款";
+  // 兜底：保持历史行为（客户汇入货款＝收款）
+  return "收款";
+}
+
+// 金额可能是 "3,921.00" 之类带千分位的字符串，写入 numeric 列前必须清洗成数字
+function toAmountNumber(v) {
+  if (v == null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
 // ── AI Audit for payment record ──
 function auditPayment(fields) {
   const issues = [];
@@ -83,6 +147,8 @@ function auditPayment(fields) {
 async function upsertPaymentRecord(jdyId, ocrFields) {
   const pool = getPool();
   const audit = auditPayment(ocrFields);
+  const direction = resolveDirection(ocrFields);
+  const amount = toAmountNumber(ocrFields.amount);
   // Use jdy_id if available, otherwise generate a unique id from timestamp
   const id = jdyId ? `jdy_${jdyId}` : `ocr_${Date.now()}`;
 
@@ -108,8 +174,8 @@ async function upsertPaymentRecord(jdyId, ocrFields) {
     id,
     jdyId || null,
     'OCR扫描',
-    '收款',
-    ocrFields.amount     || null,
+    direction,
+    amount,
     ocrFields.currency   || null,
     ocrFields.paymentDate|| null,
     ocrFields.bankRef    || null,
@@ -117,7 +183,7 @@ async function upsertPaymentRecord(jdyId, ocrFields) {
     'ocr_pending',
     JSON.stringify(audit.issues),
     audit.status,
-    JSON.stringify({ ocrSource: true, rawOcr: ocrFields }),
+    JSON.stringify({ ocrSource: true, direction, docType: ocrFields.docType || null, remittanceInfo: ocrFields.remittanceInfo || null, rawOcr: ocrFields }),
   ]);
   return result.rows[0];
 }
@@ -136,6 +202,8 @@ export default async function handler(req, res) {
     console.log("[ocr-review] qwen response:", JSON.stringify(qwenData).slice(0, 400));
 
     const fields = parseQwenResponse(qwenData);
+    // 归一化方向，回给前端展示（收款/付款）
+    if (fields) fields.direction = resolveDirection(fields);
     console.log("[ocr-review] extracted:", JSON.stringify(fields));
 
     // 2. Write back to JDY (existing behavior — bankRef + currency)

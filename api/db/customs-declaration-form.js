@@ -173,23 +173,142 @@ async function loadOrders(pool, plan) {
   return r.rows;
 }
 
+async function loadOrdersByIds(pool, orderIds) {
+  if (!orderIds.length) return [];
+  var r = await pool.query(
+    `SELECT * FROM orders
+     WHERE id = ANY($1::int[])
+     ORDER BY id ASC`,
+    [orderIds]
+  );
+  return r.rows;
+}
+
+export async function resolveOrdersForContainer(pool, planOrBl, container_no) {
+  var containerNo = clean(container_no);
+  if (!containerNo) return [];
+
+  var blNo = "";
+  var planId = "";
+  if (planOrBl && typeof planOrBl === "object") {
+    var raw = parseRaw(planOrBl.raw);
+    blNo = clean(pick(planOrBl.bl_no, raw.blNo, raw.bl_no));
+    planId = clean(pick(planOrBl.id, planOrBl._id));
+  } else {
+    blNo = clean(planOrBl);
+  }
+
+  var cb = await pool.query(
+    `SELECT id, bl_no, shipping_plan_id, contract_no, container_no
+       FROM container_bookings
+      WHERE btrim(container_no) = btrim($1)
+      ORDER BY id ASC`,
+    [containerNo]
+  );
+  if (!cb.rows.length) return [];
+
+  var matched = cb.rows.filter(function (b) {
+    var sameBl = blNo && clean(b.bl_no) === blNo;
+    var samePlan = planId && clean(b.shipping_plan_id) === planId;
+    return sameBl || samePlan;
+  });
+  var rows = matched.length ? matched : cb.rows;
+
+  var refs = [];
+  var seenRefs = new Set();
+  rows.forEach(function (b) {
+    var ref = clean(b.contract_no);
+    if (!ref || /^TBD(?:-|$)/i.test(ref) || seenRefs.has(ref)) return;
+    seenRefs.add(ref);
+    refs.push(ref);
+  });
+  if (!refs.length) return [];
+
+  var byOrderNo = await pool.query(
+    `SELECT id, order_no, contract_no FROM orders WHERE order_no = ANY($1::text[])`,
+    [refs]
+  );
+  var matchedOrderNos = new Set(byOrderNo.rows.map(function (o) { return clean(o.order_no); }));
+  var ids = [];
+  var seenIds = new Set();
+  byOrderNo.rows.forEach(function (o) {
+    var id = Number(o.id);
+    if (Number.isFinite(id) && !seenIds.has(id)) {
+      seenIds.add(id);
+      ids.push(id);
+    }
+  });
+
+  var remaining = refs.filter(function (ref) { return !matchedOrderNos.has(ref); });
+  if (remaining.length) {
+    var byContractNo = await pool.query(
+      `SELECT id, order_no, contract_no FROM orders WHERE contract_no = ANY($1::text[])`,
+      [remaining]
+    );
+    byContractNo.rows.forEach(function (o) {
+      var id = Number(o.id);
+      if (Number.isFinite(id) && !seenIds.has(id)) {
+        seenIds.add(id);
+        ids.push(id);
+      }
+    });
+  }
+
+  return ids;
+}
+
 async function loadLines(pool, orderIds) {
   if (!orderIds.length) return [];
   var r = await pool.query(
-    `SELECT
-       NULLIF(btrim(COALESCE(oli.hs_code, p.hs_code, '')), '') AS hs_code,
-       COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), '')) AS declaration_name,
-       string_agg(DISTINCT NULLIF(btrim(p.declaration_elements), ''), E'\\n') AS declaration_elements,
-       SUM(oli.qty_ctn) AS qty_ctn,
-       SUM(CASE WHEN oli.nw_ctn IS NOT NULL AND oli.qty_ctn IS NOT NULL THEN oli.nw_ctn * oli.qty_ctn ELSE NULL END) AS net_weight_kg,
-       MIN(oli.unit_price) AS unit_price,
-       SUM(oli.subtotal) AS total_amount
-     FROM order_line_items oli
-     LEFT JOIN products p ON p.sku = oli.sku
-     WHERE oli.order_id = ANY($1::int[])
-     GROUP BY NULLIF(btrim(COALESCE(oli.hs_code, p.hs_code, '')), ''),
-              COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), ''))
-     ORDER BY hs_code, declaration_name`,
+    `WITH product_one AS (
+       SELECT DISTINCT ON (sku)
+              sku, hs_code, declaration_name, declaration_elements
+       FROM products
+       WHERE NULLIF(btrim(sku), '') IS NOT NULL
+       ORDER BY sku, active DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC
+     ),
+     keyed AS (
+       SELECT
+         NULLIF(btrim(COALESCE(oli.hs_code, p.hs_code, '')), '') AS hs_code,
+         COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), '')) AS declaration_name,
+         NULLIF(btrim(p.declaration_elements), '') AS declaration_elements,
+         oli.qty_ctn,
+         oli.nw_ctn,
+         oli.unit_price,
+         oli.subtotal
+       FROM order_line_items oli
+       LEFT JOIN product_one p ON p.sku = oli.sku
+       WHERE oli.order_id = ANY($1::int[])
+     ),
+     hs_elements AS (
+       SELECT hs_code, MIN(declaration_elements) AS declaration_elements
+       FROM keyed
+       WHERE declaration_elements IS NOT NULL
+       GROUP BY hs_code
+     ),
+     -- 2026-07-06: 同HS只报一行(照商检单口径,别按品名再拆),品名取该HS下箱数最大的那个
+     name_by_hs AS (
+       SELECT DISTINCT ON (hs_code) hs_code, declaration_name AS dominant_name
+       FROM (
+         SELECT hs_code, declaration_name, SUM(qty_ctn) AS qty_sum
+         FROM keyed
+         GROUP BY hs_code, declaration_name
+       ) g
+       ORDER BY hs_code, qty_sum DESC NULLS LAST
+     )
+     SELECT
+       k.hs_code,
+       n.dominant_name AS declaration_name,
+       MAX(h.declaration_elements) AS declaration_elements,
+       SUM(k.qty_ctn) AS qty_ctn,
+       SUM(CASE WHEN k.nw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.nw_ctn * k.qty_ctn ELSE NULL END) AS net_weight_kg,
+       MIN(k.unit_price) AS unit_price,
+       SUM(k.subtotal) AS total_amount
+     FROM keyed k
+     LEFT JOIN hs_elements h ON h.hs_code IS NOT DISTINCT FROM k.hs_code
+     LEFT JOIN name_by_hs n ON n.hs_code IS NOT DISTINCT FROM k.hs_code
+     GROUP BY k.hs_code, n.dominant_name
+     ORDER BY hs_code`,
     [orderIds]
   );
   return r.rows;
@@ -207,6 +326,8 @@ function cargoRows(lines, destination) {
   if (!lines.length) {
     return `<tr><td colspan="9" class="empty-row">无货物明细</td></tr>`;
   }
+  // 2026-07-06: SQL已按hs_code唯一分组(见loadLines name_by_hs),每行天然对应唯一HS,不再需要按HS去重申报要素
+  // (旧逻辑按"见过的HS"清空后续行文字,同HS下不同品名如"宠物罐头/宠物软罐头"被误判成重复行,第二行整段申报要素被清空——已改成SQL层合并解决)
   return lines.map(function (l, i) {
     var qty = [
       fmtM(l.net_weight_kg, 0) ? fmtM(l.net_weight_kg, 0) + "千克" : "",
@@ -217,10 +338,8 @@ function cargoRows(lines, destination) {
       fmtM(l.total_amount, 2),
       "人民币",
     ].filter(Boolean).join("<br>");
-    var name = [
-      clean(l.declaration_name),
-      clean(l.declaration_elements),
-    ].filter(Boolean).map(esc).join("<br>");
+    var elements = clean(l.declaration_elements);
+    var name = [clean(l.declaration_name), elements].filter(Boolean).map(esc).join("<br>");
     return `<tr>
       <td>${i + 1}</td>
       <td>${blank(l.hs_code)}</td>
@@ -235,13 +354,29 @@ function cargoRows(lines, destination) {
   }).join("");
 }
 
+function sumOrderMetric(orders, fields, rawFields) {
+  return orders.reduce(function (sum, o) {
+    var raw = parseRaw(o.raw);
+    var v = "";
+    for (var i = 0; i < fields.length && v === ""; i++) v = pick(o[fields[i]]);
+    for (var j = 0; j < rawFields.length && v === ""; j++) v = pick(raw[rawFields[j]]);
+    var n = Number(v);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+}
+
 export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   opts = opts || {};
   var plan = await loadPlan(pool, shipmentId);
   if (!plan) return null;
 
   var praw = parseRaw(plan.raw);
+  var requestedContainerNo = clean(opts.container_no || opts.container);
   var orders = await loadOrders(pool, plan);
+  if (requestedContainerNo) {
+    var containerOrderIds = await resolveOrdersForContainer(pool, plan, requestedContainerNo);
+    orders = await loadOrdersByIds(pool, containerOrderIds);
+  }
   var orderIds = orders.map(function (o) { return Number(o.id); }).filter(Boolean);
   var lines = await loadLines(pool, orderIds);
 
@@ -250,7 +385,21 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var shipper = sellerLabel(issuer, company);
 
   var customer = firstOrderValue(orders, "customer", "customer");
-  var contractNo = firstOrderValue(orders, "contract_no", "contractNo");
+  // 合同协议号用我们的 FS 号(内部号),优先取 FS 开头的合同号;都没有才退回原始 contract_no
+  var contractNo = (function () {
+    var fallback = "";
+    for (var i = 0; i < orders.length; i++) {
+      var raw = parseRaw(orders[i].raw);
+      var candidates = [orders[i].fs_no, raw.fs_no, orders[i].contract_no, orders[i].contractNo, raw.contractNo, raw.contract_no];
+      for (var j = 0; j < candidates.length; j++) {
+        var v = clean(candidates[j]);
+        if (!v) continue;
+        if (!fallback) fallback = v;
+        if (/^FS/i.test(v)) return v;
+      }
+    }
+    return fallback || firstOrderValue(orders, "contract_no", "contractNo");
+  })();
   var currency = firstOrderValue(orders, "currency", "currency") || "CNY";
   var tradeMode = "0110 一般贸易";
   var levyNature = "101 一般征税";
@@ -258,9 +407,19 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var destination = countryFromPod(firstOrderValue(orders, "country", "country") || pod);
   var vesselVoyage = [pick(plan.vessel, praw.vessel), pick(plan.voyage, praw.voyage)].filter(Boolean).join(" / ");
   var blNo = pick(plan.bl_no, praw.blNo, praw.bl_no);
-  var containerNo = pick(plan.container_no, praw.containerNo, praw.container_no);
+  var containerNo = requestedContainerNo || pick(plan.container_no, praw.containerNo, praw.container_no);
   var grossWeight = pick(plan.gross_weight_kg, plan.gross_weight, praw.grossWeight, praw.gross_weight_kg);
   var netWeight = pick(plan.net_weight_kg, plan.net_weight, praw.netWeight, praw.net_weight_kg);
+  if (requestedContainerNo) {
+    var orderGross = sumOrderMetric(orders, ["gross_weight_kg", "gross_weight", "total_gross_weight", "total_gw"], ["grossWeightKg", "grossWeight", "gross_weight_kg", "gross_weight", "totalGrossWeight", "total_gw"]);
+    var orderNet = sumOrderMetric(orders, ["net_weight_kg", "net_weight", "total_net_weight", "total_nw"], ["netWeightKg", "netWeight", "net_weight_kg", "net_weight", "totalNetWeight", "total_nw"]);
+    var lineNet = lines.reduce(function (s, l) {
+      var n = Number(l.net_weight_kg);
+      return s + (Number.isFinite(n) ? n : 0);
+    }, 0);
+    grossWeight = orderGross || "";
+    netWeight = orderNet || lineNet || "";
+  }
   var totalCtn = lines.reduce(function (s, l) {
     var n = Number(l.qty_ctn);
     return s + (Number.isFinite(n) ? n : 0);

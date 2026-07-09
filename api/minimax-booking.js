@@ -5,6 +5,7 @@
 
 import OSS from "ali-oss";
 import { IncomingForm } from "formidable";
+import { visionOcr } from "./lib/minimax-vl.js";
 import fs from "fs";
 import { execSync } from "child_process";
 import { tmpdir } from "os";
@@ -121,26 +122,8 @@ function pdfToJpeg(pdfBuffer) {
 // ── Qwen VL 识别（通过OSS URL，从中国大陆可访问）+ AI 日记 ──
 async function extractWithQwenVL(ossImageUrl, logCtx) {
   const startMs = Date.now();
-  const apiKey = process.env.QWEN_API_KEY;
-
-  const resp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "qwen-vl-max",
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image_url", image_url: { url: ossImageUrl } },
-          { type: "text", text: BL_PROMPT },
-        ],
-      }],
-    }),
-  });
-
-  const data = await resp.json();
-  if (!resp.ok) throw new Error("Qwen VL error: " + JSON.stringify(data));
-
+  // 2026-07-04 引擎从 qwen-vl-max 切 MiniMax-M3
+  const data = await visionOcr(ossImageUrl, BL_PROMPT);
   const text = (data.choices?.[0]?.message?.content || "").trim();
   console.log("[minimax-booking] qwen raw:", text.slice(0, 200));
   const clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();

@@ -48,6 +48,7 @@ const CUSTOMER_FACING = new Set([
   "notes",
   "created_at", "updated_at",
   "products",            // already stripped by stripSensitive() for factoryPrice/cost
+  "inland_freight", "inland_freight_label", "inland_freight_label_en", // 提货运费(客户SC/IV显示)
   // Live shipping joins from orders.js GET LEFT LATERAL JOINs:
   "sp_bl_no", "sp_etd", "sp_eta", "sp_pol", "sp_pod",
   "sp_status_cn", "sp_tracking_updated_at",

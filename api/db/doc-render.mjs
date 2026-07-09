@@ -31,9 +31,20 @@ async function factoryCompanyOf(pool, orderId){
 }
 
 export default async function handler(req, res){
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, OPTIONS");
   if(req.method==='OPTIONS') return res.status(204).end();
   const pool=getPool();
+  // POST: 手动保存厂检/QC 实测结果 → 写 factory_doc_results(替代/补充OCR,真人填的真值)
+  if(req.method==='POST'){
+    if(!req.user) return res.status(401).json({error:'unauthorized'});
+    const b=req.body||{};
+    const saveOrder=(b.order_no||b.id||'').toString();
+    const saveKind=(b.kind||'fi').toString();
+    if(!saveOrder) return res.status(400).json({error:'order_no required'});
+    const results=(b.results&&typeof b.results==='object')?b.results:{};
+    await pool.query(`INSERT INTO factory_doc_results(order_no,doc_kind,results,source,filled_by) VALUES($1,$2,$3::jsonb,'manual',$4) ON CONFLICT(order_no,doc_kind) DO UPDATE SET results=EXCLUDED.results, source=EXCLUDED.source, filled_at=now()`,[saveOrder,saveKind,JSON.stringify(results),(req.user.username||'manual')]);
+    return res.json({success:true, order_no:saveOrder, kind:saveKind, count:Object.keys(results).length});
+  }
   const q=req.query||{};
   const kind=(q.kind||'fi').toString();
   const id=(q.id||'').toString();
@@ -104,6 +115,51 @@ export default async function handler(req, res){
     }
   }catch(_){}
 
+  // format=json → 返回结构化数据(供可编辑模版编辑器加载)
+  if((q.format||'').toString()==='json'){
+    res.setHeader('Cache-Control','no-store');
+    return res.json({
+      kind, order_no:orderNo, report_no:pick(resultsMap['报告编号'],reportNo), sample_name:pick(resultsMap['产品名称'],showSample), product_spec:pick(resultsMap['规格'],productSpec),
+      batch_no:batchNo, prod_date:pick(resultsMap['生产日期'],prodDate), qty_weight:pick(resultsMap['数重量'],qtyWeight), insp_date:pick(resultsMap['检验日期'],inspDate), sample_qty:sampleQty, insp_place:pick(resultsMap['检验地点'],'仓库'),
+      factory_display:factoryDisplay, factory_company:cc||'', hs4,
+      note:pick(resultsMap['备注'],note), inspector:pick(resultsMap['检测人员'],tpl&&tpl.inspector,'宫海霞'), reviewer:pick(resultsMap['复检人员'],tpl&&tpl.reviewer,'林彩云'),
+      seal_url:sealUrl, has_template:!!tpl,
+      ref_std:'GB/T 31410-2015《宠物用品 猫砂》/ GB/T 3838-2002《重金属限量》',
+      items: items.map(it=>({ no:it.no, name:it.name, unit:it.unit, spec:it.spec, section:it.section||'', type:it.type||'', result: (resultsMap[it.name]!==undefined&&resultsMap[it.name]!==null?String(resultsMap[it.name]):'') }))
+    });
+  }
+
+  // format=xlsx → 厂检/QC Excel 导出(ExcelJS)
+  if((q.format||'').toString()==='xlsx'){
+    try{
+      const ExcelJS=(await import('exceljs')).default;
+      const wb=new ExcelJS.Workbook();
+      const ws=wb.addWorksheet((kind==='qc'?'QC':'FI')+' '+orderNo);
+      ws.columns=[{width:6},{width:34},{width:12},{width:14},{width:14},{width:12}];
+      ws.addRow([factoryDisplay]); ws.addRow([showSample+(kind==='qc'?' QC质检报告':'检验报告')]);
+      ws.addRow(['参考标准', 'GB/T 31410-2015《宠物用品 猫砂》/ GB/T 3838-2002《重金属限量》']);
+      ws.addRow([]);
+      ws.addRow(['报告编号', pick(resultsMap['报告编号'],reportNo)]); ws.addRow(['样品/合同编号', orderNo]); ws.addRow(['产品名称', pick(resultsMap['产品名称'],showSample)]);
+      ws.addRow(['规格', productSpec]); ws.addRow(['生产批号', batchNo]); ws.addRow(['生产日期', prodDate]);
+      ws.addRow(['数/重量', pick(resultsMap['数重量'],qtyWeight)]); ws.addRow(['检验日期', pick(resultsMap['检验日期'],inspDate)]); ws.addRow(['检验地点', pick(resultsMap['检验地点'],'仓库')]); ws.addRow(['送检批量(袋)', sampleQty]);
+      ws.addRow([]);
+      const hdr=ws.addRow(['序号','检验项目','计量单位','技术要求','检验结果','单项评价']); hdr.font={bold:true};
+      items.forEach((it,i)=>{
+        const rv=resultsMap[it.name]; const has=rv!==undefined&&rv!==''&&rv!==null;
+        const actual=has?String(rv):''; let verdict='';
+        if(has){const ok=checkSpec(it.spec,rv);verdict=ok===null?'':(ok?'合格':'超标');}
+        ws.addRow([it.no,it.name,it.unit,it.spec,actual,verdict]);
+      });
+      ws.addRow([]); ws.addRow(['备注', note]);
+      ws.addRow(['检测人员', pick(tpl&&tpl.inspector,'宫海霞'), '', '复检人员', pick(tpl&&tpl.reviewer,'林彩云')]);
+      const buf=await wb.xlsx.writeBuffer();
+      res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition','attachment; filename="'+encodeURIComponent((kind==='qc'?'QC质检报告_':'厂检单_')+showSample+'_'+orderNo)+'.xlsx"');
+      res.setHeader('Cache-Control','no-store');
+      return res.status(200).send(Buffer.from(buf));
+    }catch(xe){ console.error('[doc-render] xlsx error:',xe&&xe.message); return res.status(500).json({error:'xlsx_failed',detail:xe&&xe.message}); }
+  }
+
   // — 分节渲染 —
   // 按 section 字段分组；无 section 字段则视为单节旧格式
   const hasSections = items.some(it => it.section);
@@ -116,10 +172,10 @@ export default async function handler(req, res){
       <tr><th>序号</th><th>检验项目</th><th>计量单位</th><th>技术要求</th><th>检验结果</th><th>单项评价</th></tr>
       ${items.map(it=>{
         const rv=resultsMap[it.name]; const has=rv!==undefined&&rv!==''&&rv!==null;
-        const actual=has?esc(rv):esc(typicalVal(it.spec));
+        const actual=has?esc(rv):(kind==='qc'?'':esc(typicalVal(it.spec)));
         let verdict='&nbsp;';
         if(has){const ok=checkSpec(it.spec,rv);verdict=ok===null?'&nbsp;':(ok?'<span style="color:#16a34a;font-weight:700">合格</span>':'<span style="color:#dc2626;font-weight:700">⚠ 超标</span>');}
-        else if(actual) verdict='<span style="color:#16a34a;font-weight:700">合格</span>';
+        else if(kind!=='qc'&&actual) verdict='<span style="color:#16a34a;font-weight:700">合格</span>';
         return `<tr><td>${esc(it.no)}</td><td>${esc(it.name)}</td><td>${esc(it.unit)}</td><td>${esc(it.spec)}</td><td>${actual||'&nbsp;'}</td><td>${verdict}</td></tr>`;
       }).join('')}
     </table>`;
@@ -156,10 +212,10 @@ export default async function handler(req, res){
           <tr><th style="width:6%">项目</th><th style="text-align:left;padding-left:8px">Item</th><th>标准 Standard</th><th>实测 Actual</th><th>单位 Unit</th><th>判定 Result</th></tr>
           ${secItems.map(it=>{
             const rv=resultsMap[it.name]; const has=rv!==undefined&&rv!==''&&rv!==null;
-            const actual=has?esc(rv):esc(typicalVal(it.spec));
+            const actual=has?esc(rv):(kind==='qc'?'':esc(typicalVal(it.spec)));
             let verdict='&nbsp;';
             if(has){const ok=checkSpec(it.spec,rv);verdict=ok===null?'&nbsp;':(ok?'<span style="color:#16a34a;font-weight:700">□ 合格</span>':'<span style="color:#dc2626;font-weight:700">⚠ 超标</span>');}
-            else verdict='<span style="color:#16a34a;font-weight:700">□ 合格</span>';
+            else if(kind!=='qc') verdict='<span style="color:#16a34a;font-weight:700">□ 合格</span>';
             return `<tr><td>${esc(it.no)}</td><td style="text-align:left;padding-left:8px">${esc(it.name)}</td><td>${esc(it.spec)}</td><td>${actual||'&nbsp;'}</td><td>${esc(it.unit)}</td><td>${verdict}</td></tr>`;
           }).join('')}
         </table>`;
@@ -200,19 +256,19 @@ ${isQC?`<div class=ti-en>QC INSPECTION REPORT · ${esc(showSample)}</div>
 
 <div class=header-grid>
   <table class=header-left style="border:none"><tbody>
-    <tr><td>报告编号</td><td>${esc(reportNo||'&nbsp;')}</td></tr>
+    <tr><td>报告编号</td><td>${esc(pick(resultsMap['报告编号'],reportNo)||'&nbsp;')}</td></tr>
     <tr><td>样品/合同编号</td><td>${esc(orderNo)}</td></tr>
-    <tr><td>产品名称</td><td>${esc(showSample)}</td></tr>
-    <tr><td>规格</td><td>${esc(productSpec||'&nbsp;')}</td></tr>
+    <tr><td>产品名称</td><td>${esc(pick(resultsMap['产品名称'],showSample))}</td></tr>
+    <tr><td>规格</td><td>${esc(pick(resultsMap['规格'],productSpec)||'&nbsp;')}</td></tr>
     <tr><td>生产批号</td><td>${batchNo ? esc(batchNo) : '<span style="color:#dc2626;font-weight:700">&#9888; 待填（需工厂批次记录）</span>'}</td></tr>
-    <tr><td>生产日期</td><td>${prodDate ? esc(prodDate) : '<span style="color:#dc2626;font-weight:700">&#9888; 待填（需工厂批次记录）</span>'}</td></tr>
-    <tr><td>数/重量</td><td>${esc(qtyWeight||'&nbsp;')}</td></tr>
+    <tr><td>生产日期</td><td>${pick(resultsMap['生产日期'],prodDate) ? esc(pick(resultsMap['生产日期'],prodDate)) : '<span style="color:#dc2626;font-weight:700">&#9888; 待填（需工厂批次记录）</span>'}</td></tr>
+    <tr><td>数/重量</td><td>${esc(pick(resultsMap['数重量'],qtyWeight)||'&nbsp;')}</td></tr>
   </tbody></table>
   <div style="display:flex;flex-direction:column">
     ${isQC?`<div class=qc-badge>QC REPORT<span class=sub>质检报告单</span></div>`:''}
     <table class=header-right style="border:none;flex:1"><tbody>
-      <tr><td>检验日期</td><td>${esc(inspDate||'&nbsp;')}</td></tr>
-      <tr><td>检验地点</td><td>仓库</td></tr>
+      <tr><td>检验日期</td><td>${esc(pick(resultsMap['检验日期'],inspDate)||'&nbsp;')}</td></tr>
+      <tr><td>检验地点</td><td>${esc(pick(resultsMap['检验地点'],'仓库'))}</td></tr>
       <tr><td>送检批量(袋)</td><td>${esc(sampleQty)}</td></tr>
     </tbody></table>
   </div>
@@ -220,17 +276,17 @@ ${isQC?`<div class=ti-en>QC INSPECTION REPORT · ${esc(showSample)}</div>
 
 ${bodyRows}
 
-<div class=note>${esc(note)}</div>
-<div class=sig>
-  <span>检测人员：${esc(pick(tpl&&tpl.inspector,'宫海霞'))}</span>
-  <span>复检人员：${esc(pick(tpl&&tpl.reviewer,'林彩云'))}</span>
-  ${sealUrl?`<img src="${esc(sealUrl)}" alt="公章" onerror="this.style.display='none'" style="position:absolute;right:40px;bottom:-8px;width:110px;height:110px;opacity:.9;pointer-events:none"/>`:''}
+<div class=note>${esc(pick(resultsMap['备注'],note))}</div>
+<div class=sig style="min-height:110px">
+  <span>检测人员：${esc(pick(resultsMap['检测人员'],tpl&&tpl.inspector,'宫海霞'))}</span>
+  <span>复检人员：${esc(pick(resultsMap['复检人员'],tpl&&tpl.reviewer,'林彩云'))}</span>
+  ${sealUrl?`<img src="${esc(sealUrl)}" alt="公章" onerror="this.style.display='none'" style="position:absolute;right:130px;bottom:-62px;width:100px;height:100px;opacity:.9;pointer-events:none"/>`:''}
 </div>
 </div></body></html>`;
 
   if((q.format||'').toString()==='pdf' || (q.download||'').toString()==='1'){
     try{
-      const puppeteer=(await import('puppeteer')).default;
+      const puppeteer=(await import('puppeteer-core')).default; // 2026-07-08 裸puppeteer→puppeteer-core(tencent只有core,漏改致厂检/PI等PDF下载503)
       const chromePath=process.env.CHROME_PATH||process.env.PUPPETEER_EXECUTABLE_PATH||'/usr/bin/google-chrome';
       const launchOpts={ headless:'new', args:['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--disable-software-rasterizer'] };
       try{ const fs=await import('fs'); if(fs.existsSync(chromePath)) launchOpts.executablePath=chromePath; }catch(_){}

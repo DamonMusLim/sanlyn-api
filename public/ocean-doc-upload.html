@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>海运单据上传 / 归档确认</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:#eef2f7; margin:0; padding:24px 16px; color:#172033; }
+  .card, .token, .review { max-width:760px; margin:0 auto; background:#fff; border-radius:10px; padding:22px; box-shadow:0 4px 22px rgba(15,23,42,.08); }
+  .token, .review { margin-top:16px; }
+  h1, h2 { margin:0 0 8px; font-size:19px; }
+  h2 { font-size:17px; }
+  .sub, .muted { color:#64748b; font-size:13px; line-height:1.55; }
+  .drop { display:block; margin-top:16px; border:2px dashed #cbd5e1; border-radius:10px; padding:28px 16px; text-align:center; cursor:pointer; transition:.15s; }
+  .drop.over { border-color:#0f766e; background:#ecfdf5; }
+  .drop input { display:none; }
+  .fname { margin-top:12px; font-size:13px; font-weight:600; word-break:break-all; text-align:left; }
+  textarea, input[type="text"], input[type="password"] { width:100%; margin-top:12px; border:1px solid #dbe3ee; border-radius:8px; padding:9px 10px; font-size:13px; font-family:inherit; }
+  textarea { resize:vertical; min-height:48px; }
+  button { width:100%; margin-top:14px; padding:11px 12px; border:0; border-radius:8px; background:#0f766e; color:#fff; font-size:14px; font-weight:700; cursor:pointer; }
+  button:disabled { background:#94a3b8; cursor:not-allowed; }
+  .secondary { background:#64748b; }
+  .danger { background:#b91c1c; }
+  .result { margin-top:16px; padding:12px 14px; border-radius:8px; font-size:13px; line-height:1.7; }
+  .result.ok { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; }
+  .result.dup { background:#fffbeb; border:1px solid #fde68a; color:#78350f; }
+  .result.err { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+  .candidate { display:flex; gap:10px; align-items:flex-start; border:1px solid #e2e8f0; border-radius:8px; padding:10px; margin-top:8px; }
+  .candidate-body { flex:1; min-width:0; }
+  .candidate strong, .candidate span { display:block; }
+  .grid { display:grid; grid-template-columns:120px 1fr; gap:8px 12px; margin:12px 0; font-size:13px; }
+  .label { color:#64748b; }
+  .tag { display:inline-block; width:auto; margin-left:6px; padding:1px 6px; border-radius:999px; background:#dbeafe; color:#1e40af; font-size:11px; font-weight:700; }
+  .actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:560px) { body { padding:14px 10px; } .grid { grid-template-columns:1fr; } .actions { grid-template-columns:1fr; } }
+</style></head>
+<body>
+<div class="card">
+  <h1>海运单据上传</h1>
+  <div class="sub">支持 PDF / PNG / JPG / WEBP，最大15MB。上传后自动识别类型、提取关键号并进入人工归属确认。</div>
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple>
+    <div>点击选择文件，或拖拽到此处</div>
+    <div class="sub">BL / 报关单 / 装箱单 / EIR / 托书 / CO / 发票等</div>
+    <div class="fname" id="fname"></div>
+  </label>
+  <textarea id="note" placeholder="备注（选填）"></textarea>
+  <button id="submit" disabled>上传</button>
+  <div id="result"></div>
+</div>
+
+<div class="token">
+  <input type="password" id="jwt" placeholder="粘贴内部 JWT token 后查看/确认待归档文件">
+  <div class="muted" style="margin-top:8px">确认归属和驳回必须登录；上传链接只用 ?k=。</div>
+</div>
+<div class="review" id="review"></div>
+
+<script src="/public/ocean-doc-upload-page.js"></script>
+</body></html>

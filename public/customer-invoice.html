@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>客户开票门户</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f8;color:#18212f;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:22px 14px 60px}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:12px}
+.brand{font-size:22px;font-weight:800}.sub{font-size:13px;color:#667085;margin-top:4px}
+.tag{border:1px solid #cfd8e3;background:#fff;border-radius:6px;padding:7px 10px;font-size:13px}
+.card{background:#fff;border:1px solid #d9e0e8;border-radius:8px;margin:12px 0;padding:14px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.empty{text-align:center;padding:42px 12px;color:#667085}
+.banner{border-radius:6px;padding:10px 12px;margin:8px 0;font-weight:700;font-size:13px}
+.blue{background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8}
+.red{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}
+.orange{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+/* 官方红色电子发票版式，照真实已开票样例(Eversparkles) 复刻，与 factory-invoice.html 同一套 .cp 逐格复制模块 */
+.invoice{position:relative;border:2px solid #b91c1c;padding:16px 16px 14px;color:#621313;background:#fffdfb}
+.invTitle{text-align:center;font-size:26px;font-weight:800;color:#b91c1c;margin:2px 0 12px}
+.officialTop{display:grid;grid-template-columns:110px 1fr 230px;gap:12px;align-items:start;margin-bottom:10px}
+.qrBox{width:96px;height:96px;border:1px solid #b91c1c;background:#fff}
+.invMeta{display:grid;gap:8px;color:#7f1d1d;font-size:13px;line-height:1.45}
+.metaLine{display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid #f3caca;padding-bottom:4px}
+.metaLine input{border:1px solid #f0c2c2;border-radius:4px;padding:3px 6px;font-size:13px;background:#fff;color:#7f1d1d;width:150px;text-align:right}
+.placeholder{color:#c98a8a;font-style:italic}
+.partyWrap{display:grid;grid-template-columns:1fr 1fr;border:1px solid #efb5b5;border-bottom:0}
+.party{display:grid;grid-template-columns:34px 1fr;min-height:86px}.party+.party{border-left:1px solid #efb5b5}
+.pLabel{display:flex;align-items:center;justify-content:center;border-right:1px solid #efb5b5;color:#9f1239;font-weight:800;writing-mode:vertical-rl;letter-spacing:2px}
+.pGrid{display:grid;gap:8px;padding:10px 12px}.field{font-size:13px;line-height:1.4}.field b{font-weight:700;color:#4b1111}
+.tableBox{overflow:auto;border-left:1px solid #efb5b5;border-right:1px solid #efb5b5}
+table{width:100%;border-collapse:collapse;min-width:900px;table-layout:fixed}
+th,td{border-bottom:1px solid #efb5b5;border-right:1px solid #f3caca;padding:6px 7px;font-size:13px;vertical-align:middle}
+th:last-child,td:last-child{border-right:0}
+th{color:#9f1239;background:#fff7f7;text-align:center;font-weight:800}
+td input,td select{width:100%;border:1px solid #f0c2c2;border-radius:5px;padding:5px 6px;font-size:13px;background:#fff;color:#621313;font-family:inherit}
+td input.num{text-align:right;font-variant-numeric:tabular-nums}
+.nameCol{width:24%}.specCol{width:12%}.unitCol{width:8%}.qtyCol{width:9%}.priceCol{width:12%}.amtCol{width:13%}.rateCol{width:10%}.taxCol{width:10%}.delCol{width:30px}
+.ro{background:#fdf6f6;color:#7f1d1d;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.center{text-align:center}
+.rowDel{border:0;background:#fee2e2;color:#b91c1c;border-radius:5px;cursor:pointer;font-weight:800;width:24px;height:24px}
+.sumLabel{text-align:center;font-weight:800;color:#9f1239;background:#fffdfb}
+.grand{display:grid;grid-template-columns:1fr 260px;border:1px solid #efb5b5;border-top:0;font-size:15px}
+.grand>div{padding:10px 12px}.grandSmall{border-left:1px solid #efb5b5}
+.money{font-size:20px;font-weight:900;color:#991b1b}
+.remarkBox{border:1px solid #efb5b5;border-top:0}
+.remarkGrid{display:grid;grid-template-columns:54px 1fr;min-height:auto}
+.remarkLabel{display:flex;align-items:center;justify-content:center;border-right:1px solid #efb5b5;color:#9f1239;font-weight:800}
+.remarkBody{padding:8px 12px;display:grid;gap:6px}
+.remarkRow{display:flex;align-items:center;gap:6px;font-size:12px;color:#6b7280;flex-wrap:wrap}
+.remarkRow label{white-space:nowrap;color:#9f1239;font-weight:700}
+.remarkRow input{border:1px solid #f0c2c2;border-radius:4px;padding:4px 6px;font-size:12px;background:#fff;color:#621313}
+.remarkRow input.w-sm{width:90px}.remarkRow input.w-md{width:150px}.remarkRow input.w-lg{width:220px}
+.issuer{display:flex;justify-content:flex-end;align-items:center;gap:8px;border:1px solid #efb5b5;border-top:0;padding:9px 12px;color:#621313;font-size:13px}
+.issuer input{border:1px solid #f0c2c2;border-radius:4px;padding:4px 8px;font-size:13px;width:140px}
+.cp{cursor:pointer;border-radius:4px;transition:background .12s,outline-color .12s}.cp:hover{background:#fff1f2}.cp.copied{outline:2px solid #16a34a;background:#ecfdf5;color:#166534}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.btn{border:1px solid #cbd5e1;background:#fff;color:#1f2937;border-radius:6px;padding:8px 12px;cursor:pointer;font-weight:700;font-size:13px}
+.btn.primary{border:0;background:#1d4ed8;color:#fff}.btn.confirm{border:0;background:#047857;color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.status{margin-top:8px;font-size:13px;color:#475467}.ok{color:#15803d}.err{color:#b91c1c}
+.refbar{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:#334155;margin:6px 0 2px}
+.refbar b{color:#0f172a}.refval{cursor:pointer;border-bottom:1px dashed #94a3b8}
+@media(max-width:760px){.officialTop{grid-template-columns:98px 1fr}.invMeta{grid-column:1/3}.partyWrap{grid-template-columns:1fr}.party+.party{border-left:0;border-top:1px solid #efb5b5}.grand{grid-template-columns:1fr}.grandSmall{border-left:0;border-top:1px solid #efb5b5}.remarkGrid{grid-template-columns:1fr}.remarkLabel{writing-mode:horizontal-tb;border-right:0;border-bottom:1px solid #efb5b5;padding:4px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="brand">SANLYN 客户开票门户</div><div class="sub" id="head">加载中...</div></div><div class="tag">电子发票（普通发票）· 巴匕开给客户</div></div>
+  <div id="msg" class="card empty">正在读取订单...</div>
+  <div id="app" style="display:none"></div>
+</div>
+<script>
+const qs=new URLSearchParams(location.search),CODE=qs.get("c")||"",API="/api/db/customer-invoice";
+let DATA=null,LINES=[],REMARK={},META={invoice_no:"",issue_date:"",issuer:""},LOCKED=false;
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const money=n=>(Number(n)||0).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const qty=n=>n==null||n===""?"":(Number(n)||0).toLocaleString("zh-CN",{maximumFractionDigits:3});
+const RATES=[["0%",0],["1%",0.01],["3%",0.03],["6%",0.06],["9%",0.09],["13%",0.13]];
+function show(t,cls=""){$("msg").className="card empty "+cls;$("msg").style.display="";$("msg").textContent=t;$("app").style.display="none"}
+function upperMoney(n){
+  let s=(Math.round((Number(n)||0)*100)/100).toFixed(2),[i,d]=s.split("."),u="零壹贰叁肆伍陆柒捌玖",a=["","拾","佰","仟"],b=["","万","亿"],out="";
+  if(i==="0")out="零";else{let g=[];while(i){g.unshift(i.slice(-4));i=i.slice(0,-4)}g.forEach((x,gi)=>{let p="",z=false;x.padStart(4,"0").split("").forEach((c,ci)=>{let num=Number(c),pos=3-ci;if(num){if(z){p+="零";z=false}p+=u[num]+a[pos]}else if(p)z=true});if(p)out+=p+b[g.length-1-gi]})}
+  const j=Number(d[0]),f=Number(d[1]);return out+"元"+(j?u[j]+"角":"")+(f?u[f]+"分":j?"":"整");
+}
+async function load(){
+  if(!CODE)return show("链接缺少参数，请联系我司。","err");
+  try{const r=await fetch(API+"?c="+encodeURIComponent(CODE)),d=await r.json();if(!r.ok)throw new Error(d.error||"链接无效或已过期");DATA=d;initState();render()}
+  catch(e){show(e.message||"网络错误，请稍后重试。","err")}
+}
+function initState(){
+  const s=DATA.saved;
+  LOCKED=!!(s&&s.locked);
+  LINES=(s&&Array.isArray(s.lines)&&s.lines.length?s.lines:(DATA.default_lines||[])).map(l=>({
+    name:l.name||"",spec:l.spec||"",unit:l.unit||"",qty:l.qty??"",amount_incl:Number(l.amount_incl)||0,tax_rate:Number(l.tax_rate)||0
+  }));
+  if(!LINES.length)LINES=[{name:"",spec:"",unit:"",qty:"",amount_incl:0,tax_rate:0}];
+  const dr=DATA.default_remark||{};
+  const sr=(s&&s.remark_fields)||{};
+  REMARK={
+    trade_terms: sr.trade_terms ?? dr.trade_terms ?? "",
+    exchange_rate: sr.exchange_rate ?? dr.exchange_rate ?? "",
+    usd_ref: sr.usd_ref ?? dr.usd_ref ?? "",
+    contract_no: sr.contract_no ?? dr.contract_no ?? DATA.contract_no ?? "",
+    trade_country: sr.trade_country ?? dr.trade_country ?? "",
+    bl_no: sr.bl_no ?? dr.bl_no ?? "",
+  };
+  META={
+    invoice_no: (s&&s.is_real_invoice_no)?s.invoice_no:"",
+    issue_date: (s&&s.issue_date)?String(s.issue_date).slice(0,10):"",
+    issuer: (s&&s.issuer)||"",
+  };
+}
+function fillCustoms(){
+  LINES=[{name:DATA.default_name||"货款",spec:"",unit:(DATA.default_lines&&DATA.default_lines[0]&&DATA.default_lines[0].unit)||"",qty:(DATA.default_lines&&DATA.default_lines[0]&&DATA.default_lines[0].qty)||"",amount_incl:Number(DATA.customs_amount)||0,tax_rate:0}];
+  renderTable();
+}
+function addRow(){LINES.push({name:"",spec:"",unit:"",qty:"",amount_incl:0,tax_rate:0});renderTable()}
+function delRow(i){LINES.splice(i,1);if(!LINES.length)LINES.push({name:"",spec:"",unit:"",qty:"",amount_incl:0,tax_rate:0});renderTable()}
+function onCell(i,k,v){LINES[i][k]=(k==="amount_incl"||k==="tax_rate"||k==="qty")?(v===""?"":Number(v)):v;renderTable()}
+function onMeta(k,v){META[k]=v}
+function onRemark(k,v){REMARK[k]=v;renderRemarkPreview()}
+function lineCalc(l){const rate=Number(l.tax_rate)||0,incl=Number(l.amount_incl)||0,ex=rate>0?incl/(1+rate):incl;return{ex:Math.round(ex*100)/100,tax:Math.round((incl-ex)*100)/100}}
+function totals(){let incl=0,ex=0;LINES.forEach(l=>{const c=lineCalc(l);incl+=Number(l.amount_incl)||0;ex+=c.ex});incl=Math.round(incl*100)/100;ex=Math.round(ex*100)/100;return{incl,ex,tax:Math.round((incl-ex)*100)/100}}
+function party(label,rows){return `<div class="party"><div class="pLabel">${label}</div><div class="pGrid">${rows.map(r=>`<div class="field"><b>${r[0]}：</b><span class="cp" onclick="copyCell(this)" data-copy="${esc(r[1]||"")}">${esc(r[1]||"—")}</span></div>`).join("")}</div></div>`}
+function render(){
+  const d=DATA,s=d.seller||{},b=d.buyer||{};$("msg").style.display="none";$("app").style.display="";
+  $("head").textContent=`${d.order_no||""} · ${b.name||"客户"} · ${d.is_domestic?"境内客户":"境外客户"}`;
+  const missBanner=(d.seller_missing||d.buyer_missing)
+    ? `<div class="banner red">⚠ ${[d.buyer_missing?"购买方":"",d.seller_missing?"销售方"+(s.tax_id?"":"税号"):""].filter(Boolean).join("/")}信息未维护，暂不能开票，请先补齐</div>`:"";
+  const amtBanner=d.amount_warning?`<div class="banner red">⚠ 报关金额缺失，请先补报关资料，或手动填写金额后开票</div>`:"";
+  const savedBadge=d.saved?`<span class="tag" style="color:#047857">${d.saved.review_status==="issued"?"✅已确认开票":"草稿"} · ¥${money(d.saved.amount_incl_tax)}</span>`:"";
+  const lockBanner=LOCKED?`<div class="banner orange">🔒 发票已确认开票超过 ${d.saved.edit_window_days} 天编辑期，已锁定只读。如需修改请联系财务作废重开。</div>`:"";
+  $("app").innerHTML=`<div class="card">
+    ${missBanner}${amtBanner}${lockBanner}
+    <div class="refbar">
+      <span><b>报关口径</b>：<span class="refval cp" onclick="copyCell(this)" data-copy="${(Number(d.customs_amount)||0).toFixed(2)}">¥${money(d.customs_amount)}</span></span>
+      ${d.customer_amount?`<span>客户价(参考)：¥${money(d.customer_amount)}</span>`:""}
+      <span>报关单号：${esc(d.customs_no||"—")}</span>
+      ${savedBadge}
+    </div>
+    <div class="invoice">
+      <div class="invTitle">电子发票（普通发票）</div>
+      <div class="officialTop">
+        <div class="qrBox"></div>
+        <div></div>
+        <div class="invMeta">
+          <div class="metaLine"><span>发票号码：</span><input id="mInvoiceNo" value="${esc(META.invoice_no)}" placeholder="开票时生成" oninput="onMeta('invoice_no',this.value)" ${LOCKED?"disabled":""}></div>
+          <div class="metaLine"><span>开票日期：</span><input id="mIssueDate" type="date" value="${esc(META.issue_date)}" oninput="onMeta('issue_date',this.value)" ${LOCKED?"disabled":""}></div>
+        </div>
+      </div>
+      <div class="partyWrap">
+        ${party("购买方",[["名称",b.name],["统一社会信用代码/纳税人识别号",b.tax_id]])}
+        ${party("销售方",[["名称",s.name],["统一社会信用代码/纳税人识别号",s.tax_id]])}
+      </div>
+      <div class="tableBox"><table><thead><tr>
+        <th class="nameCol">项目名称</th><th class="specCol">规格型号</th><th class="unitCol">单位</th><th class="qtyCol">数量</th>
+        <th class="priceCol">单价</th><th class="amtCol">金额(含税)</th><th class="rateCol">税率/征收率</th><th class="taxCol">税额</th><th class="delCol"></th>
+      </tr></thead><tbody id="tbody"></tbody>
+      <tfoot><tr><td colspan="5" class="sumLabel">合计</td><td class="ro" id="tIncl"></td><td></td><td class="ro" id="tTax"></td><td></td></tr></tfoot>
+      </table></div>
+      <div class="grand">
+        <div><b>价税合计（大写）</b> <span class="cp" onclick="copyCell(this)" id="tUpper"></span></div>
+        <div class="grandSmall"><b>（小写）</b> <span class="cp money" onclick="copyCell(this)" id="tSmall"></span></div>
+      </div>
+      <div class="remarkBox"><div class="remarkGrid"><div class="remarkLabel">备注</div><div class="remarkBody" id="remarkBody"></div></div></div>
+      <div class="issuer">开票人：<input id="mIssuer" value="${esc(META.issuer)}" placeholder="开票时填写" oninput="onMeta('issuer',this.value)" ${LOCKED?"disabled":""}></div>
+    </div>
+    <div class="tools">
+      <button class="btn" onclick="fillCustoms()" ${LOCKED?"disabled":""}>↺ 一键填报关口径</button>
+      <button class="btn" onclick="addRow()" ${LOCKED?"disabled":""}>＋ 加一行</button>
+      <button class="btn" onclick="copyTotal()">复制金额</button>
+      <button class="btn primary" onclick="save()" ${LOCKED?"disabled":""}>💾 保存草稿</button>
+      <button class="btn confirm" onclick="confirmIssue()" ${LOCKED?"disabled":""}>✅ 确认已开票</button>
+    </div>
+    <div id="st" class="status"></div>
+  </div>`;
+  renderTable();
+  renderRemarkPreview();
+}
+function renderTable(){
+  const tb=$("tbody");
+  tb.innerHTML=LINES.map((l,i)=>{
+    const c=lineCalc(l),unitPrice=(Number(l.qty)>0)?(c.ex/Number(l.qty)):null;
+    const dis=LOCKED?"disabled":"";
+    const rateSel=`<select onchange="onCell(${i},'tax_rate',this.value)" ${dis}>${RATES.map(([lab,v])=>`<option value="${v}" ${Number(l.tax_rate)===v?"selected":""}>${lab}</option>`).join("")}</select>`;
+    return `<tr>
+      <td class="nameCol"><input value="${esc(l.name)}" oninput="onCell(${i},'name',this.value)" placeholder="项目名称" ${dis}></td>
+      <td class="specCol"><input value="${esc(l.spec)}" oninput="onCell(${i},'spec',this.value)" ${dis}></td>
+      <td class="unitCol"><input value="${esc(l.unit)}" oninput="onCell(${i},'unit',this.value)" ${dis}></td>
+      <td class="qtyCol"><input class="num" value="${l.qty??""}" oninput="onCell(${i},'qty',this.value)" ${dis}></td>
+      <td class="ro">${unitPrice==null?"":money(unitPrice)}</td>
+      <td class="amtCol"><input class="num" value="${l.amount_incl||""}" oninput="onCell(${i},'amount_incl',this.value)" ${dis}></td>
+      <td class="rateCol">${rateSel}</td>
+      <td class="ro">${money(c.tax)}</td>
+      <td class="center">${LINES.length>1&&!LOCKED?`<button class="rowDel" onclick="delRow(${i})" title="删除">×</button>`:""}</td>
+    </tr>`;
+  }).join("");
+  const t=totals();
+  $("tIncl").textContent="¥"+money(t.incl);
+  $("tTax").textContent="¥"+money(t.tax);
+  $("tUpper").textContent=upperMoney(t.incl);$("tUpper").dataset.copy=upperMoney(t.incl);
+  $("tSmall").textContent="¥"+money(t.incl);$("tSmall").dataset.copy="¥"+money(t.incl);
+}
+function remarkField(key,label,width,placeholder){
+  return `<span class="remarkRow"><label>${label}</label><input class="w-${width}" value="${esc(REMARK[key]??"")}" placeholder="${placeholder||""}" oninput="onRemark('${key}',this.value)" ${LOCKED?"disabled":""}></span>`;
+}
+function renderRemarkPreview(){
+  $("remarkBody").innerHTML=`
+    <div class="remarkRow">
+      ${remarkField("trade_terms","成交方式","sm","如 FOB")}
+      ${remarkField("usd_ref","原币金额(USD)","md","")}
+      ${remarkField("exchange_rate","汇率","sm","")}
+    </div>
+    <div class="remarkRow">
+      ${remarkField("contract_no","合同协议号","lg","")}
+      ${remarkField("trade_country","贸易国","md","")}
+      ${remarkField("bl_no","提运单号","md","")}
+    </div>`;
+}
+async function copyText(t,el){try{await navigator.clipboard.writeText(t);if(el){el.classList.add("copied");setTimeout(()=>el.classList.remove("copied"),900)}}catch(e){}}
+async function copyCell(el){copyText(el.dataset.copy??el.textContent.trim(),el)}
+async function copyTotal(){const t=totals();copyText(t.incl.toFixed(2));$("st").textContent="金额已复制："+t.incl.toFixed(2);$("st").className="status ok"}
+function payload(){return{lines:LINES.map(l=>({name:l.name,spec:l.spec,unit:l.unit,qty:l.qty===""?null:l.qty,amount_incl:Number(l.amount_incl)||0,tax_rate:Number(l.tax_rate)||0})),remark_fields:REMARK,invoice_no:META.invoice_no,issue_date:META.issue_date,issuer:META.issuer}}
+async function post(action,okMsg){
+  const st=$("st");st.textContent="提交中...";st.className="status";
+  try{const r=await fetch(API+"?action="+action+"&c="+encodeURIComponent(CODE),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())}),d=await r.json();
+    if(!r.ok||!d.ok)throw new Error(d.error||"提交失败");st.textContent=okMsg;st.className="status ok";return true}
+  catch(e){st.textContent=e.message||"提交失败";st.className="status err";return false}
+}
+async function save(){if(LOCKED){$("st").textContent="已锁定只读，无法修改";$("st").className="status err";return}await post("save","✅ 草稿已保存（下次打开自动带出）")}
+async function confirmIssue(){if(LOCKED){$("st").textContent="已锁定只读，无法修改";$("st").className="status err";return}if(!confirm("确认这张发票已实际开出？确认后状态记为「已开票」。"))return;await post("confirm","✅ 已确认开票，状态已落库")}
+load();
+</script>
+</body>
+</html>
+<!--
+B3 客户销项发票门户：一套模板（境内外共用），照真实已开票样例(Eversparkles)复刻电子发票(普通发票)版式。
+所有字段可编辑：项目名称/规格/单位/数量/金额/税率 + 备注(成交方式/原币金额/汇率/合同协议号/贸易国/提运单号) + 发票号码/开票日期/开票人。
+金额默认报关口径 fob_cny，一键可复原；逐格复制沿用 factory-invoice.html 同一套 .cp/copyCell 模块。
+保存草稿(落 finance_invoices_out) / 确认已开票(B5，人工点击) 两步。
+-->

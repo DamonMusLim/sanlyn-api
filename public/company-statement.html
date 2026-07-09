@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>公司对账单</title>
+  <style>
+    :root{color-scheme:dark;--bg:#101316;--panel:#171c21;--line:#303a43;--text:#e8edf2;--muted:#91a0ad;--risk:#b94a53;--todo:#c78a2c;--done:#2c936d;--stale:#66717c;--blue:#5b8dbd}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,"PingFang SC","Noto Sans SC",sans-serif}
+    header{position:sticky;top:0;z-index:3;background:rgba(16,19,22,.96);border-bottom:1px solid var(--line);padding:12px 18px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    .brand{font-size:17px;font-weight:760}.muted{color:var(--muted)}
+    input{height:34px;background:#0c0f12;border:1px solid var(--line);border-radius:6px;color:var(--text);padding:0 10px;min-width:220px}
+    button{height:34px;border:1px solid #43505c;border-radius:6px;background:#242c34;color:var(--text);padding:0 12px;cursor:pointer}button:hover{background:#2d3740}
+    main{max-width:1080px;margin:0 auto;padding:18px}
+    .acct-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+    h1{font-size:20px;margin:0}.sub{color:var(--muted);font-size:12px;margin-top:4px}
+    .totals{display:flex;gap:8px;flex-wrap:wrap}
+    .amt{display:grid;grid-template-columns:repeat(3,minmax(96px,1fr));gap:6px;background:#10151a;border:1px solid #2c3a45;border-radius:6px;padding:6px;min-width:300px}
+    .amt span{background:#151b21;border:1px solid #26313a;border-radius:6px;padding:5px 8px;font-size:12px;color:#cdd6df}.amt em{display:block;color:var(--muted);font-style:normal;font-size:11px}
+    .tabs{display:flex;gap:4px;margin:12px 0}
+    .tt{height:32px;padding:0 14px;border:1px solid var(--line);background:#161c22;color:var(--muted);border-radius:6px;cursor:pointer;font-size:13px;font-weight:700}.tt.active{background:#243040;color:#cfe3ff;border-color:#3d6fa0}
+    .list{display:flex;flex-direction:column;gap:8px}
+    .row{display:grid;grid-template-columns:minmax(170px,1fr) minmax(330px,1.7fr) minmax(170px,.9fr);gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+    .no{font-weight:760}.ref{color:var(--muted);font-size:12px;margin-top:2px}
+    .chips{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+    .chip{display:inline-flex;align-items:center;min-height:22px;border-radius:999px;padding:2px 9px;border:1px solid transparent;font-size:12px;white-space:nowrap}
+    .chip.risk{background:#35191d;color:#f2a3aa;border-color:#7c2e35}.chip.todo{background:#332513;color:#f2c57e;border-color:#7b541d}.chip.done{background:#102c23;color:#9de2c1;border-color:#236a50}.chip.stale{background:#252b31;color:#c4ccd4;border-color:#4c5762}
+    details.fold{border:1px dashed var(--line);border-radius:8px;margin-top:8px}details.fold>summary{cursor:pointer;list-style:none;padding:10px 14px;color:var(--muted);font-size:13px}details.fold>summary::before{content:"▸ "}details.fold[open]>summary::before{content:"▾ "}details.fold>.fold-body{display:flex;flex-direction:column;gap:8px;padding:0 10px 10px}
+    .empty{padding:26px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:8px}
+    .notice{margin:10px 0;padding:9px 12px;border:1px solid #60441e;background:#231b10;border-radius:8px;color:#f0c77a;font-size:12px;display:none}
+    #error{color:#ffb3b8;margin-left:8px}
+    .actions-bar{display:flex;gap:8px;flex-wrap:wrap}
+    @media print{header,.tabs,.actions-bar,.notice,details.fold>summary{display:none}details.fold{border:none}details.fold>.fold-body{display:flex!important}body{background:#fff;color:#111}.row,.amt,.amt span{background:#fff;border-color:#bbb;color:#111}.amt em,.ref,.sub{color:#555}}
+    @media(max-width:760px){.row{grid-template-columns:1fr}.chips{justify-content:flex-start}.amt{min-width:100%}}
+  </style>
+</head>
+<body>
+  <header>
+    <div><div class="brand">公司对账单</div><div class="muted" id="who">未登录</div></div>
+    <form id="pick" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="cname" placeholder="公司全名（如 ENRICH CHAMPION SDN BHD）">
+      <input id="ccode" placeholder="编码（可选,如 CN-00040）" style="min-width:150px">
+      <button>打开对账单</button><span id="error"></span>
+    </form>
+    <form id="loginForm" style="display:flex;gap:8px;align-items:center">
+      <input id="username" autocomplete="username" placeholder="用户名" style="min-width:120px">
+      <input id="password" type="password" autocomplete="current-password" placeholder="密码" style="min-width:120px">
+      <button>登录</button>
+    </form>
+  </header>
+  <main>
+    <div class="acct-head">
+      <div><h1 id="title">—</h1><div class="sub" id="subtitle">先在上方输入公司名打开对账单</div></div>
+      <div class="totals" id="totals"></div>
+    </div>
+    <div class="actions-bar">
+      <button type="button" data-open="payments">上传/登记水单（现有模块）</button>
+      <button type="button" data-open="invoices">上传/确认发票（现有模块）</button>
+      <button type="button" id="printBtn">打印 / 存PDF</button>
+      <a href="/public/recon-board.html" target="_blank"><button type="button">在作战台打开</button></a>
+    </div>
+    <div class="notice" id="notice"></div>
+    <div class="tabs" id="tabs">
+      <button class="tt active" data-tab="goods" type="button">订单货款</button>
+      <button class="tt" data-tab="freight" type="button">海运</button>
+    </div>
+    <section class="list" id="list"><div class="empty">登录并选择公司后加载</div></section>
+  </main>
+  <script>
+    const $=id=>document.getElementById(id);
+    const state={token:localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||"",items:[],tab:"goods",name:"",code:""};
+    function authHeaders(){return state.token?{Authorization:"Bearer "+state.token}:{}}
+    async function api(path,opts={}){
+      const r=await fetch(path,{...opts,headers:{"Content-Type":"application/json",...authHeaders(),...(opts.headers||{})}});
+      const data=await r.json().catch(()=>({error:"请求失败"}));
+      if(!r.ok)throw new Error(data.message||data.error||"请求失败");
+      return data;
+    }
+    function fmt(n){return Number(n||0).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2})}
+    function money(cur,n){return n==null?"—":`${cur||"CNY"} ${fmt(n)}`}
+    function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
+    function tag(t,tone){return `<span class="chip ${tone}">${esc(t)}</span>`}
+    const nameEq=(a,b)=>String(a||"").trim().toLowerCase()===String(b||"").trim().toLowerCase();
+    function statusChips(l){
+      const c=[];
+      const due=Number(l.due||0),paid=Number(l.paid||0),total=Number(l.total||0);
+      if(l.unverified)c.push(tag("金额待双方核对","stale"));
+      if(paid>total+1)c.push(tag(`多收 ${fmt(paid-total)} 待核`,"risk"));
+      else if(due<=1&&total>1)c.push(tag("已收讫","done"));
+      else if(paid>1)c.push(tag("部分收款","todo"));
+      else c.push(tag("未收","risk"));
+      if(l.declare_mismatch)c.push(tag(`订单${fmt(l.order_price)}≠报关${fmt(l.declared_price)}`,"risk"));
+      else if(l.ar_basis==="customs")c.push(tag("按报关","done"));
+      if(l.ar_basis==="no_declaration")c.push(tag("未录报关","stale"));
+      if(l.ar_basis==="shared_contract")c.push(tag("共用合同待拆","todo"));
+      return c.join("");
+    }
+    function itemHtml({l,r}){
+      const refs=l.refs||{};
+      const ref=r.type==="order"?[refs.contract_no||"",r.subtitle?"":""].filter(Boolean).join(" · "):(refs.bl_no||r.bl_no||"");
+      const no=r.type==="order"?(refs.order_no||r.order_no||r.title):(refs.shipment_no||r.shipment_no||r.title);
+      return `<div class="row">
+        <div><div class="no">${esc(no)}</div><div class="ref">${esc(r.type==="order"?(refs.contract_no||""):("BL "+(ref||"—")))}</div></div>
+        <div class="amt"><span><em>金额 ${esc(l.currency)}</em>${money(l.currency,l.total)}</span><span><em>已收 ${esc(l.currency)}</em>${money(l.currency,l.paid)}</span><span><em>未收 ${esc(l.currency)}</em>${money(l.currency,l.due)}</span></div>
+        <div class="chips">${statusChips(l)}</div>
+      </div>`;
+    }
+    function renderTotals(items){
+      const box=new Map();
+      for(const {l,r} of items){
+        const key=(r.type==="shipment"?"海运·":"货款·")+(l.currency||"CNY");
+        const t=box.get(key)||{total:0,paid:0,due:0,cur:l.currency||"CNY"};
+        t.total+=Number(l.total||0);t.paid+=Number(l.paid||0);t.due+=Number(l.due||0);box.set(key,t);
+      }
+      $("totals").innerHTML=[...box.entries()].map(([k,t])=>`<div class="amt"><span><em>${esc(k.split("·")[0])}金额 ${esc(t.cur)}</em>${fmt(t.total)}</span><span><em>已收</em>${fmt(t.paid)}</span><span><em>未收</em>${fmt(t.due)}</span></div>`).join("");
+    }
+    function render(){
+      const items=state.items.filter(({r})=>state.tab==="goods"?r.type==="order":r.type==="shipment");
+      const open=items.filter(({l})=>Number(l.due||0)>1||Number(l.paid||0)>Number(l.total||0)+1);
+      const closed=items.filter(x=>!open.includes(x));
+      let html=open.map(itemHtml).join("");
+      if(closed.length)html+=`<details class="fold"><summary>已收讫 ${closed.length} 笔（收起）</summary><div class="fold-body">${closed.map(itemHtml).join("")}</div></details>`;
+      $("list").innerHTML=html||'<div class="empty">该分类暂无记录</div>';
+    }
+    async function load(){
+      if(!state.name&&!state.code)return;
+      const q=encodeURIComponent(state.name||state.code);
+      const board=await api(`/api/db/recon-board?action=board&limit=500&q=${q}`);
+      const rows=board.rows||[];
+      state.items=rows.flatMap(r=>(r.settlement_lines||[]).map(l=>({l,r})))
+        .filter(({l})=>l.direction==="ar")
+        .filter(({l})=>(state.code&&l.counterparty_code===state.code)||(state.name&&nameEq(l.counterparty_name,state.name)));
+      const n=state.items.length;
+      $("title").textContent=(state.name||state.code)+(state.code?` · ${state.code}`:"");
+      $("subtitle").textContent=`对账单 · 截至 ${new Date().toISOString().slice(0,10)} · 共 ${n} 笔（货款 ${state.items.filter(x=>x.r.type==="order").length} / 海运 ${state.items.filter(x=>x.r.type==="shipment").length}）`;
+      $("notice").style.display=state.items.some(({l})=>l.unverified)?"block":"none";
+      $("notice").textContent="海运费金额尚未双方核对，仅列示供确认，不计入未收合计口径。";
+      renderTotals(state.items.filter(({l})=>!l.unverified));
+      render();
+    }
+    function initFromUrl(){
+      const p=new URLSearchParams(location.search);
+      state.name=p.get("name")||"";state.code=p.get("code")||"";
+      $("cname").value=state.name;$("ccode").value=state.code;
+    }
+    $("pick").addEventListener("submit",e=>{
+      e.preventDefault();
+      state.name=$("cname").value.trim();state.code=$("ccode").value.trim();
+      const p=new URLSearchParams();if(state.name)p.set("name",state.name);if(state.code)p.set("code",state.code);
+      history.replaceState(null,"","?"+p.toString());
+      load().catch(err=>$("error").textContent=err.message);
+    });
+    $("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;state.tab=b.dataset.tab;[...$("tabs").children].forEach(c=>c.classList.toggle("active",c===b));render()});
+    document.querySelectorAll("[data-open]").forEach(b=>b.addEventListener("click",()=>window.open("/data#"+b.dataset.open,"_blank")));
+    $("printBtn").addEventListener("click",()=>window.print());
+    $("loginForm").addEventListener("submit",async e=>{
+      e.preventDefault();$("error").textContent="";
+      try{const d=await api("/api/db/auth-login",{method:"POST",body:JSON.stringify({username:$("username").value,password:$("password").value})});state.token=d.token;localStorage.setItem("sanlyn_token",d.token);$("who").textContent=`${d.user.username} · ${d.user.role}`;$("loginForm").style.display="none";await load()}catch(err){$("error").textContent=err.message}
+    });
+    initFromUrl();
+    if(state.token){$("who").textContent="已登录";$("loginForm").style.display="none";load().catch(err=>$("error").textContent=err.message)}
+  </script>
+</body>
+</html>

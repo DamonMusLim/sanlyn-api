@@ -11,6 +11,9 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import ExcelJS from "exceljs";
+// SSOT (2026-07-09): share the same canonical line-item source as documents.js / doc-editor.
+import { getCanonicalProds } from "./doc-helpers.js";
+import { enrichProdsFromMaster } from "./doc-data.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
@@ -325,13 +328,37 @@ export default async function handler(req, res) {
     // ════════════════════════════════
     if (["pi","sc","iv","pl","po"].includes(type) && id) {
       const oRes = await pool.query(
-        "SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1",
+        "SELECT * FROM orders WHERE _id=$1 OR contract_no=$1 OR customer_po=$1 OR order_no=$1 LIMIT 1",
         [id]
       );
       if (!oRes.rows.length) return res.status(404).json({ error: "Order not found: " + id });
       const o = oRes.rows[0];
       const raw = (typeof o.raw === "string" ? JSON.parse(o.raw) : o.raw) || {};
-      const prods = Array.isArray(raw.products) ? raw.products : [];
+      // SSOT (2026-07-09): canonical top-level orders.products (same as documents.js /
+      // front-end doc-editor), enriched from products master. Was reading stale raw.products
+      // (dropped rows + wrong prices — 40-DG-2 exported 2 rows @ 78.97 instead of 3 @ 75.00).
+      let prods = await enrichProdsFromMaster(pool, getCanonicalProds(o, raw));
+      // Fall back to order_line_items when the order carries no product array at all (parity
+      // with documents.js HIGH-1 fallback).
+      if (!prods.length && (o.id || o._id)) {
+        try {
+          const liR = await pool.query(
+            "SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id", [o.id || o._id]
+          );
+          if (liR.rows.length) {
+            const liProds = liR.rows.map(li => ({
+              name: li.product_name || li.name || "", productName: li.product_name || "",
+              sku: li.sku || "", barcode: li.barcode || "",
+              qty: Number(li.qty_ctn || li.qty || 0), unit: li.unit || "CTN",
+              unitPrice: Number(li.unit_price || 0), subtotal: Number(li.subtotal || 0),
+              factoryPrice: Number(li.factory_price || li.unit_price || 0),
+              hs_code: li.hs_code || "", hsCode: li.hs_code || "",
+              cbm: Number(li.cbm_ctn || li.cbm || 0),
+            }));
+            prods = await enrichProdsFromMaster(pool, liProds);
+          }
+        } catch (e) { console.warn("[export-excel] order_line_items fallback failed:", e.message); }
+      }
 
       const DOC_LABEL = { pi:"Proforma Invoice", sc:"Sales Contract", iv:"Commercial Invoice", pl:"Packing List", po:"Purchase Order" };
       const wb = new ExcelJS.Workbook();
@@ -414,13 +441,18 @@ export default async function handler(req, res) {
 
       let grandTotal = 0;
       prods.forEach((p, i) => {
-        const sub = Number(p.subtotal || 0) || Number(p.unitPrice || 0) * Number(p.qty || 0);
+        // Field priority mirrors the front-end doc-editor (selling for customer docs,
+        // factory for the factory column). Canonical products store price under unitPrice.
+        const qty     = Number(p.qty ?? p.cartons ?? p.qty_ctn ?? 0) || 0;
+        const sellUp  = Number(p.sellingPrice ?? p.selling_price ?? p.unitPrice ?? p.unit_price ?? 0) || 0;
+        const facUp   = Number(p.factoryPrice ?? p.factory_price ?? sellUp) || 0;
+        const sub     = Number(p.sellingSubtotal ?? p.selling_subtotal ?? p.subtotal ?? p.amount ?? (qty * sellUp)) || 0;
         grandTotal += sub;
+        const name = p.name || p.productName || p.product_name || "—";
+        const hs   = p.hs_code || p.hsCode || "—";
         const rowData = showFactory
-          ? [i+1, p.name || p.productName || "—", p.hs_code || p.hsCode || "—",
-             p.qty || 0, p.unit || "CTN", p.factoryPrice || 0, p.unitPrice || 0, sub]
-          : [i+1, p.name || p.productName || "—", p.hs_code || p.hsCode || "—",
-             p.qty || 0, p.unit || "CTN", p.unitPrice || 0, sub, p.cbm || 0];
+          ? [i+1, name, hs, qty, p.unit || "CTN", facUp, sellUp, sub]
+          : [i+1, name, hs, qty, p.unit || "CTN", sellUp, sub, Number(p.cbm ?? p.cbm_ctn ?? 0) || 0];
         const r = ws.addRow(rowData);
         r.eachCell((c, cn) => {
           c.border = BORDERS;

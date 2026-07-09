@@ -1,229 +1,239 @@
-// api/public/forwarder-services.js — 公开货代门户·全链服务报价(v3a拖车)
-// GET  /api/public/forwarder-services/:code?service=truck
-// POST /api/public/forwarder-services/:code/quote  { rfq_id, service, detail }
-// 免登录(/api/public/ 已在 auth 直通), 自校验 token+过期; Lens fail-closed。
 import { getPool, setCors } from "../db.js";
 
-function asNumber(v, fb){ var n = Number(v); return Number.isFinite(n) ? n : fb; }
-function cleanText(v, max){ var s = String(v == null ? "" : v).trim(); return s ? s.slice(0, max || 200) : ""; }
-function publicArea(v){
-  var s = cleanText(v, 80); if (!s) return "";
-  s = s.replace(/[0-9０-９]+[号號栋棟幢室楼樓层層\-#A-Za-z]*.*$/g, "");
-  s = s.split(/[，,;；]/)[0];
-  var m = s.match(/(.{1,18}?(市|区|县|鎮|镇|City|Area))/i);
-  return cleanText(m ? m[1] : s, 32);
+const TIERS = ["lt20", "20_25", "25_28"];
+const BOXES = ["20GP", "40HQ"];
+const CITY_ALIASES = {
+  "青岛": "青岛", "QINGDAO": "青岛",
+  "厦门": "厦门", "XIAMEN": "厦门",
+  "上海": "上海", "SHANGHAI": "上海",
+  "宁波": "宁波", "NINGBO": "宁波",
+  "锦州": "锦州", "JINZHOU": "锦州",
+  "连云港": "连云港", "LIANYUNGANG": "连云港",
+  "日照": "日照", "RIZHAO": "日照",
+  "南沙": "南沙", "NANSHA": "南沙",
+};
+const ZONES = {
+  "青岛": { zone_name: "青岛关区", scope: "前湾港区" },
+  "厦门": { zone_name: "厦门关区", scope: "海沧东渡" },
+  "上海": { zone_name: "上海关区", scope: "外高桥洋山" },
+  "宁波": { zone_name: "宁波关区", scope: "北仑" },
+  "锦州": { zone_name: "锦州关区", scope: "锦州港" },
+  "连云港": { zone_name: "连云港关区", scope: "连云港港区" },
+  "日照": { zone_name: "日照关区", scope: "日照港" },
+  "南沙": { zone_name: "南沙关区", scope: "南沙港区" },
+};
+
+function clean(v) { return v == null ? "" : String(v).trim(); }
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+function dateOnly(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v).slice(0, 10);
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
 }
-function pickPlanValue(plan, keys){ for (var i=0;i<keys.length;i++){ var v = plan && plan[keys[i]]; if (v != null && v !== "") return v; } return ""; }
-function buildShipment(plan){
-  plan = plan || {};
-  var pickupRaw = pickPlanValue(plan, ["pickup_city","origin_city","loading_city","factory_city","pickup_area","origin_area","loading_area"]);
-  return {
-    pol: plan.pol || "", pod: plan.pod || "",
-    ctnr_type: plan.container_type || plan.ctnr_type || "",
-    ctnr_count: asNumber(plan.container_qty || plan.ctnr_count, 0),
-    gross_weight_kg: plan.gross_weight_kg || null,
-    product_summary: plan.product_summary || plan.cargo_description || "",
-    etd: plan.etd || null,
-    origin_area: publicArea(pickupRaw || plan.pol || ""),
-  };
+function bodyOf(req) { return req.body || {}; }
+
+function normalizePort(raw) {
+  const s = clean(raw);
+  if (!s) return "";
+  const direct = CITY_ALIASES[s] || CITY_ALIASES[s.toUpperCase()];
+  if (direct) return direct;
+  const compact = s.replace(/\s+/g, "").toUpperCase();
+  const key = Object.keys(CITY_ALIASES).find(k => compact.includes(k.replace(/\s+/g, "").toUpperCase()));
+  return key ? CITY_ALIASES[key] : s;
 }
-function buildMyQuote(row){
-  if (!row.item_id) return null;
-  return { id: row.item_id, usd_rate: row.usd_rate == null ? null : Number(row.usd_rate),
-    currency: row.currency || "CNY", notes: row.notes || "", detail: row.quote_detail_json || null,
-    created_at: row.item_created_at || null };
+
+function normalizeBox(raw) {
+  const s = clean(raw).toUpperCase();
+  if (s.includes("20")) return "20GP";
+  if (s.includes("40")) return "40HQ";
+  return s || "40HQ";
 }
-async function validateToken(pool, code){
-  var r = await pool.query("SELECT code, forwarder_co, expires_at FROM forwarder_portal_tokens WHERE code = $1 LIMIT 1", [code]);
-  if (!r.rows.length) return { err:[404, { ok:false, error:"链接无效" }] };
-  var t = r.rows[0];
-  if (t.expires_at && new Date(t.expires_at).getTime() < Date.now()) return { err:[410, { ok:false, error:"链接已过期" }] };
-  return { token:t };
+
+async function validateToken(pool, code) {
+  const { rows } = await pool.query(
+    `SELECT code, forwarder_co, company_id, expires_at
+       FROM forwarder_portal_tokens
+      WHERE code = $1
+        AND (expires_at IS NULL OR expires_at > NOW())
+      LIMIT 1`,
+    [code]
+  );
+  return rows[0] || null;
 }
-function normalizeTruckDetail(detail, shipQty, shipType){
-  detail = detail || {};
-  var mode = detail.pricing_mode === "per_shipment" ? "per_shipment" : "per_container";
-  var amount = asNumber(detail.amount, NaN);
-  var qty = asNumber(detail.container_qty, shipQty || 1);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error("拖车费金额必须大于 0");
-  if (!Number.isFinite(qty) || qty <= 0) qty = 1;
-  var total = mode === "per_container" ? amount * qty : amount;
-  return { total:total, detail:{
-    pricing_mode:mode, pickup_place:publicArea(detail.pickup_place), amount:amount,
-    container_type:cleanText(detail.container_type || shipType, 40), container_qty:qty,
-    includes_empty_pickup_return: !!detail.includes_empty_pickup_return,
-    waiting_fee_rule:cleanText(detail.waiting_fee_rule, 240), remarks:cleanText(detail.remarks, 500),
-  }};
+
+async function getShipRows(pool, companyId) {
+  const { rows } = await pool.query(
+    `SELECT sp.id, sp.etd, sp.pol, sp.container_type, sp.trucking_cost_total,
+            sp.customs_declare_fee, sp.carrier_code,
+            sp.raw,
+            COALESCE(NULLIF(BTRIM(o.factory), ''), '未标注工厂') AS factory,
+            o.category, o.products
+       FROM shipping_plans sp
+       JOIN orders o ON o.order_no = ANY(sp.order_nos)
+      WHERE sp.forwarder_company_id = $1
+        AND COALESCE(sp.etd, sp.created_at::date, CURRENT_DATE) >= CURRENT_DATE - INTERVAL '6 months'
+        -- Lens:只取货代已接过单的票(有承运/船名/订舱号或状态已推进),没接过的工厂/港口不露给货代
+        AND (
+          (sp.shipping_status IS NOT NULL AND lower(sp.shipping_status) NOT IN ('planned','draft','pending'))
+          OR sp.carrier_code IS NOT NULL OR sp.vessel IS NOT NULL OR sp.booking_no IS NOT NULL
+        )
+      ORDER BY COALESCE(sp.etd, sp.created_at::date) DESC, sp.id DESC`,
+    [companyId]
+  );
+  return rows;
 }
-function normalizeCustomsDetail(detail){
-  detail = detail || {};
-  var fee = asNumber(detail.declaration_fee, NaN);
-  if (!Number.isFinite(fee) || fee < 0) throw new Error("报关费必须 >= 0");
-  return { total:fee, currency:"CNY", detail:{
-    declaration_fee:fee,
-    inspection_extra: !!detail.inspection_extra,
-    inspection_fee_rule:cleanText(detail.inspection_fee_rule, 240),
-    docs_included: detail.docs_included == null ? true : !!detail.docs_included,
-    remarks:cleanText(detail.remarks, 500),
-  }};
+
+async function getRates(pool, companyId, service) {
+  const { rows } = await pool.query(
+    `SELECT factory, port, container_type, tier, rate_cny, updated_at
+       FROM forwarder_service_rates
+      WHERE forwarder_company_id = $1 AND service = $2`,
+    [companyId, service]
+  );
+  return rows;
 }
-function normalizeInsuranceDetail(detail){
-  detail = detail || {};
-  var mode = detail.pricing_mode === "rate" ? "rate" : "premium";
-  var premium = asNumber(detail.premium_amount, NaN);
-  var rate = asNumber(detail.rate_percent, NaN);
-  var minc = asNumber(detail.min_charge, 0);
-  var value = asNumber(detail.insured_value, NaN);
-  var total;
-  if (mode === "premium") {
-    if (!Number.isFinite(premium) || premium <= 0) throw new Error("保费必须大于 0");
-    total = premium;
-  } else {
-    if (!Number.isFinite(rate) || rate <= 0) throw new Error("费率必须大于 0");
-    if (!Number.isFinite(value) || value <= 0) throw new Error("按费率需填货值");
-    total = Math.max(value * rate / 100, Number.isFinite(minc) ? minc : 0);
-  }
-  return { total:Math.round(total * 100) / 100, currency:"USD", detail:{
-    pricing_mode:mode,
-    premium_amount: Number.isFinite(premium) ? premium : null,
-    rate_percent: Number.isFinite(rate) ? rate : null,
-    min_charge: Number.isFinite(minc) ? minc : 0,
-    insured_value: Number.isFinite(value) ? value : null,
-    coverage_note:cleanText(detail.coverage_note, 240),
-    remarks:cleanText(detail.remarks, 500),
-  }};
+
+function ratePayload(r) {
+  return { rate_cny: r.rate_cny == null ? null : Number(r.rate_cny), updated_at: r.updated_at };
 }
-async function doGet(req, res, pool, code){
-  var service = (req.query && req.query.service) || "truck";
-  if (["truck","customs","insurance"].indexOf(service) === -1) return res.status(400).json({ ok:false, error:"service 暂未开放" });
-  var auth = await validateToken(pool, code);
-  if (auth.err) return res.status(auth.err[0]).json(auth.err[1]);
-  var q = await pool.query(
-    `SELECT r.id AS rfq_id, r.service_type, r.shipping_plan_id AS plan_id, r.status,
-            to_jsonb(sp) AS plan_json,
-            i.id AS item_id, i.usd_rate, i.currency, i.notes, i.quote_detail_json, i.submitted_at AS item_created_at
-       FROM freight_rfqs r
-       JOIN shipping_plans sp ON sp.id = r.shipping_plan_id
-       LEFT JOIN freight_rfq_items i ON i.rfq_id = r.id AND i.forwarder_co = $1
-      WHERE r.service_type = $2 AND r.status = 'open'
-      ORDER BY COALESCE(sp.etd, NOW()) ASC, r.created_at DESC NULLS LAST`,
-    [auth.token.forwarder_co, service]);
-  var rfqs = q.rows.map(function(row){
-    return { rfq_id:row.rfq_id, service_type:row.service_type, plan_id:row.plan_id,
-      shipment:buildShipment(row.plan_json), my_quote:buildMyQuote(row), status:row.status };
+
+function cargoOf(row) {
+  // 只用短类目(orders.category / raw类目 / 产品的类目字段),绝不落到整串产品名,避免货类chip污染
+  if (clean(row.category)) return clean(row.category);
+  const raw = row.raw || {};
+  if (clean(raw.cargo_type || raw.cargoType || raw.product_category)) return clean(raw.cargo_type || raw.cargoType || raw.product_category);
+  const products = Array.isArray(row.products) ? row.products : [];
+  const p = products[0] || {};
+  return clean(p.category || p.cat1_cn) || "一般货";
+}
+
+async function handleTruck(req, res, pool, token) {
+  if (!token.company_id) return res.json({ ok: true, service: "truck", factories: [], tiers: TIERS, boxes: BOXES });
+  const rows = await getShipRows(pool, token.company_id);
+  const rates = await getRates(pool, token.company_id, "truck");
+  const map = new Map();
+
+  rows.forEach(row => {
+    const factory = clean(row.factory) || "未标注工厂";
+    const port = normalizePort(row.pol);
+    if (!port) return;
+    const box = normalizeBox(row.container_type);
+    if (!map.has(factory)) map.set(factory, { factory, city: "", ports: [], history: {}, rates: {} });
+    const item = map.get(factory);
+    if (!item.ports.includes(port)) item.ports.push(port);
+    const cost = num(row.trucking_cost_total);
+    const key = `${port}|${box}`;
+    if (cost > 0 && !item.history[key]) item.history[key] = { rate_cny: cost, date: dateOnly(row.etd) };
   });
-  if (service === "truck" || service === "customs") rfqs = await scopeFilter(pool, auth.token.forwarder_co, service, rfqs);
-  return res.json({ ok:true, service:service, forwarder_co:auth.token.forwarder_co, rfqs:rfqs });
-}
-async function doPost(req, res, pool, code){
-  var auth = await validateToken(pool, code);
-  if (auth.err) return res.status(auth.err[0]).json(auth.err[1]);
-  var body = req.body || {};
-  var svc = body.service;
-  if (["truck","customs","insurance"].indexOf(svc) === -1) return res.status(400).json({ ok:false, error:"service 无效" });
-  var rfqId = cleanText(body.rfq_id, 80);
-  if (!rfqId) return res.status(400).json({ ok:false, error:"rfq_id 必填" });
-  var rq = await pool.query(
-    `SELECT r.id, r.service_type, r.status, r.shipping_plan_id AS plan_id, to_jsonb(sp) AS plan_json
-       FROM freight_rfqs r JOIN shipping_plans sp ON sp.id = r.shipping_plan_id WHERE r.id = $1 LIMIT 1`, [rfqId]);
-  if (!rq.rows.length) return res.status(404).json({ ok:false, error:"找不到 RFQ" });
-  var rfq = rq.rows[0];
-  if (rfq.service_type !== svc) return res.status(400).json({ ok:false, error:"RFQ 服务类型不匹配" });
-  if (rfq.status !== "open") return res.status(409).json({ ok:false, error:"RFQ 已关闭" });
-  var shipment = buildShipment(rfq.plan_json);
-  var normalized;
-  try {
-    if (svc === "truck") normalized = normalizeTruckDetail(body.detail, shipment.ctnr_count, shipment.ctnr_type);
-    else if (svc === "customs") normalized = normalizeCustomsDetail(body.detail);
-    else normalized = normalizeInsuranceDetail(body.detail);
-  } catch (e){ return res.status(400).json({ ok:false, error:e.message }); }
-  var ccy = normalized.currency || "CNY";
-  var fwd = auth.token.forwarder_co;
-  var upd = await pool.query(
-    `UPDATE freight_rfq_items SET usd_rate=$3, currency=$6, notes=$4, quote_detail_json=$5::jsonb
-      WHERE rfq_id=$1 AND forwarder_co=$2 RETURNING id`,
-    [rfqId, fwd, normalized.total, normalized.detail.remarks || null, JSON.stringify(normalized.detail), ccy]);
-  var itemId = upd.rows[0] && upd.rows[0].id;
-  if (!itemId){
-    var ins = await pool.query(
-      `INSERT INTO freight_rfq_items (rfq_id, forwarder_co, usd_rate, currency, notes, quote_detail_json)
-       VALUES ($1,$2,$3,$6,$4,$5::jsonb) RETURNING id`,
-      [rfqId, fwd, normalized.total, normalized.detail.remarks || null, JSON.stringify(normalized.detail), ccy]);
-    itemId = ins.rows[0] && ins.rows[0].id;
-  }
-  return res.json({ ok:true, item_id:itemId, usd_rate:normalized.total, currency:ccy, detail:normalized.detail });
-}
-async function doShipments(req, res, pool, code){
-  var auth = await validateToken(pool, code);
-  if (auth.err) return res.status(auth.err[0]).json(auth.err[1]);
-  var q = await pool.query(
-    `SELECT r.id AS rfq_id, r.service_type, r.status, r.shipping_plan_id AS plan_id,
-            to_jsonb(sp) AS plan_json,
-            i.id AS item_id, i.usd_rate, i.currency, i.quote_detail_json
-       FROM freight_rfqs r
-       JOIN shipping_plans sp ON sp.id = r.shipping_plan_id
-       LEFT JOIN freight_rfq_items i ON i.rfq_id = r.id AND i.forwarder_co = $1
-      WHERE r.service_type IN ('ocean','truck','customs','insurance') AND r.status = 'open'
-      ORDER BY COALESCE(sp.etd, NOW()) ASC`,
-    [auth.token.forwarder_co]);
-  var byPlan = {};
-  q.rows.forEach(function(row){
-    var pid = row.plan_id;
-    if (!byPlan[pid]) byPlan[pid] = { plan_id:pid, shipment:buildShipment(row.plan_json),
-      services:{ ocean:null, truck:null, customs:null, insurance:null } };
-    byPlan[pid].services[row.service_type] = {
-      rfq_id:row.rfq_id, status:row.status,
-      quoted: !!row.item_id,
-      my_amount: row.item_id ? (row.usd_rate == null ? null : Number(row.usd_rate)) : null,
-      currency: row.currency || null,
-    };
+
+  rates.forEach(r => {
+    const factory = clean(r.factory) || "未标注工厂";
+    const port = normalizePort(r.port);
+    const box = normalizeBox(r.container_type);
+    if (!map.has(factory)) map.set(factory, { factory, city: "", ports: [], history: {}, rates: {} });
+    const item = map.get(factory);
+    if (port && !item.ports.includes(port)) item.ports.push(port);
+    item.rates[`${port}|${box}|${clean(r.tier)}`] = ratePayload(r);
   });
-  var shipments = Object.keys(byPlan).map(function(k){ return byPlan[k]; });
-  return res.json({ ok:true, forwarder_co:auth.token.forwarder_co, shipments:shipments });
+
+  const factories = Array.from(map.values()).sort((a, b) => {
+    if (a.factory === "未标注工厂") return 1;
+    if (b.factory === "未标注工厂") return -1;
+    return a.factory.localeCompare(b.factory, "zh-Hans-CN");
+  });
+  return res.json({ ok: true, service: "truck", factories, tiers: TIERS, boxes: BOXES });
 }
-async function scopeFilter(pool, forwarderCo, service, rfqs){
-  try {
-    var r = await pool.query(
-      "SELECT scope_pol, scope_region, scope_customs_zone FROM provider_service_scopes WHERE forwarder_co=$1 AND service_type=$2 AND active IS TRUE",
-      [forwarderCo, service]);
-    if (!r.rows.length) return rfqs; // 没配范围=不限制(安全兜底,Damon后续加scope才收窄)
-    var pols = {};
-    r.rows.forEach(function(x){ if (x.scope_pol) pols[String(x.scope_pol).trim().toUpperCase()] = 1; });
-    if (!Object.keys(pols).length) return rfqs;
-    return rfqs.filter(function(rf){
-      var pol = String((rf.shipment && rf.shipment.pol) || "").trim().toUpperCase();
-      return pols[pol];
-    });
-  } catch(e){ return rfqs; }
+
+async function handleCustoms(req, res, pool, token) {
+  if (!token.company_id) return res.json({ ok: true, service: "customs", ports: [] });
+  const rows = await getShipRows(pool, token.company_id);
+  const rates = await getRates(pool, token.company_id, "customs");
+  const map = new Map();
+
+  rows.forEach(row => {
+    const port = normalizePort(row.pol);
+    if (!port) return;
+    const zone = ZONES[port] || { zone_name: `${port}关区`, scope: `${port}港区` };
+    if (!map.has(port)) {
+      map.set(port, {
+        port, zone_name: zone.zone_name, scope: zone.scope,
+        last_clearance: { date: "", cargo: "", carrier: "" },
+        history_fee: null, rate_cny: null, commodities: [],
+        meta: { inspection: true, advance_tax: false, permit: "如需许可证代办另议" },
+      });
+    }
+    const item = map.get(port);
+    const cargo = cargoOf(row);
+    if (!item.last_clearance.date) item.last_clearance = { date: dateOnly(row.etd), cargo, carrier: clean(row.carrier_code) };
+    const fee = num(row.customs_declare_fee);
+    if (fee > 0 && item.history_fee == null) item.history_fee = Math.round(fee);
+    if (cargo && !item.commodities.includes(cargo) && item.commodities.length < 5) item.commodities.push(cargo);
+  });
+
+  rates.forEach(r => {
+    const port = normalizePort(r.port);
+    if (!port) return;
+    const zone = ZONES[port] || { zone_name: `${port}关区`, scope: `${port}港区` };
+    if (!map.has(port)) {
+      map.set(port, {
+        port, zone_name: zone.zone_name, scope: zone.scope,
+        last_clearance: { date: "", cargo: "", carrier: "" },
+        history_fee: null, rate_cny: null, commodities: [],
+        meta: { inspection: true, advance_tax: false, permit: "如需许可证代办另议" },
+      });
+    }
+    map.get(port).rate_cny = r.rate_cny == null ? null : Number(r.rate_cny);
+  });
+
+  return res.json({ ok: true, service: "customs", ports: Array.from(map.values()) });
 }
-async function doGrab(req, res, pool, code){
-  var auth = await validateToken(pool, code);
-  if (auth.err) return res.status(auth.err[0]).json(auth.err[1]);
-  var body = req.body || {};
-  var rfqId = cleanText(body.rfq_id, 80);
-  var price = asNumber(body.price, NaN);
-  if (!rfqId || !Number.isFinite(price)) return res.status(400).json({ ok:false, error:"rfq_id/price 必填" });
-  var ins = await pool.query(
-    "INSERT INTO grab_offers (rfq_id, forwarder_co, tier, price, currency, valid_until) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id",
-    [rfqId, auth.token.forwarder_co, cleanText(body.tier,40) || null, price, cleanText(body.currency,8) || "USD", body.valid_until || null]);
-  return res.json({ ok:true, id: ins.rows[0] && ins.rows[0].id });
+
+async function saveQuote(req, res, pool, token) {
+  if (!token.company_id) return res.status(403).json({ ok: false, error: "token missing company_id" });
+  const body = bodyOf(req);
+  const service = clean(body.service || body.svc);
+  if (service === "insurance") return res.json({ ok: true, saved: false, skipped: "insurance branch unchanged" });
+  if (service !== "truck" && service !== "customs") return res.status(400).json({ ok: false, error: "service invalid" });
+  const rate = body.rate_cny == null ? null : Number(body.rate_cny);
+  if (!Number.isFinite(rate) || rate <= 0) return res.status(400).json({ ok: false, error: "rate_cny invalid" });
+
+  const factory = service === "truck" ? clean(body.factory) || "未标注工厂" : "";
+  const port = normalizePort(body.port);
+  const box = service === "truck" ? normalizeBox(body.container_type) : "";
+  const tier = service === "truck" ? clean(body.tier) : "";
+  if (!port) return res.status(400).json({ ok: false, error: "port required" });
+  if (service === "truck" && (!box || !TIERS.includes(tier))) return res.status(400).json({ ok: false, error: "truck key invalid" });
+
+  await pool.query(
+    `INSERT INTO forwarder_service_rates
+       (forwarder_company_id, service, factory, port, container_type, tier, rate_cny, updated_at, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8)
+     ON CONFLICT (forwarder_company_id, service, factory, port, container_type, tier)
+     DO UPDATE SET rate_cny = EXCLUDED.rate_cny, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+    [token.company_id, service, factory, port, box, tier, rate, token.forwarder_co || token.code || ""]
+  );
+  return res.json({ ok: true, saved: true });
 }
-export default async function handler(req, res){
+
+export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
-  if (req.method === "OPTIONS") return res.end();
+  if (req.method === "OPTIONS") return res.status(200).end();
   const pool = getPool();
-  var code = (req.params && req.params.code) || String(req.url || "").split("?")[0].split("/").filter(Boolean)[2];
-  var isQuote = /\/quote(\?|$)/.test(req.url || "");
-  var isShipments = /forwarder-shipments/.test(req.url || "");
-  var isGrab = /forwarder-grab/.test(req.url || "");
+  const fullPath = (req.path || req.url || "").replace(/\?.*/, "");
+  const segments = fullPath.split("/").filter(Boolean);
+  const code = segments[segments.indexOf("forwarder-services") + 1] || req.query?.code || "";
+  const service = clean(req.query?.service || bodyOf(req).service || bodyOf(req).svc || "truck");
+
   try {
-    if (req.method === "POST" && isGrab) return await doGrab(req, res, pool, decodeURIComponent(code));
-    if (req.method === "GET" && isShipments) return await doShipments(req, res, pool, decodeURIComponent(code));
-    if (req.method === "POST" && isQuote) return await doPost(req, res, pool, decodeURIComponent(code));
-    if (req.method === "GET") return await doGet(req, res, pool, decodeURIComponent(code));
-    return res.status(404).json({ ok:false, error:"Not found" });
-  } catch (e){
-    console.error("[forwarder-services]", e.message);
-    return res.status(500).json({ ok:false, error:e.message || "server error" });
+    const token = await validateToken(pool, code);
+    if (!token) return res.status(410).json({ ok: false, error: "链接已过期" });
+    if (req.method === "GET" && service === "truck") return await handleTruck(req, res, pool, token);
+    if (req.method === "GET" && service === "customs") return await handleCustoms(req, res, pool, token);
+    if (req.method === "POST" && segments[segments.length - 1] === "quote") return await saveQuote(req, res, pool, token);
+    return res.status(404).json({ ok: false, error: "Not found" });
+  } catch (e) {
+    console.error("[forwarder-services]", e.message, e.stack);
+    return res.status(500).json({ ok: false, error: e.message });
   }
 }

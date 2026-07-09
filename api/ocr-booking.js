@@ -4,6 +4,7 @@
 
 import OSS from "ali-oss";
 import { IncomingForm } from "formidable";
+import { visionOcr } from "./lib/minimax-vl.js";
 import fs from "fs";
 import { getPool } from "./db.js";
 import { registerOcrResult } from "./db/m3-writer.js"; // ★ M3 Phase 1
@@ -52,22 +53,7 @@ async function uploadToOSS(buffer, filename) {
 
 // ── Qwen VL extraction ──
 async function extractBookingFields(ossUrl) {
-  const apiKey = process.env.QWEN_API_KEY;
-  const resp = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "qwen-vl-max",
-      messages: [{
-        role: "user",
-        content: [
-          { type: "file", file_url: { url: ossUrl } },
-          {
-            type: "text",
-            text: `This is a shipping booking confirmation PDF. Extract ALL information and return ONLY a JSON object (no markdown, no explanation) with these fields:
+  const data = await visionOcr(ossUrl, `This is a shipping booking confirmation PDF. Extract ALL information and return ONLY a JSON object (no markdown, no explanation) with these fields:
 
 {
   "bookingNo": "Booking/Reference number",
@@ -98,14 +84,7 @@ async function extractBookingFields(ossUrl) {
   "loadingAddress": "Loading/pickup address if shown"
 }
 
-If a field is not found in the document, use empty string "" for text or null for numbers. For dates, always convert to YYYY-MM-DD format.`
-          }
-        ]
-      }]
-    })
-  });
-
-  const data = await resp.json();
+If a field is not found in the document, use empty string "" for text or null for numbers. For dates, always convert to YYYY-MM-DD format.`);
   const text = data.choices?.[0]?.message?.content || "";
   const cleaned = text.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
   try {

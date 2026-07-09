@@ -1,0 +1,182 @@
+(function(){
+  const API="/api/db/invoice-collab-confirm";
+  const token=new URLSearchParams(location.search).get("token")||"";
+  const app=document.getElementById("app");
+  const CNTR_TYPES=["20GP","40GP","40HC","40HQ","45HQ","20ST","20RF","40RF"];
+  let state=null, dirtyPrice=false, contactOpen=false, _lang="zh";
+  const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  const num=v=>Number.isFinite(Number(v))?Number(v):0;
+  const money=v=>num(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const sym=c=>c==="USD"?"$":"¥";
+  const isPer=b=>String(b||"").includes("每柜");
+  const totalLines=()=>Array.isArray(state.bill_lines)?state.bill_lines.reduce((s,l)=>s+num(l.amount),0):0;
+  const recalcInvoice=()=>{
+    const inv=state.invoices[0], total=Math.round(totalLines()*100)/100, ex=Math.round(total/1.01*100)/100;
+    inv.total_with_tax=total; inv.amount_ex_tax=ex; inv.tax_amount=Math.round((total-ex)*100)/100;
+  };
+  function cntrTypes(){ const s=new Set(CNTR_TYPES); (state.shipment.containers||[]).forEach(c=>c.type&&s.add(c.type)); return [...s]; }
+  function primaryType(){ return (state.shipment.containers||[]).find(c=>c.type)?.type || cntrTypes()[0] || "40HC"; }
+  function cntrSummary(){ return (state.shipment.containers||[]).filter(c=>c.type&&num(c.count)).map(c=>`${num(c.count)}×${c.type}`).join(" + "); }
+  function initContainers(){
+    const sh=state.shipment;
+    if(Array.isArray(sh.containers)&&sh.containers.length) return;
+    const cs=[];
+    String(sh.container_summary||"").split("+").forEach(seg=>{
+      const m=seg.trim().match(/(\d+)\s*[×xX]\s*(\S+)/); if(m) cs.push({type:m[2],count:num(m[1])});
+    });
+    sh.containers=cs;
+  }
+  function containerEditor(){
+    const cs=state.shipment.containers||[], types=cntrTypes();
+    return `<div class="cntr-edit"><span class="ce-lab">柜量</span>
+      ${cs.map((c,i)=>`<span class="ce-item"><select class="ce-type" data-cntr="${i}" data-cf="type">${types.map(t=>`<option ${t===c.type?"selected":""}>${esc(t)}</option>`).join("")}</select>×<input class="ce-qty" data-cntr="${i}" data-cf="count" value="${num(c.count)}"><button class="ce-del" data-cntr-del="${i}" title="删除柜型">✕</button></span>`).join("")}
+      <button class="ce-add" id="cntrAdd">＋ 加柜型</button></div>`;
+  }
+  function billRows(){
+    const types=cntrTypes();
+    return (state.bill_lines||[]).map((l,i)=>{
+      const per=isPer(l.basis), ct=l.container_type||primaryType(), rev=l.review||l.fob_scope==="review";
+      return `<tr class="${rev?"bl-review":""}">
+        <td><input class="edit bl-name" data-bl="${i}" data-f="name" value="${esc(l.name)}" placeholder="费用项">${rev?'<span class="rev-tag" title="未识别为起运港费用，请人工核对">存疑</span>':""}</td>
+        <td><select class="bl-sel" data-bl="${i}" data-f="basis"><option ${!per?"selected":""}>整票</option><option ${per?"selected":""}>每柜</option></select></td>
+        <td>${per?`<select class="bl-sel" data-bl="${i}" data-f="container_type">${types.map(t=>`<option ${t===ct?"selected":""}>${esc(t)}</option>`).join("")}</select>`:`<span class="faintdash">—</span>`}</td>
+        <td class="r"><input class="edit money" data-bl="${i}" data-f="unit_price" value="${money(l.unit_price)}"></td>
+        <td class="r">${per?`<input class="edit money" style="width:52px" data-bl="${i}" data-f="qty" value="${money(l.qty).replace(".00","")}">`:`<span>1</span>`}</td>
+        <td class="r">${money(l.amount)}</td>
+        <td class="r"><button class="bl-del" data-bl-del="${i}" title="删除此行">✕</button></td>
+      </tr>`;
+    }).join("");
+  }
+  function billSection(currency){
+    const has=(state.bill_lines||[]).length;
+    const notice=has?"":`<div class="bill-empty">${esc(state.bill_line_notice||"该票暂无港杂账单，可手动加行")}</div>`;
+    const exwBanner=state.exw_transfer_to_customer?`<div class="exw-banner">⚠ 本票 EXW，港杂应由客户承担——如下列在此，请核对是否应转开给客户。</div>`:"";
+    return `<div class="sec"><div class="sec-t">① 账单明细 — 请核对</div>
+      ${exwBanner}
+      ${containerEditor()}
+      <table class="billgrid"><thead><tr><th>费用项</th><th>计费</th><th>柜型</th><th class="r">单价 <span class="edithint">可改</span></th><th class="r">数量</th><th class="r">合计 (${esc(currency)})</th><th></th></tr></thead>
+      <tbody>${billRows()}<tr class="foot"><td colspan="5">应付合计 · ${esc(currency)} <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价/增删后自动重算）</span></td><td class="r">${money(totalLines())}</td><td></td></tr></tbody></table>
+      ${notice}
+      <button class="addline" id="addLine">＋ 加一行</button>
+      <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价 / 增删行需我方确认后生效</b>。本确认只保存外部确认草稿，不代表已开票或已付款。</span></div></div>`;
+  }
+  function invoiceRows(){
+    return state.invoices.map(inv=>`<tr>
+      <td><span data-en="Brokerage Agency Service Port Charges">${esc(inv.item_name)}</span></td><td>${esc(inv.unit)}</td><td class="r">${inv.qty}</td>
+      <td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${money(inv.amount_ex_tax)}</td>
+      <td class="r">1%</td><td class="r">${money(inv.tax_amount)}</td>
+    </tr>`).join("");
+  }
+  function applyLang(){
+    document.querySelectorAll("[data-en]").forEach(el=>{
+      if(!el.hasAttribute("data-zh")) el.setAttribute("data-zh", el.textContent);
+      el.textContent=_lang==="en"?el.getAttribute("data-en"):el.getAttribute("data-zh");
+    });
+    const b=document.getElementById("langBtn");
+    if(b) b.textContent=_lang==="en"?"中文":"EN";
+  }
+  function toggleLang(){ _lang=_lang==="en"?"zh":"en"; applyLang(); }
+  function contactSummary(){
+    const c=state.contacts||{}, f=(c.finance||[]).filter(Boolean).length;
+    return `收起中 · 财务邮箱 ${f?`<b>${f} 个</b>`:`<span class="miss">未填（必填）</span>`} · 操作 ${(c.ops||[]).filter(Boolean).length||"—"} · 业务 ${(c.business||[]).filter(Boolean).length||"—"}`;
+  }
+  function render(){
+    recalcInvoice();
+    const sp=state.shipment, inv=state.invoices[0], currency=inv.currency||"CNY", cntr=cntrSummary();
+    app.innerHTML=`<div class="finance-title">财务 · 开票</div><div class="sheet-hd"><div><div class="brand">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS
+      <div class="cn">上海洋宝宝国际物流有限公司　致：${esc(state.buyer.name||"")}</div></div></div>
+      <div class="docmeta"><div class="doctag">港杂费账单</div><div class="docno">${esc(sp.shipment_no||sp.bl_no||"")}</div>
+      <div class="badge ${state.status==="external_confirmed"?"done":""}">${state.status==="pending_our_review"?"待我方确认":state.status==="external_confirmed"?"已收到确认":"待你确认"}</div></div></div>
+      <div class="shipbar"><span>提单号 <b>${esc(sp.bl_no||"—")}</b></span><span>船名航次 <b>${esc([sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—")}</b></span>
+      <span><b>${esc([sp.pol,sp.pod].filter(Boolean).join(" → ")||"—")}</b></span><span>柜量 <b>${esc(cntr||"—")}</b></span></div>
+      ${billSection(currency)}
+      <div class="sec invoice-sec"><div class="sec-t">② 开票 · 港杂费</div><div class="modebar"><span class="mlab">开票方式</span>
+      <button class="mopt ${inv.mode!=="other"?"on":""}" data-mode="self">我方代开</button><button class="mopt ${inv.mode==="other"?"on":""}" data-mode="other">对方自开</button>
+      <span class="mtip" id="modeTip">${inv.mode==="other"?"对方自开后回传，我们 OCR 核对":"我们开好后发送到财务邮箱"}</span><button class="mopt inv-tool" id="langBtn" type="button">EN</button><button class="mopt inv-tool" id="printBtn" type="button">下载PDF/打印</button></div>
+      <div class="plaininv" id="invoicePrintArea"><div class="invtop"><div class="pt"><span data-en="e-Invoice">电子发票</span>（<select class="tsel" id="title"><option data-en="VAT Ordinary e-Invoice">增值税普通发票</option><option data-en="VAT Special e-Invoice">增值税专用发票</option></select>）</div></div>
+      <div class="pparty"><div class="pp"><div class="plab" data-en="Buyer">购 买 方</div><div class="prow"><b data-en="Name:">名称：</b><input class="edit" id="buyerName" value="${esc(state.buyer.name)}"><span class="edithint">可改</span></div>
+      <div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b><input class="edit" id="buyerTax" value="${esc(state.buyer.tax_id)}"></div><div class="tip">数电票只打印名称 + 税号</div></div>
+      <div class="pp"><div class="plab" data-en="Seller">销 售 方</div><div class="prow"><b data-en="Name:">名称：</b>${esc(state.seller.name)}</div><div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b>${esc(state.seller.tax_id||"—")}</div></div></div>
+      <table class="invline"><thead><tr><th data-en="Item">项目名称</th><th data-en="Unit">单位</th><th class="r" data-en="Qty">数量</th><th class="r" data-en="Unit Price">单价</th><th class="r" data-en="Amount Excl. Tax">金额(不含税)</th><th class="r" data-en="Tax Rate">税率/征收率</th><th class="r" data-en="Tax Amount">税额</th></tr></thead><tbody>${invoiceRows()}</tbody>
+      <tfoot><tr><td colspan="4"></td><td class="r" data-en="Total Incl. Tax">价税合计</td><td colspan="2" class="r">${sym(currency)} ${money(inv.total_with_tax)}</td></tr></tfoot></table>
+      <div class="remarkline"><span data-en="Remarks:">备注：</span>${esc(inv.remark)}</div></div><button class="addinv" id="addInv">＋ 新增一张发票</button>
+      <label class="savedef"><input type="checkbox" id="saveDefault" ${state.save_as_default?"checked":""}> <span>存为该客户默认开票模版，以后固定这样开。</span></label></div>
+      <div class="sec"><button class="collapse-hd" id="ctToggle"><span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span><span class="chev">${contactOpen?"收起":"展开填写"} ▾</span></button>
+      <div class="sumline" style="${contactOpen?"display:none":""}">${contactSummary()}</div><div id="ctBody" style="${contactOpen?"":"display:none"};margin-top:6px">${contactEditor("finance","财务邮箱","必填 ★","发票发这里")}${contactEditor("ops","操作邮箱","","账单/确认通知")}${contactEditor("business","业务邮箱","","报价 / 砍价")}</div></div>
+      <div class="actions"><button class="btn ghost" id="msgBtn">有疑问 · 留言给我</button><button class="btn primary" id="submitBtn">确认账单 + 开票信息</button></div>`;
+    bind();
+  }
+  function contactEditor(key,label,req,sub){
+    const vals=(state.contacts[key]||[""]).concat([""]).slice(0,5);
+    return `<div class="emrole"><div class="emlabel ${key==="finance"?"fin":key==="ops"?"ops":"buy"}">${label} ${req?`<span class="req">${req}</span>`:""}<em>${sub}</em></div>
+      <div class="emlist">${vals.map(v=>`<input class="email" data-contact="${key}" value="${esc(v)}" placeholder="${key==="finance"?"name@example.com":"选填"}">`).join("")}</div></div>`;
+  }
+  function collect(){
+    state.buyer.name=document.getElementById("buyerName")?.value.trim()||"";
+    state.buyer.tax_id=document.getElementById("buyerTax")?.value.trim()||"";
+    state.save_as_default=document.getElementById("saveDefault")?.checked!==false;
+    state.contacts={finance:[],ops:[],business:[]};
+    document.querySelectorAll("[data-contact]").forEach(el=>{const v=el.value.trim();if(v)state.contacts[el.dataset.contact].push(v)});
+  }
+  function lineChanged(i,f,val){
+    const l=state.bill_lines[i]; if(!l) return;
+    if(f==="name") l.name=val;
+    else if(f==="basis"){ l.basis=val; if(!isPer(val)){ l.qty=1; l.container_type=""; } else if(!l.container_type) l.container_type=primaryType(); }
+    else if(f==="container_type") l.container_type=val;
+    else if(f==="unit_price") l.unit_price=num(val);
+    else if(f==="qty") l.qty=num(val)||1;
+    l.amount=Math.round(num(l.unit_price)*num(l.qty)*100)/100; dirtyPrice=true; render();
+  }
+  function bind(){
+    document.querySelectorAll("[data-bl]").forEach(el=>el.addEventListener("change",e=>lineChanged(Number(e.target.dataset.bl),e.target.dataset.f,e.target.value)));
+    document.querySelectorAll("[data-bl-del]").forEach(b=>b.addEventListener("click",()=>{
+      const i=Number(b.dataset.blDel), l=state.bill_lines[i];
+      if(!confirm(`确定删除「${l?.name||"这一行"}」吗？删除后需我方确认才生效。`)) return;
+      state.bill_lines.splice(i,1); dirtyPrice=true; render();
+    }));
+    document.getElementById("addLine").onclick=()=>{
+      const cur=state.invoices[0]?.currency||"CNY";
+      state.bill_lines.push({bl_no:state.shipment.bl_no||"",name:"",basis:"每柜",container_type:primaryType(),unit_price:0,qty:1,amount:0,currency:cur});
+      dirtyPrice=true; render();
+    };
+    document.querySelectorAll("[data-cntr]").forEach(el=>el.addEventListener("change",e=>{
+      const c=state.shipment.containers[Number(e.target.dataset.cntr)]; if(!c) return;
+      if(e.target.dataset.cf==="type") c.type=e.target.value; else c.count=num(e.target.value);
+      dirtyPrice=true; render();
+    }));
+    document.querySelectorAll("[data-cntr-del]").forEach(b=>b.addEventListener("click",()=>{
+      state.shipment.containers.splice(Number(b.dataset.cntrDel),1); dirtyPrice=true; render();
+    }));
+    document.getElementById("cntrAdd").onclick=()=>{
+      (state.shipment.containers=state.shipment.containers||[]).push({type:primaryType(),count:1}); dirtyPrice=true; render();
+    };
+    document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>{state.invoices[0].mode=b.dataset.mode;render()}));
+    document.getElementById("ctToggle").onclick=()=>{contactOpen=!contactOpen;collect();render()};
+    document.getElementById("addInv").onclick=()=>alert("已预留多张发票结构，本轮先确认当前单票。");
+    document.getElementById("langBtn").onclick=toggleLang;
+    document.getElementById("printBtn").onclick=()=>window.print();
+    document.getElementById("msgBtn").onclick=()=>alert("请直接联系 Sanlyn 操作，留言入口下一版接入。");
+    document.getElementById("submitBtn").onclick=submit;
+    applyLang();
+  }
+  async function submit(){
+    collect();
+    if(!state.buyer.name||!state.buyer.tax_id){alert("请填写购买方名称和税号");return}
+    if(!(state.contacts.finance||[]).length){contactOpen=true;render();alert("请至少填写一个财务邮箱");return}
+    const body={token,draft:{...state,price_changed:dirtyPrice,invoice_mode:state.invoices[0].mode,shipment_containers:state.shipment.containers||[]}};
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok){alert("保存失败："+(d.error||r.status));return}
+    state.status=d.draft.status; dirtyPrice=false; render(); alert(state.status==="pending_our_review"?"已提交改动，待我方确认":"已保存确认草稿");
+  }
+  async function boot(){
+    if(!token){app.innerHTML='<div class="err">缺少 token</div>';return}
+    try{
+      const r=await fetch(API+"?token="+encodeURIComponent(token));
+      const d=await r.json();
+      if(!r.ok||!d.ok){app.innerHTML='<div class="err">港杂费开票确认暂不可用</div>';return}
+      state=d.data; initContainers(); render();
+    }catch(e){app.innerHTML='<div class="err">网络错误，暂无法加载港杂费开票确认</div>'}
+  }
+  boot();
+})();

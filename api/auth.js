@@ -93,6 +93,9 @@ const PUBLIC_PATHS = [
   "/api/db/check-username", // 注册页查重（只返回 {exists:bool}，不泄露其他字段）
   "/api/portal/login",    // Portal 登录（portal token 在此签发，登录前无 token）
   "/api/driver-evidence", // 司机扫 QR 上传装柜证据（无登录；凭 bl_no+container_no 授权）
+  "/api/db/slip-upload", // 客户/内部自助传水单/入账通知（无登录；凭 ?k=SLIP_UPLOAD_KEY 授权，handler内fail-closed）
+  "/api/db/ocean-doc-upload", // 海运单据通用上传（无登录；凭 ?k=SLIP_UPLOAD_KEY 授权，handler内fail-closed）
+  "/api/db/slip-customer-search", // 客户自选票据搜索（无登录；?k=授权+customer参数服务端强制过滤）
   "/api/db/magic-link",   // Driver Magic Link (Air-A): 司机点 SMS 链接，凭 raw token + SHA-256 比对授权
   "/api/factory-fill",    // 工厂 token 填单（无登录；凭 _idx_tokens 授权）
   "/api/factory-confirm", // 工厂订单确认（无登录；凭 _idx_tokens 授权）
@@ -118,6 +121,8 @@ const PUBLIC_PATHS = [
   // Sample Delivery Magic Link — factory manager, token-authenticated, no JWT
   "/api/db/sample-delivery-checkin",
   "/api/db/factory-portal", // 工厂门户:resolve/upload公开,gen内部校admin JWT
+  "/api/db/invoice-collab-confirm", // 港杂费开票确认: magic-link token-gated
+  "/api/db/customer-invoice", // 客户销项发票门户:resolve/save/confirm公开,gen内部校admin JWT
   "/api/db/factory-invoice-reconcile", // 工厂开票对账台:internal自校JWT,factory c/mt token-gated
   "/api/db/customs-collab", // 报关单开票协同:internal自校JWT,factory c/mt token-gated
   "/api/db/recon-shadow", // 对账框架影子: handler内admin自校
@@ -143,6 +148,7 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/collab-pricing-submit",
   "/api/db/bill-center/collab/validate",
   "/api/db/bill-center/collab/submit",
+  "/api/internal/ar-followup", // 微信文字回复记催款跟进状态；handler内X-Internal-Key强校验fail-closed，不发任何对外消息
 ];
 
 // Portal 路由独立 auth 体系（HMAC token）
@@ -183,6 +189,68 @@ async function enrichStaleUser(req) {
   } catch (e) { /* swallow — endpoint will return graceful empty */ }
 }
 
+// ── Account/session validity cache ──
+// 灰度: 老 token 没有 tv 仍放行到自然过期；有 tv 才比对 token_version。
+// DB 异常 fail-open，避免认证表短故障打死全站。
+var _accountStateCache = new Map();
+async function checkAccountState(req, res) {
+  if (!req.user) return true;
+  var uid = req.user.uid || req.user.id || req.user.sub;
+  var username = req.user.username || "";
+  if (!uid && !username) return true;
+  var key = String(uid || username);
+  var hit = _accountStateCache.get(key);
+  var state = null;
+
+  if (hit && Date.now() - hit.ts < 60000) {
+    state = hit;
+  } else {
+    try {
+      var dbMod = await import("./db.js");
+      var r = await dbMod.getPool().query(
+        `SELECT a.id,
+                COALESCE(a.token_version, 1) AS token_version,
+                COALESCE(a.is_active, true) AS is_active,
+                BOOL_OR(e.status IS NOT NULL AND e.status <> 'ACTIVE') AS has_inactive_employee,
+                ARRAY_AGG(e.status) FILTER (WHERE e.status IS NOT NULL AND e.status <> 'ACTIVE') AS inactive_statuses
+           FROM accounts a
+      LEFT JOIN employees e ON e.user_id::text = a.id::text
+          WHERE a.id::text = $1::text OR a.username = $2
+       GROUP BY a.id, a.token_version, a.is_active
+          LIMIT 1`,
+        [uid || "", username]
+      );
+      if (!r.rows[0]) {
+        return res.status(401).json({ error: "ACCOUNT_NOT_FOUND", message: "账号不存在或已失效" });
+      }
+      var row = r.rows[0];
+      state = {
+        ts: Date.now(),
+        account_id: row.id,
+        tv: Number(row.token_version || 1),
+        active: row.is_active !== false,
+        emp_status: row.has_inactive_employee ? ((row.inactive_statuses || [])[0] || "INACTIVE") : "ACTIVE",
+      };
+      _accountStateCache.set(key, state);
+      _accountStateCache.set(String(row.id), state);
+    } catch (e) {
+      console.warn("[authMiddleware] account state check fail-open:", e.message);
+      return true;
+    }
+  }
+
+  if (!state.active) {
+    return res.status(401).json({ error: "ACCOUNT_INACTIVE", message: "账号已停用" });
+  }
+  if (state.emp_status && state.emp_status !== "ACTIVE") {
+    return res.status(401).json({ error: "EMPLOYEE_INACTIVE", message: "员工状态已停用" });
+  }
+  if (Object.prototype.hasOwnProperty.call(req.user, "tv") && Number(req.user.tv) !== state.tv) {
+    return res.status(401).json({ error: "TOKEN_REVOKED", message: "登录已失效，请重新登录" });
+  }
+  return true;
+}
+
 // ── Express 全局鉴权中间件 ──
 // 职责：内部 JWT 校验。Portal 路径识别后直通（交由 portalGate）。
 export async function authMiddleware(req, res, next) {
@@ -207,6 +275,12 @@ export async function authMiddleware(req, res, next) {
 
   // Factory confirm short link /fc/<token> → redirect to /public/factory-confirm.html, no auth
   if (req.path.startsWith("/fc/")) return next();
+
+  // Factory invoice short link /fi/<code> → /public/factory-invoice.html, no auth
+  if (req.path.startsWith("/fi/")) return next();
+
+  // Customer invoice short link /ci/<code> → /public/customer-invoice.html, no auth
+  if (req.path.startsWith("/ci/")) return next();
 
   // Doc share recipient download: GET /api/db/doc-share?token=...&password=...
   // External recipients have no JWT — handler verifies via token + password instead.
@@ -243,6 +317,7 @@ export async function authMiddleware(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: "Unauthorized", message: "请先登录" });
   }
+  if (!(await checkAccountState(req, res))) return;
   await enrichStaleUser(req);
   next();
 }

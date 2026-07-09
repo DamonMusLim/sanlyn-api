@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>客户助手</title>
+<script src="https://res.wx.qq.com/open/js/jweixin-1.2.0.js"></script>
+<script src="https://wwcdn.weixin.qq.com/node/wework/wwopen/js/wwopen_wx_1.2.7.js"></script>
+<style>
+  :root { --bg:#f2f4f8; --card:#fff; --txt:#1f2937; --sub:#6b7280; --blue:#2563eb; --amber:#b45309; --red:#dc2626; --green:#16a34a; --line:#e5e7eb; }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family:-apple-system,"PingFang SC",sans-serif; font-size:13px; }
+  .wrap { padding:8px; }
+  .card { background:var(--card); border-radius:10px; padding:9px 10px; margin-bottom:8px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .who { font-weight:700; font-size:14px; }
+  .sub { color:var(--sub); font-size:11px; margin-top:1px; }
+  h3 { font-size:11px; color:var(--sub); margin:0 0 5px; font-weight:600; }
+  textarea { width:100%; border:1px solid var(--line); border-radius:7px; padding:7px; font-size:13px; resize:vertical; min-height:40px; }
+  .btnrow { display:flex; gap:6px; margin-top:6px; }
+  button { border:0; border-radius:7px; padding:8px 6px; font-size:13px; color:#fff; background:var(--blue); flex:1; }
+  button.ghost { background:#eef2ff; color:var(--blue); }
+  button.send { background:var(--green); }
+  .draft { background:#f0f7ff; border-left:3px solid var(--blue); border-radius:7px; padding:8px 9px; font-size:13px; line-height:1.5; white-space:pre-wrap; margin-top:6px; }
+  .tag { display:inline-block; font-size:10px; padding:1px 6px; border-radius:20px; }
+  .tag.confirm { background:#fef3c7; color:var(--amber); }
+  .tag.human { background:#fee2e2; color:var(--red); }
+  .err { color:var(--red); font-size:12px; }
+  .muted { color:var(--sub); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="who" id="who">识别客户中…</div>
+    <div class="sub" id="whoSub"></div>
+  </div>
+  <div class="card">
+    <h3>客户说了什么（可粘贴/编辑）</h3>
+    <textarea id="msg" placeholder="把客户的问题贴这里"></textarea>
+    <div class="btnrow"><button onclick="genDraft()">🤖 守底价拟回复</button></div>
+    <div id="draftBox"></div>
+  </div>
+  <div class="card muted" id="profile" style="font-size:12px;">客户资料加载中…</div>
+</div>
+<script>
+const API = 'https://sanlyn.cn';
+let externalUserId = '', canSend = false;
+function setWho(t, sub) { document.getElementById('who').textContent = t; if(sub!==undefined) document.getElementById('whoSub').textContent = sub; }
+
+async function initJsSdk() {
+  const url = location.href.split('#')[0];
+  const c = await (await fetch(`${API}/api/wecom-jssdk-sign?url=${encodeURIComponent(url)}`)).json();
+  if (c.error) { setWho('签名失败', c.error); throw new Error(c.error); }
+  await new Promise((resolve, reject) => {
+    wx.config({ beta:true, debug:false, appId:c.corpid, timestamp:c.timestamp, nonceStr:c.nonceStr,
+      signature:c.signature, jsApiList:['getCurExternalContact','sendChatMessage'] });
+    wx.ready(() => {
+      wx.agentConfig({ corpid:c.corpid, agentid:c.agentid, timestamp:c.timestamp, nonceStr:c.nonceStr,
+        signature:c.agentSignature, jsApiList:['getCurExternalContact','sendChatMessage'],
+        success: resolve, fail: (e)=>reject(new Error('agentConfig失败:'+JSON.stringify(e))) });
+    });
+    wx.error((e)=>reject(new Error('config失败:'+JSON.stringify(e))));
+  });
+}
+function getCustomer() {
+  return new Promise((resolve, reject) => {
+    wx.invoke('getCurExternalContact', {}, (r) => {
+      if (r.err_msg === 'getCurExternalContact:ok') resolve(r.userId);
+      else reject(new Error(r.err_msg));
+    });
+  });
+}
+async function loadProfile(id) {
+  try {
+    const p = await (await fetch(`${API}/api/wecom-customer-brief?external_userid=${encodeURIComponent(id)}`)).json();
+    setWho((p && p.name) || '客户', (p && (p.tags||p.name)) ? (p.tags||'') : id);
+    document.getElementById('profile').innerHTML = (p && p.summary) ? p.summary : '暂无历史资料';
+    if (p && p.last_msg) document.getElementById('msg').value = p.last_msg;
+  } catch(e) { setWho('客户', id); document.getElementById('profile').textContent = ''; }
+}
+async function genDraft() {
+  const text = document.getElementById('msg').value.trim();
+  const box = document.getElementById('draftBox');
+  if (!text) { box.innerHTML = '<div class="err">先输入客户消息</div>'; return; }
+  box.innerHTML = '<div class="muted">拟稿中…</div>';
+  try {
+    const r = await (await fetch(`${API}/api/wecom-suggest`, { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text, external_userid: externalUserId }) })).json();
+    if (r.human) { box.innerHTML = '<div class="draft"><span class="tag human">建议转人工</span> '+(r.reason||'人工处理')+'</div>'; return; }
+    const tag = r.needs_confirm ? '<span class="tag confirm">🔒发前确认</span> ' : '';
+    const d = r.draft || '';
+    const enc = encodeURIComponent(d);
+    box.innerHTML = `<div class="draft">${tag}${d.replace(/</g,'&lt;')}</div>
+      <div class="btnrow">
+        ${canSend?`<button class="send" onclick="sendToChat(this)" data-t="${enc}">📤 发送到聊天</button>`:''}
+        <button class="ghost" onclick="copyDraft(this)" data-t="${enc}">📋 复制</button>
+      </div>`;
+  } catch(e) { box.innerHTML = '<div class="err">拟稿失败：'+e.message+'</div>'; }
+}
+function copyDraft(btn) {
+  navigator.clipboard.writeText(decodeURIComponent(btn.dataset.t)).then(()=>{ btn.textContent='✅ 已复制'; setTimeout(()=>btn.textContent='📋 复制',1500); });
+}
+// 一键发送到当前聊天(官方sendChatMessage,你点才发,非自动)
+function sendToChat(btn) {
+  const content = decodeURIComponent(btn.dataset.t);
+  wx.invoke('sendChatMessage', { msgtype:'text', text:{ content } }, (r) => {
+    if (r.err_msg === 'sendChatMessage:ok') { btn.textContent='✅ 已发送'; }
+    else { btn.textContent='发送失败'; setTimeout(()=>btn.textContent='📤 发送到聊天',1500); }
+  });
+}
+(async () => {
+  try { await initJsSdk(); canSend = true; } catch(e) { setWho('手动模式', '贴消息即可拟回复'); document.getElementById('profile').textContent=''; return; }
+  try { externalUserId = await getCustomer(); await loadProfile(externalUserId); }
+  catch(e) { setWho('手动模式', '未识别客户（贴消息即可拟回复）'); document.getElementById('profile').textContent='开通客户联系权限后可自动认客户'; }
+})();
+</script>
+</body>
+</html>

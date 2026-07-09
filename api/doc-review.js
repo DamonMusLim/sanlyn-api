@@ -5,28 +5,11 @@
 // Returns { ok, findings: [{level, field, note}], keyTerms, summary, riskScore }
 
 import { getPool } from "./db.js";
+import { textChat } from "./lib/minimax-vl.js";
 
-const DASHSCOPE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
-
+// 2026-07-04 引擎从 qwen-plus(文本) 切 MiniMax-M3
 async function callQwen(systemPrompt, userPrompt) {
-  const res = await fetch(DASHSCOPE_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.QWEN_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "qwen-plus",          // cheap text model, no vision needed
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user",   content: userPrompt },
-      ],
-      max_tokens: 2000,
-      temperature: 0.1,            // low temp → deterministic extraction
-    }),
-  });
-  if (!res.ok) throw new Error(`Qwen HTTP ${res.status}`);
-  const data = await res.json();
+  const data = await textChat(systemPrompt, userPrompt);
   const text = data?.choices?.[0]?.message?.content || "";
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error("No JSON in response: " + text.slice(0, 200));

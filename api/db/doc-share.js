@@ -10,6 +10,7 @@
 
 import { getPool } from "../db.js";
 import { randomBytes } from "crypto";
+import { existsSync, createReadStream } from "fs";
 
 const SHARE_BASE = process.env.API_BASE || "https://api.sanlyn.cn";
 
@@ -103,7 +104,28 @@ export default async function handler(req, res) {
       [JSON.stringify(log), token]
     );
 
-    // Redirect to actual file
+    // If doc_url points to a local /uploads/ file, stream it directly (file is NOT
+    // publicly served by nginx; password gate above is the only access control).
+    try {
+      var _p = "";
+      try { _p = new URL(link.doc_url).pathname; } catch (e) { _p = String(link.doc_url || ""); }
+      if (/^\/uploads\//.test(_p)) {
+        var diskPath = "/opt/sanlyn-uploads" + _p.replace(/^\/uploads/, "");
+        if (existsSync(diskPath)) {
+          var ext = (diskPath.split(".").pop() || "").toLowerCase();
+          var ct = ext === "pdf" ? "application/pdf"
+                 : ext === "png" ? "image/png"
+                 : /^jpe?g$/.test(ext) ? "image/jpeg"
+                 : ext === "mp4" ? "video/mp4"
+                 : "application/octet-stream";
+          res.setHeader("Content-Type", ct);
+          res.setHeader("Content-Disposition", 'inline; filename="' + (link.doc_name || "document") + "." + ext + '"');
+          return createReadStream(diskPath).pipe(res);
+        }
+      }
+    } catch (e) { /* fall through to redirect */ }
+
+    // Redirect to actual file (external/public URLs)
     return res.redirect(302, link.doc_url);
   }
 

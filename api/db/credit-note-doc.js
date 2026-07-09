@@ -35,6 +35,13 @@ export async function renderCreditNote(pool, cnNo, opts){
   // issuer. Seller = issuing company: prefer raw.issuing_company, else default.
   var _issuer = (cn.raw && (cn.raw.issuing_company||cn.raw.issuingCompany)) || null;
   var cfg = await loadSeller(pool, _issuer);
+  var buyer = {};
+  try { var _br = await pool.query("SELECT address FROM companies WHERE code=$1 LIMIT 1", [cn.company_code]); buyer = (_br.rows && _br.rows[0]) || {}; } catch(e){}
+  var custPo = "", fsNo = "";
+  try { var _or = await pool.query("SELECT customer_po, customer_po_no, raw->>'fs_no' AS fs_no FROM orders WHERE order_no=$1 LIMIT 1", [cn.order_no]); if(_or.rows && _or.rows[0]) { custPo = _or.rows[0].customer_po || _or.rows[0].customer_po_no || ""; fsNo = _or.rows[0].fs_no || ""; } } catch(e){}
+  var contractDisplay = custPo || cn.contract_no || "";
+  var sellerSeal = "";
+  try { var _sq = await pool.query("SELECT url FROM customer_stamps WHERE company_code=$1 AND is_default=true AND is_active=true LIMIT 1", ["BABI"]); if (_sq.rows[0]) sellerSeal = _sq.rows[0].url || ""; } catch(e){}
   var curr = cn.currency || "CNY";
   var total = Number(cn.net_amount||0);
   var ap = opts.print;
@@ -46,7 +53,7 @@ export async function renderCreditNote(pool, cnNo, opts){
     .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:15px;margin-bottom:25px;}
     .seller-name{font-size:18px;font-weight:900;text-transform:uppercase;margin-bottom:4px;}
     .seller-sub{font-size:10px;color:#666;}
-    .doc-type h1{margin:0;font-size:26px;font-weight:900;letter-spacing:1px;text-align:right;color:#b91c1c;}
+    .doc-type h1{margin:0;font-size:26px;font-weight:900;letter-spacing:1px;text-align:right;color:#111;}
     .doc-type p{font-size:13px;font-weight:700;margin:3px 0;text-align:right;color:#444;}
     .meta-grid{display:grid;grid-template-columns:1.2fr 0.8fr;gap:40px;margin-bottom:20px;}
     .section-label{font-size:10px;font-weight:700;text-transform:uppercase;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:8px;color:#444;}
@@ -57,7 +64,7 @@ export async function renderCreditNote(pool, cnNo, opts){
     th{background:#000;color:#fff;padding:9px 8px;text-align:left;font-size:10px;text-transform:uppercase;}
     td{padding:8px;border-bottom:1px solid #ccc;vertical-align:top;}
     .tc{text-align:center;} .tr{text-align:right;}
-    tfoot td{font-size:14px;font-weight:900;border-top:2px solid #000;border-bottom:none;color:#b91c1c;}
+    tfoot td{font-size:14px;font-weight:900;border-top:2px solid #000;border-bottom:none;color:#111;}
     .details-box{border:1px solid #000;padding:12px;margin-top:10px;}
     .details-box h4{margin:0 0 8px 0;font-size:11px;text-transform:uppercase;text-decoration:underline;}
     .sig-row{display:flex;justify-content:space-between;margin-top:46px;}
@@ -68,11 +75,14 @@ export async function renderCreditNote(pool, cnNo, opts){
 
   var rows = items.map(function(it,i){
     var no = it.no!=null?it.no:(i+1);
-    var prod = it.product_en ? (esc(it.product)+(it.product_en?` <span style="color:#777">/ ${esc(it.product_en)}</span>`:"")) : esc(it.product||"-");
-    var diff = it.unit_price_diff!=null ? fmtM(it.unit_price_diff) : "—";
+    var prodName = it.product||it.desc||it.product_name||it.name||"-";
+    var prod = it.product_en ? (esc(prodName)+` <span style="color:#777">/ ${esc(it.product_en)}</span>`) : esc(prodName);
+    var pdiffVal = it.unit_price_diff!=null ? it.unit_price_diff : (it.price_diff!=null ? it.price_diff : null);
+    var diff = pdiffVal!=null ? fmtM(pdiffVal) : "—";
+    var unitStr = it.unit||it.qty_unit||"-";
     var qty = it.qty!=null ? it.qty : "—";
     return `<tr><td>${String(no).padStart(2,"0")}</td><td>${prod}${it.note?`<div style="color:#777;font-size:9.5px;margin-top:2px">${esc(it.note)}</div>`:""}</td>`
-      +`<td class="tc">${qty}</td><td class="tc">${esc(it.unit||"-")}</td><td class="tr">${diff}</td>`
+      +`<td class="tc">${qty}</td><td class="tc">${esc(unitStr)}</td><td class="tr">${diff}</td>`
       +`<td class="tr">${fmtM(it.amount)}</td></tr>`;
   }).join("") || `<tr><td colspan="6" style="text-align:center;color:#ccc;font-style:italic;padding:20px">— 无明细 —</td></tr>`;
 
@@ -81,24 +91,24 @@ export async function renderCreditNote(pool, cnNo, opts){
       <div class="seller-info">
         <div class="seller-name">${esc(cfg.nameEN)}</div>
         <div class="seller-sub">${esc(cfg.address)}</div>
-        <div class="seller-sub">Tel: ${esc(cfg.tel)} | Email: ${esc(cfg.email)}</div>
+        ${(cfg.tel||cfg.email)?`<div class="seller-sub">${cfg.tel?`Tel: ${esc(cfg.tel)}`:""}${cfg.tel&&cfg.email?" | ":""}${cfg.email?`Email: ${esc(cfg.email)}`:""}</div>`:""}
       </div>
       <div class="doc-type"><h1>贷记通知单</h1><p>CREDIT NOTE</p></div>
     </div>
     <div class="meta-grid">
       <div>
         <div class="section-label">收款方 / TO</div>
-        <p style="font-size:13px;font-weight:700;margin:0 0 5px 0">${esc(cn.company_name||"")}</p>
+        <p style="font-size:13px;font-weight:700;margin:0 0 4px 0">${esc(cn.company_name||"")}</p>
+        ${buyer.address?`<p style="font-size:10px;color:#555;margin:0;line-height:1.5">${esc(buyer.address)}</p>`:""}
       </div>
       <div>
         <div class="section-label">单据详情 / DETAILS</div>
         <ul class="meta-list">
-          <li><b>贷记单号 CN No.:</b>${esc(cn.cn_no)}</li>
-          ${cn.order_no?`<li><b>订单号 Order No.:</b>${esc(cn.order_no)}</li>`:""}
-          ${cn.contract_no?`<li><b>合同号 Contract:</b>${esc(cn.contract_no)}</li>`:""}
+          <li><b>贷记单号 CN No.:</b>${esc(custPo ? ('CN-'+custPo) : cn.cn_no)}</li>
+          ${contractDisplay?`<li><b>订单号 Order No.:</b>${esc(contractDisplay)}</li>`:""}
+          ${fsNo?`<li><b>合同号 Contract:</b>${esc(fsNo)}</li>`:""}
           ${cn.invoice_no?`<li><b>关联发票 Invoice:</b>${esc(cn.invoice_no)}</li>`:""}
           <li><b>日期 Date:</b>${fmtD(cn.issued_date||cn.created_at)}</li>
-          <li><b>币种 Currency:</b>${esc(curr)}</li>
         </ul>
       </div>
     </div>
@@ -121,8 +131,8 @@ export async function renderCreditNote(pool, cnNo, opts){
     </div>
     <div class="sig-row">
       <div class="sig-b">客户确认 / CUSTOMER<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span></div>
-      <div class="sig-b">我司签发 / ISSUED BY<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span></div>
+      <div class="sig-b" style="position:relative">我司签发 / ISSUED BY<br><span style="font-weight:400;font-size:9px">(签字/盖章 Signature)</span>${sellerSeal?`<img src="${esc(sellerSeal)}" style="position:absolute;right:12%;top:-30px;width:88px;height:88px;object-fit:contain;opacity:.92">`:""}</div>
     </div>
-    <div class="footer-slogan">Generated &amp; Verified by Sanlyn OS · CREDIT NOTE ${esc(cn.cn_no)}</div>
+    <div class="footer-slogan">Generated &amp; Verified by Sanlyn OS</div>
   </div></body></html>`;
 }

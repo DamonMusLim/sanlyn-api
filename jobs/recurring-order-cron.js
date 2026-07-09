@@ -23,6 +23,7 @@ function getPool() {
       password: process.env.PG_PASSWORD,
       max: 3,
     });
+    _pool.on("error", (err) => { console.error("[recurring-cron] pool error:", err.message); });
   }
   return _pool;
 }
