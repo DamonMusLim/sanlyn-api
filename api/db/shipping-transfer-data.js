@@ -33,7 +33,34 @@ const SQL = `
     ,COALESCE(o.total_cbm, 0)::numeric AS order_cbm
   FROM shipping_plans sp
   JOIN container_bookings cb ON cb.shipping_plan_id = sp.id
-  LEFT JOIN orders o ON (o.order_no = cb.contract_no OR o.contract_no = cb.contract_no) AND o.bl_no = sp.bl_no
+  -- 柜→订单绑定：不再依赖 orders.bl_no 是否回写（会漏），改用「本计划成员资格」定位；
+  -- order_no 精确匹配优先，contract_no 仅在计划内唯一时回退，共享合同号无法消歧则 fail-closed（宁空不串柜）。
+  LEFT JOIN LATERAL (
+    WITH candidates AS (
+      SELECT o0.*,
+        CASE
+          WHEN o0.order_no = cb.contract_no THEN 1
+          WHEN o0.contract_no = cb.contract_no THEN 2
+          ELSE 99
+        END AS match_rank,
+        COUNT(*) FILTER (WHERE o0.contract_no = cb.contract_no) OVER () AS same_contract_count
+      FROM orders o0
+      WHERE COALESCE(o0.status, '') <> 'cancelled'
+        AND (
+             o0.shipping_plan_id = sp.id
+          OR o0.order_no    = ANY(COALESCE(sp.order_nos, ARRAY[]::text[]))
+          OR o0.contract_no = ANY(COALESCE(sp.contract_nos, ARRAY[]::text[]))
+        )
+        AND (
+             o0.order_no    = cb.contract_no
+          OR o0.contract_no = cb.contract_no
+        )
+    )
+    SELECT * FROM candidates
+    WHERE match_rank = 1 OR (match_rank = 2 AND same_contract_count = 1)
+    ORDER BY match_rank, id
+    LIMIT 1
+  ) o ON true
   LEFT JOIN order_line_items li ON li.order_id = o.id
   LEFT JOIN products p ON p.id = li.product_id
   WHERE sp.id::text = $1 OR sp._id = $1
