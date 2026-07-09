@@ -273,7 +273,7 @@ async function loadLines(pool, orderIds) {
          COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), '')) AS declaration_name,
          NULLIF(btrim(p.declaration_elements), '') AS declaration_elements,
          oli.qty_ctn,
-         oli.nw_ctn,
+         oli.nw_ctn, oli.gw_ctn,
          oli.unit_price,
          oli.subtotal
        FROM order_line_items oli
@@ -302,6 +302,7 @@ async function loadLines(pool, orderIds) {
        MAX(h.declaration_elements) AS declaration_elements,
        SUM(k.qty_ctn) AS qty_ctn,
        SUM(CASE WHEN k.nw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.nw_ctn * k.qty_ctn ELSE NULL END) AS net_weight_kg,
+       SUM(CASE WHEN k.gw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.gw_ctn * k.qty_ctn ELSE NULL END) AS gross_weight_kg,
        MIN(k.unit_price) AS unit_price,
        SUM(k.subtotal) AS total_amount
      FROM keyed k
@@ -365,6 +366,33 @@ function sumOrderMetric(orders, fields, rawFields) {
   }, 0);
 }
 
+async function loadContainersForBl(pool, plan) {
+  try {
+    var out = [];
+    var raw = parseRaw(plan.raw);
+    var blNo = clean(pick(plan.bl_no, raw.blNo, raw.bl_no));
+    var pushList = function (v) {
+      String(v == null ? "" : v).split(/[,/;\s]+/).forEach(function (c) {
+        c = clean(c); if (c && out.indexOf(c) < 0) out.push(c);
+      });
+    };
+    try {
+      var r1 = await pool.query(
+        "SELECT DISTINCT btrim(container_no) AS c FROM container_bookings WHERE shipping_plan_id = $1 OR ($2 <> '' AND btrim(bl_no) = $2)",
+        [plan.id, blNo]);
+      r1.rows.forEach(function (x) { pushList(x.c); });
+    } catch (e) {}
+    if (blNo) {
+      try {
+        var r2 = await pool.query("SELECT container_no FROM shipping_plans WHERE btrim(bl_no) = $1", [blNo]);
+        r2.rows.forEach(function (x) { pushList(x.container_no); });
+      } catch (e) {}
+    }
+    pushList(plan.container_no);
+    return out;
+  } catch (e) { return []; }
+}
+
 export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   opts = opts || {};
   var plan = await loadPlan(pool, shipmentId);
@@ -407,19 +435,18 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var destination = countryFromPod(firstOrderValue(orders, "country", "country") || pod);
   var vesselVoyage = [pick(plan.vessel, praw.vessel), pick(plan.voyage, praw.voyage)].filter(Boolean).join(" / ");
   var blNo = pick(plan.bl_no, praw.blNo, praw.bl_no);
+  // 集装箱号: 指定单柜用它; BL级(未指定)列出该 BL/计划下全部柜号
   var containerNo = requestedContainerNo || pick(plan.container_no, praw.containerNo, praw.container_no);
-  var grossWeight = pick(plan.gross_weight_kg, plan.gross_weight, praw.grossWeight, praw.gross_weight_kg);
-  var netWeight = pick(plan.net_weight_kg, plan.net_weight, praw.netWeight, praw.net_weight_kg);
-  if (requestedContainerNo) {
-    var orderGross = sumOrderMetric(orders, ["gross_weight_kg", "gross_weight", "total_gross_weight", "total_gw"], ["grossWeightKg", "grossWeight", "gross_weight_kg", "gross_weight", "totalGrossWeight", "total_gw"]);
-    var orderNet = sumOrderMetric(orders, ["net_weight_kg", "net_weight", "total_net_weight", "total_nw"], ["netWeightKg", "netWeight", "net_weight_kg", "net_weight", "totalNetWeight", "total_nw"]);
-    var lineNet = lines.reduce(function (s, l) {
-      var n = Number(l.net_weight_kg);
-      return s + (Number.isFinite(n) ? n : 0);
-    }, 0);
-    grossWeight = orderGross || "";
-    netWeight = orderNet || lineNet || "";
+  if (!requestedContainerNo) {
+    var _allCtn = await loadContainersForBl(pool, plan);
+    if (_allCtn.length) containerNo = _allCtn.join(", ");
   }
+  // 净重/毛重一律从明细 lines 汇总(lines 范围=当前 orders: BL级=全部订单, 单柜级=该柜订单), 与件数同源,
+  // 不再只取 plan 单柜值。毛重来源=order_line_items.gw_ctn×qty_ctn(loadLines 已聚合 gross_weight_kg)。
+  var _lineNet = lines.reduce(function (s, l) { var n = Number(l.net_weight_kg); return s + (Number.isFinite(n) ? n : 0); }, 0);
+  var _lineGross = lines.reduce(function (s, l) { var n = Number(l.gross_weight_kg); return s + (Number.isFinite(n) ? n : 0); }, 0);
+  var netWeight = _lineNet || pick(plan.net_weight_kg, plan.net_weight, praw.netWeight, praw.net_weight_kg) || "";
+  var grossWeight = _lineGross || pick(plan.gross_weight_kg, plan.gross_weight, praw.grossWeight, praw.gross_weight_kg) || "";
   var totalCtn = lines.reduce(function (s, l) {
     var n = Number(l.qty_ctn);
     return s + (Number.isFinite(n) ? n : 0);
