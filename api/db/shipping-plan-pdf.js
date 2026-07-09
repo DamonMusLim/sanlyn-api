@@ -47,6 +47,15 @@ export default async function handler(req, res) {
       _cdQuery.container_no = _cdQuery.container_no || _cdQuery.container || "";
       const _cdHtml = await renderCustomsDeclaration(pool, id || bl, _cdQuery);
       if (!_cdHtml) return res.status(404).send("<h1>Shipment not found</h1>");
+      // format=pdf → 转可下载 PDF(复用 _html-to-pdf.js: puppeteer-core+系统chrome); 否则返回 HTML 供浏览器打印
+      if (String(req.query.format || "") === "pdf") {
+        const { htmlToPdf } = await import("./_html-to-pdf.js");
+        const _cdPdf = await htmlToPdf(_cdHtml);
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("报关单_" + (bl || id || "") + ".pdf"));
+        res.setHeader("Cache-Control", "no-store");
+        return res.status(200).send(_cdPdf);
+      }
       return res.status(200).send(_cdHtml);
     }
 
