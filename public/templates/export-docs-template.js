@@ -116,6 +116,10 @@ function fsFromOrder(o){
   for(var i=0;i<vals.length;i++){var m=String(vals[i]||'').match(/\bFS[0-9A-Z-]+\b/i);if(m)return m[0].toUpperCase();}
   return '';
 }
+function customerDocRef(o){
+  var r=orderRaw(o);
+  return (o&&o.customer_po)||r.customerPO||r.customer_po||fsFromOrder(o)||(o&&o.contract_no)||'';
+}
 
 // 明细行（切「明细模式」时用），ctnMap = {contract_no/order_id → container rows[]}
 function detailRows(all,ctnMap){
@@ -221,10 +225,10 @@ function fillHeader(pfx,primary,all,seller,cur,port){
   var _urlNo=qp('order_no')||qp('orderNo');
   var _fsOrder=all.filter(function(o){return o&&(String(o.order_no)===_urlNo||shortNo(o.order_no)===shortNo(_urlNo));})[0]||primary;
   var _fsNum=fsFromOrder(_fsOrder)||_fsOrder.fs_no||primary.fs_no||praw.fs_no||_fsOrder.contract_no||'';
-  var _poNum=_fsOrder.customer_po||orderRaw(_fsOrder).customerPO||shortNo(_fsOrder.order_no)||'';
-  var fs='IV-'+(_customsMode?(_fsNum||_poNum):(_poNum||_fsNum));  // Damon 2026-07-09: 报关版=IV-FS, 客户版=IV-PO(缺退order_no); 标签统一No.:
+  var _poNum=(_fsOrder&&_fsOrder.customer_po)||orderRaw(_fsOrder).customerPO||orderRaw(_fsOrder).customer_po||'';
+  var fs='IV-'+(_customsMode?(_fsNum||_poNum):(_poNum||_fsNum));  // Damon 2026-07-09: 报关版=IV-FS, 客户版=IV-PO；缺真PO退FS，绝不退内部order_no
   setT(pfx+'-no',fs);
-  setT(pfx+'-order',uniq(all.map(function(o){return shortNo(o.order_no);})).join(' / '));
+  setT(pfx+'-order',uniq(all.map(function(o){return _customsMode?shortNo(o.order_no):customerDocRef(o);})).join(' / '));
   setT(pfx+'-date',(primary.order_date||'').slice(0,10));
   setT(pfx+'-port',portLine(primary));  // 分模式:报关版XIAMEN/客户版实际起运港(不再用固定port参数)
   setT(pfx+'-cur',cur);
@@ -466,7 +470,7 @@ function init(){
       window._freightLabelEn=docPrimary.inland_freight_label_en||_praw.inland_freight_label_en||'INLAND FREIGHT';
       window._agg=aggregate(all);window._cur=cur;window._docPrimary=docPrimary;  // 存主订单供切模式重算港口
       var _dlFsOrder=all.filter(function(o){return o&&(String(o.order_no)===orderNo||shortNo(o.order_no)===shortNo(orderNo));})[0]||docPrimary;
-      var _dlFs=fsFromOrder(_dlFsOrder)||_dlFsOrder.contract_no||'';var _dlPo=(_dlFsOrder&&_dlFsOrder.customer_po)||shortNo(docPrimary.order_no)||orderNo||'';
+      var _dlFs=fsFromOrder(_dlFsOrder)||_dlFsOrder.contract_no||'';var _dlPo=(_dlFsOrder&&_dlFsOrder.customer_po)||orderRaw(_dlFsOrder).customerPO||orderRaw(_dlFsOrder).customer_po||'';
       window._docBaseName='IV-'+(_customsMode?(_dlFs||_dlPo):(_dlPo||_dlFs));  // 文件名同No.规则: 报关版IV-FS/客户版IV-PO
       document.title='Export Documents · '+window._docBaseName;
       window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
