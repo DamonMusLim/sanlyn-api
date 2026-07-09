@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工厂来料协同 · Sanlyn</title>
+<style>
+:root{--bg:#f6f8fb;--text:#172033;--muted:#667085;--line:#d7deea;--card:#fff;--blue:#175cd3;--green:#067647;--amber:#b54708;--red:#b42318}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.bar{background:#fff;border-bottom:1px solid var(--line);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:14px;position:sticky;top:0;z-index:2}
+h1{font-size:20px;margin:0}.sub{color:var(--muted);margin-top:3px}.wrap{max-width:1180px;margin:0 auto;padding:18px}.grid{display:grid;gap:12px}.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
+.toolbar{display:grid;grid-template-columns:1fr 150px 120px;gap:10px}.order-form{display:grid;grid-template-columns:1fr 1fr 130px 1.4fr 90px;gap:10px;align-items:end}.field label{display:block;margin-bottom:5px;color:var(--muted);font-weight:700;font-size:11px}
+.input,.select,textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:9px;font:inherit;background:#fff}.btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:8px 11px;font-weight:700;cursor:pointer}.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn:disabled{opacity:.55;cursor:not-allowed}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}.head{display:flex;justify-content:space-between;gap:12px;margin-bottom:12px}.order-no{font-weight:800;font-size:16px}.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;background:#eef4ff;color:var(--blue)}
+.meta{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:12px 0}.label{font-size:11px;color:var(--muted);font-weight:700}.val{margin-top:3px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}.step{height:8px;background:#e4e9f2;border-radius:999px}.step.on{background:var(--green)}
+.addr{display:grid;grid-template-columns:1fr 90px;gap:8px;margin-top:10px}.empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:30px;text-align:center;color:var(--muted)}.error{color:var(--red)}.toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;border-radius:8px;padding:10px 12px;display:none;max-width:360px;z-index:9}
+@media(max-width:900px){.bar{display:block;padding:14px}.wrap{padding:12px}.toolbar,.order-form,.meta,.addr{grid-template-columns:1fr}.head{display:block}.head button{margin-top:10px}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <div><h1>工厂来料协同</h1><div class="sub" id="factory-name">Inbound material progress and ordering</div></div>
+  <button class="btn" id="refresh-btn">刷新</button>
+</div>
+<main class="wrap grid">
+  <section class="panel">
+    <div class="order-form">
+      <div class="field"><label>供应商编码</label><input class="input" id="new-supplier" placeholder="supplier_code"></div>
+      <div class="field"><label>物料 SKU</label><input class="input" id="new-sku" list="sku-list" placeholder="material_sku"><datalist id="sku-list"></datalist></div>
+      <div class="field"><label>数量</label><input class="input" id="new-qty" type="number" min="0" step="0.001"></div>
+      <div class="field"><label>送货地址</label><input class="input" id="new-address" placeholder="工厂收货地址"></div>
+      <button class="btn primary" id="order-btn">下单</button>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="toolbar">
+      <input class="input" id="q" placeholder="搜索供应商 / 物料 / 状态 / 地址">
+      <select class="select" id="status-filter"><option value="">全部状态</option><option value="ordered">已下单</option><option value="shipped">已发出</option><option value="arrived">已到货</option><option value="cancelled">已取消</option></select>
+      <button class="btn primary" id="filter-btn">筛选</button>
+    </div>
+  </section>
+  <div class="grid" id="orders"></div>
+  <div class="empty" id="empty">加载中...</div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+const apiBase = "/api/db/inbound-collab";
+let rows = [];
+const qs = id => document.getElementById(id);
+const token = () => new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+const headers = () => token() ? {"Content-Type":"application/json",Authorization:"Bearer "+token()} : {"Content-Type":"application/json"};
+const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const fmt = v => v === null || v === undefined || v === "" ? "—" : esc(v);
+function toast(msg){ const el=qs("toast"); el.textContent=msg; el.style.display="block"; setTimeout(()=>el.style.display="none",2600); }
+function statusText(s){ return ({ordered:"已下单",shipped:"已发出",arrived:"已到货",cancelled:"已取消"}[s] || s || "—"); }
+function progress(s){ if(s === "arrived") return 3; if(s === "shipped") return 2; return 1; }
+function date(v){ return v ? String(v).slice(0,10) : "—"; }
+async function api(url, opts = {}) {
+  return fetch(url, {credentials:"include", headers:headers(), ...opts}).then(r => r.json());
+}
+function filtered(){
+  const q = qs("q").value.trim().toLowerCase();
+  const st = qs("status-filter").value;
+  return rows.filter(r => {
+    const hay = [r.supplier_code,r.material_sku,r.material_name,r.status,r.delivery_address,r.note].map(x => String(x || "").toLowerCase()).join(" ");
+    return (!q || hay.includes(q)) && (!st || r.status === st);
+  });
+}
+async function load(){
+  const empty = qs("empty");
+  empty.className = "empty";
+  empty.textContent = "加载中...";
+  empty.style.display = "block";
+  const r = await api(apiBase + "?view=factory");
+  if(!r.success){ empty.className = "empty error"; empty.textContent = r.error || "加载失败"; return; }
+  rows = r.data || [];
+  qs("factory-name").textContent = "工厂：" + (rows[0]?.factory_code || "—");
+  const skuList = [...new Set(rows.map(r => r.material_sku).filter(Boolean))];
+  qs("sku-list").innerHTML = skuList.map(s => `<option value="${esc(s)}"></option>`).join("");
+  render();
+}
+function render(){
+  const list = filtered();
+  qs("empty").style.display = list.length ? "none" : "block";
+  qs("empty").textContent = "暂无来料单";
+  qs("orders").innerHTML = list.map(r => {
+    const p = progress(r.status);
+    return `<section class="card" data-id="${esc(r.id)}">
+      <div class="head"><div><div class="order-no mono">${esc(r.material_sku)}</div><div class="sub">${esc(fmt(r.material_name))}</div></div><span class="badge">${esc(statusText(r.status))}</span></div>
+      <div class="steps">${[1,2,3].map(i => `<div class="step ${i <= p ? "on" : ""}"></div>`).join("")}</div>
+      <div class="meta">
+        <div><div class="label">供应商</div><div class="val mono">${esc(r.supplier_code)}</div></div>
+        <div><div class="label">工厂</div><div class="val mono">${esc(r.factory_code)}</div></div>
+        <div><div class="label">数量</div><div class="val">${esc(fmt(r.order_qty))}</div></div>
+        <div><div class="label">ETA</div><div class="val">${esc(date(r.expected_arrival))}</div></div>
+        <div><div class="label">状态</div><div class="val">${esc(statusText(r.status))}</div></div>
+        <div><div class="label">备注</div><div class="val">${esc(fmt(r.note))}</div></div>
+      </div>
+      <div class="addr"><input class="input" data-field="delivery_address" value="${esc(r.delivery_address || "")}" placeholder="送货地址"><button class="btn primary" data-action="address">保存地址</button></div>
+    </section>`;
+  }).join("");
+}
+async function saveAddress(btn){
+  const card = btn.closest("[data-id]");
+  const id = card.dataset.id;
+  const delivery_address = card.querySelector('[data-field="delivery_address"]').value;
+  btn.disabled = true;
+  const r = await api(apiBase + "?view=factory", {method:"PATCH", body:JSON.stringify({id, delivery_address})});
+  btn.disabled = false;
+  toast(r.success ? "地址已保存" : r.error || "保存失败");
+  if(r.success) load();
+}
+async function createOrder(btn){
+  const payload = {
+    supplier_code: qs("new-supplier").value.trim(),
+    material_sku: qs("new-sku").value.trim(),
+    order_qty: qs("new-qty").value,
+    delivery_address: qs("new-address").value.trim()
+  };
+  if(!payload.supplier_code || !payload.material_sku || !payload.order_qty) return toast("供应商、物料 SKU、数量必填");
+  btn.disabled = true;
+  const r = await api(apiBase, {method:"POST", body:JSON.stringify(payload)});
+  btn.disabled = false;
+  toast(r.success ? "已下单" : r.error || "下单失败");
+  if(r.success){ ["new-supplier","new-sku","new-qty"].forEach(id => qs(id).value = ""); load(); }
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if(!b) return;
+  if(b.id === "refresh-btn" || b.id === "filter-btn") render();
+  if(b.id === "refresh-btn") load();
+  if(b.id === "order-btn") createOrder(b);
+  if(b.dataset.action === "address") saveAddress(b);
+});
+qs("q").addEventListener("input", render);
+qs("status-filter").addEventListener("change", render);
+load();
+</script>
+</body>
+</html>
