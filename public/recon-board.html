@@ -188,9 +188,15 @@
         <div class="linechips">${chips.join("")}</div>
       </button>`;
     }
+    function collabTarget(view,name){
+      if(view==="factory")return{hash:"customs_collab",label:"🤝 开票协同",who:"工厂"};
+      if(view==="forwarder")return{hash:"shipment_collab",label:"🤝 货件协同",who:"货代"};
+      return{hash:"payments?customer="+encodeURIComponent(name||"").replace(/'/g,"%27"),label:"🤝 收款/水单",who:"客户"};
+    }
     function objectCardHtml(group,view){
       const first=group.items[0].l,side=view==="cust"?"应收":"应付",paid=view==="cust"?"已收":"已付",due=view==="cust"?"待收":"待付";
       const name=first.counterparty_name||first.missing_reason||"未补录",code=first.counterparty_code?` · ${first.counterparty_code}`:"";
+      const ct=collabTarget(view,name);
       const totals=new Map();
       group.items.forEach(({l})=>{
         const t=totals.get(l.currency||"CNY")||{total:0,paid:0,due:0};
@@ -198,7 +204,7 @@
       });
       const sums=[...totals.entries()].map(([cur,t])=>`<div class="amt totalbox"><span><em>${side}${esc(cur)}</em>${money(cur,t.total)}</span><span><em>${paid}${esc(cur)}</em>${money(cur,t.paid)}</span><span><em>${due}${esc(cur)}</em>${money(cur,t.due)}</span></div>`).join("");
       return `<article class="row ${esc(group.tone)}">
-        <div class="acct-head"><div><div class="acct-title">${esc(name+code)}</div><div class="sub">${esc(first.relation_label||first.counterparty_label||"结算对象")} · ${group.items.length} 笔</div></div><div class="totals">${sums}</div></div>
+        <div class="acct-head"><div><div class="acct-title">${esc(name+code)}</div><div class="sub">${esc(first.relation_label||first.counterparty_label||"结算对象")} · ${group.items.length} 笔</div><button type="button" class="action" data-goto="${esc(ct.hash)}" title="打开该${esc(ct.who)}的协同台" style="width:auto;min-height:28px;margin-top:7px;padding:4px 11px;font-size:12px">${ct.label} ↗</button></div><div class="totals">${sums}</div></div>
         <div class="acct-lines">${group.items.map(x=>objectLineHtml(x,view)).join("")}</div>
       </article>`;
     }
