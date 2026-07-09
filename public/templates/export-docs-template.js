@@ -472,8 +472,8 @@ function init(){
       window._agg=aggregate(all);window._cur=cur;window._docPrimary=docPrimary;  // 存主订单供切模式重算港口
       var _dlFsOrder=all.filter(function(o){return o&&(String(o.order_no)===orderNo||shortNo(o.order_no)===shortNo(orderNo));})[0]||docPrimary;
       var _dlFs=fsFromOrder(_dlFsOrder)||_dlFsOrder.contract_no||'';var _dlPo=(_dlFsOrder&&_dlFsOrder.customer_po)||orderRaw(_dlFsOrder).customerPO||orderRaw(_dlFsOrder).customer_po||'';
-      window._docBaseName='IV-'+(_customsMode?(_dlFs||_dlPo):(_dlPo||_dlFs));  // 文件名同No.规则: 报关版IV-FS/客户版IV-PO
-      document.title='Export Documents · '+window._docBaseName;
+      window._docBaseName=(_customsMode?'BG-':'IV-')+(_customsMode?(_dlFs||_dlPo):(_dlPo||_dlFs));  // 文件名同No.规则: 报关版IV-FS/客户版IV-PO
+      document.title=window._docBaseName;
       window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
       var ps=Array.isArray(d)?d:(d.data||[]);
       var sp=(docPrimary.seller_code&&ps.find(function(x){return x.code===docPrimary.seller_code;}))||ps.find(function(x){return x.name_cn===docPrimary.issuing_company||x.name_en===docPrimary.issuing_company;})||ps.find(function(x){return x.is_default;});
