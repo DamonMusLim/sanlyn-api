@@ -158,7 +158,7 @@ const PATCH_ALLOWED_COLS = [
   // Buyer + commercial refs editable from the order detail Deal section (2026-05-22)
   "customer","customer_po","payment_terms",
   // Actual delivery date (expected = delivery_date; actual triggers收款+定船期) (2026-05-22)
-  "confirmed_delivery",
+  "confirmed_delivery","confirmed_ship_date",  // confirmed_ship_date 发货日期: 客户已完成发货按钮 + DELIVERY快速确认 写此列 2026-07-09
   // Profit structure (2026-05-09)
   "factory_amount","customer_amount","margin_amount","margin_pct",
   "quote_sent_at","customer_replied_at","negotiation_rounds",
