@@ -228,7 +228,7 @@ function fillHeader(pfx,primary,all,seller,cur,port){
   var _poNum=(_fsOrder&&_fsOrder.customer_po)||orderRaw(_fsOrder).customerPO||orderRaw(_fsOrder).customer_po||'';
   var fs=(_customsMode?(_fsNum||_poNum):(_poNum||_fsNum));  // Damon 2026-07-09: 报关版=IV-FS, 客户版=IV-PO；缺真PO退FS，绝不退内部order_no
   setT(pfx+'-no',fs);
-  setT(pfx+'-order',uniq(all.map(function(o){return customerDocRef(o);})).join(' / '));
+  setT(pfx+'-order',uniq(all.map(function(o){return shortNo(o.order_no);})).join(' / '));
   setT(pfx+'-date',(primary.order_date||'').slice(0,10));
   setT(pfx+'-port',portLine(primary));  // 分模式:报关版XIAMEN/客户版实际起运港(不再用固定port参数)
   setT(pfx+'-cur',cur);
