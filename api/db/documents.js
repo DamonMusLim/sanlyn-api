@@ -35,6 +35,16 @@ import { CSS, esc, fmtM, fmtD, pick, resolveAddr, resolveUnitPrice, wrap, seller
 import { scrubCustomerFacingHtml, loadSellerCfg, enrichProdsFromMaster,
   loadDocColConfig, buildColsFromConfig } from "./doc-data.js";
 
+function customerDocNo(raw, order, fallback) {
+  raw = raw || {};
+  order = order || {};
+  var po = pick(raw.customerPO, raw.customer_po, raw.customerPo, order.customer_po, order.customer_po_no);
+  if (po && po !== order.order_no) return po;
+  var fs = pick(raw.fs_no, raw.fsNo, raw.internal_no, raw.internalNo, order.contract_no, fallback);
+  var m = String(fs || "").match(/\bFS[0-9A-Z-]+\b/i);
+  return m ? m[0].toUpperCase() : fs;
+}
+
 var FORWARDERS = {
   default: {
     nameCN: "上海洋宝宝国际物流有限公司", nameEN: "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.",
@@ -262,7 +272,7 @@ export default async function handler(req, res) {
       var cust=pick(o.company_name_en,raw.companyNameEN,raw.companyNameCN,o.customer);
       var caddr=resolveAddr(cust,pick(raw.customerAddress,raw.deliveryAddress));
       var ctel=raw.phone||"";
-      var ordNo=pick(raw.customerPO,o.customer_po,o.order_no);
+      var ordNo=customerDocNo(raw,o,pick(o.contract_no,id));
       var cno=pick(o.contract_no,o.order_no,id);
       var date=fmtD(new Date()); // 单据日期 = 今日（出单当天）
       var curr=pick(raw.currency,o.currency,"USD");
@@ -345,7 +355,7 @@ export default async function handler(req, res) {
       // Used by productRows() to emit a section header when multiple orders are merged.
       var _primaryCno=pick(o.contract_no,o.order_no,id);
       var _primaryContainer=pick(_cbMap[_primaryCno], raw.containerNo, "");
-      var _primaryPO=pick(raw.customerPO,o.customer_po,o.order_no);
+      var _primaryPO=customerDocNo(raw,o,_primaryCno);
       var _primaryCtnType=pick(_cbTypeMap[_primaryCno], raw.containerType, "");
       var _primaryIncoterm=pick(raw.tradeTerms,raw.incoterms,"");
       var _primaryFsNo=pick(raw.fs_no, raw.internal_no, o.contract_no, _primaryCno);
@@ -390,7 +400,7 @@ export default async function handler(req, res) {
             if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
             var sProds=await enrichProdsFromMaster(pool,getProds(sRaw));
             var sCno=sib.contract_no||sib.customer_po;
-            var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no);
+            var sPO=customerDocNo(sRaw,sib,sCno);
             var sContainer=pick(_cbMap[sCno], sRaw.containerNo, "");
             var sCtnType=pick(_cbTypeMap[sCno], sRaw.containerType, "");
             var sIncoterm=pick(sRaw.tradeTerms,sRaw.incoterms,"");
