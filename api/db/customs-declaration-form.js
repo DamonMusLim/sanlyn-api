@@ -614,6 +614,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     </div>
   </div>
 </div>
+<script src="/templates/customs-declaration-editor.js"></script>
 </body>
 </html>`;
 }
