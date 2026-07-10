@@ -244,7 +244,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     </div>
   </div>
 </div>
-<div style="text-align:right;font-size:9px;color:#999;margin-top:6px">报关单模版 2026-07-10 12:56</div>
+<div style="text-align:right;font-size:9px;color:#999;margin-top:6px">报关单模版 v1 · 2026-07-10 13:04</div>
 <script src="/templates/customs-declaration-editor.js"></script>
 </body>
 </html>`;
