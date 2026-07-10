@@ -53,10 +53,11 @@ function scopeWhere(r, idx) {
 function publicRow(row, r) {
   const diff = row.real_qty == null || row.order_qty == null ? null : Number(row.real_qty) - Number(row.order_qty);
   const diffPct = diff == null || Number(row.order_qty) === 0 ? null : diff / Number(row.order_qty) * 100;
+  const brand = row.brand || "未分组";
   if (r === "customer") {
     const out = {
       id: row.id, material_sku: row.material_sku, material_name: row.material_name,
-      spec: row.spec, dimensions: row.dimensions, image_url: row.image_url, status: row.status,
+      brand, spec: row.spec, dimensions: row.dimensions, image_url: row.image_url, status: row.status,
       expected_delivery: row.expected_delivery, confirmed_delivery: row.confirmed_delivery,
       customer_note: row.customer_note,
     };
@@ -69,7 +70,7 @@ function publicRow(row, r) {
   }
   const base = {
     id: row.id, supplier_code: row.supplier_code, factory_code: row.factory_code, customer_code: row.customer_code,
-    material_sku: row.material_sku, material_name: row.material_name, image_url: row.image_url, artwork_url: row.artwork_url,
+    brand, material_sku: row.material_sku, material_name: row.material_name, image_url: row.image_url, artwork_url: row.artwork_url,
     dimensions: row.dimensions, spec: row.spec, current_stock: row.current_stock, procured_by: row.procured_by,
     order_qty: row.order_qty, real_qty: row.real_qty, diff, diff_pct: diffPct,
     expected_delivery: row.expected_delivery, confirmed_delivery: row.confirmed_delivery,
@@ -85,12 +86,15 @@ async function listDeliveries(pool, r, scopeCodes) {
   const vals = [];
   const sc = scopeWhere(r, 1);
   if (sc.vals === null) vals.push(scopeCodes);
+  // TODO: MVP 先只按产品品牌分组展示；后续可复用 customer_brand_routes(customer_code+brand+factory_code+status) 做品牌授权过滤。
   const q = `
     SELECT d.*, pm.name AS material_name, pm.image_url, pm.artwork_url, pm.dimensions, pm.spec, pm.current_stock,
+           COALESCE(NULLIF(bp.brand, ''), '未分组') AS brand,
            last.created_at AS last_order_at, last.order_qty AS last_order_qty,
            COALESCE(att.items, '[]'::json) AS attachments
       FROM inbound_deliveries d
  LEFT JOIN packaging_materials pm ON pm.sku_code = d.material_sku
+ LEFT JOIN products bp ON bp.sku = (pm.product_skus->>0)
  LEFT JOIN LATERAL (
        SELECT x.created_at, x.order_qty FROM inbound_deliveries x
         WHERE x.material_sku = d.material_sku AND x.factory_code = d.factory_code AND x.id <> d.id
