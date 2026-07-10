@@ -11,6 +11,8 @@ import sys,re
 root,stamp=sys.argv[1],sys.argv[2]
 jobs=[
  ('public/templates/transfer-template.js', r'var TPL_VERSION = "[^"]*";', 'var TPL_VERSION = "%s";'%stamp, 1),
+ ('public/templates/bl-si-template.js', r'var TPL_VERSION = "[^"]*";', 'var TPL_VERSION = "%s";'%stamp, 1),
+
  ('public/templates/export-docs-template.html', r'Sanlyn OS Supply Chain Engine(?: · 模版 [^<]*)?', 'Sanlyn OS Supply Chain Engine · 模版 %s'%stamp, 0),
  ('api/db/customs-declaration-form.js', r'报关单模版 [^<]*', '报关单模版 %s'%stamp, 1),
 ]
