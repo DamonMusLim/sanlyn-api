@@ -176,6 +176,8 @@ function fileUrl(row) {
 export async function fetchRows(pool, opts) {
   const params = [opts.start, opts.end];
   const where = [`b.export_date >= $1::date`, `b.export_date < $2::date`];
+  const includeSlipDetails = !!opts.includeSlipDetails;
+  const paidAmountExpr = includeSlipDetails ? "COALESCE(bl.amount_alloc,0)" : "COALESCE(bl.amount_alloc, bs.amount)";
 
   if (opts.factoryCode) {
     params.push(opts.factoryCode);
@@ -301,7 +303,8 @@ export async function fetchRows(pool, opts) {
                 ELSE ROUND(COALESCE(s.manual_expected_amount, b.system_expected_amount) - COALESCE(u.uploaded_amount,0), 2)
             END AS diff_amount,
            COALESCE(pay.paid_amount,0) AS paid_amount,
-           COALESCE(pay.slip_count,0)::int AS slip_count,
+           COALESCE(pay.slip_count,0)::int AS slip_count
+           ${includeSlipDetails ? ", COALESCE(pay.slip_details, '[]'::jsonb) AS slip_details" : ""},
            ev.created_at AS last_event_at
       FROM b
       LEFT JOIN customs_invoice_status s ON s.customs_no=b.customs_no
@@ -329,8 +332,14 @@ export async function fetchRows(pool, opts) {
            )
       ) ri ON true
       LEFT JOIN LATERAL (
-        SELECT COALESCE(SUM(COALESCE(bl.amount_alloc, bs.amount)),0) AS paid_amount,
+        SELECT COALESCE(SUM(${paidAmountExpr}),0) AS paid_amount,
                COUNT(DISTINCT bs.id) AS slip_count
+               ${includeSlipDetails ? `,
+               COALESCE(jsonb_agg(jsonb_build_object(
+                 'amount', COALESCE(bl.amount_alloc,0),
+                 'file_url', bs.file_url,
+                 'slip_date', bs.payment_date
+               ) ORDER BY bs.payment_date DESC NULLS LAST, bs.id DESC), '[]'::jsonb) AS slip_details` : ""}
           FROM bank_slip_links bl
           JOIN bank_slips bs ON bs.id=bl.slip_id
          WHERE bl.bl_no = b.customs_no
@@ -420,6 +429,7 @@ function factoryRow(r) {
     has_invoice: (r.valid_invoice_count || 0) > 0,
     paid_amount: r.paid_amount || 0,
     slip_count: r.slip_count || 0,
+    slips: Array.isArray(r.slip_details) ? r.slip_details : [],
     diff_amount: (Number(r.factory_expected_amount) || 0) - (Number(r.uploaded_amount) || 0),
     last_event_at: r.last_event_at,
   };
@@ -433,7 +443,7 @@ async function handleFactoryList(req, res) {
 
   const range = rangeFromQuery(req.query || {});
   if (!range) return json(res, 400, { error: "from/to 月份格式应为 YYYY-MM" });
-  const rows = await fetchRows(pool, { ...range, factoryCode: scope.factory.code, status: cleanString(req.query.status), keyword: cleanString(req.query.keyword) });
+  const rows = await fetchRows(pool, { ...range, factoryCode: scope.factory.code, status: cleanString(req.query.status), keyword: cleanString(req.query.keyword), includeSlipDetails: true });
   return res.json({
     success: true,
     factory: scope.factory,
@@ -1009,7 +1019,7 @@ export default async function handler(req, res) {
     if (req.method === "GET" && action === "detail") return handleDetail(req, res);
     if (req.method === "POST" && action === "confirm") return handleConfirm(req, res);
     if (req.method === "POST" && action === "upload") return handleUpload(req, res);
-    if (req.method === "POST" && action === "upload_slip") return handleUploadSlip(req, res);
+    if (req.method === "POST" && action === "upload_slip") return json(res, 403, { error: "工厂侧仅可查看水单，水单由巴匕内部上传" });
     if (req.method === "POST" && action === "correction") return handleCorrection(req, res);
     return json(res, 404, { error: "unknown action" });
   } catch (err) {

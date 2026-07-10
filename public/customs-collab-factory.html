@@ -16,7 +16,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
 .notice{border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:14px}.notice.err{background:var(--red-bg);color:var(--red);border:1px solid #fecdd3}.notice.ok{background:var(--green-bg);color:var(--green);border:1px solid #bbf7d0}
 .empty{text-align:center;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:16px;padding:56px 18px}.monthBlock{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}.monthHead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);background:#fbfdff}.monthTitle{font-size:20px;font-weight:900}.monthSum{text-align:right}.monthSumLabel{font-size:12px;color:var(--muted)}.monthSumValue{font-size:22px;font-weight:900;color:var(--blue)}
 .rows{display:flex;flex-direction:column}.invoiceRow{display:grid;grid-template-columns:minmax(170px,1.2fr) minmax(90px,.55fr) minmax(130px,.8fr) minmax(132px,.7fr) auto;gap:14px;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}.invoiceRow:last-child{border-bottom:0}.invoiceRow.unopened{background:linear-gradient(90deg,rgba(255,241,242,.9),#fff 46%)}.cellLabel{display:none;color:var(--muted);font-size:12px;margin-bottom:4px}.orderNo{font-size:16px;font-weight:850;word-break:break-word}.qty,.amount{font-size:16px;font-weight:800}.amount.unopened{color:var(--red)}
-.badge{display:inline-flex;align-items:center;justify-content:center;min-width:54px;height:28px;border-radius:999px;padding:0 10px;font-size:13px;font-weight:850}.badge.red{color:var(--red);background:var(--red-bg);border:1px solid #fecdd3}.badge.green{color:var(--green);background:var(--green-bg);border:1px solid #bbf7d0}.invoiceInfo{color:var(--muted);font-size:12px;margin-top:5px;line-height:1.45}.actions{display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap}.fileInput{display:none}.slipInput{display:none}.ocrBox{grid-column:1/-1;background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:#334155;font-size:13px;line-height:1.55}
+.badge{display:inline-flex;align-items:center;justify-content:center;min-width:54px;height:28px;border-radius:999px;padding:0 10px;font-size:13px;font-weight:850}.badge.red{color:var(--red);background:var(--red-bg);border:1px solid #fecdd3}.badge.green{color:var(--green);background:var(--green-bg);border:1px solid #bbf7d0}.invoiceInfo{color:var(--muted);font-size:12px;margin-top:5px;line-height:1.45}.actions{display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap}.fileInput{display:none}.ocrBox{grid-column:1/-1;background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:10px 12px;color:#334155;font-size:13px;line-height:1.55}
 .modalMask{position:fixed;inset:0;background:rgba(15,23,42,.5);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}.modalMask.show{display:flex}.modal{width:1040px;max-width:100%;max-height:90vh;overflow:auto;background:#fff;border-radius:12px;box-shadow:0 24px 80px rgba(15,23,42,.22);border:1px solid var(--line)}.modalHead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)}.modalTitle{font-size:18px;font-weight:900}.modalBody{padding:16px 18px}
 .copyBtn{height:24px;border:1px solid #e6b0aa;background:#fff;color:var(--red);border-radius:6px;padding:0 7px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}.copyField{display:inline-flex;align-items:center;gap:6px;max-width:100%}.copyText{word-break:break-word}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#111827;color:#fff;border-radius:10px;padding:10px 14px;font-size:14px;z-index:80;display:none;max-width:86vw}.toast.show{display:block}
 .invoiceTpl{border:2px solid var(--red);color:#3b1a17;background:#fff;padding:18px}.invoiceTplTitle{text-align:center;color:var(--red);font-size:25px;font-weight:900;letter-spacing:0;margin:0 0 14px}.partyGrid{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--red);border-bottom:0}.partyBox{padding:10px 12px;min-height:92px}.partyBox+ .partyBox{border-left:1px solid var(--red)}.partyTitle{color:var(--red);font-weight:900;margin-bottom:8px}.partyLine{display:grid;grid-template-columns:112px 1fr;gap:8px;margin:7px 0;font-size:14px}.partyLine span:first-child{color:#6b2b25}
@@ -54,7 +54,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
 <div class="modalMask" id="detailMask">
   <div class="modal" role="dialog" aria-modal="true">
     <div class="modalHead">
-      <div class="modalTitle">开票模板</div>
+      <div class="modalTitle" id="detailTitle">开票模板</div>
       <button class="btn secondary" type="button" id="closeDetail">关闭</button>
     </div>
     <div class="modalBody" id="detailBody"></div>
@@ -90,6 +90,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
   function toast(text){const el=$("toast");el.textContent=text;el.classList.add("show");clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.remove("show"),1800)}
   function upperMoney(v){const n=Math.round(moneyNum(v)*100);if(!n)return"零元整";const cn=["零","壹","贰","叁","肆","伍","陆","柒","捌","玖"],u=["分","角","元","拾","佰","仟","万","拾","佰","仟","亿","拾","佰","仟","万"];let s="",zero=false;String(n).split("").reverse().forEach((d,i)=>{d=Number(d);if(d){s=cn[d]+u[i]+s;zero=false}else if(!zero&&s){s=cn[0]+s;zero=true}});return s.replace(/零(万|亿|元)/g,"$1").replace(/零+/g,"零").replace(/亿万/,"亿").replace(/零$/,"")+(n%100?"":"整")}
   async function copyText(value,label){const text=String(value||"");if(!text)return;try{await navigator.clipboard.writeText(text)}catch(_){const ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove()}toast("已复制:"+String(label||text))}
+  function slipList(row){return Array.isArray(row.slips)?row.slips:[]}
   function groupRows(rows){const map={};rows.forEach(row=>{const key=row.period||String(row.export_date||"").slice(0,7)||"未分月";if(!map[key])map[key]=[];map[key].push(row)});return Object.keys(map).sort().reverse().map(month=>({month,rows:map[month],total:map[month].reduce((s,r)=>s+moneyNum(rowAmount(r)),0)}))}
   function refreshTop(){const rows=state.rows;const factory=state.factoryName||rows[0]?.factory_name||"工厂开票上传";const total=rows.reduce((s,r)=>s+moneyNum(rowAmount(r)),0);const from=$("fromMonth").value;const to=$("toMonth").value;$("factoryName").textContent=factory;$("rangeLabel").textContent=from===to?monthName(from)+" 应开金额合计":monthName(from)+" - "+monthName(to)+" 应开金额合计";$("rangeTotal").textContent=money(total)}
   function render(){
@@ -104,7 +105,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
       </section>`).join("");
   }
   function renderRow(row){
-    const key=row.customs_no||"";const opened=hasInvoice(row);const rowClass=opened?"invoiceRow":"invoiceRow unopened";const amountClass=opened?"amount":"amount unopened";const badge=opened?`<span class="badge green">已开</span>`:`<span class="badge red">未开</span>`;const invText=opened?(invoiceText(row)||"已上传发票"):"尚未上传发票";const busy=state.busyKey===key;const ocr=state.ocr[key]?`<div class="ocrBox">${state.ocr[key]}</div>`:"";const paid=Number(row.paid_amount||0);const slips=Number(row.slip_count||0);const paidBadge=paid>0?`<span class="badge green">已付</span>`:`<span class="badge red">未付</span>`;const paidText=paid>0?("我司已付 "+money(paid)+(slips?" · "+slips+"张水单":"")):"我司尚未付款";
+    const key=row.customs_no||"";const opened=hasInvoice(row);const rowClass=opened?"invoiceRow":"invoiceRow unopened";const amountClass=opened?"amount":"amount unopened";const badge=opened?`<span class="badge green">已开</span>`:`<span class="badge red">未开</span>`;const invText=opened?(invoiceText(row)||"已上传发票"):"尚未上传发票";const busy=state.busyKey===key;const ocr=state.ocr[key]?`<div class="ocrBox">${state.ocr[key]}</div>`:"";const paid=Number(row.paid_amount||0);const slips=Number(row.slip_count||0);const paidBadge=paid>0?`<span class="badge green">已付</span>`:`<span class="badge red">未付</span>`;const paidText=paid>0?("我司已付 "+money(paid)+(slips?" · "+slips+"张水单":"")):"我司尚未付款";const slipBtn=slips>0?`<button class="btn ghost" type="button" data-slips="${escapeHtml(key)}">查看水单</button>`:"";
     return `<div class="${rowClass}">
       <div class="orderCell"><div class="cellLabel">订单号</div><div class="orderNo">${escapeHtml(visibleOrderNo(row))}</div></div>
       <div><div class="cellLabel">箱数</div><div class="qty">${escapeHtml(numberText(visibleQty(row)))}</div></div>
@@ -113,7 +114,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
       <div class="actions">
         <label class="btn" data-upload="${escapeHtml(key)}">${busy?"上传中...":"上传发票"}<input class="fileInput" type="file" accept="image/*,.pdf" ${busy?"disabled":""} /></label>
         <button class="btn redLine" type="button" data-detail="${escapeHtml(key)}">开票模板</button>
-        <label class="btn" data-slip="${escapeHtml(key)}">上传水单<input class="slipInput" type="file" accept="image/*,.pdf" /></label>
+        ${slipBtn}
       </div>${ocr}</div>`;
   }
   async function load(){
@@ -127,19 +128,11 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
     catch(err){showMessage("err",err.message||String(err))}
     finally{state.busyKey="";render()}
   }
-  async function uploadSlip(customsNo,file){
-    if(!customsNo||!file)return;
-    const amtStr=prompt("请输入这张水单的付款金额（元）：","");
-    if(amtStr===null)return;
-    const amount=parseFloat(String(amtStr).replace(/[^\d.]/g,""))||0;
-    state.busyKey=customsNo;showMessage("","");render();
-    try{const fd=new FormData();fd.append("customs_no",customsNo);fd.append("file",file);fd.append("amount",amount);
-      await request(API+"?"+query({action:"upload_slip",c:code,mt:mt}),{method:"POST",body:fd});
-      showMessage("ok","水单已上传");await load()}
-    catch(err){showMessage("err",err.message||String(err))}
-    finally{state.busyKey="";render()}
-  }
   function taxAmount(line){const amt=moneyNum(line.amount);const rate=Number(line.vat_rate)||0;return rate>0?amt*rate:0}
+  function renderSlipViewer(row){
+    const slips=slipList(row);
+    return `<div class="uploadedBox" style="margin-top:0;border-top:0;padding-top:0"><div class="uploadedTitle">${escapeHtml(visibleOrderNo(row))} 付款水单</div>${slips.length?slips.map(s=>`<div class="uploadedLine"><div><strong>${money(s.amount)}</strong><div class="invoiceInfo">${escapeHtml(String(s.slip_date||"").slice(0,10)||"未填付款日")}</div></div><div>${s.file_url?`<a class="linkBtn" href="${escapeHtml(s.file_url)}" target="_blank" rel="noopener">查看文件</a>`:`<span class="invoiceInfo">暂无文件</span>`}</div></div>`).join(""):`<div class="invoiceInfo">我司尚未付款</div>`}</div>`;
+  }
   function renderInvoiceTemplate(tpl,customsNo,invoices){
     const lines=Array.isArray(tpl?.lines)?tpl.lines:[];const total=lines.reduce((s,l)=>s+moneyNum(l.amount),0);const taxTotal=lines.reduce((s,l)=>s+taxAmount(l),0);const grossTotal=total+taxTotal;
     const warn=tpl?.over_baoguan?`<div class="tplWarn">⚠ 采购价超过报关申报价，请联系我司核对（报关资料待更新）</div>`:"";
@@ -188,9 +181,16 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
       const tpl=data.invoice_template||{buyer:{},seller:{},lines:[],order_no:visibleOrderNo(row),total_incl:rowAmount(row)};
       const qtySum=(tpl.lines||[]).reduce((s,l)=>s+moneyNum(l.qty),0);
       if((!row.qty||row.qty==="-")&&qtySum){row.qty=qtySum;render()}
+      $("detailTitle").textContent="开票模板";
       $("detailBody").innerHTML=renderInvoiceTemplate(tpl,customsNo,Array.isArray(data.invoices)?data.invoices:[]);
       $("detailMask").classList.add("show");
     }catch(err){showMessage("err",err.message||String(err))}
+  }
+  function openSlips(customsNo){
+    const row=state.rows.find(x=>x.customs_no===customsNo)||{};
+    $("detailTitle").textContent="付款水单";
+    $("detailBody").innerHTML=renderSlipViewer(row);
+    $("detailMask").classList.add("show");
   }
 
   $("reloadBtn").addEventListener("click",load);
@@ -198,8 +198,8 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
   $("toMonth").addEventListener("change",load);
   $("closeDetail").addEventListener("click",()=>$("detailMask").classList.remove("show"));
   $("detailMask").addEventListener("click",e=>{if(e.target===$("detailMask"))$("detailMask").classList.remove("show")});
-  document.addEventListener("change",e=>{const slip=e.target.closest(".slipInput");if(slip){const sl=slip.closest("[data-slip]");if(sl)uploadSlip(sl.getAttribute("data-slip"),slip.files[0]);slip.value="";return}const input=e.target.closest(".fileInput");if(!input)return;const label=input.closest("[data-upload]");upload(label.getAttribute("data-upload"),input.files[0]);input.value=""});
-  document.addEventListener("click",e=>{const copy=e.target.closest("[data-copy]");if(copy){copyText(copy.getAttribute("data-copy"),copy.getAttribute("data-copy-label")||copy.getAttribute("data-copy"));return}const btn=e.target.closest("[data-detail]");if(btn)openDetail(btn.getAttribute("data-detail"))});
+  document.addEventListener("change",e=>{const input=e.target.closest(".fileInput");if(!input)return;const label=input.closest("[data-upload]");upload(label.getAttribute("data-upload"),input.files[0]);input.value=""});
+  document.addEventListener("click",e=>{const copy=e.target.closest("[data-copy]");if(copy){copyText(copy.getAttribute("data-copy"),copy.getAttribute("data-copy-label")||copy.getAttribute("data-copy"));return}const slips=e.target.closest("[data-slips]");if(slips){openSlips(slips.getAttribute("data-slips"));return}const btn=e.target.closest("[data-detail]");if(btn)openDetail(btn.getAttribute("data-detail"))});
   load();
 })();
 </script>
