@@ -3,137 +3,103 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>工厂来料协同 · Sanlyn</title>
+<title>Sanlyn OS · 来料协同</title>
 <style>
-:root{--bg:#f6f8fb;--text:#172033;--muted:#667085;--line:#d7deea;--card:#fff;--blue:#175cd3;--green:#067647;--amber:#b54708;--red:#b42318}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
-.bar{background:#fff;border-bottom:1px solid var(--line);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:14px;position:sticky;top:0;z-index:2}
-h1{font-size:20px;margin:0}.sub{color:var(--muted);margin-top:3px}.wrap{max-width:1180px;margin:0 auto;padding:18px}.grid{display:grid;gap:12px}.panel{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}
-.toolbar{display:grid;grid-template-columns:1fr 150px 120px;gap:10px}.order-form{display:grid;grid-template-columns:1fr 1fr 130px 1.4fr 90px;gap:10px;align-items:end}.field label{display:block;margin-bottom:5px;color:var(--muted);font-weight:700;font-size:11px}
-.input,.select,textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:9px;font:inherit;background:#fff}.btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:8px 11px;font-weight:700;cursor:pointer}.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn:disabled{opacity:.55;cursor:not-allowed}
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}.head{display:flex;justify-content:space-between;gap:12px;margin-bottom:12px}.order-no{font-weight:800;font-size:16px}.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;background:#eef4ff;color:var(--blue)}
-.meta{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:12px 0}.label{font-size:11px;color:var(--muted);font-weight:700}.val{margin-top:3px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px}.step{height:8px;background:#e4e9f2;border-radius:999px}.step.on{background:var(--green)}
-.addr{display:grid;grid-template-columns:1fr 90px;gap:8px;margin-top:10px}.empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:30px;text-align:center;color:var(--muted)}.error{color:var(--red)}.toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;border-radius:8px;padding:10px 12px;display:none;max-width:360px;z-index:9}
-@media(max-width:900px){.bar{display:block;padding:14px}.wrap{padding:12px}.toolbar,.order-form,.meta,.addr{grid-template-columns:1fr}.head{display:block}.head button{margin-top:10px}}
+*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color:#111;font-size:13px}.portal-bar{background:#1a1d23;padding:0 24px;display:flex;align-items:center;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.3)}.portal-brand{color:#f1f5f9;font-size:14px;font-weight:800;letter-spacing:1px;padding:14px 0;margin-right:24px}.portal-login-badge{margin-left:auto;font-size:10px;color:#64748b;padding:14px 0}.shell-narrow{max-width:860px;margin:0 auto;padding:20px 16px}.card{background:#fff;border-radius:10px;border:1px solid #e0e4ea;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:14px}.section{padding:14px 16px;border-bottom:1px solid #f0f2f5}.section:last-child{border-bottom:none}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800}.badge-green{background:#dcfce7;color:#15803d;border:1px solid #bbf7d0}.badge-amber{background:#fef9c3;color:#a16207;border:1px solid #fde68a}.badge-red{background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5}.badge-blue{background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe}.badge-gray{background:#f3f4f6;color:#6b7280;border:1px solid #e5e7eb}.btn{padding:7px 16px;border-radius:7px;border:none;font-size:12px;font-weight:700;cursor:pointer}.btn-blue{background:#1a73e8;color:#fff}.btn-green{background:#059669;color:#fff}.btn-ghost{background:#f3f4f6;color:#374151;border:1px solid #e0e4ea}.btn-sm{padding:5px 12px;font-size:11px}.btn:disabled{opacity:.5;cursor:not-allowed}.form-field{margin-bottom:10px}.form-label{font-size:11px;font-weight:700;color:#374151;margin-bottom:4px;display:block}.form-input{width:100%;border:1.5px solid #c8cdd6;border-radius:6px;padding:8px 10px;font-size:13px;outline:none;font-family:inherit;background:#fff}.form-input:focus{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.12)}textarea.form-input{resize:vertical;min-height:58px}.head-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.head-title{font-size:13px;font-weight:800;color:#1a1d23}.muted{font-size:11px;color:#6b7280}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.metric{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px}.metric .k{font-size:11px;color:#64748b;font-weight:700}.metric .v{margin-top:3px;font-size:16px;font-weight:900}.diff-pos{color:#15803d}.diff-neg{color:#b91c1c}.product-row{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center}.thumb{width:72px;height:72px;border-radius:8px;border:1px solid #e0e4ea;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-weight:800;overflow:hidden;cursor:pointer}.thumb img{width:100%;height:100%;object-fit:cover}.links{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.linkbtn{border:0;background:none;color:#1d4ed8;font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline}.logi{display:grid;grid-template-columns:1fr 1fr 1.2fr auto;gap:8px;align-items:end}.dates{display:grid;grid-template-columns:1fr 1fr;gap:10px}.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.attach{display:flex;gap:8px;flex-wrap:wrap}.att{width:58px;height:58px;border-radius:7px;border:1px solid #e0e4ea;background:#f8fafc;display:flex;align-items:center;justify-content:center;overflow:hidden;color:#64748b;font-size:11px;font-weight:800;cursor:pointer}.att img{width:100%;height:100%;object-fit:cover}.actions{display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap}.toolbar{display:grid;grid-template-columns:1.2fr .9fr .8fr .8fr;gap:8px;align-items:end}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1d23;color:#fff;padding:10px 22px;border-radius:20px;font-size:12px;font-weight:700;display:none;z-index:999}.toast.show{display:block}.center-state{text-align:center;padding:70px 20px;color:#6b7280}.hidden{display:none!important}.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:9999;display:none;align-items:center;justify-content:center;cursor:zoom-out}.lightbox img{max-width:94%;max-height:94%;border-radius:8px;object-fit:contain}@media(max-width:760px){.grid2,.grid3,.logi,.dates,.notes,.toolbar{grid-template-columns:1fr}.portal-bar{padding:0 16px}.shell-narrow{padding:14px 10px}.actions{justify-content:stretch}.actions .btn{flex:1}.product-row{grid-template-columns:58px 1fr}.thumb{width:58px;height:58px}}
 </style>
 </head>
 <body>
-<div class="bar">
-  <div><h1>工厂来料协同</h1><div class="sub" id="factory-name">Inbound material progress and ordering</div></div>
-  <button class="btn" id="refresh-btn">刷新</button>
-</div>
-<main class="wrap grid">
-  <section class="panel">
-    <div class="order-form">
-      <div class="field"><label>供应商编码</label><input class="input" id="new-supplier" placeholder="supplier_code"></div>
-      <div class="field"><label>物料 SKU</label><input class="input" id="new-sku" list="sku-list" placeholder="material_sku"><datalist id="sku-list"></datalist></div>
-      <div class="field"><label>数量</label><input class="input" id="new-qty" type="number" min="0" step="0.001"></div>
-      <div class="field"><label>送货地址</label><input class="input" id="new-address" placeholder="工厂收货地址"></div>
-      <button class="btn primary" id="order-btn">下单</button>
+<div class="portal-bar"><div class="portal-brand">SANLYN OS</div><div class="portal-login-badge" id="topBadge">来料协同</div></div>
+<div class="center-state" id="stateLoading"><p>正在加载...</p></div>
+<main class="shell-narrow hidden" id="app">
+  <section class="card">
+    <div class="section head-row"><div><div class="head-title">来料下单</div><div class="muted" id="factoryName">角色：-</div></div><button class="btn btn-ghost btn-sm" id="refreshBtn">刷新</button></div>
+    <div class="section">
+      <div class="toolbar">
+        <div class="form-field"><label class="form-label">物料</label><input class="form-input" id="newSku" list="materialList" placeholder="material_sku"><datalist id="materialList"></datalist></div>
+        <div class="form-field"><label class="form-label">供应商</label><input class="form-input" id="newSupplier" placeholder="supplier_code"></div>
+        <div class="form-field"><label class="form-label">采购方</label><select class="form-input" id="newProcured"><option value="sanlyn">Sanlyn</option><option value="factory">工厂</option><option value="customer">客供料</option></select></div>
+        <div class="form-field"><label class="form-label">数量</label><input class="form-input" id="newQty" type="number" min="0" step="0.001"></div>
+      </div>
+      <div class="grid2"><div class="form-field hidden" id="newCustomerWrap"><label class="form-label">客户代码</label><input class="form-input" id="newCustomerCode" placeholder="customer_code"></div><div class="form-field"><label class="form-label">预计交货</label><input class="form-input" id="newExpected" type="date"></div><div class="form-field"><label class="form-label">送到</label><input class="form-input" id="newAddress" placeholder="收货地址"></div></div>
+      <div class="actions"><button class="btn btn-blue" id="orderBtn">下单</button></div>
     </div>
   </section>
-  <section class="panel">
-    <div class="toolbar">
-      <input class="input" id="q" placeholder="搜索供应商 / 物料 / 状态 / 地址">
-      <select class="select" id="status-filter"><option value="">全部状态</option><option value="ordered">已下单</option><option value="shipped">已发出</option><option value="arrived">已到货</option><option value="cancelled">已取消</option></select>
-      <button class="btn primary" id="filter-btn">筛选</button>
-    </div>
-  </section>
-  <div class="grid" id="orders"></div>
-  <div class="empty" id="empty">加载中...</div>
+  <div id="orders"></div><div class="center-state card" id="empty">暂无来料单</div>
 </main>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast"></div><div class="lightbox" id="lightbox"><img id="lightImg" alt=""></div>
 <script>
-const apiBase = "/api/db/inbound-collab";
-let rows = [];
-const qs = id => document.getElementById(id);
-const token = () => new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
-const headers = () => token() ? {"Content-Type":"application/json",Authorization:"Bearer "+token()} : {"Content-Type":"application/json"};
-const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-const fmt = v => v === null || v === undefined || v === "" ? "—" : esc(v);
-function toast(msg){ const el=qs("toast"); el.textContent=msg; el.style.display="block"; setTimeout(()=>el.style.display="none",2600); }
-function statusText(s){ return ({ordered:"已下单",shipped:"已发出",arrived:"已到货",cancelled:"已取消"}[s] || s || "—"); }
-function progress(s){ if(s === "arrived") return 3; if(s === "shipped") return 2; return 1; }
-function date(v){ return v ? String(v).slice(0,10) : "—"; }
-async function api(url, opts = {}) {
-  return fetch(url, {credentials:"include", headers:headers(), ...opts}).then(r => r.json());
-}
-function filtered(){
-  const q = qs("q").value.trim().toLowerCase();
-  const st = qs("status-filter").value;
-  return rows.filter(r => {
-    const hay = [r.supplier_code,r.material_sku,r.material_name,r.status,r.delivery_address,r.note].map(x => String(x || "").toLowerCase()).join(" ");
-    return (!q || hay.includes(q)) && (!st || r.status === st);
-  });
-}
+const apiBase="/api/db/inbound-collab",statusMap={ordered:"已下单",shipped:"已发出",arrived:"已到货",cancelled:"已取消"};
+const badgeMap={ordered:"badge-blue",shipped:"badge-amber",arrived:"badge-green",cancelled:"badge-gray"};
+const procMap={sanlyn:["Sanlyn采购","badge-blue"],factory:["工厂采购","badge-amber"],customer:["客供料","badge-red"]};
+let rows=[],materials=[],myRole="factory";
+const qs=id=>document.getElementById(id),token=()=>new URLSearchParams(location.search).get("token")||localStorage.getItem("token")||localStorage.getItem("sanlyn_token")||"";
+const headers=()=>token()?{"Content-Type":"application/json",Authorization:"Bearer "+token()}:{"Content-Type":"application/json"};
+const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const raw=v=>String(v==null?"":v),fmt=v=>v===null||v===undefined||v===""?"-":esc(v),date=v=>v?String(v).slice(0,10):"";
+function toast(msg){const el=qs("toast");el.textContent=msg;el.classList.add("show");setTimeout(()=>el.classList.remove("show"),2400)}
+async function api(url,opts={}){const r=await fetch(url,{credentials:"include",headers:headers(),...opts});if(r.status===401){location.href="/login.html?next="+encodeURIComponent(location.pathname+location.search);return {success:false,error:"Unauthorized"}}return r.json()}
+function n(v){const x=Number(v);return Number.isFinite(x)?x:null}
+function num(v){const x=n(v);return x==null?"-":x.toLocaleString("en-US",{maximumFractionDigits:3})}
+function lastText(r){return r.last_order_at?date(r.last_order_at)+" / "+num(r.last_order_qty):"-"}
+function diffHtml(r){const d=n(r.diff),p=n(r.diff_pct),cls=d==null?"":(d>=0?"diff-pos":"diff-neg");return `<span class="${cls}">${d==null?"-":(d>0?"+":"")+num(d)}${p==null?"":" / "+(p>0?"+":"")+p.toFixed(1)+"%"}</span>`}
+function openHttp(url){if(/^https?:/i.test(url||""))window.open(url,"_blank","noopener")}
+function thumb(r){return r.image_url?`<button class="thumb" data-img="${esc(r.image_url)}"><img src="${esc(r.image_url)}" alt=""></button>`:`<div class="thumb">图</div>`}
+function procBadge(v){const p=procMap[v]||["未知","badge-gray"];return `<span class="badge ${p[1]}">${p[0]}</span>`}
+function optionHtml(){return materials.map(m=>`<option value="${esc(m.material_sku)}">${esc(m.material_name||m.material_sku)}</option>`).join("")}
+function isInternal(){return myRole==="sanlyn"||myRole==="admin"}
+function canSource(r){return isInternal()||myRole==="supplier"||(myRole==="customer"&&r.procured_by==="customer")}
+function canFactory(){return isInternal()||myRole==="factory"}
+function canCustomer(){return isInternal()||myRole==="customer"}
 async function load(){
-  const empty = qs("empty");
-  empty.className = "empty";
-  empty.textContent = "加载中...";
-  empty.style.display = "block";
-  const r = await api(apiBase + "?view=factory");
-  if(!r.success){ empty.className = "empty error"; empty.textContent = r.error || "加载失败"; return; }
-  rows = r.data || [];
-  qs("factory-name").textContent = "工厂：" + (rows[0]?.factory_code || "—");
-  const skuList = [...new Set(rows.map(r => r.material_sku).filter(Boolean))];
-  qs("sku-list").innerHTML = skuList.map(s => `<option value="${esc(s)}"></option>`).join("");
-  render();
+  qs("stateLoading").classList.remove("hidden");qs("app").classList.add("hidden");
+  const r=await api(apiBase);if(!r.success){qs("stateLoading").innerHTML="<p>"+esc(r.error||"加载失败")+"</p>";return}
+  rows=r.data||[];materials=r.materials||[];myRole=r.role||"factory";
+  qs("factoryName").textContent="角色："+myRole;qs("topBadge").textContent=myRole+" · 来料协同";qs("materialList").innerHTML=optionHtml();render();
+  qs("stateLoading").classList.add("hidden");qs("app").classList.remove("hidden");
 }
 function render(){
-  const list = filtered();
-  qs("empty").style.display = list.length ? "none" : "block";
-  qs("empty").textContent = "暂无来料单";
-  qs("orders").innerHTML = list.map(r => {
-    const p = progress(r.status);
-    return `<section class="card" data-id="${esc(r.id)}">
-      <div class="head"><div><div class="order-no mono">${esc(r.material_sku)}</div><div class="sub">${esc(fmt(r.material_name))}</div></div><span class="badge">${esc(statusText(r.status))}</span></div>
-      <div class="steps">${[1,2,3].map(i => `<div class="step ${i <= p ? "on" : ""}"></div>`).join("")}</div>
-      <div class="meta">
-        <div><div class="label">供应商</div><div class="val mono">${esc(r.supplier_code)}</div></div>
-        <div><div class="label">工厂</div><div class="val mono">${esc(r.factory_code)}</div></div>
-        <div><div class="label">数量</div><div class="val">${esc(fmt(r.order_qty))}</div></div>
-        <div><div class="label">ETA</div><div class="val">${esc(date(r.expected_arrival))}</div></div>
-        <div><div class="label">状态</div><div class="val">${esc(statusText(r.status))}</div></div>
-        <div><div class="label">备注</div><div class="val">${esc(fmt(r.note))}</div></div>
-      </div>
-      <div class="addr"><input class="input" data-field="delivery_address" value="${esc(r.delivery_address || "")}" placeholder="送货地址"><button class="btn primary" data-action="address">保存地址</button></div>
-    </section>`;
-  }).join("");
+  qs("empty").style.display=rows.length?"none":"block";
+  qs("orders").innerHTML=rows.map(r=>`<section class="card" data-id="${esc(r.id)}">
+    <div class="section head-row"><div><div class="head-title">${esc(r.supplier_code)} · 订单 #${esc(r.id)} · ${esc(fmt(r.delivery_address))}</div><div class="muted mono">${esc(r.material_sku)} ${r.customer_code?"· 客户 "+esc(r.customer_code):""}</div></div><div>${procBadge(r.procured_by)} <span class="badge ${badgeMap[r.status]||"badge-gray"}">${esc(statusMap[r.status]||r.status||"-")}</span></div></div>
+    <div class="section product-row">${thumb(r)}<div><div class="head-title">${esc(fmt(r.material_name))}</div><div class="muted">${esc(fmt(r.spec))} · 尺寸 ${esc(fmt(r.dimensions))}</div><div class="links">${r.artwork_url?`<button class="linkbtn" data-open="${esc(r.artwork_url)}">版图</button>`:""}${canSource(r)?'<button class="linkbtn" data-upload="image">传图片URL</button><button class="linkbtn" data-upload="artwork">传版图URL</button><button class="linkbtn" data-dim="1">填尺寸</button>':""}</div></div></div>
+    <div class="section grid3"><div class="metric"><div class="k">下单数量</div><div class="v">${num(r.order_qty)}</div></div><div class="metric"><div class="k">实收数量</div><input class="form-input" type="number" step="0.001" data-field="real_qty" value="${esc(r.real_qty)}" ${canFactory()?"":"disabled"}></div><div class="metric"><div class="k">差异</div><div class="v">${diffHtml(r)}</div></div></div>
+    <div class="section grid3"><div class="metric"><div class="k">库存</div><div class="v">${num(r.current_stock)}</div></div><div class="metric"><div class="k">上次下单</div><div class="v" style="font-size:13px">${esc(lastText(r))}</div></div><div class="metric"><div class="k">预计 / 确认</div><div class="v" style="font-size:13px">${esc(date(r.expected_delivery)||"-")} / ${esc(date(r.confirmed_delivery)||"-")}</div></div></div>
+    <div class="section logi"><div class="form-field"><label class="form-label">司机</label><input class="form-input" data-field="delivery_driver" value="${esc(r.delivery_driver)}" ${canFactory()?"":"disabled"}></div><div class="form-field"><label class="form-label">车牌</label><input class="form-input" data-field="vehicle_plate" value="${esc(r.vehicle_plate)}" ${canFactory()?"":"disabled"}></div><div class="form-field"><label class="form-label">快递单号</label><input class="form-input" data-field="express_no" value="${esc(r.express_no)}" ${canFactory()?"":"disabled"}></div><button class="btn btn-ghost" data-action="track">查询</button></div>
+    <div class="section dates"><div class="form-field"><label class="form-label">预计交货</label><input class="form-input" type="date" data-field="expected_delivery" value="${esc(date(r.expected_delivery))}" ${canSource(r)?"":"disabled"}></div><div class="form-field"><label class="form-label">确认交货</label><input class="form-input" type="date" data-field="confirmed_delivery" value="${esc(date(r.confirmed_delivery))}" ${canFactory()?"":"disabled"}></div></div>
+    <div class="section notes"><div class="form-field"><label class="form-label">供应商备注</label><textarea class="form-input" data-field="supplier_note" ${canSource(r)?"":"disabled"}>${esc(r.supplier_note)}</textarea></div><div class="form-field"><label class="form-label">工厂备注</label><textarea class="form-input" data-field="factory_note" ${canFactory()?"":"disabled"}>${esc(r.factory_note)}</textarea></div><div class="form-field"><label class="form-label">客户备注</label><textarea class="form-input" data-field="customer_note" ${canCustomer()?"":"disabled"}>${esc(r.customer_note)}</textarea></div></div>
+    <div class="section"><div class="head-row" style="margin-bottom:8px"><div class="form-label">附件</div><div>${canFactory()?'<button class="btn btn-ghost btn-sm" data-upload="receipt">传收货照URL</button>':""}</div></div><div class="attach">${attHtml(r.attachments)}</div></div>
+    <div class="section actions"><select class="form-input" data-field="status" style="max-width:140px" ${canFactory()?"":"disabled"}>${Object.keys(statusMap).map(s=>`<option value="${s}" ${r.status===s?"selected":""}>${statusMap[s]}</option>`).join("")}</select><button class="btn btn-ghost" data-action="save">保存</button><button class="btn btn-green" data-action="arrive" ${canFactory()?"":"disabled"}>确认到货</button></div>
+  </section>`).join("");
 }
-async function saveAddress(btn){
-  const card = btn.closest("[data-id]");
-  const id = card.dataset.id;
-  const delivery_address = card.querySelector('[data-field="delivery_address"]').value;
-  btn.disabled = true;
-  const r = await api(apiBase + "?view=factory", {method:"PATCH", body:JSON.stringify({id, delivery_address})});
-  btn.disabled = false;
-  toast(r.success ? "地址已保存" : r.error || "保存失败");
-  if(r.success) load();
+function attHtml(xs){return (xs||[]).map(a=>`<button class="att" data-img="${esc(a.url)}">${/\.(png|jpe?g|webp|gif)(\?|$)/i.test(a.url)?`<img src="${esc(a.url)}" alt="">`:esc(a.type||"附件")}</button>`).join("")||'<span class="muted">暂无附件</span>'}
+function payload(card,arrive){
+  const data={id:card.dataset.id};card.querySelectorAll("[data-field]").forEach(el=>{if(!el.disabled)data[el.dataset.field]=el.value});
+  if(arrive){data.status="arrived";if(!data.confirmed_delivery)data.confirmed_delivery=new Date().toISOString().slice(0,10)}return data;
 }
-async function createOrder(btn){
-  const payload = {
-    supplier_code: qs("new-supplier").value.trim(),
-    material_sku: qs("new-sku").value.trim(),
-    order_qty: qs("new-qty").value,
-    delivery_address: qs("new-address").value.trim()
-  };
-  if(!payload.supplier_code || !payload.material_sku || !payload.order_qty) return toast("供应商、物料 SKU、数量必填");
-  btn.disabled = true;
-  const r = await api(apiBase, {method:"POST", body:JSON.stringify(payload)});
-  btn.disabled = false;
-  toast(r.success ? "已下单" : r.error || "下单失败");
-  if(r.success){ ["new-supplier","new-sku","new-qty"].forEach(id => qs(id).value = ""); load(); }
+async function save(btn,arrive=false){const card=btn.closest("[data-id]");btn.disabled=true;const r=await api(apiBase+"?action=update",{method:"PATCH",body:JSON.stringify(payload(card,arrive))});btn.disabled=false;toast(r.success?(arrive?"已确认到货":"已保存"):(r.error||"保存失败"));if(r.success)load()}
+async function order(btn){
+  const body={material_sku:qs("newSku").value.trim(),supplier_code:qs("newSupplier").value.trim(),order_qty:qs("newQty").value,expected_delivery:qs("newExpected").value,delivery_address:qs("newAddress").value.trim(),procured_by:qs("newProcured").value};
+  if(body.procured_by==="customer")body.customer_code=qs("newCustomerCode").value.trim();
+  if(!body.material_sku||!body.supplier_code||!body.order_qty)return toast("物料、供应商、数量必填");
+  if(body.procured_by==="customer"&&!body.customer_code)return toast("客供料必须填写客户代码");
+  btn.disabled=true;const r=await api(apiBase+"?action=order",{method:"POST",body:JSON.stringify(body)});btn.disabled=false;toast(r.success?"已下单":(r.error||"下单失败"));if(r.success){["newSku","newSupplier","newQty","newExpected","newAddress","newCustomerCode"].forEach(id=>qs(id).value="");toggleCustomerCode();load()}
 }
-document.addEventListener("click", e => {
-  const b = e.target.closest("button");
-  if(!b) return;
-  if(b.id === "refresh-btn" || b.id === "filter-btn") render();
-  if(b.id === "refresh-btn") load();
-  if(b.id === "order-btn") createOrder(b);
-  if(b.dataset.action === "address") saveAddress(b);
+async function upload(card,type){
+  const url=prompt(type==="receipt"?"收货照URL":type==="artwork"?"版图URL":"图片URL");if(!url)return;
+  const body={delivery_id:card.dataset.id,attachment_type:type,url};const r=await api(apiBase+"?action=upload",{method:"POST",body:JSON.stringify(body)});toast(r.success?"已上传":(r.error||"上传失败"));if(r.success)load();
+}
+async function dim(card){const v=prompt("尺寸");if(v==null)return;const r=await api(apiBase+"?action=upload",{method:"POST",body:JSON.stringify({delivery_id:card.dataset.id,attachment_type:"image",url:card.querySelector("[data-img]")?.dataset.img||"",dimensions:v})});toast(r.success?"尺寸已保存":(r.error||"保存失败"));if(r.success)load()}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("button");if(!b)return;const card=b.closest("[data-id]");
+  if(b.id==="refreshBtn")load();else if(b.id==="orderBtn")order(b);else if(b.dataset.action==="save")save(b);else if(b.dataset.action==="arrive")save(b,true);
+  else if(b.dataset.action==="track"){const no=card.querySelector('[data-field="express_no"]').value.trim();if(no)window.open("https://www.kuaidi100.com/chaxun/?nu="+encodeURIComponent(no),"_blank","noopener")}
+  else if(b.dataset.img){qs("lightImg").src=b.dataset.img;qs("lightbox").style.display="flex"}else if(b.dataset.open)openHttp(b.dataset.open);else if(b.dataset.upload)upload(card,b.dataset.upload);else if(b.dataset.dim)dim(card);
 });
-qs("q").addEventListener("input", render);
-qs("status-filter").addEventListener("change", render);
+qs("lightbox").addEventListener("click",()=>{qs("lightbox").style.display="none";qs("lightImg").src=""});
+function toggleCustomerCode(){qs("newCustomerWrap").classList.toggle("hidden",qs("newProcured").value!=="customer")}
+qs("newProcured").addEventListener("change",toggleCustomerCode);
+toggleCustomerCode();
 load();
 </script>
 </body>
