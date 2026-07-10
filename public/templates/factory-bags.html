@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工厂袋子清点补充 · Sanlyn</title>
+<style>
+:root{--bg:#f7f8fb;--panel:#fff;--line:#d9e0ea;--text:#172033;--muted:#64748b;--blue:#2563eb;--green:#15803d;--red:#dc2626;--amber:#b45309}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px}
+.topbar{height:60px;display:flex;align-items:center;gap:12px;padding:0 18px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}.mark{width:34px;height:34px;border-radius:8px;background:#e0f2fe;color:#075985;display:grid;place-items:center;font-weight:900}.title{font-size:16px;font-weight:900}.sub{font-size:11px;color:var(--muted);margin-top:2px}.pill{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:999px;padding:4px 9px;font-size:11px;white-space:nowrap}
+.main{max-width:1280px;margin:auto;padding:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}.section-title{font-weight:900;margin-bottom:10px}.toolbar{display:grid;grid-template-columns:1fr 150px 120px;gap:10px}.field{display:flex;flex-direction:column;gap:5px}.label{font-size:11px;color:var(--muted);font-weight:800}.input,.select{width:100%;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:var(--text);padding:8px 9px;outline:none}.input:focus,.select:focus{border-color:#38bdf8}
+.btn{border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#172033;padding:8px 11px;cursor:pointer;font-weight:900}.btn:disabled{opacity:.55;cursor:not-allowed}.btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn-success{background:var(--green);border-color:var(--green);color:#fff}.btn-sm{padding:6px 9px;font-size:12px}
+.table-wrap{overflow:auto}table{width:100%;min-width:960px;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:middle}th{font-size:11px;color:var(--muted);background:#f8fafc}td{font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.muted{color:var(--muted)}.low{background:#fff7ed}.low .stock{color:var(--red);font-weight:900}.num{width:120px}.empty{text-align:center;color:var(--muted);padding:28px}.toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;border-radius:8px;padding:10px 12px;display:none;max-width:360px;z-index:9}.actions{display:flex;gap:7px;align-items:center}.mode{display:flex;gap:8px;flex-wrap:wrap}.note-row{display:grid;grid-template-columns:160px 1fr 140px;gap:10px;align-items:end;margin-top:12px}
+@media(max-width:760px){.toolbar,.note-row{grid-template-columns:1fr}.main{padding:12px}.topbar{padding:0 12px}.title{font-size:15px}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="mark">袋</div>
+  <div><div class="title">工厂袋子清点 / 补充</div><div class="sub" id="factory-name">工厂：—</div></div>
+  <div style="margin-left:auto"><span class="pill" id="total-badge">—</span></div>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <div class="section-title">库存筛选</div>
+    <div class="toolbar">
+      <input class="input" id="q" placeholder="搜索袋子 SKU / 名称 / 规格">
+      <select class="select" id="low-only"><option value="">全部袋子</option><option value="1">只看低库存</option></select>
+      <button class="btn btn-primary" id="refresh-btn">刷新</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <div class="section-title" style="margin:0">袋子库存</div>
+      <div class="mode">
+        <button class="btn btn-sm btn-primary" id="stocktake-submit">提交清点</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>袋子 SKU</th><th>名称</th><th>规格</th><th>单位</th><th>当前库存</th><th>安全库存</th><th>供应商</th><th>实盘数量</th><th>补充</th></tr>
+        </thead>
+        <tbody id="bag-body"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none">暂无可清点袋子</div>
+    </div>
+    <div class="note-row">
+      <div class="field"><label class="label">经手人</label><input class="input" id="operator" placeholder="姓名"></div>
+      <div class="field"><label class="label">清点备注</label><input class="input" id="stocktake-note" placeholder="如：月末盘点"></div>
+      <button class="btn btn-success" id="stocktake-submit-bottom">提交清点</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let bags = [];
+let counts = {};
+const qs = id => document.getElementById(id);
+const authTok = () => new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+const api = (url, opts = {}) => fetch(url, {credentials:"include", headers:{"Content-Type":"application/json", ...(authTok() ? {Authorization:"Bearer "+authTok()} : {})}, ...opts}).then(r => r.json());
+const esc = v => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const fmt = v => v === null || v === undefined || v === "" ? "—" : esc(v);
+const num = v => Number(v || 0).toLocaleString("zh-CN", {maximumFractionDigits:3});
+function toast(msg){ const el=qs("toast"); el.textContent=msg; el.style.display="block"; setTimeout(()=>el.style.display="none",2600); }
+function filtered(){
+  const q = qs("q").value.trim().toLowerCase();
+  const low = qs("low-only").value === "1";
+  return bags.filter(b => {
+    const hay = [b.sku_code,b.name,b.spec,b.supplier].map(x => String(x || "").toLowerCase()).join(" ");
+    const isLow = Number(b.current_stock || 0) < Number(b.safety_stock || 0);
+    return (!q || hay.includes(q)) && (!low || isLow);
+  });
+}
+async function loadBags(){
+  const r = await api("/api/db/factory-bags");
+  if(!r.success) return toast(r.error || "加载失败");
+  bags = r.data || [];
+  counts = {};
+  bags.forEach(b => { counts[b.sku_code] = Number(b.current_stock || 0); });
+  qs("factory-name").textContent = "工厂：" + (r.scope?.factory_name || r.scope?.factory_codes?.join(",") || "—");
+  qs("total-badge").textContent = bags.length + " 种袋子";
+  render();
+}
+function render(){
+  const rows = filtered();
+  qs("empty").style.display = rows.length ? "none" : "block";
+  qs("bag-body").innerHTML = rows.map(b => {
+    const low = Number(b.current_stock || 0) < Number(b.safety_stock || 0);
+    const sku = esc(b.sku_code);
+    return `<tr class="${low ? "low" : ""}">
+      <td class="mono">${sku}</td>
+      <td>${esc(fmt(b.name))}</td>
+      <td>${esc(fmt(b.spec))}</td>
+      <td>${esc(fmt(b.unit))}</td>
+      <td class="mono stock">${num(b.current_stock)}</td>
+      <td class="mono">${num(b.safety_stock)}</td>
+      <td>${esc(fmt(b.supplier))}</td>
+      <td><input class="input num count-input" type="number" step="0.001" min="0" data-sku="${sku}" value="${esc(counts[b.sku_code])}"></td>
+      <td><div class="actions"><input class="input num replenish-input" type="number" step="0.001" data-sku="${sku}" placeholder="+/-数量"><button class="btn btn-sm" data-action="replenish" data-sku="${sku}">补充</button></div></td>
+    </tr>`;
+  }).join("");
+}
+function getOperator(){ return qs("operator").value.trim() || "工厂"; }
+async function submitStocktake(btn){
+  const payload = bags.map(b => ({sku_code:b.sku_code, counted_qty:Number(counts[b.sku_code])}));
+  if(payload.some(x => !Number.isFinite(x.counted_qty) || x.counted_qty < 0)) return toast("实盘数量必须是非负数字");
+  btn.disabled = true;
+  const r = await api("/api/db/factory-bags?action=stocktake", {method:"POST", body:JSON.stringify({counts:payload, operator:getOperator(), note:qs("stocktake-note").value.trim()})});
+  btn.disabled = false;
+  toast(r.success ? "清点已提交：" + r.data.batchId : r.error || "提交失败");
+  if(r.success) loadBags();
+}
+async function submitReplenish(btn){
+  const sku = btn.dataset.sku;
+  const input = document.querySelector(`.replenish-input[data-sku="${CSS.escape(sku)}"]`);
+  const delta = Number(input.value);
+  if(!Number.isFinite(delta) || delta === 0) return toast("请输入非零补充数量");
+  btn.disabled = true;
+  const r = await api("/api/db/factory-bags?action=replenish", {method:"POST", body:JSON.stringify({sku_code:sku, delta, operator:getOperator(), note:"工厂单项补录"})});
+  btn.disabled = false;
+  toast(r.success ? "已补录，当前库存 " + num(r.data.after_stock) : r.error || "补录失败");
+  if(r.success) loadBags();
+}
+document.addEventListener("click", e => {
+  const t = e.target;
+  if(t.id === "refresh-btn") loadBags();
+  if(t.id === "stocktake-submit" || t.id === "stocktake-submit-bottom") submitStocktake(t);
+  if(t.dataset.action === "replenish") submitReplenish(t);
+});
+qs("q").addEventListener("input", render);
+qs("low-only").addEventListener("change", render);
+document.addEventListener("input", e => {
+  if(e.target.classList.contains("count-input")) counts[e.target.dataset.sku] = e.target.value;
+});
+loadBags();
+</script>
+</body>
+</html>

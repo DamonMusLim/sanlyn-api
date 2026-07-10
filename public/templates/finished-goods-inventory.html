@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>成品库存填报 · Sanlyn</title>
+<style>
+:root{--bg:#0b1220;--panel:#111827;--line:#243044;--text:#e5e7eb;--muted:#94a3b8;--blue:#38bdf8;--green:#22c55e;--red:#ef4444;--amber:#f59e0b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px}
+.topbar{height:58px;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:1px solid var(--line);background:#0f172a;position:sticky;top:0;z-index:3}
+.mark{font-size:20px}.title{font-size:16px;font-weight:800}.sub{font-size:11px;color:var(--muted);margin-top:2px}.pill{border:1px solid #1e40af;background:#172554;color:#bfdbfe;border-radius:999px;padding:4px 9px;font-size:11px}
+.tabs{display:flex;gap:8px;padding:12px 18px;border-bottom:1px solid var(--line);overflow:auto}.tab{border:1px solid var(--line);background:#101827;color:var(--muted);border-radius:7px;padding:8px 12px;cursor:pointer;font-weight:700;white-space:nowrap}.tab.active{color:#fff;border-color:#2563eb;background:#1d4ed8}
+.main{padding:16px;max-width:1280px;margin:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}.section-title{font-weight:800;margin-bottom:10px;color:#f8fafc}
+.toolbar,.form-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.form-row.two{grid-template-columns:repeat(2,minmax(0,1fr))}.form-group{display:flex;flex-direction:column;gap:5px}.form-label{font-size:11px;color:var(--muted);font-weight:700}
+.form-input,.form-select{width:100%;border:1px solid #334155;background:#0b1220;color:var(--text);border-radius:7px;padding:8px 9px;outline:none}.form-input:focus,.form-select:focus{border-color:#38bdf8}
+.btn{border:1px solid #334155;border-radius:7px;background:#172033;color:#e5e7eb;padding:8px 11px;cursor:pointer;font-weight:800}.btn-primary{background:#2563eb;border-color:#2563eb;color:#fff}.btn-success{background:#15803d;border-color:#15803d;color:#fff}.btn-danger{background:#991b1b;border-color:#991b1b;color:#fff}.btn-sm{padding:6px 9px;font-size:12px}
+table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:middle}th{font-size:11px;color:var(--muted);background:#0b1220}td{font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.muted{color:var(--muted)}.low{background:rgba(239,68,68,.12)}.num{width:110px}.empty{text-align:center;color:var(--muted);padding:24px}.toast{position:fixed;right:16px;bottom:16px;background:#020617;border:1px solid #334155;border-radius:8px;padding:10px 12px;display:none;max-width:360px}
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:14px}.badge{display:inline-block;border-radius:999px;padding:2px 7px;font-size:11px;border:1px solid #334155;color:#cbd5e1}.badge.in{border-color:#166534;color:#86efac}.badge.out{border-color:#991b1b;color:#fecaca}.badge.adjust{border-color:#92400e;color:#fde68a}
+@media(max-width:820px){.toolbar,.form-row,.form-row.two,.grid2{grid-template-columns:1fr}.topbar{padding:0 12px}.main{padding:12px}table{min-width:860px}.table-wrap{overflow:auto}}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="mark">FG</div>
+  <div><div class="title">成品库存填报 · Sanlyn</div><div class="sub">Finished Goods Inventory</div></div>
+  <div style="margin-left:auto"><span class="pill" id="total-badge">—</span></div>
+</div>
+<div class="tabs">
+  <button class="tab active" data-tab="inventory" onclick="switchTab('inventory')">库存总览</button>
+  <button class="tab" data-tab="move" onclick="switchTab('move')">入出库登记</button>
+  <button class="tab" data-tab="logs" onclick="switchTab('logs')">流水记录</button>
+</div>
+<div class="main">
+  <div id="tab-inventory">
+    <div class="card">
+      <div class="section-title">筛选</div>
+      <div class="toolbar">
+        <input class="form-input" id="q-sku" placeholder="SKU" oninput="loadInventory()">
+        <input class="form-input" id="q-warehouse" placeholder="仓库 ID" oninput="loadInventory()">
+        <select class="form-select" id="q-low" onchange="loadInventory()"><option value="">全部库存</option><option value="1">只看低库存</option></select>
+        <button class="btn btn-primary" onclick="loadInventory()">刷新</button>
+      </div>
+    </div>
+    <div class="card table-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="section-title" style="margin:0">当前成品库存</div>
+        <button class="btn btn-sm" onclick="openCreate()">新增 SKU 库存</button>
+      </div>
+      <table>
+        <thead><tr><th>SKU</th><th>产品</th><th>仓库</th><th>单位</th><th>当前库存</th><th>安全库存</th><th>最近变动</th><th>操作</th></tr></thead>
+        <tbody id="inventory-body"></tbody>
+      </table>
+      <div class="empty" id="inventory-empty" style="display:none">暂无库存记录</div>
+    </div>
+  </div>
+
+  <div id="tab-move" style="display:none">
+    <div class="grid2">
+      <div class="card">
+        <div class="section-title">登记入库 / 出库 / 调整</div>
+        <div class="form-row two">
+          <div class="form-group"><label class="form-label">选择库存</label><select class="form-select" id="mv-inventory"></select></div>
+          <div class="form-group"><label class="form-label">类型</label><select class="form-select" id="mv-type"><option value="in">入库</option><option value="out">出库</option><option value="adjust">调整</option></select></div>
+        </div>
+        <div class="form-row two" style="margin-top:10px">
+          <div class="form-group"><label class="form-label">数量</label><input class="form-input" type="number" id="mv-qty" step="0.001" placeholder="出库可填正数"></div>
+          <div class="form-group"><label class="form-label">交货日期</label><input class="form-input" type="date" id="mv-date"></div>
+        </div>
+        <div class="form-row two" style="margin-top:10px">
+          <div class="form-group"><label class="form-label">引用类型</label><input class="form-input" id="mv-ref-type" value="manual"></div>
+          <div class="form-group"><label class="form-label">客户端幂等键</label><input class="form-input" id="mv-ref-id" readonly></div>
+        </div>
+        <div class="form-row two" style="margin-top:10px">
+          <div class="form-group"><label class="form-label">经手人</label><input class="form-input" id="mv-operator"></div>
+          <div class="form-group"><label class="form-label">备注</label><input class="form-input" id="mv-note"></div>
+        </div>
+        <button class="btn btn-success" id="mv-submit" style="width:100%;margin-top:12px" onclick="submitMove()">确认登记</button>
+      </div>
+      <div class="card">
+        <div class="section-title">新增 SKU 库存</div>
+        <div class="form-group"><label class="form-label">SKU（必须已存在于 products）</label><input class="form-input" id="new-sku"></div>
+        <div class="form-row two" style="margin-top:10px">
+          <div class="form-group"><label class="form-label">仓库 ID</label><input class="form-input" id="new-warehouse" value="1"></div>
+          <div class="form-group"><label class="form-label">单位</label><input class="form-input" id="new-unit" placeholder="默认取产品单位"></div>
+        </div>
+        <div class="form-group" style="margin-top:10px"><label class="form-label">安全库存</label><input class="form-input" type="number" id="new-safety" step="0.001" value="0"></div>
+        <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="createInventory()">新增</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-logs" style="display:none">
+    <div class="card">
+      <div class="section-title">流水筛选</div>
+      <div class="toolbar">
+        <input class="form-input" id="log-sku" placeholder="SKU" oninput="loadLogs()">
+        <select class="form-select" id="log-type" onchange="loadLogs()"><option value="">全部类型</option><option value="in">入库</option><option value="out">出库</option><option value="adjust">调整</option></select>
+        <input class="form-input" type="date" id="log-from" onchange="loadLogs()">
+        <input class="form-input" type="date" id="log-to" onchange="loadLogs()">
+      </div>
+    </div>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>时间</th><th>SKU</th><th>品名</th><th>类型</th><th>数量</th><th>库存</th><th>仓库</th><th>交货日期</th><th>经手人</th><th>备注</th></tr></thead>
+        <tbody id="logs-body"></tbody>
+      </table>
+      <div class="empty" id="logs-empty" style="display:none">暂无流水</div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+let rows = [];
+let moveRefId = crypto.randomUUID();
+const authTok = () => new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+const api = (url, opts={}) => fetch(url, {credentials:"include", headers:{"Content-Type":"application/json", ...(authTok() ? {Authorization:"Bearer "+authTok()} : {})}, ...opts}).then(r => r.json());
+const qs = id => document.getElementById(id);
+const fmt = v => v === null || v === undefined || v === "" ? "—" : v;
+const num = v => Number(v || 0).toLocaleString("zh-CN", {maximumFractionDigits:3});
+function toast(msg){ const el=qs("toast"); el.textContent=msg; el.style.display="block"; setTimeout(()=>el.style.display="none",2600); }
+function switchTab(tab){
+  document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===tab));
+  ["inventory","move","logs"].forEach(t=>qs("tab-"+t).style.display=t===tab?"block":"none");
+  if(tab==="logs") loadLogs();
+}
+function params(obj){ const p=new URLSearchParams(); Object.entries(obj).forEach(([k,v])=>{ if(v) p.set(k,v); }); return p.toString(); }
+function showMoveRefId(){ qs("mv-ref-id").value = moveRefId; }
+async function loadInventory(){
+  const query = params({sku:qs("q-sku").value, warehouse_id:qs("q-warehouse").value, low_stock:qs("q-low").value});
+  const r = await api("/api/db/finished-goods" + (query ? "?" + query : ""));
+  if(!r.success) return toast(r.error || "加载失败");
+  rows = r.data || [];
+  qs("total-badge").textContent = rows.length + " 条";
+  renderInventory();
+  fillMoveOptions();
+}
+function renderInventory(){
+  qs("inventory-empty").style.display = rows.length ? "none" : "block";
+  qs("inventory-body").innerHTML = rows.map(r => {
+    const low = Number(r.current_stock) <= Number(r.safety_stock);
+    return `<tr class="${low ? "low" : ""}">
+      <td class="mono">${r.sku}</td><td>${fmt(r.product_name_cn || r.product_name)}</td>
+      <td>${fmt(r.warehouse_name)} <span class="muted mono">#${r.warehouse_id}</span></td><td>${fmt(r.unit)}</td>
+      <td class="mono">${num(r.current_stock)}</td>
+      <td><input class="form-input num" type="number" step="0.001" id="safe-${r.id}" value="${r.safety_stock}"></td>
+      <td class="muted">${r.last_move_at ? new Date(r.last_move_at).toLocaleString() : "—"}</td>
+      <td><button class="btn btn-sm" onclick="adjustStock(${r.id})">调整</button>
+      <button class="btn btn-sm" onclick="saveStock(${r.id})">保存安全库存</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteInventory(${r.id})">删除</button></td></tr>`;
+  }).join("");
+}
+function fillMoveOptions(){
+  qs("mv-inventory").innerHTML = rows.map(r => `<option value="${r.id}">${r.sku} · ${fmt(r.warehouse_name)} · ${num(r.current_stock)} ${fmt(r.unit)}</option>`).join("");
+}
+async function saveStock(id){
+  const body = {id, safety_stock:qs("safe-"+id).value};
+  const r = await api("/api/db/finished-goods", {method:"PATCH", body:JSON.stringify(body)});
+  toast(r.success ? "已保存" : r.error); if(r.success) loadInventory();
+}
+async function adjustStock(id){
+  const row = rows.find(r => Number(r.id) === Number(id));
+  if(!row) return toast("库存记录不存在");
+  const input = prompt("输入目标库存，或输入 +10 / -5 表示增减", row.current_stock);
+  if(input === null) return;
+  const text = input.trim();
+  const isDelta = /^[+-]/.test(text);
+  const value = Number(text);
+  if(!Number.isFinite(value)) return toast("请输入有效数量");
+  if(isDelta && !value) return toast("库存未变化");
+  if(!isDelta && value === Number(row.current_stock || 0)) return toast("库存未变化");
+  const body = {inventory_id:id, type:"adjust", ref_type:"manual", ref_id:crypto.randomUUID(), note:isDelta ? "库存增减调整" : "库存目标调整"};
+  if(isDelta) body.quantity = value; else body.target_stock = value;
+  const r = await api("/api/db/finished-goods-move", {method:"POST", body:JSON.stringify(body)});
+  toast(r.success ? "已调整，库存 " + num(r.after_stock) : r.error); if(r.success) loadInventory();
+}
+async function deleteInventory(id){
+  if(!confirm("确认删除这条库存记录？")) return;
+  const r = await api("/api/db/finished-goods?id="+encodeURIComponent(id), {method:"DELETE"});
+  toast(r.success ? "已删除" : r.error); if(r.success) loadInventory();
+}
+function openCreate(){ switchTab("move"); qs("new-sku").focus(); }
+async function createInventory(){
+  const body = {sku:qs("new-sku").value.trim(), warehouse_id:qs("new-warehouse").value || 1, unit:qs("new-unit").value || undefined, safety_stock:qs("new-safety").value || 0};
+  const r = await api("/api/db/finished-goods", {method:"POST", body:JSON.stringify(body)});
+  toast(r.success ? "已新增" : r.error); if(r.success){ await loadInventory(); switchTab("inventory"); }
+}
+async function submitMove(){
+  const btn = qs("mv-submit");
+  if(btn.disabled) return;
+  btn.disabled = true;
+  const body = {inventory_id:qs("mv-inventory").value, type:qs("mv-type").value, quantity:qs("mv-qty").value, delivery_date:qs("mv-date").value || null, ref_type:qs("mv-ref-type").value || "manual", ref_id:moveRefId, operator:qs("mv-operator").value || null, note:qs("mv-note").value || null};
+  try {
+    const r = await api("/api/db/finished-goods-move", {method:"POST", body:JSON.stringify(body)});
+    toast(r.success ? "已登记，库存 " + num(r.after_stock) : r.error);
+    if(r.success){ moveRefId = crypto.randomUUID(); showMoveRefId(); qs("mv-qty").value=""; qs("mv-note").value=""; await loadInventory(); }
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function loadLogs(){
+  const query = params({sku:qs("log-sku").value, type:qs("log-type").value, date_from:qs("log-from").value, date_to:qs("log-to").value});
+  const r = await api("/api/db/finished-goods-logs" + (query ? "?" + query : ""));
+  if(!r.success) return toast(r.error || "流水加载失败");
+  const logs = r.data || [];
+  qs("logs-empty").style.display = logs.length ? "none" : "block";
+  qs("logs-body").innerHTML = logs.map(l => `<tr>
+    <td>${new Date(l.at).toLocaleString()}</td><td class="mono">${l.sku}</td><td>${fmt(l.product_name_cn||l.product_name)}</td>
+    <td><span class="badge ${l.type}">${l.type}</span></td><td>${num(l.quantity)} ${fmt(l.unit)}</td>
+    <td>${num(l.before_stock)} → ${num(l.after_stock)}</td><td>${fmt(l.warehouse_name)} #${l.warehouse_id}</td>
+    <td>${fmt(l.delivery_date ? l.delivery_date.slice(0,10) : "")}</td><td>${fmt(l.operator)}</td><td>${fmt(l.note)}</td>
+  </tr>`).join("");
+}
+showMoveRefId();
+loadInventory();
+</script>
+</body>
+</html>

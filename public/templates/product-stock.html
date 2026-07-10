@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>产品库存一览 · Product Stock</title>
+<style>
+:root{--bg:#f7f8fb;--text:#172033;--muted:#667085;--line:#d8dee8;--head:#eef2f7;--ok:#16794c;--warn:#b45309;--bad:#b42318}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:22px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:18px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted)}.actions{display:flex;gap:8px}
+button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:8px 11px;font-weight:700;cursor:pointer}
+.panel{background:#fff;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+table{width:100%;border-collapse:collapse}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{background:var(--head);color:#344054;font-size:12px}tr:last-child td{border-bottom:0}.num{text-align:right;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}
+.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;border:1px solid var(--line)}
+.in_stock{color:var(--ok);background:#ecfdf3;border-color:#abefc6}.low_stock{color:var(--warn);background:#fffaeb;border-color:#fedf89}.out_of_stock{color:var(--bad);background:#fef3f2;border-color:#fecdca}
+tr.low_stock td{background:#fff9ed}tr.out_of_stock td{background:#fff4f2}.empty{padding:30px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+@media(max-width:760px){.wrap{padding:14px}.top{display:block}.actions{margin-top:12px}table{min-width:760px}.panel{overflow:auto}}
+@media print{body{background:#fff}.wrap{max-width:none;padding:0}.actions{display:none}.panel{border-color:#999}th{background:#eee!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>产品库存一览 / Product Stock</h1>
+      <div class="sub" id="customer-name">Customer</div>
+    </div>
+    <div class="actions">
+      <button onclick="loadStock()">刷新 Refresh</button>
+      <button onclick="window.print()">打印 Print</button>
+    </div>
+  </div>
+  <div class="panel">
+    <table>
+      <thead><tr><th>产品 / Product</th><th>规格 / Size</th><th>口味 / Variant</th><th class="num">可发库存 / Available</th><th>状态 / Status</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty">加载中 Loading...</div>
+  </div>
+</div>
+<script>
+const apiUrl = "/api/db/customer-portal?view=stock";
+const labels = {in_stock:"充足 / In stock", low_stock:"偏低 / Low", out_of_stock:"缺货 / Out"};
+function authHeaders(){
+  const token = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+  return token ? {Authorization:"Bearer " + token} : {};
+}
+function customerFromToken(){
+  const token = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+  try {
+    const p = JSON.parse(atob(token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
+    return p.company || p.companyName || p.name || p.username || "Customer";
+  } catch (_) { return "Customer"; }
+}
+function fmt(v){ return v === null || v === undefined || v === "" ? "—" : v; }
+function esc(v){ return v==null ? "" : String(v).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+async function loadStock(){
+  document.getElementById("customer-name").textContent = customerFromToken();
+  const empty = document.getElementById("empty");
+  empty.className = "empty";
+  empty.textContent = "加载中 Loading...";
+  empty.style.display = "block";
+  try {
+    const r = await fetch(apiUrl, {credentials:"include", headers:authHeaders()}).then(x => x.json());
+    if(!r.success) throw new Error(r.error || "Load failed");
+    const data = r.data || [];
+    document.getElementById("rows").innerHTML = data.map(row => {
+      const cls = ["in_stock","low_stock","out_of_stock"].includes(row.status) ? row.status : "in_stock";
+      return `<tr class="${cls}">
+        <td><strong>${esc(fmt(row.product_name_cn || row.product_name))}</strong><div class="muted">${esc(fmt(row.product_name))}</div></td>
+        <td>${esc(fmt(row.size))}</td><td>${esc(fmt(row.variant))}</td>
+        <td class="num">${Number(row.current_stock || 0).toLocaleString()}</td>
+        <td><span class="badge ${cls}">${esc(labels[cls] || fmt(cls))}</span></td>
+      </tr>`;
+    }).join("");
+    empty.style.display = data.length ? "none" : "block";
+    empty.textContent = "暂无可展示库存 / No stock to show";
+  } catch (e) {
+    empty.className = "empty error";
+    empty.textContent = e.message;
+  }
+}
+loadStock();
+</script>
+</body>
+</html>

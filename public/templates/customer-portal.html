@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客户门户 · Customer Portal</title>
+<style>
+:root{--bg:#f6f8fb;--text:#172033;--muted:#667085;--line:#d7deea;--card:#fff;--blue:#175cd3;--green:#067647;--amber:#b54708}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.bar{background:#fff;border-bottom:1px solid var(--line);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;gap:14px;position:sticky;top:0;z-index:2}
+h1{font-size:20px;margin:0}.sub{color:var(--muted);margin-top:3px}.wrap{max-width:1180px;margin:0 auto;padding:18px}.grid{display:grid;gap:12px}
+.order{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px}.head{display:flex;justify-content:space-between;gap:12px;margin-bottom:12px}
+.order-no{font-weight:800;font-size:16px}.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;background:#eef4ff;color:var(--blue)}
+.meta{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:12px 0}.label{font-size:11px;color:var(--muted);font-weight:700}.val{margin-top:3px}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}.step{height:8px;background:#e4e9f2;border-radius:999px}.step.on{background:var(--green)}
+button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:8px 11px;font-weight:700;cursor:pointer}button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:30px;text-align:center;color:var(--muted)}.error{color:#b42318}
+dialog{border:1px solid var(--line);border-radius:8px;max-width:420px;width:calc(100% - 28px);padding:0}dialog::backdrop{background:rgba(16,24,40,.35)}
+.modal-h{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:800}.modal-b{padding:16px}.field{margin-bottom:12px}.field label{display:block;margin-bottom:5px;color:var(--muted);font-weight:700}
+input,textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:9px;font:inherit}textarea{min-height:80px;resize:vertical}.modal-f{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--line)}
+@media(max-width:820px){.bar{display:block;padding:14px}.wrap{padding:12px}.head{display:block}.head button{margin-top:10px}.meta{grid-template-columns:1fr 1fr}.steps{grid-template-columns:repeat(4,minmax(56px,1fr))}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <div><h1>客户门户 / Customer Portal</h1><div class="sub" id="customer-name">Order progress and delivery coordination</div></div>
+  <button onclick="loadOrders()">刷新 Refresh</button>
+</div>
+<main class="wrap">
+  <div class="grid" id="orders"></div>
+  <div class="empty" id="empty">加载中 Loading...</div>
+</main>
+<dialog id="dialog">
+  <div class="modal-h">申请交货日期 / Request Delivery Date</div>
+  <div class="modal-b">
+    <div class="field"><label>订单号 / Order No.</label><input id="modal-order" readonly></div>
+    <div class="field"><label>期望交货日期 / Requested Date</label><input id="modal-date" type="date"></div>
+    <div class="field"><label>备注 / Note</label><textarea id="modal-note"></textarea></div>
+  </div>
+  <div class="modal-f"><button onclick="closeDialog()">取消 Cancel</button><button class="primary" onclick="submitRequest()">提交 Submit</button></div>
+</dialog>
+<script>
+const api = "/api/db/customer-portal";
+const statusText = {draft:"待确认 / Pending", confirmed:"已确认 / Confirmed", ready:"已备货 / Ready", shipped:"已发货 / Shipped", delivered:"已交付 / Delivered", cancelled:"已取消 / Cancelled"};
+function authHeaders(){
+  const token = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+  return token ? {Authorization:"Bearer " + token, "Content-Type":"application/json"} : {"Content-Type":"application/json"};
+}
+function customerFromToken(){
+  const token = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+  try {
+    const p = JSON.parse(atob(token.split(".")[1].replace(/-/g,"+").replace(/_/g,"/")));
+    return p.company || p.companyName || p.name || p.username || "Order progress and delivery coordination";
+  } catch (_) { return "Order progress and delivery coordination"; }
+}
+function fmt(v){ return v === null || v === undefined || v === "" ? "—" : String(v).slice(0,10); }
+function esc(v){ return v==null ? "" : String(v).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+function progress(status){
+  const s = String(status || "").toLowerCase();
+  if(["shipped","in_transit","delivered"].includes(s)) return 4;
+  if(["ready","production_complete"].includes(s)) return 3;
+  if(["confirmed","in_production","production"].includes(s)) return 2;
+  return 1;
+}
+function openRequest(orderNo){
+  document.getElementById("modal-order").value = orderNo;
+  document.getElementById("modal-date").value = "";
+  document.getElementById("modal-note").value = "";
+  document.getElementById("dialog").showModal();
+}
+function closeDialog(){ document.getElementById("dialog").close(); }
+async function loadOrders(){
+  document.getElementById("customer-name").textContent = customerFromToken();
+  const empty = document.getElementById("empty");
+  empty.className = "empty";
+  empty.textContent = "加载中 Loading...";
+  empty.style.display = "block";
+  try {
+    const r = await fetch(api + "?view=orders", {credentials:"include", headers:authHeaders()}).then(x => x.json());
+    if(!r.success) throw new Error(r.error || "Load failed");
+    const rows = r.data || [];
+    document.getElementById("orders").innerHTML = rows.map(o => {
+      const p = progress(o.status);
+      const name = o.product_name_cn || o.product_name || "—";
+      return `<section class="order">
+        <div class="head"><div><div class="order-no">${esc(o.order_no)}</div><div class="sub">${esc(name)}</div></div>
+        <button class="primary" data-order-no="${esc(o.order_no)}">申请交货日期 / Request Date</button></div>
+        <span class="badge">${esc(statusText[o.status] || o.status || "Pending")}</span>
+        <div class="steps">${[1,2,3,4].map(i => `<div class="step ${i <= p ? "on" : ""}"></div>`).join("")}</div>
+        <div class="meta">
+          <div><div class="label">数量 / Qty</div><div class="val">${esc(o.total_qty || "—")}</div></div>
+          <div><div class="label">柜型 / Container</div><div class="val">${esc(o.container_type || "—")}</div></div>
+          <div><div class="label">ETD</div><div class="val">${esc(fmt(o.etd))}</div></div>
+          <div><div class="label">交货日期 / Delivery</div><div class="val">${esc(fmt(o.delivery_date))}</div></div>
+          <div><div class="label">确认交货 / Confirmed</div><div class="val">${esc(fmt(o.confirmed_delivery))}</div></div>
+        </div>
+      </section>`;
+    }).join("");
+    empty.style.display = rows.length ? "none" : "block";
+    empty.textContent = "暂无订单 / No orders";
+  } catch (e) {
+    empty.className = "empty error";
+    empty.textContent = e.message;
+  }
+}
+async function submitRequest(){
+  const orderNo = document.getElementById("modal-order").value;
+  const requested = document.getElementById("modal-date").value;
+  const note = document.getElementById("modal-note").value;
+  if(!requested) return alert("请选择日期 / Please choose a date");
+  const r = await fetch(api + "?action=request-delivery-date", {
+    method:"POST",
+    credentials:"include",
+    headers:authHeaders(),
+    body:JSON.stringify({order_no:orderNo, requested_date:requested, note})
+  }).then(x => x.json());
+  if(!r.success) return alert(r.error || "Submit failed");
+  closeDialog();
+  alert("已提交 / Submitted");
+}
+document.getElementById("orders").addEventListener("click", e => {
+  const b = e.target.closest("[data-order-no]");
+  if(b) openRequest(b.dataset.orderNo);
+});
+loadOrders();
+</script>
+</body>
+</html>
