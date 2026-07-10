@@ -26,8 +26,8 @@ export default async function handler(req, res){
       var sp=await pool.query("SELECT id,order_nos FROM shipping_plans WHERE bl_no=$1",[blNo]);
       var onos=[], planIds=[]; sp.rows.forEach(function(r){ planIds.push(r.id); if(Array.isArray(r.order_nos)) onos=onos.concat(r.order_nos); });
       // 一票多柜: 部分订单不在 shipping_plans.order_nos, 再从 container_bookings 补齐(合并报关视图就是靠它拿全部柜/单)
-      var cb=await pool.query("SELECT DISTINCT order_no, contract_no FROM container_bookings WHERE btrim(bl_no)=btrim($1)"+(planIds.length?" OR shipping_plan_id=ANY($2)":""), planIds.length?[blNo,planIds]:[blNo]);
-      cb.rows.forEach(function(r){ if(r.order_no) onos.push(r.order_no); if(r.contract_no) onos.push(r.contract_no); });
+      var cb=await pool.query("SELECT DISTINCT contract_no FROM container_bookings WHERE btrim(bl_no)=btrim($1)"+(planIds.length?" OR shipping_plan_id=ANY($2)":""), planIds.length?[blNo,planIds]:[blNo]);
+      cb.rows.forEach(function(r){ if(r.contract_no) onos.push(r.contract_no); });
       onos=Array.from(new Set(onos.filter(Boolean)));
       oq = onos.length
         ? await pool.query("SELECT id,order_no FROM orders WHERE bl_no=$1 OR order_no=ANY($2) OR contract_no=ANY($2)",[blNo,onos])
