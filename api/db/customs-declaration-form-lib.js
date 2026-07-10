@@ -194,6 +194,24 @@ export async function resolveOrdersForContainer(pool, planOrBl, container_no) {
     blNo = clean(planOrBl);
   }
 
+  if (blNo) {
+    try {
+      var oc = await pool.query(
+        `SELECT DISTINCT o.id
+           FROM order_containers oc
+           JOIN containers c ON c.id = oc.container_id
+           LEFT JOIN shipment_group sg ON sg.id = c.shipment_group_id
+           JOIN orders o ON o.id = oc.order_id
+          WHERE btrim(c.container_no) = btrim($1)
+            AND (sg.bl_master = $2 OR o.bl_no = $2 OR o.raw->>'blNo' = $2 OR o.raw->>'bl_no' = $2)
+          ORDER BY o.id ASC`,
+        [containerNo, blNo]
+      );
+      var ocIds = oc.rows.map(function (o) { return Number(o.id); }).filter(function (id) { return Number.isFinite(id); });
+      if (ocIds.length) return ocIds;
+    } catch (_) {}
+  }
+
   var cb = await pool.query(
     `SELECT id, bl_no, shipping_plan_id, contract_no, container_no
        FROM container_bookings
@@ -372,6 +390,22 @@ export async function loadContainersForBl(pool, plan) {
         c = clean(c); if (c && out.indexOf(c) < 0) out.push(c);
       });
     };
+    if (blNo) {
+      try {
+        var r0 = await pool.query(
+          `SELECT DISTINCT btrim(c.container_no) AS c
+             FROM order_containers oc
+             JOIN containers c ON c.id = oc.container_id
+             LEFT JOIN shipment_group sg ON sg.id = c.shipment_group_id
+             JOIN orders o ON o.id = oc.order_id
+            WHERE (sg.bl_master = $1 OR o.bl_no = $1 OR o.raw->>'blNo' = $1 OR o.raw->>'bl_no' = $1)
+              AND NULLIF(btrim(c.container_no), '') IS NOT NULL
+            ORDER BY btrim(c.container_no)`,
+          [blNo]
+        );
+        r0.rows.forEach(function (x) { pushList(x.c); });
+      } catch (e) {}
+    }
     try {
       var r1 = await pool.query(
         "SELECT DISTINCT btrim(container_no) AS c FROM container_bookings WHERE shipping_plan_id = $1 OR ($2 <> '' AND btrim(bl_no) = $2)",
@@ -388,4 +422,3 @@ export async function loadContainersForBl(pool, plan) {
     return out;
   } catch (e) { return []; }
 }
-
