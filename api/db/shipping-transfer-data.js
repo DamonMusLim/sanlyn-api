@@ -180,9 +180,11 @@ export default async function handler(req, res) {
     }
 
     const containers = Array.from(containersById.values()).map((container) => {
-      const gross = container._fallbackCargoWeight > 0
-        ? container._fallbackCargoWeight
-        : container.gross_weight_kg;
+      // [2026-07-10] 柜重GW 优先用产品真值 Σ(gw_ctn×qty)(与 PL / 毛重GW 一致);
+      // cb.cargo_weight_kg 是手填/圆整值(如26000),只在没有产品毛重时兜底,别覆盖真值。
+      const gross = container.gross_weight_kg > 0
+        ? container.gross_weight_kg
+        : container._fallbackCargoWeight;
       const vgm = gross + container.tare_kg;
 
       return {
