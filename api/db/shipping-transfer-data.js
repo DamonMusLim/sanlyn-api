@@ -63,7 +63,7 @@ const SQL = `
   ) o ON true
   LEFT JOIN order_line_items li ON li.order_id = o.id
   LEFT JOIN products p ON p.id = li.product_id
-  WHERE sp.id::text = $1 OR sp._id = $1
+  WHERE sp.id::text = $1 OR sp._id = $1 OR sp.shipment_no = $1 OR btrim(sp.bl_no) = btrim($1)
   ORDER BY cb.id ASC, li.id ASC
 `;
 
