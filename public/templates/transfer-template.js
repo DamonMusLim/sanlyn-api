@@ -216,6 +216,43 @@ window.saveDraft = saveDraft;
 window.loadDraft = loadDraft;
 window.toggleMode = toggleMode;
 window.togglePreview = togglePreview;
+// [2026-07-10] 补 PDF/Excel 下载(自托管库,和其它模版一致) —— 装箱资料原来只有 PNG。
+function _tLoad(src, cb){ var ex=document.querySelector('script[data-v="'+src+'"]'); if(ex){ if(ex.getAttribute('data-ok')==='1')return cb(); ex.addEventListener('load',cb); return; } var el=document.createElement('script'); el.src=src; el.setAttribute('data-v',src); el.onload=function(){ el.setAttribute('data-ok','1'); cb(); }; el.onerror=function(){ alert('库加载失败: '+src); }; document.head.appendChild(el); }
+function _tEnsure(name, file, cb){ if(window[name])return cb(); _tLoad('/templates/vendor/'+file, cb); }
+function _tJsPDF(){ return (window.jspdf&&window.jspdf.jsPDF)||window.jsPDF||null; }
+function _tName(){ return '装箱资料-' + ((currentData&&currentData.plan&&currentData.plan.export_bl)||'draft'); }
+async function downloadPdf(){
+  var doc=document.querySelector('#doc'); if(!doc)return;
+  var tb=document.querySelector('.toolbar'); if(tb)tb.style.display='none';
+  var restore=function(){ if(tb)tb.style.display=''; };
+  _tEnsure('html2canvas','html2canvas.min.js', function(){ _tEnsure('jspdf','jspdf.umd.min.js', async function(){
+    try{
+      var canvas=await window.html2canvas(doc,{scale:2,useCORS:true,backgroundColor:'#fff'});
+      var JsPDF=_tJsPDF(); if(!JsPDF){ restore(); window.print(); return; }
+      var pdf=new JsPDF('l','mm','a4'), pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+      var imgW=pw, imgH=canvas.height*pw/canvas.width, img=canvas.toDataURL('image/jpeg',0.95);
+      if(imgH<=ph){ pdf.addImage(img,'JPEG',0,0,imgW,imgH); }
+      else{ var pos=0; while(pos<imgH-0.5){ pdf.addImage(img,'JPEG',0,-pos,imgW,imgH); pos+=ph; if(pos<imgH-0.5)pdf.addPage(); } }
+      pdf.save(_tName()+'.pdf'); restore();
+    }catch(e){ restore(); window.print(); }
+  }); });
+}
+function exportExcel(){
+  _tEnsure('XLSX','xlsx.full.min.js', function(){
+    try{
+      var aoa=[];
+      document.querySelectorAll('#doc table').forEach(function(tbl){
+        if(tbl.offsetParent===null)return; // 只导当前可见视图的表
+        [].forEach.call(tbl.rows,function(tr){ aoa.push([].map.call(tr.cells,function(td){ return (td.textContent||'').replace(/\s+/g,' ').trim(); })); });
+        aoa.push([]);
+      });
+      var wb=window.XLSX.utils.book_new(), ws=window.XLSX.utils.aoa_to_sheet(aoa);
+      window.XLSX.utils.book_append_sheet(wb,ws,'装箱资料');
+      window.XLSX.writeFile(wb, _tName()+'.xlsx');
+    }catch(e){ alert('导出失败: '+e.message); }
+  });
+}
+window.downloadPdf=downloadPdf; window.exportExcel=exportExcel;
 window.downloadPng = downloadPng;
 window.pickSeal = pickSeal;
 
