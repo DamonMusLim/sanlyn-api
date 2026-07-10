@@ -1,3 +1,5 @@
+// TPL_VERSION: 每次改模版必改;= canonical git 短哈希 + 日期,单据页脚显示,旧版一眼现形
+var TPL_VERSION = "v2026.07.10 · dfdfac9";
 const qs = new URLSearchParams(location.search);
 const planId = qs.get("plan_id") || qs.get("id");
 const token = qs.get("token") || "";
@@ -48,6 +50,8 @@ function renderHeader(plan) {
   setT("exportBl", plan.export_bl || "");
   setT("etd", fmtDate(plan.etd));
   setT("shipmentNo", plan.shipment_no || "");
+  setT("tplVer", TPL_VERSION);
+  setT("genTime", new Date().toLocaleString("zh-CN"));
 }
 
 function renderTransferRows(containers) {
