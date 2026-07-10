@@ -761,6 +761,7 @@ export default async function handler(req, res) {
     }
 
     // ── 5. Shape output ───────────────────────────────────────────────────
+    const declaredOverrides = [];
     let lines = Object.values(buckets)
       .map(b => {
         const nameList = Object.keys(b._nameNw);
@@ -769,6 +770,15 @@ export default async function handler(req, res) {
           b.declaration_name = top;
           if (b._nameEn[top]) b.declaration_name_en = b._nameEn[top];
           b.merged_names = nameList;   // 同HS合并的全部品名(UI可显示+N合并)
+        }
+        // [2026-07-10 跟BL对上·以后省麻烦] BL级硬保证 申报≤销售: 申报来源(OLI declare_amount_per_box
+        // /products主数据/raw小计)有小数点进位或陈旧会让本行申报>销售,在BL合并视图统一封顶到销售;
+        // 封顶记入 declared_overrides 供人工核源头(Mode B 真坏数据仍可见,不静默吞)。
+        if (b.customer_amount > 0 && b.declared_amount > b.customer_amount + 0.001) {
+          declaredOverrides.push({ declaration_name: b.declaration_name, sku: [...b._skus][0] || null,
+            was: parseFloat(b.declared_amount.toFixed(2)), capped: parseFloat(b.customer_amount.toFixed(2)),
+            over_pct: parseFloat(((b.declared_amount - b.customer_amount) / b.customer_amount * 100).toFixed(2)) });
+          b.declared_amount = b.customer_amount;
         }
         return b;
       })
@@ -862,6 +872,7 @@ export default async function handler(req, res) {
       totals,
       cross_check:      crossCheck,
       weight_warnings:  weightWarnings,
+      declared_overrides: declaredOverrides,
       orders_included:  orders.map(o => o.order_no || o.contract_no).filter(Boolean),
       missing_skus:     missingSkus,
       missing_weight:   [...missingWeightSkus],
