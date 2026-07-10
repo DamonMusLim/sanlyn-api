@@ -201,7 +201,7 @@ export async function fetchRows(pool, opts) {
              CASE WHEN o.order_no ILIKE '%-DG-%'
                   THEN (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id)
                   ELSE NULL END AS declare_value,
-             (SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS factory_expected_value,
+             (SELECT COALESCE(NULLIF(SUM(oli.factory_subtotal),0), NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0), NULLIF(SUM(oli.qty_ctn*p.factory_price),0)) FROM order_line_items oli LEFT JOIN products p ON p.id=oli.product_id WHERE oli.order_id=o.id) AS factory_expected_value,
              COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
                       NULLIF(o.total_amount_factory,0)) AS purchase_value,
              (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli,
@@ -401,16 +401,14 @@ async function handleList(req, res) {
 
 function factoryRow(r) {
   return {
-    customs_no: r.customs_no,
     contract_no: r.contract_no,
     export_date: r.export_date,
     period: r.period,
     factory_code: r.factory_code,
     factory_name: r.factory_name,
     status: r.status,
-    expected_amount: r.effective_expected_amount,
+    expected_amount: r.factory_expected_amount,
     factory_expected_amount: r.factory_expected_amount,
-    system_expected_amount: r.system_expected_amount,
     received_amount: r.received_amount,
     uploaded_amount: r.uploaded_amount,
     valid_invoice_count: r.valid_invoice_count,
@@ -422,8 +420,7 @@ function factoryRow(r) {
     has_invoice: (r.valid_invoice_count || 0) > 0,
     paid_amount: r.paid_amount || 0,
     slip_count: r.slip_count || 0,
-    ratio_alert: r.ratio_alert ?? null,
-    diff_amount: r.diff_amount,
+    diff_amount: (Number(r.factory_expected_amount) || 0) - (Number(r.uploaded_amount) || 0),
     last_event_at: r.last_event_at,
   };
 }
