@@ -18,7 +18,7 @@ button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}button:
 table{width:100%;min-width:980px;border-collapse:collapse}th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
 th{background:var(--head);color:#344054;font-size:12px}tr:last-child td{border-bottom:0}.num{text-align:right;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}
 .product{display:flex;align-items:center;gap:8px;min-width:230px}.product img{width:34px;height:34px;border:1px solid var(--line);border-radius:5px;object-fit:cover;background:#f2f4f7}.sku{font-size:12px;color:var(--muted)}
-input{width:92px;border:1px solid var(--line);border-radius:6px;padding:7px 8px;text-align:right;font:inherit;background:#fff}input:disabled{background:#f2f4f7;color:#667085}
+input{width:92px;border:1px solid var(--line);border-radius:6px;padding:7px 8px;text-align:right;font:inherit;background:#fff}input:disabled{background:#f2f4f7;color:#667085}input.txt{width:150px;text-align:left}
 .badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800;border:1px solid var(--line);white-space:nowrap}
 .matched{color:var(--ok);background:#ecfdf3;border-color:#abefc6}.pending_receipt,.in_transit{color:var(--blue);background:#eff4ff;border-color:#b2ccff}.bag_short,.bad{color:var(--bad);background:#fef3f2;border-color:#fecdca}
 tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-neg{color:var(--bad);font-weight:800}.empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
@@ -30,23 +30,30 @@ tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-n
 <div class="wrap">
   <div class="top">
     <div>
-      <h1>SKU库存对账表</h1>
-      <div class="sub" id="scope">按品牌分组 · 工厂填报 / 客户只读</div>
+      <h1 id="title">库存比对表</h1>
+      <div class="sub" id="scope">成品库存 · 袋子库存 · 来料实收比对</div>
     </div>
     <div class="actions">
-      <span class="pill" id="role-pill">Role</span>
+      <span class="pill" id="role-pill">…</span>
+      <select id="brand-filter" style="display:none;border:1px solid #d8dee8;border-radius:6px;padding:7px 9px;font:inherit;background:#fff"></select>
+      <button id="history-btn" style="display:none">修改历史</button>
       <button id="refresh">刷新</button>
       <button class="primary" id="save-all">保存全部</button>
     </div>
   </div>
-  <div class="note" id="note">客户视图仅展示授权品牌，不包含成本、工厂价、客户售价等敏感字段。</div>
+  <div class="note" id="note" style="display:none">仅展示授权品牌，不含成本、价格等敏感字段。</div>
+  <div id="history-panel" class="brand" style="display:none;margin-bottom:12px"></div>
   <div id="groups"><div class="empty">加载中...</div></div>
 </div>
 <script>
 const apiUrl = "/api/db/sku-recon";
 const labels = {matched:"齐",pending_receipt:"待收",bag_short:"袋子缺",in_transit:"在途"};
-const state = {role:"", canEdit:false, groups:[]};
-function token(){return new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";}
+const state = {role:"", canEdit:false, groups:[], brandFilter:""};
+function token(){
+  const t = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
+  // 丢弃含非Latin1字符(如中文)的脏token,否则塞进fetch请求头会整页崩("non ISO-8859-1 code point")
+  return /[^\x00-\xff]/.test(t) ? "" : t;
+}
 function authHeaders(json){
   const t = token(), h = json ? {"Content-Type":"application/json"} : {};
   if(t) h.Authorization = "Bearer " + t;
@@ -55,41 +62,67 @@ function authHeaders(json){
 function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
 function num(v){return v==null||v===""?"":Number(v).toLocaleString();}
 function rawNum(v){return v==null||v===""?"":Number(v);}
+function gsum(g,f){return (g.rows||[]).reduce((a,x)=>a+(Number(x[f])||0),0);}
 function diffCls(v){return Number(v)<0?"diff-neg":Number(v)>0?"diff-pos":"";}
 function rowAlert(r){return r.status==="bag_short" || Math.abs(Number(r.diff || 0))>0.0001 || Number(r.finished_stock||0)<=Number(r.finished_safety_stock||-1);}
 function imgTag(url){return url ? `<img src="${esc(url)}" alt="">` : `<img alt="">`;}
+function inpCell(r, field, type){
+  if(!state.canEdit) return type==="text" ? esc(r[field]||"") : num(r[field]);
+  const v = type==="text" ? esc(r[field]==null?"":r[field]) : esc(rawNum(r[field]));
+  return `<input data-field="${field}"${type==="text"?' class="txt"':''} value="${v}">`;
+}
+function restockCell(r){
+  const gap = Math.max(0, Number(r.finished_safety_stock||0) - Number(r.finished_stock||0));
+  if(gap<=0) return '<span class="muted">—</span>';
+  const cap = Number(r.container_capacity||0);
+  const cab = cap>0 ? ` <span class="muted">≈${Math.ceil(gap/cap)}柜</span>` : "";
+  return `<span class="diff-neg">补 ${num(gap)}</span>${cab}`;
+}
+function colDefs(){
+  const ed = state.canEdit;
+  const c = [
+    {label:"产品", cell:r=>`<div class="product">${imgTag(r.image_url)}<div><strong>${esc(r.product_name||r.sku)}</strong><div class="sku">${esc(r.sku)}</div></div></div>`},
+    {label:"规格", cell:r=>esc(r.size||"")},
+  ];
+  if(ed) c.push({label:"供应商", cell:r=>inpCell(r,"supplier_name","text")});
+  c.push({label:"成品库存", num:1, cell:r=>inpCell(r,"finished_stock","num")});
+  c.push({label:"安全值", num:1, cell:r=>inpCell(r,"finished_safety_stock","num")});
+  c.push({label:"补货", num:1, cell:restockCell});
+  if(ed){
+    c.push({label:"柜容量", num:1, cell:r=>inpCell(r,"container_capacity","num")});
+    c.push({label:"袋子库存", num:1, cell:r=>`${num(r.bag_stock)}<div class="muted">安全 ${num(r.bag_safety_stock)}</div>`});
+    c.push({label:"下单", num:1, cell:r=>num(r.order_qty)});
+    c.push({label:"实收", num:1, cell:r=>inpCell(r,"real_qty","num")});
+    c.push({label:"差异", num:1, cell:r=>r.diff==null?"—":`<span class="${diffCls(r.diff)}">${num(r.diff)}</span>`});
+  }
+  c.push({label:"状态", cell:r=>`<span class="badge ${esc(r.status)}">${esc(labels[r.status]||r.status)}</span>`});
+  return c;
+}
 function render(){
-  document.getElementById("role-pill").textContent = state.role || "Role";
+  document.getElementById("role-pill").textContent = state.canEdit ? "可填写" : "只读";
   document.getElementById("save-all").disabled = !state.canEdit;
   const root = document.getElementById("groups");
-  if(!state.groups.length){root.innerHTML = '<div class="empty">暂无SKU</div>';return;}
-  root.innerHTML = state.groups.map((g,i)=>`
-    <section class="brand" data-brand="${esc(g.brand)}">
+  const groups = state.brandFilter ? state.groups.filter(g=>g.brand===state.brandFilter) : state.groups;
+  if(!groups.length){root.innerHTML = '<div class="empty">暂无SKU</div>';return;}
+  const cols = colDefs();
+  const thead = `<thead><tr>${cols.map(c=>`<th class="${c.num?'num':''}">${esc(c.label)}</th>`).join("")}</tr></thead>`;
+  root.innerHTML = groups.map((g)=>{
+    const i = state.groups.indexOf(g);
+    const meta = state.canEdit
+      ? `${Number(g.sku_count||0)} SKU · ${Number(g.bag_count||0)} 款袋子 · 成品库存合计 ${num(gsum(g,"finished_stock"))} · 实收合计 ${num(gsum(g,"real_qty"))} · 下单合计 ${num(gsum(g,"order_qty"))}`
+      : `${Number(g.sku_count||0)} SKU · 库存合计 ${num(gsum(g,"finished_stock"))} · 需补货合计 ${num(gsum(g,"restock_gap"))}`;
+    const body = (g.rows||[]).map(r=>{
+      const alert = rowAlert(r) ? "alert" : "";
+      return `<tr class="${alert}" data-sku="${esc(r.sku)}">${cols.map(c=>`<td class="${c.num?'num':''}">${c.cell(r)}</td>`).join("")}</tr>`;
+    }).join("");
+    return `<section class="brand" data-brand="${esc(g.brand)}">
       <button class="brand-head" data-toggle="${i}">
-        <span class="brand-title">${esc(g.brand || "未分组")}</span>
-        <span class="brand-meta">${Number(g.sku_count||0)} SKU · ${Number(g.bag_count||0)} 款袋子</span>
+        <span class="brand-title">${esc(g.brand||"未分组")}</span>
+        <span class="brand-meta">${meta}</span>
       </button>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>产品</th><th>规格</th><th class="num">成品库存</th><th class="num">袋子库存</th><th class="num">下单</th><th class="num">实收</th><th class="num">差异</th><th>状态</th></tr></thead>
-          <tbody>${(g.rows||[]).map(rowHtml).join("")}</tbody>
-        </table>
-      </div>
-    </section>`).join("");
-}
-function rowHtml(r){
-  const disabled = state.canEdit ? "" : "disabled";
-  const alert = rowAlert(r) ? "alert" : "";
-  return `<tr class="${alert}" data-sku="${esc(r.sku)}">
-    <td><div class="product">${imgTag(r.image_url)}<div><strong>${esc(r.product_name || r.sku)}</strong><div class="sku">${esc(r.sku)}</div></div></div></td>
-    <td>${esc(r.size || "")}</td>
-    <td class="num"><input data-field="finished_stock" value="${esc(rawNum(r.finished_stock))}" ${disabled}></td>
-    <td class="num">${num(r.bag_stock)}<div class="muted">安全 ${num(r.bag_safety_stock)}</div></td>
-    <td class="num">${num(r.order_qty)}</td>
-    <td class="num"><input data-field="real_qty" value="${esc(rawNum(r.real_qty))}" ${disabled}></td>
-    <td class="num ${diffCls(r.diff)}">${r.diff==null?"—":num(r.diff)}</td>
-    <td><span class="badge ${esc(r.status)}">${esc(labels[r.status] || r.status)}</span></td>
-  </tr>`;
+      <div class="table-wrap"><table>${thead}<tbody>${body}</tbody></table></div>
+    </section>`;
+  }).join("");
 }
 async function load(){
   const root = document.getElementById("groups");
@@ -98,10 +131,23 @@ async function load(){
     const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
     if(!r.success) throw new Error(r.error || "Load failed");
     state.role = r.role || ""; state.canEdit = !!r.can_edit; state.groups = r.groups || [];
-    document.getElementById("note").style.display = state.role === "customer" ? "block" : "none";
-    document.getElementById("scope").textContent = state.canEdit ? "工厂/内部可填写，保存后写入库存与最近来料实收" : "客户只读，仅展示授权品牌";
+    const org = (r.org_name || "").trim();
+    document.getElementById("title").textContent = org ? org + " · 库存比对表" : "库存比对表";
+    document.title = (org ? org + " · " : "") + "库存比对表";
+    document.getElementById("note").style.display = state.canEdit ? "none" : "block";
+    document.getElementById("history-btn").style.display = state.canEdit ? "" : "none";
+    document.getElementById("history-panel").style.display = "none";
+    document.getElementById("scope").textContent = state.canEdit ? "供应商 · 成品库存 · 安全值 · 柜容量 · 来料实收比对（可直接填写并保存）" : "品牌 · 库存 · 安全值 · 补货提醒";
+    fillBrandFilter();
     render();
   }catch(e){root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`;}
+}
+function fillBrandFilter(){
+  const sel = document.getElementById("brand-filter");
+  const brands = state.groups.map(g=>g.brand);
+  if(state.brandFilter && !brands.includes(state.brandFilter)) state.brandFilter = "";
+  sel.innerHTML = `<option value="">全部品牌</option>` + brands.map(b=>`<option value="${esc(b)}"${b===state.brandFilter?" selected":""}>${esc(b)}</option>`).join("");
+  sel.style.display = brands.length>1 ? "" : "none";
 }
 async function saveAll(){
   if(!state.canEdit) return;
@@ -119,11 +165,34 @@ async function saveAll(){
   }catch(e){alert(e.message);}
   finally{btn.textContent = "保存全部"; btn.disabled = !state.canEdit;}
 }
+function hRow(h){
+  const b = h.before || {}, a = h.after || {};
+  const ch = Object.keys(a).map(f=>`${esc(f)} ${esc(b[f]==null?"—":b[f])}→${esc(a[f]==null?"—":a[f])}`).join("；") || esc(h.diff_summary||"");
+  const dt = h.created_at ? new Date(h.created_at).toLocaleString("zh-CN") : "";
+  return `<tr><td>${esc(dt)}</td><td>${esc(h.sku)}</td><td>${ch}</td><td>${esc(h.operator||"")}</td></tr>`;
+}
+async function loadHistory(){
+  const panel = document.getElementById("history-panel");
+  if(panel.style.display === "block"){ panel.style.display = "none"; return; }
+  panel.style.display = "block";
+  panel.innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(apiUrl + "?view=history",{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error || "加载失败");
+    const rows = r.history || [];
+    if(!rows.length){ panel.innerHTML = '<div class="empty">暂无修改记录</div>'; return; }
+    panel.innerHTML = `<div class="brand-head"><span class="brand-title">修改历史</span><span class="brand-meta">最近 ${rows.length} 条</span></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>SKU</th><th>改动</th><th>操作人</th></tr></thead><tbody>${rows.map(hRow).join("")}</tbody></table></div>`;
+  }catch(e){ panel.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+}
 document.addEventListener("click", e=>{
   const t = e.target.closest("[data-toggle]");
   if(t){const box = t.parentElement.querySelector(".table-wrap"); box.style.display = box.style.display==="none" ? "" : "none";}
   if(e.target.id === "refresh") load();
   if(e.target.id === "save-all") saveAll();
+  if(e.target.id === "history-btn") loadHistory();
+});
+document.addEventListener("change", e=>{
+  if(e.target.id === "brand-filter"){ state.brandFilter = e.target.value; render(); }
 });
 load();
 </script>
