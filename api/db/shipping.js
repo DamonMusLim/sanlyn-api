@@ -2,6 +2,7 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 import { derivePlanFromOrders } from "../lib/derive-plan-from-orders.js"; // task 1817: 读时按 order_nos[] 派生工厂/客户/etd/量类
 import { sendCancellationNotice } from "../../jobs/shipment-notify.js"; // 2026-06-26: 取消通知工厂
+import { normalizeContainersDetail } from "../lib/containers-detail-guard.js"; // 2026-07-12: CY00376 柜数虚增防线
 
 // Normalize a Chinese company name for matching:
 //  - strip full/half-width brackets, spaces, punctuation
@@ -68,6 +69,8 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     try {
       const body = req.body || {};
+      if (Object.prototype.hasOwnProperty.call(body, "containers_detail"))
+        body.containers_detail = normalizeContainersDetail(body.containers_detail, body.container_qty);
       const params = [];
       const sets = buildSet(body, params);
       // _id 必填(NOT NULL) → 自动生成；created_by 记录操作者
@@ -96,6 +99,16 @@ export default async function handler(req, res) {
       const id = body.id != null ? parseInt(body.id, 10) : null;
       const _id = body._id != null ? String(body._id) : null;
       if (id == null && !_id) return res.status(400).json({ success:false, error:"id or _id required" });
+      if (Object.prototype.hasOwnProperty.call(body, "containers_detail") && Array.isArray(body.containers_detail)) {
+        let cq = body.container_qty;
+        if (cq == null) {
+          const qr = (id != null && Number.isFinite(id))
+            ? await poolW.query("SELECT container_qty FROM shipping_plans WHERE id = $1", [id])
+            : await poolW.query("SELECT container_qty FROM shipping_plans WHERE _id = $1", [_id]);
+          cq = qr.rows[0] ? qr.rows[0].container_qty : null;
+        }
+        body.containers_detail = normalizeContainersDetail(body.containers_detail, cq);
+      }
       const params = [];
       const sets = buildSet(body, params);
       if (!sets.length) return res.status(400).json({ success:false, error:"no editable fields" });
