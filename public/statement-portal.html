@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Statement of account · Sanlyn</title>
+<style>
+  :root{--bg:#f6f6f4;--card:#fff;--line:#e6e4dd;--line2:#d7d5cc;--text:#22201c;--muted:#7a776f;--accent:#2f6db0;--accent-bg:#eaf1fa;--warn:#9a6a15;--warn-bg:#faf1dc;--ok:#2c7a5b;--ok-bg:#e7f4ee;--pro:#6b4ea6;--pro-bg:#efe9f7;--dark:#1a1a17}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  a{color:inherit}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 14px 40px}
+  header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  .head-in{max-width:1080px;margin:0 auto;padding:11px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:600}
+  .logo{width:26px;height:26px;border-radius:6px;background:var(--dark);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px}
+  .rt{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .lang{display:flex;border:1px solid var(--line2);border-radius:999px;overflow:hidden;font-size:12px}
+  .lang button{border:0;background:transparent;padding:4px 11px;cursor:pointer;color:var(--muted);border-left:1px solid var(--line2)}
+  .lang button:first-child{border-left:0}
+  .lang button.on{background:var(--dark);color:#fff}
+  .who{font-size:12px;color:var(--muted)}
+  h1{font-size:20px;font-weight:600;margin:18px 0 3px}
+  .sub{font-size:12.5px;color:var(--muted)}
+  .titlerow{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .btn{border:1px solid var(--line2);background:var(--card);border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--dark);color:#fff;border-color:var(--dark)}
+  .dl{position:relative}
+  .dl-menu{position:absolute;right:0;top:40px;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.1);padding:4px;min-width:150px;display:none;z-index:6}
+  .dl.open .dl-menu{display:block}
+  .dl-menu div{padding:8px 10px;border-radius:6px;cursor:pointer;font-size:13px}
+  .dl-menu div:hover{background:var(--bg)}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0 14px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .kpi.warn{background:var(--warn-bg);border-color:#ead8ac}
+  .kpi .l{font-size:12px;color:var(--muted)}.kpi.warn .l{color:var(--warn)}
+  .kpi .v{font-size:16px;font-weight:600;margin-top:3px}.kpi.warn .v{color:var(--warn)}
+  .filters{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:12px;display:flex;flex-direction:column;gap:9px}
+  .frow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .frow .lab{font-size:11.5px;color:var(--muted);width:64px}
+  .pill{border:1px solid var(--line2);background:transparent;color:var(--muted);border-radius:999px;padding:5px 14px;font-size:12.5px;cursor:pointer}
+  .pill.on{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:600}
+  .hint{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:820px}
+  th{background:var(--bg);color:var(--muted);text-align:left;font-weight:400;padding:9px 10px;border-bottom:1px solid var(--line)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line)}
+  tr.sel td{background:var(--accent-bg)}
+  .num{text-align:right}.ctr{text-align:center}
+  .chip{border-radius:999px;padding:2px 9px;font-size:11px;white-space:nowrap}
+  .chip.warn{background:var(--warn-bg);color:var(--warn)}.chip.ok{background:var(--ok-bg);color:var(--ok)}
+  .cat{border-radius:5px;padding:1px 6px;font-size:10.5px;margin-right:5px}
+  .cat.product{background:var(--pro-bg);color:var(--pro)}.cat.logistics{background:var(--accent-bg);color:var(--accent)}
+  .actionbar{display:none;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding:11px 13px;background:var(--accent-bg);border-radius:10px}
+  .actionbar.show{display:flex}
+  .actionbar .info{font-size:13px;color:var(--accent)}
+  .pay{margin-top:16px}
+  .pay .ttl{font-size:13px;font-weight:600;margin-bottom:8px}
+  .paygrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .paycard{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card)}
+  .paytag{font-size:11px;display:inline-block;padding:1px 7px;border-radius:5px;margin-bottom:7px}
+  .paytag.product{background:var(--pro-bg);color:var(--pro)}.paytag.logistics{background:var(--accent-bg);color:var(--accent)}
+  .payname{font-size:12.5px;font-weight:600}.paybank{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.7}
+  .paynote{font-size:11px;color:var(--muted);margin-top:8px}
+  .state{padding:34px;text-align:center;color:var(--muted)}
+  @media(max-width:720px){.cards{grid-template-columns:1fr 1fr}.paygrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-in">
+    <div class="brand"><span class="logo">S</span><span id="brand">Sanlyn</span></div>
+    <div class="rt">
+      <div class="lang" id="lang"></div>
+      <div class="who">🔒 <span id="who"></span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="titlerow">
+    <div><h1 id="ttl">Statement of account</h1><div class="sub" id="sub"></div></div>
+    <div class="dl" id="dl">
+      <button class="btn primary" id="dlbtn"><span id="dllabel">Download</span> ▾</button>
+      <div class="dl-menu"><div data-dl="pdf" id="dlpdf">PDF</div><div data-dl="excel" id="dlxls">Excel</div></div>
+    </div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+  <div class="filters" id="filters"></div>
+  <div class="hint" id="hint"></div>
+
+  <div id="body"><div class="state" id="state">Loading…</div></div>
+
+  <div class="actionbar" id="actionbar">
+    <div class="info" id="selinfo"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn primary" id="btnslip"></button>
+      <button class="btn" id="btnconfirm"></button>
+      <button class="btn" id="btndispute"></button>
+    </div>
+  </div>
+
+  <div class="pay" id="pay"></div>
+</div>
+
+<script type="module">
+import { I18N, LANGS, t, normalizeLang } from "./js/statement-portal-i18n.js";
+import { payeeFor } from "./js/statement-portal-payee.js";
+
+const qs = new URLSearchParams(location.search);
+const TOKEN = qs.get("token") || "";
+const state = {
+  lang: normalizeLang(qs.get("lang") || navigator.language || "en"),
+  status: "unpaid", category: "all",
+  rows: [], summary: {}, customer: "", selected: new Set(), loaded: false, error: false,
+};
+const $ = (id) => document.getElementById(id);
+const T = (k) => t(state.lang, k);
+const rowKey = (r, i) => `${i}:${r.order_no || ""}:${r.category}:${r.bl_no || ""}`;
+function fmtMoney(cur, n) { return `${cur || "CNY"} ${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+function fmtDate(v) { if (!v) return "—"; return String(v).slice(0, 10); }
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m])); }
+
+async function load() {
+  try {
+    const r = await fetch(`/api/db/statement-portal-data?token=${encodeURIComponent(TOKEN)}`, { headers: { Accept: "application/json" } });
+    const d = await r.json();
+    if (!r.ok || !d.success) throw new Error(d.error || "load failed");
+    state.rows = d.rows || [];
+    state.summary = d.summary || {};
+    state.loaded = true;
+  } catch (e) { state.error = true; }
+  render();
+}
+
+function visibleRows() {
+  let rows = state.rows.map((r, i) => ({ r, i }));
+  if (state.category !== "all") rows = rows.filter((x) => x.r.category === state.category);
+  if (state.status !== "all") rows = rows.filter((x) => state.status === "paid" ? x.r.status === "paid" : x.r.status !== "paid");
+  rows.sort((a, b) => {
+    const ua = a.r.status !== "paid" ? 0 : 1, ub = b.r.status !== "paid" ? 0 : 1;
+    if (ua !== ub) return ua - ub;
+    return String(b.r.shipped_date || "").localeCompare(String(a.r.shipped_date || ""));
+  });
+  return rows;
+}
+
+function renderChrome() {
+  document.documentElement.lang = state.lang;
+  $("brand").textContent = T("brand");
+  $("ttl").textContent = T("statement_title");
+  $("dllabel").textContent = T("download");
+  $("dlpdf").textContent = T("dl_pdf"); $("dlxls").textContent = T("dl_excel");
+  $("who").textContent = state.customer || "";
+  $("hint").textContent = T("multi_hint");
+  $("btnslip").textContent = "⬆ " + T("upload_slip");
+  $("btnconfirm").textContent = "✓ " + T("confirm");
+  $("btndispute").textContent = "✎ " + T("dispute");
+  $("lang").innerHTML = LANGS.map((l) => `<button data-lang="${l}" class="${l === state.lang ? "on" : ""}">${l === "zh" ? "中" : l === "ms" ? "BM" : "EN"}</button>`).join("");
+  $("sub").textContent = `${T("period")} · ${T("updated")} ${new Date().toISOString().slice(0, 10)}`;
+}
+
+function renderCards() {
+  const cur = Object.keys(state.summary)[0];
+  const s = state.summary[cur] || { outstanding: 0, paid: 0, receivable_total: 0, order_count: 0 };
+  const cards = [
+    ["warn", T("outstanding"), fmtMoney(cur, s.outstanding)],
+    ["", T("paid"), fmtMoney(cur, s.paid)],
+    ["", T("receivable"), fmtMoney(cur, s.receivable_total)],
+    ["", T("orders"), String(s.order_count || 0)],
+  ];
+  $("cards").innerHTML = cards.map(([c, l, v]) => `<div class="kpi ${c}"><div class="l">${esc(l)}</div><div class="v">${esc(v)}</div></div>`).join("");
+}
+
+function pill(key, val, cur, label) { return `<button class="pill ${val === cur ? "on" : ""}" data-${key}="${val}">${esc(label)}</button>`; }
+
+function renderFilters() {
+  const cnt = (fn) => state.rows.filter(fn).length;
+  $("filters").innerHTML = `
+    <div class="frow"><span class="lab">${esc(T("status"))}</span>
+      ${pill("status", "unpaid", state.status, `${T("f_unpaid")} ${cnt((r) => r.status !== "paid")}`)}
+      ${pill("status", "paid", state.status, `${T("f_paid")} ${cnt((r) => r.status === "paid")}`)}
+      ${pill("status", "all", state.status, `${T("f_all")} ${state.rows.length}`)}
+      <span class="lab" style="width:auto;color:#a7a49b">· ${esc(T("unpaid_first"))}</span></div>
+    <div class="frow"><span class="lab">${esc(T("category"))}</span>
+      ${pill("category", "all", state.category, T("c_all"))}
+      ${pill("category", "product", state.category, T("c_product"))}
+      ${pill("category", "logistics", state.category, T("c_logistics"))}</div>`;
+}
+
+function renderTable() {
+  const rows = visibleRows();
+  if (!state.loaded) { $("body").innerHTML = `<div class="state">${esc(T("loading"))}</div>`; return; }
+  if (state.error) { $("body").innerHTML = `<div class="state">${esc(T("load_error"))}</div>`; return; }
+  if (!rows.length) { $("body").innerHTML = `<div class="state">${esc(T("empty"))}</div>`; return; }
+  const head = `<tr><th style="width:32px"></th><th>${T("col_order")}</th><th>${T("col_item")}</th><th>${T("col_bl")}</th><th>${T("col_shipped")}</th><th class="num">${T("col_amount")}</th><th class="num">${T("col_prepaid")}</th><th class="num">${T("col_due")}</th><th class="ctr">${T("col_status")}</th></tr>`;
+  const stChip = (s) => s === "paid" ? `<span class="chip ok">${T("st_paid")}</span>` : s === "partial" ? `<span class="chip warn">${T("st_partial")}</span>` : `<span class="chip warn">${T("st_unpaid")}</span>`;
+  const catChip = (c) => `<span class="cat ${c}">${c === "logistics" ? T("c_logistics") : T("c_product")}</span>`;
+  const trs = rows.map(({ r, i }) => {
+    const k = rowKey(r, i), on = state.selected.has(k);
+    return `<tr class="${on ? "sel" : ""}"><td><input type="checkbox" data-k="${esc(k)}" ${on ? "checked" : ""}></td>
+      <td style="font-weight:600">${esc(r.order_no || "—")}</td>
+      <td>${catChip(r.category)}${esc(r.item_desc || "")}</td>
+      <td style="color:var(--muted)">${esc(r.bl_no || "—")}</td>
+      <td style="color:var(--muted)">${esc(fmtDate(r.shipped_date))}</td>
+      <td class="num">${esc(fmtMoney(r.currency, r.amount))}</td>
+      <td class="num" style="color:var(--ok)">${r.prepaid > 0 ? esc(Number(r.prepaid).toLocaleString(undefined, { minimumFractionDigits: 2 })) : "—"}</td>
+      <td class="num" style="font-weight:600">${esc(Number(r.due || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }))}</td>
+      <td class="ctr">${stChip(r.status)}</td></tr>`;
+  }).join("");
+  $("body").innerHTML = `<div class="tablewrap"><table><thead>${head}</thead><tbody>${trs}</tbody></table></div>`;
+}
+
+function renderAction() {
+  const bar = $("actionbar");
+  if (!state.selected.size) { bar.classList.remove("show"); return; }
+  bar.classList.add("show");
+  $("selinfo").textContent = `${T("selected")} ${state.selected.size}`;
+}
+
+function renderPay() {
+  const block = (key, tag) => { const p = payeeFor(key); const bank = [p.bank, p.account, p.swift].filter(Boolean).join(" · ") || "—";
+    return `<div class="paycard"><div class="paytag ${key === "trade" ? "product" : "logistics"}">${esc(tag)}</div><div class="payname">${esc(p.name_en)}</div><div class="paybank">${esc(bank)}</div></div>`; };
+  $("pay").innerHTML = `<div class="ttl">🏦 ${esc(T("payment_instructions"))} <span style="font-weight:400;color:var(--muted);font-size:11px">· ${esc(T("pi_fixed"))}</span></div>
+    <div class="paygrid">${block("trade", T("pi_products"))}${block("forwarder", T("pi_logistics"))}</div>
+    <div class="paynote">${esc(T("pi_note"))}</div>`;
+}
+
+function render() { renderChrome(); renderCards(); renderFilters(); renderTable(); renderAction(); renderPay(); }
+
+document.addEventListener("click", (e) => {
+  const lang = e.target.closest("[data-lang]"); if (lang) { state.lang = lang.dataset.lang; render(); return; }
+  const st = e.target.closest("[data-status]"); if (st) { state.status = st.dataset.status; render(); return; }
+  const ca = e.target.closest("[data-category]"); if (ca) { state.category = ca.dataset.category; render(); return; }
+  const dl = e.target.closest("#dlbtn"); if (dl) { $("dl").classList.toggle("open"); return; }
+  const dlp = e.target.closest("[data-dl]"); if (dlp) { $("dl").classList.remove("open"); if (dlp.dataset.dl === "pdf") window.print(); else window.location = `/api/db/statement-portal-data?token=${encodeURIComponent(TOKEN)}&format=xlsx`; return; }
+  if (!e.target.closest("#dl")) $("dl").classList.remove("open");
+});
+document.addEventListener("change", (e) => {
+  const cb = e.target.closest("[data-k]"); if (!cb) return;
+  if (cb.checked) state.selected.add(cb.dataset.k); else state.selected.delete(cb.dataset.k);
+  cb.closest("tr").classList.toggle("sel", cb.checked);
+  renderAction();
+});
+$("btnslip").addEventListener("click", () => {
+  const orders = [...state.selected].map((k) => k.split(":")[1]).filter(Boolean);
+  // Reuse existing slip-upload flow; pass preselected orders + token.
+  window.location = `/slip-upload.html?token=${encodeURIComponent(TOKEN)}&orders=${encodeURIComponent(orders.join(","))}`;
+});
+$("btnconfirm").addEventListener("click", () => alert(T("confirm")));
+$("btndispute").addEventListener("click", () => alert(T("dispute")));
+
+render();
+load();
+</script>
+</body>
+</html>
+<!-- Reused: /api/db/statement-portal-data endpoint, slip-upload.html flow, statement-portal-i18n.js, statement-portal-payee.js. No framework. -->
