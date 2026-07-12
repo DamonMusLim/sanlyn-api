@@ -1,6 +1,7 @@
 // /api/db/sku-recon.js - SKU库存对账表(工厂可填/客户只读脱敏)
 import { getPool, setCors } from "./db.js";
 import { extractUser } from "../auth.js";
+import { writeAudit } from "./audit-helper.js";
 
 const ROLES = new Set(["factory", "customer", "sanlyn", "admin"]);
 
@@ -41,26 +42,35 @@ function statusOf(row) {
 }
 function publicRow(row, r) {
   const diff = row.real_qty == null && Number(row.order_qty || 0) ? null : Number(row.real_qty || 0) - Number(row.order_qty || 0);
-  const base = {
+  const finished_stock = Number(row.finished_stock || 0);
+  const finished_safety_stock = Number(row.finished_safety_stock || 0);
+  const restock_gap = Math.max(0, finished_safety_stock - finished_stock); // 补货缺口=安全值−库存
+  // 客户只看: 品牌/产品/库存/安全值/补货/状态 —— 供应商/柜容量/袋子/实收/下单/差异一律不下发
+  const common = {
     sku: row.sku,
     product_name: row.product_name_cn || row.product_name || "",
     brand: row.brand || "未分组",
     size: row.size || row.spec || "",
     image_url: row.image_url || "",
-    finished_stock: Number(row.finished_stock || 0),
-    finished_safety_stock: Number(row.finished_safety_stock || 0),
+    finished_stock,
+    finished_safety_stock,
+    restock_gap,
+    bag_count: Number(row.bag_count || 0),
+    status: statusOf(row),
+  };
+  if (!(r === "factory" || isInternal(r))) return common;
+  return {
+    ...common,
+    supplier_name: row.supplier_name || "",
+    container_capacity: row.container_capacity == null ? null : Number(row.container_capacity),
     bag_stock: Number(row.bag_stock || 0),
     bag_safety_stock: Number(row.bag_safety_stock || 0),
-    bag_count: Number(row.bag_count || 0),
     order_qty: row.order_qty == null ? null : Number(row.order_qty),
     real_qty: row.real_qty == null ? null : Number(row.real_qty),
     diff,
-    status: statusOf(row),
     inbound_id: row.inbound_id || null,
     latest_inbound_at: row.latest_inbound_at || null,
-    can_edit: r === "factory" || isInternal(r),
   };
-  return base;
 }
 function groupRows(rows) {
   const map = new Map();
@@ -98,6 +108,7 @@ async function listRows(pool, r, scopeCodes, req) {
     SELECT p.sku, p.product_name, p.product_name_cn, p.brand, p.size, p.spec, p.image_url AS product_image_url,
            COALESCE(fg.current_stock, 0) AS finished_stock,
            COALESCE(fg.safety_stock, 0) AS finished_safety_stock,
+           fg.container_capacity, fg.supplier_name,
            COALESCE(pm.bag_stock, 0) AS bag_stock,
            COALESCE(pm.bag_safety_stock, 0) AS bag_safety_stock,
            COALESCE(pm.bag_count, 0) AS bag_count,
@@ -106,7 +117,8 @@ async function listRows(pool, r, scopeCodes, req) {
       FROM products p
       ${routeJoin}
  LEFT JOIN LATERAL (
-       SELECT SUM(f.current_stock) AS current_stock, SUM(f.safety_stock) AS safety_stock
+       SELECT SUM(f.current_stock) AS current_stock, SUM(f.safety_stock) AS safety_stock,
+              MAX(f.container_capacity) AS container_capacity, MAX(NULLIF(f.supplier_name, '')) AS supplier_name
          FROM finished_goods_inventory f WHERE f.sku = p.sku) fg ON true
  LEFT JOIN LATERAL (
        SELECT SUM(m.current_stock) AS bag_stock, SUM(m.safety_stock) AS bag_safety_stock,
@@ -138,9 +150,10 @@ async function saveRow(client, req, r, scopeCodes, row) {
   const p = await client.query(`SELECT id, sku, unit, factory_code FROM products WHERE ${where} LIMIT 1 FOR UPDATE`, vals);
   if (!p.rows.length) throw new Error("sku out of scope");
   const product = p.rows[0];
+  const before = {}, after = {};
 
-  if (row.finished_stock !== undefined) {
-    const target = qty(row.finished_stock, "finished_stock");
+  const fgFields = ["finished_stock", "finished_safety_stock", "container_capacity", "supplier_name"];
+  if (fgFields.some(k => row[k] !== undefined)) {
     let inv = await client.query(
       `SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`,
       [sku, row.warehouse_id || 1]
@@ -153,29 +166,68 @@ async function saveRow(client, req, r, scopeCodes, row) {
       );
       inv = await client.query(`SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`, [sku, row.warehouse_id || 1]);
     }
-    const before = Number(inv.rows[0].current_stock || 0);
-    if (target !== before) {
-      await client.query(`UPDATE finished_goods_inventory SET current_stock=$1, last_move_at=NOW(), updated_at=NOW() WHERE id=$2`, [target, inv.rows[0].id]);
-      await client.query(
-        `INSERT INTO inventory_logs(product_id, sku, type, quantity, unit, before_stock, after_stock, ref_type, ref_id, warehouse_id, factory_code, note, "operator")
-         VALUES($1,$2,'adjust',$3,$4,$5,$6,'sku-recon',$7,$8,$9,$10,$11)`,
-        [product.id, sku, target - before, product.unit || null, before, target, "sku-recon-" + Date.now(), inv.rows[0].warehouse_id, product.factory_code || null, "SKU库存对账保存", actor(req)]
-      );
+    const fg = inv.rows[0];
+    // 成品库存(带库存流水)
+    if (row.finished_stock !== undefined) {
+      const target = qty(row.finished_stock, "finished_stock") || 0;
+      const prev = Number(fg.current_stock || 0);
+      if (target !== prev) {
+        await client.query(`UPDATE finished_goods_inventory SET current_stock=$1, last_move_at=NOW(), updated_at=NOW() WHERE id=$2`, [target, fg.id]);
+        await client.query(
+          `INSERT INTO inventory_logs(product_id, sku, type, quantity, unit, before_stock, after_stock, ref_type, ref_id, warehouse_id, factory_code, note, "operator")
+           VALUES($1,$2,'adjust',$3,$4,$5,$6,'sku-recon',$7,$8,$9,$10,$11)`,
+          [product.id, sku, target - prev, product.unit || null, prev, target, "sku-recon-" + Date.now(), fg.warehouse_id, product.factory_code || null, "SKU库存对账保存", actor(req)]
+        );
+        before["成品库存"] = prev; after["成品库存"] = target;
+      }
+    }
+    // 安全值
+    if (row.finished_safety_stock !== undefined) {
+      const target = qty(row.finished_safety_stock, "finished_safety_stock") || 0;
+      const prev = Number(fg.safety_stock || 0);
+      if (target !== prev) {
+        await client.query(`UPDATE finished_goods_inventory SET safety_stock=$1, updated_at=NOW() WHERE id=$2`, [target, fg.id]);
+        before["安全值"] = prev; after["安全值"] = target;
+      }
+    }
+    // 柜容量
+    if (row.container_capacity !== undefined) {
+      const target = qty(row.container_capacity, "container_capacity");
+      const prev = fg.container_capacity == null ? null : Number(fg.container_capacity);
+      if (target !== prev) {
+        await client.query(`UPDATE finished_goods_inventory SET container_capacity=$1, updated_at=NOW() WHERE id=$2`, [target, fg.id]);
+        before["柜容量"] = prev; after["柜容量"] = target;
+      }
+    }
+    // 供应商/供应链名
+    if (row.supplier_name !== undefined) {
+      const target = clean(row.supplier_name, 120);
+      const prev = fg.supplier_name || "";
+      if (target !== prev) {
+        await client.query(`UPDATE finished_goods_inventory SET supplier_name=$1, updated_at=NOW() WHERE id=$2`, [target || null, fg.id]);
+        before["供应商"] = prev; after["供应商"] = target;
+      }
     }
   }
   if (row.real_qty !== undefined) {
     const real = qty(row.real_qty, "real_qty");
     const d = await client.query(
-      `SELECT d.id FROM inbound_deliveries d
+      `SELECT d.id, d.real_qty FROM inbound_deliveries d
         JOIN packaging_materials m ON m.sku_code = d.material_sku
        WHERE m.product_skus @> jsonb_build_array($1::text)
          AND ($2::text IS NULL OR d.factory_code = $2)
        ORDER BY d.updated_at DESC NULLS LAST, d.created_at DESC, d.id DESC LIMIT 1 FOR UPDATE`,
       [sku, product.factory_code || null]
     );
-    if (d.rows.length) await client.query(`UPDATE inbound_deliveries SET real_qty=$1, updated_at=NOW() WHERE id=$2`, [real, d.rows[0].id]);
+    if (d.rows.length) {
+      const prev = d.rows[0].real_qty == null ? null : Number(d.rows[0].real_qty);
+      if (prev !== real) {
+        await client.query(`UPDATE inbound_deliveries SET real_qty=$1, updated_at=NOW() WHERE id=$2`, [real, d.rows[0].id]);
+        before["实收"] = prev; after["实收"] = real;
+      }
+    }
   }
-  return sku;
+  return { sku, before, after, changed: Object.keys(after).length > 0 };
 }
 
 async function save(req, res, pool, r, scopeCodes) {
@@ -183,18 +235,37 @@ async function save(req, res, pool, r, scopeCodes) {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [req.body || {}];
   if (!rows.length) return json(res, 400, { success: false, error: "rows required" });
   const client = await pool.connect();
+  let results = [];
   try {
     await client.query("BEGIN");
-    const saved = [];
-    for (const row of rows) saved.push(await saveRow(client, req, r, scopeCodes, row));
+    for (const row of rows) results.push(await saveRow(client, req, r, scopeCodes, row));
     await client.query("COMMIT");
-    return json(res, 200, { success: true, saved });
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
   } finally {
     client.release();
   }
+  // 提交后写「修改日记」到 audit_logs;审计失败不影响已保存的数据
+  for (const c of results) {
+    if (!c.changed) continue;
+    try {
+      await writeAudit(pool, req, { action: "sku-recon.edit", entity_type: "sku", entity_id: c.sku, before: c.before, after: c.after, note: "库存比对表编辑" });
+    } catch (_) { /* 审计尽力而为 */ }
+  }
+  return json(res, 200, { success: true, saved: results.map(c => c.sku) });
+}
+
+async function history(pool, r, scopeCodes) {
+  const vals = ["sku-recon.edit"];
+  let where = "a.action = $1";
+  if (!isInternal(r)) {
+    vals.push(scopeCodes);
+    where += ` AND EXISTS (SELECT 1 FROM products p WHERE p.sku = a.entity_id AND p.factory_code = ANY($${vals.length}::text[]))`;
+  }
+  const q = `SELECT a.entity_id AS sku, a.before, a.after, a.diff_summary, a.operator, a.created_at
+               FROM audit_logs a WHERE ${where} ORDER BY a.created_at DESC LIMIT 200`;
+  return { history: (await pool.query(q, vals)).rows };
 }
 
 export default async function handler(req, res) {
@@ -208,7 +279,8 @@ export default async function handler(req, res) {
   if (!isInternal(r) && !scopeCodes.length) return json(res, 403, { success: false, error: "company_code scope missing" });
   const pool = getPool();
   try {
-    if (req.method === "GET") return json(res, 200, { success: true, role: r, can_edit: r === "factory" || isInternal(r), ...(await listRows(pool, r, scopeCodes, req)) });
+    if (req.method === "GET" && clean(req.query.view || "", 40) === "history") return json(res, 200, { success: true, role: r, ...(await history(pool, r, scopeCodes)) });
+    if (req.method === "GET") return json(res, 200, { success: true, role: r, can_edit: r === "factory" || isInternal(r), org_name: clean(req.user?.company || "", 120), ...(await listRows(pool, r, scopeCodes, req)) });
     if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "save") return save(req, res, pool, r, scopeCodes);
     return json(res, 405, { success: false, error: "Method/action not allowed" });
   } catch (e) {
