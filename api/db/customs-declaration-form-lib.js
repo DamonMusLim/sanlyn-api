@@ -329,12 +329,14 @@ export async function loadLines(pool, orderIds) {
   return r.rows;
 }
 
-export function cell(label, value, cls) {
-  return `<div class="cell ${cls || ""}"><div class="lbl">${esc(label)}</div><div class="val">${blank(value)}</div></div>`;
+export function cell(label, value, cls, field) {
+  var fa = field ? ` data-field="${field}"` : "";
+  return `<div class="cell ${cls || ""}"><div class="lbl">${esc(label)}</div><div class="val"${fa}>${blank(value)}</div></div>`;
 }
 
-export function bigCell(label, value) {
-  return `<div class="cell wide"><div class="lbl">${esc(label)}</div><div class="val">${blank(value)}</div></div>`;
+export function bigCell(label, value, field) {
+  var fa = field ? ` data-field="${field}"` : "";
+  return `<div class="cell wide"><div class="lbl">${esc(label)}</div><div class="val"${fa}>${blank(value)}</div></div>`;
 }
 
 export function cargoRows(lines, destination) {
@@ -356,15 +358,15 @@ export function cargoRows(lines, destination) {
     var elements = clean(l.declaration_elements);
     var name = [clean(l.declaration_name), elements].filter(Boolean).map(esc).join("<br>");
     return `<tr>
-      <td>${i + 1}</td>
-      <td>${blank(l.hs_code)}</td>
-      <td class="goods-name">${name || '<span class="empty">—</span>'}</td>
-      <td>${qty || '<span class="empty">—</span>'}</td>
-      <td>${money || '<span class="empty">—</span>'}</td>
-      <td>中国(CHN)</td>
-      <td>${blank(destination)}</td>
-      <td><span class="empty">—</span></td>
-      <td>照章征税</td>
+      <td data-field="item_no" data-row="${i}">${i + 1}</td>
+      <td data-field="hs_code" data-row="${i}">${blank(l.hs_code)}</td>
+      <td class="goods-name" data-field="goods_name" data-row="${i}">${name || '<span class="empty">—</span>'}</td>
+      <td data-field="qty_unit" data-row="${i}">${qty || '<span class="empty">—</span>'}</td>
+      <td data-field="price_amount_currency" data-row="${i}">${money || '<span class="empty">—</span>'}</td>
+      <td data-field="origin_country" data-row="${i}">中国(CHN)</td>
+      <td data-field="dest_country" data-row="${i}">${blank(destination)}</td>
+      <td data-field="source_area" data-row="${i}"><span class="empty">—</span></td>
+      <td data-field="levy_exempt" data-row="${i}">照章征税</td>
     </tr>`;
   }).join("");
 }

@@ -58,22 +58,22 @@ function renderTransferRows(containers) {
   const tbody = document.querySelector("#transferTable tbody");
   tbody.innerHTML = containers.map((row, index) => `
     <tr>
-      <td>${index + 1}</td>
-      <td>${esc(row.vessel_voyage)}</td>
-      <td>${esc(row.import_arrival_date)}</td>
-      <td>${esc(row.import_bl_no)}</td>
-      <td>${esc(row.container_type)}</td>
-      <td>${esc(row.container_no)}</td>
-      <td>${esc(row.seal_no)}</td>
-      <td>${esc(row.export_port)}</td>
-      <td>${esc(row.export_bl)}</td>
-      <td>${esc(row.vessel_voyage)}</td>
-      <td class="left">${esc(row.goods_desc)}</td>
-      <td>${fmt(row.pieces, 0)}</td>
-      <td>${fmt(row.cbm)}</td>
-      <td>${fmt(row.gross_weight_kg)}</td>
-      <td>${fmt(row.tare_kg)}</td>
-      <td>${fmt(row.vgm_kg)}</td>
+      <td data-field="seq" data-row="${index}">${index + 1}</td>
+      <td data-field="import_vessel_voyage" data-row="${index}">${esc(row.vessel_voyage)}</td>
+      <td data-field="import_arrival_date" data-row="${index}">${esc(row.import_arrival_date)}</td>
+      <td data-field="import_bl_no" data-row="${index}">${esc(row.import_bl_no)}</td>
+      <td data-field="container_type" data-row="${index}">${esc(row.container_type)}</td>
+      <td data-field="container_no" data-row="${index}">${esc(row.container_no)}</td>
+      <td data-field="seal_no" data-row="${index}">${esc(row.seal_no)}</td>
+      <td data-field="export_port" data-row="${index}">${esc(row.export_port)}</td>
+      <td data-field="export_bl" data-row="${index}">${esc(row.export_bl)}</td>
+      <td data-field="export_vessel_voyage" data-row="${index}">${esc(row.vessel_voyage)}</td>
+      <td class="left" data-field="goods_desc" data-row="${index}">${esc(row.goods_desc)}</td>
+      <td data-field="pieces" data-row="${index}">${fmt(row.pieces, 0)}</td>
+      <td data-field="cbm" data-row="${index}">${fmt(row.cbm)}</td>
+      <td data-field="gross_weight" data-row="${index}">${fmt(row.gross_weight_kg)}</td>
+      <td data-field="tare" data-row="${index}">${fmt(row.tare_kg)}</td>
+      <td data-field="vgm" data-row="${index}">${fmt(row.vgm_kg)}</td>
     </tr>
   `).join("");
 }
@@ -83,17 +83,17 @@ function renderCutoffRows(products) {
   const tbody = document.querySelector("#cutoffTable tbody");
   tbody.innerHTML = products.map((row, index) => `
     <tr>
-      <td>${index + 1}</td>
-      <td>${esc(exportBl)}</td>
-      <td class="left">${esc(row.product)}</td>
-      <td>${fmt(row.qty_ctn, 0)}</td>
-      <td>${fmt(row.gross_weight_kg)}</td>
-      <td>${fmt(row.cbm)}</td>
-      <td>${esc(row.container_no)}</td>
-      <td>${esc(row.seal_no)}</td>
-      <td>${fmt(row.tare_kg)}</td>
-      <td>${fmt(row.vgm_kg)}</td>
-      <td>${esc(row.hs_code)}</td>
+      <td data-field="seq" data-row="${index}">${index + 1}</td>
+      <td data-field="bl_no" data-row="${index}">${esc(exportBl)}</td>
+      <td class="left" data-field="product" data-row="${index}">${esc(row.product)}</td>
+      <td data-field="ctns" data-row="${index}">${fmt(row.qty_ctn, 0)}</td>
+      <td data-field="gross_weight" data-row="${index}">${fmt(row.gross_weight_kg)}</td>
+      <td data-field="cbm" data-row="${index}">${fmt(row.cbm)}</td>
+      <td data-field="container_no" data-row="${index}">${esc(row.container_no)}</td>
+      <td data-field="seal_no" data-row="${index}">${esc(row.seal_no)}</td>
+      <td data-field="tare" data-row="${index}">${fmt(row.tare_kg)}</td>
+      <td data-field="vgm" data-row="${index}">${fmt(row.vgm_kg)}</td>
+      <td data-field="hs_code" data-row="${index}">${esc(row.hs_code)}</td>
     </tr>
   `).join("");
 }

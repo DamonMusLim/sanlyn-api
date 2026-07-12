@@ -77,39 +77,68 @@ async function ensureTable(pool) {
 async function validateToken(pool, raw) {
   if (!raw || String(raw).length < 16) return null;
   const r = await pool.query(
-    `SELECT meta
+    `SELECT recipient_role, meta
        FROM magic_links
-      WHERE token_hash=$1 AND recipient_role='factory_booking'
+      WHERE token_hash=$1
+        AND recipient_role IN ('factory_booking','customer_booking','trucking_booking','broker_booking','supplier_portal')
         AND expires_at > NOW() AND revoked_at IS NULL
       LIMIT 1`,
     [hashToken(raw)]
   );
+  if (!r.rows.length) return null;
   const meta = parseJson(r.rows[0]?.meta, {});
   const scope = meta?.factory_scope || null;
-  const label = clean(scope?.label, 80);
+  const label = clean(scope?.label || meta?.company_label, 80);
   const shipmentId = Number.parseInt(meta?.shipment_id, 10);
-  if (!r.rows.length || !shipmentId || !label) return null;
-  return { shipmentId, scope: { ...scope, label } };
+  if (!shipmentId) return null;
+  const role = clean(r.rows[0].recipient_role, 40);
+  const fieldProfile = clean(meta?.field_profile, 40);
+  const internal = fieldProfile === "shipping_booking" || fieldProfile === "upstream_downstream";
+  return { shipmentId, role, meta, internal, scope: { ...(scope || {}), label } };
 }
 
 async function loadShipment(pool, ctx) {
+  const colsR = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name='shipping_plans'`);
+  const cols = new Set(colsR.rows.map(row => row.column_name));
+  const companyJoin = (alias, col) => cols.has(col) ? `LEFT JOIN companies ${alias} ON ${alias}.id = sp.${col}` : `LEFT JOIN companies ${alias} ON false`;
   const r = await pool.query(
     `SELECT sp.id, sp.shipment_no, sp.bl_no, sp.pol, sp.pod, sp.vessel, sp.voyage,
             sp.container_type, sp.container_qty, sp.issuing_company,
             sp.freight_term, sp.customs_arrange,
+            sp.customer, sp.customer_en, sp.hbl_no,
+            cf.code AS forwarder_code, COALESCE(cf.name_cn, cf.name_en) AS forwarder_name,
+            ct.code AS trucking_code, COALESCE(ct.name_cn, ct.name_en) AS trucking_name,
+            cb.code AS broker_code, COALESCE(cb.name_cn, cb.name_en) AS broker_name,
+            cc.code AS customer_code, COALESCE(cc.name_cn, cc.name_en) AS customer_company_name,
             sp.raw->'cost_lines' AS cost_lines,
             (SELECT COALESCE(json_agg(json_build_object('order_no', o.order_no, 'factory', o.factory)), '[]'::json)
                FROM orders o WHERE o.shipping_plan_id=sp.id) AS orders
        FROM shipping_plans sp
+       ${companyJoin("cf", "forwarder_company_id")}
+       ${companyJoin("ct", "trucking_company_id")}
+       ${companyJoin("cb", "customs_broker_id")}
+       ${companyJoin("cc", "customer_company_id")}
       WHERE sp.id=$1`,
     [ctx.shipmentId]
   );
   const sp = r.rows[0];
   if (!sp) return null;
-  const orders = (sp.orders || []).filter(o => matchFactory(ctx.scope.label, o.factory));
-  if (!orders.length) return null;
-  const factory = await loadCompany(pool, ctx.scope.label);
-  return { ...sp, orders, factory_company_code: factory.code || "" };
+  let orders = sp.orders || [];
+  let partyCompany = {};
+  if (ctx.role === "factory_booking" && !ctx.internal) {
+    if (!ctx.scope.label) return null;
+    orders = orders.filter(o => matchFactory(ctx.scope.label, o.factory));
+    if (!orders.length) return null;
+    partyCompany = await loadCompany(pool, ctx.scope.label);
+  } else if (ctx.role === "supplier_portal" && !ctx.internal && ctx.scope.label) {
+    partyCompany = await loadCompany(pool, ctx.scope.label);
+  }
+  if (ctx.role === "customer_booking" && !sp.customer_code) {
+    const customer = await loadCompany(pool, sp.customer_en || sp.customer || sp.issuing_company);
+    sp.customer_code = customer.code || "";
+    sp.customer_company_name = sp.customer_company_name || customer.name_cn || customer.name_en || "";
+  }
+  return { ...sp, orders, party_company: partyCompany };
 }
 
 export async function loadCompany(pool, nameOrCode) {
@@ -138,58 +167,99 @@ export async function loadSeller(pool) {
   return { name: row.name_cn || row.name_en || SELLER_NAME, tax_id: row.tax_id || "" };
 }
 
+function companyView(c, fallback = "") {
+  return { name: c?.name_cn || c?.name_en || c?.factory_name || fallback || "", tax_id: c?.tax_id || "" };
+}
+
 function containerSummary(sp) {
   const qty = Number(sp.container_qty || 0);
   const type = clean(sp.container_type || "40HC", 20);
   return qty ? `${qty}×${type}` : "";
 }
 
-async function defaultLines(pool, sp) {
-  const blNo = clean(sp.bl_no || sp.shipment_no || "", 80);
-  const payerCode = clean(sp.factory_company_code, 40);
-  const exwTransfer = clean(sp.freight_term, 20).toUpperCase() === "EXW";
-  if (!blNo || !payerCode) return { lines: [], exwTransfer };
+function partyLens(ctx, sp) {
+  if (ctx.internal) return { role: "internal", side: "all", code: null, segment: "all" };
+  if (ctx.role === "customer_booking") {
+    return { role: "customer", side: "receivable", code: clean(sp.customer_code, 40), segment: "customer" };
+  }
+  if (ctx.role === "trucking_booking") {
+    return { role: "supplier", side: "payable", code: clean(sp.trucking_code, 40), segment: "truck" };
+  }
+  if (ctx.role === "broker_booking") {
+    return { role: "supplier", side: "payable", code: clean(sp.broker_code, 40), segment: "customs" };
+  }
+  if (ctx.role === "factory_booking") {
+    return { role: "supplier", side: "payable", code: clean(sp.party_company?.code, 40), segment: "factory" };
+  }
+  return { role: "supplier", side: "payable", code: clean(sp.party_company?.code, 40), segment: (ctx.meta?.segments || [])[0] || "supplier" };
+}
 
+async function defaultLines(pool, sp, ctx) {
+  const blNo = clean(sp.bl_no || sp.hbl_no || sp.shipment_no || "", 80);
+  const lens = partyLens(ctx, sp);
+  const exwTransfer = clean(sp.freight_term, 20).toUpperCase() === "EXW";
+  if (!blNo || (lens.role !== "internal" && !lens.code)) return { lines: [], exwTransfer, lens };
+
+  const params = [blNo];
+  const where = ["bl_no=$1"];
+  if (lens.side === "payable") {
+    params.push(lens.code);
+    where.push(`supplier_company_code=$${params.length}`, "COALESCE(amount,0)>0");
+  } else if (lens.side === "receivable") {
+    params.push(lens.code);
+    where.push(`payer_company_code=$${params.length}`, "COALESCE(sale_amount,0)>0");
+  } else {
+    where.push("(COALESCE(amount,0)>0 OR COALESCE(sale_amount,0)>0)");
+  }
   const r = await pool.query(
     `SELECT bl_no, cost_category, canonical_category, fob_scope,
-            amount, sale_amount, currency, unit_price, qty, charge_basis
+            amount, sale_amount, currency, unit_price, qty, charge_basis,
+            supplier, supplier_company_code, payer_company_code
        FROM active_freight_supplier_bills
-      WHERE bl_no=$1
-        AND payer_company_code=$2
-        AND COALESCE(amount,0)>0
+      WHERE ${where.join(" AND ")}
       ORDER BY id`,
-    [blNo, payerCode]
+    params
   );
 
   const customsArrange = clean(sp.customs_arrange, 20).toLowerCase();
   const lines = [];
   for (const row of r.rows) {
     const scope = clean(row.fob_scope, 16) || classifyFobScope(row.canonical_category, row.cost_category);
-    if (scope === "freight" || scope === "destination") continue;
-    if (scope === "declaration" && customsArrange === "factory") continue;
-    const lineAmount = row.sale_amount !== null && row.sale_amount !== undefined && String(row.sale_amount) !== ""
-      ? row.sale_amount
-      : row.amount;
-    lines.push({
+    if (lens.role === "customer" && Number(row.sale_amount || 0) <= 0) continue;
+    if (lens.role === "supplier" && Number(row.amount || 0) <= 0) continue;
+    if (ctx.role === "factory_booking") {
+      if (scope === "freight" || scope === "destination") continue;
+      if (scope === "declaration" && customsArrange === "factory") continue;
+    }
+    const visibleAmount = lens.side === "receivable" ? row.sale_amount : row.amount;
+    const line = {
       bl_no: clean(row.bl_no || blNo, 80),
       name: clean(row.cost_category || "港杂费", 80),
       basis: clean(row.charge_basis || "整票", 24),
       unit_price: money(row.unit_price),
       qty: money(row.qty || 1) || 1,
-      amount: money(lineAmount),
+      amount: money(visibleAmount),
       currency: clean(row.currency || "CNY", 8).toUpperCase(),
       fob_scope: scope,
       review: scope === "review",
-    });
+      segment: lens.segment,
+      line_side: lens.side,
+    };
+    if (lens.role === "internal") {
+      line.cost_amount = money(row.amount);
+      line.sale_amount = money(row.sale_amount);
+      line.gross_profit = money(Number(row.sale_amount || 0) - Number(row.amount || 0));
+    }
+    lines.push(line);
   }
-  return { lines, exwTransfer };
+  return { lines, exwTransfer, lens };
 }
 
-async function buildPayload(pool, sp, buyer, seller, saved) {
-  const defaults = await defaultLines(pool, sp);
+async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
+  const defaults = await defaultLines(pool, sp, ctx);
   const billLines = defaults.lines;
   const payloadBillLines = saved?.payload?.bill_lines || billLines;
-  const billLineNotice = billLines.length ? "" : "该票暂无港杂账单,请财务核对";
+  const billLineNotice = billLines.length ? "" : "费用尚未录入";
   const currency = payloadBillLines[0]?.currency || "CNY";
   const total = money(payloadBillLines.filter(l => l.currency === currency).reduce((s, l) => s + Number(l.amount || 0), 0));
   const exTax = money(total / 1.01);
@@ -203,7 +273,9 @@ async function buildPayload(pool, sp, buyer, seller, saved) {
     ? containers.filter(c => c.type && Number(c.count)).map(c => `${Number(c.count)}×${c.type}`).join(" + ")
     : containerSummary(sp);
   return {
+    is_internal: Boolean(ctx.internal),
     status: saved?.status || "draft",
+    confirmed_at: saved?.confirmed_at || null,
     shipment: {
       shipment_no: sp.shipment_no || "",
       bl_no: bl,
@@ -211,13 +283,14 @@ async function buildPayload(pool, sp, buyer, seller, saved) {
       voyage: sp.voyage || "",
       pol: sp.pol || "",
       pod: sp.pod || "",
-      freight_term: sp.freight_term || "",
+      freight_term: (ctx.internal || defaults.lens.role === "customer") ? (sp.freight_term || "") : "",
       customs_arrange: sp.customs_arrange || "",
       container_summary: cntr,
       containers,
+      billing_segment: defaults.lens.segment,
     },
     buyer: {
-      name: saved?.payload?.buyer?.name || buyer.name_cn || buyer.name_en || sp.issuing_company || "",
+      name: saved?.payload?.buyer?.name || buyer.name || buyer.name_cn || buyer.name_en || sp.issuing_company || "",
       tax_id: saved?.payload?.buyer?.tax_id || buyer.tax_id || "",
     },
     seller,
@@ -245,18 +318,34 @@ async function buildPayload(pool, sp, buyer, seller, saved) {
   };
 }
 
+async function partiesForView(pool, sp, ctx) {
+  const own = await loadSeller(pool);
+  if (ctx.internal || ctx.role === "customer_booking") {
+    const buyer = await loadCompany(pool, sp.customer_code || sp.customer_company_name || sp.customer_en || sp.customer || sp.issuing_company);
+    return { buyer: companyView(buyer, sp.customer_company_name || sp.customer_en || sp.customer || sp.issuing_company), seller: own };
+  }
+  let sellerCompany = sp.party_company || {};
+  if (ctx.role === "trucking_booking") sellerCompany = await loadCompany(pool, sp.trucking_code || sp.trucking_name);
+  if (ctx.role === "broker_booking") sellerCompany = await loadCompany(pool, sp.broker_code || sp.broker_name);
+  return { buyer: own, seller: companyView(sellerCompany, ctx.scope.label || sp.forwarder_name || sp.trucking_name || sp.broker_name) };
+}
+
+function invoiceRef(ctx) {
+  const key = clean(ctx.scope.label || ctx.meta?.company_label || ctx.role, 80).replace(/\s+/g, "_");
+  return `shipment:${ctx.shipmentId}:${ctx.internal ? "internal" : ctx.role}:${key}:invoice-default`;
+}
+
 async function handleGet(req, res, pool, ctx) {
   const sp = await loadShipment(pool, ctx);
   if (!sp) return res.status(404).json({ ok: false, error: "not_found" });
-  const buyer = await loadCompany(pool, ctx.scope.label || sp.issuing_company);
-  const seller = await loadSeller(pool);
-  const ref = `shipment:${ctx.shipmentId}:factory:${ctx.scope.label}:invoice-default`;
+  const { buyer, seller } = await partiesForView(pool, sp, ctx);
+  const ref = invoiceRef(ctx);
   const saved = await pool.query(
-    `SELECT status, payload, updated_at FROM invoice_collab_confirm_overrides
+    `SELECT status, payload, confirmed_at, updated_at FROM invoice_collab_confirm_overrides
       WHERE ref=$1 AND kind=$2 LIMIT 1`,
     [ref, KIND]
   );
-  return res.json({ ok: true, ref, kind: KIND, data: await buildPayload(pool, sp, buyer, seller, saved.rows[0]) });
+  return res.json({ ok: true, ref, kind: KIND, data: await buildPayload(pool, sp, buyer, seller, saved.rows[0], ctx) });
 }
 
 function sanitizeDraft(body) {
@@ -295,7 +384,7 @@ async function handlePost(req, res, pool, ctx) {
   if (!payload.buyer.name || !payload.buyer.tax_id) return res.status(400).json({ ok: false, error: "buyer_required" });
   if (!payload.contacts.finance.length) return res.status(400).json({ ok: false, error: "finance_email_required" });
   const status = payload.price_changed ? "pending_our_review" : "external_confirmed";
-  const ref = `shipment:${ctx.shipmentId}:factory:${ctx.scope.label}:invoice-default`;
+  const ref = invoiceRef(ctx);
   const r = await pool.query(
     `INSERT INTO invoice_collab_confirm_overrides
        (ref, kind, shipment_id, factory_scope, status, payload, actor_label, confirmed_at, updated_at)

@@ -11,21 +11,32 @@ function norm(v) { return clean(v).toUpperCase(); }
 // covered  = 本次出单实际覆盖的订单所归属的柜号
 export async function checkContainerCoverage(pool, plan, { requestedContainerNo, coveredOrderIds } = {}) {
   const blNo = clean(plan && plan.bl_no);
-  const result = { expected: [], covered: [], missing: [], foreign: [], ok: true, reason: "" };
-  if (!blNo) { result.reason = "该票无 BL 号,无法核对柜覆盖(跳过)"; return result; }
+  const result = { expected: [], covered: [], missing: [], foreign: [], ok: true, coverage_status: "pass", reason: "" };
+  if (!blNo) { result.coverage_status = "skipped"; result.reason = "该票无 BL 号,无法核对柜覆盖(跳过)"; return result; }
 
-  const exp = await pool.query(
-    `SELECT DISTINCT c.container_no
-       FROM order_containers oc
-       JOIN containers c ON c.id = oc.container_id
-       LEFT JOIN shipment_group sg ON sg.id = c.shipment_group_id
-       JOIN orders o ON o.id = oc.order_id
-      WHERE (sg.bl_master = $1 OR o.bl_no = $1 OR o.raw->>'blNo' = $1 OR o.raw->>'bl_no' = $1)
-        AND NULLIF(btrim(c.container_no),'') IS NOT NULL`,
-    [blNo]
-  );
+  let exp;
+  try {
+    exp = await pool.query(
+      `SELECT DISTINCT c.container_no
+         FROM order_containers oc
+         JOIN containers c ON c.id = oc.container_id
+         LEFT JOIN shipment_group sg ON sg.id = c.shipment_group_id
+         JOIN orders o ON o.id = oc.order_id
+        WHERE (sg.bl_master = $1 OR o.bl_no = $1 OR o.raw->>'blNo' = $1 OR o.raw->>'bl_no' = $1)
+          AND NULLIF(btrim(c.container_no),'') IS NOT NULL`,
+      [blNo]
+    );
+  } catch (e) {
+    result.coverage_status = "warning";
+    result.reason = "多柜真源表(order_containers/containers/shipment_group)不可用,无法核对柜覆盖: " + clean(e.message);
+    return result;
+  }
   result.expected = exp.rows.map(r => norm(r.container_no)).filter(Boolean);
-  if (!result.expected.length) { result.reason = "本票在 order_containers 里查无柜号记录(可能尚未录入真实装柜数据),无法核对完整性"; return result; }
+  if (!result.expected.length) {
+    result.coverage_status = "warning";
+    result.reason = "本票在 order_containers 里查无柜号记录(可能尚未录入真实装柜数据),无法核对完整性";
+    return result;
+  }
 
   if (requestedContainerNo) {
     // 按柜出单:只要求"这个柜号确实属于本票",不要求覆盖全部柜
@@ -34,6 +45,7 @@ export async function checkContainerCoverage(pool, plan, { requestedContainerNo,
     if (!result.expected.includes(want)) {
       result.foreign = [want];
       result.ok = false;
+      result.coverage_status = "blocked";
       result.reason = `柜号 ${requestedContainerNo} 不属于本票(BL ${blNo}) — 阻断`;
     }
     return result;
@@ -42,22 +54,30 @@ export async function checkContainerCoverage(pool, plan, { requestedContainerNo,
   // 按 BL 整票出单:必须覆盖 expected 里的全部柜号
   let coveredNos = [];
   if (coveredOrderIds && coveredOrderIds.length) {
-    const cov = await pool.query(
-      `SELECT DISTINCT c.container_no
-         FROM order_containers oc JOIN containers c ON c.id = oc.container_id
-        WHERE oc.order_id = ANY($1::int[]) AND NULLIF(btrim(c.container_no),'') IS NOT NULL`,
-      [coveredOrderIds]
-    );
-    coveredNos = cov.rows.map(r => norm(r.container_no)).filter(Boolean);
+    try {
+      const cov = await pool.query(
+        `SELECT DISTINCT c.container_no
+           FROM order_containers oc JOIN containers c ON c.id = oc.container_id
+          WHERE oc.order_id = ANY($1::int[]) AND NULLIF(btrim(c.container_no),'') IS NOT NULL`,
+        [coveredOrderIds]
+      );
+      coveredNos = cov.rows.map(r => norm(r.container_no)).filter(Boolean);
+    } catch (e) {
+      result.coverage_status = "warning";
+      result.reason = "已查到本票柜号,但本次订单覆盖范围无法反查柜号: " + clean(e.message);
+      return result;
+    }
   }
   result.covered = coveredNos;
   result.missing = result.expected.filter(c => !coveredNos.includes(c));
   result.foreign = coveredNos.filter(c => !result.expected.includes(c));
   if (result.missing.length) {
     result.ok = false;
+    result.coverage_status = "blocked";
     result.reason = `本票应有 ${result.expected.length} 个柜(${result.expected.join("/")}),本次单据只覆盖 ${coveredNos.length} 个,缺: ${result.missing.join("/")}`;
   } else if (result.foreign.length) {
     result.ok = false;
+    result.coverage_status = "blocked";
     result.reason = `单据里出现了不属于本票的柜号: ${result.foreign.join("/")}`;
   }
   return result;
@@ -158,6 +178,7 @@ export async function checkAmountReconciliation(pool, orderIds, { thresholdPct =
 export function renderGateBanner(coverage, recon) {
   const lines = [];
   if (coverage && !coverage.ok) lines.push("🚫 柜覆盖: " + coverage.reason);
+  else if (coverage && coverage.coverage_status === "warning" && coverage.reason) lines.push("⚠️ 柜覆盖: " + coverage.reason);
   if (recon) {
     if (recon.status === "blocked") lines.push("🚫 " + recon.reasons.join("; "));
     else if (recon.status === "warning") lines.push("⚠️ " + recon.reasons.join("; "));

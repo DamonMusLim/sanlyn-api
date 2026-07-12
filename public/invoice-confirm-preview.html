@@ -30,6 +30,9 @@
   .docno{font-size:11px;color:var(--faint);font-family:ui-monospace,monospace;margin-top:3px}
   .badge{display:inline-block;font-size:11px;font-weight:800;padding:3px 10px;border-radius:99px;margin-top:6px}
   .badge.pending{background:var(--pay-wash);color:var(--pay)}
+  .badge.done{background:var(--recv-wash);color:var(--recv)}
+  .confirmed-box{display:none;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--recv-wash);font-size:13px;font-weight:800;color:var(--recv);align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .confirmed-box.on{display:flex}.confirmed-box .mini{color:var(--ink);font-weight:700}.confirmed-box .btn{flex:none;padding:8px 12px;font-size:12px}
 
   .shipbar{display:flex;flex-wrap:wrap;gap:6px 18px;padding:12px 22px;background:var(--wash);
     border-bottom:1px solid var(--line);font-size:12px;color:var(--sub)}
@@ -150,8 +153,7 @@
 
 <div class="wrap">
   <div class="tabs">
-    <div class="tab on" data-v="collab"><i class="ti"></i>🤝 协同确认单<span class="s">恒安打开链接看到的</span></div>
-    <div class="tab" data-v="fin">💰 财务对单表<span class="s">我们内部核账用的</span></div>
+    <div class="tab on" data-v="collab"><i class="ti"></i>🤝 协同确认单<span class="s" id="collabSub">对方打开链接看到的</span></div>
   </div>
 
   <!-- ============ 协同确认单（对方视图） ============ -->
@@ -159,36 +161,31 @@
     <div class="sheet">
       <div class="sheet-hd">
         <div>
-          <div class="brand">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS
-            <div class="cn">上海洋宝宝国际物流有限公司　致：福建恒安国际贸易有限公司</div>
+          <div class="brand" id="brandName">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS
+            <div class="cn" id="brandCn">致：费用尚未录入</div>
           </div>
         </div>
         <div class="docmeta">
           <div class="doctag">港杂费账单</div>
-          <div class="docno">PC-AXI0359737-20260706</div>
+          <div class="docno" id="docNo">费用尚未录入</div>
           <div class="badge pending">待你确认</div>
         </div>
       </div>
       <div class="shipbar">
-        <span>提单号 <b>AXI0359737</b></span>
-        <span>船名航次 <b>MERKUR FJORD / 1QYF1S1NC</b></span>
-        <span><b>XIAMEN → PORT KELANG</b></span>
-        <span>柜量 <b>5 × 40HC</b></span>
+        <span>提单号 <b id="shipBl">—</b></span>
+        <span>船名航次 <b id="shipVessel">—</b></span>
+        <span><b id="shipRoute">—</b></span>
+        <span>柜量 <b id="shipCntr">—</b></span>
       </div>
+      <div class="confirmed-box" id="confirmedBox"><span id="confirmedText">账单已确认</span><button class="btn ghost" id="detailBtn">展开查看明细</button></div>
 
       <div class="sec">
         <div class="sec-t">① 账单明细 — 请核对</div>
         <table>
-          <thead><tr><th>费用项</th><th>计费</th><th class="r">单价 <span class="edithint">✎可改</span></th><th class="r">数量</th><th class="r">合计 (CNY)</th></tr></thead>
-          <tbody>
-            <tr><td>THC 码头操作费</td><td><span class="unit">每柜</span></td><td class="r"><span class="editable">825.00</span></td><td class="r">5</td><td class="r">4,125.00</td></tr>
-            <tr><td>单证费</td><td><span class="unit">整票</span></td><td class="r"><span class="editable">450.00</span></td><td class="r">1</td><td class="r">450.00</td></tr>
-            <tr><td>电放费</td><td><span class="unit">整票</span></td><td class="r"><span class="editable">450.00</span></td><td class="r">1</td><td class="r">450.00</td></tr>
-            <tr><td>设备交接费</td><td><span class="unit">每柜</span></td><td class="r"><span class="editable">35.00</span></td><td class="r">5</td><td class="r">175.00</td></tr>
-            <tr><td>封签费</td><td><span class="unit">每柜</span></td><td class="r"><span class="editable">30.00</span></td><td class="r">5</td><td class="r">150.00</td></tr>
-            <tr><td>订舱费</td><td><span class="unit">整票</span></td><td class="r"><span class="editable">105.00</span></td><td class="r">1</td><td class="r">105.00</td></tr>
-            <tr><td>VGM + 申报费 <span class="unit pack">打包价</span></td><td><span class="unit">整票</span></td><td class="r"><span class="editable">200.00</span></td><td class="r">1</td><td class="r">200.00</td></tr>
-            <tr class="foot"><td colspan="4">应付合计 · CNY <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r">5,655.00</td></tr>
+          <thead><tr><th>费用项</th><th>计费</th><th class="r">单价 <span class="edithint">✎可改</span></th><th class="r">数量</th><th class="r" id="billHeadTotal">合计 (CNY)</th></tr></thead>
+          <tbody id="billBody">
+            <tr><td colspan="5" style="text-align:center;color:var(--faint)">费用尚未录入</td></tr>
+            <tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">CNY</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r" id="billTotal">0.00</td></tr>
           </tbody>
         </table>
         <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价需我方确认后生效</b>。VGM+申报为打包价 ¥200/票。</span></div>
@@ -200,42 +197,32 @@
           <span class="mlab">开票方式</span>
           <button class="mopt on" data-m="self">我方代开</button>
           <button class="mopt" data-m="other">对方自开</button>
-          <span class="mtip" id="modeTip">我们帮恒安开好、OCR回读、发他财务邮箱</span>
+          <span class="mtip" id="modeTip">我们开好后发送到财务邮箱</span>
         </div>
         <div class="plaininv">
-          <div class="invtop"><div class="pt">电子发票（<select class="tsel"><option>增值税普通发票</option><option>增值税专用发票</option></select>）</div></div>
+          <div class="invtop"><div class="pt">电子发票（<select class="tsel" id="invoiceTitle"><option>增值税普通发票</option><option>增值税专用发票</option></select>）</div></div>
           <div class="pparty">
             <div class="pp">
               <div class="plab">购 买 方</div>
-              <div class="prow"><b>名称：</b><span class="editable">福建恒安国际贸易有限公司</span><span class="edithint">✎可改</span></div>
-              <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><span class="editable">91350200562813230Q</span></div>
+              <div class="prow"><b>名称：</b><span class="editable" id="buyerName">费用尚未录入</span><span class="edithint">✎可改</span></div>
+              <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><span class="editable" id="buyerTax">—</span></div>
               <div class="prow tip">默认带出，名称/税号可改</div>
             </div>
             <div class="pp">
               <div class="plab">销 售 方</div>
-              <div class="prow"><b>名称：</b>上海洋宝宝国际物流有限公司</div>
-              <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><span class="muted">从公司表带</span></div>
+              <div class="prow"><b>名称：</b><span id="sellerName">费用尚未录入</span></div>
+              <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><span class="muted" id="sellerTax">—</span></div>
             </div>
           </div>
           <table class="invline">
             <thead><tr><th>项目名称</th><th>单位</th><th class="r">数量</th><th class="r">单价</th><th class="r">金额(不含税)</th><th class="r">税率/征收率</th><th class="r">税额</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><span class="editable">*经纪代理服务*港杂费</span></td>
-                <td>项</td>
-                <td class="r">1</td>
-                <td class="r">5,599.01</td>
-                <td class="r">5,599.01</td>
-                <td class="r"><span class="editable">1%</span><span class="edithint">✎</span></td>
-                <td class="r">55.99</td>
-              </tr>
-            </tbody>
-            <tfoot><tr><td colspan="4"></td><td class="r">价税合计</td><td colspan="2" class="r">¥ 5,655.00</td></tr></tfoot>
+            <tbody id="invoiceBody"><tr><td colspan="7" style="text-align:center;color:var(--faint)">费用尚未录入</td></tr></tbody>
+            <tfoot><tr><td colspan="4"></td><td class="r">价税合计</td><td colspan="2" class="r" id="invoiceTotal">¥ 0.00</td></tr></tfoot>
           </table>
-          <div class="remarkline">备注：开户行 <b>中国银行厦门文灶支行</b> · 人民币账号 <b>433849860868</b>　·　提单号 <b>AXI0359737 · 5×40HC</b></div>
+          <div class="remarkline" id="invoiceRemark">备注：费用尚未录入</div>
         </div>
         <button class="addinv">＋ 新增一张发票</button>
-        <label class="savedef"><input type="checkbox" checked> <span>存为「福建恒安」默认开票模版，以后固定这样开。</span></label>
+        <label class="savedef"><input type="checkbox" checked> <span>存为该客户默认开票模版，以后固定这样开。</span></label>
       </div>
 
       <div class="sec" style="border-top:1px solid var(--line)">
@@ -263,88 +250,164 @@
 
       <div class="actions">
         <button class="btn ghost">有疑问 · 留言给我</button>
-        <button class="btn primary">确认账单 + 开票信息</button>
+        <button class="btn primary" id="submitBtn">确认账单 + 开票信息</button>
       </div>
     </div>
   </section>
 
-  <!-- ============ 财务对单表（内部视图） ============ -->
-  <section class="view" id="fin">
-    <div class="sheet">
-      <div class="sheet-hd">
-        <div><div class="brand">财务对单表 · AXI0359737
-          <div class="cn">CY00397 · 一票三方账 · 成本 / 销售 / 差额</div></div></div>
-        <div class="docmeta"><div class="doctag" style="color:var(--ink)">CY00397</div>
-          <div class="docno">MERKUR FJORD · 5×40HC</div></div>
-      </div>
-
-      <div class="sec">
-        <div class="sec-t">三方结算关系</div>
-        <div class="cards">
-          <div class="pcard pay">
-            <div class="role">应付 · 货代</div>
-            <div class="who">万汇恒通(厦门)国际物流</div>
-            <div class="amt">¥5,805.00</div>
-            <div class="amt2">+ $4,625.00 海运费</div>
-          </div>
-          <div class="pcard recv">
-            <div class="role">应收 · 发货人（港杂代收代付）</div>
-            <div class="who">福建恒安国际贸易</div>
-            <div class="amt">¥5,655.00</div>
-            <div class="amt2">打包价口径</div>
-          </div>
-          <div class="pcard cust">
-            <div class="role">应收 · 客户（海运销售）</div>
-            <div class="who">HARMONIOUS HAPPY VENTURES</div>
-            <div class="amt">$4,750.00</div>
-            <div class="amt2">成本 $4,625 + 加价 $125</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="sec" style="border-top:1px solid var(--line)">
-        <div class="sec-t">成本 ↔ 销售 对账</div>
-        <div class="recon">
-          <div class="rrow h"><span>科目</span><span class="rr">成本(万汇)</span><span class="rr">销售(收对方)</span><span class="rr">差额</span></div>
-          <div class="rrow"><span>港杂费 · CNY（承担方 恒安）</span><span class="rr">5,805.00</span><span class="rr">5,655.00</span><span class="rr loss">−150.00</span></div>
-          <div class="rrow"><span>海运费 · USD（客户 HARMONIOUS）</span><span class="rr">4,625.00</span><span class="rr">4,750.00</span><span class="rr gain">+125.00</span></div>
-        </div>
-      </div>
-
-      <div class="flag"><i>⚠</i><span><b>港杂差 −¥150</b>：VGM+申报打包价 ¥200 低于万汇成本 ¥350。按拍板口径，此差为向万汇「砍价」的目标空间，不是亏损坐实——砍到 ¥200 即打平。</span></div>
-
-      <div class="lockrow">
-        <span>🔒 港杂锁价 · <b>XIAMEN → PORT KELANG</b>　当前：未锁定（首次）</span>
-        <button class="lockbtn">确认后锁定 · 下票复用</button>
-      </div>
-      <div style="padding:6px 22px 18px"><div class="caption" style="margin:8px 0 0">锁定后同航线下一票自动套此价，偏离即报警。</div></div>
-    </div>
-  </section>
 </div>
 
 <script>
-  document.querySelectorAll('.tab').forEach(t=>{
-    t.addEventListener('click',()=>{
-      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
-      document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
-      t.classList.add('on');
-      document.getElementById(t.dataset.v).classList.add('on');
-    });
-  });
-  var ctT=document.getElementById('ctToggle'),ctB=document.getElementById('ctBody'),
-      ctC=document.getElementById('ctChev'),ctS=document.getElementById('ctSum');
-  ctT.addEventListener('click',function(){
-    var open=ctB.style.display==='none';
-    ctB.style.display=open?'block':'none';
-    ctC.textContent=open?'收起 ▴':'展开填写 ▾';
-    ctS.style.display=open?'none':'block';
-  });
-  var mTips={self:'我们帮恒安开好、OCR回读、发他财务邮箱',other:'把这张模版发给恒安，他自己开票后回传，我们OCR核对'};
-  document.querySelectorAll('.mopt').forEach(function(b){
-    b.addEventListener('click',function(){
-      document.querySelectorAll('.mopt').forEach(function(x){x.classList.remove('on')});
-      b.classList.add('on');
-      document.getElementById('modeTip').textContent=mTips[b.dataset.m];
-    });
-  });
+  (function(){
+    const API="/api/db/invoice-collab-confirm";
+    const token=new URLSearchParams(location.search).get("token")||"";
+    let state={buyer:{},seller:{},shipment:{},bill_lines:[],invoices:[],contacts:{finance:[],ops:[],business:[]},save_as_default:true};
+    let dirtyPrice=false, detailOpen=false;
+    const $=id=>document.getElementById(id);
+    const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    const num=v=>Number.isFinite(Number(String(v).replace(/,/g,"")))?Number(String(v).replace(/,/g,"")):0;
+    const money=v=>num(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    const sym=c=>c==="USD"?"$":"¥";
+    const basisLabel=v=>{
+      const raw=String(v??"").trim();
+      if(!raw) return "整票";
+      const low=raw.toLowerCase();
+      if(low==="per_bl"||low.includes("bl")||raw.includes("票")) return "整票";
+      if(low==="per_container"||low.includes("cntr")||low.includes("container")||raw.includes("柜")) return "每柜";
+      return raw;
+    };
+    const normalize=d=>({buyer:{},seller:{},shipment:{},bill_lines:[],invoices:[],contacts:{finance:[],ops:[],business:[]},save_as_default:true,...(d||{}),
+      buyer:{...((d||{}).buyer||{})},seller:{...((d||{}).seller||{})},shipment:{...((d||{}).shipment||{})},
+      bill_lines:Array.isArray(d?.bill_lines)?d.bill_lines:[],invoices:Array.isArray(d?.invoices)?d.invoices:[],
+      contacts:{finance:[],ops:[],business:[],...(d?.contacts||{})}});
+    const totalLines=(cur)=>state.bill_lines.filter(l=>!cur||l.currency===cur).reduce((s,l)=>s+num(l.amount),0);
+    const isInternal=()=>state.is_internal===true||state.internal===true||state.bill_lines.some(l=>"gross_profit"in l||"cost_amount"in l);
+    const isConfirmed=()=>["external_confirmed","pending_our_review","confirmed"].includes(String(state.status||state.prebill_status||""))||!!state.confirmed_at;
+    const cntrSummary=()=>Array.isArray(state.shipment.containers)&&state.shipment.containers.length
+      ?state.shipment.containers.filter(c=>c.type&&num(c.count)).map(c=>`${num(c.count)} × ${c.type}`).join(" + ")
+      :(state.shipment.container_summary||"");
+    const route=()=>[state.shipment.pol,state.shipment.pod].filter(Boolean).join(" → ");
+    function recalcInvoice(){
+      const inv=state.invoices[0]; if(!inv) return;
+      const cur=inv.currency||state.bill_lines[0]?.currency||"CNY", total=Math.round(totalLines(cur)*100)/100;
+      const rate=Number.isFinite(Number(inv.tax_rate))?Number(inv.tax_rate):0.01;
+      const ex=Math.round(total/(1+rate)*100)/100;
+      inv.currency=cur; inv.total_with_tax=total; inv.amount_ex_tax=ex; inv.tax_amount=Math.round((total-ex)*100)/100;
+    }
+    function ensureInvoice(){
+      if(state.invoices?.length) return;
+      const cur=state.bill_lines[0]?.currency||"CNY", bl=state.shipment.bl_no||state.shipment.shipment_no||"";
+      state.invoices=[{id:"invoice-1",currency:cur,title:"增值税普通发票",mode:"self",item_name:"*经纪代理服务*港杂费",unit:"项",qty:1,tax_rate:0.01,remark:`提单号 ${bl}${cntrSummary()?" · "+cntrSummary():""}`}];
+    }
+    function renderShell(){
+      const sp=state.shipment||{}, buyer=state.buyer||{}, seller=state.seller||{}, cntr=cntrSummary();
+      $("collabSub").textContent=(buyer.name||"对方")+"打开链接看到的";
+      $("brandName").firstChild.nodeValue=seller.name||"费用尚未录入";
+      $("brandCn").textContent="致："+(buyer.name||"费用尚未录入");
+      $("docNo").textContent=sp.shipment_no||sp.bl_no||"费用尚未录入";
+      $("shipBl").textContent=sp.bl_no||"—"; $("shipVessel").textContent=[sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—";
+      $("shipRoute").textContent=route()||"—"; $("shipCntr").textContent=cntr||"—";
+      $("buyerName").textContent=buyer.name||"费用尚未录入"; $("buyerTax").textContent=buyer.tax_id||"—";
+      $("sellerName").textContent=seller.name||"费用尚未录入"; $("sellerTax").textContent=seller.tax_id||"—";
+      document.querySelector(".badge").textContent=isConfirmed()?"已确认":"待你确认";
+      document.querySelector(".badge").className="badge "+(isConfirmed()?"done":"pending");
+      renderConfirmedSummary();
+      if(!isInternal()) return;
+      ensureFinanceView();
+      $("finTitle").firstChild.nodeValue="财务对单表 · "+(sp.bl_no||sp.shipment_no||"费用尚未录入");
+      $("finSub").textContent=[sp.shipment_no,"一票三方账 · 成本 / 销售 / 差额"].filter(Boolean).join(" · ");
+      $("finTag").textContent=sp.shipment_no||"—"; $("finDoc").textContent=[sp.vessel,cntr].filter(Boolean).join(" · ")||"—";
+      $("lockRoute").textContent=route()||"—";
+    }
+    function renderBills(){
+      const cur=state.bill_lines[0]?.currency||state.invoices[0]?.currency||"CNY";
+      const rows=state.bill_lines.map((l,i)=>`<tr><td>${esc(l.name||"港杂费")}${l.review?` <span class="unit pack">存疑</span>`:""}</td>
+        <td><span class="unit">${esc(basisLabel(l.basis))}</span>${l.container_type?` <span class="unit">${esc(l.container_type)}</span>`:""}</td>
+        <td class="r"><span class="editable" contenteditable="${isConfirmed()?"false":"true"}" data-line="${i}">${money(l.unit_price)}</span></td>
+        <td class="r">${money(l.qty).replace(".00","")}</td><td class="r">${money(l.amount)}</td></tr>`).join("");
+      $("billHeadTotal").textContent=`合计 (${cur})`;
+      $("billBody").innerHTML=(rows||`<tr><td colspan="5" style="text-align:center;color:var(--faint)">${esc(state.bill_line_notice||"费用尚未录入")}</td></tr>`)
+        +`<tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">${esc(cur)}</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r" id="billTotal">${money(totalLines(cur))}</td></tr>`;
+      if(!isConfirmed()) document.querySelectorAll("[data-line]").forEach(el=>el.addEventListener("blur",e=>changePrice(Number(e.target.dataset.line),e.target.textContent)));
+    }
+    function renderInvoice(){
+      const inv=state.invoices[0]||{}, cur=inv.currency||"CNY", rate=Number(inv.tax_rate||0.01);
+      document.querySelectorAll(".mopt[data-m]").forEach(b=>b.classList.toggle("on",(inv.mode||"self")===b.dataset.m));
+      $("modeTip").textContent=(inv.mode==="other")?"对方自开后回传，我们 OCR 核对":"我们开好后发送到财务邮箱";
+      if(inv.title&&!Array.from($("invoiceTitle").options).some(o=>o.value===inv.title)) $("invoiceTitle").add(new Option(inv.title,inv.title));
+      $("invoiceTitle").value=inv.title||"增值税普通发票";
+      $("invoiceBody").innerHTML=`<tr><td><span class="editable">${esc(inv.item_name||"*经纪代理服务*港杂费")}</span></td><td>${esc(inv.unit||"项")}</td>
+        <td class="r">${money(inv.qty||1).replace(".00","")}</td><td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${money(inv.amount_ex_tax)}</td>
+        <td class="r"><span class="editable">${money(rate*100).replace(".00","")}%</span><span class="edithint">✎</span></td><td class="r">${money(inv.tax_amount)}</td></tr>`;
+      $("invoiceTotal").textContent=`${sym(cur)} ${money(inv.total_with_tax)}`;
+      $("invoiceRemark").textContent="备注："+(inv.remark||"费用尚未录入");
+    }
+    function renderFinance(){
+      if(!isInternal()) return removeFinanceView();
+      ensureFinanceView();
+      const cur=state.bill_lines[0]?.currency||"CNY";
+      const cost=state.bill_lines.reduce((s,l)=>s+num(l.cost_amount??(l.line_side==="payable"?l.amount:0)),0);
+      const sale=state.bill_lines.reduce((s,l)=>s+num(l.sale_amount??(l.line_side==="receivable"?l.amount:0)),0);
+      const visible=totalLines(cur), diff=sale-cost, hasInternal=state.bill_lines.some(l=>"cost_amount"in l||"sale_amount"in l);
+      $("payWho").textContent=state.seller?.name||"—"; $("payAmt").textContent=sym(cur)+money(cost||visible); $("paySub").textContent=hasInternal?"成本侧合计":"按当前 lens 可见金额";
+      $("recvWho").textContent=state.buyer?.name||"—"; $("recvAmt").textContent=sym(cur)+money(sale||visible); $("recvSub").textContent=hasInternal?"销售侧合计":"账单合计";
+      $("custWho").textContent=hasInternal&&state.shipment?.billing_segment==="freight"?(state.buyer?.name||"—"):"data 未返回则不展示";
+      $("custAmt").textContent=hasInternal?sym(cur)+money(Math.max(diff,0)):"—"; $("custSub").textContent=hasInternal?"差额口径":"—";
+      $("custCard").style.display=hasInternal?"block":"none";
+      $("reconRows").innerHTML=hasInternal?`<div class="rrow"><span>${esc(state.shipment.billing_segment||"港杂费")} · ${esc(cur)}</span><span class="rr">${money(cost)}</span><span class="rr">${money(sale)}</span><span class="rr ${diff>=0?"gain":"loss"}">${diff>=0?"+":"−"}${money(Math.abs(diff))}</span></div>`
+        :`<div class="rrow"><span>当前 lens 可见合计 · ${esc(cur)}</span><span class="rr">${money(visible)}</span><span class="rr">data 未返回</span><span class="rr">—</span></div>`;
+      $("finFlag").style.display=hasInternal&&diff<0?"flex":"none";
+    }
+    function renderContacts(){
+      const c=state.contacts||{}, f=(c.finance||[]).filter(Boolean).length, o=(c.ops||[]).filter(Boolean).length, b=(c.business||[]).filter(Boolean).length;
+      $("ctSum").innerHTML=`收起中 · 财务邮箱 ${f?`<b>${f} 个</b>`:`<span class="miss">未填（必填）</span>`} · 操作 ${o||"—"} · 业务 ${b||"—"}`;
+    }
+    function renderConfirmedSummary(){
+      const on=isConfirmed(), cur=state.bill_lines[0]?.currency||state.invoices[0]?.currency||"CNY", sp=state.shipment||{};
+      $("confirmedBox").classList.toggle("on",on);
+      $("confirmedText").innerHTML=`✅ 账单已确认 · <span class="mini">应付合计 ${sym(cur)}${money(totalLines(cur))} · ${esc(state.seller?.name||"销售方")}→${esc(state.buyer?.name||"购买方")} · ${esc(sp.bl_no||sp.shipment_no||"提单号")}</span>`;
+      document.querySelectorAll("#collab .sec").forEach(x=>x.style.display=on&&!detailOpen?"none":"block");
+      document.querySelector("#collab .actions").style.display=on?"none":"flex";
+      $("detailBtn").style.display=on&&!detailOpen?"inline-block":"none";
+    }
+    function ensureFinanceView(){
+      if($("fin")) return;
+      document.querySelector(".tabs").insertAdjacentHTML("beforeend",`<div class="tab" data-v="fin">💰 财务对单表<span class="s">我们内部核账用的</span></div>`);
+      document.querySelector(".wrap").insertAdjacentHTML("beforeend",`<section class="view" id="fin"><div class="sheet"><div class="sheet-hd"><div><div class="brand" id="finTitle">财务对单表 · 费用尚未录入<div class="cn" id="finSub">一票三方账 · 成本 / 销售 / 差额</div></div></div><div class="docmeta"><div class="doctag" style="color:var(--ink)" id="finTag">—</div><div class="docno" id="finDoc">—</div></div></div><div class="sec"><div class="sec-t">三方结算关系</div><div class="cards"><div class="pcard pay"><div class="role">应付</div><div class="who" id="payWho">费用尚未录入</div><div class="amt" id="payAmt">¥0.00</div><div class="amt2" id="paySub">—</div></div><div class="pcard recv"><div class="role">应收</div><div class="who" id="recvWho">费用尚未录入</div><div class="amt" id="recvAmt">¥0.00</div><div class="amt2" id="recvSub">账单合计</div></div><div class="pcard cust" id="custCard"><div class="role">相关方</div><div class="who" id="custWho">data 未返回则不展示</div><div class="amt" id="custAmt">—</div><div class="amt2" id="custSub">—</div></div></div></div><div class="sec" style="border-top:1px solid var(--line)"><div class="sec-t">成本 ↔ 销售 对账</div><div class="recon"><div class="rrow h"><span>科目</span><span class="rr">成本侧</span><span class="rr">销售侧</span><span class="rr">差额</span></div><div id="reconRows"></div></div></div><div class="flag" id="finFlag"><i>⚠</i><span>按 data 返回字段展示，未返回的成本/客户侧不展示。</span></div><div class="lockrow"><span>🔒 港杂锁价 · <b id="lockRoute">—</b>　当前：未锁定（首次）</span><button class="lockbtn">确认后锁定 · 下票复用</button></div><div style="padding:6px 22px 18px"><div class="caption" style="margin:8px 0 0">锁定后同航线下一票自动套此价，偏离即报警。</div></div></div></section>`);
+    }
+    function removeFinanceView(){
+      document.querySelector('.tab[data-v="fin"]')?.remove(); $("fin")?.remove();
+      document.querySelector('.tab[data-v="collab"]')?.classList.add("on"); $("collab").classList.add("on");
+    }
+    function render(){ensureInvoice();recalcInvoice();renderShell();renderBills();renderInvoice();renderFinance();renderContacts();}
+    function changePrice(i,v){
+      const l=state.bill_lines[i]; if(!l) return;
+      l.unit_price=num(v); l.amount=Math.round(l.unit_price*num(l.qty||1)*100)/100; dirtyPrice=true; render();
+    }
+    function collect(){
+      state.buyer={name:$("buyerName").textContent.trim(),tax_id:$("buyerTax").textContent.trim()};
+      state.invoices[0].mode=document.querySelector(".mopt.on[data-m]")?.dataset.m||"self";
+      state.save_as_default=document.querySelector(".savedef input")?.checked!==false;
+    }
+    async function submit(){
+      if(!token){alert("缺少 token，无法提交");return}
+      collect();
+      const body={token,draft:{...state,price_changed:dirtyPrice,invoice_mode:state.invoices[0].mode,shipment_containers:state.shipment.containers||[]}};
+      const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.ok){alert("保存失败："+(d.error||r.status));return}
+      state.status=d.draft?.status||state.status; state.confirmed_at=d.draft?.updated_at||new Date().toISOString(); dirtyPrice=false; detailOpen=false; render(); alert(state.status==="pending_our_review"?"已提交改动，待我方确认":"已保存确认草稿");
+    }
+    document.querySelector(".tabs").addEventListener('click',e=>{const t=e.target.closest(".tab");if(!t||!$(t.dataset.v))return;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');$(t.dataset.v).classList.add('on')});
+    $("ctToggle").addEventListener('click',()=>{const b=$("ctBody"),open=b.style.display==='none';b.style.display=open?'block':'none';$("ctChev").textContent=open?'收起 ▴':'展开填写 ▾';$("ctSum").style.display=open?'none':'block'});
+    document.querySelectorAll('.mopt[data-m]').forEach(b=>b.addEventListener('click',()=>{ensureInvoice();state.invoices[0].mode=b.dataset.m;renderInvoice()}));
+    $("buyerName").contentEditable=true; $("buyerTax").contentEditable=true; $("submitBtn").addEventListener("click",submit);
+    $("detailBtn").addEventListener("click",()=>{detailOpen=true;renderConfirmedSummary()});
+    async function boot(){
+      if(!token){render();return}
+      try{const r=await fetch(API+"?token="+encodeURIComponent(token));const d=await r.json();if(r.ok&&d.ok){state=normalize(d.data);render();}else render();}
+      catch(e){render();}
+    }
+    boot();
+  })();
 </script>

@@ -56,6 +56,7 @@ deploy_docs() {
   scp_file "api/db/documents.js"
   scp_file "api/db/shipping-plan-pdf.js"
   scp_file "api/db/customs-declaration-form.js"
+  scp_file "api/db/customs-declaration-form-lib.js"
   scp_file "api/db/inbound-notice.js"
   scp_file "api/db/inspection-request-form.js"
   scp_file "api/db/inspection-ocr.js"

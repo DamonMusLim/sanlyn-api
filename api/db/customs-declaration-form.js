@@ -163,43 +163,43 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   </div>
 
   <div class="grid4">
-    ${cell("境内发货人", shipper)}
-    ${cell("出境关别", "")}
-    ${cell("出口日期", fmtDate(pick(plan.etd, praw.etd)))}
-    ${cell("申报日期", today)}
-    ${cell("备案号", "")}
+    ${cell("境内发货人", shipper, undefined, "domestic_shipper")}
+    ${cell("出境关别", "", undefined, "export_customs_office")}
+    ${cell("出口日期", fmtDate(pick(plan.etd, praw.etd)), undefined, "export_date")}
+    ${cell("申报日期", today, undefined, "declare_date")}
+    ${cell("备案号", "", undefined, "record_no")}
   </div>
   <div class="grid4 row2">
-    ${cell("境外收货人", customer)}
-    ${cell("运输方式", "水路运输")}
-    ${cell("运输工具名称及航次号", vesselVoyage)}
-    ${cell("提运单号", blNo)}
+    ${cell("境外收货人", customer, undefined, "overseas_consignee")}
+    ${cell("运输方式", "水路运输", undefined, "transport_mode")}
+    ${cell("运输工具名称及航次号", vesselVoyage, undefined, "vessel_voyage")}
+    ${cell("提运单号", blNo, undefined, "bl_no")}
   </div>
   <div class="grid4 row3">
-    ${cell("生产销售单位", shipper)}
-    ${cell("监管方式", tradeMode)}
-    ${cell("征免性质", levyNature)}
-    ${cell("许可证号", "")}
+    ${cell("生产销售单位", shipper, undefined, "production_sales_unit")}
+    ${cell("监管方式", tradeMode, undefined, "trade_mode")}
+    ${cell("征免性质", levyNature, undefined, "levy_nature")}
+    ${cell("许可证号", "", undefined, "license_no")}
   </div>
   <div class="grid4 row4">
-    ${cell("合同协议号", contractNo)}
-    ${cell("贸易国(地区)", destination)}
-    ${cell("运抵国(地区)", destination)}
-    ${cell("指运港", pod)}
-    ${cell("离境口岸", "")}
+    ${cell("合同协议号", contractNo, undefined, "contract_no")}
+    ${cell("贸易国(地区)", destination, undefined, "trade_country")}
+    ${cell("运抵国(地区)", destination, undefined, "arrival_country")}
+    ${cell("指运港", pod, undefined, "destination_port")}
+    ${cell("离境口岸", "", undefined, "departure_port")}
   </div>
   <div class="grid4 row5">
-    ${cell("包装种类", "纸箱", "small")}
-    ${cell("件数", totalCtn ? fmtInt(totalCtn) : "", "small")}
-    ${cell("毛重(千克)", fmtM(grossWeight, 0), "small")}
-    ${cell("净重(千克)", fmtM(netWeight, 0), "small")}
-    ${cell("成交方式", "FOB", "small")}
-    ${cell("运费", "", "small")}
-    ${cell("保费", "", "small")}
-    ${cell("杂费", "", "small")}
+    ${cell("包装种类", "纸箱", "small", "package_type")}
+    ${cell("件数", totalCtn ? fmtInt(totalCtn) : "", "small", "total_ctn")}
+    ${cell("毛重(千克)", fmtM(grossWeight, 0), "small", "gross_weight")}
+    ${cell("净重(千克)", fmtM(netWeight, 0), "small", "net_weight")}
+    ${cell("成交方式", "FOB", "small", "trade_terms")}
+    ${cell("运费", "", "small", "freight")}
+    ${cell("保费", "", "small", "insurance")}
+    ${cell("杂费", "", "small", "misc_fee")}
   </div>
-  ${bigCell("随附单证及编号", "")}
-  ${bigCell("标记唛码及备注", notes)}
+  ${bigCell("随附单证及编号", "", "attached_docs")}
+  ${bigCell("标记唛码及备注", notes, "marks_notes")}
 
   <table class="goods">
     <thead>
@@ -244,7 +244,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     </div>
   </div>
 </div>
-<div style="text-align:right;font-size:9px;color:#999;margin-top:6px">报关单模版 v1 · 2026-07-10 17:38</div>
+<div style="text-align:right;font-size:9px;color:#999;margin-top:6px">报关单模版 v1 · 2026-07-12 00:04</div>
 <script src="/templates/customs-declaration-editor.js"></script>
 </body>
 </html>`;
