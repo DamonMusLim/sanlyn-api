@@ -5,15 +5,21 @@ import { extractUser, generateToken } from "../auth.js";
 const KIND_TO_ROLE = {
   customers: "customer",
   factories: "factory",
+  suppliers: "supplier",
 };
 
 const PAGE_PATHS = {
   customer: {
-    stock: "/templates/product-stock.html?token=",
-    orders: "/templates/customer-portal.html?token=",
+    stock: "/public/templates/product-stock.html?token=",
+    orders: "/public/templates/customer-portal.html?token=",
+    "sku-recon": "/public/templates/sku-recon.html?token=",
   },
   factory: {
-    "factory-bags": "/templates/factory-bags.html?token=",
+    "factory-bags": "/public/templates/factory-bags.html?token=",
+    "sku-recon": "/public/templates/sku-recon.html?token=",
+  },
+  supplier: {
+    "supplier-catalog": "/public/templates/supplier-catalog.html?token=",
   },
 };
 
@@ -37,7 +43,16 @@ function companyCodes(row) {
 }
 
 function defaultPageFor(role) {
-  return role === "factory" ? "factory-bags" : "stock";
+  if (role === "factory") return "factory-bags";
+  if (role === "supplier") return "supplier-catalog";
+  return "stock";
+}
+
+function genCode() {
+  const cs = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let c = "";
+  for (let i = 0; i < 8; i++) c += cs[Math.floor(Math.random() * cs.length)];
+  return c;
 }
 
 export default async function handler(req, res) {
@@ -91,7 +106,7 @@ export default async function handler(req, res) {
       `SELECT id, username, role, company, company_code, company_codes, token_version
          FROM accounts
         WHERE (${where.join(" OR ")})
-          AND role IN ('customer', 'factory')
+          AND role IN ('customer', 'factory', 'supplier')
           AND COALESCE(is_active, true) = true
         LIMIT 1`,
       params
@@ -113,9 +128,26 @@ export default async function handler(req, res) {
       tv: u.token_version || 1,
     });
 
+    // 生成短码入库(对外分享=短码,不塞JWT)
+    let code = "";
+    const expIso = new Date(Date.now() + 7 * 864e5).toISOString();
+    for (let i = 0; i < 6; i++) {
+      const c = genCode();
+      try {
+        await pool.query(
+          `INSERT INTO share_links(code, account_id, page, path, created_by, expires_at) VALUES($1,$2,$3,$4,$5,$6)`,
+          [c, u.id, requestedPage, prefix, req.user?.username || "admin", expIso]
+        );
+        code = c;
+        break;
+      } catch (e) { /* 撞码重试 */ }
+    }
+    const host = req.headers.host || "ai.sanlyn.cn";
+    const short_url = code ? `https://${host}/v/${code}` : "";
+
     return json(res, 200, {
       success: true,
-      data: { token, path: prefix + token, expires_days: 7 },
+      data: { code, short_url, path: prefix + token, expires_days: 7 },
     });
   } catch (err) {
     console.error("[share-link]", err);
