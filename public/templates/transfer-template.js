@@ -1,5 +1,5 @@
 // TPL_VERSION: 每次改模版必改;= canonical git 短哈希 + 日期,单据页脚显示,旧版一眼现形
-var TPL_VERSION = "v1 · 2026-07-10 17:38";
+var TPL_VERSION = "v1 · 2026-07-12 00:04";
 const qs = new URLSearchParams(location.search);
 const planId = qs.get("plan_id") || qs.get("id");
 const token = qs.get("token") || "";
