@@ -1,0 +1,89 @@
+<meta charset="utf-8">
+<title>提单确认书生成器</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,"Microsoft YaHei",sans-serif;font-size:13px;color:#0f172a;background:#eef2f7}
+  header{background:#0f172a;color:#fff;padding:11px 16px;font-size:15px;font-weight:700}
+  .wrap{display:flex;gap:14px;padding:14px;align-items:flex-start}
+  .panel{width:340px;flex:none;background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(15,23,42,.08);padding:14px}
+  .preview{flex:1;background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(15,23,42,.08);overflow:hidden;min-height:600px}
+  .preview iframe{width:100%;height:78vh;border:0;display:block}
+  .fld{margin-bottom:13px}
+  .lbl{font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:5px;display:block}
+  input[type=text],select{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;outline:none}
+  input:focus,select:focus{border-color:#38bdf8}
+  .seg{display:flex;gap:6px}
+  .seg label{flex:1;text-align:center;padding:8px 4px;border:1px solid #cbd5e1;border-radius:7px;cursor:pointer;font-size:12px;user-select:none}
+  .seg input{display:none}
+  .seg input:checked+span{font-weight:700}
+  .seg label:has(input:checked){background:#0369a1;color:#fff;border-color:#0369a1}
+  .row{display:flex;gap:8px}
+  .row>div{flex:1}
+  .chk{display:flex;align-items:center;gap:7px;margin:5px 0;cursor:pointer}
+  .chk input{width:16px;height:16px}
+  .btn{width:100%;padding:10px;border:0;border-radius:8px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;margin-top:6px}
+  .b-prev{background:#475569}.b-gen{background:#be123c}.b-open{background:#0369a1}
+  .out{margin-top:10px;padding:10px;background:#f1f5f9;border-radius:8px;font-size:12px;word-break:break-all;display:none}
+  .out.show{display:block}
+  .out a{color:#0369a1;font-weight:700}
+  .copy{margin-top:6px;padding:6px 10px;border:1px solid #0369a1;background:#fff;color:#0369a1;border-radius:6px;cursor:pointer;font-size:12px}
+  .hint{font-size:11px;color:#94a3b8;margin-top:3px}
+  .status{font-size:12px;color:#64748b;min-height:16px;margin-top:6px}
+  .badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:10px;background:#fee2e2;color:#b91c1c;margin-left:6px}
+</style>
+
+<header>📄 提单确认书生成器 · B/L SI Generator</header>
+<div class="wrap">
+  <div class="panel">
+    <div class="fld">
+      <label class="lbl">提单号 B/L NO.</label>
+      <div class="row">
+        <div style="flex:2"><input type="text" id="bl" placeholder="COAU..."></div>
+        <div style="flex:1"><button class="btn b-prev" style="margin:0" onclick="loadBL()">加载</button></div>
+      </div>
+      <div class="hint" id="blInfo"></div>
+    </div>
+
+    <div class="fld">
+      <label class="lbl">受众（红字船公司要求自动跟随）</label>
+      <div class="seg" id="aud">
+        <label><input type="radio" name="aud" value="internal" checked><span>我们看</span></label>
+        <label><input type="radio" name="aud" value="customer"><span>发客户</span></label>
+        <label><input type="radio" name="aud" value="carrier"><span>发船东<span class="badge">红字</span></span></label>
+      </div>
+    </div>
+
+    <div class="fld">
+      <label class="lbl">出单方式</label>
+      <select id="issue"><option value="SWB">SWB（电放/海运单）</option><option value="ORIGINAL">ORIGINAL B/L（正本）</option></select>
+    </div>
+
+    <div class="fld">
+      <label class="lbl">柜信息（未录柜可手填；已录柜自动带）</label>
+      <div class="row">
+        <div><input type="text" id="ctn" placeholder="柜号"></div>
+        <div><input type="text" id="seal" placeholder="封号"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div><input type="text" id="tare" placeholder="皮重 KGS" oninput="calcVgm()"></div>
+        <div><input type="text" id="vgm" placeholder="VGM 自动" readonly style="background:#f8fafc"></div>
+      </div>
+    </div>
+
+    <div class="fld">
+      <label class="lbl">联系方式显示</label>
+      <label class="chk"><input type="checkbox" id="sc" checked> 发货人 TEL/EMAIL</label>
+      <label class="chk"><input type="checkbox" id="cc" checked> 收货人 TEL/EMAIL</label>
+    </div>
+
+    <button class="btn b-prev" onclick="refresh()">🔄 刷新预览</button>
+    <button class="btn b-gen" onclick="genLink()">🔗 生成发送短链</button>
+    <button class="btn b-open" onclick="openNew()">🖨 新窗口打开（可下载）</button>
+    <div class="status" id="status"></div>
+    <div class="out" id="out"></div>
+  </div>
+
+  <div class="preview"><iframe id="pv"></iframe></div>
+</div>
+
+<script src="/templates/bl-si-picker.js"></script>
