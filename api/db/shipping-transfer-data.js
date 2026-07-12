@@ -67,6 +67,33 @@ const SQL = `
   ORDER BY cb.id ASC, li.id ASC
 `;
 
+// 兜底 SQL: 该计划还没录柜(container_bookings 空)时,按订单+船务计划出汇总(不 JOIN 柜)。
+const FALLBACK_SQL = `
+  SELECT
+    sp._id AS sp_id, sp.bl_no AS export_bl, sp.vessel, sp.voyage, sp.etd, sp.shipment_no,
+    o.container_type AS order_container_type,
+    o.contract_no AS order_contract_no,
+    o.pol AS order_pol,
+    COALESCE(o.total_cbm, 0)::numeric AS order_cbm,
+    li.id AS li_id,
+    li.hs_code AS li_hs_code,
+    li.product_name AS li_product_name,
+    li.declaration_name AS li_declaration_name,
+    COALESCE(li.qty_ctn, 0)::numeric AS qty_ctn,
+    COALESCE(li.gw_ctn, 0)::numeric AS gw_ctn,
+    COALESCE(li.cbm_ctn, 0)::numeric AS cbm_ctn
+  FROM shipping_plans sp
+  JOIN orders o ON (
+    COALESCE(o.status,'') <> 'cancelled'
+    AND ( o.shipping_plan_id = sp.id
+       OR o.order_no    = ANY(COALESCE(sp.order_nos, ARRAY[]::text[]))
+       OR o.contract_no = ANY(COALESCE(sp.contract_nos, ARRAY[]::text[])) )
+  )
+  LEFT JOIN order_line_items li ON li.order_id = o.id
+  WHERE sp.id::text = $1 OR sp._id = $1 OR sp.shipment_no = $1 OR btrim(sp.bl_no) = btrim($1)
+  ORDER BY o.id, li.id
+`;
+
 function num(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -85,6 +112,10 @@ function vesselVoyage(row) {
   return [row.vessel, row.voyage].filter(Boolean).join(" / ");
 }
 
+// 装货港中→英(提单确认书要全英文大写);未收录的原样返回,可在模版里人工改。
+const CN_PORTS = { "青岛": "QINGDAO, CHINA", "上海": "SHANGHAI, CHINA", "宁波": "NINGBO, CHINA", "厦门": "XIAMEN, CHINA", "深圳": "SHENZHEN, CHINA", "盐田": "YANTIAN, CHINA", "蛇口": "SHEKOU, CHINA", "天津": "TIANJIN, CHINA", "新港": "XINGANG, CHINA", "大连": "DALIAN, CHINA", "广州": "GUANGZHOU, CHINA", "南沙": "NANSHA, CHINA", "连云港": "LIANYUNGANG, CHINA" };
+function enPort(cn) { const k = String(cn == null ? "" : cn).trim(); return CN_PORTS[k] || k; }
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -98,7 +129,57 @@ export default async function handler(req, res) {
     const { rows } = await pool.query(SQL, [planId]);
 
     if (!rows.length) {
-      return res.status(404).json({ error: "Shipping plan not found" });
+      // 未录柜 → 按订单级出「表头 + 汇总(1 柜,柜号待定)」,让提单确认书/装箱资料出单前也能出。
+      const fb = await pool.query(FALLBACK_SQL, [planId]);
+      if (!fb.rows.length) {
+        return res.status(404).json({ error: "Shipping plan not found" });
+      }
+      const f0 = fb.rows[0];
+      const plan = {
+        plan_id: text(f0.sp_id),
+        export_bl: text(f0.export_bl),
+        vessel: text(f0.vessel),
+        voyage: text(f0.voyage),
+        etd: f0.etd || "",
+        shipment_no: text(f0.shipment_no),
+      };
+      let pieces = 0, gross = 0, cbm = 0;
+      const prodMap = new Map();
+      for (const r of fb.rows) {
+        if (!r.li_id) continue;
+        const qty = num(r.qty_ctn);
+        const lineGw = qty * num(r.gw_ctn);
+        const lineCbm = qty * num(r.cbm_ctn);
+        pieces += qty; gross += lineGw; cbm += lineCbm;
+        const nm = text(r.li_declaration_name || r.li_product_name);
+        const hs = text(r.li_hs_code);
+        const key = hs + "\u0001" + nm;
+        if (!prodMap.has(key)) {
+          prodMap.set(key, { cb_id: null, container_no: "", seal_no: "", product: nm, hs_code: hs, qty_ctn: 0, gross_weight_kg: 0, cbm: 0, tare_kg: 0, vgm_kg: 0 });
+        }
+        const pr = prodMap.get(key);
+        pr.qty_ctn += qty; pr.gross_weight_kg += lineGw; pr.cbm += lineCbm;
+      }
+      const orderCbm = num(f0.order_cbm);
+      const summary = {
+        cb_id: null, container_no: "", seal_no: "",
+        container_type: text(f0.order_container_type),
+        contract_no: text(f0.order_contract_no),
+        export_port: enPort(f0.order_pol),
+        export_bl: text(f0.export_bl),
+        vessel_voyage: vesselVoyage(f0),
+        goods_desc: Array.from(prodMap.values()).map((x) => x.product).filter(Boolean).join(" / "),
+        import_arrival_date: "", import_bl_no: "",
+        pieces: round(pieces, 0),
+        cbm: round(orderCbm > 0 ? orderCbm : cbm, 3),
+        gross_weight_kg: round(gross, 3),
+        tare_kg: 0, vgm_kg: 0,
+        pending_container: true,
+      };
+      const products = Array.from(prodMap.values()).map((x) => ({
+        ...x, qty_ctn: round(x.qty_ctn, 0), gross_weight_kg: round(x.gross_weight_kg, 3), cbm: round(x.cbm, 3),
+      }));
+      return res.json({ plan, containers: [summary], products, pending_container: true });
     }
 
     const first = rows[0];
