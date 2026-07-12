@@ -5,7 +5,7 @@ var TPL_VERSION = "v1 · 2026-07-10 17:38";
   function qp(k){ try{ return new URLSearchParams(location.search).get(k) || ""; }catch(e){ return ""; } }
   var PLAN = qp("plan_id") || qp("id") || qp("bl");
   var TOKEN = qp("token");
-  var API = location.origin.indexOf("api.sanlyn") >= 0 ? "" : "https://api.sanlyn.cn";
+  var API = /(?:api|ai)\.sanlyn/.test(location.origin) ? "" : "https://api.sanlyn.cn";
   function api(path){ return API + path + (path.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(TOKEN); }
   function authH(){ return { Authorization: "Bearer " + TOKEN }; }
   function setT(id, v){ var e = document.getElementById(id); if(e) e.textContent = (v == null ? "" : String(v)); }
@@ -14,6 +14,11 @@ var TPL_VERSION = "v1 · 2026-07-10 17:38";
   function up(s){ return String(s == null ? "" : s).toUpperCase(); }
   // SI 须全英文大写:货描含中文时回退英文默认(可编辑再改精确品名)
   function enGoods(s){ var v = up(s); return /[^\x00-\x7F]/.test(v) ? "CAT LITTER" : (v || "CAT LITTER"); }
+  // 标准联系方式后缀: 有则加 TEL/EMAIL 行,空则省略(邮箱保持原样不大写)
+  function contactSuffix(tel, email){
+    var out=""; var t=(tel==null?"":String(tel)).trim(); var e=(email==null?"":String(email)).trim();
+    if(t) out+="\nTEL: "+t; if(e) out+="\nEMAIL: "+e; return out;
+  }
   function status(m){ setT("siStatus", m); }
 
   // ---- 自托管库(PDF/Excel),和其它模版一致 ----
@@ -63,12 +68,24 @@ var TPL_VERSION = "v1 · 2026-07-10 17:38";
 
   function boot(){
     setT("tplVer", TPL_VERSION); setT("genTime", new Date().toLocaleString("zh-CN"));
+    // 红字=船公司要求,给船东版显示(?carrier=1 / audience=carrier),我们看/发客户默认隐藏
+    var _req=document.querySelector(".req");
+    if(_req) _req.style.display = (qp("carrier")==="1"||qp("audience")==="carrier") ? "" : "none";
     if(!PLAN){ status("缺少 plan_id"); return; }
     status("加载中…");
     fetch(api("/api/db/shipping-transfer-data?plan_id="+encodeURIComponent(PLAN)), { headers: authH() }).then(function(r){ return r.json(); }).then(function(d){
       var plan=d.plan||{}, containers=d.containers||[];
+      // 未录柜时可用链接参数临时填柜信息(ctn/seal/tare/vgm),仅覆盖首个"待定"柜,不写库
+      var OV={ctn:qp("ctn"),seal:qp("seal"),tare:qp("tare"),vgm:qp("vgm")};
+      if(containers[0] && (OV.ctn||OV.seal||OV.tare||OV.vgm)){
+        var c0=containers[0];
+        if(OV.ctn) c0.container_no=OV.ctn;
+        if(OV.seal) c0.seal_no=OV.seal;
+        if(OV.tare) c0.tare_kg=num(OV.tare);
+        c0.vgm_kg = OV.vgm ? num(OV.vgm) : (num(c0.gross_weight_kg)+num(c0.tare_kg));
+      }
       fillContainers(containers);
-      setT("si-blno", up(plan.export_bl)); setT("si-issuemode", "SWB");
+      setT("si-blno", up(plan.export_bl)); setT("si-issuemode", up(qp("issue"))||"SWB");
       setT("si-vessel", up((plan.vessel||"")+" "+(plan.voyage||"")).trim());
       var contract=(containers[0]||{}).contract_no||"";
       var op = contract ? fetch(api("/api/db/orders?contract_no="+encodeURIComponent(contract)), { headers: authH() }).then(function(r){ return r.json(); }).then(function(x){ return (x.data||[])[0]||{}; }).catch(function(){ return {}; }) : Promise.resolve({});
@@ -77,11 +94,22 @@ var TPL_VERSION = "v1 · 2026-07-10 17:38";
         var order=a[0]||{}, sellers=Array.isArray(a[1])?a[1]:[];
         var s = sellers.find(function(x){ return x.name_cn===order.issuing_company || x.name_en===order.issuing_company; });
         var shipperEN = s ? up((s.name_en||"")+"\n"+(s.address_en||"")) : up(order.issuing_company||"");
+        if(qp("sc")!=="0") shipperEN += s ? contactSuffix(s.tel||s.contact_phone||s.phone, s.email||s.contact_email) : "";
         setT("si-shipper", shipperEN);
-        var cons = up((order.customer||"")+"\n"+(order.customer_address||""));
-        setT("si-consignee", cons); setT("si-notify", cons);
         setT("si-marks", up(order.shipping_marks || order.marks || "") || "NO SHIPPING MARK");
         setT("si-pod", up(order.country||"")); setT("si-delivery", up(order.country||""));
+        // 收货人/通知人带 邮箱+电话(客户联系方式, customers 表按 company_code 查)
+        function setCons(phone, email){
+          var out = up((order.customer||"")+"\n"+(order.customer_address||"")) + (qp("cc")!=="0" ? contactSuffix(phone, email) : "");
+          setT("si-consignee", out); setT("si-notify", out);
+        }
+        var code = order.company_code || "";
+        if(code){
+          fetch(api("/api/db/customers?company_code="+encodeURIComponent(code)), { headers: authH() })
+            .then(function(r){ return r.json(); })
+            .then(function(x){ var c=((x.data||x||[])[0])||{}; setCons(c.contact_phone||"", c.contact_email||""); })
+            .catch(function(){ setCons("",""); });
+        } else { setCons("",""); }
         status("数据已加载(可编辑)"); restoreDraft();
       });
     }).catch(function(e){ status("加载失败: "+e.message); });
