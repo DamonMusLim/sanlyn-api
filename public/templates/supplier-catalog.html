@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>供应商款式报价</title>
+<style>
+:root{--bg:#f6f7f9;--text:#172033;--muted:#667085;--line:#d8dee8;--head:#eef2f7;--blue:#175cd3;--bad:#b42318;--ok:#15803d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:20px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:12px;flex-wrap:wrap}
+h1{font-size:21px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
+.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:8px 13px;font-weight:700;cursor:pointer;font:inherit}
+button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}
+button.on{border-color:#16794c;background:#e9f7ef;color:var(--ok)}button:disabled{opacity:.5;cursor:not-allowed}
+select{border:1px solid var(--line);border-radius:7px;padding:8px 9px;background:#fff;font:inherit}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;background:#fff;padding:4px 9px;font-weight:700;color:#344054}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.card.bill h3{margin:0 0 8px;font-size:14px}
+.bill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:5px 18px}
+.bill-grid div{color:#344054}.bill-grid b{color:var(--muted);font-weight:600;margin-right:5px}
+.st-head{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.st-img{width:64px;height:64px;border:1px solid var(--line);border-radius:8px;object-fit:cover;background:#f2f4f7;flex-shrink:0}
+.st-title{font-weight:800;font-size:15px}.st-sku{color:#94a3b8;font-size:11px;font-family:ui-monospace,Menlo,monospace}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;border:1px solid var(--line)}
+.b-brand{background:#eef4ff;color:#1d4ed8;border-color:#c3d9ff}.b-stop{background:#fef3f2;color:var(--bad);border-color:#fecdca}
+.b-refund{background:#ecfdf3;color:var(--ok);border-color:#abefc6}
+.inc-big{margin-left:auto;text-align:right}.inc-big .v{font-size:20px;font-weight:800;color:var(--blue)}.inc-big .l{font-size:11px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:9px 16px}
+.f{display:flex;flex-direction:column;gap:3px}.f label{font-size:11px;color:var(--muted)}
+.f .val{font-weight:600;min-height:20px}.f .val.muted{color:#98a2b3;font-weight:400}
+.f input,.f select{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+.f.plate{opacity:.85}.f.plate label{font-size:10.5px}.f.plate .val{font-size:12px;color:#7a2e0e}
+.up{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.up a{color:var(--blue);font-size:12px}
+.empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+@media print{.actions,button{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1 id="title">款式报价</h1><div class="sub">供应商填报 · 含税价自动算 · 图片可上传下载</div></div>
+    <div class="actions">
+      <span class="pill" id="role-pill">…</span>
+      <select id="brand-filter" style="display:none"></select>
+      <button id="edit-btn" style="display:none">✎ 编辑</button>
+      <button id="import-btn" style="display:none">⬆ 导入Excel</button>
+      <button id="refresh">刷新</button>
+      <button class="primary" id="save-all" style="display:none">保存全部</button>
+    </div>
+  </div>
+  <div class="card bill" id="bill" style="display:none"><h3>开票信息</h3><div class="bill-grid" id="bill-body"></div></div>
+  <div id="list"><div class="empty">加载中...</div></div>
+</div>
+<script>
+const apiUrl = "/api/db/supplier-catalog";
+const state = { canEdit:false, editing:false, rows:[], brandFilter:"", supplier:null };
+function token(){ const t = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || ""; return /[^\x00-\xff]/.test(t) ? "" : t; }
+function authHeaders(json){ const t=token(), h=json?{"Content-Type":"application/json"}:{}; if(t) h.Authorization="Bearer "+t; return h; }
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function num(v){return v==null||v===""?"":Number(v).toLocaleString(undefined,{maximumFractionDigits:4});}
+function rawNum(v){return v==null||v===""?"":Number(v);}
+function incTax(ex, pt){ if(ex===""||ex==null) return null; return Math.round(Number(ex)*(1+(Number(pt)||0)/100)*10000)/10000; }
+function billRow(k,v){ return v ? `<div><b>${esc(k)}</b>${esc(v)}</div>` : ""; }
+
+// 字段渲染: 编辑态=input, 只读态=文本
+function fld(r, f, label, kind){
+  const ed = state.editing && state.canEdit;
+  let inner;
+  if(ed){
+    if(kind==="date") inner = `<input type="date" data-sku="${esc(r.sku_code)}" data-field="${f}" value="${esc(r[f]||"")}">`;
+    else if(kind==="status") inner = `<select data-sku="${esc(r.sku_code)}" data-field="status"><option value="active"${r.status!=="stopped"?" selected":""}>在产</option><option value="stopped"${r.status==="stopped"?" selected":""}>停产</option></select>`;
+    else if(kind==="num") inner = `<input type="number" step="any" data-sku="${esc(r.sku_code)}" data-field="${f}" value="${esc(rawNum(r[f]))}" ${f==="price_ex_tax"||f==="tax_point"?'data-inc="1"':''}>`;
+    else inner = `<input data-sku="${esc(r.sku_code)}" data-field="${f}" value="${esc(r[f]||"")}">`;
+  } else {
+    let v = r[f];
+    if(kind==="num") v = (v==null||v==="")?"":num(v);
+    if(kind==="status") v = r.status==="stopped"?"停产":"在产";
+    inner = v ? `<span class="val">${esc(v)}</span>` : `<span class="val muted">—</span>`;
+  }
+  return `<div class="f"><label>${esc(label)}</label>${inner}</div>`;
+}
+function imgBlock(r){
+  const ed = state.editing && state.canEdit;
+  const img = r.image_url ? `<img class="st-img" src="${esc(r.image_url)}">` : `<div class="st-img"></div>`;
+  if(!ed) return r.image_url ? `<a href="${esc(r.image_url)}" download target="_blank">${img}</a>` : img;
+  return `<div>${img}<div class="up"><button type="button" data-upload="${esc(r.sku_code)}">上传图片</button>${r.image_url?`<a href="${esc(r.image_url)}" download target="_blank">下载</a>`:""}</div></div>`;
+}
+function card(r){
+  const inc = r.price_inc_tax;
+  const refundTag = r.plate_fee_refunded ? `<span class="badge b-refund">已退版费</span>` : "";
+  const stopTag = r.status==="stopped" ? `<span class="badge b-stop">停产</span>` : "";
+  return `<div class="card" data-sku="${esc(r.sku_code)}">
+    <div class="st-head">
+      ${imgBlock(r)}
+      <div>
+        <div class="st-title">${esc(r.name || r.sku_code)} ${r.brand?`<span class="badge b-brand">${esc(r.brand)}</span>`:""} ${stopTag}</div>
+        <div class="st-sku">${esc(r.sku_code)}</div>
+      </div>
+      <div class="inc-big"><div class="v" data-inc-cell="${esc(r.sku_code)}">${inc==null?"—":num(inc)}</div><div class="l">含税单价</div></div>
+    </div>
+    <div class="grid">
+      ${fld(r,"name","品名")}
+      ${fld(r,"barcode","产品条形码")}
+      ${fld(r,"supplier_item_code","供应商货号")}
+      ${fld(r,"material","材质")}
+      ${fld(r,"spec","规格")}
+      ${fld(r,"unit","单位")}
+      ${fld(r,"price_ex_tax","未含税单价","num")}
+      ${fld(r,"tax_point","开票点数%","num")}
+      ${fld(r,"moq","起订量","num")}
+      ${fld(r,"lead_time_days","交期(天)","num")}
+      ${fld(r,"quote_date","报价日期","date")}
+      ${fld(r,"quote_valid_until","报价有效期","date")}
+      ${fld(r,"status","状态","status")}
+      <div class="f plate"><label>退版费${refundTag}</label>${state.editing&&state.canEdit?`<input type="number" step="any" data-sku="${esc(r.sku_code)}" data-field="plate_fee" value="${esc(rawNum(r.plate_fee))}" style="width:90px">`:`<span class="val">${r.plate_fee==null?"—":num(r.plate_fee)}${r.plate_fee_refunded?"（已退）":""}</span>`}</div>
+      ${state.editing&&state.canEdit?fld(r,"plate_fee_refund_qty","退版费返还量(累计到达即退)","num"):""}
+      ${fld(r,"notes","备注")}
+    </div>
+    ${!(state.editing&&state.canEdit)&&Number(r.cumulative_qty||0)>0?`<div class="sub" style="margin-top:6px">累计下单 ${num(r.cumulative_qty)}${r.plate_fee_refund_qty?` / 返还线 ${num(r.plate_fee_refund_qty)}`:""}</div>`:""}
+  </div>`;
+}
+function fillBrandFilter(){
+  const sel = document.getElementById("brand-filter");
+  const brands = [...new Set(state.rows.map(r=>r.brand).filter(Boolean))];
+  if(state.brandFilter && !brands.includes(state.brandFilter)) state.brandFilter = "";
+  sel.innerHTML = `<option value="">全部品牌</option>` + brands.map(b=>`<option value="${esc(b)}"${b===state.brandFilter?" selected":""}>${esc(b)}</option>`).join("");
+  sel.style.display = brands.length>1 ? "" : "none";
+}
+function render(){
+  document.getElementById("role-pill").textContent = state.canEdit ? (state.editing?"编辑中":"可填写") : "只读";
+  const eb = document.getElementById("edit-btn");
+  eb.style.display = state.canEdit ? "" : "none";
+  document.getElementById("import-btn").style.display = state.canEdit ? "" : "none";
+  eb.textContent = state.editing ? "✕ 退出编辑" : "✎ 编辑";
+  eb.className = state.editing ? "on" : "";
+  document.getElementById("save-all").style.display = (state.canEdit && state.editing) ? "" : "none";
+  const rows = state.brandFilter ? state.rows.filter(r=>r.brand===state.brandFilter) : state.rows;
+  const root = document.getElementById("list");
+  root.innerHTML = rows.length ? rows.map(card).join("") : '<div class="empty">暂无款式</div>';
+}
+async function load(){
+  const root = document.getElementById("list");
+  root.innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"加载失败");
+    state.canEdit = !!r.can_edit; state.rows = r.rows||[]; state.supplier = r.supplier||null;
+    const org = (r.org_name||"").trim();
+    document.getElementById("title").textContent = (org?org+" · ":"")+"款式报价";
+    document.title = (org?org+" · ":"")+"款式报价";
+    const s = r.supplier, bill = document.getElementById("bill");
+    if(s){ document.getElementById("bill-body").innerHTML =
+      billRow("名称：",s.name)+billRow("税号：",s.tax_no)+billRow("开户行：",s.bank_name)+billRow("账号：",s.bank_account)+billRow("行号：",s.bank_code)+billRow("地址：",s.address)+billRow("联系人：",s.contact)+billRow("电话：",s.phone);
+      bill.style.display="block"; } else bill.style.display="none";
+    fillBrandFilter(); render();
+  }catch(e){ root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+}
+function collectRows(){
+  return [...document.querySelectorAll(".card[data-sku]")].map(cardEl=>{
+    const out = { sku_code: cardEl.dataset.sku };
+    cardEl.querySelectorAll("input,select").forEach(i=>{ if(i.dataset.field) out[i.dataset.field]=i.value; });
+    return out;
+  });
+}
+async function saveAll(){
+  if(!state.canEdit) return;
+  const rows = collectRows();
+  const btn = document.getElementById("save-all"); btn.disabled=true; btn.textContent="保存中...";
+  try{
+    const r = await fetch(apiUrl+"?action=save",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({rows})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"保存失败");
+    state.editing = false; await load();
+  }catch(e){ alert(e.message); }
+  finally{ btn.textContent="保存全部"; btn.disabled=false; }
+}
+async function importExcel(file){
+  const fd = new FormData(); fd.append("file", file);
+  try{
+    const r = await fetch("/api/db/supplier-import",{method:"POST",headers:authHeaders(),body:fd}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"导入失败");
+    alert(`导入成功：新增 ${r.created} 款，更新 ${r.updated} 款，图片 ${r.images} 张`);
+    state.editing=false; await load();
+  }catch(e){ alert("导入失败："+e.message); }
+}
+async function uploadImage(sku, file){
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("path", "supplier-catalog/"+sku+"-"+file.name);
+  try{
+    const r = await fetch("/api/oss-upload",{method:"POST",body:fd}).then(x=>x.json());
+    if(!r.success || !r.url) throw new Error(r.error||"上传失败");
+    const row = state.rows.find(x=>x.sku_code===sku); if(row) row.image_url = r.url;
+    render();
+  }catch(e){ alert("图片上传失败: "+e.message); }
+}
+document.addEventListener("click", e=>{
+  if(e.target.id==="refresh"){ state.editing=false; load(); }
+  if(e.target.id==="save-all") saveAll();
+  if(e.target.id==="edit-btn"){ state.editing=!state.editing; render(); }
+  if(e.target.id==="import-btn"){ const inp=document.createElement("input"); inp.type="file"; inp.accept=".xlsx"; inp.onchange=()=>{ if(inp.files[0]) importExcel(inp.files[0]); }; inp.click(); }
+  const up = e.target.dataset && e.target.dataset.upload;
+  if(up){ const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+    inp.onchange=()=>{ if(inp.files[0]) uploadImage(up, inp.files[0]); }; inp.click(); }
+});
+document.addEventListener("change", e=>{ if(e.target.id==="brand-filter"){ state.brandFilter=e.target.value; render(); } });
+document.addEventListener("input", e=>{
+  if(e.target.dataset && e.target.dataset.inc){
+    const cardEl = e.target.closest(".card[data-sku]");
+    const ex = cardEl.querySelector('[data-field="price_ex_tax"]')?.value;
+    const pt = cardEl.querySelector('[data-field="tax_point"]')?.value;
+    const cell = cardEl.querySelector("[data-inc-cell]");
+    const v = incTax(ex, pt); if(cell) cell.textContent = v==null?"—":num(v);
+  }
+});
+load();
+</script>
+</body>
+</html>
