@@ -5,6 +5,7 @@
 // PATCH ?id=xxx                  → update existing plan
 // DELETE ?id=xxx                 → delete plan
 import { getPool, setCors } from "../db.js";
+import { normalizeContainersDetail } from "../lib/containers-detail-guard.js"; // 2026-07-12: CY00376 柜数虚增防线
 
 // Production convention: CY00000 sequential.
 // Real order count reached 146 before the system caught up — old rows
@@ -160,6 +161,14 @@ export default async function handler(req, res) {
       if (!id) return res.status(400).json({ error: "_id required for update" });
 
       var body = req.body || {};
+      if (Array.isArray(body.containers_detail)) {
+        var cq = body.container_qty;
+        if (cq == null) {
+          var qr = await pool.query("SELECT container_qty FROM shipping_plans WHERE _id = $1", [id]);
+          cq = qr.rows[0] ? qr.rows[0].container_qty : null;
+        }
+        body.containers_detail = normalizeContainersDetail(body.containers_detail, cq);
+      }
       var UPDATABLE = [
         "shipment_no","so_no","bl_no","vessel","voyage","shipping_line","transit","schedule","call_port",
         "etd","eta","atd","ata","cutoff_date","si_cutoff_date","port_open_date","shipment_date",
@@ -382,7 +391,7 @@ export default async function handler(req, res) {
       n(docFee), n(tlxFee), n(infoTransFee), n(bkgFee), n(thcFee), n(eirFee), n(sealFee),
       n(freightTotalUSD), n(freightTotalCNY),
       n(portSurchargeTotal), n(truckingCostTotal), n(customsCostTotal), n(insuranceCost),
-      containersDetail ? JSON.stringify(containersDetail) : null,
+      containersDetail ? JSON.stringify(normalizeContainersDetail(containersDetail, i(containerQty) || 1)) : null,
       truckingDetail ? JSON.stringify(truckingDetail) : null,
       isDdp ? true : false, n(ddpTotal), s(ddpAgent),
       flowStatus || "待订舱", s(remarks), createdBy || "admin",
