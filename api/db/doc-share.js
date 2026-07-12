@@ -34,6 +34,9 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     const { contractNo, docKey, docUrl, docName, createdBy, recipientLabel, note } = req.body || {};
     if (!docUrl) return res.status(400).json({ error: "docUrl required" });
+    // 生成器可传 maxDownloads/expiresDays(默认沿用一次性+1天); 已 parseInt+clamp, 可安全内插
+    const maxDl = Math.min(9999, Math.max(1, parseInt((req.body||{}).maxDownloads, 10) || 1));
+    const expDays = Math.min(90, Math.max(1, parseInt((req.body||{}).expiresDays, 10) || 1));
 
     const token    = genToken();
     const password = genPassword();
@@ -47,7 +50,7 @@ export default async function handler(req, res) {
       INSERT INTO doc_share_links
         (token, contract_no, doc_key, doc_url, doc_name, password,
          created_by, expires_at, max_downloads, download_count, downloaded_log)
-      VALUES ($1,$2,$3,$4,$5,$6,$7, NOW()+INTERVAL '1 day', 1, 0,
+      VALUES ($1,$2,$3,$4,$5,$6,$7, NOW()+(${expDays}||' days')::interval, ${maxDl}, 0,
         $8::jsonb)
     `, [
       token, contractNo || "", docKey || "", docUrl, docName || "",
