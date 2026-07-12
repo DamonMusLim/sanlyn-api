@@ -65,6 +65,13 @@ tr:last-child td{border-bottom:0}
       </div>
       <div data-table="factories" class="empty">加载中...</div>
     </div>
+    <div class="panel" data-kind="suppliers">
+      <div class="panel-head">
+        <div class="panel-title">供应商</div>
+        <div class="count" data-count="suppliers">-</div>
+      </div>
+      <div data-table="suppliers" class="empty">加载中...</div>
+    </div>
   </section>
 
   <section class="result">
@@ -78,11 +85,12 @@ tr:last-child td{border-bottom:0}
 
 <script>
 const API = "/api/db/share-link";
-const ALLOWED_KINDS = new Set(["customers", "factories"]);
+const ALLOWED_KINDS = new Set(["customers", "factories", "suppliers"]);
 const STATUS_CLASSES = new Set(["ok", "err"]);
 const PAGE_OPTIONS = {
-  customers: [{value:"stock", label:"库存"}, {value:"orders", label:"订单"}],
-  factories: [{value:"factory-bags", label:"包材"}],
+  customers: [{value:"stock", label:"库存"}, {value:"orders", label:"订单"}, {value:"sku-recon", label:"库存对账"}],
+  factories: [{value:"factory-bags", label:"包材"}, {value:"sku-recon", label:"库存对账"}],
+  suppliers: [{value:"supplier-catalog", label:"款式报价"}],
 };
 
 function qs(id){ return document.getElementById(id); }
@@ -181,7 +189,7 @@ async function generate(btn){
   setStatus("正在生成...", "");
   try {
     const data = await api(API, {method:"POST", body:JSON.stringify({id:tr.dataset.id, page})});
-    qs("share-url").value = location.origin + data.path;
+    qs("share-url").value = data.short_url || (location.origin + data.path);
     qs("copy-btn").disabled = false;
     setStatus("链接已生成", "ok");
   } catch (err) {
@@ -201,7 +209,7 @@ document.addEventListener("click", async ev => {
 });
 (async function init(){
   try {
-    await Promise.all([loadKind("customers"), loadKind("factories")]);
+    await Promise.all([loadKind("customers"), loadKind("factories"), loadKind("suppliers")]);
     setStatus("就绪", "ok");
   } catch (err) {
     setStatus(err.message, "err");
