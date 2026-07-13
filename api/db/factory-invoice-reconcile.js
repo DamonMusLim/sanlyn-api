@@ -176,12 +176,10 @@ function normalizeRow(r, ferSet, invoiceMap) {
   const hasFer = ferSet.has(customsNo);
   const manual = money(r.manual_expected_amount);
   const declare = money(r.declare_amount);
-  const system = money(r.system_expected_amount);
   const anchored = hasFer && (manual ?? declare) !== null;
   const rowExpected = anchored ? (manual ?? declare) : null;
   const uploaded = money(r.uploaded_amount) || 0;
   const invoices = invoiceMap.get(customsNo) || [];
-  const refAmount = anchored ? null : (manual ?? system);
   const anchorSource = anchored ? (manual !== null ? "manual" : (declare !== null ? "declare" : null)) : null;
   const paid = money(r.paid_amount) || 0;
   const settle = settleStatus({ hasFer, expected: rowExpected, uploaded, paid });
@@ -191,7 +189,6 @@ function normalizeRow(r, ferSet, invoiceMap) {
     order_nos: r.order_nos || r.order_no || null,
     qty_ctn: money(r.qty) || 0,
     amount_incl_tax: rowExpected,
-    ref_amount: refAmount,
     declare_amount: declare,
     manual_expected_amount: manual,
     anchor_source: anchorSource,
@@ -241,7 +238,6 @@ function groupRows(rows, ferSet, invoiceMap) {
       anchored_count: anchored.length,
       pending_customs_count: pendingCustomsCount,
       need_amount_count: g.lines.filter((l) => l.status === "need_amount").length,
-      ref_amount: sumMoney(g.lines.filter((l) => !l.anchored), (l) => l.ref_amount),
       status: groupStatus(expected, uploaded, anchored.length),
       ...settle,
     };
@@ -385,12 +381,12 @@ async function handleDownload(req, res) {
   if (!range) return json(res, 400, { error: "from/to 月份格式应为 YYYY-MM" });
   const factoryCode = cleanString(req.query.factory_code) || null;
   const { groups } = await loadData(getPool(), range, factoryCode);
-  const out = [["月份", "工厂代码", "工厂", "报关单号", "合同号", "订单号", "箱数", "应开(锚定)", "参考金额(未锚)", "已开", "已付", "差额", "状态", "锚定源", "发票号", "结算状态"]];
+  const out = [["月份", "工厂代码", "工厂", "报关单号", "合同号", "订单号", "箱数", "应开(锚定)", "已开", "已付", "差额", "状态", "锚定源", "发票号", "结算状态"]];
   for (const g of groups) {
     for (const l of g.lines || []) {
       out.push([
         g.period, g.factory_code, g.factory_name, l.customs_no, l.contract_no, l.order_nos,
-        l.qty_ctn, l.amount_incl_tax ?? "", l.anchored ? "" : (l.ref_amount ?? ""),
+        l.qty_ctn, l.amount_incl_tax ?? "",
         l.uploaded_amount, l.paid_amount, l.diff_amount ?? "", l.status, l.anchor_source || "",
         l.invoices.map((x) => x.invoice_no).filter(Boolean).join(";"),
         settleLabel(l.settle_status, l.settle_labels),
