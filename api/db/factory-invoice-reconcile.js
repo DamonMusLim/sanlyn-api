@@ -102,7 +102,7 @@ function settleLabel(status, labels = []) {
     pending_customs: "待报关",
     need_amount: "金额待定",
   }[status] || status || "";
-  return status === "unsettled" && labels.length ? `${base}(${labels.join("·")})` : base;
+  return (status === "unsettled" || status === "untouched") && labels.length ? labels.join("·") : base;
 }
 
 function settleStatus({ hasFer = true, expected, uploaded, paid, anchoredCount = 1 }) {
@@ -115,10 +115,10 @@ function settleStatus({ hasFer = true, expected, uploaded, paid, anchoredCount =
     return { settle_status: "abnormal", settle_labels: [] };
   }
   if (up >= ex - 1 && pa >= ex - 1) return { settle_status: "settled", settle_labels: [] };
-  if (up === 0 && pa === 0) return { settle_status: "untouched", settle_labels: [] };
+  if (up === 0 && pa === 0) return { settle_status: "untouched", settle_labels: ["待开票", "待付款"] };
   const labels = [];
-  if (up < ex - 1) labels.push("等票");
-  if (pa < ex - 1) labels.push("待付");
+  if (up < ex - 1) labels.push("待开票");
+  if (pa < ex - 1) labels.push("待付款");
   return { settle_status: "unsettled", settle_labels: labels };
 }
 
