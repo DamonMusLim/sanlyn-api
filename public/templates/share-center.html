@@ -41,7 +41,12 @@ th{background:var(--head);color:#344054;font-size:11.5px}tr:last-child td{border
 <div class="toast" id="toast"></div>
 <script>
 const apiUrl = "/api/db/share-center";
-function token(){ const t = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || ""; return /[^\x00-\xff]/.test(t) ? "" : t; }
+function token(){
+  const cand = [new URLSearchParams(location.search).get("token"),
+    localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
 function authHeaders(json){ const t=token(), h=json?{"Content-Type":"application/json"}:{}; if(t) h.Authorization="Bearer "+t; return h; }
 function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
 function dt(v){ if(!v) return "—"; const d=new Date(v); return (d.getMonth()+1)+"/"+d.getDate(); }
