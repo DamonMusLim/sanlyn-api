@@ -84,7 +84,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
   function invoiceText(row){const invoices=Array.isArray(row.invoices)?row.invoices:[];if(!invoices.length)return"";return invoices.map(inv=>{const no=inv.invoice_no||"发票";const amt=inv.amount_incl_tax||inv.amount||"";return amt?`${no} ${money(amt)}`:no}).join("；")}
   function visibleOrderNo(row){return row.order_no||row.contract_no||"-"}
   function visibleQty(row){return row.qty||row.qty_ctn||row.cartons||"-"}
-  function rowAmount(row){return row.expected_amount??row.effective_expected_amount??0}
+  function rowAmount(row){if(row.amount_anchored===false)return 0;return row.expected_amount??row.effective_expected_amount??0}
   function copyBtn(value,label){const v=value==null?"":String(value);return `<button class="copyBtn" type="button" data-copy="${attr(v)}" data-copy-label="${attr(label)}">复制</button>`}
   function copyField(value,label){return `<span class="copyField"><span class="copyText">${escapeHtml(value||"-")}</span>${copyBtn(value||"",label)}</span>`}
   function toast(text){const el=$("toast");el.textContent=text;el.classList.add("show");clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.remove("show"),1800)}
@@ -109,7 +109,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
     return `<div class="${rowClass}">
       <div class="orderCell"><div class="cellLabel">订单号</div><div class="orderNo">${escapeHtml(visibleOrderNo(row))}</div></div>
       <div><div class="cellLabel">箱数</div><div class="qty">${escapeHtml(numberText(visibleQty(row)))}</div></div>
-      <div><div class="cellLabel">开票金额</div><div class="${amountClass}">${rowAmount(row)?money(rowAmount(row)):"待我司确认"}</div>${row.ratio_alert?`<div style="color:#dc2626;font-size:11px;font-weight:700;margin-top:3px">⚠ 报关价异常(${row.ratio_alert}倍销售),待核</div>`:""}${rowAmount(row)&&row.amount_anchored===false?`<div style="color:#b45309;font-size:11px;font-weight:700;margin-top:3px">⚠ 金额未锚定报关,以我司最终确认为准</div>`:""}</div>
+      <div><div class="cellLabel">开票金额</div><div class="${amountClass}">${row.amount_anchored===false?`<span style="color:#b45309">待报关资料</span>`:(rowAmount(row)?money(rowAmount(row)):"待我司确认")}</div>${row.ratio_alert?`<div style="color:#dc2626;font-size:11px;font-weight:700;margin-top:3px">⚠ 报关价异常(${row.ratio_alert}倍销售),待核</div>`:""}${row.amount_anchored===false?`<div style="color:#b45309;font-size:11px;font-weight:700;margin-top:3px">⚠ 金额未锚定报关,以我司最终确认为准</div>`:""}</div>
       <div class="statusCell"><div class="cellLabel">开票</div><div>${badge}<span class="invoiceInfo"${opened?` data-detail="${escapeHtml(key)}" style="cursor:pointer;text-decoration:underline dotted"`:""}> ${escapeHtml(invText)}</span></div><div class="cellLabel" style="margin-top:8px">付款</div><div>${paidBadge}<span class="invoiceInfo"> ${escapeHtml(paidText)}</span></div></div>
       <div class="actions">
         <label class="btn" data-upload="${escapeHtml(key)}">${busy?"上传中...":(opened?"修改发票":"上传发票")}<input class="fileInput" type="file" accept="image/*,.pdf" ${busy?"disabled":""} /></label>
