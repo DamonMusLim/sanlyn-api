@@ -1,8 +1,9 @@
 // api/db/factory-invoice-reconcile.js
-import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { cleanString } from "./factory-portal-utils.js";
+import { fetchRows } from "./customs-collab.js";
+import crypto from "crypto";
 
 const OK_ROLES = new Set(["admin", "finance"]);
 
@@ -60,77 +61,65 @@ function rangeFromQuery(q) {
 }
 
 function money(v) {
-  if (v === null || v === undefined) return null;
+  if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
 }
 
-function statusOf(expected, uploaded, invoiceCount, hasPending) {
-  if (expected === null) return "need_amount";
-  if (!invoiceCount || !uploaded) return "missing";
-  const diff = expected - uploaded;
-  if (Math.abs(diff) <= 1) return "matched";
-  if (hasPending) return "pending";
+function sumMoney(list, pick) {
+  return money(list.reduce((s, x) => s + (money(pick(x)) || 0), 0)) || 0;
+}
+
+function gate(expected) {
+  return Math.max((money(expected) || 0) * 0.05, 5000);
+}
+
+function rowStatus({ hasFer, rowExpected, uploaded }) {
+  if (!hasFer) return "pending_customs";
+  if (rowExpected === null) return "need_amount";
+  if ((money(uploaded) || 0) === 0) return "missing";
+  const diff = Math.abs(rowExpected - (money(uploaded) || 0));
+  if (diff <= 1) return "matched";
+  if (diff <= gate(rowExpected)) return "pending";
   return "amount_mismatch";
 }
 
-async function resolveFactoryScope(pool, code) {
-  if (!code) return null;
-  const r = await pool.query(
-    `SELECT code, scope_type, scope_value, expires_at
-       FROM invoice_links
-      WHERE code = $1
-        AND purpose = 'portal'
-        AND scope_type = 'factory'
-        AND expires_at > NOW()
-      LIMIT 1`,
-    [code]
-  );
-  const link = r.rows[0];
-  if (!link?.scope_value) return null;
-  const c = await pool.query(
-    `SELECT id, code, name_cn, factory_name
-       FROM companies
-      WHERE code = $1
-      LIMIT 1`,
-    [link.scope_value]
-  );
-  const row = c.rows[0];
-  if (!row?.code) return null;
-  return { factory: { code: row.code, name: row.name_cn || row.factory_name || row.code } };
+function groupStatus(expected, uploaded, anchoredCount) {
+  if (!anchoredCount || expected === null) return "pending_customs";
+  if (expected > 0 && (money(uploaded) || 0) === 0) return "missing";
+  const diff = Math.abs(expected - (money(uploaded) || 0));
+  if (diff <= 1) return "matched";
+  if (diff <= gate(expected)) return "pending";
+  return "amount_mismatch";
 }
 
-async function resolveFactoryByMt(pool, mt) {
-  if (!mt) return null;
-  const hash = crypto.createHash("sha256").update(String(mt)).digest("hex");
-  const r = await pool.query(
-    `SELECT meta FROM magic_links
-      WHERE token_hash = $1 AND recipient_role = 'factory_booking'
-        AND expires_at > NOW() AND revoked_at IS NULL
-      LIMIT 1`,
-    [hash]
-  );
-  if (!r.rows.length) return null;
-  let meta = r.rows[0].meta;
-  if (typeof meta === "string") { try { meta = JSON.parse(meta); } catch { meta = {}; } }
-  const label = String(meta?.factory_scope?.label || "").trim();
-  if (!label) return null;
-  const c = await pool.query(
-    `SELECT code, name_cn, factory_name FROM companies
-      WHERE code = $1 OR name_cn ILIKE '%'||$1||'%' OR factory_name ILIKE '%'||$1||'%'
-      ORDER BY CASE WHEN code=$1 THEN 0 WHEN name_cn=$1 THEN 1 WHEN factory_name=$1 THEN 2 ELSE 9 END, id ASC
-      LIMIT 1`,
-    [label]
-  );
-  const row = c.rows[0];
-  if (!row?.code) return null;
-  return { factory: { code: row.code, name: row.name_cn || row.factory_name || label } };
+function settleLabel(status, labels = []) {
+  const base = {
+    settled: "已结算",
+    unsettled: "待结算",
+    untouched: "未动",
+    abnormal: "异常",
+    pending_customs: "待报关",
+    need_amount: "金额待定",
+  }[status] || status || "";
+  return status === "unsettled" && labels.length ? `${base}(${labels.join("·")})` : base;
 }
 
-async function resolveFactory(req, pool) {
-  const mt = cleanString(req.query?.mt);
-  if (mt) return resolveFactoryByMt(pool, mt);
-  return resolveFactoryScope(pool, cleanString(req.query?.c));
+function settleStatus({ hasFer = true, expected, uploaded, paid, anchoredCount = 1 }) {
+  const up = money(uploaded) || 0;
+  const pa = money(paid) || 0;
+  if (!anchoredCount || !hasFer) return { settle_status: "pending_customs", settle_labels: [] };
+  if (expected === null || expected === undefined) return { settle_status: "need_amount", settle_labels: [] };
+  const ex = money(expected) || 0;
+  if (up > ex + 1 || (up > 0 && Math.abs(ex - up) > gate(ex))) {
+    return { settle_status: "abnormal", settle_labels: [] };
+  }
+  if (up >= ex - 1 && pa >= ex - 1) return { settle_status: "settled", settle_labels: [] };
+  if (up === 0 && pa === 0) return { settle_status: "untouched", settle_labels: [] };
+  const labels = [];
+  if (up < ex - 1) labels.push("等票");
+  if (pa < ex - 1) labels.push("待付");
+  return { settle_status: "unsettled", settle_labels: labels };
 }
 
 function compactInvoice(inv) {
@@ -143,243 +132,201 @@ function compactInvoice(inv) {
   };
 }
 
-function normalizeGroups(rows, detail) {
-  const groups = rows.map((r) => {
-    const invoices = Array.isArray(r.invoices) ? r.invoices.map(compactInvoice) : [];
-    const expected = money(r.expected_amount);
-    const uploaded = money(r.uploaded_amount) || 0;
-    const diff = expected === null ? null : money(expected - uploaded);
-    const hasPending = invoices.some((x) => ["pending", "ocr_failed", "seller_mismatch", "over_issued", "under_issued"].includes(x.review_status));
-    const g = {
-      factory_code: r.factory_code,
-      factory_name: r.factory_name,
-      period: r.period,
+async function fetchFerSet(pool, keys) {
+  if (!keys.length) return new Set();
+  const r = await pool.query(
+    `SELECT DISTINCT customs_no FROM finance_export_rebates WHERE customs_no = ANY($1)`,
+    [keys]
+  );
+  return new Set(r.rows.map((x) => x.customs_no).filter(Boolean));
+}
+
+async function fetchInvoices(pool, keys) {
+  if (!keys.length) return new Map();
+  const r = await pool.query(
+    `SELECT l.customs_no,
+            jsonb_agg(jsonb_build_object(
+              'id', fii.id,
+              'invoice_no', fii.invoice_no,
+              'amount_incl_tax', fii.amount_incl_tax,
+              'review_status', fii.review_status,
+              'file_url', CASE
+                WHEN jsonb_typeof(fii.attachments)='array'
+                  THEN COALESCE(fii.attachments->0->>'oss_url', fii.attachments->0->>'url')
+                WHEN jsonb_typeof(fii.attachments)='object'
+                  THEN COALESCE(fii.attachments->>'oss_url', fii.attachments->>'url')
+                ELSE NULL END
+            ) ORDER BY fii.invoice_no NULLS LAST, fii.id) AS invoices
+       FROM invoice_customs_links l
+       JOIN finance_invoices_in fii ON fii.id = l.invoice_id
+      WHERE l.customs_no = ANY($1)
+        AND l.link_status = 'active'
+        AND COALESCE(fii.review_status,'') NOT IN ('void','red_ink')
+      GROUP BY l.customs_no`,
+    [keys]
+  );
+  return new Map(r.rows.map((x) => [
+    x.customs_no,
+    (Array.isArray(x.invoices) ? x.invoices : []).map(compactInvoice),
+  ]));
+}
+
+function normalizeRow(r, ferSet, invoiceMap) {
+  const customsNo = cleanString(r.customs_no);
+  const hasFer = ferSet.has(customsNo);
+  const manual = money(r.manual_expected_amount);
+  const declare = money(r.declare_amount);
+  const system = money(r.system_expected_amount);
+  const anchored = hasFer && (manual ?? declare) !== null;
+  const rowExpected = anchored ? (manual ?? declare) : null;
+  const uploaded = money(r.uploaded_amount) || 0;
+  const invoices = invoiceMap.get(customsNo) || [];
+  const refAmount = anchored ? null : (manual ?? system);
+  const anchorSource = anchored ? (manual !== null ? "manual" : (declare !== null ? "declare" : null)) : null;
+  const paid = money(r.paid_amount) || 0;
+  const settle = settleStatus({ hasFer, expected: rowExpected, uploaded, paid });
+  return {
+    customs_no: customsNo || null,
+    contract_no: r.contract_no || null,
+    order_nos: r.order_nos || r.order_no || null,
+    qty_ctn: money(r.qty) || 0,
+    amount_incl_tax: rowExpected,
+    ref_amount: refAmount,
+    declare_amount: declare,
+    manual_expected_amount: manual,
+    anchor_source: anchorSource,
+    anchored,
+    uploaded_amount: uploaded,
+    diff_amount: rowExpected === null ? null : money(rowExpected - uploaded),
+    invoices,
+    status: rowStatus({ hasFer, rowExpected, uploaded }),
+    ...settle,
+    paid_amount: paid,
+    slip_count: Number(r.slip_count) || 0,
+  };
+}
+
+function groupRows(rows, ferSet, invoiceMap) {
+  const map = new Map();
+  for (const r of rows) {
+    const period = r.period || (r.export_date ? String(r.export_date).slice(0, 7) : "");
+    const key = `${r.factory_code || ""}\t${period}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        factory_code: r.factory_code || null,
+        factory_name: r.factory_name || r.factory_code || "",
+        period,
+        lines: [],
+      });
+    }
+    map.get(key).lines.push(normalizeRow(r, ferSet, invoiceMap));
+  }
+  const groups = [...map.values()].map((g) => {
+    const anchored = g.lines.filter((l) => l.anchored);
+    const expected = anchored.length ? sumMoney(anchored, (l) => l.amount_incl_tax) : null;
+    const uploaded = sumMoney(g.lines, (l) => l.uploaded_amount);
+    const paid = sumMoney(g.lines, (l) => l.paid_amount);
+    const invoiceIds = new Set(g.lines.flatMap((l) => l.invoices.map((x) => x.id).filter(Boolean)));
+    const pendingCustomsCount = g.lines.filter((l) => l.status === "pending_customs").length;
+    const settle = settleStatus({ expected, uploaded, paid, anchoredCount: anchored.length });
+    return {
+      ...g,
       expected_amount: expected,
       uploaded_amount: uploaded,
-      diff_amount: diff,
-      qty_ctn: money(r.qty_ctn) || 0,
-      contracts_detail: Array.isArray(r.contracts_detail) ? r.contracts_detail.map(c => ({ contract_no: c.contract_no, qty_ctn: money(c.qty_ctn) || 0, amount_incl_tax: money(c.amount_incl_tax) })) : [],
-      contract_count: Number(r.contract_count) || 0,
-      invoice_count: Number(r.invoice_count) || 0,
-      status: statusOf(expected, uploaded, Number(r.invoice_count) || 0, hasPending),
+      diff_amount: expected === null ? null : money(expected - uploaded),
+      qty_ctn: sumMoney(g.lines, (l) => l.qty_ctn),
+      invoice_count: invoiceIds.size || g.lines.reduce((s, l) => s + (l.invoices.length || 0), 0),
+      paid_amount: paid,
+      slip_count: g.lines.reduce((s, l) => s + (Number(l.slip_count) || 0), 0),
+      anchored_count: anchored.length,
+      pending_customs_count: pendingCustomsCount,
+      need_amount_count: g.lines.filter((l) => l.status === "need_amount").length,
+      ref_amount: sumMoney(g.lines.filter((l) => !l.anchored), (l) => l.ref_amount),
+      status: groupStatus(expected, uploaded, anchored.length),
+      ...settle,
     };
-    if (detail) {
-      g.lines = (Array.isArray(r.lines) ? r.lines : []).map((l) => ({
-        contract_no: l.contract_no,
-        customs_no: l.customs_no,
-        item_code: l.item_code,
-        declaration_name: l.declaration_name,
-        qty_ctn: money(l.qty_ctn) || 0,
-        amount_incl_tax: money(l.amount_incl_tax),
-        tax_rate: Number(l.tax_rate) || 0.13,
-        invoices: Array.isArray(l.invoices) ? l.invoices.map(compactInvoice) : [],
-        diff_amount: money(l.diff_amount),
-        status: statusOf(money(l.amount_incl_tax), money(l.uploaded_amount) || 0, l.invoices?.length || 0, false),
-      }));
-    }
-    return g;
   });
+  groups.sort((a, b) => String(b.period).localeCompare(String(a.period)) || String(a.factory_name).localeCompare(String(b.factory_name)));
   const summary = groups.reduce((s, g) => {
     s.expected_amount += g.expected_amount || 0;
     s.uploaded_amount += g.uploaded_amount || 0;
+    s.paid_amount += g.paid_amount || 0;
     s.factories.add(g.factory_code);
-    s.contracts += g.contract_count;
-    s.invoice_count += g.invoice_count;
-    if (!["matched"].includes(g.status)) s.abnormal += 1;
+    s.invoice_count += g.invoice_count || 0;
+    s.pending_customs_rows += g.pending_customs_count || 0;
+    if (g.settle_status === "settled") s.settled += 1;
+    if (g.settle_status === "unsettled") s.unsettled += 1;
+    if (g.settle_status === "untouched") s.untouched += 1;
+    if (g.settle_status === "abnormal") s.abnormal += 1;
     return s;
-  }, { expected_amount: 0, uploaded_amount: 0, factories: new Set(), contracts: 0, invoice_count: 0, abnormal: 0 });
-  summary.expected_amount = money(summary.expected_amount);
-  summary.uploaded_amount = money(summary.uploaded_amount);
+  }, {
+    expected_amount: 0, uploaded_amount: 0, paid_amount: 0, factories: new Set(),
+    invoice_count: 0, abnormal: 0, pending_customs_rows: 0, settled: 0, unsettled: 0, untouched: 0,
+  });
+  summary.expected_amount = money(summary.expected_amount) || 0;
+  summary.uploaded_amount = money(summary.uploaded_amount) || 0;
+  summary.paid_amount = money(summary.paid_amount) || 0;
   summary.diff_amount = money(summary.expected_amount - summary.uploaded_amount);
-  summary.factories = summary.factories.size;
+  summary.factories = [...summary.factories].filter(Boolean).length;
   return { summary, groups };
 }
 
-async function fetchReconcile(pool, opts) {
-  const params = [opts.start, opts.end];
-  let factoryWhere = "";
-  if (opts.factoryCode) {
-    params.push(opts.factoryCode);
-    factoryWhere = `AND factory_code = $${params.length}`;
-  }
-
-  const sql = `
-    WITH range_contracts AS (
-      SELECT DISTINCT contract_no, to_char(export_date,'YYYY-MM') AS period, customs_no
-        FROM finance_export_rebates
-       WHERE export_date >= $1::date AND export_date < $2::date
-    ),
-    oli_order AS (
-      SELECT order_id,
-             NULLIF(SUM(declare_amount_per_box * qty_ctn), 0) AS decl_sum,
-             NULLIF(SUM(factory_subtotal), 0) AS fs_sum,
-             NULLIF(SUM(subtotal), 0) AS st_sum,
-             SUM(COALESCE(qty_ctn, 0)) AS qty_ctn
-        FROM order_line_items GROUP BY order_id
-    ),
-    oli_sku AS (
-      SELECT order_id, COALESCE(sku, product_id::text) AS item_code,
-             MAX(declaration_name) AS declaration_name,
-             SUM(COALESCE(qty_ctn, 0)) AS qty_ctn,
-             COALESCE(NULLIF(SUM(declare_amount_per_box * qty_ctn), 0),
-                      NULLIF(SUM(factory_subtotal), 0),
-                      NULLIF(SUM(subtotal), 0)) AS amount_incl_tax,
-             MAX(CASE WHEN COALESCE(hs_code,'') LIKE '2309%' THEN 0.09 ELSE 0.13 END) AS tax_rate
-        FROM order_line_items GROUP BY order_id, COALESCE(sku, product_id::text)
-    ),
-    ord AS (
-      SELECT o.id AS order_id, rc.contract_no, rc.period,
-             COALESCE(o.factory_code, c_id.code,
-               (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
-                 WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
-             COALESCE(c.name_cn, c_id.name_cn, o.factory) AS factory_name,
-             COALESCE(oo.fs_sum, o.total_amount_factory, oo.st_sum) AS expected_amount,
-             COALESCE(oo.qty_ctn, 0) AS qty_ctn,
-             array_agg(DISTINCT rc.customs_no) FILTER (WHERE rc.customs_no IS NOT NULL) AS customs_arr
-        FROM range_contracts rc
-        JOIN orders o ON o.contract_no = rc.contract_no AND COALESCE(o.status,'') <> 'cancelled'
-        LEFT JOIN oli_order oo ON oo.order_id = o.id
-        LEFT JOIN companies c ON c.code = o.factory_code
-        LEFT JOIN companies c_id ON c_id.id = o.factory_company_id
-       GROUP BY o.id, rc.contract_no, rc.period, o.factory_code, c_id.code,
-                c.name_cn, c_id.name_cn, o.factory,
-                oo.decl_sum, oo.fs_sum, oo.st_sum, o.total_amount_factory, oo.qty_ctn
-    ),
-    ord_f AS (
-      SELECT * FROM ord WHERE factory_code IS NOT NULL ${factoryWhere}
-    ),
-    group_keys AS (
-      SELECT period, factory_code, MAX(factory_name) AS factory_name,
-             SUM(expected_amount) AS expected_amount,
-             SUM(qty_ctn) AS qty_ctn,
-             COUNT(DISTINCT contract_no) AS contract_count,
-             array_agg(DISTINCT contract_no) AS contracts,
-             array_agg(DISTINCT cu) FILTER (WHERE cu IS NOT NULL) AS customs
-        FROM ord_f LEFT JOIN LATERAL unnest(ord_f.customs_arr) AS cu ON true
-       GROUP BY period, factory_code
-    )
-    SELECT g.period, g.factory_code, g.factory_name, g.expected_amount, g.qty_ctn, g.contract_count,
-           COALESCE(inv.uploaded_amount, 0) AS uploaded_amount,
-           COALESCE(inv.invoice_count, 0) AS invoice_count,
-           COALESCE(inv.invoices, '[]'::jsonb) AS invoices,
-           COALESCE(lines.lines, '[]'::jsonb) AS lines,
-           COALESCE(cdetail.contracts_detail, '[]'::jsonb) AS contracts_detail
-      FROM group_keys g
-      LEFT JOIN LATERAL (
-        SELECT SUM(fii.amount_incl_tax) AS uploaded_amount,
-               COUNT(DISTINCT fii.id) AS invoice_count,
-               jsonb_agg(DISTINCT jsonb_build_object(
-                 'id', fii.id, 'invoice_no', fii.invoice_no,
-                 'amount_incl_tax', fii.amount_incl_tax,
-                 'review_status', fii.review_status,
-                 'file_url', CASE
-                   WHEN jsonb_typeof(fii.attachments)='array' THEN COALESCE(fii.attachments->0->>'oss_url', fii.attachments->0->>'url')
-                   WHEN jsonb_typeof(fii.attachments)='object' THEN COALESCE(fii.attachments->>'oss_url', fii.attachments->>'url')
-                   ELSE NULL END
-               )) AS invoices
-          FROM finance_invoices_in fii
-         WHERE fii.seller_company_code = g.factory_code
-           AND COALESCE(fii.review_status, '') NOT IN ('void', 'red_ink')
-           AND (COALESCE(fii.contract_nos::text[], '{}'::text[]) && g.contracts::text[]
-             OR COALESCE(fii.customs_nos::text[], '{}'::text[]) && COALESCE(g.customs::text[], '{}'::text[]))
-      ) inv ON true
-      LEFT JOIN LATERAL (
-        SELECT jsonb_agg(jsonb_build_object(
-          'contract_no', d.contract_no, 'customs_no', d.customs_no,
-          'item_code', d.item_code, 'declaration_name', d.declaration_name,
-          'qty_ctn', d.qty_ctn, 'amount_incl_tax', d.amount_incl_tax, 'tax_rate', d.tax_rate,
-          'uploaded_amount', 0, 'diff_amount', NULL, 'invoices', '[]'::jsonb
-        ) ORDER BY d.contract_no, d.item_code) AS lines
-        FROM (
-          SELECT o2.contract_no, array_to_string(o2.customs_arr, ',') AS customs_no,
-                 s.item_code, s.declaration_name, s.qty_ctn, s.amount_incl_tax, s.tax_rate
-            FROM ord_f o2 JOIN oli_sku s ON s.order_id = o2.order_id
-           WHERE o2.period = g.period AND o2.factory_code = g.factory_code
-        ) d
-      ) lines ON true
-      LEFT JOIN LATERAL (
-        SELECT jsonb_agg(jsonb_build_object(
-          'contract_no', cc.contract_no, 'qty_ctn', cc.q, 'amount_incl_tax', cc.amt
-        ) ORDER BY cc.contract_no) AS contracts_detail
-        FROM (
-          SELECT contract_no, SUM(qty_ctn) AS q, SUM(expected_amount) AS amt
-            FROM ord_f o3 WHERE o3.period = g.period AND o3.factory_code = g.factory_code
-           GROUP BY contract_no
-        ) cc
-      ) cdetail ON true
-     ORDER BY g.period DESC, g.factory_name, g.factory_code`;
-  return (await pool.query(sql, params)).rows;
+async function loadData(pool, range, factoryCode) {
+  const rows = await fetchRows(pool, { ...range, factoryCode });
+  const keys = [...new Set(rows.map((r) => cleanString(r.customs_no)).filter(Boolean))];
+  const [ferSet, invoiceMap] = await Promise.all([fetchFerSet(pool, keys), fetchInvoices(pool, keys)]);
+  return groupRows(rows, ferSet, invoiceMap);
 }
 
 async function handleInternal(req, res) {
   if (!requireFinance(req, res)) return;
   const range = rangeFromQuery(req.query || {});
   if (!range) return json(res, 400, { error: "from/to 月份格式应为 YYYY-MM" });
-  const rows = await fetchReconcile(getPool(), {
-    ...range,
-    factoryCode: cleanString(req.query.factory_code) || null,
-  });
-  const data = normalizeGroups(rows, req.query.detail === "1");
+  const data = await loadData(getPool(), range, cleanString(req.query.factory_code) || null);
   return res.json({ success: true, period: { from: range.from, to: range.to }, ...data });
 }
 
-function factoryVisible(groups) {
-  return groups.map((g) => ({
-    period: g.period,
-    factory_code: g.factory_code,
-    factory_name: g.factory_name,
-    uploaded_amount: g.uploaded_amount,
-    expected_amount: g.expected_amount,
-    contracts_detail: g.contracts_detail || [],
-    status: g.status,
-    lines: (g.lines || []).map((l) => {
-      const row = {
-        period: g.period,
-        contract_no: l.contract_no,
-        item_code: l.item_code,
-        declaration_name: l.declaration_name,
-        qty_ctn: l.qty_ctn,
-        tax_rate: l.tax_rate,
-        uploaded: l.invoices.map((x) => ({
-          id: x.id,
-          invoice_no: x.invoice_no,
-          amount_incl_tax: x.amount_incl_tax,
-          review_status: x.review_status,
-          file_url: x.file_url,
-        })),
-      };
-      if (l.amount_incl_tax !== null) row.amount_incl_tax = l.amount_incl_tax;
-      return row;
-    }),
-  }));
-}
-
-async function handleFactory(req, res) {
+async function handlePortalLink(req, res) {
+  if (!requireFinance(req, res)) return;
+  const factoryCode = cleanString(req.query.factory_code);
+  if (!factoryCode) return json(res, 400, { error: "factory_code required" });
   const pool = getPool();
-  const scope = await resolveFactory(req, pool);
-  if (!scope) return json(res, 401, { error: "链接无效或已过期" });
-  const range = rangeFromQuery(req.query || {});
-  if (!range) return json(res, 400, { error: "months/from/to 月份格式应为 YYYY-MM" });
-  const rows = await fetchReconcile(pool, { ...range, factoryCode: scope.factory.code });
-  const data = normalizeGroups(rows, true);
+  const found = await pool.query(
+    `SELECT code, expires_at
+       FROM invoice_links
+      WHERE purpose='portal' AND scope_type='factory' AND scope_value=$1 AND expires_at > NOW()
+      ORDER BY expires_at DESC LIMIT 1`,
+    [factoryCode]
+  );
+  let row = found.rows[0];
+  if (!row) {
+    const prefix = (factoryCode.match(/[a-z]/ig) || []).join("").toLowerCase().slice(0, 2) || "fx";
+    const code = `${prefix}${crypto.randomBytes(6).toString("hex")}`;
+    const createdBy = req.user?.uid || req.user?.account || "reconcile";
+    const ins = await pool.query(
+      `INSERT INTO invoice_links
+         (code,purpose,scope_type,scope_value,order_no,expires_at,created_by,created_at)
+       VALUES ($1,'portal','factory',$2,'',NOW()+interval '1 year',$3,NOW())
+       RETURNING code, expires_at`,
+      [code, factoryCode, createdBy]
+    );
+    row = ins.rows[0];
+  }
   return res.json({
     success: true,
-    factory: scope.factory,
-    period: { from: range.from, to: range.to },
-    groups: factoryVisible(data.groups),
+    code: row.code,
+    path: `/public/customs-collab-factory.html?c=${row.code}`,
+    expires_at: row.expires_at,
   });
 }
 
 async function handleMark(req, res) {
   if (!requireFinance(req, res)) return;
   const body = req.body || {};
-  const invoiceId = Number(body.invoice_id);
-  const action = cleanString(body.action);
+  const invoiceId = Number(body.invoice_id), action = cleanString(body.action);
   const valid = new Set(["match", "amount_mismatch", "void", "red_ink", "manual_adjust"]);
   if (!invoiceId || !valid.has(action)) return json(res, 400, { error: "invoice_id/action invalid" });
-  const newStatus = action === "match" ? "matched" : action;
-  const pool = getPool();
-  const client = await pool.connect();
+  const newStatus = action === "match" ? "matched" : action, client = await getPool().connect();
   try {
     await client.query("BEGIN");
     const oldR = await client.query(
@@ -392,9 +339,7 @@ async function handleMark(req, res) {
     const hasAmount = Object.prototype.hasOwnProperty.call(body, "amount_incl_tax");
     const upd = await client.query(
       `UPDATE finance_invoices_in
-          SET review_status=$2,
-              amount_incl_tax=CASE WHEN $3::boolean THEN $4::numeric ELSE amount_incl_tax END,
-              updated_at=NOW()
+          SET review_status=$2, amount_incl_tax=CASE WHEN $3::boolean THEN $4::numeric ELSE amount_incl_tax END, updated_at=NOW()
         WHERE id=$1
         RETURNING review_status, amount_incl_tax`,
       [invoiceId, newStatus, hasAmount, hasAmount ? body.amount_incl_tax : null]
@@ -405,13 +350,9 @@ async function handleMark(req, res) {
           amount_incl_tax, reason, payload, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
        RETURNING id`,
-      [
-        invoiceId, old.invoice_no, old.seller_company_code, action,
-        old.review_status, newStatus, upd.rows[0].amount_incl_tax,
-        cleanString(body.reason) || null,
-        JSON.stringify(body.payload || {}),
-        req.user?.uid || req.user?.id || req.user?.account || null,
-      ]
+      [invoiceId, old.invoice_no, old.seller_company_code, action, old.review_status, newStatus,
+        upd.rows[0].amount_incl_tax, cleanString(body.reason) || null, JSON.stringify(body.payload || {}),
+        req.user?.uid || req.user?.id || req.user?.account || null]
     );
     await client.query("COMMIT");
     return res.json({ success: true, invoice_id: invoiceId, old_status: old.review_status, new_status: newStatus, event_id: ev.rows[0].id });
@@ -437,32 +378,23 @@ function sendCsv(res, filename, rows) {
 }
 
 async function handleDownload(req, res) {
+  if (!requireFinance(req, res)) return;
   const scope = cleanString(req.query.scope) || "internal";
   if ((cleanString(req.query.format) || "csv") !== "csv") return json(res, 400, { error: "today only csv" });
   const range = rangeFromQuery(req.query || {});
   if (!range) return json(res, 400, { error: "from/to 月份格式应为 YYYY-MM" });
-
-  let factoryCode = cleanString(req.query.factory_code) || null;
-  if (scope === "internal") {
-    if (!requireFinance(req, res)) return;
-  } else {
-    const fac = await resolveFactory(req, getPool());
-    if (!fac) return json(res, 401, { error: "链接无效或已过期" });
-    factoryCode = fac.factory.code;
-  }
-
-  const rows = await fetchReconcile(getPool(), { ...range, factoryCode });
-  const groups = normalizeGroups(rows, true).groups;
-  const out = [];
-  if (scope === "internal") {
-    out.push(["月份", "工厂代码", "工厂", "合同号", "报关单号", "SKU", "品名", "箱数", "应开含税", "已开金额", "差额", "税率", "状态", "发票号"]);
-    for (const g of groups) for (const l of g.lines || []) {
-      out.push([g.period, g.factory_code, g.factory_name, l.contract_no, l.customs_no, l.item_code, l.declaration_name, l.qty_ctn, l.amount_incl_tax, l.invoices.reduce((s, x) => s + (x.amount_incl_tax || 0), 0), l.diff_amount, l.tax_rate, l.status, l.invoices.map((x) => x.invoice_no).join(";")]);
-    }
-  } else {
-    out.push(["月份", "合同号", "SKU品名", "箱数", "含税金额", "税率"]);
-    for (const g of groups) for (const l of g.lines || []) {
-      out.push([g.period, l.contract_no, [l.item_code, l.declaration_name].filter(Boolean).join(" "), l.qty_ctn, l.amount_incl_tax ?? "", l.tax_rate]);
+  const factoryCode = cleanString(req.query.factory_code) || null;
+  const { groups } = await loadData(getPool(), range, factoryCode);
+  const out = [["月份", "工厂代码", "工厂", "报关单号", "合同号", "订单号", "箱数", "应开(锚定)", "参考金额(未锚)", "已开", "已付", "差额", "状态", "锚定源", "发票号", "结算状态"]];
+  for (const g of groups) {
+    for (const l of g.lines || []) {
+      out.push([
+        g.period, g.factory_code, g.factory_name, l.customs_no, l.contract_no, l.order_nos,
+        l.qty_ctn, l.amount_incl_tax ?? "", l.anchored ? "" : (l.ref_amount ?? ""),
+        l.uploaded_amount, l.paid_amount, l.diff_amount ?? "", l.status, l.anchor_source || "",
+        l.invoices.map((x) => x.invoice_no).filter(Boolean).join(";"),
+        settleLabel(l.settle_status, l.settle_labels),
+      ]);
     }
   }
   return sendCsv(res, `factory-invoice-reconcile-${scope}-${range.from}-${range.to}.csv`, out);
@@ -473,8 +405,11 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   try {
     const action = cleanString(req.query?.action);
-    if (req.method === "GET" && action === "factory") return handleFactory(req, res);
+    if (req.method === "GET" && action === "factory") {
+      return json(res, 410, { error: "此工厂端已迁移至报关单开票协同(customs-collab)工厂页" });
+    }
     if (req.method === "GET" && action === "download") return handleDownload(req, res);
+    if (req.method === "GET" && action === "portal_link") return handlePortalLink(req, res);
     if (req.method === "POST" && action === "mark") return handleMark(req, res);
     if (req.method === "GET") return handleInternal(req, res);
     return json(res, 405, { error: "Method not allowed" });
