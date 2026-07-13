@@ -176,6 +176,8 @@ function fileUrl(row) {
 export async function fetchRows(pool, opts) {
   const params = [opts.start, opts.end];
   const where = [`b.export_date >= $1::date`, `b.export_date < $2::date`];
+  const includeSlipDetails = !!opts.includeSlipDetails;
+  const paidAmountExpr = includeSlipDetails ? "COALESCE(bl.amount_alloc,0)" : "COALESCE(bl.amount_alloc, bs.amount)";
 
   if (opts.factoryCode) {
     params.push(opts.factoryCode);
@@ -201,7 +203,7 @@ export async function fetchRows(pool, opts) {
              CASE WHEN o.order_no ILIKE '%-DG-%'
                   THEN (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id)
                   ELSE NULL END AS declare_value,
-             (SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS factory_expected_value,
+             (SELECT COALESCE(NULLIF(SUM(oli.factory_subtotal),0), NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0), NULLIF(SUM(oli.qty_ctn*p.factory_price),0)) FROM order_line_items oli LEFT JOIN products p ON p.id=oli.product_id WHERE oli.order_id=o.id) AS factory_expected_value,
              COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
                       NULLIF(o.total_amount_factory,0)) AS purchase_value,
              (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli,
@@ -301,7 +303,8 @@ export async function fetchRows(pool, opts) {
                 ELSE ROUND(COALESCE(s.manual_expected_amount, b.system_expected_amount) - COALESCE(u.uploaded_amount,0), 2)
             END AS diff_amount,
            COALESCE(pay.paid_amount,0) AS paid_amount,
-           COALESCE(pay.slip_count,0)::int AS slip_count,
+           COALESCE(pay.slip_count,0)::int AS slip_count
+           ${includeSlipDetails ? ", COALESCE(pay.slip_details, '[]'::jsonb) AS slip_details" : ""},
            ev.created_at AS last_event_at
       FROM b
       LEFT JOIN customs_invoice_status s ON s.customs_no=b.customs_no
@@ -329,8 +332,14 @@ export async function fetchRows(pool, opts) {
            )
       ) ri ON true
       LEFT JOIN LATERAL (
-        SELECT COALESCE(SUM(COALESCE(bl.amount_alloc, bs.amount)),0) AS paid_amount,
+        SELECT COALESCE(SUM(${paidAmountExpr}),0) AS paid_amount,
                COUNT(DISTINCT bs.id) AS slip_count
+               ${includeSlipDetails ? `,
+               COALESCE(jsonb_agg(jsonb_build_object(
+                 'amount', COALESCE(bl.amount_alloc,0),
+                 'file_url', bs.file_url,
+                 'slip_date', bs.payment_date
+               ) ORDER BY bs.payment_date DESC NULLS LAST, bs.id DESC), '[]'::jsonb) AS slip_details` : ""}
           FROM bank_slip_links bl
           JOIN bank_slips bs ON bs.id=bl.slip_id
          WHERE bl.bl_no = b.customs_no
@@ -400,17 +409,17 @@ async function handleList(req, res) {
 }
 
 function factoryRow(r) {
+  // 差额审核门(2026-07-13): 无人工确认且无fer报关申报额 = OLI兜底,行必须带未锚定标记
+  const amountAnchored = r.manual_expected_amount != null || Number(r.declare_amount || 0) > 0;
   return {
-    customs_no: r.customs_no,
     contract_no: r.contract_no,
     export_date: r.export_date,
     period: r.period,
     factory_code: r.factory_code,
     factory_name: r.factory_name,
     status: r.status,
-    expected_amount: r.effective_expected_amount,
+    expected_amount: r.manual_expected_amount ?? r.factory_expected_amount,
     factory_expected_amount: r.factory_expected_amount,
-    system_expected_amount: r.system_expected_amount,
     received_amount: r.received_amount,
     uploaded_amount: r.uploaded_amount,
     valid_invoice_count: r.valid_invoice_count,
@@ -422,9 +431,10 @@ function factoryRow(r) {
     has_invoice: (r.valid_invoice_count || 0) > 0,
     paid_amount: r.paid_amount || 0,
     slip_count: r.slip_count || 0,
-    ratio_alert: r.ratio_alert ?? null,
-    diff_amount: r.diff_amount,
+    slips: Array.isArray(r.slip_details) ? r.slip_details : [],
+    diff_amount: (Number(r.manual_expected_amount ?? r.factory_expected_amount) || 0) - (Number(r.uploaded_amount) || 0),
     last_event_at: r.last_event_at,
+    amount_anchored: amountAnchored,
   };
 }
 
@@ -436,7 +446,7 @@ async function handleFactoryList(req, res) {
 
   const range = rangeFromQuery(req.query || {});
   if (!range) return json(res, 400, { error: "from/to 月份格式应为 YYYY-MM" });
-  const rows = await fetchRows(pool, { ...range, factoryCode: scope.factory.code, status: cleanString(req.query.status), keyword: cleanString(req.query.keyword) });
+  const rows = await fetchRows(pool, { ...range, factoryCode: scope.factory.code, status: cleanString(req.query.status), keyword: cleanString(req.query.keyword), includeSlipDetails: true });
   return res.json({
     success: true,
     factory: scope.factory,
@@ -785,6 +795,7 @@ async function handleDetail(req, res) {
 
     const fer = await client.query(
       `SELECT fer.customs_no, fer.contract_no, MIN(fer.export_date) AS export_date,
+              MAX(fer.fob_cny) AS fob_cny,
               jsonb_agg(item ORDER BY ord) FILTER (WHERE item IS NOT NULL) AS items
          FROM finance_export_rebates fer
          LEFT JOIN LATERAL jsonb_array_elements(
@@ -826,7 +837,7 @@ async function handleDetail(req, res) {
       const contractNo = st.contract_no || row.contract_no || null;
       let orderResult = contractNo
         ? await client.query(
-            `SELECT id, order_no, contract_no, issuing_company, company_code
+            `SELECT id, order_no, contract_no, issuing_company, company_code, customer_po
                FROM orders
               WHERE contract_no=$1
                 AND COALESCE(status,'') <> 'cancelled'
@@ -837,7 +848,7 @@ async function handleDetail(req, res) {
         : { rows: [] };
       if (!orderResult.rows[0]) {
         orderResult = await client.query(
-          `SELECT id, order_no, contract_no, issuing_company, company_code
+          `SELECT id, order_no, contract_no, issuing_company, company_code, customer_po
              FROM orders
             WHERE order_no=$1
               AND COALESCE(status,'') <> 'cancelled'
@@ -848,7 +859,7 @@ async function handleDetail(req, res) {
       }
       if (!orderResult.rows[0]) {
         orderResult = await client.query(
-          `SELECT id, order_no, contract_no, issuing_company, company_code
+          `SELECT id, order_no, contract_no, issuing_company, company_code, customer_po
              FROM orders
             WHERE bl_no=$1
               AND COALESCE(status,'') <> 'cancelled'
@@ -901,17 +912,14 @@ async function handleDetail(req, res) {
       }
 
       const sellerResult = await client.query(
-        `SELECT name_cn, tax_id
+        `SELECT name_cn, tax_id, bank_name, bank_account
            FROM companies
           WHERE code=$1
           LIMIT 1`,
         [st.factory_code]
       );
       const sellerRow = sellerResult.rows[0] || {};
-      const seller = {
-        name: sellerRow.name_cn || scope.factory.name || null,
-        tax_id: sellerRow.tax_id || null,
-      };
+      const seller = { name: sellerRow.name_cn || scope.factory.name || null, tax_id: sellerRow.tax_id || null, bank_name: sellerRow.bank_name || null, bank_account: sellerRow.bank_account || null };
 
       const rawUnit = rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.unit2
         || rawItems.find((x) => x?.unit2 || x?.transaction_unit || x?.unit)?.transaction_unit
@@ -929,7 +937,7 @@ async function handleDetail(req, res) {
                 COALESCE(NULLIF(BTRIM(p.spec), ''), NULLIF(BTRIM(oli.size), '')) AS spec,
                 COALESCE(NULLIF(BTRIM(p.transaction_unit), ''), NULLIF($2, ''), NULLIF(BTRIM(oli.unit), ''), '箱') AS unit,
                 ROUND(SUM(COALESCE(oli.qty_ctn, 0))::numeric, 2) AS qty,
-                ROUND(SUM(CASE WHEN $3 THEN COALESCE(NULLIF(oli.declare_amount_per_box*oli.qty_ctn,0), oli.factory_subtotal, oli.qty_ctn*oli.factory_price, 0) ELSE COALESCE(oli.factory_subtotal, oli.qty_ctn*oli.factory_price, 0) END)::numeric, 2) AS amount,
+                ROUND(COALESCE(NULLIF(SUM(oli.factory_subtotal),0), NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0), NULLIF(SUM(oli.qty_ctn*p.factory_price),0), 0)::numeric, 2) AS amount,
                 CASE
                   WHEN COALESCE(NULLIF(BTRIM(oli.hs_code), ''), NULLIF(BTRIM(p.hs_code), '')) LIKE '2309%' THEN 0.09
                   ELSE 0.13
@@ -954,30 +962,24 @@ async function handleDetail(req, res) {
         : { rows: [] };
 
       const unitMap = { CTN: "箱", PCS: "件", KG: "千克", BAG: "包", SET: "套" };
-      const lines = lineResult.rows.map((l) => ({
-        name: l.name || null,
-        spec: l.spec || null,
-        unit: unitMap[String(l.unit || "").toUpperCase()] || l.unit || "箱",
-        qty: money(l.qty) || 0,
-        amount: money(l.amount) || 0,
-        vat_rate: Number(l.vat_rate) || 0.13,
-      }));
+      const lines = lineResult.rows.map((l) => ({ name: l.name || null, spec: l.spec || null,
+        unit: unitMap[String(l.unit || "").toUpperCase()] || l.unit || "箱", qty: money(l.qty) || 0,
+        amount: money(l.amount) || 0, unit_price_ex: money(l.qty) ? money((Number(l.amount) || 0) / Number(l.qty)) : null,
+        vat_rate: Number(l.vat_rate) || 0.13 }));
       const linesTotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+      const baoguanAmount = money(row.fob_cny);
 
-      invoiceTemplate = {
-        buyer,
-        seller,
-        lines,
-        order_no: mergedOrderNos || order?.order_no || null,
-        total_incl: money(linesTotal) || effective || null,
-      };
+      invoiceTemplate = { buyer, seller, lines, order_no: mergedOrderNos || order?.order_no || null,
+        po_no: order?.customer_po || null, factory_ref: order?.contract_no || null, baoguan_amount: baoguanAmount,
+        over_baoguan: baoguanAmount !== null && linesTotal > baoguanAmount, total_incl: money(linesTotal) || effective || null };
+      delete invoiceTemplate.baoguan_amount;
     }
 
     return res.json({
       success: true,
       factory: factoryMode ? scope.factory : undefined,
       customs: {
-        customs_no: customsNo,
+        customs_no: factoryMode ? undefined : customsNo,
         contract_no: st.contract_no || row.contract_no || null,
         export_date: row.export_date || null,
         factory_code: st.factory_code,
@@ -1020,7 +1022,7 @@ export default async function handler(req, res) {
     if (req.method === "GET" && action === "detail") return handleDetail(req, res);
     if (req.method === "POST" && action === "confirm") return handleConfirm(req, res);
     if (req.method === "POST" && action === "upload") return handleUpload(req, res);
-    if (req.method === "POST" && action === "upload_slip") return handleUploadSlip(req, res);
+    if (req.method === "POST" && action === "upload_slip") return json(res, 403, { error: "工厂侧仅可查看水单，水单由巴匕内部上传" });
     if (req.method === "POST" && action === "correction") return handleCorrection(req, res);
     return json(res, 404, { error: "unknown action" });
   } catch (err) {
