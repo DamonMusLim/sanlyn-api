@@ -52,6 +52,7 @@ tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-n
       <button id="history-btn" style="display:none">修改历史</button>
       <button id="edit-btn" style="display:none">✎ 编辑</button>
       <button id="import-btn" style="display:none">⬆ 批量上传</button>
+      <button id="restock-btn" style="display:none">🛒 一键补货</button>
       <button id="refresh">刷新</button>
       <button class="primary" id="save-all" style="display:none">保存全部</button>
     </div>
@@ -148,6 +149,7 @@ function render(){
   eb.className = state.editing ? "primary" : "";
   document.getElementById("save-all").style.display = (state.canEdit && state.editing) ? "" : "none";
   document.getElementById("import-btn").style.display = (state.canEdit && state.editing) ? "" : "none";
+  document.getElementById("restock-btn").style.display = state.canEdit ? "" : "none";
   const root = document.getElementById("groups");
   const groups = state.brandFilter ? state.groups.filter(g=>g.brand===state.brandFilter) : state.groups;
   if(!groups.length){root.innerHTML = '<div class="empty">暂无SKU</div>';return;}
@@ -257,6 +259,15 @@ async function loadHistory(sku){
     panel.scrollIntoView({behavior:"smooth",block:"nearest"});
   }catch(e){ panel.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
 }
+async function restockAll(){
+  if(!confirm("给所有「库存低于安全值」的产品，按缺口一次性向冀凯下补货订单？")) return;
+  try{
+    const r = await fetch(apiUrl+"?action=restock-all",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"失败");
+    alert(r.ordered>0?`已一键补货：${r.ordered} 个产品下单（进来料协同）`:"当前没有低于安全值的产品，无需补货");
+    await load();
+  }catch(e){ alert("一键补货失败："+e.message); }
+}
 async function placeOrder(sku){
   const row = state.groups.flatMap(g=>g.rows||[]).find(x=>x.sku===sku);
   const gap = row ? Math.max(0, Number(row.finished_safety_stock||0)-Number(row.finished_stock||0)) : 0;
@@ -278,6 +289,7 @@ document.addEventListener("click", e=>{
   if(e.target.id === "history-btn") loadHistory();
   if(e.target.id === "edit-btn"){ state.editing = !state.editing; render(); }
   if(e.target.id === "import-btn"){ const i=document.createElement("input"); i.type="file"; i.accept=".xlsx"; i.onchange=()=>{ if(i.files[0]) importExcel(i.files[0]); }; i.click(); }
+  if(e.target.id === "restock-btn") restockAll();
   const up = e.target.dataset && e.target.dataset.upload;
   if(up){ const i=document.createElement("input"); i.type="file"; i.accept="image/*"; i.onchange=()=>{ if(i.files[0]) uploadImage(up, i.files[0]); }; i.click(); }
   const det = e.target.dataset && e.target.dataset.detail;
