@@ -296,6 +296,24 @@ async function placeOrder(req, res, pool, r, scopeCodes) {
   return json(res, 200, { success: true });
 }
 
+async function restockAll(req, res, pool, r, scopeCodes) {
+  if (!(r === "factory" || isInternal(r))) return json(res, 403, { success: false, error: "forbidden" });
+  const vals = []; let scopeSql = "";
+  if (r === "factory") { vals.push(scopeCodes); scopeSql = ` AND p.factory_code = ANY($${vals.length}::text[])`; }
+  const q = await pool.query(`SELECT f.sku, (f.safety_stock - f.current_stock) AS gap, p.factory_code
+      FROM finished_goods_inventory f JOIN products p ON p.sku = f.sku
+     WHERE f.safety_stock > f.current_stock AND f.safety_stock > 0${scopeSql}`, vals);
+  let n = 0;
+  for (const row of q.rows) {
+    const bag = await pool.query(`SELECT sku_code, supplier_code FROM packaging_materials WHERE product_skus @> jsonb_build_array($1::text) LIMIT 1`, [row.sku]);
+    await pool.query(`INSERT INTO inbound_deliveries(supplier_code, factory_code, material_sku, order_qty, status, procured_by, created_by, note)
+       VALUES($1,$2,$3,$4,'ordered',$5,$6,$7)`,
+      [bag.rows[0]?.supplier_code || "SUP-CZJK", row.factory_code || "CL", bag.rows[0]?.sku_code || row.sku, Number(row.gap), "sanlyn", actor(req), "一键补货 " + row.sku]);
+    n++;
+  }
+  return json(res, 200, { success: true, ordered: n });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -311,6 +329,7 @@ export default async function handler(req, res) {
     if (req.method === "GET") return json(res, 200, { success: true, role: r, can_edit: r === "factory" || isInternal(r), org_name: clean(req.user?.company || "", 120), ...(await listRows(pool, r, scopeCodes, req)) });
     if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "save") return save(req, res, pool, r, scopeCodes);
     if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "order") return placeOrder(req, res, pool, r, scopeCodes);
+    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "restock-all") return restockAll(req, res, pool, r, scopeCodes);
     return json(res, 405, { success: false, error: "Method/action not allowed" });
   } catch (e) {
     const code = /required|invalid/.test(e.message) ? 400 : (/scope|forbidden/.test(e.message) ? 403 : 500);
