@@ -19,6 +19,7 @@ table{width:100%;min-width:980px;border-collapse:collapse}th,td{padding:8px 10px
 th{background:var(--head);color:#344054;font-size:12px}tr:last-child td{border-bottom:0}.num{text-align:right;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}
 .product{display:flex;align-items:center;gap:8px;min-width:230px}.product img{width:34px;height:34px;border:1px solid var(--line);border-radius:5px;object-fit:cover;background:#f2f4f7}.sku{font-size:12px;color:var(--muted)}
 input{width:92px;border:1px solid var(--line);border-radius:6px;padding:7px 8px;text-align:right;font:inherit;background:#fff}input:disabled{background:#f2f4f7;color:#667085}input.txt{width:150px;text-align:left}
+.upbtn{width:auto;margin-top:4px;border:1px solid var(--line);background:#fff;border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;color:var(--blue);cursor:pointer}
 .badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800;border:1px solid var(--line);white-space:nowrap}
 .matched{color:var(--ok);background:#ecfdf3;border-color:#abefc6}.pending_receipt,.in_transit{color:var(--blue);background:#eff4ff;border-color:#b2ccff}.bag_short,.bad{color:var(--bad);background:#fef3f2;border-color:#fecdca}
 tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-neg{color:var(--bad);font-weight:800}.empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
@@ -38,6 +39,7 @@ tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-n
       <select id="brand-filter" style="display:none;border:1px solid #d8dee8;border-radius:6px;padding:7px 9px;font:inherit;background:#fff"></select>
       <button id="history-btn" style="display:none">修改历史</button>
       <button id="edit-btn" style="display:none">✎ 编辑</button>
+      <button id="import-btn" style="display:none">⬆ 批量上传</button>
       <button id="refresh">刷新</button>
       <button class="primary" id="save-all" style="display:none">保存全部</button>
     </div>
@@ -49,7 +51,7 @@ tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-n
 <script>
 const apiUrl = "/api/db/sku-recon";
 const labels = {matched:"齐",pending_receipt:"待收",bag_short:"袋子缺",in_transit:"在途"};
-const state = {role:"", canEdit:false, editing:false, groups:[], brandFilter:""};
+const state = {role:"", canEdit:false, editing:false, groups:[], brandFilter:"", imgEdits:{}};
 function token(){
   const cand = [new URLSearchParams(location.search).get("token"),
     localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
@@ -88,7 +90,7 @@ function lastOrderCell(r){
 function colDefs(){
   const ed = state.canEdit;
   const c = [
-    {label:"产品", cell:r=>`<div class="product">${imgTag(r.image_url)}<div><strong>${esc(r.product_name||r.sku)}</strong><div class="sku">${esc(r.sku)}</div></div></div>`},
+    {label:"产品", cell:r=>`<div class="product">${imgTag(r.image_url)}<div><strong>${esc(r.product_name||r.sku)}</strong><div class="sku">${esc(r.sku)}</div>${(state.canEdit&&state.editing)?`<button type="button" class="upbtn" data-upload="${esc(r.sku)}">${r.image_url?"换图":"上传图片"}</button>`:""}</div></div>`},
     {label:"规格", cell:r=>esc(r.size||"")},
   ];
   if(ed) c.push({label:"供应商", cell:r=>inpCell(r,"supplier_name","text")});
@@ -113,6 +115,7 @@ function render(){
   eb.textContent = state.editing ? "✕ 退出编辑" : "✎ 编辑";
   eb.className = state.editing ? "primary" : "";
   document.getElementById("save-all").style.display = (state.canEdit && state.editing) ? "" : "none";
+  document.getElementById("import-btn").style.display = (state.canEdit && state.editing) ? "" : "none";
   const root = document.getElementById("groups");
   const groups = state.brandFilter ? state.groups.filter(g=>g.brand===state.brandFilter) : state.groups;
   if(!groups.length){root.innerHTML = '<div class="empty">暂无SKU</div>';return;}
@@ -167,6 +170,7 @@ async function saveAll(){
   const rows = [...document.querySelectorAll("tr[data-sku]")].map(tr=>{
     const out = {sku: tr.dataset.sku};
     tr.querySelectorAll("input").forEach(inp=>{out[inp.dataset.field] = inp.value;});
+    if(state.imgEdits[tr.dataset.sku]!==undefined) out.image_url = state.imgEdits[tr.dataset.sku];
     return out;
   });
   const btn = document.getElementById("save-all");
@@ -174,9 +178,28 @@ async function saveAll(){
   try{
     const r = await fetch(apiUrl + "?action=save",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({rows})}).then(x=>x.json());
     if(!r.success) throw new Error(r.error || "Save failed");
-    state.editing = false; await load();
+    state.imgEdits = {}; state.editing = false; await load();
   }catch(e){alert(e.message);}
   finally{btn.textContent = "保存全部"; btn.disabled = false;}
+}
+async function uploadImage(sku, file){
+  const fd = new FormData(); fd.append("file", file); fd.append("path", "sku-recon/"+sku+"-"+file.name);
+  try{
+    const r = await fetch("/api/oss-upload",{method:"POST",body:fd}).then(x=>x.json());
+    if(!r.success || !r.url) throw new Error(r.error||"上传失败");
+    state.imgEdits[sku] = r.url;
+    for(const g of state.groups){ const row=(g.rows||[]).find(x=>x.sku===sku); if(row) row.image_url=r.url; }
+    render();
+  }catch(e){ alert("图片上传失败："+e.message); }
+}
+async function importExcel(file){
+  const fd = new FormData(); fd.append("file", file);
+  try{
+    const r = await fetch("/api/db/sku-recon-import",{method:"POST",headers:authHeaders(),body:fd}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"导入失败");
+    alert(`批量导入成功：更新 ${r.updated} 个SKU，图片 ${r.images} 张`);
+    state.imgEdits={}; state.editing=false; await load();
+  }catch(e){ alert("导入失败："+e.message); }
 }
 function hRow(h){
   const b = h.before || {}, a = h.after || {};
@@ -204,6 +227,9 @@ document.addEventListener("click", e=>{
   if(e.target.id === "save-all") saveAll();
   if(e.target.id === "history-btn") loadHistory();
   if(e.target.id === "edit-btn"){ state.editing = !state.editing; render(); }
+  if(e.target.id === "import-btn"){ const i=document.createElement("input"); i.type="file"; i.accept=".xlsx"; i.onchange=()=>{ if(i.files[0]) importExcel(i.files[0]); }; i.click(); }
+  const up = e.target.dataset && e.target.dataset.upload;
+  if(up){ const i=document.createElement("input"); i.type="file"; i.accept="image/*"; i.onchange=()=>{ if(i.files[0]) uploadImage(up, i.files[0]); }; i.click(); }
 });
 document.addEventListener("change", e=>{
   if(e.target.id === "brand-filter"){ state.brandFilter = e.target.value; render(); }
