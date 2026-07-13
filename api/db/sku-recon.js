@@ -276,6 +276,26 @@ async function history(pool, r, scopeCodes) {
   return { history: (await pool.query(q, vals)).rows };
 }
 
+async function placeOrder(req, res, pool, r, scopeCodes) {
+  if (!(r === "factory" || isInternal(r))) return json(res, 403, { success: false, error: "order forbidden" });
+  const sku = clean(req.body?.sku, 80);
+  const q = Number(req.body?.qty);
+  if (!sku) return json(res, 400, { success: false, error: "sku required" });
+  if (!(q > 0)) return json(res, 400, { success: false, error: "qty invalid" });
+  const pv = [sku]; let pw = "sku = $1";
+  if (r === "factory") { pv.push(scopeCodes); pw += " AND factory_code = ANY($2::text[])"; }
+  const p = await pool.query(`SELECT factory_code FROM products WHERE ${pw} LIMIT 1`, pv);
+  if (!p.rows.length) return json(res, 403, { success: false, error: "sku out of scope" });
+  const bag = await pool.query(`SELECT sku_code, supplier_code FROM packaging_materials WHERE product_skus @> jsonb_build_array($1::text) LIMIT 1`, [sku]);
+  const material_sku = bag.rows[0]?.sku_code || sku;
+  const supplier_code = bag.rows[0]?.supplier_code || "SUP-CZJK";
+  await pool.query(
+    `INSERT INTO inbound_deliveries(supplier_code, factory_code, material_sku, order_qty, status, procured_by, created_by, note)
+     VALUES($1,$2,$3,$4,'ordered',$5,$6,$7)`,
+    [supplier_code, p.rows[0].factory_code || "CL", material_sku, q, "sanlyn", actor(req), "库存比对表补货下单 " + sku]);
+  return json(res, 200, { success: true });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -290,6 +310,7 @@ export default async function handler(req, res) {
     if (req.method === "GET" && clean(req.query.view || "", 40) === "history") return json(res, 200, { success: true, role: r, ...(await history(pool, r, scopeCodes)) });
     if (req.method === "GET") return json(res, 200, { success: true, role: r, can_edit: r === "factory" || isInternal(r), org_name: clean(req.user?.company || "", 120), ...(await listRows(pool, r, scopeCodes, req)) });
     if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "save") return save(req, res, pool, r, scopeCodes);
+    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "order") return placeOrder(req, res, pool, r, scopeCodes);
     return json(res, 405, { success: false, error: "Method/action not allowed" });
   } catch (e) {
     const code = /required|invalid/.test(e.message) ? 400 : (/scope|forbidden/.test(e.message) ? 403 : 500);
