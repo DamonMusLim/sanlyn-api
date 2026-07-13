@@ -1,5 +1,5 @@
-export function renderDebit(ctx){
-  const { sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr, fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick } = ctx;
+export async function renderDebit(ctx){
+  const { sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr, fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick, pool } = ctx;
   var html;
         // ⚠ Real fields only — never fabricate values (memory: feedback_never_invent_fields)
         var freightTerm = pick(sp.freight_term, "");           // 2026-05-18 new column
@@ -23,9 +23,6 @@ export function renderDebit(ctx){
         var blNo=pick(sp.bl_no,spraw.blNo,spraw.bl_no,"");
         var _isFob = ['FOB','FCA'].indexOf(String(freightTerm||'').toUpperCase().trim())>=0;
         var _portMisc = ['THC','DOCUMENTATION FEE','SEAL FEE','B/L FEE','EIR','VGM','BOOKING FEE'];
-        var _portMiscCNY = thcF+docF+sealF+blF+eirF+vgmF+bkgF;
-        var totCNY=(_isFob ? 0 : _portMiscCNY)+fCNY+truck+customs;
-        var totUSD=fUSD+ins;
         // 2026-05-19: DN 默认 "DB-" 前缀；fmt=iv 时改 "INV-" + 标题切 INVOICE
         var _isIvFmt = (_fmtVariant === "iv");
         var dbNo = (_isIvFmt ? "INV-" : "DB-") + soNo;
@@ -50,6 +47,36 @@ export function renderDebit(ctx){
           if(_isFob && _portMisc.indexOf(r[0])>=0) return false; // FOB: 港杂归工厂, 不上客户账单
           return true;
         });
+
+        // 2026-07-13: 优先从 freight_supplier_bills 按 bl_no 聚合客户销售价(sale_amount)。
+        // 老模板只读 shipping_plans 8个固定列, 港杂费/操作费/包干费/FE代办费等新费目
+        // 一律被静默漏收(CY00376 实测发现,¥662/票)。有账单明细记账的票据改用它(完整、
+        // 按 rebill_status 判断是否上客户账单——absorbed/voided 天然排除, 不用猜FOB规则);
+        // 没有账单明细的老票据(绝大多数历史单据未走 freight-bill-entry 流程)静默回退到
+        // 上面这份固定列表, 不影响任何现有单据的显示。
+        if (blNo && pool) {
+          try {
+            var billRes = await pool.query(
+              `SELECT cost_category, currency, SUM(sale_amount)::numeric AS amt
+                 FROM freight_supplier_bills
+                WHERE bl_no = $1
+                  AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed')
+                  AND sale_amount > 0
+                GROUP BY cost_category, currency
+                ORDER BY currency DESC, amt DESC`,
+              [blNo]
+            );
+            if (billRes.rows.length) {
+              feeList = billRes.rows.map(function(r){
+                return [r.cost_category, r.cost_category, 1, r.currency, Number(r.amt)];
+              });
+            }
+          } catch (e) { /* freight_supplier_bills 查询失败(表不存在/连接问题)→ 静默回退固定列表 */ }
+        }
+
+        // 总计一律从最终 feeList 汇总(不管走固定列还是账单聚合), 保证明细行与小计永远一致
+        var totCNY = feeList.filter(function(r){ return r[3]==="CNY"; }).reduce(function(s,r){ return s+Number(r[4]||0); }, 0);
+        var totUSD = feeList.filter(function(r){ return r[3]==="USD"; }).reduce(function(s,r){ return s+Number(r[4]||0); }, 0);
 
         var CSS2=`<style>
           *{box-sizing:border-box;margin:0;padding:0}
