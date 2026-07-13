@@ -50,9 +50,10 @@ const apiUrl = "/api/db/sku-recon";
 const labels = {matched:"齐",pending_receipt:"待收",bag_short:"袋子缺",in_transit:"在途"};
 const state = {role:"", canEdit:false, groups:[], brandFilter:""};
 function token(){
-  const t = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || "";
-  // 丢弃含非Latin1字符(如中文)的脏token,否则塞进fetch请求头会整页崩("non ISO-8859-1 code point")
-  return /[^\x00-\xff]/.test(t) ? "" : t;
+  const cand = [new URLSearchParams(location.search).get("token"),
+    localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
 }
 function authHeaders(json){
   const t = token(), h = json ? {"Content-Type":"application/json"} : {};
