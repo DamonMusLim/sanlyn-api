@@ -50,6 +50,7 @@ function publicRow(row, r) {
   // 客户只看: 品牌/产品/库存/安全值/补货/状态 —— 供应商/柜容量/袋子/实收/下单/差异一律不下发
   const common = {
     sku: row.sku,
+    barcode: row.barcode || "",
     product_name: row.product_name_cn || row.product_name || "",
     brand: row.brand || "未分组",
     size: row.size || row.spec || "",
@@ -112,7 +113,7 @@ async function listRows(pool, r, scopeCodes, req) {
     if (fc) { vals.push(fc); where += ` AND p.factory_code = $${vals.length}`; }
   }
   const q = `
-    SELECT p.sku, p.product_name, p.product_name_cn, p.brand, p.size, p.spec, p.image_url AS product_image_url,
+    SELECT p.sku, p.product_name, p.product_name_cn, p.brand, p.barcode, p.size, p.spec, p.image_url AS product_image_url,
            COALESCE(fg.current_stock, 0) AS finished_stock,
            COALESCE(fg.safety_stock, 0) AS finished_safety_stock,
            fg.container_capacity, fg.supplier_name,
