@@ -37,7 +37,7 @@
   function buildParams(){
     var bl=$("bl").value.trim();
     var p=["plan_id="+encodeURIComponent(bl)];
-    if(aud()==="carrier") p.push("carrier=1");
+    p.push("aud="+aud());
     var iss=$("issue").value; if(iss&&iss!=="SWB") p.push("issue="+encodeURIComponent(iss));
     else p.push("issue=SWB");
     if($("ctn").value.trim()) p.push("ctn="+encodeURIComponent($("ctn").value.trim()));
