@@ -36,29 +36,29 @@
 
   <table class="hdr"><tbody>
     <tr>
-      <td style="width:62%"><div class="lbl">SHIPPER 发货人</div><div class="ed" id="si-shipper" contenteditable></div></td>
-      <td><div class="lbl">B/L NO. 提单号</div><div class="ed" id="si-blno" contenteditable></div>
-          <div class="lbl" style="margin-top:6px">出单方式</div><div class="ed" id="si-issuemode" contenteditable></div></td>
+      <td style="width:62%"><div class="lbl">SHIPPER 发货人</div><div class="ed" id="si-shipper" data-field="shipper" contenteditable></div></td>
+      <td><div class="lbl">B/L NO. 提单号</div><div class="ed" id="si-blno" data-field="bl_no" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">出单方式</div><div class="ed" id="si-issuemode" data-field="issue_mode" contenteditable></div></td>
     </tr>
     <tr>
-      <td><div class="lbl">CONSIGNEE 收货人</div><div class="ed" id="si-consignee" contenteditable></div></td>
-      <td rowspan="2"><div class="lbl">Ocean Vessel & VOY 船名航次</div><div class="ed" id="si-vessel" contenteditable></div>
-          <div class="lbl" style="margin-top:6px">Port of Loading 装货港</div><div class="ed" id="si-pol" contenteditable></div>
-          <div class="lbl" style="margin-top:6px">Port of Discharge 卸货港</div><div class="ed" id="si-pod" contenteditable></div>
-          <div class="lbl" style="margin-top:6px">Place of Delivery 交货地</div><div class="ed" id="si-delivery" contenteditable></div>
-          <div class="lbl" style="margin-top:6px">HS CODE（只提供不显示）</div><div class="ed" id="si-hs" contenteditable></div></td>
+      <td><div class="lbl">CONSIGNEE 收货人</div><div class="ed" id="si-consignee" data-field="consignee" contenteditable></div></td>
+      <td rowspan="2"><div class="lbl">Ocean Vessel & VOY 船名航次</div><div class="ed" id="si-vessel" data-field="vessel_voyage" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">Port of Loading 装货港</div><div class="ed" id="si-pol" data-field="port_of_loading" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">Port of Discharge 卸货港</div><div class="ed" id="si-pod" data-field="port_of_discharge" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">Place of Delivery 交货地</div><div class="ed" id="si-delivery" data-field="place_of_delivery" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">HS CODE（只提供不显示）</div><div class="ed" id="si-hs" data-field="hs_code" contenteditable></div></td>
     </tr>
     <tr>
-      <td><div class="lbl">NOTIFY 通知人</div><div class="ed" id="si-notify" contenteditable></div></td>
+      <td><div class="lbl">NOTIFY 通知人</div><div class="ed" id="si-notify" data-field="notify" contenteditable></div></td>
     </tr>
     <tr>
       <td colspan="2">
         <table style="width:100%"><tr>
-          <td style="border:0;width:22%"><div class="lbl">Marks & No. 唛头</div><div class="ed" id="si-marks" contenteditable></div></td>
-          <td style="border:0;width:16%"><div class="lbl">No. of Ctns 件数</div><div class="ed" id="si-pieces" contenteditable></div></td>
-          <td style="border:0"><div class="lbl">Description of Goods 品名货描</div><div class="ed" id="si-goods" contenteditable></div></td>
-          <td style="border:0;width:16%"><div class="lbl">Gross Weight KGS 毛重</div><div class="ed" id="si-gw" contenteditable></div></td>
-          <td style="border:0;width:14%"><div class="lbl">CBM 尺码</div><div class="ed" id="si-cbm" contenteditable></div></td>
+          <td style="border:0;width:22%"><div class="lbl">Marks & No. 唛头</div><div class="ed" id="si-marks" data-field="marks" contenteditable></div></td>
+          <td style="border:0;width:16%"><div class="lbl">No. of Ctns 件数</div><div class="ed" id="si-pieces" data-field="total_pieces" contenteditable></div></td>
+          <td style="border:0"><div class="lbl">Description of Goods 品名货描</div><div class="ed" id="si-goods" data-field="description" contenteditable></div></td>
+          <td style="border:0;width:16%"><div class="lbl">Gross Weight KGS 毛重</div><div class="ed" id="si-gw" data-field="gross_weight" contenteditable></div></td>
+          <td style="border:0;width:14%"><div class="lbl">CBM 尺码</div><div class="ed" id="si-cbm" data-field="measurement" contenteditable></div></td>
         </tr></table>
       </td>
     </tr>
@@ -68,7 +68,7 @@
   <table class="goods"><thead><tr>
     <th>#</th><th>箱号 Container</th><th>封号 Seal</th><th>箱型</th><th class="r">件数</th><th>单位</th><th class="r">重量 GW</th><th class="r">体积 CBM</th><th class="r">柜重</th><th class="r">VGM</th>
   </tr></thead><tbody id="si-rows"></tbody>
-  <tfoot><tr style="font-weight:700"><td colspan="4" class="r">TOTAL</td><td class="r" id="si-t-pieces"></td><td></td><td class="r" id="si-t-gw"></td><td class="r" id="si-t-cbm"></td><td></td><td class="r" id="si-t-vgm"></td></tr></tfoot>
+  <tfoot><tr style="font-weight:700"><td colspan="4" class="r">TOTAL</td><td class="r" id="si-t-pieces" data-field="sum_pieces"></td><td></td><td class="r" id="si-t-gw" data-field="sum_gross_weight"></td><td class="r" id="si-t-cbm" data-field="sum_cbm"></td><td></td><td class="r" id="si-t-vgm" data-field="sum_vgm"></td></tr></tfoot>
   </table>
 
   <div class="foot">提单确认件模版 <b id="tplVer">v1 · dev</b> · 生成 <span id="genTime"></span></div>
