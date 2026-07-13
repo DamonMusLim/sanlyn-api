@@ -66,10 +66,21 @@ tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-n
   <div id="history-panel" class="brand" style="display:none;margin-bottom:12px"></div>
   <div id="groups"><div class="empty">加载中...</div></div>
 </div>
+<div id="save-ask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:22px 24px;max-width:340px;width:88%;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.2)">
+    <div style="font-weight:800;font-size:15px;margin-bottom:6px">有未保存的修改</div>
+    <div style="color:#667085;font-size:13px;margin-bottom:18px">你填的内容还没保存，要保存吗？</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button data-ask="cancel">继续编辑</button>
+      <button data-ask="discard" style="color:#b42318">放弃</button>
+      <button data-ask="save" class="primary">保存</button>
+    </div>
+  </div>
+</div>
 <script>
 const apiUrl = "/api/db/sku-recon";
 const labels = {matched:"齐",pending_receipt:"待收",bag_short:"袋子缺",in_transit:"在途"};
-const state = {role:"", canEdit:false, editing:false, groups:[], brandFilter:"", imgEdits:{}};
+const state = {role:"", canEdit:false, editing:false, groups:[], brandFilter:"", imgEdits:{}, dirty:false};
 function token(){
   const cand = [new URLSearchParams(location.search).get("token"),
     localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
@@ -222,7 +233,7 @@ async function saveAll(){
   try{
     const r = await fetch(apiUrl + "?action=save",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({rows})}).then(x=>x.json());
     if(!r.success) throw new Error(r.error || "Save failed");
-    state.imgEdits = {}; state.editing = false; await load();
+    state.imgEdits = {}; state.dirty = false; state.editing = false; await load();
   }catch(e){alert(e.message);}
   finally{btn.textContent = "保存全部"; btn.disabled = false;}
 }
@@ -289,13 +300,25 @@ async function placeOrder(sku){
     await load();
   }catch(e){ alert("下单失败："+e.message); }
 }
-document.addEventListener("click", e=>{
+// ===== 未保存修改拦截(通用铁律:编辑有改动→离开必问是否保存) =====
+function askSave(){ return new Promise(res=>{ const m=document.getElementById("save-ask"); m.style.display="flex"; m._res=res; }); }
+async function guardDirty(){ // 返回 true=可以离开, false=留在编辑
+  if(!(state.editing && state.dirty)) return true;
+  const a = await askSave();
+  if(a==="cancel") return false;
+  if(a==="save"){ await saveAll(); return false; } // saveAll成功后自己退出编辑
+  state.dirty = false; return true; // discard
+}
+document.addEventListener("input", e=>{ if(state.editing && e.target.dataset && e.target.dataset.field) state.dirty = true; });
+window.addEventListener("beforeunload", e=>{ if(state.editing && state.dirty){ e.preventDefault(); e.returnValue=""; } });
+document.addEventListener("click", async e=>{
+  if(e.target.dataset && e.target.dataset.ask){ const m=document.getElementById("save-ask"); m.style.display="none"; if(m._res){ m._res(e.target.dataset.ask); m._res=null; } return; }
   const t = e.target.closest("[data-toggle]");
   if(t){const box = t.parentElement.querySelector(".table-wrap"); box.style.display = box.style.display==="none" ? "" : "none";}
-  if(e.target.id === "refresh"){ state.editing=false; load(); }
+  if(e.target.id === "refresh"){ if(!await guardDirty()) return; state.editing=false; state.dirty=false; load(); }
   if(e.target.id === "save-all") saveAll();
   if(e.target.id === "history-btn") loadHistory();
-  if(e.target.id === "edit-btn"){ state.editing = !state.editing; render(); }
+  if(e.target.id === "edit-btn"){ if(state.editing){ if(!await guardDirty()) return; } state.editing = !state.editing; state.dirty=false; render(); }
   if(e.target.id === "import-btn"){ const i=document.createElement("input"); i.type="file"; i.accept=".xlsx"; i.onchange=()=>{ if(i.files[0]) importExcel(i.files[0]); }; i.click(); }
   if(e.target.id === "restock-btn") restockAll();
   const up = e.target.dataset && e.target.dataset.upload;
