@@ -58,7 +58,17 @@ var TPL_VERSION = "v1 · 2026-07-10 17:38";
       var pieces=num(c.pieces), gw=num(c.gross_weight_kg), cbm=num(c.cbm), vgm=num(c.vgm_kg);
       tp+=pieces; tg+=gw; tc+=cbm; tv+=vgm; pol=pol||up(c.export_port); goods=goods||enGoods(c.goods_desc); hs=hs||c.hs_code;
       var tr=document.createElement("tr");
-      tr.innerHTML='<td>'+(i+1)+'</td><td class="ed" contenteditable>'+up(c.container_no)+'</td><td class="ed" contenteditable>'+up(c.seal_no)+'</td><td class="ed" contenteditable>'+up(c.container_type)+'</td><td class="r ed" contenteditable>'+fmt(pieces)+'</td><td>CARTONS</td><td class="r ed" contenteditable>'+fmt(gw,2)+'</td><td class="r ed" contenteditable>'+fmt(cbm,3)+'</td><td class="r ed" contenteditable>'+fmt(num(c.tare_kg),2)+'</td><td class="r ed" contenteditable>'+fmt(vgm,2)+'</td>';
+      var R=' data-row="'+i+'"';
+      tr.innerHTML='<td data-field="seq"'+R+'>'+(i+1)+'</td>'
+        +'<td class="ed" contenteditable data-field="container_no"'+R+'>'+up(c.container_no)+'</td>'
+        +'<td class="ed" contenteditable data-field="seal_no"'+R+'>'+up(c.seal_no)+'</td>'
+        +'<td class="ed" contenteditable data-field="container_type"'+R+'>'+up(c.container_type)+'</td>'
+        +'<td class="r ed" contenteditable data-field="pieces"'+R+'>'+fmt(pieces)+'</td>'
+        +'<td data-field="unit"'+R+'>CARTONS</td>'
+        +'<td class="r ed" contenteditable data-field="gross_weight"'+R+'>'+fmt(gw,2)+'</td>'
+        +'<td class="r ed" contenteditable data-field="cbm"'+R+'>'+fmt(cbm,3)+'</td>'
+        +'<td class="r ed" contenteditable data-field="tare"'+R+'>'+fmt(num(c.tare_kg),2)+'</td>'
+        +'<td class="r ed" contenteditable data-field="vgm"'+R+'>'+fmt(vgm,2)+'</td>';
       tb.appendChild(tr);
     });
     setT("si-t-pieces",fmt(tp)); setT("si-t-gw",fmt(tg,2)); setT("si-t-cbm",fmt(tc,3)); setT("si-t-vgm",fmt(tv,2));
@@ -68,9 +78,11 @@ var TPL_VERSION = "v1 · 2026-07-10 17:38";
 
   function boot(){
     setT("tplVer", TPL_VERSION); setT("genTime", new Date().toLocaleString("zh-CN"));
-    // 红字=船公司要求,给船东版显示(?carrier=1 / audience=carrier),我们看/发客户默认隐藏
+    // 版本标记 data-audience(internal/customer/carrier,兼容旧carrier=1) + 红字仅船东版
+    var _aud = qp("aud") || (qp("carrier")==="1" ? "carrier" : "internal");
+    var _doc=document.getElementById("doc"); if(_doc) _doc.setAttribute("data-audience", _aud);
     var _req=document.querySelector(".req");
-    if(_req) _req.style.display = (qp("carrier")==="1"||qp("audience")==="carrier") ? "" : "none";
+    if(_req) _req.style.display = (_aud==="carrier") ? "" : "none";
     if(!PLAN){ status("缺少 plan_id"); return; }
     status("加载中…");
     fetch(api("/api/db/shipping-transfer-data?plan_id="+encodeURIComponent(PLAN)), { headers: authH() }).then(function(r){ return r.json(); }).then(function(d){
