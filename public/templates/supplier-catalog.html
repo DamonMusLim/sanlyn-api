@@ -56,7 +56,12 @@ select{border:1px solid var(--line);border-radius:7px;padding:8px 9px;background
 <script>
 const apiUrl = "/api/db/supplier-catalog";
 const state = { canEdit:false, editing:false, rows:[], brandFilter:"", supplier:null };
-function token(){ const t = new URLSearchParams(location.search).get("token") || localStorage.getItem("token") || ""; return /[^\x00-\xff]/.test(t) ? "" : t; }
+function token(){
+  const cand = [new URLSearchParams(location.search).get("token"),
+    localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
 function authHeaders(json){ const t=token(), h=json?{"Content-Type":"application/json"}:{}; if(t) h.Authorization="Bearer "+t; return h; }
 function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
 function num(v){return v==null||v===""?"":Number(v).toLocaleString(undefined,{maximumFractionDigits:4});}
