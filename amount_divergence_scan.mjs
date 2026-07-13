@@ -24,9 +24,15 @@ WITH fer_c AS (
          SUM(fer.fob_cny) AS fer_total,
          COUNT(*) AS fer_rows,
          COUNT(*) FILTER (WHERE COALESCE(fer.fob_cny,0)<=0) AS fer_missing,
-         COUNT(*) FILTER (WHERE s.manual_expected_amount IS NOT NULL) AS manual_rows
+         COUNT(*) FILTER (WHERE s.has_manual) AS manual_rows
     FROM finance_export_rebates fer
-    LEFT JOIN customs_invoice_status s ON s.customs_no=fer.customs_no
+    -- 复合主键后同关单多厂行,先按 customs_no 预聚合防 join 扇出(SUM/COUNT 翻倍)
+    LEFT JOIN (
+      SELECT customs_no,
+             BOOL_OR(manual_expected_amount IS NOT NULL) AS has_manual
+        FROM customs_invoice_status
+       GROUP BY customs_no
+    ) s ON s.customs_no=fer.customs_no
    WHERE fer.contract_no IS NOT NULL AND fer.contract_no <> ''
      AND fer.export_date >= '2026-01-01'
    GROUP BY fer.contract_no

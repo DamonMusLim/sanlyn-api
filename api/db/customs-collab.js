@@ -13,6 +13,7 @@ import {
   uploadedForCustoms,
   writeInvoiceEvent,
 } from "./customs-collab-status.js";
+import { handleFactoryDoc, invoiceLinesFromItems, factorySpread, loadCustomsItems } from "./customs-collab-docs.js";
 
 export const config = { api: { bodyParser: false } };
 
@@ -150,13 +151,13 @@ async function resolveFactoryByMt(pool, mt) {
   return { factory: { code: row.code, name: row.name_cn || row.factory_name || row.name_en || label } };
 }
 
-async function resolveFactory(req, pool) {
+export async function resolveFactory(req, pool) {
   const mt = cleanString(req.query?.mt || req.body?.mt);
   if (mt) return resolveFactoryByMt(pool, mt);
   return resolveFactoryScope(pool, cleanString(req.query?.c || req.body?.c));
 }
 
-async function assertFactoryCustoms(client, factoryCode, customsNo) {
+export async function assertFactoryCustoms(client, factoryCode, customsNo) {
   const st = await ensureCustomsStatus(client, customsNo, factoryCode);
   if (st.factory_code !== factoryCode) {
     const e = new Error("customs_no not in factory scope");
@@ -218,10 +219,16 @@ export async function fetchRows(pool, opts) {
     fer_base AS (
       SELECT fer.customs_no,
              MAX(fer.contract_no) AS contract_no,
+             (SELECT NULLIF(array_agg(DISTINCT x.order_no) FILTER (WHERE COALESCE(x.order_no,'') <> ''), '{}'::text[])
+                FROM finance_export_rebates fer2
+                LEFT JOIN LATERAL jsonb_array_elements_text(
+                  CASE WHEN jsonb_typeof(fer2.raw->'order_nos')='array' THEN fer2.raw->'order_nos' ELSE '[]'::jsonb END
+                ) AS x(order_no) ON true
+               WHERE fer2.customs_no=fer.customs_no) AS order_scope,
              MIN(fer.export_date) AS export_date,
              CASE WHEN COUNT(i.item)=0 THEN NULL
                   ELSE ROUND(SUM(NULLIF(i.item->>'amount','')::numeric), 2) END AS declare_amount,
-             ROUND(SUM(NULLIF(i.item->>'qty2','')::numeric), 2) AS qty
+             COALESCE(ROUND(SUM(NULLIF(i.item->>'qty_ctn','')::numeric),2), ROUND(SUM(NULLIF(i.item->>'qty2','')::numeric),2)) AS qty
         FROM finance_export_rebates fer
         LEFT JOIN LATERAL jsonb_array_elements(
           CASE WHEN jsonb_typeof(fer.raw->'items')='array' THEN fer.raw->'items' ELSE '[]'::jsonb END
@@ -236,7 +243,7 @@ export async function fetchRows(pool, opts) {
              f.export_date AS fer_export_date,
              COALESCE(f.customs_no, NULLIF(ord.bl_no,''), ord.order_no) AS decl_key
         FROM ord
-        LEFT JOIN fer_base f ON f.contract_no=ord.contract_no
+        LEFT JOIN fer_base f ON ((f.order_scope IS NOT NULL AND ord.order_no=ANY(f.order_scope)) OR (f.order_scope IS NULL AND f.contract_no=ord.contract_no))
     ),
     brand_rollup AS (
       SELECT k.factory_code,
@@ -307,7 +314,8 @@ export async function fetchRows(pool, opts) {
            ${includeSlipDetails ? ", COALESCE(pay.slip_details, '[]'::jsonb) AS slip_details" : ""},
            ev.created_at AS last_event_at
       FROM b
-      LEFT JOIN customs_invoice_status s ON s.customs_no=b.customs_no
+      -- 2026-07-14: 一票多厂时 status 单键会把 manual 额双计到别厂行(140601772471 案例:DS的221650曾串到春叶/中砂行),必须按厂匹配
+      LEFT JOIN customs_invoice_status s ON s.customs_no=b.customs_no AND s.factory_code=b.factory_code
       LEFT JOIN brand_pick bp ON bp.factory_code=b.factory_code AND bp.decl_key=b.customs_no
       LEFT JOIN LATERAL (
         SELECT SUM(fii.amount_incl_tax) AS uploaded_amount,
@@ -315,6 +323,7 @@ export async function fetchRows(pool, opts) {
           FROM invoice_customs_links l
           JOIN finance_invoices_in fii ON fii.id=l.invoice_id
          WHERE l.customs_no=b.customs_no
+           AND (l.factory_code=b.factory_code OR l.factory_code IS NULL)
            AND l.link_status='active'
            AND COALESCE(fii.review_status,'') NOT IN ('void','red_ink')
       ) u ON true
@@ -472,12 +481,13 @@ async function handleConfirm(req, res) {
 
   const body = req.body || {};
   const customsNo = cleanString(body.customs_no || req.query.customs_no);
+  const requestedFactoryCode = cleanString(body.factory_code || req.query.factory_code) || null;
   if (!customsNo) return json(res, 400, { error: "customs_no required" });
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const st = scope ? await assertFactoryCustoms(client, scope.factory.code, customsNo) : await ensureCustomsStatus(client, customsNo);
+    const st = scope ? await assertFactoryCustoms(client, scope.factory.code, customsNo) : await ensureCustomsStatus(client, customsNo, requestedFactoryCode);
     const confirmedAmount = money(body.confirmed_amount);
     const event = await writeInvoiceEvent(client, {
       customs_no: customsNo,
@@ -498,8 +508,8 @@ async function handleConfirm(req, res) {
               confirmed_by_role=$3,
               last_event_id=$4,
               updated_at=NOW()
-        WHERE customs_no=$1`,
-      [customsNo, actorRole === "factory" ? scope.factory.code : actorId(req), actorRole, event.id]
+        WHERE customs_no=$1 AND factory_code=$5`,
+      [customsNo, actorRole === "factory" ? scope.factory.code : actorId(req), actorRole, event.id, st.factory_code]
     );
     await client.query("COMMIT");
     return res.json({ success: true, customs_no: customsNo, status: "confirmed_wait_invoice", event_id: event.id });
@@ -528,7 +538,7 @@ async function handleUpload(req, res) {
   try {
     await client.query("BEGIN");
     const st = await assertFactoryCustoms(client, scope.factory.code, customsNo);
-    const upload = await uploadedForCustoms(client, customsNo);
+    const upload = await uploadedForCustoms(client, customsNo, scope.factory.code);
     const expected = money(st.manual_expected_amount) ?? money(st.system_expected_amount);
     await client.query("COMMIT");
 
@@ -619,7 +629,7 @@ async function handleUpload(req, res) {
       created_by: scope.factory.code,
       actor_role: "factory",
     });
-    const rec = await reconcileStatus(client, customsNo, { force: true });
+    const rec = await reconcileStatus(client, customsNo, { force: true }, scope.factory.code);
     await client.query("COMMIT");
 
     return res.json({
@@ -646,6 +656,7 @@ async function handleCorrection(req, res) {
   if (!requireFinance(req, res)) return;
   const body = req.body || {};
   const customsNo = cleanString(body.customs_no);
+  const requestedFactoryCode = cleanString(body.factory_code || req.query.factory_code) || null;
   const type = cleanString(body.correction_type);
   const reason = cleanString(body.reason);
   const invoiceId = body.invoice_id ? Number(body.invoice_id) : null;
@@ -657,7 +668,7 @@ async function handleCorrection(req, res) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const st = await ensureCustomsStatus(client, customsNo);
+    const st = await ensureCustomsStatus(client, customsNo, requestedFactoryCode);
     let invoice = null;
     if (invoiceId) {
       const r = await client.query(`SELECT id, invoice_no, amount_incl_tax, review_status FROM finance_invoices_in WHERE id=$1 FOR UPDATE`, [invoiceId]);
@@ -678,8 +689,8 @@ async function handleCorrection(req, res) {
             SET manual_expected_amount=$2,
                 expected_amount_source='manual',
                 updated_at=NOW()
-          WHERE customs_no=$1`,
-        [customsNo, amt]
+          WHERE customs_no=$1 AND factory_code=$3`,
+        [customsNo, amt, st.factory_code]
       );
     } else if (type === "void_invoice" || type === "red_ink_invoice") {
       if (!invoiceId) return json(res, 400, { error: "invoice_id required" });
@@ -697,10 +708,10 @@ async function handleCorrection(req, res) {
       newStatus = type === "review_match" ? "matched" : "amount_mismatch";
       await client.query(`UPDATE finance_invoices_in SET review_status=$2, updated_at=NOW() WHERE id=$1`, [invoiceId, newStatus]);
     } else if (type === "reopen") {
-      await client.query(`UPDATE customs_invoice_status SET status='confirmed_wait_invoice', updated_at=NOW() WHERE customs_no=$1`, [customsNo]);
+      await client.query(`UPDATE customs_invoice_status SET status='confirmed_wait_invoice', updated_at=NOW() WHERE customs_no=$1 AND factory_code=$2`, [customsNo, st.factory_code]);
       newStatus = "confirmed_wait_invoice";
     } else if (type === "complete") {
-      await client.query(`UPDATE customs_invoice_status SET status='completed', updated_at=NOW() WHERE customs_no=$1`, [customsNo]);
+      await client.query(`UPDATE customs_invoice_status SET status='completed', updated_at=NOW() WHERE customs_no=$1 AND factory_code=$2`, [customsNo, st.factory_code]);
       newStatus = "completed";
     }
 
@@ -720,12 +731,12 @@ async function handleCorrection(req, res) {
     });
 
     let rec = { status: newStatus };
-    if (type !== "complete") rec = await reconcileStatus(client, customsNo, { force: true });
+    if (type !== "complete") rec = await reconcileStatus(client, customsNo, { force: true }, st.factory_code);
     await client.query("COMMIT");
     return res.json({ success: true, customs_no: customsNo, status: rec.status, event_id: ev.id });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
-    return json(res, e.message === "invoice not found" ? 404 : 500, { error: e.message });
+    return json(res, e.status || (e.message === "invoice not found" ? 404 : 500), { error: e.message });
   } finally {
     client.release();
   }
@@ -786,12 +797,13 @@ async function handleDetail(req, res) {
   }
 
   const customsNo = cleanString(req.query.customs_no);
+  const requestedFactoryCode = factoryMode ? null : cleanString(req.query.factory_code) || null;
   if (!customsNo) return json(res, 400, { error: "customs_no required" });
 
   const client = await pool.connect();
   try {
-    const st = factoryMode ? await assertFactoryCustoms(client, scope.factory.code, customsNo) : await ensureCustomsStatus(client, customsNo);
-    const up = await uploadedForCustoms(client, customsNo);
+    const st = factoryMode ? await assertFactoryCustoms(client, scope.factory.code, customsNo) : await ensureCustomsStatus(client, customsNo, requestedFactoryCode);
+    const up = await uploadedForCustoms(client, customsNo, st.factory_code);
     const effective = money(st.manual_expected_amount) ?? money(st.system_expected_amount);
 
     const fer = await client.query(
@@ -807,14 +819,16 @@ async function handleDetail(req, res) {
       [customsNo]
     );
 
+    // 一票多厂防跳单: 详情里的发票/事件只给本厂行的(NULL厂码历史链保持可见,存量已回填)
     const inv = await client.query(
       `SELECT fii.id, fii.invoice_no, fii.issue_date, fii.amount_incl_tax,
               fii.review_status, l.link_status, fii.attachments
          FROM invoice_customs_links l
          JOIN finance_invoices_in fii ON fii.id=l.invoice_id
         WHERE l.customs_no=$1
+          AND ($2::text IS NULL OR l.factory_code=$2 OR l.factory_code IS NULL)
         ORDER BY fii.issue_date DESC NULLS LAST, fii.id DESC`,
-      [customsNo]
+      [customsNo, st.factory_code]
     );
 
     const ev = await client.query(
@@ -823,8 +837,9 @@ async function handleDetail(req, res) {
               created_by, actor_role, created_at
          FROM invoice_events
         WHERE customs_no=$1
+          AND ($2::text IS NULL OR factory_code=$2 OR factory_code IS NULL)
         ORDER BY created_at ASC, id ASC`,
-      [customsNo]
+      [customsNo, st.factory_code]
     );
 
     const row = fer.rows[0] || {};
@@ -913,7 +928,7 @@ async function handleDetail(req, res) {
       }
 
       const sellerResult = await client.query(
-        `SELECT name_cn, tax_id, bank_name, bank_account
+        `SELECT name_cn, factory_name, tax_id, address, bank_name, bank_account, province
            FROM companies
           WHERE code=$1
           LIMIT 1`,
@@ -928,7 +943,10 @@ async function handleDetail(req, res) {
         || null;
 
       const isDg = /-DG-/i.test(mergedOrderNos || order?.order_no || "");
-      const lineResult = orderIds.length
+      const spread = await factorySpread(client, customsNo, st.contract_no || row.contract_no || order?.contract_no);
+      const ciTpl = await loadCustomsItems(client, customsNo);
+      const anchoredTpl = invoiceLinesFromItems(ciTpl.items, sellerRow, spread.length > 1);
+      const lineResult = !anchoredTpl.anchored && orderIds.length
         ? await client.query(
             `SELECT
                 COALESCE(NULLIF(BTRIM(oli.declaration_name), ''),
@@ -958,21 +976,23 @@ async function handleDetail(req, res) {
                   ELSE 0.13
                 END
               ORDER BY MIN(oli.sort_order) NULLS LAST, MIN(oli.id)`,
-            [orderIds, rawUnit, isDg]
+            [orderIds, rawUnit]
           )
         : { rows: [] };
 
       const unitMap = { CTN: "箱", PCS: "件", KG: "千克", BAG: "包", SET: "套" };
-      const lines = lineResult.rows.map((l) => ({ name: l.name || null, spec: l.spec || null,
+      const lines = anchoredTpl.anchored ? anchoredTpl.lines : lineResult.rows.map((l) => ({ name: l.name || null, spec: l.spec || null,
         unit: unitMap[String(l.unit || "").toUpperCase()] || l.unit || "箱", qty: money(l.qty) || 0,
         amount: money(l.amount) || 0, unit_price_ex: money(l.qty) ? money((Number(l.amount) || 0) / Number(l.qty)) : null,
         vat_rate: Number(l.vat_rate) || 0.13 }));
-      const linesTotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+      // 价税合计口径与报关申报总额比;+1元容差吸收税前换算的分位进位差
+      const linesTotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0) * (1 + (Number(l.vat_rate) || 0)), 0);
       const baoguanAmount = money(row.fob_cny);
 
       invoiceTemplate = { buyer, seller, lines, order_no: mergedOrderNos || order?.order_no || null,
         po_no: order?.customer_po || null, factory_ref: order?.contract_no || null, baoguan_amount: baoguanAmount,
-        over_baoguan: baoguanAmount !== null && linesTotal > baoguanAmount, total_incl: money(linesTotal) || effective || null };
+        lines_anchored: anchoredTpl.anchored, over_baoguan: baoguanAmount !== null && linesTotal > baoguanAmount + 1,
+        total_incl: money(linesTotal) || effective || null };
       delete invoiceTemplate.baoguan_amount;
     }
 
@@ -1020,6 +1040,7 @@ export default async function handler(req, res) {
     const action = cleanString(req.query?.action);
     if (req.method === "GET" && action === "list") return handleList(req, res);
     if (req.method === "GET" && action === "factory_list") return handleFactoryList(req, res);
+    if (req.method === "GET" && action === "factory_doc") return handleFactoryDoc(req, res);
     if (req.method === "GET" && action === "detail") return handleDetail(req, res);
     if (req.method === "POST" && action === "confirm") return handleConfirm(req, res);
     if (req.method === "POST" && action === "upload") return handleUpload(req, res);
