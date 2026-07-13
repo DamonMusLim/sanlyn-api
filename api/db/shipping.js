@@ -2,6 +2,7 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 import { derivePlanFromOrders } from "../lib/derive-plan-from-orders.js"; // task 1817: 读时按 order_nos[] 派生工厂/客户/etd/量类
 import { sendCancellationNotice } from "../../jobs/shipment-notify.js"; // 2026-06-26: 取消通知工厂
+import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 
 // Normalize a Chinese company name for matching:
 //  - strip full/half-width brackets, spaces, punctuation
@@ -26,7 +27,7 @@ const WRITABLE = [
   "container_no","container_type","container_qty","seal_no","release_type","freight_term",
   "customer","customer_en","customer_cn","issuing_company","shipper","notify_party",
   "pol","pod","pol_country","pod_country",
-  "contract_no","order_contract_nos","contract_nos","order_nos","sub_order_no",
+  "contract_no","order_contract_nos","contract_nos","order_nos","sub_order_no","shipment_no",
   "forwarder_cn","forwarder_en","forwarder_partner","trucking_cn","customs_cn","insurance_cn",
   "customs_broker_id","customs_broker_cn","trucking_company_id","trucking_company_cn",
   "factory_company_id","trucking_arrange","forwarder_company_id",
@@ -71,25 +72,6 @@ export default async function handler(req, res) {
       const params = [];
       const sets = buildSet(body, params);
       // _id 必填(NOT NULL) → 自动生成；created_by 记录操作者
-      // SHIPMENT_NO_AUTOGEN_20260709 - bare-API creates left shipment_no NULL (no
-      // CY number) and customer empty, making the plan invisible in the list UI.
-      let _cyParamIdx = -1;
-      async function _nextCy() {
-        const mx = await poolW.query("SELECT COALESCE(MAX(CAST(substring(shipment_no from 3) AS int)),0) AS n FROM shipping_plans WHERE shipment_no LIKE 'CY%' AND substring(shipment_no from 3) ~ '^[0-9]+$'");
-        return 'CY' + String((mx.rows[0] && mx.rows[0].n || 0) + 1).padStart(5, '0');
-      }
-      if (!body.shipment_no) {
-        try {
-          params.push(await _nextCy()); sets.push('shipment_no = $' + params.length);
-          _cyParamIdx = params.length - 1;
-        } catch (e) { console.warn('[shipping] CY autogen failed:', e && e.message); }
-      }
-      if (!body.customer && Array.isArray(body.order_nos) && body.order_nos.length) {
-        try {
-          const oc = await poolW.query('SELECT customer FROM orders WHERE order_no = $1 AND deleted_at IS NULL LIMIT 1', [String(body.order_nos[0])]);
-          if (oc.rows[0] && oc.rows[0].customer) { params.push(oc.rows[0].customer); sets.push('customer = $' + params.length); }
-        } catch (e) { console.warn('[shipping] customer derive failed:', e && e.message); }
-      }
       const _id = (body._id && String(body._id)) || ("sp_" + Math.random().toString(36).slice(2) + Date.now().toString(36));
       params.push(_id); sets.push(`_id = $${params.length}`);
       const u = req.user || {};
@@ -99,18 +81,10 @@ export default async function handler(req, res) {
       const cols = sets.map(s => s.split(" = ")[0]);
       const vals = sets.map(s => s.split(" = ")[1]);
       const sql = `INSERT INTO shipping_plans (${cols.join(",")}) VALUES (${vals.join(",")}) RETURNING *`;
-      let r;
-      try {
-        r = await poolW.query(sql, params);
-      } catch (e) {
-        // 23505 on uq_shipping_plans_shipment_no = concurrent POST grabbed the same
-        // auto-generated CY. Regenerate once and retry; rethrow anything else.
-        if (e && e.code === '23505' && _cyParamIdx >= 0) {
-          params[_cyParamIdx] = await _nextCy();
-          r = await poolW.query(sql, params);
-        } else { throw e; }
-      }
-      return res.status(201).json({ success:true, data:r.rows[0] });
+      const r = await poolW.query(sql, params);
+      const u0 = req.user || {};
+      const _blm = await mirrorPlanBlToOrders(poolW, r.rows[0], u0.name || u0.username || u0.email || u0.role || "admin");
+      return res.status(201).json({ success:true, data:r.rows[0], bl_mirror: _blm });
     } catch (err) { return res.status(500).json({ success:false, error: err.message }); }
   }
 
@@ -163,7 +137,9 @@ export default async function handler(req, res) {
           [r.rows[0].id]
         ).catch(function(e) { console.warn("[shipping PATCH] normalize issuing_company:", e.message); });
       }
-      return res.status(200).json({ success:true, data:r.rows[0] });
+      const uP = req.user || {};
+      const _blm = await mirrorPlanBlToOrders(poolW, r.rows[0], uP.name || uP.username || uP.email || uP.role || "admin");
+      return res.status(200).json({ success:true, data:r.rows[0], bl_mirror: _blm });
     } catch (err) { return res.status(500).json({ success:false, error: err.message }); }
   }
 

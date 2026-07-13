@@ -5,6 +5,7 @@
 // PATCH ?id=xxx                  → update existing plan
 // DELETE ?id=xxx                 → delete plan
 import { getPool, setCors } from "../db.js";
+import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 
 // Production convention: CY00000 sequential.
 // Real order count reached 146 before the system caught up — old rows
@@ -195,7 +196,8 @@ export default async function handler(req, res) {
       var sql = "UPDATE shipping_plans SET " + sets.join(", ") + " WHERE _id = $" + params.length + " RETURNING *";
       var result = await pool.query(sql, params);
       if (!result.rows.length) return res.status(404).json({ error: "Plan not found" });
-      return res.status(200).json({ success: true, data: result.rows[0] });
+      var _blm = await mirrorPlanBlToOrders(pool, result.rows[0], actorOf(req));
+      return res.status(200).json({ success: true, data: result.rows[0], bl_mirror: _blm });
     } catch (err) {
       console.error("[shipping-plan-create PATCH]", err);
       return res.status(500).json({ success: false, error: err.message });
@@ -452,10 +454,12 @@ export default async function handler(req, res) {
       }
     }
 
+    var _blm = await mirrorPlanBlToOrders(pool, plan, actorOf(req));
     return res.status(200).json({
       success: true,
       data: plan,
-      summary: { shipmentNo: plan.shipment_no, soNo: plan.so_no, vessel: vessel, etd: etd, orderNos: orderNos }
+      summary: { shipmentNo: plan.shipment_no, soNo: plan.so_no, vessel: vessel, etd: etd, orderNos: orderNos },
+      bl_mirror: _blm
     });
   } catch (err) {
     console.error("[shipping-plan-create POST]", err);

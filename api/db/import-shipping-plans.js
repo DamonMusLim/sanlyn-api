@@ -2,6 +2,7 @@
 // POST { records: [...] }  — upserts on _id (PRIMARY KEY); caller must supply _id
 // Supports the live schema: contract_no TEXT (singular), raw JSONB
 import { getPool, setCors } from "../db.js";
+import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 
 export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
@@ -88,7 +89,8 @@ export default async function handler(req, res) {
 
       try {
         const r = await pool.query(sql, vals);
-        results.push({ ok: true, _id: d._id, bl_no: d.bl_no, row: r.rows[0] });
+        const _blm = await mirrorPlanBlToOrders(pool, r.rows[0], "import");
+        results.push({ ok: true, _id: d._id, bl_no: d.bl_no, row: r.rows[0], bl_mirror: _blm });
       } catch (e) {
         results.push({ ok: false, _id: d._id, bl_no: d.bl_no, error: e.message });
       }

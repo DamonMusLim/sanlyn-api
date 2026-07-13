@@ -1,5 +1,6 @@
 // booking-collab-view.js — 协同中枢视图补充端点
 // Mounted by booking-collab-LIVE.js. Keep this file small and route-only.
+import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 
 const NON_EMPTY = v => v !== null && v !== undefined && String(v).trim() !== "";
 const arr = v => Array.isArray(v) ? v : [];
@@ -333,6 +334,7 @@ async function handleAssignOrders(req, res, pool) {
     }
     if (hasVersion) await client.query(`UPDATE shipping_plans SET version = COALESCE(version, 0) + 1 WHERE id = $1`, [plan.id]);
     await client.query("COMMIT");
+    await mirrorPlanBlToOrders(pool, plan.id, "assign-orders");
     return res.json({ ok: true, added, removed });
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});

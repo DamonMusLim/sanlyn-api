@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { registerFiles } from "./m3-writer.js"; // ★ M3 Phase 1
+import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 const TABLES = ["orders","finance_payments","shipping_plans","accounts","customs_data","products"];
 
 // ─── JDY 订单主表 widget ID → 业务字段（从表单数据结构确认） ───
@@ -377,6 +378,11 @@ export default async function handler(req, res) {
       ];
     }
     const result = await pool.query(sql, vals);
+
+    // 2026-07-13: shipping_plans upsert 成功后镜像 bl_no → orders.bl_no(内部调用,不改响应)
+    if (table === "shipping_plans" && result.rows[0]) {
+      await mirrorPlanBlToOrders(pool, result.rows[0], "jdy-sync");
+    }
 
     // ★ M3 Phase 1: register files after customs_data upsert (接入点 A)
     // 失败不阻塞主流程，失败格式见 M3_phase1_plan_v2.md §九.1
