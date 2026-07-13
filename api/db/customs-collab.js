@@ -412,6 +412,7 @@ function factoryRow(r) {
   // 差额审核门(2026-07-13): 无人工确认且无fer报关申报额 = OLI兜底,行必须带未锚定标记
   const amountAnchored = r.manual_expected_amount != null || Number(r.declare_amount || 0) > 0;
   return {
+    customs_no: r.customs_no,
     contract_no: r.contract_no,
     export_date: r.export_date,
     period: r.period,
