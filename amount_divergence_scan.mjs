@@ -62,17 +62,27 @@ function pct(diff, base) {
   return `${((Number(diff || 0) / b) * 100).toFixed(1)}%`;
 }
 
+// ⚠ 库是 SQL_ASCII: varchar(n)=n字节,汉字≈3字节!截断必须按字节(fitBytes,照 rebate_gaps.mjs c52c6d7),JS slice按字符会超长报 value too long。
+const fitBytes = (s, max) => { s = String(s ?? ""); let out = "", n = 0; for (const ch of s) { const b = Buffer.byteLength(ch); if (n + b > max) break; out += ch; n += b; } return out; };
+
 // tasks.id varchar(32) — id 必须与 autoResolve 的 activeIds 同源同截断
 function idFor(r) {
-  return `amount-div-${r.contract_no}`.slice(0, 32);
+  return fitBytes(`amount-div-${r.contract_no}`, 32);
 }
 
 const AUTO_MARK = "[自动核销:差额已回到阈内";
 
+// STRING_AGG 的 order_nos 不限长:标题只放前3个+计数
+function shortNos(orderNos) {
+  const list = String(orderNos || "").split(",").filter(Boolean);
+  if (!list.length) return "-";
+  return list.length <= 3 ? list.join(",") : `${list.slice(0, 3).join(",")}等${list.length}票`;
+}
+
 function taskText(r) {
   const diff = Number(r.diff || 0);
   const priority = Math.abs(diff) > 100000 ? "p0" : "p1";
-  const title = `差额审核: 合同${r.contract_no}(${r.order_nos || "-"}) OLI¥${money(r.oli_total)} vs 报关¥${money(r.fer_total)} 差${diff < 0 ? "-" : ""}${money(Math.abs(diff))}(${pct(diff, r.fer_total)})`.slice(0, 200);
+  const title = fitBytes(`差额审核: 合同${r.contract_no}(${shortNos(r.order_nos)}) OLI¥${money(r.oli_total)} vs 报关¥${money(r.fer_total)} 差${diff < 0 ? "-" : ""}${money(Math.abs(diff))}(${pct(diff, r.fer_total)})`, 200);
   const action = `核真报关单/进项票。确认报关口径后写 customs_invoice_status.manual_expected_amount + expected_amount_source='real_customs_declaration'(经customs-collab审核入口或SQL);查不到真报关单→escalate Damon`;
   return { priority, title, action };
 }
@@ -145,7 +155,7 @@ try {
   for (const r of rows) {
     const { priority, title, action } = taskText(r);
     // related_order_no varchar(64): 学 rebate_gaps 只放第一个单号
-    const orderNo = String(r.order_nos || r.contract_no || "").split(",")[0].slice(0, 64);
+    const orderNo = fitBytes(String(r.order_nos || r.contract_no || "").split(",")[0], 64);
     const result = await upsertTask(idFor(r), title, orderNo, priority, action);
     counts[result] = (counts[result] || 0) + 1;
   }
