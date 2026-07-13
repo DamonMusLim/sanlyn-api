@@ -27,7 +27,7 @@ input{width:92px;border:1px solid var(--line);border-radius:6px;padding:7px 8px;
 .psku{font-family:ui-monospace,Menlo,monospace}.prow3{margin-top:2px}
 .pbar{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:#0f766e;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:5px;padding:0 6px;font-size:10.5px}
 .pbar.miss{color:#b45309;background:#fffbeb;border-color:#fed7aa}
-.pmeta2{font-size:11px;color:#98a2b3}
+.pmeta2{font-size:11px;color:#98a2b3}.pname-cn{font-size:12px;color:#475467;margin-top:1px}
 .qe{cursor:pointer;border-bottom:1px dashed #94a3b8;padding:2px 4px;border-radius:4px}.qe:hover{background:#eff4ff}
 .qinp{width:88px;text-align:right}
 .ops{display:flex;gap:5px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
@@ -110,6 +110,7 @@ function prodCell(r){
   const bar = r.barcode ? `<span class="pbar">条码 ${esc(r.barcode)}</span>` : `<span class="pbar miss">条码待补</span>`;
   return `<div class="product">${imgTag(r.image_url)}<div class="pinfo">
     <div class="pname">${esc(r.product_name||r.sku)}</div>
+    ${r.product_name_cn?`<div class="pname-cn">${esc(r.product_name_cn)}</div>`:""}
     <div class="pmeta">${r.brand?`<span class="bcode">${esc(r.brand)}</span>`:""}${bar}</div>
     <div class="pmeta2">内部号 <span class="psku">${esc(r.sku)}</span></div>
     ${up?`<div class="prow3">${up}</div>`:""}</div></div>`;
@@ -124,9 +125,7 @@ function opsCell(r){
 function mainCols(){
   return [
     {label:"产品", cell:prodCell},
-    {label:"成品库存", num:1, cell:r=> (state.canEdit && !state.editing)
-        ? `<span class="qe" data-qe="${esc(r.sku)}" data-val="${esc(rawNum(r.finished_stock))}">${r.finished_stock?num(r.finished_stock):'<span class="muted">填</span>'} ✎</span>`
-        : inpCell(r,"finished_stock","num")},
+    {label:"成品库存", num:1, cell:r=>inpCell(r,"finished_stock","num")},
     {label:"安全值", num:1, cell:r=>inpCell(r,"finished_safety_stock","num")},
     {label:"补货", num:1, cell:restockCell},
     {label:"上批订货", cell:lastOrderCell},
@@ -268,26 +267,6 @@ async function loadHistory(sku){
     panel.scrollIntoView({behavior:"smooth",block:"nearest"});
   }catch(e){ panel.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
 }
-function quickEdit(sku, el){
-  if(el.querySelector("input")) return;
-  const cur = el.dataset.val || "";
-  el.innerHTML = `<input class="qinp" type="number" step="any" value="${esc(cur)}">`;
-  const inp = el.querySelector("input"); inp.focus(); inp.select();
-  let done = false;
-  const commit = async (save)=>{
-    if(done) return; done = true;
-    if(!save){ render(); return; }
-    const v = inp.value;
-    if(String(v) === String(cur)){ render(); return; }
-    try{
-      const r = await fetch(apiUrl+"?action=save",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({rows:[{sku, finished_stock:v}]})}).then(x=>x.json());
-      if(!r.success) throw new Error(r.error||"保存失败");
-      await load();
-    }catch(e){ alert("保存失败："+e.message); render(); }
-  };
-  inp.onkeydown = e=>{ if(e.key==="Enter"){ e.preventDefault(); commit(true); } if(e.key==="Escape") commit(false); };
-  inp.onblur = ()=> commit(true);
-}
 async function restockAll(){
   if(!confirm("给所有「库存低于安全值」的产品，按缺口一次性向冀凯下补货订单？")) return;
   try{
@@ -319,8 +298,6 @@ document.addEventListener("click", e=>{
   if(e.target.id === "edit-btn"){ state.editing = !state.editing; render(); }
   if(e.target.id === "import-btn"){ const i=document.createElement("input"); i.type="file"; i.accept=".xlsx"; i.onchange=()=>{ if(i.files[0]) importExcel(i.files[0]); }; i.click(); }
   if(e.target.id === "restock-btn") restockAll();
-  const qe = e.target.closest && e.target.closest("[data-qe]");
-  if(qe) quickEdit(qe.dataset.qe, qe);
   const up = e.target.dataset && e.target.dataset.upload;
   if(up){ const i=document.createElement("input"); i.type="file"; i.accept="image/*"; i.onchange=()=>{ if(i.files[0]) uploadImage(up, i.files[0]); }; i.click(); }
   const det = e.target.dataset && e.target.dataset.detail;
