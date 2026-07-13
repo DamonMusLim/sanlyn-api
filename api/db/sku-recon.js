@@ -51,7 +51,8 @@ function publicRow(row, r) {
   const common = {
     sku: row.sku,
     barcode: row.barcode || "",
-    product_name: row.product_name_cn || row.product_name || "",
+    product_name: row.product_name || row.product_name_cn || "",
+    product_name_cn: (row.product_name_cn && row.product_name_cn !== row.product_name) ? row.product_name_cn : "",
     brand: row.brand || "未分组",
     size: row.size || row.spec || "",
     image_url: row.image_url || "",
