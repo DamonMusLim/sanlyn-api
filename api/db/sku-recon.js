@@ -119,14 +119,15 @@ async function listRows(pool, r, scopeCodes, req) {
            COALESCE(pm.bag_stock, 0) AS bag_stock,
            COALESCE(pm.bag_safety_stock, 0) AS bag_safety_stock,
            COALESCE(pm.bag_count, 0) AS bag_count,
-           COALESCE(pm.image_url, p.image_url) AS image_url,
+           COALESCE(fg.image_url, pm.image_url, p.image_url) AS image_url,
            ib.inbound_id, ib.latest_inbound_at, ib.order_qty, ib.real_qty,
            lo.last_order_no, lo.last_order_at, lo.last_delivery, lo.last_units
       FROM products p
       ${routeJoin}
  LEFT JOIN LATERAL (
        SELECT SUM(f.current_stock) AS current_stock, SUM(f.safety_stock) AS safety_stock,
-              MAX(f.container_capacity) AS container_capacity, MAX(NULLIF(f.supplier_name, '')) AS supplier_name
+              MAX(f.container_capacity) AS container_capacity, MAX(NULLIF(f.supplier_name, '')) AS supplier_name,
+              MAX(NULLIF(f.image_url, '')) AS image_url
          FROM finished_goods_inventory f WHERE f.sku = p.sku) fg ON true
  LEFT JOIN LATERAL (
        SELECT SUM(m.current_stock) AS bag_stock, SUM(m.safety_stock) AS bag_safety_stock,
@@ -169,11 +170,11 @@ async function saveRow(client, req, r, scopeCodes, row) {
   const before = {}, after = {};
   const DEFAULT_SUP = "沧州冀凯塑料包装有限公司";
 
-  const fgFields = ["finished_stock", "finished_safety_stock", "container_capacity", "supplier_name"];
+  const fgFields = ["finished_stock", "finished_safety_stock", "container_capacity", "supplier_name", "image_url"];
   if (fgFields.some(k => row[k] !== undefined)) {
     const wh = row.warehouse_id || 1;
     let fg = (await client.query(`SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`, [sku, wh])).rows[0] || null;
-    const cur = fg || { current_stock: 0, safety_stock: 0, container_capacity: null, supplier_name: null };
+    const cur = fg || { current_stock: 0, safety_stock: 0, container_capacity: null, supplier_name: null, image_url: null };
     // 先算真实变更(不建空行)
     const plan = [];
     if (row.finished_stock !== undefined) {
@@ -193,6 +194,10 @@ async function saveRow(client, req, r, scopeCodes, row) {
       // 默认值(冀凯)自动回填不算修改,不写不审计; 只有改成别的供应商才记
       if (t !== p && !(t === DEFAULT_SUP && !p)) plan.push({ f: "supplier_name", label: "供应商", prev: p, target: t || null });
     }
+    if (row.image_url !== undefined) {
+      const t = clean(row.image_url, 500), p = cur.image_url || "";
+      if (t !== p) plan.push({ f: "image_url", label: "图片", prev: p ? "有图" : "", target: t ? "已更新" : "已清空", dbVal: t || null });
+    }
     if (plan.length) {
       if (!fg) {
         await client.query(`INSERT INTO finished_goods_inventory(product_id, sku, unit, current_stock, safety_stock, factory_code, warehouse_id)
@@ -201,7 +206,8 @@ async function saveRow(client, req, r, scopeCodes, row) {
         fg = (await client.query(`SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`, [sku, wh])).rows[0];
       }
       for (const c of plan) {
-        await client.query(`UPDATE finished_goods_inventory SET ${c.f}=$1, ${c.stock ? "last_move_at=NOW(), " : ""}updated_at=NOW() WHERE id=$2`, [c.target, fg.id]);
+        const writeVal = ("dbVal" in c) ? c.dbVal : c.target;
+        await client.query(`UPDATE finished_goods_inventory SET ${c.f}=$1, ${c.stock ? "last_move_at=NOW(), " : ""}updated_at=NOW() WHERE id=$2`, [writeVal, fg.id]);
         if (c.stock) {
           await client.query(`INSERT INTO inventory_logs(product_id, sku, type, quantity, unit, before_stock, after_stock, ref_type, ref_id, warehouse_id, factory_code, note, "operator")
              VALUES($1,$2,'adjust',$3,$4,$5,$6,'sku-recon',$7,$8,$9,$10,$11)`,
