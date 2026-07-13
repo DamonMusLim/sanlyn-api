@@ -18,6 +18,8 @@ function codes(req) {
   return raw.map(x => clean(x, 80)).filter(Boolean);
 }
 function isInternal(r) { return r === "sanlyn" || r === "admin"; }
+function dstr(v) { if (!v) return ""; if (v instanceof Date) return v.getFullYear() + "-" + String(v.getMonth() + 1).padStart(2, "0") + "-" + String(v.getDate()).padStart(2, "0"); return String(v).slice(0, 10); }
+function n(v) { return v == null ? null : Number(v); }
 function actor(req) {
   const u = req.user || {};
   return clean(u.username || u.email || u.sub || "sku-recon", 120);
@@ -57,7 +59,12 @@ function publicRow(row, r) {
     restock_gap,
     bag_count: Number(row.bag_count || 0),
     status: statusOf(row),
+    last_order_date: dstr(row.last_order_at),
+    last_delivery: dstr(row.last_delivery),
+    last_order_qty: n(row.last_units),
   };
+  // 单号只给客户(自己的)和内部;工厂不下发(单号前缀含客户号,防跳单)
+  if (r === "customer" || isInternal(r)) common.last_order_no = row.last_order_no || "";
   if (!(r === "factory" || isInternal(r))) return common;
   return {
     ...common,
@@ -113,7 +120,8 @@ async function listRows(pool, r, scopeCodes, req) {
            COALESCE(pm.bag_safety_stock, 0) AS bag_safety_stock,
            COALESCE(pm.bag_count, 0) AS bag_count,
            COALESCE(pm.image_url, p.image_url) AS image_url,
-           ib.inbound_id, ib.latest_inbound_at, ib.order_qty, ib.real_qty
+           ib.inbound_id, ib.latest_inbound_at, ib.order_qty, ib.real_qty,
+           lo.last_order_no, lo.last_order_at, lo.last_delivery, lo.last_units
       FROM products p
       ${routeJoin}
  LEFT JOIN LATERAL (
@@ -134,6 +142,14 @@ async function listRows(pool, r, scopeCodes, req) {
          JOIN packaging_materials m ON m.sku_code = d.material_sku
         WHERE m.product_skus @> jsonb_build_array(p.sku)
           AND (p.factory_code IS NULL OR d.factory_code = p.factory_code)) ib ON true
+ LEFT JOIN LATERAL (
+       SELECT o.order_no AS last_order_no, o.created_at AS last_order_at, o.delivery_date AS last_delivery,
+              SUM(li.qty_ctn * COALESCE(NULLIF(li.bg_bx, 0), 1)) AS last_units
+         FROM order_line_items li
+         JOIN orders o ON o.id = li.order_id
+        WHERE li.sku = p.sku ${r === "customer" ? "AND o.company_code = ANY($1::text[])" : ""}
+        GROUP BY o.id, o.order_no, o.created_at, o.delivery_date
+        ORDER BY o.created_at DESC LIMIT 1) lo ON true
      WHERE ${where}
   ORDER BY COALESCE(NULLIF(p.brand, ''), '未分组'), p.sku
      LIMIT 500`;

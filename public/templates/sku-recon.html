@@ -78,6 +78,11 @@ function restockCell(r){
   const cab = cap>0 ? ` <span class="muted">≈${Math.ceil(gap/cap)}柜</span>` : "";
   return `<span class="diff-neg">补 ${num(gap)}</span>${cab}`;
 }
+function lastOrderCell(r){
+  if(!r.last_order_date) return '<span class="muted">—</span>';
+  const no = r.last_order_no ? `<div class="muted">${esc(r.last_order_no)}</div>` : "";
+  return `${esc(r.last_order_date)}<div class="muted">${num(r.last_order_qty)} 件</div>${no}`;
+}
 function colDefs(){
   const ed = state.canEdit;
   const c = [
@@ -88,6 +93,7 @@ function colDefs(){
   c.push({label:"成品库存", num:1, cell:r=>inpCell(r,"finished_stock","num")});
   c.push({label:"安全值", num:1, cell:r=>inpCell(r,"finished_safety_stock","num")});
   c.push({label:"补货", num:1, cell:restockCell});
+  c.push({label:"上批订货", cell:lastOrderCell});
   if(ed){
     c.push({label:"柜容量", num:1, cell:r=>inpCell(r,"container_capacity","num")});
     c.push({label:"袋子库存", num:1, cell:r=>`${num(r.bag_stock)}<div class="muted">安全 ${num(r.bag_safety_stock)}</div>`});
