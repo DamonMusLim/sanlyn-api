@@ -68,7 +68,7 @@ function publicRow(row, r) {
   if (!(r === "factory" || isInternal(r))) return common;
   return {
     ...common,
-    supplier_name: row.supplier_name || "",
+    supplier_name: row.supplier_name || "沧州冀凯塑料包装有限公司",
     container_capacity: row.container_capacity == null ? null : Number(row.container_capacity),
     bag_stock: Number(row.bag_stock || 0),
     bag_safety_stock: Number(row.bag_safety_stock || 0),
@@ -167,61 +167,47 @@ async function saveRow(client, req, r, scopeCodes, row) {
   if (!p.rows.length) throw new Error("sku out of scope");
   const product = p.rows[0];
   const before = {}, after = {};
+  const DEFAULT_SUP = "沧州冀凯塑料包装有限公司";
 
   const fgFields = ["finished_stock", "finished_safety_stock", "container_capacity", "supplier_name"];
   if (fgFields.some(k => row[k] !== undefined)) {
-    let inv = await client.query(
-      `SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`,
-      [sku, row.warehouse_id || 1]
-    );
-    if (!inv.rows.length) {
-      await client.query(
-        `INSERT INTO finished_goods_inventory(product_id, sku, unit, current_stock, safety_stock, factory_code, warehouse_id)
-         VALUES($1,$2,$3,0,0,$4,$5) ON CONFLICT (sku, warehouse_id) DO NOTHING`,
-        [product.id, sku, product.unit || null, product.factory_code || null, row.warehouse_id || 1]
-      );
-      inv = await client.query(`SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`, [sku, row.warehouse_id || 1]);
-    }
-    const fg = inv.rows[0];
-    // 成品库存(带库存流水)
+    const wh = row.warehouse_id || 1;
+    let fg = (await client.query(`SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`, [sku, wh])).rows[0] || null;
+    const cur = fg || { current_stock: 0, safety_stock: 0, container_capacity: null, supplier_name: null };
+    // 先算真实变更(不建空行)
+    const plan = [];
     if (row.finished_stock !== undefined) {
-      const target = qty(row.finished_stock, "finished_stock") || 0;
-      const prev = Number(fg.current_stock || 0);
-      if (target !== prev) {
-        await client.query(`UPDATE finished_goods_inventory SET current_stock=$1, last_move_at=NOW(), updated_at=NOW() WHERE id=$2`, [target, fg.id]);
-        await client.query(
-          `INSERT INTO inventory_logs(product_id, sku, type, quantity, unit, before_stock, after_stock, ref_type, ref_id, warehouse_id, factory_code, note, "operator")
-           VALUES($1,$2,'adjust',$3,$4,$5,$6,'sku-recon',$7,$8,$9,$10,$11)`,
-          [product.id, sku, target - prev, product.unit || null, prev, target, "sku-recon-" + Date.now(), fg.warehouse_id, product.factory_code || null, "SKU库存对账保存", actor(req)]
-        );
-        before["成品库存"] = prev; after["成品库存"] = target;
-      }
+      const t = qty(row.finished_stock, "finished_stock") || 0, p = Number(cur.current_stock || 0);
+      if (t !== p) plan.push({ f: "current_stock", label: "成品库存", prev: p, target: t, stock: true });
     }
-    // 安全值
     if (row.finished_safety_stock !== undefined) {
-      const target = qty(row.finished_safety_stock, "finished_safety_stock") || 0;
-      const prev = Number(fg.safety_stock || 0);
-      if (target !== prev) {
-        await client.query(`UPDATE finished_goods_inventory SET safety_stock=$1, updated_at=NOW() WHERE id=$2`, [target, fg.id]);
-        before["安全值"] = prev; after["安全值"] = target;
-      }
+      const t = qty(row.finished_safety_stock, "finished_safety_stock") || 0, p = Number(cur.safety_stock || 0);
+      if (t !== p) plan.push({ f: "safety_stock", label: "安全值", prev: p, target: t });
     }
-    // 柜容量
     if (row.container_capacity !== undefined) {
-      const target = qty(row.container_capacity, "container_capacity");
-      const prev = fg.container_capacity == null ? null : Number(fg.container_capacity);
-      if (target !== prev) {
-        await client.query(`UPDATE finished_goods_inventory SET container_capacity=$1, updated_at=NOW() WHERE id=$2`, [target, fg.id]);
-        before["柜容量"] = prev; after["柜容量"] = target;
-      }
+      const t = qty(row.container_capacity, "container_capacity"), p = cur.container_capacity == null ? null : Number(cur.container_capacity);
+      if (t !== p) plan.push({ f: "container_capacity", label: "柜容量", prev: p, target: t });
     }
-    // 供应商/供应链名
     if (row.supplier_name !== undefined) {
-      const target = clean(row.supplier_name, 120);
-      const prev = fg.supplier_name || "";
-      if (target !== prev) {
-        await client.query(`UPDATE finished_goods_inventory SET supplier_name=$1, updated_at=NOW() WHERE id=$2`, [target || null, fg.id]);
-        before["供应商"] = prev; after["供应商"] = target;
+      const t = clean(row.supplier_name, 120), p = cur.supplier_name || "";
+      // 默认值(冀凯)自动回填不算修改,不写不审计; 只有改成别的供应商才记
+      if (t !== p && !(t === DEFAULT_SUP && !p)) plan.push({ f: "supplier_name", label: "供应商", prev: p, target: t || null });
+    }
+    if (plan.length) {
+      if (!fg) {
+        await client.query(`INSERT INTO finished_goods_inventory(product_id, sku, unit, current_stock, safety_stock, factory_code, warehouse_id)
+           VALUES($1,$2,$3,0,0,$4,$5) ON CONFLICT (sku, warehouse_id) DO NOTHING`,
+          [product.id, sku, product.unit || null, product.factory_code || null, wh]);
+        fg = (await client.query(`SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`, [sku, wh])).rows[0];
+      }
+      for (const c of plan) {
+        await client.query(`UPDATE finished_goods_inventory SET ${c.f}=$1, ${c.stock ? "last_move_at=NOW(), " : ""}updated_at=NOW() WHERE id=$2`, [c.target, fg.id]);
+        if (c.stock) {
+          await client.query(`INSERT INTO inventory_logs(product_id, sku, type, quantity, unit, before_stock, after_stock, ref_type, ref_id, warehouse_id, factory_code, note, "operator")
+             VALUES($1,$2,'adjust',$3,$4,$5,$6,'sku-recon',$7,$8,$9,$10,$11)`,
+            [product.id, sku, c.target - c.prev, product.unit || null, c.prev, c.target, "sku-recon-" + Date.now(), fg.warehouse_id, product.factory_code || null, "SKU库存对账保存", actor(req)]);
+        }
+        before[c.label] = c.prev; after[c.label] = c.target;
       }
     }
   }
