@@ -174,6 +174,7 @@ textarea.form-input { resize: vertical; min-height: 60px; }
   </div>
 
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="chips"></div>
+  <div class="step-card" id="billingCard"><div class="step-head"><div style="display:flex;align-items:center;gap:10px;"><div class="step-num">￥</div><div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div></div></div><div class="step-body" style="max-height:none !important;opacity:1 !important;"><div class="section" id="billingBody"></div></div></div>
 
   <!-- 下载 -->
   <div class="step-card" id="stepDl">
@@ -306,6 +307,11 @@ function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
 function gv(id){ return ($(id)?.value||'').trim(); }
 function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+function openBillingInvoice(){ if(window._billingToken) window.open('/public/invoice-confirm-preview.html?token='+encodeURIComponent(window._billingToken),'_blank','noopener'); }
+function renderBillingEntry(billing){
+  const canOpen=!!(billing&&billing.token&&billing.show_amount!==false); window._billingToken=canOpen?billing.token:'';
+  $('billingBody').innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f8fafc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px;"><div><div style="font-size:13px;font-weight:800;color:#1a1d23;">费用 / 账单：'+(canOpen?'本票港杂/费用账单':'暂无')+'</div><div style="font-size:11px;color:#6b7280;margin-top:2px;">'+(canOpen?esc(billing.segment||'按当前权限展示'):'当前链接暂无可打开账单')+'</div></div>'+(canOpen?'<button class="btn btn-blue btn-sm" onclick="openBillingInvoice()">打开账单 / 开票</button>':'')+'</div>';
+}
 
 let vehs = [], uploads = [];
 
@@ -364,6 +370,7 @@ async function boot(){
   const d = await r.json().catch(()=>({}));
   if(!d.valid || d.role!=='trucking_booking'){ show('stateDead'); return; }
   const s = d.booking_sheet || {};
+  renderBillingEntry(d.billing || {});
   $('topBadge').textContent = s.shipment_no || '车队协同';
   $('bannerTitle').textContent = (s.shipment_no||'—') + ' — 拖车协同';
   const chips=[];
