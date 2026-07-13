@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>供应链协同平台 · 蓝图</title>
+<style>
+:root{--bg:#0b1220;--panel:#111a2e;--line:#233150;--text:#e6ecf7;--muted:#8ea0bf;--blue:#5b9bff;--green:#3ddc97;--amber:#ffc555;--pink:#ff7eb6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:26px 18px 60px}
+h1{font-size:22px;margin:0}.sub{color:var(--muted);margin:4px 0 18px;font-size:12.5px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.panel h2{font-size:15px;margin:0 0 12px;color:var(--blue)}
+.svgbox{overflow-x:auto}svg{display:block;min-width:820px;width:100%}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.mod{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.mod h3{margin:0 0 6px;font-size:14.5px;display:flex;align-items:center;gap:8px}
+.chip{font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px}
+.on{background:rgba(61,220,151,.15);color:var(--green);border:1px solid rgba(61,220,151,.4)}
+.plan{background:rgba(255,197,85,.12);color:var(--amber);border:1px solid rgba(255,197,85,.35)}
+.mod p{margin:0;color:var(--muted);font-size:12.5px}
+.mod .who{margin-top:8px;font-size:11.5px;color:#b9c7de}
+.rules{columns:2;column-gap:26px;font-size:12.5px;color:#b9c7de}
+.rules li{margin-bottom:6px;break-inside:avoid}
+.foot{color:var(--muted);font-size:11px;margin-top:20px;text-align:right}
+@media(max-width:720px){.rules{columns:1}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏛 供应链协同平台 · 蓝图</h1>
+  <div class="sub">巴匕协调 · 工厂/客户/供应商三端 · 每文件≤500行 · 修改全审计 · 受众隔离</div>
+
+  <div class="panel"><h2>框架图</h2><div class="svgbox">
+  <svg viewBox="0 0 860 560" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system,PingFang SC,Microsoft YaHei,sans-serif">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#5b9bff"/></marker>
+      <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#ffc555"/></marker>
+    </defs>
+    <!-- 外部三端 -->
+    <g font-size="12.5" font-weight="700">
+      <rect x="30" y="20" width="230" height="56" rx="10" fill="#16223c" stroke="#3ddc97" stroke-width="1.2"/>
+      <text x="145" y="43" fill="#3ddc97" text-anchor="middle">👤 客户</text>
+      <text x="145" y="62" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="11">HARMONIOUS · 只读授权品牌</text>
+      <rect x="315" y="20" width="230" height="56" rx="10" fill="#16223c" stroke="#5b9bff" stroke-width="1.2"/>
+      <text x="430" y="43" fill="#5b9bff" text-anchor="middle">🏭 工厂</text>
+      <text x="430" y="62" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="11">辽宁宠爱 · 填库存/实收</text>
+      <rect x="600" y="20" width="230" height="56" rx="10" fill="#16223c" stroke="#ff7eb6" stroke-width="1.2"/>
+      <text x="715" y="43" fill="#ff7eb6" text-anchor="middle">📦 供应商</text>
+      <text x="715" y="62" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="11">沧州冀凯 / 连云港中砂 · 填报价</text>
+    </g>
+    <!-- 短码链接层 -->
+    <g font-size="11">
+      <line x1="145" y1="76" x2="145" y2="130" stroke="#5b9bff" stroke-width="1.2" marker-end="url(#ar)"/>
+      <line x1="430" y1="76" x2="430" y2="130" stroke="#5b9bff" stroke-width="1.2" marker-end="url(#ar)"/>
+      <line x1="715" y1="76" x2="715" y2="130" stroke="#5b9bff" stroke-width="1.2" marker-end="url(#ar)"/>
+      <text x="430" y="112" fill="#8ea0bf" text-anchor="middle">短码 ai.sanlyn.cn/v/xxxx（7天 · 可撤销 · 记点击）</text>
+    </g>
+    <!-- 三个协同页 -->
+    <g font-size="12" font-weight="700">
+      <rect x="30" y="134" width="230" height="64" rx="10" fill="#101c33" stroke="#3ddc97"/>
+      <text x="145" y="158" fill="#e6ecf7" text-anchor="middle">M1 库存比对表 ✅</text>
+      <text x="145" y="178" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="10.5">库存·安全值·柜容量·补货提醒</text>
+      <rect x="315" y="134" width="230" height="64" rx="10" fill="#101c33" stroke="#5b9bff"/>
+      <text x="430" y="158" fill="#e6ecf7" text-anchor="middle">M3 来料协同 ✅</text>
+      <text x="430" y="178" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="10.5">下单→发货→实收→差异·客供料</text>
+      <rect x="600" y="134" width="230" height="64" rx="10" fill="#101c33" stroke="#ff7eb6"/>
+      <text x="715" y="158" fill="#e6ecf7" text-anchor="middle">M2 款式报价 ✅</text>
+      <text x="715" y="178" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="10.5">材质·价格·退版费·Excel导入嵌图</text>
+    </g>
+    <!-- 中枢 -->
+    <line x1="145" y1="198" x2="360" y2="268" stroke="#5b9bff" stroke-width="1.2" marker-end="url(#ar)"/>
+    <line x1="430" y1="198" x2="430" y2="262" stroke="#5b9bff" stroke-width="1.2" marker-end="url(#ar)"/>
+    <line x1="715" y1="198" x2="500" y2="268" stroke="#5b9bff" stroke-width="1.2" marker-end="url(#ar)"/>
+    <rect x="290" y="266" width="280" height="74" rx="12" fill="#182750" stroke="#5b9bff" stroke-width="1.6"/>
+    <text x="430" y="296" fill="#e6ecf7" text-anchor="middle" font-size="14" font-weight="800">🏢 巴匕 · Sanlyn OS</text>
+    <text x="430" y="318" fill="#8ea0bf" text-anchor="middle" font-size="10.5">sanlyn-api(tencent:9000) · JWT角色隔离 · audit_logs 全留痕</text>
+    <!-- 规划三模块 -->
+    <g font-size="12" font-weight="700">
+      <rect x="30" y="380" width="230" height="64" rx="10" fill="#101c33" stroke="#ffc555" stroke-dasharray="5 4"/>
+      <text x="145" y="404" fill="#ffc555" text-anchor="middle">M4 链接中心 🔨</text>
+      <text x="145" y="424" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="10.5">全部对外链接·复制/撤销/点击数</text>
+      <rect x="315" y="380" width="230" height="64" rx="10" fill="#101c33" stroke="#ffc555" stroke-dasharray="5 4"/>
+      <text x="430" y="404" fill="#ffc555" text-anchor="middle">M5 巴匕总览 ⏳</text>
+      <text x="430" y="424" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="10.5">全厂库存·供应商比价·异常看板</text>
+      <rect x="600" y="380" width="230" height="64" rx="10" fill="#101c33" stroke="#ffc555" stroke-dasharray="5 4"/>
+      <text x="715" y="404" fill="#ffc555" text-anchor="middle">M6 账单/付款 ⏳</text>
+      <text x="715" y="424" fill="#8ea0bf" text-anchor="middle" font-weight="400" font-size="10.5">谁付·怎么付·AP/AR·贴海运</text>
+    </g>
+    <line x1="360" y1="340" x2="145" y2="378" stroke="#ffc555" stroke-width="1.2" marker-end="url(#ar2)"/>
+    <line x1="430" y1="340" x2="430" y2="376" stroke="#ffc555" stroke-width="1.2" marker-end="url(#ar2)"/>
+    <line x1="500" y1="340" x2="715" y2="378" stroke="#ffc555" stroke-width="1.2" marker-end="url(#ar2)"/>
+    <!-- 数据层 -->
+    <rect x="30" y="480" width="800" height="56" rx="10" fill="#0e1830" stroke="#233150"/>
+    <text x="430" y="503" fill="#8ea0bf" text-anchor="middle" font-size="11" font-weight="700">📀 PostgreSQL(sanlyn_db · tencent)</text>
+    <text x="430" y="522" fill="#5d7194" text-anchor="middle" font-size="10">packaging_materials(款式/价格) · finished_goods_inventory(库存) · inbound_deliveries(来料) · suppliers(开票) · share_links(短码) · customer_brand_routes(品牌授权) · audit_logs(修改日记) · supply_bills(账单·M6建)</text>
+    <line x1="430" y1="444" x2="430" y2="478" stroke="#233150" stroke-width="1.2"/>
+  </svg>
+  </div></div>
+
+  <div class="panel"><h2>模块清单</h2><div class="cards">
+    <div class="mod"><h3>M1 库存比对表 <span class="chip on">已上线</span></h3>
+      <p>每工厂一张。工厂填 成品库存/安全值/柜容量/供应商/实收;自动算差异+补货缺口(安全值−库存,≈几柜)。品牌分组+筛选,修改历史可查。</p>
+      <div class="who">🏭工厂可填 · 👤客户只读(仅授权品牌:库存/安全值/补货) · 页面 sku-recon.html</div></div>
+    <div class="mod"><h3>M2 供应商款式报价 <span class="chip on">已上线</span></h3>
+      <p>卡片式,点编辑才改。品名/条形码/货号/材质/规格/单位/未含税价/开票点数(含税自动算)/退版费(累计到阈值自动标已退)/MOQ/交期/有效期/状态。Excel一次性导入(嵌图自动提取)。开票信息卡。</p>
+      <div class="who">📦供应商可填(只看自己) · 🏢巴匕全量 · 页面 supplier-catalog.html</div></div>
+    <div class="mod"><h3>M3 来料协同 <span class="chip on">已上线</span></h3>
+      <p>下单数量→发货(司机/车牌/快递)→工厂实收→差异。支持客供料(procured_by+customer_code)。三方备注分开。</p>
+      <div class="who">📦供应商报 · 🏭工厂收 · 👤客户看自己 · 页面 inbound-factory.html</div></div>
+    <div class="mod"><h3>M4 链接中心 <span class="chip plan">建设中</span></h3>
+      <p>所有对外短码一览:对象/页面/权限/状态/点击数/最后打开/过期。一键复制·撤销·重新生成。</p>
+      <div class="who">🏢仅巴匕(admin)</div></div>
+    <div class="mod"><h3>M5 巴匕总览 <span class="chip plan">规划</span></h3>
+      <p>全工厂库存 + 全供应商报价 + 同款比价(冀凯 vs 中砂) + 异常看板(缺口/报价过期/差异/逾期)。</p>
+      <div class="who">🏢仅巴匕</div></div>
+    <div class="mod"><h3>M6 账单/付款 <span class="chip plan">规划</span></h3>
+      <p>贴海运账单:来料实收→账单行(价格快照固化)→谁付(payer)→AP应付/AR应收(客供料转开)→部分付款→状态机(待确认/争议/结清)→发票号+水单附件→账期逾期提醒。已确认账单不重算,调整走红冲。</p>
+      <div class="who">👤客户看自己该付 · 🏭工厂看自己收付 · 📦供应商看自己应收 · 🏢巴匕全量+确认权</div></div>
+  </div></div>
+
+  <div class="panel"><h2>铁律</h2><ul class="rules">
+    <li>单文件 ≤500 行,超了拆模块</li>
+    <li>受众隔离在 SQL 层(不是前端隐藏):客户看不到成本/供应商/别家品牌;供应商看不到客户/工厂;越权=403</li>
+    <li>所有修改进 audit_logs(前值→后值/操作人/时间),页面可查修改历史</li>
+    <li>对外链接只发短码 /v/xxxx,JWT 不进分享链接;7天过期,可撤销</li>
+    <li>验证=真渲染断言内容,curl 200 不算数(SPA兜底坑)</li>
+    <li>页面统一 /public/templates/,禁裸 /templates/</li>
+    <li>M6:价格快照固化;已确认账单只红冲不重算;发票必留号+附件</li>
+    <li>真源=mini canonical;mini离线期改动全进补料队列,上线即收编</li>
+  </ul></div>
+
+  <div class="foot">v2 · 2026-07-12 · 本页随模块上线持续更新(问 Claude 更新即可)</div>
+</div>
+</body>
+</html>
