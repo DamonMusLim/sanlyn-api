@@ -176,14 +176,15 @@ export default async function handler(req, res) {
     const isFobInvoice = type === "fob_invoice";
     const isFobPortcharge = type === "fob_portcharge";
     const isDebitNote  = type === "freight_debit_note";
-    const isConfirm    = !isCost && !isSI && !isBooking && !isBlDraft && !isFreight && !isFobInvoice && !isFobPortcharge && !isDebitNote;
+    const isExwInvoice = type === "exw_invoice"; // EXW全费用账单(客户版) — 独立渲染器 doc-exw-invoice.js
+    const isConfirm    = !isCost && !isSI && !isBooking && !isBlDraft && !isFreight && !isFobInvoice && !isFobPortcharge && !isDebitNote && !isExwInvoice;
 
     const generatedAt = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     const genDate = new Date().toISOString().slice(0, 10);
 
     // ── Fetch customer/consignee info for docs that need it ──
     let cust = null;
-    if (isBooking || isBlDraft || isFreight || isFobInvoice || isFobPortcharge) {
+    if (isBooking || isBlDraft || isFreight || isFobInvoice || isFobPortcharge || isExwInvoice) {
       const customerName = p.customer_en || p.customer_cn || p.customer || "";
       if (customerName) {
         try {
@@ -194,6 +195,28 @@ export default async function handler(req, res) {
           if (cRes.rows.length) cust = cRes.rows[0];
         } catch(e) {}
       }
+    }
+
+    // ── EXW 全费用账单(客户版):独立渲染器,接 fsb 真实卖价 ──
+    if (isExwInvoice) {
+      const { renderExwInvoice } = await import("./doc-exw-invoice.js");
+      const _exwHtml = await renderExwInvoice(pool, p, null, cust, req.query);
+      if (!_exwHtml) return res.status(404).send("<h1>Shipment not found</h1>");
+      if (String(req.query.format || "") === "pdf") {
+        try {
+          const { htmlToPdf } = await import("./_html-to-pdf.js");
+          const _exwPdf = await htmlToPdf(_exwHtml);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("EXW全费用账单_" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+          res.setHeader("Cache-Control", "no-store");
+          return res.status(200).send(_exwPdf);
+        } catch(e) {
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          return res.status(200).send(_exwHtml);
+        }
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(200).send(_exwHtml);
     }
 
     // ── Shared CSS for new doc types ──
