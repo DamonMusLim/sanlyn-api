@@ -1460,9 +1460,9 @@ export default async function handler(req, res) {
 
       if(type==="debit"){
         const { renderDebit } = await import("./docs/debit.js");
-        html = renderDebit({
+        html = await renderDebit({
           sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr,
-          fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick,
+          fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick, pool,
         });
       }
 
