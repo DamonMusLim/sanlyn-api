@@ -3,8 +3,10 @@ import { requireAuth } from "../auth.js";
 import { TAX_ID } from "./tax-rebate-taxpayer.js";
 import {
   containerNosArray,
+  contractNoTokens,
+  missingShippingPlanSkipRecord,
   ownerCompanyIdFromRows,
-  pendingShippingPlanId,
+  shippingPlanResolution,
   text,
 } from "./tax-rebate-declaration-backfill-helpers.js";
 
@@ -73,7 +75,21 @@ async function loadSeeds(client, customsNos) {
   return r.rows.filter((row) => declarationNo(row) && itemsFromRaw(row.raw).length);
 }
 
-async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch, ownerCompanyId) {
+async function resolveShippingPlan(client, seed) {
+  const tokens = contractNoTokens(seed.contract_no);
+  if (!tokens.length) return shippingPlanResolution(seed.contract_no, []);
+  const rows = [];
+  for (const token of tokens) {
+    const r = await client.query(
+      `SELECT DISTINCT _id FROM shipping_plans WHERE contract_no ILIKE '%' || $1 || '%'`,
+      [token]
+    );
+    rows.push(...r.rows);
+  }
+  return shippingPlanResolution(seed.contract_no, rows);
+}
+
+async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch, ownerCompanyId, shippingPlan) {
   const raw = rawObj(seed.raw);
   const no = declarationNo(seed);
   const declaredAt = text(raw.declare_date) || seed.export_date || null;
@@ -96,10 +112,12 @@ async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch, ownerC
        rebate_batch = EXCLUDED.rebate_batch,
        updated_at = now()
      RETURNING id, declaration_no, rebate_period, rebate_batch`,
-    [no, pendingShippingPlanId(seed.customs_no || no), ownerCompanyId, totalAmount, currency, declaredAt, containerNosArray(raw.container_nos), JSON.stringify({
+    [no, shippingPlan.shipping_plan_id, ownerCompanyId, totalAmount, currency, declaredAt, containerNosArray(raw.container_nos), JSON.stringify({
       ...raw,
       finance_export_rebate_id: seed.id,
       fob_usd_source: "pending_pdf_anchor",
+      shipping_plan_id_candidates: shippingPlan.candidates,
+      shipping_plan_contract_no_tokens: shippingPlan.tokens,
     }), rebatePeriod, rebateBatch]
   );
   return r.rows[0];
@@ -180,16 +198,58 @@ export async function runDeclarationBackfill({ period, batch = "001", customs_no
     const declarations = [];
     let itemCount = 0;
     const skippedItems = [];
+    const skippedDeclarations = [];
     for (let i = 0; i < seeds.length; i += 1) {
       const seed = seeds[i];
-      const decl = await upsertDeclaration(client, seed, periodInfo.period, b, ownerCompanyId);
-      const { rows: items, skipped_items } = await replaceItems(client, decl.id, seed, ownerCompanyId, i + 1);
-      skippedItems.push(...skipped_items);
-      itemCount += items.length;
-      declarations.push({ ...decl, customs_no: seed.customs_no, item_count: items.length, skipped_items, items });
+      const declarationIndex = i + 1;
+      await client.query(`SAVEPOINT declaration_backfill_${declarationIndex}`);
+      try {
+        const shippingPlan = await resolveShippingPlan(client, seed);
+        if (shippingPlan.skipped) {
+          skippedDeclarations.push(missingShippingPlanSkipRecord({
+            customs_no: seed.customs_no,
+            declaration_no: declarationNo(seed),
+            declaration_index: declarationIndex,
+            contract_no: seed.contract_no,
+          }));
+          await client.query(`RELEASE SAVEPOINT declaration_backfill_${declarationIndex}`);
+          continue;
+        }
+        const decl = await upsertDeclaration(client, seed, periodInfo.period, b, ownerCompanyId, shippingPlan);
+        const { rows: items, skipped_items } = await replaceItems(client, decl.id, seed, ownerCompanyId, declarationIndex);
+        skippedItems.push(...skipped_items);
+        itemCount += items.length;
+        declarations.push({
+          ...decl,
+          customs_no: seed.customs_no,
+          item_count: items.length,
+          shipping_plan_id_candidates: shippingPlan.candidates,
+          skipped_items,
+          items,
+        });
+        await client.query(`RELEASE SAVEPOINT declaration_backfill_${declarationIndex}`);
+      } catch (e) {
+        await client.query(`ROLLBACK TO SAVEPOINT declaration_backfill_${declarationIndex}`).catch(() => {});
+        await client.query(`RELEASE SAVEPOINT declaration_backfill_${declarationIndex}`).catch(() => {});
+        skippedDeclarations.push({
+          customs_no: seed.customs_no,
+          declaration_no: declarationNo(seed),
+          declaration_index: declarationIndex,
+          contract_no: seed.contract_no,
+          reason: e.message,
+        });
+      }
     }
     await client.query("COMMIT");
-    return { success: true, period: periodInfo.period, batch: b, declarations, item_count: itemCount, skipped_items: skippedItems };
+    return {
+      success: true,
+      period: periodInfo.period,
+      batch: b,
+      declarations,
+      item_count: itemCount,
+      skipped_items: skippedItems,
+      skipped_declarations: skippedDeclarations,
+    };
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     throw e;
