@@ -128,7 +128,7 @@ export async function renderPurchaseXls({ period, batch, rows, totalRebate }) {
     r.unit || "",
     r.qty ?? "",
     fmtMoney(r.taxable_amount),
-    fmtRate(r.tax_rate || 0.13),
+    fmtRate(r.tax_rate),
     fmtRate(r.rebate_rate),
     fmtMoney(r.rebate_amount),
     r.note || "",

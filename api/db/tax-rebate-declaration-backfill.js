@@ -41,16 +41,6 @@ function declarationNo(row) {
   return text(raw.declaration_no) || text(row.customs_no);
 }
 
-async function ensureColumns(client) {
-  await client.query(`ALTER TABLE customs_declaration_items ADD COLUMN IF NOT EXISTS fob_usd NUMERIC(14,2)`);
-  await client.query(`ALTER TABLE customs_declaration_items ADD COLUMN IF NOT EXISTS fob_usd_source TEXT`);
-  await client.query(`ALTER TABLE customs_declaration_items ADD COLUMN IF NOT EXISTS source_system TEXT`);
-  await client.query(`ALTER TABLE customs_declaration_items ADD COLUMN IF NOT EXISTS raw JSONB`);
-  await client.query(`ALTER TABLE customs_declarations ADD COLUMN IF NOT EXISTS source_system TEXT`);
-  await client.query(`ALTER TABLE customs_declarations ADD COLUMN IF NOT EXISTS raw JSONB`);
-  await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_customs_declarations_no ON customs_declarations(declaration_no)`);
-}
-
 async function loadSeeds(client, periodInfo, customsNos) {
   const params = [];
   const where = [];
@@ -148,7 +138,6 @@ export async function runDeclarationBackfill({ period, customs_nos } = {}) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await ensureColumns(client);
     const seeds = await loadSeeds(client, periodInfo, customsNos);
     const declarations = [];
     let itemCount = 0;

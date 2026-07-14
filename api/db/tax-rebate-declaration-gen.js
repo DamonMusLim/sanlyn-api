@@ -45,15 +45,9 @@ function itemWeight(row) {
   return qty > 0 ? qty : 1;
 }
 
-async function ensureColumns(pool) {
-  await pool.query(`ALTER TABLE customs_declaration_items ADD COLUMN IF NOT EXISTS fob_usd NUMERIC(14,2)`);
-  await pool.query(`ALTER TABLE customs_declaration_items ADD COLUMN IF NOT EXISTS fob_usd_source TEXT`);
-}
-
 async function updateDeclarationItem(pool, id, body) {
   const fob = body?.fob_usd === "" || body?.fob_usd == null ? null : Number(body.fob_usd);
   if (fob != null && (!Number.isFinite(fob) || fob < 0)) throw new Error("fob_usd must be a non-negative number");
-  await ensureColumns(pool);
   const source = fob == null ? "pending_pdf_anchor" : "pdf_anchor_manual";
   const r = await pool.query(
     `UPDATE customs_declaration_items
@@ -70,7 +64,6 @@ async function updateDeclarationItem(pool, id, body) {
 }
 
 async function loadRows(pool, info) {
-  await ensureColumns(pool);
   const r = await pool.query(
     `WITH product_rates AS (
        SELECT hs_code, MAX(rebate_rate) AS rebate_rate
@@ -79,7 +72,7 @@ async function loadRows(pool, info) {
         GROUP BY hs_code
      )
      SELECT
-       fer.customs_no AS fer_customs_no, fer.contract_no, fer.export_date AS fer_export_date, fer.rebate_rate AS fer_rebate_rate,
+       fer.customs_no AS fer_customs_no, fer.contract_no, fer.export_date AS fer_export_date,
        d.id AS declaration_id, d.declaration_no, d.declared_at,
        i.id AS item_id, i.hs_code, i.declaration_name_cn, i.unit, i.qty, i.declaration_amount,
        i.sort_order, i.fob_usd, i.fob_usd_source,
@@ -137,48 +130,67 @@ async function loadHsRates(pool, hsCodes) {
   return out;
 }
 
-function buildValidation(rows) {
+export function buildValidation(rows) {
   const byDecl = new Map();
   const validations = [];
   for (const row of rows) {
-    if (!byDecl.has(row.declaration_no)) byDecl.set(row.declaration_no, { invoices: 0, fob: 0, rate: 0 });
+    if (!byDecl.has(row.declaration_no)) byDecl.set(row.declaration_no, { invoices: 0, fob: 0, rate: 0, taxRate: 0 });
     const state = byDecl.get(row.declaration_no);
     if (row.invoice_no || row.link_invoice_no) state.invoices += 1;
     const fobMissing = row.fob_usd == null || row.fob_usd_source === "pending_pdf_anchor";
     if (fobMissing) state.fob += 1;
-    const rate = row.hs_rebate_rate ?? row.product_rebate_rate ?? row.fer_rebate_rate;
+    const rate = row.hs_rebate_rate ?? row.product_rebate_rate;
     if (rate == null || Number(rate) <= 0) state.rate += 1;
+    if ((row.invoice_no || row.link_invoice_no) && (row.tax_rate == null || Number(row.tax_rate) <= 0)) state.taxRate += 1;
   }
   for (const [declarationNo, state] of byDecl.entries()) {
     if (!state.invoices) validations.push({ level: "error", type: "missing_invoice", declaration_no: declarationNo, message: "报关单缺有效进项票绑定" });
     if (state.fob) validations.push({ level: "error", type: "missing_fob_usd", declaration_no: declarationNo, message: `缺美元FOB锚定值 ${state.fob} 行，需人工核对报关单PDF后补录` });
     if (state.rate) validations.push({ level: "error", type: "missing_rebate_rate", declaration_no: declarationNo, message: `缺退税率 ${state.rate} 行` });
+    if (state.taxRate) validations.push({ level: "error", type: "missing_tax_rate", declaration_no: declarationNo, message: `缺征税率 ${state.taxRate} 行` });
   }
   if (!rows.length) validations.push({ level: "error", type: "no_rows", message: "该申报年月未找到可生成的报关单明细" });
   return validations;
 }
 
-function buildPairs(rows, info, batch) {
-  const itemTotals = new Map();
+function rowInvoiceWeight(row) {
+  const amount = num(row.allocated_amount ?? row.amount_ex_tax);
+  return amount > 0 ? amount : 1;
+}
+
+export function buildPairs(rows, info, batch) {
+  const linkTotals = new Map();
+  const exportSplits = new Map();
   for (const row of rows) {
     const key = row.link_id || `missing-${row.item_id}`;
-    const cur = itemTotals.get(key) || { total: 0, rows: [] };
+    const cur = linkTotals.get(key) || { total: 0, rows: [] };
     cur.total += itemWeight(row);
     cur.rows.push(row);
-    itemTotals.set(key, cur);
+    linkTotals.set(key, cur);
+
+    const itemKey = row.item_id || `missing-${row.declaration_no}-${row.sort_order || ""}-${row.hs_code || ""}`;
+    const split = exportSplits.get(itemKey) || { total: 0 };
+    split.total += rowInvoiceWeight(row);
+    exportSplits.set(itemKey, split);
   }
   const exportRows = [];
   const purchaseRows = [];
   let seq = 1;
   for (const row of rows) {
     const key = row.link_id || `missing-${row.item_id}`;
-    const group = itemTotals.get(key) || { total: itemWeight(row), rows: [row] };
+    const group = linkTotals.get(key) || { total: itemWeight(row), rows: [row] };
     const no = linkNo(info.period, batch, seq);
     const weight = itemWeight(row) / (group.total || itemWeight(row));
+    const itemKey = row.item_id || `missing-${row.declaration_no}-${row.sort_order || ""}-${row.hs_code || ""}`;
+    const exportSplit = exportSplits.get(itemKey);
+    // Multiple active invoices can point at one customs item; split export qty/FOB by invoice weight so export totals stay anchored.
+    const exportWeight = rowInvoiceWeight(row) / (exportSplit?.total || rowInvoiceWeight(row));
     const invoiceAmount = row.allocated_amount ?? row.amount_ex_tax ?? 0;
     const taxable = round2(num(invoiceAmount) * weight);
-    const rebateRate = Number(row.hs_rebate_rate ?? row.product_rebate_rate ?? row.fer_rebate_rate ?? 0);
+    const rebateRate = Number(row.hs_rebate_rate ?? row.product_rebate_rate ?? 0);
     const note = row.fob_usd == null || row.fob_usd_source === "pending_pdf_anchor" ? "缺美元FOB锚定值" : "";
+    const qty = row.qty == null ? "" : round2(Number(row.qty) * exportWeight);
+    const fobUsd = row.fob_usd == null ? null : round2(Number(row.fob_usd) * exportWeight);
     exportRows.push({
       link_no: no,
       declaration_no: row.declaration_no,
@@ -187,8 +199,8 @@ function buildPairs(rows, info, batch) {
       hs_code: row.hs_code,
       goods_name: row.declaration_name_cn,
       unit: row.unit,
-      qty: row.qty == null ? "" : Number(row.qty),
-      fob_usd: row.fob_usd == null ? null : Number(row.fob_usd),
+      qty,
+      fob_usd: fobUsd,
       note,
     });
     if (row.invoice_no || row.link_invoice_no) {
@@ -202,7 +214,7 @@ function buildPairs(rows, info, batch) {
         unit: row.unit,
         qty: row.qty == null ? "" : Number(row.qty),
         taxable_amount: taxable,
-        tax_rate: row.tax_rate ?? 0.13,
+        tax_rate: row.tax_rate == null ? null : Number(row.tax_rate),
         rebate_rate: rebateRate,
         rebate_amount: round2(taxable * rebateRate),
         note: group.rows.length > 1 ? "按报关项金额/数量权重分摊进项票金额" : "",
