@@ -1,6 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 import { serializeOrdersForRole } from "../lib/orders/serializer.js"; // W0-1: role-scoped allowlist
+import { withAuditActor } from "../lib/audit-actor.js"; // M028: orders 字段变更审计 actor 注入
 
 // ── P1-1: 代理模式敏感字段剥离 ──────────────────────────────────
 // 当 order.mode === 'agent' 且请求者是工厂角色时，从 raw JSONB 里剥离这些 key。
@@ -272,7 +273,8 @@ async function handlePatch(req, res) {
   n++; sets.push("updated_at = NOW()");
   vals.push(id);
   const sql = "UPDATE orders SET " + sets.join(", ") + " WHERE id = $" + (n) + " RETURNING id";
-  const r = await pool.query(sql, vals);
+  const actor = req.user?.username || req.user?.uid || "unknown"; // M028
+  const r = await withAuditActor(pool, { actor, source: "orders.js:handlePatch" }, (client) => client.query(sql, vals));
   if (r.rowCount === 0) return res.status(404).json({ error: "order not found" });
   return res.status(200).json({ success: true, id });
 }

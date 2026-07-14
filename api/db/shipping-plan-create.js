@@ -6,6 +6,7 @@
 // DELETE ?id=xxx                 → delete plan
 import { getPool, setCors } from "../db.js";
 import { normalizeContainersDetail } from "../lib/containers-detail-guard.js"; // 2026-07-12: CY00376 柜数虚增防线
+import { withAuditActor } from "../lib/audit-actor.js"; // M028: orders 字段变更审计 actor 注入
 
 // Production convention: CY00000 sequential.
 // Real order count reached 146 before the system caught up — old rows
@@ -432,10 +433,13 @@ export default async function handler(req, res) {
     // Mark linked orders as confirmed + 回挂 shipping_plan_id + 带出开票公司（工厂端"下游"显示用）
     if (orderNos && orderNos.length) {
       var nos = arr(orderNos);
-      await pool.query(
-        "UPDATE orders SET status = 'confirmed', shipping_plan_id = $2, updated_at = NOW() WHERE order_no = ANY($1) AND (status = 'pending' OR shipping_plan_id IS NULL)",
-        [nos, plan.id]
-      ).catch(function() {});
+      var _actor = actorOf(req); // M028
+      await withAuditActor(pool, { actor: _actor, source: "shipping-plan-create.js:handler" }, function(client) {
+        return client.query(
+          "UPDATE orders SET status = 'confirmed', shipping_plan_id = $2, updated_at = NOW() WHERE order_no = ANY($1) AND (status = 'pending' OR shipping_plan_id IS NULL)",
+          [nos, plan.id]
+        );
+      }).catch(function() {});
       // 回填 order_contract_nos（列表「合同号」列读这个字段）+ contract_nos 数组
       await pool.query(
         `UPDATE shipping_plans sp
