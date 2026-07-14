@@ -39,6 +39,7 @@ function itemsFromRaw(raw) {
 }
 
 function num(v) {
+  if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
@@ -82,7 +83,7 @@ async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch, ownerC
     `INSERT INTO customs_declarations
        (declaration_no, shipping_plan_id, owner_company_id, declaration_status, total_declaration_amount, total_declaration_currency,
         declared_at, container_nos, source_system, raw, rebate_period, rebate_batch, created_at, updated_at)
-     VALUES ($1, $2, $3, 'seeded_from_finance_export_rebates', $4, $5, $6::date, $7, 'tax-rebate-backfill', $8::jsonb, $9, $10, now(), now())
+     VALUES ($1, $2, $3, 'draft', $4, $5, $6::date, $7, 'tax-rebate-backfill', $8::jsonb, $9, $10, now(), now())
      ON CONFLICT (declaration_no) DO UPDATE SET
        shipping_plan_id = COALESCE(customs_declarations.shipping_plan_id, EXCLUDED.shipping_plan_id),
        owner_company_id = COALESCE(customs_declarations.owner_company_id, EXCLUDED.owner_company_id),
@@ -104,7 +105,7 @@ async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch, ownerC
   return r.rows[0];
 }
 
-async function replaceItems(client, declId, seed) {
+async function replaceItems(client, declId, seed, ownerCompanyId, declarationIndex) {
   const items = itemsFromRaw(seed.raw);
   await client.query(
     `DELETE FROM customs_declaration_items
@@ -112,25 +113,43 @@ async function replaceItems(client, declId, seed) {
     [declId]
   );
   const rows = [];
+  const skippedItems = [];
   for (let i = 0; i < items.length; i += 1) {
     const it = items[i] || {};
     const sort = i + 1;
+    const hsCode = text(it.hs_code);
+    const qty = num(it.qty1) ?? num(it.qty);
+    const missing = [];
+    if (!hsCode) missing.push("hs_code");
+    if (qty === null) missing.push("qty");
+    if (missing.length) {
+      skippedItems.push({
+        customs_no: seed.customs_no,
+        declaration_no: declarationNo(seed),
+        declaration_index: declarationIndex,
+        item_index: sort,
+        missing,
+        reason: `missing ${missing.join("/")}`,
+      });
+      continue;
+    }
     const raw = { ...it, fob_usd_source: "pending_pdf_anchor" };
     const r = await client.query(
       `INSERT INTO customs_declaration_items
-         (declaration_id, hs_code, declaration_name_cn, unit, qty, gross_weight_kg, net_weight_kg,
+         (declaration_id, owner_company_id, hs_code, declaration_name_cn, unit, qty, gross_weight_kg, net_weight_kg,
           declaration_amount, declaration_currency, unit_price, country_of_origin, destination_country,
           sort_order, fob_usd, fob_usd_source, source_system, raw, created_at, updated_at)
        VALUES
-         ($1, $2, $3, $4, $5, NULL, NULL, $6, $7, $8, $9, $10,
-          $11, NULL, 'pending_pdf_anchor', 'tax-rebate-backfill', $12::jsonb, now(), now())
+         ($1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8, $9, $10, $11,
+          $12, NULL, 'pending_pdf_anchor', 'tax-rebate-backfill', $13::jsonb, now(), now())
        RETURNING id, hs_code, declaration_name_cn, unit, qty, sort_order, fob_usd, fob_usd_source`,
       [
         declId,
-        text(it.hs_code),
+        ownerCompanyId,
+        hsCode,
         text(it.name_cn),
         text(it.unit1) || text(it.unit) || "千克",
-        num(it.qty1) ?? num(it.qty),
+        qty,
         num(it.amount),
         text(it.currency) || "人民币",
         num(it.unit_price),
@@ -142,7 +161,7 @@ async function replaceItems(client, declId, seed) {
     );
     rows.push(r.rows[0]);
   }
-  return rows;
+  return { rows, skipped_items: skippedItems };
 }
 
 export async function runDeclarationBackfill({ period, batch = "001", customs_nos } = {}) {
@@ -160,14 +179,17 @@ export async function runDeclarationBackfill({ period, batch = "001", customs_no
     const ownerCompanyId = seeds.length ? await resolveOwnerCompanyId(client) : null;
     const declarations = [];
     let itemCount = 0;
-    for (const seed of seeds) {
+    const skippedItems = [];
+    for (let i = 0; i < seeds.length; i += 1) {
+      const seed = seeds[i];
       const decl = await upsertDeclaration(client, seed, periodInfo.period, b, ownerCompanyId);
-      const items = await replaceItems(client, decl.id, seed);
+      const { rows: items, skipped_items } = await replaceItems(client, decl.id, seed, ownerCompanyId, i + 1);
+      skippedItems.push(...skipped_items);
       itemCount += items.length;
-      declarations.push({ ...decl, customs_no: seed.customs_no, item_count: items.length, items });
+      declarations.push({ ...decl, customs_no: seed.customs_no, item_count: items.length, skipped_items, items });
     }
     await client.query("COMMIT");
-    return { success: true, period: periodInfo.period, batch: b, declarations, item_count: itemCount };
+    return { success: true, period: periodInfo.period, batch: b, declarations, item_count: itemCount, skipped_items: skippedItems };
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     throw e;
