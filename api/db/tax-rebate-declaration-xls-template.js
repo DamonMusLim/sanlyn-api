@@ -94,8 +94,8 @@ async function workbookBuffer(sheetName, title, headers, rows, period, batch, to
   return wb.xlsx.writeBuffer();
 }
 
-export async function renderExportXls({ period, batch, rows, totalRebate }) {
-  const body = rows.map((r, i) => [
+export async function renderExportXls({ period, batch, exportRows, totalRebate }) {
+  const body = exportRows.map((r, i) => [
     i + 1,
     r.link_no,
     r.export_invoice_no || "",
@@ -114,8 +114,8 @@ export async function renderExportXls({ period, batch, rows, totalRebate }) {
   return workbookBuffer("出口明细表", "外贸企业出口退税出口明细申报表", EXPORT_HEADERS, body, period, batch, totalRebate);
 }
 
-export async function renderPurchaseXls({ period, batch, rows, totalRebate }) {
-  const body = rows.map((r, i) => [
+export async function renderPurchaseXls({ period, batch, purchaseRows, totalRebate }) {
+  const body = purchaseRows.map((r, i) => [
     i + 1,
     r.link_no,
     "增值税",

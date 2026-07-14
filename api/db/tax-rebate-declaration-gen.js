@@ -63,7 +63,7 @@ async function updateDeclarationItem(pool, id, body) {
   return r.rows[0];
 }
 
-async function loadRows(pool, info) {
+export async function loadRows(pool, info, batch) {
   const r = await pool.query(
     `WITH product_rates AS (
        SELECT hs_code, MAX(rebate_rate) AS rebate_rate
@@ -80,8 +80,8 @@ async function loadRows(pool, info) {
        inv.invoice_no, inv.invoice_code, inv.issue_date, inv.seller_name, inv.seller_tax_id,
        inv.amount_ex_tax, inv.total_tax, inv.amount_incl_tax, inv.tax_rate,
        pr.rebate_rate AS product_rebate_rate
-     FROM finance_export_rebates fer
-     JOIN customs_declarations d
+     FROM customs_declarations d
+     LEFT JOIN finance_export_rebates fer
        ON d.declaration_no = COALESCE(fer.raw->>'declaration_no', fer.customs_no)
        OR d.declaration_no = fer.customs_no
      JOIN customs_declaration_items i ON i.declaration_id = d.id
@@ -91,9 +91,10 @@ async function loadRows(pool, info) {
      LEFT JOIN finance_invoices_in inv
        ON inv.id = l.invoice_id OR (l.invoice_id IS NULL AND inv.invoice_no = l.invoice_no)
      LEFT JOIN product_rates pr ON pr.hs_code = i.hs_code
-     WHERE fer.export_date >= $1::date AND fer.export_date < $2::date
+     WHERE d.rebate_period = $1
+       AND d.rebate_batch = $2
      ORDER BY d.declaration_no, COALESCE(i.sort_order, 999), i.id, l.id NULLS LAST`,
-    [info.start, info.end]
+    [info.period, batch]
   );
   const rows = r.rows;
   const hsRates = await loadHsRates(pool, [...new Set(rows.map((x) => x.hs_code).filter(Boolean))]);
@@ -231,7 +232,7 @@ export async function buildDeclarationPackage({ period, batch = "001" } = {}) {
   if (!info) throw new Error("period must be YYYYMM");
   const b = batchNo(batch);
   const pool = getPool();
-  const rows = await loadRows(pool, info);
+  const rows = await loadRows(pool, info, b);
   const validations = buildValidation(rows);
   const data = buildPairs(rows, info, b);
   return { success: true, period: info.period, batch: b, validations, ...data };

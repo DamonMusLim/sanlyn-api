@@ -4,6 +4,8 @@ ALTER TABLE customs_declaration_items ADD COLUMN IF NOT EXISTS source_system TEX
 ALTER TABLE customs_declaration_items ADD COLUMN IF NOT EXISTS raw JSONB;
 ALTER TABLE customs_declarations ADD COLUMN IF NOT EXISTS source_system TEXT;
 ALTER TABLE customs_declarations ADD COLUMN IF NOT EXISTS raw JSONB;
+ALTER TABLE customs_declarations ADD COLUMN IF NOT EXISTS rebate_period TEXT;
+ALTER TABLE customs_declarations ADD COLUMN IF NOT EXISTS rebate_batch TEXT;
 
 DO $$
 DECLARE
@@ -25,3 +27,4 @@ BEGIN
 END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_customs_declarations_no ON customs_declarations(declaration_no);
+CREATE INDEX IF NOT EXISTS idx_customs_declarations_rebate_batch ON customs_declarations(rebate_period, rebate_batch);

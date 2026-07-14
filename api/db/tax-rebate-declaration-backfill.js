@@ -13,6 +13,11 @@ function ymdPeriod(period) {
   return { period: s, start, end: endDate.toISOString().slice(0, 10) };
 }
 
+function batchNo(v) {
+  const s = String(v || "001").replace(/[^0-9]/g, "");
+  return s.padStart(3, "0").slice(-3);
+}
+
 function rawObj(v) {
   if (!v) return {};
   if (typeof v === "string") {
@@ -41,13 +46,9 @@ function declarationNo(row) {
   return text(raw.declaration_no) || text(row.customs_no);
 }
 
-async function loadSeeds(client, periodInfo, customsNos) {
+async function loadSeeds(client, customsNos) {
   const params = [];
   const where = [];
-  if (periodInfo) {
-    params.push(periodInfo.start, periodInfo.end);
-    where.push(`export_date >= $1::date AND export_date < $2::date`);
-  }
   if (customsNos?.length) {
     params.push(customsNos);
     where.push(`customs_no = ANY($${params.length}::text[])`);
@@ -61,7 +62,7 @@ async function loadSeeds(client, periodInfo, customsNos) {
   return r.rows.filter((row) => declarationNo(row) && itemsFromRaw(row.raw).length);
 }
 
-async function upsertDeclaration(client, seed) {
+async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch) {
   const raw = rawObj(seed.raw);
   const no = declarationNo(seed);
   const declaredAt = text(raw.declare_date) || seed.export_date || null;
@@ -70,21 +71,23 @@ async function upsertDeclaration(client, seed) {
   const r = await client.query(
     `INSERT INTO customs_declarations
        (declaration_no, declaration_status, total_declaration_amount, total_declaration_currency,
-        declared_at, container_nos, source_system, raw, created_at, updated_at)
-     VALUES ($1, 'seeded_from_finance_export_rebates', $2, $3, $4::date, $5, 'tax-rebate-backfill', $6::jsonb, now(), now())
+        declared_at, container_nos, source_system, raw, rebate_period, rebate_batch, created_at, updated_at)
+     VALUES ($1, 'seeded_from_finance_export_rebates', $2, $3, $4::date, $5, 'tax-rebate-backfill', $6::jsonb, $7, $8, now(), now())
      ON CONFLICT (declaration_no) DO UPDATE SET
        total_declaration_amount = COALESCE(customs_declarations.total_declaration_amount, EXCLUDED.total_declaration_amount),
        total_declaration_currency = COALESCE(customs_declarations.total_declaration_currency, EXCLUDED.total_declaration_currency),
        declared_at = COALESCE(customs_declarations.declared_at, EXCLUDED.declared_at),
        container_nos = COALESCE(customs_declarations.container_nos, EXCLUDED.container_nos),
        raw = COALESCE(customs_declarations.raw, '{}'::jsonb) || EXCLUDED.raw,
+       rebate_period = EXCLUDED.rebate_period,
+       rebate_batch = EXCLUDED.rebate_batch,
        updated_at = now()
-     RETURNING id, declaration_no`,
+     RETURNING id, declaration_no, rebate_period, rebate_batch`,
     [no, totalAmount, currency, declaredAt, text(raw.container_nos), JSON.stringify({
       ...raw,
       finance_export_rebate_id: seed.id,
       fob_usd_source: "pending_pdf_anchor",
-    })]
+    }), rebatePeriod, rebateBatch]
   );
   return r.rows[0];
 }
@@ -130,25 +133,28 @@ async function replaceItems(client, declId, seed) {
   return rows;
 }
 
-export async function runDeclarationBackfill({ period, customs_nos } = {}) {
+export async function runDeclarationBackfill({ period, batch = "001", customs_nos } = {}) {
   const periodInfo = ymdPeriod(period);
   if (period && !periodInfo) throw new Error("period must be YYYYMM");
+  if (!periodInfo) throw new Error("period is required");
+  const b = batchNo(batch);
   const customsNos = Array.isArray(customs_nos) ? customs_nos.map(text).filter(Boolean) : [];
+  if (!customsNos.length) throw new Error("customs_nos is required to assign a rebate declaration batch");
   const pool = getPool();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const seeds = await loadSeeds(client, periodInfo, customsNos);
+    const seeds = await loadSeeds(client, customsNos);
     const declarations = [];
     let itemCount = 0;
     for (const seed of seeds) {
-      const decl = await upsertDeclaration(client, seed);
+      const decl = await upsertDeclaration(client, seed, periodInfo.period, b);
       const items = await replaceItems(client, decl.id, seed);
       itemCount += items.length;
       declarations.push({ ...decl, customs_no: seed.customs_no, item_count: items.length, items });
     }
     await client.query("COMMIT");
-    return { success: true, period: periodInfo?.period || null, declarations, item_count: itemCount };
+    return { success: true, period: periodInfo.period, batch: b, declarations, item_count: itemCount };
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});
     throw e;
