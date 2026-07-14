@@ -91,3 +91,37 @@ test("shippingPlanResolution marks declarations with no shipping plan candidates
     reason: "contract_no has no matching shipping_plans._id",
   }]);
 });
+
+test("replaceItems clears all existing items for the declaration before rebuilding", async () => {
+  process.env.JWT_SECRET ||= "test-secret";
+  const { replaceItems } = await import("../api/db/tax-rebate-declaration-backfill.js");
+  const queries = [];
+  const client = {
+    async query(sql, params) {
+      queries.push({ sql, params });
+      if (/INSERT INTO customs_declaration_items/.test(sql)) {
+        return { rows: [{ id: 1, hs_code: "1604140000", qty: 12, sort_order: 1 }] };
+      }
+      return { rows: [] };
+    },
+  };
+
+  await replaceItems(client, 38, {
+    customs_no: "420420260000121431",
+    raw: {
+      declaration_no: "420420260000121431",
+      items: [{
+        hs_code: "1604140000",
+        qty1: 12,
+        name_cn: "罐头",
+        unit1: "箱",
+        currency: "美元",
+      }],
+    },
+  }, 37, 1);
+
+  const deleteQuery = queries[0];
+  assert.match(deleteQuery.sql, /DELETE FROM customs_declaration_items\s+WHERE declaration_id=\$1/);
+  assert.deepEqual(deleteQuery.params, [38]);
+  assert.doesNotMatch(deleteQuery.sql, /source_system/i);
+});

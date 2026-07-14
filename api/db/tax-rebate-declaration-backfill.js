@@ -123,11 +123,12 @@ async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch, ownerC
   return r.rows[0];
 }
 
-async function replaceItems(client, declId, seed, ownerCompanyId, declarationIndex) {
+export async function replaceItems(client, declId, seed, ownerCompanyId, declarationIndex) {
   const items = itemsFromRaw(seed.raw);
+  // Current backfill semantics rebuild the full item snapshot from FER raw items.
+  // Re-evaluate this full delete if other trusted item-entry flows start sharing this table.
   await client.query(
-    `DELETE FROM customs_declaration_items
-      WHERE declaration_id=$1 AND COALESCE(source_system,'')='tax-rebate-backfill'`,
+    `DELETE FROM customs_declaration_items WHERE declaration_id=$1`,
     [declId]
   );
   const rows = [];
