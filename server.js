@@ -662,6 +662,14 @@ mount("/api/db/slip-customer-search", () => import("./api/db/slip-customer-searc
 // tax-rebate 子路由: 进项票×报关单分配 N:M
 app.all("/api/db/tax-rebate/*", async (req, res) => {
   try {
+    if (req.path.includes("/gen-declaration") || req.path.includes("/declaration-items/")) {
+      const mod = await import("./api/db/tax-rebate-declaration-gen.js");
+      return await (mod.default || mod)(req, res);
+    }
+    if (req.path.includes("/declaration-backfill")) {
+      const mod = await import("./api/db/tax-rebate-declaration-backfill.js");
+      return await (mod.default || mod)(req, res);
+    }
     const mod = await import("./api/db/tax-rebate-links.js");
     await (mod.default || mod)(req, res);
   } catch (err) {
