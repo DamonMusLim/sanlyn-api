@@ -36,6 +36,12 @@ function text(v) {
   return s || null;
 }
 
+export function containerNosArray(v) {
+  const s = text(v);
+  if (!s) return null;
+  return s.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
+}
+
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -83,7 +89,7 @@ async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch) {
        rebate_batch = EXCLUDED.rebate_batch,
        updated_at = now()
      RETURNING id, declaration_no, rebate_period, rebate_batch`,
-    [no, totalAmount, currency, declaredAt, text(raw.container_nos), JSON.stringify({
+    [no, totalAmount, currency, declaredAt, containerNosArray(raw.container_nos), JSON.stringify({
       ...raw,
       finance_export_rebate_id: seed.id,
       fob_usd_source: "pending_pdf_anchor",
