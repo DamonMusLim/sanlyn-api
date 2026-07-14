@@ -1,7 +1,6 @@
 import ExcelJS from "exceljs";
 
-const TAX_ID = "91350206MA34RW3852";
-const TAXPAYER = "厦门巴匕进出口有限公司";
+import { TAX_ID, TAXPAYER } from "./tax-rebate-taxpayer.js";
 
 const EXPORT_HEADERS = [
   "序号", "关联号", "出口发票号", "出口货物报关单号", "代理出口货物证明号", "出口日期",

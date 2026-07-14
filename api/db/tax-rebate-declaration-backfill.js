@@ -1,5 +1,12 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { TAX_ID } from "./tax-rebate-taxpayer.js";
+import {
+  containerNosArray,
+  ownerCompanyIdFromRows,
+  pendingShippingPlanId,
+  text,
+} from "./tax-rebate-declaration-backfill-helpers.js";
 
 const FINANCE_ROLES = new Set(["admin", "finance"]);
 
@@ -31,17 +38,6 @@ function itemsFromRaw(raw) {
   return Array.isArray(r.items) ? r.items : [];
 }
 
-function text(v) {
-  const s = String(v ?? "").trim();
-  return s || null;
-}
-
-export function containerNosArray(v) {
-  const s = text(v);
-  if (!s) return null;
-  return s.split(/[,，\s]+/).map((x) => x.trim()).filter(Boolean);
-}
-
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -50,6 +46,14 @@ function num(v) {
 function declarationNo(row) {
   const raw = rawObj(row.raw);
   return text(raw.declaration_no) || text(row.customs_no);
+}
+
+async function resolveOwnerCompanyId(client) {
+  const r = await client.query(
+    `SELECT id FROM companies WHERE tax_id=$1 ORDER BY id LIMIT 2`,
+    [TAX_ID]
+  );
+  return ownerCompanyIdFromRows(r.rows);
 }
 
 async function loadSeeds(client, customsNos) {
@@ -68,7 +72,7 @@ async function loadSeeds(client, customsNos) {
   return r.rows.filter((row) => declarationNo(row) && itemsFromRaw(row.raw).length);
 }
 
-async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch) {
+async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch, ownerCompanyId) {
   const raw = rawObj(seed.raw);
   const no = declarationNo(seed);
   const declaredAt = text(raw.declare_date) || seed.export_date || null;
@@ -76,10 +80,12 @@ async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch) {
   const currency = text(raw.currency) || text(raw.items?.[0]?.currency) || "人民币";
   const r = await client.query(
     `INSERT INTO customs_declarations
-       (declaration_no, declaration_status, total_declaration_amount, total_declaration_currency,
+       (declaration_no, shipping_plan_id, owner_company_id, declaration_status, total_declaration_amount, total_declaration_currency,
         declared_at, container_nos, source_system, raw, rebate_period, rebate_batch, created_at, updated_at)
-     VALUES ($1, 'seeded_from_finance_export_rebates', $2, $3, $4::date, $5, 'tax-rebate-backfill', $6::jsonb, $7, $8, now(), now())
+     VALUES ($1, $2, $3, 'seeded_from_finance_export_rebates', $4, $5, $6::date, $7, 'tax-rebate-backfill', $8::jsonb, $9, $10, now(), now())
      ON CONFLICT (declaration_no) DO UPDATE SET
+       shipping_plan_id = COALESCE(customs_declarations.shipping_plan_id, EXCLUDED.shipping_plan_id),
+       owner_company_id = COALESCE(customs_declarations.owner_company_id, EXCLUDED.owner_company_id),
        total_declaration_amount = COALESCE(customs_declarations.total_declaration_amount, EXCLUDED.total_declaration_amount),
        total_declaration_currency = COALESCE(customs_declarations.total_declaration_currency, EXCLUDED.total_declaration_currency),
        declared_at = COALESCE(customs_declarations.declared_at, EXCLUDED.declared_at),
@@ -89,7 +95,7 @@ async function upsertDeclaration(client, seed, rebatePeriod, rebateBatch) {
        rebate_batch = EXCLUDED.rebate_batch,
        updated_at = now()
      RETURNING id, declaration_no, rebate_period, rebate_batch`,
-    [no, totalAmount, currency, declaredAt, containerNosArray(raw.container_nos), JSON.stringify({
+    [no, pendingShippingPlanId(seed.customs_no || no), ownerCompanyId, totalAmount, currency, declaredAt, containerNosArray(raw.container_nos), JSON.stringify({
       ...raw,
       finance_export_rebate_id: seed.id,
       fob_usd_source: "pending_pdf_anchor",
@@ -151,10 +157,11 @@ export async function runDeclarationBackfill({ period, batch = "001", customs_no
   try {
     await client.query("BEGIN");
     const seeds = await loadSeeds(client, customsNos);
+    const ownerCompanyId = seeds.length ? await resolveOwnerCompanyId(client) : null;
     const declarations = [];
     let itemCount = 0;
     for (const seed of seeds) {
-      const decl = await upsertDeclaration(client, seed, periodInfo.period, b);
+      const decl = await upsertDeclaration(client, seed, periodInfo.period, b, ownerCompanyId);
       const items = await replaceItems(client, decl.id, seed);
       itemCount += items.length;
       declarations.push({ ...decl, customs_no: seed.customs_no, item_count: items.length, items });
