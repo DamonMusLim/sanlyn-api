@@ -1,0 +1,25 @@
+{
+  "forwarder": "zhongyuan",
+  "forwarder_match": ["中远海", "宁波中远海运", "中远海运"],
+  "header_row_index": 13,
+  "ticket_split_regex": "^\\s*\\d+\\s*[/／]\\s*\\S",
+  "columns": {
+    "sailing_date": 0,
+    "bl_or_bill_to": 1,
+    "name_raw": 2,
+    "currency": 3,
+    "unit_price": 4,
+    "qty": 5,
+    "amount": 6,
+    "invoice_type": 7,
+    "total_cny_0": 8,
+    "total_cny_6": 9,
+    "total_cny_9": 10,
+    "total_usd": 11,
+    "destination_port": 12,
+    "carrier": 13,
+    "container_type": 14,
+    "container_no": 15,
+    "transport_mode": 16
+  }
+}
