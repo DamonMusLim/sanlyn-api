@@ -245,6 +245,7 @@ mount("/api/db/finance-receivables",      () => import("./api/db/finance-records
 mount("/api/db/freight-supplier-bills",   () => import("./api/db/freight-supplier-bills.js"));
 mount("/api/db/inbound-collab",           () => import("./api/db/inbound-collab.js"));
 mount("/api/db/sku-recon",                () => import("./api/db/sku-recon.js"));
+mount("/api/db/stocktake",                () => import("./api/db/stocktake.js"));
 mount("/api/db/freight-invoice-b",        () => import("./api/db/freight-invoice-b.js"));
 mount("/api/db/freight-bill-intake",      () => import("./api/db/freight-bill-intake.js"));
 mount("/api/db/canonical-doc",            () => import("./api/db/canonical-doc.js"));

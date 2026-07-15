@@ -28,7 +28,7 @@ function pubRow(r) {
     sku_code: r.sku_code, name: r.name || "", brand: r.brand || "",
     barcode: r.barcode || "", supplier_item_code: r.supplier_item_code || "",
     material: r.material || "", spec: r.spec || "", unit: r.unit || "",
-    image_url: r.image_url || "",
+    image_url: r.image_url || "", plate_image_url: r.plate_image_url || "",
     moq: n(r.moq), lead_time_days: n(r.lead_time_days),
     price_ex_tax: ex, tax_point: pt, price_inc_tax: inc,
     plate_fee: n(r.plate_fee), plate_fee_refund_qty: thr, cumulative_qty: cum, plate_fee_refunded: refunded,
@@ -44,13 +44,14 @@ async function listRows(pool, r, scope, req) {
   if (!isInternal(r)) { vals.push(scope); where += ` AND supplier_code = ANY($${vals.length}::text[])`; billCode = scope[0] || ""; }
   else { const sc = clean(req.query.supplier_code || ""); if (sc) { vals.push(sc); where += ` AND supplier_code = $${vals.length}`; } billCode = sc; }
   const q = `SELECT pm.sku_code, pm.name, pm.brand, pm.barcode, pm.supplier_item_code,
-                    pm.material, pm.spec, pm.unit, pm.image_url,
+                    pm.material, pm.spec, pm.unit, pm.image_url, pm.plate_image_url,
                     pm.moq, pm.lead_time_days, pm.price_ex_tax, pm.tax_point,
                     pm.plate_fee, pm.plate_fee_refund_qty, pm.quote_date::text AS quote_date, pm.quote_valid_until::text AS quote_valid_until,
                     pm.status, pm.notes,
                     COALESCE((SELECT SUM(COALESCE(d.real_qty, d.order_qty))
                                 FROM inbound_deliveries d WHERE d.material_sku = pm.sku_code), 0) AS cumulative_qty
                FROM packaging_materials pm WHERE ${where.replace(/supplier_code/g, "pm.supplier_code")}
+                AND COALESCE(pm.status,'active') <> 'inactive'
               ORDER BY pm.brand NULLS LAST, pm.sku_code LIMIT 500`;
   const rows = (await pool.query(q, vals)).rows.map(pubRow);
   let supplier = null;
@@ -62,9 +63,9 @@ async function listRows(pool, r, scope, req) {
 }
 
 const WRITABLE = ["name", "brand", "barcode", "supplier_item_code", "material", "spec", "unit",
-  "image_url", "status", "notes", "moq", "lead_time_days", "plate_fee", "price_ex_tax", "tax_point",
+  "image_url", "plate_image_url", "status", "notes", "moq", "lead_time_days", "plate_fee", "price_ex_tax", "tax_point",
   "plate_fee_refund_qty", "quote_date", "quote_valid_until"];
-const TEXTF = new Set(["name", "brand", "barcode", "supplier_item_code", "material", "spec", "unit", "image_url", "status", "notes"]);
+const TEXTF = new Set(["name", "brand", "barcode", "supplier_item_code", "material", "spec", "unit", "image_url", "plate_image_url", "status", "notes"]);
 const DATEF = new Set(["quote_date", "quote_valid_until"]);
 function dstr2(v) { if (!v) return ""; if (v instanceof Date) return v.getFullYear() + "-" + String(v.getMonth() + 1).padStart(2, "0") + "-" + String(v.getDate()).padStart(2, "0"); return String(v).slice(0, 10); }
 async function saveRow(client, req, r, scope, row) {
@@ -108,6 +109,38 @@ async function save(req, res, pool, r, scope) {
   return json(res, 200, { success: true, saved: results.map(c => c.sku) });
 }
 
+async function create(req, res, pool, r, scope) {
+  if (!(r === "supplier" || isInternal(r))) return json(res, 403, { success: false, error: "create forbidden" });
+  const supplierCode = isInternal(r) ? clean(req.body?.supplier_code || "", 80) : (scope[0] || "");
+  if (!supplierCode) throw new Error("supplier_code required");
+  const base = supplierCode.replace(/[^A-Za-z0-9]/g, "");
+  let sku = "";
+  for (let i = 0; i < 5; i++) {
+    sku = `BAG-${base}-${Date.now()}${i ? `-${i}` : ""}`;
+    try {
+      await pool.query("INSERT INTO packaging_materials(sku_code, supplier_code, status, name) VALUES($1,$2,'active',$3)", [sku, supplierCode, "新款式(待填)"]);
+      break;
+    } catch (e) {
+      if (e.code !== "23505" || i === 4) throw e;
+    }
+  }
+  try { await writeAudit(pool, req, { action: "supplier-catalog.create", entity_type: "bag", entity_id: sku, before: {}, after: { sku_code: sku, supplier_code: supplierCode, status: "active" }, note: "供应商新增款式" }); } catch (_) {}
+  return json(res, 200, { success: true, sku_code: sku });
+}
+
+async function deleteRow(req, res, pool, r, scope) {
+  if (!(r === "supplier" || isInternal(r))) return json(res, 403, { success: false, error: "delete forbidden" });
+  const sku = clean(req.body?.sku_code || "", 80);
+  if (!sku) throw new Error("sku_code required");
+  const vals = [sku];
+  let where = "sku_code=$1";
+  if (!isInternal(r)) { vals.push(scope); where += " AND supplier_code=ANY($2::text[])"; }
+  const ret = await pool.query(`UPDATE packaging_materials SET status='inactive', updated_at=NOW() WHERE ${where} RETURNING supplier_code`, vals);
+  if (!ret.rowCount) throw new Error("sku out of scope");
+  try { await writeAudit(pool, req, { action: "supplier-catalog.delete", entity_type: "bag", entity_id: sku, before: { status: "active" }, after: { status: "inactive" }, note: "供应商停用款式" }); } catch (_) {}
+  return json(res, 200, { success: true });
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -120,10 +153,14 @@ export default async function handler(req, res) {
   const pool = getPool();
   try {
     if (req.method === "GET") return json(res, 200, { success: true, role: r, can_edit: r === "supplier" || isInternal(r), org_name: clean(req.user?.company || ""), ...(await listRows(pool, r, scope, req)) });
-    if (req.method === "PATCH" && clean(req.query.action || "", 40) === "save") return save(req, res, pool, r, scope);
+    const action = clean(req.query.action || req.body?.action || "", 40);
+    if (req.method === "PATCH" && action === "save") return await save(req, res, pool, r, scope);
+    if (req.method === "PATCH" && action === "create") return await create(req, res, pool, r, scope);
+    if (req.method === "PATCH" && action === "delete") return await deleteRow(req, res, pool, r, scope);
     return json(res, 405, { success: false, error: "method/action not allowed" });
   } catch (e) {
     const code = /required|invalid/.test(e.message) ? 400 : (/scope|forbidden/.test(e.message) ? 403 : 500);
+    if (code === 500) { console.error("[supplier-catalog]", e); return json(res, 500, { success: false, error: "internal error" }); }
     return json(res, code, { success: false, error: e.message });
   }
 }

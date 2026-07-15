@@ -17,6 +17,7 @@ const PAGE_PATHS = {
   factory: {
     "factory-bags": "/public/templates/factory-bags.html?token=",
     "sku-recon": "/public/templates/sku-recon.html?token=",
+    "stocktake": "/public/templates/factory-stocktake.html?token=",
   },
   supplier: {
     "supplier-catalog": "/public/templates/supplier-catalog.html?token=",

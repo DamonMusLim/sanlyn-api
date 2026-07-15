@@ -38,7 +38,7 @@ input{width:92px;border:1px solid var(--line);border-radius:6px;padding:7px 8px;
 .df{display:flex;flex-direction:column;gap:3px}.df label{font-size:11px;color:var(--muted)}.df .dv{font-weight:600}
 .df input{width:100%}
 .badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800;border:1px solid var(--line);white-space:nowrap}
-.matched{color:var(--ok);background:#ecfdf3;border-color:#abefc6}.pending_receipt,.in_transit{color:var(--blue);background:#eff4ff;border-color:#b2ccff}.bag_short,.bad{color:var(--bad);background:#fef3f2;border-color:#fecdca}
+.ok,.matched{color:var(--ok);background:#ecfdf3;border-color:#abefc6}.pending_receipt,.in_transit{color:var(--blue);background:#eff4ff;border-color:#b2ccff}.restock_needed,.bag_short,.bad{color:var(--bad);background:#fef3f2;border-color:#fecdca}.no_line{color:#98a2b3;background:#f3f4f6;border-color:#e5e7eb}
 tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-neg{color:var(--bad);font-weight:800}.empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
 @media(max-width:760px){.wrap{padding:14px}.top{display:block}.actions{margin-top:10px}}
 @media print{body{background:#fff}.actions,.note{display:none}.wrap{max-width:none;padding:0}.brand{break-inside:avoid}}
@@ -79,8 +79,8 @@ tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-n
 </div>
 <script>
 const apiUrl = "/api/db/sku-recon";
-const labels = {matched:"齐",pending_receipt:"待收",bag_short:"袋子缺",in_transit:"在途"};
-const state = {role:"", canEdit:false, editing:false, groups:[], brandFilter:"", imgEdits:{}, dirty:false};
+const labels = {restock_needed:"需备货",ok:"够",no_line:"未设线",matched:"齐",pending_receipt:"待收",bag_short:"袋子缺",in_transit:"在途"};
+const state = {role:"", canEdit:false, canEditLine:false, editing:false, groups:[], brandFilter:"", imgEdits:{}, dirty:false};
 function token(){
   const cand = [new URLSearchParams(location.search).get("token"),
     localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
@@ -100,7 +100,8 @@ function diffCls(v){return Number(v)<0?"diff-neg":Number(v)>0?"diff-pos":"";}
 function rowAlert(r){return r.status==="bag_short" || Math.abs(Number(r.diff || 0))>0.0001 || Number(r.finished_stock||0)<=Number(r.finished_safety_stock||-1);}
 function imgTag(url){return url ? `<img src="${esc(url)}" alt="">` : `<img alt="">`;}
 function inpCell(r, field, type){
-  if(!(state.canEdit && state.editing)) return type==="text" ? esc(r[field]||"") : num(r[field]);
+  const can = state.editing && (state.canEdit || (field==="finished_safety_stock" && state.canEditLine));
+  if(!can) return type==="text" ? esc(r[field]||"") : num(r[field]);
   const v = type==="text" ? esc(r[field]==null?"":r[field]) : esc(rawNum(r[field]));
   return `<input data-sku="${esc(r.sku)}" data-field="${field}"${type==="text"?' class="txt"':''} value="${v}">`;
 }
@@ -131,7 +132,13 @@ function opsCell(r){
   const detail = `<button type="button" class="op" data-detail="${esc(r.sku)}">详情</button>`;
   const order = state.canEdit?`<button type="button" class="op ${gap>0?"op-hot":""}" data-order="${esc(r.sku)}">下单</button>`:"";
   const hist = state.canEdit?`<button type="button" class="op op-ic" data-hist="${esc(r.sku)}" title="修改记录">🕐</button>`:"";
-  return `<div class="ops">${detail}${order}${hist}</div>`;
+  let decision = "";
+  if(r.status==="restock_needed"){
+    decision = r.restock_decision
+      ? `<span class="muted">已定:${esc(r.restock_decision)}${r.restock_decision_by?` · ${esc(r.restock_decision_by)}`:""}</span>`
+      : `<button type="button" class="op op-hot" data-decision="备" data-sku="${esc(r.sku)}">备</button><button type="button" class="op" data-decision="不备" data-sku="${esc(r.sku)}">不备</button>`;
+  }
+  return `<div class="ops">${decision}${detail}${order}${hist}</div>`;
 }
 function mainCols(){
   return [
@@ -161,12 +168,13 @@ function detailHtml(r){
   return `<div class="detail">${parts.join("")}</div>`;
 }
 function render(){
-  document.getElementById("role-pill").textContent = state.canEdit ? (state.editing?"编辑中":"可填写") : "只读";
+  const editable = state.canEdit || state.canEditLine;
+  document.getElementById("role-pill").textContent = editable ? (state.editing?"编辑中":(state.canEdit?"可填写":"可设提醒线")) : "只读";
   const eb = document.getElementById("edit-btn");
-  eb.style.display = state.canEdit ? "" : "none";
+  eb.style.display = editable ? "" : "none";
   eb.textContent = state.editing ? "✕ 退出编辑" : "✎ 编辑";
   eb.className = state.editing ? "primary" : "";
-  document.getElementById("save-all").style.display = (state.canEdit && state.editing) ? "" : "none";
+  document.getElementById("save-all").style.display = (editable && state.editing) ? "" : "none";
   document.getElementById("import-btn").style.display = (state.canEdit && state.editing) ? "" : "none";
   document.getElementById("restock-btn").style.display = state.canEdit ? "" : "none";
   const root = document.getElementById("groups");
@@ -200,14 +208,14 @@ async function load(){
   try{
     const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
     if(!r.success) throw new Error(r.error || "Load failed");
-    state.role = r.role || ""; state.canEdit = !!r.can_edit; state.groups = r.groups || [];
+    state.role = r.role || ""; state.canEdit = !!r.can_edit; state.canEditLine = !!r.can_edit_line; state.groups = r.groups || [];
     const org = (r.org_name || "").trim();
     document.getElementById("title").textContent = org ? org + " · 库存比对表" : "库存比对表";
     document.title = (org ? org + " · " : "") + "库存比对表";
     document.getElementById("note").style.display = state.canEdit ? "none" : "block";
     document.getElementById("history-btn").style.display = state.canEdit ? "" : "none";
     document.getElementById("history-panel").style.display = "none";
-    if(!state.canEdit) state.editing = false;
+    if(!(state.canEdit || state.canEditLine)) state.editing = false;
     document.getElementById("scope").textContent = state.canEdit ? "供应商 · 成品库存 · 安全值 · 柜容量 · 来料实收比对（可直接填写并保存）" : "品牌 · 库存 · 安全值 · 补货提醒";
     fillBrandFilter();
     render();
@@ -221,7 +229,7 @@ function fillBrandFilter(){
   sel.style.display = brands.length>1 ? "" : "none";
 }
 async function saveAll(){
-  if(!state.canEdit) return;
+  if(!(state.canEdit || state.canEditLine)) return;
   const map = {};
   document.querySelectorAll("#groups input[data-field][data-sku]").forEach(inp=>{
     const s = inp.dataset.sku; (map[s]=map[s]||{sku:s})[inp.dataset.field] = inp.value;
@@ -290,15 +298,27 @@ async function restockAll(){
 async function placeOrder(sku){
   const row = state.groups.flatMap(g=>g.rows||[]).find(x=>x.sku===sku);
   const gap = row ? Math.max(0, Number(row.finished_safety_stock||0)-Number(row.finished_stock||0)) : 0;
-  const q = prompt(`给「${row?row.product_name||sku:sku}」补货下单\n建议量(缺口)=${gap||0}\n请输入下单数量:`, gap||"");
+  const bagMoq = row ? Number(row.bag_moq||0) : 0;
+  const defQty = Math.max(gap, bagMoq);
+  const moqTip = bagMoq>0 ? `\n起订量 ${bagMoq}` : "";
+  const q = prompt(`给「${row?row.product_name||sku:sku}」补货下单\n建议量=${defQty||0}${moqTip}\n请输入下单数量:`, defQty||"");
   if(q===null) return;
   const qty = Number(q); if(!(qty>0)){ alert("请输入正数"); return; }
+  const orderQty = Math.max(qty, bagMoq);
+  if(qty < bagMoq) alert(`已按起订量 ${bagMoq} 下单`);
   try{
-    const r = await fetch(apiUrl+"?action=order",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku, qty})}).then(x=>x.json());
+    const r = await fetch(apiUrl+"?action=order",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku, qty:orderQty})}).then(x=>x.json());
     if(!r.success) throw new Error(r.error||"下单失败");
-    alert(`已下单：${sku} × ${qty}（已进来料协同待发货）`);
+    alert(`已下单：${sku} × ${r.ordered_qty||orderQty}（已进来料协同待发货）`);
     await load();
   }catch(e){ alert("下单失败："+e.message); }
+}
+async function restockDecision(sku, decision){
+  try{
+    const r = await fetch(apiUrl+"?action=restock-decision",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku, decision})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"提交失败");
+    await load();
+  }catch(e){ alert("备货决策失败："+e.message); }
 }
 // ===== 未保存修改拦截(通用铁律:编辑有改动→离开必问是否保存) =====
 function askSave(){ return new Promise(res=>{ const m=document.getElementById("save-ask"); m.style.display="flex"; m._res=res; }); }
@@ -329,6 +349,8 @@ document.addEventListener("click", async e=>{
   if(hs) loadHistory(hs);
   const od = e.target.dataset && e.target.dataset.order;
   if(od) placeOrder(od);
+  const dec = e.target.dataset && e.target.dataset.decision;
+  if(dec) restockDecision(e.target.dataset.sku, dec);
 });
 document.addEventListener("change", e=>{
   if(e.target.id === "brand-filter"){ state.brandFilter = e.target.value; render(); }

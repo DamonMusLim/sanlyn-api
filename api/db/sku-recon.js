@@ -30,17 +30,13 @@ function qty(v, label) {
   if (!Number.isFinite(n) || n < 0) throw new Error(label + " invalid");
   return n;
 }
+// 状态只看「成品库存 vs 提醒线(安全值)」——工厂按单生产,不做订单/袋子匹配那套
+//   未设提醒线 → no_line(未设线);库存 < 线 → restock_needed(需备货);否则 ok(够)
 function statusOf(row) {
-  const order = Number(row.order_qty || 0);
-  const realRaw = row.real_qty;
-  const real = Number(realRaw || 0);
-  const diff = realRaw == null && order ? null : real - order;
-  const bag = Number(row.bag_stock || 0);
-  const safety = Number(row.bag_safety_stock || 0);
-  if ((safety > 0 && bag < safety) || (order > 0 && bag < order)) return "bag_short";
-  if (order > 0 && realRaw == null) return "pending_receipt";
-  if (diff != null && Math.abs(diff) <= 0.0001) return "matched";
-  return "in_transit";
+  const fstock = Number(row.finished_stock || 0);
+  const fsafety = Number(row.finished_safety_stock || 0);
+  if (fsafety <= 0) return "no_line";
+  return fstock < fsafety ? "restock_needed" : "ok";
 }
 function publicRow(row, r) {
   const diff = row.real_qty == null && Number(row.order_qty || 0) ? null : Number(row.real_qty || 0) - Number(row.order_qty || 0);
@@ -59,6 +55,9 @@ function publicRow(row, r) {
     finished_stock,
     finished_safety_stock,
     restock_gap,
+    restock_decision: row.restock_decision || "",
+    restock_decision_by: row.restock_decision_by || "",
+    restock_decision_at: dstr(row.restock_decision_at),
     bag_count: Number(row.bag_count || 0),
     status: statusOf(row),
     last_order_date: dstr(row.last_order_at),
@@ -72,6 +71,7 @@ function publicRow(row, r) {
     ...common,
     supplier_name: row.supplier_name || "沧州冀凯塑料包装有限公司",
     container_capacity: row.container_capacity == null ? null : Number(row.container_capacity),
+    bag_moq: Number(row.bag_moq || 0),
     bag_stock: Number(row.bag_stock || 0),
     bag_safety_stock: Number(row.bag_safety_stock || 0),
     order_qty: row.order_qty == null ? null : Number(row.order_qty),
@@ -117,10 +117,12 @@ async function listRows(pool, r, scopeCodes, req) {
     SELECT p.sku, p.product_name, p.product_name_cn, p.brand, p.barcode, p.size, p.spec, p.image_url AS product_image_url,
            COALESCE(fg.current_stock, 0) AS finished_stock,
            COALESCE(fg.safety_stock, 0) AS finished_safety_stock,
+           fg.restock_decision, fg.restock_decision_by, fg.restock_decision_at,
            fg.container_capacity, fg.supplier_name,
            COALESCE(pm.bag_stock, 0) AS bag_stock,
            COALESCE(pm.bag_safety_stock, 0) AS bag_safety_stock,
            COALESCE(pm.bag_count, 0) AS bag_count,
+           COALESCE(pm.bag_moq, 0) AS bag_moq,
            COALESCE(fg.image_url, pm.image_url, p.image_url) AS image_url,
            ib.inbound_id, ib.latest_inbound_at, ib.order_qty, ib.real_qty,
            lo.last_order_no, lo.last_order_at, lo.last_delivery, lo.last_units
@@ -128,12 +130,15 @@ async function listRows(pool, r, scopeCodes, req) {
       ${routeJoin}
  LEFT JOIN LATERAL (
        SELECT SUM(f.current_stock) AS current_stock, SUM(f.safety_stock) AS safety_stock,
+              MAX(f.restock_decision) AS restock_decision, MAX(f.restock_decision_at) AS restock_decision_at,
+              MAX(f.restock_decision_by) AS restock_decision_by,
               MAX(f.container_capacity) AS container_capacity, MAX(NULLIF(f.supplier_name, '')) AS supplier_name,
               MAX(NULLIF(f.image_url, '')) AS image_url
          FROM finished_goods_inventory f WHERE f.sku = p.sku) fg ON true
  LEFT JOIN LATERAL (
        SELECT SUM(m.current_stock) AS bag_stock, SUM(m.safety_stock) AS bag_safety_stock,
-              COUNT(DISTINCT m.id) AS bag_count, MAX(NULLIF(m.image_url, '')) AS image_url
+              COUNT(DISTINCT m.id) AS bag_count, MAX(NULLIF(m.image_url, '')) AS image_url,
+              MAX(m.moq) AS bag_moq
          FROM packaging_materials m
         WHERE m.product_skus @> jsonb_build_array(p.sku)) pm ON true
  LEFT JOIN LATERAL (
@@ -160,21 +165,38 @@ async function listRows(pool, r, scopeCodes, req) {
   return { rows, groups: groupRows(rows) };
 }
 
+async function scopedProduct(client, sku, r, scopeCodes, lock = false) {
+  const vals = [sku];
+  let where = "sku = $1";
+  if (r === "factory") {
+    vals.push(scopeCodes);
+    where += ` AND factory_code = ANY($${vals.length}::text[])`;
+  } else if (r === "customer") {
+    vals.push(scopeCodes);
+    where += ` AND EXISTS (
+      SELECT 1 FROM customer_brand_routes cbr
+       WHERE cbr.brand = products.brand
+         AND cbr.factory_code = products.factory_code
+         AND cbr.status = 'active'
+         AND cbr.customer_code = ANY($${vals.length}::text[]))`;
+  }
+  const q = `SELECT id, sku, unit, factory_code, brand FROM products WHERE ${where} LIMIT 1${lock ? " FOR UPDATE" : ""}`;
+  const p = await client.query(q, vals);
+  if (!p.rows.length) throw new Error("sku out of scope");
+  return p.rows[0];
+}
+
 async function saveRow(client, req, r, scopeCodes, row) {
   const sku = clean(row.sku, 80);
   if (!sku) throw new Error("sku required");
-  const vals = [sku];
-  let where = "sku = $1";
-  if (r === "factory") { vals.push(scopeCodes); where += ` AND factory_code = ANY($2::text[])`; }
-  const p = await client.query(`SELECT id, sku, unit, factory_code FROM products WHERE ${where} LIMIT 1 FOR UPDATE`, vals);
-  if (!p.rows.length) throw new Error("sku out of scope");
-  const product = p.rows[0];
+  if (r === "customer") row = { sku, finished_safety_stock: row.finished_safety_stock, warehouse_id: 1 };
+  const product = await scopedProduct(client, sku, r, scopeCodes, true);
   const before = {}, after = {};
   const DEFAULT_SUP = "沧州冀凯塑料包装有限公司";
 
   const fgFields = ["finished_stock", "finished_safety_stock", "container_capacity", "supplier_name", "image_url"];
   if (fgFields.some(k => row[k] !== undefined)) {
-    const wh = row.warehouse_id || 1;
+    const wh = (Number.isInteger(+row.warehouse_id) && +row.warehouse_id > 0) ? +row.warehouse_id : 1;
     let fg = (await client.query(`SELECT * FROM finished_goods_inventory WHERE sku=$1 AND warehouse_id=$2 FOR UPDATE`, [sku, wh])).rows[0] || null;
     const cur = fg || { current_stock: 0, safety_stock: 0, container_capacity: null, supplier_name: null, image_url: null };
     // 先算真实变更(不建空行)
@@ -241,7 +263,7 @@ async function saveRow(client, req, r, scopeCodes, row) {
 }
 
 async function save(req, res, pool, r, scopeCodes) {
-  if (r !== "factory" && !isInternal(r)) return json(res, 403, { success: false, error: "save forbidden" });
+  if (!(r === "factory" || r === "customer" || isInternal(r))) return json(res, 403, { success: false, error: "save forbidden" });
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : [req.body || {}];
   if (!rows.length) return json(res, 400, { success: false, error: "rows required" });
   const client = await pool.connect();
@@ -266,6 +288,41 @@ async function save(req, res, pool, r, scopeCodes) {
   return json(res, 200, { success: true, saved: results.map(c => c.sku) });
 }
 
+async function restockDecision(req, res, pool, r, scopeCodes) {
+  const sku = clean(req.body?.sku, 80);
+  const decision = clean(req.body?.decision, 10);
+  if (!sku) return json(res, 400, { success: false, error: "sku required" });
+  if (!["备", "不备"].includes(decision)) return json(res, 400, { success: false, error: "decision invalid" });
+  const client = await pool.connect();
+  let product;
+  try {
+    await client.query("BEGIN");
+    product = await scopedProduct(client, sku, r, scopeCodes, false);
+    const by = `${actor(req)}(${r})`;
+    await client.query(
+      `INSERT INTO finished_goods_inventory(product_id, sku, unit, current_stock, safety_stock, factory_code, warehouse_id,
+          restock_decision, restock_decision_by, restock_decision_at)
+       VALUES($1,$2,$3,0,0,$4,1,$5,$6,NOW())
+       ON CONFLICT (sku, warehouse_id) DO UPDATE SET
+          restock_decision=EXCLUDED.restock_decision,
+          restock_decision_by=EXCLUDED.restock_decision_by,
+          restock_decision_at=EXCLUDED.restock_decision_at,
+          updated_at=NOW()`,
+      [product.id, sku, product.unit || null, product.factory_code || null, decision, by]
+    );
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+  try {
+    await writeAudit(pool, req, { action: "sku-recon.restock-decision", entity_type: "sku", entity_id: sku, before: {}, after: { decision }, note: "库存提醒备货决策" });
+  } catch (_) { /* 审计尽力而为 */ }
+  return json(res, 200, { success: true, sku, decision });
+}
+
 async function history(pool, r, scopeCodes) {
   const vals = ["sku-recon.edit"];
   let where = "a.action = $1";
@@ -288,29 +345,37 @@ async function placeOrder(req, res, pool, r, scopeCodes) {
   if (r === "factory") { pv.push(scopeCodes); pw += " AND factory_code = ANY($2::text[])"; }
   const p = await pool.query(`SELECT factory_code FROM products WHERE ${pw} LIMIT 1`, pv);
   if (!p.rows.length) return json(res, 403, { success: false, error: "sku out of scope" });
-  const bag = await pool.query(`SELECT sku_code, supplier_code FROM packaging_materials WHERE product_skus @> jsonb_build_array($1::text) LIMIT 1`, [sku]);
+  const bag = await pool.query(`SELECT sku_code, supplier_code, moq FROM packaging_materials WHERE product_skus @> jsonb_build_array($1::text) LIMIT 1`, [sku]);
   const material_sku = bag.rows[0]?.sku_code || sku;
   const supplier_code = bag.rows[0]?.supplier_code || "SUP-CZJK";
+  const moq = Number(bag.rows[0]?.moq) || 0;
+  const orderQty = Math.max(q, moq);
   await pool.query(
     `INSERT INTO inbound_deliveries(supplier_code, factory_code, material_sku, order_qty, status, procured_by, created_by, note)
      VALUES($1,$2,$3,$4,'ordered',$5,$6,$7)`,
-    [supplier_code, p.rows[0].factory_code || "CL", material_sku, q, "sanlyn", actor(req), "库存比对表补货下单 " + sku]);
-  return json(res, 200, { success: true });
+    [supplier_code, p.rows[0].factory_code || "CL", material_sku, orderQty, "sanlyn", actor(req), "库存比对表补货下单 " + sku]);
+  return json(res, 200, { success: true, ordered_qty: orderQty, moq });
 }
 
 async function restockAll(req, res, pool, r, scopeCodes) {
   if (!(r === "factory" || isInternal(r))) return json(res, 403, { success: false, error: "forbidden" });
   const vals = []; let scopeSql = "";
   if (r === "factory") { vals.push(scopeCodes); scopeSql = ` AND p.factory_code = ANY($${vals.length}::text[])`; }
-  const q = await pool.query(`SELECT f.sku, (f.safety_stock - f.current_stock) AS gap, p.factory_code
+  const q = await pool.query(`SELECT f.sku, (f.safety_stock - f.current_stock) AS gap, p.factory_code,
+             bag.sku_code, bag.supplier_code, bag.moq
       FROM finished_goods_inventory f JOIN products p ON p.sku = f.sku
+ LEFT JOIN LATERAL (
+       SELECT m.sku_code, m.supplier_code, m.moq
+         FROM packaging_materials m
+        WHERE m.product_skus @> jsonb_build_array(f.sku)
+        LIMIT 1) bag ON true
      WHERE f.safety_stock > f.current_stock AND f.safety_stock > 0${scopeSql}`, vals);
   let n = 0;
   for (const row of q.rows) {
-    const bag = await pool.query(`SELECT sku_code, supplier_code FROM packaging_materials WHERE product_skus @> jsonb_build_array($1::text) LIMIT 1`, [row.sku]);
+    const orderQty = Math.max(Number(row.gap), Number(row.moq) || 0);
     await pool.query(`INSERT INTO inbound_deliveries(supplier_code, factory_code, material_sku, order_qty, status, procured_by, created_by, note)
        VALUES($1,$2,$3,$4,'ordered',$5,$6,$7)`,
-      [bag.rows[0]?.supplier_code || "SUP-CZJK", row.factory_code || "CL", bag.rows[0]?.sku_code || row.sku, Number(row.gap), "sanlyn", actor(req), "一键补货 " + row.sku]);
+      [row.supplier_code || "SUP-CZJK", row.factory_code || "CL", row.sku_code || row.sku, orderQty, "sanlyn", actor(req), "一键补货 " + row.sku]);
     n++;
   }
   return json(res, 200, { success: true, ordered: n });
@@ -328,10 +393,11 @@ export default async function handler(req, res) {
   const pool = getPool();
   try {
     if (req.method === "GET" && clean(req.query.view || "", 40) === "history") return json(res, 200, { success: true, role: r, ...(await history(pool, r, scopeCodes)) });
-    if (req.method === "GET") return json(res, 200, { success: true, role: r, can_edit: r === "factory" || isInternal(r), org_name: clean(req.user?.company || "", 120), ...(await listRows(pool, r, scopeCodes, req)) });
-    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "save") return save(req, res, pool, r, scopeCodes);
-    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "order") return placeOrder(req, res, pool, r, scopeCodes);
-    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "restock-all") return restockAll(req, res, pool, r, scopeCodes);
+    if (req.method === "GET") return json(res, 200, { success: true, role: r, can_edit: r === "factory" || isInternal(r), can_edit_line: true, org_name: clean(req.user?.company || "", 120), ...(await listRows(pool, r, scopeCodes, req)) });
+    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "save") return await save(req, res, pool, r, scopeCodes);
+    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "restock-decision") return await restockDecision(req, res, pool, r, scopeCodes);
+    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "order") return await placeOrder(req, res, pool, r, scopeCodes);
+    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "restock-all") return await restockAll(req, res, pool, r, scopeCodes);
     return json(res, 405, { success: false, error: "Method/action not allowed" });
   } catch (e) {
     const code = /required|invalid/.test(e.message) ? 400 : (/scope|forbidden/.test(e.message) ? 403 : 500);

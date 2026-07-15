@@ -13,6 +13,7 @@ h1{font-size:21px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
 .actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:8px 13px;font-weight:700;cursor:pointer;font:inherit}
 button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}
+button.danger{border-color:#fecdca;background:#fff;color:var(--bad);padding:6px 10px}
 button.on{border-color:#16794c;background:#e9f7ef;color:var(--ok)}button:disabled{opacity:.5;cursor:not-allowed}
 select{border:1px solid var(--line);border-radius:7px;padding:8px 9px;background:#fff;font:inherit}
 .pill{display:inline-block;border:1px solid var(--line);border-radius:999px;background:#fff;padding:4px 9px;font-weight:700;color:#344054}
@@ -33,6 +34,7 @@ select{border:1px solid var(--line);border-radius:7px;padding:8px 9px;background
 .f input,.f select{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
 .f.plate{opacity:.85}.f.plate label{font-size:10.5px}.f.plate .val{font-size:12px;color:#7a2e0e}
 .up{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.up a{color:var(--blue);font-size:12px}
+.plate-pic{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.plate-thumb{width:54px;height:54px;border:1px solid var(--line);border-radius:7px;object-fit:cover;background:#f2f4f7}
 .empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
 @media print{.actions,button{display:none}}
 </style>
@@ -44,6 +46,7 @@ select{border:1px solid var(--line);border-radius:7px;padding:8px 9px;background
     <div class="actions">
       <span class="pill" id="role-pill">…</span>
       <select id="brand-filter" style="display:none"></select>
+      <button class="primary" id="create-btn" style="display:none">+ 新增款式</button>
       <button id="edit-btn" style="display:none">✎ 编辑</button>
       <button id="import-btn" style="display:none">⬆ 导入Excel</button>
       <button id="refresh">刷新</button>
@@ -92,10 +95,17 @@ function imgBlock(r){
   if(!ed) return r.image_url ? `<a href="${esc(r.image_url)}" download target="_blank">${img}</a>` : img;
   return `<div>${img}<div class="up"><button type="button" data-upload="${esc(r.sku_code)}">上传图片</button>${r.image_url?`<a href="${esc(r.image_url)}" download target="_blank">下载</a>`:""}</div></div>`;
 }
+function plateImageBlock(r){
+  const ed = state.editing && state.canEdit;
+  const img = r.plate_image_url ? `<img class="plate-thumb" src="${esc(r.plate_image_url)}">` : `<div class="plate-thumb"></div>`;
+  if(!ed) return `<div class="f plate"><label>版费原图</label><div class="plate-pic">${r.plate_image_url?`<a href="${esc(r.plate_image_url)}" download target="_blank">${img}</a><a href="${esc(r.plate_image_url)}" download target="_blank">下载</a>`:`<span class="val muted">—</span>`}</div></div>`;
+  return `<div class="f plate"><label>版费原图</label><div class="plate-pic">${img}<button type="button" data-upload-plate="${esc(r.sku_code)}">上传原图</button>${r.plate_image_url?`<a href="${esc(r.plate_image_url)}" download target="_blank">下载</a>`:""}</div></div>`;
+}
 function card(r){
   const inc = r.price_inc_tax;
   const refundTag = r.plate_fee_refunded ? `<span class="badge b-refund">已退版费</span>` : "";
   const stopTag = r.status==="stopped" ? `<span class="badge b-stop">停产</span>` : "";
+  const del = state.editing && state.canEdit ? `<button class="danger" type="button" data-delete="${esc(r.sku_code)}">删除</button>` : "";
   return `<div class="card" data-sku="${esc(r.sku_code)}">
     <div class="st-head">
       ${imgBlock(r)}
@@ -104,6 +114,7 @@ function card(r){
         <div class="st-sku">${esc(r.sku_code)}</div>
       </div>
       <div class="inc-big"><div class="v" data-inc-cell="${esc(r.sku_code)}">${inc==null?"—":num(inc)}</div><div class="l">含税单价</div></div>
+      ${del}
     </div>
     <div class="grid">
       ${fld(r,"name","品名")}
@@ -120,6 +131,7 @@ function card(r){
       ${fld(r,"quote_valid_until","报价有效期","date")}
       ${fld(r,"status","状态","status")}
       <div class="f plate"><label>退版费${refundTag}</label>${state.editing&&state.canEdit?`<input type="number" step="any" data-sku="${esc(r.sku_code)}" data-field="plate_fee" value="${esc(rawNum(r.plate_fee))}" style="width:90px">`:`<span class="val">${r.plate_fee==null?"—":num(r.plate_fee)}${r.plate_fee_refunded?"（已退）":""}</span>`}</div>
+      ${plateImageBlock(r)}
       ${state.editing&&state.canEdit?fld(r,"plate_fee_refund_qty","退版费返还量(累计到达即退)","num"):""}
       ${fld(r,"notes","备注")}
     </div>
@@ -137,6 +149,7 @@ function render(){
   document.getElementById("role-pill").textContent = state.canEdit ? (state.editing?"编辑中":"可填写") : "只读";
   const eb = document.getElementById("edit-btn");
   eb.style.display = state.canEdit ? "" : "none";
+  document.getElementById("create-btn").style.display = state.canEdit ? "" : "none";
   document.getElementById("import-btn").style.display = state.canEdit ? "" : "none";
   eb.textContent = state.editing ? "✕ 退出编辑" : "✎ 编辑";
   eb.className = state.editing ? "on" : "";
@@ -180,6 +193,26 @@ async function saveAll(){
   }catch(e){ alert(e.message); }
   finally{ btn.textContent="保存全部"; btn.disabled=false; }
 }
+async function createRow(){
+  if(!state.canEdit) return;
+  const body = { action:"create" };
+  const sc = new URLSearchParams(location.search).get("supplier_code") || state.supplier?.code || "";
+  if(sc) body.supplier_code = sc;
+  try{
+    const r = await fetch(apiUrl+"?action=create",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify(body)}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"新增失败");
+    state.editing = true; await load(); state.editing = true; render();
+  }catch(e){ alert(e.message); }
+}
+async function deleteRow(sku){
+  if(!state.canEdit || !sku) return;
+  if(!confirm("停用该款式?(可恢复)")) return;
+  try{
+    const r = await fetch(apiUrl+"?action=delete",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku_code:sku})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"删除失败");
+    await load();
+  }catch(e){ alert(e.message); }
+}
 async function importExcel(file){
   const fd = new FormData(); fd.append("file", file);
   try{
@@ -189,25 +222,33 @@ async function importExcel(file){
     state.editing=false; await load();
   }catch(e){ alert("导入失败："+e.message); }
 }
-async function uploadImage(sku, file){
+async function uploadImage(sku, file, field){
   const fd = new FormData();
   fd.append("file", file);
-  fd.append("path", "supplier-catalog/"+sku+"-"+file.name);
+  fd.append("path", "supplier-catalog/"+sku+"-"+(field==="plate_image_url"?"plate-":"")+file.name);
   try{
     const r = await fetch("/api/oss-upload",{method:"POST",body:fd}).then(x=>x.json());
     if(!r.success || !r.url) throw new Error(r.error||"上传失败");
-    const row = state.rows.find(x=>x.sku_code===sku); if(row) row.image_url = r.url;
+    const save = await fetch(apiUrl+"?action=save",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku_code:sku,[field]:r.url})}).then(x=>x.json());
+    if(!save.success) throw new Error(save.error||"保存图片失败");
+    const row = state.rows.find(x=>x.sku_code===sku); if(row) row[field] = r.url;
     render();
   }catch(e){ alert("图片上传失败: "+e.message); }
 }
 document.addEventListener("click", e=>{
   if(e.target.id==="refresh"){ state.editing=false; load(); }
   if(e.target.id==="save-all") saveAll();
+  if(e.target.id==="create-btn") createRow();
   if(e.target.id==="edit-btn"){ state.editing=!state.editing; render(); }
   if(e.target.id==="import-btn"){ const inp=document.createElement("input"); inp.type="file"; inp.accept=".xlsx"; inp.onchange=()=>{ if(inp.files[0]) importExcel(inp.files[0]); }; inp.click(); }
   const up = e.target.dataset && e.target.dataset.upload;
   if(up){ const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
-    inp.onchange=()=>{ if(inp.files[0]) uploadImage(up, inp.files[0]); }; inp.click(); }
+    inp.onchange=()=>{ if(inp.files[0]) uploadImage(up, inp.files[0], "image_url"); }; inp.click(); }
+  const upPlate = e.target.dataset && e.target.dataset.uploadPlate;
+  if(upPlate){ const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+    inp.onchange=()=>{ if(inp.files[0]) uploadImage(upPlate, inp.files[0], "plate_image_url"); }; inp.click(); }
+  const del = e.target.dataset && e.target.dataset.delete;
+  if(del) deleteRow(del);
 });
 document.addEventListener("change", e=>{ if(e.target.id==="brand-filter"){ state.brandFilter=e.target.value; render(); } });
 document.addEventListener("input", e=>{

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工厂盘点</title>
+<style>
+:root{--bg:#f5f7fb;--text:#172033;--muted:#667085;--line:#d8dee8;--ok:#16794c;--bad:#b42318;--blue:#175cd3;--card:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:560px;margin:0 auto;padding:14px 12px 26px}.top{position:sticky;top:0;z-index:5;background:rgba(245,247,251,.96);padding:10px 0 12px;border-bottom:1px solid var(--line)}
+h1{margin:0 0 8px;font-size:22px}.prog-text{font-size:20px;font-weight:900;margin-bottom:8px}.bar{height:12px;background:#e6eaf2;border-radius:999px;overflow:hidden}.bar>i{display:block;height:100%;width:0;background:var(--ok);transition:width .2s}
+.section-title{font-weight:900;margin:18px 2px 8px}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px;margin:10px 0;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.prod{display:grid;grid-template-columns:74px 1fr;gap:12px}.prod img{width:74px;height:74px;border:1px solid var(--line);border-radius:7px;object-fit:cover;background:#eef2f7}.name{font-size:17px;font-weight:900;line-height:1.25}.cn{color:#475467;margin-top:3px}.meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.tag{border:1px solid #c3d9ff;background:#eef4ff;color:#1d4ed8;border-radius:5px;padding:1px 6px;font-size:12px;font-weight:800}.muted{color:var(--muted)}.mono{font-family:ui-monospace,Menlo,monospace}
+.form{display:grid;grid-template-columns:1fr 116px;gap:10px;margin-top:12px}input{width:100%;height:48px;border:1px solid var(--line);border-radius:7px;padding:8px 10px;font:18px/1 Arial,sans-serif;text-align:right;background:#fff}button{height:48px;border:1px solid var(--line);border-radius:7px;background:#fff;font-weight:900;font-size:16px;cursor:pointer}button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}button:disabled{opacity:.55;cursor:not-allowed}
+.empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:22px 14px;text-align:center;color:var(--muted);margin-top:12px}.done-box{border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden}.done-head{width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:#fff;text-align:left}.done-list{display:none}.done-row{display:grid;grid-template-columns:1fr auto;gap:8px;padding:10px 12px;border-top:1px solid #eef1f6}.qty{font-size:18px;font-weight:900}.time{font-size:12px;color:var(--muted)}.complete{background:#ecfdf3;border:1px solid #abefc6;color:#05603a;border-radius:8px;padding:18px 12px;text-align:center;font-size:18px;font-weight:900;margin:14px 0}.reset{width:100%;margin-top:10px}.err{color:var(--bad)}
+#save-ask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:20;align-items:center;justify-content:center}.modal{width:90%;max-width:350px;background:#fff;border-radius:12px;padding:22px;text-align:center}.modal-title{font-weight:900;font-size:17px}.modal-text{color:var(--muted);margin:8px 0 18px}.modal-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.danger{color:var(--bad)}
+@media(max-width:380px){.prod{grid-template-columns:62px 1fr}.prod img{width:62px;height:62px}.form{grid-template-columns:1fr}.modal-actions{grid-template-columns:1fr}button{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>工厂盘点</h1>
+    <div class="prog-text" id="prog-text">盘点进度 已盘 0 / 共 0</div>
+    <div class="bar"><i id="prog-bar"></i></div>
+  </div>
+  <div id="complete"></div>
+  <div class="section-title">未盘</div>
+  <div id="todo"><div class="empty">加载中...</div></div>
+  <div class="section-title">已盘</div>
+  <div class="done-box">
+    <button class="done-head" id="done-toggle"><span>已盘款</span><span id="done-count">0</span></button>
+    <div class="done-list" id="done-list"></div>
+  </div>
+</div>
+<div id="save-ask">
+  <div class="modal">
+    <div class="modal-title">有未保存的数量</div>
+    <div class="modal-text">你填了数字但还没确认提交。</div>
+    <div class="modal-actions">
+      <button data-ask="cancel">继续编辑</button>
+      <button data-ask="discard" class="danger">放弃</button>
+      <button data-ask="save" class="primary">保存</button>
+    </div>
+  </div>
+</div>
+<script>
+const apiUrl = location.origin + "/api/db/stocktake";
+const state = {todo:[], done:[], total:0, saving:"", dirtySku:""};
+function token(){
+  const cand = [new URLSearchParams(location.search).get("token"),
+    localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
+function authHeaders(json){
+  const t = token(), h = json ? {"Content-Type":"application/json"} : {};
+  if(t) h.Authorization = "Bearer " + t;
+  return h;
+}
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function fmtTime(v){return v ? new Date(v).toLocaleString("zh-CN",{hour12:false}) : "";}
+function imgTag(url){return url ? `<img src="${esc(url)}" alt="">` : `<img alt="">`;}
+function itemCard(r){
+  const dis = state.saving === r.sku ? " disabled" : "";
+  return `<section class="card" data-card="${esc(r.sku)}">
+    <div class="prod">${imgTag(r.image_url)}<div>
+      <div class="name">${esc(r.product_name || r.sku)}</div>
+      ${r.product_name_cn ? `<div class="cn">${esc(r.product_name_cn)}</div>` : ""}
+      <div class="meta">${r.brand ? `<span class="tag">${esc(r.brand)}</span>` : ""}${r.barcode ? `<span class="tag">条码 ${esc(r.barcode)}</span>` : ""}${r.size ? `<span class="tag">${esc(r.size)}</span>` : ""}</div>
+      <div class="muted">内部号 <span class="mono">${esc(r.sku)}</span></div>
+    </div></div>
+    <div class="form">
+      <input inputmode="decimal" type="number" min="0" step="any" data-qty="${esc(r.sku)}" placeholder="现有数量,没货填0"${dis}>
+      <button class="primary" data-save="${esc(r.sku)}"${dis}>${state.saving===r.sku?"保存中":"确认"}</button>
+    </div>
+  </section>`;
+}
+function doneRow(r){
+  return `<div class="done-row"><div><b>${esc(r.product_name || r.sku)}</b><div class="muted mono">${esc(r.sku)}</div><div class="time">${esc(fmtTime(r.stocktook_at))}</div></div><div class="qty">${Number(r.current_stock||0).toLocaleString()}</div></div>`;
+}
+function render(){
+  const doneN = state.done.length, total = state.total;
+  document.getElementById("prog-text").textContent = `盘点进度 已盘 ${doneN} / 共 ${total}`;
+  document.getElementById("prog-bar").style.width = total ? Math.round(doneN * 100 / total) + "%" : "0%";
+  document.getElementById("done-count").textContent = doneN;
+  document.getElementById("done-list").innerHTML = state.done.length ? state.done.map(doneRow).join("") : '<div class="empty">还没有已盘款</div>';
+  if(!total) document.getElementById("todo").innerHTML = '<div class="empty">该工厂暂无SKU</div>';
+  else document.getElementById("todo").innerHTML = state.todo.length ? state.todo.map(itemCard).join("") : '<div class="empty">未盘款已全部完成</div>';
+  document.getElementById("complete").innerHTML = (state.todo.length===0 && total>0)
+    ? `<div class="complete">✅ 盘点完成,共 ${total} 款</div><button class="primary reset" id="reset">重新盘点</button>` : "";
+}
+async function load(){
+  try{
+    const r = await fetch(apiUrl + location.search,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error || "加载失败");
+    state.todo = r.todo || []; state.done = r.done || []; state.total = Number(r.progress?.total || state.todo.length + state.done.length);
+    state.dirtySku = ""; render();
+  }catch(e){ document.getElementById("todo").innerHTML = `<div class="empty err">${esc(e.message)}</div>`; }
+}
+function dirtyInput(){
+  if(!state.dirtySku) return null;
+  const inp = document.querySelector(`input[data-qty="${CSS.escape(state.dirtySku)}"]`);
+  return inp && inp.value !== "" ? inp : null;
+}
+async function saveSku(sku){
+  const inp = document.querySelector(`input[data-qty="${CSS.escape(sku)}"]`);
+  const val = inp ? inp.value : "";
+  if(val === "" || !Number.isFinite(Number(val)) || Number(val) < 0){ alert("请输入大于等于0的成品库存"); return false; }
+  state.saving = sku; render();
+  try{
+    const r = await fetch(apiUrl + "?action=count",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku,current_stock:Number(val)})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error || "保存失败");
+    const i = state.todo.findIndex(x=>x.sku===sku);
+    if(i >= 0){
+      const row = {...state.todo.splice(i,1)[0], current_stock:Number(val), stocktook_at:new Date().toISOString()};
+      state.done.unshift(row);
+    }
+    state.dirtySku = state.dirtySku === sku ? "" : state.dirtySku;
+    return true;
+  }catch(e){ alert(e.message); return false; }
+  finally{ state.saving = ""; render(); }
+}
+function askSave(){return new Promise(res=>{const m=document.getElementById("save-ask");m.style.display="flex";m._res=res;});}
+async function guardDirty(){
+  const inp = dirtyInput();
+  if(!inp) return true;
+  const a = await askSave();
+  if(a === "cancel") return false;
+  if(a === "save") return await saveSku(state.dirtySku);
+  state.dirtySku = ""; return true;
+}
+async function resetAll(){
+  if(!confirm("确认重新盘点？已盘列表会回到未盘，但不会改库存数量。")) return;
+  try{
+    const r = await fetch(apiUrl + "?action=reset",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error || "重置失败");
+    await load();
+  }catch(e){ alert(e.message); }
+}
+document.addEventListener("input", e=>{ if(e.target.dataset && e.target.dataset.qty) state.dirtySku = e.target.dataset.qty; });
+window.addEventListener("beforeunload", e=>{ if(dirtyInput()){ e.preventDefault(); e.returnValue=""; } });
+document.addEventListener("click", async e=>{
+  if(e.target.dataset && e.target.dataset.ask){ const m=document.getElementById("save-ask"); m.style.display="none"; if(m._res){ m._res(e.target.dataset.ask); m._res=null; } return; }
+  if(e.target.id === "done-toggle"){ const d=document.getElementById("done-list"); d.style.display = d.style.display==="block" ? "none" : "block"; return; }
+  if(e.target.id === "reset"){ if(await guardDirty()) resetAll(); return; }
+  const sku = e.target.dataset && e.target.dataset.save;
+  if(sku) saveSku(sku);
+});
+load();
+</script>
+</body>
+</html>
