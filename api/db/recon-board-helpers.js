@@ -143,10 +143,25 @@ export function ageChip(age, hasDue) {
 
 export function nextAction(row) {
   const s = row.signals || {};
-  if (s.invoice_status === "pending" || s.invoice_status === "confirmed") return { label: "确认票面开票", kind: "confirm_invoice" };
-  if (s.receivable_due > TOLERANCE && !s.customer_slip_uploaded) return { label: "催客户传水单", kind: "copy_slip_link" };
-  if (s.invoice_status === "blocked") return { label: "补报关资料(缺申报额)", kind: "none" };
-  if (s.payable_due > TOLERANCE) return { label: "登记工厂付款", kind: "goto_payment" };
+  const f = row.factory_side || {};
+  if (row.type === "order") {
+    if (f.payable === null || f.payable === undefined || Number(f.payable) === 0) return { label: "采购价待录", kind: "none" };
+    if (row.receivable_status === "pending_customs") return { label: "待报关", kind: "none" };
+    if (s.receivable_due > TOLERANCE) {
+      if (s.customer_slip_uploaded) return { label: "催客户收款", kind: "goto_payment" };
+      return { label: "催客户传水单", kind: "copy_slip_link" };
+    }
+    if (s.invoice_status === "blocked") return { label: "补报关资料(缺申报额)", kind: "none" };
+    // 已开票认 finance_invoices_out 真实发票(row.invoice_no)，不认 finance_invoice_drafts.status——
+    // 草稿表 status 从没被推进到过 'issued'(生产0行)，认它会把全部已开票订单都误判成待开票。
+    if (!row.invoice_no) return { label: "待开票", kind: "confirm_invoice" };
+    if (s.payable_due > TOLERANCE) return { label: "登记工厂付款", kind: "goto_payment" };
+    return { label: "—已闭环", kind: "none" };
+  }
+  // shipment：ap_invoice 是货代应付发票状态(invoiced/pending)，跟订单客户开票状态是两套值域，别混
+  if (s.invoice_status !== "invoiced") return { label: "运费待开票", kind: "confirm_invoice" };
+  if (s.receivable_due > TOLERANCE) return { label: "催收运费", kind: "goto_payment" };
+  if (s.payable_due > TOLERANCE) return { label: "登记货代付款", kind: "goto_payment" };
   return { label: "—已闭环", kind: "none" };
 }
 

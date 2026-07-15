@@ -17,9 +17,9 @@ async function fetchFacts(pool, { q = "", limit = 500 } = {}) {
   const like = `%${q}%`;
   const args = q ? [like, limit] : [limit];
   const orderFilter = q ? `
-    AND (o.order_no ILIKE $1 OR o.contract_no ILIKE $1 OR o.customer ILIKE $1 OR o.company_code ILIKE $1)` : "";
+    AND (o.order_no ILIKE $1 OR o.contract_no ILIKE $1 OR o.customer ILIKE $1)` : "";
   const shipmentFilter = q ? `
-    AND (sp.shipment_no ILIKE $1 OR sp.bl_no ILIKE $1 OR sp.forwarder_cn ILIKE $1 OR sp.customer ILIKE $1 OR sp.company_code ILIKE $1
+    AND (sp.shipment_no ILIKE $1 OR sp.bl_no ILIKE $1 OR sp.forwarder_cn ILIKE $1
       OR EXISTS (SELECT 1 FROM selected_orders so WHERE so.order_no = ANY(COALESCE(sp.order_nos, '{}'::text[]))))` : "";
   const sql = `
 WITH selected_orders AS (
@@ -41,24 +41,6 @@ drafts AS (
          COALESCE(d.amount_invoice, d.amount_declared, d.amount_order) AS invoice_amount
     FROM selected_orders so LEFT JOIN finance_invoice_drafts d ON d.contract_no=so.contract_no
 ),
-declared AS (
-  SELECT so.order_no, so.contract_no, f.decl_cny, f.decl_cnt, sib.sibling_cnt
-    FROM selected_orders so
-    LEFT JOIN (
-      SELECT fer.contract_no,
-             SUM(COALESCE(NULLIF(fer.fob_cny, 0), NULLIF(fer.fob_foreign * fer.exchange_rate, 0))) AS decl_cny,
-             COUNT(*) AS decl_cnt
-        FROM finance_export_rebates fer
-       WHERE fer.contract_no IS NOT NULL AND BTRIM(fer.contract_no) <> ''
-       GROUP BY fer.contract_no
-    ) f ON f.contract_no = so.contract_no
-    LEFT JOIN (
-      SELECT o2.contract_no, COUNT(*) AS sibling_cnt
-        FROM orders o2
-       WHERE o2.deleted_at IS NULL AND COALESCE(o2.status, '') <> 'cancelled' AND o2.contract_no IS NOT NULL
-       GROUP BY o2.contract_no
-    ) sib ON sib.contract_no = so.contract_no
-),
 slips AS (
   SELECT so.order_no, so.contract_no,
          COUNT(DISTINCT bsl.id) FILTER (WHERE bsl.contract_no=so.contract_no OR bsl.order_no=so.order_no) AS customer_slip_count,
@@ -68,6 +50,53 @@ slips AS (
     LEFT JOIN finance_payments fp ON fp.id=bsl.payment_id AND fp.direction='out'
       AND ((fp.contract_no=so.contract_no AND so.contract_no IS NOT NULL) OR (fp.order_no=so.order_no AND so.order_no IS NOT NULL))
    GROUP BY so.order_no, so.contract_no
+),
+-- 客户应收锚定源 = finance_export_rebates.fob_cny(报关销售额,唯一真源;绝不用 orders.total/OLI)。
+-- 借鉴 customer-ar-reconcile.js 的锚定逻辑,此处按 contract_no 聚合(一票多单时各 fer 行 SUM,避免 JOIN 扇出)。
+-- 无 fer 行 → receivable_anchor=NULL → orderFact 里 anchored=false → 前端显"待报关"。
+receivable_anchor AS (
+  SELECT so.contract_no,
+         SUM(r.fob_cny) AS receivable_anchor,
+         MIN(r.currency) AS anchor_currency,
+         COUNT(*) AS anchor_decl_count
+    FROM selected_orders so
+    JOIN finance_export_rebates r ON r.contract_no = so.contract_no AND so.contract_no IS NOT NULL
+   GROUP BY so.contract_no
+),
+-- 客户发票号:finance_invoices_out.contract_nos 数组重叠匹配(排除作废/红冲/草稿)。
+customer_invoices AS (
+  SELECT so.contract_no,
+         (array_agg(DISTINCT fio.invoice_no) FILTER (WHERE fio.invoice_no IS NOT NULL))[1] AS invoice_no
+    FROM selected_orders so
+    JOIN finance_invoices_out fio
+      ON so.contract_no = ANY(COALESCE(fio.contract_nos::text[], '{}'::text[]))
+     AND so.contract_no IS NOT NULL
+     AND COALESCE(fio.void_status,'') <> 'void'
+     AND COALESCE(fio.review_status,'') NOT IN ('void','red_ink')
+     AND COALESCE(fio.invoice_no,'') NOT LIKE 'CI-DRAFT%'
+   GROUP BY so.contract_no
+),
+-- 客户水单文件 url:bank_slips.file_url,经 bank_slip_links 按 contract_no/order_no 挂到订单。
+customer_slip_file AS (
+  SELECT so.contract_no, so.order_no,
+         (array_agg(bs.file_url ORDER BY bs.created_at DESC)
+            FILTER (WHERE bs.file_url IS NOT NULL))[1] AS slip_file_url
+    FROM selected_orders so
+    JOIN bank_slip_links bsl ON (bsl.contract_no=so.contract_no AND so.contract_no IS NOT NULL)
+                             OR (bsl.order_no=so.order_no AND so.order_no IS NOT NULL)
+    JOIN bank_slips bs ON bs.id = bsl.slip_id
+   GROUP BY so.contract_no, so.order_no
+),
+-- 订单运输信息:按 order_no 在 shipping_plans.order_nos 数组里找;一订单多柜取最新 etd。
+order_shipment AS (
+  SELECT DISTINCT ON (so.order_no)
+         so.order_no,
+         sp.container_no, sp.shipper, sp.carrier_code, sp.vessel, sp.etd, sp.eta,
+         sp.customer AS consignee
+    FROM selected_orders so
+    JOIN shipping_plans sp ON sp.deleted_at IS NULL
+     AND so.order_no = ANY(COALESCE(sp.order_nos, '{}'::text[]))
+   ORDER BY so.order_no, sp.etd DESC NULLS LAST
 ),
 selected_shipments AS (
   SELECT sp.* FROM shipping_plans sp
@@ -97,6 +126,8 @@ ${INVOICE_CONFIRM_SQL},
 shipment_sum AS (
   SELECT sp.id, sp._id, sp.shipment_no, sp.bl_no, sp.order_nos, sp.issuing_company,
          sp.forwarder_cn AS forwarder, sp.forwarder_company_id, sp.customer, sp.company_code, sp.customer_company_id,
+         sp.container_no, sp.shipper, sp.carrier_code, sp.vessel, sp.etd, sp.eta,
+         sp.customer AS consignee,
          sp.created_at, sp.updated_at, sp.forwarder_price_confirmed_at,
          COALESCE(SUM(bg.ap_total),0) AS ap_total, COALESCE(SUM(bg.ap_paid),0) AS ap_paid,
          COALESCE(SUM(bg.ar_total),0) AS ar_total, COALESCE(SUM(bg.ar_paid),0) AS ar_paid,
@@ -115,6 +146,7 @@ shipment_sum AS (
     LEFT JOIN invoice_confirm_groups icg ON icg.shipment_id=sp.id
    GROUP BY sp.id, sp._id, sp.shipment_no, sp.bl_no, sp.order_nos, sp.issuing_company,
             sp.forwarder_cn, sp.forwarder_company_id, sp.customer, sp.company_code, sp.customer_company_id,
+            sp.container_no, sp.shipper, sp.carrier_code, sp.vessel, sp.etd, sp.eta,
             sp.created_at, sp.updated_at, sp.forwarder_price_confirmed_at,
             icg.invoice_confirm_status, icg.pending_price_review, icg.confirm_actor, icg.confirm_at, icg.invoice_confirm_refs
 )
@@ -125,10 +157,19 @@ SELECT
            so.created_by, so.status_updated_by, COALESCE(so.status_updated_at, so.updated_at) AS last_action_at,
            so.factory_confirmed_at, so.customer_confirmed_at,
            COALESCE(so.factory_total_amount, so.total_amount_factory, so.factory_amount) AS payable,
-           COALESCE(so.customer_total_amount, so.customer_amount, so.total_amount) AS receivable,
-           dd.decl_cny, dd.decl_cnt, dd.sibling_cnt,
+           -- 应收锚定:仅报关销售额 fob_cny;无 fer 锚 → NULL(anchored=false → 前端"待报关"),绝不兜底订单额。
+           ra.receivable_anchor AS receivable,
+           (ra.receivable_anchor IS NOT NULL) AS anchored,
+           ra.anchor_currency, ra.anchor_decl_count,
+           ci.invoice_no,
+           csf.slip_file_url,
+           osh.container_no, osh.shipper, osh.carrier_code, osh.vessel, osh.etd AS ship_etd, osh.eta AS ship_eta, osh.consignee,
            p.paid, p.received, d.invoice_status, d.invoice_currency, d.invoice_amount, s.factory_slip_count, s.customer_slip_count
-      FROM selected_orders so LEFT JOIN payments p USING(order_no, contract_no) LEFT JOIN drafts d USING(order_no, contract_no) LEFT JOIN slips s USING(order_no, contract_no) LEFT JOIN declared dd USING(order_no, contract_no)
+      FROM selected_orders so LEFT JOIN payments p USING(order_no, contract_no) LEFT JOIN drafts d USING(order_no, contract_no) LEFT JOIN slips s USING(order_no, contract_no)
+           LEFT JOIN receivable_anchor ra USING(contract_no)
+           LEFT JOIN customer_invoices ci USING(contract_no)
+           LEFT JOIN customer_slip_file csf USING(contract_no, order_no)
+           LEFT JOIN order_shipment osh USING(order_no)
   ) x) AS orders,
   (SELECT COALESCE(jsonb_agg(to_jsonb(ss) ORDER BY ss.created_at DESC NULLS LAST), '[]'::jsonb) FROM shipment_sum ss) AS shipments,
   (SELECT COALESCE(jsonb_agg(to_jsonb(d)), '[]'::jsonb) FROM finance_invoice_drafts d WHERE d.status IN ('pending','blocked','confirmed')) AS invoice_drafts,
@@ -141,17 +182,11 @@ SELECT
 function orderFact(row) {
   const payable = money(row.payable);
   const paid = money(row.paid) || 0;
-  // 应收口径：报关主表(finance_export_rebates)优先；共用合同号的报关额无法按单拆分时退回订单价并标记
-  // sibling_cnt 来自全量 orders（不是本次查询过滤后的集合），搜索/截断时共用合同判断不失真
-  const orderPrice = money(row.receivable);
-  const declared = money(row.decl_cny);
-  const sharedContract = Number(row.sibling_cnt || 1) > 1;
-  const useDeclared = declared != null && declared > TOLERANCE && !sharedContract;
-  const receivable = useDeclared ? declared : orderPrice;
-  const arBasis = useDeclared ? "customs"
-    : (declared != null && declared > TOLERANCE && sharedContract ? "shared_contract" : "no_declaration");
-  const declareMismatch = useDeclared && orderPrice != null && Math.abs(declared - orderPrice) > TOLERANCE;
+  const anchored = Boolean(row.anchored);
+  const receivable = anchored ? money(row.receivable) : null; // 无报关锚 → null(待报关),绝不兜底订单额
   const received = money(row.received) || 0;
+  // 应收币种以报关锚币种为准(报关销售额口径),缺则回退订单币种
+  const arCurrency = anchored ? "CNY" : (row.currency || "CNY"); // fob_cny 恒为人民币口径,锚定应收固定 CNY(currency 列是原始申报币种,USD 单会错标)
   const age = ageDays(row.etd || row.order_date || row.created_at);
   const invoiceStatus = row.invoice_status || "none";
   const fTone = baseTone({ total: payable, paid, age, createdAt: row.created_at });
@@ -183,7 +218,7 @@ function orderFact(row) {
       counterpartyCode: row.company_code,
       total: receivable,
       paid: received,
-      currency: row.currency || "CNY",
+      currency: arCurrency,
       refs,
       tone: cTone,
       invoiceStatus,
@@ -192,11 +227,6 @@ function orderFact(row) {
       missingReason: !hasText(row.customer) && !hasText(row.company_code) ? "缺客户" : null,
     }),
   ];
-  const custLine = settlementLines[1];
-  custLine.ar_basis = arBasis;
-  custLine.order_price = orderPrice;
-  custLine.declared_price = declared;
-  custLine.declare_mismatch = declareMismatch;
   const r = {
     id: `order:${row.order_no || row.contract_no}`,
     type: "order",
@@ -209,11 +239,24 @@ function orderFact(row) {
     last_action_at: row.last_action_at || row.updated_at || row.created_at || null,
     age_days: age,
     age_chip: ageChip(age, due(receivable, received) > TOLERANCE || due(payable, paid) > TOLERANCE),
-    amounts: { receivable, received, receivable_due: due(receivable, received), payable, paid, payable_due: due(payable, paid), order_price: orderPrice, declared_price: declared },
-    ar_basis: arBasis,
+    amounts: { receivable, received, receivable_due: due(receivable, received), payable, paid, payable_due: due(payable, paid) },
     settlement_lines: settlementLines,
+    anchored,
+    receivable_status: anchored ? undefined : "pending_customs", // 前端据此显"待报关"
+    invoice_no: row.invoice_no || null,
+    slip_file_url: row.slip_file_url || null,
+    consignee: row.consignee || null,
+    shipping: {
+      container_no: row.container_no || null,
+      shipper: row.shipper || null,
+      carrier_code: row.carrier_code || null,
+      vessel: row.vessel || null,
+      etd: row.ship_etd || null,
+      eta: row.ship_eta || null,
+      consignee: row.consignee || null,
+    },
     factory_side: { payable, paid, due: due(payable, paid), paid_status: statusOf(payable, paid), slip_count: Number(row.factory_slip_count || 0), tone: fTone },
-    customer_side: { invoice_status: invoiceStatus, receivable, received, due: due(receivable, received), received_status: statusOf(receivable, received), slip_uploaded: Number(row.customer_slip_count || 0) > 0, tone: cTone },
+    customer_side: { invoice_status: invoiceStatus, anchored, receivable, received, currency: arCurrency, due: due(receivable, received), received_status: statusOf(receivable, received), invoice_no: row.invoice_no || null, slip_file_url: row.slip_file_url || null, slip_uploaded: Number(row.customer_slip_count || 0) > 0, tone: cTone },
     signals: {
       invoice_status: invoiceStatus,
       receivable_due: due(receivable, received),
@@ -266,8 +309,7 @@ function shipmentFact(row, selectedOrderNos) {
       missingReason: lineForwarderMissing ? "缺货代" : null,
     }));
     if ((money(g.ar_total) || 0) > TOLERANCE || (money(g.ar_paid) || 0) > TOLERANCE) {
-      // 运费销售价(sale_amount)未经报关/协议核对前只展示不计应收——催款金额一律以报关主表为准
-      const arLine = settlementLine({
+      settlementLines.push(settlementLine({
         sourceType: "shipment",
         counterpartyType: "customer",
         direction: "ar",
@@ -281,9 +323,7 @@ function shipmentFact(row, selectedOrderNos) {
         refs,
         status: aggregateStatus(groupBills, "ar_status"),
         tone: arTone,
-      });
-      arLine.unverified = true;
-      settlementLines.push(arLine);
+      }));
     }
   }
   if (!settlementLines.length) {
@@ -327,6 +367,16 @@ function shipmentFact(row, selectedOrderNos) {
     confirm_actor: row.confirm_actor || null,
     confirm_at: row.confirm_at || null,
     invoice_confirm_refs: Array.isArray(row.invoice_confirm_refs) ? row.invoice_confirm_refs : [],
+    consignee: row.consignee || row.customer || null, // consignee=收货人=shipping_plans.customer(出口货买方)
+    shipping: {
+      container_no: row.container_no || null,
+      shipper: row.shipper || null,
+      carrier_code: row.carrier_code || null,
+      vessel: row.vessel || null,
+      etd: row.etd || null,
+      eta: row.eta || null,
+      consignee: row.consignee || row.customer || null,
+    },
     amounts: { payable: ap, paid: apPaid, payable_due: due(ap, apPaid), receivable: ar, received: arPaid, receivable_due: due(ar, arPaid) },
     settlement_lines: settlementLines,
     data_missing: missingForwarder,
@@ -370,7 +420,7 @@ function buildSummary(facts) {
   };
   for (const r of rows) {
     for (const line of r.settlement_lines || []) {
-      if (line.direction === "ar" && !line.unverified && line.due > TOLERANCE) { queues.ar_due.count++; amountMapAdd(queues.ar_due.amounts, line.currency, line.due); }
+      if (line.direction === "ar" && line.due > TOLERANCE) { queues.ar_due.count++; amountMapAdd(queues.ar_due.amounts, line.currency, line.due); }
       if (line.direction === "ap" && line.due > TOLERANCE) { queues.ap_due.count++; amountMapAdd(queues.ap_due.amounts, line.currency, line.due); }
       if (line.data_missing || line.tone === "risk") { queues.risk.count++; amountMapAdd(queues.risk.amounts, line.currency, line.due || line.total || 0); }
     }
@@ -410,9 +460,9 @@ export default async function handler(req, res) {
     if (!requireAuth(req, res)) return;
     if (!FINANCE_ROLES.has(req.user?.role)) return json(res, 403, { error: "Forbidden", message: "仅财务/管理员可访问" });
     const action = String(req.query?.action || "board").trim();
-    if (req.method === "GET" && action === "board") return await handleBoard(req, res);
-    if (req.method === "GET" && action === "summary") return await handleSummary(req, res);
-    if (req.method === "POST" && action === "review-price") return await handleReviewPrice(req, res);
+    if (req.method === "GET" && action === "board") return handleBoard(req, res);
+    if (req.method === "GET" && action === "summary") return handleSummary(req, res);
+    if (req.method === "POST" && action === "review-price") return handleReviewPrice(req, res);
     if (!["GET", "POST"].includes(req.method)) return json(res, 405, { error: "Method not allowed" });
     return json(res, 404, { error: "unknown action" });
   } catch (err) {
