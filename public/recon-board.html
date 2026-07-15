@@ -19,6 +19,7 @@
     .amt{display:grid;grid-template-columns:repeat(3,minmax(92px,1fr));gap:6px;width:100%}.amt span{background:#10151a;border:1px solid #26313a;border-radius:6px;padding:5px 7px;color:#cdd6df;font-size:12px}.amt em{display:block;color:var(--muted);font-style:normal;font-size:11px}.action{width:100%;height:auto;min-height:34px;white-space:normal}.empty{padding:30px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:8px}#error{color:#ffb3b8;margin-left:8px}
     .typetabs{display:flex;gap:4px}.tt{height:32px;padding:0 14px;border:1px solid var(--line);background:#161c22;color:var(--muted);border-radius:6px;cursor:pointer;font-size:13px;font-weight:700}.tt.active{background:#243040;color:#cfe3ff;border-color:#3d6fa0}
     .acct-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}.acct-title{font-size:15px;font-weight:760;color:var(--text)}.totals{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}.totalbox{min-width:300px;background:#10151a;border:1px solid #2c3a45;border-radius:6px;padding:6px}.acct-lines{display:flex;flex-direction:column;gap:7px;margin-top:8px}.ref{font-size:13px;font-weight:760;color:var(--text)}
+    .detail{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;background:#10151a;border:1px solid #26313a;border-top:none;border-radius:0 0 6px 6px;margin-top:-7px;padding:7px 10px 8px;font-size:12px;color:#cdd6df}.detail .f{display:flex;gap:4px;align-items:center;white-space:nowrap}.detail .f em{color:var(--muted);font-style:normal}.detail .slip-link{color:#7fb2e0;text-decoration:none}.detail .slip-link:hover{text-decoration:underline}.detail .ship-info{margin-left:auto;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
     .actions{display:flex;flex-direction:column;gap:5px}.actions .action{width:100%;height:auto;min-height:30px;white-space:normal;font-size:12px;padding:5px 8px}.actions .action.done{opacity:.45;cursor:default}
     dialog{border:1px solid var(--line);border-radius:8px;background:#171c21;color:var(--text);padding:0;max-width:460px;width:calc(100% - 28px)}dialog::backdrop{background:rgba(0,0,0,.55)}.modal{padding:16px}.modal h3{margin:0 0 8px;font-size:16px}.modal p{margin:0 0 14px;color:#cbd5df}.modal-actions{display:flex;justify-content:flex-end;gap:8px}
     @media(max-width:960px){.queues{grid-template-columns:repeat(2,1fr)}.line{grid-template-columns:1fr}.settle{grid-template-columns:1fr}.linechips{justify-content:flex-start}.row.child{margin-left:12px}.amt{grid-template-columns:1fr 1fr}input{min-width:120px}.acct-head{flex-direction:column}.totals{justify-content:flex-start}}
@@ -176,17 +177,80 @@
       const refs=l.refs||{};
       return refs.order_no||refs.shipment_no||l.relation_label||"关联记录";
     }
+    function fmtDate(v){if(!v)return"—";const d=new Date(v);if(isNaN(d))return esc(String(v));return d.toISOString().slice(0,10)}
+    function poField(r){return `<div class="f"><em>PO</em>${esc(r.order_no||r.contract_no||"—")}</div>`}
+    function deliveryField(r){
+      const s=r.shipping||{};
+      const v=r.delivery_date||r.deliver_at||s.eta||s.etd;
+      return `<div class="f"><em>交货</em>${fmtDate(v)}</div>`;
+    }
+    function anchorPriceField(r){
+      const c=r.customer_side||{};
+      const anchored=c.anchored!=null?c.anchored:r.anchored;
+      const pending=(c.receivable_status||r.receivable_status)==="pending_customs";
+      if(anchored===false||pending)return `<div class="f">${tag("待报关","todo")}</div>`;
+      const cur=c.currency||"CNY",amt=c.receivable;
+      if(amt==null)return `<div class="f">${tag("待报关","todo")}</div>`;
+      return `<div class="f"><em>价格</em>${money(cur,amt)}</div>`;
+    }
+    function monthField(r){
+      const s=r.shipping||{};
+      const v=r.month||r.settle_month||s.etd||r.delivery_date;
+      if(!v)return `<div class="f"><em>月份</em>—</div>`;
+      const d=new Date(v);
+      return `<div class="f"><em>月份</em>${isNaN(d)?esc(String(v)):d.toISOString().slice(0,7)}</div>`;
+    }
+    function receivedField(r,view){
+      const c=r.customer_side||{};
+      const cur=c.currency||(linesOf(r)[0]&&linesOf(r)[0].currency)||"CNY";
+      const v=view==="cust"?c.received:r.received;
+      return `<div class="f"><em>代收款</em>${money(cur,v)}</div>`;
+    }
+    function slipField(r,view){
+      const url=view==="cust"?r.slip_file_url:(r.slip_file_url||null);
+      if(url)return `<a class="slip-link" href="${esc(url)}" target="_blank" rel="noopener">查看水单</a>`;
+      return tag("未提交","stale");
+    }
+    function shippingInfoHtml(r){
+      const s=r.shipping||{};
+      const parts=[`<span>${esc(s.carrier_code||"—")}${s.vessel?` / ${esc(s.vessel)}`:""}</span>`,`<span>ETD ${fmtDate(s.etd)}</span>`,`<span>柜号 ${esc(s.container_no||"—")}</span>`];
+      return `<div class="ship-info">${parts.join("")}</div>`;
+    }
+    function forwarderDetailHtml(r){
+      const s=r.shipping||{};
+      const payCur=(r.customer_side&&r.customer_side.currency)||(linesOf(r)[0]&&linesOf(r)[0].currency)||"CNY";
+      return `<div class="detail">
+        <div class="f"><em>CY柜号</em>${esc(s.container_no||"—")}</div>
+        <div class="f"><em>发货人</em>${esc(s.shipper||"—")}</div>
+        <div class="f"><em>收货人</em>${esc(s.consignee||r.consignee||"—")}</div>
+        ${monthField(r)}
+        <div class="f"><em>代收款</em>${money(payCur,r.received)}</div>
+        <div class="f"><em>水单</em>${slipField(r,"forwarder")}</div>
+      </div>`;
+    }
+    function customerDetailHtml(r){
+      return `<div class="detail">
+        ${poField(r)}
+        ${deliveryField(r)}
+        ${anchorPriceField(r)}
+        ${monthField(r)}
+        ${receivedField(r,"cust")}
+        <div class="f"><em>水单</em>${slipField(r,"cust")}</div>
+        ${shippingInfoHtml(r)}
+      </div>`;
+    }
     function objectLineHtml(item,view){
       const {l,r}=item,side=view==="cust"?"应收":"应付",paid=view==="cust"?"已收":"已付",due=view==="cust"?"待收":"待付";
       const chips=[]; if(l.data_missing)chips.push(tag(l.missing_reason||"数据缺失","risk"));
       const inv=invoiceLabel(l); if(inv)chips.push(tag(inv,l.tone||"todo"));
       chips.push(tag(lineStatusLabel(l),l.tone||"todo"));
       const over=overpayChip(l); if(over)chips.push(over);
+      const detail=view==="forwarder"?forwarderDetailHtml(r):(view==="cust"?customerDetailHtml(r):"");
       return `<button type="button" class="settle ${esc(l.tone||"")}" data-row-id="${esc(r.id)}" data-line-id="${esc(l.id)}" title="打开具体记录">
         <div><div class="ref">${esc(lineRef(l))}</div><div class="party">${esc(l.relation_label||"结算关系")}</div><div class="dir">${esc(r.title||"")} ${r.subtitle?`· ${esc(r.subtitle)}`:""}</div></div>
         <div class="amt"><span><em>${side}${esc(l.currency)}</em>${money(l.currency,l.total)}</span><span><em>${paid}${esc(l.currency)}</em>${money(l.currency,l.paid)}</span><span><em>${due}${esc(l.currency)}</em>${money(l.currency,l.due)}</span></div>
         <div class="linechips">${chips.join("")}</div>
-      </button>`;
+      </button>${detail}`;
     }
     function collabTarget(view,name){
       if(view==="factory")return{hash:"customs_collab",label:"🤝 开票协同",who:"工厂"};
