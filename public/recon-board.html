@@ -219,6 +219,27 @@
       const parts=[`<span>${esc(s.carrier_code||"—")}${s.vessel?` / ${esc(s.vessel)}`:""}</span>`,`<span>ETD ${fmtDate(s.etd)}</span>`,`<span>柜号 ${esc(s.container_no||"—")}</span>`];
       return `<div class="ship-info">${parts.join("")}</div>`;
     }
+    function portChargeChipHtml(c){
+      const label=`${esc(c.bucket_label)} ¥${fmt(c.unit)}`;
+      if(c.flag==="insufficient_sample")return `<span class="chip stale" title="历史样本不足3次,暂不比价">${label} · 样本不足</span>`;
+      if(c.flag==="high"){
+        const oh=c.own_history,mh=c.market_history;
+        const pct=Math.round((c.ratio-1)*100);
+        const detail=`${c.bucket_label}:当前 ¥${fmt(c.unit)}/柜,该货代历史均价 ¥${fmt(oh.avg)}(${oh.count}次,区间 ¥${fmt(oh.min)}~¥${fmt(oh.max)}),超均价 ${pct}%。`
+          +(mh?`市场参考:${mh.supplier_count}家货代共${mh.bill_count}次,区间 ¥${fmt(mh.min)}~¥${fmt(mh.max)}。`:"");
+        return chip(`🔴 ${label}`,"risk",detail);
+      }
+      const oh=c.own_history;
+      return `<span class="chip done" title="历史均价 ¥${fmt(oh.avg)}(${oh.count}次)">${label} vs 历史¥${fmt(oh.avg)}</span>`;
+    }
+    function portChargeChecksHtml(r){
+      const checks=r.port_charge_checks||[];
+      if(!checks.length)return"";
+      return `<div class="f" style="width:100%;flex-direction:column;align-items:flex-start;gap:5px">
+        <em>港杂费比价</em>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${checks.map(portChargeChipHtml).join("")}</div>
+      </div>`;
+    }
     function forwarderDetailHtml(r){
       const s=r.shipping||{};
       const payCur=(r.customer_side&&r.customer_side.currency)||(linesOf(r)[0]&&linesOf(r)[0].currency)||"CNY";
@@ -229,6 +250,7 @@
         ${monthField(r)}
         <div class="f"><em>代收款</em>${money(payCur,r.received)}</div>
         <div class="f"><em>水单</em>${slipField(r,"forwarder")}</div>
+        ${portChargeChecksHtml(r)}
       </div>`;
     }
     function customerDetailHtml(r){
