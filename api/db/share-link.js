@@ -13,6 +13,7 @@ const PAGE_PATHS = {
     stock: "/public/templates/product-stock.html?token=",
     orders: "/public/templates/customer-portal.html?token=",
     "sku-recon": "/public/templates/sku-recon.html?token=",
+    "collection": "/public/templates/customer-collection.html?token=",
   },
   factory: {
     "factory-bags": "/public/templates/factory-bags.html?token=",

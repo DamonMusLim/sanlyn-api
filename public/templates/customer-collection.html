@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>款式收集</title>
+<style>
+:root{--bg:#f6f7f9;--text:#172033;--muted:#667085;--line:#d8dee8;--blue:#175cd3;--bad:#b42318;--soft:#f1f5f9;--ok:#15803d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:900px;margin:0 auto;padding:18px 14px 34px}.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h1{margin:0 0 4px;font-size:23px;line-height:1.2}.sub{color:var(--muted);font-size:13px}.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button,input{border:1px solid var(--line);border-radius:7px;background:#fff;font:inherit}button{padding:8px 12px;font-weight:800;cursor:pointer}button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}button.danger{border-color:#fecdca;color:var(--bad)}button:disabled{opacity:.55;cursor:not-allowed}
+input{padding:8px 10px;min-width:0}.pill{border:1px solid var(--line);border-radius:999px;background:#fff;padding:5px 10px;font-weight:800;color:#344054}.addbar{display:none;background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:12px;gap:8px}.addbar.on{display:flex}.addbar input{flex:1}
+.summary{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}.summary .pill{font-size:12px}.customer-group{border-top:1px solid var(--line);padding-top:14px;margin-top:16px}.customer-group:first-child{border-top:0;padding-top:0;margin-top:0}.group-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#344054}.group-code{font:700 14px ui-monospace,Menlo,monospace}.group-count{color:var(--muted);font-size:12px}.card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px;margin:10px 0}.card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.series{min-width:0}.series-name{font-size:20px;font-weight:900;overflow-wrap:anywhere}.meta{margin-top:3px;color:var(--muted);font-size:12px}.customer-code{font:12px ui-monospace,Menlo,monospace;color:#475467;margin-top:4px}
+.chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:14px}.chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:1px solid #b8c7dd;background:#f8fafc;border-radius:999px;padding:5px 10px;font-weight:800;color:#344054;overflow-wrap:anywhere}.chip button{border:0;background:transparent;padding:0 2px;color:var(--bad);font-weight:900}
+.flavor-add{display:inline-flex;gap:6px;align-items:center}.flavor-add input{width:170px;padding:6px 9px}.muted{color:#98a2b3;font-weight:500}.empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:28px 14px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+#ask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:30;align-items:center;justify-content:center}.modal{width:92%;max-width:380px;background:#fff;border-radius:12px;padding:22px;text-align:center}.modal-title{font-weight:900;font-size:17px}.modal-text{color:var(--muted);margin:8px 0 18px}.modal-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+@media(max-width:560px){.wrap{padding:12px}.top{align-items:flex-start}.actions{width:100%}.actions button{flex:1}.addbar.on{display:grid;grid-template-columns:1fr auto}.card-head{display:grid}.series-name{font-size:18px}.flavor-add{width:100%;display:grid;grid-template-columns:1fr auto}.flavor-add input{width:100%}.modal-actions{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1 id="title">款式收集</h1>
+      <div class="sub">填写你的系列和口味</div>
+    </div>
+    <div class="actions">
+      <span class="pill" id="role-pill">…</span>
+      <button class="primary" id="add-toggle">+ 新增系列</button>
+      <button id="refresh">刷新</button>
+    </div>
+  </div>
+  <div class="addbar" id="addbar">
+    <input id="series-input" maxlength="80" placeholder="系列名">
+    <button class="primary" id="series-save">添加</button>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div id="list"><div class="empty">加载中...</div></div>
+</div>
+<div id="ask">
+  <div class="modal">
+    <div class="modal-title">有未提交内容</div>
+    <div class="modal-text">你输入了系列名或口味，但还没提交。</div>
+    <div class="modal-actions">
+      <button data-ask="cancel">继续编辑</button>
+      <button class="danger" data-ask="discard">放弃</button>
+      <button class="primary" data-ask="save">保存</button>
+    </div>
+  </div>
+</div>
+<script>
+const apiBase = location.origin + "/api/db/customer-collection";
+const state = { rows:[], role:"", canEdit:false, orgName:"", currentCustomer:"", progress:{total:0,flavors:0}, busy:false };
+function token(){
+  const cand = [new URLSearchParams(location.search).get("token"), localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
+function authHeaders(json){ const t=token(), h=json?{"Content-Type":"application/json"}:{}; if(t) h.Authorization="Bearer "+t; return h; }
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function qs(){ const p = new URLSearchParams(location.search), cc = p.get("customer_code"); return cc ? "?customer_code="+encodeURIComponent(cc) : ""; }
+function api(action){ return apiBase + (action ? "?action="+encodeURIComponent(action) : qs()); }
+function fmtTime(v){ return v ? new Date(v).toLocaleString("zh-CN",{hour12:false}) : ""; }
+function ago(v){
+  if(!v) return "无记录";
+  const sec = Math.max(1, Math.floor((Date.now() - new Date(v).getTime()) / 1000));
+  if(sec < 60) return "刚刚";
+  if(sec < 3600) return Math.floor(sec/60) + "分钟前";
+  if(sec < 86400) return Math.floor(sec/3600) + "小时前";
+  return fmtTime(v);
+}
+function dirtyInputs(){
+  const out = [];
+  const s = document.getElementById("series-input");
+  if(s && s.value.trim()) out.push({type:"series", value:s.value.trim()});
+  document.querySelectorAll("[data-flavor-input]").forEach(i=>{ if(i.value.trim()) out.push({type:"flavor", id:Number(i.dataset.flavorInput), value:i.value.trim()}); });
+  return out;
+}
+function hasDirty(){ return dirtyInputs().length > 0; }
+function roleText(){
+  if(state.role === "customer") return state.currentCustomer || "客户";
+  if(state.role === "sanlyn" || state.role === "admin") return state.currentCustomer ? "内部 · "+state.currentCustomer : "内部 · 全部客户";
+  return state.role || "未知";
+}
+function isInternal(){ return state.role === "sanlyn" || state.role === "admin"; }
+function render(){
+  document.getElementById("role-pill").textContent = roleText();
+  const name = state.orgName || state.currentCustomer || "客户";
+  document.getElementById("title").textContent = "款式收集 · " + name;
+  document.title = "款式收集 · " + name;
+  document.getElementById("summary").innerHTML =
+    `<span class="pill">系列 ${Number(state.progress.total||state.rows.length)}</span><span class="pill">口味 ${Number(state.progress.flavors||0)}</span>` +
+    (isInternal() ? `<span class="pill">customer_code ${esc(state.currentCustomer || "全部")}</span>` : "");
+  document.getElementById("list").innerHTML = state.rows.length ? (isInternal() ? groupedCards() : state.rows.map(card).join("")) : '<div class="empty">点+新增系列开始</div>';
+}
+function groupedCards(){
+  const groups = [];
+  for(const row of state.rows){
+    const code = row.customer_code || "未分配";
+    let group = groups[groups.length - 1];
+    if(!group || group.code !== code){ group = {code, rows:[]}; groups.push(group); }
+    group.rows.push(row);
+  }
+  return groups.map(g=>{
+    const flavors = g.rows.reduce((n,r)=>n + (Array.isArray(r.flavors) ? r.flavors.length : 0), 0);
+    return `<section class="customer-group">
+      <div class="group-head">
+        <div class="group-code">${esc(g.code)}</div>
+        <div class="group-count">系列 ${g.rows.length} · 口味 ${flavors}</div>
+      </div>
+      ${g.rows.map(card).join("")}
+    </section>`;
+  }).join("");
+}
+function card(r){
+  const fs = Array.isArray(r.flavors) ? r.flavors : [];
+  const chips = fs.length ? fs.map((x,i)=>`<span class="chip">${esc(x)}<button type="button" data-del-flavor="${i}" data-id="${r.id}">×</button></span>`).join("") : '<span class="muted">未设口味</span>';
+  return `<section class="card" data-card="${r.id}">
+    <div class="card-head">
+      <div class="series">
+        <div class="series-name">${esc(r.series_name)}</div>
+        <div class="meta" title="${esc(fmtTime(r.updated_at))}">最后更新 ${esc(ago(r.updated_at))}</div>
+        ${isInternal() ? `<div class="customer-code">${esc(r.customer_code)}</div>` : ""}
+      </div>
+      <button class="danger" data-del-series="${r.id}">删除</button>
+    </div>
+    <div class="chips" data-flavors="${r.id}">${chips}<span class="flavor-add"><input data-flavor-input="${r.id}" maxlength="40" placeholder="加口味,回车"><button class="primary" data-add-flavor="${r.id}">+</button></span></div>
+  </section>`;
+}
+async function load(){
+  document.getElementById("list").innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(apiBase + qs(), {credentials:"include", headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error || "加载失败");
+    state.rows = (r.rows || []).map(x=>({...x, flavors:Array.isArray(x.flavors)?x.flavors:[]}));
+    state.role = r.role || ""; state.canEdit = !!r.can_edit; state.orgName = r.org_name || "";
+    state.currentCustomer = r.current_customer_code || ""; state.progress = r.progress || {};
+    render();
+  }catch(e){ document.getElementById("list").innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+}
+async function addSeries(){
+  const inp = document.getElementById("series-input"), name = inp.value.trim();
+  if(!name) return false;
+  const body = {action:"add-series", series_name:name};
+  const cc = new URLSearchParams(location.search).get("customer_code");
+  if((state.role === "sanlyn" || state.role === "admin") && cc) body.customer_code = cc;
+  const r = await fetch(api("add-series"), {method:"POST", credentials:"include", headers:authHeaders(true), body:JSON.stringify(body)}).then(x=>x.json());
+  if(!r.success) throw new Error(r.error || "新增失败");
+  inp.value = ""; document.getElementById("addbar").classList.remove("on");
+  await load(); return true;
+}
+async function setFlavors(id, flavors){
+  const r = await fetch(api("set-flavors"), {method:"PATCH", credentials:"include", headers:authHeaders(true), body:JSON.stringify({action:"set-flavors", id, flavors})}).then(x=>x.json());
+  if(!r.success) throw new Error(r.error || "口味保存失败");
+  const row = state.rows.find(x=>x.id===Number(id)); if(row){ row.flavors = r.flavors || []; row.updated_at = new Date().toISOString(); }
+  render();
+}
+async function addFlavor(id, value){
+  const inp = value == null ? document.querySelector(`[data-flavor-input="${CSS.escape(String(id))}"]`) : null;
+  const v = (value == null ? inp?.value : value || "").trim();
+  if(!v) return false;
+  const row = state.rows.find(x=>x.id===Number(id)); if(!row) return false;
+  const fs = [...(Array.isArray(row.flavors)?row.flavors:[])];
+  if(!fs.includes(v)) fs.push(v);
+  await setFlavors(id, fs);
+  return true;
+}
+async function delFlavor(id, idx){
+  const row = state.rows.find(x=>x.id===Number(id)); if(!row) return;
+  const fs = (Array.isArray(row.flavors)?row.flavors:[]).filter((_,i)=>i!==Number(idx));
+  await setFlavors(id, fs);
+}
+async function delSeries(id){
+  if(!confirm("停用该系列?可恢复")) return;
+  const r = await fetch(api("del-series"), {method:"PATCH", credentials:"include", headers:authHeaders(true), body:JSON.stringify({action:"del-series", id:Number(id)})}).then(x=>x.json());
+  if(!r.success) throw new Error(r.error || "删除失败");
+  await load();
+}
+function askSave(){ return new Promise(res=>{ const m=document.getElementById("ask"); m.style.display="flex"; m._res=res; }); }
+async function saveDrafts(){
+  const drafts = dirtyInputs();
+  const series = drafts.find(x=>x.type==="series");
+  if(series) await addSeries();
+  for(const d of drafts.filter(x=>x.type==="flavor")) await addFlavor(d.id, d.value);
+  await load();
+}
+async function guardDirty(){
+  if(!hasDirty()) return true;
+  const a = await askSave();
+  if(a === "cancel") return false;
+  if(a === "discard"){ document.getElementById("series-input").value=""; document.querySelectorAll("[data-flavor-input]").forEach(i=>i.value=""); return true; }
+  try{ await saveDrafts(); return true; }catch(e){ alert(e.message); return false; }
+}
+document.addEventListener("click", async e=>{
+  if(e.target.dataset && e.target.dataset.ask){ const m=document.getElementById("ask"); m.style.display="none"; if(m._res){ m._res(e.target.dataset.ask); m._res=null; } return; }
+  try{
+    if(e.target.id==="add-toggle"){ document.getElementById("addbar").classList.toggle("on"); document.getElementById("series-input").focus(); return; }
+    if(e.target.id==="series-save"){ await addSeries(); return; }
+    if(e.target.id==="refresh"){ if(await guardDirty()) await load(); return; }
+    if(e.target.dataset && e.target.dataset.addFlavor){ await addFlavor(e.target.dataset.addFlavor); return; }
+    if(e.target.dataset && e.target.dataset.delFlavor !== undefined){ await delFlavor(e.target.dataset.id, e.target.dataset.delFlavor); return; }
+    if(e.target.dataset && e.target.dataset.delSeries){ if(await guardDirty()) await delSeries(e.target.dataset.delSeries); }
+  }catch(err){ alert(err.message); }
+});
+document.addEventListener("keydown", async e=>{
+  if(e.target.id==="series-input" && e.key==="Enter"){ e.preventDefault(); try{ await addSeries(); }catch(err){ alert(err.message); } }
+  const id = e.target.dataset && e.target.dataset.flavorInput;
+  if(id && e.key==="Enter"){ e.preventDefault(); try{ await addFlavor(id); }catch(err){ alert(err.message); } }
+});
+window.addEventListener("beforeunload", e=>{ if(hasDirty()){ e.preventDefault(); e.returnValue=""; } });
+load();
+</script>
+</body>
+</html>

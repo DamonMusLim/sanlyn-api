@@ -10,7 +10,7 @@
 .topbar{height:60px;display:flex;align-items:center;gap:12px;padding:0 18px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}.mark{width:34px;height:34px;border-radius:8px;background:#e0f2fe;color:#075985;display:grid;place-items:center;font-weight:900}.title{font-size:16px;font-weight:900}.sub{font-size:11px;color:var(--muted);margin-top:2px}.pill{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:999px;padding:4px 9px;font-size:11px;white-space:nowrap}
 .main{max-width:1280px;margin:auto;padding:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:14px}.section-title{font-weight:900;margin-bottom:10px}.toolbar{display:grid;grid-template-columns:1fr 150px 120px;gap:10px}.field{display:flex;flex-direction:column;gap:5px}.label{font-size:11px;color:var(--muted);font-weight:800}.input,.select{width:100%;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:var(--text);padding:8px 9px;outline:none}.input:focus,.select:focus{border-color:#38bdf8}
 .btn{border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#172033;padding:8px 11px;cursor:pointer;font-weight:900}.btn:disabled{opacity:.55;cursor:not-allowed}.btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn-success{background:var(--green);border-color:var(--green);color:#fff}.btn-sm{padding:6px 9px;font-size:12px}
-.table-wrap{overflow:auto}table{width:100%;min-width:960px;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:middle}th{font-size:11px;color:var(--muted);background:#f8fafc}td{font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.muted{color:var(--muted)}.low{background:#fff7ed}.low .stock{color:var(--red);font-weight:900}.num{width:120px}.empty{text-align:center;color:var(--muted);padding:28px}.toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;border-radius:8px;padding:10px 12px;display:none;max-width:360px;z-index:9}.actions{display:flex;gap:7px;align-items:center}.mode{display:flex;gap:8px;flex-wrap:wrap}.note-row{display:grid;grid-template-columns:160px 1fr 140px;gap:10px;align-items:end;margin-top:12px}
+.table-wrap{overflow:auto}table{width:100%;min-width:1020px;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:middle}th{font-size:11px;color:var(--muted);background:#f8fafc}td{font-size:12px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.muted{color:var(--muted)}.sku-main{font-weight:900}.sku-sub{font-size:10px;color:var(--muted);margin-top:3px}.bag-img{width:44px;height:44px;border-radius:6px;object-fit:cover;border:1px solid var(--line);background:#f1f5f9;display:block}.img-empty{width:44px;height:44px;border-radius:6px;border:1px solid var(--line);background:#f1f5f9;color:var(--muted);display:grid;place-items:center;font-size:10px}.low{background:#fff7ed}.low .stock{color:var(--red);font-weight:900}.num{width:120px}.empty{text-align:center;color:var(--muted);padding:28px}.toast{position:fixed;right:16px;bottom:16px;background:#111827;color:#fff;border-radius:8px;padding:10px 12px;display:none;max-width:360px;z-index:9}.actions{display:flex;gap:7px;align-items:center}.mode{display:flex;gap:8px;flex-wrap:wrap}.note-row{display:grid;grid-template-columns:160px 1fr 140px;gap:10px;align-items:end;margin-top:12px}
 @media(max-width:760px){.toolbar,.note-row{grid-template-columns:1fr}.main{padding:12px}.topbar{padding:0 12px}.title{font-size:15px}}
 </style>
 </head>
@@ -25,7 +25,7 @@
   <div class="panel">
     <div class="section-title">库存筛选</div>
     <div class="toolbar">
-      <input class="input" id="q" placeholder="搜索袋子 SKU / 名称 / 规格">
+      <input class="input" id="q" placeholder="搜索条形码 / SKU / 名称 / 规格">
       <select class="select" id="low-only"><option value="">全部袋子</option><option value="1">只看低库存</option></select>
       <button class="btn btn-primary" id="refresh-btn">刷新</button>
     </div>
@@ -41,7 +41,7 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>袋子 SKU</th><th>名称</th><th>规格</th><th>单位</th><th>当前库存</th><th>安全库存</th><th>供应商</th><th>实盘数量</th><th>补充</th></tr>
+          <tr><th>品牌码 / SKU</th><th>图片</th><th>名称</th><th>规格</th><th>单位</th><th>当前库存</th><th>安全库存</th><th>供应商</th><th>实盘数量</th><th>补充</th></tr>
         </thead>
         <tbody id="bag-body"></tbody>
       </table>
@@ -70,7 +70,7 @@ function filtered(){
   const q = qs("q").value.trim().toLowerCase();
   const low = qs("low-only").value === "1";
   return bags.filter(b => {
-    const hay = [b.sku_code,b.name,b.spec,b.supplier].map(x => String(x || "").toLowerCase()).join(" ");
+    const hay = [b.barcode,b.sku_code,b.name,b.spec,b.supplier].map(x => String(x || "").toLowerCase()).join(" ");
     const isLow = Number(b.current_stock || 0) < Number(b.safety_stock || 0);
     return (!q || hay.includes(q)) && (!low || isLow);
   });
@@ -91,8 +91,13 @@ function render(){
   qs("bag-body").innerHTML = rows.map(b => {
     const low = Number(b.current_stock || 0) < Number(b.safety_stock || 0);
     const sku = esc(b.sku_code);
+    const barcodeRaw = String(b.barcode || "").trim();
+    const barcode = barcodeRaw ? esc(barcodeRaw) : "—";
+    const imageUrl = String(b.image_url || "").trim();
+    const image = imageUrl ? `<a href="${esc(imageUrl)}" target="_blank" rel="noopener"><img class="bag-img" src="${esc(imageUrl)}" alt="${esc(b.name || b.sku_code || "袋子图片")}"></a>` : `<div class="img-empty">待补</div>`;
     return `<tr class="${low ? "low" : ""}">
-      <td class="mono">${sku}</td>
+      <td><div class="mono sku-main">${barcode}</div><div class="mono sku-sub">${sku}</div></td>
+      <td>${image}</td>
       <td>${esc(fmt(b.name))}</td>
       <td>${esc(fmt(b.spec))}</td>
       <td>${esc(fmt(b.unit))}</td>
