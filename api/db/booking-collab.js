@@ -89,7 +89,7 @@ async function handleValidate(req, res, pool) {
     `SELECT recipient_role, meta, expires_at
        FROM magic_links
       WHERE token_hash = $1
-        AND recipient_role IN ('factory_booking','customer_booking','trucking_booking','broker_booking','supplier_portal')
+        AND recipient_role IN ('factory_booking','customer_booking','trucking_booking','broker_booking','supplier_portal','shipper_booking')
         AND expires_at > NOW()
         AND revoked_at IS NULL
       LIMIT 1`,
@@ -462,6 +462,16 @@ async function handleValidate(req, res, pool) {
           delete sheet.freight_term; delete sheet.plan_freight_term;
         }
       }
+      // shipper_booking 发货人只做港杂账单(走 invoice-collab-section→invoice-collab-confirm)，
+      // 无权访问订舱 sheet：若 shipper token 被手动指向 collab-portal，validate 一律 fail-closed，
+      // 绝不返回下游客户/条款/订单/柜/航班(命脉红线：发货人不得见下游客户)。
+      if (role === "shipper_booking") {
+        delete sheet.customer_name; delete sheet.customer_en;
+        delete sheet.freight_term; delete sheet.plan_freight_term; delete sheet.customer_selected_sailing;
+        sheet.orders = []; sheet.factory_cargo = []; sheet.factory_entry = {};
+        sheet.containers_live = []; sheet.containers_detail = []; sheet.factory_loading_done = {};
+        sheet.sailings = []; sheet.scope_missing = true;
+      }
       return sheet;
     })(),
     ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
@@ -473,6 +483,7 @@ async function handleValidate(req, res, pool) {
       segment: meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream"
         ? "all"
         : role === "customer_booking" ? "customer"
+        : role === "shipper_booking" ? "port_charge"
         : role === "factory_booking" ? "factory"
         : role === "trucking_booking" ? "truck"
         : role === "broker_booking" ? "customs"
@@ -2443,6 +2454,10 @@ async function handleMasterPreviewToken(req, res, pool) {
   if (party === "customer") {
     page = "collab-customer.html";
     role = "customer_booking";
+  } else if (party === "shipper") {
+    page = "templates/invoice-collab-section.html";
+    role = "shipper_booking";
+    if (company_label) meta.shipper_scope = { label: String(company_label).slice(0, 60) };
   } else if (party === "factory") {
     // 工厂预览必须开真工厂页(collab-factory.html)+ factory_booking 角色，
     // 与 handleSendFactoryLink 对齐；collab-portal 没有工厂段内容会显示成海运界面
