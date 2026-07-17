@@ -154,40 +154,34 @@ async function loadContainers(pool, p) {
     },
     qty: rows.length || ctnNos.length || num(p.container_qty) || 1,
     type: p.container_type || "40HQ",
-    freight_term: "PREPAID",
+    freight_term: p.freight_term || "PREPAID",
   };
 }
 
 async function portCharges(pool, p) {
   const blNo = p.bl_no || "—";
+  // 2026-07-18 根治(CY00376实锤):真账单常不挂payer_company_code,非空硬门槛会整批漏掉真数据;
+  // 且对外账单必须用sale_amount卖价(amount=成本,绝不外泄);sale_amount=0的行(如改单费内部项)不上账单。
   let factoryCode = "";
+  let rows = [];
   try {
     const r = await pool.query(
-      `SELECT DISTINCT payer_company_code
+      `SELECT cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis, payer_company_code
        FROM active_freight_supplier_bills
        WHERE (bl_no = $1 OR link_plan_id = $2)
          AND (cost_category !~* '海运|ocean|freight')
-         AND COALESCE(amount,0) > 0 AND COALESCE(payer_company_code,'') <> ''
-       LIMIT 1`,
+         AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
+       ORDER BY id`,
       [blNo, String(p.id)]
     );
-    factoryCode = r.rows[0]?.payer_company_code || "";
+    factoryCode = r.rows.find(x => (x.payer_company_code || "") !== "")?.payer_company_code || "";
+    rows = r.rows.map(x => {
+      const billed = x.sale_amount != null ? Number(x.sale_amount) : Number(x.amount);
+      const q = Number(x.qty) || 1;
+      return { cost_category: x.cost_category, charge_basis: x.charge_basis || "整票", currency: "CNY",
+               qty: q, unit_price: Number((billed / q).toFixed(2)), amount: Number(billed.toFixed(2)) };
+    }).filter(x => x.amount > 0);
   } catch (_) {}
-  let rows = [];
-  if (factoryCode) {
-    try {
-      const r = await pool.query(
-        `SELECT cost_category, amount, currency, qty, unit_price, charge_basis
-         FROM active_freight_supplier_bills
-         WHERE (bl_no = $1 OR link_plan_id = $3) AND payer_company_code = $2
-           AND (cost_category !~* '海运|ocean|freight')
-           AND UPPER(COALESCE(currency,'CNY')) = 'CNY' AND COALESCE(amount,0) > 0
-         ORDER BY id`,
-        [blNo, factoryCode, String(p.id)]
-      );
-      rows = r.rows;
-    } catch (_) {}
-  }
   if (!rows.length) {
     const fieldRows = [
       ["码头操作费(THC)", p.thc_fee], ["单证费", p.doc_fee], ["电放费", p.tlx_fee],
@@ -233,7 +227,8 @@ export async function buildShippingPlanDocData(pool, id, page) {
   };
   if (page === "portcharge") {
     const pc = await portCharges(pool, p);
-    let factory = await loadFactory(pool, pc.factoryCode);
+    const isExw = /EXW/i.test(p.freight_term || "");
+    let factory = isExw ? await loadCustomer(pool, p) : await loadFactory(pool, pc.factoryCode);
     if (!factory || !(factory.name_cn || factory.name_en)) {
       try {
         const facR = await pool.query(

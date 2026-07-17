@@ -1,5 +1,75 @@
 // /api/db/kp.js — 工厂开票门户页(公开). 链接支持 ?o=订单号(初期无token) / ?c=短码 / ?t=hmac
-import { setCors } from "../db.js";
+import crypto from "crypto";
+import { getPool, setCors } from "../db.js";
+
+function rawToHash(raw) {
+  return crypto.createHash("sha256").update(String(raw || "")).digest("hex");
+}
+
+function expiredHtml() {
+  return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>链接已失效 · Sanlyn</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#1e293b;font-family:-apple-system,"PingFang SC",sans-serif}.card{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center}.title{font-size:18px;font-weight:800;margin-bottom:8px}.msg{font-size:14px;color:#64748b;line-height:1.7}</style></head><body><div class="card"><div class="title">链接已失效</div><div class="msg">请联系 Sanlyn 重新获取</div></div></body></html>`;
+}
+
+function setFwdCookie(res, token) {
+  var maxAge = 30 * 24 * 60 * 60;
+  var parts = [
+    "fwd_session=" + encodeURIComponent(token),
+    "Max-Age=" + maxAge,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Secure",
+  ];
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+async function resolveForwarderCode(req, res) {
+  var code = String((req.query && req.query.c) || "").trim();
+  if (!/^[A-Za-z0-9]{10}$/.test(code)) return false;
+  var pool = getPool();
+  var hash = rawToHash(code);
+  var linkRows = await pool.query(
+    `SELECT meta
+      FROM magic_links
+     WHERE token_hash = $1
+       AND recipient_role = 'fwd_portal'
+       AND revoked_at IS NULL
+       AND (expires_at IS NULL OR expires_at > NOW())
+      LIMIT 1`,
+    [hash]
+  );
+  if (!linkRows.rows.length) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(410).send(expiredHtml());
+    return true;
+  }
+  var meta = linkRows.rows[0].meta || {};
+  var companyId = Number(meta.company_id);
+  if (!Number.isInteger(companyId) || companyId <= 0) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(410).send(expiredHtml());
+    return true;
+  }
+  var tokenRows = await pool.query(
+    `SELECT code
+       FROM forwarder_portal_tokens
+      WHERE company_id = $1
+        AND (expires_at IS NULL OR expires_at > NOW())
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [companyId]
+  );
+  if (!tokenRows.rows.length) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(410).send(expiredHtml());
+    return true;
+  }
+  var token = tokenRows.rows[0].code;
+  setFwdCookie(res, token);
+  res.status(302).setHeader("Location", "/forwarder-quote/" + encodeURIComponent(token));
+  res.end();
+  return true;
+}
 const HTML = `<!DOCTYPE html><html lang="zh"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>采购开票 · Sanlyn</title>
@@ -82,6 +152,7 @@ if(!QSTR){document.getElementById("app").innerHTML='<div class="card"><div class
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method === "GET" && await resolveForwarderCode(req, res)) return;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   return res.status(200).send(HTML);
 }

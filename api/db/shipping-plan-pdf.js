@@ -745,7 +745,7 @@ ${printBtn}
       const totalCartons = p.total_cartons || p.raw?.totalCtns || null;
       const totalGW      = p.gross_weight_kg || null;
       const totalCBM     = p.total_cbm || null;
-      const freightTerm  = "PREPAID";
+      const freightTerm  = p.freight_term || "PREPAID";
 
       // ── 方案A: 同BL多个shipping_plan → 每个plan一柜 ──
       // ── 方案B: 单plan多PO → 查orders表取每PO的CTN/GW/CBM ──
@@ -1092,7 +1092,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       const totalCartons = p.total_cartons || p.raw?.totalCtns || null;
       const totalGW      = p.gross_weight_kg || null;
       const totalCBM     = p.total_cbm || null;
-      const freightTerm  = "PREPAID";
+      const freightTerm  = p.freight_term || "PREPAID";
 
       let factoryCode = "";
       try {
@@ -1122,6 +1122,8 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
           factory = factoryRes.rows[0] || null;
         } catch(_) {}
       }
+      const _isExwPc = /EXW/i.test(p.freight_term || "");
+      if (_isExwPc && cust) factory = { name_cn: cust.name_en || cust.name_cn, address: cust.address || "" };
       let billTo = factory ? (factory.name_cn || factoryCode) : factoryCode;
       if (!billTo) {
         try {
@@ -1137,19 +1139,40 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       if (factoryCode) {
         try {
           const chargeRes = await pool.query(
-            `SELECT cost_category, amount, currency, qty, unit_price, charge_basis
+            `SELECT cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis
              FROM active_freight_supplier_bills
              WHERE (bl_no = $1 OR link_plan_id = $3)
                AND payer_company_code = $2
                AND (cost_category !~* '海运|ocean|freight')
                AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
-               AND COALESCE(amount,0) > 0
              ORDER BY id`,
             [blNo, factoryCode, String(p.id)]
           );
           portChargeRows = chargeRes.rows;
         } catch(_) {}
       }
+      // 2026-07-18 根治:真账单常不挂payer_company_code(CY00376全空被漏),无payer时取全部非海运CNY行
+      if (!portChargeRows.length) {
+        try {
+          const anyRes = await pool.query(
+            `SELECT cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis
+             FROM active_freight_supplier_bills
+             WHERE (bl_no = $1 OR link_plan_id = $2)
+               AND (cost_category !~* '海运|ocean|freight')
+               AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
+             ORDER BY id`,
+            [blNo, String(p.id)]
+          );
+          portChargeRows = anyRes.rows;
+        } catch(_) {}
+      }
+      // 对外账单一律用 sale_amount 卖价(amount=成本绝不外泄);sale=0的内部项(如改单费)不上账单
+      portChargeRows = portChargeRows.map(x => {
+        const billed = x.sale_amount != null ? Number(x.sale_amount) : Number(x.amount);
+        const q = Number(x.qty) || 1;
+        return { cost_category: x.cost_category, charge_basis: x.charge_basis || "整票", currency: "CNY",
+                 qty: q, unit_price: Number((billed / q).toFixed(2)), amount: Number(billed.toFixed(2)) };
+      }).filter(x => x.amount > 0);
 
       // ── 标准港杂费率卡（Damon 2026-06-29 定，覆盖系统脏数据）整票×1 / 每柜×柜量 ──
       // 2026-07-06 根治：真实账单(freight_supplier_bills 已挂 payer_company_code)存在时优先用真实数据，
