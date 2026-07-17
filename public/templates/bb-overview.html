@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>巴匕总览</title>
+<style>
+:root{--bg:#f6f7f9;--text:#172033;--muted:#667085;--line:#d8dee8;--head:#eef2f7;--blue:#175cd3;--bad:#b42318;--ok:#15803d;--warn:#b45309}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:1160px;margin:0 auto;padding:20px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px}
+h1{font-size:21px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
+button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:7px 11px;font-weight:700;cursor:pointer;font:inherit}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+.kpi h4{margin:0 0 6px;font-size:12.5px;color:var(--muted)}.kpi .v{font-size:19px;font-weight:800}
+.kpi .s{font-size:11.5px;color:var(--muted);margin-top:3px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.p-head{padding:10px 14px;background:#f8fafc;border-bottom:1px solid var(--line);font-weight:800;display:flex;justify-content:space-between}
+.p-head .n{color:var(--muted);font-weight:700;font-size:12px}
+.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:640px}
+th,td{padding:8px 10px;border-bottom:1px solid #f0f2f5;text-align:left;white-space:nowrap;font-size:12.5px}
+th{background:var(--head);color:#344054;font-size:11.5px}tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.best{color:var(--ok);font-weight:800}.pending{color:#98a2b3}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;border:1px solid var(--line)}
+.b-warn{background:#fffaeb;color:var(--warn);border-color:#fedf89}.b-bad{background:#fef3f2;color:var(--bad);border-color:#fecdca}
+.empty{padding:20px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+.alert-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+.alert-grid .panel{margin-bottom:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>🏢 巴匕总览</h1><div class="sub" id="scope">全工厂库存 · 供应商报价 · 同款比价 · 异常看板 · 仅内部</div></div>
+    <button id="refresh">刷新</button>
+  </div>
+  <div id="body"><div class="empty">加载中...</div></div>
+</div>
+<script>
+const apiUrl = "/api/db/bb-overview";
+function token(){
+  const cand = [new URLSearchParams(location.search).get("token"),
+    localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
+function authHeaders(){ const t=token(); return t?{Authorization:"Bearer "+t}:{}; }
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function num(v){return v==null||v===""?"—":Number(v).toLocaleString(undefined,{maximumFractionDigits:4});}
+const SUP_SHORT = {"SUP-CZJK":"冀凯","SUP-ZS":"中砂"};
+function render(d){
+  const root = document.getElementById("body");
+  const f = d.factories||[], s = d.suppliers||[], cp = d.compare||[], al = d.alerts||{};
+  const kpis = `<div class="cards">
+    ${f.map(x=>`<div class="kpi"><h4>🏭 ${esc(x.factory_name)}</h4><div class="v">${num(x.stock_sum)}</div>
+      <div class="s">${x.sku_count} SKU · 已填 ${x.filled_skus} · 缺口 ${num(x.gap_sum)}</div></div>`).join("")}
+    ${s.map(x=>`<div class="kpi"><h4>📦 ${esc(x.supplier_name)}</h4><div class="v">${x.priced}/${x.styles}</div>
+      <div class="s">已报价/款式 · 有图 ${x.with_image}</div></div>`).join("")}
+  </div>`;
+  const cmp = `<div class="panel"><div class="p-head"><span>⚖️ 同款比价(冀凯 vs 中砂)</span><span class="n">${cp.length} 组</span></div>
+    <div class="table-wrap"><table><thead><tr><th>款式</th><th>供应商</th><th class="num">未含税</th><th class="num">含税价</th><th class="num">起订量</th><th class="num">交期</th><th>有效期</th></tr></thead><tbody>
+    ${cp.map(g=>g.offers.map((o,i)=>`<tr>
+      ${i===0?`<td rowspan="${g.offers.length}"><strong>${esc(g.name)}</strong></td>`:""}
+      <td>${esc(SUP_SHORT[o.supplier_code]||o.supplier_code)}</td>
+      <td class="num">${o.price_ex_tax==null?'<span class="pending">待填</span>':num(o.price_ex_tax)}</td>
+      <td class="num">${o.price_inc_tax==null?'<span class="pending">待填</span>':(o.price_inc_tax===g.best_inc?`<span class="best">${num(o.price_inc_tax)} ★低</span>`:num(o.price_inc_tax))}</td>
+      <td class="num">${num(o.moq)}</td><td class="num">${num(o.lead_time_days)}</td><td>${esc(o.valid_until||"—")}</td>
+    </tr>`).join("")).join("")}
+    </tbody></table></div></div>`;
+  const alertPanel = (title, rows, cols, mapRow) => `<div class="panel"><div class="p-head"><span>${title}</span><span class="n">${rows.length}</span></div>
+    ${rows.length?`<div class="table-wrap"><table><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody>${rows.map(mapRow).join("")}</tbody></table></div>`:'<div class="empty">无</div>'}</div>`;
+  const alerts = `<div class="alert-grid">
+    ${alertPanel("⚠️ 链接发了没人打开", al.links_unopened||[], ["对象","页面"], r=>`<tr><td>${esc(r.company)}</td><td>${esc(r.page)}</td></tr>`)}
+    ${alertPanel("🈳 供应商未报价款数", al.unpriced||[], ["供应商","未报价款"], r=>`<tr><td>${esc(SUP_SHORT[r.supplier_code]||r.supplier_code)}</td><td><span class="badge b-warn">${r.c} 款</span></td></tr>`)}
+    ${alertPanel("📉 库存低于安全值", al.stock_gaps||[], ["SKU","库存","安全值"], r=>`<tr><td>${esc(r.sku)}</td><td>${num(r.current_stock)}</td><td>${num(r.safety_stock)}</td></tr>`)}
+    ${alertPanel("⏰ 报价已过期", al.quotes_expired||[], ["款式","供应商","过期日"], r=>`<tr><td>${esc(r.name)}</td><td>${esc(SUP_SHORT[r.supplier_code]||r.supplier_code)}</td><td><span class="badge b-bad">${esc(r.d)}</span></td></tr>`)}
+    ${alertPanel("📦 来料实收差异", al.receipt_diffs||[], ["袋子","下单","实收"], r=>`<tr><td>${esc(r.material_sku)}</td><td>${num(r.order_qty)}</td><td>${num(r.real_qty)}</td></tr>`)}
+  </div>`;
+  root.innerHTML = kpis + cmp + alerts;
+}
+async function load(){
+  const root = document.getElementById("body");
+  root.innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"加载失败(需内部账号)");
+    render(r);
+  }catch(e){ root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+}
+document.addEventListener("click", e=>{ if(e.target.id==="refresh") load(); });
+load();
+</script>
+</body>
+</html>

@@ -85,6 +85,7 @@ export function requireRole(req, res, roles) {
 
 // ── 完全公开路径（无需任何 token）──
 const PUBLIC_PATHS = [
+  "/api/db/statement-portal-data",  // 客户对账单门户 public token
   "/",
   "/health",
   // "/api/db/accounts", // REMOVED 2026-04-22 P0 — no longer public; use /api/db/auth-login

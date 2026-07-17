@@ -1,6 +1,12 @@
 export async function renderSoSqFreight(ctx){
   let { type, sp, spraw, raw, cfg3, soNo, html, _xlsCapture, totRow, ap, esc, pick, fmtD } = ctx;
 
+  // type=so 走《出口货物委托单》专用模板(独立文件，防漂移)；sq/freight-quote 保持原样
+  if (type === "so") {
+    const { renderBookingInstruction } = await import("./booking-instruction.js");
+    return await renderBookingInstruction(ctx);
+  }
+
         var isSO = (type==="so");
         var docTitle = isSO ? "海运单" : "海运确认报价";
         var docTitleEN = isSO ? "SHIPPING ORDER" : "OCEAN FREIGHT QUOTATION";

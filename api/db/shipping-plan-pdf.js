@@ -47,6 +47,15 @@ export default async function handler(req, res) {
       _cdQuery.container_no = _cdQuery.container_no || _cdQuery.container || "";
       const _cdHtml = await renderCustomsDeclaration(pool, id || bl, _cdQuery);
       if (!_cdHtml) return res.status(404).send("<h1>Shipment not found</h1>");
+      // format=pdf → 转可下载 PDF(复用 _html-to-pdf.js: puppeteer-core+系统chrome); 否则返回 HTML 供浏览器打印
+      if (String(req.query.format || "") === "pdf") {
+        const { htmlToPdf } = await import("./_html-to-pdf.js");
+        const _cdPdf = await htmlToPdf(_cdHtml);
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("报关单_" + (bl || id || "") + ".pdf"));
+        res.setHeader("Cache-Control", "no-store");
+        return res.status(200).send(_cdPdf);
+      }
       return res.status(200).send(_cdHtml);
     }
 
@@ -167,14 +176,15 @@ export default async function handler(req, res) {
     const isFobInvoice = type === "fob_invoice";
     const isFobPortcharge = type === "fob_portcharge";
     const isDebitNote  = type === "freight_debit_note";
-    const isConfirm    = !isCost && !isSI && !isBooking && !isBlDraft && !isFreight && !isFobInvoice && !isFobPortcharge && !isDebitNote;
+    const isExwInvoice = type === "exw_invoice"; // EXW全费用账单(客户版) — 独立渲染器 doc-exw-invoice.js
+    const isConfirm    = !isCost && !isSI && !isBooking && !isBlDraft && !isFreight && !isFobInvoice && !isFobPortcharge && !isDebitNote && !isExwInvoice;
 
     const generatedAt = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     const genDate = new Date().toISOString().slice(0, 10);
 
     // ── Fetch customer/consignee info for docs that need it ──
     let cust = null;
-    if (isBooking || isBlDraft || isFreight || isFobInvoice || isFobPortcharge) {
+    if (isBooking || isBlDraft || isFreight || isFobInvoice || isFobPortcharge || isExwInvoice) {
       const customerName = p.customer_en || p.customer_cn || p.customer || "";
       if (customerName) {
         try {
@@ -185,6 +195,28 @@ export default async function handler(req, res) {
           if (cRes.rows.length) cust = cRes.rows[0];
         } catch(e) {}
       }
+    }
+
+    // ── EXW 全费用账单(客户版):独立渲染器,接 fsb 真实卖价 ──
+    if (isExwInvoice) {
+      const { renderExwInvoice } = await import("./doc-exw-invoice.js");
+      const _exwHtml = await renderExwInvoice(pool, p, null, cust, req.query);
+      if (!_exwHtml) return res.status(404).send("<h1>Shipment not found</h1>");
+      if (String(req.query.format || "") === "pdf") {
+        try {
+          const { htmlToPdf } = await import("./_html-to-pdf.js");
+          const _exwPdf = await htmlToPdf(_exwHtml);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("EXW全费用账单_" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+          res.setHeader("Cache-Control", "no-store");
+          return res.status(200).send(_exwPdf);
+        } catch(e) {
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          return res.status(200).send(_exwHtml);
+        }
+      }
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.status(200).send(_exwHtml);
     }
 
     // ── Shared CSS for new doc types ──
@@ -896,13 +928,13 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 .box-tt .title,.box-bk .title{font-size:9.5px;font-weight:900;color:#111;letter-spacing:.05em;margin-bottom:4px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px}
 .warn{color:#c00;font-size:8px}
 .footer-bar{display:flex;justify-content:space-between;margin-top:10px;padding-top:6px;border-top:1px solid #ddd;font-size:8px;color:#999;font-family:monospace}
-@media print{body{padding:0;background:#fff}.page{margin:0;padding:8mm 10mm;box-shadow:none}}
+@media print{body{padding:0;background:#fff}.page{margin:0;padding:6mm 10mm;box-shadow:none}.pay-grid,.pay-box,.bottom,.box-tt,.box-bk{page-break-inside:avoid;break-inside:avoid}.pay-grid{margin-bottom:8px}.fx-note{margin:4px 0 6px}}
 @media screen{body{background:#f1f5f9}.page{box-shadow:0 4px 32px rgba(0,0,0,.12);margin:20px auto;border-radius:8px}}
 </style></head><body>
 <div class="page">
   <div class="hdr">
     <div class="hdr-l">
-      <div class="co-en">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</div>
+      <div class="co-en">SHANGHAI OCEAN BABY INT'L LOGISTICS CO., LTD.</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
     </div>
@@ -915,15 +947,15 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
   <div class="info-grid">
     <div class="info-box">
-      <div class="row"><div class="lbl">TO (客户名称):</div><div class="val big">${esc(billTo)}</div></div>
+      <div class="row"><div class="lbl">TO (客户名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}<div style="font-size:9px;font-weight:400;color:${billAddr?'#555':'#bbb'};margin-top:2px">${billAddr?esc(billAddr):'地址 Address: _______________________________'}</div></div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
-      <div class="row"><div class="lbl">P.O.L (起运港):</div><div class="val">${esc(p.pol || "—")}</div></div>
+      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${genDate}</div></div>
     </div>
     <div class="info-box">
-      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${genDate}</div></div>
       <div class="row"><div class="lbl">Vessel/Voyage (船名航次):</div><div class="val">${esc(vessel)}</div></div>
       <div class="row"><div class="lbl">ETD (离港日):</div><div class="val">${fmtDate(p.etd)}</div></div>
+      <div class="row"><div class="lbl">P.O.L (起运港):</div><div class="val">${esc(p.pol || "—")}</div></div>
       <div class="row"><div class="lbl">P.O.D (目的港):</div><div class="val">${esc(p.pod || "—")}</div></div>
     </div>
   </div>
@@ -1031,6 +1063,16 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
 </div>${autoprint}</body></html>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
+      if (String(req.query.format || "") === "pdf") {
+        try {
+          const { htmlToPdf } = await import("./_html-to-pdf.js");
+          const _pdfBuf = await htmlToPdf(fobHtml);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+          res.setHeader("Cache-Control", "no-store");
+          return res.status(200).send(_pdfBuf);
+        } catch(_e) { /* fall through to HTML */ }
+      }
       return res.status(200).send(fobHtml);
     }
 
@@ -1074,7 +1116,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       if (factoryCode) {
         try {
           const factoryRes = await pool.query(
-            `SELECT name_cn, tax_id FROM companies WHERE code = $1 LIMIT 1`,
+            `SELECT name_cn, tax_id, address FROM companies WHERE code = $1 LIMIT 1`,
             [factoryCode]
           );
           factory = factoryRes.rows[0] || null;
@@ -1252,7 +1294,11 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         </tr>`).join("");
 
       const totalCny = portChargeRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-      const chargeRowsHtml = portChargeRows.length
+      // 汇总版(?summary=1):明细太长时只显港杂费总额一行(不列各费目)
+      const _pcSummary = String((req.query && req.query.summary) || "") === "1";
+      const chargeRowsHtml = (_pcSummary && portChargeRows.length)
+        ? `<tr><td class="label">港杂费总额 Port Charges (Lump Sum)</td><td>整票 per_bl</td><td class="c">CNY</td><td class="c">1</td><td class="r">${fmtNum(totalCny)}</td><td class="r">${fmtNum(totalCny)}</td></tr>`
+        : portChargeRows.length
         ? portChargeRows.map(r => {
           const qty = r.qty == null || r.qty === "" ? 1 : Number(r.qty);
           const unitPrice = r.unit_price == null || r.unit_price === "" ? Number(r.amount || 0) : Number(r.unit_price);
@@ -1321,13 +1367,13 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 .box-tt .title,.box-bk .title{font-size:9.5px;font-weight:900;color:#111;letter-spacing:.05em;margin-bottom:4px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px}
 .warn{color:#c00;font-size:8px}
 .footer-bar{display:flex;justify-content:space-between;margin-top:10px;padding-top:6px;border-top:1px solid #ddd;font-size:8px;color:#999;font-family:monospace}
-@media print{body{padding:0;background:#fff}.page{margin:0;padding:8mm 10mm;box-shadow:none}}
+@media print{body{padding:0;background:#fff}.page{margin:0;padding:6mm 10mm;box-shadow:none}.pay-grid,.pay-box,.bottom,.box-tt,.box-bk{page-break-inside:avoid;break-inside:avoid}.pay-grid{margin-bottom:8px}.fx-note{margin:4px 0 6px}}
 @media screen{body{background:#f1f5f9}.page{box-shadow:0 4px 32px rgba(0,0,0,.12);margin:20px auto;border-radius:8px}}
 </style></head><body>
 <div class="page">
   <div class="hdr">
     <div class="hdr-l">
-      <div class="co-en">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</div>
+      <div class="co-en">SHANGHAI OCEAN BABY INT'L LOGISTICS CO., LTD.</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
     </div>
@@ -1345,15 +1391,15 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
   <div class="info-grid">
     <div class="info-box">
-      <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big">${esc(billTo)}</div></div>
+      <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}<div style="font-size:9px;font-weight:400;color:${(factory&&factory.address)?'#555':'#bbb'};margin-top:2px">${(factory&&factory.address)?esc(factory.address):'地址 Address: _______________________________'}</div></div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
-      <div class="row"><div class="lbl">P.O.L (起运港):</div><div class="val">${esc(p.pol || "—")}</div></div>
+      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${genDate}</div></div>
     </div>
     <div class="info-box">
-      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${genDate}</div></div>
       <div class="row"><div class="lbl">Vessel/Voyage (船名航次):</div><div class="val">${esc(vessel)}</div></div>
       <div class="row"><div class="lbl">ETD (离港日):</div><div class="val">${fmtDate(p.etd)}</div></div>
+      <div class="row"><div class="lbl">P.O.L (起运港):</div><div class="val">${esc(p.pol || "—")}</div></div>
       <div class="row"><div class="lbl">P.O.D (目的港):</div><div class="val">${esc(p.pod || "—")}</div></div>
     </div>
   </div>
@@ -1448,6 +1494,16 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
 </div>${autoprint}</body></html>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
+      if (String(req.query.format || "") === "pdf") {
+        try {
+          const { htmlToPdf } = await import("./_html-to-pdf.js");
+          const _pdfBuf = await htmlToPdf(fobPortchargeHtml);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("PC-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+          res.setHeader("Cache-Control", "no-store");
+          return res.status(200).send(_pdfBuf);
+        } catch(_e) { /* fall through to HTML */ }
+      }
       return res.status(200).send(fobPortchargeHtml);
     }
 

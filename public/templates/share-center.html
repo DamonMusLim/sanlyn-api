@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>链接中心</title>
+<style>
+:root{--bg:#f6f7f9;--text:#172033;--muted:#667085;--line:#d8dee8;--head:#eef2f7;--blue:#175cd3;--bad:#b42318;--ok:#15803d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:20px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+h1{font-size:21px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
+button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:7px 11px;font-weight:700;cursor:pointer;font:inherit}
+button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}
+button.danger{color:var(--bad)}button:disabled{opacity:.5;cursor:not-allowed}
+.grp{background:#fff;border:1px solid var(--line);border-radius:10px;margin-bottom:14px;overflow:hidden}
+.grp-head{padding:10px 14px;background:#f8fafc;border-bottom:1px solid var(--line);font-weight:800;display:flex;justify-content:space-between}
+.grp-head .n{color:var(--muted);font-weight:700;font-size:12px}
+.table-wrap{overflow-x:auto}table{width:100%;min-width:860px;border-collapse:collapse}
+th,td{padding:8px 10px;border-bottom:1px solid #f0f2f5;text-align:left;white-space:nowrap;font-size:12.5px}
+th{background:var(--head);color:#344054;font-size:11.5px}tr:last-child td{border-bottom:0}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;border:1px solid var(--line)}
+.st-active{background:#ecfdf3;color:var(--ok);border-color:#abefc6}
+.st-expired{background:#f3f4f6;color:#6b7280}
+.st-revoked{background:#fef3f2;color:var(--bad);border-color:#fecdca}
+.perm-edit{background:#eff4ff;color:var(--blue);border-color:#b2ccff}
+.code{font-family:ui-monospace,Menlo,monospace;color:#475467}
+.hits0{color:#b42318;font-weight:700}.hits{color:var(--ok);font-weight:700}
+.empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1d23;color:#fff;border-radius:8px;padding:10px 18px;font-weight:700;display:none;z-index:9}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>🔗 链接中心</h1><div class="sub">所有对外分享短码 · 复制 / 撤销 / 重新生成 · 仅内部</div></div>
+    <div><button id="new-btn">＋ 生成新链接</button> <button id="refresh">刷新</button></div>
+  </div>
+  <div id="list"><div class="empty">加载中...</div></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const apiUrl = "/api/db/share-center";
+function token(){
+  const cand = [new URLSearchParams(location.search).get("token"),
+    localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
+function authHeaders(json){ const t=token(), h=json?{"Content-Type":"application/json"}:{}; if(t) h.Authorization="Bearer "+t; return h; }
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function dt(v){ if(!v) return "—"; const d=new Date(v); return (d.getMonth()+1)+"/"+d.getDate(); }
+function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.style.display="block"; setTimeout(()=>t.style.display="none",1800); }
+const STATUS = { active:["有效","st-active"], expired:["已过期","st-expired"], revoked:["已撤销","st-revoked"] };
+let LINKS = [];
+function row(l){
+  const [sl, sc] = STATUS[l.status] || [l.status,""];
+  const ops = l.status==="active"
+    ? `<button data-copy="${esc(l.short_url)}">复制</button> <button class="danger" data-revoke="${esc(l.code)}">撤销</button>`
+    : `<button data-regen="${esc(l.code)}">重新生成</button>`;
+  return `<tr>
+    <td><strong>${esc(l.company)}</strong></td>
+    <td>${esc(l.page_label)}</td>
+    <td><span class="badge ${l.can_edit?"perm-edit":""}">${l.can_edit?"🖊 可填":"👁 只读"}</span></td>
+    <td class="code">/v/${esc(l.code)}</td>
+    <td><span class="badge ${sc}">${esc(sl)}</span></td>
+    <td class="${Number(l.hits)?"hits":"hits0"}">${Number(l.hits)||0}${Number(l.hits)?"":" ⚠未打开"}</td>
+    <td>${dt(l.last_hit_at)}</td>
+    <td>${dt(l.expires_at)}</td>
+    <td>${ops}</td>
+  </tr>`;
+}
+function render(){
+  const root = document.getElementById("list");
+  if(!LINKS.length){ root.innerHTML = '<div class="empty">还没有分享链接，点"生成新链接"</div>'; return; }
+  const groups = [["customer","👤 客户"],["factory","🏭 工厂"],["supplier","📦 供应商"]];
+  let html = "";
+  for(const [role,label] of groups){
+    const rows = LINKS.filter(l=>l.role===role);
+    if(!rows.length) continue;
+    html += `<div class="grp"><div class="grp-head"><span>${label}</span><span class="n">${rows.length} 条</span></div>
+      <div class="table-wrap"><table>
+      <thead><tr><th>对象</th><th>页面</th><th>权限</th><th>短码</th><th>状态</th><th>点击</th><th>最后打开</th><th>过期</th><th>操作</th></tr></thead>
+      <tbody>${rows.map(row).join("")}</tbody></table></div></div>`;
+  }
+  root.innerHTML = html || '<div class="empty">暂无</div>';
+}
+async function load(){
+  const root = document.getElementById("list");
+  root.innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"加载失败(需内部账号登录)");
+    LINKS = r.links||[]; render();
+  }catch(e){ root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+}
+document.addEventListener("click", async e=>{
+  const t = e.target;
+  if(t.id==="refresh") return load();
+  if(t.id==="new-btn") return location.href = "/public/templates/share-link.html" + (location.search||"");
+  if(t.dataset.copy){
+    try{ await navigator.clipboard.writeText(t.dataset.copy); toast("已复制链接"); }
+    catch(_){ prompt("手动复制：", t.dataset.copy); }
+    return;
+  }
+  if(t.dataset.revoke){
+    if(!confirm("撤销后对方立即打不开，确定？")) return;
+    const r = await fetch(apiUrl+"?action=revoke",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({code:t.dataset.revoke})}).then(x=>x.json());
+    if(r.success){ toast("已撤销"); load(); } else alert(r.error||"失败");
+    return;
+  }
+  if(t.dataset.regen){
+    const r = await fetch(apiUrl+"?action=regen",{method:"POST",credentials:"include",headers:authHeaders(true),body:JSON.stringify({code:t.dataset.regen})}).then(x=>x.json());
+    if(r.success){ try{ await navigator.clipboard.writeText(r.short_url); toast("新链接已生成并复制"); }catch(_){ prompt("新链接：", r.short_url); } load(); }
+    else alert(r.error||"失败");
+  }
+});
+load();
+</script>
+</body>
+</html>

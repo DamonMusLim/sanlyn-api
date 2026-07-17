@@ -52,16 +52,17 @@ slips AS (
    GROUP BY so.order_no, so.contract_no
 ),
 -- 客户应收锚定源 = finance_export_rebates.fob_cny(报关销售额,唯一真源;绝不用 orders.total/OLI)。
--- 借鉴 customer-ar-reconcile.js 的锚定逻辑,此处按 contract_no 聚合(一票多单时各 fer 行 SUM,避免 JOIN 扇出)。
+-- 按 contract_no 聚合前先去重 selected_orders(先 DISTINCT contract_no 再 JOIN fer),
+-- 避免同一 contract_no 命中多张兄弟订单时 JOIN 扇出导致 SUM 被重复累加(2026-07-15 修复,曾致应收翻倍)。
 -- 无 fer 行 → receivable_anchor=NULL → orderFact 里 anchored=false → 前端显"待报关"。
 receivable_anchor AS (
-  SELECT so.contract_no,
+  SELECT dc.contract_no,
          SUM(r.fob_cny) AS receivable_anchor,
          MIN(r.currency) AS anchor_currency,
          COUNT(*) AS anchor_decl_count
-    FROM selected_orders so
-    JOIN finance_export_rebates r ON r.contract_no = so.contract_no AND so.contract_no IS NOT NULL
-   GROUP BY so.contract_no
+    FROM (SELECT DISTINCT contract_no FROM selected_orders WHERE contract_no IS NOT NULL) dc
+    JOIN finance_export_rebates r ON r.contract_no = dc.contract_no
+   GROUP BY dc.contract_no
 ),
 -- 客户发票号:finance_invoices_out.contract_nos 数组重叠匹配(排除作废/红冲/草稿)。
 customer_invoices AS (

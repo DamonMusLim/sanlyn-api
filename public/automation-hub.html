@@ -1,0 +1,202 @@
+<!doctype html><html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>自动化观测台 · Sanlyn</title>
+<style>
+  :root{--bg:#0a0e14;--panel:#121822;--panel2:#0f141c;--line:#212b38;--ink:#e7edf4;--mut:#8593a6;--dim:#5d6a7d;
+    --accent:#3d9bf0;--ok:#37d39b;--warn:#f5b23f;--crit:#f5564a;
+    --okbg:rgba(55,211,155,.10);--warnbg:rgba(245,178,63,.12);--critbg:rgba(245,86,74,.12);
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;--ui:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  *{box-sizing:border-box}html,body{margin:0;background:var(--bg)}
+  body{color:var(--ink);font-family:var(--ui);-webkit-font-smoothing:antialiased;line-height:1.45}
+  .wrap{padding:26px;max-width:1280px;margin:0 auto}
+  .head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .title{font-size:20px;font-weight:650}.title .sub{color:var(--mut);font-weight:400;font-size:13px;margin-left:10px}
+  .asof{font-family:var(--mono);font-size:12px;color:var(--dim)}
+  .eyebrow{font-size:11px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim);font-weight:600;margin:26px 0 12px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .kpi .n{font-size:26px;font-weight:680;font-family:var(--mono);font-variant-numeric:tabular-nums;line-height:1.1}
+  .kpi .l{color:var(--mut);font-size:12px;margin-top:4px}.kpi .meta{margin-top:8px;font-size:11.5px;color:var(--dim);display:flex;gap:10px;flex-wrap:wrap}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}
+  .d-ok{background:var(--ok)}.d-warn{background:var(--warn)}.d-crit{background:var(--crit)}.d-dim{background:var(--dim)}
+  .alerts{display:flex;flex-direction:column;gap:8px}
+  .alert{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-left-width:3px;border-radius:8px;padding:11px 14px}
+  .alert.crit{border-left-color:var(--crit)}.alert.warn{border-left-color:var(--warn)}
+  .alert .tag{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.5px;white-space:nowrap;margin-top:1px}
+  .alert.crit .tag{background:var(--critbg);color:var(--crit)}.alert.warn .tag{background:var(--warnbg);color:var(--warn)}
+  .alert .txt{font-size:13px}
+  .cols{display:grid;grid-template-columns:1.55fr 1fr;gap:22px;align-items:start}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-left-width:3px;border-radius:9px;padding:11px 13px;display:flex;flex-direction:column;gap:3px}
+  .card.ok{border-left-color:var(--ok)}.card.warn{border-left-color:var(--warn)}.card.crit{border-left-color:var(--crit)}.card.dim{border-left-color:var(--dim);opacity:.72}
+  .card .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .card .nm{font-size:13.5px;font-weight:600}.card .key{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+  .card .row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--mut);gap:8px}
+  .card .st{font-size:12px;font-weight:600;display:flex;align-items:center;margin-top:2px}
+  .st.ok{color:var(--ok)}.st.warn{color:var(--warn)}.st.crit{color:var(--crit)}.st.dim{color:var(--dim)}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:11px}
+  .mrow{padding:11px 13px;border-bottom:1px solid var(--panel2)}.mrow:last-child{border-bottom:none}
+  .mrow .r1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .mrow .who{font-size:12.5px;font-weight:600}.mrow .subj{font-size:11.5px;color:var(--mut);margin-top:2px}
+  .mrow .addr{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-top:2px;word-break:break-all}
+  .pill{font-size:10px;font-weight:700;font-family:var(--mono);padding:2px 7px;border-radius:20px;letter-spacing:.4px;white-space:nowrap}
+  .pill.warn{background:var(--warnbg);color:var(--warn)}.pill.crit{background:var(--critbg);color:var(--crit)}.pill.ok{background:var(--okbg);color:var(--ok)}
+  .qlist{display:flex;flex-direction:column;gap:9px;padding:14px}
+  .q{display:flex;align-items:center;gap:10px;font-size:12.5px}
+  .q .qn{font-family:var(--mono);font-variant-numeric:tabular-nums;width:36px;text-align:right;font-weight:640}
+  .q .qb{height:7px;border-radius:4px;background:var(--accent);opacity:.85}.q .ql{color:var(--mut);white-space:nowrap}
+  .note{margin-top:22px;font-size:12px;color:var(--dim);border-top:1px solid var(--line);padding-top:12px;line-height:1.6}
+  #login{max-width:340px;margin:12vh auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px;display:flex;flex-direction:column;gap:12px}
+  #login h2{margin:0 0 6px;font-size:17px}#login input{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:11px 12px;color:var(--ink);font-size:14px}
+  #login button{background:var(--accent);border:none;border-radius:8px;padding:11px;color:#04121f;font-weight:650;cursor:pointer;font-size:14px}
+  #err{color:var(--crit);font-size:12.5px;min-height:16px}
+  .mrow.editable{cursor:pointer}.mrow.editable:hover{background:var(--panel2)}
+  .editbadge{font-size:10px;color:var(--accent);margin-left:6px}
+  .scrim{position:fixed;inset:0;background:rgba(4,8,14,.6);display:none;z-index:40}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(440px,94vw);background:var(--panel);border-left:1px solid var(--line);
+    z-index:41;display:none;flex-direction:column;box-shadow:-20px 0 60px rgba(0,0,0,.4)}
+  .drawer.open,.scrim.open{display:flex}
+  .dh{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+  .dh h3{margin:0;font-size:16px}.dh .k{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .db{padding:18px 20px;overflow:auto;flex:1;display:flex;flex-direction:column;gap:16px}
+  .fld{display:flex;flex-direction:column;gap:6px}
+  .fld label{font-size:12px;color:var(--mut);letter-spacing:.3px}
+  .fld input[type=text],.fld textarea,.fld select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 11px;color:var(--ink);font-size:13.5px;font-family:var(--ui);width:100%}
+  .fld textarea{min-height:78px;resize:vertical;font-family:var(--mono);font-size:12px}
+  .toggle{display:flex;align-items:center;gap:10px}
+  .toggle input{width:38px;height:22px;-webkit-appearance:none;appearance:none;background:var(--line);border-radius:20px;position:relative;cursor:pointer;transition:.2s}
+  .toggle input:checked{background:var(--ok)}
+  .toggle input::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
+  .toggle input:checked::after{left:18px}
+  .hint{font-size:11.5px;color:var(--dim);background:var(--panel2);border-radius:8px;padding:9px 11px;line-height:1.5}
+  .df{padding:16px 20px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;align-items:center}
+  .df .dirty{margin-right:auto;font-size:12px;color:var(--warn);display:none}
+  .df .dirty.on{display:inline}
+  .btn{border:none;border-radius:8px;padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .btn.pri{background:var(--accent);color:#04121f}.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--mut)}
+  .btn[disabled]{opacity:.5;cursor:default}
+  @media(max-width:820px){.kpis{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}.cards{grid-template-columns:1fr}}
+</style></head>
+<body>
+<form id="login">
+  <h2>自动化观测台</h2>
+  <input id="u" placeholder="Email / Username" autocomplete="username">
+  <input id="p" type="password" placeholder="密码" autocomplete="current-password">
+  <button type="submit">登录</button><div id="err"></div>
+</form>
+<div class="wrap" id="app" style="display:none">
+  <div class="head">
+    <div class="title">自动化观测台 <span class="sub">每日自动任务 · 邮件 · 技能 · 告警一屏看清</span></div>
+    <div class="asof" id="asof"></div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="eyebrow">需要你处理 · Needs Attention</div>
+  <div class="alerts" id="alerts"></div>
+  <div class="cols">
+    <div>
+      <div class="eyebrow">每日自动任务 · 做了什么 / 挂没挂</div>
+      <div class="cards" id="jobs"></div>
+      <div class="eyebrow">通知项目 · Notification Projects</div>
+      <div class="panel" id="projects"></div>
+    </div>
+    <div>
+      <div class="eyebrow">邮件发给谁 · 最近发送</div>
+      <div class="panel" id="emails"></div>
+      <div class="eyebrow">任务队列 · 待办堆积</div>
+      <div class="panel"><div class="qlist" id="tasks"></div></div>
+    </div>
+  </div>
+  <div class="note">数据实时来自腾讯 sanlyn_db + 自动任务心跳（<span class="mono">/api/db/automation-hub</span>）。新自动化只要上报心跳就自动出现在这里。点通知项目可编辑。</div>
+</div>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer">
+  <div class="dh"><div><h3 id="dTitle">编辑自动化</h3><div class="k" id="dKey"></div></div></div>
+  <div class="db">
+    <div class="fld"><label>名称</label><input type="text" id="fName"></div>
+    <div class="fld"><label>说明</label><input type="text" id="fDesc"></div>
+    <div class="fld"><label>开关</label><div class="toggle"><input type="checkbox" id="fActive"><span id="fActiveLbl" class="mono"></span></div></div>
+    <div class="fld"><label>邮件模版</label><select id="fTpl"></select></div>
+    <div class="fld" id="recipFixed" style="display:none"><label>发给谁（每行一个：名称 &lt;邮箱&gt;）</label><textarea id="fRecip"></textarea></div>
+    <div class="fld" id="recipEntity" style="display:none"><label>发给谁</label><div class="hint" id="recipHint"></div></div>
+    <div class="fld"><label>触发方式</label><div class="hint" id="fTrig"></div></div>
+  </div>
+  <div class="df"><span class="dirty" id="dDirty">● 有未保存改动</span>
+    <button class="btn ghost" id="dCancel" type="button">取消</button>
+    <button class="btn pri" id="dSave" type="button" disabled>保存</button></div>
+</aside>
+<script>
+const $=id=>document.getElementById(id);
+let token=localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||"";
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const cls=s=>({ok:"ok",crit:"crit",warn:"warn"}[s]||"dim");
+const stTxt={ok:"正常",crit:"异常",warn:"注意",pending_heartbeat:"待接心跳",idle:"已停用"};
+const TL={payment_term_confirm:"催客户付款",notification_closure:"通知待关单",INVOICE_GAP:"开票缺口",REBATE_GAP:"退税缺口",AMOUNT_DIVERGENCE:"差额待审",SAMPLE_REQUEST:"打样请求","单证处理":"单证处理","资料补齐":"资料补齐","装货安排":"装货安排","交期确认":"交期确认"};
+const fmtT=t=>t?new Date(t).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):"—";
+async function api(path,opts={}){
+  const r=await fetch(path,{...opts,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{}),...(opts.headers||{})}});
+  const d=await r.json().catch(()=>({error:"请求失败"}));
+  if(!r.ok)throw new Error(d.message||d.error||"请求失败");return d;
+}
+function render(d){
+  window.HUB=d;
+  $("asof").textContent="数据截至 "+fmtT(d.as_of);
+  const s=d.summary;
+  $("kpis").innerHTML=`
+    <div class="kpi"><div class="n">${s.jobs_total}</div><div class="l">自动任务</div>
+      <div class="meta"><span><span class="dot d-ok"></span>正常 ${s.jobs_ok}</span><span><span class="dot d-crit"></span>挂了 ${s.jobs_crit}</span><span><span class="dot d-dim"></span>待接 ${s.jobs_pending}</span></div></div>
+    <div class="kpi"><div class="n" style="color:${s.email_sent?'var(--ink)':'var(--crit)'}">${s.email_sent}</div><div class="l">邮件真发出</div><div class="meta">${s.email_not_sent} 封未发出(pending/skipped)</div></div>
+    <div class="kpi"><div class="n">${s.open_tasks}</div><div class="l">开放任务待办</div><div class="meta">${d.tasks.slice(0,3).map(t=>(TL[t.task_type]||t.task_type)+" "+t.n).join(" · ")}</div></div>
+    <div class="kpi"><div class="n" style="color:${s.alerts?'var(--crit)':'var(--ok)'}">${s.alerts}</div><div class="l">待处理告警</div><div class="meta">${s.jobs_crit} 严重 · ${s.jobs_warn} 注意</div></div>`;
+  $("alerts").innerHTML=d.alerts.length?d.alerts.map(a=>`<div class="alert ${a.level==='crit'?'crit':'warn'}"><span class="tag">${esc(a.cat)}</span><div class="txt">${esc(a.text)}</div></div>`).join(""):`<div class="alert warn"><span class="tag">OK</span><div class="txt">当前没有告警。</div></div>`;
+  $("jobs").innerHTML=d.jobs.map(j=>`<div class="card ${cls(j.status)}"><div class="top"><span class="nm">${esc(j.name)}</span><span class="key">${esc(j.machine||"")} ${esc(j.job_key)}</span></div>
+    <div class="row"><span>${esc(j.schedule||"")}</span><span class="mono">上次 ${fmtT(j.last_run)}</span></div>
+    <div class="st ${cls(j.status)}"><span class="dot d-${cls(j.status)}"></span>${esc(stTxt[j.status]||j.status)}${j.message?" · "+esc(j.message):""}</div></div>`).join("");
+  const canEdit=d.meta&&d.meta.can_edit;
+  $("projects").innerHTML=d.projects.map(p=>`<div class="mrow ${canEdit?'editable':''}" ${canEdit?`data-edit="${esc(p.project_key)}"`:''}><div class="r1"><span class="who">${esc(p.name)}${canEdit?'<span class="editbadge">✎ 编辑</span>':''}</span><span class="pill ${p.last_status==='success'?'ok':(p.is_active?'warn':'')}">${p.is_active?(p.last_status||"未跑"):"已停用"}</span></div>
+    <div class="subj mono" style="color:var(--dim)">${esc((p.channels||[]).join?p.channels.join(","):p.channels||"")} · 上次 ${fmtT(p.last_run)}${p.last_error?" · "+esc(p.last_error):""}</div></div>`).join("")||'<div class="mrow" style="color:var(--dim)">暂无通知项目</div>';
+  $("emails").innerHTML=d.emails.map(m=>`<div class="mrow"><div class="r1"><span class="who">${esc(m.recipient_name||"—")}</span><span class="pill ${m.status==='sent'?'ok':(m.status==='skipped'||m.status==='failed'?'crit':'warn')}">${esc(m.status)}</span></div>
+    <div class="subj">${esc(m.subject||"")}</div><div class="addr" ${!m.recipient_email?'style="color:var(--crit)"':''}>${esc(m.recipient_email||"缺收件邮箱 — 未发出")}</div></div>`).join("")||'<div class="mrow" style="color:var(--dim)">暂无邮件记录</div>';
+  const max=Math.max(1,...d.tasks.map(t=>t.n));
+  $("tasks").innerHTML=d.tasks.map(t=>`<div class="q"><span class="qn">${t.n}</span><span class="qb" style="width:${Math.round(t.n/max*100)}%"></span><span class="ql">${esc(TL[t.task_type]||t.task_type)}</span></div>`).join("");
+}
+let editState=null;
+function recipToText(rc){return (rc&&rc.mode==="fixed"&&Array.isArray(rc.recipients))?rc.recipients.map(r=>`${r.name||""} <${r.email||""}>`.trim()).join("\n"):"";}
+function parseRecip(txt){return txt.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{const m=l.match(/^(.*?)\s*<([^>]+)>\s*$/);return m?{name:m[1].trim(),email:m[2].trim()}:{name:"",email:l};});}
+function setDirty(v){if(editState)editState.dirty=v;$("dDirty").classList.toggle("on",v);$("dSave").disabled=!v;}
+function openEdit(key){
+  const p=(window.HUB.projects||[]).find(x=>x.project_key===key);if(!p)return;
+  const rc=p.recipient_config||{};editState={key,mode:rc.mode||"fixed",dirty:false};
+  $("dTitle").textContent="编辑："+(p.name||key);$("dKey").textContent=key;
+  $("fName").value=p.name||"";$("fDesc").value=p.description||"";
+  $("fActive").checked=!!p.is_active;$("fActiveLbl").textContent=p.is_active?"启用中":"已停用";
+  const tpls=(window.HUB.meta&&window.HUB.meta.templates)||[];
+  $("fTpl").innerHTML='<option value="">（不指定）</option>'+tpls.map(t=>`<option value="${esc(t.tpl_key)}" ${t.tpl_key===p.tpl_key?"selected":""}>${esc(t.name)}</option>`).join("");
+  if(rc.mode==="entity"){$("recipFixed").style.display="none";$("recipEntity").style.display="";$("recipHint").textContent=`动态收件人：按${rc.entity_type||"客户"}档案自动解析（字段 ${rc.id_field||"company_code"}）。缺邮箱的对象会被跳过——去「公司·客户」给它补邮箱。`;}
+  else{$("recipEntity").style.display="none";$("recipFixed").style.display="";$("fRecip").value=recipToText(rc);}
+  $("fTrig").textContent=p.trigger_type==="manual_button"?"手动按钮触发（到点自动跑 = 下一阶段的定时引擎）":(p.trigger_type||"—");
+  setDirty(false);$("scrim").classList.add("open");$("drawer").classList.add("open");
+}
+function tryClose(){if(editState&&editState.dirty&&!confirm("有未保存的改动。\n\n确定 = 放弃改动关闭\n取消 = 继续编辑（想保存请点「保存」）"))return;editState=null;$("scrim").classList.remove("open");$("drawer").classList.remove("open");}
+async function saveEdit(){
+  if(!editState)return;
+  const patch={name:$("fName").value.trim(),description:$("fDesc").value.trim(),is_active:$("fActive").checked,tpl_key:$("fTpl").value};
+  if(editState.mode==="fixed")patch.recipient_config={mode:"fixed",recipients:parseRecip($("fRecip").value)};
+  $("dSave").disabled=true;$("dSave").textContent="保存中…";
+  try{await api("/api/db/automation-hub",{method:"POST",body:JSON.stringify({action:"update_project",project_key:editState.key,patch})});
+    editState=null;$("scrim").classList.remove("open");$("drawer").classList.remove("open");await load();}
+  catch(err){alert("保存失败："+err.message);$("dSave").disabled=false;}
+  finally{$("dSave").textContent="保存";}
+}
+$("projects").addEventListener("click",e=>{const r=e.target.closest("[data-edit]");if(r)openEdit(r.dataset.edit);});
+["fName","fDesc","fTpl","fRecip"].forEach(id=>$(id).addEventListener("input",()=>setDirty(true)));
+$("fActive").addEventListener("change",()=>{setDirty(true);$("fActiveLbl").textContent=$("fActive").checked?"启用中":"已停用";});
+$("dCancel").addEventListener("click",tryClose);$("scrim").addEventListener("click",tryClose);$("dSave").addEventListener("click",saveEdit);
+window.addEventListener("beforeunload",e=>{if(editState&&editState.dirty){e.preventDefault();e.returnValue="";}});
+async function load(){const d=await api("/api/db/automation-hub");$("login").style.display="none";$("app").style.display="";render(d);}
+$("login").addEventListener("submit",async e=>{e.preventDefault();$("err").textContent="";
+  try{const d=await api("/api/db/auth-login",{method:"POST",body:JSON.stringify({username:$("u").value,password:$("p").value})});
+    token=d.token;localStorage.setItem("sanlyn_token",d.token);await load();}catch(err){$("err").textContent=err.message;}});
+if(token){load().catch(err=>{localStorage.removeItem("sanlyn_token");token="";$("err").textContent="登录已过期，请重新登录";});}
+</script>
+</body></html>

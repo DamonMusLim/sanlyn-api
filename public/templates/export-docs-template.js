@@ -116,6 +116,10 @@ function fsFromOrder(o){
   for(var i=0;i<vals.length;i++){var m=String(vals[i]||'').match(/\bFS[0-9A-Z-]+\b/i);if(m)return m[0].toUpperCase();}
   return '';
 }
+function customerDocRef(o){
+  var r=orderRaw(o);
+  return (o&&o.customer_po)||r.customerPO||r.customer_po||fsFromOrder(o)||(o&&o.contract_no)||'';
+}
 
 // 明细行（切「明细模式」时用），ctnMap = {contract_no/order_id → container rows[]}
 function detailRows(all,ctnMap){
@@ -221,8 +225,8 @@ function fillHeader(pfx,primary,all,seller,cur,port){
   var _urlNo=qp('order_no')||qp('orderNo');
   var _fsOrder=all.filter(function(o){return o&&(String(o.order_no)===_urlNo||shortNo(o.order_no)===shortNo(_urlNo));})[0]||primary;
   var _fsNum=fsFromOrder(_fsOrder)||_fsOrder.fs_no||primary.fs_no||praw.fs_no||_fsOrder.contract_no||'';
-  var _poNum=_fsOrder.customer_po||orderRaw(_fsOrder).customerPO||shortNo(_fsOrder.order_no)||'';
-  var fs='IV-'+(_customsMode?(_fsNum||_poNum):(_poNum||_fsNum));  // Damon 2026-07-09: 报关版=IV-FS, 客户版=IV-PO(缺退order_no); 标签统一No.:
+  var _poNum=(_fsOrder&&_fsOrder.customer_po)||orderRaw(_fsOrder).customerPO||orderRaw(_fsOrder).customer_po||'';
+  var fs=(_customsMode?(_fsNum||_poNum):(_poNum||_fsNum));  // Damon 2026-07-09: 报关版=IV-FS, 客户版=IV-PO；缺真PO退FS，绝不退内部order_no
   setT(pfx+'-no',fs);
   setT(pfx+'-order',uniq(all.map(function(o){return shortNo(o.order_no);})).join(' / '));
   setT(pfx+'-date',(primary.order_date||'').slice(0,10));
@@ -247,7 +251,8 @@ function fillPriced(pfx,seller,cur){
 }
 // 港口名中→英规范化：认识的转英文大写，不认识的原样保留(绝不乱翻/造词)
 var PORT_EN={'青岛':'QINGDAO','上海':'SHANGHAI','宁波':'NINGBO','宁波北仑':'NINGBO','深圳':'SHENZHEN','厦门':'XIAMEN','天津':'TIANJIN','大连':'DALIAN','广州':'GUANGZHOU','连云港':'LIANYUNGANG','蛇口':'SHEKOU','盐田':'YANTIAN','南沙':'NANSHA','泉州':'QUANZHOU','锦州':'JINZHOU','福州':'FUZHOU','巴生':'PORT KLANG','巴生港':'PORT KLANG','巴生西':'PORT KLANG (WESTPORT)','巴生西港':'PORT KLANG (WESTPORT)','巴生北':'PORT KLANG (NORTHPORT)'};
-function normPort(x){if(!x)return '';var t=String(x).trim();if(PORT_EN[t])return PORT_EN[t];var t2=t.replace(/港$/,'');if(PORT_EN[t2])return PORT_EN[t2];return /[\u4e00-\u9fa5]/.test(t)?t:t.toUpperCase();}
+var PORT_CODE={"1301": "TRIPOLI", "AEDXBAP": "DUBAI INTERNATIONAL", "AEJEA": "JEBEL ALI", "AUBNE": "BRISBANE", "AUMEL": "MELBOURNE", "AUSYD": "SYDNEY", "BDCGP": "CHITTAGONG", "BEANR": "ANTWERP", "BRITJ": "ITAJAI", "BRSSA": "SANTOS", "CAHAL": "HALIFAX", "CAVAN": "VANCOUVER", "CLSAI": "SAN ANTONIO", "CLVAP": "VALPARAISO", "CNCAN": "GUANGZHOU", "CNDLC": "DALIAN", "CNJGH": "JIANGHAI", "CNJNZ": "JINZHOU", "CNLYG": "LIANYUNGANG", "CNNGB": "NINGBO", "CNNSA": "NANSHA", "CNQZL": "QUANZHOU", "CNRZH": "RIZHAO", "CNSHA": "SHANGHAI", "CNSZX": "SHENZHEN", "CNTAC": "TAICANG", "CNTAO": "QINGDAO", "CNTJN": "TIANJIN", "CNTXG": "XINGANG", "CNUAN": "XUANCHENG", "CNWHG": "WUHAN", "CNXMN": "XIAMEN", "CNYIU": "YIWU", "DEFRAAP": "FRANKFURT", "DEHAM": "HAMBURG", "EGALX": "ALEXANDRIA", "EGPSU": "PORT SAID", "ESBCN": "BARCELONA", "ESVLC": "VALENCIA", "FRLEH": "LE HAVRE", "GRPIR": "PIRAEUS", "HKHKGAP": "HONG KONG", "IDJKT": "JAKARTA (TANJUNG PRIOK)", "IDSRG": "SEMARANG", "IDSUB": "SURABAYA", "INCCU": "KOLKATA", "INMAA": "CHENNAI", "INNSA": "NHAVA SHEVA (JNPT)", "ITGOA": "GENOA", "JPKOB": "KOBE", "JPOSA": "OSAKA", "JPTYO": "TOKYO", "JPYOK": "YOKOHAMA", "KEMOM": "MOMBASA", "KHPNH": "PHNOM PENH", "KRICN": "INCHEON", "KRPUS": "BUSAN", "LKCMB": "COLOMBO", "LYTRP": "TRIPOLI", "MACAS": "CASABLANCA", "MMRGN": "YANGON", "MYBKI": "KOTA KINABALU", "MYBTU": "BINTULU", "MYJHB": "JOHOR (PASIR GUDANG)", "MYKCH": "KUCHING", "MYPEN": "PENANG", "MYPGU": "PASIR GUDANG", "MYPKG": "PORT KLANG", "MYPKGN": "PORT KLANG NORTHPORT", "MYPKGW": "PORT KLANG WESTPORT", "MYSDK": "SANDAKAN", "MYTPP": "TANJUNG PELEPAS", "MYTWU": "TAWAU", "NGLOS": "LAGOS (APAPA)", "NLAMSAP": "AMSTERDAM SCHIPHOL", "NLRTDM": "ROTTERDAM", "NLRTM": "ROTTERDAM", "NZAKL": "AUCKLAND", "OMMCT": "MUSCAT", "PECAL": "CALLAO", "PHCEB": "CEBU", "PHMNL": "MANILA", "PKKHI": "KARACHI", "PLGDY": "GDYNIA", "QADOH": "DOHA", "QADOHAP": "DOHA HAMAD", "RUSPB": "ST. PETERSBURG", "RUVVO": "VLADIVOSTOK", "SADMM": "DAMMAM", "SAJED": "JEDDAH", "SARUH": "RIYADH DRY PORT", "SGSIN": "SINGAPORE", "SGSINAP": "SINGAPORE CHANGI", "THLCH": "LAEM CHABANG", "TRIST": "ISTANBUL", "TWKEL": "KEELUNG", "TWKHH": "KAOHSIUNG", "TWTXG": "TAICHUNG", "TZDAR": "DAR ES SALAAM", "UKLGP": "LONDON GATEWAY", "UKLHRAP": "LONDON HEATHROW", "UKSOU": "SOUTHAMPTON", "USHOU": "HOUSTON", "USJFKAP": "NEW YORK JFK", "USLA": "LOS ANGELES", "USLAX": "LOS ANGELES", "USLAXAP": "LOS ANGELES", "USLGB": "LONG BEACH", "USNYC": "NEW YORK/NEW JERSEY", "USORDAP": "CHICAGO O'HARE", "USSAV": "SAVANNAH", "USSEA": "SEATTLE/TACOMA", "VNDAN": "DA NANG", "VNHCM": "HO CHI MINH (CAT LAI)", "VNHPH": "HAIPHONG", "ZACPT": "CAPE TOWN", "ZADUR": "DURBAN"};
+function normPort(x){if(!x)return '';var t=String(x).trim();if(PORT_EN[t])return PORT_EN[t];if(PORT_CODE[t])return PORT_CODE[t];var t2=t.replace(/港$/,'');if(PORT_EN[t2])return PORT_EN[t2];return /[\u4e00-\u9fa5]/.test(t)?t:t.toUpperCase();}
 function buildPort(primary){
   var pol=normPort(primary.pol||primary.sp_pol||(primary.raw&&primary.raw.sp_pol)||'');
   var pod=normPort(primary.destination_port||primary.pod||primary.sp_pod||(primary.raw&&(primary.raw.destination_port||primary.raw.pod||primary.raw.sp_pod))||'');
@@ -359,7 +364,14 @@ function applySeal(target,url,name){
   if(!url){url=target;target='all:seller';}
   sealTargets(target).forEach(function(t){
     var id=t.replace(':','-'),img=document.getElementById(id+'-seal'),hint=document.getElementById(id+'-seal-hint');
-    if(!img)return;_sealRotation[t]=0;img.crossOrigin='anonymous';img.src=url;img.style.display='block';img.style.transform='';if(hint)hint.style.display='none';
+    if(!img)return;_sealRotation[t]=0;
+    img.onerror=function(){
+      if(img.getAttribute('crossorigin')){ img.removeAttribute('crossorigin'); img.src=url; return; }
+      img.style.display='none';
+      if(hint){hint.style.display='';hint.textContent='章图加载失败 · 点击重选';hint.style.color='#c00';hint.style.fontWeight='700';}
+    };
+    img.crossOrigin='anonymous';img.src=url;img.style.display='block';img.style.transform='';
+    if(hint){hint.style.display='';hint.textContent='已选: '+(name||'印章')+' · 点击修改';hint.style.color='#16a34a';hint.style.fontWeight='700';}
     try{localStorage.setItem(sealKey(t),JSON.stringify({url:url,name:name||''}));}catch(e){}
     initRotHandle(t);
   });
@@ -466,9 +478,9 @@ function init(){
       window._freightLabelEn=docPrimary.inland_freight_label_en||_praw.inland_freight_label_en||'INLAND FREIGHT';
       window._agg=aggregate(all);window._cur=cur;window._docPrimary=docPrimary;  // 存主订单供切模式重算港口
       var _dlFsOrder=all.filter(function(o){return o&&(String(o.order_no)===orderNo||shortNo(o.order_no)===shortNo(orderNo));})[0]||docPrimary;
-      var _dlFs=fsFromOrder(_dlFsOrder)||_dlFsOrder.contract_no||'';var _dlPo=(_dlFsOrder&&_dlFsOrder.customer_po)||shortNo(docPrimary.order_no)||orderNo||'';
-      window._docBaseName='IV-'+(_customsMode?(_dlFs||_dlPo):(_dlPo||_dlFs));  // 文件名同No.规则: 报关版IV-FS/客户版IV-PO
-      document.title='Export Documents · '+window._docBaseName;
+      var _dlFs=fsFromOrder(_dlFsOrder)||_dlFsOrder.contract_no||'';var _dlPo=(_dlFsOrder&&_dlFsOrder.customer_po)||orderRaw(_dlFsOrder).customerPO||orderRaw(_dlFsOrder).customer_po||'';
+      window._docBaseName=(_customsMode?'BG-':'IV-')+(_customsMode?(_dlFs||_dlPo):(_dlPo||_dlFs));  // 文件名同No.规则: 报关版IV-FS/客户版IV-PO
+      document.title=window._docBaseName;
       window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
       var ps=Array.isArray(d)?d:(d.data||[]);
       var sp=(docPrimary.seller_code&&ps.find(function(x){return x.code===docPrimary.seller_code;}))||ps.find(function(x){return x.name_cn===docPrimary.issuing_company||x.name_en===docPrimary.issuing_company;})||ps.find(function(x){return x.is_default;});
@@ -482,4 +494,10 @@ function init(){
   }).catch(function(e){banner('err',e.message);});
   ['pl','sc','iv'].forEach(function(p){['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey(p+':'+w))||'null');if(s&&s.url)applySeal(p+':'+w,s.url,s.name);}catch(e){}});});
 }
-init();
+if(/^(freight|portcharge)$/.test(String(qp("page")||"").toLowerCase())){
+  var _freightScript=document.createElement("script");
+  _freightScript.src="export-docs-freight.js";
+  document.head.appendChild(_freightScript);
+}else{
+  init();
+}

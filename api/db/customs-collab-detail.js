@@ -25,7 +25,7 @@ async function handleDetail(req, res) {
   try {
     const st = factoryMode ? await assertFactoryCustoms(client, scope.factory.code, customsNo) : await ensureCustomsStatus(client, customsNo, requestedFactoryCode);
     const up = await uploadedForCustoms(client, customsNo, st.factory_code);
-    const effective = money(st.manual_expected_amount) ?? money(st.system_expected_amount);
+    const effective = money(st.manual_expected_amount) ?? null;  // OLI出局(Damon 07-14):模板上限只认报关锚定,无锚返null,不从system/OLI兜底
 
     const fer = await client.query(
       `SELECT fer.customs_no, fer.contract_no, MIN(fer.export_date) AS export_date,
@@ -167,39 +167,7 @@ async function handleDetail(req, res) {
       const spread = await factorySpread(client, customsNo, st.contract_no || row.contract_no || order?.contract_no);
       const ciTpl = await loadCustomsItems(client, customsNo);
       const anchoredTpl = invoiceLinesFromItems(ciTpl.items, sellerRow, spread.length > 1);
-      const lineResult = !anchoredTpl.anchored && orderIds.length
-        ? await client.query(
-            `SELECT
-                COALESCE(NULLIF(BTRIM(oli.declaration_name), ''),
-                         NULLIF(BTRIM(oli.product_name), ''),
-                         NULLIF(BTRIM(p.declaration_name), ''),
-                         NULLIF(BTRIM(p.product_name), '')) AS name,
-                COALESCE(NULLIF(BTRIM(p.spec), ''), NULLIF(BTRIM(oli.size), '')) AS spec,
-                COALESCE(NULLIF(BTRIM(p.transaction_unit), ''), NULLIF($2, ''), NULLIF(BTRIM(oli.unit), ''), '箱') AS unit,
-                ROUND(SUM(COALESCE(oli.qty_ctn, 0))::numeric, 2) AS qty,
-                ROUND(COALESCE(NULLIF(SUM(oli.factory_subtotal),0), NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0), NULLIF(SUM(oli.qty_ctn*p.factory_price),0), 0)::numeric, 2) AS amount,
-                CASE
-                  WHEN COALESCE(NULLIF(BTRIM(oli.hs_code), ''), NULLIF(BTRIM(p.hs_code), '')) LIKE '2309%' THEN 0.09
-                  ELSE 0.13
-                END AS vat_rate
-               FROM order_line_items oli
-               LEFT JOIN products p ON p.id=oli.product_id
-              WHERE oli.order_id = ANY($1::int[])
-              GROUP BY
-                COALESCE(NULLIF(BTRIM(oli.declaration_name), ''),
-                         NULLIF(BTRIM(oli.product_name), ''),
-                         NULLIF(BTRIM(p.declaration_name), ''),
-                         NULLIF(BTRIM(p.product_name), '')),
-                COALESCE(NULLIF(BTRIM(p.spec), ''), NULLIF(BTRIM(oli.size), '')),
-                COALESCE(NULLIF(BTRIM(p.transaction_unit), ''), NULLIF($2, ''), NULLIF(BTRIM(oli.unit), ''), '箱'),
-                CASE
-                  WHEN COALESCE(NULLIF(BTRIM(oli.hs_code), ''), NULLIF(BTRIM(p.hs_code), '')) LIKE '2309%' THEN 0.09
-                  ELSE 0.13
-                END
-              ORDER BY MIN(oli.sort_order) NULLS LAST, MIN(oli.id)`,
-            [orderIds, rawUnit]
-          )
-        : { rows: [] };
+      const lineResult = { rows: [] };  // 护栏(Damon 07-14):报关明细缺失绝不兜底OLI,前端显"待报关明细导入"
 
       const unitMap = { CTN: "箱", PCS: "件", KG: "千克", BAG: "包", SET: "套" };
       const lines = anchoredTpl.anchored ? anchoredTpl.lines : lineResult.rows.map((l) => ({ name: l.name || null, spec: l.spec || null,
@@ -212,8 +180,8 @@ async function handleDetail(req, res) {
 
       invoiceTemplate = { buyer, seller, lines, order_no: mergedOrderNos || order?.order_no || null,
         po_no: order?.customer_po || null, factory_ref: order?.contract_no || null, baoguan_amount: baoguanAmount,
-        lines_anchored: anchoredTpl.anchored, over_baoguan: baoguanAmount !== null && linesTotal > baoguanAmount + 1,
-        total_incl: money(linesTotal) || effective || null };
+        lines_anchored: anchoredTpl.anchored, needs_customs_import: !anchoredTpl.anchored, over_baoguan: baoguanAmount !== null && linesTotal > baoguanAmount + 1,
+        total_incl: anchoredTpl.anchored ? (money(linesTotal) || effective || null) : (effective || null) };
       delete invoiceTemplate.baoguan_amount;
     }
 

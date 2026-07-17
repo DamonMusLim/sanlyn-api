@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>供应商款式报价</title>
+<style>
+:root{--bg:#f6f7f9;--text:#172033;--muted:#667085;--line:#d8dee8;--soft:#f1f5f9;--blue:#175cd3;--bad:#b42318;--ok:#15803d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:20px}.top{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:12px;flex-wrap:wrap}
+h1{font-size:21px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+button{border:1px solid var(--line);background:#fff;border-radius:7px;padding:8px 13px;font-weight:700;cursor:pointer;font:inherit}
+button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}button.danger{border-color:#fecdca;background:#fff;color:var(--bad);padding:6px 10px}
+button.on{border-color:#16794c;background:#e9f7ef;color:var(--ok)}button.mini{padding:5px 9px}button:disabled{opacity:.5;cursor:not-allowed}
+select,input{border:1px solid var(--line);border-radius:7px;padding:7px 9px;background:#fff;font:inherit;min-width:0}.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;background:#fff;padding:4px 9px;font-weight:700;color:#344054}
+.card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-bottom:12px}.card.bill h3{margin:0 0 8px;font-size:14px}
+.bill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:5px 18px}.bill-grid div{color:#344054}.bill-grid b{color:var(--muted);font-weight:600;margin-right:5px}
+.main-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:start}.identity{min-width:0}.name-line{font-size:18px;font-weight:850;line-height:1.3;overflow-wrap:anywhere}
+.parts{display:flex;gap:9px;flex-wrap:wrap;margin-top:5px;color:#344054;font-size:14px}.part{min-width:0;overflow-wrap:anywhere}.part:empty{display:none}
+.sku{color:#94a3b8;font:11px ui-monospace,Menlo,monospace;margin-top:5px}.price-box{text-align:right;min-width:126px}.price-box .v{font-size:23px;font-weight:850;color:var(--blue);line-height:1.2}.price-box .l{font-size:11px;color:var(--muted)}
+.main-edit{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px}.price-edit{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}.price-edit label,.f label{font-size:11px;color:var(--muted)}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;border:1px solid var(--line)}.b-stop{background:#fef3f2;color:var(--bad);border-color:#fecdca}.b-refund{background:#ecfdf3;color:var(--ok);border-color:#abefc6}
+.flavor-area{margin-top:12px}.chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-width:0}.chip{display:inline-flex;align-items:center;gap:5px;max-width:100%;border:1px solid #b8c7dd;background:#f8fafc;border-radius:999px;padding:4px 9px;font-weight:700;color:#344054;overflow-wrap:anywhere}
+.chip button{border:0;background:transparent;padding:0 2px;color:var(--bad);font-weight:900}.flavor-add{display:inline-flex;gap:5px;align-items:center;max-width:100%}.flavor-add input{width:150px;padding:5px 8px}.muted{color:#98a2b3;font-weight:400}
+.common{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 14px;margin-top:12px}.f{display:flex;flex-direction:column;gap:3px;min-width:0}.f .val{font-weight:700;min-height:20px;overflow-wrap:anywhere}.f input,.f select{width:100%}
+.thumb{width:58px;height:58px;border:1px solid var(--line);border-radius:7px;object-fit:cover;background:#f2f4f7;display:block}.picline,.up,.plate-pic{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.up a,.picline a,.plate-pic a{color:var(--blue);font-size:12px}.plate-meta{font-size:12px;color:#344054}.progress{width:150px;height:7px;border-radius:999px;background:#e5e7eb;overflow:hidden}.bar{height:100%;background:var(--blue);width:0}.plate-nas{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.plate-nas input{width:170px;padding:5px 8px}
+details.more{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}details.more>summary{cursor:pointer;font-weight:800;color:#344054;list-style:none}details.more>summary::-webkit-details-marker{display:none}
+.more-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px 14px;margin-top:8px;background:var(--soft);border-radius:7px;padding:10px}.empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+@media(max-width:640px){.wrap{padding:12px}.main-row{grid-template-columns:1fr}.price-box{text-align:left}.main-edit{grid-template-columns:1fr}.common,.more-grid{grid-template-columns:1fr}.name-line{font-size:16px}.price-box .v{font-size:21px}.flavor-add input{width:130px}}
+@media print{.actions,button{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1 id="title">款式报价</h1><div class="sub">供应商填报 · 含税价自动算 · 图片可上传下载</div></div>
+    <div class="actions">
+      <span class="pill" id="role-pill">…</span>
+      <select id="brand-filter" style="display:none"></select>
+      <button class="primary" id="create-btn" style="display:none">+ 新增款式</button>
+      <button id="edit-btn" style="display:none">✎ 编辑</button>
+      <button id="import-btn" style="display:none">⬆ 导入Excel</button>
+      <button id="refresh">刷新</button>
+      <button class="primary" id="save-all" style="display:none">保存全部</button>
+    </div>
+  </div>
+  <div class="card bill" id="bill" style="display:none"><h3>开票信息</h3><div class="bill-grid" id="bill-body"></div></div>
+  <div id="list"><div class="empty">加载中...</div></div>
+</div>
+<script>
+const apiUrl = "/api/db/supplier-catalog";
+const state = { canEdit:false, editing:false, dirty:false, rows:[], brandFilter:"", supplier:null, role:"", plateProgress:{} };
+function token(){
+  const cand = [new URLSearchParams(location.search).get("token"), localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
+function authHeaders(json){ const t=token(), h=json?{"Content-Type":"application/json"}:{}; if(t) h.Authorization="Bearer "+t; return h; }
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function num(v){return v==null||v===""?"":Number(v).toLocaleString(undefined,{maximumFractionDigits:4});}
+function rawNum(v){return v==null||v===""?"":Number(v);}
+function incTax(ex, pt){ if(ex===""||ex==null) return null; return Math.round(Number(ex)*(1+(Number(pt)||0)/100)*10000)/10000; }
+function billRow(k,v){ return v ? `<div><b>${esc(k)}</b>${esc(v)}</div>` : ""; }
+function canEdit(){ return state.editing && state.canEdit; }
+function isInternal(){ return state.role==="sanlyn" || state.role==="admin"; }
+function fieldInput(r,f,kind){
+  if(kind==="date") return `<input type="date" data-sku="${esc(r.sku_code)}" data-field="${f}" value="${esc(r[f]||"")}">`;
+  if(kind==="status") return `<select data-sku="${esc(r.sku_code)}" data-field="status"><option value="active"${r.status!=="stopped"?" selected":""}>在产</option><option value="stopped"${r.status==="stopped"?" selected":""}>停产</option></select>`;
+  if(kind==="num") return `<input type="number" step="any" data-sku="${esc(r.sku_code)}" data-field="${f}" value="${esc(rawNum(r[f]))}" ${f==="price_ex_tax"||f==="tax_point"?'data-inc="1"':''}>`;
+  return `<input data-sku="${esc(r.sku_code)}" data-field="${f}" value="${esc(r[f]||"")}">`;
+}
+function fld(r,f,label,kind){
+  if(canEdit()) return `<div class="f"><label>${esc(label)}</label>${fieldInput(r,f,kind)}</div>`;
+  let v = r[f];
+  if(kind==="num") v = (v==null||v==="") ? "" : num(v);
+  if(kind==="status") v = r.status==="stopped" ? "停产" : "在产";
+  return `<div class="f"><label>${esc(label)}</label>${v ? `<span class="val">${esc(v)}</span>` : `<span class="val muted">—</span>`}</div>`;
+}
+function imgBlock(r){
+  const img = r.image_url ? `<img class="thumb" src="${esc(r.image_url)}">` : `<div class="thumb"></div>`;
+  if(!canEdit()) return `<div class="f"><label>图片</label><div class="picline">${r.image_url?`<a href="${esc(r.image_url)}" download target="_blank">${img}</a><a href="${esc(r.image_url)}" download target="_blank">下载</a>`:`<span class="muted">—</span>`}</div></div>`;
+  return `<div class="f"><label>图片</label><div class="picline">${img}<button class="mini" type="button" data-upload="${esc(r.sku_code)}">上传图片</button>${r.image_url?`<a href="${esc(r.image_url)}" download target="_blank">下载</a>`:""}</div></div>`;
+}
+function plateImageBlock(r){
+  const st = r.plate_status || (r.plate_image_url ? "待转存" : "");
+  const pct = state.plateProgress[r.sku_code];
+  if(pct!=null) return `<div class="f"><label>版图</label><div class="plate-pic"><span class="plate-meta">上传中 ${pct}%</span><div class="progress"><div class="bar" style="width:${pct}%"></div></div></div></div>`;
+  if(st==="已存NAS") return `<div class="f"><label>版图</label><div class="plate-pic"><span class="badge b-refund">已存NAS</span>${r.plate_nas_location?`<span class="plate-meta">${esc(r.plate_nas_location)}</span>`:""}</div></div>`;
+  if(st==="待转存") return `<div class="f"><label>版图</label><div class="plate-pic"><span class="badge">版图已发·待转存</span>${r.plate_uploaded_at?`<span class="plate-meta">${esc(String(r.plate_uploaded_at).slice(0,16))}</span>`:""}${r.plate_image_url?`<a href="${esc(r.plate_image_url)}" download target="_blank">下载</a>`:""}${isInternal()?`<span class="plate-nas"><input placeholder="NAS位置" data-nas-input="${esc(r.sku_code)}"><button class="mini" type="button" data-plate-archived="${esc(r.sku_code)}">标记已存NAS</button></span>`:""}</div></div>`;
+  if(!canEdit()) return `<div class="f"><label>版图</label><div class="plate-pic"><span class="muted">—</span></div></div>`;
+  return `<div class="f"><label>版图</label><div class="plate-pic"><button class="mini" type="button" data-upload-plate="${esc(r.sku_code)}">发送版图</button></div></div>`;
+}
+function mainRow(r){
+  const inc = r.price_inc_tax, stopTag = r.status==="stopped" ? `<span class="badge b-stop">停产</span>` : "";
+  if(canEdit()) return `<div class="main-row">
+    <div class="identity"><div class="main-edit">${fld(r,"brand","系列")}${fld(r,"name","品名")}${fld(r,"spec","规格")}${fld(r,"material","材质")}</div><div class="sku">${esc(r.sku_code)}</div></div>
+    <div class="price-box"><div class="v" data-inc-cell="${esc(r.sku_code)}">${inc==null?"—":num(inc)}</div><div class="l">含税价</div><div class="price-edit">${fld(r,"price_ex_tax","未含税","num")}${fld(r,"tax_point","开票点%","num")}</div></div>
+  </div>`;
+  return `<div class="main-row">
+    <div class="identity"><div class="name-line">${esc(r.name || r.sku_code)} ${stopTag}</div><div class="parts"><span class="part">${esc(r.spec||"")}</span><span class="part">${esc(r.material||"")}</span></div><div class="sku">${esc(r.sku_code)}</div></div>
+    <div class="price-box"><div class="v" data-inc-cell="${esc(r.sku_code)}">${inc==null?"—":num(inc)}</div><div class="l">含税价</div></div>
+  </div>`;
+}
+function flavorSection(r){
+  const fs = Array.isArray(r.flavors) ? r.flavors : [];
+  const chips = fs.length ? fs.map((x,i)=>`<span class="chip">${esc(x)}${canEdit()?`<button type="button" data-flavor-del="${i}" data-sku="${esc(r.sku_code)}">×</button>`:""}</span>`).join("") : `<span class="muted">未设口味</span>`;
+  const add = canEdit() ? `<span class="flavor-add"><input data-flavor-input="${esc(r.sku_code)}" placeholder="加口味,回车"><button class="mini" type="button" data-flavor-add="${esc(r.sku_code)}">+</button></span>` : "";
+  return `<div class="flavor-area" data-flavors="${esc(r.sku_code)}"><div class="chips">${chips}${add}</div></div>`;
+}
+function card(r){
+  const refundTag = r.plate_fee_refunded ? `<span class="badge b-refund">已退</span>` : "";
+  const del = canEdit() ? `<button class="danger" type="button" data-delete="${esc(r.sku_code)}">删除</button>` : "";
+  return `<div class="card" data-sku="${esc(r.sku_code)}">
+    ${mainRow(r)}
+    ${flavorSection(r)}
+    <div class="common">
+      ${fld(r,"moq","起订量(MOQ)","num")}
+      ${fld(r,"lead_time_days","交期(天)","num")}
+      <div class="f"><label>退版费 ${refundTag}</label>${canEdit()?`<input type="number" step="any" data-sku="${esc(r.sku_code)}" data-field="plate_fee" value="${esc(rawNum(r.plate_fee))}">`:`<span class="val">${r.plate_fee==null?"—":num(r.plate_fee)}${r.plate_fee_refunded?"（已退）":""}</span>`}</div>
+      ${plateImageBlock(r)}
+      ${fld(r,"status","状态","status")}
+      ${fld(r,"barcode","条形码")}
+      ${imgBlock(r)}
+    </div>
+    <details class="more"><summary>更多</summary><div class="more-grid">
+      ${fld(r,"supplier_item_code","供应商货号")}
+      ${fld(r,"quote_date","报价日期","date")}
+      ${fld(r,"quote_valid_until","报价有效期","date")}
+      ${fld(r,"notes","备注")}
+      ${fld(r,"unit","单位")}
+      ${canEdit()?fld(r,"plate_fee_refund_qty","退版费返还量","num"):""}
+      ${!canEdit()&&Number(r.cumulative_qty||0)>0?`<div class="f"><label>累计下单</label><span class="val">${num(r.cumulative_qty)}${r.plate_fee_refund_qty?` / 返还线 ${num(r.plate_fee_refund_qty)}`:""}</span></div>`:""}
+    </div></details>
+    ${del}
+  </div>`;
+}
+function fillBrandFilter(){
+  const sel = document.getElementById("brand-filter");
+  const brands = [...new Set(state.rows.map(r=>r.brand).filter(Boolean))];
+  if(state.brandFilter && !brands.includes(state.brandFilter)) state.brandFilter = "";
+  sel.innerHTML = `<option value="">全部品牌</option>` + brands.map(b=>`<option value="${esc(b)}"${b===state.brandFilter?" selected":""}>${esc(b)}</option>`).join("");
+  sel.style.display = brands.length>1 ? "" : "none";
+}
+function render(){
+  document.getElementById("role-pill").textContent = state.canEdit ? (state.editing?"编辑中":"可填写") : "只读";
+  const eb = document.getElementById("edit-btn");
+  eb.style.display = state.canEdit ? "" : "none";
+  document.getElementById("create-btn").style.display = state.canEdit ? "" : "none";
+  document.getElementById("import-btn").style.display = state.canEdit ? "" : "none";
+  eb.textContent = state.editing ? "✕ 退出编辑" : "✎ 编辑";
+  eb.className = state.editing ? "on" : "";
+  document.getElementById("save-all").style.display = canEdit() ? "" : "none";
+  const rows = state.brandFilter ? state.rows.filter(r=>r.brand===state.brandFilter) : state.rows;
+  document.getElementById("list").innerHTML = rows.length ? rows.map(card).join("") : '<div class="empty">暂无款式</div>';
+}
+async function load(){
+  const root = document.getElementById("list");
+  root.innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"加载失败");
+    state.canEdit = !!r.can_edit; state.role = r.role || ""; state.rows = (r.rows||[]).map(x=>({...x,flavors:Array.isArray(x.flavors)?x.flavors:[]})); state.supplier = r.supplier||null; state.dirty=false;
+    const org = (r.org_name||"").trim();
+    document.getElementById("title").textContent = (org?org+" · ":"")+"款式报价";
+    document.title = (org?org+" · ":"")+"款式报价";
+    const s = r.supplier, bill = document.getElementById("bill");
+    if(s){ document.getElementById("bill-body").innerHTML =
+      billRow("名称：",s.name)+billRow("税号：",s.tax_no)+billRow("开户行：",s.bank_name)+billRow("账号：",s.bank_account)+billRow("行号：",s.bank_code)+billRow("地址：",s.address)+billRow("联系人：",s.contact)+billRow("电话：",s.phone);
+      bill.style.display="block"; } else bill.style.display="none";
+    fillBrandFilter(); render();
+  }catch(e){ root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+}
+function collectRows(){
+  return [...document.querySelectorAll(".card[data-sku]")].map(cardEl=>{
+    const out = { sku_code: cardEl.dataset.sku };
+    cardEl.querySelectorAll("input,select").forEach(i=>{ if(i.dataset.field) out[i.dataset.field]=i.value; });
+    return out;
+  });
+}
+async function saveAll(){
+  if(!state.canEdit) return;
+  const rows = collectRows(), btn = document.getElementById("save-all"); btn.disabled=true; btn.textContent="保存中...";
+  try{
+    const r = await fetch(apiUrl+"?action=save",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({rows})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"保存失败");
+    state.editing = false; state.dirty=false; await load();
+  }catch(e){ alert(e.message); }
+  finally{ btn.textContent="保存全部"; btn.disabled=false; }
+}
+async function createRow(){
+  if(!state.canEdit) return;
+  const body = { action:"create" }, sc = new URLSearchParams(location.search).get("supplier_code") || state.supplier?.code || "";
+  if(sc) body.supplier_code = sc;
+  try{
+    const r = await fetch(apiUrl+"?action=create",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify(body)}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"新增失败");
+    state.editing = true; state.dirty=false; await load(); state.editing = true; render();
+  }catch(e){ alert(e.message); }
+}
+async function deleteRow(sku){
+  if(!state.canEdit || !sku) return;
+  if(!confirm("停用该款式?(可恢复)")) return;
+  try{
+    const r = await fetch(apiUrl+"?action=delete",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku_code:sku})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"删除失败");
+    await load();
+  }catch(e){ alert(e.message); }
+}
+async function importExcel(file){
+  const fd = new FormData(); fd.append("file", file);
+  try{
+    const r = await fetch("/api/db/supplier-import",{method:"POST",headers:authHeaders(),body:fd}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"导入失败");
+    alert(`导入成功：新增 ${r.created} 款，更新 ${r.updated} 款，图片 ${r.images} 张`);
+    state.editing=false; state.dirty=false; await load();
+  }catch(e){ alert("导入失败："+e.message); }
+}
+async function uploadImage(sku, file, field){
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("path", "supplier-catalog/"+sku+"-"+(field==="plate_image_url"?"plate-":"")+file.name);
+  try{
+    const r = await fetch("/api/oss-upload",{method:"POST",body:fd}).then(x=>x.json());
+    if(!r.success || !r.url) throw new Error(r.error||"上传失败");
+    const save = await fetch(apiUrl+"?action=save",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku_code:sku,[field]:r.url})}).then(x=>x.json());
+    if(!save.success) throw new Error(save.error||"保存图片失败");
+    const row = state.rows.find(x=>x.sku_code===sku); if(row) row[field] = r.url;
+    render();
+  }catch(e){ alert("图片上传失败: "+e.message); }
+}
+function xhrPut(url, file, contentType, onProgress){
+  return new Promise((resolve,reject)=>{
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", contentType || "application/octet-stream");
+    xhr.upload.onprogress = ev => { if(ev.lengthComputable) onProgress(Math.max(1, Math.round(ev.loaded * 100 / ev.total))); };
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error("OSS上传失败("+xhr.status+")"));
+    xhr.onerror = () => reject(new Error("网络错误"));
+    xhr.send(file);
+  });
+}
+async function sendPlate(sku, file){
+  const ct = file.type || "application/octet-stream";
+  state.plateProgress[sku] = 1; render();
+  try{
+    const sign = await fetch(apiUrl+"?action=plate-sign",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku_code:sku,filename:file.name,content_type:ct})}).then(x=>x.json());
+    if(!sign.success || !sign.put_url) throw new Error(sign.error||"签名失败");
+    await xhrPut(sign.put_url, file, ct, p=>{ if(state.plateProgress[sku]!==p){ state.plateProgress[sku]=p; render(); } });
+    const sent = await fetch(apiUrl+"?action=plate-sent",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku_code:sku,key:sign.key})}).then(x=>x.json());
+    if(!sent.success) throw new Error(sent.error||"保存版图状态失败");
+    delete state.plateProgress[sku]; await load();
+  }catch(e){ delete state.plateProgress[sku]; render(); alert("版图发送失败: "+e.message); }
+}
+async function markPlateArchived(sku){
+  const inp = [...document.querySelectorAll("[data-nas-input]")].find(x=>x.dataset.nasInput===sku);
+  const nas_location = (inp?.value||"").trim();
+  try{
+    const r = await fetch(apiUrl+"?action=plate-archived",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku_code:sku,nas_location})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"标记失败");
+    await load();
+  }catch(e){ alert(e.message); }
+}
+async function setFlavors(sku, flavors){
+  const r = await fetch(apiUrl+"?action=set-flavors",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku_code:sku,flavors})}).then(x=>x.json());
+  if(!r.success) throw new Error(r.error||"口味保存失败");
+  const row = state.rows.find(x=>x.sku_code===sku); if(row) row.flavors = r.flavors || [];
+  const box = [...document.querySelectorAll("[data-flavors]")].find(x=>x.dataset.flavors===sku);
+  if(box && row) box.outerHTML = flavorSection(row);
+}
+async function addFlavor(sku){
+  const inp = [...document.querySelectorAll("[data-flavor-input]")].find(x=>x.dataset.flavorInput===sku);
+  const v = (inp?.value||"").trim(); if(!v) return;
+  const row = state.rows.find(x=>x.sku_code===sku); if(!row) return;
+  const fs = [...(Array.isArray(row.flavors)?row.flavors:[])]; if(!fs.includes(v)) fs.push(v);
+  try{ await setFlavors(sku, fs); }catch(e){ alert(e.message); }
+}
+async function delFlavor(sku, idx){
+  const row = state.rows.find(x=>x.sku_code===sku); if(!row) return;
+  const fs = (Array.isArray(row.flavors)?row.flavors:[]).filter((_,i)=>i!==Number(idx));
+  try{ await setFlavors(sku, fs); }catch(e){ alert(e.message); }
+}
+function confirmDirty(){ return !state.dirty || confirm("有未保存修改，确认离开当前编辑内容?"); }
+document.addEventListener("click", e=>{
+  if(e.target.id==="refresh"){ if(confirmDirty()){ state.editing=false; state.dirty=false; load(); } }
+  if(e.target.id==="save-all") saveAll();
+  if(e.target.id==="create-btn") createRow();
+  if(e.target.id==="edit-btn"){ if(state.editing && !confirmDirty()) return; state.editing=!state.editing; if(!state.editing) state.dirty=false; render(); }
+  if(e.target.id==="import-btn"){ const inp=document.createElement("input"); inp.type="file"; inp.accept=".xlsx"; inp.onchange=()=>{ if(inp.files[0]) importExcel(inp.files[0]); }; inp.click(); }
+  const up = e.target.dataset && e.target.dataset.upload;
+  if(up){ const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*"; inp.onchange=()=>{ if(inp.files[0]) uploadImage(up, inp.files[0], "image_url"); }; inp.click(); }
+  const upPlate = e.target.dataset && e.target.dataset.uploadPlate;
+  if(upPlate){
+    if(!confirm("版图较大(约1小时上传),确认发送?")) return;
+    if(!confirm("再次确认发送版图?")) return;
+    const inp=document.createElement("input"); inp.type="file"; inp.onchange=()=>{ if(inp.files[0]) sendPlate(upPlate, inp.files[0]); }; inp.click();
+  }
+  const arch = e.target.dataset && e.target.dataset.plateArchived; if(arch) markPlateArchived(arch);
+  const del = e.target.dataset && e.target.dataset.delete; if(del) deleteRow(del);
+  const add = e.target.dataset && e.target.dataset.flavorAdd; if(add) addFlavor(add);
+  if(e.target.dataset && e.target.dataset.flavorDel !== undefined) delFlavor(e.target.dataset.sku, e.target.dataset.flavorDel);
+});
+document.addEventListener("change", e=>{ if(e.target.id==="brand-filter"){ state.brandFilter=e.target.value; render(); } if(e.target.dataset && e.target.dataset.field) state.dirty=true; });
+document.addEventListener("keydown", e=>{ const sku = e.target.dataset && e.target.dataset.flavorInput; if(sku && e.key==="Enter"){ e.preventDefault(); addFlavor(sku); } });
+document.addEventListener("input", e=>{
+  if(e.target.dataset && e.target.dataset.field) state.dirty=true;
+  if(e.target.dataset && e.target.dataset.inc){
+    const cardEl = e.target.closest(".card[data-sku]");
+    const ex = cardEl.querySelector('[data-field="price_ex_tax"]')?.value;
+    const pt = cardEl.querySelector('[data-field="tax_point"]')?.value;
+    const cell = cardEl.querySelector("[data-inc-cell]");
+    const v = incTax(ex, pt); if(cell) cell.textContent = v==null?"—":num(v);
+  }
+});
+window.addEventListener("beforeunload", e=>{ if(state.dirty){ e.preventDefault(); e.returnValue=""; } });
+load();
+</script>
+</body>
+</html>

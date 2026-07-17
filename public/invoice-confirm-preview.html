@@ -315,7 +315,7 @@
       if(!isInternal()) return;
       ensureFinanceView();
       $("finTitle").firstChild.nodeValue="财务对单表 · "+(sp.bl_no||sp.shipment_no||"费用尚未录入");
-      $("finSub").textContent=[sp.shipment_no,"一票三方账 · 成本 / 销售 / 差额"].filter(Boolean).join(" · ");
+      $("finSub").textContent=[sp.shipment_no,"一票两手 · 收票供应链(进项) + 开票给客户(销项)"].filter(Boolean).join(" · ");
       $("finTag").textContent=sp.shipment_no||"—"; $("finDoc").textContent=[sp.vessel,cntr].filter(Boolean).join(" · ")||"—";
       $("lockRoute").textContent=route()||"—";
     }
@@ -349,8 +349,8 @@
       const cost=state.bill_lines.reduce((s,l)=>s+num(l.cost_amount??(l.line_side==="payable"?l.amount:0)),0);
       const sale=state.bill_lines.reduce((s,l)=>s+num(l.sale_amount??(l.line_side==="receivable"?l.amount:0)),0);
       const visible=totalLines(cur), diff=sale-cost, hasInternal=state.bill_lines.some(l=>"cost_amount"in l||"sale_amount"in l);
-      $("payWho").textContent=state.seller?.name||"—"; $("payAmt").textContent=sym(cur)+money(cost||visible); $("paySub").textContent=hasInternal?"成本侧合计":"按当前 lens 可见金额";
-      $("recvWho").textContent=state.buyer?.name||"—"; $("recvAmt").textContent=sym(cur)+money(sale||visible); $("recvSub").textContent=hasInternal?"销售侧合计":"账单合计";
+      $("payWho").textContent=state.seller?.name||"—"; $("payAmt").textContent=sym(cur)+money(cost||visible); $("paySub").textContent=hasInternal?"应收供应商进项票":"按当前 lens 可见金额";
+      $("recvWho").textContent=state.buyer?.name||"—"; $("recvAmt").textContent=sym(cur)+money(sale||visible); $("recvSub").textContent=hasInternal?"我方开销项票":"账单合计";
       $("custWho").textContent=hasInternal&&state.shipment?.billing_segment==="freight"?(state.buyer?.name||"—"):"data 未返回则不展示";
       $("custAmt").textContent=hasInternal?sym(cur)+money(Math.max(diff,0)):"—"; $("custSub").textContent=hasInternal?"差额口径":"—";
       $("custCard").style.display=hasInternal?"block":"none";
@@ -373,7 +373,7 @@
     function ensureFinanceView(){
       if($("fin")) return;
       document.querySelector(".tabs").insertAdjacentHTML("beforeend",`<div class="tab" data-v="fin">💰 财务对单表<span class="s">我们内部核账用的</span></div>`);
-      document.querySelector(".wrap").insertAdjacentHTML("beforeend",`<section class="view" id="fin"><div class="sheet"><div class="sheet-hd"><div><div class="brand" id="finTitle">财务对单表 · 费用尚未录入<div class="cn" id="finSub">一票三方账 · 成本 / 销售 / 差额</div></div></div><div class="docmeta"><div class="doctag" style="color:var(--ink)" id="finTag">—</div><div class="docno" id="finDoc">—</div></div></div><div class="sec"><div class="sec-t">三方结算关系</div><div class="cards"><div class="pcard pay"><div class="role">应付</div><div class="who" id="payWho">费用尚未录入</div><div class="amt" id="payAmt">¥0.00</div><div class="amt2" id="paySub">—</div></div><div class="pcard recv"><div class="role">应收</div><div class="who" id="recvWho">费用尚未录入</div><div class="amt" id="recvAmt">¥0.00</div><div class="amt2" id="recvSub">账单合计</div></div><div class="pcard cust" id="custCard"><div class="role">相关方</div><div class="who" id="custWho">data 未返回则不展示</div><div class="amt" id="custAmt">—</div><div class="amt2" id="custSub">—</div></div></div></div><div class="sec" style="border-top:1px solid var(--line)"><div class="sec-t">成本 ↔ 销售 对账</div><div class="recon"><div class="rrow h"><span>科目</span><span class="rr">成本侧</span><span class="rr">销售侧</span><span class="rr">差额</span></div><div id="reconRows"></div></div></div><div class="flag" id="finFlag"><i>⚠</i><span>按 data 返回字段展示，未返回的成本/客户侧不展示。</span></div><div class="lockrow"><span>🔒 港杂锁价 · <b id="lockRoute">—</b>　当前：未锁定（首次）</span><button class="lockbtn">确认后锁定 · 下票复用</button></div><div style="padding:6px 22px 18px"><div class="caption" style="margin:8px 0 0">锁定后同航线下一票自动套此价，偏离即报警。</div></div></div></section>`);
+      document.querySelector(".wrap").insertAdjacentHTML("beforeend",`<section class="view" id="fin"><div class="sheet"><div class="sheet-hd"><div><div class="brand" id="finTitle">财务对单表 · 费用尚未录入<div class="cn" id="finSub">一票两手 · 收票供应链(进项) + 开票给客户(销项)</div></div></div><div class="docmeta"><div class="doctag" style="color:var(--ink)" id="finTag">—</div><div class="docno" id="finDoc">—</div></div></div><div class="sec"><div class="sec-t">一票两手发票关系</div><div class="cards"><div class="pcard pay"><div class="role">收票供应链 · 进项</div><div class="who" id="payWho">费用尚未录入</div><div class="amt" id="payAmt">¥0.00</div><div class="amt2" id="paySub">—</div></div><div class="pcard recv"><div class="role">开票给客户 · 销项</div><div class="who" id="recvWho">费用尚未录入</div><div class="amt" id="recvAmt">¥0.00</div><div class="amt2" id="recvSub">账单合计</div></div><div class="pcard cust" id="custCard"><div class="role">相关方</div><div class="who" id="custWho">data 未返回则不展示</div><div class="amt" id="custAmt">—</div><div class="amt2" id="custSub">—</div></div></div></div><div class="sec" style="border-top:1px solid var(--line)"><div class="sec-t">进项 ↔ 销项 对账</div><div class="recon"><div class="rrow h"><span>科目</span><span class="rr">进项(收票)</span><span class="rr">销项(开票)</span><span class="rr">毛利</span></div><div id="reconRows"></div></div></div><div class="flag" id="finFlag"><i>⚠</i><span>按 data 返回字段展示，未返回的成本/客户侧不展示。</span></div><div class="lockrow"><span>🔒 港杂锁价 · <b id="lockRoute">—</b>　当前：未锁定（首次）</span><button class="lockbtn">确认后锁定 · 下票复用</button></div><div style="padding:6px 22px 18px"><div class="caption" style="margin:8px 0 0">锁定后同航线下一票自动套此价，偏离即报警。</div></div></div></section>`);
     }
     function removeFinanceView(){
       document.querySelector('.tab[data-v="fin"]')?.remove(); $("fin")?.remove();
