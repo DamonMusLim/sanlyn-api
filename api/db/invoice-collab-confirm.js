@@ -1,11 +1,9 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
-
 const KIND = "port_charge_invoice_confirmation";
 const SELLER_NAME = "上海洋宝宝国际物流有限公司";
 export const SELLER_BANK = "中国银行厦门文灶支行";
 export const ACCOUNTS = { CNY: "433849860868", USD: "433849630299" };
-
 function hashToken(raw) {
   return crypto.createHash("sha256").update(String(raw || "")).digest("hex");
 }
@@ -13,7 +11,6 @@ function hashToken(raw) {
 export function clean(v, max = 200) {
   return String(v || "").trim().slice(0, max);
 }
-
 export function money(v) {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
@@ -24,7 +21,6 @@ function parseJson(v, fallback) {
   if (typeof v === "object") return v;
   try { return JSON.parse(v); } catch (_) { return fallback; }
 }
-
 function matchFactory(label, factory) {
   const a = clean(label).toLowerCase();
   const b = clean(factory).toLowerCase();
@@ -80,14 +76,14 @@ async function validateToken(pool, raw) {
     `SELECT recipient_role, meta
        FROM magic_links
       WHERE token_hash=$1
-        AND recipient_role IN ('factory_booking','customer_booking','trucking_booking','broker_booking','supplier_portal')
+        AND recipient_role IN ('factory_booking','customer_booking','trucking_booking','broker_booking','supplier_portal','shipper_booking')
         AND expires_at > NOW() AND revoked_at IS NULL
       LIMIT 1`,
     [hashToken(raw)]
   );
   if (!r.rows.length) return null;
   const meta = parseJson(r.rows[0]?.meta, {});
-  const scope = meta?.factory_scope || null;
+  const scope = meta?.factory_scope || meta?.shipper_scope || null;
   const label = clean(scope?.label || meta?.company_label, 80);
   const shipmentId = Number.parseInt(meta?.shipment_id, 10);
   if (!shipmentId) return null;
@@ -130,6 +126,8 @@ async function loadShipment(pool, ctx) {
     orders = orders.filter(o => matchFactory(ctx.scope.label, o.factory));
     if (!orders.length) return null;
     partyCompany = await loadCompany(pool, ctx.scope.label);
+  } else if (ctx.role === "shipper_booking" && !ctx.internal) {
+    if (!ctx.scope.label) return null; partyCompany = await loadCompany(pool, ctx.scope.label);
   } else if (ctx.role === "supplier_portal" && !ctx.internal && ctx.scope.label) {
     partyCompany = await loadCompany(pool, ctx.scope.label);
   }
@@ -182,6 +180,7 @@ function partyLens(ctx, sp) {
   if (ctx.role === "customer_booking") {
     return { role: "customer", side: "receivable", code: clean(sp.customer_code, 40), segment: "customer" };
   }
+  if (ctx.role === "shipper_booking") return { role: "shipper", side: "receivable", code: clean(sp.party_company?.code, 40), segment: "port_charge" };
   if (ctx.role === "trucking_booking") {
     return { role: "supplier", side: "payable", code: clean(sp.trucking_code, 40), segment: "truck" };
   }
@@ -292,7 +291,7 @@ async function loadLaneBenchmarks(pool, sp, lens) {
 
 async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const defaults = await defaultLines(pool, sp, ctx);
-  const lane = await loadLaneBenchmarks(pool, sp, defaults.lens);
+  const lane = ctx.role === "shipper_booking" ? { localCharge: null, freightRate: null } : await loadLaneBenchmarks(pool, sp, defaults.lens);
   const billLines = defaults.lines;
   const payloadBillLines = saved?.payload?.bill_lines || billLines;
   const billLineNotice = billLines.length ? "" : "费用尚未录入";
@@ -337,7 +336,7 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     bill_lines: payloadBillLines,
     bill_line_notice: saved?.payload?.bill_line_notice || billLineNotice,
     needs_finance_review: saved?.payload?.needs_finance_review ?? !billLines.length,
-    exw_transfer_to_customer: Boolean(defaults.exwTransfer && payloadBillLines.length),
+    ...(ctx.role === "shipper_booking" ? {} : { exw_transfer_to_customer: Boolean(defaults.exwTransfer && payloadBillLines.length) }),
     invoices: saved?.payload?.invoices || [{
       id: "invoice-1",
       currency,
@@ -360,6 +359,7 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
 
 async function partiesForView(pool, sp, ctx) {
   const own = await loadSeller(pool);
+  if (ctx.role === "shipper_booking") return { buyer: companyView(sp.party_company, ctx.scope.label), seller: own };
   if (ctx.internal || ctx.role === "customer_booking") {
     const buyer = await loadCompany(pool, sp.customer_code || sp.customer_company_name || sp.customer_en || sp.customer || sp.issuing_company);
     return { buyer: companyView(buyer, sp.customer_company_name || sp.customer_en || sp.customer || sp.issuing_company), seller: own };
