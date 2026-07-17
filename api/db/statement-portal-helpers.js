@@ -42,10 +42,10 @@ order_payments AS (
 ),
 order_items AS (
   SELECT so.id,
-         COALESCE(NULLIF(li.product_name, ''), NULLIF(p.bl_description, ''), NULLIF(p.declaration_name_en, ''), NULLIF(p.product_name, ''), '货款') AS item_desc
+         COALESCE(NULLIF(li.declaration_name_en, ''), NULLIF(p.declaration_name_en, ''), NULLIF(p.bl_description, ''), NULLIF(li.declaration_name, ''), NULLIF(li.product_name, ''), NULLIF(p.product_name, ''), '货款') AS item_desc
     FROM selected_orders so
     LEFT JOIN LATERAL (
-      SELECT oli.product_name, oli.product_id, oli.sku
+      SELECT oli.product_name, oli.product_id, oli.sku, oli.declaration_name, oli.declaration_name_en
         FROM order_line_items oli
        WHERE oli.order_id = so.id
        ORDER BY oli.sort_order NULLS LAST, oli.id ASC
@@ -160,4 +160,5 @@ export function buildSummary(rows) {
 // shipping_plans, order_line_items/products labels, recon-board money/due/statusOf.
 // Claude review fixes: p.name_en(不存在)->bl_description/declaration_name_en; direction='in'->COALESCE NOT IN(空串陷阱铁律).
 // 2026-07-17: product_rows aggregated by bl_no (merge same-B/L multi-order lines); order_nos/details/is_group added for frontend expand.
-// Final line count after this edit: 162.
+// item_desc now prefers declaration_name_en (IV/PL goods category, e.g. "CAT LITTER") over full product_name.
+// Final line count after this edit: 163.
