@@ -103,7 +103,7 @@ async function loadShipment(pool, ctx) {
   const companyJoin = (alias, col) => cols.has(col) ? `LEFT JOIN companies ${alias} ON ${alias}.id = sp.${col}` : `LEFT JOIN companies ${alias} ON false`;
   const r = await pool.query(
     `SELECT sp.id, sp.shipment_no, sp.bl_no, sp.pol, sp.pod, sp.vessel, sp.voyage,
-            sp.container_type, sp.container_qty, sp.issuing_company,
+            sp.container_type, sp.container_qty, sp.issuing_company, sp.carrier_code, sp.shipping_line,
             sp.freight_term, sp.customs_arrange,
             sp.customer, sp.customer_en, sp.hbl_no,
             cf.code AS forwarder_code, COALESCE(cf.name_cn, cf.name_en) AS forwarder_name,
@@ -164,11 +164,11 @@ export async function loadSeller(pool) {
       ORDER BY id ASC LIMIT 1`
   );
   const row = r.rows[0] || {};
-  return { name: row.name_cn || row.name_en || SELLER_NAME, tax_id: row.tax_id || "" };
+  return { name: row.name_cn || row.name_en || SELLER_NAME, name_en: row.name_en || "", tax_id: row.tax_id || "" };
 }
 
 function companyView(c, fallback = "") {
-  return { name: c?.name_cn || c?.name_en || c?.factory_name || fallback || "", tax_id: c?.tax_id || "" };
+  return { name: c?.name_cn || c?.name_en || c?.factory_name || fallback || "", name_en: c?.name_en || "", tax_id: c?.tax_id || "" };
 }
 
 function containerSummary(sp) {
@@ -255,8 +255,44 @@ async function defaultLines(pool, sp, ctx) {
   return { lines, exwTransfer, lens };
 }
 
+async function loadLaneBenchmarks(pool, sp, lens) {
+  const carrier = clean(sp.carrier_code || sp.shipping_line || sp.forwarder_name, 80);
+  const pol = clean(sp.pol, 100), pod = clean(sp.pod, 100), ct = clean(sp.container_type || "40HC", 20);
+  const out = { localCharge: null, freightRate: null };
+  if (!carrier || !pol || !pod) return out;
+  const lc = await pool.query(
+    `SELECT id, carrier, pol, pod, container_type, fees, cost_total, sell_total
+       FROM local_charges
+      WHERE lower(btrim(carrier))=lower(btrim($1)) AND lower(btrim(pol))=lower(btrim($2))
+        AND lower(btrim(pod))=lower(btrim($3)) AND lower(btrim(container_type))=lower(btrim($4))
+      ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 1`,
+    [carrier, pol, pod, ct]
+  );
+  if (lc.rows[0]) out.localCharge = {
+    id: lc.rows[0].id, carrier: lc.rows[0].carrier, pol: lc.rows[0].pol, pod: lc.rows[0].pod,
+    container_type: lc.rows[0].container_type, fees: parseJson(lc.rows[0].fees, []),
+    cost_total: money(lc.rows[0].cost_total), sell_total: money(lc.rows[0].sell_total),
+    total: money(lens.side === "receivable" ? lc.rows[0].sell_total : lc.rows[0].cost_total),
+  };
+  const fr = await pool.query(
+    `SELECT id, currency, gp20, hq40, customer_gp20, customer_hq40
+       FROM freight_rates
+      WHERE lower(btrim(carrier))=lower(btrim($1)) AND lower(btrim(pol))=lower(btrim($2))
+        AND lower(btrim(pod))=lower(btrim($3)) AND COALESCE(status,'active')!='withdrawn'
+      ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 1`,
+    [carrier, pol, pod]
+  );
+  if (fr.rows[0]) {
+    const is20 = /20/.test(ct), sell = lens.side === "receivable";
+    const amount = money(sell ? (is20 ? fr.rows[0].customer_gp20 : fr.rows[0].customer_hq40) : (is20 ? fr.rows[0].gp20 : fr.rows[0].hq40));
+    if (amount > 0) out.freightRate = { id: fr.rows[0].id, currency: fr.rows[0].currency || "CNY", amount };
+  }
+  return out;
+}
+
 async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const defaults = await defaultLines(pool, sp, ctx);
+  const lane = await loadLaneBenchmarks(pool, sp, defaults.lens);
   const billLines = defaults.lines;
   const payloadBillLines = saved?.payload?.bill_lines || billLines;
   const billLineNotice = billLines.length ? "" : "费用尚未录入";
@@ -276,6 +312,10 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     is_internal: Boolean(ctx.internal),
     status: saved?.status || "draft",
     confirmed_at: saved?.confirmed_at || null,
+    line_side: defaults.lens.side,
+    settlement_mode: saved?.payload?.settlement_mode || "monthly",
+    local_charge_baseline: lane.localCharge,
+    freight_rate_baseline: lane.freightRate,
     shipment: {
       shipment_no: sp.shipment_no || "",
       bl_no: bl,
@@ -350,7 +390,6 @@ async function handleGet(req, res, pool, ctx) {
 
 function sanitizeDraft(body) {
   const d = body?.draft || {};
-  const priceChanged = Boolean(d.price_changed);
   return {
     buyer: { name: clean(d.buyer?.name, 120), tax_id: clean(d.buyer?.tax_id, 40) },
     bill_lines: Array.isArray(d.bill_lines) ? d.bill_lines.map(l => ({
@@ -373,16 +412,59 @@ function sanitizeDraft(body) {
     },
     save_as_default: Boolean(d.save_as_default),
     invoice_mode: clean(d.invoice_mode || "self", 24),
-    price_changed: priceChanged,
+    settlement_mode: clean(d.settlement_mode || "monthly", 16) === "single" ? "single" : "monthly",
+    price_changed: Boolean(d.price_changed),
   };
+}
+
+function billLinesChanged(serverLines, clientLines) {
+  if (serverLines.length !== clientLines.length) return true;
+  const norm = (lines) => lines.map(l => ({ name: clean(l.name, 80).toLowerCase(), amount: money(l.amount) }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.amount - b.amount);
+  const a = norm(serverLines), b = norm(clientLines);
+  return a.some((l, i) => l.name !== b[i].name || Math.abs(l.amount - b[i].amount) > 0.01);
+}
+
+async function lockLocalChargeBaseline(pool, sp, payload, ctx) {
+  if (!ctx.internal) return null;
+  const defaults = await defaultLines(pool, sp, ctx);
+  const billLines = defaults.lines; if (!billLines.length) return null;
+  const carrier = clean(sp.carrier_code || sp.shipping_line || sp.forwarder_name, 80);
+  const pol = clean(sp.pol, 100), pod = clean(sp.pod, 100);
+  const ct = clean(payload.shipment_containers[0]?.type || sp.container_type || "40HC", 20);
+  if (!carrier || !pol || !pod || !ct) return null;
+  const exists = await pool.query(
+    `SELECT id FROM local_charges
+      WHERE lower(btrim(carrier))=lower(btrim($1)) AND lower(btrim(pol))=lower(btrim($2))
+        AND lower(btrim(pod))=lower(btrim($3)) AND lower(btrim(container_type))=lower(btrim($4))
+      LIMIT 1`,
+    [carrier, pol, pod, ct]
+  );
+  if (exists.rows.length) return exists.rows[0];
+  const fees = billLines.map(l => ({
+    feeName: l.name, unit: l.basis, unitPrice: l.unit_price, qty: l.qty,
+    amount: l.amount, currency: l.currency, direction: defaults.lens.side === "receivable" ? "应收" : "应付",
+  }));
+  const total = money(billLines.reduce((s, l) => s + Number(l.amount || 0), 0));
+  const r = await pool.query(
+    `INSERT INTO local_charges (carrier, pol, pod, company_name, container_type, fees, cost_total, sell_total, raw, remarks)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10) RETURNING id`,
+    [carrier, pol, pod, clean(payload.seller?.name || ctx.scope.label, 120), ct, JSON.stringify(fees),
+      defaults.lens.side === "payable" ? total : 0, defaults.lens.side === "receivable" ? total : 0,
+      JSON.stringify({ created_by: "invoice_collab_confirm", shipment_id: ctx.shipmentId, ref: invoiceRef(ctx) }),
+      "invoice_collab_confirm locked baseline"]
+  );
+  return r.rows[0];
 }
 
 async function handlePost(req, res, pool, ctx) {
   const sp = await loadShipment(pool, ctx);
   if (!sp) return res.status(404).json({ ok: false, error: "not_found" });
   const payload = sanitizeDraft(req.body);
+  payload.line_side = partyLens(ctx, sp).side;
   if (!payload.buyer.name || !payload.buyer.tax_id) return res.status(400).json({ ok: false, error: "buyer_required" });
   if (!payload.contacts.finance.length) return res.status(400).json({ ok: false, error: "finance_email_required" });
+  payload.price_changed = billLinesChanged((await defaultLines(pool, sp, ctx)).lines, payload.bill_lines);
   const status = payload.price_changed ? "pending_our_review" : "external_confirmed";
   const ref = invoiceRef(ctx);
   const r = await pool.query(
@@ -392,9 +474,10 @@ async function handlePost(req, res, pool, ctx) {
      ON CONFLICT (ref, kind) DO UPDATE SET
        status=EXCLUDED.status, payload=EXCLUDED.payload, actor_label=EXCLUDED.actor_label,
        confirmed_at=now(), updated_at=now()
-     RETURNING ref, kind, status, updated_at`,
+     RETURNING ref, kind, status, confirmed_at, updated_at`,
     [ref, KIND, ctx.shipmentId, JSON.stringify(ctx.scope), status, JSON.stringify(payload), ctx.scope.label]
   );
+  if (status === "external_confirmed") await lockLocalChargeBaseline(pool, sp, payload, ctx);
   return res.json({ ok: true, draft: r.rows[0] });
 }
 
