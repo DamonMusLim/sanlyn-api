@@ -482,4 +482,10 @@ function init(){
   }).catch(function(e){banner('err',e.message);});
   ['pl','sc','iv'].forEach(function(p){['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey(p+':'+w))||'null');if(s&&s.url)applySeal(p+':'+w,s.url,s.name);}catch(e){}});});
 }
-init();
+if(/^(freight|portcharge)$/.test(String(qp('page')||'').toLowerCase())){
+  var _freightScript=document.createElement('script');
+  _freightScript.src='export-docs-freight.js';
+  document.head.appendChild(_freightScript);
+}else{
+  init();
+}

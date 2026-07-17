@@ -351,6 +351,7 @@ app.all("/api/db/booking-collab/*", async (req, res) => {
 mount("/api/db/booking-collab", () => import("./api/db/booking-collab.js"));
 mount("/api/db/forwarder-booking-submit", () => import("./api/db/forwarder-booking-submit.js"));
 mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"));
+mount("/api/db/shipping-plan-doc-data", () => import("./api/db/shipping-plan-doc-data.js"));
 mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
 mount("/api/db/shipping-plan-rebook", () => import("./api/db/shipping-plan-rebook.js")); // 换航次原子操作: 旧航次进raw.booking_history+新航次写主表 2026-06-10
 mount("/api/db/shipping-transfer-gen", () => import("./api/db/shipping-transfer-gen.js")); // 内转外Excel自动生成
