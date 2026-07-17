@@ -1063,6 +1063,16 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
 </div>${autoprint}</body></html>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
+      if (String(req.query.format || "") === "pdf") {
+        try {
+          const { htmlToPdf } = await import("./_html-to-pdf.js");
+          const _pdfBuf = await htmlToPdf(fobHtml);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+          res.setHeader("Cache-Control", "no-store");
+          return res.status(200).send(_pdfBuf);
+        } catch(_e) { /* fall through to HTML */ }
+      }
       return res.status(200).send(fobHtml);
     }
 
@@ -1484,6 +1494,16 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
 </div>${autoprint}</body></html>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
+      if (String(req.query.format || "") === "pdf") {
+        try {
+          const { htmlToPdf } = await import("./_html-to-pdf.js");
+          const _pdfBuf = await htmlToPdf(fobPortchargeHtml);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("PC-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+          res.setHeader("Cache-Control", "no-store");
+          return res.status(200).send(_pdfBuf);
+        } catch(_e) { /* fall through to HTML */ }
+      }
       return res.status(200).send(fobPortchargeHtml);
     }
 
