@@ -1,5 +1,5 @@
 export function renderDebit(ctx){
-  const { sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr, fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick } = ctx;
+  const { sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr, fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick, filterMode } = ctx;
   var html;
         // ⚠ Real fields only — never fabricate values (memory: feedback_never_invent_fields)
         var freightTerm = pick(sp.freight_term, "");           // 2026-05-18 new column
@@ -31,6 +31,14 @@ export function renderDebit(ctx){
         var dbNo = (_isIvFmt ? "INV-" : "DB-") + soNo;
         var _dnTitleCN = _isIvFmt ? "海运费发票" : "借记通知单";
         var _dnTitleEN = _isIvFmt ? "FREIGHT INVOICE" : "DEBIT NOTE";
+        if(filterMode==="ocean"){
+          _dnTitleCN = "海运费";
+          _dnTitleEN = "OCEAN FREIGHT";
+        }
+        if(filterMode==="local"){
+          _dnTitleCN = "港杂费";
+          _dnTitleEN = "PORT CHARGES";
+        }
 
         // Build fee rows: [label_en, label_cn, qty, currency, amount]
         var feeList=[
@@ -50,6 +58,16 @@ export function renderDebit(ctx){
           if(_isFob && _portMisc.indexOf(r[0])>=0) return false; // FOB: 港杂归工厂, 不上客户账单
           return true;
         });
+        if(filterMode==="ocean"){
+          feeList=feeList.filter(function(r){return ["OCEAN FREIGHT","INSURANCE"].indexOf(r[0])>=0;});
+          totCNY=0;
+          totUSD=feeList.reduce(function(sum,r){return sum+(r[3]==="USD"?Number(r[4]||0):0);},0);
+        }
+        if(filterMode==="local"){
+          feeList=feeList.filter(function(r){return _portMisc.indexOf(r[0])>=0;});
+          totCNY=feeList.reduce(function(sum,r){return sum+(r[3]==="CNY"?Number(r[4]||0):0);},0);
+          totUSD=0;
+        }
 
         var CSS2=`<style>
           *{box-sizing:border-box;margin:0;padding:0}

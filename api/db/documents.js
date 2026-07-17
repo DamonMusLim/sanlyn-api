@@ -1487,6 +1487,24 @@ export default async function handler(req, res) {
         });
       }
 
+      if(type==="debit_ocean"){
+        const { renderDebit } = await import("./docs/debit.js");
+        html = renderDebit({
+          sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr,
+          fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick,
+          filterMode: "ocean",
+        });
+      }
+
+      if(type==="debit_local"){
+        const { renderDebit } = await import("./docs/debit.js");
+        html = renderDebit({
+          sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr,
+          fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick,
+          filterMode: "local",
+        });
+      }
+
       // ──────────────────────────────────────────────────────────────────────
       // SO 海运单 Shipping Order / SQ 海运确认报价 Freight Quote
       // 2026-05-19: 用现有模板库设计 (freight-quote-enrich-2026-04.html)
