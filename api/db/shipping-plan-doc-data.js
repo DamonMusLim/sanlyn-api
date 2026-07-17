@@ -188,6 +188,18 @@ async function portCharges(pool, p) {
       rows = r.rows;
     } catch (_) {}
   }
+  if (!rows.length) {
+    const fieldRows = [
+      ["码头操作费(THC)", p.thc_fee], ["单证费", p.doc_fee], ["电放费", p.tlx_fee],
+      ["铅封费", p.seal_fee], ["设备交接费", p.eir_fee], ["信息传输费", p.info_trans_fee],
+      ["订舱费", p.bkg_fee], ["拖车费", p.trucking_cost_total], ["报关费", p.customs_cost_total],
+    ].filter(([, v]) => Number(v) > 0)
+     .map(([name, v]) => ({ cost_category: name, charge_basis: "整票", currency: "CNY", qty: 1, unit_price: Number(v), amount: Number(v) }));
+    if (fieldRows.length) rows = fieldRows;
+  }
+  if (rows.length && Number(p.trucking_cost_total) > 0 && !rows.some(r => /拖车|truck/i.test(r.cost_category || ""))) {
+    rows.push({ cost_category: "拖车费", charge_basis: "整票", currency: "CNY", qty: 1, unit_price: Number(p.trucking_cost_total), amount: Number(p.trucking_cost_total) });
+  }
   let usedFallbackCard = false;
   if (!rows.length) {
     usedFallbackCard = true;
@@ -221,7 +233,16 @@ export async function buildShippingPlanDocData(pool, id, page) {
   };
   if (page === "portcharge") {
     const pc = await portCharges(pool, p);
-    const factory = await loadFactory(pool, pc.factoryCode);
+    let factory = await loadFactory(pool, pc.factoryCode);
+    if (!factory || !(factory.name_cn || factory.name_en)) {
+      try {
+        const facR = await pool.query(
+          `SELECT DISTINCT c.name_cn FROM shipping_plans sp, unnest(sp.order_nos) AS ono
+           JOIN orders o ON o.order_no = ono LEFT JOIN companies c ON c.id = o.factory_company_id
+           WHERE sp.id = $1 AND c.name_cn IS NOT NULL`, [p.id]);
+        if (facR.rows.length) factory = { name_cn: facR.rows.map(r => r.name_cn).join(" / "), address: "" };
+      } catch (_) {}
+    }
     const totalCny = pc.rows.reduce((s, r) => s + num(r.amount), 0);
     return {
       page, shipment: common, factory, containers, charges: pc.rows,
