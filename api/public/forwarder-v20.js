@@ -10,6 +10,12 @@ function cleanCode(req){
   return parts[parts.length - 1] || "";
 }
 
+function cookieSession(req){
+  var raw = String((req.headers && req.headers.cookie) || "");
+  var hit = raw.split(";").map(function(p){ return p.trim(); }).find(function(p){ return p.indexOf("fwd_session=") === 0; });
+  return hit ? decodeURIComponent(hit.slice("fwd_session=".length)) : "";
+}
+
 function send(res, status, body){
   res.status(status).json(body);
 }
@@ -28,7 +34,7 @@ async function ensureColumns(pool){
   `);
 }
 
-async function loadToken(pool, code){
+async function loadToken(pool, code, req){
   await pool.query(`
     CREATE TABLE IF NOT EXISTS forwarder_portal_tokens (
       code text PRIMARY KEY,
@@ -37,6 +43,7 @@ async function loadToken(pool, code){
       created_at timestamptz DEFAULT now()
     )
   `);
+  if (code === "session" || code === "me") code = cookieSession(req || {});
   if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
   const { rows } = await pool.query(
     "SELECT code, forwarder_co, expires_at FROM forwarder_portal_tokens WHERE code = $1",
@@ -360,7 +367,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   const pool = getPool();
   const code = cleanCode(req);
-  const loaded = await loadToken(pool, code);
+  const loaded = await loadToken(pool, code, req);
   if (loaded.error) return send(res, loaded.error, loaded.body);
   if (req.method === "GET") return handleGet(pool, loaded.token, res);
   if (req.method === "POST") return handlePost(pool, loaded.token, req, res);

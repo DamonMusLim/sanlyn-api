@@ -8,6 +8,12 @@ function cleanCode(req){
   return parts[parts.length - 1] || "";
 }
 
+function cookieSession(req){
+  var raw = String((req.headers && req.headers.cookie) || "");
+  var hit = raw.split(";").map(function(p){ return p.trim(); }).find(function(p){ return p.indexOf("fwd_session=") === 0; });
+  return hit ? decodeURIComponent(hit.slice("fwd_session=".length)) : "";
+}
+
 function send(res, status, body){
   res.status(status).json(body);
 }
@@ -27,7 +33,8 @@ function dateTime(v){
   return Number.isFinite(d.getTime()) ? d.getTime() : null;
 }
 
-async function loadToken(pool, code){
+async function loadToken(pool, code, req){
+  if (code === "session" || code === "me") code = cookieSession(req || {});
   if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
   const { rows } = await pool.query(
     "SELECT code, forwarder_co, company_id, expires_at FROM forwarder_portal_tokens WHERE code = $1 LIMIT 1",
@@ -92,7 +99,7 @@ async function loadPlans(pool, companyId){
             sp.freight_cost, sp.thc_fee, sp.seal_fee, sp.vgm_fee, sp.doc_fee, sp.eir_fee, sp.port_surcharge_total,
             COALESCE(sp.gross_weight_kg, li.gross_weight_kg) AS gross_weight_kg,
             COALESCE(NULLIF(BTRIM(sp.cargo_description), ''), li.cargo_description) AS cargo_description,
-            sp.vessel, sp.voyage, sp.customer_en, sp.eta,
+            sp.vessel, sp.voyage, sp.eta,
             sp.shipping_status, sp.status, sp.current_status_cn, sp.booking_no, sp.forwarder_booking_no, sp.booking_stage,
             sp.pol_port_id, sp.pod_port_id, sp.pod_terminal_unconfirmed, sp.port_resolution_status,
             pod_p.name_en AS pod_canon_en, pod_p.name_cn AS pod_canon_cn, pod_p.code AS pod_code, pod_p.requires_terminal AS pod_requires_terminal,
@@ -219,7 +226,6 @@ function shipment(row, closed){
     container_qty:numOrNull(row.container_qty),
     gross_weight_kg:numOrNull(row.gross_weight_kg),
     cargo_description:shortCargo(row.cargo_description),
-    customer_en:cleanText(row.customer_en) || null,
     booked_carrier:booked ? (cleanText(row.carrier_code).toUpperCase() || null) : null,
     booking_voyage:booked ? (cleanText(row.voyage) || cleanText(row.vessel) || null) : null,
     booked_etd:booked ? (row.etd || null) : null,
@@ -445,7 +451,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, { ok:false, error:"method_not_allowed" });
   const pool = getPool();
   const code = cleanCode(req);
-  const loaded = await loadToken(pool, code);
+  const loaded = await loadToken(pool, code, req);
   if (loaded.error) return send(res, loaded.error, loaded.body);
   return handleGet(pool, loaded.token, res);
 }

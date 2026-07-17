@@ -37,7 +37,7 @@ async function issue(req, res, pool) {
   await pool.query(
     `INSERT INTO magic_links
        (token_hash, recipient_role, meta, expires_at, access_log, created_at, created_by)
-     VALUES ($1, 'fwd_portal', $2::jsonb, NULL, '[]'::jsonb, NOW(), $3)`,
+     VALUES ($1, 'fwd_portal', $2::jsonb, '2099-12-31'::timestamptz, '[]'::jsonb, NOW(), $3)`,
     [hash, JSON.stringify(meta), actor(req)]
   );
   return res.status(201).json({

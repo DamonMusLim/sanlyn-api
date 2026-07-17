@@ -7,6 +7,12 @@ function cleanCode(req){
   return parts[parts.length - 1] || "";
 }
 
+function cookieSession(req){
+  var raw = String((req.headers && req.headers.cookie) || "");
+  var hit = raw.split(";").map(function(p){ return p.trim(); }).find(function(p){ return p.indexOf("fwd_session=") === 0; });
+  return hit ? decodeURIComponent(hit.slice("fwd_session=".length)) : "";
+}
+
 function send(res, status, body){
   res.status(status).json(body);
 }
@@ -34,7 +40,8 @@ function mergePayStatus(current, next){
   return current || s;
 }
 
-async function loadToken(pool, code){
+async function loadToken(pool, code, req){
+  if (code === "session" || code === "me") code = cookieSession(req || {});
   if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
   const { rows } = await pool.query(
     "SELECT code, forwarder_co, company_id, expires_at FROM forwarder_portal_tokens WHERE code = $1 LIMIT 1",
@@ -119,7 +126,6 @@ function planPayload(row){
     pol:row.pol || "",
     pod:row.pod || "",
     etd:row.etd || null,
-    customer_en:row.customer_en || "",
     vessel:row.vessel || "",
     voyage:row.voyage || "",
     container_qty:row.container_qty == null ? null : Number(row.container_qty),
@@ -136,7 +142,7 @@ async function attachPlans(pool, companyId, byBl){
   if (!blNos.length && !planIds.length) return;
 
   const { rows } = await pool.query(
-    `SELECT id::text AS id_text, _id, bl_no, pol, pod, etd, customer_en, vessel, voyage, container_qty
+    `SELECT id::text AS id_text, _id, bl_no, pol, pod, etd, vessel, voyage, container_qty
        FROM shipping_plans
       WHERE forwarder_company_id = $3
         AND (
@@ -233,7 +239,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, { ok:false, error:"method_not_allowed" });
   const pool = getPool();
   const code = cleanCode(req);
-  const loaded = await loadToken(pool, code);
+  const loaded = await loadToken(pool, code, req);
   if (loaded.error) return send(res, loaded.error, loaded.body);
   return handleGet(pool, loaded.token, res);
 }

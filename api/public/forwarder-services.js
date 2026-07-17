@@ -33,6 +33,12 @@ function dateOnly(v) {
 }
 function bodyOf(req) { return req.body || {}; }
 
+function cookieSession(req) {
+  const raw = String((req.headers && req.headers.cookie) || "");
+  const hit = raw.split(";").map(p => p.trim()).find(p => p.indexOf("fwd_session=") === 0);
+  return hit ? decodeURIComponent(hit.slice("fwd_session=".length)) : "";
+}
+
 function normalizePort(raw) {
   const s = clean(raw);
   if (!s) return "";
@@ -50,7 +56,8 @@ function normalizeBox(raw) {
   return s || "40HQ";
 }
 
-async function validateToken(pool, code) {
+async function validateToken(pool, code, req) {
+  if (code === "session" || code === "me") code = cookieSession(req || {});
   const { rows } = await pool.query(
     `SELECT code, forwarder_co, company_id, expires_at
        FROM forwarder_portal_tokens
@@ -226,7 +233,7 @@ export default async function handler(req, res) {
   const service = clean(req.query?.service || bodyOf(req).service || bodyOf(req).svc || "truck");
 
   try {
-    const token = await validateToken(pool, code);
+    const token = await validateToken(pool, code, req);
     if (!token) return res.status(410).json({ ok: false, error: "链接已过期" });
     if (req.method === "GET" && service === "truck") return await handleTruck(req, res, pool, token);
     if (req.method === "GET" && service === "customs") return await handleCustoms(req, res, pool, token);
