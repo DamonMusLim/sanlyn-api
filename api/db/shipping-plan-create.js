@@ -6,6 +6,7 @@
 // DELETE ?id=xxx                 → delete plan
 import { getPool, setCors } from "../db.js";
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
+import { enableContractSplit } from "./lib/shipping-plan-contracts.js";
 
 // Production convention: CY00000 sequential.
 // Real order count reached 146 before the system caught up — old rows
@@ -87,6 +88,14 @@ async function writeAudit(pool, plan, action, actor, detail) {
 function actorOf(req) {
   var u = req.user || {};
   return u.name || u.username || u.email || u.role || "admin";
+}
+function wantsContractSplit(body) {
+  return body && (
+    body.contract_split_enabled === true ||
+    body.contractSplitEnabled === true ||
+    body.enableContractSplit === true ||
+    body.splitContracts === true
+  );
 }
 
 export default async function handler(req, res) {
@@ -451,6 +460,29 @@ export default async function handler(req, res) {
               AND sp.issuing_company IS NULL`,
           [plan.id, nos]
         ).catch(function() {});
+      }
+    }
+
+    if (wantsContractSplit(body)) {
+      var splitClient = await pool.connect();
+      try {
+        await splitClient.query("BEGIN");
+        plan = await enableContractSplit(
+          splitClient,
+          plan.id,
+          body.contract_base_no || body.contractBaseNo || sNo
+        );
+        await splitClient.query("COMMIT");
+        await writeAudit(pool, plan, "contract_split_enable", actorOf(req), {
+          contract_base_no: plan.contract_base_no,
+          contract_nos: plan.contract_nos,
+          primary_contract_no: plan.primary_contract_no,
+        });
+      } catch (e) {
+        await splitClient.query("ROLLBACK").catch(function(){});
+        throw e;
+      } finally {
+        splitClient.release();
       }
     }
 

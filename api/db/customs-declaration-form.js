@@ -1,6 +1,7 @@
 // /api/db/customs-declaration-form.js
 // Render official-style PRC export customs declaration HTML.
 // Data is derived from shipping_plans + orders + order_line_items + products + companies.
+import { findPlanByRef, resolvePlanContracts } from "./lib/shipping-plan-contracts.js";
 
 function esc(s) {
   if (s == null) return "";
@@ -132,20 +133,19 @@ async function loadCompany(pool, name) {
 }
 
 async function loadPlan(pool, shipmentId) {
-  var r = await pool.query(
-    `SELECT * FROM shipping_plans
-     WHERE _id::text=$1 OR id::text=$1 OR shipment_no=$1 OR bl_no=$1
-     LIMIT 1`,
-    [String(shipmentId)]
-  );
-  return r.rows[0] || null;
+  return await findPlanByRef(pool, shipmentId);
 }
 
-function orderKeys(plan) {
+function splitText(v) {
+  return clean(v).split(/[,\s/，；;]+/).map(clean).filter(Boolean);
+}
+
+function orderKeys(plan, planContracts) {
   var raw = parseRaw(plan.raw);
   var xs = []
     .concat(Array.isArray(plan.order_nos) ? plan.order_nos : [])
-    .concat(Array.isArray(plan.contract_nos) ? plan.contract_nos : [])
+    .concat(planContracts && !planContracts.legacy ? [] : (Array.isArray(plan.contract_nos) ? plan.contract_nos : []))
+    .concat(splitText(plan.order_contract_nos))
     .concat(Array.isArray(raw.orderNos) ? raw.orderNos : [])
     .concat(Array.isArray(raw.order_nos) ? raw.order_nos : [])
     .concat(Array.isArray(raw.contractNos) ? raw.contractNos : [])
@@ -158,8 +158,8 @@ function orderKeys(plan) {
   });
 }
 
-async function loadOrders(pool, plan) {
-  var keys = orderKeys(plan);
+async function loadOrders(pool, plan, planContracts) {
+  var keys = orderKeys(plan, planContracts);
   if (!keys.length) return [];
   var r = await pool.query(
     `SELECT * FROM orders
@@ -369,10 +369,11 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   opts = opts || {};
   var plan = await loadPlan(pool, shipmentId);
   if (!plan) return null;
+  var planContracts = await resolvePlanContracts(pool, plan);
 
   var praw = parseRaw(plan.raw);
   var requestedContainerNo = clean(opts.container_no || opts.container);
-  var orders = await loadOrders(pool, plan);
+  var orders = await loadOrders(pool, plan, planContracts);
   if (requestedContainerNo) {
     var containerOrderIds = await resolveOrdersForContainer(pool, plan, requestedContainerNo);
     orders = await loadOrdersByIds(pool, containerOrderIds);
@@ -386,7 +387,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
 
   var customer = firstOrderValue(orders, "customer", "customer");
   // 合同协议号用我们的 FS 号(内部号),优先取 FS 开头的合同号;都没有才退回原始 contract_no
-  var contractNo = (function () {
+  var contractNo = !planContracts.legacy && planContracts.goodsCnyNo ? planContracts.goodsCnyNo : (function () {
     var fallback = "";
     for (var i = 0; i < orders.length; i++) {
       var raw = parseRaw(orders[i].raw);

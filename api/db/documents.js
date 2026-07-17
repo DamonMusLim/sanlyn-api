@@ -20,6 +20,7 @@ import { htmlToPdf } from "./_html-to-pdf.js"; // format=pdf 真PDF渲染 2026-0
 import { renderPureFreightDoc } from "./doc-pure-freight.js";
 import { renderPurePortChargeDoc } from "./doc-pure-portcharge.js";
 import { loadContainerWeightSources, resolveContainerGrossWeight, scaleGrossWeightsToContainer } from "./customs-weight-source.js";
+import { findPlanByRef, findPlanForOrder, resolvePlanContracts } from "./lib/shipping-plan-contracts.js";
 
 // ── W0-3 customer-facing scrub ────────────────────────────────────────────────
 // Memory rule (HARD): feedback_customer_code_anti_counterfeit.md
@@ -264,6 +265,17 @@ export default async function handler(req, res) {
       var ctel=raw.phone||"";
       var ordNo=pick(raw.customerPO,o.customer_po,o.order_no);
       var cno=pick(o.contract_no,o.order_no,id);
+      var _goodsCnyContractNo="";
+      try {
+        var _contractPlan = await findPlanForOrder(pool, o);
+        if (_contractPlan) {
+          var _planContracts = await resolvePlanContracts(pool, _contractPlan);
+          if (!_planContracts.legacy && _planContracts.goodsCnyNo) {
+            _goodsCnyContractNo = _planContracts.goodsCnyNo;
+            cno = _goodsCnyContractNo;
+          }
+        }
+      } catch (e) { console.warn("[documents] split contract resolve skipped:", e.message); }
       var date=fmtD(new Date()); // 单据日期 = 今日（出单当天）
       var curr=pick(raw.currency,o.currency,"USD");
       // POL = 工厂带过来的港口：取该单工厂在 factories.ports 的首个港口。
@@ -282,12 +294,15 @@ export default async function handler(req, res) {
       var _spPol="", _spPod="", _spBl="";
       var _v2_vessel="", _v2_voyage="", _v2_carrier="", _v2_etd="";
       try{
-        var _spR=await pool.query(
-          "SELECT pol,pod,bl_no,vessel,voyage,shipping_line,carrier_code,etd FROM shipping_plans WHERE NULLIF($1,'') IS NOT NULL AND (bl_no=$1 OR contract_no=$1 OR order_contract_nos ILIKE '%'||$1||'%') OR (NULLIF($2,'') IS NOT NULL AND (contract_no=$2 OR order_contract_nos ILIKE '%'||$2||'%')) ORDER BY tracking_updated_at DESC NULLS LAST, eta DESC NULLS LAST LIMIT 1",
-          [o.contract_no||"", o.order_no||""]
-        );
-        if(_spR.rows[0]){
-          var _spRow0=_spR.rows[0];
+        var _spRow0 = _contractPlan;
+        if(!_spRow0){
+          var _spR=await pool.query(
+            "SELECT pol,pod,bl_no,vessel,voyage,shipping_line,carrier_code,etd FROM shipping_plans WHERE NULLIF($1,'') IS NOT NULL AND (bl_no=$1 OR contract_no=$1 OR order_contract_nos ILIKE '%'||$1||'%') OR (NULLIF($2,'') IS NOT NULL AND (contract_no=$2 OR order_contract_nos ILIKE '%'||$2||'%')) ORDER BY tracking_updated_at DESC NULLS LAST, eta DESC NULLS LAST LIMIT 1",
+            [o.contract_no||"", o.order_no||""]
+          );
+          _spRow0=_spR.rows[0];
+        }
+        if(_spRow0){
           _spPol=_spRow0.pol||""; _spPod=_spRow0.pod||""; _spBl=_spRow0.bl_no||"";
           _v2_vessel=_spRow0.vessel||""; _v2_voyage=_spRow0.voyage||"";
           _v2_carrier=_spRow0.shipping_line||_spRow0.carrier_code||"";
@@ -411,6 +426,7 @@ export default async function handler(req, res) {
           prods.sort(function(a,b){var pa=(a._customerPO||"");var pb=(b._customerPO||"");return pa<pb?-1:pa>pb?1:0;});
         }
       }
+      if(_goodsCnyContractNo) cno=_goodsCnyContractNo;
       // Single-order: no group header needed — blank the tag so productRows skips it.
       if(!_hasMultiOrder) prods=prods.map(function(p){return Object.assign({},p,{_groupKey:""});});
 
@@ -1394,12 +1410,17 @@ export default async function handler(req, res) {
 
     if(["so","debit","freight-quote","sq","tr"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
-      var spR=await pool.query(
-        "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
-        [id]
-      );
-      if(!spR.rows.length) return res.status(404).send("<h1>Shipment not found: "+esc(id)+"</h1>");
-      var sp=spR.rows[0], spraw=sp.raw||{};
+      var sp=await findPlanByRef(pool, id);
+      if(!sp) return res.status(404).send("<h1>Shipment not found: "+esc(id)+"</h1>");
+      var spContracts=await resolvePlanContracts(pool, sp);
+      if(!spContracts.legacy && spContracts.freightUsdNo) {
+        sp = Object.assign({}, sp, {
+          contract_no: spContracts.freightUsdNo,
+          primary_contract_no: spContracts.primaryContractNo,
+          contract_nos: spContracts.allNos,
+        });
+      }
+      var spraw=sp.raw||{};
       if(typeof spraw==="string")try{spraw=JSON.parse(spraw);}catch(e){spraw={};}
       // 海运类文档强制走 OCEANBABY (除非 spraw.shipping_vendor 指定)
       var cfg3=await loadSellerCfg(pool,spraw,qco,{shipping:true});
