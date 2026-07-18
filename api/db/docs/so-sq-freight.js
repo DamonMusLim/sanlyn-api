@@ -108,7 +108,7 @@ export async function renderSoSqFreight(ctx){
     <div class="v">${esc(shipperX)}</div>
     <div class="v">${esc(consigneeX)}</div>
     <div class="k" style="margin-top:6px">CARRIER 船公司</div><div class="k" style="margin-top:6px">FORWARDER 货代</div>
-    <div class="v">${esc(isSO ? (cfg3 && cfg3.nameCN || "上海洋宝宝国际物流有限公司") : carrierX)}</div>
+    <div class="v">${esc(carrierX)}</div>
     <div class="v">${esc(isSO ? (cfg3 && cfg3.nameCN || "上海洋宝宝国际物流有限公司") : forwarderX)}</div>
     <div class="k" style="margin-top:6px">POL 起运港</div><div class="k" style="margin-top:6px">POD 目的港</div>
     <div class="v">${esc(polX)}</div>
