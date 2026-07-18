@@ -186,20 +186,20 @@
           <thead><tr><th>费用项</th><th>计费</th><th class="r">单价 <span class="edithint">✎可改</span></th><th class="r">数量</th><th class="r" id="billHeadTotal">合计 (CNY)</th></tr></thead>
           <tbody id="billBody">
             <tr><td colspan="5" style="text-align:center;color:var(--faint)">费用尚未录入</td></tr>
-            <tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">CNY</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r" id="billTotal">0.00</td></tr>
+            <tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">CNY</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改价后自动重算）</span></td><td class="r" id="billTotal">0.00</td></tr>
           </tbody>
         </table>
-        <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价需我方确认后生效</b>。VGM+申报为打包价 ¥200/票。</span></div>
+        <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价经我方确认后生效</b>。VGM+申报为打包价 ¥200/票。</span></div>
       </div>
 
       <div class="sec" style="border-top:1px solid var(--line)">
-        <button class="collapse-hd" id="invTogglePv" type="button"><span class="sec-t" style="margin:0">② 开票 · 港杂费 <span style="text-transform:none;font-weight:600;color:var(--sub)">填好可折叠隐藏</span></span><span class="chev" id="invChevPv">收起 ▴</span></button>
+        <button class="collapse-hd" id="invTogglePv" type="button"><span class="sec-t" style="margin:0">② 开票 · 港杂费 <span style="text-transform:none;font-weight:600;color:var(--sub)">填好可收起</span></span><span class="chev" id="invChevPv">收起 ▴</span></button>
         <div id="invBodyPv">
         <div class="modebar">
           <span class="mlab">开票方式</span>
           <button class="mopt on" data-m="self">我方代开（标准）</button>
-          <button class="mopt" data-m="other">对方自开</button>
-          <span class="mtip" id="modeTip">我们开好后发送到财务邮箱</span>
+          <button class="mopt" data-m="other">自定义开票</button>
+          <span class="mtip" id="modeTip">我方开好后发到你的财务邮箱</span>
         </div>
         <div class="plaininv">
           <div class="invtop"><div class="pt">电子发票（<select class="tsel" id="invoiceTitle"><option>增值税普通发票</option><option>增值税专用发票</option></select>）</div></div>
@@ -224,7 +224,7 @@
           <div class="remarkline" id="invoiceRemark">备注：费用尚未录入</div>
         </div>
         <button class="addinv">＋ 新增一张发票</button>
-        <label class="savedef"><input type="checkbox" checked> <span>存为该客户默认开票模版，以后固定这样开。</span></label>
+        <label class="savedef"><input type="checkbox" checked> <span>记住这些开票信息，下次默认按此开。</span></label>
         </div>
       </div>
 
@@ -331,13 +331,13 @@
         <td class="r">${money(l.qty).replace(".00","")}</td><td class="r">${money(l.amount)}</td></tr>`).join("");
       $("billHeadTotal").textContent=`合计 (${cur})`;
       $("billBody").innerHTML=(rows||`<tr><td colspan="5" style="text-align:center;color:var(--faint)">${esc(state.bill_line_notice||"费用尚未录入")}</td></tr>`)
-        +`<tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">${esc(cur)}</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r" id="billTotal">${money(totalLines(cur))}</td></tr>`;
+        +`<tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">${esc(cur)}</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改价后自动重算）</span></td><td class="r" id="billTotal">${money(totalLines(cur))}</td></tr>`;
       if(!isConfirmed()) document.querySelectorAll("[data-line]").forEach(el=>el.addEventListener("blur",e=>changePrice(Number(e.target.dataset.line),e.target.textContent)));
     }
     function renderInvoice(){
       const inv=state.invoices[0]||{}, cur=inv.currency||"CNY", rate=Number(inv.tax_rate||0.01);
       document.querySelectorAll(".mopt[data-m]").forEach(b=>b.classList.toggle("on",(inv.mode||"self")===b.dataset.m));
-      $("modeTip").textContent=(inv.mode==="other")?"对方自开后回传，我们 OCR 核对":"我们开好后发送到财务邮箱";
+      $("modeTip").textContent=(inv.mode==="other")?"你方自行开具后回传，我方核对":"我方开好后发到你的财务邮箱";
       if(inv.title&&!Array.from($("invoiceTitle").options).some(o=>o.value===inv.title)) $("invoiceTitle").add(new Option(inv.title,inv.title));
       $("invoiceTitle").value=inv.title||"增值税普通发票";
       $("invoiceBody").innerHTML=`<tr><td><span class="editable">${esc(inv.item_name||"*经纪代理服务*港杂费")}</span></td><td>${esc(inv.unit||"项")}</td>
