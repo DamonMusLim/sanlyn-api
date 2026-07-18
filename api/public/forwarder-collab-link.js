@@ -53,12 +53,23 @@ export default async function handler(req, res) {
   if (!sp.rows.length) return res.status(403).json({ ok: false, error: "本票不属于该货代" });
   const plan = sp.rows[0];
 
+  // 2026-07-18 Damon 纠正：门户货代 = 协同中枢的「海运方」，只进海运段。
+  // 车队/报关在中枢是独立的方（车队·工厂自理 / 报关·巴匕自理），各有各的链——
+  // 就算这票拖车由货代安排，也不从这个入口放段，段位归中枢管。
   const segments = ["ocean"];
-  if (String(plan.trucking_arrange || "") === "agent") segments.push("truck");
-  if (String(plan.customs_arrange || "") === "agent") segments.push("customs");
 
   const co = await pool.query("SELECT name_cn FROM companies WHERE id = $1 LIMIT 1", [token.company_id]);
   const companyLabel = (co.rows[0] && co.rows[0].name_cn) || token.forwarder_co || "";
+
+  // 与协同中枢 handleSendPortalLink 同口径：先吊销该票该方旧链——一票一方只一条活链。
+  // 门户点开 = 等价中枢对海运方点「发」，两个入口共用同一条链体系，不各签各的。
+  await pool.query(
+    `UPDATE magic_links SET revoked_at = NOW()
+      WHERE recipient_role = 'supplier_portal'
+        AND (meta->>'shipment_id')::int = $1 AND revoked_at IS NULL
+        AND COALESCE(meta->>'company_label','') = COALESCE($2,'')`,
+    [plan.id, String(companyLabel || "").slice(0, 60)]
+  );
 
   const raw = genRaw();
   await pool.query(
@@ -69,7 +80,7 @@ export default async function handler(req, res) {
       shipment_id: plan.id,
       plan_business_id: plan._id,
       segments,
-      company_label: companyLabel,
+      company_label: String(companyLabel || "").slice(0, 60) || undefined,
       company_id: token.company_id,
       issued_via: "forwarder_portal",
     })]
