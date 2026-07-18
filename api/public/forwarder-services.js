@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { resolveForwarder } from "./_forwarder-portal-auth.js";
 
 const TIERS = ["lt20", "20_25", "25_28"];
 const BOXES = ["20GP", "40HQ"];
@@ -57,16 +58,9 @@ function normalizeBox(raw) {
 }
 
 async function validateToken(pool, code, req) {
-  if (code === "session" || code === "me") code = cookieSession(req || {});
-  const { rows } = await pool.query(
-    `SELECT code, forwarder_co, company_id, expires_at
-       FROM forwarder_portal_tokens
-      WHERE code = $1
-        AND (expires_at IS NULL OR expires_at > NOW())
-      LIMIT 1`,
-    [code]
-  );
-  return rows[0] || null;
+  // P0根治: 只认 cookie secret, 无视 URL slug(code)
+  const r = await resolveForwarder(pool, req);
+  return r.token || null;
 }
 
 async function getShipRows(pool, companyId) {

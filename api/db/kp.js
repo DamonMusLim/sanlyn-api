@@ -51,7 +51,7 @@ async function resolveForwarderCode(req, res) {
     return true;
   }
   var tokenRows = await pool.query(
-    `SELECT code
+    `SELECT code, secret
        FROM forwarder_portal_tokens
       WHERE company_id = $1
         AND (expires_at IS NULL OR expires_at > NOW())
@@ -64,9 +64,12 @@ async function resolveForwarderCode(req, res) {
     res.status(410).send(expiredHtml());
     return true;
   }
-  var token = tokenRows.rows[0].code;
-  setFwdCookie(res, token);
-  res.status(302).setHeader("Location", "/forwarder-quote/" + encodeURIComponent(token));
+  // P0根治: cookie 存高熵 secret(凭证), URL 只放 slug(标签)
+  var slug = tokenRows.rows[0].code;
+  var secret = tokenRows.rows[0].secret;
+  if (!secret) { res.setHeader("Content-Type","text/html; charset=utf-8"); res.status(410).send(expiredHtml()); return true; }
+  setFwdCookie(res, secret);
+  res.status(302).setHeader("Location", "/forwarder-quote/" + encodeURIComponent(slug));
   res.end();
   return true;
 }

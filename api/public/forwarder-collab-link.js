@@ -11,6 +11,7 @@
 // segments：ocean 恒有；truck/customs 仅当该票 trucking_arrange/customs_arrange = 'agent'（货代承包段）。
 //   collab-portal.html 靠它做 Lens（"只显示贵司承包的段"、运费价格无权访问），绝不放大。
 import crypto from "node:crypto";
+import { resolveForwarder } from "./_forwarder-portal-auth.js";
 import { getPool, setCors } from "../db.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
@@ -32,14 +33,10 @@ export default async function handler(req, res) {
   const planId = parseInt(req.query && req.query.plan_id, 10);
   if (!code || !planId) return res.status(400).json({ ok: false, error: "code/plan_id 必填" });
 
-  const tk = await pool.query(
-    "SELECT company_id, forwarder_co, expires_at FROM forwarder_portal_tokens WHERE code = $1 LIMIT 1",
-    [code]
-  );
-  if (!tk.rows.length) return res.status(404).json({ ok: false, error: "not_found" });
-  const token = tk.rows[0];
-  if (token.expires_at && new Date(token.expires_at) < new Date())
-    return res.status(410).json({ ok: false, error: "expired" });
+  // P0根治: 只认 cookie secret, 无视 URL slug(code)
+  const _auth = await resolveForwarder(pool, req);
+  if (_auth.error) return res.status(_auth.error).json(_auth.body);
+  const token = _auth.token;
   if (!token.company_id)
     return res.status(403).json({ ok: false, error: "token 未绑定 company_id" });
 

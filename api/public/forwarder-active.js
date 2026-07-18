@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { resolveForwarder } from "./_forwarder-portal-auth.js";
 import { normalizePort } from "../db/_official-port-charges.js";
 
 function cleanCode(req){
@@ -34,18 +35,8 @@ function dateTime(v){
 }
 
 async function loadToken(pool, code, req){
-  if (code === "session" || code === "me") code = cookieSession(req || {});
-  if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
-  const { rows } = await pool.query(
-    "SELECT code, forwarder_co, company_id, expires_at FROM forwarder_portal_tokens WHERE code = $1 LIMIT 1",
-    [code]
-  );
-  if (!rows.length) return { error:404, body:{ ok:false, error:"not_found" } };
-  var token = rows[0];
-  if (token.expires_at && new Date(token.expires_at) < new Date()) {
-    return { error:410, body:{ ok:false, error:"expired", message:"链接已过期" } };
-  }
-  return { token:token };
+  // P0根治: 只认 cookie secret, 无视 URL slug(code)
+  return resolveForwarder(pool, req);
 }
 
 async function companyName(pool, companyId){

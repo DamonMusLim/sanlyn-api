@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { resolveForwarder } from "./_forwarder-portal-auth.js";
 import { officialPortChargeKey, officialPortChargesMap, normalizePort } from "../db/_official-port-charges.js";
 
 const CARRIER_OPTIONS = ["OOCL", "EMC", "COSCO", "MSC", "KMTC", "ESL", "HAPAG", "MSK", "CMA", "ONE"];
@@ -43,17 +44,8 @@ async function loadToken(pool, code, req){
       created_at timestamptz DEFAULT now()
     )
   `);
-  if (code === "session" || code === "me") code = cookieSession(req || {});
-  if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
-  const { rows } = await pool.query(
-    "SELECT code, forwarder_co, expires_at FROM forwarder_portal_tokens WHERE code = $1",
-    [code]
-  );
-  if (!rows.length) return { error:404, body:{ ok:false, error:"not_found" } };
-  if (new Date(rows[0].expires_at) < new Date()) {
-    return { error:410, body:{ ok:false, error:"expired", message:"链接已过期" } };
-  }
-  return { token:rows[0] };
+  // P0根治: 只认 cookie secret, 无视 URL slug(code)
+  return resolveForwarder(pool, req);
 }
 
 function normPort(v){
