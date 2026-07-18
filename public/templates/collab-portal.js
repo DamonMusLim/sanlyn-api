@@ -197,6 +197,8 @@ function parseQuickFill(){
 }
 let _cntrZone = null;
 function pickFileCntr(cntr){ _cntrZone = cntr; pickFile('truck'); }
+// 独立"上传舱单/SO"按钮:打[SO舱单]标记,不靠文件名,上传即认成SO(客户提箱凭此) 2026-07-18
+function pickFileSO(){ _cntrZone = 'SO舱单'; pickFile('ocean'); }
 function snapV(){ vehs = vehs.map((v,i)=>$('plate_'+i)!==null?{...v,plate:gv('plate_'+i),driver:gv('driver_'+i),driver_phone:gv('phone_'+i),pickup_time:gv('pickup_'+i),loading_time:gv('loadtime_'+i)||v.loading_time||'',cntr:(gv('cntr_'+i)||'').toUpperCase()||v.cntr||'',seal_no:(gv('seal_'+i)||'').toUpperCase()||v.seal_no||'',weigh_kg:gv('weigh_'+i)||v.weigh_kg||''}:v); }
 function renderVehs(){ $('vehGroups').innerHTML = vehs.map((v,i)=>vehHtml(i,v)).join(''); }
 function addVeh(){ vehs.push({}); renderVehs(); }
@@ -290,11 +292,11 @@ async function boot(){
   })();
   // （单据链接构造已上移至 boot 顶部）
   const upsAll = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
-  const soUps = upsAll.filter(u=>/(^|[^A-Z])S\/?O([^A-Z]|$)|入货|排载|配舱/i.test(u.filename||''));
+  const soUps = upsAll.filter(u=>/(^|[^A-Z])S\/?O([^A-Z]|$)|入货|排载|配舱|舱单|订舱确认|manifest|放箱/i.test(u.filename||''));
   const blUps = upsAll.filter(u=>/\bBL\b|提单/i.test(u.filename||''));
   let dl = '';
-  if (soUps.length) soUps.forEach(u => { dl += dlRow('📋', '排载单 / SO · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
-  else dl += `<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:6px;font-size:12px;color:#9ca3af;">📋 排载单 / SO（入货通知）· 货代上传后自动出现在这里</div>`;
+  if (soUps.length) soUps.forEach(u => { dl += dlRow('📋', '舱单 / SO · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
+  else dl += `<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:6px;font-size:12px;color:#9ca3af;">📋 舱单 / SO（订舱确认书 · 提箱凭此）· 货代上传后自动出现在这里</div>`;
   if (blUps.length) blUps.forEach(u => { dl += dlRow('📄', 'BL · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
   // BL number entry section
   (function(){
