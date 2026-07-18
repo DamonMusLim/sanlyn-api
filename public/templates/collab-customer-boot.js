@@ -116,7 +116,8 @@ async function boot(){
   window._feState = (sheet.fe_cert && sheet.fe_cert.requested) ? true : false;
   window.renderFE = function(){
     const btn = $('feBtn');
-    if (sheet.is_daigou) $('feMust').classList.remove('hidden');
+    if(!btn) return; // FE 主按钮已从本页移除(affa32b拆JS/删块)时不崩，行内 .fe-ck 仍可用
+    if (sheet.is_daigou && $('feMust')) $('feMust').classList.remove('hidden');
     if (window._feState) {
       btn.textContent = sheet.is_daigou ? '✓ 已开通（必办）' : '✓ 已申请 · 点击取消';
       btn.style.background = '#ecfdf5'; btn.style.borderColor = '#a7f3d0'; btn.style.color = '#047857';
