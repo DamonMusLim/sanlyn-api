@@ -27,7 +27,7 @@ async function listVersions(pool, req, res) {
   if (port) { params.push(port); where = "WHERE port ILIKE $1"; }
   params.push(limit);
   const r = await pool.query(
-    `SELECT id, version, source_doc, port, import_status, effective_from, created_at,
+    `SELECT id, version, source_doc, port, import_status, effective_from, imported_at AS created_at,
             (import_status='active') AS active
        FROM carrier_tariff_versions
        ${where}
