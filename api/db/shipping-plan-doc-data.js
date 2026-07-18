@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { buildOfficialPortChargePricing, savePortChargeSnapshot } from "./tariff-billing.js";
 
 function stripCompanyPrefix(s) {
   return String(s || "").replace(/^\d+-/, "");
@@ -182,6 +183,20 @@ async function portCharges(pool, p) {
                qty: q, unit_price: Number((billed / q).toFixed(2)), amount: Number(billed.toFixed(2)) };
     }).filter(x => x.amount > 0);
   } catch (_) {}
+  try {
+    const official = await buildOfficialPortChargePricing(pool, p, factoryCode);
+    if (official) {
+      await savePortChargeSnapshot(pool, p.id, official.snapshot);
+      return {
+        factoryCode,
+        rows: official.rows,
+        usedFallbackCard: false,
+        official_port_charge: true,
+        blocked: official.missingOfficial,
+        snapshot: official.snapshot,
+      };
+    }
+  } catch (_) {}
   if (!rows.length) {
     const fieldRows = [
       ["码头操作费(THC)", p.thc_fee], ["单证费", p.doc_fee], ["电放费", p.tlx_fee],
@@ -239,13 +254,19 @@ export async function buildShippingPlanDocData(pool, id, page) {
       } catch (_) {}
     }
     const totalCny = pc.rows.reduce((s, r) => s + num(r.amount), 0);
-    return {
+    const out = {
       page, shipment: common, factory, containers, charges: pc.rows,
       used_fallback_card: pc.usedFallbackCard,
       totals: { cny: Number(totalCny.toFixed(2)) },
       doc_no: "PC-" + String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-" + genDate.replace(/-/g, ""),
       pdf_type: "fob_portcharge",
     };
+    if (pc.official_port_charge) {
+      out.official_port_charge = true;
+      out.blocked = Boolean(pc.blocked);
+      out.port_charge_standard_snapshot = pc.snapshot || null;
+    }
+    return out;
   }
   const customer = await loadCustomer(pool, p);
   const fxRate = await latestFx(pool);

@@ -11,6 +11,7 @@ import { renderInboundNotice } from "./inbound-notice.js"; // 入货通知/订�
 import { renderInspectionRequest } from "./inspection-request-form.js"; // 出境货物检验检疫申请/报检单 2026-07-05
 import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
 import { renderReceiptDoc } from "./receipt-doc.js"; // 收款证明(银行原版docx母版灌数据) 2026-07-07
+import { buildOfficialPortChargePricing, savePortChargeSnapshot } from "./tariff-billing.js";
 
 // 合同号/PO 展示用：去掉前导公司码前缀(如 "38-XM-244" -> "XM-244")，纯展示，不影响任何金额/归属计算。
 // 呼应 documents.js 里同名用途的 stripPrefix()（那边只硬编码strip "40-"，这里适配任意公司码前缀）。
@@ -1136,7 +1137,21 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       }
 
       let portChargeRows = [];
-      if (factoryCode) {
+      let officialPortCharge = null;
+      let portChargeBlocked = false;
+      try {
+        officialPortCharge = await buildOfficialPortChargePricing(pool, p, factoryCode);
+        if (officialPortCharge) {
+          await savePortChargeSnapshot(pool, p.id, officialPortCharge.snapshot);
+          if (officialPortCharge.missingOfficial) {
+            portChargeBlocked = true;
+            portChargeRows = [];
+          } else {
+            portChargeRows = officialPortCharge.rows;
+          }
+        }
+      } catch(_) {}
+      if (!officialPortCharge && factoryCode) {
         try {
           const chargeRes = await pool.query(
             `SELECT cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis
@@ -1152,7 +1167,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         } catch(_) {}
       }
       // 2026-07-18 根治:真账单常不挂payer_company_code(CY00376全空被漏),无payer时取全部非海运CNY行
-      if (!portChargeRows.length) {
+      if (!officialPortCharge && !portChargeRows.length) {
         try {
           const anyRes = await pool.query(
             `SELECT cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis
@@ -1178,7 +1193,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       // 2026-07-06 根治：真实账单(freight_supplier_bills 已挂 payer_company_code)存在时优先用真实数据，
       // 只有真查不到(historical脏数据/未挂payer)才落回这张写死参考卡兜底，不再无条件覆盖真实值。
       // 2026-07-18 Damon: 兜底先用计划里人工录的真实费用字段(绝不造数),参考卡只当最后手段
-      if (!portChargeRows.length) {
+      if (!officialPortCharge && !portChargeRows.length) {
         const _fieldRows = [
           ["码头操作费(THC)", p.thc_fee], ["单证费", p.doc_fee], ["电放费", p.tlx_fee],
           ["铅封费", p.seal_fee], ["设备交接费", p.eir_fee], ["信息传输费", p.info_trans_fee],
@@ -1188,11 +1203,11 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         if (_fieldRows.length) portChargeRows = _fieldRows;
       }
       // 拖车费补齐:任何路径下若无拖车行而计划有真实拖车费,追加(Damon 2026-07-18)
-      if (portChargeRows.length && Number(p.trucking_cost_total) > 0 && !portChargeRows.some(r => /拖车|truck/i.test(r.cost_category || ""))) {
+      if (!officialPortCharge && portChargeRows.length && Number(p.trucking_cost_total) > 0 && !portChargeRows.some(r => /拖车|truck/i.test(r.cost_category || ""))) {
         portChargeRows.push({ cost_category: "拖车费", charge_basis: "整票", currency: "CNY", qty: 1, unit_price: Number(p.trucking_cost_total), amount: Number(p.trucking_cost_total) });
       }
       let usedFallbackCard = false;
-      if (!portChargeRows.length) {
+      if (!officialPortCharge && !portChargeRows.length) {
         usedFallbackCard = true;
         const PORT_CHARGE_CARD = [
           { name:"舱单费",            basis:"整票", price:100,  perCtn:false },
@@ -1342,7 +1357,9 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       const totalCny = portChargeRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
       // 汇总版(?summary=1):明细太长时只显港杂费总额一行(不列各费目)
       const _pcSummary = String((req.query && req.query.summary) || "") === "1";
-      const chargeRowsHtml = (_pcSummary && portChargeRows.length)
+      const chargeRowsHtml = portChargeBlocked
+        ? `<tr><td colspan="6" style="text-align:center;color:#c00;font-weight:900">缺官方标准不能出流水价 / Official carrier tariff missing</td></tr>`
+        : (_pcSummary && portChargeRows.length)
         ? `<tr><td class="label">港杂费总额 Port Charges (Lump Sum)</td><td>整票 per_bl</td><td class="c">CNY</td><td class="c">1</td><td class="r">${fmtNum(totalCny)}</td><td class="r">${fmtNum(totalCny)}</td></tr>`
         : portChargeRows.length
         ? portChargeRows.map(r => {
