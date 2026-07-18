@@ -27,9 +27,46 @@ function bad(res, status, error) {
   return res.status(status).json({ ok:false, success:false, error:error });
 }
 
+// P0根治配套(2026-07-18): 签 kp 链时自动 ensure forwarder_portal_tokens 行存在,
+// secret 用 crypto 强生成(48hex/192bit),彻底不依赖表上那个弱 md5 DEFAULT,也免手动insert。
+// code(slug)=纯URL标签,新货代给个短随机串即可(货代经 kp 跳转进门户,从不手打 slug)。
+async function ensureForwarderToken(pool, companyId) {
+  var existing = await pool.query(
+    `SELECT code, secret FROM forwarder_portal_tokens
+       WHERE company_id = $1 AND (expires_at IS NULL OR expires_at > NOW())
+       ORDER BY created_at DESC LIMIT 1`, [companyId]);
+  if (existing.rows.length && existing.rows[0].secret) return existing.rows[0];
+  var secret = crypto.randomBytes(24).toString("hex");
+  if (existing.rows.length) {
+    // 旧行缺 secret → 补上(不动 slug)
+    await pool.query(`UPDATE forwarder_portal_tokens SET secret=$1 WHERE code=$2`,
+      [secret, existing.rows[0].code]);
+    return { code: existing.rows[0].code, secret: secret };
+  }
+  // 建新行:slug 短随机(唯一,PK),撞了重试几次
+  var co = await pool.query(`SELECT name_cn FROM companies WHERE id=$1 LIMIT 1`, [companyId]);
+  var coName = (co.rows[0] && co.rows[0].name_cn) || ("company-" + companyId);
+  for (var attempt = 0; attempt < 5; attempt++) {
+    var slug = crypto.randomBytes(6).toString("hex"); // 12 hex 标签
+    try {
+      await pool.query(
+        `INSERT INTO forwarder_portal_tokens (code, forwarder_co, company_id, secret, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, '2099-12-31'::timestamptz, NOW())`,
+        [slug, coName, companyId, secret]);
+      return { code: slug, secret: secret };
+    } catch (e) {
+      if (!/duplicate|unique/i.test(e.message || "")) throw e;
+    }
+  }
+  throw new Error("ensureForwarderToken: slug 连续撞车");
+}
+
 async function issue(req, res, pool) {
   var companyId = Number(req.body && req.body.company_id);
   if (!Number.isInteger(companyId) || companyId <= 0) return bad(res, 400, "company_id_required");
+
+  // 先确保该公司有 forwarder_portal_tokens 行(带强 secret),否则 kp 跳转会 410
+  await ensureForwarderToken(pool, companyId);
 
   const raw = genRaw();
   const hash = rawToHash(raw);
