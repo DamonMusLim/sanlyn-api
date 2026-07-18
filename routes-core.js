@@ -369,6 +369,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/public/forwarder-services/:code", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务(拖车)列表
   mount("/api/public/forwarder-services/:code/quote", () => import("./api/public/forwarder-services.js")); // v3a 全链公开服务报价提交
   mount("/api/public/forwarder-shipments/:code", () => import("./api/public/forwarder-services.js")); // v3d 按票四服务全貌
+  mount("/api/public/forwarder-collab-link/:code", () => import("./api/public/forwarder-collab-link.js")); // 门户「进入协同」按票签发supplier_portal链接(2026-07-17真接线)
   mount("/api/public/forwarder-grab/:code", () => import("./api/public/forwarder-services.js")); // 立即抢单两口价 grab_offers
   mount("/api/public/forwarder-history/:code", () => import("./api/public/forwarder-history.js")); // 货代门户历史业务(只读账单)
   mount("/api/public/forwarder-active/:code", () => import("./api/public/forwarder-active.js")); // 货代门户活跃业务(真实海运计划)

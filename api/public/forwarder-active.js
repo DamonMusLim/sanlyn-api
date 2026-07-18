@@ -221,6 +221,7 @@ function shipment(row, closed){
   var bl = cleanText(row.bl_no);
   var booked = isBooked(row);
   return {
+    plan_id:row.id || null,  // 进入协同按票签发协同链接要用(2026-07-17);SELECT本就查了sp.id
     bl_no:bl || null,
     etd:row.etd || null,
     container_qty:numOrNull(row.container_qty),
