@@ -123,6 +123,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/invoice-drafts", () => import("./api/db/invoice-drafts.js"));
   mount("/api/db/recon-board", () => import("./api/db/recon-board.js"));
   mount("/api/db/automation-hub", () => import("./api/db/automation-hub.js")); // 自动化观测台
+  mount("/api/db/carrier-tariff",  () => import("./api/db/carrier-tariff.js"));
   mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
   mount("/api/db/orders",            () => import("./api/db/orders.js"));
   mount("/api/db/payments",          () => import("./api/db/payments.js"));

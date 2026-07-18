@@ -15,6 +15,7 @@ export default async function handler(req, res) {
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
         "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
         "valid_to","remarks","status","currency","raw","freetime",
+        "rate_type","price_tier","contract_no","contract_valid_from","contract_valid_to",
         "free_days_base","free_days_ext","terminal","next_sailing","supplier_id"];
       const JSON_COLS = ["raw"];
       const sets = [], params = [];
@@ -38,7 +39,9 @@ export default async function handler(req, res) {
       const body = req.body || {};
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
         "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
-        "valid_to","remarks","status","currency","raw","freetime","this_week","next_sailing","eta_date","free_days_base","free_days_ext","terminal","supplier_id"];
+        "valid_to","remarks","status","currency","raw","freetime","this_week","next_sailing","eta_date",
+        "free_days_base","free_days_ext","terminal","supplier_id",
+        "rate_type","price_tier","contract_no","contract_valid_from","contract_valid_to"];
       const cols = [], vals = [], params = [];
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(body, k)) {
         const v = body[k]; cols.push(k);
@@ -73,6 +76,8 @@ export default async function handler(req, res) {
         f.next_sailing AS "nextSailing",
         f.valid_from AS "validFrom", f.valid_to AS "validTo",
         f.transit_days AS "transitDays", f.freetime, f.via, f.thc, f.remarks, f.raw,
+        f.rate_type, f.price_tier, f.contract_no,
+        f.contract_valid_from, f.contract_valid_to,
         f.eta_date AS "etaDate",
         f.created_at AS "createdAt", f.updated_at AS "updatedAt",
         lc20.cost_total AS "portGp20",
