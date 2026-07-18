@@ -51,7 +51,7 @@ export async function buildOfficialPortChargePricing(pool, p, companyCode) {
          cts.amount_cny, cts.unit_basis, cts.required_flag, cts.conditional_flag,
          cts.source_doc, cts.valid_from, cts.valid_to, ctv.version,
          row_number() OVER (
-           PARTITION BY cts.charge_item_code, COALESCE(cts.station_name,''), COALESCE(cts.route_scope,'')
+           PARTITION BY cts.charge_item_code
            ORDER BY cts.valid_from DESC, cts.amount_cny DESC, cts.id DESC
          ) AS rn
        FROM carrier_tariff_standards cts
