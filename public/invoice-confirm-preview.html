@@ -152,15 +152,16 @@
 </style>
 
 <div class="wrap">
-  <div class="tabs">
-    <div class="tab on" data-v="collab"><i class="ti"></i>🤝 协同确认单<span class="s" id="collabSub">对方打开链接看到的</span></div>
+  <div class="tabs" id="tabBar" style="display:none">
+    <div class="tab on" data-v="collab"><i class="ti"></i>🤝 协同确认单</div>
   </div>
 
   <!-- ============ 协同确认单（对方视图） ============ -->
   <section class="view on" id="collab">
     <div class="sheet">
       <div class="sheet-hd">
-        <div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <img id="sellerLogo" alt="" style="display:none;height:40px;max-width:120px;object-fit:contain;border-radius:6px">
           <div class="brand" id="brandName">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS
             <div class="cn" id="brandCn">致：费用尚未录入</div>
           </div>
@@ -192,10 +193,11 @@
       </div>
 
       <div class="sec" style="border-top:1px solid var(--line)">
-        <div class="sec-t">② 开票 · 港杂费</div>
+        <button class="collapse-hd" id="invTogglePv" type="button"><span class="sec-t" style="margin:0">② 开票 · 港杂费 <span style="text-transform:none;font-weight:600;color:var(--sub)">填好可折叠隐藏</span></span><span class="chev" id="invChevPv">收起 ▴</span></button>
+        <div id="invBodyPv">
         <div class="modebar">
           <span class="mlab">开票方式</span>
-          <button class="mopt on" data-m="self">我方代开</button>
+          <button class="mopt on" data-m="self">我方代开（标准）</button>
           <button class="mopt" data-m="other">对方自开</button>
           <span class="mtip" id="modeTip">我们开好后发送到财务邮箱</span>
         </div>
@@ -223,6 +225,7 @@
         </div>
         <button class="addinv">＋ 新增一张发票</button>
         <label class="savedef"><input type="checkbox" checked> <span>存为该客户默认开票模版，以后固定这样开。</span></label>
+        </div>
       </div>
 
       <div class="sec" style="border-top:1px solid var(--line)">
@@ -233,8 +236,8 @@
         <div class="sumline" id="ctSum">收起中 · 财务邮箱 <span class="miss">未填（必填）</span> · 操作 — · 业务 —</div>
         <div id="ctBody" style="display:none;margin-top:6px">
           <div class="emrole">
-            <div class="emlabel fin">财务邮箱 <span class="req">必填 ★</span><em>发票发这里</em></div>
-            <div class="emlist"><div class="val reqempty" style="flex:1;min-width:180px">未填 · 不填开不了自动票</div><button class="addem">+ 加邮箱</button></div>
+            <div class="emlabel fin">财务邮箱 <span class="req">必填 ★</span><em>发票发这里 · 柠檬云自动发到这</em></div>
+            <div class="emlist"><input class="email" id="finEmail" type="email" placeholder="name@example.com · 不填开不了票" style="flex:1;min-width:200px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px"></div>
           </div>
           <div class="emrole">
             <div class="emlabel ops">操作邮箱<em>账单/确认通知</em></div>
@@ -301,8 +304,9 @@
     }
     function renderShell(){
       const sp=state.shipment||{}, buyer=state.buyer||{}, seller=state.seller||{}, cntr=cntrSummary();
-      $("collabSub").textContent=(buyer.name||"对方")+"打开链接看到的";
+      $("tabBar").style.display=isInternal()?"flex":"none"; // ①对方视图去掉顶部"协同确认单/打开链接看到的"，只内部核账才显示标签栏
       $("brandName").firstChild.nodeValue=seller.name||"费用尚未录入";
+      if(seller.logo_url){$("sellerLogo").src=seller.logo_url;$("sellerLogo").alt=seller.name||"";$("sellerLogo").style.display="block";}else{$("sellerLogo").style.display="none";} // ④公司logo，有则显示(暂未上传logo则留空)
       $("brandCn").textContent="致："+(buyer.name||"费用尚未录入");
       $("docNo").textContent=sp.shipment_no||sp.bl_no||"费用尚未录入";
       $("shipBl").textContent=sp.bl_no||"—"; $("shipVessel").textContent=[sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—";
@@ -360,6 +364,7 @@
     }
     function renderContacts(){
       const c=state.contacts||{}, f=(c.finance||[]).filter(Boolean).length, o=(c.ops||[]).filter(Boolean).length, b=(c.business||[]).filter(Boolean).length;
+      if($("finEmail")&&!$("finEmail").value&&(c.finance||[])[0])$("finEmail").value=(c.finance||[])[0]; // 已存邮箱回填
       $("ctSum").innerHTML=`收起中 · 财务邮箱 ${f?`<b>${f} 个</b>`:`<span class="miss">未填（必填）</span>`} · 操作 ${o||"—"} · 业务 ${b||"—"}`;
     }
     function renderConfirmedSummary(){
@@ -388,10 +393,15 @@
       state.buyer={name:$("buyerName").textContent.trim(),tax_id:$("buyerTax").textContent.trim()};
       state.invoices[0].mode=document.querySelector(".mopt.on[data-m]")?.dataset.m||"self";
       state.save_as_default=document.querySelector(".savedef input")?.checked!==false;
+      const fe=$("finEmail")?.value.trim()||""; state.contacts=state.contacts||{finance:[],ops:[],business:[]}; state.contacts.finance=fe?[fe]:[]; // ⑤收集财务邮箱
     }
     async function submit(){
       if(!token){alert("缺少 token，无法提交");return}
       collect();
+      if(!(state.contacts.finance||[]).filter(Boolean).length){ // ⑤没填财务邮箱不放行(发票要发这里)
+        const b=$("ctBody"); if(b){b.style.display="block";$("ctChev").textContent="收起 ▴";$("ctSum").style.display="none";}
+        $("finEmail")?.focus(); alert("请先填写财务邮箱（发票要发到这里），否则无法确认开票。"); return;
+      }
       const body={token,draft:{...state,price_changed:dirtyPrice,invoice_mode:state.invoices[0].mode,shipment_containers:state.shipment.containers||[]}};
       const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const d=await r.json().catch(()=>({}));
@@ -400,6 +410,7 @@
     }
     document.querySelector(".tabs").addEventListener('click',e=>{const t=e.target.closest(".tab");if(!t||!$(t.dataset.v))return;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');$(t.dataset.v).classList.add('on')});
     $("ctToggle").addEventListener('click',()=>{const b=$("ctBody"),open=b.style.display==='none';b.style.display=open?'block':'none';$("ctChev").textContent=open?'收起 ▴':'展开填写 ▾';$("ctSum").style.display=open?'none':'block'});
+    $("invTogglePv").addEventListener('click',()=>{const b=$("invBodyPv"),open=b.style.display==='none';b.style.display=open?'block':'none';$("invChevPv").textContent=open?'收起 ▴':'展开 ▾'}); // ③②开票段可折叠隐藏
     document.querySelectorAll('.mopt[data-m]').forEach(b=>b.addEventListener('click',()=>{ensureInvoice();state.invoices[0].mode=b.dataset.m;renderInvoice()}));
     $("buyerName").contentEditable=true; $("buyerTax").contentEditable=true; $("submitBtn").addEventListener("click",submit);
     $("detailBtn").addEventListener("click",()=>{detailOpen=true;renderConfirmedSummary()});

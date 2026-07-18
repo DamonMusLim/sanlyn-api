@@ -205,8 +205,14 @@ async function defaultLines(pool, sp, ctx) {
     params.push(lens.code);
     where.push(`supplier_company_code=$${params.length}`, "COALESCE(amount,0)>0");
   } else if (lens.side === "receivable") {
-    params.push(lens.code);
-    where.push(`payer_company_code=$${params.length}`, "COALESCE(sale_amount,0)>0");
+    if (lens.segment === "port_charge") {
+      // 港杂账单：按提单带出下游客户的港杂，不靠 payer_company_code
+      // (backfill 默认填 BABI 不可靠；Damon 定"只按上下游/走自己系统"，一票一提单=一个下游客户)
+      where.push("COALESCE(sale_amount,0)>0");
+    } else {
+      params.push(lens.code);
+      where.push(`payer_company_code=$${params.length}`, "COALESCE(sale_amount,0)>0");
+    }
   } else {
     where.push("(COALESCE(amount,0)>0 OR COALESCE(sale_amount,0)>0)");
   }
@@ -226,6 +232,8 @@ async function defaultLines(pool, sp, ctx) {
     const scope = clean(row.fob_scope, 16) || classifyFobScope(row.canonical_category, row.cost_category);
     if (lens.role === "customer" && Number(row.sale_amount || 0) <= 0) continue;
     if (lens.role === "supplier" && Number(row.amount || 0) <= 0) continue;
+    // 港杂账单只带起运港真港杂(origin scope)：海运费/拖车/报关/目的港等一律不进港杂账单，需要再手动加行
+    if (lens.segment === "port_charge" && scope !== "origin") continue;
     if (ctx.role === "factory_booking") {
       if (scope === "freight" || scope === "destination") continue;
       if (scope === "declaration" && customsArrange === "factory") continue;
