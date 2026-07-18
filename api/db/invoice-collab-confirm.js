@@ -237,7 +237,7 @@ async function defaultLines(pool, sp, ctx) {
     if (lens.role === "supplier" && Number(row.amount || 0) <= 0) continue;
     // 港杂账单只带起运港真港杂(origin scope)：海运费/拖车/报关/目的港等一律不进港杂账单，需要再手动加行
     if (lens.segment === "port_charge" && scope !== "origin") continue;
-    if (ctx.role === "factory_booking") {
+    if (ctx.role === "factory_booking" && !ctx.internal) {
       if (scope === "freight" || scope === "destination") continue;
       if (scope === "declaration" && customsArrange === "factory") continue;
     }
@@ -261,6 +261,32 @@ async function defaultLines(pool, sp, ctx) {
       line.gross_profit = money(Number(row.sale_amount || 0) - Number(row.amount || 0));
     }
     lines.push(line);
+  }
+  // fallback：部分票费用不在 active_freight_supplier_bills，而存在 shipping_plans.raw.cost_lines
+  //（如 CY00394：bills 表 0 行，raw.cost_lines 有 海运费/港杂费/拖车费/报关费）。bills 无行时兜底带出。
+  if (!lines.length && Array.isArray(sp.cost_lines) && sp.cost_lines.length) {
+    for (const cl of sp.cost_lines) {
+      const name = clean(cl.name, 80); if (!name) continue;
+      const cost = money(cl.cost), sale = money(cl.sale);
+      const scope = classifyFobScope("", name);
+      if (!ctx.internal) {
+        if (lens.role === "customer" && sale <= 0) continue;
+        if (lens.role === "supplier" && cost <= 0) continue;
+        if (lens.segment === "port_charge" && scope !== "origin") continue;
+        if (ctx.role === "factory_booking") {
+          if (scope === "freight" || scope === "destination") continue;
+          if (scope === "declaration" && customsArrange === "factory") continue;
+        }
+      }
+      const visibleAmount = lens.side === "receivable" ? sale : lens.side === "payable" ? cost : (sale || cost);
+      const line = {
+        bl_no: blNo, name, basis: "整票", unit_price: money(visibleAmount), qty: 1, amount: money(visibleAmount),
+        currency: clean(cl.currency || "CNY", 8).toUpperCase(),
+        fob_scope: scope, review: scope === "review", segment: lens.segment, line_side: lens.side, from_raw: true,
+      };
+      if (lens.role === "internal") { line.cost_amount = cost; line.sale_amount = sale; line.gross_profit = money(sale - cost); }
+      lines.push(line);
+    }
   }
   return { lines, exwTransfer, lens };
 }
