@@ -1,5 +1,7 @@
 function normDate(v) {
-  return v ? String(v).slice(0, 10) : new Date().toISOString().slice(0, 10);
+  if (!v) return new Date().toISOString().slice(0, 10);
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? String(v).slice(0, 10) : d.toISOString().slice(0, 10);
 }
 
 function normContainerType(v) {
