@@ -89,8 +89,11 @@ async function validateToken(pool, raw) {
   if (!shipmentId) return null;
   const role = clean(r.rows[0].recipient_role, 40);
   const fieldProfile = clean(meta?.field_profile, 40);
-  const internal = fieldProfile === "shipping_booking" || fieldProfile === "upstream_downstream";
-  return { shipmentId, role, meta, internal, scope: { ...(scope || {}), label } };
+  // 预览链接(meta.preview)=Damon 的 godview：不带 party scope，按内部全景带出全部数据，
+  // 否则 factory/shipper 预览因缺 scope.label 在 loadShipment 直接 return null → 404 空数据
+  const preview = Boolean(meta?.preview);
+  const internal = fieldProfile === "shipping_booking" || fieldProfile === "upstream_downstream" || preview;
+  return { shipmentId, role, meta, internal, preview, scope: { ...(scope || {}), label } };
 }
 
 async function loadShipment(pool, ctx) {
