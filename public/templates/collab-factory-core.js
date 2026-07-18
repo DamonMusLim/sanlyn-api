@@ -14,14 +14,30 @@ function openBillingInvoice(){
   if(!window._billingToken) return;
   window.open('/public/invoice-confirm-preview.html?token='+encodeURIComponent(window._billingToken), '_blank', 'noopener');
 }
+function isFactorySelf(v){ return ['factory','self'].includes(arrangeVal(v)); }
+function factorySelfHandled(){ return isFactorySelf(sel.trk)||isFactorySelf(sel.cus); }
+function filterFactoryBillingLines(lines){
+  if(!Array.isArray(lines)) return lines;
+  if(!factorySelfHandled()) return lines;
+  return lines.filter(line=>{
+    const text=String((line&&line.name)||(line&&line.item_name)||(line&&line.cost_category)||(line&&line.category)||'');
+    return !/拖车|truck|trucking|报关|申报|customs|declaration/i.test(text);
+  });
+}
 function renderBillingEntry(billing){
   const body=$('billingBody');
   if(!body) return;
+  window._lastBilling=billing||{};
   const canOpen=!!(billing&&billing.token&&billing.show_amount!==false);
+  const visibleLines=filterFactoryBillingLines((billing&&billing.lines)||(billing&&billing.bill_lines));
+  if(billing&&Array.isArray(visibleLines)){ billing.lines=visibleLines; billing.bill_lines=visibleLines; }
+  const selfHandled=factorySelfHandled();
+  const billTitle=canOpen?(selfHandled?'本票港杂':'本票港杂/费用账单'):'暂无';
+  const billHint=canOpen?(selfHandled?'工厂自理拖车/报关：本账单仅展示本票港杂':esc(billing.segment||'按当前权限展示')):'当前链接暂无可打开账单';
   window._billingToken=canOpen?billing.token:'';
   body.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f8fafc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px;">'
-    +'<div><div style="font-size:13px;font-weight:800;color:#1a1d23;">费用 / 账单：'+(canOpen?'本票港杂/费用账单':'暂无')+'</div>'
-    +'<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+(canOpen?esc(billing.segment||'按当前权限展示'):'当前链接暂无可打开账单')+'</div></div>'
+    +'<div><div style="font-size:13px;font-weight:800;color:#1a1d23;">费用 / 账单：'+billTitle+'</div>'
+    +'<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+billHint+'</div></div>'
     +(canOpen?'<button class="btn btn-blue btn-sm" onclick="openBillingInvoice()">打开账单 / 开票</button>':'')+'</div>';
 }
 function arrangeVal(v){ return v==='self'?'factory':v; }
@@ -69,7 +85,23 @@ function expandTradeTerms(){ if($('ttEdit'))$('ttEdit').classList.remove('hidden
 bindSel('batRow','bat','bat',v=>{ $('msdsNote').style.display=v==='yes'?'block':'none'; checkStep3(); });
 bindSel('woodRow','wood','wood',v=>{ $('fumWrap').style.display=v==='yes'?'flex':'none'; if(v==='no'){sel.fum=null;$('fumNote').style.display='none';} checkStep3(); });
 bindSel('fumRow','fum','fum',v=>{ $('fumNote').style.display=v==='no'?'block':'none'; checkStep3(); });
-function selfNote(){ const p=[]; if(sel.trk&&sel.trk!=='agent')p.push((sel.trk==='babi'?'巴匕安排拖车':'自拖')+'请提供：车牌/进港预约/磅单'); if(sel.cus&&sel.cus!=='agent')p.push((sel.cus==='babi'?'巴匕安排报关':'自报')+'请提供：报关单/装箱单/发票'); $('selfNote').textContent=p.join('　·　'); $('selfNote').style.display=p.length?'block':'none'; }
+function selfNote(){
+  const p=[];
+  if(sel.trk==='babi') p.push('巴匕安排拖车请提供：车牌/进港预约/磅单');
+  if(sel.cus==='babi') p.push('巴匕安排报关请提供：报关单/装箱单/发票');
+  $('selfNote').textContent=p.join('　·　');
+  $('selfNote').style.display=p.length?'block':'none';
+  const st=$('arrangeStatus');
+  if(st){
+    const badge=t=>'<span class="badge badge-green">'+t+'：自理·已确认</span>';
+    const bits=[];
+    if(isFactorySelf(sel.trk)) bits.push(badge('车队'));
+    if(isFactorySelf(sel.cus)) bits.push(badge('报关方'));
+    st.innerHTML=bits.join('');
+    st.style.display=bits.length?'flex':'none';
+  }
+  if(window._lastBilling) renderBillingEntry(window._lastBilling);
+}
 function preset(rowId,attr,val,cls){ const el=$(rowId).querySelector('[data-'+attr+'="'+val+'"]'); if(el) el.classList.add(cls||'on-blue'); }
 function setTog(rowId,attr,val){ if(!val) return; const el=$(rowId).querySelector('[data-'+attr+'="'+val+'"]'); if(el) el.click(); }
 
