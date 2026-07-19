@@ -1,4 +1,6 @@
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { getPool, setCors } from "../db.js";
 import {
   clean,
@@ -17,6 +19,8 @@ const SELLER_NAME = "上海洋宝宝国际物流有限公司";
 export const SELLER_BANK = "中国银行厦门文灶支行";
 export const ACCOUNTS = { CNY: "433849860868", USD: "433849630299" };
 export { clean, classifyFobScope, money };
+const SLIP_DIR = "/opt/sanlyn-uploads/invoice-confirm-slips";
+const INTERNAL_PARTIES = new Set(["ocean", "truck", "customs", "factory", "customer"]);
 
 function hashToken(raw) {
   return crypto.createHash("sha256").update(String(raw || "")).digest("hex");
@@ -70,7 +74,7 @@ async function loadShipment(pool, ctx) {
   const cols = new Set(colsR.rows.map(row => row.column_name));
   const companyJoin = (alias, col) => cols.has(col) ? `LEFT JOIN companies ${alias} ON ${alias}.id = sp.${col}` : `LEFT JOIN companies ${alias} ON false`;
   const r = await pool.query(
-    `SELECT sp.id, sp.shipment_no, sp.bl_no, sp.pol, sp.pod, sp.vessel, sp.voyage,
+    `SELECT sp.id, sp.shipment_no, sp.bl_no, sp.pol, sp.pod, sp.vessel, sp.voyage, sp.order_nos,
             sp.container_type, sp.container_qty, sp.issuing_company, sp.carrier_code, sp.shipping_line,
             sp.freight_term, sp.customs_arrange,
             sp.customer, sp.customer_en, sp.hbl_no,
@@ -79,6 +83,8 @@ async function loadShipment(pool, ctx) {
             cb.code AS broker_code, COALESCE(cb.name_cn, cb.name_en) AS broker_name,
             cc.code AS customer_code, COALESCE(cc.name_cn, cc.name_en) AS customer_company_name,
             sp.raw->'cost_lines' AS cost_lines,
+            sp.raw->>'taxed_port_charge' AS taxed_port_charge,
+            sp.raw->>'port_charge_invoice_total' AS port_charge_invoice_total,
             (SELECT COALESCE(json_agg(json_build_object('order_no', o.order_no, 'factory', o.factory)), '[]'::json)
                FROM orders o WHERE o.shipping_plan_id=sp.id) AS orders
        FROM shipping_plans sp
@@ -108,7 +114,32 @@ async function loadShipment(pool, ctx) {
     sp.customer_code = customer.code || "";
     sp.customer_company_name = sp.customer_company_name || customer.name_cn || customer.name_en || "";
   }
+  if (ctx.internal && ctx.party === "factory") partyCompany = await loadFactoryParty(pool, sp, ctx);
   return { ...sp, orders, party_company: partyCompany };
+}
+
+async function loadFactoryParty(pool, sp, ctx) {
+  const labels = (sp.orders || []).map(o => o.factory).filter(Boolean);
+  const r = await pool.query(
+    `WITH plan_orders AS (
+       SELECT o.id, o.factory, o.factory_code, o.factory_company_id
+         FROM orders o
+        WHERE o.shipping_plan_id=$1 OR o.order_no = ANY(COALESCE($2::text[], ARRAY[]::text[]))
+     ), fac AS (
+       SELECT COALESCE(c_id.code, c_code.code, p.factory_code) AS code,
+              COALESCE(c_id.name_cn, c_code.name_cn, p.factory_name, po.factory) AS name
+         FROM plan_orders po
+         LEFT JOIN companies c_id ON c_id.id=po.factory_company_id
+         LEFT JOIN companies c_code ON c_code.code=po.factory_code
+         LEFT JOIN order_line_items oli ON oli.order_id=po.id
+         LEFT JOIN products p ON p.id=oli.product_id OR (oli.product_id IS NULL AND p.sku=oli.sku)
+        WHERE COALESCE(c_id.code, c_code.code, p.factory_code, po.factory) IS NOT NULL
+     )
+     SELECT code, name FROM fac ORDER BY code NULLS LAST, name LIMIT 1`,
+    [sp.id, Array.isArray(sp.order_nos) ? sp.order_nos : []]
+  ).catch(() => ({ rows: [] }));
+  const row = r.rows[0] || {};
+  return row.code ? await loadCompany(pool, row.code) : await loadCompany(pool, row.name || ctx.scope.label || labels[0]);
 }
 
 export async function loadCompany(pool, nameOrCode) {
@@ -192,23 +223,26 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     },
     seller,
     bill_lines: payloadBillLines,
+    payment_slips: Array.isArray(saved?.payload?.payment_slips) ? saved.payload.payment_slips : [],
     bill_line_notice: saved?.payload?.bill_line_notice || billLineNotice,
     needs_finance_review: saved?.payload?.needs_finance_review ?? !billLines.length,
     ...(ctx.role === "shipper_booking" ? {} : { exw_transfer_to_customer: Boolean(defaults.exwTransfer && payloadBillLines.length) }),
-    invoices: saved?.payload?.invoices || [{
-      id: "invoice-1",
-      currency,
-      title: "增值税普通发票",
-      mode: "self",
-      item_name: "*经纪代理服务*港杂费",
-      unit: "项",
-      qty: 1,
-      total_with_tax: total,
-      amount_ex_tax: exTax,
-      tax_rate: 0.01,
-      tax_amount: tax,
-      remark: `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`,
-    }],
+    invoices: saved?.payload?.invoices || (() => {
+      // 港杂开票拆两张：①代理港杂费(带税1%) ②国际货物运输代理服务费(免税)
+      // 开票总额=打折后(raw.port_charge_invoice_total)否则用账单合计;带税额=进项票(raw.taxed_port_charge);免税=总额−带税
+      const invoiceTotal = money(sp.port_charge_invoice_total || total);
+      const taxedBase = Math.min(money(sp.taxed_port_charge || 0), invoiceTotal);
+      const freeAmt = money(invoiceTotal - taxedBase);
+      const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
+      return [
+        { id: "invoice-agency", currency, title: "增值税普通发票", mode: "self",
+          item_name: "*经纪代理服务*代理港杂费", unit: "项", qty: 1,
+          amount_ex_tax: taxedBase, tax_rate: 0.01, tax_amount: money(taxedBase * 0.01), total_with_tax: money(taxedBase * 1.01), remark },
+        { id: "invoice-service", currency, title: "增值税普通发票", mode: "self",
+          item_name: "*经纪代理服务*国际货物运输代理服务费", unit: "项", qty: 1,
+          amount_ex_tax: freeAmt, tax_rate: 0, tax_amount: 0, total_with_tax: freeAmt, remark },
+      ];
+    })(),
     contacts: saved?.payload?.contacts || { finance: [], ops: [], business: [] },
     save_as_default: saved?.payload?.save_as_default ?? true,
     updated_at: saved?.updated_at || null,
@@ -217,7 +251,23 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
 }
 
 async function partiesForView(pool, sp, ctx) {
-  const own = await loadSeller(pool);
+  let own = await loadSeller(pool);
+  if (ctx.internal && ctx.meta && ctx.meta.company_label) {
+    const ent = await loadCompany(pool, ctx.meta.company_label);
+    if (ent && (ent.name_cn || ent.name_en)) {
+      own = { name: ent.name_cn || ent.name_en, name_en: ent.name_en || "", tax_id: ent.tax_id || "" };
+    }
+  }
+  if (ctx.internal && ["ocean", "truck", "customs", "factory"].includes(ctx.party)) {
+    const key = {
+      ocean: sp.forwarder_code || sp.forwarder_name,
+      truck: sp.trucking_code || sp.trucking_name,
+      customs: sp.broker_code || sp.broker_name,
+      factory: sp.party_company?.code || sp.party_company?.name_cn || sp.party_company?.factory_name || ctx.scope.label,
+    }[ctx.party];
+    const sellerCompany = ctx.party === "factory" ? (sp.party_company || await loadCompany(pool, key)) : await loadCompany(pool, key);
+    return { buyer: own, seller: companyView(sellerCompany, key) };
+  }
   if (ctx.role === "shipper_booking") return { buyer: companyView(sp.party_company, ctx.scope.label), seller: own };
   if (ctx.internal || ctx.role === "customer_booking") {
     const buyer = await loadCompany(pool, sp.customer_code || sp.customer_company_name || sp.customer_en || sp.customer || sp.issuing_company);
@@ -230,7 +280,7 @@ async function partiesForView(pool, sp, ctx) {
 }
 
 function invoiceRef(ctx) {
-  const key = clean(ctx.scope.label || ctx.meta?.company_label || ctx.role, 80).replace(/\s+/g, "_");
+  const key = clean(ctx.internal ? (ctx.party || "customer") : (ctx.scope.label || ctx.meta?.company_label || ctx.role), 80).replace(/\s+/g, "_");
   return `shipment:${ctx.shipmentId}:${ctx.internal ? "internal" : ctx.role}:${key}:invoice-default`;
 }
 
@@ -273,7 +323,57 @@ function sanitizeDraft(body) {
     invoice_mode: clean(d.invoice_mode || "self", 24),
     settlement_mode: clean(d.settlement_mode || "monthly", 16) === "single" ? "single" : "monthly",
     price_changed: Boolean(d.price_changed),
+    payment_slips: Array.isArray(d.payment_slips) ? d.payment_slips.map(s => ({
+      file_ref: clean(s.file_ref, 240), url: clean(s.url, 500),
+      amount: money(s.amount), currency: clean(s.currency || "CNY", 8).toUpperCase(),
+      paid_date: clean(s.paid_date, 20), memo: clean(s.memo, 200),
+      uploaded_at: clean(s.uploaded_at, 40),
+    })).filter(s => s.file_ref || s.url).slice(0, 80) : [],
   };
+}
+
+function sanitizeSlip(body) {
+  const b = body || {};
+  return {
+    amount: money(b.amount), currency: clean(b.currency || "CNY", 8).toUpperCase(),
+    paid_date: clean(b.paid_date, 20), memo: clean(b.memo, 200),
+    filename: clean(b.filename || "payment-slip", 100),
+    mime: clean(b.mime || "application/octet-stream", 80),
+    data_base64: String(b.data_base64 || "").replace(/^data:[^,]*,/, ""),
+  };
+}
+
+async function handlePaymentSlip(req, res, pool, ctx) {
+  const sp = await loadShipment(pool, ctx);
+  if (!sp) return res.status(404).json({ ok: false, error: "not_found" });
+  const s = sanitizeSlip(req.body);
+  if (!s.amount || !s.paid_date) return res.status(400).json({ ok: false, error: "amount_paid_date_required" });
+  if (!s.data_base64) return res.status(400).json({ ok: false, error: "file_required" });
+  const buf = Buffer.from(s.data_base64, "base64");
+  if (!buf.length || buf.length > 8 * 1024 * 1024) return res.status(413).json({ ok: false, error: "file_too_large" });
+  fs.mkdirSync(SLIP_DIR, { recursive: true });
+  const safe = s.filename.replace(/[^\w.\-\u4e00-\u9fa5]/g, "_").slice(0, 80) || "payment-slip";
+  const ref = invoiceRef(ctx);
+  const stored = `${Date.now()}_${crypto.randomBytes(4).toString("hex")}_${safe}`;
+  fs.writeFileSync(path.join(SLIP_DIR, stored), buf);
+  const slip = {
+    file_ref: stored, url: `/uploads/invoice-confirm-slips/${stored}`,
+    amount: s.amount, currency: s.currency, paid_date: s.paid_date, memo: s.memo,
+    uploaded_at: new Date().toISOString(),
+  };
+  const r = await pool.query(
+    `INSERT INTO invoice_collab_confirm_overrides
+       (ref, kind, shipment_id, factory_scope, status, payload, actor_label, updated_at)
+     VALUES ($1,$2,$3,$4::jsonb,'draft',jsonb_build_object('payment_slips', $5::jsonb),$6,now())
+     ON CONFLICT (ref, kind) DO UPDATE SET
+       payload = COALESCE(invoice_collab_confirm_overrides.payload,'{}'::jsonb) ||
+                 jsonb_build_object('payment_slips',
+                   COALESCE(invoice_collab_confirm_overrides.payload->'payment_slips','[]'::jsonb) || $5::jsonb),
+       updated_at=now()
+     RETURNING payload`,
+    [ref, KIND, ctx.shipmentId, JSON.stringify(ctx.scope), JSON.stringify([slip]), ctx.scope.label || ctx.role]
+  );
+  return res.json({ ok: true, slip, payment_slips: r.rows[0]?.payload?.payment_slips || [slip] });
 }
 
 function billLinesChanged(serverLines, clientLines) {
@@ -349,7 +449,10 @@ export default async function handler(req, res) {
     const token = req.method === "GET" ? req.query?.token : req.body?.token;
     const ctx = await validateToken(pool, token);
     if (!ctx) return res.status(401).json({ ok: false, error: "invalid_token" });
+    const party = clean(req.method === "GET" ? req.query?.party : req.body?.party, 20);
+    ctx.party = ctx.internal && INTERNAL_PARTIES.has(party) ? party : "";
     if (req.method === "GET") return handleGet(req, res, pool, ctx);
+    if (req.method === "POST" && clean(req.body?.action, 40) === "upload_payment_slip") return handlePaymentSlip(req, res, pool, ctx);
     if (req.method === "POST") return handlePost(req, res, pool, ctx);
     return res.status(405).json({ ok: false, error: "method_not_allowed" });
   } catch (err) {
