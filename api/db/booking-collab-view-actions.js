@@ -1,6 +1,7 @@
 // booking-collab-view-actions.js — 写操作 handler（拆自 booking-collab-view.js 2026-07-13）
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 import { NON_EMPTY, arr, resolvePlan, columnExists } from "./booking-collab-view-lib.js";
+import { autoIssueCollabLinks } from "./lib/collab-auto-links.js";
 
 // party company_id 列 → 对应中文名列（写 id 时顺带回填名字，便于前端 linked() 判定）
 const PARTY_COLUMNS = {
@@ -29,6 +30,7 @@ export async function handleSupplyChain(req, res, pool) {
   if (!plan) return res.status(404).json({ ok: false, error: "找不到计划" });
 
   const sets = [], vals = [];
+  const changedRoles = [];
   for (const [col, cnCol] of Object.entries(PARTY_COLUMNS)) {
     if (!(col in body)) continue;
     let id = null, nm = null;
@@ -43,6 +45,9 @@ export async function handleSupplyChain(req, res, pool) {
     }
     vals.push(id); sets.push(`${col} = $${vals.length}`);
     if (id != null && cnCol && nm) { vals.push(nm); sets.push(`${cnCol} = $${vals.length}`); }
+    if (id != null && col === "forwarder_company_id") changedRoles.push("forwarder");
+    if (id != null && col === "factory_company_id") changedRoles.push("factory");
+    if (id != null && col === "customer_company_id") changedRoles.push("customer");
   }
   for (const col of SCALAR_COLS) {
     if (col in body) { vals.push(NON_EMPTY(body[col]) ? body[col] : null); sets.push(`${col} = $${vals.length}`); }
@@ -56,7 +61,10 @@ export async function handleSupplyChain(req, res, pool) {
   if (!sets.length) return res.status(400).json({ ok: false, error: "没有可更新字段" });
   vals.push(plan.id);
   await pool.query(`UPDATE shipping_plans SET ${sets.join(", ")} WHERE id = $${vals.length}`, vals);
-  return res.json({ ok: true });
+  const auto = changedRoles.length
+    ? await autoIssueCollabLinks(pool, plan.id, [...new Set(changedRoles)]).catch(e => ({ error: e.message }))
+    : [];
+  return res.json({ ok: true, collab_auto_links: auto });
 }
 
 // POST /assign-orders — 加/撤订单到本票(事务+乐观锁+add只认无归属单,防抢)

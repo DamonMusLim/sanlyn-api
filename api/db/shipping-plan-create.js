@@ -1,12 +1,8 @@
 // /api/db/shipping-plan-create.js — Shipping plan creation / editing
-// GET  ?action=init              → pending orders for selection
-// GET  ?action=detail&id=xxx     → single plan detail
-// POST                           → create new plan
-// PATCH ?id=xxx                  → update existing plan
-// DELETE ?id=xxx                 → delete plan
 import { getPool, setCors } from "../db.js";
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 import { enableContractSplit } from "./lib/shipping-plan-contracts.js";
+import { autoIssueCollabLinks } from "./lib/collab-auto-links.js";
 
 // Production convention: CY00000 sequential.
 // Real order count reached 146 before the system caught up — old rows
@@ -55,6 +51,7 @@ var ENSURE_COLS = `
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS customer_en TEXT;
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS customer_cn TEXT;
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS forwarder_en TEXT;
+  ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS forwarder_company_id INT;
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS insurance_cn TEXT;
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS remarks TEXT;
 `;
@@ -102,11 +99,6 @@ export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // ── Auth guard: ALL methods require admin role ────────────────────────────
-  // This endpoint is AdminPanel-only (shipping plan creation / edit / detail).
-  // GET returns ALL pending orders across every customer — never expose to
-  // customer / factory / logistics roles.
-  // ROLE-VIEWMODEL-PERMISSION-REGRESSION-001: P1 scope bug fixed 2026-05-12.
   if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({ error: "Forbidden: admin only" });
   }
@@ -177,6 +169,7 @@ export default async function handler(req, res) {
         "pol","pod",
         "customer","customer_en","customer_cn","company_code","order_nos","contract_nos",
         "forwarder_cn","forwarder_en","trucking_cn","customs_cn","insurance_cn",
+        "forwarder_company_id",
         "freight_cost","freight_sale_usd",
         "doc_fee","tlx_fee","info_trans_fee","bkg_fee","thc_fee","eir_fee","seal_fee",
         "freight_total_usd","freight_total_cny",
@@ -206,7 +199,10 @@ export default async function handler(req, res) {
       var result = await pool.query(sql, params);
       if (!result.rows.length) return res.status(404).json({ error: "Plan not found" });
       var _blm = await mirrorPlanBlToOrders(pool, result.rows[0], actorOf(req));
-      return res.status(200).json({ success: true, data: result.rows[0], bl_mirror: _blm });
+      var _auto = body.forwarder_company_id !== undefined
+        ? await autoIssueCollabLinks(pool, result.rows[0].id, ["forwarder"]).catch(e => ({ error: e.message }))
+        : [];
+      return res.status(200).json({ success: true, data: result.rows[0], bl_mirror: _blm, collab_auto_links: _auto });
     } catch (err) {
       console.error("[shipping-plan-create PATCH]", err);
       return res.status(500).json({ success: false, error: err.message });
@@ -258,7 +254,7 @@ export default async function handler(req, res) {
       containerNo, containerType, containerQty, sealNo,
       pol, pod,
       customer, customerEN, customerCN, companyCode, orderNos, contractNos,
-      forwarderCN, forwarderEN, truckingCN, customsCN, insuranceCN,
+      forwarderCN, forwarderEN, truckingCN, customsCN, insuranceCN, forwarderCompanyId,
       freightCost, freightSaleUSD,
       docFee, tlxFee, infoTransFee, bkgFee, thcFee, eirFee, sealFee,
       freightTotalUSD, freightTotalCNY,
@@ -341,6 +337,7 @@ export default async function handler(req, res) {
         ddp_agent TEXT,
         flow_status TEXT DEFAULT '待订舱',
         remarks TEXT,
+        forwarder_company_id INT,
         created_by TEXT,
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
@@ -365,7 +362,7 @@ export default async function handler(req, res) {
       containers_detail, trucking_detail,
       is_ddp, ddp_total, ddp_agent,
       flow_status, remarks, created_by,
-      forwarder_partner
+      forwarder_partner, forwarder_company_id
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
       $11,$12,$13,$14,$15,$16,$17,$18,
@@ -379,7 +376,7 @@ export default async function handler(req, res) {
       $51,$52,
       $53,$54,$55,
       $56,$57,$58,
-      $59
+      $59,$60
     ) RETURNING *`;
 
     var vals = [
@@ -399,7 +396,8 @@ export default async function handler(req, res) {
       flowStatus || "待订舱", s(remarks), createdBy || "admin",
       // W0-4: explicit NULL prevents the DDL default '上海洋宝宝 × COSCO' from firing.
       // Caller must set forwarder via raw or POST body if they want it; never silently default.
-      (req.body && (req.body.forwarderPartner || req.body.forwarder_partner)) || null
+      (req.body && (req.body.forwarderPartner || req.body.forwarder_partner)) || null,
+      forwarderCompanyId || body.forwarder_company_id || null
     ];
 
     var result = await pool.query(sql, vals);
@@ -487,11 +485,13 @@ export default async function handler(req, res) {
     }
 
     var _blm = await mirrorPlanBlToOrders(pool, plan, actorOf(req));
+    var _auto = await autoIssueCollabLinks(pool, plan.id).catch(e => ({ error: e.message }));
     return res.status(200).json({
       success: true,
       data: plan,
       summary: { shipmentNo: plan.shipment_no, soNo: plan.so_no, vessel: vessel, etd: etd, orderNos: orderNos },
-      bl_mirror: _blm
+      bl_mirror: _blm,
+      collab_auto_links: _auto
     });
   } catch (err) {
     console.error("[shipping-plan-create POST]", err);

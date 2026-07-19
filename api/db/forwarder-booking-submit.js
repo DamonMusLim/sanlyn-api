@@ -115,24 +115,21 @@ export default async function handler(req, res) {
   add("vessel",   b.vessel?.trim()  || null);
   add("voyage",   b.voyage?.trim()  || null);
   add("flow_status",   "booked");
-  // booking_sent_at may or may not exist depending on migration state
-  // Store in raw.booking_sent_at instead to be safe
 
-  // vault merge for BL draft (if provided)
-  // Always store booking_sent_at in vault (safe even if column doesn't exist)
   const bookingSentAt = new Date().toISOString();
-  let vaultMerge = null;
+  add("booking_sent_at", bookingSentAt);
+  let vaultMerge = { booking_sent_at: bookingSentAt };
   if (b.bl_draft && b.bl_draft.filename) {
     const bl = {
       filename:    b.bl_draft.filename,
       size:        b.bl_draft.size || 0,
-      uploaded_at: new Date().toISOString(),
+      uploaded_at: bookingSentAt,
       // data_b64 only stored if small (< 4MB after base64 padding)
       data_b64: (b.bl_draft.data_b64 && b.bl_draft.data_b64.length < 5_500_000)
         ? b.bl_draft.data_b64
         : null,
     };
-    vaultMerge = JSON.stringify({ forwarder_draft_bl: bl });
+    vaultMerge.forwarder_draft_bl = bl;
   }
 
   if (!sets.length && !vaultMerge) {
@@ -141,7 +138,7 @@ export default async function handler(req, res) {
 
   if (vaultMerge) {
     sets.push(`vault = COALESCE(vault, '{}'::jsonb) || $${vals.length + 1}::jsonb`);
-    vals.push(vaultMerge);
+    vals.push(JSON.stringify(vaultMerge));
   }
 
   vals.push(sp.id);

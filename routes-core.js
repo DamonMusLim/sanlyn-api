@@ -194,6 +194,7 @@ export function registerCoreRoutes(app, mount) {
   });
   mount("/api/db/booking-collab", () => import("./api/db/booking-collab.js"));
   mount("/api/db/forwarder-booking-submit", () => import("./api/db/forwarder-booking-submit.js"));
+  mount("/api/collab/gaps", () => import("./api/collab/gaps.js"));
   mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"));
   mount("/api/db/shipping-plan-doc-data", () => import("./api/db/shipping-plan-doc-data.js"));
   mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
