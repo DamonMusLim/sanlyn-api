@@ -17,6 +17,10 @@ function num(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function money2(v) {
+  return Number(num(v).toFixed(2));
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -229,6 +233,72 @@ async function portCharges(pool, p) {
   return { factoryCode, rows, usedFallbackCard };
 }
 
+function splitValues(v) {
+  if (Array.isArray(v)) return v.flatMap(splitValues);
+  return String(v || "").split(/[\/,，;；\s|]+/).map(s => s.trim()).filter(Boolean);
+}
+
+function planContractNos(p, raw) {
+  return [...new Set(splitValues([
+    p.contract_no,
+    p.contract_nos,
+    p.order_contract_nos,
+    raw?.customerPO,
+    raw?.customer_po,
+  ]))];
+}
+
+async function loadTaxedPortChargeFromInvoice(pool, contracts) {
+  if (!contracts.length) return 0;
+  try {
+    const r = await pool.query(
+      `SELECT COALESCE(SUM(amount_incl_tax),0)::numeric AS amount
+         FROM finance_invoices_in
+        WHERE COALESCE(review_status,'') NOT IN ('void','red_ink','cancelled','作废','已作废')
+          AND COALESCE(amount_incl_tax,0) > 0
+          AND (
+            contract_nos && $1::text[]
+            OR contract_nos::text ILIKE ANY($2::text[])
+            OR COALESCE(raw::text,'') ILIKE ANY($2::text[])
+            OR COALESCE(line_items::text,'') ILIKE ANY($2::text[])
+          )
+          AND (
+            COALESCE(raw::text,'') ILIKE ANY(ARRAY['%港杂%','%代理%','%port charge%','%local charge%'])
+            OR COALESCE(line_items::text,'') ILIKE ANY(ARRAY['%港杂%','%代理%','%port charge%','%local charge%'])
+            OR COALESCE(invoice_type,'') ILIKE '%普票%'
+            OR COALESCE(tax_rate,0) = 0.01
+          )`,
+      [contracts, contracts.map(c => "%" + c + "%")]
+    );
+    return money2(r.rows[0]?.amount);
+  } catch (_) {
+    return 0;
+  }
+}
+
+async function buildInvoiceSplit(pool, p, totalCny, raw) {
+  let taxed = await loadTaxedPortChargeFromInvoice(pool, planContractNos(p, raw));
+  let source = taxed > 0 ? "进项票" : "";
+  if (!source && raw && raw.taxed_port_charge != null && raw.taxed_port_charge !== "") {
+    taxed = money2(raw.taxed_port_charge);
+    source = "手填";
+  }
+  if (!source) {
+    taxed = 0;
+    source = "待填";
+  }
+  taxed = Math.min(money2(taxed), money2(totalCny));
+  return {
+    taxed_name: "代理港杂费",
+    taxed_amount: taxed,
+    taxed_rate: 0.01,
+    taxed_with_tax: money2(taxed * 1.01),
+    free_name: "国际货物运输代理服务费",
+    free_amount: money2(totalCny - taxed),
+    source,
+  };
+}
+
 export async function buildShippingPlanDocData(pool, id, page) {
   const p = await loadPlan(pool, id);
   if (!p) return null;
@@ -258,6 +328,7 @@ export async function buildShippingPlanDocData(pool, id, page) {
       page, shipment: common, factory, containers, charges: pc.rows,
       used_fallback_card: pc.usedFallbackCard,
       totals: { cny: Number(totalCny.toFixed(2)) },
+      invoice_split: await buildInvoiceSplit(pool, p, totalCny, raw),
       doc_no: String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-2", // 提单号-2=港杂费单(人民币)；去PC-前缀，不用CY号(避免暴露单量)
       pdf_type: "fob_portcharge",
     };
