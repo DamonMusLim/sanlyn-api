@@ -41,16 +41,31 @@ export default async function handler(req, res) {
         return res.status(200).json(h.rows);
       }
       const { carrier, pol, pod, company, limit = 1000 } = req.query;
-      let query = "SELECT * FROM local_charges", params = [], conds = [];
-      if (carrier) { params.push("%" + carrier + "%"); conds.push("carrier ILIKE $" + params.length); }
-      if (pol) { params.push("%" + pol + "%"); conds.push("pol ILIKE $" + params.length); }
-      if (pod) { params.push("%" + pod + "%"); conds.push("pod ILIKE $" + params.length); }
-      if (company) { params.push("%" + company + "%"); conds.push("company_name ILIKE $" + params.length); }
-      if (conds.length) query += " WHERE " + conds.join(" AND ");
-      params.push(parseInt(limit));
-      query += " ORDER BY created_at DESC LIMIT $" + params.length;
-      const result = await pool.query(query, params);
-      return res.status(200).json(result.rows);
+      const parsedLimit = parseInt(limit);
+      const buildListQuery = ({ includeCarrier }) => {
+        let query = "SELECT * FROM local_charges", params = [], conds = [];
+        if (includeCarrier && carrier) { params.push("%" + carrier + "%"); conds.push("carrier ILIKE $" + params.length); }
+        if (pol) { params.push("%" + pol + "%"); conds.push("pol ILIKE $" + params.length); }
+        if (pod) { params.push("%" + pod + "%"); conds.push("pod ILIKE $" + params.length); }
+        if (company) { params.push("%" + company + "%"); conds.push("company_name ILIKE $" + params.length); }
+        if (conds.length) query += " WHERE " + conds.join(" AND ");
+        params.push(parsedLimit);
+        query += " ORDER BY created_at DESC LIMIT $" + params.length;
+        return { query, params };
+      };
+
+      const exactQuery = buildListQuery({ includeCarrier: true });
+      const result = await pool.query(exactQuery.query, exactQuery.params);
+      if (!carrier) return res.status(200).json(result.rows);
+      if (result.rows.length) {
+        return res.status(200).json(result.rows.map((row) => ({ ...row, match: "exact" })));
+      }
+      if (pol || pod) {
+        const routeQuery = buildListQuery({ includeCarrier: false });
+        const routeResult = await pool.query(routeQuery.query, routeQuery.params);
+        return res.status(200).json(routeResult.rows.map((row) => ({ ...row, match: "route" })));
+      }
+      return res.status(200).json(result.rows.map((row) => ({ ...row, match: "exact" })));
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
     }
