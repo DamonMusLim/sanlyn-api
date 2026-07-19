@@ -3,6 +3,7 @@
 // GET: fetch form helpers (customers list, products list)
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { enforceOrderIntakeGate } from "../lib/order-intake-gate.js";
 var ENSURE_LINE_ITEMS = `
   CREATE TABLE IF NOT EXISTS order_line_items (
     id              SERIAL PRIMARY KEY,
@@ -908,8 +909,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     // Merge exportController + factoryCompanyCode into body so they land in orders.raw
     body = Object.assign({}, body, { exportController: exportController, factoryCompanyCode: factoryCompanyCode });
 
-    if (!companyNameCN && !companyNameEN) return res.status(400).json({ error: "客户名称必填" });
-    if (!products || !products.length) return res.status(400).json({ error: "请添加产品" });
+    if (enforceOrderIntakeGate(req, res)) return;
 
     // Manufacturer name for the order_no factory prefix. Orders are split one-per
     // factory upstream, so all line items share a manufacturer; use the first.

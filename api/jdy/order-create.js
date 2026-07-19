@@ -1,4 +1,5 @@
 import { getPool } from "../db.js";
+import { enforceOrderIntakeGate } from "../lib/order-intake-gate.js";
 var JDY_TOKEN="jgAipmndimpj0endT0wStd6gpspAQpAd";
 var JDY_APP_ID="689cb08a93c073210bfc772b";
 var JDY_ENTRY_ID="6419d478b9b91b00091e4d73";
@@ -13,8 +14,7 @@ export default async function handler(req,res){
   if(req.method!=="POST")return res.status(405).json({error:"Method not allowed"});
   try{
     var{companyCode,companyNameCN,companyNameEN,consignee,deliveryAddress,destinationPort,requiredArrivalDate,remarks,products=[],createdBy}=req.body;
-    if(!companyNameCN&&!companyNameEN)return res.status(400).json({error:"companyName is required"});
-    if(!products.length)return res.status(400).json({error:"products cannot be empty"});
+    if(enforceOrderIntakeGate(req,res))return;
     var totalAmount=products.reduce(function(s,p){return s+(parseFloat(p.subtotal)||parseFloat(p.unitPrice)*parseFloat(p.qty)||0);},0);
     var totalQty=products.reduce(function(s,p){return s+(parseInt(p.qty)||0);},0);
     var orderNo=generateOrderNo();
