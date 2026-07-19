@@ -2188,6 +2188,25 @@ function partyKeyFromFactoryLabel(label) {
 function companyCodeMatches(a, b) {
   return normBillCode(a) && normBillCode(a) === normBillCode(b);
 }
+function isOceanBillSegment(row) {
+  const category = [
+    row && row.canonical_category,
+    row && row.cost_category,
+    row && row.raw_cost_name_cn,
+  ].map(v => String(v || "").trim()).filter(Boolean).join(" ");
+  if (!category) return false;
+  if (/拖车|陆运|truck|trucking|报关|customs|工厂|factory|保险|insurance/i.test(category)) return false;
+  return /海运|ocean|sea\s*freight|freight|港杂|local|port|THC|订舱|booking|单证|document|doc|电放|telex|封签|封条|铅封|seal|VGM|EIR|设备|操作费|handling|改单|舱单|manifest|PTF|文件|安保|仓单|集港|码头|港建/i.test(category);
+}
+function deriveForwarderFromOceanBills(rows) {
+  const suppliers = uniqBillVals(
+    rows
+      .filter(row => Number(row.amount || 0) > 0 && isOceanBillSegment(row))
+      .map(row => row.supplier)
+      .filter(name => String(name || "").trim().length > 4)
+  );
+  return suppliers.length === 1 ? suppliers[0] : null;
+}
 
 // ── GET /party-billing-status?plan_id=xxx ───────────────────────────────────
 // Read-only billing badges from active_freight_supplier_bills; shipping_plans.party_billing is ignored.
@@ -2228,9 +2247,11 @@ async function handlePartyBillingStatus(req, res, pool) {
   const fsbCols = new Set(fsbColR.rows.map(row => row.column_name));
   const optional = (name, fallback = "NULL") => fsbCols.has(name) ? `b.${name}` : `${fallback} AS ${name}`;
   const bills = await pool.query(
-    `SELECT b.id, b.bl_no, b.cost_category, b.amount, b.sale_amount,
+    `SELECT b.id, b.bl_no, b.supplier, b.cost_category, b.amount, b.sale_amount,
             b.supplier_company_code, b.payer_company_code,
             b.confirmed_at, b.reconciled, b.ap_status, b.ap_paid_amount, b.ar_status, b.ar_paid_amount,
+            ${optional("canonical_category")},
+            b.raw->>'cost_name_cn' AS raw_cost_name_cn,
             ${optional("rebill_to_type")}, ${optional("rebill_to_name")}, ${optional("rebill_to_code")},
             b.raw->'collab_pending' AS collab_pending
        FROM active_freight_supplier_bills b
@@ -2256,9 +2277,13 @@ async function handlePartyBillingStatus(req, res, pool) {
   const supplierRows = (code) => rows.filter(row => code && companyCodeMatches(row.supplier_company_code, code) && Number(row.amount || 0) > 0);
   const payerRows = (code) => rows.filter(row => code && companyCodeMatches(row.payer_company_code, code) && Number(row.sale_amount || 0) > 0);
   const factorySupplierCodes = uniqBillVals(factoryCodes.map(row => row.code));
+  const oceanBilling = {
+    ...partyBillSummary(supplierRows(plan.forwarder_code), "payable"),
+    derived_forwarder: deriveForwarderFromOceanBills(rows),
+  };
   const party_billing = {
     factory: partyBillSummary(rows.filter(row => factorySupplierCodes.includes(normBillCode(row.supplier_company_code)) && Number(row.amount || 0) > 0), "payable"),
-    ocean: partyBillSummary(supplierRows(plan.forwarder_code), "payable"),
+    ocean: oceanBilling,
     trucking: partyBillSummary(supplierRows(plan.trucking_code), "payable"),
     broker: partyBillSummary(supplierRows(plan.broker_code), "payable"),
     intermediary: partyBillSummary(supplierRows(plan.intermediary_code), "payable"),
