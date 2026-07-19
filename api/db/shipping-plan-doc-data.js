@@ -279,6 +279,13 @@ async function loadTaxedPortChargeFromInvoice(pool, contracts) {
 async function buildInvoiceSplit(pool, p, totalCny, raw) {
   let taxed = await loadTaxedPortChargeFromInvoice(pool, planContractNos(p, raw));
   let source = taxed > 0 ? "进项票" : "";
+  // 成本/销售表 港杂行的「成本」= Damon 填的代理港杂费(带税/进项票)金额；免税=销售−成本
+  if (!source && Array.isArray(raw?.cost_lines)) {
+    const pcCost = raw.cost_lines
+      .filter((l) => /港杂|杂费|港口|port\s*charge|thc/i.test(String(l?.name || "")))
+      .reduce((s, l) => s + money2(l?.cost), 0);
+    if (pcCost > 0) { taxed = pcCost; source = "港杂成本(代理港杂费)"; }
+  }
   if (!source && raw && raw.taxed_port_charge != null && raw.taxed_port_charge !== "") {
     taxed = money2(raw.taxed_port_charge);
     source = "手填";
