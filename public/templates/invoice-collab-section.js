@@ -18,6 +18,7 @@
     return state.line_side==="payable"?"供应商费用账单":"费用账单";
   };
   const recalcInvoice=()=>{
+    if(!Array.isArray(state.invoices)||state.invoices.length!==1) return; // 多张(代理港杂费+服务费拆分)用后端金额,不整票重算
     const inv=state.invoices[0], total=Math.round(totalLines()*100)/100, ex=Math.round(total/1.01*100)/100;
     inv.total_with_tax=total; inv.amount_ex_tax=ex; inv.tax_amount=Math.round((total-ex)*100)/100;
   };
@@ -96,7 +97,7 @@
     return state.invoices.map(inv=>`<tr>
       <td><span data-en="Brokerage Agency Service Port Charges">${esc(inv.item_name)}</span></td><td>${esc(inv.unit)}</td><td class="r">${inv.qty}</td>
       <td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${money(inv.amount_ex_tax)}</td>
-      <td class="r">1%</td><td class="r">${money(inv.tax_amount)}</td>
+      <td class="r">${Number(inv.tax_rate)>0?String(money(inv.tax_rate*100)).replace(".00","")+"%":"免税"}</td><td class="r">${money(inv.tax_amount)}</td>
     </tr>`).join("");
   }
   function applyLang(){
@@ -140,7 +141,7 @@
       <div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b><input class="edit" id="buyerTax" value="${esc(state.buyer.tax_id)}"></div><div class="tip">数电票只打印名称 + 税号</div></div>
       <div class="pp"><div class="plab" data-en="Seller">销 售 方</div><div class="prow"><b data-en="Name:">名称：</b>${esc(state.seller.name)}</div><div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b>${esc(state.seller.tax_id||"—")}</div></div></div>
       <table class="invline"><thead><tr><th data-en="Item">项目名称</th><th data-en="Unit">单位</th><th class="r" data-en="Qty">数量</th><th class="r" data-en="Unit Price">单价</th><th class="r" data-en="Amount Excl. Tax">金额(不含税)</th><th class="r" data-en="Tax Rate">税率/征收率</th><th class="r" data-en="Tax Amount">税额</th></tr></thead><tbody>${invoiceRows()}</tbody>
-      <tfoot><tr><td colspan="4"></td><td class="r" data-en="Total Incl. Tax">价税合计</td><td colspan="2" class="r">${sym(currency)} ${money(inv.total_with_tax)}</td></tr></tfoot></table>
+      <tfoot><tr><td colspan="4"></td><td class="r" data-en="Total Incl. Tax">价税合计</td><td colspan="2" class="r">${sym(currency)} ${money(state.invoices.reduce((s,i)=>s+num(i.total_with_tax),0))}</td></tr></tfoot></table>
       <div class="remarkline"><span data-en="Remarks:">备注：</span>${esc(inv.remark)}</div></div><button class="addinv" id="addInv">＋ 新增一张发票</button>
       <label class="savedef"><input type="checkbox" id="saveDefault" ${state.save_as_default?"checked":""}> <span>存为该客户默认开票模版，以后固定这样开。</span></label></div></div>
       <div class="sec"><button class="collapse-hd" id="ctToggle"><span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span><span class="chev">${contactOpen?"收起":"展开填写"} ▾</span></button>
