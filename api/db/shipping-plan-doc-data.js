@@ -258,7 +258,7 @@ export async function buildShippingPlanDocData(pool, id, page) {
       page, shipment: common, factory, containers, charges: pc.rows,
       used_fallback_card: pc.usedFallbackCard,
       totals: { cny: Number(totalCny.toFixed(2)) },
-      doc_no: "PC-" + String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-" + genDate.replace(/-/g, ""),
+      doc_no: String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-2", // 提单号-2=港杂费单(人民币)；去PC-前缀，不用CY号(避免暴露单量)
       pdf_type: "fob_portcharge",
     };
     if (pc.official_port_charge) {
@@ -276,7 +276,7 @@ export async function buildShippingPlanDocData(pool, id, page) {
     page: "freight", shipment: common, customer, containers,
     charges: [{ cost_category: "海运费 Ocean Freight", charge_basis: "Per Container / 箱", currency: "USD", qty: containers.qty, unit_price: unitPrice, amount: totalUsd }],
     totals: { usd: Number(totalUsd.toFixed(2)), cny: Number((totalUsd * fxRate).toFixed(2)), fx_rate: fxRate },
-    doc_no: "FI-" + (p.shipment_no || String(p.id)) + "-" + genDate.replace(/-/g, ""),
+    doc_no: String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-1", // 提单号-1=海运费单(美金)；去FI-前缀，不用CY号(避免暴露单量)
     pdf_type: "fob_invoice",
   };
 }
