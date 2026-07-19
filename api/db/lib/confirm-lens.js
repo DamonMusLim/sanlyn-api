@@ -48,6 +48,29 @@ export function classifyFobScope(canonicalCategory, costCategory) {
   return "review";
 }
 
+function isPassThroughRemark(...values) {
+  return values.some(v => /代收代付|客户承担|客户付|客付|rebill|pass.?through/i.test(clean(v, 300)));
+}
+
+function isExporterAbsorbedReceivable(name, scope) {
+  if (scope === "declaration" || scope === "destination") return true;
+  return /拖车|报关|清关|truck|customs/i.test(clean(name, 120));
+}
+
+function receivableAmount(row, scope) {
+  const name = row.cost_category || row.name || "";
+  if (isExporterAbsorbedReceivable(name, scope)) return { amount: 0, review: false };
+  const sale = money(row.sale_amount ?? row.sale);
+  const cost = money(row.amount ?? row.cost);
+  if (sale > 0) return { amount: sale, review: scope === "review" };
+  const status = clean(row.rebill_status, 40).toLowerCase();
+  const raw = parseJson(row.raw, {});
+  const passThrough = ["rebilled_to_customer", "rebill", "direct"].includes(status) ||
+    isPassThroughRemark(row.remarks, row.remark, raw?.note, raw?.remark);
+  if (passThrough && cost > 0) return { amount: cost, review: scope === "review" };
+  return { amount: 0, review: false };
+}
+
 export function partyLens(ctx, sp) {
   if (ctx.internal) return { role: "internal", side: "all", code: null, segment: "all" };
   const policy = ROLE_POLICIES[ctx.role] || ROLE_POLICIES.supplier_portal;
@@ -75,11 +98,12 @@ export async function defaultLines(pool, sp, ctx) {
     params.push(lens.code);
     where.push(`supplier_company_code=$${params.length}`, "COALESCE(amount,0)>0");
   } else if (lens.side === "receivable") {
+    where.push("COALESCE(sale_amount, amount,0)>0");
     if (lens.segment === "port_charge") {
-      where.push("COALESCE(sale_amount,0)>0");
+      where.push("TRUE");
     } else {
       params.push(lens.code);
-      where.push(`payer_company_code=$${params.length}`, "COALESCE(sale_amount,0)>0");
+      where.push(`(payer_company_code=$${params.length} OR COALESCE(rebill_status,'') IN ('rebilled_to_customer','rebill','direct'))`);
     }
   } else {
     where.push("(COALESCE(amount,0)>0 OR COALESCE(sale_amount,0)>0)");
@@ -87,7 +111,7 @@ export async function defaultLines(pool, sp, ctx) {
   const r = await pool.query(
     `SELECT bl_no, cost_category, canonical_category, fob_scope,
             amount, sale_amount, currency, unit_price, qty, charge_basis,
-            supplier, supplier_company_code, payer_company_code
+            supplier, supplier_company_code, payer_company_code, rebill_status, remarks, raw
        FROM active_freight_supplier_bills
       WHERE ${where.join(" AND ")}
       ORDER BY id`,
@@ -98,17 +122,19 @@ export async function defaultLines(pool, sp, ctx) {
   const lines = [];
   for (const row of r.rows) {
     const scope = clean(row.fob_scope, 16) || classifyFobScope(row.canonical_category, row.cost_category);
-    if (lens.role === "customer" && Number(row.sale_amount || 0) <= 0) continue;
+    const receivable = lens.side === "receivable" ? receivableAmount(row, scope) : null;
+    if (lens.side === "receivable" && receivable.amount <= 0) continue;
     if (lens.role === "supplier" && Number(row.amount || 0) <= 0) continue;
-    if (lens.segment === "port_charge" && scope !== "origin") continue;
+    if (lens.side === "receivable" && !["freight", "origin", "review"].includes(scope)) continue;
     if (ctx.role === "factory_booking" && !ctx.internal) {
       if (scope === "freight" || scope === "destination") continue;
       if (scope === "declaration" && customsArrange === "factory") continue;
     }
-    const visibleAmount = lens.side === "receivable" ? row.sale_amount : row.amount;
+    const visibleAmount = lens.side === "receivable" ? receivable.amount : row.amount;
     const line = baseLine(row.bl_no || blNo, row.cost_category || "港杂费", row.charge_basis || "整票", visibleAmount, row.currency, scope, lens);
     line.unit_price = money(row.unit_price);
     line.qty = money(row.qty || 1) || 1;
+    if (receivable?.review) line.review = true;
     if (lens.role === "internal") addInternalAmounts(line, row.amount, row.sale_amount);
     lines.push(line);
   }
@@ -145,18 +171,20 @@ function addRawCostLines(lines, costLines, blNo, lens, ctx, customsArrange) {
     const name = clean(cl.name, 80); if (!name) continue;
     const cost = money(cl.cost), sale = money(cl.sale);
     const scope = classifyFobScope("", name);
+    const receivable = lens.side === "receivable" ? receivableAmount({ ...cl, amount: cost, sale_amount: sale, cost_category: name }, scope) : null;
     if (!ctx.internal) {
-      if (lens.role === "customer" && sale <= 0) continue;
+      if (lens.side === "receivable" && receivable.amount <= 0) continue;
       if (lens.role === "supplier" && cost <= 0) continue;
-      if (lens.segment === "port_charge" && scope !== "origin") continue;
+      if (lens.side === "receivable" && !["freight", "origin", "review"].includes(scope)) continue;
       if (ctx.role === "factory_booking") {
         if (scope === "freight" || scope === "destination") continue;
         if (scope === "declaration" && customsArrange === "factory") continue;
       }
     }
-    const visibleAmount = lens.side === "receivable" ? sale : lens.side === "payable" ? cost : (sale || cost);
+    const visibleAmount = lens.side === "receivable" ? receivable.amount : lens.side === "payable" ? cost : (sale || cost);
     const line = baseLine(blNo, name, "整票", visibleAmount, cl.currency, scope, lens);
     line.from_raw = true;
+    if (receivable?.review) line.review = true;
     if (lens.role === "internal") addInternalAmounts(line, cost, sale);
     lines.push(line);
   }
