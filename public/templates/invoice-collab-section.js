@@ -62,7 +62,7 @@
   }
   function settlementToggle(){
     const m=state.settlement_mode||"monthly";
-    return `<div class="settle"><span class="mlab">结算方式</span><button class="mopt ${m==="monthly"?"on":""}" data-settle="monthly">月结</button><button class="mopt ${m==="single"?"on":""}" data-settle="single">单票</button></div>`;
+    return `<div class="settle"><span class="mlab">结算方式</span><button class="mopt ${m==="monthly"?"on":""}" data-settle="monthly">月结</button></div>`;
   }
   function billSection(currency){
     const has=(state.bill_lines||[]).length;
@@ -77,8 +77,7 @@
       <table class="billgrid"><thead><tr><th>费用项</th><th>计费</th><th>柜型</th><th class="r">单价 <span class="edithint">可改</span></th><th class="r">数量</th><th class="r">合计 (${esc(currency)})</th><th></th></tr></thead>
       <tbody>${billRows()}${discountRow}<tr class="foot"><td colspan="5">应付合计 · ${esc(currency)} <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价/增删后自动重算）</span></td><td class="r">${money(payable)}</td><td></td></tr></tbody></table>
       ${notice}
-      <button class="addline" id="addLine">＋ 加一行</button>
-      <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价 / 增删行需我方确认后生效</b>。本确认只保存外部确认草稿，不代表已开票或已付款。</span></div></div>`;
+      <button class="addline" id="addLine">＋ 加一行</button></div>`;
   }
   function invoiceRows(){
     const editable=(state.invoices[0]?.mode||"self")==="other";
@@ -144,12 +143,12 @@
       ${billSection(currency)}
       <div class="sec invoice-sec"><button class="collapse-hd" id="invToggle"><span class="sec-t" style="margin:0">② 开票 <span style="text-transform:none;font-weight:600;color:var(--sub)">${isOcean()?"· 如需发票再展开":"点开票展开"}</span></span><span class="chev">${invoiceOpen?"收起":"展开"} ▾</span></button>
       <div id="invBody" style="${invoiceOpen?"":"display:none"};margin-top:10px"><div class="modebar"><span class="mlab">开票方式</span>
-      <button class="mopt ${inv.mode!=="other"?"on":""}" data-mode="self">我方代开</button><button class="mopt ${inv.mode==="other"?"on":""}" data-mode="other">对方自开</button>
-      <span class="mtip" id="modeTip">${inv.mode==="other"?"对方自开信息提交后需我方确认":"我方按当前信息开票"}</span><button class="mopt inv-tool" id="langBtn" type="button">EN</button><button class="mopt inv-tool" id="printBtn" type="button">下载PDF/打印</button></div>
+      <button class="mopt ${inv.mode!=="other"?"on":""}" data-mode="self">自动开</button><button class="mopt ${inv.mode==="other"?"on":""}" data-mode="other" style="border:1.5px solid #b91c1c;color:${inv.mode==="other"?"#fff":"#b91c1c"};background:${inv.mode==="other"?"#b91c1c":"#fff7f7"};font-weight:800">自定义开票</button>
+      <button class="mopt inv-tool" id="langBtn" type="button">EN</button><button class="mopt inv-tool" id="printBtn" type="button">下载PDF/打印</button></div>
       <div id="invoicePrintArea">${invoiceOfficialHtml(currency)}</div></div></div>
       <div class="sec"><button class="collapse-hd" id="ctToggle"><span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span><span class="chev">${contactOpen?"收起":"展开填写"} ▾</span></button>
       <div class="sumline" style="${contactOpen?"display:none":""}">${contactSummary()}</div><div id="ctBody" style="${contactOpen?"":"display:none"};margin-top:6px">${contactEditor("finance","财务邮箱","必填 ★","发票发这里")}${contactEditor("ops","操作邮箱","","账单/确认通知")}${contactEditor("business","业务邮箱","","报价 / 砍价")}</div></div>
-      <div class="actions"><button class="btn ghost" id="msgBtn">有疑问 · 留言给我</button><button class="btn primary" id="submitBtn">确认账单 + 开票信息</button></div>`;
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost" id="msgBtn" style="flex:0 0 auto;padding:10px 16px;font-size:13px">有疑问 · 留言给我</button><button class="btn primary" id="submitBtn" style="flex:0 0 auto;padding:10px 22px;font-size:13px">确认账单 + 开票信息</button></div>`;
     bind();
   }
   function contactEditor(key,label,req,sub){
@@ -238,7 +237,7 @@
       const r=await fetch(API+"?token="+encodeURIComponent(token));
       const d=await r.json();
       if(!r.ok||!d.ok){app.innerHTML='<div class="err">港杂费开票确认暂不可用</div>';return}
-      state=d.data; initContainers(); render();
+      state=d.data; initContainers(); invoiceOpen=state.bill_kind!=="ocean"; render(); // 港杂默认展开开票,海运默认收起(如需发票再展开)
     }catch(e){app.innerHTML='<div class="err">网络错误，暂无法加载港杂费开票确认</div>'}
   }
   boot();
