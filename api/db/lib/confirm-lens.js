@@ -267,24 +267,18 @@ export function redactPayloadForLens(payload, lens, parties) {
   }
   safe.bill_lines = (safe.bill_lines || []).map(line => redactLine(line));
   safe.invoices = (safe.invoices || []).map(invoice => redactInvoice(invoice));
-  safe.local_charge_baseline = redactBaseline(safe.local_charge_baseline, lens);
-  safe.freight_rate_baseline = redactBaseline(safe.freight_rate_baseline, lens);
+  delete safe.local_charge_baseline;
+  delete safe.freight_rate_baseline;
+  delete safe.exw_transfer_to_customer;
   return safe;
 }
 
 function redactLine(line) {
-  const { cost_amount, sale_amount, gross_profit, cost, sale, customer, customer_name, payer_company_code, ...safe } = line || {};
+  const { cost_amount, sale_amount, gross_profit, cost, sale, customer, customer_name, payer_company_code, supplier, supplier_company_code, raw, ...safe } = line || {};
   return safe;
 }
 
 function redactInvoice(invoice) {
   const { cost_amount, sale_amount, gross_profit, cost, sale, customer, customer_name, payer_company_code, ...safe } = invoice || {};
-  return safe;
-}
-
-function redactBaseline(baseline, lens) {
-  if (!baseline) return baseline;
-  const { cost_total, sell_total, fees, ...safe } = baseline;
-  safe.total = money(lens.side === "receivable" ? baseline.sell_total ?? baseline.total : baseline.cost_total ?? baseline.total);
   return safe;
 }

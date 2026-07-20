@@ -5,7 +5,8 @@
   const CNTR_TYPES=["20GP","40GP","40HC","40HQ","45HQ","20ST","20RF","40RF"];
   let state=null, dirtyPrice=false, contactOpen=false, invoiceOpen=false, sheetOpen=false, _lang="zh";
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-  const num=v=>Number.isFinite(Number(v))?Number(v):0;
+  const num=v=>Number.isFinite(Number(String(v).replace(/,/g,"")))?Number(String(v).replace(/,/g,"")):0;
+  const round=v=>Math.round(num(v)*100)/100;
   const money=v=>num(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
   const sym=c=>c==="USD"?"$":"¥";
   const isPer=b=>String(b||"").includes("每柜");
@@ -18,9 +19,11 @@
     return state.line_side==="payable"?"供应商费用账单":"费用账单";
   };
   const recalcInvoice=()=>{
-    if(!Array.isArray(state.invoices)||state.invoices.length!==1) return; // 多张(代理港杂费+服务费拆分)用后端金额,不整票重算
-    const inv=state.invoices[0], total=Math.round(totalLines()*100)/100, ex=Math.round(total/1.01*100)/100;
-    inv.total_with_tax=total; inv.amount_ex_tax=ex; inv.tax_amount=Math.round((total-ex)*100)/100;
+    if(!Array.isArray(state.invoices)) return;
+    state.invoices.forEach(inv=>{
+      const ex=round(inv.amount_ex_tax), rate=num(inv.tax_rate);
+      inv.amount_ex_tax=ex; inv.tax_amount=rate>0?round(ex*rate):0; inv.total_with_tax=round(ex+inv.tax_amount);
+    });
   };
   function cntrTypes(){ const s=new Set(CNTR_TYPES); (state.shipment.containers||[]).forEach(c=>c.type&&s.add(c.type)); return [...s]; }
   function primaryType(){ return (state.shipment.containers||[]).find(c=>c.type)?.type || cntrTypes()[0] || "40HC"; }
@@ -43,10 +46,9 @@
   function billRows(){
     const types=cntrTypes();
     return (state.bill_lines||[]).map((l,i)=>{
-      const per=isPer(l.basis), ct=l.container_type||primaryType(), rev=l.review||l.fob_scope==="review";
-      const bm=baselineFor(l), btxt=baselineText(l,bm);
-      return `<tr class="${rev?"bl-review":""}">
-        <td><input class="edit bl-name" data-bl="${i}" data-f="name" value="${esc(l.name)}" placeholder="费用项">${rev?'<span class="rev-tag" title="未识别为起运港费用，请人工核对">存疑</span>':""}${btxt}</td>
+      const per=isPer(l.basis), ct=l.container_type||primaryType();
+      return `<tr>
+        <td><input class="edit bl-name" data-bl="${i}" data-f="name" value="${esc(l.name)}" placeholder="费用项"></td>
         <td><select class="bl-sel" data-bl="${i}" data-f="basis"><option ${!per?"selected":""}>整票</option><option ${per?"selected":""}>每柜</option></select></td>
         <td>${per?`<select class="bl-sel" data-bl="${i}" data-f="container_type">${types.map(t=>`<option ${t===ct?"selected":""}>${esc(t)}</option>`).join("")}</select>`:`<span class="faintdash">—</span>`}</td>
         <td class="r"><input class="edit money" data-bl="${i}" data-f="unit_price" value="${money(l.unit_price)}"></td>
@@ -56,24 +58,6 @@
       </tr>`;
     }).join("");
   }
-  function baselineFor(line){
-    const fees=state.local_charge_baseline?.fees;
-    if(!Array.isArray(fees)) return null;
-    const key=String(line.name||"").trim().toLowerCase();
-    return fees.find(f=>String(f.feeName||f.name||"").trim().toLowerCase()===key)||null;
-  }
-  function baselineText(line,b){
-    if(!b) return "";
-    const base=money(b.unitPrice??b.unit_price??b.amount), cur=money(line.unit_price||line.amount);
-    const bad=Math.abs(num(base)-num(cur))>=0.01;
-    return bad?`<div class="base-warn">本项 ¥${cur} 偏离锁定基准 ¥${base}</div>`:`<span class="base-tag">基准价 ¥${base}</span>`;
-  }
-  function laneBenchmarks(){
-    const lc=state.local_charge_baseline, fr=state.freight_rate_baseline, bits=[];
-    if(lc) bits.push(`港杂基准 ${esc(lc.container_type||"")} ¥${money(lc.total||lc.cost_total||lc.sell_total)}`);
-    if(fr) bits.push(`该航线锁定报价 ¥${money(fr.amount)}${fr.currency?` ${esc(fr.currency)}`:""}`);
-    return bits.length?`<div class="lane-base">${bits.join(" · ")}</div>`:"";
-  }
   function settlementToggle(){
     const m=state.settlement_mode||"monthly";
     return `<div class="settle"><span class="mlab">结算方式</span><button class="mopt ${m==="monthly"?"on":""}" data-settle="monthly">月结</button><button class="mopt ${m==="single"?"on":""}" data-settle="single">单票</button></div>`;
@@ -81,12 +65,9 @@
   function billSection(currency){
     const has=(state.bill_lines||[]).length;
     const notice=has?"":`<div class="bill-empty">${esc(state.bill_line_notice||"该票暂无港杂账单，可手动加行")}</div>`;
-    const exwBanner=state.exw_transfer_to_customer?`<div class="exw-banner">⚠ 本票 EXW，港杂应由客户承担——如下列在此，请核对是否应转开给客户。</div>`:"";
     return `<div class="sec"><div class="sec-t">① 账单明细 — 请核对</div>
-      ${exwBanner}
       ${containerEditor()}
       ${settlementToggle()}
-      ${laneBenchmarks()}
       <table class="billgrid"><thead><tr><th>费用项</th><th>计费</th><th>柜型</th><th class="r">单价 <span class="edithint">可改</span></th><th class="r">数量</th><th class="r">合计 (${esc(currency)})</th><th></th></tr></thead>
       <tbody>${billRows()}<tr class="foot"><td colspan="5">应付合计 · ${esc(currency)} <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价/增删后自动重算）</span></td><td class="r">${money(totalLines())}</td><td></td></tr></tbody></table>
       ${notice}
@@ -94,9 +75,10 @@
       <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价 / 增删行需我方确认后生效</b>。本确认只保存外部确认草稿，不代表已开票或已付款。</span></div></div>`;
   }
   function invoiceRows(){
-    return state.invoices.map(inv=>`<tr>
-      <td><span data-en="Brokerage Agency Service Port Charges">${esc(inv.item_name)}</span></td><td>${esc(inv.unit)}</td><td class="r">${inv.qty}</td>
-      <td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${money(inv.amount_ex_tax)}</td>
+    const editable=(state.invoices[0]?.mode||"self")==="other";
+    return state.invoices.map((inv,i)=>`<tr>
+      <td>${editable?`<input class="edit inv-name" data-inv="${i}" data-if="item_name" value="${esc(inv.item_name)}">`:`<span data-en="Brokerage Agency Service Port Charges">${esc(inv.item_name)}</span>`}</td><td>${esc(inv.unit)}</td><td class="r">${inv.qty}</td>
+      <td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${editable?`<input class="edit money" data-inv="${i}" data-if="amount_ex_tax" value="${money(inv.amount_ex_tax)}">`:money(inv.amount_ex_tax)}</td>
       <td class="r">${Number(inv.tax_rate)>0?String(money(inv.tax_rate*100)).replace(".00","")+"%":"免税"}</td><td class="r">${money(inv.tax_amount)}</td>
     </tr>`).join("");
   }
@@ -135,14 +117,14 @@
       <div class="sec invoice-sec"><button class="collapse-hd" id="invToggle"><span class="sec-t" style="margin:0">② 开票 <span style="text-transform:none;font-weight:600;color:var(--sub)">点开票展开</span></span><span class="chev">${invoiceOpen?"收起":"展开"} ▾</span></button>
       <div id="invBody" style="${invoiceOpen?"":"display:none"};margin-top:10px"><div class="modebar"><span class="mlab">开票方式</span>
       <button class="mopt ${inv.mode!=="other"?"on":""}" data-mode="self">我方代开</button><button class="mopt ${inv.mode==="other"?"on":""}" data-mode="other">对方自开</button>
-      <span class="mtip" id="modeTip">${inv.mode==="other"?"对方自开后回传，我们 OCR 核对":"我们开好后发送到财务邮箱"}</span><button class="mopt inv-tool" id="langBtn" type="button">EN</button><button class="mopt inv-tool" id="printBtn" type="button">下载PDF/打印</button></div>
+      <span class="mtip" id="modeTip">${inv.mode==="other"?"对方自开信息提交后需我方确认":"我方按当前信息开票"}</span><button class="mopt inv-tool" id="langBtn" type="button">EN</button><button class="mopt inv-tool" id="printBtn" type="button">下载PDF/打印</button></div>
       <div class="plaininv" id="invoicePrintArea"><div class="invtop"><div class="pt"><span data-en="e-Invoice">电子发票</span>（<select class="tsel" id="title"><option data-en="VAT Ordinary e-Invoice">增值税普通发票</option><option data-en="VAT Special e-Invoice">增值税专用发票</option></select>）</div></div>
       <div class="pparty"><div class="pp"><div class="plab" data-en="Buyer">购 买 方</div><div class="prow"><b data-en="Name:">名称：</b><input class="edit" id="buyerName" value="${esc(state.buyer.name)}"><span class="edithint">可改</span></div>
       <div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b><input class="edit" id="buyerTax" value="${esc(state.buyer.tax_id)}"></div><div class="tip">数电票只打印名称 + 税号</div></div>
       <div class="pp"><div class="plab" data-en="Seller">销 售 方</div><div class="prow"><b data-en="Name:">名称：</b>${esc(state.seller.name)}</div><div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b>${esc(state.seller.tax_id||"—")}</div></div></div>
       <table class="invline"><thead><tr><th data-en="Item">项目名称</th><th data-en="Unit">单位</th><th class="r" data-en="Qty">数量</th><th class="r" data-en="Unit Price">单价</th><th class="r" data-en="Amount Excl. Tax">金额(不含税)</th><th class="r" data-en="Tax Rate">税率/征收率</th><th class="r" data-en="Tax Amount">税额</th></tr></thead><tbody>${invoiceRows()}</tbody>
       <tfoot><tr><td colspan="4"></td><td class="r" data-en="Total Incl. Tax">价税合计</td><td colspan="2" class="r">${sym(currency)} ${money(state.invoices.reduce((s,i)=>s+num(i.total_with_tax),0))}</td></tr></tfoot></table>
-      <div class="remarkline"><span data-en="Remarks:">备注：</span>${esc(inv.remark)}</div></div><button class="addinv" id="addInv">＋ 新增一张发票</button>
+      <div class="remarkline"><span data-en="Remarks:">备注：</span>${esc(inv.remark)}</div></div>
       <label class="savedef"><input type="checkbox" id="saveDefault" ${state.save_as_default?"checked":""}> <span>存为该客户默认开票模版，以后固定这样开。</span></label></div></div>
       <div class="sec"><button class="collapse-hd" id="ctToggle"><span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span><span class="chev">${contactOpen?"收起":"展开填写"} ▾</span></button>
       <div class="sumline" style="${contactOpen?"display:none":""}">${contactSummary()}</div><div id="ctBody" style="${contactOpen?"":"display:none"};margin-top:6px">${contactEditor("finance","财务邮箱","必填 ★","发票发这里")}${contactEditor("ops","操作邮箱","","账单/确认通知")}${contactEditor("business","业务邮箱","","报价 / 砍价")}</div></div>
@@ -160,6 +142,7 @@
     state.save_as_default=document.getElementById("saveDefault")?.checked!==false;
     state.contacts={finance:[],ops:[],business:[]};
     document.querySelectorAll("[data-contact]").forEach(el=>{const v=el.value.trim();if(v)state.contacts[el.dataset.contact].push(v)});
+    document.querySelectorAll("[data-inv]").forEach(el=>invoiceChanged(Number(el.dataset.inv),el.dataset.if,el.value,false));
   }
   function lineChanged(i,f,val){
     const l=state.bill_lines[i]; if(!l) return;
@@ -170,8 +153,19 @@
     else if(f==="qty") l.qty=num(val)||1;
     l.amount=Math.round(num(l.unit_price)*num(l.qty)*100)/100; dirtyPrice=true; render();
   }
+  function invoiceChanged(i,f,val,rerender=true){
+    const inv=state.invoices[i]; if(!inv) return;
+    if(f==="item_name") inv.item_name=val;
+    else if(f==="amount_ex_tax") inv.amount_ex_tax=round(val);
+    recalcInvoice(); if(rerender) render();
+  }
+  function setInvoiceMode(mode){
+    const m=mode==="other"?"other":"self";
+    state.invoices.forEach(inv=>{inv.mode=m}); state.invoice_mode=m; render();
+  }
   function bind(){
     document.querySelectorAll("[data-bl]").forEach(el=>el.addEventListener("change",e=>lineChanged(Number(e.target.dataset.bl),e.target.dataset.f,e.target.value)));
+    document.querySelectorAll("[data-inv]").forEach(el=>el.addEventListener("change",e=>invoiceChanged(Number(e.target.dataset.inv),e.target.dataset.if,e.target.value)));
     document.querySelectorAll("[data-bl-del]").forEach(b=>b.addEventListener("click",()=>{
       const i=Number(b.dataset.blDel), l=state.bill_lines[i];
       if(!confirm(`确定删除「${l?.name||"这一行"}」吗？删除后需我方确认才生效。`)) return;
@@ -193,14 +187,13 @@
     document.getElementById("cntrAdd").onclick=()=>{
       (state.shipment.containers=state.shipment.containers||[]).push({type:primaryType(),count:1}); dirtyPrice=true; render();
     };
-    document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>{state.invoices[0].mode=b.dataset.mode;render()}));
+    document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>{collect();setInvoiceMode(b.dataset.mode)}));
     document.querySelectorAll("[data-settle]").forEach(b=>b.addEventListener("click",()=>{state.settlement_mode=b.dataset.settle;render()}));
     document.getElementById("invToggle").onclick=()=>{invoiceOpen=!invoiceOpen;collect();render()};
     document.getElementById("ctToggle").onclick=()=>{contactOpen=!contactOpen;collect();render()};
-    document.getElementById("addInv")&&(document.getElementById("addInv").onclick=()=>alert("已预留多张发票结构，本轮先确认当前单票。"));
     document.getElementById("langBtn")&&(document.getElementById("langBtn").onclick=toggleLang);
     document.getElementById("printBtn")&&(document.getElementById("printBtn").onclick=()=>window.print());
-    document.getElementById("msgBtn").onclick=()=>alert("请直接联系 Sanlyn 操作，留言入口下一版接入。");
+    document.getElementById("msgBtn").onclick=()=>alert("如有疑问，请联系对接人员。");
     document.getElementById("submitBtn").onclick=submit;
     applyLang();
   }

@@ -178,6 +178,35 @@ function containerSummary(sp) {
   return qty ? `${qty}×${type}` : "";
 }
 
+function defaultInvoices(sp, total, currency, bl, cntr, mode = "self") {
+  const invoiceTotal = money(sp.port_charge_invoice_total || total);
+  const taxedBase = Math.min(money(sp.taxed_port_charge || 0), invoiceTotal);
+  const freeAmt = money(invoiceTotal - taxedBase);
+  const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
+  return [
+    { id: "invoice-agency", currency, title: "增值税普通发票", mode,
+      item_name: "*经纪代理服务*代理港杂费", unit: "项", qty: 1,
+      amount_ex_tax: taxedBase, tax_rate: 0.01, tax_amount: money(taxedBase * 0.01), total_with_tax: money(taxedBase * 1.01), remark },
+    { id: "invoice-service", currency, title: "增值税普通发票", mode,
+      item_name: "*经纪代理服务*国际货物运输代理服务费", unit: "项", qty: 1,
+      amount_ex_tax: freeAmt, tax_rate: 0, tax_amount: 0, total_with_tax: freeAmt, remark },
+  ];
+}
+
+function normalizeInvoices(input, defaults, mode) {
+  if (mode !== "other") return defaults;
+  if (!Array.isArray(input) || input.length !== 2) return null;
+  const rows = input.map((inv, i) => {
+    const d = defaults[i], currency = clean(inv.currency || d.currency, 8).toUpperCase();
+    const ex = money(inv.amount_ex_tax);
+    if (currency !== d.currency || ex < 0) return null;
+    const tax = d.tax_rate > 0 ? money(ex * d.tax_rate) : 0;
+    return { ...d, mode: "other", item_name: clean(inv.item_name || d.item_name, 120),
+      amount_ex_tax: ex, tax_amount: tax, total_with_tax: money(ex + tax) };
+  });
+  return rows.every(Boolean) ? rows : null;
+}
+
 async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const defaults = await defaultLines(pool, sp, ctx);
   const lane = ctx.role === "shipper_booking" ? { localCharge: null, freightRate: null } : await loadLaneBenchmarks(pool, sp, defaults.lens);
@@ -189,8 +218,6 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const billLineNotice = billLines.length ? "" : "费用尚未录入";
   const currency = payloadBillLines[0]?.currency || "CNY";
   const total = money(payloadBillLines.filter(l => l.currency === currency).reduce((s, l) => s + Number(l.amount || 0), 0));
-  const exTax = money(total / 1.01);
-  const tax = money(total - exTax);
   const bl = clean(sp.bl_no || sp.shipment_no || "");
   const savedCntrs = Array.isArray(saved?.payload?.shipment_containers) && saved.payload.shipment_containers.length
     ? saved.payload.shipment_containers.map(c => ({ type: clean(c.type, 20), count: money(c.count) })).filter(c => c.type)
@@ -199,6 +226,8 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const cntr = savedCntrs
     ? containers.filter(c => c.type && Number(c.count)).map(c => `${Number(c.count)}×${c.type}`).join(" + ")
     : containerSummary(sp);
+  const mode = clean(saved?.payload?.invoice_mode || saved?.payload?.invoices?.[0]?.mode || "self", 24) === "other" ? "other" : "self";
+  const autoInvoices = defaultInvoices(sp, total, currency, bl, cntr, mode);
   const payload = {
     is_internal: Boolean(ctx.internal),
     status: saved?.status || "draft",
@@ -230,22 +259,8 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     bill_line_notice: saved?.payload?.bill_line_notice || billLineNotice,
     needs_finance_review: saved?.payload?.needs_finance_review ?? !billLines.length,
     ...(ctx.role === "shipper_booking" ? {} : { exw_transfer_to_customer: Boolean(defaults.exwTransfer && payloadBillLines.length) }),
-    invoices: saved?.payload?.invoices || (() => {
-      // 港杂开票拆两张：①代理港杂费(带税1%) ②国际货物运输代理服务费(免税)
-      // 开票总额=打折后(raw.port_charge_invoice_total)否则用账单合计;带税额=进项票(raw.taxed_port_charge);免税=总额−带税
-      const invoiceTotal = money(sp.port_charge_invoice_total || total);
-      const taxedBase = Math.min(money(sp.taxed_port_charge || 0), invoiceTotal);
-      const freeAmt = money(invoiceTotal - taxedBase);
-      const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
-      return [
-        { id: "invoice-agency", currency, title: "增值税普通发票", mode: "self",
-          item_name: "*经纪代理服务*代理港杂费", unit: "项", qty: 1,
-          amount_ex_tax: taxedBase, tax_rate: 0.01, tax_amount: money(taxedBase * 0.01), total_with_tax: money(taxedBase * 1.01), remark },
-        { id: "invoice-service", currency, title: "增值税普通发票", mode: "self",
-          item_name: "*经纪代理服务*国际货物运输代理服务费", unit: "项", qty: 1,
-          amount_ex_tax: freeAmt, tax_rate: 0, tax_amount: 0, total_with_tax: freeAmt, remark },
-      ];
-    })(),
+    invoice_mode: mode,
+    invoices: mode === "other" ? (normalizeInvoices(saved?.payload?.invoices, autoInvoices, mode) || autoInvoices) : autoInvoices,
     contacts: saved?.payload?.contacts || { finance: [], ops: [], business: [] },
     save_as_default: saved?.payload?.save_as_default ?? true,
     updated_at: saved?.updated_at || null,
@@ -433,8 +448,17 @@ async function handlePost(req, res, pool, ctx) {
   payload.line_side = partyLens(ctx, sp).side;
   if (!payload.buyer.name || !payload.buyer.tax_id) return res.status(400).json({ ok: false, error: "buyer_required" });
   if (!payload.contacts.finance.length) return res.status(400).json({ ok: false, error: "finance_email_required" });
-  payload.price_changed = billLinesChanged((await defaultLines(pool, sp, ctx)).lines, payload.bill_lines);
-  const status = payload.price_changed ? "pending_our_review" : "external_confirmed";
+  const defaults = await defaultLines(pool, sp, ctx);
+  payload.price_changed = billLinesChanged(defaults.lines, payload.bill_lines);
+  payload.invoice_mode = payload.invoice_mode === "other" ? "other" : "self";
+  const currency = payload.bill_lines[0]?.currency || "CNY";
+  const total = money(payload.bill_lines.filter(l => l.currency === currency).reduce((s, l) => s + Number(l.amount || 0), 0));
+  const bl = clean(sp.bl_no || sp.shipment_no || "");
+  const cntr = payload.shipment_containers.filter(c => c.type && Number(c.count)).map(c => `${Number(c.count)}×${c.type}`).join(" + ") || containerSummary(sp);
+  const normalized = normalizeInvoices(payload.invoices, defaultInvoices(sp, total, currency, bl, cntr, payload.invoice_mode), payload.invoice_mode);
+  if (!normalized) return res.status(400).json({ ok: false, error: "invalid_invoices" });
+  payload.invoices = normalized;
+  const status = payload.price_changed || payload.invoice_mode === "other" ? "pending_our_review" : "external_confirmed";
   const ref = invoiceRef(ctx);
   const r = await pool.query(
     `INSERT INTO invoice_collab_confirm_overrides
