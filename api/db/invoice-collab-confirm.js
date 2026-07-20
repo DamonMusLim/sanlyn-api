@@ -268,7 +268,14 @@ async function partiesForView(pool, sp, ctx) {
     const sellerCompany = ctx.party === "factory" ? (sp.party_company || await loadCompany(pool, key)) : await loadCompany(pool, key);
     return { buyer: own, seller: companyView(sellerCompany, key) };
   }
-  if (ctx.role === "shipper_booking") return { buyer: companyView(sp.party_company, ctx.scope.label), seller: own };
+  if (ctx.role === "shipper_booking") {
+    let b = sp.party_company;
+    if (!b || !b.tax_id) {
+      const looked = await loadCompany(pool, ctx.scope.label || sp.party_company?.name_cn);
+      if (looked && (looked.name_cn || looked.tax_id)) b = { ...(b || {}), name_cn: b?.name_cn || looked.name_cn, name_en: b?.name_en || looked.name_en, tax_id: b?.tax_id || looked.tax_id };
+    }
+    return { buyer: companyView(b, ctx.scope.label), seller: own };
+  }
   if (ctx.internal || ctx.role === "customer_booking") {
     const buyer = await loadCompany(pool, sp.customer_code || sp.customer_company_name || sp.customer_en || sp.customer || sp.issuing_company);
     return { buyer: companyView(buyer, sp.customer_company_name || sp.customer_en || sp.customer || sp.issuing_company), seller: own };
