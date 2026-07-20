@@ -3,7 +3,7 @@
   const token=new URLSearchParams(location.search).get("token")||"";
   const app=document.getElementById("app");
   const CNTR_TYPES=["20GP","40GP","40HC","40HQ","45HQ","20ST","20RF","40RF"];
-  let state=null, dirtyPrice=false, contactOpen=false, invoiceOpen=false, sheetOpen=false, _lang="zh";
+  let state=null, dirtyPrice=false, contactOpen=false, invoiceOpen=false, sheetOpen=false, _lang="zh", invEdited=false;
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
   const num=v=>Number.isFinite(Number(String(v).replace(/,/g,"")))?Number(String(v).replace(/,/g,"")):0;
   const round=v=>Math.round(num(v)*100)/100;
@@ -144,11 +144,11 @@
       <div class="sec invoice-sec"><button class="collapse-hd" id="invToggle"><span class="sec-t" style="margin:0">② 开票 <span style="text-transform:none;font-weight:600;color:var(--sub)">${isOcean()?"· 如需发票再展开":"点开票展开"}</span></span><span class="chev">${invoiceOpen?"收起":"展开"} ▾</span></button>
       <div id="invBody" style="${invoiceOpen?"":"display:none"};margin-top:10px"><div class="modebar"><span class="mlab">开票方式</span>
       <button class="mopt ${inv.mode!=="other"?"on":""}" data-mode="self">自动开</button><button class="mopt ${inv.mode==="other"?"on":""}" data-mode="other" style="border:1.5px solid #b91c1c;color:${inv.mode==="other"?"#fff":"#b91c1c"};background:${inv.mode==="other"?"#b91c1c":"#fff7f7"};font-weight:800">自定义开票</button>
-      <button class="mopt inv-tool" id="langBtn" type="button">EN</button><button class="mopt inv-tool" id="printBtn" type="button">下载PDF/打印</button></div>
+      <button class="mopt inv-tool" id="fwdBtn" type="button">转发</button></div>
       <div id="invoicePrintArea">${invoiceOfficialHtml(currency)}</div></div></div>
       <div class="sec"><button class="collapse-hd" id="ctToggle"><span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span><span class="chev">${contactOpen?"收起":"展开填写"} ▾</span></button>
       <div class="sumline" style="${contactOpen?"display:none":""}">${contactSummary()}</div><div id="ctBody" style="${contactOpen?"":"display:none"};margin-top:6px">${contactEditor("finance","财务邮箱","必填 ★","发票发这里")}${contactEditor("ops","操作邮箱","","账单/确认通知")}${contactEditor("business","业务邮箱","","报价 / 砍价")}</div></div>
-      <div class="actions" style="justify-content:flex-end"><button class="btn ghost" id="msgBtn" style="flex:0 0 auto;padding:10px 16px;font-size:13px">有疑问 · 留言给我</button><button class="btn primary" id="submitBtn" style="flex:0 0 auto;padding:10px 22px;font-size:13px">确认账单 + 开票信息</button></div>`;
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost" id="msgBtn" style="flex:0 0 auto;padding:10px 16px;font-size:13px">有疑问 · 留言给我</button>${inv.mode==="other"?`<button class="btn ghost" id="saveBtn" style="flex:0 0 auto;padding:10px 18px;font-size:13px">保存</button>`:""}<button class="btn primary" id="submitBtn" style="flex:0 0 auto;padding:10px 22px;font-size:13px">${inv.mode==="other"?"提交":"确认"}</button></div>`;
     bind();
   }
   function contactEditor(key,label,req,sub){
@@ -181,6 +181,7 @@
     const inv=state.invoices[i]; if(!inv) return;
     if(f==="item_name") inv.item_name=val;
     else if(f==="amount_ex_tax") inv.amount_ex_tax=round(val);
+    if(inv.mode==="other") invEdited=true; // 自定义有改动
     recalcInvoice(); if(rerender) render();
   }
   function setInvoiceMode(mode){
@@ -211,25 +212,40 @@
     document.getElementById("cntrAdd").onclick=()=>{
       (state.shipment.containers=state.shipment.containers||[]).push({type:primaryType(),count:1}); dirtyPrice=true; render();
     };
-    document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>{collect();setInvoiceMode(b.dataset.mode)}));
+    document.querySelectorAll("[data-mode]").forEach(b=>b.addEventListener("click",()=>{
+      const cur=state.invoices[0]?.mode||"self", next=b.dataset.mode;
+      if(cur==="other"&&next!=="other"&&invEdited&&!confirm("发票有改动未保存，切换会丢失，确定切换？")) return;
+      collect(); if(next!=="other") invEdited=false; setInvoiceMode(next);
+    }));
+    document.getElementById("saveBtn")&&(document.getElementById("saveBtn").onclick=save);
     document.querySelectorAll("[data-settle]").forEach(b=>b.addEventListener("click",()=>{state.settlement_mode=b.dataset.settle;render()}));
     document.getElementById("invToggle").onclick=()=>{invoiceOpen=!invoiceOpen;collect();render()};
     document.getElementById("ctToggle").onclick=()=>{contactOpen=!contactOpen;collect();render()};
-    document.getElementById("langBtn")&&(document.getElementById("langBtn").onclick=toggleLang);
-    document.getElementById("printBtn")&&(document.getElementById("printBtn").onclick=()=>window.print());
+    document.getElementById("fwdBtn")&&(document.getElementById("fwdBtn").onclick=fwd);
     document.getElementById("msgBtn").onclick=()=>alert("如有疑问，请联系对接人员。");
     document.getElementById("submitBtn").onclick=submit;
     applyLang();
   }
+  function fwd(){
+    const u=location.href;
+    (navigator.clipboard?.writeText(u)||Promise.reject()).then(()=>alert("链接已复制，可转发给对方")).catch(()=>prompt("复制此链接转发：",u));
+  }
+  async function postDraft(){
+    collect();
+    const body={token,draft:{...state,price_changed:dirtyPrice,invoice_mode:state.invoices[0].mode,settlement_mode:state.settlement_mode||"monthly",shipment_containers:state.shipment.containers||[]}};
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok){alert("保存失败："+(d.error||r.status));return null}
+    state.status=d.draft.status; state.confirmed_at=d.draft.confirmed_at||state.confirmed_at; dirtyPrice=false; invEdited=false;
+    return d;
+  }
+  async function save(){ if(await postDraft()){ render(); alert("已保存草稿（未提交，可继续编辑）"); } }
   async function submit(){
     collect();
     if(!state.buyer.name||!state.buyer.tax_id){alert("请填写购买方名称和税号");return}
     if(!(state.contacts.finance||[]).length){contactOpen=true;render();alert("请至少填写一个财务邮箱");return}
-    const body={token,draft:{...state,price_changed:dirtyPrice,invoice_mode:state.invoices[0].mode,settlement_mode:state.settlement_mode||"monthly",shipment_containers:state.shipment.containers||[]}};
-    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok){alert("保存失败："+(d.error||r.status));return}
-    state.status=d.draft.status; state.confirmed_at=d.draft.confirmed_at||state.confirmed_at; dirtyPrice=false; render(); alert(state.status==="pending_our_review"?"已提交改动，待我方确认":"已保存确认草稿");
+    const d=await postDraft(); if(!d) return;
+    render(); alert(state.status==="pending_our_review"?"已提交，待我方确认":"已确认");
   }
   async function boot(){
     if(!token){app.innerHTML='<div class="err">缺少 token</div>';return}

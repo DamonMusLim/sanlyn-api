@@ -61,7 +61,7 @@
     const docTitle=d.docTitle||"电子发票";
     return `<div class="invoiceOfficial" data-io-index="${esc(d.index??0)}">
       <div class="ioTitle">${esc(docTitle)}（${titleHtml}）</div>
-      <div class="ioTop"><div class="ioSeal">国家税务总局<br>监制</div><div class="ioMeta"><div class="ioMetaLine"><span>发票号码：</span>${metaField(meta,"invoice_no","开票时生成",editableMeta)}</div><div class="ioMetaLine"><span>开票日期：</span>${metaField(meta,"issue_date","开票时生成",editableMeta,"date")}</div></div></div>
+      <div class="ioTop"><div class="ioSeal">模拟开票</div><div class="ioMeta"><div class="ioMetaLine"><span>发票号码：</span>${metaField(meta,"invoice_no","开票时生成",editableMeta)}</div><div class="ioMetaLine"><span>开票日期：</span>${metaField(meta,"issue_date","开票时生成",editableMeta,"date")}</div></div></div>
       <div class="ioPartyWrap">${party("购买方信息",d.buyer||{},"buyer",buyerEditable)}${party("销售方信息",d.seller||{},"seller",sellerEditable)}</div>
       <div class="ioTableBox"><table class="ioTable"><thead><tr><th class="ioNameCol">项目名称</th><th class="ioSpecCol">规格型号</th><th class="ioUnitCol">单位</th><th class="ioQtyCol">数量</th><th class="ioPriceCol">单价</th><th class="ioAmountCol">金额</th><th class="ioRateCol">税率/征收率</th><th class="ioTaxCol">税额</th></tr></thead><tbody>${rows||'<tr><td colspan="8" class="ioCenter">费用尚未录入</td></tr>'}</tbody><tfoot><tr><td colspan="5" class="ioSumLabel">合计</td><td class="ioNum">${currency(cur)}${money(d.total_ex)}</td><td></td><td class="ioNum">${currency(cur)}${money(d.total_tax)}</td></tr></tfoot></table></div>
       <div class="ioGrand"><div><b>价税合计（大写）</b> <span>${upperMoney(d.total)}</span></div><div class="ioGrandSmall"><b>（小写）</b> <span class="ioMoney">${currency(cur)}${money(d.total)}</span></div></div>
