@@ -6,6 +6,8 @@ import {
   clean,
   classifyFobScope,
   defaultLines,
+  defaultInvoices,
+  oceanInvoice,
   matchFactory,
   money,
   parseJson,
@@ -18,6 +20,7 @@ const KIND = "port_charge_invoice_confirmation";
 const SELLER_NAME = "上海洋宝宝国际物流有限公司";
 export const SELLER_BANK = "中国银行厦门文灶支行";
 export const ACCOUNTS = { CNY: "433849860868", USD: "433849630299" };
+const BANKS = { bank: SELLER_BANK, accounts: ACCOUNTS };
 export { clean, classifyFobScope, money };
 const SLIP_DIR = "/opt/sanlyn-uploads/invoice-confirm-slips";
 const INTERNAL_PARTIES = new Set(["ocean", "truck", "customs", "factory", "customer"]);
@@ -178,24 +181,9 @@ function containerSummary(sp) {
   return qty ? `${qty}×${type}` : "";
 }
 
-function defaultInvoices(sp, total, currency, bl, cntr, mode = "self") {
-  const invoiceTotal = money(sp.port_charge_invoice_total || total);
-  const taxedBase = Math.min(money(sp.taxed_port_charge || 0), invoiceTotal);
-  const freeAmt = money(invoiceTotal - taxedBase);
-  const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
-  return [
-    { id: "invoice-agency", currency, title: "增值税普通发票", mode,
-      item_name: "*经纪代理服务*代理港杂费", unit: "项", qty: 1,
-      amount_ex_tax: taxedBase, tax_rate: 0.01, tax_amount: money(taxedBase * 0.01), total_with_tax: money(taxedBase * 1.01), remark },
-    { id: "invoice-service", currency, title: "增值税普通发票", mode,
-      item_name: "*经纪代理服务*国际货物运输代理服务费", unit: "项", qty: 1,
-      amount_ex_tax: freeAmt, tax_rate: 0, tax_amount: 0, total_with_tax: freeAmt, remark },
-  ];
-}
-
 function normalizeInvoices(input, defaults, mode) {
   if (mode !== "other") return defaults;
-  if (!Array.isArray(input) || input.length !== 2) return null;
+  if (!Array.isArray(input) || input.length !== defaults.length) return null;
   const rows = input.map((inv, i) => {
     const d = defaults[i], currency = clean(inv.currency || d.currency, 8).toUpperCase();
     const ex = money(inv.amount_ex_tax);
@@ -210,9 +198,12 @@ function normalizeInvoices(input, defaults, mode) {
 async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const defaults = await defaultLines(pool, sp, ctx);
   const lane = ctx.role === "shipper_booking" ? { localCharge: null, freightRate: null } : await loadLaneBenchmarks(pool, sp, defaults.lens);
-  // 港杂账单只留非USD(海运费USD归客户单);"除USD都算港杂" [Damon 0720 FOB:工厂付港杂/客户付海运]
+  // FOB[Damon 0720]:工厂付港杂(非USD)/客户付海运(USD)。港杂账单只留非USD;客户海运单只留USD
+  const oceanBill = ctx.role === "customer_booking";
   const billLines = ctx.role === "shipper_booking"
     ? defaults.lines.filter(l => String(l.currency || "CNY").toUpperCase() !== "USD")
+    : oceanBill
+    ? defaults.lines.filter(l => String(l.currency || "").toUpperCase() === "USD")
     : defaults.lines;
   const payloadBillLines = saved?.payload?.bill_lines || billLines;
   const billLineNotice = billLines.length ? "" : "费用尚未录入";
@@ -227,7 +218,9 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     ? containers.filter(c => c.type && Number(c.count)).map(c => `${Number(c.count)}×${c.type}`).join(" + ")
     : containerSummary(sp);
   const mode = clean(saved?.payload?.invoice_mode || saved?.payload?.invoices?.[0]?.mode || "self", 24) === "other" ? "other" : "self";
-  const autoInvoices = defaultInvoices(sp, total, currency, bl, cntr, mode);
+  const autoInvoices = oceanBill
+    ? oceanInvoice(currency, total, bl, cntr, BANKS)              // 客户海运单=单行商业发票IV(USD无税)
+    : defaultInvoices(sp, total, currency, bl, cntr, mode, BANKS); // 港杂=两张拆分
   const payload = {
     is_internal: Boolean(ctx.internal),
     status: saved?.status || "draft",
@@ -260,6 +253,8 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     needs_finance_review: saved?.payload?.needs_finance_review ?? !billLines.length,
     ...(ctx.role === "shipper_booking" ? {} : { exw_transfer_to_customer: Boolean(defaults.exwTransfer && payloadBillLines.length) }),
     invoice_mode: mode,
+    bill_kind: oceanBill ? "ocean" : "port_charge",              // 前端据此显示"海运费账单"标题+"如需发票再展开"
+    port_charge_invoice_total: money(sp.port_charge_invoice_total || 0), // 打折目标(客户该付价,非敏感);前端据此出优惠行+应付合计
     invoices: mode === "other" ? (normalizeInvoices(saved?.payload?.invoices, autoInvoices, mode) || autoInvoices) : autoInvoices,
     contacts: saved?.payload?.contacts || { finance: [], ops: [], business: [] },
     save_as_default: saved?.payload?.save_as_default ?? true,
@@ -455,7 +450,10 @@ async function handlePost(req, res, pool, ctx) {
   const total = money(payload.bill_lines.filter(l => l.currency === currency).reduce((s, l) => s + Number(l.amount || 0), 0));
   const bl = clean(sp.bl_no || sp.shipment_no || "");
   const cntr = payload.shipment_containers.filter(c => c.type && Number(c.count)).map(c => `${Number(c.count)}×${c.type}`).join(" + ") || containerSummary(sp);
-  const normalized = normalizeInvoices(payload.invoices, defaultInvoices(sp, total, currency, bl, cntr, payload.invoice_mode), payload.invoice_mode);
+  const autoInv = ctx.role === "customer_booking"
+    ? oceanInvoice(currency, total, bl, cntr, BANKS)
+    : defaultInvoices(sp, total, currency, bl, cntr, payload.invoice_mode, BANKS);
+  const normalized = normalizeInvoices(payload.invoices, autoInv, payload.invoice_mode);
   if (!normalized) return res.status(400).json({ ok: false, error: "invalid_invoices" });
   payload.invoices = normalized;
   const status = payload.price_changed || payload.invoice_mode === "other" ? "pending_our_review" : "external_confirmed";

@@ -13,7 +13,9 @@
   const totalLines=()=>Array.isArray(state.bill_lines)?state.bill_lines.reduce((s,l)=>s+num(l.amount),0):0;
   const isConfirmed=()=>state?.status==="external_confirmed"||Boolean(state?.confirmed_at);
   const fmtTime=v=>v?new Date(v).toLocaleString("zh-CN",{hour12:false}):"";
+  const isOcean=()=>state.bill_kind==="ocean";
   const docTitle=()=>{
+    if(isOcean()) return "海运费账单";
     if(state.line_side==="receivable") return "港杂费账单";
     if(state.line_side==="payable"&&state.shipment?.billing_segment==="ocean") return "海运费账单";
     return state.line_side==="payable"?"供应商费用账单":"费用账单";
@@ -65,11 +67,15 @@
   function billSection(currency){
     const has=(state.bill_lines||[]).length;
     const notice=has?"":`<div class="bill-empty">${esc(state.bill_line_notice||"该票暂无港杂账单，可手动加行")}</div>`;
+    const lines=totalLines(), target=num(state.port_charge_invoice_total);
+    const discounted=target>0&&target<lines-0.01;                       // 打折:应付合计取目标价,补一行优惠(仅展示,不进bill_lines)
+    const payable=discounted?target:lines;
+    const discountRow=discounted?`<tr class="foot"><td colspan="5">优惠</td><td class="r" style="color:var(--warn)">-${money(lines-target)}</td><td></td></tr>`:"";
     return `<div class="sec"><div class="sec-t">① 账单明细 — 请核对</div>
       ${containerEditor()}
       ${settlementToggle()}
       <table class="billgrid"><thead><tr><th>费用项</th><th>计费</th><th>柜型</th><th class="r">单价 <span class="edithint">可改</span></th><th class="r">数量</th><th class="r">合计 (${esc(currency)})</th><th></th></tr></thead>
-      <tbody>${billRows()}<tr class="foot"><td colspan="5">应付合计 · ${esc(currency)} <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价/增删后自动重算）</span></td><td class="r">${money(totalLines())}</td><td></td></tr></tbody></table>
+      <tbody>${billRows()}${discountRow}<tr class="foot"><td colspan="5">应付合计 · ${esc(currency)} <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价/增删后自动重算）</span></td><td class="r">${money(payable)}</td><td></td></tr></tbody></table>
       ${notice}
       <button class="addline" id="addLine">＋ 加一行</button>
       <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价 / 增删行需我方确认后生效</b>。本确认只保存外部确认草稿，不代表已开票或已付款。</span></div></div>`;
@@ -81,6 +87,28 @@
       <td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${editable?`<input class="edit money" data-inv="${i}" data-if="amount_ex_tax" value="${money(inv.amount_ex_tax)}">`:money(inv.amount_ex_tax)}</td>
       <td class="r">${Number(inv.tax_rate)>0?String(money(inv.tax_rate*100)).replace(".00","")+"%":"免税"}</td><td class="r">${money(inv.tax_amount)}</td>
     </tr>`).join("");
+  }
+  function invoiceOfficialHtml(currency){
+    const editable=(state.invoices[0]?.mode||"self")==="other"; // 我方代开=只读, 对方自开=可编辑
+    const totalEx=state.invoices.reduce((s,i)=>s+num(i.amount_ex_tax),0);
+    const totalTax=state.invoices.reduce((s,i)=>s+num(i.tax_amount),0);
+    const total=state.invoices.reduce((s,i)=>s+num(i.total_with_tax),0);
+    return InvoiceOfficial.render({
+      docTitle:isOcean()?"商业发票":"电子发票",
+      title:isOcean()?"COMMERCIAL INVOICE":(state.invoices[0]?.title||"增值税普通发票"),
+      currency,
+      buyer:state.buyer,
+      seller:state.seller,
+      seller_editable:false,
+      buyer_editable:true,
+      editable,
+      items:state.invoices.map(inv=>({name:inv.item_name,unit:inv.unit,qty:inv.qty||1,price:inv.amount_ex_tax,amount:inv.amount_ex_tax,rate:inv.tax_rate||0,tax:inv.tax_amount||0})),
+      total_ex:totalEx,
+      total_tax:totalTax,
+      total,
+      remark:state.invoices[0]?.remark||"",
+      footerHtml:`<label class="savedef"><input type="checkbox" id="saveDefault" ${state.save_as_default?"checked":""}> <span>存为该客户默认开票模版，以后固定这样开。</span></label>`
+    });
   }
   function applyLang(){
     document.querySelectorAll("[data-en]").forEach(el=>{
@@ -114,18 +142,11 @@
       <div class="shipbar"><span>提单号 <b>${esc(sp.bl_no||"—")}</b></span><span>船名航次 <b>${esc([sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—")}</b></span>
       <span><b>${esc([sp.pol,sp.pod].filter(Boolean).join(" → ")||"—")}</b></span><span>柜量 <b>${esc(cntr||"—")}</b></span></div>
       ${billSection(currency)}
-      <div class="sec invoice-sec"><button class="collapse-hd" id="invToggle"><span class="sec-t" style="margin:0">② 开票 <span style="text-transform:none;font-weight:600;color:var(--sub)">点开票展开</span></span><span class="chev">${invoiceOpen?"收起":"展开"} ▾</span></button>
+      <div class="sec invoice-sec"><button class="collapse-hd" id="invToggle"><span class="sec-t" style="margin:0">② 开票 <span style="text-transform:none;font-weight:600;color:var(--sub)">${isOcean()?"· 如需发票再展开":"点开票展开"}</span></span><span class="chev">${invoiceOpen?"收起":"展开"} ▾</span></button>
       <div id="invBody" style="${invoiceOpen?"":"display:none"};margin-top:10px"><div class="modebar"><span class="mlab">开票方式</span>
       <button class="mopt ${inv.mode!=="other"?"on":""}" data-mode="self">我方代开</button><button class="mopt ${inv.mode==="other"?"on":""}" data-mode="other">对方自开</button>
       <span class="mtip" id="modeTip">${inv.mode==="other"?"对方自开信息提交后需我方确认":"我方按当前信息开票"}</span><button class="mopt inv-tool" id="langBtn" type="button">EN</button><button class="mopt inv-tool" id="printBtn" type="button">下载PDF/打印</button></div>
-      <div class="plaininv" id="invoicePrintArea"><div class="invtop"><div class="pt"><span data-en="e-Invoice">电子发票</span>（<select class="tsel" id="title"><option data-en="VAT Ordinary e-Invoice">增值税普通发票</option><option data-en="VAT Special e-Invoice">增值税专用发票</option></select>）</div></div>
-      <div class="pparty"><div class="pp"><div class="plab" data-en="Buyer">购 买 方</div><div class="prow"><b data-en="Name:">名称：</b><input class="edit" id="buyerName" value="${esc(state.buyer.name)}"><span class="edithint">可改</span></div>
-      <div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b><input class="edit" id="buyerTax" value="${esc(state.buyer.tax_id)}"></div><div class="tip">数电票只打印名称 + 税号</div></div>
-      <div class="pp"><div class="plab" data-en="Seller">销 售 方</div><div class="prow"><b data-en="Name:">名称：</b>${esc(state.seller.name)}</div><div class="prow"><b data-en="Unified Social Credit Code / Tax ID:">统一社会信用代码/纳税人识别号：</b>${esc(state.seller.tax_id||"—")}</div></div></div>
-      <table class="invline"><thead><tr><th data-en="Item">项目名称</th><th data-en="Unit">单位</th><th class="r" data-en="Qty">数量</th><th class="r" data-en="Unit Price">单价</th><th class="r" data-en="Amount Excl. Tax">金额(不含税)</th><th class="r" data-en="Tax Rate">税率/征收率</th><th class="r" data-en="Tax Amount">税额</th></tr></thead><tbody>${invoiceRows()}</tbody>
-      <tfoot><tr><td colspan="4"></td><td class="r" data-en="Total Incl. Tax">价税合计</td><td colspan="2" class="r">${sym(currency)} ${money(state.invoices.reduce((s,i)=>s+num(i.total_with_tax),0))}</td></tr></tfoot></table>
-      <div class="remarkline"><span data-en="Remarks:">备注：</span>${esc(inv.remark)}</div></div>
-      <label class="savedef"><input type="checkbox" id="saveDefault" ${state.save_as_default?"checked":""}> <span>存为该客户默认开票模版，以后固定这样开。</span></label></div></div>
+      <div id="invoicePrintArea">${invoiceOfficialHtml(currency)}</div></div></div>
       <div class="sec"><button class="collapse-hd" id="ctToggle"><span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span><span class="chev">${contactOpen?"收起":"展开填写"} ▾</span></button>
       <div class="sumline" style="${contactOpen?"display:none":""}">${contactSummary()}</div><div id="ctBody" style="${contactOpen?"":"display:none"};margin-top:6px">${contactEditor("finance","财务邮箱","必填 ★","发票发这里")}${contactEditor("ops","操作邮箱","","账单/确认通知")}${contactEditor("business","业务邮箱","","报价 / 砍价")}</div></div>
       <div class="actions"><button class="btn ghost" id="msgBtn">有疑问 · 留言给我</button><button class="btn primary" id="submitBtn">确认账单 + 开票信息</button></div>`;
@@ -137,12 +158,16 @@
       <div class="emlist">${vals.map(v=>`<input class="email" data-contact="${key}" value="${esc(v)}" placeholder="${key==="finance"?"name@example.com":"选填"}">`).join("")}</div></div>`;
   }
   function collect(){
-    state.buyer.name=document.getElementById("buyerName")?.value.trim()||"";
-    state.buyer.tax_id=document.getElementById("buyerTax")?.value.trim()||"";
+    state.buyer.name=document.querySelector('[data-io-field="buyer.name"]')?.textContent.trim()||state.buyer.name||"";
+    state.buyer.tax_id=document.querySelector('[data-io-field="buyer.tax_id"]')?.textContent.trim()||state.buyer.tax_id||"";
     state.save_as_default=document.getElementById("saveDefault")?.checked!==false;
     state.contacts={finance:[],ops:[],business:[]};
     document.querySelectorAll("[data-contact]").forEach(el=>{const v=el.value.trim();if(v)state.contacts[el.dataset.contact].push(v)});
     document.querySelectorAll("[data-inv]").forEach(el=>invoiceChanged(Number(el.dataset.inv),el.dataset.if,el.value,false));
+    document.querySelectorAll("[data-io-field]").forEach(el=>{
+      const m=el.dataset.ioField.match(/^items\.(\d+)\.(name|amount)$/);if(!m)return;
+      invoiceChanged(Number(m[1]),m[2]==="name"?"item_name":"amount_ex_tax",el.textContent,false);
+    });
   }
   function lineChanged(i,f,val){
     const l=state.bill_lines[i]; if(!l) return;

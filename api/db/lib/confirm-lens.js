@@ -282,3 +282,32 @@ function redactInvoice(invoice) {
   const { cost_amount, sale_amount, gross_profit, cost, sale, customer, customer_name, payer_company_code, ...safe } = invoice || {};
   return safe;
 }
+
+// 港杂开票拆两张:①代理港杂费(带税1%) ②国际货代服务费(免税)。banks={bank,accounts}由调用方传(避免循环依赖)
+export function defaultInvoices(sp, total, currency, bl, cntr, mode = "self", banks = {}) {
+  const SELLER_BANK = banks.bank || "", ACCOUNTS = banks.accounts || {};
+  const invoiceTotal = money(sp.port_charge_invoice_total || total);
+  const taxedBase = Math.min(money(sp.taxed_port_charge || 0), invoiceTotal);
+  const freeAmt = money(invoiceTotal - taxedBase);
+  const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
+  return [
+    { id: "invoice-agency", currency, title: "增值税普通发票", mode,
+      item_name: "*经纪代理服务*代理港杂费", unit: "项", qty: 1,
+      amount_ex_tax: taxedBase, tax_rate: 0.01, tax_amount: money(taxedBase * 0.01), total_with_tax: money(taxedBase * 1.01), remark },
+    { id: "invoice-service", currency, title: "增值税普通发票", mode,
+      item_name: "*经纪代理服务*国际货物运输代理服务费", unit: "项", qty: 1,
+      amount_ex_tax: freeAmt, tax_rate: 0, tax_amount: 0, total_with_tax: freeAmt, remark },
+  ];
+}
+
+// 客户海运单=单行商业发票IV(USD无税);FOB下客户只付海运费
+export function oceanInvoice(currency, total, bl, cntr, banks = {}) {
+  const SELLER_BANK = banks.bank || "", ACCOUNTS = banks.accounts || {};
+  const amt = money(total);
+  const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
+  return [
+    { id: "invoice-ocean", currency, title: "商业发票", mode: "self",
+      item_name: "*运输服务*海运费", unit: "票", qty: 1,
+      amount_ex_tax: amt, tax_rate: 0, tax_amount: 0, total_with_tax: amt, remark },
+  ];
+}
