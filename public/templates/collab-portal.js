@@ -28,20 +28,43 @@ function renderBillingEntry(billing, s){
   if (!card || !body) return;
   const rows = [];
   if (s.carrier_code || s.vessel) rows.push(['船名航次', [s.carrier_code, s.vessel, s.voyage].filter(Boolean).join(' / ')]);
-  if (s.etd) rows.push(['预计开船 ETD', String(s.etd).slice(0,10)]);
-  if (s.eta) rows.push(['预计到港 ETA', String(s.eta).slice(0,10)]);
+  if (s.etd) rows.push(['预计开船 ETD', fmtD(s.etd)]);   // fmtD=上海时区，勿用原始UTC slice（会差一天）
+  if (s.eta) rows.push(['预计到港 ETA', fmtD(s.eta)]);
   if (s.release_type) rows.push(['提单类型', s.release_type === 'SWB' ? '海运单(SWB) · 无需电放' : s.release_type === 'TELEX' ? '电放提单 · 已电放' : s.release_type === 'OBL' ? '正本提单' : s.release_type]);
   const canOpen = !!(billing && billing.token && billing.show_amount !== false);
   window._billingToken = canOpen ? billing.token : '';
   card.classList.remove('hidden');
   body.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
     + '<div><div style="font-size:13px;font-weight:800;color:#1a1d23;">费用 / 账单：' + (canOpen ? '本票港杂/费用账单' : '暂无') + '</div>'
-    + '<div style="font-size:11px;color:#6b7280;margin-top:2px;">' + (canOpen ? esc(billing.segment || '按当前权限展示') : '当前链接暂无可打开账单') + '</div></div>'
+    + '<div style="font-size:11px;color:#6b7280;margin-top:2px;">' + (canOpen ? esc((SEG_META[billing.segment] && SEG_META[billing.segment].label ? SEG_META[billing.segment].label + '段费用' : billing.segment) || '按当前权限展示') : '当前链接暂无可打开账单') + '</div></div>'
     + (canOpen ? '<button class="btn btn-blue btn-sm" onclick="openBillingInvoice()">打开账单 / 开票</button>' : '') + '</div>'
     + (rows.length ? '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 20px;align-items:baseline;margin-top:12px;">'
       + rows.map(r => `<span style="font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap;">${esc(r[0])}</span>`
         + `<span style="font-size:12px;font-weight:700;color:#1a1d23;">${esc(r[1])}</span>`).join('') + '</div>' : '')
-    + (s.vessel ? '<div style="margin-top:12px;"><a href="https://www.vesselfinder.com/vessels?name=' + encodeURIComponent(s.vessel) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#2563eb;text-decoration:none;padding:7px 13px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;">🛰 实时船位 <span style="font-size:10px;color:#94a3b8;font-weight:400;">第三方AIS · 仅供参考</span></a></div>' : '');
+    + ((s.vessel && segs.includes('ocean')) ? '<div style="margin-top:12px;"><a href="https://www.vesselfinder.com/vessels?name=' + encodeURIComponent(s.vessel) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#2563eb;text-decoration:none;padding:7px 13px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;">🛰 实时船位 <span style="font-size:10px;color:#94a3b8;font-weight:400;">第三方AIS · 仅供参考</span></a></div>' : '');
+
+  // 账单卡默认收起（报关行主线是下载资料，费用次要）——点头部展开/收起
+  const bodyEl = card.querySelector('.step-body');
+  const headEl = card.querySelector('.step-head');
+  if (bodyEl && headEl && !card._collapsibleWired) {
+    card._collapsibleWired = true;
+    // 车队方：费用默认展开写出来（报关行主线是下载资料，仍默认收起）
+    const startOpen = Array.isArray(segs) && segs.includes('truck');
+    bodyEl.style.cssText = 'overflow:hidden;transition:max-height .3s ease,opacity .25s ease;max-height:' + (startOpen ? '1400px' : '0') + ';opacity:' + (startOpen ? '1' : '0') + ';';
+    const sub = card.querySelector('.step-sub');
+    if (sub) sub.textContent = canOpen ? (startOpen ? '本票费用 · 装货完成后请确认价格（含续页加价）' : '点开确认 / 改价（含续页加价）· 已收起') : '本票港杂 / 费用账单';
+    const chev = document.createElement('span');
+    chev.textContent = startOpen ? '▲' : '▼';
+    chev.style.cssText = 'margin-left:auto;color:#9ca3af;font-size:12px;flex-shrink:0;';
+    headEl.appendChild(chev);
+    headEl.style.cursor = 'pointer';
+    headEl.addEventListener('click', () => {
+      const open = bodyEl.style.maxHeight && bodyEl.style.maxHeight !== '0px';
+      bodyEl.style.maxHeight = open ? '0px' : '1400px';
+      bodyEl.style.opacity = open ? '0' : '1';
+      chev.textContent = open ? '▼' : '▲';
+    });
+  }
 }
 
 function renderFiles(){
@@ -67,6 +90,7 @@ $('fileInput').addEventListener('change', async e=>{
       const d = await r.json();
       if(!r.ok||!d.ok){ toast(f.name+' 上传失败: '+(d.error||'')); continue; }
       uploads.push(d.file); renderFiles(); toast('✓ '+f.name+' 已上传');
+      if(upZone==='customs' && window._billingToken) setTimeout(()=>toast('别忘了确认本票报关费 → 上方按钮'), 1600);
     }catch(err){ toast(f.name+' 网络错误'); }
   }
   e.target.value='';
@@ -122,7 +146,7 @@ function vehHtml(i, d={}){
       <input id="seal_${i}" value="${esc(d.seal_no)}" placeholder="点击填写" style="border:none;border-bottom:1.5px dashed #cbd5e1;background:transparent;font-size:12px;font-weight:800;color:#111827;width:108px;outline:none;font-family:monospace;text-transform:uppercase;">
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
-      <span style="cursor:pointer;color:#1a73e8;font-size:11px;font-weight:700;" onclick="openQuickFill(${i})">📋 快捷填写</span>
+      <span style="cursor:pointer;color:#fff;background:#1a73e8;font-size:14px;font-weight:800;padding:6px 14px;border-radius:8px;box-shadow:0 1px 2px rgba(26,115,232,.3);" onclick="openQuickFill(${i})">📋 快捷填写</span>
       <span style="cursor:pointer;color:#6b7280;font-size:11px;" onclick="copyQuick(${i})" title="复制派车信息文本">复制</span>
       ${vehs.length>1?`<span style="cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;" onclick="delVeh(${i})">× 删除</span>`:''}
     </div></div>
@@ -203,20 +227,25 @@ function snapV(){ vehs = vehs.map((v,i)=>$('plate_'+i)!==null?{...v,plate:gv('pl
 function renderVehs(){ $('vehGroups').innerHTML = vehs.map((v,i)=>vehHtml(i,v)).join(''); }
 function addVeh(){ vehs.push({}); renderVehs(); }
 function delVeh(i){ snapV(); vehs.splice(i,1); if(!vehs.length) vehs.push({}); renderVehs(); }
-async function saveVeh(){
+let _autoSaveTimer = null;
+function setSaveStatus(txt, color){ const el=$('vehSaveStatus'); if(el){ el.textContent=txt; el.style.color=color||'#9ca3af'; } }
+async function saveVeh(opts){
+  const silent = opts && opts.silent;
   snapV();
   const vehicles = vehs.filter(v=>v.plate||v.driver_phone);
-  if(!vehicles.length){ toast('至少一辆车需填车牌和司机电话'); return; }
-  $('btnVeh').disabled = true;
+  if(!vehicles.length){ if(!silent) toast('至少一辆车需填车牌和司机电话'); return; }
+  setSaveStatus('保存中…','#b45309');
   try{
     const r = await fetch(`${API}/trucking-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token,vehicles,remarks:''})});
     const d = await r.json();
-    $('btnVeh').disabled = false;
-    if(!r.ok||!d.ok){ toast(d.error||'提交失败'); return; }
-    toast('✓ 车辆信息已提交');
-  }catch(e){ $('btnVeh').disabled=false; toast('网络错误'); }
+    if(!r.ok||!d.ok){ setSaveStatus('保存失败，请重试','#dc2626'); if(!silent) toast(d.error||'保存失败'); return; }
+    setSaveStatus('已自动保存 ✓','#047857');
+    if(!silent) toast('✓ 车辆信息已保存');
+  }catch(e){ setSaveStatus('网络错误，未保存','#dc2626'); if(!silent) toast('网络错误'); }
 }
+// 协同端口：填完即存，无需手动提交（防抖 0.6s）
+function autoSaveVeh(){ clearTimeout(_autoSaveTimer); _autoSaveTimer=setTimeout(()=>saveVeh({silent:true}), 600); }
 
 async function boot(){
   if(!token){ show('stateDead'); return; }
@@ -225,7 +254,14 @@ async function boot(){
   if(!d.valid || d.role!=='supplier_portal'){ show('stateDead'); return; }
   const s = d.booking_sheet || {};
   const ps = d.portal_scope || {};
+  if (d.dispatched_at) s.dispatched_at = d.dispatched_at;   // 委托/接单时间戳（后端 magic_links.created_at）
   window._sheetP = s;
+  const isGodview = d.role === 'supplier_portal' &&
+    (ps.field_profile === 'upstream_downstream' || ps.field_profile === 'shipping_booking');
+  if (isGodview && window.CollabPortalGodview) {
+    await window.CollabPortalGodview.render({ data:d, sheet:s, portalScope:ps, api:API, token, $, esc, fmtD, show });
+    return;
+  }
   // 单据链接构造（海运/报关段共用）
   const orders = Array.isArray(s.orders)?s.orders:[];
   const dlRow = (icon, label, href, extra='') =>
@@ -239,7 +275,8 @@ async function boot(){
   $('bannerTitle').textContent = (s.shipment_no||'—') + ' — ' + segs.map(x=>SEG_META[x].label).join('+') + (ps.company_label?`（${esc(ps.company_label)}）`:'');
   $('bannerSub').textContent = '贵司承包：' + segs.map(x=>SEG_META[x].label).join('+') + ' ＝ ' + (ps.company_label || '贵司') + (segs.length>=3 ? ' · 一个口全干' : '');
   const chips=[];
-  if(s.pol||s.pod) chips.push(`<div class="chip"><span>航线 </span><b>${esc(s.pol||'—')} → ${esc(s.pod||'—')}</b></div>`);
+  // 航线只给海运方(货代)看；纯车队/报关方不需要知道 POL→POD
+  if((s.pol||s.pod) && segs.includes('ocean')) chips.push(`<div class="chip"><span>航线 </span><b>${esc(s.pol||'—')} → ${esc(s.pod||'—')}</b></div>`);
   if(s.container_type) chips.push(`<div class="chip"><span>柜型 </span><b>${esc(s.container_type)}${s.container_qty?' × '+s.container_qty:''}</b></div>`);
   if(s.factory_cargo_ready) chips.push(`<div class="chip"><span>货好 </span><b>${fmtD(s.factory_cargo_ready)}</b></div>`);
   if(s.etd) chips.push(`<div class="chip"><span>ETD </span><b>${fmtD(s.etd)}</b></div>`);
@@ -295,8 +332,9 @@ async function boot(){
   const soUps = upsAll.filter(u=>/(^|[^A-Z])S\/?O([^A-Z]|$)|入货|排载|配舱|舱单|订舱确认|manifest|放箱/i.test(u.filename||''));
   const blUps = upsAll.filter(u=>/\bBL\b|提单/i.test(u.filename||''));
   let dl = '';
+  // 排载单/SO 真下载（系统数据生成，报关行排载单按此做）
+  dl += dlRow('📋', '排载单 / SO（订舱确认书 · 提箱凭此）', fileURL('so'), pv(fileURL('so')));
   if (soUps.length) soUps.forEach(u => { dl += dlRow('📋', '舱单 / SO · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
-  else dl += `<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:10px 14px;margin-bottom:6px;font-size:12px;color:#9ca3af;">📋 舱单 / SO（订舱确认书 · 提箱凭此）· 货代上传后自动出现在这里</div>`;
   if (blUps.length) blUps.forEach(u => { dl += dlRow('📄', 'BL · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
   // BL number entry section
   (function(){
@@ -319,7 +357,15 @@ async function boot(){
   dl += dlRow('🛂', '报关单（海关格式·数据已填）', fileURL('customs_decl'), pv(fileURL('customs_decl')));
   dl += dlRow('📋', 'PL·SC·IV 合并版', fileURL('pack', '', 'customs'), pv(fileURL('pack', '', 'customs')));
   const quar = (Array.isArray(s.collab_uploads)?s.collab_uploads:[]).filter(u=>/检疫|植检|动检|兽医|quarantine/i.test(u.filename||''));
-  if (quar.length) quar.forEach(u => { dl += dlRow('🌿', '检疫报告 · '+esc(u.filename), '#'); });
+  if (Array.isArray(s.quarantine_docs) && s.quarantine_docs.length) {   // 真源 document_uploads，一票多份全列(拼柜每单一张CIQ)
+    const n = s.quarantine_docs.length;
+    s.quarantine_docs.forEach((q, i) => {
+      const label = n > 1 ? `检疫报告 ${i+1}/${n}（CIQ / 植检）` : '检疫报告（CIQ / 植检 · 出证件）';
+      dl += dlRow('🌿', label, fileURL('quarantine', q.ref), pv(fileURL('quarantine', q.ref)));
+    });
+  }
+  else if (s.has_quarantine) dl += dlRow('🌿', '检疫报告（CIQ / 植检 · 出证件）', fileURL('quarantine'), pv(fileURL('quarantine')));  // 兼容旧字段
+  else if (quar.length) quar.forEach(u => { dl += dlRow('🌿', '检疫报告 · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
   else dl += `<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:12px;color:#9ca3af;">🌿 检疫报告 · 出证后自动出现在这里</div>`;
   $('dlBox').innerHTML = dl;
   // 申报字段表（直接带过来，免开文件）：品名/HS/箱数/净毛/CBM/申报金额 — 来自订单明细真值
@@ -362,6 +408,9 @@ async function boot(){
     if(raw.split_note) rows.push(['分票', raw.split_note]);
     if(raw.vgm_note) rows.push(['VGM', raw.vgm_note]);
     if(raw.truck_req) rows.push(['🚛要求', raw.truck_req]);
+    if(s.etd) rows.push(['预计开船 ETD', fmtD(s.etd)]);
+    if(s.eta) rows.push(['预计到港 ETA', fmtD(s.eta)]);
+    if(s.dispatched_at){ let _dt; try{ _dt=new Date(s.dispatched_at).toLocaleString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,16); }catch(e){ _dt=String(s.dispatched_at).replace('T',' ').slice(0,16); } rows.push(['接单时间', _dt]); }
     if(!rows.length) return;
     const html = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:10px;">'
       + '<div style="font-size:12px;font-weight:800;color:#1d4ed8;margin-bottom:6px;">⚓ SO / 下单信息 <span style="font-weight:400;color:#60a5fa;font-size:10px;">排载单按此做</span>'
@@ -374,6 +423,52 @@ async function boot(){
   })();
   renderVehs();
   renderBillingEntry(d.billing || {}, s);
+  // 报关费·回传即确认（续页/加项由报关行自行加价，一次确认即结单）
+  (function(){
+    const seg = document.getElementById('seg-customs'); if(!seg) return;
+    const uz = seg.querySelector('.up-zone'); if(!uz) return;
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12px;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+    box.innerHTML = '💴 <b>本票报关费</b>请在回传后确认（续页 / 加项自行加价）· 确认即结单'
+      + '<button class="btn btn-blue btn-sm" style="margin-left:auto;" onclick="openBillingInvoice()">确认报关费 →</button>';
+    uz.parentNode.insertBefore(box, uz);
+  })();
+  // 车队费·装货完成后确认价格（拖车费 / 续页加价，一次确认即结单）
+  (function(){
+    if (!(Array.isArray(segs) && segs.includes('truck'))) return;
+    if (!window._billingToken) return;                      // 无可开账单则不显示
+    const seg = document.getElementById('seg-truck'); if(!seg) return;
+    if (seg.querySelector('#truckFeeConfirm')) return;
+    const box = document.createElement('div');
+    box.id = 'truckFeeConfirm';
+    box.style.cssText = 'background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:0 0 12px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+    box.innerHTML = '💴 <b>本票拖车费</b>请在装货完成后确认（续页 / 加项自行加价）· 确认即结单'
+      + '<button class="btn btn-blue btn-sm" style="margin-left:auto;" onclick="openBillingInvoice()">确认价格 →</button>';
+    const vg = document.getElementById('vehGroups');
+    if (vg && vg.parentNode) vg.parentNode.insertBefore(box, vg);
+    else seg.insertBefore(box, seg.firstChild);
+  })();
+  // 车辆信息：填完即自动保存（协同端口，去掉手动「提交」按钮）
+  (function(){
+    const btn = $('btnVeh');
+    if (btn) {
+      btn.style.display = 'none';
+      if (!$('vehSaveStatus')) {
+        const st = document.createElement('div');
+        st.id = 'vehSaveStatus';
+        st.style.cssText = 'font-size:12px;color:#9ca3af;text-align:right;margin-top:6px;';
+        st.textContent = '填完车牌 / 司机电话即自动保存';
+        btn.parentNode.insertBefore(st, btn.nextSibling);
+      }
+    }
+    const grp = $('vehGroups');
+    if (grp && !grp._autoSaveWired) {
+      grp._autoSaveWired = true;
+      grp.addEventListener('focusout', (e) => {
+        if (e.target && e.target.tagName === 'INPUT') autoSaveVeh();
+      });
+    }
+  })();
   show('stateForm');
 }
 

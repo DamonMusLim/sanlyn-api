@@ -181,7 +181,10 @@ function containerSummary(sp) {
 async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const defaults = await defaultLines(pool, sp, ctx);
   const lane = ctx.role === "shipper_booking" ? { localCharge: null, freightRate: null } : await loadLaneBenchmarks(pool, sp, defaults.lens);
-  const billLines = defaults.lines;
+  // 港杂账单只留非USD(海运费USD归客户单);"除USD都算港杂" [Damon 0720 FOB:工厂付港杂/客户付海运]
+  const billLines = ctx.role === "shipper_booking"
+    ? defaults.lines.filter(l => String(l.currency || "CNY").toUpperCase() !== "USD")
+    : defaults.lines;
   const payloadBillLines = saved?.payload?.bill_lines || billLines;
   const billLineNotice = billLines.length ? "" : "费用尚未录入";
   const currency = payloadBillLines[0]?.currency || "CNY";

@@ -72,7 +72,19 @@ function receivableAmount(row, scope) {
 }
 
 export function partyLens(ctx, sp) {
-  if (ctx.internal) return { role: "internal", side: "all", code: null, segment: "all" };
+  if (ctx.internal) {
+    const p = clean(ctx.party, 20);
+    const internalPayable = {
+      ocean: { code: sp.forwarder_code, name: sp.forwarder_name },
+      truck: { code: sp.trucking_code, name: sp.trucking_name },
+      customs: { code: sp.broker_code, name: sp.broker_name },
+      factory: { code: sp.party_company?.code, name: sp.party_company?.name_cn || sp.party_company?.factory_name },
+    };
+    if (Object.prototype.hasOwnProperty.call(internalPayable, p)) {
+      return { role: "internal", side: "payable", code: clean(internalPayable[p].code, 40), name: clean(internalPayable[p].name, 120), segment: p };
+    }
+    return { role: "internal", side: "all", code: null, segment: "all" };
+  }
   const policy = ROLE_POLICIES[ctx.role] || ROLE_POLICIES.supplier_portal;
   const segment = ctx.role === "supplier_portal" ? ((ctx.meta?.segments || [])[0] || policy.segment) : policy.segment;
   const code = {
@@ -91,12 +103,22 @@ export async function defaultLines(pool, sp, ctx) {
   const lens = partyLens(ctx, sp);
   const exwTransfer = clean(sp.freight_term, 20).toUpperCase() === "EXW";
   if (!blNo || (lens.role !== "internal" && !lens.code)) return { lines: [], exwTransfer, lens };
+  if (ctx.internal && lens.side === "payable" && lens.segment === "factory" && !lens.code) return { lines: [], exwTransfer, lens };
 
   const params = [blNo];
   const where = ["bl_no=$1"];
   if (lens.side === "payable") {
-    params.push(lens.code);
-    where.push(`supplier_company_code=$${params.length}`, "COALESCE(amount,0)>0");
+    const supConds = [];
+    if (lens.code) {
+      params.push(lens.code);
+      supConds.push(`supplier_company_code=$${params.length}`);
+    }
+    if (lens.name) {
+      params.push(lens.name);
+      supConds.push(`supplier=$${params.length}`);
+    }
+    if (supConds.length) where.push(`(${supConds.join(" OR ")})`);
+    where.push("COALESCE(amount,0)>0");
   } else if (lens.side === "receivable") {
     where.push("COALESCE(sale_amount, amount,0)>0");
     if (lens.segment === "port_charge") {
@@ -122,6 +144,7 @@ export async function defaultLines(pool, sp, ctx) {
   const lines = [];
   for (const row of r.rows) {
     const scope = clean(row.fob_scope, 16) || classifyFobScope(row.canonical_category, row.cost_category);
+    if (ctx.internal && !internalSegmentMatch(lens.segment, row.cost_category, scope)) continue;
     const receivable = lens.side === "receivable" ? receivableAmount(row, scope) : null;
     if (lens.side === "receivable" && receivable.amount <= 0) continue;
     if (lens.role === "supplier" && Number(row.amount || 0) <= 0) continue;
@@ -142,6 +165,15 @@ export async function defaultLines(pool, sp, ctx) {
     addRawCostLines(lines, sp.cost_lines, blNo, lens, ctx, customsArrange);
   }
   return { lines, exwTransfer, lens };
+}
+
+function internalSegmentMatch(segment, name, scope) {
+  if (!["ocean", "truck", "customs", "factory"].includes(segment)) return true;
+  const label = clean(name, 120);
+  if (segment === "ocean") return scope === "freight" || scope === "origin" || /海运|运费|港杂|码头|THC|订舱|单证|封签|VGM|EIR|telex|manifest|ocean|freight|port|local/i.test(label);
+  if (segment === "truck") return /拖车|车队|提柜|还柜|truck|trucking|haul/i.test(label);
+  if (segment === "customs") return scope === "declaration" || /报关|申报|清关|customs|declaration/i.test(label);
+  return true;
 }
 
 function baseLine(blNo, name, basis, amount, currency, scope, lens) {
@@ -171,6 +203,7 @@ function addRawCostLines(lines, costLines, blNo, lens, ctx, customsArrange) {
     const name = clean(cl.name, 80); if (!name) continue;
     const cost = money(cl.cost), sale = money(cl.sale);
     const scope = classifyFobScope("", name);
+    if (ctx.internal && !internalSegmentMatch(lens.segment, name, scope)) continue;
     const receivable = lens.side === "receivable" ? receivableAmount({ ...cl, amount: cost, sale_amount: sale, cost_category: name }, scope) : null;
     if (!ctx.internal) {
       if (lens.side === "receivable" && receivable.amount <= 0) continue;
