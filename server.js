@@ -55,6 +55,7 @@ app.use("/api/factory-portal/upload-history", factoryPortalLimiter);
 // ── CORS middleware (replace Vercel headers config) ──
 const ALLOWED_ORIGINS = [
   "https://ai.sanlyn.cn",
+  "https://pet.sanlyn.cn",
   "https://ai.sanlynos.com",
   "https://sanlyn-os.vercel.app",
   "https://dashboard.sanlyn.cn",
