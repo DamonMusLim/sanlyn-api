@@ -235,7 +235,8 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/fix-co-account",    () => import("./api/db/fix-co-account.js"));
   mount("/api/db/countries",         () => import("./api/db/countries.mjs"));
   mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs"));
-  mount("/api/db/petstore-pricing-log", () => import("./api/db/petstore-pricing-log.mjs")); // petstore AI pricing log (readonly) [Claude 0721]
+  mount("/api/db/petstore-pricing-log", () => import("./api/db/petstore-pricing-log.mjs"));
+  mount("/api/db/petstore-health", () => import("./api/db/petstore-health.mjs")); // 宠物店数据体检(只读) [Claude 0721] // petstore AI pricing log (readonly) [Claude 0721]
   mount("/api/db/mailings", () => import("./api/db/mailings.mjs"));
    mount("/api/db/customs-fix-amount", () => import("./api/db/customs-fix-amount.mjs"));
   mount("/api/db/companies",          () => import("./api/db/companies.js"));
