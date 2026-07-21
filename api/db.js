@@ -15,7 +15,7 @@ export function getPool() {
   }
   return pool;
 }
-export const ALLOWED = ["https://damon.sanlyn.cn","https://admin.sanlyn.cn","https://sanlyn-os.vercel.app","https://ai.sanlynos.com","https://ai.sanlyn.cn","https://ac.sanlyn.cn","http://localhost:5173","http://localhost:5183","http://localhost:3000"];
+export const ALLOWED = ["https://damon.sanlyn.cn","https://admin.sanlyn.cn","https://sanlyn-os.vercel.app","https://ai.sanlynos.com","https://ai.sanlyn.cn","https://pet.sanlyn.cn","https://ac.sanlyn.cn","http://localhost:5173","http://localhost:5183","http://localhost:3000"];
 export function setCors(req, res, methods = "GET, POST, OPTIONS") {
   const origin = req.headers.origin || "";
   if (ALLOWED.includes(origin)) res.setHeader("Access-Control-Allow-Origin", origin);
