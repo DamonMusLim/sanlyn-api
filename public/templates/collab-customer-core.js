@@ -10,17 +10,6 @@ function openBillingInvoice(){
   if(!window._billingToken) return;
   window.open('/public/invoice-confirm-preview.html?token='+encodeURIComponent(window._billingToken), '_blank', 'noopener');
 }
-function renderMissingPrompt(summary){
-  const list = (summary && Array.isArray(summary.missing_for_role)) ? summary.missing_for_role : [];
-  const old = document.getElementById('missingPrompt'); if(old) old.remove();
-  if(!list.length) return;
-  const box = document.createElement('div');
-  box.id = 'missingPrompt';
-  box.style.cssText = 'margin-bottom:14px;padding:10px 14px;background:#fffbeb;border:1.5px solid #fbbf24;border-radius:8px;color:#92400e;font-size:12px;font-weight:700;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;';
-  box.innerHTML = '<span>待填</span>' + list.map(x=>'<span style="background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;padding:2px 9px;">'+esc(x.label||x.field)+'</span>').join('');
-  const shell = document.querySelector('.shell');
-  if(shell) shell.insertBefore(box, shell.firstChild);
-}
 function renderBillingEntry(billing){
   const box=$('priceBox');
   if(!box) return;
@@ -201,7 +190,8 @@ window.addBLField = function(){
   row.innerHTML = `<input placeholder="字段名" style="flex:1;border:1px solid #e0e4ea;border-radius:6px;padding:5px 8px;font-size:12px;" oninput="window._blFields[${idx}].k=this.value">
     <input placeholder="内容" style="flex:2;border:1px solid #e0e4ea;border-radius:6px;padding:5px 8px;font-size:12px;" oninput="window._blFields[${idx}].v=this.value">
     <button onclick="document.getElementById('blf_${idx}').remove();window._blFields[${idx}]={k:'',v:''}" style="background:none;border:none;color:#9ca3af;font-size:14px;cursor:pointer;">✕</button>`;
-  $('blChangeFields').appendChild(row);
+  const holder = $('blChangeFields');   // 2026-07-23 判空：该容器当前 HTML 里不存在
+  if (holder) holder.appendChild(row);
 };
 window.submitBLConfirm = async function(isOk){
   const btn = $(isOk ? 'blOkBtn' : 'blChgSubmitBtn');

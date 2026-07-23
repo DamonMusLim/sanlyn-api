@@ -6,7 +6,6 @@ async function boot(){
   sheet = d.booking_sheet || {};
   window._billing = d.billing || {};
   window.__fp = d.factory_progress || null;
-  renderMissingPrompt(sheet.collab_summary);
   sailings = Array.isArray(sheet.sailings)?sheet.sailings:[];
   confirmed = !!sheet.customer_submitted;
 
@@ -117,8 +116,12 @@ async function boot(){
   window._feState = (sheet.fe_cert && sheet.fe_cert.requested) ? true : false;
   window.renderFE = function(){
     const btn = $('feBtn');
-    if(!btn) return; // FE 主按钮已从本页移除(affa32b拆JS/删块)时不崩，行内 .fe-ck 仍可用
-    if (sheet.is_daigou && $('feMust')) $('feMust').classList.remove('hidden');
+    // 2026-07-23: feBtn/feMust 这两个元素当前 HTML 里并不存在，原来未做判空，
+    // 一进页面就抛 "Cannot set properties of null" 导致后面全部渲染中断，页面永远卡在"正在加载…"。
+    // 这里判空跳过：有元素才渲染 FE 区，没有就当该功能未启用，不影响页面其余部分。
+    const must = $('feMust');
+    if (sheet.is_daigou && must) must.classList.remove('hidden');
+    if (!btn) return;
     if (window._feState) {
       btn.textContent = sheet.is_daigou ? '✓ 已开通（必办）' : '✓ 已申请 · 点击取消';
       btn.style.background = '#ecfdf5'; btn.style.borderColor = '#a7f3d0'; btn.style.color = '#047857';
