@@ -122,10 +122,19 @@ function renderCollab(){
     <tbody>${rows.map(crow).join("")}</tbody></table></div></div>` : "";
   root.innerHTML = grp(act, `✅ 生效中${never?`（其中 ${never} 条从未被打开 ⚠）`:""}`) + grp(dead.slice(0,60), "🗄 已失效 / 已作废（近 60 条）");
 }
+// 没登录/登录过期时给人话+入口，别甩裸 Unauthorized（Damon 07-23 实际踩到）
+function needLogin(msg){
+  document.getElementById("list").innerHTML =
+    `<div class="empty"><div style="font-size:15px;font-weight:700;color:var(--text)">${esc(msg)}</div>
+     <div style="margin:10px 0 14px">链接中心只对内部账号开放，先登录后台再回到本页。</div>
+     <button id="go-login">去登录后台</button></div>`;
+}
+function isAuthErr(e){ return /Unauthorized|请先登录|internal only|Forbidden|权限不足/i.test(String(e)); }
 async function load(){
   const root = document.getElementById("list");
   root.innerHTML = '<div class="empty">加载中...</div>';
   const sub = document.getElementById("sub");
+  if(!token()){ needLogin("需要先登录后台"); return; }
   try{
     if(TAB==="collab"){
       sub.textContent = "发给工厂/货代/车队/报关行/客户的协同链接 · 看范围 / 一键作废 · 库里只存哈希，给不出链接原文";
@@ -137,10 +146,14 @@ async function load(){
     const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
     if(!r.success) throw new Error(r.error||"加载失败(需内部账号登录)");
     LINKS = r.links||[]; render();
-  }catch(e){ root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+  }catch(e){
+    if(isAuthErr(e.message)) return needLogin("登录已过期");
+    root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`;
+  }
 }
 document.addEventListener("click", async e=>{
   const t = e.target;
+  if(t.id==="go-login"){ location.href = "/data"; return; }
   if(t.classList && t.classList.contains("tab")){
     TAB = t.dataset.tab;
     document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active", b.dataset.tab===TAB));

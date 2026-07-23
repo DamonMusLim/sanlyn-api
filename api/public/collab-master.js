@@ -302,17 +302,24 @@ export default async function handler(req, res) {
       buildPriceAnchor(pool, view, scope),
     ]);
 
-    return res.status(200).json({
+    // 默认拒绝也管键名：本视角无权的区块连键都不下发（不是给个空壳）。
+    // 起因：车队响应里带着 price_anchor:null，权限审计当场报红——空壳键既是噪音也是信息泄漏面。
+    const body = {
       success: true, view, stage, bl_no: blNo,
       shipment: plan
         ? { vessel: plan.vessel, voyage: plan.voyage, etd: plan.etd, eta: plan.eta,
             pol: plan.pol, pod: plan.pod, status: plan.current_status }
         : null,
-      orders: orders.rows, order_lines: lines.rows, documents: docs.rows,
-      customs: customs.rows, containers: containers.rows, insurance: insurance.rows,
-      price_anchor: priceAnchor,
       scope_missing: Boolean(orders.scope_missing || customs.scope_missing || containers.scope_missing),
-    });
+    };
+    if (allowedFields("order", view).length || allowedFields("identity", view).length) body.orders = orders.rows;
+    if (allowedFields("line", view).length) body.order_lines = lines.rows;
+    if (allowedFields("doc", view).length) body.documents = docs.rows;
+    if (allowedFields("customs", view).length) body.customs = customs.rows;
+    if (allowedFields("container", view).length) body.containers = containers.rows;
+    if (allowedFields("insurance", view).length) body.insurance = insurance.rows;
+    if (priceAnchor != null) body.price_anchor = priceAnchor;
+    return res.status(200).json(body);
   } catch (e) {
     console.error("[collab-master] error:", e);
     return res.status(500).json({ success: false, error: e.message });
