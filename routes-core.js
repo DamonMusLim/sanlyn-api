@@ -367,6 +367,21 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/migrate-rfq",   () => import("./api/db/migrate-rfq.js"));    // table migration
   mount("/api/db/rfq-requests",  () => import("./api/db/rfq-requests.js"));   // CRUD
   mount("/api/db/rfq-items",     () => import("./api/db/rfq-items.js"));      // forwarder quote lines
+  mount("/api/db/rfq-dispatch",  () => import("./api/db/rfq-dispatch.js"));   // directed RFQ invitation
+  mount("/api/db/rfq-price",     () => import("./api/db/rfq-price.js"));      // RFQ median pricing
+  mount("/api/db/rfq-chase",     () => import("./api/db/rfq-chase.js"));      // RFQ chase drafts/email gate
+  mount("/api/db/rfq-route-lock", () => import("./api/db/rfq-route-lock.js")); // 询价单锁定航线(读ship_schedules写request_meta)
+  mount("/api/db/pricing-desk/quotes", () => import("./api/db/pricing-desk.js"));    // Damon 内部报价中心(成本只在此页)
+  mount("/api/db/pricing-desk/publish", () => import("./api/db/pricing-desk.js"));   // 上架客户牌价
+  mount("/api/db/pricing-desk/unpublish", () => import("./api/db/pricing-desk.js")); // 下架客户牌价
+  mount("/api/public/customer-myportal", () => import("./api/public/customer-myportal.js")); // P1 只读客户门户(orders/docs/missing/price) [Claude 0723 #bp-p1-customer-portal-0723]
+  mount("/api/db/customer-quote-link", () => import("./api/public/customer-quote.js")); // issue customer quote magic link
+  mount("/api/public/customer-quote",  () => import("./api/public/customer-quote.js")); // customer quote lens
+  mount("/api/public/forwarder-rfqs",  () => import("./api/public/freight-quote.js")); // forwarder RFQ center lens
+  mount("/api/public/marketplace-freight", () => import("./api/public/marketplace-freight.js")); // 公开牌价(只销售价)
+  mount("/api/public/marketplace", () => import("./api/db/marketplace.js")); // 公开牌价·图1同款route shape(未登录=全量在售,只卖价)
+  mount("/api/db/my-quotes",       () => import("./api/public/customer-quote.js")); // 登录客户报价页数据
+  mount("/api/db/quote-request",   () => import("./api/public/customer-quote.js")); // 客户需求报价(心里价位只进内部)
   mount("/api/public/freight-quote/:itemId", () => import("./api/public/freight-quote.js")); // 货代公开报价页(免登录,token=freight_rfq_items.id)
   mount("/api/public/forwarder-lanes/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开多航线报价页
   mount("/api/public/forwarder-quote/:code", () => import("./api/public/forwarder-v20.js")); // V20 货代公开报价提交

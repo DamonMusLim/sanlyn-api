@@ -28,7 +28,7 @@ const APP_BASE   = process.env.MAGIC_LINK_BASE_URL || "https://app.sanlyn.cn";
 const MAX_TTL    = 720; // 30 days hard cap
 const DEFAULT_TTL = 72; // 3 days default
 
-const ALLOWED_ROLES = new Set(["driver", "forwarder", "customs", "customer_downstream"]);
+const ALLOWED_ROLES = new Set(["driver", "forwarder", "customs", "customer_downstream", "customer_myportal"]);
 
 function rawToHash(raw) {
   return crypto.createHash("sha256").update(raw).digest("hex");

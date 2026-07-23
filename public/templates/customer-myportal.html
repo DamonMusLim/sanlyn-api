@@ -1,0 +1,194 @@
+<!--
+  public/templates/customer-myportal.html — DRAFT, NOT DEPLOYED. Task #bp-p1-customer-portal-0723.
+  P1 只读客户门户前端。配对后端草案 customer-myportal.js。
+
+  硬约束：
+    - 单文件 ≤500 行（当前 ~230 行）
+    - 全部相对路径调用 /api/public/customer-myportal，绝不出现 api.sanlyn.cn
+    - 零写入：没有任何 POST/PATCH，没有表单提交，没有 localStorage 落 token 以外的东西
+    - token 只从 URL ?token= 读取（magic link 打开即用，不要求登录）
+    - 缺显缺：docs/missing/price 视图数据为空时明确显示"暂无/待补/待报关"文案，不留空白骗过去
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客户门户 · Customer Portal (只读预览)</title>
+<style>
+:root{--bg:#f6f8fb;--text:#172033;--muted:#667085;--line:#d7deea;--card:#fff;--blue:#175cd3;--green:#067647;--amber:#b54708;--red:#b42318}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.bar{background:#fff;border-bottom:1px solid var(--line);padding:16px 22px;position:sticky;top:0;z-index:2}
+h1{font-size:20px;margin:0}.sub{color:var(--muted);margin-top:3px}
+.wrap{max-width:1100px;margin:0 auto;padding:18px}
+.order{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px}
+.head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;cursor:pointer}
+.order-no{font-weight:800;font-size:16px}.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:700;background:#eef4ff;color:var(--blue);margin-top:6px}
+.meta{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:12px 0}
+.label{font-size:11px;color:var(--muted);font-weight:700}.val{margin-top:3px}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:12px}
+.step{height:8px;background:#e4e9f2;border-radius:999px}.step.on{background:var(--green)}
+.detail{display:none;margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.detail.on{display:block}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tab{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 10px;font-weight:700;cursor:pointer;font-size:12px}
+.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.panel{display:none}.panel.active{display:block}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:700}
+.tag{display:inline-block;border-radius:5px;padding:2px 6px;font-size:11px;font-weight:700}
+.tag.missing{background:#fef3f2;color:var(--red)}
+.tag.heuristic{background:#fffaeb;color:var(--amber)}
+.tag.anchored{background:#ecfdf3;color:var(--green)}
+.tag.pending{background:#fffaeb;color:var(--amber)}
+.empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:30px;text-align:center;color:var(--muted)}
+.error{color:var(--red)}
+a{color:var(--blue)}
+@media(max-width:820px){.bar{padding:14px}.wrap{padding:12px}.meta{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>客户门户 · 订单进度（只读预览）</h1>
+  <div class="sub" id="scope-note">加载中…</div>
+</div>
+<main class="wrap">
+  <div class="empty" id="empty">加载中 Loading...</div>
+  <div id="orders"></div>
+  <div class="sub" style="text-align:center;padding:14px 0">customer-myportal v1 · 2026-07-23</div>
+</main>
+<script>
+const api = "/api/public/customer-myportal";
+const statusColor = {shipped:"on", delivered:"on", ready:"on", confirmed:"on"};
+function token(){ return new URLSearchParams(location.search).get("token") || ""; }
+function fmt(v){ return v === null || v === undefined || v === "" ? "—" : String(v).slice(0,10); }
+function esc(v){ return v==null ? "" : String(v).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+function progress(status){
+  const s = String(status || "").toLowerCase();
+  if(["shipped","in_transit","delivered"].includes(s)) return 4;
+  if(["ready","production_complete"].includes(s)) return 3;
+  if(["confirmed","in_production","production"].includes(s)) return 2;
+  return 1;
+}
+async function call(view, orderNo){
+  const qs = new URLSearchParams({token: token(), view});
+  if(orderNo) qs.set("order_no", orderNo);
+  const r = await fetch(api + "?" + qs.toString()).then(x => x.json());
+  if(!r.success) throw new Error(r.error || "加载失败");
+  return r.data;
+}
+function renderDocs(list){
+  if(!list.length) return '<div class="empty">暂无已上传单证</div>';
+  return '<table><thead><tr><th>类型</th><th>文件名</th><th>上传时间</th></tr></thead><tbody>' +
+    list.map(d => `<tr><td>${esc(d.doc_kind)}</td><td><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.name)}</a></td><td>${fmt(d.uploaded_at)}</td></tr>`).join("") +
+    '</tbody></table>';
+}
+function renderMissing(data){
+  const reg = data.registered || [], heur = data.heuristic_missing || [];
+  if(!reg.length && !heur.length) return '<div class="empty">暂无缺项提示</div>';
+  const rows = [
+    ...reg.map(m => `<tr><td>${esc(m.doc_type||"—")}</td><td>${esc(m.description)}</td><td><span class="tag missing">需处理</span></td></tr>`),
+    ...heur.map(m => `<tr><td>${esc(m.doc_type)}</td><td>${esc(m.description)}</td><td><span class="tag heuristic">系统推断</span></td></tr>`),
+  ].join("");
+  return '<table><thead><tr><th>类型</th><th>说明</th><th>状态</th></tr></thead><tbody>' + rows + '</tbody></table>' +
+    (data.note ? `<div class="sub" style="margin-top:8px">${esc(data.note)}</div>` : "");
+}
+function renderPrice(data){
+  const lines = data.lines || [];
+  const table = lines.length ? '<table><thead><tr><th>品名</th><th>数量</th><th>单价</th><th>小计</th></tr></thead><tbody>' +
+    lines.map(l => `<tr><td>${esc(l.product_name)}</td><td>${esc(l.qty_ctn)} ${esc(l.unit||"")}</td><td>${esc(l.unit_price)}</td><td>${esc(l.subtotal)}</td></tr>`).join("") +
+    '</tbody></table>' : '<div class="empty">暂无价格明细</div>';
+  const anchorTag = data.anchor_status === "anchored"
+    ? `<span class="tag anchored">已按报关金额核对（人民币 ¥${esc(data.declared_anchor_cny)}）</span>`
+    : `<span class="tag pending">${esc(data.anchor_note || "待报关")}</span>`;
+  return table + `<div style="margin-top:10px">${anchorTag}</div>`;
+}
+function orderCard(o){
+  const p = progress(o.status);
+  const el = document.createElement("section");
+  el.className = "order";
+  el.innerHTML = `
+    <div class="head" data-order="${esc(o.order_no)}">
+      <div><div class="order-no">${esc(o.order_no)}</div><div class="sub">${esc(o.product_name_cn || o.product_name || "—")}</div>
+      <span class="badge">${esc(o.status_text || o.status || "—")}</span></div>
+    </div>
+    <div class="steps">${[1,2,3,4].map(i => `<div class="step ${i <= p ? "on" : ""}"></div>`).join("")}</div>
+    <div class="meta">
+      <div><div class="label">数量</div><div class="val">${esc(o.total_qty || "—")}</div></div>
+      <div><div class="label">柜型</div><div class="val">${esc(o.container_type || "—")}</div></div>
+      <div><div class="label">ETD</div><div class="val">${esc(fmt(o.etd))}</div></div>
+      <div><div class="label">交货日期</div><div class="val">${esc(fmt(o.delivery_date))}</div></div>
+      <div><div class="label">确认交货</div><div class="val">${esc(fmt(o.confirmed_delivery))}</div></div>
+    </div>
+    <div class="detail" data-detail="${esc(o.order_no)}">
+      <div class="tabs">
+        <div class="tab active" data-tab="docs">单证清单</div>
+        <div class="tab" data-tab="missing">待补清单</div>
+        <div class="tab" data-tab="price">价格</div>
+      </div>
+      <div class="panel active" data-panel="docs"><div class="empty">点击展开加载…</div></div>
+      <div class="panel" data-panel="missing"></div>
+      <div class="panel" data-panel="price"></div>
+    </div>`;
+  return el;
+}
+async function loadOrderDetail(orderNo, container){
+  const docsPanel = container.querySelector('[data-panel="docs"]');
+  try {
+    const docs = await call("docs", orderNo);
+    docsPanel.innerHTML = renderDocs(docs);
+    docsPanel.dataset.loaded = "1";
+  } catch(e) { docsPanel.innerHTML = `<div class="error">${esc(e.message)}</div>`; }
+}
+const RENDERERS = { docs: renderDocs, missing: renderMissing, price: renderPrice };
+async function loadPanel(kind, orderNo, container){
+  const panel = container.querySelector(`[data-panel="${kind}"]`);
+  if(panel.dataset.loaded) return;
+  panel.innerHTML = '<div class="empty">加载中…</div>';
+  try {
+    const data = await call(kind, orderNo);
+    panel.innerHTML = RENDERERS[kind](data);
+    panel.dataset.loaded = "1";
+  } catch(e) { panel.innerHTML = `<div class="error">${esc(e.message)}</div>`; }
+}
+async function main(){
+  const empty = document.getElementById("empty");
+  if(!token()){ empty.className = "empty error"; empty.textContent = "链接无效：缺少 token"; return; }
+  try {
+    const orders = await call("orders");
+    empty.style.display = orders.length ? "none" : "block";
+    empty.textContent = "暂无订单";
+    document.getElementById("scope-note").textContent = `共 ${orders.length} 个订单`;
+    const box = document.getElementById("orders");
+    orders.forEach(o => box.appendChild(orderCard(o)));
+    box.addEventListener("click", e => {
+      const head = e.target.closest("[data-order]");
+      if(head){
+        const orderNo = head.dataset.order;
+        const detail = head.closest(".order").querySelector(`[data-detail="${CSS.escape(orderNo)}"]`);
+        const wasOn = detail.classList.contains("on");
+        detail.classList.toggle("on");
+        if(!wasOn && !detail.dataset.loaded){ detail.dataset.loaded = "1"; loadOrderDetail(orderNo, detail); }
+        return;
+      }
+      const tab = e.target.closest("[data-tab]");
+      if(tab){
+        const detail = tab.closest(".detail");
+        const orderNo = detail.dataset.detail;
+        detail.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        detail.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+        tab.classList.add("active");
+        detail.querySelector(`[data-panel="${tab.dataset.tab}"]`).classList.add("active");
+        loadPanel(tab.dataset.tab, orderNo, detail);
+      }
+    });
+  } catch(e) {
+    empty.className = "empty error";
+    empty.textContent = e.message;
+  }
+}
+main();
+</script>
+</body>
+</html>
