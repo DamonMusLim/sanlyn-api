@@ -1,105 +1,58 @@
-// /api/db/kp.js — 工厂开票门户页(公开). 链接支持 ?o=订单号(初期无token) / ?c=短码 / ?t=hmac
-import crypto from "crypto";
-import { getPool, setCors } from "../db.js";
+// /api/db/kp.js — 通用协同短码入口(公开)。链接支持 ?o=订单号 / ?c=短码 / ?t=hmac
+//
+// 2026-07-23 修复：/kp?c=CODE 从设计上就是全系统通用短码入口（booking-collab.js 里 9 处
+// send-*-link 全都发这个格式），但本文件过去只会去查开票表 invoice_links，于是所有
+// 工厂/货代/客户/车队/报关的协同链接点开都是「无效的开票链接」——实测：协同中枢「发」
+// 按钮生成的链接 HTTP 200 但取数报错，token 在 magic_links 命中 1、invoice_links 命中 0。
+// 台账里 25 条生效链接 23 条从未被打开，根因就在这里。
+// 修法：先按 magic_links 的 recipient_role 分发到对应协同页(?token=)，查不到再回落原开票门户。
+import { setCors, getPool } from "../db.js";
+import crypto from "node:crypto";
 
-function rawToHash(raw) {
+// 角色 → 页面。映射照抄 booking-collab.js:handleMasterPreviewToken 的权威写法，不自创。
+// 各协同页统一读 ?token=（已逐个核实 collab-*-core.js / collab-portal.js）。
+const PAGE_BY_ROLE = {
+  factory_booking:    "collab-factory.html",
+  supplier_portal:    "collab-portal.html",
+  customer_booking:   "collab-customer.html",
+  broker_booking:     "collab-broker.html",
+  trucking_booking:   "collab-trucking.html",
+  shipper_booking:    "templates/invoice-collab-section.html",
+  customer_myportal:  "templates/customer-myportal.html",
+};
+
+function hashOf(raw) {
   return crypto.createHash("sha256").update(String(raw || "")).digest("hex");
 }
 
-function expiredHtml() {
-  return `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>链接已失效 · Sanlyn</title><style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#1e293b;font-family:-apple-system,"PingFang SC",sans-serif}.card{width:min(420px,calc(100vw - 32px));background:#fff;border-radius:12px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center}.title{font-size:18px;font-weight:800;margin-bottom:8px}.msg{font-size:14px;color:#64748b;line-height:1.7}</style></head><body><div class="card"><div class="title">链接已失效</div><div class="msg">请联系 Sanlyn 重新获取</div></div></body></html>`;
-}
-
-function setFwdCookie(res, token) {
-  var maxAge = 30 * 24 * 60 * 60;
-  var parts = [
-    "fwd_session=" + encodeURIComponent(token),
-    "Max-Age=" + maxAge,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-    "Secure",
-  ];
-  res.setHeader("Set-Cookie", parts.join("; "));
-}
-
-async function resolveCollabCode(req, res) {
-  var code = String((req.query && req.query.c) || "").trim();
-  if (!/^[A-Za-z0-9]{10}$/.test(code)) return false;
-  var pool = getPool();
-  var hash = rawToHash(code);
-  var linkRows = await pool.query(
-    `SELECT recipient_role
-      FROM magic_links
-     WHERE token_hash = $1
-       AND recipient_role IN ('factory_booking','customer_booking','supplier_portal','trucking_booking','broker_booking','customer_quote')
-       AND revoked_at IS NULL
-       AND (expires_at IS NULL OR expires_at > NOW())
-      LIMIT 1`,
-    [hash]
-  );
-  if (!linkRows.rows.length) return false;
-  var role = linkRows.rows[0].recipient_role;
-  var page = role === "factory_booking"
-    ? "collab-factory.html"
-    : role === "customer_booking"
-      ? "collab-customer.html"
-      : role === "customer_quote"
-        ? "collab-quote.html"
-        : "collab-portal.html";
-  res.status(302).setHeader("Location", "/public/" + page + "?token=" + encodeURIComponent(code));
-  res.end();
-  return true;
-}
-
-async function resolveForwarderCode(req, res) {
-  var code = String((req.query && req.query.c) || "").trim();
-  if (!/^[A-Za-z0-9]{10}$/.test(code)) return false;
-  var pool = getPool();
-  var hash = rawToHash(code);
-  var linkRows = await pool.query(
-    `SELECT meta
-      FROM magic_links
-     WHERE token_hash = $1
-       AND recipient_role = 'fwd_portal'
-       AND revoked_at IS NULL
-       AND (expires_at IS NULL OR expires_at > NOW())
-      LIMIT 1`,
-    [hash]
-  );
-  if (!linkRows.rows.length) {
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.status(410).send(expiredHtml());
+// 命中 magic_links 就跳对应页；没有对应页的角色给人话提示，别再甩"无效的开票链接"误导。
+async function dispatch(req, res) {
+  const code = req.query?.c;
+  if (!code) return false;
+  let row;
+  try {
+    const r = await getPool().query(
+      `SELECT recipient_role FROM magic_links
+        WHERE token_hash = $1 AND expires_at > NOW()
+          AND revoked_at IS NULL AND COALESCE(revoked, false) = false
+        LIMIT 1`, [hashOf(code)]);
+    row = r.rows[0];
+  } catch (e) {
+    console.warn("[kp] magic_links lookup failed:", e.message);
+    return false; // 查库出错就回落老逻辑，别把开票门户也带崩
+  }
+  if (!row) return false; // 不是协同链接 → 回落开票门户(invoice_links/?o=/?t=)
+  const page = PAGE_BY_ROLE[row.recipient_role];
+  if (page) {
+    res.writeHead(302, { Location: `/public/${page}?token=${encodeURIComponent(code)}` });
+    res.end();
     return true;
   }
-  var meta = linkRows.rows[0].meta || {};
-  var companyId = Number(meta.company_id);
-  if (!Number.isInteger(companyId) || companyId <= 0) {
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.status(410).send(expiredHtml());
-    return true;
-  }
-  var tokenRows = await pool.query(
-    `SELECT code, secret
-       FROM forwarder_portal_tokens
-      WHERE company_id = $1
-        AND (expires_at IS NULL OR expires_at > NOW())
-      ORDER BY created_at DESC
-      LIMIT 1`,
-    [companyId]
-  );
-  if (!tokenRows.rows.length) {
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.status(410).send(expiredHtml());
-    return true;
-  }
-  // P0根治: cookie 存高熵 secret(凭证), URL 只放 slug(标签)
-  var slug = tokenRows.rows[0].code;
-  var secret = tokenRows.rows[0].secret;
-  if (!secret) { res.setHeader("Content-Type","text/html; charset=utf-8"); res.status(410).send(expiredHtml()); return true; }
-  setFwdCookie(res, secret);
-  res.status(302).setHeader("Location", "/forwarder-quote/" + encodeURIComponent(slug));
-  res.end();
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.status(200).send(`<!DOCTYPE html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<div style="font-family:-apple-system,'PingFang SC',sans-serif;max-width:520px;margin:60px auto;padding:24px;text-align:center;color:#334155">
+<div style="font-size:17px;font-weight:700;margin-bottom:8px">链接有效，但这类协同页还没上线</div>
+<div style="font-size:14px;color:#64748b">类型：${String(row.recipient_role).replace(/[<>&]/g, "")}<br>请联系 Sanlyn 对接人。</div></div>`);
   return true;
 }
 const HTML = `<!DOCTYPE html><html lang="zh"><head>
@@ -184,8 +137,7 @@ if(!QSTR){document.getElementById("app").innerHTML='<div class="card"><div class
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method === "GET" && await resolveCollabCode(req, res)) return;
-  if (req.method === "GET" && await resolveForwarderCode(req, res)) return;
+  if (await dispatch(req, res)) return;   // 协同链接 → 跳对应协同页
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  return res.status(200).send(HTML);
+  return res.status(200).send(HTML);      // 其余 → 原开票门户，行为不变
 }
