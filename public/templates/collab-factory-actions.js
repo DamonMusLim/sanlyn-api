@@ -5,6 +5,7 @@ async function boot(){
   if(!d.valid||d.role!=='factory_booking'){ show('stateDead'); return; }
   const s=d.booking_sheet||{};
   renderBillingEntry(d.billing||{});
+  renderMissingPrompt(s.collab_summary);
   if(s.scope_missing){
     $('stateDead').innerHTML='<div style="text-align:center;padding:48px 22px;"><div style="font-size:44px;">🔒</div><div style="font-size:15px;font-weight:800;color:#92400e;margin-top:12px;">此链接未限定贵厂范围</div><div style="font-size:12px;color:#6b7280;margin-top:10px;line-height:1.7;">为防止信息串单，本链接已停用。<br>请联系 Sanlyn 重新发送专属链接。</div></div>';
     show('stateDead'); return;

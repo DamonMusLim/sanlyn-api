@@ -1,0 +1,127 @@
+<!--
+  public/templates/collab-link-center.html — 海运协同链接台账。仅内部。
+  受众隔离：本页只管【海运/出口协同】链接。供应链/包材那条线的分享短码在 share-center.html，
+  两条线各是各的页面，不混（2026-07-23 Damon 指正）。
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>海运协同链接台账</title>
+<style>
+:root{--bg:#f6f7f9;--text:#172033;--muted:#667085;--line:#d8dee8;--head:#eef2f7;--blue:#175cd3;--bad:#b42318;--ok:#15803d;--warn:#b54708}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:20px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+h1{font-size:21px;margin:0 0 4px}.sub{color:var(--muted);font-size:12px}
+button{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:6px;padding:7px 13px;font-weight:700;cursor:pointer;font-size:13px;font-family:inherit}
+button:hover{border-color:var(--blue)}
+button.danger{color:var(--bad);border-color:#f3c9c4}
+.stats{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;font-size:12.5px;color:var(--muted)}
+.stats b{color:var(--text);font-variant-numeric:tabular-nums;font-size:15px}
+.grp{background:#fff;border:1px solid var(--line);border-radius:8px;margin-bottom:12px;overflow:hidden}
+.grp-head{display:flex;justify-content:space-between;padding:10px 14px;background:var(--head);font-weight:700;border-bottom:1px solid var(--line)}
+.grp-head .n{color:var(--muted);font-weight:400}
+.table-wrap{overflow-x:auto}table{width:100%;min-width:900px;border-collapse:collapse}
+th{text-align:left;padding:8px 14px;color:var(--muted);font-size:11.5px;font-weight:700;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700}
+.st-active{background:#e7f6ec;color:var(--ok)}.st-expired{background:#eef1f5;color:var(--muted)}.st-revoked{background:#fdecea;color:var(--bad)}
+.aud{font-weight:700}
+.scope{color:var(--muted);font-size:12px;max-width:430px;word-break:break-all}
+.hits{color:var(--ok);font-weight:700;font-variant-numeric:tabular-nums}
+.hits0{color:var(--bad);font-weight:700}
+.warnrow{background:#fffaf0}
+.empty{background:#fff;border:1px solid var(--line);border-radius:8px;padding:40px;text-align:center;color:var(--muted)}
+.empty.error{color:var(--bad)}
+.tip{background:#fff8ec;border:1px solid #f2dcb3;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12.5px;color:var(--warn)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1d23;color:#fff;border-radius:8px;padding:10px 18px;font-weight:700;display:none;z-index:9}
+@media(max-width:640px){.wrap{padding:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>🚢 海运协同链接台账</h1>
+      <div class="sub">发给工厂 / 货代 / 车队 / 报关行 / 保险 / 客户的协同链接 · 看范围 / 一键作废 · 仅内部</div></div>
+    <div><button id="refresh">刷新</button></div>
+  </div>
+  <div id="tip"></div>
+  <div class="stats" id="stats"></div>
+  <div id="list"><div class="empty">加载中...</div></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const api = "/api/db/collab-link-center";
+function token(){
+  const cand = [localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
+function authHeaders(j){ const t=token(), h=j?{"Content-Type":"application/json"}:{}; if(t) h.Authorization="Bearer "+t; return h; }
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function dt(v){ if(!v) return "—"; const d=new Date(v); return (d.getMonth()+1)+"/"+d.getDate(); }
+function toast(m){ const t=document.getElementById("toast"); t.textContent=m; t.style.display="block"; setTimeout(()=>t.style.display="none",1800); }
+const STATE = { active:["有效","st-active"], expired:["已过期","st-expired"], revoked:["已作废","st-revoked"] };
+function needLogin(msg){
+  document.getElementById("stats").innerHTML = "";
+  document.getElementById("list").innerHTML =
+    `<div class="empty"><div style="font-size:15px;font-weight:700;color:var(--text)">${esc(msg)}</div>
+     <div style="margin:10px 0 14px">本页只对内部账号开放，先登录后台再回到这里。</div>
+     <button id="go-login">去登录后台</button></div>`;
+}
+function row(l){
+  const [sl, sc] = STATE[l.state] || [l.state,""];
+  return `<tr class="${l.never_opened?"warnrow":""}">
+    <td class="aud">${esc(l.audience)}</td>
+    <td><strong>${esc(l.role_cn)}</strong><div class="sub">${esc(l.role)}</div></td>
+    <td class="scope">${esc(l.scope)}</td>
+    <td><span class="badge ${sc}">${esc(sl)}</span></td>
+    <td class="${l.hits?"hits":"hits0"}">${l.hits}${l.never_opened?" ⚠从未打开":""}</td>
+    <td>${dt(l.last_hit_at)}</td><td>${dt(l.created_at)}</td><td>${dt(l.expires_at)}</td>
+    <td>${l.state==="active"?`<button class="danger" data-revoke="${l.id}">作废</button>`:"—"}</td></tr>`;
+}
+function render(links){
+  const act = links.filter(l=>l.state==="active");
+  const dead = links.filter(l=>l.state!=="active").slice(0,60);
+  const never = act.filter(l=>l.never_opened).length;
+  document.getElementById("stats").innerHTML =
+    `<span>生效中 <b>${act.length}</b></span><span>从未被打开 <b style="color:var(--bad)">${never}</b></span>`+
+    `<span>已失效/作废 <b>${links.length-act.length}</b></span>`;
+  document.getElementById("tip").innerHTML = never
+    ? `<div class="tip">⚠ ${never} 条生效链接从未被人打开过——多半是链接本身发不出去或指向了失效地址，值得查。</div>` : "";
+  const head = `<thead><tr><th>给谁</th><th>类型</th><th>能看到什么</th><th>状态</th><th>打开次数</th><th>最后打开</th><th>发出</th><th>过期</th><th>操作</th></tr></thead>`;
+  const grp = (rows,label)=> rows.length ? `<div class="grp"><div class="grp-head"><span>${label}</span><span class="n">${rows.length} 条</span></div>
+    <div class="table-wrap"><table>${head}<tbody>${rows.map(row).join("")}</tbody></table></div></div>` : "";
+  document.getElementById("list").innerHTML =
+    (grp(act,"✅ 生效中") + grp(dead,"🗄 已失效 / 已作废（近 60 条）")) || '<div class="empty">还没有协同链接</div>';
+}
+async function load(){
+  if(!token()) return needLogin("需要先登录后台");
+  document.getElementById("list").innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(api,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"加载失败");
+    render(r.links||[]);
+  }catch(e){
+    if(/Unauthorized|请先登录|internal only|Forbidden|权限不足/i.test(e.message)) return needLogin("登录已过期");
+    document.getElementById("list").innerHTML = `<div class="empty error">${esc(e.message)}</div>`;
+  }
+}
+document.addEventListener("click", async e=>{
+  const t = e.target;
+  if(t.id==="go-login"){ location.href="/data"; return; }
+  if(t.id==="refresh") return load();
+  if(t.dataset.revoke){
+    if(!confirm("作废后对方立即打不开，且无法恢复（只能重新签发）。确定？")) return;
+    const r = await fetch(api+"?action=revoke",{method:"PATCH",credentials:"include",headers:authHeaders(true),
+      body:JSON.stringify({id:Number(t.dataset.revoke)})}).then(x=>x.json());
+    if(r.success){ toast("已作废"); load(); } else alert(r.error||"失败");
+  }
+});
+load();
+</script>
+</body>
+</html>

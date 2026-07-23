@@ -28,22 +28,13 @@ th{background:var(--head);color:#344054;font-size:11.5px}tr:last-child td{border
 .hits0{color:#b42318;font-weight:700}.hits{color:var(--ok);font-weight:700}
 .empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1a1d23;color:#fff;border-radius:8px;padding:10px 18px;font-weight:700;display:none;z-index:9}
-.tabs{display:flex;gap:6px;margin-bottom:12px}
-.tab{border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:6px;padding:7px 14px;font-weight:700;cursor:pointer;font-size:13px}
-.tab.active{background:var(--blue);border-color:var(--blue);color:#fff}
-.scope{color:var(--muted);font-size:12px;max-width:420px;word-break:break-all}
-.warnrow{background:#fffaf0}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="top">
-    <div><h1>🔗 链接中心</h1><div class="sub" id="sub">所有对外分享短码 · 复制 / 撤销 / 重新生成 · 仅内部</div></div>
+    <div><h1>🔗 链接中心</h1><div class="sub">所有对外分享短码 · 复制 / 撤销 / 重新生成 · 仅内部</div></div>
     <div><button id="new-btn">＋ 生成新链接</button> <button id="refresh">刷新</button></div>
-  </div>
-  <div class="tabs">
-    <button class="tab active" data-tab="share">分享短码</button>
-    <button class="tab" data-tab="collab">协同链接台账</button>
   </div>
   <div id="list"><div class="empty">加载中...</div></div>
 </div>
@@ -94,78 +85,29 @@ function render(){
   }
   root.innerHTML = html || '<div class="empty">暂无</div>';
 }
-// ── 协同链接台账 ──────────────────────────────────────────────
-// 库里只存 token 的哈希，所以这里给不出链接原文——要重发只能重新签发。
-let COLLAB = [], TAB = "share";
-const CSTATE = { active:["有效","st-active"], expired:["已过期","st-expired"], revoked:["已作废","st-revoked"] };
-function crow(l){
-  const [sl, sc] = CSTATE[l.state] || [l.state,""];
-  const ops = l.state==="active" ? `<button class="danger" data-revoke-collab="${l.id}">作废</button>` : "—";
-  return `<tr class="${l.never_opened?"warnrow":""}">
-    <td><strong>${esc(l.role_cn)}</strong><div class="sub">${esc(l.role)}</div></td>
-    <td class="scope">${esc(l.scope)}</td>
-    <td><span class="badge ${sc}">${esc(sl)}</span></td>
-    <td class="${l.hits?"hits":"hits0"}">${l.hits}${l.never_opened?" ⚠从未打开":""}</td>
-    <td>${dt(l.last_hit_at)}</td>
-    <td>${dt(l.created_at)}</td>
-    <td>${dt(l.expires_at)}</td>
-    <td>${ops}</td></tr>`;
-}
-function renderCollab(){
-  const root = document.getElementById("list");
-  if(!COLLAB.length){ root.innerHTML = '<div class="empty">还没有协同链接</div>'; return; }
-  const act = COLLAB.filter(l=>l.state==="active");
-  const dead = COLLAB.filter(l=>l.state!=="active");
-  const never = act.filter(l=>l.never_opened).length;
-  const grp = (rows,label)=> rows.length ? `<div class="grp"><div class="grp-head"><span>${label}</span><span class="n">${rows.length} 条</span></div>
-    <div class="table-wrap"><table><thead><tr><th>类型</th><th>能看到什么</th><th>状态</th><th>打开次数</th><th>最后打开</th><th>发出</th><th>过期</th><th>操作</th></tr></thead>
-    <tbody>${rows.map(crow).join("")}</tbody></table></div></div>` : "";
-  root.innerHTML = grp(act, `✅ 生效中${never?`（其中 ${never} 条从未被打开 ⚠）`:""}`) + grp(dead.slice(0,60), "🗄 已失效 / 已作废（近 60 条）");
-}
-// 没登录/登录过期时给人话+入口，别甩裸 Unauthorized（Damon 07-23 实际踩到）
+// 没登录/过期给人话+入口，别甩裸 Unauthorized（Damon 07-23 实际踩到）
 function needLogin(msg){
   document.getElementById("list").innerHTML =
     `<div class="empty"><div style="font-size:15px;font-weight:700;color:var(--text)">${esc(msg)}</div>
-     <div style="margin:10px 0 14px">链接中心只对内部账号开放，先登录后台再回到本页。</div>
+     <div style="margin:10px 0 14px">本页只对内部账号开放，先登录后台再回到这里。</div>
      <button id="go-login">去登录后台</button></div>`;
 }
-function isAuthErr(e){ return /Unauthorized|请先登录|internal only|Forbidden|权限不足/i.test(String(e)); }
 async function load(){
+  if(!token()) return needLogin("需要先登录后台");
   const root = document.getElementById("list");
   root.innerHTML = '<div class="empty">加载中...</div>';
-  const sub = document.getElementById("sub");
-  if(!token()){ needLogin("需要先登录后台"); return; }
   try{
-    if(TAB==="collab"){
-      sub.textContent = "发给工厂/货代/车队/报关行/客户的协同链接 · 看范围 / 一键作废 · 库里只存哈希，给不出链接原文";
-      const r = await fetch(apiUrl+"?source=collab",{credentials:"include",headers:authHeaders()}).then(x=>x.json());
-      if(!r.success) throw new Error(r.error||"加载失败(需内部账号登录)");
-      COLLAB = r.links||[]; renderCollab(); return;
-    }
-    sub.textContent = "所有对外分享短码 · 复制 / 撤销 / 重新生成 · 仅内部";
     const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
     if(!r.success) throw new Error(r.error||"加载失败(需内部账号登录)");
     LINKS = r.links||[]; render();
   }catch(e){
-    if(isAuthErr(e.message)) return needLogin("登录已过期");
+    if(/Unauthorized|请先登录|internal only|Forbidden|权限不足/i.test(e.message)) return needLogin("登录已过期");
     root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`;
   }
 }
 document.addEventListener("click", async e=>{
   const t = e.target;
-  if(t.id==="go-login"){ location.href = "/data"; return; }
-  if(t.classList && t.classList.contains("tab")){
-    TAB = t.dataset.tab;
-    document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active", b.dataset.tab===TAB));
-    document.getElementById("new-btn").style.display = TAB==="collab" ? "none" : "";
-    return load();
-  }
-  if(t.dataset.revokeCollab){
-    if(!confirm("作废后对方立即打不开，且无法恢复（只能重新签发）。确定？")) return;
-    const r = await fetch(apiUrl+"?action=revoke-collab",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({id:Number(t.dataset.revokeCollab)})}).then(x=>x.json());
-    if(r.success){ toast("已作废"); load(); } else alert(r.error||"失败");
-    return;
-  }
+  if(t.id==="go-login"){ location.href="/data"; return; }
   if(t.id==="refresh") return load();
   if(t.id==="new-btn") return location.href = "/public/templates/share-link.html" + (location.search||"");
   if(t.dataset.copy){

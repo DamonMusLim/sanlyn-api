@@ -1,7 +1,7 @@
 // api/db/customs-ocr.js — 报关单 OCR 抽取管道
 // 报关单PDF(OSS) → pdftoppm → MiniMax-M3 → customs_declarations + customs_declaration_items
 // 退税/对账镜像真实报关单。范本: slip-ocr.js。2026-06-20
-// POST {doc_id}  或  {declaration_no}  [+ {dry_run:true} 只抽不存]
+// POST {doc_id}  或  {declaration_no}  默认只抽不存；必须 confirmed:true 才写库
 import { getPool, setCors } from "../db.js";
 import OSS from "ali-oss";
 import fs from "fs";
@@ -100,7 +100,7 @@ async function ocr(imgBytes) {
 }
 
 
-export async function runCustomsOcr(pool, { doc_id, declaration_no, dry_run = false, contract_no: bodyContractNo } = {}) {
+export async function runCustomsOcr(pool, { doc_id, declaration_no, dry_run, confirmed = false, contract_no: bodyContractNo } = {}) {
   const q = doc_id
     ? await pool.query(`SELECT id, doc_id, url, name, contract_no FROM document_uploads WHERE doc_id=$1 AND doc_type IN ('customs_decl','customs_declaration') ORDER BY uploaded_at DESC LIMIT 1`, [doc_id])
     : await pool.query(`SELECT id, doc_id, url, name, contract_no FROM document_uploads WHERE (name ILIKE '%'||$1||'%' OR url ILIKE '%'||$1||'%') AND doc_type IN ('customs_decl','customs_declaration') ORDER BY uploaded_at DESC LIMIT 1`, [declaration_no || ""]);
@@ -124,7 +124,27 @@ export async function runCustomsOcr(pool, { doc_id, declaration_no, dry_run = fa
   try { jpeg = await pdfToJpeg(tmpPdf); } finally { try { fs.unlinkSync(tmpPdf); } catch {} }
 
   const parsed = await ocr(jpeg);
-  if (dry_run) return { success: true, dry_run: true, doc: doc.doc_id, parsed };
+  const shouldWrite = confirmed === true && dry_run !== true;
+  if (!shouldWrite) {
+    const currency = s(parsed.total_currency).toUpperCase();
+    const isCny = ["CNY", "RMB", "人民币"].includes(currency);
+    const cny = num(parsed.total_amount);
+    return {
+      success: true,
+      dry_run: true,
+      requires_confirmation: true,
+      doc: doc.doc_id,
+      contract_no: contractNo,
+      planned_writes: {
+        document_uploads_ocr_status: doc.id,
+        finance_export_rebates_raw: contractNo || null,
+        finance_export_rebates_fob_cny: contractNo && isCny && cny != null ? cny : null,
+        customs_declarations: shippingPlanId ? { shipping_plan_id: shippingPlanId } : null,
+        customs_declaration_items: shippingPlanId ? (parsed.items || []).length : 0,
+      },
+      parsed,
+    };
+  }
 
   const client = await pool.connect();
   try {

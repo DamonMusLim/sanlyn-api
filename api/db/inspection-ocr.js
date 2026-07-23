@@ -3,7 +3,7 @@
 // 范本: customs-ocr.js。2026-07-05。qwen 不用,统一 MiniMax-M3。
 // POST {doc_id}                              从 document_uploads 取(doc_type ciq_inspection/inspection)
 //   或 {image_url} / {pdf_url}               直接给图/PDF(测试或外部)
-//   [+ {contract_no} {order_no} {dry_run:true}]
+//   [+ {contract_no} {order_no}] 默认只抽不存；必须 confirmed:true 才写库
 import { getPool, setCors } from "../db.js";
 import OSS from "ali-oss";
 import fs from "fs";
@@ -135,14 +135,38 @@ async function resolveImage(pool, { doc_id, image_url, pdf_url }) {
 }
 
 export async function runInspectionOcr(pool, body = {}) {
-  const { dry_run = false } = body;
+  const { dry_run, confirmed = false } = body;
   const img = await resolveImage(pool, body);
   const parsed = await ocr(img.bytes, img.media);
-  if (dry_run) return { success: true, dry_run: true, source: img.source, parsed };
 
   // 定位订单: 合同号优先(商检 contract_no) → body → doc.contract_no
   const contractNo = s(parsed.contract_no) || s(body.contract_no) || s(img.docRow && img.docRow.contract_no);
   const orderNo = s(body.order_no) || s(img.docRow && img.docRow.doc_id);
+
+  let previewOrder = null;
+  if (orderNo) { const r = await pool.query(`SELECT id, order_no, contract_no, factory_code FROM orders WHERE order_no=$1 LIMIT 1`, [orderNo]); previewOrder = r.rows[0] || null; }
+  if (!previewOrder && contractNo) { const r = await pool.query(`SELECT id, order_no, contract_no, factory_code FROM orders WHERE contract_no=$1 ORDER BY id LIMIT 1`, [contractNo]); previewOrder = r.rows[0] || null; }
+
+  const prodRegPreview = s(parsed.producer_reg_no).split(/[\/／]/)[0].trim();
+  const shouldWrite = confirmed === true && dry_run !== true;
+  if (!shouldWrite) {
+    return {
+      success: true,
+      dry_run: true,
+      requires_confirmation: true,
+      source: img.source,
+      contract_no: contractNo,
+      matched_order: previewOrder ? previewOrder.order_no : null,
+      planned_writes: {
+        companies_registration_no: previewOrder && previewOrder.factory_code && prodRegPreview
+          ? { code: previewOrder.factory_code, registration_no: prodRegPreview, only_if_empty: true }
+          : null,
+        inspection_request_sheets: previewOrder ? { order_id: previewOrder.id, order_no: previewOrder.order_no } : null,
+        document_uploads_ocr_status: img.docRow ? img.docRow.id : null,
+      },
+      parsed,
+    };
+  }
 
   const client = await pool.connect();
   try {
@@ -150,8 +174,7 @@ export async function runInspectionOcr(pool, body = {}) {
 
     // 找订单(拿 order_id + factory_code 用于回填)
     let ord = null;
-    if (orderNo) { const r = await client.query(`SELECT id, order_no, contract_no, factory_code FROM orders WHERE order_no=$1 LIMIT 1`, [orderNo]); ord = r.rows[0] || null; }
-    if (!ord && contractNo) { const r = await client.query(`SELECT id, order_no, contract_no, factory_code FROM orders WHERE contract_no=$1 ORDER BY id LIMIT 1`, [contractNo]); ord = r.rows[0] || null; }
+    ord = previewOrder;
 
     const certNames = Array.isArray(parsed.certs) ? parsed.certs.map(c => s(c.name)).filter(Boolean) : [];
 

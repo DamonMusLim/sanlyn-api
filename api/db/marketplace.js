@@ -26,6 +26,22 @@ function podFamily(p) {
   return s;
 }
 
+function toISODate(v) {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+// ports 表 MYJHB/MYPGU 是同一码头两条记录——牌价层先折叠，根治归港口命名项目
+const POD_FOLD = { "johor (pasir gudang)": "Pasir Gudang" };
+function normalizePodName(pod) {
+  const t = String(pod || "").trim();
+  return POD_FOLD[t.toLowerCase()] || t;
+}
+// 2026-07-23：同一份已知重复主数据在 port_id 层的折叠（MYJHB id=129 → 并入 MYPGU id=227 的桶）。
+// 这条只用于"确认是同一码头的重复 ports 记录"这一具体案例，绝不能用来合并 Westport(131)/Northport(132)
+// 这种真实不同码头——那两个 code 不在这张表里，永远各自独立分组。
+const POD_PORT_ID_FOLD = { 129: 227 };
 function podMeta(pod) {
   const f = podFamily(pod);
   const isMy = MY_FAMILIES.has(f);
@@ -58,6 +74,10 @@ export default async function handler(req, res) {
   const viewAsCompany = isInternal && companyOverride ? companyOverride : null;
   if (viewAsCompany) viewerCodes = [viewAsCompany];
 
+  // 公开牌价（未登录）：/api/public/marketplace 挂同一 handler。卖价牌不是秘密（下方 anti-clutter
+  // 注释同口径），无身份=不做订单史过滤直接全量在售航线；本 handler 本来就只吐 customer_* 卖价。
+  const isPublic = !req.user && String(req.path || req.url || "").startsWith("/api/public/marketplace");
+
   if (type === "ddp") {
     // No ddp_rates table yet — real empty state, never mock.
     return res.status(200).json({ ok: true, source: "empty", type, routes: [] });
@@ -72,7 +92,7 @@ export default async function handler(req, res) {
 
     // 1. Viewer's historical POD families (skip for unscoped internal view).
     let allowedFamilies = null; // null = no lane filter
-    if (!isInternal || viewAsCompany) {
+    if (!isPublic && (!isInternal || viewAsCompany)) {
       if (viewerCodes.length === 0) {
         // Fail-closed: external viewer with no scope sees nothing.
         return res.status(200).json({ ok: true, source: "db", type, routes: [] });
@@ -90,22 +110,31 @@ export default async function handler(req, res) {
 
     // 2. Active, non-expired rate cards. customer_* sell prices ONLY —
     //    hq40/gp20 (采购成本) must never appear in this endpoint.
+    // 2026-07-23 港口规范化补齐：join ports 拿 pod_port_id 的 canonical_name，
+    // 分组优先按 pod_port_id（同一真实港口的不同写法归一条 lane）。
     const rates = await pool.query(`
-      SELECT id, pol, pod, carrier, route_code, via, transit_days,
-             next_sailing, free_days_base, free_days_ext, freetime,
-             customer_hq40, customer_gp20
-      FROM freight_rates
-      WHERE status = 'active'
-        AND (next_sailing IS NULL
-             OR next_sailing::date >= (now() AT TIME ZONE 'Asia/Singapore')::date)
-      ORDER BY pol, pod, next_sailing NULLS LAST, id DESC
+      SELECT r.id, r.pol, r.pod, r.pod_port_id, r.pol_port_id, r.carrier, r.route_code, r.via, r.transit_days,
+             r.next_sailing, r.free_days_base, r.free_days_ext, r.freetime,
+             r.customer_hq40, r.customer_gp20, r.valid_from, r.created_at,
+             p.name_en AS pod_canonical_name
+      FROM freight_rates r
+      LEFT JOIN ports p ON p.id = r.pod_port_id
+      WHERE r.status = 'active'
+        AND (r.next_sailing IS NULL
+             OR r.next_sailing::date >= (now() AT TIME ZONE 'Asia/Singapore')::date)
+      ORDER BY r.pol, r.pod, r.next_sailing NULLS LAST, r.id DESC
     `);
 
     // 3. Group by POL + POD into lane cards.
+    //    pod_port_id 存在 → 用 port_id 分组(同港口不同写法归一);
+    //    NULL(未解析) → 回退旧的文本折叠(POD_FOLD band-aid 兜底)。
     const lanes = new Map();
     for (const r of rates.rows) {
       if (allowedFamilies && !allowedFamilies.has(podFamily(r.pod))) continue;
-      const key = `${r.pol}→${r.pod}`;
+      r.pod = normalizePodName(r.pod_canonical_name || r.pod); // 港口规范名优先，仍过 POD_FOLD 兜底折叠已知重复记录
+      const foldedPortId = r.pod_port_id != null ? (POD_PORT_ID_FOLD[r.pod_port_id] || r.pod_port_id) : null;
+      const podKey = foldedPortId != null ? `pid:${foldedPortId}` : r.pod;
+      const key = `${r.pol}→${podKey}`;
       if (!lanes.has(key)) lanes.set(key, []);
       lanes.get(key).push(r);
     }
@@ -118,7 +147,8 @@ export default async function handler(req, res) {
         (r.customer_gp20 != null && Number(r.customer_gp20) > 0));
       const byCarrier = new Map();
       for (const r of priced) {
-        const k = r.carrier || "—";
+        if (!r.carrier || !String(r.carrier).trim()) continue; // 无船司的行不上牌
+        const k = r.carrier;
         const cmp = r.customer_hq40 != null ? Number(r.customer_hq40) : Number(r.customer_gp20) * 2;
         const cur = byCarrier.get(k);
         if (!cur || cmp < cur._cmp) byCarrier.set(k, Object.assign({}, r, { _cmp: cmp }));
@@ -158,6 +188,12 @@ export default async function handler(req, res) {
             ? (r.free_days_ext ? `${r.free_days_base}+${r.free_days_ext}` : String(r.free_days_base))
             : (r.freetime != null ? String(r.freetime) : null),
           priceGrid: grid,
+          // pg 驱动吐 Date 对象，必须 toISOString 取日期，String().slice 会得 "Mon Jul 13" 再 parse 成 2001 年
+          rateDate: toISODate(r.valid_from) || toISODate(r.created_at),
+          historical: (() => {
+            const d = toISODate(r.valid_from) || toISODate(r.created_at);
+            return !!d && (Date.now() - new Date(d + "T00:00:00Z").getTime()) > 30 * 864e5;
+          })(),
         };
       });
 

@@ -48,7 +48,7 @@ async function ensureTable(pool) {
 }
 
 async function validateToken(pool, raw) {
-  if (!raw || String(raw).length < 16) return null;
+  if (!raw || String(raw).length < 10) return null;
   const r = await pool.query(
     `SELECT recipient_role, meta
        FROM magic_links

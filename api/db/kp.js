@@ -23,6 +23,35 @@ function setFwdCookie(res, token) {
   res.setHeader("Set-Cookie", parts.join("; "));
 }
 
+async function resolveCollabCode(req, res) {
+  var code = String((req.query && req.query.c) || "").trim();
+  if (!/^[A-Za-z0-9]{10}$/.test(code)) return false;
+  var pool = getPool();
+  var hash = rawToHash(code);
+  var linkRows = await pool.query(
+    `SELECT recipient_role
+      FROM magic_links
+     WHERE token_hash = $1
+       AND recipient_role IN ('factory_booking','customer_booking','supplier_portal','trucking_booking','broker_booking','customer_quote')
+       AND revoked_at IS NULL
+       AND (expires_at IS NULL OR expires_at > NOW())
+      LIMIT 1`,
+    [hash]
+  );
+  if (!linkRows.rows.length) return false;
+  var role = linkRows.rows[0].recipient_role;
+  var page = role === "factory_booking"
+    ? "collab-factory.html"
+    : role === "customer_booking"
+      ? "collab-customer.html"
+      : role === "customer_quote"
+        ? "collab-quote.html"
+        : "collab-portal.html";
+  res.status(302).setHeader("Location", "/public/" + page + "?token=" + encodeURIComponent(code));
+  res.end();
+  return true;
+}
+
 async function resolveForwarderCode(req, res) {
   var code = String((req.query && req.query.c) || "").trim();
   if (!/^[A-Za-z0-9]{10}$/.test(code)) return false;
@@ -155,6 +184,7 @@ if(!QSTR){document.getElementById("app").innerHTML='<div class="card"><div class
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method === "GET" && await resolveCollabCode(req, res)) return;
   if (req.method === "GET" && await resolveForwarderCode(req, res)) return;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   return res.status(200).send(HTML);

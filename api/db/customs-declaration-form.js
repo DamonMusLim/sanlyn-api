@@ -132,6 +132,27 @@ async function loadCompany(pool, name) {
   }
 }
 
+async function loadCompanyByCode(pool, code) {
+  code = clean(code);
+  if (!code) return null;
+  var cols = await getColumns(pool, "companies");
+  if (!cols.size || !cols.has("code")) return null;
+
+  var select = ["name_cn", "name_en", "tax_id", "registration_no", "uscc"]
+    .filter(function (c) { return cols.has(c); });
+  if (!select.length) return null;
+
+  try {
+    var r = await pool.query(
+      `SELECT ${select.join(", ")} FROM companies WHERE code = $1 LIMIT 1`,
+      [code]
+    );
+    return r.rows[0] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function loadPlan(pool, shipmentId) {
   return await findPlanByRef(pool, shipmentId);
 }
@@ -365,6 +386,13 @@ function sumOrderMetric(orders, fields, rawFields) {
   }, 0);
 }
 
+function hasExternalOrder(orders) {
+  return orders.some(function (o) {
+    var raw = parseRaw(o.raw);
+    return clean(o.export_mode || raw.export_mode || raw.exportMode).toLowerCase() === "external";
+  });
+}
+
 export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   opts = opts || {};
   var plan = await loadPlan(pool, shipmentId);
@@ -381,11 +409,16 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var orderIds = orders.map(function (o) { return Number(o.id); }).filter(Boolean);
   var lines = await loadLines(pool, orderIds);
 
+  var isExternal = hasExternalOrder(orders);
   var issuer = clean(firstOrderValue(orders, "issuing_company", "issuingCompany"));
-  var company = await loadCompany(pool, issuer);
-  var shipper = sellerLabel(issuer, company);
+  var ownerCode = firstOrderValue(orders, "company_code", "companyCode");
+  var ownerName = firstOrderValue(orders, "company_name_cn", "companyNameCN") || firstOrderValue(orders, "company_name_en", "companyNameEN");
+  var company = isExternal ? (await loadCompanyByCode(pool, ownerCode) || await loadCompany(pool, ownerName)) : await loadCompany(pool, issuer);
+  var shipper = isExternal ? sellerLabel(ownerName, company) : sellerLabel(issuer, company);
 
-  var customer = firstOrderValue(orders, "customer", "customer");
+  var customer = isExternal
+    ? firstOrderValue(orders, "consignee", "consignee") || firstOrderValue(orders, "customer", "customer")
+    : firstOrderValue(orders, "customer", "customer");
   // 合同协议号用我们的 FS 号(内部号),优先取 FS 开头的合同号;都没有才退回原始 contract_no
   var contractNo = !planContracts.legacy && planContracts.goodsCnyNo ? planContracts.goodsCnyNo : (function () {
     var fallback = "";

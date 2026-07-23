@@ -10,6 +10,17 @@ function openBillingInvoice(){
   if(!window._billingToken) return;
   window.open('/public/invoice-confirm-preview.html?token='+encodeURIComponent(window._billingToken), '_blank', 'noopener');
 }
+function renderMissingPrompt(summary){
+  const list = (summary && Array.isArray(summary.missing_for_role)) ? summary.missing_for_role : [];
+  const old = document.getElementById('missingPrompt'); if(old) old.remove();
+  if(!list.length) return;
+  const box = document.createElement('div');
+  box.id = 'missingPrompt';
+  box.style.cssText = 'margin-bottom:14px;padding:10px 14px;background:#fffbeb;border:1.5px solid #fbbf24;border-radius:8px;color:#92400e;font-size:12px;font-weight:700;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;';
+  box.innerHTML = '<span>待填</span>' + list.map(x=>'<span style="background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;padding:2px 9px;">'+esc(x.label||x.field)+'</span>').join('');
+  const shell = document.querySelector('.shell');
+  if(shell) shell.insertBefore(box, shell.firstChild);
+}
 function renderBillingEntry(billing){
   const box=$('priceBox');
   if(!box) return;

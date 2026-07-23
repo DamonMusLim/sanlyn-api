@@ -6,6 +6,7 @@ async function boot(){
   sheet = d.booking_sheet || {};
   window._billing = d.billing || {};
   window.__fp = d.factory_progress || null;
+  renderMissingPrompt(sheet.collab_summary);
   sailings = Array.isArray(sheet.sailings)?sheet.sailings:[];
   confirmed = !!sheet.customer_submitted;
 

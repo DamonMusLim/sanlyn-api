@@ -27,6 +27,48 @@ function genRaw() {
   return crypto.randomBytes(24).toString("hex"); // 48 hex chars
 }
 
+function buildSummary(sheet, role, portalScope) {
+  const missing = { factory: [], customer: [], ocean: [], truck: [], customs: [] };
+  const has = v => !(v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length));
+  if (!has(sheet.factory_cargo_ready)) missing.factory.push({ field: "factory_cargo_ready", label: "货好日期" });
+  if (!has(sheet.container_type)) missing.factory.push({ field: "container_type", label: "柜型" });
+  if (!has(sheet.freight_term)) missing.factory.push({ field: "freight_term", label: "交易条款" });
+  const doneCtns = (sheet.containers_detail || []).filter(c => c && c.loading_done).length;
+  const needCtns = Math.max(Number(sheet.container_qty) || 0, (sheet.containers_detail || []).length);
+  if (!doneCtns && needCtns) missing.factory.push({ field: "loading_done", label: "装柜完成确认" });
+
+  if (!sheet.customer_submitted && !(sheet.so_no || sheet.bl_no)) missing.customer.push({ field: "selected_sailing", label: "确认订舱航班" });
+  if (!has(sheet.freight_term)) missing.customer.push({ field: "freight_term", label: "确认交易条款" });
+  if (sheet.bl_no && !sheet.bl_draft_status) missing.customer.push({ field: "bl_draft_status", label: "确认 BL 草稿" });
+
+  if (!has(sheet.so_no)) missing.ocean.push({ field: "so_no", label: "SO / 入货通知" });
+  if (!has(sheet.etd)) missing.ocean.push({ field: "etd", label: "ETD 船期" });
+  if (!has(sheet.bl_no)) missing.ocean.push({ field: "bl_no", label: "提单号 / BL" });
+
+  const vehicles = sheet.trucking_detail && Array.isArray(sheet.trucking_detail.vehicles) ? sheet.trucking_detail.vehicles : [];
+  const hasTruck = vehicles.some(v => v && (v.plate || v.trailer_plate) && (v.driver_phone || v.driver));
+  if (!hasTruck) missing.truck.push({ field: "vehicles", label: "车牌 / 司机 / 提箱时间" });
+  if ((sheet.containers_detail || []).some(c => c && !c.vgm_weight_kg)) missing.truck.push({ field: "vgm", label: "VGM / 过磅重" });
+
+  const uploads = Array.isArray(sheet.collab_uploads) ? sheet.collab_uploads : [];
+  if (!uploads.some(u => /报关单|放行|customs/i.test(u && u.filename || ""))) missing.customs.push({ field: "customs_doc", label: "报关单 / 放行回传" });
+  if (!uploads.some(u => /检疫|植检|动检|quarantine|ciq/i.test(u && u.filename || "")) && sheet.has_quarantine) missing.customs.push({ field: "quarantine", label: "检疫报告" });
+
+  let keys = [];
+  if (role === "factory_booking") keys = ["factory"];
+  else if (role === "customer_booking") keys = ["customer"];
+  else if (role === "supplier_portal") keys = (portalScope && portalScope.segments || ["ocean", "truck", "customs"]);
+  else if (role === "trucking_booking") keys = ["truck"];
+  else if (role === "broker_booking") keys = ["customs"];
+  const own = keys.flatMap(k => missing[k] || []);
+  return {
+    missing_by_party: missing,
+    missing_for_role: own,
+    missing_count: own.length,
+    next_action: own.length ? "pending_input" : "waiting_other_party",
+  };
+}
+
 // ── GET /validate?token=<raw> ──────────────────────────────────
 async function handleCustomsDocStatus(req, res, pool) {
   if (!requireAuth(req, res)) return;
@@ -79,9 +121,49 @@ async function handleCustomsDocStatus(req, res, pool) {
   });
 }
 
+function isTradeExternalCompany(row) {
+  if (!row) return false;
+  const type = String(row.type || row.company_type || "").toLowerCase();
+  const rel = String(row.relationship_type || "").toLowerCase();
+  return type === "customer" && rel === "partner";
+}
+
+async function inferSupplierPortalFieldProfile(pool, meta) {
+  if (meta.field_profile) return meta.field_profile;
+  const companyId = parseInt(meta.company_id, 10);
+  const label = String(meta.company_label || "").trim();
+  if (!companyId && !label) return null;
+  try {
+    const params = [];
+    const where = [];
+    if (companyId) {
+      params.push(companyId);
+      where.push(`id = $${params.length}`);
+    }
+    if (label) {
+      params.push(label);
+      where.push(`name_cn = $${params.length}`);
+      where.push(`name_en = $${params.length}`);
+      where.push(`factory_name = $${params.length}`);
+    }
+    const { rows } = await pool.query(
+      `SELECT id, code, name_cn, name_en, type, company_type, relationship_type
+         FROM companies
+        WHERE ${where.join(" OR ")}
+        ORDER BY id ASC
+        LIMIT 1`,
+      params
+    );
+    return isTradeExternalCompany(rows[0]) ? "trade_external" : null;
+  } catch (e) {
+    console.warn("[booking-collab] infer trade_external failed:", e.message);
+    return null;
+  }
+}
+
 async function handleValidate(req, res, pool) {
   const raw = req.query && req.query.token;
-  if (!raw || raw.length < 16)
+  if (!raw || raw.length < 10)
     return res.status(400).json({ valid: false, error: "token 缺失" });
 
   const hash = rawToHash(raw);
@@ -89,7 +171,7 @@ async function handleValidate(req, res, pool) {
     `SELECT recipient_role, meta, expires_at
        FROM magic_links
       WHERE token_hash = $1
-        AND recipient_role IN ('factory_booking','customer_booking','trucking_booking','broker_booking','supplier_portal','shipper_booking')
+        AND recipient_role IN ('factory_booking','customer_booking','trucking_booking','broker_booking','supplier_portal','shipper_booking','customer_quote')
         AND expires_at > NOW()
         AND revoked_at IS NULL
       LIMIT 1`,
@@ -100,9 +182,16 @@ async function handleValidate(req, res, pool) {
 
   const { recipient_role: role, meta: rawMeta } = rows[0];
   const meta = (typeof rawMeta === "string" ? JSON.parse(rawMeta) : rawMeta) || {};
+  if (role === "customer_quote") {
+    return res.json({ valid: true, role, meta: { customer_company_id: meta.customer_company_id || null } });
+  }
+  if (role === "supplier_portal") {
+    const inferredProfile = await inferSupplierPortalFieldProfile(pool, meta);
+    if (inferredProfile) meta.field_profile = inferredProfile;
+  }
   const factoryScope = meta.factory_scope || null;
   const portalScope = role === "supplier_portal"
-    ? { segments: meta.segments || ["ocean","truck","customs"], company_label: meta.company_label || null }
+    ? { segments: meta.segments || ["ocean","truck","customs"], company_label: meta.company_label || null, field_profile: meta.field_profile || null }
     : null;
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId)
@@ -246,6 +335,7 @@ async function handleValidate(req, res, pool) {
   return res.json({
     valid: true,
     role,
+    shipment_no: planRes.rows[0].shipment_no || null,
     is_preview: meta.preview === true,                                   // 内部预览 token（master-preview-token 生成）
     preview_godview: meta.preview === true && !(factoryScope && factoryScope.label), // 无 scope 的全貌预览
     factory_progress: await (async (roleX) => {
@@ -456,7 +546,7 @@ async function handleValidate(req, res, pool) {
       // 仅内部 field_profile=shipping_booking/upstream_downstream 可见。
       if (role === "supplier_portal") {
         const fprof = meta.field_profile || null;
-        const seesCustomer = fprof === "shipping_booking" || fprof === "upstream_downstream";
+        const seesCustomer = fprof === "shipping_booking" || fprof === "upstream_downstream" || fprof === "trade_external";
         if (!seesCustomer) {
           delete sheet.customer_name; delete sheet.customer_en;
           delete sheet.freight_term; delete sheet.plan_freight_term;
@@ -472,6 +562,7 @@ async function handleValidate(req, res, pool) {
         sheet.containers_live = []; sheet.containers_detail = []; sheet.factory_loading_done = {};
         sheet.sailings = []; sheet.scope_missing = true;
       }
+      sheet.collab_summary = buildSummary(sheet, role, portalScope);
       return sheet;
     })(),
     ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
@@ -755,12 +846,29 @@ function normOrderNo(v) {
   return String(v || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
+function customsVatRateForHs(hsCode) {
+  const hs = String(hsCode || "").replace(/[^0-9]/g, "");
+  if (!hs) return null;
+  return hs.startsWith("2309") ? 0.09 : 0.13;
+}
+
 // ── POST /factory-submit ──────────────────────────────────────
 async function handleFactorySubmit(req, res, pool) {
   const { token, cargo_ready_date, container_type, cargo_type, remarks } = req.body || {};
   // 工厂自填分柜明细（订单没挂/明细缺失时）：raw.factory_cargo 留痕，绝不覆盖订单真值
   let factoryCargo = Array.isArray(req.body.containers) ? req.body.containers : null;
   if (factoryCargo) {
+    for (const x of factoryCargo) {
+      const hasPrice = x && x.price != null && x.price !== "";
+      if (hasPrice && customsVatRateForHs(x.hs_code) == null) {
+        return res.status(400).json({
+          ok: false,
+          blocked: true,
+          error: "hs_code_required_for_customs_price",
+          message: "报关价需要按 HS 取税率；缺 HS 不得回落默认 13%",
+        });
+      }
+    }
     factoryCargo = factoryCargo.slice(0, 200).map(function (x) {
       return {
         container_seq: parseInt(x.container_seq, 10) || 1,
@@ -779,11 +887,13 @@ async function handleFactorySubmit(req, res, pool) {
           const taxed = x.price_type === "taxed";
           const untaxed = taxed ? +(pr / (1 + pts / 100)).toFixed(4) : pr;
           const invoicePrice = taxed ? pr : +(pr * (1 + pts / 100)).toFixed(4); // 工厂开票价=未含税×(1+点数)
+          const customsVatRate = customsVatRateForHs(x.hs_code);
           const qty = x.pkg_qty != null ? Number(x.pkg_qty) : null;
           return { price: pr, price_type: taxed ? "taxed" : "untaxed", tax_points: pts,
                    price_untaxed: untaxed,
                    invoice_price: invoicePrice,                              // 给工厂看的开票价(1.11档)
-                   customs_price: +(untaxed * 1.13).toFixed(4),              // 报关价=未含税×1.13(固定)
+                   customs_vat_rate: customsVatRate,
+                   customs_price: +(untaxed * (1 + customsVatRate)).toFixed(4),
                    customer_price: +(untaxed * 1.02).toFixed(4),             // 客户价=未含税×1.02
                    line_total_untaxed: qty ? +(untaxed * qty).toFixed(2) : null };
         })(),
@@ -1679,7 +1789,7 @@ async function handleBrokerSubmit(req, res, pool) {
 // segments: ['ocean','truck','customs'] 子集；自拖自报票默认只给 ocean
 async function handleSendPortalLink(req, res, pool) {
   if (!requireAuth(req, res)) return;
-  const { plan_id, segments, company_label } = req.body || {};
+  const { plan_id, segments, company_label, company_id } = req.body || {};
   if (!plan_id)
     return res.status(400).json({ ok: false, error: "plan_id 必填 (shipping_plans._id)" });
   const planRow = await pool.query(
@@ -1699,11 +1809,15 @@ async function handleSendPortalLink(req, res, pool) {
     [numericId, company_label || ""]);
 
   const raw = genRaw();
+  const fieldProfile = await inferSupplierPortalFieldProfile(pool, { company_label, company_id });
+  const meta = { shipment_id: numericId, plan_business_id: plan_id,
+    segments: segs, company_label: String(company_label || "").slice(0, 60) || undefined };
+  if (company_id) meta.company_id = parseInt(company_id, 10) || undefined;
+  if (fieldProfile) meta.field_profile = fieldProfile;
   await pool.query(
     `INSERT INTO magic_links (token_hash, recipient_role, meta, expires_at, access_log, created_at)
      VALUES ($1, 'supplier_portal', $2, NOW() + INTERVAL '7 days', '[]'::jsonb, NOW())`,
-    [rawToHash(raw), JSON.stringify({ shipment_id: numericId, plan_business_id: plan_id,
-      segments: segs, company_label: String(company_label || "").slice(0, 60) || undefined })]);
+    [rawToHash(raw), JSON.stringify(meta)]);
 
   return res.json({ ok: true, segments: segs,
     magic_link: `${APP_BASE}/public/collab-portal.html?token=${raw}` });
@@ -1711,7 +1825,7 @@ async function handleSendPortalLink(req, res, pool) {
 
 // ── 角色 token 解析（车队/报关行 文件口共用）──────────────
 async function resolveRoleToken(pool, raw, roles) {
-  if (!raw || raw.length < 16) return null;
+  if (!raw || raw.length < 10) return null;
   const { rows } = await pool.query(
     `SELECT recipient_role, meta FROM magic_links
       WHERE token_hash = $1 AND recipient_role = ANY($2)
@@ -2464,7 +2578,7 @@ async function handleMasterPreviewToken(req, res, pool) {
   if (!requireAuth(req, res)) return;
   const isPost = req.method === "POST";
   const src = isPost ? (req.body || {}) : (req.query || {});
-  const { plan_id, party, segments, company_label } = src;
+  const { plan_id, party, segments, company_label, company_id } = src;
   if (!plan_id) return res.status(400).json({ ok: false, error: "plan_id 必填" });
 
   const planRow = await pool.query(
@@ -2493,7 +2607,12 @@ async function handleMasterPreviewToken(req, res, pool) {
     const segs = Array.isArray(segments) ? segments.filter(s => ["ocean","truck","customs","factory"].includes(s))
       : [party].filter(s => ["ocean","truck","customs"].includes(s));
     meta.segments = segs.length ? segs : ["ocean", "truck", "customs"];
-    if (company_label) meta.company_label = String(company_label).slice(0, 60); else meta.field_profile = "shipping_booking";
+    if (company_label) {
+      meta.company_label = String(company_label).slice(0, 60);
+      if (company_id) meta.company_id = parseInt(company_id, 10) || undefined;
+      const fieldProfile = await inferSupplierPortalFieldProfile(pool, meta);
+      if (fieldProfile) meta.field_profile = fieldProfile;
+    } else meta.field_profile = "shipping_booking";
   }
 
   const raw = genRaw();

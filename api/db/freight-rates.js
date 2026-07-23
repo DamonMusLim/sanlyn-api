@@ -80,8 +80,8 @@ export default async function handler(req, res) {
         f.contract_valid_from, f.contract_valid_to,
         f.eta_date AS "etaDate",
         f.created_at AS "createdAt", f.updated_at AS "updatedAt",
-        lc20.cost_total AS "portGp20",
-        lc40.cost_total AS "portHq40",
+        COALESCE(lc20.base_total_cny, lc20.cost_total) AS "portGp20",
+        COALESCE(lc40.base_total_cny, lc40.cost_total) AS "portHq40",
         COALESCE(lc40.company_name, lc20.company_name) AS "portProvider",
         COALESCE(lc40.charge_code, lc20.charge_code)   AS "portCode",
         hist.prev_hq40 AS "prevHq40", hist.prev_gp20 AS "prevGp20", hist.changed_at AS "lastChangedAt"
@@ -93,17 +93,19 @@ export default async function handler(req, res) {
       ) hist ON TRUE
       -- 港杂按航线(港口+船司)连 local_charges（真值在这），分柜型
       LEFT JOIN LATERAL (
-        SELECT cost_total, company_name, charge_code FROM local_charges lc
+        SELECT base_total_cny, cost_total, company_name, charge_code FROM local_charges lc
         WHERE lower(btrim(lc.pol))=lower(btrim(f.pol)) AND lower(btrim(lc.pod))=lower(btrim(f.pod))
           AND lower(btrim(lc.carrier))=lower(btrim(f.carrier)) AND lc.container_type ~* '20'
           AND (f.forwarder IS NULL OR lower(btrim(lc.company_name))=lower(btrim(f.forwarder)))
+          AND lc.is_active
         ORDER BY updated_at DESC NULLS LAST LIMIT 1
       ) lc20 ON TRUE
       LEFT JOIN LATERAL (
-        SELECT cost_total, company_name, charge_code FROM local_charges lc
+        SELECT base_total_cny, cost_total, company_name, charge_code FROM local_charges lc
         WHERE lower(btrim(lc.pol))=lower(btrim(f.pol)) AND lower(btrim(lc.pod))=lower(btrim(f.pod))
           AND lower(btrim(lc.carrier))=lower(btrim(f.carrier)) AND lc.container_type ~* '40|HQ|45'
           AND (f.forwarder IS NULL OR lower(btrim(lc.company_name))=lower(btrim(f.forwarder)))
+          AND lc.is_active
         ORDER BY updated_at DESC NULLS LAST LIMIT 1
       ) lc40 ON TRUE`;
     const params = [], conds = [];

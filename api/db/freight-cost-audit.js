@@ -17,6 +17,14 @@ function money(v) {
   return isNaN(n) ? 0 : n;
 }
 
+function addCurrency(bucket, currency, cost, sale) {
+  var cur = String(currency || "CNY").trim().toUpperCase() || "CNY";
+  if (!bucket[cur]) bucket[cur] = { cost: 0, sale: 0, profit: 0 };
+  bucket[cur].cost += money(cost);
+  bucket[cur].sale += money(sale);
+  bucket[cur].profit = bucket[cur].sale - bucket[cur].cost;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -30,9 +38,10 @@ export default async function handler(req, res) {
 
     try {
       var r = await pool.query(
-        `SELECT id, bl_no, cost_amount, sale_amount, currency, supplier_type
+        `SELECT id, bl_no, amount AS cost_amount, amount, sale_amount, currency, supplier_type, cost_category
            FROM freight_supplier_bills
-          WHERE bl_no = $1`,
+          WHERE bl_no = $1
+            AND COALESCE(rebill_status, '') <> 'voided'`,
         [blNo]
       );
 
@@ -46,16 +55,12 @@ export default async function handler(req, res) {
         });
       }
 
-      var costCny = 0;
-      var saleCny = 0;
+      var byCurrency = {};
       var hasSaleMissing = false;
-      var hasNonCny = false;
 
       rows.forEach(function(row) {
         var currency = String(row.currency || "CNY").toUpperCase();
-        if (currency !== "CNY") hasNonCny = true;
-        costCny += money(row.cost_amount);
-        saleCny += money(row.sale_amount);
+        addCurrency(byCurrency, currency, row.amount, row.sale_amount);
         if (row.sale_amount === null || money(row.sale_amount) === 0) {
           hasSaleMissing = true;
         }
@@ -64,14 +69,18 @@ export default async function handler(req, res) {
       if (hasSaleMissing) {
         checks.push({ code: "SALE_MISSING", severity: "warn", message: "存在销售额为空或为0的货代账单行" });
       }
-      if (hasNonCny) {
-        checks.push({ code: "NON_CNY_LINE", severity: "warn", message: "存在非CNY币种账单行，本次仅按账面金额汇总为CNY" });
+      var currencies = Object.keys(byCurrency);
+      if (currencies.length > 1) {
+        checks.push({ code: "MIXED_CURRENCY", severity: "warn", message: "存在多个币种账单行，已按币种分别汇总，不能混算为CNY" });
+      } else if (currencies[0] && currencies[0] !== "CNY") {
+        checks.push({ code: "NON_CNY_LINE", severity: "warn", message: "存在非CNY币种账单行，已按原币种汇总，未折算为CNY" });
       }
 
-      var profitCny = saleCny - costCny;
-      if (profitCny < 0) {
-        checks.push({ code: "NEGATIVE_PROFIT", severity: "high", message: "销售金额低于成本金额" });
-      }
+      currencies.forEach(function(cur) {
+        if (byCurrency[cur].profit < 0) {
+          checks.push({ code: "NEGATIVE_PROFIT", severity: "high", currency: cur, message: cur + " 销售金额低于成本金额" });
+        }
+      });
 
       if (checks.length === 0) {
         checks.push({ code: "COST_AUDIT_OK", severity: "ok", message: "货代成本与销售金额已核查" });
@@ -86,7 +95,12 @@ export default async function handler(req, res) {
       return res.json({
         status: status,
         checks: checks,
-        summary: { cost_cny: costCny, sale_cny: saleCny, profit_cny: profitCny },
+        summary: {
+          cost_cny: byCurrency.CNY ? byCurrency.CNY.cost : 0,
+          sale_cny: byCurrency.CNY ? byCurrency.CNY.sale : 0,
+          profit_cny: byCurrency.CNY ? byCurrency.CNY.profit : 0,
+          by_currency: byCurrency,
+        },
       });
     } catch (e) {
       console.error("[freight-cost-audit] GET failed:", e);
@@ -108,7 +122,7 @@ export default async function handler(req, res) {
 
       var upd = await client.query(
         `UPDATE freight_supplier_bills
-            SET sale_amount = cost_amount
+            SET sale_amount = amount
           WHERE bl_no = $1
             AND (sale_amount IS NULL OR sale_amount = 0)`,
         [postBlNo]

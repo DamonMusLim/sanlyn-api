@@ -61,12 +61,12 @@
     if(seg === 'truck') return s.trucking_company_cn || '';
     return s.customs_broker_cn || '';
   }
-  function carrierPanel(s, esc, canEdit, invoiceData){
+  function carrierPanel(s, esc, canEdit, invoiceData, showInvoices){
     const segs = ['ocean','truck','customs'];
     const parties = invoiceParties(invoiceData);
     const rows = segs.map(seg => '<div class="chip" style="align-items:flex-start;gap:8px;justify-content:space-between;">'
       + '<span><span>' + esc(vendorDefs[seg].label) + ' </span><b>' + esc(vendorName(s, seg)) + '</b></span>'
-      + (seg === 'customs' ? '<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">' + invoiceControls(parties.customs, 'customs', false, true, '进项票 →') + '</span>' : '')
+      + (showInvoices && seg === 'customs' ? '<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">' + invoiceControls(parties.customs, 'customs', false, true, '进项票 →') + '</span>' : '')
       + (canEdit ? '<button type="button" onclick="CollabPortalGodview.pickVendor(\'' + seg + '\')" style="border:1px solid #d1d5db;background:#fff;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:800;cursor:pointer;">选择/更换</button>' : '')
       + '<div id="vendorPick-' + seg + '" style="flex-basis:100%;width:100%;"></div></div>');
     rows.push('<div class="chip"><span>工厂 </span><b>' + esc((Array.isArray(s.factory_names) ? s.factory_names.join(' / ') : '') || s.factory_cn || s.factory || '未指派') + '</b></div>');
@@ -214,11 +214,15 @@
     const esc = ctx.esc;
     const fmtD = ctx.fmtD;
     const $ = ctx.$;
+    const isTradeExternal = ps.field_profile === 'trade_external';
+    const showFinancials = !isTradeExternal;
     const canSeeOrderProfit = ps.field_profile === 'upstream_downstream';
     const canEditGodview = ps.field_profile === 'upstream_downstream';
     $('topBadge').textContent = s.shipment_no || '综合门户';
     $('bannerTitle').textContent = (s.shipment_no || '-') + ' - 综合视图' + (ps.company_label ? '（' + ps.company_label + '）' : '');
-    $('bannerSub').textContent = '内部 godview · 三段承运方 / 工厂装货 / 成本销售毛利';
+    $('bannerSub').textContent = isTradeExternal
+      ? '贸易主体综合视图 · 三段承运方 / 工厂装货 / 船期单据'
+      : '内部 godview · 三段承运方 / 工厂装货 / 成本销售毛利';
     $('chips').innerHTML = [
       s.pol || s.pod ? '<div class="chip"><span>航线 </span><b>' + esc(s.pol || '-') + ' -> ' + esc(s.pod || '-') + '</b></div>' : '',
       s.container_type ? '<div class="chip"><span>柜型 </span><b>' + esc(s.container_type) + (s.container_qty ? ' x ' + esc(s.container_qty) : '') + '</b></div>' : '',
@@ -233,31 +237,31 @@
       root.id = 'godviewRoot';
       $('segTabs').parentNode.insertBefore(root, $('segTabs').nextSibling);
     }
-    root.innerHTML = card('三段承运方', canEditGodview ? '可选择/更换承运方并生成子链' : '只展示已指派公司名', carrierPanel(s, esc, canEditGodview), '🏢')
+    root.innerHTML = card('三段承运方', canEditGodview ? '可选择/更换承运方并生成子链' : '只展示已指派公司名', carrierPanel(s, esc, canEditGodview, null, showFinancials), '🏢')
       + card('工厂装货状态', '来自 booking_sheet.factory_loading_done / containers', loadingPanel(s, esc), '🏭')
       + card('车队装货', '自动读取同一柜明细/车队回填数据源', truckingLoadingPanel(s, esc), '🚛')
-      + card('价格面板', '正在读取成本 / 销售价 / 毛利', '<div style="font-size:12px;color:#6b7280;">加载中...</div>', '💰');
+      + (showFinancials ? card('价格面板', '正在读取成本 / 销售价 / 毛利', '<div style="font-size:12px;color:#6b7280;">加载中...</div>', '💰') : '');
     ctx.show('stateForm');
     const [invoiceRes, freightRes, orderRes] = await Promise.all([
-      safeFetch(ctx.api + '/collab-party-invoices?token=' + encodeURIComponent(ctx.token)),
-      safeFetch(ctx.api + '/collab-pricing?token=' + encodeURIComponent(ctx.token)),
+      showFinancials ? safeFetch(ctx.api + '/collab-party-invoices?token=' + encodeURIComponent(ctx.token)) : Promise.resolve({ ok:true, data:{} }),
+      showFinancials ? safeFetch(ctx.api + '/collab-pricing?token=' + encodeURIComponent(ctx.token)) : Promise.resolve({ ok:true, data:{} }),
       canSeeOrderProfit
         ? safeFetch(ctx.api + '/collab-order-pricing?token=' + encodeURIComponent(ctx.token))
-        : Promise.resolve({ ok:true, data:{ ok:false, error:'shipping_booking 链不显示订单采购/销售毛利' } }),
+        : Promise.resolve({ ok:true, data:{ ok:false, error:'当前链接不显示订单采购/销售毛利' } }),
     ]);
     const invoices = invoiceRes.data || {};
     const freight = freightRes.data || {};
     const order = orderRes.data || {};
     const parties = invoiceParties(invoices);
-    root.innerHTML = card('三段承运方', canEditGodview ? '可选择/更换承运方并生成子链' : '只展示已指派公司名', carrierPanel(s, esc, canEditGodview, invoices), '🏢')
+    root.innerHTML = card('三段承运方', canEditGodview ? '可选择/更换承运方并生成子链' : '只展示已指派公司名', carrierPanel(s, esc, canEditGodview, invoices, showFinancials), '🏢')
       + card('工厂装货状态', '来自 booking_sheet.factory_loading_done / containers', loadingPanel(s, esc), '🏭',
-        invoiceControls(parties.factory, 'factory', false, parties.factory && parties.factory.assigned !== false, '进项票 →'))
+        showFinancials ? invoiceControls(parties.factory, 'factory', false, parties.factory && parties.factory.assigned !== false, '进项票 →') : '')
       + card('车队装货', '自动读取同一柜明细/车队回填数据源', truckingLoadingPanel(s, esc), '🚛',
-        truckingPriceHeader(freight) + invoiceControls(parties.truck, 'truck', false, true, '进项票 →'))
-      + card('运费价格', 'freight_supplier_bills 成本 / 销售 / 毛利', freightPricingPanel(freight, esc, canEditGodview), '💰',
+        showFinancials ? truckingPriceHeader(freight) + invoiceControls(parties.truck, 'truck', false, true, '进项票 →') : '')
+      + (showFinancials ? card('运费价格', 'freight_supplier_bills 成本 / 销售 / 毛利', freightPricingPanel(freight, esc, canEditGodview), '💰',
         headerTotalsChips(freight.totals, 'freight') + invoiceControls(parties.ocean, 'ocean', false, true, '进项票 →'))
       + card('订单价格', canSeeOrderProfit ? 'OLI 采购价 / 销售价 / 毛利' : '仅 upstream_downstream 可见', orderPricingPanel(order, esc), '📦',
-        headerTotalsChips(order.totals, 'order') + invoiceControls(parties.customer, 'customer', true, true, '开销售票 →'));
+        headerTotalsChips(order.totals, 'order') + invoiceControls(parties.customer, 'customer', true, true, '开销售票 →')) : '');
   }
   function openInvoiceParty(seg){
     if(!lastCtx) return;

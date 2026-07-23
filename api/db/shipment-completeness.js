@@ -1,5 +1,6 @@
 // api/db/shipment-completeness.js — 出运完整度「专项单」只读端点
-// GET /api/db/shipment-completeness?ref=<str>&by=auto|order_no|contract_no|bl_no|container_no|shipping_plan_id
+// GET  /api/db/shipment-completeness?ref=<str>&by=auto|order_no|contract_no|bl_no|container_no|shipping_plan_id
+// POST /api/db/shipment-completeness/batch {refs:[...], by:"auto"}  // <=100 refs, admin JWT roles same as GET
 // 铁律：只读、参数化、绝不造数。ref 不猜——唯一命中=resolved / 多命中=ambiguous(列candidates) / 无=missing。
 // 订单↔海运 join 真实键 = shipping_plans.order_nos[] → orders.order_no（task 1817, 2026-06-24）。
 // 标量 contract_no 仅作兜底(常为脏值 "FS.../FS..." 或 NULL, 匹配 0 单 → 旧逻辑误报「缺单」)。
@@ -24,6 +25,8 @@ const DIM_ORDER = ["order","contract","sale_price_goods","sale_price_freight","s
   "freight_cost","container","customs","invoice_docs","payment_in","payment_out"];
 
 const ISO_CONTAINER = /^[A-Z]{4}\d{7}$/i;
+const MAX_BATCH_REFS = 100;
+const BATCH_CONCURRENCY = 5;
 
 // BL 前缀 → 船公司（local_charges.carrier 存的是船公司名，shipping_plans 无干净 carrier 列）
 function carrierFromBl(bl) {
@@ -45,20 +48,15 @@ async function safe(pool, sql, params) {
 }
 const has = r => r && !r.error && r.rows && r.rows.length > 0;
 
-export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
-  if (req.method === "OPTIONS") return res.status(200).end();
-  if (!requireAuth(req, res)) return;
-  if (req.method !== "GET") return res.status(405).json({ error: "GET only" });
-  if (!req.user || !READ_ROLES.includes(req.user.role))
-    return res.status(403).json({ success:false, error:"Forbidden" });
+export async function resolveShipmentCompleteness(pool, refInput, byInput = "auto") {
+  const ref = String(refInput || "").trim();
+  const by  = String(byInput || "auto").trim();
+  if (!ref) {
+    const err = new Error("ref required");
+    err.status = 400;
+    throw err;
+  }
 
-  const pool = getPool();
-  const ref = String(req.query.ref || "").trim();
-  const by  = String(req.query.by  || "auto").trim();
-  if (!ref) return res.status(400).json({ success:false, error:"ref required" });
-
-  try {
     // ── 1. 解析 ref → 候选 shipping_plans + orders（绝不猜，跨类型收集） ──
     const plansById = new Map();   // plan.id → plan row
     const orderRows = [];          // candidate orders
@@ -139,9 +137,9 @@ export default async function handler(req, res) {
     for (const p of noContractPlans) groups.add(`__plan_${p.id}`);
 
     if (plans.length === 0 && orderRows.length === 0) {
-      return res.status(200).json({ success:true, ref, by,
+      return { success:true, ref, by,
         resolution:{ status:"missing", matched_by:null, candidates:[] },
-        message:"系统查无此票（待录入，不代表没货）" });
+        message:"系统查无此票（待录入，不代表没货）" };
     }
     if (groups.size > 1) {
       const candidates = [...groups].map(g => {
@@ -154,9 +152,9 @@ export default async function handler(req, res) {
         return { kind:"contract", contract_no:g, plan_count:ps.length, order_count:os.length,
                  bl_nos:[...new Set(ps.map(x=>x.bl_no).filter(Boolean))] };
       });
-      return res.status(200).json({ success:true, ref, by,
+      return { success:true, ref, by,
         resolution:{ status:"ambiguous", matched_by:null, candidates },
-        message:"匹配到多票，请用更精确的标识（合同号/提单号/柜号）选定" });
+        message:"匹配到多票，请用更精确的标识（合同号/提单号/柜号）选定" };
     }
 
     // ── 3. resolved：唯一票，建 dossier + 维度 ──
@@ -323,7 +321,7 @@ export default async function handler(req, res) {
       .filter(k => dim[k] && !["ok","not_supported","ambiguous"].includes(dim[k].status))
       .map(k => ({ gap:k, required:REQUIRED.has(k), skill: NEXT_ACTION[k] || null, detail: dim[k].detail }));
 
-    return res.status(200).json({ success:true, ref, by,
+    return { success:true, ref, by,
       resolution:{ status:"resolved", matched_by:matchedBy, candidates:[] },
       dossier:{
         contract_no: contractNo,
@@ -336,9 +334,60 @@ export default async function handler(req, res) {
       next_actions,
       completeness:{ required_ok:requiredOk, required_total:requiredTotal,
         pct: requiredTotal ? Math.round(requiredOk / requiredTotal * 100) : 0 },
-    });
+    };
+}
+
+async function runLimited(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function loop() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await worker(items[i], i);
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, items.length) }, loop);
+  await Promise.all(workers);
+  return results;
+}
+
+export default async function handler(req, res) {
+  setCors(req, res, "GET, POST, OPTIONS");
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
+  if (!req.user || !READ_ROLES.includes(req.user.role))
+    return res.status(403).json({ success:false, error:"Forbidden" });
+
+  const pool = getPool();
+  try {
+    if (req.method === "GET") {
+      const result = await resolveShipmentCompleteness(pool, req.query.ref, req.query.by || "auto");
+      return res.status(200).json(result);
+    }
+
+    if (req.method === "POST") {
+      const path = String(req.path || req.url || "");
+      if (!/\/batch(?:\?|$)/.test(path)) return res.status(404).json({ success:false, error:"Not found" });
+      const body = req.body || {};
+      if (!Array.isArray(body.refs)) return res.status(400).json({ success:false, error:"refs must be an array" });
+      const refs = [...new Set(body.refs.map(v => String(v || "").trim()).filter(Boolean))];
+      if (refs.length > MAX_BATCH_REFS) {
+        return res.status(400).json({ success:false, error:`refs limit exceeded: max ${MAX_BATCH_REFS}` });
+      }
+      const by = String(body.by || "auto").trim();
+      const results = await runLimited(refs, BATCH_CONCURRENCY, async (ref) => {
+        try {
+          return await resolveShipmentCompleteness(pool, ref, by);
+        } catch (e) {
+          return { ref, error: e.message };
+        }
+      });
+      return res.status(200).json({ success:true, count: results.length, results });
+    }
+
+    return res.status(405).json({ success:false, error:"GET/POST only" });
   } catch (err) {
-    return res.status(500).json({ success:false, error: err.message });
+    return res.status(err.status || 500).json({ success:false, error: err.message });
   }
 }
 

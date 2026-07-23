@@ -10,6 +10,7 @@ export const CLASSIFY_PROMPT = `Identify this ocean-shipping related document an
 - 装箱单: 柜号+铅封+件毛体; extract container_no, seal_no.
 - EIR: EIR字样+柜号+提还箱; extract container_no.
 - 托书: Booking确认字样; extract bl_no, booking_no.
+- 报检单/检验检疫申请: 优先抽取字段名为"编号"或"申请编号"的号码作为 ciq_application_no；若只看到"电子底账数据号"，extract ciq_ledger_no.
 - CO: 原产地证; extract contract_no, invoice_no.
 - PI/SC/PO: 商品行+金额+客户; extract contract_no, customer.
 
@@ -21,6 +22,8 @@ Reply with ONLY valid JSON, no markdown:
   "container_no": "柜号或空(多个用逗号分隔)",
   "seal_no": "铅封号或空",
   "customs_no": "18位海关编号或空",
+  "ciq_application_no": "报检单申请编号/编号或空，不要用电子底账数据号冒充",
+  "ciq_ledger_no": "电子底账数据号或空",
   "contract_no": "合同号或空",
   "invoice_no": "发票号或空",
   "booking_no": "订舱号或空",
@@ -68,6 +71,7 @@ function splitContracts(v) {
 }
 
 function normalizeExtracted(parsed) {
+  const ciq = normalizeCiqNos(parsed);
   const out = {
     doc_type: clean(parsed?.doc_type, 40),
     confidence: clean(parsed?.confidence, 20).toLowerCase(),
@@ -75,6 +79,8 @@ function normalizeExtracted(parsed) {
     container_no: clean(parsed?.container_no),
     seal_no: clean(parsed?.seal_no),
     customs_no: clean(parsed?.customs_no, 40),
+    ciq_application_no: ciq.ciq_application_no,
+    ciq_ledger_no: ciq.ciq_ledger_no,
     contract_no: clean(parsed?.contract_no),
     invoice_no: clean(parsed?.invoice_no),
     booking_no: clean(parsed?.booking_no),
@@ -84,6 +90,24 @@ function normalizeExtracted(parsed) {
   if (!DOC_TYPES.has(out.doc_type)) out.doc_type = "无法识别";
   if (!CONFIDENCE.has(out.confidence)) out.confidence = "low";
   return out;
+}
+
+function normalizeCiqNos(parsed) {
+  const rawApplication = clean(parsed?.ciq_application_no || parsed?.application_no || parsed?.inspection_application_no, 40);
+  const rawLedger = clean(parsed?.ciq_ledger_no || parsed?.ledger_no || parsed?.electronic_ledger_no, 40);
+  let applicationNo = rawApplication;
+  let ledgerNo = rawLedger;
+  if (!applicationNo && ledgerNo && /^[A-Za-z0-9]{17,40}$/.test(ledgerNo) && ledgerNo.endsWith("001")) {
+    applicationNo = ledgerNo.slice(0, -3);
+  } else if (applicationNo && !ledgerNo && /^[A-Za-z0-9]{17,40}$/.test(applicationNo) && applicationNo.endsWith("001")) {
+    ledgerNo = applicationNo;
+    applicationNo = applicationNo.slice(0, -3);
+  }
+  return { ciq_application_no: applicationNo, ciq_ledger_no: ledgerNo };
+}
+
+export function normalizeOceanDocExtracted(parsed) {
+  return normalizeExtracted(parsed);
 }
 
 export async function classifyAndExtract(fileBytes, filename, absPath, minimaxApiKey) {

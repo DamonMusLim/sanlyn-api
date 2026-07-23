@@ -183,9 +183,13 @@ export default async function handler(req, res) {
       var params = [];
       for (var col of UPDATABLE) {
         if (body[col] !== undefined) {
-          params.push(typeof body[col] === "object" ? JSON.stringify(body[col]) : body[col]);
-          if (col === "containers_detail" || col === "trucking_detail" || col === "order_nos" || col === "contract_nos") {
+          var isArrayColumn = col === "order_nos" || col === "contract_nos";
+          var isJsonbColumn = col === "containers_detail" || col === "trucking_detail";
+          params.push(isJsonbColumn && typeof body[col] === "object" ? JSON.stringify(body[col]) : body[col]);
+          if (isJsonbColumn) {
             sets.push(col + " = $" + params.length + "::jsonb");
+          } else if (isArrayColumn) {
+            sets.push(col + " = $" + params.length + "::text[]");
           } else {
             sets.push(col + " = $" + params.length);
           }
