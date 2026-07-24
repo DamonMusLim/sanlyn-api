@@ -40,7 +40,8 @@ export async function renderBookingInstruction(ctx) {
   _pushNos(_raw.orderNos); _pushNos(sp.order_nos); _pushNos(sp.contract_nos); _pushNos(sp.order_contract_nos);
   let shipper = { nameEN: "", nameCN: "", address: "", phone: "", contactName: "", email: "" };
   let issuing = "", orderIds = [], orow0 = {};
-  const ORD_COLS = `id, order_no, issuing_company, customer, consignee, customer_address, pol, destination_port, trade_terms, freight_term, raw`;
+  const ORD_COLS = `id, order_no, issuing_company, customer, consignee, customer_address, pol, destination_port, trade_terms, freight_term, raw,
+                    issuing_company_id, customer_company_id, factory_company_id, pol_port_id, pod_port_id`;
   let orows = [];
   if (orderNos.length) {
     orows = await q(`select ${ORD_COLS} from orders where order_no = any($1) or contract_no = any($1)`, [orderNos]);
@@ -55,11 +56,45 @@ export async function renderBookingInstruction(ctx) {
   }
   if (!issuing) issuing = pick(sp.issuing_company, "") || ""; // 计划自带开票主体也算数
   const _oraw = (function () { let r = orow0.raw || {}; if (typeof r === "string") { try { r = JSON.parse(r); } catch (e) { r = {}; } } return r || {}; })();
-  if (issuing) {
+
+  // 1b) 🔑 公司一律走 ID 关联（Damon 定调「全部字段走 ID」，M036 已把 FK 回填：
+  //     orders 活单 issuing 132/132、customer 128、factory 129）。名字字符串撞表只作最后兜底——
+  //     name_cn/name_en 有合并别名、有全称/简称漂移，撞不上就退化成一行光名字没地址（原托书就这样）。
+  const _cid = v => (v == null || v === 0 || v === "" ? null : Number(v));
+  const compIds = [
+    _cid(orow0.issuing_company_id), _cid(orow0.customer_company_id), _cid(orow0.factory_company_id),
+    _cid(sp.customer_company_id), _cid(sp.factory_company_id), _cid(sp.forwarder_company_id),
+  ].filter(Boolean);
+  const compById = new Map();
+  if (compIds.length) {
+    const crows = await q(
+      `select id, code, name_cn, name_en, address, contact_name, contact_phone, einvoice_email, country
+         from companies where id = any($1)`, [compIds]);
+    crows.forEach(c => compById.set(Number(c.id), c));
+  }
+  const asParty = c => c ? {
+    nameEN: c.name_en || "", nameCN: c.name_cn || "", address: c.address || "",
+    phone: c.contact_phone || "", contactName: c.contact_name || "", email: c.einvoice_email || "",
+  } : null;
+  const _shipperById = asParty(compById.get(_cid(orow0.issuing_company_id)));
+  if (_shipperById) {
+    shipper = _shipperById;
+    if (!nz(shipper.nameCN) && !nz(shipper.nameEN)) shipper.nameCN = issuing;
+  } else if (issuing) { // 兜底：没 ID 才按名字撞
     const crows = await q(`select name_en, name_cn, address, contact_phone, contact_name, einvoice_email from companies where name_cn = $1 or name_en = $1 limit 1`, [issuing]);
     if (crows[0]) shipper = { nameEN: crows[0].name_en || "", nameCN: crows[0].name_cn || issuing, address: crows[0].address || "", phone: crows[0].contact_phone || "", contactName: crows[0].contact_name || "", email: crows[0].einvoice_email || "" };
     else shipper.nameCN = issuing;
   }
+  const buyerCo = asParty(compById.get(_cid(orow0.customer_company_id)) || compById.get(_cid(sp.customer_company_id)));
+
+  // 1c) 港口也走 ID（ports 表是港口唯一真源，文本列有 Qingdao/青岛/QINGDAO 各种写法）
+  const portIds = [_cid(sp.pol_port_id), _cid(sp.pod_port_id), _cid(orow0.pol_port_id), _cid(orow0.pod_port_id)].filter(Boolean);
+  const portById = new Map();
+  if (portIds.length) {
+    const prows = await q(`select id, code, name_en, name_cn from ports where id = any($1)`, [portIds]);
+    prows.forEach(p => portById.set(Number(p.id), p));
+  }
+  const portText = pid => { const p = portById.get(_cid(pid)); return p ? (p.name_en || p.name_cn || p.code || "") : ""; };
   const shipperTitle = shipper.nameEN || shipper.nameCN || pick(_raw.shipper, "");
   // 中国发货(有中文抬头)→中文优先；补邮箱/联系人字段（空则留待填）
   const cnFirst = !!shipper.nameCN;
@@ -123,19 +158,24 @@ export async function renderBookingInstruction(ctx) {
   const bookingConfirm = [vessel && voyage ? vessel + " / " + voyage : vessel, eta ? "ETA " + eta : ""].filter(Boolean).join("  ");
   // ⚠️2026-07-24：以下标量原来全是 plan-only，新建/多柜绑定的 plan 是空壳 → 整页留白。
   //   一律 plan → order 列 → order.raw 三级兜底（订单是录单真源，plan 只是船务执行层）。
-  const pol = pick(sp.pol, _raw.pol, orow0.pol, _oraw.pol, "");
-  const pod = pick(sp.pod, _raw.pod, orow0.destination_port, _oraw.destinationPort, _oraw.pod, "");
+  //   港口优先 ports 表 ID，其次才是各处的文本列
+  const pol = pick(portText(sp.pol_port_id), portText(orow0.pol_port_id), sp.pol, _raw.pol, orow0.pol, _oraw.pol, "");
+  const pod = pick(portText(sp.pod_port_id), portText(orow0.pod_port_id), sp.pod, _raw.pod, orow0.destination_port, _oraw.destinationPort, _oraw.pod, "");
   // ⚠️2026-07-24：原来兜底写死 "40HC"——全库真值分布 40HQ 107 / 20GP 20 / 40HC 11，
   //   写死等于给每张没录柜型的托书编一个柜型（CY00406 实际是 20GP，被印成 40HC）。空就留空让人选。
   const ctnType = pick(sp.container_type, _raw.containerType, (ctrs[0] && ctrs[0].container_type), sp.factory_container_type, "");
   const ctnQty = ctrs.length || num(sp.container_qty) || 1;
-  const consignee = pick(sp.customer_en, sp.customer, _raw.companyNameEN, _raw.companyName, orow0.customer, _oraw.companyNameEN, "");
-  // 真实收货人抬头/地址在 orders.consignee（多行文本），plan 上只有客户简称
-  const consFull = pick(orow0.consignee, _oraw.consignee, orow0.customer_address, _oraw.customerAddress, "");
-  const consText = nz(consFull)
-    ? String(consFull)
+  // 🔑 收货人=订单主表 customer_company_id → companies（ID 带出抬头+注册地址+联系人），
+  //   不再拿 orders.consignee 自由文本当抬头：全库 132 活单只 26 张有该文本，其中 4 张写的是**另一家实体**
+  //   （36-LL-1 写的是沙特 PAWS AND TAILS，而买方主体是 Eversparkles Pte Ltd）→ 那种应落在通知人位。
+  const consignee = pick(buyerCo && (buyerCo.nameEN || buyerCo.nameCN), sp.customer_en, sp.customer, _raw.companyNameEN, _raw.companyName, orow0.customer, _oraw.companyNameEN, "");
+  const consText = buyerCo
+    ? [consignee, buyerCo.address, buyerCo.contactName ? "联系人 Attn: " + buyerCo.contactName : "", buyerCo.phone ? "电话 Tel: " + buyerCo.phone : ""].filter(nz).join("\n")
     : [consignee, [pick(_raw.consignee_contact, ""), pick(_raw.consignee_phone, ""), pick(_raw.consignee_country, "")].filter(Boolean).join(" · ")].filter(Boolean).join("\n");
-  const notify = pick(_raw.notify, "SAME AS CONSIGNEE");
+  // 通知人：原来硬编 "SAME AS CONSIGNEE"。订单上另有第三方收货抬头(orders.consignee)时，那才是要通知的人。
+  const _thirdParty = String(pick(orow0.consignee, _oraw.consignee, "")).trim();
+  const _sameEntity = !nz(_thirdParty) || (nz(consignee) && _thirdParty.toUpperCase().includes(String(consignee).toUpperCase().split(" ")[0]));
+  const notify = pick(_raw.notify, _sameEntity ? "SAME AS CONSIGNEE" : _thirdParty);
   const terms = String(pick(_raw.tradeTerms, _raw.incoterm, sp.freight_term, orow0.trade_terms, orow0.freight_term, _oraw.tradeTerms, "FOB")).toUpperCase();
   const releaseRaw = String(pick(sp.release_type, _raw.release_type, "")).toLowerCase();
   // ⚠️2026-07-24：原来 SWB 被正则并进"电放"，托书上没有 SWB 这一档。
