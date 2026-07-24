@@ -165,17 +165,22 @@ export async function renderBookingInstruction(ctx) {
   //   写死等于给每张没录柜型的托书编一个柜型（CY00406 实际是 20GP，被印成 40HC）。空就留空让人选。
   const ctnType = pick(sp.container_type, _raw.containerType, (ctrs[0] && ctrs[0].container_type), sp.factory_container_type, "");
   const ctnQty = ctrs.length || num(sp.container_qty) || 1;
-  // 🔑 收货人=订单主表 customer_company_id → companies（ID 带出抬头+注册地址+联系人），
-  //   不再拿 orders.consignee 自由文本当抬头：全库 132 活单只 26 张有该文本，其中 4 张写的是**另一家实体**
-  //   （36-LL-1 写的是沙特 PAWS AND TAILS，而买方主体是 Eversparkles Pte Ltd）→ 那种应落在通知人位。
-  const consignee = pick(buyerCo && (buyerCo.nameEN || buyerCo.nameCN), sp.customer_en, sp.customer, _raw.companyNameEN, _raw.companyName, orow0.customer, _oraw.companyNameEN, "");
-  const consText = buyerCo
-    ? [consignee, buyerCo.address, buyerCo.contactName ? "联系人 Attn: " + buyerCo.contactName : "", buyerCo.phone ? "电话 Tel: " + buyerCo.phone : ""].filter(nz).join("\n")
-    : [consignee, [pick(_raw.consignee_contact, ""), pick(_raw.consignee_phone, ""), pick(_raw.consignee_country, "")].filter(Boolean).join(" · ")].filter(Boolean).join("\n");
-  // 通知人：原来硬编 "SAME AS CONSIGNEE"。订单上另有第三方收货抬头(orders.consignee)时，那才是要通知的人。
+  // 🔑 提单两方（Damon 0724 定）：**收货人=实际收货那家**（订单上的第三方收货抬头，如沙特 PAWS AND TAILS），
+  //   **通知人=客户主体公司**（customer_company_id → companies，ID 带出抬头+注册地址+Attn，如新加坡 Eversparkles）。
+  //   订单没有第三方收货抬头时，两方都是客户主体公司——通知人**照样把公司信息写全，不再硬编 "SAME AS CONSIGNEE" 这种死字符串**。
+  const buyerText = buyerCo
+    ? [buyerCo.nameEN || buyerCo.nameCN, buyerCo.address,
+       buyerCo.contactName ? "联系人 Attn: " + buyerCo.contactName : "",
+       buyerCo.phone ? "电话 Tel: " + buyerCo.phone : ""].filter(nz).join("\n")
+    : "";
+  const buyerName = pick(buyerCo && (buyerCo.nameEN || buyerCo.nameCN), sp.customer_en, sp.customer, _raw.companyNameEN, _raw.companyName, orow0.customer, _oraw.companyNameEN, "");
   const _thirdParty = String(pick(orow0.consignee, _oraw.consignee, "")).trim();
-  const _sameEntity = !nz(_thirdParty) || (nz(consignee) && _thirdParty.toUpperCase().includes(String(consignee).toUpperCase().split(" ")[0]));
-  const notify = pick(_raw.notify, _sameEntity ? "SAME AS CONSIGNEE" : _thirdParty);
+  const _sameEntity = !nz(_thirdParty) || (nz(buyerName) && _thirdParty.toUpperCase().includes(String(buyerName).toUpperCase().split(" ")[0]));
+  const consignee = _sameEntity ? buyerName : (_thirdParty.split("\n")[0] || buyerName);
+  const consText = _sameEntity
+    ? (nz(buyerText) ? buyerText : [buyerName, [pick(_raw.consignee_contact, ""), pick(_raw.consignee_phone, ""), pick(_raw.consignee_country, "")].filter(Boolean).join(" · ")].filter(Boolean).join("\n"))
+    : _thirdParty;
+  const notify = pick(_raw.notify, buyerText, buyerName, "");
   const terms = String(pick(_raw.tradeTerms, _raw.incoterm, sp.freight_term, orow0.trade_terms, orow0.freight_term, _oraw.tradeTerms, "FOB")).toUpperCase();
   const releaseRaw = String(pick(sp.release_type, _raw.release_type, "")).toLowerCase();
   // ⚠️2026-07-24：原来 SWB 被正则并进"电放"，托书上没有 SWB 这一档。
