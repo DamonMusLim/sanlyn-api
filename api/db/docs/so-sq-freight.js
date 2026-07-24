@@ -1,6 +1,12 @@
 export async function renderSoSqFreight(ctx){
   let { type, sp, spraw, raw, cfg3, soNo, html, _xlsCapture, totRow, ap, esc, pick, fmtD } = ctx;
 
+  // type=so 走《出口货物委托单》专用模板(独立文件，防漂移)；sq/freight-quote 保持原样
+  if (type === "so") {
+    const { renderBookingInstruction } = await import("./booking-instruction.js");
+    return await renderBookingInstruction(ctx);
+  }
+
         var isSO = (type==="so");
         var docTitle = isSO ? "海运单" : "海运确认报价";
         var docTitleEN = isSO ? "SHIPPING ORDER" : "OCEAN FREIGHT QUOTATION";
@@ -109,7 +115,7 @@ export async function renderSoSqFreight(ctx){
     <div class="v">${esc(consigneeX)}</div>
     <div class="k" style="margin-top:6px">CARRIER 船公司</div><div class="k" style="margin-top:6px">FORWARDER 货代</div>
     <div class="v">${esc(carrierX)}</div>
-    <div class="v">${esc(isSO ? (cfg3 && cfg3.nameCN || "上海洋宝宝国际物流有限公司") : forwarderX)}</div>
+    <div class="v">${esc(forwarderX)}</div>
     <div class="k" style="margin-top:6px">POL 起运港</div><div class="k" style="margin-top:6px">POD 目的港</div>
     <div class="v">${esc(polX)}</div>
     <div class="v">${esc(podX)}</div>
