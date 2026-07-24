@@ -10,7 +10,6 @@ import { getPool } from "../db.js";
 
 const TEMPLATE_VERSION = "v3";
 
-function digitsFrom(s) { const m = String(s || "").match(/(\d{6,})/); return m ? m[1] : ""; }
 function num(x) { const n = Number(x); return isFinite(n) ? n : 0; }
 function fmtNum(x, d) { const n = num(x); return d != null ? n.toFixed(d) : String(n); }
 const nz = v => v != null && String(v).trim() !== "";
@@ -113,7 +112,9 @@ export async function renderBookingInstruction(ctx) {
 
   // 5) 标量字段
   const _bnFields = [sp.booking_no, sp.forwarder_booking_no, sp.so_no].map(v => (v == null ? "" : String(v))).filter(v => v && v !== blNo && /^\d{6,}$/.test(v));
-  const bookingNo = pick(_bnFields[0], digitsFrom(sp._id), "");
+  // ⚠️2026-07-24：原来兜底 digitsFrom(sp._id) —— _id 是系统内部主键 sp_<epoch_ms>_<rand>，
+  //   切出来的 1784868820507 是毫秒时间戳，被当"外运编号"印在对外托书上。真编号没有就留空给货代填。
+  const bookingNo = pick(_bnFields[0], "");
   const cyNo = pick(sp.shipment_no, soNo, "");
   const contractNo = pick(sp.contract_no, "");
   const vessel = pick(sp.vessel, _raw.vessel, "");
@@ -124,7 +125,9 @@ export async function renderBookingInstruction(ctx) {
   //   一律 plan → order 列 → order.raw 三级兜底（订单是录单真源，plan 只是船务执行层）。
   const pol = pick(sp.pol, _raw.pol, orow0.pol, _oraw.pol, "");
   const pod = pick(sp.pod, _raw.pod, orow0.destination_port, _oraw.destinationPort, _oraw.pod, "");
-  const ctnType = pick(sp.container_type, _raw.containerType, (ctrs[0] && ctrs[0].container_type), "40HC");
+  // ⚠️2026-07-24：原来兜底写死 "40HC"——全库真值分布 40HQ 107 / 20GP 20 / 40HC 11，
+  //   写死等于给每张没录柜型的托书编一个柜型（CY00406 实际是 20GP，被印成 40HC）。空就留空让人选。
+  const ctnType = pick(sp.container_type, _raw.containerType, (ctrs[0] && ctrs[0].container_type), sp.factory_container_type, "");
   const ctnQty = ctrs.length || num(sp.container_qty) || 1;
   const consignee = pick(sp.customer_en, sp.customer, _raw.companyNameEN, _raw.companyName, orow0.customer, _oraw.companyNameEN, "");
   // 真实收货人抬头/地址在 orders.consignee（多行文本），plan 上只有客户简称
@@ -135,12 +138,18 @@ export async function renderBookingInstruction(ctx) {
   const notify = pick(_raw.notify, "SAME AS CONSIGNEE");
   const terms = String(pick(_raw.tradeTerms, _raw.incoterm, sp.freight_term, orow0.trade_terms, orow0.freight_term, _oraw.tradeTerms, "FOB")).toUpperCase();
   const releaseRaw = String(pick(sp.release_type, _raw.release_type, "")).toLowerCase();
-  const isTelex = /电放|swb|telex|sea ?way/.test(releaseRaw);
+  // ⚠️2026-07-24：原来 SWB 被正则并进"电放"，托书上没有 SWB 这一档。
+  //   全库 release_type：SWB 211 / 电放 11 / telex 3 / 空 34 —— **我方基本盘是 SWB**，故空值默认 SWB。
   const isOriginal = /正本|original/.test(releaseRaw);
-  // R1: mutually exclusive on pre-fill (syncChk2 only fires on user change, not load) — telex is default
-  const showOrig = isOriginal && !isTelex;
-  const showTelex = isTelex || !isOriginal;
+  const isSwb = !isOriginal && (/swb|sea ?way/.test(releaseRaw) || !nz(releaseRaw));
+  const isTelex = !isOriginal && !isSwb && /电放|telex/.test(releaseRaw);
+  // R1: mutually exclusive on pre-fill (syncChk2 only fires on user change, not load)
+  const showOrig = isOriginal, showSwb = isSwb, showTelex = isTelex;
   const cargoReady = dt(pick(sp.cargo_ready_date, _raw.cargo_ready, ""));
+  // 备注：系统派生的内部记账备注（"[从订单确认发货派生] 36-LL-1 …"）不上对外托书——那会把内部订单号漏给货代/船司
+  const _rmk = String(pick(sp.remarks, _raw.remarks, ""));
+  // 系统内部标记：[从…派生] [反查补全…] [自动同步] [导入…] 之类，一律不上对外单
+  const remarkText = /^\s*\[[^\]]*(从|系统|自动|反查|补全|待补|同步|迁移|导入|派生)/.test(_rmk) ? "" : _rmk;
   const docNo = "SBI-" + (blNo || cyNo || soNo || "DRAFT");
 
   // 货物表行（textarea/input 预填，原生可编辑）
@@ -157,7 +166,11 @@ export async function renderBookingInstruction(ctx) {
     </tr>`;
   }).join("") + (cargo.length ? `<tr class="total-row"><td></td><td><input type="text" value="${a(totQty ? fmtNum(totQty) + " ctns" : "")}" /></td><td style="text-align:right;font-weight:700">合计 TOTAL</td><td><input type="text" value="${a(totGw ? fmtNum(totGw, 0) + " kgs" : "")}" /></td><td><input type="text" value="${a(totCbm ? fmtNum(totCbm, 3) + " cbm" : "")}" /></td></tr>` : "");
 
-  const ctnOptions = ["40HC", "40GP", "20GP", "45HC", "LCL"].map(o => `<option ${o === ctnType ? "selected" : ""}>${o}</option>`).join("") + (["40HC", "40GP", "20GP", "45HC", "LCL"].includes(ctnType) ? "" : `<option selected>${esc(ctnType)}</option>`);
+  // 选项按全库真值补齐（原表缺 40HQ——恰恰是最常见的 107 票）；柜型未录时首项空白且被选中，不代填
+  const CTN_TYPES = ["40HQ", "40HC", "40GP", "20GP", "20ST", "45HQ", "LCL"];
+  const ctnOptions = `<option value="" ${nz(ctnType) ? "" : "selected"}>—</option>`
+    + CTN_TYPES.map(o => `<option ${o === ctnType ? "selected" : ""}>${o}</option>`).join("")
+    + (nz(ctnType) && !CTN_TYPES.includes(ctnType) ? `<option selected>${esc(ctnType)}</option>` : "");
 
   const html = `<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -289,12 +302,13 @@ body.mode-carrier .vfull { display: none !important; }
     </div>
     <div class="decl-right">
       <div class="bl-type-line" style="margin-top:4px;"><span style="font-size:9.5px;font-weight:700;margin-right:8px;">提单方式：</span>
-        <label><input type="checkbox" id="bl_orig" onchange="syncChk2(this,['bl_telex','bl_other_chk'])" ${ck(showOrig)} /> 正本</label>
-        <label><input type="checkbox" id="bl_telex" onchange="syncChk2(this,['bl_orig','bl_other_chk'])" ${ck(showTelex)} /> 电放</label>
-        <label><input type="checkbox" id="bl_other_chk" onchange="syncChk2(this,['bl_orig','bl_telex'])" /> 其他：</label>
+        <label><input type="checkbox" id="bl_orig" onchange="syncChk2(this,['bl_swb','bl_telex','bl_other_chk'])" ${ck(showOrig)} /> 正本</label>
+        <label><input type="checkbox" id="bl_swb" onchange="syncChk2(this,['bl_orig','bl_telex','bl_other_chk'])" ${ck(showSwb)} /> 海运单 SWB</label>
+        <label><input type="checkbox" id="bl_telex" onchange="syncChk2(this,['bl_orig','bl_swb','bl_other_chk'])" ${ck(showTelex)} /> 电放</label>
+        <label><input type="checkbox" id="bl_other_chk" onchange="syncChk2(this,['bl_orig','bl_swb','bl_telex'])" /> 其他：</label>
         <input type="text" id="bl_other_txt" placeholder="___________" style="width:80px;border-bottom:1px solid #999;" /></div>
       <div style="margin-top:10px;"><div style="font-size:9px;color:#555;margin-bottom:3px;">备注 Remarks</div>
-        <textarea rows="6" id="remarks" placeholder="特殊要求 / 换单 / 报检等" style="border:1px solid #ddd;border-radius:2px;padding:3px;background:#fff;width:100%;">${esc(pick(sp.remarks, _raw.remarks, ""))}</textarea></div>
+        <textarea rows="6" id="remarks" placeholder="特殊要求 / 换单 / 报检等" style="border:1px solid #ddd;border-radius:2px;padding:3px;background:#fff;width:100%;">${esc(remarkText)}</textarea></div>
     </div>
   </div>
   <div style="border:1px solid #999;border-top:none;padding:3px 10px;background:#f9f9f9;"><p style="font-size:7.5px;color:#666;line-height:1.4;">本托书为格式条款，委托方签字/盖章即视为已充分阅读并接受全部内容；如有与本托书冲突之特别约定，须以双方授权代表签字盖章的书面文件为准；本托书传真件、扫描件与原件具有同等法律效力；因本托书引起或与之相关的任何争议，适用中华人民共和国法律，由厦门海事法院管辖。</p></div>
