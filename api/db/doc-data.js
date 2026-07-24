@@ -21,8 +21,56 @@ export function scrubCustomerFacingHtml(html) {
 //   海运类 (SO/SQ/DN)     → 自动绑 OCEANBABY (上海洋宝宝)
 //     预留接口: raw.shippingVendor / spraw.shipping_vendor 未来可手选
 //     现在写死 'OCEANBABY' 默认，但不 hardcode 在模板里，全过 seller_profiles
+function firstCompanyText(v) {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v.map(firstCompanyText).filter(Boolean).join("\n");
+  if (typeof v === "object") return v.en || v.full_en || v.full || v.cn || v.address || v.text || v.value || Object.keys(v).map(function(k) { return firstCompanyText(v[k]); }).filter(Boolean)[0] || "";
+  return String(v || "");
+}
+
+function cfgFromCompany(c) {
+  return {
+    nameEN: c.name_en || "", nameCN: c.name_cn || "",
+    address: firstCompanyText(c.address), tel: c.contact_phone || "", email: c.einvoice_email || "",
+    taxNo: c.tax_id || c.registration_no || "",
+    termsPO: [],
+    bank: {
+      beneficiary: c.name_en || c.name_cn || "",
+      bankName: "", bankNameCN: "", swift: "",
+      bankAddr: "", usdAccount: "", rmbAccount: "",
+    },
+    terms: { sc: [], iv: [] },
+    seal_url: "",
+  };
+}
+
+function cfgFromSeller(s) {
+  return {
+    nameEN: s.name_en||"", nameCN: s.name_cn||"",
+    address: s.address||"", tel: s.tel||"", email: s.email||"",
+    taxNo: s.tax_no||"",   // 卖方统一社会信用代码（采购合同买方税号）
+    termsPO: Array.isArray(s.terms_po) ? s.terms_po : (s.terms_po||[]),
+    bank: {
+      beneficiary: s.bank_beneficiary||s.name_en||"",
+      bankName: s.bank_name||"", bankNameCN: s.bank_name_cn||"",
+      swift: s.bank_swift||"",
+      bankAddr: s.bank_addr||"", usdAccount: s.usd_account||"",
+      rmbAccount: s.rmb_account||"",
+    },
+    terms: {
+      sc: Array.isArray(s.terms_sc) ? s.terms_sc : (s.terms_sc||[]),
+      iv: Array.isArray(s.terms_iv) ? s.terms_iv : (s.terms_iv||[]),
+    },
+    seal_url: s.seal_url||"",  // 卖方公章图 URL（sigBlock 自动盖章用）
+  };
+}
+
 export async function loadSellerCfg(pool, raw, qco, opts) {
   opts = opts || {};
+  raw = raw || {};
+  var issuingId = parseInt(raw.issuing_company_id || raw.issuingCompanyId || 0, 10);
+  var companyCfg = null, companyCode = "";
   var code = qco || "";
   if(!code){ var h=(raw.issuingCompanyEN||raw.issuingCompany||"").toLowerCase(); if(h.includes("sanlyn"))code="sanlyn"; }
   // 海运类强制 OCEANBABY (除非 raw.shippingVendor 显式给出)
@@ -30,38 +78,49 @@ export async function loadSellerCfg(pool, raw, qco, opts) {
     code = raw.shipping_vendor || raw.shippingVendor || code || "yangbaobao";
   }
   try {
+    if(issuingId > 0 && !opts.shipping){
+      var cr = await pool.query("SELECT id, code, name_cn, name_en, address, contact_phone, einvoice_email, registration_no, tax_id FROM companies WHERE id=$1 LIMIT 1", [issuingId]);
+      if(cr.rows.length){
+        companyCfg = cfgFromCompany(cr.rows[0]);
+        companyCode = cr.rows[0].code || "";
+        if(!code && companyCode) code = companyCode;
+      }
+    }
     var q = code
       ? "SELECT * FROM seller_profiles WHERE code=$1 LIMIT 1"
       : "SELECT * FROM seller_profiles WHERE is_default=TRUE LIMIT 1";
     var p = code ? [code] : [];
     var r = await pool.query(q, p);
+    // ⚠️2026-07-24 护栏：companies.code 与 seller_profiles.code 不是一套编码——
+    //   companies id=37 的 code 是 'BABI'，而真正在用的 profile 是 'petbaby'(128/132 单，is_default，银行齐全)；
+    //   'BABI' 那条 profile 银行字段全空。若拿 company code 撞到一条**没有银行**的 profile，
+    //   就会把 IV/SC 的收款信息印成空白 → 回退到 is_default 那条（银行是付款命脉，宁可用默认也不能空）。
+    var _hasBank = row => !!(row && (row.bank_name || row.usd_account || row.rmb_account));
+    if (r.rows.length && companyCode && code === companyCode && !_hasBank(r.rows[0])) {
+      var dflt = await pool.query("SELECT * FROM seller_profiles WHERE is_default=TRUE LIMIT 1");
+      if (dflt.rows.length && _hasBank(dflt.rows[0])) r = dflt;
+    }
+    if(!r.rows.length && companyCfg) return companyCfg;
     if(!r.rows.length){ // fallback: first row
       var fb = await pool.query("SELECT * FROM seller_profiles ORDER BY id LIMIT 1");
       if(!fb.rows.length) throw new Error("No seller profile found");
       r = fb;
     }
     var s = r.rows[0];
-    return {
-      nameEN: s.name_en||"", nameCN: s.name_cn||"",
-      address: s.address||"", tel: s.tel||"", email: s.email||"",
-      taxNo: s.tax_no||"",   // 卖方统一社会信用代码（采购合同买方税号）
-      termsPO: Array.isArray(s.terms_po) ? s.terms_po : (s.terms_po||[]),
-      bank: {
-        beneficiary: s.bank_beneficiary||s.name_en||"",
-        bankName: s.bank_name||"", bankNameCN: s.bank_name_cn||"",
-        swift: s.bank_swift||"",
-        bankAddr: s.bank_addr||"", usdAccount: s.usd_account||"",
-        rmbAccount: s.rmb_account||"",
-      },
-      terms: {
-        sc: Array.isArray(s.terms_sc) ? s.terms_sc : (s.terms_sc||[]),
-        iv: Array.isArray(s.terms_iv) ? s.terms_iv : (s.terms_iv||[]),
-      },
-      seal_url: s.seal_url||"",  // 卖方公章图 URL（sigBlock 自动盖章用）
-    };
+    var sellerCfg = cfgFromSeller(s);
+    return companyCfg ? Object.assign({}, sellerCfg, {
+      nameEN: companyCfg.nameEN,
+      nameCN: companyCfg.nameCN,
+      address: companyCfg.address,
+      tel: companyCfg.tel,
+      email: companyCfg.email,
+      taxNo: companyCfg.taxNo,
+      bank: Object.assign({}, sellerCfg.bank, {
+        beneficiary: companyCfg.nameEN || companyCfg.nameCN || sellerCfg.bank.beneficiary,
+      }),
+    }) : sellerCfg;
   } catch(e) {
-    // Hard fallback so doc still renders if DB query fails
-    return { nameEN:"[SELLER]", nameCN:"", address:"", tel:"", email:"",
+    return { nameEN:"", nameCN:"", address:"", tel:"", email:"",
       bank:{beneficiary:"",bankName:"",swift:"",bankAddr:"",usdAccount:""},
       terms:{sc:[],iv:[]}, _err: e.message };
   }
@@ -175,4 +234,3 @@ export function buildColsFromConfig(dbCols, fnMap, fallback) {
     };
   });
 }
-

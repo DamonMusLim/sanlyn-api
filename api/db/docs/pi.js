@@ -1,5 +1,24 @@
 export async function renderPi(ctx){
-  let { pool, raw, ordNo, cno, curr, cfg, cust, caddr, ctel, date, pol, pod, inco, prods, tot, html, _xlsCapture, totRow, audience, ap, esc, pick, fmtM, wrap, docHdr, buyerBlock, productRows, termsCard, bankCard, sigBlock, loadDocColConfig, buildColsFromConfig, resolveUnitPrice, mkTotRow } = ctx;
+  let { pool, raw, order, ordNo, cno, curr, cfg, cust, caddr, ctel, date, pol, pod, inco, prods, tot, html, _xlsCapture, totRow, audience, ap, esc, pick, fmtM, wrap, docHdr, buyerBlock, productRows, termsCard, bankCard, sigBlock, loadDocColConfig, buildColsFromConfig, resolveUnitPrice, mkTotRow } = ctx;
+  function firstCompanyText(v) {
+    if (!v) return "";
+    if (typeof v === "string") return v;
+    if (Array.isArray(v)) return v.map(firstCompanyText).filter(Boolean).join("\n");
+    if (typeof v === "object") return v.en || v.full_en || v.full || v.cn || v.address || v.text || v.value || Object.keys(v).map(function(k) { return firstCompanyText(v[k]); }).filter(Boolean)[0] || "";
+    return String(v || "");
+  }
+  var customerCompanyId = parseInt((order&&order.customer_company_id)||raw.customer_company_id||0, 10);
+  if (customerCompanyId > 0) {
+    try {
+      var _cr = await pool.query("SELECT name_cn, name_en, address, contact_phone FROM companies WHERE id=$1 LIMIT 1", [customerCompanyId]);
+      if (_cr.rows.length) {
+        var _co = _cr.rows[0];
+        cust = _co.name_en || _co.name_cn || cust;
+        caddr = firstCompanyText(_co.address) || caddr;
+        ctel = _co.contact_phone || ctel;
+      }
+    } catch(e) {}
+  }
 
         var noPI=cno.replace(/[^A-Z0-9-]/gi,"").slice(0,20);
         var _piNameFn=function(p){

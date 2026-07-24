@@ -20,7 +20,6 @@ import { htmlToPdf } from "./_html-to-pdf.js"; // format=pdf 真PDF渲染 2026-0
 import { renderPureFreightDoc } from "./doc-pure-freight.js";
 import { renderPurePortChargeDoc } from "./doc-pure-portcharge.js";
 import { loadContainerWeightSources, resolveContainerGrossWeight, scaleGrossWeightsToContainer } from "./customs-weight-source.js";
-import { findPlanByRef, findPlanForOrder, resolvePlanContracts } from "./lib/shipping-plan-contracts.js";
 
 // ── W0-3 customer-facing scrub ────────────────────────────────────────────────
 // Memory rule (HARD): feedback_customer_code_anti_counterfeit.md
@@ -35,6 +34,16 @@ import { CSS, esc, fmtM, fmtD, pick, resolveAddr, resolveUnitPrice, wrap, seller
   getCanonicalProds, getTotal } from "./doc-helpers.js";
 import { scrubCustomerFacingHtml, loadSellerCfg, enrichProdsFromMaster,
   loadDocColConfig, buildColsFromConfig } from "./doc-data.js";
+
+function customerDocNo(raw, order, fallback) {
+  raw = raw || {};
+  order = order || {};
+  var po = pick(raw.customerPO, raw.customer_po, raw.customerPo, order.customer_po, order.customer_po_no);
+  if (po && po !== order.order_no) return po;
+  var fs = pick(raw.fs_no, raw.fsNo, raw.internal_no, raw.internalNo, order.contract_no, fallback);
+  var m = String(fs || "").match(/\bFS[0-9A-Z-]+\b/i);
+  return m ? m[0].toUpperCase() : fs;
+}
 
 var FORWARDERS = {
   default: {
@@ -259,23 +268,17 @@ export default async function handler(req, res) {
         }
       }
       if(typeof raw==="string")try{raw=JSON.parse(raw);}catch(e){raw={};}
+      raw = Object.assign({}, raw, {
+        issuing_company_id: o.issuing_company_id || raw.issuing_company_id,
+        customer_company_id: o.customer_company_id || raw.customer_company_id,
+        factory_company_id: o.factory_company_id || raw.factory_company_id,
+      });
       var cfg=await loadSellerCfg(pool,raw,qco);
       var cust=pick(o.company_name_en,raw.companyNameEN,raw.companyNameCN,o.customer);
       var caddr=resolveAddr(cust,pick(raw.customerAddress,raw.deliveryAddress));
       var ctel=raw.phone||"";
-      var ordNo=pick(raw.customerPO,o.customer_po,o.order_no);
+      var ordNo=customerDocNo(raw,o,pick(o.contract_no,id));
       var cno=pick(o.contract_no,o.order_no,id);
-      var _goodsCnyContractNo="";
-      try {
-        var _contractPlan = await findPlanForOrder(pool, o);
-        if (_contractPlan) {
-          var _planContracts = await resolvePlanContracts(pool, _contractPlan);
-          if (!_planContracts.legacy && _planContracts.goodsCnyNo) {
-            _goodsCnyContractNo = _planContracts.goodsCnyNo;
-            cno = _goodsCnyContractNo;
-          }
-        }
-      } catch (e) { console.warn("[documents] split contract resolve skipped:", e.message); }
       var date=fmtD(new Date()); // 单据日期 = 今日（出单当天）
       var curr=pick(raw.currency,o.currency,"USD");
       // POL = 工厂带过来的港口：取该单工厂在 factories.ports 的首个港口。
@@ -292,18 +295,17 @@ export default async function handler(req, res) {
       }
       // POL/POD/BL 从关联的 SO(托书/海运计划) + BL 带（实际订舱港口优先于工厂默认港）。
       var _spPol="", _spPod="", _spBl="";
+      var _primaryContractNo="";
       var _v2_vessel="", _v2_voyage="", _v2_carrier="", _v2_etd="";
       try{
-        var _spRow0 = _contractPlan;
-        if(!_spRow0){
-          var _spR=await pool.query(
-            "SELECT pol,pod,bl_no,vessel,voyage,shipping_line,carrier_code,etd FROM shipping_plans WHERE NULLIF($1,'') IS NOT NULL AND (bl_no=$1 OR contract_no=$1 OR order_contract_nos ILIKE '%'||$1||'%') OR (NULLIF($2,'') IS NOT NULL AND (contract_no=$2 OR order_contract_nos ILIKE '%'||$2||'%')) ORDER BY tracking_updated_at DESC NULLS LAST, eta DESC NULLS LAST LIMIT 1",
-            [o.contract_no||"", o.order_no||""]
-          );
-          _spRow0=_spR.rows[0];
-        }
-        if(_spRow0){
+        var _spR=await pool.query(
+          "SELECT pol,pod,bl_no,vessel,voyage,shipping_line,carrier_code,etd,primary_contract_no FROM shipping_plans WHERE NULLIF($1,'') IS NOT NULL AND (bl_no=$1 OR contract_no=$1 OR order_contract_nos ILIKE '%'||$1||'%') OR (NULLIF($2,'') IS NOT NULL AND (contract_no=$2 OR order_contract_nos ILIKE '%'||$2||'%')) ORDER BY tracking_updated_at DESC NULLS LAST, eta DESC NULLS LAST LIMIT 1",
+          [o.contract_no||"", o.order_no||""]
+        );
+        if(_spR.rows[0]){
+          var _spRow0=_spR.rows[0];
           _spPol=_spRow0.pol||""; _spPod=_spRow0.pod||""; _spBl=_spRow0.bl_no||"";
+          _primaryContractNo=_spRow0.primary_contract_no||"";
           _v2_vessel=_spRow0.vessel||""; _v2_voyage=_spRow0.voyage||"";
           _v2_carrier=_spRow0.shipping_line||_spRow0.carrier_code||"";
           _v2_etd=_spRow0.etd?fmtD(_spRow0.etd):"";
@@ -360,7 +362,7 @@ export default async function handler(req, res) {
       // Used by productRows() to emit a section header when multiple orders are merged.
       var _primaryCno=pick(o.contract_no,o.order_no,id);
       var _primaryContainer=pick(_cbMap[_primaryCno], raw.containerNo, "");
-      var _primaryPO=pick(raw.customerPO,o.customer_po,o.order_no);
+      var _primaryPO=customerDocNo(raw,o,_primaryCno);
       var _primaryCtnType=pick(_cbTypeMap[_primaryCno], raw.containerType, "");
       var _primaryIncoterm=pick(raw.tradeTerms,raw.incoterms,"");
       var _primaryFsNo=pick(raw.fs_no, raw.internal_no, o.contract_no, _primaryCno);
@@ -405,7 +407,7 @@ export default async function handler(req, res) {
             if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
             var sProds=await enrichProdsFromMaster(pool,getProds(sRaw));
             var sCno=sib.contract_no||sib.customer_po;
-            var sPO=pick(sRaw.customerPO,sib.customer_po,sib.order_no);
+            var sPO=customerDocNo(sRaw,sib,sCno);
             var sContainer=pick(_cbMap[sCno], sRaw.containerNo, "");
             var sCtnType=pick(_cbTypeMap[sCno], sRaw.containerType, "");
             var sIncoterm=pick(sRaw.tradeTerms,sRaw.incoterms,"");
@@ -426,7 +428,6 @@ export default async function handler(req, res) {
           prods.sort(function(a,b){var pa=(a._customerPO||"");var pb=(b._customerPO||"");return pa<pb?-1:pa>pb?1:0;});
         }
       }
-      if(_goodsCnyContractNo) cno=_goodsCnyContractNo;
       // Single-order: no group header needed — blank the tag so productRows skips it.
       if(!_hasMultiOrder) prods=prods.map(function(p){return Object.assign({},p,{_groupKey:""});});
 
@@ -487,19 +488,9 @@ export default async function handler(req, res) {
         // the request when audience===customs (review fix #4) — see check below.
         var _missingDecl = [];
         if (_customsWeightSource) {
-          var _gwGroups = {};
-          prods.forEach(function(p){
-            var key = p._containerNo || _customsWeightSource.containerFor({ contractNo: p._contractNo, orderNo: p._contractNo }) || p._contractNo || "";
-            (_gwGroups[key] || (_gwGroups[key] = [])).push(p);
-          });
-          Object.keys(_gwGroups).forEach(function(k){
-            var rows = _gwGroups[k], oli = rows.map(function(p){ return Number(p.grossWeight||p.gw||0) * Number(p.qty||0); });
-            var oliSum = oli.reduce(function(s,v){ return s + v; }, 0);
-            var first = rows[0] || {};
-            var measured = _customsWeightSource.measuredFor({ containerNo: first._containerNo, contractNo: first._contractNo, orderNo: first._contractNo });
-            var scaled = scaleGrossWeightsToContainer(oli, resolveContainerGrossWeight(measured, oliSum), oliSum);
-            rows.forEach(function(p,i){ p._customsGrossTotal = scaled[i]; });
-          });
+          // Damon 2026-07-10(forge任务B): 报关毛重不再按 measured 集装箱实测重缩放(measured 陈旧会偏离真值,本例 104922 != 105915.2),
+          // 统一用 Σ gross×qty 真值(与 PL/报关单 loadLines 同源),保证三方审核一致。
+          prods.forEach(function(p){ p._customsGrossTotal = Number(p.grossWeight || p.gw || 0) * Number(p.qty || 0); });
         }
         prods.forEach(function(p){
           var sku = p.sku || p.code || p.product_code || "";
@@ -708,6 +699,7 @@ export default async function handler(req, res) {
         var rows=_customsMode?_aggregate(lines):_detailRows(orderRows,lines,ctnMap);
         var total=_tot(rows), baseNo=(ordNo||cno||id||"PACK");
         var fsNo=_uniqJoin(orderRows.map(_fsFromOrder)) || _fsFromOrder(o) || baseNo;
+        if(_primaryContractNo) fsNo=_primaryContractNo;
         var packCurr=_uniqJoin(orderRows.map(function(orow){return orow&&orow.currency;})) || o.currency || curr || "CNY";
         var orderNoText=_uniqJoin(orderRows.map(function(orow){return _shortNo((orow&&orow.order_no)||(orow&&orow.contract_no));}));
         function _money(v){ return parseFloat((_n(v)).toFixed(2))||0; }
@@ -814,6 +806,7 @@ export default async function handler(req, res) {
                   (prods||[]).forEach(function(p){ if(p._fsNo) v2_fsList.push(p._fsNo); });
                   if(!v2_fsList.length) v2_fsList.push(raw.fs_no || raw.internal_no || cno);
                   var v2_docNo = joinUniq(v2_fsList.map(stripPrefix), " / ");
+                  if(_primaryContractNo) v2_docNo=_primaryContractNo;
                   // Order list — strip "40-" prefix, join unique
                   var v2_orderList = [];
                   (prods||[]).forEach(function(p){ if(p._customerPO) v2_orderList.push(stripPrefix(p._customerPO)); });
@@ -1221,7 +1214,7 @@ export default async function handler(req, res) {
         var _fsNoSC = (raw.fs_no || raw.internal_no || (ordNo||no)) + "-SC";
         _packBodies.sc=`
           ${docHdr(cfg,"销售合同","SALES CONTRACT",audience)}
-          ${buyerBlock(cust,caddr,ctel,no,"Contract No.",ordNo,date,curr)}
+          ${buyerBlock(cust,caddr,ctel,(_primaryContractNo||no),"Contract No.",ordNo,date,curr)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsSC.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsSC,curr)}${totRow}</tbody></table>
           <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.sc)}${bankCard(cfg.bank,curr)}</div>${sigBlock(cfg.seal_url)}</div>`; html=wrap((ordNo||no)+"_SC",_packBodies.sc,ap,{docNo:_fsNoSC,date:date});
@@ -1279,7 +1272,7 @@ export default async function handler(req, res) {
         var _fsNoIV = (raw.fs_no || raw.internal_no || (ordNo||noIV)) + "-IV";
         _packBodies.iv=`
           ${docHdr(cfg,"商业发票","COMMERCIAL INVOICE",audience)}
-          ${buyerBlock(cust,caddr,ctel,noIV,"Invoice No.",ordNo,date,curr)}
+          ${buyerBlock(cust,caddr,ctel,(_primaryContractNo||noIV),"Invoice No.",ordNo,date,curr)}
           <table><thead><tr><th style="width:36px">NO.</th>${colsIV.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
           <tbody>${productRows(prods,colsIV,curr)}${totRow}</tbody></table>
           <div class="footer-block"><div class="details-grid">${termsCard(cfg.terms.iv)}${bankCard(cfg.bank,curr)}</div>${sigBlock(cfg.seal_url)}</div>`; html=wrap((ordNo||noIV)+"_IV",_packBodies.iv,ap,{docNo:_fsNoIV,date:date});
@@ -1361,7 +1354,7 @@ export default async function handler(req, res) {
         var _fsNoPL = (raw.fs_no || raw.internal_no || (ordNo||noPL)) + "-PL";
         _packBodies.pl=`
           ${docHdr(cfg,"装箱单","PACKING LIST",audience)}
-          ${buyerBlock(cust,caddr,ctel,noPL,"Contract No.",ordNo,date,"")}
+          ${buyerBlock(cust,caddr,ctel,(_primaryContractNo||noPL),"Contract No.",ordNo,date,"")}
           <table><thead><tr><th style="width:36px">NO.</th>${colsPL.map(function(c){return`<th${c.w?` style="width:${c.w};text-align:${c.al==='right'?'right':'center'}"`:""}>${c.lbl}</th>`;}).join("")}</tr></thead>
 	          <tbody>${productRows(prods,colsPL,curr)}
 	          ${audience==="customs"?`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${_plQtyUnit(tqty,"CTN")}</td><td></td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>`:`<tr class="total-row"><td colspan="3" class="text-right" style="color:#555;font-size:11px">SHIPPING MARKS: N/M &nbsp;&nbsp; TOTAL:</td><td style="text-align:center">${_plQtyUnit(tqty,"CTN")}</td><td class="text-right">${fmtM(tnw)}</td><td class="text-right">${fmtM(tgw)}</td><td class="text-right">${fmtM(tcbmPL,3)}</td></tr>`}
@@ -1399,7 +1392,7 @@ export default async function handler(req, res) {
 
       if(type==="pi"){
         const { renderPi } = await import("./docs/pi.js");
-        ({ html, _xlsCapture, totRow } = await renderPi({ pool, raw, ordNo, cno, curr, cfg, cust, caddr, ctel, date, pol, pod, inco, prods, tot, html, _xlsCapture, totRow, audience, ap, esc, pick, fmtM, wrap, docHdr, buyerBlock, productRows, termsCard, bankCard, sigBlock, loadDocColConfig, buildColsFromConfig, resolveUnitPrice, mkTotRow }));
+        ({ html, _xlsCapture, totRow } = await renderPi({ pool, raw, order:o, ordNo, cno, curr, cfg, cust, caddr, ctel, date, pol, pod, inco, prods, tot, html, _xlsCapture, totRow, audience, ap, esc, pick, fmtM, wrap, docHdr, buyerBlock, productRows, termsCard, bankCard, sigBlock, loadDocColConfig, buildColsFromConfig, resolveUnitPrice, mkTotRow }));
       }
 
       if(type==="po"){
@@ -1410,17 +1403,12 @@ export default async function handler(req, res) {
 
     if(["so","debit","freight-quote","sq","tr"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
-      var sp=await findPlanByRef(pool, id);
-      if(!sp) return res.status(404).send("<h1>Shipment not found: "+esc(id)+"</h1>");
-      var spContracts=await resolvePlanContracts(pool, sp);
-      if(!spContracts.legacy && spContracts.freightUsdNo) {
-        sp = Object.assign({}, sp, {
-          contract_no: spContracts.freightUsdNo,
-          primary_contract_no: spContracts.primaryContractNo,
-          contract_nos: spContracts.allNos,
-        });
-      }
-      var spraw=sp.raw||{};
+      var spR=await pool.query(
+        "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
+        [id]
+      );
+      if(!spR.rows.length) return res.status(404).send("<h1>Shipment not found: "+esc(id)+"</h1>");
+      var sp=spR.rows[0], spraw=sp.raw||{};
       if(typeof spraw==="string")try{spraw=JSON.parse(spraw);}catch(e){spraw={};}
       // 海运类文档强制走 OCEANBABY (除非 spraw.shipping_vendor 指定)
       var cfg3=await loadSellerCfg(pool,spraw,qco,{shipping:true});
@@ -1484,24 +1472,6 @@ export default async function handler(req, res) {
         html = renderDebit({
           sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr,
           fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick,
-        });
-      }
-
-      if(type==="debit_ocean"){
-        const { renderDebit } = await import("./docs/debit.js");
-        html = renderDebit({
-          sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr,
-          fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick,
-          filterMode: "ocean",
-        });
-      }
-
-      if(type==="debit_local"){
-        const { renderDebit } = await import("./docs/debit.js");
-        html = renderDebit({
-          sp, spraw, cust, _fmtVariant, soNo, cqty, cfg3, consignee, consAddr,
-          fmtD, etd, vessel, voyage, polSp, podSp, fmtM, esc, ap, pick,
-          filterMode: "local",
         });
       }
 

@@ -76,13 +76,24 @@ export default async function handler(req, res) {
 
   if (req.method === "GET") {
     try {
-      const { type, country, limit = 100, q } = req.query;
+      const { type, country, limit = 100, q, id, ids } = req.query;
       let query = "SELECT * FROM companies", params = [], conds = [];
-      if (type)    { params.push(type);    conds.push(`type = $${params.length}`); }
-      if (country) { params.push(country); conds.push(`country = $${params.length}`); }
-      if (q && q.trim()) { const kw = q.trim(); params.push("%" + kw + "%"); const p = params.length; conds.push("(name_cn ILIKE $" + p + " OR name_en ILIKE $" + p + " OR code ILIKE $" + p + ")"); }
+      const idList = []
+        .concat(id != null ? [id] : [])
+        .concat(ids ? String(ids).split(",") : [])
+        .map(function(v) { return parseInt(v, 10); })
+        .filter(function(v, i, a) { return Number.isFinite(v) && v > 0 && a.indexOf(v) === i; });
+      const idMode = id != null || ids != null;
+      if (idMode) {
+        params.push(idList);
+        conds.push(`id = ANY($${params.length}::int[])`);
+      } else {
+        if (type)    { params.push(type);    conds.push(`type = $${params.length}`); }
+        if (country) { params.push(country); conds.push(`country = $${params.length}`); }
+        if (q && q.trim()) { const kw = q.trim(); params.push("%" + kw + "%"); const p = params.length; conds.push("(name_cn ILIKE $" + p + " OR name_en ILIKE $" + p + " OR code ILIKE $" + p + ")"); }
+      }
       if (conds.length) query += " WHERE " + conds.join(" AND ");
-      params.push(parseInt(limit));
+      params.push(parseInt(limit, 10) || 100);
       query += ` ORDER BY code ASC LIMIT $${params.length}`;
       const result = await pool.query(query, params);
       return res.status(200).json({ success: true, data: result.rows, count: result.rowCount });
