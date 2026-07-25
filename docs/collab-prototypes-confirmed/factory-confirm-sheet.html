@@ -1,0 +1,337 @@
+<title>工厂确认协同单 · 原型</title>
+<style>
+:root{
+  --ink:#152030; --sub:#5a6b7d; --faint:#8a99a8; --ground:#eef2f6; --card:#fff; --line:#dde4ec;
+  --brand:#15619a; --brand-soft:#e5eff7; --brand-ink:#0e4a78;
+  --ok:#2f7d55; --ok-soft:#e5f2ea; --wait:#a9701a; --wait-soft:#f8efdc; --err:#b23a2e; --err-soft:#f8e7e4;
+  --help:#6b4ba8; --help-soft:#efe9f8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ink:#e4ebf2; --sub:#9aabbb; --faint:#6f8091; --ground:#0d141c; --card:#161f2a; --line:#26333f;
+  --brand:#4f9fd6; --brand-soft:#132836; --brand-ink:#8ec4e8;
+  --ok:#66b487; --ok-soft:#15271d; --wait:#d3a458; --wait-soft:#2a2214; --err:#dd7d70; --err-soft:#2d1a17;
+  --help:#a98fd6; --help-soft:#211a30;
+}}
+:root[data-theme="dark"]{
+  --ink:#e4ebf2; --sub:#9aabbb; --faint:#6f8091; --ground:#0d141c; --card:#161f2a; --line:#26333f;
+  --brand:#4f9fd6; --brand-soft:#132836; --brand-ink:#8ec4e8;
+  --ok:#66b487; --ok-soft:#15271d; --wait:#d3a458; --wait-soft:#2a2214; --err:#dd7d70; --err-soft:#2d1a17;
+  --help:#a98fd6; --help-soft:#211a30;
+}
+:root[data-theme="light"]{
+  --ink:#152030; --sub:#5a6b7d; --faint:#8a99a8; --ground:#eef2f6; --card:#fff; --line:#dde4ec;
+  --brand:#15619a; --brand-soft:#e5eff7; --brand-ink:#0e4a78;
+  --ok:#2f7d55; --ok-soft:#e5f2ea; --wait:#a9701a; --wait-soft:#f8efdc; --err:#b23a2e; --err-soft:#f8e7e4;
+  --help:#6b4ba8; --help-soft:#efe9f8;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font:15px/1.6 -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;
+  -webkit-text-size-adjust:100%}
+.mono,.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--ground);
+  display:flex;flex-direction:column;position:relative}
+
+/* 顶部抬头 */
+.head{background:var(--brand);color:#fff;padding:16px 18px 14px;position:sticky;top:0;z-index:20}
+:root[data-theme="dark"] .head, .head{--on:#fff}
+.head .co{font-size:18px;font-weight:800;line-height:1.3;display:flex;align-items:center;gap:8px}
+.head .rt{font-size:12.5px;opacity:.9;margin-top:3px}
+.head .rt b{font-variant-numeric:tabular-nums}
+.deliver{margin-top:11px;background:rgba(255,255,255,.14);border-radius:8px;padding:8px 12px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px}
+.deliver .l{font-size:12px;opacity:.85}
+.deliver .v{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+
+/* 免登录安心条 */
+.nologin{display:flex;align-items:center;gap:9px;background:var(--ok-soft);color:var(--ok);
+  padding:9px 16px;font-size:12.5px;font-weight:600;border-bottom:1px solid var(--line)}
+.nologin svg{flex:0 0 auto}
+
+/* 进度 */
+.prog{padding:12px 16px 4px;background:var(--card);border-bottom:1px solid var(--line)}
+.prog-top{display:flex;justify-content:space-between;align-items:baseline;font-size:13px}
+.prog-top b{color:var(--wait);font-size:14px}
+.bar{height:7px;border-radius:99px;background:var(--line);margin:8px 0 12px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--ok);border-radius:99px;width:60%}
+
+.wrap{padding:14px 14px 130px;display:flex;flex-direction:column;gap:12px}
+
+/* 区块卡片 */
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ch{display:flex;align-items:center;gap:11px;padding:14px 16px}
+.ic{width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font-size:19px;flex:0 0 auto;
+  background:var(--brand-soft)}
+.ct{flex:1;min-width:0}
+.ct h2{margin:0;font-size:16px;font-weight:800;letter-spacing:.01em}
+.ct p{margin:2px 0 0;font-size:12px;color:var(--sub)}
+.st{font-size:12px;font-weight:800;padding:3px 10px;border-radius:99px;white-space:nowrap}
+.st.wait{background:var(--wait-soft);color:var(--wait)}
+.st.ok{background:var(--ok-soft);color:var(--ok)}
+.st.err{background:var(--err-soft);color:var(--err)}
+.cb{padding:0 16px 16px;border-top:1px solid var(--line);padding-top:13px}
+
+/* 货物/价格行 */
+.rows{overflow-x:auto;margin:0 -16px;padding:0 16px}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:380px}
+th{text-align:left;color:var(--faint);font-size:11px;font-weight:700;padding:0 10px 6px 0;white-space:nowrap}
+td{padding:7px 10px 7px 0;border-top:1px solid var(--line);white-space:nowrap}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pname{white-space:normal;font-weight:600;min-width:150px}
+tfoot td{font-weight:800;border-top:2px solid var(--line);color:var(--ink)}
+
+.kv{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;font-size:13.5px;align-items:baseline}
+.kv .k{color:var(--sub);white-space:nowrap}
+.kv .v{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.kv .v.edit{color:var(--brand)}
+
+/* 上传格 */
+.upl{display:flex;gap:9px;flex-wrap:wrap;margin-top:4px}
+.slot{width:70px;height:70px;border-radius:9px;border:1.5px dashed var(--line);
+  display:grid;place-items:center;text-align:center;color:var(--faint);font-size:10.5px;line-height:1.25;cursor:pointer;
+  background:var(--ground)}
+.slot.done{border-style:solid;border-color:var(--ok);background:var(--ok-soft);color:var(--ok);font-weight:700}
+.slot.lost{border-color:var(--err);color:var(--err);background:var(--err-soft)}
+.slot .big{font-size:20px;display:block;margin-bottom:1px}
+.doc-line{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.doc-line:first-child{border-top:none}
+.doc-line .nm{flex:1;font-size:13.5px;font-weight:600}
+.doc-line .req{font-size:11px;color:var(--err);font-weight:700}
+
+/* 动作按钮 */
+.acts{display:flex;gap:9px;margin-top:13px}
+.btn{flex:1;padding:11px 0;border-radius:9px;font-size:14px;font-weight:800;cursor:pointer;
+  border:1.5px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;text-align:center}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.ghost{color:var(--err);border-color:var(--err-soft)}
+.btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.sm{flex:0 0 auto;padding:8px 14px;font-size:12.5px;font-weight:700}
+.confirmed{display:flex;align-items:center;gap:8px;color:var(--ok);font-weight:700;font-size:13.5px}
+
+/* 底部固定条 */
+.foot{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
+  padding:11px 14px calc(11px + env(safe-area-inset-bottom));z-index:30}
+.foot-in{max-width:480px;margin:0 auto;display:flex;gap:10px;align-items:center}
+.foot .submit{flex:1;padding:13px 0;border-radius:10px;background:var(--brand);color:#fff;border:none;
+  font-size:15.5px;font-weight:800;cursor:pointer;font-family:inherit}
+.foot .help{flex:0 0 auto;padding:13px 15px;border-radius:10px;background:var(--help-soft);color:var(--help);
+  border:1px solid transparent;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;line-height:1.15}
+.foot .help small{font-weight:600;font-size:10px;opacity:.85}
+
+/* 协助浮层 */
+.sheet{position:fixed;inset:0;background:rgba(10,16,24,.5);z-index:40;display:none;
+  align-items:flex-end;justify-content:center}
+.sheet.on{display:flex}
+.sheet-c{background:var(--card);width:100%;max-width:480px;border-radius:16px 16px 0 0;padding:20px 18px calc(24px + env(safe-area-inset-bottom))}
+.sheet-c h3{margin:0 0 4px;font-size:17px;display:flex;align-items:center;gap:8px}
+.sheet-c p{margin:0 0 15px;font-size:13.5px;color:var(--sub)}
+.opt{display:flex;align-items:center;gap:13px;padding:14px;border:1px solid var(--line);border-radius:11px;
+  margin-bottom:10px;cursor:pointer}
+.opt .oi{width:40px;height:40px;border-radius:10px;background:var(--help-soft);color:var(--help);
+  display:grid;place-items:center;font-size:20px;flex:0 0 auto}
+.opt .ot b{display:block;font-size:14.5px}
+.opt .ot span{font-size:12px;color:var(--sub)}
+.sheet-x{width:100%;padding:12px;border:none;background:none;color:var(--sub);font-size:14px;cursor:pointer;font-family:inherit;font-weight:600}
+
+.demoflag{background:var(--wait-soft);color:var(--wait);font-size:11px;text-align:center;padding:5px;font-weight:700}
+.tip{font-size:11.5px;color:var(--faint);margin-top:9px;line-height:1.5}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.hsrow{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--line,#e2e7ee)}
+.hsrow:first-child{border-top:none}
+.hsrow .hn{flex:1;min-width:0}
+.hsrow .hn b{font-size:13.5px;font-weight:700;display:block;line-height:1.4}
+.hsrow .hn small{color:#8b98a8;font-size:11px}
+.hscode{font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:800;color:#0f4f92;white-space:nowrap}
+.hsedit{font-size:11.5px;font-weight:800;color:#1a6fc4;cursor:pointer;white-space:nowrap;margin-left:8px}
+.hswarn{background:#fbefd8;color:#8a6a10;font-size:11.5px;font-weight:700;padding:9px 11px;line-height:1.55;border-radius:8px;margin-top:9px}
+</style>
+
+<div class="app">
+  <div class="demoflag">UI 原型 · 演示数据 · 真实上线时工厂点开专属链接即此页</div>
+
+  <div class="head">
+    <div class="co">🏭 辽宁宠爱科技有限公司</div>
+    <div class="rt">货物确认单 · 提单 <b>CY00395</b> · 厦门 XMN → 巴生西 · 柜 CSGU2466241</div>
+    <div class="deliver">
+      <span class="l">📅 要求交货时间</span>
+      <span class="v">2026-07-08 前</span>
+    </div>
+  </div>
+
+  <div class="nologin">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+    无需注册或登录 —— 这条链接就是您的专属入口，随时可打开、可保存
+  </div>
+
+  <div class="prog">
+    <div class="prog-top"><span>本单进度</span><span><b>还差 2 项</b> 待您确认</span></div>
+    <div class="bar"><i></i></div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- 0 申报品名/HS:第一时间确认,订舱前定死 -->
+    <section class="card">
+      <div class="ch">
+        <div class="ic">🏷</div>
+        <div class="ct"><h2>申报品名 / HS 编码</h2><p>订舱前定稿 · 决定报关与退税</p></div>
+        <span class="st wait">待确认</span>
+      </div>
+      <div class="cb" style="padding-top:6px">
+        <div class="hsrow"><span class="hn"><b>宠物食品 PET FOOD</b><small>猫砂 6KG · 420 箱</small></span><span class="hscode">2309109000</span><span class="hsedit">改 ✎</span></div>
+        <div class="hsrow"><span class="hn"><b>宠物罐头 PET CANNED FOOD</b><small>主食罐 · 398 箱</small></span><span class="hscode">2309101000</span><span class="hsedit">改 ✎</span></div>
+        <div class="hsrow"><span class="hn"><b>宠物用品 PET SUPPLIES</b><small>玩具 · 429 箱</small></span><span class="hscode">3924900000</span><span class="hsedit">改 ✎</span></div>
+        <div class="hswarn">HS 编码须与贵司开票品名一致；订舱后更改需支付船司改单费，并影响退税</div>
+        <div class="acts" style="display:flex;gap:9px;margin-top:11px">
+          <button class="btn brand" style="flex:1">✓ HS 无误，确认</button>
+          <button class="btn" style="flex:1">需修改</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1 订单货物 -->
+    <section class="card">
+      <div class="ch">
+        <div class="ic">📦</div>
+        <div class="ct"><h2>订单货物</h2><p>请核对品名与箱数，有误可改</p></div>
+        <span class="st ok">已核对</span>
+      </div>
+      <div class="cb">
+        <div class="rows"><table>
+          <thead><tr><th class="pname">品名</th><th>货号</th><th class="num">箱数</th></tr></thead>
+          <tbody>
+            <tr><td class="pname">PROPAW BENTONITE CAT LITTER LEMON 6KG<br><span style="color:var(--faint);font-weight:400;font-size:11px">6KG/BAG · 9551014016620</span></td><td class="mono">CP0902</td><td class="num">1,445</td></tr>
+          </tbody>
+          <tfoot><tr><td>合计</td><td></td><td class="num">1,445 箱</td></tr></tfoot>
+        </table></div>
+        <div class="confirmed" style="margin-top:12px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M20 6 9 17l-5-5"/></svg>您已于 07-05 核对无误</div>
+      </div>
+    </section>
+
+    <!-- 2 价格确认 -->
+    <section class="card">
+      <div class="ch">
+        <div class="ic">💰</div>
+        <div class="ct"><h2>采购价确认</h2><p>确认单价与交期 · 只您和我们可见</p></div>
+        <span class="st wait">待您确认</span>
+      </div>
+      <div class="cb">
+        <div class="kv">
+          <span class="k">采购单价（含税）</span><span class="v edit">¥ 142.00 / 箱 ✎</span>
+          <span class="k">箱数</span><span class="v">1,445</span>
+          <span class="k">采购金额</span><span class="v">¥ 205,190.00</span>
+          <span class="k">开票点数</span><span class="v edit">11% ✎</span>
+          <span class="k">交货日期</span><span class="v edit">2026-07-06 ✎</span>
+        </div>
+        <p class="tip">改了单价或交期，我们会先内部复核再入账，不会直接改动订单。</p>
+        <div class="acts">
+          <button class="btn ok">✓ 价格无误，确认</button>
+          <button class="btn ghost">价格有变 · 修改</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 装货信息 -->
+    <section class="card">
+      <div class="ch">
+        <div class="ic">🚛</div>
+        <div class="ct"><h2>装货信息</h2><p>司机 · 柜号 · 装柜照片</p></div>
+        <span class="st err">照片待重传</span>
+      </div>
+      <div class="cb">
+        <div class="kv">
+          <span class="k">车牌 / 司机</span><span class="v">辽GK1187 · 杨光</span>
+          <span class="k">柜号 / 封铅</span><span class="v">CSGU2466241 · A455028</span>
+          <span class="k">皮重 / VGM</span><span class="v">2,200 · 28,200 kg</span>
+        </div>
+        <p class="tip" style="margin-top:12px;color:var(--err)">⚠ 原装柜照片因系统迁移丢失，请重新上传（每柜 3–5 张即可）。</p>
+        <div class="upl">
+          <div class="slot lost"><span class="big">📷</span>已丢失<br>请重传</div>
+          <div class="slot"><span class="big">＋</span>装箱图</div>
+          <div class="slot"><span class="big">＋</span>磅单</div>
+          <div class="slot"><span class="big">＋</span>视频</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 报关资料 -->
+    <section class="card">
+      <div class="ch">
+        <div class="ic">📄</div>
+        <div class="ct"><h2>报关资料</h2><p>本厂专属 · 别的工厂看不到您的</p></div>
+        <span class="st wait">缺 1 项</span>
+      </div>
+      <div class="cb" style="padding-top:6px">
+        <div class="doc-line"><span class="nm">报关单</span><span class="confirmed">✓ 已上传</span></div>
+        <div class="doc-line"><span class="nm">报检单</span><span class="confirmed">✓ 已上传</span></div>
+        <div class="doc-line"><span class="nm">检疫证 <span class="req">· 待上传</span></span><button class="btn sm brand">上传</button></div>
+        <div class="doc-line"><span class="nm">进项发票</span><button class="btn sm">上传</button></div>
+      </div>
+    </section>
+
+    <!-- 货运险:工厂直发时随货单证 -->
+    <section class="card">
+      <div class="ch">
+        <div class="ic">🛡</div>
+        <div class="ct"><h2>货运险</h2><p>本票已由我方投保 · 工厂直发时随货</p></div>
+        <span class="st">已投保</span>
+      </div>
+      <div class="cb" style="padding-top:6px">
+        <div class="doc-line"><span class="nm">承保方案</span><span class="confirmed">人保 · 集装箱普货</span></div>
+        <div class="doc-line"><span class="nm">保单号</span><span class="confirmed">PICC-2026-XM-0417</span></div>
+        <div class="doc-line"><span class="nm">COI 保险单</span><button class="btn sm brand">下载</button></div>
+      </div>
+    </section>
+
+    <!-- 5 费用账单 -->
+    <section class="card">
+      <div class="ch">
+        <div class="ic">🧾</div>
+        <div class="ct"><h2>费用账单</h2><p>本票港杂 / 应付您的费用</p></div>
+        <span class="st ok">1 张</span>
+      </div>
+      <div class="cb">
+        <div class="doc-line" style="border:none;padding-top:0">
+          <span class="nm">本票港杂 / 费用账单<br><span style="color:var(--faint);font-weight:400;font-size:11.5px">核对费用行 · 填开票资料</span></span>
+          <button class="btn sm brand">打开账单 / 开票</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- 底部固定 -->
+  <div class="foot"><div class="foot-in">
+    <button class="submit">✅ 全部确认，提交</button>
+    <button class="help" onclick="document.getElementById('sheet').classList.add('on')">🆘 请协助<small>不方便填？</small></button>
+  </div></div>
+
+  <!-- 协助浮层 -->
+  <div class="sheet" id="sheet">
+    <div class="sheet-c">
+      <h3>🤝 让 Sanlyn 协助您</h3>
+      <p>不方便自己填也没关系，选一种方式，我们来替您完成。</p>
+      <div class="opt">
+        <div class="oi">📞</div>
+        <div class="ot"><b>电话协助</b><span>报出信息，我们照着帮您填</span></div>
+      </div>
+      <div class="opt">
+        <div class="oi">💬</div>
+        <div class="ot"><b>发微信给对接人</b><span>把资料/照片发过来，我们代传</span></div>
+      </div>
+      <div class="opt">
+        <div class="oi">🙋</div>
+        <div class="ot"><b>请 Sanlyn 代填</b><span>我们先填好，您最后点一下确认</span></div>
+      </div>
+      <button class="sheet-x" onclick="document.getElementById('sheet').classList.remove('on')">先不用，我自己填</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById("sheet").addEventListener("click",e=>{
+  if(e.target.id==="sheet") e.currentTarget.classList.remove("on");
+});
+</script>

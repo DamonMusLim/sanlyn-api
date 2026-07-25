@@ -1,0 +1,251 @@
+<title>协同总表规划 · 2026-07-23</title>
+<style>
+:root{
+  --ink:#16233a; --sub:#5d6a7d; --ground:#f7f5f0; --card:#fff; --line:#e0dcd3;
+  --accent:#1d5c7a; --accent-bg:#e6eff3;
+  --stamp:#a8342a; --stamp-bg:#f9e9e6;
+  --ready:#2f6b4f; --ready-bg:#e7f0ea;
+  --amber:#9a6516; --amber-bg:#f8efdd;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ink:#dfe4ea; --sub:#94a1b3; --ground:#0f1520; --card:#18202e; --line:#2a3444;
+  --accent:#63aecb; --accent-bg:#152530;
+  --stamp:#e08a7c; --stamp-bg:#2b1a18;
+  --ready:#7fc09b; --ready-bg:#15271e;
+  --amber:#dcaa5c; --amber-bg:#2a2317;
+}}
+:root[data-theme="dark"]{
+  --ink:#dfe4ea; --sub:#94a1b3; --ground:#0f1520; --card:#18202e; --line:#2a3444;
+  --accent:#63aecb; --accent-bg:#152530;
+  --stamp:#e08a7c; --stamp-bg:#2b1a18;
+  --ready:#7fc09b; --ready-bg:#15271e;
+  --amber:#dcaa5c; --amber-bg:#2a2317;
+}
+:root[data-theme="light"]{
+  --ink:#16233a; --sub:#5d6a7d; --ground:#f7f5f0; --card:#fff; --line:#e0dcd3;
+  --accent:#1d5c7a; --accent-bg:#e6eff3;
+  --stamp:#a8342a; --stamp-bg:#f9e9e6;
+  --ready:#2f6b4f; --ready-bg:#e7f0ea;
+  --amber:#9a6516; --amber-bg:#f8efdd;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font:16px/1.75 -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:780px;margin:0 auto;padding:26px 18px 76px;display:flex;flex-direction:column;gap:32px}
+code,.mono{font-family:var(--mono);font-size:.86em}
+header{display:flex;flex-direction:column;gap:5px}
+.eyebrow{font-size:11.5px;letter-spacing:.16em;color:var(--accent);font-weight:700}
+h1{font-size:25px;margin:0;line-height:1.32;text-wrap:balance}
+.meta{color:var(--sub);font-size:13px}
+section{display:flex;flex-direction:column;gap:13px}
+h2{font-size:18.5px;margin:0;line-height:1.4}
+p{margin:0}
+.lede{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);
+  border-radius:5px;padding:15px 17px}
+.lede b{color:var(--accent)}
+
+/* 主表分区 — 装货单式行 */
+.zones{display:flex;flex-direction:column;gap:8px}
+.zone{background:var(--card);border:1px solid var(--line);border-radius:5px;
+  padding:12px 15px 12px 13px;border-left:4px solid var(--ready);
+  display:grid;grid-template-columns:1fr auto;gap:4px 14px;align-items:baseline}
+.zone.warn{border-left-color:var(--amber)}
+.zone.new{border-left-color:var(--stamp)}
+.zone-name{font-weight:700;font-size:15px}
+.zone-src{grid-column:1;color:var(--sub);font-size:12.5px;font-family:var(--mono);word-break:break-all}
+.chip{font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:3px;white-space:nowrap;
+  background:var(--ready-bg);color:var(--ready);grid-row:1;grid-column:2}
+.chip.warn{background:var(--amber-bg);color:var(--amber)}
+.chip.new{background:var(--stamp-bg);color:var(--stamp)}
+.zone-note{grid-column:1/-1;font-size:13.5px;color:var(--sub);margin-top:2px}
+
+/* 风险块 */
+.risk{background:var(--stamp-bg);border:1px solid var(--stamp);border-radius:5px;padding:16px 18px;
+  display:flex;flex-direction:column;gap:9px}
+.risk h3{margin:0;font-size:16px;color:var(--stamp);display:flex;gap:8px;align-items:baseline}
+.risk .tag{font-size:11px;border:1px solid var(--stamp);border-radius:3px;padding:1px 6px;font-weight:700}
+.risk p{font-size:14.5px}
+.risk ul{margin:0;padding-left:20px;font-size:14.5px;display:flex;flex-direction:column;gap:5px}
+
+/* 不符项 */
+.gaps{display:flex;flex-direction:column;gap:9px}
+.gap{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:13px 16px}
+.gap b{display:block;margin-bottom:3px}
+.gap span{font-size:14px;color:var(--sub)}
+
+/* 阶段 */
+.phases{display:flex;flex-direction:column;gap:9px}
+.phase{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:13px 16px;
+  display:grid;grid-template-columns:auto 1fr auto;gap:3px 13px;align-items:baseline}
+.ph-id{font-family:var(--mono);font-weight:700;color:var(--accent);font-size:14px;grid-row:1}
+.ph-title{font-weight:700;font-size:15px}
+.ph-body{grid-column:2/-1;font-size:14px;color:var(--sub);margin-top:2px}
+.ph-cost{font-size:12px;color:var(--sub);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+/* 决策 */
+.ask{background:var(--card);border:1px solid var(--accent);border-radius:5px;padding:15px 17px;
+  display:flex;flex-direction:column;gap:7px}
+.ask h3{margin:0;font-size:15.5px;color:var(--accent)}
+.ask p{font-size:14.5px}
+.ask .rec{font-size:13.5px;color:var(--ready);font-weight:700}
+footer{border-top:1px solid var(--line);padding-top:15px;color:var(--sub);font-size:12.5px;line-height:1.85}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">SANLYN · 一切表格皆协同</div>
+  <h1>协同总表 · 开工前规划</h1>
+  <div class="meta">2026-07-23 · 任务 <code>#bp-collab-master-html-0723</code> · 全库只读核实（81 次查证）</div>
+</header>
+
+<section>
+  <p class="lede"><b>一句话：</b>你要的六个区里，<b>四个已经现成能拼</b>；但保险组其实不存在、报价链是断的，另外车队和报关的链接<b>存在数据泄漏</b>——这个必须先补，否则总表一上线等于把全厂价格和司机身份证打包送出去。</p>
+</section>
+
+<section>
+  <h2>你列的清单 → 现有资产对应</h2>
+  <div class="zones">
+
+    <div class="zone">
+      <div class="zone-name">海运段（每单主干）</div>
+      <span class="chip">现成</span>
+      <div class="zone-src">collab-portal-godview.js + booking-collab.js</div>
+      <div class="zone-note">船期、柜号、提单、状态全在。这就是你钦点的主表本体。</div>
+    </div>
+
+    <div class="zone warn">
+      <div class="zone-name">车队段</div>
+      <span class="chip warn">现成·先补权限</span>
+      <div class="zone-src">collab-trucking.html · 角色 trucking_booking</div>
+      <div class="zone-note">代码能跑，但目前<b>零条有效链接</b>（最后一条 7 月 18 日），近期实际派车可能没走系统。</div>
+    </div>
+
+    <div class="zone warn">
+      <div class="zone-name">报关段</div>
+      <span class="chip warn">现成·先补权限</span>
+      <div class="zone-src">collab-broker.html · 角色 broker_booking</div>
+      <div class="zone-note">同上，零条有效链接（最后一条 7 月 1 日）。权限裁剪是四个角色里最松的——一个字段都没删。</div>
+    </div>
+
+    <div class="zone new">
+      <div class="zone-name">保险段</div>
+      <span class="chip new">要新建</span>
+      <div class="zone-src">仅内部 insurance.js · 保单表 0 行</div>
+      <div class="zone-note">对外协同页面<b>压根不存在</b>，主表的分段白名单里也没有"保险"这一项。要做是净新增。</div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-name">工厂区：订单下载 + 装货（可直接改）</div>
+      <span class="chip">现成·不用动</span>
+      <div class="zone-src">collab-factory.html · 角色 factory_booking</div>
+      <div class="zone-note">你说"不用动"是对的。而且它是四个角色里<b>唯一做了严格分厂隔离</b>的（400 多行防跳单代码），A 厂看不见 B 厂。</div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-name">工厂账单：海运 FOB + 产品单</div>
+      <span class="chip">现成</span>
+      <div class="zone-src">customs-collab-factory.html + invoice-collab-confirm.js</div>
+      <div class="zone-note">工厂开票协同这条线是通的。</div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-name">财务开票模版</div>
+      <span class="chip">现成</span>
+      <div class="zone-src">customer-invoice.html · 销项 199 条 / 进项 470 条</div>
+      <div class="zone-note">你说"都好了"是对的，真实数据在跑，7 月 21 日还在用。</div>
+    </div>
+
+    <div class="zone">
+      <div class="zone-name">客户区</div>
+      <span class="chip">现成</span>
+      <div class="zone-src">collab-customer.html（托书写入）+ customer-myportal（今天上线的只读进度）</div>
+      <div class="zone-note">托书协同历史 52 条链接，7 月 20 日还在用。今天新上的只读门户还没有真实客户点过，建议发一个真客户试一轮。</div>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <h2>必须先修：车队 / 报关链接在漏数据</h2>
+  <div class="risk">
+    <h3>P0 <span class="tag">已登记 #sec-collab-role-scope-0723</span></h3>
+    <p>工厂链接做了严格隔离，但<b>车队和报关这两种链接几乎没做裁剪</b>。拿到一条这样的链接，从接口原始数据里能看到：</p>
+    <ul>
+      <li>该票<b>全部工厂、全部订单行</b>的品名、HS 编码、销售单价与金额、报关申报金额</li>
+      <li><b>全部集装箱</b>的司机身份证号和电话——不只是他自己拉的那几个柜</li>
+    </ul>
+    <p>目前的缓冲：海运卖价和成本行已经被统一剔除（这两项安全），而且页面上没渲染出来，得用技术手段才看得到——<b>所以是"还没被看见"，不是"没漏"</b>。</p>
+    <p><b>修法</b>：照抄工厂那套分厂隔离的写法，车队按自己承运的柜、报关按自己受托的范围裁剪，查不到范围就返回空（宁可不给，不能多给）。</p>
+  </div>
+</section>
+
+<section>
+  <h2>三处和你的印象不符</h2>
+  <div class="gaps">
+    <div class="gap">
+      <b>① 保险组模版 —— 实际没有</b>
+      <span>只有内部员工登录才能看的保险模块，保单表 0 行，没有任何能发给保险公司的协同链接。要做是从零建（分段白名单 + 校验分支 + 新角色 + 新页面）。</span>
+    </div>
+    <div class="gap">
+      <b>② 报价 → 订单 → 开票 —— 链子是断的</b>
+      <span>报价短链发出去后，落地页查的是另一张表，根本查不到这个码。属于路由设计对不上，页面上小改修不好。客户点你发的报价链接，大概率进不去。</span>
+    </div>
+    <div class="gap">
+      <b>③ 四个"看起来做好了"的报价页面 —— 是设计稿</b>
+      <span>quote-role-aware、quote-v3、partner-workbench、freight-marketplace 这四个页面<b>一行取数代码都没有</b>，是纯静态样子货，不接真实数据。</span>
+    </div>
+  </div>
+  <p style="font-size:13.5px;color:var(--sub)">另：你说的"报价协同已经做好了在 Studio 上"，Studio 这次连不上（网段又变了），没核实到。<b>你把文件名或截图给我，我去接。</b></p>
+</section>
+
+<section>
+  <h2>建议的开工顺序</h2>
+  <div class="phases">
+    <div class="phase">
+      <span class="ph-id">A</span><span class="ph-title">补车队 / 报关权限</span><span class="ph-cost">先决条件</span>
+      <div class="ph-body">照抄工厂的隔离写法。不做这个，总表一上线就是把数据打包送出去。</div>
+    </div>
+    <div class="phase">
+      <span class="ph-id">B</span><span class="ph-title">总表内部版（拼现成六区）</span><span class="ph-cost">主交付</span>
+      <div class="ph-body">一单一页，海运 / 车队 / 报关 / 工厂 / 账单 / 客户六区拼装，复用现成的分段渲染，不新造框架。<b>只给内部登录用</b>，不发单一外部链接——否则等于绕开所有分区隔离。</div>
+    </div>
+    <div class="phase">
+      <span class="ph-id">C</span><span class="ph-title">保险段净新增</span><span class="ph-cost">新开发</span>
+      <div class="ph-body">白名单加一项 + 保单校验分支 + 新角色 + 新页面。权限从头做严格，禁止照抄车队/报关那套松的。</div>
+    </div>
+    <div class="phase">
+      <span class="ph-id">D</span><span class="ph-title">修报价链</span><span class="ph-cost">独立修复</span>
+      <div class="ph-body">把报价短链接回订单与开票。等你给了 Studio 那份文件再定怎么接最省事。</div>
+    </div>
+  </div>
+  <p style="font-size:13.5px;color:var(--sub)">规矩沿用：显隐继续用现有的"字段档案 + 分段"两层开关，不发明第三套权限模型；主表后端已 3105 行（超 500 行铁律 6 倍），保险段必须拆成独立文件，不往里堆。</p>
+</section>
+
+<section>
+  <h2>需要你定三件事</h2>
+  <div class="ask">
+    <h3>① 先修权限再建总表，同意吗？</h3>
+    <p>A 阶段大概是总表工作量的三成，但不修的话总表就是个放大器。</p>
+    <p class="rec">建议：同意，A 完成即刻转 B。</p>
+  </div>
+  <div class="ask">
+    <h3>② 保险段这轮做不做？</h3>
+    <p>它是唯一的净新增。先做总表五区（不含保险）能更快见到东西；保险等 C 阶段单独上。</p>
+    <p class="rec">建议：这轮先不做，总表给保险区留个"未启用"的位置。</p>
+  </div>
+  <div class="ask">
+    <h3>③ Studio 上那份报价协同是哪个文件？</h3>
+    <p>给我文件名或截图。没有它，D 阶段只能靠猜。</p>
+  </div>
+</section>
+
+<footer>
+  依据：#bp-collab-master-html-0723 只读映射（腾讯代码 + 数据库计数 + 接口实测）。<br>
+  已登记待办：<code>sec-collab-role-scope-0723</code>（P0 权限）· <code>gap-quote-order-invoice-0723</code>（报价链断）· <code>gap-insurance-collab-0723</code>（保险净新增）。<br>
+  另记两个坑：<code>sanlyn-factory-form.html</code> 还指向已废弃域名（死档）；<code>loading_collab_sheets</code> 是六周没动的试验分支——总表<b>别接这两个</b>，真正在跑的是 collab-factory。
+</footer>
+
+</div>

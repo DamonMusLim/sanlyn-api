@@ -1,0 +1,288 @@
+<title>协同中枢模版 · 双排版</title>
+<style>
+:root{
+  --bg:#0e151d; --panel:#151f2a; --card:#1a2531; --card2:#1e2a37; --line:#283644; --line2:#33465a;
+  --ink:#e5edf5; --sub:#93a6b8; --faint:#6b7f92;
+  --brand:#3d8fd4; --brand-bg:#16303f;
+  --ok:#4bb47e; --ok-bg:#162c22; --wait:#d3a24f; --wait-bg:#2b2415; --info:#5aa0d8; --info-bg:#152735;
+  --err:#df7d6e; --err-bg:#2c1a17; --purple:#9b7fd6; --purple-bg:#221a33;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.55 -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:640px;margin:0 auto;padding:16px 14px 40px;display:flex;flex-direction:column;gap:12px}
+
+.demoflag{background:var(--wait-bg);color:var(--wait);font-size:11.5px;text-align:center;padding:6px;
+  border-radius:7px;font-weight:700;letter-spacing:.02em}
+
+/* 顶部票头 */
+.hdr{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 16px;display:flex;flex-direction:column;gap:12px}
+.hdr .bl{font-size:17px;font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hdr .bl .code{font-family:var(--mono)}
+.hdr .route{color:var(--sub);font-size:12.5px}
+.times{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.time{border-radius:9px;padding:9px 12px;border:1px solid var(--line)}
+.time.deliver{background:var(--brand-bg);border-color:#245069}
+.time .l{font-size:11px;color:var(--sub);display:flex;align-items:center;gap:5px}
+.time .v{font-size:16px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums}
+.time.deliver .v{color:#7cc0ef}
+.time .set{color:var(--faint);font-size:13px;font-weight:600}
+
+/* 工具行 */
+.tools{display:flex;gap:8px;flex-wrap:wrap}
+.tool{font-size:12.5px;font-weight:700;padding:8px 12px;border-radius:8px;border:1px solid var(--line2);
+  background:var(--card);color:var(--ink);cursor:pointer;display:flex;align-items:center;gap:5px}
+.tool.ai{border-color:#4a3d6b;color:#b79ae8;background:var(--purple-bg)}
+.tool.doc{border-color:#2f5a44;color:#7fd0a3;background:var(--ok-bg)}
+
+.dz{border:1.5px dashed var(--line2);border-radius:10px;padding:13px;text-align:center;color:var(--sub);font-size:12.5px}
+.dz b{color:#7fd0a3}
+
+/* 本票协同自检面板(内部检测视角) */
+.selfcheck{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 15px;
+  display:flex;flex-direction:column;gap:11px}
+.sc-head{display:flex;justify-content:space-between;align-items:baseline}
+.sc-title{font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:7px}
+.sc-prog{font-size:12.5px;color:var(--sub)}
+.sc-prog b{color:var(--ok);font-size:15px;font-variant-numeric:tabular-nums}
+.sc-bar{height:7px;border-radius:99px;background:var(--line);overflow:hidden;display:flex}
+.sc-bar i{display:block;height:100%}
+.sc-bar .done{background:var(--ok)}
+.sc-items{display:flex;flex-direction:column;gap:7px}
+.sc-item{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;background:var(--card);
+  border:1px solid var(--line);border-left:3px solid var(--zc);font-size:12.5px;cursor:pointer}
+.sc-item.bill{--zc:var(--wait)} .sc-item.info{--zc:var(--info)} .sc-item.other{--zc:var(--purple)}
+.sc-item.clear{--zc:var(--ok);opacity:.75}
+.sc-ico{font-size:15px;flex:0 0 auto}
+.sc-lab{font-weight:800;white-space:nowrap}
+.sc-n{font-family:var(--mono);font-weight:800;font-variant-numeric:tabular-nums}
+.sc-who{color:var(--sub);flex:1;min-width:0}
+.sc-item.bill .sc-n{color:var(--wait)} .sc-item.info .sc-n{color:var(--info)} .sc-item.other .sc-n{color:var(--purple)}
+.sc-item.clear .sc-n{color:var(--ok)}
+
+/* 分组标题 */
+.gt{font-size:12px;font-weight:800;color:var(--faint);letter-spacing:.08em;padding:6px 2px 0}
+
+/* 各方卡片 —— 双排 */
+.party{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.party.attn{border-color:#4a3f22}
+.prow{padding:13px 14px;display:flex;flex-direction:column;gap:10px}
+/* 第一排：图标 + 名字(长名横排不挤) + 状态徽章 */
+.pl1{display:flex;align-items:flex-start;gap:11px}
+.pico{width:38px;height:38px;border-radius:10px;background:var(--card2);display:grid;place-items:center;font-size:20px;flex:0 0 auto}
+.pmeta{flex:1;min-width:0}
+.pname{font-size:15px;font-weight:800;line-height:1.3;word-break:break-word}
+.psub{font-size:11.5px;color:var(--sub);margin-top:2px}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.bdg{font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.bdg.ok{background:var(--ok-bg);color:var(--ok)}
+.bdg.gray{background:var(--card2);color:var(--faint);border:1px solid var(--line2)}
+.bdg.wait{background:var(--wait-bg);color:var(--wait)}
+.bdg.info{background:var(--info-bg);color:var(--info)}
+/* 第二排：动作按钮独立一行(单排挤不下的解法) */
+.pl2{display:flex;gap:8px}
+.pbtn{flex:1;padding:9px 0;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;
+  border:1px solid var(--line2);background:var(--card2);color:var(--ink);font-family:inherit;
+  display:flex;align-items:center;justify-content:center;gap:5px}
+.pbtn.send{background:var(--brand-bg);border-color:#2c5a76;color:#8ec8ef}
+.pbtn.eye{background:var(--purple-bg);border-color:#4a3d6b;color:#b79ae8;flex:0 0 52px}
+.pbtn.swap{flex:0 0 62px}
+
+/* 工厂展开：对账 + 港杂(图2) */
+.pexp{border-top:1px solid var(--line);background:var(--card2);padding:12px 14px;display:flex;flex-direction:column;gap:9px}
+.pexp .et{font-size:11.5px;font-weight:800;color:var(--faint);letter-spacing:.05em}
+.subrow{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--card);border:1px solid var(--line);border-radius:9px}
+.subrow .si{font-size:17px;flex:0 0 auto}
+.subrow .st{flex:1;min-width:0}
+.subrow .st b{font-size:13.5px;display:block}
+.subrow .st span{font-size:11.5px;color:var(--sub)}
+.subrow .sv{font-size:13px;font-weight:800;font-family:var(--mono);white-space:nowrap}
+.subrow .sb{font-size:12px;font-weight:800;padding:7px 12px;border-radius:7px;border:1px solid #2c5a76;
+  background:var(--brand-bg);color:#8ec8ef;cursor:pointer;font-family:inherit;white-space:nowrap}
+.gap-warn{font-size:11.5px;color:var(--wait);display:flex;align-items:center;gap:5px}
+
+.foot{color:var(--faint);font-size:11.5px;text-align:center;padding-top:8px;line-height:1.7}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+@media(max-width:520px){.times{grid-template-columns:1fr}}
+</style>
+
+<div class="wrap">
+  <div class="demoflag">协同中枢 UI 模版 · 双排版 · 演示数据（图1 布局 + 图2 内容）</div>
+
+  <!-- 顶部票头 + 交货时间(图2要求) -->
+  <div class="hdr">
+    <div>
+      <div class="bl">🚢 <span class="code">CY00395</span> · 辽宁宠爱科技</div>
+      <div class="route">厦门 XMN → 巴生西 Port Klang West · 3×20GP · 本票订单 3 单</div>
+    </div>
+    <div class="times">
+      <div class="time deliver">
+        <div class="l">📅 交货时间（工厂承诺）</div>
+        <div class="v">2026-07-08 前</div>
+      </div>
+      <div class="time">
+        <div class="l">🚢 发货时间</div>
+        <div class="v set">年 / 月 / 日 · 确认发货</div>
+      </div>
+    </div>
+    <div class="tools">
+      <button class="tool">🔗 一键关联</button>
+      <button class="tool ai">🤖 AI 补全</button>
+      <button class="tool doc">📄 单据补全</button>
+      <button class="tool">📍 开追踪</button>
+      <button class="tool">📮 发船期</button>
+    </div>
+    <div class="dz">拖入或粘贴 BL / 报关单图片；PDF 可先传首页图 · <b>识别并生成建议</b></div>
+  </div>
+
+  <!-- 本票协同自检:一眼看出卡在谁那里(内部检测) -->
+  <div class="selfcheck">
+    <div class="sc-head">
+      <div class="sc-title">🔍 本票协同自检</div>
+      <div class="sc-prog"><b>2</b> / 6 方就绪 · 还差 4 项</div>
+    </div>
+    <div class="sc-bar"><i class="done" style="width:33%"></i></div>
+    <div class="sc-items">
+      <div class="sc-item bill"><span class="sc-ico">💰</span><span class="sc-lab">未确认账单</span><span class="sc-n">1</span><span class="sc-who">工厂 · 辽宁宠爱科技有限公司（港杂费待对）</span></div>
+      <div class="sc-item info"><span class="sc-ico">📝</span><span class="sc-lab">未提交信息</span><span class="sc-n">2</span><span class="sc-who">客户 HARMONIOUS HAPPY VENTURE（待提交）· 报关（部分需确认）</span></div>
+      <div class="sc-item other"><span class="sc-ico">🛡</span><span class="sc-lab">未处理</span><span class="sc-n">1</span><span class="sc-who">保险（未投保）</span></div>
+      <div class="sc-item clear"><span class="sc-ico">✓</span><span class="sc-lab">已就绪</span><span class="sc-n">2</span><span class="sc-who">海运 · 江西中远海运物流有限公司 · 车队</span></div>
+    </div>
+  </div>
+
+  <div class="gt">协同各方 · 点「发」给对方专属链接，点「👁」自己代填</div>
+
+  <!-- 工厂(可展开对账+港杂) -->
+  <div class="party">
+    <div class="prow">
+      <div class="pl1">
+        <div class="pico">🏭</div>
+        <div class="pmeta">
+          <div class="pname">工厂 · 辽宁宠爱科技有限公司</div>
+          <div class="psub">3×20GP · 已确认货物 ✓</div>
+          <div class="badges"><span class="bdg ok">✓ 已关联</span><span class="bdg wait">账单待对</span></div>
+        </div>
+      </div>
+      <div class="pl2">
+        <button class="pbtn swap">换</button>
+        <button class="pbtn send">📤 发链接</button>
+        <button class="pbtn eye">👁 代填</button>
+      </div>
+    </div>
+    <!-- 图2: 工厂有贸易公司 → 对账单 + 港杂费单 -->
+    <div class="pexp">
+      <div class="et">工厂协同内容（点开确认单即见）</div>
+      <div class="subrow">
+        <span class="si">💰</span>
+        <div class="st"><b>采购对账单</b><span>报关单口径 · 采购价对账（工厂↔贸易公司）</span></div>
+        <button class="sb">打开对账</button>
+      </div>
+      <div class="subrow">
+        <span class="si">🧾</span>
+        <div class="st"><b>港杂费账单</b><span>本票港杂 / 应付工厂费用 · 开票确认</span></div>
+        <button class="sb">打开开票</button>
+      </div>
+      <div class="gap-warn">⚠ 这是该厂在本系统第一单 —— 首次订单确认已随链接发出</div>
+    </div>
+  </div>
+
+  <!-- 海运 -->
+  <div class="party">
+    <div class="prow">
+      <div class="pl1">
+        <div class="pico">🚢</div>
+        <div class="pmeta">
+          <div class="pname">海运 · 江西中远海运物流有限公司</div>
+          <div class="badges"><span class="bdg ok">✓ 已关联</span><span class="bdg info">BL 已出</span><span class="bdg gray">无账单</span></div>
+        </div>
+      </div>
+      <div class="pl2">
+        <button class="pbtn swap">换</button>
+        <button class="pbtn send">📤 发链接</button>
+        <button class="pbtn eye">👁 代填</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 客户 -->
+  <div class="party attn">
+    <div class="prow">
+      <div class="pl1">
+        <div class="pico">👤</div>
+        <div class="pmeta">
+          <div class="pname">客户 · HARMONIOUS HAPPY VENTURE CO., LIMITED</div>
+          <div class="badges"><span class="bdg ok">✓ 已关联</span><span class="bdg wait">待提交</span><span class="bdg gray">无账单</span></div>
+        </div>
+      </div>
+      <div class="pl2">
+        <button class="pbtn swap">换</button>
+        <button class="pbtn send">📤 发链接</button>
+        <button class="pbtn eye">👁 代填</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 车队 -->
+  <div class="party">
+    <div class="prow">
+      <div class="pl1">
+        <div class="pico">🚛</div>
+        <div class="pmeta">
+          <div class="pname">车队</div>
+          <div class="psub">工厂自理</div>
+          <div class="badges"><span class="bdg ok">✓ 已关联</span><span class="bdg gray">无账单</span></div>
+        </div>
+      </div>
+      <div class="pl2">
+        <button class="pbtn swap">换</button>
+        <button class="pbtn send">📤 发链接</button>
+        <button class="pbtn eye">👁 代填</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 报关 -->
+  <div class="party attn">
+    <div class="prow">
+      <div class="pl1">
+        <div class="pico">📋</div>
+        <div class="pmeta">
+          <div class="pname">报关</div>
+          <div class="psub">工厂自理</div>
+          <div class="badges"><span class="bdg ok">✓ 已关联</span><span class="bdg wait">部分 · 需确认</span><span class="bdg gray">无账单</span></div>
+        </div>
+      </div>
+      <div class="pl2">
+        <button class="pbtn swap">换</button>
+        <button class="pbtn send">📤 发链接</button>
+        <button class="pbtn eye">👁 代填</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保险(蓝图有,预留) -->
+  <div class="party">
+    <div class="prow">
+      <div class="pl1">
+        <div class="pico">🛡</div>
+        <div class="pmeta">
+          <div class="pname">保险</div>
+          <div class="psub">ICC(A) 一切险 · 售价 40 / 成本 35</div>
+          <div class="badges"><span class="bdg gray">未投保</span></div>
+        </div>
+      </div>
+      <div class="pl2">
+        <button class="pbtn swap">换</button>
+        <button class="pbtn send">📤 发链接</button>
+        <button class="pbtn eye">👁 代填</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    双排布局：长中文公司名整行横排、状态徽章一目、动作按钮独立一排 —— 解决单排挤不下。<br>
+    工厂那方展开即见「采购对账单 + 港杂费单 + 首单确认」；顶部固定「交货时间」。
+  </div>
+</div>

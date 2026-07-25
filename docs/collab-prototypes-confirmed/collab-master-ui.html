@@ -1,0 +1,421 @@
+<title>协同总表 UI 原型 · 一票一表七视角</title>
+<style>
+:root{
+  --ink:#0f1a24; --sub:#5b6b7a; --faint:#8b98a6; --ground:#eef1f5; --card:#fff; --line:#dbe2ea;
+  --accent:#0e5aa7; --accent-bg:#e4edf7;
+  --lock:#94a3b1; --lock-bg:#e7ebef;
+  --ok:#2c6b4c; --ok-bg:#e5efe9;
+  --warn:#9b6412; --warn-bg:#f7efdd;
+  --stop:#a03a2c; --stop-bg:#f8e8e5;
+  --r-ocean:#1c6ea4; --r-truck:#8a5a1e; --r-broker:#6b3fa0;
+  --r-ins:#0d7a63; --r-fac:#a8452c; --r-cust:#2f6b4f; --r-fin:#4a5568;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ink:#e2e8ee; --sub:#93a2b2; --faint:#6b7887; --ground:#0c1117; --card:#151d26; --line:#26313d;
+  --accent:#5aa3e0; --accent-bg:#132433; --lock:#5d6b7a; --lock-bg:#1c242e;
+  --ok:#74bd94; --ok-bg:#152318; --warn:#d5a355; --warn-bg:#2a2214; --stop:#e08878; --stop-bg:#2c1a17;
+  --r-ocean:#5aa3d6; --r-truck:#c99a52; --r-broker:#a481d6;
+  --r-ins:#4fbba1; --r-fac:#dd8674; --r-cust:#77bb92; --r-fin:#94a3b8;
+}}
+:root[data-theme="dark"]{
+  --ink:#e2e8ee; --sub:#93a2b2; --faint:#6b7887; --ground:#0c1117; --card:#151d26; --line:#26313d;
+  --accent:#5aa3e0; --accent-bg:#132433; --lock:#5d6b7a; --lock-bg:#1c242e;
+  --ok:#74bd94; --ok-bg:#152318; --warn:#d5a355; --warn-bg:#2a2214; --stop:#e08878; --stop-bg:#2c1a17;
+  --r-ocean:#5aa3d6; --r-truck:#c99a52; --r-broker:#a481d6;
+  --r-ins:#4fbba1; --r-fac:#dd8674; --r-cust:#77bb92; --r-fin:#94a3b8;
+}
+:root[data-theme="light"]{
+  --ink:#0f1a24; --sub:#5b6b7a; --faint:#8b98a6; --ground:#eef1f5; --card:#fff; --line:#dbe2ea;
+  --accent:#0e5aa7; --accent-bg:#e4edf7; --lock:#94a3b1; --lock-bg:#e7ebef;
+  --ok:#2c6b4c; --ok-bg:#e5efe9; --warn:#9b6412; --warn-bg:#f7efdd; --stop:#a03a2c; --stop-bg:#f8e8e5;
+  --r-ocean:#1c6ea4; --r-truck:#8a5a1e; --r-broker:#6b3fa0;
+  --r-ins:#0d7a63; --r-fac:#a8452c; --r-cust:#2f6b4f; --r-fin:#4a5568;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font:15px/1.6 -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif}
+.mono,code{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.top{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line)}
+.top-in{max-width:940px;margin:0 auto;padding:12px 16px 0;display:flex;flex-direction:column;gap:9px}
+.bl{font-size:19px;font-weight:800}
+.bl small{font-weight:400;color:var(--sub);font-size:13px;margin-left:8px}
+.hint{font-size:11.5px;letter-spacing:.12em;color:var(--accent);font-weight:700}
+.switch{display:flex;gap:6px;align-items:center;overflow-x:auto;scrollbar-width:thin}
+.switch:last-child{padding-bottom:11px}
+.sw-lab{flex:0 0 auto;font-size:11px;color:var(--faint);font-weight:700;letter-spacing:.08em;padding-right:2px}
+.role{flex:0 0 auto;border:1px solid var(--line);background:transparent;color:var(--sub);
+  border-radius:999px;padding:6px 14px;font-size:13.5px;font-weight:700;cursor:pointer;
+  font-family:inherit;transition:background .15s,color .15s,border-color .15s;white-space:nowrap}
+.role.sm{padding:4px 12px;font-size:12.5px}
+.role:hover{border-color:var(--accent)}
+.role[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+.role.stage[aria-pressed="true"]{background:var(--r-truck);border-color:var(--r-truck)}
+
+.summary{max-width:940px;margin:0 auto;padding:14px 16px 0}
+.sum-card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);
+  border-radius:6px;padding:12px 15px;display:flex;flex-direction:column;gap:6px}
+.sum-who{font-weight:700;font-size:15px}
+.sum-line{font-size:13.5px;color:var(--sub)}
+.sum-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--sub);margin-top:2px}
+.sum-stats b{color:var(--ink);font-variant-numeric:tabular-nums}
+.flow{display:grid;grid-template-columns:1fr auto 1fr 1fr;gap:10px;align-items:center;
+  background:var(--ground);border-radius:6px;padding:10px 12px}
+.leg-l{font-size:11px;color:var(--faint);font-weight:700}
+.leg-v{font-size:14.5px;font-weight:700;margin-top:2px}
+.leg.in .leg-v{color:var(--r-fac)} .leg.out .leg-v{color:var(--r-cust)} .leg.diff .leg-v{color:var(--accent)}
+.leg-arrow{color:var(--faint);font-size:15px}
+.gate.trader-warn{background:var(--warn-bg);color:var(--warn);border-left:3px solid var(--warn)}
+@media(max-width:640px){.flow{grid-template-columns:1fr 1fr}.leg-arrow{display:none}}
+.gate{margin-top:4px;font-size:12.5px;background:var(--warn-bg);color:var(--warn);
+  border-radius:4px;padding:7px 11px;font-weight:600}
+
+.wrap{max-width:940px;margin:0 auto;padding:14px 16px 70px;display:flex;flex-direction:column;gap:11px}
+.zone{background:var(--card);border:1px solid var(--line);border-radius:7px;overflow:hidden;
+  border-left:4px solid var(--zc,var(--line))}
+.zh{padding:11px 15px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.zh h2{margin:0;font-size:15px;font-weight:800;color:var(--zc)}
+.zh .cnt{font-size:12px;color:var(--faint);margin-left:auto;white-space:nowrap}
+.pill{font-size:11px;font-weight:800;padding:2px 8px;border-radius:3px;white-space:nowrap}
+.pill.rw{background:var(--ok-bg);color:var(--ok)}
+.pill.ro{background:var(--lock-bg);color:var(--lock)}
+.pill.gap{background:var(--warn-bg);color:var(--warn)}
+.pill.risk{background:var(--stop-bg);color:var(--stop)}
+.pill.self{background:var(--accent-bg);color:var(--accent)}
+
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.f{padding:9px 15px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);min-width:0}
+.f:nth-child(2n){border-right:none}
+.fl{font-size:11.5px;color:var(--faint);font-weight:700}
+.fv{margin-top:2px;font-size:14px;word-break:break-word}
+.fv.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.f.editable .fv{color:var(--ok);font-weight:600}
+.f.editable .fv::after{content:" ✎";font-size:11px;opacity:.7}
+.f.locked .fl{color:var(--lock)}
+.bar{display:inline-block;height:13px;width:72px;border-radius:2px;margin-top:4px;vertical-align:-2px;
+  background:repeating-linear-gradient(115deg,var(--lock-bg),var(--lock-bg) 4px,transparent 4px,transparent 8px);
+  border:1px solid var(--lock-bg)}
+.lockmsg{font-size:11.5px;color:var(--lock);margin-left:7px}
+.lockmsg.gated{color:var(--warn)}
+
+.note{padding:10px 15px;font-size:12.5px;color:var(--sub);background:var(--accent-bg);border-top:1px solid var(--line)}
+.note.warnnote{background:var(--warn-bg);color:var(--warn)}
+.note.risknote{background:var(--stop-bg);color:var(--stop)}
+
+.rows{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:520px}
+th{text-align:left;padding:8px 15px;color:var(--faint);font-size:11.5px;font-weight:700;
+  border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px 15px;border-bottom:1px solid var(--line);white-space:nowrap}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* 工厂分卡 */
+.facs{display:flex;flex-direction:column}
+.fac{border-bottom:1px solid var(--line);padding:12px 15px;display:flex;flex-direction:column;gap:8px}
+.fac:last-child{border-bottom:none}
+.fac-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fac-n{font-weight:800;font-size:14.5px}
+.fac-m{font-size:12px;color:var(--faint);margin-left:auto;font-family:var(--mono)}
+.docs{display:flex;gap:7px;flex-wrap:wrap}
+.doc{font-size:12px;border:1px solid var(--line);border-radius:5px;padding:5px 10px;
+  display:flex;gap:6px;align-items:center;background:var(--ground)}
+.doc.up{border-color:var(--ok);color:var(--ok);background:var(--ok-bg);font-weight:600}
+.doc.need{border-color:var(--warn);color:var(--warn);background:var(--warn-bg);font-weight:600}
+.doc.na{color:var(--lock);border-style:dashed}
+
+.demo{max-width:940px;margin:0 auto;padding:0 16px}
+.demo-in{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--sub);
+  background:var(--card);border:1px dashed var(--line);border-radius:6px;padding:9px 14px}
+.demo-in input{accent-color:var(--accent);width:15px;height:15px}
+.demo-in label{cursor:pointer}
+footer{max-width:940px;margin:0 auto;padding:6px 16px 40px;color:var(--faint);font-size:12px;line-height:1.8}
+@media(max-width:640px){.fields{grid-template-columns:1fr}.f{border-right:none}.bl{font-size:17px}}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="top">
+  <div class="top-in">
+    <div>
+      <span class="hint" id="hint">协同总表 · 原型 v3</span>
+      <div class="bl mono">SNLB2607-0448<small>40-CL-19 · ENRICH · 厦门 → 鹿特丹 · 两工厂</small></div>
+    </div>
+    <div class="switch" id="roles" role="group" aria-label="切换视角"><span class="sw-lab">视角</span></div>
+    <div class="switch" id="stages" role="group" aria-label="切换阶段"><span class="sw-lab">阶段</span></div>
+  </div>
+</div>
+
+<div class="summary"><div class="sum-card">
+  <div class="sum-who" id="sum-who"></div>
+  <div class="sum-line" id="sum-line"></div>
+  <div class="sum-stats" id="sum-stats"></div>
+  <div class="gate" id="gate" hidden></div>
+</div></div>
+
+<div class="wrap" id="zones"></div>
+
+<div class="demo"><div class="demo-in">
+  <input type="checkbox" id="showlocks" checked>
+  <label for="showlocks">显示被隐藏的字段（仅本原型演示用 · 真实页面上外部人根本看不到这些行）</label>
+</div></div>
+
+<footer>
+  原型 v2 · 2026-07-23 · 数据取自真实票据示例。<br>
+  一张主表，七副眼镜 × 两个阶段：谁看到什么由「视角」决定，金额还看不看得到由「装货前 / 装货后」决定。
+</footer>
+
+<script>
+const ROLES = [
+  {id:"me",      name:"我（内部）",  who:"Damon / 内部同事",        via:"账号登录",           desc:"全表可见可改，唯一能看到成本与利润的视角。"},
+  {id:"fwd",     name:"货代",       who:"上海洋宝宝国际物流",       via:"协同链接 · 海运段",   desc:"填船期舱位与提单，看得到海运卖价，看不到我的成本与其他组。"},
+  {id:"trucker", name:"车队",       who:"厦门捷通运输",            via:"协同链接 · 车队段",   desc:"只看自己承运的柜与司机，全程看不到任何金额。"},
+  {id:"broker",  name:"报关行",     who:"厦门宏鑫报关",            via:"协同链接 · 报关段",   desc:"只看受托报关的厂与票，能填报关单号与放行状态。"},
+  {id:"insurer", name:"保险",       who:"平安 / 太保 / 人保 / 史带", via:"协同链接 · 保险段",  desc:"只看投保必需信息（货值、品名、航程），看不到我的售价与利润。"},
+  {id:"factory", name:"工厂",       who:"中宠 CP",                 via:"协同链接 · 工厂区",   desc:"只看自己那几行货与自己的单证，装货表可直接改，看不到别厂与销售价。"},
+  {id:"customer",name:"客户",       who:"ENRICH（CN-00040）",      via:"链接 / 后期小程序",   desc:"只读：订单进度、单证、待补清单、卖价。永不见成本。"},
+  {id:"trader",  name:"贸易公司",    who:"厦门巴匕进出口（中间人）", via:"协同链接 · 中间人档", desc:"交易链「工厂 → 贸易公司 → 客户」的中间人：两头价都要看（进货价 + 出货价），不看两头没法做事。"},
+];
+const STAGES = [
+  {id:"before", name:"装货前", desc:"金额在这个阶段确认完毕：报价、采购价、运费、保费都在装货前谈定。"},
+  {id:"after",  name:"装货后", desc:"金额闸已落：装货起，所有外部视角一律看不到金额，只走操作与单证。"},
+];
+const ALL = ROLES.map(r=>r.id);
+
+const Z = [
+ {id:"head", name:"票头概览", color:"--r-ocean", see:ALL, f:[
+   {l:"提单号", v:"SNLB2607-0448", m:1},
+   {l:"订单号", v:"40-CL-19", m:1},
+   {l:"客户", v:"ENRICH（CN-00040）", see:["me","fwd","broker","insurer","customer"]},
+   {l:"品名", v:"ENRICH BENTONITE Multi LEMON 7KG 等 3 项"},
+   {l:"柜型/柜量", v:"40HQ × 2"},
+   {l:"总件数", v:"1,548 CTN", m:1, see:["me","fwd","trucker","broker","insurer","customer"]},
+   {l:"ETD", v:"2026-07-10", m:1},
+   {l:"ETA", v:"2026-08-14", m:1},
+   {l:"状态", v:"已确认 · 待装柜"},
+   {l:"本票毛利", v:"¥ 18,420", m:1, money:1, see:["me"]},
+ ]},
+ {id:"ocean", name:"海运段", color:"--r-ocean", see:["me","fwd","broker","customer","insurer","trader"], f:[
+   {l:"船名 / 航次", v:"COSCO SHIPPING ARIES / 042E", edit:["me","fwd"]},
+   {l:"船公司", v:"中远海运 COSCO", edit:["me","fwd"]},
+   {l:"订舱号", v:"6142887320", m:1, edit:["me","fwd"]},
+   {l:"截关 / 截单", v:"07-08 16:00 / 07-07", edit:["me","fwd"]},
+   {l:"起运港 → 目的港", v:"厦门 XMN → 鹿特丹 RTM"},
+   {l:"箱号", v:"CSNU7742318 / CSNU8810945", m:1, edit:["me","fwd"]},
+   {l:"海运费 · 卖价", v:"USD 2,850", m:1, money:1, see:["me","fwd","customer"]},
+   {l:"海运费 · 成本", v:"USD 2,410", m:1, money:1, see:["me"]},
+   {l:"船东包干价含保险", v:"否（本票单独投保）", see:["me","fwd","insurer"]},
+ ], note:"海运是另一本账：运费在装货前跟货代确认掉，装货后这一段只剩船期与提单，不再显示金额。船公司有打包（含保险/含拖车）的就在这一段一起做，不另开流程。"},
+ {id:"truck", name:"车队段", color:"--r-truck", see:["me","fwd","trucker","factory"], f:[
+   {l:"车队", v:"厦门捷通运输", edit:["me"]},
+   {l:"提箱时间", v:"07-06 09:00", edit:["me","trucker"]},
+   {l:"到厂装货", v:"07-06 13:30", edit:["me","trucker","factory"]},
+   {l:"还箱时间", v:"07-07 11:00", edit:["me","trucker"]},
+   {l:"车牌 / 司机", v:"闽D·8H236 / 陈师傅", edit:["me","trucker"]},
+   {l:"司机电话", v:"138****4471", see:["me","trucker","factory"]},
+   {l:"司机身份证", v:"3502**********1537", see:["me"]},
+   {l:"拖车费 · 卖价", v:"¥ 2,600", m:1, money:1, see:["me","customer"]},
+   {l:"拖车费 · 成本", v:"¥ 2,180", m:1, money:1, see:["me"]},
+ ], gap:"risk", gapText:"⚠ 现状漏洞：车队链接目前能看到全票所有工厂的价格与所有司机身份证——上线前必须按「只看自己承运的柜」收口。"},
+ {id:"customs", name:"报关段", color:"--r-broker", see:["me","fwd","broker","factory","customer","trader"], f:[
+   {l:"报关行", v:"厦门宏鑫报关（中宠部分）", edit:["me"]},
+   {l:"报关单号", v:"140601772471", m:1, edit:["me","broker"]},
+   {l:"申报日期", v:"2026-07-08", edit:["me","broker"]},
+   {l:"申报金额", v:"USD 41,285.00", m:1, money:1, customsValue:1, see:["me","broker","factory","customer"]},
+   {l:"HS 编码", v:"2508.1000", m:1, see:["me","broker","factory"]},
+   {l:"放行状态", v:"已放行 07-09", edit:["me","broker"]},
+   {l:"退税额（预估）", v:"¥ 21,660", m:1, money:1, see:["me"]},
+   {l:"报关费 · 成本", v:"¥ 800", m:1, money:1, see:["me"]},
+ ], note:"一票两厂各报各的：中宠委托宏鑫代报，大之圣自己报（见工厂区）。报关状态库里本来就是「报关号 + 厂码」两个键，各厂各行，不会串。",
+    noteAlt:{factory:"你这部分由 厦门宏鑫报关 代报，报关单号与放行状态如上。同票其他货主的报关信息此视角不可见。"}},
+ {id:"ins", name:"保险段", color:"--r-ins", see:["me","fwd","insurer","customer"], f:[
+   {l:"是否投保", v:"是 · ICC(A) 一切险", edit:["me","insurer"]},
+   {l:"货值（发票额）", v:"USD 41,285.00", m:1, money:1, see:["me","insurer","customer"]},
+   {l:"投保金额（×110%）", v:"USD 45,413.50", m:1, money:1, see:["me","insurer","customer"]},
+   {l:"费率", v:"0.3‰", see:["me","insurer"]},
+   {l:"保单号", v:"待出单", edit:["me","insurer"]},
+   {l:"保费 · 售价", v:"¥ 40.00", m:1, money:1, see:["me","customer"]},
+   {l:"保费 · 成本", v:"¥ 35.00", m:1, money:1, see:["me"]},
+   {l:"单张毛利", v:"¥ 5.00", m:1, money:1, see:["me"]},
+ ], gap:"gap", gapText:"现状：投保流程与报价门户都已建好，但从没跑通过（保单表 0 行）。本轮只加对账：售价下限 40 / 成本 35，低于 40 需审。"},
+ {id:"factory", name:"工厂区 · 订单 · 装货 · 单证", color:"--r-fac", see:["me","factory","broker","trader"], facs:1, f:[
+   {l:"本票工厂数", v:"2 家（中宠 CP / 大之圣）", see:["me","broker"]},
+   {l:"装货日期", v:"2026-07-06", edit:["me","factory"]},
+   {l:"合计实装", v:"1,548 CTN", m:1, see:["me","broker"], edit:["me"]},
+   {l:"你的实装件数", v:"1,238 CTN", m:1, see:["factory"], edit:["factory"]},
+ ], note:"你说「不用动」的就是这块——它是现在唯一做了严格分厂隔离的：A 厂看不见 B 厂。装货表工厂可直接改。",
+    noteAlt:{factory:null}},
+ {id:"cust", name:"客户区", color:"--r-cust", see:["me","customer","trader"], f:[
+   {l:"订单进度", v:"已确认 → 已装柜 → 已开船"},
+   {l:"单证", v:"提单 / 发票 / 装箱单 已上传"},
+   {l:"待补清单", v:"缺 产地证 CO — 请上传"},
+   {l:"卖价合计", v:"USD 41,285.00", m:1, money:1},
+   {l:"报关锚定", v:"已按报关金额核对"},
+   {l:"补贴 / 折让", v:"待你定口径", money:1, edit:["me"]},
+ ], note:"今天已上线只读版（进度 / 单证 / 待补 / 卖价）。补贴字段库里还没有，等你给口径。"},
+ {id:"fin", name:"财务开票", color:"--r-fin", see:["me","factory","customer","trader"], f:[
+   {l:"销项发票（给客户）", v:"已开 · INV-26-0448", m:1, see:["me","customer"]},
+   {l:"进项发票（工厂）", v:"待两厂各自上传", m:1, see:["me","factory"]},
+   {l:"货代账单", v:"已收 · 待付", see:["me"]},
+   {l:"保险费账单", v:"未生成", see:["me"]},
+   {l:"本票应收 / 应付", v:"¥ 289,400 / ¥ 270,980", m:1, money:1, see:["me"]},
+ ], note:"开票模版你说「都好了」——核实过，销项 199 条、进项 470 条真实在跑。"},
+];
+
+// 一票两厂：各自单证、各自报关方式
+const FACTORIES = [
+  {code:"CP", name:"中宠 CP", self:false, contract:"CP-26-0448 / PO-1183", qty:"1,238 CTN",
+   buy:"¥ 205,400", sell:"USD 33,180（≈¥ 238,900）", spread:"+¥ 33,500",
+   rows:[{sku:"CP-BEN-LEM-7",name:"ENRICH BENTONITE Multi LEMON 7KG",qty:"620",price:"USD 16.75"},
+         {sku:"CP-BEN-LAV-7",name:"ENRICH 膨润土薰衣草猫砂 7KG",qty:"618",price:"USD 16.40"}],
+   docs:[{n:"报关单",s:"up"},{n:"报检单",s:"up"},{n:"检疫证",s:"up"},{n:"进项发票",s:"need"}]},
+  {code:"DZS", name:"大之圣", self:true, contract:"DZS-26-0117 / PO-1184", qty:"310 CTN",
+   buy:"¥ 44,900", sell:"USD 8,105（≈¥ 58,360）", spread:"+¥ 13,460",
+   rows:[{sku:"DZS-TOF-6",name:"大之圣 豆腐猫砂 6L",qty:"310",price:"USD 11.20"}],
+   docs:[{n:"报关单",s:"need"},{n:"报检单",s:"need"},{n:"检疫证",s:"na"},{n:"进项发票",s:"need"}]},
+];
+
+let role="me", stage="before", showLocks=true;
+
+function chipRow(el, list, cur, cls, onpick){
+  list.forEach(it=>{
+    const b=document.createElement("button");
+    b.className="role"+(cls?" "+cls:""); b.type="button"; b.textContent=it.name;
+    b.dataset.id=it.id;
+    b.setAttribute("aria-pressed", String(it.id===cur));
+    b.onclick=()=>{ onpick(it.id); render(); };
+    el.appendChild(b);
+  });
+}
+chipRow(document.getElementById("roles"), ROLES, role, "", id=>role=id);
+chipRow(document.getElementById("stages"), STAGES, stage, "sm stage", id=>stage=id);
+document.getElementById("showlocks").onchange=e=>{ showLocks=e.target.checked; render(); };
+
+// 金额闸：装货后，外部所有视角一律不见金额。
+// 唯一例外＝报关行的「申报金额」（没有它报不了关）——此例外在报关段注明，待 Damon 确认。
+const gated = f => stage==="after" && f.money && !["me","trader"].includes(role) && !(role==="broker" && f.customsValue);
+const canSee  = (f,z)=> (f.see||z.see||ALL).includes(role) && !gated(f);
+const isGated = (f,z)=> (f.see||z.see||ALL).includes(role) && gated(f);
+const canEdit = f => (f.edit||[]).includes(role);
+const esc = s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function facCard(fa){
+  // 中间人跟内部一样不受金额闸：装货后才是它对账开票最忙的时候，把钱关了它就没法干活
+  const isTrader = role==="trader";
+  const moneyGated = stage==="after" && !["me","trader"].includes(role);
+  const showMoney = ["me","factory","trader"].includes(role) && !moneyGated;
+  const showSell = role==="me" || isTrader;
+  if(isTrader && showMoney){
+    // 中间人的脑子是"一进一出"，所以按方向排，不按字段名并排
+    return `<div class="fac">
+      <div class="fac-h"><span class="fac-n">${esc(fa.name)}</span>
+        ${fa.self?'<span class="pill self">自主报关</span>':'<span class="pill ro">我们代报</span>'}
+        <span class="fac-m">${esc(fa.contract)} · ${esc(fa.qty)}</span></div>
+      <div class="flow">
+        <div class="leg in"><div class="leg-l">进货 ← 工厂</div><div class="leg-v mono">${esc(fa.buy)}</div></div>
+        <div class="leg-arrow">→</div>
+        <div class="leg out"><div class="leg-l">出货 → 客户</div><div class="leg-v mono">${esc(fa.sell)}</div></div>
+        <div class="leg diff"><div class="leg-l">这一手价差</div><div class="leg-v mono">${esc(fa.spread)}</div></div>
+      </div>
+      <div class="docs">${fa.docs.map(d=>`<span class="doc ${d.s}">${esc(d.n)} · ${d.s==="up"?"✓ 已传":d.s==="need"?"待上传":"不适用"}</span>`).join("")}</div>
+    </div>`;
+  }
+  const docs = fa.docs.map(d=>{
+    const t = d.s==="up" ? "✓ 已传" : d.s==="need" ? "待上传" : "不适用";
+    return `<span class="doc ${d.s}">${esc(d.n)} · ${t}</span>`;
+  }).join("");
+  const rows = `<div class="rows"><table><thead><tr><th>SKU</th><th>品名</th><th>件数</th>
+      ${showSell?"<th>销售单价</th>":""}</tr></thead><tbody>
+      ${fa.rows.map(r=>`<tr><td class="num">${esc(r.sku)}</td><td>${esc(r.name)}</td>
+        <td class="num">${esc(r.qty)}</td>${showSell?`<td class="num">${esc(r.price)}</td>`:""}</tr>`).join("")}
+    </tbody></table></div>`;
+  return `<div class="fac">
+    <div class="fac-h"><span class="fac-n">${esc(fa.name)}</span>
+      ${fa.self?'<span class="pill self">自主报关</span>':'<span class="pill ro">我们代报</span>'}
+      <span class="fac-m">${esc(fa.contract)} · ${esc(fa.qty)}</span></div>
+    ${rows}
+    <div class="docs">${docs}</div>
+    ${showMoney?`<div style="font-size:12.5px;color:var(--sub)">采购结算价 <b class="mono">${esc(fa.buy)}</b>${showSell?` · 销售额 <b class="mono">${esc(fa.sell)}</b>`:""}</div>`:""}
+  </div>`;
+}
+
+function render(){
+  document.querySelectorAll("#roles .role").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.id===role)));
+  document.querySelectorAll("#stages .role").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.id===stage)));
+  const R=ROLES.find(r=>r.id===role), S=STAGES.find(s=>s.id===stage);
+
+  let zoneShown=0, fieldShown=0, fieldHidden=0, fieldGated=0, editable=0;
+  const box=document.getElementById("zones"); box.innerHTML="";
+
+  Z.forEach(z=>{
+    if(!(z.see||ALL).includes(role)) return;
+    zoneShown++;
+    const visF=z.f.filter(f=>canSee(f,z));
+    const gateF=z.f.filter(f=>isGated(f,z));
+    const hidF=z.f.filter(f=>!canSee(f,z)&&!isGated(f,z));
+    fieldShown+=visF.length; fieldHidden+=hidF.length; fieldGated+=gateF.length;
+    const ed=visF.filter(canEdit).length; editable+=ed;
+
+    const el=document.createElement("section");
+    el.className="zone"; el.style.setProperty("--zc",`var(${z.color})`);
+    const pill = ed>0?`<span class="pill rw">可填 ${ed} 项</span>`:`<span class="pill ro">只读</span>`;
+    const gapPill = z.gap==="risk"?`<span class="pill risk">待收口</span>`
+                  : z.gap==="gap"?`<span class="pill gap">只差对账</span>`:"";
+
+    const fieldsHtml=z.f.map(f=>{
+      if(canSee(f,z)){
+        const edi=canEdit(f);
+        return `<div class="f${edi?" editable":""}"><div class="fl">${esc(f.l)}</div>
+          <div class="fv${f.m?" num":""}">${esc(f.v)}</div></div>`;
+      }
+      if(!showLocks) return "";
+      const why = isGated(f,z) ? `<span class="lockmsg gated">装货后金额已关闸</span>`
+                               : `<span class="lockmsg">本视角不可见</span>`;
+      return `<div class="f locked"><div class="fl">${esc(f.l)}</div>
+        <div class="fv"><span class="bar"></span>${why}</div></div>`;
+    }).join("");
+
+    let facHtml="";
+    if(z.facs){
+      const mine = role==="factory" ? FACTORIES.filter(f=>f.code==="CP") : FACTORIES;
+      facHtml = `<div class="facs">${mine.map(facCard).join("")}</div>` +
+        (role==="factory"
+          ? `<div class="note">已按厂过滤：只显示 中宠 CP；另一家大之圣的货、单证、金额此视角物理不可见。</div>`
+          : `<div class="note">两家厂各传各的单证：报关单 / 报检单 / 检疫证 / 进项发票，各自一套槽位，互不可见。大之圣<b>自主报关</b>——我们不代报，只收他自己报完的单据。</div>`);
+    }
+
+    el.innerHTML=`<div class="zh"><h2>${esc(z.name)}</h2>${pill}${gapPill}
+        <span class="cnt">${visF.length} 项可见${hidF.length?` · ${hidF.length} 项隐藏`:""}${gateF.length?` · ${gateF.length} 项关闸`:""}</span></div>
+      <div class="fields">${fieldsHtml}</div>${facHtml}` +
+      (()=>{ // 说明文字也要按视角走——否则会从注释里泄漏别厂名字
+        if(z.gapText) return `<div class="note ${z.gap==="risk"?"risknote":"warnnote"}">${esc(z.gapText)}</div>`;
+        const alt = z.noteAlt && Object.prototype.hasOwnProperty.call(z.noteAlt, role) ? z.noteAlt[role] : z.note;
+        return alt ? `<div class="note">${esc(alt)}</div>` : "";
+      })();
+    box.appendChild(el);
+  });
+
+  document.getElementById("sum-who").textContent=`${R.name} · ${R.who}　|　${S.name}`;
+  document.getElementById("hint").textContent = role==="trader" ? "协同总表 · 原型 v3 ｜ 贸易公司视角 · 双价可见" : "协同总表 · 原型 v3";
+  document.getElementById("sum-line").textContent=`${R.via} — ${R.desc}`;
+  document.getElementById("sum-stats").innerHTML=
+    `<span>可见区块 <b>${zoneShown}</b> / ${Z.length}</span>`+
+    `<span>可见字段 <b>${fieldShown}</b></span>`+
+    `<span>隐藏字段 <b>${fieldHidden}</b></span>`+
+    `<span>金额关闸 <b>${fieldGated}</b></span>`+
+    `<span>可填写 <b>${editable}</b> 项</span>`;
+
+  const g=document.getElementById("gate");
+  if(role==="trader"){
+    g.hidden=false; g.className="gate trader-warn";
+    g.textContent="贸易公司视角 · 双价可见：本页同时显示进货价与出货价。只发给自己的贸易实体（巴匕 / 洋宝宝 / 富城山凌），不要转发给工厂、客户、货代、车队、报关行。";
+  } else if(stage==="after"&&role!=="me"){
+    g.hidden=false;
+    g.textContent=role==="broker"
+      ? `金额闸已落：本视角金额全部关闭，仅保留「申报金额」——没有它报不了关。是否连它也关，等你定。`
+      : `${S.desc}本视角当前 0 个金额字段。`;
+  } else if(stage==="after"){
+    g.hidden=false; g.textContent=`金额闸只对外部生效——内部视角照常看全部金额（对账要用）。`;
+  } else { g.hidden=true; }
+}
+render();
+</script>

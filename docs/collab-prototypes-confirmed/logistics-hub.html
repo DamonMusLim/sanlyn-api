@@ -1,0 +1,445 @@
+<title>Logistics Hub · 物流中心 · 原型</title>
+<style>
+:root{
+  --bg:#0a0e1a; --card:#131a2a; --card2:#1a2338; --line:#222c42; --line2:#2c3852;
+  --ink:#e8edf7; --sub:#8b9bb4; --faint:#5d6b85;
+  --pur:#8b7cf6; --pink:#ec4899; --cyan:#22d3ee; --grn:#22c55e; --amb:#fbbf24; --red:#f87171;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.55 -apple-system,"PingFang SC","Noto Sans SC",sans-serif;-webkit-text-size-adjust:100%}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.app{max-width:1100px;margin:0 auto;padding:16px 14px 96px}
+
+/* 顶部 */
+.top{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.brand h1{margin:0;font-size:26px;font-weight:800;
+  background:linear-gradient(90deg,var(--pink),var(--pur));-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand .os{font-size:12px;color:var(--faint);margin-top:1px}
+/* All-in 托管条 */
+.allin{flex:1;min-width:280px;background:linear-gradient(135deg,#1b1b3a,#141d33);
+  border:1px solid #2f2a5c;border-radius:14px;padding:13px 15px;display:flex;align-items:center;gap:13px;flex-wrap:wrap}
+.allin .star{width:44px;height:44px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;font-size:22px;
+  background:linear-gradient(135deg,var(--pur),var(--pink))}
+.allin .at{flex:1;min-width:180px}
+.allin .at .t1{font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{background:#2f2a5c;color:#b9a9ff;font-size:9.5px;font-weight:800;letter-spacing:.08em;padding:3px 8px;border-radius:5px}
+.svcs{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.svc{background:#1c2437;border:1px solid var(--line2);border-radius:7px;padding:4px 9px;font-size:11.5px;font-weight:600;color:#c3cfe4;white-space:nowrap}
+.svc.ins{border-color:#4a3a6b;color:#c9b6ff;background:#231d3d}
+.trust{background:linear-gradient(135deg,var(--pur),#6d5ce0);border:none;color:#fff;font-size:13px;font-weight:800;
+  padding:10px 18px;border-radius:9px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.air{background:#12281f;border:1px solid #1f4a35;color:#6ee7a8;font-size:13px;font-weight:800;
+  padding:12px 16px;border-radius:12px;cursor:pointer;font-family:inherit;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.air .ex{background:var(--amb);color:#3a2c00;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:4px}
+
+.flow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:14px;padding:11px 14px;
+  background:var(--card);border:1px solid var(--line);border-radius:11px}
+.fs{font-size:12px;font-weight:700;color:var(--faint);white-space:nowrap}
+.fs small{font-weight:400;opacity:.75}
+.fs.done{color:var(--grn)}
+.fs.now{color:var(--pur)}
+.fa{color:var(--line2);font-size:12px}
+.grid{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:860px){.grid{grid-template-columns:1.35fr 1fr}}
+
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.ph{padding:15px 16px 12px}
+.ph h2{margin:0;font-size:17px;font-weight:800}
+.ph p{margin:4px 0 0;font-size:12px;color:var(--sub);line-height:1.5}
+.tabs{display:flex;gap:7px;flex-wrap:wrap;padding:0 16px 12px}
+.tab{background:var(--card2);border:1px solid var(--line2);border-radius:8px;padding:6px 12px;font-size:12.5px;
+  font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px}
+.tab.on{background:#1e2a45;border-color:#3b5480;color:var(--ink)}
+.tab .n{background:var(--line2);color:var(--sub);font-size:10.5px;padding:1px 6px;border-radius:99px}
+.tab.on .n{background:#2f4770;color:#a8c4ee}
+.urgent{padding:0 16px 12px;font-size:11.5px;color:var(--amb);text-align:right}
+
+/* 航线卡 */
+.lane{margin:0 16px 14px;background:var(--card2);border:1px solid var(--line2);border-radius:12px;overflow:hidden}
+.lh{padding:13px 15px 10px}
+.lh .rt{font-size:16px;font-weight:800;line-height:1.35;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lh .rt .ar{color:var(--faint)}
+/* 双排:排1=船司简称+价格 排2=航次班期+按钮 */
+.lrow{padding:11px 15px;border-top:1px solid var(--line)}
+.r1{display:flex;align-items:baseline;gap:10px}
+.r1 .car{font-family:var(--mono);font-size:15px;font-weight:800;display:flex;align-items:center;gap:5px;flex:1;min-width:0}
+.r1 .car .st{color:var(--amb);font-size:12px}
+.r1 .pw{display:flex;gap:14px;align-items:baseline;white-space:nowrap}
+.r1 .pw .pc{text-align:right}
+.r1 .pw .pc i{display:block;font-style:normal;font-size:9.5px;color:var(--faint);font-weight:700;letter-spacing:.04em}
+.r1 .pw .pc b{font-family:var(--mono);font-size:14.5px;font-weight:800;color:var(--amb)}
+.r1 .pw .pc b.ask{color:var(--sub);font-size:12px;font-weight:600}
+.r2{display:flex;align-items:center;gap:10px;margin-top:6px}
+.r2 .voy{flex:1;min-width:0;font-size:11.5px;color:var(--faint);font-family:var(--mono);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lacts{display:flex;gap:6px;flex:0 0 auto}
+.bsel{background:#1c3350;border:1px solid #2f5480;color:#8fc4ff;font-size:11.5px;font-weight:800;
+  padding:5px 12px;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.bbar{background:#2a1f45;border:1px solid #453370;color:#c4aeff;font-size:11.5px;font-weight:800;
+  padding:5px 12px;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.sendfac{margin:0 15px 14px;width:calc(100% - 30px);padding:13px;border:none;border-radius:10px;
+  background:linear-gradient(90deg,var(--pur),var(--pink));color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit}
+
+/* 右栏 */
+.mapbox{height:190px;margin:0 16px 16px;border:1px solid var(--line2);border-radius:11px;
+  background:radial-gradient(ellipse at 40% 45%,#16233a,#0f1626);display:grid;place-items:center;
+  color:var(--faint);font-size:12.5px;position:relative;overflow:hidden}
+.mapbox svg{position:absolute;inset:0;width:100%;height:100%;opacity:.5}
+.chip{background:#123122;color:#6ee7a8;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:6px;white-space:nowrap}
+.chip.amb{background:#3a2c07;color:var(--amb)}
+.ord{display:flex;align-items:center;gap:11px;margin:0 16px 9px;padding:12px 13px;
+  background:var(--card2);border:1px solid var(--line2);border-radius:10px}
+.ord .oi{font-size:18px}
+.ord .on{flex:1;min-width:0}
+.ord .on b{font-family:var(--mono);font-size:13.5px;font-weight:800;display:block}
+.ord .on small{color:var(--faint);font-size:11px}
+
+/* 下单弹层(含保险) */
+.mask{position:fixed;inset:0;background:rgba(5,8,16,.72);z-index:50;display:none;align-items:flex-end;justify-content:center}
+.mask.on{display:flex}
+.sheet{background:var(--card);width:100%;max-width:520px;border-radius:16px 16px 0 0;max-height:88vh;overflow-y:auto;
+  border-top:1px solid var(--line2)}
+@media(min-width:640px){.mask{align-items:center}.sheet{border-radius:16px}}
+.sh{padding:16px 17px 13px;border-bottom:1px solid var(--line)}
+.sh h3{margin:0;font-size:17px;font-weight:800}
+.sh p{margin:3px 0 0;font-size:12.5px;color:var(--sub)}
+.srow{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:10px 17px;border-top:1px solid var(--line);font-size:13.5px}
+.srow .k{color:var(--sub);white-space:nowrap}
+.srow .v{font-weight:700;text-align:right;font-variant-numeric:tabular-nums;word-break:break-word}
+.srow .v.big{font-size:16px;font-weight:800;color:var(--amb)}
+.sgrp{padding:10px 17px 6px;font-size:10.5px;font-weight:800;color:var(--faint);letter-spacing:.05em;border-top:1px solid var(--line);background:#0f1524}
+.opts{display:flex;gap:7px;flex-wrap:wrap;padding:10px 17px}
+.opt{background:var(--card2);border:1.5px solid var(--line2);border-radius:8px;padding:8px 12px;font-size:12.5px;
+  font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit}
+.opt.on{border-color:var(--pur);background:#231d3d;color:#c9b6ff}
+.ilab{padding:11px 17px 0;font-size:11px;font-weight:800;color:var(--sub)}
+.optm{background:var(--card2);border:1.5px solid var(--line2);border-radius:8px;padding:8px 12px;font-size:12.5px;
+  font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit}
+.optm.on{border-color:var(--cyan);background:#0e2b33;color:#8ee9f7}
+.mini{background:var(--card2);border:1.5px solid var(--line2);border-radius:7px;padding:5px 13px;font-size:12.5px;
+  font-weight:700;color:var(--sub);cursor:pointer;font-family:inherit;margin-left:6px}
+.mini.on{border-color:var(--pur);background:#231d3d;color:#c9b6ff}
+.rec{background:#123122;color:#6ee7a8;font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:4px;margin-left:5px}
+.cargoready{margin:0 17px 4px;padding:10px 12px;border-radius:8px;font-size:11.5px;font-weight:700;line-height:1.5}
+.cargoready.ok{background:#12281f;border:1px solid #1f4a35;color:#6ee7a8}
+.cargoready.no{background:#33270c;border:1px solid #5c4715;color:var(--amb)}
+.insin{width:118px;padding:8px 10px;border:1.5px solid var(--pur);border-radius:7px;font-size:14px;font-weight:800;
+  text-align:right;background:var(--card2);color:var(--ink);font-family:var(--mono)}
+.warn{margin:10px 17px;padding:10px 12px;background:#33270c;border:1px solid #5c4715;border-radius:8px;
+  font-size:11.5px;color:var(--amb);font-weight:700;line-height:1.5}
+.sacts{display:flex;gap:9px;padding:14px 17px calc(18px + env(safe-area-inset-bottom))}
+.sbtn{flex:1;padding:12px 0;border-radius:9px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;
+  border:1.5px solid var(--line2);background:var(--card2);color:var(--ink)}
+.sbtn.go{background:linear-gradient(90deg,var(--pur),var(--pink));border:none;color:#fff}
+
+/* 底部导航 */
+.nav{position:fixed;left:0;right:0;bottom:0;background:rgba(13,18,32,.96);border-top:1px solid var(--line);
+  display:flex;align-items:center;justify-content:space-around;padding:8px 6px calc(8px + env(safe-area-inset-bottom));z-index:40}
+.nav a{color:var(--faint);text-decoration:none;font-size:10.5px;font-weight:700;display:flex;flex-direction:column;
+  align-items:center;gap:3px;padding:4px 10px}
+.nav a.on{color:var(--pur)}
+.nav a i{font-style:normal;font-size:19px}
+.nav .neworder{background:linear-gradient(90deg,var(--pur),var(--pink));color:#fff;border-radius:99px;
+  padding:11px 22px;font-size:13.5px;font-weight:800;display:flex;align-items:center;gap:7px;white-space:nowrap}
+</style>
+
+<div class="app">
+  <div class="top">
+    <div class="brand"><h1>Logistics Hub</h1><div class="os">Sanlyn OS · 物流中心</div></div>
+    <div class="allin">
+      <div class="star">⭐</div>
+      <div class="at">
+        <div class="t1">All-in · Sanlyn Full Management <span class="badge">FULL TRUST</span></div>
+        <div class="svcs">
+          <span class="svc">📦 Booking</span><span class="svc">🚚 Trucking</span><span class="svc">📋 Customs</span>
+          <span class="svc">🏗 Port &amp; Docs</span><span class="svc">🧪 Fumigation</span><span class="svc ins">🛡 Insurance</span>
+        </div>
+      </div>
+      <button class="trust">✓ Full Trust</button>
+    </div>
+    <button class="air">✈️ Air &amp; DDP <span class="ex">EXPRESS</span> ›</button>
+  </div>
+
+  <div class="flow">
+    <span class="fs done">① 比价</span><span class="fa">→</span>
+    <span class="fs" id="fs2">② 砍价 <small>可选</small></span><span class="fa">→</span>
+    <span class="fs" id="fs3">③ 协同排产 <small>确认货期</small></span><span class="fa">→</span>
+    <span class="fs" id="fs4">④ 订舱 + 保险</span>
+  </div>
+
+  <div class="grid">
+    <!-- 海运比价 -->
+    <div class="panel">
+      <div class="ph">
+        <h2>🌊 Ocean Marketplace</h2>
+        <p>按航线比价 · 仅 EXW 订单显示港杂费 · 每航次取最低价</p>
+      </div>
+      <div class="tabs">
+        <button class="tab on">All <span class="n">4</span></button>
+        <button class="tab">SE Asia <span class="n">4</span></button>
+        <button class="tab">Mid East <span class="n">0</span></button>
+        <button class="tab">N. America <span class="n">0</span></button>
+        <button class="tab">Europe <span class="n">0</span></button>
+        <button class="tab">JP/KR <span class="n">0</span></button>
+      </div>
+      <div class="urgent">🔥 紧急 / 临期订单优先显示</div>
+
+      <div class="lane">
+        <div class="lh"><div class="rt">🇨🇳 Ningbo-Zhoushan <span class="ar">→</span> 🇲🇾 Port Klang Westport</div></div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">MSC<span class="st">★</span></span>
+            <span class="pw"><span class="pc"><i>20GP</i><b class="ask">询价</b></span><span class="pc"><i>40HQ</i><b>$820</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">042E · 7天班 · 直达 · ETD 07-10 → ETA 08-14</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('MSC','Ningbo-Zhoushan','40HQ',820)">选择</button><button class="bbar" onclick="bargain('MSC',820,this)">砍价</button></span>
+          </div>
+        </div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">MCC</span>
+            <span class="pw"><span class="pc"><i>20GP</i><b class="ask">询价</b></span><span class="pc"><i>40HQ</i><b>$860</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">318S · 7天班 · 新港中转 · ETD 07-12</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('MCC','Ningbo-Zhoushan','40HQ',860)">选择</button><button class="bbar" onclick="bargain('MCC',860,this)">砍价</button></span>
+          </div>
+        </div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">COSCO</span>
+            <span class="pw"><span class="pc"><i>20GP</i><b class="ask">询价</b></span><span class="pc"><i>40HQ</i><b>$995</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">0FE2X · 10天班 · 直达 · ETD 07-15</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('COSCO','Ningbo-Zhoushan','40HQ',995)">选择</button><button class="bbar" onclick="bargain('COSCO',995,this)">砍价</button></span>
+          </div>
+        </div>
+        <button class="sendfac" onclick="sendFactory(this)">🏭 Send to Factory · 协同排产</button>
+      </div>
+
+      <div class="lane">
+        <div class="lh"><div class="rt">🇨🇳 Qingdao <span class="ar">→</span> 🇲🇾 Port Klang Westport</div></div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">MSC</span>
+            <span class="pw"><span class="pc"><i>20GP</i><b>$620</b></span><span class="pc"><i>40HQ</i><b>$720</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">214W · 7天班 · 直达 · ETD 07-11</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('MSC','Qingdao','40HQ',720)">选择</button><button class="bbar" onclick="bargain('MSC',720,this)">砍价</button></span>
+          </div>
+        </div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">KMTC<span class="st">★</span></span>
+            <span class="pw"><span class="pc"><i>20GP</i><b class="ask">询价</b></span><span class="pc"><i>40HQ</i><b>$700</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">2508N · 7天班 · ETD 07-09</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('KMTC','Qingdao','40HQ',700)">选择</button><button class="bbar" onclick="bargain('KMTC',700,this)">砍价</button></span>
+          </div>
+        </div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">MCC</span>
+            <span class="pw"><span class="pc"><i>20GP</i><b class="ask">询价</b></span><span class="pc"><i>40HQ</i><b>$780</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">331S · 7天班 · 丹戎中转 · ETD 07-13</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('MCC','Qingdao','40HQ',780)">选择</button><button class="bbar" onclick="bargain('MCC',780,this)">砍价</button></span>
+          </div>
+        </div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">COSCO</span>
+            <span class="pw"><span class="pc"><i>20GP</i><b class="ask">询价</b></span><span class="pc"><i>40HQ</i><b>$995</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">0FE5X · 10天班 · ETD 07-16</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('COSCO','Qingdao','40HQ',995)">选择</button><button class="bbar" onclick="bargain('COSCO',995,this)">砍价</button></span>
+          </div>
+        </div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">OOCL</span>
+            <span class="pw"><span class="pc"><i>20GP</i><b class="ask">询价</b></span><span class="pc"><i>40HQ</i><b>$1,300</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">118N · 7天班 · ETD 07-10</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('OOCL','Qingdao','40HQ',1300)">选择</button><button class="bbar" onclick="bargain('OOCL',1300,this)">砍价</button></span>
+          </div>
+        </div>
+        <div class="lrow">
+          <div class="r1">
+            <span class="car">MAERSK</span>
+            <span class="pw"><span class="pc"><i>20GP</i><b class="ask">询价</b></span><span class="pc"><i>40HQ</i><b>$1,180</b></span></span>
+          </div>
+          <div class="r2">
+            <span class="voy">527W · 12天班 · ETD 07-18</span>
+            <span class="lacts"><button class="bsel" onclick="openOrder('MAERSK','Qingdao','40HQ',1180)">选择</button><button class="bbar" onclick="bargain('MAERSK',1180,this)">砍价</button></span>
+          </div>
+        </div>
+        <button class="sendfac" onclick="sendFactory(this)">🏭 Send to Factory · 协同排产</button>
+      </div>
+    </div>
+
+    <!-- 右栏:地图 + 可发货订单 -->
+    <div>
+      <div class="panel" style="margin-bottom:14px">
+        <div class="ph" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <h2 style="font-size:16px">🗺 Live Shipment Map</h2><span class="chip">0 IN TRANSIT</span>
+        </div>
+        <div class="mapbox">
+          <svg viewBox="0 0 300 160"><g fill="#1e2c44">
+            <path d="M20,30 L120,20 L150,55 L90,75 L30,60 Z"/><path d="M170,40 L260,30 L280,80 L210,95 L165,70 Z"/>
+            <path d="M60,105 L140,98 L160,130 L80,140 Z"/></g>
+            <path d="M100,60 C140,70 190,80 230,70" fill="none" stroke="#3b5480" stroke-width="1.6" stroke-dasharray="4 4"/>
+          </svg>
+          <span style="position:relative">暂无在途货运 · 点击打开地图</span>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="ph" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <h2 style="font-size:16px">📦 Shippable Orders</h2><span class="chip">0 READY</span>
+        </div>
+        <div class="ord"><span class="oi">📦</span><span class="on"><b>LL-23</b><small>— · —</small></span><span class="chip amb">未发货</span></div>
+        <div class="ord"><span class="oi">📦</span><span class="on"><b>LL-23</b><small>— · —</small></span><span class="chip amb">未发货</span></div>
+        <div class="ord"><span class="oi">📦</span><span class="on"><b>XM-249</b><small>— · —</small></span><span class="chip amb">未发货</span></div>
+        <div class="ord" style="margin-bottom:16px"><span class="oi">📦</span><span class="on"><b>XM-243</b><small>— · —</small></span><span class="chip amb">未发货</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 下单确认:保险跟订舱一起,发货前定 -->
+<div class="mask" id="mask" onclick="if(event.target.id==='mask')close_()">
+  <div class="sheet">
+    <div class="sh"><h3 id="oTitle">订舱确认 · MSC</h3><p id="oSub">Qingdao → Port Klang Westport · 40HQ</p></div>
+
+    <div class="sgrp">舱位 BOOKING</div>
+    <div class="srow"><span class="k">船公司</span><span class="v" id="oCar">MSC</span></div>
+    <div class="srow"><span class="k">柜型 / 数量</span><span class="v">40HQ × 1</span></div>
+    <div class="srow"><span class="k">海运费</span><span class="v big" id="oFrt">USD 720.00</span></div>
+    <div class="srow"><span class="k">出单方式</span><span class="v">Seaway Bill</span></div>
+
+    <div class="cargoready no" id="cargoState">⚠ 本票货期未确认 · 建议先「Send to Factory · 协同排产」，避免订早压港 / 订晚赶不上</div>
+
+    <div class="sgrp">🛡 货运险 INSURANCE · 发货前确认</div>
+    <div class="ilab">保险公司</div>
+    <div class="opts" id="insCo">
+      <button class="opt on" onclick="setCo('picc',this)">PICC 中国人保 <span class="rec">推荐</span></button>
+      <button class="opt" onclick="setCo('other',this)">中国平安</button>
+      <button class="opt" onclick="setCo('other',this)">太平洋 CPIC</button>
+      <button class="opt" onclick="setCo('none',this)">本票不投保</button>
+    </div>
+    <div class="ilab">主险 <span style="color:var(--red)">*</span></div>
+    <div class="opts" id="insMain">
+      <button class="opt on">一切险</button><button class="opt">水渍险</button><button class="opt">平安险</button>
+      <button class="opt">I.C.C.(A)</button><button class="opt">I.C.C.(B)</button><button class="opt">I.C.C.(C)</button>
+      <button class="opt">冷藏一切险</button><button class="opt">冷藏险</button>
+    </div>
+    <div class="ilab">附加险 <small style="color:var(--faint);font-weight:400">可多选</small></div>
+    <div class="opts" id="insAdd">
+      <button class="optm on">仓至仓</button><button class="optm">罢工险</button><button class="optm on">战争险</button>
+    </div>
+    <div class="srow"><span class="k">是否做信用证</span><span class="v">
+      <button class="mini" onclick="lc(this,1)">是</button><button class="mini on" onclick="lc(this,0)">否</button></span></div>
+    <div class="srow"><span class="k">保险金额 <small style="color:var(--faint)">按货值比例</small></span>
+      <span class="v"><span style="color:var(--sub);font-weight:600">USD</span> <input class="insin" id="insAmt" type="number" value="50198.39" oninput="calcIns()"></span></div>
+    <div class="opts" style="padding-top:0" id="pctOpts">
+      <button class="opt on" onclick="setPct(1.00,this)">100%</button>
+      <button class="opt" onclick="setPct(0.70,this)">70%</button>
+      <button class="opt" onclick="setPct(0.50,this)">50%</button>
+      <button class="opt" onclick="customIns(this)">自定义金额</button>
+    </div>
+    <div class="srow" style="border-top:none;padding-top:0"><span class="k" id="pctNow">当前 = 货值 100%</span><span class="v" style="color:var(--faint);font-size:11.5px">货值 USD 50,198.39</span></div>
+    <div class="srow"><span class="k">保费</span><span class="v big" id="insPrem">CNY 109.24</span></div>
+    <div class="warn">保额随托书一并提交承保 · 开船后不可追溯投保</div>
+
+    <div class="sacts">
+      <button class="sbtn" onclick="close_()">再看看</button>
+      <button class="sbtn go" onclick="this.textContent='✓ 已下单并投保'">确认下单 · 含保险</button>
+    </div>
+  </div>
+</div>
+
+<div class="nav">
+  <a href="#"><i>📊</i>Overview</a>
+  <a href="#" class="on"><i>🚢</i>Logistics</a>
+  <span class="neworder">📦 New Order</span>
+  <a href="#"><i>🧾</i>Billing</a>
+  <a href="#"><i>👤</i>My</a>
+</div>
+
+<script>
+let CARGO_READY=false;
+function bargain(car,price,btn){
+  const t=prompt('向 '+car+' 报价 US$'+price+' 还价（USD/40HQ）：', Math.round(price*0.93));
+  if(!t) return;
+  btn.textContent='议价中'; btn.disabled=true;
+  document.getElementById('fs2').classList.add('done');
+  setTimeout(()=>{btn.textContent='已报 $'+t;},400);
+}
+function sendFactory(btn){
+  btn.textContent='✓ 已发工厂 · 货期待回';
+  setTimeout(()=>{
+    CARGO_READY=true;
+    btn.textContent='✓ 工厂已回 · 货好 07-06';
+    document.getElementById('fs3').classList.add('done');
+    syncCargo();
+  },900);
+}
+function syncCargo(){
+  const el=document.getElementById('cargoState'); if(!el) return;
+  if(CARGO_READY){ el.className='cargoready ok';
+    el.textContent='✓ 工厂已回货期：07-06 货好 · 与本船期匹配，可安排订舱'; }
+  else { el.className='cargoready no';
+    el.textContent='⚠ 本票货期未确认 · 建议先「Send to Factory · 协同排产」，避免订早压港 / 订晚赶不上'; }
+}
+function openOrder(car,pol,ct,frt){
+  syncCargo();
+  document.getElementById('fs4').classList.add('now');
+  document.getElementById('oTitle').textContent='订舱确认 · '+car;
+  document.getElementById('oSub').textContent=pol+' → Port Klang Westport · '+ct;
+  document.getElementById('oCar').textContent=car;
+  document.getElementById('oFrt').textContent='USD '+frt.toFixed(2);
+  document.getElementById('mask').classList.add('on');
+}
+function close_(){document.getElementById('mask').classList.remove('on');}
+const GOODS=50198.39;   // 货值 = 发票金额
+let INS_CO='picc';
+function setCo(k,btn){
+  INS_CO=k;
+  document.querySelectorAll('#insCo .opt').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on'); calcIns();
+}
+function calcIns(){
+  const a=+document.getElementById('insAmt').value||0;
+  const el=document.getElementById('insPrem');
+  if(INS_CO==='none'){ el.textContent='—'; el.style.color='var(--faint)'; }
+  else if(INS_CO==='other'){ el.textContent='需询价'; el.style.color='var(--cyan)'; }
+  else { el.textContent='CNY '+Math.max(40, a*0.0003*6.9228 + 5).toFixed(2); el.style.color=''; }
+  const pct=GOODS? (a/GOODS*100):0;
+  document.getElementById('pctNow').textContent='当前 = 货值 '+pct.toFixed(0)+'%';
+}
+function setPct(k,btn){
+  document.getElementById('insAmt').value=(GOODS*k).toFixed(2);
+  document.querySelectorAll('#pctOpts .opt').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on'); calcIns();
+}
+function customIns(btn){
+  document.querySelectorAll('#pctOpts .opt').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on');
+  const el=document.getElementById('insAmt'); el.focus(); el.select();
+}
+function lc(btn,v){btn.parentNode.querySelectorAll('.mini').forEach(x=>x.classList.remove('on'));btn.classList.add('on');}
+document.getElementById('insAdd').addEventListener('click',e=>{const b=e.target.closest('.optm');if(b)b.classList.toggle('on');});
+document.querySelectorAll('.opts:not(#pctOpts):not(#insAdd)').forEach(g=>g.addEventListener('click',e=>{
+  const b=e.target.closest('.opt'); if(!b||b.getAttribute('onclick'))return;
+  g.querySelectorAll('.opt').forEach(x=>{if(!x.getAttribute('onclick'))x.classList.remove('on')}); b.classList.add('on');
+}));
+</script>

@@ -1,0 +1,464 @@
+<title>上下游进出单 · 原型</title>
+<style>
+:root{
+  --ink:#16202e; --sub:#5c6b7d; --faint:#8b98a8; --ground:#f0f2f5; --card:#fff; --line:#e2e7ee;
+  --brand:#1a6fc4; --brand-soft:#e7f0fa; --brand-ink:#0f4f92;
+  --ok:#2c8156; --ok-soft:#e5f1ea; --wait:#b3781d; --wait-soft:#fbefd8; --err:#b23a2e;
+  --amber-bar:#f6f0d8; --amber-line:#e6d9a0; --amber-ink:#8a6a10;
+  --help:#6b4ba8; --help-soft:#efe9f8; --row:#f6f8fb;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ink:#e5edf5; --sub:#93a4b6; --faint:#6c7d90; --ground:#0e151d; --card:#161f2a; --line:#27333f;
+  --brand:#4f9fd6; --brand-soft:#132836; --brand-ink:#8ec8ef;
+  --ok:#5cb083; --ok-soft:#15271d; --wait:#d3a458; --wait-soft:#2a2214; --err:#dd7d6e;
+  --amber-bar:#2a2413; --amber-line:#4a3f1e; --amber-ink:#e0c063; --row:#1c2734;
+  --help:#a98fd6; --help-soft:#211a30;
+}}
+:root[data-theme="dark"]{
+  --ink:#e5edf5; --sub:#93a4b6; --faint:#6c7d90; --ground:#0e151d; --card:#161f2a; --line:#27333f;
+  --brand:#4f9fd6; --brand-soft:#132836; --brand-ink:#8ec8ef;
+  --ok:#5cb083; --ok-soft:#15271d; --wait:#d3a458; --wait-soft:#2a2214; --err:#dd7d6e;
+  --amber-bar:#2a2413; --amber-line:#4a3f1e; --amber-ink:#e0c063; --row:#1c2734;
+  --help:#a98fd6; --help-soft:#211a30;
+}
+:root[data-theme="light"]{
+  --ink:#16202e; --sub:#5c6b7d; --faint:#8b98a8; --ground:#f0f2f5; --card:#fff; --line:#e2e7ee;
+  --brand:#1a6fc4; --brand-soft:#e7f0fa; --brand-ink:#0f4f92;
+  --ok:#2c8156; --ok-soft:#e5f1ea; --wait:#b3781d; --wait-soft:#fbefd8; --err:#b23a2e;
+  --amber-bar:#f6f0d8; --amber-line:#e6d9a0; --amber-ink:#8a6a10; --row:#f6f8fb;
+  --help:#6b4ba8; --help-soft:#efe9f8;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font:15px/1.55 -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;-webkit-text-size-adjust:100%}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.app{max-width:560px;margin:0 auto;padding:14px 14px 120px;display:flex;flex-direction:column;gap:12px}
+.demoflag{background:var(--wait-soft);color:var(--wait);font-size:11.5px;text-align:center;padding:6px;border-radius:7px;font-weight:700}
+
+.banner{background:var(--amber-bar);border:1px solid var(--amber-line);border-radius:12px;padding:15px 16px;display:flex;align-items:center;gap:12px}
+.banner .bt{flex:1;min-width:0}
+.banner .bt h1{margin:0;font-size:16px;font-weight:800;line-height:1.35;color:var(--amber-ink);word-break:break-word}
+.banner .bt .sub{font-size:12px;color:var(--sub);margin-top:3px}
+.banner .flag{background:var(--card);border:1px solid var(--amber-line);color:var(--amber-ink);font-size:12px;font-weight:800;padding:6px 11px;border-radius:99px;white-space:nowrap;flex:0 0 auto}
+
+.nologin{display:flex;align-items:center;gap:9px;background:var(--ok-soft);color:var(--ok);padding:9px 14px;font-size:12.5px;font-weight:600;border-radius:10px}
+.deliver{background:var(--brand-soft);border:1px solid #bcd8f0;border-radius:11px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.deliver .l{font-size:12px;color:var(--sub)}
+.deliver .v{font-size:16px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+
+/* 折叠确认卡:已确认默认收起,待办展开(details/summary) */
+details.step{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+details.step.done{border-color:#bfe0cd}
+details.step>summary{list-style:none;cursor:pointer;padding:14px 15px;display:flex;align-items:center;gap:12px}
+details.step>summary::-webkit-details-marker{display:none}
+.snum{width:28px;height:28px;border-radius:99px;display:grid;place-items:center;font-size:14px;font-weight:800;flex:0 0 auto;background:var(--ink);color:var(--card)}
+.step.done .snum{background:var(--ok);color:#fff}.step.now .snum{background:var(--brand);color:#fff}
+.st{flex:1;min-width:0}.st h2{margin:0;font-size:15.5px;font-weight:800}.st p{margin:2px 0 0;font-size:12px;color:var(--sub)}
+.sstat{font-size:12px;font-weight:800;padding:3px 10px;border-radius:99px;white-space:nowrap}
+.sstat.ok{background:var(--ok-soft);color:var(--ok)}.sstat.wait{background:var(--wait-soft);color:var(--wait)}
+.chev{color:var(--faint);font-size:12px;transition:transform .2s}
+details[open] .chev{transform:rotate(180deg)}
+.sb{border-top:1px solid var(--line);padding:13px 15px;display:flex;flex-direction:column;gap:11px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;font-size:13.5px;align-items:baseline}
+.kv .k{color:var(--sub);white-space:nowrap}.kv .v{font-weight:600;text-align:right;word-break:break-word}
+.done-line{display:flex;align-items:center;gap:8px;color:var(--ok);font-weight:700;font-size:13px;flex-wrap:wrap}
+.altlink{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--row);cursor:pointer;font-size:13px;font-weight:700;color:var(--brand)}
+.acts{display:flex;gap:9px}
+.btn{flex:1;padding:11px 0;border-radius:9px;font-size:14px;font-weight:800;cursor:pointer;border:1.5px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;text-align:center}
+.btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}.btn.ghost{color:var(--err);border-color:var(--line)}
+
+/* 区块卡(货物明细/单证/账单) */
+.block{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.bh{padding:13px 15px;border-bottom:1px solid var(--line)}
+.bh h2{margin:0;font-size:15.5px;font-weight:800}
+.bh p{margin:2px 0 0;font-size:12px;color:var(--sub)}
+.bb{padding:12px 15px}
+
+/* 货物明细表(图2样式,按订单分组,横滚) */
+.cargo{overflow-x:auto}
+.cargo table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:640px}
+.cargo th{text-align:left;color:var(--faint);font-size:11px;font-weight:700;padding:7px 10px;white-space:nowrap;border-bottom:1px solid var(--line)}
+.cargo td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.cargo td.num,.cargo th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.grp td{background:var(--row);font-weight:800;font-size:11.5px;color:var(--brand-ink);white-space:nowrap}
+.bcode{font-family:var(--mono);font-weight:800}
+.pdesc{font-weight:600;min-width:170px;white-space:normal}
+.pdesc small{color:var(--faint);font-weight:400}
+.note-in{width:130px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:var(--card);color:var(--ink);font-family:inherit}
+.fe-box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:4px;display:inline-block}
+
+.doc-line{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.doc-line:first-child{border-top:none}
+.doc-line .nm{flex:1;font-size:13.5px;font-weight:600}
+.dl{font-size:12.5px;font-weight:800;color:var(--brand);cursor:pointer;white-space:nowrap}
+.add-doc{margin-top:10px;width:100%;padding:10px;border:1.5px dashed var(--line);border-radius:9px;background:none;color:var(--brand);font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
+.tip{font-size:11.5px;color:var(--faint);line-height:1.5}
+
+/* 语言切换(i18n 三语) */
+.lang{display:flex;gap:0;align-self:flex-end;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card)}
+.lang button{border:none;background:none;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--sub);font-family:inherit}
+.lang button.on{background:var(--brand);color:#fff}
+.lang button+button{border-left:1px solid var(--line)}
+
+/* 账单中心(权限锁 + 两类账单 + 下载) */
+.lock{background:var(--wait-soft);color:var(--wait);font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:99px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.bill{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--row)}
+.bill .bi{font-size:20px;flex:0 0 auto}
+.bill .bt2{flex:1;min-width:0}
+.bill .bt2 b{display:block;font-size:14px}
+.bill .bt2 span{font-size:11.5px;color:var(--sub)}
+.bill .bv{font-size:14px;font-weight:800;font-family:var(--mono);white-space:nowrap}
+.bill .bdl{flex:0 0 auto;padding:7px 13px;border-radius:7px;border:1px solid var(--brand);background:var(--brand-soft);color:var(--brand-ink);font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit}
+.bill .bdl:disabled{border-color:var(--line);background:var(--card);color:var(--faint);cursor:default}
+.billgrp{font-size:11px;font-weight:800;color:var(--faint);letter-spacing:.06em;padding:2px 2px 0}
+.bill .bexw{font-size:10.5px;font-weight:800;color:var(--wait);background:var(--wait-soft);padding:2px 7px;border-radius:99px;white-space:nowrap}
+
+.foot{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:11px 14px calc(11px + env(safe-area-inset-bottom));z-index:30}
+.foot-in{max-width:560px;margin:0 auto;display:flex;gap:10px}
+.foot .submit{flex:1;padding:13px 0;border-radius:10px;background:var(--brand);color:#fff;border:none;font-size:15.5px;font-weight:800;cursor:pointer;font-family:inherit}
+.foot .help{flex:0 0 auto;padding:13px 15px;border-radius:10px;background:var(--help-soft);color:var(--help);border:none;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;line-height:1.15}
+.foot .help small{font-weight:600;font-size:10px;opacity:.85}
+.sheet{position:fixed;inset:0;background:rgba(10,16,24,.5);z-index:40;display:none;align-items:flex-end;justify-content:center}
+.sheet.on{display:flex}
+.sheet-c{background:var(--card);width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:20px 18px calc(24px + env(safe-area-inset-bottom))}
+.sheet-c h3{margin:0 0 4px;font-size:17px}.sheet-c p{margin:0 0 14px;font-size:13.5px;color:var(--sub)}
+.opt{display:flex;align-items:center;gap:13px;padding:14px;border:1px solid var(--line);border-radius:11px;margin-bottom:10px;cursor:pointer}
+.opt .oi{width:40px;height:40px;border-radius:10px;background:var(--help-soft);color:var(--help);display:grid;place-items:center;font-size:20px;flex:0 0 auto}
+.opt .ot b{display:block;font-size:14.5px}.opt .ot span{font-size:12px;color:var(--sub)}
+.sheet-x{width:100%;padding:12px;border:none;background:none;color:var(--sub);font-size:14px;cursor:pointer;font-family:inherit;font-weight:600}
+
+/* 右上角登入主页面 + 协同标注 + 提单/术语选择器 + FE记住 */
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.homelink{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;color:var(--brand);background:var(--brand-soft);border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.collab-tag{font-size:10px;font-weight:800;color:var(--brand);background:var(--brand-soft);padding:2px 7px;border-radius:99px;white-space:nowrap;margin-left:6px}
+.pick{margin-top:4px}
+.pick .pl{font-size:12.5px;color:var(--sub);font-weight:700;display:flex;align-items:center}
+.pick-opts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.pick-opt{font-size:12.5px;font-weight:700;padding:6px 12px;border:1.5px solid var(--line);border-radius:8px;background:var(--card);color:var(--sub);cursor:pointer}
+.pick-opt.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-ink)}
+.fe-rem{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--sub);cursor:pointer;margin-top:3px;white-space:nowrap;user-select:none}
+.fe-rem input{width:12px;height:12px;accent-color:var(--brand)}
+.invoice-cta{width:100%;padding:13px;border-radius:10px;background:var(--brand);color:#fff;font-weight:800;font-size:14.5px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;font-family:inherit;margin-top:2px;text-decoration:none}
+.invoice-cta small{font-weight:600;opacity:.85;font-size:11px}
+.banner.urgent{background:#fdecea;border-color:#f0b4ab}
+.banner.urgent .bt h1{color:#8f2d22}
+.flag.urgent{background:#fff;border-color:#e79c90;color:#b23a2e}
+.flag.todo{background:var(--card);border-color:var(--amber-line);color:var(--amber-ink)}
+@media (prefers-color-scheme:dark){.banner.urgent{background:#2c1a17;border-color:#5b342c}.banner.urgent .bt h1{color:#f0a294}.flag.urgent{background:#1d1310;border-color:#7a4438;color:#e89283}}
+:root[data-theme="dark"] .banner.urgent{background:#2c1a17;border-color:#5b342c}
+:root[data-theme="dark"] .banner.urgent .bt h1{color:#f0a294}
+:root[data-theme="dark"] .flag.urgent{background:#1d1310;border-color:#7a4438;color:#e89283}
+.help.wide{flex:1;flex-direction:row;gap:7px;justify-content:center;padding:14px 0;font-size:14.5px}
+.help.wide small{font-size:12px}
+@media(max-width:480px){
+  .banner{flex-wrap:wrap}
+  .banner .bt{flex:1 1 100%;min-width:0}
+  .banner .flag{flex:1 1 100%;text-align:center;margin-top:9px;padding:8px 11px}
+}
+/* 货物追踪:航线示意 + 里程碑(接现成 vessel-track/vessel-map) */
+.route{position:relative;display:flex;align-items:center;gap:8px;padding:16px 4px 10px}
+.route .port{display:flex;flex-direction:column;align-items:center;gap:4px;flex:0 0 auto;min-width:58px}
+.route .dot{width:11px;height:11px;border-radius:99px;background:var(--ok)}
+.route .dot.pending{background:var(--line);border:2px solid var(--faint);box-sizing:border-box}
+.route .pn{font-size:11px;font-weight:800;text-align:center;line-height:1.25}
+.route .pd{font-size:10px;color:var(--faint)}
+.route .line{flex:1;height:3px;border-radius:99px;background:var(--line);position:relative}
+.route .line i{position:absolute;left:0;top:0;height:100%;border-radius:99px;background:var(--ok)}
+.route .ship{position:absolute;top:-11px;transform:translateX(-50%);font-size:17px}
+.mstones{display:flex;flex-direction:column;gap:0;padding:4px 2px 2px}
+.ms{display:flex;align-items:flex-start;gap:10px;padding:7px 0}
+.ms .mi{width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font-size:10px;font-weight:800;flex:0 0 auto;background:var(--ok);color:#fff}
+.ms.now .mi{background:var(--brand);color:#fff}
+.ms.todo .mi{background:var(--card);border:2px solid var(--line);color:transparent}
+.ms .mt{flex:1;font-size:13px;font-weight:600}
+.ms.todo .mt{color:var(--faint);font-weight:500}
+.ms .md{font-size:12px;color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap}
+.todo-hd{padding:9px 14px 8px;font-size:11.5px;font-weight:800;color:var(--wait);background:var(--wait-soft)}
+.todos{background:var(--card);border:1px solid var(--amber-line);border-radius:11px;overflow:hidden}
+.todo-item{display:flex;align-items:center;gap:9px;padding:11px 14px;border-top:1px solid var(--line);cursor:pointer;width:100%;background:none;font-family:inherit;text-align:left}
+
+.todo-item .tdot{width:7px;height:7px;border-radius:99px;background:var(--wait);flex:0 0 auto}
+.todo-item .tnm{flex:1;font-size:13.5px;font-weight:700;color:var(--ink)}
+.todo-item .tst{font-size:11.5px;font-weight:800;color:var(--wait);background:var(--wait-soft);padding:3px 9px;border-radius:99px;white-space:nowrap}
+.todo-item .go{color:var(--faint);font-size:13px}
+.unset{background:var(--wait-soft);color:var(--wait);font-size:11.5px;font-weight:800;padding:3px 10px;border-radius:99px;cursor:pointer;display:inline-block}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.viewhint{font-size:11.5px;color:var(--wait);font-weight:700}
+.feenote{font-size:11.5px;color:var(--err);font-weight:700}
+.seamap{position:relative;border-radius:11px;overflow:hidden;cursor:pointer;background:#0a1a28;margin-bottom:4px}
+.seamap svg{display:block;width:100%;height:172px}
+.mfull{position:absolute;top:9px;right:9px;background:rgba(8,20,32,.72);color:#cbd5e1;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap}
+.maplink{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:11px;margin-top:8px;border-radius:9px;background:var(--brand-soft);border:1px solid #bcd8f0;color:var(--brand-ink);font-size:13.5px;font-weight:800;cursor:pointer;text-decoration:none}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+
+/* ── 上下游单:主体切换/货代模式/金额核对/多对手方 ── */
+.entsw,.modesw{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--card)}
+.entsw button,.modesw button{flex:1;border:none;background:none;padding:9px 6px;font-size:12.5px;font-weight:800;cursor:pointer;color:var(--sub);font-family:inherit}
+.entsw button.on{background:var(--ink);color:var(--card)}
+.modesw button.on{background:var(--brand);color:#fff}
+.entsw button+button,.modesw button+button{border-left:1px solid var(--line)}
+.modelab{font-size:11.5px;color:var(--sub);font-weight:700;margin-bottom:6px}
+.banner.mine{background:var(--brand-soft);border-color:#bcd8f0}
+.banner.mine .bt h1{color:var(--brand-ink)}
+.mytag{background:var(--ink);color:var(--card);font-size:11px;font-weight:800;padding:3px 9px;border-radius:99px;white-space:nowrap}
+
+/* 金额核对(报关额 vs 客户额 vs 工厂价) */
+.insenv{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.insenv .ih{display:flex;align-items:center;gap:9px;padding:12px 15px;border-bottom:1px solid var(--line)}
+.insenv .ih h2{margin:0;font-size:15.5px;font-weight:800;flex:1}
+.insenv .ir{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:9px 15px;border-top:1px solid var(--line);font-size:13.5px}
+.insenv .ir:first-child{border-top:none}
+.insenv .ir .ik{color:var(--sub);white-space:nowrap}
+.insenv .ir .iv{font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.insenv .ir .iv.gain{color:var(--ok);font-weight:800}
+.insenv .isum{background:var(--row);border-top:1px solid var(--line);padding:11px 15px;font-size:12.5px;font-weight:700;line-height:1.55}
+.insenv .iact{padding:11px 15px;border-top:1px solid var(--line)}
+.chk{display:flex;flex-direction:column}
+.chkrow{display:flex;align-items:baseline;gap:10px;padding:11px 15px;border-top:1px solid var(--line)}
+.chkrow:first-child{border-top:none}
+.chkrow .cl{flex:1;font-size:13.5px;font-weight:600}
+.chkrow .cl small{display:block;color:var(--faint);font-size:11px;font-weight:400;margin-top:1px}
+.chkrow .cv{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chkrow .cf{font-size:11.5px;font-weight:800;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.cf.ok{background:var(--ok-soft);color:var(--ok)}
+.cf.bad{background:#fbe3df;color:var(--err)}
+@media (prefers-color-scheme:dark){.cf.bad{background:#3a201c}}
+.chkfoot{padding:10px 15px;border-top:1px solid var(--line);font-size:12px;font-weight:700}
+.chkfoot.ok{background:var(--ok-soft);color:var(--ok)}
+.chkfoot.bad{background:var(--wait-soft);color:var(--err)}
+
+/* 多对手方 */
+.side{border-top:1px solid var(--line)}
+.side:first-child{border-top:none}
+.sh{display:flex;align-items:center;gap:8px;padding:11px 15px 7px;font-size:11.5px;font-weight:800;letter-spacing:.02em}
+.sh.up{color:var(--err)}.sh.down{color:var(--ok)}
+.sh .cnt{background:var(--row);color:var(--sub);padding:2px 8px;border-radius:99px;font-size:11px}
+.party{display:flex;align-items:flex-start;gap:10px;padding:9px 15px;border-top:1px solid var(--line)}
+.party .pi{font-size:16px;flex:0 0 auto;line-height:1.3}
+.party .pb{flex:1;min-width:0}
+.party .pn{font-size:13.5px;font-weight:700;line-height:1.4;word-break:break-word}
+.party .pk{font-size:11.5px;color:var(--faint);margin-top:1px}
+.party .pr{text-align:right;flex:0 0 auto}
+.party .pv{font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.party .ps{font-size:11px;margin-top:2px;white-space:nowrap}
+.party .ps.due{color:var(--err);font-weight:700}
+.party .ps.paid{color:var(--ok)}
+.nolink{padding:13px 15px;font-size:12.5px;color:var(--sub);background:var(--row);border-top:1px solid var(--line);font-weight:600}
+.noenv{padding:26px 18px;text-align:center;color:var(--sub);font-size:13.5px;font-weight:700;line-height:1.6}
+</style>
+
+<div class="app">
+  <div class="topbar">
+    <a class="homelink" href="/data">☰ 登入主页面</a>
+    <div class="lang"><button class="on">中文</button><button>English</button><button>BM</button></div>
+  </div>
+
+  <div class="entsw">
+    <button class="on" onclick="setEnt('babi',this)">厦门巴匕进出口有限公司</button>
+    <button onclick="setEnt('ybb',this)">上海洋宝宝国际物流有限公司</button>
+  </div>
+
+  <div class="banner mine">
+    <span style="font-size:26px">🏛</span>
+    <div class="bt">
+      <h1 id="bnTitle">40-XM-1 — 本票进出<br>厦门巴匕进出口有限公司</h1>
+      <div class="sub">ENRICH CHAMPION SDN BHD · 2026-06-22 · CNY</div>
+    </div>
+    <span class="mytag">我方主体</span>
+  </div>
+
+  <div>
+    <div class="modelab">本票货代由谁安排</div>
+    <div class="modesw">
+      <button class="on" onclick="setMode('fob',this)">FOB · 客户指定货代</button>
+      <button onclick="setMode('cif',this)">CIF · 我方安排</button>
+    </div>
+  </div>
+
+  <!-- 金额核对:工厂价 / 报关额 / 客户额 -->
+  <div class="block">
+    <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><h2>本票金额核对</h2><p>工厂价 · 报关金额 · 客户金额</p></div>
+      <span class="lock">🔒 仅授权人可见</span>
+    </div>
+    <div class="chk">
+      <div class="chkrow">
+        <span class="cl">工厂价<small>我付工厂 · 含税结算</small></span>
+        <span class="cv" id="amtF">CNY 71,500.00</span>
+      </div>
+      <div class="chkrow">
+        <span class="cl">报关金额<small>报关单申报</small></span>
+        <span class="cv" id="amtD">CNY 71,500.00</span>
+        <span class="cf ok" id="flagD">✓</span>
+      </div>
+      <div class="chkrow">
+        <span class="cl">客户金额<small>客户付我</small></span>
+        <span class="cv" id="amtC">CNY 71,500.00</span>
+        <span class="cf ok" id="flagC">✓</span>
+      </div>
+    </div>
+    <div class="chkfoot ok" id="chkFoot">三价一致</div>
+  </div>
+
+  <!-- 上下游:多对手方 -->
+  <div class="block" id="blkFlow">
+    <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><h2 id="flowTitle">本票进出 · 巴匕这一环</h2><p>各对手方的应付与应收</p></div>
+      <span class="lock">🔒 仅授权人可见</span>
+    </div>
+    <div id="flowBody"></div>
+  </div>
+
+  <!-- 保险这一环:自助投保,按月转账 -->
+  <div class="insenv">
+    <div class="ih"><span style="font-size:19px">🛡</span><h2>保险这一环</h2><span class="lock">🔒 仅授权人可见</span></div>
+    <div class="ir"><span class="ik">承保方案</span><span class="iv">人保青岛营业二部 · 集装箱普货</span></div>
+    <div class="ir"><span class="ik">成本（付人保）</span><span class="iv">¥114.68</span></div>
+    <div class="ir"><span class="ik">售价（收客户）</span><span class="iv">¥119.68</span></div>
+    <div class="ir"><span class="ik">这一环差额</span><span class="iv gain">+¥5.00</span></div>
+    <div class="isum">本月累计 3 单　·　应付人保 <b>¥247.24</b>　·　已收客户 <b>¥262.24</b>　·　差额 <b style="color:var(--ok)">+¥15.00</b><br>
+    投保在保险公司网站自助完成，按月核对人保对账单后统一转账</div>
+    <div class="iact"><a class="invoice-cta" href="/public/insurance-sheet.html">🛡 打开保险对账台</a></div>
+  </div>
+
+  <!-- 货物追踪 -->
+  <div class="block">
+    <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><h2>货物追踪 Tracking</h2><p>COSCO SHIPPING ARIES / 042E</p></div>
+      <span class="sstat ok">在途</span>
+    </div>
+    <div class="bb" style="padding-top:0">
+      <div class="seamap" onclick="openFull()">
+        <svg viewBox="0 0 360 220" preserveAspectRatio="xMidYMid slice" role="img" aria-label="航线地图">
+          <rect width="360" height="220" fill="#0a1a28"/>
+          <g fill="#1e3448">
+            <path d="M205,0 L360,0 L360,48 C340,50 318,44 300,36 C280,27 258,17 238,8 C227,4 215,1 205,0 Z"/>
+            <path d="M336,58 C341,62 342,72 338,80 C335,85 331,84 330,79 C328,70 331,61 336,58 Z"/>
+            <path d="M78,0 L205,0 C200,8 193,20 187,32 C180,46 172,60 163,72 C156,81 150,90 146,100 C142,110 138,118 133,124 C128,130 122,128 119,120 C114,106 110,92 104,78 C96,58 87,32 78,0 Z"/>
+            <path d="M133,124 C137,132 138,142 135,152 C132,162 126,172 119,180 C114,186 108,186 106,180 C103,171 106,160 111,150 C117,138 126,128 133,124 Z"/>
+            <path d="M30,148 C45,158 62,172 74,186 C80,193 78,200 70,199 C58,197 42,186 30,174 C22,166 20,155 24,150 C26,147 28,147 30,148 Z"/>
+            <path d="M240,136 C262,130 290,132 312,142 C330,150 336,166 328,180 C318,196 292,204 268,198 C248,193 234,178 232,160 C231,148 234,139 240,136 Z"/>
+            <path d="M78,206 C105,210 140,214 170,216 C176,216 177,220 170,220 L80,220 C74,218 73,207 78,206 Z"/>
+          </g>
+          <path d="M272,42 C250,70 220,95 190,115 C180,121 176,122 172,124" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M172,124 C150,140 138,152 116,166" fill="none" stroke="#48657d" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>
+          <circle cx="272" cy="42" r="4.5" fill="#22c55e"/>
+          <text x="264" y="30" fill="#cbd5e1" font-size="10" font-weight="700" text-anchor="end">厦门 XMN</text>
+          <circle cx="116" cy="166" r="4.5" fill="none" stroke="#94a3b8" stroke-width="2"/>
+          <text x="124" y="183" fill="#cbd5e1" font-size="10" font-weight="700">巴生西 PKW</text>
+          <circle cx="172" cy="124" r="13" fill="#38bdf8" opacity="0.18"/>
+          <circle cx="172" cy="124" r="6" fill="#38bdf8"/>
+          <text x="172" y="112" font-size="15" text-anchor="middle">🚢</text>
+        </svg>
+        <span class="mfull">全屏 ⤢</span>
+      </div>
+      <div class="mstones">
+        <div class="ms"><span class="mi">✓</span><span class="mt">已订舱</span><span class="md">07-05</span></div>
+        <div class="ms"><span class="mi">✓</span><span class="mt">已装柜</span><span class="md">07-06</span></div>
+        <div class="ms"><span class="mi">✓</span><span class="mt">已开船</span><span class="md">07-10</span></div>
+        <div class="ms now"><span class="mi">•</span><span class="mt">海上在途</span><span class="md">预计 08-14 到港</span></div>
+        <div class="ms todo"><span class="mi">·</span><span class="mt">已到港</span><span class="md">—</span></div>
+      </div>
+    </div>
+  </div>
+  <!-- 货物明细(图2样式,按订单分组,可核对写备注) -->
+  <div class="block">
+    <div class="bh"><h2>货物明细 / Cargo Description</h2><p>订舱前请核对</p></div>
+    <div class="cargo">
+      <table>
+        <thead><tr><th>Brand Code</th><th>品名 &amp; 规格</th><th>HS Code</th><th>FE</th><th class="num">箱数</th><th class="num">GW (KGS)</th><th>您的备注</th></tr></thead>
+        <tbody>
+          <tr class="grp"><td colspan="7">ORDER CL-11 · 柜 BMOU1633290 · 封 Y271878 · 20GP</td></tr>
+          <tr><td class="bcode">9551014016620</td><td class="pdesc">PROPAW BENTONITE CAT LITTER LEMON 6KG<br><small>6KG/BAG</small></td><td class="mono">3824999999</td><td><span class="fe-box"></span><label class="fe-rem"><input type="checkbox">记住此产品</label></td><td class="num">1,445</td><td class="num">26,732.5</td><td><input class="note-in" placeholder="如需改品名/HS/标签请说明"></td></tr>
+          <tr class="grp"><td colspan="7">ORDER CL-9 · 柜 CSGU2466241 · 封 A455028 · 20GP</td></tr>
+          <tr><td class="bcode">9551014016620</td><td class="pdesc">PROPAW BENTONITE CAT LITTER LEMON 6KG<br><small>6KG/BAG</small></td><td class="mono">3824999999</td><td><span class="fe-box"></span><label class="fe-rem"><input type="checkbox">记住此产品</label></td><td class="num">1,445</td><td class="num">26,732.5</td><td><input class="note-in" placeholder="如需改品名/HS/标签请说明"></td></tr>
+          <tr class="grp"><td colspan="7">ORDER CL-10 · 柜 CSGU2502035 · 封 A455029 · 20GP</td></tr>
+          <tr><td class="bcode">9551014016637</td><td class="pdesc">PROPAW BENTONITE CAT LITTER COFFEE 6KG<br><small>6KG/BAG</small></td><td class="mono">3824999999</td><td><span class="fe-box"></span><label class="fe-rem"><input type="checkbox">记住此产品</label></td><td class="num">1,445</td><td class="num">26,732.5</td><td><input class="note-in" placeholder="如需改品名/HS/标签请说明"></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
+  <!-- 单证 · 出口抬头 -->
+  <div class="block">
+    <div class="bh"><h2>单证 · 出口抬头</h2><p>本票以哪个主体报关开票</p></div>
+    <div class="bb">
+      <div class="kv" style="margin-bottom:11px">
+        <span class="k">报关抬头</span><span class="v" id="declCo">厦门巴匕进出口有限公司</span>
+        <span class="k">贸易术语</span><span class="v" id="termV">FOB</span>
+      </div>
+      <div class="doc-line"><span class="nm">报关单 Customs Declaration</span><span class="dl">下载 ↓</span></div>
+      <div class="doc-line"><span class="nm">提单 Bill of Lading</span><span class="dl">下载 ↓</span></div>
+      <div class="doc-line"><span class="nm">商业发票 / 装箱单</span><span class="dl">下载 ↓</span></div>
+      <div class="acts" style="margin-top:11px"><button class="btn brand">确认出口抬头</button></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><h2>账单中心</h2><p>应付上游 · 应收下游</p></div>
+      <span class="lock">🔒 仅授权人可见</span>
+    </div>
+    <div class="bb">
+      <a class="invoice-cta" href="/public/invoice-confirm-preview.html?token=DEMO&party=internal">💰 打开账单 · 开票</a>
+    </div>
+  </div>
+
+  <div class="foot"><button class="helpbtn">🆘 有问题？请 Sanlyn 协助</button></div>
+</div>
+
+<script>
+// 真实数据:订单 40-XM-1(ENRICH,FOB,CNY 71,500 三价一致) + 海运段取 COAU6460845880(万汇恒通 1700/1750)
+const F={n:'福建泰迪宠物食品有限公司',i:'🏭',k:'货款 · 工厂含税结算',v:'¥71,500.00',s:'未付 ¥71,500.00',c:'due'};
+const B={n:'厦门欣力通报关有限公司',i:'📋',k:'报关费',v:'¥800.00',s:'已付',c:'paid'};
+const T={n:'天津振和供应链管理有限公司',i:'🚚',k:'拖车费 · 厦门港',v:'¥2,400.00',s:'未付 ¥2,400.00',c:'due'};
+const FW={n:'万汇恒通(厦门)国际物流有限公司',i:'🚢',k:'海运费 · 承运成本',v:'$1,700.00',s:'未付 $1,700.00',c:'due'};
+const CUST={n:'ENRICH CHAMPION SDN BHD',i:'🏢',k:'货款 · 报关口径',v:'¥71,500.00',s:'未收 ¥71,500.00',c:'due'};
+const CUSTF={n:'ENRICH CHAMPION SDN BHD',i:'🚢',k:'海运费 · 转售',v:'$1,750.00',s:'未收 $1,750.00',c:'due'};
+const LINE={n:'中远海运集装箱运输有限公司',i:'🚢',k:'舱位 · 船司结算',v:'$1,700.00',s:'未付 $1,700.00',c:'due'};
+const BABI={n:'厦门巴匕进出口有限公司',i:'🏛',k:'委托运价 · 含港杂',v:'$1,750.00',s:'未收 $1,750.00',c:'due'};
+
+const DATA={
+ babi:{
+  fob:{title:'本票进出 · 巴匕这一环',up:[F,B,T],down:[CUST],
+       note:'海运费由客户指定货代直接结算，不经本主体'},
+  cif:{title:'本票进出 · 巴匕这一环',up:[F,B,T,FW],down:[CUST,CUSTF],note:''}
+ },
+ ybb:{
+  fob:{none:'本票为 FOB，客户指定货代<br>本主体无此环节'},
+  cif:{title:'本票进出 · 洋宝宝这一环',up:[LINE],down:[BABI],
+       note:'本环为运输段，不含货值'}
+ }
+};
+let ent='babi', mode='fob';
+function row(p,dir){return `<div class="party"><span class="pi">${p.i}</span><div class="pb"><div class="pn">${p.n}</div><div class="pk">${p.k}</div></div><div class="pr"><div class="pv">${p.v}</div><div class="ps ${p.c}">${p.s}</div></div></div>`;}
+function render(){
+  const d=DATA[ent][mode], el=document.getElementById('flowBody');
+  if(d.none){ document.getElementById('flowTitle').textContent='本票进出'; el.innerHTML=`<div class="noenv">${d.none}</div>`; return; }
+  document.getElementById('flowTitle').textContent=d.title;
+  let h=`<div class="side"><div class="sh up">⬆ 上游 · 我付给<span class="cnt">${d.up.length} 家</span></div>${d.up.map(p=>row(p)).join('')}</div>`;
+  h+=`<div class="side"><div class="sh down">⬇ 下游 · 谁付给我<span class="cnt">${d.down.length} 家</span></div>${d.down.map(p=>row(p)).join('')}</div>`;
+  if(d.note) h+=`<div class="nolink">${d.note}</div>`;
+  el.innerHTML=h;
+  document.getElementById('termV').textContent = mode==='fob'?'FOB':'CIF';
+  document.getElementById('declCo').textContent = ent==='babi'?'厦门巴匕进出口有限公司':'上海洋宝宝国际物流有限公司';
+}
+function setEnt(k,btn){ent=k;document.querySelectorAll('.entsw button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  document.getElementById('bnTitle').innerHTML='40-XM-1 — 本票进出<br>'+(k==='babi'?'厦门巴匕进出口有限公司':'上海洋宝宝国际物流有限公司');render();}
+function setMode(m,btn){mode=m;document.querySelectorAll('.modesw button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');render();}
+// 金额核对:差超 max(5%,¥5000) 判待审(记忆铁律 差额审核门)
+function checkAmt(f,d,c){
+  const tol=Math.max(f*0.05,5000);
+  const okD=Math.abs(d-f)<=tol, okC=Math.abs(c-d)<=tol;
+  const set=(id,ok)=>{const e=document.getElementById(id);e.className='cf '+(ok?'ok':'bad');e.textContent=ok?'✓':'⚠ 待审';};
+  set('flagD',okD); set('flagC',okC);
+  const ft=document.getElementById('chkFoot');
+  ft.className='chkfoot '+((okD&&okC)?'ok':'bad');
+  ft.textContent=(okD&&okC)?'三价一致':'金额不一致，需先审再放行';
+}
+checkAmt(71500,71500,71500);
+render();
+function openFull(){location.href="/public/portun-map.html?blNo=OOLU2329707640&carrierCode=OOCL";}
+</script>

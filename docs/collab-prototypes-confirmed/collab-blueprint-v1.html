@@ -1,0 +1,220 @@
+<title>协同大蓝图 · 终审版 2026-07-23</title>
+<style>
+:root{
+  --ink:#1b2224; --sub:#5a6467; --ground:#fafaf8; --card:#ffffff; --line:#e3e6e4;
+  --accent:#0e7c86; --accent-soft:#e3f0f1; --warn:#c2571a; --warn-soft:#f9ece2;
+  --ok:#3d7a4e; --ok-soft:#e6f0e8; --mid:#a06a1f; --mid-soft:#f6eeda; --hi:#a8402f; --hi-soft:#f7e6e2;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --ink:#dce3e4; --sub:#8fa0a3; --ground:#10181a; --card:#172124; --line:#26363a;
+  --accent:#4db3bc; --accent-soft:#15282b; --warn:#e08a4f; --warn-soft:#2b2018;
+  --ok:#7dbb8d; --ok-soft:#182a1d; --mid:#d3a959; --mid-soft:#2a2415; --hi:#df7f6c; --hi-soft:#2d1a16;
+}}
+:root[data-theme="dark"]{
+  --ink:#dce3e4; --sub:#8fa0a3; --ground:#10181a; --card:#172124; --line:#26363a;
+  --accent:#4db3bc; --accent-soft:#15282b; --warn:#e08a4f; --warn-soft:#2b2018;
+  --ok:#7dbb8d; --ok-soft:#182a1d; --mid:#d3a959; --mid-soft:#2a2415; --hi:#df7f6c; --hi-soft:#2d1a16;
+}
+:root[data-theme="light"]{
+  --ink:#1b2224; --sub:#5a6467; --ground:#fafaf8; --card:#ffffff; --line:#e3e6e4;
+  --accent:#0e7c86; --accent-soft:#e3f0f1; --warn:#c2571a; --warn-soft:#f9ece2;
+  --ok:#3d7a4e; --ok-soft:#e6f0e8; --mid:#a06a1f; --mid-soft:#f6eeda; --hi:#a8402f; --hi-soft:#f7e6e2;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font:16px/1.75 -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;}
+.wrap{max-width:740px;margin:0 auto;padding:28px 18px 80px;display:flex;flex-direction:column;gap:34px}
+header h1{font-size:26px;line-height:1.3;margin:6px 0 4px;letter-spacing:.01em;text-wrap:balance}
+.meta{color:var(--sub);font-size:13px;display:flex;flex-wrap:wrap;gap:6px 14px}
+.meta code{font-family:var(--mono);font-size:12px}
+.eyebrow{font-size:12px;letter-spacing:.14em;color:var(--accent);font-weight:600;text-transform:uppercase}
+section{display:flex;flex-direction:column;gap:12px}
+h2{font-size:19px;margin:0;line-height:1.4}
+p{margin:0}
+.lede{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);
+  border-radius:6px;padding:16px 18px;font-size:16.5px}
+.lede strong{color:var(--accent)}
+.note{background:var(--warn-soft);border:1px solid var(--line);border-left:4px solid var(--warn);
+  border-radius:6px;padding:12px 16px;font-size:14.5px}
+.note strong{color:var(--warn)}
+.tablebox{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th{background:var(--accent-soft);color:var(--ink);text-align:left;font-size:12.5px;letter-spacing:.04em;padding:9px 12px}
+td{padding:10px 12px;border-top:1px solid var(--line);vertical-align:top;line-height:1.6}
+td:first-child{white-space:nowrap;font-weight:600}
+.pill{display:inline-block;border-radius:999px;padding:1px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+.p-low{background:var(--ok-soft);color:var(--ok)} .p-mid{background:var(--mid-soft);color:var(--mid)}
+.p-high{background:var(--hi-soft);color:var(--hi)}
+.layers{display:flex;flex-direction:column;gap:10px}
+.layer{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:13px 16px;display:flex;gap:14px;align-items:baseline}
+.layer b{font-family:var(--mono);font-size:14px;color:var(--accent);white-space:nowrap}
+.layer span{font-size:14px;color:var(--sub)}
+.flow{font-size:13.5px;color:var(--sub);background:var(--card);border:1px dashed var(--line);border-radius:8px;padding:11px 16px}
+.flow em{font-style:normal;color:var(--accent);font-weight:600}
+details{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:0}
+details summary{cursor:pointer;padding:12px 16px;font-weight:600;font-size:14.5px}
+details[open] summary{border-bottom:1px solid var(--line)}
+pre{margin:0;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--ink)}
+ol,ul{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+li{padding-left:2px}
+.decide{background:var(--card);border:1px solid var(--warn);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.decide h3{margin:0;font-size:15.5px;color:var(--warn)}
+.decide p{font-size:14.5px}
+.rec{font-size:13px;color:var(--ok);font-weight:600}
+footer{color:var(--sub);font-size:12.5px;border-top:1px solid var(--line);padding-top:16px;line-height:1.9}
+.num{font-variant-numeric:tabular-nums}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Sanlyn · 一切表格皆协同</div>
+  <h1>协同大蓝图 · 终审版</h1>
+  <div class="meta">
+    <span class="num">2026-07-23</span>
+    <span>任务 <code>#bp-collab-rectify-0723</code></span>
+    <span>依据盘点 <code>#research-collab-saas-0723</code></span>
+    <span>Codex(GPT) + Opus 双独立评审 → Fable 合成终审</span>
+  </div>
+</header>
+
+<section>
+  <p class="lede"><strong>终审一句话：</strong>不新造任何机制——身份按信任边界切三层，外部写入收进一张 staging 收件箱，配置引擎用库里已经建好的骨架，整改全程"绞杀者模式"：465 条活链接和 4 张有数据的表一根手指都不碰。</p>
+  <p class="note"><strong>前置雷：</strong>sanlyn-api 磁盘与运行态漂移（<code>#bug-sanlynapi-routes-drift-0723</code>），修复前禁止重启 pm2，也就意味着<strong>任何新路由都部署不了</strong>。这是整个路线图的第一块砖，必须先修。</p>
+</section>
+
+<section>
+  <div class="eyebrow">身份架构</div>
+  <h2>三层切分：不是 A 或 B，是按信任边界各归各位</h2>
+  <p style="font-size:14.5px;color:var(--sub)">两位评审独立得出同一结论——Q1"登录二选一"是个假命题。正确切法：</p>
+  <div class="layers">
+    <div class="layer"><b>accounts</b><span>收缩为<strong style="color:var(--ink)">纯内部员工</strong>登录。已 bcrypt，不是安全负债；问题是内外混装，把 ~15 条外部行迁走后冻结边界。</span></div>
+    <div class="layer"><b>portal_users</b><span>复用为<strong style="color:var(--ink)">外部长期身份锚</strong>（客户/工厂/货代/报关行）。公司级账号+角色+scope 全现成，重新定位为"magic-link 优先、口令可选"——身份是锚，认证方式可插拔。</span></div>
+    <div class="layer"><b>magic_links</b><span><strong style="color:var(--ink)">访问票</strong>，不是身份。它是 3–4 天短效邀请票（193 条 supplier 链接 177 条已过期），撑不住长期访问——token 只认证一次引导动作，身份和会话另立。</span></div>
+  </div>
+  <p class="flow">客户旅程：免登录看追踪 → <em>magic_link</em> 一次性引导 → 绑定/创建 <em>portal_user</em> 并签发 session → 之后凭 session 反复访问 → 过期用邮件 magic-link <em>step-up</em> 续期 → 后期小程序 = 同一身份上的一个渠道。</p>
+</section>
+
+<section>
+  <div class="eyebrow">双评审裁决</div>
+  <h2>分歧点与终审采纳</h2>
+  <div class="tablebox"><table>
+    <tr><th>议题</th><th>Codex (GPT)</th><th>Opus</th><th>终审采纳</th></tr>
+    <tr><td>身份抽象</td><td>另建 portal_identities 统一抽象层 + collab_objects 对象索引表</td><td>直接复用 portal_users，业务键指向主表，不加抽象层</td><td><b>Opus</b>。单人团队养不起多余抽象；日后真需要再加</td></tr>
+    <tr><td>配置载体</td><td>（未查库）沿用 brief 给的 view_configs</td><td>查库实证 <b>view_configs 不存在</b>；真骨架是 collab_sheet_templates（9 模板，字段/权限/状态流齐全）</td><td><b>Opus</b>（事实校正）。07-20"简道云式引擎"项目并入该表演进</td></tr>
+    <tr><td>staging 规模</td><td>5 表：submissions + items + objects + tasks + quote_acceptances，硬 FK</td><td>2 表：submissions + events，jsonb diff，业务键无硬 FK</td><td><b>Opus 为骨架</b>；吸收 Codex 的幂等去重、报价快照必存、待补任务表（后期可选）</td></tr>
+    <tr><td>报价接受</td><td>专用表存价格快照（法律证据链）</td><td>作为 intent 进 submissions</td><td>P5 上线在线接受时再建专用表；<b>快照必存</b>即日起为硬规则</td></tr>
+    <tr><td>magic_links 改造</td><td>加 portal_user_id / upgraded_at 列，token 可升级</td><td>token 不"变成"会话；认证一次，会话另立</td><td>合并：加 portal_user_id 列 + Opus 会话模型</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <div class="eyebrow">统一提交层</div>
+  <h2>一张收件箱吃掉所有外部写入</h2>
+  <ul style="font-size:14.5px">
+    <li><b>collab_submissions</b>（staging 收件箱）+ <b>collab_submission_events</b>（append-only 留痕）两张新表，纯 additive 上线，不动任何现有表。</li>
+    <li>覆盖四类协同：工厂确认价格、客户补料、货代填舱单、报价接受——靠 <code style="font-family:var(--mono);font-size:13px">intent</code> 区分，payload 用 jsonb（顺带规避 SQL_ASCII 汉字字节截断）。</li>
+    <li>三张 0 行确认表（factory_confirmations / invoice_collab_confirm_overrides / customs confirmed_*）<b>零数据迁移</b>：前两张改代码指向后废弃，confirmed_* 列保留作 apply 落地目的地。</li>
+    <li><b>apply 护栏</b>（写进代码规范）：dry-run 出 diff → 人点确认 → SELECT 验命中 → UPDATE 带业务键 WHERE → 写 applied_to + event → psql 回读验真。主表只 additive 到独立列，<b>永不覆盖报关原始真值</b>。</li>
+    <li>对外读投影<b>默认拒绝、显式白名单</b>——成本/买价物理不出 API，不再靠"记得别 SELECT 那列"。</li>
+  </ul>
+  <details>
+    <summary>DDL 草图（终审版，点开看）</summary>
+<pre>CREATE TABLE collab_submissions (
+  id             bigserial PRIMARY KEY,
+  submission_uid uuid NOT NULL DEFAULT gen_random_uuid(), -- 对外只用它
+  magic_link_id  integer REFERENCES magic_links(id),      -- 哪张票授权
+  portal_user_id uuid REFERENCES portal_users(id),        -- 有身份则挂靠
+  submitter_role text NOT NULL,                           -- factory_booking/customer/...
+  submitter_ident text,                                   -- email/公司码快照
+  intent         text NOT NULL,  -- factory_price_confirm|customer_backfill
+                                 -- |fwd_manifest|quote_accept
+  sheet_type     text,           -- → collab_sheet_templates.sheet_type
+  target_kind    text NOT NULL,  -- order|customs_item|quote|booking
+  target_ref     text NOT NULL,  -- 业务键: order_no/decl_key/...（无硬FK）
+  payload        jsonb NOT NULL, -- 外部提交原文
+  field_diffs    jsonb,          -- 审核时算出 [{field,old,new}]
+  attachments    jsonb,          -- [{name,url,sha256}]
+  status         text NOT NULL DEFAULT 'submitted',
+                 -- submitted|under_review|applied|rejected|superseded
+  applied_to     jsonb,          -- 实际写了哪 [{table,pk,cols}]
+  reviewed_by    text, reviewed_at timestamptz,
+  applied_at     timestamptz, reject_reason text,
+  content_hash   text,           -- 幂等去重（Codex）
+  supersedes_id  bigint REFERENCES collab_submissions(id),
+  source_ip      text,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX ux_cs_uid    ON collab_submissions(submission_uid);
+CREATE INDEX ix_cs_queue  ON collab_submissions(status)
+       WHERE status IN ('submitted','under_review');
+CREATE INDEX ix_cs_target ON collab_submissions(target_kind, target_ref);
+CREATE UNIQUE INDEX ux_cs_dedupe ON collab_submissions(content_hash)
+       WHERE status <> 'rejected';
+
+CREATE TABLE collab_submission_events (
+  id bigserial PRIMARY KEY,
+  submission_id bigint NOT NULL REFERENCES collab_submissions(id),
+  actor  text NOT NULL,   -- external:factory:CP-xx | internal:damon | system
+  action text NOT NULL,   -- submitted|reviewed|applied|rejected|reverted
+  detail jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_cse_sub ON collab_submission_events(submission_id);</pre>
+  </details>
+</section>
+
+<section>
+  <div class="eyebrow">整改路线图</div>
+  <h2>绞杀者模式 · 每阶段独立上线、独立回滚</h2>
+  <div class="tablebox"><table>
+    <tr><th>阶段</th><th>内容</th><th>风险</th><th>回滚</th></tr>
+    <tr><td>前置</td><td>修复 sanlyn-api routes 漂移（找回/重建 routes-core/tail.js）。不修 = 后续全部部署不了</td><td><span class="pill p-high">高·必做</span></td><td>—</td></tr>
+    <tr><td>P0</td><td>冻结乱象：禁开第 7 个入口/第 4 套 token；additive 建两张新表；旧 token 表加观测日志摸清残余流量</td><td><span class="pill p-low">低</span></td><td>drop 空表</td></tr>
+    <tr><td>P1</td><td><b>客户门户只读版</b>：看单 + 待补清单（缺显缺），复用 customer_booking 链接，零写入。<b>最快兑现头版愿景，可与 P0 并行</b></td><td><span class="pill p-low">低</span></td><td>revoke 链接</td></tr>
+    <tr><td>P2</td><td>第一条写回 = <b>工厂价格确认</b>：magic_link → staging → diff 确认 → apply 到 confirmed_*。顺带干掉三张 0 行表</td><td><span class="pill p-mid">中</span></td><td>flag 关闭；不 apply 则主表零改动</td></tr>
+    <tr><td>P3</td><td>身份层：portal_users 接管外部身份（magic-link 优先/口令可选），迁 ~15 外部行出 accounts 并冻结内外边界</td><td><span class="pill p-mid">中</span></td><td>关 portal 登录，token 路径照常</td></tr>
+    <tr><td>P4</td><td>其余写流（客户补料/货代舱单）进 staging + collab_sheet_templates 配置化；工厂 6 入口收成 1；下线死 token/死短链/僵尸代码</td><td><span class="pill p-mid">中</span></td><td>逐 intent 灰度；4 张活表不迁</td></tr>
+    <tr><td>P5</td><td>报价协同：活视图（客户看到当前生效价+补贴）+ 版本化报价单在线接受留痕转订单；小程序渠道接入</td><td><span class="pill p-mid">低–中</span></td><td>关接受按钮，保留只读</td></tr>
+  </table></div>
+</section>
+
+<section>
+  <div class="eyebrow">风险</div>
+  <h2>最可能死在哪三件事上</h2>
+  <ol style="font-size:14.5px">
+    <li><b>蓝图过载、半途而废</b>——库里 6 套半成品就是前科。保命：禁 big-bang，P1 先上拿正反馈；不收敛就停在当前阶段也不塌。</li>
+    <li><b>成本价泄漏给客户</b>——一个角色判断 bug 的距离。保命：身份物理分层 + 读投影默认拒绝白名单 + 面向客户的 payload 永不含成本列 + 沿用成本词硬拦。</li>
+    <li><b>apply 误写主表真源</b>——"漏 WHERE 全表置 done"的前科要在这里防住。保命：五步护栏（diff→人确认→SELECT 验命中→业务键 WHERE→回读验真），主表只 additive。</li>
+  </ol>
+  <p style="font-size:13.5px;color:var(--sub)">附加（Codex）：警惕配置引擎长成 JSONB 怪物——collab_sheet_templates 只管表单与展示；权限归身份层、提交归 staging、审计归 events，各归各表。</p>
+</section>
+
+<section>
+  <div class="eyebrow">待拍板</div>
+  <h2>Damon 只需拍三下</h2>
+  <div class="decide">
+    <h3>① 批准"三层身份切分"为终版架构？</h3>
+    <p>accounts=内部 / portal_users=外部身份 / magic_links=访问票。</p>
+    <p class="rec">推荐：批准。两位独立评审 + 终审三方一致，是唯一同时满足"物理隔离 + 不重造 + token 优先"的路。</p>
+  </div>
+  <div class="decide">
+    <h3>② 批准"前置修雷 + P0 + P1"立即开工？</h3>
+    <p>先修 routes 漂移，然后 P0 冻结建表、P1 只读客户门户并行。全部低风险、可回滚，走 forge 流程留痕。</p>
+    <p class="rec">推荐：批准。P1 是你"客户一个网站看订单"愿景的最短路径。</p>
+  </div>
+  <div class="decide">
+    <h3>③ 批准清理清单进 P4？</h3>
+    <p>死 token 两套、死短链两套、僵尸 factory-invoice-reconcile、6 个工厂入口收 1。等一个完整业务周期无访问再删，先只读归档。</p>
+    <p class="rec">推荐：批准（延迟执行版，不是立即删）。</p>
+  </div>
+</section>
+
+<footer>
+  依据：#research-collab-saas-0723 只读盘点（腾讯库 + /opt/sanlyn-api-test 代码）· 海运 SaaS 全局调研（Flexport/CargoWise/Freightos/Beacon/Logixboard/运去哪 等 20+ 家）· Codex(GPT) 与 Opus deep-reasoner 并行独立评审后由 Fable 合成。<br>
+  铁律映射：不重造先复用 ✓ · 三方隔离/成本硬拦 ✓ · 外部不直写主表 ✓ · 改库先 SELECT 验命中 ✓ · 单文件 ≤500 行（写入 forge brief）✓ · 分享链接不露 API 域 ✓
+</footer>
+
+</div>

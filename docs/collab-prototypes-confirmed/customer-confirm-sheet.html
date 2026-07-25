@@ -1,0 +1,633 @@
+<title>客户订舱确认单 · 原型</title>
+<style>
+:root{
+  --ink:#16202e; --sub:#5c6b7d; --faint:#8b98a8; --ground:#f0f2f5; --card:#fff; --line:#e2e7ee;
+  --brand:#1a6fc4; --brand-soft:#e7f0fa; --brand-ink:#0f4f92;
+  --ok:#2c8156; --ok-soft:#e5f1ea; --wait:#b3781d; --wait-soft:#fbefd8; --err:#b23a2e;
+  --amber-bar:#f6f0d8; --amber-line:#e6d9a0; --amber-ink:#8a6a10;
+  --help:#6b4ba8; --help-soft:#efe9f8; --row:#f6f8fb;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ink:#e5edf5; --sub:#93a4b6; --faint:#6c7d90; --ground:#0e151d; --card:#161f2a; --line:#27333f;
+  --brand:#4f9fd6; --brand-soft:#132836; --brand-ink:#8ec8ef;
+  --ok:#5cb083; --ok-soft:#15271d; --wait:#d3a458; --wait-soft:#2a2214; --err:#dd7d6e;
+  --amber-bar:#2a2413; --amber-line:#4a3f1e; --amber-ink:#e0c063; --row:#1c2734;
+  --help:#a98fd6; --help-soft:#211a30;
+}}
+:root[data-theme="dark"]{
+  --ink:#e5edf5; --sub:#93a4b6; --faint:#6c7d90; --ground:#0e151d; --card:#161f2a; --line:#27333f;
+  --brand:#4f9fd6; --brand-soft:#132836; --brand-ink:#8ec8ef;
+  --ok:#5cb083; --ok-soft:#15271d; --wait:#d3a458; --wait-soft:#2a2214; --err:#dd7d6e;
+  --amber-bar:#2a2413; --amber-line:#4a3f1e; --amber-ink:#e0c063; --row:#1c2734;
+  --help:#a98fd6; --help-soft:#211a30;
+}
+:root[data-theme="light"]{
+  --ink:#16202e; --sub:#5c6b7d; --faint:#8b98a8; --ground:#f0f2f5; --card:#fff; --line:#e2e7ee;
+  --brand:#1a6fc4; --brand-soft:#e7f0fa; --brand-ink:#0f4f92;
+  --ok:#2c8156; --ok-soft:#e5f1ea; --wait:#b3781d; --wait-soft:#fbefd8; --err:#b23a2e;
+  --amber-bar:#f6f0d8; --amber-line:#e6d9a0; --amber-ink:#8a6a10; --row:#f6f8fb;
+  --help:#6b4ba8; --help-soft:#efe9f8;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font:15px/1.55 -apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;-webkit-text-size-adjust:100%}
+.num,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.app{max-width:560px;margin:0 auto;padding:14px 14px 120px;display:flex;flex-direction:column;gap:12px}
+.demoflag{background:var(--wait-soft);color:var(--wait);font-size:11.5px;text-align:center;padding:6px;border-radius:7px;font-weight:700}
+
+.banner{background:var(--amber-bar);border:1px solid var(--amber-line);border-radius:12px;padding:15px 16px;display:flex;align-items:center;gap:12px}
+.banner .bt{flex:1;min-width:0}
+.banner .bt h1{margin:0;font-size:16px;font-weight:800;line-height:1.35;color:var(--amber-ink);word-break:break-word}
+.banner .bt .sub{font-size:12px;color:var(--sub);margin-top:3px}
+.banner .flag{background:var(--card);border:1px solid var(--amber-line);color:var(--amber-ink);font-size:12px;font-weight:800;padding:6px 11px;border-radius:99px;white-space:nowrap;flex:0 0 auto}
+
+.nologin{display:flex;align-items:center;gap:9px;background:var(--ok-soft);color:var(--ok);padding:9px 14px;font-size:12.5px;font-weight:600;border-radius:10px}
+.deliver{background:var(--brand-soft);border:1px solid #bcd8f0;border-radius:11px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.deliver .l{font-size:12px;color:var(--sub)}
+.deliver .v{font-size:16px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+
+/* 折叠确认卡:已确认默认收起,待办展开(details/summary) */
+details.step{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+details.step.done{border-color:#bfe0cd}
+details.step>summary{list-style:none;cursor:pointer;padding:14px 15px;display:flex;align-items:center;gap:12px}
+details.step>summary::-webkit-details-marker{display:none}
+.snum{width:28px;height:28px;border-radius:99px;display:grid;place-items:center;font-size:14px;font-weight:800;flex:0 0 auto;background:var(--ink);color:var(--card)}
+.step.done .snum{background:var(--ok);color:#fff}.step.now .snum{background:var(--brand);color:#fff}
+.st{flex:1;min-width:0}.st h2{margin:0;font-size:15.5px;font-weight:800}.st p{margin:2px 0 0;font-size:12px;color:var(--sub)}
+.sstat{font-size:12px;font-weight:800;padding:3px 10px;border-radius:99px;white-space:nowrap}
+.sstat.ok{background:var(--ok-soft);color:var(--ok)}.sstat.wait{background:var(--wait-soft);color:var(--wait)}
+.chev{color:var(--faint);font-size:12px;transition:transform .2s}
+details[open] .chev{transform:rotate(180deg)}
+.sb{border-top:1px solid var(--line);padding:13px 15px;display:flex;flex-direction:column;gap:11px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;font-size:13.5px;align-items:baseline}
+.kv .k{color:var(--sub);white-space:nowrap}.kv .v{font-weight:600;text-align:right;word-break:break-word}
+.done-line{display:flex;align-items:center;gap:8px;color:var(--ok);font-weight:700;font-size:13px;flex-wrap:wrap}
+.altlink{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--row);cursor:pointer;font-size:13px;font-weight:700;color:var(--brand)}
+.acts{display:flex;gap:9px}
+.btn{flex:1;padding:11px 0;border-radius:9px;font-size:14px;font-weight:800;cursor:pointer;border:1.5px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;text-align:center}
+.btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}.btn.ghost{color:var(--err);border-color:var(--line)}
+
+/* 区块卡(货物明细/单证/账单) */
+.block{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.bh{padding:13px 15px;border-bottom:1px solid var(--line)}
+.bh h2{margin:0;font-size:15.5px;font-weight:800}
+.bh p{margin:2px 0 0;font-size:12px;color:var(--sub)}
+.bb{padding:12px 15px}
+
+/* 货物明细表(图2样式,按订单分组,横滚) */
+.cargo{overflow-x:auto}
+.cargo table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:640px}
+.cargo th{text-align:left;color:var(--faint);font-size:11px;font-weight:700;padding:7px 10px;white-space:nowrap;border-bottom:1px solid var(--line)}
+.cargo td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.cargo td.num,.cargo th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.grp td{background:var(--row);font-weight:800;font-size:11.5px;color:var(--brand-ink);white-space:nowrap}
+.bcode{font-family:var(--mono);font-weight:800}
+.pdesc{font-weight:600;min-width:170px;white-space:normal}
+.pdesc small{color:var(--faint);font-weight:400}
+.note-in{width:130px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-size:11.5px;background:var(--card);color:var(--ink);font-family:inherit}
+.fe-box{width:16px;height:16px;border:1.5px solid var(--line);border-radius:4px;display:inline-block}
+
+.doc-line{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.doc-line:first-child{border-top:none}
+.doc-line .nm{flex:1;font-size:13.5px;font-weight:600}
+.dl{font-size:12.5px;font-weight:800;color:var(--brand);cursor:pointer;white-space:nowrap}
+.add-doc{margin-top:10px;width:100%;padding:10px;border:1.5px dashed var(--line);border-radius:9px;background:none;color:var(--brand);font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
+.tip{font-size:11.5px;color:var(--faint);line-height:1.5}
+
+/* 语言切换(i18n 三语) */
+.lang{display:flex;gap:0;align-self:flex-end;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card)}
+.lang button{border:none;background:none;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--sub);font-family:inherit}
+.lang button.on{background:var(--brand);color:#fff}
+.lang button+button{border-left:1px solid var(--line)}
+
+/* 账单中心(权限锁 + 两类账单 + 下载) */
+.lock{background:var(--wait-soft);color:var(--wait);font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:99px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.bill{display:flex;align-items:center;gap:11px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--row)}
+.bill .bi{font-size:20px;flex:0 0 auto}
+.bill .bt2{flex:1;min-width:0}
+.bill .bt2 b{display:block;font-size:14px}
+.bill .bt2 span{font-size:11.5px;color:var(--sub)}
+.bill .bv{font-size:14px;font-weight:800;font-family:var(--mono);white-space:nowrap}
+.bill .bdl{flex:0 0 auto;padding:7px 13px;border-radius:7px;border:1px solid var(--brand);background:var(--brand-soft);color:var(--brand-ink);font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit}
+.bill .bdl:disabled{border-color:var(--line);background:var(--card);color:var(--faint);cursor:default}
+.billgrp{font-size:11px;font-weight:800;color:var(--faint);letter-spacing:.06em;padding:2px 2px 0}
+.bill .bexw{font-size:10.5px;font-weight:800;color:var(--wait);background:var(--wait-soft);padding:2px 7px;border-radius:99px;white-space:nowrap}
+
+.foot{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:11px 14px calc(11px + env(safe-area-inset-bottom));z-index:30}
+.foot-in{max-width:560px;margin:0 auto;display:flex;gap:10px}
+.foot .submit{flex:1;padding:13px 0;border-radius:10px;background:var(--brand);color:#fff;border:none;font-size:15.5px;font-weight:800;cursor:pointer;font-family:inherit}
+.foot .help{flex:0 0 auto;padding:13px 15px;border-radius:10px;background:var(--help-soft);color:var(--help);border:none;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;line-height:1.15}
+.foot .help small{font-weight:600;font-size:10px;opacity:.85}
+.sheet{position:fixed;inset:0;background:rgba(10,16,24,.5);z-index:40;display:none;align-items:flex-end;justify-content:center}
+.sheet.on{display:flex}
+.sheet-c{background:var(--card);width:100%;max-width:560px;border-radius:16px 16px 0 0;padding:20px 18px calc(24px + env(safe-area-inset-bottom))}
+.sheet-c h3{margin:0 0 4px;font-size:17px}.sheet-c p{margin:0 0 14px;font-size:13.5px;color:var(--sub)}
+.opt{display:flex;align-items:center;gap:13px;padding:14px;border:1px solid var(--line);border-radius:11px;margin-bottom:10px;cursor:pointer}
+.opt .oi{width:40px;height:40px;border-radius:10px;background:var(--help-soft);color:var(--help);display:grid;place-items:center;font-size:20px;flex:0 0 auto}
+.opt .ot b{display:block;font-size:14.5px}.opt .ot span{font-size:12px;color:var(--sub)}
+.sheet-x{width:100%;padding:12px;border:none;background:none;color:var(--sub);font-size:14px;cursor:pointer;font-family:inherit;font-weight:600}
+
+/* 右上角登入主页面 + 协同标注 + 提单/术语选择器 + FE记住 */
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.homelink{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;color:var(--brand);background:var(--brand-soft);border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.collab-tag{font-size:10px;font-weight:800;color:var(--brand);background:var(--brand-soft);padding:2px 7px;border-radius:99px;white-space:nowrap;margin-left:6px}
+.pick{margin-top:4px}
+.pick .pl{font-size:12.5px;color:var(--sub);font-weight:700;display:flex;align-items:center}
+.pick-opts{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.pick-opt{font-size:12.5px;font-weight:700;padding:6px 12px;border:1.5px solid var(--line);border-radius:8px;background:var(--card);color:var(--sub);cursor:pointer}
+.pick-opt.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-ink)}
+.fe-rem{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--sub);cursor:pointer;margin-top:3px;white-space:nowrap;user-select:none}
+.fe-rem input{width:12px;height:12px;accent-color:var(--brand)}
+.invoice-cta{width:100%;padding:13px;border-radius:10px;background:var(--brand);color:#fff;font-weight:800;font-size:14.5px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;font-family:inherit;margin-top:2px;text-decoration:none}
+.invoice-cta small{font-weight:600;opacity:.85;font-size:11px}
+.banner.urgent{background:#fdecea;border-color:#f0b4ab}
+.banner.urgent .bt h1{color:#8f2d22}
+.flag.urgent{background:#fff;border-color:#e79c90;color:#b23a2e}
+.flag.todo{background:var(--card);border-color:var(--amber-line);color:var(--amber-ink)}
+@media (prefers-color-scheme:dark){.banner.urgent{background:#2c1a17;border-color:#5b342c}.banner.urgent .bt h1{color:#f0a294}.flag.urgent{background:#1d1310;border-color:#7a4438;color:#e89283}}
+:root[data-theme="dark"] .banner.urgent{background:#2c1a17;border-color:#5b342c}
+:root[data-theme="dark"] .banner.urgent .bt h1{color:#f0a294}
+:root[data-theme="dark"] .flag.urgent{background:#1d1310;border-color:#7a4438;color:#e89283}
+.help.wide{flex:1;flex-direction:row;gap:7px;justify-content:center;padding:14px 0;font-size:14.5px}
+.help.wide small{font-size:12px}
+@media(max-width:480px){
+  .banner{flex-wrap:wrap}
+  .banner .bt{flex:1 1 100%;min-width:0}
+  .banner .flag{flex:1 1 100%;text-align:center;margin-top:9px;padding:8px 11px}
+}
+/* 货物追踪:航线示意 + 里程碑(接现成 vessel-track/vessel-map) */
+.route{position:relative;display:flex;align-items:center;gap:8px;padding:16px 4px 10px}
+.route .port{display:flex;flex-direction:column;align-items:center;gap:4px;flex:0 0 auto;min-width:58px}
+.route .dot{width:11px;height:11px;border-radius:99px;background:var(--ok)}
+.route .dot.pending{background:var(--line);border:2px solid var(--faint);box-sizing:border-box}
+.route .pn{font-size:11px;font-weight:800;text-align:center;line-height:1.25}
+.route .pd{font-size:10px;color:var(--faint)}
+.route .line{flex:1;height:3px;border-radius:99px;background:var(--line);position:relative}
+.route .line i{position:absolute;left:0;top:0;height:100%;border-radius:99px;background:var(--ok)}
+.route .ship{position:absolute;top:-11px;transform:translateX(-50%);font-size:17px}
+.mstones{display:flex;flex-direction:column;gap:0;padding:4px 2px 2px}
+.ms{display:flex;align-items:flex-start;gap:10px;padding:7px 0}
+.ms .mi{width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font-size:10px;font-weight:800;flex:0 0 auto;background:var(--ok);color:#fff}
+.ms.now .mi{background:var(--brand);color:#fff}
+.ms.todo .mi{background:var(--card);border:2px solid var(--line);color:transparent}
+.ms .mt{flex:1;font-size:13px;font-weight:600}
+.ms.todo .mt{color:var(--faint);font-weight:500}
+.ms .md{font-size:12px;color:var(--sub);font-variant-numeric:tabular-nums;white-space:nowrap}
+.todo-hd{padding:9px 14px 8px;font-size:11.5px;font-weight:800;color:var(--wait);background:var(--wait-soft)}
+.todos{background:var(--card);border:1px solid var(--amber-line);border-radius:11px;overflow:hidden}
+.todo-item{display:flex;align-items:center;gap:9px;padding:11px 14px;border-top:1px solid var(--line);cursor:pointer;width:100%;background:none;font-family:inherit;text-align:left}
+
+.todo-item .tdot{width:7px;height:7px;border-radius:99px;background:var(--wait);flex:0 0 auto}
+.todo-item .tnm{flex:1;font-size:13.5px;font-weight:700;color:var(--ink)}
+.todo-item .tst{font-size:11.5px;font-weight:800;color:var(--wait);background:var(--wait-soft);padding:3px 9px;border-radius:99px;white-space:nowrap}
+.todo-item .go{color:var(--faint);font-size:13px}
+.unset{background:var(--wait-soft);color:var(--wait);font-size:11.5px;font-weight:800;padding:3px 10px;border-radius:99px;cursor:pointer;display:inline-block}
+/* 提单确认件版式(照 bl-si-template.html:标签+多行值,地址完整) */
+.si{border-top:1px solid var(--line)}
+.sirow{padding:10px 15px;border-top:1px solid var(--line)}
+.sirow:first-child{border-top:none}
+.silbl{font-size:10.5px;font-weight:800;color:var(--faint);letter-spacing:.03em;margin-bottom:4px}
+.sival{font-size:13px;font-weight:700;line-height:1.5;word-break:break-word;white-space:pre-line}
+.sival.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.sinote{font-size:10.5px;color:var(--faint);font-weight:600;margin-top:3px}
+.si2{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.si2 .sirow{border-top:1px solid var(--line)}
+.si2 .sirow:nth-child(2n){border-left:1px solid var(--line)}
+/* 换船司变更广播 */
+.bcast{background:#fdf0ec;border:1px solid #e7b3a6;border-radius:12px;padding:13px 15px}
+@media (prefers-color-scheme:dark){.bcast{background:#2c1a17;border-color:#5b342c}}
+:root[data-theme="dark"] .bcast{background:#2c1a17;border-color:#5b342c}
+.bcast .bt2{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:800;color:var(--err)}
+.bcast .chgline{font-size:14px;font-weight:800;margin:8px 0 6px;line-height:1.45}
+.bcast .chgline s{color:var(--faint);font-weight:600}
+.bcast .eff{font-size:12px;color:var(--sub);line-height:1.6}
+.bcast .eff b{color:var(--ink);font-variant-numeric:tabular-nums}
+.bcast .noti{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.bcast .noti span{background:var(--card);border:1px solid var(--line);font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px;color:var(--ok)}
+.bcast .bact{display:flex;gap:8px;margin-top:11px}
+.bcast .bbtn{flex:1;padding:9px 0;border-radius:9px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;border:1.5px solid var(--line);background:var(--card);color:var(--ink)}
+.bcast .bbtn.b{background:var(--err);border-color:var(--err);color:#fff}
+/* BL 草稿:沿用段 / 本票新增段 */
+.blgrp{display:flex;align-items:center;gap:8px;padding:10px 15px;background:var(--row);border-top:1px solid var(--line);font-size:11.5px;font-weight:800;color:var(--sub)}
+.blgrp .cnt{background:var(--card);border:1px solid var(--line);padding:2px 8px;border-radius:99px;font-size:11px}
+.blgrp.locked{color:var(--ok)}
+.blgrp.newv{color:var(--brand-ink)}
+.blrow{display:flex;align-items:flex-start;gap:10px;padding:9px 15px;border-top:1px solid var(--line);font-size:13px}
+.blrow .bk{color:var(--sub);white-space:nowrap;min-width:96px}
+.blrow .bv{flex:1;font-weight:700;text-align:right;word-break:break-word;line-height:1.45}
+.blrow .bv.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.blrow.chg{background:var(--wait-soft)}
+.blrow.chg .bv{color:var(--amber-ink)}
+.blchg{font-size:10.5px;font-weight:800;background:var(--wait);color:#fff;padding:2px 7px;border-radius:99px;white-space:nowrap;align-self:center}
+.blfold{padding:0}
+.blfold>summary{list-style:none;cursor:pointer}
+.blfold>summary::-webkit-details-marker{display:none}
+.insbox{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.inshd{display:flex;align-items:center;gap:9px;padding:12px 15px;border-bottom:1px solid var(--line)}
+.inshd h2{margin:0;font-size:15.5px;font-weight:800;flex:1}
+.insrow{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:9px 15px;border-top:1px solid var(--line);font-size:13.5px}
+.insrow:first-child{border-top:none}
+.insrow .ik{color:var(--sub);white-space:nowrap}
+.insrow .iv{font-weight:700;text-align:right;font-variant-numeric:tabular-nums;word-break:break-word}
+.insrow .iv.big{font-size:16px;font-weight:800}
+.insin{width:112px;padding:7px 9px;border:1.5px solid var(--brand);border-radius:7px;font-size:14px;font-weight:800;text-align:right;background:var(--card);color:var(--ink);font-family:var(--mono)}
+.insnote{padding:9px 15px;border-top:1px solid var(--line);font-size:11.5px;color:var(--wait);font-weight:700;background:var(--wait-soft);line-height:1.5}
+.insel{display:flex;gap:7px;flex-wrap:wrap;padding:10px 15px;border-top:1px solid var(--line)}
+.inopt{border:1.5px solid var(--line);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer;background:var(--card);color:var(--ink);font-family:inherit}
+.inopt.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand-ink)}
+.hsbox{border-top:1px solid var(--line)}
+.hsrow{display:flex;align-items:flex-start;gap:10px;padding:10px 15px;border-top:1px solid var(--line)}
+.hsrow:first-child{border-top:none}
+.hsrow .hn{flex:1;min-width:0}
+.hsrow .hn b{font-size:13.5px;font-weight:700;display:block;line-height:1.4}
+.hsrow .hn small{color:var(--faint);font-size:11px}
+.hscode{font-family:var(--mono);font-size:13px;font-weight:800;color:var(--brand-ink);white-space:nowrap}
+.hswarn{background:var(--wait-soft);color:var(--amber-ink);font-size:11.5px;font-weight:700;padding:10px 15px;line-height:1.55;border-top:1px solid var(--line)}
+.cnee{display:grid;grid-template-columns:auto 1fr;gap:7px 12px;padding:11px 15px;font-size:13px;align-items:baseline;border-top:1px solid var(--line)}
+.cnee .k{color:var(--sub);white-space:nowrap}
+.cnee .v{font-weight:700;text-align:right;word-break:break-word;line-height:1.45}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.viewhint{font-size:11.5px;color:var(--wait);font-weight:700}
+.feenote{font-size:11.5px;color:var(--err);font-weight:700}
+.seamap{position:relative;border-radius:11px;overflow:hidden;cursor:pointer;background:#0a1a28;margin-bottom:4px}
+.seamap svg{display:block;width:100%;height:172px}
+.mfull{position:absolute;top:9px;right:9px;background:rgba(8,20,32,.72);color:#cbd5e1;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap}
+.maplink{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:11px;margin-top:8px;border-radius:9px;background:var(--brand-soft);border:1px solid #bcd8f0;color:var(--brand-ink);font-size:13.5px;font-weight:800;cursor:pointer;text-decoration:none}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+</style>
+
+<div class="app">
+  <div class="topbar">
+    <a class="homelink" href="/data">☰ 登入主页面</a>
+    <div class="lang"><button class="on">中文</button><button>English</button><button>BM</button></div>
+  </div>
+
+  <div class="banner">
+    <span style="font-size:26px">👤</span>
+    <div class="bt">
+      <h1>CY00395 — 订舱确认<br>HARMONIOUS HAPPY VENTURE CO., LIMITED</h1>
+      <div class="sub">厦门 XMN → 巴生西 Port Klang West · 3×20GP</div>
+    </div>
+    
+  </div>
+
+  <div class="bcast">
+    <div class="bt2">⚠ 本票承运人已变更</div>
+    <div class="chgline"><s>MSC</s> → COSCO SHIPPING</div>
+    <div class="eff">船名航次 <b>COSCO SHIPPING ARIES / 042E</b><br>预计开船 <s>07-10</s> → <b>07-12</b>　·　截港 <s>07-08</s> → <b>07-10</b><br>提单格式随之更换，请重新核对提单草稿</div>
+    <div class="noti"><span>✓ 已通知货代</span><span>✓ 已通知车队</span><span>✓ 已通知报关行</span></div>
+    <div class="bact"><button class="bbtn b">查看变更详情</button><button class="bbtn">我已知悉</button></div>
+  </div>
+
+  <div class="todos">
+    <div class="todo-hd">需要您处理 · 4 项</div>
+    <button class="todo-item" onclick="jump('stepHS')"><span class="tdot"></span><span class="tnm">托书要素 SI</span><span class="tst">订舱前定稿</span><span class="go">›</span></button>
+    <button class="todo-item" onclick="jump('stepIns')"><span class="tdot"></span><span class="tnm">货运险 · 保额确认</span><span class="tst">随托书提交</span><span class="go">›</span></button>
+    <button class="todo-item" onclick="jump('stepBL')"><span class="tdot"></span><span class="tnm">提单草稿 BL Draft</span><span class="tst">待您确认</span><span class="go">›</span></button>
+    <button class="todo-item" onclick="jump('stepTerms')"><span class="tdot"></span><span class="tnm">交易条款 · 目的港代理</span><span class="tst">未填</span><span class="go">›</span></button>
+  </div>
+  <div class="nologin">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+    无需登录，这条链接就是您的专属入口，可随时打开
+  </div>
+
+  <div class="deliver">
+    <span class="l">📅 要求交货 / 到货</span>
+    <span class="v">2026-08-14 前</span>
+  </div>
+
+  <!-- HS + 收发通:按提单确认件 B/L SI 版式预览,地址完整 -->
+  <details class="step now" id="stepHS" open>
+    <summary>
+      <div class="snum">!</div>
+      <div class="st"><h2>托书要素 Shipping Instruction</h2><p>订舱前定稿 · 确认一次以后沿用</p></div>
+      <span class="sstat wait">首次确认</span><span class="chev">▾</span>
+    </summary>
+    <div class="sb" style="padding:0">
+      <div class="si">
+        <div class="sirow">
+          <div class="silbl">SHIPPER 发货人</div>
+          <div class="sival">XIAMEN PET BABY IMPORT AND EXPORT CO., LTD.
+厦门巴匕进出口有限公司
+4/F, NO.26-9 HUARONG ROAD, HULI DISTRICT, XIAMEN, CHINA</div>
+        </div>
+        <div class="sirow">
+          <div class="silbl">CONSIGNEE 收货人</div>
+          <div class="sival">ENRICH CHAMPION SDN BHD
+Lot 1, Jalan CJ 1/1A, Off Jalan Balakong,
+Taman Cheras Jaya, 43200 Balakong,
+Selangor, Malaysia</div>
+        </div>
+        <div class="sirow">
+          <div class="silbl">NOTIFY 通知人</div>
+          <div class="sival">SAME AS CONSIGNEE</div>
+        </div>
+        <div class="si2">
+          <div class="sirow"><div class="silbl">Port of Loading 装货港</div><div class="sival">XIAMEN, CHINA</div></div>
+          <div class="sirow"><div class="silbl">Port of Discharge 卸货港</div><div class="sival">PORT KLANG WEST, MALAYSIA</div></div>
+          <div class="sirow"><div class="silbl">Marks &amp; No. 唛头</div><div class="sival">N/M</div></div>
+          <div class="sirow"><div class="silbl">出单方式</div><div class="sival">Seaway Bill</div></div>
+        </div>
+        <div class="sirow">
+          <div class="silbl">Description of Goods 品名货描</div>
+          <div class="sival">PET FOOD / PET CANNED FOOD / PET SUPPLIES</div>
+        </div>
+        <div class="sirow">
+          <div class="silbl">HS CODE（提供船司订舱）</div>
+          <div class="sival mono">2309109000 · 2309101000 · 3924900000</div>
+          <div class="sinote">只提供船司订舱，不显示在提单正面</div>
+        </div>
+      </div>
+      <div class="hswarn">部分船公司（如 MSC）要求 HS 编码与收发通在订舱时即准确无误，开船后更改需支付改单费</div>
+      <div class="hswarn" style="background:var(--ok-soft);color:var(--ok)">确认后本客户以后各票自动沿用，除非产品或收发通有变，届时会单独提示</div>
+      <div class="sb" style="border-top:1px solid var(--line)">
+        <div class="acts"><button class="btn ok">✓ 确认无误</button><button class="btn ghost">需修改</button></div>
+      </div>
+    </div>
+  </details>
+
+  <!-- 步骤1 订舱航班:已确认 → 默认折叠;展开可查看其他航线 -->
+  <details class="step done">
+    <summary>
+      <div class="snum">✓</div>
+      <div class="st"><h2>订舱航班</h2><p>如需换航线，点开</p></div>
+      <span class="sstat ok">已定</span><span class="chev">▾</span>
+    </summary>
+    <div class="sb">
+      <div class="done-line"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M20 6 9 17l-5-5"/></svg>COSCO SHIPPING ARIES / 042E · ETD 2026-07-10 · 07-05 确认</div>
+</div>
+  </details>
+
+  <!-- 货运险:跟订舱 SO 一起,发货前必须确认;保额可改 -->
+  <div class="insbox" id="stepIns">
+    <div class="inshd"><span style="font-size:19px">🛡</span><h2>货运险 Cargo Insurance</h2><span class="sstat wait">待您确认</span></div>
+    <div class="insrow"><span class="ik">本票投保</span><span class="iv">由我方代办（FOB 客户委托）</span></div>
+    <div class="insel">
+      <button class="inopt on" onclick="setCo('picc',this)">人保 PICC · 集装箱普货</button>
+      <button class="inopt" onclick="setCo('other',this)">中国平安</button>
+      <button class="inopt" onclick="setCo('other',this)">太平洋 CPIC</button>
+      <button class="inopt" onclick="setCo('none',this)">本票不投保</button>
+    </div>
+    <div class="insrow"><span class="ik">承保范围</span><span class="iv">ICC(A) 一切险 + 战争险</span></div>
+    <div class="insrow">
+      <span class="ik">保险金额 <small style="color:var(--faint);font-weight:400">按货值比例</small></span>
+      <span class="iv"><span style="color:var(--sub);font-weight:600">USD</span> <input class="insin" id="insAmt" type="number" value="50198.39" oninput="calcIns()"></span>
+    </div>
+    <div class="insel" style="border-top:none;padding-top:0" id="pctOpts">
+      <button class="inopt on" onclick="setPct(1.00,this)">100%</button>
+      <button class="inopt" onclick="setPct(0.70,this)">70%</button>
+      <button class="inopt" onclick="setPct(0.50,this)">50%</button>
+      <button class="inopt" onclick="customIns(this)">自定义金额</button>
+    </div>
+    <div class="insrow" style="border-top:none;padding-top:0"><span class="ik" id="pctNow">当前 = 货值 100%</span><span class="iv" style="color:var(--faint);font-size:11.5px;font-weight:600">货值 USD 50,198.39</span></div>
+    <div class="insrow"><span class="ik">保费</span><span class="iv big" id="insPrem">CNY 109.24</span></div>
+    <div class="insnote">保额确认后随托书一并提交承保，开船后不可追溯投保</div>
+    <div class="insel" style="border-top:1px solid var(--line)">
+      <button class="inopt on" style="flex:1;text-align:center" onclick="this.textContent='✓ 已确认';">确认保额与保费</button>
+    </div>
+  </div>
+
+  <!-- 步骤2 交易条款:待确认 → 默认展开 -->
+  <details class="step" id="stepTerms">
+    <summary>
+      <div class="snum" style="background:var(--wait)">!</div>
+      <div class="st"><h2>交易条款</h2><p>不用确认 · 可随时修改</p></div>
+      <span class="sstat wait">1 项未填</span><span class="chev">▾</span>
+    </summary>
+    <div class="sb">
+      <div class="kv">
+        <span class="k">付款方式</span><span class="v">T/T 30% 定金 · 70% 见提单副本</span>
+        <span class="k">币种</span><span class="v">USD</span>
+        <span class="k">目的港代理</span><span class="v"><span class="unset">未填 · 点此填写</span></span>
+      </div>
+      <div class="pick"><div class="pl">贸易术语 <span class="collab-tag">协同 · 各方可改</span></div>
+        <div class="pick-opts"><span class="pick-opt on">FOB 厦门</span><span class="pick-opt">CIF</span><span class="pick-opt">CFR</span><span class="pick-opt">EXW</span><span class="pick-opt">DDP</span></div>
+      </div>
+      <div class="acts"><button class="btn brand">修改条款</button></div>
+    </div>
+  </details>
+
+  <!-- 步骤3 提单草稿:订舱阶段就出,固定项沿用,只核本票新增 -->
+  <details class="step now" id="stepBL">
+    <summary>
+      <div class="snum">3</div>
+      <div class="st"><h2>提单草稿 B/L Draft</h2><p>开船前核对 · 托书要素已沿用</p></div>
+      <span class="sstat wait">待您确认</span><span class="chev">▾</span>
+    </summary>
+    <div class="sb" style="padding:0">
+
+      <details class="blfold">
+        <summary><div class="blgrp locked">✓ 沿用已确认的托书要素<span class="cnt">5 项 · 点开核对</span></div></summary>
+        <div class="blrow"><span class="bk">SHIPPER</span><span class="bv">厦门巴匕进出口有限公司</span></div>
+        <div class="blrow"><span class="bk">CONSIGNEE</span><span class="bv">ENRICH CHAMPION SDN BHD</span></div>
+        <div class="blrow"><span class="bk">NOTIFY</span><span class="bv">SAME AS CONSIGNEE</span></div>
+        <div class="blrow"><span class="bk">唛头 Marks</span><span class="bv">N/M</span></div>
+        <div class="blrow"><span class="bk">出单方式</span><span class="bv">Seaway Bill</span></div>
+      </details>
+
+      <div class="blgrp newv">● 订舱后新增，请核对<span class="cnt">4 项</span></div>
+      <div class="blrow"><span class="bk">提单号 B/L No.</span><span class="bv mono">COAU6460845880</span></div>
+      <div class="blrow"><span class="bk">箱号 / 封号</span><span class="bv mono">BMOU1633290 / Y271878<br>CSGU2466241 / A455028<br>CSGU2502035 / A455029</span></div>
+      <div class="blrow"><span class="bk">件数 Ctns</span><span class="bv mono">1,247 箱</span></div>
+      <div class="blrow"><span class="bk">毛重 / CBM</span><span class="bv mono">18,600 KGS / 54.8 CBM</span></div>
+
+      <div class="blrow chg"><span class="bk">船名 / 航次</span><span class="bv">COSCO SHIPPING ARIES / 042E</span><span class="blchg">本次有变更</span></div>
+
+      <div class="sb" style="border-top:1px solid var(--line)">
+        <div class="acts">
+          <button class="btn brand" onclick="window._blSeen=true;document.getElementById('blOk').disabled=false;">查看完整提单 PDF</button>
+          <button class="btn ok" id="blOk" disabled>草稿无误，确认</button>
+        </div>
+        <div class="feenote">确认后如需改单，船司收改单费 USD 500 / 次</div>
+      </div>
+    </div>
+  </details>
+
+  <!-- 货物追踪(接现成 vessel-track / vessel-map) -->
+  <div class="block">
+    <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><h2>货物追踪 Tracking</h2><p>COSCO SHIPPING ARIES / 042E</p></div>
+      <span class="sstat ok">在途</span>
+    </div>
+    <div class="bb" style="padding-top:0">
+      <div class="seamap" onclick="openFull()">
+        <svg viewBox="0 0 360 220" preserveAspectRatio="xMidYMid slice" role="img" aria-label="航线地图">
+          <rect width="360" height="220" fill="#0a1a28"/>
+          <g fill="#1e3448">
+            <path d="M205,0 L360,0 L360,48 C340,50 318,44 300,36 C280,27 258,17 238,8 C227,4 215,1 205,0 Z"/>
+            <path d="M336,58 C341,62 342,72 338,80 C335,85 331,84 330,79 C328,70 331,61 336,58 Z"/>
+            <path d="M78,0 L205,0 C200,8 193,20 187,32 C180,46 172,60 163,72 C156,81 150,90 146,100 C142,110 138,118 133,124 C128,130 122,128 119,120 C114,106 110,92 104,78 C96,58 87,32 78,0 Z"/>
+            <path d="M133,124 C137,132 138,142 135,152 C132,162 126,172 119,180 C114,186 108,186 106,180 C103,171 106,160 111,150 C117,138 126,128 133,124 Z"/>
+            <path d="M30,148 C45,158 62,172 74,186 C80,193 78,200 70,199 C58,197 42,186 30,174 C22,166 20,155 24,150 C26,147 28,147 30,148 Z"/>
+            <path d="M240,136 C262,130 290,132 312,142 C330,150 336,166 328,180 C318,196 292,204 268,198 C248,193 234,178 232,160 C231,148 234,139 240,136 Z"/>
+            <path d="M78,206 C105,210 140,214 170,216 C176,216 177,220 170,220 L80,220 C74,218 73,207 78,206 Z"/>
+          </g>
+          <path d="M272,42 C250,70 220,95 190,115 C180,121 176,122 172,124" fill="none" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M172,124 C150,140 138,152 116,166" fill="none" stroke="#48657d" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>
+          <circle cx="272" cy="42" r="4.5" fill="#22c55e"/>
+          <text x="264" y="30" fill="#cbd5e1" font-size="10" font-weight="700" text-anchor="end">厦门 XMN</text>
+          <circle cx="116" cy="166" r="4.5" fill="none" stroke="#94a3b8" stroke-width="2"/>
+          <text x="124" y="183" fill="#cbd5e1" font-size="10" font-weight="700">巴生西 PKW</text>
+          <circle cx="172" cy="124" r="13" fill="#38bdf8" opacity="0.18"/>
+          <circle cx="172" cy="124" r="6" fill="#38bdf8"/>
+          <text x="172" y="112" font-size="15" text-anchor="middle">🚢</text>
+        </svg>
+        <span class="mfull">全屏 ⤢</span>
+      </div>
+      <div class="mstones">
+        <div class="ms"><span class="mi">✓</span><span class="mt">已订舱</span><span class="md">07-05</span></div>
+        <div class="ms"><span class="mi">✓</span><span class="mt">已装柜</span><span class="md">07-06</span></div>
+        <div class="ms"><span class="mi">✓</span><span class="mt">已开船</span><span class="md">07-10</span></div>
+        <div class="ms now"><span class="mi">•</span><span class="mt">海上在途</span><span class="md">预计 08-14 到港</span></div>
+        <div class="ms todo"><span class="mi">·</span><span class="mt">已到港</span><span class="md">—</span></div>
+      </div>
+    </div>
+  </div>
+  <!-- 货物明细(图2样式,按订单分组,可核对写备注) -->
+  <div class="block">
+    <div class="bh"><h2>货物明细 / Cargo Description</h2><p>订舱前请核对</p></div>
+    <div class="cargo">
+      <table>
+        <thead><tr><th>Brand Code</th><th>品名 &amp; 规格</th><th>HS Code</th><th>FE</th><th class="num">箱数</th><th class="num">GW (KGS)</th><th>您的备注</th></tr></thead>
+        <tbody>
+          <tr class="grp"><td colspan="7">ORDER CL-11 · 柜 BMOU1633290 · 封 Y271878 · 20GP</td></tr>
+          <tr><td class="bcode">9551014016620</td><td class="pdesc">PROPAW BENTONITE CAT LITTER LEMON 6KG<br><small>6KG/BAG</small></td><td class="mono">3824999999</td><td><span class="fe-box"></span><label class="fe-rem"><input type="checkbox">记住此产品</label></td><td class="num">1,445</td><td class="num">26,732.5</td><td><input class="note-in" placeholder="如需改品名/HS/标签请说明"></td></tr>
+          <tr class="grp"><td colspan="7">ORDER CL-9 · 柜 CSGU2466241 · 封 A455028 · 20GP</td></tr>
+          <tr><td class="bcode">9551014016620</td><td class="pdesc">PROPAW BENTONITE CAT LITTER LEMON 6KG<br><small>6KG/BAG</small></td><td class="mono">3824999999</td><td><span class="fe-box"></span><label class="fe-rem"><input type="checkbox">记住此产品</label></td><td class="num">1,445</td><td class="num">26,732.5</td><td><input class="note-in" placeholder="如需改品名/HS/标签请说明"></td></tr>
+          <tr class="grp"><td colspan="7">ORDER CL-10 · 柜 CSGU2502035 · 封 A455029 · 20GP</td></tr>
+          <tr><td class="bcode">9551014016637</td><td class="pdesc">PROPAW BENTONITE CAT LITTER COFFEE 6KG<br><small>6KG/BAG</small></td><td class="mono">3824999999</td><td><span class="fe-box"></span><label class="fe-rem"><input type="checkbox">记住此产品</label></td><td class="num">1,445</td><td class="num">26,732.5</td><td><input class="note-in" placeholder="如需改品名/HS/标签请说明"></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 单证:下载 + 可新增 -->
+  <div class="block">
+    <div class="bh"><h2>单证</h2><p>可下载 · 也可新增您需要的单证</p></div>
+    <div class="bb" style="padding-top:6px">
+      <div class="doc-line"><span class="nm">提单 Bill of Lading</span><span class="dl">下载 ↓</span></div>
+      <div class="doc-line"><span class="nm">商业发票 Invoice</span><span class="dl">下载 ↓</span></div>
+      <div class="doc-line"><span class="nm">装箱单 Packing List</span><span class="dl">下载 ↓</span></div>
+      <div class="doc-line"><span class="nm">产地证 CO <span style="color:var(--wait);font-size:11px;font-weight:700">· 办理中</span></span><span style="color:var(--faint);font-size:12.5px">待出</span></div>
+      <div class="doc-line"><span class="nm">FORM E 产地证 <span style="color:var(--sub);font-size:11px">· RCEP 减税用</span></span><span class="dl">下载 ↓</span></div>
+      <button class="add-doc">＋ 新增需要的单证（如熏蒸证 / MSDS…）</button>
+    </div>
+  </div>
+
+  <!-- 账单中心:产品账单+海运账单,可下载,整体权限锁 -->
+  <div class="block">
+    <div class="bh"><h2>账单中心</h2><p>单据 · 费用 · 对账</p></div>
+    <div class="bb" style="display:flex;flex-direction:column;gap:9px">
+      <!-- 单据组:客户随时可下载,不锁 -->
+      <div class="billgrp">单据 · 可随时下载</div>
+      <div class="bill">
+        <span class="bi">📄</span>
+        <div class="bt2"><b>PI 形式发票</b><span>Proforma Invoice</span></div>
+        <button class="bdl">下载</button>
+      </div>
+      <div class="bill">
+        <span class="bi">📑</span>
+        <div class="bt2"><b>IV / SC / PL 贸易单据</b><span>商业发票 · 销售合同 · 装箱单</span></div>
+        <button class="bdl">下载</button>
+      </div>
+      <div class="bill">
+        <span class="bi">🛡</span>
+        <div class="bt2"><b>COI 保险单</b><span>Certificate of Insurance</span></div>
+        <button class="bdl">下载</button>
+      </div>
+
+      <!-- 费用与对账:锁只在这里 -->
+      <div class="billgrp" style="margin-top:5px;display:flex;justify-content:space-between;align-items:center">
+        <span>费用与对账</span><span class="lock">🔒 仅授权人可见</span>
+      </div>
+      <div class="bill">
+        <span class="bi">📦</span>
+        <div class="bt2"><b>产品账单（货款）</b><span>PROPAW 猫砂 × 3 柜</span></div>
+        <div class="bv">USD 33,180</div>
+        <button class="bdl">下载</button>
+      </div>
+      <div class="bill">
+        <span class="bi">🚢</span>
+        <div class="bt2"><b>海运费 Ocean Freight</b><span>FOB · 由您指定货代结算</span></div>
+        <div class="bv" style="color:var(--faint)">—</div>
+        <button class="bdl" disabled>不适用</button>
+      </div>
+      <div class="bill">
+        <span class="bi">🏗</span>
+        <div class="bt2"><b>港杂费 Local Charges</b><span>EXW 买方承担</span></div>
+        <span class="bexw">仅 EXW</span>
+        <button class="bdl" disabled>不适用</button>
+      </div>
+      <div class="bill">
+        <span class="bi">🚚</span>
+        <div class="bt2"><b>拖车 / 报关 / 订舱 / 文件费</b><span>EXW 买方承担</span></div>
+        <span class="bexw">仅 EXW</span>
+        <button class="bdl" disabled>不适用</button>
+      </div>
+
+      <a class="invoice-cta" href="/public/invoice-confirm-preview.html?token=DEMO&party=customer">
+        💰 打开账单 · 开票 <small>核对费用 · 填开票抬头税号</small>
+      </a>
+
+      <div class="billgrp" style="margin-top:5px">对账</div>
+      <div class="kv" style="padding:2px 2px">
+        <span class="k">应付合计 AR</span><span class="v">USD 33,180.00</span>
+        <span class="k">已付（30% 定金）</span><span class="v" style="color:var(--ok)">USD 9,954.00</span>
+        <span class="k">未付余额 Balance</span><span class="v" style="color:var(--wait);font-size:15px">USD 23,226.00</span>
+      </div>
+      <div class="bill">
+        <span class="bi">🧾</span>
+        <div class="bt2"><b>付款水单</b><span>付款后上传，我们确认到账</span></div>
+        <button class="bdl">上传</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="altlink" style="margin-top:2px">查看其他航线（如需改期）<span>›</span></div>
+
+  <div class="foot"><div class="foot-in">
+    <button class="help wide" onclick="document.getElementById('sheet').classList.add('on')">🆘 不方便填？<small>请 Sanlyn 协助</small></button>
+  </div></div>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet-c">
+      <h3>🤝 让 Sanlyn 协助您</h3>
+      <p>不方便自己操作也没关系，选一种方式，我们来替您完成。</p>
+      <div class="opt"><div class="oi">📞</div><div class="ot"><b>电话协助</b><span>报出要求，我们照着帮您确认</span></div></div>
+      <div class="opt"><div class="oi">💬</div><div class="ot"><b>发邮件 / 微信给对接人</b><span>把要求发过来，我们代确认</span></div></div>
+      <div class="opt"><div class="oi">🙋</div><div class="ot"><b>请 Sanlyn 代填</b><span>我们先填好，您最后点一下确认</span></div></div>
+      <button class="sheet-x" onclick="document.getElementById('sheet').classList.remove('on')">先不用，我自己来</button>
+    </div>
+  </div>
+</div>
+<script>
+document.getElementById("sheet").addEventListener("click",e=>{if(e.target.id==="sheet")e.currentTarget.classList.remove("on")});
+</script>
+<script>
+const GOODS=50198.39;
+let INS_CO='picc';
+function setCo(k,btn){INS_CO=k;
+  btn.parentNode.querySelectorAll('.inopt').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on'); calcIns();}
+function calcIns(){
+  const a=+document.getElementById('insAmt').value||0;
+  const el=document.getElementById('insPrem');
+  if(INS_CO==='none'){ el.textContent='—'; }
+  else if(INS_CO==='other'){ el.textContent='需询价'; }
+  else { el.textContent='CNY '+Math.max(40, a*0.0003*6.9228 + 5).toFixed(2); }
+  document.getElementById('pctNow').textContent='当前 = 货值 '+(GOODS? (a/GOODS*100):0).toFixed(0)+'%';
+}
+function setPct(k,btn){
+  document.getElementById('insAmt').value=(GOODS*k).toFixed(2);
+  document.querySelectorAll('#pctOpts .inopt').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on'); calcIns();
+}
+function customIns(btn){
+  document.querySelectorAll('#pctOpts .inopt').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on');
+  const el=document.getElementById('insAmt'); el.focus(); el.select();
+}
+function openFull(){location.href="/public/portun-map.html?blNo=OOLU2329707640&carrierCode=OOCL";}
+function jump(id){const d=document.getElementById(id);if(!d)return;d.open=true;d.scrollIntoView({behavior:"smooth",block:"center"});}
+</script>
