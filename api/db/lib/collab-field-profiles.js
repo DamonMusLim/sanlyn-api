@@ -14,6 +14,7 @@ const PUBLIC_SHEET_FIELDS = [
   "factory_attrs", "factory_entry", "customer_item_notes", "customer_amend",
   "customs_arrange", "trucking_arrange", "forwarder_cn", "forwarder_en",
   "trucking_company_cn", "trucking_cn", "customs_broker_cn", "customs_cn",
+  "logistics_provider_kind", "trade_owner_kind",
 ];
 
 const FORBIDDEN_KEYS = new Set([

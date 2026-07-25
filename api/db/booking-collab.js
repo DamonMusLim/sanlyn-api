@@ -18,6 +18,7 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth, generateToken } from "../auth.js";
 import { registerBookingCollabView, derivePlanFactories } from "./booking-collab-view.js";
 import { billingSegmentFor, sanitizeSheet } from "./lib/collab-field-profiles.js";
+import { handleCollabQuoteSubmit } from "./lib/collab-quote-submit.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 
@@ -133,6 +134,7 @@ async function handleValidate(req, res, pool) {
             sp.forwarder_cn, sp.forwarder_en, sp.trucking_company_cn, sp.trucking_cn, sp.customs_broker_cn, sp.customs_cn,
             sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage,
             sp.freight_sale_usd, sp.freight_term AS plan_freight_term,
+            sp.logistics_provider_kind, sp.trade_owner_kind,
             sp.release_type,
             (sp.source_system = 'freight_agency' OR sp.raw ? 'legs' OR sp.raw ? 'transfer') AS is_transfer,
             sp.raw->'cost_lines' AS _cost_lines_raw,
@@ -197,7 +199,7 @@ async function handleValidate(req, res, pool) {
        FROM shipping_plans sp
        LEFT JOIN orders o ON o.shipping_plan_id = sp.id
       WHERE sp.id = $1
-      GROUP BY sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta, sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage, sp.freight_sale_usd, sp.release_type, sp.source_system,
+      GROUP BY sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta, sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage, sp.freight_sale_usd, sp.logistics_provider_kind, sp.trade_owner_kind, sp.release_type, sp.source_system,
                sp.container_type, sp.container_qty, sp.collab_status,
                sp.total_cartons, sp.gross_weight_kg, sp.total_cbm, sp.freight_term,
                sp.raw, sp.trucking_detail, sp.issuing_company, sp.trucking_arrange, sp.customs_arrange, sp.customer, sp.customer_en,
@@ -3097,6 +3099,7 @@ export default async function handler(req, res) {
     if (req.method === "POST"   && pathSuffix === "send-intermediary-link")  return await handleSendIntermediaryLink(req, res, pool);
     if (req.method === "POST" && pathSuffix === "factory-self-token")  return await handleFactoryToken(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "collab-pricing-submit")    return await handleCollabPricingSubmit(req, res, pool);
+    if (req.method === "POST"   && pathSuffix === "collab-quote-submit")     return await handleCollabQuoteSubmit(req, res, pool);
 
     return res.status(404).json({ error: "Not found" });
   } catch (e) {

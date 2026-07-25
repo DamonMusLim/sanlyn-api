@@ -9,11 +9,12 @@
 import { setCors, getPool } from "../db.js";
 import crypto from "node:crypto";
 
-// 角色 → 页面。映射照抄 booking-collab.js:handleMasterPreviewToken 的权威写法，不自创。
+// 角色 → 页面。供应商端口按 field_profile 再分流：
+//   无 field_profile = 外部承运/货代，只看确认单；
+//   shipping_booking/upstream_downstream = 内部全貌，继续走 collab-portal。
 // 各协同页统一读 ?token=（已逐个核实 collab-*-core.js / collab-portal.js）。
 const PAGE_BY_ROLE = {
   factory_booking:    "collab-factory.html",
-  supplier_portal:    "collab-portal.html",
   customer_booking:   "collab-customer.html",
   broker_booking:     "collab-broker.html",
   trucking_booking:   "collab-trucking.html",
@@ -25,6 +26,16 @@ function hashOf(raw) {
   return crypto.createHash("sha256").update(String(raw || "")).digest("hex");
 }
 
+function pageFor(row) {
+  if (row.recipient_role !== "supplier_portal") return PAGE_BY_ROLE[row.recipient_role];
+  let meta = {};
+  try { meta = typeof row.meta === "string" ? JSON.parse(row.meta || "{}") : (row.meta || {}); }
+  catch (_) { meta = {}; }
+  const fp = String(meta.field_profile || "");
+  if (fp === "shipping_booking" || fp === "upstream_downstream") return "collab-portal.html";
+  return "templates/forwarder-confirm-sheet.html";
+}
+
 // 命中 magic_links 就跳对应页；没有对应页的角色给人话提示，别再甩"无效的开票链接"误导。
 async function dispatch(req, res) {
   const code = req.query?.c;
@@ -32,7 +43,7 @@ async function dispatch(req, res) {
   let row;
   try {
     const r = await getPool().query(
-      `SELECT recipient_role FROM magic_links
+      `SELECT recipient_role, meta FROM magic_links
         WHERE token_hash = $1 AND expires_at > NOW()
           AND revoked_at IS NULL AND COALESCE(revoked, false) = false
         LIMIT 1`, [hashOf(code)]);
@@ -42,7 +53,7 @@ async function dispatch(req, res) {
     return false; // 查库出错就回落老逻辑，别把开票门户也带崩
   }
   if (!row) return false; // 不是协同链接 → 回落开票门户(invoice_links/?o=/?t=)
-  const page = PAGE_BY_ROLE[row.recipient_role];
+  const page = pageFor(row);
   if (page) {
     res.writeHead(302, { Location: `/public/${page}?token=${encodeURIComponent(code)}` });
     res.end();
