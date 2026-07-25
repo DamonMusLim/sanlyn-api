@@ -154,7 +154,7 @@ export default async function handler(req, res) {
 
     let ocr = null;
     try {
-      ocr = await runCustomsOcr(pool, { doc_id: docId, contract_no: contractNo });
+      ocr = await runCustomsOcr(pool, { doc_id: docId, contract_no: contractNo, confirmed: fields.confirmed });
     } catch (e) {
       ocr = { success: false, error: e.message };
     }

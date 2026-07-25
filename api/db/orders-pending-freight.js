@@ -5,7 +5,7 @@ import { roleFromAuth, sendError } from "../lib/viewmodel-adapter.js";
 // Orders that are ready/confirmed but have no freight RFQ yet.
 // These need to be quoted before booking can start.
 export default async function handler(req, res) {
-  setCors(res);
+  setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.end();
 
   const pool = getPool();

@@ -1,6 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 import { serializeOrdersForRole } from "../lib/orders/serializer.js"; // W0-1: role-scoped allowlist
+import createShippingPlan from "./shipping-plan-create.js";
 
 // ── P1-1: 代理模式敏感字段剥离 ──────────────────────────────────
 // 当 order.mode === 'agent' 且请求者是工厂角色时，从 raw JSONB 里剥离这些 key。
@@ -195,6 +196,74 @@ function checkOrderNoPrefix(order_no, company_code, raw) {
   return { ok: true };
 }
 
+function actorOf(req) {
+  const u = req.user || {};
+  return u.name || u.username || u.email || u.role || "admin";
+}
+
+function callShippingPlanCreate(req, body) {
+  return new Promise(function(resolve) {
+    const mockReq = {
+      ...req,
+      method: "POST",
+      query: {},
+      body,
+      headers: req.headers || {},
+    };
+    const mockRes = {
+      statusCode: 200,
+      headers: {},
+      setHeader: function(k, v) { this.headers[k] = v; },
+      status: function(code) { this.statusCode = code; return this; },
+      json: function(payload) { resolve({ statusCode: this.statusCode, payload }); },
+      end: function() { resolve({ statusCode: this.statusCode, payload: null }); },
+    };
+    Promise.resolve(createShippingPlan(mockReq, mockRes)).catch(function(err) {
+      resolve({ statusCode: 500, payload: { error: err.message } });
+    });
+  });
+}
+
+async function admitOrderToShipping(pool, req, id, confirmedShipDate) {
+  if (!confirmedShipDate) return null;
+
+  const qr = await pool.query(
+    `SELECT id, order_no, customer, company_code, contract_no, shipping_plan_id, confirmed_ship_date
+       FROM orders
+      WHERE id = $1`,
+    [id]
+  );
+  const order = qr.rows[0];
+  if (!order || !order.order_no) return null;
+  if (order.shipping_plan_id) return { shipping_plan_existing: order.shipping_plan_id };
+
+  const existing = await pool.query(
+    "SELECT id FROM shipping_plans WHERE $1 = ANY(order_nos) LIMIT 1",
+    [order.order_no]
+  ).catch(function() { return { rows: [] }; });
+  if (existing.rows.length) return { shipping_plan_existing: existing.rows[0].id };
+
+  if (!order.customer || !order.contract_no) {
+    return { shipping_plan_skipped: "缺买方/合同号" };
+  }
+
+  const created = await callShippingPlanCreate(req, {
+    customer: order.customer,
+    companyCode: order.company_code,
+    orderNos: [order.order_no],
+    contractNos: [order.contract_no],
+    etd: order.confirmed_ship_date || confirmedShipDate,
+    remarks: "[确认发货自动派生]",
+    createdBy: actorOf(req),
+  });
+  if (created.statusCode < 200 || created.statusCode >= 300 || !created.payload?.success) {
+    return {
+      shipping_plan_warning: created.payload?.error || "auto derive shipping plan failed",
+    };
+  }
+  return { shipping_plan_created: created.payload.data?.id || true };
+}
+
 async function handlePatch(req, res) {
   if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({ error: "Forbidden: admin only" });
@@ -274,7 +343,16 @@ async function handlePatch(req, res) {
   const sql = "UPDATE orders SET " + sets.join(", ") + " WHERE id = $" + (n) + " RETURNING id";
   const r = await pool.query(sql, vals);
   if (r.rowCount === 0) return res.status(404).json({ error: "order not found" });
-  return res.status(200).json({ success: true, id });
+  let shippingPlanResult = null;
+  if (rest.confirmed_ship_date !== undefined) {
+    try {
+      shippingPlanResult = await admitOrderToShipping(pool, req, id, rest.confirmed_ship_date);
+    } catch (e) {
+      console.warn("[orders PATCH] auto shipping plan derive skipped:", e.message);
+      shippingPlanResult = { shipping_plan_warning: e.message };
+    }
+  }
+  return res.status(200).json({ success: true, id, ...(shippingPlanResult || {}) });
 }
 
 // ── POST (no action): create a new order — admin only, minimal fields ─────────

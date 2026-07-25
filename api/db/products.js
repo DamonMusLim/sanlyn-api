@@ -1,12 +1,70 @@
 import { getPool, setCors } from "../db.js";
+import { getBrandScope } from "./brand-scoping.js";
 
 const PRODUCT_WRITABLE = ["sku","barcode","product_name","product_name_cn","brand","size","cbm",
-  "net_weight","gross_weight","factory_name","hs_code","declaration_name","declaration_elements",
+  "net_weight","gross_weight","hs_code","declaration_name","declaration_elements",
   "bl_description","vat_rate","rebate_rate","factory_price","price_usd","declaration_amount","profit",
-  "bg_bx","cat1","cat2","cat3","flavor","issuing_company","pallet_size","active","factory_city",
+  "bg_bx","cat1","cat2","cat3","flavor","pallet_size","active",
   "origin_country","spec","unit","raw","factory_code","category","stock","sale_price_cny","image_url",
   "images","colors","material","product_dims","carton_qty","display_brand","weight_unit","is_canonical",
   "declaration_name_en","quarantine_required","quarantine_note"];
+
+let productReadPartsCache = null;
+
+function nullIfEmpty(expr) {
+  return `NULLIF(${expr}, '')`;
+}
+
+async function getProductReadParts(pool) {
+  if (productReadPartsCache) return productReadPartsCache;
+
+  const meta = await pool.query(
+    `SELECT table_name, column_name
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name IN ('companies', 'factories')`
+  );
+  const cols = { companies: new Set(), factories: new Set() };
+  for (const row of meta.rows) {
+    if (cols[row.table_name]) cols[row.table_name].add(row.column_name);
+  }
+
+  const joins = [];
+  const nameParts = [];
+  const cityParts = [];
+
+  if (cols.companies.has("code")) {
+    joins.push("LEFT JOIN companies c ON c.code = p.factory_code");
+    if (cols.companies.has("name_cn")) nameParts.push(nullIfEmpty("c.name_cn"));
+    if (cols.companies.has("name_en")) nameParts.push(nullIfEmpty("c.name_en"));
+    if (cols.companies.has("city")) cityParts.push(nullIfEmpty("c.city"));
+    if (cols.companies.has("province")) cityParts.push(nullIfEmpty("c.province"));
+  }
+
+  const factoryJoinKeys = [];
+  if (cols.factories.has("company_code")) factoryJoinKeys.push("f.company_code = p.factory_code");
+  if (cols.factories.has("po_prefix")) factoryJoinKeys.push("f.po_prefix = p.factory_code");
+  if (factoryJoinKeys.length) {
+    const factoryOrder = cols.factories.has("id") ? " ORDER BY f0.id" : "";
+    joins.push(
+      "LEFT JOIN LATERAL (SELECT * FROM factories f0 WHERE " +
+      factoryJoinKeys.map(k => k.replaceAll("f.", "f0.")).join(" OR ") +
+      factoryOrder + " LIMIT 1) f ON true"
+    );
+    if (cols.factories.has("name")) nameParts.push(nullIfEmpty("f.name"));
+    if (cols.factories.has("name_short")) nameParts.push(nullIfEmpty("f.name_short"));
+    if (cols.factories.has("city")) cityParts.push(nullIfEmpty("f.city"));
+    if (cols.factories.has("province")) cityParts.push(nullIfEmpty("f.province"));
+  }
+
+  const factoryName = nameParts.length ? `COALESCE(${nameParts.join(", ")})` : "NULL";
+  const factoryCity = cityParts.length ? `COALESCE(${cityParts.join(", ")})` : "NULL";
+  productReadPartsCache = {
+    from: "FROM products p " + joins.join(" "),
+    select: `p.*, ${factoryName} AS factory_name, ${factoryCity} AS factory_city`,
+  };
+  return productReadPartsCache;
+}
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PUT, PATCH, OPTIONS");
@@ -55,7 +113,7 @@ export default async function handler(req, res) {
         "factory_price","sanlyn_price","price_usd","tax_rate","rebate_rate",
         "cat1","cat2","cat3","cat1_cn","cat2_cn","cat3_cn",
         "trade_terms","declaration_name","declaration_elements","bl_description",
-        "factory_name","declaration_amount","inner_qty","inner_unit","flavor","moq","spec","image_url",
+        "declaration_amount","inner_qty","inner_unit","flavor","moq","spec","image_url",
         "shelf_life_days"
       ];
       for (var f of fields) {
@@ -114,12 +172,12 @@ export default async function handler(req, res) {
     // ?q= is an alias for ?search= (used by product picker in OrdersModule)
     if (q && !search) search = q;
 
-    var query = "SELECT * FROM products", params = [], conds = [];
+    var readParts = await getProductReadParts(pool);
+    var query = "SELECT " + readParts.select + " " + readParts.from, params = [], conds = [];
 
-    // ── Brand scoping (fail-closed) ──
-    // Internal roles see everything; everyone else is scoped to the brands
-    // assigned to their customer record(s). This enforces price isolation
-    // server-side so prices can't leak even if the frontend is bypassed.
+    // ── Brand scoping (open default + exclusive locks) ──
+    // Internal roles see everything; everyone else sees open brands, excluding
+    // brands held exclusively by other customers.
     var INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin"];
     if (req.user && !INTERNAL_ROLES.includes(req.user.role)) {
       var codes = Array.isArray(req.user.companyCodes) && req.user.companyCodes.length
@@ -128,56 +186,45 @@ export default async function handler(req, res) {
       if (codes.length === 0) {
         return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
       }
-      var custR = await pool.query(
-        "SELECT brands FROM customers WHERE company_code = ANY($1::text[]) AND is_active = true",
-        [codes]
-      );
-      var brandSet = new Set();
-      for (var row of custR.rows) {
-        var bs = row.brands;
-        if (typeof bs === "string") { try { bs = JSON.parse(bs); } catch (_) { bs = []; } }
-        if (Array.isArray(bs)) for (var br of bs) if (br) brandSet.add(String(br).trim());
+      var scope = await getBrandScope(pool, codes);
+      if (scope.exclusiveByOthers.length > 0) {
+        params.push(scope.exclusiveByOthers);
+        conds.push("p.brand <> ALL($" + params.length + "::text[])");
       }
-      if (brandSet.size === 0) {
-        // No brand assigned → return nothing (fail-closed).
-        return res.status(200).json({ data: [], count: 0, total: 0, scopedBrands: [], scoped: true });
-      }
-      params.push(Array.from(brandSet));
-      conds.push("brand = ANY($" + params.length + "::text[])");
     }
 
     if (brand) {
       params.push(brand);
-      conds.push("brand = $" + params.length);
+      conds.push("p.brand = $" + params.length);
     }
     if (category || cat1) {
       params.push(cat1 || category);
-      conds.push("(cat1 = $" + params.length + " OR category = $" + params.length + ")");
+      conds.push("(p.cat1 = $" + params.length + " OR p.category = $" + params.length + ")");
     }
     if (cat2) {
       params.push(cat2);
-      conds.push("cat2 = $" + params.length);
+      conds.push("p.cat2 = $" + params.length);
     }
     if (cat3) {
       params.push(cat3);
-      conds.push("cat3 = $" + params.length);
+      conds.push("p.cat3 = $" + params.length);
     }
     if (search) {
       params.push("%" + search + "%");
-      conds.push("(sku ILIKE $" + params.length + " OR product_name ILIKE $" + params.length + " OR product_name_cn ILIKE $" + params.length + " OR brand ILIKE $" + params.length + ")");
+      conds.push("(p.sku ILIKE $" + params.length + " OR p.product_name ILIKE $" + params.length + " OR p.product_name_cn ILIKE $" + params.length + " OR p.brand ILIKE $" + params.length + ")");
     }
 
     // Default: only active
-    conds.push("active = true");
+    conds.push("p.active = true");
 
     if (conds.length) query += " WHERE " + conds.join(" AND ");
 
     // Count total
-    var countQ = query.replace("SELECT *", "SELECT COUNT(*) as total");
+    var countQ = "SELECT COUNT(*) as total " + readParts.from + (conds.length ? " WHERE " + conds.join(" AND ") : "");
     var countR = await pool.query(countQ, params);
 
     params.push(parseInt(limit));
-    query += " ORDER BY id DESC LIMIT $" + params.length;
+    query += " ORDER BY p.id DESC LIMIT $" + params.length;
     params.push(parseInt(offset));
     query += " OFFSET $" + params.length;
 

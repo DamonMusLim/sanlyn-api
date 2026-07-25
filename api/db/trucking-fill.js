@@ -200,7 +200,7 @@ export default async function handler(req, res) {
           // 设置时间 → 重置双方确认状态
           const field = role === "factory" ? "factory_ready_time" : "fleet_eta";
           await pool.query(
-            ,
+            `UPDATE trucking_dispatches SET ${field} = $1, factory_time_confirmed = false, fleet_time_confirmed = false, updated_at = NOW() WHERE bl_token = $2`,
             [time, bl_token]
           );
         }
@@ -208,19 +208,19 @@ export default async function handler(req, res) {
         if (confirm === true) {
           const field = role === "factory" ? "factory_time_confirmed" : "fleet_time_confirmed";
           await pool.query(
-            ,
+            `UPDATE trucking_dispatches SET ${field} = true, updated_at = NOW() WHERE bl_token = $1`,
             [bl_token]
           );
           // 两方都确认 → 锁定 agreed_loading_time = max(factory_ready, fleet_eta)
           const chk = await pool.query(
-            ,
+            `SELECT factory_ready_time, fleet_eta, factory_time_confirmed, fleet_time_confirmed FROM trucking_dispatches WHERE bl_token = $1 LIMIT 1`,
             [bl_token]
           );
           const r = chk.rows[0];
           if (r.factory_time_confirmed && r.fleet_time_confirmed && r.factory_ready_time && r.fleet_eta) {
             const agreed = r.factory_ready_time >= r.fleet_eta ? r.factory_ready_time : r.fleet_eta;
             await pool.query(
-              ,
+              `UPDATE trucking_dispatches SET agreed_loading_time = $1, updated_at = NOW() WHERE bl_token = $2`,
               [agreed, bl_token]
             );
           }

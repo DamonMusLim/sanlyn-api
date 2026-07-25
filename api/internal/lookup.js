@@ -7,6 +7,7 @@
  */
 import { getPool, setCors } from "../db.js";
 import { verifyToken } from "../auth.js";
+import { getBrandScope } from "../db/brand-scoping.js";
 
 const ALLOWED = ["customer_by_name", "customer_by_code", "orders_by_customer", "order_by_contract", "product_by_sku", "factory_code_resolve", "product_resolve_scoped", "line_item_history_by_sku"];
 
@@ -128,22 +129,31 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, type, data: { existing: existingCode, next } });
     }
     if (type === "product_resolve_scoped") {
-      // 授权隔离:只能在客户授权品牌范围内搜产品(防跳单+授权);带价格/重量/HS
+      // 品牌隔离:开放品牌可搜;只排除其他客户独家持有的品牌。
       const code = String(body.company_code || "").trim();
       const sku = String(body.sku || "").trim();
       const hint = String(body.hint || "").trim();  // 香型/品名关键词
+      if (!code) {
+        return res.status(200).json({ ok: true, type, data: null });
+      }
+      const scope = await getBrandScope(pool, [code]);
+      const params = [sku, hint];
+      const exclusiveClause = scope.exclusiveByOthers.length > 0
+        ? "AND p.brand <> ALL($3::text[])"
+        : "";
+      if (scope.exclusiveByOthers.length > 0) params.push(scope.exclusiveByOthers);
       const r = await pool.query(
         `SELECT p.id, p.sku, p.product_name, p.flavor, p.brand, p.factory_name,
                 p.factory_price, p.sale_price_cny, p.price_usd,
                 p.net_weight, p.gross_weight, p.cbm, p.bg_bx, p.hs_code,
                 p.vat_rate, p.rebate_rate, p.declaration_name, p.declaration_amount
            FROM products p
-          WHERE p.brand IN (SELECT jsonb_array_elements_text(c.brands) FROM customers c WHERE c.company_code = $1)
-            AND ( ($2 <> '' AND p.sku = $2)
-               OR ($3 <> '' AND (p.product_name ILIKE '%'||$3||'%' OR p.flavor ILIKE '%'||$3||'%')) )
-          ORDER BY (p.sku = $2) DESC NULLS LAST, p.id
+          WHERE ( ($1 <> '' AND p.sku = $1)
+               OR ($2 <> '' AND (p.product_name ILIKE '%'||$2||'%' OR p.flavor ILIKE '%'||$2||'%')) )
+            ${exclusiveClause}
+          ORDER BY (p.sku = $1) DESC NULLS LAST, p.id
           LIMIT 1`,
-        [code, sku, hint]
+        params
       );
       return res.status(200).json({ ok: true, type, data: r.rows[0] || null });
     }

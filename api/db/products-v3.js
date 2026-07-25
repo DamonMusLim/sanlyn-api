@@ -23,6 +23,7 @@
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { getBrandScope } from "./brand-scoping.js";
 
 // Field whitelists per role
 var FIELDS_BY_ROLE = {
@@ -73,7 +74,7 @@ export default async function handler(req, res) {
   var role = jwtRoleToAudience(req.user && req.user.role);
 
   // factory role: factory_code MUST come from JWT companyCode (the factory's own code).
-  // buyer role: company_code (for price overrides) MUST come from JWT.
+  // buyer role: company_code (for brand scope + price overrides) MUST come from JWT.
   // Query values for factory_code / company_code are IGNORED when they would be
   // privilege-relevant (i.e. for factory / buyer). Admin may still supply them
   // as filters since they already have full visibility.
@@ -110,6 +111,15 @@ export default async function handler(req, res) {
     } else if (factoryCode) {
       // admin-supplied filter
       args.push(factoryCode); where.push("factory_code = $" + args.length);
+    }
+
+    if (role === "buyer") {
+      if (!companyCode) return res.status(200).json({ success: true, role, total: 0, count: 0, rows: [] });
+      var scope = await getBrandScope(pool, [companyCode]);
+      if (scope.exclusiveByOthers.length > 0) {
+        args.push(scope.exclusiveByOthers);
+        where.push("brand <> ALL($" + args.length + "::text[])");
+      }
     }
 
     if (category) { args.push(category); where.push("category = $" + args.length); }

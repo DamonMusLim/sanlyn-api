@@ -144,7 +144,9 @@ async function handleUploadCustoms(req, res) {
   const pool = getPool();
   const { fields, file } = await readUploadPayload(req);
   const verr = validateFile(file); if (verr) return json(res, 400, { error: verr });
-  const dry = String(req.query.dry || fields.dry || "") === "1";
+  const confirmed = ["1", "true", "yes"].includes(String(req.query.confirmed || fields.confirmed || "").toLowerCase());
+  const explicitDry = ["1", "true", "yes"].includes(String(req.query.dry || req.query.dry_run || fields.dry || fields.dry_run || "").toLowerCase());
+  const dry = explicitDry || !confirmed;
   // 落临时文件(PDF需路径给pdftoppm)
   const tmp = path.join(os.tmpdir(), `custup_${Date.now()}_${String(file.fileName || "f").replace(/[^\w.]/g, "_")}`);
   fs.writeFileSync(tmp, file.buffer);
@@ -165,7 +167,7 @@ async function handleUploadCustoms(req, res) {
   const plan = { customs_no: customsNo, cny_total: cny, by_source: ocr.by_source,
     fer_exists: exists, cur_fob_cny: curCny, will_fill: willFill, will_insert: !exists && cny > 0,
     rebate_would: +(cny * rate).toFixed(2) };
-  if (dry) return res.json({ success: true, dry: true, plan, ocr_items: ocr.items });
+  if (dry) return res.json({ success: true, dry: true, confirmed: false, confirmation_required: true, plan, ocr_items: ocr.items });
 
   const oss = await uploadToOss(customsNo, "CUSTOMS", file);
   await ensureCustomsDocsTable(pool);
