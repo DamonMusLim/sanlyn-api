@@ -219,6 +219,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/shipping/:id/insurance/prepare", () => import("./api/db/insurance.js"));
   mount("/api/insurance/:policyId/mark-filled", () => import("./api/db/insurance.js"));
   mount("/api/insurance/:policyId/mark-submitted", () => import("./api/db/insurance.js"));
+  mount("/api/insurance/pref", () => import("./api/db/product-insurance-pref.js")); // 产品级投保偏好 GET/POST (forge-product-ins-pref-0725)
   mount("/api/db/shipping-notify",   () => import("./api/db/shipping-notify.js")); // BL录入双轨通知
   mount("/api/db/vendor-quotes",     () => import("./api/db/vendor-quotes.js"));
   mount("/api/db/stamp-permissions", () => import("./api/db/stamp-permissions.js"));
