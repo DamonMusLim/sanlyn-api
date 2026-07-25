@@ -381,10 +381,10 @@ export default async function handler(req, res) {
       const reportUploaded = !!matchedOrder;
       if (reportUploaded) okCount++; else missCount++;
       const noteParts = (r.note || "").split("|");
-      const notePort = noteParts[0] || "";
+      const notePort = r.port || "";
       const noteHint = (noteParts[1] || "").trim();
       const looksLikeCompany = noteHint && /[A-Za-z一-龥]{3,}/.test(noteHint) && !/^\d{2}-\d{2}批$/.test(noteHint);
-      const customerDisplay = r.customers || (looksLikeCompany ? noteHint : "—");
+      const customerDisplay = r.customers || "";
       const ferContracts = String(r.contract_no || "").split(/[\/,，;；\s]+/).filter(Boolean);
       const inputInvoices = [];
       const seenInputInvoices = new Set();
