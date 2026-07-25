@@ -288,14 +288,37 @@ export default async function handler(req, res) {
             LIMIT 1
           ) ci ON true
         ) d
-      ) dn_det ON true`;
+      ) dn_det ON true
+      LEFT JOIN LATERAL (
+        SELECT json_agg(json_build_object(
+          'declaration_name',     i.declaration_name_cn,
+          'qty',                  i.qty,
+          'unit',                 i.unit,
+          'net_weight_kg',        i.net_weight_kg,
+          'declaration_amount',   i.declaration_amount,
+          'declaration_currency', i.declaration_currency,
+          'factory_name',         (
+            SELECT comp.name_cn
+            FROM shipping_plans sp
+            JOIN orders o ON o.shipping_plan_id = sp.id
+            JOIN order_line_items oli ON oli.order_id = o.id AND oli.declaration_name = i.declaration_name_cn
+            LEFT JOIN products p ON p.id = oli.product_id
+            LEFT JOIN companies comp ON comp.code = COALESCE(p.factory_code, o.factory_code)
+            WHERE sp._id = cd.shipping_plan_id LIMIT 1
+          ),
+          'from_customs',         true
+        ) ORDER BY i.sort_order) AS declaration_name_details
+        FROM customs_declarations cd
+        JOIN customs_declaration_items i ON i.declaration_id = cd.id AND i.deleted_at IS NULL
+        WHERE cd.declaration_no = base.customs_no
+      ) cust_det ON true`;
 
     const ferR = isAll
       ? await pool.query(`
           WITH base AS (SELECT ${BASE_COLS} ${BASE_FROM} ${BASE_GROUP})
           SELECT base.*,
             COALESCE(m.declaration_name_invoices, '[]'::json) AS declaration_name_invoices,
-            COALESCE(dn_det.declaration_name_details, '[]'::json) AS declaration_name_details
+            COALESCE(dn_det.declaration_name_details, cust_det.declaration_name_details, '[]'::json) AS declaration_name_details
           FROM base ${LATERAL}
           ORDER BY base.export_date DESC NULLS LAST`)
       : await pool.query(`
@@ -304,7 +327,7 @@ export default async function handler(req, res) {
             ${BASE_GROUP})
           SELECT base.*,
             COALESCE(m.declaration_name_invoices, '[]'::json) AS declaration_name_invoices,
-            COALESCE(dn_det.declaration_name_details, '[]'::json) AS declaration_name_details
+            COALESCE(dn_det.declaration_name_details, cust_det.declaration_name_details, '[]'::json) AS declaration_name_details
           FROM base ${LATERAL}
           ORDER BY base.export_date DESC`,
           [start.toISOString(), end.toISOString()]);
