@@ -80,6 +80,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/sku-recon-import",         () => import("./api/db/sku-recon-import.js"));
   mount("/api/db/supplier-catalog",         () => import("./api/db/supplier-catalog.js"));
   mount("/api/db/supplier-import",          () => import("./api/db/supplier-import.js"));
+  mount("/api/db/collab-link-center",      () => import("./api/db/collab-link-center.js")); // 海运协同链接台账(magic_links) [Claude 0723]
   mount("/api/db/share-center",             () => import("./api/db/share-center.js"));
   mount("/api/db/bb-overview",              () => import("./api/db/bb-overview.js"));
   mount("/api/db/freight-invoice-b",        () => import("./api/db/freight-invoice-b.js"));
@@ -125,6 +126,10 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/automation-hub", () => import("./api/db/automation-hub.js")); // 自动化观测台
   mount("/api/db/carrier-tariff",  () => import("./api/db/carrier-tariff.js"));
   mount("/api/db/freight-rates",     () => import("./api/db/freight-rates.js"));
+  mount("/api/db/freight-board", () => import("./api/db/freight-board.js"));
+  mount("/api/db/freight-inquiry", () => import("./api/db/freight-inquiry.js"));
+  mount("/api/public/ship-schedules-sync", () => import("./api/public/ship-schedules-sync.js"));
+  mount("/api/db/orders-pending-freight", () => import("./api/db/orders-pending-freight.js"));
   mount("/api/db/orders",            () => import("./api/db/orders.js"));
   mount("/api/db/payments",          () => import("./api/db/payments.js"));
   mount("/api/db/finance_payments",  () => import("./api/db/finance_payments.js"));
@@ -139,6 +144,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/field-catalog/resolve", () => import("./api/db/field-catalog-resolve.js"));
   mount("/api/db/field-catalog",         () => import("./api/db/field-catalog.js"));
   mount("/api/db/template-form",          () => import("./api/db/template-form.js"));
+  mount("/api/db/email-template-sample", () => import("./api/db/email-template-sample.js"));
   mount("/api/db/field-layout",           () => import("./api/db/field-layout.js"));
   mount("/api/db/migrate-collab-fields", () => import("./api/db/migrate-collab-fields.js"));
   // customer-invite: self-service activation links for customer accounts — needs prefix match
@@ -375,6 +381,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/pricing-desk/quotes", () => import("./api/db/pricing-desk.js"));    // Damon 内部报价中心(成本只在此页)
   mount("/api/db/pricing-desk/publish", () => import("./api/db/pricing-desk.js"));   // 上架客户牌价
   mount("/api/db/pricing-desk/unpublish", () => import("./api/db/pricing-desk.js")); // 下架客户牌价
+  mount("/api/public/collab-master", () => import("./api/public/collab-master.js")); // 协同总表统一投影层 [Claude 0723 #bp-collab-master-build-0723]
   mount("/api/public/customer-myportal", () => import("./api/public/customer-myportal.js")); // P1 只读客户门户(orders/docs/missing/price) [Claude 0723 #bp-p1-customer-portal-0723]
   mount("/api/db/customer-quote-link", () => import("./api/public/customer-quote.js")); // issue customer quote magic link
   mount("/api/public/customer-quote",  () => import("./api/public/customer-quote.js")); // customer quote lens
