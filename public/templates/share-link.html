@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分享链接生成器</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#1f2937;background:#f6f7f9}
+*{box-sizing:border-box}
+body{margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding:22px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+h1{font-size:24px;margin:0 0 6px;font-weight:800}
+.note{color:#64748b;font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e5e7eb}
+.panel-title{font-weight:800}
+.count{font-size:12px;color:#64748b}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:10px 12px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:middle}
+th{font-size:12px;color:#64748b;background:#fafafa;font-weight:800}
+tr:last-child td{border-bottom:0}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.muted{color:#64748b}
+.actions{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.btn{border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#172033;padding:7px 10px;cursor:pointer;font-weight:800;font-size:12px}
+.btn:hover{background:#f8fafc}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn-primary{background:#2563eb;border-color:#2563eb;color:#fff}
+.btn-primary:hover{background:#1d4ed8}
+.select{border:1px solid #cbd5e1;border-radius:7px;background:#fff;padding:7px 8px;font-size:12px}
+.status{min-height:20px;font-size:13px;color:#64748b}
+.status.ok{color:#047857}
+.status.err{color:#b91c1c}
+.result{margin-top:16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px}
+.urlbox{display:flex;gap:8px;margin-top:10px}
+.urlbox input{flex:1;border:1px solid #cbd5e1;border-radius:7px;padding:9px 10px;font-size:13px}
+.empty{padding:22px;color:#64748b;text-align:center}
+@media(max-width:860px){.grid{grid-template-columns:1fr}.top{display:block}.wrap{padding:14px}.urlbox{display:block}.urlbox .btn{margin-top:8px;width:100%}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div>
+      <h1>分享链接生成器</h1>
+      <div class="note">仅管理员;链接7天有效</div>
+    </div>
+    <div id="status" class="status">加载中...</div>
+  </div>
+
+  <section class="grid" id="lists">
+    <div class="panel" data-kind="customers">
+      <div class="panel-head">
+        <div class="panel-title">客户</div>
+        <div class="count" data-count="customers">-</div>
+      </div>
+      <div data-table="customers" class="empty">加载中...</div>
+    </div>
+    <div class="panel" data-kind="factories">
+      <div class="panel-head">
+        <div class="panel-title">工厂</div>
+        <div class="count" data-count="factories">-</div>
+      </div>
+      <div data-table="factories" class="empty">加载中...</div>
+    </div>
+    <div class="panel" data-kind="suppliers">
+      <div class="panel-head">
+        <div class="panel-title">供应商</div>
+        <div class="count" data-count="suppliers">-</div>
+      </div>
+      <div data-table="suppliers" class="empty">加载中...</div>
+    </div>
+  </section>
+
+  <section class="result">
+    <div class="panel-title">生成结果</div>
+    <div class="urlbox">
+      <input id="share-url" readonly placeholder="生成后显示完整 URL">
+      <button class="btn" id="copy-btn" type="button" disabled>复制</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = "/api/db/share-link";
+const ALLOWED_KINDS = new Set(["customers", "factories", "suppliers"]);
+const STATUS_CLASSES = new Set(["ok", "err"]);
+const PAGE_OPTIONS = {
+  customers: [{value:"stock", label:"库存"}, {value:"orders", label:"订单"}, {value:"sku-recon", label:"库存对账"}, {value:"collection", label:"款式收集"}],
+  factories: [{value:"factory-bags", label:"包材"}, {value:"sku-recon", label:"库存对账"}, {value:"stocktake", label:"盘点"}],
+  suppliers: [{value:"supplier-catalog", label:"款式报价"}],
+};
+
+function qs(id){ return document.getElementById(id); }
+function esc(v){
+  return String(v == null ? "" : v).replace(/[&<>"']/g, c => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+  }[c]));
+}
+function clean(v){ return String(v == null ? "" : v); }
+function token(){
+  const q = new URLSearchParams(location.search).get("token");
+  return q || localStorage.getItem("sanlyn_jwt") || localStorage.getItem("sanlyn_token") || localStorage.getItem("token") || "";
+}
+function headers(){
+  const t = token();
+  return {"Content-Type":"application/json", ...(t ? {Authorization:"Bearer " + t} : {})};
+}
+function setStatus(msg, kind){
+  const el = qs("status");
+  el.className = "status";
+  if (STATUS_CLASSES.has(kind)) el.classList.add(kind);
+  el.textContent = msg;
+}
+async function api(url, opts){
+  const res = await fetch(url, {credentials:"include", headers:headers(), ...opts});
+  const data = await res.json().catch(() => ({success:false,error:"Invalid JSON"}));
+  if (!res.ok || !data.success) throw new Error(data.error || ("HTTP " + res.status));
+  return data.data;
+}
+function cell(value, cls){
+  const td = document.createElement("td");
+  if (cls) td.className = cls;
+  td.innerHTML = esc(value) || "-";
+  return td;
+}
+function render(kind, rows){
+  if (!ALLOWED_KINDS.has(kind)) return;
+  document.querySelector('[data-count="' + kind + '"]').textContent = rows.length + " 个";
+  const host = document.querySelector('[data-table="' + kind + '"]');
+  if (!rows.length) {
+    host.className = "empty";
+    host.textContent = "暂无可用账号";
+    return;
+  }
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  thead.innerHTML = "<tr><th>用户名</th><th>公司代码</th><th>公司</th><th>页面</th><th></th></tr>";
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  rows.forEach(row => {
+    const tr = document.createElement("tr");
+    tr.dataset.id = clean(row.id);
+    tr.dataset.kind = kind;
+    tr.appendChild(cell(row.username));
+    tr.appendChild(cell(row.company_code, "mono"));
+    tr.appendChild(cell(row.company));
+    const pageTd = document.createElement("td");
+    const select = document.createElement("select");
+    select.className = "select";
+    select.dataset.page = "1";
+    PAGE_OPTIONS[kind].forEach(opt => {
+      const option = document.createElement("option");
+      option.value = opt.value;
+      option.textContent = opt.label;
+      select.appendChild(option);
+    });
+    pageTd.appendChild(select);
+    tr.appendChild(pageTd);
+    const actionTd = document.createElement("td");
+    actionTd.className = "actions";
+    const btn = document.createElement("button");
+    btn.className = "btn btn-primary";
+    btn.type = "button";
+    btn.dataset.action = "generate";
+    btn.textContent = "生成分享链接";
+    actionTd.appendChild(btn);
+    tr.appendChild(actionTd);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  host.className = "";
+  host.replaceChildren(table);
+}
+async function loadKind(kind){
+  const rows = await api(API + "?kind=" + encodeURIComponent(kind));
+  render(kind, Array.isArray(rows) ? rows : []);
+}
+async function generate(btn){
+  const tr = btn.closest("tr");
+  const kind = tr?.dataset.kind || "";
+  if (!ALLOWED_KINDS.has(kind)) return;
+  const select = tr.querySelector("[data-page]");
+  const allowedPages = new Set(PAGE_OPTIONS[kind].map(p => p.value));
+  const page = allowedPages.has(select.value) ? select.value : PAGE_OPTIONS[kind][0].value;
+  btn.disabled = true;
+  setStatus("正在生成...", "");
+  try {
+    const data = await api(API, {method:"POST", body:JSON.stringify({id:tr.dataset.id, page})});
+    qs("share-url").value = data.short_url || (location.origin + data.path);
+    qs("copy-btn").disabled = false;
+    setStatus("链接已生成", "ok");
+  } catch (err) {
+    setStatus(err.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.addEventListener("click", async ev => {
+  const btn = ev.target.closest("button");
+  if (!btn) return;
+  if (btn.dataset.action === "generate") generate(btn);
+  if (btn.id === "copy-btn") {
+    await navigator.clipboard.writeText(qs("share-url").value);
+    setStatus("已复制", "ok");
+  }
+});
+(async function init(){
+  try {
+    await Promise.all([loadKind("customers"), loadKind("factories"), loadKind("suppliers")]);
+    setStatus("就绪", "ok");
+  } catch (err) {
+    setStatus(err.message, "err");
+  }
+})();
+</script>
+</body>
+</html>

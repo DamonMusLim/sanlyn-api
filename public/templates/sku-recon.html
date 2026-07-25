@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKU库存对账表</title>
+<style>
+:root{--bg:#f6f7f9;--text:#172033;--muted:#667085;--line:#d8dee8;--head:#eef2f7;--ok:#16794c;--warn:#b45309;--bad:#b42318;--blue:#175cd3}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 Arial,"Microsoft YaHei",sans-serif}
+.wrap{max-width:1240px;margin:0 auto;padding:20px}.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:12px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:var(--muted)}.actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:8px 11px;font-weight:700;cursor:pointer}
+button.primary{border-color:#84adff;background:#eff4ff;color:var(--blue)}button:disabled{opacity:.55;cursor:not-allowed}
+.pill{display:inline-block;border:1px solid var(--line);border-radius:999px;background:#fff;padding:4px 9px;font-weight:700;color:#344054}
+.note{border:1px solid #fedf89;background:#fffaeb;color:#7a2e0e;border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.brand{background:#fff;border:1px solid var(--line);border-radius:8px;margin-bottom:12px;overflow:hidden}.brand-head{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:#fff;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;text-align:left}
+.brand-title{font-size:15px;font-weight:800}.brand-meta{color:var(--muted);font-weight:700}.table-wrap{overflow:auto}
+table{width:100%;min-width:980px;border-collapse:collapse}th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{background:var(--head);color:#344054;font-size:12px}tr:last-child td{border-bottom:0}.num{text-align:right;font-variant-numeric:tabular-nums}.muted{color:var(--muted)}
+.product{display:flex;align-items:center;gap:8px;min-width:230px}.product img{width:34px;height:34px;border:1px solid var(--line);border-radius:5px;object-fit:cover;background:#f2f4f7}.sku{font-size:12px;color:var(--muted)}
+input{width:92px;border:1px solid var(--line);border-radius:6px;padding:7px 8px;text-align:right;font:inherit;background:#fff}input:disabled{background:#f2f4f7;color:#667085}input.txt{width:150px;text-align:left}
+.upbtn{width:auto;margin-top:4px;border:1px solid var(--line);background:#fff;border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;color:var(--blue);cursor:pointer}
+.product{display:flex;gap:10px;align-items:flex-start;min-width:230px}.product img{width:44px;height:44px;flex-shrink:0}
+.pinfo{display:flex;flex-direction:column;gap:3px;line-height:1.35}
+.pname{font-weight:700}.pmeta{font-size:11.5px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.bcode{background:#eef4ff;color:#1d4ed8;border:1px solid #c3d9ff;border-radius:5px;padding:0 6px;font-weight:700;font-size:10.5px}
+.psku{font-family:ui-monospace,Menlo,monospace}.prow3{margin-top:2px}
+.pbar{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:#0f766e;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:5px;padding:0 6px;font-size:10.5px}
+.pbar.miss{color:#b45309;background:#fffbeb;border-color:#fed7aa}
+.pmeta2{font-size:11px;color:#98a2b3}.pname-cn{font-size:12px;color:#475467;margin-top:1px}
+.qe{cursor:pointer;border-bottom:1px dashed #94a3b8;padding:2px 4px;border-radius:4px}.qe:hover{background:#eff4ff}
+.qinp{width:88px;text-align:right}
+.ops{display:flex;gap:5px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.op{border:1px solid var(--line);background:#fff;border-radius:6px;padding:4px 9px;font-size:12px;font-weight:700;cursor:pointer;color:#344054}
+.op-hot{border-color:#fca5a5;background:#fef2f2;color:var(--bad)}.op-ic{padding:4px 7px}
+.detrow>td{background:#f8fafc;padding:0}
+.detail{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 18px;padding:12px 16px}
+.df{display:flex;flex-direction:column;gap:3px}.df label{font-size:11px;color:var(--muted)}.df .dv{font-weight:600}
+.df input{width:100%}
+.badge{display:inline-block;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800;border:1px solid var(--line);white-space:nowrap}
+.ok,.matched{color:var(--ok);background:#ecfdf3;border-color:#abefc6}.pending_receipt,.in_transit{color:var(--blue);background:#eff4ff;border-color:#b2ccff}.restock_needed,.bag_short,.bad{color:var(--bad);background:#fef3f2;border-color:#fecdca}.no_line{color:#98a2b3;background:#f3f4f6;border-color:#e5e7eb}
+tr.alert td{background:#fff4f2}.diff-pos{color:var(--ok);font-weight:800}.diff-neg{color:var(--bad);font-weight:800}.empty{padding:28px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+@media(max-width:760px){.wrap{padding:14px}.top{display:block}.actions{margin-top:10px}}
+@media print{body{background:#fff}.actions,.note{display:none}.wrap{max-width:none;padding:0}.brand{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1 id="title">库存比对表</h1>
+      <div class="sub" id="scope">成品库存 · 袋子库存 · 来料实收比对</div>
+    </div>
+    <div class="actions">
+      <span class="pill" id="role-pill">…</span>
+      <select id="brand-filter" style="display:none;border:1px solid #d8dee8;border-radius:6px;padding:7px 9px;font:inherit;background:#fff"></select>
+      <button id="history-btn" style="display:none">修改历史</button>
+      <button id="edit-btn" style="display:none">✎ 编辑</button>
+      <button id="import-btn" style="display:none">⬆ 批量上传</button>
+      <button id="restock-btn" style="display:none">🛒 一键补货</button>
+      <button id="refresh">刷新</button>
+      <button class="primary" id="save-all" style="display:none">保存全部</button>
+    </div>
+  </div>
+  <div class="note" id="note" style="display:none">仅展示授权品牌，不含成本、价格等敏感字段。</div>
+  <div id="history-panel" class="brand" style="display:none;margin-bottom:12px"></div>
+  <div id="groups"><div class="empty">加载中...</div></div>
+</div>
+<div id="save-ask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;padding:22px 24px;max-width:340px;width:88%;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.2)">
+    <div style="font-weight:800;font-size:15px;margin-bottom:6px">有未保存的修改</div>
+    <div style="color:#667085;font-size:13px;margin-bottom:18px">你填的内容还没保存，要保存吗？</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button data-ask="cancel">继续编辑</button>
+      <button data-ask="discard" style="color:#b42318">放弃</button>
+      <button data-ask="save" class="primary">保存</button>
+    </div>
+  </div>
+</div>
+<script>
+const apiUrl = "/api/db/sku-recon";
+const labels = {restock_needed:"需备货",ok:"够",no_line:"未设线",matched:"齐",pending_receipt:"待收",bag_short:"袋子缺",in_transit:"在途"};
+const state = {role:"", canEdit:false, canEditLine:false, editing:false, groups:[], brandFilter:"", imgEdits:{}, dirty:false};
+function token(){
+  const cand = [new URLSearchParams(location.search).get("token"),
+    localStorage.getItem("sanlyn_jwt"), localStorage.getItem("sanlyn_token"), localStorage.getItem("token")];
+  for(const t of cand){ if(t && /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return t; }
+  return "";
+}
+function authHeaders(json){
+  const t = token(), h = json ? {"Content-Type":"application/json"} : {};
+  if(t) h.Authorization = "Bearer " + t;
+  return h;
+}
+function esc(v){return v==null?"":String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));}
+function num(v){return v==null||v===""?"":Number(v).toLocaleString();}
+function rawNum(v){return v==null||v===""?"":Number(v);}
+function gsum(g,f){return (g.rows||[]).reduce((a,x)=>a+(Number(x[f])||0),0);}
+function diffCls(v){return Number(v)<0?"diff-neg":Number(v)>0?"diff-pos":"";}
+function rowAlert(r){return r.status==="bag_short" || Math.abs(Number(r.diff || 0))>0.0001 || Number(r.finished_stock||0)<=Number(r.finished_safety_stock||-1);}
+function imgTag(url){return url ? `<img src="${esc(url)}" alt="">` : `<img alt="">`;}
+function inpCell(r, field, type){
+  const can = state.editing && (state.canEdit || (field==="finished_safety_stock" && state.canEditLine));
+  if(!can) return type==="text" ? esc(r[field]||"") : num(r[field]);
+  const v = type==="text" ? esc(r[field]==null?"":r[field]) : esc(rawNum(r[field]));
+  return `<input data-sku="${esc(r.sku)}" data-field="${field}"${type==="text"?' class="txt"':''} value="${v}">`;
+}
+function restockCell(r){
+  const gap = Math.max(0, Number(r.finished_safety_stock||0) - Number(r.finished_stock||0));
+  if(gap<=0) return '<span class="muted">—</span>';
+  const cap = Number(r.container_capacity||0);
+  const cab = cap>0 ? ` <span class="muted">≈${Math.ceil(gap/cap)}柜</span>` : "";
+  return `<span class="diff-neg">补 ${num(gap)}</span>${cab}`;
+}
+function lastOrderCell(r){
+  if(!r.last_order_date) return '<span class="muted">—</span>';
+  const no = r.last_order_no ? `<div class="muted">${esc(r.last_order_no)}</div>` : "";
+  return `${esc(r.last_order_date)}<div class="muted">${num(r.last_order_qty)} 件</div>${no}`;
+}
+function prodCell(r){
+  const up = (state.canEdit&&state.editing)?`<button type="button" class="upbtn" data-upload="${esc(r.sku)}">${r.image_url?"换图":"上传图片"}</button>`:"";
+  const bar = r.barcode ? `<span class="pbar">条码 ${esc(r.barcode)}</span>` : `<span class="pbar miss">条码待补</span>`;
+  return `<div class="product">${imgTag(r.image_url)}<div class="pinfo">
+    <div class="pname">${esc(r.product_name||r.sku)}</div>
+    ${r.product_name_cn?`<div class="pname-cn">${esc(r.product_name_cn)}</div>`:""}
+    <div class="pmeta">${r.brand?`<span class="bcode">${esc(r.brand)}</span>`:""}${bar}</div>
+    <div class="pmeta2">内部号 <span class="psku">${esc(r.sku)}</span></div>
+    ${up?`<div class="prow3">${up}</div>`:""}</div></div>`;
+}
+function opsCell(r){
+  const gap = Math.max(0, Number(r.finished_safety_stock||0)-Number(r.finished_stock||0));
+  const detail = `<button type="button" class="op" data-detail="${esc(r.sku)}">详情</button>`;
+  const restock = state.canEdit?`<button type="button" class="op" data-restock-in="${esc(r.sku)}">补充</button>`:"";
+  const order = state.canEdit?`<button type="button" class="op ${gap>0?"op-hot":""}" data-order="${esc(r.sku)}">下单</button>`:"";
+  const hist = state.canEdit?`<button type="button" class="op op-ic" data-hist="${esc(r.sku)}" title="修改记录">🕐</button>`:"";
+  let decision = "";
+  if(r.status==="restock_needed"){
+    decision = r.restock_decision
+      ? `<span class="muted">已定:${esc(r.restock_decision)}${r.restock_decision_by?` · ${esc(r.restock_decision_by)}`:""}</span>`
+      : `<button type="button" class="op op-hot" data-decision="备" data-sku="${esc(r.sku)}">备</button><button type="button" class="op" data-decision="不备" data-sku="${esc(r.sku)}">不备</button>`;
+  }
+  return `<div class="ops">${decision}${detail}${restock}${order}${hist}</div>`;
+}
+function mainCols(){
+  return [
+    {label:"产品", cell:prodCell},
+    {label:"成品库存", num:1, cell:r=>inpCell(r,"finished_stock","num")},
+    {label:"安全值", num:1, cell:r=>inpCell(r,"finished_safety_stock","num")},
+    {label:"补货", num:1, cell:restockCell},
+    {label:"上批订货", cell:lastOrderCell},
+    {label:"状态", cell:r=>`<span class="badge ${esc(r.status)}">${esc(labels[r.status]||r.status)}</span>`},
+    {label:"操作", cell:opsCell},
+  ];
+}
+function detailHtml(r){
+  const ed = state.canEdit;
+  const f=(label,inner)=>`<div class="df"><label>${label}</label><div class="dv">${inner}</div></div>`;
+  const parts = [
+    f("规格", esc(r.size||"—")),
+    ed?f("供应商", inpCell(r,"supplier_name","text")):f("供应商", esc(r.supplier_name||"—")),
+    f("袋子库存", `${num(r.bag_stock)} <span class="muted">安全 ${num(r.bag_safety_stock)}</span>`),
+  ];
+  if(ed){
+    parts.push(f("柜容量", inpCell(r,"container_capacity","num")));
+    parts.push(f("下单量", num(r.order_qty)));
+    parts.push(f("实收", inpCell(r,"real_qty","num")));
+    parts.push(f("差异", r.diff==null?"—":`<span class="${diffCls(r.diff)}">${num(r.diff)}</span>`));
+  }
+  return `<div class="detail">${parts.join("")}</div>`;
+}
+function render(){
+  const editable = state.canEdit || state.canEditLine;
+  document.getElementById("role-pill").textContent = editable ? (state.editing?"编辑中":(state.canEdit?"可填写":"可设提醒线")) : "只读";
+  const eb = document.getElementById("edit-btn");
+  eb.style.display = editable ? "" : "none";
+  eb.textContent = state.editing ? "✕ 退出编辑" : "✎ 编辑";
+  eb.className = state.editing ? "primary" : "";
+  document.getElementById("save-all").style.display = (editable && state.editing) ? "" : "none";
+  document.getElementById("import-btn").style.display = (state.canEdit && state.editing) ? "" : "none";
+  document.getElementById("restock-btn").style.display = state.canEdit ? "" : "none";
+  const root = document.getElementById("groups");
+  const groups = state.brandFilter ? state.groups.filter(g=>g.brand===state.brandFilter) : state.groups;
+  if(!groups.length){root.innerHTML = '<div class="empty">暂无SKU</div>';return;}
+  const cols = mainCols();
+  const ncol = cols.length;
+  const thead = `<thead><tr>${cols.map(c=>`<th class="${c.num?'num':''}">${esc(c.label)}</th>`).join("")}</tr></thead>`;
+  root.innerHTML = groups.map((g)=>{
+    const i = state.groups.indexOf(g);
+    const meta = state.canEdit
+      ? `${Number(g.sku_count||0)} SKU · ${Number(g.bag_count||0)} 款袋子 · 成品库存合计 ${num(gsum(g,"finished_stock"))} · 实收合计 ${num(gsum(g,"real_qty"))} · 下单合计 ${num(gsum(g,"order_qty"))}`
+      : `${Number(g.sku_count||0)} SKU · 库存合计 ${num(gsum(g,"finished_stock"))} · 需补货合计 ${num(gsum(g,"restock_gap"))}`;
+    const body = (g.rows||[]).map(r=>{
+      const alert = rowAlert(r) ? "alert" : "";
+      const det = `<tr class="detrow" data-detail-for="${esc(r.sku)}" style="display:none"><td colspan="${ncol}">${detailHtml(r)}</td></tr>`;
+      return `<tr class="${alert}" data-sku="${esc(r.sku)}">${cols.map(c=>`<td class="${c.num?'num':''}">${c.cell(r)}</td>`).join("")}</tr>${det}`;
+    }).join("");
+    return `<section class="brand" data-brand="${esc(g.brand)}">
+      <button class="brand-head" data-toggle="${i}">
+        <span class="brand-title">${esc(g.brand||"未分组")}</span>
+        <span class="brand-meta">${meta}</span>
+      </button>
+      <div class="table-wrap"><table>${thead}<tbody>${body}</tbody></table></div>
+    </section>`;
+  }).join("");
+}
+async function load(){
+  const root = document.getElementById("groups");
+  root.innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(apiUrl,{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error || "Load failed");
+    state.role = r.role || ""; state.canEdit = !!r.can_edit; state.canEditLine = !!r.can_edit_line; state.groups = r.groups || [];
+    const org = (r.org_name || "").trim();
+    document.getElementById("title").textContent = org ? org + " · 库存比对表" : "库存比对表";
+    document.title = (org ? org + " · " : "") + "库存比对表";
+    document.getElementById("note").style.display = state.canEdit ? "none" : "block";
+    document.getElementById("history-btn").style.display = state.canEdit ? "" : "none";
+    document.getElementById("history-panel").style.display = "none";
+    if(!(state.canEdit || state.canEditLine)) state.editing = false;
+    document.getElementById("scope").textContent = state.canEdit ? "供应商 · 成品库存 · 安全值 · 柜容量 · 来料实收比对（可直接填写并保存）" : "品牌 · 库存 · 安全值 · 补货提醒";
+    fillBrandFilter();
+    render();
+  }catch(e){root.innerHTML = `<div class="empty error">${esc(e.message)}</div>`;}
+}
+function fillBrandFilter(){
+  const sel = document.getElementById("brand-filter");
+  const brands = state.groups.map(g=>g.brand);
+  if(state.brandFilter && !brands.includes(state.brandFilter)) state.brandFilter = "";
+  sel.innerHTML = `<option value="">全部品牌</option>` + brands.map(b=>`<option value="${esc(b)}"${b===state.brandFilter?" selected":""}>${esc(b)}</option>`).join("");
+  sel.style.display = brands.length>1 ? "" : "none";
+}
+async function saveAll(){
+  if(!(state.canEdit || state.canEditLine)) return;
+  const map = {};
+  document.querySelectorAll("#groups input[data-field][data-sku]").forEach(inp=>{
+    const s = inp.dataset.sku; (map[s]=map[s]||{sku:s})[inp.dataset.field] = inp.value;
+  });
+  for(const s in state.imgEdits){ (map[s]=map[s]||{sku:s}).image_url = state.imgEdits[s]; }
+  const rows = Object.values(map);
+  const btn = document.getElementById("save-all");
+  btn.disabled = true; btn.textContent = "保存中...";
+  try{
+    const r = await fetch(apiUrl + "?action=save",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({rows})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error || "Save failed");
+    state.imgEdits = {}; state.dirty = false; state.editing = false; await load();
+  }catch(e){alert(e.message);}
+  finally{btn.textContent = "保存全部"; btn.disabled = false;}
+}
+async function uploadImage(sku, file){
+  const fd = new FormData(); fd.append("file", file); fd.append("path", "sku-recon/"+sku+"-"+file.name);
+  try{
+    const r = await fetch("/api/oss-upload",{method:"POST",body:fd}).then(x=>x.json());
+    if(!r.success || !r.url) throw new Error(r.error||"上传失败");
+    state.imgEdits[sku] = r.url;
+    for(const g of state.groups){ const row=(g.rows||[]).find(x=>x.sku===sku); if(row) row.image_url=r.url; }
+    render();
+  }catch(e){ alert("图片上传失败："+e.message); }
+}
+async function importExcel(file){
+  const fd = new FormData(); fd.append("file", file);
+  try{
+    const r = await fetch("/api/db/sku-recon-import",{method:"POST",headers:authHeaders(),body:fd}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"导入失败");
+    alert(`批量导入成功：更新 ${r.updated} 个SKU，图片 ${r.images} 张`);
+    state.imgEdits={}; state.editing=false; await load();
+  }catch(e){ alert("导入失败："+e.message); }
+}
+function hRow(h){
+  const b = h.before || {}, a = h.after || {};
+  const ch = Object.keys(a).map(f=>`${esc(f)} ${esc(b[f]==null?"—":b[f])}→${esc(a[f]==null?"—":a[f])}`).join("；") || esc(h.diff_summary||"");
+  const dt = h.created_at ? new Date(h.created_at).toLocaleString("zh-CN") : "";
+  return `<tr><td>${esc(dt)}</td><td>${esc(h.sku)}</td><td>${ch}</td><td>${esc(h.operator||"")}</td></tr>`;
+}
+async function loadHistory(sku){
+  const panel = document.getElementById("history-panel");
+  if(!sku && panel.style.display === "block"){ panel.style.display = "none"; return; }
+  panel.style.display = "block";
+  panel.innerHTML = '<div class="empty">加载中...</div>';
+  try{
+    const r = await fetch(apiUrl + "?view=history",{credentials:"include",headers:authHeaders()}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error || "加载失败");
+    let rows = r.history || [];
+    if(sku) rows = rows.filter(h=>h.sku===sku);
+    const title = sku ? `${esc(sku)} 修改记录` : "修改历史";
+    if(!rows.length){ panel.innerHTML = `<div class="brand-head"><span class="brand-title">${title}</span></div><div class="empty">暂无修改记录</div>`; panel.scrollIntoView({behavior:"smooth",block:"nearest"}); return; }
+    panel.innerHTML = `<div class="brand-head"><span class="brand-title">${title}</span><span class="brand-meta">${rows.length} 条</span></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>SKU</th><th>改动</th><th>操作人</th></tr></thead><tbody>${rows.map(hRow).join("")}</tbody></table></div>`;
+    panel.scrollIntoView({behavior:"smooth",block:"nearest"});
+  }catch(e){ panel.innerHTML = `<div class="empty error">${esc(e.message)}</div>`; }
+}
+async function restockAll(){
+  if(!confirm("给所有「库存低于安全值」的产品，按缺口一次性向冀凯下补货订单？")) return;
+  try{
+    const r = await fetch(apiUrl+"?action=restock-all",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"失败");
+    alert(r.ordered>0?`已一键补货：${r.ordered} 个产品下单（进来料协同）`:"当前没有低于安全值的产品，无需补货");
+    await load();
+  }catch(e){ alert("一键补货失败："+e.message); }
+}
+async function placeOrder(sku){
+  const row = state.groups.flatMap(g=>g.rows||[]).find(x=>x.sku===sku);
+  const gap = row ? Math.max(0, Number(row.finished_safety_stock||0)-Number(row.finished_stock||0)) : 0;
+  const bagMoq = row ? Number(row.bag_moq||0) : 0;
+  const defQty = Math.max(gap, bagMoq);
+  const moqTip = bagMoq>0 ? `\n起订量 ${bagMoq}` : "";
+  const q = prompt(`给「${row?row.product_name||sku:sku}」补货下单\n建议量=${defQty||0}${moqTip}\n请输入下单数量:`, defQty||"");
+  if(q===null) return;
+  const qty = Number(q); if(!(qty>0)){ alert("请输入正数"); return; }
+  const orderQty = Math.max(qty, bagMoq);
+  if(qty < bagMoq) alert(`已按起订量 ${bagMoq} 下单`);
+  try{
+    const r = await fetch(apiUrl+"?action=order",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku, qty:orderQty})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"下单失败");
+    alert(`已下单：${sku} × ${r.ordered_qty||orderQty}（已进来料协同待发货）`);
+    await load();
+  }catch(e){ alert("下单失败："+e.message); }
+}
+async function restockDecision(sku, decision){
+  try{
+    const r = await fetch(apiUrl+"?action=restock-decision",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku, decision})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"提交失败");
+    await load();
+  }catch(e){ alert("备货决策失败："+e.message); }
+}
+async function restockIn(sku){
+  const row = state.groups.flatMap(g=>g.rows||[]).find(x=>x.sku===sku);
+  const q = prompt(`给「${row?row.product_name||sku:sku}」补充/入库\n请输入入库+数量；负数用于纠正/出库:`, "");
+  if(q===null) return;
+  const delta = Number(q);
+  if(!Number.isFinite(delta) || delta===0){ alert("请输入非0数字"); return; }
+  try{
+    const r = await fetch(apiUrl+"?action=restock-in",{method:"PATCH",credentials:"include",headers:authHeaders(true),body:JSON.stringify({sku, delta})}).then(x=>x.json());
+    if(!r.success) throw new Error(r.error||"入库失败");
+    alert(`已更新：${sku} ${num(r.before)} → ${num(r.after)}`);
+    state.editing=false; state.dirty=false; await load();
+  }catch(e){ alert("补充/入库失败："+e.message); }
+}
+// ===== 未保存修改拦截(通用铁律:编辑有改动→离开必问是否保存) =====
+function askSave(){ return new Promise(res=>{ const m=document.getElementById("save-ask"); m.style.display="flex"; m._res=res; }); }
+async function guardDirty(){ // 返回 true=可以离开, false=留在编辑
+  if(!(state.editing && state.dirty)) return true;
+  const a = await askSave();
+  if(a==="cancel") return false;
+  if(a==="save"){ await saveAll(); return false; } // saveAll成功后自己退出编辑
+  state.dirty = false; return true; // discard
+}
+document.addEventListener("input", e=>{ if(state.editing && e.target.dataset && e.target.dataset.field) state.dirty = true; });
+window.addEventListener("beforeunload", e=>{ if(state.editing && state.dirty){ e.preventDefault(); e.returnValue=""; } });
+document.addEventListener("click", async e=>{
+  if(e.target.dataset && e.target.dataset.ask){ const m=document.getElementById("save-ask"); m.style.display="none"; if(m._res){ m._res(e.target.dataset.ask); m._res=null; } return; }
+  const t = e.target.closest("[data-toggle]");
+  if(t){const box = t.parentElement.querySelector(".table-wrap"); box.style.display = box.style.display==="none" ? "" : "none";}
+  if(e.target.id === "refresh"){ if(!await guardDirty()) return; state.editing=false; state.dirty=false; load(); }
+  if(e.target.id === "save-all") saveAll();
+  if(e.target.id === "history-btn") loadHistory();
+  if(e.target.id === "edit-btn"){ if(state.editing){ if(!await guardDirty()) return; } state.editing = !state.editing; state.dirty=false; render(); }
+  if(e.target.id === "import-btn"){ const i=document.createElement("input"); i.type="file"; i.accept=".xlsx"; i.onchange=()=>{ if(i.files[0]) importExcel(i.files[0]); }; i.click(); }
+  if(e.target.id === "restock-btn") restockAll();
+  const up = e.target.dataset && e.target.dataset.upload;
+  if(up){ const i=document.createElement("input"); i.type="file"; i.accept="image/*"; i.onchange=()=>{ if(i.files[0]) uploadImage(up, i.files[0]); }; i.click(); }
+  const det = e.target.dataset && e.target.dataset.detail;
+  if(det){ const dr=document.querySelector(`.detrow[data-detail-for="${det}"]`); if(dr) dr.style.display = dr.style.display==="none"?"":"none"; }
+  const hs = e.target.dataset && e.target.dataset.hist;
+  if(hs) loadHistory(hs);
+  const od = e.target.dataset && e.target.dataset.order;
+  if(od) placeOrder(od);
+  const ri = e.target.dataset && e.target.dataset.restockIn;
+  if(ri){ if(!await guardDirty()) return; restockIn(ri); }
+  const dec = e.target.dataset && e.target.dataset.decision;
+  if(dec) restockDecision(e.target.dataset.sku, dec);
+});
+document.addEventListener("change", e=>{
+  if(e.target.id === "brand-filter"){ state.brandFilter = e.target.value; render(); }
+});
+load();
+</script>
+</body>
+</html>

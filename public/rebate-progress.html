@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>退税进度 · 八环节追踪</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--line:#e6e8eb;--txt:#1a1a1a;--mut:#6b7280;--ok:#0f9d58;--okbg:#e8f5ee;--warn:#b7791f;--warnbg:#fdf6e3;--bad:#d93025;--badbg:#fdeceb;--blue:#1a56db}
+*{box-sizing:border-box}
+body{margin:0;padding:14px;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+h1{font-size:18px;margin:0 0 4px}
+.sub{font-size:12.5px;color:var(--mut);margin-bottom:14px}
+.wrap{max-width:1080px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+.hd{display:flex;flex-wrap:wrap;gap:9px;align-items:center;padding:11px 14px;border-bottom:1px solid var(--line);background:#fafbfc}
+.no{font-family:ui-monospace,Menlo,monospace;font-weight:600;font-size:13.5px}
+.chip{font-size:11.5px;padding:2px 8px;border-radius:6px}
+.c-ok{background:var(--okbg);color:var(--ok)}.c-warn{background:var(--warnbg);color:var(--warn)}.c-bad{background:var(--badbg);color:var(--bad)}.c-mut{background:#f1f3f5;color:var(--mut)}
+.steps{padding:6px 14px 12px}
+.step{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px dashed #eef0f2}
+.step:last-child{border-bottom:0}
+.dot{flex:none;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;margin-top:1px}
+.d-ok{background:var(--ok)}.d-warn{background:#e8a33d}.d-bad{background:var(--bad)}.d-mut{background:#c9ced4}
+.sname{font-weight:600;font-size:13px}
+.sdesc{font-size:12px;color:var(--mut);margin-top:2px;line-height:1.6}
+.sdetail{font-size:12px;margin-top:3px;line-height:1.7}
+.owner{font-size:11.5px;color:var(--mut);margin-left:6px}
+.hi{background:var(--warnbg);border-radius:8px;padding:8px 10px;margin:4px 0}
+.blocked{margin:0 14px 12px;padding:8px 11px;background:var(--badbg);color:var(--bad);border-radius:8px;font-size:12.5px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-bottom:12px}
+.legend b{color:var(--txt)}
+@media(max-width:640px){.sdesc,.sdetail{font-size:11.5px}}
+</style></head><body>
+<div class="wrap">
+<h1>退税进度 · 八环节追踪</h1>
+<div class="sub">每张报关单从报关到提交的八个环节，卡在哪一眼看到。<b>勾选认证</b>最易漏且最致命（不勾＝A0215 不予受理）。</div>
+<div class="legend"><span><b>①</b>出口报关</span><span><b>②</b>出口开票</span><span><b>③</b>工厂开票</span><span><b>④</b>勾选认证</span><span><b>⑤</b>生成三文件</span><span><b>⑥</b>导入门户</span><span><b>⑦</b>数据自检</span><span><b>⑧</b>提交</span></div>
+<div id="list"></div>
+</div>
+<script>
+var STEPS=[
+ {n:"1 · 出口报关",owner:"报关行",desc:"拿真实报关单 → 核验(品名+金额闭合Σ行项=报关总额) → 落逐项真值(含美元离岸价)"},
+ {n:"2 · 出口开票",owner:"我方财务",desc:"开零税率数电票给客户(26942开头)。<b>一张报关单一张票</b>，金额=报关总额，不拆SKU不拆厂"},
+ {n:"3 · 工厂开票",owner:"各工厂(协同链接催)",desc:"工厂按报关品名/数量/金额开专票，开票额<b>不得超过报关</b>"},
+ {n:"4 · 勾选认证",owner:"我方财务",desc:"发票业务→发票勾选确认→<b>出口退税类勾选</b>→勾票→提交勾选。批量走<b>「清单导入勾选」上传Excel</b>(studio-electron 生成，已验证)。<br>⚠ 不勾＝申报报 <b>A0215「发票无电子信息，不予受理」</b>；只勾<b>货物</b>票，运费/货代票不勾。",hi:1},
+ {n:"5 · 生成三文件",owner:"系统",desc:"勾选清单 · 出口明细(8位税则号/法定单位千克/美元离岸价) · 进货明细(税种V/凭证种类02) · 关联号配对"},
+ {n:"6 · 导入门户",owner:"我方财务",desc:"填写明细表→导入出口明细；左侧进货页→导入进货明细。<b>①导报关单/③智能配单可跳过</b>"},
+ {n:"7 · 数据自检",owner:"我方财务",desc:"疑点对照：A0019=出口日期与海关不符(用海关日期) ｜ A0215=票未勾选认证 ｜ 计量单位不符=用法定千克 ｜ 商品代码无效=用8位税则号"},
+ {n:"8 · 提交申报",owner:"我方财务",desc:"自检0疑点→提交。<b>无需U盾/CA签名</b>"}];
+var DATA=[
+ {no:"425820260000878686",cust:"JJ PET GROUP",amt:"325,533.40",rebate:"37,450.74",
+  st:["ok","bad","warn","warn","mut","mut","mut","mut"],
+  detail:{0:"9项·三厂：大之圣221,650 / 中砂61,992 / 春叶41,891.40",
+          1:"<span style='color:#d93025'>应开 ¥325,533.40 给 JJ PET —— <b>未开</b></span>",
+          2:"✅ 春叶 41,891.40（26322000005743895656，7-14已开）<br><span style='color:#b7791f'>⏳ 大之圣 221,650.00 —— 过两天</span><br><span style='color:#d93025'>❌ 中砂 61,992.00 —— 未开</span>",
+          3:"✅ 春叶已勾(7-14) ｜ 其余等票到后逐张勾"},
+  blocked:"卡在 ②出口发票未开(我方财务) + ③中砂进项票未开(催工厂)，后面⑤⑥⑦⑧全走不了"},
+ {no:"021720260000118373",cust:"JJ PET GROUP",amt:"117,627.00",rebate:"1,783.19",
+  st:["ok","ok","ok","ok","ok","ok","ok","warn"],
+  detail:{0:"4项(宠物包/仓鼠用品/宠物奶瓶/猫抓板)",
+          1:"✅ 26942000000740884726（06-15开，117,627.00）",
+          2:"✅ 义乌淘淘 猫抓板 13,716.81（26332000006027956626）",
+          3:"✅ 已勾选认证",
+          4:"✅ 批次202607-002 三文件已生成",
+          5:"✅ 已导入（出口明细+进货明细）",
+          6:"✅ 自检成功 2/2/0",
+          7:"<span style='color:#b7791f'>⏳ 待提交 —— 提交后可退 ¥1,783.19</span>"},
+  blocked:""},
+ {no:"425820260000623039",cust:"PETSOME",amt:"164,736.00",rebate:"13,602.05",
+  st:["ok","bad","ok","warn","ok","mut","mut","mut"],
+  detail:{0:"1项 宠物罐头 21,600千克",
+          1:"<span style='color:#d93025'>❌ 出口发票未开/未录</span>",
+          2:"✅ 中宠 151,133.95（26372000003360201421）",
+          3:"⏳ 待确认是否已勾选",
+          4:"✅ 已含在批次202607-003"},
+  blocked:"卡在 ②出口发票 —— 出口明细的「出口发票号码」是必填"}];
+document.getElementById('list').innerHTML=DATA.map(function(d){
+ var done=d.st.filter(function(x){return x==='ok'}).length;
+ var badge=d.st.indexOf('bad')>=0?'<span class="chip c-bad">🔴 卡住</span>':(done===8?'<span class="chip c-ok">✓ 全通</span>':'<span class="chip c-warn">⏳ 进行中</span>');
+ return '<div class="card"><div class="hd"><span class="no">'+d.no+'</span>'
+ +'<span class="chip c-mut">'+d.cust+'</span><span class="chip c-mut">报关 ¥'+d.amt+'</span>'
+ +'<span class="chip c-ok">可退 ¥'+d.rebate+'</span>'+badge
+ +'<span style="margin-left:auto;font-size:12px;color:var(--mut)">'+done+'/8</span></div>'
+ +'<div class="steps">'+STEPS.map(function(s,i){
+   var st=d.st[i],dt=(d.detail&&d.detail[i])?'<div class="sdetail">'+d.detail[i]+'</div>':'';
+   var mark=st==='ok'?'✓':(st==='bad'?'!':(st==='warn'?'⏳':(i+1)));
+   return '<div class="step'+(s.hi?' hi':'')+'"><span class="dot d-'+st+'">'+mark+'</span><div style="flex:1">'
+   +'<span class="sname">'+s.n+'</span><span class="owner">责任：'+s.owner+'</span>'
+   +'<div class="sdesc">'+s.desc+'</div>'+dt+'</div></div>';}).join('')
+ +'</div>'+(d.blocked?'<div class="blocked"><b>当前卡点</b>：'+d.blocked+'</div>':'')+'</div>';}).join('');
+</script></body></html>

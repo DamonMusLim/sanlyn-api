@@ -1,0 +1,77 @@
+<meta charset="utf-8">
+<title>提单确认件 B/L SI</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#eef1f5;color:#111;font-family:Arial,"Microsoft YaHei",sans-serif;font-size:12px}
+  .cd-toolbar{position:sticky;top:0;z-index:1000;display:flex;gap:8px;flex-wrap:wrap;padding:8px 10px;background:#0f172a}
+  .cd-toolbar button{padding:7px 13px;border:0;border-radius:7px;font-size:13px;font-weight:700;color:#fff;cursor:pointer}
+  .sheet{width:1000px;max-width:100%;margin:14px auto;background:#fff;padding:18px 22px;box-shadow:0 6px 24px rgba(15,23,42,.12)}
+  h1{text-align:center;font-size:20px;margin:0 0 4px;letter-spacing:2px}
+  .req{background:#fff1f2;border:1px solid #fecdd3;color:#b91c1c;font-size:11px;padding:6px 10px;border-radius:6px;margin:8px 0;line-height:1.5}
+  table{width:100%;border-collapse:collapse}
+  .hdr td{border:1px solid #222;padding:5px 7px;vertical-align:top}
+  .lbl{font-size:10px;color:#555;font-weight:700;text-transform:uppercase}
+  .ed{min-height:16px;outline:none}
+  .ed[contenteditable]:focus{background:#fefce8;outline:1px solid #38bdf8}
+  .goods th,.goods td{border:1px solid #222;padding:4px 6px;font-size:11px}
+  .goods th{background:#f1f5f9;font-weight:700}
+  .r{text-align:right}
+  .foot{text-align:right;font-size:9px;color:#9aa4b2;margin-top:8px}
+  @media print{.cd-toolbar,.no-print{display:none!important}}
+</style>
+
+<div class="cd-toolbar no-print">
+  <button style="background:#0369a1" onclick="siPrint()">🖨 打印</button>
+  <button style="background:#7c3aed" onclick="siSaveDraft()">💾 保存草稿</button>
+  <button style="background:#be123c" onclick="siPdf()">📄 PDF下载</button>
+  <button style="background:#15803d" onclick="siExcel()">📊 Excel下载</button>
+  <span id="siStatus" style="color:#94a3b8;font-size:12px;align-self:center"></span>
+</div>
+
+<div class="sheet" id="doc">
+  <h1>提单确认件 · B/L CONFIRMATION (SI)</h1>
+  <div class="req">
+    ⚠ 提单内容全部英文大写 · 唛头不能写 N/M，无唛头须写 NO SHIPPING MARK（不接受 MADE IN CHINA）· 出单方式确认后如改单收改单费 RMB500/次 · 发货人/收货人/通知人须齐全
+  </div>
+
+  <table class="hdr"><tbody>
+    <tr>
+      <td style="width:62%"><div class="lbl">SHIPPER 发货人</div><div class="ed" id="si-shipper" data-field="shipper" contenteditable></div></td>
+      <td><div class="lbl">B/L NO. 提单号</div><div class="ed" id="si-blno" data-field="bl_no" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">出单方式</div><div class="ed" id="si-issuemode" data-field="issue_mode" contenteditable></div></td>
+    </tr>
+    <tr>
+      <td><div class="lbl">CONSIGNEE 收货人</div><div class="ed" id="si-consignee" data-field="consignee" contenteditable></div></td>
+      <td rowspan="2"><div class="lbl">Ocean Vessel & VOY 船名航次</div><div class="ed" id="si-vessel" data-field="vessel_voyage" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">Port of Loading 装货港</div><div class="ed" id="si-pol" data-field="port_of_loading" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">Port of Discharge 卸货港</div><div class="ed" id="si-pod" data-field="port_of_discharge" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">Place of Delivery 交货地</div><div class="ed" id="si-delivery" data-field="place_of_delivery" contenteditable></div>
+          <div class="lbl" style="margin-top:6px">HS CODE（只提供不显示）</div><div class="ed" id="si-hs" data-field="hs_code" contenteditable></div></td>
+    </tr>
+    <tr>
+      <td><div class="lbl">NOTIFY 通知人</div><div class="ed" id="si-notify" data-field="notify" contenteditable></div></td>
+    </tr>
+    <tr>
+      <td colspan="2">
+        <table style="width:100%"><tr>
+          <td style="border:0;width:22%"><div class="lbl">Marks & No. 唛头</div><div class="ed" id="si-marks" data-field="marks" contenteditable></div></td>
+          <td style="border:0;width:16%"><div class="lbl">No. of Ctns 件数</div><div class="ed" id="si-pieces" data-field="total_pieces" contenteditable></div></td>
+          <td style="border:0"><div class="lbl">Description of Goods 品名货描</div><div class="ed" id="si-goods" data-field="description" contenteditable></div></td>
+          <td style="border:0;width:16%"><div class="lbl">Gross Weight KGS 毛重</div><div class="ed" id="si-gw" data-field="gross_weight" contenteditable></div></td>
+          <td style="border:0;width:14%"><div class="lbl">CBM 尺码</div><div class="ed" id="si-cbm" data-field="measurement" contenteditable></div></td>
+        </tr></table>
+      </td>
+    </tr>
+  </tbody></table>
+
+  <div style="font-weight:700;margin:12px 0 4px">分柜明细 CONTAINER DETAILS</div>
+  <table class="goods"><thead><tr>
+    <th>#</th><th>箱号 Container</th><th>封号 Seal</th><th>箱型</th><th class="r">件数</th><th>单位</th><th class="r">重量 GW</th><th class="r">体积 CBM</th><th class="r">柜重</th><th class="r">VGM</th>
+  </tr></thead><tbody id="si-rows"></tbody>
+  <tfoot><tr style="font-weight:700"><td colspan="4" class="r">TOTAL</td><td class="r" id="si-t-pieces" data-field="sum_pieces"></td><td></td><td class="r" id="si-t-gw" data-field="sum_gross_weight"></td><td class="r" id="si-t-cbm" data-field="sum_cbm"></td><td></td><td class="r" id="si-t-vgm" data-field="sum_vgm"></td></tr></tfoot>
+  </table>
+
+  <div class="foot">提单确认件模版 <b id="tplVer">v1 · dev</b> · 生成 <span id="genTime"></span></div>
+</div>
+
+<script src="/templates/bl-si-template.js"></script>
