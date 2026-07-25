@@ -3,8 +3,6 @@
 // GET: fetch form helpers (customers list, products list)
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { enforceOrderIntakeGate } from "../lib/order-intake-gate.js";
-import { ensureOrderCollabOpen } from "./lib/collab-auto-links.js";
 var ENSURE_LINE_ITEMS = `
   CREATE TABLE IF NOT EXISTS order_line_items (
     id              SERIAL PRIMARY KEY,
@@ -31,13 +29,11 @@ var ENSURE_LINE_ITEMS = `
     vat_rate        NUMERIC(6,4),
     tax_rebate_rate NUMERIC(6,4),
     declare_amount_per_box NUMERIC(14,4),
-    is_external_temp BOOLEAN DEFAULT FALSE,
     sort_order      INTEGER DEFAULT 0,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()
   );
   CREATE INDEX IF NOT EXISTS order_line_items_order_id_idx ON order_line_items(order_id);
-  ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS is_external_temp BOOLEAN DEFAULT FALSE;
 `;
 
 
@@ -91,14 +87,6 @@ async function nextOrderNo(pool, companyCode, factoryName) {
   } catch (e) {
     return generateOrderNo();
   }
-}
-
-function normalizeExportMode(v, proxyExport) {
-  var mode = String(v || "").trim().toLowerCase();
-  if (mode === "external") return "external";
-  if (mode === "daigou" || mode === "proxy") return "daigou";
-  if (mode === "direct") return "direct";
-  return proxyExport ? "daigou" : "direct";
 }
 
 function generateContractNo() {
@@ -162,13 +150,7 @@ export default async function handler(req, res) {
           return res.status(403).json({ error: "Out of scope" });
         }
         var ciRes = await pool.query(
-          `SELECT c.company_code, c.name_cn, c.name_en, c.country, c.currency, c.grade,
-                  c.destination_port, c.consignee, c.sub_entities,
-                  COALESCE(NULLIF(cm.client_mode,''), 'internal') AS client_mode
-             FROM customers c
-             LEFT JOIN companies cm ON cm.code = c.company_code
-            WHERE c.company_code = $1
-            LIMIT 1`,
+          "SELECT company_code, name_cn, name_en, country, currency, grade, destination_port, consignee, sub_entities FROM customers WHERE company_code = $1 LIMIT 1",
           [ciCode]
         ).catch(function() { return { rows: [] }; });
         if (!ciRes.rows.length) {
@@ -189,7 +171,6 @@ export default async function handler(req, res) {
             grade: row.grade || "",
             destinationPort: row.destination_port || "",
             consignee: row.consignee || "",
-            clientMode: row.client_mode || "internal",
             subEntities: subEntities,
           }
         });
@@ -596,15 +577,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       ).catch(function() { return { rows: [] }; });
 
       var custTable = await pool.query(
-        `SELECT c.id, c.company_code, c.name_cn, c.name_en, c.brands, c.country, c.country_en,
-                c.currency, c.grade, c.payment_policy, c.payment_terms, c.destination_port,
-                c.address, c.consignee, c.bl_type, c.trade_terms, c.our_shipping, c.addresses,
-                c.sub_entities, c.raw,
-                COALESCE(NULLIF(cm.client_mode,''), 'internal') AS client_mode
-           FROM customers c
-           LEFT JOIN companies cm ON cm.code = c.company_code
-          WHERE c.is_active != false` + scopeClauseCust + ` AND (c.grade IS NOT NULL AND c.grade != '' OR c.brands IS NOT NULL AND c.brands != '{}' AND c.brands != '[]' AND c.brands::text != '')
-          ORDER BY c.name_en`,
+        "SELECT id, company_code, name_cn, name_en, brands, country, country_en, currency, grade, payment_policy, payment_terms, destination_port, address, consignee, bl_type, trade_terms, our_shipping, addresses, sub_entities, raw FROM customers WHERE is_active != false" + scopeClauseCust + " AND (grade IS NOT NULL AND grade != '' OR brands IS NOT NULL AND brands != '{}' AND brands != '[]' AND brands::text != '') ORDER BY name_en",
         scopeParams
       ).catch(function() { return { rows: [] }; });
 
@@ -643,7 +616,6 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
             blType: c.bl_type || "",
             tradeTerms: c.trade_terms || "",
             ourShipping: c.our_shipping || "",
-            clientMode: c.client_mode || "internal",
             addresses: addrs,
             subEntities: subEntities,
             raw: c.raw || {}
@@ -658,7 +630,6 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
             currency: c.currency || "USD",
             destinationPort: c.destination_port || firstAddr.port || "",
             consignee: c.consignee || firstAddr.consignee || "",
-            clientMode: c.client_mode || "internal",
             subEntities: subEntities,
           };
         }
@@ -912,8 +883,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       }
     }
 
-    var requestedExportMode = normalizeExportMode(body.exportMode || body.export_mode, body.proxyExport);
-    var exportController = body.exportController || (requestedExportMode === "daigou" ? "SANLYN" : "SELF");
+    var exportController = body.exportController || (body.proxyExport ? "SANLYN" : "SELF");
     var factoryCompanyCode = body.factoryCompanyCode || body.selectedFactoryCode || null;
     // ORDER_ENTRY_P0_FIX_001 — write orders.factory_code column.
     // Accepts snake (body.factory_code, new FE), camel fallbacks, or resolved factoryCompanyCode.
@@ -935,20 +905,11 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       remarks, products, createdBy, source
     } = body;
 
-    var exportMode = requestedExportMode;
-    if ((!body.exportMode && !body.export_mode) && companyCode) {
-      var modeRes = await pool.query(
-        "SELECT client_mode FROM companies WHERE code = $1 LIMIT 1",
-        [companyCode]
-      ).catch(function() { return { rows: [] }; });
-      exportMode = normalizeExportMode(modeRes.rows[0] && modeRes.rows[0].client_mode, body.proxyExport);
-    }
-    if (!body.exportController) exportController = exportMode === "daigou" ? "SANLYN" : "SELF";
-
     // Merge exportController + factoryCompanyCode into body so they land in orders.raw
-    body = Object.assign({}, body, { exportController: exportController, factoryCompanyCode: factoryCompanyCode, exportMode: exportMode, export_mode: exportMode });
+    body = Object.assign({}, body, { exportController: exportController, factoryCompanyCode: factoryCompanyCode });
 
-    if (enforceOrderIntakeGate(req, res)) return;
+    if (!companyNameCN && !companyNameEN) return res.status(400).json({ error: "客户名称必填" });
+    if (!products || !products.length) return res.status(400).json({ error: "请添加产品" });
 
     // Manufacturer name for the order_no factory prefix. Orders are split one-per
     // factory upstream, so all line items share a manufacturer; use the first.
@@ -1048,8 +1009,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       if (!master) return p;
       var filled = [];
       var result = Object.assign({}, p);
-      var externalTemp = exportMode === "external" && (p.isExternalTemp === true || p.is_external_temp === true);
-      if (!externalTemp && master && master.id) result.product_id = master.id;  // 根因修复2026-06-24:挂产品关联
+      if (master && master.id) result.product_id = master.id;  // 根因修复2026-06-24:挂产品关联
 
       // Each entry: [products_col, p_camelKey, p_snakeKey (optional alias)]
       // Only columns verified to exist in products table are listed here.
@@ -1097,9 +1057,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       }
       var qty = parseInt(p.qty) || 0;
       var unitPrice = parseFloat(p.unitPrice) || parseFloat(p.price) || 0;
-      var factoryPrice = exportMode === "external"
-        ? (parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || 0)
-        : (parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || unitPrice);
+      var factoryPrice = parseFloat(p.factoryPrice) || parseFloat(p.factory_price) || unitPrice;
       var subtotal = parseFloat(p.subtotal) || (unitPrice * qty);
       var factorySubtotal = factoryPrice * qty;
       var pCbm = (parseFloat(p.cbm) || 0) * qty;
@@ -1140,8 +1098,6 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
         // barcode: from client, or filled from master (never overrides client)
         barcode: p.barcode || p.code || "",
         sku: p.sku || "",
-        product_id: p.product_id || null,
-        isExternalTemp: exportMode === "external" && (p.isExternalTemp === true || p.is_external_temp === true || !p.product_id),
         // Track which fields were auto-filled from product master (for audit in raw)
         _masterFilled: p._masterFilled || undefined,
         declareAmountPerBox: parseFloat(p.declareAmount) || parseFloat(p.declareAmountPerBox) || 0,
@@ -1247,8 +1203,8 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       hasBlNoCol = colProbe.rows.length > 0;
     } catch (_e) { hasBlNoCol = false; }
 
-    var extraCols = ["factory_code", "export_mode"];
-    var extraVals = [factoryCodeForCol, exportMode];
+    var extraCols = ["factory_code"];
+    var extraVals = [factoryCodeForCol];
     if (hasBlNoCol) { extraCols.push("bl_no"); extraVals.push(blNoForCol); }
     // 出单主体权威码(seller_profiles.code,如 petbaby/yangbaobao)。前端按上下游关系带出,不默认兜底。
     // 用 extraCols 动态追加,占位符自动偏移($49+),避免手排 $1-$48 错位。
@@ -1397,11 +1353,10 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
             parseFloat(p.taxRebateRate)       || null,
             parseFloat(p.declareAmountPerBox) || null,
             idx,
-            parseInt(p.product_id) || null,
-            p.isExternalTemp === true
+            parseInt(p.product_id) || null
           );
           var n = base + 1;
-          return '($' + [n,n+1,n+2,n+3,n+4,n+5,n+6,n+7,n+8,n+9,n+10,n+11,n+12,n+13,n+14,n+15,n+16,n+17,n+18,n+19,n+20,n+21,n+22,n+23,n+24].join(',$') + ')';
+          return '($' + [n,n+1,n+2,n+3,n+4,n+5,n+6,n+7,n+8,n+9,n+10,n+11,n+12,n+13,n+14,n+15,n+16,n+17,n+18,n+19,n+20,n+21,n+22,n+23].join(',$') + ')';
         });
         await pool.query(
           `INSERT INTO order_line_items
@@ -1409,7 +1364,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
              qty_ctn, unit, unit_price, factory_price,
              subtotal, factory_subtotal, nw_ctn, gw_ctn, cbm_ctn, size,
              hs_code, declaration_name, bl_description,
-             vat_rate, tax_rebate_rate, declare_amount_per_box, sort_order, product_id, is_external_temp)
+             vat_rate, tax_rebate_rate, declare_amount_per_box, sort_order, product_id)
            VALUES ` + liRows.join(','),
           liVals
         );
@@ -1540,14 +1495,6 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       console.warn("[order-create-v2] payment_term task creation failed (non-fatal):", taskErr.message);
     }
 
-    var collabAuto = null;
-    try {
-      collabAuto = await ensureOrderCollabOpen(pool, order.id, createdBy || orderSource || "order-create-v2");
-    } catch (collabErr) {
-      console.warn("[order-create-v2] collab auto-open failed (non-fatal):", collabErr.message);
-      collabAuto = { error: collabErr.message };
-    }
-
     // PKG-002: strip internal cost fields from customer-facing response.
     // profit / totalAmountFactory reveal Sanlyn's margin and MUST NOT reach external callers.
     // Admin callers receive the full summary for cost tracking.
@@ -1579,7 +1526,6 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       order_no: order.order_no,
       order: isAdmin ? order : orderPublic,
       summary: isAdmin ? summaryFull : summaryPublic,
-      collab_auto: collabAuto,
       credit: creditInfo,   // S89: client may show "pending approval" banner
     });
   } catch (err) {

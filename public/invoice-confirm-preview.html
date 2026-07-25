@@ -148,26 +148,19 @@
   .savedef input{margin-top:2px;flex:none}.savedef b{font-weight:800}
   .reuse{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;font-size:11.5px;color:var(--sub);background:var(--wash);border:1px solid var(--line);border-radius:9px;padding:9px 12px}
   .reuse .rbtn{font-size:11.5px;font-weight:800;padding:6px 12px;border-radius:8px;border:1px solid var(--teal);background:var(--paper);color:var(--teal);cursor:pointer;white-space:nowrap}
-  .slipgrid{display:grid;grid-template-columns:1.1fr .7fr .7fr 1fr auto;gap:8px;align-items:end}
-  .slipgrid input{width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;background:var(--paper);font-size:12.5px}
-  .sliplist{margin-top:10px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
-  .sliprow{display:grid;grid-template-columns:1fr .8fr .8fr 1.2fr;gap:8px;padding:9px 11px;border-bottom:1px solid var(--line2);font-size:12.5px}
-  .sliprow:last-child{border-bottom:0}.sliprow b{font-family:ui-monospace,monospace}.sliprow a{color:var(--teal);font-weight:800;text-decoration:none}
   @media(max-width:680px){.pparty{grid-template-columns:1fr}.pp+.pp{border-left:0;border-top:1px solid var(--line)}.reuse{flex-direction:column;align-items:stretch}}
-  @media(max-width:680px){.slipgrid,.sliprow{grid-template-columns:1fr}.slipgrid .btn{width:100%}}
 </style>
 
 <div class="wrap">
-  <div class="tabs" id="tabBar" style="display:none">
-    <div class="tab on" data-v="collab"><i class="ti"></i>🤝 协同确认单</div>
+  <div class="tabs">
+    <div class="tab on" data-v="collab"><i class="ti"></i>🤝 协同确认单<span class="s" id="collabSub">对方打开链接看到的</span></div>
   </div>
 
   <!-- ============ 协同确认单（对方视图） ============ -->
   <section class="view on" id="collab">
     <div class="sheet">
       <div class="sheet-hd">
-        <div style="display:flex;align-items:center;gap:12px">
-          <img id="sellerLogo" alt="" style="display:none;height:40px;max-width:120px;object-fit:contain;border-radius:6px">
+        <div>
           <div class="brand" id="brandName">SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS
             <div class="cn" id="brandCn">致：费用尚未录入</div>
           </div>
@@ -192,20 +185,19 @@
           <thead><tr><th>费用项</th><th>计费</th><th class="r">单价 <span class="edithint">✎可改</span></th><th class="r">数量</th><th class="r" id="billHeadTotal">合计 (CNY)</th></tr></thead>
           <tbody id="billBody">
             <tr><td colspan="5" style="text-align:center;color:var(--faint)">费用尚未录入</td></tr>
-            <tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">CNY</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改价后自动重算）</span></td><td class="r" id="billTotal">0.00</td></tr>
+            <tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">CNY</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r" id="billTotal">0.00</td></tr>
           </tbody>
         </table>
-        <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价经我方确认后生效</b>。VGM+申报为打包价 ¥200/票。</span></div>
+        <div class="note"><i>ⓘ</i><span>金额可议价，<b>改价需我方确认后生效</b>。VGM+申报为打包价 ¥200/票。</span></div>
       </div>
 
       <div class="sec" style="border-top:1px solid var(--line)">
-        <button class="collapse-hd" id="invTogglePv" type="button"><span class="sec-t" style="margin:0">② 开票 · 港杂费 <span style="text-transform:none;font-weight:600;color:var(--sub)">填好可收起</span></span><span class="chev" id="invChevPv">收起 ▴</span></button>
-        <div id="invBodyPv">
+        <div class="sec-t">② 开票 · 港杂费</div>
         <div class="modebar">
           <span class="mlab">开票方式</span>
-          <button class="mopt on" data-m="self">我方代开（标准）</button>
-          <button class="mopt" data-m="other">自定义开票</button>
-          <span class="mtip" id="modeTip">我方开好后发到你的财务邮箱</span>
+          <button class="mopt on" data-m="self">我方代开</button>
+          <button class="mopt" data-m="other">对方自开</button>
+          <span class="mtip" id="modeTip">我们开好后发送到财务邮箱</span>
         </div>
         <div class="plaininv">
           <div class="invtop"><div class="pt">电子发票（<select class="tsel" id="invoiceTitle"><option>增值税普通发票</option><option>增值税专用发票</option></select>）</div></div>
@@ -230,33 +222,19 @@
           <div class="remarkline" id="invoiceRemark">备注：费用尚未录入</div>
         </div>
         <button class="addinv">＋ 新增一张发票</button>
-        <label class="savedef"><input type="checkbox" checked> <span>记住这些开票信息，下次默认按此开。</span></label>
-        </div>
-      </div>
-
-      <div class="sec" style="border-top:1px solid var(--line)">
-        <div class="sec-t" id="slipTitle">③ 转账水单</div>
-        <div class="slipgrid">
-          <input id="slipFile" type="file" accept="application/pdf,image/*">
-          <input id="slipAmount" type="number" step="0.01" min="0" placeholder="金额">
-          <input id="slipDate" type="date">
-          <input id="slipMemo" type="text" maxlength="200" placeholder="备注">
-          <button class="btn ghost" id="slipBtn" type="button" style="padding:9px 14px;flex:none">登记水单</button>
-        </div>
-        <div class="note"><i>ⓘ</i><span id="slipHint">仅登记付款/收款凭证，不会触发转账或写入付款流水。</span></div>
-        <div class="sliplist" id="slipList" style="display:none"></div>
+        <label class="savedef"><input type="checkbox" checked> <span>存为该客户默认开票模版，以后固定这样开。</span></label>
       </div>
 
       <div class="sec" style="border-top:1px solid var(--line)">
         <button class="collapse-hd" id="ctToggle">
-          <span class="sec-t" style="margin:0">④ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span>
+          <span class="sec-t" style="margin:0">③ 联系人邮箱 <span style="text-transform:none;font-weight:600;color:var(--sub)">· 财务/操作/业务，各可多个</span></span>
           <span class="chev" id="ctChev">展开填写 ▾</span>
         </button>
         <div class="sumline" id="ctSum">收起中 · 财务邮箱 <span class="miss">未填（必填）</span> · 操作 — · 业务 —</div>
         <div id="ctBody" style="display:none;margin-top:6px">
           <div class="emrole">
-            <div class="emlabel fin">财务邮箱 <span class="req">必填 ★</span><em>发票发这里 · 柠檬云自动发到这</em></div>
-            <div class="emlist"><input class="email" id="finEmail" type="email" placeholder="name@example.com · 不填开不了票" style="flex:1;min-width:200px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:13px"></div>
+            <div class="emlabel fin">财务邮箱 <span class="req">必填 ★</span><em>发票发这里</em></div>
+            <div class="emlist"><div class="val reqempty" style="flex:1;min-width:180px">未填 · 不填开不了自动票</div><button class="addem">+ 加邮箱</button></div>
           </div>
           <div class="emrole">
             <div class="emlabel ops">操作邮箱<em>账单/确认通知</em></div>
@@ -283,8 +261,7 @@
   (function(){
     const API="/api/db/invoice-collab-confirm";
     const token=new URLSearchParams(location.search).get("token")||"";
-    const party=new URLSearchParams(location.search).get("party")||"";
-    let state={buyer:{},seller:{},shipment:{},bill_lines:[],invoices:[],contacts:{finance:[],ops:[],business:[]},payment_slips:[],save_as_default:true};
+    let state={buyer:{},seller:{},shipment:{},bill_lines:[],invoices:[],contacts:{finance:[],ops:[],business:[]},save_as_default:true};
     let dirtyPrice=false, detailOpen=false;
     const $=id=>document.getElementById(id);
     const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -299,10 +276,9 @@
       if(low==="per_container"||low.includes("cntr")||low.includes("container")||raw.includes("柜")) return "每柜";
       return raw;
     };
-    const normalize=d=>({buyer:{},seller:{},shipment:{},bill_lines:[],invoices:[],contacts:{finance:[],ops:[],business:[]},payment_slips:[],save_as_default:true,...(d||{}),
+    const normalize=d=>({buyer:{},seller:{},shipment:{},bill_lines:[],invoices:[],contacts:{finance:[],ops:[],business:[]},save_as_default:true,...(d||{}),
       buyer:{...((d||{}).buyer||{})},seller:{...((d||{}).seller||{})},shipment:{...((d||{}).shipment||{})},
       bill_lines:Array.isArray(d?.bill_lines)?d.bill_lines:[],invoices:Array.isArray(d?.invoices)?d.invoices:[],
-      payment_slips:Array.isArray(d?.payment_slips)?d.payment_slips:[],
       contacts:{finance:[],ops:[],business:[],...(d?.contacts||{})}});
     const totalLines=(cur)=>state.bill_lines.filter(l=>!cur||l.currency===cur).reduce((s,l)=>s+num(l.amount),0);
     const isInternal=()=>state.is_internal===true||state.internal===true||state.bill_lines.some(l=>"gross_profit"in l||"cost_amount"in l);
@@ -325,9 +301,8 @@
     }
     function renderShell(){
       const sp=state.shipment||{}, buyer=state.buyer||{}, seller=state.seller||{}, cntr=cntrSummary();
-      $("tabBar").style.display=isInternal()?"flex":"none"; // ①对方视图去掉顶部"协同确认单/打开链接看到的"，只内部核账才显示标签栏
+      $("collabSub").textContent=(buyer.name||"对方")+"打开链接看到的";
       $("brandName").firstChild.nodeValue=seller.name||"费用尚未录入";
-      if(seller.logo_url){$("sellerLogo").src=seller.logo_url;$("sellerLogo").alt=seller.name||"";$("sellerLogo").style.display="block";}else{$("sellerLogo").style.display="none";} // ④公司logo，有则显示(暂未上传logo则留空)
       $("brandCn").textContent="致："+(buyer.name||"费用尚未录入");
       $("docNo").textContent=sp.shipment_no||sp.bl_no||"费用尚未录入";
       $("shipBl").textContent=sp.bl_no||"—"; $("shipVessel").textContent=[sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—";
@@ -340,7 +315,7 @@
       if(!isInternal()) return;
       ensureFinanceView();
       $("finTitle").firstChild.nodeValue="财务对单表 · "+(sp.bl_no||sp.shipment_no||"费用尚未录入");
-      $("finSub").textContent=[sp.shipment_no,"一票三方账 · 成本 / 销售 / 差额"].filter(Boolean).join(" · ");
+      $("finSub").textContent=[sp.shipment_no,"一票两手 · 收票供应链(进项) + 开票给客户(销项)"].filter(Boolean).join(" · ");
       $("finTag").textContent=sp.shipment_no||"—"; $("finDoc").textContent=[sp.vessel,cntr].filter(Boolean).join(" · ")||"—";
       $("lockRoute").textContent=route()||"—";
     }
@@ -352,13 +327,13 @@
         <td class="r">${money(l.qty).replace(".00","")}</td><td class="r">${money(l.amount)}</td></tr>`).join("");
       $("billHeadTotal").textContent=`合计 (${cur})`;
       $("billBody").innerHTML=(rows||`<tr><td colspan="5" style="text-align:center;color:var(--faint)">${esc(state.bill_line_notice||"费用尚未录入")}</td></tr>`)
-        +`<tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">${esc(cur)}</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改价后自动重算）</span></td><td class="r" id="billTotal">${money(totalLines(cur))}</td></tr>`;
+        +`<tr class="foot"><td colspan="4">应付合计 · <span id="billCurrency">${esc(cur)}</span> <span style="font-weight:400;color:var(--faint);font-size:11px">（改单价后自动重算）</span></td><td class="r" id="billTotal">${money(totalLines(cur))}</td></tr>`;
       if(!isConfirmed()) document.querySelectorAll("[data-line]").forEach(el=>el.addEventListener("blur",e=>changePrice(Number(e.target.dataset.line),e.target.textContent)));
     }
     function renderInvoice(){
       const inv=state.invoices[0]||{}, cur=inv.currency||"CNY", rate=Number(inv.tax_rate||0.01);
       document.querySelectorAll(".mopt[data-m]").forEach(b=>b.classList.toggle("on",(inv.mode||"self")===b.dataset.m));
-      $("modeTip").textContent=(inv.mode==="other")?"你方自行开具后回传，我方核对":"我方开好后发到你的财务邮箱";
+      $("modeTip").textContent=(inv.mode==="other")?"对方自开后回传，我们 OCR 核对":"我们开好后发送到财务邮箱";
       if(inv.title&&!Array.from($("invoiceTitle").options).some(o=>o.value===inv.title)) $("invoiceTitle").add(new Option(inv.title,inv.title));
       $("invoiceTitle").value=inv.title||"增值税普通发票";
       $("invoiceBody").innerHTML=`<tr><td><span class="editable">${esc(inv.item_name||"*经纪代理服务*港杂费")}</span></td><td>${esc(inv.unit||"项")}</td>
@@ -374,8 +349,8 @@
       const cost=state.bill_lines.reduce((s,l)=>s+num(l.cost_amount??(l.line_side==="payable"?l.amount:0)),0);
       const sale=state.bill_lines.reduce((s,l)=>s+num(l.sale_amount??(l.line_side==="receivable"?l.amount:0)),0);
       const visible=totalLines(cur), diff=sale-cost, hasInternal=state.bill_lines.some(l=>"cost_amount"in l||"sale_amount"in l);
-      $("payWho").textContent=state.seller?.name||"—"; $("payAmt").textContent=sym(cur)+money(cost||visible); $("paySub").textContent=hasInternal?"成本侧合计":"按当前 lens 可见金额";
-      $("recvWho").textContent=state.buyer?.name||"—"; $("recvAmt").textContent=sym(cur)+money(sale||visible); $("recvSub").textContent=hasInternal?"销售侧合计":"账单合计";
+      $("payWho").textContent=state.seller?.name||"—"; $("payAmt").textContent=sym(cur)+money(cost||visible); $("paySub").textContent=hasInternal?"应收供应商进项票":"按当前 lens 可见金额";
+      $("recvWho").textContent=state.buyer?.name||"—"; $("recvAmt").textContent=sym(cur)+money(sale||visible); $("recvSub").textContent=hasInternal?"我方开销项票":"账单合计";
       $("custWho").textContent=hasInternal&&state.shipment?.billing_segment==="freight"?(state.buyer?.name||"—"):"data 未返回则不展示";
       $("custAmt").textContent=hasInternal?sym(cur)+money(Math.max(diff,0)):"—"; $("custSub").textContent=hasInternal?"差额口径":"—";
       $("custCard").style.display=hasInternal?"block":"none";
@@ -385,16 +360,7 @@
     }
     function renderContacts(){
       const c=state.contacts||{}, f=(c.finance||[]).filter(Boolean).length, o=(c.ops||[]).filter(Boolean).length, b=(c.business||[]).filter(Boolean).length;
-      if($("finEmail")&&!$("finEmail").value&&(c.finance||[])[0])$("finEmail").value=(c.finance||[])[0]; // 已存邮箱回填
       $("ctSum").innerHTML=`收起中 · 财务邮箱 ${f?`<b>${f} 个</b>`:`<span class="miss">未填（必填）</span>`} · 操作 ${o||"—"} · 业务 ${b||"—"}`;
-    }
-    function renderSlips(){
-      const payable=(state.line_side||state.bill_lines[0]?.line_side)==="payable";
-      $("slipTitle").textContent="③ 转账水单";
-      $("slipHint").textContent=payable?"供应商应付：登记我方付款水单/银行TT截图；只留凭证，不触发付款。":"客户应收：登记客户收款水单/银行TT截图；只留凭证，不写收款流水。";
-      const slips=Array.isArray(state.payment_slips)?state.payment_slips:[];
-      $("slipList").style.display=slips.length?"block":"none";
-      $("slipList").innerHTML=slips.map(s=>`<div class="sliprow"><span>${s.url?`<a href="${esc(s.url)}" target="_blank">查看水单</a>`:esc(s.file_ref||"水单")}</span><b>${esc(s.currency||"CNY")} ${money(s.amount)}</b><span>${esc(s.paid_date||"—")}</span><span>${esc(s.memo||s.uploaded_at||"—")}</span></div>`).join("");
     }
     function renderConfirmedSummary(){
       const on=isConfirmed(), cur=state.bill_lines[0]?.currency||state.invoices[0]?.currency||"CNY", sp=state.shipment||{};
@@ -407,13 +373,13 @@
     function ensureFinanceView(){
       if($("fin")) return;
       document.querySelector(".tabs").insertAdjacentHTML("beforeend",`<div class="tab" data-v="fin">💰 财务对单表<span class="s">我们内部核账用的</span></div>`);
-      document.querySelector(".wrap").insertAdjacentHTML("beforeend",`<section class="view" id="fin"><div class="sheet"><div class="sheet-hd"><div><div class="brand" id="finTitle">财务对单表 · 费用尚未录入<div class="cn" id="finSub">一票三方账 · 成本 / 销售 / 差额</div></div></div><div class="docmeta"><div class="doctag" style="color:var(--ink)" id="finTag">—</div><div class="docno" id="finDoc">—</div></div></div><div class="sec"><div class="sec-t">三方结算关系</div><div class="cards"><div class="pcard pay"><div class="role">应付</div><div class="who" id="payWho">费用尚未录入</div><div class="amt" id="payAmt">¥0.00</div><div class="amt2" id="paySub">—</div></div><div class="pcard recv"><div class="role">应收</div><div class="who" id="recvWho">费用尚未录入</div><div class="amt" id="recvAmt">¥0.00</div><div class="amt2" id="recvSub">账单合计</div></div><div class="pcard cust" id="custCard"><div class="role">相关方</div><div class="who" id="custWho">data 未返回则不展示</div><div class="amt" id="custAmt">—</div><div class="amt2" id="custSub">—</div></div></div></div><div class="sec" style="border-top:1px solid var(--line)"><div class="sec-t">成本 ↔ 销售 对账</div><div class="recon"><div class="rrow h"><span>科目</span><span class="rr">成本侧</span><span class="rr">销售侧</span><span class="rr">差额</span></div><div id="reconRows"></div></div></div><div class="flag" id="finFlag"><i>⚠</i><span>按 data 返回字段展示，未返回的成本/客户侧不展示。</span></div><div class="lockrow"><span>🔒 港杂锁价 · <b id="lockRoute">—</b>　当前：未锁定（首次）</span><button class="lockbtn">确认后锁定 · 下票复用</button></div><div style="padding:6px 22px 18px"><div class="caption" style="margin:8px 0 0">锁定后同航线下一票自动套此价，偏离即报警。</div></div></div></section>`);
+      document.querySelector(".wrap").insertAdjacentHTML("beforeend",`<section class="view" id="fin"><div class="sheet"><div class="sheet-hd"><div><div class="brand" id="finTitle">财务对单表 · 费用尚未录入<div class="cn" id="finSub">一票两手 · 收票供应链(进项) + 开票给客户(销项)</div></div></div><div class="docmeta"><div class="doctag" style="color:var(--ink)" id="finTag">—</div><div class="docno" id="finDoc">—</div></div></div><div class="sec"><div class="sec-t">一票两手发票关系</div><div class="cards"><div class="pcard pay"><div class="role">收票供应链 · 进项</div><div class="who" id="payWho">费用尚未录入</div><div class="amt" id="payAmt">¥0.00</div><div class="amt2" id="paySub">—</div></div><div class="pcard recv"><div class="role">开票给客户 · 销项</div><div class="who" id="recvWho">费用尚未录入</div><div class="amt" id="recvAmt">¥0.00</div><div class="amt2" id="recvSub">账单合计</div></div><div class="pcard cust" id="custCard"><div class="role">相关方</div><div class="who" id="custWho">data 未返回则不展示</div><div class="amt" id="custAmt">—</div><div class="amt2" id="custSub">—</div></div></div></div><div class="sec" style="border-top:1px solid var(--line)"><div class="sec-t">进项 ↔ 销项 对账</div><div class="recon"><div class="rrow h"><span>科目</span><span class="rr">进项(收票)</span><span class="rr">销项(开票)</span><span class="rr">毛利</span></div><div id="reconRows"></div></div></div><div class="flag" id="finFlag"><i>⚠</i><span>按 data 返回字段展示，未返回的成本/客户侧不展示。</span></div><div class="lockrow"><span>🔒 港杂锁价 · <b id="lockRoute">—</b>　当前：未锁定（首次）</span><button class="lockbtn">确认后锁定 · 下票复用</button></div><div style="padding:6px 22px 18px"><div class="caption" style="margin:8px 0 0">锁定后同航线下一票自动套此价，偏离即报警。</div></div></div></section>`);
     }
     function removeFinanceView(){
       document.querySelector('.tab[data-v="fin"]')?.remove(); $("fin")?.remove();
       document.querySelector('.tab[data-v="collab"]')?.classList.add("on"); $("collab").classList.add("on");
     }
-    function render(){ensureInvoice();recalcInvoice();renderShell();renderBills();renderInvoice();renderFinance();renderSlips();renderContacts();}
+    function render(){ensureInvoice();recalcInvoice();renderShell();renderBills();renderInvoice();renderFinance();renderContacts();}
     function changePrice(i,v){
       const l=state.bill_lines[i]; if(!l) return;
       l.unit_price=num(v); l.amount=Math.round(l.unit_price*num(l.qty||1)*100)/100; dirtyPrice=true; render();
@@ -422,43 +388,24 @@
       state.buyer={name:$("buyerName").textContent.trim(),tax_id:$("buyerTax").textContent.trim()};
       state.invoices[0].mode=document.querySelector(".mopt.on[data-m]")?.dataset.m||"self";
       state.save_as_default=document.querySelector(".savedef input")?.checked!==false;
-      const fe=$("finEmail")?.value.trim()||""; state.contacts=state.contacts||{finance:[],ops:[],business:[]}; state.contacts.finance=fe?[fe]:[]; // ⑤收集财务邮箱
     }
     async function submit(){
       if(!token){alert("缺少 token，无法提交");return}
       collect();
-      if(!(state.contacts.finance||[]).filter(Boolean).length){ // ⑤没填财务邮箱不放行(发票要发这里)
-        const b=$("ctBody"); if(b){b.style.display="block";$("ctChev").textContent="收起 ▴";$("ctSum").style.display="none";}
-        $("finEmail")?.focus(); alert("请先填写财务邮箱（发票要发到这里），否则无法确认开票。"); return;
-      }
-      const body={token,party,draft:{...state,price_changed:dirtyPrice,invoice_mode:state.invoices[0].mode,shipment_containers:state.shipment.containers||[]}};
+      const body={token,draft:{...state,price_changed:dirtyPrice,invoice_mode:state.invoices[0].mode,shipment_containers:state.shipment.containers||[]}};
       const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       const d=await r.json().catch(()=>({}));
       if(!r.ok||!d.ok){alert("保存失败："+(d.error||r.status));return}
       state.status=d.draft?.status||state.status; state.confirmed_at=d.draft?.updated_at||new Date().toISOString(); dirtyPrice=false; detailOpen=false; render(); alert(state.status==="pending_our_review"?"已提交改动，待我方确认":"已保存确认草稿");
     }
-    const fileB64=file=>new Promise((ok,fail)=>{const r=new FileReader();r.onload=()=>ok(String(r.result||"").split(",").pop()||"");r.onerror=fail;r.readAsDataURL(file)});
-    async function uploadSlip(){
-      if(!token){alert("缺少 token，无法登记");return}
-      const f=$("slipFile").files[0], amount=num($("slipAmount").value), paid_date=$("slipDate").value;
-      if(!f||!amount||!paid_date){alert("请选择水单文件，并填写金额和日期");return}
-      const body={token,party,action:"upload_payment_slip",filename:f.name,mime:f.type,amount,currency:state.bill_lines[0]?.currency||state.invoices[0]?.currency||"CNY",paid_date,memo:$("slipMemo").value.trim(),data_base64:await fileB64(f)};
-      const r=await fetch(API,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok||!d.ok){alert("水单登记失败："+(d.error||r.status));return}
-      state.payment_slips=d.payment_slips||[...(state.payment_slips||[]),d.slip].filter(Boolean);
-      $("slipFile").value=""; $("slipAmount").value=""; $("slipMemo").value=""; renderSlips();
-    }
     document.querySelector(".tabs").addEventListener('click',e=>{const t=e.target.closest(".tab");if(!t||!$(t.dataset.v))return;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');$(t.dataset.v).classList.add('on')});
     $("ctToggle").addEventListener('click',()=>{const b=$("ctBody"),open=b.style.display==='none';b.style.display=open?'block':'none';$("ctChev").textContent=open?'收起 ▴':'展开填写 ▾';$("ctSum").style.display=open?'none':'block'});
-    $("invTogglePv").addEventListener('click',()=>{const b=$("invBodyPv"),open=b.style.display==='none';b.style.display=open?'block':'none';$("invChevPv").textContent=open?'收起 ▴':'展开 ▾'}); // ③②开票段可折叠隐藏
     document.querySelectorAll('.mopt[data-m]').forEach(b=>b.addEventListener('click',()=>{ensureInvoice();state.invoices[0].mode=b.dataset.m;renderInvoice()}));
     $("buyerName").contentEditable=true; $("buyerTax").contentEditable=true; $("submitBtn").addEventListener("click",submit);
-    $("slipBtn").addEventListener("click",uploadSlip);
     $("detailBtn").addEventListener("click",()=>{detailOpen=true;renderConfirmedSummary()});
     async function boot(){
       if(!token){render();return}
-      try{const qs="?token="+encodeURIComponent(token)+(party?"&party="+encodeURIComponent(party):"");const r=await fetch(API+qs);const d=await r.json();if(r.ok&&d.ok){state=normalize(d.data);render();}else render();}
+      try{const r=await fetch(API+"?token="+encodeURIComponent(token));const d=await r.json();if(r.ok&&d.ok){state=normalize(d.data);render();}else render();}
       catch(e){render();}
     }
     boot();

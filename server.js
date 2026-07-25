@@ -84,6 +84,18 @@ app.use((req, res, next) => {
   });
 });
 
+// ── AI控制台 P0 (CAW202607250149): 任务代号/执行链留痕/推送落库 ──
+{
+  const { createRequire } = await import("module");
+  const _req = createRequire(import.meta.url);
+  app.use(_req("./api/db/console-task-code.cjs"));
+  app.use(_req("./api/db/console-task-runs.cjs"));
+  app.use(_req("./api/db/console-push-log.cjs"));
+  app.use(_req("./api/db/console-views.cjs"));
+  app.use(_req("./api/db/console-journal.cjs"));
+  app.use(_req("./api/db/console-chain-refresh.cjs"));
+}
+
 // ── Templates list (manifest-driven) ───────────────────────────────────
 {
   const { readFileSync, writeFileSync } = await import("fs");

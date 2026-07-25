@@ -1,5 +1,3 @@
-import { findPlanByRef, resolvePlanContracts } from "./lib/shipping-plan-contracts.js";
-
 export const SELLER = {
   name: "上海洋宝宝国际物流有限公司",
   tax_id: "91310106MAE9L4AQ28",
@@ -8,13 +6,11 @@ export const SELLER = {
 };
 
 export async function loadShippingPlan(pool, id) {
-  const plan = await findPlanByRef(pool, id);
-  if (!plan) return null;
-  const contracts = await resolvePlanContracts(pool, plan);
-  if (!contracts.legacy && contracts.freightUsdNo) {
-    return { ...plan, contract_no: contracts.freightUsdNo, contract_nos: contracts.allNos };
-  }
-  return plan;
+  const r = await pool.query(
+    "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
+    [id]
+  );
+  return r.rows[0] || null;
 }
 
 export function esc(s) {

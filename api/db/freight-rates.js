@@ -15,7 +15,6 @@ export default async function handler(req, res) {
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
         "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
         "valid_to","remarks","status","currency","raw","freetime",
-        "rate_type","price_tier","contract_no","contract_valid_from","contract_valid_to",
         "free_days_base","free_days_ext","terminal","next_sailing","supplier_id"];
       const JSON_COLS = ["raw"];
       const sets = [], params = [];
@@ -39,9 +38,7 @@ export default async function handler(req, res) {
       const body = req.body || {};
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
         "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
-        "valid_to","remarks","status","currency","raw","freetime","this_week","next_sailing","eta_date",
-        "free_days_base","free_days_ext","terminal","supplier_id",
-        "rate_type","price_tier","contract_no","contract_valid_from","contract_valid_to"];
+        "valid_to","remarks","status","currency","raw","freetime","this_week","next_sailing","eta_date","free_days_base","free_days_ext","terminal","supplier_id"];
       const cols = [], vals = [], params = [];
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(body, k)) {
         const v = body[k]; cols.push(k);
@@ -76,12 +73,10 @@ export default async function handler(req, res) {
         f.next_sailing AS "nextSailing",
         f.valid_from AS "validFrom", f.valid_to AS "validTo",
         f.transit_days AS "transitDays", f.freetime, f.via, f.thc, f.remarks, f.raw,
-        f.rate_type, f.price_tier, f.contract_no,
-        f.contract_valid_from, f.contract_valid_to,
         f.eta_date AS "etaDate",
         f.created_at AS "createdAt", f.updated_at AS "updatedAt",
-        COALESCE(lc20.base_total_cny, lc20.cost_total) AS "portGp20",
-        COALESCE(lc40.base_total_cny, lc40.cost_total) AS "portHq40",
+        lc20.cost_total AS "portGp20",
+        lc40.cost_total AS "portHq40",
         COALESCE(lc40.company_name, lc20.company_name) AS "portProvider",
         COALESCE(lc40.charge_code, lc20.charge_code)   AS "portCode",
         hist.prev_hq40 AS "prevHq40", hist.prev_gp20 AS "prevGp20", hist.changed_at AS "lastChangedAt"
@@ -91,22 +86,28 @@ export default async function handler(req, res) {
         WHERE h.rate_id = f.id AND h.change_kind NOT IN ('baseline','create')
         ORDER BY h.changed_at DESC LIMIT 1
       ) hist ON TRUE
-      -- 港杂按航线(港口+船司)连 local_charges（真值在这），分柜型
+      -- 港杂关联 local_charges（真值在这）。口径(Damon 2026-07-23 定):港杂直接挂货代,
+      -- 主键=货代+船司+起运港+柜型,不含目的港(与唯一索引 uq_local_charges_ssot_active 一致)。
+      -- 两级匹配:优先 local_charge_code 硬绑定,对不上再退回自然键。全程只取 is_active。
       LEFT JOIN LATERAL (
-        SELECT base_total_cny, cost_total, company_name, charge_code FROM local_charges lc
-        WHERE lower(btrim(lc.pol))=lower(btrim(f.pol)) AND lower(btrim(lc.pod))=lower(btrim(f.pod))
-          AND lower(btrim(lc.carrier))=lower(btrim(f.carrier)) AND lc.container_type ~* '20'
-          AND (f.forwarder IS NULL OR lower(btrim(lc.company_name))=lower(btrim(f.forwarder)))
-          AND lc.is_active
-        ORDER BY updated_at DESC NULLS LAST LIMIT 1
+        SELECT cost_total, company_name, charge_code FROM local_charges lc
+        WHERE lc.is_active AND lc.container_type ~* '20' AND (
+          lc.charge_code = f.local_charge_code
+          OR (lower(btrim(lc.pol))=lower(btrim(f.pol))
+              AND lower(btrim(lc.carrier))=lower(btrim(f.carrier))
+              AND (f.forwarder IS NULL OR lower(btrim(lc.company_name))=lower(btrim(f.forwarder))))
+        )
+        ORDER BY (lc.charge_code = f.local_charge_code) DESC NULLS LAST, updated_at DESC NULLS LAST LIMIT 1
       ) lc20 ON TRUE
       LEFT JOIN LATERAL (
-        SELECT base_total_cny, cost_total, company_name, charge_code FROM local_charges lc
-        WHERE lower(btrim(lc.pol))=lower(btrim(f.pol)) AND lower(btrim(lc.pod))=lower(btrim(f.pod))
-          AND lower(btrim(lc.carrier))=lower(btrim(f.carrier)) AND lc.container_type ~* '40|HQ|45'
-          AND (f.forwarder IS NULL OR lower(btrim(lc.company_name))=lower(btrim(f.forwarder)))
-          AND lc.is_active
-        ORDER BY updated_at DESC NULLS LAST LIMIT 1
+        SELECT cost_total, company_name, charge_code FROM local_charges lc
+        WHERE lc.is_active AND lc.container_type ~* '40|HQ|45' AND (
+          lc.charge_code = f.local_charge_code
+          OR (lower(btrim(lc.pol))=lower(btrim(f.pol))
+              AND lower(btrim(lc.carrier))=lower(btrim(f.carrier))
+              AND (f.forwarder IS NULL OR lower(btrim(lc.company_name))=lower(btrim(f.forwarder))))
+        )
+        ORDER BY (lc.charge_code = f.local_charge_code) DESC NULLS LAST, updated_at DESC NULLS LAST LIMIT 1
       ) lc40 ON TRUE`;
     const params = [], conds = [];
     if (pol) { params.push(`%${pol}%`); conds.push(`f.pol ILIKE $${params.length}`); }

@@ -1,3 +1,5 @@
+// TPL_VERSION: 每次改模版必改;= canonical git 短哈希 + 日期,单据页脚显示,旧版一眼现形
+var TPL_VERSION = "v4 · 2026-07-14 02:31";
 const qs = new URLSearchParams(location.search);
 const planId = qs.get("plan_id") || qs.get("id");
 const token = qs.get("token") || "";
@@ -48,28 +50,30 @@ function renderHeader(plan) {
   setT("exportBl", plan.export_bl || "");
   setT("etd", fmtDate(plan.etd));
   setT("shipmentNo", plan.shipment_no || "");
+  setT("tplVer", TPL_VERSION);
+  setT("genTime", new Date().toLocaleString("zh-CN"));
 }
 
 function renderTransferRows(containers) {
   const tbody = document.querySelector("#transferTable tbody");
   tbody.innerHTML = containers.map((row, index) => `
     <tr>
-      <td>${index + 1}</td>
-      <td>${esc(row.vessel_voyage)}</td>
-      <td>${esc(row.import_arrival_date)}</td>
-      <td>${esc(row.import_bl_no)}</td>
-      <td>${esc(row.container_type)}</td>
-      <td>${esc(row.container_no)}</td>
-      <td>${esc(row.seal_no)}</td>
-      <td>${esc(row.export_port)}</td>
-      <td>${esc(row.export_bl)}</td>
-      <td>${esc(row.vessel_voyage)}</td>
-      <td class="left">${esc(row.goods_desc)}</td>
-      <td>${fmt(row.pieces, 0)}</td>
-      <td>${fmt(row.cbm)}</td>
-      <td>${fmt(row.gross_weight_kg)}</td>
-      <td>${fmt(row.tare_kg)}</td>
-      <td>${fmt(row.vgm_kg)}</td>
+      <td data-field="seq" data-row="${index}">${index + 1}</td>
+      <td data-field="import_vessel_voyage" data-row="${index}">${esc(row.vessel_voyage)}</td>
+      <td data-field="import_arrival_date" data-row="${index}">${esc(row.import_arrival_date)}</td>
+      <td data-field="import_bl_no" data-row="${index}">${esc(row.import_bl_no)}</td>
+      <td data-field="container_type" data-row="${index}">${esc(row.container_type)}</td>
+      <td data-field="container_no" data-row="${index}">${esc(row.container_no)}</td>
+      <td data-field="seal_no" data-row="${index}">${esc(row.seal_no)}</td>
+      <td data-field="export_port" data-row="${index}">${esc(row.export_port)}</td>
+      <td data-field="export_bl" data-row="${index}">${esc(row.export_bl)}</td>
+      <td data-field="export_vessel_voyage" data-row="${index}">${esc(row.vessel_voyage)}</td>
+      <td class="left" data-field="goods_desc" data-row="${index}">${esc(row.goods_desc)}</td>
+      <td data-field="pieces" data-row="${index}">${fmt(row.pieces, 0)}</td>
+      <td data-field="cbm" data-row="${index}">${fmt(row.cbm)}</td>
+      <td data-field="gross_weight" data-row="${index}">${fmt(row.gross_weight_kg)}</td>
+      <td data-field="tare" data-row="${index}">${fmt(row.tare_kg)}</td>
+      <td data-field="vgm" data-row="${index}">${fmt(row.vgm_kg)}</td>
     </tr>
   `).join("");
 }
@@ -79,17 +83,17 @@ function renderCutoffRows(products) {
   const tbody = document.querySelector("#cutoffTable tbody");
   tbody.innerHTML = products.map((row, index) => `
     <tr>
-      <td>${index + 1}</td>
-      <td>${esc(exportBl)}</td>
-      <td class="left">${esc(row.product)}</td>
-      <td>${fmt(row.qty_ctn, 0)}</td>
-      <td>${fmt(row.gross_weight_kg)}</td>
-      <td>${fmt(row.cbm)}</td>
-      <td>${esc(row.container_no)}</td>
-      <td>${esc(row.seal_no)}</td>
-      <td>${fmt(row.tare_kg)}</td>
-      <td>${fmt(row.vgm_kg)}</td>
-      <td>${esc(row.hs_code)}</td>
+      <td data-field="seq" data-row="${index}">${index + 1}</td>
+      <td data-field="bl_no" data-row="${index}">${esc(exportBl)}</td>
+      <td class="left" data-field="product" data-row="${index}">${esc(row.product)}</td>
+      <td data-field="ctns" data-row="${index}">${fmt(row.qty_ctn, 0)}</td>
+      <td data-field="gross_weight" data-row="${index}">${fmt(row.gross_weight_kg)}</td>
+      <td data-field="cbm" data-row="${index}">${fmt(row.cbm)}</td>
+      <td data-field="container_no" data-row="${index}">${esc(row.container_no)}</td>
+      <td data-field="seal_no" data-row="${index}">${esc(row.seal_no)}</td>
+      <td data-field="tare" data-row="${index}">${fmt(row.tare_kg)}</td>
+      <td data-field="vgm" data-row="${index}">${fmt(row.vgm_kg)}</td>
+      <td data-field="hs_code" data-row="${index}">${esc(row.hs_code)}</td>
     </tr>
   `).join("");
 }
@@ -216,6 +220,43 @@ window.saveDraft = saveDraft;
 window.loadDraft = loadDraft;
 window.toggleMode = toggleMode;
 window.togglePreview = togglePreview;
+// [2026-07-10] 补 PDF/Excel 下载(自托管库,和其它模版一致) —— 装箱资料原来只有 PNG。
+function _tLoad(src, cb){ var ex=document.querySelector('script[data-v="'+src+'"]'); if(ex){ if(ex.getAttribute('data-ok')==='1')return cb(); ex.addEventListener('load',cb); return; } var el=document.createElement('script'); el.src=src; el.setAttribute('data-v',src); el.onload=function(){ el.setAttribute('data-ok','1'); cb(); }; el.onerror=function(){ alert('库加载失败: '+src); }; document.head.appendChild(el); }
+function _tEnsure(name, file, cb){ if(window[name])return cb(); _tLoad('/templates/vendor/'+file, cb); }
+function _tJsPDF(){ return (window.jspdf&&window.jspdf.jsPDF)||window.jsPDF||null; }
+function _tName(){ return '装箱资料-' + ((currentData&&currentData.plan&&currentData.plan.export_bl)||'draft'); }
+async function downloadPdf(){
+  var doc=document.querySelector('#doc'); if(!doc)return;
+  var tb=document.querySelector('.toolbar'); if(tb)tb.style.display='none';
+  var restore=function(){ if(tb)tb.style.display=''; };
+  _tEnsure('html2canvas','html2canvas.min.js', function(){ _tEnsure('jspdf','jspdf.umd.min.js', async function(){
+    try{
+      var canvas=await window.html2canvas(doc,{scale:2,useCORS:true,backgroundColor:'#fff'});
+      var JsPDF=_tJsPDF(); if(!JsPDF){ restore(); window.print(); return; }
+      var pdf=new JsPDF('l','mm','a4'), pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+      var imgW=pw, imgH=canvas.height*pw/canvas.width, img=canvas.toDataURL('image/jpeg',0.95);
+      if(imgH<=ph){ pdf.addImage(img,'JPEG',0,0,imgW,imgH); }
+      else{ var pos=0; while(pos<imgH-0.5){ pdf.addImage(img,'JPEG',0,-pos,imgW,imgH); pos+=ph; if(pos<imgH-0.5)pdf.addPage(); } }
+      pdf.save(_tName()+'.pdf'); restore();
+    }catch(e){ restore(); window.print(); }
+  }); });
+}
+function exportExcel(){
+  _tEnsure('XLSX','xlsx.full.min.js', function(){
+    try{
+      var aoa=[];
+      document.querySelectorAll('#doc table').forEach(function(tbl){
+        if(tbl.offsetParent===null)return; // 只导当前可见视图的表
+        [].forEach.call(tbl.rows,function(tr){ aoa.push([].map.call(tr.cells,function(td){ return (td.textContent||'').replace(/\s+/g,' ').trim(); })); });
+        aoa.push([]);
+      });
+      var wb=window.XLSX.utils.book_new(), ws=window.XLSX.utils.aoa_to_sheet(aoa);
+      window.XLSX.utils.book_append_sheet(wb,ws,'装箱资料');
+      window.XLSX.writeFile(wb, _tName()+'.xlsx');
+    }catch(e){ alert('导出失败: '+e.message); }
+  });
+}
+window.downloadPdf=downloadPdf; window.exportExcel=exportExcel;
 window.downloadPng = downloadPng;
 window.pickSeal = pickSeal;
 

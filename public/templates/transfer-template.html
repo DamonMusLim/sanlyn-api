@@ -116,6 +116,8 @@
     <button type="button" onclick="toggleMode()" id="modeBtn">切到截单明细</button>
     <button type="button" onclick="saveDraft()">保存草稿</button>
     <button type="button" onclick="downloadPng()">下载 PNG</button>
+    <button type="button" onclick="downloadPdf()">PDF 下载</button>
+    <button type="button" onclick="exportExcel()">Excel 下载</button>
     <button type="button" onclick="window.print()">打印</button>
     <button type="button" onclick="pickSeal()">盖章</button>
     <span class="status" id="status"></span>
@@ -125,10 +127,10 @@
     <h1>装箱资料</h1>
 
     <section class="meta">
-      <div class="field"><b>船名航次：</b><span id="vesselVoyage"></span></div>
-      <div class="field"><b>外贸提单号：</b><span id="exportBl"></span></div>
-      <div class="field"><b>截单/ETD：</b><span id="etd"></span></div>
-      <div class="field"><b>Shipment No：</b><span id="shipmentNo"></span></div>
+      <div class="field"><b>船名航次：</b><span id="vesselVoyage" data-field="vessel_voyage"></span></div>
+      <div class="field"><b>外贸提单号：</b><span id="exportBl" data-field="export_bl"></span></div>
+      <div class="field"><b>截单/ETD：</b><span id="etd" data-field="etd"></span></div>
+      <div class="field"><b>Shipment No：</b><span id="shipmentNo" data-field="shipment_no"></span></div>
     </section>
 
     <section id="transferView">
@@ -177,6 +179,7 @@
         <tbody></tbody>
       </table>
     </section>
+  <div class="tpl-ver" style="text-align:right;font-size:9px;color:#9aa4b2;margin-top:10px">装箱资料模版 <b id="tplVer"></b> · 生成 <span id="genTime"></span></div>
   </main>
 </body>
 </html>

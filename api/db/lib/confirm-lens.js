@@ -155,7 +155,7 @@ export async function defaultLines(pool, sp, ctx) {
     }
     const visibleAmount = lens.side === "receivable" ? receivable.amount : row.amount;
     const line = baseLine(row.bl_no || blNo, row.cost_category || "港杂费", row.charge_basis || "整票", visibleAmount, row.currency, scope, lens);
-    line.unit_price = money(row.unit_price);
+    line.unit_price = money(row.unit_price) || money(visibleAmount / (Number(row.qty) || 1)); // 单价缺则用合计/数量兜底(整票qty=1→单价=合计)
     line.qty = money(row.qty || 1) || 1;
     if (receivable?.review) line.review = true;
     if (lens.role === "internal") addInternalAmounts(line, row.amount, row.sale_amount);

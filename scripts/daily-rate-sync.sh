@@ -9,5 +9,5 @@ const p=Buffer.from(JSON.stringify({account:'cron-sync',role:'internal',iat:Math
 const sig=crypto.createHmac('sha256',secret).update(h+'.'+p).digest('base64url');
 console.log(h+'.'+p+'.'+sig);
 " 2>/dev/null)"
-curl -s -X POST https://api.sanlyn.cn/api/platform/exchange-rate   -H "Authorization: Bearer $JWT"   -H 'Content-Type: application/json'   >> /var/log/sanlyn-rate-sync.log 2>&1
+curl -s 'https://ai.sanlyn.cn/api/db/exchange-rate?pair=USD_CNY'   -H "Authorization: Bearer $JWT"   -H 'Content-Type: application/json'   >> /var/log/sanlyn-rate-sync.log 2>&1
 echo "[$(date)] rate sync done" >> /var/log/sanlyn-rate-sync.log

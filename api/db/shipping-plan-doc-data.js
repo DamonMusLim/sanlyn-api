@@ -1,6 +1,5 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { buildOfficialPortChargePricing, savePortChargeSnapshot } from "./tariff-billing.js";
 
 function stripCompanyPrefix(s) {
   return String(s || "").replace(/^\d+-/, "");
@@ -15,10 +14,6 @@ function parseRaw(raw) {
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
-}
-
-function money2(v) {
-  return Number(num(v).toFixed(2));
 }
 
 function today() {
@@ -159,59 +154,39 @@ async function loadContainers(pool, p) {
     },
     qty: rows.length || ctnNos.length || num(p.container_qty) || 1,
     type: p.container_type || "40HQ",
-    freight_term: p.freight_term || "PREPAID",
+    freight_term: "PREPAID",
   };
 }
 
 async function portCharges(pool, p) {
   const blNo = p.bl_no || "—";
-  // 2026-07-18 根治(CY00376实锤):真账单常不挂payer_company_code,非空硬门槛会整批漏掉真数据;
-  // 且对外账单必须用sale_amount卖价(amount=成本,绝不外泄);sale_amount=0的行(如改单费内部项)不上账单。
   let factoryCode = "";
-  let rows = [];
   try {
     const r = await pool.query(
-      `SELECT cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis, payer_company_code
+      `SELECT DISTINCT payer_company_code
        FROM active_freight_supplier_bills
        WHERE (bl_no = $1 OR link_plan_id = $2)
          AND (cost_category !~* '海运|ocean|freight')
-         AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
-       ORDER BY id`,
+         AND COALESCE(amount,0) > 0 AND COALESCE(payer_company_code,'') <> ''
+       LIMIT 1`,
       [blNo, String(p.id)]
     );
-    factoryCode = r.rows.find(x => (x.payer_company_code || "") !== "")?.payer_company_code || "";
-    rows = r.rows.map(x => {
-      const billed = x.sale_amount != null ? Number(x.sale_amount) : Number(x.amount);
-      const q = Number(x.qty) || 1;
-      return { cost_category: x.cost_category, charge_basis: x.charge_basis || "整票", currency: "CNY",
-               qty: q, unit_price: Number((billed / q).toFixed(2)), amount: Number(billed.toFixed(2)) };
-    }).filter(x => x.amount > 0);
+    factoryCode = r.rows[0]?.payer_company_code || "";
   } catch (_) {}
-  try {
-    const official = await buildOfficialPortChargePricing(pool, p, factoryCode);
-    if (official) {
-      await savePortChargeSnapshot(pool, p.id, official.snapshot);
-      return {
-        factoryCode,
-        rows: official.rows,
-        usedFallbackCard: false,
-        official_port_charge: true,
-        blocked: official.missingOfficial,
-        snapshot: official.snapshot,
-      };
-    }
-  } catch (_) {}
-  if (!rows.length) {
-    const fieldRows = [
-      ["码头操作费(THC)", p.thc_fee], ["单证费", p.doc_fee], ["电放费", p.tlx_fee],
-      ["铅封费", p.seal_fee], ["设备交接费", p.eir_fee], ["信息传输费", p.info_trans_fee],
-      ["订舱费", p.bkg_fee], ["拖车费", p.trucking_cost_total], ["报关费", p.customs_cost_total],
-    ].filter(([, v]) => Number(v) > 0)
-     .map(([name, v]) => ({ cost_category: name, charge_basis: "整票", currency: "CNY", qty: 1, unit_price: Number(v), amount: Number(v) }));
-    if (fieldRows.length) rows = fieldRows;
-  }
-  if (rows.length && Number(p.trucking_cost_total) > 0 && !rows.some(r => /拖车|truck/i.test(r.cost_category || ""))) {
-    rows.push({ cost_category: "拖车费", charge_basis: "整票", currency: "CNY", qty: 1, unit_price: Number(p.trucking_cost_total), amount: Number(p.trucking_cost_total) });
+  let rows = [];
+  if (factoryCode) {
+    try {
+      const r = await pool.query(
+        `SELECT cost_category, amount, currency, qty, unit_price, charge_basis
+         FROM active_freight_supplier_bills
+         WHERE (bl_no = $1 OR link_plan_id = $3) AND payer_company_code = $2
+           AND (cost_category !~* '海运|ocean|freight')
+           AND UPPER(COALESCE(currency,'CNY')) = 'CNY' AND COALESCE(amount,0) > 0
+         ORDER BY id`,
+        [blNo, factoryCode, String(p.id)]
+      );
+      rows = r.rows;
+    } catch (_) {}
   }
   let usedFallbackCard = false;
   if (!rows.length) {
@@ -233,84 +208,6 @@ async function portCharges(pool, p) {
   return { factoryCode, rows, usedFallbackCard };
 }
 
-function splitValues(v) {
-  if (Array.isArray(v)) return v.flatMap(splitValues);
-  return String(v || "").split(/[\/,，;；\s|]+/).map(s => s.trim()).filter(Boolean);
-}
-
-function planContractNos(p, raw) {
-  return [...new Set(splitValues([
-    p.contract_no,
-    p.contract_nos,
-    p.order_contract_nos,
-    raw?.customerPO,
-    raw?.customer_po,
-  ]))];
-}
-
-async function loadTaxedPortChargeFromInvoice(pool, contracts) {
-  if (!contracts.length) return 0;
-  try {
-    const r = await pool.query(
-      `SELECT COALESCE(SUM(amount_incl_tax),0)::numeric AS amount
-         FROM finance_invoices_in
-        WHERE COALESCE(review_status,'') NOT IN ('void','red_ink','cancelled','作废','已作废')
-          AND COALESCE(amount_incl_tax,0) > 0
-          AND (
-            contract_nos && $1::text[]
-            OR contract_nos::text ILIKE ANY($2::text[])
-            OR COALESCE(raw::text,'') ILIKE ANY($2::text[])
-            OR COALESCE(line_items::text,'') ILIKE ANY($2::text[])
-          )
-          AND (
-            COALESCE(raw::text,'') ILIKE ANY(ARRAY['%港杂%','%代理%','%port charge%','%local charge%'])
-            OR COALESCE(line_items::text,'') ILIKE ANY(ARRAY['%港杂%','%代理%','%port charge%','%local charge%'])
-            OR COALESCE(invoice_type,'') ILIKE '%普票%'
-            OR COALESCE(tax_rate,0) = 0.01
-          )`,
-      [contracts, contracts.map(c => "%" + c + "%")]
-    );
-    return money2(r.rows[0]?.amount);
-  } catch (_) {
-    return 0;
-  }
-}
-
-async function buildInvoiceSplit(pool, p, totalCny, raw) {
-  // 打折后开票总额覆盖：raw.port_charge_invoice_total 有则用它(客户实开额)，否则用港杂明细合计
-  const invoiceTotal = (raw && raw.port_charge_invoice_total != null && raw.port_charge_invoice_total !== "")
-    ? money2(raw.port_charge_invoice_total) : money2(totalCny);
-  let taxed = 0, source = "";
-  // ①显式手填带税(代理港杂费=进项票额)最优先
-  if (raw && raw.taxed_port_charge != null && raw.taxed_port_charge !== "") {
-    taxed = money2(raw.taxed_port_charge); source = "手填";
-  }
-  // ②进项票
-  if (!source) {
-    taxed = await loadTaxedPortChargeFromInvoice(pool, planContractNos(p, raw));
-    if (taxed > 0) source = "进项票";
-  }
-  // ③成本/销售表 港杂行的「成本」
-  if (!source && Array.isArray(raw?.cost_lines)) {
-    const pcCost = raw.cost_lines
-      .filter((l) => /港杂|杂费|港口|port\s*charge|thc/i.test(String(l?.name || "")))
-      .reduce((s, l) => s + money2(l?.cost), 0);
-    if (pcCost > 0) { taxed = pcCost; source = "港杂成本(代理港杂费)"; }
-  }
-  if (!source) { taxed = 0; source = "待填"; }
-  taxed = Math.min(money2(taxed), invoiceTotal);
-  return {
-    taxed_name: "代理港杂费",
-    taxed_amount: taxed,
-    taxed_rate: 0.01,
-    taxed_with_tax: money2(taxed * 1.01),
-    free_name: "国际货物运输代理服务费",
-    free_amount: money2(invoiceTotal - taxed),
-    invoice_total: invoiceTotal,
-    source,
-  };
-}
-
 export async function buildShippingPlanDocData(pool, id, page) {
   const p = await loadPlan(pool, id);
   if (!p) return null;
@@ -324,32 +221,15 @@ export async function buildShippingPlanDocData(pool, id, page) {
   };
   if (page === "portcharge") {
     const pc = await portCharges(pool, p);
-    const isExw = /EXW/i.test(p.freight_term || "");
-    let factory = isExw ? await loadCustomer(pool, p) : await loadFactory(pool, pc.factoryCode);
-    if (!factory || !(factory.name_cn || factory.name_en)) {
-      try {
-        const facR = await pool.query(
-          `SELECT DISTINCT c.name_cn FROM shipping_plans sp, unnest(sp.order_nos) AS ono
-           JOIN orders o ON o.order_no = ono LEFT JOIN companies c ON c.id = o.factory_company_id
-           WHERE sp.id = $1 AND c.name_cn IS NOT NULL`, [p.id]);
-        if (facR.rows.length) factory = { name_cn: facR.rows.map(r => r.name_cn).join(" / "), address: "" };
-      } catch (_) {}
-    }
+    const factory = await loadFactory(pool, pc.factoryCode);
     const totalCny = pc.rows.reduce((s, r) => s + num(r.amount), 0);
-    const out = {
+    return {
       page, shipment: common, factory, containers, charges: pc.rows,
       used_fallback_card: pc.usedFallbackCard,
       totals: { cny: Number(totalCny.toFixed(2)) },
-      invoice_split: await buildInvoiceSplit(pool, p, totalCny, raw),
-      doc_no: String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-2", // 提单号-2=港杂费单(人民币)；去PC-前缀，不用CY号(避免暴露单量)
+      doc_no: "PC-" + String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-" + genDate.replace(/-/g, ""),
       pdf_type: "fob_portcharge",
     };
-    if (pc.official_port_charge) {
-      out.official_port_charge = true;
-      out.blocked = Boolean(pc.blocked);
-      out.port_charge_standard_snapshot = pc.snapshot || null;
-    }
-    return out;
   }
   const customer = await loadCustomer(pool, p);
   const fxRate = await latestFx(pool);
@@ -359,7 +239,7 @@ export async function buildShippingPlanDocData(pool, id, page) {
     page: "freight", shipment: common, customer, containers,
     charges: [{ cost_category: "海运费 Ocean Freight", charge_basis: "Per Container / 箱", currency: "USD", qty: containers.qty, unit_price: unitPrice, amount: totalUsd }],
     totals: { usd: Number(totalUsd.toFixed(2)), cny: Number((totalUsd * fxRate).toFixed(2)), fx_rate: fxRate },
-    doc_no: String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-1", // 提单号-1=海运费单(美金)；去FI-前缀，不用CY号(避免暴露单量)
+    doc_no: "FI-" + (p.shipment_no || String(p.id)) + "-" + genDate.replace(/-/g, ""),
     pdf_type: "fob_invoice",
   };
 }

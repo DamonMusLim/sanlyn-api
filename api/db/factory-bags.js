@@ -149,7 +149,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     try {
       const r = await pool.query(
-        `SELECT pm.sku_code, pm.name, pm.spec, pm.unit,
+        `SELECT pm.sku_code, pm.barcode, pm.image_url, pm.name, pm.spec, pm.unit,
                 pm.current_stock, pm.safety_stock, pm.supplier
          FROM packaging_materials pm
          WHERE ${SCOPE_EXISTS}

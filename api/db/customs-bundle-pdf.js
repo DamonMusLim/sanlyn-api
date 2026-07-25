@@ -112,7 +112,7 @@ export async function renderCustomsBundle(pool, opts) {
   let inspDocs = [];
   if (partsWanted.includes("inspect")) inspDocs = await loadInspectionUploads(pool, orders);
 
-  const puppeteer = (await import("puppeteer")).default;
+  const puppeteer = (await import("puppeteer-core")).default;  // 2026-07-10: tencent 只装 puppeteer-core + 系统 chrome(见下 chromePath)
   const { PDFDocument } = await import("pdf-lib");
   const chromePath = process.env.CHROME_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/google-chrome";
   const launch = { headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--disable-software-rasterizer"] };

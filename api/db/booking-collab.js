@@ -24,49 +24,12 @@ function rawToHash(raw) {
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 function genRaw() {
-  return crypto.randomBytes(24).toString("hex"); // 48 hex chars
-}
-
-function buildSummary(sheet, role, portalScope) {
-  const missing = { factory: [], customer: [], ocean: [], truck: [], customs: [] };
-  const has = v => !(v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length));
-  if (!has(sheet.factory_cargo_ready)) missing.factory.push({ field: "factory_cargo_ready", label: "货好日期" });
-  if (!has(sheet.container_type)) missing.factory.push({ field: "container_type", label: "柜型" });
-  if (!has(sheet.freight_term)) missing.factory.push({ field: "freight_term", label: "交易条款" });
-  const doneCtns = (sheet.containers_detail || []).filter(c => c && c.loading_done).length;
-  const needCtns = Math.max(Number(sheet.container_qty) || 0, (sheet.containers_detail || []).length);
-  if (!doneCtns && needCtns) missing.factory.push({ field: "loading_done", label: "装柜完成确认" });
-
-  if (!sheet.customer_submitted && !(sheet.so_no || sheet.bl_no)) missing.customer.push({ field: "selected_sailing", label: "确认订舱航班" });
-  if (!has(sheet.freight_term)) missing.customer.push({ field: "freight_term", label: "确认交易条款" });
-  if (sheet.bl_no && !sheet.bl_draft_status) missing.customer.push({ field: "bl_draft_status", label: "确认 BL 草稿" });
-
-  if (!has(sheet.so_no)) missing.ocean.push({ field: "so_no", label: "SO / 入货通知" });
-  if (!has(sheet.etd)) missing.ocean.push({ field: "etd", label: "ETD 船期" });
-  if (!has(sheet.bl_no)) missing.ocean.push({ field: "bl_no", label: "提单号 / BL" });
-
-  const vehicles = sheet.trucking_detail && Array.isArray(sheet.trucking_detail.vehicles) ? sheet.trucking_detail.vehicles : [];
-  const hasTruck = vehicles.some(v => v && (v.plate || v.trailer_plate) && (v.driver_phone || v.driver));
-  if (!hasTruck) missing.truck.push({ field: "vehicles", label: "车牌 / 司机 / 提箱时间" });
-  if ((sheet.containers_detail || []).some(c => c && !c.vgm_weight_kg)) missing.truck.push({ field: "vgm", label: "VGM / 过磅重" });
-
-  const uploads = Array.isArray(sheet.collab_uploads) ? sheet.collab_uploads : [];
-  if (!uploads.some(u => /报关单|放行|customs/i.test(u && u.filename || ""))) missing.customs.push({ field: "customs_doc", label: "报关单 / 放行回传" });
-  if (!uploads.some(u => /检疫|植检|动检|quarantine|ciq/i.test(u && u.filename || "")) && sheet.has_quarantine) missing.customs.push({ field: "quarantine", label: "检疫报告" });
-
-  let keys = [];
-  if (role === "factory_booking") keys = ["factory"];
-  else if (role === "customer_booking") keys = ["customer"];
-  else if (role === "supplier_portal") keys = (portalScope && portalScope.segments || ["ocean", "truck", "customs"]);
-  else if (role === "trucking_booking") keys = ["truck"];
-  else if (role === "broker_booking") keys = ["customs"];
-  const own = keys.flatMap(k => missing[k] || []);
-  return {
-    missing_by_party: missing,
-    missing_for_role: own,
-    missing_count: own.length,
-    next_action: own.length ? "pending_input" : "waiting_other_party",
-  };
+  // 10位字母数字短码：kp?c=CODE 复用;code本身即token(hash存token_hash)
+  const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const b = crypto.randomBytes(10);
+  let out = "";
+  for (const x of b) out += A[x % A.length];
+  return out;
 }
 
 // ── GET /validate?token=<raw> ──────────────────────────────────
@@ -121,46 +84,6 @@ async function handleCustomsDocStatus(req, res, pool) {
   });
 }
 
-function isTradeExternalCompany(row) {
-  if (!row) return false;
-  const type = String(row.type || row.company_type || "").toLowerCase();
-  const rel = String(row.relationship_type || "").toLowerCase();
-  return type === "customer" && rel === "partner";
-}
-
-async function inferSupplierPortalFieldProfile(pool, meta) {
-  if (meta.field_profile) return meta.field_profile;
-  const companyId = parseInt(meta.company_id, 10);
-  const label = String(meta.company_label || "").trim();
-  if (!companyId && !label) return null;
-  try {
-    const params = [];
-    const where = [];
-    if (companyId) {
-      params.push(companyId);
-      where.push(`id = $${params.length}`);
-    }
-    if (label) {
-      params.push(label);
-      where.push(`name_cn = $${params.length}`);
-      where.push(`name_en = $${params.length}`);
-      where.push(`factory_name = $${params.length}`);
-    }
-    const { rows } = await pool.query(
-      `SELECT id, code, name_cn, name_en, type, company_type, relationship_type
-         FROM companies
-        WHERE ${where.join(" OR ")}
-        ORDER BY id ASC
-        LIMIT 1`,
-      params
-    );
-    return isTradeExternalCompany(rows[0]) ? "trade_external" : null;
-  } catch (e) {
-    console.warn("[booking-collab] infer trade_external failed:", e.message);
-    return null;
-  }
-}
-
 async function handleValidate(req, res, pool) {
   const raw = req.query && req.query.token;
   if (!raw || raw.length < 10)
@@ -168,7 +91,7 @@ async function handleValidate(req, res, pool) {
 
   const hash = rawToHash(raw);
   const { rows } = await pool.query(
-    `SELECT recipient_role, meta, expires_at
+    `SELECT recipient_role, meta, expires_at, created_at
        FROM magic_links
       WHERE token_hash = $1
         AND recipient_role IN ('factory_booking','customer_booking','trucking_booking','broker_booking','supplier_portal','shipper_booking','customer_quote')
@@ -181,14 +104,13 @@ async function handleValidate(req, res, pool) {
     return res.json({ valid: false, error: "链接无效或已过期" });
 
   const { recipient_role: role, meta: rawMeta } = rows[0];
+  {
+    const _m = (typeof rawMeta === "string" ? JSON.parse(rawMeta) : rawMeta) || {};
+    if (role === "customer_quote") {
+      return res.json({ valid: true, role, meta: { customer_company_id: _m.customer_company_id || null } });
+    }
+  }
   const meta = (typeof rawMeta === "string" ? JSON.parse(rawMeta) : rawMeta) || {};
-  if (role === "customer_quote") {
-    return res.json({ valid: true, role, meta: { customer_company_id: meta.customer_company_id || null } });
-  }
-  if (role === "supplier_portal") {
-    const inferredProfile = await inferSupplierPortalFieldProfile(pool, meta);
-    if (inferredProfile) meta.field_profile = inferredProfile;
-  }
   const factoryScope = meta.factory_scope || null;
   const portalScope = role === "supplier_portal"
     ? { segments: meta.segments || ["ocean","truck","customs"], company_label: meta.company_label || null, field_profile: meta.field_profile || null }
@@ -207,6 +129,7 @@ async function handleValidate(req, res, pool) {
             sp.raw->'factory_attrs' AS factory_attrs,
             sp.raw->'customer_amend' AS customer_amend,
             sp.trucking_arrange, sp.customs_arrange,
+            sp.forwarder_cn, sp.forwarder_en, sp.trucking_company_cn, sp.trucking_cn, sp.customs_broker_cn, sp.customs_cn,
             sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage,
             sp.freight_sale_usd, sp.freight_term AS plan_freight_term,
             sp.release_type,
@@ -332,12 +255,55 @@ async function handleValidate(req, res, pool) {
     if (fpRows.length === 1) factoryProfileAddress = fpRows[0];
   }
 
+  // 承包方公司名规范化：链接里存的可能是已废弃的合并别名（如「[已合并]瀚龙→CN-00071」），
+  // 对外门户一律显示真身公司全名（厦门瀚龙国际物流有限公司）。解析规则：
+  //   1) 别名尾部「→CODE」→ 按 code 查 companies.name_cn（未再被合并的真身）
+  //   2) 别名本身是某条已合并公司 → 顺 merged_into_code 找真身
+  //   3) 都查不到 → 至少剥掉「[已合并]」前缀与「→…」尾巴
+  if (portalScope && portalScope.company_label) {
+    const lab = String(portalScope.company_label);
+    let resolved = null;
+    try {
+      const m = lab.match(/→\s*([A-Za-z0-9-]+)/);
+      if (m) {
+        const cr = await pool.query(
+          `SELECT name_cn FROM companies
+             WHERE code = $1 AND COALESCE(merged_into_code,'') = '' AND COALESCE(name_cn,'') <> ''
+             LIMIT 1`, [m[1]]);
+        if (cr.rows.length) resolved = cr.rows[0].name_cn;
+      }
+      if (!resolved) {
+        const cr2 = await pool.query(
+          `SELECT c2.name_cn FROM companies c1
+             JOIN companies c2 ON c2.code = c1.merged_into_code
+             WHERE c1.name_cn = $1 AND COALESCE(c2.name_cn,'') <> ''
+             LIMIT 1`, [lab]);
+        if (cr2.rows.length) resolved = cr2.rows[0].name_cn;
+      }
+    } catch (e) { /* 解析失败不阻断门户，走下方剥壳兜底 */ }
+    portalScope.company_label = resolved || lab.replace(/^\[已合并\]\s*/, "").replace(/→.*$/, "").trim() || lab;
+  }
+
+  // 检疫报告是否存在（真源=document_uploads，按 plan→orders 的 contract_no 或 order_no 匹配；
+  // du.contract_no 字段有的存合同号有的存订单号，两头都匹配才不漏）
+  let quarantineDocs = [];
+  try {
+    const { rows: qr } = await pool.query(
+      `SELECT DISTINCT du.id, COALESCE(NULLIF(du.name,''), '检疫报告') AS name
+         FROM document_uploads du
+         JOIN orders o ON (o.contract_no = du.contract_no OR o.order_no = du.contract_no)
+        WHERE o.shipping_plan_id = $1 AND du.doc_type = 'quarantine_report'
+          AND COALESCE(du.stamped_url, du.url) IS NOT NULL
+        ORDER BY du.id`, [planId]);
+    quarantineDocs = qr.map(r => ({ ref: String(r.id), name: r.name })); // 一票可多份(拼柜每单一张CIQ)，全列出
+  } catch (e) { /* 检疫探测失败不阻断门户 */ }
+
   return res.json({
     valid: true,
     role,
-    shipment_no: planRes.rows[0].shipment_no || null,
-    is_preview: meta.preview === true,                                   // 内部预览 token（master-preview-token 生成）
-    preview_godview: meta.preview === true && !(factoryScope && factoryScope.label), // 无 scope 的全貌预览
+    // factory_booking 下 preview 标志无意义，不能驱动前端显示全貌。
+    is_preview: role !== "factory_booking" && meta.preview === true,
+    preview_godview: role !== "factory_booking" && meta.preview === true && !(factoryScope && factoryScope.label),
     factory_progress: await (async (roleX) => {
       // 分厂确认进度：有 scoped 链接才有意义（拼柜/分柜）
       const { rows: fl } = await pool.query(
@@ -346,6 +312,7 @@ async function handleValidate(req, res, pool) {
             AND (meta->>'shipment_id')::int = $1
             AND meta->'factory_scope' IS NOT NULL AND revoked_at IS NULL`, [planId]);
       if (!fl.length) return null;
+      if (roleX === "factory_booking") return null;   // 工厂绝不见跨厂进度/厂数(存在也是泄露)
       const { rows: sub } = await pool.query(
         `SELECT raw->'factory_submits' AS fs FROM shipping_plans WHERE id = $1`, [planId]);
       const fs = (sub[0] && sub[0].fs) || {};
@@ -358,6 +325,8 @@ async function handleValidate(req, res, pool) {
     })(role),
     booking_sheet: (() => {
       const sheet = { ...planRes.rows[0], sailings: sailingsRes.rows };
+      sheet.quarantine_docs = quarantineDocs;              // 检疫报告清单（真源 document_uploads，每份带 ref=du.id）
+      sheet.has_quarantine = quarantineDocs.length > 0;   // 兼容旧判断
       sheet.containers_live = cbRes.rows;
       // ── containers_detail：稳定 seq=1..N 柜槽（前端渲染/皮重/司机/地址读它）──
       const toNumOrNull = v => (v === undefined || v === null || v === "" || Number.isNaN(Number(v))) ? null : Number(v);
@@ -499,10 +468,9 @@ async function handleValidate(req, res, pool) {
         delete sheet.customer_name; delete sheet.customer_en;
         delete sheet.pod; delete sheet.customer_selected_sailing;
       }
-      // 🔓 内部预览(preview:true)且未限定工厂 = Sanlyn 本人全貌预览，跳过工厂裁剪/fail-close；
-      // 真正发给工厂的 7 天链接不带 preview，照常受租户隔离铁律约束(防跳单)。
-      const _adminPreview = meta.preview === true && !(factoryScope && factoryScope.label);
-      if (role === "factory_booking" && !_adminPreview) {
+      // 方案A：factory_booking 永远 scoped-or-failclosed。
+      // 内部全貌只能走登录态 collab-hub；工厂页 token 不再存在 preview godview 豁免。
+      if (role === "factory_booking") {
         delete sheet.customer_name; delete sheet.customer_en;   // 工厂只见下游 issuing_company
         delete sheet.customer_selected_sailing;
         // 🔒 防跳单租户隔离：scoped 才返回本厂数据；无 scope = fail-closed（绝不返回任何工厂货物）
@@ -546,7 +514,7 @@ async function handleValidate(req, res, pool) {
       // 仅内部 field_profile=shipping_booking/upstream_downstream 可见。
       if (role === "supplier_portal") {
         const fprof = meta.field_profile || null;
-        const seesCustomer = fprof === "shipping_booking" || fprof === "upstream_downstream" || fprof === "trade_external";
+        const seesCustomer = fprof === "shipping_booking" || fprof === "upstream_downstream";
         if (!seesCustomer) {
           delete sheet.customer_name; delete sheet.customer_en;
           delete sheet.freight_term; delete sheet.plan_freight_term;
@@ -562,12 +530,12 @@ async function handleValidate(req, res, pool) {
         sheet.containers_live = []; sheet.containers_detail = []; sheet.factory_loading_done = {};
         sheet.sailings = []; sheet.scope_missing = true;
       }
-      sheet.collab_summary = buildSummary(sheet, role, portalScope);
       return sheet;
     })(),
     ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
     factory_scope: factoryScope,
     portal_scope: portalScope,
+    dispatched_at: rows[0].created_at || null,   // 委托/接单时间戳（本票何时派给该方）
     billing: {
       token: raw,
       show_amount: true,
@@ -590,10 +558,17 @@ async function handleSendFactoryLink(req, res, pool) {
   if (!plan_id)
     return res.status(400).json({ ok: false, error: "plan_id 必填 (shipping_plans._id)" });
   // 多工厂分柜：factory_label=工厂名/代号, container_seqs=[1,2] 该厂负责的柜
-  const scope = (factory_label && Array.isArray(container_seqs) && container_seqs.length)
-    ? { label: String(factory_label).slice(0, 60),
-        seqs: container_seqs.map(n => parseInt(n, 10)).filter(n => n > 0).slice(0, 50) }
+  const scopeLabel = factory_label ? String(factory_label).slice(0, 60) : "";
+  const scopeSeqs = Array.isArray(container_seqs)
+    ? container_seqs.map(n => parseInt(n, 10)).filter(n => n > 0).slice(0, 50)
+    : [];
+  const scope = scopeLabel
+    ? { label: scopeLabel, ...(scopeSeqs.length ? { seqs: scopeSeqs } : {}) }
     : null;
+
+  if (!scope || !scope.label) {
+    return res.status(400).json({ ok: false, error: "factory_scope_required" });
+  }
 
   const planRow = await pool.query(
     `SELECT id FROM shipping_plans WHERE _id = $1 LIMIT 1`, [plan_id]
@@ -602,27 +577,15 @@ async function handleSendFactoryLink(req, res, pool) {
     return res.status(404).json({ ok: false, error: "找不到出货计划" });
   const numericId = planRow.rows[0].id;
 
-  // Revoke：无 scope 撤全部；有 scope 只撤同一工厂的旧链接（多厂互不影响）
-  if (scope) {
-    await pool.query(
-      `UPDATE magic_links SET revoked_at = NOW()
-        WHERE recipient_role = 'factory_booking'
-          AND (meta->>'shipment_id')::int = $1
-          AND meta->'factory_scope'->>'label' = $2
-          AND revoked_at IS NULL`,
-      [numericId, scope.label]
-    );
-  } else {
-    // 只撤无 scope 的普通链接；分厂链接（拼柜/分柜）不受普通重发影响
-    await pool.query(
-      `UPDATE magic_links SET revoked_at = NOW()
-        WHERE recipient_role = 'factory_booking'
-          AND (meta->>'shipment_id')::int = $1
-          AND meta->'factory_scope' IS NULL
-          AND revoked_at IS NULL`,
-      [numericId]
-    );
-  }
+  // Revoke：factory_booking 必须有 scope，只撤同一工厂旧链接（多厂互不影响）
+  await pool.query(
+    `UPDATE magic_links SET revoked_at = NOW()
+      WHERE recipient_role = 'factory_booking'
+        AND (meta->>'shipment_id')::int = $1
+        AND meta->'factory_scope'->>'label' = $2
+        AND revoked_at IS NULL`,
+    [numericId, scope.label]
+  );
 
   const raw = genRaw();
   const hash = rawToHash(raw);
@@ -638,7 +601,7 @@ async function handleSendFactoryLink(req, res, pool) {
     [hash, numericId]
   );
 
-  const link = `${APP_BASE}/public/collab-factory.html?token=${raw}`;
+  const link = `${APP_BASE}/kp?c=${raw}`;
   return res.json({ ok: true, magic_link: link });
 }
 
@@ -677,7 +640,7 @@ async function handleSendCustomerLink(req, res, pool) {
     [hash, numericId]
   );
 
-  const link = `${APP_BASE}/public/collab-customer.html?token=${raw}`;
+  const link = `${APP_BASE}/kp?c=${raw}`;
   return res.json({ ok: true, magic_link: link });
 }
 
@@ -846,10 +809,11 @@ function normOrderNo(v) {
   return String(v || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
-function customsVatRateForHs(hsCode) {
-  const hs = String(hsCode || "").replace(/[^0-9]/g, "");
-  if (!hs) return null;
-  return hs.startsWith("2309") ? 0.09 : 0.13;
+function customsVatMultiplierFromHs(hs) {
+  const clean = String(hs || "").replace(/\D/g, "");
+  if (!clean) return null;
+  if (clean.startsWith("2309")) return 1.09;
+  return 1.13;
 }
 
 // ── POST /factory-submit ──────────────────────────────────────
@@ -859,14 +823,8 @@ async function handleFactorySubmit(req, res, pool) {
   let factoryCargo = Array.isArray(req.body.containers) ? req.body.containers : null;
   if (factoryCargo) {
     for (const x of factoryCargo) {
-      const hasPrice = x && x.price != null && x.price !== "";
-      if (hasPrice && customsVatRateForHs(x.hs_code) == null) {
-        return res.status(400).json({
-          ok: false,
-          blocked: true,
-          error: "hs_code_required_for_customs_price",
-          message: "报关价需要按 HS 取税率；缺 HS 不得回落默认 13%",
-        });
+      if (x && x.price != null && x.price !== "" && !customsVatMultiplierFromHs(x.hs_code)) {
+        return res.status(400).json({ ok: false, error: "customs_price_blocked_missing_hs", message: "工厂价格行缺 HS 编码，无法按 HS 取报关税率，已阻断" });
       }
     }
     factoryCargo = factoryCargo.slice(0, 200).map(function (x) {
@@ -887,13 +845,12 @@ async function handleFactorySubmit(req, res, pool) {
           const taxed = x.price_type === "taxed";
           const untaxed = taxed ? +(pr / (1 + pts / 100)).toFixed(4) : pr;
           const invoicePrice = taxed ? pr : +(pr * (1 + pts / 100)).toFixed(4); // 工厂开票价=未含税×(1+点数)
-          const customsVatRate = customsVatRateForHs(x.hs_code);
+          const customsVat = customsVatMultiplierFromHs(x.hs_code);
           const qty = x.pkg_qty != null ? Number(x.pkg_qty) : null;
           return { price: pr, price_type: taxed ? "taxed" : "untaxed", tax_points: pts,
                    price_untaxed: untaxed,
                    invoice_price: invoicePrice,                              // 给工厂看的开票价(1.11档)
-                   customs_vat_rate: customsVatRate,
-                   customs_price: +(untaxed * (1 + customsVatRate)).toFixed(4),
+                   customs_price: +(untaxed * customsVat).toFixed(4),        // 报关价=未含税×HS增值税率(2309=9%,其他制成品=13%)
                    customer_price: +(untaxed * 1.02).toFixed(4),             // 客户价=未含税×1.02
                    line_total_untaxed: qty ? +(untaxed * qty).toFixed(2) : null };
         })(),
@@ -1500,7 +1457,7 @@ async function handleSendRoleLink(req, res, pool, role) {
   );
 
   const page = role === "trucking" ? "collab-trucking.html" : "collab-broker.html";
-  const link = `${APP_BASE}/public/${page}?token=${raw}`;
+  const link = `${APP_BASE}/kp?c=${raw}`;
   return res.json({ ok: true, magic_link: link });
 }
 
@@ -1789,7 +1746,7 @@ async function handleBrokerSubmit(req, res, pool) {
 // segments: ['ocean','truck','customs'] 子集；自拖自报票默认只给 ocean
 async function handleSendPortalLink(req, res, pool) {
   if (!requireAuth(req, res)) return;
-  const { plan_id, segments, company_label, company_id } = req.body || {};
+  const { plan_id, segments, company_label } = req.body || {};
   if (!plan_id)
     return res.status(400).json({ ok: false, error: "plan_id 必填 (shipping_plans._id)" });
   const planRow = await pool.query(
@@ -1809,18 +1766,14 @@ async function handleSendPortalLink(req, res, pool) {
     [numericId, company_label || ""]);
 
   const raw = genRaw();
-  const fieldProfile = await inferSupplierPortalFieldProfile(pool, { company_label, company_id });
-  const meta = { shipment_id: numericId, plan_business_id: plan_id,
-    segments: segs, company_label: String(company_label || "").slice(0, 60) || undefined };
-  if (company_id) meta.company_id = parseInt(company_id, 10) || undefined;
-  if (fieldProfile) meta.field_profile = fieldProfile;
   await pool.query(
     `INSERT INTO magic_links (token_hash, recipient_role, meta, expires_at, access_log, created_at)
      VALUES ($1, 'supplier_portal', $2, NOW() + INTERVAL '7 days', '[]'::jsonb, NOW())`,
-    [rawToHash(raw), JSON.stringify(meta)]);
+    [rawToHash(raw), JSON.stringify({ shipment_id: numericId, plan_business_id: plan_id,
+      segments: segs, company_label: String(company_label || "").slice(0, 60) || undefined })]);
 
   return res.json({ ok: true, segments: segs,
-    magic_link: `${APP_BASE}/public/collab-portal.html?token=${raw}` });
+    magic_link: `${APP_BASE}/kp?c=${raw}` });
 }
 
 // ── 角色 token 解析（车队/报关行 文件口共用）──────────────
@@ -1842,9 +1795,9 @@ async function resolveRoleToken(pool, raw, roles) {
 // ── GET /file?token=&type=so|cd&ref= — 文档下载代理 ─────────
 // magic token 换内部 JWT，服务端转发 documents 渲染，JWT 不出服务器。
 // 车队只能拿 SO（托书）；报关行 SO + CD（报关底稿，ref 必须是本票挂的订单号）。
-const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl"], customer_booking: ["pack"],
+const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl", "quarantine"], customer_booking: ["pack"],
   factory_booking: ["upload"],
-  supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl"] };
+  supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl", "quarantine"] };
 async function handleFileProxy(req, res, pool) {
   const { token: raw, type, ref, aud } = req.query || {};
   const auth = await resolveRoleToken(pool, raw, ["trucking_booking", "broker_booking", "supplier_portal", "customer_booking", "factory_booking"]);
@@ -1855,7 +1808,7 @@ async function handleFileProxy(req, res, pool) {
   let docId;
   // 非危声明/电放保函：shipping-plan-pdf 端点（关联字段=计划 id）
   if (type === "nondg" || type === "telex" || type === "transfer" || type === "customs_decl") {
-    const jwtX = generateToken({ id: 0, username: "collab-doc-proxy", role: "logistics" });
+    const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 }); // documents 鉴权核 accounts 表,虚构 uid 会 ACCOUNT_NOT_FOUND → 用真实服务账号 svc-agent(id=90)
     const urlX = `http://127.0.0.1:9000/api/db/shipping-plan-pdf?id=${auth.planId}&type=${type}&token=${encodeURIComponent(jwtX)}`;
     try {
       const up = await fetch(urlX);
@@ -1876,6 +1829,29 @@ async function handleFileProxy(req, res, pool) {
     res.setHeader("Content-Type", hit.mime || "application/octet-stream");
     res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(hit.filename)}`);
     return res.end(fs.readFileSync(fp));
+  }
+  // 检疫报告：真源 document_uploads(doc_type=quarantine_report)，按本票 plan→orders 的 contract_no 或 order_no 匹配（防越权拉别票）
+  if (type === "quarantine") {
+    const qref = parseInt(ref, 10);   // ref=du.id 指定某一份；无 ref 取最新（向后兼容）
+    const { rows: qd } = await pool.query(
+      `SELECT COALESCE(du.stamped_url, du.url) AS url, du.mime, du.name
+         FROM document_uploads du
+         JOIN orders o ON (o.contract_no = du.contract_no OR o.order_no = du.contract_no)
+        WHERE o.shipping_plan_id = $1 AND du.doc_type = 'quarantine_report'
+          AND COALESCE(du.stamped_url, du.url) IS NOT NULL
+          AND ($2::int IS NULL OR du.id = $2::int)
+        ORDER BY du.id DESC LIMIT 1`, [auth.planId, qref > 0 ? qref : null]);
+    if (!qd.length) return res.status(404).json({ ok: false, error: "本票暂无检疫报告" });
+    let qurl = String(qd[0].url);
+    if (!/^https?:\/\//i.test(qurl)) qurl = "https://files.sanlynos.com/" + qurl.replace(/^\/+/, ""); // 相对路径挂 files base
+    try {
+      const up = await fetch(qurl);
+      res.status(up.status);
+      const ct = up.headers.get("content-type") || qd[0].mime || "application/octet-stream";
+      res.setHeader("Content-Type", ct);
+      res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(qd[0].name || "quarantine_report")}`);
+      return res.end(Buffer.from(await up.arrayBuffer()));
+    } catch (e) { return res.status(502).json({ ok: false, error: "检疫报告服务不可用" }); }
   }
   let extraQ = "";
   if (type === "so") {
@@ -1898,7 +1874,7 @@ async function handleFileProxy(req, res, pool) {
     if (!rows.length) return res.status(403).json({ ok: false, error: "订单不属于本票" });
     docId = String(ref);
   }
-  const jwt = generateToken({ id: 0, username: "collab-doc-proxy", role: "logistics" });
+  const jwt = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 }); // 同上：真实服务账号,虚构 uid 会 401 ACCOUNT_NOT_FOUND
   const audQ = (type !== "pack" && (aud === "customs" || aud === "customer")) ? `&audience=${aud}` : "";
   const url = `http://127.0.0.1:9000/api/db/documents?type=${type}&id=${encodeURIComponent(docId)}&token=${encodeURIComponent(jwt)}${audQ}${extraQ || ""}`;
   try {
@@ -2199,6 +2175,246 @@ async function handleSupplyChainOptions(req, res, pool) {
   return res.json({ ok: true, companies: { forwarders, trucking, brokers, factories, customers, intermediaries } });
 }
 
+async function resolveUpstreamDownstreamToken(req, res, pool, raw) {
+  if (!raw) {
+    res.status(400).json({ ok: false, error: "token 必填" });
+    return null;
+  }
+  const { rows } = await pool.query(
+    `SELECT meta FROM magic_links
+      WHERE token_hash = $1
+        AND recipient_role = 'supplier_portal'
+        AND expires_at > NOW() AND revoked_at IS NULL LIMIT 1`,
+    [rawToHash(raw)]
+  );
+  if (!rows.length) {
+    res.status(403).json({ ok: false, error: "链接无效" });
+    return null;
+  }
+  const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
+  if (meta.field_profile !== "upstream_downstream") {
+    res.status(403).json({ ok: false, error: "无权操作承运方" });
+    return null;
+  }
+  const planId = parseInt(meta.shipment_id, 10);
+  if (!planId) {
+    res.status(400).json({ ok: false, error: "plan 无效" });
+    return null;
+  }
+  return { meta, planId };
+}
+
+// ── GET /collab-party-invoices?token= — godview 各方票据只读状态 ──
+async function handleCollabPartyInvoices(req, res, pool) {
+  const { token: raw } = req.query || {};
+  const ctx = await resolveUpstreamDownstreamToken(req, res, pool, raw);
+  if (!ctx) return;
+
+  const { rows } = await pool.query(
+    `SELECT sp.id, sp.contract_no, sp.order_nos, sp.factory_company_id,
+            sp.customer, sp.customer_en,
+            cf.code AS forwarder_code, COALESCE(cf.name_cn, cf.name_en) AS forwarder_name,
+            ct.code AS trucking_code, COALESCE(ct.name_cn, ct.name_en) AS trucking_name,
+            cb.code AS customs_code, COALESCE(cb.name_cn, cb.name_en) AS customs_name,
+            cfac.code AS factory_code, COALESCE(cfac.name_cn, cfac.name_en) AS factory_name
+       FROM shipping_plans sp
+       LEFT JOIN companies cf ON cf.id = sp.forwarder_company_id
+       LEFT JOIN companies ct ON ct.id = sp.trucking_company_id
+       LEFT JOIN companies cb ON cb.id = sp.customs_broker_id
+       LEFT JOIN companies cfac ON cfac.id = sp.factory_company_id
+      WHERE sp.id = $1
+      LIMIT 1`,
+    [ctx.planId]
+  );
+  if (!rows.length) return res.status(404).json({ ok: false, error: "计划不存在" });
+
+  const plan = rows[0];
+  const orderNos = Array.isArray(plan.order_nos) ? plan.order_nos : [];
+  const matchArr = [plan.contract_no, ...orderNos].map(v => String(v || "").trim()).filter(Boolean);
+
+  const readIn = async (code) => {
+    if (!code) return { received: false, count: 0, amount: 0, currency: null, invoice_nos: [] };
+    const r = await pool.query(
+      `SELECT count(*)::int AS n,
+              COALESCE(SUM(amount_incl_tax),0) AS amt,
+              COALESCE(ARRAY_REMOVE(ARRAY_AGG(invoice_no::text), NULL), ARRAY[]::text[]) AS nos,
+              min(currency) AS currency
+         FROM finance_invoices_in
+        WHERE contract_nos::text[] && $1::text[]
+          AND seller_company_code = $2`,
+      [matchArr, code]
+    );
+    const row = r.rows[0] || {};
+    const count = Number(row.n || 0);
+    return {
+      received: count > 0,
+      count,
+      amount: Number(row.amt || 0),
+      currency: row.currency || null,
+      invoice_nos: Array.isArray(row.nos) ? row.nos : [],
+    };
+  };
+  const readOut = async () => {
+    const r = await pool.query(
+      `SELECT count(*)::int AS n,
+              COALESCE(SUM(amount_incl_tax),0) AS amt,
+              COALESCE(ARRAY_REMOVE(ARRAY_AGG(invoice_no::text), NULL), ARRAY[]::text[]) AS nos,
+              min(currency) AS currency
+         FROM finance_invoices_out
+        WHERE contract_nos::text[] && $1::text[]`,
+      [matchArr]
+    );
+    const row = r.rows[0] || {};
+    const count = Number(row.n || 0);
+    return {
+      issued: count > 0,
+      count,
+      amount: Number(row.amt || 0),
+      currency: row.currency || null,
+      invoice_nos: Array.isArray(row.nos) ? row.nos : [],
+    };
+  };
+
+  const [oceanIn, truckIn, customsIn, factoryIn, customerOut] = await Promise.all([
+    readIn(plan.forwarder_code),
+    readIn(plan.trucking_code),
+    readIn(plan.customs_code),
+    plan.factory_company_id ? readIn(plan.factory_code) : Promise.resolve(null),
+    readOut(),
+  ]);
+
+  return res.json({
+    ok: true,
+    parties: {
+      ocean: { label: plan.forwarder_name || "海运货代", code: plan.forwarder_code || null, kind: "in", ...oceanIn },
+      truck: { label: plan.trucking_name || "车队", code: plan.trucking_code || null, kind: "in", ...truckIn },
+      customs: { label: plan.customs_name || "报关行", code: plan.customs_code || null, kind: "in", ...customsIn },
+      factory: plan.factory_company_id
+        ? { label: plan.factory_name || "工厂", code: plan.factory_code || null, kind: "in", assigned: true, ...factoryIn }
+        : { label: "未指派", code: null, kind: "in", assigned: false },
+      customer: { label: plan.customer_en || plan.customer || "客户", kind: "out", ...customerOut },
+    },
+  });
+}
+
+// ── GET /collab-vendor-options?token=&segment=ocean|truck|customs ──
+async function handleCollabVendorOptions(req, res, pool) {
+  const { token: raw, segment } = req.query || {};
+  const ctx = await resolveUpstreamDownstreamToken(req, res, pool, raw);
+  if (!ctx) return;
+  const typeBySegment = { ocean: "forwarder", truck: "trucking", customs: "customs_broker" };
+  const type = typeBySegment[segment];
+  if (!type) return res.status(400).json({ ok: false, error: "segment 无效" });
+  const { rows } = await pool.query(
+    `SELECT id, name_cn, COALESCE(name_en, name_cn) AS name
+       FROM companies
+      WHERE type = $1 AND (active IS NULL OR active = true)
+        AND merged_into_code IS NULL
+        AND name_cn NOT LIKE '[已合并]%'
+      ORDER BY name_cn NULLS LAST LIMIT 120`,
+    [type]
+  );
+  return res.json({ ok: true, options: rows, companies: rows });
+}
+
+// ── POST /collab-assign-vendor — godview 选/换承运方并当场发子链 ──
+async function handleCollabAssignVendor(req, res, pool) {
+  const { token: raw, segment, company_id } = req.body || {};
+  const ctx = await resolveUpstreamDownstreamToken(req, res, pool, raw);
+  if (!ctx) return;
+  const cfg = {
+    ocean: {
+      type: "forwarder",
+      update: ["forwarder_company_id", "forwarder_cn"],
+      role: "supplier_portal",
+      page: "collab-portal.html",
+      segments: ["ocean"],
+    },
+    truck: {
+      type: "trucking",
+      update: ["trucking_company_id", "trucking_company_cn"],
+      role: "supplier_portal",
+      page: "collab-portal.html",
+      segments: ["truck"],
+    },
+    customs: {
+      type: "customs_broker",
+      update: ["customs_broker_id", "customs_broker_cn"],
+      role: "supplier_portal",
+      page: "collab-portal.html",
+      segments: ["customs"],
+    },
+  }[segment];
+  if (!cfg) return res.status(400).json({ ok: false, error: "segment 无效" });
+  const companyId = parseInt(company_id, 10);
+  if (!companyId) return res.status(400).json({ ok: false, error: "company_id 必填" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: companies } = await client.query(
+      `SELECT id, name_cn, COALESCE(name_en, name_cn) AS name
+         FROM companies
+        WHERE id = $1 AND type = $2 AND (active IS NULL OR active = true)
+          AND merged_into_code IS NULL
+        LIMIT 1`,
+      [companyId, cfg.type]
+    );
+    if (!companies.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, error: "找不到可用承运方" });
+    }
+    const vendor = companies[0];
+    const vendorName = vendor.name_cn || vendor.name || "";
+    const planRow = await client.query(
+      `SELECT _id FROM shipping_plans WHERE id = $1 LIMIT 1`,
+      [ctx.planId]
+    );
+    if (!planRow.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, error: "计划不存在" });
+    }
+    const planBusinessId = planRow.rows[0]._id || ctx.meta.plan_business_id || null;
+
+    await client.query(
+      `UPDATE shipping_plans
+          SET ${cfg.update[0]} = $1, ${cfg.update[1]} = $2, updated_at = NOW()
+        WHERE id = $3`,
+      [companyId, vendorName, ctx.planId]
+    );
+
+    await client.query(
+      `UPDATE magic_links SET revoked_at = NOW()
+        WHERE recipient_role = 'supplier_portal'
+          AND (meta->>'shipment_id')::int = $1
+          AND meta->'segments' ? $2
+          AND meta->>'field_profile' IS NULL
+          AND revoked_at IS NULL`,
+      [ctx.planId, cfg.segments[0]]
+    );
+
+    const childRaw = genRaw();
+    const childMeta = { shipment_id: ctx.planId, plan_business_id: planBusinessId, segments: cfg.segments, company_label: vendorName || undefined };
+    await client.query(
+      `INSERT INTO magic_links (token_hash, recipient_role, meta, expires_at, access_log, created_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '7 days', '[]'::jsonb, NOW())`,
+      [rawToHash(childRaw), cfg.role, JSON.stringify(childMeta)]
+    );
+
+    await client.query("COMMIT");
+    return res.json({
+      ok: true,
+      vendor: { id: vendor.id, name: vendorName },
+      link_url: `${APP_BASE}/kp?c=${childRaw}`,
+    });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 // ── GET /party-defaults ──────────────────────────────────────────────────────
 // Returns per-party default company from collab_party_defaults.
 async function handlePartyDefaults(req, res, pool) {
@@ -2302,25 +2518,6 @@ function partyKeyFromFactoryLabel(label) {
 function companyCodeMatches(a, b) {
   return normBillCode(a) && normBillCode(a) === normBillCode(b);
 }
-function isOceanBillSegment(row) {
-  const category = [
-    row && row.canonical_category,
-    row && row.cost_category,
-    row && row.raw_cost_name_cn,
-  ].map(v => String(v || "").trim()).filter(Boolean).join(" ");
-  if (!category) return false;
-  if (/拖车|陆运|truck|trucking|报关|customs|工厂|factory|保险|insurance/i.test(category)) return false;
-  return /海运|ocean|sea\s*freight|freight|港杂|local|port|THC|订舱|booking|单证|document|doc|电放|telex|封签|封条|铅封|seal|VGM|EIR|设备|操作费|handling|改单|舱单|manifest|PTF|文件|安保|仓单|集港|码头|港建/i.test(category);
-}
-function deriveForwarderFromOceanBills(rows) {
-  const suppliers = uniqBillVals(
-    rows
-      .filter(row => Number(row.amount || 0) > 0 && isOceanBillSegment(row))
-      .map(row => row.supplier)
-      .filter(name => String(name || "").trim().length > 4)
-  );
-  return suppliers.length === 1 ? suppliers[0] : null;
-}
 
 // ── GET /party-billing-status?plan_id=xxx ───────────────────────────────────
 // Read-only billing badges from active_freight_supplier_bills; shipping_plans.party_billing is ignored.
@@ -2361,11 +2558,9 @@ async function handlePartyBillingStatus(req, res, pool) {
   const fsbCols = new Set(fsbColR.rows.map(row => row.column_name));
   const optional = (name, fallback = "NULL") => fsbCols.has(name) ? `b.${name}` : `${fallback} AS ${name}`;
   const bills = await pool.query(
-    `SELECT b.id, b.bl_no, b.supplier, b.cost_category, b.amount, b.sale_amount,
+    `SELECT b.id, b.bl_no, b.cost_category, b.amount, b.sale_amount,
             b.supplier_company_code, b.payer_company_code,
             b.confirmed_at, b.reconciled, b.ap_status, b.ap_paid_amount, b.ar_status, b.ar_paid_amount,
-            ${optional("canonical_category")},
-            b.raw->>'cost_name_cn' AS raw_cost_name_cn,
             ${optional("rebill_to_type")}, ${optional("rebill_to_name")}, ${optional("rebill_to_code")},
             b.raw->'collab_pending' AS collab_pending
        FROM active_freight_supplier_bills b
@@ -2391,13 +2586,9 @@ async function handlePartyBillingStatus(req, res, pool) {
   const supplierRows = (code) => rows.filter(row => code && companyCodeMatches(row.supplier_company_code, code) && Number(row.amount || 0) > 0);
   const payerRows = (code) => rows.filter(row => code && companyCodeMatches(row.payer_company_code, code) && Number(row.sale_amount || 0) > 0);
   const factorySupplierCodes = uniqBillVals(factoryCodes.map(row => row.code));
-  const oceanBilling = {
-    ...partyBillSummary(supplierRows(plan.forwarder_code), "payable"),
-    derived_forwarder: deriveForwarderFromOceanBills(rows),
-  };
   const party_billing = {
     factory: partyBillSummary(rows.filter(row => factorySupplierCodes.includes(normBillCode(row.supplier_company_code)) && Number(row.amount || 0) > 0), "payable"),
-    ocean: oceanBilling,
+    ocean: partyBillSummary(supplierRows(plan.forwarder_code), "payable"),
     trucking: partyBillSummary(supplierRows(plan.trucking_code), "payable"),
     broker: partyBillSummary(supplierRows(plan.broker_code), "payable"),
     intermediary: partyBillSummary(supplierRows(plan.intermediary_code), "payable"),
@@ -2578,7 +2769,11 @@ async function handleMasterPreviewToken(req, res, pool) {
   if (!requireAuth(req, res)) return;
   const isPost = req.method === "POST";
   const src = isPost ? (req.body || {}) : (req.query || {});
-  const { plan_id, party, segments, company_label, company_id } = src;
+  const { plan_id, party, segments } = src;
+  // 2026-07-23 修复「👁 我代填」对工厂行报 factory_scope_required：
+  // 前端工厂行传的是 factory_label（与 send-factory-link 同名），端口/发货人行传 company_label，
+  // 这里两个都收，避免同一个"公司名"在两条接口上叫两个名字。
+  const company_label = src.company_label || src.factory_label;
   if (!plan_id) return res.status(400).json({ ok: false, error: "plan_id 必填" });
 
   const planRow = await pool.query(
@@ -2598,21 +2793,18 @@ async function handleMasterPreviewToken(req, res, pool) {
     role = "shipper_booking";
     if (company_label) meta.shipper_scope = { label: String(company_label).slice(0, 60) };
   } else if (party === "factory") {
-    // 工厂预览必须开真工厂页(collab-factory.html)+ factory_booking 角色，
-    // 与 handleSendFactoryLink 对齐；collab-portal 没有工厂段内容会显示成海运界面
+    // 方案A：工厂页不再支持无 scope 全貌 preview；内部全貌走登录态 collab-hub。
+    if (!company_label) {
+      return res.status(400).json({ ok: false, error: "factory_scope_required" });
+    }
     page = "collab-factory.html";
     role = "factory_booking";
-    if (company_label) meta.factory_scope = { label: String(company_label).slice(0, 60) };
+    meta.factory_scope = { label: String(company_label).slice(0, 60) };
   } else {
     const segs = Array.isArray(segments) ? segments.filter(s => ["ocean","truck","customs","factory"].includes(s))
       : [party].filter(s => ["ocean","truck","customs"].includes(s));
     meta.segments = segs.length ? segs : ["ocean", "truck", "customs"];
-    if (company_label) {
-      meta.company_label = String(company_label).slice(0, 60);
-      if (company_id) meta.company_id = parseInt(company_id, 10) || undefined;
-      const fieldProfile = await inferSupplierPortalFieldProfile(pool, meta);
-      if (fieldProfile) meta.field_profile = fieldProfile;
-    } else meta.field_profile = "shipping_booking";
+    if (company_label) meta.company_label = String(company_label).slice(0, 60); else meta.field_profile = "shipping_booking";
   }
 
   const raw = genRaw();
@@ -2621,7 +2813,7 @@ async function handleMasterPreviewToken(req, res, pool) {
      VALUES ($1, $2, $3, NOW() + INTERVAL '2 hours', '[]'::jsonb, NOW())`,
     [rawToHash(raw), role, JSON.stringify(meta)]);
 
-  return res.json({ ok: true, url: `${APP_BASE}/public/${page}?token=${raw}` });
+  return res.json({ ok: true, url: `${APP_BASE}/kp?c=${raw}` });
 }
 
 
@@ -2659,8 +2851,8 @@ async function handleSendIntermediaryLink(req, res, pool) {
       field_profile: cfg.field_profile,
       party_scope: { mode: "upstream_downstream" },
     })]);
-  const page = intermediary === "babi" ? "collab-factory.html" : "collab-portal.html";
-  return res.json({ ok: true, magic_link: `${APP_BASE}/public/${page}?token=${raw}` });
+  const page = "collab-portal.html";
+  return res.json({ ok: true, magic_link: `${APP_BASE}/kp?c=${raw}` });
 }
 
 // ── GET /collab-pricing — 洋宝宝费用成本/销售视图（只读）──
@@ -2755,15 +2947,15 @@ async function handleCollabOrderPricing(req, res, pool) {
 
   // 拉本票关联订单的行项目（采购价=settle_after_tax_per_unit，销售价=unit_price）
   const { rows } = await pool.query(
-    `SELECT o.order_no, o.customer_en AS customer,
-            oli.product_name, oli.product_sku,
-            oli.quantity, oli.unit,
-            oli.settle_after_tax   AS purchase_unit_price,
-            oli.unit_price         AS sales_unit_price,
-            oli.total_amount       AS sales_total,
-            (oli.settle_after_tax * oli.quantity) AS purchase_total,
-            ((oli.unit_price - oli.settle_after_tax) * oli.quantity) AS gross_profit,
-            oli.currency
+    `SELECT o.order_no, o.customer AS customer,
+            oli.product_name, oli.sku AS product_sku,
+            oli.qty_ctn AS quantity, oli.unit,
+            oli.factory_price    AS purchase_unit_price,
+            oli.unit_price       AS sales_unit_price,
+            oli.subtotal         AS sales_total,
+            oli.factory_subtotal AS purchase_total,
+            (oli.subtotal - oli.factory_subtotal) AS gross_profit,
+            o.currency
        FROM orders o
        JOIN order_line_items oli ON oli.order_id = o.id
       WHERE o.shipping_plan_id = $1
@@ -2794,9 +2986,9 @@ async function handleCollabPricingSubmit(req, res, pool) {
     [rawToHash(raw)]);
   if (!ml.length) return res.status(403).json({ ok: false, error: "链接无效" });
   const meta = typeof ml[0].meta === "string" ? JSON.parse(ml[0].meta) : ml[0].meta;
-  // 仅内部 field_profile 可补录运费销售价；纯供应商方拒绝
-  const seesPricing = meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream";
-  if (!seesPricing) return res.status(403).json({ ok: false, error: "无权补录运费价格" });
+  // 仅 upstream_downstream godview 可补录运费销售价；shipping_booking 只读。
+  if (meta.field_profile !== "upstream_downstream")
+    return res.status(403).json({ ok: false, error: "无权补录运费价格" });
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId) return res.status(400).json({ ok: false, error: "plan 无效" });
 
@@ -2854,7 +3046,7 @@ async function handleFactoryToken(req, res, pool) {
     [hash, JSON.stringify({ shipment_id: shipping_plan_id, factory_scope: { label: factoryLabel } })]
   );
 
-  return res.json({ ok: true, link: `${APP_BASE}/public/collab-factory.html?token=${rawTok}`, expires_in: "7 days" });
+  return res.json({ ok: true, link: `${APP_BASE}/kp?c=${rawTok}`, expires_in: "7 days" });
 }
 
 }
@@ -2909,6 +3101,9 @@ export default async function handler(req, res) {
     if ((req.method === "GET" || req.method === "POST") && pathSuffix === "master-preview-token") return await handleMasterPreviewToken(req, res, pool);
     if (req.method === "GET" && pathSuffix === "collab-pricing")       return await handleCollabPricing(req, res, pool);
     if (req.method === "GET" && pathSuffix === "collab-order-pricing") return await handleCollabOrderPricing(req, res, pool);
+    if (req.method === "GET" && pathSuffix === "collab-party-invoices") return await handleCollabPartyInvoices(req, res, pool);
+    if (req.method === "GET" && pathSuffix === "collab-vendor-options") return await handleCollabVendorOptions(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "collab-assign-vendor") return await handleCollabAssignVendor(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-intermediary-link")  return await handleSendIntermediaryLink(req, res, pool);
     if (req.method === "POST" && pathSuffix === "factory-self-token")  return await handleFactoryToken(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "collab-pricing-submit")    return await handleCollabPricingSubmit(req, res, pool);

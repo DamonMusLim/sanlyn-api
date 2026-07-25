@@ -16,8 +16,6 @@ var ALLOWED_TABLES = {
   trucking_rates: { label: "车队费率", key: "_id", columns: ["_id","vendor_cn","factory_name","pol","valid_from","valid_to","rates","surge","currency","created_at"] },
   factories: { label: "工厂管理", key: "id", columns: ["id","name","name_short","po_prefix","ports","notes","is_active","created_at"] },
   field_schemas: { label: "字段设计", key: "id", columns: ["id","field_id","table_name","column_name","label","label_en","field_type","storage","section","section_icon","section_order","sort_order","is_visible","is_editable","is_required","is_list_col","show_empty","width","options","default_value","placeholder","description","linked_table","linked_field","linked_bring","created_at","updated_at"] },
-  // ── 🏪 宠物店 (金枋店) — 只读镜像，数据每日同步自 mini；admin 不可写（改价走 brain-pricing 链路） ──
-  petstore_pricing_log: { label: "🏪 AI改价日志", key: "id", readonly: true, defaultSort: "ts", columns: ["id","ts","log_date","store_name","channel","product_code","product_name","old_price","new_price","rate","reason","result","days_left","tier","store_code","synced_at"] },
 };
 
 export default async function handler(req, res) {
@@ -78,7 +76,7 @@ export default async function handler(req, res) {
       var limit = parseInt(req.query.limit || 50);
       var offset = parseInt(req.query.offset || 0);
       var search = req.query.search || "";
-      var defaultSort = ALLOWED_TABLES[table].defaultSort || (ALLOWED_TABLES[table].columns.includes("created_at") ? "created_at" : (ALLOWED_TABLES[table].columns.includes("id") ? "id" : ALLOWED_TABLES[table].key));
+      var defaultSort = ALLOWED_TABLES[table].columns.includes("created_at") ? "created_at" : (ALLOWED_TABLES[table].columns.includes("id") ? "id" : ALLOWED_TABLES[table].key);
       var sortBy = req.query.sort || defaultSort;
       var sortDir = (req.query.dir || "DESC").toUpperCase() === "ASC" ? "ASC" : "DESC";
       var filters = {};
@@ -110,7 +108,7 @@ export default async function handler(req, res) {
       var sql = "SELECT * FROM " + table;
       if (conds.length) sql += " WHERE " + conds.join(" AND ");
       // Validate sort column
-      if (!ALLOWED_TABLES[table].columns.includes(sortBy)) sortBy = defaultSort;
+      if (!ALLOWED_TABLES[table].columns.includes(sortBy)) sortBy = "created_at";
       sql += " ORDER BY " + sortBy + " " + sortDir;
       params.push(limit);
       sql += " LIMIT $" + params.length;
@@ -154,7 +152,6 @@ export default async function handler(req, res) {
       var id = req.body.id;
       var fields = req.body.fields || {};
       if (!table || !ALLOWED_TABLES[table]) return res.status(400).json({ error: "Invalid table" });
-      if (ALLOWED_TABLES[table].readonly) return res.status(403).json({ error: "只读表，不可修改: " + table });
       if (!id) return res.status(400).json({ error: "id required" });
 
       var keyCol = ALLOWED_TABLES[table].key;
@@ -200,7 +197,6 @@ export default async function handler(req, res) {
       var table = req.body.table;
       var fields = req.body.fields || {};
       if (!table || !ALLOWED_TABLES[table]) return res.status(400).json({ error: "Invalid table" });
-      if (ALLOWED_TABLES[table].readonly) return res.status(403).json({ error: "只读表，不可写入: " + table });
       var keyCol = ALLOWED_TABLES[table].key;
       var colNames = [], params = [], valCasts = [];
       for (var col in fields) {
@@ -237,7 +233,6 @@ export default async function handler(req, res) {
       var table = req.body.table;
       var id = req.body.id;
       if (!table || !ALLOWED_TABLES[table]) return res.status(400).json({ error: "Invalid table" });
-      if (ALLOWED_TABLES[table].readonly) return res.status(403).json({ error: "只读表，不可删除: " + table });
       if (!id) return res.status(400).json({ error: "id required" });
       var keyCol = ALLOWED_TABLES[table].key;
       var result = await pool.query("DELETE FROM " + table + " WHERE " + keyCol + " = $1 RETURNING *", [id]);

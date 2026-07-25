@@ -22,18 +22,6 @@ function openBillingInvoice(){
   window.open('/public/invoice-confirm-preview.html?token=' + encodeURIComponent(window._billingToken), '_blank', 'noopener');
 }
 
-function renderMissingPrompt(summary){
-  const list = (summary && Array.isArray(summary.missing_for_role)) ? summary.missing_for_role : [];
-  const old = document.getElementById('missingPrompt'); if(old) old.remove();
-  if(!list.length) return;
-  const box = document.createElement('div');
-  box.id = 'missingPrompt';
-  box.style.cssText = 'margin:10px 0 12px;padding:10px 14px;background:#fffbeb;border:1.5px solid #fbbf24;border-radius:8px;color:#92400e;font-size:12px;font-weight:700;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;';
-  box.innerHTML = '<span>待填</span>' + list.map(x=>'<span style="background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;padding:2px 9px;">'+esc(x.label||x.field)+'</span>').join('');
-  const anchor = document.getElementById('chips') || document.getElementById('segTabs') || document.body.firstChild;
-  anchor.parentNode.insertBefore(box, anchor);
-}
-
 function renderBillingEntry(billing, s){
   const card = $('billingCard');
   const body = $('billingBody');
@@ -269,7 +257,7 @@ async function boot(){
   if (d.dispatched_at) s.dispatched_at = d.dispatched_at;   // 委托/接单时间戳（后端 magic_links.created_at）
   window._sheetP = s;
   const isGodview = d.role === 'supplier_portal' &&
-    (ps.field_profile === 'upstream_downstream' || ps.field_profile === 'shipping_booking' || ps.field_profile === 'trade_external');
+    (ps.field_profile === 'upstream_downstream' || ps.field_profile === 'shipping_booking');
   if (isGodview && window.CollabPortalGodview) {
     await window.CollabPortalGodview.render({ data:d, sheet:s, portalScope:ps, api:API, token, $, esc, fmtD, show });
     return;
@@ -286,7 +274,6 @@ async function boot(){
   $('topBadge').textContent = s.shipment_no || '供应链端口';
   $('bannerTitle').textContent = (s.shipment_no||'—') + ' — ' + segs.map(x=>SEG_META[x].label).join('+') + (ps.company_label?`（${esc(ps.company_label)}）`:'');
   $('bannerSub').textContent = '贵司承包：' + segs.map(x=>SEG_META[x].label).join('+') + ' ＝ ' + (ps.company_label || '贵司') + (segs.length>=3 ? ' · 一个口全干' : '');
-  renderMissingPrompt(s.collab_summary);
   const chips=[];
   // 航线只给海运方(货代)看；纯车队/报关方不需要知道 POL→POD
   if((s.pol||s.pod) && segs.includes('ocean')) chips.push(`<div class="chip"><span>航线 </span><b>${esc(s.pol||'—')} → ${esc(s.pod||'—')}</b></div>`);

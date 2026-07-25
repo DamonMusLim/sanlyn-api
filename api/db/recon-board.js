@@ -6,7 +6,6 @@ import {
   worstTone, ageChip, nextAction, amountMapAdd, amountList,
 } from "./recon-board-helpers.js";
 import { INVOICE_CONFIRM_SQL, reviewPriceOverride } from "./recon-board-invoice-confirm.js";
-import { fetchPortChargeHistory, computePortChargeCheck } from "./recon-board-portcharge.js";
 
 const FINANCE_ROLES = new Set(["admin", "finance"]);
 
@@ -119,11 +118,7 @@ bill_groups AS (
          COALESCE(SUM(br.ap_paid_amount),0) AS ap_paid,
          COALESCE(SUM(br.sale_amount),0) AS ar_total,
          COALESCE(SUM(br.ar_paid_amount),0) AS ar_paid,
-         COALESCE(jsonb_agg(jsonb_build_object(
-           'ap_status', br.ap_status, 'ar_status', br.ar_status,
-           'cost_category', br.cost_category, 'amount', br.amount, 'qty', br.qty,
-           'unit_price', br.unit_price, 'bl_no', br.bl_no
-         )) FILTER (WHERE br.id IS NOT NULL), '[]'::jsonb) AS bills
+         COALESCE(jsonb_agg(jsonb_build_object('ap_status', br.ap_status, 'ar_status', br.ar_status)) FILTER (WHERE br.id IS NOT NULL), '[]'::jsonb) AS bills
     FROM bill_rows br
    WHERE br.id IS NOT NULL
    GROUP BY br.plan_id, COALESCE(br.supplier_company_code, br.supplier), COALESCE(br.currency_norm, br.currency, 'CNY')
@@ -276,7 +271,7 @@ function orderFact(row) {
   return r;
 }
 
-function shipmentFact(row, selectedOrderNos, portChargeHistory) {
+function shipmentFact(row, selectedOrderNos) {
   const billGroups = Array.isArray(row.bill_groups) ? row.bill_groups : [];
   const ap = money(row.ap_total);
   const apPaid = money(row.ap_paid) || 0;
@@ -289,19 +284,12 @@ function shipmentFact(row, selectedOrderNos, portChargeHistory) {
   const parent = orderNos.find(no => selectedOrderNos.has(no)) || null;
   const refs = { shipment_id: row._id || row.id, shipment_no: row.shipment_no, bl_no: row.bl_no, order_nos: orderNos, parent_order_no: parent };
   const settlementLines = [];
-  const portChargeChecks = [];
   const firstText = (...xs) => xs.find(hasText) || null;
   const displayForwarderName = firstText(...billGroups.map(g => g.supplier_name), row.forwarder);
   const missingForwarder = !hasText(displayForwarderName);
   for (const g of billGroups) {
     const groupBills = Array.isArray(g.bills) ? g.bills : [];
     const lineForwarderName = firstText(g.supplier_name, row.forwarder);
-    if (portChargeHistory) {
-      for (const b of groupBills) {
-        const check = computePortChargeCheck(b, lineForwarderName, portChargeHistory);
-        if (check) portChargeChecks.push(check);
-      }
-    }
     const lineForwarderMissing = !hasText(lineForwarderName);
     settlementLines.push(settlementLine({
       sourceType: "shipment",
@@ -394,7 +382,6 @@ function shipmentFact(row, selectedOrderNos, portChargeHistory) {
     settlement_lines: settlementLines,
     data_missing: missingForwarder,
     missing_reason: missingForwarder ? "缺货代" : null,
-    port_charge_checks: portChargeChecks,
     factory_side: { payable: ap, paid: apPaid, due: due(ap, apPaid), paid_status: aggregateStatus(billGroups.flatMap(g => Array.isArray(g.bills) ? g.bills : []), "ap_status"), invoice_status: row.ap_invoice || "pending", tone: missingForwarder ? "risk" : apTone },
     customer_side: { receivable: ar, received: arPaid, due: due(ar, arPaid), received_status: aggregateStatus(billGroups.flatMap(g => Array.isArray(g.bills) ? g.bills : []), "ar_status"), tone: arTone },
     signals: { invoice_status: row.ap_invoice || "pending", payable_due: due(ap, apPaid), receivable_due: due(ar, arPaid), customer_slip_uploaded: true, amount_partial: isPartial(ap, apPaid) || isPartial(ar, arPaid) },
@@ -415,10 +402,10 @@ function sortRows(rows) {
   });
 }
 
-function buildRows(facts, portChargeHistory = null) {
+function buildRows(facts) {
   const orders = (facts.orders || []).map(orderFact);
   const selected = new Set(orders.map(o => o.order_no).filter(Boolean));
-  const shipments = (facts.shipments || []).map(s => shipmentFact(s, selected, portChargeHistory));
+  const shipments = (facts.shipments || []).map(s => shipmentFact(s, selected));
   return sortRows([...orders, ...shipments]);
 }
 
@@ -452,12 +439,8 @@ function buildSummary(facts) {
 }
 
 async function handleBoard(req, res) {
-  const pool = getPool();
-  const [facts, portChargeHistory] = await Promise.all([
-    fetchFacts(pool, { q: String(req.query?.q || "").trim(), limit: parseLimit(req.query?.limit) }),
-    fetchPortChargeHistory(pool),
-  ]);
-  const rows = buildRows(facts, portChargeHistory);
+  const facts = await fetchFacts(getPool(), { q: String(req.query?.q || "").trim(), limit: parseLimit(req.query?.limit) });
+  const rows = buildRows(facts);
   return res.json({ success: true, rows, orders: rows.filter(r => r.type === "order"), shipments: rows.filter(r => r.type === "shipment"), unclassified_payments_count: Number(facts.unclassified_payments_count || 0) });
 }
 

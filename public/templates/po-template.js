@@ -164,10 +164,9 @@ function init(){
       var p=(_sc&&ps.find(function(x){return x.code===_sc;}))||ps.find(function(x){return x.name_cn===primary.issuing_company;})||ps.find(function(x){return x.is_default;});
       if(p){setText('buyerName',p.name_cn||'');setText('buyerTaxNo',p.tax_no||'');setText('buyerBank',p.bank_name_cn||p.bank_name||'');setText('buyerAccount',p.rmb_account||'');}
     }).catch(function(){});
-    var _fq=primary.factory_code||primary.factory;
-    if(_fq)fetch(API+'/api/db/companies?q='+encodeURIComponent(_fq),{headers:authH()}).then(function(r){return r.json();}).then(function(d){
+    if(primary.factory)fetch(API+'/api/db/companies?q='+encodeURIComponent(primary.factory),{headers:authH()}).then(function(r){return r.json();}).then(function(d){
       var cs=Array.isArray(d)?d:(d.data||[]);
-      var c=(primary.factory_code&&cs.find(function(x){return x.code===primary.factory_code;}))||cs.find(function(x){return x.name_cn===primary.factory&&(x.tax_id||x.tax_no);})||cs.find(function(x){return x.name_cn===primary.factory;})||cs[0];
+      var c=cs.find(function(x){return x.name_cn===primary.factory;})||cs[0];
       if(c){setText('sellerName',c.name_cn||'');setText('sellerTaxNo',c.tax_id||c.tax_no||'');setText('sellerBank',c.bank_name||'');setText('sellerAccount',c.bank_account||'');}
     }).catch(function(){});
     // ── 产品+价格：优先 order_line_items（有 product_name），降级到 orders.products ────
@@ -255,31 +254,6 @@ function downloadPng(){
     }).catch(function(){document.querySelector('.toolbar').style.display='';btn.textContent='📥 下载图片';btn.disabled=false;});
   };
   if(window.html2canvas)script.onload();else document.head.appendChild(script);
-}
-function downloadPdf(){
-  var btn=document.querySelector('.btn-pdf');
-  btn.textContent='⏳ 生成中…';btn.disabled=true;
-  document.querySelector('.toolbar').style.display='none';
-  function run(){
-    html2canvas(document.getElementById('printPage'),{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false}).then(function(canvas){
-      document.querySelector('.toolbar').style.display='';
-      var jsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
-      var pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-      var pw=210,ph=297,margin=8,iw=pw-margin*2;
-      var ih=canvas.height*iw/canvas.width;
-      var img=canvas.toDataURL('image/jpeg',0.92);
-      if(ih<=ph-margin*2){pdf.addImage(img,'JPEG',margin,margin,iw,ih);}
-      else{ // 分页：内容超一页时按页高切
-        var left=ih,pos=margin;
-        while(left>0){pdf.addImage(img,'JPEG',margin,pos,iw,ih);left-=(ph-margin*2);if(left>0){pdf.addPage();pos=margin-(ih-left);}}
-      }
-      pdf.save('PO-'+(qp('order_no')||'draft')+'.pdf');
-      btn.textContent='📄 下载PDF';btn.disabled=false;
-    }).catch(function(){document.querySelector('.toolbar').style.display='';btn.textContent='📄 下载PDF';btn.disabled=false;});
-  }
-  function loadHtml2canvas(cb){if(window.html2canvas)return cb();var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/html2canvas.min.js';s.onload=cb;s.onerror=function(){alert('PDF库加载失败');btn.textContent='📄 下载PDF';btn.disabled=false;};document.head.appendChild(s);}
-  function loadJsPdf(cb){if((window.jspdf&&window.jspdf.jsPDF)||window.jsPDF)return cb();var s=document.createElement('script');s.src='https://api.sanlyn.cn/templates/vendor/jspdf.umd.min.js';s.onload=cb;s.onerror=function(){alert('PDF库加载失败');btn.textContent='📄 下载PDF';btn.disabled=false;};document.head.appendChild(s);}
-  loadJsPdf(function(){loadHtml2canvas(run);});
 }
 function showBanner(type,msg){['infoBanner','errBanner','okBanner'].forEach(function(id){document.getElementById(id).style.display='none';});var m={info:'infoBanner',err:'errBanner',ok:'okBanner'};var el=document.getElementById(m[type]);if(el){el.textContent=(type==='err'?'⚠ ':'')+msg;el.style.display='block';}}
 function hideBanner(){['infoBanner','errBanner','okBanner'].forEach(function(id){document.getElementById(id).style.display='none';});}

@@ -32,7 +32,6 @@ const WRITABLE = [
   "customs_broker_id","customs_broker_cn","trucking_company_id","trucking_company_cn",
   "factory_company_id","trucking_arrange","forwarder_company_id",
   "freight_cost","freight_sale_usd","freight_sale_cny","freight_total_usd","freight_total_cny",
-  "freight_rate_id","freight_quote_snapshot",
   "port_surcharge_total","trucking_cost_total","customs_cost_total","insurance_cost",
   "doc_fee","tlx_fee","bkg_fee","thc_fee","eir_fee","seal_fee","vgm_fee","customs_declare_fee","info_trans_fee",
   "gross_weight_kg","total_cartons","total_cbm","cargo_description","cargo_ready_date",
@@ -46,57 +45,8 @@ const WRITABLE = [
   "oceanbaby_price_confirmed",
 ];
 const JSONB_COLS = new Set(["containers_detail","trucking_detail","driver_info","raw",
-  "order_contract_nos","contract_nos","order_nos","container_bookings","freight_quote_snapshot"]);
+  "order_contract_nos","contract_nos","order_nos","container_bookings"]);
 const ARRAY_COLS = new Set(["order_nos","contract_nos"]);
-
-function parsePositiveInt(v) {
-  if (v === undefined || v === null || v === "") return null;
-  const n = Number(v);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
-
-async function prepareFreightQuotePatch(pool, body) {
-  if (!Object.prototype.hasOwnProperty.call(body, "freight_rate_id")) return null;
-  const rateId = parsePositiveInt(body.freight_rate_id);
-  const nowRes = await pool.query("SELECT NOW() AS now");
-  const nowIso = nowRes.rows[0].now.toISOString();
-
-  if (!rateId) {
-    body.freight_rate_id = null;
-    if (Object.prototype.hasOwnProperty.call(body, "freight_quote_snapshot")) {
-      body.freight_quote_snapshot = { ...(body.freight_quote_snapshot || {}), detached_at: nowIso };
-    }
-    return null;
-  }
-
-  const rateRes = await pool.query(
-    `SELECT id, pol, pod, carrier, forwarder, gp20, hq40, valid_from, valid_to
-       FROM freight_rates WHERE id = $1 LIMIT 1`,
-    [rateId]
-  );
-  if (!rateRes.rows.length) {
-    const err = new Error("freight_rate_id not found");
-    err.statusCode = 400;
-    throw err;
-  }
-  const rate = rateRes.rows[0];
-  body.freight_rate_id = rateId;
-  body.freight_quote_snapshot = {
-    rate_id: rate.id,
-    pol: rate.pol,
-    pod: rate.pod,
-    carrier: rate.carrier,
-    forwarder: rate.forwarder,
-    price_20gp: rate.gp20,
-    price_40hq: rate.hq40,
-    valid_from: rate.valid_from,
-    valid_to: rate.valid_to,
-    ...(body.freight_quote_snapshot || {}),
-    adopted_at: nowIso,
-  };
-  return rate;
-}
-
 function buildSet(body, params) {
   const sets = [];
   for (const col of WRITABLE) {
@@ -119,7 +69,6 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     try {
       const body = req.body || {};
-      await prepareFreightQuotePatch(poolW, body);
       const params = [];
       const sets = buildSet(body, params);
       // _id 必填(NOT NULL) → 自动生成；created_by 记录操作者
@@ -165,14 +114,13 @@ export default async function handler(req, res) {
       const u0 = req.user || {};
       const _blm = await mirrorPlanBlToOrders(poolW, r.rows[0], u0.name || u0.username || u0.email || u0.role || "admin");
       return res.status(201).json({ success:true, data:r.rows[0], bl_mirror: _blm });
-    } catch (err) { return res.status(err.statusCode || 500).json({ success:false, error: err.message }); }
+    } catch (err) { return res.status(500).json({ success:false, error: err.message }); }
   }
 
   // ── PATCH: 更新海运计划（by id 或 _id）──
   if (req.method === "PATCH") {
     try {
       const body = req.body || {};
-      await prepareFreightQuotePatch(poolW, body);
       const BOOKING_STAGES = new Set(["so_received","confirming","confirmed"]);
       if (body.booking_stage && !BOOKING_STAGES.has(body.booking_stage)) {
         return res.status(400).json({ success:false, error:"invalid booking_stage" });
@@ -221,7 +169,7 @@ export default async function handler(req, res) {
       const uP = req.user || {};
       const _blm = await mirrorPlanBlToOrders(poolW, r.rows[0], uP.name || uP.username || uP.email || uP.role || "admin");
       return res.status(200).json({ success:true, data:r.rows[0], bl_mirror: _blm });
-    } catch (err) { return res.status(err.statusCode || 500).json({ success:false, error: err.message }); }
+    } catch (err) { return res.status(500).json({ success:false, error: err.message }); }
   }
 
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });

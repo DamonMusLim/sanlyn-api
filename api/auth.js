@@ -86,7 +86,6 @@ export function requireRole(req, res, roles) {
 // ── 完全公开路径（无需任何 token）──
 const PUBLIC_PATHS = [
   "/api/db/statement-portal-data",  // 客户对账单门户 public token
-  "/api/db/statement-portal-doc",   // 对账单单据附件打开(magic token在handler内校验+白名单scope,fail-closed) 2026-07-18
   "/",
   "/health",
   // "/api/db/accounts", // REMOVED 2026-04-22 P0 — no longer public; use /api/db/auth-login
@@ -148,9 +147,6 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/collab-pricing",
   "/api/db/booking-collab/collab-order-pricing",
   "/api/db/booking-collab/collab-pricing-submit",
-  "/api/db/booking-collab/collab-party-invoices",
-  "/api/db/booking-collab/collab-vendor-options",
-  "/api/db/booking-collab/collab-assign-vendor",
   "/api/db/bill-center/collab/validate",
   "/api/db/bill-center/collab/submit",
   "/api/internal/ar-followup", // 微信文字回复记催款跟进状态；handler内X-Internal-Key强校验fail-closed，不发任何对外消息

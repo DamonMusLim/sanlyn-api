@@ -11,7 +11,6 @@ body { font-family:'PingFang SC','Microsoft YaHei','Noto Sans SC',Arial,sans-ser
 .toolbar { padding:8px 20px; display:flex; gap:7px; align-items:center; flex-wrap:wrap; background:#fff; border-bottom:1px solid #e2e8f0; margin-bottom:14px; }
 .toolbar button { padding:6px 13px; border-radius:6px; border:none; cursor:pointer; font-size:12px; font-weight:700; }
 .btn-print    { background:#1d4ed8; color:#fff; }
-.btn-pdf      { background:#b91c1c; color:#fff; }
 .btn-download { background:#7c3aed; color:#fff; }
 .btn-excel    { background:#16a34a; color:#fff; }
 .btn-save     { background:#059669; color:#fff; }
@@ -111,8 +110,7 @@ tbody tr:not(.group-header):hover .row-actions { display:flex; }
 <body>
 
 <div class="toolbar">
-  <button class="btn-print"    onclick="window.print()">🖨 打印</button>
-  <button class="btn-pdf"      onclick="downloadPdf()">📄 下载PDF</button>
+  <button class="btn-print"    onclick="window.print()">🖨 打印/PDF</button>
   <button class="btn-download" onclick="downloadPng()">📥 下载图片</button>
   <button class="btn-excel" onclick="exportExcel()">📊 下载Excel</button>
   <button class="btn-save"     onclick="saveDraft()">💾 保存草稿</button>
@@ -257,7 +255,7 @@ tbody tr:not(.group-header):hover .row-actions { display:flex; }
     </div>
   </div>
 
-  <div class="footer-note">⚡ Generated &amp; Verified by <strong>Sanlyn OS Supply Chain Engine</strong> · 模板 PO-FRAME v2026.07.21（完整版）</div>
+  <div class="footer-note">⚡ Generated &amp; Verified by <strong>Sanlyn OS Supply Chain Engine</strong></div>
 </div>
 
 <!-- 修改日志（右侧浮层，不打印）-->

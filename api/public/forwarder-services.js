@@ -1,5 +1,4 @@
 import { getPool, setCors } from "../db.js";
-import { resolveForwarder } from "./_forwarder-portal-auth.js";
 
 const TIERS = ["lt20", "20_25", "25_28"];
 const BOXES = ["20GP", "40HQ"];
@@ -34,12 +33,6 @@ function dateOnly(v) {
 }
 function bodyOf(req) { return req.body || {}; }
 
-function cookieSession(req) {
-  const raw = String((req.headers && req.headers.cookie) || "");
-  const hit = raw.split(";").map(p => p.trim()).find(p => p.indexOf("fwd_session=") === 0);
-  return hit ? decodeURIComponent(hit.slice("fwd_session=".length)) : "";
-}
-
 function normalizePort(raw) {
   const s = clean(raw);
   if (!s) return "";
@@ -57,10 +50,16 @@ function normalizeBox(raw) {
   return s || "40HQ";
 }
 
-async function validateToken(pool, code, req) {
-  // P0根治: 只认 cookie secret, 无视 URL slug(code)
-  const r = await resolveForwarder(pool, req);
-  return r.token || null;
+async function validateToken(pool, code) {
+  const { rows } = await pool.query(
+    `SELECT code, forwarder_co, company_id, expires_at
+       FROM forwarder_portal_tokens
+      WHERE code = $1
+        AND (expires_at IS NULL OR expires_at > NOW())
+      LIMIT 1`,
+    [code]
+  );
+  return rows[0] || null;
 }
 
 async function getShipRows(pool, companyId) {
@@ -227,7 +226,7 @@ export default async function handler(req, res) {
   const service = clean(req.query?.service || bodyOf(req).service || bodyOf(req).svc || "truck");
 
   try {
-    const token = await validateToken(pool, code, req);
+    const token = await validateToken(pool, code);
     if (!token) return res.status(410).json({ ok: false, error: "链接已过期" });
     if (req.method === "GET" && service === "truck") return await handleTruck(req, res, pool, token);
     if (req.method === "GET" && service === "customs") return await handleCustoms(req, res, pool, token);

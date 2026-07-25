@@ -259,7 +259,7 @@ function factoryRow(r) {
     factory_code: r.factory_code,
     factory_name: r.factory_name,
     status: r.status,
-    expected_amount: r.manual_expected_amount ?? r.factory_expected_amount,
+    expected_amount: r.manual_expected_amount ?? null,  // OLI出局(Damon 07-14):无报关锚定返null=显待报关,绝不兜底OLI
     factory_expected_amount: r.factory_expected_amount,
     received_amount: r.received_amount,
     uploaded_amount: r.uploaded_amount,
@@ -273,7 +273,7 @@ function factoryRow(r) {
     paid_amount: r.paid_amount || 0,
     slip_count: r.slip_count || 0,
     slips: Array.isArray(r.slip_details) ? r.slip_details : [],
-    diff_amount: (Number(r.manual_expected_amount ?? r.factory_expected_amount) || 0) - (Number(r.uploaded_amount) || 0),
+    diff_amount: (Number(r.manual_expected_amount) || 0) - (Number(r.uploaded_amount) || 0),
     last_event_at: r.last_event_at,
     amount_anchored: amountAnchored,
   };

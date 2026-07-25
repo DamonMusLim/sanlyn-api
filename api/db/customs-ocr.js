@@ -1,7 +1,7 @@
 // api/db/customs-ocr.js — 报关单 OCR 抽取管道
 // 报关单PDF(OSS) → pdftoppm → MiniMax-M3 → customs_declarations + customs_declaration_items
 // 退税/对账镜像真实报关单。范本: slip-ocr.js。2026-06-20
-// POST {doc_id}  或  {declaration_no}  默认只抽不存；必须 confirmed:true 才写库
+// POST {doc_id}  或  {declaration_no}  [+ {dry_run:true} 只抽不存]
 import { getPool, setCors } from "../db.js";
 import OSS from "ali-oss";
 import fs from "fs";
@@ -100,7 +100,9 @@ async function ocr(imgBytes) {
 }
 
 
-export async function runCustomsOcr(pool, { doc_id, declaration_no, dry_run, confirmed = false, contract_no: bodyContractNo } = {}) {
+export async function runCustomsOcr(pool, { doc_id, declaration_no, dry_run, confirmed, contract_no: bodyContractNo } = {}) {
+  const isConfirmed = confirmed === true || confirmed === "true" || confirmed === "1";
+  const isDryRun = dry_run === true || dry_run === "true" || dry_run === "1" || !isConfirmed;
   const q = doc_id
     ? await pool.query(`SELECT id, doc_id, url, name, contract_no FROM document_uploads WHERE doc_id=$1 AND doc_type IN ('customs_decl','customs_declaration') ORDER BY uploaded_at DESC LIMIT 1`, [doc_id])
     : await pool.query(`SELECT id, doc_id, url, name, contract_no FROM document_uploads WHERE (name ILIKE '%'||$1||'%' OR url ILIKE '%'||$1||'%') AND doc_type IN ('customs_decl','customs_declaration') ORDER BY uploaded_at DESC LIMIT 1`, [declaration_no || ""]);
@@ -124,27 +126,19 @@ export async function runCustomsOcr(pool, { doc_id, declaration_no, dry_run, con
   try { jpeg = await pdfToJpeg(tmpPdf); } finally { try { fs.unlinkSync(tmpPdf); } catch {} }
 
   const parsed = await ocr(jpeg);
-  const shouldWrite = confirmed === true && dry_run !== true;
-  if (!shouldWrite) {
-    const currency = s(parsed.total_currency).toUpperCase();
-    const isCny = ["CNY", "RMB", "人民币"].includes(currency);
-    const cny = num(parsed.total_amount);
-    return {
-      success: true,
-      dry_run: true,
-      requires_confirmation: true,
-      doc: doc.doc_id,
-      contract_no: contractNo,
-      planned_writes: {
-        document_uploads_ocr_status: doc.id,
-        finance_export_rebates_raw: contractNo || null,
-        finance_export_rebates_fob_cny: contractNo && isCny && cny != null ? cny : null,
-        customs_declarations: shippingPlanId ? { shipping_plan_id: shippingPlanId } : null,
-        customs_declaration_items: shippingPlanId ? (parsed.items || []).length : 0,
-      },
-      parsed,
-    };
-  }
+  const currency = s(parsed.total_currency).toUpperCase();
+  const isCny = ["CNY", "RMB", "人民币"].includes(currency);
+  const cny = num(parsed.total_amount);
+  const plan = {
+    doc: doc.doc_id,
+    declaration_no: s(parsed.declaration_no) || s(declaration_no),
+    contract_no: contractNo,
+    update_rebate_raw: !!contractNo,
+    fob_cny: isCny ? cny : null,
+    fob_cny_action: !isCny ? "skip_non_cny" : (!contractNo || cny == null ? "need_manual" : "fill_if_empty"),
+    upsert_customs_declaration: !!shippingPlanId,
+  };
+  if (isDryRun) return { success: true, dry_run: true, confirmed: false, confirmation_required: true, plan, parsed };
 
   const client = await pool.connect();
   try {
@@ -161,10 +155,6 @@ export async function runCustomsOcr(pool, { doc_id, declaration_no, dry_run, con
         [JSON.stringify(parsed), contractNo]
       );
       rebateMatched = u.rows.length;
-
-      const currency = s(parsed.total_currency).toUpperCase();
-      const isCny = ["CNY", "RMB", "人民币"].includes(currency);
-      const cny = num(parsed.total_amount);
 
       if (!isCny) {
         fobCnyAction = "skip_non_cny";

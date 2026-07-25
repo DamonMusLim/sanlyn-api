@@ -1,5 +1,4 @@
 import { getPool, setCors } from "../db.js";
-import { resolveForwarder } from "./_forwarder-portal-auth.js";
 import { normalizePort } from "../db/_official-port-charges.js";
 
 function cleanCode(req){
@@ -7,12 +6,6 @@ function cleanCode(req){
   if (p) return String(p).split("?")[0];
   var parts = String(req.url || "").split("?")[0].split("/").filter(Boolean);
   return parts[parts.length - 1] || "";
-}
-
-function cookieSession(req){
-  var raw = String((req.headers && req.headers.cookie) || "");
-  var hit = raw.split(";").map(function(p){ return p.trim(); }).find(function(p){ return p.indexOf("fwd_session=") === 0; });
-  return hit ? decodeURIComponent(hit.slice("fwd_session=".length)) : "";
 }
 
 function send(res, status, body){
@@ -34,9 +27,18 @@ function dateTime(v){
   return Number.isFinite(d.getTime()) ? d.getTime() : null;
 }
 
-async function loadToken(pool, code, req){
-  // P0根治: 只认 cookie secret, 无视 URL slug(code)
-  return resolveForwarder(pool, req);
+async function loadToken(pool, code){
+  if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
+  const { rows } = await pool.query(
+    "SELECT code, forwarder_co, company_id, expires_at FROM forwarder_portal_tokens WHERE code = $1 LIMIT 1",
+    [code]
+  );
+  if (!rows.length) return { error:404, body:{ ok:false, error:"not_found" } };
+  var token = rows[0];
+  if (token.expires_at && new Date(token.expires_at) < new Date()) {
+    return { error:410, body:{ ok:false, error:"expired", message:"链接已过期" } };
+  }
+  return { token:token };
 }
 
 async function companyName(pool, companyId){
@@ -90,8 +92,7 @@ async function loadPlans(pool, companyId){
             sp.freight_cost, sp.thc_fee, sp.seal_fee, sp.vgm_fee, sp.doc_fee, sp.eir_fee, sp.port_surcharge_total,
             COALESCE(sp.gross_weight_kg, li.gross_weight_kg) AS gross_weight_kg,
             COALESCE(NULLIF(BTRIM(sp.cargo_description), ''), li.cargo_description) AS cargo_description,
-            li.cargo_generic AS cargo_generic,
-            sp.vessel, sp.voyage, sp.eta,
+            sp.vessel, sp.voyage, sp.customer_en, sp.eta,
             sp.shipping_status, sp.status, sp.current_status_cn, sp.booking_no, sp.forwarder_booking_no, sp.booking_stage,
             sp.pol_port_id, sp.pod_port_id, sp.pod_terminal_unconfirmed, sp.port_resolution_status,
             pod_p.name_en AS pod_canon_en, pod_p.name_cn AS pod_canon_cn, pod_p.code AS pod_code, pod_p.requires_terminal AS pod_requires_terminal,
@@ -120,20 +121,7 @@ async function loadPlans(pool, companyId){
                SELECT o.id
                  FROM orders o
                 WHERE o.order_no = ANY(sp.order_nos)
-             )) AS gross_weight_kg,
-           -- 笼统货描真源=products.cat1(宠物食品/宠物用品/…),按票聚合去重;对货代只出这个不出品名(Damon 2026-07-19)
-           (SELECT string_agg(cat1, ' / ' ORDER BY cat1)
-              FROM (
-                SELECT DISTINCT NULLIF(BTRIM(p.cat1), '') AS cat1
-                  FROM order_line_items oi
-                  JOIN products p ON p.sku = oi.sku
-                 WHERE oi.order_id = ANY(
-                   SELECT o.id
-                     FROM orders o
-                    WHERE o.order_no = ANY(sp.order_nos)
-                 )
-              ) c
-             WHERE c.cat1 IS NOT NULL) AS cargo_generic
+             )) AS gross_weight_kg
        ) li ON TRUE
       WHERE sp.forwarder_company_id = $1
         AND (sp.etd >= CURRENT_DATE - interval '6 months' OR sp.etd IS NULL)
@@ -141,31 +129,6 @@ async function loadPlans(pool, companyId){
     [companyId]
   );
   return rows;
-}
-
-// 门户参考运价真源 = freight_rates 运价库(该货代自己的供应商价 gp20/hq40,绝不用 customer_*=客户价 Lens红线),
-// 按 pol/pod/船司 取最新有效一条;取代原来脏的 shipping_plans.freight_cost(美金/人民币/垃圾混存)。Damon 2026-07-19。
-async function loadRateBook(pool, forwarderName){
-  const { rows } = await pool.query(
-    // 每字段各取"最新非空"一条(运价 thc 稀疏度不同,分别取最近有值的),都在 freight_rates 库内
-    `SELECT lower(btrim(pol)) AS pol, lower(btrim(pod)) AS pod, upper(btrim(carrier)) AS carrier,
-            (array_agg(gp20 ORDER BY COALESCE(valid_from, created_at) DESC NULLS LAST, id DESC) FILTER (WHERE gp20 IS NOT NULL AND gp20 > 0))[1] AS gp20,
-            (array_agg(hq40 ORDER BY COALESCE(valid_from, created_at) DESC NULLS LAST, id DESC) FILTER (WHERE hq40 IS NOT NULL AND hq40 > 0))[1] AS hq40,
-            (array_agg(thc  ORDER BY COALESCE(valid_from, created_at) DESC NULLS LAST, id DESC) FILTER (WHERE thc  IS NOT NULL AND thc  > 0))[1] AS thc
-       FROM freight_rates
-      WHERE forwarder = $1 AND carrier IS NOT NULL AND btrim(carrier) <> ''
-      GROUP BY lower(btrim(pol)), lower(btrim(pod)), upper(btrim(carrier))`,
-    [forwarderName]
-  );
-  var map = {};
-  (rows || []).forEach(function(r){
-    map[r.pol + "||" + r.pod + "||" + r.carrier] = { "20GP": pos(r.gp20), "40HQ": pos(r.hq40), thc: pos(r.thc) };
-  });
-  return map;
-}
-
-function rateKey(lane, carrierName){
-  return cleanText(lane && lane.pol).toLowerCase() + "||" + cleanText(lane && lane.pod).toLowerCase() + "||" + cleanText(carrierName).toUpperCase();
 }
 
 function boxType(v){
@@ -221,17 +184,6 @@ function shortCargo(v){
   return head + (base.length > 2 ? " 等" + base.length + "项" : "");
 }
 
-// 对货代只出笼统货描,绝不泄露具体品名(Damon 2026-07-18)。任何非空输入 → {猫砂|宠物食品|宠物用品} 之一,
-// 兜底也是"宠物用品"而非原品名;空输入返 null 保持"货描待补"判断不变。
-function cargoGeneric(v){
-  var s = cleanText(v);
-  if (!s) return null;
-  var u = s.toUpperCase();
-  if (/猫砂|膨润土|豆腐砂|LITTER|BENTONITE|TOFU/.test(u)) return "猫砂";
-  if (/猫粮|狗粮|宠物食品|零食|罐头|FOOD|TREAT|SNACK|POUCH|CANNED|\bCAN\b|JELLY|KIBBLE|STICK|BISCUIT|MEAT|LOAF|CHICKEN|SALMON|BEEF|DUCK|FISH|DENTAL|KITTEN|PUPPY/.test(u)) return "宠物食品";
-  return "宠物用品";
-}
-
 // 接单状态:有船名/订舱号/shipping_status进入booked+ 即视为已接单
 var BOOKED_STATES = { booked:"已订舱", arrived:"已到港", shipped:"已开船", departed:"已开船", loaded:"已装船", customs:"报关中" };
 function bookingState(row){
@@ -262,12 +214,12 @@ function shipment(row, closed){
   var bl = cleanText(row.bl_no);
   var booked = isBooked(row);
   return {
-    plan_id:row.id || null,  // 进入协同按票签发协同链接要用(2026-07-17);SELECT本就查了sp.id
     bl_no:bl || null,
     etd:row.etd || null,
     container_qty:numOrNull(row.container_qty),
     gross_weight_kg:numOrNull(row.gross_weight_kg),
-    cargo_description:cleanText(row.cargo_generic) || cargoGeneric(row.cargo_description),
+    cargo_description:shortCargo(row.cargo_description),
+    customer_en:cleanText(row.customer_en) || null,
     booked_carrier:booked ? (cleanText(row.carrier_code).toUpperCase() || null) : null,
     booking_voyage:booked ? (cleanText(row.voyage) || cleanText(row.vessel) || null) : null,
     booked_etd:booked ? (row.etd || null) : null,
@@ -364,7 +316,12 @@ function addCarrier(lane, row){
   if (t != null && (!carrier.latest || t > carrier.latest.t)) {
     carrier.latest = { t:t, v:row.etd };
   }
-  // 运价不再取 shipping_plans.freight_cost(脏:美金/人民币/垃圾混存)——改由 finishCarriers 从 freight_rates 运价库取。
+  // 历史海运价:freight_cost=货代收我方价(货代自己的数,Lens可回显),按柜型取最近一条有值的
+  var usd = pos(row.freight_cost);
+  if (ct && usd != null) {
+    var pv = carrier.prices[ct];
+    if (!pv || tk >= pv.t) carrier.prices[ct] = { t:tk, usd:usd };
+  }
   // 历史港杂(CNY):优先port_surcharge_total,否则各费求和;取最近一条有值的
   var thc = pos(row.thc_fee), seal = pos(row.seal_fee), vgm = pos(row.vgm_fee), doc = pos(row.doc_fee), eir = pos(row.eir_fee);
   var sum = (thc||0)+(seal||0)+(vgm||0)+(doc||0)+(eir||0);
@@ -386,14 +343,12 @@ function earliest(list){
   return list[0];
 }
 
-function finishCarriers(lane, rateBook){
+function finishCarriers(lane){
   lane.carriers = Object.keys(lane._carriers).sort().map(function(code){
     var carrier = lane._carriers[code];
     var etd = carrier.latest ? carrier.latest.v : null;
     var prices = {};
-    // 运价真源=freight_rates 运价库,按 pol/pod/船司 匹配该货代供应商价;无匹配则留空(前端显"待填"),绝不回退脏 freight_cost
-    var rb = (rateBook || {})[rateKey(lane, carrier.name)] || null;
-    if (rb) Object.keys(carrier.boxes).forEach(function(b){ if (rb[b] != null) prices[b] = rb[b]; });
+    Object.keys(carrier.prices).forEach(function(b){ prices[b] = carrier.prices[b].usd; });
     var out = {
       name:carrier.name,
       boxes:Object.keys(carrier.boxes).sort(),
@@ -403,13 +358,14 @@ function finishCarriers(lane, rateBook){
       prices:prices,
       quoted:Object.keys(prices).length > 0,
     };
-    // 港杂也接 freight_rates 运价库(thc,与运价统一口径),挂 40 柜列;无匹配留空前端显"待填",不再用 shipping_plans.port_surcharge_total
-    if (rb && rb.thc != null) out.port_charge_40 = rb.thc;
+    // 港杂历史价:现数据多为40柜,填对应柜型;缺则留空由前端显"待填"
+    var ch = carrier.charge;
+    if (ch) { if (/40/.test(ch.box)) out.port_charge_40 = ch.total; else out.port_charge_20 = ch.total; }
     return out;
   });
 }
 
-function finishLane(lane, rateBook){
+function finishLane(lane){
   var boxKeys = Object.keys(lane._box);
   if (boxKeys.length) {
     boxKeys.sort();
@@ -427,7 +383,7 @@ function finishLane(lane, rateBook){
   var now = Date.now();
   lane.hot = t != null && t >= now && t <= now + 7 * 24 * 60 * 60 * 1000;
   lane.missing = Object.keys(lane._missing).sort();
-  finishCarriers(lane, rateBook);
+  finishCarriers(lane);
 
   delete lane._box;
   delete lane._cargo;
@@ -438,7 +394,7 @@ function finishLane(lane, rateBook){
   return lane;
 }
 
-function groupActivePlans(rows, closed, rateBook){
+function groupActivePlans(rows, closed){
   var lanes = {};
   (rows || []).forEach(function(row){
     // Lens:只显示货代已接过单的业务;没接过的不露(免货代拿到工厂信息绕过洋宝宝直接谈)
@@ -452,7 +408,7 @@ function groupActivePlans(rows, closed, rateBook){
     if (row.pod_terminal_unconfirmed || row.pod_requires_terminal) lane.pod_terminal_unconfirmed = true;
     addPlan(lane, row, closed);
   });
-  return Object.keys(lanes).map(function(k){ return finishLane(lanes[k], rateBook); })
+  return Object.keys(lanes).map(function(k){ return finishLane(lanes[k]); })
     .filter(function(lane){ return lane.shipments.length > 0; })
     .sort(function(a, b){
       var at = dateTime(a.nearest_etd);
@@ -473,8 +429,7 @@ async function handleGet(pool, token, res){
 
   var closed = await loadClosedMap(pool, supplierName);
   var plans = await loadPlans(pool, token.company_id);
-  var rateBook = await loadRateBook(pool, supplierName);
-  var lanes = groupActivePlans(plans, closed, rateBook);
+  var lanes = groupActivePlans(plans, closed);
 
   return send(res, 200, {
     ok:true,
@@ -490,7 +445,7 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return send(res, 405, { ok:false, error:"method_not_allowed" });
   const pool = getPool();
   const code = cleanCode(req);
-  const loaded = await loadToken(pool, code, req);
+  const loaded = await loadToken(pool, code);
   if (loaded.error) return send(res, loaded.error, loaded.body);
   return handleGet(pool, loaded.token, res);
 }

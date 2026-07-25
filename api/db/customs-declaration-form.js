@@ -1,426 +1,60 @@
-// /api/db/customs-declaration-form.js
-// Render official-style PRC export customs declaration HTML.
-// Data is derived from shipping_plans + orders + order_line_items + products + companies.
-import { findPlanByRef, resolvePlanContracts } from "./lib/shipping-plan-contracts.js";
+import {
+  bigCell,
+  blank,
+  cargoRows,
+  cell,
+  clean,
+  countryFromPod,
+  firstOrderValue,
+  fmtDate,
+  fmtInt,
+  fmtM,
+  loadCompany,
+  loadContainersForBl,
+  loadLines,
+  loadOrders,
+  loadOrdersByIds,
+  loadPlan,
+  parseRaw,
+  pick,
+  resolveOrdersForContainer,
+  sellerLabel,
+} from "./customs-declaration-form-lib.js";
 
-function esc(s) {
-  if (s == null) return "";
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+export { resolveOrdersForContainer } from "./customs-declaration-form-lib.js";
 
-function clean(v) {
-  return String(v ?? "").trim();
-}
-
-function pick() {
-  for (var i = 0; i < arguments.length; i++) {
-    var v = arguments[i];
-    if (v !== null && v !== undefined && String(v).trim() !== "") return v;
-  }
+function _provinceOf(name){
+  name=String(name||"");
+  var d=name.match(/^(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|广西|内蒙古|西藏|宁夏|新疆)/);
+  if(d) return d[1];
+  var CITY={"烟台":"山东","徐州":"江苏","连云港":"江苏","霸州":"河北"};
+  for(var c in CITY){ if(name.indexOf(c)>=0) return CITY[c]; }
   return "";
-}
-
-function parseRaw(v) {
-  if (!v) return {};
-  if (typeof v === "object") return v;
-  try { return JSON.parse(v); } catch (_) { return {}; }
-}
-
-function fmtM(v, dec) {
-  if (v == null || v === "") return "";
-  var n = Number(v);
-  if (!Number.isFinite(n)) return "";
-  return n.toLocaleString("zh-CN", {
-    minimumFractionDigits: dec == null ? 2 : dec,
-    maximumFractionDigits: dec == null ? 2 : dec,
-    useGrouping: false,
-  });
-}
-
-function fmtInt(v) {
-  if (v == null || v === "") return "";
-  var n = Number(v);
-  if (!Number.isFinite(n)) return "";
-  return String(Math.round(n));
-}
-
-function fmtDate(v) {
-  if (!v) return "";
-  var s = String(v);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  try {
-    var d = new Date(v);
-    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  } catch (_) {}
-  return s.slice(0, 10);
-}
-
-function blank(v) {
-  var s = clean(v);
-  return s ? esc(s) : '<span class="empty">—</span>';
-}
-
-function countryFromPod(pod) {
-  var s = clean(pod).toUpperCase();
-  if (!s) return "";
-  if (s.includes("MYS") || s.includes("MALAYSIA") || s.includes("马来") || s.includes("KLANG") || s.includes("WESTPORT") || s.includes("PASIR GUDANG") || s.includes("PENANG") || s.includes("巴生")) return "马来西亚(MYS)";
-  if (s.includes("THA") || s.includes("THAILAND") || s.includes("泰国")) return "泰国(THA)";
-  if (s.includes("VNM") || s.includes("VIETNAM") || s.includes("越南")) return "越南(VNM)";
-  if (s.includes("SGP") || s.includes("SINGAPORE") || s.includes("新加坡")) return "新加坡(SGP)";
-  if (s.includes("IDN") || s.includes("INDONESIA") || s.includes("印尼") || s.includes("印度尼西亚")) return "印度尼西亚(IDN)";
-  if (s.includes("PHL") || s.includes("PHILIPPINES") || s.includes("菲律宾")) return "菲律宾(PHL)";
-  return clean(pod);
-}
-
-function sellerLabel(name, company) {
-  var n = clean(name || company?.name_cn || company?.name_en);
-  var uscc = clean(company?.tax_id || company?.registration_no || company?.uscc);
-  if (uscc && n) return uscc + " " + n;
-  return n;
-}
-
-function firstOrderValue(orders, field, rawField) {
-  for (var i = 0; i < orders.length; i++) {
-    var raw = parseRaw(orders[i].raw);
-    var v = pick(orders[i][field], rawField ? raw[rawField] : "");
-    if (v) return v;
-  }
-  return "";
-}
-
-async function getColumns(pool, table) {
-  try {
-    var r = await pool.query(
-      `SELECT column_name FROM information_schema.columns
-       WHERE table_schema='public' AND table_name=$1`,
-      [table]
-    );
-    return new Set(r.rows.map(function (x) { return x.column_name; }));
-  } catch (_) {
-    return new Set();
-  }
-}
-
-async function loadCompany(pool, name) {
-  name = clean(name);
-  if (!name) return null;
-  var cols = await getColumns(pool, "companies");
-  if (!cols.size) return null;
-
-  var select = ["name_cn", "name_en", "tax_id", "registration_no", "uscc"]
-    .filter(function (c) { return cols.has(c); });
-  if (!select.length) return null;
-
-  var conds = [];
-  var args = [name];
-  if (cols.has("name_cn")) conds.push("btrim(name_cn) = btrim($1)");
-  if (cols.has("name_en")) conds.push("btrim(name_en) = btrim($1)");
-  if (!conds.length) return null;
-
-  try {
-    var r = await pool.query(
-      `SELECT ${select.join(", ")} FROM companies WHERE ${conds.join(" OR ")} LIMIT 1`,
-      args
-    );
-    return r.rows[0] || null;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function loadCompanyByCode(pool, code) {
-  code = clean(code);
-  if (!code) return null;
-  var cols = await getColumns(pool, "companies");
-  if (!cols.size || !cols.has("code")) return null;
-
-  var select = ["name_cn", "name_en", "tax_id", "registration_no", "uscc"]
-    .filter(function (c) { return cols.has(c); });
-  if (!select.length) return null;
-
-  try {
-    var r = await pool.query(
-      `SELECT ${select.join(", ")} FROM companies WHERE code = $1 LIMIT 1`,
-      [code]
-    );
-    return r.rows[0] || null;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function loadPlan(pool, shipmentId) {
-  return await findPlanByRef(pool, shipmentId);
-}
-
-function splitText(v) {
-  return clean(v).split(/[,\s/，；;]+/).map(clean).filter(Boolean);
-}
-
-function orderKeys(plan, planContracts) {
-  var raw = parseRaw(plan.raw);
-  var xs = []
-    .concat(Array.isArray(plan.order_nos) ? plan.order_nos : [])
-    .concat(planContracts && !planContracts.legacy ? [] : (Array.isArray(plan.contract_nos) ? plan.contract_nos : []))
-    .concat(splitText(plan.order_contract_nos))
-    .concat(Array.isArray(raw.orderNos) ? raw.orderNos : [])
-    .concat(Array.isArray(raw.order_nos) ? raw.order_nos : [])
-    .concat(Array.isArray(raw.contractNos) ? raw.contractNos : [])
-    .concat(clean(plan.contract_no) ? [plan.contract_no] : []);
-  var seen = new Set();
-  return xs.map(clean).filter(function (x) {
-    if (!x || seen.has(x)) return false;
-    seen.add(x);
-    return true;
-  });
-}
-
-async function loadOrders(pool, plan, planContracts) {
-  var keys = orderKeys(plan, planContracts);
-  if (!keys.length) return [];
-  var r = await pool.query(
-    `SELECT * FROM orders
-     WHERE order_no = ANY($1::text[])
-        OR contract_no = ANY($1::text[])
-        OR _id::text = ANY($1::text[])
-        OR id::text = ANY($1::text[])
-     ORDER BY id ASC`,
-    [keys]
-  );
-  return r.rows;
-}
-
-async function loadOrdersByIds(pool, orderIds) {
-  if (!orderIds.length) return [];
-  var r = await pool.query(
-    `SELECT * FROM orders
-     WHERE id = ANY($1::int[])
-     ORDER BY id ASC`,
-    [orderIds]
-  );
-  return r.rows;
-}
-
-export async function resolveOrdersForContainer(pool, planOrBl, container_no) {
-  var containerNo = clean(container_no);
-  if (!containerNo) return [];
-
-  var blNo = "";
-  var planId = "";
-  if (planOrBl && typeof planOrBl === "object") {
-    var raw = parseRaw(planOrBl.raw);
-    blNo = clean(pick(planOrBl.bl_no, raw.blNo, raw.bl_no));
-    planId = clean(pick(planOrBl.id, planOrBl._id));
-  } else {
-    blNo = clean(planOrBl);
-  }
-
-  var cb = await pool.query(
-    `SELECT id, bl_no, shipping_plan_id, contract_no, container_no
-       FROM container_bookings
-      WHERE btrim(container_no) = btrim($1)
-      ORDER BY id ASC`,
-    [containerNo]
-  );
-  if (!cb.rows.length) return [];
-
-  var matched = cb.rows.filter(function (b) {
-    var sameBl = blNo && clean(b.bl_no) === blNo;
-    var samePlan = planId && clean(b.shipping_plan_id) === planId;
-    return sameBl || samePlan;
-  });
-  var rows = matched.length ? matched : cb.rows;
-
-  var refs = [];
-  var seenRefs = new Set();
-  rows.forEach(function (b) {
-    var ref = clean(b.contract_no);
-    if (!ref || /^TBD(?:-|$)/i.test(ref) || seenRefs.has(ref)) return;
-    seenRefs.add(ref);
-    refs.push(ref);
-  });
-  if (!refs.length) return [];
-
-  var byOrderNo = await pool.query(
-    `SELECT id, order_no, contract_no FROM orders WHERE order_no = ANY($1::text[])`,
-    [refs]
-  );
-  var matchedOrderNos = new Set(byOrderNo.rows.map(function (o) { return clean(o.order_no); }));
-  var ids = [];
-  var seenIds = new Set();
-  byOrderNo.rows.forEach(function (o) {
-    var id = Number(o.id);
-    if (Number.isFinite(id) && !seenIds.has(id)) {
-      seenIds.add(id);
-      ids.push(id);
-    }
-  });
-
-  var remaining = refs.filter(function (ref) { return !matchedOrderNos.has(ref); });
-  if (remaining.length) {
-    var byContractNo = await pool.query(
-      `SELECT id, order_no, contract_no FROM orders WHERE contract_no = ANY($1::text[])`,
-      [remaining]
-    );
-    byContractNo.rows.forEach(function (o) {
-      var id = Number(o.id);
-      if (Number.isFinite(id) && !seenIds.has(id)) {
-        seenIds.add(id);
-        ids.push(id);
-      }
-    });
-  }
-
-  return ids;
-}
-
-async function loadLines(pool, orderIds) {
-  if (!orderIds.length) return [];
-  var r = await pool.query(
-    `WITH product_one AS (
-       SELECT DISTINCT ON (sku)
-              sku, hs_code, declaration_name, declaration_elements
-       FROM products
-       WHERE NULLIF(btrim(sku), '') IS NOT NULL
-       ORDER BY sku, active DESC NULLS LAST, updated_at DESC NULLS LAST, id DESC
-     ),
-     keyed AS (
-       SELECT
-         NULLIF(btrim(COALESCE(oli.hs_code, p.hs_code, '')), '') AS hs_code,
-         COALESCE(NULLIF(btrim(oli.declaration_name), ''), NULLIF(btrim(p.declaration_name), ''), NULLIF(btrim(oli.product_name), '')) AS declaration_name,
-         NULLIF(btrim(p.declaration_elements), '') AS declaration_elements,
-         oli.qty_ctn,
-         oli.nw_ctn,
-         oli.unit_price,
-         oli.subtotal
-       FROM order_line_items oli
-       LEFT JOIN product_one p ON p.sku = oli.sku
-       WHERE oli.order_id = ANY($1::int[])
-     ),
-     hs_elements AS (
-       SELECT hs_code, MIN(declaration_elements) AS declaration_elements
-       FROM keyed
-       WHERE declaration_elements IS NOT NULL
-       GROUP BY hs_code
-     ),
-     -- 2026-07-06: 同HS只报一行(照商检单口径,别按品名再拆),品名取该HS下箱数最大的那个
-     name_by_hs AS (
-       SELECT DISTINCT ON (hs_code) hs_code, declaration_name AS dominant_name
-       FROM (
-         SELECT hs_code, declaration_name, SUM(qty_ctn) AS qty_sum
-         FROM keyed
-         GROUP BY hs_code, declaration_name
-       ) g
-       ORDER BY hs_code, qty_sum DESC NULLS LAST
-     )
-     SELECT
-       k.hs_code,
-       n.dominant_name AS declaration_name,
-       MAX(h.declaration_elements) AS declaration_elements,
-       SUM(k.qty_ctn) AS qty_ctn,
-       SUM(CASE WHEN k.nw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.nw_ctn * k.qty_ctn ELSE NULL END) AS net_weight_kg,
-       MIN(k.unit_price) AS unit_price,
-       SUM(k.subtotal) AS total_amount
-     FROM keyed k
-     LEFT JOIN hs_elements h ON h.hs_code IS NOT DISTINCT FROM k.hs_code
-     LEFT JOIN name_by_hs n ON n.hs_code IS NOT DISTINCT FROM k.hs_code
-     GROUP BY k.hs_code, n.dominant_name
-     ORDER BY hs_code`,
-    [orderIds]
-  );
-  return r.rows;
-}
-
-function cell(label, value, cls) {
-  return `<div class="cell ${cls || ""}"><div class="lbl">${esc(label)}</div><div class="val">${blank(value)}</div></div>`;
-}
-
-function bigCell(label, value) {
-  return `<div class="cell wide"><div class="lbl">${esc(label)}</div><div class="val">${blank(value)}</div></div>`;
-}
-
-function cargoRows(lines, destination) {
-  if (!lines.length) {
-    return `<tr><td colspan="9" class="empty-row">无货物明细</td></tr>`;
-  }
-  // 2026-07-06: SQL已按hs_code唯一分组(见loadLines name_by_hs),每行天然对应唯一HS,不再需要按HS去重申报要素
-  // (旧逻辑按"见过的HS"清空后续行文字,同HS下不同品名如"宠物罐头/宠物软罐头"被误判成重复行,第二行整段申报要素被清空——已改成SQL层合并解决)
-  return lines.map(function (l, i) {
-    var qty = [
-      fmtM(l.net_weight_kg, 0) ? fmtM(l.net_weight_kg, 0) + "千克" : "",
-      fmtInt(l.qty_ctn) ? fmtInt(l.qty_ctn) + "箱" : "",
-    ].filter(Boolean).join("<br>");
-    var money = [
-      fmtM(l.unit_price, 2),
-      fmtM(l.total_amount, 2),
-      "人民币",
-    ].filter(Boolean).join("<br>");
-    var elements = clean(l.declaration_elements);
-    var name = [clean(l.declaration_name), elements].filter(Boolean).map(esc).join("<br>");
-    return `<tr>
-      <td>${i + 1}</td>
-      <td>${blank(l.hs_code)}</td>
-      <td class="goods-name">${name || '<span class="empty">—</span>'}</td>
-      <td>${qty || '<span class="empty">—</span>'}</td>
-      <td>${money || '<span class="empty">—</span>'}</td>
-      <td>中国(CHN)</td>
-      <td>${blank(destination)}</td>
-      <td><span class="empty">—</span></td>
-      <td>照章征税</td>
-    </tr>`;
-  }).join("");
-}
-
-function sumOrderMetric(orders, fields, rawFields) {
-  return orders.reduce(function (sum, o) {
-    var raw = parseRaw(o.raw);
-    var v = "";
-    for (var i = 0; i < fields.length && v === ""; i++) v = pick(o[fields[i]]);
-    for (var j = 0; j < rawFields.length && v === ""; j++) v = pick(raw[rawFields[j]]);
-    var n = Number(v);
-    return sum + (Number.isFinite(n) ? n : 0);
-  }, 0);
-}
-
-function hasExternalOrder(orders) {
-  return orders.some(function (o) {
-    var raw = parseRaw(o.raw);
-    return clean(o.export_mode || raw.export_mode || raw.exportMode).toLowerCase() === "external";
-  });
 }
 
 export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   opts = opts || {};
   var plan = await loadPlan(pool, shipmentId);
   if (!plan) return null;
-  var planContracts = await resolvePlanContracts(pool, plan);
 
   var praw = parseRaw(plan.raw);
   var requestedContainerNo = clean(opts.container_no || opts.container);
-  var orders = await loadOrders(pool, plan, planContracts);
+  var orders = await loadOrders(pool, plan);
   if (requestedContainerNo) {
     var containerOrderIds = await resolveOrdersForContainer(pool, plan, requestedContainerNo);
     orders = await loadOrdersByIds(pool, containerOrderIds);
   }
   var orderIds = orders.map(function (o) { return Number(o.id); }).filter(Boolean);
   var lines = await loadLines(pool, orderIds);
+  var _srcProvs={}; (orders||[]).forEach(function(_o){ var _p=_provinceOf(_o.factory||_o.factory_name||_o.factory_company_name); if(_p) _srcProvs[_p]=1; }); var _pk=Object.keys(_srcProvs); var _sourceArea=_pk.length===1?_pk[0]:"";
 
-  var isExternal = hasExternalOrder(orders);
   var issuer = clean(firstOrderValue(orders, "issuing_company", "issuingCompany"));
-  var ownerCode = firstOrderValue(orders, "company_code", "companyCode");
-  var ownerName = firstOrderValue(orders, "company_name_cn", "companyNameCN") || firstOrderValue(orders, "company_name_en", "companyNameEN");
-  var company = isExternal ? (await loadCompanyByCode(pool, ownerCode) || await loadCompany(pool, ownerName)) : await loadCompany(pool, issuer);
-  var shipper = isExternal ? sellerLabel(ownerName, company) : sellerLabel(issuer, company);
+  var company = await loadCompany(pool, issuer);
+  var shipper = sellerLabel(issuer, company);
 
-  var customer = isExternal
-    ? firstOrderValue(orders, "consignee", "consignee") || firstOrderValue(orders, "customer", "customer")
-    : firstOrderValue(orders, "customer", "customer");
+  var customer = firstOrderValue(orders, "customer", "customer");
   // 合同协议号用我们的 FS 号(内部号),优先取 FS 开头的合同号;都没有才退回原始 contract_no
-  var contractNo = !planContracts.legacy && planContracts.goodsCnyNo ? planContracts.goodsCnyNo : (function () {
+  var contractNo = clean(plan.primary_contract_no) || (function () {
     var fallback = "";
     for (var i = 0; i < orders.length; i++) {
       var raw = parseRaw(orders[i].raw);
@@ -441,19 +75,18 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var destination = countryFromPod(firstOrderValue(orders, "country", "country") || pod);
   var vesselVoyage = [pick(plan.vessel, praw.vessel), pick(plan.voyage, praw.voyage)].filter(Boolean).join(" / ");
   var blNo = pick(plan.bl_no, praw.blNo, praw.bl_no);
+  // 集装箱号: 指定单柜用它; BL级(未指定)列出该 BL/计划下全部柜号
   var containerNo = requestedContainerNo || pick(plan.container_no, praw.containerNo, praw.container_no);
-  var grossWeight = pick(plan.gross_weight_kg, plan.gross_weight, praw.grossWeight, praw.gross_weight_kg);
-  var netWeight = pick(plan.net_weight_kg, plan.net_weight, praw.netWeight, praw.net_weight_kg);
-  if (requestedContainerNo) {
-    var orderGross = sumOrderMetric(orders, ["gross_weight_kg", "gross_weight", "total_gross_weight", "total_gw"], ["grossWeightKg", "grossWeight", "gross_weight_kg", "gross_weight", "totalGrossWeight", "total_gw"]);
-    var orderNet = sumOrderMetric(orders, ["net_weight_kg", "net_weight", "total_net_weight", "total_nw"], ["netWeightKg", "netWeight", "net_weight_kg", "net_weight", "totalNetWeight", "total_nw"]);
-    var lineNet = lines.reduce(function (s, l) {
-      var n = Number(l.net_weight_kg);
-      return s + (Number.isFinite(n) ? n : 0);
-    }, 0);
-    grossWeight = orderGross || "";
-    netWeight = orderNet || lineNet || "";
+  if (!requestedContainerNo) {
+    var _allCtn = await loadContainersForBl(pool, plan);
+    if (_allCtn.length) containerNo = _allCtn.join(", ");
   }
+  // 净重/毛重一律从明细 lines 汇总(lines 范围=当前 orders: BL级=全部订单, 单柜级=该柜订单), 与件数同源,
+  // 不再只取 plan 单柜值。毛重来源=order_line_items.gw_ctn×qty_ctn(loadLines 已聚合 gross_weight_kg)。
+  var _lineNet = lines.reduce(function (s, l) { var n = Number(l.net_weight_kg); return s + (Number.isFinite(n) ? n : 0); }, 0);
+  var _lineGross = lines.reduce(function (s, l) { var n = Number(l.gross_weight_kg); return s + (Number.isFinite(n) ? n : 0); }, 0);
+  var netWeight = _lineNet || pick(plan.net_weight_kg, plan.net_weight, praw.netWeight, praw.net_weight_kg) || "";
+  var grossWeight = _lineGross || pick(plan.gross_weight_kg, plan.gross_weight, praw.grossWeight, praw.gross_weight_kg) || "";
   var totalCtn = lines.reduce(function (s, l) {
     var n = Number(l.qty_ctn);
     return s + (Number.isFinite(n) ? n : 0);
@@ -540,43 +173,43 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   </div>
 
   <div class="grid4">
-    ${cell("境内发货人", shipper)}
-    ${cell("出境关别", "")}
-    ${cell("出口日期", fmtDate(pick(plan.etd, praw.etd)))}
-    ${cell("申报日期", today)}
-    ${cell("备案号", "")}
+    ${cell("境内发货人", shipper, undefined, "domestic_shipper")}
+    ${cell("出境关别", "", undefined, "export_customs_office")}
+    ${cell("出口日期", fmtDate(pick(plan.etd, praw.etd)), undefined, "export_date")}
+    ${cell("申报日期", today, undefined, "declare_date")}
+    ${cell("备案号", "", undefined, "record_no")}
   </div>
   <div class="grid4 row2">
-    ${cell("境外收货人", customer)}
-    ${cell("运输方式", "水路运输")}
-    ${cell("运输工具名称及航次号", vesselVoyage)}
-    ${cell("提运单号", blNo)}
+    ${cell("境外收货人", customer, undefined, "overseas_consignee")}
+    ${cell("运输方式", "水路运输", undefined, "transport_mode")}
+    ${cell("运输工具名称及航次号", vesselVoyage, undefined, "vessel_voyage")}
+    ${cell("提运单号", blNo, undefined, "bl_no")}
   </div>
   <div class="grid4 row3">
-    ${cell("生产销售单位", shipper)}
-    ${cell("监管方式", tradeMode)}
-    ${cell("征免性质", levyNature)}
-    ${cell("许可证号", "")}
+    ${cell("生产销售单位", shipper, undefined, "production_sales_unit")}
+    ${cell("监管方式", tradeMode, undefined, "trade_mode")}
+    ${cell("征免性质", levyNature, undefined, "levy_nature")}
+    ${cell("许可证号", "", undefined, "license_no")}
   </div>
   <div class="grid4 row4">
-    ${cell("合同协议号", contractNo)}
-    ${cell("贸易国(地区)", destination)}
-    ${cell("运抵国(地区)", destination)}
-    ${cell("指运港", pod)}
-    ${cell("离境口岸", "")}
+    ${cell("合同协议号", contractNo, undefined, "contract_no")}
+    ${cell("贸易国(地区)", destination, undefined, "trade_country")}
+    ${cell("运抵国(地区)", destination, undefined, "arrival_country")}
+    ${cell("指运港", pod, undefined, "destination_port")}
+    ${cell("离境口岸", "", undefined, "departure_port")}
   </div>
   <div class="grid4 row5">
-    ${cell("包装种类", "纸箱", "small")}
-    ${cell("件数", totalCtn ? fmtInt(totalCtn) : "", "small")}
-    ${cell("毛重(千克)", fmtM(grossWeight, 0), "small")}
-    ${cell("净重(千克)", fmtM(netWeight, 0), "small")}
-    ${cell("成交方式", "FOB", "small")}
-    ${cell("运费", "", "small")}
-    ${cell("保费", "", "small")}
-    ${cell("杂费", "", "small")}
+    ${cell("包装种类", "纸箱", "small", "package_type")}
+    ${cell("件数", totalCtn ? fmtInt(totalCtn) : "", "small", "total_ctn")}
+    ${cell("毛重(千克)", fmtM(grossWeight, 0), "small", "gross_weight")}
+    ${cell("净重(千克)", fmtM(netWeight, 0), "small", "net_weight")}
+    ${cell("成交方式", "FOB", "small", "trade_terms")}
+    ${cell("运费", "", "small", "freight")}
+    ${cell("保费", "", "small", "insurance")}
+    ${cell("杂费", "", "small", "misc_fee")}
   </div>
-  ${bigCell("随附单证及编号", "")}
-  ${bigCell("标记唛码及备注", notes)}
+  ${bigCell("随附单证及编号", "", "attached_docs")}
+  ${bigCell("标记唛码及备注", notes, "marks_notes")}
 
   <table class="goods">
     <thead>
@@ -592,7 +225,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
         <th>征免</th>
       </tr>
     </thead>
-    <tbody>${cargoRows(lines, destination)}</tbody>
+    <tbody>${cargoRows(lines, destination, _sourceArea)}</tbody>
   </table>
 
   <div class="confirm-line">
@@ -621,6 +254,8 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     </div>
   </div>
 </div>
+<div style="text-align:right;font-size:9px;color:#999;margin-top:6px">报关单模版 v4 · 2026-07-14 02:31</div>
+<script src="/templates/customs-declaration-editor.js"></script>
 </body>
 </html>`;
 }

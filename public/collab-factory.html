@@ -97,8 +97,16 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
     </div>
   </div>
 
-  <div id="billingCard" style="margin-bottom:14px;">
-    <div id="billingBody"></div>
+  <div class="step-card" id="billingCard" style="margin-bottom:14px;">
+    <div class="step-head">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num">￥</div>
+        <div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div>
+      </div>
+    </div>
+    <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+      <div class="section" id="billingBody"></div>
+    </div>
   </div>
 
   <!-- STEP 1 -->
@@ -168,7 +176,6 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
                 </div>
               </div>
               <div id="selfNote" style="display:none;font-size:11px;color:#6b7280;margin-top:8px;"></div>
-              <div id="arrangeStatus" style="display:none;gap:8px;flex-wrap:wrap;margin-top:8px;"></div>
             </div>
           </div>
         </div>

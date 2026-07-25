@@ -84,7 +84,11 @@ router.get("/api/console/domain-counts", async (req, res) => {
         END,
         task_prefix ASC`
     );
-    return res.status(200).json({ success: true, count: result.rowCount, data: result.rows });
+    try {
+      const oc = await getPool().query("SELECT COUNT(*)::int AS c FROM task_center_v WHERE current_holder = 'Ocean' AND status <> 'done'");
+      result.rows.push({ task_prefix: '__OCEAN__', domain_label: 'Ocean代码', total_count: oc.rows[0].c, stuck_count: 0, decision_count: 0 });
+    } catch (e) { /* ocean count optional */ }
+    return res.status(200).json({ success: true, count: result.rows.length, data: result.rows });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

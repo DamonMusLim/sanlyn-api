@@ -1,5 +1,4 @@
 import { getPool, setCors } from "../db.js";
-import { resolveForwarder } from "./_forwarder-portal-auth.js";
 import { officialPortChargeKey, officialPortChargesMap, normalizePort } from "../db/_official-port-charges.js";
 
 const CARRIER_OPTIONS = ["OOCL", "EMC", "COSCO", "MSC", "KMTC", "ESL", "HAPAG", "MSK", "CMA", "ONE"];
@@ -9,12 +8,6 @@ function cleanCode(req){
   if (p) return String(p).split("?")[0];
   var parts = String(req.url || "").split("?")[0].split("/").filter(Boolean);
   return parts[parts.length - 1] || "";
-}
-
-function cookieSession(req){
-  var raw = String((req.headers && req.headers.cookie) || "");
-  var hit = raw.split(";").map(function(p){ return p.trim(); }).find(function(p){ return p.indexOf("fwd_session=") === 0; });
-  return hit ? decodeURIComponent(hit.slice("fwd_session=".length)) : "";
 }
 
 function send(res, status, body){
@@ -35,7 +28,7 @@ async function ensureColumns(pool){
   `);
 }
 
-async function loadToken(pool, code, req){
+async function loadToken(pool, code){
   await pool.query(`
     CREATE TABLE IF NOT EXISTS forwarder_portal_tokens (
       code text PRIMARY KEY,
@@ -44,8 +37,16 @@ async function loadToken(pool, code, req){
       created_at timestamptz DEFAULT now()
     )
   `);
-  // P0根治: 只认 cookie secret, 无视 URL slug(code)
-  return resolveForwarder(pool, req);
+  if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
+  const { rows } = await pool.query(
+    "SELECT code, forwarder_co, expires_at FROM forwarder_portal_tokens WHERE code = $1",
+    [code]
+  );
+  if (!rows.length) return { error:404, body:{ ok:false, error:"not_found" } };
+  if (new Date(rows[0].expires_at) < new Date()) {
+    return { error:410, body:{ ok:false, error:"expired", message:"链接已过期" } };
+  }
+  return { token:rows[0] };
 }
 
 function normPort(v){
@@ -359,7 +360,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   const pool = getPool();
   const code = cleanCode(req);
-  const loaded = await loadToken(pool, code, req);
+  const loaded = await loadToken(pool, code);
   if (loaded.error) return send(res, loaded.error, loaded.body);
   if (req.method === "GET") return handleGet(pool, loaded.token, res);
   if (req.method === "POST") return handlePost(pool, loaded.token, req, res);
