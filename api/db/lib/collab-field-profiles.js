@@ -1,0 +1,224 @@
+const INTERNAL_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
+
+const PUBLIC_SHEET_FIELDS = [
+  "id", "_id", "shipment_no", "pol", "pod", "etd", "eta", "container_type",
+  "container_qty", "collab_status", "total_cartons", "gross_weight_kg",
+  "total_cbm", "so_no", "bl_no", "cargo_cutoff", "carrier_code", "vessel",
+  "voyage", "release_type", "is_transfer", "so_info", "collab_uploads",
+  "quarantine_docs", "has_quarantine", "containers_live", "containers_detail",
+  "sailings", "trucking_detail", "factory_submitted", "factory_cargo_ready",
+  "factory_container_type", "factory_cargo_type", "factory_remarks",
+  "factory_submitted_at", "customer_submitted", "customer_reference_no",
+  "customer_remarks", "customer_submitted_at", "factory_loading_done",
+  "scope_missing", "pricing", "factory_progress", "orders", "factory_cargo",
+  "factory_attrs", "factory_entry", "customer_item_notes", "customer_amend",
+  "customs_arrange", "trucking_arrange", "forwarder_cn", "forwarder_en",
+  "trucking_company_cn", "trucking_cn", "customs_broker_cn", "customs_cn",
+];
+
+const FORBIDDEN_KEYS = new Set([
+  "_cost_lines_raw", "cost", "cost_amount", "amount_cost", "payable_amount",
+  "supplier_amount", "gross_profit", "profit", "margin", "counterparty_amount",
+  "counterparty_company_code", "payer_company_code", "supplier_company_code",
+  "freight_sale_usd", "rate_usd", "customer_name", "customer_en",
+  "freight_term", "plan_freight_term",
+]);
+
+const COUNTERPARTY_KEYS = new Set([
+  "counterparty", "counterparty_name", "counterparty_code", "counterparty_company_code",
+  "payer_company_code", "supplier_company_code", "customer_code", "customer_company_code",
+]);
+
+export const FIELD_PROFILES = Object.freeze({
+  minimal: {
+    sheetFields: ["id", "_id", "shipment_no", "pol", "pod", "etd", "eta", "container_type", "container_qty", "so_no", "bl_no"],
+    billingSegment: "supplier",
+    directions: [],
+    allowCostAmount: false,
+    scopes: [],
+  },
+  carrier: {
+    sheetFields: PUBLIC_SHEET_FIELDS.filter(k => !["pricing", "orders", "factory_cargo", "factory_attrs", "factory_entry", "customer_item_notes", "customer_amend"].includes(k)),
+    billingSegment: "ocean",
+    directions: ["payable"],
+    allowCostAmount: false,
+    scopes: ["freight", "origin"],
+  },
+  customer: {
+    sheetFields: [...PUBLIC_SHEET_FIELDS, "customer_selected_sailing", "freight_term", "plan_freight_term"],
+    billingSegment: "customer",
+    directions: ["receivable"],
+    allowCostAmount: false,
+    scopes: ["freight"],
+  },
+  factory: {
+    sheetFields: PUBLIC_SHEET_FIELDS.filter(k => !["pricing", "sailings", "customer_item_notes", "customer_amend", "forwarder_cn", "forwarder_en"].includes(k)),
+    billingSegment: "factory",
+    directions: ["payable"],
+    allowCostAmount: false,
+    scopes: ["origin", "declaration", "review", "factory"],
+  },
+  shipping_booking: {
+    sheetFields: null,
+    billingSegment: "all",
+    directions: ["receivable", "payable", "both"],
+    allowCostAmount: true,
+    scopes: ["all"],
+  },
+  upstream_downstream: {
+    sheetFields: null,
+    billingSegment: "all",
+    directions: ["receivable", "payable", "both"],
+    allowCostAmount: true,
+    scopes: ["all"],
+  },
+  trucking: {
+    sheetFields: PUBLIC_SHEET_FIELDS,
+    billingSegment: "truck",
+    directions: ["payable"],
+    allowCostAmount: false,
+    scopes: ["truck"],
+  },
+  broker: {
+    sheetFields: PUBLIC_SHEET_FIELDS,
+    billingSegment: "customs",
+    directions: ["payable"],
+    allowCostAmount: false,
+    scopes: ["customs", "declaration"],
+  },
+  shipper: {
+    sheetFields: ["id", "_id", "shipment_no", "bl_no", "container_type", "container_qty", "scope_missing"],
+    billingSegment: "port_charge",
+    directions: ["receivable"],
+    allowCostAmount: false,
+    scopes: ["origin", "port_charge"],
+  },
+});
+
+export function profileFor({ role, field_profile } = {}) {
+  const explicit = clean(field_profile);
+  if (FIELD_PROFILES[explicit]) return FIELD_PROFILES[explicit];
+  if (explicit) return FIELD_PROFILES.minimal;
+  if (role === "customer_booking") return FIELD_PROFILES.customer;
+  if (role === "factory_booking") return FIELD_PROFILES.factory;
+  if (role === "trucking_booking") return FIELD_PROFILES.trucking;
+  if (role === "broker_booking") return FIELD_PROFILES.broker;
+  if (role === "shipper_booking") return FIELD_PROFILES.shipper;
+  if (role === "supplier_portal") return FIELD_PROFILES.carrier;
+  return FIELD_PROFILES.minimal;
+}
+
+export function billingSegmentFor({ role, field_profile } = {}) {
+  return profileFor({ role, field_profile }).billingSegment || "supplier";
+}
+
+export function sanitizeSheet(sheet, { role, field_profile, plan } = {}) {
+  const profile = profileFor({ role, field_profile });
+  const safe = clonePlain(sheet || {});
+  if (Array.isArray(profile.sheetFields)) keepOnly(safe, profile.sheetFields);
+  if (!profile.allowCostAmount) redactDeep(safe, { allowSale: role === "customer_booking" || field_profile === "customer" });
+  if (role === "supplier_portal" && !INTERNAL_PROFILES.has(clean(field_profile))) {
+    delete safe.customer_name;
+    delete safe.customer_en;
+    delete safe.freight_term;
+    delete safe.plan_freight_term;
+  }
+  if (profile === FIELD_PROFILES.minimal) {
+    safe.orders = [];
+    safe.factory_cargo = [];
+    safe.containers_live = [];
+    safe.containers_detail = [];
+    safe.scope_missing = true;
+  }
+  delete safe.freight_sale_usd;
+  return safe;
+}
+
+export function visibleBillLines(lines, { field_profile, role, plan, resolvedPartyCode } = {}) {
+  const profile = profileFor({ role, field_profile });
+  const partyCode = clean(resolvedPartyCode).toUpperCase();
+  const internal = Boolean(profile.allowCostAmount);
+  if (!Array.isArray(lines)) return [];
+  return lines.flatMap(line => {
+    if (!line || typeof line !== "object") return [];
+    if (!internal && !lineBelongsToProfile(line, profile, partyCode)) return [];
+    // 只按"航段"词汇(fob_scope/segment)过滤; ownership_scope(trade/logistics)是另一套词汇, 不参与航段过滤,
+    // 该行归属已由 party+direction 定死(lineBelongsToProfile), 无航段标记时不再二次拒绝。
+    const scope = clean(line.fob_scope || line.segment).toLowerCase();
+    if (!internal && !scopeAllowed(profile, scope)) return [];
+    return [amountView(line, profile, internal)];
+  });
+}
+
+function lineBelongsToProfile(line, profile, partyCode) {
+  const direction = clean(line.direction || line.line_side).toLowerCase();
+  if (profile.directions.length && !profile.directions.includes(direction)) return false;
+  const hasPartyColumns = ["payer_company_code", "counterparty_company_code", "supplier_company_code"]
+    .some(k => clean(line[k]));
+  if (!hasPartyColumns) return true;
+  if (!partyCode) return false;
+  if (direction === "receivable") {
+    return codeMatches(line.payer_company_code, partyCode) || codeMatches(line.counterparty_company_code, partyCode);
+  }
+  if (direction === "payable") {
+    return codeMatches(line.supplier_company_code, partyCode);
+  }
+  return false;
+}
+
+function amountView(line, profile, internal) {
+  if (internal) return clonePlain(line);
+  const { amount, sale_amount, unit_price, cost_amount, gross_profit, cost, sale,
+    supplier_amount, payer_company_code, supplier_company_code, counterparty_company_code,
+    counterparty_amount, raw, ...safe } = line;
+  const direction = clean(line.direction || line.line_side).toLowerCase();
+  const visible = direction === "receivable" ? sale_amount ?? amount : amount;
+  safe.amount = money(visible);
+  safe.unit_price = money(line.qty ? money(visible) / Number(line.qty || 1) : visible);
+  safe.currency = clean(line.currency || "CNY", 8).toUpperCase();
+  return safe;
+}
+
+function scopeAllowed(profile, scope) {
+  if (!profile.scopes.length || profile.scopes.includes("all")) return true;
+  if (!scope) return true; // 无航段标记: 归属已由 party+direction 定, 不再按航段拒绝
+  return profile.scopes.includes(scope);
+}
+
+function redactDeep(value, opts = {}) {
+  if (Array.isArray(value)) {
+    value.forEach(v => redactDeep(v, opts));
+    return value;
+  }
+  if (!value || typeof value !== "object") return value;
+  for (const key of Object.keys(value)) {
+    if (FORBIDDEN_KEYS.has(key) || COUNTERPARTY_KEYS.has(key) || (!opts.allowSale && key === "sale_amount")) {
+      delete value[key];
+      continue;
+    }
+    redactDeep(value[key], opts);
+  }
+  return value;
+}
+
+function keepOnly(obj, keys) {
+  const allowed = new Set(keys);
+  for (const key of Object.keys(obj)) if (!allowed.has(key)) delete obj[key];
+}
+
+function codeMatches(value, partyCode) {
+  return clean(value).toUpperCase() === partyCode;
+}
+
+function clonePlain(value) {
+  return JSON.parse(JSON.stringify(value || {}));
+}
+
+function clean(v, max = 200) {
+  return String(v || "").trim().slice(0, max);
+}
+
+function money(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}

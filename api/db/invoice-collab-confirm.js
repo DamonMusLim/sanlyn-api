@@ -1,5 +1,8 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
+import { classifyFobScope, defaultLines, loadLaneBenchmarks, partyLens, sanitizeForExternal } from "./lib/confirm-lens.js";
+import { visibleBillLines } from "./lib/collab-field-profiles.js";
+import { resolveCompany } from "./lib/company-code-resolve.js";
 const KIND = "port_charge_invoice_confirmation";
 const SELLER_NAME = "上海洋宝宝国际物流有限公司";
 export const SELLER_BANK = "中国银行厦门文灶支行";
@@ -27,30 +30,7 @@ function matchFactory(label, factory) {
   return !!a && !!b && (a.includes(b) || b.includes(a));
 }
 
-export function classifyFobScope(canonicalCategory, costCategory) {
-  const canonical = clean(canonicalCategory, 80).toLowerCase();
-  const label = clean(costCategory, 120).toLowerCase();
-  const has = (pattern) => pattern.test(label);
-
-  if (["ocean_freight", "rail_freight", "barge_freight", "fuel_surcharge"].includes(canonical)) return "freight";
-  if (!canonical && has(/海运|运费|铁路|驳船|燃油|baf|ocean|freight/i)) return "freight";
-
-  if (canonical === "customs_declaration") return "declaration";
-  if (!canonical && has(/报关|申报|清关|customs/i)) return "declaration";
-
-  if (!canonical && has(/目的港|destination|dthc|进口港/i)) return "destination";
-
-  if (["storage", "detention", "pending"].includes(canonical)) return "review";
-  if (!canonical && has(/仓储|滞港|滞箱|堆存/i)) return "review";
-
-  if ([
-    "doc", "thc", "booking", "seal", "vgm", "eir", "telex_fee", "manifest",
-    "edi", "isps_security", "chc", "agency", "port_charge", "ptf",
-  ].includes(canonical)) return "origin";
-  if (!canonical && has(/单证|文件|码头|订舱|订仓|封签|铅封|设备交接|电放|放单|舱单|安全|港杂|代理|操作|thc|vgm|eir|edi|isps|chc|doc|seal|booking|telex|manifest/i)) return "origin";
-
-  return "review";
-}
+export { classifyFobScope };
 
 async function ensureTable(pool) {
   await pool.query(`
@@ -175,125 +155,18 @@ function containerSummary(sp) {
   return qty ? `${qty}×${type}` : "";
 }
 
-function partyLens(ctx, sp) {
-  if (ctx.internal) return { role: "internal", side: "all", code: null, segment: "all" };
-  if (ctx.role === "customer_booking") {
-    return { role: "customer", side: "receivable", code: clean(sp.customer_code, 40), segment: "customer" };
-  }
-  if (ctx.role === "shipper_booking") return { role: "shipper", side: "receivable", code: clean(sp.party_company?.code, 40), segment: "port_charge" };
-  if (ctx.role === "trucking_booking") {
-    return { role: "supplier", side: "payable", code: clean(sp.trucking_code, 40), segment: "truck" };
-  }
-  if (ctx.role === "broker_booking") {
-    return { role: "supplier", side: "payable", code: clean(sp.broker_code, 40), segment: "customs" };
-  }
-  if (ctx.role === "factory_booking") {
-    return { role: "supplier", side: "payable", code: clean(sp.party_company?.code, 40), segment: "factory" };
-  }
-  return { role: "supplier", side: "payable", code: clean(sp.party_company?.code, 40), segment: (ctx.meta?.segments || [])[0] || "supplier" };
-}
-
-async function defaultLines(pool, sp, ctx) {
-  const blNo = clean(sp.bl_no || sp.hbl_no || sp.shipment_no || "", 80);
-  const lens = partyLens(ctx, sp);
-  const exwTransfer = clean(sp.freight_term, 20).toUpperCase() === "EXW";
-  if (!blNo || (lens.role !== "internal" && !lens.code)) return { lines: [], exwTransfer, lens };
-
-  const params = [blNo];
-  const where = ["bl_no=$1"];
-  if (lens.side === "payable") {
-    params.push(lens.code);
-    where.push(`supplier_company_code=$${params.length}`, "COALESCE(amount,0)>0");
-  } else if (lens.side === "receivable") {
-    params.push(lens.code);
-    where.push(`payer_company_code=$${params.length}`, "COALESCE(sale_amount,0)>0");
-  } else {
-    where.push("(COALESCE(amount,0)>0 OR COALESCE(sale_amount,0)>0)");
-  }
-  const r = await pool.query(
-    `SELECT bl_no, cost_category, canonical_category, fob_scope,
-            amount, sale_amount, currency, unit_price, qty, charge_basis,
-            supplier, supplier_company_code, payer_company_code
-       FROM active_freight_supplier_bills
-      WHERE ${where.join(" AND ")}
-      ORDER BY id`,
-    params
-  );
-
-  const customsArrange = clean(sp.customs_arrange, 20).toLowerCase();
-  const lines = [];
-  for (const row of r.rows) {
-    const scope = clean(row.fob_scope, 16) || classifyFobScope(row.canonical_category, row.cost_category);
-    if (lens.role === "customer" && Number(row.sale_amount || 0) <= 0) continue;
-    if (lens.role === "supplier" && Number(row.amount || 0) <= 0) continue;
-    if (ctx.role === "factory_booking") {
-      if (scope === "freight" || scope === "destination") continue;
-      if (scope === "declaration" && customsArrange === "factory") continue;
-    }
-    const visibleAmount = lens.side === "receivable" ? row.sale_amount : row.amount;
-    const line = {
-      bl_no: clean(row.bl_no || blNo, 80),
-      name: clean(row.cost_category || "港杂费", 80),
-      basis: clean(row.charge_basis || "整票", 24),
-      unit_price: money(row.unit_price),
-      qty: money(row.qty || 1) || 1,
-      amount: money(visibleAmount),
-      currency: clean(row.currency || "CNY", 8).toUpperCase(),
-      fob_scope: scope,
-      review: scope === "review",
-      segment: lens.segment,
-      line_side: lens.side,
-    };
-    if (lens.role === "internal") {
-      line.cost_amount = money(row.amount);
-      line.sale_amount = money(row.sale_amount);
-      line.gross_profit = money(Number(row.sale_amount || 0) - Number(row.amount || 0));
-    }
-    lines.push(line);
-  }
-  return { lines, exwTransfer, lens };
-}
-
-async function loadLaneBenchmarks(pool, sp, lens) {
-  const carrier = clean(sp.carrier_code || sp.shipping_line || sp.forwarder_name, 80);
-  const pol = clean(sp.pol, 100), pod = clean(sp.pod, 100), ct = clean(sp.container_type || "40HC", 20);
-  const out = { localCharge: null, freightRate: null };
-  if (!carrier || !pol || !pod) return out;
-  const lc = await pool.query(
-    `SELECT id, carrier, pol, pod, container_type, fees, cost_total, sell_total
-       FROM local_charges
-      WHERE lower(btrim(carrier))=lower(btrim($1)) AND lower(btrim(pol))=lower(btrim($2))
-        AND lower(btrim(pod))=lower(btrim($3)) AND lower(btrim(container_type))=lower(btrim($4))
-      ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 1`,
-    [carrier, pol, pod, ct]
-  );
-  if (lc.rows[0]) out.localCharge = {
-    id: lc.rows[0].id, carrier: lc.rows[0].carrier, pol: lc.rows[0].pol, pod: lc.rows[0].pod,
-    container_type: lc.rows[0].container_type, fees: parseJson(lc.rows[0].fees, []),
-    cost_total: money(lc.rows[0].cost_total), sell_total: money(lc.rows[0].sell_total),
-    total: money(lens.side === "receivable" ? lc.rows[0].sell_total : lc.rows[0].cost_total),
-  };
-  const fr = await pool.query(
-    `SELECT id, currency, gp20, hq40, customer_gp20, customer_hq40
-       FROM freight_rates
-      WHERE lower(btrim(carrier))=lower(btrim($1)) AND lower(btrim(pol))=lower(btrim($2))
-        AND lower(btrim(pod))=lower(btrim($3)) AND COALESCE(status,'active')!='withdrawn'
-      ORDER BY updated_at DESC NULLS LAST, id DESC LIMIT 1`,
-    [carrier, pol, pod]
-  );
-  if (fr.rows[0]) {
-    const is20 = /20/.test(ct), sell = lens.side === "receivable";
-    const amount = money(sell ? (is20 ? fr.rows[0].customer_gp20 : fr.rows[0].customer_hq40) : (is20 ? fr.rows[0].gp20 : fr.rows[0].hq40));
-    if (amount > 0) out.freightRate = { id: fr.rows[0].id, currency: fr.rows[0].currency || "CNY", amount };
-  }
-  return out;
-}
-
 async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const defaults = await defaultLines(pool, sp, ctx);
   const lane = ctx.role === "shipper_booking" ? { localCharge: null, freightRate: null } : await loadLaneBenchmarks(pool, sp, defaults.lens);
   const billLines = defaults.lines;
-  const payloadBillLines = saved?.payload?.bill_lines || billLines;
+  const resolvedPartyCode = await resolvedBillingPartyCode(pool, ctx, sp, defaults.lens);
+  const sourceBillLines = ctx.internal && saved?.payload?.bill_lines ? saved.payload.bill_lines : billLines;
+  const payloadBillLines = visibleBillLines(sourceBillLines, {
+    role: ctx.role,
+    field_profile: ctx.meta?.field_profile || null,
+    plan: sp,
+    resolvedPartyCode,
+  });
   const billLineNotice = billLines.length ? "" : "费用尚未录入";
   const currency = payloadBillLines[0]?.currency || "CNY";
   const total = money(payloadBillLines.filter(l => l.currency === currency).reduce((s, l) => s + Number(l.amount || 0), 0));
@@ -307,7 +180,7 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
   const cntr = savedCntrs
     ? containers.filter(c => c.type && Number(c.count)).map(c => `${Number(c.count)}×${c.type}`).join(" + ")
     : containerSummary(sp);
-  return {
+  const payload = {
     is_internal: Boolean(ctx.internal),
     status: saved?.status || "draft",
     confirmed_at: saved?.confirmed_at || null,
@@ -355,6 +228,27 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     save_as_default: saved?.payload?.save_as_default ?? true,
     updated_at: saved?.updated_at || null,
   };
+  return sanitizeForExternal(payload, defaults.lens, { buyer, seller });
+}
+
+async function resolvedBillingPartyCode(pool, ctx, sp, lens) {
+  if (ctx.internal) return clean(lens?.code, 40).toUpperCase();
+  const candidates = [
+    lens?.code,
+    ctx.scope?.label,
+    ctx.meta?.company_label,
+    sp.party_company?.code,
+    sp.party_company?.name_cn,
+    ctx.role === "customer_booking" ? sp.customer_code : "",
+    ctx.role === "trucking_booking" ? sp.trucking_code : "",
+    ctx.role === "broker_booking" ? sp.broker_code : "",
+  ].filter(Boolean);
+  for (const key of candidates) {
+    const company = await resolveCompany(pool, key);
+    const code = clean(company?.code || key, 40).toUpperCase();
+    if (code) return code;
+  }
+  return "";
 }
 
 async function partiesForView(pool, sp, ctx) {

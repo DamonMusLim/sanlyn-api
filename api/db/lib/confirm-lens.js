@@ -1,3 +1,5 @@
+import { resolveCompany } from "./company-code-resolve.js";
+
 const ROLE_POLICIES = {
   customer_booking: { role: "customer", side: "receivable", segment: "customer" },
   shipper_booking: { role: "shipper", side: "receivable", segment: "port_charge" },
@@ -98,6 +100,42 @@ export function partyLens(ctx, sp) {
   return { ...policy, code: clean(code, 40), segment };
 }
 
+async function canonicalCode(pool, value, cache) {
+  const key = clean(value, 120);
+  if (!key) return "";
+  const upper = key.toUpperCase();
+  if (cache.has(upper)) return cache.get(upper);
+  const company = await resolveCompany(pool, key);
+  const code = clean(company?.code || key, 40).toUpperCase();
+  cache.set(upper, code);
+  return code;
+}
+
+async function sameCompanyCode(pool, left, right, cache) {
+  const a = await canonicalCode(pool, left, cache);
+  const b = await canonicalCode(pool, right, cache);
+  return !!a && !!b && a === b;
+}
+
+async function lineVisibleForLens(pool, row, lens, cache) {
+  if (lens.role === "internal") return true;
+  if (!lens.code) return false;
+  const direction = clean(row.direction, 16).toLowerCase();
+  const ownership = clean(row.ownership_scope, 16).toLowerCase();
+  if (lens.side === "receivable") {
+    if (!["receivable", "both"].includes(direction)) return false;
+    const counterparty = row.counterparty_company_code || row.payer_company_code;
+    return sameCompanyCode(pool, counterparty, lens.code, cache);
+  }
+  if (lens.side === "payable") {
+    if (direction === "receivable") return false;
+    if (["supplier", "ocean"].includes(lens.segment) && direction !== "payable") return false;
+    if (["supplier", "ocean"].includes(lens.segment) && ownership && !["logistics", "shared"].includes(ownership)) return false;
+    return sameCompanyCode(pool, row.supplier_company_code, lens.code, cache);
+  }
+  return false;
+}
+
 export async function defaultLines(pool, sp, ctx) {
   const blNo = clean(sp.bl_no || sp.hbl_no || sp.shipment_no || "", 80);
   const lens = partyLens(ctx, sp);
@@ -109,7 +147,7 @@ export async function defaultLines(pool, sp, ctx) {
   const where = ["bl_no=$1"];
   if (lens.side === "payable") {
     const supConds = [];
-    if (lens.code) {
+    if (lens.code && lens.role === "internal") {
       params.push(lens.code);
       supConds.push(`supplier_company_code=$${params.length}`);
     }
@@ -125,7 +163,7 @@ export async function defaultLines(pool, sp, ctx) {
       where.push("TRUE");
     } else {
       params.push(lens.code);
-      where.push(`(payer_company_code=$${params.length} OR COALESCE(rebill_status,'') IN ('rebilled_to_customer','rebill','direct'))`);
+      where.push(`(payer_company_code=$${params.length} OR counterparty_company_code=$${params.length} OR COALESCE(rebill_status,'') IN ('rebilled_to_customer','rebill','direct'))`);
     }
   } else {
     where.push("(COALESCE(amount,0)>0 OR COALESCE(sale_amount,0)>0)");
@@ -133,7 +171,8 @@ export async function defaultLines(pool, sp, ctx) {
   const r = await pool.query(
     `SELECT bl_no, cost_category, canonical_category, fob_scope,
             amount, sale_amount, currency, unit_price, qty, charge_basis,
-            supplier, supplier_company_code, payer_company_code, rebill_status, remarks, raw
+            supplier, supplier_company_code, payer_company_code,
+            direction, counterparty_company_code, ownership_scope, rebill_status, remarks, raw
        FROM active_freight_supplier_bills
       WHERE ${where.join(" AND ")}
       ORDER BY id`,
@@ -141,12 +180,15 @@ export async function defaultLines(pool, sp, ctx) {
   );
 
   const customsArrange = clean(sp.customs_arrange, 20).toLowerCase();
+  const codeCache = new Map();
   const lines = [];
   for (const row of r.rows) {
+    if (!(await lineVisibleForLens(pool, row, lens, codeCache))) continue;
     const scope = clean(row.fob_scope, 16) || classifyFobScope(row.canonical_category, row.cost_category);
     if (ctx.internal && !internalSegmentMatch(lens.segment, row.cost_category, scope)) continue;
     const receivable = lens.side === "receivable" ? receivableAmount(row, scope) : null;
     if (lens.side === "receivable" && receivable.amount <= 0) continue;
+    if (lens.role === "customer" && scope !== "freight") continue;
     if (lens.role === "supplier" && Number(row.amount || 0) <= 0) continue;
     if (lens.side === "receivable" && !["freight", "origin", "review"].includes(scope)) continue;
     if (ctx.role === "factory_booking" && !ctx.internal) {
@@ -161,7 +203,7 @@ export async function defaultLines(pool, sp, ctx) {
     if (lens.role === "internal") addInternalAmounts(line, row.amount, row.sale_amount);
     lines.push(line);
   }
-  if (!lines.length && Array.isArray(sp.cost_lines) && sp.cost_lines.length) {
+  if (!lines.length && Array.isArray(sp.cost_lines) && sp.cost_lines.length && (ctx.internal || ["factory_booking", "trucking_booking", "broker_booking"].includes(ctx.role))) {
     addRawCostLines(lines, sp.cost_lines, blNo, lens, ctx, customsArrange);
   }
   return { lines, exwTransfer, lens };
@@ -258,7 +300,7 @@ export async function loadLaneBenchmarks(pool, sp, lens) {
   return out;
 }
 
-export function redactPayloadForLens(payload, lens, parties) {
+export function sanitizeForExternal(payload, lens, parties = {}) {
   if (lens.role === "internal") return payload;
   const safe = { ...payload };
   if (lens.side === "payable") {
@@ -267,19 +309,30 @@ export function redactPayloadForLens(payload, lens, parties) {
   }
   safe.bill_lines = (safe.bill_lines || []).map(line => redactLine(line));
   safe.invoices = (safe.invoices || []).map(invoice => redactInvoice(invoice));
+  delete safe.amount;
+  delete safe.cost_amount;
+  delete safe.sale_amount;
+  delete safe.gross_profit;
+  delete safe.cost;
+  delete safe.sale;
+  delete safe.payer_company_code;
+  delete safe.supplier_company_code;
+  delete safe.counterparty_company_code;
   delete safe.local_charge_baseline;
   delete safe.freight_rate_baseline;
   delete safe.exw_transfer_to_customer;
   return safe;
 }
 
+export const redactPayloadForLens = sanitizeForExternal;
+
 function redactLine(line) {
-  const { cost_amount, sale_amount, gross_profit, cost, sale, customer, customer_name, payer_company_code, supplier, supplier_company_code, raw, ...safe } = line || {};
+  const { cost_amount, sale_amount, gross_profit, cost, sale, customer, customer_name, payer_company_code, supplier, supplier_company_code, counterparty_company_code, counterparty_amount, raw, ...safe } = line || {};
   return safe;
 }
 
 function redactInvoice(invoice) {
-  const { cost_amount, sale_amount, gross_profit, cost, sale, customer, customer_name, payer_company_code, ...safe } = invoice || {};
+  const { cost_amount, sale_amount, gross_profit, cost, sale, customer, customer_name, payer_company_code, supplier_company_code, counterparty_company_code, counterparty_amount, ...safe } = invoice || {};
   return safe;
 }
 

@@ -17,6 +17,7 @@ import path from "path";
 import { getPool, setCors } from "../db.js";
 import { requireAuth, generateToken } from "../auth.js";
 import { registerBookingCollabView, derivePlanFactories } from "./booking-collab-view.js";
+import { billingSegmentFor, sanitizeSheet } from "./lib/collab-field-profiles.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 
@@ -510,16 +511,7 @@ async function handleValidate(req, res, pool) {
           sheet.containers_live = []; sheet.containers_detail = []; sheet.factory_loading_done = {}; sheet.scope_missing = true;
         }
       }
-      // supplier_portal 居间人/承包段：上游供应商(含 ocean 供应商)不得见下游客户/条款。
-      // 仅内部 field_profile=shipping_booking/upstream_downstream 可见。
-      if (role === "supplier_portal") {
-        const fprof = meta.field_profile || null;
-        const seesCustomer = fprof === "shipping_booking" || fprof === "upstream_downstream";
-        if (!seesCustomer) {
-          delete sheet.customer_name; delete sheet.customer_en;
-          delete sheet.freight_term; delete sheet.plan_freight_term;
-        }
-      }
+      // supplier_portal visibility is centralized in collab-field-profiles.
       // shipper_booking 发货人只做港杂账单(走 invoice-collab-section→invoice-collab-confirm)，
       // 无权访问订舱 sheet：若 shipper token 被手动指向 collab-portal，validate 一律 fail-closed，
       // 绝不返回下游客户/条款/订单/柜/航班(命脉红线：发货人不得见下游客户)。
@@ -530,7 +522,7 @@ async function handleValidate(req, res, pool) {
         sheet.containers_live = []; sheet.containers_detail = []; sheet.factory_loading_done = {};
         sheet.sailings = []; sheet.scope_missing = true;
       }
-      return sheet;
+      return sanitizeSheet(sheet, { role, field_profile: meta.field_profile || null, plan: planRes.rows[0] });
     })(),
     ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
     factory_scope: factoryScope,
@@ -539,14 +531,12 @@ async function handleValidate(req, res, pool) {
     billing: {
       token: raw,
       show_amount: true,
-      segment: meta.field_profile === "shipping_booking" || meta.field_profile === "upstream_downstream"
-        ? "all"
-        : role === "customer_booking" ? "customer"
-        : role === "shipper_booking" ? "port_charge"
-        : role === "factory_booking" ? "factory"
-        : role === "trucking_booking" ? "truck"
-        : role === "broker_booking" ? "customs"
-        : ((portalScope && portalScope.segments && portalScope.segments[0]) || "supplier"),
+      segment: (() => {
+        const segment = billingSegmentFor({ role, field_profile: meta.field_profile || null });
+        return role === "supplier_portal" && !meta.field_profile && segment === "ocean"
+          ? ((portalScope && portalScope.segments && portalScope.segments[0]) || "supplier")
+          : segment;
+      })(),
     },
   });
 }
