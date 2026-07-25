@@ -85,6 +85,91 @@ async function list(pool) {
   });
 }
 
+function parseDays(v) {
+  const raw = v == null || v === "" ? 30 : Number(v);
+  if (!Number.isInteger(raw) || raw < 1 || raw > 90) return null;
+  return raw;
+}
+
+function parseIds(body) {
+  if (body?.id != null && body.id !== "") {
+    const id = Number(body.id);
+    return Number.isInteger(id) && id > 0 ? { ids: [id], bulk: false } : null;
+  }
+  if (!Array.isArray(body?.ids)) return null;
+  const ids = Array.from(new Set(body.ids.map(Number).filter(id => Number.isInteger(id) && id > 0)));
+  return ids.length ? { ids, bulk: true } : null;
+}
+
+async function refresh(pool, req) {
+  const days = parseDays(req.body?.days);
+  if (!days) return { status: 400, body: { success: false, error: "days must be an integer from 1 to 90" } };
+
+  const parsed = parseIds(req.body || {});
+  if (!parsed) return { status: 400, body: { success: false, error: "id or ids required" } };
+
+  const selectSql = parsed.bulk
+    ? `SELECT id, recipient_role, expires_at
+         FROM magic_links
+        WHERE id = ANY($1::int[])
+          AND revoked_at IS NULL
+          AND COALESCE(revoked,false) = false
+          AND created_at >= NOW() - INTERVAL '30 days'
+          AND COALESCE(meta->>'test','') <> 'true'`
+    : `SELECT id, recipient_role, expires_at
+         FROM magic_links
+        WHERE id = ANY($1::int[])
+          AND revoked_at IS NULL
+          AND COALESCE(revoked,false) = false`;
+  const found = await pool.query(selectSql, [parsed.ids]);
+  if (!found.rowCount) {
+    return {
+      status: 200,
+      body: {
+        success: true,
+        refreshed: [],
+        skipped: parsed.ids.map(id => ({ id, reason: parsed.bulk ? "not found, revoked, old, or test link" : "not found or revoked" })),
+      },
+    };
+  }
+
+  const hitIds = found.rows.map(r => r.id);
+  const updated = await pool.query(
+    `UPDATE magic_links
+        SET expires_at = GREATEST(expires_at, NOW()) + ($2::int * INTERVAL '1 day')
+      WHERE id = ANY($1::int[])
+        AND revoked_at IS NULL
+        AND COALESCE(revoked,false) = false
+      RETURNING id, recipient_role, expires_at`,
+    [hitIds, days]
+  );
+
+  const updatedIds = new Set(updated.rows.map(r => r.id));
+  const beforeById = new Map(found.rows.map(r => [r.id, r]));
+  for (const row of updated.rows) {
+    const before = beforeById.get(row.id);
+    try {
+      await writeAudit(pool, req, {
+        action: "collab-link-center.refresh", entity_type: "magic_link", entity_id: String(row.id),
+        before: { expires_at: before?.expires_at || null }, after: { expires_at: row.expires_at, days },
+        note: "延期协同链接 " + row.recipient_role,
+      });
+    } catch (_) {}
+  }
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      refreshed: updated.rows.map(r => ({ id: r.id, role: r.recipient_role, expires_at: r.expires_at })),
+      skipped: parsed.ids.filter(id => !updatedIds.has(id)).map(id => ({
+        id,
+        reason: parsed.bulk ? "not found, revoked, old, or test link" : "not found or revoked",
+      })),
+    },
+  };
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -94,6 +179,10 @@ export default async function handler(req, res) {
   const pool = getPool();
   try {
     if (req.method === "GET") return json(res, 200, { success: true, links: await list(pool) });
+    if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "refresh") {
+      const r = await refresh(pool, req);
+      return json(res, r.status, r.body);
+    }
     if (req.method === "PATCH" && clean(req.query.action || req.body?.action, 40) === "revoke") {
       const id = Number(req.body?.id || 0);
       if (!id) return json(res, 400, { success: false, error: "id required" });
