@@ -5,6 +5,7 @@
 //  - 内部(field_profile=upstream_downstream/shipping_booking godview) → 直接落 raw.so_bl_reference(apply)并清 pending；
 //  - 绝不改 shipment_no 本身(内部编号体系不被外部污染)。
 import crypto from "node:crypto";
+import { notifyDamonCard } from "./notify-damon.js";
 
 function rawToHash(raw) {
   return crypto.createHash("sha256").update(String(raw || "")).digest("hex");
@@ -55,10 +56,11 @@ export async function handleCollabRefSubmit(req, res, pool) {
 
   try {
     const { rows: pn } = await pool.query(`SELECT shipment_no FROM shipping_plans WHERE id = $1`, [planId]);
-    fetch("https://ntfy.sh/sanlyn-damon-alert", {
-      method: "POST",
-      headers: { Title: encodeURIComponent(`货代改引用单号 ${(pn[0] || {}).shipment_no || planId}`), Priority: "default" },
-      body: `货代提议 SO/BL 引用单号改为：${ref}（待核对）`,
+    const sm = (pn[0] || {}).shipment_no || planId;
+    notifyDamonCard({
+      title: "货代改SO/BL引用单号",
+      applicant: String(sm), urgency: "普通", count: 1,
+      url: `https://ai.sanlyn.cn/data`,
     }).catch(() => {});
   } catch (e) { /* 通知失败不阻断 */ }
 

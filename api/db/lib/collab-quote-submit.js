@@ -3,6 +3,7 @@
 // 铁律：这是对方报的「他收我们的价」= 我方成本，一律进 staging(shipping_plans.raw.collab_quotes)
 // 待 Sanlyn 人工核价后才落 freight_supplier_bills。绝不在此写 sale_amount / 任何财务真值。
 import crypto from "node:crypto";
+import { notifyDamonCard } from "./notify-damon.js";
 
 const SEG_OK = new Set(["truck", "customs", "local", "ocean", "port_charge"]);
 
@@ -69,11 +70,10 @@ export async function handleCollabQuoteSubmit(req, res, pool) {
   try {
     const { rows: pn } = await pool.query(`SELECT shipment_no FROM shipping_plans WHERE id = $1`, [planId]);
     const sm = (pn[0] || {}).shipment_no || planId;
-    const txt = staged.map(s => `${s.segment} ${s.currency}${s.amount}`).join(" · ");
-    fetch("https://ntfy.sh/sanlyn-damon-alert", {
-      method: "POST",
-      headers: { Title: encodeURIComponent(`货代报价 ${sm}`), Priority: "default" },
-      body: `货代在确认单填了报价（待核价）：\n${txt}`,
+    notifyDamonCard({
+      title: "货代报价待核价",
+      applicant: String(sm), urgency: "普通", count: staged.length,
+      url: `https://ai.sanlyn.cn/data`,
     }).catch(() => {});
   } catch (e) { /* 通知失败不阻断 */ }
 
