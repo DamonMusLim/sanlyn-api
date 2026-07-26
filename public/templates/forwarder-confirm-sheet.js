@@ -69,6 +69,7 @@ async function boot(){
     state.role = v.role || "";
     state.invoice = inv.ok ? (inv.data || {}) : {};
     state.invoiceError = inv.ok ? "" : inv.error;
+    state.carrierReq = Array.isArray(v.carrier_requirements) ? v.carrier_requirements : [];
     state.mode = providerMode(state.sheet);
     renderAll();
   }catch(e){ fail(e.message || "加载失败"); }
@@ -112,8 +113,44 @@ function renderAll(){
   $("soHint").textContent = uploadedHint(/(^|[^A-Z])S\/?O([^A-Z]|$)|放舱|订舱确认|舱单|manifest/i, "放舱后请上传");
   $("blHint").textContent = uploadedHint(/\bBL\b|提单/i, "草稿与正式提单");
   renderRef();
+  renderCarrierReq();
   renderStatus();
   renderFees();
+}
+function renderCarrierReq(){
+  const el = $("carrierReq"); if(!el) return;
+  const reqs = Array.isArray(state.carrierReq) ? state.carrierReq : [];
+  if(!reqs.length){ el.innerHTML = ""; return; }
+  const carrier = state.sheet.carrier_code || state.sheet.shipping_line || "承运人";
+  const pending = reqs.filter(t => t.status === "requested" || t.status === "rejected").length;
+  el.innerHTML = `<div class="block" style="border:2px solid #f0b4ab">
+    <div class="bh" style="background:#fdecea;display:flex;align-items:center;gap:9px">
+      <input type="checkbox" ${pending ? "" : "checked"} disabled style="width:18px;height:18px">
+      <h2 style="flex:1;font-size:15.5px;margin:0">🛡 ${esc(carrier)} 要求 · 放舱前必交</h2>
+      <span class="noagr">${pending ? pending + " 项待办" : "已齐"}</span>
+    </div>
+    <div class="bb" style="display:flex;flex-direction:column;gap:11px">${reqs.map(reqRow).join("")}</div>
+  </div>`;
+}
+function reqRow(t){
+  const map = { requested:"待提交", submitted:"待核", accepted:"已核准", rejected:"需重交" };
+  const done = t.status === "accepted";
+  return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--row)">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:${done?0:9}px">
+      <span style="font-size:19px">📄</span>
+      <div style="flex:1"><b style="font-size:14px">${esc(t.label || t.task_type)}</b>${t.signed_by ? `<div style="font-size:11.5px;color:var(--sub)">签署：${esc(t.signed_by)}</div>` : ""}</div>
+      <span class="${done ? "sstat ok" : "noagr"}">${esc(map[t.status] || t.status)}</span>
+    </div>
+    ${done ? "" : `<div class="acts"><button class="btn" onclick="downloadReqTpl(${t.id})">⬇ 下载模版</button><button class="btn brand" onclick="uploadReqFile(${t.id})">⬆ 上传签署件</button></div>`}
+  </div>`;
+}
+function downloadReqTpl(taskId){
+  window.open(`${API}/file?token=${encodeURIComponent(token)}&type=loi_template&task=${taskId}`, "_blank", "noopener");
+}
+function uploadReqFile(taskId){
+  state.reqTaskId = taskId; state._reqUpload = true;
+  state.uploadZone = "loi"; state.uploadLabel = "LOI";
+  $("fileInput").click();
 }
 function refValue(){
   const s = state.sheet;
@@ -313,9 +350,23 @@ async function uploadPickedFile(input){
   if(!f) return;
   if(f.size > 8 * 1024 * 1024){ toast("文件需在 8MB 以内"); return; }
   const b64 = await new Promise((ok,no)=>{ const r = new FileReader(); r.onload=()=>ok(r.result); r.onerror=no; r.readAsDataURL(f); });
+  const fname = `[${state.uploadZone}][${state.uploadLabel}]${f.name}`;
   try{
     const d = await fetchJson(`${API}/upload`, { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ token, filename:`[${state.uploadZone}][${state.uploadLabel}]${f.name}`, mime:f.type, data_base64:b64 }) });
+      body: JSON.stringify({ token, filename:fname, mime:f.type, data_base64:b64 }) });
+    // 承运人要求件(保函等):上传后记签署证据链 + 置 submitted
+    if(state._reqUpload && state.reqTaskId){
+      state._reqUpload = false;
+      const by = (prompt("签署人姓名") || "").trim();
+      const title = (prompt("签署人职务（选填）", "") || "").trim();
+      await fetchJson(`${API}/collab-requirement-submit`, { method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ token, task_id:state.reqTaskId, signed_by:by, signed_title:title, company_chop_present:true, evidence_ref:fname, loi_template_version:"v1" }) });
+      const t = (state.carrierReq || []).find(x => x.id === state.reqTaskId);
+      if(t){ t.status = "submitted"; t.signed_by = by; }
+      renderCarrierReq();
+      toast("已提交，待 Sanlyn 核对");
+      return;
+    }
     state.sheet.collab_uploads = (state.sheet.collab_uploads || []).concat(d.file || []);
     renderAll();
     toast("已上传：" + f.name);
