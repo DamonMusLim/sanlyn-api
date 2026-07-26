@@ -104,8 +104,7 @@ function renderAll(){
   applyModeButtons();
   const route = [s.pol, s.pod].filter(Boolean).join(" → ");
   const hdrNo = s.so_no || s.bl_no || s.shipment_no || "—";
-  const hdrKind = s.so_no ? "SO" : (s.bl_no ? "BL" : "");
-  $("fwName").innerHTML = `${hdrKind ? esc(hdrKind) + " " : ""}${esc(hdrNo)} — 订舱协同<br>${esc(forwarderName(s))}`;
+  $("fwName").innerHTML = `${esc(hdrNo)} — 订舱协同<br>${esc(forwarderName(s))}`;
   $("fwSub").textContent = textParts([route, cntrSummary(s), [s.vessel,s.voyage].filter(Boolean).join(" / ")]);
   $("etdV").textContent = fmtD(s.etd);
   $("soNoV").textContent = s.so_no || "—";
@@ -193,12 +192,15 @@ function forwarderName(s){
 function renderStatus(){
   const s = state.sheet;
   const days = daysLeft(s.cargo_cutoff || s.si_cutoff || s.etd);
-  const prefix = days == null ? "待处理" : (days < 0 ? "已到截单期" : `截单剩 ${days} 天`);
   const hasSo = !!(s.so_no || findUpload(/(^|[^A-Z])S\/?O([^A-Z]|$)|放舱|订舱确认|舱单|manifest/i));
-  $("agrTag").className = state.mode === "ours" ? "flag urgent" : "noagr";
-  $("agrTag").textContent = state.mode === "ours"
-    ? `⏰ ${prefix} · ${hasSo ? "SO 已有记录" : "待传 SO"}`
-    : `⏰ ${prefix} · ${hasSo ? "SO 已有记录" : "待传 SO"} · 待报价`;
+  // 截单已过 = 不再催"待传 SO"(过了没意义);截单前才提醒
+  let txt;
+  if(days == null) txt = "待处理";
+  else if(days < 0) txt = hasSo ? "已开船" : "已截单";
+  else txt = `截单剩 ${days} 天 · ${hasSo ? "SO 已有记录" : "待传 SO"}`;
+  const overdue = days != null && days < 0;
+  $("agrTag").className = (state.mode === "ours" && !overdue) ? "flag urgent" : "noagr";
+  $("agrTag").textContent = `⏰ ${txt}`;
 }
 function daysLeft(v){
   if(!v) return null;
