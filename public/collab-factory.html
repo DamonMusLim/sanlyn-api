@@ -98,11 +98,12 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
   </div>
 
   <div class="step-card" id="billingCard" style="margin-bottom:14px;">
-    <div class="step-head">
+    <div class="step-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
       <div style="display:flex;align-items:center;gap:10px;">
         <div class="step-num">￥</div>
         <div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div>
       </div>
+      <button onclick="openFactoryInvoiceTemplate(this)" style="padding:8px 14px;border:1.5px solid #9a3412;background:#fdf1ea;color:#9a3412;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📄 查看/确认开票模板</button>
     </div>
     <div class="step-body" style="max-height:none !important;opacity:1 !important;">
       <div class="section" id="billingBody"></div>
@@ -402,5 +403,21 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
 - L166-L182, L346-L390, L606-L608: expand trucking/customs arranger UI to Sanlyn/Babi/factory, centralize self->factory compatibility labels, and show non-agent material notes.
 - L311-L337, L380, L491-L503, L606-L607, L737-L765: add scoped factory profile address correction modal, gated entry, confirm checkbox, and token-only update submit.
 -->
+
+<script>
+// 从工厂协同点开图1完整开票模板去确认(token 从 URL 取,自包含)
+async function openFactoryInvoiceTemplate(btn){
+  var t = new URLSearchParams(location.search).get('token');
+  if(!t){ alert('缺少 token'); return; }
+  btn.disabled = true; var old = btn.textContent; btn.textContent = '生成中\u2026';
+  try{
+    var r = await fetch('/api/db/booking-collab/factory-invoice-code?token=' + encodeURIComponent(t));
+    var d = await r.json();
+    if(!r.ok || !d.ok) throw new Error(d.error || '生成失败');
+    window.open(d.url, '_blank', 'noopener');
+  }catch(e){ alert('打开开票模板失败\uFF1A' + e.message); }
+  finally{ btn.disabled = false; btn.textContent = old; }
+}
+</script>
 </body>
 </html>
