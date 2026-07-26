@@ -250,6 +250,19 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     <span class="v" id="etdV">—</span>
   </div>
 
+  <!-- SO/BL 引用单号:建议货代把我方内部号引用到 SO/提单,方便查单核对;可改(改动进 staging 待我方核对) -->
+  <div class="block">
+    <div class="bh"><h2>SO / 提单 引用单号</h2><p>请在 SO、提单上引用此单号，方便我方查单核对</p></div>
+    <div class="bb" style="display:flex;flex-direction:column;gap:9px">
+      <div class="bill">
+        <span class="bi">🔖</span>
+        <div class="bt2"><b id="refV">—</b><span id="refHint">默认=我方内部号，可改</span></div>
+        <button class="bdl" onclick="copyRef()">复制</button>
+        <button class="bdl" onclick="editRef()">改单号</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 单据放上面 -->
   <div class="block">
     <div class="bh"><h2>单据</h2><p>托书下载 · SO / 提单上传</p></div>

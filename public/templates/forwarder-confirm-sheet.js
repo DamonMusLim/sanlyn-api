@@ -111,8 +111,41 @@ function renderAll(){
   $("cntrV").innerHTML = renderContainerLines(s);
   $("soHint").textContent = uploadedHint(/(^|[^A-Z])S\/?O([^A-Z]|$)|放舱|订舱确认|舱单|manifest/i, "放舱后请上传");
   $("blHint").textContent = uploadedHint(/\bBL\b|提单/i, "草稿与正式提单");
+  renderRef();
   renderStatus();
   renderFees();
+}
+function refValue(){
+  const s = state.sheet;
+  return s.so_bl_reference || s.shipment_no || "—";
+}
+function renderRef(){
+  const s = state.sheet;
+  const cur = refValue();
+  $("refV").textContent = cur;
+  const pend = s.so_bl_ref_pending;
+  if(pend && pend.value && pend.value !== cur) $("refHint").textContent = `待我方核对：${pend.value}`;
+  else if(s.so_bl_reference) $("refHint").textContent = "已确认引用单号";
+  else $("refHint").textContent = "默认=我方内部号，可改";
+}
+function copyRef(){
+  const t = refValue();
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t).then(()=>toast("已复制：" + t)).catch(()=>toast("复制失败，请手动选择"));
+  else toast("请手动选择复制：" + t);
+}
+async function editRef(){
+  const v = prompt("SO / 提单引用单号（默认=我方内部号，可改为客户 PO 等）", refValue());
+  if(v == null) return;
+  const ref = String(v).trim();
+  if(!ref) return;
+  try{
+    const d = await fetchJson(`${API}/collab-ref-submit`, { method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ token, so_bl_reference: ref }) });
+    if(d.applied){ state.sheet.so_bl_reference = ref; state.sheet.so_bl_ref_pending = null; toast("引用单号已更新：" + ref); }
+    else { state.sheet.so_bl_ref_pending = { value: ref, status:"pending" }; toast("已提交，待 Sanlyn 核对"); }
+    renderRef();
+  }catch(e){ toast("提交失败：" + e.message); }
 }
 function forwarderName(s){
   if(state.mode === "nom") return "客户指定货代（无价格协议）";

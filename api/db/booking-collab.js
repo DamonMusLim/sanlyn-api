@@ -19,6 +19,7 @@ import { requireAuth, generateToken } from "../auth.js";
 import { registerBookingCollabView, derivePlanFactories } from "./booking-collab-view.js";
 import { billingSegmentFor, sanitizeSheet } from "./lib/collab-field-profiles.js";
 import { handleCollabQuoteSubmit } from "./lib/collab-quote-submit.js";
+import { handleCollabRefSubmit } from "./lib/collab-ref-submit.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 
@@ -135,6 +136,8 @@ async function handleValidate(req, res, pool) {
             sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage,
             sp.freight_sale_usd, sp.freight_term AS plan_freight_term,
             sp.logistics_provider_kind, sp.trade_owner_kind,
+            sp.raw->>'so_bl_reference' AS so_bl_reference,
+            sp.raw->'so_bl_ref_pending' AS so_bl_ref_pending,
             sp.release_type,
             (sp.source_system = 'freight_agency' OR sp.raw ? 'legs' OR sp.raw ? 'transfer') AS is_transfer,
             sp.raw->'cost_lines' AS _cost_lines_raw,
@@ -3100,6 +3103,7 @@ export default async function handler(req, res) {
     if (req.method === "POST" && pathSuffix === "factory-self-token")  return await handleFactoryToken(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "collab-pricing-submit")    return await handleCollabPricingSubmit(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "collab-quote-submit")     return await handleCollabQuoteSubmit(req, res, pool);
+    if (req.method === "POST"   && pathSuffix === "collab-ref-submit")       return await handleCollabRefSubmit(req, res, pool);
 
     return res.status(404).json({ error: "Not found" });
   } catch (e) {
