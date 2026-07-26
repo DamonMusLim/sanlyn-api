@@ -192,6 +192,20 @@ function allowedLine(l){
   if(/cost|margin|profit|gross|purchase/.test(keys)) return false;
   return l && (l.amount != null || l.unit_price != null || l.name);
 }
+function groupTier(lines){
+  const t = (lines || []).map(l => l && l.ac_tier);
+  if(t.includes("never")) return "never";
+  if(t.includes("confirm")) return "confirm";
+  if(t.includes("auto")) return "auto";
+  return "";
+}
+function tierBar(tier){
+  const c = tier === "auto" ? "var(--ok)" : tier === "confirm" ? "var(--wait)" : tier === "never" ? "var(--err)" : "";
+  return c ? `border-left:3px solid ${c}` : "";
+}
+function feeLegend(){
+  return `<div style="display:flex;gap:12px;font-size:11px;color:var(--sub);padding:1px 2px 3px"><span>🟢默认确认</span><span>🟠需确认</span><span>🔴不确认金额</span></div>`;
+}
 function groupLines(lines){
   const out = { ocean:[], local:[], truck:[], customs:[], other:[] };
   lines.filter(allowedLine).forEach(l=>{
@@ -227,6 +241,7 @@ function renderFees(){
 }
 function feeOurs(g){
   return [
+    feeLegend(),
     feeBill("🚢","海运费 Ocean Freight", cntrSummary(state.sheet), g.ocean, true),
     localDetails(g.local.concat(g.other)),
     quoteBill("🚚","拖车费 Trucking","报价前请看提货地址","truck"),
@@ -249,12 +264,14 @@ function feeNom(g){
 }
 function feeBill(icon, title, sub, lines, withDownload){
   const value = totalByCurrency(lines);
-  return `<div class="bill"><span class="bi">${icon}</span><div class="bt2"><b>${title}</b><span>${esc(sub || "—")}</span></div><div class="bv">${esc(value)}</div>${withDownload ? '<button class="bdl" onclick="openInvoice()">下载</button>' : ""}</div>`;
+  const bar = tierBar(groupTier(lines));
+  return `<div class="bill"${bar ? ` style="${bar}"` : ""}><span class="bi">${icon}</span><div class="bt2"><b>${title}</b><span>${esc(sub || "—")}</span></div><div class="bv">${esc(value)}</div>${withDownload ? '<button class="bdl" onclick="openInvoice()">下载</button>' : ""}</div>`;
 }
 function localDetails(lines){
   if(!lines.length) return feeBill("🏗","港杂费 Local Charges","费用尚未录入",[],false);
   const rows = lines.map(l=>`<div class="exp-row"><span>${esc(l.name || "费用")}</span><span class="mono">${esc(lineAmount(l))}</span></div>`).join("");
-  return `<details class="exp"><summary><span class="bi">🏗</span><div class="bt2"><b>港杂费 Local Charges</b><span>点开看明细</span></div><div class="bv">${esc(totalByCurrency(lines))}</div><span class="chev">▾</span></summary><div class="exp-body">${rows}<div class="exp-row"><span>合计</span><span class="mono">${esc(totalByCurrency(lines))}</span></div></div></details>`;
+  const bar = tierBar(groupTier(lines));
+  return `<details class="exp"${bar ? ` style="${bar}"` : ""}><summary><span class="bi">🏗</span><div class="bt2"><b>港杂费 Local Charges</b><span>点开看明细</span></div><div class="bv">${esc(totalByCurrency(lines))}</div><span class="chev">▾</span></summary><div class="exp-body">${rows}<div class="exp-row"><span>合计</span><span class="mono">${esc(totalByCurrency(lines))}</span></div></div></details>`;
 }
 function quoteBill(icon, title, sub, segment){
   return `<div class="bill"><span class="bi">${icon}</span><div class="bt2"><b>${title}</b><span>${esc(sub)}</span></div><span class="fillin" onclick="submitQuote('${segment}')">填写报价 ✎</span></div>`;

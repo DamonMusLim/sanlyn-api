@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { classifyFobScope, defaultLines, loadLaneBenchmarks, partyLens, sanitizeForExternal } from "./lib/confirm-lens.js";
 import { visibleBillLines } from "./lib/collab-field-profiles.js";
+import { tagAutoConfirm } from "./lib/collab-autoconfirm-guard.js";
 import { resolveCompany } from "./lib/company-code-resolve.js";
 const KIND = "port_charge_invoice_confirmation";
 const SELLER_NAME = "上海洋宝宝国际物流有限公司";
@@ -80,7 +81,7 @@ async function loadShipment(pool, ctx) {
   const r = await pool.query(
     `SELECT sp.id, sp.shipment_no, sp.bl_no, sp.pol, sp.pod, sp.vessel, sp.voyage,
             sp.container_type, sp.container_qty, sp.issuing_company, sp.carrier_code, sp.shipping_line,
-            sp.freight_term, sp.customs_arrange,
+            sp.freight_term, sp.customs_arrange, sp.logistics_provider_kind,
             sp.customer, sp.customer_en, sp.hbl_no,
             cf.code AS forwarder_code, COALESCE(cf.name_cn, cf.name_en) AS forwarder_name,
             ct.code AS trucking_code, COALESCE(ct.name_cn, ct.name_en) AS trucking_name,
@@ -206,7 +207,7 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
       tax_id: saved?.payload?.buyer?.tax_id || buyer.tax_id || "",
     },
     seller,
-    bill_lines: payloadBillLines,
+    bill_lines: tagAutoConfirm(payloadBillLines, { externalLogistics: sp.logistics_provider_kind === 'external' }),
     bill_line_notice: saved?.payload?.bill_line_notice || billLineNotice,
     needs_finance_review: saved?.payload?.needs_finance_review ?? !billLines.length,
     ...(ctx.role === "shipper_booking" ? {} : { exw_transfer_to_customer: Boolean(defaults.exwTransfer && payloadBillLines.length) }),
