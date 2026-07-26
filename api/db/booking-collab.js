@@ -20,6 +20,7 @@ import { registerBookingCollabView, derivePlanFactories } from "./booking-collab
 import { billingSegmentFor, sanitizeSheet } from "./lib/collab-field-profiles.js";
 import { handleCollabQuoteSubmit } from "./lib/collab-quote-submit.js";
 import { handleCollabRefSubmit } from "./lib/collab-ref-submit.js";
+import { materializeAndList } from "./lib/carrier-requirements.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 
@@ -304,9 +305,15 @@ async function handleValidate(req, res, pool) {
     quarantineDocs = qr.map(r => ({ ref: String(r.id), name: r.name })); // 一票可多份(拼柜每单一张CIQ)，全列出
   } catch (e) { /* 检疫探测失败不阻断门户 */ }
 
+  const carrierRequirements = await materializeAndList(pool, planId, {
+    role,
+    internal: meta.field_profile === "upstream_downstream" || meta.field_profile === "shipping_booking",
+  }).catch(() => []);
+
   return res.json({
     valid: true,
     role,
+    carrier_requirements: carrierRequirements,
     // factory_booking 下 preview 标志无意义，不能驱动前端显示全貌。
     is_preview: role !== "factory_booking" && meta.preview === true,
     preview_godview: role !== "factory_booking" && meta.preview === true && !(factoryScope && factoryScope.label),
