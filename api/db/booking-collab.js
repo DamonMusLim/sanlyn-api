@@ -21,6 +21,7 @@ import { billingSegmentFor, sanitizeSheet } from "./lib/collab-field-profiles.js
 import { handleCollabQuoteSubmit } from "./lib/collab-quote-submit.js";
 import { handleCollabRefSubmit } from "./lib/collab-ref-submit.js";
 import { materializeAndList } from "./lib/carrier-requirements.js";
+import { handleCollabRequirementSubmit } from "./lib/collab-requirement-submit.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 
@@ -3111,6 +3112,7 @@ export default async function handler(req, res) {
     if (req.method === "POST"   && pathSuffix === "collab-pricing-submit")    return await handleCollabPricingSubmit(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "collab-quote-submit")     return await handleCollabQuoteSubmit(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "collab-ref-submit")       return await handleCollabRefSubmit(req, res, pool);
+    if (req.method === "POST"   && pathSuffix === "collab-requirement-submit") return await handleCollabRequirementSubmit(req, res, pool);
 
     return res.status(404).json({ error: "Not found" });
   } catch (e) {
