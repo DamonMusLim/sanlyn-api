@@ -296,14 +296,14 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
   <details class="step now" open>
     <summary>
       <div class="snum">2</div>
-      <div class="st"><h2>回填箱号 / 封号</h2><p>装柜后回填</p></div>
-      <span class="sstat wait">待您回填</span><span class="chev">▾</span>
+      <div class="st"><h2>回填箱号 / 封号</h2><p id="boxSub">装柜后回填</p></div>
+      <span class="sstat wait" id="boxBadge">待您回填</span><span class="chev">▾</span>
     </summary>
     <div class="sb">
       <div class="kv">
         <span class="k">柜号 / 封号</span><span class="v edit" id="cntrV">—</span>
       </div>
-      <div class="acts"><button class="btn ok" onclick="confirmContainers()">✓ 箱封号无误，确认</button><button class="btn ghost" onclick="editContainers()">需修改</button></div>
+      <div class="acts" id="boxActs"></div>
     </div>
   </details>
 

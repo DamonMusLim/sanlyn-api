@@ -70,6 +70,7 @@ async function boot(){
     state.invoice = inv.ok ? (inv.data || {}) : {};
     state.invoiceError = inv.ok ? "" : inv.error;
     state.carrierReq = Array.isArray(v.carrier_requirements) ? v.carrier_requirements : [];
+    state.segments = (v.portal_scope && Array.isArray(v.portal_scope.segments)) ? v.portal_scope.segments : [];
     state.mode = providerMode(state.sheet);
     renderAll();
   }catch(e){ fail(e.message || "加载失败"); }
@@ -115,8 +116,24 @@ function renderAll(){
   $("blHint").textContent = uploadedHint(/\bBL\b|提单/i, "草稿与正式提单");
   renderRef();
   renderCarrierReq();
+  renderBoxMode();
   renderStatus();
   renderFees();
+}
+// 箱号谁填:货代承包拖车段(他们的车队)→ 他们填(确认/需修改);否则只读核对 + 只留需修改(2次确认)
+function renderBoxMode(){
+  const theirTruck = Array.isArray(state.segments) && state.segments.includes("truck");
+  const sub = $("boxSub"), badge = $("boxBadge"), acts = $("boxActs");
+  if(!acts) return;
+  if(theirTruck){
+    if(sub) sub.textContent = "贵司车队装柜后回填";
+    if(badge){ badge.textContent = "待您回填"; badge.className = "sstat wait"; }
+    acts.innerHTML = `<button class="btn ok" onclick="confirmContainers()">✓ 箱封号无误，确认</button><button class="btn ghost" onclick="editContainers()">需修改</button>`;
+  } else {
+    if(sub) sub.textContent = "工厂 / 我方车队填，您核对";
+    if(badge){ badge.textContent = "只读核对"; badge.className = "sstat ok"; }
+    acts.innerHTML = `<button class="btn ghost" onclick="editContainers()">需修改（2 次确认）</button>`;
+  }
 }
 function renderCarrierReq(){
   const el = $("carrierReq"); if(!el) return;
