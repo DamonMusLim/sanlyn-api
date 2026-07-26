@@ -22,6 +22,7 @@ import { handleCollabQuoteSubmit } from "./lib/collab-quote-submit.js";
 import { handleCollabRefSubmit } from "./lib/collab-ref-submit.js";
 import { materializeAndList } from "./lib/carrier-requirements.js";
 import { handleCollabRequirementSubmit } from "./lib/collab-requirement-submit.js";
+import { handleCargoPayment } from "./lib/cargo-payment.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 
@@ -3070,6 +3071,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET"    && pathSuffix === "plan-factories")     return await handlePlanFactories(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "validate")           return await handleValidate(req, res, pool);
+    if (req.method === "GET"    && pathSuffix === "cargo-payment")      return await handleCargoPayment(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "customs-doc-status") return await handleCustomsDocStatus(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-factory-link")  return await handleSendFactoryLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-customer-link") return await handleSendCustomerLink(req, res, pool);

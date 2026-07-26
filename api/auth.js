@@ -150,6 +150,7 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/collab-quote-submit",
   "/api/db/booking-collab/collab-ref-submit",
   "/api/db/booking-collab/collab-requirement-submit",
+  "/api/db/booking-collab/cargo-payment",
   "/api/db/bill-center/collab/validate",
   "/api/db/bill-center/collab/submit",
   "/api/internal/ar-followup", // 微信文字回复记催款跟进状态；handler内X-Internal-Key强校验fail-closed，不发任何对外消息
