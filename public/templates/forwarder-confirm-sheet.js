@@ -103,7 +103,9 @@ function renderAll(){
   const s = state.sheet;
   applyModeButtons();
   const route = [s.pol, s.pod].filter(Boolean).join(" → ");
-  $("fwName").innerHTML = `${esc(s.shipment_no || "—")} — 订舱协同<br>${esc(forwarderName(s))}`;
+  const hdrNo = s.so_no || s.bl_no || s.shipment_no || "—";
+  const hdrKind = s.so_no ? "SO" : (s.bl_no ? "BL" : "");
+  $("fwName").innerHTML = `${hdrKind ? esc(hdrKind) + " " : ""}${esc(hdrNo)} — 订舱协同<br>${esc(forwarderName(s))}`;
   $("fwSub").textContent = textParts([route, cntrSummary(s), [s.vessel,s.voyage].filter(Boolean).join(" / ")]);
   $("etdV").textContent = fmtD(s.etd);
   $("soNoV").textContent = s.so_no || "—";
