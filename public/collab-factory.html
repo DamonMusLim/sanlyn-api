@@ -114,6 +114,14 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
     </div>
   </div>
 
+  <div class="step-card" style="margin-bottom:14px;padding:14px;background:#fdf1ea;border:1px solid #e7c8b4;border-radius:12px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:18px">📁</span>
+      <div style="flex:1;min-width:180px"><b style="color:#9a3412">装箱照片已存为档案</b><div style="font-size:12px;color:#6b7280">超1个月已转NAS冷存 · 需提取请留邮箱或发公司人员,系统自动发送(有申请记录)</div></div>
+      <button onclick="requestArchive(this)" style="padding:9px 16px;border:none;background:#9a3412;color:#fff;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📥 申请提取</button>
+    </div>
+  </div>
+
   <!-- STEP 1 -->
   <div class="step-card required" id="step1">
     <div class="step-head" onclick="toggleStep(1)">
@@ -445,6 +453,20 @@ function icInvoiceHtml(d){
   '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:4px 2px">'+pcH+btnH+'</div>';
 }
 async function icConfirm(gt){try{var t=new URLSearchParams(location.search).get('token');var r=await fetch('/api/db/booking-collab/cargo-payment-confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,grand_total:gt})});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'确认失败');renderCargoInvoice();}catch(e){alert('确认失败：'+e.message);}}
+</script>
+
+<script>
+async function requestArchive(btn){
+  var t=new URLSearchParams(location.search).get('token');if(!t){alert('缺少 token');return;}
+  var email=prompt('发送到哪个邮箱?(或留空、下一步填公司接收人)','');
+  var person='';if(!email){person=prompt('发给公司哪位?','')||'';}
+  if(!email&&!person)return;
+  btn.disabled=true;var old=btn.textContent;btn.textContent='提交中\u2026';
+  try{var r=await fetch('/api/db/booking-collab/archive-retrieve-request',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,recipient_email:email||undefined,recipient_person:person||undefined,note:'装箱照片提取'})});
+    var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'提交失败');
+    alert('已登记提取申请（#'+d.request_id+'）· 发给：'+d.to+'\n邮件渠道接通后自动发送,已留申请记录。');
+  }catch(e){alert('申请失败：'+e.message);}finally{btn.disabled=false;btn.textContent=old;}
+}
 </script>
 </body>
 </html>

@@ -24,6 +24,7 @@ import { materializeAndList } from "./lib/carrier-requirements.js";
 import { handleCollabRequirementSubmit } from "./lib/collab-requirement-submit.js";
 import { handleCargoPayment, handleCargoPaymentConfirm } from "./lib/cargo-payment.js";
 import { handleFactoryInvoiceCode } from "./lib/factory-invoice-code.js";
+import { handleArchiveRetrieveRequest } from "./lib/archive-retrieve-request.js";
 
 const APP_BASE = process.env.APP_BASE_URL || "https://ai.sanlyn.cn";
 
@@ -1830,7 +1831,11 @@ async function handleFileProxy(req, res, pool) {
     const hit = Array.isArray(list) ? list.find(x => x && x.stored === String(ref || "")) : null;
     if (!hit) return res.status(403).json({ ok: false, error: "文件不属于本票" });
     const fp = path.join(UPLOAD_DIR, String(auth.planId), hit.stored);
-    if (!fs.existsSync(fp)) return res.status(404).json({ ok: false, error: "文件不存在" });
+    if (!fs.existsSync(fp)) {
+      // 已转 NAS 冷存:回"已存档"占位图(不再破图),顾客可点"申请提取"发邮箱
+      res.setHeader("Content-Type", "image/svg+xml");
+      return res.end('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"120\"><rect width=\"120\" height=\"120\" fill=\"#fdf1ea\"/><text x=\"60\" y=\"54\" font-size=\"30\" text-anchor=\"middle\">\U0001F4C1</text><text x=\"60\" y=\"80\" font-size=\"11\" fill=\"#9a3412\" text-anchor=\"middle\" font-family=\"sans-serif\">\u5df2\u5b58\u6863</text><text x=\"60\" y=\"96\" font-size=\"9\" fill=\"#b45309\" text-anchor=\"middle\" font-family=\"sans-serif\">\u7533\u8bf7\u63d0\u53d6</text></svg>');
+    }
     res.setHeader("Content-Type", hit.mime || "application/octet-stream");
     res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(hit.filename)}`);
     return res.end(fs.readFileSync(fp));
@@ -3075,6 +3080,7 @@ export default async function handler(req, res) {
     if (req.method === "GET"    && pathSuffix === "cargo-payment")      return await handleCargoPayment(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "cargo-payment-confirm") return await handleCargoPaymentConfirm(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "factory-invoice-code") return await handleFactoryInvoiceCode(req, res, pool);
+    if (req.method === "POST"   && pathSuffix === "archive-retrieve-request") return await handleArchiveRetrieveRequest(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "customs-doc-status") return await handleCustomsDocStatus(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-factory-link")  return await handleSendFactoryLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-customer-link") return await handleSendCustomerLink(req, res, pool);
