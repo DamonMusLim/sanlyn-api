@@ -1,0 +1,91 @@
+<!DOCTYPE html><html lang="zh"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>单票开票内容 · Sanlyn</title>
+<style>
+:root{--o:#9a3412;--o2:#c2410c;--owash:#fdf1ea;--oline:#e7c8b4;--ink:#1f2937;--sub:#6b7280;--line:#e5e7eb;--ok:#166534;--wait:#b45309;--mono:ui-monospace,Menlo,Consolas,monospace}
+*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:var(--ink);font:14px/1.55 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:16px}
+.dir{background:var(--owash);color:var(--o);font-weight:800;font-size:13px;padding:9px 14px;border-radius:9px;text-align:center;margin-bottom:12px}
+.inv{background:#fff;border:1px solid var(--oline);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.ihd{text-align:center;font-size:19px;font-weight:800;color:var(--o);padding:18px;border-bottom:2px solid var(--o)}
+.party{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line)}
+.party>div{padding:15px 18px}.party>div+div{border-left:1px solid var(--line)}
+.party h3{margin:0 0 8px;font-size:12.5px;font-weight:800;color:var(--o)}
+.party .nm{font-weight:700;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:var(--owash);color:var(--o);font-weight:700;text-align:left;padding:10px 12px;white-space:nowrap;border-bottom:1px solid var(--oline)}
+td{padding:10px 12px;border-bottom:1px solid var(--line)}
+th.r,td.r{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+tr.tot td{background:#faf6f3;font-weight:800;border-top:1px solid var(--oline)}
+.sum{padding:15px 18px;border-top:1px solid var(--line)}
+.sum .row{display:flex;justify-content:space-between;padding:4px 0;font-size:14px}
+.sum .cap{font-weight:800;color:var(--o)}.sum .big{color:var(--o);font-weight:800;font-size:16px}
+.note{padding:0 18px 16px;color:var(--sub);font-size:12px}
+.bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 16px;display:flex;gap:10px;align-items:center}
+.pc{flex:1;font-size:13px;font-weight:700}
+.pc.ok{color:var(--ok)}.pc.wait{color:var(--wait)}
+.btn{padding:12px 22px;border-radius:9px;border:none;background:var(--o);color:#fff;font-size:15px;font-weight:800;cursor:pointer}
+.btn:disabled{opacity:.5}
+.msg{padding:60px 20px;text-align:center;color:var(--sub)}
+</style></head><body>
+<div class="wrap" id="app"><div class="msg">加载中…</div></div>
+<script>
+const TOKEN=new URLSearchParams(location.search).get("token")||"";
+const SIDE=new URLSearchParams(location.search).get("side")||"";
+const API="/api/db/booking-collab";
+const esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const money=n=>Number(n||0).toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
+function rmb(n){ // 价税合计大写
+  n=Math.round(Number(n||0)*100)/100;const d=["零","壹","贰","叁","肆","伍","陆","柒","捌","玖"],u=["","拾","佰","仟"],g=["","万","亿"];
+  let[i,f]=n.toFixed(2).split(".");let s="";let grp=0;
+  while(i.length){let seg=i.slice(-4);i=i.slice(0,-4);let t="",zero=false;
+    for(let k=0;k<seg.length;k++){let dig=+seg[seg.length-1-k];if(dig===0){zero=true;}else{if(zero&&t)t=d[0]+t;t=d[dig]+u[k]+t;zero=false;}}
+    if(t)s=t+g[grp]+s;grp++;}
+  s=s||"零";let jf=(f[0]==="0"?"":d[+f[0]]+"角")+(f[1]==="0"?"":d[+f[1]]+"分");
+  return s+"元"+(jf||"整");
+}
+async function load(){
+  if(!TOKEN){document.getElementById("app").innerHTML='<div class="msg">缺少 token</div>';return;}
+  try{
+    const r=await fetch(`${API}/cargo-payment?token=${encodeURIComponent(TOKEN)}${SIDE?"&side="+SIDE:""}`);
+    const d=await r.json();
+    if(!r.ok||!d.ok)throw new Error(d.error||"加载失败");
+    render(d);
+  }catch(e){document.getElementById("app").innerHTML='<div class="msg">'+esc(e.message)+'</div>';}
+}
+function render(d){
+  const rows=(d.lines||[]).map(l=>`<tr><td>${esc(l.name||"")}</td><td>${esc(l.sku||"")}</td><td>箱</td><td class="r">${Number(l.qty||0).toLocaleString()}</td><td class="r">${money(l.unit_price)}</td><td class="r">${money(l.amount)}</td><td class="r">${Math.round(l.tax_rate*100)}%</td><td class="r">${money(l.tax)}</td></tr>`).join("");
+  const pc=d.price_confirm||{};
+  let pcHtml,btnHtml;
+  if(pc.changed===false){pcHtml='<span class="pc ok">✓ 价格已确认</span>';btnHtml='';}
+  else if(pc.changed===true){pcHtml='<span class="pc wait">⚠ 价格有改动 · 请重新确认</span>';btnHtml=`<button class="btn" onclick="confirmPrice(${d.grand_total})">重新确认价格</button>`;}
+  else {pcHtml='<span class="pc wait">待价格确认</span>';btnHtml=`<button class="btn" onclick="confirmPrice(${d.grand_total})">确认价格</button>`;}
+  document.getElementById("app").innerHTML=`
+  <div class="dir">📄 ${esc(d.direction)} · ${esc(d.title)} · 单票 ${esc(d.shipment_no||"")}</div>
+  <div class="inv">
+    <div class="ihd">电子发票（增值税专用发票）· 开票内容</div>
+    <div class="party">
+      <div><h3>购买方</h3><div class="nm">${esc(d.buyer)}</div></div>
+      <div><h3>销售方</h3><div class="nm">${esc(d.seller)}</div></div>
+    </div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>项目名称</th><th>货号</th><th>单位</th><th class="r">数量(箱)</th><th class="r">单价</th><th class="r">金额</th><th class="r">税率</th><th class="r">税额</th></tr></thead>
+      <tbody>${rows}<tr class="tot"><td colspan="5">合计</td><td class="r">${money(d.amount_total)}</td><td></td><td class="r">${money(d.tax_total)}</td></tr></tbody>
+    </table></div>
+    <div class="sum">
+      <div class="row"><span class="cap">价税合计（小写）· ${esc(d.currency)}</span><span class="big">${d.currency==="USD"?"$":"¥"} ${money(d.grand_total)}</span></div>
+      <div class="row"><span class="cap">价税合计（大写）</span><span class="big">${d.currency==="USD"?"":esc(rmb(d.grand_total))}</span></div>
+    </div>
+    <div class="note">备注：单票协同开票内容 · 数量取自共同装柜表 · ${esc(d.note||"")}</div>
+  </div>
+  <div class="bar">${pcHtml}${btnHtml}</div>`;
+}
+async function confirmPrice(gt){
+  try{
+    const r=await fetch(`${API}/cargo-payment-confirm`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:TOKEN,side:SIDE||undefined,grand_total:gt})});
+    const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||"确认失败");
+    load();
+  }catch(e){alert("确认失败："+e.message);}
+}
+load();
+</script></body></html>

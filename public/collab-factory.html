@@ -103,7 +103,7 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
         <div class="step-num">￥</div>
         <div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div>
       </div>
-      <button onclick="openFactoryInvoiceTemplate(this)" style="padding:8px 14px;border:1.5px solid #9a3412;background:#fdf1ea;color:#9a3412;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📄 查看/确认开票模板</button>
+      <button onclick="openFactoryInvoiceTemplate(this)" style="padding:8px 14px;border:1.5px solid #9a3412;background:#fdf1ea;color:#9a3412;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📄 查看/确认开票内容</button>
     </div>
     <div class="step-body" style="max-height:none !important;opacity:1 !important;">
       <div class="section" id="billingBody"></div>
@@ -411,10 +411,7 @@ async function openFactoryInvoiceTemplate(btn){
   if(!t){ alert('缺少 token'); return; }
   btn.disabled = true; var old = btn.textContent; btn.textContent = '生成中\u2026';
   try{
-    var r = await fetch('/api/db/booking-collab/factory-invoice-code?token=' + encodeURIComponent(t));
-    var d = await r.json();
-    if(!r.ok || !d.ok) throw new Error(d.error || '生成失败');
-    window.open(d.url, '_blank', 'noopener');
+    window.open('/public/invoice-content.html?token=' + encodeURIComponent(t), '_blank', 'noopener');
   }catch(e){ alert('打开开票模板失败\uFF1A' + e.message); }
   finally{ btn.disabled = false; btn.textContent = old; }
 }
