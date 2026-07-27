@@ -1834,7 +1834,7 @@ async function handleFileProxy(req, res, pool) {
     if (!fs.existsSync(fp)) {
       // 已转 NAS 冷存:回"已存档"占位图(不再破图),顾客可点"申请提取"发邮箱
       res.setHeader("Content-Type", "image/svg+xml");
-      return res.end('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"120\"><rect width=\"120\" height=\"120\" fill=\"#fdf1ea\"/><text x=\"60\" y=\"54\" font-size=\"30\" text-anchor=\"middle\">\U0001F4C1</text><text x=\"60\" y=\"80\" font-size=\"11\" fill=\"#9a3412\" text-anchor=\"middle\" font-family=\"sans-serif\">\u5df2\u5b58\u6863</text><text x=\"60\" y=\"96\" font-size=\"9\" fill=\"#b45309\" text-anchor=\"middle\" font-family=\"sans-serif\">\u7533\u8bf7\u63d0\u53d6</text></svg>');
+      return res.end('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"120\"><rect width=\"120\" height=\"120\" fill=\"#fdf1ea\"/><rect x=\"42\" y=\"38\" width=\"36\" height=\"26\" rx=\"3\" fill=\"#e7c8b4\"/><rect x=\"42\" y=\"33\" width=\"16\" height=\"7\" rx=\"2\" fill=\"#e7c8b4\"/><text x=\"60\" y=\"80\" font-size=\"11\" fill=\"#9a3412\" text-anchor=\"middle\" font-family=\"sans-serif\">\u5df2\u5b58\u6863</text><text x=\"60\" y=\"96\" font-size=\"9\" fill=\"#b45309\" text-anchor=\"middle\" font-family=\"sans-serif\">\u7533\u8bf7\u63d0\u53d6</text></svg>');
     }
     res.setHeader("Content-Type", hit.mime || "application/octet-stream");
     res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(hit.filename)}`);
