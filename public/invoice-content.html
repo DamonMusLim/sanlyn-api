@@ -54,6 +54,7 @@ async function load(){
   }catch(e){document.getElementById("app").innerHTML='<div class="msg">'+esc(e.message)+'</div>';}
 }
 function render(d){
+  if(d.gated){document.getElementById("app").innerHTML='<div class="msg">🔒 '+esc(d.gate_reason||"报关资料确认后才开放开票资料")+'</div>';return;}
   const rows=(d.lines||[]).map(l=>`<tr><td>${esc(l.name||"")}</td><td>${esc(l.sku||"")}</td><td>箱</td><td class="r">${Number(l.qty||0).toLocaleString()}</td><td class="r">${money(l.unit_price)}</td><td class="r">${money(l.amount)}</td><td class="r">${Math.round(l.tax_rate*100)}%</td><td class="r">${money(l.tax)}</td></tr>`).join("");
   const pc=d.price_confirm||{};
   let pcHtml,btnHtml;

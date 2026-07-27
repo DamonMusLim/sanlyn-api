@@ -33,10 +33,23 @@ export async function handleCargoPayment(req, res, pool) {
   const pr = await pool.query(
     `SELECT shipment_no, issuing_company, customer, customer_en,
             raw->>'cargo_payment_note' AS note,
-            raw->'cargo_payment_confirms' AS confirms
+            raw->'cargo_payment_confirms' AS confirms,
+            (raw->>'customs_confirmed')::boolean AS customs_confirmed,
+            raw->'broker_ack' AS broker_ack
        FROM shipping_plans WHERE id = $1`, [planId]);
   if (!pr.rows.length) return res.status(404).json({ ok: false, error: "计划不存在" });
   const OUR = "上海洋宝宝国际物流有限公司";  // 我方主体
+
+  // ── 门控:报关资料确认后才显示开票资料(最稳,报关没定不急着开票)──
+  const ack = pr.rows[0].broker_ack || {};
+  const customsConfirmed = pr.rows[0].customs_confirmed === true || ack.confirmed === true;
+  if (!customsConfirmed) {
+    return res.json({
+      ok: true, view: "cargo_payment", side, gated: true,
+      gate_reason: "报关资料确认后才开放开票资料",
+      shipment_no: pr.rows[0].shipment_no,
+    });
+  }
 
   let lines, currency, title;
   if (side === "purchase") {
