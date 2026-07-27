@@ -154,11 +154,12 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
-    const { customer, created_by, shipment_no, forwarder_company_id, bl_no, limit = 500 } = req.query;
+    const { customer, created_by, shipment_no, forwarder_company_id, bl_no, container_no, limit = 500 } = req.query;
     let query = "SELECT * FROM shipping_plans", params = [], conds = [];
     // 按CY号/货代精确过滤(agent自动补链用,服务端过滤=只富集匹配行,避免全表N+1慢)
     if (shipment_no) { params.push(shipment_no); conds.push(`shipment_no = $${params.length}`); }
-    if (bl_no) { params.push(bl_no); conds.push(`(bl_no = $${params.length} OR mbl_no = $${params.length} OR hbl_no = $${params.length} OR booking_no = $${params.length} OR forwarder_booking_no = $${params.length})`); }
+    if (bl_no) { params.push(bl_no); conds.push(`(bl_no = $${params.length} OR mbl_no = $${params.length} OR hbl_no = $${params.length} OR booking_no = $${params.length} OR forwarder_booking_no = $${params.length} OR container_no = $${params.length})`); }
+    if (container_no) { params.push(container_no); conds.push(`container_no = $${params.length}`); }
     if (forwarder_company_id) { params.push(parseInt(forwarder_company_id)); conds.push(`forwarder_company_id = $${params.length}`); }
     if (customer) { params.push(`%${customer}%`); conds.push(`customer ILIKE $${params.length}`); }
     if (created_by) { params.push(created_by); conds.push(`created_by = $${params.length}`); }

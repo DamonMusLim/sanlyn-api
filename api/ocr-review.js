@@ -47,7 +47,7 @@ const OCR_PROMPT = `你是银行单据识别专家。图片是一张银行回单
 {"docType":"单据标题原文或null","direction":"收款或付款或null","amount":金额数字(去掉千分位逗号)或null,"currency":"币种代码如CNY/USD/MYR或null","paymentDate":"YYYY-MM-DD格式或null","bankRef":"交易流水号(优先),否则回单编号或业务编号或null","senderName":"对方名称(收款时=汇款人,付款时=收款人)或null","remittanceInfo":"汇款信息/用途附言或null"}`;
 
 // MiniMax-M3 视觉识别：下载OSS→(PDF转jpeg)→base64→api.minimaxi.com。返回 OpenAI 形状供 parseQwenResponse 复用。
-async function callQwenVL(ossUrl) {
+export async function callQwenVL(ossUrl, prompt = OCR_PROMPT) {
   const key = process.env.MINIMAX_API_KEY;
   if (!key) throw new Error("MINIMAX_API_KEY not set");
   const dl = await fetch(ossUrl);
@@ -68,7 +68,7 @@ async function callQwenVL(ossUrl) {
       model: "MiniMax-M3", max_tokens: 1024,
       messages: [{ role: "user", content: [
         { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
-        { type: "text", text: OCR_PROMPT },
+        { type: "text", text: prompt },
       ]}],
     }),
   });
@@ -78,7 +78,7 @@ async function callQwenVL(ossUrl) {
   return { choices: [{ message: { content: text } }] };
 }
 
-function parseQwenResponse(data) {
+export function parseQwenResponse(data) {
   try {
     const text = data?.choices?.[0]?.message?.content || "";
     console.log("[ocr-review] qwen raw text:", text.slice(0, 300));
