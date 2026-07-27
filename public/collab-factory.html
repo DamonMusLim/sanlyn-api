@@ -103,10 +103,14 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
         <div class="step-num">￥</div>
         <div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div>
       </div>
-      <button onclick="openFactoryInvoiceTemplate(this)" style="padding:8px 14px;border:1.5px solid #9a3412;background:#fdf1ea;color:#9a3412;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📄 查看/确认开票内容</button>
+      <div class="ftabs" style="display:flex;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+        <button class="on" onclick="switchFeeTab('logi',this)" style="border:none;background:#9a3412;color:#fff;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">物流费</button>
+        <button onclick="switchFeeTab('cargo',this)" style="border:none;border-left:1px solid #e5e7eb;background:#fff;color:#6b7280;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">货款开票</button>
+      </div>
     </div>
     <div class="step-body" style="max-height:none !important;opacity:1 !important;">
       <div class="section" id="billingBody"></div>
+      <div class="section" id="invoiceBody" style="display:none"></div>
     </div>
   </div>
 
@@ -405,16 +409,41 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
 -->
 
 <script>
-// 从工厂协同点开图1完整开票模板去确认(token 从 URL 取,自包含)
-async function openFactoryInvoiceTemplate(btn){
-  var t = new URLSearchParams(location.search).get('token');
-  if(!t){ alert('缺少 token'); return; }
-  btn.disabled = true; var old = btn.textContent; btn.textContent = '生成中\u2026';
-  try{
-    window.open('/public/invoice-content.html?token=' + encodeURIComponent(t), '_blank', 'noopener');
-  }catch(e){ alert('打开开票模板失败\uFF1A' + e.message); }
-  finally{ btn.disabled = false; btn.textContent = old; }
+// 货款/物流两个Tab互斥内联(不同屏、不弹窗);货款Tab点开才拉cargo-payment(没点开不下发,防毛利反推)
+function switchFeeTab(tab, btn){
+  document.querySelectorAll('#billingCard .ftabs button').forEach(function(b){b.classList.remove('on');b.style.background='#fff';b.style.color='#6b7280';});
+  btn.classList.add('on'); btn.style.background='#9a3412'; btn.style.color='#fff';
+  var logi=document.getElementById('billingBody'), cargo=document.getElementById('invoiceBody');
+  if(tab==='cargo'){ logi.style.display='none'; cargo.style.display='block';
+    if(!cargo.dataset.loaded){ cargo.dataset.loaded='1'; renderCargoInvoice(); } }
+  else { cargo.style.display='none'; logi.style.display='block'; }
 }
+function icEsc(x){return String(x==null?'':x).replace(/[&<>"']/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
+function icMoney(n){return Number(n||0).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function icRmb(n){n=Math.round(Number(n||0)*100)/100;var d=['零','壹','贰','叁','肆','伍','陆','柒','捌','玖'],u=['','拾','佰','仟'],g=['','万','亿'];var a=n.toFixed(2).split('.'),i=a[0],f=a[1],s='',grp=0;while(i.length){var seg=i.slice(-4);i=i.slice(0,-4);var t='',z=false;for(var k=0;k<seg.length;k++){var dig=+seg[seg.length-1-k];if(dig===0){z=true;}else{if(z&&t)t=d[0]+t;t=d[dig]+u[k]+t;z=false;}}if(t)s=t+g[grp]+s;grp++;}s=s||'零';var jf=(f[0]==='0'?'':d[+f[0]]+'角')+(f[1]==='0'?'':d[+f[1]]+'分');return s+'元'+(jf||'整');}
+async function renderCargoInvoice(){
+  var t=new URLSearchParams(location.search).get('token');var el=document.getElementById('invoiceBody');
+  el.innerHTML='<div style="padding:18px;color:#888">加载中\u2026</div>';
+  try{var r=await fetch('/api/db/booking-collab/cargo-payment?token='+encodeURIComponent(t));var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'加载失败');el.innerHTML=icInvoiceHtml(d);}
+  catch(e){el.innerHTML='<div style="padding:18px;color:#b23">'+icEsc(e.message)+'</div>';}
+}
+function icInvoiceHtml(d){
+  var O='#9a3412';var rows=(d.lines||[]).map(function(l){return '<tr><td style="padding:8px 10px;border-bottom:1px solid #eee">'+icEsc(l.name)+'</td><td style="padding:8px 10px;border-bottom:1px solid #eee">'+icEsc(l.sku)+'</td><td style="padding:8px 10px;border-bottom:1px solid #eee">箱</td><td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:right">'+Number(l.qty||0).toLocaleString()+'</td><td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:right">'+icMoney(l.unit_price)+'</td><td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:right">'+icMoney(l.amount)+'</td><td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:right">'+Math.round(l.tax_rate*100)+'%</td><td style="padding:8px 10px;border-bottom:1px solid #eee;text-align:right">'+icMoney(l.tax)+'</td></tr>';}).join('');
+  var pc=d.price_confirm||{};var pcH,btnH;
+  if(pc.changed===false){pcH='<span style="color:#166534;font-weight:700">\u2713 价格已确认</span>';btnH='';}
+  else if(pc.changed===true){pcH='<span style="color:#b45309;font-weight:700">\u26A0 价格有改动·请重新确认</span>';btnH='<button onclick="icConfirm('+d.grand_total+')" style="padding:9px 18px;border:none;background:'+O+';color:#fff;border-radius:8px;font-weight:800;cursor:pointer">重新确认价格</button>';}
+  else{pcH='<span style="color:#b45309;font-weight:700">待价格确认</span>';btnH='<button onclick="icConfirm('+d.grand_total+')" style="padding:9px 18px;border:none;background:'+O+';color:#fff;border-radius:8px;font-weight:800;cursor:pointer">确认价格</button>';}
+  var cur=d.currency==='USD'?'$':'¥';
+  return '<div style="background:#fdf1ea;color:'+O+';font-weight:800;font-size:12.5px;padding:8px 12px;border-radius:8px;text-align:center;margin-bottom:10px">\uD83D\uDCC4 '+icEsc(d.direction)+' · '+icEsc(d.title)+' · 单票 '+icEsc(d.shipment_no)+'</div>'+
+  '<div style="border:1px solid #e7c8b4;border-radius:12px;overflow:hidden">'+
+  '<div style="text-align:center;font-size:16px;font-weight:800;color:'+O+';padding:14px;border-bottom:2px solid '+O+'">电子发票（增值税专用发票）· 开票内容</div>'+
+  '<div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #eee"><div style="padding:12px 14px"><div style="font-size:12px;font-weight:800;color:'+O+';margin-bottom:5px">购买方</div><div style="font-weight:700">'+icEsc(d.buyer)+'</div></div><div style="padding:12px 14px;border-left:1px solid #eee"><div style="font-size:12px;font-weight:800;color:'+O+';margin-bottom:5px">销售方</div><div style="font-weight:700">'+icEsc(d.seller)+'</div></div></div>'+
+  '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px"><thead><tr style="background:#fdf1ea;color:'+O+'"><th style="padding:9px 10px;text-align:left">项目名称</th><th style="padding:9px 10px;text-align:left">货号</th><th style="padding:9px 10px;text-align:left">单位</th><th style="padding:9px 10px;text-align:right">数量(箱)</th><th style="padding:9px 10px;text-align:right">单价</th><th style="padding:9px 10px;text-align:right">金额</th><th style="padding:9px 10px;text-align:right">税率</th><th style="padding:9px 10px;text-align:right">税额</th></tr></thead><tbody>'+rows+'<tr style="background:#faf6f3;font-weight:800"><td colspan="5" style="padding:9px 10px">合计</td><td style="padding:9px 10px;text-align:right">'+icMoney(d.amount_total)+'</td><td></td><td style="padding:9px 10px;text-align:right">'+icMoney(d.tax_total)+'</td></tr></tbody></table></div>'+
+  '<div style="padding:13px 14px"><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-weight:800;color:'+O+'">价税合计（小写）· '+icEsc(d.currency)+'</span><span style="font-weight:800;color:'+O+';font-size:16px">'+cur+' '+icMoney(d.grand_total)+'</span></div><div style="display:flex;justify-content:space-between;padding:3px 0"><span style="font-weight:800;color:'+O+'">价税合计（大写）</span><span style="font-weight:800;color:'+O+'">'+(d.currency==='USD'?'':icEsc(icRmb(d.grand_total)))+'</span></div></div>'+
+  '</div>'+
+  '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;padding:4px 2px">'+pcH+btnH+'</div>';
+}
+async function icConfirm(gt){try{var t=new URLSearchParams(location.search).get('token');var r=await fetch('/api/db/booking-collab/cargo-payment-confirm',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t,grand_total:gt})});var d=await r.json();if(!r.ok||!d.ok)throw new Error(d.error||'确认失败');renderCargoInvoice();}catch(e){alert('确认失败：'+e.message);}}
 </script>
 </body>
 </html>

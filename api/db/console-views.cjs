@@ -69,14 +69,14 @@ router.get("/api/console/domain-counts", async (req, res) => {
       `SELECT
          COALESCE(task_prefix, 'UNKNOWN') AS task_prefix,
          COALESCE(domain_label, '未知') AS domain_label,
-         COUNT(*)::int AS total_count,
+         COUNT(*) FILTER (WHERE status IN ('open','doing'))::int AS total_count,
          COUNT(*) FILTER (
-           WHERE status = 'doing'
-             AND (NULLIF(failure_point, '') IS NOT NULL OR updated_at < now() - interval '48 hours')
+           WHERE status IN ('open','doing') AND risk_color = 'red'
          )::int AS stuck_count,
          COUNT(*) FILTER (WHERE level = 'L4' AND status = 'open')::int AS decision_count
        FROM task_center_v
       GROUP BY task_prefix, domain_label
+      HAVING COUNT(*) FILTER (WHERE status IN ('open','doing')) > 0
       ORDER BY
         CASE COALESCE(task_prefix, 'UNKNOWN')
           WHEN 'FS' THEN 1 WHEN 'CY' THEN 2 WHEN 'CAW' THEN 3
