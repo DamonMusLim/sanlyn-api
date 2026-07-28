@@ -28,7 +28,7 @@ async function boot(){
       return sheet.factory_submitted?('已确认 Confirmed — '+fmt(sheet.factory_cargo_ready)):'待工厂确认';
     })(), (window.__fp ? (window.__fp.submitted>=window.__fp.total?'green':'') : (sheet.factory_submitted?'green':''))],
     ['货物 Cargo', [ctns?ctns.toLocaleString()+' CTNS':null, gw?Number(gw).toLocaleString()+' KGS':null,
-      sheet.total_cbm?Number(sheet.total_cbm)+' CBM':null].filter(Boolean).join(' · ')||'—',''],
+      sheet.total_cbm?(Math.round(Number(sheet.total_cbm)*1000)/1000)+' CBM':null].filter(Boolean).join(' · ')||'—',''],
     ['柜型 Container', (sheet.container_type||'—')+(sheet.container_qty?' × '+sheet.container_qty:''),''],
     ['条款 Incoterms', sheet.freight_term||'—',''],
   ];

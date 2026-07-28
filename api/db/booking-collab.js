@@ -490,6 +490,7 @@ async function handleValidate(req, res, pool) {
       if (role === "factory_booking") {
         delete sheet.customer_name; delete sheet.customer_en;   // 工厂只见下游 issuing_company
         delete sheet.customer_selected_sailing;
+        (sheet.orders || []).forEach(o => (o.items || []).forEach(it => { delete it.unit_price; delete it.amount; delete it.declare_amount; })); // hongxian: factory sees purchase side only (cargo-payment); strip sales unit_price/amount/declare
         // 🔒 防跳单租户隔离：scoped 才返回本厂数据；无 scope = fail-closed（绝不返回任何工厂货物）
         if (factoryScope && factoryScope.label) {
           const lab = String(factoryScope.label);
