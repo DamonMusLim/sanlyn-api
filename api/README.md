@@ -20,7 +20,7 @@ git push -u origin main
 - 导入 sanlyn-api 仓库
 - 环境变量添加：
   - `PORTUN_APP_ID` = `SHYBB`
-  - `PORTUN_SECRET` = `+I(yuq!AQOBrc9gB`
+  - `PORTUN_SECRET` = 见 .env / 密钥管理（勿在文档写明文）
 - 部署域名建议设为: `api.sanlynos.com`
 
 ### 3. 前端调用
