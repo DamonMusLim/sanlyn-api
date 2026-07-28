@@ -241,7 +241,17 @@ async function admitOrderToShipping(pool, req, id, confirmedShipDate) {
     "SELECT id FROM shipping_plans WHERE $1 = ANY(order_nos) LIMIT 1",
     [order.order_no]
   ).catch(function() { return { rows: [] }; });
-  if (existing.rows.length) return { shipping_plan_existing: existing.rows[0].id };
+  if (existing.rows.length) {
+    const existingPlanId = existing.rows[0].id;
+    await pool.query(
+      `UPDATE orders
+          SET shipping_plan_id = $2, updated_at = NOW()
+        WHERE id = $1
+          AND shipping_plan_id IS NULL`,
+      [id, existingPlanId]
+    );
+    return { shipping_plan_existing: existingPlanId, shipping_plan_linked: true };
+  }
 
   if (!order.customer || !order.contract_no) {
     return { shipping_plan_skipped: "缺买方/合同号" };
