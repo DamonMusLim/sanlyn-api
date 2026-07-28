@@ -270,6 +270,7 @@ app.all("/api/db/bill-center/*", async (req, res) => {
 });
 mount("/api/db/bill-center",      () => import("./api/db/bill-center.js"));
 mount("/api/db/freight-cost-audit",   () => import("./api/db/freight-cost-audit.js")); // freight cost vs sale audit + set-par (2026-06-17)
+mount("/api/db/shipping-data-integrity-audit", () => import("./api/db/shipping-data-integrity-audit.js")); // read-only orphan bill + VOID anomaly audit
 mount("/api/db/vendor-invoice-upload", () => import("./api/db/vendor-invoice-upload.js"));
 mount("/api/db/smart-invoice-upload", () => import("./api/db/smart-invoice-upload.js"));
 mount("/api/db/payment-batches", () => import("./api/db/payment-batches.js"));
