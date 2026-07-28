@@ -2527,6 +2527,7 @@ async function handleCollabPricing(req, res, pool) {
   };
 
   const { rows: bills } = await pool.query(
+    // Intentional raw-table read: booking collaboration displays/editable bill evidence, including voided/direct-paid rows.
     `SELECT id, cost_category, charge_basis, unit_price, qty, amount, sale_amount,
             currency, supplier, incoterm, rebill_to_name
        FROM freight_supplier_bills

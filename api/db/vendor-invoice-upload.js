@@ -60,9 +60,11 @@ export default async function handler(req, res) {
   try {
     // 1. Verify BL belongs to this vendor + recompute real amount from bills.
     const billRes = await client.query(
+      // Intentional raw-table read: vendor upload verifies rows under the vendor account; voided rows are excluded explicitly.
       `SELECT currency, amount, supplier, supplier_company_code
          FROM freight_supplier_bills
-        WHERE bl_no = $1 AND supplier_company_code = $2`,
+        WHERE bl_no = $1 AND supplier_company_code = $2
+          AND COALESCE(rebill_status, '') <> 'voided'`,
       [blNo, sellerCode]
     );
     if (billRes.rowCount === 0) {

@@ -221,6 +221,7 @@ async function loadBills(pool, scope, limit) {
   const selected = cols.filter((c) => c !== "supplier_company_code");
   if (!selected.length) return [];
   const r = await pool.query(
+    // Intentional raw-table read: supplier dossiers need full bill history, including voided/direct-paid rows.
     `SELECT ${selected.join(", ")}
        FROM freight_supplier_bills
       WHERE supplier_company_code = $1

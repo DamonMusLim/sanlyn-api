@@ -56,7 +56,7 @@ async function getCandidates(pool, id) {
   const billsQ = await pool.query(
     `SELECT fsb.bl_no, sp.shipment_no, ord.order_no, ord.issuing_company, ord.customer,
             fsb.amount, fsb.ap_status
-       FROM freight_supplier_bills fsb
+       FROM our_freight_cost_lines fsb
        LEFT JOIN shipping_plans sp ON sp.bl_no = fsb.bl_no
        LEFT JOIN LATERAL (
          SELECT string_agg(o.order_no, ', ' ORDER BY o.order_no) AS order_no,
@@ -144,7 +144,7 @@ export default async function handler(req, res) {
       slips.push({ ...s, order, ai, reviewed: s.reviewed === "1", allocated: +(s.allocated || 0), unallocated: +(s.unallocated || 0), allocations: s.allocations || [] });
     }
     const sum = (d, c) => slips.filter(s => s.direction === d && s.currency === c).reduce((a, s) => a + Math.abs(+s.amount), 0);
-    const ap = await pool.query(`SELECT COUNT(*)::int c, COALESCE(SUM(amount),0) amt FROM freight_supplier_bills WHERE supplier ILIKE '%万汇恒通%' AND ap_status='unpaid'`);
+    const ap = await pool.query(`SELECT COUNT(*)::int c, COALESCE(SUM(amount),0) amt FROM our_freight_cost_lines WHERE supplier ILIKE '%万汇恒通%' AND ap_status='unpaid'`);
     const ar = await pool.query(`SELECT COUNT(*)::int c, COALESCE(SUM(amount_incl_tax),0) amt FROM finance_invoices_out WHERE seller_name LIKE '%上海洋宝宝%' AND issue_date >= '2026-06-01' AND issue_date < '2026-07-01'`);
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.status(200).json({

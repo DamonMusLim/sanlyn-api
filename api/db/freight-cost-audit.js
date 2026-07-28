@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     try {
       var r = await pool.query(
         `SELECT id, bl_no, cost_amount, sale_amount, currency, supplier_type
-           FROM freight_supplier_bills
+           FROM our_freight_cost_lines
           WHERE bl_no = $1`,
         [blNo]
       );

@@ -43,7 +43,7 @@ export default async function handler(req, res) {
               ELSE 0
             END
           )::numeric, 2) AS freight_cost_cny
-        FROM freight_supplier_bills
+        FROM our_freight_cost_lines
         WHERE bl_no IS NOT NULL
         GROUP BY bl_no
       ),

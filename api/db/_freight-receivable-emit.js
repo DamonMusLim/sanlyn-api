@@ -33,6 +33,7 @@ export async function emitFreightReceivable(client, args) {
   const result = await client.query(
     `WITH existing AS (
        SELECT id FROM freight_supplier_bills
+        -- Intentional raw-table read: emit idempotency must find pre-existing generated rows before writing.
         WHERE bl_no = $1 AND raw->>'kind' = 'freight_rate_sale'
         LIMIT 1
      ), updated AS (

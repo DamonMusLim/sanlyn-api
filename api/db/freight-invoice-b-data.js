@@ -104,7 +104,7 @@ async function loadBillSummary(pool, blNo, billCols) {
        SUM(b.sale_amount)::numeric AS amount_incl,
        ${payerSelect}
        COUNT(*)::int AS bill_count
-     FROM freight_supplier_bills b
+     FROM our_freight_cost_lines b
      WHERE b.bl_no = $1
        AND b.cost_category = ANY($2::text[])
        AND COALESCE(b.rebill_status, '') <> 'voided'`,
@@ -115,7 +115,7 @@ async function loadBillSummary(pool, blNo, billCols) {
   if (billCols.has("raw")) {
     const transportResult = await pool.query(
       `SELECT COALESCE(JSONB_AGG(t.line) FILTER (WHERE t.line IS NOT NULL), '[]'::jsonb) AS transport_lines
-         FROM freight_supplier_bills b
+         FROM our_freight_cost_lines b
          LEFT JOIN LATERAL jsonb_array_elements(
            CASE WHEN jsonb_typeof(b.raw->'transport_lines') = 'array'
                 THEN b.raw->'transport_lines' ELSE '[]'::jsonb END
@@ -175,7 +175,7 @@ export async function computePriceCheck(pool, { bl_no, invoice_amount, bill_cols
   if (bill_cols?.has("amount")) {
     const r = await pool.query(
       `SELECT SUM(amount)::numeric AS cost_amount
-         FROM freight_supplier_bills
+         FROM our_freight_cost_lines
         WHERE bl_no = $1
           AND cost_category = ANY($2::text[])
           AND COALESCE(rebill_status, '') <> 'voided'`,

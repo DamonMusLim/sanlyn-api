@@ -254,14 +254,14 @@ export default async function handler(req, res) {
       if (planIds.length)    { params.push(planIds.map(String)); conds.push(`link_plan_id = ANY($${params.length}::text[])`); }
       let bills = { rows: [] };
       if (conds.length) bills = await safe(pool,
-        `SELECT cost_category, count(*)::int n FROM freight_supplier_bills WHERE ${conds.join(" OR ")} GROUP BY cost_category`, params);
-      if (bills.error) setDim("freight_cost","not_supported","成本表查询不可用","freight_supplier_bills");
-      else if (!bills.rows.length) setDim("freight_cost","missing","无货代账单成本","freight_supplier_bills");
+        `SELECT cost_category, count(*)::int n FROM our_freight_cost_lines WHERE ${conds.join(" OR ")} GROUP BY cost_category`, params);
+      if (bills.error) setDim("freight_cost","not_supported","成本表查询不可用","our_freight_cost_lines");
+      else if (!bills.rows.length) setDim("freight_cost","missing","无货代账单成本","our_freight_cost_lines");
       else {
         const cats = bills.rows.map(r=>r.cost_category).filter(Boolean);
         const hasOcean = cats.some(c => /海运|ocean/i.test(c));
         setDim("freight_cost", hasOcean ? "ok" : "partial",
-          `${bills.rows.reduce((a,b)=>a+b.n,0)} 条成本（${cats.length} 费目）${hasOcean?"":"，缺海运费"}`,"freight_supplier_bills");
+          `${bills.rows.reduce((a,b)=>a+b.n,0)} 条成本（${cats.length} 费目）${hasOcean?"":"，缺海运费"}`,"our_freight_cost_lines");
       }
     }
 

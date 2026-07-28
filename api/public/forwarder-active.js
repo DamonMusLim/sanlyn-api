@@ -74,6 +74,7 @@ function closedBills(rows){
 
 async function loadClosedMap(pool, supplierName){
   const { rows } = await pool.query(
+    // Intentional raw-table read: forwarder closure status needs every supplier row, including voided/direct-paid rows.
     `SELECT bl_no, confirmed_at, ap_status, ar_status
        FROM freight_supplier_bills
       WHERE supplier = $1

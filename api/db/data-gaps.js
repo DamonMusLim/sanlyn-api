@@ -16,7 +16,7 @@ export default async function handler(req, res) {
       FROM shipping_plans sp
       WHERE sp.bl_no IS NOT NULL AND sp.bl_no!='' AND sp.bl_no NOT LIKE 'BL-%'
         AND sp.etd>='2026-01-01'
-        AND NOT EXISTS(SELECT 1 FROM freight_supplier_bills f WHERE f.bl_no=sp.bl_no)
+        AND NOT EXISTS(SELECT 1 FROM our_freight_cost_lines f WHERE f.bl_no=sp.bl_no)
       ORDER BY sp.etd DESC`);
     for (const r of c1.rows) tasks.push({
       domain: "海运成本", icon: "🚢", severity: 1,

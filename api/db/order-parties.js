@@ -246,6 +246,7 @@ async function loadFreightBills(pool, blNos) {
   const cols = await tableColumns(pool, "freight_supplier_bills", BILL_COLS);
   if (!cols.includes("bl_no") || !blNos.length) return [];
   const r = await pool.query(
+    // Intentional raw-table read: party dossier needs full bill evidence, including voided/direct-paid rows.
     `SELECT ${cols.join(", ")}
        FROM freight_supplier_bills
       WHERE bl_no = ANY($1::text[])

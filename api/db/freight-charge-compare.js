@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     // 1. Current bill lines for this BL
     const cur = await pool.query(
       `SELECT cost_category, amount, currency, bill_month, supplier
-       FROM freight_supplier_bills
+       FROM our_freight_cost_lines
        WHERE bl_no = $1
          AND ($2::text IS NULL OR supplier ILIKE '%' || $2 || '%')
        ORDER BY cost_category`,
@@ -44,7 +44,7 @@ export default async function handler(req, res) {
               COUNT(*)::int                  AS sample_count,
               MIN(amount)                    AS min_12m,
               MAX(amount)                    AS max_12m
-       FROM freight_supplier_bills
+       FROM our_freight_cost_lines
        WHERE supplier       ILIKE '%' || $1 || '%'
          AND cost_category  = ANY($2::text[])
          AND bl_no          != $3

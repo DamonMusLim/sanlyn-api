@@ -197,6 +197,7 @@ export default async function handler(req, res) {
 
     if (plan.bl_no) {
       const dupResult = await client.query(
+        // Intentional raw-table read: adoption duplicate check must see existing source rows before writing.
         `SELECT id
          FROM freight_supplier_bills
          WHERE bl_no = $1

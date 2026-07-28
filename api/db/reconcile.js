@@ -4,7 +4,7 @@
 // 铁律：只读、参数化、绝不造数 —— 查不到的柜 found=false；多 plan/多 order 显式标 ambiguous，不蒙混成事实。
 import { getPool, setCors } from "../db.js";
 
-// 注：orders.total_amount / finance_payments.amount / freight_supplier_bills.amount / shipping_plans.freight_*
+// 注：orders.total_amount / finance_payments.amount / our_freight_cost_lines.amount / shipping_plans.freight_*
 // 经 information_schema 实测全部为 numeric 类型，直接 SUM 安全（无脏 text，不会 ::numeric 炸库）。
 
 export default async function handler(req, res) {
@@ -50,7 +50,7 @@ export default async function handler(req, res) {
         (SELECT COALESCE(SUM(fp.amount), 0) FROM finance_payments fp
            WHERE (fp.plan_id = sp.id::text OR fp.plan_id = sp._id) AND fp.direction = 'out')                    AS freight_paid,
         -- 海运费应付(供应商账单): 按 plan 或按柜号匹配
-        (SELECT COALESCE(SUM(fb.amount), 0) FROM freight_supplier_bills fb
+        (SELECT COALESCE(SUM(fb.amount), 0) FROM our_freight_cost_lines fb
            WHERE fb.link_plan_id = sp.id::text OR fb.link_plan_id = sp._id OR fb.container_no = cn.container_no) AS freight_billed
       FROM cn
       LEFT JOIN LATERAL (

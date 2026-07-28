@@ -202,6 +202,7 @@ export default async function handler(req, res) {
     const payerCompanyCode = payerResult.rows[0]?.code ?? null;
 
     const duplicateResult = await client.query(
+      // Intentional raw-table read: adoption duplicate check must see existing source rows before writing.
       `
         SELECT id
         FROM freight_supplier_bills

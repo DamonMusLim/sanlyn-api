@@ -135,6 +135,7 @@ export default async function handler(req, res) {
         );
       } else {
         const dupResult = await client.query(
+          // Intentional raw-table read: adoption duplicate check must see existing source rows before writing.
           `SELECT id FROM freight_supplier_bills WHERE ${dupWhere} LIMIT 1`,
           dupParams,
         );

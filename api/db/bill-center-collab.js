@@ -165,6 +165,7 @@ export async function reviewCollab(req, res) {
   try {
     await client.query("BEGIN");
     const cur = await client.query(
+      // Intentional raw-table read: collaboration review locks the exact bill row by id.
       `SELECT id, raw->'collab_pending' AS pending FROM freight_supplier_bills WHERE id = $1 FOR UPDATE`,
       [id]
     );

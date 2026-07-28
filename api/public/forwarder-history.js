@@ -194,6 +194,7 @@ async function handleGet(pool, token, res){
   if (!supplierName) return send(res, 404, { ok:false, error:"company_not_found" });
 
   const bills = await pool.query(
+    // Intentional raw-table read: forwarder history is an audit/listing surface and must show all supplier rows.
     `SELECT bl_no, container_no, bill_month, cost_category, amount, currency, link_plan_id,
             reconciled, confirmed_at, ap_status, ar_status
        FROM freight_supplier_bills

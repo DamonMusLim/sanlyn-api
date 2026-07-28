@@ -28,6 +28,7 @@ export async function markPayment(req, res) {
   try {
     await client.query("BEGIN");
     const cur = await client.query(
+      // Intentional raw-table read: payment update locks the exact bill row by id.
       `SELECT id, ${s.total} AS total FROM freight_supplier_bills WHERE id = $1 FOR UPDATE`,
       [id]
     );

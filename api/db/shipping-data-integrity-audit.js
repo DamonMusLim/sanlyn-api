@@ -82,7 +82,7 @@ async function fetchOrphanBills(pool) {
             sum(CASE WHEN fsb.currency='CNY' THEN fsb.amount ELSE 0 END) AS cny_total,
             sum(CASE WHEN fsb.currency='USD' THEN fsb.amount ELSE 0 END) AS usd_total,
             min(fsb.created_at) AS earliest_bill_at
-       FROM freight_supplier_bills fsb
+       FROM our_freight_cost_lines fsb
       WHERE NOT EXISTS (
         SELECT 1 FROM shipping_plans sp
          WHERE sp.deleted_at IS NULL
@@ -96,6 +96,39 @@ async function fetchOrphanBills(pool) {
     count: rows.length,
     totalCny: money(rows.reduce(function(sum, row) { return sum + row.cny_total; }, 0)),
     totalUsd: money(rows.reduce(function(sum, row) { return sum + row.usd_total; }, 0)),
+    rows: rows,
+  };
+}
+
+async function fetchHeaderDetailMismatch(pool) {
+  const r = await pool.query(
+    `SELECT sp.id, sp.shipment_no, sp.bl_no,
+            sp.freight_sale_cny AS header_sale_cny,
+            COALESCE(d.cny_sale, 0) AS detail_sale_cny,
+            sp.freight_sale_cny - COALESCE(d.cny_sale, 0) AS diff_cny
+       FROM shipping_plans sp
+       LEFT JOIN (
+         SELECT bl_no, SUM(sale_amount) FILTER (WHERE currency='CNY') AS cny_sale
+           FROM our_freight_cost_lines
+          GROUP BY bl_no
+       ) d ON d.bl_no = sp.bl_no
+      WHERE sp.deleted_at IS NULL
+        AND sp.freight_sale_cny IS NOT NULL
+        AND ABS(sp.freight_sale_cny - COALESCE(d.cny_sale,0)) > 1
+      ORDER BY ABS(sp.freight_sale_cny - COALESCE(d.cny_sale,0)) DESC`
+  );
+  const rows = (r.rows || []).map(function(row) {
+    return {
+      id: row.id,
+      shipment_no: row.shipment_no,
+      bl_no: row.bl_no,
+      header_sale_cny: money(row.header_sale_cny),
+      detail_sale_cny: money(row.detail_sale_cny),
+      diff_cny: money(row.diff_cny),
+    };
+  });
+  return {
+    count: rows.length,
     rows: rows,
   };
 }
@@ -148,10 +181,12 @@ export default async function handler(req, res) {
   try {
     const orphanBills = await fetchOrphanBills(pool);
     const voidAnomalies = await fetchVoidAnomalies(pool);
+    const headerDetailMismatch = await fetchHeaderDetailMismatch(pool);
     return res.json({
       success: true,
       orphanBills: orphanBills,
       voidAnomalies: voidAnomalies,
+      headerDetailMismatch: headerDetailMismatch,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {

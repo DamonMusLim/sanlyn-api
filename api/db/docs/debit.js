@@ -58,7 +58,7 @@ export async function renderDebit(ctx){
           try {
             var billRes = await pool.query(
               `SELECT cost_category, currency, SUM(sale_amount)::numeric AS amt
-                 FROM freight_supplier_bills
+                 FROM our_freight_cost_lines
                 WHERE bl_no = $1
                   AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed')
                   AND sale_amount > 0

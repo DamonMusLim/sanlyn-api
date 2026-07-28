@@ -181,6 +181,7 @@ export default async function handler(req, res) {
 
     // Count query (no limit/offset)
     const countResult = await pool.query(
+      // Intentional raw-table read: bill CRUD/listing must expose full records, including voided/direct-paid rows.
       `SELECT COUNT(*) AS total FROM freight_supplier_bills ${whereClause}`,
       params
     );
@@ -190,6 +191,7 @@ export default async function handler(req, res) {
     params.push(safeLimit);
     params.push(safeOffset);
     const dataResult = await pool.query(
+      // Intentional raw-table read: bill CRUD/listing must expose full records, including voided/direct-paid rows.
       `SELECT
          id,
          supplier,

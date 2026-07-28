@@ -54,6 +54,7 @@ export default async function handler(req, res) {
 
   // Check if already inserted
   const existing = await pool.query(
+    // Intentional raw-table read: one-off import idempotency must see any existing row for this BL.
     "SELECT COUNT(*) AS n FROM freight_supplier_bills WHERE bl_no = $1",
     [META.bl_no]
   );
