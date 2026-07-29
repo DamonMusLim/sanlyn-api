@@ -134,7 +134,81 @@ export default async function handler(req, res) {
       const b = req.body || {};
       const action = b.action;
 
-      // 扫墙上二维码打卡（必须人在店里才扫得到）
+      // ── 打卡开门（0730 Damon 定名）─────────────────────────────
+      // 一个动作 = 开门 + 打卡 + 摄像头抓拍。设计意图(Damon原话)：
+      //   "打卡开门 + 监控拍照，也是刚好测试员工的诚信度"
+      //   —— 在家远程点开门，照片里没人，诚信问题自己就暴露。
+      // 编排放在 HR 侧(forge 评审推荐方案c)：员工身份只认 staff JWT，
+      // 门锁能力仍只在网关一处，HR 用服务令牌代调，不把 HR 鉴权扩散进 yudao。
+      // 铁律：**门没开成绝不记打卡**；开了但记打卡失败要能看出来(留 suspicious)。
+      if (action === "unlock") {
+        const today = new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
+        const pt = (await pool.query(
+          "SELECT * FROM hr_checkin_points WHERE company_code=$1 AND is_active=true ORDER BY code LIMIT 1",
+          [me.company_code])).rows[0];
+        if (!pt) return res.status(400).json({ success:false, error:"没配打卡点位" });
+
+        // 1) 先开门（开不了就别记卡）
+        let opened = false, doorErr = "";
+        try {
+          const r = await fetch("http://127.0.0.1:8093/app-api/luvsome/door/unlock-internal", {
+            method:"POST",
+            headers:{ "Content-Type":"application/json", "X-Service-Token": process.env.DOOR_SERVICE_TOKEN || "" },
+            body: JSON.stringify({ storeCode: pt.store_code, actor: `${me.name}/${empId}` }),
+            signal: AbortSignal.timeout(10000),
+          });
+          const d = await r.json();
+          opened = d && (d.code === 0 || d.data?.opened === true);
+          if (!opened) doorErr = d?.msg || "开门失败";
+        } catch (e) { doorErr = "门禁服务连不上"; }
+        if (!opened) return res.status(502).json({ success:false, error: doorErr || "开门失败，请联系店长" });
+
+        // 2) 位置核对（**只标不拦** —— Damon: 有电话+有监控兜底，别把人挡在门外）
+        const lat = Number(b.lat), lng = Number(b.lng);
+        let distance = null, suspicious = [];
+        if (Number.isFinite(lat) && Number.isFinite(lng) && pt.lat != null && pt.lng != null) {
+          const R = 6371000, toR = (x) => x*Math.PI/180;
+          const dLat = toR(lat - Number(pt.lat)), dLng = toR(lng - Number(pt.lng));
+          const a2 = Math.sin(dLat/2)**2 + Math.cos(toR(Number(pt.lat)))*Math.cos(toR(lat))*Math.sin(dLng/2)**2;
+          distance = Math.round(R * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1-a2)));
+          if (distance > (pt.radius_m || 200)) suspicious.push(`离店${distance}米`);
+        } else if (!Number.isFinite(lat)) {
+          suspicious.push("没给位置");
+        }
+
+        // 3) 摄像头抓拍（尽力而为，失败绝不影响打卡）
+        let snap = null;
+        try {
+          const cr = await fetch("http://127.0.0.1:3721/api/checkin/capture", { signal: AbortSignal.timeout(6000) });
+          if (cr.ok) { const cd = await cr.json(); snap = cd?.url || cd?.pic_url || null; }
+        } catch (e) { /* 摄像头没装店/离线都算正常，不报错 */ }
+        if (!snap) suspicious.push("无抓拍");
+
+        // 4) 记打卡（上班没打过就记上班，打过就记下班）
+        const exist = (await pool.query(
+          "SELECT id, checkin_at, checkout_at FROM hr_staff_checkin WHERE employee_ref=$1 AND checkin_date=$2 LIMIT 1",
+          [empId, today])).rows[0];
+        const susp = suspicious.length ? suspicious.join("+") : null;
+        let what;
+        if (!exist) {
+          await pool.query(
+            `INSERT INTO hr_staff_checkin (id,company_code,employee_ref,staff_name,checkin_date,checkin_at,
+               source,scan_code,store_code,lat,lng,distance_m,suspicious,snapshot_url)
+             VALUES ($1,$2,$3,$4,$5,now(),'door',$6,$7,$8,$9,$10,$11,$12)`,
+            [`door-${empId}-${today}`, me.company_code, empId, me.name, today, pt.code, pt.store_code,
+             Number.isFinite(lat)?lat:null, Number.isFinite(lng)?lng:null, distance, susp, snap]);
+          what = "上班打卡";
+        } else if (!exist.checkout_at) {
+          await pool.query("UPDATE hr_staff_checkin SET checkout_at=now() WHERE id=$1", [exist.id]);
+          what = "下班打卡";
+        } else {
+          what = "今天已打过卡";
+        }
+        return res.status(200).json({ success:true, opened:true,
+          message: `门已开 · ${what}`, distance_m: distance, suspicious: susp });
+      }
+
+      // 扫墙上二维码打卡（保留：没门禁的点位/门锁故障时兜底）
       if (action === "checkin" || action === "checkout") {
         const code = String(b.code || "").trim();
         const pt = await pool.query(
@@ -196,7 +270,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, data: r.rows[0], message: "已提交，等店长审批" });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 checkin / checkout / leave / reimbursement / overtime" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
