@@ -256,6 +256,8 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/hr-org-settings", () => import("./api/db/hr-org-settings.mjs")); // 集团HRM组织配置 [Claude 0728]
   mount("/api/db/hr-profile", () => import("./api/db/hr-profile.mjs")); // 集团HRM串联聚合 [Claude 0728]
   mount("/api/db/hr-staff-portal", () => import("./api/db/hr-staff-portal.mjs")); // 员工自助(限权token) [Claude 0728]
+  mount("/api/db/hr-apply", () => import("./api/db/hr-apply.mjs")); // 招聘自助投递(公开路径,见 api/auth.js PUBLIC_PATHS) [Claude 0728]
+  mount("/api/db/hr-recruit", () => import("./api/db/hr-recruit.mjs")); // 招聘管理端 [Claude 0728]
   mount("/api/db/mailings", () => import("./api/db/mailings.mjs"));
    mount("/api/db/customs-fix-amount", () => import("./api/db/customs-fix-amount.mjs"));
   mount("/api/db/companies",          () => import("./api/db/companies.js"));
