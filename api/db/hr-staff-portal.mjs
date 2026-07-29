@@ -8,7 +8,8 @@
 //   1. employee_id 一律取自 **token 内**，绝不信任 body/query 里传来的 —— 否则改个数字就能看别人工资。
 //   2. 只允许 submit 类动作，**不含任何审批权**（status 恒为 pending，店长在后台批）。
 //   3. 工资条只返回 confirmed/paid 的，草稿不给看（避免店员看到试算中的数字来吵）。
-//   4. 不返回身份证号/证件文件（那是 HR 侧数据，员工自己端不需要，减少泄露面）。
+//   4. 证件：**只返回本人自己的**（0730 Damon 要"员工能看到自己签的合同和身份证"）。
+//      身份证号本人可见全量；文件走 ?file=id_card|contract 从私有目录取，employee 仍只从 token 认。
 import fs from "fs";
 import path from "path";
 import { getPool, setCors } from "./db.js";
@@ -16,6 +17,7 @@ import { verifyToken } from "./auth.js";
 
 const D = "YYYY-MM-DD";
 const UPLOAD_DIR = "/opt/sanlyn-uploads/reimbursement";
+const PRIVATE_ROOT = "/opt/sanlyn-private/hr";   // 证件私有目录，不在任何 web root 内
 const PUBLIC_HOST = "https://ai.sanlyn.cn";
 const MAX_BYTES = 6 * 1024 * 1024;
 
@@ -51,12 +53,32 @@ export default async function handler(req, res) {
 
   try {
     const empQ = await pool.query(
-      `SELECT id, name, employee_code, role, position, company_code, employment_status
+      `SELECT id, name, employee_code, role, position, company_code, employment_status,
+              phone, id_card_no, id_card_file, contract_file,
+              to_char(contract_start,'YYYY-MM-DD') AS contract_start,
+              to_char(contract_end,'YYYY-MM-DD')   AS contract_end,
+              to_char(hire_date,'YYYY-MM-DD')      AS hire_date,
+              pay_type, pay_rate, emergency_contact, emergency_phone
          FROM hr_employees WHERE id = $1`, [empId]);
     if (!empQ.rows.length) return res.status(404).json({ success: false, error: "员工不存在" });
     const me = empQ.rows[0];
     if (me.employment_status !== "active") {
       return res.status(403).json({ success: false, error: "该员工已离职，链接停用" });
+    }
+
+    // 本人证件文件（私有目录；employee 只从 token 取，拿不到别人的）
+    if (req.method === "GET" && req.query?.file) {
+      const kindMap = { id_card: me.id_card_file, contract: me.contract_file };
+      const rel = kindMap[req.query.file];
+      if (rel === undefined) return res.status(400).json({ success:false, error:"file 只能是 id_card 或 contract" });
+      if (!rel) return res.status(404).json({ success:false, error:"还没上传这个文件，找店长补" });
+      const abs = path.resolve(PRIVATE_ROOT, rel);
+      if (!abs.startsWith(PRIVATE_ROOT + path.sep)) return res.status(400).json({ success:false, error:"非法路径" });
+      if (!fs.existsSync(abs)) return res.status(404).json({ success:false, error:"文件不存在" });
+      const ext = path.extname(abs).toLowerCase();
+      res.setHeader("Content-Type", ext===".pdf"?"application/pdf":ext===".png"?"image/png":"image/jpeg");
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.end(fs.readFileSync(abs));
     }
 
     if (req.method === "GET") {
@@ -88,10 +110,20 @@ export default async function handler(req, res) {
             ORDER BY category, sort_order, id LIMIT 200`,
           [me.company_code, me.role]),
       ]);
+      const today = new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
+      const todayCk = await pool.query(
+        `SELECT id, checkin_at, checkout_at, source FROM hr_staff_checkin
+          WHERE employee_ref=$1 AND checkin_date=$2 ORDER BY checkin_at DESC LIMIT 1`, [empId, today]);
       return res.status(200).json({
-        success: true,
+        success: true, today,
+        today_checkin: todayCk.rows[0] || null,
         me: { name: me.name, employee_code: me.employee_code, position: me.position || null,
-              role: me.role, company_code: me.company_code },
+              role: me.role, company_code: me.company_code,
+              phone: me.phone, id_card_no: me.id_card_no,
+              has_id_card: !!me.id_card_file, has_contract: !!me.contract_file,
+              contract_start: me.contract_start, contract_end: me.contract_end,
+              hire_date: me.hire_date, pay_type: me.pay_type, pay_rate: me.pay_rate,
+              emergency_contact: me.emergency_contact, emergency_phone: me.emergency_phone },
         month,
         shifts: shifts.rows, leaves: leaves.rows, reimbursements: reimb.rows,
         payslips: pay.rows, overtime: ot.rows, handbook: book.rows,
@@ -101,6 +133,32 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const b = req.body || {};
       const action = b.action;
+
+      // 扫墙上二维码打卡（必须人在店里才扫得到）
+      if (action === "checkin" || action === "checkout") {
+        const code = String(b.code || "").trim();
+        const pt = await pool.query(
+          "SELECT code,label FROM hr_checkin_points WHERE code=$1 AND company_code=$2 AND is_active=true",
+          [code, me.company_code]);
+        if (!pt.rows.length) return res.status(400).json({ success:false, error:"二维码无效，请扫店里墙上那个" });
+        const today = new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
+        const exist = await pool.query(
+          "SELECT id, checkin_at, checkout_at FROM hr_staff_checkin WHERE employee_ref=$1 AND checkin_date=$2 LIMIT 1",
+          [empId, today]);
+        if (action === "checkin") {
+          if (exist.rows.length) return res.status(200).json({ success:true, already:true,
+            message:`今天已经打过卡了（${String(exist.rows[0].checkin_at).slice(11,16)}）` });
+          await pool.query(
+            `INSERT INTO hr_staff_checkin (id, company_code, employee_ref, staff_name, checkin_date, checkin_at, source, scan_code, store_code)
+             VALUES ($1,$2,$3,$4,$5,now(),'qr',$6,$7)`,
+            [`qr-${empId}-${today}`, me.company_code, empId, me.name, today, code, me.company_code]);
+          return res.status(200).json({ success:true, message:`上班打卡成功 · ${pt.rows[0].label}` });
+        }
+        if (!exist.rows.length) return res.status(400).json({ success:false, error:"今天还没上班打卡" });
+        if (exist.rows[0].checkout_at) return res.status(200).json({ success:true, already:true, message:"今天已经打过下班卡了" });
+        await pool.query("UPDATE hr_staff_checkin SET checkout_at=now() WHERE id=$1", [exist.rows[0].id]);
+        return res.status(200).json({ success:true, message:"下班打卡成功，辛苦了 🐾" });
+      }
 
       if (action === "leave") {
         if (!b.leave_date_start || !b.leave_date_end)
@@ -138,7 +196,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, data: r.rows[0], message: "已提交，等店长审批" });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 leave / reimbursement / overtime" });
+      return res.status(400).json({ success: false, error: "action 只能是 checkin / checkout / leave / reimbursement / overtime" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
