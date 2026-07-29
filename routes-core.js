@@ -244,6 +244,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs"));
   mount("/api/db/petstore-pricing-log", () => import("./api/db/petstore-pricing-log.mjs"));
   mount("/api/db/petstore-health", () => import("./api/db/petstore-health.mjs")); // 宠物店数据体检(只读) [Claude 0721] // petstore AI pricing log (readonly) [Claude 0721]
+  mount("/api/db/hermes-digest", () => import("./api/db/hermes-digest.mjs"));
   mount("/api/db/hr-employees", () => import("./api/db/hr-employees.mjs")); // 集团HRM员工花名册 [Claude 0728]
   mount("/api/db/hr-shifts", () => import("./api/db/hr-shifts.mjs")); // 集团HRM排班表 [Claude 0728]
   mount("/api/db/hr-staff-checkin", () => import("./api/db/hr-staff-checkin.mjs")); // 集团HRM打卡只读 [Claude 0728]
