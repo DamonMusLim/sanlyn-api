@@ -2804,9 +2804,10 @@ async function handleMasterPreviewToken(req, res, pool) {
     page = "collab-customer.html";
     role = "customer_booking";
   } else if (party === "shipper") {
-    page = "templates/invoice-collab-section.html";
-    role = "shipper_booking";
-    if (company_label) meta.shipper_scope = { label: String(company_label).slice(0, 60) };
+    // 2026-07-30 Damon 定：退役独立「发货人(shipper)」协同角色。
+    // 发货人=工厂或我方贸易，非独立外部协同方；港杂费已归货代(forwarder)物流费。
+    // 这是 shipper_booking magic_link 的唯一签发入口，直接拒绝，不再签发任何发货人链接。
+    return res.status(410).json({ ok: false, error: "发货人角色已退役:港杂费归货代物流费" });
   } else if (party === "factory") {
     // 方案A：工厂页不再支持无 scope 全貌 preview；内部全貌走登录态 collab-hub。
     if (!company_label) {
