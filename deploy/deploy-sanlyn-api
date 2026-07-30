@@ -1,60 +1,113 @@
 #!/usr/bin/env bash
-# 后端唯一部署路径 v2: mini canonical -> tencent.
-# 只传内容真变的文件(--checksum,不被mtime/chattr锁干扰),自动解锁→传→重锁。
-# 铁律: 只在 ~/canonical/sanlyn-api 改代码,改完先 commit; 绝不直接改 tencent。
+# 后端唯一部署路径 v3: mini canonical true source -> /opt mirror.
+# 目标: /opt 代码等于真源 commit；uploads/api/files 等运行时产物永不删除。
 set -euo pipefail
+
 CANON="$HOME/canonical/sanlyn-api"
+ENV_FILE="$HOME/deploy-config/sanlyn-api.env"
+if [ -f "$ENV_FILE" ]; then
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+fi
+
+DEPLOY_HOST="${DEPLOY_HOST:-tencent}"
 RDIR="/opt/sanlyn-api-test"
+RDIR="${REMOTE_DIR:-$RDIR}"
+PM2_NAME="${PM2_NAME:-sanlyn-api}"
+
 cd "$CANON"
 
-EXCL=(--exclude='.git' --exclude='node_modules' --exclude='.env'
-      --exclude='*.bak' --exclude='*.bak.*' --exclude='*.bak-*'
+DEPLOY_IGNORE="$CANON/.deployignore"
+EXCL=(--exclude-from="$DEPLOY_IGNORE"
       --exclude='fix_*.mjs' --exclude='fix_*.js' --exclude='oli_repair.mjs'
       --exclude='rebate_gaps.mjs' --exclude='sync-plan-aggregates.mjs' --exclude='_audit_severity.mjs')
+PROTECT=(--filter='protect /uploads/***'
+         --filter='protect /api/files/***'
+         --filter='protect /backups/***'
+         --filter='protect /DEPLOYED_VERSION')
 
-# 0. canonical 必须干净
-if [ -n "$(/usr/bin/git status --porcelain)" ]; then
-  echo "🛑 canonical 有未提交改动,先 commit 再部署:"; /usr/bin/git status --short; exit 1
+die() { echo "STOP: $*" >&2; exit 1; }
+is_prod_branch() { [[ "$1" == snapshot/prod-* ]]; }
+
+select_prod_branch() {
+  local current latest
+  current="$(/usr/bin/git rev-parse --abbrev-ref HEAD)"
+  if is_prod_branch "$current"; then
+    echo "$current"
+    return 0
+  fi
+  latest="$(/usr/bin/git for-each-ref --sort=-committerdate --format='%(refname:short)' 'refs/heads/snapshot/prod-*' | head -1)"
+  [ -n "$latest" ] || die "找不到本地 snapshot/prod-* 真源分支；停止部署"
+  echo "$latest"
+}
+
+echo "[0/7] canonical/source guard..."
+if [ -n "$(/usr/bin/git status --porcelain=v1)" ]; then
+  /usr/bin/git status --short
+  die "canonical 有未提交改动；先 commit，再部署"
 fi
+[ -f "$DEPLOY_IGNORE" ] || die "缺少 .deployignore；停止部署，避免覆盖 runtime/密钥产物"
 BR="$(/usr/bin/git rev-parse --abbrev-ref HEAD)"
-if [ "$BR" != "snapshot/prod-20260628" ]; then
-  echo "🛑 分支不对: $BR (应在 snapshot/prod-20260628)"; exit 1
+PROD_BRANCH="$(select_prod_branch)"
+[ "$BR" != "main" ] || die "拒绝从 main 部署；真源必须是 snapshot/prod-*"
+[ "$BR" = "$PROD_BRANCH" ] || die "分支不对: $BR (应切到最新真源 $PROD_BRANCH；配置见 $ENV_FILE)"
+
+/usr/bin/git fetch --quiet origin "$PROD_BRANCH" || die "无法 fetch origin/$PROD_BRANCH；停止部署"
+if /usr/bin/git rev-parse --verify "origin/$PROD_BRANCH" >/dev/null 2>&1; then
+  LOCAL_SHA="$(/usr/bin/git rev-parse HEAD)"
+  ORIGIN_SHA="$(/usr/bin/git rev-parse "origin/$PROD_BRANCH")"
+  BASE_SHA="$(/usr/bin/git merge-base HEAD "origin/$PROD_BRANCH")"
+  if [ "$LOCAL_SHA" = "$BASE_SHA" ] && [ "$LOCAL_SHA" != "$ORIGIN_SHA" ]; then
+    die "本地 $PROD_BRANCH 落后 origin/$PROD_BRANCH；先 pull/merge 最新真源"
+  fi
+  if [ "$BASE_SHA" != "$LOCAL_SHA" ] && [ "$BASE_SHA" != "$ORIGIN_SHA" ]; then
+    die "本地 $PROD_BRANCH 与 origin/$PROD_BRANCH 已分叉；先人工合并并复审"
+  fi
+fi
+COMMIT="$(/usr/bin/git rev-parse --short HEAD)"
+echo "   source=$BR@$COMMIT host=$DEPLOY_HOST dir=$RDIR"
+
+echo "[1/7] verify remote runtime dirs..."
+ssh "$DEPLOY_HOST" "test -d '$RDIR' && mkdir -p '$RDIR/uploads' '$RDIR/api/files'"
+
+echo "[2/7] 计算变更文件(checksum dry-run)..."
+mapfile -t CHANGED < <(rsync -rln --checksum --out-format='%n' "${PROTECT[@]}" "${EXCL[@]}" "$CANON"/ "$DEPLOY_HOST":"$RDIR"/ 2>/dev/null | grep -vE '/$' | grep -v '^$' || true)
+if [ "${#CHANGED[@]}" -eq 0 ]; then
+  echo "   无内容变更；仍执行 mirror 校验"
+else
+printf '   变更: %s\n' "${CHANGED[@]}"
 fi
 
-# 1. 算出内容真变的文件(checksum dry-run)
-echo "[1/6] 计算变更文件(checksum)..."
-mapfile -t CHANGED < <(rsync -rln --checksum --out-format='%n' "${EXCL[@]}" "$CANON"/ tencent:"$RDIR"/ 2>/dev/null | grep -vE '/$' | grep -v '^$' || true)
-if [ "${#CHANGED[@]}" -eq 0 ]; then echo "✅ 无内容变更,无需部署"; exit 0; fi
-printf '   变更: %s\n' "${CHANGED[@]}"
+echo "[3/7] 备份远端 /opt tree (排除 runtime 重物)..."
+ssh "$DEPLOY_HOST" "mkdir -p /opt/sanlyn-api-backups && cd /opt && TS=\$(date +%Y%m%d-%H%M%S) && tar czf /opt/sanlyn-api-backups/predeploy-\$TS.tar.gz --exclude='sanlyn-api-test/node_modules' --exclude='sanlyn-api-test/uploads' --exclude='sanlyn-api-test/api/files' sanlyn-api-test >/dev/null && echo \"   备份OK \$TS\""
 
-# 2. tencent 预部署备份
-echo "[2/6] 备份 tencent..."
-ssh tencent 'cd /opt && TS=$(date +%Y%m%d-%H%M%S) && tar czf /opt/sanlyn-api-backups/predeploy-$TS.tar.gz --exclude=sanlyn-api-test/node_modules sanlyn-api-test >/dev/null 2>&1 && echo "   备份OK $TS"'
+if [ "${#CHANGED[@]}" -gt 0 ]; then
+  echo "[4/7] 解锁被锁的变更文件..."
+  printf '%s\n' "${CHANGED[@]}" | ssh "$DEPLOY_HOST" 'cd '"$RDIR"'; rm -f /tmp/relock.list; while read -r f; do [ -z "$f" ] && continue; case "$f" in uploads/*|api/files/*|backups/*|DEPLOYED_VERSION) echo "SKIP runtime $f"; continue;; esac; if lsattr "$f" 2>/dev/null | cut -d" " -f1 | grep -q i; then chattr -i "$f" && echo "$f" >> /tmp/relock.list && echo "   解锁 $f"; fi; done'
 
-# 3. 解锁变更文件中被 chattr +i 锁的(记录,部署后重锁)
-echo "[3/6] 解锁被锁的变更文件..."
-printf '%s\n' "${CHANGED[@]}" | ssh tencent 'cd '"$RDIR"'; rm -f /tmp/relock.list; while read -r f; do [ -z "$f" ] && continue; if lsattr "$f" 2>/dev/null | cut -d" " -f1 | grep -q i; then chattr -i "$f" && echo "$f" >> /tmp/relock.list && echo "   解锁 $f"; fi; done'
+  echo "[5/7] rsync mirror without delete..."
+  rsync -rl --checksum --no-times "${PROTECT[@]}" "${EXCL[@]}" "$CANON"/ "$DEPLOY_HOST":"$RDIR"/
 
-# 4. 实际传输(只传变更,checksum)
-echo "[4/6] 传输..."
-rsync -rl --checksum --no-times "${EXCL[@]}" "$CANON"/ tencent:"$RDIR"/
+  echo "[6/7] 重锁..."
+  ssh "$DEPLOY_HOST" 'cd '"$RDIR"'; if [ -f /tmp/relock.list ]; then while read -r f; do chattr +i "$f" 2>/dev/null && echo "   重锁 $f"; done < /tmp/relock.list; rm -f /tmp/relock.list; fi'
+else
+  echo "[4/7] 无文件传输，跳过解锁"
+  echo "[5/7] 无文件传输，跳过 rsync"
+  echo "[6/7] 无文件传输，跳过重锁"
+fi
 
-# 5. 重锁
-echo "[5/6] 重锁..."
-ssh tencent 'cd '"$RDIR"'; if [ -f /tmp/relock.list ]; then while read -r f; do chattr +i "$f" 2>/dev/null && echo "   重锁 $f"; done < /tmp/relock.list; rm -f /tmp/relock.list; fi'
+echo "[6.5/7] mirror checksum verify..."
+node scripts/verify-opt-mirror.mjs --remote "$DEPLOY_HOST" --remote-dir "$RDIR"
 
-# 5.5 跑 DB migration(幂等,只跑未应用的;DB在tencent本地)
-echo "[5.5] 跑 DB migration..."
-ssh tencent 'cd '"$RDIR"' && node scripts/apply-migrations.js'
+echo "[6.6/7] 跑 DB migration..."
+ssh "$DEPLOY_HOST" "cd '$RDIR' && node scripts/apply-migrations.js"
 
-# 6. node 自检 + 重启 + 健康
-echo "[6/6] node 自检 + 重启..."
-ssh tencent 'cd '"$RDIR"' && node --check server.js && pm2 restart sanlyn-api >/dev/null && sleep 2 && pm2 logs sanlyn-api --lines 5 --nostream 2>/dev/null | grep -iE "listening|error" | tail -3'
-COMMIT="$(/usr/bin/git rev-parse --short HEAD)"
-ssh tencent 'cat > '"$RDIR"'/DEPLOYED_VERSION' <<EOV
+echo "[7/7] node 自检 + 重启..."
+ssh "$DEPLOY_HOST" "cd '$RDIR' && node --check server.js && pm2 restart '$PM2_NAME' >/dev/null && sleep 2 && pm2 logs '$PM2_NAME' --lines 5 --nostream 2>/dev/null | grep -iE 'listening|error' | tail -3"
+ssh "$DEPLOY_HOST" 'cat > '"$RDIR"'/DEPLOYED_VERSION' <<EOV
 repo=sanlyn-api
-branch=snapshot/prod-20260628
+branch='"$BR"'
 commit='"$COMMIT"'
 deployed_at='"$(date -Iseconds)"'
 EOV
-echo "✅ 部署完成 (commit $COMMIT)。记得 git push origin snapshot/prod-20260628。"
+echo "部署完成: $BR@$COMMIT。若本 commit 未 push，立即 git push origin $BR。"

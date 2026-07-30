@@ -1,0 +1,29 @@
+# Sanlyn API deploy mirror exclusions.
+# These paths are runtime state or local-only material and must not be used to
+# make /opt match canonical. Keep this aligned with deploy/deploy-sanlyn-api.
+.git/
+node_modules/
+logs/
+*.log
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+.secrets-*
+
+# Runtime state on /opt. Never delete or overwrite these via deploy sync.
+uploads/
+api/files/
+backups/
+sanlyn-api-backups/
+
+# Local/debug artifacts.
+*.bak
+*.bak.*
+*.bak-*
+DEPLOYED_VERSION
+ecosystem.config.js
