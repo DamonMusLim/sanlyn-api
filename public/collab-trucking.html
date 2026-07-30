@@ -328,7 +328,7 @@ function cargoDesc(s,d){
 function renderCargo(s,d,td){
   $('cargo_cartons').value=firstVal([s,d,td],['total_cartons','cartons','package_count']);
   $('cargo_gw').value=firstVal([s,d,td],['gross_weight_kg','total_gw_kg','gw_kg']);
-  $('cargo_cbm').value=firstVal([s,d,td],['total_cbm','cbm']);
+  $('cargo_cbm').value=(v=>v!==''&&!isNaN(v)?Math.round(Number(v)*1000)/1000:v)(firstVal([s,d,td],['total_cbm','cbm']));
   $('cargo_desc').value=cargoDesc(s,d);
   $('loading_address').value=firstVal([td,s,d,s.factory||{}],['loading_address','factory_loading_address','factory_address','pickup_address','loading_addr','address']);
   calcVgm(); }
