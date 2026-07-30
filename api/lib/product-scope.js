@@ -388,6 +388,31 @@ export function applyAllVisibility(rows, reqUser) {
   return rows;
 }
 
+// ── Write gate: who can edit the products master table? ─────────────────────
+// PUT /api/db/products accepts cost / margin columns (factory_price,
+// sanlyn_price, rebate_rate, tax_rate, …) with no per-field filtering, so the
+// allow-list is strict:
+//   - admin / super_admin / superadmin / platform_admin → master data ops
+//   - finance / platform_finance                        → pricing & margin
+//
+// Logistics is DELIBERATELY excluded from this gate. CODEX-REVIEW P1
+// (2026-05-19): logistics legitimately edits HS / declaration fields but the
+// PUT handler accepts every column, so granting logistics PUT would also let
+// them rewrite factory_price / sanlyn_price / rebate_rate / tax_rate.
+// Logistics keeps the per-field PATCH path (api/db/products.js:47, which
+// only accepts hsCode / declarationName / declarationElements /
+// declarationPrice / blDescription via raw JSONB). A future PR may add
+// per-role field filtering and re-grant logistics here.
+const PRODUCT_WRITE_ROLES = new Set([
+  "admin", "super_admin", "superadmin", "platform_admin",
+  "finance", "platform_finance",
+]);
+
+export function canEditProductMasterData(reqUser) {
+  if (!reqUser || !reqUser.role) return false;
+  return PRODUCT_WRITE_ROLES.has(normalizeRole(reqUser.role));
+}
+
 export default {
   getProductScope,
   applyProductRowScope,
@@ -395,4 +420,5 @@ export default {
   resolvePartyAlias,
   resolvePricingVisibility,
   applyAllVisibility,
+  canEditProductMasterData,
 };

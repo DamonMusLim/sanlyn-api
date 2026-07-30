@@ -11,15 +11,28 @@ import {
   applyProductFieldWhitelist,
   resolvePartyAlias,
   resolvePricingVisibility,
+  canEditProductMasterData,
 } from "../lib/product-scope.js";
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, PUT, OPTIONS");
+  // PATCH added (2026-05-19): a PATCH branch has existed in this handler for
+  // a while but was missing from the CORS allow-list, so browser clients
+  // could not call it. CODEX-REVIEW P2 on the P0-1 PR flagged this as the
+  // logistics replacement path for HS/declaration edits.
+  setCors(req, res, "GET, PUT, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
 
   // PUT = update single product
   if (req.method === "PUT") {
     try {
+      // ── P0-1 (2026-05-19): role gate.
+      // The PUT body accepts factory_price / sanlyn_price / rebate_rate /
+      // tax_rate — anyone with a valid JWT could rewrite cost & margin.
+      // Allow-list lives in api/lib/product-scope.js so PUT and PATCH stay
+      // aligned and the role set is testable in isolation.
+      if (!canEditProductMasterData(req.user)) {
+        return res.status(403).json({ error: "Forbidden", message: "admin / finance only (logistics: use PATCH)" });
+      }
       var pool = getPool();
       var b = req.body || {};
       if (!b.sku) return res.status(400).json({ error: "sku required" });
