@@ -90,21 +90,27 @@ async function renderPage(pdfPath, pageNum, tmpFiles) {
   return jpgPath;
 }
 
+// Claude review fix (2026-07-31, caught by live test on a real 2-page scan): pdftoppm ERRORS OUT
+// ("Wrong page range given") when asked for a page past the end — it does not return empty — so
+// probing pages blindly crashed the whole doc. Ask pdfinfo for the real page count instead; this
+// also makes `truncated` exact instead of probe-based.
+async function pdfPageCount(pdfPath) {
+  const { stdout } = await execFileP('pdfinfo', [pdfPath], { encoding: 'utf8' });
+  const m = String(stdout || '').match(/^Pages:\s+(\d+)/m);
+  if (!m) throw new Error('pdfinfo could not determine page count');
+  return Number(m[1]);
+}
+
 async function renderPages(pdfPath, tmpFiles) {
+  const total = await pdfPageCount(pdfPath);
+  const n = Math.min(total, MAX_PAGES);
   const images = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
+  for (let page = 1; page <= n; page++) {
     const img = await renderPage(pdfPath, page, tmpFiles);
     if (!img) break;
     images.push({ page, path: img });
   }
-  let truncated = false;
-  try {
-    const img21 = await renderPage(pdfPath, MAX_PAGES + 1, tmpFiles);
-    truncated = !!img21;
-  } catch (_) {
-    truncated = false;
-  }
-  return { images, truncated };
+  return { images, truncated: total > MAX_PAGES };
 }
 
 async function tesseractText(imgPath, pageNum, tmpFiles) {
@@ -191,7 +197,7 @@ async function getDoc(pool, { doc_upload_id, doc_id }) {
   return q.rows[0] || null;
 }
 
-async function processDoc(pool, input = {}) {
+export async function processDoc(pool, input = {}) {
   const doc = await getDoc(pool, input);
   if (!doc) return { success: false, error: 'document_upload not found', doc_upload_id: input.doc_upload_id || null };
   if (!input.refresh && doc.ocr_raw?.textlayer) {
@@ -203,6 +209,13 @@ async function processDoc(pool, input = {}) {
     const layer = { status: 'not_pdf', source: null, text: '', pages: 0, chars: 0, checked_at: checkedAt };
     await saveTextlayer(pool, doc.id, 'not_pdf', layer);
     return { success: true, doc_upload_id: doc.id, skipped: 'not_pdf', textlayer: layer };
+  }
+  // Legacy rows (2026-05 era) carry file:///Users/... URLs that never reached OSS — mark them
+  // with a dedicated status instead of a misleading OSS "key does not exist" failure (codex review).
+  if (/^file:\/\//i.test(String(doc.url || ''))) {
+    const layer = { status: 'legacy_file_url', source: null, text: '', pages: 0, chars: 0, checked_at: checkedAt, error: 'url is a local file:// path, no OSS object to fetch' };
+    await saveTextlayer(pool, doc.id, 'legacy_file_url', layer);
+    return { success: true, doc_upload_id: doc.id, skipped: 'legacy_file_url', textlayer: layer };
   }
 
   const tmpFiles = [];

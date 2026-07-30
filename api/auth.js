@@ -5,7 +5,7 @@ import crypto from "crypto";
 
 var SECRET = process.env.JWT_SECRET;
 if (!SECRET) throw new Error("JWT_SECRET environment variable is required but not set");
-var TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
+var TOKEN_EXPIRY = 3650 * 24 * 60 * 60; // 10y ~ permanent (Damon 0731) // 7 days in seconds
 
 // ── Base64url encode/decode ──
 function b64url(buf) {
@@ -273,6 +273,14 @@ export async function authMiddleware(req, res, next) {
 
   // 完全公开路径：无需任何 token
   if (PUBLIC_PATHS.includes(req.path)) return next();
+
+  // 自动化心跳上报:仅 POST + 正确 x-cron-secret 才免登录;GET 看板仍需登录
+  // (2026-07-31: 之前被全局鉴权挡死,导致没有任何 job 能报心跳,美团/饿了么掉线 18 天没人看见)
+  if (req.path === "/api/db/automation-hub" && req.method === "POST" &&
+      (req.headers["x-cron-secret"] || "") ===
+        (process.env.CRON_SECRET || "a931e0008d84d0e1a6f69129457dbe54")) {
+    return next();
+  }
 
   // 静态文件 /public/* 直通（driver-evidence.html / dispatch-paste.html 等）
   if (req.path.startsWith("/public/")) return next();
