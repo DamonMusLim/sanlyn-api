@@ -135,6 +135,11 @@ textarea.form-input { resize: vertical; min-height: 60px; }
 .file-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
   border: 1px solid #d1fae5; background: #f0fdf4; border-radius: 8px;
   font-size: 12px; margin-bottom: 6px; }
+.gap-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px;
+  font-size: 12px; margin-bottom: 6px; }
+.gap-row.done { border-color: #d1fae5; background: #f0fdf4; }
+.gap-row.other { border-color: #e0e4ea; background: #f8fafc; }
 
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: #1a1d23; color: #fff; padding: 10px 22px; border-radius: 20px;
@@ -170,6 +175,21 @@ textarea.form-input { resize: vertical; min-height: 60px; }
   </div>
 
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="chips"></div>
+  <div class="step-card required" id="progressCard">
+    <div class="step-head">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="step-num" id="progressNum">⏳</div>
+        <div><div class="step-title">回传进度 / Broker Return</div><div class="step-sub">按已上传文件判断完成，不以勾选为准</div></div>
+      </div>
+      <div class="badge badge-amber" id="progressBadge">待传</div>
+    </div>
+    <div class="step-body" style="max-height:none !important;opacity:1 !important;">
+      <div class="section">
+        <div id="progressList"></div>
+        <div id="gapHint" style="font-size:11px;color:#a16207;margin-top:6px;"></div>
+      </div>
+    </div>
+  </div>
   <div class="step-card" id="billingCard"><div class="step-head"><div style="display:flex;align-items:center;gap:10px;"><div class="step-num">￥</div><div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div></div></div><div class="step-body" style="max-height:none !important;opacity:1 !important;"><div class="section" id="billingBody"></div></div></div>
 
   <!-- 下载 -->
@@ -238,14 +258,68 @@ function renderBillingEntry(billing){
 }
 
 let uploads = [];
+let currentSheet = {};
+function fileName(u){ return String(u && u.filename || ''); }
+function matchFile(u, type){
+  const n = fileName(u).toLowerCase();
+  if(type==='decl') return /报关单|customs|declaration|decl/.test(n);
+  if(type==='release') return /放行|release/.test(n);
+  if(type==='inspection') return /查验|inspection|inspect/.test(n);
+  if(type==='cert') return /证书|检疫|植检|动检|兽医|certificate|cert|quarantine|phyto|ciq|vet/.test(n);
+  return false;
+}
+function listVal(v){ return Array.isArray(v)?v.filter(Boolean):[]; }
+function productCerts(s){
+  const r=s.raw||{};
+  return listVal(s.required_product_certs).concat(listVal(s.product_certs),listVal(s.requested_certs),
+    listVal(r.required_product_certs),listVal(r.product_certs),listVal(r.requested_certs));
+}
+function needsInspection(s,mine){
+  if(mine.some(u=>matchFile(u,'inspection'))) return true;
+  const r=s.raw||{}, vals=[s.has_inspection,s.inspection_required,s.customs_inspection,s.inspection,s.customs_status,s.status,s.note,s.remark,
+    r.has_inspection,r.inspection_required,r.customs_inspection,r.inspection,r.customs_status,r.status,r.note,r.remark];
+  return vals.some(v=>v===true || /查验|inspection|inspect/i.test(String(v||'')));
+}
+function buildDocStatus(s,mine){
+  const docs = [
+    {key:'decl', label:'报关单', required:true},
+    {key:'release', label:'放行单', required:true}
+  ];
+  if(needsInspection(s,mine)) docs.push({key:'inspection', label:'查验通知', required:true});
+  if(productCerts(s).length) docs.push({key:'cert', label:'按产品要的证书', required:true});
+  return docs.map(d=>({ ...d, files: mine.filter(u=>matchFile(u,d.key)) }));
+}
+function renderProgress(mine){
+  const docs = buildDocStatus(currentSheet,mine);
+  const matched = new Set();
+  docs.forEach(d=>d.files.forEach(f=>matched.add(f)));
+  const other = mine.filter(u=>!matched.has(u));
+  const missing = docs.filter(d=>d.required && !d.files.length);
+  $('progressList').innerHTML = docs.map(d=>{
+    const ok = d.files.length > 0;
+    const names = ok ? d.files.map(f=>esc(fileName(f))).join('、') : '缺少 '+esc(d.label);
+    return `<div class="gap-row ${ok?'done':''}"><span>${ok?'✓':'⏳'}</span><span style="flex:1;font-weight:800;">${esc(d.label)}</span><span class="badge ${ok?'badge-green':'badge-amber'}">${ok?'已传':'待传'}</span></div><div style="font-size:11px;color:${ok?'#047857':'#a16207'};margin:-2px 0 7px 32px;">${names}</div>`;
+  }).join('') + (other.length ? `<div class="gap-row other"><span>📎</span><span style="flex:1;font-weight:800;">其他回传</span><span class="badge badge-blue">${other.length} 份</span></div><div style="font-size:11px;color:#6b7280;margin:-2px 0 7px 32px;">${other.map(f=>esc(fileName(f))).join('、')}</div>` : '');
+  $('gapHint').textContent = missing.length ? '黄色待传项未补齐前，本票不算报关资料完成。' : '';
+  $('progressBadge').textContent = missing.length ? '待传 '+missing.length+' 项' : '报关资料已齐/已完成';
+  $('progressBadge').className = 'badge ' + (missing.length ? 'badge-amber' : 'badge-green');
+  $('progressCard').className = 'step-card ' + (missing.length ? 'required' : 'done');
+  $('progressNum').textContent = missing.length ? '⏳' : '✓';
+  $('progressNum').className = 'step-num ' + (missing.length ? '' : 'done');
+  return missing.length === 0;
+}
 function renderFiles(){
   const mine = uploads.filter(u=>u.role==='broker');
   $('fileList').innerHTML = mine.map(u=>`
     <div class="file-row"><span>📄</span><span style="flex:1;font-weight:700;">${esc(u.filename)}</span>
       <span style="color:#047857;font-size:10px;">${esc(String(u.uploaded_at).replace('T',' ').slice(5,16))} ✓ 已收到</span></div>`).join('');
   const b=$('upBadge');
-  if(mine.length){ b.textContent='✓ 已传 '+mine.length+' 份'; b.classList.remove('hidden');
-    $('step2').classList.remove('required'); $('actBadge').textContent='已回传'; $('actBadge').className='badge badge-green'; }
+  const done = renderProgress(mine);
+  b.textContent = mine.length ? '✓ 已传 '+mine.length+' 份' : '';
+  b.classList.toggle('hidden', !mine.length);
+  $('step2').classList.toggle('required', !done);
+  $('actBadge').textContent = done ? '已完成' : '需要您操作';
+  $('actBadge').className = 'badge ' + (done ? 'badge-green' : 'badge-amber');
 }
 
 async function boot(){
@@ -254,6 +328,7 @@ async function boot(){
   const d = await r.json().catch(()=>({}));
   if(!d.valid || d.role!=='broker_booking'){ show('stateDead'); return; }
   const s = d.booking_sheet || {};
+  currentSheet = s;
   renderBillingEntry(d.billing || {});
   $('topBadge').textContent = s.shipment_no || '报关协同';
   $('bannerTitle').textContent = (s.shipment_no||'—') + ' — 报关协同';
