@@ -6,10 +6,12 @@
   let state=null, dirtyPrice=false, contactOpen=false, invoiceOpen=false, sheetOpen=false, _lang="zh", invEdited=false;
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
   const num=v=>Number.isFinite(Number(String(v).replace(/,/g,"")))?Number(String(v).replace(/,/g,"")):0;
+  const hasNum=v=>v!==null&&v!==undefined&&String(v).trim()!==""&&Number.isFinite(Number(String(v).replace(/,/g,"")));
   const round=v=>Math.round(num(v)*100)/100;
   const money=v=>num(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+  const moneyVal=v=>hasNum(v)?money(v):"";
   const sym=c=>c==="USD"?"$":"¥";
-  const isPer=b=>String(b||"").includes("每柜");
+  const isPer=b=>/每柜|per_container/i.test(String(b||""));
   const totalLines=()=>Array.isArray(state.bill_lines)?state.bill_lines.reduce((s,l)=>s+num(l.amount),0):0;
   const isConfirmed=()=>state?.status==="external_confirmed"||Boolean(state?.confirmed_at);
   const fmtTime=v=>v?new Date(v).toLocaleString("zh-CN",{hour12:false}):"";
@@ -53,8 +55,8 @@
         <td><input class="edit bl-name" data-bl="${i}" data-f="name" value="${esc(l.name)}" placeholder="费用项"></td>
         <td><select class="bl-sel" data-bl="${i}" data-f="basis"><option ${!per?"selected":""}>整票</option><option ${per?"selected":""}>每柜</option></select></td>
         <td>${per?`<select class="bl-sel" data-bl="${i}" data-f="container_type">${types.map(t=>`<option ${t===ct?"selected":""}>${esc(t)}</option>`).join("")}</select>`:`<span class="faintdash">—</span>`}</td>
-        <td class="r"><input class="edit money" data-bl="${i}" data-f="unit_price" value="${money(l.unit_price)}"></td>
-        <td class="r">${per?`<input class="edit money" style="width:52px" data-bl="${i}" data-f="qty" value="${money(l.qty).replace(".00","")}">`:`<span>1</span>`}</td>
+        <td class="r"><input class="edit money" data-bl="${i}" data-f="unit_price" value="${moneyVal(l.unit_price)}" placeholder="待补"></td>
+        <td class="r">${per?`<input class="edit money" style="width:52px" data-bl="${i}" data-f="qty" value="${moneyVal(l.qty).replace(".00","")}" placeholder="待补">`:`<span>1</span>`}</td>
         <td class="r">${money(l.amount)}</td>
         <td class="r"><button class="bl-del" data-bl-del="${i}" title="删除此行">✕</button></td>
       </tr>`;
@@ -89,25 +91,23 @@
   }
   function invoiceOfficialHtml(currency){
     const editable=(state.invoices[0]?.mode||"self")==="other"; // 我方代开=只读, 对方自开=可编辑
-    const totalEx=state.invoices.reduce((s,i)=>s+num(i.amount_ex_tax),0);
-    const totalTax=state.invoices.reduce((s,i)=>s+num(i.tax_amount),0);
-    const total=state.invoices.reduce((s,i)=>s+num(i.total_with_tax),0);
-    return InvoiceOfficial.render({
+    return state.invoices.map((inv,i)=>InvoiceOfficial.render({
+      index:i,
       docTitle:isOcean()?"商业发票":"电子发票",
-      title:isOcean()?"COMMERCIAL INVOICE":(state.invoices[0]?.title||"增值税普通发票"),
+      title:isOcean()?"COMMERCIAL INVOICE":(inv.title||"增值税普通发票"),
       currency,
       buyer:state.buyer,
       seller:state.seller,
       seller_editable:false,
       buyer_editable:true,
       editable,
-      items:state.invoices.map(inv=>({name:inv.item_name,unit:inv.unit,qty:inv.qty||1,price:inv.amount_ex_tax,amount:inv.amount_ex_tax,rate:inv.tax_rate||0,tax:inv.tax_amount||0})),
-      total_ex:totalEx,
-      total_tax:totalTax,
-      total,
-      remark:state.invoices[0]?.remark||"",
-      footerHtml:`<label class="savedef"><input type="checkbox" id="saveDefault" ${state.save_as_default?"checked":""}> <span>存为该客户默认开票模版，以后固定这样开。</span></label>`
-    });
+      items:[{name:inv.item_name,unit:inv.unit,qty:inv.qty||1,price:inv.amount_ex_tax,amount:inv.amount_ex_tax,rate:inv.tax_rate||0,tax:inv.tax_amount||0}],
+      total_ex:inv.amount_ex_tax,
+      total_tax:inv.tax_amount,
+      total:inv.total_with_tax,
+      remark:inv.remark||"",
+      footerHtml:i===0?`<label class="savedef"><input type="checkbox" id="saveDefault" ${state.save_as_default?"checked":""}> <span>存为该客户默认开票模版，以后固定这样开。</span></label>`:""
+    })).join("");
   }
   function applyLang(){
     document.querySelectorAll("[data-en]").forEach(el=>{
@@ -163,9 +163,15 @@
     state.contacts={finance:[],ops:[],business:[]};
     document.querySelectorAll("[data-contact]").forEach(el=>{const v=el.value.trim();if(v)state.contacts[el.dataset.contact].push(v)});
     document.querySelectorAll("[data-inv]").forEach(el=>invoiceChanged(Number(el.dataset.inv),el.dataset.if,el.value,false));
-    document.querySelectorAll("[data-io-field]").forEach(el=>{
-      const m=el.dataset.ioField.match(/^items\.(\d+)\.(name|amount)$/);if(!m)return;
-      invoiceChanged(Number(m[1]),m[2]==="name"?"item_name":"amount_ex_tax",el.textContent,false);
+    document.querySelectorAll(".invoiceOfficial [data-io-field]").forEach(el=>{
+      const invIndex=Number(el.closest(".invoiceOfficial")?.dataset.ioIndex)||0;
+      const field=el.dataset.ioField, value=(el.value??el.textContent).trim();
+      if(field==="title") invoiceChanged(invIndex,"title",value,false);
+      else if(field==="remark") invoiceChanged(invIndex,"remark",value,false);
+      else {
+        const m=field.match(/^items\.0\.(name|amount)$/);if(!m)return;
+        invoiceChanged(invIndex,m[1]==="name"?"item_name":"amount_ex_tax",value,false);
+      }
     });
   }
   function lineChanged(i,f,val){
@@ -173,14 +179,17 @@
     if(f==="name") l.name=val;
     else if(f==="basis"){ l.basis=val; if(!isPer(val)){ l.qty=1; l.container_type=""; } else if(!l.container_type) l.container_type=primaryType(); }
     else if(f==="container_type") l.container_type=val;
-    else if(f==="unit_price") l.unit_price=num(val);
-    else if(f==="qty") l.qty=num(val)||1;
-    l.amount=Math.round(num(l.unit_price)*num(l.qty)*100)/100; dirtyPrice=true; render();
+    else if(f==="unit_price") l.unit_price=hasNum(val)?num(val):null;
+    else if(f==="qty") l.qty=hasNum(val)?num(val):null;
+    if(hasNum(l.unit_price)&&hasNum(l.qty)) l.amount=Math.round(num(l.unit_price)*num(l.qty)*100)/100;
+    dirtyPrice=true; render();
   }
   function invoiceChanged(i,f,val,rerender=true){
     const inv=state.invoices[i]; if(!inv) return;
     if(f==="item_name") inv.item_name=val;
     else if(f==="amount_ex_tax") inv.amount_ex_tax=round(val);
+    else if(f==="title") inv.title=val;
+    else if(f==="remark") inv.remark=val;
     if(inv.mode==="other") invEdited=true; // 自定义有改动
     recalcInvoice(); if(rerender) render();
   }
@@ -198,7 +207,7 @@
     }));
     document.getElementById("addLine").onclick=()=>{
       const cur=state.invoices[0]?.currency||"CNY";
-      state.bill_lines.push({bl_no:state.shipment.bl_no||"",name:"",basis:"每柜",container_type:primaryType(),unit_price:0,qty:1,amount:0,currency:cur});
+      state.bill_lines.push({bl_no:state.shipment.bl_no||"",name:"",basis:"每柜",container_type:primaryType(),unit_price:null,qty:null,amount:0,currency:cur});
       dirtyPrice=true; render();
     };
     document.querySelectorAll("[data-cntr]").forEach(el=>el.addEventListener("change",e=>{
