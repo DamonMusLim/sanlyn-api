@@ -99,16 +99,6 @@ textarea.form-input { resize: vertical; min-height: 60px; }
 .tog.on-blue  { border-color: #1a73e8; background: #dbeafe; color: #1d4ed8; }
 .tog.on-red   { border-color: #dc2626; background: #fee2e2; color: #b91c1c; }
 
-.cargo-t { width: 100%; border-collapse: collapse; font-size: 11px; }
-.cargo-t th { background: #f8fafc; padding: 6px 8px; text-align: left;
-  border: 1px solid #c8cdd6; font-size: 10px; font-weight: 800; color: #374151; }
-.cargo-t td { padding: 4px 6px; border: 1px solid #e0e4ea; }
-.cargo-t tr.alert-row td { border-color: #fca5a5; background: #fef2f2; }
-.cargo-t tr.total { font-weight: 800; background: #f8f8f8; }
-.cargo-t input.cell-in { width: 100%; border: 1px solid transparent; border-radius: 4px;
-  padding: 4px 6px; font-size: 11px; outline: none; font-family: inherit; background: transparent; }
-.cargo-t input.cell-in:focus { border-color: #1a73e8; background: #fff; }
-
 .landing-card { background: #fff; border-radius: 14px;
   box-shadow: 0 4px 24px rgba(0,0,0,.10); overflow: hidden; }
 .landing-head { background: linear-gradient(135deg,#059669,#10b981);
@@ -174,6 +164,18 @@ textarea.form-input { resize: vertical; min-height: 60px; }
   </div>
 
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="chips"></div>
+  <div class="card">
+    <div class="section" style="padding-bottom:4px;"><div class="step-title">装柜数据</div><div class="step-sub">供车队核对，可补录缺失项；VGM 按毛重自动计算</div></div>
+    <div class="section">
+      <div class="grid2">
+        <div class="form-field"><label class="form-label">总箱数</label><input class="form-input" id="cargo_cartons" type="number" min="0" step="1" placeholder="缺失可补录"></div>
+        <div class="form-field"><label class="form-label">总 GW 毛重 kg</label><input class="form-input" id="cargo_gw" type="number" min="0" step="0.01" placeholder="缺失可补录"></div>
+        <div class="form-field"><label class="form-label">总 CBM</label><input class="form-input" id="cargo_cbm" type="number" min="0" step="0.001" placeholder="缺失可补录"></div>
+        <div class="form-field"><label class="form-label">VGM(t)</label><input class="form-input" id="cargo_vgm" readonly placeholder="按 GW 自动计算"></div>
+      </div>
+      <div class="form-field"><label class="form-label">中文品名货描</label><textarea class="form-input" id="cargo_desc" rows="2" placeholder="缺失可补录"></textarea></div>
+      <div class="form-field" style="margin-bottom:0;"><label class="form-label">工厂提货地址</label><input class="form-input" id="loading_address" placeholder="提货地址缺失,请补录"></div></div>
+  </div>
   <div class="step-card" id="billingCard"><div class="step-head"><div style="display:flex;align-items:center;gap:10px;"><div class="step-num">￥</div><div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div></div></div><div class="step-body" style="max-height:none !important;opacity:1 !important;"><div class="section" id="billingBody"></div></div></div>
 
   <!-- 下载 -->
@@ -314,6 +316,24 @@ function renderBillingEntry(billing){
 }
 
 let vehs = [], uploads = [];
+function firstVal(objs, keys){ for(const o of objs){ if(!o) continue; for(const k of keys){ if(o[k]!=null&&String(o[k]).trim()!=='') return o[k]; } } return ''; }
+function itemText(item){ return item&&firstVal([item],['description','product_name','cn_name','product_cn_name','chinese_name','goods_name','name']); }
+function cargoDesc(s,d){
+  const direct=firstVal([s,d],['cargo_description_cn','cargo_description','goods_description','product_name','品名','中文品名']);
+  if(direct) return direct;
+  const orders=[...(Array.isArray(s.orders)?s.orders:[]),...(Array.isArray(d.orders)?d.orders:[])], names=[];
+  orders.forEach(o=>(Array.isArray(o.items)?o.items:[]).forEach(it=>{ const v=itemText(it); if(v&&!names.includes(v)) names.push(v); }));
+  return names.join(' / ');
+}
+function renderCargo(s,d,td){
+  $('cargo_cartons').value=firstVal([s,d,td],['total_cartons','cartons','package_count']);
+  $('cargo_gw').value=firstVal([s,d,td],['gross_weight_kg','total_gw_kg','gw_kg']);
+  $('cargo_cbm').value=firstVal([s,d,td],['total_cbm','cbm']);
+  $('cargo_desc').value=cargoDesc(s,d);
+  $('loading_address').value=firstVal([td,s,d,s.factory||{}],['loading_address','factory_loading_address','factory_address','pickup_address','loading_addr','address']);
+  calcVgm(); }
+function calcVgm(){ const gw=parseFloat(gv('cargo_gw')); $('cargo_vgm').value=gw>=0?((gw/1000)+2.2).toFixed(3).replace(/\.?0+$/,''):''; }
+function cargoPayload(){ return {total_cartons:gv('cargo_cartons'),gross_weight_kg:gv('cargo_gw'),total_cbm:gv('cargo_cbm'),vgm_t:gv('cargo_vgm'),cargo_description_cn:gv('cargo_desc'),loading_address:gv('loading_address')}; }
 
 function collapseVeh(summary){
   $('step1').classList.add('done'); $('step1').classList.remove('required');
@@ -382,6 +402,7 @@ async function boot(){
   $('dlBox').innerHTML = `<a class="dl-btn" href="${API}/file?token=${encodeURIComponent(token)}&type=so" target="_blank">📋 <span style="flex:1;">托书 / Booking Instruction（含进港信息）</span><span style="color:#1a73e8;">下载 ↗</span></a>`;
   // 已提交过：预填 + 收起
   const td = s.trucking_detail || {};
+  renderCargo(s,d,td);
   const saved = Array.isArray(td.vehicles)?td.vehicles:(td.plate?[{plate:td.plate,driver:td.driver,driver_phone:td.driver_phone,pickup_time:td.pickup_time}]:[]);
   if(saved.length){
     vehs = saved.map(v=>({plate:v.plate||'',driver:v.driver||'',driver_phone:v.driver_phone||'',pickup_time:v.pickup_time||'',cntr:v.cntr||'',seal_no:v.seal_no||'',weigh_kg:v.weigh_kg||'',trailer_plate:v.trailer_plate||''}));
@@ -439,7 +460,7 @@ async function save(){
   $('btnSubmit').disabled = true;
   try{
     const r = await fetch(`${API}/trucking-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token,vehicles,remarks:gv('remarks')})});
+      body:JSON.stringify({token,vehicles,remarks:gv('remarks'),cargo_summary:cargoPayload()})});
     const d = await r.json();
     $('btnSubmit').disabled = false;
     if(!r.ok||!d.ok){ toast(d.error||'提交失败'); return; }
@@ -471,6 +492,7 @@ $('fileInput')?.addEventListener('change', async e=>{
   }
   e.target.value='';
 });
+$('cargo_gw')?.addEventListener('input', calcVgm);
 
 boot();
 </script>
