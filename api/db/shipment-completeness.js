@@ -287,10 +287,10 @@ export default async function handler(req, res) {
     // invoice_docs 发票（可选）= finance_invoices_out
     {
       // finance_invoices_out 关联键是 contract_nos（复数，文本）→ 逐合同 ILIKE 匹配
-      const cArr = [...contracts];
+      const cArr = [...new Set([...contracts, ...myPlans.map(p=>p.bl_no).filter(Boolean)])];
       const inv = cArr.length
-        ? await safe(pool, `SELECT count(*)::int n FROM finance_invoices_out WHERE ` +
-            cArr.map((_,i)=>`contract_nos::text ILIKE '%'||$${i+1}||'%'`).join(" OR "), cArr)
+        ? await safe(pool, `SELECT count(*)::int n FROM finance_invoices_out WHERE (void_status IS NULL OR void_status = 'normal') AND (` +
+            cArr.map((_,i)=>`contract_nos::text ILIKE '%'||$${i+1}||'%'`).join(" OR ") + ")", cArr)
         : { rows: [] };
       if (inv.error) setDim("invoice_docs","not_supported","发票表查询不可用","finance_invoices_out");
       else if (has(inv) && inv.rows[0].n > 0) setDim("invoice_docs","ok",`${inv.rows[0].n} 张销售发票`,"finance_invoices_out");
