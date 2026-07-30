@@ -73,6 +73,18 @@ function receivableAmount(row, scope) {
   return { amount: 0, review: false };
 }
 
+function hasNumeric(v) {
+  return v !== null && v !== undefined && String(v).trim() !== "" && Number.isFinite(Number(v));
+}
+
+function billBasisLabel(v) {
+  const raw = clean(v, 40);
+  const basis = raw.toLowerCase();
+  if (basis === "per_container" || /每柜|per.?container|container/.test(basis)) return "每柜";
+  if (basis === "per_bl" || basis === "per_shipment" || /整票|每票|per.?bl|shipment|票/.test(basis)) return "整票";
+  return raw || "整票";
+}
+
 export function partyLens(ctx, sp) {
   if (ctx.internal) {
     const p = clean(ctx.party, 20);
@@ -196,9 +208,10 @@ export async function defaultLines(pool, sp, ctx) {
       if (scope === "declaration" && customsArrange === "factory") continue;
     }
     const visibleAmount = lens.side === "receivable" ? receivable.amount : row.amount;
-    const line = baseLine(row.bl_no || blNo, row.cost_category || "港杂费", row.charge_basis || "整票", visibleAmount, row.currency, scope, lens);
-    line.unit_price = money(row.unit_price) || money(visibleAmount / (Number(row.qty) || 1)); // 单价缺则用合计/数量兜底(整票qty=1→单价=合计)
-    line.qty = money(row.qty || 1) || 1;
+    const basis = billBasisLabel(row.charge_basis);
+    const line = baseLine(row.bl_no || blNo, row.cost_category || "港杂费", basis, visibleAmount, row.currency, scope, lens);
+    line.unit_price = hasNumeric(row.unit_price) ? money(row.unit_price) : null;
+    line.qty = basis === "每柜" ? (hasNumeric(row.qty) ? money(row.qty) : null) : 1;
     if (receivable?.review) line.review = true;
     if (lens.role === "internal") addInternalAmounts(line, row.amount, row.sale_amount);
     lines.push(line);
@@ -223,8 +236,8 @@ function baseLine(blNo, name, basis, amount, currency, scope, lens) {
     bl_no: clean(blNo, 80),
     name: clean(name, 80),
     basis: clean(basis, 24),
-    unit_price: money(amount),
-    qty: 1,
+    unit_price: null,
+    qty: null,
     amount: money(amount),
     currency: clean(currency || "CNY", 8).toUpperCase(),
     fob_scope: scope,
