@@ -1,4 +1,5 @@
 import { buildRateComparison, computeHistoryGuard } from "./freight-price-guard.js";
+import { parseLocalChargeFees } from "./freight-fee-lines.js";
 
 const PORT_KLANG_FAMILY = "PORT_KLANG_FAMILY";
 
@@ -89,6 +90,7 @@ function total(unitCost, qty, warnings) {
 
 function adoptedPort(row, ctx, level, confidence, warnings, loose) {
   var unitCost = num(row.cost_total);
+  var subItems = parseLocalChargeFees(row.fees);
   if (ctx.carrier.inferred) warnings.push("carrier_inferred");
   if (!ctx.containerType) warnings.push("柜型缺失·待确认");
   if (loose) warnings.push("loose_same_amount");
@@ -103,6 +105,7 @@ function adoptedPort(row, ctx, level, confidence, warnings, loose) {
     source_table: "local_charges",
     source_id: row.id || null,
     charge_code: row.charge_code || null,
+    sub_items: subItems,
     confidence: confidence,
     warnings: warnings,
   };
@@ -269,7 +272,7 @@ export async function importCostPreview(pool, input) {
   if (warnings.length) return { status: "missing_context", context: ctx, items: [], warnings: warnings, unmatched: [] };
 
   var [lc, fr] = await Promise.all([
-    pool.query(`SELECT id, carrier, pol, pod, company_name, container_type, cost_total, charge_code
+    pool.query(`SELECT id, carrier, pol, pod, company_name, container_type, cost_total, charge_code, fees
                   FROM local_charges
                  WHERE (valid_until IS NULL OR valid_until >= CURRENT_DATE)
                    AND cost_total IS NOT NULL`),
@@ -294,6 +297,7 @@ export async function importCostPreview(pool, input) {
         container_type: ctx.containerType,
         unit_cost: item.unit_cost,
         currency: item.currency,
+        sub_items: item.sub_items,
       });
       return { ...item, guard: guard };
     } catch (e) {

@@ -1,3 +1,5 @@
+import { normalizeFeeCategory, summarizeFeeLine, summarizePortFeeGuard } from "./freight-fee-lines.js";
+
 const PORT_KLANG_FAMILY = "PORT_KLANG_FAMILY";
 
 function clean(v) {
@@ -203,6 +205,22 @@ function collectRateHistorySamples(rows, ctx) {
   }).filter(Boolean);
 }
 
+function collectFeeLineSamples(rows, feeCategory) {
+  return (rows || []).map((r) => {
+    if (normalizeFeeCategory(r.cost_category) !== feeCategory) return null;
+    var unit = safeUnit(r);
+    if (unit === null || unit <= 0) return null;
+    return {
+      date: r.sample_date,
+      unit_price: unit,
+      compare_unit_price: unit,
+      currency: currency(r.currency),
+      carrier: r.carrier,
+      source: r.source,
+    };
+  }).filter(Boolean);
+}
+
 function comparableSamples(samples, unitCost, inputCurrency, fx) {
   var cur = currency(inputCurrency);
   var same = samples.filter((s) => currency(s.currency) === cur).map((s) => ({ ...s, compare_unit_price: s.unit_price, fx_converted: false }));
@@ -219,6 +237,7 @@ function comparableSamples(samples, unitCost, inputCurrency, fx) {
 
 export async function computeHistoryGuard(pool, input) {
   var unitCost = num(input.unit_cost);
+  var subItems = Array.isArray(input.sub_items) ? input.sub_items : [];
   var ctx = {
     pol: normPort(input.pol),
     pod: normPort(input.pod),
@@ -227,6 +246,9 @@ export async function computeHistoryGuard(pool, input) {
   };
   if (!unitCost || !ctx.pol.norm || !ctx.pod.norm || !ctx.carrier.norm) {
     return { verdict: "insufficient", count: 0, message: "历史守卫上下文不足·仅供参考", historySamples: [] };
+  }
+  if (input.fee_item === "port_charge" && !subItems.length) {
+    return { verdict: "insufficient", count: 0, message: "港杂缺费目拆项·不做整柜混合历史比较", historySamples: [] };
   }
   var activeBillSql = `
     SELECT b.id::text, b.bl_no, b.cost_category, b.amount, b.qty, b.unit_price, b.currency,
@@ -252,6 +274,15 @@ export async function computeHistoryGuard(pool, input) {
     ) : Promise.resolve({ rows: [] }),
     loadFx(pool).catch(() => new Map()),
   ]);
+  if (input.fee_item === "port_charge" && subItems.length) {
+    var perFee = subItems.map((line) => {
+      var cur = currency(line.currency || input.currency);
+      var category = line.cost_category || normalizeFeeCategory(line.feeName);
+      var samples = collectFeeLineSamples(activeRows.rows, category).filter((s) => currency(s.currency) === cur);
+      return summarizeFeeLine({ ...line, cost_category: category }, samples, cur);
+    });
+    return summarizePortFeeGuard(perFee);
+  }
   var samples = collectBillSamples(activeRows.rows, ctx, input.fee_item)
     .concat(collectBillSamples(legacyRows.rows, ctx, input.fee_item))
     .concat(collectRateHistorySamples(rateRows.rows, ctx))
