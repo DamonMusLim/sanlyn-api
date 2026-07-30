@@ -129,6 +129,11 @@ textarea.form-input { resize: vertical; min-height: 60px; }
 .file-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
   border: 1px solid #d1fae5; background: #f0fdf4; border-radius: 8px;
   font-size: 12px; margin-bottom: 6px; }
+.qty-btn{border:1px solid #c8cdd6;background:#fff;border-radius:5px;width:24px;height:24px;font-weight:800;cursor:pointer;}
+.qty-in{width:42px;border:1px solid #c8cdd6;border-radius:5px;padding:4px;text-align:center;font-weight:800;}
+.photo-grid{display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:#fafafa;border:1px solid #eef2f7;border-radius:8px;}
+.photo-cell{position:relative;width:58px;height:58px;border-radius:6px;overflow:hidden;border:1px solid #e0e4ea;background:#f1f5f9;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:10px;color:#64748b;text-align:center;}
+.photo-cell img{width:100%;height:100%;object-fit:cover;}.photo-cell.add{border-style:dashed;border-color:#cbd5e1;}.photo-cell .del-btn{position:absolute;top:1px;right:1px;width:16px;height:16px;background:#dc2626;color:#fff;border-radius:50%;font-size:11px;font-weight:800;line-height:16px;}
 
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: #1a1d23; color: #fff; padding: 10px 22px; border-radius: 20px;
@@ -268,26 +273,6 @@ textarea.form-input { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
-  <!-- 上传图片 -->
-  <div class="step-card" id="step2">
-    <div class="step-head">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div class="step-num">⬆</div>
-        <div><div class="step-title">上传 / Upload</div><div class="step-sub">装柜照片 · 磅单 · EIR，传完即存</div></div>
-      </div>
-      <div class="badge badge-green hidden" id="upBadge"></div>
-    </div>
-    <div class="step-body" style="max-height:none !important;opacity:1 !important;">
-      <div class="section">
-        <div id="fileList"></div>
-        <div class="up-zone" onclick="document.getElementById('fileInput').click()">
-          📷 点击上传照片 / 文件（≤8MB，可多次）
-        </div>
-        <input type="file" id="fileInput" multiple accept="image/*,.pdf" style="display:none;">
-      </div>
-    </div>
-  </div>
-
   <div style="text-align:center;font-size:11px;color:#9ca3af;margin-bottom:40px;">
     上传与提交即自动保存 · 🔒 此链接仅限本次任务使用 · 数据仅您与 Sanlyn 可见
   </div>
@@ -315,7 +300,7 @@ function renderBillingEntry(billing){
   $('billingBody').innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f8fafc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px;"><div><div style="font-size:13px;font-weight:800;color:#1a1d23;">费用 / 账单：'+(canOpen?'本票港杂/费用账单':'暂无')+'</div><div style="font-size:11px;color:#6b7280;margin-top:2px;">'+(canOpen?esc(billing.segment||'按当前权限展示'):'当前链接暂无可打开账单')+'</div></div>'+(canOpen?'<button class="btn btn-blue btn-sm" onclick="openBillingInvoice()">打开账单 / 开票</button>':'')+'</div>';
 }
 
-let vehs = [], uploads = [];
+let vehs = [], ctnQty = 1, ctnType = '';
 function firstVal(objs, keys){ for(const o of objs){ if(!o) continue; for(const k of keys){ if(o[k]!=null&&String(o[k]).trim()!=='') return o[k]; } } return ''; }
 function itemText(item){ return item&&firstVal([item],['description','product_name','cn_name','product_cn_name','chinese_name','goods_name','name']); }
 function cargoDesc(s,d){
@@ -333,7 +318,7 @@ function renderCargo(s,d,td){
   $('loading_address').value=firstVal([td,s,d,s.factory||{}],['loading_address','factory_loading_address','factory_address','pickup_address','loading_addr','address']);
   calcVgm(); }
 function calcVgm(){ const gw=parseFloat(gv('cargo_gw')); $('cargo_vgm').value=gw>=0?((gw/1000)+2.2).toFixed(3).replace(/\.?0+$/,''):''; }
-function cargoPayload(){ return {total_cartons:gv('cargo_cartons'),gross_weight_kg:gv('cargo_gw'),total_cbm:gv('cargo_cbm'),vgm_t:gv('cargo_vgm'),cargo_description_cn:gv('cargo_desc'),loading_address:gv('loading_address')}; }
+function cargoPayload(){ return {total_cartons:gv('cargo_cartons'),gross_weight_kg:gv('cargo_gw'),total_cbm:gv('cargo_cbm'),vgm_t:gv('cargo_vgm'),cargo_description_cn:gv('cargo_desc'),loading_address:gv('loading_address'),container_qty:ctnQty}; }
 
 function collapseVeh(summary){
   $('step1').classList.add('done'); $('step1').classList.remove('required');
@@ -342,6 +327,11 @@ function collapseVeh(summary){
   $('actBadge').textContent='已提交'; $('actBadge').className='badge badge-green';
 }
 function toggleStep(n){ const c=$('step'+n); if(c.classList.contains('done')){ c.classList.remove('done'); $('sn'+n).classList.remove('done'); } }
+function normQty(v){ v=parseInt(v,10); return isNaN(v)||v<1?1:Math.min(v,30); }
+function setQty(v){ snap(); ctnQty=normQty(v); if($('ctn_qty')) $('ctn_qty').value=ctnQty; while(vehs.length<ctnQty) vehs.push({photos:[]}); if(vehs.length>ctnQty) vehs.length=ctnQty; renderVehs(); }
+function qtyChip(){ return `<div class="chip" style="display:flex;align-items:center;gap:6px;"><span>柜型 × 柜量 </span><b>${esc(ctnType||'—')} ×</b><button class="qty-btn" onclick="setQty(ctnQty-1)">−</button><input class="qty-in" id="ctn_qty" type="number" min="1" max="30" value="${ctnQty}" onchange="setQty(this.value)"><button class="qty-btn" onclick="setQty(ctnQty+1)">＋</button></div>`; }
+function photoUrl(p){ return p.preview||p.url||(p.stored?`${API}/file?token=${encodeURIComponent(token)}&type=upload&ref=${encodeURIComponent(p.stored)}`:''); }
+function photoGrid(i,ps){ ps=ps||[]; return ps.map((p,j)=>{const u=photoUrl(p), img=(p.mime||'').startsWith('image'); return `<div class="photo-cell">${img&&u?`<img src="${esc(u)}" alt="">`:'📄<br>'+esc(p.filename||'文件')}<div class="del-btn" onclick="delPhoto(${i},${j})">×</div></div>`;}).join('')+`<div class="photo-cell add" onclick="$('photo_${i}').click()"><div><div style="font-size:18px;">＋</div>照片/磅单</div></div>`; }
 
 function vehHtml(i, d={}){
   return `<div class="ctn-group" id="veh_${i}">
@@ -367,22 +357,16 @@ function vehHtml(i, d={}){
       <div class="form-field" style="margin:0;"><label class="form-label">挂车牌</label>
         <input class="form-input" id="trailer_${i}" value="${esc(d.trailer_plate)}" placeholder="挂车/拖架牌(选填)"></div>
     </div>
+    <div style="padding:0 12px 12px;"><label class="form-label">装柜照 / 磅单（每车一组，传完即存）</label><div class="photo-grid">${photoGrid(i,d.photos)}</div><input type="file" id="photo_${i}" multiple accept="image/*,.pdf" style="display:none;" onchange="uploadVehPhoto(${i},this.files);this.value=''"></div>
   </div>`;
 }
-function snap(){ vehs = vehs.map((v,i)=>$('veh_'+i)?{plate:gv('plate_'+i),driver:gv('driver_'+i),driver_phone:gv('phone_'+i),pickup_time:gv('pickup_'+i),cntr:gv('cntr_'+i).toUpperCase(),seal_no:gv('seal_'+i).toUpperCase(),weigh_kg:gv('weigh_'+i),trailer_plate:gv('trailer_'+i)}:v); }
+function snap(){ vehs = vehs.map((v,i)=>$('veh_'+i)?{plate:gv('plate_'+i),driver:gv('driver_'+i),driver_phone:gv('phone_'+i),pickup_time:gv('pickup_'+i),cntr:gv('cntr_'+i).toUpperCase(),seal_no:gv('seal_'+i).toUpperCase(),weigh_kg:gv('weigh_'+i),trailer_plate:gv('trailer_'+i),photos:v.photos||[]}:v); }
 function renderVehs(){ $('vehGroups').innerHTML = vehs.map((v,i)=>vehHtml(i,v)).join(''); }
-function addVeh(){ vehs.push({}); renderVehs(); }
-function delVeh(i){ snap(); vehs.splice(i,1); if(!vehs.length) vehs.push({}); renderVehs(); }
-
-function renderFiles(){
-  const mine = uploads.filter(u=>u.role==='trucking');
-  $('fileList').innerHTML = mine.map(u=>`
-    <div class="file-row"><span>${(u.mime||'').startsWith('image')?'🖼':'📄'}</span>
-      <span style="flex:1;font-weight:700;">${esc(u.filename)}</span>
-      <span style="color:#047857;font-size:10px;">${esc(String(u.uploaded_at).replace('T',' ').slice(5,16))} ✓</span></div>`).join('');
-  const b=$('upBadge');
-  if(mine.length){ b.textContent='✓ 已传 '+mine.length+' 份'; b.classList.remove('hidden'); }
-}
+function addVeh(){ setQty(ctnQty+1); }
+function delVeh(i){ snap(); vehs.splice(i,1); ctnQty=normQty(vehs.length); if($('ctn_qty')) $('ctn_qty').value=ctnQty; renderVehs(); }
+function delPhoto(i,j){ snap(); vehs[i].photos.splice(j,1); renderVehs(); }
+async function uploadVehPhoto(i,files){ snap(); let ok=0; for(const f of files){ if(f.size>8*1024*1024){ toast(f.name+' 超过 8MB'); continue; } const b64=await new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.readAsDataURL(f);}); try{ const r=await fetch(`${API}/upload`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,filename:`[车${i+1}]`+f.name,mime:f.type,data_base64:b64})}); const d=await r.json(); if(!r.ok||!d.ok){ toast(f.name+' 上传失败'); continue; } (vehs[i].photos=vehs[i].photos||[]).push({filename:f.name,mime:f.type,stored:d.file&&d.file.stored,uploaded_at:d.file&&d.file.uploaded_at,preview:b64}); ok++; }catch(e){ toast(f.name+' 网络错误'); } } if(ok){ renderVehs(); toast('✓ 车 '+(i+1)+' 已上传 '+ok+' 份'); } }
+function photoPayload(ps){ return (ps||[]).map(p=>({filename:p.filename,mime:p.mime,stored:p.stored,uploaded_at:p.uploaded_at})); }
 
 async function boot(){
   if(!token){ show('stateDead'); return; }
@@ -393,27 +377,27 @@ async function boot(){
   renderBillingEntry(d.billing || {});
   $('topBadge').textContent = s.shipment_no || '车队协同';
   $('bannerTitle').textContent = (s.shipment_no||'—') + ' — 拖车协同';
+  const td = s.trucking_detail || {};
+  ctnType = s.container_type || '';
+  ctnQty = normQty(firstVal([td.cargo_summary||{},td,s,d],['container_qty'])||1);
   const chips=[];
   if(s.pol) chips.push(`<div class="chip"><span>送港 </span><b>${esc(s.pol)}</b></div>`);
-  if(s.container_type) chips.push(`<div class="chip"><span>柜型 </span><b>${esc(s.container_type)}</b></div>`);
+  chips.push(qtyChip());
   if(s.factory_cargo_ready) chips.push(`<div class="chip"><span>货好 </span><b>${esc(fmtD(s.factory_cargo_ready))}</b></div>`);
   if(s.etd) chips.push(`<div class="chip"><span>ETD </span><b>${esc(fmtD(s.etd))}</b></div>`);
   $('chips').innerHTML = chips.join('');
   $('dlBox').innerHTML = `<a class="dl-btn" href="${API}/file?token=${encodeURIComponent(token)}&type=so" target="_blank">📋 <span style="flex:1;">托书 / Booking Instruction（含进港信息）</span><span style="color:#1a73e8;">下载 ↗</span></a>`;
   // 已提交过：预填 + 收起
-  const td = s.trucking_detail || {};
   renderCargo(s,d,td);
   const saved = Array.isArray(td.vehicles)?td.vehicles:(td.plate?[{plate:td.plate,driver:td.driver,driver_phone:td.driver_phone,pickup_time:td.pickup_time}]:[]);
   if(saved.length){
-    vehs = saved.map(v=>({plate:v.plate||'',driver:v.driver||'',driver_phone:v.driver_phone||'',pickup_time:v.pickup_time||'',cntr:v.cntr||'',seal_no:v.seal_no||'',weigh_kg:v.weigh_kg||'',trailer_plate:v.trailer_plate||''}));
+    vehs = saved.map(v=>({plate:v.plate||'',driver:v.driver||'',driver_phone:v.driver_phone||'',pickup_time:v.pickup_time||'',cntr:v.cntr||'',seal_no:v.seal_no||'',weigh_kg:v.weigh_kg||'',trailer_plate:v.trailer_plate||'',photos:Array.isArray(v.photos)?v.photos:[]}));
+    setQty(ctnQty);
     if(td.remarks) $('remarks').value = td.remarks;
-    renderVehs();
     // 自己提交过才收起；柜表派生的预填（source=container_bookings）保持展开待补
     if(td.source==='trucking_booking_link')
-      collapseVeh(saved.length+' 辆车已提交 · '+saved.map(v=>v.plate).filter(Boolean).join(' / '));
-  } else { vehs=[{}]; renderVehs(); }
-  uploads = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
-  renderFiles();
+      collapseVeh(vehs.length+' 辆车已提交 · '+vehs.map(v=>v.plate).filter(Boolean).join(' / '));
+  } else { vehs=[]; setQty(ctnQty); }
   // Restore trucking-confirm state from localStorage (idempotent reload)
   const saved_tc = localStorage.getItem('tc_'+token);
   if(saved_tc){ try{ const d=JSON.parse(saved_tc); collapseStep0(d.summary||('CNY '+d.amount)); }catch(_){} }
@@ -453,10 +437,10 @@ async function confirmBooking(){
 
 async function save(){
   snap();
-  const vehicles = vehs.filter(v=>v.plate||v.driver_phone);
+  const vehicles = vehs.map(v=>({...v,photos:photoPayload(v.photos)}));
   if(!vehicles.length){ toast('至少一辆车需填车牌和司机电话'); return; }
-  const bad = vehs.find(v=>(v.plate||v.driver||v.driver_phone||v.pickup_time)&&(!v.plate||!v.driver_phone));
-  if(bad){ toast('车牌号和司机电话都要填'); return; }
+  const bad = vehicles.find(v=>!v.plate||!v.driver_phone);
+  if(bad){ toast('每辆车的车牌号和司机电话都要填'); return; }
   $('btnSubmit').disabled = true;
   try{
     const r = await fetch(`${API}/trucking-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -478,20 +462,6 @@ async function save(){
   }catch(e){ $('btnSubmit').disabled=false; toast('网络错误，请重试'); }
 }
 
-$('fileInput')?.addEventListener('change', async e=>{
-  for(const f of e.target.files){
-    if(f.size > 8*1024*1024){ toast(f.name+' 超过 8MB'); continue; }
-    const b64 = await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(f); });
-    try{
-      const r = await fetch(`${API}/upload`,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token,filename:f.name,mime:f.type,data_base64:b64})});
-      const d = await r.json();
-      if(!r.ok||!d.ok){ toast(f.name+' 上传失败: '+(d.error||'')); continue; }
-      uploads.push(d.file); renderFiles(); toast('✓ '+f.name+' 已上传');
-    }catch(err){ toast(f.name+' 网络错误'); }
-  }
-  e.target.value='';
-});
 $('cargo_gw')?.addEventListener('input', calcVgm);
 
 boot();
