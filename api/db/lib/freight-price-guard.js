@@ -110,6 +110,47 @@ function moneyText(v, cur) {
   return prefix + Math.round(v).toLocaleString("zh-CN") + "/柜";
 }
 
+function buildFeeDisputeMessage(line) {
+  var verdict = line && line.verdict;
+  var disputable = verdict === "warn" || verdict === "alert" || verdict === "low";
+  if (!disputable) return null;
+  var history = line.history || {};
+  var count = num(history.count) || 0;
+  var unitCost = num(line.unit_cost);
+  var median = num(history.median);
+  if (count < 3 || unitCost === null || median === null || median <= 0) return null;
+  var cur = line.currency || "CNY";
+  var feeName = clean(line.feeName || line.cost_category || "该费目");
+  if (verdict === "low") {
+    return "【核对提示】" + feeName + " 报价 " + moneyText(unitCost, cur) +
+      " 低于历史中位 " + moneyText(median, cur) + "，请确认是否漏项或口径不同。";
+  }
+  var robustLow = num(history.p25);
+  if (robustLow === null) robustLow = num(history.robust_min);
+  if (robustLow === null) robustLow = num(history.min);
+  var pct = Math.round((unitCost - median) / median * 100);
+  var tone = verdict === "alert" ? "疑似显著偏高" : "略高请核对";
+  var lowText = robustLow === null ? "" : "历史最低 " + moneyText(robustLow, cur) + "，";
+  var rawMin = num(history.min);
+  var rawMinText = rawMin !== null && robustLow !== null && rawMin !== robustLow ? "，原始最低 " + moneyText(rawMin, cur) : "";
+  return "【价格异议】" + feeName + " 贵司报价 " + moneyText(unitCost, cur) +
+    "，高于我方历史中位 " + moneyText(median, cur) + "（" + lowText + "近" + count + "票" + rawMinText +
+    "），" + tone + "，偏高约 " + pct + "%。请核对是否笔误或说明加价理由；无合理说明我方可不接受此项。";
+}
+
+function withDisputeFields(line) {
+  var disputable = line.verdict === "warn" || line.verdict === "alert" || line.verdict === "low";
+  return { ...line, disputable: disputable, dispute_message: buildFeeDisputeMessage(line) };
+}
+
+function buildDisputeSummary(perFee) {
+  var messages = (perFee || []).filter((x) => x.dispute_message).map((x) => x.dispute_message);
+  if (!messages.length) return null;
+  return "关于本票港杂费用，以下项目与我方历史价存在偏差：\n" +
+    messages.map((m, i) => (i + 1) + ". " + m).join("\n") +
+    "\n请贵司核对回复。";
+}
+
 function buildMessage(verdict, stats, unitCost, cur, scarce) {
   if (verdict === "insufficient") return "历史不足 " + stats.count + " 条，仅供参考；请人工确认";
   var note = scarce ? "样本较少；" : "";
@@ -279,9 +320,10 @@ export async function computeHistoryGuard(pool, input) {
       var cur = currency(line.currency || input.currency);
       var category = line.cost_category || normalizeFeeCategory(line.feeName);
       var samples = collectFeeLineSamples(activeRows.rows, category).filter((s) => currency(s.currency) === cur);
-      return summarizeFeeLine({ ...line, cost_category: category }, samples, cur);
+      return withDisputeFields(summarizeFeeLine({ ...line, cost_category: category }, samples, cur));
     });
-    return summarizePortFeeGuard(perFee);
+    var portGuard = summarizePortFeeGuard(perFee);
+    return { ...portGuard, dispute_summary: buildDisputeSummary(perFee) };
   }
   var samples = collectBillSamples(activeRows.rows, ctx, input.fee_item)
     .concat(collectBillSamples(legacyRows.rows, ctx, input.fee_item))
