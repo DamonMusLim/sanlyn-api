@@ -202,7 +202,7 @@ textarea.form-input { resize: vertical; min-height: 60px; }
         <div class="step-num" id="sn0">✅</div>
         <div style="min-width:0;">
           <div class="step-title">接单确认 / Confirm Booking</div>
-          <div class="step-sub">填写拖车费报价金额 · 确认接单后可填写车辆信息</div>
+          <div class="step-sub">确认接单后可填写车辆信息 · 拖车费在账单中查看</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
@@ -213,25 +213,7 @@ textarea.form-input { resize: vertical; min-height: 60px; }
     </div>
     <div class="step-body">
       <div class="section">
-        <div class="grid2" style="margin-bottom:10px;">
-          <div class="form-field" style="margin:0;">
-            <label class="form-label">拖车费 <span class="req">*</span></label>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <input class="form-input" id="tc_amount" type="number" min="0" step="1" placeholder="如 4700">
-              <select id="tc_currency" style="border:1.5px solid #c8cdd6;border-radius:6px;padding:8px 8px;font-size:13px;background:#fff;">
-                <option value="CNY">CNY</option>
-                <option value="USD">USD</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-field" style="margin:0;">
-            <label class="form-label">计费方式</label>
-            <select id="tc_basis" class="form-input">
-              <option value="per_bl">按票</option>
-              <option value="per_container">按柜</option>
-            </select>
-          </div>
-        </div>
+        <div class="badge badge-amber" style="margin-bottom:10px;">⏳ 待确认接单</div>
         <div class="form-field">
           <label class="form-label">备注（可选）</label>
           <input class="form-input" id="tc_note" type="text" placeholder="如：含卸货费 / 超长另议">
@@ -408,7 +390,7 @@ async function boot(){
   } else { vehs=[]; setQty(ctnQty); }
   // Restore trucking-confirm state from localStorage (idempotent reload)
   const saved_tc = localStorage.getItem('tc_'+token);
-  if(saved_tc){ try{ const d=JSON.parse(saved_tc); collapseStep0(d.summary||('CNY '+d.amount)); }catch(_){} }
+  if(saved_tc){ try{ const d=JSON.parse(saved_tc); collapseStep0(d.summary||'已接单'); }catch(_){} }
 
   show('stateForm');
 }
@@ -417,27 +399,24 @@ function collapseStep0(summary){
   $('step0').classList.add('done'); $('step0').classList.remove('required');
   $('sn0').textContent='✅'; $('sn0').classList.add('done');
   $('sum0').textContent='✓ '+summary;
-  $('badge0').style.display='none';
+  $('badge0').className='badge badge-green';
+  $('badge0').textContent='已接单';
 }
 
 async function confirmBooking(){
-  const amount = parseFloat(($('tc_amount')?.value||'').trim());
-  if(!amount||amount<=0){ toast('请输入拖车费金额'); return; }
-  const currency = $('tc_currency')?.value||'CNY';
-  const charge_basis = $('tc_basis')?.value||'per_bl';
   const note = ($('tc_note')?.value||'').trim();
   $('btnConfirmBooking').disabled=true;
   try{
     const r=await fetch('/api/db/booking-collab/trucking-confirm',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token, amount, currency, charge_basis, note: note||null})
+      body:JSON.stringify({token, note: note||null})
     });
     const d=await r.json();
     $('btnConfirmBooking').disabled=false;
     if(!r.ok||!d.ok){ toast(d.error||'接单失败'); return; }
-    const summary=(d.already?'已接单（已存）':'接单成功')+' · '+currency+' '+amount.toLocaleString();
+    const summary=d.already?'已接单（已存）':'接单成功';
     $('confirmMsg').textContent='✓ '+summary; $('confirmMsg').style.display='block';
-    localStorage.setItem('tc_'+token, JSON.stringify({amount,currency,summary}));
+    localStorage.setItem('tc_'+token, JSON.stringify({summary}));
     collapseStep0(summary);
     toast(d.already?'已接单，无需重复提交':'✓ 接单确认已保存');
   }catch(e){ $('btnConfirmBooking').disabled=false; toast('网络错误，请重试'); }
