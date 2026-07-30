@@ -539,7 +539,11 @@ async function handleValidate(req, res, pool) {
         sheet.containers_live = []; sheet.containers_detail = []; sheet.factory_loading_done = {};
         sheet.sailings = []; sheet.scope_missing = true;
       }
-      return sanitizeSheet(sheet, { role, field_profile: meta.field_profile || null, plan: planRes.rows[0] });
+        // 红线扩展(2026-07-29): 车队/报关行与工厂同样保留 orders 却未删销售价, 补齐剥离; 只有客户可见订单销售 unit_price(=她自己采购价), 内部走登录态
+      if (role === "trucking_booking" || role === "broker_booking") {
+        (sheet.orders || []).forEach(o => (o.items || []).forEach(it => { delete it.unit_price; delete it.amount; delete it.declare_amount; }));
+      }
+    return sanitizeSheet(sheet, { role, field_profile: meta.field_profile || null, plan: planRes.rows[0] });
     })(),
     ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
     factory_scope: factoryScope,
