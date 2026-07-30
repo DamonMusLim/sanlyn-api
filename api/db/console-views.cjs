@@ -27,6 +27,21 @@ function cleanLimit(value) {
   return Math.min(parsed, 500);
 }
 
+// 拍板结论分流(中文判断只在 JS 做,SQL 只收参数,避开 SQL_ASCII)
+const _TERMINAL = ["自己关的", "别再问", "不用管", "不用处理", "不做", "放弃", "取消",
+                   "知道了", "记下", "已解决", "完成", "关闭", "驳回", "算了"];
+const _EXEC = ["去执行", "补录", "跟进", "处理", "申报", "修改", "下架", "降价", "联系",
+               "照做", "同意", "上吧", "开吧", "先做", "改成"];
+const _OWNER = { finance: "安娜", 报关: "辛迪", 退税: "瑞塔", 宠物店: "诺拉",
+                 petshop: "诺拉", "petshop-pricing": "诺拉", infra: "Ocean", code: "Ocean" };
+function decideOutcome(decision, task) {
+  const d = String(decision || "");
+  if (_TERMINAL.some((k) => d.includes(k))) return { kind: "done", holder: null };
+  const who = _OWNER[task && task.domain] || _OWNER[task && task.task_type] || "Lyn";
+  if (_EXEC.some((k) => d.includes(k))) return { kind: "assign", holder: who };
+  return { kind: "assign", holder: "Lyn" };   // 认不出 → 转 Lyn,绝不留在 Damon 也绝不丢
+}
+
 const router = express.Router();
 
 // -- data source center --
@@ -347,7 +362,7 @@ router.get("/api/console/decisions", async (req, res) => {
               COALESCE(current_holder,'') AS current_holder, steps
          FROM tasks
         WHERE status IN ('open','doing')
-          AND (level='L4' OR current_holder='Damon' OR (steps ? 'options'))
+          AND COALESCE(damon_feedback,'') = '' AND (level='L4' OR current_holder='Damon' OR (steps ? 'options'))
         ORDER BY (steps ? 'options') DESC, (level='L4') DESC, updated_at DESC
         LIMIT 50`);
     return res.status(200).json({ success: true, count: result.rowCount, data: result.rows });
@@ -362,18 +377,28 @@ router.post("/api/console/tasks/:id/decide", require("express").json(), async (r
     const note = String((req.body && req.body.note) || "").slice(0, 1000);
     if (req.body && req.body.revoke) {
       const p2 = getPool();
-      await p2.query("UPDATE tasks SET damon_feedback=NULL, next_action='decision revoked' WHERE id=$1", [id]);
+      await p2.query("UPDATE tasks SET damon_feedback=NULL, next_action='待拍板', " +
+        "status='open', closed_at=NULL, current_holder='Damon', updated_at=now() WHERE id=$1", [id]);
       await p2.query("INSERT INTO task_events(task_id,event_type,actor_type,actor_id,note) VALUES($1,'damon_decision_revoked','damon','damon','revoked by Damon')", [id]);
       return res.status(200).json({ success: true, revoked: true });
     }
     if (!id || !choice) return res.status(400).json({ success: false, error: "缺 choice" });
+    const _t = (await getPool().query(
+      "SELECT domain, task_type FROM tasks WHERE id=$1", [id])).rows[0] || {};
+    const _oc = decideOutcome(choice, _t);
     const pool = getPool();
     await pool.query(
       "INSERT INTO task_events(task_id,event_type,actor_type,actor_id,note) VALUES($1,'damon_decision','damon','damon',$2)",
       [id, "拍板:" + choice + (note ? " | 备注:" + note : "")]);
     await pool.query(
-      "UPDATE tasks SET damon_feedback=$2, next_action='已拍板:'||$2, updated_at=now() WHERE id=$1",
-      [id, choice]);
+      "UPDATE tasks SET damon_feedback=$2, next_action=$3, status=$4::text, " +
+      "closed_at=CASE WHEN $4::text='done' THEN now() ELSE closed_at END, " +
+      "current_holder=$5, current_holder_role=$6, updated_at=now() WHERE id=$1",
+      [id, choice,
+       (_oc.kind === "done" ? "已拍板:" : "已拍板:") + choice +
+         (_oc.kind === "assign" ? "(交" + _oc.holder + "执行)" : ""),
+       _oc.kind === "done" ? "done" : "open",
+       _oc.holder, _oc.kind === "assign" ? "execute" : null]);
     return res.status(200).json({ success: true });
   } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
 });
@@ -387,12 +412,12 @@ router.get("/api/damon/today-summary", async (req, res) => {
   try {
     const d = await getPool().query(
       `SELECT id, title, COALESCE(level,'') AS level, COALESCE(domain,'') AS domain
-         FROM tasks WHERE status IN ('open','doing') AND (level='L4' OR current_holder='Damon')
+         FROM tasks WHERE status IN ('open','doing') AND COALESCE(damon_feedback,'') = '' AND (level='L4' OR current_holder='Damon')
         ORDER BY (steps ? 'options') DESC, updated_at DESC LIMIT 5`);
     const c = await getPool().query(
       `SELECT COUNT(*) FILTER (WHERE status='done' AND COALESCE(closed_at,updated_at)::date=CURRENT_DATE)::int AS done_today,
               COUNT(*) FILTER (WHERE status IN ('open','doing'))::int AS active,
-              COUNT(*) FILTER (WHERE status IN ('open','doing') AND (level='L4' OR current_holder='Damon'))::int AS pending_damon
+              COUNT(*) FILTER (WHERE status IN ('open','doing') AND COALESCE(damon_feedback,'') = '' AND (level='L4' OR current_holder='Damon'))::int AS pending_damon
          FROM tasks`);
     return res.status(200).json({ success: true, counts: c.rows[0], top: d.rows,
       link: "https://damon.sanlyn.cn/center" });
@@ -519,7 +544,7 @@ router.get("/api/console/onecard", async (req, res) => {
              to_char(t.created_at,'MM-DD HH24:MI') AS created,
              round(EXTRACT(EPOCH FROM (now()-t.updated_at))/86400)::int AS idle_days
         FROM tasks t
-       WHERE t.status IN ('open','doing') AND (t.level='L4' OR t.current_holder='Damon')
+       WHERE t.status IN ('open','doing') AND COALESCE(t.damon_feedback,'') = '' AND (t.level='L4' OR t.current_holder='Damon')
          AND COALESCE(t.task_type,'') NOT LIKE 'Damon%'
        ORDER BY (t.steps ? 'options') DESC, t.serial_no ASC`);
     return res.status(200).json({ success: true, total: r.rowCount, cards: r.rows });
