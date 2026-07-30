@@ -4,6 +4,7 @@ import { getPool } from "../db.js";
 import { cleanString } from "./factory-portal-utils.js";
 import { money } from "./customs-collab-status.js";
 import { rangeFromQuery, requireFinance, resolveFactory, rateLimit, json, failClosed } from "./customs-collab-shared.js";
+import { scrubFactoryCustomsPayload } from "./lib/collab-field-profiles.js";
 
 export async function fetchRows(pool, opts) {
   const params = [opts.start, opts.end];
@@ -249,8 +250,6 @@ async function handleList(req, res) {
 }
 
 function factoryRow(r) {
-  // 差额审核门(2026-07-13): 无人工确认且无fer报关申报额 = OLI兜底,行必须带未锚定标记
-  const amountAnchored = r.manual_expected_amount != null || Number(r.declare_amount || 0) > 0;
   return {
     customs_no: r.customs_no,
     contract_no: r.contract_no,
@@ -259,8 +258,8 @@ function factoryRow(r) {
     factory_code: r.factory_code,
     factory_name: r.factory_name,
     status: r.status,
-    expected_amount: r.manual_expected_amount ?? null,  // OLI出局(Damon 07-14):无报关锚定返null=显待报关,绝不兜底OLI
     factory_expected_amount: r.factory_expected_amount,
+    needs_internal_fill: r.factory_expected_amount == null,
     received_amount: r.received_amount,
     uploaded_amount: r.uploaded_amount,
     valid_invoice_count: r.valid_invoice_count,
@@ -273,9 +272,7 @@ function factoryRow(r) {
     paid_amount: r.paid_amount || 0,
     slip_count: r.slip_count || 0,
     slips: Array.isArray(r.slip_details) ? r.slip_details : [],
-    diff_amount: (Number(r.manual_expected_amount) || 0) - (Number(r.uploaded_amount) || 0),
     last_event_at: r.last_event_at,
-    amount_anchored: amountAnchored,
   };
 }
 
@@ -288,13 +285,13 @@ async function handleFactoryList(req, res) {
   const range = rangeFromQuery(req.query || {});
   if (!range) return json(res, 400, { error: "from/to 月份格式应为 YYYY-MM" });
   const rows = await fetchRows(pool, { ...range, factoryCode: scope.factory.code, status: cleanString(req.query.status), keyword: cleanString(req.query.keyword), includeSlipDetails: true });
-  return res.json({
+  return res.json(scrubFactoryCustomsPayload({
     success: true,
     factory: scope.factory,
     period: { from: range.from, to: range.to },
     summary: summarize(rows),
     rows: rows.map(factoryRow),
-  });
+  }));
 }
 
 export { handleList, handleFactoryList };

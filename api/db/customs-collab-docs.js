@@ -2,6 +2,7 @@
 import { getPool } from "../db.js";
 import { cleanString } from "./factory-portal-utils.js";
 import { resolveFactory, assertFactoryCustoms } from "./customs-collab.js";
+import { scrubFactoryCustomsPayload } from "./lib/collab-field-profiles.js";
 
 const RATE_WINDOW_MS = 5 * 60 * 1000;
 const RATE_MAX = 30;
@@ -65,6 +66,29 @@ function lineFromItem(item, i) {
     unit_price: unitPrice,
     amount,
   };
+}
+
+function factoryGoodsLineFromItem(item, i) {
+  const ctn = num(item?.qty_ctn);
+  const qty = ctn ?? num(item?.qty2 ?? item?.qty1 ?? item?.qty);
+  return {
+    item_id: item?.id || null,
+    name: cleanString(item?.name_cn || item?.name) || `报关项${i + 1}`,
+    spec: cleanString(item?.spec) || null,
+    hs_code: cleanString(item?.hs_code || item?.hs) || null,
+    unit: ctn !== null ? "箱" : unit(item?.unit2 || item?.unit1 || item?.unit),
+    qty,
+  };
+}
+
+export function factoryGoodsLinesFromItems(rawItems, sellerRaw, multiFactory) {
+  let items = Array.isArray(rawItems) ? rawItems : [];
+  if (multiFactory) {
+    items = items.filter((x) => containsRegion(sellerRaw || {}, regionWord(x?.source_region)));
+    if (!items.length) return { lines: [], anchored: false };
+  }
+  const lines = items.map(factoryGoodsLineFromItem).filter((l) => l.name || l.qty !== null);
+  return { lines, anchored: lines.length > 0 };
 }
 
 export function invoiceLinesFromItems(rawItems, sellerRaw, multiFactory) {
@@ -361,7 +385,7 @@ export async function handleFactoryDoc(req, res) {
     if (kind === "packing") {
       const lines = await packingLines(client, group.ids);
       const totals = lines.reduce((t, l) => ({ ctns: num(t.ctns + (Number(l.ctns) || 0)), nw: num(t.nw + (Number(l.nw) || 0)), gw: num(t.gw + (Number(l.gw) || 0)), cbm: num(t.cbm + (Number(l.cbm) || 0)) }), { ctns: 0, nw: 0, gw: 0, cbm: 0 });
-      return res.json({ success: true, doc: {
+      return res.json(scrubFactoryCustomsPayload({ success: true, doc: {
         kind: "packing",
         order_nos: orderNos.join(",") || null,
         po_no: group.poNo || order?.customer_po || null,
@@ -370,7 +394,7 @@ export async function handleFactoryDoc(req, res) {
         containers: await packingContainers(client, order?.bl_no, orderNos),
         lines,
         totals,
-      } });
+      } }));
     }
     const party = await parties(client, order, scope.factory.code);
     const spread = await factorySpread(client, customsNo, ci.contractNo || st.contract_no || order?.contract_no);
@@ -383,16 +407,15 @@ export async function handleFactoryDoc(req, res) {
       rawItems = anchored ? filtered : [];
     }
 
-    let lines = anchored ? rawItems.map(lineFromItem) : await oliLines(client, group.ids, rawItems[0]?.unit2 || rawItems[0]?.unit1);
-    lines = lines.filter((l) => l.name || l.amount !== null || l.qty !== null);
-    const linesTotal = num(lines.reduce((s, l) => s + (Number(l.amount) || 0), 0)) || 0;
-    const itemAmounts = anchored ? rawItems.map((x) => Number(x?.amount ?? x?.amt ?? x?.total)).filter(Number.isFinite) : [];
-    const customsTotal = itemAmounts.length ? num(itemAmounts.reduce((s, v) => s + v, 0)) : null;
-    const manualTotal = num(st.manual_expected_amount);
-    const total = manualTotal ?? customsTotal;
-    const totalSource = manualTotal !== null ? "manual" : (customsTotal !== null ? "customs_items" : null);
+    const purchaseLines = await oliLines(client, group.ids, rawItems[0]?.unit2 || rawItems[0]?.unit1);
+    const goods = anchored ? factoryGoodsLinesFromItems(rawItems, party.sellerRaw, false) : {
+      anchored: false,
+      lines: purchaseLines.map((l, i) => factoryGoodsLineFromItem(l, i)),
+    };
+    const purchaseAmounts = purchaseLines.map((x) => Number(x.amount)).filter(Number.isFinite);
+    const factoryExpectedAmount = purchaseAmounts.length ? num(purchaseAmounts.reduce((s, v) => s + v, 0)) : null;
 
-    return res.json({ success: true, doc: {
+    return res.json(scrubFactoryCustomsPayload({ success: true, doc: {
       kind,
       buyer: party.buyer,
       seller: party.seller,
@@ -400,13 +423,12 @@ export async function handleFactoryDoc(req, res) {
       po_no: group.poNo || order?.customer_po || null,
       factory_ref: order?.contract_no || st.contract_no || ci.contractNo || null,
       doc_date: ci.exportDate || dateOnly(order?.created_at) || new Date().toISOString().slice(0, 10),
-      lines,
-      lines_total: linesTotal,
-      total,
-      anchored,
+      lines: goods.lines,
+      factory_expected_amount: factoryExpectedAmount,
+      needs_internal_fill: factoryExpectedAmount === null,
+      anchored: goods.anchored,
       item_source: ci.item_source,
-      total_source: totalSource,
-    } });
+    } }));
   } catch (e) {
     return json(res, e.status || 500, { error: e.status === 403 ? "Forbidden" : e.message });
   } finally {

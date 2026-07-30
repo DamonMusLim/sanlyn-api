@@ -26,6 +26,15 @@ const FORBIDDEN_KEYS = new Set([
   "freight_term", "plan_freight_term",
 ]);
 
+const FACTORY_CUSTOMS_FORBIDDEN_KEYS = new Set([
+  "unit_price", "unit_price_ex", "amount", "declaration_amount", "declare_amount",
+  "effective_expected_amount", "system_expected_amount", "manual_expected_amount",
+  "expected_amount", "diff_amount", "sale_amount", "sales_amount", "gross_profit",
+  "baoguan_amount", "lines_total", "total_incl",
+]);
+
+const FACTORY_CUSTOMS_FORBIDDEN_TEXT = ["销售", "毛利"];
+
 const COUNTERPARTY_KEYS = new Set([
   "counterparty", "counterparty_name", "counterparty_code", "counterparty_company_code",
   "payer_company_code", "supplier_company_code", "customer_code", "customer_company_code",
@@ -152,6 +161,10 @@ export function visibleBillLines(lines, { field_profile, role, plan, resolvedPar
   });
 }
 
+export function scrubFactoryCustomsPayload(payload) {
+  return redactFactoryCustomsDeep(clonePlain(payload));
+}
+
 function lineBelongsToProfile(line, profile, partyCode) {
   const direction = clean(line.direction || line.line_side).toLowerCase();
   if (profile.directions.length && !profile.directions.includes(direction)) return false;
@@ -199,6 +212,23 @@ function redactDeep(value, opts = {}) {
       continue;
     }
     redactDeep(value[key], opts);
+  }
+  return value;
+}
+
+function redactFactoryCustomsDeep(value) {
+  if (Array.isArray(value)) {
+    value.forEach(redactFactoryCustomsDeep);
+    return value;
+  }
+  if (!value || typeof value !== "object") return value;
+  for (const key of Object.keys(value)) {
+    const lower = key.toLowerCase();
+    if (FACTORY_CUSTOMS_FORBIDDEN_KEYS.has(lower) || FACTORY_CUSTOMS_FORBIDDEN_TEXT.some((word) => key.includes(word))) {
+      delete value[key];
+      continue;
+    }
+    redactFactoryCustomsDeep(value[key]);
   }
   return value;
 }

@@ -3,8 +3,9 @@
 import { getPool } from "../db.js";
 import { cleanString } from "./factory-portal-utils.js";
 import { money, ensureCustomsStatus, uploadedForCustoms } from "./customs-collab-status.js";
-import { factorySpread, loadCustomsItems, invoiceLinesFromItems } from "./customs-collab-docs.js";
+import { factorySpread, loadCustomsItems, factoryGoodsLinesFromItems } from "./customs-collab-docs.js";
 import { resolveFactory, requireFinance, failClosed, assertFactoryCustoms, fileUrl, json } from "./customs-collab-shared.js";
+import { scrubFactoryCustomsPayload } from "./lib/collab-field-profiles.js";
 
 async function handleDetail(req, res) {
   const pool = getPool();
@@ -25,7 +26,7 @@ async function handleDetail(req, res) {
   try {
     const st = factoryMode ? await assertFactoryCustoms(client, scope.factory.code, customsNo) : await ensureCustomsStatus(client, customsNo, requestedFactoryCode);
     const up = await uploadedForCustoms(client, customsNo, st.factory_code);
-    const effective = money(st.manual_expected_amount) ?? null;  // OLI出局(Damon 07-14):模板上限只认报关锚定,无锚返null,不从system/OLI兜底
+    const effective = factoryMode ? null : (money(st.manual_expected_amount) ?? null);  // 工厂侧不回读内部/报关派生应开金额
 
     const fer = await client.query(
       `SELECT fer.customs_no, fer.contract_no, MIN(fer.export_date) AS export_date,
@@ -66,7 +67,7 @@ async function handleDetail(req, res) {
     const row = fer.rows[0] || {};
     const rawItems = Array.isArray(row.items) ? row.items : [];
     const items = factoryMode
-      ? rawItems.map((x) => ({ name_cn: x.name_cn || x.name || null, qty1: x.qty1 || null, qty2: x.qty2 || null }))
+      ? factoryGoodsLinesFromItems(rawItems, null, false).lines
       : rawItems;
 
     let invoiceTemplate;
@@ -166,26 +167,27 @@ async function handleDetail(req, res) {
       const isDg = /-DG-/i.test(mergedOrderNos || order?.order_no || "");
       const spread = await factorySpread(client, customsNo, st.contract_no || row.contract_no || order?.contract_no);
       const ciTpl = await loadCustomsItems(client, customsNo);
-      const anchoredTpl = invoiceLinesFromItems(ciTpl.items, sellerRow, spread.length > 1);
-      const lineResult = { rows: [] };  // 护栏(Damon 07-14):报关明细缺失绝不兜底OLI,前端显"待报关明细导入"
+      const anchoredTpl = factoryGoodsLinesFromItems(ciTpl.items, sellerRow, spread.length > 1);
+      const anchorResult = orderIds.length
+        ? await client.query(
+            `SELECT ROUND(COALESCE(NULLIF(SUM(oli.factory_subtotal),0),
+                           NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0),
+                           NULLIF(SUM(oli.qty_ctn*p.factory_price),0))::numeric,2) AS factory_expected_amount
+               FROM order_line_items oli
+               LEFT JOIN products p ON p.id=oli.product_id
+              WHERE oli.order_id = ANY($1::int[])`,
+            [orderIds]
+          )
+        : { rows: [] };
+      const factoryExpectedAmount = money(anchorResult.rows[0]?.factory_expected_amount);
 
-      const unitMap = { CTN: "箱", PCS: "件", KG: "千克", BAG: "包", SET: "套" };
-      const lines = anchoredTpl.anchored ? anchoredTpl.lines : lineResult.rows.map((l) => ({ name: l.name || null, spec: l.spec || null,
-        unit: unitMap[String(l.unit || "").toUpperCase()] || l.unit || "箱", qty: money(l.qty) || 0,
-        amount: money(l.amount) || 0, unit_price_ex: money(l.qty) ? money((Number(l.amount) || 0) / Number(l.qty)) : null,
-        vat_rate: Number(l.vat_rate) || 0.13 }));
-      // 价税合计口径与报关申报总额比;+1元容差吸收税前换算的分位进位差
-      const linesTotal = lines.reduce((sum, l) => sum + (Number(l.amount) || 0) * (1 + (Number(l.vat_rate) || 0)), 0);
-      const baoguanAmount = money(row.fob_cny);
-
-      invoiceTemplate = { buyer, seller, lines, order_no: mergedOrderNos || order?.order_no || null,
-        po_no: order?.customer_po || null, factory_ref: order?.contract_no || null, baoguan_amount: baoguanAmount,
-        lines_anchored: anchoredTpl.anchored, needs_customs_import: !anchoredTpl.anchored, over_baoguan: baoguanAmount !== null && linesTotal > baoguanAmount + 1,
-        total_incl: anchoredTpl.anchored ? (money(linesTotal) || effective || null) : (effective || null) };
-      delete invoiceTemplate.baoguan_amount;
+      invoiceTemplate = { buyer, seller, lines: anchoredTpl.lines, order_no: mergedOrderNos || order?.order_no || null,
+        po_no: order?.customer_po || null, factory_ref: order?.contract_no || null,
+        factory_expected_amount: factoryExpectedAmount, needs_internal_fill: factoryExpectedAmount === null,
+        lines_anchored: anchoredTpl.anchored, needs_customs_import: !anchoredTpl.anchored };
     }
 
-    return res.json({
+    const payload = {
       success: true,
       factory: factoryMode ? scope.factory : undefined,
       customs: {
@@ -196,10 +198,12 @@ async function handleDetail(req, res) {
         status: st.status,
         system_expected_amount: factoryMode ? undefined : money(st.system_expected_amount),
         manual_expected_amount: factoryMode ? undefined : money(st.manual_expected_amount),
-        effective_expected_amount: effective,
+        effective_expected_amount: factoryMode ? undefined : effective,
+        factory_expected_amount: factoryMode ? invoiceTemplate?.factory_expected_amount : undefined,
+        needs_internal_fill: factoryMode ? invoiceTemplate?.needs_internal_fill : undefined,
         uploaded_amount: up.uploaded_amount,
         valid_invoice_count: up.valid_invoice_count,
-        diff_amount: effective === null ? null : money(effective - up.uploaded_amount),
+        diff_amount: factoryMode || effective === null ? undefined : money(effective - up.uploaded_amount),
       },
       items,
       invoice_template: invoiceTemplate,
@@ -213,7 +217,8 @@ async function handleDetail(req, res) {
         file_url: fileUrl(r),
       })),
       events: ev.rows,
-    });
+    };
+    return res.json(factoryMode ? scrubFactoryCustomsPayload(payload) : payload);
   } catch (e) {
     return json(res, e.status || 500, { error: e.message });
   } finally {
