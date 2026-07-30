@@ -254,6 +254,7 @@ export async function importCostPreview(pool, input) {
   var carrierMap = await loadCarrierMap(pool);
   var ctx = {
     bl_no: pick(plan.bl_no, input.bl_no),
+    shipping_plan_id: pick(plan.id, plan._id, input.shipping_plan_id),
     pol: normPort(pick(plan.pol, raw.pol)),
     pod: normPort(pick(plan.pod, raw.pod)),
     carrier: normCarrier(pick(plan.carrier_code, plan.shipping_line, raw.carrier, raw.shippingLine), carrierMap, pick(plan.bl_no, input.bl_no)),
@@ -299,6 +300,7 @@ export async function importCostPreview(pool, input) {
       return { ...item, guard: { verdict: "insufficient", count: 0, message: "历史守卫查询失败·仅供参考", error: e.message, historySamples: [] } };
     }
   }));
+  items = await attachSaleSuggestions(pool, items, ctx);
   var rateComparison = await buildRateComparison(pool, {
     pol: ctx.pol.raw,
     pod: ctx.pod.raw,
@@ -313,4 +315,87 @@ export async function importCostPreview(pool, input) {
     warnings: items.flatMap((x) => x.warnings || []),
     unmatched: items.filter((x) => x.status === "missing"),
   };
+}
+
+async function attachSaleSuggestions(pool, items, ctx) {
+  var feeItems = [...new Set((items || []).map((x) => x.fee_item).filter(Boolean))];
+  if (!feeItems.length) return items;
+  var customer = clean(ctx.customer_company_code);
+  if (!customer || !ctx.pol.norm || !ctx.pod.norm || !ctx.containerType) {
+    return items.map((item) => ({ ...item, sale: null, sale_label: "待你定" }));
+  }
+  var [fixedRows, dnaRows] = await Promise.all([
+    pool.query(
+      `SELECT bl_no, customer_company_code, pol, pod, container_type, fee_item,
+              sale_amount, sale_currency, updated_at
+         FROM ocean_sale_prices
+        WHERE customer_company_code = $1
+          AND container_type = $2
+          AND fee_item = ANY($3)
+          AND sale_amount IS NOT NULL
+        ORDER BY updated_at DESC NULLS LAST
+        LIMIT 100`,
+      [customer, ctx.containerType, feeItems]
+    ).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT customer_company_code, pol, pod, container_type, fee_item,
+              suggested_sale, suggested_currency, sample_count, updated_at
+         FROM ocean_sale_price_dna
+        WHERE customer_company_code = $1
+          AND container_type = $2
+          AND fee_item = ANY($3)
+        ORDER BY updated_at DESC NULLS LAST
+        LIMIT 100`,
+      [customer, ctx.containerType, feeItems]
+    ).catch(() => ({ rows: [] })),
+  ]);
+  return items.map((item) => ({ ...item, ...saleForItem(item, ctx, fixedRows.rows, dnaRows.rows) }));
+}
+
+function saleForItem(item, ctx, fixedRows, dnaRows) {
+  var fixed = (fixedRows || []).find((r) => routeMatches(r, ctx) && r.fee_item === item.fee_item);
+  if (fixed && num(fixed.sale_amount) !== null) {
+    return { sale: {
+      amount: num(fixed.sale_amount),
+      currency: fixed.sale_currency || item.currency || "CNY",
+      source: "fixed",
+      label: "固定价·" + clean(ctx.customer_company_code),
+      bl_no: fixed.bl_no || null,
+    }};
+  }
+  var dna = (dnaRows || []).find((r) => routeMatches(r, ctx) && r.fee_item === item.fee_item);
+  if (dna && Number(dna.sample_count || 0) >= 3 && num(dna.suggested_sale) !== null) {
+    return { sale: {
+      amount: num(dna.suggested_sale),
+      currency: dna.suggested_currency || item.currency || "CNY",
+      source: "dna",
+      label: "DNA建议·" + Number(dna.sample_count || 0) + "次",
+    }};
+  }
+  if (dna) {
+    return {
+      sale: null,
+      sale_hint: {
+        source: "dna",
+        label: "DNA样本不足·" + Number(dna.sample_count || 0) + "次",
+        sample_count: Number(dna.sample_count || 0),
+      },
+      sale_label: "待你定",
+    };
+  }
+  if (item.fee_item === "port_charge" && num(item.unit_cost) !== null) {
+    return { sale: {
+      amount: num(item.unit_cost),
+      currency: item.currency || "CNY",
+      source: "passthrough·代收代付",
+      label: "passthrough·代收代付",
+    }};
+  }
+  return { sale: null, sale_label: "待你定" };
+}
+
+function routeMatches(row, ctx) {
+  var pol = normPort(row.pol);
+  var pod = normPort(row.pod);
+  return pol.norm === ctx.pol.norm && (pod.norm === ctx.pod.norm || (ctx.pod.family && pod.family === ctx.pod.family));
 }

@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { importCostPreview } from "./lib/freight-cost-import.js";
+import { auditDeprecatedSetPar, confirmSalePrices } from "./lib/ocean-sale-prices.js";
 
 function requireFinanceAuth(req, res) {
   if (!req.user) {
@@ -133,41 +134,23 @@ export default async function handler(req, res) {
     var postBlNo = String(body.bl_no || "").trim();
 
     if (!postBlNo) return res.status(400).json({ error: "bl_no required" });
-    if (body.action !== "set_par") return res.status(400).json({ error: "unsupported action" });
-    if (body.confirmed !== true) return res.status(400).json({ error: "confirmed=true required" });
 
-    var client = await pool.connect();
+    if (body.action === "set_par") {
+      await auditDeprecatedSetPar(pool, req, postBlNo);
+      return res.status(410).json({
+        error: "已废弃:不得拿成本当售价,请用 confirm_sale_prices",
+        deprecated_action: "set_par",
+      });
+    }
+    if (body.action !== "confirm_sale_prices") return res.status(400).json({ error: "unsupported action" });
+
     try {
-      await client.query("BEGIN");
-
-      var upd = await client.query(
-        `UPDATE freight_supplier_bills
-            SET sale_amount = cost_amount
-          WHERE bl_no = $1
-            AND (sale_amount IS NULL OR sale_amount = 0)`,
-        [postBlNo]
-      );
-
-      await client.query(
-        `INSERT INTO audit_logs (action, operator, entity_type, entity_id, detail)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [
-          "set_par",
-          String(req.user.username || req.user.email || req.user.id || "unknown"),
-          "freight_bill",
-          postBlNo,
-          JSON.stringify({ note: "sale set to cost parity", bl_no: postBlNo }),
-        ]
-      );
-
-      await client.query("COMMIT");
-      return res.json({ ok: true, rows_updated: upd.rowCount });
+      var preview = await importCostPreview(pool, { bl_no: postBlNo });
+      var result = await confirmSalePrices(pool, body, req.user, preview);
+      return res.status(result.status).json(result.payload);
     } catch (e) {
-      await client.query("ROLLBACK");
       console.error("[freight-cost-audit] POST failed:", e);
-      return res.status(500).json({ error: "set par failed", detail: e.message });
-    } finally {
-      client.release();
+      return res.status(500).json({ error: "confirm sale prices failed", detail: e.message });
     }
   }
 
