@@ -1,4 +1,5 @@
 import { getPool, setCors } from "../db.js";
+import { importCostPreview } from "./lib/freight-cost-import.js";
 
 function requireFinanceAuth(req, res) {
   if (!req.user) {
@@ -12,6 +13,19 @@ function requireFinanceAuth(req, res) {
   return true;
 }
 
+function requireCostPreviewAuth(req, res) {
+  if (!req.user) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+  var allowed = new Set(["internal", "admin", "finance", "logistics"]);
+  if (!allowed.has(req.user.role)) {
+    res.status(403).json({ error: "internal/admin/finance/logistics role required" });
+    return false;
+  }
+  return true;
+}
+
 function money(v) {
   var n = Number(v || 0);
   return isNaN(n) ? 0 : n;
@@ -20,11 +34,30 @@ function money(v) {
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (!requireFinanceAuth(req, res)) return;
 
   const pool = getPool();
 
   if (req.method === "GET") {
+    if (req.query.action === "import_cost_preview") {
+      if (!requireCostPreviewAuth(req, res)) return;
+      var previewBlNo = String(req.query.bl_no || "").trim();
+      var shippingPlanId = String(req.query.shipping_plan_id || "").trim();
+      if (!previewBlNo && !shippingPlanId) {
+        return res.status(400).json({ error: "bl_no or shipping_plan_id required" });
+      }
+      try {
+        var preview = await importCostPreview(pool, {
+          bl_no: previewBlNo || null,
+          shipping_plan_id: shippingPlanId || null,
+        });
+        return res.json(preview);
+      } catch (e) {
+        console.error("[freight-cost-audit] import preview failed:", e);
+        return res.status(500).json({ error: "import cost preview failed", detail: e.message });
+      }
+    }
+
+    if (!requireFinanceAuth(req, res)) return;
     var blNo = String(req.query.bl_no || "").trim();
     if (!blNo) return res.status(400).json({ error: "bl_no required" });
 
@@ -95,6 +128,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
+    if (!requireFinanceAuth(req, res)) return;
     var body = req.body || {};
     var postBlNo = String(body.bl_no || "").trim();
 
