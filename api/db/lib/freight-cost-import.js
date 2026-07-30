@@ -1,3 +1,5 @@
+import { buildRateComparison, computeHistoryGuard } from "./freight-price-guard.js";
+
 const PORT_KLANG_FAMILY = "PORT_KLANG_FAMILY";
 
 function clean(v) {
@@ -280,10 +282,34 @@ export async function importCostPreview(pool, input) {
     decidePort(normalizeChargeRows(lc.rows || [], carrierMap), ctx),
     decideOcean(normalizeRateRows(fr.rows || [], carrierMap), ctx),
   ];
+  items = await Promise.all(items.map(async (item) => {
+    if (item.status !== "matched" || num(item.unit_cost) === null) return item;
+    try {
+      var guard = await computeHistoryGuard(pool, {
+        pol: ctx.pol.raw,
+        pod: ctx.pod.raw,
+        carrier: ctx.carrier.norm,
+        fee_item: item.fee_item,
+        container_type: ctx.containerType,
+        unit_cost: item.unit_cost,
+        currency: item.currency,
+      });
+      return { ...item, guard: guard };
+    } catch (e) {
+      return { ...item, guard: { verdict: "insufficient", count: 0, message: "历史守卫查询失败·仅供参考", error: e.message, historySamples: [] } };
+    }
+  }));
+  var rateComparison = await buildRateComparison(pool, {
+    pol: ctx.pol.raw,
+    pod: ctx.pod.raw,
+    carrier: ctx.carrier.norm,
+    container_type: ctx.containerType,
+  });
   return {
     status: items.some((x) => x.status === "matched") ? "ok" : "missing",
     context: ctx,
     items: items,
+    rate_comparison: rateComparison,
     warnings: items.flatMap((x) => x.warnings || []),
     unmatched: items.filter((x) => x.status === "missing"),
   };
