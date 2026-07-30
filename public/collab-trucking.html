@@ -301,6 +301,7 @@ function renderBillingEntry(billing){
 
 let vehs = [], ctnQty = 1, ctnType = '';
 function firstVal(objs, keys){ for(const o of objs){ if(!o) continue; for(const k of keys){ if(o[k]!=null&&String(o[k]).trim()!=='') return o[k]; } } return ''; }
+function dtLocal(v){ return v?String(v).slice(0,16):''; }
 function itemText(item){ return item&&firstVal([item],['description','product_name','cn_name','product_cn_name','chinese_name','goods_name','name']); }
 function cargoDesc(s,d){
   const direct=firstVal([s,d],['cargo_description_cn','cargo_description','goods_description','product_name','品名','中文品名']);
@@ -334,6 +335,7 @@ function photoGrid(i,ps){ ps=ps||[]; return ps.map((p,j)=>{const u=photoUrl(p), 
 function vehHtml(i, d={}){
   const addr=firstVal([d],['loading_address','factory_loading_address','pickup_address','loading_addr','address']);
   const contact=firstVal([d],['loading_contact','factory_loading_contact','contact','factory_contact']);
+  const loadingTime=firstVal([d],['loading_time','load_time','装柜时间']);
   return `<div class="ctn-group" id="veh_${i}">
     <div class="ctn-group-head">
       <div class="ctn-group-title">🚛 车 ${i+1}</div>
@@ -348,6 +350,8 @@ function vehHtml(i, d={}){
         <input class="form-input" id="phone_${i}" type="tel" value="${esc(d.driver_phone)}" placeholder="手机号"></div>
       <div class="form-field" style="margin:0;"><label class="form-label">提箱时间</label>
         <input class="form-input" id="pickup_${i}" type="datetime-local" value="${esc(d.pickup_time)}"></div>
+      <div class="form-field" style="margin:0;"><label class="form-label">装柜预约时间(工厂/车队可改)</label>
+        <input class="form-input" id="loading_time_${i}" type="datetime-local" value="${esc(dtLocal(loadingTime))}"></div>
       <div class="form-field" style="margin:0;"><label class="form-label">工厂提货地址</label>
         <div style="font-size:10.5px;color:${addr?'#64748b':'#94a3b8'};margin-bottom:4px;">📍 ${esc(addr||'提货地址待补')}</div><input class="form-input" id="loadaddr_${i}" value="${esc(addr)}" placeholder="📍 提货地址待补"></div>
       <div class="form-field" style="margin:0;"><label class="form-label">工厂联系人</label>
@@ -364,7 +368,7 @@ function vehHtml(i, d={}){
     <div style="padding:0 12px 12px;"><label class="form-label">装柜照 / 磅单（每车一组，传完即存）</label><div class="photo-grid">${photoGrid(i,d.photos)}</div><input type="file" id="photo_${i}" multiple accept="image/*,.pdf" style="display:none;" onchange="uploadVehPhoto(${i},this.files);this.value=''"></div>
   </div>`;
 }
-function snap(){ vehs = vehs.map((v,i)=>$('veh_'+i)?{plate:gv('plate_'+i),driver:gv('driver_'+i),driver_phone:gv('phone_'+i),pickup_time:gv('pickup_'+i),loading_address:gv('loadaddr_'+i),loading_contact:gv('loadcontact_'+i),cntr:gv('cntr_'+i).toUpperCase(),seal_no:gv('seal_'+i).toUpperCase(),weigh_kg:gv('weigh_'+i),trailer_plate:gv('trailer_'+i),photos:v.photos||[]}:v); }
+function snap(){ vehs = vehs.map((v,i)=>$('veh_'+i)?{plate:gv('plate_'+i),driver:gv('driver_'+i),driver_phone:gv('phone_'+i),pickup_time:gv('pickup_'+i),loading_time:gv('loading_time_'+i),loading_address:gv('loadaddr_'+i),loading_contact:gv('loadcontact_'+i),cntr:gv('cntr_'+i).toUpperCase(),seal_no:gv('seal_'+i).toUpperCase(),weigh_kg:gv('weigh_'+i),trailer_plate:gv('trailer_'+i),photos:v.photos||[]}:v); }
 function renderVehs(){ $('vehGroups').innerHTML = vehs.map((v,i)=>vehHtml(i,v)).join(''); }
 function addVeh(){ setQty(ctnQty+1); }
 function delVeh(i){ snap(); vehs.splice(i,1); ctnQty=normQty(vehs.length); if($('ctn_qty')) $('ctn_qty').value=ctnQty; renderVehs(); }
@@ -393,9 +397,9 @@ async function boot(){
   $('dlBox').innerHTML = `<a class="dl-btn" href="${API}/file?token=${encodeURIComponent(token)}&type=so" target="_blank">📋 <span style="flex:1;">托书 / Booking Instruction（含进港信息）</span><span style="color:#1a73e8;">下载 ↗</span></a>`;
   // 已提交过：预填 + 收起
   renderCargo(s,d,td);
-  const saved = Array.isArray(td.vehicles)?td.vehicles:(td.plate?[{plate:td.plate,driver:td.driver,driver_phone:td.driver_phone,pickup_time:td.pickup_time}]:[]);
+  const saved = Array.isArray(td.vehicles)?td.vehicles:(td.plate?[{plate:td.plate,driver:td.driver,driver_phone:td.driver_phone,pickup_time:td.pickup_time,loading_time:td.loading_time}]:[]);
   if(saved.length){
-    vehs = saved.map(v=>({plate:v.plate||'',driver:v.driver||'',driver_phone:v.driver_phone||'',pickup_time:v.pickup_time||'',loading_address:firstVal([v],['loading_address','factory_loading_address','pickup_address','loading_addr','address']),loading_contact:firstVal([v],['loading_contact','factory_loading_contact','contact','factory_contact']),cntr:v.cntr||'',seal_no:v.seal_no||'',weigh_kg:v.weigh_kg||'',trailer_plate:v.trailer_plate||'',photos:Array.isArray(v.photos)?v.photos:[]}));
+    vehs = saved.map(v=>({plate:v.plate||'',driver:v.driver||'',driver_phone:v.driver_phone||'',pickup_time:v.pickup_time||'',loading_time:firstVal([v],['loading_time','load_time','装柜时间']),loading_address:firstVal([v],['loading_address','factory_loading_address','pickup_address','loading_addr','address']),loading_contact:firstVal([v],['loading_contact','factory_loading_contact','contact','factory_contact']),cntr:v.cntr||'',seal_no:v.seal_no||'',weigh_kg:v.weigh_kg||'',trailer_plate:v.trailer_plate||'',photos:Array.isArray(v.photos)?v.photos:[]}));
     setQty(ctnQty);
     if(td.remarks) $('remarks').value = td.remarks;
     // 自己提交过才收起；柜表派生的预填（source=container_bookings）保持展开待补

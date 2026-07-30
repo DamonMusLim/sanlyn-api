@@ -9,6 +9,7 @@ function gn(id){ const v=parseFloat($(id)?.value); return isNaN(v)?null:v; }
 function gi(id){ const v=parseInt($(id)?.value); return isNaN(v)?null:v; }
 function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+function dtLocal(v){ return v?String(v).slice(0,16):''; }
 function imgLightbox(url,isVideo){ const img=$('lbImg'),vid=$('lbVid'); if(isVideo){ img.style.display='none'; vid.src=url; vid.style.display='block'; } else { vid.style.display='none'; vid.removeAttribute('src'); img.src=url; img.style.display='block'; } $('lightbox').style.display='flex'; }
 function openBillingInvoice(){
   if(!window._billingToken) return;
@@ -36,6 +37,7 @@ window._confirmedKeys=new Set();
 window._collapsedKeys=new Set();
 window._pendingConfirmKey=null;
 window._pendingCargoEdit=null;
+window._loadingTimeVals={};
 
 function collapseStep(n,summary){ const c=$('step'+n); c.classList.add('done'); c.classList.remove('required','alert'); $('sn'+n).classList.add('done'); $('sum'+n).textContent='✓ '+summary; const b=$('badge'+n); if(b) b.style.display='none'; }
 function reopenStep(n){ $('step'+n).classList.remove('done'); $('sn'+n).classList.remove('done'); const b=$('badge'+n); if(b) b.style.display=''; }
@@ -98,7 +100,8 @@ function addCtn(linesData,seq,factory){ const g={lines:[],seq:seq||(groups.lengt
 function addLine(gi_){ groups[gi_].lines.push({id:lineSeq++,data:{}}); renderGroups(); }
 function delLine(id){ snapshot(); groups.forEach(g=>{ g.lines=g.lines.filter(l=>l.id!==id); }); groups=groups.filter(g=>g.lines.length); if(!groups.length) addCtn(); else renderGroups(); }
 function delCtn(gi_){ snapshot(); groups.splice(gi_,1); if(!groups.length) addCtn(); else renderGroups(); }
-function snapshot(){ groups.forEach(g=>g.lines.forEach(l=>{ l.data=l.data||{}; })); }
+function snapshot(){ groups.forEach(g=>{ const el=$('loading_time_'+g.key); if(el) window._loadingTimeVals[g.key]=el.value; g.lines.forEach(l=>{ l.data=l.data||{}; }); }); }
+function loadingTimesPayload(){ snapshot(); return groups.map(g=>({seq:g.seq,factory_label:g.factory||null,loading_time:window._loadingTimeVals[g.key]||null})).filter(x=>x.loading_time); }
 
 function openCargoEditModal(gi_,li_){
   const g=groups[gi_], l=g&&g.lines&&g.lines[li_]; if(!l) return;
@@ -202,6 +205,7 @@ function renderGroups(){
     const collapsedTotal='<div style="display:flex;flex-wrap:wrap;gap:12px;padding:6px 14px;background:#f0fdf4;font-size:12px;color:#15803d;font-weight:800;"><span style="color:#94a3b8;font-weight:700;">合计</span><span>'+_fmtN(_gt.q)+' 箱</span><span>NW '+_fmtN(_gt.nw)+'</span><span>GW '+_fmtN(_gt.gw)+'</span><span>'+_fmtN(_gt.cbm)+' CBM</span></div>';
     const localVgm=window._vgmVals&&Object.prototype.hasOwnProperty.call(window._vgmVals,g.key)?window._vgmVals[g.key]:'';
     const vgmVal=localVgm!==''?localVgm:(cd.vgm_weight_kg!=null?cd.vgm_weight_kg:((cd.cargo_weight_kg!=null&&cd.tare_weight_kg!=null)?Number(cd.cargo_weight_kg)+Number(cd.tare_weight_kg):''));
+    const loadingTime=(window._loadingTimeVals&&Object.prototype.hasOwnProperty.call(window._loadingTimeVals,g.key))?window._loadingTimeVals[g.key]:dtLocal(cd.loading_time);
     const addressFix=factoryProfileAddress
       ? '<button type="button" onclick="event.stopPropagation();openAddressModal()" style="border:none;background:transparent;color:#1a73e8;font-size:10.5px;font-weight:700;cursor:pointer;padding:0 2px;">地址有误?</button>'
       : '<span style="font-size:10.5px;color:#cbd5e1;">请用工厂专属链接修改地址</span>';
@@ -248,6 +252,7 @@ function renderGroups(){
     '<button onclick="pickLoadingPhoto(\''+g.key+'\','+g.seq+',\'video\')" style="font-size:11px;padding:5px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;font-weight:700;">🎬 视频</button>' +
     '<button onclick="pickLoadingPhoto(\''+g.key+'\','+g.seq+',\'doc\')" style="font-size:11px;padding:5px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer;font-weight:700;">📋 磅单</button>' +
     '<span id="lpTip_'+g.key+'" style="font-size:10px;color:#059669;"></span>' +
+    '<span style="color:#64748b;margin-left:4px;">装柜预约时间</span><input id="loading_time_'+g.key+'" type="datetime-local" value="'+esc(loadingTime)+'" style="width:156px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;" onchange="window._loadingTimeVals=window._loadingTimeVals||{};window._loadingTimeVals[\''+g.key+'\']=this.value;">' +
     '<span style="color:#64748b;margin-left:4px;">VGM(kg)</span><input id="vgm_'+g.key+'" type="number" step="0.01" value="'+esc(vgmVal)+'" placeholder="含柜皮重" style="width:80px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;" onchange="window._vgmVals=window._vgmVals||{};window._vgmVals[\''+g.key+'\']=this.value;">' +
     '<span style="color:#64748b;">过磅(kg)</span><input id="fw_'+g.key+'" type="number" step="0.01" value="'+((window._fwVals&&window._fwVals[g.key])||'')+'" placeholder="实重" style="width:72px;border:1px solid #cbd5e1;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;" onchange="window._fwVals=window._fwVals||{};window._fwVals[\''+g.key+'\']=this.value;">' +
     (!confirmed?'<button onclick="openConfirmModal(\''+g.key+'\')" class="btn btn-green btn-sm" style="margin-left:auto;">✅ 确认本柜装货完毕</button>':'<span style="font-size:11px;font-weight:700;color:#059669;margin-left:auto;">✅ 本柜已确认</span>')+

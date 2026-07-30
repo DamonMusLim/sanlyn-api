@@ -391,6 +391,9 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
 <div class="toast" id="toast"></div>
 
 <script src="/public/templates/collab-factory-core.js"></script>
+<script>
+(function(){const rawFetch=window.fetch;window.fetch=function(input,init){const url=typeof input==='string'?input:(input&&input.url)||'';if(url.indexOf('/api/db/booking-collab/factory-submit')>=0&&init&&init.body&&typeof loadingTimesPayload==='function'){try{const body=JSON.parse(init.body), times=loadingTimesPayload();if(times.length){body.container_loading_times=times;if(Array.isArray(body.containers)) body.containers=body.containers.map(c=>{const t=times.find(x=>(x.seq||1)===(c.container_seq||1)&&(!x.factory_label||!c.factory_label||x.factory_label===c.factory_label));return t?{...c,loading_time:t.loading_time}:c;});init={...init,body:JSON.stringify(body)};}}catch(e){}}return rawFetch.call(this,input,init);};})();
+</script>
 <script src="/public/templates/collab-factory-actions.js"></script>
   <div id="pageVerBadge" style="position:fixed;right:8px;bottom:6px;font-size:10px;color:#9ca3af;z-index:60;">collab-factory v1.7.1 · 2026-07-02</div>
 <!--
