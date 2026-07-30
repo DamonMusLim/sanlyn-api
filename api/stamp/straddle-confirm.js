@@ -6,14 +6,19 @@ import { getPool, setCors } from '../db.js';
 import {
   DEFAULT_OPACITY,
   SEAL_DIAMETER_PT,
+  SIGNATURE_ASPECT,
   calcCustomPosition,
   clamp01,
   enforceStampPermission,
   fetchPdfBytes,
   fetchStampBytes,
+  generateSignaturePng,
+  randomSealRotationDeg,
   resolvePageIndex,
   resolveStampUrl,
+  rotatedDrawParams,
   safeOriginalName,
+  squareCropStamp,
   stampKeyForCompany,
   uploadToOSS,
 } from './_straddle-shared.js';
@@ -36,7 +41,7 @@ async function logStampAction(pool, params) {
     1,
     params.sourceUrl,
     params.stampedUrl,
-    JSON.stringify({ gaps: params.gaps, signature: params.signature }),
+    JSON.stringify({ gaps: params.gaps, signature: params.signature, rotationsUsed: params.rotationsUsed, signed: !!params.signature }),
   ]);
   return res.rows[0]?.id;
 }
@@ -82,12 +87,15 @@ export default async function handler(req, res) {
     }
 
     const authHeader = req.headers.authorization || '';
-    const [pdfBuffer, stampBuffer] = await Promise.all([
+    const [pdfBuffer, rawStampBuffer] = await Promise.all([
       fetchPdfBytes(pdfUrl, authHeader),
       fetchStampBytes(sealUrl),
     ]);
+    // Source seal images are frequently not square (extra blank canvas below/around the circle) —
+    // crop to the real ink bounding box and pad to square so the seal renders round, not oval.
+    const stampBuffer = await squareCropStamp(rawStampBuffer);
 
-    const { PDFDocument } = await import('pdf-lib');
+    const { PDFDocument, degrees } = await import('pdf-lib');
     const pdfDoc = await PDFDocument.load(pdfBuffer);
     const totalPages = pdfDoc.getPageCount();
     const pages = pdfDoc.getPages();
@@ -101,6 +109,7 @@ export default async function handler(req, res) {
     const stampImage = await embedStamp(pdfDoc, stampBuffer);
     const sW = SEAL_DIAMETER_PT;
     const sH = SEAL_DIAMETER_PT;
+    const rotationsUsed = [];
 
     for (const gap of gaps) {
       const leftPage = pages[gap.pageIndex];
@@ -108,22 +117,22 @@ export default async function handler(req, res) {
       const { width: leftW, height: leftH } = leftPage.getSize();
       const { height: rightH } = rightPage.getSize();
 
-      const leftY = leftH * (1 - gap.y) - sH / 2;
-      const rightY = rightH * (1 - gap.y) - sH / 2;
+      // Same random angle for both halves of one gap — if the physical pages were folded back
+      // together the two half-stamps still line up into a single tilted circle, like a real one.
+      const angleDeg = randomSealRotationDeg();
+      rotationsUsed.push({ pageIndex: gap.pageIndex, angleDeg: Number(angleDeg.toFixed(2)) });
+      const leftCenter = { cx: leftW, cy: leftH * (1 - gap.y) };
+      const rightCenter = { cx: 0, cy: rightH * (1 - gap.y) };
+      const leftParams = rotatedDrawParams(leftCenter.cx, leftCenter.cy, sW, sH, angleDeg);
+      const rightParams = rotatedDrawParams(rightCenter.cx, rightCenter.cy, sW, sH, angleDeg);
 
       leftPage.drawImage(stampImage, {
-        x: leftW - sW / 2,
-        y: leftY,
-        width: sW,
-        height: sH,
-        opacity: DEFAULT_OPACITY,
+        x: leftParams.x, y: leftParams.y, width: sW, height: sH,
+        opacity: DEFAULT_OPACITY, rotate: degrees(angleDeg),
       });
       rightPage.drawImage(stampImage, {
-        x: -sW / 2,
-        y: rightY,
-        width: sW,
-        height: sH,
-        opacity: DEFAULT_OPACITY,
+        x: rightParams.x, y: rightParams.y, width: sW, height: sH,
+        opacity: DEFAULT_OPACITY, rotate: degrees(angleDeg),
       });
     }
 
@@ -131,12 +140,41 @@ export default async function handler(req, res) {
       const page = pages[signature.page];
       const { width: pageW, height: pageH } = page.getSize();
       const pos = calcCustomPosition(signature.x, signature.y, pageW, pageH, sW, sH);
+      const centerX = pos.x + sW / 2;
+      const centerY = pos.y + sH / 2;
+
+      // Draw the auto-generated "Damon 林" signature first, overlapping partly under the seal —
+      // matches how a real signed-and-stamped document looks (sign the line, then stamp over it).
+      // Font rendering (sharp+SVG+system fonts) is an environment dependency that can break
+      // independently of everything else here — never let a signature failure 500 the whole
+      // stamping request; just skip the signature and still stamp the seal (codex review finding).
+      try {
+        const sigBuffer = await generateSignaturePng();
+        const sigImage = await pdfDoc.embedPng(sigBuffer);
+        const sigW = sW * 1.6;
+        const sigH = sigW * SIGNATURE_ASPECT;
+        // Only the tail end of the signature should sit under the seal (real signed-then-stamped
+        // documents overlap a little, not half the name). Actual overlap width here is ~0.32*sW
+        // (~20% of the signature's own width) — the seal's left edge sits at centerX-0.5*sW and
+        // the signature's right edge at centerX-0.18*sW; see project_straddle_seal_blueprint memory
+        // if retuning this (codex review caught the comment previously understating this as 0.18*sW).
+        page.drawImage(sigImage, {
+          x: centerX - sW * 1.78,
+          y: centerY - sigH / 2,
+          width: sigW,
+          height: sigH,
+          opacity: 0.92,
+        });
+      } catch (sigErr) {
+        console.warn('signature generation failed, stamping seal without it:', sigErr.message);
+      }
+
+      const angleDeg = randomSealRotationDeg();
+      rotationsUsed.push({ page: signature.page, angleDeg: Number(angleDeg.toFixed(2)) });
+      const sealParams = rotatedDrawParams(centerX, centerY, sW, sH, angleDeg);
       page.drawImage(stampImage, {
-        x: pos.x,
-        y: pos.y,
-        width: sW,
-        height: sH,
-        opacity: DEFAULT_OPACITY,
+        x: sealParams.x, y: sealParams.y, width: sW, height: sH,
+        opacity: DEFAULT_OPACITY, rotate: degrees(angleDeg),
       });
     }
 
@@ -158,6 +196,7 @@ export default async function handler(req, res) {
         stampedUrl,
         gaps,
         signature,
+        rotationsUsed,
       });
     } catch (dbErr) {
       console.warn('stamp_log write failed (non-fatal):', dbErr.message);

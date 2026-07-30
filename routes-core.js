@@ -428,6 +428,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/stamp/smart-position", () => import("./api/stamp/smart-position.js"));
   mount("/api/stamp/straddle-preview", () => import("./api/stamp/straddle-preview.js"));
   mount("/api/stamp/straddle-confirm", () => import("./api/stamp/straddle-confirm.js"));
+  mount("/api/stamp/straddle-email", () => import("./api/stamp/straddle-email.js"));
   // ── /api/convert/* ──
   mount("/api/convert/excel-to-pdf", () => import("./api/convert/excel-to-pdf.js"));
   // ── /api/* top-level endpoints ──

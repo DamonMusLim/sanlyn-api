@@ -5,6 +5,7 @@
 
 import { getPool, setCors } from '../db.js';
 import { extractUser } from '../auth.js';
+import { squareCropStamp } from './_straddle-shared.js';
 
 // ── 印章 OSS 路径映射 ──────────────────────────────
 const STAMP_MAP = {
@@ -215,7 +216,9 @@ export default async function handler(req, res) {
     if (!stampResp.ok) throw new Error(`Failed to fetch stamp: ${stampResp.status}`);
 
     const pdfBuffer = Buffer.from(await pdfResp.arrayBuffer());
-    const stampBuffer = Buffer.from(await stampResp.arrayBuffer());
+    const rawStampBuffer = Buffer.from(await stampResp.arrayBuffer());
+    // 源章图非正方(如 BABI 378x532 带下方大片留白)会把印章画歪/画小;裁到真实印泥边界再补方(与 straddle-confirm 一致)
+    const stampBuffer = await squareCropStamp(rawStampBuffer);
 
     // ── 2. pdf-lib 签章 ──
     const { PDFDocument } = await import('pdf-lib');

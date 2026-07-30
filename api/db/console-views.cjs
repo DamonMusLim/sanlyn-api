@@ -29,6 +29,194 @@ function cleanLimit(value) {
 
 const router = express.Router();
 
+// -- data source center --
+router.get("/api/console/sources", async (req, res) => {
+  try {
+    const result = await getPool().query(
+      "SELECT cat, name, status, detail, cnt, last_seen, probed_at FROM data_sources ORDER BY " +
+      "CASE cat WHEN 'core' THEN 1 WHEN 'email' THEN 2 WHEN 'wechat' THEN 3 WHEN 'wecom' THEN 4 " +
+      "WHEN 'sms' THEN 5 WHEN 'call' THEN 6 WHEN 'shop' THEN 7 ELSE 8 END, id");
+    res.json({ success: true,
+      probed_at: result.rows.length ? result.rows[0].probed_at : null,
+      rows: result.rows });
+  } catch (e) { res.json({ success: false, error: String(e.message || e), rows: [] }); }
+});
+
+// -- data source center: mini side ingest --
+router.post("/api/console/sources/ingest", require("express").json(), async (req, res) => {
+  try {
+    if ((req.body && req.body.token) !== "06zume-src") return res.status(403).json({ success: false, error: "bad token" });
+    const rows = (req.body && req.body.rows) || [];
+    if (!Array.isArray(rows) || !rows.length) return res.json({ success: false, error: "no rows" });
+    const pool = getPool();
+    await pool.query("DELETE FROM data_sources WHERE origin = 'mini'");
+    for (const x of rows) {
+      await pool.query(
+        "INSERT INTO data_sources(cat,name,status,detail,cnt,last_seen,origin,probed_at) " +
+        "VALUES ($1,$2,$3,$4,$5,$6,'mini',now()) ON CONFLICT (cat,name) DO UPDATE SET " +
+        "status=EXCLUDED.status, detail=EXCLUDED.detail, cnt=EXCLUDED.cnt, " +
+        "last_seen=EXCLUDED.last_seen, origin='mini', probed_at=now()",
+        [x.cat || "other", x.name || "?", x.status || "unknown", x.detail || "",
+         String(x.cnt == null ? "" : x.cnt), String(x.last || "")]);
+    }
+    res.json({ success: true, ingested: rows.length });
+  } catch (e) { res.json({ success: false, error: String(e.message || e) }); }
+});
+
+// -- front 4 blocks: questions / yesterday / my notes --
+const _b64 = (x) => "encode(COALESCE(" + x + ",'')::bytea,'base64')";
+
+router.get("/api/console/questions", async (req, res) => {
+  try {
+    const pool = getPool();
+    await pool.query(`CREATE TABLE IF NOT EXISTS damon_questions(
+      id serial PRIMARY KEY, task_id text, asker text, question text, context text,
+      status text DEFAULT 'open', answer text, asked_at timestamptz DEFAULT now(),
+      answered_at timestamptz)`);
+    const q = await pool.query(
+      "SELECT q.id, q.task_id, q.asker, " + _b64("q.question") + " AS question_b64, " +
+      _b64("q.context") + " AS context_b64, q.asked_at, " +
+      _b64("t.title") + " AS task_title_b64, t.serial_no " +
+      "FROM damon_questions q LEFT JOIN tasks t ON t.id = q.task_id " +
+      "WHERE q.status = 'open' ORDER BY q.asked_at DESC LIMIT 50");
+    const bl = await pool.query(
+      "SELECT id, serial_no, " + _b64("title") + " AS title_b64, " +
+      _b64("failure_point") + " AS reason_b64, current_holder, updated_at " +
+      "FROM tasks WHERE status IN ('open','doing') AND COALESCE(failure_point,'') <> '' " +
+      "ORDER BY updated_at DESC LIMIT 30");
+    res.json({ success: true, questions: q.rows, blocked: bl.rows });
+  } catch (e) { res.json({ success: false, error: String(e.message || e), questions: [], blocked: [] }); }
+});
+
+router.post("/api/console/questions/:id/answer", require("express").json(), async (req, res) => {
+  try {
+    const ans = String((req.body && req.body.answer) || "").slice(0, 4000);
+    if (!ans.trim()) return res.json({ success: false, error: "答案为空" });
+    const b = Buffer.from(ans, "utf8").toString("base64");
+    const pool = getPool();
+    const r = await pool.query(
+      "UPDATE damon_questions SET status='answered', answered_at=now(), " +
+      "answer=convert_from(decode($1,'base64'),'UTF8') WHERE id=$2 AND status='open' RETURNING task_id",
+      [b, parseInt(req.params.id, 10)]);
+    if (r.rows.length && r.rows[0].task_id) {
+      await pool.query(
+        "INSERT INTO task_events(task_id, actor, actor_type, event_type, note, created_at) " +
+        "VALUES ($1,'Damon','human','answer',convert_from(decode($2,'base64'),'UTF8'),now())",
+        [r.rows[0].task_id, b]).catch(() => {});
+    }
+    res.json({ success: true, updated: r.rows.length });
+  } catch (e) { res.json({ success: false, error: String(e.message || e) }); }
+});
+
+router.get("/api/console/yesterday", async (req, res) => {
+  try {
+    const pool = getPool();
+    const rep = await pool.query(
+      "SELECT day, " + _b64("body") + " AS body_b64, facts FROM daily_report " +
+      "WHERE day <= CURRENT_DATE ORDER BY day DESC LIMIT 1");
+    const dec = await pool.query(
+      "SELECT " + _b64("t.title") + " AS title_b64, t.serial_no, t.status, t.updated_at " +
+      "FROM tasks t WHERE t.status IN ('done','cancelled') " +
+      "AND COALESCE(t.closed_at,t.updated_at)::date >= CURRENT_DATE - 1 " +
+      "ORDER BY t.updated_at DESC LIMIT 40");
+    const feed = await pool.query(
+      "SELECT kind, " + _b64("title") + " AS title_b64, ts FROM ops_feed " +
+      "WHERE ts > now() - interval '36 hours' ORDER BY ts DESC LIMIT 40");
+    res.json({ success: true, report: rep.rows[0] || null, decided: dec.rows, feed: feed.rows });
+  } catch (e) { res.json({ success: false, error: String(e.message || e), decided: [], feed: [] }); }
+});
+
+router.get("/api/console/my-notes", async (req, res) => {
+  try {
+    const pool = getPool();
+    await pool.query(`CREATE TABLE IF NOT EXISTS damon_notes(
+      id serial PRIMARY KEY, day date, body text, source text DEFAULT 'web',
+      created_at timestamptz DEFAULT now())`);
+    const q = await pool.query(
+      "SELECT id, day, " + _b64("body") + " AS body_b64, source, created_at " +
+      "FROM damon_notes ORDER BY created_at DESC LIMIT 30");
+    res.json({ success: true, rows: q.rows });
+  } catch (e) { res.json({ success: false, error: String(e.message || e), rows: [] }); }
+});
+
+router.post("/api/console/my-notes", require("express").json(), async (req, res) => {
+  try {
+    const body = String((req.body && req.body.body) || "").slice(0, 8000);
+    if (!body.trim()) return res.json({ success: false, error: "内容为空" });
+    const b = Buffer.from(body, "utf8").toString("base64");
+    const pool = getPool();
+    await pool.query(`CREATE TABLE IF NOT EXISTS damon_notes(
+      id serial PRIMARY KEY, day date, body text, source text DEFAULT 'web',
+      created_at timestamptz DEFAULT now())`);
+    await pool.query(
+      "INSERT INTO damon_notes(day, body, source) VALUES " +
+      "(CURRENT_DATE, convert_from(decode($1,'base64'),'UTF8'), $2)",
+      [b, String((req.body && req.body.source) || "web").slice(0, 20)]);
+    res.json({ success: true });
+  } catch (e) { res.json({ success: false, error: String(e.message || e) }); }
+});
+
+router.post("/api/console/blocked/answer", require("express").json(), async (req, res) => {
+  try {
+    const tid = String((req.body && req.body.task_id) || "");
+    const ans = String((req.body && req.body.answer) || "").slice(0, 4000);
+    if (!tid || !ans.trim()) return res.json({ success: false, error: "缺 task_id 或答案" });
+    const b = Buffer.from(ans, "utf8").toString("base64");
+    const pool = getPool();
+    await pool.query(
+      "INSERT INTO task_events(task_id, actor, actor_type, event_type, note, created_at) " +
+      "VALUES (\,'Damon','human','unblock',convert_from(decode(\,'base64'),'UTF8'),now())", [tid, b]);
+    const r = await pool.query(
+      "UPDATE tasks SET failure_point=NULL, damon_feedback=convert_from(decode(\,'base64'),'UTF8'), " +
+      "updated_at=now() WHERE id=\ AND status IN ('open','doing') RETURNING id", [b, tid]);
+    res.json({ success: true, updated: r.rows.length });
+  } catch (e) { res.json({ success: false, error: String(e.message || e) }); }
+});
+
+// -- 微信短码入口: /c/<code> → 302 到真页面。微信里永不出现私链 key --
+const SHORT = { a7: "/one", c3: "/center", s9: "/sources", d5: "/one" };
+router.get("/g/:code", async (req, res) => {
+  const t = SHORT[String(req.params.code || "").slice(0, 8)];
+  if (!t) return res.status(404).type("html").send("<h3>链接不存在或已作废</h3>");
+  res.redirect(302, t + "?k=06zume");
+});
+
+// -- 闸门挡单:mini 回传 + 作战实验室查看 --
+router.post("/api/console/held/ingest", require("express").json(), async (req, res) => {
+  try {
+    if ((req.body && req.body.token) !== "06zume-src") return res.status(403).json({ success: false });
+    const pool = getPool();
+    await pool.query(`CREATE TABLE IF NOT EXISTS push_held(
+      id serial PRIMARY KEY, day date, reason text, msg text, held_at timestamptz,
+      suppressed int DEFAULT 0, created_at timestamptz DEFAULT now())`);
+    await pool.query("DELETE FROM push_held WHERE day = CURRENT_DATE");
+    const rows = (req.body && req.body.rows) || [];
+    for (const x of rows) {
+      const b = Buffer.from(String(x.msg || ""), "utf8").toString("base64");
+      await pool.query(
+        "INSERT INTO push_held(day, reason, msg, held_at, suppressed) VALUES " +
+        "(CURRENT_DATE, $1, convert_from(decode($2,'base64'),'UTF8'), $3, $4)",
+        [String(x.reason || "?"), b, x.ts || null, 0]);
+    }
+    if (req.body.suppressed) {
+      await pool.query("INSERT INTO push_held(day, reason, msg, suppressed) VALUES " +
+        "(CURRENT_DATE, 'duplicate', convert_from(decode($1,'base64'),'UTF8'), $2)",
+        [Buffer.from("同一件事重复上报,已压下", "utf8").toString("base64"), req.body.suppressed]);
+    }
+    res.json({ success: true, ingested: rows.length });
+  } catch (e) { res.json({ success: false, error: String(e.message || e) }); }
+});
+
+router.get("/api/console/held", async (req, res) => {
+  try {
+    const pool = getPool();
+    const q = await pool.query(
+      "SELECT reason, encode(COALESCE(msg,'')::bytea,'base64') AS msg_b64, held_at, suppressed " +
+      "FROM push_held WHERE day >= CURRENT_DATE - 1 ORDER BY held_at DESC NULLS LAST LIMIT 80");
+    res.json({ success: true, rows: q.rows });
+  } catch (e) { res.json({ success: false, error: String(e.message || e), rows: [] }); }
+});
+
 router.get("/api/console/tasks", async (req, res) => {
   try {
     const status = cleanText(req.query.status);
@@ -400,6 +588,18 @@ ${lrTxt}
         [q.slice(0, 70), taskId || null]);
     } catch (e) {}
     return res.status(200).json({ success: true, answer, dna_used: dna.rowCount, has_task_ctx: !!taskTxt });
+  } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
+});
+
+
+// —— 今日报告(Lyn写的)+DNA快照 ——
+router.get("/api/console/daily", async (req, res) => {
+  try {
+    const pool = getPool();
+    const r = await pool.query("SELECT day, encode(body::bytea,'base64') AS body_b64, facts FROM daily_report ORDER BY day DESC LIMIT 1");
+    const dna = await pool.query("SELECT COUNT(*)::int AS n, MAX(created_at) AS latest FROM decision_rules WHERE active");
+    const rules = await pool.query("SELECT encode((domain||' / '||scene||': '||rule_text)::bytea,'base64') AS r_b64 FROM decision_rules WHERE active ORDER BY priority ASC LIMIT 30");
+    return res.status(200).json({ success: true, report: r.rows[0] || null, dna_count: dna.rows[0].n, dna_latest: dna.rows[0].latest, rules: rules.rows.map(x => x.r_b64) });
   } catch (e) { return res.status(500).json({ success: false, error: e.message }); }
 });
 
