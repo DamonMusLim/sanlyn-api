@@ -429,6 +429,13 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/stamp/straddle-preview", () => import("./api/stamp/straddle-preview.js"));
   mount("/api/stamp/straddle-confirm", () => import("./api/stamp/straddle-confirm.js"));
   mount("/api/stamp/straddle-email", () => import("./api/stamp/straddle-email.js"));
+  // /api/petstore/faces/* -> authenticated proxy to mini camera backend (2026-07-31)
+  mount("/api/petstore/faces/visitors", () => import("./api/petstore/faces-proxy.js"));
+  mount("/api/petstore/faces/people", () => import("./api/petstore/faces-proxy.js"));
+  mount("/api/petstore/faces/events", () => import("./api/petstore/faces-proxy.js"));
+  mount("/api/petstore/faces/name", () => import("./api/petstore/faces-proxy.js"));
+  mount("/api/petstore/faces/deactivate", () => import("./api/petstore/faces-proxy.js"));
+  mount("/api/petstore/faces/pics/*", () => import("./api/petstore/faces-proxy.js"));
   // ── /api/convert/* ──
   mount("/api/convert/excel-to-pdf", () => import("./api/convert/excel-to-pdf.js"));
   // ── /api/* top-level endpoints ──
