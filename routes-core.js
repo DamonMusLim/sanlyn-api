@@ -436,6 +436,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/petstore/faces/name", () => import("./api/petstore/faces-proxy.js"));
   mount("/api/petstore/faces/deactivate", () => import("./api/petstore/faces-proxy.js"));
   mount("/api/petstore/faces/pics/*", () => import("./api/petstore/faces-proxy.js"));
+  mount("/api/db/doc-textlayer", () => import("./api/db/doc-textlayer.js")); // PDF文字层钩子(发票付款闭环brief1, 2026-07-31)
   // ── /api/convert/* ──
   mount("/api/convert/excel-to-pdf", () => import("./api/convert/excel-to-pdf.js"));
   // ── /api/* top-level endpoints ──
