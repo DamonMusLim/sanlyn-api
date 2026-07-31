@@ -296,11 +296,14 @@ function redactInvoice(invoice) {
   return safe;
 }
 
-// 港杂开票拆两张:①代理港杂费(带税1%) ②国际货代服务费(免税)。banks={bank,accounts}由调用方传(避免循环依赖)
+// 港杂开票:默认全部代理港杂费@1%一张(Damon规则:没特意要求就1%港杂费);只有显式设了 taxed_port_charge(>0)
+// 才拆成 ①代理港杂费(带税1%) ②国际货代服务费(免税) 两张。0金额的票删掉(不给对方看空票)。banks由调用方传(避免循环依赖)
 export function defaultInvoices(sp, total, currency, bl, cntr, mode = "self", banks = {}) {
   const SELLER_BANK = banks.bank || "", ACCOUNTS = banks.accounts || {};
   const invoiceTotal = money(sp.port_charge_invoice_total || total);
-  const taxedBase = Math.min(money(sp.taxed_port_charge || 0), invoiceTotal);
+  // 有特意要求(显式设了带税base)才拆免税;否则整票走代理港杂费@1%
+  const hasSplit = sp.taxed_port_charge != null && sp.taxed_port_charge !== "" && money(sp.taxed_port_charge) > 0;
+  const taxedBase = hasSplit ? Math.min(money(sp.taxed_port_charge), invoiceTotal) : invoiceTotal;
   const freeAmt = money(invoiceTotal - taxedBase);
   const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
   return [
@@ -310,7 +313,7 @@ export function defaultInvoices(sp, total, currency, bl, cntr, mode = "self", ba
     { id: "invoice-service", currency, title: "增值税普通发票", mode,
       item_name: "*经纪代理服务*国际货物运输代理服务费", unit: "项", qty: 1,
       amount_ex_tax: freeAmt, tax_rate: 0, tax_amount: 0, total_with_tax: freeAmt, remark },
-  ];
+  ].filter(inv => money(inv.amount_ex_tax) > 0);
 }
 
 // 客户海运单=单行商业发票IV(USD无税);FOB下客户只付海运费
