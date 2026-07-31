@@ -89,3 +89,10 @@ th.r,td.r{text-align:right}td{padding:8px 7px;border-bottom:1px solid var(--line
 .lane-base{margin:0 0 10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--wash);color:var(--sub);font-size:12px;font-weight:700}
 .base-tag{display:inline-block;margin-left:6px;font-size:9.5px;font-weight:800;color:var(--teal);background:var(--teal-wash);border:1px solid #addbd6;border-radius:99px;padding:1px 6px;vertical-align:middle}
 .base-warn{margin-top:3px;font-size:10.5px;font-weight:800;color:var(--warn)}
+
+/* doc=bill 盖章账单明细PDF(screen媒体渲染,不走@media print) */
+.billgrid.ro th,.billgrid.ro td{padding:7px 6px}
+.billseal{margin-top:52px;text-align:right;padding-right:26px}
+.billseal-co{font-weight:800;font-size:14px;color:var(--ink)}
+.billseal-lab{color:var(--faint);margin-top:2px;font-size:12px}
+.billseal-date{margin-top:30px;color:var(--sub);font-size:12px}

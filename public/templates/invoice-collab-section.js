@@ -1,6 +1,7 @@
 (function(){
   const API="/api/db/invoice-collab-confirm";
   const token=new URLSearchParams(location.search).get("token")||"";
+  const DOCBILL=new URLSearchParams(location.search).get("doc")==="bill"; // 盖章账单明细PDF模式:只读账单+盖章位,给puppeteer出PDF
   const app=document.getElementById("app");
   const CNTR_TYPES=["20GP","40GP","40HC","40HQ","45HQ","20ST","20RF","40RF"];
   let state=null, dirtyPrice=false, contactOpen=false, invoiceOpen=false, sheetOpen=false, _lang="zh", invEdited=false;
@@ -81,6 +82,33 @@
       ${notice}
       <button class="addline" id="addLine">＋ 加一行</button></div>`;
   }
+  // 只读账单明细(doc=bill出PDF用):纯文本,无input/select/删除列
+  function billRowsRO(){
+    return (state.bill_lines||[]).map(l=>{
+      const per=isPer(l.basis);
+      return `<tr><td>${esc(l.name)}</td><td>${per?"每柜":"整票"}</td><td>${per?esc(l.container_type||primaryType()):"—"}</td>`
+        +`<td class="r">${moneyVal(l.unit_price)||"—"}</td><td class="r">${per?(moneyVal(l.qty).replace(".00","")||"—"):"1"}</td><td class="r">${money(l.amount)}</td></tr>`;
+    }).join("");
+  }
+  function billSectionRO(currency){
+    const lines=totalLines(), target=num(state.port_charge_invoice_total);
+    const discounted=target>0&&target<lines-0.01, payable=discounted?target:lines;
+    const discountRow=discounted?`<tr class="foot"><td colspan="5">优惠</td><td class="r">-${money(lines-target)}</td></tr>`:"";
+    return `<div class="sec"><div class="sec-t">港杂费账单明细</div>
+      <table class="billgrid ro"><thead><tr><th>费用项</th><th>计费</th><th>柜型</th><th class="r">单价</th><th class="r">数量</th><th class="r">合计 (${esc(currency)})</th></tr></thead>
+      <tbody>${billRowsRO()}${discountRow}<tr class="foot"><td colspan="5">应付合计 · ${esc(currency)}</td><td class="r">${money(payable)}</td></tr></tbody></table></div>`;
+  }
+  function renderBillDoc(){
+    const sp=state.shipment, currency=(state.invoices[0]||{}).currency||(state.bill_lines[0]||{}).currency||"CNY", cntr=cntrSummary();
+    const sellerEn=state.seller.name_en?`<div>${esc(state.seller.name_en)}</div>`:"";
+    app.innerHTML=`<div class="sheet-hd"><div><div class="brand">${sellerEn}
+      <div class="cn">${esc(state.seller.name||"")}　致：${esc(state.buyer.name||"")}</div></div></div>
+      <div class="docmeta"><div class="doctag">${docTitle()}</div><div class="docno">${esc(sp.shipment_no||sp.bl_no||"")}</div></div></div>
+      <div class="shipbar"><span>提单号 <b>${esc(sp.bl_no||"—")}</b></span><span>船名航次 <b>${esc([sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—")}</b></span>
+      <span><b>${esc([sp.pol,sp.pod].filter(Boolean).join(" → ")||"—")}</b></span><span>柜量 <b>${esc(cntr||"—")}</b></span></div>
+      ${billSectionRO(currency)}
+      <div class="billseal"><div class="billseal-co">${esc(state.seller.name||"")}</div><div class="billseal-lab">（盖章）</div><div class="billseal-date">日期：＿＿＿年＿＿月＿＿日</div></div>`;
+  }
   function invoiceRows(){
     const editable=(state.invoices[0]?.mode||"self")==="other";
     return state.invoices.map((inv,i)=>`<tr>
@@ -126,6 +154,7 @@
     return `<button class="collapse-hd confirmed-line" id="sheetToggle"><span>✓ 已确认 · ${sym(currency)}${money(totalLines())} · ${state.settlement_mode==="single"?"单票":"月结"} · ${esc(fmtTime(state.confirmed_at)||"已确认")}</span><span class="chev">展开 ▾</span></button>`;
   }
   function render(){
+    if(DOCBILL){ renderBillDoc(); return; } // 盖章账单明细PDF:只出账单,不出发票/联系人/控件
     recalcInvoice();
     const sp=state.shipment, inv=state.invoices[0], currency=inv.currency||"CNY", cntr=cntrSummary();
     if(isConfirmed()&&!sheetOpen){
