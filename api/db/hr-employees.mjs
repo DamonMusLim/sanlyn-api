@@ -11,6 +11,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { getPool, setCors } from "./db.js";
+import { hashPw } from "./hr-staff-auth.mjs";   // 店长设初始密码用同一套 scrypt
 
 // ── 员工自助链接：签发【限权长效 token】（role=staff + employee_id，180天）──
 // 用同一个 JWT_SECRET，故 auth.js 的 verifyToken 能直接验；但 role=staff 进不了任何后台接口，
@@ -35,10 +36,17 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const KINDS = { id_card: "id_card_file", contract: "contract_file" };
 
 const COLS = "id, employee_code, name, role, employment_status, store_id, phone, id_card_no, "
+  + "company_code, position, pay_type, pay_rate, "
+  + "to_char(probation_end,'YYYY-MM-DD') AS probation_end, "
+  + "(password_hash IS NOT NULL) AS has_password, must_change_password, "
   + "id_card_file, to_char(contract_start,'YYYY-MM-DD') AS contract_start, "
   + "to_char(contract_end,'YYYY-MM-DD') AS contract_end, contract_file, "
   + "emergency_contact, emergency_phone, to_char(hire_date,'YYYY-MM-DD') AS hire_date, "
   + "face_employee_id, face_enabled, left_at, created_at";
+
+// 空串进 date/numeric 列会让 PG 报 invalid input syntax，统一转 null
+const dt = (v) => (v === "" || v === undefined ? null : v);
+const num = (v) => (v === "" || v === undefined || v === null ? null : Number(v));
 
 function maskId(v) {
   const s = String(v || "");
@@ -103,7 +111,8 @@ export default async function handler(req, res) {
         const token = signStaffToken(e.rows[0].id, e.rows[0].name);
         return res.status(200).json({ success: true, data: {
           employee: e.rows[0].name,
-          url: `https://pet.sanlyn.cn/m/staff/${token}`,
+          // 员工端读的是 ?t=（Q.get("t")），路径式 /m/staff/<token> 打开是登录页
+          url: `https://pet.sanlyn.cn/m/staff?t=${token}`,
           expires_days: STAFF_TOKEN_DAYS,
           note: "发给员工本人。此链接只能看/提交他自己的数据，无任何审批权。员工离职后链接自动失效。",
         }});
@@ -156,11 +165,17 @@ export default async function handler(req, res) {
       const r = await pool.query(
         `INSERT INTO hr_employees
            (employee_code, name, role, store_id, phone, id_card_no,
-            contract_start, contract_end, emergency_contact, emergency_phone, hire_date)
-         VALUES ($1,$2,COALESCE($3,'clerk'),COALESCE($4,'jinfang'),$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+            contract_start, contract_end, emergency_contact, emergency_phone, hire_date,
+            company_code, position, pay_type, pay_rate, probation_end,
+            password_hash, must_change_password)
+         VALUES ($1,$2,COALESCE($3,'clerk'),COALESCE($4,'jinfang'),$5,$6,$7,$8,$9,$10,$11,
+                 COALESCE($12,'JINFANG'),$13,COALESCE($14,'daily'),$15,$16,$17,true) RETURNING id`,
         [b.employee_code || null, b.name, b.role || null, b.store_id || null, b.phone || null,
-         b.id_card_no || null, b.contract_start || null, b.contract_end || null,
-         b.emergency_contact || null, b.emergency_phone || null, b.hire_date || null]
+         b.id_card_no || null, dt(b.contract_start), dt(b.contract_end),
+         b.emergency_contact || null, b.emergency_phone || null, dt(b.hire_date),
+         b.company_code || null, b.position || null, b.pay_type || null,
+         num(b.pay_rate), dt(b.probation_end),
+         b.password ? hashPw(String(b.password)) : null]
       );
       const newId = r.rows[0].id;
       const sets = [];
@@ -187,15 +202,26 @@ export default async function handler(req, res) {
       if (!id) return res.status(400).json({ success: false, error: "id 必填" });
       const allowed = ["employee_code", "name", "role", "employment_status", "store_id",
         "phone", "id_card_no", "contract_start", "contract_end",
-        "emergency_contact", "emergency_phone", "hire_date", "face_employee_id", "face_enabled"];
+        "emergency_contact", "emergency_phone", "hire_date", "face_employee_id", "face_enabled",
+        "company_code", "position", "pay_type", "pay_rate", "probation_end"];
       const sets = [];
       const params = [];
       for (const k of allowed) {
         if (k in body) {
-          // 日期空串要转 null，否则 PG 报 invalid input syntax for type date
-          const v = (["contract_start", "contract_end", "hire_date"].includes(k) && body[k] === "") ? null : body[k];
+          // 日期/数字空串要转 null，否则 PG 报 invalid input syntax
+          let v = body[k];
+          if (["contract_start", "contract_end", "hire_date", "probation_end"].includes(k)) v = dt(v);
+          if (k === "pay_rate") v = num(v);
           params.push(v); sets.push(`${k} = $${params.length}`);
         }
+      }
+      // 店长重设初始密码：员工下次登录强制改
+      if (body.password) {
+        params.push(hashPw(String(body.password)));
+        sets.push(`password_hash = $${params.length}`);
+        sets.push("must_change_password = true");
+        sets.push("login_fail_count = 0");
+        sets.push("locked_until = NULL");
       }
       for (const k of Object.keys(KINDS)) {
         const b64 = body[`${k}_base64`];

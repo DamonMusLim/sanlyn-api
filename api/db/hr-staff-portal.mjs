@@ -32,6 +32,20 @@ function saveReceipt(filename, mime, dataB64) {
   return `${PUBLIC_HOST}/uploads/reimbursement/${path.basename(dir)}/${safe}`;
 }
 
+// 身份证照片存私有目录，路径规则跟 hr-employees.mjs 的 saveDoc 保持一致（只存相对路径）
+function savePrivateIdCard(employeeId, filename, mime, dataB64) {
+  const ok = /^image\//.test(String(mime || "")) || mime === "application/pdf";
+  if (!ok) throw new Error("身份证只能传图片或 PDF");
+  const buf = Buffer.from(dataB64, "base64");
+  if (buf.length > 8 * 1024 * 1024) throw new Error("文件超过8MB");
+  const dir = path.join(PRIVATE_ROOT, String(employeeId));
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const safe = `id_card_${Date.now()}_` +
+    String(filename || "doc").replace(/[^a-zA-Z0-9._\u4e00-\u9fa5-]/g, "_");
+  fs.writeFileSync(path.join(dir, safe), buf, { mode: 0o600 });
+  return path.posix.join(String(employeeId), safe);
+}
+
 function monthOf(v) {
   if (/^\d{4}-\d{2}$/.test(String(v || ""))) return v;
   const d = new Date();
@@ -270,7 +284,49 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, data: r.rows[0], message: "已提交，等店长审批" });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime" });
+      // 员工自助补资料（入职当天用）。只开紧急联系人 + 身份证首次填写，其余一律不可改。
+      if (action === "update_profile") {
+        const cur = (await pool.query(
+          "SELECT id_card_no, id_card_file FROM hr_employees WHERE id=$1", [empId])).rows[0] || {};
+        const sets = [];
+        const params = [];
+        const done = [];
+
+        if ("emergency_contact" in b) {
+          params.push(String(b.emergency_contact || "").trim() || null);
+          sets.push(`emergency_contact = $${params.length}`); done.push("紧急联系人");
+        }
+        if ("emergency_phone" in b) {
+          const ph = String(b.emergency_phone || "").trim();
+          if (ph && !/^[0-9+\-\s]{6,20}$/.test(ph))
+            return res.status(400).json({ success: false, error: "紧急联系电话格式不对" });
+          params.push(ph || null);
+          sets.push(`emergency_phone = $${params.length}`); done.push("紧急联系电话");
+        }
+        if (b.id_card_no) {
+          if (cur.id_card_no)
+            return res.status(400).json({ success: false, error: "身份证号已录入，要更正请找店长" });
+          const idn = String(b.id_card_no).trim().toUpperCase();
+          if (!/^[0-9]{17}[0-9X]$/.test(idn))
+            return res.status(400).json({ success: false, error: "身份证号要18位" });
+          params.push(idn); sets.push(`id_card_no = $${params.length}`); done.push("身份证号");
+        }
+        if (b.id_card_base64) {
+          if (cur.id_card_file)
+            return res.status(400).json({ success: false, error: "身份证照片已上传过，要更换请找店长" });
+          try {
+            const rel = savePrivateIdCard(empId, b.id_card_filename, b.id_card_mime, b.id_card_base64);
+            params.push(rel); sets.push(`id_card_file = $${params.length}`); done.push("身份证照片");
+          } catch (e) { return res.status(400).json({ success: false, error: e.message }); }
+        }
+
+        if (!sets.length) return res.status(400).json({ success: false, error: "没有要保存的内容" });
+        params.push(empId);
+        await pool.query(`UPDATE hr_employees SET ${sets.join(", ")} WHERE id = $${params.length}`, params);
+        return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
+      }
+
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime / update_profile" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
