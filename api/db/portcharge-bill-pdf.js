@@ -93,9 +93,9 @@ export default async function portchargeBillPdf(req, res) {
     const { width: pw, height: ph } = p.getSize();
     const sW = Math.min(pw, ph) * 0.19;             // ≈40mm 标准公章
     const sH = sW * (img.height / img.width);
-    // 右侧,压在 TOTAL PAYABLE 区右方留白(避开左侧金额框+底部银行账号)。可按实测微调。
-    const sx = pw - sW - 70;
-    const sy = ph * 0.30;
+    // 右侧,压在 TOTAL PAYABLE 框右方留白(避开上方费用表数字 + 下方银行账号)。实测微调后:
+    const sx = pw - sW - 78;
+    const sy = ph * 0.205;
     p.drawImage(img, { x: sx, y: sy, width: sW, height: sH, opacity: 0.85 });
     const outBuf = Buffer.from(await doc.save());
     const stampedUrl = await uploadToOSS(`${base}_stamped.pdf`, outBuf);
