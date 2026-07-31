@@ -99,6 +99,7 @@
       <tbody>${billRowsRO()}${discountRow}<tr class="foot"><td colspan="5">应付合计 · ${esc(currency)}</td><td class="r">${money(payable)}</td></tr></tbody></table></div>`;
   }
   function renderBillDoc(){
+    document.body.classList.add("docbill"); // 覆盖全局@media print的body隐藏(那条只给发票#invoicePrintArea放行)
     const sp=state.shipment, currency=(state.invoices[0]||{}).currency||(state.bill_lines[0]||{}).currency||"CNY", cntr=cntrSummary();
     const sellerEn=state.seller.name_en?`<div>${esc(state.seller.name_en)}</div>`:"";
     app.innerHTML=`<div class="sheet-hd"><div><div class="brand">${sellerEn}

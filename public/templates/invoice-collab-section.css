@@ -67,6 +67,10 @@ th.r,td.r{text-align:right}td{padding:8px 7px;border-bottom:1px solid var(--line
   .tsel,.edit{border:0!important;background:transparent!important;appearance:none;-webkit-appearance:none}
   .edithint,.invoice-sec>.sec-t,.modebar,.addinv,.savedef{display:none!important}
   .invoice-seal{display:block!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  /* doc=bill 盖章账单明细:整页可见(覆盖上面body*隐藏),打印背景色保真 */
+  body.docbill *{visibility:visible!important}
+  body.docbill{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body.docbill .wrap{padding:0!important}
 }
 
 /* editable bill grid + container editor */
