@@ -125,6 +125,7 @@ const PUBLIC_PATHS = [
   "/api/db/sample-delivery-checkin",
   "/api/db/factory-portal", // 工厂门户:resolve/upload公开,gen内部校admin JWT
   "/api/db/invoice-collab-confirm", // 港杂费开票确认: magic-link token-gated
+  "/api/db/portcharge-bill-pdf", // 港杂费账单明细PDF+盖章: 同 magic-link token 鉴权(token=凭证)
   "/api/db/customer-invoice", // 客户销项发票门户:resolve/save/confirm公开,gen内部校admin JWT
   "/api/db/factory-invoice-reconcile", // 工厂开票对账台:internal自校JWT,factory c/mt token-gated
   "/api/db/customs-collab", // 报关单开票协同:internal自校JWT,factory c/mt token-gated
