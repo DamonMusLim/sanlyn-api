@@ -104,16 +104,14 @@ export default async function portchargeBillPdf(req, res) {
     const sH = sW * (img.height / img.width);
     let sx, sy;
     if (sealBox) {
-      // 量到的 billseal 中心(css px)→PDF点(96→72dpi=0.75)+页边距;pdf-lib原点在左下
-      const f = 0.75, mL = MARGIN_MM.left * 72 / 25.4, mT = MARGIN_MM.top * 72 / 25.4;
-      const cxPt = mL + sealBox.cx * f, cyTopPt = mT + sealBox.cy * f;
-      sx = cxPt - sW / 2;
+      // 竖直用量到的 billseal 行(销售方盖章那一行);水平固定压右侧(billseal右对齐,块级div量不到文字x)
+      const f = 0.75, mT = MARGIN_MM.top * 72 / 25.4;
+      const cyTopPt = mT + sealBox.cy * f;
+      sx = pw - sW - 56;                 // 右侧,压住卖方名/(盖章)
       sy = ph - cyTopPt - sH / 2;
-      // 兜底夹取在页内
-      sx = Math.max(8, Math.min(sx, pw - sW - 8));
-      sy = Math.max(8, Math.min(sy, ph - sH - 8));
+      sy = Math.max(8, Math.min(sy, ph - sH - 8)); // 夹在页内
     } else {
-      const ox = 64, oy = 72; sx = pw - sW - ox; sy = oy; // 量不到就退右下角
+      sx = pw - sW - 56; sy = 72; // 量不到就退右下角
     }
     p.drawImage(img, { x: sx, y: sy, width: sW, height: sH, opacity: 0.85 });
     const outBuf = Buffer.from(await doc.save());
