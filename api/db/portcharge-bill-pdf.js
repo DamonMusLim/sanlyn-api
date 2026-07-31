@@ -1,23 +1,23 @@
 // api/db/portcharge-bill-pdf.js
-// 港杂费账单明细 PDF（可选盖卖方公章）——给恒安等客户随发票寄的「盖章账单明细扫描件」。
+// 港杂费账单(正版 fob_portcharge 模板)+ 自动盖卖方章 → 客户「盖章账单明细扫描件」。
 // GET /api/db/portcharge-bill-pdf?token=<magic>&stamp=1&company=OCEANBABY
-//   stamp=1 → 盖章版；不带 → 素账单。company 默认 OCEANBABY(洋宝宝,港杂卖方)。
-// 账单只读页由 invoice-collab-section 前端 doc=bill 模式渲染(复用恒安已看到的同一份账单外观)。
-// 章图铁律：只取 customer_stamps 里该公司 is_default+is_active 的唯一章，域名白名单校验(同 apply.js/straddle)。
-import puppeteer from "puppeteer-core";
+// 正版模板 = shipping-plan-pdf.js 的 type=fob_portcharge(PC-{BL}-{出单日}编号+集装箱明细+Terms+银行信息)。
+// 本端点:magic-link token→shipment_id→直接调正版 handler(绕中间件,拿format=pdf buffer)→(stamp=1)DAS盖章→OSS→返URL。
+// ⚠️不再自画账单(0731 Damon纠正:先锁真源别自画)。章图铁律同 apply.js/straddle:只取该公司 default+active 唯一章+域名白名单。
+import crypto from "crypto";
 import { getPool } from "./db.js";
 import { squareCropStamp } from "../stamp/_straddle-shared.js";
 import { clean } from "./statement-portal-helpers.js";
+import shippingPlanPdf from "./shipping-plan-pdf.js";
 
 const OSS_BASE = "https://files.sanlynos.com";
+const sha256 = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
 
 async function uploadToOSS(ossPath, buffer) {
   const OSS = (await import("ali-oss")).default;
   const client = new OSS({
-    region: process.env.OSS_REGION,
-    accessKeyId: process.env.OSS_ACCESS_KEY_ID,
-    accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
-    bucket: process.env.OSS_BUCKET,
+    region: process.env.OSS_REGION, accessKeyId: process.env.OSS_ACCESS_KEY_ID,
+    accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET, bucket: process.env.OSS_BUCKET,
   });
   await client.put(ossPath, Buffer.from(buffer), { mime: "application/pdf" });
   return `${OSS_BASE}/${ossPath}`;
@@ -33,6 +33,24 @@ async function resolveSealUrl(pool, companyCode) {
   return null;
 }
 
+// 直接调正版 fob_portcharge handler(绕过auth中间件),拿 format=pdf 的 PDF buffer
+async function fobPortchargePdf(sid) {
+  return await new Promise((resolve, reject) => {
+    let done = false;
+    const finish = (b) => { if (!done) { done = true; resolve(b); } };
+    const fail = (m) => { if (!done) { done = true; reject(new Error(m)); } };
+    const req = { method: "GET", query: { id: String(sid), type: "fob_portcharge", format: "pdf" }, headers: {}, user: { role: "admin" } };
+    const res = {
+      _s: 200, setHeader() {}, writeHead() {}, status(c) { this._s = c; return this; },
+      send(b) { finish(Buffer.isBuffer(b) ? b : Buffer.from(b || "")); return this; },
+      end(b) { if (b != null) finish(Buffer.isBuffer(b) ? b : Buffer.from(b)); else fail("正版账单空返回"); return this; },
+      json(o) { fail("正版账单生成失败:" + JSON.stringify(o).slice(0, 200)); return this; },
+      redirect() { fail("正版账单意外重定向"); return this; },
+    };
+    Promise.resolve(shippingPlanPdf(req, res)).catch((e) => fail(e && e.message));
+  });
+}
+
 export default async function portchargeBillPdf(req, res) {
   const pool = getPool();
   const token = clean(req.query?.token);
@@ -40,93 +58,56 @@ export default async function portchargeBillPdf(req, res) {
   const companyCode = (clean(req.query?.company) || "OCEANBABY").toUpperCase();
   if (!token) return res.status(400).json({ error: "token required" });
 
-  let browser;
   try {
-    // 盖章前先确认有章，避免白跑一趟 puppeteer
+    const ml = await pool.query(
+      "SELECT meta FROM magic_links WHERE token_hash=$1 AND expires_at>NOW() AND revoked_at IS NULL LIMIT 1",
+      [sha256(token)]
+    );
+    const sid = ml.rows[0]?.meta?.shipment_id;
+    if (!sid) return res.status(404).json({ error: "invalid_or_expired_token" });
+
     let sealUrl = null;
     if (doStamp) {
       sealUrl = await resolveSealUrl(pool, companyCode);
-      if (!sealUrl) return res.status(400).json({ error: "公章未录入DAS", detail: `${companyCode} 无 default+active 章，请先在 DAS 上传` });
+      if (!sealUrl) return res.status(400).json({ error: "公章未录入DAS", detail: `${companyCode} 无 default+active 章` });
     }
 
-    browser = await puppeteer.launch({
-      executablePath: "/usr/bin/google-chrome",
-      headless: "new",
-      args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-    });
-    const page = await browser.newPage();
-    const port = process.env.PORT || 9000;
-    const url = `http://127.0.0.1:${port}/public/templates/invoice-collab-section.html?token=${encodeURIComponent(token)}&doc=bill`;
-    await page.goto(url, { waitUntil: "networkidle0", timeout: 25000 });
-    await page.waitForFunction(
-      () => document.querySelector(".billgrid.ro tbody tr") || /err|错误|不可用/i.test(document.body.innerText),
-      { timeout: 12000 }
-    ).catch(() => {});
-    // 在打印媒体+A4内容宽度下量 billseal(销售方 盖章)中心,好把章精确压上去(不是固定页角)
-    const MARGIN_MM = { top: 12, left: 10 };
-    let sealBox = null;
-    if (doStamp) {
-      try {
-        await page.emulateMediaType("print");
-        await page.setViewport({ width: 718, height: 1010 }); // A4内容宽190mm@96dpi≈718px
-        sealBox = await page.evaluate(() => {
-          const el = document.querySelector(".billseal-lab") || document.querySelector(".billseal");
-          if (!el) return null;
-          const r = el.getBoundingClientRect();
-          return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
-        });
-      } catch (_) {}
-    }
-    const pdf = await page.pdf({
-      format: "A4", printBackground: true, displayHeaderFooter: false,
-      margin: { top: `${MARGIN_MM.top}mm`, bottom: "12mm", left: `${MARGIN_MM.left}mm`, right: "10mm" },
-    });
-    await browser.close(); browser = null;
+    const basePdf = await fobPortchargePdf(sid);
+    if (!basePdf || basePdf.length < 500) return res.status(500).json({ error: "正版账单生成失败" });
 
     const ts = Date.now();
-    const base = `documents/portcharge-bill/${token.slice(0, 10)}_${ts}`;
+    const base = `documents/portcharge-bill/${String(sid)}_${ts}`;
 
     if (!doStamp) {
-      const billUrl = await uploadToOSS(`${base}.pdf`, Buffer.from(pdf));
-      return res.status(200).json({ ok: true, stamped: false, billUrl });
+      const billUrl = await uploadToOSS(`${base}.pdf`, Buffer.from(basePdf));
+      return res.status(200).json({ ok: true, stamped: false, template: "fob_portcharge", billUrl });
     }
 
-    // 盖章：末页右下(br)压在 billseal（销售方 盖章）区
     const stampResp = await fetch(sealUrl);
     if (!stampResp.ok) throw new Error(`fetch seal ${stampResp.status}`);
     const stampBuf = await squareCropStamp(Buffer.from(await stampResp.arrayBuffer()));
     const { PDFDocument } = await import("pdf-lib");
-    const doc = await PDFDocument.load(pdf);
+    const doc = await PDFDocument.load(basePdf);
     const img = await doc.embedPng(stampBuf);
     const p = doc.getPage(doc.getPageCount() - 1);
     const { width: pw, height: ph } = p.getSize();
-    const sW = Math.min(pw, ph) * 0.19;          // ≈40mm 标准公章(同 apply.js)
+    const sW = Math.min(pw, ph) * 0.19;             // ≈40mm 标准公章
     const sH = sW * (img.height / img.width);
-    let sx, sy;
-    if (sealBox) {
-      // 竖直用量到的 billseal 行(销售方盖章那一行);水平固定压右侧(billseal右对齐,块级div量不到文字x)
-      const f = 0.75, mT = MARGIN_MM.top * 72 / 25.4;
-      const cyTopPt = mT + sealBox.cy * f;
-      sx = pw - sW - 56;                 // 右侧,压住卖方名/(盖章)
-      sy = ph - cyTopPt - sH / 2;
-      sy = Math.max(8, Math.min(sy, ph - sH - 8)); // 夹在页内
-    } else {
-      sx = pw - sW - 56; sy = 72; // 量不到就退右下角
-    }
+    // 右侧,压在 TOTAL PAYABLE 区右方留白(避开左侧金额框+底部银行账号)。可按实测微调。
+    const sx = pw - sW - 70;
+    const sy = ph * 0.30;
     p.drawImage(img, { x: sx, y: sy, width: sW, height: sH, opacity: 0.85 });
     const outBuf = Buffer.from(await doc.save());
     const stampedUrl = await uploadToOSS(`${base}_stamped.pdf`, outBuf);
     try {
       await pool.query(
         "INSERT INTO stamp_log (document_id,document_name,stamp_key,operator,pages,position,scale,source_url,stamped_url,stamped_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())",
-        [`portcharge:${token.slice(0, 10)}`, "港杂费账单明细", "portcharge:" + companyCode, "ai:port-charge", "last", "br", 0.19, url, stampedUrl]
+        [`portcharge:${sid}`, "港杂费账单(fob_portcharge)", "portcharge:" + companyCode, "ai:port-charge", "last", "custom", 0.19, `shipping-plan-pdf?id=${sid}&type=fob_portcharge`, stampedUrl]
       );
     } catch (_) {}
-    return res.status(200).json({ ok: true, stamped: true, companyCode, stampedUrl });
+    return res.status(200).json({ ok: true, stamped: true, template: "fob_portcharge", companyCode, stampedUrl });
   } catch (e) {
     console.error("[portcharge-bill-pdf]", e && e.message);
     return res.status(500).json({ error: "bill_pdf_failed", detail: e && e.message });
-  } finally {
-    if (browser) await browser.close();
   }
 }
