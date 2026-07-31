@@ -62,9 +62,24 @@ export default async function portchargeBillPdf(req, res) {
       () => document.querySelector(".billgrid.ro tbody tr") || /err|错误|不可用/i.test(document.body.innerText),
       { timeout: 12000 }
     ).catch(() => {});
+    // 在打印媒体+A4内容宽度下量 billseal(销售方 盖章)中心,好把章精确压上去(不是固定页角)
+    const MARGIN_MM = { top: 12, left: 10 };
+    let sealBox = null;
+    if (doStamp) {
+      try {
+        await page.emulateMediaType("print");
+        await page.setViewport({ width: 718, height: 1010 }); // A4内容宽190mm@96dpi≈718px
+        sealBox = await page.evaluate(() => {
+          const el = document.querySelector(".billseal-lab") || document.querySelector(".billseal");
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+        });
+      } catch (_) {}
+    }
     const pdf = await page.pdf({
       format: "A4", printBackground: true, displayHeaderFooter: false,
-      margin: { top: "12mm", bottom: "12mm", left: "10mm", right: "10mm" },
+      margin: { top: `${MARGIN_MM.top}mm`, bottom: "12mm", left: `${MARGIN_MM.left}mm`, right: "10mm" },
     });
     await browser.close(); browser = null;
 
@@ -87,8 +102,20 @@ export default async function portchargeBillPdf(req, res) {
     const { width: pw, height: ph } = p.getSize();
     const sW = Math.min(pw, ph) * 0.19;          // ≈40mm 标准公章(同 apply.js)
     const sH = sW * (img.height / img.width);
-    const ox = 64, oy = 72;                        // 右下留白
-    p.drawImage(img, { x: pw - sW - ox, y: oy, width: sW, height: sH, opacity: 0.85 });
+    let sx, sy;
+    if (sealBox) {
+      // 量到的 billseal 中心(css px)→PDF点(96→72dpi=0.75)+页边距;pdf-lib原点在左下
+      const f = 0.75, mL = MARGIN_MM.left * 72 / 25.4, mT = MARGIN_MM.top * 72 / 25.4;
+      const cxPt = mL + sealBox.cx * f, cyTopPt = mT + sealBox.cy * f;
+      sx = cxPt - sW / 2;
+      sy = ph - cyTopPt - sH / 2;
+      // 兜底夹取在页内
+      sx = Math.max(8, Math.min(sx, pw - sW - 8));
+      sy = Math.max(8, Math.min(sy, ph - sH - 8));
+    } else {
+      const ox = 64, oy = 72; sx = pw - sW - ox; sy = oy; // 量不到就退右下角
+    }
+    p.drawImage(img, { x: sx, y: sy, width: sW, height: sH, opacity: 0.85 });
     const outBuf = Buffer.from(await doc.save());
     const stampedUrl = await uploadToOSS(`${base}_stamped.pdf`, outBuf);
     try {
