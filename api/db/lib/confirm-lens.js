@@ -298,18 +298,24 @@ function redactInvoice(invoice) {
 
 // 港杂开票:默认全部代理港杂费@1%一张(Damon规则:没特意要求就1%港杂费);只有显式设了 taxed_port_charge(>0)
 // 才拆成 ①代理港杂费(带税1%) ②国际货代服务费(免税) 两张。0金额的票删掉(不给对方看空票)。banks由调用方传(避免循环依赖)
+// 🔴含税口径[Damon 0731]:港杂账单总额=价税合计(恒安付的就是账单总额),1%从含税倒推 不含税=总额/1.01,不是总额×1.01外加
 export function defaultInvoices(sp, total, currency, bl, cntr, mode = "self", banks = {}) {
   const SELLER_BANK = banks.bank || "", ACCOUNTS = banks.accounts || {};
   const invoiceTotal = money(sp.port_charge_invoice_total || total);
-  // 有特意要求(显式设了带税base)才拆免税;否则整票走代理港杂费@1%
-  const hasSplit = sp.taxed_port_charge != null && sp.taxed_port_charge !== "" && money(sp.taxed_port_charge) > 0;
-  const taxedBase = hasSplit ? Math.min(money(sp.taxed_port_charge), invoiceTotal) : invoiceTotal;
-  const freeAmt = money(invoiceTotal - taxedBase);
   const remark = `开户行 ${SELLER_BANK} · ${currency === "USD" ? "美金账号" : "人民币账号"} ${ACCOUNTS[currency] || ACCOUNTS.CNY} · 提单号 ${bl}${cntr ? " · " + cntr : ""}`;
-  return [
-    { id: "invoice-agency", currency, title: "增值税普通发票", mode,
+  const agency = (inclTotal) => {
+    const exTax = money(inclTotal / 1.01); // 含税倒推不含税
+    return { id: "invoice-agency", currency, title: "增值税普通发票", mode,
       item_name: "*经纪代理服务*代理港杂费", unit: "项", qty: 1,
-      amount_ex_tax: taxedBase, tax_rate: 0.01, tax_amount: money(taxedBase * 0.01), total_with_tax: money(taxedBase * 1.01), remark },
+      amount_ex_tax: exTax, tax_rate: 0.01, tax_amount: money(inclTotal - exTax), total_with_tax: money(inclTotal), remark };
+  };
+  // 有特意要求(显式设了带税含税额)才拆免税;否则整票走代理港杂费@1%
+  const hasSplit = sp.taxed_port_charge != null && sp.taxed_port_charge !== "" && money(sp.taxed_port_charge) > 0;
+  if (!hasSplit) return [agency(invoiceTotal)];
+  const taxedIncl = Math.min(money(sp.taxed_port_charge), invoiceTotal); // 带税那张的含税额
+  const freeAmt = money(invoiceTotal - taxedIncl);                        // 免税那张(无税,含=不含)
+  return [
+    agency(taxedIncl),
     { id: "invoice-service", currency, title: "增值税普通发票", mode,
       item_name: "*经纪代理服务*国际货物运输代理服务费", unit: "项", qty: 1,
       amount_ex_tax: freeAmt, tax_rate: 0, tax_amount: 0, total_with_tax: freeAmt, remark },
