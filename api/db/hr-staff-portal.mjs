@@ -12,10 +12,108 @@
 //      身份证号本人可见全量；文件走 ?file=id_card|contract 从私有目录取，employee 仍只从 token 认。
 import fs from "fs";
 import path from "path";
+import { spawnSync } from "child_process";
 import { getPool, setCors } from "./db.js";
 import { verifyToken } from "./auth.js";
 
 const D = "YYYY-MM-DD";
+
+// 首页「建议」:从每日销售快照里挑出**事实型**提醒，不做定价/补货决策。
+// ⚠️ 店员端可见 —— 绝不 SELECT cost_price / gross_margin_pct，源头就不取。
+const DNA_STORE = { JINFANG: "63350001" };
+async function tipsFor(pool, companyCode) {
+  const store = DNA_STORE[String(companyCode || "")];
+  if (!store) return null;
+  const asOf = (await pool.query(
+    "SELECT to_char(MAX(as_of),'YYYY-MM-DD') AS d FROM petstore_sku_sales_dna WHERE store_code=$1",
+    [store])).rows[0]?.d;
+  if (!asOf) return null;
+
+  // 断货了但还在卖 —— 该补
+  const oos = await pool.query(
+    `SELECT product_name, spec, oos_days_30, ROUND(daily_avg_30::numeric, 2) AS daily_avg
+       FROM petstore_sku_sales_dna
+      WHERE store_code=$1 AND as_of=$2 AND cur_stock <= 0 AND daily_avg_30 > 0
+      ORDER BY daily_avg_30 DESC LIMIT 5`, [store, asOf]);
+  // 负库存 = 系统卖超，要盘
+  const neg = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM petstore_sku_sales_dna
+      WHERE store_code=$1 AND as_of=$2 AND cur_stock < 0`, [store, asOf]);
+
+  const list = [];
+  if (oos.rowCount) {
+    list.push({
+      kind: "restock", level: "warn",
+      title: `${oos.rowCount === 5 ? "至少 " : ""}${oos.rowCount} 个断货了还在卖`,
+      sub: "货架空着，顾客问得到买不到",
+      items: oos.rows.map((r) => ({
+        name: r.product_name, spec: r.spec,
+        note: `日均 ${r.daily_avg} 个` + (r.oos_days_30 > 0 ? ` · 已断 ${r.oos_days_30} 天` : ""),
+      })),
+    });
+  }
+  if (neg.rows[0]?.n > 0) {
+    list.push({
+      kind: "stocktake", level: "info",
+      title: `${neg.rows[0].n} 个负库存`,
+      sub: "系统卖超了，实物和账对不上，需要盘一下",
+      items: [],
+    });
+  }
+  return list.length ? { as_of: asOf, list } : null;
+}
+
+// 开店点检：模板 hr_checklist_items(phase='open') + 当天执行记录 hr_checklist_logs。
+// 只在「当天还没人做完开店点检」时返回，做完就不再打扰。
+async function openChecklist(pool, companyCode, today) {
+  const r = await pool.query(
+    `SELECT i.id, i.seq, i.title, i.hint, i.need_photo,
+            l.status, l.employee_name, to_char(l.done_at,'HH24:MI') AS done_at
+       FROM hr_checklist_items i
+       LEFT JOIN hr_checklist_logs l
+         ON l.item_id = i.id AND l.work_date = $2 AND l.company_code = i.company_code
+      WHERE i.company_code = $1 AND i.phase = 'open' AND i.is_active = true
+      ORDER BY i.seq, i.id`, [companyCode, today]);
+  const items = r.rows;
+  if (!items.length) return null;
+  const left = items.filter((x) => !x.status).length;
+  return { phase: "open", total: items.length, left, items };
+}
+
+// ── 今日待办：读店员任务真源 ────────────────────────────────────────
+// 真源 = 腾讯本地 /opt/pet-ai-clerk/data/decisions.db（clerk-service 在写）。
+// ⚠️ mini 上那份 ~/.openclaw/decisions.db 是**陈旧存档**(2026-07-05 后就没更新)，别再读它。
+// 腾讯 node v18 没有 node:sqlite，走 sqlite3 CLI 只读。
+const CLERK_DB = "/opt/pet-ai-clerk/data/decisions.db";
+const KIND_LABEL = {
+  verify_expiry: "保质期核查", verify_stock: "库存核对", restock_photo: "补货拍照",
+  stocktake: "盘点", discount_review: "改价复核", review_losing: "亏本复核",
+  review_expired: "临期复核",
+};
+function clerkQuery(sql) {
+  try {
+    const r = spawnSync("sqlite3", ["-json", "-readonly", CLERK_DB, sql],
+      { encoding: "utf8", timeout: 5000 });
+    if (r.status !== 0) return [];
+    return JSON.parse(r.stdout || "[]");
+  } catch { return []; }
+}
+// 只给金枋的人看（clerk_tasks 全是金枋店的活）。开第二家店时这里要改成按 store_code 过滤。
+function todoFor(companyCode) {
+  if (String(companyCode || "") !== "JINFANG") return { total: 0, by_kind: [], recent: [] };
+  const byKind = clerkQuery(
+    "SELECT kind, COUNT(*) AS n FROM clerk_tasks WHERE status='pending' GROUP BY kind ORDER BY n DESC");
+  // 只取品名和货架，system_data 里有成本价，绝不外泄
+  const recent = clerkQuery(
+    "SELECT kind, product_name, shelf_list FROM clerk_tasks WHERE status='pending' " +
+    "ORDER BY assigned_at DESC LIMIT 3");
+  return {
+    total: byKind.reduce((a, x) => a + (x.n || 0), 0),
+    by_kind: byKind.map((x) => ({ kind: x.kind, label: KIND_LABEL[x.kind] || x.kind, n: x.n })),
+    recent: recent.map((x) => ({ label: KIND_LABEL[x.kind] || x.kind,
+      product_name: x.product_name, shelf: x.shelf_list })),
+  };
+}
 const UPLOAD_DIR = "/opt/sanlyn-uploads/reimbursement";
 const PRIVATE_ROOT = "/opt/sanlyn-private/hr";   // 证件私有目录，不在任何 web root 内
 const PUBLIC_HOST = "https://ai.sanlyn.cn";
@@ -139,6 +237,9 @@ export default async function handler(req, res) {
               hire_date: me.hire_date, pay_type: me.pay_type, pay_rate: me.pay_rate,
               emergency_contact: me.emergency_contact, emergency_phone: me.emergency_phone },
         month,
+        todo: todoFor(me.company_code),
+        checklist: await openChecklist(pool, me.company_code, today),
+        tips: await tipsFor(pool, me.company_code),
         shifts: shifts.rows, leaves: leaves.rows, reimbursements: reimb.rows,
         payslips: pay.rows, overtime: ot.rows, handbook: book.rows,
       });
@@ -284,6 +385,38 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, data: r.rows[0], message: "已提交，等店长审批" });
       }
 
+      // 开店点检:勾一条 或 跳过一条。跳过也留痕——店长看得到谁跳了什么。
+      if (action === "checklist") {
+        const itemId = parseInt(b.item_id, 10);
+        const st = b.status === "skipped" ? "skipped" : "done";
+        if (!itemId) return res.status(400).json({ success: false, error: "缺 item_id" });
+        const it = (await pool.query(
+          "SELECT id, need_photo, title FROM hr_checklist_items WHERE id=$1 AND company_code=$2 AND is_active=true",
+          [itemId, me.company_code])).rows[0];
+        if (!it) return res.status(400).json({ success: false, error: "没有这一项" });
+
+        let url = null;
+        if (b.photo_base64) {
+          try { url = saveReceipt(b.photo_filename, b.photo_mime, b.photo_base64); }
+          catch (e) { return res.status(400).json({ success: false, error: e.message }); }
+        }
+        // 要求拍照的项，勾"完成"必须有照片；"稍后"不强制（不然会有人干脆不做）
+        if (st === "done" && it.need_photo && !url) {
+          return res.status(400).json({ success: false, error: `「${it.title}」要拍一张照片` });
+        }
+        const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+        await pool.query(
+          `INSERT INTO hr_checklist_logs
+             (company_code, work_date, phase, item_id, employee_id, employee_name, status, photo_url, note)
+           VALUES ($1,$2,'open',$3,$4,$5,$6,$7,$8)
+           ON CONFLICT (company_code, work_date, phase, item_id)
+           DO UPDATE SET status=EXCLUDED.status, photo_url=COALESCE(EXCLUDED.photo_url, hr_checklist_logs.photo_url),
+                         note=EXCLUDED.note, employee_id=EXCLUDED.employee_id,
+                         employee_name=EXCLUDED.employee_name, done_at=now()`,
+          [me.company_code, today, itemId, empId, me.name, st, url, b.note || null]);
+        return res.status(200).json({ success: true, message: st === "done" ? "记下了" : "已标记稍后" });
+      }
+
       // 员工自助补资料（入职当天用）。只开紧急联系人 + 身份证首次填写，其余一律不可改。
       if (action === "update_profile") {
         const cur = (await pool.query(
@@ -326,7 +459,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime / update_profile" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
