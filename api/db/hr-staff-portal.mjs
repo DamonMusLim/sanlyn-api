@@ -18,14 +18,19 @@ import { verifyToken } from "./auth.js";
 
 const D = "YYYY-MM-DD";
 
-// 今天的事:一次性、带时间点的当天安排(到货/上门/临时交代)。
+// 当天条目:kind='tip' 进「建议」(Damon 自己写的)，其余进「今日待办」(带时间的安排)。
+// 一张表两种用途，不另加表。
 async function agendaFor(pool, companyCode, today) {
   const r = await pool.query(
     `SELECT id, to_char(at_time,'HH24:MI') AS at_time, title, note, kind, status
        FROM hr_day_agenda
       WHERE company_code=$1 AND work_date=$2
       ORDER BY at_time NULLS LAST, id`, [companyCode, today]);
-  return r.rows.length ? r.rows : null;
+  const all = r.rows;
+  return {
+    items: all.filter((x) => x.kind !== "tip"),
+    tips: all.filter((x) => x.kind === "tip"),
+  };
 }
 
 // 点检照片交 MiniMax-M3 判。⚠️ 只标不拦:判不合格也记完成，异常留给店长看。
@@ -55,51 +60,6 @@ async function reviewPhoto(title, hint, dataUrl) {
     if (a < 0 || b < a) return null;
     return JSON.parse(t.slice(a, b + 1));
   } catch (e) { return null; }   // AI 挂了不影响店员打勾
-}
-
-// 首页「建议」:从每日销售快照里挑出**事实型**提醒，不做定价/补货决策。
-// ⚠️ 店员端可见 —— 绝不 SELECT cost_price / gross_margin_pct，源头就不取。
-const DNA_STORE = { JINFANG: "63350001" };
-async function tipsFor(pool, companyCode) {
-  const store = DNA_STORE[String(companyCode || "")];
-  if (!store) return null;
-  const asOf = (await pool.query(
-    "SELECT to_char(MAX(as_of),'YYYY-MM-DD') AS d FROM petstore_sku_sales_dna WHERE store_code=$1",
-    [store])).rows[0]?.d;
-  if (!asOf) return null;
-
-  // 断货了但还在卖 —— 该补
-  const oos = await pool.query(
-    `SELECT product_name, spec, oos_days_30, ROUND(daily_avg_30::numeric, 2) AS daily_avg
-       FROM petstore_sku_sales_dna
-      WHERE store_code=$1 AND as_of=$2 AND cur_stock <= 0 AND daily_avg_30 > 0
-      ORDER BY daily_avg_30 DESC LIMIT 5`, [store, asOf]);
-  // 负库存 = 系统卖超，要盘
-  const neg = await pool.query(
-    `SELECT COUNT(*)::int AS n FROM petstore_sku_sales_dna
-      WHERE store_code=$1 AND as_of=$2 AND cur_stock < 0`, [store, asOf]);
-
-  const list = [];
-  if (oos.rowCount) {
-    list.push({
-      kind: "restock", level: "warn",
-      title: `${oos.rowCount === 5 ? "至少 " : ""}${oos.rowCount} 个断货了还在卖`,
-      sub: "货架空着，顾客问得到买不到",
-      items: oos.rows.map((r) => ({
-        name: r.product_name, spec: r.spec,
-        note: `日均 ${r.daily_avg} 个` + (r.oos_days_30 > 0 ? ` · 已断 ${r.oos_days_30} 天` : ""),
-      })),
-    });
-  }
-  if (neg.rows[0]?.n > 0) {
-    list.push({
-      kind: "stocktake", level: "info",
-      title: `${neg.rows[0].n} 个负库存`,
-      sub: "系统卖超了，实物和账对不上，需要盘一下",
-      items: [],
-    });
-  }
-  return list.length ? { as_of: asOf, list } : null;
 }
 
 // 开店点检：模板 hr_checklist_items(phase='open') + 当天执行记录 hr_checklist_logs。
@@ -278,7 +238,6 @@ export default async function handler(req, res) {
         month,
         todo: todoFor(me.company_code),
         checklist: await openChecklist(pool, me.company_code, today),
-        tips: await tipsFor(pool, me.company_code),
         agenda: await agendaFor(pool, me.company_code, today),
         shifts: shifts.rows, leaves: leaves.rows, reimbursements: reimb.rows,
         payslips: pay.rows, overtime: ot.rows, handbook: book.rows,
