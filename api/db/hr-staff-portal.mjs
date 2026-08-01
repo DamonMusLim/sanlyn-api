@@ -18,22 +18,29 @@ import { verifyToken } from "./auth.js";
 
 const D = "YYYY-MM-DD";
 
+// 今天的事:一次性、带时间点的当天安排(到货/上门/临时交代)。
+async function agendaFor(pool, companyCode, today) {
+  const r = await pool.query(
+    `SELECT id, to_char(at_time,'HH24:MI') AS at_time, title, note, kind, status
+       FROM hr_day_agenda
+      WHERE company_code=$1 AND work_date=$2
+      ORDER BY at_time NULLS LAST, id`, [companyCode, today]);
+  return r.rows.length ? r.rows : null;
+}
+
 // 点检照片交 MiniMax-M3 判。⚠️ 只标不拦:判不合格也记完成，异常留给店长看。
 // (M3 是多模态的,2026-08-01 实测;旧的 MiniMax-VL-01 已下线)
 async function reviewPhoto(title, hint, dataUrl) {
   const key = process.env.MINIMAX_API_KEY;
   if (!key || !dataUrl) return null;
-  const prompt = `你是宠物店店长，正在核验店员拍的开店点检照片。
-检查项：「${title}」${hint ? "（" + hint + "）" : ""}
-只回 JSON，不要别的：
-{"能判断":true/false,"判不了的原因":"太暗/太糊/没拍到位/空，能判断就留空",
- "合格":true/false,"看到什么":"25字内","问题":["具体问题，没有就空数组"]}`;
+  const prompt = `宠物店点检项「${title}」。看图后只回JSON：`
+    + `{"能判断":true/false,"合格":true/false,"看到什么":"25字内","问题":["没有就空"]}`;
   try {
     const r = await fetch("https://api.minimaxi.com/v1/text/chatcompletion_v2", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "MiniMax-M3", max_tokens: 300,
+        model: "MiniMax-M3", max_tokens: 1500,
         messages: [{ role: "user", content: [
           { type: "text", text: prompt },
           { type: "image_url", image_url: { url: dataUrl } }] }],
@@ -41,7 +48,8 @@ async function reviewPhoto(title, hint, dataUrl) {
       signal: AbortSignal.timeout(40000),
     });
     const d = await r.json();
-    let t = d?.choices?.[0]?.message?.content || "";
+    const m = d?.choices?.[0]?.message || {};
+    let t = m.content || m.reasoning_content || "";   // M3 是推理模型,正文可能为空
     t = t.replace(/```json|```/g, "").trim();       // M3 会用 code fence 包
     const a = t.indexOf("{"), b = t.lastIndexOf("}");
     if (a < 0 || b < a) return null;
@@ -271,6 +279,7 @@ export default async function handler(req, res) {
         todo: todoFor(me.company_code),
         checklist: await openChecklist(pool, me.company_code, today),
         tips: await tipsFor(pool, me.company_code),
+        agenda: await agendaFor(pool, me.company_code, today),
         shifts: shifts.rows, leaves: leaves.rows, reimbursements: reimb.rows,
         payslips: pay.rows, overtime: ot.rows, handbook: book.rows,
       });
@@ -416,6 +425,21 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, data: r.rows[0], message: "已提交，等店长审批" });
       }
 
+      // 勾掉/取消勾「今天的事」
+      if (action === "agenda") {
+        const id = parseInt(b.id, 10);
+        if (!id) return res.status(400).json({ success: false, error: "缺 id" });
+        const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+        const done = b.status !== "open";
+        const r = await pool.query(
+          `UPDATE hr_day_agenda
+              SET status=$1, done_by=$2, done_at=CASE WHEN $1='done' THEN now() ELSE NULL END
+            WHERE id=$3 AND company_code=$4 AND work_date=$5 RETURNING id`,
+          [done ? "done" : "open", done ? me.name : null, id, me.company_code, today]);
+        if (!r.rowCount) return res.status(400).json({ success: false, error: "没有这件事" });
+        return res.status(200).json({ success: true, message: done ? "已完成" : "已取消" });
+      }
+
       // 开店点检:勾一条 或 跳过一条。跳过也留痕——店长看得到谁跳了什么。
       if (action === "checklist") {
         const itemId = parseInt(b.item_id, 10);
@@ -496,7 +520,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
