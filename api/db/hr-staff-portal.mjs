@@ -102,12 +102,16 @@ function todoFor(companyCode) {
   if (String(companyCode || "") !== "JINFANG") return { total: 0, by_kind: [], recent: [] };
   const byKind = clerkQuery(
     "SELECT kind, COUNT(*) AS n FROM clerk_tasks WHERE status='pending' GROUP BY kind ORDER BY n DESC");
+  // 批数:件数对店员没意义(3541 件一天做不完)，「还有几批」才抓得住
+  const bat = clerkQuery(
+    "SELECT COUNT(DISTINCT batch_token) AS n FROM clerk_tasks WHERE status='pending'");
   // 只取品名和货架，system_data 里有成本价，绝不外泄
   const recent = clerkQuery(
     "SELECT kind, product_name, shelf_list FROM clerk_tasks WHERE status='pending' " +
     "ORDER BY assigned_at DESC LIMIT 3");
   return {
     total: byKind.reduce((a, x) => a + (x.n || 0), 0),
+    batches: (bat[0] && bat[0].n) || 0,
     by_kind: byKind.map((x) => ({ kind: x.kind, label: KIND_LABEL[x.kind] || x.kind, n: x.n })),
     recent: recent.map((x) => ({ label: KIND_LABEL[x.kind] || x.kind,
       product_name: x.product_name, shelf: x.shelf_list })),
