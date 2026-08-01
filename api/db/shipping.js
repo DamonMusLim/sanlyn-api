@@ -175,7 +175,27 @@ export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
     const pool = getPool();
-    const { customer, created_by, shipment_no, forwarder_company_id, bl_no, limit = 500 } = req.query;
+    const { customer, created_by, shipment_no, forwarder_company_id, bl_no, ref, limit = 500 } = req.query;
+    if (ref) {
+      const needle = String(ref).trim();
+      const pick = r => r.rows[0] || null;
+      let hit = pick(await pool.query(
+        "SELECT id,_id,shipment_no FROM shipping_plans WHERE deleted_at IS NULL AND shipment_no = $1 LIMIT 1", [needle]));
+      if (!hit) hit = pick(await pool.query(
+        "SELECT id,_id,shipment_no FROM shipping_plans WHERE deleted_at IS NULL AND bl_no = $1 LIMIT 1", [needle]));
+      if (!hit) hit = pick(await pool.query(
+        "SELECT id,_id,shipment_no FROM shipping_plans WHERE deleted_at IS NULL AND _id = $1 LIMIT 1", [needle]));
+      if (!hit) {
+        const ord = pick(await pool.query(
+          `SELECT shipping_plan_id FROM orders
+            WHERE deleted_at IS NULL AND shipping_plan_id IS NOT NULL
+              AND (customer_po = $1 OR order_no = $1 OR contract_no = $1)
+            LIMIT 1`, [needle]));
+        if (ord) hit = pick(await pool.query(
+          "SELECT id,_id,shipment_no FROM shipping_plans WHERE deleted_at IS NULL AND id = $1 LIMIT 1", [ord.shipping_plan_id]));
+      }
+      return res.status(200).json(hit ? { ok:true, id:hit.id, _id:hit._id, shipment_no:hit.shipment_no } : { ok:false, error:"not_found" });
+    }
     let query = "SELECT * FROM shipping_plans", params = [], conds = [];
     // 按CY号/货代精确过滤(agent自动补链用,服务端过滤=只富集匹配行,避免全表N+1慢)
     if (shipment_no) { params.push(shipment_no); conds.push(`shipment_no = $${params.length}`); }
