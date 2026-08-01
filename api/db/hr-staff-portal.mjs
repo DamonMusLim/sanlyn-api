@@ -18,6 +18,37 @@ import { verifyToken } from "./auth.js";
 
 const D = "YYYY-MM-DD";
 
+// 点检照片交 MiniMax-M3 判。⚠️ 只标不拦:判不合格也记完成，异常留给店长看。
+// (M3 是多模态的,2026-08-01 实测;旧的 MiniMax-VL-01 已下线)
+async function reviewPhoto(title, hint, dataUrl) {
+  const key = process.env.MINIMAX_API_KEY;
+  if (!key || !dataUrl) return null;
+  const prompt = `你是宠物店店长，正在核验店员拍的开店点检照片。
+检查项：「${title}」${hint ? "（" + hint + "）" : ""}
+只回 JSON，不要别的：
+{"能判断":true/false,"判不了的原因":"太暗/太糊/没拍到位/空，能判断就留空",
+ "合格":true/false,"看到什么":"25字内","问题":["具体问题，没有就空数组"]}`;
+  try {
+    const r = await fetch("https://api.minimaxi.com/v1/text/chatcompletion_v2", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "MiniMax-M3", max_tokens: 300,
+        messages: [{ role: "user", content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: dataUrl } }] }],
+      }),
+      signal: AbortSignal.timeout(40000),
+    });
+    const d = await r.json();
+    let t = d?.choices?.[0]?.message?.content || "";
+    t = t.replace(/```json|```/g, "").trim();       // M3 会用 code fence 包
+    const a = t.indexOf("{"), b = t.lastIndexOf("}");
+    if (a < 0 || b < a) return null;
+    return JSON.parse(t.slice(a, b + 1));
+  } catch (e) { return null; }   // AI 挂了不影响店员打勾
+}
+
 // 首页「建议」:从每日销售快照里挑出**事实型**提醒，不做定价/补货决策。
 // ⚠️ 店员端可见 —— 绝不 SELECT cost_price / gross_margin_pct，源头就不取。
 const DNA_STORE = { JINFANG: "63350001" };
@@ -391,14 +422,16 @@ export default async function handler(req, res) {
         const st = b.status === "skipped" ? "skipped" : "done";
         if (!itemId) return res.status(400).json({ success: false, error: "缺 item_id" });
         const it = (await pool.query(
-          "SELECT id, need_photo, title FROM hr_checklist_items WHERE id=$1 AND company_code=$2 AND is_active=true",
+          "SELECT id, need_photo, title, hint FROM hr_checklist_items WHERE id=$1 AND company_code=$2 AND is_active=true",
           [itemId, me.company_code])).rows[0];
         if (!it) return res.status(400).json({ success: false, error: "没有这一项" });
 
-        let url = null;
+        let url = null, ai = null;
         if (b.photo_base64) {
           try { url = saveReceipt(b.photo_filename, b.photo_mime, b.photo_base64); }
           catch (e) { return res.status(400).json({ success: false, error: e.message }); }
+          // 交 M3 看一眼。只标不拦，判不了或调用失败都不影响打勾
+          ai = await reviewPhoto(it.title, it.hint, `data:${b.photo_mime || "image/jpeg"};base64,${b.photo_base64}`);
         }
         // 要求拍照的项，勾"完成"必须有照片；"稍后"不强制（不然会有人干脆不做）
         if (st === "done" && it.need_photo && !url) {
@@ -413,8 +446,12 @@ export default async function handler(req, res) {
            DO UPDATE SET status=EXCLUDED.status, photo_url=COALESCE(EXCLUDED.photo_url, hr_checklist_logs.photo_url),
                          note=EXCLUDED.note, employee_id=EXCLUDED.employee_id,
                          employee_name=EXCLUDED.employee_name, done_at=now()`,
-          [me.company_code, today, itemId, empId, me.name, st, url, b.note || null]);
-        return res.status(200).json({ success: true, message: st === "done" ? "记下了" : "已标记稍后" });
+          [me.company_code, today, itemId, empId, me.name, st, url,
+           ai ? JSON.stringify({ note: b.note || null, ai }) : (b.note || null)]);
+        let msg = st === "done" ? "记下了" : "已标记稍后";
+        if (ai && ai["能判断"] === false) msg = "记下了（照片看不清，店长会再看一眼）";
+        else if (ai && ai["合格"] === false) msg = "记下了（AI 觉得还有点问题，店长会看）";
+        return res.status(200).json({ success: true, message: msg, ai });
       }
 
       // 员工自助补资料（入职当天用）。只开紧急联系人 + 身份证首次填写，其余一律不可改。
