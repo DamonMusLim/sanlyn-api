@@ -28,6 +28,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/contracts",         () => import("./api/db/contracts.js"));
   mount("/api/db/customers",         () => import("./api/db/customers.js"));
   mount("/api/db/import-customers",  () => import("./api/db/import-customers.js"));
+  mount("/api/db/customer-addresses", () => import("./api/db/customer-addresses.js"));
   mount("/api/db/customer-stamps",   () => import("./api/db/customer-stamps.js"));
   mount("/api/db/customer-brand-routes", () => import("./api/db/customer-brand-routes.js")); // factory-self brand→customer auth (2026-05-19)
   mount("/api/db/partner-relationships", () => import("./api/db/partner-relationships.js")); // partner network listing (2026-05-19)
@@ -112,6 +113,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/invoice-collab-confirm", () => import("./api/db/invoice-collab-confirm.js")); // 港杂费开票确认(booking collab token)
   mount("/api/db/invoice-monthly-consolidate", () => import("./api/db/invoice-monthly-consolidate.js")); // 月结合并开票聚合(admin/finance JWT)
   mount("/api/db/customer-invoice", () => import("./api/db/customer-invoice.js")); // B3 客户销项发票门户(短码 /ci)
+  mount("/api/db/plan-invoices", () => import("./api/db/plan-invoices.js")); // 海运编辑器: 按合同读真实销项电票
   mount("/api/db/rate-configs", () => import("./api/db/rate-configs.js")); // 税率/汇率配置编辑器+改动历史(admin only)
   mount("/api/db/migrate-rate-configs", () => import("./api/db/migrate-rate-configs.js"));
   mount("/api/db/factory-invoice-reconcile", () => import("./api/db/factory-invoice-reconcile.js")); // 工厂开票对账台
@@ -402,6 +404,8 @@ export function registerCoreRoutes(app, mount) {
   // ── /api/stamp/* ──
   mount("/api/stamp/apply", () => import("./api/stamp/apply.js"));
   mount("/api/stamp/smart-position", () => import("./api/stamp/smart-position.js"));
+  mount("/api/stamp/straddle-preview", () => import("./api/stamp/straddle-preview.js"));
+  mount("/api/stamp/straddle-confirm", () => import("./api/stamp/straddle-confirm.js"));
   // ── /api/convert/* ──
   mount("/api/convert/excel-to-pdf", () => import("./api/convert/excel-to-pdf.js"));
   // ── /api/* top-level endpoints ──

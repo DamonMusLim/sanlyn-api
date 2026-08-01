@@ -63,18 +63,30 @@ async function resolveFactoryPrefix(pool, factoryName) {
   } catch (e) { return ""; }
 }
 
-// order_no convention = <company numeric suffix>-<factory po_prefix>-<next seq>,
-// e.g. HARMONIOUS(CN-00048) + 连云港中砂 -> "48-LL-1". Prefixing with the factory
-// keeps same-customer sequences from colliding across factories ("不会乱").
-// Falls back to <suffix>-<seq> if the factory is unknown, then the date-based
-// ORD- code if the company code has no numeric tail. The seq is the max trailing
-// number for the exact prefix, +1. $1 is a fixed literal prefix (LIKE) — the
-// numeric suffix is parseInt'd and po_prefix comes from our own factories table.
-async function nextOrderNo(pool, companyCode, factoryName) {
+function normalizeCustomerPo(body) {
+  var v = body && (body.customer_po || body.customerPo || body.customerPO);
+  v = String(v || "").trim();
+  return v || null;
+}
+
+function resolveCustomerPoPrefix(customerPo) {
+  var raw = String(customerPo || "").trim().toUpperCase();
+  if (!raw) return "";
+  var head = raw.split("-")[0].replace(/[^A-Z0-9]/g, "");
+  if (!head || /^[0-9]+$/.test(head)) return "";
+  return head;
+}
+
+// order_no convention = <company numeric suffix>-<customer PO prefix>-<next seq>,
+// e.g. HKP(CN-00078) + customer PO "WP-1" -> "78-WP-1". Falls back to the
+// legacy factory po_prefix when no customer PO prefix is provided, then to
+// <suffix>-<seq>, then date-based ORD- if the company code has no numeric tail.
+// The seq is the max trailing number for the exact prefix, +1.
+async function nextOrderNo(pool, companyCode, factoryName, customerPo) {
   var m = String(companyCode || "").match(/(\d+)\s*$/);
   if (!m) return generateOrderNo();
   var custSuffix = String(parseInt(m[1], 10)); // CN-00048 -> "48"
-  var fpx = await resolveFactoryPrefix(pool, factoryName);
+  var fpx = resolveCustomerPoPrefix(customerPo) || await resolveFactoryPrefix(pool, factoryName);
   var prefix = fpx ? (custSuffix + "-" + fpx) : custSuffix; // "48-LL" or "48"
   try {
     var r = await pool.query(
@@ -347,6 +359,17 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
               AND pr.status = 'active'`,
           [lookupCode]
         ).catch(function() { return { rows: [] }; });
+        if (subEntityCode && !partnerRes.rows.length) {
+          partnerRes = await pool.query(
+            `SELECT pr.company_code_b AS code,
+                    pr.role_at_hop
+               FROM partner_relationships pr
+              WHERE pr.company_code_a = $1
+                AND pr.relationship_type = 'customer_factory'
+                AND pr.status = 'active'`,
+            [buyerCode]
+          ).catch(function() { return { rows: [] }; });
+        }
 
         if (partnerRes.rows.length) {
           var relationshipRows = partnerRes.rows.map(function(r) {
@@ -811,6 +834,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
 
   try {
     var body = req.body || {};
+    var submittedCustomerPo = normalizeCustomerPo(body);
 
     // ── Forbidden field scrub ─────────────────────────────────────────────────
     // Strip internal cost/settlement fields before any processing or DB storage.
@@ -878,6 +902,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
         containerQty:     containerQtyV3,
         products:         v3Products,
         contractNo:       body.ref || null,  // V3 ref (SC-YYYYMMDD-NNN) as contract ref
+        customerPO:       submittedCustomerPo,
         // P1-BUG-3 fix: source = "customer-portal" for customer self-service orders
         createdBy:        "customer-portal",
         source:           "customer-portal",
@@ -888,6 +913,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
         _v3_containers:   body.containers     || [],
       };
     }
+    var customerPoForCol = normalizeCustomerPo(body);
 
     // ── Server-side buyer scope validation (non-admin) ────────────────────────
     // CRITICAL: Must run AFTER V3 adaptation so body.companyCode is normalised.
@@ -953,7 +979,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     // Manufacturer name for the order_no factory prefix. Orders are split one-per
     // factory upstream, so all line items share a manufacturer; use the first.
     var _mfrName = (products && products[0] && (products[0].factory_name || products[0].factory)) || factory || "";
-    var orderNo = body.orderNo || await nextOrderNo(pool, companyCode, _mfrName);
+    var orderNo = body.orderNo || await nextOrderNo(pool, companyCode, _mfrName, customerPoForCol);
     // DEC-02: backend FS-prefix is canonical contract_no.
     // Non-admin callers may supply a client-side SC-prefix ref (draft display ref) but it is
     // stored as raw._clientRef only. The official contract_no always comes from server generateContractNo().
@@ -1316,7 +1342,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       /*$2*/  portalId,
       /*$3*/  orderNo,
       /*$4*/  contractNo,
-      /*$5*/  body.customerPO || null,
+      /*$5*/  customerPoForCol,
       /*$6*/  companyCode || "",
       /*$7*/  companyNameCN || "",
       /*$8*/  companyNameEN || "",
@@ -1529,7 +1555,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
         `Confirm payment term · ${orderLabel}`,
         String(order.id),
         orderLabel,
-        order.order_no || '', body.customerPO || '', companyCode || '',
+        order.order_no || '', customerPoForCol || '', companyCode || '',
         JSON.stringify({
           order_id: order.id,
           workflow: 'payment_term',

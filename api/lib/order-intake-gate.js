@@ -28,8 +28,17 @@ function firstFilled(values) {
   return "";
 }
 
+function normalizeExportMode(body) {
+  var mode = String((body && (body.exportMode || body.export_mode)) || "").trim().toLowerCase();
+  if (mode === "external") return "external";
+  if (mode === "daigou" || mode === "proxy") return "daigou";
+  if (mode === "direct") return "direct";
+  return body && body.proxyExport ? "daigou" : "direct";
+}
+
 export function getOrderIntakeMissingFields(body) {
   body = body || {};
+  var exportMode = normalizeExportMode(body);
   var products = Array.isArray(body.products) ? body.products : [];
   var hasLine = products.some(function(p) {
     return p && positiveQty(p.qty || p.quantity || p.qty_ctn);
@@ -43,7 +52,7 @@ export function getOrderIntakeMissingFields(body) {
 
   var checks = {
     customer: present(firstFilled([body.companyNameCN, body.companyNameEN, body.customer, body.customerName])),
-    factory: present(firstFilled([
+    factory: exportMode === "external" || present(firstFilled([
       body.factory,
       body.factory_code,
       body.factoryCode,

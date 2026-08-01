@@ -71,6 +71,7 @@ td input.num{text-align:right;font-variant-numeric:tabular-nums}
   <div id="msg" class="card empty">正在读取订单...</div>
   <div id="app" style="display:none"></div>
 </div>
+<script src="templates/invoice-official.js"></script>
 <script>
 const qs=new URLSearchParams(location.search),CODE=qs.get("c")||"",API="/api/db/customer-invoice";
 let DATA=null,LINES=[],REMARK={},META={invoice_no:"",issue_date:"",issuer:""},LOCKED=false;
@@ -114,15 +115,58 @@ function initState(){
 }
 function fillCustoms(){
   LINES=[{name:DATA.default_name||"货款",spec:"",unit:(DATA.default_lines&&DATA.default_lines[0]&&DATA.default_lines[0].unit)||"",qty:(DATA.default_lines&&DATA.default_lines[0]&&DATA.default_lines[0].qty)||"",amount_incl:Number(DATA.customs_amount)||0,tax_rate:0}];
-  renderTable();
+  render();
 }
-function addRow(){LINES.push({name:"",spec:"",unit:"",qty:"",amount_incl:0,tax_rate:0});renderTable()}
-function delRow(i){LINES.splice(i,1);if(!LINES.length)LINES.push({name:"",spec:"",unit:"",qty:"",amount_incl:0,tax_rate:0});renderTable()}
+function addRow(){collectOfficial();LINES.push({name:"",spec:"",unit:"",qty:"",amount_incl:0,tax_rate:0});render()}
+function delRow(i){LINES.splice(i,1);if(!LINES.length)LINES.push({name:"",spec:"",unit:"",qty:"",amount_incl:0,tax_rate:0});render()}
 function onCell(i,k,v){LINES[i][k]=(k==="amount_incl"||k==="tax_rate"||k==="qty")?(v===""?"":Number(v)):v;renderTable()}
 function onMeta(k,v){META[k]=v}
 function onRemark(k,v){REMARK[k]=v;renderRemarkPreview()}
 function lineCalc(l){const rate=Number(l.tax_rate)||0,incl=Number(l.amount_incl)||0,ex=rate>0?incl/(1+rate):incl;return{ex:Math.round(ex*100)/100,tax:Math.round((incl-ex)*100)/100}}
 function totals(){let incl=0,ex=0;LINES.forEach(l=>{const c=lineCalc(l);incl+=Number(l.amount_incl)||0;ex+=c.ex});incl=Math.round(incl*100)/100;ex=Math.round(ex*100)/100;return{incl,ex,tax:Math.round((incl-ex)*100)/100}}
+function remarkText(){return[
+  REMARK.trade_terms&&`成交方式:${REMARK.trade_terms}`,
+  REMARK.usd_ref&&`原币金额(USD):${REMARK.usd_ref}`,
+  REMARK.exchange_rate&&`汇率:${REMARK.exchange_rate}`,
+  REMARK.contract_no&&`合同协议号:${REMARK.contract_no}`,
+  REMARK.trade_country&&`贸易国:${REMARK.trade_country}`,
+  REMARK.bl_no&&`提运单号:${REMARK.bl_no}`
+].filter(Boolean).join("；")}
+function invoiceData(){
+  const t=totals();
+  return {
+    docTitle:"电子发票",
+    title:"普通发票",
+    currency:"CNY",
+    buyer:DATA.buyer||{},
+    seller:DATA.seller||{},
+    meta:{...META,editable_meta:!LOCKED},
+    editable:!LOCKED,
+    items:LINES.map(l=>{const c=lineCalc(l),q=Number(l.qty)||0;return{name:l.name,spec:l.spec,unit:l.unit,qty:l.qty||1,price:q?c.ex/q:0,amount:c.ex,rate:l.tax_rate,tax:c.tax}}),
+    total_ex:t.ex,
+    total_tax:t.tax,
+    total:t.incl,
+    remark:remarkText(),
+    footerHtml:`<div class="tools">
+      <button class="btn" onclick="fillCustoms()" ${LOCKED?"disabled":""}>↺ 一键填报关口径</button>
+      <button class="btn" onclick="addRow()" ${LOCKED?"disabled":""}>＋ 加一行</button>
+      <button class="btn" onclick="copyTotal()">复制金额</button>
+      <button class="btn primary" onclick="save()" ${LOCKED?"disabled":""}>💾 保存草稿</button>
+      <button class="btn confirm" onclick="confirmIssue()" ${LOCKED?"disabled":""}>✅ 确认已开票</button>
+    </div><div id="st" class="status"></div>`
+  };
+}
+function parseNum(v){const s=String(v??"").replace(/[¥$,%\\s]/g,"").replace(/,/g,"");return Number.isFinite(Number(s))?Number(s):0}
+function collectOfficial(){
+  document.querySelectorAll("[data-io-field]").forEach(el=>{
+    const path=el.dataset.ioField,val=("value" in el)?el.value:el.textContent.trim();
+    let m=path.match(/^meta\\.(invoice_no|issue_date|issuer)$/);if(m){META[m[1]]=val;return}
+    m=path.match(/^items\\.(\\d+)\\.(name|spec|unit|qty|amount|rate)$/);if(m){
+      const l=LINES[Number(m[1])];if(!l)return;
+      const f=m[2];if(f==="amount"){const ex=parseNum(val),rate=Number(l.tax_rate)||0;l.amount_incl=Math.round(ex*(1+rate)*100)/100}else if(f==="rate"){l.tax_rate=String(val).includes("%")?parseNum(val)/100:parseNum(val)}else if(f==="qty")l.qty=parseNum(val);else l[f]=val;
+    }
+  });
+}
 function party(label,rows){return `<div class="party"><div class="pLabel">${label}</div><div class="pGrid">${rows.map(r=>`<div class="field"><b>${r[0]}：</b><span class="cp" onclick="copyCell(this)" data-copy="${esc(r[1]||"")}">${esc(r[1]||"—")}</span></div>`).join("")}</div></div>`}
 function render(){
   const d=DATA,s=d.seller||{},b=d.buyer||{};$("msg").style.display="none";$("app").style.display="";
@@ -140,44 +184,8 @@ function render(){
       <span>报关单号：${esc(d.customs_no||"—")}</span>
       ${savedBadge}
     </div>
-    <div class="invoice">
-      <div class="invTitle">电子发票（普通发票）</div>
-      <div class="officialTop">
-        <div class="qrBox"></div>
-        <div></div>
-        <div class="invMeta">
-          <div class="metaLine"><span>发票号码：</span><input id="mInvoiceNo" value="${esc(META.invoice_no)}" placeholder="开票时生成" oninput="onMeta('invoice_no',this.value)" ${LOCKED?"disabled":""}></div>
-          <div class="metaLine"><span>开票日期：</span><input id="mIssueDate" type="date" value="${esc(META.issue_date)}" oninput="onMeta('issue_date',this.value)" ${LOCKED?"disabled":""}></div>
-        </div>
-      </div>
-      <div class="partyWrap">
-        ${party("购买方",[["名称",b.name],["统一社会信用代码/纳税人识别号",b.tax_id]])}
-        ${party("销售方",[["名称",s.name],["统一社会信用代码/纳税人识别号",s.tax_id]])}
-      </div>
-      <div class="tableBox"><table><thead><tr>
-        <th class="nameCol">项目名称</th><th class="specCol">规格型号</th><th class="unitCol">单位</th><th class="qtyCol">数量</th>
-        <th class="priceCol">单价</th><th class="amtCol">金额(含税)</th><th class="rateCol">税率/征收率</th><th class="taxCol">税额</th><th class="delCol"></th>
-      </tr></thead><tbody id="tbody"></tbody>
-      <tfoot><tr><td colspan="5" class="sumLabel">合计</td><td class="ro" id="tIncl"></td><td></td><td class="ro" id="tTax"></td><td></td></tr></tfoot>
-      </table></div>
-      <div class="grand">
-        <div><b>价税合计（大写）</b> <span class="cp" onclick="copyCell(this)" id="tUpper"></span></div>
-        <div class="grandSmall"><b>（小写）</b> <span class="cp money" onclick="copyCell(this)" id="tSmall"></span></div>
-      </div>
-      <div class="remarkBox"><div class="remarkGrid"><div class="remarkLabel">备注</div><div class="remarkBody" id="remarkBody"></div></div></div>
-      <div class="issuer">开票人：<input id="mIssuer" value="${esc(META.issuer)}" placeholder="开票时填写" oninput="onMeta('issuer',this.value)" ${LOCKED?"disabled":""}></div>
-    </div>
-    <div class="tools">
-      <button class="btn" onclick="fillCustoms()" ${LOCKED?"disabled":""}>↺ 一键填报关口径</button>
-      <button class="btn" onclick="addRow()" ${LOCKED?"disabled":""}>＋ 加一行</button>
-      <button class="btn" onclick="copyTotal()">复制金额</button>
-      <button class="btn primary" onclick="save()" ${LOCKED?"disabled":""}>💾 保存草稿</button>
-      <button class="btn confirm" onclick="confirmIssue()" ${LOCKED?"disabled":""}>✅ 确认已开票</button>
-    </div>
-    <div id="st" class="status"></div>
+    ${InvoiceOfficial.render(invoiceData())}
   </div>`;
-  renderTable();
-  renderRemarkPreview();
 }
 function renderTable(){
   const tb=$("tbody");
@@ -221,8 +229,8 @@ function renderRemarkPreview(){
 }
 async function copyText(t,el){try{await navigator.clipboard.writeText(t);if(el){el.classList.add("copied");setTimeout(()=>el.classList.remove("copied"),900)}}catch(e){}}
 async function copyCell(el){copyText(el.dataset.copy??el.textContent.trim(),el)}
-async function copyTotal(){const t=totals();copyText(t.incl.toFixed(2));$("st").textContent="金额已复制："+t.incl.toFixed(2);$("st").className="status ok"}
-function payload(){return{lines:LINES.map(l=>({name:l.name,spec:l.spec,unit:l.unit,qty:l.qty===""?null:l.qty,amount_incl:Number(l.amount_incl)||0,tax_rate:Number(l.tax_rate)||0})),remark_fields:REMARK,invoice_no:META.invoice_no,issue_date:META.issue_date,issuer:META.issuer}}
+async function copyTotal(){collectOfficial();const t=totals();copyText(t.incl.toFixed(2));$("st").textContent="金额已复制："+t.incl.toFixed(2);$("st").className="status ok"}
+function payload(){collectOfficial();return{lines:LINES.map(l=>({name:l.name,spec:l.spec,unit:l.unit,qty:l.qty===""?null:l.qty,amount_incl:Number(l.amount_incl)||0,tax_rate:Number(l.tax_rate)||0})),remark_fields:REMARK,invoice_no:META.invoice_no,issue_date:META.issue_date,issuer:META.issuer}}
 async function post(action,okMsg){
   const st=$("st");st.textContent="提交中...";st.className="status";
   try{const r=await fetch(API+"?action="+action+"&c="+encodeURIComponent(CODE),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())}),d=await r.json();

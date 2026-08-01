@@ -160,7 +160,7 @@ app.use("/api/portal", portalGate);
 // Vercel handlers expect (req, res) with req.query populated
 // Express already does this, so we just need to call the handler
 function mount(route, handlerModule) {
-  app.all(route, async (req, res) => {
+  const callHandler = async (req, res) => {
     try {
       const mod = await handlerModule();
       const handler = mod.default || mod;
@@ -171,7 +171,11 @@ function mount(route, handlerModule) {
         res.status(500).json({ error: err.message });
       }
     }
-  });
+  };
+  app.all(route, callHandler);
+  if (route === "/api/db/shipment-completeness") {
+    app.all(`${route}/batch`, callHandler);
+  }
 }
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──

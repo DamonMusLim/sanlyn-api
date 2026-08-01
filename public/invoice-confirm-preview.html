@@ -114,35 +114,15 @@
   .addem{font-size:11px;font-weight:700;padding:7px 11px;border-radius:8px;border:1px dashed var(--line);background:var(--paper);color:var(--sub);cursor:pointer;white-space:nowrap}
   .sumline{font-size:12px;color:var(--sub);margin-top:8px}
   .sumline b{font-weight:700}.sumline .miss{color:var(--warn);font-weight:800}
-  .plaininv{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:13px 15px}
-  .plaininv .pt{text-align:center;font-size:17px;font-weight:800;color:var(--ink);margin-bottom:11px;letter-spacing:1px}
-  .pparty{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-radius:5px;overflow:hidden}
-  .pp{padding:10px 13px;font-size:12.5px}.pp+.pp{border-left:1px solid var(--line)}
-  .pp .plab{font-size:10.5px;font-weight:800;color:var(--sub);margin-bottom:6px;letter-spacing:2px}
-  .pp .prow{margin:3px 0;color:var(--ink)}.pp .prow b{font-weight:700}
-  .pp .prow.tip{color:var(--teal);font-size:11px;margin-top:5px}
-  .pp .muted{color:var(--faint)}
-  .raterow{display:flex;align-items:center;gap:10px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line2);flex-wrap:wrap}
-  .raterow .rlab{font-size:12.5px;font-weight:800;color:var(--ink)}
-  .rsel{font-size:12.5px;font-weight:700;padding:7px 10px;border:1px solid var(--edit);border-radius:8px;background:var(--teal-wash);color:var(--teal);cursor:pointer}
-  .raterow .rtip{font-size:11px;color:var(--faint)}
   .modebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   .modebar .mlab{font-size:12px;font-weight:800;color:var(--ink)}
   .mopt{font-size:12px;font-weight:700;padding:6px 14px;border-radius:99px;border:1.5px solid var(--line);background:var(--paper);color:var(--sub);cursor:pointer}
   .mopt.on{border-color:var(--teal);background:var(--teal-wash);color:var(--teal)}
   .modebar .mtip{font-size:11px;color:var(--faint);flex:1;min-width:170px}
-  .invtop{display:flex;justify-content:center;margin-bottom:11px}
-  .tsel{font-size:15px;font-weight:800;color:var(--ink);border:1px solid var(--edit);border-radius:6px;padding:3px 7px;background:var(--teal-wash);cursor:pointer;font-family:inherit}
   .linebar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:11px;padding-top:11px;border-top:1px solid var(--line2);font-size:12.5px;color:var(--ink);font-weight:600}
   .transline{margin-top:10px;font-size:11.5px;color:var(--sub);background:var(--wash);border-radius:8px;padding:8px 11px}.transline b{color:var(--teal)}
-  .remarkline{margin-top:8px;font-size:11.5px;color:var(--ink);border-top:1px solid var(--line2);padding-top:9px}.remarkline .muted{color:var(--faint)}
   .editable{border-bottom:1px dashed var(--edit);cursor:text;padding:0 2px}
   .edithint{font-size:10px;color:var(--edit);font-weight:700;margin-left:4px}
-  .invline{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line2)}
-  .invline th{text-align:left;font-size:10px;color:var(--faint);font-weight:700;padding:6px 5px;border-bottom:1px solid var(--line)}
-  .invline th.r,.invline td.r{text-align:right}
-  .invline td{padding:8px 5px;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums;color:var(--ink)}
-  .invline tfoot td{font-weight:800;border-top:1px solid var(--ink);border-bottom:none;padding-top:9px;font-size:12.5px}
   .addinv{width:100%;margin-top:10px;padding:11px;border-radius:9px;border:1.5px dashed var(--teal);background:var(--teal-wash);color:var(--teal);font-size:13px;font-weight:800;cursor:pointer}
   .savedef{display:flex;gap:9px;align-items:flex-start;margin-top:10px;padding:11px 13px;border-radius:9px;background:var(--recv-wash);border:1px solid #a7d9c4;font-size:12px;color:#155e43;line-height:1.5;cursor:pointer}
   .savedef input{margin-top:2px;flex:none}.savedef b{font-weight:800}
@@ -153,7 +133,7 @@
   .sliplist{margin-top:10px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
   .sliprow{display:grid;grid-template-columns:1fr .8fr .8fr 1.2fr;gap:8px;padding:9px 11px;border-bottom:1px solid var(--line2);font-size:12.5px}
   .sliprow:last-child{border-bottom:0}.sliprow b{font-family:ui-monospace,monospace}.sliprow a{color:var(--teal);font-weight:800;text-decoration:none}
-  @media(max-width:680px){.pparty{grid-template-columns:1fr}.pp+.pp{border-left:0;border-top:1px solid var(--line)}.reuse{flex-direction:column;align-items:stretch}}
+  @media(max-width:680px){.reuse{flex-direction:column;align-items:stretch}}
   @media(max-width:680px){.slipgrid,.sliprow{grid-template-columns:1fr}.slipgrid .btn{width:100%}}
 </style>
 
@@ -207,29 +187,8 @@
           <button class="mopt" data-m="other">自定义开票</button>
           <span class="mtip" id="modeTip">我方开好后发到你的财务邮箱</span>
         </div>
-        <div class="plaininv">
-          <div class="invtop"><div class="pt">电子发票（<select class="tsel" id="invoiceTitle"><option>增值税普通发票</option><option>增值税专用发票</option></select>）</div></div>
-          <div class="pparty">
-            <div class="pp">
-              <div class="plab">购 买 方</div>
-              <div class="prow"><b>名称：</b><span class="editable" id="buyerName">费用尚未录入</span><span class="edithint">✎可改</span></div>
-              <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><span class="editable" id="buyerTax">—</span></div>
-              <div class="prow tip">默认带出，名称/税号可改</div>
-            </div>
-            <div class="pp">
-              <div class="plab">销 售 方</div>
-              <div class="prow"><b>名称：</b><span id="sellerName">费用尚未录入</span></div>
-              <div class="prow"><b>统一社会信用代码/纳税人识别号：</b><span class="muted" id="sellerTax">—</span></div>
-            </div>
-          </div>
-          <table class="invline">
-            <thead><tr><th>项目名称</th><th>单位</th><th class="r">数量</th><th class="r">单价</th><th class="r">金额(不含税)</th><th class="r">税率/征收率</th><th class="r">税额</th></tr></thead>
-            <tbody id="invoiceBody"><tr><td colspan="7" style="text-align:center;color:var(--faint)">费用尚未录入</td></tr></tbody>
-            <tfoot><tr><td colspan="4"></td><td class="r">价税合计</td><td colspan="2" class="r" id="invoiceTotal">¥ 0.00</td></tr></tfoot>
-          </table>
-          <div class="remarkline" id="invoiceRemark">备注：费用尚未录入</div>
-        </div>
-        <button class="addinv">＋ 新增一张发票</button>
+        <div id="invoiceOfficial"></div>
+        <button class="addinv" type="button">＋ 新增一张发票</button>
         <label class="savedef"><input type="checkbox" checked> <span>记住这些开票信息，下次默认按此开。</span></label>
         </div>
       </div>
@@ -279,6 +238,7 @@
 
 </div>
 
+<script src="/templates/invoice-official.js"></script>
 <script>
   (function(){
     const API="/api/db/invoice-collab-confirm";
@@ -312,11 +272,12 @@
       :(state.shipment.container_summary||"");
     const route=()=>[state.shipment.pol,state.shipment.pod].filter(Boolean).join(" → ");
     function recalcInvoice(){
-      const inv=state.invoices[0]; if(!inv) return;
-      const cur=inv.currency||state.bill_lines[0]?.currency||"CNY", total=Math.round(totalLines(cur)*100)/100;
-      const rate=Number.isFinite(Number(inv.tax_rate))?Number(inv.tax_rate):0.01;
-      const ex=Math.round(total/(1+rate)*100)/100;
-      inv.currency=cur; inv.total_with_tax=total; inv.amount_ex_tax=ex; inv.tax_amount=Math.round((total-ex)*100)/100;
+      (state.invoices||[]).forEach(inv=>{
+        const cur=inv.currency||state.bill_lines[0]?.currency||"CNY", total=Math.round((inv.manual_amount?num(inv.total_with_tax):totalLines(cur))*100)/100;
+        const rate=Number.isFinite(Number(inv.tax_rate))?Number(inv.tax_rate):0.01;
+        const qty=num(inv.qty||1)||1, ex=inv.manual_amount?Math.round(num(inv.amount_ex_tax)*100)/100:Math.round(total/(1+rate)*100)/100;
+        inv.currency=cur; inv.qty=qty; inv.total_with_tax=inv.manual_amount?Math.round(ex*(1+rate)*100)/100:total; inv.amount_ex_tax=ex; inv.tax_amount=Math.round((inv.total_with_tax-ex)*100)/100;
+      });
     }
     function ensureInvoice(){
       if(state.invoices?.length) return;
@@ -332,8 +293,6 @@
       $("docNo").textContent=sp.shipment_no||sp.bl_no||"费用尚未录入";
       $("shipBl").textContent=sp.bl_no||"—"; $("shipVessel").textContent=[sp.vessel,sp.voyage].filter(Boolean).join(" / ")||"—";
       $("shipRoute").textContent=route()||"—"; $("shipCntr").textContent=cntr||"—";
-      $("buyerName").textContent=buyer.name||"费用尚未录入"; $("buyerTax").textContent=buyer.tax_id||"—";
-      $("sellerName").textContent=seller.name||"费用尚未录入"; $("sellerTax").textContent=seller.tax_id||"—";
       document.querySelector(".badge").textContent=isConfirmed()?"已确认":"待你确认";
       document.querySelector(".badge").className="badge "+(isConfirmed()?"done":"pending");
       renderConfirmedSummary();
@@ -356,16 +315,36 @@
       if(!isConfirmed()) document.querySelectorAll("[data-line]").forEach(el=>el.addEventListener("blur",e=>changePrice(Number(e.target.dataset.line),e.target.textContent)));
     }
     function renderInvoice(){
-      const inv=state.invoices[0]||{}, cur=inv.currency||"CNY", rate=Number(inv.tax_rate||0.01);
-      document.querySelectorAll(".mopt[data-m]").forEach(b=>b.classList.toggle("on",(inv.mode||"self")===b.dataset.m));
-      $("modeTip").textContent=(inv.mode==="other")?"你方自行开具后回传，我方核对":"我方开好后发到你的财务邮箱";
-      if(inv.title&&!Array.from($("invoiceTitle").options).some(o=>o.value===inv.title)) $("invoiceTitle").add(new Option(inv.title,inv.title));
-      $("invoiceTitle").value=inv.title||"增值税普通发票";
-      $("invoiceBody").innerHTML=`<tr><td><span class="editable">${esc(inv.item_name||"*经纪代理服务*港杂费")}</span></td><td>${esc(inv.unit||"项")}</td>
-        <td class="r">${money(inv.qty||1).replace(".00","")}</td><td class="r">${money(inv.amount_ex_tax)}</td><td class="r">${money(inv.amount_ex_tax)}</td>
-        <td class="r"><span class="editable">${money(rate*100).replace(".00","")}%</span><span class="edithint">✎</span></td><td class="r">${money(inv.tax_amount)}</td></tr>`;
-      $("invoiceTotal").textContent=`${sym(cur)} ${money(inv.total_with_tax)}`;
-      $("invoiceRemark").textContent="备注："+(inv.remark||"费用尚未录入");
+      const payable=(state.line_side||state.bill_lines[0]?.line_side)==="payable";
+      const first=state.invoices[0]||{};
+      document.querySelectorAll(".mopt[data-m]").forEach(b=>b.classList.toggle("on",(first.mode||"self")===b.dataset.m));
+      $("modeTip").textContent=payable?"登记供应商开来的进项票":((first.mode==="other")?"你方自行开具后回传，我方核对":"我方开好后发到你的财务邮箱");
+      $("invoiceOfficial").innerHTML=(state.invoices||[]).map((inv,i)=>officialInvoiceData(inv,i,payable)).map(d=>InvoiceOfficial.render(d)).join("");
+      document.querySelector(".addinv").style.display=(state.invoices||[]).length<2?"block":"none";
+    }
+    function officialInvoiceData(inv,i,payable){
+      const cur=inv.currency||state.bill_lines[0]?.currency||"CNY", rate=Number(inv.tax_rate||0.01), qty=num(inv.qty||1)||1, ex=num(inv.amount_ex_tax), tax=num(inv.tax_amount), total=num(inv.total_with_tax);
+      return {index:i,title:inv.title||"增值税普通发票",buyer:state.buyer||{},seller:state.seller||{},currency:cur,items:[{name:inv.item_name||"*经纪代理服务*港杂费",spec:inv.spec||"",unit:inv.unit||"项",qty,price:ex/qty,amount:ex,rate,tax}],total_ex:ex,total_tax:tax,total,remark:inv.remark||(payable?"登记供应商开来的进项票":"费用尚未录入"),editable:!isConfirmed()};
+    }
+    function addInvoice(){
+      if((state.invoices||[]).length>=2) return;
+      const base=state.invoices[0]||{}, next={...base,id:"invoice-"+(state.invoices.length+1),manual_amount:false};
+      state.invoices.push(next); renderInvoice();
+    }
+    function setInvoiceMode(mode){
+      (state.invoices||[]).forEach(inv=>inv.mode=mode);
+      document.querySelectorAll(".mopt[data-m]").forEach(b=>b.classList.toggle("on",mode===b.dataset.m));
+    }
+    function onInvoiceOfficialInput(el){
+      const box=el.closest(".invoiceOfficial"), inv=state.invoices[Number(box?.dataset.ioIndex)||0]; if(!inv) return;
+      const field=el.dataset.ioField, value=(el.value??el.textContent).trim();
+      if(field==="title"){inv.title=value;setInvoiceMode("other");return}
+      if(field==="buyer.name"){state.buyer.name=value;return}
+      if(field==="buyer.tax_id"){state.buyer.tax_id=value;return}
+      if(field==="items.0.name"){inv.item_name=value;setInvoiceMode("other");return}
+      if(field==="items.0.price"){const price=num(value), qty=num(inv.qty||1)||1, rate=Number(inv.tax_rate||0); inv.amount_ex_tax=Math.round(price*qty*100)/100; inv.tax_amount=Math.round(inv.amount_ex_tax*rate*100)/100; inv.total_with_tax=Math.round((inv.amount_ex_tax+inv.tax_amount)*100)/100; inv.manual_amount=true; setInvoiceMode("other"); return}
+      if(field==="items.0.rate"){const raw=value.replace("%",""), rate=num(raw)/100; inv.tax_rate=rate; inv.tax_amount=Math.round(num(inv.amount_ex_tax)*rate*100)/100; inv.total_with_tax=Math.round((num(inv.amount_ex_tax)+num(inv.tax_amount))*100)/100; setInvoiceMode("other"); return}
+      if(field==="remark"){inv.remark=value;setInvoiceMode("other")}
     }
     function renderFinance(){
       if(!isInternal()) return removeFinanceView();
@@ -419,8 +398,8 @@
       l.unit_price=num(v); l.amount=Math.round(l.unit_price*num(l.qty||1)*100)/100; dirtyPrice=true; render();
     }
     function collect(){
-      state.buyer={name:$("buyerName").textContent.trim(),tax_id:$("buyerTax").textContent.trim()};
-      state.invoices[0].mode=document.querySelector(".mopt.on[data-m]")?.dataset.m||"self";
+      const activeMode=document.querySelector(".mopt.on[data-m]")?.dataset.m||"self";
+      setInvoiceMode((state.invoices||[]).some(inv=>inv.mode==="other")?"other":activeMode);
       state.save_as_default=document.querySelector(".savedef input")?.checked!==false;
       const fe=$("finEmail")?.value.trim()||""; state.contacts=state.contacts||{finance:[],ops:[],business:[]}; state.contacts.finance=fe?[fe]:[]; // ⑤收集财务邮箱
     }
@@ -452,8 +431,12 @@
     document.querySelector(".tabs").addEventListener('click',e=>{const t=e.target.closest(".tab");if(!t||!$(t.dataset.v))return;document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');$(t.dataset.v).classList.add('on')});
     $("ctToggle").addEventListener('click',()=>{const b=$("ctBody"),open=b.style.display==='none';b.style.display=open?'block':'none';$("ctChev").textContent=open?'收起 ▴':'展开填写 ▾';$("ctSum").style.display=open?'none':'block'});
     $("invTogglePv").addEventListener('click',()=>{const b=$("invBodyPv"),open=b.style.display==='none';b.style.display=open?'block':'none';$("invChevPv").textContent=open?'收起 ▴':'展开 ▾'}); // ③②开票段可折叠隐藏
-    document.querySelectorAll('.mopt[data-m]').forEach(b=>b.addEventListener('click',()=>{ensureInvoice();state.invoices[0].mode=b.dataset.m;renderInvoice()}));
-    $("buyerName").contentEditable=true; $("buyerTax").contentEditable=true; $("submitBtn").addEventListener("click",submit);
+    document.querySelectorAll('.mopt[data-m]').forEach(b=>b.addEventListener('click',()=>{ensureInvoice();setInvoiceMode(b.dataset.m);renderInvoice()}));
+    document.querySelector(".addinv").addEventListener("click",addInvoice);
+    $("invoiceOfficial").addEventListener("input",e=>{if(e.target.dataset.ioField)onInvoiceOfficialInput(e.target)});
+    $("invoiceOfficial").addEventListener("change",e=>{if(e.target.dataset.ioField){onInvoiceOfficialInput(e.target);renderInvoice()}});
+    $("invoiceOfficial").addEventListener("blur",e=>{if(e.target.dataset.ioField){onInvoiceOfficialInput(e.target);renderInvoice()}},true);
+    $("submitBtn").addEventListener("click",submit);
     $("slipBtn").addEventListener("click",uploadSlip);
     $("detailBtn").addEventListener("click",()=>{detailOpen=true;renderConfirmedSummary()});
     async function boot(){

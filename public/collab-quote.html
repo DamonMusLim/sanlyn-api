@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sanlyn 运价确认</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6f8;color:#151922;font:13px -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}.shell{max-width:860px;margin:0 auto;padding:22px 14px 56px}.top{background:#20242c;color:#fff;border-radius:8px;padding:16px 18px;margin-bottom:14px}.top h1{font-size:17px;margin:0 0 4px}.top p{margin:0;color:#b8c0cc;font-size:12px}.section{margin:14px 0}.head{font-size:13px;font-weight:800;margin:0 0 8px;color:#20242c}.list{display:grid;gap:8px}.row{background:#fff;border:1px solid #dfe4ea;border-radius:8px;padding:13px 14px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.muted{color:#77808d}.route{font-weight:800;font-size:14px}.meta{margin-top:5px;color:#596170;font-size:12px}.price{font-size:18px;font-weight:900;text-align:right}.btn{border:0;border-radius:7px;background:#11795d;color:#fff;font-weight:800;padding:9px 16px;cursor:pointer;margin-top:8px}.btn:disabled{opacity:.55;cursor:not-allowed}.ghost{background:#eef1f4;color:#68717d}.empty{background:#fff;border:1px dashed #ccd3dc;border-radius:8px;padding:18px;color:#77808d}.history .row{background:#fafafa;color:#68717d}.pill{display:inline-block;border-radius:99px;background:#e8f2ff;color:#1f5da8;font-size:11px;font-weight:800;padding:3px 8px;margin-left:8px}@media(max-width:560px){.row{grid-template-columns:1fr}.price{text-align:left}.btn{width:100%}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top"><h1>Sanlyn 运价确认</h1><p>报价按船期展示，过期后进入历史价格。</p></div>
+  <div class="section"><div class="head">询价中</div><div id="pending" class="list"></div></div>
+  <div class="section"><div class="head">在售</div><div id="active" class="list"></div></div>
+  <div class="section history"><div class="head">历史价格</div><div id="history" class="list"></div></div>
+</div>
+<script>
+const token=new URLSearchParams(location.search).get("token")||"";
+function el(id){return document.getElementById(id)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+function empty(t){return `<div class="empty">${t}</div>`}
+function pendingRow(r){return `<div class="row"><div><div class="route">${esc(r.route)} <span class="pill">${esc(r.ctnr_type)}</span></div><div class="meta">已受理，报价中</div></div><button class="btn ghost" disabled>报价中</button></div>`}
+function quoteRow(r, hist){return `<div class="row"><div><div class="route">${esc(r.route)} <span class="pill">${esc(r.ctnr_type)}</span></div><div class="meta">ETD ${esc(r.etd||"-")} · 截止 ${esc(r.sell_until||"-")}</div></div><div><div class="price">USD ${esc(r.price_usd||"-")}</div>${hist?"":`<button class="btn" onclick="accept('${esc(r.rfq_id)}',this)">接受</button>`}</div></div>`}
+async function load(){
+  const r=await fetch(`/api/public/customer-quote?token=${encodeURIComponent(token)}`);
+  const j=await r.json();
+  if(!j.ok){document.body.innerHTML='<div class="shell"><div class="empty">链接无效或已过期</div></div>';return}
+  el("pending").innerHTML=j.pending.length?j.pending.map(pendingRow).join(""):empty("暂无询价中的航线");
+  el("active").innerHTML=j.active.length?j.active.map(r=>quoteRow(r,false)).join(""):empty("暂无在售运价");
+  el("history").innerHTML=j.history.length?j.history.map(r=>quoteRow(r,true)).join(""):empty("暂无历史价格");
+}
+async function accept(id,btn){
+  btn.disabled=true;
+  const r=await fetch("/api/public/customer-quote",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token,rfq_id:id})});
+  const j=await r.json();
+  if(!j.ok){btn.disabled=false;alert("接受失败，请刷新后重试");return}
+  await load();
+}
+load();
+</script>
+</body>
+</html>
