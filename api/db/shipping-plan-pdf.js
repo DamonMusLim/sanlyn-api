@@ -756,7 +756,11 @@ ${printBtn}
                   COALESCE(raw->>'customerPO', '') AS po,
                   COALESCE(raw->>'sealNo', '') AS seal,
                   total_cartons, gross_weight_kg, total_cbm
-           FROM shipping_plans WHERE bl_no = $1 AND id != $2 ORDER BY id`,
+           FROM shipping_plans WHERE bl_no = $1 AND id != $2
+             AND bl_no NOT LIKE '%#merged%' AND bl_no NOT LIKE '%#void%' AND bl_no NOT LIKE '%#retired%'
+             AND COALESCE(flow_status,'') NOT LIKE 'merged_to_%' AND COALESCE(flow_status,'') NOT IN ('retired','void')
+             AND shipment_no NOT LIKE 'VOID-%' AND COALESCE(container_no,'') <> ''
+           ORDER BY id`,
           [p.bl_no, p.id]
         );
         siblingPlans = sibRes.rows;
@@ -1179,7 +1183,11 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
                   COALESCE(raw->>'customerPO', '') AS po,
                   COALESCE(raw->>'sealNo', '') AS seal,
                   total_cartons, gross_weight_kg, total_cbm
-           FROM shipping_plans WHERE bl_no = $1 AND id != $2 ORDER BY id`,
+           FROM shipping_plans WHERE bl_no = $1 AND id != $2
+             AND bl_no NOT LIKE '%#merged%' AND bl_no NOT LIKE '%#void%' AND bl_no NOT LIKE '%#retired%'
+             AND COALESCE(flow_status,'') NOT LIKE 'merged_to_%' AND COALESCE(flow_status,'') NOT IN ('retired','void')
+             AND shipment_no NOT LIKE 'VOID-%' AND COALESCE(container_no,'') <> ''
+           ORDER BY id`,
           [p.bl_no, p.id]
         );
         siblingPlans = sibRes.rows;
