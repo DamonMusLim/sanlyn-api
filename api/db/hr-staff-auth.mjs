@@ -59,11 +59,10 @@ export default async function handler(req, res) {
       const name = String(b.name || "").trim();
       const phone = String(b.phone || "").trim();
       const idno = String(b.id_card_no || "").trim().toUpperCase();
-      const pw = String(b.password || "");
+
       if (!name) return res.status(400).json({ success: false, error: "请填姓名" });
       if (!/^1[3-9]\d{9}$/.test(phone)) return res.status(400).json({ success: false, error: "手机号不对" });
       if (!/^[0-9]{17}[0-9X]$/.test(idno)) return res.status(400).json({ success: false, error: "身份证号要18位" });
-      if (pw.length < 6) return res.status(400).json({ success: false, error: "密码至少6位" });
 
       const dup = await pool.query(
         "SELECT id, employment_status FROM hr_employees WHERE phone=$1", [phone]);
@@ -76,33 +75,37 @@ export default async function handler(req, res) {
       const r = await pool.query(
         `INSERT INTO hr_employees
            (name, phone, id_card_no, company_code, store_id, role,
-            employment_status, password_hash, must_change_password, hire_date)
-         VALUES ($1,$2,$3,$4,$5,'clerk','pending',$6,false,CURRENT_DATE)
+            employment_status, must_change_password, hire_date)
+         VALUES ($1,$2,$3,$4,$5,'clerk','pending',true,CURRENT_DATE)
          RETURNING id`,
-        [name, phone, idno, company, company === "JINFANG" ? "jinfang" : "babi", hashPw(pw)]);
+        [name, phone, idno, company, company === "JINFANG" ? "jinfang" : "babi"]);
       const newId = r.rows[0].id;
 
       // 身份证照片存私有目录，不进公开 uploads
-      if (b.id_card_base64) {
-        try {
-          const dir = path.join("/opt/sanlyn-private/hr", String(newId));
-          fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-          const buf = Buffer.from(b.id_card_base64, "base64");
-          if (buf.length <= 8 * 1024 * 1024) {
-            const safe = `id_card_${Date.now()}.jpg`;
-            fs.writeFileSync(path.join(dir, safe), buf, { mode: 0o600 });
-            await pool.query("UPDATE hr_employees SET id_card_file=$1 WHERE id=$2",
-              [path.posix.join(String(newId), safe), newId]);
-          }
-        } catch (e) { /* 照片存不下不影响登记，店长可以后补 */ }
-      }
+      // 身份证正反两面都存进私有目录。正面路径进 id_card_file，背面进 id_card_back_file
+      try {
+        const dir = path.join("/opt/sanlyn-private/hr", String(newId));
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        for (const [key, col, tag] of [
+          ["id_card_base64", "id_card_file", "front"],
+          ["id_card_back_base64", "id_card_back_file", "back"],
+        ]) {
+          if (!b[key]) continue;
+          const buf = Buffer.from(b[key], "base64");
+          if (buf.length > 8 * 1024 * 1024) continue;
+          const safe = `id_${tag}_${Date.now()}.jpg`;
+          fs.writeFileSync(path.join(dir, safe), buf, { mode: 0o600 });
+          await pool.query(`UPDATE hr_employees SET ${col}=$1 WHERE id=$2`,
+            [path.posix.join(String(newId), safe), newId]);
+        }
+      } catch (e) { /* 照片存不下不影响登记，店长可以后补 */ }
       return res.status(200).json({ success: true,
-        message: "资料收到了。等店长确认后就能用这个手机号和密码登录。" });
+        message: "资料收到了。等店长确认后，再来这里设登录密码。" });
     }
 
     if (b.action === "login") {
       const phone = String(b.phone || "").trim();
-      const pw = String(b.password || "");
+
       if (!phone || !pw) return res.status(400).json({ success: false, error: "请填手机号和密码" });
 
       const r = await pool.query(
