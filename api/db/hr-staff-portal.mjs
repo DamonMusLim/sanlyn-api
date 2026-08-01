@@ -388,6 +388,34 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, data: r.rows[0], message: "已提交，等店长审批" });
       }
 
+      // 选这周的休息日(上六休一,员工自己挑)
+      if (action === "restday") {
+        const day = String(b.date || "").slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return res.status(400).json({ success: false, error: "日期不对" });
+        const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+        if (day < today) return res.status(400).json({ success: false, error: "不能选已经过去的日子" });
+
+        // 本周一 ~ 周日
+        const t = new Date(day + "T00:00:00Z");
+        const mon = new Date(t.getTime() - ((t.getUTCDay() + 6) % 7) * 86400000);
+        const days = [];
+        for (let i = 0; i < 7; i++) days.push(new Date(mon.getTime() + i * 86400000).toISOString().slice(0, 10));
+
+        // 整周重排:选中那天休息，其余六天营业班
+        await pool.query(
+          "DELETE FROM hr_shifts WHERE employee_id=$1 AND work_date = ANY($2::date[])", [empId, days]);
+        for (const d of days) {
+          const rest = d === day;
+          await pool.query(
+            `INSERT INTO hr_shifts (employee_id, employee_name, store_id, company_code,
+                                    work_date, start_time, end_time, shift_label, is_rest_day, note)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'员工自选')`,
+            [empId, me.name, me.company_code === "JINFANG" ? "jinfang" : "babi", me.company_code,
+             d, rest ? null : "12:00", rest ? null : "22:00", rest ? null : "营业", rest]);
+        }
+        return res.status(200).json({ success: true, message: `已排好，${day.slice(5)} 休息` });
+      }
+
       // 勾掉/取消勾「今天的事」
       if (action === "agenda") {
         const id = parseInt(b.id, 10);
@@ -483,7 +511,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda / restday" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
