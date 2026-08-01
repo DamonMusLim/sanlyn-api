@@ -9,6 +9,8 @@
 // 🔒 防爆破：连错5次锁15分钟（记在 hr_employees.login_fail_count / locked_until）。
 // 🔒 返回的 token 跟原来一样是限权的：role=staff + employee_id，进不了任何后台接口。
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { getPool, setCors } from "./db.js";
 
 const TOKEN_DAYS = 30;          // 员工自己登录的，比店长发的长效链接短
@@ -51,6 +53,53 @@ export default async function handler(req, res) {
   const company = b.company_code || "JINFANG";
 
   try {
+    // ── 新员工自助入职登记 ──
+    // 只写 pending，店长后台确认后才生效。谁都能打开这个页面，所以这一层必须有。
+    if (b.action === "onboard") {
+      const name = String(b.name || "").trim();
+      const phone = String(b.phone || "").trim();
+      const idno = String(b.id_card_no || "").trim().toUpperCase();
+      const pw = String(b.password || "");
+      if (!name) return res.status(400).json({ success: false, error: "请填姓名" });
+      if (!/^1[3-9]\d{9}$/.test(phone)) return res.status(400).json({ success: false, error: "手机号不对" });
+      if (!/^[0-9]{17}[0-9X]$/.test(idno)) return res.status(400).json({ success: false, error: "身份证号要18位" });
+      if (pw.length < 6) return res.status(400).json({ success: false, error: "密码至少6位" });
+
+      const dup = await pool.query(
+        "SELECT id, employment_status FROM hr_employees WHERE phone=$1", [phone]);
+      if (dup.rows.length) {
+        return res.status(400).json({ success: false,
+          error: dup.rows[0].employment_status === "pending"
+            ? "这个号已经登记过了，等店长确认" : "这个手机号已经在册，直接登录就行" });
+      }
+
+      const r = await pool.query(
+        `INSERT INTO hr_employees
+           (name, phone, id_card_no, company_code, store_id, role,
+            employment_status, password_hash, must_change_password, hire_date)
+         VALUES ($1,$2,$3,$4,$5,'clerk','pending',$6,false,CURRENT_DATE)
+         RETURNING id`,
+        [name, phone, idno, company, company === "JINFANG" ? "jinfang" : "babi", hashPw(pw)]);
+      const newId = r.rows[0].id;
+
+      // 身份证照片存私有目录，不进公开 uploads
+      if (b.id_card_base64) {
+        try {
+          const dir = path.join("/opt/sanlyn-private/hr", String(newId));
+          fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+          const buf = Buffer.from(b.id_card_base64, "base64");
+          if (buf.length <= 8 * 1024 * 1024) {
+            const safe = `id_card_${Date.now()}.jpg`;
+            fs.writeFileSync(path.join(dir, safe), buf, { mode: 0o600 });
+            await pool.query("UPDATE hr_employees SET id_card_file=$1 WHERE id=$2",
+              [path.posix.join(String(newId), safe), newId]);
+          }
+        } catch (e) { /* 照片存不下不影响登记，店长可以后补 */ }
+      }
+      return res.status(200).json({ success: true,
+        message: "资料收到了。等店长确认后就能用这个手机号和密码登录。" });
+    }
+
     if (b.action === "login") {
       const phone = String(b.phone || "").trim();
       const pw = String(b.password || "");
