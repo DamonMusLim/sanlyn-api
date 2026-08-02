@@ -53,19 +53,21 @@ export async function reviewPhoto(title, hint, dataUrl) {
 
 // 开店点检：模板 hr_checklist_items(phase='open') + 当天执行记录 hr_checklist_logs。
 // 只在「当天还没人做完开店点检」时返回，做完就不再打扰。
-export async function openChecklist(pool, companyCode, today) {
+// phase: 'open' = 开门先做的; 'close' = 走之前做的。
+// 0802 起下班不打卡,所以闭店清单**没有闸**,靠拍照留痕 + 第二天开店第1条复查。
+export async function openChecklist(pool, companyCode, today, phase = "open") {
   const r = await pool.query(
     `SELECT i.id, i.seq, i.title, i.hint, i.need_photo,
             l.status, l.employee_name, to_char(l.done_at,'HH24:MI') AS done_at
        FROM hr_checklist_items i
        LEFT JOIN hr_checklist_logs l
          ON l.item_id = i.id AND l.work_date = $2 AND l.company_code = i.company_code
-      WHERE i.company_code = $1 AND i.phase = 'open' AND i.is_active = true
-      ORDER BY i.seq, i.id`, [companyCode, today]);
+      WHERE i.company_code = $1 AND i.phase = $3 AND i.is_active = true
+      ORDER BY i.seq, i.id`, [companyCode, today, phase]);
   const items = r.rows;
   if (!items.length) return null;
   const left = items.filter((x) => !x.status).length;
-  return { phase: "open", total: items.length, left, items };
+  return { phase, total: items.length, left, items };
 }
 
 // ── 今日待办：读店员任务真源 ────────────────────────────────────────
