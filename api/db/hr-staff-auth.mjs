@@ -68,6 +68,9 @@ export default async function handler(req, res) {
   try {
     if (b.action === "login") {
       const phone = String(b.phone || "").trim();
+      // ⚠️ 0802 修:这行原本压根不存在,login 一进来就 ReferenceError: pw is not defined → 500。
+      //    也就是说员工端登录**从上线那天起就没成功过一次**,不是没人用。
+      const pw = String(b.password || "");
 
       if (!phone) return res.status(400).json({ success: false, error: "请填手机号" });
 
