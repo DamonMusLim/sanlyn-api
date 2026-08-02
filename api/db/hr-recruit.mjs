@@ -89,16 +89,20 @@ export default async function handler(req, res) {
 
     // 一键录用：应聘资料 → hr_employees（不用重打一遍）
     if (req.method === "POST" && req.body?.action === "hire") {
-      const { id, pay_type, pay_rate, hire_date, role } = req.body;
+      const { id, pay_type, pay_rate, hire_date, role, position } = req.body;
       if (!id) return res.status(400).json({ success: false, error: "id 必填" });
       const a = (await pool.query("SELECT * FROM hr_applicants WHERE id=$1", [id])).rows[0];
       if (!a) return res.status(404).json({ success: false, error: "应聘者不存在" });
       if (a.hired_employee_id) return res.status(400).json({ success: false, error: "已录用过，别重复建档" });
 
+      // 岗位:店长录用时可以改;不传就沿用应聘时选的意向。
+      // ⚠️ role(权限) 跟 position(叫法) 是两回事 —— role=manager 只能由 CEO 在这里显式写,
+      //    公网自申请只能影响 position 这个称呼,拿不到管理权。
+      const pos = position || a.desired_position || null;
       const emp = await pool.query(
-        `INSERT INTO hr_employees (company_code,name,phone,role,pay_type,pay_rate,hire_date,employment_status)
-         VALUES ($1,$2,$3,COALESCE($4,'clerk'),COALESCE($5,'daily'),$6,$7,'active') RETURNING id,name`,
-        [a.company_code, a.name, a.phone, role || null, pay_type || null,
+        `INSERT INTO hr_employees (company_code,name,phone,role,position,pay_type,pay_rate,hire_date,employment_status)
+         VALUES ($1,$2,$3,COALESCE($4,'clerk'),$5,COALESCE($6,'daily'),$7,$8,'active') RETURNING id,name,position`,
+        [a.company_code, a.name, a.phone, role || null, pos, pay_type || null,
          pay_rate == null || pay_rate === "" ? null : pay_rate,
          hire_date || new Date().toISOString().slice(0, 10)]);
       const empId = emp.rows[0].id;
