@@ -5,12 +5,13 @@
 //
 // 🔒 为什么不是"只用手机号"：员工端要能看**自己的身份证和合同**，只凭手机号登录
 //    等于同事之间互相知道号码就能看对方证件。所以必须有密码。
-//    没走短信验证码是因为目前没有短信通道（订单线也卡在这），店长建档时设初始密码、员工首登强制改。
+//    没走短信验证码是因为目前没有短信通道（订单线也卡在这）。
+// 🔒 0802 改：**店长不再发初始密码**。新人先在 /m/staff 提申请(只进 hr_applicants)，
+//    店长在后台一键录用建档，员工再来时凭手机号拿一枚 10 分钟的 set_password token，
+//    自己设密码。申请人**不在花名册里**，employment_status 只剩 active|left。
 // 🔒 防爆破：连错5次锁15分钟（记在 hr_employees.login_fail_count / locked_until）。
 // 🔒 返回的 token 跟原来一样是限权的：role=staff + employee_id，进不了任何后台接口。
 import crypto from "crypto";
-import fs from "fs";
-import path from "path";
 import { getPool, setCors } from "./db.js";
 
 const TOKEN_DAYS = 30;          // 员工自己登录的，比店长发的长效链接短
@@ -29,6 +30,18 @@ function signStaffToken(employeeId, name) {
   seg.push(b64url(crypto.createHmac("sha256", SECRET).update(seg.join(".")).digest()));
   return seg.join(".");
 }
+// 设密码专用的一次性短 token：只能调 set_password，进不了任何数据接口。
+// 10 分钟到期；密码一旦设上，同一枚 token 再用也会被 password_hash 已存在挡掉。
+function signSetPwToken(employeeId) {
+  const SECRET = process.env.JWT_SECRET;
+  if (!SECRET) throw new Error("JWT_SECRET 未配置");
+  const now = Math.floor(Date.now() / 1000);
+  const seg = [b64url(JSON.stringify({ alg: "HS256", typ: "JWT" })),
+               b64url(JSON.stringify({ role: "staff_setpw", employee_id: employeeId, iat: now, exp: now + 600 }))];
+  seg.push(b64url(crypto.createHmac("sha256", SECRET).update(seg.join(".")).digest()));
+  return seg.join(".");
+}
+
 // scrypt 加盐哈希（不引第三方依赖）
 function hashPw(pw, salt) {
   const s = salt || crypto.randomBytes(16).toString("hex");
@@ -53,60 +66,10 @@ export default async function handler(req, res) {
   const company = b.company_code || "JINFANG";
 
   try {
-    // ── 新员工自助入职登记 ──
-    // 只写 pending，店长后台确认后才生效。谁都能打开这个页面，所以这一层必须有。
-    if (b.action === "onboard") {
-      const name = String(b.name || "").trim();
-      const phone = String(b.phone || "").trim();
-      const idno = String(b.id_card_no || "").trim().toUpperCase();
-
-      if (!name) return res.status(400).json({ success: false, error: "请填姓名" });
-      if (!/^1[3-9]\d{9}$/.test(phone)) return res.status(400).json({ success: false, error: "手机号不对" });
-      if (!/^[0-9]{17}[0-9X]$/.test(idno)) return res.status(400).json({ success: false, error: "身份证号要18位" });
-
-      const dup = await pool.query(
-        "SELECT id, employment_status FROM hr_employees WHERE phone=$1", [phone]);
-      if (dup.rows.length) {
-        return res.status(400).json({ success: false,
-          error: dup.rows[0].employment_status === "pending"
-            ? "这个号已经登记过了，等店长确认" : "这个手机号已经在册，直接登录就行" });
-      }
-
-      const r = await pool.query(
-        `INSERT INTO hr_employees
-           (name, phone, id_card_no, company_code, store_id, role,
-            employment_status, must_change_password, hire_date)
-         VALUES ($1,$2,$3,$4,$5,'clerk','pending',true,CURRENT_DATE)
-         RETURNING id`,
-        [name, phone, idno, company, company === "JINFANG" ? "jinfang" : "babi"]);
-      const newId = r.rows[0].id;
-
-      // 身份证照片存私有目录，不进公开 uploads
-      // 身份证正反两面都存进私有目录。正面路径进 id_card_file，背面进 id_card_back_file
-      try {
-        const dir = path.join("/opt/sanlyn-private/hr", String(newId));
-        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        for (const [key, col, tag] of [
-          ["id_card_base64", "id_card_file", "front"],
-          ["id_card_back_base64", "id_card_back_file", "back"],
-        ]) {
-          if (!b[key]) continue;
-          const buf = Buffer.from(b[key], "base64");
-          if (buf.length > 8 * 1024 * 1024) continue;
-          const safe = `id_${tag}_${Date.now()}.jpg`;
-          fs.writeFileSync(path.join(dir, safe), buf, { mode: 0o600 });
-          await pool.query(`UPDATE hr_employees SET ${col}=$1 WHERE id=$2`,
-            [path.posix.join(String(newId), safe), newId]);
-        }
-      } catch (e) { /* 照片存不下不影响登记，店长可以后补 */ }
-      return res.status(200).json({ success: true,
-        message: "资料收到了。等店长确认后，再来这里设登录密码。" });
-    }
-
     if (b.action === "login") {
       const phone = String(b.phone || "").trim();
 
-      if (!phone || !pw) return res.status(400).json({ success: false, error: "请填手机号和密码" });
+      if (!phone) return res.status(400).json({ success: false, error: "请填手机号" });
 
       const r = await pool.query(
         `SELECT id,name,phone,password_hash,must_change_password,employment_status,
@@ -121,12 +84,21 @@ export default async function handler(req, res) {
         return res.status(429).json({ success: false,
           error: `密码错太多次，请 ${Math.ceil((new Date(e.locked_until) - new Date()) / 60000)} 分钟后再试` });
       }
+      if (e.employment_status === "left") {
+        return res.status(403).json({ success: false, error: "账号已停用，有问题找店长" });
+      }
       if (e.employment_status !== "active") {
-        return res.status(403).json({ success: false, error: "该员工已离职，账号已停用" });
+        // 老口径遗留(pending)。以前这里一律回「已离职」——在册的人被告知离职，是个真 bug。
+        return res.status(403).json({ success: false, error: "账号还没启用，找店长看一下" });
       }
+      // 刚被录用、还没设过密码：不发正式 token，只发一枚 10 分钟的设密码票。
+      // 密码由员工自己设（Damon 定：店长不发初始密码）。
       if (!e.password_hash) {
-        return res.status(403).json({ success: false, error: "还没设密码，找店长给你设一个" });
+        return res.status(200).json({ success: true, stage: "set_password",
+          setpw_token: signSetPwToken(e.id), name: e.name,
+          message: "店长已经确认你了，设一个只有你知道的密码" });
       }
+      if (!pw) return res.status(400).json({ success: false, error: "请填密码" });
       if (!verifyPw(pw, e.password_hash)) {
         const n = (e.login_fail_count || 0) + 1;
         if (n >= MAX_FAIL) {
@@ -141,6 +113,28 @@ export default async function handler(req, res) {
         success: true, token: signStaffToken(e.id, e.name), name: e.name,
         must_change_password: !!e.must_change_password,
       });
+    }
+
+    // 首次设密码：只认 role=staff_setpw 的短票，且该员工必须还没有密码。
+    if (b.action === "set_password") {
+      const { verifyToken } = await import("./auth.js");
+      const claims = verifyToken(b.token);
+      if (!claims || claims.role !== "staff_setpw" || !claims.employee_id) {
+        return res.status(401).json({ success: false, error: "这张票过期了，回登录页重新来一次" });
+      }
+      const np = String(b.new_password || "");
+      if (np.length < 6) return res.status(400).json({ success: false, error: "密码至少6位" });
+      const r = await pool.query(
+        "SELECT id,name,password_hash,employment_status FROM hr_employees WHERE id=$1", [claims.employee_id]);
+      if (!r.rows.length) return res.status(404).json({ success: false, error: "员工不存在" });
+      const e = r.rows[0];
+      if (e.employment_status !== "active") return res.status(403).json({ success: false, error: "账号未启用" });
+      if (e.password_hash) return res.status(400).json({ success: false, error: "密码已经设过了，直接登录" });
+      await pool.query(
+        "UPDATE hr_employees SET password_hash=$1, must_change_password=false, last_login_at=now() WHERE id=$2",
+        [hashPw(np), e.id]);
+      return res.status(200).json({ success: true, token: signStaffToken(e.id, e.name), name: e.name,
+        message: "设好了，开工吧 🐾" });
     }
 
     if (b.action === "change_password") {
@@ -161,7 +155,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: "密码已修改" });
     }
 
-    return res.status(400).json({ success: false, error: "action 只能是 login / change_password" });
+    return res.status(400).json({ success: false, error: "action 只能是 login / set_password / change_password" });
   } catch (err) {
     console.error("[hr-staff-auth]", err.message);
     return res.status(500).json({ success: false, error: "服务异常，稍后再试" });
