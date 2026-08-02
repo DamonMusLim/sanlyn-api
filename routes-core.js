@@ -343,6 +343,10 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/driver-reviews",             () => import("./api/db/driver-reviews.js"));
   mount("/api/db/shipment-collab",          () => import("./api/db/shipment-collab.js"));
   mount("/api/db/external-tokens",          () => import("./api/db/external-tokens.js"));
+  // 2026-08-02 接线:处理文件早就在,但一直没挂载 → 前端模块点开就 404。
+  // collab-closure.js 自 2026-07-09 在库;insurance-policies.js 本次按 ports.js 同款补齐。
+  mount("/api/db/collab-closure",            () => import("./api/db/collab-closure.js"));
+  mount("/api/db/insurance-policies",        () => import("./api/db/insurance-policies.js"));
   mount("/api/db/collab-sheets/queue",        () => import("./api/db/collab-sheets-queue.js"));
   mount("/api/db/collab-sheets",             () => import("./api/db/collab-sheets.js"));
   mount("/api/db/collab-sheet-templates",    () => import("./api/db/collab-sheet-templates.js"));
