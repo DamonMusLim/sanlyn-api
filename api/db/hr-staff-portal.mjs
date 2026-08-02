@@ -39,7 +39,8 @@ export default async function handler(req, res) {
               to_char(contract_start,'YYYY-MM-DD') AS contract_start,
               to_char(contract_end,'YYYY-MM-DD')   AS contract_end,
               to_char(hire_date,'YYYY-MM-DD')      AS hire_date,
-              pay_type, pay_rate, emergency_contact, emergency_phone
+              pay_type, pay_rate, emergency_contact, emergency_phone,
+              id_card_back_file, bank_account_no, bank_name, materials_done_at
          FROM hr_employees WHERE id = $1`, [empId]);
     if (!empQ.rows.length) return res.status(404).json({ success: false, error: "员工不存在" });
     const me = empQ.rows[0];
@@ -104,7 +105,18 @@ export default async function handler(req, res) {
               has_id_card: !!me.id_card_file, has_contract: !!me.contract_file,
               contract_start: me.contract_start, contract_end: me.contract_end,
               hire_date: me.hire_date, pay_type: me.pay_type, pay_rate: me.pay_rate,
-              emergency_contact: me.emergency_contact, emergency_phone: me.emergency_phone },
+              emergency_contact: me.emergency_contact, emergency_phone: me.emergency_phone,
+              has_id_card_back: !!me.id_card_back_file,
+              // 卡号只回后4位 —— 员工端也没必要把整串亮在屏幕上
+              bank_tail: me.bank_account_no ? String(me.bank_account_no).slice(-4) : null,
+              bank_name: me.bank_name,
+              missing: [
+                me.id_card_no ? null : "身份证号",
+                me.id_card_file ? null : "身份证人像面",
+                me.id_card_back_file ? null : "身份证国徽面",
+                me.emergency_contact ? null : "紧急联系人",
+                me.bank_account_no ? null : "工资卡",
+              ].filter(Boolean) },
         month,
         todo: todoFor(me.company_code),
         checklist: await openChecklist(pool, me.company_code, today),
@@ -336,7 +348,8 @@ export default async function handler(req, res) {
       // 员工自助补资料（入职当天用）。只开紧急联系人 + 身份证首次填写，其余一律不可改。
       if (action === "update_profile") {
         const cur = (await pool.query(
-          "SELECT id_card_no, id_card_file FROM hr_employees WHERE id=$1", [empId])).rows[0] || {};
+          `SELECT id_card_no, id_card_file, id_card_back_file, emergency_contact, bank_account_no
+             FROM hr_employees WHERE id=$1`, [empId])).rows[0] || {};
         const sets = [];
         const params = [];
         const done = [];
@@ -360,6 +373,24 @@ export default async function handler(req, res) {
             return res.status(400).json({ success: false, error: "身份证号要18位" });
           params.push(idn); sets.push(`id_card_no = $${params.length}`); done.push("身份证号");
         }
+        if ("bank_account_no" in b) {
+          const acc = String(b.bank_account_no || "").replace(/\s/g, "");
+          if (acc && !/^\d{12,25}$/.test(acc))
+            return res.status(400).json({ success: false, error: "卡号只填数字，12~25位" });
+          params.push(acc || null); sets.push(`bank_account_no = $${params.length}`); done.push("工资卡");
+        }
+        if ("bank_name" in b) {
+          params.push(String(b.bank_name || "").trim().slice(0, 40) || null);
+          sets.push(`bank_name = $${params.length}`); done.push("开户行");
+        }
+        if (b.id_card_back_base64) {
+          if (cur.id_card_back_file)
+            return res.status(400).json({ success: false, error: "国徽面已上传过，要更换请找店长" });
+          try {
+            const rel = savePrivateIdCard(empId, b.id_card_back_filename, b.id_card_back_mime, b.id_card_back_base64);
+            params.push(rel); sets.push(`id_card_back_file = $${params.length}`); done.push("身份证国徽面");
+          } catch (e) { return res.status(400).json({ success: false, error: e.message }); }
+        }
         if (b.id_card_base64) {
           if (cur.id_card_file)
             return res.status(400).json({ success: false, error: "身份证照片已上传过，要更换请找店长" });
@@ -372,6 +403,13 @@ export default async function handler(req, res) {
         if (!sets.length) return res.status(400).json({ success: false, error: "没有要保存的内容" });
         params.push(empId);
         await pool.query(`UPDATE hr_employees SET ${sets.join(", ")} WHERE id = $${params.length}`, params);
+        // 五样都齐了就盖个时间戳，店长后台照这个标「资料未齐」。只盖一次，不回退。
+        await pool.query(
+          `UPDATE hr_employees SET materials_done_at = now()
+            WHERE id = $1 AND materials_done_at IS NULL
+              AND id_card_no IS NOT NULL AND id_card_file IS NOT NULL
+              AND id_card_back_file IS NOT NULL AND emergency_contact IS NOT NULL
+              AND bank_account_no IS NOT NULL`, [empId]);
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
