@@ -333,8 +333,8 @@ async function main() {
     await fs.writeFile(CSV_PATH, [FIELDS.join(","), ...output.map((r) => FIELDS.map((f) => csvCell(r[f])).join(","))].join("\n") + "\n");
     const sections = Object.keys(counts).sort().map((key) => {
       const rows = output.filter((r) => r.classification === key).slice(0, 20);
-      const table = ["| shipment_no | bl_no | customer | container | cost | sale | flags | reason |", "|---|---|---|---|---:|---:|---|---|"];
-      for (const r of rows) table.push(`| ${mdCell(r.shipment_no)} | ${mdCell(r.bl_no)} | ${mdCell(r.customer)} | ${mdCell([r.container_type, r.container_qty].filter(Boolean).join(" x "))} | ${mdCell(r.freight_cost)} | ${mdCell(r.freight_sale_usd)} | ${mdCell(r.flags)} | ${mdCell(r.reason)} |`);
+      const table = ["| shipment_no | bl_no | customer | container | cost | sale | bill_qty_set | suspect_miscategorized | flags | reason |", "|---|---|---|---|---:|---:|---|---|---|---|"];
+      for (const r of rows) table.push(`| ${mdCell(r.shipment_no)} | ${mdCell(r.bl_no)} | ${mdCell(r.customer)} | ${mdCell([r.container_type, r.container_qty].filter(Boolean).join(" x "))} | ${mdCell(r.freight_cost)} | ${mdCell(r.freight_sale_usd)} | ${mdCell(r.bill_qty_set)} | ${mdCell(r.suspect_miscategorized)} | ${mdCell(r.flags)} | ${mdCell(r.reason)} |`);
       return `## ${key} (${counts[key]})\n\n${table.join("\n")}`;
     });
     await fs.writeFile(MD_PATH, `# Freight Price Audit\n\nGenerated at: ${new Date().toISOString()}\n\n${sections.join("\n\n")}\n`);
