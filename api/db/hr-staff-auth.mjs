@@ -80,7 +80,10 @@ export default async function handler(req, res) {
            FROM hr_employees WHERE company_code=$1 AND phone=$2`, [company, phone]);
       // 统一话术，不告诉攻击者"这个号不存在"还是"密码错"
       const bad = () => res.status(401).json({ success: false, error: "手机号或密码不对" });
-      if (!r.rows.length) return bad();
+      // 号不存在但密码也没填 → 跟「已有密码却没填」回同一句，两种情况外面看不出区别
+      if (!r.rows.length) return pw
+        ? bad()
+        : res.status(400).json({ success: false, error: "请填密码" });
       const e = r.rows[0];
 
       if (e.locked_until && new Date(e.locked_until) > new Date()) {
@@ -88,6 +91,7 @@ export default async function handler(req, res) {
           error: `密码错太多次，请 ${Math.ceil((new Date(e.locked_until) - new Date()) / 60000)} 分钟后再试` });
       }
       if (e.employment_status === "left") {
+        if (!pw) return res.status(400).json({ success: false, error: "请填密码" });
         return res.status(403).json({ success: false, error: "账号已停用，有问题找店长" });
       }
       if (e.employment_status !== "active") {
@@ -101,6 +105,9 @@ export default async function handler(req, res) {
           setpw_token: signSetPwToken(e.id), name: e.name,
           message: "店长已经确认你了，设一个只有你知道的密码" });
       }
+      // 密码留空只有一个合法用途:刚被录用、还没设过密码(上面那支已经返回了)。
+      // 走到这里说明这号已经有密码/已离职/根本不存在 —— 一律回同一句，
+      // 免得空密码变成「这个号是不是刚入职的员工」的探测器。
       if (!pw) return res.status(400).json({ success: false, error: "请填密码" });
       if (!verifyPw(pw, e.password_hash)) {
         const n = (e.login_fail_count || 0) + 1;
