@@ -7,7 +7,7 @@ const CSV_PATH = "/tmp/freight_price_audit.csv";
 const MD_PATH = "/tmp/freight_price_audit.md";
 const MONEY_EPS = 0.01;
 
-const FIELDS = ["shipment_no", "bl_no", "customer", "pol", "pod", "container_type", "container_qty", "detected_container_types", "freight_rate_id", "freight_cost", "freight_sale_usd", "snapshot_totals", "bill_ocean_cost", "bill_ocean_sale", "classification", "flags", "reason", "recommended_action"];
+const FIELDS = ["shipment_no", "bl_no", "customer", "pol", "pod", "container_type", "container_qty", "detected_container_types", "freight_rate_id", "freight_cost", "freight_sale_usd", "snapshot_totals", "bill_ocean_cost_usd", "bill_ocean_cost_cny", "bill_ocean_sale_usd", "bill_ocean_sale_cny", "bill_qty_set", "suspect_miscategorized", "classification", "flags", "reason", "recommended_action"];
 
 function getPool() {
   const dsn = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.PG_URL;
@@ -30,6 +30,33 @@ function money(v) {
 function approx(a, b, eps = MONEY_EPS) {
   const x = n(a), y = n(b);
   return x !== null && y !== null && Math.abs(x - y) <= eps;
+}
+
+function normCurrency(v) {
+  return String(v || "").trim().toUpperCase();
+}
+
+function normCategory(v) {
+  return String(v || "").trim();
+}
+
+function suggestedCategory(category) {
+  const s = normCategory(category);
+  if (s.includes("驳船")) return "驳船费";
+  if (s.includes("铁路")) return "铁路费";
+  if (s.includes("拖车") || s.includes("土地燃油附加费") || s.includes("提货费")) return "拖车费";
+  return "";
+}
+
+function isOceanCategory(category) {
+  const s = normCategory(category).toLowerCase();
+  if (!s) return false;
+  if (suggestedCategory(s)) return false;
+  return s === "海运费" || s === "ocean freight" || s === "freight" || s === "ocean";
+}
+
+function sameBillBasis(a, b) {
+  return approx(a.amount, b.amount) && approx(a.qty, b.qty, 0) && approx(a.unit_price, b.unit_price);
 }
 
 function normType(v) {
@@ -122,12 +149,16 @@ function classify(row, detected, bill, snap) {
   const qty = n(row.container_qty) || [...detected.values()].reduce((sum, q) => sum + q, 0);
   const flags = [];
   const hasAmount = row.freight_cost !== null || row.freight_sale_usd !== null;
-  const hasBillLink = Boolean(row.bl_no || bill.cost !== null || bill.sale !== null);
+  const hasBillLink = Boolean(row.bl_no || bill.costUsd !== null || bill.costCny !== null || bill.saleUsd !== null || bill.saleCny !== null);
   const typeCount = detected.size;
   const planTypeCount = normType(row.container_type) ? 1 : 0;
   if (row.freight_cost !== null && row.freight_sale_usd !== null && approx(row.freight_cost, row.freight_sale_usd, 0)) {
     flags.push("zero_margin");
   }
+  if (bill.qtySet.length && row.container_qty !== null && !bill.qtySet.some((q) => approx(q, row.container_qty, 0))) {
+    flags.push("qty_mismatch");
+  }
+  if (bill.suspects.length) flags.push("suspect_miscategorized");
   const units = [...snap.units, ...bill.units].filter((x, i, arr) => arr.findIndex((y) => approx(x, y)) === i);
   let classification;
   let reason;
@@ -201,12 +232,10 @@ async function fetchBookings(pool) {
 async function fetchBills(pool) {
   const source = await tableExists(pool, "active_freight_supplier_bills") ? "active_freight_supplier_bills" : "freight_supplier_bills";
   const { rows } = await pool.query(`
-    SELECT bl_no, link_plan_id::text AS link_plan_id,
-           SUM(CASE WHEN COALESCE(cost_category,'') ILIKE ANY (ARRAY['%海运%', '%ocean%', '%freight%']) THEN COALESCE(amount,0) ELSE 0 END) AS ocean_cost,
-           SUM(CASE WHEN COALESCE(cost_category,'') ILIKE ANY (ARRAY['%海运%', '%ocean%', '%freight%']) THEN COALESCE(sale_amount,0) ELSE 0 END) AS ocean_sale,
-           ARRAY_REMOVE(ARRAY_AGG(DISTINCT unit_price) FILTER (WHERE unit_price IS NOT NULL), NULL) AS units
+    SELECT id::text, bl_no, link_plan_id::text AS link_plan_id, cost_category,
+           currency, amount, sale_amount, qty, unit_price
     FROM ${source}
-    GROUP BY bl_no, link_plan_id::text
+    WHERE COALESCE(rebill_status,'') <> 'voided'
   `);
   return rows;
 }
@@ -223,21 +252,43 @@ function indexBy(rows, keys) {
 }
 
 function mergeBill(rows) {
-  const out = { cost: null, sale: null, units: [] };
+  const out = { costUsd: null, costCny: null, saleUsd: null, saleCny: null, units: [], qtySet: [], suspects: [] };
   // 同一账单行可能同时挂在 bl_no 和 link_plan_id 两个索引键上,先按行去重再累加,否则金额翻倍
   const seen = new Set();
   const uniq = (rows || []).filter((r) => {
-    const k = String(r.bl_no || "") + "|" + String(r.link_plan_id || "");
+    const k = String(r.id || "") || [r.bl_no, r.link_plan_id, r.cost_category, r.currency, r.amount, r.qty, r.unit_price].join("|");
     if (seen.has(k)) return false;
     seen.add(k); return true;
   });
-  for (const row of uniq) {
-    out.cost = money((out.cost || 0) + (n(row.ocean_cost) || 0));
-    out.sale = money((out.sale || 0) + (n(row.ocean_sale) || 0));
-    out.units.push(...(row.units || []).map(n).filter((x) => x !== null));
+  const ocean = uniq.filter((r) => isOceanCategory(r.cost_category));
+  const nonOcean = uniq.filter((r) => !isOceanCategory(r.cost_category));
+  const suspectIds = new Set();
+  for (const row of ocean) {
+    const match = nonOcean.find((other) => sameBillBasis(row, other));
+    if (!match) continue;
+    suspectIds.add(row.id);
+    out.suspects.push(`${row.id}:${row.cost_category}->${suggestedCategory(match.cost_category) || "need_manual_review"};matched=${match.id}:${match.cost_category};amount=${money(row.amount)};qty=${n(row.qty) ?? ""};unit=${money(row.unit_price) ?? ""}`);
   }
-  if (out.cost === 0) out.cost = null;
-  if (out.sale === 0) out.sale = null;
+  for (const row of uniq) {
+    const qty = n(row.qty);
+    if (qty !== null && !out.qtySet.some((x) => approx(x, qty, 0))) out.qtySet.push(qty);
+    const unit = n(row.unit_price);
+    if (unit !== null) out.units.push(unit);
+    if (!isOceanCategory(row.cost_category) || suspectIds.has(row.id)) continue;
+    const currency = normCurrency(row.currency);
+    if (currency === "USD") {
+      out.costUsd = money((out.costUsd || 0) + (n(row.amount) || 0));
+      out.saleUsd = money((out.saleUsd || 0) + (n(row.sale_amount) || 0));
+    } else if (currency === "CNY" || currency === "RMB") {
+      out.costCny = money((out.costCny || 0) + (n(row.amount) || 0));
+      out.saleCny = money((out.saleCny || 0) + (n(row.sale_amount) || 0));
+    }
+  }
+  out.qtySet.sort((a, b) => a - b);
+  if (out.costUsd === 0) out.costUsd = null;
+  if (out.costCny === 0) out.costCny = null;
+  if (out.saleUsd === 0) out.saleUsd = null;
+  if (out.saleCny === 0) out.saleCny = null;
   return out;
 }
 
@@ -267,8 +318,12 @@ async function main() {
         freight_cost: money(row.freight_cost),
         freight_sale_usd: money(row.freight_sale_usd),
         snapshot_totals: snap.snap ? `cost=${snap.cost ?? ""};sale=${snap.sale ?? ""};lines=${snap.hasLines ? "yes" : "no"}` : "",
-        bill_ocean_cost: bill.cost,
-        bill_ocean_sale: bill.sale,
+        bill_ocean_cost_usd: bill.costUsd,
+        bill_ocean_cost_cny: bill.costCny,
+        bill_ocean_sale_usd: bill.saleUsd,
+        bill_ocean_sale_cny: bill.saleCny,
+        bill_qty_set: bill.qtySet.join(";"),
+        suspect_miscategorized: bill.suspects.join(" | "),
         ...cls,
       };
     });
