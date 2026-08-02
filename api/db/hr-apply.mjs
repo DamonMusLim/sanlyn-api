@@ -15,7 +15,9 @@ import crypto from "node:crypto";
 import { getPool, setCors } from "./db.js";
 
 const LIM = { name: 40, phone: 30, gender: 10, intro: 800, expected_pay: 60, answer: 600 };
-const POSITIONS = ["店长", "店员"];   // 只是**意向**;真岗位和权限由店长录用时定
+const POSITIONS = ["店员", "主管"];   // 只是**意向**;真岗位和权限由店长录用时定。
+// 「店长」不在选项里 —— 那是 Damon 自己,在 admin 后台审批,不占员工席位。
+// 层级:店长(Damon,后台) > 主管(以后从店员提) > 店员。
 const cut = (v, n) => (v == null ? null : String(v).slice(0, n));
 const arr = (v, n = 12) => (Array.isArray(v) ? v.slice(0, n).map((x) => cut(x, 60)) : []);
 
