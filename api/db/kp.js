@@ -53,6 +53,13 @@ async function dispatch(req, res) {
     return false; // 查库出错就回落老逻辑，别把开票门户也带崩
   }
   if (!row) return false; // 不是协同链接 → 回落开票门户(invoice_links/?o=/?t=)
+  // 2026-08-02: 门户短码并入 magic_links 后,fwd_portal 一直没接分发 → 落到「还没上线」兜底。
+  // 货代报价门户是 SPA 路由(/forwarder-quote/:code),不走 /public/ 静态页那套。
+  if (row.recipient_role === "fwd_portal") {
+    res.writeHead(302, { Location: "/forwarder-quote/" + encodeURIComponent(code) });
+    res.end();
+    return true;
+  }
   const page = pageFor(row);
   if (page) {
     res.writeHead(302, { Location: `/public/${page}?token=${encodeURIComponent(code)}` });
