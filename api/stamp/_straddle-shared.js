@@ -264,3 +264,49 @@ export async function generateSignaturePng() {
   </svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
+
+// ── 统一单点盖章 overlay(DAS唯一overlay,apply.js/portcharge-bill-pdf共用,别再各自drawImage) ──
+// 章位preset(pdf-lib原点左下)
+export function calcPosition(pos, pageW, pageH, sW, sH, ox = 60, oy = 60) {
+  const map = {
+    br: { x: pageW - sW - ox, y: oy }, bl: { x: ox, y: oy }, bc: { x: (pageW - sW) / 2, y: oy },
+    tr: { x: pageW - sW - ox, y: pageH - sH - oy }, tl: { x: ox, y: pageH - sH - oy },
+    cr: { x: pageW - sW - ox, y: (pageH - sH) / 2 }, cc: { x: (pageW - sW) / 2, y: (pageH - sH) / 2 },
+  };
+  return map[pos] || map.br;
+}
+export function parseStampPages(pagesStr, total) {
+  if (pagesStr === "all") return Array.from({ length: total }, (_, i) => i);
+  if (pagesStr === "first") return [0];
+  if (pagesStr === "first_last") return total === 1 ? [0] : [0, total - 1];
+  if (pagesStr === "last" || pagesStr == null) return [total - 1];
+  return String(pagesStr).split(",").map((p) => parseInt(p.trim(), 10) - 1).filter((i) => i >= 0 && i < total);
+}
+// 把 stampBuffer(已squareCrop的PNG)盖到 pdfBytes 上,返回 Buffer。
+// opts: pages/position/customX/customY(0-1顶左原点)/scale/sealMm/opacity/coordsByPage({x,y}直给PDF点,优先)
+export async function stampPdfBuffer(pdfBytes, stampBuffer, opts = {}) {
+  const { pages = "last", position = "br", customX = null, customY = null, scale = 0.19, sealMm = null, opacity = DEFAULT_OPACITY, coords = null } = opts;
+  const { PDFDocument } = await import("pdf-lib");
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const img = await pdfDoc.embedPng(stampBuffer);
+  const aspect = img.height / img.width;
+  const targets = parseStampPages(pages, pdfDoc.getPageCount());
+  for (const idx of targets) {
+    const page = pdfDoc.getPage(idx);
+    const { width: pw, height: ph } = page.getSize();
+    let sW = (typeof sealMm === "number" && sealMm > 0) ? sealMm * (72 / 25.4) : Math.min(pw, ph) * scale;
+    let sH = sW * aspect;
+    if (sH > ph * 0.35) { sH = ph * 0.35; sW = sH / aspect; } // 极端长宽比保护
+    let x, y;
+    if (coords && Number.isFinite(coords.x) && Number.isFinite(coords.y)) {
+      x = Math.max(8, Math.min(coords.x, pw - sW - 8));
+      y = Math.max(8, Math.min(coords.y, ph - sH - 8));
+    } else if (customX != null && customY != null) {
+      ({ x, y } = calcCustomPosition(customX, customY, pw, ph, sW, sH));
+    } else {
+      ({ x, y } = calcPosition(position, pw, ph, sW, sH));
+    }
+    page.drawImage(img, { x, y, width: sW, height: sH, opacity });
+  }
+  return Buffer.from(await pdfDoc.save());
+}

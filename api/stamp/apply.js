@@ -5,7 +5,8 @@
 
 import { getPool, setCors } from '../db.js';
 import { extractUser } from '../auth.js';
-import { squareCropStamp } from './_straddle-shared.js';
+import { squareCropStamp, stampPdfBuffer } from './_straddle-shared.js';
+import { signPdfViaEsign, esignConfigured } from './esign-jiandaoyun.js';
 
 // ── 印章 OSS 路径映射 ──────────────────────────────
 const STAMP_MAP = {
@@ -131,6 +132,7 @@ export default async function handler(req, res) {
       customStampUrl,
       stampType,
       isSuperAdmin = false,
+      mode = 'simulate',   // simulate=pdf-lib模拟章(日常·免费) | esign=简道云E签宝电子签章(正规·法律效力·gated)
     } = req.body;
 
     if (!pdfUrl) {
@@ -138,6 +140,25 @@ export default async function handler(req, res) {
     }
     if (!operator) {
       return res.status(400).json({ error: 'operator required' });
+    }
+
+    // ── DAS 正规签章通道:E签宝(简道云)。gated,未配置明确报错(绝不静默回退模拟章,否则以为盖了法律章其实是模拟) ──
+    if (String(mode) === 'esign') {
+      if (!esignConfigured()) {
+        return res.status(400).json({ error: 'E签宝未配置', detail: '正规电子签章需:法人办e签宝企业实名+印章授权,建简道云表单/流程(挂e签宝节点·自动落章),再在.env填 JDY_API_KEY/JDY_ESIGN_APP_ID/JDY_ESIGN_ENTRY_ID/JDY_ESIGN_FILE_FIELD/JDY_ESIGN_RESULT_FIELD' });
+      }
+      let _u = pdfUrl;
+      if (_u.startsWith('/')) _u = 'http://127.0.0.1:' + (process.env.PORT || 9000) + _u;
+      if (/\/api\/db\/shipping-plan-pdf/.test(_u) && !_u.includes('format=')) _u += (_u.includes('?') ? '&' : '?') + 'format=pdf';
+      const _r = await fetch(_u, req.headers.authorization ? { headers: { Authorization: req.headers.authorization } } : {});
+      if (!_r.ok) return res.status(502).json({ error: '源PDF拉取失败', status: _r.status });
+      const _buf = Buffer.from(await _r.arrayBuffer());
+      const out = await signPdfViaEsign({ pdfBuffer: _buf, docName: documentName || documentId, companyCode: (req.body && req.body.companyCode) || null });
+      if (!out.ok) return res.status(out.configured ? 502 : 400).json({ error: out.error, dataId: out.dataId });
+      let archived = out.signedUrl;
+      try { const sBuf = Buffer.from(await (await fetch(out.signedUrl)).arrayBuffer()); archived = await uploadToOSS(`documents/esigned/${(documentId || 'doc').replace(/[^\w.-]/g, '_')}_${Date.now()}.pdf`, sBuf); } catch (_) {}
+      try { await logStampAction(getPool(), { documentId, documentName, stampKey: 'esign:' + ((req.body && req.body.companyCode) || ''), operator, pages: 'esign', position: 'esign', scale: 0, sourceUrl: pdfUrl, stampedUrl: archived }); } catch (_) {}
+      return res.status(200).json({ success: true, mode: 'esign', stampedUrl: archived, esignSourceUrl: out.signedUrl, dataId: out.dataId, note: 'E签宝电子签章(法律效力)' });
     }
 
     const isCustom = (stampType === 'custom') && !!customStampUrl;
@@ -220,48 +241,8 @@ export default async function handler(req, res) {
     // 源章图非正方(如 BABI 378x532 带下方大片留白)会把印章画歪/画小;裁到真实印泥边界再补方(与 straddle-confirm 一致)
     const stampBuffer = await squareCropStamp(rawStampBuffer);
 
-    // ── 2. pdf-lib 签章 ──
-    const { PDFDocument } = await import('pdf-lib');
-
-    const pdfDoc = await PDFDocument.load(pdfBuffer);
-    const stampImage = await pdfDoc.embedPng(stampBuffer);
-
-    const totalPages = pdfDoc.getPageCount();
-    const targetPages = parsePages(pages, totalPages);
-
-    for (const pageIdx of targetPages) {
-      const page = pdfDoc.getPage(pageIdx);
-      const { width: pageW, height: pageH } = page.getSize();
-
-      const stampAspect = stampImage.height / stampImage.width;
-      // 按真实物理尺寸定章大小(标准公章直径 ~40mm),不随页面点数/横竖变化。
-      // 旧逻辑 sW=pageW*scale 在 A4 横版(842pt宽)会把章放成 56mm 过大。
-      // 印章按 A4 短边(宽)为参照,横竖版一致(旧 pageW*scale 在A4横版842pt宽放成56mm过大)。
-      // 默认 scale 0.19 × 短边595pt ≈ 113pt = 40mm 标准公章;也可传 sealMm(mm)精确指定。
-      const refDim = Math.min(pageW, pageH);
-      let sW = (typeof sealMm === 'number' && sealMm > 0) ? sealMm * (72 / 25.4) : refDim * scale;
-      let sH = sW * stampAspect;
-      if (sH > pageH * 0.35) {                  // 极端长宽比保护
-        sH = pageH * 0.35;
-        sW = sH / stampAspect;
-      }
-
-      const offsetX = 60, offsetY = 60;
-      // ★ S99: customX/customY override preset — origin top-left, PDF-lib origin bottom-left
-      const pos = (customX != null && customY != null)
-        ? calcCustomPosition(customX, customY, pageW, pageH, sW, sH)
-        : calcPosition(position, pageW, pageH, sW, sH, offsetX, offsetY);
-
-      page.drawImage(stampImage, {
-        x: pos.x,
-        y: pos.y,
-        width: sW,
-        height: sH,
-        opacity,
-      });
-    }
-
-    const stampedBytes = await pdfDoc.save();
+    // ── 2. pdf-lib 签章(统一 overlay = _straddle-shared.stampPdfBuffer,apply/portcharge共用,不再各自drawImage) ──
+    const stampedBytes = await stampPdfBuffer(pdfBuffer, stampBuffer, { pages, position, customX, customY, scale, sealMm, opacity });
 
     // ── 3. 上传盖章后的 PDF 到 OSS ──
     const timestamp = Date.now();
@@ -300,9 +281,10 @@ export default async function handler(req, res) {
     // ── 5. 返回 JSON ──
     return res.status(200).json({
       success: true,
+      mode: 'simulate',
       stampedUrl,
       logId,
-      pages: targetPages.map(i => i + 1),
+      pages,
       stampKey,
       position,
     });
@@ -312,39 +294,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message });
   }
 }
-
-// ── 辅助函数 ──────────────────────────────────────
-
-function parsePages(pagesStr, total) {
-  if (pagesStr === 'all') return Array.from({ length: total }, (_, i) => i);
-  if (pagesStr === 'last') return [total - 1];
-  if (pagesStr === 'first') return [0];
-  if (pagesStr === 'first_last') return total === 1 ? [0] : [0, total - 1];
-  return pagesStr
-    .split(',')
-    .map(p => parseInt(p.trim()) - 1)
-    .filter(i => i >= 0 && i < total);
-}
-
-function calcPosition(pos, pageW, pageH, sW, sH, ox, oy) {
-  const map = {
-    br: { x: pageW - sW - ox, y: oy },
-    bl: { x: ox, y: oy },
-    bc: { x: (pageW - sW) / 2, y: oy },
-    tr: { x: pageW - sW - ox, y: pageH - sH - oy },
-    tl: { x: ox, y: pageH - sH - oy },
-    cr: { x: pageW - sW - ox, y: (pageH - sH) / 2 },
-    cc: { x: (pageW - sW) / 2, y: (pageH - sH) / 2 },
-  };
-  return map[pos] || map.br;
-}
-
-// ★ S99: Free-drag custom position
-// customX/customY are 0-1 fractions, origin = top-left (browser convention)
-// PDF-lib x = left, y = from bottom → invert Y
-function calcCustomPosition(cx, cy, pageW, pageH, sW, sH) {
-  // Center the stamp on the drag point, clamped within page bounds
-  const x = Math.min(Math.max(cx * pageW - sW / 2, 0), pageW - sW);
-  const y = Math.min(Math.max((1 - cy) * pageH - sH / 2, 0), pageH - sH);
-  return { x, y };
-}
+// 定位/分页/overlay 已统一到 _straddle-shared.js(calcPosition/calcCustomPosition/parseStampPages/stampPdfBuffer),此处不再重复。
