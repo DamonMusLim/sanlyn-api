@@ -19,6 +19,19 @@ import {
   todoFor, saveReceipt, savePrivateIdCard, monthOf,
 } from "./hr-staff-portal-lib.mjs";
 
+// 员工自己传的证件也进凭据柜(hr_employee_docs)。存不进去不影响他交资料 —— 快捷指针已经写了。
+async function vaultPut(pool, company, empId, kind, rel, mime) {
+  try {
+    await pool.query(
+      `INSERT INTO hr_employee_docs (company_code, employee_id, kind, file_path, mime, source, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,'staff_app',$6)`,
+      [company, empId, kind, rel, mime || null, `self:${empId}`]);
+    await pool.query(
+      `UPDATE hr_employee_docs SET archived_at=now(), archived_by='system', archive_note='被员工自己传的新版本替换'
+        WHERE employee_id=$1 AND kind=$2 AND file_path<>$3 AND archived_at IS NULL`, [empId, kind, rel]);
+  } catch (e) { console.error("[vaultPut]", e.message); }
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -390,6 +403,7 @@ export default async function handler(req, res) {
           try {
             const rel = savePrivateIdCard(empId, b.id_card_back_filename, b.id_card_back_mime, b.id_card_back_base64);
             params.push(rel); sets.push(`id_card_back_file = $${params.length}`); done.push("身份证国徽面");
+            await vaultPut(pool, me.company_code, empId, "id_card_back", rel, b.id_card_back_mime);
           } catch (e) { return res.status(400).json({ success: false, error: e.message }); }
         }
         if (b.id_card_base64) {
@@ -398,6 +412,7 @@ export default async function handler(req, res) {
           try {
             const rel = savePrivateIdCard(empId, b.id_card_filename, b.id_card_mime, b.id_card_base64);
             params.push(rel); sets.push(`id_card_file = $${params.length}`); done.push("身份证照片");
+            await vaultPut(pool, me.company_code, empId, "id_card_front", rel, b.id_card_mime);
           } catch (e) { return res.status(400).json({ success: false, error: e.message }); }
         }
 
