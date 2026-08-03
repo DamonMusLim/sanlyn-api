@@ -1584,7 +1584,8 @@ export default async function handler(req, res) {
           var bk=cap.bank;
           if(bk&&(bk.beneficiary||bk.accountName||bk.bankName||bk.swift)){ _sec("BANKING INFORMATION"); _kv("Beneficiary:",bk.beneficiary||bk.accountName||""); if(bk.bankName)_kv("Bank:",bk.bankName); if(bk.swift)_kv("SWIFT:",bk.swift); if(bk.bankAddr)_kv("Bank Address:",bk.bankAddr); if(bk.usdAccount)_kv("Account No.:",bk.usdAccount); }
           ws.addRow([]); ws.addRow([]);
-          var sigMid=Math.max(2,Math.ceil(_LC/2)), sigR1=ws.addRow([]);
+          // 同上：夹到 [1, _LC-1]，防 2 列表的右半起点越界。
+          var sigMid=Math.min(Math.max(2,Math.ceil(_LC/2)), Math.max(1,_LC-1)), sigR1=ws.addRow([]);
           for(var si=1;si<=_LC;si++){ sigR1.getCell(si).border={top:{style:"medium",color:{argb:"FF000000"}}}; }
           var sigR2=ws.addRow([]); sigR2.getCell(1).value="BUYER AUTHORIZED SIGNATURE"; sigR2.getCell(sigMid+1).value="SELLER AUTHORIZED SIGNATURE";
           ws.mergeCells("A"+sigR2.number+":"+_CLM(sigMid)+sigR2.number); ws.mergeCells(_CLM(sigMid+1)+sigR2.number+":"+_lastColL+sigR2.number);
@@ -1763,7 +1764,11 @@ export default async function handler(req, res) {
 
       // Signatures
       ws.addRow([]);ws.addRow([]);
-      var sigMid=Math.max(2,Math.ceil(_lastCol/2));
+// 签名行分左右两半。原为 Math.max(2, ceil(n/2))：当表只有 2 列时算出 3，
+      // 右半起点 C 越过末列 B → 倒序区间 "C:B"，ExcelJS 归一成 B:C 后与左半在 B 重叠
+      // → "Cannot merge already merged cells"（托书 headers 只有 Item/Detail 两列，实测 500）。
+      // 夹到 [1, n-1] 保证右半起点永远落在表内。
+      var sigMid=Math.min(Math.max(2,Math.ceil(_lastCol/2)), Math.max(1,_lastCol-1));
       var sigR1=ws.addRow([]);
       // Draw top border across two halves as signature lines
       for(var _ci=1;_ci<=_lastCol;_ci++){
