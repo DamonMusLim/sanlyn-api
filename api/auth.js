@@ -338,7 +338,34 @@ export async function authMiddleware(req, res, next) {
   }
   if (!(await checkAccountState(req, res))) return;
   await enrichStaleUser(req);
+
+  // ── 人事口白名单（0803 Damon：人事只有他一个人能进）──
+  // 放在这里而不是各接口里：以后新加的 hr-* 自动被管住，没人能忘了加检查。
+  // 前端藏菜单不算数 —— 藏起来的接口照样能用 curl 打。
+  if (!hrGate(req, res)) return;
+
   next();
+}
+
+// 员工端那三个不是给后台管理员用的，必须放行：
+//   hr-staff-auth   员工登录(公开)
+//   hr-apply        应聘投递(公开)
+//   hr-staff-portal 员工自己的工作台(role=staff 限权 token,压根没有 username)
+const HR_STAFF_PATHS = new Set([
+  "/api/db/hr-staff-auth", "/api/db/hr-apply", "/api/db/hr-staff-portal",
+]);
+// 想多给一个人开，改这个环境变量，不用改代码
+const HR_ADMINS = (process.env.HR_ADMINS || "damon_sl,damon")
+  .split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+
+function hrGate(req, res) {
+  const p = req.path || "";
+  if (!p.startsWith("/api/db/hr-") && !p.startsWith("/api/hr/")) return true;
+  if (HR_STAFF_PATHS.has(p)) return true;
+  const who = String(req.user?.username || req.user?.account || req.user?.sub || "").toLowerCase();
+  if (HR_ADMINS.includes(who)) return true;
+  res.status(403).json({ error: "Forbidden", message: "人事数据只有老板本人能看" });
+  return false;
 }
 
 export default authMiddleware;
