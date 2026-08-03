@@ -126,11 +126,28 @@
         <div class="linechips">${chips.join("")}</div>
       </button>`;
     }
+    function feeChipsHtml(r){
+      if(r.type!=="shipment"||!Array.isArray(r.fees)||!r.fees.length)return"";
+      const L={freight:"海运费",port:"港杂/其他",truck:"车队",customs:"报关",unknown:"未分类"};
+      const st=f=>f.paid>1?(f.due<=1?["已付","done"]:["部分付","todo"]):["无付款记录","stale"];
+      const chips=[];
+      for(const k of ["freight","port","truck","customs"]){
+        const fs=r.fees.filter(f=>f.fee_class===k);
+        if(!fs.length){chips.push(tag(`${L[k]} —`,"stale"));continue;}
+        for(const f of fs){const s=st(f);chips.push(tag(`${L[k]} ${money(f.currency,f.amount)} ${s[0]}`,s[1]));}
+      }
+      for(const f of r.fees.filter(f=>f.fee_class==="unknown")){const s=st(f);chips.push(tag(`${L.unknown} ${money(f.currency,f.amount)} ${s[0]}`,s[1]));}
+      return `<div class="linechips" style="justify-content:flex-start;margin-top:6px">${chips.join("")}</div>`;
+    }
+    function orderDatesMeta(r){
+      if(r.type!=="order")return"";
+      return `下单:${fmtDate(r.order_date)} · 交货:${fmtDate(r.delivery_date)} · `;
+    }
     function rowHtml(r){
       const child=r.type==="shipment"&&!r.is_top_level;
       return `<article class="row ${r.tone} ${child?"child":""}" data-id="${esc(r.id)}">
         <div class="line">
-          <div><div class="title">${esc(r.title)}</div><div class="sub">${esc(r.subtitle)}</div><div class="meta">经手:${esc(r.owner||"未指派")} · ${relTime(r.last_action_at)}</div><div class="linechips" style="justify-content:flex-start;margin-top:7px">${invoiceConfirmChip(r)}</div></div>
+          <div><div class="title">${esc(r.title)}</div><div class="sub">${esc(r.subtitle)}</div><div class="meta">${orderDatesMeta(r)}经手:${esc(r.owner||"未指派")} · ${relTime(r.last_action_at)}</div><div class="linechips" style="justify-content:flex-start;margin-top:7px">${invoiceConfirmChip(r)}</div>${feeChipsHtml(r)}</div>
           <div class="settlements">${linesOf(r).map(settlementHtml).join("")||'<div class="muted">无结算线</div>'}</div>
           ${rowActionsHtml(r)}
         </div>

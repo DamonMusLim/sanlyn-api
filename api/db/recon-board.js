@@ -123,6 +123,22 @@ bill_groups AS (
    WHERE br.id IS NOT NULL
    GROUP BY br.plan_id, COALESCE(br.supplier_company_code, br.supplier), COALESCE(br.currency_norm, br.currency, 'CNY')
 ),
+-- 费目四分类(闭环表格):海运费/拖车(车队)/报关/其余归港杂;按票+币种聚合出 已付/未付
+fee_groups AS (
+  SELECT br.plan_id,
+         CASE WHEN br.cost_category IS NULL OR BTRIM(br.cost_category)='' OR br.cost_category ILIKE 'misc' THEN 'unknown'
+              WHEN br.cost_category ILIKE '%海运%' OR br.cost_category ILIKE '%ocean_freight%' THEN 'freight'
+              WHEN br.cost_category ILIKE '%拖车%' OR br.cost_category ILIKE '%陆运%' OR br.cost_category ILIKE '%铁路%' OR br.cost_category ILIKE '%拖驳%' THEN 'truck'
+              WHEN br.cost_category ILIKE '%报关%' OR br.cost_category ILIKE '%报检%' THEN 'customs'
+              ELSE 'port' END AS fee_class,
+         COALESCE(br.currency_norm, br.currency, 'CNY') AS currency,
+         COALESCE(SUM(br.amount),0) AS amount,
+         COALESCE(SUM(br.ap_paid_amount),0) AS paid,
+         COUNT(*) AS bill_count
+    FROM bill_rows br
+   WHERE br.id IS NOT NULL
+   GROUP BY 1, 2, 3
+),
 ${INVOICE_CONFIRM_SQL},
 shipment_sum AS (
   SELECT sp.id, sp._id, sp.shipment_no, sp.bl_no, sp.order_nos, sp.issuing_company,
@@ -135,6 +151,7 @@ shipment_sum AS (
          COUNT(DISTINCT bg.currency) FILTER (WHERE bg.party_key IS NOT NULL) AS bill_currency_count,
          MIN(bg.currency) FILTER (WHERE bg.party_key IS NOT NULL) AS bill_currency,
          COALESCE(jsonb_agg(to_jsonb(bg) ORDER BY bg.party_key, bg.currency) FILTER (WHERE bg.party_key IS NOT NULL), '[]'::jsonb) AS bill_groups,
+         COALESCE((SELECT jsonb_agg(jsonb_build_object('fee_class',fg.fee_class,'currency',fg.currency,'amount',fg.amount,'paid',fg.paid,'bill_count',fg.bill_count) ORDER BY CASE fg.fee_class WHEN 'freight' THEN 1 WHEN 'port' THEN 2 WHEN 'truck' THEN 3 WHEN 'customs' THEN 4 ELSE 5 END) FROM fee_groups fg WHERE fg.plan_id=sp.id), '[]'::jsonb) AS fee_groups,
          COALESCE(icg.invoice_confirm_status, 'none') AS invoice_confirm_status,
          COALESCE(icg.pending_price_review, false) AS pending_price_review,
          icg.confirm_actor,
@@ -153,7 +170,7 @@ shipment_sum AS (
 )
 SELECT
   (SELECT COALESCE(jsonb_agg(to_jsonb(x) ORDER BY x.last_action_at DESC NULLS LAST), '[]'::jsonb) FROM (
-    SELECT so.created_at, so.updated_at, so.etd, so.order_date, so.order_no, so.contract_no, so.customer, so.factory, so.issuing_company, so.currency,
+    SELECT so.created_at, so.updated_at, so.etd, so.order_date, so.delivery_date, so.confirmed_delivery, so.order_no, so.contract_no, so.customer, so.factory, so.issuing_company, so.currency,
            so.factory_code, so.factory_company_id, so.company_code, so.customer_company_id,
            so.created_by, so.status_updated_by, COALESCE(so.status_updated_at, so.updated_at) AS last_action_at,
            so.factory_confirmed_at, so.customer_confirmed_at,
@@ -235,6 +252,8 @@ function orderFact(row) {
     contract_no: row.contract_no,
     title: row.order_no || row.contract_no || "未编号订单",
     subtitle: [row.contract_no || "无合同号", row.customer || "无客户", row.factory || "无工厂"].join(" · "),
+    order_date: row.order_date || null,
+    delivery_date: row.confirmed_delivery || row.delivery_date || null,
     currency: row.currency || "CNY",
     owner: row.status_updated_by || row.created_by || "未指派",
     last_action_at: row.last_action_at || row.updated_at || row.created_at || null,
@@ -273,6 +292,7 @@ function orderFact(row) {
 
 function shipmentFact(row, selectedOrderNos) {
   const billGroups = Array.isArray(row.bill_groups) ? row.bill_groups : [];
+  const feeGroups = Array.isArray(row.fee_groups) ? row.fee_groups : [];
   const ap = money(row.ap_total);
   const apPaid = money(row.ap_paid) || 0;
   const ar = money(row.ar_total);
@@ -379,6 +399,7 @@ function shipmentFact(row, selectedOrderNos) {
       consignee: row.consignee || row.customer || null,
     },
     amounts: { payable: ap, paid: apPaid, payable_due: due(ap, apPaid), receivable: ar, received: arPaid, receivable_due: due(ar, arPaid) },
+    fees: feeGroups.map(f => { const a = money(f.amount), p = money(f.paid) || 0; return { fee_class: f.fee_class, currency: f.currency, amount: a, paid: p, due: due(a, p), status: statusOf(a, p), bill_count: f.bill_count }; }),
     settlement_lines: settlementLines,
     data_missing: missingForwarder,
     missing_reason: missingForwarder ? "缺货代" : null,
