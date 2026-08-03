@@ -59,43 +59,111 @@ async function resolveFactoryPrefix(pool, factoryName) {
   } catch (e) { return ""; }
 }
 
-// order_no convention = <company numeric suffix>-<factory po_prefix>-<next seq>,
-// e.g. HARMONIOUS(CN-00048) + 连云港中砂 -> "48-LL-1". Prefixing with the factory
-// keeps same-customer sequences from colliding across factories ("不会乱").
-// Falls back to <suffix>-<seq> if the factory is unknown, then the date-based
-// ORD- code if the company code has no numeric tail. The seq is the max trailing
-// number for the exact prefix, +1. $1 is a fixed literal prefix (LIKE) — the
-// numeric suffix is parseInt'd and po_prefix comes from our own factories table.
+// order_no = <公司数字后缀>-<工厂po_prefix>-<序号>，如 48-CL-17。
+// 🔴 序号是「集团级」流水，不是每家公司各排一套（2026-08-03 事故：nextOrderNo 只数
+//    本公司，发出 48-CL-14 撞了同集团 79-CL-14）。分桶键由 resolveOrderNoScope 决定。
+// 🔴 发号走 order_no_counters 原子自增，不再裸 SELECT max+1（无锁会并发重号）。
+//    orders.order_no 上另有唯一索引 orders_order_no_uniq 做最后防线。
+
+// 有 active 集团归属 → 按集团分桶；没有组的公司 → 退化成公司级。
+// 不给没组的公司批量造「单公司组」——那是在组表里造假业务归属。
+// 所有发号只能走这里，别处不许自己拼前缀查 companies.group_code。
+async function resolveOrderNoScope(pool, companyCode) {
+  var code = String(companyCode || "").trim();
+  if (!code) return { scopeKey: "c:SANLYN:", companyCodes: [] };
+  try {
+    var g = await pool.query(
+      `SELECT g.group_code,
+              ARRAY(SELECT i2.company_code FROM company_group_items i2
+                     WHERE i2.group_id = g.id AND i2.left_at IS NULL) AS members
+         FROM company_group_items i
+         JOIN company_groups g ON g.id = i.group_id AND g.status = 'active'
+        WHERE i.company_code = $1 AND i.left_at IS NULL
+        LIMIT 1`, [code]);
+    if (g.rows.length && g.rows[0].group_code) {
+      var members = g.rows[0].members && g.rows[0].members.length ? g.rows[0].members : [code];
+      return { scopeKey: "g:SANLYN:" + g.rows[0].group_code, companyCodes: members };
+    }
+  } catch (e) {
+    console.warn("[order-create-v2] group scope lookup failed, fallback to company scope:", e.message);
+  }
+  return { scopeKey: "c:SANLYN:" + code, companyCodes: [code] };
+}
+
 async function nextOrderNo(pool, companyCode, factoryName) {
   var m = String(companyCode || "").match(/(\d+)\s*$/);
   if (!m) return generateOrderNo();
-  var custSuffix = String(parseInt(m[1], 10)); // CN-00048 -> "48"
-  var fpx = await resolveFactoryPrefix(pool, factoryName);
-  var prefix = fpx ? (custSuffix + "-" + fpx) : custSuffix; // "48-LL" or "48"
+  var custSuffix = String(parseInt(m[1], 10));           // CN-00048 -> "48"
+  var fpx = await resolveFactoryPrefix(pool, factoryName); // 辽宁宠爱 -> "CL"
+  var bucket = fpx || "_";
+  var scope = await resolveOrderNoScope(pool, companyCode);
+  // 历史订单不回改，只用来给计数器定起点（GREATEST 保证人工改号后不会倒退发重号）
+  var tailRe = fpx ? ("^[0-9]+-" + fpx + "-([0-9]+)$") : "^[0-9]+-([0-9]+)$";
   try {
-    var r = await pool.query(
-      "SELECT order_no FROM orders WHERE order_no LIKE $1",
-      [prefix + "-%"]
-    );
-    var max = 0;
-    var tail = new RegExp("^" + prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "-([0-9]+)$");
-    (r.rows || []).forEach(function(row) {
-      var mm = String(row.order_no || "").match(tail);
-      if (mm) { var n = parseInt(mm[1], 10); if (n > max) max = n; }
-    });
-    return prefix + "-" + (max + 1);
+    var seedQ = await pool.query(
+      `SELECT COALESCE(MAX((regexp_match(order_no, $2))[1]::int), 0) AS mx
+         FROM orders WHERE company_code = ANY($1::text[]) AND order_no ~ $2`,
+      [scope.companyCodes, tailRe]);
+    var start = Number(seedQ.rows[0].mx || 0) + 1;
+    await pool.query(
+      `INSERT INTO order_no_counters (tenant_code, scope_key, factory_prefix, next_seq)
+       VALUES ('SANLYN', $1, $2, $3)
+       ON CONFLICT (tenant_code, scope_key, factory_prefix)
+       DO UPDATE SET next_seq = GREATEST(order_no_counters.next_seq, $3), updated_at = now()`,
+      [scope.scopeKey, bucket, start]);
+    var up = await pool.query(
+      `UPDATE order_no_counters SET next_seq = next_seq + 1, updated_at = now()
+        WHERE tenant_code='SANLYN' AND scope_key=$1 AND factory_prefix=$2
+        RETURNING next_seq - 1 AS seq`, [scope.scopeKey, bucket]);
+    var seq = Number(up.rows[0].seq);
+    return (fpx ? custSuffix + "-" + fpx : custSuffix) + "-" + seq;
   } catch (e) {
-    return generateOrderNo();
+    console.error("[order-create-v2] nextOrderNo counter failed:", e.message);
+    throw Object.assign(new Error("order_no allocation failed"), { status: 503, code: "ORDER_NO_ALLOC_FAILED" });
   }
 }
 
-function generateContractNo() {
+// FS + YYYYMMDD + NNN。原本用 Math.random()*1000 且不查重——按生日悖论一天建 40 张
+// 碰撞率约 55%，而 contract_no 是发票/报关/提单共用的对外号。改成按天原子计数。
+// ⚠️ orders.contract_no 故意不加全局唯一约束：一个商业合同拆多张单是既有业务
+//    （如 FS20260407001 挂 48-CL-3/3-2/3-3/4）。这里只保证「自动发的新号不撞已用号」。
+// 序号超过 999 自动变 4 位，解析侧按 ^FS(\d{8})(\d{3,})$ 兼容。
+// 只预览下一个号、不消耗计数器（建单页 init 每次加载都会调，取了就会留空号）。
+async function peekContractNo(pool) {
   var d = new Date();
-  var y = d.getFullYear();
-  var m = String(d.getMonth() + 1).padStart(2, "0");
-  var day = String(d.getDate()).padStart(2, "0");
-  var seq = String(Math.floor(Math.random() * 1000)).padStart(3, "0");
-  return "FS" + y + m + day + seq;
+  var ymd = "" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  try {
+    var c = await pool.query(
+      "SELECT next_seq FROM contract_no_counters WHERE tenant_code='SANLYN' AND ymd=$1", [ymd]);
+    var h = await pool.query(
+      `SELECT COALESCE(MAX((regexp_match(contract_no, $1))[1]::int), 0) AS mx
+         FROM orders WHERE contract_no ~ $1`, ["^FS" + ymd + "([0-9]{3,})$"]);
+    var n = Math.max(Number((c.rows[0] || {}).next_seq || 0), Number(h.rows[0].mx || 0) + 1, 1);
+    return "FS" + ymd + String(n).padStart(3, "0");
+  } catch (e) { return ""; }
+}
+
+async function generateContractNo(pool) {
+  var d = new Date();
+  var ymd = "" + d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  try {
+    var seedQ = await pool.query(
+      `SELECT COALESCE(MAX((regexp_match(contract_no, $1))[1]::int), 0) AS mx
+         FROM orders WHERE contract_no ~ $1`, ["^FS" + ymd + "([0-9]{3,})$"]);
+    var start = Number(seedQ.rows[0].mx || 0) + 1;
+    await pool.query(
+      `INSERT INTO contract_no_counters (tenant_code, ymd, next_seq) VALUES ('SANLYN', $1, $2)
+       ON CONFLICT (tenant_code, ymd)
+       DO UPDATE SET next_seq = GREATEST(contract_no_counters.next_seq, $2), updated_at = now()`,
+      [ymd, start]);
+    var up = await pool.query(
+      `UPDATE contract_no_counters SET next_seq = next_seq + 1, updated_at = now()
+        WHERE tenant_code='SANLYN' AND ymd=$1 RETURNING next_seq - 1 AS seq`, [ymd]);
+    return "FS" + ymd + String(Number(up.rows[0].seq)).padStart(3, "0");
+  } catch (e) {
+    console.error("[order-create-v2] contract_no counter failed:", e.message);
+    throw Object.assign(new Error("contract_no allocation failed"), { status: 503, code: "CONTRACT_NO_ALLOC_FAILED" });
+  }
 }
 
 export default async function handler(req, res) {
@@ -703,7 +771,7 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
         lastOrderNo: lastOrder.rows[0]?.order_no || null,
         lastContractNo: lastOrder.rows[0]?.contract_no || null,
         nextOrderNo: generateOrderNo(),
-        nextContractNo: generateContractNo(),
+        nextContractNo: await peekContractNo(pool),
       });
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -920,8 +988,8 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     // stored as raw._clientRef only. The official contract_no always comes from server generateContractNo().
     // Admin callers may explicitly supply contractNo (for re-submission / import scenarios).
     var contractNo = isAdmin
-      ? (body.contractNo || generateContractNo())
-      : generateContractNo();
+      ? (body.contractNo || await generateContractNo(pool))
+      : await generateContractNo(pool);
     // Preserve client SC-prefix ref in raw for display continuity (OrderCreateV4 shows SC-... in header)
     if (!isAdmin && body.contractNo) {
       body = Object.assign({}, body, { _clientRef: body.contractNo });
