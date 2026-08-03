@@ -37,6 +37,12 @@ async function rejectRateOverlap(pool, body, selfId = null) {
   return `同航线同船司同货代同柜型有效期重叠: 与 #${row.id} 冲突(${row.valid_from || ""}~${row.valid_to || ""})`;
 }
 
+
+// 数字/日期列空串→null(前端留空常传"",直插 numeric/date 列会 500)
+const NUMDATE_COLS = new Set(["gp20","hq40","customer_gp20","customer_hq40","transit_days",
+  "thc","valid_from","valid_to","eta_date","free_days_base","free_days_ext","supplier_id"]);
+const blankToNull = (k, v) => (NUMDATE_COLS.has(k) && v === "" ? null : v);
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -60,7 +66,7 @@ export default async function handler(req, res) {
       const JSON_COLS = ["raw"];
       const sets = [], params = [];
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(body, k)) {
-        params.push(JSON_COLS.includes(k) ? JSON.stringify(body[k] ?? null) : body[k]);
+        params.push(JSON_COLS.includes(k) ? JSON.stringify(body[k] ?? null) : blankToNull(k, body[k]));
         sets.push(`${k} = $${params.length}`);
       }
       if (!sets.length) return res.status(400).json({ success:false, error:"no editable fields" });
@@ -84,7 +90,7 @@ export default async function handler(req, res) {
         "valid_to","remarks","status","currency","raw","freetime","this_week","next_sailing","eta_date","free_days_base","free_days_ext","terminal","supplier_id"];
       const cols = [], vals = [], params = [];
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(body, k)) {
-        const v = body[k]; cols.push(k);
+        const v = blankToNull(k, body[k]); cols.push(k);
         if (k === "raw") { params.push(JSON.stringify(v ?? null)); vals.push(`$${params.length}::jsonb`); }
         else { params.push(v); vals.push(`$${params.length}`); }
       }
