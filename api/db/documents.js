@@ -405,7 +405,7 @@ export default async function handler(req, res) {
           for(var sib of sibRows){
             var sRaw=sib.raw||{};
             if(typeof sRaw==="string")try{sRaw=JSON.parse(sRaw);}catch(e){sRaw={};}
-            var sProds=await enrichProdsFromMaster(pool,getProds(sRaw));
+            var sProds=await enrichProdsFromMaster(pool,getCanonicalProds(sib,sRaw));
             var sCno=sib.contract_no||sib.customer_po;
             var sPO=customerDocNo(sRaw,sib,sCno);
             var sContainer=pick(_cbMap[sCno], sRaw.containerNo, "");
