@@ -915,7 +915,7 @@ export default async function handler(req, res) {
                     } else {
                       nwTot = (nwPer*qty)||nwPer;
                       gwTot = (gwPer*qty)||gwPer;
-                      cbmTot = cbmPer>0 ? cbmPer*qty : Number(p.cbm||p.volume||0);
+                      cbmTot = cbmPer>0 ? cbmPer*qty : (Number(p.totalCbm||p.total_cbm||0) || Number(p.cbm||p.volume||0));
                     }
                     return {qty:qty, nw:nwTot, gw:gwTot, cbm:cbmTot};
                   }
@@ -1131,11 +1131,17 @@ export default async function handler(req, res) {
                       }
                       grandQty+=subQty; grandNW+=subNW; grandGW+=subGW; grandCBM+=subCBM;
                     });
-                    // Prefer order-table totals if available (more authoritative)
-                    var totQty = Number(o.total_qty)||grandQty;
-                    var totNW = Number(o.net_weight)||grandNW;
-                    var totGW = audience==="customs" ? grandGW : (Number(o.gross_weight)||grandGW);
-                    var totCBM = Number(o.total_cbm)||grandCBM;
+                    // Prefer order-table totals ONLY for a single-order doc — they describe
+                    // just THIS order. On a merged multi-order doc they would silently replace
+                    // the summed totals with the primary order's own, under-reporting the rest.
+                    // customs 分支(:468)会主动 _hasMultiOrder=false 以合并成一张表，
+                    // 所以合并判定要独立看 _mergedCnos，否则报关版仍会用主单字段。
+                    var _isMergedDoc = Array.isArray(_mergedCnos) && _mergedCnos.filter(Boolean).length > 1;
+                    var _useOrderTot = !_hasMultiOrder && !_isMergedDoc;
+                    var totQty = (_useOrderTot && Number(o.total_qty))||grandQty;
+                    var totNW = (_useOrderTot && Number(o.net_weight))||grandNW;
+                    var totGW = (audience==="customs" || !_useOrderTot) ? grandGW : (Number(o.gross_weight)||grandGW);
+                    var totCBM = (_useOrderTot && Number(o.total_cbm))||grandCBM;
                     rows += v2SummaryRow("v2-total", "GRAND TOTAL:", cols, {
                       qty: v2QtyUnit(totQty,"CTN"),
                       nw: fmtM(totNW),
