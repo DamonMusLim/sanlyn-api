@@ -9,7 +9,7 @@ export async function linePayments(pool, query = {}) {
   const payments = [];
   if (orderNo || contractNo) {
     const r = await pool.query(
-      `SELECT COALESCE(payment_date, paid_date, created_at)::date AS pay_date, direction,
+      `SELECT COALESCE(payment_date, paid_date, created_at)::date::text AS pay_date, direction,
               COALESCE(this_amount, amount) AS amount, COALESCE(currency,'CNY') AS currency,
               COALESCE(customer_en, customer, customer_cn) AS counterparty, forwarder_cn,
               pay_item, bank_ref, tt_slip_url, contract_no, order_no
@@ -21,7 +21,7 @@ export async function linePayments(pool, query = {}) {
   }
   if (!payments.length && forwarder) {
     const r = await pool.query(
-      `SELECT COALESCE(payment_date, paid_date, created_at)::date AS pay_date, direction,
+      `SELECT COALESCE(payment_date, paid_date, created_at)::date::text AS pay_date, direction,
               COALESCE(this_amount, amount) AS amount, COALESCE(currency,'CNY') AS currency,
               forwarder_cn AS counterparty, pay_item, bank_ref, tt_slip_url, contract_no, order_no
          FROM finance_payments
@@ -31,7 +31,7 @@ export async function linePayments(pool, query = {}) {
   }
 
   const slips = (orderNo || contractNo || blNo) ? (await pool.query(
-    `SELECT bs.id, bs.payment_date::date AS pay_date, bs.amount, bs.currency,
+    `SELECT bs.id, bs.payment_date::date::text AS pay_date, bs.amount, bs.currency,
             bs.sender_name, bs.beneficiary_name, bs.file_url, l.amount_alloc, l.order_no, l.contract_no, l.bl_no
        FROM bank_slip_links l JOIN bank_slips bs ON bs.id = l.slip_id
       WHERE ($1 <> '' AND l.order_no = $1) OR ($2 <> '' AND l.contract_no = $2) OR ($3 <> '' AND l.bl_no = $3)
@@ -39,7 +39,7 @@ export async function linePayments(pool, query = {}) {
 
   // 银行流水侧(洋宝宝等 bank_flows,含汇款日期;摘要常带单号,便于人工核对)
   const flows = (orderNo || contractNo || blNo) ? (await pool.query(
-    `SELECT entity_code, tx_date, direction, amount, currency, counterparty_name, memo, ref_no
+    `SELECT entity_code, tx_date::text AS tx_date, direction, amount, currency, counterparty_name, memo, ref_no
        FROM bank_flows
       WHERE ($1 <> '' AND memo ILIKE '%' || $1 || '%')
          OR ($2 <> '' AND memo ILIKE '%' || $2 || '%')
