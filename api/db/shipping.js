@@ -3,6 +3,7 @@ import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 import { derivePlanFromOrders } from "../lib/derive-plan-from-orders.js"; // task 1817: 读时按 order_nos[] 派生工厂/客户/etd/量类
 import { sendCancellationNotice } from "../../jobs/shipment-notify.js"; // 2026-06-26: 取消通知工厂
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
+import { applyCostLinesMirror } from "./lib/cost-lines-mirror.js"; // 2026-08-03: costLines→镜像派生(蓝图v1.4①)
 
 // Normalize a Chinese company name for matching:
 //  - strip full/half-width brackets, spaces, punctuation
@@ -68,7 +69,7 @@ export default async function handler(req, res) {
   // ── POST: 新建海运计划（修复「一直没写入」：原来只有 GET，+New 撞 405）──
   if (req.method === "POST") {
     try {
-      const body = req.body || {};
+      const body = applyCostLinesMirror(req.body || {});
       const params = [];
       const sets = buildSet(body, params);
       // _id 必填(NOT NULL) → 自动生成；created_by 记录操作者
@@ -120,7 +121,7 @@ export default async function handler(req, res) {
   // ── PATCH: 更新海运计划（by id 或 _id）──
   if (req.method === "PATCH") {
     try {
-      const body = req.body || {};
+      const body = applyCostLinesMirror(req.body || {});
       const BOOKING_STAGES = new Set(["so_received","confirming","confirmed"]);
       if (body.booking_stage && !BOOKING_STAGES.has(body.booking_stage)) {
         return res.status(400).json({ success:false, error:"invalid booking_stage" });

@@ -35,6 +35,21 @@ const PRIVATE_ROOT = "/opt/sanlyn-private/hr";
 const MAX_BYTES = 8 * 1024 * 1024;
 const KINDS = { id_card: "id_card_file", contract: "contract_file" };
 
+const CODE_PREFIX = { JINFANG: "JF", BABI: "BB" };
+
+// 排下一个工号。取该前缀下已用的最大数字 +1，两位补零；到 100 就自然进三位。
+// 不是绝对防并发（同一毫秒两个建档可能撞），但一家店一天建不了两个人，够用；
+// 真撞了唯一性由人工发现，不至于串档。
+export async function nextEmployeeCode(pool, companyCode) {
+  const pfx = CODE_PREFIX[companyCode] || "EM";
+  const r = await pool.query(
+    `SELECT COALESCE(MAX(NULLIF(regexp_replace(employee_code, '^' || $2 || '0*', ''), '')::int), 0) AS n
+       FROM hr_employees
+      WHERE employee_code ~ ('^' || $2 || '[0-9]+$')`, [companyCode, pfx]);
+  const n = Number(r.rows[0]?.n || 0) + 1;
+  return pfx + String(n).padStart(2, "0");
+}
+
 const COLS = "id, employee_code, name, role, employment_status, store_id, phone, id_card_no, "
   + "company_code, position, pay_type, pay_rate, "
   + "to_char(probation_end,'YYYY-MM-DD') AS probation_end, "
@@ -170,7 +185,7 @@ export default async function handler(req, res) {
             password_hash, must_change_password)
          VALUES ($1,$2,COALESCE($3,'clerk'),COALESCE($4,'jinfang'),$5,$6,$7,$8,$9,$10,$11,
                  COALESCE($12,'JINFANG'),$13,COALESCE($14,'daily'),$15,$16,$17,true) RETURNING id`,
-        [b.employee_code || null, b.name, b.role || null, b.store_id || null, b.phone || null,
+        [b.employee_code || await nextEmployeeCode(pool, b.company_code || company), b.name, b.role || null, b.store_id || null, b.phone || null,
          b.id_card_no || null, dt(b.contract_start), dt(b.contract_end),
          b.emergency_contact || null, b.emergency_phone || null, dt(b.hire_date),
          b.company_code || null, b.position || null, b.pay_type || null,

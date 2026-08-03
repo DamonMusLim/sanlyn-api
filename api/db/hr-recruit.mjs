@@ -5,6 +5,7 @@ import fs from "fs";
 import path from "path";
 import { getPool, setCors } from "./db.js";
 import { verifyToken } from "./auth.js";
+import { nextEmployeeCode } from "./hr-employees.mjs";
 
 // 招聘流程的状态机。**只能往前走，不能倒退**（除非显式 force）。
 // 之所以要这条：admin 的状态下拉目前只有前四个，点开一个已录用的人会回落显示「新投递」，
@@ -142,12 +143,13 @@ export default async function handler(req, res) {
       // ⚠️ role(权限) 跟 position(叫法) 是两回事 —— role=manager 只能由 CEO 在这里显式写,
       //    公网自申请只能影响 position 这个称呼,拿不到管理权。
       const pos = position || a.desired_position || null;
+      const code = await nextEmployeeCode(pool, a.company_code);
       const emp = await pool.query(
-        `INSERT INTO hr_employees (company_code,name,phone,role,position,pay_type,pay_rate,hire_date,employment_status)
-         VALUES ($1,$2,$3,COALESCE($4,'clerk'),$5,COALESCE($6,'daily'),$7,$8,'active') RETURNING id,name,position`,
+        `INSERT INTO hr_employees (company_code,name,phone,role,position,pay_type,pay_rate,hire_date,employment_status,employee_code)
+         VALUES ($1,$2,$3,COALESCE($4,'clerk'),$5,COALESCE($6,'daily'),$7,$8,'active',$9) RETURNING id,name,position,employee_code`,
         [a.company_code, a.name, a.phone, role || null, pos, pay_type || null,
          pay_rate == null || pay_rate === "" ? null : pay_rate,
-         hire_date || new Date().toISOString().slice(0, 10)]);
+         hire_date || new Date().toISOString().slice(0, 10), code]);
       const empId = emp.rows[0].id;
 
       await pool.query(
@@ -162,8 +164,9 @@ export default async function handler(req, res) {
                 interviewed_at=COALESCE(interviewed_at, now())
           WHERE id=$2`, [empId, id, actorOf(req)]);
 
-      return res.status(200).json({ success: true, data: { employee_id: empId, name: emp.rows[0].name },
-        message: "已建档到员工花名册。记得去花名册补身份证/合同/薪资标准。" });
+      return res.status(200).json({ success: true,
+        data: { employee_id: empId, name: emp.rows[0].name, employee_code: emp.rows[0].employee_code },
+        message: `已建档到员工花名册，工号 ${emp.rows[0].employee_code}。记得去凭据柜补身份证和合同。` });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });

@@ -1,5 +1,40 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+
+// 同 船司×货代×航线 且同柜型列有价,有效期不得重叠(运费中心蓝图 v1.4 决议⑤,2026-08-03)。
+// 排除已撤销(withdrawn)的旧价 —— 它们不该永远挡住新价录入。
+async function rejectRateOverlap(pool, body, selfId = null) {
+  const q = `
+    SELECT id, valid_from, valid_to
+    FROM freight_rates
+    WHERE upper(trim(carrier)) = upper(trim($1))
+      AND upper(trim(coalesce(forwarder,''))) = upper(trim(coalesce($2,'')))
+      AND upper(trim(pol)) = upper(trim($3))
+      AND upper(trim(pod)) = upper(trim($4))
+      AND status IS DISTINCT FROM 'withdrawn'
+      AND coalesce(valid_from::date, '-infinity'::date) <= coalesce($6::date, 'infinity'::date)
+      AND coalesce(valid_to::date, 'infinity'::date) >= coalesce($5::date, '-infinity'::date)
+      AND (($7::numeric IS NOT NULL AND gp20 IS NOT NULL) OR ($8::numeric IS NOT NULL AND hq40 IS NOT NULL))
+      AND ($9::int IS NULL OR id <> $9)
+    ORDER BY id
+    LIMIT 1`;
+  const p = [
+    body.carrier,
+    body.forwarder ?? "",
+    body.pol,
+    body.pod,
+    body.valid_from ?? null,
+    body.valid_to ?? null,
+    body.gp20 ?? null,
+    body.hq40 ?? null,
+    selfId,
+  ];
+  const hit = await pool.query(q, p);
+  if (!hit.rows.length) return null;
+  const row = hit.rows[0];
+  return `同航线同船司同货代同柜型有效期重叠: 与 #${row.id} 冲突(${row.valid_from || ""}~${row.valid_to || ""})`;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -12,6 +47,10 @@ export default async function handler(req, res) {
       const body = req.body || {};
       const id = parseInt(body.id, 10);
       if (!Number.isFinite(id)) return res.status(400).json({ success:false, error:"id required" });
+      const old = await pool.query("SELECT * FROM freight_rates WHERE id = $1", [id]);
+      if (!old.rows.length) return res.status(404).json({ success:false, error:"not found" });
+      const overlap = await rejectRateOverlap(pool, { ...old.rows[0], ...body }, id);
+      if (overlap) return res.status(409).json({ success:false, error: overlap });
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
         "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
         "valid_to","remarks","status","currency","raw","freetime",
@@ -36,6 +75,8 @@ export default async function handler(req, res) {
     if (!requireAuth(req, res)) return;
     try {
       const body = req.body || {};
+      const overlap = await rejectRateOverlap(pool, body);
+      if (overlap) return res.status(409).json({ success:false, error: overlap });
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
         "customer_gp20","customer_hq40","transit_days","thc","local_charge_code","valid_from",
         "valid_to","remarks","status","currency","raw","freetime","this_week","next_sailing","eta_date","free_days_base","free_days_ext","terminal","supplier_id"];
