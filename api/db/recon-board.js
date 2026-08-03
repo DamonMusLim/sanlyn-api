@@ -6,6 +6,7 @@ import {
   worstTone, ageChip, nextAction, amountMapAdd, amountList,
 } from "./recon-board-helpers.js";
 import { INVOICE_CONFIRM_SQL, reviewPriceOverride } from "./recon-board-invoice-confirm.js";
+import { linePayments } from "./recon-board-line-payments.js";
 
 const FINANCE_ROLES = new Set(["admin", "finance"]);
 
@@ -484,6 +485,7 @@ export default async function handler(req, res) {
     const action = String(req.query?.action || "board").trim();
     if (req.method === "GET" && action === "board") return handleBoard(req, res);
     if (req.method === "GET" && action === "summary") return handleSummary(req, res);
+    if (req.method === "GET" && action === "line-payments") return res.json(await linePayments(getPool(), req.query || {}));
     if (req.method === "POST" && action === "review-price") return handleReviewPrice(req, res);
     if (!["GET", "POST"].includes(req.method)) return json(res, 405, { error: "Method not allowed" });
     return json(res, 404, { error: "unknown action" });

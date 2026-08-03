@@ -321,12 +321,29 @@
       if(r.type==="order")return `orders?order_no=${encodeURIComponent(r.order_no||"")}`;
       return `shipping?shipment_id=${encodeURIComponent(recordShipmentId(r))}&shipment_no=${encodeURIComponent(r.shipment_no||"")}`;
     }
-    function gotoRecord(row,line){
-      if(line&&line.refs){
-        if(line.refs.order_no)return gotoModule(`orders?order_no=${encodeURIComponent(line.refs.order_no)}`);
-        if(line.refs.shipment_id||line.refs.shipment_no)return gotoModule(`shipping?shipment_id=${encodeURIComponent(line.refs.shipment_id||line.refs.shipment_no)}&shipment_no=${encodeURIComponent(line.refs.shipment_no||"")}`);
-      }
-      gotoModule(recordHash(row));
+    function payRowsHtml(d){
+      const dirCn=x=>x.direction==="in"?"收":"付";
+      const rows=[];
+      for(const p of d.payments||[]) rows.push(`<tr><td>${esc(p.pay_date||"—")}</td><td>${dirCn(p)}</td><td style="text-align:right">${money(p.currency,p.amount)}</td><td>${esc(p.counterparty||p.forwarder_cn||"—")}</td><td>${esc(p.pay_item||"")} ${esc(p.contract_no||p.order_no||"")}</td><td>${p.tt_slip_url?`<a href="${esc(p.tt_slip_url)}" target="_blank" rel="noopener">水单</a>`:"—"}</td></tr>`);
+      for(const s of d.slips||[]) rows.push(`<tr><td>${esc(s.pay_date||"—")}</td><td>水单</td><td style="text-align:right">${money(s.currency,s.amount_alloc||s.amount)}</td><td>${esc(s.sender_name||"—")}</td><td>${esc(s.contract_no||s.order_no||s.bl_no||"")}</td><td>${s.file_url?`<a href="${esc(s.file_url)}" target="_blank" rel="noopener">查看</a>`:"—"}</td></tr>`);
+      for(const f of d.flows||[]) rows.push(`<tr><td>${esc(String(f.tx_date||"").slice(0,10))}</td><td>流水·${dirCn(f)}</td><td style="text-align:right">${money(f.currency,f.amount)}</td><td>${esc(f.counterparty_name||"—")}</td><td>${esc((f.memo||"").slice(0,26))}</td><td>${esc(f.entity_code||"")}</td></tr>`);
+      if(!rows.length)return `<div class="muted" style="padding:10px 0">ERP 里没查到这条线的付款/水单记录——可能挂在别的单号下,或还没录入。</div>`;
+      return `<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th style="text-align:left">日期</th><th>类型</th><th style="text-align:right">金额</th><th style="text-align:left">对方</th><th style="text-align:left">单号/摘要</th><th>凭证</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+    }
+    async function gotoRecord(row,line){
+      const refs=(line&&line.refs)||{};
+      const qs=new URLSearchParams();
+      if(refs.order_no||row.order_no)qs.set("order_no",refs.order_no||row.order_no||"");
+      if(refs.contract_no||row.contract_no)qs.set("contract_no",refs.contract_no||row.contract_no||"");
+      if(refs.bl_no||row.bl_no)qs.set("bl_no",refs.bl_no||row.bl_no||"");
+      if(line&&line.counterparty_type==="forwarder"&&line.counterparty_name)qs.set("forwarder",line.counterparty_name);
+      try{
+        const d=await api(`/api/db/recon-board?action=line-payments&${qs.toString()}`);
+        const scopeNote=(d.payments||[]).some(p=>p.scope==="forwarder_recent")?`<div class="muted" style="margin:4px 0">该票暂无挂链付款,以下为这家货代最近付款记录(供核对)。</div>`:"";
+        $("modalTitle").textContent=`${row.title||""} · 付款/水单明细`;
+        $("modalText").innerHTML=scopeNote+payRowsHtml(d)+`<div style="margin-top:10px"><button class="action" data-goto="${esc(recordHash(row))}" style="width:auto;padding:4px 12px">打开原始记录 ↗</button></div>`;
+        $("modal").showModal();
+      }catch(e){ gotoModule(recordHash(row)); }
     }
     function render(){
       renderQueues();
@@ -369,6 +386,7 @@
       await load();
     }
     function openModal(title,text){$("modalTitle").textContent=title;$("modalText").textContent=text;$("modal").showModal()}
+    $("modal").addEventListener("click",e=>{const g=e.target.closest("[data-goto]");if(g){$("modal").close();gotoModule(g.dataset.goto);}});
     $("loginForm").addEventListener("submit",async e=>{
       e.preventDefault();$("error").textContent="";
       try{const d=await api("/api/db/auth-login",{method:"POST",body:JSON.stringify({username:$("username").value,password:$("password").value})});state.token=d.token;localStorage.setItem("sanlyn_token",d.token);$("who").textContent=`${d.user.username} · ${d.user.role}`;$("loginForm").style.display="none";await load()}catch(err){$("error").textContent=err.message}
