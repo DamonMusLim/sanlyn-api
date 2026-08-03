@@ -214,12 +214,13 @@ function shipment(row, closed){
   var bl = cleanText(row.bl_no);
   var booked = isBooked(row);
   return {
+    plan_id:row.id || row.plan_id || null,   // 协同链接按票签发要用(缺它「进入协同」是死的)
     bl_no:bl || null,
     etd:row.etd || null,
     container_qty:numOrNull(row.container_qty),
     gross_weight_kg:numOrNull(row.gross_weight_kg),
     cargo_description:shortCargo(row.cargo_description),
-    customer_en:cleanText(row.customer_en) || null,
+    // customer_en 已移除(2026-08-03):Lens 红线,客户名绝不出货代门户
     booked_carrier:booked ? (cleanText(row.carrier_code).toUpperCase() || null) : null,
     booking_voyage:booked ? (cleanText(row.voyage) || cleanText(row.vessel) || null) : null,
     booked_etd:booked ? (row.etd || null) : null,
