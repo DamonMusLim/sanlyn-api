@@ -43,9 +43,9 @@ const CODE_PREFIX = { JINFANG: "JF", BABI: "BB" };
 export async function nextEmployeeCode(pool, companyCode) {
   const pfx = CODE_PREFIX[companyCode] || "EM";
   const r = await pool.query(
-    `SELECT COALESCE(MAX(NULLIF(regexp_replace(employee_code, '^' || $2 || '0*', ''), '')::int), 0) AS n
+    `SELECT COALESCE(MAX(NULLIF(regexp_replace(employee_code, '^' || $1 || '0*', ''), '')::int), 0) AS n
        FROM hr_employees
-      WHERE employee_code ~ ('^' || $2 || '[0-9]+$')`, [companyCode, pfx]);
+      WHERE employee_code ~ ('^' || $1 || '[0-9]+$')`, [pfx]);
   const n = Number(r.rows[0]?.n || 0) + 1;
   return pfx + String(n).padStart(2, "0");
 }
