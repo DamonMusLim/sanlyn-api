@@ -4,6 +4,21 @@
 import fs from "fs";
 import path from "path";
 import { getPool, setCors } from "./db.js";
+import { verifyToken } from "./auth.js";
+
+// 招聘流程的状态机。**只能往前走，不能倒退**（除非显式 force）。
+// 之所以要这条：admin 的状态下拉目前只有前四个，点开一个已录用的人会回落显示「新投递」，
+// 手一滑按保存就把人打回未审状态，申请人那边「通过了」会变回「认证中」。
+const STAGE = { new: 0, reviewing: 1, interview: 2, interview_passed: 3, hired: 4, rejected: 9 };
+
+// 谁在操作:从登录态取,不信前端传的「经办人」
+function actorOf(req) {
+  try {
+    const raw = req.query?.token || (req.headers.authorization || "").replace(/^Bearer /, "");
+    const c = verifyToken(raw);
+    return c?.username || c?.name || c?.email || null;
+  } catch { return null; }
+}
 
 const UPLOAD_DIR = "/opt/sanlyn-uploads/handbook";   // 环境照片与手册同目录（都是内部非隐私图）
 const PUBLIC_HOST = "https://ai.sanlyn.cn";
@@ -75,11 +90,35 @@ export default async function handler(req, res) {
       }
       // 应聘者：只允许改审批相关，不能改他填的内容
       if (!b.id) return res.status(400).json({ success: false, error: "id 必填" });
+      const cur = (await pool.query(
+        "SELECT status, hired_employee_id FROM hr_applicants WHERE id=$1", [b.id])).rows[0];
+      if (!cur) return res.status(404).json({ success: false, error: "应聘者不存在" });
+
+      // 不许倒退。已经录用的人被改回「新投递」= 申请人那边从「通过了」变回「认证中」,
+      // 而且他已经建档进花名册了,状态对不上。
+      if ("status" in b && !b.force) {
+        const from = STAGE[cur.status] ?? 0, to = STAGE[b.status] ?? 0;
+        if (cur.status === "hired" && b.status !== "hired") {
+          return res.status(409).json({ success: false,
+            error: `${cur.status === "hired" ? "这个人已经录用建档了" : ""}，不能改回「${b.status}」。要退回请先在花名册处理离职。` });
+        }
+        if (to < from && b.status !== "rejected") {
+          return res.status(409).json({ success: false, error: "招聘状态只能往前走，不能倒退" });
+        }
+      }
+
       const sets = [], params = [];
       for (const k of ["status", "review_note", "reviewed_by"]) {
         if (k in b) { params.push(b[k]); sets.push(`${k}=$${params.length}`); }
       }
       if (!sets.length) return res.status(400).json({ success: false, error: "仅允许更新 status/review_note/reviewed_by" });
+      // 经办人以登录态为准;前端那个手填框只在取不到登录人时兜底
+      const actor = actorOf(req);
+      if (actor && !("reviewed_by" in b)) { params.push(actor); sets.push(`reviewed_by=$${params.length}`); }
+      // 面试通过的时间单独记一笔 —— Damon 要的「认证时间」
+      if (b.status === "interview_passed") {
+        params.push(new Date().toISOString()); sets.push(`interviewed_at=$${params.length}`);
+      }
       params.push(new Date().toISOString()); sets.push(`reviewed_at=$${params.length}`);
       params.push(b.id);
       const r = await pool.query(`UPDATE hr_applicants SET ${sets.join(", ")} WHERE id=$${params.length} RETURNING *`, params);
@@ -112,7 +151,12 @@ export default async function handler(req, res) {
          VALUES ($1,$2,$3,'hire',$4,$5)`,
         [a.company_code, empId, a.name, hire_date || new Date().toISOString().slice(0, 10),
          `由应聘者#${id}录用；可上班时段：${(a.available_shifts || []).join("/") || "未填"}`]);
-      await pool.query("UPDATE hr_applicants SET status='hired', hired_employee_id=$1, reviewed_at=now() WHERE id=$2", [empId, id]);
+      await pool.query(
+        `UPDATE hr_applicants
+            SET status='hired', hired_employee_id=$1, reviewed_at=now(),
+                reviewed_by=COALESCE(reviewed_by, $3),
+                interviewed_at=COALESCE(interviewed_at, now())
+          WHERE id=$2`, [empId, id, actorOf(req)]);
 
       return res.status(200).json({ success: true, data: { employee_id: empId, name: emp.rows[0].name },
         message: "已建档到员工花名册。记得去花名册补身份证/合同/薪资标准。" });
