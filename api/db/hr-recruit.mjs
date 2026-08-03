@@ -52,12 +52,16 @@ export default async function handler(req, res) {
       const r = await pool.query(
         `SELECT id, job_post_id, name, phone, gender, birth_year, intro,
                 available_days, available_shifts, to_char(earliest_start,'YYYY-MM-DD') AS earliest_start,
-                expected_pay, answers, status, review_note, reviewed_by, hired_employee_id, created_at
+                expected_pay, answers, status, review_note, reviewed_by, hired_employee_id,
+                desired_position,
+                to_char(created_at    AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD HH24:MI') AS created_at,
+                to_char(interviewed_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD HH24:MI') AS interviewed_at,
+                to_char(reviewed_at   AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD HH24:MI') AS reviewed_at
            FROM hr_applicants WHERE ${conds.join(" AND ")}
           ORDER BY created_at DESC LIMIT 500`, params);
       const c = await pool.query(
         `SELECT COUNT(*) total, COUNT(*) FILTER (WHERE status='new') AS fresh,
-                COUNT(*) FILTER (WHERE status='interview') AS interview
+                COUNT(*) FILTER (WHERE status IN ('interview','interview_passed')) AS interview
            FROM hr_applicants WHERE company_code=$1`, [company]);
       return res.status(200).json({ success: true, data: r.rows, count: r.rows.length, stats: c.rows[0] });
     }
