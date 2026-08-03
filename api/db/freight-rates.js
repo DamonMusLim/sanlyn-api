@@ -4,6 +4,7 @@ import { requireAuth } from "../auth.js";
 // 同 船司×货代×航线 且同柜型列有价,有效期不得重叠(运费中心蓝图 v1.4 决议⑤,2026-08-03)。
 // 排除已撤销(withdrawn)的旧价 —— 它们不该永远挡住新价录入。
 async function rejectRateOverlap(pool, body, selfId = null) {
+  if (String(body.status || "") === "withdrawn") return null; // 撤销价不参与冲突检测
   const q = `
     SELECT id, valid_from, valid_to
     FROM freight_rates
@@ -18,15 +19,16 @@ async function rejectRateOverlap(pool, body, selfId = null) {
       AND ($9::int IS NULL OR id <> $9)
     ORDER BY id
     LIMIT 1`;
+  const nn = (v) => (v === "" || v == null ? null : v);  // 空串→null,防 ::date/::numeric 500
   const p = [
     body.carrier,
     body.forwarder ?? "",
     body.pol,
     body.pod,
-    body.valid_from ?? null,
-    body.valid_to ?? null,
-    body.gp20 ?? null,
-    body.hq40 ?? null,
+    nn(body.valid_from),
+    nn(body.valid_to),
+    nn(body.gp20),
+    nn(body.hq40),
     selfId,
   ];
   const hit = await pool.query(q, p);
