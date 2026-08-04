@@ -9,6 +9,34 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
+
+// 港口中英互认 —— service_rates 里是中文(「厦门」),票上多是英文(「Xiamen」),
+// 不归一则永远匹配不上。只在匹配层用,不改任何原始字段(feedback_fk_exists_not_business_valid)。
+const POL_ALIASES = [
+  ["厦门", "xiamen", "xmn"],
+  ["青岛", "qingdao", "tao"],
+  ["上海", "shanghai", "sha"],
+  ["宁波", "ningbo", "ningbo-zhoushan", "ngb"],
+  ["天津", "tianjin", "xingang", "新港", "tsn"],
+  ["连云港", "lianyungang", "lyg"],
+  ["锦州", "jinzhou"],
+  ["泉州", "quanzhou"],
+  ["日照", "rizhao", "日照港"],
+  ["南沙", "nansha"],
+  ["深圳", "shenzhen", "yantian", "盐田"],
+  ["大连", "dalian"],
+  ["广州", "guangzhou"],
+  ["武汉", "wuhan", "wuhan tianhe"],
+];
+function polCandidates(v) {
+  const t = String(v == null ? "" : v).trim().toLowerCase();
+  if (!t) return [];
+  for (const group of POL_ALIASES) {
+    if (group.some((x) => x.toLowerCase() === t)) return group;
+  }
+  return [t];
+}
+
 const clean = (v) => (v == null ? "" : String(v).trim());
 
 export default async function handler(req, res) {
@@ -48,7 +76,11 @@ export default async function handler(req, res) {
     // 这里只读 service_rates 一处,不再各读各的。
     const conds = ["sr.is_active"], params = [];
     if (service) { params.push(service); conds.push(`sr.service = $${params.length}`); }
-    if (pol) { params.push(pol); conds.push(`(sr.pol IS NULL OR sr.pol = '' OR lower(btrim(sr.pol)) = lower(btrim($${params.length})))`); }
+    if (pol) {
+      const cands = polCandidates(pol);
+      params.push(cands);
+      conds.push(`(sr.pol IS NULL OR sr.pol = '' OR lower(btrim(sr.pol)) = ANY($${params.length}::text[]))`);
+    }
 
     const q = await pool.query(
       `SELECT sr.id, sr.service, sr.factory_name, sr.factory_company_id, sr.pol, sr.pod,
