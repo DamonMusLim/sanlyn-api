@@ -19,7 +19,12 @@ async function fetchFacts(pool, { q = "", limit = 500 } = {}) {
   const like = `%${q}%`;
   const args = q ? [like, limit] : [limit];
   const orderFilter = q ? `
-    AND (o.order_no ILIKE $1 OR o.contract_no ILIKE $1 OR o.customer ILIKE $1)` : "";
+    AND (o.order_no ILIKE $1 OR o.contract_no ILIKE $1 OR o.customer ILIKE $1
+      -- 客户汇款单上写的常是 PO 号或提单号,不是我方合同号;也允许按水单挂链上的号反查到订单
+      OR o.customer_po ILIKE $1 OR o.bl_no ILIKE $1
+      OR EXISTS (SELECT 1 FROM bank_slip_links bl2
+                  WHERE (bl2.order_no = o.order_no OR (o.contract_no IS NOT NULL AND bl2.contract_no = o.contract_no))
+                    AND (bl2.contract_no ILIKE $1 OR bl2.order_no ILIKE $1)))` : "";
   const shipmentFilter = q ? `
     AND (sp.shipment_no ILIKE $1 OR sp.bl_no ILIKE $1 OR sp.forwarder_cn ILIKE $1
       OR EXISTS (SELECT 1 FROM selected_orders so WHERE so.order_no = ANY(COALESCE(sp.order_nos, '{}'::text[]))))` : "";
