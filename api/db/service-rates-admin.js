@@ -43,34 +43,45 @@ export default async function handler(req, res) {
       }
     }
 
-    // ① 货代门户填的费率
-    const conds = [], params = [];
-    if (service) { params.push(service); conds.push(`service = $${params.length}`); }
-    if (pol) { params.push(pol); conds.push(`(port IS NULL OR port = '' OR lower(btrim(port)) = lower(btrim($${params.length})))`); }
-    const fsr = await pool.query(
-      `SELECT r.id, r.forwarder_company_id, c.name_cn AS forwarder_cn, r.service, r.factory, r.port,
-              r.container_type, r.tier, r.rate_cny, r.updated_at, r.updated_by
-       FROM forwarder_service_rates r
-       LEFT JOIN companies c ON c.id = r.forwarder_company_id
-       ${conds.length ? "WHERE " + conds.join(" AND ") : ""}
-       ORDER BY r.factory NULLS LAST, r.port, r.container_type, r.tier`, params);
+    // 统一表 service_rates(2026-08-05 建,四段服务一张表)。
+    // 闸2 同类路径:老的 forwarder_service_rates / trucking_rates 已迁入并降级为历史源,
+    // 这里只读 service_rates 一处,不再各读各的。
+    const conds = ["sr.is_active"], params = [];
+    if (service) { params.push(service); conds.push(`sr.service = $${params.length}`); }
+    if (pol) { params.push(pol); conds.push(`(sr.pol IS NULL OR sr.pol = '' OR lower(btrim(sr.pol)) = lower(btrim($${params.length})))`); }
 
-    // ② 我方自维护的拖车价(老表,文本键)
-    let ours = [];
-    if (!service || service === "truck") {
-      const t = await pool.query(
-        `SELECT _id, vendor_cn, factory_name, pol, rates, currency, valid_from, valid_to, notes
-         FROM trucking_rates ${pol ? "WHERE lower(btrim(pol)) = lower(btrim($1))" : ""}
-         ORDER BY factory_name NULLS LAST`, pol ? [pol] : []);
-      ours = t.rows;
-    }
+    const q = await pool.query(
+      `SELECT sr.id, sr.service, sr.factory_name, sr.factory_company_id, sr.pol, sr.pod,
+              sr.container_type, sr.tier, sr.rate, sr.currency, sr.unit,
+              sr.quote_owner_company_id, qo.name_cn AS quote_owner_cn,
+              sr.executor_company_id,    ex.name_cn AS executor_cn,
+              sr.payable_company_id,     pa.name_cn AS payable_cn,
+              sr.issuing_company_id, sr.issuing_company,
+              sr.valid_from, sr.valid_to, sr.source, sr.notes,
+              sr.raw->>'id_link'  AS id_link_status,
+              sr.raw->>'vendor_cn' AS legacy_vendor_cn,
+              sr.updated_at, sr.updated_by
+       FROM service_rates sr
+       LEFT JOIN companies qo ON qo.id = sr.quote_owner_company_id
+       LEFT JOIN companies ex ON ex.id = sr.executor_company_id
+       LEFT JOIN companies pa ON pa.id = sr.payable_company_id
+       WHERE ${conds.join(" AND ")}
+       ORDER BY sr.service, sr.factory_name NULLS LAST, sr.pol, sr.container_type, sr.tier`,
+      params
+    );
+
+    const rows = q.rows;
+    const bySvc = { truck: [], customs: [], ocean: [], port: [] };
+    rows.forEach((r) => { (bySvc[r.service] || (bySvc[r.service] = [])).push(r); });
+    const needManual = rows.filter((r) => r.id_link_status === "need_manual").length;
 
     return res.status(200).json({
       ok: true,
       context: { plan_id: planId || null, pol: pol || null, issuing_company: issuingCompany || null, factories },
-      portal_rates: fsr.rows,     // 货代自己填的(带 company_id)
-      our_trucking_rates: ours,   // 我方自维护(待 ID 化,见任务 join-by-id-migration-0804)
-      counts: { portal: fsr.rows.length, ours: ours.length },
+      rates: rows,
+      by_service: bySvc,
+      counts: { total: rows.length, truck: bySvc.truck.length, customs: bySvc.customs.length,
+                ocean: bySvc.ocean.length, port: bySvc.port.length, need_manual: needManual },
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: err.message });
