@@ -160,6 +160,8 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const b = req.body || {};
       const action = b.action;
+      // 「今天」按 +08 算,unlock 和调休都用这一个,别各算各的
+      const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
       // ── 打卡开门（0730 Damon 定名）─────────────────────────────
       // 一个动作 = 开门 + 打卡 + 摄像头抓拍。设计意图(Damon原话)：
@@ -169,7 +171,6 @@ export default async function handler(req, res) {
       // 门锁能力仍只在网关一处，HR 用服务令牌代调，不把 HR 鉴权扩散进 yudao。
       // 铁律：**门没开成绝不记打卡**；开了但记打卡失败要能看出来(留 suspicious)。
       if (action === "unlock") {
-        const today = new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
         const pt = (await pool.query(
           "SELECT * FROM hr_checkin_points WHERE company_code=$1 AND is_active=true ORDER BY code LIMIT 1",
           [me.company_code])).rows[0];
