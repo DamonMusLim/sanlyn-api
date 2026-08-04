@@ -27,6 +27,50 @@ function dateTime(v){
   return Number.isFinite(d.getTime()) ? d.getTime() : null;
 }
 
+
+// ── 船司清单(我们真实跑过的)+ 每个船司自己的航线 ────────────────────
+// Damon 2026-08-04:新增船司要给「我们的」选择;选了船司要能直接出航线,其余他自己补。
+// 归一:大小写、常见别名(YANGMING→YML、MSK→MAERSK、TS LINE→TSLINE、CMA CGM→CMA)。
+var CARRIER_ALIAS_MAP = {
+  YANGMING:"YML", "YANG MING":"YML", MSK:"MAERSK", "TS LINE":"TSLINE", TS:"TSLINE",
+  "CMA CGM":"CMA", COSCON:"COSCO", "太海集运":"TCLC",
+};
+function normCarrierCode(v){
+  var t = String(v == null ? "" : v).trim().toUpperCase().replace(/\s+/g, " ");
+  return CARRIER_ALIAS_MAP[t] || t;
+}
+function titlePort(v){
+  var t = String(v == null ? "" : v).trim().replace(/\s+/g, " ");
+  return t.replace(/\S+/g, function(w){ return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase(); });
+}
+async function loadCarrierCatalog(pool){
+  try {
+    var q = await pool.query(
+      "SELECT carrier, pol, pod, count(*)::int AS n, max(COALESCE(valid_to, updated_at::date)) AS recent " +
+      "FROM freight_rates WHERE COALESCE(carrier,'') <> '' AND COALESCE(status,'') <> 'withdrawn' " +
+      "GROUP BY carrier, pol, pod"
+    );
+    var byCode = {};
+    q.rows.forEach(function(r){
+      var code = normCarrierCode(r.carrier);
+      if (!code) return;
+      var pol = titlePort(r.pol), pod = titlePort(r.pod);
+      var slot = byCode[code] || (byCode[code] = { code: code, label: code, quotes: 0, lanes: [], _seen: {} });
+      slot.quotes += Number(r.n) || 0;
+      var key = pol.toLowerCase() + ">" + pod.toLowerCase();
+      if (pol && pod && !slot._seen[key]) {
+        slot._seen[key] = 1;
+        slot.lanes.push({ pol: pol, pod: pod });
+      }
+    });
+    return Object.keys(byCode).map(function(k){
+      var c = byCode[k]; delete c._seen;
+      c.lanes.sort(function(a, b){ return (a.pol + a.pod) < (b.pol + b.pod) ? -1 : 1; });
+      return c;
+    }).sort(function(a, b){ return b.lanes.length - a.lanes.length || b.quotes - a.quotes || (a.code < b.code ? -1 : 1); });
+  } catch (e) { return []; }   // 取不到不挡门户
+}
+
 async function loadToken(pool, code){
   if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
   const { rows } = await pool.query(
@@ -437,6 +481,7 @@ async function handleGet(pool, token, res){
     forwarder_co:supplierName,
     company_id:token.company_id,
     lanes:lanes,
+    carrier_catalog:await loadCarrierCatalog(pool),   // 2026-08-04:我们真实跑过的船司+各自航线
   });
 }
 
