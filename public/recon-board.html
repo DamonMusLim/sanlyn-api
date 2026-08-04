@@ -23,6 +23,20 @@
     .actions{display:flex;flex-direction:column;gap:5px}.actions .action{width:100%;height:auto;min-height:30px;white-space:normal;font-size:12px;padding:5px 8px}.actions .action.done{opacity:.45;cursor:default}
     dialog{border:1px solid var(--line);border-radius:8px;background:#171c21;color:var(--text);padding:0;max-width:460px;width:calc(100% - 28px)}
     dialog.wide{max-width:880px}
+    .ovbox{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:12px}
+    .ovbox>summary{padding:10px 12px;cursor:pointer;font-size:13px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .ov-chip{background:#1b2129;border:1px solid var(--line);border-radius:6px;padding:3px 9px;font-size:12px;white-space:nowrap}
+    .ov-chip em{font-style:normal;color:#8b98a5;margin-right:5px}
+    .ov-chip b{color:var(--text)}
+    .ov-scroll{overflow-x:auto;max-height:420px;overflow-y:auto;border-top:1px solid var(--line)}
+    .ovtable{width:100%;border-collapse:collapse;font-size:12.5px}
+    .ovtable th{position:sticky;top:0;background:#1b2129;color:#8b98a5;font-weight:500;text-align:left;padding:6px 10px;white-space:nowrap}
+    .ovtable td{padding:5px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+    .ovtable tbody tr{cursor:pointer}
+    .ovtable tbody tr:hover{background:#1b2129}
+    .ov-who{max-width:260px;overflow:hidden;text-overflow:ellipsis}
+    .ov-num{text-align:right;font-variant-numeric:tabular-nums}
+    .ov-due{font-weight:600}
     .paytable{width:100%;border-collapse:collapse;font-size:12.5px}
     .paytable th,.paytable td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
     .paytable th{color:#8b98a5;font-weight:500;white-space:nowrap}
@@ -47,6 +61,7 @@
   </header>
   <main>
     <section class="queues" id="queues"></section>
+    <section id="overview"></section>
     <div class="notice" id="notice"></div>
     <div class="toolbar">
       <form class="search" id="searchForm"><input id="q" placeholder="搜索订单/合同/客户/CY单"><button>查询</button></form>
@@ -84,6 +99,43 @@
       if(state.filter==="price_review")return r.type==="shipment"&&r.pending_price_review;
       if(state.filter==="risk")return r.tone==="risk"||linesOf(r).some(l=>l.tone==="risk"||l.data_missing);
       return true;
+    }
+    // 总清单:按对手方汇总 应收/已收/待收 + 单数,点行筛该对象。数据全部来自已加载的 rows,不另发请求。
+    function overviewRows(){
+      const m=new Map();
+      for(const r of state.rows||[]){
+        for(const l of linesOf(r)){
+          const who=l.counterparty_name||l.missing_reason||"未补录";
+          const k=l.direction+"|"+l.counterparty_type+"|"+who+"|"+(l.currency||"CNY");
+          if(!m.has(k)) m.set(k,{dir:l.direction,type:l.counterparty_type,who,cur:l.currency||"CNY",total:0,paid:0,due:0,n:0,risk:0});
+          const g=m.get(k);
+          g.total+=Number(l.total||0); g.paid+=Number(l.paid||0); g.due+=Number(l.due||0); g.n++;
+          if(l.tone==="risk"||l.data_missing) g.risk++;
+        }
+      }
+      return [...m.values()].sort((a,b)=>b.due-a.due);
+    }
+    function renderOverview(){
+      const rows=overviewRows();
+      if(!rows.length){ $("overview").innerHTML=""; return; }
+      const TL={factory:"工厂",customer:"客户",forwarder:"货代"};
+      const sum={};
+      for(const g of rows){ const k=(g.dir==="ar"?"应收":"应付")+" "+g.cur; sum[k]=sum[k]||{total:0,paid:0,due:0,n:0};
+        sum[k].total+=g.total; sum[k].paid+=g.paid; sum[k].due+=g.due; sum[k].n+=g.n; }
+      const head=Object.entries(sum).map(([k,v])=>`<span class="ov-chip"><em>${esc(k)}</em> 应结${money(k.slice(-3),v.total)} · 已结${money(k.slice(-3),v.paid)} · <b>待结${money(k.slice(-3),v.due)}</b> · ${v.n}笔</span>`).join("");
+      const body=rows.slice(0,40).map(g=>`<tr data-ovwho="${esc(g.who)}">
+        <td>${g.dir==="ar"?'<span class="tag done">收</span>':'<span class="tag todo">付</span>'} ${esc(TL[g.type]||g.type)}</td>
+        <td class="ov-who">${esc(g.who)}</td>
+        <td class="ov-num">${money(g.cur,g.total)}</td>
+        <td class="ov-num">${money(g.cur,g.paid)}</td>
+        <td class="ov-num ov-due">${money(g.cur,g.due)}</td>
+        <td class="ov-num">${g.n}</td>
+        <td>${g.risk?`<span class="tag risk">${g.risk} 异常</span>`:""}</td></tr>`).join("");
+      $("overview").innerHTML=`<details class="ovbox" ${state.ovOpen?"open":""}>
+        <summary><b>📋 总清单</b> ${head} <span class="muted">（点开看按对象汇总，共 ${rows.length} 个对象）</span></summary>
+        <div class="ov-scroll"><table class="ovtable"><thead><tr><th>方向</th><th>对象</th><th>应结</th><th>已结</th><th>待结</th><th>笔数</th><th></th></tr></thead><tbody>${body}</tbody></table></div>
+        ${rows.length>40?`<div class="muted" style="padding:6px 10px">仅显示待结金额最大的 40 个对象，共 ${rows.length} 个</div>`:""}
+      </details>`;
     }
     function renderQueues(){
       const byKey=new Map((state.summary||[]).map(q=>[q.key,q]));
@@ -381,6 +433,7 @@
     }
     function render(){
       renderQueues();
+      renderOverview();
       if(state.view!=="order")return renderObjectView(state.view);
       const tf="all";
       const childrenOf=o=>state.rows.filter(x=>x.type==="shipment"&&x.parent_order_no===o.order_no);
@@ -426,6 +479,11 @@
       try{const d=await api("/api/db/auth-login",{method:"POST",body:JSON.stringify({username:$("username").value,password:$("password").value})});state.token=d.token;localStorage.setItem("sanlyn_token",d.token);$("who").textContent=`${d.user.username} · ${d.user.role}`;$("loginForm").style.display="none";await load()}catch(err){$("error").textContent=err.message}
     });
     $("searchForm").addEventListener("submit",e=>{e.preventDefault();load().catch(err=>$("error").textContent=err.message)});
+    $("overview").addEventListener("click",e=>{
+      const d=e.target.closest("details.ovbox"); if(d) state.ovOpen=!d.open;
+      const tr=e.target.closest("[data-ovwho]");
+      if(tr){ state.ovOpen=true; $("q").value=tr.dataset.ovwho; load().catch(err=>$("error").textContent=err.message); }
+    });
     $("queues").addEventListener("click",e=>{const b=e.target.closest("[data-filter]");if(!b)return;state.filter=state.filter===b.dataset.filter?"all":b.dataset.filter;render()});
     $("clearFilter").addEventListener("click",()=>{state.filter="all";render()});
     $("typetabs").addEventListener("click",e=>{const b=e.target.closest("[data-view]");if(!b)return;state.view=b.dataset.view;[...$("typetabs").children].forEach(c=>c.classList.toggle("active",c===b));render()});
