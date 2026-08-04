@@ -117,6 +117,10 @@ export default async function handler(req, res) {
           WHERE company_code=$1 AND (employee_id IS NULL OR employee_id=$2)
             AND effective_from > $3
           ORDER BY effective_from LIMIT 1`, [me.company_code, empId, today]);
+      const sug = await pool.query(
+        `SELECT id, content, status, reply, replied_by,
+                to_char(created_at AT TIME ZONE 'Asia/Shanghai','MM-DD') AS created_at
+           FROM hr_suggestions WHERE employee_id=$1 ORDER BY created_at DESC LIMIT 10`, [empId]);
       const restReq = await pool.query(
         `SELECT id, to_char(orig_date,'YYYY-MM-DD') AS orig_date,
                 to_char(new_date,'YYYY-MM-DD') AS new_date,
@@ -155,6 +159,7 @@ export default async function handler(req, res) {
         rest_weekday: restWd,
         rest_next: restNext.rows[0] || null,   // 下一条还没生效的规则(有就提前告诉员工)
         rest_requests: restReq.rows,
+        suggestions: sug.rows,          // 我提过的建议(含店长回复)
         todo: todoFor(me.company_code),
         checklist: await openChecklist(pool, me.company_code, today, "open"),
         checklist_close: await openChecklist(pool, me.company_code, today, "close"),
@@ -353,6 +358,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ success:true, message:"交上去了，等店长批" });
       }
 
+      // 员工提建议。只能提，改不了状态 —— 采纳与否是店长的事。
+      if (action === "suggest") {
+        const c = String(b.content || "").trim();
+        if (c.length < 4) return res.status(400).json({ success:false, error:"多写两句，太短看不明白" });
+        if (c.length > 1000) return res.status(400).json({ success:false, error:"太长了，说重点" });
+        const recent = await pool.query(
+          `SELECT COUNT(*) n FROM hr_suggestions
+            WHERE employee_id=$1 AND created_at > now() - INTERVAL '10 minutes'`, [empId]);
+        if (Number(recent.rows[0].n) >= 3)
+          return res.status(429).json({ success:false, error:"一会儿提太多了，歇会儿再说" });
+        await pool.query(
+          `INSERT INTO hr_suggestions (company_code, employee_id, employee_name, content)
+           VALUES ($1,$2,$3,$4)`, [me.company_code, empId, me.name, c]);
+        return res.status(200).json({ success:true, message:"收到了，店长会看 🙏" });
+      }
+
       if (action === "agenda") {
         const id = parseInt(b.id, 10);
         if (!id) return res.status(400).json({ success: false, error: "缺 id" });
@@ -475,7 +496,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda / rest_change" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda / rest_change / suggest" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });

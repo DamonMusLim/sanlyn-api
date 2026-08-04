@@ -47,8 +47,14 @@ export async function renderPurePortChargeDoc(pool, id) {
     currency: String(r.currency || "CNY").toUpperCase(),
   }));
   const totalCny = lines.reduce((s, r) => s + (r.currency === "CNY" || r.currency === "RMB" ? r.amount : 0), 0);
+  // 2026-08-04 Damon: 账单必须有唯一单号,否则同一票重开一次分不清哪张是哪张(对账只能靠提单号认)。
+  // 格式对齐货代同类账单(恒安 PC-YMJAI228525576-20260706): <类型>-<提单号>-<出单日>
+  const _dn = new Date();
+  const _p2 = (n) => String(n).padStart(2, "0");
+  const docNo = "PC-" + String(blNo || "NOBL").replace(/[^A-Za-z0-9-]/g, "")
+    + "-" + _dn.getFullYear() + _p2(_dn.getMonth() + 1) + _p2(_dn.getDate());
   const body = `
-    <div class="top"><div class="seller"><h2>${copyBtn(SELLER.name, "销方")}</h2><p>税号: ${copyBtn(SELLER.tax_id, "销方税号")}</p></div><div class="title"><h1>港杂费对账单</h1><p>PORT CHARGES STATEMENT</p></div></div>
+    <div class="top"><div class="seller"><h2>${copyBtn(SELLER.name, "销方")}</h2><p>税号: ${copyBtn(SELLER.tax_id, "销方税号")}</p></div><div class="title"><h1>港杂费对账单</h1><p>PORT CHARGES STATEMENT</p><p class="docno">No. ${copyBtn(docNo, "单号")}</p></div></div>
     <div class="grid">
       <div class="box"><div class="label">销方 / Seller</div><div class="field"><b>名称</b>${copyBtn(SELLER.name, "销方名称")}</div><div class="field"><b>税号</b>${copyBtn(SELLER.tax_id, "销方税号")}</div></div>
       <div class="box"><div class="label">付款方 / Payer</div><div class="field"><b>名称</b>${copyBtn(pick(factory && factory.name_cn, factory && factory.name_en, "工厂"), "付款方名称")}</div>${factory && factory.tax_id ? `<div class="field"><b>税号</b>${copyBtn(factory.tax_id, "付款方税号")}</div>` : ""}</div>

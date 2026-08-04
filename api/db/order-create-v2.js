@@ -979,6 +979,17 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     if (!companyNameCN && !companyNameEN) return res.status(400).json({ error: "客户名称必填" });
     if (!products || !products.length) return res.status(400).json({ error: "请添加产品" });
 
+    // 2026-08-04 Damon: 成交方式必填,空了就阻断。
+    // 病根:出运资料该出哪几份全靠它判(海运费账单除 CNF/CIF/DDP 才出、港杂费只 EXW/FOB 出),
+    // 空值会让整套规则静默失效——不是少一栏,是判不出该给客户发什么。COAU6461510080 那票就是空的。
+    // 只认 Incoterms 2020 十一种,别的一律打回,防止「FOB厦门」「F.O.B」这类脏值再进来。
+    var _TT_OK = ["EXW","FCA","FAS","FOB","CFR","CIF","CPT","CIP","DAP","DPU","DDP","CNF"];
+    var _tt = String(body.trade_terms || "").toUpperCase().trim();
+    if (!_tt) return res.status(400).json({ error: "成交方式必填(EXW/FOB/CIF/CNF/DDP...)，缺了无法判断该出哪些出运单据" });
+    if (_TT_OK.indexOf(_tt) < 0) {
+      return res.status(400).json({ error: "成交方式不认识: " + _tt + "。只接受 " + _TT_OK.join("/") });
+    }
+
     // Manufacturer name for the order_no factory prefix. Orders are split one-per
     // factory upstream, so all line items share a manufacturer; use the first.
     var _mfrName = (products && products[0] && (products[0].factory_name || products[0].factory)) || factory || "";
