@@ -269,6 +269,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/companies",          () => import("./api/db/companies.js"));
   mount("/api/db/trucking-vendors",  () => import("./api/db/trucking-vendors.js"));
   mount("/api/db/trucking-rates",     () => import("./api/db/trucking-rates.js"));
+  mount("/api/db/service-rates-admin",   () => import("./api/db/service-rates-admin.js")); // 2026-08-05 admin只读:一票的拖车/报关费率明细(门户费率+我方自维护合并)
   mount("/api/db/customs-rates",      () => import("./api/db/customs-rates.js"));
   mount("/api/db/exchange-rate",      () => import("./api/db/exchange-rate.js"));
   mount("/api/db/local-charges",     () => import("./api/db/local-charges.js"));
