@@ -78,11 +78,15 @@ customer_invoices AS (
      AND COALESCE(fio.invoice_no,'') NOT LIKE 'CI-DRAFT%'
    GROUP BY so.contract_no
 ),
--- 客户水单文件 url:bank_slips.file_url,经 bank_slip_links 按 contract_no/order_no 挂到订单。
+-- 客户水单:file_url + 分摊金额 + 有无回单文件。⚠ 方向甄别:sender=我方主体(巴匕/洋宝宝)的水单是"我们付出去"的
+-- (如 slip36 巴匕→中宠人工确认记录),绝不能算作客户已收 → 单列 ap_alloc 并置 direction_warn,前端显警示不计已收。
 customer_slip_file AS (
   SELECT so.contract_no, so.order_no,
-         (array_agg(bs.file_url ORDER BY bs.created_at DESC)
-            FILTER (WHERE bs.file_url IS NOT NULL))[1] AS slip_file_url
+         (array_agg(bs.file_url ORDER BY bs.created_at DESC) FILTER (WHERE bs.file_url IS NOT NULL))[1] AS slip_file_url,
+         SUM(bsl.amount_alloc) FILTER (WHERE NOT (bs.sender_name ILIKE '%巴匕%' OR bs.sender_name ILIKE '%洋宝%')) AS slip_alloc,
+         SUM(bsl.amount_alloc) FILTER (WHERE bs.sender_name ILIKE '%巴匕%' OR bs.sender_name ILIKE '%洋宝%') AS slip_ap_alloc,
+         COUNT(*) FILTER (WHERE bs.file_url IS NOT NULL) AS receipt_count,
+         MIN(bsl.alloc_currency) AS slip_currency
     FROM selected_orders so
     JOIN bank_slip_links bsl ON (bsl.contract_no=so.contract_no AND so.contract_no IS NOT NULL)
                              OR (bsl.order_no=so.order_no AND so.order_no IS NOT NULL)
@@ -181,7 +185,7 @@ SELECT
            (ra.receivable_anchor IS NOT NULL) AS anchored,
            ra.anchor_currency, ra.anchor_decl_count,
            ci.invoice_no,
-           csf.slip_file_url,
+           csf.slip_file_url, csf.slip_alloc, csf.slip_ap_alloc, csf.receipt_count, csf.slip_currency,
            osh.container_no, osh.shipper, osh.carrier_code, osh.vessel, osh.etd AS ship_etd, osh.eta AS ship_eta, osh.consignee,
            p.paid, p.received, d.invoice_status, d.invoice_currency, d.invoice_amount, s.factory_slip_count, s.customer_slip_count
       FROM selected_orders so LEFT JOIN payments p USING(order_no, contract_no) LEFT JOIN drafts d USING(order_no, contract_no) LEFT JOIN slips s USING(order_no, contract_no)
@@ -255,6 +259,14 @@ function orderFact(row) {
     subtitle: [row.contract_no || "无合同号", row.customer || "无客户", row.factory || "无工厂"].join(" · "),
     order_date: row.order_date || null,
     delivery_date: row.confirmed_delivery || row.delivery_date || null,
+    slip: {
+      alloc: money(row.slip_alloc),                 // 客户汇入水单已认领金额
+      ap_alloc: money(row.slip_ap_alloc),           // ⚠ 我方付出去的水单被挂到本单(方向错挂),不算已收
+      receipt_count: Number(row.receipt_count || 0),// 有回单文件的份数
+      currency: row.slip_currency || arCurrency,
+      file_url: row.slip_file_url || null,
+      direction_warn: money(row.slip_ap_alloc) > 1,
+    },
     currency: row.currency || "CNY",
     owner: row.status_updated_by || row.created_by || "未指派",
     last_action_at: row.last_action_at || row.updated_at || row.created_at || null,

@@ -152,11 +152,22 @@
       if(r.type!=="order")return"";
       return `下单:${fmtDate(r.order_date)} · 交货:${fmtDate(r.delivery_date)} · `;
     }
+    // 数据可疑徽章:0价格/无锚、方向错挂、只有水单没入账 —— 让"不能当真"的单一眼可见
+    function dataAlertChips(r){
+      if(r.type!=="order")return"";
+      const c=r.customer_side||{},s=r.slip||{},chips=[];
+      const anchored=c.anchored!=null?c.anchored:r.anchored;
+      if(!anchored) chips.push(tag("❗未报关·应收无价","risk"));
+      else if(!(c.receivable>1)) chips.push(tag("❗0价格·待核","risk"));
+      if(s.direction_warn) chips.push(tag("❗水单方向错挂·非客户付款","risk"));
+      if((s.alloc||0)>1 && !((c.received||0)>1)) chips.push(tag("⚠有水单未入账","todo"));
+      return chips.length?`<div class="linechips" style="justify-content:flex-start;margin-top:6px">${chips.join("")}</div>`:"";
+    }
     function rowHtml(r){
       const child=r.type==="shipment"&&!r.is_top_level;
       return `<article class="row ${r.tone} ${child?"child":""}" data-id="${esc(r.id)}">
         <div class="line">
-          <div><div class="title">${esc(r.title)}</div><div class="sub">${esc(r.subtitle)}</div><div class="meta">${orderDatesMeta(r)}经手:${esc(r.owner||"未指派")} · ${relTime(r.last_action_at)}</div><div class="linechips" style="justify-content:flex-start;margin-top:7px">${invoiceConfirmChip(r)}</div>${feeChipsHtml(r)}</div>
+          <div><div class="title">${esc(r.title)}</div><div class="sub">${esc(r.subtitle)}</div><div class="meta">${orderDatesMeta(r)}经手:${esc(r.owner||"未指派")} · ${relTime(r.last_action_at)}</div><div class="linechips" style="justify-content:flex-start;margin-top:7px">${invoiceConfirmChip(r)}</div>${dataAlertChips(r)}${feeChipsHtml(r)}</div>
           <div class="settlements">${linesOf(r).map(settlementHtml).join("")||'<div class="muted">无结算线</div>'}</div>
           ${rowActionsHtml(r)}
         </div>
@@ -240,6 +251,16 @@
       if(url)return `<a class="slip-link" href="${esc(url)}" target="_blank" rel="noopener">查看水单</a>`;
       return tag("未提交","stale");
     }
+    function slipAmountField(r){
+      const s=r.slip||{},cur=s.currency||"CNY";
+      const v=s.alloc||0;
+      return `<div class="f"><em>水单金额</em>${v>1?money(cur,v):tag("无","stale")}${s.direction_warn?` ${tag("⚠含我方付款"+money(cur,s.ap_alloc)+"·未计已收","risk")}`:""}</div>`;
+    }
+    function receiptField(r){
+      const s=r.slip||{},n=s.receipt_count||0;
+      if(n>0&&s.file_url)return `<div class="f"><em>回单</em><a class="slip-link" href="${esc(s.file_url)}" target="_blank" rel="noopener">${n} 份 · 查看</a></div>`;
+      return `<div class="f"><em>回单</em>${tag("未上传","stale")}</div>`;
+    }
     function shippingInfoHtml(r){
       const s=r.shipping||{};
       const parts=[`<span>${esc(s.carrier_code||"—")}${s.vessel?` / ${esc(s.vessel)}`:""}</span>`,`<span>ETD ${fmtDate(s.etd)}</span>`,`<span>柜号 ${esc(s.container_no||"—")}</span>`];
@@ -268,6 +289,8 @@
         <div class="f"><em>发货人</em>${esc(s.shipper||"—")}</div>
         <div class="f"><em>收货人</em>${esc(s.consignee||r.consignee||"—")}</div>
         <div class="f"><em>水单</em>${slipField(r,"cust")}</div>
+        ${slipAmountField(r)}
+        ${receiptField(r)}
         ${shippingInfoHtml(r)}
       </div>`;
     }
