@@ -201,8 +201,11 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   <div class="grid4 row5">
     ${cell("包装种类", "纸箱", "small", "package_type")}
     ${cell("件数", totalCtn ? fmtInt(totalCtn) : "", "small", "total_ctn")}
-    ${cell("毛重(千克)", fmtM(grossWeight, 0), "small", "gross_weight")}
-    ${cell("净重(千克)", fmtM(netWeight, 0), "small", "net_weight")}
+    ${/* 2026-08-04: 原为 fmtM(...,0) 整数，把 80,197.50→80198、72,726.60→72727，
+          与箱单/提单样单(两位小数)对不上，报关行据此报"毛重不一样"。
+          海关报关单毛重/净重字段本身接受小数，改为两位与箱单同口径。 */""}
+    ${cell("毛重(千克)", fmtM(grossWeight, 2), "small", "gross_weight")}
+    ${cell("净重(千克)", fmtM(netWeight, 2), "small", "net_weight")}
     ${cell("成交方式", "FOB", "small", "trade_terms")}
     ${cell("运费", "", "small", "freight")}
     ${cell("保费", "", "small", "insurance")}

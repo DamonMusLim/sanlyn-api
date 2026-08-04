@@ -14,7 +14,7 @@ export async function renderFi(ctx){
       var nwKg=fiLines.reduce(function(s,l){return s+(Number(l.nw_ctn)||0)*(Number(l.qty_ctn)||0);},0);
       if(!qtyCtn) qtyCtn=pick(fo.total_qty,fo.total_ctn,"");          // 行项目缺则回退订单
       if(!nwKg) nwKg=pick(fo.total_net_weight,fo.net_weight,"");
-      var qtyWeight=(qtyCtn?qtyCtn+"箱":"")+(qtyCtn&&nwKg?"/":"")+(nwKg?Math.round(Number(nwKg))+"kg":"");
+      var qtyWeight=(qtyCtn?qtyCtn+"箱":"")+(qtyCtn&&nwKg?"/":"")+(nwKg?Number(nwKg).toFixed(2)+"kg":"");
       // 生产日期 = 确认交货期(delivery_date); 检验日期 = 同日
       var prodDate=fmtD(pick(fo.delivery_date,fo.etd));
       var inspDate=prodDate;

@@ -347,7 +347,9 @@ export function cargoRows(lines, destination, sourceArea) {
   // (旧逻辑按"见过的HS"清空后续行文字,同HS下不同品名如"宠物罐头/宠物软罐头"被误判成重复行,第二行整段申报要素被清空——已改成SQL层合并解决)
   return lines.map(function (l, i) {
     var qty = [
-      fmtM(l.net_weight_kg, 0) ? fmtM(l.net_weight_kg, 0) + "千克" : "",
+      // 2026-08-04: 原为 0 位小数，71,354.40→71354，与箱单/汇总栏对不上(报关行据此报"不一样")。
+      // 件数保持整数(箱/袋本就是整数)，重量一律两位。
+      fmtM(l.net_weight_kg, 2) ? fmtM(l.net_weight_kg, 2) + "千克" : "",
       fmtInt(l.qty_ctn) ? fmtInt(l.qty_ctn) + "箱" : "",
     ].filter(Boolean).join("<br>");
     var money = [

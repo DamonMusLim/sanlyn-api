@@ -35,7 +35,7 @@ export async function renderQc(ctx){
         +"@media print{body{background:#fff;padding:0}}</style></head><body><div class=page>"
         +"<div class=top><div><h1>QC 出厂质检报告</h1><div class=en>QC INSPECTION REPORT · 参考 GB/T 31410-2015 宠物猫砂</div></div><div class=r>QC REPORT<br><span style='font-size:11px;font-weight:400;color:#888'>质检报告单</span></div></div>"
         +"<table class=meta><tr><td class=l>产品名称</td><td>"+esc(qSample)+"</td><td class=l>订单/合同号</td><td>"+esc(qOrd)+"</td></tr>"
-        +"<tr><td class=l>数/重量</td><td>"+esc((qQty?qQty+"箱":"")+(qNw?"/"+Math.round(Number(qNw))+"kg":""))+"</td><td class=l>客户</td><td>"+esc(qCust)+"</td></tr>"
+        +"<tr><td class=l>数/重量</td><td>"+esc((qQty?qQty+"箱":"")+(qNw?"/"+Number(qNw).toFixed(2)+"kg":""))+"</td><td class=l>客户</td><td>"+esc(qCust)+"</td></tr>"
         +"<tr><td class=l>生产日期</td><td>"+esc(qProd)+"</td><td class=l>检验日期</td><td>"+esc(qInsp)+"</td></tr></table>"
         +"<table class=t><tr class=sec><td>项目 Item</td><td>英文</td><td class=c>标准 Standard</td><td class=c>实测 Actual</td><td class=c>判定</td></tr>"+PHYS+PERF+CHEM+"</table>"
         +"<div class=dis>※ 以上为<b>典型出厂指标</b>；实测以随批检验报告为准，按 <b>AQL 抽样</b>判定(Critical AQL=0 / Major 1.0 / Minor 2.5)。安全指标(重金属/微生物)按 GB 强制标准执行。</div>"
