@@ -257,6 +257,11 @@ async function handleValidate(req, res, pool) {
       sheet.quarantine_docs = quarantineDocs;              // 检疫报告清单（真源 document_uploads，每份带 ref=du.id）
       sheet.has_quarantine = quarantineDocs.length > 0;   // 兼容旧判断
       sheet.containers_live = cbRes.rows;
+      // 2026-08-04:下面会用 container_bookings 重建 containers_detail,但 plan 上那份
+      // (claude-shipping-intake 等录进来的真箱号/封号)不能丢 —— 先存下按 seq 兜底。
+      // 实测漏了会让 68 票/187 柜在所有协同页显示"待回填",库里其实全有。
+      const _planDetail = Array.isArray(sheet.containers_detail) ? sheet.containers_detail : [];
+      const _planBySeq = new Map(_planDetail.map((c, i) => [Number((c && (c.seq || c.container_seq)) || i + 1), c || {}]));
       // ── containers_detail：稳定 seq=1..N 柜槽（前端渲染/皮重/司机/地址读它）──
       const toNumOrNull = v => (v === undefined || v === null || v === "" || Number.isNaN(Number(v))) ? null : Number(v);
       const vehicleRows = (sheet.trucking_detail && Array.isArray(sheet.trucking_detail.vehicles)) ? sheet.trucking_detail.vehicles : [];
@@ -331,6 +336,7 @@ async function handleValidate(req, res, pool) {
         const seq = i + 1;
         const live = sheet.containers_live[i] || {};
         const veh = vehicleRows[i] || {};
+        const old = _planBySeq.get(seq) || {};   // plan 上原有真值,作为最后一道兜底
         const driverPhotos = [];
         const platePhotos = [];
         uploads.forEach(u => {
@@ -342,18 +348,18 @@ async function handleValidate(req, res, pool) {
         return {
           seq,
           factory: factoryOfSeq(live),
-          container_no: live.container_no || "",
-          seal_no: live.seal_no || veh.seal_no || null,
-          container_type: live.container_type || sheet.container_type || null,
-          tare_weight_kg: toNumOrNull(live.tare_weight_kg != null ? live.tare_weight_kg : veh.tare_kg),
-          cargo_weight_kg: toNumOrNull(live.cargo_weight_kg != null ? live.cargo_weight_kg : veh.weigh_kg),
-          vgm_weight_kg: toNumOrNull(live.vgm_weight_kg),
-          driver_name: live.driver_name || veh.driver || null,
+          container_no: live.container_no || old.container_no || "",
+          seal_no: live.seal_no || veh.seal_no || old.seal_no || null,
+          container_type: live.container_type || old.container_type || sheet.container_type || null,
+          tare_weight_kg: toNumOrNull(live.tare_weight_kg != null ? live.tare_weight_kg : (veh.tare_kg != null ? veh.tare_kg : old.tare_weight_kg)),
+          cargo_weight_kg: toNumOrNull(live.cargo_weight_kg != null ? live.cargo_weight_kg : (veh.weigh_kg != null ? veh.weigh_kg : old.cargo_weight_kg)),
+          vgm_weight_kg: toNumOrNull(live.vgm_weight_kg != null ? live.vgm_weight_kg : old.vgm_weight_kg),
+          driver_name: live.driver_name || veh.driver || old.driver_name || null,
           driver_phone: live.driver_phone || veh.driver_phone || null,
           driver_id_no: live.driver_id_no || veh.driver_id_no || null,
-          plate: live.plate || live.trailer_plate || veh.plate || veh.trailer_plate || null,
-          loading_address: live.loading_address || veh.loading_address || (factoryProfileAddress && factoryProfileAddress.address) || null,
-          loading_contact: live.loading_contact || veh.loading_contact || null,
+          plate: live.plate || live.trailer_plate || veh.plate || veh.trailer_plate || old.plate || null,
+          loading_address: live.loading_address || veh.loading_address || old.loading_address || (factoryProfileAddress && factoryProfileAddress.address) || null,
+          loading_contact: live.loading_contact || veh.loading_contact || old.loading_contact || null,
           driver_photos: driverPhotos,
           plate_photos: platePhotos,
           ...pickupFor(seq),

@@ -232,13 +232,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     <span class="flag urgent" id="agrTag">⏰ 截单剩 1 天 · 待传 SO</span>
   </div>
 
-  <div>
-    <div class="modelab">本票货代由谁安排</div>
-    <div class="modesw">
-      <button class="on" onclick="setMode('ours',this)">我方货代 · 有协议价</button>
-      <button onclick="setMode('nom',this)">客户指定货代 · 无协议</button>
-    </div>
-  </div>
+  <!-- 2026-08-04 删:「本票货代由谁安排」是我方内部定性,不该给货代看更不该让他改 -->
 
   <div class="nologin">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
@@ -253,13 +247,13 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
   <!-- 承运人要求(COSCO 保函等):规则命中自动长出 -->
   <div id="carrierReq"></div>
 
-  <!-- SO/BL 引用单号:建议货代把我方内部号引用到 SO/提单,方便查单核对;可改(改动进 staging 待我方核对) -->
+  <!-- SO/BL 引用单号:货代填自己的 SO 号,我方据此核对;可改(改动进 staging 待我方核对)。2026-08-04:我方内部号不外发 -->
   <div class="block">
-    <div class="bh"><h2>SO / 提单 引用单号</h2><p>请在 SO、提单上引用此单号，方便我方查单核对</p></div>
+    <div class="bh"><h2>SO / 提单 引用单号</h2><p>请填您的 SO 号，我方据此核对</p></div>
     <div class="bb" style="display:flex;flex-direction:column;gap:9px">
       <div class="bill">
         <span class="bi">🔖</span>
-        <div class="bt2"><b id="refV">—</b><span id="refHint">默认=我方内部号，可改</span></div>
+        <div class="bt2"><b id="refV">—</b><span id="refHint">请填您的 SO 号，我方据此核对</span></div>
         <button class="bdl" onclick="copyRef()">复制</button>
         <button class="bdl" onclick="editRef()">改单号</button>
       </div>

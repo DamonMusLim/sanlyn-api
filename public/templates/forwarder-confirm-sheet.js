@@ -93,12 +93,7 @@ function setMode(m, btn){
   if(m !== real) toast("本票货代安排以系统记录为准，外部链接不能切换写入");
   renderFees();
 }
-function applyModeButtons(){
-  const btns = document.querySelectorAll(".modesw button");
-  btns.forEach(b=>b.classList.remove("on"));
-  const i = state.mode === "nom" ? 1 : 0;
-  if(btns[i]) btns[i].classList.add("on");
-}
+function applyModeButtons(){ /* 2026-08-04:模式按钮已从页面删除(内部定性不外露),保留空壳防旧缓存页 ReferenceError */ }
 
 function renderAll(){
   const s = state.sheet;
@@ -120,7 +115,7 @@ function renderAll(){
   renderStatus();
   renderFees();
 }
-// 箱号谁填:货代承包拖车段(他们的车队)→ 他们填(确认/需修改);否则只读核对 + 只留需修改(2次确认)
+// 箱号谁填:货代承包拖车段(他们的车队)→ 他们填(确认/需修改);否则只读核对 + 只留「修改」
 function renderBoxMode(){
   const theirTruck = Array.isArray(state.segments) && state.segments.includes("truck");
   const sub = $("boxSub"), badge = $("boxBadge"), acts = $("boxActs");
@@ -132,7 +127,7 @@ function renderBoxMode(){
   } else {
     if(sub) sub.textContent = "工厂 / 我方车队填，您核对";
     if(badge){ badge.textContent = "只读核对"; badge.className = "sstat ok"; }
-    acts.innerHTML = `<button class="btn ghost" onclick="editContainers()">需修改（2 次确认）</button>`;
+    acts.innerHTML = `<button class="btn ghost" onclick="editContainers()">修改</button>`;
   }
 }
 function renderCarrierReq(){
@@ -141,10 +136,10 @@ function renderCarrierReq(){
   if(!reqs.length){ el.innerHTML = ""; return; }
   const carrier = state.sheet.carrier_code || state.sheet.shipping_line || "承运人";
   const pending = reqs.filter(t => t.status === "requested" || t.status === "rejected").length;
-  el.innerHTML = `<div class="block" style="border:2px solid #f0b4ab">
-    <div class="bh" style="background:#fdecea;display:flex;align-items:center;gap:9px">
+  el.innerHTML = `<div class="block" style="border:2px solid #1f4f78;background:#101b26;color:#e5edf5">
+    <div class="bh" style="background:#132836;border-bottom-color:#1f4f78;display:flex;align-items:center;gap:9px">
       <input type="checkbox" ${pending ? "" : "checked"} disabled style="width:18px;height:18px">
-      <h2 style="flex:1;font-size:15.5px;margin:0">🛡 ${esc(carrier)} 要求 · 放舱前必交</h2>
+      <h2 style="flex:1;font-size:15.5px;margin:0;color:#f8fafc">🛡 ${esc(carrier)} 要求 · 放舱前必交</h2>
       <span class="noagr">${pending ? pending + " 项待办" : "已齐"}</span>
     </div>
     <div class="bb" style="display:flex;flex-direction:column;gap:11px">${reqs.map(reqRow).join("")}</div>
@@ -172,25 +167,26 @@ function uploadReqFile(taskId){
 }
 function refValue(){
   const s = state.sheet;
-  return s.so_bl_reference || s.shipment_no || "—";
+  return s.so_bl_reference || "";   // 2026-08-04:不再兜底我方内部号(shipment_no),内部号不外发
 }
 function renderRef(){
   const s = state.sheet;
   const cur = refValue();
-  $("refV").textContent = cur;
+  $("refV").textContent = cur || "—";
   const pend = s.so_bl_ref_pending;
   if(pend && pend.value && pend.value !== cur) $("refHint").textContent = `待我方核对：${pend.value}`;
   else if(s.so_bl_reference) $("refHint").textContent = "已确认引用单号";
-  else $("refHint").textContent = "默认=我方内部号，可改";
+  else $("refHint").textContent = "请填您的 SO 号，我方据此核对";
 }
 function copyRef(){
   const t = refValue();
+  if(!t){ toast("请先填写您的 SO 号"); return; }
   if(navigator.clipboard && navigator.clipboard.writeText)
     navigator.clipboard.writeText(t).then(()=>toast("已复制：" + t)).catch(()=>toast("复制失败，请手动选择"));
   else toast("请手动选择复制：" + t);
 }
 async function editRef(){
-  const v = prompt("SO / 提单引用单号（默认=我方内部号，可改为客户 PO 等）", refValue());
+  const v = prompt("请填写您的 SO 号", refValue());
   if(v == null) return;
   const ref = String(v).trim();
   if(!ref) return;
