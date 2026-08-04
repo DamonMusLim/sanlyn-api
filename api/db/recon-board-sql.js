@@ -168,7 +168,11 @@ SELECT
            ci.invoice_no,
            csf.slip_file_url, csf.slip_alloc, csf.slip_ap_alloc, csf.receipt_count, csf.slip_currency,
            osh.container_no, osh.shipper, osh.carrier_code, osh.vessel, osh.etd AS ship_etd, osh.eta AS ship_eta, osh.consignee,
-           p.paid, p.received, d.invoice_status, d.invoice_currency, d.invoice_amount, s.factory_slip_count, s.customer_slip_count
+           p.paid,
+           -- 已收 = finance_payments 入账额 与 水单已认领分摊额 取大者(同一笔钱的两种记录,相加会翻倍)。
+           -- 水单侧只认客户汇入(sender 非我方主体),我方付出的水单被错挂时不计入客户已收(见 customer_slip_file.slip_alloc)。
+           GREATEST(COALESCE(p.received,0), COALESCE(csf.slip_alloc,0)) AS received,
+           d.invoice_status, d.invoice_currency, d.invoice_amount, s.factory_slip_count, s.customer_slip_count
       FROM selected_orders so LEFT JOIN payments p USING(order_no, contract_no) LEFT JOIN drafts d USING(order_no, contract_no) LEFT JOIN slips s USING(order_no, contract_no)
            LEFT JOIN receivable_anchor ra USING(contract_no)
            LEFT JOIN customer_invoices ci USING(contract_no)
