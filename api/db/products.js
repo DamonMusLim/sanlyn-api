@@ -7,7 +7,8 @@ const PRODUCT_WRITABLE = ["sku","barcode","product_name","product_name_cn","bran
   "bg_bx","cat1","cat2","cat3","flavor","pallet_size","active",
   "origin_country","spec","unit","raw","factory_code","category","stock","sale_price_cny","image_url",
   "images","colors","material","product_dims","carton_qty","display_brand","weight_unit","is_canonical",
-  "declaration_name_en","quarantine_required","quarantine_note"];
+  "declaration_name_en","quarantine_required","quarantine_note",
+  "package_type_id", "outer_package_unit", "inner_pack_qty_per_outer", "inner_pack_unit", "sales_unit", "package_profile_status", "package_profile_source"];
 
 let productReadPartsCache = null;
 
@@ -76,6 +77,31 @@ export default async function handler(req, res) {
       const pool = getPool();
       const body = req.body || {};
       if (!body.sku || !body.product_name) return res.status(400).json({ success:false, error:"sku 和 product_name 必填" });
+      // 2026-08-04 包装真源闸门：新建产品必须给包装种类。
+      // 病根——报关单 customs-declaration-form.js 长期硬编码"纸箱"，而 products.unit 有 59 种脏值
+      // (80G/KG 都混进来)，录单又 || "CTN" 兜底，导致「产品说BAG、订单写CTN」554条明细。
+      // Damon 2026-08-04 定调：历史不管，后续不能再出现 → 源头必填，不兜底。
+      {
+        const _ptId = body.package_type_id;
+        const _ptName = (body.package_type_name || "").toString().trim();
+        if (!_ptId && !_ptName) {
+          return res.status(400).json({
+            success:false, code:"PACKAGE_TYPE_REQUIRED",
+            error:"包装种类必填：请传 package_type_id 或 package_type_name（可选值见 package_types 表，如 包/袋、纸箱、木箱、托盘、散装、桶）"
+          });
+        }
+        if (!_ptId && _ptName) {
+          const _pt = await getPool().query("SELECT id, display_unit_en FROM package_types WHERE name_cn=$1 AND active LIMIT 1", [_ptName]);
+          if (!_pt.rows.length) {
+            return res.status(400).json({ success:false, code:"PACKAGE_TYPE_UNKNOWN",
+              error:"包装种类不在码表内："+_ptName+"（绝不自动新增，请先维护 package_types）" });
+          }
+          body.package_type_id = _pt.rows[0].id;
+          if (!body.outer_package_unit) body.outer_package_unit = _pt.rows[0].display_unit_en;
+        }
+        body.package_profile_status = "confirmed";
+        body.package_profile_source = body.package_profile_source || "manual_on_create";
+      }
       const PRODUCT_JSONB = new Set(["raw","images"]);
       const cols = [], vals = [], params = [];
       for (const k of PRODUCT_WRITABLE) if (Object.prototype.hasOwnProperty.call(body, k)) {

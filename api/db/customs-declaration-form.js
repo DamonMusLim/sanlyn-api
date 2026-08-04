@@ -23,6 +23,10 @@ import {
 
 export { resolveOrdersForContainer } from "./customs-declaration-form-lib.js";
 
+// 境内货源地。2026-08-04 报关行反馈「辽宁范围太大了，具体是哪里呀」——
+// 原实现只从公司名开头正则取省名("辽宁宠爱科技有限公司"→"辽宁")，永远到不了区县，
+// 而真地址一直在 companies.address（"辽宁省朝阳市建平县..."）。
+// 改为：companies.customs_source_area(人工确认的申报值) → 从 address 抽区县 → 才回退猜名字。
 function _provinceOf(name){
   name=String(name||"");
   var d=name.match(/^(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|广西|内蒙古|西藏|宁夏|新疆)/);
@@ -30,6 +34,33 @@ function _provinceOf(name){
   var CITY={"烟台":"山东","徐州":"江苏","连云港":"江苏","霸州":"河北"};
   for(var c in CITY){ if(name.indexOf(c)>=0) return CITY[c]; }
   return "";
+}
+
+function _areaFromAddress(addr){
+  var a=String(addr||"");
+  var m=a.match(/([\u4e00-\u9fa5]{2,6}?(?:县|市辖区|区))(?![\u4e00-\u9fa5]*省)/);
+  if(m) return m[1].replace(/(县|区)$/,"");
+  var c=a.match(/([\u4e00-\u9fa5]{2,6}?)市/);
+  return c?c[1]:"";
+}
+
+// 按工厂名批量取「境内货源地」：优先人工确认值，其次地址抽取，最后才猜名字
+async function _sourceAreaOf(pool, names){
+  var out={};
+  var uniq=Array.from(new Set((names||[]).filter(Boolean).map(String)));
+  if(!uniq.length) return out;
+  try{
+    var r=await pool.query(
+      "SELECT name_cn, customs_source_area, address FROM companies WHERE name_cn = ANY($1::text[])",
+      [uniq]);
+    r.rows.forEach(function(row){
+      out[row.name_cn] = (row.customs_source_area && row.customs_source_area.trim())
+        || _areaFromAddress(row.address)
+        || _provinceOf(row.name_cn);
+    });
+  }catch(e){ console.warn("[customs-decl] source area lookup failed:", e.message); }
+  uniq.forEach(function(n){ if(!out[n]) out[n]=_provinceOf(n); });
+  return out;
 }
 
 export async function renderCustomsDeclaration(pool, shipmentId, opts) {
@@ -46,7 +77,10 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   }
   var orderIds = orders.map(function (o) { return Number(o.id); }).filter(Boolean);
   var lines = await loadLines(pool, orderIds);
-  var _srcProvs={}; (orders||[]).forEach(function(_o){ var _p=_provinceOf(_o.factory||_o.factory_name||_o.factory_company_name); if(_p) _srcProvs[_p]=1; }); var _pk=Object.keys(_srcProvs); var _sourceArea=_pk.length===1?_pk[0]:"";
+  var _facNames=(orders||[]).map(function(_o){ return _o.factory||_o.factory_name||_o.factory_company_name; }).filter(Boolean);
+  var _areaMap=await _sourceAreaOf(pool, _facNames);
+  var _srcProvs={}; _facNames.forEach(function(n){ var _p=_areaMap[n]; if(_p) _srcProvs[_p]=1; });
+  var _pk=Object.keys(_srcProvs); var _sourceArea=_pk.length===1?_pk[0]:"";  // 多产地留空,不猜
 
   var issuer = clean(firstOrderValue(orders, "issuing_company", "issuingCompany"));
   var company = await loadCompany(pool, issuer);

@@ -24,11 +24,40 @@ const FIELDS = [
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  // 🛡️ 保险台页面(HTML外壳,无数据→无需鉴权;页面自身读localStorage token再拉数据)
+  if (req.method === "GET" && req.query.view) {
+    try {
+      const fsm = await import("fs");
+      const pathm = await import("path");
+      const urlm = await import("url");
+      const root = pathm.join(pathm.dirname(urlm.fileURLToPath(import.meta.url)), "..", "..");
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(fsm.readFileSync(pathm.join(root, "public", "insurance-desk.html"), "utf8"));
+    } catch (e) { return res.status(500).send("保险台加载失败: " + e.message); }
+  }
   if (!requireAuth(req, res)) return;
 
   const pool = getPool();
 
   if (req.method === "GET") {
+    // 📄 PDF 直链下载: ?pdf=<保单号> → 流式返回保单PDF(后台"下载保单"链接;鉴权走 ?token= 见 auth.js)
+    if (req.query.pdf) {
+      try {
+        const fsm = await import("fs");
+        const pathm = await import("path");
+        const urlm = await import("url");
+        const root = pathm.join(pathm.dirname(urlm.fileURLToPath(import.meta.url)), "..", "..");
+        const dir = pathm.join(root, "public", "insurance-policies");
+        const safe = String(req.query.pdf).replace(/[^A-Za-z0-9_.-]/g, "");
+        const fp = pathm.join(dir, safe.endsWith(".pdf") ? safe : safe + ".pdf");
+        if (!fp.startsWith(dir) || !fsm.existsSync(fp)) return res.status(404).json({ error: "PDF不存在或未归档" });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `inline; filename="${safe}.pdf"`);
+        return fsm.createReadStream(fp).pipe(res);
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
     try {
       const { status, shipping_plan_id, bl_no, limit = 500 } = req.query;
       const params = [], conds = [];

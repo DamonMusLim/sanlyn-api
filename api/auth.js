@@ -274,6 +274,8 @@ export async function authMiddleware(req, res, next) {
 
   // 完全公开路径：无需任何 token
   if (PUBLIC_PATHS.includes(req.path)) return next();
+  // 保险台HTML外壳(?view,无数据)免鉴权直通;无view的数据查询/PDF下载仍需token
+  if (req.method === "GET" && req.path === "/api/db/insurance-policies" && req.query && req.query.view) return next();
 
   // 自动化心跳上报:仅 POST + 正确 x-cron-secret 才免登录;GET 看板仍需登录
   // (2026-07-31: 之前被全局鉴权挡死,导致没有任何 job 能报心跳,美团/饿了么掉线 18 天没人看见)
