@@ -51,9 +51,42 @@ router.get("/api/console/sources", async (req, res) => {
       "SELECT cat, name, status, detail, cnt, last_seen, probed_at FROM data_sources ORDER BY " +
       "CASE cat WHEN 'core' THEN 1 WHEN 'email' THEN 2 WHEN 'wechat' THEN 3 WHEN 'wecom' THEN 4 " +
       "WHEN 'sms' THEN 5 WHEN 'call' THEN 6 WHEN 'shop' THEN 7 ELSE 8 END, id");
+    // ⚖️ Damon 0805:「已接,再新增一个『未收到数据』」
+    //   病根:接得上 ≠ 有数据。饿了么/京东/美团三个渠道全 0 单,却都是绿的「已接」——
+    //   跟日报把 0 单写成「持平」是同一个病。第三态把这两件事分开。
+    // 🩸 第一版写成 /0\s*条/,把「1220 条」里的 0 也抓了(微信 relay 被误判成没数据)。
+    //    数字前面必须不是数字。另外「待接进数据中心」是到不了中枢,不是没收到,不算这一类。
+    const DEAD = /(近\d+天\s*0\s*单|没抓到过数据|(^|[^\d])0\s*条|未接每日自动)/;
+    const staleDays = (t) => {
+      if (!t) return null;
+      const d = new Date(String(t).replace(' ', 'T'));
+      if (isNaN(d)) return null;
+      return Math.floor((Date.now() - d.getTime()) / 86400000);
+    };
+    const rows = result.rows.map(r => {
+      const out = { ...r };
+      if (r.status === 'connected') {
+        const days = staleDays(r.last_seen);
+        if (DEAD.test(r.detail || '')) {
+          out.status = 'no_data';
+          out.why = '接得上,但没有数据进来';
+        } else if (days !== null && days >= 3) {
+          out.status = 'no_data';
+          out.why = `最后一条是 ${days} 天前`;
+        }
+      }
+      if (out.status !== r.status) out.raw_status = r.status;
+      return out;
+    });
     res.json({ success: true,
       probed_at: result.rows.length ? result.rows[0].probed_at : null,
-      rows: result.rows });
+      counts: {
+        connected: rows.filter(r => r.status === 'connected').length,
+        no_data: rows.filter(r => r.status === 'no_data').length,
+        not_connected: rows.filter(r => r.status === 'not_connected').length,
+        paused: rows.filter(r => r.status === 'paused').length,
+      },
+      rows });
   } catch (e) { res.json({ success: false, error: String(e.message || e), rows: [] }); }
 });
 
