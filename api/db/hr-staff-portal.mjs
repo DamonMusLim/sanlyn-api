@@ -106,6 +106,9 @@ export default async function handler(req, res) {
           [me.company_code, me.role]),
       ]);
       const today = new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
+      const pt = await pool.query(
+        `SELECT code, label, lat, lng, radius_m FROM hr_checkin_points
+          WHERE company_code=$1 AND is_active=true ORDER BY code LIMIT 1`, [me.company_code]);
       const todayCk = await pool.query(
         `SELECT id, checkin_at, checkout_at, source FROM hr_staff_checkin
           WHERE employee_ref=$1 AND checkin_date=$2 ORDER BY checkin_at DESC LIMIT 1`, [empId, today]);
@@ -131,6 +134,8 @@ export default async function handler(req, res) {
                 me.bank_account_no ? null : "工资卡",
               ].filter(Boolean) },
         month,
+        // 打卡点回给前端 —— 开门确认弹窗要拿它算「你离店多远」
+        point: pt.rows[0] || null,
         todo: todoFor(me.company_code),
         checklist: await openChecklist(pool, me.company_code, today, "open"),
         checklist_close: await openChecklist(pool, me.company_code, today, "close"),
@@ -220,6 +225,28 @@ export default async function handler(req, res) {
       }
 
       // 扫墙上二维码打卡（保留：没门禁的点位/门锁故障时兜底）
+      // 首次标定店址。**只有还没标过才让设** —— 否则有人在家一点就把店"搬"到自己家了。
+      // 要改已标定的，去后台改，不走员工端。谁设的/什么时候设的都留痕。
+      if (action === "set_point_location") {
+        const la = Number(b.lat), ln = Number(b.lng), acc = Number(b.accuracy);
+        if (!Number.isFinite(la) || !Number.isFinite(ln))
+          return res.status(400).json({ success:false, error:"没拿到定位" });
+        if (Number.isFinite(acc) && acc > 100)
+          return res.status(400).json({ success:false, error:`定位精度只有 ±${Math.round(acc)} 米，太飘了，到门口再试` });
+        const cur = (await pool.query(
+          `SELECT code, lat FROM hr_checkin_points
+            WHERE company_code=$1 AND is_active=true ORDER BY code LIMIT 1`, [me.company_code])).rows[0];
+        if (!cur) return res.status(400).json({ success:false, error:"没配打卡点位" });
+        if (cur.lat != null)
+          return res.status(409).json({ success:false, error:"店址已经标定过了，要改找店长在后台改" });
+        await pool.query(
+          `UPDATE hr_checkin_points
+              SET lat=$1, lng=$2, located_by=$3, located_at=now()
+            WHERE code=$4`, [la, ln, `${me.name}/${empId}`, cur.code]);
+        return res.status(200).json({ success:true,
+          message:"店址标好了，以后开门会显示你离店多远" });
+      }
+
       if (action === "checkin" || action === "checkout") {
         const code = String(b.code || "").trim();
         const pt = await pool.query(
@@ -432,7 +459,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda / restday" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda / restday" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
