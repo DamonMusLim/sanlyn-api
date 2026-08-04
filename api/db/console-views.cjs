@@ -222,7 +222,7 @@ router.post("/api/console/blocked/answer", require("express").json(), async (req
 });
 
 // -- 微信短码入口: /c/<code> → 302 到真页面。微信里永不出现私链 key --
-const SHORT = { a7: "/one", c3: "/center", s9: "/sources", d5: "/one", h4: "/finance/history.html" };
+const SHORT = { a7: "/one", c3: "/center", s9: "/sources", d5: "/one", h4: "/finance/history.html", q7: "/finance/ask.html", n8: "/finance/issues.html", g6: "/finance/dna.html" };
 router.get("/g/:code", async (req, res) => {
   const t = SHORT[String(req.params.code || "").slice(0, 8)];
   if (!t) return res.status(404).type("html").send("<h3>链接不存在或已作废</h3>");
