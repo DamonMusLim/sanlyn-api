@@ -159,6 +159,11 @@
       return "";
     }
     function overpayChip(l){
+      // total 为空(未报关/无锚)时 paid-total 恒等于 paid,会把"已收但没应收口径"误标成超收 → 改显"已收待锚"
+      if(l.total==null||l.total===""){
+        const got=Number(l.paid||0);
+        return got>1?tag(`已收${l.currency||"CNY"}${fmt(got)}·待锚定`,"todo"):"";
+      }
       const over=Number(l.paid||0)-Number(l.total||0);
       if(over<=1)return"";
       if(l.direction==="ar")return tag(`超收¥${fmt(over)}`,"risk");
