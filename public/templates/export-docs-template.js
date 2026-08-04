@@ -563,7 +563,9 @@ function init(){
       window._agg=aggregate(all);window._cur=cur;window._docPrimary=docPrimary;  // 存主订单供切模式重算港口
       var _dlFsOrder=all.filter(function(o){return o&&(String(o.order_no)===orderNo||shortNo(o.order_no)===shortNo(orderNo));})[0]||docPrimary;
       var _dlFs=fsFromOrder(_dlFsOrder)||_dlFsOrder.contract_no||'';var _dlPo=(_dlFsOrder&&_dlFsOrder.customer_po)||orderRaw(_dlFsOrder).customerPO||orderRaw(_dlFsOrder).customer_po||'';
-      window._docBaseName=(_customsMode?'BG-':'IV-')+(_customsMode?(_dlFs||_dlPo):(_dlPo||_dlFs));  // 文件名同No.规则: 报关版IV-FS/客户版IV-PO
+      // 2026-08-04 Damon:「名字帮我改成fs号」→ 下载文件名一律用 FS 主号,与抬头 No. 同源。
+      // ⚠️ 旧规矩(已推翻,别改回去): 报关版IV-FS/客户版IV-PO —— 客户版会出成 IV-CL-14 这种。
+      window._docBaseName=(_customsMode?'BG-':'IV-')+(_dlFs||_dlPo);
       document.title=window._docBaseName;
       window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
       var ps=Array.isArray(d)?d:(d.data||[]);
