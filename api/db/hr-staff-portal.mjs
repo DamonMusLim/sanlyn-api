@@ -14,6 +14,7 @@ import fs from "fs";
 import path from "path";
 import { getPool, setCors } from "./db.js";
 import { verifyToken } from "./auth.js";
+import { restWeekdayOn } from "./hr-rest.mjs";
 import {
   D, PRIVATE_ROOT, agendaFor, reviewPhoto, openChecklist,
   todoFor, saveReceipt, savePrivateIdCard, monthOf,
@@ -109,6 +110,14 @@ export default async function handler(req, res) {
       const pt = await pool.query(
         `SELECT code, label, lat, lng, radius_m FROM hr_checkin_points
           WHERE company_code=$1 AND is_active=true ORDER BY code LIMIT 1`, [me.company_code]);
+      const restWd = await restWeekdayOn(pool, me.company_code, empId, today);
+      const restReq = await pool.query(
+        `SELECT id, to_char(orig_date,'YYYY-MM-DD') AS orig_date,
+                to_char(new_date,'YYYY-MM-DD') AS new_date,
+                reason, status, review_note,
+                to_char(created_at AT TIME ZONE 'Asia/Shanghai','MM-DD HH24:MI') AS created_at
+           FROM hr_rest_change_requests
+          WHERE employee_id=$1 ORDER BY created_at DESC LIMIT 8`, [empId]);
       const todayCk = await pool.query(
         `SELECT id, checkin_at, checkout_at, source FROM hr_staff_checkin
           WHERE employee_ref=$1 AND checkin_date=$2 ORDER BY checkin_at DESC LIMIT 1`, [empId, today]);
@@ -136,6 +145,9 @@ export default async function handler(req, res) {
         month,
         // 打卡点回给前端 —— 开门确认弹窗要拿它算「你离店多远」
         point: pt.rows[0] || null,
+        // 休息日规则（每周几）+ 我的调休申请。规则说了算,员工改不动,只能申请。
+        rest_weekday: restWd,
+        rest_requests: restReq.rows,
         todo: todoFor(me.company_code),
         checklist: await openChecklist(pool, me.company_code, today, "open"),
         checklist_close: await openChecklist(pool, me.company_code, today, "close"),
@@ -309,34 +321,30 @@ export default async function handler(req, res) {
       }
 
       // 选这周的休息日(上六休一,员工自己挑)
-      if (action === "restday") {
-        const day = String(b.date || "").slice(0, 10);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return res.status(400).json({ success: false, error: "日期不对" });
-        const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
-        if (day < today) return res.status(400).json({ success: false, error: "不能选已经过去的日子" });
-
-        // 本周一 ~ 周日
-        const t = new Date(day + "T00:00:00Z");
-        const mon = new Date(t.getTime() - ((t.getUTCDay() + 6) % 7) * 86400000);
-        const days = [];
-        for (let i = 0; i < 7; i++) days.push(new Date(mon.getTime() + i * 86400000).toISOString().slice(0, 10));
-
-        // 整周重排:选中那天休息，其余六天营业班
+      // 调休申请（0804 Damon：「申请后要等审批」）。
+      // 原来这里是 restday —— 员工点一下直接改 hr_shifts，等于自己给自己批假，已拆掉。
+      // 现在只写申请单；批准了由 hr-rest 的 review 去动排班。
+      if (action === "restday" || action === "rest_change") {
+        const od = String(b.orig_date || "");
+        const nd = String(b.new_date || b.date || "");
+        const ok = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x);
+        if (!ok(od) || !ok(nd))
+          return res.status(400).json({ success:false, error:"要选「本来休哪天」和「想换到哪天」" });
+        if (od === nd) return res.status(400).json({ success:false, error:"换的是同一天" });
+        if (nd < today) return res.status(400).json({ success:false, error:"不能把休息改到过去" });
+        const dup = await pool.query(
+          "SELECT id FROM hr_rest_change_requests WHERE employee_id=$1 AND orig_date=$2 AND status='pending'",
+          [empId, od]);
+        if (dup.rows.length)
+          return res.status(409).json({ success:false, error:"这天已经提过一次了，等店长批" });
         await pool.query(
-          "DELETE FROM hr_shifts WHERE employee_id=$1 AND work_date = ANY($2::date[])", [empId, days]);
-        for (const d of days) {
-          const rest = d === day;
-          await pool.query(
-            `INSERT INTO hr_shifts (employee_id, employee_name, store_id, company_code,
-                                    work_date, start_time, end_time, shift_label, is_rest_day, note)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'员工自选')`,
-            [empId, me.name, me.company_code === "JINFANG" ? "jinfang" : "babi", me.company_code,
-             d, rest ? null : "12:00", rest ? null : "22:00", rest ? null : "营业", rest]);
-        }
-        return res.status(200).json({ success: true, message: `已排好，${day.slice(5)} 休息` });
+          `INSERT INTO hr_rest_change_requests
+             (company_code, employee_id, employee_name, orig_date, new_date, reason)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [me.company_code, empId, me.name, od, nd, String(b.reason || "").slice(0, 200) || null]);
+        return res.status(200).json({ success:true, message:"交上去了，等店长批" });
       }
 
-      // 勾掉/取消勾「今天的事」
       if (action === "agenda") {
         const id = parseInt(b.id, 10);
         if (!id) return res.status(400).json({ success: false, error: "缺 id" });
@@ -459,7 +467,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda / restday" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda / rest_change" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
