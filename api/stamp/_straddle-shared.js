@@ -246,7 +246,7 @@ export function rotatedDrawParams(cx, cy, w, h, angleDeg) {
 // Not sourced from customer_stamps — this is a generated personal signature, not a company seal.
 const SIGNATURE_LATIN_FONT = 'Reenie Beanie';
 const SIGNATURE_CN_FONT = 'Liu Jian Mao Cao';
-const SIGNATURE_COLOR = '#152a63';
+const SIGNATURE_COLOR = '#111111'; // 黑色签名(Damon 0804,原深蓝#152a63)
 export const SIGNATURE_ASPECT = 160 / 380; // height/width of the generated canvas below
 
 export async function generateSignaturePng() {
