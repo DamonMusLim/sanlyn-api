@@ -189,7 +189,10 @@ export default async function handler(req, res) {
         // 3) 摄像头抓拍（尽力而为，失败绝不影响打卡）
         let snap = null;
         try {
-          const cr = await fetch("http://127.0.0.1:3721/api/checkin/capture", { signal: AbortSignal.timeout(6000) });
+          // ⚠️ 摄像头只有 mini 够得着,而且腾讯的 127.0.0.1:3721 是本机的 pet-ai-clerk(没这个路由,
+          //    一直静默 404 → 每条打卡都标「无抓拍」)。这里走 tailscale 直连 mini。
+          const CAP = process.env.CHECKIN_CAPTURE_URL || "http://100.87.134.113:3721/api/checkin/capture";
+          const cr = await fetch(CAP, { signal: AbortSignal.timeout(15000) });
           if (cr.ok) { const cd = await cr.json(); snap = cd?.url || cd?.pic_url || null; }
         } catch (e) { /* 摄像头没装店/离线都算正常，不报错 */ }
         if (!snap) suspicious.push("无抓拍");
