@@ -1452,6 +1452,44 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       console.error('[order-create-v2] order_line_items batch insert failed (non-fatal):', liErr.message);
     }
 
+    // ── 2026-08-04 Damon: 建单时把三个公司外键一起写进去 ──
+    // 病根: M036 那次回填是一次性的,建单流程从没写过这三个 ID。
+    //       结果 07-25 之后的单全缺,单据按公司ID关联(idjoin)对它们一律失效,静默退回文本兜底。
+    // 认公司只按「码」和「工商全名」,不按英文名猜 —— 早上把 XIAMEN PET BABY 认成洋宝宝就是猜名字栽的。
+    // 解析不到不阻断建单(单据侧有文本兜底),但必须在响应里说出来,不许无声无息。
+    var _companyLinkWarn = [];
+    try {
+      var _lookupCompany = async function (label, byCode, byName) {
+        if (byCode) {
+          var rc = await pool.query("SELECT id FROM companies WHERE code = $1 LIMIT 1", [String(byCode).trim()]);
+          if (rc.rows.length) return rc.rows[0].id;
+        }
+        if (byName) {
+          var rn = await pool.query("SELECT id FROM companies WHERE name_cn = $1 LIMIT 1", [String(byName).trim()]);
+          if (rn.rows.length) return rn.rows[0].id;
+        }
+        _companyLinkWarn.push(label + "没能对到公司表(码=" + (byCode || "无") + " 名=" + (byName || "无") + ")");
+        return null;
+      };
+      var _cusId = await _lookupCompany("客户", companyCode, companyNameCN);
+      var _issId = await _lookupCompany("开票公司", null, issuingCompany);
+      var _facId = await _lookupCompany("工厂", factoryCompanyCode, _mfrName || factory);
+      if (_cusId || _issId || _facId) {
+        await pool.query(
+          "UPDATE orders SET customer_company_id = COALESCE($1, customer_company_id),"
+          + " issuing_company_id = COALESCE($2, issuing_company_id),"
+          + " factory_company_id = COALESCE($3, factory_company_id) WHERE id = $4",
+          [_cusId, _issId, _facId, order.id]
+        );
+      }
+      if (_companyLinkWarn.length) {
+        console.warn("[order-create-v2] 公司外键未全部解析 order_no=" + (order.order_no || order.id) + " → " + _companyLinkWarn.join("; "));
+      }
+    } catch (e) {
+      _companyLinkWarn.push("写公司外键时出错: " + e.message);
+      console.error("[order-create-v2] 公司外键写入失败:", e.message);
+    }
+
     // Save trade_terms to order row + update customer's last-used value (non-fatal)
     if (body.trade_terms) {
       try {
@@ -1606,6 +1644,8 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       order: isAdmin ? order : orderPublic,
       summary: isAdmin ? summaryFull : summaryPublic,
       credit: creditInfo,   // S89: client may show "pending approval" banner
+      // 2026-08-04: 公司外键没对上要说出来,别只写日志(日志没人看=等于静默)
+      company_link_warnings: (typeof _companyLinkWarn !== "undefined" && _companyLinkWarn.length) ? _companyLinkWarn : undefined,
     });
   } catch (err) {
     console.error("[order-create-v2]", err);

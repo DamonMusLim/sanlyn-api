@@ -5,6 +5,7 @@
 // DELETE ?id=xxx                  → remove a line item
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { syncOrderFromOLI } from "./order-sync-from-oli.js";
 
 var ENSURE_TABLE = `
   CREATE TABLE IF NOT EXISTS order_line_items (
@@ -53,6 +54,18 @@ async function enrichFromMaster(pool, sku) {
     );
     return r.rows[0] || {};
   } catch (e) { return {}; }
+}
+
+async function syncParentOrder(pool, orderId) {
+  if (!orderId) return;
+  try {
+    await syncOrderFromOLI(pool, orderId);
+  } catch (e) {
+    console.error("[order-line-items] syncOrderFromOLI failed", {
+      orderId,
+      error: e.message,
+    });
+  }
 }
 
 export default async function handler(req, res) {
@@ -135,6 +148,7 @@ export default async function handler(req, res) {
           row.vat_rate, row.tax_rebate_rate, row.declare_amount_per_box, row.sort_order,
         ]
       );
+      await syncParentOrder(pool, ins.rows[0].order_id);
       return res.status(200).json({ ok: true, data: ins.rows[0] });
     } catch (e) {
       return res.status(500).json({ error: e.message });
@@ -186,6 +200,7 @@ export default async function handler(req, res) {
         vals
       );
       if (!upd.rows.length) return res.status(404).json({ error: "Not found" });
+      await syncParentOrder(pool, upd.rows[0].order_id);
       return res.status(200).json({ ok: true, data: upd.rows[0] });
     } catch (e) {
       return res.status(500).json({ error: e.message });
@@ -198,6 +213,7 @@ export default async function handler(req, res) {
     if (!id) return res.status(400).json({ error: "id required" });
     try {
       var del = await pool.query("DELETE FROM order_line_items WHERE id = $1 RETURNING order_id", [id]);
+      if (del.rows.length) await syncParentOrder(pool, del.rows[0].order_id);
       return res.status(200).json({ ok: true });
     } catch (e) {
       return res.status(500).json({ error: e.message });

@@ -11,7 +11,46 @@ function applyPageFilter(){
 }
 function tok(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
 function authH(){var h={'Content-Type':'application/json'};var t=tok();if(t)h.Authorization='Bearer '+t;return h;}
+
+// ── 2026-08-04 Damon「根治」: 认证失败绝不许伪装成「订单未找到」 ──
+// 病根: loadOrder 只做 r.json(),完全不看 HTTP 状态码。401 返回 {"error":"Unauthorized"}
+//       → rows=[] → 报「订单 XX 未找到或无权限」。Damon 看到这句第一反应是数据坏了,
+//       实际是 token 空/过期。今天他就这么撞了一次(48-CL-17,地址栏 &token= 后面是空的)。
+function AUTH_ERR(){var e=new Error('__AUTH__');e.__auth=true;return e;}
+function chkAuth(r){
+  if(r.status===401||r.status===403) throw AUTH_ERR();
+  return r.json();
+}
+function showAuthDead(){
+  // 2026-08-04 实测: 本页在 api.sanlyn.cn，主站在 ai.sanlyn.cn —— 两个不同的域。
+  // 浏览器 localStorage 按域隔离，本页的 localStorage 永远是空的([]，实测),
+  // 所以它读不到主站登录态,只认网址里的 ?token=。
+  // ⛔ 上一版写「去重新登录」是错的:登录多少次都不会让这条链接生效,必须重新生成带 token 的链接。
+  var app='https://ai.sanlyn.cn/data#customs';
+  var e=document.getElementById('errBanner');
+  if(e){
+    e.style.display='block';
+    e.innerHTML='🔗 <b>这条链接缺少访问凭证，打不开</b>'
+      +'<div style="font-size:12.5px;margin-top:6px;font-weight:400;line-height:1.7">'
+      +'网址末尾的 <code>token=</code> 是空的。<br>'
+      +'本页在 <b>api.sanlyn.cn</b>，而登录信息存在 <b>ai.sanlyn.cn</b> —— 两个不同的域，'
+      +'浏览器不允许互相读取。<b>所以重新登录也没用</b>，必须回系统里重新生成一条带凭证的链接。'
+      +'</div>'
+      +'<div style="margin-top:10px"><a href="'+app+'" target="_blank" '
+      +'style="display:inline-block;background:#2563eb;color:#fff;padding:7px 16px;'
+      +'border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">'
+      +'去报关主表重新生成 ➜</a>'
+      +'<span style="font-size:11.5px;color:#64748b;margin-left:10px">'
+      +'在那边点单据按钮，生成的链接会自动带上凭证</span></div>';
+  }
+  var i2=document.getElementById('infoBanner'); if(i2)i2.style.display='none';
+  // 2026-08-04 Damon:「港口还在」——出错时别再画半成品单据骨架。
+  // 空表头+空港口条会让人以为是数据丢了(他就是这么判断的),整张藏起来只留提示。
+  try{ document.querySelectorAll('.doc-page').forEach(function(el){el.style.display='none';}); }catch(_){}
+  try{ var tb=document.querySelector('.toolbar'); if(tb) tb.style.display='none'; }catch(_){}
+}
 function setT(id,v){var e=document.getElementById(id);if(e&&v!=null&&String(v).trim().length)e.textContent=v;}
+function setT0(id,v){var e=document.getElementById(id);if(e)e.textContent=v==null?'':String(v);}
 function shortNo(no){return String(no||'').replace(/^\d+-/,'');}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function fmt(n,d){var x=Number(n)||0;d=(d==null?2:d);return x.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});}
@@ -30,7 +69,7 @@ function firstText(v){
   if(!v)return '';
   if(typeof v==='string')return v;
   if(Array.isArray(v))return v.map(firstText).filter(Boolean).join('\n');
-  if(typeof v==='object')return v.en||v.address_en||v.full_en||v.full||v.cn||v.address||v.text||v.value||Object.keys(v).map(function(k){return firstText(v[k]);}).filter(Boolean)[0]||'';
+  if(typeof v==='object')return v.en||v.full_en||v.full||v.cn||v.address||v.text||v.value||Object.keys(v).map(function(k){return firstText(v[k]);}).filter(Boolean)[0]||'';
   return String(v||'');
 }
 function declName(p){return p.declarationName||p.declaration_name||p.blDescription||p.bl_description||'宠物食品';}
@@ -48,20 +87,20 @@ function amount(p){var q=qty(p),u=unitPrice(p);return Number(p.subtotal||(q*u))|
 
 function loadOrder(no){
   return fetch(API+'/api/db/orders?order_no='+encodeURIComponent(no),{headers:authH()})
-    .then(function(r){return r.json();}).then(function(d){
+    .then(chkAuth).then(function(d){
       var rows=d.data||d.orders||(Array.isArray(d)?d:[]);
       if(rows.length)return rows;
-      return fetch(API+'/api/db/orders?contract_no='+encodeURIComponent(no),{headers:authH()}).then(function(r){return r.json();}).then(function(d){return d.data||d.orders||(Array.isArray(d)?d:[]);});
+      return fetch(API+'/api/db/orders?contract_no='+encodeURIComponent(no),{headers:authH()}).then(chkAuth).then(function(d){return d.data||d.orders||(Array.isArray(d)?d:[]);});
     });
 }
 function loadOrderLineItems(order){
   var id=Number(order&&order.id);
   if(!id)return Promise.resolve([]);
   return fetch(API+'/api/db/order-line-items?order_id='+encodeURIComponent(id),{headers:authH()})
-    .then(function(r){return r.json();}).then(arr);
+    .then(chkAuth).then(arr);
 }
 function fetchProductMaster(){
-  return fetch(API+'/api/db/products?limit=5000',{headers:authH()}).then(function(r){return r.json();}).then(arr).then(function(rows){
+  return fetch(API+'/api/db/products?limit=5000',{headers:authH()}).then(chkAuth).then(arr).then(function(rows){
     var m={};rows.forEach(function(p){
       var v=String(p.product_name||p.productName||p.name||p.name_en||'').trim();
       var meta={name:v,barcode:String(p.barcode||p.bar_code||'').trim(),factory_code:String(p.factory_code||p.factoryCode||'').trim(),decl_en:String(p.declaration_name_en||'').trim()};
@@ -120,6 +159,32 @@ function customerDocRef(o){
   var r=orderRaw(o);
   return (o&&o.customer_po)||r.customerPO||r.customer_po||fsFromOrder(o)||(o&&o.contract_no)||'';
 }
+function intId(v){var n=parseInt(v,10);return isFinite(n)&&n>0?n:null;}
+function collectCompanyIds(rows){
+  var ids=[];
+  (rows||[]).forEach(function(o){
+    ['issuing_company_id','customer_company_id','factory_company_id'].forEach(function(k){
+      var id=intId(o&&o[k]);if(id&&ids.indexOf(id)===-1)ids.push(id);
+    });
+  });
+  return ids;
+}
+function fetchCompaniesByIds(ids){
+  ids=(ids||[]).filter(Boolean);
+  if(!ids.length)return Promise.resolve({});
+  return fetch(API+'/api/db/companies?ids='+encodeURIComponent(ids.join(',')),{headers:authH()}).then(chkAuth).then(function(d){
+    var m={};arr(d).forEach(function(row){var id=intId(row&&row.id);if(id)m[id]=row;});
+    return m;
+  }).catch(function(){return {};});
+}
+function companyById(map,id){return (map||{})[intId(id)]||null;}
+function companyName(c){return c?(c.name_en||c.name_cn||''):'';}
+// 2026-08-04 Damon: 给客户的单据抬头必须英文地址。
+// 回退来源: 07-24 的 idjoin 改成按公司ID取 companies.address(中文),把原来 seller.address_en 顶掉了。
+// 顺序: 公司表英文地址 → 公司表 addresses 里的英文 → 中文(实在没有英文才用,总比空好)。
+// companies 表实测【只有 address(中文)】,没有 address_en 列 —— 别指望它出英文地址。
+// 英文地址的真源是 seller_profiles.address_en(实测 code=petbaby 有完整英文)。
+function companyAddr(c){ return c ? (firstText(c.address) || '') : ''; }
 
 // 明细行（切「明细模式」时用），ctnMap = {contract_no/order_id → container rows[]}
 function detailRows(all,ctnMap){
@@ -214,11 +279,16 @@ function renderPriced(pfx,agg,rows,cur){
   document.getElementById(pfx+'-body').innerHTML=body;
 }
 
-function fillHeader(pfx,primary,all,seller,cur,port){
-  setT(pfx+'-sellerName',(seller&&(seller.name_en||seller.name_cn))||primary.issuing_company||'XIAMEN PET BABY IMPORT AND EXPORT CO., LTD');
-  setT(pfx+'-sellerAddr',(seller&&(seller.address_en||seller.address))||'4th Floor, 26-9# Huarong Road, Huli, Xiamen, China');
-  setT(pfx+'-buyerName',primary.customer||primary.company_name_en||'');
-  setT(pfx+'-buyerAddr',primary._buyerAddr||primary.customer_address||'');
+function fillHeader(pfx,primary,all,seller,cur,port,companyMap){
+  var sellerCo=companyById(companyMap,primary.issuing_company_id);
+  var buyerCo=companyById(companyMap,primary.customer_company_id);
+  setT0(pfx+'-sellerName',companyName(sellerCo)||(seller&&(seller.name_en||seller.name_cn))||primary.issuing_company||'');
+  // 2026-08-04 Damon:「顶上的中文名改成英文地址」——给客户的单据抬头必须英文。
+  // 回退来源: 07-24 的 idjoin 改成优先取 companies.address(中文),把 seller_profiles.address_en 顶掉了。
+  // 顺序: 卖方档案英文 → 卖方档案中文 → 公司表中文(实在没有才用,总比空好)。
+  setT0(pfx+'-sellerAddr', (seller&&(firstText(seller.address_en)||firstText(seller.address))) || companyAddr(sellerCo) || '');
+  setT0(pfx+'-buyerName',companyName(buyerCo)||primary.customer||primary.company_name_en||'');
+  setT0(pfx+'-buyerAddr',primary._buyerAddr||companyAddr(buyerCo)||primary.customer_address||'');
   var praw=orderRaw(primary);
   // 多单合并只显示【主订单(URL order_no那个=primary)】的一个FS,不再把全部FS用 / 拼(Damon 2026-07-08定案);单单自然=它自己的FS/PO
   // 主FS取【URL order_no 指定的那单】(Damon 2026-07-08:多单合并显示主订单的FS),不是排序后的all[0];找不到才退primary
@@ -226,9 +296,21 @@ function fillHeader(pfx,primary,all,seller,cur,port){
   var _fsOrder=all.filter(function(o){return o&&(String(o.order_no)===_urlNo||shortNo(o.order_no)===shortNo(_urlNo));})[0]||primary;
   var _fsNum=fsFromOrder(_fsOrder)||_fsOrder.fs_no||primary.fs_no||praw.fs_no||_fsOrder.contract_no||'';
   var _poNum=(_fsOrder&&_fsOrder.customer_po)||orderRaw(_fsOrder).customerPO||orderRaw(_fsOrder).customer_po||'';
-  var fs=(_customsMode?(_fsNum||_poNum):(_poNum||_fsNum));  // Damon 2026-07-09: 报关版=IV-FS, 客户版=IV-PO；缺真PO退FS，绝不退内部order_no
+  // 2026-08-04 Damon 改口径:「我说的是FS号码，订单主表一直有唯一值直接从订单主表带过来」
+  // → No. 一律用订单主表的 FS 合同号(contract_no),报关版/客户版统一,不再看 customer_po。
+  // ⚠️ 这是推翻 2026-07-09 那条「客户版=IV-PO」的旧规矩(原注释保留在下行,别当成 bug 改回去)。
+  //    旧: var fs=(_customsMode?(_fsNum||_poNum):(_poNum||_fsNum));  报关版=IV-FS, 客户版=IV-PO
+  // ⚠️ customer_po 不是脏数据:按录单规矩它=「我们对该客户的PO码」(CP-6/CL-14),必填。
+  //    只是它不该占 No. 这一栏 —— No. 是我方单据号,认 FS。
+  var fs=_fsNum||_poNum;
   setT(pfx+'-no',fs);
-  setT(pfx+'-order',uniq(all.map(function(o){return shortNo(o.order_no);})).join(' / '));
+  // 2026-08-04 Damon:「FS号只有一个代表！po号：有3个都要显示」
+  // → No. = 一票一个 FS 主号(上面那行); Order = 本票每个柜/每张单各自的 PO 号,全列出来。
+  // 取不到 PO 的退回短订单号(如 CL-14),绝不留空、绝不用 FS 顶替(否则又变成一堆 FS 看不出几个柜)。
+  setT(pfx+'-order',uniq(all.map(function(o){
+    var r=orderRaw(o);
+    return o.customer_po||r.customerPO||r.customer_po||shortNo(o.order_no);
+  })).join(' / '));
   setT(pfx+'-date',(primary.order_date||'').slice(0,10));
   setT(pfx+'-port',portLine(primary));  // 分模式:报关版XIAMEN/客户版实际起运港(不再用固定port参数)
   setT(pfx+'-cur',cur);
@@ -242,7 +324,7 @@ function fillPriced(pfx,seller,cur){
     if(seller){
       var acct=(cur==='USD')?(seller.usd_account||''):(seller.rmb_account||'');
       bank.innerText=['Beneficiary: '+(seller.name_en||seller.name_cn||''),'Bank: '+(seller.bank_name||''),'A/C No. ('+cur+'): '+acct,'SWIFT: '+(seller.bank_swift||''),(seller.bank_addr?'Bank Address: '+seller.bank_addr:'')].filter(function(s){return s&&!/: $/.test(s);}).join('\n')+'\n* Please verify bank info before payment.';
-    }else{bank.innerText='Beneficiary: XIAMEN PET BABY IMPORT AND EXPORT CO., LTD\nBank: BANK OF CHINA XIAMEN WENZAO SUB-BRANCH\nA/C No. (CNY): 431279918006\nSWIFT: BKCHCNBJ73A\nBank Address: No. 40 North Hubin Road, Xiamen, China\n* Please verify bank info before payment.';}
+    }else{bank.innerText='';}
   }
   var te=document.getElementById(pfx+'-terms');
   if(te&&!te.textContent.trim()){
@@ -281,14 +363,10 @@ function loadFactoryPorts(){
     (d&&d.data||[]).forEach(function(row){if(row&&row.company_code)_factoryPorts[row.company_code]=row.ports||[];});
   }).catch(function(){});
 }
-function fetchBuyerAddr(primary){
+function fetchBuyerAddr(primary,companyMap){
   if((primary.customer_address||'').trim())return Promise.resolve('');
-  var code=primary.company_code||'';
-  if(!code)return Promise.resolve('');
-  return fetch(API+'/api/db/companies?q='+encodeURIComponent(code),{headers:authH()}).then(function(r){return r.json();}).then(function(d){
-    var rows=arr(d),row=rows.find(function(x){return x.code===code||x.company_code===code;})||rows[0]||{};
-    return firstText(row.address_en)||firstText(row.address)||firstText(row.addresses)||firstText(row.raw&&row.raw.address)||'';
-  }).catch(function(){return '';});
+  var row=companyById(companyMap,primary.customer_company_id);
+  return Promise.resolve(companyAddr(row)||firstText(row&&row.addresses)||firstText(row&&row.raw&&row.raw.address)||'');
 }
 function loadContainerInfo(all){
   if(!(all||[]).length)return Promise.resolve({});
@@ -300,7 +378,7 @@ function loadContainerInfo(all){
       if(rows&&rows.length)return {order:o,rows:rows};
       if(!no)return {order:o,rows:[]};
       return fetch(API+'/api/db/container-bookings?contract_no='+encodeURIComponent(no),{headers:authH()})
-        .then(function(r){return r.json();}).then(function(d){return {order:o,rows:arr(d)};})
+        .then(chkAuth).then(function(d){return {order:o,rows:arr(d)};})
         .catch(function(){return {order:o,rows:[]};});
     });
   })).then(function(sets){
@@ -371,7 +449,9 @@ function applySeal(target,url,name){
       if(hint){hint.style.display='';hint.textContent='章图加载失败 · 点击重选';hint.style.color='#c00';hint.style.fontWeight='700';}
     };
     img.crossOrigin='anonymous';img.src=url;img.style.display='block';img.style.transform='';
-    if(hint){hint.style.display='';hint.textContent='已选: '+(name||'印章')+' · 点击修改';hint.style.color='#16a34a';hint.style.fontWeight='700';}
+    // 2026-08-04 Damon: 盖了章就别再显示绿字提示 —— 它会一起印进 PDF 发到客户手里。
+    // 章加载失败那条提示保留(那是真要让人看见的)。
+    if(hint){hint.style.display='none';hint.textContent='';}
     try{localStorage.setItem(sealKey(t),JSON.stringify({url:url,name:name||''}));}catch(e){}
     initRotHandle(t);
   });
@@ -402,7 +482,7 @@ function renderLocalStamps(){
 function selLocal(i){loadLocalStamps();applySeal(_sealTarget,_localStamps[i].url,_localStamps[i].name);closeModal();}
 function loadDasStamps(){
   var g=document.getElementById('stampGrid');g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">加载中…</div>';
-  fetch(API+'/api/db/customer-stamps',{headers:authH()}).then(function(r){return r.json();}).then(function(d){
+  fetch(API+'/api/db/customer-stamps',{headers:authH()}).then(chkAuth).then(function(d){
     var stamps=Array.isArray(d)?d:(d.stamps||d.data||[]);
     if(!stamps.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">DAS暂无印章</div>';return;}
     _stamps=stamps;
@@ -450,11 +530,13 @@ function init(){
   var orderNo=qp('order_no')||qp('orderNo');
   var onlyContainer=qp('container_no');
   if(!orderNo){banner('err','请加 ?order_no=XX&token=YY');return;}
+  // 2026-08-04: token 空就当场停,别再照常打开、跑一圈、然后报一句「订单未找到」误导人。
+  if(!tok()){showAuthDead();return;}
   var sibs=(qp('ids')||'').split(',').map(function(s){return s.trim();}).filter(function(s){return s&&s!==orderNo;});
   banner('info','正在拉取订单数据…');
   var _fpP=loadFactoryPorts();  // 工厂就近港map(起运港pol空时兜底);单独await,不塞进下面Promise.all以免打乱res索引(res.slice(2)是兄弟单)
   Promise.all([loadOrder(orderNo),fetchProductMaster()].concat(sibs.map(loadOrder))).then(function(res){
-    if(!res[0].length)throw new Error('订单 "'+orderNo+'" 未找到或无权限');
+    if(!res[0].length)throw new Error('订单 "'+orderNo+'" 在系统里查不到 —— 确认单号是否正确');
     _pmMap=res[1]||{};
     var primary=res[0][0];
     var all=[primary].concat(res.slice(2).map(function(r){return r[0];}).filter(Boolean));
@@ -462,16 +544,18 @@ function init(){
     document.getElementById('orderLabel').textContent=orderNo;
     return _fpP.then(function(){return Promise.all(all.map(loadOrderLineItems));}).then(function(lineSets){
       lineSets.forEach(function(lines,i){all[i]._lineItems=lines;});
-      var sellerP=fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).catch(function(){return [];});
-      var addrP=fetchBuyerAddr(primary);
+      var companyP=fetchCompaniesByIds(collectCompanyIds(all));
+      var sellerP=fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(chkAuth).catch(function(){return [];});
       var ctnP=(onlyContainer||!_customsMode)?loadContainerInfo(all):Promise.resolve({});
-      return Promise.all([sellerP,addrP,ctnP]).then(function(rr){
-      var d=rr[0],addr=rr[1],ctnMap=rr[2]||{};if(addr)primary._buyerAddr=addr;
+      return Promise.all([sellerP,companyP,ctnP]).then(function(rr){
+      var d=rr[0],companyMap=rr[1]||{},ctnMap=rr[2]||{};
       if(onlyContainer){
         all=all.filter(function(o){return orderHasContainer(o,ctnMap,onlyContainer);});
         if(!all.length)throw new Error('该柜没有匹配订单: '+onlyContainer);
       }
       var docPrimary=all[0]||primary,cur=docPrimary.currency||primary.currency||'CNY',port=buildPort(docPrimary)||buildPort(primary);
+      return fetchBuyerAddr(docPrimary,companyMap).then(function(addr){
+      if(addr)docPrimary._buyerAddr=addr;
       var _praw=orderRaw(docPrimary);
       window._freight=Number(docPrimary.inland_freight||_praw.inland_freight||0)||0;
       window._freightLabel=docPrimary.inland_freight_label||_praw.inland_freight_label||'提货运费';
@@ -483,15 +567,53 @@ function init(){
       document.title=window._docBaseName;
       window._ctnMap=ctnMap;window._rows=detailRows(all,ctnMap);
       var ps=Array.isArray(d)?d:(d.data||[]);
-      var sp=(docPrimary.seller_code&&ps.find(function(x){return x.code===docPrimary.seller_code;}))||ps.find(function(x){return x.name_cn===docPrimary.issuing_company||x.name_en===docPrimary.issuing_company;})||ps.find(function(x){return x.is_default;});
-      ['pl','sc','iv'].forEach(function(pfx){fillHeader(pfx,docPrimary,all,sp,cur,port);});
+      var issuingCo=companyById(companyMap,docPrimary.issuing_company_id);
+      // ── 2026-08-04 Damon「为什么这个会这样」根治 ──
+      // 病根: seller_profiles 里 code=BABI 那条是空壳(地址/银行/印章全空),
+      //       而 companies.id=37 的 code 正好也是 BABI。
+      //       订单没填 seller_code 时,选择链第2步按公司码匹配 → 选中空壳 → 抬头退回中文地址。
+      //       48-CL-17 有 seller_code=petbaby 所以正常,79-CL-14 没填就中招 —— 同一家公司两种结果。
+      // 修法: 匹配到的档案必须【有内容】才算数,空壳一律跳过,继续往下找。
+      var _spHasContent=function(x){
+        return !!(x && (x.address_en||x.address||x.bank_name||x.usd_account||x.rmb_account||x.seal_url));
+      };
+      var _spPick=function(pred){ var hit=ps.filter(pred); return hit.find(_spHasContent)||null; };
+      // ⛔ 只认【确实属于本单开票公司】的档案。找不到就不许出单。
+      // 2026-08-04 实测事故: TLN-TRK-20260701 开票方是义乌淘蓝,但档案表里没有淘蓝,
+      //   原来的兜底(is_default / 随便找一个有内容的)抓到了巴匕 →
+      //   单据抬头写「Yiwu Taolan」,地址/收款账号却是巴匕的,还盖上了巴匕的公章。
+      //   客户会把钱付到错的公司,而且等于在别家发票上盖我们的章。
+      // 宁可阻断不可静默兜底 —— 缺档案就报错,别拿另一家公司的身份顶上。
+      var sp = _spPick(function(x){return docPrimary.seller_code&&x.code===docPrimary.seller_code;})
+            || _spPick(function(x){return issuingCo&&issuingCo.code&&x.code===issuingCo.code;})
+            || _spPick(function(x){return x.name_cn===docPrimary.issuing_company||x.name_en===docPrimary.issuing_company;})
+            || null;
+      if(!sp){
+        var _who = docPrimary.issuing_company || (issuingCo&&(issuingCo.name_cn||issuingCo.name_en)) || '本单开票公司';
+        var _eb=document.getElementById('errBanner');
+        if(_eb){
+          _eb.style.display='block';
+          _eb.innerHTML='🏢 <b>缺少卖方档案，单据不能出</b>'
+            +'<div style="font-size:12.5px;margin-top:6px;font-weight:400;line-height:1.7">'
+            +'开票公司是 <b>'+esc(_who)+'</b>，但系统里没有它的卖方档案'
+            +'（地址 / 银行账号 / 公章）。<br>'
+            +'⛔ 系统不会拿别家公司的账号和公章顶上 —— 那样客户会把钱付到错的公司。<br>'
+            +'请先在「卖方档案」里补一条 <b>'+esc(_who)+'</b> 的资料，再回来出单。'
+            +'</div>';
+        }
+        try{ document.querySelectorAll('.doc-page').forEach(function(el){el.style.display='none';}); }catch(_){}
+        try{ var _tb=document.querySelector('.toolbar'); if(_tb) _tb.style.display='none'; }catch(_){}
+        return;
+      }
+      ['pl','sc','iv'].forEach(function(pfx){fillHeader(pfx,docPrimary,all,sp,cur,port,companyMap);});
       fillPriced('sc',sp,cur);fillPriced('iv',sp,cur);
       renderAll();
       if(sp&&sp.seal_url)applySeal('all:seller',sp.seal_url,sp.name_en||sp.name_cn||'Seller seal');
       banner('','');
       });
+      });
     });
-  }).catch(function(e){banner('err',e.message);});
+  }).catch(function(e){ if(e&&e.__auth){showAuthDead();return;} banner('err',e.message); });
   ['pl','sc','iv'].forEach(function(p){['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem(sealKey(p+':'+w))||'null');if(s&&s.url)applySeal(p+':'+w,s.url,s.name);}catch(e){}});});
 }
 if(/^(freight|portcharge)$/.test(String(qp("page")||"").toLowerCase())){

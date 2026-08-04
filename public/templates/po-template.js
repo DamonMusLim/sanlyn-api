@@ -5,6 +5,44 @@ function qp(n){return new URLSearchParams(location.search).get(n)||'';}
 function getToken(){try{return qp('token')||localStorage.getItem('sanlyn_jwt')||localStorage.getItem('sanlyn_token')||'';}catch(e){return '';}}
 function authH(){var t=getToken();var h={'Content-Type':'application/json'};if(t)h['Authorization']='Bearer '+t;return h;}
 
+// ── 2026-08-04 Damon「根治」: 认证失败绝不许伪装成「订单未找到」 ──
+// 病根: loadOrder 只做 r.json(),完全不看 HTTP 状态码。401 返回 {"error":"Unauthorized"}
+//       → rows=[] → 报「订单 XX 未找到或无权限」。Damon 看到这句第一反应是数据坏了,
+//       实际是 token 空/过期。今天他就这么撞了一次(48-CL-17,地址栏 &token= 后面是空的)。
+function AUTH_ERR(){var e=new Error('__AUTH__');e.__auth=true;return e;}
+function chkAuth(r){
+  if(r.status===401||r.status===403) throw AUTH_ERR();
+  return r.json();
+}
+function showAuthDead(){
+  // 2026-08-04 实测: 本页在 api.sanlyn.cn，主站在 ai.sanlyn.cn —— 两个不同的域。
+  // 浏览器 localStorage 按域隔离，本页的 localStorage 永远是空的([]，实测),
+  // 所以它读不到主站登录态,只认网址里的 ?token=。
+  // ⛔ 上一版写「去重新登录」是错的:登录多少次都不会让这条链接生效,必须重新生成带 token 的链接。
+  var app='https://ai.sanlyn.cn/data#customs';
+  var e=document.getElementById('errBanner');
+  if(e){
+    e.style.display='block';
+    e.innerHTML='🔗 <b>这条链接缺少访问凭证，打不开</b>'
+      +'<div style="font-size:12.5px;margin-top:6px;font-weight:400;line-height:1.7">'
+      +'网址末尾的 <code>token=</code> 是空的。<br>'
+      +'本页在 <b>api.sanlyn.cn</b>，而登录信息存在 <b>ai.sanlyn.cn</b> —— 两个不同的域，'
+      +'浏览器不允许互相读取。<b>所以重新登录也没用</b>，必须回系统里重新生成一条带凭证的链接。'
+      +'</div>'
+      +'<div style="margin-top:10px"><a href="'+app+'" target="_blank" '
+      +'style="display:inline-block;background:#2563eb;color:#fff;padding:7px 16px;'
+      +'border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">'
+      +'去报关主表重新生成 ➜</a>'
+      +'<span style="font-size:11.5px;color:#64748b;margin-left:10px">'
+      +'在那边点单据按钮，生成的链接会自动带上凭证</span></div>';
+  }
+  var i2=document.getElementById('infoBanner'); if(i2)i2.style.display='none';
+  // 2026-08-04 Damon:「港口还在」——出错时别再画半成品单据骨架。
+  // 空表头+空港口条会让人以为是数据丢了(他就是这么判断的),整张藏起来只留提示。
+  try{ document.querySelectorAll('.doc-page').forEach(function(el){el.style.display='none';}); }catch(_){}
+  try{ var tb=document.querySelector('.toolbar'); if(tb) tb.style.display='none'; }catch(_){}
+}
+
 function initRotHandle(who){
   var key=who==='buyer'?'Buyer':'Seller';
   var area=document.getElementById('seal'+key),img=document.getElementById('seal'+key+'Img');
@@ -64,7 +102,7 @@ function renderLocalStamps(){
 function selLocal(i){loadLocalStamps();applySeal(_sealTarget,_localStamps[i].url,_localStamps[i].name);closeModal();}
 function loadDasStamps(){
   var g=document.getElementById('stampGrid');g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">加载中…</div>';
-  fetch(API+'/api/db/customer-stamps',{headers:authH()}).then(function(r){return r.json();}).then(function(d){
+  fetch(API+'/api/db/customer-stamps',{headers:authH()}).then(chkAuth).then(function(d){
     var stamps=Array.isArray(d)?d:(d.stamps||d.data||[]);
     if(!stamps.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;color:#94a3b8;padding:20px">DAS暂无印章</div>';return;}
     _stamps=stamps;
@@ -120,11 +158,11 @@ function appendText(id,val){if(!val)return;var el=document.getElementById(id);if
 
 function loadOrder(no){
   return fetch(API+'/api/db/orders?order_no='+encodeURIComponent(no),{headers:authH()})
-    .then(function(r){return r.json();})
+    .then(chkAuth)
     .then(function(d){
       var rows=d.data||d.orders||(Array.isArray(d)?d:[]);
       // fallback: try contract_no if order_no finds nothing
-      if(!rows.length) return fetch(API+'/api/db/orders?contract_no='+encodeURIComponent(no),{headers:authH()}).then(function(r){return r.json();}).then(function(d){return d.data||d.orders||(Array.isArray(d)?d:[]);});
+      if(!rows.length) return fetch(API+'/api/db/orders?contract_no='+encodeURIComponent(no),{headers:authH()}).then(chkAuth).then(function(d){return d.data||d.orders||(Array.isArray(d)?d:[]);});
       return rows;
     });
 }
@@ -136,13 +174,15 @@ function init(){
     document.getElementById('poBody').innerHTML='<tr><td colspan="8" style="text-align:center;padding:14px;color:#64748b;border:1px solid #bbb">未传 order_no，请手动填写或加 ?order_no=XX&token=YY</td></tr>';
     hideBanner();return;
   }
+  // 2026-08-04: token 空就当场停,别跑一圈再报「订单未找到」。
+  if(!getToken()){showAuthDead();return;}
   showBanner('info','正在加载订单数据…');
   var siblingNos=idsRaw?idsRaw.split(',').map(function(s){return s.trim();}).filter(function(s){return s&&s!==orderNo;}):[];
   var allFetches=[loadOrder(orderNo)];
   siblingNos.forEach(function(no){allFetches.push(loadOrder(no));});
   Promise.all(allFetches).then(function(results){
     var primaryRows=results[0];
-    if(!primaryRows.length)throw new Error('订单 "'+orderNo+'" 未找到或无权限');
+    if(!primaryRows.length)throw new Error('订单 "'+orderNo+'" 在系统里查不到 —— 确认单号是否正确');
     var primary=primaryRows[0];
     window._poPrimary=primary;
     // Fill header fields from primary order
@@ -159,12 +199,12 @@ function init(){
     setText('sellerName',primary.factory||'');
     // 税号/开户行不在订单行上：买方按 seller_code 查我方主体，卖方按工厂名查 companies
     var _sc=primary.seller_code||'';
-    fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(function(r){return r.json();}).then(function(d){
+    fetch(API+'/api/db/seller-profiles',{headers:authH()}).then(chkAuth).then(function(d){
       var ps=Array.isArray(d)?d:(d.data||[]);
       var p=(_sc&&ps.find(function(x){return x.code===_sc;}))||ps.find(function(x){return x.name_cn===primary.issuing_company;})||ps.find(function(x){return x.is_default;});
       if(p){setText('buyerName',p.name_cn||'');setText('buyerTaxNo',p.tax_no||'');setText('buyerBank',p.bank_name_cn||p.bank_name||'');setText('buyerAccount',p.rmb_account||'');}
     }).catch(function(){});
-    if(primary.factory)fetch(API+'/api/db/companies?q='+encodeURIComponent(primary.factory),{headers:authH()}).then(function(r){return r.json();}).then(function(d){
+    if(primary.factory)fetch(API+'/api/db/companies?q='+encodeURIComponent(primary.factory),{headers:authH()}).then(chkAuth).then(function(d){
       var cs=Array.isArray(d)?d:(d.data||[]);
       var c=cs.find(function(x){return x.name_cn===primary.factory;})||cs[0];
       if(c){setText('sellerName',c.name_cn||'');setText('sellerTaxNo',c.tax_id||c.tax_no||'');setText('sellerBank',c.bank_name||'');setText('sellerAccount',c.bank_account||'');}
@@ -205,7 +245,7 @@ function init(){
       document.getElementById('poBody').innerHTML=html||'<tr><td colspan="8" style="text-align:center;padding:12px;color:#64748b;border:1px solid #bbb">无产品数据，可点击"＋加产品行"手动添加</td></tr>';
       recalcTotals();hideBanner();setTimeout(handleHashAction,300);
     });
-  }).catch(function(e){showBanner('err',e.message);});
+  }).catch(function(e){ if(e&&e.__auth){showAuthDead();return;} showBanner('err',e.message); });
   ['buyer','seller'].forEach(function(w){try{var s=JSON.parse(localStorage.getItem('po_seal_'+w)||'null');if(s&&s.url)applySeal(w,s.url,s.name);}catch(e){}});
 }
 
