@@ -111,6 +111,12 @@ export default async function handler(req, res) {
         `SELECT code, label, lat, lng, radius_m FROM hr_checkin_points
           WHERE company_code=$1 AND is_active=true ORDER BY code LIMIT 1`, [me.company_code]);
       const restWd = await restWeekdayOn(pool, me.company_code, empId, today);
+      const restNext = await pool.query(
+        `SELECT weekday, to_char(effective_from,'YYYY-MM-DD') AS effective_from, note
+           FROM hr_rest_rules
+          WHERE company_code=$1 AND (employee_id IS NULL OR employee_id=$2)
+            AND effective_from > $3
+          ORDER BY effective_from LIMIT 1`, [me.company_code, empId, today]);
       const restReq = await pool.query(
         `SELECT id, to_char(orig_date,'YYYY-MM-DD') AS orig_date,
                 to_char(new_date,'YYYY-MM-DD') AS new_date,
@@ -147,6 +153,7 @@ export default async function handler(req, res) {
         point: pt.rows[0] || null,
         // 休息日规则（每周几）+ 我的调休申请。规则说了算,员工改不动,只能申请。
         rest_weekday: restWd,
+        rest_next: restNext.rows[0] || null,   // 下一条还没生效的规则(有就提前告诉员工)
         rest_requests: restReq.rows,
         todo: todoFor(me.company_code),
         checklist: await openChecklist(pool, me.company_code, today, "open"),
