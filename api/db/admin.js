@@ -3,7 +3,7 @@
 import { getPool, setCors } from "../db.js";
 
 var ALLOWED_TABLES = {
-  orders: { label: "订单管理", key: "_id", columns: ["_id","order_no","contract_no","customer_po","customer","company_code","seller_code","issuing_company_id","customer_company_id","factory_company_id","seller_company_id","company_name_cn","company_name_en","consignee","customer_address","country","destination_port","pol","delivery_date","confirmed_delivery","required_arrival","total_qty","total_cbm","gross_weight","net_weight","container_type","container_qty","total_amount","total_amount_factory","currency","exchange_rate","profit","declare_amount","tax_rebate_amount","trade_terms","status","production_status","factory","remarks","created_at","updated_at"] },
+  orders: { label: "订单管理", key: "_id", columns: ["_id","order_no","contract_no","customer_po","customer","company_code","seller_code","shipping_plan_id","issuing_company_id","customer_company_id","factory_company_id","seller_company_id","company_name_cn","company_name_en","consignee","customer_address","country","destination_port","pol","delivery_date","confirmed_delivery","required_arrival","total_qty","total_cbm","gross_weight","net_weight","container_type","container_qty","total_amount","total_amount_factory","currency","exchange_rate","profit","declare_amount","tax_rebate_amount","trade_terms","status","production_status","factory","remarks","created_at","updated_at"] },
   shipping_plans: { label: "海运计划", key: "_id", columns: ["_id","shipment_no","so_no","bl_no","vessel","voyage","shipping_line","transit","schedule","call_port","pol","pod","container_type","container_qty","container_no","cutoff_date","si_cutoff_date","port_open_date","shipment_date","etd","atd","eta","ata","customer","customer_en","customer_cn","order_nos","contract_nos","forwarder_cn","forwarder_en","trucking_cn","customs_cn","insurance_cn","freight_cost","freight_sale_usd","doc_fee","tlx_fee","info_trans_fee","bkg_fee","thc_fee","eir_fee","seal_fee","freight_total_usd","freight_total_cny","trucking_cost_total","customs_cost_total","insurance_cost","is_ddp","ddp_total","ddp_agent","flow_status","status","current_status","current_status_cn","remarks","raw","created_at","updated_at"] },
   finance_payments: { label: "财务收款", key: "_id", columns: ["_id","jdy_id","type","direction","contract_no","order_no","customer_en","customer_cn","issuing_co","total_customer","total_factory","paid_amount","pending_amount","this_amount","currency","bank_ref","payment_date","pay_type","pay_item","forwarder_cn","freight_recv","freight_pay","port_recv","port_pay","truck_recv","truck_pay","customs_recv","customs_pay","audit_issues","audit_status","status","raw","created_at","updated_at"] },
   customs_data: { label: "报关资料", key: "_id", columns: ["_id","customs_no","shipment_no","contract_no","created_at","updated_at"] },
@@ -180,6 +180,21 @@ export default async function handler(req, res) {
             sets.push(col + " = $" + params.length);
           }
         }
+      }
+      // 2026-08-04: 白名单外的字段以前被【静默丢弃】,照样返回 200 而值是 null。
+      // 0804 一天踩三次(公司外键/seller_code/shipping_plan_id):回填 7 条全废,查半天才发现。
+      // 宁可阻断不可静默兜底 —— 传了但没写进去的,必须当场报出来。
+      var _ignored = Object.keys(fields).filter(function(c){
+        return !(ALLOWED_TABLES[table].columns.includes(c) && c !== keyCol
+                 && !c.includes("created_at") && !c.includes("updated_at"));
+      });
+      if (_ignored.length) {
+        return res.status(400).json({
+          error: "unknown_fields",
+          message: "这些字段不在 " + table + " 的可写白名单里，没有写入：" + _ignored.join(", ")
+                 + "。要写就先把字段加进 admin.js 的 ALLOWED_TABLES。",
+          ignored: _ignored
+        });
       }
       if (!sets.length) return res.status(400).json({ error: "No valid fields to update" });
       if(ALLOWED_TABLES[table].columns.includes("updated_at")){
