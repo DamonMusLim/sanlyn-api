@@ -27,7 +27,7 @@ export default async function handler(req, res) {
       const r = await pool.query(
         `UPDATE freight_forwarder_quote_dna
          SET chosen = true, chosen_reason = $2,
-             raw = COALESCE(raw,'{}'::jsonb) || jsonb_build_object('chosen_at', now()::text, 'chosen_by', $3)
+             raw = COALESCE(raw,'{}'::jsonb) || jsonb_build_object('chosen_at', now()::text, 'chosen_by', $3::text)
          WHERE id = $1 RETURNING id, forwarder, ocean_usd, chosen_reason`, [id, reason, clean(body.by) || "admin"]);
       if (!r.rows.length) return res.status(404).json({ ok: false, error: "not found" });
       // 同航线同柜型的其他候选标未选中,保证"这条线这次选了谁"唯一
