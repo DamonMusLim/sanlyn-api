@@ -37,14 +37,71 @@ slips AS (
 -- 按 contract_no 聚合前先去重 selected_orders(先 DISTINCT contract_no 再 JOIN fer),
 -- 避免同一 contract_no 命中多张兄弟订单时 JOIN 扇出导致 SUM 被重复累加(2026-07-15 修复,曾致应收翻倍)。
 -- 无 fer 行 → receivable_anchor=NULL → orderFact 里 anchored=false → 前端显"待报关"。
+-- 报关单常一票管多单,fer.contract_no 存成斜杠拼接(如 'FS20260220049/FS20260220051/FS20260220057/FS20260220058'),
+-- 精确等值匹配会让这些单全判"待报关"。这里拆开拼接号建索引,再按各订单销售额占比把报关总额分摊到单。
+-- 报关总额是真值,只做分摊不造数;单号独占一张报关单时占比=100% 与原逻辑等价。
+decl_expanded AS (
+  SELECT r.customs_no, r.currency, r.fob_cny,
+         BTRIM(part) AS one_contract,
+         COUNT(*) OVER (PARTITION BY r.customs_no) AS parts_in_decl
+    FROM finance_export_rebates r
+    CROSS JOIN LATERAL regexp_split_to_table(r.contract_no, '\\s*/\\s*') AS part
+   WHERE NULLIF(BTRIM(part),'') IS NOT NULL
+),
+decl_share AS (
+  SELECT de.customs_no, de.currency, de.fob_cny, de.one_contract,
+         COALESCE(SUM(ABS(o2.sale)) OVER (PARTITION BY de.customs_no), 0) AS decl_sale_total,
+         COALESCE(ABS(o2.sale), 0) AS one_sale,
+         de.parts_in_decl
+    FROM decl_expanded de
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(COALESCE(o.customer_amount, o.total_amount, 0)), 0) AS sale
+        FROM orders o
+       WHERE o.deleted_at IS NULL AND COALESCE(o.status,'') <> 'cancelled'
+         AND o.contract_no = de.one_contract
+    ) o2 ON TRUE
+),
+anchor_from_fer AS (
+  SELECT dc.contract_no,
+         SUM(CASE WHEN ds.decl_sale_total > 0 THEN ds.fob_cny * (ds.one_sale / ds.decl_sale_total)
+                  ELSE ds.fob_cny / NULLIF(ds.parts_in_decl,0) END) AS amt,
+         MIN(ds.currency) AS cur,
+         COUNT(*) AS n
+    FROM (SELECT DISTINCT contract_no FROM selected_orders WHERE contract_no IS NOT NULL) dc
+    JOIN decl_share ds ON ds.one_contract = dc.contract_no
+   GROUP BY dc.contract_no
+),
+-- 第二来源:报关单主表 customs_declarations,经 shipping_plans.order_nos 关联到订单。
+-- fer(退税表)是首选真值;这里只补 fer 没覆盖到的单(报关了但还没进退税流程)。同样按销售额占比拆到单。
+anchor_from_cd AS (
+  SELECT o.contract_no,
+         SUM(CASE WHEN pt.plan_sale > 0 THEN cd.total_declaration_amount * (ABS(COALESCE(o.customer_amount,o.total_amount,0)) / pt.plan_sale)
+                  ELSE cd.total_declaration_amount / NULLIF(pt.plan_orders,0) END) AS amt,
+         COUNT(*) AS n
+    FROM customs_declarations cd
+    JOIN shipping_plans sp ON sp._id = cd.shipping_plan_id AND sp.deleted_at IS NULL
+    CROSS JOIN LATERAL unnest(COALESCE(sp.order_nos,'{}'::text[])) AS ord(order_no)
+    JOIN orders o ON o.order_no = ord.order_no AND o.deleted_at IS NULL AND COALESCE(o.status,'') <> 'cancelled'
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(SUM(ABS(COALESCE(o3.customer_amount,o3.total_amount,0))),0) AS plan_sale,
+             COUNT(*) AS plan_orders
+        FROM unnest(COALESCE(sp.order_nos,'{}'::text[])) AS u(order_no)
+        JOIN orders o3 ON o3.order_no = u.order_no AND o3.deleted_at IS NULL AND COALESCE(o3.status,'') <> 'cancelled'
+    ) pt
+   WHERE cd.deleted_at IS NULL AND COALESCE(cd.total_declaration_amount,0) > 0
+     AND o.contract_no IS NOT NULL
+   GROUP BY o.contract_no
+),
 receivable_anchor AS (
   SELECT dc.contract_no,
-         SUM(r.fob_cny) AS receivable_anchor,
-         MIN(r.currency) AS anchor_currency,
-         COUNT(*) AS anchor_decl_count
+         COALESCE(f.amt, cdx.amt) AS receivable_anchor,
+         COALESCE(f.cur, 'CNY') AS anchor_currency,
+         COALESCE(f.n, cdx.n) AS anchor_decl_count,
+         (f.amt IS NULL AND cdx.amt IS NOT NULL) AS anchor_from_declaration
     FROM (SELECT DISTINCT contract_no FROM selected_orders WHERE contract_no IS NOT NULL) dc
-    JOIN finance_export_rebates r ON r.contract_no = dc.contract_no
-   GROUP BY dc.contract_no
+    LEFT JOIN anchor_from_fer f USING (contract_no)
+    LEFT JOIN anchor_from_cd cdx USING (contract_no)
+   WHERE COALESCE(f.amt, cdx.amt) IS NOT NULL
 ),
 -- 客户发票号:finance_invoices_out.contract_nos 数组重叠匹配(排除作废/红冲/草稿)。
 customer_invoices AS (
@@ -164,7 +221,11 @@ SELECT
            -- 应收锚定:仅报关销售额 fob_cny;无 fer 锚 → NULL(anchored=false → 前端"待报关"),绝不兜底订单额。
            ra.receivable_anchor AS receivable,
            (ra.receivable_anchor IS NOT NULL) AS anchored,
-           ra.anchor_currency, ra.anchor_decl_count,
+           ra.anchor_currency, ra.anchor_decl_count, ra.anchor_from_declaration,
+           -- 三价并列(Damon 2026-08-05 要):采购=付工厂 / 报关=申报额 / 销售=收客户
+           COALESCE(so.factory_total_amount, so.total_amount_factory, so.factory_amount) AS price_buy,
+           ra.receivable_anchor AS price_declared,
+           COALESCE(so.customer_amount, so.total_amount) AS price_sale,
            ci.invoice_no,
            csf.slip_file_url, csf.slip_alloc, csf.slip_ap_alloc, csf.receipt_count, csf.slip_currency,
            osh.container_no, osh.shipper, osh.carrier_code, osh.vessel, osh.etd AS ship_etd, osh.eta AS ship_eta, osh.consignee,
