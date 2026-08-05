@@ -90,6 +90,11 @@ function orderFact(row) {
     subtitle: [row.contract_no || "无合同号", row.customer || "无客户", row.factory || "无工厂"].join(" · "),
     order_date: row.order_date || null,
     delivery_date: row.confirmed_delivery || row.delivery_date || null,
+    // 三价并列:采购(付工厂) / 报关(申报额,拼接号已按销售额占比拆到单) / 销售(收客户)
+    price_buy: money(row.price_buy),
+    price_declared: anchored ? money(row.price_declared) : null,   // 无报关锚 → null(前端显"缺"而非0)
+    price_sale: money(row.price_sale),
+    anchor_from_declaration: Boolean(row.anchor_from_declaration), // true=来自报关单主表而非退税表
     slip: {
       alloc: money(row.slip_alloc),                 // 客户汇入水单已认领金额
       ap_alloc: money(row.slip_ap_alloc),           // ⚠ 我方付出去的水单被挂到本单(方向错挂),不算已收
