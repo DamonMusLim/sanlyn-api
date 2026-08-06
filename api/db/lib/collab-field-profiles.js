@@ -70,9 +70,10 @@ export const FIELD_PROFILES = Object.freeze({
     // ⚠️ 与 freight_term(对客条款,FORBIDDEN_KEYS 禁止外露)是两回事,别混。
     // 2026-08-06 追加排除:船期/港口/船名/提单号 —— 工厂的下游是厦门巴匕不是最终客户,
     // 海运怎么走跟他无关,下发等于把物流安排暴露给上游(Damon 2026-08-05)。
-    // 注:cargo_cutoff(进场截止)暂留 —— 对工厂排产有用,去留待 Damon 拍板。
+    // cargo_cutoff 同批删(Damon 2026-08-06 拍板):页面本来就没渲染它,删了工厂零感知;
+    // 留着等于在刚做完的隔离上开个 F12 后门。
     sheetFields: [...PUBLIC_SHEET_FIELDS.filter(k => !["pricing", "sailings", "customer_item_notes", "customer_amend", "forwarder_cn", "forwarder_en",
-      "pol", "pod", "etd", "eta", "vessel", "voyage", "carrier_code", "so_no", "bl_no", "release_type"].includes(k)), "factory_purchase_term"],
+      "pol", "pod", "etd", "eta", "vessel", "voyage", "carrier_code", "so_no", "bl_no", "release_type", "cargo_cutoff"].includes(k)), "factory_purchase_term"],
     billingSegment: "factory",
     directions: ["payable"],
     allowCostAmount: false,
