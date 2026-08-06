@@ -42,6 +42,10 @@ slips AS (
 -- 报关总额是真值,只做分摊不造数;单号独占一张报关单时占比=100% 与原逻辑等价。
 decl_expanded AS (
   SELECT r.customs_no, r.currency, r.fob_cny,
+         r.rebate_rate,
+         COALESCE(r.rebate_expected, r.fob_cny * COALESCE(r.rebate_rate,0)) AS rebate_amt,
+         COALESCE(r.rebate_received,0) AS rebate_received,
+         COALESCE(r.rebate_lifecycle_status, r.status) AS rebate_status,
          BTRIM(part) AS one_contract,
          COUNT(*) OVER (PARTITION BY r.customs_no) AS parts_in_decl
     FROM finance_export_rebates r
@@ -50,6 +54,7 @@ decl_expanded AS (
 ),
 decl_share AS (
   SELECT de.customs_no, de.currency, de.fob_cny, de.one_contract,
+         de.rebate_rate, de.rebate_amt, de.rebate_received, de.rebate_status,
          COALESCE(SUM(ABS(o2.sale)) OVER (PARTITION BY de.customs_no), 0) AS decl_sale_total,
          COALESCE(ABS(o2.sale), 0) AS one_sale,
          de.parts_in_decl
@@ -66,7 +71,13 @@ anchor_from_fer AS (
          SUM(CASE WHEN ds.decl_sale_total > 0 THEN ds.fob_cny * (ds.one_sale / ds.decl_sale_total)
                   ELSE ds.fob_cny / NULLIF(ds.parts_in_decl,0) END) AS amt,
          MIN(ds.currency) AS cur,
-         COUNT(*) AS n
+         COUNT(*) AS n,
+         -- 退税:平价转卖模式下利润全在退税(Damon 2026-08-05)。退税额按同比例拆到单。
+         MAX(ds.rebate_rate) AS rebate_rate,
+         SUM(CASE WHEN ds.decl_sale_total > 0 THEN ds.rebate_amt * (ds.one_sale / ds.decl_sale_total)
+                  ELSE ds.rebate_amt / NULLIF(ds.parts_in_decl,0) END) AS rebate_amt,
+         MAX(ds.rebate_received) AS rebate_received,
+         MIN(ds.rebate_status) AS rebate_status
     FROM (SELECT DISTINCT contract_no FROM selected_orders WHERE contract_no IS NOT NULL) dc
     JOIN decl_share ds ON ds.one_contract = dc.contract_no
    GROUP BY dc.contract_no
@@ -97,7 +108,8 @@ receivable_anchor AS (
          COALESCE(f.amt, cdx.amt) AS receivable_anchor,
          COALESCE(f.cur, 'CNY') AS anchor_currency,
          COALESCE(f.n, cdx.n) AS anchor_decl_count,
-         (f.amt IS NULL AND cdx.amt IS NOT NULL) AS anchor_from_declaration
+         (f.amt IS NULL AND cdx.amt IS NOT NULL) AS anchor_from_declaration,
+         f.rebate_rate, f.rebate_amt, f.rebate_received, f.rebate_status
     FROM (SELECT DISTINCT contract_no FROM selected_orders WHERE contract_no IS NOT NULL) dc
     LEFT JOIN anchor_from_fer f USING (contract_no)
     LEFT JOIN anchor_from_cd cdx USING (contract_no)
@@ -222,6 +234,7 @@ SELECT
            ra.receivable_anchor AS receivable,
            (ra.receivable_anchor IS NOT NULL) AS anchored,
            ra.anchor_currency, ra.anchor_decl_count, ra.anchor_from_declaration,
+           ra.rebate_rate, ra.rebate_amt, ra.rebate_received, ra.rebate_status,
            -- 三价并列(Damon 2026-08-05 要):采购=付工厂 / 报关=申报额 / 销售=收客户
            COALESCE(so.factory_total_amount, so.total_amount_factory, so.factory_amount) AS price_buy,
            ra.receivable_anchor AS price_declared,

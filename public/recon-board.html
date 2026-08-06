@@ -218,11 +218,20 @@
       const dec=r.price_declared==null?null:Number(r.price_declared);
       const sale=r.price_sale==null?null:Number(r.price_sale);
       const cell=(lab,v,extra)=>`<span class="p3"><em>${lab}</em>${v==null||!(v>0)?'<b class="p3-miss">缺</b>':`<b>${money(cur,v)}</b>`}${extra||""}</span>`;
+      // 退税:平价转卖时利润全在退税,真实毛利 = 货款毛利 + 退税额
+      const rb=r.rebate||{}, rbAmt=rb.expected==null?null:Number(rb.expected), rbGot=Number(rb.received||0);
+      let rbCell="";
+      if(rbAmt>0){
+        const done=rbGot>=rbAmt-1;
+        rbCell=`<span class="p3"><em>退税${rb.rate?(rb.rate*100).toFixed(0)+"%":""}</em><b>${money(cur,rbAmt)}</b>${
+          done?tag("已收","done"):(rbGot>0?tag("收"+money(cur,rbGot),"todo"):tag("未收","risk"))}</span>`;
+      }
       let gp="";
       if(buy>0&&sale>0){
-        const g=sale-buy, pct=(g/sale*100);
-        const tone=g<0?"risk":(pct<3?"todo":"done");
-        gp=`<span class="p3"><em>毛利</em>${tag((g<0?"-":"")+money(cur,Math.abs(g))+" / "+pct.toFixed(1)+"%",tone)}</span>`;
+        const g=sale-buy, total=g+(rbAmt>0?rbAmt:0), pct=(total/sale*100);
+        const tone=total<0?"risk":(pct<3?"todo":"done");
+        const lab=(rbAmt>0&&Math.abs(g)<1)?"利润(退税)":(rbAmt>0?"综合毛利":"毛利");
+        gp=`<span class="p3"><em>${lab}</em>${tag((total<0?"-":"")+money(cur,Math.abs(total))+" / "+pct.toFixed(1)+"%",tone)}</span>`;
       }
       // 报关额 vs 销售价偏离(>5% 触发审核门,见铁律 feedback_declare_vs_sales_5pct_rule)
       let warn="";
@@ -231,7 +240,7 @@
         if(dv>5) warn=` ${tag("申报偏离"+dv.toFixed(1)+"%","risk")}`;
       }
       const src=r.anchor_from_declaration?tag("报关单表","stale"):"";
-      return `<div class="p3row">${cell("采购",buy)}${cell("报关",dec,warn+src)}${cell("销售",sale)}${gp}</div>`;
+      return `<div class="p3row">${cell("采购",buy)}${cell("报关",dec,warn+src)}${cell("销售",sale)}${rbCell}${gp}</div>`;
     }
     function orderDatesMeta(r){
       if(r.type!=="order")return"";

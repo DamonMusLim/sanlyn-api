@@ -95,6 +95,13 @@ function orderFact(row) {
     price_declared: anchored ? money(row.price_declared) : null,   // 无报关锚 → null(前端显"缺"而非0)
     price_sale: money(row.price_sale),
     anchor_from_declaration: Boolean(row.anchor_from_declaration), // true=来自报关单主表而非退税表
+    // 退税:平价转卖(采购=销售)时利润全在退税(Damon 2026-08-05)。真实毛利 = 货款毛利 + 退税额。
+    rebate: {
+      rate: row.rebate_rate == null ? null : Number(row.rebate_rate),
+      expected: money(row.rebate_amt),
+      received: money(row.rebate_received) || 0,
+      status: row.rebate_status || null,
+    },
     slip: {
       alloc: money(row.slip_alloc),                 // 客户汇入水单已认领金额
       ap_alloc: money(row.slip_ap_alloc),           // ⚠ 我方付出去的水单被挂到本单(方向错挂),不算已收
