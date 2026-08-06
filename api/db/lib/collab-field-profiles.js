@@ -1,7 +1,10 @@
 const INTERNAL_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
 
+// 🔴 CY内部号铁律(2026-08-05 Damon)：CY开头=Sanlyn内部代码，对外一律不下发。
+//    _id 同样禁 —— 它常含客户名(sp_enrich_.../TAOLAN-TRK-...)，等于泄漏客户身份。
+//    外部方看 ext_ref：工厂=订单号，货代/船司=BL或SO。
 const PUBLIC_SHEET_FIELDS = [
-  "id", "_id", "shipment_no", "pol", "pod", "etd", "eta", "container_type",
+  "id", "ext_ref", "pol", "pod", "etd", "eta", "container_type",
   "container_qty", "collab_status", "total_cartons", "gross_weight_kg",
   "total_cbm", "so_no", "bl_no", "cargo_cutoff", "carrier_code", "vessel",
   "voyage", "release_type", "is_transfer", "so_info", "collab_uploads",
@@ -42,7 +45,7 @@ const COUNTERPARTY_KEYS = new Set([
 
 export const FIELD_PROFILES = Object.freeze({
   minimal: {
-    sheetFields: ["id", "_id", "shipment_no", "pol", "pod", "etd", "eta", "container_type", "container_qty", "so_no", "bl_no"],
+    sheetFields: ["id", "ext_ref", "pol", "pod", "etd", "eta", "container_type", "container_qty", "so_no", "bl_no"],
     billingSegment: "supplier",
     directions: [],
     allowCostAmount: false,
@@ -63,7 +66,13 @@ export const FIELD_PROFILES = Object.freeze({
     scopes: ["freight"],
   },
   factory: {
-    sheetFields: PUBLIC_SHEET_FIELDS.filter(k => !["pricing", "sailings", "customer_item_notes", "customer_amend", "forwarder_cn", "forwarder_en"].includes(k)),
+    // factory_purchase_term = 工厂→巴匕的【采购侧】成交方式(2026-08-05)。
+    // ⚠️ 与 freight_term(对客条款,FORBIDDEN_KEYS 禁止外露)是两回事,别混。
+    // 2026-08-06 追加排除:船期/港口/船名/提单号 —— 工厂的下游是厦门巴匕不是最终客户,
+    // 海运怎么走跟他无关,下发等于把物流安排暴露给上游(Damon 2026-08-05)。
+    // 注:cargo_cutoff(进场截止)暂留 —— 对工厂排产有用,去留待 Damon 拍板。
+    sheetFields: [...PUBLIC_SHEET_FIELDS.filter(k => !["pricing", "sailings", "customer_item_notes", "customer_amend", "forwarder_cn", "forwarder_en",
+      "pol", "pod", "etd", "eta", "vessel", "voyage", "carrier_code", "so_no", "bl_no", "release_type"].includes(k)), "factory_purchase_term"],
     billingSegment: "factory",
     directions: ["payable"],
     allowCostAmount: false,
@@ -142,6 +151,12 @@ export function sanitizeSheet(sheet, { role, field_profile, plan } = {}) {
     safe.scope_missing = true;
   }
   delete safe.freight_sale_usd;
+  // 🔴 兜底硬闸：内部标识绝不外发。即使有人把它加回白名单，这里也拦得住。
+  if (!INTERNAL_PROFILES.has(clean(field_profile))) {
+    delete safe.shipment_no;
+    delete safe._id;
+    delete safe.plan_business_id;
+  }
   return safe;
 }
 

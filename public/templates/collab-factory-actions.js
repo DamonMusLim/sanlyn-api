@@ -16,14 +16,14 @@ async function boot(){
   window._doneSeqs=new Set((Array.isArray(s.containers_detail)?s.containers_detail:[]).filter(c=>c&&c.loading_done).map(c=>c.seq||1));
   SCOPE=d.factory_scope||null;
   factoryProfileAddress=d.factory_profile_address||null;
-  $('topBadge').textContent=s.shipment_no||'工厂协同';
+  $('topBadge').textContent=s.ext_ref||'工厂协同';   // ⛔绝不用 shipment_no(CY内部号)
   const ordersArr=Array.isArray(s.orders)?s.orders:[]; window._ordersArr=ordersArr;
   // oli_id → 货号/条码/规格(产品主数据),给已存明细(factory_cargo无这几个字段)按oli_id补认货码
-  window._oliMeta={}; ordersArr.forEach(o=>(o.items||[]).forEach(it=>{ if(it&&it.oli_id!=null) window._oliMeta[it.oli_id]={sku:it.sku||'',barcode:it.barcode||'',size:it.size||''}; }));
+  window._oliMeta={}; ordersArr.forEach(o=>(o.items||[]).forEach(it=>{ if(it&&it.oli_id!=null) window._oliMeta[it.oli_id]={sku:it.sku||'',barcode:it.barcode||'',size:it.size||'',brand:it.brand||''}; }));
   const facList=[...new Set(ordersArr.map(o=>o.factory||o.supplier_name||o.factory_name).filter(Boolean))];
   // 工厂专属链接只显本厂名；管理视角多厂时不合并显示，提示各厂独立确认
   const facName=SCOPE?SCOPE.label:facList.join(' / ');
-  $('bannerTitle').textContent=(s.shipment_no||'—')+' — 工厂货物确认'+(facName?'（'+facName+'）':'');
+  $('bannerTitle').textContent=(s.ext_ref||'货物确认')+' — 工厂货物确认'+(facName?'（'+facName+'）':'');
   // banner: preview identity (v1.1.0 2026-06-23)
   (function(){
     var el=document.getElementById('previewBanner');
@@ -36,16 +36,17 @@ async function boot(){
       el.textContent='\uD83D\uDC41 \u5185\u90e8\u9884\u89c8 \u00b7 \u4f60\u6b63\u4ee5\u3010'+(SCOPE.label||'')+'\u3011\u8eab\u4efd\u67e5\u770b \u2014 \u8fd9\u5c31\u662f\u8be5\u5de5\u5382\u4f1a\u770b\u5230\u7684\u5168\u90e8';
     } else { el.style.display='none'; }
   })();
-  const fp=d.factory_progress; if(fp&&fp.total>1) document.querySelector('.portal-login-badge').textContent=(s.shipment_no||'')+' · '+fp.submitted+'/'+fp.total+'厂已确认';
+  const fp=d.factory_progress; if(fp&&fp.total>1) document.querySelector('.portal-login-badge').textContent=(s.ext_ref||'')+' · '+fp.submitted+'/'+fp.total+'厂已确认';
   if(SCOPE) document.querySelector('#step1 .step-sub').textContent='请确认贵厂货柜信息 · 仅您与 Sanlyn 可见';
   const cells=[], cell=(l,v)=>'<div style="border:1px solid #f0f2f5;background:#f8fafc;border-radius:8px;padding:7px 10px;"><div style="font-size:9px;color:#9ca3af;font-weight:700;">'+l+'</div><div style="font-size:12px;font-weight:800;color:#1a1d23;margin-top:2px;">'+v+'</div></div>';
-  if(s.pol) cells.push(cell('送港',esc(s.pol)));
-  if(s.etd) cells.push(cell('ETD',fmtD(s.etd)));
+  // 2026-08-06 删「送港/ETD」:工厂只管做货装柜,船期港口是我方物流安排,不给上游看。
+  // 后端 collab-field-profiles.js 的 factory profile 也已摘掉这些字段(只删前端 F12 还能看到)。
   if(s.factory_submitted) cells.push(cell('状态','✓ 已提交 · 可修改重交'));
   const _q=ordersArr.reduce((t,o)=>t+(Number(o.total_qty)||0),0), _g=ordersArr.reduce((t,o)=>t+(Number(o.gross_weight)||0),0);
   if(_q&&!SCOPE) cells.push(cell('总箱数',_q.toLocaleString()+'箱'+(_g?' · '+_g.toLocaleString()+' kg':'')));
   $('infoGrid').innerHTML=cells.join('');
-  if(s.freight_term){ sel.tt=s.freight_term; locked.tt=true; preset('ttRow','tt',s.freight_term,'on-green'); $('ttHint').textContent='（已选定：'+s.freight_term+'）'; $('fobSub').style.display=(s.freight_term==='FOB'||s.freight_term==='EXW')?'block':'none'; }
+  var _ft = s.factory_purchase_term || s.freight_term;   // 2026-08-05 优先采购侧(工厂自己那侧)
+  if(_ft){ sel.tt=_ft; locked.tt=true; preset('ttRow','tt',_ft,'on-green'); $('ttHint').textContent='（已选定：'+s.freight_term+'）'; $('fobSub').style.display=(s.freight_term==='FOB'||s.freight_term==='EXW')?'block':'none'; }
   if(s.trucking_arrange){ sel.trk=arrangeVal(s.trucking_arrange); locked.trk=true; preset('trkRow','trk',sel.trk,'on-green'); }
   if(s.customs_arrange){ sel.cus=arrangeVal(s.customs_arrange); locked.cus=true; preset('cusRow','cus',sel.cus,'on-green'); }
   selfNote();
@@ -58,9 +59,9 @@ async function boot(){
   editMode=true; $('cargoEdit').style.display='block'; $('cargoSub').textContent='按工厂分区 · 箱数可修改 · 各厂独立确认';
   let fc=Array.isArray(s.factory_cargo)?s.factory_cargo:[];
   const facOf=o=>o.factory||o.supplier_name||o.factory_name||'未指定工厂';
-  const mapItem=it=>({oli_id:it.oli_id,cargo_name:it.product_name||it.description||'',sku:it.sku||'',barcode:it.barcode||'',size:it.size||'',hs_code:it.hs_code||'',pkg_qty:it.ctns||'',nw_kg:Number(it.nw_kgs)||'',gw_kg:Number(it.gw_kgs)||'',cbm_m3:Number(it.cbm)||''});
+  const mapItem=it=>({oli_id:it.oli_id,cargo_name:it.product_name||it.description||'',sku:it.sku||'',barcode:it.barcode||'',brand:it.brand||'',size:it.size||'',hs_code:it.hs_code||'',pkg_qty:it.ctns||'',nw_kg:Number(it.nw_kgs)||'',gw_kg:Number(it.gw_kgs)||'',cbm_m3:Number(it.cbm)||''});
   const _om=id=>(window._oliMeta&&window._oliMeta[id])||{};
-  const mapFc=x=>({oli_id:x.oli_id,cargo_name:x.cargo_name||'',sku:x.sku||_om(x.oli_id).sku||'',barcode:x.barcode||_om(x.oli_id).barcode||'',size:x.size||_om(x.oli_id).size||'',hs_code:x.hs_code||'',pkg_qty:x.pkg_qty!=null?x.pkg_qty:'',nw_kg:x.nw_kg!=null?x.nw_kg:'',gw_kg:x.gw_kg!=null?x.gw_kg:'',cbm_m3:x.cbm_m3!=null?x.cbm_m3:'',fe:x.fe});
+  const mapFc=x=>({oli_id:x.oli_id,cargo_name:x.cargo_name||'',sku:x.sku||_om(x.oli_id).sku||'',barcode:x.barcode||_om(x.oli_id).barcode||'',brand:x.brand||_om(x.oli_id).brand||'',size:x.size||_om(x.oli_id).size||'',hs_code:x.hs_code||'',pkg_qty:x.pkg_qty!=null?x.pkg_qty:'',nw_kg:x.nw_kg!=null?x.nw_kg:'',gw_kg:x.gw_kg!=null?x.gw_kg:'',cbm_m3:x.cbm_m3!=null?x.cbm_m3:'',fe:x.fe});
   // 找出某工厂订单所在的柜 seq（拼柜则多厂同 seq）
   const seqForOrders=ordNos=>{ const seqs=Object.keys(window._cntrBySeq||{}).map(Number); for(const k of seqs){ const ci=window._cntrBySeq[k]; const cnos=(ci&&ci.cargo||[]).map(x=>x.order_no); if(ordNos.some(n=>cnos.includes(n))) return k; } return seqs[0]||1; };
   window._lockCtnCount=true; $('btnAddCtn').style.display='none';
@@ -111,8 +112,19 @@ async function boot(){
   const fe=s.factory_entry||{}, mine=(SCOPE&&fe[SCOPE.label])||fe['default']||Object.values(fe)[0];
   if(mine){ if($('er_contact')) $('er_contact').value=mine.contact||''; if($('er_phone')) $('er_phone').value=mine.phone||''; if($('er_note')) $('er_note').value=mine.note||''; if($('er_url')) $('er_url').value=mine.exam_url||''; if($('erSaved')) $('erSaved').textContent='✓ 已登记'; }
   window._booked=!!(s.so_no||s.bl_no); window._loading=Array.isArray(s.containers_live)&&s.containers_live.length>0;
-  if(window._booked){ sel.ct=s.container_type||sel.ct; const ctRow=$('ctRow'); if(ctRow) ctRow.querySelectorAll('.tog').forEach(t=>{ t.style.pointerEvents='none'; t.style.opacity=(t.dataset.ct===sel.ct)?'1':'.3'; }); }
-  if(window._booked||window._loading){ const bits=[]; if(window._booked) bits.push('⚓ 已订舱 · 柜型 '+(s.container_type||'')+' × '+(s.container_qty||'')+' 已锁定'); if(window._loading) bits.push('🚛 柜已提 · 装柜进行中'); $('bookedBar').innerHTML='<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#047857;">'+bits.join('　')+'</div>'; if(window._loading){ const cf=$('cargo_ready_date'); if(cf) cf.closest('.form-field').style.display='none'; } }
+  // 2026-08-05 修：票级 container_type 为空时（CY00407 就是），原逻辑把四个按钮全锁死且一个都不高亮，
+  // 工厂"柜型必填"却永远选不了。→ 票级空就用柜级实际柜型兜底；两边都取不到就【不锁】，让人能选。
+  if(window._booked){
+    const _ctnCt=((s.containers_live||[]).map(c=>c&&c.container_type).filter(Boolean));
+    const _uniq=[...new Set(_ctnCt.map(x=>String(x).toUpperCase().replace('HC','HQ')))];
+    const _locked=String(s.container_type||(_uniq.length===1?_uniq[0]:'')||'').toUpperCase().replace('HC','HQ');
+    if(_locked){
+      sel.ct=_locked;
+      const ctRow=$('ctRow');
+      if(ctRow) ctRow.querySelectorAll('.tog').forEach(t=>{ t.style.pointerEvents='none'; t.style.opacity=(t.dataset.ct===_locked)?'1':'.3'; });
+    }
+  }
+  if(window._booked||window._loading){ const bits=[]; if(window._booked){ const _ct=sel.ct||s.container_type||''; bits.push('⚓ 已订舱'+(_ct?' · 柜型 '+_ct:'')+(s.container_qty?' × '+s.container_qty:'')+' 已锁定'); } if(window._loading) bits.push('🚛 柜已提 · 装柜进行中'); $('bookedBar').innerHTML='<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:#047857;">'+bits.join('　')+'</div>'; if(window._loading){ const cf=$('cargo_ready_date'); if(cf) cf.closest('.form-field').style.display='none'; } }
   checkStep1(true); checkStep3(true); show('stateForm');
   window._autoSaveTerms=async function(){ try{ await fetch(API+'/factory-submit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,partial:true,freight_term:sel.tt||null,trucking_arrange:sel.trk||null,customs_arrange:sel.cus||null})}); }catch(e){} };
   ['ttRow','trkRow','cusRow'].forEach(id=>{ const el=$(id); if(el) el.addEventListener('click',()=>setTimeout(window._autoSaveTerms,50)); });
