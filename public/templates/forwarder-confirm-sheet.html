@@ -215,6 +215,23 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
 .atab .fine{color:#6fd39b;font-weight:800}
 .atab tr.sum td{font-weight:800;background:#16232f;color:#fff}
 :focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.statbox{background:var(--row);border:1px solid var(--line);border-radius:8px;padding:10px 11px;min-width:0}
+.statbox .k{font-size:11px;color:var(--faint);font-weight:800}.statbox .v{font-size:13px;font-weight:800;margin-top:2px;word-break:break-word}
+.muted{color:var(--faint)}.missing{color:var(--wait);font-weight:800}.oktxt{color:var(--ok);font-weight:800}
+.receipt{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding:8px 0;font-size:12.5px}
+.docgrp{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--row)}
+.docgrp-h{padding:10px 12px;font-size:13px;font-weight:800;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px}
+.fee-head{width:100%;border:0;background:var(--row);color:var(--ink);font-family:inherit;cursor:pointer;padding:12px;display:flex;align-items:center;gap:10px;text-align:left}
+.fee-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}.fee-missing{font-size:11.5px;color:var(--wait);font-weight:800}
+.fee-form{display:grid;grid-template-columns:1fr 92px 92px 92px;gap:7px;margin-top:9px}
+.fee-form input,.fee-form select{width:100%;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);padding:8px 7px;font-family:inherit;font-size:12.5px}
+.deadline{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.truckrow{border-top:1px solid var(--line);padding:10px 0;font-size:13px}.truckrow:first-child{border-top:0}
+.version{font-size:10.5px;color:var(--faint);text-align:center;margin-top:8px}
+.confirmbox{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--row);display:none;gap:10px;flex-direction:column}
+.confirmbox.on{display:flex}
+@media(max-width:480px){.mini-grid,.deadline,.fee-form{grid-template-columns:1fr}.fee-actions{flex-direction:column;align-items:flex-end}.bill{align-items:flex-start}.bill .bdl{padding:7px 9px}}
 </style>
 
 <div class="app">
@@ -223,33 +240,36 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     <div class="lang"><button class="on">中文</button><button>English</button><button>BM</button></div>
   </div>
 
-  <div class="banner urgent">
+  <div class="banner">
     <span style="font-size:26px">🚢</span>
     <div class="bt">
-      <h1 id="fwName">加载中 — 订舱协同<br>—</h1>
+      <h1 id="fwName">货代确认单<br>加载中</h1>
       <div class="sub" id="fwSub">读取订舱确认单中…</div>
     </div>
-    <span class="flag urgent" id="agrTag">⏰ 截单剩 1 天 · 待传 SO</span>
+    <span class="flag" id="agrTag">委托拖车 —</span>
   </div>
-
-  <!-- 2026-08-04 删:「本票货代由谁安排」是我方内部定性,不该给货代看更不该让他改 -->
 
   <div class="nologin">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
     无需登录，这条链接就是您的专属入口，可随时打开
   </div>
 
-  <div class="deliver">
-    <span class="l">🚢 预计开船 ETD</span>
-    <span class="v" id="etdV">—</span>
+  <div class="block">
+    <div class="bh"><h2>① 页头</h2><p id="headHint">货代公司名 · 提单号 · 出单方式 · 柜量 / 航线</p></div>
+    <div class="bb mini-grid">
+      <div class="statbox"><div class="k">货代公司</div><div class="v" id="forwarderV">—</div></div>
+      <div class="statbox"><div class="k">提单号</div><div class="v" id="blV">—</div></div>
+      <div class="statbox"><div class="k">出单方式</div><div class="v" id="releaseV">—</div></div>
+      <div class="statbox"><div class="k">柜量 / 航线</div><div class="v" id="routeV">—</div></div>
+    </div>
   </div>
 
   <!-- 承运人要求(COSCO 保函等):规则命中自动长出 -->
   <div id="carrierReq"></div>
 
-  <!-- SO/BL 引用单号:货代填自己的 SO 号,我方据此核对;可改(改动进 staging 待我方核对)。2026-08-04:我方内部号不外发 -->
+  <!-- 请贵司上传 -->
   <div class="block">
-    <div class="bh"><h2>SO / 提单 引用单号</h2><p>请填您的 SO 号，我方据此核对</p></div>
+    <div class="bh"><h2>② 请贵司上传</h2><p>SO 订舱确认 / 提单 B/L · 已收到回执</p></div>
     <div class="bb" style="display:flex;flex-direction:column;gap:9px">
       <div class="bill">
         <span class="bi">🔖</span>
@@ -257,58 +277,26 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
         <button class="bdl" onclick="copyRef()">复制</button>
         <button class="bdl" onclick="editRef()">改单号</button>
       </div>
-    </div>
-  </div>
-
-  <!-- 单据放上面 -->
-  <div class="block">
-    <div class="bh"><h2>单据</h2><p>托书下载 · SO / 提单上传</p></div>
-    <div class="bb" style="display:flex;flex-direction:column;gap:9px">
-      <div class="bill"><span class="bi">📄</span><div class="bt2"><b>托书 Shipping Instruction</b><span>我方委托书</span></div><button class="bdl" onclick="downloadSI()">下载</button></div>
       <div class="bill"><span class="bi">📋</span><div class="bt2"><b>SO 订舱确认 / 放舱通知</b><span id="soHint">放舱后请上传</span></div><button class="bdl" onclick="pickUpload('ocean','SO')">上传</button></div>
       <div class="bill"><span class="bi">📃</span><div class="bt2"><b>提单 B/L</b><span id="blHint">草稿与正式提单</span></div><button class="bdl" onclick="pickUpload('ocean','BL')">上传</button></div>
+      <div id="receiptList"></div>
     </div>
   </div>
 
-  <!-- 订舱信息:展示,不需要货代确认船公司 -->
-  <details class="step done">
-    <summary>
-      <div class="snum">✓</div>
-      <div class="st"><h2>订舱信息</h2><p>SO 已放 · 已收货</p></div>
-      <span class="sstat ok">已放舱</span><span class="chev">▾</span>
-    </summary>
-    <div class="sb">
-      <div class="kv">
-        <span class="k">订舱号 SO</span><span class="v" id="soNoV">—</span>
-        <span class="k">船名 / 航次</span><span class="v" id="vesselV">—</span>
-        <span class="k">截关 / 截单</span><span class="v" id="cutoffV">—</span>
-      </div>
-    </div>
-  </details>
-
-  <!-- 回填箱封号 -->
-  <details class="step now" open>
-    <summary>
-      <div class="snum">2</div>
-      <div class="st"><h2>回填箱号 / 封号</h2><p id="boxSub">装柜后回填</p></div>
-      <span class="sstat wait" id="boxBadge">待您回填</span><span class="chev">▾</span>
-    </summary>
-    <div class="sb">
-      <div class="kv">
-        <span class="k">柜号 / 封号</span><span class="v edit" id="cntrV">—</span>
-      </div>
-      <div class="acts" id="boxActs"></div>
-    </div>
-  </details>
-
-  <!-- 账单中心:费用为主 -->
   <div class="block">
     <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><h2>费用与对账</h2><p>本票应收费用</p></div><span class="lock">🔒 仅授权人可见</span>
+      <div><h2>③ 我方资料</h2><p>抬头资料 · 本票单据 · 货物证书</p></div>
+      <button class="bdl" onclick="downloadAllDocs()">打包下载全部</button>
+    </div>
+    <div class="bb" id="docGroups" style="display:flex;flex-direction:column;gap:10px"></div>
+  </div>
+
+  <div class="block">
+    <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <div><h2>④ 费用与对账</h2><p>海运费 / 拖车费 / 港杂费 / 报关费</p></div><span class="lock">🔒 仅授权人可见</span>
     </div>
     <div class="bb" style="display:flex;flex-direction:column;gap:9px" id="feeBody"></div>
     <div class="bb" style="padding-top:0;display:flex;flex-direction:column;gap:9px">
-      <div id="auditWrap"></div>
       <div class="billgrp" style="margin-top:5px">对账</div>
       <div class="kv" style="padding:2px 2px">
         <span class="k">应收合计 AR</span><span class="v" id="arV">USD 2,850 + ¥ 3,200</span>
@@ -318,6 +306,34 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
       <div class="bill"><span class="bi">🧾</span><div class="bt2"><b>付款水单</b><span>我方付款后提供，供贵司核对</span></div><button class="bdl" disabled>待付款</button></div>
     </div>
   </div>
+
+  <div class="block">
+    <div class="bh"><h2>⑤ 本票时限</h2><p>进场 / VGM / SI / 预计开船</p></div>
+    <div class="bb deadline">
+      <div class="statbox"><div class="k">进场</div><div class="v" id="gateV">—</div></div>
+      <div class="statbox"><div class="k">VGM</div><div class="v" id="vgmV">—</div></div>
+      <div class="statbox"><div class="k">SI</div><div class="v" id="siV">—</div></div>
+      <div class="statbox"><div class="k">预计开船</div><div class="v" id="etdV">—</div></div>
+    </div>
+  </div>
+
+  <details class="step now" open>
+    <summary>
+      <div class="snum">6</div>
+      <div class="st"><h2>⑥ 拖车</h2><p id="boxSub">装柜数据 · 柜号封号 / 车牌司机 / 装柜图磅单</p></div>
+      <span class="sstat wait" id="boxBadge">待您回填</span><span class="chev">▾</span>
+    </summary>
+    <div class="sb">
+      <div class="kv">
+        <span class="k">订舱号 SO</span><span class="v" id="soNoV">—</span>
+        <span class="k">船名 / 航次</span><span class="v" id="vesselV">—</span>
+        <span class="k">截关 / 截单</span><span class="v" id="cutoffV">—</span>
+        <span class="k">柜号 / 封号</span><span class="v edit" id="cntrV">—</span>
+      </div>
+      <div id="truckBody"></div>
+      <div class="acts" id="boxActs"></div>
+    </div>
+  </details>
 
   <div class="foot"><div class="foot-in">
     <button class="help wide" onclick="document.getElementById('sheet').classList.add('on')">🆘 不方便填？<small>请 Sanlyn 协助</small></button>
@@ -333,7 +349,14 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
       <button class="sheet-x" onclick="document.getElementById('sheet').classList.remove('on')">先不用，我自己来</button>
     </div>
   </div>
+  <div class="version" id="uiVersion">UI v2.0.0 · 2026-08-07</div>
 </div>
 
 <input id="fileInput" type="file" style="display:none" onchange="uploadPickedFile(this)">
-<script src="forwarder-confirm-sheet.js"></script>
+<script>
+  (function(){
+    var qs = new URLSearchParams(location.search);
+    var src = qs.get("ui") === "v1" ? "forwarder-confirm-sheet.v1.js" : "forwarder-confirm-sheet.js";
+    document.write('<script src="' + src + '"><\/script>');
+  })();
+</script>
