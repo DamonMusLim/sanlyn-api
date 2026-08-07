@@ -1,5 +1,13 @@
 const API = '/api/db/booking-collab';
 const PORTAL_UI_VERSION = "v2.0.0";
+// 证件脱敏（2026-08-08）：Damon 铁律「证件仅存后4位」。
+// 库里历史数据有 4 条存了完整 18 位身份证，前端一律只渲染后 4 位，
+// 不依赖库里存的是什么——防御在渲染层，历史脏数据也漏不出去。
+function maskId(v){
+  const t = String(v == null ? '' : v).trim();
+  if (!t) return '';
+  return t.length <= 4 ? t : '****' + t.slice(-4);
+}
 const token = new URLSearchParams(location.search).get('token') || '';
 const $ = id => document.getElementById(id);
 const show = id => { ['stateLoading','stateForm','stateDead'].forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
@@ -243,7 +251,7 @@ function quickText(i){
   if(d.trailer_plate) L.push('挂号：'+d.trailer_plate);
   if(gv('phone_'+i)) L.push('手机：'+gv('phone_'+i));
   if(gv('driver_'+i)) L.push('姓名：'+gv('driver_'+i));
-  if(d.driver_id_no) L.push('证号：'+d.driver_id_no);
+  if(d.driver_id_no) L.push('证号：'+maskId(d.driver_id_no));
   if(d.cntr) L.push('箱号：'+d.cntr);
   if(d.seal_no) L.push('封号：'+d.seal_no);
   if(d.tare_kg) L.push('箱皮重：'+d.tare_kg+'kg');
@@ -272,7 +280,7 @@ function vehHtml(i, d={}){
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px 12px;background:#f9fafb;border-radius:8px;margin:8px 12px 0;padding:10px 12px;">
       <div style="grid-column:1/-1;font-size:11px;"><span style="color:#9ca3af;">提货地</span> <span style="font-weight:700;color:#111827;">${esc(d.loading_address||'—')}</span></div>
       ${infoCell('挂号', d.trailer_plate)}
-      ${infoCell('证号', d.driver_id_no)}
+      ${infoCell('证号', maskId(d.driver_id_no))}
       ${infoCell('箱皮重', d.tare_kg?d.tare_kg+'kg':'')}
       ${(c2=>{const t=String(c2||'');const ph=(t.match(/1\d{10}/)||[''])[0];const nm=t.replace(ph,'').replace(/[:：\s]+$/,'').trim();
         return infoCell('工厂联系人', nm) + (ph?`<div style="font-size:11px;"><span style="color:#9ca3af;">工厂电话</span> <a href="tel:${ph}" style="font-weight:700;color:#1a73e8;">${ph}</a></div>`:infoCell('工厂电话',''));})(d.loading_contact)}
