@@ -146,12 +146,56 @@ textarea.form-input { resize: vertical; min-height: 60px; }
   font-size: 12px; font-weight: 700; display: none; z-index: 999; }
 .toast.show { display: block; }
 .hidden { display: none !important; }
+body:not(.ui-v1) .legacy-v1 { display:none !important; }
+body.ui-v1 .v2-only { display:none !important; }
 .center-state { text-align: center; padding: 70px 20px; color: #6b7280; }
 .center-state .big { font-size: 44px; margin-bottom: 14px; }
 .center-state h2 { font-size: 17px; font-weight: 800; color: #1a1d23; margin-bottom: 6px; }
+.portal-section { background:#fff;border:1px solid #e0e4ea;border-radius:10px;margin-bottom:14px;overflow:hidden; }
+.portal-section-head { padding:12px 16px;border-bottom:1px solid #f0f2f5;display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.portal-section-title { font-size:13px;font-weight:800;color:#1a1d23; }
+.portal-section-sub { font-size:11px;color:#6b7280;margin-top:2px; }
+.portal-section-body { padding:14px 16px; }
+.hero-grid { display:grid;grid-template-columns:1.4fr 1fr;gap:10px 14px;align-items:start; }
+.hero-name { font-size:17px;font-weight:900;color:#111827;line-height:1.35;overflow-wrap:anywhere; }
+.hero-bl { font-size:14px;font-weight:900;color:#1a73e8;margin-top:4px;overflow-wrap:anywhere; }
+.mini-kv { display:grid;grid-template-columns:auto 1fr;gap:6px 10px;font-size:12px;align-items:baseline; }
+.mini-kv span:nth-child(odd) { color:#6b7280;font-weight:700;white-space:nowrap; }
+.mini-kv span:nth-child(even) { color:#111827;font-weight:800;overflow-wrap:anywhere; }
+.receipt-list { display:grid;gap:8px; }
+.doc-group { margin-bottom:12px; }
+.doc-group-title { font-size:12px;font-weight:900;color:#374151;margin:0 0 8px; }
+.doc-list { display:grid;gap:8px; }
+.doc-list.two-col { grid-template-columns:1fr 1fr; }
+.doc-row { display:flex;align-items:center;gap:10px;border:1px solid #e5e7eb;border-radius:8px;padding:9px 10px;background:#fff;font-size:12px;min-width:0; }
+.doc-row-main { flex:1;min-width:0;font-weight:800;color:#111827;overflow-wrap:anywhere; }
+.doc-tag { font-size:10px;font-weight:800;border-radius:999px;padding:2px 7px;background:#eef2ff;color:#3730a3;white-space:nowrap; }
+.doc-actions { display:flex;gap:8px;flex-shrink:0; }
+.icon-link { color:#1a73e8;text-decoration:none;font-weight:900;font-size:13px; }
+.bill-row { border:1px solid #e5e7eb;border-radius:8px;margin-bottom:8px;overflow:hidden;background:#fff; }
+.bill-summary { width:100%;border:0;background:#fff;padding:10px 12px;display:grid;grid-template-columns:88px 1fr auto auto;gap:10px;align-items:center;text-align:left;cursor:pointer;font-family:inherit; }
+.bill-summary b { font-size:12px;color:#111827; }
+.bill-summary .desc { font-size:11px;color:#6b7280;overflow-wrap:anywhere; }
+.bill-money { font-size:12px;font-weight:900;color:#111827;white-space:nowrap; }
+.bill-money.empty { color:#d97706; }
+.bill-detail { display:none;border-top:1px solid #f0f2f5;padding:10px 12px;background:#f9fafb; }
+.bill-row.open .bill-detail { display:block; }
+.bill-edit-table { width:100%;border-collapse:collapse;font-size:11px; }
+.bill-edit-table th,.bill-edit-table td { border-bottom:1px solid #e5e7eb;padding:6px;text-align:left;vertical-align:top; }
+.bill-edit-table input,.bill-edit-table select { width:100%;border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;background:#fff;font-family:inherit; }
+.deadline-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:8px; }
+.deadline-cell { border:1px solid #e5e7eb;border-radius:8px;padding:10px;background:#f9fafb;min-height:58px; }
+.deadline-cell div:first-child { font-size:11px;color:#6b7280;font-weight:800;margin-bottom:4px; }
+.deadline-cell div:last-child { font-size:13px;color:#111827;font-weight:900;overflow-wrap:anywhere; }
+@media (max-width:680px){
+  .hero-grid,.doc-list.two-col,.deadline-grid { grid-template-columns:1fr; }
+  .bill-summary { grid-template-columns:72px 1fr; }
+  .bill-money,.bill-summary .badge { justify-self:start; }
+}
 </style>
 </head>
 <body>
+<script>document.body.classList.toggle('ui-v1', new URLSearchParams(location.search).get('ui') === 'v1');</script>
 
 <div class="portal-bar"><div class="portal-brand">SANLYN OS</div><div class="portal-login-badge" id="topBadge">供应链端口</div></div>
 
@@ -171,12 +215,47 @@ textarea.form-input { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="chips"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="chips" class="legacy-v1"></div>
+
+  <div class="portal-section hidden v2-only" id="portalHero"><div class="portal-section-body" id="portalHeroBody"></div></div>
+
+  <div class="portal-section hidden v2-only" id="uploadPanel">
+    <div class="portal-section-head"><div><div class="portal-section-title">请贵司上传</div><div class="portal-section-sub">SO 订舱确认 / 提单 B/L</div></div></div>
+    <div class="portal-section-body">
+      <div style="display:grid;gap:8px;margin-bottom:10px;">
+        <div class="up-zone" onclick="pickFileSO()" style="border-color:#1a73e8;color:#1a73e8;font-weight:700;">＋ 上传 SO 订舱确认</div>
+        <div class="up-zone" onclick="pickFile('ocean')">＋ 上传提单 B/L / BL草稿（≤8MB 可多次）</div>
+      </div>
+      <div class="receipt-list" id="fl_ocean_v2"></div>
+      <div id="blNoSection_v2" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <div class="portal-section hidden v2-only" id="ourDocsPanel">
+    <div class="portal-section-head">
+      <div><div class="portal-section-title">我方资料</div><div class="portal-section-sub">按资料组下载，上传后自动更新</div></div>
+      <a class="btn btn-blue btn-sm" id="dlPackAll" target="_blank">打包下载全部</a>
+    </div>
+    <div class="portal-section-body" id="ourDocsBody"></div>
+  </div>
+
+  <div class="portal-section hidden v2-only" id="billingCardV2">
+    <div class="portal-section-head">
+      <div><div class="portal-section-title">费用与对账</div><div class="portal-section-sub" id="billingSubV2">四项费用默认收起</div></div>
+      <button class="btn btn-blue btn-sm" onclick="startBillConfirm()">确认账单</button>
+    </div>
+    <div class="portal-section-body" id="billingBodyV2"></div>
+  </div>
+
+  <div class="portal-section hidden v2-only" id="deadlinePanel">
+    <div class="portal-section-head"><div><div class="portal-section-title">本票时限</div><div class="portal-section-sub">进场 / VGM / SI / 预计开船</div></div></div>
+    <div class="portal-section-body"><div class="deadline-grid" id="deadlineGrid"></div></div>
+  </div>
 
   <div class="seg-tabs" id="segTabs"></div>
 
-  <!-- 🚢 海运段：单据口 -->
-  <div class="hidden" id="seg-ocean">
+  <!-- v1 回切专用：旧脚本依赖这些 DOM id，默认由 CSS 隐藏 -->
+  <div class="hidden legacy-v1" id="seg-ocean">
     <div class="step-card">
       <div class="step-head"><div style="display:flex;align-items:center;gap:10px;">
         <div class="step-num">🚢</div>
@@ -196,8 +275,7 @@ textarea.form-input { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
-  <!-- 💰 费用 · 账单入口（海运段内第二卡） -->
-  <div class="hidden step-card" id="billingCard" style="margin-bottom:14px;">
+  <div class="hidden step-card legacy-v1" id="billingCard" style="margin-bottom:14px;">
     <div class="step-head"><div style="display:flex;align-items:center;gap:10px;">
       <div class="step-num">💰</div>
       <div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div>
@@ -268,7 +346,7 @@ textarea.form-input { resize: vertical; min-height: 60px; }
   </div>
   <div style="text-align:center;font-size:11px;color:#9ca3af;margin:20px 0 40px;">
     🔒 此链接仅限本票 · 只显示贵司承包的段 · 上传与提交即自动保存
-    <div style="margin-top:6px;color:#cbd5e1;font-size:10px;">collab-portal v1.2.0 · 2026-06-22</div>
+    <div style="margin-top:6px;color:#cbd5e1;font-size:10px;" id="uiVersionFoot">UI v1 · 2026-08-07</div>
   </div>
 </div>
 </div>
@@ -279,6 +357,13 @@ textarea.form-input { resize: vertical; min-height: 60px; }
 <div class="toast" id="toast"></div>
 
 <script src="/public/templates/collab-portal-godview.js"></script>
-<script src="/public/templates/collab-portal.js"></script>
+<script>
+(function(){
+  var ui = new URLSearchParams(location.search).get('ui');
+  var s = document.createElement('script');
+  s.src = ui === 'v1' ? '/public/templates/collab-portal.v1.js' : '/public/templates/collab-portal.js';
+  document.body.appendChild(s);
+})();
+</script>
 </body>
 </html>

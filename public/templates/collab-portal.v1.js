@@ -1,36 +1,21 @@
 const API = '/api/db/booking-collab';
-const PORTAL_UI_VERSION = "v2.0.0";
 const token = new URLSearchParams(location.search).get('token') || '';
 const $ = id => document.getElementById(id);
 const show = id => { ['stateLoading','stateForm','stateDead'].forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
 function gv(id){ return ($(id)?.value||'').trim(); }
 function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
-function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return ''; } }
+function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
 function bjTime(v){ if(v==null||v==="")return ""; try{ return new Date(v).toLocaleString("sv-SE",{timeZone:"Asia/Shanghai"}).slice(0,16); }catch(e){ return ""; } }  // PG日期→北京时间;绝不切ISO串
 
 const SEG_META = { ocean:{icon:'🚢',label:'海运'}, truck:{icon:'🚛',label:'车队'}, customs:{icon:'🛂',label:'报关'}, factory:{icon:'🏭',label:'工厂'} };
-let segs = [], curSeg = null, uploads = [], vehs = [{}], upZone = 'ocean', _billSummary = null, _billSheet = null;
-function moneyMap(v){
-  if(!v || typeof v !== 'object') return '';
-  return Object.entries(v).filter(([,n])=>Number(n)>0).map(([c,n])=>c+' '+Number(n).toLocaleString()).join(' / ');
-}
-function chipTone(status){
-  return status === '已定' ? 'badge-green' : status === '待确认' ? 'badge-amber' : 'badge-red';
-}
-function unitLabel(basis, qty){
-  if(basis === 'per_container') return '每柜 × '+(qty || (_billSheet && _billSheet.container_qty) || 1);
-  return '整票 × 1';
-}
+let segs = [], curSeg = null, uploads = [], vehs = [{}], upZone = 'ocean';
 
 function goSeg(s, el){
   curSeg = s;
   document.querySelectorAll('.seg-tab').forEach(t=>t.classList.remove('active'));
   if(el) el.classList.add('active');
-  ['ocean','truck','customs'].forEach(k=>{
-    const node = $('seg-'+k); if(!node) return;
-    node.classList.toggle('hidden', k !== s || (k === 'ocean' && !document.body.classList.contains('ui-v1')));
-  });
+  ['ocean','truck','customs'].forEach(k=>$('seg-'+k).classList.toggle('hidden', k!==s));
 }
 
 function openBillingInvoice(){
@@ -38,152 +23,49 @@ function openBillingInvoice(){
   window.open('/public/invoice-confirm-preview.html?token=' + encodeURIComponent(window._billingToken), '_blank', 'noopener');
 }
 
-async function fetchBillSummary(){
-  try{
-    const r = await fetch(`${API}/collab-bill-summary?token=${encodeURIComponent(token)}`);
-    const d = await r.json().catch(()=>({}));
-    if(r.ok && d.ok) _billSummary = d;
-  }catch(e){}
-}
-
-function renderHero(s, ps){
-  const panel = $('portalHero'), body = $('portalHeroBody'); if(!panel || !body) return;
-  const route = [s.pol, s.pod].filter(Boolean).join(' → ');
-  const qty = [s.container_type, s.container_qty ? '× '+s.container_qty : ''].filter(Boolean).join(' ');
-  const truckOk = !!(s.trucking_detail && Array.isArray(s.trucking_detail.vehicles) && s.trucking_detail.vehicles.some(v=>v.plate||v.driver_phone));
-  body.innerHTML = `<div class="hero-grid">
-    <div><div class="hero-name">${esc(ps.company_label || '货代协同')}</div>
-      <div class="hero-bl">${esc(s.bl_no || s.hbl_no || '提单号待回传')}</div></div>
-    <div class="mini-kv">
-      <span>出单方式</span><span>${esc(s.release_type || '待确认')}</span>
-      <span>柜量/航线</span><span>${esc([qty, route].filter(Boolean).join(' · ') || '待确认')}</span>
-      <span>委托拖车</span><span><button class="btn btn-sm ${truckOk?'btn-green':'btn-ghost'}" type="button">${truckOk?'已回填':'待回填'}</button></span>
-    </div></div>`;
-  panel.classList.remove('hidden');
-}
-
-function fileLink(type, ref, aud){ return window._fileURL ? window._fileURL(type, ref, aud) : '#'; }
-function docRow(icon, label, href, source){
-  const safe = esc(href);
-  return `<div class="doc-row"><span>${icon}</span><div class="doc-row-main">${esc(label)}</div>
-    <span class="doc-tag">${esc(source)}</span>
-    <div class="doc-actions"><a class="icon-link" href="${safe}" target="_blank" title="预览">👁</a><a class="icon-link" href="${safe}" target="_blank" download title="下载">⬇</a></div></div>`;
-}
-function requirementDocs(s){
-  const cr = s.carrier_requirements || s.requirements || s.carrier_docs_required || null;
-  if(!cr) return [];
-  const text = Array.isArray(cr) ? cr.join(' ') : typeof cr === 'object' ? JSON.stringify(cr) : String(cr);
-  const rows = [];
-  if(/MSDS|鉴定|液体|电池|危/i.test(text)) rows.push(['🧪','MSDS / 海运运输条件鉴定报告', fileLink('pack','','customs')]);
-  if(/检疫|植检|动检|CIQ|quarantine/i.test(text)) rows.push(['🌿','检疫报告 / CIQ', fileLink('quarantine')]);
-  if(/熏蒸|木|IPPC|fumigation/i.test(text)) rows.push(['🌲','熏蒸 / 木质包装证明', fileLink('pack','','customs')]);
-  return rows;
-}
-function renderOurDocs(s){
-  if(!segs.includes('ocean')) return;
-  const panel = $('ourDocsPanel'), body = $('ourDocsBody'); if(!panel || !body) return;
-  $('dlPackAll').href = fileLink('pack', '', 'customs');
-  const groups = [
-    ['抬头资料', [
-      ['🏢','订舱委托 / Booking Instruction', fileLink('so'), '规则自动'],
-      ...(s.is_transfer ? [['🔁','内转外信息表', fileLink('transfer'), '规则自动']] : [])
-    ]],
-    ['本票单据', [
-      ['📋','排载单 / SO', fileLink('so'), '规则自动'],
-      ['🛂','报关单（海关格式·数据已填）', fileLink('customs_decl'), '规则自动'],
-      ['📦','PL · SC · IV 合并版', fileLink('pack','','customs'), '规则自动']
-    ]]
-  ];
-  const certs = requirementDocs(s).map(x => [x[0], x[1], x[2], '贵司提请']);
-  if(certs.length) groups.push(['货物证书', certs]);
-  body.innerHTML = groups.map(([title, rows]) => `<div class="doc-group">
-    <div class="doc-group-title">${esc(title)}</div>
-    <div class="doc-list ${rows.length>1?'two-col':''}">${rows.map(r=>docRow(r[0],r[1],r[2],r[3])).join('')}</div>
-  </div>`).join('');
-  panel.classList.remove('hidden');
-}
-
-function renderUploadsPanel(){
-  if(!segs.includes('ocean')) return;
-  $('uploadPanel')?.classList.remove('hidden');
-}
-
-function renderDeadlines(s){
-  if(!segs.includes('ocean')) return;
-  const raw = s.so_info || s.raw || {};
-  const grid = $('deadlineGrid'), panel = $('deadlinePanel'); if(!grid || !panel) return;
-  const rows = [
-    ['进场', raw.cutoff_port || raw.port_cutoff || s.port_cutoff_date || '待确认'],
-    ['VGM', bjTime(raw.vgm_cutoff || s.vgm_cutoff || s.vgm_cutoff_at) || '待确认'],
-    ['SI', bjTime(raw.doc_cutoff || s.doc_cutoff || s.si_cutoff_date || s.doc_cutoff_at) || '待确认'],
-    ['预计开船', fmtD(s.etd) || '待确认']
-  ];
-  grid.innerHTML = rows.map(r=>`<div class="deadline-cell"><div>${esc(r[0])}</div><div>${esc(r[1])}</div></div>`).join('');
-  panel.classList.remove('hidden');
-}
-
 function renderBillingEntry(billing, s){
-  const card = $('billingCardV2');
-  const body = $('billingBodyV2');
+  const card = $('billingCard');
+  const body = $('billingBody');
   if (!card || !body) return;
+  const rows = [];
+  if (s.carrier_code || s.vessel) rows.push(['船名航次', [s.carrier_code, s.vessel, s.voyage].filter(Boolean).join(' / ')]);
+  if (s.etd) rows.push(['预计开船 ETD', fmtD(s.etd)]);   // fmtD=上海时区，勿用原始UTC slice（会差一天）
+  if (s.eta) rows.push(['预计到港 ETA', fmtD(s.eta)]);
+  if (s.release_type) rows.push(['提单类型', s.release_type === 'SWB' ? '海运单(SWB) · 无需电放' : s.release_type === 'TELEX' ? '电放提单 · 已电放' : s.release_type === 'OBL' ? '正本提单' : s.release_type]);
   const canOpen = !!(billing && billing.token && billing.show_amount !== false);
   window._billingToken = canOpen ? billing.token : '';
-  if(!segs.includes('ocean')) return;
   card.classList.remove('hidden');
-  const map = { ocean:'海运费', trucking:'拖车费', port_charge:'港杂费', customs:'报关费' };
-  const keys = ['ocean','trucking','port_charge','customs'];
-  const segData = (_billSummary && _billSummary.segments) || {};
-  body.innerHTML = keys.map(k=>{
-    const x = segData[k] || {status:'待报', amount:{}, pending_amount:{}};
-    const money = moneyMap(x.amount);
-    const pending = moneyMap(x.pending_amount);
-    const empty = !money && !pending;
-    const summary = k === 'port_charge' ? '可编辑费目表 · 新增待我方确认' : [s.pol||'起点', s.pod||'港口'].join(' → ');
-    const detail = k === 'port_charge' ? portChargeEditor() :
-      `<div style="font-size:12px;color:#374151;font-weight:800;">${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>`;
-    return `<div class="bill-row" id="bill_${k}">
-      <button class="bill-summary" type="button" onclick="toggleBill('${k}')"><b>${map[k]}</b><span class="desc">${esc(summary)}</span>
-        <span class="bill-money ${empty?'empty':''}">${esc(money || pending || '未填写金额')}</span><span class="badge ${chipTone(x.status)}">${esc(x.status)}</span></button>
-      <div class="bill-detail">${detail}</div></div>`;
-  }).join('');
-  $('billingSubV2').textContent = canOpen ? '海运费 / 拖车费 / 港杂费 / 报关费' : '当前链接暂无可打开账单';
-}
+  body.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">'
+    + '<div><div style="font-size:13px;font-weight:800;color:#1a1d23;">费用 / 账单：' + (canOpen ? '本票港杂/费用账单' : '暂无') + '</div>'
+    + '<div style="font-size:11px;color:#6b7280;margin-top:2px;">' + (canOpen ? esc((SEG_META[billing.segment] && SEG_META[billing.segment].label ? SEG_META[billing.segment].label + '段费用' : billing.segment) || '按当前权限展示') : '当前链接暂无可打开账单') + '</div></div>'
+    + (canOpen ? '<button class="btn btn-blue btn-sm" onclick="openBillingInvoice()">打开账单 / 开票</button>' : '') + '</div>'
+    + (rows.length ? '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 20px;align-items:baseline;margin-top:12px;">'
+      + rows.map(r => `<span style="font-size:11px;color:#6b7280;font-weight:600;white-space:nowrap;">${esc(r[0])}</span>`
+        + `<span style="font-size:12px;font-weight:700;color:#1a1d23;">${esc(r[1])}</span>`).join('') + '</div>' : '')
+    + ((s.vessel && segs.includes('ocean')) ? '<div style="margin-top:12px;"><a href="https://www.vesselfinder.com/vessels?name=' + encodeURIComponent(s.vessel) + '" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#2563eb;text-decoration:none;padding:7px 13px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;">🛰 实时船位 <span style="font-size:10px;color:#94a3b8;font-weight:400;">第三方AIS · 仅供参考</span></a></div>' : '');
 
-function toggleBill(k){ document.getElementById('bill_'+k)?.classList.toggle('open'); }
-function portChargeEditor(){
-  return `<table class="bill-edit-table"><thead><tr><th>费目</th><th>计价单位</th><th>单价</th><th>金额</th><th></th></tr></thead>
-    <tbody id="portChargeRows"></tbody></table>
-    <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="addPortChargeRow()">＋ 新增费目</button>`;
-}
-function addPortChargeRow(){
-  const tb = $('portChargeRows'); if(!tb) return;
-  const id = 'pcr_' + Date.now().toString(36);
-  tb.insertAdjacentHTML('beforeend', `<tr id="${id}">
-    <td><input placeholder="港杂费目"></td>
-    <td><select><option value="">请选择</option><option value="per_container">每柜 × ${esc((_billSheet&&_billSheet.container_qty)||1)}</option><option value="per_bl">整票 × 1</option></select></td>
-    <td><input type="number" min="0" step="0.01" placeholder="不预填"></td>
-    <td><input type="number" min="0" step="0.01" placeholder="必填金额"></td>
-    <td><button class="btn btn-blue btn-sm" onclick="submitPortCharge('${id}')">提报</button></td></tr>`);
-}
-async function submitPortCharge(id){
-  const tr = document.getElementById(id), ins = tr ? tr.querySelectorAll('input') : [], sel = tr ? tr.querySelector('select') : null;
-  const cost = (ins[0]?.value || '').trim(), basis = sel?.value || '', unit = ins[1]?.value || '', amount = ins[2]?.value || '';
-  if(!cost || !basis || !amount){ toast('费目、计价单位、金额必填'); return; }
-  try{
-    const r = await fetch(`${API}/collab-bill-submit`, {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token, action:'add', cost_category:cost, charge_basis:basis, currency:'CNY', unit_price:unit || amount, amount, reason:'协同页提报港杂费'})});
-    const d = await r.json().catch(()=>({}));
-    if(!r.ok || !d.ok) throw new Error(d.error || '提报失败');
-    toast('已提报，待我方确认');
-    tr.querySelectorAll('input,select,button').forEach(x=>x.disabled=true);
-  }catch(e){ toast(e.message || '提报失败'); }
-}
-function startBillConfirm(){
-  const o = (_billSummary && _billSummary.segments) || {}, ocean = moneyMap(o.ocean && o.ocean.amount) || '未填写金额', truck = moneyMap(o.trucking && o.trucking.amount) || '未填写金额';
-  const ok = confirm('本次确认范围：海运费 '+ocean+'；拖车费 '+truck+'。港杂费不在本次确认范围。');
-  if(!ok) return;
-  const ok2 = confirm('请确认：已核对金额与柜数无误。确认后如需改价，请走账单改价/提报，待我方确认。');
-  if(ok2){ localStorage.setItem('collab_bill_checked_'+token, new Date().toISOString()); toast('已记录本机确认；正式账单仍以系统确认为准'); }
+  // 账单卡默认收起（报关行主线是下载资料，费用次要）——点头部展开/收起
+  const bodyEl = card.querySelector('.step-body');
+  const headEl = card.querySelector('.step-head');
+  if (bodyEl && headEl && !card._collapsibleWired) {
+    card._collapsibleWired = true;
+    // 车队方：费用默认展开写出来（报关行主线是下载资料，仍默认收起）
+    const startOpen = Array.isArray(segs) && segs.includes('truck');
+    bodyEl.style.cssText = 'overflow:hidden;transition:max-height .3s ease,opacity .25s ease;max-height:' + (startOpen ? '1400px' : '0') + ';opacity:' + (startOpen ? '1' : '0') + ';';
+    const sub = card.querySelector('.step-sub');
+    if (sub) sub.textContent = canOpen ? (startOpen ? '本票费用 · 装货完成后请确认价格（含续页加价）' : '点开确认 / 改价（含续页加价）· 已收起') : '本票港杂 / 费用账单';
+    const chev = document.createElement('span');
+    chev.textContent = startOpen ? '▲' : '▼';
+    chev.style.cssText = 'margin-left:auto;color:#9ca3af;font-size:12px;flex-shrink:0;';
+    headEl.appendChild(chev);
+    headEl.style.cursor = 'pointer';
+    headEl.addEventListener('click', () => {
+      const open = bodyEl.style.maxHeight && bodyEl.style.maxHeight !== '0px';
+      bodyEl.style.maxHeight = open ? '0px' : '1400px';
+      bodyEl.style.opacity = open ? '0' : '1';
+      chev.textContent = open ? '▼' : '▲';
+    });
+  }
 }
 
 function renderFiles(){
@@ -191,10 +73,10 @@ function renderFiles(){
   ['ocean','truck','customs'].forEach(seg=>{
     const mine = uploads.filter(u=>String(u.filename||'').startsWith('['+seg+']') ||
       (seg==='ocean' && !/^\[(truck|customs)\]/.test(String(u.filename||''))&& u.role!=='trucking' && u.role!=='broker' && String(u.filename||'').startsWith('[ocean]')));
-    const el = $(seg === 'ocean' ? 'fl_ocean_v2' : 'fl_'+seg) || $('fl_'+seg); if(!el) return;
+    const el = $('fl_'+seg); if(!el) return;
     el.innerHTML = uploads.filter(u=>String(u.filename||'').startsWith('['+seg+']')).map(u=>`
       <div class="file-row"><span>📄</span><span style="flex:1;font-weight:700;">${esc(String(u.filename).replace('['+seg+']',''))}</span>
-      <span style="color:#047857;font-size:10px;">${esc(bjTime(u.uploaded_at))} ✓</span></div>`).join('');
+      <span style="color:#047857;font-size:10px;">${esc(String(u.uploaded_at).replace('T',' ').slice(5,16))} ✓</span></div>`).join('');
   });
 }
 
@@ -367,8 +249,6 @@ async function saveVeh(opts){
 function autoSaveVeh(){ clearTimeout(_autoSaveTimer); _autoSaveTimer=setTimeout(()=>saveVeh({silent:true}), 600); }
 
 async function boot(){
-  const foot = $('uiVersionFoot');
-  if(foot) foot.textContent = `UI ${PORTAL_UI_VERSION} · 2026-08-07`;
   if(!token){ show('stateDead'); return; }
   const r = await fetch(`${API}/validate?token=${encodeURIComponent(token)}`);
   const d = await r.json().catch(()=>({}));
@@ -392,17 +272,16 @@ async function boot(){
   const fileURL = window._fileURL;
 
   segs = ps.segments || ['ocean','truck','customs'];
-  $('topBadge').textContent = ps.company_label || '供应链端口';
-  $('bannerTitle').textContent = (ps.company_label || '贵司') + ' — ' + segs.map(x=>SEG_META[x].label).join('+');
+  $('topBadge').textContent = s.shipment_no || '供应链端口';
+  $('bannerTitle').textContent = (s.shipment_no||'—') + ' — ' + segs.map(x=>SEG_META[x].label).join('+') + (ps.company_label?`（${esc(ps.company_label)}）`:'');
   $('bannerSub').textContent = '贵司承包：' + segs.map(x=>SEG_META[x].label).join('+') + ' ＝ ' + (ps.company_label || '贵司') + (segs.length>=3 ? ' · 一个口全干' : '');
-  renderHero(s, ps);
   const chips=[];
   // 航线只给海运方(货代)看；纯车队/报关方不需要知道 POL→POD
   if((s.pol||s.pod) && segs.includes('ocean')) chips.push(`<div class="chip"><span>航线 </span><b>${esc(s.pol||'—')} → ${esc(s.pod||'—')}</b></div>`);
   if(s.container_type) chips.push(`<div class="chip"><span>柜型 </span><b>${esc(s.container_type)}${s.container_qty?' × '+s.container_qty:''}</b></div>`);
   if(s.factory_cargo_ready) chips.push(`<div class="chip"><span>货好 </span><b>${fmtD(s.factory_cargo_ready)}</b></div>`);
   if(s.etd) chips.push(`<div class="chip"><span>ETD </span><b>${fmtD(s.etd)}</b></div>`);
-  if($('chips')) $('chips').innerHTML = chips.join('');
+  $('chips').innerHTML = chips.join('');
   // 阶段进度：现在到哪步、谁该干活
   (function(){
     const ups0 = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
@@ -425,17 +304,14 @@ async function boot(){
     const div = document.createElement('div');
     div.style.cssText = 'margin:10px 0 2px;padding:8px 14px;background:#fff;border:1px solid #e5e7eb;border-radius:9px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;';
     div.innerHTML = bar;
-    if($('chips')) $('chips').parentNode.insertBefore(div, $('chips').nextSibling);
+    $('chips').parentNode.insertBefore(div, $('chips').nextSibling);
   })();
   // 段 tab
   $('segTabs').innerHTML = segs.map((x,i)=>
     `<div class="seg-tab ${i===0?'active':''}" onclick="goSeg('${x}',this)">${SEG_META[x].icon} ${SEG_META[x].label}</div>`).join('');
   goSeg(segs[0], document.querySelector('.seg-tab'));
   // 海运下载
-  if($('dlSO')) $('dlSO').href = `${API}/file?token=${encodeURIComponent(token)}&type=so`;
-  renderUploadsPanel();
-  renderOurDocs(s);
-  renderDeadlines(s);
+  $('dlSO').href = `${API}/file?token=${encodeURIComponent(token)}&type=so`;
   (function(){
     const box = document.getElementById('oceanDocs');
     if (!box) return;
@@ -463,7 +339,7 @@ async function boot(){
   if (blUps.length) blUps.forEach(u => { dl += dlRow('📄', 'BL · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
   // BL number entry section
   (function(){
-    const sec = $('blNoSection_v2') || $('blNoSection');
+    const sec = $('blNoSection');
     if (!sec) return;
     if (s.bl_no) {
       sec.innerHTML = `<div style="background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 提单号已提交：<span style="color:#1a1d23;">${esc(s.bl_no)}</span> · 客户已可查看草稿</div>`;
@@ -547,8 +423,6 @@ async function boot(){
     if ($('soInfoC')) $('soInfoC').innerHTML = html;
   })();
   renderVehs();
-  _billSheet = s;
-  if(segs.includes('ocean')) await fetchBillSummary();
   renderBillingEntry(d.billing || {}, s);
   // 报关费·回传即确认（续页/加项由报关行自行加价，一次确认即结单）
   (function(){
@@ -604,15 +478,15 @@ function showPreview(href){ $('pvFrame').src = href; $('pvModal').style.display=
 async function submitBlNo(){
   const val = ($('blNoInput')||{}).value||'';
   if(!val.trim()){toast('请输入提单号');return;}
-  const btn = document.querySelector('#blNoSection_v2 button') || document.querySelector('#blNoSection button');
+  const btn = document.querySelector('#blNoSection button');
   if(btn){btn.disabled=true;btn.textContent='提交中…';}
   try{
     const r = await fetch(`${API}/update-bl-no`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token, bl_no: val.trim()})});
     const d = await r.json();
     if(!d.ok) throw new Error(d.error||'失败');
-    if(window._sheetP) window._sheetP.bl_no = d.bl_no;
-    const sec=$('blNoSection_v2') || $('blNoSection');
+    s.bl_no = d.bl_no;
+    const sec=$('blNoSection');
     if(sec) sec.innerHTML=`<div style="background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 提单号已提交：<span style="color:#1a1d23;">${esc(d.bl_no)}</span> · 客户已可查看草稿</div>`;
     toast('✓ 提单号已提交，客户可确认');
   }catch(e){toast('提交失败：'+e.message);if(btn){btn.disabled=false;btn.textContent='提交';}}
