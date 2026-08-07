@@ -3,6 +3,10 @@ import { requireAuth } from "../../auth.js";
 import { derivePlanFactories } from "../booking-collab-view.js";
 import { rawToHash } from "./collab-shared.js";
 
+const INTERNAL_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
+const VALID_BASIS = new Set(["per_container", "per_bl", "per_declaration", "per_item"]), VALID_CCY = new Set(["CNY", "USD"]);
+const ROLE_SEGMENT = { supplier_portal: { segment: "port_charge", categories: null, basis: ["per_container", "per_bl"] }, broker_booking: { segment: "customs", categories: ["报关费", "超项费"], basis: ["per_declaration", "per_item"] }, trucking_booking: { segment: "trucking", categories: ["拖车费"], basis: ["per_container"] } };
+
 // ── POST /set-factory-bill (Sanlyn内部) ───────────────────────
 async function handleSetFactoryBill(req, res, pool) {
   if (!requireAuth(req, res)) return;
@@ -386,4 +390,92 @@ async function handleSetPartyBilling(req, res, pool) {
   return res.json({ ok: true, party_billing: partyBilling });
 }
 
-export { handleSetFactoryBill, handleConfirmFactoryBill, handlePartyDefaults, handleSetPartyDefault, handlePartyBillingStatus, handleSetPartyBilling };
+async function readBillToken(pool, token) {
+  const { rows } = await pool.query(`SELECT recipient_role, meta FROM magic_links WHERE token_hash=$1 AND recipient_role=ANY($2::text[]) AND expires_at>NOW() AND revoked_at IS NULL LIMIT 1`, [rawToHash(token), Object.keys(ROLE_SEGMENT)]);
+  if (!rows.length) return null;
+  const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
+  return { role: rows[0].recipient_role, meta, planId: parseInt(meta.shipment_id, 10) };
+}
+async function billPlan(pool, planId) {
+  const { rows } = await pool.query(`SELECT id, bl_no, hbl_no, pol, pod, container_type, container_qty, carrier_code, shipping_line FROM shipping_plans WHERE id=$1 LIMIT 1`, [planId]);
+  return rows[0] || null;
+}
+function cleanText(v, max = 120) { return String(v || "").trim().slice(0, max); }
+function amountNum(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
+function normCcy(v) { return cleanText(v, 8).toUpperCase(); }
+function calcQty(basis, plan) { return basis === "per_container" ? Number(plan.container_qty || 0) : 1; }
+function segmentForCategory(cat) { return /拖车|陆运|truck/i.test(cat) ? "trucking" : /报关|超项|报检|custom/i.test(cat) ? "customs" : /海运|ocean|freight/i.test(cat) ? "ocean" : "port_charge"; }
+function totalsByCurrency(rows) { return rows.reduce((a, r) => { const c = normCcy(r.currency || "CNY"); a[c] = Number(((a[c] || 0) + Number(r.amount || 0)).toFixed(2)); return a; }, {}); }
+async function declarationStats(pool, planId) {
+  const { rows } = await pool.query(`SELECT o.order_no, COALESCE(NULLIF(BTRIM(oli.declaration_name),''),NULLIF(BTRIM(oli.product_name),''),NULLIF(BTRIM(p.declaration_name),''),NULLIF(BTRIM(p.product_name),''),NULLIF(BTRIM(oli.sku),'')) AS name FROM orders o JOIN order_line_items oli ON oli.order_id=o.id LEFT JOIN products p ON p.sku=oli.sku WHERE o.shipping_plan_id=$1 OR o.order_no IN (SELECT unnest(COALESCE((SELECT order_nos FROM shipping_plans WHERE id=$1),'{}'::text[])))`, [planId]);
+  const names = [...new Set(rows.map(r => cleanText(r.name)).filter(Boolean))];
+  const byOrder = {};
+  for (const r of rows) { const order = cleanText(r.order_no || "unknown", 80), name = cleanText(r.name); if (name) (byOrder[order] ||= new Set()).add(name); }
+  return { declaration_name_count: names.length, excess_item_count: Math.max(0, names.length - 5), per_order: Object.fromEntries(Object.entries(byOrder).map(([k, v]) => [k, v.size])), names };
+}
+async function handleCollabBillSubmit(req, res, pool) {
+  const b = req.body || {}, auth = b.token ? await readBillToken(pool, b.token) : null;
+  if (!b.token) return res.status(400).json({ ok: false, error: "token 必填" });
+  if (!auth || !auth.planId) return res.status(403).json({ ok: false, error: "链接无效或已过期" });
+  const rule = ROLE_SEGMENT[auth.role], plan = await billPlan(pool, auth.planId);
+  if (!plan) return res.status(404).json({ ok: false, error: "找不到出货计划" });
+  const blNo = plan.bl_no || plan.hbl_no, action = cleanText(b.action || "add", 12), billId = parseInt(b.bill_id, 10);
+  if (!blNo) return res.status(400).json({ ok: false, error: "BL 尚未录入，不能提报费用" });
+  if (!["add", "update", "delete"].includes(action)) return res.status(400).json({ ok: false, error: "action 无效" });
+  const category = cleanText(b.cost_category || "港杂费", 60), basis = cleanText(b.charge_basis, 24), currency = normCcy(b.currency || "CNY"), unit = amountNum(b.unit_price), qty = b.qty == null || b.qty === "" ? null : amountNum(b.qty), amount = amountNum(b.amount ?? (unit != null ? unit * (qty || calcQty(basis, plan)) : null));
+  if (segmentForCategory(category) !== rule.segment || (rule.categories && !rule.categories.includes(category))) return res.status(403).json({ ok: false, error: "角色无权提报该费段" });
+  if (!VALID_BASIS.has(basis) || !rule.basis.includes(basis)) return res.status(400).json({ ok: false, error: "charge_basis 必须是允许的枚举值" });
+  if (!VALID_CCY.has(currency)) return res.status(400).json({ ok: false, error: "currency 只接受 CNY/USD" });
+  if (action !== "delete" && (!amount || amount <= 0)) return res.status(400).json({ ok: false, error: "金额必须 > 0" });
+  if (basis === "per_container" && !Number(plan.container_qty || 0)) return res.status(400).json({ ok: false, error: "缺 container_qty，不能按柜计费" });
+  let stats = null;
+  if (category === "超项费" && (stats = await declarationStats(pool, plan.id)).declaration_name_count <= 5) return res.status(400).json({ ok: false, error: "本票申报品名未超过5项，不能收超项费", declaration_stats: stats });
+  const pending = { status: "pending", action, requested_by_role: auth.role, requested_by: cleanText(auth.meta.company_label || auth.role, 80), requested_at: new Date().toISOString(), reason: cleanText(b.reason, 500), charge_basis: basis, declaration_stats: stats };
+  if (action === "add") {
+    const ins = await pool.query(`INSERT INTO freight_supplier_bills (supplier,supplier_type,bl_no,cost_category,amount,currency,qty,unit_price,rebill_status,link_plan_id,raw,created_at,updated_at,supplier_company_code,charge_basis,canonical_category,currency_norm,confirmed_at,direction,ownership_scope,fob_scope) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10::jsonb,NOW(),NOW(),$11,$12,$13,$6,NULL,'payable','logistics',$14) RETURNING id`, [pending.requested_by, auth.role, blNo, category, amount, currency, qty || calcQty(basis, plan), unit, plan.id, JSON.stringify({ collab_pending: pending }), cleanText(auth.meta.company_code || auth.meta.supplier_company_code, 40) || null, basis, category, rule.segment]);
+    return res.json({ ok: true, status: "pending", bill_id: ins.rows[0].id });
+  }
+  if (!billId) return res.status(400).json({ ok: false, error: "bill_id 必填" });
+  const own = await pool.query(`SELECT id FROM freight_supplier_bills WHERE id=$1 AND bl_no=$2`, [billId, blNo]);
+  if (!own.rows.length) return res.status(403).json({ ok: false, error: "账单行不属于本票" });
+  pending.proposed = action === "delete" ? null : { cost_category: category, amount, currency, qty: qty || calcQty(basis, plan), unit_price: unit, charge_basis: basis };
+  await pool.query(`UPDATE freight_supplier_bills SET raw=COALESCE(raw,'{}'::jsonb)||jsonb_build_object('collab_pending',$1::jsonb), updated_at=NOW() WHERE id=$2`, [JSON.stringify(pending), billId]);
+  return res.json({ ok: true, status: "pending", bill_id: billId });
+}
+async function handleCollabBillConfirm(req, res, pool) {
+  if (!requireAuth(req, res)) return;
+  const b = req.body || {}, id = parseInt(b.bill_id, 10), by = req.user && req.user.username ? req.user.username : "admin";
+  if (!id) return res.status(400).json({ ok: false, error: "bill_id 必填" });
+  const { rows } = await pool.query(`SELECT *, raw->'collab_pending' AS pending FROM freight_supplier_bills WHERE id=$1`, [id]);
+  if (!rows.length) return res.status(404).json({ ok: false, error: "账单行不存在" });
+  const pending = rows[0].pending;
+  if (!pending || !pending.status) return res.status(400).json({ ok: false, error: "没有待确认变更" });
+  if (b.decision === "reject") {
+    await pool.query(`UPDATE freight_supplier_bills SET raw=(COALESCE(raw,'{}'::jsonb)-'collab_pending')||jsonb_build_object('collab_rejected',$1::jsonb), updated_at=NOW() WHERE id=$2`, [JSON.stringify({ ...pending, rejected_by: by, rejected_at: new Date().toISOString(), reason: cleanText(b.reason, 500) }), id]);
+    return res.json({ ok: true, status: "rejected" });
+  }
+  if (pending.action === "delete") await pool.query(`UPDATE freight_supplier_bills SET rebill_status='voided', confirmed_at=NOW(), confirmed_by=$1, raw=COALESCE(raw,'{}'::jsonb)-'collab_pending', updated_at=NOW() WHERE id=$2`, [by, id]);
+  else { const p = pending.proposed || rows[0]; await pool.query(`UPDATE freight_supplier_bills SET cost_category=$1,amount=$2,currency=$3,qty=$4,unit_price=$5,charge_basis=$6,canonical_category=$1,currency_norm=$3,rebill_status=NULL,confirmed_at=NOW(),confirmed_by=$7,raw=COALESCE(raw,'{}'::jsonb)-'collab_pending',updated_at=NOW() WHERE id=$8`, [p.cost_category, p.amount, p.currency, p.qty, p.unit_price, p.charge_basis, by, id]); }
+  return res.json({ ok: true, status: "accepted" });
+}
+async function handleCollabBillSummary(req, res, pool) {
+  const token = req.query && req.query.token;
+  let planId = req.query && req.query.plan_id, internal = false;
+  if (token) { const auth = await readBillToken(pool, token); if (!auth || !auth.planId) return res.status(403).json({ ok: false, error: "链接无效或已过期" }); planId = auth.planId; internal = INTERNAL_PROFILES.has(cleanText(auth.meta.field_profile)); }
+  else { if (!requireAuth(req, res)) return; internal = true; }
+  if (!planId) return res.status(400).json({ ok: false, error: "plan_id 必填" });
+  const plan = await billPlan(pool, planId), blNo = plan && (plan.bl_no || plan.hbl_no);
+  if (!plan) return res.status(404).json({ ok: false, error: "找不到出货计划" });
+  if (!blNo) return res.status(400).json({ ok: false, error: "BL 尚未录入，不能汇总账单" });
+  const { rows } = await pool.query(`SELECT id,cost_category,amount,currency,supplier,supplier_type,confirmed_at,raw->'collab_pending' AS pending FROM freight_supplier_bills WHERE bl_no=$1 AND COALESCE(rebill_status,'') <> 'voided'`, [blNo]);
+  const segs = { ocean: [], trucking: [], port_charge: [], customs: [] };
+  for (const r of rows) (segs[segmentForCategory(r.cost_category)] || segs.port_charge).push(r);
+  const segment = (key) => { const rs = segs[key] || [], confirmed = rs.filter(r => r.confirmed_at && !(r.pending && r.pending.status)); return { status: confirmed.length ? "已定" : rs.some(r => r.pending && r.pending.status) ? "待确认" : "待报", reported_by: [...new Set(rs.map(r => r.supplier || r.supplier_type).filter(Boolean))], amount: totalsByCurrency(confirmed), pending_amount: totalsByCurrency(rs.filter(r => r.pending && r.pending.status)) }; };
+  const out = { ok: true, shipping_plan_id: plan.id, bl_no: blNo, segments: { ocean: segment("ocean"), trucking: segment("trucking"), port_charge: segment("port_charge"), customs: segment("customs") } };
+  if (internal) {
+    const refs = await pool.query(`SELECT (SELECT row_to_json(lc) FROM local_charges lc WHERE ($1='' OR lc.pol ILIKE $1) AND ($2='' OR lc.pod ILIKE $2) ORDER BY lc.updated_at DESC LIMIT 1) AS local_charge_last,(SELECT json_agg(x) FROM (SELECT company_name, container_type, cost_total, sell_total, updated_at FROM local_charges WHERE ($1='' OR pol ILIKE $1) AND ($2='' OR pod ILIKE $2) ORDER BY updated_at DESC LIMIT 5) x) AS route_base`, [plan.pol || "", plan.pod || ""]);
+    out.references = { local_charges_last: refs.rows[0].local_charge_last || null, route_base: refs.rows[0].route_base || [], declaration_stats: await declarationStats(pool, plan.id) };
+  }
+  return res.json(out);
+}
+export { handleSetFactoryBill, handleConfirmFactoryBill, handlePartyDefaults, handleSetPartyDefault, handlePartyBillingStatus, handleSetPartyBilling, handleCollabBillSubmit, handleCollabBillConfirm, handleCollabBillSummary };

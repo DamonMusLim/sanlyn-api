@@ -27,7 +27,7 @@ import { handleValidate } from "./lib/collab-validate.js";
 import { handleSendFactoryLink, handleSendCustomerLink, handleSendRoleLink, handleSendPortalLink, handleMasterPreviewToken, handleSendIntermediaryLink } from "./lib/collab-links.js";
 import { handleFactorySubmit } from "./lib/collab-submit-factory.js";
 import { handleCustomerSubmit, handleTruckingSubmit, handleBrokerSubmit, handleCustomerNotes } from "./lib/collab-submit-roles.js";
-import { handleSetFactoryBill, handleConfirmFactoryBill, handlePartyDefaults, handleSetPartyDefault, handlePartyBillingStatus, handleSetPartyBilling } from "./lib/collab-billing.js";
+import { handleSetFactoryBill, handleConfirmFactoryBill, handlePartyDefaults, handleSetPartyDefault, handlePartyBillingStatus, handleSetPartyBilling, handleCollabBillSubmit, handleCollabBillConfirm, handleCollabBillSummary } from "./lib/collab-billing.js";
 import { handleFileProxy, handleCollabUpload } from "./lib/collab-files.js";
 import { handleGetSailings, handlePostSailing, handleGetPlan, handlePatchPlan, handleDeleteSailing, handlePlansList, handlePlanFactories } from "./lib/collab-sailings-plans.js";
 import { handleGetContacts, handleSupplyChainOptions, handleCollabPartyInvoices, handleCollabVendorOptions, handleCollabAssignVendor } from "./lib/collab-contacts-vendor.js";
@@ -81,6 +81,9 @@ export default async function handler(req, res) {
     if (req.method === "POST" && pathSuffix === "set-party-default")      return await handleSetPartyDefault(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "party-billing-status")   return await handlePartyBillingStatus(req, res, pool);
     if (req.method === "POST" && pathSuffix === "set-party-billing")      return await handleSetPartyBilling(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "collab-bill-submit")     return await handleCollabBillSubmit(req, res, pool);
+    if (req.method === "POST" && pathSuffix === "collab-bill-confirm")    return await handleCollabBillConfirm(req, res, pool);
+    if (req.method === "GET"  && pathSuffix === "collab-bill-summary")    return await handleCollabBillSummary(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "collab-messages")        return await handleCollabMessages(req, res, pool);
     if (req.method === "POST" && pathSuffix === "collab-message")         return await handlePostCollabMessage(req, res, pool);
     if (req.method === "GET"  && pathSuffix === "shipment-orders")        return await handleShipmentOrders(req, res, pool);
