@@ -35,6 +35,31 @@ import { CSS, esc, fmtM, fmtD, pick, resolveAddr, resolveUnitPrice, wrap, seller
 import { scrubCustomerFacingHtml, loadSellerCfg, enrichProdsFromMaster,
   loadDocColConfig, buildColsFromConfig } from "./doc-data.js";
 
+// ── ids 分隔符统一解析(2026-08-08 根治) ──
+// 事故: 合并出单传 ids 用换行分隔时 split(",") 得到一个整串,查不到兄弟单 →
+// 静默只出一半货(OOLU2335623260 出成 1400箱/¥77,420,真值 2800箱/¥157,234)。
+// 一律按 [逗号|换行|分号|竖线|空白] 拆,任何调用方写法都吃得下。
+function _splitIds(v){
+  return String(v==null?"":v).split(/[,;|\s]+/).map(function(s){return s.trim();}).filter(Boolean);
+}
+
+// ── 本票范围解析(2026-08-08 根治) ──
+// 一份报关/客户资料该覆盖谁,由【本票】决定,不由调用方参数决定。
+// 真源 = orders.shipping_plan_id(orders.bl_no 实测全空,别再用它判本票)。
+// 调用方没传 ids / 传漏了,这里补全 → 从源头杜绝"静默半票"。
+async function _resolveTicketIds(pool, anyId){
+  try{
+    var r = await pool.query(
+      "WITH base AS (SELECT shipping_plan_id AS pid, COALESCE(NULLIF(bl_no,''), raw->>'blNo') AS bl"
+      + " FROM orders WHERE order_no=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1)"
+      + " SELECT COALESCE(o.order_no, o.contract_no, o.customer_po) AS key FROM orders o, base b"
+      + " WHERE (b.pid IS NOT NULL AND o.shipping_plan_id = b.pid)"
+      + "    OR (b.bl IS NOT NULL AND b.bl <> '' AND (o.bl_no = b.bl OR o.raw->>'blNo' = b.bl))"
+      + " ORDER BY 1", [String(anyId||"")]);
+    return (r.rows||[]).map(function(x){return x.key;}).filter(Boolean);
+  }catch(e){ console.warn("[documents] 本票范围解析失败(放行):", e.message); return []; }
+}
+
 function customerDocNo(raw, order, fallback) {
   raw = raw || {};
   order = order || {};
@@ -361,7 +386,7 @@ export default async function handler(req, res) {
       try {
         var cbR=await pool.query(
           "SELECT contract_no, container_no, container_type FROM container_bookings WHERE contract_no = ANY($1::text[])",
-          [[pick(o.contract_no,o.order_no,id)].concat(String(ids||"").split(",").map(function(s){return s.trim();}).filter(Boolean))]
+          [[pick(o.contract_no,o.order_no,id)].concat(_splitIds(ids))]
         );
         cbR.rows.forEach(function(row){ if(row.contract_no){ _cbMap[row.contract_no]=row.container_no; _cbTypeMap[row.contract_no]=row.container_type||""; } });
       } catch (e) { console.warn("[documents] container_bookings lookup failed:",e.message); }
@@ -390,12 +415,16 @@ export default async function handler(req, res) {
       // Only the product name field differs: customs uses bl_description, customer uses full name.
       var autoIds = ids;
       if (!autoIds && type !== "pi") {
+        // 2026-08-08 根治: 本票真源 = shipping_plan_id。orders.bl_no 实测全空,
+        // 原来按 bl_no 找兄弟单的自动合并从上线起就没生效过(所以必须靠前端传 ids,
+        // 前端传法一错就静默出半票)。改为 plan 优先、bl_no 兜底。
         var blForLookup = pick(o.bl_no, raw.blNo, raw.bl_no);
-        if (blForLookup) {
+        if (o.shipping_plan_id || blForLookup) {
           try {
             var sibBl = await pool.query(
-              "SELECT contract_no, customer_po FROM orders WHERE bl_no=$1 OR raw->>'blNo'=$2",
-              [blForLookup, blForLookup]
+              "SELECT contract_no, customer_po FROM orders WHERE ($1::int IS NOT NULL AND shipping_plan_id=$1)"
+              + " OR ($2::text <> '' AND (bl_no=$2 OR raw->>'blNo'=$2))",
+              [o.shipping_plan_id || null, blForLookup || ""]
             );
             var sibCnos = sibBl.rows
               .map(function(r){ return r.contract_no || r.customer_po; })
@@ -405,9 +434,9 @@ export default async function handler(req, res) {
         }
       }
       if(autoIds && type!=="pi"){
-        var idList=String(autoIds).split(",").map(function(s){return s.trim();}).filter(function(s){return s && s!==id;});
+        var idList=_splitIds(autoIds).filter(function(s){return s!==id;});
         if(idList.length){
-          var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[])",[idList]);
+          var sibR=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[]) OR order_no = ANY($1::text[])",[idList]);
           // Sort sibling orders by customer_po for stable output (XM-254 → 256 → 262 → 263 etc.)
           var sibRows=sibR.rows.slice().sort(function(a,b){var pa=(a.customer_po||"");var pb=(b.customer_po||"");return pa<pb?-1:pa>pb?1:0;});
           for(var sib of sibRows){
@@ -441,6 +470,8 @@ export default async function handler(req, res) {
 
       // 2026-05-18 — Customs aggregation + drop empty product rows.
       // Empty rows ({qty:0, name empty}) leak through from upstream import bugs;
+
+
       // they show as "—" in PDF and break visual cleanliness. Filter ANY audience.
       prods = prods.filter(function(p){
         if (!p) return false;
@@ -656,7 +687,7 @@ export default async function handler(req, res) {
           });
           return out;
         }
-        var orderRows=[o], xids=String(autoIds||ids||"").split(",").map(function(s){return s.trim();}).filter(function(s){return s&&s!==id;});
+        var orderRows=[o], xids=_splitIds(autoIds||ids).filter(function(s){return s!==id;});
         if(xids.length){
           var xr=await pool.query("SELECT * FROM orders WHERE contract_no = ANY($1::text[]) OR customer_po = ANY($1::text[]) OR order_no = ANY($1::text[])",[xids]);
           xr.rows.forEach(function(r){ if(!orderRows.some(function(or){return String(or.id)===String(r.id);})){ orderRows.push(r); } });
@@ -1839,13 +1870,77 @@ export default async function handler(req, res) {
           var _ppage2 = /^(pl|sc|iv)$/.test(String(req.query.page||"").toLowerCase()) ? String(req.query.page).toLowerCase() : "";
           var _plang2 = (String(req.query.lang||"").toLowerCase() === "en") ? "&lang=en" : "";
           var _pctn2 = req.query.container_no ? "&container_no=" + encodeURIComponent(String(req.query.container_no)) : "";
+          // 调用方没传 ids(或按柜拆单以外的场景)→ 用本票范围补全,避免出半票
+          var _idsForTpl = ids;
+          if (!_idsForTpl && !req.query.container_no) {
+            var _tk = await _resolveTicketIds(pool, id);
+            if (_tk.length > 1) _idsForTpl = _tk.join(",");
+          }
           var _tplUrl = "https://api.sanlyn.cn/templates/export-docs-template.html?order_no=" + encodeURIComponent(id||"")
-            + "&ids=" + encodeURIComponent(ids||id||"") + _pmode2 + _plang2 + _pctn2
+            + "&ids=" + encodeURIComponent(_idsForTpl||id||"") + _pmode2 + _plang2 + _pctn2
             + (_ppage2 ? "&page=" + encodeURIComponent(_ppage2) : "")
             + "&token=" + encodeURIComponent(_ptok2);
           await page.goto(_tplUrl, {waitUntil:"networkidle0", timeout:60000});
           await new Promise(function(r){ setTimeout(r, 1800); });
           try { _pdfNameOverride = await page.title(); } catch (_) {}
+
+          // ══ 出单自查闸门(2026-08-08 根治)═════════════════════════════════
+          // 事故复盘: 合并报关资料静默只出一半货(1400/2800箱),PDF 照常生成、
+          // 无报错,发出去报关行按半票报关必退单。另一种静默: 只给 Bearer 头
+          // 不给 ?token=,模板取不到登录态 → 出一张全白 PDF(200/1178字节)。
+          // 铁律: 单据出不全 = 事故,必须炸,绝不静默交付。
+          var _guardText = "";
+          try { _guardText = await page.evaluate(function(){ return (document.body && document.body.innerText) || ""; }); } catch(_){}
+          var _guardFail = null;
+
+          // ① 空白单: 多半是 token 没带到模板
+          // 出得来的 pack 单必然带 GRAND TOTAL;没有就是没渲染出来(最常见: 没带 ?token=,
+          // 模板页拿不到登录态 → 出一张全白 PDF,200/1178字节,看不出错)。
+          if (!/GRAND\s*TOTAL/i.test(_guardText)) {
+            _guardFail = { code:"BLANK_DOC",
+              msg:"单据没渲染出内容(找不到 GRAND TOTAL)——最常见原因是没带 ?token= 查询参数:"
+                + "只给 Authorization 头不够,模板页取不到登录态就出一张全白 PDF。已拒绝输出,以免把空白单当正式资料发出。" };
+          }
+
+          // ② 覆盖校验: 本票(同一提单)应有的箱数 vs 单据上打出来的 GRAND TOTAL
+          //    按柜拆单(?container_no=)是合法子集,跳过此项。
+          if (!_guardFail && !req.query.container_no) {
+            try {
+              var _scopeQ = await pool.query(
+                "WITH base AS (SELECT shipping_plan_id AS pid, COALESCE(NULLIF(bl_no,''), raw->>'blNo') AS bl"
+                + " FROM orders WHERE order_no=$1 OR contract_no=$1 OR customer_po=$1 LIMIT 1)"
+                + " SELECT o.order_no, o.total_qty FROM orders o, base b"
+                + " WHERE (b.pid IS NOT NULL AND o.shipping_plan_id = b.pid)"
+                + "    OR (b.bl IS NOT NULL AND b.bl <> '' AND (o.bl_no = b.bl OR o.raw->>'blNo' = b.bl))",
+                [String(id||"")]
+              );
+              var _scope = _scopeQ.rows || [];
+              if (_scope.length >= 1) {
+                var _expQty = _scope.reduce(function(a,r){ return a + (Number(r.total_qty)||0); }, 0);
+                var _m = /GRAND\s*TOTAL:?\s*\n?\s*([\d,]+)\s*CTN/i.exec(_guardText);
+                if (_m) {
+                  var _gotQty = Number(String(_m[1]).replace(/,/g,"")) || 0;
+                  if (_expQty > 0 && _gotQty !== _expQty) {
+                    _guardFail = { code:"COVERAGE_SHORT",
+                      msg:"单据只覆盖了本票的一部分 —— 提单下共 " + _scope.length + " 个订单(" 
+                        + _scope.map(function(r){return r.order_no;}).join(" + ") + ")合计 " + _expQty
+                        + " 箱,单据上只打出 " + _gotQty + " 箱。请检查 ids 参数是否传全(逗号/换行/分号/空格都支持);"
+                        + "若确实要按柜拆单,请带 ?container_no= 指明。已拒绝输出。" };
+                  }
+                } else {
+                  console.warn("[documents] 覆盖校验: 未在单据中找到 GRAND TOTAL,跳过箱数比对 id=" + id);
+                }
+              }
+            } catch(e){ console.warn("[documents] 覆盖校验查询失败(放行):", e.message); }
+          }
+
+          if (_guardFail) {
+            try { await browser.close(); } catch(_){}
+            console.error("[documents] 出单自查拦截 " + _guardFail.code + " id=" + id + " ids=" + (ids||"") );
+            return res.status(409).json({ error:_guardFail.code, message:_guardFail.msg,
+              id:id||null, ids:ids||null, hint:"这是护栏主动拦截,不是系统故障。修正参数后重试。" });
+          }
+          // ══════════════════════════════════════════════════════════════
         } else {
           // W0-3: scrub leaked codes BEFORE rendering to PDF (default = customer-facing).
           var _pdfHtml = (String(_audReq||"").toLowerCase() === "customs") ? html : scrubCustomerFacingHtml(html);

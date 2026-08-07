@@ -532,7 +532,8 @@ function init(){
   if(!orderNo){banner('err','请加 ?order_no=XX&token=YY');return;}
   // 2026-08-04: token 空就当场停,别再照常打开、跑一圈、然后报一句「订单未找到」误导人。
   if(!tok()){showAuthDead();return;}
-  var sibs=(qp('ids')||'').split(',').map(function(s){return s.trim();}).filter(function(s){return s&&s!==orderNo;});
+  // 2026-08-08 根治: ids 分隔符只认逗号会导致换行传参时静默漏单(见 documents.js _splitIds)
+  var sibs=(qp('ids')||'').split(/[,;|\s]+/).map(function(s){return s.trim();}).filter(function(s){return s&&s!==orderNo;});
   banner('info','正在拉取订单数据…');
   var _fpP=loadFactoryPorts();  // 工厂就近港map(起运港pol空时兜底);单独await,不塞进下面Promise.all以免打乱res索引(res.slice(2)是兄弟单)
   Promise.all([loadOrder(orderNo),fetchProductMaster()].concat(sibs.map(loadOrder))).then(function(res){
