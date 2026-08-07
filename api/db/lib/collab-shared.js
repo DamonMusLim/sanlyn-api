@@ -20,9 +20,10 @@ function genRaw() {
 // Damon 2026-08-06：「记得别重造，就改我们之前的协同，版本号记录和时间」
 // 每次改协同的行为(字段可见性/费用/闸门)就升一版，写清改了什么。
 // 前端页脚与 /api/db/collab/verify 都读这里，线上跑的是哪版一看便知。
-const COLLAB_VERSION = "v2.5.0";
-const COLLAB_VERSION_AT = "2026-08-07T11:05+08:00";
+const COLLAB_VERSION = "v2.5.1";
+const COLLAB_VERSION_AT = "2026-08-08T00:25+08:00";
 const COLLAB_CHANGELOG = [
+  { v: "v2.5.1", at: "2026-08-08", note: "修复协同账单跨段越权：update/delete/confirm 均按原账单行费段校验；超项费改为普通 pending 费用，申报品名统计仅作确认参考" },
   { v: "v2.5.0", at: "2026-08-07", note: "三方费用分段填报：货代/车队/报关行只能提报本段费用，全部 pending 待我方确认；新增内部账单分段汇总与参照数据闸门" },
   { v: "v2.4.0", at: "2026-08-06", note: "角色权限矩阵落地：trucking/broker 由完整字段收紧为按需字段(车队10/报关行17/货代23)" },
 ];

@@ -429,15 +429,16 @@ async function handleCollabBillSubmit(req, res, pool) {
   if (action !== "delete" && (!amount || amount <= 0)) return res.status(400).json({ ok: false, error: "金额必须 > 0" });
   if (basis === "per_container" && !Number(plan.container_qty || 0)) return res.status(400).json({ ok: false, error: "缺 container_qty，不能按柜计费" });
   let stats = null;
-  if (category === "超项费" && (stats = await declarationStats(pool, plan.id)).declaration_name_count <= 5) return res.status(400).json({ ok: false, error: "本票申报品名未超过5项，不能收超项费", declaration_stats: stats });
+  if (category === "超项费") stats = await declarationStats(pool, plan.id);
   const pending = { status: "pending", action, requested_by_role: auth.role, requested_by: cleanText(auth.meta.company_label || auth.role, 80), requested_at: new Date().toISOString(), reason: cleanText(b.reason, 500), charge_basis: basis, declaration_stats: stats };
   if (action === "add") {
     const ins = await pool.query(`INSERT INTO freight_supplier_bills (supplier,supplier_type,bl_no,cost_category,amount,currency,qty,unit_price,rebill_status,link_plan_id,raw,created_at,updated_at,supplier_company_code,charge_basis,canonical_category,currency_norm,confirmed_at,direction,ownership_scope,fob_scope) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending',$9,$10::jsonb,NOW(),NOW(),$11,$12,$13,$6,NULL,'payable','logistics',$14) RETURNING id`, [pending.requested_by, auth.role, blNo, category, amount, currency, qty || calcQty(basis, plan), unit, plan.id, JSON.stringify({ collab_pending: pending }), cleanText(auth.meta.company_code || auth.meta.supplier_company_code, 40) || null, basis, category, rule.segment]);
     return res.json({ ok: true, status: "pending", bill_id: ins.rows[0].id });
   }
   if (!billId) return res.status(400).json({ ok: false, error: "bill_id 必填" });
-  const own = await pool.query(`SELECT id FROM freight_supplier_bills WHERE id=$1 AND bl_no=$2`, [billId, blNo]);
+  const own = await pool.query(`SELECT id,cost_category FROM freight_supplier_bills WHERE id=$1 AND bl_no=$2`, [billId, blNo]);
   if (!own.rows.length) return res.status(403).json({ ok: false, error: "账单行不属于本票" });
+  if (segmentForCategory(own.rows[0].cost_category) !== rule.segment) return res.status(403).json({ ok: false, error: "该账单行不属于贵司费段" });
   pending.proposed = action === "delete" ? null : { cost_category: category, amount, currency, qty: qty || calcQty(basis, plan), unit_price: unit, charge_basis: basis };
   await pool.query(`UPDATE freight_supplier_bills SET raw=COALESCE(raw,'{}'::jsonb)||jsonb_build_object('collab_pending',$1::jsonb), updated_at=NOW() WHERE id=$2`, [JSON.stringify(pending), billId]);
   return res.json({ ok: true, status: "pending", bill_id: billId });
@@ -450,6 +451,8 @@ async function handleCollabBillConfirm(req, res, pool) {
   if (!rows.length) return res.status(404).json({ ok: false, error: "账单行不存在" });
   const pending = rows[0].pending;
   if (!pending || !pending.status) return res.status(400).json({ ok: false, error: "没有待确认变更" });
+  const pendingRule = ROLE_SEGMENT[pending.requested_by_role];
+  if (!pendingRule || segmentForCategory(rows[0].cost_category) !== pendingRule.segment) return res.status(403).json({ ok: false, error: "该账单行不属于贵司费段" });
   if (b.decision === "reject") {
     await pool.query(`UPDATE freight_supplier_bills SET raw=(COALESCE(raw,'{}'::jsonb)-'collab_pending')||jsonb_build_object('collab_rejected',$1::jsonb), updated_at=NOW() WHERE id=$2`, [JSON.stringify({ ...pending, rejected_by: by, rejected_at: new Date().toISOString(), reason: cleanText(b.reason, 500) }), id]);
     return res.json({ ok: true, status: "rejected" });
