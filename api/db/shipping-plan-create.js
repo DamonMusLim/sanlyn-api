@@ -6,6 +6,7 @@
 // DELETE ?id=xxx                 → delete plan
 import { getPool, setCors } from "../db.js";
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
+import { validateReleaseTypeBody } from "./lib/release-type.js";
 
 // Production convention: CY00000 sequential.
 // Real order count reached 146 before the system caught up — old rows
@@ -49,6 +50,7 @@ var ENSURE_COLS = `
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS is_ddp BOOLEAN DEFAULT FALSE;
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS ddp_total NUMERIC(12,2);
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS ddp_agent TEXT;
+  ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS release_type TEXT;
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS order_nos TEXT[];
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS contract_nos TEXT[];
   ALTER TABLE shipping_plans ADD COLUMN IF NOT EXISTS customer_en TEXT;
@@ -161,10 +163,12 @@ export default async function handler(req, res) {
       if (!id) return res.status(400).json({ error: "_id required for update" });
 
       var body = req.body || {};
+      var rel = validateReleaseTypeBody(body);
+      if (!rel.ok) return res.status(400).json({ success: false, error: rel.error });
       var UPDATABLE = [
         "shipment_no","so_no","bl_no","vessel","voyage","shipping_line","transit","schedule","call_port",
         "etd","eta","atd","ata","cutoff_date","si_cutoff_date","port_open_date","shipment_date",
-        "container_no","container_type","container_qty","seal_no",
+        "container_no","container_type","container_qty","seal_no","release_type",
         "pol","pod",
         "customer","customer_en","customer_cn","company_code","order_nos","contract_nos",
         "forwarder_cn","forwarder_en","trucking_cn","customs_cn","insurance_cn",
@@ -239,6 +243,8 @@ export default async function handler(req, res) {
 
   try {
     var body = req.body || {};
+    var rel = validateReleaseTypeBody(body);
+    if (!rel.ok) return res.status(400).json({ success: false, error: rel.error });
 
     // Ensure all new columns exist (safe to re-run)
     await pool.query(ENSURE_COLS).catch(function() {});
@@ -246,7 +252,7 @@ export default async function handler(req, res) {
     var {
       shipmentNo, soNo, blNo, vessel, voyage, shippingLine, transit, schedule, callPort,
       etd, eta, atd, ata, cutoffDate, siCutoffDate, portOpenDate, shipmentDate,
-      containerNo, containerType, containerQty, sealNo,
+      containerNo, containerType, containerQty, sealNo, releaseType,
       pol, pod,
       customer, customerEN, customerCN, companyCode, orderNos, contractNos,
       forwarderCN, forwarderEN, truckingCN, customsCN, insuranceCN,
@@ -297,6 +303,7 @@ export default async function handler(req, res) {
         container_type TEXT,
         container_qty INT,
         seal_no TEXT,
+        release_type TEXT,
         pol TEXT,
         pod TEXT,
         customer TEXT,
@@ -346,7 +353,7 @@ export default async function handler(req, res) {
     var sql = `INSERT INTO shipping_plans (
       _id, shipment_no, so_no, bl_no, vessel, voyage, shipping_line, transit, schedule, call_port,
       etd, eta, atd, ata, cutoff_date, si_cutoff_date, port_open_date, shipment_date,
-      container_no, container_type, container_qty, seal_no, pol, pod,
+      container_no, container_type, container_qty, seal_no, release_type, pol, pod,
       customer, customer_en, customer_cn, company_code, order_nos, contract_nos,
       forwarder_cn, forwarder_en, trucking_cn, customs_cn, insurance_cn,
       freight_cost, freight_sale_usd,
@@ -360,23 +367,23 @@ export default async function handler(req, res) {
     ) VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
       $11,$12,$13,$14,$15,$16,$17,$18,
-      $19,$20,$21,$22,$23,$24,
-      $25,$26,$27,$28,$29,$30,
-      $31,$32,$33,$34,$35,
-      $36,$37,
-      $38,$39,$40,$41,$42,$43,$44,
-      $45,$46,
-      $47,$48,$49,$50,
-      $51,$52,
-      $53,$54,$55,
-      $56,$57,$58,
-      $59
+      $19,$20,$21,$22,$23,$24,$25,
+      $26,$27,$28,$29,$30,$31,
+      $32,$33,$34,$35,$36,
+      $37,$38,
+      $39,$40,$41,$42,$43,$44,$45,
+      $46,$47,
+      $48,$49,$50,$51,
+      $52,$53,
+      $54,$55,$56,
+      $57,$58,$59,
+      $60
     ) RETURNING *`;
 
     var vals = [
       portalId, sNo, s(soNo), s(blNo), s(vessel), s(voyage), s(shippingLine), s(transit), s(schedule), s(callPort),
       s(etd), s(eta), s(atd), s(ata), s(cutoffDate), s(siCutoffDate), s(portOpenDate), s(shipmentDate),
-      s(containerNo), s(containerType), i(containerQty)||1, s(sealNo), s(pol), s(pod),
+      s(containerNo), s(containerType), i(containerQty)||1, s(sealNo), s(body.release_type || releaseType), s(pol), s(pod),
       s(customer||customerEN||customerCN), s(customerEN), s(customerCN), s(companyCode),
       arr(orderNos), arr(contractNos),
       s(forwarderCN), s(forwarderEN), s(truckingCN), s(customsCN), s(insuranceCN),

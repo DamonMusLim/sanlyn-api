@@ -4,6 +4,7 @@ import { derivePlanFromOrders } from "../lib/derive-plan-from-orders.js"; // tas
 import { sendCancellationNotice } from "../../jobs/shipment-notify.js"; // 2026-06-26: 取消通知工厂
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 import { applyCostLinesMirror } from "./lib/cost-lines-mirror.js"; // 2026-08-03: costLines→镜像派生(蓝图v1.4①)
+import { validateReleaseTypeBody } from "./lib/release-type.js";
 
 // Normalize a Chinese company name for matching:
 //  - strip full/half-width brackets, spaces, punctuation
@@ -70,6 +71,8 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     try {
       const body = applyCostLinesMirror(req.body || {});
+      const rel = validateReleaseTypeBody(body);
+      if (!rel.ok) return res.status(400).json({ success:false, error:rel.error });
       const params = [];
       const sets = buildSet(body, params);
       // _id 必填(NOT NULL) → 自动生成；created_by 记录操作者
@@ -122,6 +125,8 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     try {
       const body = applyCostLinesMirror(req.body || {});
+      const rel = validateReleaseTypeBody(body);
+      if (!rel.ok) return res.status(400).json({ success:false, error:rel.error });
       const BOOKING_STAGES = new Set(["so_received","confirming","confirmed"]);
       if (body.booking_stage && !BOOKING_STAGES.has(body.booking_stage)) {
         return res.status(400).json({ success:false, error:"invalid booking_stage" });

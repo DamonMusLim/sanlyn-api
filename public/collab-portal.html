@@ -360,9 +360,18 @@ body.ui-v1 .v2-only { display:none !important; }
 <script>
 (function(){
   var ui = new URLSearchParams(location.search).get('ui');
-  var s = document.createElement('script');
-  s.src = ui === 'v1' ? '/public/templates/collab-portal.v1.js' : '/public/templates/collab-portal.js';
-  document.body.appendChild(s);
+  function add(src, cb) {
+    var s = document.createElement('script');
+    s.src = src;
+    if (cb) s.onload = cb;
+    document.body.appendChild(s);
+  }
+  if (ui === 'v1') add('/public/templates/collab-portal.v1.js');
+  else add('/public/templates/collab-portal.js', function(){
+    add('/public/templates/collab-portal-truck.js', function(){
+      if (window.CollabPortalBoot) window.CollabPortalBoot();
+    });
+  });
 })();
 </script>
 </body>

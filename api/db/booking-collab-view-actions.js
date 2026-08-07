@@ -1,6 +1,7 @@
 // booking-collab-view-actions.js — 写操作 handler（拆自 booking-collab-view.js 2026-07-13）
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
 import { NON_EMPTY, arr, resolvePlan, columnExists } from "./booking-collab-view-lib.js";
+import { validateReleaseTypeBody } from "./lib/release-type.js";
 
 // party company_id 列 → 对应中文名列（写 id 时顺带回填名字，便于前端 linked() 判定）
 const PARTY_COLUMNS = {
@@ -25,6 +26,8 @@ const SCALAR_COLS = ["trucking_arrange", "customs_arrange", "freight_term", "rel
 // POST /supply-chain — 保存某一方公司（手动选/一键关联/采纳建议都走这里）
 export async function handleSupplyChain(req, res, pool) {
   const body = req.body || {};
+  const rel = validateReleaseTypeBody(body);
+  if (!rel.ok) return res.status(400).json({ ok: false, error: rel.error });
   const plan = await resolvePlan(pool, body.plan_id);
   if (!plan) return res.status(404).json({ ok: false, error: "找不到计划" });
 
