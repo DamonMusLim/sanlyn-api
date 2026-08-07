@@ -1,10 +1,11 @@
 // collab-validate.js — extracted from booking-collab.js (structural split 2026-07-31, zero behavior change)
 import fs from "fs";
-import { billingSegmentFor, sanitizeSheet } from "./collab-field-profiles.js";
+import { billingSegmentFor, sanitizeSheet, visibleBillLines } from "./collab-field-profiles.js";
 import { materializeAndList } from "./carrier-requirements.js";
-import { rawToHash } from "./collab-shared.js";
+import { rawToHash, COLLAB_VERSION, COLLAB_VERSION_AT } from "./collab-shared.js";
 
 async function handleValidate(req, res, pool) {
+  let _partyHasBills = false;   // 该方是否有可见账单行；决定 billing 卡片出不出
   const raw = req.query && req.query.token;
   if (!raw || raw.length < 10)
     return res.status(400).json({ valid: false, error: "token 缺失" });
@@ -105,6 +106,7 @@ async function handleValidate(req, res, pool) {
                       'cbm',         ROUND((COALESCE(oli.cbm_ctn,0) * COALESCE(oli.qty_ctn,0))::numeric, 3),
                       'declare_amount', ROUND((COALESCE(NULLIF(oli.declare_amount_per_box,0), oli.unit_price, 0) * COALESCE(oli.qty_ctn,0))::numeric, 2),
                       'barcode',     oli.barcode,
+                      'brand',       oli.brand,
                       'product_name', COALESCE(NULLIF(oli.product_name,''), oli.declaration_name),
                       'size',        oli.size,
                       'unit_price',  oli.unit_price,
@@ -164,6 +166,20 @@ async function handleValidate(req, res, pool) {
     cbMap.set(r.container_no, cur);
   }
   const cbRes = { rows: [...cbMap.values()] };
+
+  // 2026-08-05 双成交方式:工厂页的交易条款必须是【采购侧】(工厂→巴匕),不是销售侧。
+  // 病象:工厂页 6 个条款一个都没选中(plan.freight_term 空),Damon 选过 EXW 也不回填。
+  // 本票所有单口径一致才回填;不一致就留空让工厂自己选(宁可不填,不猜)。
+  let factoryPurchaseTerm = null;
+  if (role === "factory_booking") {
+    try {
+      const _pt = await pool.query(
+        "SELECT purchase_trade_terms AS t, count(*) AS n FROM orders" +
+        " WHERE shipping_plan_id=$1 AND COALESCE(purchase_trade_terms,'') NOT IN ('','PENDING')" +
+        " GROUP BY 1 ORDER BY n DESC LIMIT 2", [planId]);
+      if (_pt.rows.length === 1) factoryPurchaseTerm = _pt.rows[0].t;
+    } catch (e) { console.warn("[collab-validate] 取采购侧成交方式失败:", e.message); }
+  }
 
   let factoryProfileAddress = null;
   if (role === "factory_booking" && meta.preview !== true && factoryScope && factoryScope.label) {
@@ -229,6 +245,9 @@ async function handleValidate(req, res, pool) {
   return res.json({
     valid: true,
     role,
+    // 协同版本戳（Damon 2026-08-06）：线上跑的是哪一版，外部页脚可直接显示
+    collab_version: COLLAB_VERSION,
+    collab_version_at: COLLAB_VERSION_AT,
     carrier_requirements: carrierRequirements,
     // factory_booking 下 preview 标志无意义，不能驱动前端显示全貌。
     is_preview: role !== "factory_booking" && meta.preview === true,
@@ -257,6 +276,10 @@ async function handleValidate(req, res, pool) {
       sheet.quarantine_docs = quarantineDocs;              // 检疫报告清单（真源 document_uploads，每份带 ref=du.id）
       sheet.has_quarantine = quarantineDocs.length > 0;   // 兼容旧判断
       sheet.containers_live = cbRes.rows;
+      // ⚠️ 不能塞进 freight_term:它在 FORBIDDEN_KEYS 硬黑名单里(对客条款,外部方一律不许见,
+      //    与"发货人不得见下游客户"同属命脉红线)。工厂看的是【它自己那侧】,本就是另一个概念,
+      //    所以用独立字段名 factory_purchase_term。
+      if (factoryPurchaseTerm) sheet.factory_purchase_term = factoryPurchaseTerm;
       // 2026-08-04:下面会用 container_bookings 重建 containers_detail,但 plan 上那份
       // (claude-shipping-intake 等录进来的真箱号/封号)不能丢 —— 先存下按 seq 兜底。
       // 实测漏了会让 68 票/187 柜在所有协同页显示"待回填",库里其实全有。
@@ -369,6 +392,11 @@ async function handleValidate(req, res, pool) {
       // 价格：只有客户能看，且只给卖价——cost 一律不出 API
       const costLines = Array.isArray(sheet._cost_lines_raw) ? sheet._cost_lines_raw : [];
       delete sheet._cost_lines_raw;
+      // 2026-08-05 Damon:「物流费他没账单，不该有这个的」
+      // 该方一条可见账单行都没有 → 不下发 billing token → 前端整张卡不渲染
+      _partyHasBills = visibleBillLines(costLines, {
+        role, field_profile: meta.field_profile || null, plan: planRes.rows[0],
+      }).length > 0;
       if (role === "customer_booking") {
         const saleLines = costLines
           .filter(l => l && l.sale !== undefined && l.sale !== null && String(l.sale) !== "" && l.name !== "海运费")
@@ -461,6 +489,18 @@ async function handleValidate(req, res, pool) {
       if (role === "trucking_booking" || role === "broker_booking") {
         (sheet.orders || []).forEach(o => (o.items || []).forEach(it => { delete it.unit_price; delete it.amount; delete it.declare_amount; }));
       }
+      // 🔴 对外参照号(2026-08-05 Damon)：CY号是内部代码，绝不外发。
+      //    工厂/供应链 → 看订单号(40-LL-7 / LL-23)；货代/船司/车队/报关 → 看他自己给的 BL 或 SO。
+      //    取不到就留空，绝不回落 shipment_no。
+      const _ordRefs = (sheet.orders || [])
+        .map(o => String(o && o.order_no || "").trim()).filter(Boolean);
+      // 2026-08-06：so_no/bl_no 对工厂已屏蔽，但「是否已订舱」这个状态工厂要知道
+      // （决定柜型锁不锁）。→ 下发布尔值，绝不下发号码本身。
+      sheet.is_booked = !!(String(sheet.so_no||"").trim() || String(sheet.bl_no||"").trim());
+      sheet.ext_ref =
+        (role === "factory_booking")
+          ? (_ordRefs.length ? [...new Set(_ordRefs)].join(" / ") : "")
+          : (String(sheet.bl_no || "").trim() || String(sheet.so_no || "").trim() || "");
     return sanitizeSheet(sheet, { role, field_profile: meta.field_profile || null, plan: planRes.rows[0] });
     })(),
     ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
@@ -468,8 +508,8 @@ async function handleValidate(req, res, pool) {
     portal_scope: portalScope,
     dispatched_at: rows[0].created_at || null,   // 委托/接单时间戳（本票何时派给该方）
     billing: {
-      token: raw,
-      show_amount: true,
+      token: _partyHasBills ? raw : null,        // 无账单不给 token
+      show_amount: _partyHasBills,
       segment: (() => {
         const segment = billingSegmentFor({ role, field_profile: meta.field_profile || null });
         return role === "supplier_portal" && !meta.field_profile && segment === "ocean"

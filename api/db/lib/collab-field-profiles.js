@@ -4,7 +4,7 @@ const INTERNAL_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
 //    _id 同样禁 —— 它常含客户名(sp_enrich_.../TAOLAN-TRK-...)，等于泄漏客户身份。
 //    外部方看 ext_ref：工厂=订单号，货代/船司=BL或SO。
 const PUBLIC_SHEET_FIELDS = [
-  "id", "ext_ref", "pol", "pod", "etd", "eta", "container_type",
+  "id", "ext_ref", "is_booked", "pol", "pod", "etd", "eta", "container_type",
   "container_qty", "collab_status", "total_cartons", "gross_weight_kg",
   "total_cbm", "so_no", "bl_no", "cargo_cutoff", "carrier_code", "vessel",
   "voyage", "release_type", "is_transfer", "so_info", "collab_uploads",
@@ -93,15 +93,35 @@ export const FIELD_PROFILES = Object.freeze({
     allowCostAmount: true,
     scopes: ["all"],
   },
+  // 车队(2026-08-06 Damon 权限矩阵)：只要"去哪装、几个柜、多重、几点前进场、送哪个场站"。
+  // 客户抬头/船名航次/提单号/目的港/费用一律不下发 —— 车队是最外围一环，
+  // 给客户身份等于把客户暴露给最外圈。
   trucking: {
-    sheetFields: PUBLIC_SHEET_FIELDS,
+    sheetFields: [
+      "id", "ext_ref", "collab_status", "scope_missing",
+      "container_type", "container_qty", "containers_live", "containers_detail",
+      "total_cartons", "gross_weight_kg", "total_cbm",
+      "pol", "cargo_cutoff",
+      "trucking_detail", "trucking_arrange", "trucking_company_cn", "trucking_cn",
+      "factory_submitted", "factory_loading_done", "factory_cargo_ready", "collab_uploads",
+    ],
     billingSegment: "truck",
     directions: ["payable"],
     allowCostAmount: false,
     scopes: ["truck"],
   },
+  // 报关行(2026-08-06 Damon 权限矩阵)：品名数量重量+船名航次+柜号+报检件 —— 报关单上都要填。
+  // 运价/港杂/货代账单/托书保函/SO/拖车安排与报关无关，给了会被拿去比价。
   broker: {
-    sheetFields: PUBLIC_SHEET_FIELDS,
+    sheetFields: [
+      "id", "ext_ref", "bl_no", "collab_status", "scope_missing",
+      "pol", "pod", "etd", "vessel", "voyage", "is_transfer",
+      "container_type", "container_qty", "containers_live", "containers_detail",
+      "total_cartons", "gross_weight_kg", "total_cbm",
+      "orders", "factory_cargo",
+      "quarantine_docs", "has_quarantine",
+      "customs_arrange", "customs_broker_cn", "customs_cn", "collab_uploads",
+    ],
     billingSegment: "customs",
     directions: ["payable"],
     allowCostAmount: false,
