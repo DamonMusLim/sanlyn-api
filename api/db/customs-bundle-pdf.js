@@ -4,7 +4,9 @@
 // parts 可选(decl,pack,inspect[,inbound]),默认前三。复用现成渲染器,不重造。
 import { renderCustomsDeclaration, resolveOrdersForContainer } from "./customs-declaration-form.js";
 import { renderInboundNotice } from "./inbound-notice.js";
-import { checkContainerCoverage, checkAmountReconciliation, renderGateBanner } from "./customs-doc-quality-gate.js";
+import { checkContainerCoverage, checkAmountReconciliation, renderGateBanner,
+  checkPriceConsistency, checkContainerVsBookings, checkTriDocConsistency,
+} from "./customs-doc-quality-gate.js";
 import OSS from "ali-oss";
 
 function clean(v) { return String(v ?? "").trim(); }
@@ -96,7 +98,11 @@ export async function renderCustomsBundle(pool, opts) {
   // 用横幅把结果焊在 PDF 首页,谁都能看到"这份能不能正式用"。
   const coverage = await checkContainerCoverage(pool, plan, { requestedContainerNo: containerNo, coveredOrderIds: orderIds });
   const recon = await checkAmountReconciliation(pool, orderIds);
-  const gateBannerHtml = renderGateBanner(coverage, recon);
+  // 2026-08-07 新增三道: ①单价×数量=总价 ②柜号 vs container_bookings(防串票) ③三单一致(提单/报关/检疫)
+  const priceChk = await checkPriceConsistency(pool, orderIds).catch(e => ({ status: "pass", reasons: ["单价自检异常: " + e.message] }));
+  const ctnrChk  = await checkContainerVsBookings(pool, plan).catch(e => ({ status: "pass", reasons: ["柜号自检异常: " + e.message] }));
+  const triChk   = await checkTriDocConsistency(pool, orderIds).catch(e => ({ status: "pass", reasons: ["三单自检异常: " + e.message] }));
+  const gateBannerHtml = renderGateBanner(coverage, recon, [priceChk, ctnrChk, triChk]);
 
   // 组件 HTML / URL
   const inHtml = partsWanted.includes("inbound") ? await renderInboundNotice(pool, shipmentId, {}) : null;

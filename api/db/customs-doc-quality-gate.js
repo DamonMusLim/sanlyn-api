@@ -2,6 +2,7 @@
 // forge gpt-5.5 系统设计的落地版:只做两项(柜覆盖完整性 + 报关↔商检金额比对),渲染器画图前先调这里判断。
 // 字段只对应不编造:查不到就标"数据缺失",不猜测、不静默放行。
 import { resolveOrdersForContainer } from "./customs-declaration-form.js";
+import { loadLines } from "./customs-declaration-form-lib.js";
 
 function clean(v) { return String(v ?? "").trim(); }
 function norm(v) { return clean(v).toUpperCase(); }
@@ -154,16 +155,130 @@ export async function checkAmountReconciliation(pool, orderIds, { thresholdPct =
   return result;
 }
 
+
+function _r2(n){ return Math.round(Number(n||0)*100)/100; }
+function _parseRaw(v){ if(!v) return {}; if(typeof v==="object") return v; try{ return JSON.parse(v); }catch(e){ return {}; } }
+
+// ── ① 单价自洽: 单价×数量 必须 = 总价 ────────────────────────
+// 2026-08-07 上线: 合并行曾用 MIN(unit_price) 取最便宜那个(57个订单受影响,37-ZC-19差12万),
+//   单价×数量≠总价是海关质疑/退单的典型硬伤 → 出单前必须自检。
+export async function checkPriceConsistency(pool, orderIds, { thresholdPct = 0.5 } = {}) {
+  const result = { status: "pass", reasons: [], rows: [] };
+  if (!orderIds || !orderIds.length) return result;
+  let lines = [];
+  try { lines = await loadLines(pool, orderIds); }
+  catch (e) { result.reasons.push("取货物明细失败: " + e.message); return result; }
+  for (const l of lines) {
+    const u = Number(l.unit_price), q = Number(l.qty_ctn), t = Number(l.total_amount);
+    if (!Number.isFinite(u) || !Number.isFinite(q) || !Number.isFinite(t) || !t) continue;
+    const calc = u * q;
+    const pct = Math.abs(calc - t) / Math.abs(t) * 100;
+    result.rows.push({ hs: l.hs_code, unit: u, qty: q, total: t, calc: _r2(calc), pct: _r2(pct) });
+    if (pct > thresholdPct) {
+      result.status = "blocked";
+      result.reasons.push(`HS ${l.hs_code}: 单价 ${u} × 数量 ${q} = ${_r2(calc)} ≠ 总价 ${_r2(t)} (差 ${_r2(pct)}%)`);
+    }
+  }
+  return result;
+}
+
+// ── ② 柜号 vs 装柜真源(container_bookings) ───────────────────
+// 2026-08-07 上线: plan 475 的 raw.containers 串进了别票(462)的柜 CSGU6557381,报关单印出3个柜。
+//   真源=container_bookings(EIR/装箱录入), shipping_plans 里的只是会漂的快照。
+export async function checkContainerVsBookings(pool, plan) {
+  const result = { status: "pass", reasons: [], booked: [], onPlan: [] };
+  if (!plan || !plan.id) return result;
+  let cb;
+  try {
+    cb = await pool.query(
+      `SELECT DISTINCT container_no FROM container_bookings
+        WHERE shipping_plan_id = $1 AND NULLIF(btrim(container_no),'') IS NOT NULL`, [plan.id]);
+  } catch (e) { result.reasons.push("查装柜记录失败: " + e.message); return result; }
+  result.booked = cb.rows.map(r => norm(r.container_no)).filter(Boolean).sort();
+  const raw = _parseRaw(plan.raw);
+  const fromField = String(plan.container_no || "").split(/[\/,;、]+/).map(norm).filter(Boolean);
+  const fromRaw = Array.isArray(raw.containers)
+    ? raw.containers.map(c => norm(c && c.container_no)).filter(Boolean) : [];
+  result.onPlan = Array.from(new Set(fromField.concat(fromRaw))).sort();
+  if (!result.booked.length) { result.reasons.push("本票尚无装柜记录(container_bookings),跳过柜号核对"); return result; }
+  const extra = result.onPlan.filter(c => result.booked.indexOf(c) < 0);
+  const missing = result.booked.filter(c => result.onPlan.indexOf(c) < 0);
+  if (extra.length) {
+    result.status = "blocked";
+    result.reasons.push(`计划中的柜号不在本票装柜记录里: ${extra.join("/")} — 疑串票,阻断`);
+  }
+  if (missing.length) {
+    if (result.status !== "blocked") result.status = "warning";
+    result.reasons.push(`装柜记录有但计划里缺: ${missing.join("/")}`);
+  }
+  return result;
+}
+
+// ── ③ 三单一致: 提单(订单汇总) / 报关(明细汇总) / 检疫(申报值) ──
+// 铁律: 件数·净重必须三处一致, 否则报关或检疫必被退。
+export async function checkTriDocConsistency(pool, orderIds) {
+  const result = { status: "pass", reasons: [], bl: {}, cd: {}, ciq: {} };
+  if (!orderIds || !orderIds.length) return result;
+  let o;
+  try {
+    o = await pool.query(
+      `SELECT order_no, total_qty, gross_weight, net_weight, ciq_application_no, raw
+         FROM orders WHERE id = ANY($1::int[])`, [orderIds]);
+  } catch (e) { result.reasons.push("取订单失败: " + e.message); return result; }
+  let blQty = 0, blGw = 0, blNw = 0, ciqQty = null, ciqNw = null;
+  const ciqNos = [];
+  for (const r of o.rows) {
+    blQty += Number(r.total_qty || 0); blGw += Number(r.gross_weight || 0); blNw += Number(r.net_weight || 0);
+    const c = (_parseRaw(r.raw).ciq) || {};
+    const no = clean(r.ciq_application_no || c.report_no);
+    if (no && ciqNos.indexOf(no) < 0) ciqNos.push(no);
+    if (c.qty_ctn != null) ciqQty = Number(c.qty_ctn);
+    if (c.net_kg != null) ciqNw = Number(c.net_kg);
+  }
+  let lines = [];
+  try { lines = await loadLines(pool, orderIds); } catch (e) {}
+  const cdQty = lines.reduce((s, l) => s + Number(l.qty_ctn || 0), 0);
+  const cdGw  = lines.reduce((s, l) => s + Number(l.gross_weight_kg || 0), 0);
+  const cdNw  = lines.reduce((s, l) => s + Number(l.net_weight_kg || 0), 0);
+  result.bl  = { qty: blQty, gw: _r2(blGw), nw: _r2(blNw) };
+  result.cd  = { qty: cdQty, gw: _r2(cdGw), nw: _r2(cdNw) };
+  result.ciq = { qty: ciqQty, nw: ciqNw, nos: ciqNos };
+  if (blQty && cdQty && blQty !== cdQty) {
+    result.status = "blocked";
+    result.reasons.push(`件数不一致: 订单/提单 ${blQty} vs 报关明细 ${cdQty}`);
+  }
+  if (blGw && cdGw && Math.abs(_r2(blGw) - _r2(cdGw)) > 0.05) {
+    if (result.status !== "blocked") result.status = "warning";
+    result.reasons.push(`毛重不一致: 订单/提单 ${_r2(blGw)} vs 报关明细 ${_r2(cdGw)}`);
+  }
+  if (ciqQty != null && cdQty && Number(ciqQty) !== cdQty) {
+    result.status = "blocked";
+    result.reasons.push(`件数与检疫申报不一致: 检疫 ${ciqQty} vs 报关 ${cdQty} — 三单必须一致`);
+  }
+  if (ciqNw != null && cdNw && Math.abs(_r2(ciqNw) - _r2(cdNw)) > 0.5) {
+    result.status = "blocked";
+    result.reasons.push(`净重与检疫申报不一致: 检疫 ${_r2(ciqNw)} vs 报关 ${_r2(cdNw)} — 三单必须一致`);
+  }
+  return result;
+}
+
 // ── 渲染横幅 HTML(供各渲染器/bundle插入) ──────────────────────
-export function renderGateBanner(coverage, recon) {
+export function renderGateBanner(coverage, recon, extras) {
   const lines = [];
+  const _ex = Array.isArray(extras) ? extras.filter(Boolean) : [];
   if (coverage && !coverage.ok) lines.push("🚫 柜覆盖: " + coverage.reason);
   if (recon) {
     if (recon.status === "blocked") lines.push("🚫 " + recon.reasons.join("; "));
     else if (recon.status === "warning") lines.push("⚠️ " + recon.reasons.join("; "));
   }
+  for (const e of _ex) {
+    if (!e || !e.reasons || !e.reasons.length) continue;
+    if (e.status === "blocked") lines.push("🚫 " + e.reasons.join("; "));
+    else if (e.status === "warning") lines.push("⚠️ " + e.reasons.join("; "));
+  }
   if (!lines.length) return "";
-  const blocked = (coverage && !coverage.ok) || (recon && recon.status === "blocked");
+  const blocked = (coverage && !coverage.ok) || (recon && recon.status === "blocked")
+    || _ex.some(e => e && e.status === "blocked");
   const bg = blocked ? "#fef2f2" : "#fffbeb";
   const bd = blocked ? "#dc2626" : "#f59e0b";
   const title = blocked ? "🚫 质量门禁未通过 — 仅供内部核对,不可正式对外使用" : "⚠️ 质量门禁警告 — 请人工确认后再正式发出";
