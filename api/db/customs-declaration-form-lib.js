@@ -59,16 +59,42 @@ export function blank(v) {
   return s ? esc(s) : '<span class="empty">—</span>';
 }
 
+// 目的国/贸易国规范化（2026-08-08 修）
+// 病根：orders.country 存法五花八门 —— MALAYSIA/Malaysia/MY/SG/MM/Espana/CHILE…
+//       原来只认 MYS/MALAYSIA/马来 这种写法，遇到 ISO2 的 "MY" 直接原样印上报关单
+//       （LL-23 的贸易国/运抵国/最终目的国就印成了 "MY"）。全库有 8 票是 ISO2 写法。
+// 规矩：认不出来就【原样返回】并让人看见，绝不猜一个国家。
+const _COUNTRY_TABLE = [
+  { cn: "马来西亚(MYS)",   iso2: "MY", keys: ["MYS","MALAYSIA","马来","KLANG","WESTPORT","PASIR GUDANG","PENANG","巴生","KOTA KINABALU","BINTULU"] },
+  { cn: "泰国(THA)",       iso2: "TH", keys: ["THA","THAILAND","泰国","LAEM CHABANG","BANGKOK"] },
+  { cn: "越南(VNM)",       iso2: "VN", keys: ["VNM","VIETNAM","越南","HAIPHONG","HO CHI MINH","CAI MEP"] },
+  { cn: "新加坡(SGP)",     iso2: "SG", keys: ["SGP","SINGAPORE","新加坡"] },
+  { cn: "印度尼西亚(IDN)", iso2: "ID", keys: ["IDN","INDONESIA","印尼","印度尼西亚","JAKARTA","SURABAYA"] },
+  { cn: "菲律宾(PHL)",     iso2: "PH", keys: ["PHL","PHILIPPINES","菲律宾","MANILA"] },
+  { cn: "缅甸(MMR)",       iso2: "MM", keys: ["MMR","MYANMAR","BURMA","缅甸","YANGON"] },
+  { cn: "孟加拉国(BGD)",   iso2: "BD", keys: ["BGD","BANGLADESH","孟加拉","CHITTAGONG","CHATTOGRAM"] },
+  { cn: "柬埔寨(KHM)",     iso2: "KH", keys: ["KHM","CAMBODIA","柬埔寨","SIHANOUKVILLE"] },
+  { cn: "沙特阿拉伯(SAU)", iso2: "SA", keys: ["SAU","SAUDI","沙特","JEDDAH","DAMMAM"] },
+  { cn: "西班牙(ESP)",     iso2: "ES", keys: ["ESP","SPAIN","ESPANA","ESPAÑA","西班牙","BARCELONA","VALENCIA"] },
+  { cn: "智利(CHL)",       iso2: "CL", keys: ["CHL","CHILE","智利","VALPARAISO","SAN ANTONIO"] },
+  { cn: "日本(JPN)",       iso2: "JP", keys: ["JPN","JAPAN","日本","TOKYO","OSAKA","YOKOHAMA"] },
+  { cn: "韩国(KOR)",       iso2: "KR", keys: ["KOR","KOREA","韩国","BUSAN","INCHEON"] },
+  { cn: "美国(USA)",       iso2: "US", keys: ["USA","UNITED STATES","美国","LOS ANGELES","LONG BEACH","NEW YORK"] },
+  { cn: "澳大利亚(AUS)",   iso2: "AU", keys: ["AUS","AUSTRALIA","澳大利亚","SYDNEY","MELBOURNE"] },
+];
 export function countryFromPod(pod) {
   var s = clean(pod).toUpperCase();
   if (!s) return "";
-  if (s.includes("MYS") || s.includes("MALAYSIA") || s.includes("马来") || s.includes("KLANG") || s.includes("WESTPORT") || s.includes("PASIR GUDANG") || s.includes("PENANG") || s.includes("巴生")) return "马来西亚(MYS)";
-  if (s.includes("THA") || s.includes("THAILAND") || s.includes("泰国")) return "泰国(THA)";
-  if (s.includes("VNM") || s.includes("VIETNAM") || s.includes("越南")) return "越南(VNM)";
-  if (s.includes("SGP") || s.includes("SINGAPORE") || s.includes("新加坡")) return "新加坡(SGP)";
-  if (s.includes("IDN") || s.includes("INDONESIA") || s.includes("印尼") || s.includes("印度尼西亚")) return "印度尼西亚(IDN)";
-  if (s.includes("PHL") || s.includes("PHILIPPINES") || s.includes("菲律宾")) return "菲律宾(PHL)";
-  return clean(pod);
+  // ① ISO2 精确匹配（"MY" 这种，必须整串相等，否则会被别的词误伤）
+  for (var a = 0; a < _COUNTRY_TABLE.length; a++) {
+    if (s === _COUNTRY_TABLE[a].iso2) return _COUNTRY_TABLE[a].cn;
+  }
+  // ② 关键词包含匹配
+  for (var b = 0; b < _COUNTRY_TABLE.length; b++) {
+    var ks = _COUNTRY_TABLE[b].keys;
+    for (var c = 0; c < ks.length; c++) if (s.includes(ks[c])) return _COUNTRY_TABLE[b].cn;
+  }
+  return clean(pod);   // 认不出来原样返回：宁可人看出来不对，也不猜
 }
 
 export function sellerLabel(name, company) {
@@ -362,6 +388,29 @@ export function bigCell(label, value, field) {
   return `<div class="cell wide"><div class="lbl">${esc(label)}</div><div class="val"${fa}>${blank(value)}</div></div>`;
 }
 
+// 报关单「商品名称及规格型号」栏的申报要素写法(2026-08-08 对照真实海关单修正)
+// 实样(海关出的 COAU9506731780 膨润土猫砂):
+//   膨润土猫砂
+//   0|1|宠物清洁用|蒙脱石70%-80%,水10%,二氧化硅5%-15%|15.6KG/BAG|无中文或外文品牌|无型号
+// → 只写【值】,用 | 分隔,**不写"1:品牌类型:"这种序号和标签**。
+// 我们库里 products.declaration_elements 是带标签存的(便于人看/校验),
+// 印到报关单上必须剥掉标签。Damon 2026-08-08:「猫砂下面没有写这些的」。
+export function declElementsForCustoms(v) {
+  var raw = clean(v);
+  if (!raw) return "";
+  return raw.split("|").map(function (part) {
+    var t = String(part || "").trim();
+    if (!t) return "";
+    // 形如 "3:用途:宠物用猫砂" → 取最后一段值; 值里含冒号的(如 "成分:A:B")只剥前两段
+    var m = /^\s*\d+\s*:\s*[^:]+?\s*:\s*([\s\S]*)$/.exec(t);
+    if (m) return m[1].trim();
+    // 形如 "用途:宠物用猫砂"(无序号)
+    var m2 = /^\s*[^:：]{1,12}\s*[:：]\s*([\s\S]*)$/.exec(t);
+    if (m2 && /品牌|用途|成分|型号|规格|享惠|类型|等级|种类|包装/.test(t.split(/[:：]/)[0])) return m2[1].trim();
+    return t;
+  }).filter(Boolean).join("|");
+}
+
 export function cargoRows(lines, destination, sourceArea) {
   if (!lines.length) {
     return `<tr><td colspan="9" class="empty-row">无货物明细</td></tr>`;
@@ -386,7 +435,7 @@ export function cargoRows(lines, destination, sourceArea) {
       fmtM(l.total_amount, 2),
       "人民币",
     ].filter(Boolean).join("<br>");
-    var elements = clean(l.declaration_elements);
+    var elements = declElementsForCustoms(l.declaration_elements);
     var name = [clean(l.declaration_name), elements].filter(Boolean).map(esc).join("<br>");
     return `<tr>
       <td data-field="item_no" data-row="${i}">${i + 1}</td>

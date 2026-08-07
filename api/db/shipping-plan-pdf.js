@@ -47,6 +47,12 @@ export default async function handler(req, res) {
       _cdQuery.container_no = _cdQuery.container_no || _cdQuery.container || "";
       const _cdHtml = await renderCustomsDeclaration(pool, id || bl, _cdQuery);
       if (!_cdHtml) return res.status(404).send("<h1>Shipment not found</h1>");
+      // format=xlsx → 报关行/船东要复制数字进自己系统,给 Excel(2026-08-08 Damon)
+      // 用的是上面这份 _cdHtml 的同一份渲染结果,所以 Excel 与 PDF 永远同数。
+      if (String(req.query.format || "").toLowerCase() === "xlsx") {
+        const { default: xlsxResponder } = await import("./customs-decl-xlsx.js");
+        return await xlsxResponder(pool, res, id || bl, _cdQuery, "报关单_" + (bl || id || ""));
+      }
       // format=pdf → 转可下载 PDF(复用 _html-to-pdf.js: puppeteer-core+系统chrome); 否则返回 HTML 供浏览器打印
       if (String(req.query.format || "") === "pdf") {
         const { htmlToPdf } = await import("./_html-to-pdf.js");
