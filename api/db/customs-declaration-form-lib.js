@@ -294,10 +294,30 @@ export async function loadLines(pool, orderIds) {
        LEFT JOIN product_one p ON p.sku = oli.sku
        WHERE oli.order_id = ANY($1::int[])
      ),
+     -- 2026-08-07 DNA「合并 + 全写要么无」(Damon): 合并行的申报要素绝不用 MIN/MAX 随便取一个 SKU 的。
+     --   逐要素字段(形如 "5:品牌(中文或外文名称):ECO")在【本票SKU范围内】聚合:
+     --   同值→用之; 不同值→全部列出用 "/" 连接(如 ECO/ENRICH); 没有→留空。
+     --   踩过的坑: 原 MIN() 让报关单印 ECO、同源CSV取到 ENRICH,同一票两个品牌互相打架。
+     elem_parts AS (
+       SELECT k.hs_code,
+              (regexp_match(t.part, '^\s*([0-9]+)\s*:\s*([^:]+?)\s*:\s*(.*)$'))[1] AS e_no,
+              (regexp_match(t.part, '^\s*([0-9]+)\s*:\s*([^:]+?)\s*:\s*(.*)$'))[2] AS e_name,
+              btrim((regexp_match(t.part, '^\s*([0-9]+)\s*:\s*([^:]+?)\s*:\s*(.*)$'))[3]) AS e_val
+       FROM keyed k,
+            LATERAL unnest(string_to_array(k.declaration_elements, '|')) AS t(part)
+       WHERE k.declaration_elements IS NOT NULL
+     ),
+     elem_merged AS (
+       SELECT hs_code, e_no, e_name,
+              string_agg(DISTINCT NULLIF(e_val,''), '/' ORDER BY NULLIF(e_val,'')) AS e_val
+       FROM elem_parts
+       WHERE e_no IS NOT NULL
+       GROUP BY hs_code, e_no, e_name
+     ),
      hs_elements AS (
-       SELECT hs_code, MIN(declaration_elements) AS declaration_elements
-       FROM keyed
-       WHERE declaration_elements IS NOT NULL
+       SELECT hs_code,
+              string_agg(e_no || ':' || e_name || ':' || COALESCE(e_val,''), '|' ORDER BY e_no::int) AS declaration_elements
+       FROM elem_merged
        GROUP BY hs_code
      ),
      -- 2026-07-06: 同HS只报一行(照商检单口径,别按品名再拆),品名取该HS下箱数最大的那个
