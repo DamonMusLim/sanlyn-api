@@ -133,7 +133,8 @@ export default async function handler(req, res) {
     try {
       const _fk = await pool.query(
         `SELECT _id, order_no, contract_no, customer_po, raw,
-                issuing_company_id, seller_code, shipping_plan_id
+                issuing_company_id, seller_code, shipping_plan_id,
+                total_qty, gross_weight, net_weight, total_cbm
            FROM orders WHERE shipping_plan_id = $1 ORDER BY order_no`, [p.id]);
       if (_fk.rows.length) orders = _fk.rows;
     } catch (e) {}
@@ -142,7 +143,8 @@ export default async function handler(req, res) {
       const ph = orderNos.map((_, i) => `$${i + 1}`).join(",");
       const oRes = await pool.query(
         `SELECT _id, order_no, contract_no, customer_po, raw,
-                issuing_company_id, seller_code, shipping_plan_id
+                issuing_company_id, seller_code, shipping_plan_id,
+                total_qty, gross_weight, net_weight, total_cbm
          FROM orders
          WHERE order_no IN (${ph}) OR contract_no IN (${ph}) OR _id::text IN (${ph})`,
         orderNos
