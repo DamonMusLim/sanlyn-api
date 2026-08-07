@@ -148,9 +148,26 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     }
     return { reportNo: "", edocNo: "", despPort: "", declCustoms: "" };
   })();
-  // 随附单证及编号: 法检货物填 代码B + 电子底账号, 海关据此自动调取检验检疫申报要素
-  var attachedDocs = _ciqInfo.edocNo ? ("B " + _ciqInfo.edocNo) : "";
+  // 随附单证及编号(2026-08-08 对齐真实海关单):
+  //   实样 40-LL-5: 「随附单证1:电子底账226N23010009739001 随附单证2:发票;企业提供的声明」
+  //   原来只写「B <底账号>」是简写,报关行要照抄进系统,给全格式省得他们再问。
+  var attachedDocs = _ciqInfo.edocNo
+    ? ("随附单证1:电子底账" + _ciqInfo.edocNo + "　随附单证2:发票;企业提供的声明")
+    : "";
+  // 离境口岸: 报检口岸名 ≠ 报关离境口岸码,两套体系。青岛港(报检370101) → 黄岛(报关370201)。
+  // 映射查表 customs_departure_ports;查不到就原样用报检那个名字(不猜)。
   var departurePort = _ciqInfo.despPort;
+  try {
+    if (departurePort) {
+      var _pm = await pool.query(
+        "SELECT customs_port_name, customs_port_code FROM customs_departure_ports WHERE ciq_port_name=$1 LIMIT 1",
+        [departurePort]
+      );
+      if (_pm.rows && _pm.rows[0]) {
+        departurePort = _pm.rows[0].customs_port_name + "(" + _pm.rows[0].customs_port_code + ")";
+      }
+    }
+  } catch (e) { console.warn("[customs] 离境口岸映射查询失败(原样用报检口岸名):", e.message); }
   var exportCustomsOffice = _ciqInfo.declCustoms;
   var orderNosLabel = orders.map(function (o) { return clean(o.order_no); }).filter(Boolean).join(" / ");
 
