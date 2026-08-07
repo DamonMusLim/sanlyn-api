@@ -144,6 +144,7 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/confirm-telex",
   "/api/db/booking-collab/confirm-payment",
   "/api/db/booking-collab/customer-notes",
+  "/api/db/booking-collab/bl-confirmation",
   "/api/db/booking-collab/file",
   "/api/db/booking-collab/upload",
   "/api/db/booking-collab/sailings",

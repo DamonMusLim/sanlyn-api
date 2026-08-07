@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sanlyn OS · 托书协同</title>
+<title>Sanlyn OS · Shipment Confirmation</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
@@ -15,7 +15,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 .sec-title { font-size: 13px; font-weight: 800; color: #1a1d23; }
 .sec-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
 
-/* 顶部 My Shipment */
+/* My Shipment */
 .ship-head { background: #1a1d23; color: #fff; padding: 14px 18px;
   display: flex; align-items: center; justify-content: space-between; border-radius: 10px 10px 0 0; }
 .ship-title { font-size: 14px; font-weight: 800; }
@@ -33,7 +33,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 .kv .v.green { color: #059669; }
 
 
-/* 货物表 */
+/* Cargo table */
 .cg-t { width: 100%; border-collapse: collapse; font-size: 12px; }
 .cg-t th { background: #f8fafc; padding: 8px 10px; text-align: left;
   font-size: 10px; font-weight: 800; color: #374151; border-bottom: 1px solid #e0e4ea; }
@@ -43,7 +43,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 .note-in:focus { border-color: #1a73e8; }
 .note-in.saved { border-color: #fbbf24; background: #fffbeb; }
 
-/* 航班卡 */
+/* Sailing cards */
 .sail { border: 1.5px solid #e0e4ea; border-radius: 10px; margin: 10px 16px;
   padding: 13px 15px; cursor: pointer; transition: border-color .15s; background: #fff; }
 .sail:hover { border-color: #93c5fd; }
@@ -69,7 +69,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 .btn-green { background: #059669; color: #fff; width: 100%; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
-/* 已确认横幅 */
+/* Confirmed banner */
 .confirmed-banner { background: linear-gradient(135deg,#ecfdf5,#d1fae5);
   border: 1.5px solid #86efac; border-radius: 10px; padding: 14px 18px;
   margin-bottom: 14px; display: flex; align-items: center; gap: 12px; }
@@ -83,34 +83,53 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 .center-state .big { font-size: 44px; margin-bottom: 14px; }
 .center-state h2 { font-size: 17px; font-weight: 800; color: #1a1d23; margin-bottom: 6px; }
 .sync-dot { font-size: 10px; color: #059669; font-weight: 700; float: right; }
+.bl-alert{padding:12px 16px;border-bottom:1px solid currentColor;font-size:12px;line-height:1.5}
+.bl-doc{border:1px solid currentColor;border-radius:8px;margin:12px 16px;padding:14px;background:inherit}
+.bl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-bottom:1px solid currentColor;padding-bottom:10px;margin-bottom:10px}
+.bl-box{border:1px solid currentColor;border-radius:6px;padding:10px;min-height:74px;white-space:pre-wrap}
+.bl-lbl{font-size:10px;font-weight:900;text-transform:uppercase;margin-bottom:5px;opacity:.7}
+.bl-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
+.bl-table th,.bl-table td{border:1px solid currentColor;padding:7px;text-align:left;vertical-align:top}
+.bl-actions{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 16px}
+.bl-actions .btn{flex:1;min-width:180px}
+.btn-outline{background:transparent;border:1.5px solid currentColor;color:inherit}
+.modal{position:fixed;inset:0;background:color-mix(in srgb, CanvasText 38%, transparent);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto}
+.modal-panel{background:Canvas;color:CanvasText;border:1px solid currentColor;border-radius:8px;max-width:760px;width:100%;padding:14px}
+.chg-row{border:1px solid currentColor;border-radius:8px;margin-top:8px;overflow:hidden}
+.chg-sum{width:100%;background:transparent;color:inherit;border:0;padding:10px 12px;text-align:left;font-weight:800;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
+.chg-body{display:none;border-top:1px solid currentColor;padding:10px 12px}
+.chg-row.open .chg-body{display:block}
+.chg-body input,.chg-body textarea,.chg-body select{width:100%;border:1px solid currentColor;border-radius:6px;padding:8px;font:inherit;background:transparent;color:inherit}
+.muted{opacity:.7}
+@media(max-width:640px){.bl-grid{grid-template-columns:1fr}.bl-actions .btn{min-width:100%}}
 </style>
 </head>
 <body>
 
-<div class="center-state" id="stateLoading"><div class="big">⏳</div><p>正在加载…</p></div>
+<div class="center-state" id="stateLoading"><div class="big">...</div><p>Loading...</p></div>
 
 <div class="hidden" id="stateForm">
 <div class="shell">
 
-  <!-- 已确认横幅（谁定了就显示） -->
+  <!-- Confirmed banner -->
   <div class="confirmed-banner hidden" id="confirmedBanner">
     <div style="font-size:26px;">✅</div>
     <div style="flex:1;">
-      <div style="font-size:13px;font-weight:800;color:#065f46;" id="confirmedText">已确认</div>
+      <div style="font-size:13px;font-weight:800;color:#065f46;" id="confirmedText">Confirmed</div>
       <div style="font-size:11px;color:#047857;margin-top:2px;" id="confirmedSub"></div>
     </div>
     <button onclick="reopen()" style="background:none;border:1px solid #86efac;color:#047857;
-      padding:6px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">重新选择</button>
+      padding:6px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">Change</button>
   </div>
 
   <!-- My Shipment -->
   <div class="card">
     <div class="ship-head">
       <div>
-        <div class="ship-title">协同 · My Shipment</div>
+        <div class="ship-title">My Shipment</div>
         <div class="ship-sub" id="shipSub">—</div>
       </div>
-      <span class="badge badge-amber" id="actionBadge">需要您确认</span>
+      <span class="badge badge-amber" id="actionBadge">Action required</span>
     </div>
     <div id="kvBox"></div>
   </div>
@@ -119,8 +138,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
   <div class="card" id="cargoCard" style="display:none;">
     <div class="sec-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;cursor:pointer;" onclick="const t=$('cargoTable');const c=$('cargoChevron');t.style.display=t.style.display==='none'?'':'none';c.textContent=t.style.display===''?'▾':'▸';">
       <div>
-        <div class="sec-title">货物明细 / Cargo Description <span class="sync-dot hidden" id="syncDot">✓ 已同步</span></div>
-        <div class="sec-sub" id="cargoSub">订舱前请核对 · 改 HS/品名写备注即同步</div>
+        <div class="sec-title">Cargo Description <span class="sync-dot hidden" id="syncDot">Saved</span></div>
+        <div class="sec-sub" id="cargoSub">Please review before booking. Notes are saved automatically.</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <span id="cargoChevron" style="font-size:16px;color:#9ca3af;">▾</span>
@@ -128,18 +147,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
     </div>
     <div id="cargoTable">
     <table class="cg-t">
-      <thead><tr><th>Brand Code</th><th>品名 & 规格 Description</th><th style="width:96px;">HS Code</th>
-        <th style="width:54px;">FE</th><th style="width:54px;">箱数</th>
-        <th style="width:72px;">GW (KGS)</th><th style="width:170px;">您的备注 Your Notes</th></tr></thead>
+      <thead><tr><th>Brand Code</th><th>Description</th><th style="width:96px;">HS Code</th>
+        <th style="width:54px;">FE</th><th style="width:54px;">CTNS</th>
+        <th style="width:72px;">GW (KGS)</th><th style="width:170px;">Your Notes</th></tr></thead>
       <tbody id="cargoBody"></tbody>
     </table>
     </div>
   </div>
 
-  <!-- 条款 + 价格 -->
+  <!-- Terms and price -->
   <div class="card" id="termCard">
     <div class="sec-head">
-      <div class="sec-title">条款 · 航班 & 费用 / Terms & Charges</div>
+      <div class="sec-title">Terms, Sailings & Charges</div>
     </div>
     <div style="padding:12px 16px;">
       <div style="display:flex;gap:6px;flex-wrap:wrap;" id="ttRowC"></div>
@@ -148,75 +167,87 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
     </div>
   </div>
 
-  <!-- 柜明细 -->
+  <!-- Containers -->
   <div class="card" id="cntrCard" style="display:none;">
     <div class="sec-head">
-      <div class="sec-title">柜 / Containers <span id="cntrCount" style="font-weight:400;color:#9ca3af;"></span></div>
+      <div class="sec-title">Containers <span id="cntrCount" style="font-weight:400;color:#9ca3af;"></span></div>
     </div>
     <div id="cntrBox" style="padding:8px 16px 14px;"></div>
   </div>
 
-  <!-- 单据下载 -->
+  <!-- Documents -->
   <div class="card" id="docCard">
-    <div class="sec-head"><div class="sec-title">单据 / Documents</div></div>
+    <div class="sec-head"><div class="sec-title">Documents</div></div>
     <div style="padding:10px 16px 16px;">
       <a id="dlPack" target="_blank" style="display:flex;align-items:center;gap:10px;border:1.5px solid #e0e4ea;border-radius:10px;padding:12px 14px;text-decoration:none;color:#111827;font-size:13px;font-weight:700;">
-        📦 <span style="flex:1;">客户资料合并版（PL + SC + IV）</span><span style="color:#1a73e8;">下载 ↗</span></a>
+        <span style="flex:1;">Document pack (PL + SC + IV)</span><span style="color:#1a73e8;">Open</span></a>
     </div>
   </div>
 
-  <!-- BL 草稿确认 -->
-  <!-- 海运随附文件（非危险品声明 + 电放保函） -->
+  <!-- Shipping documents -->
   <div class="card" id="shippingDocsCard" style="display:none;">
-    <div class="sec-head"><div class="sec-title">📄 海运随附文件 / Shipping Documents</div></div>
+    <div class="sec-head"><div class="sec-title">Shipping Documents</div></div>
     <div id="shippingDocsBox" style="padding:10px 16px 16px;display:flex;flex-direction:column;gap:8px;"></div>
   </div>
 
   <div class="card" id="blDraftCard" style="display:none;">
     <div class="sec-head">
-      <div class="sec-title">✍️ BL 草稿确认 / Bill of Lading Draft</div>
-      <div class="sec-sub">请核对提单草稿，如有错误请备注后提交</div>
+      <div class="sec-title">Bill of Lading Draft Confirmation</div>
+      <div class="sec-sub">Please review the draft before carrier submission.</div>
     </div>
-    <div id="blDraftBox" style="padding:10px 16px 16px;"></div>
+    <div id="blDraftBox"></div>
   </div>
 
   <!-- Available Sailings -->
   <div class="card">
     <div class="sec-head" style="display:flex;justify-content:space-between;align-items:center;">
       <div>
-        <div class="sec-title">可选航班 / Available Sailings</div>
-        <div class="sec-sub" id="sailSub">点击卡片选择您偏好的航班 · 选择即自动记录 · ⚠️ 确认后改其他航线将产生改舱/退仓费</div>
+        <div class="sec-title">Available Sailings</div>
+        <div class="sec-sub" id="sailSub">Select your preferred sailing. Changes after confirmation may incur amendment fees.</div>
       </div>
       <span class="badge badge-amber" id="sailCount" style="background:#dbeafe;color:#1d4ed8;">—</span>
     </div>
-    <div id="sailBox"><div style="padding:20px 16px;font-size:12px;color:#9ca3af;">暂无可选航班，请联系 Sanlyn 业务员。</div></div>
+    <div id="sailBox"><div style="padding:20px 16px;font-size:12px;color:#9ca3af;">No available sailings yet. Please contact Sanlyn.</div></div>
     <div class="confirm-bar hidden" id="recBar"></div>
   </div>
 
-  <!-- 确认按钮 -->
+  <!-- Confirm button -->
   <div id="confirmZone">
-    <button class="btn btn-green" id="btnConfirm" onclick="confirmBooking()">✅ 确认订舱 Confirm Booking</button>
+    <button class="btn btn-green" id="btnConfirm" onclick="confirmBooking()">Confirm Booking</button>
   </div>
 
-  <!-- 财务确认（仅 admin 可见，后续接真实账单数据） -->
+  <!-- Finance confirmation -->
   <div class="card" id="adminFinanceCard" style="display:none;">
     <div class="sec-head" style="display:flex;align-items:center;justify-content:space-between;">
       <div>
-        <div class="sec-title">💰 财务确认 / Finance Confirmation <span style="font-size:10px;font-weight:400;color:#9ca3af;">Admin only</span></div>
-        <div class="sec-sub">账单核对与确认 · 仅内部可见</div>
+        <div class="sec-title">Finance Confirmation <span style="font-size:10px;font-weight:400;color:#9ca3af;">Admin only</span></div>
+        <div class="sec-sub">Internal billing review only.</div>
       </div>
-      <span style="font-size:11px;background:#fef3c7;color:#92400e;border-radius:20px;padding:3px 10px;font-weight:700;">待实现</span>
+      <span style="font-size:11px;background:#fef3c7;color:#92400e;border-radius:20px;padding:3px 10px;font-weight:700;">Pending</span>
     </div>
-    <div style="padding:16px;color:#9ca3af;font-size:12px;">账单数据将在后续版本中对接，目前为占位。</div>
+    <div style="padding:16px;color:#9ca3af;font-size:12px;">Billing data placeholder.</div>
   </div>
 </div>
 </div>
 
 <div class="center-state hidden" id="stateDead">
-  <div class="big">⛔️</div><h2>链接无效</h2><p>链接已过期或被重发作废，请联系 Sanlyn 重新获取。</p>
+  <div class="big">!</div><h2>Invalid link</h2><p>This link has expired or was replaced. Please contact Sanlyn for a new link.</p>
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="modal hidden" id="blChangeModal">
+  <div class="modal-panel">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+      <div><div class="sec-title">Request Changes</div><div class="sec-sub">Submitting changes pauses the countdown. A new timer starts after Sanlyn sends the revised draft.</div></div>
+      <button class="btn btn-outline" style="padding:6px 10px;" onclick="closeBLChanges()">Close</button>
+    </div>
+    <div id="blChangeRows"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+      <button class="btn btn-outline" onclick="closeBLChanges()">Cancel</button>
+      <button class="btn btn-green" id="blChgSubmitBtn" onclick="submitBLChanges()">Submit request</button>
+    </div>
+  </div>
+</div>
 
 <script src="/public/templates/collab-customer-core.js"></script>
 <script src="/public/templates/collab-customer-boot.js"></script>

@@ -1,11 +1,18 @@
 const API = '/api/db/booking-collab';
+const BL_API = API + '/bl-confirmation';
 const token = new URLSearchParams(location.search).get('token') || '';
 const $ = id => document.getElementById(id);
 const show = id => { ['stateLoading','stateForm','stateDead'].forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
 function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
-function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+function fmtD(v){
+  if(!v) return '';
+  try{
+    return new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',day:'2-digit',month:'short',year:'numeric'}).format(new Date(v));
+  }catch(e){ return ''; }
+}
 function fmt(d){ return d?fmtD(d):'—'; }
+function fmtDT(v){ return v ? `${fmtD(v)} (GMT+8)` : '—'; }
 function openBillingInvoice(){
   if(!window._billingToken) return;
   window.open('/public/invoice-confirm-preview.html?token='+encodeURIComponent(window._billingToken), '_blank', 'noopener');
@@ -16,29 +23,27 @@ function renderBillingEntry(billing){
   const canOpen=!!(billing&&billing.token&&billing.show_amount!==false);
   window._billingToken=canOpen?billing.token:'';
   box.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f8fafc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px;">'
-    +'<div><div style="font-size:13px;font-weight:800;color:#1a1d23;">费用 / 账单：'+(canOpen?'本票港杂/费用账单':'暂无')+'</div>'
-    +'<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+(canOpen?esc(billing.segment||'按当前权限展示'):'当前链接暂无可打开账单')+'</div></div>'
-    +(canOpen?'<button class="btn" style="padding:7px 12px;font-size:12px;background:#1a73e8;color:#fff;" onclick="openBillingInvoice()">打开账单 / 开票</button>':'')+'</div>';
+      +'<div><div style="font-size:13px;font-weight:800;color:#1a1d23;">Charges: '+(canOpen?'available':'not available')+'</div>'
+      +'<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+(canOpen?esc(billing.segment||'Available to this role'):'No billing page is available for this link')+'</div></div>'
+    +(canOpen?'<button class="btn" style="padding:7px 12px;font-size:12px;background:#1a73e8;color:#fff;" onclick="openBillingInvoice()">Open bill</button>':'')+'</div>';
 }
 
 let sheet = {}, sailings = [], selIdx = -1, confirmed = false, noteTimer = null, notes = {};
 
 
 function renderConfirmState(){
-  // 谁定了就显示：已确认横幅 + 锁定选中卡
   if(confirmed){
     const x = sailings[selIdx] || sheet.customer_selected_sailing || {};
     $('confirmedBanner').classList.remove('hidden');
-    $('confirmedText').textContent = `已确认订舱：${x.carrier||''} ${x.vessel||''} · ETD ${fmt(x.etd)}`;
-    $('confirmedSub').textContent = (sheet.customer_submitted_at?`确认时间 ${String(sheet.customer_submitted_at).replace('T',' ').slice(0,16)} · `:'') + 'Sanlyn 已收到，舱位锁定中';
-    $('actionBadge').textContent='已确认'; $('actionBadge').className='badge badge-green';
+    $('confirmedText').textContent = `Booking confirmed: ${x.vessel||''} · ETD ${fmt(x.etd)}`;
+    $('confirmedSub').textContent = (sheet.customer_submitted_at?`Confirmed at ${fmtDT(sheet.customer_submitted_at)} · `:'') + 'Sanlyn has received your confirmation.';
+    $('actionBadge').textContent='Confirmed'; $('actionBadge').className='badge badge-green';
     $('confirmZone').style.display='none';
-    // 确认后折叠货物明细
     const ct=$('cargoTable'),cc=$('cargoChevron'),cs=$('cargoSub');
-    if(ct){ct.style.display='none';} if(cc){cc.textContent='▸';} if(cs){cs.textContent='点击展开明细';}
+    if(ct){ct.style.display='none';} if(cc){cc.textContent='▸';} if(cs){cs.textContent='Click to expand details';}
   } else {
     $('confirmedBanner').classList.add('hidden');
-    $('actionBadge').textContent='需要您确认'; $('actionBadge').className='badge badge-amber';
+    $('actionBadge').textContent='Action required'; $('actionBadge').className='badge badge-amber';
     // hide confirm button if ship is already booked on Sanlyn side
     const _booked = !!(sheet.so_no || sheet.bl_no);
     $('confirmZone').style.display = _booked ? 'none' : 'block';
@@ -56,38 +61,36 @@ function pick(i){
 }
 function reopen(){
   confirmed=false; window._isAmend = !!sheet.customer_submitted; renderConfirmState();
-  // 已确认过再改 = 改单：明示可能产生改单费（以船司账单为准）
   if(window._isAmend){
     const cz=$('confirmZone');
     if(cz && !$('amendNotice')){
       const n=document.createElement('div'); n.id='amendNotice';
       n.style.cssText='margin:0 0 10px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:6px;font-size:12px;color:#92400e;';
       const cnt=(sheet.customer_amend&&sheet.customer_amend.count)?Number(sheet.customer_amend.count):0;
-      n.innerHTML='⚠️ <b>改单提醒 Amendment</b>：您已确认过船期，再次提交将视为<b>改单</b>，船公司可能收取改单费（以实际账单为准）。'+(cnt>0?`<span style="margin-left:6px;color:#b45309;">本票已改单 ${cnt} 次</span>`:'');
+      n.innerHTML='<b>Amendment notice</b>: You have already confirmed a sailing. Submitting again will be treated as an amendment and may incur amendment fees.'+(cnt>0?`<span style="margin-left:6px;color:#b45309;">Amendments submitted: ${cnt}</span>`:'');
       cz.insertBefore(n,cz.firstChild);
     }
   }
-  toast('可重新选择航班，选好后再次确认');
+  toast('You can select another sailing and confirm again.');
 }
 
 function renderSailings(){
-  $('sailCount').textContent = sailings.length + ' 个班次';
+  $('sailCount').textContent = sailings.length + ' sailings';
   if(!sailings.length){
     if (sheet.so_no || sheet.bl_no) {
-      $('sailCount').textContent = '已订舱';
-      const seg = [sheet.carrier_code, sheet.vessel, sheet.voyage].filter(Boolean).join(' · ');
+      $('sailCount').textContent = 'Booked';
+      const seg = [sheet.vessel, sheet.voyage].filter(Boolean).join(' · ');
       $('sailBox').innerHTML = `<div style="padding:14px 16px;font-size:13px;background:#f0fdf4;border-radius:8px;margin:0 0 4px;">
-        ✅ <b>已订舱：${esc(seg||'—')}</b>${sheet.etd?` · ETD ${fmt(sheet.etd)}`:''}</div>`;
+        <b>Booked: ${esc(seg||'—')}</b>${sheet.etd?` · ETD ${fmt(sheet.etd)}`:''}</div>`;
     }
     return;
   }
   $('sailBox').innerHTML = sailings.map((x,i)=>`
     <div class="sail" id="sail_${i}" onclick="pick(${i})">
       <div class="sail-top">
-        <span style="font-size:18px;">🚢</span>
         <div>
-          <span class="sail-carrier">${esc(x.carrier||'—')}</span>
-          ${x.is_recommended?'<span class="rec-pill">Sanlyn 推荐</span>':''}
+          <span class="sail-carrier">${esc(x.vessel||'—')}</span>
+          ${x.is_recommended?'<span class="rec-pill">Sanlyn preferred</span>':''}
           <div class="sail-vessel">${esc(x.vessel||'')} ${esc(x.voyage||'')}</div>
         </div>
         <span class="sel-pill hidden">✓ Selected</span>
@@ -95,13 +98,12 @@ function renderSailings(){
       <div class="sail-grid">
         <div class="sail-cell"><div class="l">ETD ${esc(sheet.pol||'')}</div><div class="d">${fmt(x.etd)}</div></div>
         <div class="sail-cell"><div class="l">ETA ${esc(sheet.pod||'')}</div><div class="d">${fmt(x.eta)}</div></div>
-        <div class="sail-cell"><div class="l">截关 Cut-off</div><div class="d red">${fmt(x.cutoff_date)}</div></div>
-        <div class="sail-cell"><div class="l">运费 / ${esc(sheet.container_type||'柜')}</div><div class="d green">${x.rate_usd?('USD '+Number(x.rate_usd).toLocaleString()):'—'}</div></div>
+        <div class="sail-cell"><div class="l">Cut-off</div><div class="d red">${fmt(x.cutoff_date)}</div></div>
       </div>
     </div>`).join('');
   const rec = sailings.find(x=>x.is_recommended);
   if(rec){ $('recBar').classList.remove('hidden');
-    $('recBar').innerHTML = `Sanlyn 推荐 <b>${esc(rec.carrier)} ${fmt(rec.etd)}</b> — 综合船期与价格最优。报价 48 小时内有效。`; }
+    $('recBar').innerHTML = `Sanlyn preferred sailing: <b>${fmt(rec.etd)}</b>.`; }
 }
 
 function saveNotes(){
@@ -128,8 +130,8 @@ function renderCargo(){
     const liveC = Array.isArray(sheet.containers_live)?sheet.containers_live:[];
     const myC = liveC.filter(x=>(x.cargo||[]).some(g=>g.order_no===o.order_no));
     const cntrTag = myC.length
-      ? myC.map(x=>`<span style="color:#475569;font-weight:600;">　柜 ${esc(x.container_no||'')}${x.seal_no?' · 封 '+esc(x.seal_no):''}${x.container_type?' · '+esc(x.container_type):''}</span>`).join('')
-      : ' <span style="color:#9ca3af;font-weight:400;font-size:10px;">　柜待装柜绑定</span>';
+      ? myC.map(x=>`<span style="color:#475569;font-weight:600;"> Container ${esc(x.container_no||'')}${x.seal_no?' · Seal '+esc(x.seal_no):''}${x.container_type?' · '+esc(x.container_type):''}</span>`).join('')
+      : ' <span style="color:#9ca3af;font-weight:400;font-size:10px;"> Container pending</span>';
     html += `<tr><td colspan="7" style="background:#f1f5f9;font-weight:800;font-size:11px;color:#334155;padding:6px 10px;">ORDER ${esc((o.order_no||'').replace(/^\d+-/,''))}　·　${esc(o.contract_no||'')}${dgBadge}${cntrTag}</td></tr>`;
     its.forEach((it,i)=>{
       let bc = it.barcode;
@@ -140,14 +142,14 @@ function renderCargo(){
       const feChecked = !!(window._feLines && window._feLines[feKey]);
       const nameLine = esc(it.product_name||it.description||'—') + (it.size?`<div style="font-size:10px;color:#9ca3af;">${esc(it.size)}</div>`:'');
       html += `<tr>
-        <td style="font-weight:700;${it.barcode?'':'color:#b45309;'}" ${it.barcode?'':'title="无条形码·代购特殊条码"'}>${esc(bc)}</td>
+        <td style="font-weight:700;${it.barcode?'':'color:#b45309;'}" ${it.barcode?'':'title="Temporary code"'}>${esc(bc)}</td>
         <td>${nameLine}</td>
         <td style="font-family:monospace;">${esc(it.hs_code||'—')}</td>
         <td style="text-align:center;"><input type="checkbox" class="fe-ck" data-fekey="${esc(feKey)}" data-hs="${esc(it.hs_code||'')}" ${feChecked?'checked':''} ${sheet.is_daigou?'checked disabled':''} style="width:15px;height:15px;cursor:pointer;accent-color:#1a73e8;"></td>
         <td>${esc(it.ctns||'—')}</td>
         <td>${esc(it.gw_kgs||'—')}</td>
         <td><input class="note-in ${saved[key]?'saved':''}" data-key="${esc(key)}"
-          value="${esc(saved[key]||'')}" placeholder="如需改品名/HS/标签请说明"></td>
+          value="${esc(saved[key]||'')}" placeholder="Tell us if description, HS, or marks need changes"></td>
       </tr>`;
     });
   });
@@ -159,7 +161,7 @@ function renderCargo(){
     ck.addEventListener('change',()=>{
       window._feLines = window._feLines || {};
       const hs = ck.dataset.hs;
-      // 同 HS 联动：一票 FE 按品类报，勾一行=同 HS 全勾
+      // Link FE checkboxes by HS code.
       const group = hs ? [...document.querySelectorAll(`.fe-ck[data-hs="${hs}"]`)] : [ck];
       group.forEach(x=>{ if(!x.disabled){ x.checked = ck.checked; } window._feLines[x.dataset.fekey] = ck.checked; });
       clearTimeout(window._feTimer);
@@ -174,143 +176,137 @@ async function saveFELines(){
     const r = await fetch(`${API}/customer-notes`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token, fe_request: any, fe_lines: any ? lines : null})});
     const d = await r.json();
-    if(!r.ok||!d.ok){ alert(d.error||'FE 保存失败'); return; }
+    if(!r.ok||!d.ok){ alert(d.error||'FE save failed'); return; }
     window._feState = any; sheet.fe_cert = d.fe_cert;
     renderPrice(); if(window.renderFE) renderFE();
   }catch(e){}
 }
-// ── BL 草稿确认 ──────────────────────────────────────────────────────
-window._blFields = [];
-window.addBLField = function(){
-  const idx = window._blFields.length;
-  window._blFields.push({k:'',v:''});
-  const row = document.createElement('div');
-  row.id = `blf_${idx}`;
-  row.style.cssText = 'display:flex;gap:6px;margin-top:6px;';
-  row.innerHTML = `<input placeholder="字段名" style="flex:1;border:1px solid #e0e4ea;border-radius:6px;padding:5px 8px;font-size:12px;" oninput="window._blFields[${idx}].k=this.value">
-    <input placeholder="内容" style="flex:2;border:1px solid #e0e4ea;border-radius:6px;padding:5px 8px;font-size:12px;" oninput="window._blFields[${idx}].v=this.value">
-    <button onclick="document.getElementById('blf_${idx}').remove();window._blFields[${idx}]={k:'',v:''}" style="background:none;border:none;color:#9ca3af;font-size:14px;cursor:pointer;">✕</button>`;
-  const holder = $('blChangeFields');   // 2026-07-23 判空：该容器当前 HTML 里不存在
-  if (holder) holder.appendChild(row);
-};
-window.submitBLConfirm = async function(isOk){
-  const btn = $(isOk ? 'blOkBtn' : 'blChgSubmitBtn');
-  if(btn) btn.disabled = true;
-  const payload = {token, bl_draft_status: isOk ? 'confirmed' : 'change_requested'};
-  if(!isOk){
-    payload.bl_draft_note = ($('blChangeNote')||{}).value || '';
-    payload.bl_draft_fields = window._blFields.filter(f=>f.k||f.v);
-  }
+// BL draft confirmation.
+window._blDraft = null;
+window._blChanges = {};
+function timeLeft(v){
+  const ms = new Date(v).getTime() - Date.now();
+  if(!Number.isFinite(ms) || ms <= 0) return 'deadline passed';
+  const h = Math.floor(ms / 3600000), d = Math.floor(h / 24);
+  return `${d} days ${h % 24} hours left`;
+}
+function blStatusText(st){
+  if(st === 'customer_confirmed') return 'Confirmed';
+  if(st === 'revision_requested') return 'Changes requested';
+  if(st === 'auto_submitted') return 'Auto-submitted';
+  return 'Awaiting confirmation';
+}
+function blCell(label, value){ return `<div class="bl-box"><div class="bl-lbl">${esc(label)}</div>${esc(value||'—')}</div>`; }
+function blRows(rows, cols){
+  return rows.length ? rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c]||'—')}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}">—</td></tr>`;
+}
+function renderBLCountdown(){
+  const d = window._blDraft;
+  const el = $('blCountdown');
+  if(el && d) el.textContent = `Please confirm before ${fmtDT(d.deadline_at)} — ${timeLeft(d.deadline_at)}`;
+}
+window.loadBLDraft = async function(){
   try{
-    const r = await fetch(`${API}/customer-notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const r = await fetch(`${BL_API}?token=${encodeURIComponent(token)}`);
     const d = await r.json();
-    if(!r.ok||!d.ok){ alert(d.error||'提交失败'); if(btn) btn.disabled=false; return; }
-    sheet.bl_draft_status = payload.bl_draft_status;
-    sheet.bl_draft_confirmed_at = new Date().toISOString();
-    renderBLDraft();
-  }catch(e){ alert('网络错误'); if(btn) btn.disabled=false; }
-};
-// 电放确认（BL确认后 release_type=电放 时出现）
-window.confirmTelex = async function(){
-  const btn = $('telexBtn');
-  if(btn) btn.disabled = true;
-  try{
-    const r = await fetch(`${API}/confirm-telex`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})});
-    const d = await r.json();
-    if(!r.ok||!d.ok){ alert(d.error||'操作失败'); if(btn) btn.disabled=false; return; }
-    sheet.telex_released_at = d.telex_released_at || new Date().toISOString();
-    renderBLDraft();
-  }catch(e){ alert('网络错误'); if(btn) btn.disabled=false; }
-};
-// 保存邮寄地址
-window.saveMailingAddress = async function(){
-  const val = ($('mailingInput')||{}).value||'';
-  if(!val.trim()){ alert('请填写邮寄地址'); return; }
-  const btn = $('mailingBtn');
-  if(btn) btn.disabled = true;
-  try{
-    const r = await fetch(`${API}/customer-notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token, mailing_address: val})});
-    const d = await r.json();
-    if(!r.ok||!d.ok){ alert(d.error||'保存失败'); if(btn) btn.disabled=false; return; }
-    sheet.mailing_address = val;
-    renderBLDraft();
-  }catch(e){ alert('网络错误'); if(btn) btn.disabled=false; }
+    if(r.ok && d.ok){ window._blDraft = d.draft; renderBLDraft(); }
+  }catch(e){}
 };
 window.renderBLDraft = function(){
-  const card = $('blDraftCard');
-  if(!card) return;
-  // BL草稿文件：supplier_portal上传，排除非危/电放保函/MSDS/SO等非BL文档
-  const uploads = (Array.isArray(sheet.collab_uploads) ? sheet.collab_uploads : [])
-    .filter(u => u && u.role === 'supplier_portal'
-      && !/非危|nondg|telex|电放保函|msds|鉴定|排载|\bso\b|入货/i.test(u.filename||''));
-  // 货代已上传BL草稿即显示（bl_no 可以之后补）
-  if(!uploads.length){ card.style.display='none'; return; }
+  const card = $('blDraftCard'), d = window._blDraft;
+  if(!card || !d || !d.deadline_at){ if(card) card.style.display='none'; return; }
   card.style.display = '';
-  const st = sheet.bl_no ? sheet.bl_draft_status : null;
-  const rel = sheet.release_type || '';
-  const statusHtml = !sheet.bl_no
-    ? `<span style="background:#f3f4f6;color:#6b7280;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:800;">📄 待出单号</span>`
-    : !st
-    ? `<span style="background:#fef9c3;color:#a16207;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:800;">⏳ 待确认</span>`
-    : st==='confirmed'
-    ? `<span style="background:#dcfce7;color:#15803d;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:800;">✓ 已确认</span>`
-    : `<span style="background:#fee2e2;color:#b91c1c;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:800;">✏️ 修改中</span>`;
-  function _filePreviewHtml(u){
-    const url = `${API}/file?token=${encodeURIComponent(token)}&type=upload&filename=${encodeURIComponent(u.filename)}`;
-    const isImg = /^image\//i.test(u.mime||'');
-    const isPdf = (u.mime||'').includes('pdf') || /\.pdf$/i.test(u.filename||'');
-    if(isImg) return `<img src="${url}" alt="${esc(u.filename)}" style="width:100%;border-radius:8px;display:block;margin-bottom:8px;" loading="lazy">`;
-    if(isPdf) return `<iframe src="${url}" style="width:100%;height:480px;border:none;border-radius:8px;display:block;margin-bottom:8px;" title="${esc(u.filename)}"></iframe>`;
-    return `<a href="${url}" target="_blank" style="display:flex;align-items:center;gap:8px;border:1px solid #e0e4ea;border-radius:8px;padding:8px 12px;margin-bottom:6px;text-decoration:none;color:#111827;font-size:12px;">📄 <span style="flex:1;">${esc(u.filename)}</span><span style="color:#1a73e8;font-size:11px;">下载 ↗</span></a>`;
-  }
-  const uploadsHtml = uploads.length
-    ? uploads.map(u => _filePreviewHtml(u)).join('')
-    : `<div style="color:#9ca3af;font-size:12px;text-align:center;padding:20px 0;">货代尚未上传 BL 草稿</div>`;
-  let actionsHtml = '';
-  if(!st && sheet.bl_no){
-    actionsHtml = `
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
-        <button id="blOkBtn" onclick="submitBLConfirm(true)" style="flex:1;padding:10px 0;border-radius:8px;border:none;background:#059669;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">✅ 确认无误 Confirm BL</button>
-        <button onclick="const f=$('blChangeForm');f.style.display=f.style.display==='none'?'':'none'" style="flex:1;padding:10px 0;border-radius:8px;border:1.5px solid #d97706;background:#fff;color:#d97706;font-size:13px;font-weight:700;cursor:pointer;">✏️ 有误 / 需修改</button>
-      </div>
-      <div id="blChangeForm" style="display:none;margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;">
-        <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px;">请填写需要修改的内容：</div>
-        <textarea id="blChangeNote" rows="3" placeholder="总体说明（如：收货人地址有误）" style="width:100%;border:1px solid #fde68a;border-radius:6px;padding:8px;font-size:12px;font-family:inherit;outline:none;resize:vertical;"></textarea>
-        <div id="blChangeFields"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-          <button onclick="addBLField()" style="background:none;border:1.5px dashed #d97706;border-radius:6px;padding:4px 12px;font-size:12px;color:#d97706;cursor:pointer;">＋ 添加字段</button>
-          <button id="blChgSubmitBtn" onclick="submitBLConfirm(false)" style="padding:8px 20px;border-radius:8px;border:none;background:#d97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">提交修改请求</button>
-        </div>
-      </div>`;
-  } else if(st==='confirmed'){
-    const ts = sheet.bl_draft_confirmed_at ? ` · ${fmt(sheet.bl_draft_confirmed_at)}` : '';
-    // 电放：确认BL后显示电放确认按钮
-    let postConfirm = '';
-    if(rel==='电放'){
-      postConfirm = sheet.telex_released_at
-        ? `<div style="margin-top:8px;background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:8px 12px;font-size:12px;color:#047857;font-weight:700;">⚡ 电放已确认 ${fmt(sheet.telex_released_at)}</div>`
-        : `<button id="telexBtn" onclick="confirmTelex()" style="width:100%;margin-top:8px;padding:10px 0;border-radius:8px;border:none;background:#7c3aed;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">⚡ 确认电放放单 Surrender BL</button>`;
-    }
-    // 正本：显示邮寄地址表单
-    if(rel==='正本'){
-      postConfirm = sheet.mailing_address
-        ? `<div style="margin-top:8px;background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:8px;padding:8px 12px;font-size:12px;color:#1d4ed8;">📮 邮寄地址：${esc(sheet.mailing_address)}</div>`
-        : `<div style="margin-top:8px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;">
-            <div style="font-size:12px;font-weight:700;color:#1d4ed8;margin-bottom:6px;">📮 正本提单 — 请提供邮寄地址</div>
-            <textarea id="mailingInput" rows="3" placeholder="收件人 / 公司名 / 地址 / 电话" style="width:100%;border:1px solid #bfdbfe;border-radius:6px;padding:7px;font-size:12px;font-family:inherit;outline:none;resize:vertical;"></textarea>
-            <button id="mailingBtn" onclick="saveMailingAddress()" style="margin-top:6px;padding:7px 20px;border-radius:8px;border:none;background:#1d4ed8;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">保存地址</button>
-          </div>`;
-    }
-    actionsHtml = `<div style="margin-top:10px;background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 您已确认此提单草稿${ts}</div>${postConfirm}`;
-  } else {
-    const ts = sheet.bl_draft_confirmed_at ? ` · ${fmt(sheet.bl_draft_confirmed_at)}` : '';
-    actionsHtml = `<div style="margin-top:10px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:8px;padding:10px 14px;font-size:12px;color:#b91c1c;font-weight:700;">✏️ 您的修改请求已提交${ts}，Sanlyn 将与您确认</div>`;
-  }
+  const locked = ['customer_confirmed','revision_requested','auto_submitted'].includes(d.status);
+  const goods = (d.goods||[]).map(x=>({
+    description:x.description,
+    package:x.cartons ? `${x.cartons} CTNS` : '',
+    weight:x.gross_weight_kg ? `${x.gross_weight_kg} KGS` : '',
+    cbm:x.cbm ? `${x.cbm} CBM` : '',
+  }));
+  const cntrs = (d.containers||[]).map(x=>({container:x.container_no,type:x.type,seal:x.seal_no}));
   $('blDraftBox').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div style="font-size:12px;color:#6b7280;">${sheet.bl_no ? `BL No. <b style="color:#1a1d23;">${esc(sheet.bl_no)}</b>` : '<span style="color:#9ca3af;">提单号待货代填写</span>'}</div>
-      ${statusHtml}
+    <div class="bl-alert">
+      <div id="blCountdown" style="font-weight:900;"></div>
+      <div>If we do not receive your reply before the deadline, this draft will be submitted to the carrier as shown. Any later change may incur carrier amendment fees.</div>
+      <div style="margin-top:4px;font-weight:800;">Status: ${esc(blStatusText(d.status))} · Draft version ${esc(d.version)}</div>
     </div>
-    ${uploadsHtml}
-    ${actionsHtml}`;
+    <div class="bl-doc">
+      <div class="bl-grid">
+        ${blCell('Shipper', d.shipper)}
+        ${blCell('Consignee', d.consignee)}
+        ${blCell('Notify Party', d.notify)}
+        ${blCell('Vessel / Voyage', d.vessel_voyage)}
+        ${blCell('Port of Loading', d.pol)}
+        ${blCell('Port of Discharge', d.pod)}
+        ${blCell('ETD', fmtD(d.etd))}
+        ${blCell('ETA', fmtD(d.eta))}
+      </div>
+      <div class="bl-lbl">Description of Goods</div>
+      <table class="bl-table"><thead><tr><th>Description</th><th>Package</th><th>Gross Weight</th><th>Measurement</th></tr></thead><tbody>${blRows(goods,['description','package','weight','cbm'])}</tbody></table>
+      <div class="bl-lbl" style="margin-top:10px;">Container & Seal</div>
+      <table class="bl-table"><thead><tr><th>Container No.</th><th>Type</th><th>Seal No.</th></tr></thead><tbody>${blRows(cntrs,['container','type','seal'])}</tbody></table>
+    </div>
+    <div class="bl-actions">
+      <button class="btn btn-green" id="blOkBtn" onclick="submitBLConfirm()" ${locked?'disabled':''}>Confirm — ready to submit</button>
+      <button class="btn btn-outline" onclick="openBLChanges()" ${locked?'disabled':''}>Request changes</button>
+    </div>`;
+  renderBLCountdown();
+  clearInterval(window._blTimer);
+  window._blTimer = setInterval(renderBLCountdown, 60000);
+};
+window.submitBLConfirm = async function(){
+  const btn = $('blOkBtn'); if(btn) btn.disabled = true;
+  try{
+    const r = await fetch(BL_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,action:'confirm'})});
+    const d = await r.json();
+    if(!r.ok||!d.ok){ alert(d.error||'Submit failed'); if(btn) btn.disabled=false; return; }
+    window._blDraft = d.draft; renderBLDraft();
+  }catch(e){ alert('Network error'); if(btn) btn.disabled=false; }
+};
+window.toggleBLChange = function(id){
+  const row = $(id); if(row) row.classList.toggle('open');
+};
+function changeRow(id, title, summary, body){
+  return `<div class="chg-row" id="${id}"><button class="chg-sum" onclick="toggleBLChange('${id}')"><span>${esc(title)}</span><span class="muted">${esc(summary||'—')}</span></button><div class="chg-body">${body}</div></div>`;
+}
+window.openBLChanges = function(){
+  const d = window._blDraft || {};
+  const hs = (d.hs_lines||[]).map((x,i)=>`<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-top:6px;"><input value="${esc(x.sku)}" data-hs-sku="${i}"><input value="${esc(x.code)}" data-hs-code="${i}"><button class="btn btn-outline" style="padding:6px 10px;" onclick="this.parentNode.remove()">Remove</button></div>`).join('');
+  const clr = (d.clearance_fields||[]).map((x,i)=>`<label style="display:block;margin-top:8px;"><span class="bl-lbl">${esc(x.label)}</span><input data-clearance="${i}" data-clearance-label="${esc(x.label)}" value="${esc(x.value)}"></label>`).join('') || '<div class="muted">No destination-specific clearance fields are required for this shipment.</div>';
+  $('blChangeRows').innerHTML =
+    '<div class="sec-sub" style="margin-top:10px;font-weight:800;">Provided by you — we cannot verify</div>' +
+    changeRow('chgConsignee','Consignee / Notify', [d.consignee,d.notify].filter(Boolean).join(' / '), `<textarea id="chgConsigneeText" rows="4">${esc(`Consignee:\n${d.consignee||''}\n\nNotify:\n${d.notify||''}`)}</textarea>`) +
+    changeRow('chgHs','H.S. Code', (d.hs_lines||[]).map(x=>x.code).filter(Boolean).join(' & '), `<div id="hsRows">${hs}</div><button class="btn btn-outline" style="margin-top:8px;padding:7px 12px;" onclick="addHSLine()">Add H.S. Code</button><label style="display:block;margin-top:8px;"><select id="hsShow"><option value="yes" ${d.hs_show_on_bl!==false?'selected':''}>show on B/L</option><option value="no" ${d.hs_show_on_bl===false?'selected':''}>do not show on B/L</option></select></label><div class="muted" style="margin-top:8px;">Our China export declaration uses a separate code. A different code here does not affect shipment.</div>`) +
+    changeRow('chgClearance','Clearance documents','Blank fields stay blank', `${clr}<div class="muted" style="margin-top:8px;">Blank fields will be submitted as blank. Adding them later may incur carrier amendment fees.</div>`) +
+    '<div class="sec-sub" style="margin-top:14px;font-weight:800;">Our data — tell us if anything looks wrong</div>' +
+    changeRow('chgGoods','Goods / quantity / weight / measurement','Comment only', '<textarea id="chgGoodsText" rows="3" placeholder="Tell us what looks wrong."></textarea>') +
+    changeRow('chgCntr','Container & seal','As per terminal record', '<div class="muted">As per the terminal record / carrier feed. Not amendable.</div><textarea id="chgCntrText" rows="3" placeholder="Tell us what looks wrong."></textarea>') +
+    changeRow('chgSchedule','Schedule','As per carrier feed', '<div class="muted">As per the terminal record / carrier feed. Not amendable.</div><textarea id="chgScheduleText" rows="3" placeholder="Tell us what looks wrong."></textarea>');
+  $('blChangeModal').classList.remove('hidden');
+};
+window.closeBLChanges = function(){ $('blChangeModal').classList.add('hidden'); };
+window.addHSLine = function(){
+  const div = document.createElement('div');
+  div.style.cssText='display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-top:6px;';
+  div.innerHTML='<input placeholder="SKU / item"><input placeholder="H.S. Code"><button class="btn btn-outline" style="padding:6px 10px;" onclick="this.parentNode.remove()">Remove</button>';
+  $('hsRows').appendChild(div);
+};
+window.submitBLChanges = async function(){
+  const btn = $('blChgSubmitBtn'); if(btn) btn.disabled = true;
+  const hs = [...$('hsRows').children].map(r=>({sku:(r.children[0]||{}).value||'',code:(r.children[1]||{}).value||''})).filter(x=>x.sku||x.code);
+  const clearance = {}; document.querySelectorAll('[data-clearance]').forEach(x=>{ clearance[x.dataset.clearanceLabel]=x.value; });
+  const changes = {
+    consignee_notify: ($('chgConsigneeText')||{}).value || '',
+    hs_lines: hs, hs_show_on_bl: ($('hsShow')||{}).value !== 'no',
+    clearance_docs: clearance,
+    goods_comment: ($('chgGoodsText')||{}).value || '',
+    container_comment: ($('chgCntrText')||{}).value || '',
+    schedule_comment: ($('chgScheduleText')||{}).value || '',
+  };
+  try{
+    const r = await fetch(BL_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,action:'request_changes',changes})});
+    const d = await r.json();
+    if(!r.ok||!d.ok){ alert(d.error||'Submit failed'); if(btn) btn.disabled=false; return; }
+    closeBLChanges(); window._blDraft = d.draft; renderBLDraft();
+  }catch(e){ alert('Network error'); if(btn) btn.disabled=false; }
 };

@@ -33,6 +33,7 @@ import { handleGetSailings, handlePostSailing, handleGetPlan, handlePatchPlan, h
 import { handleGetContacts, handleSupplyChainOptions, handleCollabPartyInvoices, handleCollabVendorOptions, handleCollabAssignVendor } from "./lib/collab-contacts-vendor.js";
 import { handleCustomsDocStatus, handleCollabMessages, handlePostCollabMessage, handleShipmentOrders } from "./lib/collab-misc.js";
 import { handleCollabPricing, handleCollabOrderPricing, handleCollabPricingSubmit } from "./lib/collab-pricing.js";
+import { handleBlConfirmation } from "./lib/collab-bl-confirmation.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
@@ -67,6 +68,7 @@ export default async function handler(req, res) {
     if (req.method === "POST"   && pathSuffix === "trucking-submit")    return await handleTruckingSubmit(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "broker-submit")      return await handleBrokerSubmit(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "customer-notes")     return await handleCustomerNotes(req, res, pool);
+    if ((req.method === "GET" || req.method === "POST") && pathSuffix === "bl-confirmation") return await handleBlConfirmation(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "file")               return await handleFileProxy(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "upload")             return await handleCollabUpload(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "sailings")           return await handlePostSailing(req, res, pool);
