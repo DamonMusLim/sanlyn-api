@@ -401,8 +401,18 @@ function msUntilNextRun() {
 }
 
 export function scheduleBlConfirmationGate() {
+  // 🔴 2026-08-08 上线闸门：定时跑默认【只演练不动手】。
+  // 病根：首次 dry-run 实测 checked=8 里 auto_submitted=7 —— 那 8 票的 SI 截止早就过了
+  // (历史单)，新引擎一上线就会把它们【一次性全部自动提交】。这是典型的"存量数据被
+  // 新自动化一次性引爆"。所以：
+  //   ① 必须显式 BL_CONFIRMATION_GATE_LIVE=true 才真动手，否则只演练+记日志
+  //   ② 真动手前还要过 CUTOVER 日期闸(见 runBlConfirmationGate 内)，只管上线之后的票
+  const live = process.env.BL_CONFIRMATION_GATE_LIVE === "true";
+  if (!live) {
+    console.log("[bl-confirmation-gate] LIVE=false → 定时任务只演练(dryRun)，不写库不提交");
+  }
   function tick() {
-    runBlConfirmationGate()
+    runBlConfirmationGate({ dryRun: !live })
       .catch(e => console.error("[bl-confirmation-gate] error:", e.message))
       .finally(() => setTimeout(tick, msUntilNextRun()));
   }

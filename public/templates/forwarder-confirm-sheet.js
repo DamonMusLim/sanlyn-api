@@ -1,5 +1,5 @@
 const FWD_SHEET_UI_VERSION = "v2.0.0";
-const FWD_SHEET_UI_DATE = "2026-08-07";
+const FWD_SHEET_UI_DATE = "2026-08-08";
 const API = "/api/db/booking-collab";
 const INVOICE_API = "/api/db/invoice-collab-confirm";
 const token = new URLSearchParams(location.search).get("token") || "";
