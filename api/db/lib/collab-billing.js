@@ -464,7 +464,8 @@ async function handleCollabBillConfirm(req, res, pool) {
 async function handleCollabBillSummary(req, res, pool) {
   const token = req.query && req.query.token;
   let planId = req.query && req.query.plan_id, internal = false;
-  if (token) { const auth = await readBillToken(pool, token); if (!auth || !auth.planId) return res.status(403).json({ ok: false, error: "链接无效或已过期" }); planId = auth.planId; internal = INTERNAL_PROFILES.has(cleanText(auth.meta.field_profile)); }
+  let auth = null;
+  if (token) { auth = await readBillToken(pool, token); if (!auth || !auth.planId) return res.status(403).json({ ok: false, error: "链接无效或已过期" }); planId = auth.planId; internal = INTERNAL_PROFILES.has(cleanText(auth.meta.field_profile)); }
   else { if (!requireAuth(req, res)) return; internal = true; }
   if (!planId) return res.status(400).json({ ok: false, error: "plan_id 必填" });
   const plan = await billPlan(pool, planId), blNo = plan && (plan.bl_no || plan.hbl_no);
@@ -474,7 +475,21 @@ async function handleCollabBillSummary(req, res, pool) {
   const segs = { ocean: [], trucking: [], port_charge: [], customs: [] };
   for (const r of rows) (segs[segmentForCategory(r.cost_category)] || segs.port_charge).push(r);
   const segment = (key) => { const rs = segs[key] || [], confirmed = rs.filter(r => r.confirmed_at && !(r.pending && r.pending.status)); return { status: confirmed.length ? "已定" : rs.some(r => r.pending && r.pending.status) ? "待确认" : "待报", reported_by: [...new Set(rs.map(r => r.supplier || r.supplier_type).filter(Boolean))], amount: totalsByCurrency(confirmed), pending_amount: totalsByCurrency(rs.filter(r => r.pending && r.pending.status)) }; };
-  const out = { ok: true, shipping_plan_id: plan.id, bl_no: blNo, segments: { ocean: segment("ocean"), trucking: segment("trucking"), port_charge: segment("port_charge"), customs: segment("customs") } };
+  // 🔴 2026-08-08 修越权：原来不分角色，四段全返回 —— 实测车队 token 能拿到
+  // 海运费段以及货代公司名。权限矩阵定的是【钱只给货代】，车队只看拖车费、
+  // 报关行只看报关费。上一轮修了提报/改价的跨段越权，汇总这条漏了。
+  // SUMMARY_SCOPED
+  const SEG_BY_ROLE = {
+    supplier_portal:  ["ocean", "trucking", "port_charge", "customs"], // 货代=我方付款对象,全段可见
+    trucking_booking: ["trucking"],
+    broker_booking:   ["customs"],
+  };
+  const visibleSegs = internal
+    ? ["ocean", "trucking", "port_charge", "customs"]
+    : (SEG_BY_ROLE[auth && auth.role] || []);
+  const segments = {};
+  for (const k of visibleSegs) segments[k] = segment(k);
+  const out = { ok: true, shipping_plan_id: plan.id, bl_no: blNo, segments };
   if (internal) {
     const refs = await pool.query(`SELECT (SELECT row_to_json(lc) FROM local_charges lc WHERE ($1='' OR lc.pol ILIKE $1) AND ($2='' OR lc.pod ILIKE $2) ORDER BY lc.updated_at DESC LIMIT 1) AS local_charge_last,(SELECT json_agg(x) FROM (SELECT company_name, container_type, cost_total, sell_total, updated_at FROM local_charges WHERE ($1='' OR pol ILIKE $1) AND ($2='' OR pod ILIKE $2) ORDER BY updated_at DESC LIMIT 5) x) AS route_base`, [plan.pol || "", plan.pod || ""]);
     out.references = { local_charges_last: refs.rows[0].local_charge_last || null, route_base: refs.rows[0].route_base || [], declaration_stats: await declarationStats(pool, plan.id) };

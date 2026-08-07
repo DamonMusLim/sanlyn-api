@@ -150,6 +150,15 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/collab-pricing",
   "/api/db/booking-collab/collab-order-pricing",
   "/api/db/booking-collab/collab-pricing-submit",
+  // 2026-08-08 补登记：v2.5.0 新增的三个费用端点当时【漏了登记进公开白名单】，
+  // 于是全局鉴权在进 handler 之前就 401 掉了 —— 表现是货代页控制台一堆 401、
+  // 账单分段状态拿不到、"未安排的费段该藏没藏"。
+  // ⚠️ 这三个端点自己在 handler 里做 token 鉴权(readBillToken 只认
+  //    supplier_portal/broker_booking/trucking_booking 三种角色的有效链接)，
+  //    不带 token 时仍会走 requireAuth，所以放进白名单不等于不鉴权。
+  "/api/db/booking-collab/collab-bill-summary",
+  "/api/db/booking-collab/collab-bill-submit",
+  "/api/db/booking-collab/collab-bill-confirm",
   "/api/db/booking-collab/collab-quote-submit",
   "/api/db/booking-collab/collab-ref-submit",
   "/api/db/booking-collab/collab-requirement-submit",
