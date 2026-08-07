@@ -260,7 +260,7 @@ function renderPending(d){
   // Pre-fill ETD from order if available
   if(o.etd) $('etd-input').value = fmtDate(o.etd);
   // Min date = today
-  $('etd-input').min = new Date().toISOString().substring(0,10);
+  $('etd-input').min = new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'});   // 2026-08-06 修:原用UTC,北京00:00-08:00会算成昨天
 }
 
 async function submitConfirm(){

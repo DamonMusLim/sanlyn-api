@@ -2,6 +2,14 @@
 // GET /api/db/data-gaps  → 扫4域缺口，返回逐条可补任务（带skill触发词）
 import { getPool, setCors } from "../db.js";
 
+
+// 2026-08-06 时区根治：PG 的 date/timestamptz 取出来是 JS Date 对象。
+//   String(d).substring(0,10) → "Thu Aug 13"（乱码）
+//   JSON 下发再 slice        → 差 8 小时，date 型直接差一天
+// 唯一正确写法：显式转 Asia/Shanghai。sv-SE locale 输出就是 YYYY-MM-DD HH:mm。
+function bjDate(v){ if(v==null||v==="")return null; try{ return new Date(v).toLocaleDateString("sv-SE",{timeZone:"Asia/Shanghai"}); }catch(e){ return null; } }
+function bjTime(v){ if(v==null||v==="")return null; try{ return new Date(v).toLocaleString("sv-SE",{timeZone:"Asia/Shanghai"}).slice(0,16); }catch(e){ return null; } }
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -21,7 +29,7 @@ export default async function handler(req, res) {
     for (const r of c1.rows) tasks.push({
       domain: "海运成本", icon: "🚢", severity: 1,
       title: `${r.bl_no} 缺货代成本`,
-      detail: `${r.customer||"?"} · ${r.carrier_code||"?"} · ${r.forwarder_cn||"货代未知"} · ETD ${(r.etd||"").toString().slice(0,10)}`,
+      detail: `${r.customer||"?"} · ${r.carrier_code||"?"} · ${r.forwarder_cn||"货代未知"} · ETD ${bjDate(r.etd)||"—"}`,
       ref: r.bl_no, skill: "shipping-intake",
       trigger: `这票货的船费录一下 ${r.bl_no}`,
     });
@@ -97,7 +105,7 @@ export default async function handler(req, res) {
     for (const r of c6.rows) tasks.push({
       domain: "海运字段", icon: "🚢", severity: 0,
       title: `${r.bl_no} 缺柜型`,
-      detail: `${r.customer||"?"} · ETD ${(r.etd||"").toString().slice(0,10)}`,
+      detail: `${r.customer||"?"} · ETD ${bjDate(r.etd)||"—"}`,
       ref: r.bl_no, skill: "shipping-intake",
       trigger: `补 ${r.bl_no} 的柜型(20GP/40HQ)`,
     });
@@ -121,7 +129,7 @@ export default async function handler(req, res) {
     for (const r of c8.rows) tasks.push({
       domain:"海运字段", icon:"🚢", severity:0,
       title:`${r.bl_no} 缺合同号`,
-      detail:`${r.customer||"?"} · ETD ${(r.etd||"").toString().slice(0,10)}`,
+      detail:`${r.customer||"?"} · ETD ${bjDate(r.etd)||"—"}`,
       ref:r.bl_no, skill:"shipping-intake",
       trigger:`补 ${r.bl_no} 的合同号`,
     });
@@ -145,7 +153,7 @@ export default async function handler(req, res) {
     for (const r of c10.rows) tasks.push({
       domain:"订单字段", icon:"📝", severity:1,
       title:`${r.bl_no} 海运行无对应订单`,
-      detail:`${r.customer||"?"} · ETD ${(r.etd||"").toString().slice(0,10)} · 需按单据建订单`,
+      detail:`${r.customer||"?"} · ETD ${bjDate(r.etd)||"—"} · 需按单据建订单`,
       ref:r.bl_no, skill:"order-intake",
       trigger:`${r.bl_no} 这票货建订单录进系统`,
     });

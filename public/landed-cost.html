@@ -125,7 +125,7 @@ function render(d, bl) {
       '<div class="hdr-left">'+
         '<h1>My Landed Cost · 到岸成本</h1>'+
         '<div class="sub">BL '+bl+' · '+(d.bl.vessel||'—')+' v.'+(d.bl.voyage||'—')+
-          ' · ETD '+(d.bl.etd?String(d.bl.etd).slice(0,10):'—')+
+          ' · ETD '+(d.bl.etd?new Date(d.bl.etd).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}):'—')+
           ' · '+(d.bl.pol||'—')+' → '+(d.bl.pod||'—')+'</div>'+
       '</div>'+
       '<div class="pill-row">'+

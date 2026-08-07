@@ -6,6 +6,7 @@ function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show');
 function gv(id){ return ($(id)?.value||'').trim(); }
 function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function fmtD(v){ if(!v) return ''; try{ return new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Shanghai'}); }catch(e){ return String(v).slice(0,10); } }
+function bjTime(v){ if(v==null||v==="")return ""; try{ return new Date(v).toLocaleString("sv-SE",{timeZone:"Asia/Shanghai"}).slice(0,16); }catch(e){ return ""; } }  // PG日期→北京时间;绝不切ISO串
 
 const SEG_META = { ocean:{icon:'🚢',label:'海运'}, truck:{icon:'🚛',label:'车队'}, customs:{icon:'🛂',label:'报关'}, factory:{icon:'🏭',label:'工厂'} };
 let segs = [], curSeg = null, uploads = [], vehs = [{}], upZone = 'ocean';
@@ -290,7 +291,7 @@ async function boot(){
     const stages = [
       { label:'订舱', done: !!(s.so_no||s.bl_no) },
       { label:'提柜/装柜', done: live0.some(x=>x.plate||x.trailer_plate) },
-      { label:'截单/VGM', done: false, due: (soX.doc_cutoff||'').slice(0,16) },
+      { label:'截单/VGM', done: false, due: bjTime(soX.doc_cutoff) },   // 2026-08-06 修:原来 slice ISO 串早8小时
       { label:'报关放行', done: declared },
       { label:'开船', done: false, due: s.etd?('ETD '+fmtD(s.etd)):'' },
     ];

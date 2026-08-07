@@ -7,6 +7,14 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
 // ── Normalize company codes from JWT (case, whitespace, dedup, length guard) ──
+
+// 2026-08-06 时区根治：PG 的 date/timestamptz 取出来是 JS Date 对象。
+//   String(d).substring(0,10) → "Thu Aug 13"（乱码）
+//   JSON 下发再 slice        → 差 8 小时，date 型直接差一天
+// 唯一正确写法：显式转 Asia/Shanghai。sv-SE locale 输出就是 YYYY-MM-DD HH:mm。
+function bjDate(v){ if(v==null||v==="")return null; try{ return new Date(v).toLocaleDateString("sv-SE",{timeZone:"Asia/Shanghai"}); }catch(e){ return null; } }
+function bjTime(v){ if(v==null||v==="")return null; try{ return new Date(v).toLocaleString("sv-SE",{timeZone:"Asia/Shanghai"}).slice(0,16); }catch(e){ return null; } }
+
 function normalizeCompanyCodes(raw) {
   // Guard null/undefined before String() to avoid "null" / "undefined" entries
   if (raw == null) return [];
@@ -302,9 +310,9 @@ function _merge(order, plan, isAdmin) {
       bl_no:         plan.bl_no,
       vessel:        plan.vessel,
       voyage:        plan.voyage,
-      etd:           plan.etd ? String(plan.etd).substring(0, 10) : null,
-      eta:           plan.eta ? String(plan.eta).substring(0, 10) : null,
-      cutoff_date:   plan.cutoff_date ? String(plan.cutoff_date).substring(0, 10) : null,
+      etd:           bjDate(plan.etd),
+      eta:           bjDate(plan.eta),
+      cutoff_date:   bjDate(plan.cutoff_date),
       container_no:  plan.container_no,
       container_type: plan.container_type,
       pol:           plan.pol,
@@ -328,8 +336,8 @@ function _merge(order, plan, isAdmin) {
     if (plan.voyage  && !out.voyage)    out.voyage = plan.voyage;
     if (plan.pol     && !out.pol)       out.pol    = plan.pol;
     if (plan.pod     && !out.pod)       out.pod    = plan.pod;
-    if (plan.etd     && !out.etd)       out.etd    = String(plan.etd).substring(0, 10);
-    if (plan.eta     && !out.eta)       out.eta    = String(plan.eta).substring(0, 10);
+    if (plan.etd     && !out.etd)       out.etd    = bjDate(plan.etd);
+    if (plan.eta     && !out.eta)       out.eta    = bjDate(plan.eta);
     if (plan.container_no)              out.container_no = plan.container_no;
     if (plan.container_type && !out.container_type) out.container_type = plan.container_type;
     if (plan.flow_status)               out.flow_status = plan.flow_status;

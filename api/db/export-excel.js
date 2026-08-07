@@ -15,6 +15,14 @@ import ExcelJS from "exceljs";
 import { getCanonicalProds } from "./doc-helpers.js";
 import { enrichProdsFromMaster } from "./doc-data.js";
 
+
+// 2026-08-06 时区根治：PG 的 date/timestamptz 取出来是 JS Date 对象。
+//   String(d).substring(0,10) → "Thu Aug 13"（乱码）
+//   JSON 下发再 slice        → 差 8 小时，date 型直接差一天
+// 唯一正确写法：显式转 Asia/Shanghai。sv-SE locale 输出就是 YYYY-MM-DD HH:mm。
+function bjDate(v){ if(v==null||v==="")return null; try{ return new Date(v).toLocaleDateString("sv-SE",{timeZone:"Asia/Shanghai"}); }catch(e){ return null; } }
+function bjTime(v){ if(v==null||v==="")return null; try{ return new Date(v).toLocaleString("sv-SE",{timeZone:"Asia/Shanghai"}).slice(0,16); }catch(e){ return null; } }
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -99,8 +107,8 @@ export default async function handler(req, res) {
         _row4("提单号 B/L", p.bl_no, "出运编号", p.shipment_no),
         _row4("装运港 POL", p.pol, "目的港 POD", p.pod),
         _row4("船名 Vessel", p.vessel, "航次 Voyage", p.voyage),
-        _row4("ETD 开船日", p.etd ? String(p.etd).substring(0,10) : "—", "ETA 到港日", p.eta ? String(p.eta).substring(0,10) : "—"),
-        _row4("截关日 Cutoff", p.si_cutoff_date ? String(p.si_cutoff_date).substring(0,10) : (p.cutoff_date||"—"), "柜型", p.container_type || "—"),
+        _row4("ETD 开船日", bjDate(p.etd) || "—", "ETA 到港日", bjDate(p.eta) || "—"),
+        _row4("截关日 Cutoff", bjTime(p.si_cutoff_date) || bjDate(p.cutoff_date) || "—", "柜型", p.container_type || "—"),
         _row4("柜号", p.container_no || "—", "流程状态", p.flow_status || "—"),
         _blank(),
         _hdr("客户与服务商", 4),
@@ -189,7 +197,7 @@ export default async function handler(req, res) {
         _row4("出运编号", cd?.shipment_no||shipment||"—", "合同号", cd?.contract_no||contract||"—"),
         _row4("报关编号", cd?.customs_no||"—", "提单号 B/L", plan?.bl_no||"—"),
         ...(plan ? [
-          _row4("船名/航次", `${plan.vessel||"—"} / ${plan.voyage||"—"}`, "ETD", plan.etd?String(plan.etd).substring(0,10):"—"),
+          _row4("船名/航次", `${plan.vessel||"—"} / ${plan.voyage||"—"}`, "ETD", bjDate(plan.etd) || "—"),
           _row4("装运港 POL", plan.pol||"—", "目的港 POD", plan.pod||"—"),
         ] : []),
         _row4("客户", oRaw.companyNameEN||oRaw.companyNameCN||order?.customer||"—", "", ""),
@@ -303,7 +311,7 @@ export default async function handler(req, res) {
           const total = Number(p.freight_total_cny||0);
           return _row([
             p.shipment_no||"—",
-            p.etd ? String(p.etd).substring(0,10) : "—",
+            bjDate(p.etd) || "—",
             `${p.pol||""}→${p.pod||""}`,
             p.vessel||"—",
             p.bl_no||"—",
