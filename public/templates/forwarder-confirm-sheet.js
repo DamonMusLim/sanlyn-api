@@ -37,6 +37,16 @@ function fmtDT(v){
     hour:"2-digit", minute:"2-digit", hour12:false
   }).replace(/\//g, "-");
 }
+
+function humanBillHint(state){
+  var raw = String((state && (state.invoiceError || state.billError)) || "");
+  if (raw) {
+    try { console.warn("[bill] " + raw); } catch (e) {}
+    return "费用信息暂时取不到，请稍后刷新或联系 Sanlyn 对接人";
+  }
+  return "费用尚未录入";
+}
+
 function money(v, cur){
   const n = Number(v);
   if(!Number.isFinite(n)) return "";
@@ -337,7 +347,10 @@ function renderFees(){
     feePanel("customs", "📋", "报关费 Customs", `${scrub(state.sheet.pol || "—")} · 如由贵司安排`, g.customs, "customs")
   ].join("") + billConfirmBox();
   $("arV").textContent = totalByCurrency(lines);
-  $("arDue").textContent = lines.length ? "以账单确认为准" : (state.invoiceError || state.billError || "费用尚未录入");
+  // 2026-08-08 修：原来把接口原始错误(如 "Unauthorized")直接渲染给货代看。
+  // 对外页面绝不显示英文错误码/技术信息——外人看不懂，还暴露内部实现。
+  // 出错一律降级成人话，真正的错误留在 console 供我方排查。
+  $("arDue").textContent = lines.length ? "以账单确认为准" : humanBillHint(state);
 }
 function feePanel(key, icon, title, sub, lines, segKey, editable){
   const value = segAmount(segKey, lines);
