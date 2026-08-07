@@ -196,7 +196,7 @@ export async function renderInspectionRequest(pool, shipmentId, opts) {
 @page{size:A4;margin:8mm}
 *{box-sizing:border-box}
 body{margin:0;background:#f1f5f9;color:#111;font-family:"SimSun","Songti SC","Microsoft YaHei",Arial,sans-serif;font-size:11.5px;line-height:1.35}
-.sheet{max-width:200mm;margin:16px auto;background:#fff;padding:8mm 8mm 6mm;box-shadow:0 4px 24px rgba(0,0,0,.12)}
+.sheet{max-width:194mm;margin:16px auto;background:#fff;padding:8mm 8mm 6mm;box-shadow:0 4px 24px rgba(0,0,0,.12)}
 .top{text-align:center;position:relative;margin-bottom:6px}
 .gov{font-size:18px;font-weight:700;letter-spacing:2px}
 .h1{font-size:20px;font-weight:800;letter-spacing:3px;margin-top:2px}
@@ -216,7 +216,11 @@ table.form td,table.form th{border:1px solid #111;padding:4px 6px;vertical-align
 .decl{font-size:10px;color:#334155;margin-top:6px;line-height:1.6}
 .ctn-hint{display:inline-block;margin:4px 0 0;padding:2px 10px;border:1px solid #dc2626;color:#dc2626;border-radius:4px;font-size:10.5px;font-weight:700}
 .miss{color:#dc2626}
-@media print{body{background:#fff}.sheet{box-shadow:none;margin:0}}
+/* 2026-08-08 修: 原 .sheet 200mm > A4竖版可打印宽 194mm(210-8*2), 导出PDF时右侧「生产单位注册号」等列被裁掉。
+   改 194mm 适配; 打印/导出时 @page 已留 8mm 边距, 这里再去掉 sheet 自身 padding 与宽度限制, 铺满可打印区。 */
+@media print{body{background:#fff}.sheet{box-shadow:none;margin:0;padding:0;max-width:none;width:100%}
+  table.form{width:100%;table-layout:fixed}
+  td,th{word-break:break-word;overflow-wrap:anywhere}}
 </style></head><body>
 <div class="sheet">
   <div class="top">
