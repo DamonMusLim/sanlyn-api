@@ -126,6 +126,31 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     return s + (Number.isFinite(n) ? n : 0);
   }, 0);
   var notes = containerNo ? "集装箱号: " + containerNo : "";
+  // 2026-08-07 接线: 出境关别/离境口岸/随附单证(法检电子底账B)/订单号
+  // 数据来源=订单真实字段(报检时向海关申报的值, orders.raw.ciq + ciq_application_no), 缺则留空不猜
+  var _ciqInfo = (function () {
+    for (var i = 0; i < orders.length; i++) {
+      var _r = parseRaw(orders[i].raw) || {};
+      var _c = _r.ciq || {};
+      var _no = clean(orders[i].ciq_application_no) || clean(_c.report_no);
+      var _edoc = clean(_c.edoc_no) || (_no ? _no + "001" : "");
+      if (_no || _edoc) {
+        return {
+          reportNo: _no,
+          edocNo: _edoc,
+          despPort: String(clean(_c.despPort) || "").replace(/[0-9]/g, "").trim(),
+          declCustoms: clean(_c.declare_customs),
+        };
+      }
+    }
+    return { reportNo: "", edocNo: "", despPort: "", declCustoms: "" };
+  })();
+  // 随附单证及编号: 法检货物填 代码B + 电子底账号, 海关据此自动调取检验检疫申报要素
+  var attachedDocs = _ciqInfo.edocNo ? ("B " + _ciqInfo.edocNo) : "";
+  var departurePort = _ciqInfo.despPort;
+  var exportCustomsOffice = _ciqInfo.declCustoms;
+  var orderNosLabel = orders.map(function (o) { return clean(o.order_no); }).filter(Boolean).join(" / ");
+
   var today = fmtDate(opts.declareDate || new Date());
 
   return `<!doctype html>
@@ -201,14 +226,14 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   </div>
 
   <div class="meta">
-    <div>预录入编号: ${blank(opts.preEntryNo || "")}</div>
+    <div>预录入编号: ${blank(opts.preEntryNo || "")}${orderNosLabel ? "　订单号: " + orderNosLabel : ""}${_ciqInfo.reportNo ? "　检疫号: " + _ciqInfo.reportNo : ""}</div>
     <div>海关编号: ${blank(opts.customsNo || "")} ${blank(opts.customsName || "")}</div>
     <div style="text-align:right">页码: 1/1</div>
   </div>
 
   <div class="grid4">
     ${cell("境内发货人", shipper, undefined, "domestic_shipper")}
-    ${cell("出境关别", "", undefined, "export_customs_office")}
+    ${cell("出境关别", exportCustomsOffice, undefined, "export_customs_office")}
     ${cell("出口日期", fmtDate(pick(plan.etd, praw.etd)), undefined, "export_date")}
     ${cell("申报日期", today, undefined, "declare_date")}
     ${cell("备案号", "", undefined, "record_no")}
@@ -230,7 +255,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     ${cell("贸易国(地区)", destination, undefined, "trade_country")}
     ${cell("运抵国(地区)", destination, undefined, "arrival_country")}
     ${cell("指运港", pod, undefined, "destination_port")}
-    ${cell("离境口岸", "", undefined, "departure_port")}
+    ${cell("离境口岸", departurePort, undefined, "departure_port")}
   </div>
   <div class="grid4 row5">
     ${cell("包装种类", "纸箱", "small", "package_type")}
@@ -245,7 +270,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     ${cell("保费", "", "small", "insurance")}
     ${cell("杂费", "", "small", "misc_fee")}
   </div>
-  ${bigCell("随附单证及编号", "", "attached_docs")}
+  ${bigCell("随附单证及编号", attachedDocs, "attached_docs")}
   ${bigCell("标记唛码及备注", notes, "marks_notes")}
 
   <table class="goods">
