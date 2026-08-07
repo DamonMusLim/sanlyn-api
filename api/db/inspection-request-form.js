@@ -77,7 +77,7 @@ async function loadCompany(pool, code, nameFallback) {
     // 原来无 ORDER BY 的 LIMIT 1 是随机取 → 曾把「(已废弃·勿用·合并至VEN-LL)」印上报检单。
     // 现在：精确 code 命中优先 > 在用优先 > id 小优先，三重排序定死，绝不再随机。
     var r = await pool.query(
-      `SELECT code, name_cn, name_en, factory_name, registration_no, address, contact_name, contact_phone, country
+      `SELECT code, name_cn, name_en, factory_name, registration_no, tax_id, customs_reg_code, ciq_reg_no, address, contact_name, contact_phone, country
          FROM companies
         WHERE code=$1 OR merged_into_code=$1
         ORDER BY (code=$1) DESC, COALESCE(active,true) DESC, id ASC
@@ -86,7 +86,7 @@ async function loadCompany(pool, code, nameFallback) {
   }
   if (!row && clean(nameFallback)) {
     var r2 = await pool.query(
-      `SELECT code, name_cn, name_en, factory_name, registration_no, address, contact_name, contact_phone, country
+      `SELECT code, name_cn, name_en, factory_name, registration_no, tax_id, customs_reg_code, ciq_reg_no, address, contact_name, contact_phone, country
          FROM companies WHERE name_cn=$1 OR name_en=$1
         ORDER BY COALESCE(active,true) DESC, id ASC LIMIT 1`, [clean(nameFallback)]);
     row = r2.rows[0] || null;
@@ -138,7 +138,14 @@ export async function renderInspectionRequest(pool, shipmentId, opts) {
   var shipperEn = pick(shipper.name_en, "");
   var consigneeEn = pick(consignee.name_en, firstOrderValue(orders, "customer"));
   var consigneeCn = pick(consignee.name_cn, "");
-  var applicantCn = pick(factory.name_cn, factory.factory_name, "");
+  // 2026-08-08 改口径(Damon: 难题自己钻研·我们自主申报,不再交工厂/报关行代报):
+  //   报检【申请单位】= 申报主体(巴匕),不是工厂。工厂只出现在"生产单位"栏。
+  //   依据: 本票真实报检成功单 226N23010013904 —— 申请单位=厦门巴匕进出口有限公司/登记号3502960427,
+  //   生产单位=连云港中砂 91320723MADDJNGU67。原来印工厂是"工厂自报"年代的老口径。
+  var applicantCn = pick(shipperCn, factory.name_cn, factory.factory_name, "");
+  // 2026-08-08: 登记号一律从公司表的官方编码位取(新增 ciq_reg_no / customs_reg_code),
+  //   不再拿 registration_no(那是工商注册号) 或 tax_id 顶替。查不到就显 "—",绝不造。
+  var applicantRegNo = pick(shipper.ciq_reg_no, shipper.customs_reg_code, "");
 
   var contractNo = contractNoOf(orders);
   var destination = countryCn(firstOrderValue(orders, "destination") || firstOrderValue(orders, "country") || plan.pod_country || plan.pod);
@@ -220,8 +227,8 @@ table.form td,table.form th{border:1px solid #111;padding:4px 6px;vertical-align
   ${noticeBar}
 
   <table class="form">
-    <tr><td class="lbl">申请单位<br>(加盖公章)</td><td colspan="3">${esc(D(applicantCn))} <span style="color:#64748b">生产企业/报检单位</span></td><td class="lbl">申请日期</td><td>${esc(today)}</td></tr>
-    <tr><td class="lbl">申请单位登记号</td><td>${esc(D(factory.registration_no))}</td><td class="lbl">联系人</td><td>${esc(D(factory.contact_name))}</td><td class="lbl">电话</td><td>${esc(D(factory.contact_phone))}</td></tr>
+    <tr><td class="lbl">申请单位<br>(加盖公章)</td><td colspan="3">${esc(D(applicantCn))} <span style="color:#64748b">申报单位</span></td><td class="lbl">申请日期</td><td>${esc(today)}</td></tr>
+    <tr><td class="lbl">申请单位登记号</td><td>${esc(D(applicantRegNo))}</td><td class="lbl">联系人</td><td>${esc(D(factory.contact_name))}</td><td class="lbl">电话</td><td>${esc(D(factory.contact_phone))}</td></tr>
     <tr><td class="lbl">发货人</td><td colspan="5">(中文) ${esc(D(shipperCn))} &nbsp;&nbsp; (外文) ${esc(D(shipperEn))}</td></tr>
     <tr><td class="lbl">收货人</td><td colspan="5">(中文) ${esc(D(consigneeCn))} &nbsp;&nbsp; (外文) ${esc(D(consigneeEn))}</td></tr>
   </table>
@@ -236,7 +243,7 @@ table.form td,table.form th{border:1px solid #111;padding:4px 6px;vertical-align
     <tr><td class="lbl">运输工具名称号码</td><td>${esc(pick(plan.vessel ? "水路运输 / " + clean(plan.vessel) : "水路运输"))}</td><td class="lbl">贸易方式</td><td>一般贸易</td><td class="lbl">货物存放地点</td><td>工厂</td></tr>
     <tr><td class="lbl">合同号</td><td>${esc(D(contractNo))}</td><td class="lbl">信用证号</td><td>—</td><td class="lbl">用途</td><td>${esc(D(use))}</td></tr>
     <tr><td class="lbl">发货日期</td><td>${esc(etd)}</td><td class="lbl">输往国家(地区)</td><td>${esc(destination)}</td><td class="lbl">许可证/审批号</td><td>—</td></tr>
-    <tr><td class="lbl">启运地</td><td>${esc(D(pol))}</td><td class="lbl">到达口岸</td><td>${esc(D(pod))}</td><td class="lbl">生产单位注册号</td><td class="${factory.registration_no ? "" : "miss"}">${esc(D(factory.registration_no))}</td></tr>
+    <tr><td class="lbl">启运地</td><td>${esc(D(pol))}</td><td class="lbl">到达口岸</td><td>${esc(D(pod))}</td><td class="lbl">生产单位注册号</td><td class="${(factory.ciq_reg_no||factory.tax_id) ? "" : "miss"}">${esc(D(pick(factory.ciq_reg_no, factory.tax_id, "")))}</td></tr>
     <tr><td class="lbl">集装箱规格<br>数量及号码</td><td colspan="5">${ctnQty ? esc(ctnQty) + " × " + esc(D(ctnType)) : esc(D(ctnType))}${containerNo ? " &nbsp; 柜号 " + esc(containerNo) : ""}</td></tr>
   </table>
 
