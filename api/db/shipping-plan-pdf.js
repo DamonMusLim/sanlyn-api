@@ -680,7 +680,7 @@ ${printBtn}
     </table>
     <div class="bl-row" style="grid-template-columns:1fr">
       <div class="bl-cell"><div class="bl-head">Special Instructions</div>
-      <div class="bl-val" style="min-height:24px">${p.remarks ? esc(p.remarks) : ""}</div></div>
+      <div class="bl-val" style="min-height:24px">${(function(_r){/* 2026-08-07 红线: 系统派生的内部记账备注(如"[从订单确认发货派生] 39-LL-23 …")绝不上对外提单, 会把内部订单号漏给货代/船司; 与 booking-instruction.js 同一过滤规则 */ var _s=String(_r||""); return /^\s*\[[^\]]*(从|系统|自动|反查|补全|待补|同步|迁移|导入|派生)/.test(_s) ? "" : esc(_s);})(p.remarks)}</div></div>
     </div>
   </div>
   <div class="sig-area" style="margin-top:12px">

@@ -317,7 +317,10 @@ export async function loadLines(pool, orderIds) {
        SUM(k.qty_ctn) AS qty_ctn,
        SUM(CASE WHEN k.nw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.nw_ctn * k.qty_ctn ELSE NULL END) AS net_weight_kg,
        SUM(CASE WHEN k.gw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.gw_ctn * k.qty_ctn ELSE NULL END) AS gross_weight_kg,
-       MIN(k.unit_price) AS unit_price,
+       -- 2026-08-07: 原为 MIN(unit_price) —— 合并行取了最便宜那个(猫砂 ECO 55.3 vs ENRICH 61 → 印55.30),
+       --   与报检申报单价(总值/数量=56.155)对不上, 且 单价×数量≠总价。改为加权均价(总价÷数量), 自洽且与报检一致。
+       CASE WHEN SUM(k.qty_ctn) > 0 THEN ROUND(SUM(k.subtotal)::numeric / SUM(k.qty_ctn)::numeric, 5)
+            ELSE MIN(k.unit_price) END AS unit_price,
        SUM(k.subtotal) AS total_amount
      FROM keyed k
      LEFT JOIN hs_elements h ON h.hs_code IS NOT DISTINCT FROM k.hs_code
@@ -352,8 +355,14 @@ export function cargoRows(lines, destination, sourceArea) {
       fmtM(l.net_weight_kg, 2) ? fmtM(l.net_weight_kg, 2) + "千克" : "",
       fmtInt(l.qty_ctn) ? fmtInt(l.qty_ctn) + "箱" : "",
     ].filter(Boolean).join("<br>");
+    // 单价精度: 两位能精确表示就两位(55.30), 否则最多5位并去尾零(56.155), 保证 单价×数量=总价
+    var _upn = Number(l.unit_price);
+    var _up = !Number.isFinite(_upn) ? "" :
+      (Math.abs(Number(_upn.toFixed(2)) - _upn) < 1e-9
+        ? fmtM(_upn, 2)
+        : _upn.toFixed(5).replace(/0+$/, "").replace(/\.$/, ""));
     var money = [
-      fmtM(l.unit_price, 2),
+      _up,
       fmtM(l.total_amount, 2),
       "人民币",
     ].filter(Boolean).join("<br>");
