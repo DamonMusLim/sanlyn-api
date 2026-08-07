@@ -750,12 +750,15 @@ export default async function handler(req, res) {
       }
       var totRow = mkTotRow(5);
 
-      // ── V2 template (2026-05-25, Damon locked layout) ────────────────────────
+      // ── V2 template (2026-05-25, Damon locked layout) — 🚫 2026-08-08 已下掉 ────
+      // Damon: 「这个版本我删除了很久了」。正版是 2026-07-01 的 export-docs-template
+      // (海关单行·产品汇总真值+PORT+可编辑+盖章)。线上前端 CustomsModule 已 0 处发送 style=v2。
+      // 但服务端旧分支还在 → 任何人(或AI)拿旧链接 ?style=v2 仍会挖出这版废弃版式,
+      // 造成"给报关行的资料是早删掉的老版本"。故停用触发词。
+      // 保留代码仅作历史参考;万一要临时对照,传 ?style=v2legacy(不要用于对外单据)。
       // Per /Users/mac/Desktop/SANLYN_REAL_ORDER_CUSTOMS_RESCUE/print/merged/
-      // Triggers ONLY when ?style=v2 explicitly. Default path unchanged for
-      // backwards compat (HARMONIOUS / PETSOME / JJ PET etc still get legacy).
       // Supports type ∈ {iv, sc, pl, pack}. PI/PO/SO/etc unaffected.
-      if(String(_styleVariant||"").toLowerCase()==="v2" && ["iv","sc","pl","pack"].includes(type)){
+      if(String(_styleVariant||"").toLowerCase()==="v2legacy" && ["iv","sc","pl","pack"].includes(type)){
         var _v2ColConfig = await Promise.all([loadDocColConfig(pool, "pl"), loadDocColConfig(pool, "iv"), loadDocColConfig(pool, "sc")]);
                 var V2 = (function(){
                   var V2_CSS = "<style>"
