@@ -240,22 +240,20 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     <div class="lang"><button class="on">中文</button><button>English</button><button>BM</button></div>
   </div>
 
-  <div class="banner">
-    <span style="font-size:26px">🚢</span>
-    <div class="bt">
-      <h1 id="fwName">货代确认单<br>加载中</h1>
-      <div class="sub" id="fwSub">读取订舱确认单中…</div>
-    </div>
-    <span class="flag" id="agrTag">委托拖车 —</span>
-  </div>
-
   <div class="nologin">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
     无需登录，这条链接就是您的专属入口，可随时打开
   </div>
 
   <div class="block">
-    <div class="bh"><h2>① 页头</h2><p id="headHint">货代公司名 · 提单号 · 出单方式 · 柜量 / 航线</p></div>
+    <div class="bh" id="headFlag" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+      <div>
+        <h2 id="fwName">订舱协同</h2>
+        <p id="fwSub">货代公司名 · 提单号 · 出单方式 · 柜量 / 航线</p>
+        <p id="headHint" hidden></p>
+      </div>
+      <span class="flag" id="agrTag">委托拖车 —</span>
+    </div>
     <div class="bb mini-grid">
       <div class="statbox"><div class="k">货代公司</div><div class="v" id="forwarderV">—</div></div>
       <div class="statbox"><div class="k">提单号</div><div class="v" id="blV">—</div></div>
