@@ -1,4 +1,4 @@
-const FWD_SHEET_UI_VERSION = "v2.0.0";
+const FWD_SHEET_UI_VERSION = "v2.1.0";
 const FWD_SHEET_UI_DATE = "2026-08-08";
 const API = "/api/db/booking-collab";
 const INVOICE_API = "/api/db/invoice-collab-confirm";
@@ -36,6 +36,9 @@ function fmtDT(v){
     timeZone:"Asia/Shanghai", month:"2-digit", day:"2-digit",
     hour:"2-digit", minute:"2-digit", hour12:false
   }).replace(/\//g, "-");
+}
+function fmtAutoAfterSo(v){
+  return v ? fmtDT(v) : "上传 SO 后自动带出";
 }
 
 function humanBillHint(state){
@@ -147,8 +150,8 @@ function renderAll(){
   $("agrTag").textContent = state.segments.includes("truck") ? "委托拖车 · 贵司回填" : "拖车只读核对";
   $("etdV").textContent = fmtD(s.etd);
   $("gateV").textContent = fmtDT(s.cargo_cutoff || s.gate_in_cutoff || s.cutoff_date);
-  $("vgmV").textContent = fmtDT(s.vgm_cutoff || s.vgm_deadline);
-  $("siV").textContent = fmtDT(s.si_cutoff || s.doc_cutoff);
+  $("vgmV").textContent = fmtAutoAfterSo(s.vgm_cutoff || s.vgm_deadline);
+  $("siV").textContent = fmtAutoAfterSo(s.si_cutoff || s.doc_cutoff);
   $("soNoV").textContent = scrub(s.so_no || "—");
   $("vesselV").textContent = [s.vessel, s.voyage].filter(Boolean).map(scrub).join(" / ") || "—";
   $("cutoffV").textContent = textParts([fmtDT(s.cargo_cutoff), fmtD(s.si_cutoff || s.doc_cutoff || s.cutoff_date)]);
@@ -172,11 +175,11 @@ function renderBoxMode(){
   if(theirTruck){
     if(sub) sub.textContent = "贵司车队装柜后回填";
     if(badge){ badge.textContent = "待您回填"; badge.className = "sstat wait"; }
-    acts.innerHTML = `<button class="btn ok" onclick="confirmContainers()">✓ 箱封号无误，确认</button><button class="btn ghost" onclick="editContainers()">需修改</button>`;
+    acts.innerHTML = "";
   } else {
     if(sub) sub.textContent = "工厂 / 我方车队填，您核对";
     if(badge){ badge.textContent = "只读核对"; badge.className = "sstat ok"; }
-    acts.innerHTML = `<button class="btn ghost" onclick="editContainers()">修改</button>`;
+    acts.innerHTML = "";
   }
 }
 function renderCarrierReq(){
@@ -282,23 +285,44 @@ function renderContainerLines(s){
     return `柜 ${esc(c.seq || i + 1)}：${esc(no)} / ${esc(seal)} ✎`;
   }).join("<br>");
 }
-function maskId(v){
-  const s = String(v || "").trim();
-  if(!s) return "";
-  const tail = s.slice(-4);
-  return "****" + tail;
-}
 function renderTruck(){
-  const list = Array.isArray(state.sheet.containers_detail) && state.sheet.containers_detail.length ? state.sheet.containers_detail : [];
-  $("truckBody").innerHTML = list.length ? list.map((c,i)=>{
-    const files = (state.sheet.collab_uploads || []).filter(u => new RegExp(String(c.cntr || c.container_no || i + 1).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).test(String(u.filename || "")));
-    const driverId = maskId(c.driver_id_no || c.id_no || c.driver_identity_no);
-    return `<div class="truckrow">
-      <b>柜 ${esc(c.seq || i + 1)}</b> <span class="mono">${esc(scrub(c.container_no || c.cntr || "待回填"))}</span> / <span class="mono">${esc(scrub(c.seal_no || "待回填"))}</span><br>
-      <span class="muted">车牌司机</span> ${esc(scrub(c.plate || c.truck_plate || "—"))} · ${esc(scrub(c.driver_name || c.driver || "—"))}${driverId ? " · 证号 " + esc(driverId) : ""}<br>
-      <span class="muted">装柜图磅单</span> ${files.length ? files.map(f => esc(scrub(f.filename || "文件"))).join("；") : "未上传"}
-    </div>`;
-  }).join("") : `<div class="pending">暂无装柜数据</div>`;
+  const detail = state.sheet.trucking_detail || {};
+  const list = Array.isArray(detail.vehicles) && detail.vehicles.length
+    ? detail.vehicles
+    : (Array.isArray(state.sheet.containers_detail) && state.sheet.containers_detail.length ? state.sheet.containers_detail : []);
+  const vehicles = list.map(c => ({
+    plate:c.plate || c.truck_plate || "",
+    driver:c.driver || c.driver_name || "",
+    driver_phone:c.driver_phone || "",
+    pickup_time:c.pickup_time || "",
+    loading_time:c.loading_time || c.load_time || "",
+    loading_address:c.loading_address || c.factory_loading_address || c.pickup_address || c.loading_addr || c.address || "",
+    loading_contact:c.loading_contact || c.factory_loading_contact || c.contact || c.factory_contact || "",
+    cntr:c.cntr || c.container_no || "",
+    seal_no:c.seal_no || "",
+    weigh_kg:c.weigh_kg || "",
+    trailer_plate:c.trailer_plate || "",
+    photos:Array.isArray(c.photos) ? c.photos : []
+  }));
+  const sheet = {
+    ...state.sheet,
+    trucking_detail:{
+      ...detail,
+      vehicles,
+      cargo_summary:detail.cargo_summary || {},
+      source:detail.source || (vehicles.length ? "container_bookings" : "")
+    }
+  };
+  CollabTruckBlock.mount($("truckBody"), {
+    token,
+    sheet,
+    data:state,
+    toast,
+    onSubmitted:function(){
+      const badge = $("boxBadge");
+      if(badge){ badge.textContent = "已回填"; badge.className = "sstat ok"; }
+    }
+  });
 }
 
 function allowedLine(l){
@@ -432,38 +456,6 @@ async function uploadPickedFile(input){
     renderAll();
     toast("已上传：" + f.name);
   }catch(e){ toast("上传失败：" + e.message); }
-}
-async function confirmContainers(){
-  const vehicles = (state.sheet.containers_detail || []).map(c => ({
-    cntr:c.container_no || "", seal_no:c.seal_no || "", plate:c.plate || "",
-    driver:c.driver_name || "", driver_phone:c.driver_phone || "", pickup_time:c.pickup_time || ""
-  })).filter(v => v.cntr || v.seal_no || v.plate || v.driver_phone);
-  try{
-    const d = await fetchJson(`${API}/trucking-submit`, { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ token, vehicles, remarks:"forwarder sheet container/seal confirm" }) });
-    toast(d.ok ? "箱封号确认已提交" : "提交完成");
-  }catch(e){ toast("确认失败：" + e.message); }
-}
-async function editContainers(){
-  const cntr = prompt("请输入柜号（多柜请在 Sanlyn 协助中提交明细）", "");
-  if(!cntr) return;
-  const seal = prompt("请输入封号", "");
-  try{
-    await fetchJson(`${API}/trucking-submit`, { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ token, vehicles:[{ cntr, seal_no:seal || "", plate:"待补" }], remarks:"forwarder sheet container/seal edit" }) });
-    toast("箱封号修改已提交");
-  }catch(e){ toast("提交失败：" + e.message); }
-}
-async function submitQuote(segment){
-  const amount = prompt(segment === "truck" ? "请输入拖车报价金额" : "请输入报关报价金额", "");
-  if(amount == null || amount === "") return;
-  const category = segment === "truck" ? "拖车费" : "报关费";
-  const basis = segment === "truck" ? "per_container" : "per_declaration";
-  try{
-    await fetchJson(`${API}/collab-bill-submit`, { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ token, action:"add", cost_category:category, charge_basis:basis, currency:"CNY", unit_price:Number(amount), amount:Number(amount), reason:"forwarder sheet quote submit" }) });
-    toast("报价已提交，待 Sanlyn 核价确认");
-  }catch(e){ toast("报价提交失败：" + e.message); }
 }
 
 document.querySelectorAll(".lang button").forEach((b, i) => {

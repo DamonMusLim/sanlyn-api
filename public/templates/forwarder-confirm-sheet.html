@@ -325,7 +325,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
       <div class="kv">
         <span class="k">订舱号 SO</span><span class="v" id="soNoV">—</span>
         <span class="k">船名 / 航次</span><span class="v" id="vesselV">—</span>
-        <span class="k">截关 / 截单</span><span class="v" id="cutoffV">—</span>
+        <span class="k" style="display:none"></span><span class="v" id="cutoffV" style="display:none">—</span>
         <span class="k">柜号 / 封号</span><span class="v edit" id="cntrV">—</span>
       </div>
       <div id="truckBody"></div>
@@ -347,10 +347,11 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
       <button class="sheet-x" onclick="document.getElementById('sheet').classList.remove('on')">先不用，我自己来</button>
     </div>
   </div>
-  <div class="version" id="uiVersion">UI v2.0.0 · 2026-08-07</div>
+  <div class="version" id="uiVersion">UI v2.1.0 · 2026-08-07</div>
 </div>
 
 <input id="fileInput" type="file" style="display:none" onchange="uploadPickedFile(this)">
+<script src="collab-truck-block.js"></script>
 <script>
   (function(){
     var qs = new URLSearchParams(location.search);
