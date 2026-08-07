@@ -73,11 +73,22 @@ async function loadInspectionLines(pool, orderIds) {
 async function loadCompany(pool, code, nameFallback) {
   var row = null;
   if (clean(code)) {
-    var r = await pool.query(`SELECT code, name_cn, name_en, factory_name, registration_no, address, contact_name, contact_phone, country FROM companies WHERE code=$1 OR merged_into_code=$1 LIMIT 1`, [clean(code)]);
+    // 2026-08-06 修：code=$1 与 merged_into_code=$1 会同时命中「在用」和「已废弃」两行，
+    // 原来无 ORDER BY 的 LIMIT 1 是随机取 → 曾把「(已废弃·勿用·合并至VEN-LL)」印上报检单。
+    // 现在：精确 code 命中优先 > 在用优先 > id 小优先，三重排序定死，绝不再随机。
+    var r = await pool.query(
+      `SELECT code, name_cn, name_en, factory_name, registration_no, address, contact_name, contact_phone, country
+         FROM companies
+        WHERE code=$1 OR merged_into_code=$1
+        ORDER BY (code=$1) DESC, COALESCE(active,true) DESC, id ASC
+        LIMIT 1`, [clean(code)]);
     row = r.rows[0] || null;
   }
   if (!row && clean(nameFallback)) {
-    var r2 = await pool.query(`SELECT code, name_cn, name_en, factory_name, registration_no, address, contact_name, contact_phone, country FROM companies WHERE name_cn=$1 OR name_en=$1 LIMIT 1`, [clean(nameFallback)]);
+    var r2 = await pool.query(
+      `SELECT code, name_cn, name_en, factory_name, registration_no, address, contact_name, contact_phone, country
+         FROM companies WHERE name_cn=$1 OR name_en=$1
+        ORDER BY COALESCE(active,true) DESC, id ASC LIMIT 1`, [clean(nameFallback)]);
     row = r2.rows[0] || null;
   }
   return row || {};
@@ -148,9 +159,12 @@ export async function renderInspectionRequest(pool, shipmentId, opts) {
   var today = fmtDate(opts.applyDate || new Date().toISOString());
 
   var cargoRows = lines.map(function (l) {
-    var nameEn = clean(l.decl_name_en) || "PET FOODS";
+    // 2026-08-06 修：原来兜底硬编码 "PET FOODS" —— 违反本文件开头「一律显 — 绝不造」的规矩。
+    // 猫砂(HS1404909090/3824999999)根本不是宠物食品，报检写错品名是合规风险。
+    // 缺英文申报名就显 —，让人去补 products.declaration_name_en，绝不替它编一个。
+    var nameEn = clean(l.decl_name_en) || "";
     return `<tr>
-      <td class="l">${esc(D(l.decl_name))}<br><span class="en">${esc(nameEn)}</span></td>
+      <td class="l">${esc(D(l.decl_name))}<br><span class="en${nameEn ? "" : " miss"}">${esc(D(nameEn))}</span></td>
       <td>${esc(D(l.hs_code))}<div class="pq">P/Q</div></td>
       <td>—</td>
       <td class="r">${fmtM(l.net_weight_kg)} 千克</td>

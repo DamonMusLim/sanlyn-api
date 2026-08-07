@@ -127,11 +127,22 @@ export default async function handler(req, res) {
 
     // ── Fetch linked orders ──
     let orders = [];
+    // 🔴 2026-08-06 修：原来只认 shipping_plans.order_nos / contract_nos 这两个【手工维护的数组】。
+    //    CY00417 数组是空的 → 查不到订单 → 开票主体取不到 → 被 fail-closed 挡下。
+    //    正解：先用外键 orders.shipping_plan_id 查（那才是真关联），数组只作兜底。
+    try {
+      const _fk = await pool.query(
+        `SELECT _id, order_no, contract_no, customer_po, raw,
+                issuing_company_id, seller_code, shipping_plan_id
+           FROM orders WHERE shipping_plan_id = $1 ORDER BY order_no`, [p.id]);
+      if (_fk.rows.length) orders = _fk.rows;
+    } catch (e) {}
     const orderNos = p.order_nos || p.contract_nos || [];
-    if (Array.isArray(orderNos) && orderNos.length > 0) {
+    if (!orders.length && Array.isArray(orderNos) && orderNos.length > 0) {
       const ph = orderNos.map((_, i) => `$${i + 1}`).join(",");
       const oRes = await pool.query(
-        `SELECT _id, order_no, contract_no, customer_po, raw
+        `SELECT _id, order_no, contract_no, customer_po, raw,
+                issuing_company_id, seller_code, shipping_plan_id
          FROM orders
          WHERE order_no IN (${ph}) OR contract_no IN (${ph}) OR _id::text IN (${ph})`,
         orderNos
@@ -141,9 +152,12 @@ export default async function handler(req, res) {
 
     // ── Format helpers ──
     const fmt = v => (v == null || v === "") ? "—" : v;
+    // 2026-08-06 时区根治：PG 日期取出是 JS Date 对象，String(v).substring(0,10) 产出 "Thu Aug 13"（乱码）。
+    // 必须显式转 Asia/Shanghai；sv-SE locale 输出即 YYYY-MM-DD。
     const fmtDate = v => {
-      if (!v) return "—";
-      return String(v).substring(0, 10);
+      if (v == null || v === "") return "—";
+      try { return new Date(v).toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" }); }
+      catch (e) { return "—"; }
     };
     const fmtNum = (v, dec = 2) => {
       if (v == null || v === "") return "—";
@@ -252,9 +266,11 @@ export default async function handler(req, res) {
     `;
     const printBtn = `<button class="print-btn no-print" onclick="window.print()">🖨 打印 / 另存为PDF</button>`;
     const autoprint = `<script>if(new URLSearchParams(location.search).get('print')==='1')window.onload=()=>setTimeout(()=>window.print(),500);<\/script>`;
-    const docHeader = (title, ref) => `
+    // 2026-08-06：页眉抬头改为可传开票主体。不传仍是三林（海运费发票等内部单据不受影响）；
+    // 提单草稿这类对外单据必须传本票真实开票主体，绝不再默认印三林。
+    const docHeader = (title, ref, coEN, coCN) => `
       <div class="header">
-        <div><div class="co-name">三林宠物 Sanlyn</div><div class="co-sub">XIAMEN SANLYN IMPORT AND EXPORT CO., LTD</div><div class="co-sub" style="font-size:9px;color:#94a3b8">ai.sanlynos.com</div></div>
+        <div><div class="co-name">${esc(coCN || coEN || "三林宠物 Sanlyn")}</div><div class="co-sub">${esc(coEN || "XIAMEN SANLYN IMPORT AND EXPORT CO., LTD")}</div>${coEN ? "" : '<div class="co-sub" style="font-size:9px;color:#94a3b8">ai.sanlynos.com</div>'}</div>
         <div><div class="doc-title">${title}</div><div class="ref-no">${fmt(ref)}</div><div class="gen-time">Date: ${genDate} · Generated: ${generatedAt}</div></div>
       </div>`;
 
@@ -265,8 +281,34 @@ export default async function handler(req, res) {
       // ── Aggregate cargo data from linked orders ──
       let totalCbm = 0, totalGw = 0, totalQty = 0;
       let blDescSet = new Set(), hsCodeSet = new Set();
-      let issuingCoEN = "XIAMEN SANLYN IMPORT AND EXPORT CO., LTD";
-      let issuingCoAddr = "Xiamen, Fujian, China";
+      // 🔴 2026-08-06 修：原来硬编码默认三林，只有 raw.issuingCompanyEN 有值才覆盖 →
+      //    巴匕的票照印「XIAMEN SANLYN」。与 0804 淘蓝单盖错章是同一类问题：主体不跟单走。
+      //    真源顺序：orders.issuing_company_id → companies；地址取 seller_profiles（与 export-docs 一致）。
+      let issuingCoEN = "";
+      let issuingCoCN = "";
+      let issuingCoAddr = "";
+      try {
+        const _icId = orders.map(o => o.issuing_company_id).find(Boolean);
+        const _sCode = orders.map(o => o.seller_code).find(Boolean);
+        if (_icId) {
+          const _c = await pool.query(
+            `SELECT code, name_en, name_cn, address FROM companies WHERE id = $1 LIMIT 1`, [_icId]);
+          if (_c.rows.length) {
+            issuingCoEN = _c.rows[0].name_en || _c.rows[0].name_cn || "";
+            issuingCoCN = _c.rows[0].name_cn || "";
+            issuingCoAddr = _c.rows[0].address || "";
+          }
+        }
+        // 卖方档案里的英文地址更规范（单据用），有就覆盖
+        if (_sCode) {
+          const _sp = await pool.query(
+            `SELECT name_en, address_en, address FROM seller_profiles WHERE code = $1 LIMIT 1`, [_sCode]);
+          if (_sp.rows.length) {
+            issuingCoEN = _sp.rows[0].name_en || issuingCoEN;
+            issuingCoAddr = _sp.rows[0].address_en || _sp.rows[0].address || issuingCoAddr;
+          }
+        }
+      } catch (e) { /* 查不到就留空，下面 fail-closed */ }
 
       for (const o of orders) {
         totalCbm += Number(o.total_cbm || 0);
@@ -274,7 +316,7 @@ export default async function handler(req, res) {
         totalQty += Number(o.total_qty || 0);
         const raw = typeof o.raw === "string" ? (() => { try { return JSON.parse(o.raw); } catch(e) { return {}; } })() : (o.raw || {});
         if (raw.blDescription) blDescSet.add(raw.blDescription);
-        if (raw.issuingCompanyEN) issuingCoEN = raw.issuingCompanyEN;
+        if (raw.issuingCompanyEN) issuingCoEN = raw.issuingCompanyEN;      // 单上人工指定优先
         else if (raw.issuingCompany)  issuingCoEN = raw.issuingCompany;
         // Extract SKUs from products array in raw JSON
         const prods = raw.products || [];
@@ -552,7 +594,25 @@ ${printBtn}
         return { marks, desc, qty, wt, cbm2 };
       }) : [{ marks: "AS PER CONTRACT", desc: blDescText || "PET PRODUCTS", qty: qtyText, wt: gwText, cbm2: cbmText }];
 
-            const blHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>提单草稿 B/L Draft — ${fmt(p.shipment_no)}</title><style>${sharedCss}
+      // 🔴 2026-08-06 修：原来读 shipping_plans.container_no（老字段），CY00417 印出了别票的 CSGU6557381。
+      //    真源是 container_bookings（按 shipping_plan_id 取，与柜表一致）。
+      let blCtnNos = "";
+      try {
+        const _cb = await pool.query(
+          `SELECT container_no FROM container_bookings WHERE shipping_plan_id = $1
+            AND container_no IS NOT NULL ORDER BY container_no`, [p.id]);
+        blCtnNos = _cb.rows.map(r => r.container_no).filter(Boolean).join(" / ");
+      } catch (e) {}
+
+      // 🔒 fail-closed：开票主体取不到就整张不出，绝不回落成别家公司名（0804 淘蓝盖错章教训）
+      if (isBlDraft && !issuingCoEN) {
+        return res.status(409).send(
+          "<h1 style=\"font-family:sans-serif;color:#b91c1c\">无法出提单草稿：本票查不到开票主体</h1>" +
+          "<p style=\"font-family:sans-serif\">请先在订单上设置 <b>issuing_company_id</b>（开票公司）或 <b>seller_code</b>（卖方档案）。" +
+          "以前会默认印成「XIAMEN SANLYN」，那是错的，已改为不出单。</p>");
+      }
+
+            const blHtml = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>提单草稿 B/L Draft — ${fmt(p.bl_no || "DRAFT")}</title><style>${sharedCss}
       .bl-box{border:1px solid #1e3a8a;margin-bottom:0;}
       .bl-row{display:grid;border-bottom:1px solid #e2e8f0;}
       .bl-row.c2{grid-template-columns:1fr 1fr;} .bl-row.c3{grid-template-columns:1fr 1fr 1fr;}
@@ -564,7 +624,7 @@ ${printBtn}
 ${printBtn}
 <div class="draft-wm">DRAFT</div>
 <div class="page">
-  ${docHeader("📝 提单草稿 B/L Draft", p.bl_no || p.shipment_no)}
+  ${docHeader("📝 提单草稿 B/L Draft", p.bl_no || "TBC", issuingCoEN, issuingCoCN)}
   <div style="font-size:10px;color:#dc2626;text-align:center;margin-bottom:12px;font-weight:600">⚠️ DRAFT — FOR CONFIRMATION ONLY · 仅供确认，非正本</div>
   <div class="bl-box">
     <div class="bl-row c2">
@@ -574,7 +634,7 @@ ${printBtn}
       </div>
       <div class="bl-cell">
         <div class="bl-head">B/L No.</div><div class="bl-val">${esc(p.bl_no || "TBC")}</div>
-        <div class="bl-head" style="margin-top:6px">Shipment Ref.</div><div class="bl-val">${esc(p.shipment_no)}</div>
+        <div class="bl-head" style="margin-top:6px">Booking No.</div><div class="bl-val">${esc(p.booking_no || p.so_no || "—")}</div>
       </div>
     </div>
     <div class="bl-row c2">
@@ -598,7 +658,7 @@ ${printBtn}
       <div class="bl-cell"><div class="bl-head">ETD</div><div class="bl-val">${fmtDate(p.etd)}</div></div>
     </div>
     <div class="bl-row c3">
-      <div class="bl-cell"><div class="bl-head">Container No.</div><div class="bl-val">${esc(p.container_no||"TBC")}</div></div>
+      <div class="bl-cell"><div class="bl-head">Container No.</div><div class="bl-val">${esc(blCtnNos || p.container_no || "TBC")}</div></div>
       <div class="bl-cell"><div class="bl-head">Container Type × Qty</div><div class="bl-val">${esc(p.container_type||"—")} × ${fmt(p.container_qty||1)}</div></div>
       <div class="bl-cell"><div class="bl-head">Freight</div><div class="bl-val">${p.freight_sale_usd ? "PREPAID" : "AS ARRANGED"}</div></div>
     </div>
@@ -626,7 +686,7 @@ ${printBtn}
     <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">Confirmed By (船公司)</div></div>
     <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">Date</div></div>
   </div>
-  <div class="footer"><span>${esc(issuingCoEN)}</span><span>B/L Draft · ${fmt(p.shipment_no)} · ${genDate}</span></div>
+  <div class="footer"><span>${esc(issuingCoEN)}</span><span>B/L Draft · ${fmt(p.bl_no || "TBC")} · ${genDate}</span></div>
 </div>${autoprint}</body></html>`;
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       return res.status(200).send(blHtml);
