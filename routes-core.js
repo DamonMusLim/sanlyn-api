@@ -332,6 +332,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/inspection-request-sheets",  () => import("./api/db/inspection-request-sheets.js"));
   mount("/api/db/inspection-status",          () => import("./api/db/inspection-status.js")); // 检疫状态查询
   mount("/api/db/ciq-merged",                 () => import("./api/db/ciq-merged.js")); // 合并报检要素(一票多柜合并成一份检疫申请, 只出要素不申报) 2026-08-08
+  mount("/api/db/doc-delivery",               () => import("./api/db/doc-delivery.js")); // 对外发资料: 按收件方出清单(报关行/船东要xlsx能复制)+发件留痕 2026-08-08
   mount("/api/db/inspection-ocr",             () => import("./api/db/inspection-ocr.js")); // 商检单/报检单 OCR (MiniMax-M3) 2026-07-05
   mount("/api/db/cert-application-sheets",    () => import("./api/db/cert-application-sheets.js"));
   mount("/api/db/trucking-pickup-sheets",     () => import("./api/db/trucking-pickup-sheets.js"));
