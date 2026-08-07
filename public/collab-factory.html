@@ -45,15 +45,15 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
 .tog{padding:8px 16px;border-radius:7px;border:1.5px solid #c8cdd6;background:#fff;font-size:12px;font-weight:700;color:#4b5563;cursor:pointer;text-align:center;}
 .tog.on-green{border-color:#059669;background:#d1fae5;color:#059669;}.tog.on-blue{border-color:#1a73e8;background:#dbeafe;color:#1d4ed8;}.tog.on-red{border-color:#dc2626;background:#fee2e2;color:#b91c1c;}
 .cargo-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
-.cargo-t{width:100%;min-width:720px;border-collapse:collapse;font-size:13.5px;table-layout:auto;}
-.cargo-t th{background:#f8fafc;padding:9px 10px;text-align:left;border:1px solid #c8cdd6;font-size:12px;font-weight:800;color:#374151;}
-.cargo-t td{padding:8px 8px;border:1px solid #e0e4ea;vertical-align:middle;}
+.cargo-t{width:100%;min-width:680px;border-collapse:collapse;font-size:15px;table-layout:auto;}
+.cargo-t th{background:#f8fafc;padding:11px 10px;text-align:left;border:1px solid #c8cdd6;font-size:13.5px;font-weight:800;color:#374151;}
+.cargo-t td{padding:11px 9px;border:1px solid #e0e4ea;vertical-align:middle;}
 .cargo-t tr.row-total td{font-weight:800;background:#f0fdf4;color:#15803d;border-color:#bbf7d0;}
 .cargo-t .td-name{min-width:150px;max-width:220px;white-space:normal;word-break:break-word;}
-.cargo-t .td-num{min-width:76px;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;}
+.cargo-t .td-num{min-width:92px;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;}
 .cargo-t .td-act{min-width:66px;white-space:nowrap;text-align:center;}
 .cargo-val{display:block;min-width:max-content;line-height:1.35;}
-.cargo-t input.cell-in{width:100%;border:1px solid transparent;border-radius:4px;padding:7px 8px;font-size:13.5px;outline:none;font-family:inherit;background:transparent;}
+.cargo-t input.cell-in{width:100%;border:1px solid transparent;border-radius:4px;padding:9px 8px;font-size:15px;outline:none;font-family:inherit;background:transparent;}
 .cargo-t input.cell-in:focus{border-color:#1a73e8;background:#fff;}
 .ctn-group{border:1.5px solid #e0e4ea;border-radius:10px;margin-bottom:16px;overflow:hidden;transition:border-color .2s;}
 .ctn-group.confirmed{border-color:#86efac;}
@@ -104,8 +104,8 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
         <div><div class="step-title">费用 / 账单</div><div class="step-sub">本票港杂 / 费用账单</div></div>
       </div>
       <div class="ftabs" style="display:flex;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
-        <button class="on" onclick="switchFeeTab('logi',this)" style="border:none;background:#9a3412;color:#fff;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">物流费</button>
-        <button onclick="switchFeeTab('cargo',this)" style="border:none;border-left:1px solid #e5e7eb;background:#fff;color:#6b7280;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">货款开票</button>
+        <button id="feeTabLogi" class="on" onclick="switchFeeTab('logi',this)" style="border:none;background:#9a3412;color:#fff;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">物流费</button>
+        <button id="feeTabCargo" onclick="switchFeeTab('cargo',this)" style="border:none;border-left:1px solid #e5e7eb;background:#fff;color:#6b7280;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer">货款开票</button>
       </div>
     </div>
     <div class="step-body" style="max-height:none !important;opacity:1 !important;">
@@ -114,13 +114,7 @@ body{font-family:-apple-system,'PingFang SC',sans-serif;background:#f0f2f5;color
     </div>
   </div>
 
-  <div class="step-card" style="margin-bottom:14px;padding:14px;background:#fdf1ea;border:1px solid #e7c8b4;border-radius:12px">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <span style="font-size:18px">📁</span>
-      <div style="flex:1;min-width:180px"><b style="color:#9a3412">装箱照片已存为档案</b><div style="font-size:12px;color:#6b7280">超1个月已转NAS冷存 · 需提取请留邮箱或发公司人员,系统自动发送(有申请记录)</div></div>
-      <button onclick="requestArchive(this)" style="padding:9px 16px;border:none;background:#9a3412;color:#fff;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap">📥 申请提取</button>
-    </div>
-  </div>
+  <!-- 2026-08-05 Damon:「装箱照片已存为档案」块不显示在这里,已移除(功能保留在别处需要时再放) -->
 
   <!-- STEP 1 -->
   <div class="step-card required" id="step1">

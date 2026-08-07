@@ -20,6 +20,20 @@ function renderBillingEntry(billing){
   if(!body) return;
   const canOpen=!!(billing&&billing.token&&billing.show_amount!==false);
   window._billingToken=canOpen?billing.token:'';
+  // 2026-08-05 Damon:「物流费他没账单，不该有这个的」
+  // 只藏【物流费】这一个 tab；【货款开票】要留 —— 工厂给我们开货款发票是必经流程。
+  const _tabLogi=$('feeTabLogi'), _tabCargo=$('feeTabCargo'), _card=$('billingCard');
+  if(!canOpen){
+    body.innerHTML=''; body.style.display='none';
+    if(_tabLogi) _tabLogi.style.display='none';
+    // 物流费没了 → 默认切到货款开票；若两个都没有，整张卡收起
+    if(_tabCargo){ if(typeof switchFeeTab==='function') switchFeeTab('cargo',_tabCargo); }
+    else if(_card) _card.style.display='none';
+    return;
+  }
+  body.style.display='';
+  if(_tabLogi) _tabLogi.style.display='';
+  if(_card) _card.style.display='';
   body.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f8fafc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px;">'
     +'<div><div style="font-size:13px;font-weight:800;color:#1a1d23;">费用 / 账单：'+(canOpen?'本票港杂/费用账单':'暂无')+'</div>'
     +'<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+(canOpen?esc(billing.segment||'按当前权限展示'):'当前链接暂无可打开账单')+'</div></div>'
@@ -76,7 +90,10 @@ function preset(rowId,attr,val,cls){ const el=$(rowId).querySelector('[data-'+at
 function setTog(rowId,attr,val){ if(!val) return; const el=$(rowId).querySelector('[data-'+attr+'="'+val+'"]'); if(el) el.click(); }
 
 function groupIsDG(seq){ return false; }
-function groupShowWeights(g){ return groupIsDG(g.seq) || !(g.lines||[]).some(l=>Number(l.data&&l.data.nw_kg)>0 || Number(l.data&&l.data.gw_kg)>0); }
+// 2026-08-05 Damon:「需要他们填写重量」——重量一律让工厂填/核对,不再因为我们已有值就藏起来。
+// 原逻辑:我们已知重量就不问工厂(下面注释保留)。改后我们的值仍会预填,工厂只需确认或改准。
+// 旧: return groupIsDG(g.seq) || !(g.lines||[]).some(l=>Number(l.data&&l.data.nw_kg)>0 || Number(l.data&&l.data.gw_kg)>0);
+function groupShowWeights(g){ return true; }
 function numVal(v){ if(v==null||v==='') return 0; const n=Number(v); return isNaN(n)?0:n; }
 function fmtCargoNum(v,digits){
   if(v==null||v==='') return '—';
@@ -89,8 +106,8 @@ function lineHtml(id,d={},sp,showWeights,gi_,li_){
   const txt=v=>v?esc(v):'<span style="color:#cbd5e1;">—</span>';
   return '<tr id="line_'+id+'">'+
     '<td class="td-name">'+(d.cargo_name?esc(d.cargo_name):'<span style="color:#cbd5e1;">未填写</span>')+'</td>'+
-    '<td>'+txt(d.sku)+'</td>'+
     '<td>'+txt(d.barcode)+'</td>'+
+    '<td>'+txt(d.brand)+'</td>'+
     '<td>'+txt(d.size)+'</td>'+
     '<td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.pkg_qty,0)+'</span></td>'+
     (showWeights?'<td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.nw_kg,2)+'</span></td><td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.gw_kg,2)+'</span></td><td class="td-num"><span class="cargo-val">'+fmtCargoNum(d.cbm_m3,3)+'</span></td>':'')+
@@ -115,13 +132,31 @@ function openCargoEditModal(gi_,li_){
     fld('品名','ce_cargo_name','text',editVal(d.cargo_name))+
     '<div class="grid2">'+
     ro('货号',d.sku)+
-    ro('条码',d.barcode)+
+    fld('条码 / Barcode','ce_barcode','text',editVal(d.barcode))+
+    fld('品牌代码 / Brand code','ce_brand','text',editVal(d.brand))+   // 2026-08-05 Damon:工厂填 brand code
     ro('规格',d.size)+
     fld('箱数','ce_pkg_qty','number',editVal(d.pkg_qty),'1')+
     (showWeights?fld('NW kg','ce_nw_kg','number',editVal(d.nw_kg),'0.01')+fld('GW kg','ce_gw_kg','number',editVal(d.gw_kg),'0.01')+fld('CBM','ce_cbm_m3','number',editVal(d.cbm_m3),'0.001'):'')+
     '</div>'+
     '<div style="display:flex;gap:10px;margin-top:14px;"><button class="btn btn-ghost" style="flex:1;" onclick="closeCargoEditModal()">取消</button><button class="btn btn-blue" style="flex:2;" onclick="requestCargoEditConfirm()">保存修改</button></div>';
   const m=$('cargoEditModal'); m.classList.remove('hidden'); m.style.display='flex';
+}
+function askSwapContainers(){
+  var d=(window._cntrDetailBySeq)||{}, k=Object.keys(d).sort();
+  var c1=(d[k[0]]||{}).container_no||'柜1', c2=(d[k[1]]||{}).container_no||'柜2';
+  if(!confirm('确认把两个柜的货【对调】吗？\n\n'
+      +'柜1 '+c1+' 的货 → 换到 柜2 '+c2+'\n'
+      +'柜2 '+c2+' 的货 → 换到 柜1 '+c1+'\n\n'
+      +'对调后报关和 VGM 会跟着变，Sanlyn 会收到通知。')) return;
+  var t=new URLSearchParams(location.search).get('token');
+  fetch('/api/db/booking-collab/factory-submit',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({token:t,action:'swap-containers',confirm:true})})
+   .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})
+   .then(function(x){
+      if(!x.ok||!x.j.ok){ alert('对调没成功：'+((x.j&&x.j.error)||'未知错误')+'\n\n数据没有被改动。'); return; }
+      alert('已对调，页面即将刷新。'); location.reload();
+   })
+   .catch(function(e){ alert('对调没成功：'+e.message+'\n\n数据没有被改动。'); });
 }
 function closeCargoEditModal(){ const m=$('cargoEditModal'); if(m){ m.classList.add('hidden'); m.style.display=''; } }
 function requestCargoEditConfirm(){ const m=$('cargoConfirmModal'); if(m){ m.classList.remove('hidden'); m.style.display='flex'; } }
@@ -130,6 +165,8 @@ function commitCargoEdit(){
   const p=window._pendingCargoEdit, g=p&&groups[p.gi], l=g&&g.lines&&g.lines[p.li]; if(!l) return;
   const d=l.data||{};
   d.cargo_name=gv('ce_cargo_name');
+  d.barcode=gv('ce_barcode');   // 2026-08-05 Damon:工厂提供条形码
+  d.brand=gv('ce_brand');       // 2026-08-05 Damon:工厂填 brand code
   d.pkg_qty=gi('ce_pkg_qty');
   if(p.showWeights){
     d.nw_kg=gn('ce_nw_kg');
@@ -197,6 +234,13 @@ function renderGroups(){
     if(plate) chips.push(chip('车牌','<b>'+plate+'</b>'));
     if(cd.driver_name||cd.driver_phone) chips.push(chip('司机',driverLink));
     if(cd.container_no) chips.push(chip('柜号','<b>'+esc(cd.container_no)+'</b>'));
+    // 2026-08-05 Damon:「不能你说，需要他们能变」—— 柜绑定是我们猜的,让装货的人自己纠正。
+    // 只在正好2个柜时出现;点了走二次确认,后端事务+留痕+可回滚。
+    if(cd.container_no && (window._cntrDetailBySeq && Object.keys(window._cntrDetailBySeq).length===2))
+      chips.push('<button type="button" onclick="askSwapContainers()" '
+        +'style="font-size:12px;font-weight:800;color:#fff;background:#ea580c;border:none;'
+        +'border-radius:7px;padding:6px 12px;cursor:pointer;white-space:nowrap;'
+        +'box-shadow:0 1px 3px rgba(234,88,12,.35)">🔄 装错柜了？点这里对调</button>');
     if(cd.seal_no) chips.push(chip('封铅','<b>'+esc(cd.seal_no)+'</b>'));
     if(cd.tare_weight_kg!=null) chips.push(chip('皮重','<b>'+esc(cd.tare_weight_kg)+'kg</b>'));
     // 折叠态也带货物合计(图2那行:箱数/NW/GW/CBM)
@@ -233,11 +277,11 @@ function renderGroups(){
     '<div class="cargo-scroll" style="padding:0 0 8px;">' +
     '<table class="cargo-t"><thead><tr>' +
     '<th>品名 * <span style="cursor:pointer;color:#1a73e8;font-weight:700;font-size:10px;margin-left:4px;" onclick="snapshot();addLine('+gi_+')">＋加</span></th>' +
-    '<th style="width:76px;">货号</th>' +
-    '<th style="width:120px;">条码</th>' +
-    '<th style="width:72px;">规格</th>' +
-    '<th style="width:86px;">箱数 *</th>' +
-    (showWeights?'<th style="width:96px;">NW kg</th><th style="width:96px;">GW kg</th><th style="width:88px;">CBM</th>':'')+
+    '<th style="width:132px;">条码</th>' +
+    '<th style="width:96px;">品牌</th>' +
+    '<th style="width:96px;">规格</th>' +
+    '<th style="width:96px;text-align:right;">箱数 *</th>' +
+    (showWeights?'<th style="width:108px;text-align:right;">NW kg</th><th style="width:108px;text-align:right;">GW kg</th><th style="width:100px;text-align:right;">CBM</th>':'')+
     '<th style="width:72px;"></th></tr></thead>' +
     '<tbody id="tbody_'+gi_+'">'+g.lines.map((l,li_)=>lineHtml(l.id,l.data,false,showWeights,gi_,li_)).join('')+'</tbody>' +
     '<tfoot><tr class="row-total" id="tfoot_'+gi_+'"><td colspan="4" style="font-size:10px;color:#6b7280;">TOTAL（来自订单原值'+(editMode?' · 点「改」编辑':'')+'）</td><td class="td-num" id="ft_q_'+gi_+'">—</td>'+(showWeights?'<td class="td-num" id="ft_nw_'+gi_+'">—</td><td class="td-num" id="ft_gw_'+gi_+'">—</td><td class="td-num" id="ft_cbm_'+gi_+'">—</td>':'')+'<td></td></tr></tfoot>' +

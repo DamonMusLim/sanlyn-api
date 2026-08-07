@@ -111,7 +111,9 @@ async function boot(){
   if(!sel.cgt||sel.cgt==='普通货物'){ sel.cgt='普通货物'; const el=$('cgtRow').querySelector('[data-cgt="普通货物"]'); if(el) el.classList.add('on-green'); }
   const fe=s.factory_entry||{}, mine=(SCOPE&&fe[SCOPE.label])||fe['default']||Object.values(fe)[0];
   if(mine){ if($('er_contact')) $('er_contact').value=mine.contact||''; if($('er_phone')) $('er_phone').value=mine.phone||''; if($('er_note')) $('er_note').value=mine.note||''; if($('er_url')) $('er_url').value=mine.exam_url||''; if($('erSaved')) $('erSaved').textContent='✓ 已登记'; }
-  window._booked=!!(s.so_no||s.bl_no); window._loading=Array.isArray(s.containers_live)&&s.containers_live.length>0;
+  // 2026-08-06 修：工厂 profile 已屏蔽 so_no/bl_no，原来靠它俩判断"已订舱"会永远 false
+  // → 柜型不再锁定、已订舱横幅消失。改用后端下发的 is_booked 布尔，号码本身仍不外发。
+  window._booked=!!(s.is_booked||s.so_no||s.bl_no); window._loading=Array.isArray(s.containers_live)&&s.containers_live.length>0;
   // 2026-08-05 修：票级 container_type 为空时（CY00407 就是），原逻辑把四个按钮全锁死且一个都不高亮，
   // 工厂"柜型必填"却永远选不了。→ 票级空就用柜级实际柜型兜底；两边都取不到就【不锁】，让人能选。
   if(window._booked){
@@ -238,7 +240,13 @@ async function uploadLoadingFiles(files, key, seq){
       const isVid=/^video\//.test(f.type), isDoc=!/^image\/|^video\//.test(f.type);
       const prefix=isVid?'[装柜视频]':isDoc?'[磅单]':'[装箱图]';
       const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(f);});
-      const resp=await fetch(API+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,filename:prefix+f.name,mime:f.type,data_base64:b64})});
+      // 🔴 2026-08-06 修：原来只发 token/filename/mime/data，【container_seq 从不发】。
+      // 服务端 collab-validate.js 拿不到 seq 就一律挂 seq1 → 多柜时所有装柜图全堆到第一个柜。
+      // 后端 handleCollabUpload 早就支持 container_seq/purpose（还带越权校验），只是前端没接。
+      const resp=await fetch(API+'/upload',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({token,filename:prefix+f.name,mime:f.type,data_base64:b64,
+          container_seq:seq,                                              // ← 关键：柜序号
+          purpose:isVid?'装柜视频':isDoc?'磅单':'装箱图'})});               // ← 别再靠文件名猜类型
       const rd=await resp.json();
       if(resp.ok&&rd.ok){ ok++; if(!isDoc){ window._uploadedPhotos[key]=window._uploadedPhotos[key]||[]; window._uploadedPhotos[key].push({url:b64,filename:f.name,type:isVid?'video':'image'}); } }
     }catch(err){}

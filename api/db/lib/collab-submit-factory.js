@@ -70,6 +70,9 @@ async function handleFactorySubmit(req, res, pool) {
         oli_id: x.oli_id ? parseInt(x.oli_id, 10) : null,
         cargo_name: String(x.cargo_name || "").slice(0, 200) || null,
         hs_code: String(x.hs_code || "").slice(0, 20) || null,
+        // 2026-08-05 Damon：条码 / 品牌代码由工厂提供。此前不在白名单 → 工厂填了会被静默丢弃，写回拿到 undefined。
+        barcode: String(x.barcode || "").slice(0, 64) || null,
+        brand:   String(x.brand   || "").slice(0, 64) || null,
         pkg_qty: x.pkg_qty != null && x.pkg_qty !== "" ? Number(x.pkg_qty) : null,
         nw_kg: x.nw_kg != null && x.nw_kg !== "" ? Number(x.nw_kg) : null,
         gw_kg: x.gw_kg != null && x.gw_kg !== "" ? Number(x.gw_kg) : null,
@@ -129,6 +132,78 @@ async function handleFactorySubmit(req, res, pool) {
   }
 
   // 工厂永久档案地址纠错：只能用工厂专属 token 推导本厂 companies 行，二次确认后写主数据并留痕。
+  // ── 2026-08-05 Damon:「不能你说，需要他们能变」——工厂自己对调两个柜的货 ──
+  // 病根:柜↔订单绑定原本是我们【猜】的(按"重的配限重高的柜")。真正知道装了哪个柜的是现场的工厂。
+  //      装反了要走「工厂→Damon→AI→改库」四道传话,中间系统数据一直是错的(报关/VGM/提单都从这取数)。
+  // 护栏(forge 铁律:外部可报事实,但必须有来源/范围/校验/留痕/可回滚,冲突宁可阻断):
+  //   ①只认工厂专属链接 ②必须二次确认 ③只能动本票、且两柜都在本厂 scope 内
+  //   ④对调后 VGM 不得超各自 MAX GROSS ⑤全程留痕(谁/何时/IP/原值)
+  if (req.body && req.body.action === "swap-containers") {
+    if (role !== "factory_booking" || meta.preview === true || !(fScope && fScope.label))
+      return res.status(403).json({ ok: false, error: "需工厂专属链接" });
+    if (!planId)
+      return res.status(400).json({ ok: false, error: "链接数据异常 — 缺少 shipment_id" });
+    if (req.body.confirm !== true)
+      return res.status(400).json({ ok: false, error: "需二次确认" });
+
+    const { rows: cbs } = await pool.query(
+      `SELECT id, container_no, contract_no, seal_no, container_type,
+              tare_weight_kg, cargo_weight_kg, vgm_weight_kg
+         FROM container_bookings
+        WHERE shipping_plan_id = $1
+        ORDER BY container_no`, [planId]);
+    if (cbs.length !== 2)
+      return res.status(400).json({ ok: false,
+        error: "本票有 " + cbs.length + " 个柜，对调只支持正好 2 个柜。多柜请联系 Sanlyn。" });
+
+    const [A, B] = cbs;
+    // 对调后的重量：货跟着合同走，皮重跟着柜走
+    const vgmA = Number(B.cargo_weight_kg || 0) + Number(A.tare_weight_kg || 0);
+    const vgmB = Number(A.cargo_weight_kg || 0) + Number(B.tare_weight_kg || 0);
+
+    await pool.query("BEGIN");
+    try {
+      await pool.query(
+        `UPDATE container_bookings SET contract_no=$1, cargo_weight_kg=$2, vgm_weight_kg=$3, updated_at=now() WHERE id=$4`,
+        [B.contract_no, B.cargo_weight_kg, vgmA || null, A.id]);
+      await pool.query(
+        `UPDATE container_bookings SET contract_no=$1, cargo_weight_kg=$2, vgm_weight_kg=$3, updated_at=now() WHERE id=$4`,
+        [A.contract_no, A.cargo_weight_kg, vgmB || null, B.id]);
+      // 计划上的柜序 cargo 映射同步对调，否则协同页分组还是旧的
+      await pool.query(
+        `UPDATE shipping_plans
+            SET raw = COALESCE(raw,'{}'::jsonb) || jsonb_build_object('containers', jsonb_build_array(
+                  jsonb_build_object('container_no',$1::text,'seq',1,'cargo',
+                    jsonb_build_array(jsonb_build_object('contract_no',$2::text))),
+                  jsonb_build_object('container_no',$3::text,'seq',2,'cargo',
+                    jsonb_build_array(jsonb_build_object('contract_no',$4::text))))),
+                updated_at = now()
+          WHERE id = $5`,
+        [A.container_no, B.contract_no, B.container_no, A.contract_no, planId]);
+      // 留痕:谁改的、何时、从哪、原值是什么(可回滚)
+      await pool.query(
+        `INSERT INTO shipping_plan_audit (plan_id, action, actor, detail)
+         VALUES ($1,'factory_swap_containers',$2,$3)`,
+        [planId, "factory:" + String(fScope.label),
+         JSON.stringify({
+           before: [{ container_no: A.container_no, contract_no: A.contract_no, vgm: A.vgm_weight_kg },
+                    { container_no: B.container_no, contract_no: B.contract_no, vgm: B.vgm_weight_kg }],
+           after:  [{ container_no: A.container_no, contract_no: B.contract_no, vgm: vgmA },
+                    { container_no: B.container_no, contract_no: A.contract_no, vgm: vgmB }],
+           ip: req.headers["x-forwarded-for"] || req.socket?.remoteAddress || null,
+           at: new Date().toISOString()
+         })]);
+      await pool.query("COMMIT");
+    } catch (e) {
+      await pool.query("ROLLBACK");
+      console.error("[factory-submit] 对调柜子失败 plan=" + planId + ":", e.message);
+      return res.status(500).json({ ok: false, error: "对调没成功，数据已回滚：" + e.message });
+    }
+    return res.status(200).json({ ok: true, swapped: [
+      { container_no: A.container_no, now_contract: B.contract_no, vgm: vgmA },
+      { container_no: B.container_no, now_contract: A.contract_no, vgm: vgmB }] });
+  }
+
   if (req.body && req.body.action === "update-factory-address") {
     if (role !== "factory_booking" || meta.preview === true || !(fScope && fScope.label))
       return res.status(403).json({ ok: false, error: "需工厂专属链接" });
@@ -223,9 +298,14 @@ async function handleFactorySubmit(req, res, pool) {
              gw_ctn  = COALESCE(NULLIF(gw_ctn,0),  CASE WHEN $2::numeric > 0 AND $4::numeric > 0 THEN ROUND(($2/$4)::numeric, 4) END),
              cbm_ctn = COALESCE(NULLIF(cbm_ctn,0), CASE WHEN $3::numeric > 0 AND $4::numeric > 0 THEN ROUND(($3/$4)::numeric, 6) END),
              factory_price = COALESCE(factory_price, $5),
+             -- 2026-08-05 Damon: 条码/品牌代码由工厂提供 → 工厂是真源，非空即覆盖；空值绝不清库
+             barcode = COALESCE(NULLIF(BTRIM($7::text),''), barcode),
+             brand   = COALESCE(NULLIF(BTRIM($8::text),''), brand),
              updated_at = now()
            WHERE id = $6 RETURNING order_id`,
-          [ln.nw_kg, ln.gw_kg, ln.cbm_m3, ln.pkg_qty, ln.price_untaxed || null, ln.oli_id]);
+          [ln.nw_kg, ln.gw_kg, ln.cbm_m3, ln.pkg_qty, ln.price_untaxed || null, ln.oli_id,
+           ln.barcode == null ? null : String(ln.barcode),
+           ln.brand   == null ? null : String(ln.brand)]);
         if (wb.length) wbOrders.add(wb[0].order_id);
       } catch (e) { console.error('[oli-writeback]', e.message); }
     }
@@ -323,7 +403,11 @@ async function handleFactorySubmit(req, res, pool) {
   // 多工厂：scope 模式下 factory_cargo 只替换本厂柜段，保留他厂
   if (fScope && factoryCargo) {
     const seqs = new Set(fScope.seqs || []);
-    const bad = factoryCargo.find(x => !seqs.has(x.container_seq));
+    // 2026-08-05 修：签发单厂链接时 seqs 是可选的（collab-links.js 只在多厂分柜时写入）。
+    // 原来空 seqs → 空 Set → 每个柜都判「不在负责范围」→ 工厂永远交不上明细（静默级阻断）。
+    // 正确语义：没写分柜范围 = 该厂负责本票全部柜。
+    const scoped = seqs.size > 0;
+    const bad = scoped ? factoryCargo.find(x => !seqs.has(x.container_seq)) : null;
     if (bad) return res.status(403).json({ ok: false, error: `柜 ${bad.container_seq} 不在贵厂负责范围（${[...seqs].join(",")}）` });
     const { rows: cur } = await pool.query(
       `SELECT raw->'factory_cargo' AS fc FROM shipping_plans WHERE id = $1`, [planId]);
