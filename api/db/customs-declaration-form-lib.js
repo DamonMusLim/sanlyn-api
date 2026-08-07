@@ -395,23 +395,49 @@ export function bigCell(label, value, field) {
 // → 只写【值】,用 | 分隔,**不写"1:品牌类型:"这种序号和标签**。
 // 我们库里 products.declaration_elements 是带标签存的(便于人看/校验),
 // 印到报关单上必须剥掉标签。Damon 2026-08-08:「猫砂下面没有写这些的」。
-export function declElementsForCustoms(v) {
+export function declElementsForCustoms(v, spec) {
   var raw = clean(v);
   if (!raw) return "";
-  return raw.split("|").map(function (part) {
+  var parsed = raw.split("|").map(function (part) {
     var t = String(part || "").trim();
-    if (!t) return "";
-    // 形如 "3:用途:宠物用猫砂" → 取最后一段值; 值里含冒号的(如 "成分:A:B")只剥前两段
-    var m = /^\s*\d+\s*:\s*[^:]+?\s*:\s*([\s\S]*)$/.exec(t);
-    if (m) return m[1].trim();
-    // 形如 "用途:宠物用猫砂"(无序号)
-    var m2 = /^\s*[^:：]{1,12}\s*[:：]\s*([\s\S]*)$/.exec(t);
-    if (m2 && /品牌|用途|成分|型号|规格|享惠|类型|等级|种类|包装/.test(t.split(/[:：]/)[0])) return m2[1].trim();
-    return t;
-  }).filter(Boolean).join("|");
+    if (!t) return null;
+    var m = /^\s*(\d+)\s*:\s*([^:：]+?)\s*[:：]\s*([\s\S]*)$/.exec(t);
+    if (m) return { name: m[2].trim(), val: m[3].trim() };
+    var m2 = /^\s*([^:：]{1,14})\s*[:：]\s*([\s\S]*)$/.exec(t);
+    if (m2 && /品牌|用途|成分|材质|型号|规格|享惠|类型|等级|种类|包装/.test(m2[1])) {
+      return { name: m2[1].trim(), val: m2[2].trim() };
+    }
+    return { name: "", val: t };
+  }).filter(Boolean);
+
+  // 有 HS 规格 → 只印规格里列的项、按规格顺序（项数由 HS 定，不是全印）
+  if (spec && spec.length) {
+    return spec.map(function (nm) {
+      var hit = parsed.find(function (p) { return p.name === nm; });
+      return hit ? hit.val : "";
+    }).join("|");
+  }
+  return parsed.map(function (p) { return p.val; }).filter(Boolean).join("|");
 }
 
-export function cargoRows(lines, destination, sourceArea) {
+// 拉某些 HS 的申报要素规格（哪几项、什么顺序）。查不到就返回空 → 按老行为全印。
+export async function loadHsDeclSpecs(pool, hsCodes) {
+  var out = {};
+  try {
+    var codes = (hsCodes || []).filter(Boolean);
+    if (!codes.length) return out;
+    var r = await pool.query(
+      "SELECT hs_code, element_name FROM hs_declaration_specs WHERE hs_code = ANY($1::text[]) ORDER BY hs_code, seq",
+      [codes]
+    );
+    (r.rows || []).forEach(function (x) {
+      (out[x.hs_code] || (out[x.hs_code] = [])).push(x.element_name);
+    });
+  } catch (e) { console.warn("[customs] loadHsDeclSpecs 失败(按老行为全印):", e.message); }
+  return out;
+}
+
+export function cargoRows(lines, destination, sourceArea, hsSpecs) {
   if (!lines.length) {
     return `<tr><td colspan="9" class="empty-row">无货物明细</td></tr>`;
   }
@@ -435,7 +461,7 @@ export function cargoRows(lines, destination, sourceArea) {
       fmtM(l.total_amount, 2),
       "人民币",
     ].filter(Boolean).join("<br>");
-    var elements = declElementsForCustoms(l.declaration_elements);
+    var elements = declElementsForCustoms(l.declaration_elements, (hsSpecs||{})[clean(l.hs_code)]);
     var name = [clean(l.declaration_name), elements].filter(Boolean).map(esc).join("<br>");
     return `<tr>
       <td data-field="item_no" data-row="${i}">${i + 1}</td>

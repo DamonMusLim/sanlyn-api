@@ -5,6 +5,7 @@ import {
   cell,
   clean,
   countryFromPod,
+  loadHsDeclSpecs,
   firstOrderValue,
   fmtDate,
   fmtInt,
@@ -107,6 +108,8 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
   var levyNature = "101 一般征税";
   var pod = pick(plan.pod, praw.pod, praw.destinationPort, "");
   var destination = countryFromPod(firstOrderValue(orders, "country", "country") || pod);
+  // 报关单该印哪几项申报要素由 HS 定（1404909090 猫砂只印 品牌类型|出口享惠情况，实样 40-LL-5 = 3|0）
+  var _hsSpecs = await loadHsDeclSpecs(pool, (lines || []).map(function (l) { return clean(l.hs_code); }));
   var vesselVoyage = [pick(plan.vessel, praw.vessel), pick(plan.voyage, praw.voyage)].filter(Boolean).join(" / ");
   var blNo = pick(plan.bl_no, praw.blNo, praw.bl_no);
   // 集装箱号: 指定单柜用它; BL级(未指定)列出该 BL/计划下全部柜号
@@ -258,7 +261,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
     ${cell("离境口岸", departurePort, undefined, "departure_port")}
   </div>
   <div class="grid4 row5">
-    ${cell("包装种类", "纸箱", "small", "package_type")}
+    ${cell("包装种类", "纸制或纤维板制盒/箱", "small", "package_type")}
     ${cell("件数", totalCtn ? fmtInt(totalCtn) : "", "small", "total_ctn")}
     ${/* 2026-08-04: 原为 fmtM(...,0) 整数，把 80,197.50→80198、72,726.60→72727，
           与箱单/提单样单(两位小数)对不上，报关行据此报"毛重不一样"。
@@ -287,7 +290,7 @@ export async function renderCustomsDeclaration(pool, shipmentId, opts) {
         <th>征免</th>
       </tr>
     </thead>
-    <tbody>${cargoRows(lines, destination, _sourceArea)}</tbody>
+    <tbody>${cargoRows(lines, destination, _sourceArea, _hsSpecs)}</tbody>
   </table>
 
   <div class="confirm-line">
