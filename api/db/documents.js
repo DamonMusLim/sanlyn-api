@@ -313,7 +313,15 @@ export default async function handler(req, res) {
       }catch(e){}
       var pol=pick(raw.pol,raw.portOfLoading,_spPol,_facPol,"-");
       var pod=pick(raw.destination,raw.pod,raw.destinationPort,_spPod,"-");
-      var inco=pick(raw.tradeTerms,raw.incoterms,"FOB");
+      // 2026-08-05 双成交方式收口(Damon 同意 forge 方案):
+      //   对客单据(IV/SC/PL)一律用【销售侧】= orders.trade_terms 列。
+      //   ⛔ raw.tradeTerms 只是原始导入快照,不是业务真源 —— 两个来源并存迟早打架(0805 就撞过:
+      //      列里 EXW、单据却按 raw 默认印 FOB,两边不一致没人发现)。
+      //   旧单(terms_model_version 非 dual_terms)含义未知,才短暂回落 raw,并保留 FOB 兜底。
+      var _isDual = String(o.terms_model_version||"") === "dual_terms";
+      var inco = _isDual
+        ? (o.trade_terms || "")
+        : pick(o.trade_terms, raw.tradeTerms, raw.incoterms, "FOB");
       // SSOT (2026-07-09): read canonical top-level orders.products (same source as the
       // front-end doc-editor), inheriting rich fields from the raw.products snapshot by SKU.
       // Fixes stale/partial raw.products (dropped rows + wrong prices, e.g. 40-DG-2).

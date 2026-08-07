@@ -983,12 +983,42 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
     // 病根:出运资料该出哪几份全靠它判(海运费账单除 CNF/CIF/DDP 才出、港杂费只 EXW/FOB 出),
     // 空值会让整套规则静默失效——不是少一栏,是判不出该给客户发什么。COAU6461510080 那票就是空的。
     // 只认 Incoterms 2020 十一种,别的一律打回,防止「FOB厦门」「F.O.B」这类脏值再进来。
+    // 2026-08-05 双成交方式（Damon 同意 forge 方案）：一票天然两个口径，别共用一个格子。
+    //   trade_terms          = 【销售侧】巴匕→客户 → 驱动对客单据 + 账单规则
+    //   purchase_trade_terms = 【采购侧】工厂→巴匕 → 驱动采购合同 + 拖车/提货成本归属建议
+    // ⛔ 不许用空值表示"以后补" —— 空值会变成静默兜底(这正是 0804 那批坑的模式)。
+    //    确实没谈定就显式填 pending，订单留在草稿，不许进入出单/出账单环节。
     var _TT_OK = ["EXW","FCA","FAS","FOB","CFR","CIF","CPT","CIP","DAP","DPU","DDP","CNF"];
-    var _tt = String(body.trade_terms || "").toUpperCase().trim();
-    if (!_tt) return res.status(400).json({ error: "成交方式必填(EXW/FOB/CIF/CNF/DDP...)，缺了无法判断该出哪些出运单据" });
-    if (_TT_OK.indexOf(_tt) < 0) {
-      return res.status(400).json({ error: "成交方式不认识: " + _tt + "。只接受 " + _TT_OK.join("/") });
-    }
+    var _chkTT = function (raw, label) {
+      var v = String(raw || "").toUpperCase().trim();
+      if (!v) return { err: label + "必填(EXW/FOB/CIF/CNF/DDP...)。确实没谈定请填 PENDING，别留空——留空会让出运资料和账单规则静默失效" };
+      if (v === "PENDING") return { val: "PENDING" };
+      if (_TT_OK.indexOf(v) < 0) return { err: label + "不认识: " + v + "。只接受 " + _TT_OK.join("/") + " 或 PENDING" };
+      return { val: v };
+    };
+    // 2026-08-05 Damon:「除非点了固定，我们常用」→ 没填就带出该客户的常用成交方式。
+    // 只兜底、不覆盖：录单时明确填了什么就用什么。
+    var _ttDefaults = { default_trade_terms: null, default_purchase_trade_terms: null, pinned: false };
+    try {
+      // ⚠️ 真源是 customers_legacy_20260803(customers 视图的底表)——客户默认值机制早就有:
+      //    trade_terms / destination_port / currency / our_shipping / order_prefixes(含nextNumber)...
+      //    ⛔ 别写 customers 视图:它只暴露 8 列,写 trade_terms 会静默失败(这就是老代码一直没生效的原因)。
+      var _dr = await pool.query(
+        "SELECT trade_terms AS default_trade_terms, purchase_trade_terms AS default_purchase_trade_terms," +
+        " trade_terms_pinned AS pinned FROM customers_legacy_20260803 WHERE company_code=$1 LIMIT 1",
+        [companyCode]);
+      if (_dr.rows.length) _ttDefaults = _dr.rows[0];
+    } catch (e) { console.warn("[order-create-v2] 取客户常用成交方式失败:", e.message); }
+    if (!String(body.trade_terms||"").trim() && _ttDefaults.default_trade_terms)
+      body.trade_terms = _ttDefaults.default_trade_terms;
+    if (!String(body.purchase_trade_terms||"").trim() && _ttDefaults.default_purchase_trade_terms)
+      body.purchase_trade_terms = _ttDefaults.default_purchase_trade_terms;
+
+    var _sale = _chkTT(body.trade_terms, "销售侧成交方式(巴匕→客户)");
+    if (_sale.err) return res.status(400).json({ error: _sale.err });
+    var _buy = _chkTT(body.purchase_trade_terms, "采购侧成交方式(工厂→巴匕)");
+    if (_buy.err) return res.status(400).json({ error: _buy.err });
+    var _tt = _sale.val;
 
     // Manufacturer name for the order_no factory prefix. Orders are split one-per
     // factory upstream, so all line items share a manufacturer; use the first.
@@ -1490,13 +1520,32 @@ if (action === "factory-by-buyer" && req.query.buyerCode) {
       console.error("[order-create-v2] 公司外键写入失败:", e.message);
     }
 
-    // Save trade_terms to order row + update customer's last-used value (non-fatal)
-    if (body.trade_terms) {
+    // 2026-08-05 双成交方式落库：销售侧+采购侧+模型版本一起写。
+    // ⚠️ 这里【不再吞异常】—— 0805 教训:order_line_items 的 non-fatal catch 让订单建成功但明细全空,
+    //    返回 200 却是废单。成交方式写不进去同样是废单(出运资料/账单规则会静默走错)。
+    try {
+      await pool.query(
+        "UPDATE orders SET trade_terms=$1, purchase_trade_terms=$2, terms_model_version='dual_terms' WHERE id=$3",
+        [_sale.val, _buy.val, order.id]
+      );
+      // 回写该客户常用成交方式,供下次录单自动带出。
+      // ⛔ pinned=true 就不动 —— Damon:「除非点了固定，我们常用」。
+      // ⛔ 旧代码写的是 UPDATE customers SET trade_terms=...,但 customers 是视图且无此列,
+      //    一直静默报错 →「记住上次口径」从来没生效过。改写真表。
       try {
-        var tt = String(body.trade_terms).toUpperCase().trim();
-        await pool.query("UPDATE orders SET trade_terms = $1 WHERE id = $2", [tt, order.id]);
-        await pool.query("UPDATE customers SET trade_terms = $1, updated_at = NOW() WHERE company_code = $2", [tt, companyCode]);
-      } catch (_) {}
+        if (_sale.val !== "PENDING" && companyCode) {
+          await pool.query(
+            "UPDATE customers_legacy_20260803 SET" +
+            "   trade_terms = CASE WHEN trade_terms_pinned THEN trade_terms ELSE $1 END," +
+            "   purchase_trade_terms = CASE WHEN trade_terms_pinned THEN purchase_trade_terms ELSE $2 END," +
+            "   updated_at = now()" +
+            " WHERE company_code = $3",
+            [_sale.val, (_buy.val === "PENDING" ? null : _buy.val), companyCode]);
+        }
+      } catch (e) { console.warn("[order-create-v2] 回写客户常用成交方式失败:", e.message); }
+    } catch (e) {
+      console.error("[order-create-v2] 成交方式写入失败 order_no=" + (order.order_no || order.id) + ":", e.message);
+      return res.status(500).json({ success: false, error: "成交方式没写进去，这张单不完整：" + e.message });
     }
 
     // ─────────────────────────────────────────────────────────────────
