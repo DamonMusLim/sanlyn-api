@@ -313,6 +313,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/migrate-factory-notifications",  () => import("./api/db/migrate-factory-notifications.js")); // B2-2A migration
   mount("/api/tasks",                 () => import("./api/tasks.js"));                 // P1-2 detail + P1-4 action
   mount("/api/tasks/create",          () => import("./api/tasks-create.js"));          // P2-B admin manual create
+  mount("/api/admin/trigger-bl-confirmation-gate", () => import("./api/admin/trigger-bl-confirmation-gate.js")); // BL确认闸门手动dry-run/触发
   mount("/api/collab",                () => import("./api/collab.js"));                // P1-3
   mount("/api/db/migrate-freight",   () => import("./api/db/migrate-freight.js"));
   mount("/api/db/migrate-hh-bill-202604", () => import("./api/db/migrate-hh-bill-202604.js")); // ONE-SHOT: 天津惠禾 HH_202604ZXCK01868

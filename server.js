@@ -228,4 +228,9 @@ import("./jobs/recurring-order-cron.js")
   .then(({ scheduleRecurringOrders }) => scheduleRecurringOrders())
   .catch(e => console.error("[server] recurring-order-cron schedule failed:", e.message));
 
+// ── BL confirmation gate (customer deadline checkpoints) ─────────────────────
+import("./jobs/bl-confirmation-gate.js")
+  .then(({ scheduleBlConfirmationGate }) => scheduleBlConfirmationGate())
+  .catch(e => console.error("[server] bl-confirmation-gate schedule failed:", e.message));
+
 export default app;
