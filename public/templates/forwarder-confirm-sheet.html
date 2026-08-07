@@ -44,8 +44,11 @@ body{margin:0;background:var(--ground);color:var(--ink);
 
 .nologin{display:flex;align-items:center;gap:9px;background:var(--ok-soft);color:var(--ok);padding:9px 14px;font-size:12.5px;font-weight:600;border-radius:10px}
 .deliver{background:var(--brand-soft);border:1px solid #bcd8f0;border-radius:11px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
-.deliver .l{font-size:12px;color:var(--sub)}
-.deliver .v{font-size:16px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+	.deliver .l{font-size:12px;color:var(--sub)}
+	.deliver .v{font-size:16px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
+	.todo-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+	.todo-item{border:1px solid var(--line);background:var(--row);color:var(--ink);border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit}
+	.head-tags{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
 
 /* 折叠确认卡:已确认默认收起,待办展开(details/summary) */
 details.step{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -245,15 +248,15 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     无需登录，这条链接就是您的专属入口，可随时打开
   </div>
 
-  <div class="block">
-    <div class="bh" id="headFlag" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-      <div>
-        <h2 id="fwName">订舱协同</h2>
-        <p id="fwSub">货代公司名 · 提单号 · 出单方式 · 柜量 / 航线</p>
-        <p id="headHint" hidden></p>
-      </div>
-      <span class="flag" id="agrTag">委托拖车 —</span>
-    </div>
+	  <div class="block">
+	    <div class="bh" id="headFlag" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+	      <div>
+	        <h2 id="fwName">待办事项</h2>
+	        <p id="fwSub">请按本票待办逐项补齐</p>
+	        <div id="todoBox" class="todo-list"></div>
+	      </div>
+	      <div class="head-tags"><span class="flag todo" id="todoBadge">待办 0</span><span class="flag" id="agrTag">委托拖车 —</span></div>
+	    </div>
     <div class="bb mini-grid">
       <div class="statbox"><div class="k">货代公司</div><div class="v" id="forwarderV">—</div></div>
       <div class="statbox"><div class="k">提单号</div><div class="v" id="blV">—</div></div>
@@ -266,7 +269,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
   <div id="carrierReq"></div>
 
   <!-- 请贵司上传 -->
-  <div class="block">
+	  <div class="block" id="sectionUpload">
     <div class="bh"><h2>② 请贵司上传</h2><p>SO 订舱确认 / 提单 B/L · 已收到回执</p></div>
     <div class="bb" style="display:flex;flex-direction:column;gap:9px">
       <div class="bill">
@@ -281,7 +284,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     </div>
   </div>
 
-  <div class="block">
+	  <div class="block" id="sectionDocs">
     <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
       <div><h2>③ 我方资料</h2><p>抬头资料 · 本票单据 · 货物证书</p></div>
       <button class="bdl" onclick="downloadAllDocs()">打包下载全部</button>
@@ -289,7 +292,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     <div class="bb" id="docGroups" style="display:flex;flex-direction:column;gap:10px"></div>
   </div>
 
-  <div class="block">
+	  <div class="block" id="sectionFees">
     <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
       <div><h2>④ 费用与对账</h2><p>海运费 / 拖车费 / 港杂费 / 报关费</p></div><span class="lock">🔒 仅授权人可见</span>
     </div>
@@ -315,7 +318,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     </div>
   </div>
 
-  <details class="step now" open>
+	  <details class="step now" id="sectionTruck" open>
     <summary>
       <div class="snum">6</div>
       <div class="st"><h2>⑥ 拖车</h2><p id="boxSub">装柜数据 · 柜号封号 / 车牌司机 / 装柜图磅单</p></div>
