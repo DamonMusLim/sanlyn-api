@@ -240,29 +240,29 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
 
 <div class="app">
   <div class="topbar">
-    <a class="homelink" href="/data">☰ 登入主页面</a>
-    <div class="lang"><button class="on">中文</button><button>English</button><button>BM</button></div>
+    <a class="homelink" href="/data" data-i18n="fwd.home">登入主页面</a>
+    <div id="langMount"></div>
   </div>
 
   <div class="nologin">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
-    无需登录，这条链接就是您的专属入口，可随时打开
+    <span data-i18n="common.noLogin">无需登录，这条链接就是您的专属入口，可随时打开</span>
   </div>
 
 	  <div class="block">
 	    <div class="bh" id="headFlag" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
 	      <div>
-	        <h2 id="fwName">待办事项</h2>
-	        <p id="fwSub">请按本票待办逐项补齐</p>
+	        <h2 id="fwName" data-i18n="fwd.todoTitle">待办事项</h2>
+	        <p id="fwSub" data-i18n="fwd.todoSub">请按本票待办逐项补齐</p>
 	        <div id="todoBox" class="todo-list"></div>
 	      </div>
 	      <div class="head-tags"><span class="flag todo" id="todoBadge">待办 0</span><span class="flag" id="agrTag">委托拖车 —</span></div>
 	    </div>
     <div class="bb mini-grid">
-      <div class="statbox"><div class="k">货代公司</div><div class="v" id="forwarderV">—</div></div>
-      <div class="statbox"><div class="k">提单号</div><div class="v" id="blV">—</div></div>
-      <div class="statbox"><div class="k">出单方式</div><div class="v" id="releaseV">—</div></div>
-      <div class="statbox"><div class="k">柜量 / 航线</div><div class="v" id="routeV">—</div></div>
+      <div class="statbox"><div class="k" data-i18n="fwd.forwarder">货代公司</div><div class="v" id="forwarderV">—</div></div>
+      <div class="statbox"><div class="k" data-i18n="fwd.blNo">提单号</div><div class="v" id="blV">—</div></div>
+      <div class="statbox"><div class="k" data-i18n="fwd.release">出单方式</div><div class="v" id="releaseV">—</div></div>
+      <div class="statbox"><div class="k" data-i18n="fwd.route">柜量 / 航线</div><div class="v" id="routeV">—</div></div>
     </div>
   </div>
 
@@ -271,66 +271,66 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
 
   <!-- 请贵司上传 -->
 	  <div class="block" id="sectionUpload">
-    <div class="bh"><h2>② 请贵司上传</h2><p>SO 订舱确认 / 提单 B/L · 已收到回执</p></div>
+    <div class="bh"><h2 data-i18n="fwd.uploadTitle">② 请贵司上传</h2><p data-i18n="fwd.uploadSub">SO 订舱确认 / 提单 B/L · 已收到回执</p></div>
     <div class="bb" style="display:flex;flex-direction:column;gap:9px">
       <div class="bill">
         <span class="bi">🔖</span>
         <div class="bt2"><b id="refV">—</b><span id="refHint">请填您的 SO 号，我方据此核对</span></div>
-        <button class="bdl" onclick="copyRef()">复制</button>
-        <button class="bdl" onclick="editRef()">改单号</button>
+        <button class="bdl" onclick="copyRef()" data-i18n="fwd.copy">复制</button>
+        <button class="bdl" onclick="editRef()" data-i18n="fwd.editRef">改单号</button>
       </div>
-      <div class="bill"><span class="bi">📋</span><div class="bt2"><b>SO 订舱确认 / 放舱通知</b><span id="soHint">放舱后请上传</span></div><button class="bdl" onclick="pickUpload('ocean','SO')">上传</button></div>
-      <div class="bill"><span class="bi">📃</span><div class="bt2"><b>提单 B/L</b><span id="blHint">草稿与正式提单</span></div><button class="bdl" onclick="pickUpload('ocean','BL')">上传</button></div>
+      <div class="bill"><span class="bi">📋</span><div class="bt2"><b data-i18n="fwd.soDoc">SO 订舱确认 / 放舱通知</b><span id="soHint">放舱后请上传</span></div><button class="bdl" onclick="pickUpload('ocean','SO')" data-i18n="common.upload">上传</button></div>
+      <div class="bill"><span class="bi">📃</span><div class="bt2"><b data-i18n="fwd.blDoc">提单 B/L</b><span id="blHint">草稿与正式提单</span></div><button class="bdl" onclick="pickUpload('ocean','BL')" data-i18n="common.upload">上传</button></div>
       <div id="receiptList"></div>
     </div>
   </div>
 
 	  <div class="block" id="sectionDocs">
     <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><h2>③ 我方资料</h2><p>抬头资料 · 本票单据 · 货物证书</p></div>
-      <button class="bdl" onclick="downloadAllDocs()">打包下载全部</button>
+      <div><h2 data-i18n="fwd.docsTitle">③ 我方资料</h2><p data-i18n="fwd.docsSub">抬头资料 · 本票单据 · 货物证书</p></div>
+      <button class="bdl" onclick="downloadAllDocs()" data-i18n="common.downloadAll">打包下载全部</button>
     </div>
     <div class="bb" id="docGroups" style="display:flex;flex-direction:column;gap:10px"></div>
   </div>
 
 	  <div class="block" id="sectionFees">
     <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><h2>④ 费用与对账</h2><p>海运费 / 拖车费 / 港杂费 / 报关费</p></div><span class="lock">🔒 仅授权人可见</span>
+      <div><h2 data-i18n="fwd.feesTitle">④ 费用与对账</h2><p data-i18n="fwd.feesSub">海运费 / 拖车费 / 港杂费 / 报关费</p></div><span class="lock">🔒 <span data-i18n="fwd.authOnly">仅授权人可见</span></span>
     </div>
     <div class="bb" style="display:flex;flex-direction:column;gap:9px" id="feeBody"></div>
     <div class="bb" style="padding-top:0;display:flex;flex-direction:column;gap:9px">
-      <div class="billgrp" style="margin-top:5px">对账</div>
+      <div class="billgrp" style="margin-top:5px" data-i18n="fwd.reconcile">对账</div>
       <div class="kv" style="padding:2px 2px">
-        <span class="k">应收合计 AR</span><span class="v" id="arV">USD 2,850 + ¥ 3,200</span>
-        <span class="k">已收</span><span class="v" style="color:var(--faint)">—</span>
-        <span class="k">未收余额</span><span class="v" id="arDue" style="color:var(--wait);font-size:15px">全额待收</span>
+        <span class="k" data-i18n="fwd.ar">应收合计 AR</span><span class="v" id="arV">USD 2,850 + ¥ 3,200</span>
+        <span class="k" data-i18n="fwd.received">已收</span><span class="v" style="color:var(--faint)">—</span>
+        <span class="k" data-i18n="fwd.balance">未收余额</span><span class="v" id="arDue" style="color:var(--wait);font-size:15px">全额待收</span>
       </div>
-      <div class="bill"><span class="bi">🧾</span><div class="bt2"><b>付款水单</b><span>我方付款后提供，供贵司核对</span></div><button class="bdl" disabled>待付款</button></div>
+      <div class="bill"><span class="bi">🧾</span><div class="bt2"><b data-i18n="fwd.paySlip">付款水单</b><span data-i18n="fwd.paySlipSub">我方付款后提供，供贵司核对</span></div><button class="bdl" disabled data-i18n="fwd.waitPay">待付款</button></div>
     </div>
   </div>
 
   <div class="block">
-    <div class="bh"><h2>⑤ 本票时限</h2><p>进场 / VGM / SI / 预计开船</p></div>
+    <div class="bh"><h2 data-i18n="fwd.deadlineTitle">⑤ 本票时限</h2><p data-i18n="fwd.deadlineSub">进场 / VGM / SI / 预计开船</p></div>
     <div class="bb deadline">
-      <div class="statbox"><div class="k">进场</div><div class="v" id="gateV">—</div></div>
+      <div class="statbox"><div class="k" data-i18n="fwd.gate">进场</div><div class="v" id="gateV">—</div></div>
       <div class="statbox"><div class="k">VGM</div><div class="v" id="vgmV">—</div></div>
       <div class="statbox"><div class="k">SI</div><div class="v" id="siV">—</div></div>
-      <div class="statbox"><div class="k">预计开船</div><div class="v" id="etdV">—</div></div>
+      <div class="statbox"><div class="k" data-i18n="fwd.etd">预计开船</div><div class="v" id="etdV">—</div></div>
     </div>
   </div>
 
 	  <details class="step now" id="sectionTruck" open>
     <summary>
       <div class="snum">6</div>
-      <div class="st"><h2>⑥ 拖车</h2><p id="boxSub">装柜数据 · 柜号封号 / 车牌司机 / 装柜图磅单</p></div>
+      <div class="st"><h2 data-i18n="fwd.truckTitle">⑥ 拖车</h2><p id="boxSub">装柜数据 · 柜号封号 / 车牌司机 / 装柜图磅单</p></div>
       <span class="sstat wait" id="boxBadge">待您回填</span><span class="chev">▾</span>
     </summary>
     <div class="sb">
       <div class="kv">
-        <span class="k">订舱号 SO</span><span class="v" id="soNoV">—</span>
-        <span class="k">船名 / 航次</span><span class="v" id="vesselV">—</span>
+        <span class="k" data-i18n="fwd.soNo">订舱号 SO</span><span class="v" id="soNoV">—</span>
+        <span class="k" data-i18n="fwd.vesselVoyage">船名 / 航次</span><span class="v" id="vesselV">—</span>
         <span class="k" style="display:none"></span><span class="v" id="cutoffV" style="display:none">—</span>
-        <span class="k">柜号 / 封号</span><span class="v edit" id="cntrV">—</span>
+        <span class="k" data-i18n="fwd.cntrSeal">柜号 / 封号</span><span class="v edit" id="cntrV">—</span>
       </div>
       <div id="truckBody"></div>
       <div class="acts" id="boxActs"></div>
@@ -338,23 +338,25 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
   </details>
 
   <div class="foot"><div class="foot-in">
-    <button class="help wide" onclick="document.getElementById('sheet').classList.add('on')">🆘 不方便填？<small>请 Sanlyn 协助</small></button>
+    <button class="help wide" onclick="document.getElementById('sheet').classList.add('on')">🆘 <span data-i18n="common.needHelp">不方便填？</span><small data-i18n="common.askSanlyn">请 Sanlyn 协助</small></button>
   </div></div>
 
   <div class="sheet" id="sheet">
     <div class="sheet-c">
-      <h3>🤝 让 Sanlyn 协助您</h3>
-      <p>不方便自己操作也没关系，选一种方式，我们来替您完成。</p>
-      <div class="opt"><div class="oi">📞</div><div class="ot"><b>电话协助</b><span>报出信息，我们照着帮您填</span></div></div>
-      <div class="opt"><div class="oi">💬</div><div class="ot"><b>发邮件 / 微信给对接人</b><span>把资料发过来，我们代填</span></div></div>
-      <div class="opt"><div class="oi">🙋</div><div class="ot"><b>请 Sanlyn 代填</b><span>我们先填好，您最后点一下确认</span></div></div>
-      <button class="sheet-x" onclick="document.getElementById('sheet').classList.remove('on')">先不用，我自己来</button>
+      <h3>🤝 <span data-i18n="fwd.assistTitle">让 Sanlyn 协助您</span></h3>
+      <p data-i18n="fwd.assistSub">不方便自己操作也没关系，选一种方式，我们来替您完成。</p>
+      <div class="opt"><div class="oi">📞</div><div class="ot"><b data-i18n="fwd.phoneHelp">电话协助</b><span data-i18n="fwd.phoneHelpSub">报出信息，我们照着帮您填</span></div></div>
+      <div class="opt"><div class="oi">💬</div><div class="ot"><b data-i18n="fwd.sendHelp">发邮件 / 微信给对接人</b><span data-i18n="fwd.sendHelpSub">把资料发过来，我们代填</span></div></div>
+      <div class="opt"><div class="oi">🙋</div><div class="ot"><b data-i18n="fwd.agentHelp">请 Sanlyn 代填</b><span data-i18n="fwd.agentHelpSub">我们先填好，您最后点一下确认</span></div></div>
+      <button class="sheet-x" onclick="document.getElementById('sheet').classList.remove('on')" data-i18n="fwd.self">先不用，我自己来</button>
     </div>
   </div>
   <div class="version" id="uiVersion">UI v2.1.0 · 2026-08-07</div>
 </div>
 
 <input id="fileInput" type="file" style="display:none" onchange="uploadPickedFile(this)">
+<script src="collab-i18n.js"></script>
+<script>CollabI18n.mount(document.getElementById("langMount"), { langs:["zh","en","bm"], default:"zh", scope:"forwarder" });</script>
 <script src="collab-truck-block.js"></script>
 <script>
   (function(){

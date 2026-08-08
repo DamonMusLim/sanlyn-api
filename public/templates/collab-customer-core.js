@@ -3,6 +3,8 @@ const BL_API = API + '/bl-confirmation';
 const token = new URLSearchParams(location.search).get('token') || '';
 const $ = id => document.getElementById(id);
 const show = id => { ['stateLoading','stateForm','stateDead'].forEach(s => $(s).classList.add('hidden')); $(id).classList.remove('hidden'); };
+function tr(k, vars){ return window.CollabI18n ? CollabI18n.t(k, vars) : k; }
+function i18n(){ if(window.CollabI18n) CollabI18n.apply(); }
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2200); }
 function esc(v){ return v==null?'':String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function fmtD(v){
@@ -44,9 +46,9 @@ function uniqueList(xs){
 function statusEn(v){
   const t = String(v||'').trim();
   const map = {
-    '\u8fdb\u6e2f':'At origin port',
-    '\u5728\u9014':'In transit',
-    '\u5230\u6e2f':'Arrived'
+    '\u8fdb\u6e2f':tr('cust.atOrigin'),
+    '\u5728\u9014':tr('cust.inTransit'),
+    '\u5230\u6e2f':tr('cust.arrived')
   };
   return map[t] || t;
 }
@@ -64,13 +66,13 @@ function renderJourney(){
   const labelX = Math.max(156, Math.min(484, x));
   const pol = enPart(sheet.pol) || 'Origin';
   const pod = enPart(sheet.pod) || 'Destination';
-  const status = statusEn(sheet.portun_status_cn) || (pct <= 0 ? 'At origin port' : (pct >= 1 ? 'Arrived' : 'In transit'));
-  const startLabel = sheet.portun_atd ? 'Actual departure' : 'Estimated departure';
-  const endLabel = sheet.portun_ata ? 'Actual arrival' : 'Estimated arrival';
+  const status = statusEn(sheet.portun_status_cn) || (pct <= 0 ? tr('cust.atOrigin') : (pct >= 1 ? tr('cust.arrived') : tr('cust.inTransit')));
+  const startLabel = sheet.portun_atd ? tr('cust.actualDeparture') : tr('cust.estimatedDeparture');
+  const endLabel = sheet.portun_ata ? tr('cust.actualArrival') : tr('cust.estimatedArrival');
   const feed = fmtFeedDT(sheet.portun_synced_at);
   $('journeySub').textContent = status;
   box.innerHTML = `
-    <svg class="journey-svg" viewBox="0 0 640 154" role="img" aria-label="Shipment journey from ${esc(pol)} to ${esc(pod)}">
+    <svg class="journey-svg" viewBox="0 0 640 154" role="img" aria-label="${esc(tr('cust.shipmentJourney', { pol, pod }))}">
       <line class="journey-track" x1="84" y1="70" x2="556" y2="70"></line>
       <line class="journey-done" x1="84" y1="70" x2="${x}" y2="70"></line>
       <circle class="journey-point journey-start" cx="84" cy="70" r="9"></circle>
@@ -84,7 +86,7 @@ function renderJourney(){
       <text class="journey-date" x="84" y="132" text-anchor="middle">${fmtD(startRaw)}</text>
       <text class="journey-date" x="556" y="132" text-anchor="middle">${fmtD(endRaw)}</text>
     </svg>
-    ${feed?`<div class="journey-feed">Carrier feed · updated ${esc(feed)}</div>`:''}`;
+    ${feed?`<div class="journey-feed">${esc(tr('cust.carrierUpdated', { time:feed }))}</div>`:''}`;
   card.style.display = '';
 }
 function openBillingInvoice(){
@@ -102,8 +104,9 @@ function renderBillingEntry(billing){
     : '';
   const currency = (billing && (billing.currency || billing.customer_currency)) || sheet.freight_currency || 'USD';
   const quoted = amount !== '' && amount != null;
-  box.innerHTML = `<div class="bill"><span class="bi">USD</span><div class="bt2"><b>Ocean freight</b><span>${quoted ? 'Quoted to you' : 'Not quoted yet'}</span></div><span class="fee-value">${quoted ? esc(moneyAmount(amount, currency)) : 'Not quoted yet'}</span></div>
-    <div class="bill"><span class="bi">T&C</span><div class="bt2"><b>Trade term</b><span>FOB / EXW / FCA / CIF / CNF / DDP</span></div><select id="incotermSelect" class="bdl" onchange="sheet.incoterm=this.value">${terms.map(x=>`<option value="${x}" ${term===x?'selected':''}>${x}</option>`).join('')}</select></div>`;
+  box.innerHTML = `<div class="bill"><span class="bi">USD</span><div class="bt2"><b>${esc(tr('cust.oceanFreight'))}</b><span>${esc(quoted ? tr('cust.quoted') : tr('cust.notQuoted'))}</span></div><span class="fee-value">${quoted ? esc(moneyAmount(amount, currency)) : esc(tr('cust.notQuoted'))}</span></div>
+    <div class="bill"><span class="bi">T&C</span><div class="bt2"><b>${esc(tr('cust.tradeTerm'))}</b><span>FOB / EXW / FCA / CIF / CNF / DDP</span></div><select id="incotermSelect" class="bdl" onchange="sheet.incoterm=this.value">${terms.map(x=>`<option value="${x}" ${term===x?'selected':''}>${x}</option>`).join('')}</select></div>`;
+  i18n();
 }
 
 function dataPick(obj, keys){
@@ -116,18 +119,18 @@ function renderCustomerInfo(){
   const d = window._blDraft || {};
   const src = {...sheet, ...(sheet.customer_profile || {}), ...(d.customer_profile || {})};
   const fields = [
-    ['Consignee name', dataPick(src, ['consignee_name','consignee','customer_en','customer'])],
-    ['Address', dataPick(src, ['consignee_address','customer_address','address'])],
-    ['Tax ID', dataPick(src, ['tax_id','vat_no','tin','bin'])],
-    ['Contact', dataPick(src, ['contact_person','contact','customer_contact'])],
+    [tr('cust.consignee'), dataPick(src, ['consignee_name','consignee','customer_en','customer'])],
+    [tr('cust.address'), dataPick(src, ['consignee_address','customer_address','address'])],
+    [tr('cust.taxId'), dataPick(src, ['tax_id','vat_no','tin','bin'])],
+    [tr('cust.contact'), dataPick(src, ['contact_person','contact','customer_contact'])],
     ['TT', dataPick(src, ['tt','tt_no','clearance_tt'])],
     ['IRC', dataPick(src, ['irc','irc_no'])],
     ['TIN', dataPick(src, ['tin'])],
     ['BIN', dataPick(src, ['bin'])]
   ];
   const missing = fields.filter(x=>!x[1]).map(x=>x[0]);
-  box.innerHTML = fields.map(x=>`<div class="statbox ${x[1] ? '' : 'field-missing'}"><div class="k">${esc(x[0])}</div><div class="v">${esc(x[1] || 'Missing')}</div></div>`).join('');
-  const text = missing.length ? missing.length + ' fields missing' : 'Verified';
+  box.innerHTML = fields.map(x=>`<div class="statbox ${x[1] ? '' : 'field-missing'}"><div class="k">${esc(x[0])}</div><div class="v">${esc(x[1] || tr('common.missing'))}</div></div>`).join('');
+  const text = missing.length ? tr('cust.fieldsMissing', { n:missing.length }) : tr('common.verified');
   $('customerInfoSummary').textContent = text;
   $('customerInfoBadge').textContent = text;
   $('customerInfoBadge').className = missing.length ? 'pill wait' : 'pill ok';
@@ -142,15 +145,15 @@ function customerFileUrl(type, filename){
 }
 function docBill(label, sub, type, filename){
   const url = customerFileUrl(type, filename);
-  return `<a class="bill" href="${url}" target="_blank"><span class="bi">DOC</span><span class="bt2"><b>${esc(label)}</b><span>${esc(sub || '')}</span></span><span class="bdl">View</span><span class="bdl">Download</span></a>`;
+  return `<a class="bill" href="${url}" target="_blank"><span class="bi">DOC</span><span class="bt2"><b>${esc(label)}</b><span>${esc(sub || '')}</span></span><span class="bdl">${esc(tr('common.view'))}</span><span class="bdl">${esc(tr('common.download'))}</span></a>`;
 }
 function renderCertificatesAndDownloads(){
   const certBox = $('certBox'), dl = $('downloadBox'), all = $('dlAll');
   if(all) all.href = customerFileUrl('pack');
   const rows = [];
-  const downloads = [docBill('Document pack', 'PL + SC + IV', 'pack')];
-  if(window._blDraft) downloads.push(docBill('Bill of Lading draft', 'Current draft for confirmation', 'bl_draft'));
-  downloads.push(docBill('Non-Dangerous Goods Declaration', 'Customer copy', 'nondg'));
+  const downloads = [docBill(tr('cust.docPack'), 'PL + SC + IV', 'pack')];
+  if(window._blDraft) downloads.push(docBill('Bill of Lading draft', tr('cust.currentDraft'), 'bl_draft'));
+  downloads.push(docBill(tr('cust.nondg'), tr('cust.customerCopy'), 'nondg'));
   const certs = Array.isArray(sheet.certificates) ? sheet.certificates : [];
   certs.forEach(c=>{
     if(!c || !(c.file_type || c.file_id || c.filename || c.number || c.status)) return;
@@ -160,10 +163,11 @@ function renderCertificatesAndDownloads(){
     if(c.filename || c.file_id || c.file_type) downloads.push(docBill(name, sub || 'Available', c.file_type || 'certificate', c.filename || c.file_id || ''));
   });
   if(sheet.fe_cert && (sheet.fe_cert.requested || sheet.fe_cert.status || sheet.fe_cert.number)){
-    rows.push(`<div class="bill"><span class="bi">FE</span><span class="bt2"><b>FE Certificate of Origin</b><span>${esc(sheet.fe_cert.number || sheet.fe_cert.status || 'Pending')}</span></span><span class="pill wait">${sheet.fe_cert.number ? 'Ready' : 'Pending'}</span></div>`);
+    rows.push(`<div class="bill"><span class="bi">FE</span><span class="bt2"><b>FE Certificate of Origin</b><span>${esc(sheet.fe_cert.number || sheet.fe_cert.status || tr('common.pending'))}</span></span><span class="pill wait">${sheet.fe_cert.number ? esc(tr('common.ready')) : esc(tr('common.pending'))}</span></div>`);
   }
-  if(certBox) certBox.innerHTML = rows.length ? rows.join('') : '<div class="bill"><span class="bi">OK</span><span class="bt2"><b>Certificates</b><span>Not required</span></span><span class="pill ok">OK</span></div>';
+  if(certBox) certBox.innerHTML = rows.length ? rows.join('') : `<div class="bill"><span class="bi">OK</span><span class="bt2"><b>${esc(tr('cust.certificates'))}</b><span>${esc(tr('cust.notRequired'))}</span></span><span class="pill ok">OK</span></div>`;
   if(dl) dl.innerHTML = downloads.join('');
+  i18n();
 }
 
 let sheet = {}, sailings = [], selIdx = -1, confirmed = false, noteTimer = null, notes = {};
@@ -172,15 +176,15 @@ let sheet = {}, sailings = [], selIdx = -1, confirmed = false, noteTimer = null,
 function renderConfirmState(){
   if(confirmed){
     $('confirmedBanner').classList.remove('hidden');
-    $('confirmedText').textContent = 'Booking confirmed';
+    $('confirmedText').textContent = tr('common.confirmed');
     $('confirmedSub').textContent = (sheet.customer_submitted_at?`Confirmed at ${fmtDT(sheet.customer_submitted_at)} · `:'') + 'Sanlyn has received your confirmation.';
-    $('actionBadge').textContent='Confirmed'; $('actionBadge').className='badge badge-green';
+    $('actionBadge').textContent=tr('common.confirmed'); $('actionBadge').className='badge badge-green';
     $('confirmZone').style.display='none';
     const ct=$('cargoTable'),cc=$('cargoChevron'),cs=$('cargoSub');
-    if(ct){ct.style.display='none';} if(cc){cc.textContent='▸';} if(cs){cs.textContent='Click to expand details';}
+    if(ct){ct.style.display='none';} if(cc){cc.textContent='▸';} if(cs){cs.textContent=tr('cust.clickExpand');}
   } else {
     $('confirmedBanner').classList.add('hidden');
-    $('actionBadge').textContent='Action required'; $('actionBadge').className='badge badge-amber';
+    $('actionBadge').textContent=tr('common.actionRequired'); $('actionBadge').className='badge badge-amber';
     // hide confirm button if ship is already booked on Sanlyn side
     const _booked = !!(sheet.so_no || sheet.bl_no);
     $('confirmZone').style.display = _booked ? 'none' : 'block';
@@ -215,9 +219,8 @@ function renderSailings(){
   $('sailCount').textContent = sailings.length + ' sailings';
   if(!sailings.length){
     if (sheet.so_no || sheet.bl_no) {
-      $('sailCount').textContent = 'Booked';
-      $('sailBox').innerHTML = `<div style="padding:14px 16px;font-size:13px;background:var(--ok-soft);border-radius:8px;margin:0 0 4px;">
-        <b>Booked</b></div>`;
+      $('sailCount').textContent = tr('common.booked');
+      $('sailBox').innerHTML = `<div style="padding:14px 16px;font-size:13px;background:var(--ok-soft);border-radius:8px;margin:0 0 4px;"><b>${esc(tr('common.booked'))}</b></div>`;
     }
     return;
   }
@@ -240,6 +243,7 @@ function renderSailings(){
   const rec = sailings.find(x=>x.is_recommended);
   if(rec){ $('recBar').classList.remove('hidden');
     $('recBar').innerHTML = `Sanlyn preferred sailing: <b>${fmt(rec.etd)}</b>.`; }
+  i18n();
 }
 
 function saveNotes(){
@@ -317,15 +321,15 @@ window._blDraft = null;
 window._blChanges = {};
 function timeLeft(v){
   const ms = new Date(v).getTime() - Date.now();
-  if(!Number.isFinite(ms) || ms <= 0) return 'deadline passed';
+  if(!Number.isFinite(ms) || ms <= 0) return tr('cust.deadlinePassed');
   const h = Math.floor(ms / 3600000), d = Math.floor(h / 24);
-  return `${d} days ${h % 24} hours left`;
+  return tr('cust.left', { d, h:h % 24 });
 }
 function blStatusText(st){
-  if(st === 'customer_confirmed') return 'Confirmed';
-  if(st === 'revision_requested') return 'Changes requested';
-  if(st === 'auto_submitted') return 'Auto-submitted';
-  return 'Awaiting confirmation';
+  if(st === 'customer_confirmed') return tr('common.confirmed');
+  if(st === 'revision_requested') return tr('cust.changesRequested');
+  if(st === 'auto_submitted') return tr('cust.autoSubmitted');
+  return tr('cust.awaiting');
 }
 function blCell(label, value){ return `<div class="bl-box"><div class="bl-lbl">${esc(label)}</div>${esc(value||'—')}</div>`; }
 function blRows(rows, cols){
@@ -353,7 +357,7 @@ function blGoodsSummary(d){
 function renderBLCountdown(){
   const d = window._blDraft;
   const el = $('blCountdown');
-  if(el && d) el.textContent = `Please confirm before ${fmtDT(d.deadline_at)} — ${timeLeft(d.deadline_at)}`;
+  if(el && d) el.textContent = tr('cust.blDeadline', { date:fmtDT(d.deadline_at), left:timeLeft(d.deadline_at) });
 }
 window.loadBLDraft = async function(){
   try{
@@ -374,31 +378,32 @@ window.renderBLDraft = function(){
   $('blDraftBox').innerHTML = `
     <div class="bl-alert">
       <div id="blCountdown" style="font-weight:900;"></div>
-      <div>If we do not receive your reply before the deadline, this draft will be submitted as shown. Any later change may incur amendment fees.</div>
-      <div style="margin-top:4px;font-weight:800;">Status: ${esc(blStatusText(d.status))} · Draft version ${esc(d.version)}</div>
+      <div>${esc(tr('cust.autoSubmitWarn'))}</div>
+      <div style="margin-top:4px;font-weight:800;">${esc(tr('cust.statusLine', { status:blStatusText(d.status), version:d.version }))}</div>
     </div>
     <div class="bl-doc">
       <div class="bl-grid">
-        ${blCell('Shipper', d.shipper)}
+        ${blCell(tr('cust.shipper'), d.shipper)}
         ${blCell('Consignee', d.consignee)}
-        ${blCell('Notify Party', d.notify)}
-        ${blCell('Vessel / Voyage', d.vessel_voyage)}
-        ${blCell('Port of Loading', d.pol)}
-        ${blCell('Port of Discharge', d.pod)}
+        ${blCell(tr('cust.notify'), d.notify)}
+        ${blCell(tr('cust.vesselVoyage'), d.vessel_voyage)}
+        ${blCell(tr('cust.pol'), d.pol)}
+        ${blCell(tr('cust.pod'), d.pod)}
       </div>
-      <div class="bl-lbl">Description of Goods</div>
-      <table class="bl-table"><thead><tr><th>Description</th><th>Package</th><th>Gross Weight</th><th>Measurement</th><th>H.S. Code</th></tr></thead><tbody>${blRows(goods,['description','package','weight','cbm','hs'])}</tbody></table>
-      <div class="muted" style="font-size:11px;margin-top:6px;">Itemised breakdown: see Cargo Description above.</div>
-      <div class="bl-lbl" style="margin-top:10px;">Container & Seal</div>
-      <table class="bl-table"><thead><tr><th>Container No.</th><th>Type</th><th>Seal No.</th></tr></thead><tbody>${blRows(cntrs,['container','type','seal'])}</tbody></table>
+      <div class="bl-lbl">${esc(tr('cust.goodsDesc'))}</div>
+      <table class="bl-table"><thead><tr><th>${esc(tr('cust.desc'))}</th><th>${esc(tr('cust.package'))}</th><th>${esc(tr('cust.grossWeight'))}</th><th>${esc(tr('cust.measurement'))}</th><th>${esc(tr('cust.hs'))}</th></tr></thead><tbody>${blRows(goods,['description','package','weight','cbm','hs'])}</tbody></table>
+      <div class="muted" style="font-size:11px;margin-top:6px;">${esc(tr('cust.itemised'))}</div>
+      <div class="bl-lbl" style="margin-top:10px;">${esc(tr('cust.containerSeal'))}</div>
+      <table class="bl-table"><thead><tr><th>${esc(tr('cust.containerNo'))}</th><th>${esc(tr('cust.type'))}</th><th>${esc(tr('cust.sealNo'))}</th></tr></thead><tbody>${blRows(cntrs,['container','type','seal'])}</tbody></table>
     </div>
     <div class="bl-actions">
-      <button class="btn btn-green" id="blOkBtn" onclick="submitBLConfirm()" ${locked?'disabled':''}>Confirm — ready to submit</button>
-      <button class="btn btn-outline" onclick="openBLChanges()" ${locked?'disabled':''}>Request changes</button>
+      <button class="btn btn-green" id="blOkBtn" onclick="submitBLConfirm()" ${locked?'disabled':''}>${esc(tr('cust.blOk'))}</button>
+      <button class="btn btn-outline" onclick="openBLChanges()" ${locked?'disabled':''}>${esc(tr('cust.requestChanges'))}</button>
     </div>`;
   renderBLCountdown();
   clearInterval(window._blTimer);
   window._blTimer = setInterval(renderBLCountdown, 60000);
+  i18n();
 };
 window.submitBLConfirm = async function(){
   const btn = $('blOkBtn'); if(btn) btn.disabled = true;
@@ -425,16 +430,17 @@ window.openBLChanges = function(){
     changeRow('chgHs','H.S. Code', (d.hs_lines||[]).map(x=>x.code).filter(Boolean).join(' & '), `<div id="hsRows">${hs}</div><button class="btn btn-outline" style="margin-top:8px;padding:7px 12px;" onclick="addHSLine()">Add H.S. Code</button><label style="display:block;margin-top:8px;"><select id="hsShow"><option value="yes" ${d.hs_show_on_bl!==false?'selected':''}>show on B/L</option><option value="no" ${d.hs_show_on_bl===false?'selected':''}>do not show on B/L</option></select></label><div class="muted" style="margin-top:8px;">Our China export declaration uses a separate code. A different code here does not affect shipment.</div>`) +
     changeRow('chgClearance','Clearance documents','Blank fields stay blank', `${clr}<div class="muted" style="margin-top:8px;">Blank fields will be submitted as blank. Adding them later may incur amendment fees.</div>`) +
     '<div class="sec-sub" style="margin-top:14px;font-weight:800;">Our data — tell us if anything looks wrong</div>' +
-    changeRow('chgGoods','Goods / quantity / weight / measurement','Comment only', '<textarea id="chgGoodsText" rows="3" placeholder="Tell us what looks wrong."></textarea>') +
-    changeRow('chgCntr','Container & seal','As per terminal record', '<div class="muted">As per the terminal record / carrier feed. Not amendable.</div><textarea id="chgCntrText" rows="3" placeholder="Tell us what looks wrong."></textarea>') +
-    changeRow('chgSchedule','Schedule','As per carrier feed', '<div class="muted">As per the terminal record / carrier feed. Not amendable.</div><textarea id="chgScheduleText" rows="3" placeholder="Tell us what looks wrong."></textarea>');
+    changeRow('chgGoods','Goods / quantity / weight / measurement',tr('cust.commentOnly'), `<textarea id="chgGoodsText" rows="3" placeholder="${esc(tr('cust.tellWrong'))}"></textarea>`) +
+    changeRow('chgCntr','Container & seal','As per terminal record', `<div class="muted">${esc(tr('cust.asCarrier'))}</div><textarea id="chgCntrText" rows="3" placeholder="${esc(tr('cust.tellWrong'))}"></textarea>`) +
+    changeRow('chgSchedule','Schedule','As per carrier feed', `<div class="muted">${esc(tr('cust.asCarrier'))}</div><textarea id="chgScheduleText" rows="3" placeholder="${esc(tr('cust.tellWrong'))}"></textarea>`);
   $('blChangeModal').classList.remove('hidden');
+  i18n();
 };
 window.closeBLChanges = function(){ $('blChangeModal').classList.add('hidden'); };
 window.addHSLine = function(){
   const div = document.createElement('div');
   div.style.cssText='display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-top:6px;';
-  div.innerHTML='<input placeholder="SKU / item"><input placeholder="H.S. Code"><button class="btn btn-outline" style="padding:6px 10px;" onclick="this.parentNode.remove()">Remove</button>';
+  div.innerHTML=`<input placeholder="SKU / item"><input placeholder="H.S. Code"><button class="btn btn-outline" style="padding:6px 10px;" onclick="this.parentNode.remove()">${esc(tr('cust.remove'))}</button>`;
   $('hsRows').appendChild(div);
 };
 window.submitBLChanges = async function(){

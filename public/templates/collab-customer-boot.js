@@ -13,12 +13,18 @@ function enPart(v){
   const m = t.match(/[A-Za-z][A-Za-z0-9 ,.'()\/-]{2,}/);
   return m ? m[0].trim() : t;
 }
+function isMalaysiaCustomer(s){
+  const src = {...(s||{}), ...((s||{}).customer_profile||{})};
+  const vals = ['consignee_country','country_code','customer_country','country','destination_country'].map(k=>String(src[k]||'').trim().toUpperCase());
+  return vals.some(v => v === 'MY' || v === 'MYS' || v === 'MALAYSIA');
+}
 async function boot(){
   if(!token){ show('stateDead'); return; }
   const r = await fetch(`${API}/validate?token=${encodeURIComponent(token)}`);
   const d = await r.json().catch(()=>({}));
   if(!d.valid || d.role!=='customer_booking'){ show('stateDead'); return; }
   sheet = d.booking_sheet || {};
+  if(window.CollabI18n && isMalaysiaCustomer(sheet)) CollabI18n.useDefault('bm');
   window._billing = d.billing || {};
   window.__fp = d.factory_progress || null;
   sailings = Array.isArray(sheet.sailings)?sheet.sailings:[];
@@ -32,19 +38,19 @@ async function boot(){
   const ctns = sheet.total_cartons || items.reduce((s,x)=>s+(Number(x.ctns)||0),0) || null;
   const gw = sheet.gross_weight_kg || items.reduce((s,x)=>s+(Number(x.gw_kgs)||0),0) || null;
   const kvs = [
-    ['Orders', orderNos||'—', ''],
-    ['Factory Ready', (()=>{
+    [tr('cust.orders'), orderNos||'—', ''],
+    [tr('cust.factoryReady'), (()=>{
       const fp = window.__fp;
       if(fp && fp.total > 1){
         const done = fp.submitted >= fp.total;
-        return (done?'Confirmed ':'In progress ') + fp.submitted + '/' + fp.total
+        return (done?tr('common.confirmed') + ' ':tr('cust.inProgress') + ' ') + fp.submitted + '/' + fp.total
           + (done?(' — '+fmt(sheet.factory_cargo_ready)):'');
       }
-      return sheet.factory_submitted?('Confirmed — '+fmt(sheet.factory_cargo_ready)):'Pending factory confirmation';
+      return sheet.factory_submitted?(tr('common.confirmed') + ' — '+fmt(sheet.factory_cargo_ready)):tr('cust.pendingFactory');
     })(), (window.__fp ? (window.__fp.submitted>=window.__fp.total?'green':'') : (sheet.factory_submitted?'green':''))],
-    ['Cargo', [ctns?ctns.toLocaleString()+' CTNS':null, gw?Number(gw).toLocaleString()+' KGS':null,
+    [tr('cust.cargo'), [ctns?ctns.toLocaleString()+' CTNS':null, gw?Number(gw).toLocaleString()+' KGS':null,
       sheet.total_cbm?(Math.round(Number(sheet.total_cbm)*1000)/1000)+' CBM':null].filter(Boolean).join(' · ')||'—',''],
-    ['Container', (sheet.container_type||'—')+(sheet.container_qty?' × '+sheet.container_qty:''),''],
+    [tr('cust.container'), (sheet.container_type||'—')+(sheet.container_qty?' × '+sheet.container_qty:''),''],
   ];
   $('kvBox').innerHTML = kvs.map(k=>`<div class="kv"><span class="k">${k[0]}</span><span class="v ${k[2]}">${esc(k[1])}</span></div>`).join('');
 
@@ -59,7 +65,7 @@ async function boot(){
   window.renderPrice = function(){
     const rows = [];
     if (sheet.so_no || sheet.bl_no) {
-      rows.push(`<div class="bill"><span class="pill ok">Booked</span><span style="flex:1;"></span><button class="bdl" onclick="window.toggleSail&&toggleSail()">Change sailing</button></div>`);
+      rows.push(`<div class="bill"><span class="pill ok">${esc(tr('common.booked'))}</span><span style="flex:1;"></span><button class="bdl" onclick="window.toggleSail&&toggleSail()">${esc(tr('common.change'))}</button></div>`);
     }
     renderBillingEntry(window._billing||{});
     if(rows.length) $('priceBox').insertAdjacentHTML('afterbegin', rows.join(''));
@@ -156,21 +162,22 @@ async function boot(){
   })();
   renderConfirmState();
   show('stateForm');
+  i18n();
   if (d.is_admin) { const af = $('adminFinanceCard'); if(af) af.style.display=''; }
 }
 
 async function confirmBooking(){
-  if(selIdx<0){ toast('Please select a sailing first.'); return; }
+  if(selIdx<0){ toast(tr('cust.selectFirst')); return; }
   const x = sailings[selIdx];
-  const amendTip = window._isAmend ? '\nThis is an amendment and may incur amendment fees.' : '';
-  if(!confirm(`Confirm booking: ${x.vessel||''} · ETD ${fmt(x.etd)}?\nSanlyn will lock this sailing after your confirmation.${amendTip}`)) return;
+  const amendTip = window._isAmend ? tr('cust.amendExtra') : '';
+  if(!confirm(tr('cust.confirmQuestion', { vessel:x.vessel || '', etd:fmt(x.etd), extra:amendTip }))) return;
   $('btnConfirm').disabled = true;
   try{
     const r = await fetch(`${API}/customer-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token,selected_sailing:x,reference_no:null,remarks:null})});
     const d = await r.json();
     $('btnConfirm').disabled = false;
-    if(!r.ok||!d.ok){ toast(d.error||'Submit failed'); return; }
+    if(!r.ok||!d.ok){ toast(d.error||tr('cust.submitFailed')); return; }
     if(window._isAmend){
       sheet.customer_amend = { count: ((sheet.customer_amend&&Number(sheet.customer_amend.count))||0) + 1 };
       window._isAmend = false;
@@ -180,7 +187,8 @@ async function confirmBooking(){
     sheet.customer_submitted_at = new Date().toISOString();
     renderConfirmState();
     window.scrollTo({top:0,behavior:'smooth'});
-  }catch(e){ $('btnConfirm').disabled=false; toast('Network error. Please try again.'); }
+  }catch(e){ $('btnConfirm').disabled=false; toast(tr('cust.network')); }
 }
 
+window.onCollabI18nChange = function(){ renderConfirmState(); if(window.renderJourney) renderJourney(); if(window.renderCustomerInfo) renderCustomerInfo(); if(window.renderCertificatesAndDownloads) renderCertificatesAndDownloads(); renderSailings(); if(window.renderBLDraft) renderBLDraft(); };
 boot();
