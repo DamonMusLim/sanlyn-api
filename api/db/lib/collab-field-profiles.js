@@ -38,6 +38,26 @@ const FACTORY_CUSTOMS_FORBIDDEN_KEYS = new Set([
 
 const FACTORY_CUSTOMS_FORBIDDEN_TEXT = ["销售", "毛利"];
 
+// 🔴 客户绝不该看到工厂身份（Damon 2026-08-08：「去掉工厂信息，只看到产品和柜子」）
+//    实测客户 token 返回里工厂名出现 12 次，分布在 orders[].factory /
+//    containers_detail[].factory / factory_cargo[].factory_label。
+//    看到工厂 = 客户有绕过我们直连工厂的可能，这是生意的根。
+//    ⚖️ 在【权限层】砍，不在 UI 层藏 —— UI 藏起来的东西，F12 照样看得到。
+const FACTORY_IDENTITY_KEYS = new Set([
+  "factory", "factory_label", "factory_name", "factory_cn", "factory_en",
+  "factory_code", "factory_company_id", "manufacturer", "manufacturer_name",
+  "supplier_name", "supplier_cn",
+]);
+
+function stripFactoryIdentityDeep(node) {
+  if (Array.isArray(node)) { node.forEach(stripFactoryIdentityDeep); return; }
+  if (!node || typeof node !== "object") return;
+  for (const k of Object.keys(node)) {
+    if (FACTORY_IDENTITY_KEYS.has(k)) { delete node[k]; continue; }
+    stripFactoryIdentityDeep(node[k]);
+  }
+}
+
 const COUNTERPARTY_KEYS = new Set([
   "counterparty", "counterparty_name", "counterparty_code", "counterparty_company_code",
   "payer_company_code", "supplier_company_code", "customer_code", "customer_company_code",
@@ -170,6 +190,10 @@ export function sanitizeSheet(sheet, { role, field_profile, plan } = {}) {
     safe.containers_live = [];
     safe.containers_detail = [];
     safe.scope_missing = true;
+  }
+  // 客户视角：抹掉一切工厂身份（产品、柜子照给，工厂是谁不给）
+  if (role === "customer_booking" || clean(field_profile) === "customer") {
+    stripFactoryIdentityDeep(safe);
   }
   delete safe.freight_sale_usd;
   // 🔴 兜底硬闸：内部标识绝不外发。即使有人把它加回白名单，这里也拦得住。
