@@ -1,3 +1,11 @@
+// 客户页是全英文：pol/pod 库里存的是中英混排(如「巴生港西港 Port Klang Westport」)，
+// 页头只取英文段。取不到就原样给(总比空好)，⛔ 不自己翻译。
+function enPart(v){
+  const t = String(v == null ? "" : v).trim();
+  if (!t) return "";
+  const m = t.match(/[A-Za-z][A-Za-z0-9 ,.'()\/-]{2,}/);
+  return m ? m[0].trim() : t;
+}
 async function boot(){
   if(!token){ show('stateDead'); return; }
   const r = await fetch(`${API}/validate?token=${encodeURIComponent(token)}`);
@@ -9,7 +17,7 @@ async function boot(){
   sailings = Array.isArray(sheet.sailings)?sheet.sailings:[];
   confirmed = !!sheet.customer_submitted;
 
-  $('shipSub').textContent = [sheet.shipment_no, (sheet.pol&&sheet.pod)?`${sheet.pol} → ${sheet.pod}`:null,
+  $('shipSub').textContent = [sheet.shipment_no, (sheet.pol&&sheet.pod)?`${enPart(sheet.pol)} → ${enPart(sheet.pod)}`:null,
     sheet.etd?('ETD '+fmt(sheet.etd)):null].filter(Boolean).join(' · ');
   const orders = Array.isArray(sheet.orders)?sheet.orders:[];
   const orderNos = orders.map(o=>o.order_no).filter(Boolean).join(' / ');

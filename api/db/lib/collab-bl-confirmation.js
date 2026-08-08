@@ -26,6 +26,14 @@ function clean(v, max = 500) {
   return String(v == null ? "" : v).trim().slice(0, max);
 }
 
+// 从中英混排里取英文段（客户页是全英文）。取不到就原样返回，⛔ 不自己翻译。
+function enPart(v) {
+  const t = String(v == null ? "" : v).trim();
+  if (!t) return "";
+  const m = t.match(/[A-Za-z][A-Za-z0-9 ,.'()\/-]{2,}/);
+  return m ? m[0].trim() : t;
+}
+
 function first(...xs) {
   return xs.find(x => clean(x)) || "";
 }
@@ -87,12 +95,19 @@ function snapshot(row) {
     status: clean(gate.status || "awaiting_customer_confirmation", 60),
     deadline_at: iso(deadline),
     deadline_tz: "GMT+8",
-    shipper: clean(first(gate.shipper, raw.shipper, row.issuing_company), 1000),
+    // 发货人真源顺序：闸门快照 → raw → 计划列 → seller_profiles(is_default)。
+    // 实测 sp.issuing_company 是空的，客户页发货人栏会开天窗。
+    // ⛔ 取不到就留空并由调用方 fail-closed，绝不回落成任何默认公司名。
+    shipper: clean(first(gate.shipper, raw.shipper, row.issuing_company, row.seller_name_en), 1000),
     consignee: clean(first(gate.consignee, raw.consignee, row.customer_en, row.customer), 1000),
     notify: clean(first(gate.notify, raw.notify_party, raw.notify), 1000),
-    vessel_voyage: [row.vessel, row.voyage].map(clean).filter(Boolean).join(" "),
+    // MAP_INDEX_TRAP_FIXED 2026-08-08：原写法 .map(clean) 会把下标当 maxLen，
+    // clean(vessel,0)→"" / clean(voyage,1)→"2"，线上实测就印出了 "2"。
+    vessel_voyage: [row.vessel, row.voyage].map(v => clean(v)).filter(Boolean).join(" / "),
     pol: clean(row.pol, 80),
-    pod: clean(row.pod, 80),
+    // 客户页是全英文：pod 库里存的是中英混排(如「巴生港西港 Port Klang Westport」)，
+    // 取其中的英文段；没有英文段就原样给(总比空好)，⛔ 不自己翻译。
+    pod: clean(enPart(row.pod), 80),
     etd: iso(row.etd),
     eta: iso(row.eta),
     goods: goodsLines(row),
@@ -122,13 +137,14 @@ async function validateCustomer(pool, token) {
 async function loadPlan(pool, planId) {
   const { rows } = await pool.query(
     `SELECT sp.id, sp.customer, sp.customer_en, sp.issuing_company, sp.raw,
+            (SELECT name_en FROM seller_profiles WHERE is_default = TRUE LIMIT 1) AS seller_name_en,
             sp.vessel, sp.voyage, sp.pol, sp.pod, sp.etd, sp.eta, sp.si_cutoff_date,
             COALESCE((SELECT json_agg(json_build_object(
               'container_no', cb.container_no, 'seal_no', cb.seal_no, 'container_type', cb.container_type))
               FROM container_bookings cb WHERE cb.shipping_plan_id=sp.id), '[]'::json) AS containers,
             COALESCE((SELECT json_agg(json_build_object('order_no', o.order_no, 'country', o.country, 'items',
               COALESCE((SELECT json_agg(json_build_object(
-                'sku', oli.sku, 'barcode', oli.barcode, 'description', oli.declaration_name,
+                'sku', oli.sku, 'barcode', oli.barcode, 'description', COALESCE(NULLIF(BTRIM(oli.product_name),''), NULLIF(BTRIM(oli.declaration_name),'')),
                 'product_name', oli.product_name, 'hs_code', oli.hs_code, 'ctns', oli.qty_ctn,
                 'gw_kgs', ROUND((COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,1),
                 'cbm', ROUND((COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3)))
