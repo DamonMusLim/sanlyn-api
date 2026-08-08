@@ -13,6 +13,75 @@ function fmtD(v){
 }
 function fmt(d){ return d?fmtD(d):'—'; }
 function fmtDT(v){ return v ? `${fmtD(v)} (GMT+8)` : '—'; }
+function fmtFeedDT(v){
+  if(!v) return '';
+  try{
+    const parts = new Intl.DateTimeFormat('en-GB',{
+      timeZone:'Asia/Shanghai',day:'2-digit',month:'short',year:'numeric',
+      hour:'2-digit',minute:'2-digit',hour12:false
+    }).formatToParts(new Date(v)).reduce((m,p)=>{ m[p.type]=p.value; return m; },{});
+    return `${parts.day} ${parts.month} ${parts.year}, ${parts.hour}:${parts.minute} (GMT+8)`;
+  }catch(e){ return ''; }
+}
+function numText(v){
+  const n = Number(v);
+  if(!Number.isFinite(n) || n === 0) return '';
+  return n.toLocaleString('en-US',{maximumFractionDigits:3});
+}
+function uniqueList(xs){
+  const seen = new Set();
+  return xs.map(x=>String(x||'').trim()).filter(x=>{
+    if(!x || seen.has(x)) return false;
+    seen.add(x);
+    return true;
+  });
+}
+function statusEn(v){
+  const t = String(v||'').trim();
+  const map = {
+    '\u8fdb\u6e2f':'At origin port',
+    '\u5728\u9014':'In transit',
+    '\u5230\u6e2f':'Arrived'
+  };
+  return map[t] || t;
+}
+function renderJourney(){
+  const card = $('journeyCard'), box = $('journeyBox');
+  if(!card || !box) return;
+  const startRaw = sheet.portun_atd || sheet.etd;
+  const endRaw = sheet.portun_ata || sheet.eta;
+  if(!sheet.etd || !sheet.eta || !startRaw || !endRaw){ card.style.display='none'; return; }
+  const startMs = new Date(startRaw).getTime();
+  const endMs = new Date(endRaw).getTime();
+  if(!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs){ card.style.display='none'; return; }
+  const pct = Math.max(0, Math.min(1, (Date.now() - startMs) / (endMs - startMs)));
+  const x = Math.round((84 + pct * 472) * 10) / 10;
+  const labelX = Math.max(156, Math.min(484, x));
+  const pol = enPart(sheet.pol) || 'Origin';
+  const pod = enPart(sheet.pod) || 'Destination';
+  const status = statusEn(sheet.portun_status_cn) || (pct <= 0 ? 'At origin port' : (pct >= 1 ? 'Arrived' : 'In transit'));
+  const startLabel = sheet.portun_atd ? 'Actual departure' : 'Estimated departure';
+  const endLabel = sheet.portun_ata ? 'Actual arrival' : 'Estimated arrival';
+  const feed = fmtFeedDT(sheet.portun_synced_at);
+  $('journeySub').textContent = status;
+  box.innerHTML = `
+    <svg class="journey-svg" viewBox="0 0 640 154" role="img" aria-label="Shipment journey from ${esc(pol)} to ${esc(pod)}">
+      <line class="journey-track" x1="84" y1="70" x2="556" y2="70"></line>
+      <line class="journey-done" x1="84" y1="70" x2="${x}" y2="70"></line>
+      <circle class="journey-point journey-start" cx="84" cy="70" r="9"></circle>
+      <circle class="journey-point" cx="556" cy="70" r="9"></circle>
+      <path class="journey-now" d="M ${x} 58 L ${x+12} 70 L ${x} 82 L ${x-12} 70 Z"></path>
+      <text class="journey-port" x="84" y="32" text-anchor="middle">${esc(pol)}</text>
+      <text class="journey-port" x="556" y="32" text-anchor="middle">${esc(pod)}</text>
+      <text class="journey-label" x="84" y="108" text-anchor="middle">${esc(startLabel)}</text>
+      <text class="journey-label" x="${labelX}" y="108" text-anchor="middle">${esc(status)}</text>
+      <text class="journey-label" x="556" y="108" text-anchor="middle">${esc(endLabel)}</text>
+      <text class="journey-date" x="84" y="132" text-anchor="middle">${fmtD(startRaw)}</text>
+      <text class="journey-date" x="556" y="132" text-anchor="middle">${fmtD(endRaw)}</text>
+    </svg>
+    ${feed?`<div class="journey-feed">Carrier feed · updated ${esc(feed)}</div>`:''}`;
+  card.style.display = '';
+}
 function openBillingInvoice(){
   if(!window._billingToken) return;
   window.open('/public/invoice-confirm-preview.html?token='+encodeURIComponent(window._billingToken), '_blank', 'noopener');
@@ -33,9 +102,8 @@ let sheet = {}, sailings = [], selIdx = -1, confirmed = false, noteTimer = null,
 
 function renderConfirmState(){
   if(confirmed){
-    const x = sailings[selIdx] || sheet.customer_selected_sailing || {};
     $('confirmedBanner').classList.remove('hidden');
-    $('confirmedText').textContent = `Booking confirmed: ${x.vessel||''} · ETD ${fmt(x.etd)}`;
+    $('confirmedText').textContent = 'Booking confirmed';
     $('confirmedSub').textContent = (sheet.customer_submitted_at?`Confirmed at ${fmtDT(sheet.customer_submitted_at)} · `:'') + 'Sanlyn has received your confirmation.';
     $('actionBadge').textContent='Confirmed'; $('actionBadge').className='badge badge-green';
     $('confirmZone').style.display='none';
@@ -79,9 +147,8 @@ function renderSailings(){
   if(!sailings.length){
     if (sheet.so_no || sheet.bl_no) {
       $('sailCount').textContent = 'Booked';
-      const seg = [sheet.vessel, sheet.voyage].filter(Boolean).join(' · ');
       $('sailBox').innerHTML = `<div style="padding:14px 16px;font-size:13px;background:#f0fdf4;border-radius:8px;margin:0 0 4px;">
-        <b>Booked: ${esc(seg||'—')}</b>${sheet.etd?` · ETD ${fmt(sheet.etd)}`:''}</div>`;
+        <b>Booked</b></div>`;
     }
     return;
   }
@@ -127,12 +194,7 @@ function renderCargo(){
     const its = o.items||[];
     if(!its.length) return;
     const dgBadge = o.export_mode==='daigou' ? ' <span style="background:#f3e8ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:4px;padding:1px 7px;font-size:10px;">DAIGOU · Buying Agent</span>' : '';
-    const liveC = Array.isArray(sheet.containers_live)?sheet.containers_live:[];
-    const myC = liveC.filter(x=>(x.cargo||[]).some(g=>g.order_no===o.order_no));
-    const cntrTag = myC.length
-      ? myC.map(x=>`<span style="color:#475569;font-weight:600;"> Container ${esc(x.container_no||'')}${x.seal_no?' · Seal '+esc(x.seal_no):''}${x.container_type?' · '+esc(x.container_type):''}</span>`).join('')
-      : ' <span style="color:#9ca3af;font-weight:400;font-size:10px;"> Container pending</span>';
-    html += `<tr><td colspan="7" style="background:#f1f5f9;font-weight:800;font-size:11px;color:#334155;padding:6px 10px;">ORDER ${esc((o.order_no||'').replace(/^\d+-/,''))}　·　${esc(o.contract_no||'')}${dgBadge}${cntrTag}</td></tr>`;
+    html += `<tr><td colspan="7" style="background:#f1f5f9;font-weight:800;font-size:11px;color:#334155;padding:6px 10px;">ORDER ${esc((o.order_no||'').replace(/^\d+-/,''))} · ${esc(o.contract_no||'')}${dgBadge}</td></tr>`;
     its.forEach((it,i)=>{
       let bc = it.barcode;
       if(!bc){ gSeq++; bc = 'G-'+String(gSeq).padStart(4,'0'); }
@@ -200,6 +262,25 @@ function blCell(label, value){ return `<div class="bl-box"><div class="bl-lbl">$
 function blRows(rows, cols){
   return rows.length ? rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c]||'—')}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${cols.length}">—</td></tr>`;
 }
+function blGoodsSummary(d){
+  const lines = Array.isArray(d.goods) ? d.goods : [];
+  const cartons = lines.reduce((s,x)=>s+(Number(x.cartons)||0),0);
+  const weight = lines.reduce((s,x)=>s+(Number(x.gross_weight_kg)||0),0);
+  const cbm = lines.reduce((s,x)=>s+(Number(x.cbm)||0),0);
+  const descs = uniqueList(lines.map(x=>x.description));
+  const hs = uniqueList(Array.isArray(d.hs_lines) ? d.hs_lines.map(x=>x.code) : []);
+  let commodity = descs.length === 1 ? descs[0] : '';
+  if(!commodity && descs.some(x=>/CAT\s+LITTER/i.test(x))) commodity = 'CAT LITTER';
+  if(!commodity && descs.some(x=>/\bLITTER\b/i.test(x))) commodity = 'CAT LITTER';
+  commodity = commodity || 'GOODS';
+  return [{
+    description: `${cartons ? numText(cartons) + ' CARTONS OF ' : ''}${commodity}`.trim(),
+    package: cartons ? `${numText(cartons)} CTNS` : '',
+    weight: weight ? `${numText(weight)} KGS` : '',
+    cbm: cbm ? `${numText(cbm)} CBM` : '',
+    hs: hs.join(' / ')
+  }];
+}
 function renderBLCountdown(){
   const d = window._blDraft;
   const el = $('blCountdown');
@@ -217,12 +298,7 @@ window.renderBLDraft = function(){
   if(!card || !d || !d.deadline_at){ if(card) card.style.display='none'; return; }
   card.style.display = '';
   const locked = ['customer_confirmed','revision_requested','auto_submitted'].includes(d.status);
-  const goods = (d.goods||[]).map(x=>({
-    description:x.description,
-    package:x.cartons ? `${x.cartons} CTNS` : '',
-    weight:x.gross_weight_kg ? `${x.gross_weight_kg} KGS` : '',
-    cbm:x.cbm ? `${x.cbm} CBM` : '',
-  }));
+  const goods = blGoodsSummary(d);
   const cntrs = (d.containers||[]).map(x=>({container:x.container_no,type:x.type,seal:x.seal_no}));
   $('blDraftBox').innerHTML = `
     <div class="bl-alert">
@@ -238,11 +314,10 @@ window.renderBLDraft = function(){
         ${blCell('Vessel / Voyage', d.vessel_voyage)}
         ${blCell('Port of Loading', d.pol)}
         ${blCell('Port of Discharge', d.pod)}
-        ${blCell('ETD', fmtD(d.etd))}
-        ${blCell('ETA', fmtD(d.eta))}
       </div>
       <div class="bl-lbl">Description of Goods</div>
-      <table class="bl-table"><thead><tr><th>Description</th><th>Package</th><th>Gross Weight</th><th>Measurement</th></tr></thead><tbody>${blRows(goods,['description','package','weight','cbm'])}</tbody></table>
+      <table class="bl-table"><thead><tr><th>Description</th><th>Package</th><th>Gross Weight</th><th>Measurement</th><th>H.S. Code</th></tr></thead><tbody>${blRows(goods,['description','package','weight','cbm','hs'])}</tbody></table>
+      <div class="muted" style="font-size:11px;margin-top:6px;">Itemised breakdown: see Cargo Description above.</div>
       <div class="bl-lbl" style="margin-top:10px;">Container & Seal</div>
       <table class="bl-table"><thead><tr><th>Container No.</th><th>Type</th><th>Seal No.</th></tr></thead><tbody>${blRows(cntrs,['container','type','seal'])}</tbody></table>
     </div>

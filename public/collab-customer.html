@@ -101,6 +101,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 .chg-row.open .chg-body{display:block}
 .chg-body input,.chg-body textarea,.chg-body select{width:100%;border:1px solid currentColor;border-radius:6px;padding:8px;font:inherit;background:transparent;color:inherit}
 .muted{opacity:.7}
+:root{
+  --cust-surface: Canvas;
+  --cust-text: CanvasText;
+  --cust-muted: GrayText;
+  --cust-line: color-mix(in srgb, CanvasText 18%, transparent);
+  --cust-track: color-mix(in srgb, CanvasText 12%, transparent);
+  --cust-active: LinkText;
+  --cust-ok: color-mix(in srgb, LinkText 70%, CanvasText);
+}
+.journey-wrap{padding:14px 16px 16px}
+.journey-svg{width:100%;height:auto;color:var(--cust-text);display:block}
+.journey-track{stroke:var(--cust-track);stroke-width:6;stroke-linecap:round}
+.journey-done{stroke:var(--cust-active);stroke-width:6;stroke-linecap:round}
+.journey-point{fill:var(--cust-surface);stroke:var(--cust-active);stroke-width:4}
+.journey-start{fill:var(--cust-active)}
+.journey-now{fill:var(--cust-ok);stroke:var(--cust-surface);stroke-width:3}
+.journey-port{font-size:12px;font-weight:900;fill:var(--cust-text)}
+.journey-label{font-size:10px;font-weight:800;fill:var(--cust-muted)}
+.journey-date{font-size:11px;font-weight:800;fill:var(--cust-text)}
+.journey-feed{font-size:11px;color:var(--cust-muted);margin-top:4px}
 @media(max-width:640px){.bl-grid{grid-template-columns:1fr}.bl-actions .btn{min-width:100%}}
 </style>
 </head>
@@ -134,6 +154,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
     <div id="kvBox"></div>
   </div>
 
+  <div class="card" id="journeyCard" style="display:none;">
+    <div class="sec-head">
+      <div class="sec-title">Shipment Journey</div>
+      <div class="sec-sub" id="journeySub"></div>
+    </div>
+    <div class="journey-wrap" id="journeyBox"></div>
+  </div>
+
   <!-- Cargo Description -->
   <div class="card" id="cargoCard" style="display:none;">
     <div class="sec-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;cursor:pointer;" onclick="const t=$('cargoTable');const c=$('cargoChevron');t.style.display=t.style.display==='none'?'':'none';c.textContent=t.style.display===''?'▾':'▸';">
@@ -158,7 +186,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
   <!-- Terms and price -->
   <div class="card" id="termCard">
     <div class="sec-head">
-      <div class="sec-title">Terms, Sailings & Charges</div>
+      <div class="sec-title">Sailings & Charges</div>
     </div>
     <div style="padding:12px 16px;">
       <div style="display:flex;gap:6px;flex-wrap:wrap;" id="ttRowC"></div>

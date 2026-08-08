@@ -1,5 +1,3 @@
-// 客户页是全英文：pol/pod 库里存的是中英混排(如「巴生港西港 Port Klang Westport」)，
-// 页头只取英文段。取不到就原样给(总比空好)，⛔ 不自己翻译。
 function enPart(v){
   const t = String(v == null ? "" : v).trim();
   if (!t) return "";
@@ -38,47 +36,28 @@ async function boot(){
     ['Cargo', [ctns?ctns.toLocaleString()+' CTNS':null, gw?Number(gw).toLocaleString()+' KGS':null,
       sheet.total_cbm?(Math.round(Number(sheet.total_cbm)*1000)/1000)+' CBM':null].filter(Boolean).join(' · ')||'—',''],
     ['Container', (sheet.container_type||'—')+(sheet.container_qty?' × '+sheet.container_qty:''),''],
-    ['Incoterms', sheet.freight_term||'—',''],
   ];
   $('kvBox').innerHTML = kvs.map(k=>`<div class="kv"><span class="k">${k[0]}</span><span class="v ${k[2]}">${esc(k[1])}</span></div>`).join('');
 
   window._feLines = (sheet.fe_cert && sheet.fe_cert.lines) || {};
   renderCargo();
-  // Terms are saved through customer-notes.
+  if(window.renderJourney) window.renderJourney();
   window.renderTT = function(){
-    const TT = ['FOB','EXW','FCA','CIF','DDP','CNF/CFR'];
-    const cur = sheet.freight_term || '';
-    const curLabel = (cur==='CNF'||cur==='CFR') ? 'CNF/CFR' : cur;
-    if (cur && !window._ttExpand) {
-      $('ttRowC').innerHTML = `<div style="display:flex;align-items:center;gap:8px;">
-        <div style="padding:5px 13px;border:1.5px solid #1a73e8;border-radius:8px;font-size:12px;font-weight:700;color:#1a73e8;background:#eff6ff;">${curLabel}</div>
-        <span style="font-size:11px;color:#9ca3af;cursor:pointer;" onclick="window._ttExpand=true;renderTT();">Edit</span></div>`;
-      return;
-    }
-    $('ttRowC').innerHTML = TT.map(t=>`<div class="tt-chip${(curLabel===t)?' on':''}" data-tt="${t}"
-      style="padding:5px 13px;border:1.5px solid ${(curLabel===t)?'#1a73e8':'#e0e4ea'};border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;${(curLabel===t)?'color:#1a73e8;background:#eff6ff;':''}">${t}</div>`).join('');
-    document.querySelectorAll('.tt-chip').forEach(ch=>ch.addEventListener('click', async ()=>{
-      const v = ch.dataset.tt==='CNF/CFR'?'CNF':ch.dataset.tt;
-      try{ await fetch(`${API}/customer-notes`,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({token,freight_term:v})}); sheet.freight_term=v; window._ttExpand=false; renderTT(); renderPrice(); }catch(e){}
-    }));
+    $('ttRowC').innerHTML = '';
   };
   renderTT();
-  // Billing entry.
   window.renderPrice = function(){
     const rows = [];
     if (sheet.so_no || sheet.bl_no) {
-      const seg = [sheet.vessel, sheet.voyage].filter(Boolean).join(' · ');
       rows.push(`<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;background:#f0fdf4;border-radius:6px;padding:6px 10px;margin-bottom:4px;">
-        <span>Booked sailing <b>${esc(seg||'—')}</b>${sheet.etd?` · ETD ${fmt(sheet.etd)}`:''}</span>
-        <span style="color:#047857;font-weight:700;">Booked <span style="color:#1a73e8;font-weight:600;cursor:pointer;margin-left:8px;" onclick="window.toggleSail&&toggleSail()">Change sailing</span></span></div>`);
+        <span style="color:#047857;font-weight:700;">Booked</span>
+        <span style="color:#1a73e8;font-weight:600;cursor:pointer;margin-left:8px;" onclick="window.toggleSail&&toggleSail()">Change sailing</span></div>`);
     }
     renderBillingEntry(window._billing||{});
     if(rows.length) $('priceBox').insertAdjacentHTML('afterbegin', rows.join(''));
   };
   renderPrice();
   if(window.loadBLDraft) window.loadBLDraft();
-  // Shipping documents.
   (function(){
     const card = $('shippingDocsCard');
     const box = $('shippingDocsBox');
@@ -87,11 +66,10 @@ async function boot(){
     const dlLink = (icon, label, url) =>
       `<a href="${url}" target="_blank" style="display:flex;align-items:center;gap:10px;border:1.5px solid #e0e4ea;border-radius:10px;padding:11px 14px;text-decoration:none;color:#111827;font-size:13px;font-weight:700;">${icon} <span style="flex:1;">${label}</span><span style="color:#1a73e8;font-size:12px;">Open</span></a>`;
     items.push(dlLink('', 'Non-Dangerous Goods Declaration', `${API}/file?token=${encodeURIComponent(token)}&type=nondg`));
-    if((sheet.release_type||'')==='电放')
+    if((sheet.release_type||'')==='\u7535\u653e')
       items.push(dlLink('', 'Telex Release Letter', `${API}/file?token=${encodeURIComponent(token)}&type=telex`));
-    // uploaded signed copies from forwarder
     const signedUps = (Array.isArray(sheet.collab_uploads)?sheet.collab_uploads:[])
-      .filter(u => u && /非危|nondg|telex|电放保函/i.test(u.filename||''));
+      .filter(u => u && /\u975e\u5371|nondg|telex|\u7535\u653e\u4fdd\u51fd/i.test(u.filename||''));
     signedUps.forEach(u => {
       const url = `${API}/file?token=${encodeURIComponent(token)}&type=upload&filename=${encodeURIComponent(u.filename||'')}`;
       items.push(dlLink('', 'Signed copy · '+esc(u.filename), url));
@@ -99,7 +77,6 @@ async function boot(){
     box.innerHTML = items.join('');
     card.style.display = '';
   })();
-  // Container details.
   (function(){
     const live = [];
     if(!live.length) return;
@@ -120,11 +97,9 @@ async function boot(){
         <div style="color:#9ca3af;">${pos?'':'PO pending'}</div>
       </div>`;}).join('');
   })();
-  // FE certificate.
   window._feState = (sheet.fe_cert && sheet.fe_cert.requested) ? true : false;
   window.renderFE = function(){
     const btn = $('feBtn');
-    // Skip when the optional FE controls are not mounted.
     const must = $('feMust');
     if (sheet.is_daigou && must) must.classList.remove('hidden');
     if (!btn) return;
@@ -138,7 +113,6 @@ async function boot(){
   };
   window.toggleFE = async function(){
     const want = !window._feState;
-    // Link the header state with all line checkboxes.
     document.querySelectorAll('.fe-ck').forEach(ck=>{ if(!ck.disabled) ck.checked = want; window._feLines = window._feLines||{}; window._feLines[ck.dataset.fekey]=want; });
     if (document.querySelectorAll('.fe-ck').length) { await saveFELines(); return; }
     try{
@@ -151,34 +125,29 @@ async function boot(){
     }catch(e){ alert('Network error'); }
   };
   renderFE();
-  // Buying-agent orders require FE.
   if (sheet.is_daigou && !window._feState) { window.toggleFE(); }
-  // Document pack download.
   (function(){
     const orders0 = Array.isArray(sheet.orders)?sheet.orders:[];
     const f = (orders0.find(o=>o.order_no)||{}).order_no;
     $('dlPack').href = `${API}/file?token=${encodeURIComponent(token)}&type=pack&aud=customer`;
   })();
-  // Selected sailing banner.
   (function(){
     if(!sheet.customer_selected_sailing) return;
     const cs = typeof sheet.customer_selected_sailing==='string'?(()=>{try{return JSON.parse(sheet.customer_selected_sailing)}catch(e){return null}})():sheet.customer_selected_sailing;
     if(!cs||!cs.vessel) return;
     const bar = document.createElement('div');
     bar.style.cssText='background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:13px;';
-    bar.innerHTML = `<b>Selected sailing:</b> ${esc(cs.vessel)} ${esc(cs.voyage||'')} · ETD ${fmt(cs.etd)} <span style="color:#9ca3af;font-size:11px;margin-left:8px;">Changing to another sailing may incur amendment fees.</span>`;
+    bar.innerHTML = `<b>Selected sailing saved.</b> <span style="color:#9ca3af;font-size:11px;margin-left:8px;">Changing to another sailing may incur amendment fees.</span>`;
     const shell = document.querySelector('.shell');
     shell.insertBefore(bar, shell.firstChild.nextSibling);
   })();
   renderSailings();
-  // Re-select an already confirmed sailing.
   if(confirmed && sheet.customer_selected_sailing){
     const cs = typeof sheet.customer_selected_sailing==='string'?JSON.parse(sheet.customer_selected_sailing):sheet.customer_selected_sailing;
     const idx = sailings.findIndex(x=>x.vessel===cs.vessel&&String(x.etd)===String(cs.etd));
     if(idx>=0){ selIdx=idx; setTimeout(()=>{ const el=$('sail_'+idx); if(el){el.classList.add('selected');el.querySelector('.sel-pill').classList.remove('hidden');} },0); }
     sheet.customer_selected_sailing = cs;
   }
-  // Move sailing cards into the terms card.
   (function(){
     const sailCard = $('sailBox') && $('sailBox').closest('.card');
     const cz = $('confirmZone');
