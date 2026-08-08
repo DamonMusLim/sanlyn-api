@@ -4,279 +4,133 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sanlyn OS · Shipment Confirmation</title>
+<link rel="stylesheet" href="/public/templates/collab-ui.css">
 <style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
-  background: #f0f2f5; color: #111; font-size: 13px; }
-.shell { max-width: 760px; margin: 0 auto; padding: 20px 16px 60px; }
-.card { background: #fff; border-radius: 10px; border: 1px solid #e0e4ea;
-  overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 14px; }
-.sec-head { padding: 13px 16px; border-bottom: 1px solid #f0f2f5; }
-.sec-title { font-size: 13px; font-weight: 800; color: #1a1d23; }
-.sec-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
-
-/* My Shipment */
-.ship-head { background: #1a1d23; color: #fff; padding: 14px 18px;
-  display: flex; align-items: center; justify-content: space-between; border-radius: 10px 10px 0 0; }
-.ship-title { font-size: 14px; font-weight: 800; }
-.ship-sub { font-size: 11px; color: #9ca3af; margin-top: 3px; }
-.badge { display: inline-flex; align-items: center; padding: 4px 12px;
-  border-radius: 20px; font-size: 11px; font-weight: 800; }
-.badge-amber { background: #fef9c3; color: #a16207; }
-.badge-green { background: #dcfce7; color: #15803d; }
-
-.kv { display: flex; justify-content: space-between; padding: 10px 18px;
-  border-bottom: 1px solid #f0f2f5; font-size: 12px; }
-.kv:last-child { border-bottom: none; }
-.kv .k { color: #6b7280; }
-.kv .v { font-weight: 700; color: #1a1d23; text-align: right; }
-.kv .v.green { color: #059669; }
-
-
-/* Cargo table */
-.cg-t { width: 100%; border-collapse: collapse; font-size: 12px; }
-.cg-t th { background: #f8fafc; padding: 8px 10px; text-align: left;
-  font-size: 10px; font-weight: 800; color: #374151; border-bottom: 1px solid #e0e4ea; }
-.cg-t td { padding: 8px 10px; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }
-.note-in { width: 100%; border: 1.5px solid #e0e4ea; border-radius: 6px;
-  padding: 6px 9px; font-size: 11px; outline: none; font-family: inherit; }
-.note-in:focus { border-color: #1a73e8; }
-.note-in.saved { border-color: #fbbf24; background: #fffbeb; }
-
-/* Sailing cards */
-.sail { border: 1.5px solid #e0e4ea; border-radius: 10px; margin: 10px 16px;
-  padding: 13px 15px; cursor: pointer; transition: border-color .15s; background: #fff; }
-.sail:hover { border-color: #93c5fd; }
-.sail.selected { border: 2.5px solid #059669; background: #f6fef9; box-shadow: 0 0 0 3px #05966918; }
-.sail-top { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.sail-carrier { font-size: 13px; font-weight: 800; color: #1a1d23; }
-.sail-vessel { font-size: 11px; color: #6b7280; }
-.rec-pill { font-size: 9px; font-weight: 800; background: #dbeafe; color: #1d4ed8;
-  padding: 2px 8px; border-radius: 12px; }
-.sel-pill { margin-left: auto; font-size: 10px; font-weight: 800;
-  background: #059669; color: #fff; padding: 3px 10px; border-radius: 12px; }
-.sail-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
-.sail-cell { border: 1px solid #f0f2f5; border-radius: 8px; padding: 7px 10px; }
-.sail-cell .l { font-size: 9px; color: #9ca3af; font-weight: 700; }
-.sail-cell .d { font-size: 12px; font-weight: 800; color: #1a1d23; margin-top: 2px; }
-.sail-cell .d.red { color: #b91c1c; }
-.sail-cell .d.green { color: #059669; }
-
-.confirm-bar { background: #eff6ff; border-top: 1px solid #dbeafe; padding: 11px 16px;
-  font-size: 11.5px; color: #1e40af; }
-.btn { padding: 12px 24px; border-radius: 9px; border: none; font-size: 13px;
-  font-weight: 800; cursor: pointer; }
-.btn-green { background: #059669; color: #fff; width: 100%; }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-
-/* Confirmed banner */
-.confirmed-banner { background: linear-gradient(135deg,#ecfdf5,#d1fae5);
-  border: 1.5px solid #86efac; border-radius: 10px; padding: 14px 18px;
-  margin-bottom: 14px; display: flex; align-items: center; gap: 12px; }
-
-.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  background: #1a1d23; color: #fff; padding: 10px 22px; border-radius: 20px;
-  font-size: 12px; font-weight: 700; display: none; z-index: 999; }
-.toast.show { display: block; }
-.hidden { display: none !important; }
-.center-state { text-align: center; padding: 70px 20px; color: #6b7280; }
-.center-state .big { font-size: 44px; margin-bottom: 14px; }
-.center-state h2 { font-size: 17px; font-weight: 800; color: #1a1d23; margin-bottom: 6px; }
-.sync-dot { font-size: 10px; color: #059669; font-weight: 700; float: right; }
-.bl-alert{padding:12px 16px;border-bottom:1px solid currentColor;font-size:12px;line-height:1.5}
-.bl-doc{border:1px solid currentColor;border-radius:8px;margin:12px 16px;padding:14px;background:inherit}
-.bl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-bottom:1px solid currentColor;padding-bottom:10px;margin-bottom:10px}
-.bl-box{border:1px solid currentColor;border-radius:6px;padding:10px;min-height:74px;white-space:pre-wrap}
-.bl-lbl{font-size:10px;font-weight:900;text-transform:uppercase;margin-bottom:5px;opacity:.7}
-.bl-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:8px}
-.bl-table th,.bl-table td{border:1px solid currentColor;padding:7px;text-align:left;vertical-align:top}
-.bl-actions{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 16px}
-.bl-actions .btn{flex:1;min-width:180px}
-.btn-outline{background:transparent;border:1.5px solid currentColor;color:inherit}
-.modal{position:fixed;inset:0;background:color-mix(in srgb, CanvasText 38%, transparent);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto}
-.modal-panel{background:Canvas;color:CanvasText;border:1px solid currentColor;border-radius:8px;max-width:760px;width:100%;padding:14px}
-.chg-row{border:1px solid currentColor;border-radius:8px;margin-top:8px;overflow:hidden}
-.chg-sum{width:100%;background:transparent;color:inherit;border:0;padding:10px 12px;text-align:left;font-weight:800;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
-.chg-body{display:none;border-top:1px solid currentColor;padding:10px 12px}
-.chg-row.open .chg-body{display:block}
-.chg-body input,.chg-body textarea,.chg-body select{width:100%;border:1px solid currentColor;border-radius:6px;padding:8px;font:inherit;background:transparent;color:inherit}
-.muted{opacity:.7}
-:root{
-  --cust-surface: Canvas;
-  --cust-text: CanvasText;
-  --cust-muted: GrayText;
-  --cust-line: color-mix(in srgb, CanvasText 18%, transparent);
-  --cust-track: color-mix(in srgb, CanvasText 12%, transparent);
-  --cust-active: LinkText;
-  --cust-ok: color-mix(in srgb, LinkText 70%, CanvasText);
-}
-.journey-wrap{padding:14px 16px 16px}
-.journey-svg{width:100%;height:auto;color:var(--cust-text);display:block}
-.journey-track{stroke:var(--cust-track);stroke-width:6;stroke-linecap:round}
-.journey-done{stroke:var(--cust-active);stroke-width:6;stroke-linecap:round}
-.journey-point{fill:var(--cust-surface);stroke:var(--cust-active);stroke-width:4}
-.journey-start{fill:var(--cust-active)}
-.journey-now{fill:var(--cust-ok);stroke:var(--cust-surface);stroke-width:3}
-.journey-port{font-size:12px;font-weight:900;fill:var(--cust-text)}
-.journey-label{font-size:10px;font-weight:800;fill:var(--cust-muted)}
-.journey-date{font-size:11px;font-weight:800;fill:var(--cust-text)}
-.journey-feed{font-size:11px;color:var(--cust-muted);margin-top:4px}
-@media(max-width:640px){.bl-grid{grid-template-columns:1fr}.bl-actions .btn{min-width:100%}}
+.shell{display:flex;flex-direction:column;gap:12px}
+.ship-head{background:var(--ink);color:var(--card);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ship-title{font-size:14px;font-weight:800}.ship-sub{font-size:11px;color:var(--faint);margin-top:3px}
+.confirmed-banner{background:var(--ok-soft);border:1.5px solid var(--ok);border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:12px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--card);padding:10px 22px;border-radius:20px;font-size:12px;font-weight:700;display:none;z-index:999}
+.toast.show{display:block}
+.section-row{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.customer-details{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card);margin-top:10px}
+.customer-details>summary{list-style:none;cursor:pointer;padding:12px;background:var(--row);display:flex;align-items:center;gap:10px}
+.customer-details>summary::-webkit-details-marker{display:none}
+.customer-details .sum-title{font-weight:800}.customer-details .sum-sub{font-size:11.5px;color:var(--sub)}
+.customer-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}
+.field-missing{border-color:var(--wait);background:var(--wait-soft)}
+.field-missing .v{color:var(--wait)}
+.bl-alert{background:var(--amber-bar);border:1px solid var(--amber-line);border-radius:10px;padding:12px;font-size:12px;line-height:1.5;color:var(--amber-ink);margin-bottom:10px}
+.bl-doc{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--row)}
+.bl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.bl-box{border:1px solid var(--line);border-radius:8px;padding:10px;min-height:74px;background:var(--card);white-space:pre-wrap}
+.bl-lbl{font-size:10px;font-weight:900;text-transform:uppercase;margin-bottom:5px;color:var(--faint)}
+.bl-table,.cg-t{width:100%;border-collapse:collapse;font-size:12px}
+.bl-table th,.bl-table td,.cg-t th,.cg-t td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+.bl-table th,.cg-t th{font-size:10px;font-weight:800;color:var(--faint);background:var(--row)}
+.bl-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.bl-actions .btn{flex:1;min-width:180px}
+.note-in{width:100%;border:1.5px solid var(--line);border-radius:6px;padding:6px 9px;font-size:11px;outline:none;font-family:inherit;background:var(--card);color:var(--ink)}
+.note-in:focus{border-color:var(--brand)}.note-in.saved{border-color:var(--wait);background:var(--wait-soft)}
+.sync-dot{font-size:10px;color:var(--ok);font-weight:700;float:right}
+.journey-wrap{padding:14px 16px 16px}.journey-svg{width:100%;height:auto;color:var(--ink);display:block}
+.journey-track{stroke:var(--line);stroke-width:6;stroke-linecap:round}.journey-done{stroke:var(--brand);stroke-width:6;stroke-linecap:round}
+.journey-point{fill:var(--card);stroke:var(--brand);stroke-width:4}.journey-start{fill:var(--brand)}
+.journey-now{fill:var(--ok);stroke:var(--card);stroke-width:3}.journey-port{font-size:12px;font-weight:900;fill:var(--ink)}
+.journey-label{font-size:10px;font-weight:800;fill:var(--sub)}.journey-date{font-size:11px;font-weight:800;fill:var(--ink)}
+.journey-feed{font-size:11px;color:var(--sub);margin-top:4px}
+.sail{border:1.5px solid var(--line);border-radius:10px;margin-top:10px;padding:13px 15px;cursor:pointer;background:var(--card)}
+.sail.selected{border-color:var(--ok);background:var(--ok-soft)}.sail-top{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.sail-main{font-size:13px;font-weight:800}.sail-vessel{font-size:11px;color:var(--sub)}
+.rec-pill{font-size:9px;font-weight:800;background:var(--brand-soft);color:var(--brand-ink);padding:2px 8px;border-radius:12px}
+.sel-pill{margin-left:auto;font-size:10px;font-weight:800;background:var(--ok);color:var(--card);padding:3px 10px;border-radius:12px}
+.sail-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.sail-cell{border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.sail-cell .l{font-size:9px;color:var(--faint);font-weight:700}.sail-cell .d{font-size:12px;font-weight:800;margin-top:2px}.sail-cell .d.red{color:var(--err)}
+.confirm-bar{background:var(--brand-soft);border:1px solid var(--line);border-radius:9px;padding:11px 12px;font-size:11.5px;color:var(--brand-ink);margin-top:8px}
+.modal{position:fixed;inset:0;background:rgba(10,16,24,.5);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:28px 12px;overflow:auto}
+.modal-panel{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;max-width:760px;width:100%;padding:14px}
+.chg-row{border:1px solid var(--line);border-radius:8px;margin-top:8px;overflow:hidden}.chg-sum{width:100%;background:var(--row);color:var(--ink);border:0;padding:10px 12px;text-align:left;font-weight:800;cursor:pointer;display:flex;justify-content:space-between;gap:12px}
+.chg-body{display:none;border-top:1px solid var(--line);padding:10px 12px}.chg-row.open .chg-body{display:block}
+.chg-body input,.chg-body textarea,.chg-body select{width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;font:inherit;background:var(--card);color:var(--ink)}
+@media(max-width:640px){.bl-grid,.customer-grid,.sail-grid{grid-template-columns:1fr}.bl-actions .btn{min-width:100%}}
 </style>
 </head>
 <body>
-
 <div class="center-state" id="stateLoading"><div class="big">...</div><p>Loading...</p></div>
-
 <div class="hidden" id="stateForm">
-<div class="shell">
-
-  <!-- Confirmed banner -->
-  <div class="confirmed-banner hidden" id="confirmedBanner">
-    <div style="font-size:26px;">✅</div>
-    <div style="flex:1;">
-      <div style="font-size:13px;font-weight:800;color:#065f46;" id="confirmedText">Confirmed</div>
-      <div style="font-size:11px;color:#047857;margin-top:2px;" id="confirmedSub"></div>
+  <div class="app shell">
+    <div class="confirmed-banner hidden" id="confirmedBanner">
+      <div style="font-size:26px;">OK</div>
+      <div style="flex:1;"><div style="font-size:13px;font-weight:800;" id="confirmedText">Confirmed</div><div style="font-size:11px;margin-top:2px;" id="confirmedSub"></div></div>
+      <button class="bdl" onclick="reopen()">Change</button>
     </div>
-    <button onclick="reopen()" style="background:none;border:1px solid #86efac;color:#047857;
-      padding:6px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;">Change</button>
-  </div>
 
-  <!-- My Shipment -->
-  <div class="card">
-    <div class="ship-head">
-      <div>
-        <div class="ship-title">My Shipment</div>
-        <div class="ship-sub" id="shipSub">—</div>
+    <div class="block">
+      <div class="ship-head">
+        <div><div class="ship-title">My Shipment</div><div class="ship-sub" id="shipSub">-</div></div>
+        <span class="pill wait" id="actionBadge">Action required</span>
       </div>
-      <span class="badge badge-amber" id="actionBadge">Action required</span>
+      <div class="bb mini-grid" id="kvBox"></div>
     </div>
-    <div id="kvBox"></div>
-  </div>
 
-  <div class="card" id="journeyCard" style="display:none;">
-    <div class="sec-head">
-      <div class="sec-title">Shipment Journey</div>
-      <div class="sec-sub" id="journeySub"></div>
-    </div>
-    <div class="journey-wrap" id="journeyBox"></div>
-  </div>
-
-  <!-- Cargo Description -->
-  <div class="card" id="cargoCard" style="display:none;">
-    <div class="sec-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;cursor:pointer;" onclick="const t=$('cargoTable');const c=$('cargoChevron');t.style.display=t.style.display==='none'?'':'none';c.textContent=t.style.display===''?'▾':'▸';">
-      <div>
-        <div class="sec-title">Cargo Description <span class="sync-dot hidden" id="syncDot">Saved</span></div>
-        <div class="sec-sub" id="cargoSub">Please review before booking. Notes are saved automatically.</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-        <span id="cargoChevron" style="font-size:16px;color:#9ca3af;">▾</span>
+    <div class="block" id="blDraftCard" style="display:none;">
+      <div class="bh"><h2>1. Customer Details & Bill of Lading</h2><p>Please confirm the draft before the deadline.</p></div>
+      <div class="bb">
+        <div id="blDraftBox"></div>
+        <details class="customer-details" id="customerInfoDetails">
+          <summary><div style="flex:1;"><div class="sum-title">Customer profile</div><div class="sum-sub" id="customerInfoSummary">Verified</div></div><span class="pill ok" id="customerInfoBadge">Verified</span></summary>
+          <div class="customer-grid" id="customerInfoBox"></div>
+        </details>
       </div>
     </div>
-    <div id="cargoTable">
-    <table class="cg-t">
-      <thead><tr><th>Brand Code</th><th>Description</th><th style="width:96px;">HS Code</th>
-        <th style="width:54px;">FE</th><th style="width:54px;">CTNS</th>
-        <th style="width:72px;">GW (KGS)</th><th style="width:170px;">Your Notes</th></tr></thead>
-      <tbody id="cargoBody"></tbody>
-    </table>
-    </div>
-  </div>
 
-  <!-- Terms and price -->
-  <div class="card" id="termCard">
-    <div class="sec-head">
-      <div class="sec-title">Sailings & Charges</div>
-    </div>
-    <div style="padding:12px 16px;">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;" id="ttRowC"></div>
-      <div id="priceBox" style="margin-top:8px;"></div>
-      <div id="sailMerge" style="margin-top:6px;"></div>
-    </div>
-  </div>
-
-  <!-- Containers -->
-  <div class="card" id="cntrCard" style="display:none;">
-    <div class="sec-head">
-      <div class="sec-title">Containers <span id="cntrCount" style="font-weight:400;color:#9ca3af;"></span></div>
-    </div>
-    <div id="cntrBox" style="padding:8px 16px 14px;"></div>
-  </div>
-
-  <!-- Documents -->
-  <div class="card" id="docCard">
-    <div class="sec-head"><div class="sec-title">Documents</div></div>
-    <div style="padding:10px 16px 16px;">
-      <a id="dlPack" target="_blank" style="display:flex;align-items:center;gap:10px;border:1.5px solid #e0e4ea;border-radius:10px;padding:12px 14px;text-decoration:none;color:#111827;font-size:13px;font-weight:700;">
-        <span style="flex:1;">Document pack (PL + SC + IV)</span><span style="color:#1a73e8;">Open</span></a>
-    </div>
-  </div>
-
-  <!-- Shipping documents -->
-  <div class="card" id="shippingDocsCard" style="display:none;">
-    <div class="sec-head"><div class="sec-title">Shipping Documents</div></div>
-    <div id="shippingDocsBox" style="padding:10px 16px 16px;display:flex;flex-direction:column;gap:8px;"></div>
-  </div>
-
-  <div class="card" id="blDraftCard" style="display:none;">
-    <div class="sec-head">
-      <div class="sec-title">Bill of Lading Draft Confirmation</div>
-      <div class="sec-sub">Please review the draft before carrier submission.</div>
-    </div>
-    <div id="blDraftBox"></div>
-  </div>
-
-  <!-- Available Sailings -->
-  <div class="card">
-    <div class="sec-head" style="display:flex;justify-content:space-between;align-items:center;">
-      <div>
-        <div class="sec-title">Available Sailings</div>
-        <div class="sec-sub" id="sailSub">Select your preferred sailing. Changes after confirmation may incur amendment fees.</div>
+    <div class="block" id="termCard">
+      <div class="bh"><h2>2. Ocean Freight</h2><p>Customer rate and trade term only.</p></div>
+      <div class="bb bill-stack">
+        <div id="priceBox"></div>
+        <div id="sailMerge"></div>
       </div>
-      <span class="badge badge-amber" id="sailCount" style="background:#dbeafe;color:#1d4ed8;">—</span>
     </div>
-    <div id="sailBox"><div style="padding:20px 16px;font-size:12px;color:#9ca3af;">No available sailings yet. Please contact Sanlyn.</div></div>
-    <div class="confirm-bar hidden" id="recBar"></div>
-  </div>
 
-  <!-- Confirm button -->
-  <div id="confirmZone">
-    <button class="btn btn-green" id="btnConfirm" onclick="confirmBooking()">Confirm Booking</button>
-  </div>
+    <div class="block" id="journeyCard" style="display:none;">
+      <div class="bh"><h2>3. Shipment Journey</h2><p id="journeySub"></p></div>
+      <div class="journey-wrap" id="journeyBox"></div>
+    </div>
 
-  <!-- Finance confirmation -->
-  <div class="card" id="adminFinanceCard" style="display:none;">
-    <div class="sec-head" style="display:flex;align-items:center;justify-content:space-between;">
-      <div>
-        <div class="sec-title">Finance Confirmation <span style="font-size:10px;font-weight:400;color:#9ca3af;">Admin only</span></div>
-        <div class="sec-sub">Internal billing review only.</div>
+    <div class="block" id="cargoCard" style="display:none;">
+      <div class="bh section-row" onclick="const t=$('cargoTable');const c=$('cargoChevron');t.style.display=t.style.display==='none'?'':'none';c.textContent=t.style.display===''?'v':'>';">
+        <div><h2>4. Cargo Data & Certificates <span class="sync-dot hidden" id="syncDot">Saved</span></h2><p id="cargoSub">Please review factory loading data. Notes are saved automatically.</p></div>
+        <span id="cargoChevron" class="pill brand">v</span>
       </div>
-      <span style="font-size:11px;background:#fef3c7;color:#92400e;border-radius:20px;padding:3px 10px;font-weight:700;">Pending</span>
+      <div id="cargoTable">
+        <table class="cg-t"><thead><tr><th>Brand Code</th><th>Description</th><th>HS Code</th><th>FE</th><th>CTNS</th><th>GW (KGS)</th><th>Your Notes</th></tr></thead><tbody id="cargoBody"></tbody></table>
+      </div>
+      <div class="bb bill-stack" id="certBox"></div>
     </div>
-    <div style="padding:16px;color:#9ca3af;font-size:12px;">Billing data placeholder.</div>
+
+    <div class="block" id="allDocsCard">
+      <div class="bh section-row"><div><h2>5. All Downloads</h2><p>Customer documents for this shipment.</p></div><a class="bdl" id="dlAll" target="_blank">Download all</a></div>
+      <div class="bb bill-stack" id="downloadBox">
+        <a class="bill" id="dlPack" target="_blank"><span class="bi">DOC</span><span class="bt2"><b>Document pack</b><span>PL + SC + IV</span></span><span class="bdl">View</span><span class="bdl">Download</span></a>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="bh section-row"><div><h2>Available Sailings</h2><p id="sailSub">Select your preferred sailing. Changes after confirmation may incur amendment fees.</p></div><span class="pill brand" id="sailCount">-</span></div>
+      <div class="bb"><div id="sailBox"><div class="muted">No available sailings yet. Please contact Sanlyn.</div></div><div class="confirm-bar hidden" id="recBar"></div></div>
+    </div>
+    <div id="confirmZone"><button class="btn ok" id="btnConfirm" onclick="confirmBooking()">Confirm Booking</button></div>
+    <div class="version" id="uiVersion">customer portal v2026.08.08-1 · generated 08 Aug 2026 16:16 (GMT+8)</div>
   </div>
 </div>
-</div>
-
-<div class="center-state hidden" id="stateDead">
-  <div class="big">!</div><h2>Invalid link</h2><p>This link has expired or was replaced. Please contact Sanlyn for a new link.</p>
-</div>
-
+<div class="center-state hidden" id="stateDead"><div class="big">!</div><h2>Invalid link</h2><p>This link has expired or was replaced. Please contact Sanlyn for a new link.</p></div>
 <div class="toast" id="toast"></div>
 <div class="modal hidden" id="blChangeModal">
   <div class="modal-panel">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
-      <div><div class="sec-title">Request Changes</div><div class="sec-sub">Submitting changes pauses the countdown. A new timer starts after Sanlyn sends the revised draft.</div></div>
-      <button class="btn btn-outline" style="padding:6px 10px;" onclick="closeBLChanges()">Close</button>
-    </div>
+    <div class="section-row"><div><div style="font-weight:800;">Request Changes</div><div class="muted">Submitting changes pauses the countdown. A new timer starts after Sanlyn sends the revised draft.</div></div><button class="btn btn-outline" onclick="closeBLChanges()">Close</button></div>
     <div id="blChangeRows"></div>
-    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-      <button class="btn btn-outline" onclick="closeBLChanges()">Cancel</button>
-      <button class="btn btn-green" id="blChgSubmitBtn" onclick="submitBLChanges()">Submit request</button>
-    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-outline" onclick="closeBLChanges()">Cancel</button><button class="btn ok" id="blChgSubmitBtn" onclick="submitBLChanges()">Submit request</button></div>
   </div>
 </div>
-
 <script src="/public/templates/collab-customer-core.js"></script>
 <script src="/public/templates/collab-customer-boot.js"></script>
 </body>

@@ -49,34 +49,13 @@ async function boot(){
   window.renderPrice = function(){
     const rows = [];
     if (sheet.so_no || sheet.bl_no) {
-      rows.push(`<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;background:#f0fdf4;border-radius:6px;padding:6px 10px;margin-bottom:4px;">
-        <span style="color:#047857;font-weight:700;">Booked</span>
-        <span style="color:#1a73e8;font-weight:600;cursor:pointer;margin-left:8px;" onclick="window.toggleSail&&toggleSail()">Change sailing</span></div>`);
+      rows.push(`<div class="bill"><span class="pill ok">Booked</span><span style="flex:1;"></span><button class="bdl" onclick="window.toggleSail&&toggleSail()">Change sailing</button></div>`);
     }
     renderBillingEntry(window._billing||{});
     if(rows.length) $('priceBox').insertAdjacentHTML('afterbegin', rows.join(''));
   };
   renderPrice();
   if(window.loadBLDraft) window.loadBLDraft();
-  (function(){
-    const card = $('shippingDocsCard');
-    const box = $('shippingDocsBox');
-    if(!card||!box) return;
-    const items = [];
-    const dlLink = (icon, label, url) =>
-      `<a href="${url}" target="_blank" style="display:flex;align-items:center;gap:10px;border:1.5px solid #e0e4ea;border-radius:10px;padding:11px 14px;text-decoration:none;color:#111827;font-size:13px;font-weight:700;">${icon} <span style="flex:1;">${label}</span><span style="color:#1a73e8;font-size:12px;">Open</span></a>`;
-    items.push(dlLink('', 'Non-Dangerous Goods Declaration', `${API}/file?token=${encodeURIComponent(token)}&type=nondg`));
-    if((sheet.release_type||'')==='\u7535\u653e')
-      items.push(dlLink('', 'Telex Release Letter', `${API}/file?token=${encodeURIComponent(token)}&type=telex`));
-    const signedUps = (Array.isArray(sheet.collab_uploads)?sheet.collab_uploads:[])
-      .filter(u => u && /\u975e\u5371|nondg|telex|\u7535\u653e\u4fdd\u51fd/i.test(u.filename||''));
-    signedUps.forEach(u => {
-      const url = `${API}/file?token=${encodeURIComponent(token)}&type=upload&filename=${encodeURIComponent(u.filename||'')}`;
-      items.push(dlLink('', 'Signed copy · '+esc(u.filename), url));
-    });
-    box.innerHTML = items.join('');
-    card.style.display = '';
-  })();
   (function(){
     const live = [];
     if(!live.length) return;
@@ -87,14 +66,14 @@ async function boot(){
       const pos = (x.cargo||[]).map(g=>{
         const po = String(g.order_no||'').replace(/^\d+-/,'');
         const od = ordersX.find(o=>o.order_no===g.order_no);
-        return po + (od&&od.export_mode==='daigou' ? ' <span style="color:#7c3aed;font-size:10px;">DAIGOU</span>' : '');
+        return po + (od&&od.export_mode==='daigou' ? ' <span class="pill brand" style="font-size:10px;">DAIGOU</span>' : '');
       }).filter(Boolean).join('+');
       return `
-      <div style="display:grid;grid-template-columns:1.4fr 1.1fr 0.7fr 1fr;gap:6px 12px;border:1px solid #f0f2f5;border-radius:8px;padding:7px 12px;margin-top:6px;font-size:11px;">
-        <div><span style="color:#9ca3af;">Container ${i+1}</span> <b>${esc(x.container_no||'—')}</b>${pos?` <span style="color:#1d4ed8;font-weight:700;">· ${esc(pos)}</span>`:''}</div>
-        <div><span style="color:#9ca3af;">Seal</span> <b>${esc(x.seal_no||'—')}</b></div>
+      <div style="display:grid;grid-template-columns:1.4fr 1.1fr 0.7fr 1fr;gap:6px 12px;border:1px solid var(--line);border-radius:8px;padding:7px 12px;margin-top:6px;font-size:11px;">
+        <div><span style="color:var(--faint);">Container ${i+1}</span> <b>${esc(x.container_no||'—')}</b>${pos?` <span style="color:var(--brand-ink);font-weight:700;">· ${esc(pos)}</span>`:''}</div>
+        <div><span style="color:var(--faint);">Seal</span> <b>${esc(x.seal_no||'—')}</b></div>
         <div><b>${esc(x.container_type||'—')}</b></div>
-        <div style="color:#9ca3af;">${pos?'':'PO pending'}</div>
+        <div style="color:var(--faint);">${pos?'':'PO pending'}</div>
       </div>`;}).join('');
   })();
   window._feState = (sheet.fe_cert && sheet.fe_cert.requested) ? true : false;
@@ -105,10 +84,10 @@ async function boot(){
     if (!btn) return;
     if (window._feState) {
       btn.textContent = sheet.is_daigou ? 'Enabled (required)' : 'Requested · click to cancel';
-      btn.style.background = '#ecfdf5'; btn.style.borderColor = '#a7f3d0'; btn.style.color = '#047857';
+      btn.style.background = 'var(--ok-soft)'; btn.style.borderColor = 'var(--ok)'; btn.style.color = 'var(--ok)';
       if (sheet.is_daigou) { btn.style.cursor = 'default'; btn.onclick = null; }
     } else {
-      btn.textContent = 'Request FE'; btn.style.background = '#fff'; btn.style.borderColor = '#1a73e8'; btn.style.color = '#1a73e8';
+      btn.textContent = 'Request FE'; btn.style.background = 'var(--card)'; btn.style.borderColor = 'var(--brand)'; btn.style.color = 'var(--brand)';
     }
   };
   window.toggleFE = async function(){
@@ -136,12 +115,14 @@ async function boot(){
     const cs = typeof sheet.customer_selected_sailing==='string'?(()=>{try{return JSON.parse(sheet.customer_selected_sailing)}catch(e){return null}})():sheet.customer_selected_sailing;
     if(!cs||!cs.vessel) return;
     const bar = document.createElement('div');
-    bar.style.cssText='background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:13px;';
-    bar.innerHTML = `<b>Selected sailing saved.</b> <span style="color:#9ca3af;font-size:11px;margin-left:8px;">Changing to another sailing may incur amendment fees.</span>`;
+    bar.style.cssText='background:var(--brand-soft);border:1.5px solid var(--line);border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:13px;';
+    bar.innerHTML = `<b>Selected sailing saved.</b> <span style="color:var(--faint);font-size:11px;margin-left:8px;">Changing to another sailing may incur amendment fees.</span>`;
     const shell = document.querySelector('.shell');
     shell.insertBefore(bar, shell.firstChild.nextSibling);
   })();
   renderSailings();
+  if(window.renderCustomerInfo) renderCustomerInfo();
+  if(window.renderCertificatesAndDownloads) renderCertificatesAndDownloads();
   if(confirmed && sheet.customer_selected_sailing){
     const cs = typeof sheet.customer_selected_sailing==='string'?JSON.parse(sheet.customer_selected_sailing):sheet.customer_selected_sailing;
     const idx = sailings.findIndex(x=>x.vessel===cs.vessel&&String(x.etd)===String(cs.etd));

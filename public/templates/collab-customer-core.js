@@ -28,6 +28,11 @@ function numText(v){
   if(!Number.isFinite(n) || n === 0) return '';
   return n.toLocaleString('en-US',{maximumFractionDigits:3});
 }
+function moneyAmount(v, cur){
+  const n = Number(v);
+  if(!Number.isFinite(n)) return '';
+  return (cur || 'USD') + ' ' + n.toLocaleString('en-US',{maximumFractionDigits:2});
+}
 function uniqueList(xs){
   const seen = new Set();
   return xs.map(x=>String(x||'').trim()).filter(x=>{
@@ -89,12 +94,76 @@ function openBillingInvoice(){
 function renderBillingEntry(billing){
   const box=$('priceBox');
   if(!box) return;
-  const canOpen=!!(billing&&billing.token&&billing.show_amount!==false);
-  window._billingToken=canOpen?billing.token:'';
-  box.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f8fafc;border:1px solid #e0e4ea;border-radius:8px;padding:10px 12px;">'
-      +'<div><div style="font-size:13px;font-weight:800;color:#1a1d23;">Charges: '+(canOpen?'available':'not available')+'</div>'
-      +'<div style="font-size:11px;color:#6b7280;margin-top:2px;">'+(canOpen?esc(billing.segment||'Available to this role'):'No billing page is available for this link')+'</div></div>'
-    +(canOpen?'<button class="btn" style="padding:7px 12px;font-size:12px;background:#1a73e8;color:#fff;" onclick="openBillingInvoice()">Open bill</button>':'')+'</div>';
+  window._billingToken = '';
+  const terms = ['FOB','EXW','FCA','CIF','CNF','DDP'];
+  const term = String(sheet.incoterm || sheet.trade_term || sheet.price_term || '').toUpperCase();
+  const amount = billing && billing.show_amount !== false
+    ? (billing.customer_amount || billing.amount || billing.freight_amount || billing.total_amount || '')
+    : '';
+  const currency = (billing && (billing.currency || billing.customer_currency)) || sheet.freight_currency || 'USD';
+  const quoted = amount !== '' && amount != null;
+  box.innerHTML = `<div class="bill"><span class="bi">USD</span><div class="bt2"><b>Ocean freight</b><span>${quoted ? 'Quoted to you' : 'Not quoted yet'}</span></div><span class="fee-value">${quoted ? esc(moneyAmount(amount, currency)) : 'Not quoted yet'}</span></div>
+    <div class="bill"><span class="bi">T&C</span><div class="bt2"><b>Trade term</b><span>FOB / EXW / FCA / CIF / CNF / DDP</span></div><select id="incotermSelect" class="bdl" onchange="sheet.incoterm=this.value">${terms.map(x=>`<option value="${x}" ${term===x?'selected':''}>${x}</option>`).join('')}</select></div>`;
+}
+
+function dataPick(obj, keys){
+  for(const k of keys){ if(obj && obj[k] != null && String(obj[k]).trim()) return obj[k]; }
+  return '';
+}
+function renderCustomerInfo(){
+  const box = $('customerInfoBox'), det = $('customerInfoDetails');
+  if(!box || !det) return;
+  const d = window._blDraft || {};
+  const src = {...sheet, ...(sheet.customer_profile || {}), ...(d.customer_profile || {})};
+  const fields = [
+    ['Consignee name', dataPick(src, ['consignee_name','consignee','customer_en','customer'])],
+    ['Address', dataPick(src, ['consignee_address','customer_address','address'])],
+    ['Tax ID', dataPick(src, ['tax_id','vat_no','tin','bin'])],
+    ['Contact', dataPick(src, ['contact_person','contact','customer_contact'])],
+    ['TT', dataPick(src, ['tt','tt_no','clearance_tt'])],
+    ['IRC', dataPick(src, ['irc','irc_no'])],
+    ['TIN', dataPick(src, ['tin'])],
+    ['BIN', dataPick(src, ['bin'])]
+  ];
+  const missing = fields.filter(x=>!x[1]).map(x=>x[0]);
+  box.innerHTML = fields.map(x=>`<div class="statbox ${x[1] ? '' : 'field-missing'}"><div class="k">${esc(x[0])}</div><div class="v">${esc(x[1] || 'Missing')}</div></div>`).join('');
+  const text = missing.length ? missing.length + ' fields missing' : 'Verified';
+  $('customerInfoSummary').textContent = text;
+  $('customerInfoBadge').textContent = text;
+  $('customerInfoBadge').className = missing.length ? 'pill wait' : 'pill ok';
+  det.open = !!missing.length;
+  const card = $('blDraftCard');
+  if(card && !window._blDraft && (missing.length || fields.some(x=>x[1]))) card.style.display = '';
+}
+function customerFileUrl(type, filename){
+  const qs = new URLSearchParams({ token, type });
+  if(filename) qs.set('filename', filename);
+  return `${API}/file?${qs.toString()}`;
+}
+function docBill(label, sub, type, filename){
+  const url = customerFileUrl(type, filename);
+  return `<a class="bill" href="${url}" target="_blank"><span class="bi">DOC</span><span class="bt2"><b>${esc(label)}</b><span>${esc(sub || '')}</span></span><span class="bdl">View</span><span class="bdl">Download</span></a>`;
+}
+function renderCertificatesAndDownloads(){
+  const certBox = $('certBox'), dl = $('downloadBox'), all = $('dlAll');
+  if(all) all.href = customerFileUrl('pack');
+  const rows = [];
+  const downloads = [docBill('Document pack', 'PL + SC + IV', 'pack')];
+  if(window._blDraft) downloads.push(docBill('Bill of Lading draft', 'Current draft for confirmation', 'bl_draft'));
+  downloads.push(docBill('Non-Dangerous Goods Declaration', 'Customer copy', 'nondg'));
+  const certs = Array.isArray(sheet.certificates) ? sheet.certificates : [];
+  certs.forEach(c=>{
+    if(!c || !(c.file_type || c.file_id || c.filename || c.number || c.status)) return;
+    const name = c.name || c.cert_type || c.type || 'Certificate';
+    const sub = [c.number, c.status].filter(Boolean).join(' · ');
+    rows.push(docBill(name, sub || 'Available', c.file_type || 'certificate', c.filename || c.file_id || ''));
+    if(c.filename || c.file_id || c.file_type) downloads.push(docBill(name, sub || 'Available', c.file_type || 'certificate', c.filename || c.file_id || ''));
+  });
+  if(sheet.fe_cert && (sheet.fe_cert.requested || sheet.fe_cert.status || sheet.fe_cert.number)){
+    rows.push(`<div class="bill"><span class="bi">FE</span><span class="bt2"><b>FE Certificate of Origin</b><span>${esc(sheet.fe_cert.number || sheet.fe_cert.status || 'Pending')}</span></span><span class="pill wait">${sheet.fe_cert.number ? 'Ready' : 'Pending'}</span></div>`);
+  }
+  if(certBox) certBox.innerHTML = rows.length ? rows.join('') : '<div class="bill"><span class="bi">OK</span><span class="bt2"><b>Certificates</b><span>Not required</span></span><span class="pill ok">OK</span></div>';
+  if(dl) dl.innerHTML = downloads.join('');
 }
 
 let sheet = {}, sailings = [], selIdx = -1, confirmed = false, noteTimer = null, notes = {};
@@ -133,9 +202,9 @@ function reopen(){
     const cz=$('confirmZone');
     if(cz && !$('amendNotice')){
       const n=document.createElement('div'); n.id='amendNotice';
-      n.style.cssText='margin:0 0 10px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:6px;font-size:12px;color:#92400e;';
+      n.style.cssText='margin:0 0 10px;padding:10px 14px;background:var(--wait-soft);border:1px solid var(--line);border-left:4px solid var(--wait);border-radius:6px;font-size:12px;color:var(--wait);';
       const cnt=(sheet.customer_amend&&sheet.customer_amend.count)?Number(sheet.customer_amend.count):0;
-      n.innerHTML='<b>Amendment notice</b>: You have already confirmed a sailing. Submitting again will be treated as an amendment and may incur amendment fees.'+(cnt>0?`<span style="margin-left:6px;color:#b45309;">Amendments submitted: ${cnt}</span>`:'');
+      n.innerHTML='<b>Amendment notice</b>: You have already confirmed a sailing. Submitting again will be treated as an amendment and may incur amendment fees.'+(cnt>0?`<span style="margin-left:6px;color:var(--wait);">Amendments submitted: ${cnt}</span>`:'');
       cz.insertBefore(n,cz.firstChild);
     }
   }
@@ -147,7 +216,7 @@ function renderSailings(){
   if(!sailings.length){
     if (sheet.so_no || sheet.bl_no) {
       $('sailCount').textContent = 'Booked';
-      $('sailBox').innerHTML = `<div style="padding:14px 16px;font-size:13px;background:#f0fdf4;border-radius:8px;margin:0 0 4px;">
+      $('sailBox').innerHTML = `<div style="padding:14px 16px;font-size:13px;background:var(--ok-soft);border-radius:8px;margin:0 0 4px;">
         <b>Booked</b></div>`;
     }
     return;
@@ -156,7 +225,7 @@ function renderSailings(){
     <div class="sail" id="sail_${i}" onclick="pick(${i})">
       <div class="sail-top">
         <div>
-          <span class="sail-carrier">${esc(x.vessel||'—')}</span>
+          <span class="sail-main">${esc(x.vessel||'—')}</span>
           ${x.is_recommended?'<span class="rec-pill">Sanlyn preferred</span>':''}
           <div class="sail-vessel">${esc(x.vessel||'')} ${esc(x.voyage||'')}</div>
         </div>
@@ -193,8 +262,8 @@ function renderCargo(){
   orders.forEach(o=>{
     const its = o.items||[];
     if(!its.length) return;
-    const dgBadge = o.export_mode==='daigou' ? ' <span style="background:#f3e8ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:4px;padding:1px 7px;font-size:10px;">DAIGOU · Buying Agent</span>' : '';
-    html += `<tr><td colspan="7" style="background:#f1f5f9;font-weight:800;font-size:11px;color:#334155;padding:6px 10px;">ORDER ${esc((o.order_no||'').replace(/^\d+-/,''))} · ${esc(o.contract_no||'')}${dgBadge}</td></tr>`;
+    const dgBadge = o.export_mode==='daigou' ? ' <span class="pill brand" style="font-size:10px;padding:1px 7px;">DAIGOU · Buying Agent</span>' : '';
+    html += `<tr><td colspan="7" style="background:var(--row);font-weight:800;font-size:11px;color:var(--brand-ink);padding:6px 10px;">ORDER ${esc((o.order_no||'').replace(/^\d+-/,''))} · ${esc(o.contract_no||'')}${dgBadge}</td></tr>`;
     its.forEach((it,i)=>{
       let bc = it.barcode;
       if(!bc){ gSeq++; bc = 'G-'+String(gSeq).padStart(4,'0'); }
@@ -202,12 +271,12 @@ function renderCargo(){
       if(saved[key]) notes[key]=saved[key];
       const feKey = it.barcode||it.sku||key;
       const feChecked = !!(window._feLines && window._feLines[feKey]);
-      const nameLine = esc(it.product_name||it.description||'—') + (it.size?`<div style="font-size:10px;color:#9ca3af;">${esc(it.size)}</div>`:'');
+      const nameLine = esc(it.product_name||it.description||'—') + (it.size?`<div style="font-size:10px;color:var(--faint);">${esc(it.size)}</div>`:'');
       html += `<tr>
-        <td style="font-weight:700;${it.barcode?'':'color:#b45309;'}" ${it.barcode?'':'title="Temporary code"'}>${esc(bc)}</td>
+        <td style="font-weight:700;${it.barcode?'':'color:var(--wait);'}" ${it.barcode?'':'title="Temporary code"'}>${esc(bc)}</td>
         <td>${nameLine}</td>
         <td style="font-family:monospace;">${esc(it.hs_code||'—')}</td>
-        <td style="text-align:center;"><input type="checkbox" class="fe-ck" data-fekey="${esc(feKey)}" data-hs="${esc(it.hs_code||'')}" ${feChecked?'checked':''} ${sheet.is_daigou?'checked disabled':''} style="width:15px;height:15px;cursor:pointer;accent-color:#1a73e8;"></td>
+        <td style="text-align:center;"><input type="checkbox" class="fe-ck" data-fekey="${esc(feKey)}" data-hs="${esc(it.hs_code||'')}" ${feChecked?'checked':''} ${sheet.is_daigou?'checked disabled':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--brand);"></td>
         <td>${esc(it.ctns||'—')}</td>
         <td>${esc(it.gw_kgs||'—')}</td>
         <td><input class="note-in ${saved[key]?'saved':''}" data-key="${esc(key)}"
@@ -292,6 +361,8 @@ window.loadBLDraft = async function(){
     const d = await r.json();
     if(r.ok && d.ok){ window._blDraft = d.draft; renderBLDraft(); }
   }catch(e){}
+  if(window.renderCustomerInfo) renderCustomerInfo();
+  if(window.renderCertificatesAndDownloads) renderCertificatesAndDownloads();
 };
 window.renderBLDraft = function(){
   const card = $('blDraftCard'), d = window._blDraft;
@@ -303,7 +374,7 @@ window.renderBLDraft = function(){
   $('blDraftBox').innerHTML = `
     <div class="bl-alert">
       <div id="blCountdown" style="font-weight:900;"></div>
-      <div>If we do not receive your reply before the deadline, this draft will be submitted to the carrier as shown. Any later change may incur carrier amendment fees.</div>
+      <div>If we do not receive your reply before the deadline, this draft will be submitted as shown. Any later change may incur amendment fees.</div>
       <div style="margin-top:4px;font-weight:800;">Status: ${esc(blStatusText(d.status))} · Draft version ${esc(d.version)}</div>
     </div>
     <div class="bl-doc">
@@ -352,7 +423,7 @@ window.openBLChanges = function(){
     '<div class="sec-sub" style="margin-top:10px;font-weight:800;">Provided by you — we cannot verify</div>' +
     changeRow('chgConsignee','Consignee / Notify', [d.consignee,d.notify].filter(Boolean).join(' / '), `<textarea id="chgConsigneeText" rows="4">${esc(`Consignee:\n${d.consignee||''}\n\nNotify:\n${d.notify||''}`)}</textarea>`) +
     changeRow('chgHs','H.S. Code', (d.hs_lines||[]).map(x=>x.code).filter(Boolean).join(' & '), `<div id="hsRows">${hs}</div><button class="btn btn-outline" style="margin-top:8px;padding:7px 12px;" onclick="addHSLine()">Add H.S. Code</button><label style="display:block;margin-top:8px;"><select id="hsShow"><option value="yes" ${d.hs_show_on_bl!==false?'selected':''}>show on B/L</option><option value="no" ${d.hs_show_on_bl===false?'selected':''}>do not show on B/L</option></select></label><div class="muted" style="margin-top:8px;">Our China export declaration uses a separate code. A different code here does not affect shipment.</div>`) +
-    changeRow('chgClearance','Clearance documents','Blank fields stay blank', `${clr}<div class="muted" style="margin-top:8px;">Blank fields will be submitted as blank. Adding them later may incur carrier amendment fees.</div>`) +
+    changeRow('chgClearance','Clearance documents','Blank fields stay blank', `${clr}<div class="muted" style="margin-top:8px;">Blank fields will be submitted as blank. Adding them later may incur amendment fees.</div>`) +
     '<div class="sec-sub" style="margin-top:14px;font-weight:800;">Our data — tell us if anything looks wrong</div>' +
     changeRow('chgGoods','Goods / quantity / weight / measurement','Comment only', '<textarea id="chgGoodsText" rows="3" placeholder="Tell us what looks wrong."></textarea>') +
     changeRow('chgCntr','Container & seal','As per terminal record', '<div class="muted">As per the terminal record / carrier feed. Not amendable.</div><textarea id="chgCntrText" rows="3" placeholder="Tell us what looks wrong."></textarea>') +
