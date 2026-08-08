@@ -50,7 +50,7 @@ function humanBillHint(state){
 function money(v, cur){
   const n = Number(v);
   if(!Number.isFinite(n)) return "";
-  return (cur || "CNY") + " " + n.toLocaleString("zh-CN", { maximumFractionDigits:2 });
+  return n.toLocaleString("zh-CN", { minimumFractionDigits:2, maximumFractionDigits:2 }) + " " + (cur || "CNY");
 }
 function cntrSummary(s){
   const qty = Number(s.container_qty || 0);
@@ -58,6 +58,7 @@ function cntrSummary(s){
   return qty && type ? `${qty}×${type}` : (scrub(s.container_summary || type) || "—");
 }
 function textParts(parts){ return parts.filter(Boolean).join(" · ") || "—"; }
+function identPart(v){ return v && v !== "—" ? `<span>${esc(v)}</span>` : `<span class="muted">—</span>`; }
 function toast(msg){
   const old = document.querySelector(".demoflag.runtime");
   if(old) old.remove();
@@ -140,10 +141,7 @@ function renderAll(){
   const rel = releaseMeta(s.release_type);
 	  const route = [s.pol, s.pod].filter(Boolean).map(scrub).join(" → "), bl = scrub(s.bl_no || s.hbl_no || "");
 	  $("fwName").dataset.i18n = "fwd.todoTitle"; $("fwSub").dataset.i18n = "fwd.todoSub";
-  $("forwarderV").textContent = forwarderName(s);
-  $("blV").textContent = bl || "—";
-  $("releaseV").innerHTML = `<span class="${rel.cls}">${esc(rel.label)}</span>`;
-  $("routeV").textContent = textParts([cntrSummary(s), route]);
+  $("identityLine").innerHTML = [forwarderName(s), bl, String(rel.label || "").replace(/ · .*/, ""), cntrSummary(s), route].map(identPart).join(" · ");
   $("agrTag").className = state.segments.includes("truck") ? "flag urgent" : "flag";
   $("agrTag").textContent = state.segments.includes("truck") ? tr("fwd.truckDelegated") : tr("fwd.truckReview");
   $("etdV").textContent = fmtD(s.etd);
@@ -347,10 +345,23 @@ function totalByCurrency(lines){
   });
   return Object.keys(map).map(cur => money(map[cur], cur)).join(" + ") || "—";
 }
+function amountText(v){
+  if(!v) return "";
+  if(typeof v === "string") return v;
+  return Object.keys(v).map(cur => money(v[cur], cur)).join(" + ");
+}
 function segAmount(key, fallback){
   const seg = state.bill.segments && state.bill.segments[key];
-  if(seg && seg.amount) return seg.amount;
+  if(seg && seg.amount) return amountText(seg.amount);
   return totalByCurrency(fallback || []);
+}
+function segStatus(key, lines){
+  const seg = (state.bill.segments || {})[key] || {};
+  const s = String(seg.status || ""), a = amountText(seg.amount);
+  if(s === "已定") return { cls:"ok", label:tr("fwd.billFixed") };
+  if(s === "待确认") return { cls:"", label:tr("fwd.billPending") };
+  if(s === "已录入" || lines.length || a) return { cls:"", label:tr("fwd.billEntered") };
+  return { cls:"", label:tr("fwd.billNeedInput") };
 }
 	function renderFees(){
 	  const lines = Array.isArray(state.invoice.bill_lines) ? state.invoice.bill_lines.filter(allowedLine) : [];
@@ -376,11 +387,12 @@ function segAmount(key, fallback){
 	}
 function feePanel(key, icon, title, sub, lines, segKey, editable){
   const value = segAmount(segKey, lines);
-  const missing = value === "—" || /待报|无账单/.test(String((state.bill.segments || {})[segKey]?.status || ""));
+  const missing = value === "—" || /待报|待贵司填|无账单/.test(String((state.bill.segments || {})[segKey]?.status || ""));
+  const status = segStatus(segKey, lines);
   const rows = lines.length ? lines.map(l=>`<div class="exp-row"><span>${esc(scrub(l.name || l.cost_category || "费用"))}</span><span class="mono">${esc(lineAmount(l) || "未填写金额")}</span></div>`).join("") : "";
   return `<details class="exp">
     <summary class="fee-head"><span class="bi">${icon}</span><div class="bt2"><b>${esc(title)}</b><span>${esc(sub || "—")}</span></div>
-      <div class="fee-actions"><span class="${missing ? "fee-missing" : "bv"}">${missing ? esc(tr("fwd.amountMissing")) : esc(value)}</span><span class="chev">▾</span></div></summary>
+      <div class="fee-actions"><span class="fee-chip ${status.cls}">${esc(status.label)}</span><span class="${missing ? "fee-missing" : "bv"}">${missing ? esc(tr("fwd.amountMissing")) : esc(value)}</span><span class="chev">▾</span></div></summary>
     <div class="exp-body">${rows || `<div class="pending">${esc(tr("fwd.amountMissing"))}</div>`}${editable ? feeInputRows() : ""}</div>
   </details>`;
 }
@@ -413,6 +425,7 @@ function feeInputRows(){
 	  if(!state.billLocked) tasks.push(["待确认本票账单","sectionFees"]);
 	  if(missVeh) tasks.push(["待回填车辆与司机","sectionTruck"]);
 	  if(missCntr) tasks.push(["待确认箱号封号","sectionTruck"]);
+	  $("todoSection").style.display = tasks.length ? "" : "none";
 	  $("headFlag").style.display = tasks.length ? "flex" : "none";
 	  $("todoBadge").textContent = tr("fwd.todoCount", { n:tasks.length });
 	  $("todoBox").innerHTML = tasks.map(t => `<button class="todo-item" onclick="jumpTodo('${t[1]}')">${esc(t[0])}</button>`).join("");

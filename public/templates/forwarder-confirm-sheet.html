@@ -44,6 +44,8 @@ body{margin:0;background:var(--ground);color:var(--ink);
 .banner .flag{background:var(--card);border:1px solid var(--amber-line);color:var(--amber-ink);font-size:12px;font-weight:800;padding:6px 11px;border-radius:99px;white-space:nowrap;flex:0 0 auto}
 
 .nologin{display:flex;align-items:center;gap:9px;background:var(--ok-soft);color:var(--ok);padding:9px 14px;font-size:12.5px;font-weight:600;border-radius:10px}
+.identity-strip{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 14px;font-size:12.5px;font-weight:800;color:var(--ink);line-height:1.45;word-break:break-word}
+.identity-strip .muted{font-weight:700;color:var(--sub)}
 .deliver{background:var(--brand-soft);border:1px solid #bcd8f0;border-radius:11px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
 	.deliver .l{font-size:12px;color:var(--sub)}
 	.deliver .v{font-size:16px;font-weight:800;color:var(--brand-ink);font-variant-numeric:tabular-nums}
@@ -227,7 +229,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
 .docgrp{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--row)}
 .docgrp-h{padding:10px 12px;font-size:13px;font-weight:800;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px}
 .fee-head{width:100%;border:0;background:var(--row);color:var(--ink);font-family:inherit;cursor:pointer;padding:12px;display:flex;align-items:center;gap:10px;text-align:left}
-.fee-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}.fee-missing{font-size:11.5px;color:var(--wait);font-weight:800}
+.fee-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}.fee-missing{font-size:11.5px;color:var(--wait);font-weight:800}.fee-chip{font-size:11.5px;font-weight:800;padding:3px 8px;border-radius:99px;background:var(--wait-soft);color:var(--wait);white-space:nowrap}.fee-chip.ok{background:var(--ok-soft);color:var(--ok)}
 .fee-form{display:grid;grid-template-columns:1fr 92px 92px 92px;gap:7px;margin-top:9px}
 .fee-form input,.fee-form select{width:100%;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);padding:8px 7px;font-family:inherit;font-size:12.5px}
 .deadline{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -248,8 +250,9 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
     <span data-i18n="common.noLogin">无需登录，这条链接就是您的专属入口，可随时打开</span>
   </div>
+  <div class="identity-strip" id="identityLine">—</div>
 
-	  <div class="block">
+	  <div class="block" id="todoSection">
 	    <div class="bh" id="headFlag" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
 	      <div>
 	        <h2 id="fwName" data-i18n="fwd.todoTitle">待办事项</h2>
@@ -258,12 +261,6 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
 	      </div>
 	      <div class="head-tags"><span class="flag todo" id="todoBadge">待办 0</span><span class="flag" id="agrTag">委托拖车 —</span></div>
 	    </div>
-    <div class="bb mini-grid">
-      <div class="statbox"><div class="k" data-i18n="fwd.forwarder">货代公司</div><div class="v" id="forwarderV">—</div></div>
-      <div class="statbox"><div class="k" data-i18n="fwd.blNo">提单号</div><div class="v" id="blV">—</div></div>
-      <div class="statbox"><div class="k" data-i18n="fwd.release">出单方式</div><div class="v" id="releaseV">—</div></div>
-      <div class="statbox"><div class="k" data-i18n="fwd.route">柜量 / 航线</div><div class="v" id="routeV">—</div></div>
-    </div>
   </div>
 
   <!-- 承运人要求(COSCO 保函等):规则命中自动长出 -->
@@ -287,7 +284,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
 
 	  <div class="block" id="sectionDocs">
     <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><h2 data-i18n="fwd.docsTitle">③ 我方资料</h2><p data-i18n="fwd.docsSub">抬头资料 · 本票单据 · 货物证书</p></div>
+      <div><h2 data-i18n="fwd.docsTitle">③ Sanlyn 提供</h2><p data-i18n="fwd.docsSub">抬头资料 · 本票单据 · 货物证书</p></div>
       <button class="bdl" onclick="downloadAllDocs()" data-i18n="common.downloadAll">打包下载全部</button>
     </div>
     <div class="bb" id="docGroups" style="display:flex;flex-direction:column;gap:10px"></div>

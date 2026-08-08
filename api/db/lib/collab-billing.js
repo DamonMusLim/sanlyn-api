@@ -474,7 +474,7 @@ async function handleCollabBillSummary(req, res, pool) {
   const { rows } = await pool.query(`SELECT id,cost_category,amount,currency,supplier,supplier_type,confirmed_at,raw->'collab_pending' AS pending FROM freight_supplier_bills WHERE bl_no=$1 AND COALESCE(rebill_status,'') <> 'voided'`, [blNo]);
   const segs = { ocean: [], trucking: [], port_charge: [], customs: [] };
   for (const r of rows) (segs[segmentForCategory(r.cost_category)] || segs.port_charge).push(r);
-  const segment = (key) => { const rs = segs[key] || [], confirmed = rs.filter(r => r.confirmed_at && !(r.pending && r.pending.status)); return { status: confirmed.length ? "已定" : rs.some(r => r.pending && r.pending.status) ? "待确认" : "待报", reported_by: [...new Set(rs.map(r => r.supplier || r.supplier_type).filter(Boolean))], amount: totalsByCurrency(confirmed), pending_amount: totalsByCurrency(rs.filter(r => r.pending && r.pending.status)) }; };
+  const segment = (key) => { const rs = segs[key] || [], pending = rs.filter(r => r.pending && r.pending.status), confirmed = rs.filter(r => r.confirmed_at && !(r.pending && r.pending.status)); return { status: pending.length ? "待确认" : confirmed.length ? "已定" : rs.length ? "已录入" : "待贵司填", reported_by: [...new Set(rs.map(r => r.supplier || r.supplier_type).filter(Boolean))], amount: totalsByCurrency(rs), pending_amount: totalsByCurrency(pending) }; };
   // 🔴 2026-08-08 修越权：原来不分角色，四段全返回 —— 实测车队 token 能拿到
   // 海运费段以及货代公司名。权限矩阵定的是【钱只给货代】，车队只看拖车费、
   // 报关行只看报关费。上一轮修了提报/改价的跨段越权，汇总这条漏了。
