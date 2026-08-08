@@ -1,3 +1,12 @@
+// 写 DOM 的兜底：元素不存在就静默跳过并留 console 提示，
+// 别让一个孤儿 id 拖垮整页（2026-08-08 客户页就这么崩过）。
+function safeSet(id, html){
+  const el = document.getElementById(id);
+  if (!el) { try { console.warn('[boot] missing #' + id + ', skipped'); } catch(e){} return false; }
+  el.innerHTML = html;
+  return true;
+}
+
 function enPart(v){
   const t = String(v == null ? "" : v).trim();
   if (!t) return "";
@@ -42,9 +51,10 @@ async function boot(){
   window._feLines = (sheet.fe_cert && sheet.fe_cert.lines) || {};
   renderCargo();
   if(window.renderJourney) window.renderJourney();
-  window.renderTT = function(){
-    $('ttRowC').innerHTML = '';
-  };
+  // 2026-08-08 修：五模块重排把 #ttRowC 从 HTML 里删了，这里还在写它 →
+  // null.innerHTML 抛异常 → boot 整条链断掉 → 提单确认/航程图/下载全不渲染，
+  // 页面回落成 "Invalid link"。典型的「HTML 删了元素，JS 没同步」。
+  window.renderTT = function(){ safeSet('ttRowC', ''); };
   renderTT();
   window.renderPrice = function(){
     const rows = [];
