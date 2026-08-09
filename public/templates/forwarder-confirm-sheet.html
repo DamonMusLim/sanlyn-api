@@ -44,6 +44,12 @@ body{margin:0;background:var(--ground);color:var(--ink);
 .banner .flag{background:var(--card);border:1px solid var(--amber-line);color:var(--amber-ink);font-size:12px;font-weight:800;padding:6px 11px;border-radius:99px;white-space:nowrap;flex:0 0 auto}
 
 .nologin{display:flex;align-items:center;gap:9px;background:var(--ok-soft);color:var(--ok);padding:9px 14px;font-size:12.5px;font-weight:600;border-radius:10px}
+.ident-in-card{display:block}
+.ident-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.ident-co{font-size:15px;font-weight:800;color:var(--ink);line-height:1.35;word-break:break-word}
+.ident-sub{font-size:12.5px;font-weight:700;color:var(--sub);line-height:1.5;margin-top:2px;word-break:break-word}
+.ident-div{height:1px;background:var(--line);margin:11px 0 10px}
+.todo-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .identity-strip{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 14px;font-size:12.5px;font-weight:800;color:var(--ink);line-height:1.45;word-break:break-word}
 .identity-strip .muted{font-weight:700;color:var(--sub)}
 .deliver{background:var(--brand-soft);border:1px solid #bcd8f0;border-radius:11px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -250,16 +256,28 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
     <span data-i18n="common.noLogin">无需登录，这条链接就是您的专属入口，可随时打开</span>
   </div>
-  <div class="identity-strip" id="identityLine">—</div>
-
 	  <div class="block" id="todoSection">
-	    <div class="bh" id="headFlag" style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-	      <div>
-	        <h2 id="fwName" data-i18n="fwd.todoTitle">待办事项</h2>
-	        <p id="fwSub" data-i18n="fwd.todoSub">请按本票待办逐项补齐</p>
-	        <div id="todoBox" class="todo-list"></div>
+	    <div class="bh ident-in-card">
+	      <div class="ident-top">
+	        <div class="ident-main">
+	          <div class="ident-co" id="identCo">—</div>
+	          <div class="ident-sub" id="identLine2">—</div>
+	          <div class="ident-sub" id="identLine3">—</div>
+	        </div>
+	        <div class="head-tags"><span class="flag" id="agrTag">委托拖车 —</span></div>
 	      </div>
-	      <div class="head-tags"><span class="flag todo" id="todoBadge">待办 0</span><span class="flag" id="agrTag">委托拖车 —</span></div>
+	      <div id="todoWrap">
+	      <div class="ident-div"></div>
+	      <div class="todo-top">
+	        <div>
+	          <h2 id="fwName" data-i18n="fwd.todoTitle">待办事项</h2>
+	          <p id="fwSub" data-i18n="fwd.todoSub">请按本票待办逐项补齐</p>
+	        </div>
+	        <span class="flag todo" id="todoBadge">待办 0</span>
+	      </div>
+	      <div id="todoBox" class="todo-list"></div>
+	      </div>
+	      <div id="identityLine" hidden></div>
 	    </div>
   </div>
 

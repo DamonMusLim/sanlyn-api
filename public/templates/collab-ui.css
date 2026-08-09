@@ -75,3 +75,11 @@ details.fee>summary::-webkit-details-marker{display:none}
 .center-state h2{font-size:17px;font-weight:800;color:var(--ink);margin:0 0 6px}
 .version{font-size:10.5px;color:var(--faint);text-align:center;margin-top:8px}
 @media(max-width:640px){.deadline,.mini-grid{grid-template-columns:1fr}.bill{align-items:flex-start}.bdl{padding:7px 9px}}
+
+/* QUOTE_PORTAL_UI：费用展开区底部 → 现成的报价中心 */
+.quote-jump{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin-top:8px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+  background:var(--soft,rgba(127,127,127,.06));text-decoration:none;
+  font-size:12.5px;font-weight:700;color:var(--sub)}
+.quote-jump:hover{border-color:var(--brand,#2563eb);color:var(--brand,#2563eb)}
+.quote-jump .qj-arrow{font-weight:800}

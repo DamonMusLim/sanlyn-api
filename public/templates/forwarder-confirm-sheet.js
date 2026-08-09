@@ -141,7 +141,15 @@ function renderAll(){
   const rel = releaseMeta(s.release_type);
 	  const route = [s.pol, s.pod].filter(Boolean).map(scrub).join(" → "), bl = scrub(s.bl_no || s.hbl_no || "");
 	  $("fwName").dataset.i18n = "fwd.todoTitle"; $("fwSub").dataset.i18n = "fwd.todoSub";
-  $("identityLine").innerHTML = [forwarderName(s), bl, String(rel.label || "").replace(/ · .*/, ""), cntrSummary(s), route].map(identPart).join(" · ");
+  // 2026-08-08 Damon:「这两个合并。模块化，都看不清」
+  // 原来身份条是独立一块小灰字挤成两行，跟待办卡分开且难读。
+  // 改成同一张卡里三行：公司名(大)/单号·出单方式·柜量(次)/航线(次)，再分隔线接待办。
+  const _co = document.getElementById("identCo");
+  const _l2 = document.getElementById("identLine2");
+  const _l3 = document.getElementById("identLine3");
+  if (_co) _co.textContent = forwarderName(s) || "—";
+  if (_l2) _l2.textContent = [bl, String(rel.label || "").replace(/ · .*/, ""), cntrSummary(s)].filter(Boolean).join(" · ");
+  if (_l3) _l3.textContent = route || "";
   $("agrTag").className = state.segments.includes("truck") ? "flag urgent" : "flag";
   $("agrTag").textContent = state.segments.includes("truck") ? tr("fwd.truckDelegated") : tr("fwd.truckReview");
   $("etdV").textContent = fmtD(s.etd);
@@ -385,15 +393,47 @@ function segStatus(key, lines){
 	  const seg = (state.bill.segments || {})[billSeg] || {};
 	  return lines.length || seg.amount || seg.pending_amount || !/待报|无账单/.test(String(seg.status || ""));
 	}
+// 2026-08-08：展开区原来只认 state.invoice.bill_lines(这票是空的)，
+// 于是拖车费明明有 5,600 CNY，展开后却只有一条「未填写金额」死杠。
+// collab-bill-summary 现已返回每段费目明细，优先用它。
+function segLines(segKey, fallback){
+  const seg = (state.bill.segments || {})[segKey] || {};
+  if (Array.isArray(seg.lines) && seg.lines.length) return seg.lines;
+  return Array.isArray(fallback) ? fallback : [];
+}
+function basisText(b){
+  if (b === "per_container") return tr("fwd.basisPerCntr");
+  if (b === "per_bl") return tr("fwd.basisPerBl");
+  if (b === "per_declaration") return tr("fwd.basisPerDecl");
+  if (b === "per_item") return tr("fwd.basisPerItem");
+  return "";
+}
+// QUOTE_PORTAL_UI 2026-08-08 Damon:「他们不是有报价表？点击可以跳转到他们的报价中心上，
+// 我们的一切原则，不重造。」报价中心是现成的 SPA，这里只挂入口，不复制报价表。
+// 后端查不到/已过期就返回空 → 这里什么都不画，绝不给死链。
+function quotePortalRow(){
+  const qp = state.bill.quote_portal;
+  if (!qp || !qp.url) return "";
+  return `<a class="quote-jump" href="${esc(qp.url)}" target="_blank" rel="noopener">`
+       + `<span>${esc(tr("fwd.quotePortal"))}</span><span class="qj-arrow">→</span></a>`;
+}
 function feePanel(key, icon, title, sub, lines, segKey, editable){
   const value = segAmount(segKey, lines);
   const missing = value === "—" || /待报|待贵司填|无账单/.test(String((state.bill.segments || {})[segKey]?.status || ""));
   const status = segStatus(segKey, lines);
-  const rows = lines.length ? lines.map(l=>`<div class="exp-row"><span>${esc(scrub(l.name || l.cost_category || "费用"))}</span><span class="mono">${esc(lineAmount(l) || "未填写金额")}</span></div>`).join("") : "";
+  const _ls = segLines(segKey, lines);
+  const rows = _ls.length ? _ls.map(l=>{
+    const nm = esc(scrub(l.name || l.cost_category || "费用"));
+    const bt = basisText(l.charge_basis);
+    const calc = (l.qty != null && l.unit_price != null) ? `${esc(String(l.unit_price))} × ${esc(String(l.qty))}` : "";
+    const amt = l.amount != null ? money(l.amount, l.currency) : (lineAmount(l) || "");
+    return `<div class="exp-row"><span>${nm}${bt ? ` <small class="dim">${esc(bt)}</small>` : ""}</span>`
+         + `<span class="mono">${calc ? `<small class="dim">${calc} = </small>` : ""}${esc(amt || tr("fwd.amountMissing"))}</span></div>`;
+  }).join("") : "";
   return `<details class="exp">
     <summary class="fee-head"><span class="bi">${icon}</span><div class="bt2"><b>${esc(title)}</b><span>${esc(sub || "—")}</span></div>
       <div class="fee-actions"><span class="fee-chip ${status.cls}">${esc(status.label)}</span><span class="${missing ? "fee-missing" : "bv"}">${missing ? esc(tr("fwd.amountMissing")) : esc(value)}</span><span class="chev">▾</span></div></summary>
-    <div class="exp-body">${rows || `<div class="pending">${esc(tr("fwd.amountMissing"))}</div>`}${editable ? feeInputRows() : ""}</div>
+    <div class="exp-body">${rows || `<div class="pending">${esc(tr("fwd.amountMissing"))}</div>`}${editable ? feeInputRows() : ""}${quotePortalRow()}</div>
   </details>`;
 }
 function feeInputRows(){
@@ -425,8 +465,11 @@ function feeInputRows(){
 	  if(!state.billLocked) tasks.push(["待确认本票账单","sectionFees"]);
 	  if(missVeh) tasks.push(["待回填车辆与司机","sectionTruck"]);
 	  if(missCntr) tasks.push(["待确认箱号封号","sectionTruck"]);
-	  $("todoSection").style.display = tasks.length ? "" : "none";
-	  $("headFlag").style.display = tasks.length ? "flex" : "none";
+	  // 2026-08-08：身份信息(公司名/提单号/航线)并进了这张卡，所以整块【永远显示】，
+	  // 只隐藏待办那一段。原来读的 #headFlag 已随重排删除，直接读会 null.style 崩掉
+	  // → 走 fail() 分支，待办和费用全不渲染（跟客户页 #ttRowC 同一个错）。
+	  const _tw = document.getElementById("todoWrap");
+	  if (_tw) _tw.style.display = tasks.length ? "" : "none";
 	  $("todoBadge").textContent = tr("fwd.todoCount", { n:tasks.length });
 	  $("todoBox").innerHTML = tasks.map(t => `<button class="todo-item" onclick="jumpTodo('${t[1]}')">${esc(t[0])}</button>`).join("");
 	}
