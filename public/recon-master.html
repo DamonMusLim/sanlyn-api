@@ -35,14 +35,29 @@ function gapCell(v,flag){return '<td class="'+(flag?"gap":"")+'">'+esc(v||"")+'<
 function numCell(v,flag){return '<td class="'+(flag?"gap":"")+'">'+money(v)+'</td>'}
 function render(){
   var s=rows.reduce(function(a,r){["goods_cost","goods_sale","ocean_cost_usd","barge_cost_cny","ocean_sale_usd","port_sale_cny","declared_amount"].forEach(function(k){a[k]+=Number(r[k]||0)});return a},{goods_cost:0,goods_sale:0,ocean_cost_usd:0,barge_cost_cny:0,ocean_sale_usd:0,port_sale_cny:0,declared_amount:0});
-  var head='<tr><th>PO号</th><th>客户</th><th>工厂</th><th>BL</th><th>ETD</th><th>贸易条款</th><th>货品成本</th><th>货品销售</th><th>海运成本USD</th><th>驳船CNY</th><th>海运销售USD</th><th>港杂销售CNY</th><th>报关额</th><th>缺口</th></tr>';
+  var head='<tr><th>PO号</th><th>客户</th><th>工厂</th><th>BL</th><th>ETD</th><th>贸易条款</th><th>货品成本</th><th>货品销售</th><th>海运成本USD</th><th>驳船CNY</th><th>海运销售USD</th><th>港杂销售CNY</th><th>报关额</th><th>文件</th><th>缺口</th></tr>';
   function poCell(v){var parts=String(v||"").split("+").filter(Boolean);
   if(parts.length<=3)return '<td>'+esc(parts.join(" + ")||"—")+'</td>';
   var head=parts.slice(0,3).join(" + ");
   return '<td class="po-fold" title="点击展开" onclick="this.classList.toggle(\'open\')">'+
     '<span class="po-head">'+esc(head)+' <b class="po-more">+'+(parts.length-3)+'</b></span>'+
     '<span class="po-full">'+esc(parts.join(" + "))+'</span></td>';}
-var body=rows.map(function(r){var g=r.gap_flags||[];return '<tr>'+poCell(r.po_nos)+gapCell(r.customer,false)+gapCell(r.factory,false)+gapCell(r.bl_no,g.includes("缺BL"))+gapCell(String(r.etd||"").slice(0,10),false)+gapCell(r.trade_terms,false)+numCell(r.goods_cost,g.includes("缺成本"))+numCell(r.goods_sale,g.includes("缺销售"))+numCell(r.ocean_cost_usd,false)+numCell(r.barge_cost_cny,false)+numCell(r.ocean_sale_usd,false)+numCell(r.port_sale_cny,false)+numCell(r.declared_amount,g.includes("缺报关"))+gapCell(g.join("/"),g.length)+'</tr>'}).join("");
+var body=rows.map(function(r){var g=r.gap_flags||[];function facCell(v){var parts=String(v||"").split(" / ").filter(Boolean);
+  if(parts.length<=1&&String(v||"").length<=14)return '<td>'+esc(v||"—")+'</td>';
+  var head=parts[0].slice(0,12);
+  return '<td class="po-fold" title="点击展开" onclick="this.classList.toggle(\'open\')">'+
+    '<span class="po-head">'+esc(head)+(parts.length>1?' <b class="po-more">+'+(parts.length-1)+'</b>':'…')+'</span>'+
+    '<span class="po-full">'+esc(parts.join(" / "))+'</span></td>';}
+function docCell(r){var t=localStorage.getItem("sanlyn_token")||"";var bl=r.bl_no||"";
+  if(!bl)return '<td class="nil">—</td>';
+  var docs=r.docs||[];
+  var links=docs.map(function(d){return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type='+encodeURIComponent(d.doc_type)+'&token='+encodeURIComponent(t)+'">'+esc(d.doc_no)+'</a>'});
+  links.push('<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_invoice&token='+encodeURIComponent(t)+'">海运费单</a>');
+  links.push('<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_portcharge&token='+encodeURIComponent(t)+'">港杂单</a>');
+  return '<td class="po-fold" onclick="if(event.target.tagName!==\'A\')this.classList.toggle(\'open\')">'+
+    '<span class="po-head">📎'+docs.length+' <b class="po-more">…</b></span>'+
+    '<span class="po-full">'+links.join('<br>')+'</span></td>';}
+return '<tr>'+poCell(r.po_nos)+gapCell(r.customer,false)+facCell(r.factory)+gapCell(r.bl_no,g.includes("缺BL"))+gapCell(String(r.etd||"").slice(0,10),false)+gapCell(r.trade_terms,false)+numCell(r.goods_cost,g.includes("缺成本"))+numCell(r.goods_sale,g.includes("缺销售"))+numCell(r.ocean_cost_usd,false)+numCell(r.barge_cost_cny,false)+numCell(r.ocean_sale_usd,false)+numCell(r.port_sale_cny,false)+numCell(r.declared_amount,g.includes("缺报关"))+docCell(r)+gapCell(g.join("/"),g.length)+'</tr>'}).join("");
   body+='<tr class="sum"><td>合计</td><td></td><td></td><td></td><td>'+money(s.goods_cost)+'</td><td>'+money(s.goods_sale)+'</td><td>'+money(s.ocean_cost_usd)+'</td><td>'+money(s.barge_cost_cny)+'</td><td>'+money(s.ocean_sale_usd)+'</td><td>'+money(s.port_sale_cny)+'</td><td>'+money(s.declared_amount)+'</td><td></td></tr>';
   app.innerHTML='<table class="tbl">'+head+body+'</table>';
 }

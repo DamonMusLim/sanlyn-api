@@ -103,6 +103,12 @@ joined AS (
     FULL JOIN plan_groups pg ON pg.bl_no = og.bl_no
     LEFT JOIN bill_groups bg ON bg.bl_no = COALESCE(og.bl_no, pg.bl_no)
 ),
+docs_grp AS (
+  SELECT BTRIM(bl_no) AS bl_no,
+         json_agg(json_build_object('doc_no',doc_no,'doc_type',doc_type) ORDER BY generated_at DESC) AS docs
+    FROM doc_issue_log WHERE NULLIF(BTRIM(bl_no),'') IS NOT NULL
+   GROUP BY BTRIM(bl_no)
+),
 decl AS (
   SELECT j.group_key, SUM(x.fob_cny) AS declared_amount
     FROM joined j
@@ -123,6 +129,7 @@ SELECT j.po_nos, j.customer, j.factory, j.bl_no, j.etd, j.trade_terms,
        ROUND(j.ocean_sale_usd::numeric,2) AS ocean_sale_usd,
        ROUND(j.port_sale_cny::numeric,2) AS port_sale_cny,
        ROUND(COALESCE(d.declared_amount,0)::numeric,2) AS declared_amount,
+       COALESCE(dg.docs,'[]'::json) AS docs,
        ARRAY_REMOVE(ARRAY[
          CASE WHEN NULLIF(j.bl_no,'') IS NULL THEN '缺BL' END,
          CASE WHEN COALESCE(j.goods_cost,0)=0 THEN '缺成本' END,
@@ -130,6 +137,7 @@ SELECT j.po_nos, j.customer, j.factory, j.bl_no, j.etd, j.trade_terms,
          CASE WHEN COALESCE(d.declared_amount,0)=0 THEN '缺报关' END
        ], NULL) AS gap_flags
   FROM joined j LEFT JOIN decl d USING(group_key)
+  LEFT JOIN docs_grp dg ON dg.bl_no = j.bl_no
  ORDER BY j.etd NULLS LAST, j.bl_no NULLS LAST, j.po_nos NULLS LAST`;
   const r = await pool.query(sql, args);
   return r.rows;
