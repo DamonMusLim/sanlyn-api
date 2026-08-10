@@ -162,6 +162,7 @@ mount("/api/wecom-jssdk-sign", () => import("./api/wecom-jssdk-sign.js"));
 mount("/api/wx-mini-login", () => import("./api/wx-mini-login.js"));
 mount("/api/brief-notes", () => import("./api/brief-notes.js"));
 mount("/kp", () => import("./api/db/kp.js"));
+mount("/api/console/daily-check", () => import("./api/console-daily-check.js"));
 
 // ── JWT 鉴权中间件 ──
 app.use(authMiddleware);
