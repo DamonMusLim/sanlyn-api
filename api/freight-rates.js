@@ -1,4 +1,12 @@
 import { getPool, setCors } from './db.js';
+import { normalizeCarrier } from './db/lib/portcharge-close-loop.js';
+
+function normRateBody(body) {
+  const out = { ...(body || {}) };
+  if (Object.prototype.hasOwnProperty.call(out, 'carrier')) out.carrier = normalizeCarrier(out.carrier);
+  if (Object.prototype.hasOwnProperty.call(out, 'forwarder')) out.forwarder = String(out.forwarder || '').trim();
+  return out;
+}
 
 export default async function handler(req, res) {
   setCors(req, res, 'GET, POST, PATCH, DELETE, OPTIONS');
@@ -35,8 +43,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { carrier, forwarder, pol, pod, route_code, gp20, hq40, customer_gp20, customer_hq40, this_week, next_sailing, transit_days, thc, local_charge_code, eta_date, remarks } = req.body || {};
-    if (!carrier || !pol || !pod) return res.status(400).json({ error: 'carrier, pol, pod required' });
+    const body = normRateBody(req.body || {});
+    const { carrier, forwarder, pol, pod, route_code, gp20, hq40, customer_gp20, customer_hq40, this_week, next_sailing, transit_days, thc, local_charge_code, eta_date, remarks } = body;
+    if (!carrier || !pol || !pod || !forwarder) return res.status(400).json({ error: 'carrier, forwarder, pol, pod required' });
     try {
       const result = await pool.query(
         'INSERT INTO freight_rates (carrier, forwarder, pol, pod, route_code, gp20, hq40, customer_gp20, customer_hq40, this_week, next_sailing, transit_days, thc, local_charge_code, eta_date, remarks, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,\'active\') RETURNING *',
@@ -52,7 +61,8 @@ export default async function handler(req, res) {
     const id = req.query.id;
     if (!id) return res.status(400).json({ error: 'id required' });
     const allowed = ['carrier','forwarder','pol','pod','route_code','gp20','hq40','customer_gp20','customer_hq40','this_week','next_sailing','transit_days','thc','local_charge_code','eta_date','remarks','status'];
-    const body = req.body || {};
+    const body = normRateBody(req.body || {});
+    if (Object.prototype.hasOwnProperty.call(body, 'forwarder') && !body.forwarder) return res.status(400).json({ error: 'forwarder required' });
     const fields = Object.keys(body).filter(k => allowed.includes(k));
     if (!fields.length) return res.status(400).json({ error: 'no updatable fields' });
     const setClauses = fields.map((f, i) => '`' + f + '` = $' + (i + 1)).join(', ');

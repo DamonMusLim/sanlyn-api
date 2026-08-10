@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { issueDocNo, loadPortChargeIssue } from "./lib/portcharge-close-loop.js";
 
 function stripCompanyPrefix(s) {
   return String(s || "").replace(/^\d+-/, "");
@@ -188,57 +189,7 @@ async function loadContainers(pool, p) {
   };
 }
 
-async function portCharges(pool, p) {
-  const blNo = p.bl_no || "—";
-  let factoryCode = "";
-  try {
-    const r = await pool.query(
-      `SELECT DISTINCT payer_company_code
-       FROM active_freight_supplier_bills
-       WHERE (bl_no = $1 OR link_plan_id = $2)
-         AND (cost_category !~* '海运|ocean|freight')
-         AND COALESCE(amount,0) > 0 AND COALESCE(payer_company_code,'') <> ''
-       LIMIT 1`,
-      [blNo, String(p.id)]
-    );
-    factoryCode = r.rows[0]?.payer_company_code || "";
-  } catch (_) {}
-  let rows = [];
-  if (factoryCode) {
-    try {
-      const r = await pool.query(
-        `SELECT cost_category, amount, currency, qty, unit_price, charge_basis
-         FROM active_freight_supplier_bills
-         WHERE (bl_no = $1 OR link_plan_id = $3) AND payer_company_code = $2
-           AND (cost_category !~* '海运|ocean|freight')
-           AND UPPER(COALESCE(currency,'CNY')) = 'CNY' AND COALESCE(amount,0) > 0
-         ORDER BY id`,
-        [blNo, factoryCode, String(p.id)]
-      );
-      rows = r.rows;
-    } catch (_) {}
-  }
-  let usedFallbackCard = false;
-  if (!rows.length) {
-    usedFallbackCard = true;
-    const qty = parseInt(p.container_qty, 10) || 1;
-    rows = [
-      ["舱单费", "整票", 100, false], ["码头操作费(THC)", "每柜", 1100, true],
-      ["铅封费", "每柜", 55, true], ["单证费", "整票", 400, false],
-      ["港杂费", "每柜", 50, true], ["提箱费", "每柜", 307, true],
-      ["电放费", "整票", 450, false], ["设备交接单费", "每柜", 50, true],
-      ["燃油附加费", "每柜", 50, true], ["订舱费", "整票", 100, false],
-      ["码头信息服务费", "每柜", 7, true], ["EDI", "每柜", 3.9, true],
-      ["场站费用", "每柜", 400, true],
-    ].map(([name, basis, price, perCtn]) => {
-      const q = perCtn ? qty : 1;
-      return { cost_category: name, charge_basis: basis, currency: "CNY", qty: q, unit_price: price, amount: Number((price * q).toFixed(2)) };
-    });
-  }
-  return { factoryCode, rows, usedFallbackCard };
-}
-
-export async function buildShippingPlanDocData(pool, id, page) {
+export async function buildShippingPlanDocData(pool, id, page, actor = null, query = {}) {
   const p = await loadPlan(pool, id);
   if (!p) return null;
   const raw = parseRaw(p.raw);
@@ -250,28 +201,47 @@ export async function buildShippingPlanDocData(pool, id, page) {
     etd: p.etd, pol: p.pol || "—", pod: p.pod || "—", gen_date: genDate,
   };
   if (page === "portcharge") {
-    const pc = await portCharges(pool, p);
+    const pc = await loadPortChargeIssue(pool, p, { containerQty: containers.qty, payerCode: query.payer_company_code });
+    if (pc.needs_payer_selection) return { page, needs_payer_selection: true, payers: pc.payers, shipment: common };
     const factory = await loadFactory(pool, pc.factoryCode);
-    const totalCny = pc.rows.reduce((s, r) => s + num(r.amount), 0);
-    return {
+    const totalCny = pc.totalCny;
+    const data = {
       page, shipment: common, factory, containers, charges: pc.rows,
       used_fallback_card: pc.usedFallbackCard,
+      needs_terms: pc.needs_terms,
+      warning: pc.warning,
+      warnings: pc.warnings || [],
       totals: { cny: Number(totalCny.toFixed(2)) },
-      doc_no: "PC-" + String(p.bl_no || p.shipment_no || p.id).replace(/[^A-Z0-9]/gi, "").toUpperCase() + "-" + genDate.replace(/-/g, ""),
       pdf_type: "fob_portcharge",
     };
+    data.doc_no = await issueDocNo(pool, {
+      prefix: "PC", seed: p.bl_no || p.shipment_no || p.id, blNo: p.bl_no,
+      docType: "fob_portcharge", totalCny, generatedBy: actor,
+      snapshot: { shipment: common, factory_code: pc.factoryCode, charges: pc.rows, used_fallback_card: pc.usedFallbackCard, warnings: pc.warnings || [] },
+    });
+    return data;
   }
   const customer = await loadCustomer(pool, p);
   const fxRate = await latestFx(pool);
   const totalUsd = num(p.freight_sale_usd);
   const unitPrice = containers.qty > 0 ? totalUsd / containers.qty : totalUsd;
-  return {
+  const plannedQty = num(p.container_qty);
+  const warnings = plannedQty && plannedQty !== containers.qty
+    ? [`container_qty(${plannedQty}) 与实际柜明细(${containers.qty})不一致, 已按实际柜数计算单价`]
+    : [];
+  const data = {
     page: "freight", shipment: common, customer, containers,
     charges: [{ cost_category: "海运费 Ocean Freight", charge_basis: "Per Container / 箱", currency: "USD", qty: containers.qty, unit_price: unitPrice, amount: totalUsd }],
     totals: { usd: Number(totalUsd.toFixed(2)), cny: Number((totalUsd * fxRate).toFixed(2)), fx_rate: fxRate },
-    doc_no: "FI-" + (p.shipment_no || String(p.id)) + "-" + genDate.replace(/-/g, ""),
     pdf_type: "fob_invoice",
+    warnings,
   };
+  data.doc_no = await issueDocNo(pool, {
+    prefix: "FI", seed: p.shipment_no || p.bl_no || p.id, blNo: p.bl_no,
+    docType: "fob_invoice", totalUsd, totalCny: data.totals.cny, generatedBy: actor,
+    snapshot: { shipment: common, containers, charges: data.charges, warnings },
+  });
+  return data;
 }
 
 export default async function handler(req, res) {
@@ -283,8 +253,10 @@ export default async function handler(req, res) {
   if (!id) return res.status(400).json({ error: "Missing id" });
   const page = String(req.query.page || "freight").toLowerCase() === "portcharge" ? "portcharge" : "freight";
   try {
-    const data = await buildShippingPlanDocData(getPool(), id, page);
+    const actor = req.user?.email || req.user?.username || req.user?.name || req.user?.role || null;
+    const data = await buildShippingPlanDocData(getPool(), id, page, actor, req.query || {});
     if (!data) return res.status(404).json({ error: "Shipment not found" });
+    if (data.needs_payer_selection) return res.status(409).json({ success: false, error: "multiple_payers", data });
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).json({ success: true, data });
   } catch (e) {

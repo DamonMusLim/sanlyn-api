@@ -22,6 +22,7 @@
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { normalizeChargeName } from "./lib/portcharge-close-loop.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
@@ -35,13 +36,17 @@ export default async function handler(req, res) {
       if (!b.bl_no || !b.cost_category || b.amount == null || !b.currency)
         return res.status(400).json({ error: "bl_no, cost_category, amount, currency required" });
       const pool = getPool();
+      const chargeNorm = await normalizeChargeName(pool, b.cost_category, b.carrier || b.shipping_line || "*", b.bl_no);
+      const raw = b.raw && typeof b.raw === "object" ? { ...b.raw } : {};
+      raw.original_name = chargeNorm.original_name || null;
+      raw.unmapped = Boolean(chargeNorm.unmapped);
       const r = await pool.query(
         `INSERT INTO freight_supplier_bills
            (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, rebill_status, supplier, bill_month, raw, created_at, updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) RETURNING *`,
-        [b.bl_no, b.link_plan_id ?? null, b.cost_category, b.amount, b.currency,
+        [b.bl_no, b.link_plan_id ?? null, chargeNorm.name || b.cost_category, b.amount, b.currency,
          b.sale_amount ?? null, b.rebill_status ?? null, b.supplier ?? "待补",
-         b.bill_month ?? null, b.raw ? JSON.stringify(b.raw) : null]
+         b.bill_month ?? null, JSON.stringify(raw)]
       );
       return res.status(201).json({ success: true, data: r.rows[0] });
     } catch (err) { return res.status(500).json({ success: false, error: err.message }); }

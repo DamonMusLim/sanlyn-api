@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { normalizeCarrier } from "./lib/portcharge-close-loop.js";
 
 // 同 船司×货代×航线 且同柜型列有价,有效期不得重叠(运费中心蓝图 v1.4 决议⑤,2026-08-03)。
 // 排除已撤销(withdrawn)的旧价 —— 它们不该永远挡住新价录入。
@@ -43,6 +44,13 @@ const NUMDATE_COLS = new Set(["gp20","hq40","customer_gp20","customer_hq40","tra
   "thc","valid_from","valid_to","eta_date","free_days_base","free_days_ext","supplier_id"]);
 const blankToNull = (k, v) => (NUMDATE_COLS.has(k) && v === "" ? null : v);
 
+function normalizeRateBody(body) {
+  const out = { ...(body || {}) };
+  if (Object.prototype.hasOwnProperty.call(out, "carrier")) out.carrier = normalizeCarrier(out.carrier);
+  if (Object.prototype.hasOwnProperty.call(out, "forwarder")) out.forwarder = String(out.forwarder || "").trim();
+  return out;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -52,9 +60,12 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     if (!requireAuth(req, res)) return;
     try {
-      const body = req.body || {};
+      const body = normalizeRateBody(req.body || {});
       const id = parseInt(body.id, 10);
       if (!Number.isFinite(id)) return res.status(400).json({ success:false, error:"id required" });
+      if (Object.prototype.hasOwnProperty.call(body, "forwarder") && !String(body.forwarder || "").trim()) {
+        return res.status(400).json({ success:false, error:"forwarder required" });
+      }
       const old = await pool.query("SELECT * FROM freight_rates WHERE id = $1", [id]);
       if (!old.rows.length) return res.status(404).json({ success:false, error:"not found" });
       const overlap = await rejectRateOverlap(pool, { ...old.rows[0], ...body }, id);
@@ -82,7 +93,10 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     if (!requireAuth(req, res)) return;
     try {
-      const body = req.body || {};
+      const body = normalizeRateBody(req.body || {});
+      if (!String(body.forwarder || "").trim()) {
+        return res.status(400).json({ success:false, error:"forwarder required" });
+      }
       const overlap = await rejectRateOverlap(pool, body);
       if (overlap) return res.status(409).json({ success:false, error: overlap });
       const EDITABLE = ["pol","pod","carrier","forwarder","route_code","via","gp20","hq40",
