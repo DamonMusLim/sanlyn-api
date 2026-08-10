@@ -93,7 +93,7 @@ async function localRows(pool, port, ct, carrier = "") {
     `SELECT carrier, company_name, container_type, fees, base_total_cny,
             conditional_total_cny, markup_cny, cost_total, sell_total, updated_at
        FROM local_charges
-      WHERE ${where}
+      WHERE COALESCE(is_active,true) AND ${where}
       ORDER BY carrier, company_name, updated_at DESC NULLS LAST`,
     params
   );
@@ -160,8 +160,9 @@ async function lane(pool, q) {
             lc.cost_total AS port_base, lc.company_name AS port_forwarder
        FROM freight_rates f
        LEFT JOIN LATERAL (
-         SELECT cost_total, company_name FROM local_charges lc
-          WHERE upper(lc.container_type) = upper($1)
+         SELECT COALESCE(base_total_cny,cost_total) AS cost_total, company_name FROM local_charges lc
+          WHERE COALESCE(lc.is_active,true)
+            AND upper(lc.container_type) = upper($1)
             AND lower(btrim(lc.pol)) = lower(btrim(f.pol))
             AND lower(btrim(lc.carrier)) = lower(btrim(f.carrier))
             AND (f.forwarder IS NULL OR lower(btrim(lc.company_name)) = lower(btrim(f.forwarder)))
