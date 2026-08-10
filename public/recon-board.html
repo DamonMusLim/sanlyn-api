@@ -548,5 +548,32 @@
     $("modalSecond").addEventListener("click",()=>$("modal").close());$("modalMain").addEventListener("click",()=>$("modal").close());
     if(state.token){$("who").textContent="已登录（token）";load().catch(err=>{localStorage.removeItem("sanlyn_token");$("who").textContent="登录已过期，请重新登录";$("error").textContent=err.message})}
   </script>
+<div id="rm-wrap" style="display:none;margin:14px 0;border:1px solid #2a2e37;border-radius:10px;overflow:hidden">
+  <iframe id="rm-frame" style="width:100%;height:78vh;border:none;background:#0a0e1a"></iframe>
+</div>
+<script>
+(function(){
+  var bar=document.createElement('button');
+  bar.id='rm-toggle';
+  bar.textContent='📋 对账主表(每票一行)';
+  bar.style.cssText='position:sticky;bottom:0;margin:10px 0;padding:9px 18px;border-radius:8px;border:1px solid #3b82f6;background:rgba(59,130,246,.12);color:#93c5fd;font-weight:600;cursor:pointer;font-size:13px';
+  function mount(){
+    var host=document.querySelector('details')||document.body.firstElementChild;
+    if(host&&host.parentNode){host.parentNode.insertBefore(bar,host.nextSibling);
+      var w=document.getElementById('rm-wrap');host.parentNode.insertBefore(w,bar.nextSibling);}
+    else document.body.appendChild(bar);
+  }
+  bar.onclick=function(){
+    var w=document.getElementById('rm-wrap'),f=document.getElementById('rm-frame');
+    var show=w.style.display==='none';
+    w.style.display=show?'block':'none';
+    bar.textContent=show?'📋 收起对账主表':'📋 对账主表(每票一行)';
+    if(show&&!f.src)f.src='/public/recon-master.html';
+    if(show)w.scrollIntoView({behavior:'smooth'});
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(mount,800)});
+  else setTimeout(mount,800);
+})();
+</script>
 </body>
 </html>

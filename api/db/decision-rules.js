@@ -91,17 +91,28 @@ export default async function handler(req, res) {
                          : res.status(404).json({ ok: false, error: "没这条" });
       }
       if (act === "approve") {
+        // forge 0810 两处：①不存在的 id 会在下面读 r.rows[0].hit_count 直接 500，该返 404
+        //                 ②cancelled 的规则不许被重新升 active（误操作会把废规则救活）
         const r = await pool.query(
           `UPDATE decision_rules
               SET hit_count = COALESCE(hit_count,0)+1,
                   status = CASE WHEN COALESCE(hit_count,0)+1 >= $2 THEN 'active' ELSE status END,
                   active = (COALESCE(hit_count,0)+1 >= $2),
                   updated_at = now()
-            WHERE id=$1 RETURNING id, status, hit_count, active`, [id, PROMOTE_AT]);
-        return res.json({ ok: true, ...r.rows[0],
-          提示: r.rows[0]?.active ? "已升为 active，以后同类会自动按它办" : `再认可 ${PROMOTE_AT - r.rows[0].hit_count} 次就自动执行` });
+            WHERE id=$1 AND status <> 'cancelled'
+            RETURNING id, status, hit_count, active`, [id, PROMOTE_AT]);
+        const row = r.rows[0];
+        if (!row) {
+          const ex = await pool.query(`SELECT status FROM decision_rules WHERE id=$1`, [id]);
+          return ex.rows[0]
+            ? res.status(409).json({ ok: false, error: `规则已 ${ex.rows[0].status}，不能再认可；要恢复请先显式 restore` })
+            : res.status(404).json({ ok: false, error: "没这条规则" });
+        }
+        return res.json({ ok: true, ...row,
+          提示: row.active ? "已升为 active，以后同类会自动按它办" : `再认可 ${PROMOTE_AT - row.hit_count} 次就自动执行` });
       }
       if (act === "corrected") {
+        // 同上：cancelled 的不再参与升降级
         // Damon 改了它拟的稿 → 说明这条不准，降级
         const r = await pool.query(
           `UPDATE decision_rules
@@ -109,7 +120,9 @@ export default async function handler(req, res) {
                   status = CASE WHEN COALESCE(corrected_count,0)+1 >= $2 THEN 'candidate' ELSE status END,
                   active = CASE WHEN COALESCE(corrected_count,0)+1 >= $2 THEN false ELSE active END,
                   updated_at = now()
-            WHERE id=$1 RETURNING id, status, corrected_count, active`, [id, DEMOTE_AT]);
+            WHERE id=$1 AND status <> 'cancelled'
+            RETURNING id, status, corrected_count, active`, [id, DEMOTE_AT]);
+        if (!r.rows[0]) return res.status(404).json({ ok: false, error: "没这条规则或已取消" });
         return res.json({ ok: true, ...r.rows[0],
           提示: r.rows[0]?.active === false ? "已降回候选，不再自动执行" : "已记一次修正" });
       }
