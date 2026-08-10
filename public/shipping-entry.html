@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>海运录入表单</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f7f9;color:#111827;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}.wrap{max-width:1380px;margin:0 auto;padding:22px}.title{font-size:22px;font-weight:900}.meta{font-size:12px;color:#6b7280}.bar,.main{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-top:12px}.grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr 2fr;gap:10px}label{display:block;font-size:11px;color:#6b7280;font-weight:800;margin-bottom:4px}input,select,textarea{width:100%;height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 8px;background:#fff}textarea{height:32px;padding-top:6px}.btn{height:32px;border:0;border-radius:6px;background:#111827;color:#fff;font-weight:800;padding:0 14px;cursor:pointer}.tbl{width:100%;border-collapse:collapse;margin-top:12px}.tbl th,.tbl td{border:1px solid #edf0f4;padding:6px}.tbl th{background:#111827;color:#fff;font-size:11px}.tbl input,.tbl select{min-width:86px}.readonly{background:#f9fafb;color:#6b7280}.err{padding:10px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-top:12px}.ok{padding:10px;color:#047857;background:#ecfdf5;border:1px solid #bbf7d0;border-radius:8px;margin-top:12px}#login{display:none;max-width:320px;margin:10vh auto;padding:24px;border:1px solid #ddd;border-radius:8px;background:#fff}@media(max-width:900px){.grid{grid-template-columns:1fr}.tbl{min-width:900px}.scroll{overflow:auto}}
+</style>
+</head>
+<body>
+<div class="wrap" id="main">
+  <div><div class="title">海运录入表单</div><div class="meta">v2026.08.10-1 · <span id="stamp"></span></div></div>
+  <div class="bar" style="display:flex;gap:8px;align-items:end">
+    <div style="flex:1"><label>海运票选择</label><input id="search" list="plans" placeholder="搜索 shipment_no / BL"><datalist id="plans"></datalist></div>
+    <button class="btn" id="loadBtn">载入</button><button class="btn" id="saveBtn">保存</button>
+  </div>
+  <div id="msg"></div>
+  <div class="main">
+    <div class="grid">
+      <div><label>海运票</label><input id="shipment" readonly></div>
+      <div><label>状态</label><input id="status"></div>
+      <div><label>日期</label><input id="etd" type="date"></div>
+      <div><label>20GP USD 实际</label><input id="a20" type="number" step="0.01"></div>
+      <div><label>40HQ USD 实际</label><input id="a40" type="number" step="0.01"></div>
+      <div><label>备注</label><textarea id="remarks"></textarea></div>
+    </div>
+    <div class="scroll"><table class="tbl" id="lines"></table></div>
+    <button class="btn" id="addBtn" style="margin-top:10px">新增明细</button>
+  </div>
+</div>
+<div id="login"><h3>登录</h3><input id="u" placeholder="用户名" style="margin-bottom:8px;padding:9px"><input id="p" type="password" placeholder="密码" style="margin-bottom:10px;padding:9px"><button id="go" style="width:100%;padding:10px">登录</button><div id="le" style="color:#b91c1c;font-size:12px;margin-top:6px"></div></div>
+<script>
+var plan=null,items=[],standards=[],rows=[];
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])})}
+function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+function headers(){var h={"Content-Type":"application/json"};if(token())h.Authorization="Bearer "+token();return h}
+function msg(t,ok){document.getElementById("msg").innerHTML='<div class="'+(ok?"ok":"err")+'">'+esc(t)+'</div>'}
+function showLogin(){login.style.display="block";main.style.display="none"}
+function itemOptions(v){return '<option value=""></option>'+items.map(function(x){return '<option '+(x.name===v?"selected":"")+' value="'+esc(x.name)+'">'+esc(x.name)+'</option>'}).join("")}
+function unitOf(name){var x=items.find(function(i){return i.name===name});return x?x.unit_basis:""}
+function official(name){var x=standards.find(function(s){return s.charge_item_name===name});return x?Number(x.amount_cny||0).toFixed(2):"—"}
+function lineTotal(r){return Number(((Number(r.unit_price)||0)*(Number(r.qty)||1)).toFixed(2))}
+function saleValue(r){return r.sale_amount==null||r.sale_amount===""?lineTotal(r):r.sale_amount}
+function renderLines(){
+  var head='<tr><th>费用名称</th><th>收/付</th><th>单价</th><th>数量</th><th>转客户价</th><th>单位</th><th>官方价</th><th>备注</th></tr>';
+  lines.innerHTML=head+rows.map(function(r,i){var isSale=r.direction==="收";return '<tr><td><select data-i="'+i+'" data-k="cost_category">'+itemOptions(r.cost_category)+'</select><input data-i="'+i+'" data-k="manual" placeholder="手输费目" value="'+esc(r.manual||"")+'"></td><td><select data-i="'+i+'" data-k="direction"><option '+(r.direction==="付"?"selected":"")+'>付</option><option '+(isSale?"selected":"")+'>收</option></select></td><td><input data-i="'+i+'" data-k="unit_price" type="number" step="0.01" value="'+esc(r.unit_price||"")+'"></td><td><input data-i="'+i+'" data-k="qty" type="number" step="0.01" value="'+esc(r.qty||1)+'"></td><td><input class="'+(isSale?"":"readonly")+'" data-i="'+i+'" data-k="sale_amount" type="number" step="0.01" '+(isSale?"":"readonly")+' value="'+esc(isSale?saleValue(r):"")+'"></td><td><input class="readonly" data-i="'+i+'" data-k="charge_basis" readonly value="'+esc(r.charge_basis||unitOf(r.cost_category)||"")+'"></td><td class="readonly">'+official(r.cost_category)+'</td><td><input data-i="'+i+'" data-k="remarks" value="'+esc(r.remarks||"")+'"></td></tr>'}).join("");
+}
+lines.oninput=lines.onchange=function(e){var i=e.target.dataset.i,k=e.target.dataset.k;if(i==null)return;rows[i][k]=e.target.value;if(k==="cost_category"){rows[i].charge_basis=unitOf(e.target.value);renderLines()}if(k==="direction")renderLines();if((k==="unit_price"||k==="qty")&&rows[i].direction==="收"&&(rows[i].sale_amount==null||rows[i].sale_amount==="")){var x=lines.querySelector('input[data-i="'+i+'"][data-k="sale_amount"]');if(x)x.value=lineTotal(rows[i])}};
+async function api(url,opt){var r=await fetch(url,opt||{headers:headers()});if(r.status===401){showLogin();throw new Error("需要登录")}var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);return j}
+async function loadList(){var j=await api("/api/db/shipping-entry?search="+encodeURIComponent(search.value),{headers:headers()});items=j.fee_items||[];plans.innerHTML=(j.data||[]).map(function(p){return '<option value="'+esc(p.shipment_no||p.bl_no)+'">'+esc((p.shipment_no||"")+" "+(p.bl_no||""))+'</option>'}).join("")}
+async function loadOne(){try{var j=await api("/api/db/shipping-entry?id="+encodeURIComponent(search.value),{headers:headers()});var d=j.data;plan=d.plan;items=d.fee_items||items;standards=d.standards||[];shipment.value=(plan.shipment_no||"")+" / "+(plan.bl_no||"");status.value=plan.flow_status||plan.status||"";etd.value=String(plan.etd||"").slice(0,10);remarks.value=plan.remarks||"";a20.value=String(plan.container_type||"").includes("20")?(plan.freight_sale_usd||""):"";a40.value=String(plan.container_type||"").includes("40")?(plan.freight_sale_usd||""):"";rows=(d.bills||[]).map(function(b){return {id:b.id,cost_category:b.cost_category,direction:Number(b.sale_amount)>0?"收":"付",unit_price:b.unit_price||b.amount,qty:b.qty||1,sale_amount:b.sale_amount,charge_basis:b.charge_basis,remarks:b.remarks}});renderLines();stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN")}catch(e){msg(e.message,false)}}
+addBtn.onclick=function(){rows.push({direction:"付",qty:1,currency:"CNY"});renderLines()};
+loadBtn.onclick=loadOne;search.oninput=function(){clearTimeout(window.t);window.t=setTimeout(loadList,250)};
+saveBtn.onclick=async function(){try{if(!plan)throw new Error("先选择海运票");var body={id:plan._id,plan:{flow_status:status.value,etd:etd.value,actual_20gp_usd:a20.value,actual_40hq_usd:a40.value,remarks:remarks.value},lines:rows.map(function(r){var x=Object.assign({},r,{fee_name:r.manual||r.cost_category,cost_category:r.manual||r.cost_category});if(x.direction==="收"&&(x.sale_amount==null||x.sale_amount===""))x.sale_amount=lineTotal(x);return x})};await api("/api/db/shipping-entry",{method:"PATCH",headers:headers(),body:JSON.stringify(body)});msg("已保存",true);loadOne()}catch(e){msg(e.message,false)}};
+go.onclick=async function(){try{var r=await fetch("/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u.value,password:p.value})});var d=await r.json();if(!r.ok||!d.token)throw new Error(d.error||"登录失败");localStorage.setItem("sanlyn_token",d.token);login.style.display="none";main.style.display="block";loadList()}catch(e){le.textContent=e.message}};
+loadList().catch(function(e){if(e.message!=="需要登录")msg(e.message,false)});
+</script>
+</body>
+</html>

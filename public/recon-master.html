@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>对账主表</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f6f7f9;color:#111827;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}.wrap{max-width:1500px;margin:0 auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px}.title{font-size:22px;font-weight:900}.meta{font-size:12px;color:#6b7280}.bar{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #e5e7eb;padding:10px;border-radius:8px;margin-bottom:12px}input{height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 9px}.btn{height:32px;border:0;border-radius:6px;background:#111827;color:#fff;font-weight:800;padding:0 14px;cursor:pointer}.panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:auto}.tbl{width:100%;min-width:1180px;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid #edf0f4;border-right:1px solid #edf0f4;padding:7px 8px;text-align:right;white-space:nowrap}.tbl th:first-child,.tbl td:first-child{text-align:left;position:sticky;left:0;background:inherit}.tbl th{background:#111827;color:#fff;font-size:11px}.gap{background:#fee2e2;color:#991b1b;font-weight:800}.sum{background:#f9fafb;font-weight:900}.hint{padding:24px;text-align:center;color:#6b7280}.err{padding:12px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-bottom:12px}#login{display:none;max-width:320px;margin:10vh auto;padding:24px;border:1px solid #ddd;border-radius:8px;background:#fff}
+</style>
+</head>
+<body>
+<div class="wrap" id="main">
+  <div class="top"><div><div class="title">对账主表</div><div class="meta">v2026.08.10-1 · <span id="stamp"></span></div></div></div>
+  <div class="bar">
+    <input id="company" value="CN-00040" placeholder="客户编码">
+    <input id="year" value="2026" placeholder="年份">
+    <button class="btn" id="reload">刷新</button>
+    <button class="btn" id="exportBtn">导出Excel</button>
+  </div>
+  <div id="msg"></div><div class="panel" id="app"><div class="hint">Loading...</div></div>
+</div>
+<div id="login"><h3>登录</h3><input id="u" placeholder="用户名" style="width:100%;margin-bottom:8px;padding:9px"><input id="p" type="password" placeholder="密码" style="width:100%;margin-bottom:10px;padding:9px"><button id="go" style="width:100%;padding:10px">登录</button><div id="le" style="color:#b91c1c;font-size:12px;margin-top:6px"></div></div>
+<script>
+var app=document.getElementById("app"),msg=document.getElementById("msg"),rows=[];
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])})}
+function money(n){n=Number(n||0);return n?n.toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2}):"0.00"}
+function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+function qs(){return new URLSearchParams({company:company.value,year:year.value}).toString()}
+function showLogin(){document.getElementById("login").style.display="block";document.getElementById("main").style.display="none"}
+function gapCell(v,flag){return '<td class="'+(flag?"gap":"")+'">'+esc(v||"")+'</td>'}
+function numCell(v,flag){return '<td class="'+(flag?"gap":"")+'">'+money(v)+'</td>'}
+function render(){
+  var s=rows.reduce(function(a,r){["goods_cost","goods_sale","ocean_cost_usd","barge_cost_cny","ocean_sale_usd","port_sale_cny","declared_amount"].forEach(function(k){a[k]+=Number(r[k]||0)});return a},{goods_cost:0,goods_sale:0,ocean_cost_usd:0,barge_cost_cny:0,ocean_sale_usd:0,port_sale_cny:0,declared_amount:0});
+  var head='<tr><th>PO号</th><th>BL</th><th>ETD</th><th>贸易条款</th><th>货品成本</th><th>货品销售</th><th>海运成本USD</th><th>驳船CNY</th><th>海运销售USD</th><th>港杂销售CNY</th><th>报关额</th><th>缺口</th></tr>';
+  var body=rows.map(function(r){var g=r.gap_flags||[];return '<tr>'+gapCell(r.po_nos,false)+gapCell(r.bl_no,g.includes("缺BL"))+gapCell(String(r.etd||"").slice(0,10),false)+gapCell(r.trade_terms,false)+numCell(r.goods_cost,g.includes("缺成本"))+numCell(r.goods_sale,g.includes("缺销售"))+numCell(r.ocean_cost_usd,false)+numCell(r.barge_cost_cny,false)+numCell(r.ocean_sale_usd,false)+numCell(r.port_sale_cny,false)+numCell(r.declared_amount,g.includes("缺报关"))+gapCell(g.join("/"),g.length)+'</tr>'}).join("");
+  body+='<tr class="sum"><td>合计</td><td></td><td></td><td></td><td>'+money(s.goods_cost)+'</td><td>'+money(s.goods_sale)+'</td><td>'+money(s.ocean_cost_usd)+'</td><td>'+money(s.barge_cost_cny)+'</td><td>'+money(s.ocean_sale_usd)+'</td><td>'+money(s.port_sale_cny)+'</td><td>'+money(s.declared_amount)+'</td><td></td></tr>';
+  app.innerHTML='<table class="tbl">'+head+body+'</table>';
+}
+async function load(){
+  msg.innerHTML="";app.innerHTML='<div class="hint">Loading...</div>';
+  try{var r=await fetch("/api/db/recon-master?"+qs(),{headers:token()?{Authorization:"Bearer "+token()}:{}});
+    if(r.status===401){showLogin();return}var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);
+    rows=j.data||[];stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");render();
+  }catch(e){app.innerHTML="";msg.innerHTML='<div class="err">'+esc(e.message)+'</div>'}
+}
+reload.onclick=load;exportBtn.onclick=async function(){try{var r=await fetch("/api/db/recon-export?"+qs(),{headers:token()?{Authorization:"Bearer "+token()}: {}});if(r.status===401){showLogin();return}if(!r.ok)throw new Error("导出失败");var b=await r.blob(),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="recon-"+company.value+".xlsx";a.click();URL.revokeObjectURL(a.href)}catch(e){msg.innerHTML='<div class="err">'+esc(e.message)+'</div>'}};
+go.onclick=async function(){try{var r=await fetch("/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u.value,password:p.value})});var d=await r.json();if(!r.ok||!d.token)throw new Error(d.error||"登录失败");localStorage.setItem("sanlyn_token",d.token);login.style.display="none";main.style.display="block";load()}catch(e){le.textContent=e.message}};
+load();
+</script>
+</body>
+</html>

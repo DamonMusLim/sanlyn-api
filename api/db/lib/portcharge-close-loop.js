@@ -47,7 +47,7 @@ function isPureFobPlan(p) {
   return term === "FOB" || term === "FCA";
 }
 
-function carrierFromBl(blNo) {
+export function carrierFromBl(blNo) {
   const s = docKey(blNo);
   if (!s) return "";
   const map = [

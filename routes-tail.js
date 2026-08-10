@@ -31,6 +31,9 @@ export function registerTailRoutes(app, mount) {
   mount("/api/admin/trigger-payment-reminder", () => import("./api/admin/trigger-payment-reminder.js"));
   // ── Reconciliation / monthly statement ──
   mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
+  mount("/api/db/recon-master", () => import("./api/db/recon-master.js"));
+  mount("/api/db/recon-export", () => import("./api/db/recon-export.js"));
+  mount("/api/db/shipping-entry", () => import("./api/db/shipping-entry.js"));
   mount("/api/db/statement-portal-data", () => import("./api/db/statement-portal-data.js")); // 客户对账单门户public
   mount("/api/db/slip-upload", () => import("./api/db/slip-upload.js")); // 水单/入账通知上传+MiniMax OCR (补线,2026-07-08二次找回)
   mount("/api/db/slip-review", () => import("./api/db/slip-review.js")); // 水单OCR人工确认闸 2026-07-07
