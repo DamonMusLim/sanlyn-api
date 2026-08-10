@@ -11,6 +11,7 @@ import { renderInboundNotice } from "./inbound-notice.js"; // 入货通知/订�
 import { renderInspectionRequest } from "./inspection-request-form.js"; // 出境货物检验检疫申请/报检单 2026-07-05
 import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
 import { renderReceiptDoc } from "./receipt-doc.js"; // 收款证明(银行原版docx母版灌数据) 2026-07-07
+import { issueDocNo, loadPortChargeIssue } from "./lib/portcharge-close-loop.js";
 
 // 合同号/PO 展示用：去掉前导公司码前缀(如 "38-XM-244" -> "XM-244")，纯展示，不影响任何金额/归属计算。
 // 呼应 documents.js 里同名用途的 stripPrefix()（那边只硬编码strip "40-"，这里适配任意公司码前缀）。
@@ -943,11 +944,19 @@ ${printBtn}
         </tr>`).join("");
 
       const totalUsd  = parseFloat(p.freight_sale_usd || 0);
-      const unitPrice = ctnQty > 0 ? totalUsd / ctnQty : totalUsd;
+      const unitPrice = actualCtnQty > 0 ? totalUsd / actualCtnQty : totalUsd;
       const totalCny  = Math.round(totalUsd * fxRate * 100) / 100;
+      const fobWarnings = ctnQty && ctnQty !== actualCtnQty
+        ? [`container_qty(${ctnQty}) 与实际柜明细(${actualCtnQty})不一致, 已按实际柜数计算单价`]
+        : [];
+      const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
 
-      // 发票号：FI-{shipment_no}-{YYYYMMDD}
-      const fobInvNo = "FI-" + (p.shipment_no || String(p.id)) + "-" + genDate.replace(/-/g, "");
+      const fobInvNo = await issueDocNo(pool, {
+        prefix: "FI", seed: p.shipment_no || p.bl_no || p.id, blNo: p.bl_no,
+        docType: "fob_invoice", totalUsd, totalCny,
+        generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
+        snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, qty: actualCtnQty, warnings: fobWarnings },
+      });
 
       const fobHtml = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
@@ -1016,6 +1025,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       <div class="inv-no">No. ${esc(fobInvNo)}</div>
     </div>
   </div>
+  ${fobWarningHtml}
 
   <div class="info-grid">
     <div class="info-box">
@@ -1166,81 +1176,11 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       const totalCBM     = p.total_cbm || null;
       const freightTerm  = "PREPAID";
 
-      let factoryCode = "";
-      try {
-        // 2026-07-06 根治：外单常见 FSB.bl_no 存的是订舱号原文(如"I228525576")而 shipping_plans.bl_no
-        // 是全称waybill号(如"YMJAI228525576")，纯bl_no精确匹配会找不到，导致误落回写死参考卡。
-        // 改成 bl_no匹配 OR link_plan_id匹配(整数id，更可靠的关联键)。
-        const payerRes = await pool.query(
-          `SELECT DISTINCT payer_company_code
-           FROM active_freight_supplier_bills
-           WHERE (bl_no = $1 OR link_plan_id = $2)
-             AND (cost_category !~* '海运|ocean|freight')
-             AND COALESCE(amount,0) > 0
-             AND COALESCE(payer_company_code,'') <> ''
-           LIMIT 1`,
-          [blNo, String(p.id)]
-        );
-        factoryCode = payerRes.rows[0]?.payer_company_code || "";
-      } catch(_) {}
-
-      let factory = null;
-      if (factoryCode) {
-        try {
-          const factoryRes = await pool.query(
-            `SELECT name_cn, tax_id, address FROM companies WHERE code = $1 LIMIT 1`,
-            [factoryCode]
-          );
-          factory = factoryRes.rows[0] || null;
-        } catch(_) {}
-      }
-      const billTo = factory ? (factory.name_cn || factoryCode) : factoryCode;
-
       let portChargeRows = [];
-      if (factoryCode) {
-        try {
-          const chargeRes = await pool.query(
-            `SELECT cost_category, amount, currency, qty, unit_price, charge_basis
-             FROM active_freight_supplier_bills
-             WHERE (bl_no = $1 OR link_plan_id = $3)
-               AND payer_company_code = $2
-               AND (cost_category !~* '海运|ocean|freight')
-               AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
-               AND COALESCE(amount,0) > 0
-             ORDER BY id`,
-            [blNo, factoryCode, String(p.id)]
-          );
-          portChargeRows = chargeRes.rows;
-        } catch(_) {}
-      }
-
-      // ── 标准港杂费率卡（Damon 2026-06-29 定，覆盖系统脏数据）整票×1 / 每柜×柜量 ──
-      // 2026-07-06 根治：真实账单(freight_supplier_bills 已挂 payer_company_code)存在时优先用真实数据，
-      // 只有真查不到(historical脏数据/未挂payer)才落回这张写死参考卡兜底，不再无条件覆盖真实值。
+      let factoryCode = "";
+      let factory = null;
+      let billTo = "";
       let usedFallbackCard = false;
-      if (!portChargeRows.length) {
-        usedFallbackCard = true;
-        const PORT_CHARGE_CARD = [
-          { name:"舱单费",            basis:"整票", price:100,  perCtn:false },
-          { name:"码头操作费(THC)",    basis:"每柜", price:1100, perCtn:true  },
-          { name:"铅封费",            basis:"每柜", price:55,   perCtn:true  },
-          { name:"单证费",            basis:"整票", price:400,  perCtn:false },
-          { name:"港杂费",            basis:"每柜", price:50,   perCtn:true  },
-          { name:"提箱费",            basis:"每柜", price:307,  perCtn:true  },
-          { name:"电放费",            basis:"整票", price:450,  perCtn:false },
-          { name:"设备交接单费",       basis:"每柜", price:50,   perCtn:true  },
-          { name:"燃油附加费",         basis:"每柜", price:50,   perCtn:true  },
-          { name:"订舱费",            basis:"整票", price:100,  perCtn:false },
-          { name:"码头信息服务费",     basis:"每柜", price:7,    perCtn:true  },
-          { name:"EDI",              basis:"每柜", price:3.90, perCtn:true  },
-          { name:"场站费用",          basis:"每柜", price:400,  perCtn:true  },
-        ];
-        const ctnQtyPC = parseInt(p.container_qty) || 1;
-        portChargeRows = PORT_CHARGE_CARD.map(c => {
-          const qty = c.perCtn ? ctnQtyPC : 1;
-          return { cost_category:c.name, charge_basis:c.basis, currency:"CNY", qty, unit_price:c.price, amount:Number((c.price*qty).toFixed(2)) };
-        });
-      }
 
       // ── 方案A: 同BL多个shipping_plan → 每个plan一柜 ──
       // ── 方案B: 单plan多PO → 查orders表取每PO的CTN/GW/CBM ──
@@ -1369,7 +1309,28 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
           <td class="ctn-cbm">${r.cbm ? r.cbm.toFixed(3)+' CBM' : '—'}</td>
         </tr>`).join("");
 
-      const totalCny = portChargeRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+      const pcIssue = await loadPortChargeIssue(pool, p, {
+        containerQty: actualCtnQty || parseInt(p.container_qty, 10) || 1,
+        payerCode: req.query.payer_company_code,
+      });
+      if (pcIssue.needs_payer_selection) {
+        return res.status(409).send("<h1>Multiple payer_company_code found</h1><pre>" + esc(JSON.stringify(pcIssue.payers, null, 2)) + "</pre>");
+      }
+      portChargeRows = pcIssue.rows;
+      factoryCode = pcIssue.factoryCode || "";
+      usedFallbackCard = pcIssue.usedFallbackCard;
+      if (factoryCode) {
+        try {
+          const factoryRes = await pool.query(
+            `SELECT name_cn, tax_id, address FROM companies WHERE code = $1 LIMIT 1`,
+            [factoryCode]
+          );
+          factory = factoryRes.rows[0] || null;
+        } catch(_) {}
+      }
+      billTo = factory ? (factory.name_cn || factoryCode) : factoryCode;
+
+      const totalCny = pcIssue.totalCny;
       // 汇总版(?summary=1):明细太长时只显港杂费总额一行(不列各费目)
       const _pcSummary = String((req.query && req.query.summary) || "") === "1";
       const chargeRowsHtml = (_pcSummary && portChargeRows.length)
@@ -1389,8 +1350,12 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         }).join("")
         : `<tr><td colspan="6" style="text-align:center;color:#999">No CNY port charge rows found / 未找到人民币港杂费明细</td></tr>`;
 
-      // 账单号：PC-{BL}-{YYYYMMDD}
-      const portchargeNo = "PC-" + (p.bl_no || p.shipment_no || String(p.id)).replace(/[^A-Z0-9]/gi,"").toUpperCase() + "-" + genDate.replace(/-/g, "");
+      const portchargeNo = await issueDocNo(pool, {
+        prefix: "PC", seed: p.bl_no || p.shipment_no || p.id, blNo: p.bl_no,
+        docType: "fob_portcharge", totalCny,
+        generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
+        snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, payer_company_code: factoryCode, charges: portChargeRows, used_fallback_card: usedFallbackCard },
+      });
 
       const fobPortchargeHtml = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">

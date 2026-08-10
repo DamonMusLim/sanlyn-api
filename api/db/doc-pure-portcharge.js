@@ -1,4 +1,5 @@
 import { SELLER, copyBtn, docShell, fmtDate, fmtMoney, loadShippingPlan, numberToRMB, pick } from "./doc-pure-fee-common.js";
+import { issueDocNo, loadPortChargeIssue } from "./lib/portcharge-close-loop.js";
 
 function num(v) {
   const n = Number(v);
@@ -25,34 +26,32 @@ export async function renderPurePortChargeDoc(pool, id) {
   const plan = await loadShippingPlan(pool, id);
   if (!plan) return null;
   const blNo = pick(plan.bl_no, id);
-  const billR = await pool.query(
-    `SELECT bl_no,cost_category,amount,currency,qty,unit_price,charge_basis,payer_company_code
-       FROM active_freight_supplier_bills
-      WHERE bl_no=$1
-        AND (cost_category !~* '海运|ocean|freight')
-        AND COALESCE(amount,0)>0
-      ORDER BY id`,
-    [blNo]
-  );
-  const payerCode = (billR.rows.find(r => r.payer_company_code) || {}).payer_company_code || null;
+  const pc = await loadPortChargeIssue(pool, plan, { containerQty: plan.container_qty });
+  if (pc.needs_terms) {
+    return docShell("港杂费对账单", `<div class="box"><div class="label">需要补齐贸易条款 / Terms Required</div><p>该票未填贸易条款，系统已停止生成标准费率兜底卡。</p></div>`);
+  }
+  if (pc.needs_payer_selection) {
+    const opts = pc.payers.map(p => `<li>${copyBtn(p.payer_company_code, "付款方")} - ${fmtMoney(p.total_cny, "CNY")} (${p.line_count}项)</li>`).join("");
+    return docShell("港杂费对账单", `<div class="box"><div class="label">需要选择付款方 / Payer Required</div><p>该票存在多个 payer_company_code, 系统已停止随机出单。</p><ul>${opts}</ul></div>`);
+  }
+  const payerCode = pc.factoryCode || null;
   const factory = payerCode
     ? (await pool.query('SELECT code,name_cn,name_en,tax_id FROM companies WHERE code=$1 LIMIT 1', [payerCode])).rows[0]
     : await loadFactory(pool, plan);
-  const lines = billR.rows.map((r) => ({
+  const lines = pc.rows.map((r) => ({
     item: pick(r.cost_category, "港杂费"),
     basis: basisText(r.charge_basis),
-    unit: num(r.unit_price),
-    qty: num(r.qty) || 1,
-    amount: num(r.amount),
+    unit: r.unit_price == null ? null : num(r.unit_price),
+    qty: r.qty == null ? null : num(r.qty),
+    amount: num(r.sale_amount ?? r.amount),
     currency: String(r.currency || "CNY").toUpperCase(),
   }));
   const totalCny = lines.reduce((s, r) => s + (r.currency === "CNY" || r.currency === "RMB" ? r.amount : 0), 0);
-  // 2026-08-04 Damon: 账单必须有唯一单号,否则同一票重开一次分不清哪张是哪张(对账只能靠提单号认)。
-  // 格式对齐货代同类账单(恒安 PC-YMJAI228525576-20260706): <类型>-<提单号>-<出单日>
-  const _dn = new Date();
-  const _p2 = (n) => String(n).padStart(2, "0");
-  const docNo = "PC-" + String(blNo || "NOBL").replace(/[^A-Za-z0-9-]/g, "")
-    + "-" + _dn.getFullYear() + _p2(_dn.getMonth() + 1) + _p2(_dn.getDate());
+  const docNo = await issueDocNo(pool, {
+    prefix: "PC", seed: blNo || plan.shipment_no || plan.id, blNo,
+    docType: "pure_portcharge", totalCny,
+    snapshot: { plan_id: plan.id, payer_company_code: payerCode, charges: pc.rows, used_fallback_card: pc.usedFallbackCard },
+  });
   const body = `
     <div class="top"><div class="seller"><h2>${copyBtn(SELLER.name, "销方")}</h2><p>税号: ${copyBtn(SELLER.tax_id, "销方税号")}</p></div><div class="title"><h1>港杂费对账单</h1><p>PORT CHARGES STATEMENT</p><p class="docno">No. ${copyBtn(docNo, "单号")}</p></div></div>
     <div class="grid">
@@ -70,7 +69,7 @@ export async function renderPurePortChargeDoc(pool, id) {
       <div><b>Doc Date</b>${copyBtn(fmtDate(new Date()), "日期")}</div>
     </div>
     <table><thead><tr><th>No.</th><th>港杂项目 / Item</th><th class="tc">计费 Basis</th><th class="tr">单价 Unit</th><th class="tc">数量 Qty</th><th class="tr">金额 Amount</th><th class="tc">币种</th></tr></thead><tbody>
-      ${lines.map((r, i) => `<tr><td>${String(i + 1).padStart(2, "0")}</td><td>${copyBtn(r.item, "项目")}</td><td class="tc">${copyBtn(r.basis, "计费")}</td><td class="tr">${copyBtn(fmtMoney(r.unit, r.currency), "单价")}</td><td class="tc">${copyBtn(r.qty, "数量")}</td><td class="tr">${copyBtn(fmtMoney(r.amount, r.currency), "金额")}</td><td class="tc">${copyBtn(r.currency, "币种")}</td></tr>`).join("") || `<tr><td colspan="7" class="tc muted">未找到工厂承担的港杂费</td></tr>`}
+      ${lines.map((r, i) => `<tr><td>${String(i + 1).padStart(2, "0")}</td><td>${copyBtn(r.item, "项目")}</td><td class="tc">${copyBtn(r.basis, "计费")}</td><td class="tr">${r.unit == null ? "" : copyBtn(fmtMoney(r.unit, r.currency), "单价")}</td><td class="tc">${r.qty == null ? "" : copyBtn(r.qty, "数量")}</td><td class="tr">${copyBtn(fmtMoney(r.amount, r.currency), "金额")}</td><td class="tc">${copyBtn(r.currency, "币种")}</td></tr>`).join("") || `<tr><td colspan="7" class="tc muted">未找到工厂承担的港杂费</td></tr>`}
     </tbody><tfoot><tr class="total"><td colspan="5" class="tr">合计 Total</td><td class="tr">${copyBtn(fmtMoney(totalCny, "CNY"), "合计")}</td><td class="tc">${copyBtn("CNY", "币种")}</td></tr></tfoot></table>
     <div class="box"><div class="label">金额大写 / Amount in Words</div>${copyBtn(numberToRMB(totalCny), "金额大写")}</div>
     <div class="note"><b>备注 / Banking Information</b><br>收款方: ${copyBtn(SELLER.name, "收款方")}<br>开户行: ${copyBtn(SELLER.bank, "开户行")}<br>账号: ${copyBtn(SELLER.acct, "账号")}</div>

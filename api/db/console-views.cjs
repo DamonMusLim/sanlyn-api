@@ -74,6 +74,13 @@ router.get("/api/console/sources", async (req, res) => {
           out.status = 'no_data';
           out.why = `最后一条是 ${days} 天前`;
         }
+        // ⚖️ DNA(Damon 0805):「任何一天 0 单都要立刻报」——「现在都在起量,你要分析是不是休息日」
+        //   所以 0 单一天就标出来,但把「是不是周末」一并说清楚,别让他自己猜。
+        if (out.status === 'no_data' && /0\s*单/.test(r.detail || '')) {
+          const d = new Date();
+          const wk = [0, 6].includes(d.getDay());
+          out.why = (out.why || '') + (wk ? ' · 今天是周末,可能正常' : ' · 今天是工作日,0 单不正常');
+        }
       }
       if (out.status !== r.status) out.raw_status = r.status;
       return out;
@@ -263,6 +270,42 @@ router.get("/api/console/held", async (req, res) => {
       "FROM push_held WHERE day >= CURRENT_DATE - 1 ORDER BY held_at DESC NULLS LAST LIMIT 80");
     res.json({ success: true, rows: q.rows });
   } catch (e) { res.json({ success: false, error: String(e.message || e), rows: [] }); }
+});
+
+// -- 每日体检:各 skill 跑没跑 / 数据到几号 / 要不要你登录 --
+router.get("/api/console/daily-check", async (req, res) => {
+  try {
+    const days = Math.min(parseInt(req.query.days || "7", 10) || 7, 30);
+    const pool = getPool();
+    const q = await pool.query(
+      "SELECT day::text AS day, job_key, encode(COALESCE(label,'')::bytea,'base64') AS label_b64, machine, " +
+      "state, data_date, encode(COALESCE(note,'')::bytea,'base64') AS note_b64, " +
+      "healed, need_human, checked_at FROM automation_daily_status " +
+      "WHERE day >= CURRENT_DATE - $1::int ORDER BY day DESC, " +
+      "CASE state WHEN 'crit' THEN 1 WHEN 'warn' THEN 2 ELSE 3 END, job_key", [days]);
+    const hb = await pool.query(
+      "SELECT job_key, status, last_run, metric->>'data_date' AS data_date, " +
+      "encode(COALESCE(message,'')::bytea,'base64') AS message_b64 FROM automation_heartbeats");
+    const byDay = {};
+    for (const r of q.rows) {
+      const k = String(r.day).slice(0, 10);
+      (byDay[k] = byDay[k] || []).push(r);
+    }
+    // ⚖️ 0808:day 经 node-pg 是 Date 对象,String(d).slice(0,10)="Sat Aug 08",
+    //   永远匹配不上 → summary 恒为 0,看门狗天天误报「今天一条体检记录都没有」。
+    //   SQL 里 day::text 出来就是 YYYY-MM-DD;今天也用**库的** CURRENT_DATE,别用进程时区
+    //   (mini 跑 UTC / 腾讯 CST,差一天;见 PG DATE 那条坑)。
+    const td = await pool.query("SELECT CURRENT_DATE::text AS d");
+    const todayStr = td.rows[0].d;
+    const today = q.rows.filter((r) => String(r.day).slice(0, 10) === todayStr);
+    res.json({ success: true, days, today: todayStr,
+      summary: { total: today.length,
+        ok: today.filter((r) => r.state === "ok").length,
+        warn: today.filter((r) => r.state === "warn").length,
+        crit: today.filter((r) => r.state === "crit").length,
+        need_human: today.filter((r) => r.need_human).length },
+      by_day: byDay, latest: hb.rows });
+  } catch (e) { res.json({ success: false, error: String(e.message || e), by_day: {} }); }
 });
 
 router.get("/api/console/tasks", async (req, res) => {

@@ -7,6 +7,7 @@
 
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { normalizeChargeName } from "./lib/portcharge-close-loop.js";
 
 const FOB_TERMS = new Set(["FOB", "FCA", "EXW"]);
 const ABSORBED_TERMS = new Set(["CIF", "CFR", "CIP", "CPT", "DDP", "DAP"]);
@@ -288,7 +289,7 @@ export default async function handler(req, res) {
   const pool = getPool();
 
   try {
-    const costCategory = norm(body.cost_category);
+    let costCategory = norm(body.cost_category);
     const blNo = norm(body.bl_no);
     const currency = upper(body.currency);
     const qty = asNumber(body.qty ?? 1, "qty");
@@ -311,6 +312,8 @@ export default async function handler(req, res) {
     const supplierResult = await resolveSupplier(pool, body);
     if (supplierResult.status) return res.status(supplierResult.status).json(supplierResult.payload);
     const supplier = supplierResult.company;
+    const chargeNorm = await normalizeChargeName(pool, costCategory, body.carrier || body.shipping_line || "*", blNo);
+    costCategory = chargeNorm.name || costCategory;
 
     if ((isOceanCost(costCategory) || isOriginLocalCost(costCategory)) && !hasCompanyRole(supplier, "forwarder")) {
       return res.status(422).json({
@@ -331,6 +334,8 @@ export default async function handler(req, res) {
     const payerType = payerResult.payerType;
     const freightTerm = payerResult.freightTerm;
     const raw = buildRaw(body, supplier, payer, payerType, freightTerm);
+    raw.original_name = chargeNorm.original_name || null;
+    raw.unmapped = Boolean(chargeNorm.unmapped);
 
     const base = {
       supplier: companyLabel(supplier),

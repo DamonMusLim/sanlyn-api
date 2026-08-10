@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>港杂三视图</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#172033;font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}.wrap{max-width:1360px;margin:0 auto;padding:22px}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.title{font-size:22px;font-weight:900}.meta{color:#6b7280;font-size:12px}.bar{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:12px}.tabs{display:flex;gap:6px}.tab{border:1px solid #d1d5db;background:#fff;border-radius:6px;padding:7px 12px;font-weight:800;cursor:pointer}.tab.on{background:#111827;color:#fff;border-color:#111827}input,select{height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 9px;background:#fff}.btn{height:32px;border:0;border-radius:6px;background:#2563eb;color:#fff;font-weight:800;padding:0 14px;cursor:pointer}.panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}.hint{padding:24px;color:#6b7280;text-align:center}.matrix-group{border-bottom:1px solid #e5e7eb}.group-head{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;background:#f9fafb;font-weight:900}.grid{overflow:auto}.tbl{width:100%;border-collapse:collapse;min-width:900px}.tbl th,.tbl td{border-top:1px solid #edf0f4;border-right:1px solid #edf0f4;padding:7px 8px;text-align:right;white-space:nowrap}.tbl th:first-child,.tbl td:first-child{text-align:left;position:sticky;left:0;background:inherit}.tbl th{background:#111827;color:#fff;font-size:11px}.official{background:#f8fafc;font-weight:800}.pos{color:#047857}.neg{color:#b91c1c}.zero{color:#6b7280}.sub{display:block;font-size:10px;color:#9ca3af;margin-top:2px}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;padding:12px}.card{border:1px solid #e5e7eb;border-radius:8px;padding:12px;background:#fff}.card h3{font-size:14px;margin:0 0 8px}.opt{display:grid;grid-template-columns:1fr auto;gap:8px;padding:8px;border-top:1px solid #f1f5f9}.opt.low{background:#ecfdf5}.badge{font-size:11px;color:#047857;font-weight:900}.err{padding:14px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="title">港杂三视图</div><div class="meta" id="stamp"></div></div></div>
+  <div class="bar">
+    <div class="tabs">
+      <button class="tab on" data-view="matrix">全景矩阵</button>
+      <button class="tab" data-view="carrier">单船司</button>
+      <button class="tab" data-view="lane">Lane成本</button>
+    </div>
+    <input id="port" value="青岛" placeholder="起运港">
+    <select id="ct"><option>40HQ</option><option>40GP</option><option>20GP</option></select>
+    <input id="carrier" value="COSCO" placeholder="船司">
+    <button class="btn" id="reload">刷新</button>
+  </div>
+  <div id="msg"></div>
+  <div class="panel" id="app"><div class="hint">Loading...</div></div>
+</div>
+<script>
+var view="matrix";
+var app=document.getElementById("app"),msg=document.getElementById("msg");
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])})}
+function money(n){n=Number(n||0);return n?n.toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2}):"0.00"}
+function cls(v){v=Number(v||0);return v>0?"pos":(v<0?"neg":"zero")}
+function qs(){
+  var p=new URLSearchParams({view:view,port:port.value,ct:ct.value});
+  if(view==="carrier")p.set("carrier",carrier.value);
+  return p.toString();
+}
+async function load(){
+  msg.innerHTML="";app.innerHTML='<div class="hint">Loading...</div>';
+  try{
+    var r=await fetch("/api/db/portcharge-views?"+qs(),{credentials:"include"});
+    var j=await r.json(); if(!r.ok||!j.success)throw new Error(j.error||r.statusText);
+    render(j.data); stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");
+  }catch(e){app.innerHTML="";msg.innerHTML='<div class="err">'+esc(e.message)+'</div>'}
+}
+function allItems(obj){
+  var s=new Set(Object.keys(obj.official||{}));
+  Object.values(obj.forwarders||{}).forEach(function(x){Object.keys(x).forEach(function(k){s.add(k)})});
+  return Array.from(s);
+}
+function renderMatrix(d){
+  app.innerHTML=(d.carriers||[]).map(function(g){
+    var fwds=Object.keys(g.forwarders||{}),items=allItems(g);
+    var head='<tr><th>费目</th><th class="official">官方</th>'+fwds.map(function(f){return '<th>'+esc(f)+'</th>'}).join("")+'</tr>';
+    var body=items.map(function(it){
+      var off=Number(g.official[it]||0);
+      return '<tr><td>'+esc(it)+'</td><td class="official">'+money(off)+'</td>'+fwds.map(function(f){
+        var v=Number(g.forwarders[f][it]||0),diff=v-off;
+        return '<td>'+money(v)+'<span class="sub '+cls(diff)+'">'+(diff>0?"+":"")+money(diff)+'</span></td>';
+      }).join("")+'</tr>';
+    }).join("");
+    return '<div class="matrix-group"><div class="group-head"><span>'+esc(g.carrier)+'</span><span>'+esc(d.port)+' · '+esc(d.container_type)+'</span></div><div class="grid"><table class="tbl">'+head+body+'</table></div></div>';
+  }).join("")||'<div class="hint">无数据</div>';
+}
+function renderCarrier(d){
+  var fwds=Object.keys(d.forwarders||{}),items=d.items||[];
+  var head='<tr><th>费目</th><th class="official">官方</th>'+fwds.map(function(f){return '<th>'+esc(f)+'</th>'}).join("")+'</tr>';
+  var body=items.map(function(it){
+    var off=Number(d.official[it]||0);
+    return '<tr><td>'+esc(it)+'</td><td class="official">'+money(off)+'</td>'+fwds.map(function(f){
+      var v=Number(d.forwarders[f][it]||0),diff=v-off;
+      return '<td>'+money(v)+'<span class="sub '+cls(diff)+'">'+(diff>0?"+":"")+money(diff)+'</span></td>';
+    }).join("")+'</tr>';
+  }).join("");
+  app.innerHTML='<div class="group-head"><span>'+esc(d.carrier)+'</span><span>'+esc(d.port)+' · '+esc(d.container_type)+'</span></div><div class="grid"><table class="tbl">'+head+body+'</table></div>';
+}
+function renderLane(d){
+  app.innerHTML='<div class="cards">'+(d.groups||[]).map(function(g){
+    return '<div class="card"><h3>'+esc(g.pol)+' → '+esc(g.pod)+' · '+esc(g.carrier)+'</h3>'+(g.options||[]).map(function(o){
+      return '<div class="opt '+(o.is_lowest?'low':'')+'"><div><b>'+esc(o.forwarder||"未命名")+'</b>'+(o.is_lowest?'<span class="sub badge">最低</span>':'')+'<span class="sub">海运 '+money(o.ocean_cost)+' · 港杂 '+money(o.port_base)+'</span></div><b>'+money(o.total_cost)+'</b></div>';
+    }).join("")+'</div>';
+  }).join("")+'</div>';
+}
+function render(d){ if(d.view==="lane")renderLane(d); else if(d.view==="carrier")renderCarrier(d); else renderMatrix(d); }
+document.querySelectorAll(".tab").forEach(function(b){b.onclick=function(){view=b.dataset.view;document.querySelectorAll(".tab").forEach(function(x){x.classList.toggle("on",x===b)});carrier.style.display=view==="carrier"?"block":"none";load()}});
+reload.onclick=load; carrier.style.display="none"; load();
+</script>
+</body>
+</html>
