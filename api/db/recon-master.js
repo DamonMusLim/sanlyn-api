@@ -83,7 +83,10 @@ bill_groups AS (
                   THEN COALESCE(amount,0) ELSE 0 END) AS ocean_cost_usd,
          SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency,'USD'))='CNY'
                    AND (cost_category ILIKE '%驳船%' OR cost_category ILIKE '%barge%')
-                  THEN COALESCE(amount,0) ELSE 0 END) AS barge_cost_cny
+                  THEN COALESCE(amount,0) ELSE 0 END) AS barge_cost_cny,
+         SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency,'USD'))='CNY'
+                   AND cost_category ~* '拖车|trucking|拖驳'
+                  THEN COALESCE(amount,0) ELSE 0 END) AS truck_cost_cny
     FROM active_freight_supplier_bills
    WHERE UPPER(COALESCE(currency_norm,currency,'USD')) IN ('USD','CNY')
      AND NULLIF(BTRIM(bl_no),'') IS NOT NULL
@@ -97,6 +100,7 @@ joined AS (
          COALESCE(og.goods_cost,0) AS goods_cost, COALESCE(og.goods_sale,0) AS goods_sale,
          COALESCE(bg.ocean_cost_usd,0) AS ocean_cost_usd,
          COALESCE(bg.barge_cost_cny,0) AS barge_cost_cny,
+         COALESCE(bg.truck_cost_cny,0) AS truck_cost_cny,
          COALESCE(pg.ocean_sale_usd,0) AS ocean_sale_usd,
          COALESCE(pg.port_sale_cny,0) AS port_sale_cny
     FROM order_groups og
@@ -121,10 +125,11 @@ decl AS (
     ) x ON TRUE
    GROUP BY j.group_key
 )
-SELECT j.po_nos, j.customer, j.factory, j.bl_no, j.etd, j.trade_terms,
+SELECT j.po_nos, j.bl_no, j.etd, j.trade_terms, j.customer, j.factory,
        ROUND(j.goods_cost::numeric,2) AS goods_cost,
        ROUND(j.goods_sale::numeric,2) AS goods_sale,
        ROUND(j.ocean_cost_usd::numeric,2) AS ocean_cost_usd,
+       ROUND(j.truck_cost_cny::numeric,2) AS truck_cost_cny,
        ROUND(j.barge_cost_cny::numeric,2) AS barge_cost_cny,
        ROUND(j.ocean_sale_usd::numeric,2) AS ocean_sale_usd,
        ROUND(j.port_sale_cny::numeric,2) AS port_sale_cny,

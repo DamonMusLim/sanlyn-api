@@ -52,8 +52,8 @@ export default async function handler(req, res) {
     const d = await detailRows(pool, company);
     const wb = new ExcelJS.Workbook();
     wb.creator = "sanlyn-reconcile";
-    addSheet(wb, "对账主表", ["PO号", "客户","工厂","BL", "ETD", "贸易条款", "货品成本", "货品销售", "海运成本USD", "驳船CNY", "海运销售USD", "港杂销售CNY", "报关额", "缺口"],
-      master.map(r => [r.po_nos, r.customer, r.factory, r.bl_no, r.etd, r.trade_terms, r.goods_cost, r.goods_sale, r.ocean_cost_usd, r.barge_cost_cny, r.ocean_sale_usd, r.port_sale_cny, r.declared_amount, (r.gap_flags || []).join("/")]));
+    addSheet(wb, "对账主表", ["PO号", "BL", "ETD", "贸易条款", "货品成本", "货品销售", "海运成本USD", "拖车CNY", "驳船CNY", "海运销售USD", "港杂销售CNY", "报关额", "缺口", "客户", "工厂"],
+      master.map(r => [r.po_nos, r.bl_no, r.etd, r.trade_terms, r.goods_cost, r.goods_sale, r.ocean_cost_usd, r.truck_cost_cny, r.barge_cost_cny, r.ocean_sale_usd, r.port_sale_cny, r.declared_amount, (r.gap_flags || []).join("/"), r.customer, r.factory]));
     addSheet(wb, "港杂明细", ["BL", "标准费目名", "成本", "销售", "币种", "数量", "单价", "单位", "供应商"],
       d.bills.map(r => [r.bl_no, r.cost_category, r.amount, r.sale_amount, r.currency, r.qty, r.unit_price, r.charge_basis, r.supplier]));
     addSheet(wb, "官方标准", ["船司", "港口", "柜型", "标准费目", "金额CNY", "单位"],
