@@ -30,6 +30,7 @@ WITH order_pick AS (
            o.shipping_plan_id::text = sp._id OR o.shipping_plan_id::text = sp.id::text
            OR o.order_no = ANY(COALESCE(sp.order_nos,'{}'::text[]))
            OR o.contract_no = ANY(COALESCE(sp.contract_nos,'{}'::text[]))
+           OR (NULLIF(BTRIM(o.bl_no),'') IS NOT NULL AND BTRIM(o.bl_no) = BTRIM(sp.bl_no))
          )
        ORDER BY (sp.bl_no IS NOT NULL AND sp.bl_no !~ '^[0-9]+-[0-9]+$') DESC,
                 sp.etd DESC NULLS LAST, sp.updated_at DESC NULLS LAST
