@@ -98,6 +98,39 @@ export default async function handler(req, res) {
 
   var{type,id,ids,company:qco,print:ap,format,contract_no,bl_no,limit,audience:_audReq,fmt:_fmtVariant,style:_styleVariant}=req.query;
 
+  // ══ 数据质量闸门(2026-08-08)═══════════════════════════════════════
+  // order_data_quality_issues 里 status=open + severity=blocker 的订单,
+  // 禁止出具任何带明细的单据(pack/pl/sc/iv/cd)。
+  // 病因: 6 张已出运订单明细为 0(¥160.7万),照常出单会得到空表/半票,
+  //       而这张纸会一路流进报关 → 发票 → 退税。
+  // ⛔ 铁律: 绝不许拿订单总金额倒推明细来"补齐"。只能照真实单据人工补录。
+  // 补齐后 issue 置 resolved,本闸自动放行,不需要改代码。
+  // ⚠️ 查询本身出错时放行(保可用),但会打 error 日志 —— 别让新闸拖垮出单。
+  try {
+    if (/^(pack|pl|sc|iv|cd)$/i.test(String(type || ""))) {
+      var _dqIds = String(ids || id || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+      var _dqPool = getPool();
+      var _dqRes = await _dqPool.query(
+        "SELECT DISTINCT q.order_no, q.issue_key FROM order_data_quality_issues q"
+        + " JOIN orders o ON o.order_no = q.order_no"
+        + " WHERE q.status='open' AND q.severity='blocker'"
+        + "   AND ( o.order_no = ANY($1::text[])"
+        + "      OR ($2 <> '' AND o.contract_no = $2)"
+        + "      OR ($3 <> '' AND o.bl_no = $3) )",
+        [_dqIds, String(contract_no || ""), String(bl_no || "")]);
+      if (_dqRes.rows.length) {
+        var _dqList = _dqRes.rows.map(function (r) { return r.order_no + "(" + r.issue_key + ")"; }).join(", ");
+        console.error("[documents] 数据质量闸拦截 type=" + type + " → " + _dqList);
+        return res.status(409).json({
+          error: "DATA_QUALITY_BLOCKER",
+          message: "这些订单被标记为数据不完整,禁止出单(出了会流进报关/发票/退税): " + _dqList
+                 + " 。请照真实单据补齐明细后再出 —— 绝不许用总金额倒推。",
+          orders: _dqRes.rows
+        });
+      }
+    }
+  } catch (_dqErr) { console.error("[documents] dq-gate 查询失败(放行):", _dqErr.message); }
+
   // 2026-07-01 type=pack 浏览器视图 → 正版可编辑模版(export-docs-template)：海关单行(产品汇总真值)+PORT+可编辑+盖章。
   // PDF/xlsx 导出仍走下方服务端渲染,不受影响。&mode=detail 走逐SKU明细。
   if (type === "pack") {
