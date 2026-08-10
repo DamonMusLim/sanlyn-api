@@ -39,7 +39,9 @@ function qs(){
 async function load(){
   msg.innerHTML="";app.innerHTML='<div class="hint">Loading...</div>';
   try{
-    var r=await fetch("/api/db/portcharge-views?"+qs(),{credentials:"include"});
+    var token=localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||"";
+    var r=await fetch("/api/db/portcharge-views?"+qs(),{headers:token?{Authorization:"Bearer "+token}:{}});
+    if(r.status===401){showLogin();return;}
     var j=await r.json(); if(!r.ok||!j.success)throw new Error(j.error||r.statusText);
     render(j.data); stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");
   }catch(e){app.innerHTML="";msg.innerHTML='<div class="err">'+esc(e.message)+'</div>'}
@@ -85,6 +87,21 @@ function renderLane(d){
 function render(d){ if(d.view==="lane")renderLane(d); else if(d.view==="carrier")renderCarrier(d); else renderMatrix(d); }
 document.querySelectorAll(".tab").forEach(function(b){b.onclick=function(){view=b.dataset.view;document.querySelectorAll(".tab").forEach(function(x){x.classList.toggle("on",x===b)});carrier.style.display=view==="carrier"?"block":"none";load()}});
 reload.onclick=load; carrier.style.display="none"; load();
+</script>
+<div id="pv-login" style="display:none;max-width:320px;margin:10vh auto;padding:24px;border:1px solid #8884;border-radius:12px">
+<h3 style="margin:0 0 10px">登录</h3>
+<input id="pv-u" placeholder="用户名" style="width:100%;margin-bottom:8px;padding:9px">
+<input id="pv-p" type="password" placeholder="密码" style="width:100%;margin-bottom:10px;padding:9px">
+<button id="pv-go" style="width:100%;padding:10px">登录</button>
+<div id="pv-err" style="color:#e66;font-size:12px;margin-top:6px"></div></div>
+<script>
+function showLogin(){document.getElementById("pv-login").style.display="block";app.innerHTML="";msg.innerHTML="";}
+document.getElementById("pv-go").onclick=async function(){
+  try{var r=await fetch("/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({username:document.getElementById("pv-u").value,password:document.getElementById("pv-p").value})});
+   var d=await r.json(); if(!r.ok||!d.token)throw new Error(d.error||"登录失败");
+   localStorage.setItem("sanlyn_token",d.token);document.getElementById("pv-login").style.display="none";load();
+  }catch(e){document.getElementById("pv-err").textContent=e.message;}};
 </script>
 </body>
 </html>
