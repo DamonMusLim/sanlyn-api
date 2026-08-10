@@ -6,8 +6,7 @@ function clean(v) { return String(v ?? "").trim(); }
 export async function loadReconMaster(pool, q = {}) {
   const company = clean(q.company);
   const year = clean(q.year);
-  if (!company) throw new Error("company required");
-  const args = [company];
+  const args = [company];   // 空串=全客户
   let yearSql = "";
   if (year) {
     args.push(year);
@@ -19,6 +18,12 @@ export async function loadReconMaster(pool, q = {}) {
   const sql = `
 WITH order_pick AS (
   SELECT o.*,
+         (SELECT COALESCE(c.name_cn,c.name_en,o.company_code) FROM companies c
+           WHERE c.code = o.company_code
+           ORDER BY (COALESCE(c.active,true) AND c.code NOT LIKE 'DEPRECATED%') DESC, c.id DESC LIMIT 1) AS customer_name,
+         (SELECT COALESCE(c.name_cn,c.name_en,o.factory_code) FROM companies c
+           WHERE c.code = o.factory_code
+           ORDER BY (COALESCE(c.active,true) AND c.code NOT LIKE 'DEPRECATED%') DESC, c.id DESC LIMIT 1) AS factory_name,
          bp.bl_no AS best_bl_no, bp.etd AS best_etd, bp._id AS best_plan_id,
          CASE WHEN NULLIF(BTRIM(bp.bl_no),'') IS NULL OR bp.bl_no ~ '^[0-9]+-[0-9]+$' THEN NULL ELSE BTRIM(bp.bl_no) END AS clean_bl
     FROM orders o
@@ -39,7 +44,7 @@ WITH order_pick AS (
     LEFT JOIN shipping_plans pg ON pg.bl_no = bp.bl_no AND bp.bl_no IS NOT NULL
    WHERE o.deleted_at IS NULL
      AND COALESCE(o.status,'') <> 'cancelled'
-     AND o.company_code = $1
+     AND ($1 = '' OR o.company_code = $1)
      ${yearSql}
 ),
 order_groups AS (
@@ -50,6 +55,8 @@ order_groups AS (
          string_agg(DISTINCT COALESCE(order_no, contract_no), '+' ORDER BY COALESCE(order_no, contract_no)) AS po_nos,
          MIN(best_etd) AS etd,
          string_agg(DISTINCT NULLIF(trade_terms,''), '+' ORDER BY NULLIF(trade_terms,'')) AS trade_terms,
+         string_agg(DISTINCT COALESCE(NULLIF(customer_name,''), company_code), ' / ') AS customer,
+         string_agg(DISTINCT NULLIF(factory_name,''), ' / ') AS factory,
          SUM(COALESCE(factory_total_amount, total_amount_factory, factory_amount, 0)) AS goods_cost,
          SUM(COALESCE(customer_amount, total_amount, 0)) AS goods_sale
     FROM order_pick
@@ -62,7 +69,7 @@ plan_groups AS (
          MAX(sp.freight_sale_cny) AS port_sale_cny
     FROM shipping_plans sp
    WHERE sp.deleted_at IS NULL
-     AND sp.company_code = $1
+     AND ($1 = '' OR sp.company_code = $1)
      AND NULLIF(BTRIM(sp.bl_no),'') IS NOT NULL
      AND sp.bl_no !~ '^[0-9]+-[0-9]+$'
      ${year ? "AND EXTRACT(YEAR FROM sp.etd)::text = $2" : ""}
@@ -84,7 +91,7 @@ bill_groups AS (
 joined AS (
   SELECT COALESCE(og.group_key, pg.bl_no) AS group_key,
          COALESCE(og.bl_no, pg.bl_no) AS bl_no, og.contracts, og.customer_pos,
-         og.po_nos, COALESCE(og.etd, pg.etd) AS etd, og.trade_terms,
+         og.po_nos, og.customer, og.factory, COALESCE(og.etd, pg.etd) AS etd, og.trade_terms,
          COALESCE(og.goods_cost,0) AS goods_cost, COALESCE(og.goods_sale,0) AS goods_sale,
          COALESCE(bg.ocean_cost_usd,0) AS ocean_cost_usd,
          COALESCE(bg.barge_cost_cny,0) AS barge_cost_cny,
@@ -106,7 +113,7 @@ decl AS (
     ) x ON TRUE
    GROUP BY j.group_key
 )
-SELECT j.po_nos, j.bl_no, j.etd, j.trade_terms,
+SELECT j.po_nos, j.customer, j.factory, j.bl_no, j.etd, j.trade_terms,
        ROUND(j.goods_cost::numeric,2) AS goods_cost,
        ROUND(j.goods_sale::numeric,2) AS goods_sale,
        ROUND(j.ocean_cost_usd::numeric,2) AS ocean_cost_usd,
