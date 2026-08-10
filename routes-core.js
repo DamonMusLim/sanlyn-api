@@ -203,6 +203,8 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/collab/gaps", () => import("./api/collab/gaps.js"));
   mount("/api/db/shipping-plan-pdf",  () => import("./api/db/shipping-plan-pdf.js"));
   mount("/api/db/portcharge-bill-pdf", () => import("./api/db/portcharge-bill-pdf.js")); // 港杂费账单明细PDF+盖卖方章(恒安盖章账单明细扫描件)
+  mount("/api/db/portcharge-views", () => import("./api/db/portcharge-views.js")); // [0810] 港杂三视图(官方×货代矩阵/单船司/lane成本)
+  mount("/api/db/fee-name-candidates", () => import("./api/db/fee-name-candidates.js")); // [0810] 费目DNA学习候选
   mount("/api/db/shipping-plan-doc-data", () => import("./api/db/shipping-plan-doc-data.js"));
   mount("/api/db/shipping-plan-create", () => import("./api/db/shipping-plan-create.js")); // SUPPLY-CHAIN-ORDER-INTAKE-001: was missing
   mount("/api/db/shipping-plan-rebook", () => import("./api/db/shipping-plan-rebook.js")); // 换航次原子操作: 旧航次进raw.booking_history+新航次写主表 2026-06-10
