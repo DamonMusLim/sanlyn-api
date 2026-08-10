@@ -101,7 +101,7 @@ decl AS (
         FROM finance_export_rebates r
         LEFT JOIN LATERAL regexp_split_to_table(COALESCE(r.contract_no,''), '\\s*/\\s*') part(v) ON TRUE
        WHERE part.v = ANY(COALESCE(j.contracts,'{}'::text[]))
-          OR COALESCE(r.customer_po,'') = ANY(COALESCE(j.customer_pos,'{}'::text[]))
+          OR part.v = ANY(COALESCE(j.customer_pos,'{}'::text[]))
     ) x ON TRUE
    GROUP BY j.group_key
 )
