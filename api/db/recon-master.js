@@ -115,6 +115,18 @@ joined AS (
     FULL JOIN plan_groups pg ON pg.bl_no = og.bl_no
     LEFT JOIN bill_groups bg ON bg.bl_no = COALESCE(og.bl_no, pg.bl_no)
 ),
+recv_grp AS (
+  SELECT j.group_key, SUM(l.amount_alloc) AS received_cny
+    FROM joined j
+    JOIN bank_slip_links l ON (
+         (NULLIF(BTRIM(l.bl_no),'') IS NOT NULL AND BTRIM(l.bl_no) = j.bl_no)
+      OR (j.bl_no IS NULL AND (
+            l.order_no = ANY(string_to_array(COALESCE(j.po_nos,''),'+'))
+         OR l.contract_no = ANY(COALESCE(j.contracts,'{}'::text[]))))
+    )
+   WHERE COALESCE(NULLIF(l.alloc_currency,''),'CNY') = 'CNY'
+   GROUP BY j.group_key
+),
 docs_grp AS (
   SELECT BTRIM(bl_no) AS bl_no,
          json_agg(json_build_object('doc_no',doc_no,'doc_type',doc_type) ORDER BY generated_at DESC) AS docs
@@ -144,6 +156,9 @@ SELECT j.po_nos, j.orders, j.bl_no, j.etd, j.trade_terms, j.customer, j.factory,
        ROUND(j.port_sale_cny::numeric,2) AS port_sale_cny,
        ROUND(COALESCE(d.declared_amount,0)::numeric,2) AS declared_amount,
        COALESCE(dg.docs,'[]'::json) AS docs,
+       ROUND(COALESCE(rg.received_cny,0)::numeric,2) AS received_cny,
+       COALESCE(pc.status,'未核') AS product_status,
+       COALESCE(fc.status,'未核') AS freight_status,
        ARRAY_REMOVE(ARRAY[
          CASE WHEN NULLIF(j.bl_no,'') IS NULL THEN '缺BL' END,
          CASE WHEN COALESCE(j.goods_cost,0)=0 THEN '缺成本' END,
@@ -152,6 +167,9 @@ SELECT j.po_nos, j.orders, j.bl_no, j.etd, j.trade_terms, j.customer, j.factory,
        ], NULL) AS gap_flags
   FROM joined j LEFT JOIN decl d USING(group_key)
   LEFT JOIN docs_grp dg ON dg.bl_no = j.bl_no
+  LEFT JOIN recv_grp rg ON rg.group_key = j.group_key
+  LEFT JOIN recon_confirmations pc ON pc.ledger='product' AND pc.ticket_key = COALESCE(j.bl_no, j.po_nos)
+  LEFT JOIN recon_confirmations fc ON fc.ledger='freight' AND fc.ticket_key = COALESCE(j.bl_no, j.po_nos)
  ORDER BY j.etd NULLS LAST, j.bl_no NULLS LAST, j.po_nos NULLS LAST`;
   const r = await pool.query(sql, args);
   return r.rows;

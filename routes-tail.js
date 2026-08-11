@@ -38,6 +38,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/petstore-sync",        () => import("./api/db/petstore-sync.js"));
   mount("/api/db/recon-export", () => import("./api/db/recon-export.js"));
   mount("/api/db/recon-edit", () => import("./api/db/recon-edit.js")); // 对账主表行内编辑 2026-08-11
+  mount("/api/db/recon-confirm", () => import("./api/db/recon-confirm.js")); // 对平状态 2026-08-12
   mount("/api/db/shipping-entry", () => import("./api/db/shipping-entry.js"));
   mount("/api/db/statement-portal-data", () => import("./api/db/statement-portal-data.js")); // 客户对账单门户public
   mount("/api/db/slip-upload", () => import("./api/db/slip-upload.js")); // 水单/入账通知上传+MiniMax OCR (补线,2026-07-08二次找回)

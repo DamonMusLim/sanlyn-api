@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>海运对账 · 洋宝宝</title>
+<link rel="stylesheet" href="/public/sanlyn-table.css">
+<style>.hl{background:#fef9c3}.st{cursor:pointer;font-weight:700}.st-ok{color:#15803d}.st-warn{color:#b45309}.st-bad{color:#b91c1c}.st-na{color:#6b7280}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="title">海运对账 <span class="meta">洋宝宝 · 运费账</span></div><div class="meta">v2026.08.12-1 · <span id="stamp"></span></div></div></div>
+  <div class="bar">
+    <input id="company" value="CN-00040" placeholder="客户编码(空=全部)">
+    <input id="year" value="2026" placeholder="年份">
+    <button class="btn" id="reload">刷新</button>
+    <button class="btn" id="exportBtn">导出Excel</button>
+  </div>
+  <div id="msg"></div><div class="panel" id="app"><div class="hint">Loading...</div></div>
+</div>
+<script src="/public/sanlyn-table.js"></script>
+<script>
+var LEDGER="freight", ST=["未核","待补资料","已对平","需人工确认"], STC={"未核":"st-na","待补资料":"st-warn","已对平":"st-ok","需人工确认":"st-bad"};
+function tkey(r){return r.bl_no||r.po_nos||""}
+function stCell(r,h){var s=r.freight_status||"未核";
+  return '<span class="st '+STC[s]+'" onclick="setSt(\''+h.esc(tkey(r)).replace(/'/g,"")+'\')">'+h.esc(s)+'</span>'}
+window.setSt=async function(key){
+  var pick=prompt("状态: 1=未核 2=待补资料 3=已对平 4=需人工确认","3");if(pick===null)return;
+  var s=ST[Number(pick)-1];if(!s){alert("输入1-4");return}
+  var note=s==="需人工确认"?(prompt("备注(可空)")||""):"";
+  try{var r=await fetch("/api/db/recon-confirm",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+SanlynTable.token()},body:JSON.stringify({ticket_key:key,ledger:LEDGER,status:s,note:note})});
+    var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);table.load()}
+  catch(e){alert("保存失败: "+e.message)}};
+function pcLink(r,h){var bl=r.bl_no||"";if(!bl)return "—";
+  return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_portcharge&token='+encodeURIComponent(h.token())+'">港杂单</a>'}
+var table=SanlynTable.mount(document.getElementById("app"),{
+  api:"/api/db/recon-master",params:function(){return {company:company.value,year:year.value}},
+  exportUrl:"/api/db/recon-export",loginApi:"/api/db/auth-login",
+  sumKeys:["ocean_cost_usd","truck_cost_cny","barge_cost_cny","ocean_sale_usd","port_sale_cny"],
+  columns:[
+    {key:"etd",label:"船期",render:function(r,h){return h.esc(String(r.etd||"").slice(0,10))}},
+    {key:"bl_no",label:"BL",gap:"缺BL"},
+    {key:"po_nos",label:"PO号",type:"fold",sep:"+",show:2},
+    {key:"customer",label:"客户",render:function(r,h){return h.esc(String(r.customer||"—").slice(0,16))}},
+    {key:"trade_terms",label:"条款"},
+    {key:"ocean_cost_usd",label:"成本USD",type:"num",group:"成本"},
+    {key:"truck_cost_cny",label:"拖车CNY",type:"num",group:"成本"},
+    {key:"barge_cost_cny",label:"驳船CNY",type:"num",group:"成本"},
+    {key:"ocean_sale_usd",label:"海运USD",type:"num",group:"收客"},
+    {key:"port_sale_cny",label:"港杂CNY",type:"num",group:"收客"},
+    {key:"margin",label:"毛差USD",render:function(r,h){var d=Number(r.ocean_sale_usd||0)-Number(r.ocean_cost_usd||0);
+      if(!Number(r.ocean_sale_usd||0)&&!Number(r.ocean_cost_usd||0))return '<span class="st-na">—</span>';
+      var cls=d>=0?"st-ok":"st-bad";return '<span class="'+cls+'">'+h.money(d)+'</span>'}},
+    {key:"pcdoc",label:"港杂单",render:pcLink},
+    {key:"freight_status",label:"状态",render:stCell},
+    {key:"jump",label:"↗",render:function(r,h){return r.bl_no?'<a href="/public/recon-product.html?bl='+encodeURIComponent(r.bl_no)+'">产品账</a>':""}}
+  ]});
+reload.onclick=function(){table.load()};exportBtn.onclick=function(){table.exportExcel("recon-freight-"+(company.value||"all")+".xlsx")};
+var hlBl=new URLSearchParams(location.search).get("bl");
+if(hlBl){var n=0,iv=setInterval(function(){n++;var trs=document.querySelectorAll("table.tbl tr");
+  if(trs.length>1||n>40){clearInterval(iv);trs.forEach(function(tr){if(tr.textContent.indexOf(hlBl)>=0){tr.classList.add("hl");tr.scrollIntoView({block:"center"})}})}},250)}
+</script>
+</body>
+</html>
