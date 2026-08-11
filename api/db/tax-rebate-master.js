@@ -75,7 +75,12 @@ ckts AS (
           AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
       (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
-          AND c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%' LIMIT 1)
+          AND c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%' LIMIT 1),
+      -- ⑤ 整票的订单只指向唯一一家工厂 → 每一行都是这家（无歧义，Damon 0812：按公司分开除重）
+      (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
+         FROM orders o WHERE o.factory IS NOT NULL AND o.factory <> ''
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')))
     ) AS line_factory
   FROM decl d JOIN finance_rebate_ckts_lines c ON c.customs_no = d.customs_no
 ),
@@ -118,6 +123,11 @@ line AS (
       (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
          FROM order_line_items l JOIN orders o ON o.id = l.order_id
         WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.declaration_name = ci.declaration_name_cn
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
+      -- ⑤ 整票的订单只指向唯一一家工厂 → 每一行都是这家（无歧义，Damon 0812：按公司分开除重）
+      (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
+         FROM orders o WHERE o.factory IS NOT NULL AND o.factory <> ''
           AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')))
     ) AS line_factory,
