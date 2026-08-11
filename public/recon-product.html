@@ -10,7 +10,7 @@
 <div class="wrap">
   <div class="top"><div><div class="title">产品对账 <span class="meta">巴匕 · 货款账</span></div><div class="meta">v2026.08.12-1 · <span id="stamp"></span></div></div></div>
   <div class="bar">
-    <input id="company" value="CN-00040" placeholder="客户编码(空=全部)">
+    <select id="company" style="height:32px;border:1px solid #d1d5db;border-radius:6px;min-width:260px"><option value="CN-00040">CN-00040</option></select>
     <input id="year" value="2026" placeholder="年份">
     <button class="btn" id="reload">刷新</button>
     <button class="btn" id="exportBtn">导出Excel</button>
@@ -37,6 +37,7 @@ window.setSt=async function(key){
     var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);table.load()}
   catch(e){alert("保存失败: "+e.message)}};
 var table=SanlynTable.mount(document.getElementById("app"),{
+  filter:function(r){return Number(r.goods_cost||0)||Number(r.goods_sale||0)||Number(r.declared_amount||0)||Number(r.received_cny||0)},
   api:"/api/db/recon-master",params:function(){return {company:company.value,year:year.value}},
   exportUrl:"/api/db/recon-export",loginApi:"/api/db/auth-login",
   sumKeys:["goods_cost","goods_sale","declared_amount","received_cny"],
@@ -57,6 +58,8 @@ var table=SanlynTable.mount(document.getElementById("app"),{
     {key:"product_status",label:"状态",render:stCell},
     {key:"jump",label:"↗",render:function(r,h){return r.bl_no?'<a href="/public/recon-freight.html?bl='+encodeURIComponent(r.bl_no)+'">海运账</a>':""}}
   ]});
+SanlynTable.companySelect(document.getElementById("company"),"CN-00040").then(function(){});
+company.onchange=function(){table.load()};
 reload.onclick=function(){table.load()};exportBtn.onclick=function(){table.exportExcel("recon-product-"+(company.value||"all")+".xlsx")};
 var hlBl=new URLSearchParams(location.search).get("bl");
 if(hlBl){var n=0,iv=setInterval(function(){n++;var trs=document.querySelectorAll("table.tbl tr");

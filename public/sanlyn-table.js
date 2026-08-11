@@ -56,7 +56,7 @@
       var r=await fetch(url,{headers:authHeaders({})});
       if(r.status===401){this.loginBox();return}
       var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);
-      this.rows=j.data||[];if(stamp)stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");this.render();
+      this.rows=(j.data||[]).filter(this.config.filter||function(){return true});if(stamp)stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");this.render();
     }catch(e){this.err(e)}
   };
   SanlynTable.prototype.sumRow=function(){
@@ -150,5 +150,13 @@
     }catch(e){this.err(e)}
   };
   SanlynTable.prototype.setEditMode=function(v){this.editMode=!!v;this.render()};
-  window.SanlynTable={mount:function(el,config){var t=new SanlynTable(el,config);t.load();return t},esc:esc,token:token,money:money};
+  async function companySelect(sel,defVal){
+    try{
+      var r=await fetch("/api/db/recon-companies",{headers:authHeaders({})});
+      var j=await r.json();if(!j.success)return;
+      sel.innerHTML='<option value="">全部客户</option>'+j.data.map(function(c){
+        return '<option value="'+escAttr(c.code)+'"'+(c.code===defVal?" selected":"")+'>'+esc((c.name||c.code).slice(0,26))+' ('+esc(c.code)+')</option>'}).join("");
+    }catch(e){}
+  }
+  window.SanlynTable={mount:function(el,config){var t=new SanlynTable(el,config);t.load();return t},esc:esc,token:token,money:money,companySelect:companySelect};
 })();

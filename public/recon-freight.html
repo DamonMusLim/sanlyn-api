@@ -10,7 +10,7 @@
 <div class="wrap">
   <div class="top"><div><div class="title">海运对账 <span class="meta">洋宝宝 · 运费账</span></div><div class="meta">v2026.08.12-1 · <span id="stamp"></span></div></div></div>
   <div class="bar">
-    <input id="company" value="CN-00040" placeholder="客户编码(空=全部)">
+    <select id="company" style="height:32px;border:1px solid #d1d5db;border-radius:6px;min-width:260px"><option value="CN-00040">CN-00040</option></select>
     <input id="year" value="2026" placeholder="年份">
     <button class="btn" id="reload">刷新</button>
     <button class="btn" id="exportBtn">导出Excel</button>
@@ -33,6 +33,7 @@ window.setSt=async function(key){
 function pcLink(r,h){var bl=r.bl_no||"";if(!bl)return "—";
   return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_portcharge&token='+encodeURIComponent(h.token())+'">港杂单</a>'}
 var table=SanlynTable.mount(document.getElementById("app"),{
+  filter:function(r){return Number(r.ocean_cost_usd||0)||Number(r.ocean_sale_usd||0)||Number(r.truck_cost_cny||0)||Number(r.barge_cost_cny||0)||Number(r.port_sale_cny||0)},
   api:"/api/db/recon-master",params:function(){return {company:company.value,year:year.value}},
   exportUrl:"/api/db/recon-export",loginApi:"/api/db/auth-login",
   sumKeys:["ocean_cost_usd","truck_cost_cny","barge_cost_cny","ocean_sale_usd","port_sale_cny"],
@@ -54,6 +55,8 @@ var table=SanlynTable.mount(document.getElementById("app"),{
     {key:"freight_status",label:"状态",render:stCell},
     {key:"jump",label:"↗",render:function(r,h){return r.bl_no?'<a href="/public/recon-product.html?bl='+encodeURIComponent(r.bl_no)+'">产品账</a>':""}}
   ]});
+SanlynTable.companySelect(document.getElementById("company"),"CN-00040").then(function(){});
+company.onchange=function(){table.load()};
 reload.onclick=function(){table.load()};exportBtn.onclick=function(){table.exportExcel("recon-freight-"+(company.value||"all")+".xlsx")};
 var hlBl=new URLSearchParams(location.search).get("bl");
 if(hlBl){var n=0,iv=setInterval(function(){n++;var trs=document.querySelectorAll("table.tbl tr");

@@ -9,7 +9,7 @@
 <div class="wrap">
   <div class="top"><div><div class="title">对账主表</div><div class="meta">v2026.08.11-1 · <span id="stamp"></span></div></div></div>
   <div class="bar">
-    <input id="company" value="CN-00040" placeholder="客户编码">
+    <select id="company" style="height:32px;border:1px solid #d1d5db;border-radius:6px;min-width:260px"><option value="CN-00040">CN-00040</option></select>
     <input id="year" value="2026" placeholder="年份">
     <button class="btn" id="reload">刷新</button>
     <button class="btn" id="exportBtn">导出Excel</button>
@@ -59,6 +59,8 @@ var table=SanlynTable.mount(document.getElementById("app"),{
     {key:"port_sale_cny",label:"港杂CNY",type:"num",group:"海运",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_cny"}:null}},
     {key:"gap_flags",label:"缺口",gap:true,render:function(r,h){var g=r.gap_flags||[];return h.esc(g.join("/"))}}
   ]});
+SanlynTable.companySelect(document.getElementById("company"),"CN-00040").then(function(){});
+company.onchange=function(){table.load()};
 reload.onclick=function(){table.load()};exportBtn.onclick=function(){table.exportExcel("recon-"+company.value+".xlsx")};
 editToggle.onclick=function(){table.setEditMode(!table.editMode);
   editToggle.textContent=table.editMode?"✏️ 编辑中":"🔒 只读";
