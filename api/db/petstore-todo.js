@@ -10,10 +10,10 @@ export async function loadPetstoreTodo(pool, q = {}) {
   const shelf = clean(q.shelf);
   const args = [];
   const where = [];
-  if (date) { args.push(date); where.push(`snapshot_date = $${args.length}::date`); }
-  else { where.push(`snapshot_date = (SELECT max(snapshot_date) FROM petstore_daily_todo)`); }
-  if (type) { args.push(type); where.push(`todo_type = $${args.length}`); }
-  if (shelf) { args.push(shelf + "%"); where.push(`COALESCE(shelf,'') LIKE $${args.length}`); }
+  if (date) { args.push(date); where.push(`t.snapshot_date = $${args.length}::date`); }
+  else { where.push(`t.snapshot_date = (SELECT max(snapshot_date) FROM petstore_daily_todo)`); }
+  if (type) { args.push(type); where.push(`t.todo_type = $${args.length}`); }
+  if (shelf) { args.push(shelf + "%"); where.push(`COALESCE(t.shelf,'') LIKE $${args.length}`); }
   // 分渠道价:商品接口不返回,取改价日志里每个渠道最近一次的价
   // (Damon 0812:「美团,饿了么价格补上,这样搜就比较容易了」)
   const sql = `
@@ -36,7 +36,7 @@ export async function loadPetstoreTodo(pool, q = {}) {
            t.snapshot_date::text AS snapshot_date, t.done_at, t.done_by
       FROM petstore_daily_todo t
       LEFT JOIN chp c ON c.product_code = t.product_code
-     WHERE ${where.join(" AND ").replace(/\b(snapshot_date|todo_type|shelf)\b/g, "t.$1")}
+     WHERE ${where.join(" AND ")}
      ORDER BY CASE t.todo_type WHEN '已过期' THEN 0 WHEN '无货位' THEN 1
                              WHEN '快过期' THEN 2 ELSE 3 END,
               CASE WHEN COALESCE(t.shelf,'') ~ '^[0-9]+-[0-9]+' THEN split_part(t.shelf,'-',1)::int ELSE 9999 END,
