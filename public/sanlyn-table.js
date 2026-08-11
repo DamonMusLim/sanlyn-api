@@ -56,13 +56,13 @@
       var r=await fetch(url,{headers:authHeaders({})});
       if(r.status===401){this.loginBox();return}
       var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);
-      this.rows=(j.data||[]).filter(this.config.filter||function(){return true});if(stamp)stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");this.render();
+      this.rows=j.data||[];if(stamp)stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");this.render();
     }catch(e){this.err(e)}
   };
-  SanlynTable.prototype.sumRow=function(){
+  SanlynTable.prototype.sumRow=function(rows){
     var sums={},keys=this.config.sumKeys||[];
     keys.forEach(function(k){sums[k]=0});
-    this.rows.forEach(function(r){keys.forEach(function(k){sums[k]+=Number(r[k]||0)})});
+    rows.forEach(function(r){keys.forEach(function(k){sums[k]+=Number(r[k]||0)})});
     return sums;
   };
   SanlynTable.prototype.cell=function(row,col,ri,ci){
@@ -96,9 +96,11 @@
     return '<tr>'+r1+'</tr><tr>'+r2+'</tr>';
   };
   SanlynTable.prototype.render=function(){
-    var self=this,cols=this.config.columns||[],sums=this.sumRow();this.edits=[];
+    var self=this,cols=this.config.columns||[];
+    this.view=this.rows.filter(this.config.filter||function(){return true});
+    var sums=this.sumRow(this.view);this.edits=[];
     var head=this.headHtml(cols);
-    var body=this.rows.map(function(r,ri){return '<tr>'+cols.map(function(c,ci){return self.cell(r,c,ri,ci)}).join("")+'</tr>'}).join("");
+    var body=this.view.map(function(r,ri){return '<tr>'+cols.map(function(c,ci){return self.cell(r,c,ri,ci)}).join("")+'</tr>'}).join("");
     if((this.config.sumKeys||[]).length){
       body+='<tr class="sum">'+cols.map(function(c,ci){
         if(ci===0)return '<td>合计</td>';
@@ -118,7 +120,7 @@
     try{await this.patch(ed,nv);this.load()}catch(e){this.softErr(e)}
   };
   SanlynTable.prototype.openEdit=function(i){
-    var row=this.rows[i],items=this.config.rowEdit?this.config.rowEdit(row):[],h="";
+    var row=(this.view||this.rows)[i],items=this.config.rowEdit?this.config.rowEdit(row):[],h="";
     if(!items.length){this.err("本票无可编辑字段(纯货代票金额在海运录入改)");return}
     items.forEach(function(it,idx){
       h+='<div class="mrow"><label>'+esc(it.label)+'</label><input data-i="'+idx+'" value="'+escAttr(it.value||0)+'"></div>';

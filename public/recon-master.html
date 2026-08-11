@@ -11,7 +11,10 @@
   <div class="bar">
     <select id="company" style="height:32px;border:1px solid #d1d5db;border-radius:6px;min-width:260px"><option value="CN-00040">CN-00040</option></select>
     <input id="year" value="2026" placeholder="年份">
-    <button class="btn" id="reload">刷新</button>
+        <select id="factory" style="height:32px;border:1px solid #d1d5db;border-radius:6px;min-width:180px"><option value="">全部工厂</option></select>
+    <select id="terms" style="height:32px;border:1px solid #d1d5db;border-radius:6px"><option value="">全部条款</option></select>
+    <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="gaponly">只看缺口</label>
+<button class="btn" id="reload">刷新</button>
     <button class="btn" id="exportBtn">导出Excel</button>
     <button class="btn" id="editToggle" style="background:#6b7280">🔒 只读</button>
   </div>
@@ -38,6 +41,7 @@ function rowEdit(r){var out=[];(r.orders||[]).forEach(function(o){if(!o.po)retur
     out.push({label:"港杂销售 CNY",kind:"plan",key:r.bl_no,field:"freight_sale_cny",value:r.port_sale_cny||0})}
   return out}
 var table=SanlynTable.mount(document.getElementById("app"),{
+  filter:baseFilter,
   api:"/api/db/recon-master",params:function(){return {company:company.value,year:year.value}},
   exportUrl:"/api/db/recon-export",editApi:"/api/db/recon-edit",loginApi:"/api/db/auth-login",
   sumKeys:["goods_cost","goods_sale","ocean_cost_usd","truck_cost_cny","barge_cost_cny","ocean_sale_usd","port_sale_cny","declared_amount"],
@@ -61,7 +65,24 @@ var table=SanlynTable.mount(document.getElementById("app"),{
   ]});
 SanlynTable.companySelect(document.getElementById("company"),"CN-00040").then(function(){});
 company.onchange=function(){table.load()};
-reload.onclick=function(){table.load()};exportBtn.onclick=function(){table.exportExcel("recon-"+company.value+".xlsx")};
+reload.onclick=function(){table.load()};
+function baseFilter(r){
+  var f=document.getElementById("factory").value, t=document.getElementById("terms").value, g=document.getElementById("gaponly").checked;
+  if(f&&String(r.factory||"").indexOf(f)<0)return false;
+  if(t&&String(r.trade_terms||"")!==t)return false;
+  if(g&&!(r.gap_flags||[]).length)return false;
+  return true;}
+function fillOpts(){var fs={},ts={};table.rows.forEach(function(r){
+    String(r.factory||"").split(" / ").filter(Boolean).forEach(function(x){fs[x]=1});
+    if(r.trade_terms)ts[r.trade_terms]=1});
+  var F=document.getElementById("factory"),T=document.getElementById("terms");
+  var fv=F.value,tv=T.value;
+  F.innerHTML='<option value="">全部工厂</option>'+Object.keys(fs).sort().map(function(x){return '<option'+(x===fv?" selected":"")+'>'+SanlynTable.esc(x)+'</option>'}).join("");
+  T.innerHTML='<option value="">全部条款</option>'+Object.keys(ts).sort().map(function(x){return '<option'+(x===tv?" selected":"")+'>'+SanlynTable.esc(x)+'</option>'}).join("");}
+["factory","terms","gaponly"].forEach(function(id){document.getElementById(id).onchange=function(){table.render()}});
+setInterval(function(){if(table.rows.length&&!document.getElementById("factory").dataset.f){document.getElementById("factory").dataset.f=1;fillOpts()}},400);
+var _oldReload=reload.onclick;reload.onclick=function(){document.getElementById("factory").dataset.f="";_oldReload();setTimeout(fillOpts,1500)};
+exportBtn.onclick=function(){table.exportExcel("recon-"+company.value+".xlsx")};
 editToggle.onclick=function(){table.setEditMode(!table.editMode);
   editToggle.textContent=table.editMode?"✏️ 编辑中":"🔒 只读";
   editToggle.style.background=table.editMode?"#b91c1c":"#6b7280"};
