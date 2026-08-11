@@ -59,6 +59,8 @@ order_groups AS (
          string_agg(DISTINCT NULLIF(factory_name,''), ' / ') AS factory,
          SUM(COALESCE(factory_total_amount, total_amount_factory, factory_amount, 0)) AS goods_cost,
          SUM(COALESCE(customer_amount, total_amount, 0)) AS goods_sale,
+         bool_or(COALESCE(remarks,'') LIKE '%客户自提%') AS self_pickup,
+         bool_or(COALESCE(remarks,'') LIKE '%混单报关%') AS merged_decl,
          json_agg(json_build_object('po', COALESCE(order_no, contract_no),
                   'cost', COALESCE(factory_total_amount, total_amount_factory, factory_amount, 0),
                   'sale', COALESCE(customer_amount, total_amount, 0))
@@ -103,6 +105,7 @@ joined AS (
          COALESCE(og.bl_no, pg.bl_no) AS bl_no, og.contracts, og.customer_pos,
          COALESCE(og.po_nos, pg.plan_orders, pg.plan_contracts) AS po_nos,
          og.orders, pg.plan_contracts,
+         COALESCE(og.self_pickup,false) AS self_pickup, COALESCE(og.merged_decl,false) AS merged_decl,
          COALESCE(og.customer, pg.plan_customer) AS customer, og.factory,
          COALESCE(og.etd, pg.etd) AS etd, og.trade_terms,
          COALESCE(og.goods_cost,0) AS goods_cost, COALESCE(og.goods_sale,0) AS goods_sale,
@@ -162,10 +165,10 @@ SELECT j.po_nos, j.orders, j.bl_no, j.etd, j.trade_terms, j.customer, j.factory,
        COALESCE(pc.status,'未核') AS product_status,
        COALESCE(fc.status,'未核') AS freight_status,
        ARRAY_REMOVE(ARRAY[
-         CASE WHEN NULLIF(j.bl_no,'') IS NULL THEN '缺BL' END,
+         CASE WHEN NULLIF(j.bl_no,'') IS NULL AND NOT j.self_pickup THEN '缺BL' END,
          CASE WHEN COALESCE(j.goods_cost,0)=0 THEN '缺成本' END,
          CASE WHEN COALESCE(j.goods_sale,0)=0 THEN '缺销售' END,
-         CASE WHEN COALESCE(d.declared_amount,0)=0 THEN '缺报关' END
+         CASE WHEN COALESCE(d.declared_amount,0)=0 AND NOT j.self_pickup AND NOT j.merged_decl THEN '缺报关' END
        ], NULL) AS gap_flags
   FROM joined j LEFT JOIN decl d USING(group_key)
   LEFT JOIN docs_grp dg ON dg.bl_no = j.bl_no
