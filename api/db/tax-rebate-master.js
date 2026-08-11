@@ -10,8 +10,15 @@ export async function loadTaxRebateMaster(pool, q = {}) {
   const sql = `
 WITH decl AS (
   SELECT f.customs_no, f.export_date, f.contract_no, f.fob_cny,
+    f.fob_foreign, f.currency, f.exchange_rate,
     COALESCE(f.rebate_lifecycle_status, f.status) AS status,
-    f.raw->'tax_declare'->>'batch' AS batch, cd.id AS decl_id,
+    f.raw->'tax_declare'->>'batch' AS batch,
+    f.raw->'tax_declare'->>'apply_date' AS apply_date,
+    f.raw->'tax_declare'->>'flow_status' AS flow_status,
+    f.raw->'tax_declare'->>'batch_total' AS batch_total,
+    f.rebate_expected, f.rebate_received, to_char(f.rebate_date,'YYYY-MM-DD') AS rebate_date,
+    f.raw->'order_nos' AS raw_order_nos,
+    cd.id AS decl_id,
     COALESCE(NULLIF(array_to_string(cd.container_nos, '/'), ''),
              NULLIF(replace(sp.container_no, ',', '/'), '')) AS containers,
     sp.container_qty, sp.container_type,
@@ -33,10 +40,44 @@ inv AS (
           SELECT 1 FROM unnest(i.contract_nos) c
           WHERE c <> '' AND d.contract_no LIKE '%'||c||'%'))
 ),
+-- 税局出口退税联（finance_rebate_ckts_lines）是最高权威口径：
+-- 它是税局认的逐项，HS/数量/人民币离岸价都以它为准；有它就不用报关单PDF那一层。
+ckts AS (
+  SELECT d.customs_no, c.item_no, c.hs_code, c.goods_name, c.qty, c.unit,
+    c.amount_cny, c.declared_flag,
+    CASE WHEN c.hs_code LIKE '2309%' THEN 0.09
+         WHEN c.hs_code IS NULL OR c.hs_code = '' THEN NULL
+         ELSE 0.13 END AS rate,
+    (SELECT v.invoice_no FROM inv v WHERE v.customs_no = d.customs_no
+       AND (v.amount_incl_tax = c.amount_cny
+            OR (c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%'))
+     ORDER BY (v.amount_incl_tax = c.amount_cny) DESC LIMIT 1) AS invoice_no,
+    (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
+       AND (v.amount_incl_tax = c.amount_cny
+            OR (c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%'))
+     ORDER BY (v.amount_incl_tax = c.amount_cny) DESC LIMIT 1) AS line_factory
+  FROM decl d JOIN finance_rebate_ckts_lines c ON c.customs_no = d.customs_no
+),
+ckts_agg AS (
+  SELECT customs_no, count(*) n,
+    count(*) FILTER (WHERE rate IS NULL OR amount_cny IS NULL) bad,
+    bool_or(declared_flag = 'N') AS ckts_declarable,
+    round(sum(amount_cny), 2) AS line_amt_sum,
+    CASE WHEN count(*) FILTER (WHERE rate IS NULL OR amount_cny IS NULL) > 0 THEN NULL
+         ELSE round(sum(amount_cny * rate), 2) END AS est_rebate,
+    json_agg(json_build_object(
+      'item_no', item_no, 'hs', hs_code, 'name', goods_name, 'qty', qty, 'unit', unit,
+      'nw', NULL, 'amt', amount_cny, 'rate', rate,
+      'invoice_no', invoice_no, 'factory', line_factory,
+      'line_rebate', CASE WHEN rate IS NOT NULL AND amount_cny IS NOT NULL
+                          THEN round(amount_cny * rate, 2) END
+    ) ORDER BY item_no) AS items
+  FROM ckts GROUP BY customs_no
+),
 line AS (
   SELECT d.customs_no, ci.sort_order AS item_no, ci.hs_code,
     ci.declaration_name_cn AS name, ci.qty, ci.unit,
-    ci.net_weight_kg AS nw, ci.declaration_amount AS amt,
+    ci.net_weight_kg AS nw, ci.declaration_amount AS amt, ci.source_region,
     CASE WHEN ci.hs_code LIKE '2309%' THEN 0.09
          WHEN ci.hs_code IS NULL OR ci.hs_code = '' THEN NULL
          ELSE 0.13 END AS rate,
@@ -67,27 +108,96 @@ agg AS (
     json_agg(json_build_object(
       'item_no', item_no, 'hs', hs_code, 'name', name, 'qty', qty, 'unit', unit,
       'nw', nw, 'amt', amt, 'rate', rate, 'invoice_no', invoice_no,
-      'factory', line_factory,
+      'factory', line_factory, 'region', source_region,
       'line_rebate', CASE WHEN rate IS NOT NULL AND amt IS NOT NULL
                           THEN round(amt * rate, 2) END
     ) ORDER BY item_no) AS items
   FROM line GROUP BY customs_no
 )
 SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
-  d.status, d.batch, d.contract_no, d.containers, d.container_qty, d.container_type,
+  d.status, d.batch, d.apply_date, d.flow_status, d.batch_total,
+  d.rebate_expected, d.rebate_received, d.rebate_date,
+  d.contract_no, d.containers,
+  -- 同一条提单上还有哪几张报关单（多张报关单共用同一批柜子时，避免把柜数重复计算）
+  (SELECT string_agg(c2.declaration_no, '/') FROM customs_declarations c2
+     WHERE c2.shipping_plan_id = (SELECT c3.shipping_plan_id FROM customs_declarations c3
+                                    WHERE c3.declaration_no = d.customs_no)
+       AND c2.declaration_no <> d.customs_no) AS bl_siblings, d.container_qty, d.container_type,
   d.bl_no, d.mbl_no, d.hbl_no, d.so_no, d.vessel, d.voyage, d.etd,
-  d.fob_cny, COALESCE(a.n, 0) AS item_count, COALESCE(a.bad, 0) AS bad_lines,
-  a.est_rebate, a.no_nw, a.line_amt_sum,
+  d.fob_cny, d.fob_foreign, d.currency, d.exchange_rate,
+  COALESCE(k.n, a.n, 0) AS item_count, COALESCE(k.bad, a.bad, 0) AS bad_lines,
+  COALESCE(k.est_rebate, a.est_rebate) AS est_rebate, a.no_nw,
+  COALESCE(k.line_amt_sum, a.line_amt_sum) AS line_amt_sum,
+  k.ckts_declarable,
   -- 数据等级：报关单级 = 逐项都有净重 且 逐项金额合计与报关额吻合；否则是模版/预估，不能当退税依据
-  CASE WHEN a.n IS NULL THEN 'none'
+  CASE WHEN k.n IS NOT NULL THEN 'ckts'
+       WHEN a.n IS NULL THEN 'none'
        WHEN COALESCE(a.no_nw,0) = 0 AND a.line_amt_sum IS NOT NULL
             AND abs(a.line_amt_sum - d.fob_cny) < 0.01 THEN 'customs'
        ELSE 'template' END AS data_grade,
-  COALESCE(a.items, '[]'::json) AS items,
-  (SELECT string_agg(DISTINCT o.order_no, '/') FROM orders o
-     WHERE d.contract_no LIKE '%'||o.contract_no||'%' AND o.contract_no <> '') AS order_nos,
-  (SELECT string_agg(DISTINCT o.factory, '/') FROM orders o
-     WHERE d.contract_no LIKE '%'||o.contract_no||'%' AND o.contract_no <> '') AS order_factories,
+  COALESCE(k.items, a.items, '[]'::json) AS items,
+  COALESCE(k.n, a.n, 0) AS ckts_or_customs_n,
+  -- 订单归属三条链路，缺一都会造成「工厂未知」：
+  --   ① 台账 raw->order_nos 直接存着订单号（34/59 票有，最准）
+  --   ② 合同号模糊匹配 orders.contract_no
+  --   ③ 提单号反查 orders.bl_no
+  COALESCE(
+    (SELECT string_agg(DISTINCT o.order_no, '/') FROM orders o
+       WHERE o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))),
+    -- ②合同号匹配：同一合同下常挂多张订单（一船多柜各报一张），
+    --   必须排除已被别的报关单 raw->order_nos 明确认领的订单，否则会把兄弟单的订单也贴上来。
+    (SELECT string_agg(DISTINCT o.order_no, '/') FROM orders o
+       WHERE d.contract_no LIKE '%'||o.contract_no||'%' AND o.contract_no <> ''
+         AND NOT EXISTS (
+           SELECT 1 FROM finance_export_rebates f2
+           WHERE f2.customs_no <> d.customs_no
+             AND f2.raw->'order_nos' IS NOT NULL
+             AND o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((f2.raw->'order_nos')::jsonb))))),
+    (SELECT string_agg(DISTINCT o.order_no, '/') FROM orders o
+       WHERE o.bl_no <> '' AND o.bl_no = d.bl_no)
+  ) AS order_nos,
+  COALESCE(
+    (SELECT string_agg(DISTINCT o.factory, '/') FROM orders o
+       WHERE o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))),
+    (SELECT string_agg(DISTINCT o.factory, '/') FROM orders o
+       WHERE d.contract_no LIKE '%'||o.contract_no||'%' AND o.contract_no <> ''
+         AND NOT EXISTS (
+           SELECT 1 FROM finance_export_rebates f2
+           WHERE f2.customs_no <> d.customs_no
+             AND f2.raw->'order_nos' IS NOT NULL
+             AND o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((f2.raw->'order_nos')::jsonb))))),
+    (SELECT string_agg(DISTINCT o.factory, '/') FROM orders o
+       WHERE o.bl_no <> '' AND o.bl_no = d.bl_no)
+  ) AS order_factories,
+  -- ④订单号编码：<客户号>-<厂码>-<PO号>，厂码可直接译出工厂（order_code_map，Damon 0812 说明）
+  (SELECT string_agg(DISTINCT mp.value_cn, '/') FROM order_code_map mp
+     WHERE mp.kind = 'factory' AND mp.is_primary
+       AND mp.code = ANY(ARRAY(
+         SELECT split_part(x, '-', 2) FROM unnest(string_to_array(
+           COALESCE(
+             (SELECT string_agg(DISTINCT o.order_no, ',') FROM orders o
+                WHERE o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))),
+             (SELECT string_agg(DISTINCT o.order_no, ',') FROM orders o
+                WHERE d.contract_no LIKE '%'||o.contract_no||'%' AND o.contract_no <> '')
+           ), ',')) AS x))) AS code_factories,
+  (SELECT string_agg(DISTINCT mp.value_cn, '/') FROM order_code_map mp
+     WHERE mp.kind = 'cust' AND mp.is_primary
+       AND mp.code = ANY(ARRAY(
+         SELECT split_part(x, '-', 1) FROM unnest(string_to_array(
+           COALESCE(
+             (SELECT string_agg(DISTINCT o.order_no, ',') FROM orders o
+                WHERE o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))),
+             (SELECT string_agg(DISTINCT o.order_no, ',') FROM orders o
+                WHERE d.contract_no LIKE '%'||o.contract_no||'%' AND o.contract_no <> '')
+           ), ',')) AS x))) AS code_customer,
+  COALESCE(
+    (SELECT string_agg(DISTINCT o.customer, '/') FROM orders o
+       WHERE o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))),
+    (SELECT string_agg(DISTINCT o.customer, '/') FROM orders o
+       WHERE d.contract_no LIKE '%'||o.contract_no||'%' AND o.contract_no <> ''),
+    (SELECT string_agg(DISTINCT o.customer, '/') FROM orders o
+       WHERE o.bl_no <> '' AND o.bl_no = d.bl_no)
+  ) AS customer,
   (SELECT string_agg(DISTINCT v.seller_name, '/') FROM inv v
      WHERE v.customs_no = d.customs_no AND v.seller_name IS NOT NULL) AS factories,
   (SELECT count(DISTINCT v.seller_name) FROM inv v
@@ -96,7 +206,9 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
      WHERE v.customs_no = d.customs_no) AS invoices,
   (SELECT round(sum(v.amount_incl_tax), 2) FROM inv v
      WHERE v.customs_no = d.customs_no) AS invoice_amt
-FROM decl d LEFT JOIN agg a ON a.customs_no = d.customs_no
+FROM decl d
+LEFT JOIN agg a ON a.customs_no = d.customs_no
+LEFT JOIN ckts_agg k ON k.customs_no = d.customs_no
 ORDER BY d.export_date DESC, d.customs_no`;
   const r = await pool.query(sql, [from]);
   return r.rows;
