@@ -42,15 +42,21 @@ var table=SanlynTable.mount(document.getElementById("app"),{
   sumKeys:["goods_cost","goods_sale","ocean_cost_usd","truck_cost_cny","barge_cost_cny","ocean_sale_usd","port_sale_cny","declared_amount"],
   rowEdit:rowEdit,
   columns:[
+    {key:"etd",label:"日期",render:function(r,h){return h.esc(String(r.etd||"").slice(0,10))}},
+    {key:"factory",label:"出货人(工厂)",fold:true,render:factoryCell},
+    {key:"customer",label:"收货人(客户)",fold:true,render:docsCell},
     {key:"po_nos",label:"PO号",type:"fold",sep:"+",show:3},
-    {key:"bl_no",label:"BL",gap:"缺BL"},{key:"etd",label:"ETD",render:function(r,h){return h.esc(String(r.etd||"").slice(0,10))}},
-    {key:"trade_terms",label:"贸易条款"},{key:"goods_cost",label:"货品成本",type:"num",gap:"缺成本",edit:function(r){var p=onePo(r);return p?{kind:"order",key:p,field:"goods_cost"}:null}},
-    {key:"goods_sale",label:"货品销售",type:"num",gap:"缺销售",edit:function(r){var p=onePo(r);return p?{kind:"order",key:p,field:"goods_sale"}:null}},
-    {key:"ocean_cost_usd",label:"海运成本USD",type:"num"},{key:"truck_cost_cny",label:"拖车CNY",type:"num"},{key:"barge_cost_cny",label:"驳船CNY",type:"num"},
-    {key:"ocean_sale_usd",label:"海运销售USD",type:"num",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_usd"}:null}},
-    {key:"port_sale_cny",label:"港杂销售CNY",type:"num",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_cny"}:null}},
-    {key:"declared_amount",label:"报关额",type:"num",gap:"缺报关"},{key:"gap_flags",label:"缺口",gap:true,render:function(r,h){var g=r.gap_flags||[];return h.esc(g.join("/"))}},
-    {key:"docs",label:"客户·账单",fold:true,render:docsCell},{key:"factory",label:"工厂·账单",fold:true,render:factoryCell}
+    {key:"bl_no",label:"BL",gap:"缺BL"},
+    {key:"trade_terms",label:"条款"},
+    {key:"goods_cost",label:"货品成本",type:"num",gap:"缺成本",group:"外贸",edit:function(r){var p=onePo(r);return p?{kind:"order",key:p,field:"goods_cost"}:null}},
+    {key:"goods_sale",label:"货品销售",type:"num",gap:"缺销售",group:"外贸",edit:function(r){var p=onePo(r);return p?{kind:"order",key:p,field:"goods_sale"}:null}},
+    {key:"declared_amount",label:"报关额",type:"num",gap:"缺报关",group:"外贸"},
+    {key:"ocean_cost_usd",label:"成本USD",type:"num",group:"海运"},
+    {key:"truck_cost_cny",label:"拖车CNY",type:"num",group:"海运"},
+    {key:"barge_cost_cny",label:"驳船CNY",type:"num",group:"海运"},
+    {key:"ocean_sale_usd",label:"销售USD",type:"num",group:"海运",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_usd"}:null}},
+    {key:"port_sale_cny",label:"港杂CNY",type:"num",group:"海运",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_cny"}:null}},
+    {key:"gap_flags",label:"缺口",gap:true,render:function(r,h){var g=r.gap_flags||[];return h.esc(g.join("/"))}}
   ]});
 reload.onclick=function(){table.load()};exportBtn.onclick=function(){table.exportExcel("recon-"+company.value+".xlsx")};
 </script>

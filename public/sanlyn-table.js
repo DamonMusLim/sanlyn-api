@@ -84,9 +84,20 @@
     var head=parts.slice(0,col.show||3).join(" + ");
     return '<span class="po-head">'+esc(head)+' <b class="po-more">+'+(parts.length-(col.show||3))+'</b></span><span class="po-full">'+esc(parts.join(" + "))+'</span>';
   };
+  SanlynTable.prototype.headHtml=function(cols){
+    if(!cols.some(function(c){return c.group}))return '<tr>'+cols.map(function(c){return '<th>'+esc(c.label||c.key)+'</th>'}).join("")+'</tr>';
+    var r1="",r2="",i=0;
+    while(i<cols.length){var c=cols[i];
+      if(!c.group){r1+='<th rowspan="2">'+esc(c.label||c.key)+'</th>';i++;continue}
+      var g=c.group,span=0;while(i+span<cols.length&&cols[i+span].group===g)span++;
+      r1+='<th colspan="'+span+'" class="grp">'+esc(g)+'</th>';
+      for(var k=0;k<span;k++)r2+='<th>'+esc(cols[i+k].label||cols[i+k].key)+'</th>';
+      i+=span;}
+    return '<tr>'+r1+'</tr><tr>'+r2+'</tr>';
+  };
   SanlynTable.prototype.render=function(){
     var self=this,cols=this.config.columns||[],sums=this.sumRow();this.edits=[];
-    var head='<tr>'+cols.map(function(c){return '<th>'+esc(c.label||c.key)+'</th>'}).join("")+'</tr>';
+    var head=this.headHtml(cols);
     var body=this.rows.map(function(r,ri){return '<tr>'+cols.map(function(c,ci){return self.cell(r,c,ri,ci)}).join("")+'</tr>'}).join("");
     if((this.config.sumKeys||[]).length){
       body+='<tr class="sum">'+cols.map(function(c,ci){

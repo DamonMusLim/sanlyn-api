@@ -35,3 +35,5 @@ input{height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 9px}
 .nil{color:#9ca3af}
 a{color:#1d4ed8;text-decoration:none}
 a:hover{text-decoration:underline}
+
+.tbl th.grp{text-align:center;background:#1f2937;letter-spacing:2px}
