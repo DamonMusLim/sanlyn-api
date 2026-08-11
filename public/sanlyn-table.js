@@ -9,7 +9,7 @@
   function splitFold(v,sep){return String(v||"").split(sep||"+").filter(Boolean)}
 
   function SanlynTable(el,config){
-    this.el=el;this.config=config;this.rows=[];this.edits=[];this.modal=this.ensureModal();
+    this.el=el;this.config=config;this.rows=[];this.edits=[];this.editMode=!!config.editable;this.modal=this.ensureModal();
     this.bind();
   }
   SanlynTable.prototype.ensureModal=function(){
@@ -68,12 +68,12 @@
   SanlynTable.prototype.cell=function(row,col,ri,ci){
     var cls=[],html="",edit=null,prefix="";
     if(gapHit(row,col))cls.push("gap");
-    if(ci===0&&this.config.rowEdit&&(this.config.rowEdit(row)||[]).length)prefix='<b class="pen" title="编辑本票" data-row="'+ri+'">&#9998;</b> ';
+    if(this.editMode&&ci===0&&this.config.rowEdit&&(this.config.rowEdit(row)||[]).length)prefix='<b class="pen" title="编辑本票" data-row="'+ri+'">&#9998;</b> ';
     if(col.render){html=prefix+col.render(row,{esc:esc,token:token,money:money});}
     else if(col.type==="fold"){html=prefix+this.foldHtml(row[col.key],col);}
     else if(col.type==="num"){html=money(row[col.key]);}
     else html=esc(row[col.key]||"");
-    if(col.type==="num"&&col.edit){edit=col.edit(row);if(edit&&this.config.editApi){cls.push("ed");this.edits.push(edit)}}
+    if(this.editMode&&col.type==="num"&&col.edit){edit=col.edit(row);if(edit&&this.config.editApi){cls.push("ed");this.edits.push(edit)}}
     var data=edit?' data-edit="'+(this.edits.length-1)+'" title="双击编辑"':"";
     if(col.type==="fold"||col.fold)cls.push("po-fold");
     return '<td class="'+cls.join(" ")+'"'+data+'>'+html+'</td>';
@@ -149,5 +149,6 @@
       var b=await r.blob(),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=filename||"export.xlsx";a.click();URL.revokeObjectURL(a.href);
     }catch(e){this.err(e)}
   };
+  SanlynTable.prototype.setEditMode=function(v){this.editMode=!!v;this.render()};
   window.SanlynTable={mount:function(el,config){var t=new SanlynTable(el,config);t.load();return t},esc:esc,token:token,money:money};
 })();

@@ -13,6 +13,7 @@
     <input id="year" value="2026" placeholder="年份">
     <button class="btn" id="reload">刷新</button>
     <button class="btn" id="exportBtn">导出Excel</button>
+    <button class="btn" id="editToggle" style="background:#6b7280">🔒 只读</button>
   </div>
   <div id="msg"></div><div class="panel" id="app"><div class="hint">Loading...</div></div>
 </div>
@@ -59,6 +60,9 @@ var table=SanlynTable.mount(document.getElementById("app"),{
     {key:"gap_flags",label:"缺口",gap:true,render:function(r,h){var g=r.gap_flags||[];return h.esc(g.join("/"))}}
   ]});
 reload.onclick=function(){table.load()};exportBtn.onclick=function(){table.exportExcel("recon-"+company.value+".xlsx")};
+editToggle.onclick=function(){table.setEditMode(!table.editMode);
+  editToggle.textContent=table.editMode?"✏️ 编辑中":"🔒 只读";
+  editToggle.style.background=table.editMode?"#b91c1c":"#6b7280"};
 </script>
 </body>
 </html>
