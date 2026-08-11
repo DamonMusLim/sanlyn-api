@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>宠物店 · 店员待办</title>
+<link rel="stylesheet" href="/public/sanlyn-table.css">
+<style>
+  .sum{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+  .chip{padding:4px 10px;border-radius:12px;font-size:12px;border:1px solid #ddd;cursor:pointer}
+  .chip.on{outline:2px solid #4472C4}
+  .c1{background:#FFC7CE}.c2{background:#FFE699}.c3{background:#FFF2CC}.c4{background:#DDEBF7}
+  @media print{.bar,.top .meta,.sum{display:none}.wrap{padding:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="title">宠物店 · 店员待办</div>
+    <div class="meta">金枋店 · <span id="stamp"></span></div></div></div>
+  <div class="bar">
+    <input id="shelf" placeholder="货架号前缀 如 3">
+    <select id="type"><option value="">全部待办</option><option>已过期</option><option>无货位</option><option>快过期</option><option>无生产日期</option></select>
+    <button class="btn" id="reload">刷新</button>
+    <button class="btn" id="exportBtn">导出Excel</button>
+    <button class="btn" id="printBtn">打印</button>
+  </div>
+  <div class="sum" id="sum"></div>
+  <div id="msg"></div><div class="panel" id="app"><div class="hint">Loading...</div></div>
+</div>
+<script src="/public/sanlyn-table.js"></script>
+<script>
+function params(){return{shelf:document.getElementById("shelf").value.trim(),type:document.getElementById("type").value}}
+var t=new SanlynTable(document.getElementById("app"),{
+  api:"/api/db/petstore-todo", loginApi:"/api/db/auth-login", params:params,
+  columns:[
+    {key:"todo_type",label:"待办"},{key:"shelf",label:"货架号"},
+    {key:"product_name",label:"商品名称"},{key:"spec",label:"规格"},
+    {key:"warn_status",label:"保质期状态"},{key:"production_date",label:"生产日期"},
+    {key:"expire_date",label:"到期日"},{key:"stock",label:"库存"},
+    {key:"out_price",label:"门店售价"},{key:"month_sale",label:"月销"},
+    {key:"product_code",label:"商品编码"},{key:"barcode",label:"条码"},
+    {key:"category",label:"一级分类"}
+  ],
+  afterRender:function(res){
+    var s=(res&&res.summary)||[],box=document.getElementById("sum");
+    var cls={"已过期":"c1","无货位":"c2","快过期":"c3","无生产日期":"c4"};
+    box.innerHTML=s.map(function(x){return '<span class="chip '+(cls[x.todo_type]||"")+'" data-t="'+x.todo_type+'">'+x.todo_type+' '+x.n+'</span>'}).join("");
+    box.querySelectorAll(".chip").forEach(function(c){c.onclick=function(){document.getElementById("type").value=c.dataset.t;t.load()}});
+  }
+});
+document.getElementById("reload").onclick=function(){t.load()};
+document.getElementById("printBtn").onclick=function(){window.print()};
+document.getElementById("exportBtn").onclick=function(){
+  var tk=localStorage.getItem("sanlyn_token")||localStorage.getItem("sanlyn_jwt")||"";
+  var p=new URLSearchParams(params());p.set("token",tk);
+  window.open("/api/db/petstore-todo-export?"+p.toString(),"_blank");
+};
+t.load();
+</script>
+</body></html>

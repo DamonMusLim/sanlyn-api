@@ -32,6 +32,9 @@ export function registerTailRoutes(app, mount) {
   // ── Reconciliation / monthly statement ──
   mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
   mount("/api/db/recon-master", () => import("./api/db/recon-master.js"));
+  mount("/api/db/petstore-todo",        () => import("./api/db/petstore-todo.js"));
+  mount("/api/db/petstore-todo-export", () => import("./api/db/petstore-todo-export.js"));
+  mount("/api/db/petstore-sync",        () => import("./api/db/petstore-sync.js"));
   mount("/api/db/recon-export", () => import("./api/db/recon-export.js"));
   mount("/api/db/recon-edit", () => import("./api/db/recon-edit.js")); // 对账主表行内编辑 2026-08-11
   mount("/api/db/shipping-entry", () => import("./api/db/shipping-entry.js"));
