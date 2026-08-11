@@ -45,6 +45,11 @@ inv AS (
 ckts AS (
   SELECT d.customs_no, c.item_no, c.hs_code, c.goods_name, c.qty, c.unit,
     c.amount_cny, c.declared_flag,
+    (c.raw::jsonb->>'region') AS source_region,
+    (c.raw::jsonb->>'nw_total') AS nw_total,
+    -- 退税联的「法定数量」单位是千克时，它就是该行净重
+    CASE WHEN c.raw::jsonb->>'legal_unit' = '千克'
+         THEN (c.raw::jsonb->>'legal_qty')::numeric END AS line_nw,
     CASE WHEN c.hs_code LIKE '2309%' THEN 0.09
          WHEN c.hs_code IS NULL OR c.hs_code = '' THEN NULL
          ELSE 0.13 END AS rate,
@@ -52,10 +57,26 @@ ckts AS (
        AND (v.amount_incl_tax = c.amount_cny
             OR (c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%'))
      ORDER BY (v.amount_incl_tax = c.amount_cny) DESC LIMIT 1) AS invoice_no,
-    (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
-       AND (v.amount_incl_tax = c.amount_cny
-            OR (c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%'))
-     ORDER BY (v.amount_incl_tax = c.amount_cny) DESC LIMIT 1) AS line_factory
+    -- 行级工厂证据链（Damon 0812：工厂必须从我们自己的库带；
+    -- 货源地是「整票一个值」，一票多厂时贴到行上必然全错，已停用）
+    --  ① 进项票逐行明细：品名+箱数命中
+    --  ② 进项票金额 = 该行报关金额（±1元）
+    --  ③ 我们的订单行 order_line_items：按报关品名匹配，且这些行只指向唯一一家工厂
+    --  ④ 票备注含品名
+    COALESCE(
+      (SELECT i2.seller_name FROM finance_invoices_in i2, jsonb_array_elements(i2.line_items) li
+        WHERE i2.customs_nos @> ARRAY[d.customs_no]::varchar[] AND i2.line_items IS NOT NULL
+          AND (li->>'nm') = c.goods_name AND (li->>'qty')::numeric = c.qty LIMIT 1),
+      (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
+          AND abs(v.amount_incl_tax - c.amount_cny) < 1 LIMIT 1),
+      (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
+         FROM order_line_items l JOIN orders o ON o.id = l.order_id
+        WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.declaration_name = c.goods_name
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
+      (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
+          AND c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%' LIMIT 1)
+    ) AS line_factory
   FROM decl d JOIN finance_rebate_ckts_lines c ON c.customs_no = d.customs_no
 ),
 ckts_agg AS (
@@ -67,8 +88,11 @@ ckts_agg AS (
          ELSE round(sum(amount_cny * rate), 2) END AS est_rebate,
     json_agg(json_build_object(
       'item_no', item_no, 'hs', hs_code, 'name', goods_name, 'qty', qty, 'unit', unit,
-      'nw', NULL, 'amt', amount_cny, 'rate', rate,
+      'nw', line_nw, 'amt', amount_cny, 'rate', rate,
       'invoice_no', invoice_no, 'factory', line_factory,
+      'region', source_region,
+      'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
+      'region_factory', NULL,
       'line_rebate', CASE WHEN rate IS NOT NULL AND amount_cny IS NOT NULL
                           THEN round(amount_cny * rate, 2) END
     ) ORDER BY item_no) AS items
@@ -86,10 +110,17 @@ line AS (
     --   ② 票备注含该行品名
     --   ③ 整票只有一个销方（无歧义，可下沉）
     -- 都不满足 → 留空，由上层标「待分」，绝不猜。
-    (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
+    COALESCE(
+      (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
         AND (v.amount_incl_tax = ci.declaration_amount
              OR (ci.declaration_name_cn <> '' AND v.remark ILIKE '%'||ci.declaration_name_cn||'%'))
-      ORDER BY (v.amount_incl_tax = ci.declaration_amount) DESC LIMIT 1) AS line_factory,
+      ORDER BY (v.amount_incl_tax = ci.declaration_amount) DESC LIMIT 1),
+      (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
+         FROM order_line_items l JOIN orders o ON o.id = l.order_id
+        WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.declaration_name = ci.declaration_name_cn
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')))
+    ) AS line_factory,
     (SELECT v.invoice_no FROM inv v WHERE v.customs_no = d.customs_no
         AND (v.amount_incl_tax = ci.declaration_amount
              OR (ci.declaration_name_cn <> '' AND v.remark ILIKE '%'||ci.declaration_name_cn||'%'))
@@ -110,8 +141,7 @@ agg AS (
       'nw', nw, 'amt', amt, 'rate', rate, 'invoice_no', invoice_no,
       'factory', line_factory, 'region', source_region,
       'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
-      'region_factory', (SELECT c2.name_cn FROM companies c2
-                          WHERE c2.customs_source_area_code = source_region AND c2.active LIMIT 1),
+      'region_factory', NULL,
       'line_rebate', CASE WHEN rate IS NOT NULL AND amt IS NOT NULL
                           THEN round(amt * rate, 2) END
     ) ORDER BY item_no) AS items
