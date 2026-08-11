@@ -120,9 +120,11 @@ recv_grp AS (
     FROM joined j
     JOIN bank_slip_links l ON (
          (NULLIF(BTRIM(l.bl_no),'') IS NOT NULL AND BTRIM(l.bl_no) = j.bl_no)
-      OR (j.bl_no IS NULL AND (
-            l.order_no = ANY(string_to_array(COALESCE(j.po_nos,''),'+'))
-         OR l.contract_no = ANY(COALESCE(j.contracts,'{}'::text[]))))
+      OR (NULLIF(BTRIM(l.bl_no),'') IS NULL AND (
+            (NULLIF(BTRIM(l.order_no),'') IS NOT NULL AND l.order_no = ANY(string_to_array(COALESCE(j.po_nos,''),'+')))
+         OR (NULLIF(BTRIM(l.contract_no),'') IS NOT NULL AND (
+               l.contract_no = ANY(COALESCE(j.contracts,'{}'::text[]))
+            OR l.contract_no = ANY(COALESCE(j.customer_pos,'{}'::text[]))))))
     )
    WHERE COALESCE(NULLIF(l.alloc_currency,''),'CNY') = 'CNY'
    GROUP BY j.group_key
