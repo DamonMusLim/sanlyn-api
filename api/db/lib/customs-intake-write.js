@@ -50,7 +50,7 @@ export async function writeIntake(payload, verify, actor) {
           const it = items[i];
           await client.query(
             `INSERT INTO customs_declaration_items(declaration_id, owner_company_id, sort_order, hs_code, declaration_name_cn, declaration_elements, qty, unit, gross_weight_kg, net_weight_kg, declaration_amount, declaration_currency, unit_price, country_of_origin, destination_country, fob_usd, fob_usd_source, source_type, created_at, updated_at)
-             VALUES($1,37,$2,$3,$4,$5,$6,$7,$8,$9,$10,'CNY',$11,'中国(CHN)',$12,NULL,'pending_official_number','customs-intake',now(),now())`,
+             VALUES($1,37,$2,$3,$4,$5,$6,$7,$8,$9,$10,'CNY',$11,'中国(CHN)',$12,NULL,'pending_official_number','pdf',now(),now())`,
             [declId, i + 1, it.hs_code, it.name_cn, it.elements || null, it.qty, it.unit || "件",
              it.gross_kg || null, it.net_kg || null, it.amount, it.unit_price || null,
              doc.destination || "马来西亚(MYS)"]);
