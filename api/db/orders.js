@@ -172,6 +172,13 @@ const PATCH_ALLOWED_COLS = [
   // 客户确认 + 洋宝宝价格 (2026-06-22)
   "customer_confirmed_at",
   "oceanbaby_price",
+  // 收货人 / 买方 (2026-08-12): 改订单收货公司时可从订单详情落库，不再裸改库。
+  //   consignee        text    → order-parties 收货人参与方 + BL/报关收货人
+  //   customer_address text    → 收货地址（docs 仍优先读 raw.customerAddress，此列为主数据备份）
+  //   buyer_company_id bigint  → 买方公司实体（booking-instruction / pi 抬头）
+  //   customer_company_id int  → 客户公司实体（documents 抬头解析 loadSellerCfg）
+  //   ⚠ consignees(jsonb) 不在此列——下方按 ::jsonb 显式处理，走通用循环会被序列化成 [object Object]
+  "consignee", "customer_address", "buyer_company_id", "customer_company_id",
   // is_locked 不在此列——只允许通过专属锁单端点修改
 ];
 
@@ -296,6 +303,25 @@ async function handlePatch(req, res) {
     }
   }
 
+  // 联动校验 (2026-08-12): 改 buyer_company_id / customer_company_id 时，公司实体必须已存在于 companies。
+  // 防止落进悬空的公司 id（documents/booking 抬头解析会静默取不到 → 单据抬头空白）。
+  // 只校验"存在"，不强制 customer_id == buyer_company_id ——
+  //   consignee/买方本就可以≠客户（如 48-LL-3 收货换成集团公司 SEVEN SEAS，customer 仍是 HARMONIOUS），
+  //   强制一致会误杀这类正当改动。三者一致性交由业务判断，此处只挡"不存在的公司"。
+  for (const idCol of ["buyer_company_id", "customer_company_id"]) {
+    if (rest[idCol] !== undefined && rest[idCol] !== null && rest[idCol] !== "") {
+      const cid = Number(rest[idCol]);
+      if (!Number.isInteger(cid) || cid <= 0) {
+        return res.status(400).json({ error: idCol + " must be a positive integer company id", got: rest[idCol] });
+      }
+      const chk = await pool.query("SELECT id, code, name_en FROM companies WHERE id = $1", [cid]);
+      if (!chk.rows.length) {
+        return res.status(400).json({ error: idCol + " references a non-existent company", company_id: cid });
+      }
+      rest[idCol] = cid; // 归一为数字，避免字符串写入
+    }
+  }
+
   const sets = [], vals = [];
   let n = 0;
   for (const col of PATCH_ALLOWED_COLS) {
@@ -307,6 +333,9 @@ async function handlePatch(req, res) {
   if (rawPatch && typeof rawPatch === "object") {
     n++; sets.push("raw = COALESCE(raw,'{}') || $" + n + "::jsonb"); vals.push(JSON.stringify(rawPatch));
   }
+  // consignees(jsonb): 多收货人明细。显式 ::jsonb，不能走通用循环（pg 会把对象序列化成 [object Object]）。
+  // 必须在下面的 "no fields to update" 判定之前算进 sets，否则单独改 consignees 会被误判为空。(2026-08-12)
+  if (body.consignees !== undefined) { n++; sets.push("consignees = $" + n + "::jsonb"); vals.push(JSON.stringify(body.consignees)); }
   if (sets.length === 0) return res.status(400).json({ error: "no fields to update" });
 
   // ── Auto-compute profit fields from raw.products ────────────────

@@ -109,6 +109,9 @@ agg AS (
       'item_no', item_no, 'hs', hs_code, 'name', name, 'qty', qty, 'unit', unit,
       'nw', nw, 'amt', amt, 'rate', rate, 'invoice_no', invoice_no,
       'factory', line_factory, 'region', source_region,
+      'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
+      'region_factory', (SELECT c2.name_cn FROM companies c2
+                          WHERE c2.customs_source_area_code = source_region AND c2.active LIMIT 1),
       'line_rebate', CASE WHEN rate IS NOT NULL AND amt IS NOT NULL
                           THEN round(amt * rate, 2) END
     ) ORDER BY item_no) AS items
@@ -119,10 +122,14 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
   d.rebate_expected, d.rebate_received, d.rebate_date,
   d.contract_no, d.containers,
   -- 同一条提单上还有哪几张报关单（多张报关单共用同一批柜子时，避免把柜数重复计算）
+  -- 同提单兄弟报关单：必须是 18 位正规报关单号 且 在退税台账里有票，
+  -- 否则会把「提单号当 declaration_no 存」的模版行当成兄弟单（0812 实测 878686 自己跟自己比）
   (SELECT string_agg(c2.declaration_no, '/') FROM customs_declarations c2
      WHERE c2.shipping_plan_id = (SELECT c3.shipping_plan_id FROM customs_declarations c3
                                     WHERE c3.declaration_no = d.customs_no)
-       AND c2.declaration_no <> d.customs_no) AS bl_siblings, d.container_qty, d.container_type,
+       AND c2.declaration_no <> d.customs_no
+       AND c2.declaration_no ~ '^[0-9]{18}$'
+       AND EXISTS (SELECT 1 FROM finance_export_rebates f3 WHERE f3.customs_no = c2.declaration_no)) AS bl_siblings, d.container_qty, d.container_type,
   d.bl_no, d.mbl_no, d.hbl_no, d.so_no, d.vessel, d.voyage, d.etd,
   d.fob_cny, d.fob_foreign, d.currency, d.exchange_rate,
   COALESCE(k.n, a.n, 0) AS item_count, COALESCE(k.bad, a.bad, 0) AS bad_lines,
@@ -132,8 +139,12 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
   -- 数据等级：报关单级 = 逐项都有净重 且 逐项金额合计与报关额吻合；否则是模版/预估，不能当退税依据
   CASE WHEN k.n IS NOT NULL THEN 'ckts'
        WHEN a.n IS NULL THEN 'none'
+       -- 从 i.chinaport 出口退税联(decDetail/preview) 抓来的，等同税局口径
+       WHEN EXISTS (SELECT 1 FROM customs_declarations c4
+                     WHERE c4.declaration_no = d.customs_no
+                       AND c4.source_system = 'chinaport-rtx-decDetail-0812') THEN 'ckts'
        WHEN COALESCE(a.no_nw,0) = 0 AND a.line_amt_sum IS NOT NULL
-            AND abs(a.line_amt_sum - d.fob_cny) < 0.01 THEN 'customs'
+            AND abs(a.line_amt_sum - d.fob_cny) < 1.00 THEN 'customs'
        ELSE 'template' END AS data_grade,
   COALESCE(k.items, a.items, '[]'::json) AS items,
   COALESCE(k.n, a.n, 0) AS ckts_or_customs_n,
