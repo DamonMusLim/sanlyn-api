@@ -39,6 +39,8 @@ line AS (
 agg AS (
   SELECT customs_no, count(*) AS n,
     count(*) FILTER (WHERE rate IS NULL OR amt IS NULL) AS bad,
+    count(*) FILTER (WHERE nw IS NULL) AS no_nw,
+    round(sum(amt), 2) AS line_amt_sum,
     CASE WHEN count(*) FILTER (WHERE rate IS NULL OR amt IS NULL) > 0 THEN NULL
          ELSE round(sum(amt * rate), 2) END AS est_rebate,
     json_agg(json_build_object(
@@ -53,7 +55,13 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
   d.status, d.batch, d.contract_no, d.containers, d.container_qty, d.container_type,
   d.bl_no, d.mbl_no, d.hbl_no, d.so_no, d.vessel, d.voyage, d.etd,
   d.fob_cny, COALESCE(a.n, 0) AS item_count, COALESCE(a.bad, 0) AS bad_lines,
-  a.est_rebate, COALESCE(a.items, '[]'::json) AS items,
+  a.est_rebate, a.no_nw, a.line_amt_sum,
+  -- 数据等级：报关单级 = 逐项都有净重 且 逐项金额合计与报关额吻合；否则是模版/预估，不能当退税依据
+  CASE WHEN a.n IS NULL THEN 'none'
+       WHEN COALESCE(a.no_nw,0) = 0 AND a.line_amt_sum IS NOT NULL
+            AND abs(a.line_amt_sum - d.fob_cny) < 0.01 THEN 'customs'
+       ELSE 'template' END AS data_grade,
+  COALESCE(a.items, '[]'::json) AS items,
   (SELECT string_agg(DISTINCT o.order_no, '/') FROM orders o
      WHERE d.contract_no LIKE '%'||o.contract_no||'%' AND o.contract_no <> '') AS order_nos,
   (SELECT string_agg(DISTINCT o.factory, '/') FROM orders o
