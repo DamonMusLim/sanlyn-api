@@ -70,6 +70,8 @@ plan_groups AS (
   SELECT BTRIM(sp.bl_no) AS bl_no,
          MAX(NULLIF(BTRIM(sp.customer),'')) AS plan_customer,
          MIN(sp.etd) AS etd,
+         MAX(NULLIF(array_to_string(COALESCE(sp.order_nos,'{}'::text[]),'+'),'')) AS plan_orders,
+         MAX(NULLIF(array_to_string(COALESCE(sp.contract_nos,'{}'::text[]),'+'),'')) AS plan_contracts,
          MAX(sp.freight_sale_usd) AS ocean_sale_usd,
          MAX(sp.freight_sale_cny) AS port_sale_cny
     FROM shipping_plans sp
@@ -99,7 +101,9 @@ bill_groups AS (
 joined AS (
   SELECT COALESCE(og.group_key, pg.bl_no) AS group_key,
          COALESCE(og.bl_no, pg.bl_no) AS bl_no, og.contracts, og.customer_pos,
-         og.po_nos, og.orders, COALESCE(og.customer, pg.plan_customer) AS customer, og.factory,
+         COALESCE(og.po_nos, pg.plan_orders, pg.plan_contracts) AS po_nos,
+         og.orders, pg.plan_contracts,
+         COALESCE(og.customer, pg.plan_customer) AS customer, og.factory,
          COALESCE(og.etd, pg.etd) AS etd, og.trade_terms,
          COALESCE(og.goods_cost,0) AS goods_cost, COALESCE(og.goods_sale,0) AS goods_sale,
          COALESCE(bg.ocean_cost_usd,0) AS ocean_cost_usd,
@@ -126,6 +130,7 @@ decl AS (
         LEFT JOIN LATERAL regexp_split_to_table(COALESCE(r.contract_no,''), '\\s*/\\s*') part(v) ON TRUE
        WHERE part.v = ANY(COALESCE(j.contracts,'{}'::text[]))
           OR part.v = ANY(COALESCE(j.customer_pos,'{}'::text[]))
+          OR part.v = ANY(string_to_array(COALESCE(j.plan_contracts,''),'+'))
     ) x ON TRUE
    GROUP BY j.group_key
 )
