@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>对账主表</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f6f7f9;color:#111827;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}.wrap{max-width:1500px;margin:0 auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px}.title{font-size:22px;font-weight:900}.meta{font-size:12px;color:#6b7280}.bar{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #e5e7eb;padding:10px;border-radius:8px;margin-bottom:12px}input{height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 9px}.btn{height:32px;border:0;border-radius:6px;background:#111827;color:#fff;font-weight:800;padding:0 14px;cursor:pointer}.panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:auto}.tbl{width:100%;min-width:1180px;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid #edf0f4;border-right:1px solid #edf0f4;padding:7px 8px;text-align:right;white-space:nowrap}.tbl th:first-child,.tbl td:first-child{text-align:left;position:sticky;left:0;background:inherit}.tbl th{background:#111827;color:#fff;font-size:11px}.gap{background:#fee2e2;color:#991b1b;font-weight:800}.sum{background:#f9fafb;font-weight:900}.hint{padding:24px;text-align:center;color:#6b7280}.err{padding:12px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-bottom:12px}#login{display:none;max-width:320px;margin:10vh auto;padding:24px;border:1px solid #ddd;border-radius:8px;background:#fff}
+*{box-sizing:border-box}body{margin:0;background:#f6f7f9;color:#111827;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}.wrap{max-width:1500px;margin:0 auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px}.title{font-size:22px;font-weight:900}.meta{font-size:12px;color:#6b7280}.bar{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #e5e7eb;padding:10px;border-radius:8px;margin-bottom:12px}input{height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 9px}.btn{height:32px;border:0;border-radius:6px;background:#111827;color:#fff;font-weight:800;padding:0 14px;cursor:pointer}.panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:auto}.tbl{width:100%;min-width:1180px;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid #edf0f4;border-right:1px solid #edf0f4;padding:7px 8px;text-align:right;white-space:nowrap}.tbl th:first-child,.tbl td:first-child{text-align:left;position:sticky;left:0;background:inherit}.tbl th{background:#111827;color:#fff;font-size:11px}.gap{background:#fee2e2;color:#991b1b;font-weight:800}.ed{cursor:cell}.ed:hover{outline:2px solid #2563eb66}.sum{background:#f9fafb;font-weight:900}.hint{padding:24px;text-align:center;color:#6b7280}.err{padding:12px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-bottom:12px}#login{display:none;max-width:320px;margin:10vh auto;padding:24px;border:1px solid #ddd;border-radius:8px;background:#fff}
 .po-fold{cursor:pointer;max-width:280px}
 .po-fold .po-full{display:none;white-space:normal;word-break:break-all}
 .po-fold.open .po-head{display:none}
@@ -32,7 +32,7 @@ function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem
 function qs(){return new URLSearchParams({company:company.value,year:year.value}).toString()}
 function showLogin(){document.getElementById("login").style.display="block";document.getElementById("main").style.display="none"}
 function gapCell(v,flag){return '<td class="'+(flag?"gap":"")+'">'+esc(v||"")+'</td>'}
-function numCell(v,flag){return '<td class="'+(flag?"gap":"")+'">'+money(v)+'</td>'}
+function numCell(v,flag,ed){return '<td class="'+(flag?"gap":"")+(ed?" ed":"")+'"'+(ed?' data-edit="'+ed+'" title="双击编辑"':'')+'>'+money(v)+'</td>'}
 function render(){
   var s=rows.reduce(function(a,r){["goods_cost","goods_sale","ocean_cost_usd","truck_cost_cny","barge_cost_cny","ocean_sale_usd","port_sale_cny","declared_amount"].forEach(function(k){a[k]+=Number(r[k]||0)});return a},{goods_cost:0,goods_sale:0,ocean_cost_usd:0,truck_cost_cny:0,barge_cost_cny:0,ocean_sale_usd:0,port_sale_cny:0,declared_amount:0});
   var head='<tr><th>PO号</th><th>BL</th><th>ETD</th><th>贸易条款</th><th>货品成本</th><th>货品销售</th><th>海运成本USD</th><th>拖车CNY</th><th>驳船CNY</th><th>海运销售USD</th><th>港杂销售CNY</th><th>报关额</th><th>缺口</th><th>客户·账单</th><th>工厂·账单</th></tr>';
@@ -42,6 +42,8 @@ function render(){
   return '<td class="po-fold" title="点击展开" onclick="this.classList.toggle(\'open\')">'+
     '<span class="po-head">'+esc(head)+' <b class="po-more">+'+(parts.length-3)+'</b></span>'+
     '<span class="po-full">'+esc(parts.join(" + "))+'</span></td>';}
+function ordEd(r,f){var pos=String(r.po_nos||"").split("+").filter(Boolean);return pos.length===1?"order|"+pos[0]+"|"+f:""}
+function planEd(r,f){return r.bl_no?"plan|"+r.bl_no+"|"+f:""}
 var body=rows.map(function(r){var g=r.gap_flags||[];
 function custCell(r){var t=token();var bl=r.bl_no||"";var name=String(r.customer||"—");
   var docs=r.docs||[];var links=[];
@@ -59,7 +61,7 @@ function facCell(r){var parts=String(r.factory||"").split(" / ").filter(Boolean)
   return '<td class="po-fold" onclick="if(event.target.tagName!==\'A\')this.classList.toggle(\'open\')">'+
     '<span class="po-head">'+esc((parts[0]||"—").slice(0,10))+(parts.length>1?' <b class="po-more">+'+(parts.length-1)+'</b>':'')+' 📎</span>'+
     '<span class="po-full">'+esc(parts.join(" / ")||"—")+'<br>'+links.join('<br>')+'</span></td>';}
-return '<tr>'+poCell(r.po_nos)+gapCell(r.bl_no,g.includes("缺BL"))+gapCell(String(r.etd||"").slice(0,10),false)+gapCell(r.trade_terms,false)+numCell(r.goods_cost,g.includes("缺成本"))+numCell(r.goods_sale,g.includes("缺销售"))+numCell(r.ocean_cost_usd,false)+numCell(r.truck_cost_cny,false)+numCell(r.barge_cost_cny,false)+numCell(r.ocean_sale_usd,false)+numCell(r.port_sale_cny,false)+numCell(r.declared_amount,g.includes("缺报关"))+gapCell(g.join("/"),g.length)+custCell(r)+facCell(r)+'</tr>'}).join("");
+return '<tr>'+poCell(r.po_nos)+gapCell(r.bl_no,g.includes("缺BL"))+gapCell(String(r.etd||"").slice(0,10),false)+gapCell(r.trade_terms,false)+numCell(r.goods_cost,g.includes("缺成本"),ordEd(r,"goods_cost"))+numCell(r.goods_sale,g.includes("缺销售"),ordEd(r,"goods_sale"))+numCell(r.ocean_cost_usd,false)+numCell(r.truck_cost_cny,false)+numCell(r.barge_cost_cny,false)+numCell(r.ocean_sale_usd,false,planEd(r,"freight_sale_usd"))+numCell(r.port_sale_cny,false,planEd(r,"freight_sale_cny"))+numCell(r.declared_amount,g.includes("缺报关"))+gapCell(g.join("/"),g.length)+custCell(r)+facCell(r)+'</tr>'}).join("");
   body+='<tr class="sum"><td>合计</td><td></td><td></td><td></td><td>'+money(s.goods_cost)+'</td><td>'+money(s.goods_sale)+'</td><td>'+money(s.ocean_cost_usd)+'</td><td>'+money(s.truck_cost_cny)+'</td><td>'+money(s.barge_cost_cny)+'</td><td>'+money(s.ocean_sale_usd)+'</td><td>'+money(s.port_sale_cny)+'</td><td>'+money(s.declared_amount)+'</td><td></td><td></td><td></td></tr>';
   app.innerHTML='<table class="tbl">'+head+body+'</table>';
 }
@@ -70,6 +72,13 @@ async function load(){
     rows=j.data||[];stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");render();
   }catch(e){app.innerHTML="";msg.innerHTML='<div class="err">'+esc(e.message)+'</div>'}
 }
+app.addEventListener("dblclick",async function(e){var td=e.target.closest("td[data-edit]");if(!td)return;
+  var p=td.dataset.edit.split("|");var cur=td.innerText.replace(/,/g,"");
+  var nv=prompt("修改 "+p[2]+" ("+p[1]+")",cur);
+  if(nv===null||nv===cur)return;
+  try{var r=await fetch("/api/db/recon-edit",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},body:JSON.stringify({kind:p[0],key:p[1],field:p[2],value:nv})});
+    var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);load()}
+  catch(err){msg.innerHTML='<div class="err">'+esc(err.message)+'</div>'}});
 reload.onclick=load;exportBtn.onclick=async function(){try{var r=await fetch("/api/db/recon-export?"+qs(),{headers:token()?{Authorization:"Bearer "+token()}: {}});if(r.status===401){showLogin();return}if(!r.ok)throw new Error("导出失败");var b=await r.blob(),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="recon-"+company.value+".xlsx";a.click();URL.revokeObjectURL(a.href)}catch(e){msg.innerHTML='<div class="err">'+esc(e.message)+'</div>'}};
 go.onclick=async function(){try{var r=await fetch("/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u.value,password:p.value})});var d=await r.json();if(!r.ok||!d.token)throw new Error(d.error||"登录失败");localStorage.setItem("sanlyn_token",d.token);login.style.display="none";main.style.display="block";load()}catch(e){le.textContent=e.message}};
 load();
