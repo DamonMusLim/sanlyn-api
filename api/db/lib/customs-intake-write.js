@@ -76,6 +76,10 @@ export async function writeIntake(payload, verify, actor) {
        payload.override_reason ? "overridden" : "written", actor, payload.model || "manual"]);
     out.job_id = job.rows[0].id;
     await client.query(
+      `INSERT INTO public.tasks(id, title, reason, status, source, created_at)
+       VALUES('customs-intake','录单执行器·审计流','intake_jobs 审计事件挂靠(常驻)','open','customs-intake',now())
+       ON CONFLICT (id) DO NOTHING`);
+    await client.query(
       `INSERT INTO task_events(task_id, event_type, actor_type, actor_id, note, created_at)
        VALUES('customs-intake','intake_written','ai',$1,$2,now())`,
       [actor, `${verify.normalized.customs_no} ¥${verify.normalized.total} job#${out.job_id}${payload.override_reason ? " OVERRIDE:" + payload.override_reason : ""}`]);
