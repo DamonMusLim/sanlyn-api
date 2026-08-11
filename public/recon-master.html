@@ -3,26 +3,11 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>对账主表</title>
-<style>
-*{box-sizing:border-box}body{margin:0;background:#f6f7f9;color:#111827;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}.wrap{max-width:1500px;margin:0 auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px}.title{font-size:22px;font-weight:900}.meta{font-size:12px;color:#6b7280}.bar{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #e5e7eb;padding:10px;border-radius:8px;margin-bottom:12px}input{height:32px;border:1px solid #d1d5db;border-radius:6px;padding:0 9px}.btn{height:32px;border:0;border-radius:6px;background:#111827;color:#fff;font-weight:800;padding:0 14px;cursor:pointer}.panel{background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:auto}.tbl{width:100%;min-width:1180px;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid #edf0f4;border-right:1px solid #edf0f4;padding:7px 8px;text-align:right;white-space:nowrap}.tbl th:first-child,.tbl td:first-child{text-align:left;position:sticky;left:0;background:inherit}.tbl th{background:#111827;color:#fff;font-size:11px}.gap{background:#fee2e2;color:#991b1b;font-weight:800}.ed{cursor:cell}.ed:hover{outline:2px solid #2563eb66}
-.pen{cursor:pointer;margin-right:4px}
-#modal{display:none;position:fixed;inset:0;background:rgba(17,24,39,.55);z-index:50}
-#mbox{background:#fff;max-width:760px;margin:5vh auto;padding:22px;border-radius:12px;max-height:88vh;overflow:auto}
-#mbox h3{margin:0 0 12px}
-.mrow{display:flex;gap:10px;align-items:center;margin-bottom:8px}
-.mrow label{width:220px;font-weight:700}
-.mrow input{flex:1;height:34px;border:1px solid #d1d5db;border-radius:6px;padding:0 10px;text-align:right}
-.mbtns{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.sum{background:#f9fafb;font-weight:900}.hint{padding:24px;text-align:center;color:#6b7280}.err{padding:12px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-bottom:12px}#login{display:none;max-width:320px;margin:10vh auto;padding:24px;border:1px solid #ddd;border-radius:8px;background:#fff}
-.po-fold{cursor:pointer;max-width:280px}
-.po-fold .po-full{display:none;white-space:normal;word-break:break-all}
-.po-fold.open .po-head{display:none}
-.po-fold.open .po-full{display:inline}
-.po-more{color:var(--accent,#1d4ed8);background:rgba(29,78,216,.12);border-radius:8px;padding:0 6px;font-size:11px}
-</style>
+<link rel="stylesheet" href="/public/sanlyn-table.css">
 </head>
 <body>
-<div class="wrap" id="main">
-  <div class="top"><div><div class="title">对账主表</div><div class="meta">v2026.08.10-1 · <span id="stamp"></span></div></div></div>
+<div class="wrap">
+  <div class="top"><div><div class="title">对账主表</div><div class="meta">v2026.08.11-1 · <span id="stamp"></span></div></div></div>
   <div class="bar">
     <input id="company" value="CN-00040" placeholder="客户编码">
     <input id="year" value="2026" placeholder="年份">
@@ -31,85 +16,43 @@
   </div>
   <div id="msg"></div><div class="panel" id="app"><div class="hint">Loading...</div></div>
 </div>
-<div id="login"><h3>登录</h3><input id="u" placeholder="用户名" style="width:100%;margin-bottom:8px;padding:9px"><input id="p" type="password" placeholder="密码" style="width:100%;margin-bottom:10px;padding:9px"><button id="go" style="width:100%;padding:10px">登录</button><div id="le" style="color:#b91c1c;font-size:12px;margin-top:6px"></div></div>
-<div id="modal"><div id="mbox"><h3 id="mtitle"></h3><div id="mbody"></div>
-<div class="mbtns"><button class="btn" id="msave">保存全部</button><button class="btn" style="background:#6b7280" onclick="modal.style.display='none'">取消</button></div></div></div>
+<script src="/public/sanlyn-table.js"></script>
 <script>
-var app=document.getElementById("app"),msg=document.getElementById("msg"),rows=[];
-function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])})}
-function money(n){n=Number(n||0);return n?n.toLocaleString("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2}):"0.00"}
-function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
-function qs(){return new URLSearchParams({company:company.value,year:year.value}).toString()}
-function showLogin(){document.getElementById("login").style.display="block";document.getElementById("main").style.display="none"}
-function gapCell(v,flag){return '<td class="'+(flag?"gap":"")+'">'+esc(v||"")+'</td>'}
-function numCell(v,flag,ed){return '<td class="'+(flag?"gap":"")+(ed?" ed":"")+'"'+(ed?' data-edit="'+ed+'" title="双击编辑"':'')+'>'+money(v)+'</td>'}
-function render(){
-  var s=rows.reduce(function(a,r){["goods_cost","goods_sale","ocean_cost_usd","truck_cost_cny","barge_cost_cny","ocean_sale_usd","port_sale_cny","declared_amount"].forEach(function(k){a[k]+=Number(r[k]||0)});return a},{goods_cost:0,goods_sale:0,ocean_cost_usd:0,truck_cost_cny:0,barge_cost_cny:0,ocean_sale_usd:0,port_sale_cny:0,declared_amount:0});
-  var head='<tr><th>PO号</th><th>BL</th><th>ETD</th><th>贸易条款</th><th>货品成本</th><th>货品销售</th><th>海运成本USD</th><th>拖车CNY</th><th>驳船CNY</th><th>海运销售USD</th><th>港杂销售CNY</th><th>报关额</th><th>缺口</th><th>客户·账单</th><th>工厂·账单</th></tr>';
-  function poCell(v,i){var pen='<b class="pen" title="编辑本票" onclick="openEdit('+i+');event.stopPropagation()">&#9998;</b> ';
-  var parts=String(v||"").split("+").filter(Boolean);
-  if(parts.length<=3)return '<td>'+pen+esc(parts.join(" + ")||"—")+'</td>';
-  var head=parts.slice(0,3).join(" + ");
-  return '<td class="po-fold" title="点击展开" onclick="this.classList.toggle(\'open\')">'+pen+
-    '<span class="po-head">'+esc(head)+' <b class="po-more">+'+(parts.length-3)+'</b></span>'+
-    '<span class="po-full">'+esc(parts.join(" + "))+'</span></td>';}
-function ordEd(r,f){var pos=String(r.po_nos||"").split("+").filter(Boolean);return pos.length===1?"order|"+pos[0]+"|"+f:""}
-function planEd(r,f){return r.bl_no?"plan|"+r.bl_no+"|"+f:""}
-var body=rows.map(function(r,ri){var g=r.gap_flags||[];
-function custCell(r){var t=token();var bl=r.bl_no||"";var name=String(r.customer||"—");
-  var docs=r.docs||[];var links=[];
-  if(bl){links=docs.map(function(d){return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type='+encodeURIComponent(d.doc_type)+'&token='+encodeURIComponent(t)+'">'+esc(d.doc_no)+'</a>'});
+function onePo(r){var pos=String(r.po_nos||"").split("+").filter(Boolean);return pos.length===1?pos[0]:""}
+function planKey(r){return r.bl_no||""}
+function docsCell(r,h){var t=h.token(),bl=r.bl_no||"",name=String(r.customer||"-"),docs=r.docs||[],links=[];
+  if(bl){links=docs.map(function(d){return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type='+encodeURIComponent(d.doc_type)+'&token='+encodeURIComponent(t)+'">'+h.esc(d.doc_no)+'</a>'});
     links.push('<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_invoice&token='+encodeURIComponent(t)+'">海运费单</a>');
-    links.push('<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_portcharge&token='+encodeURIComponent(t)+'">港杂单</a>');}
-  if(!links.length)return '<td>'+esc(name)+'</td>';
-  return '<td class="po-fold" onclick="if(event.target.tagName!==\'A\')this.classList.toggle(\'open\')">'+
-    '<span class="po-head">'+esc(name.slice(0,10))+' 📎'+docs.length+'</span>'+
-    '<span class="po-full">'+esc(name)+'<br>'+links.join('<br>')+'</span></td>';}
-function facCell(r){var parts=String(r.factory||"").split(" / ").filter(Boolean);
-  var pos=String(r.po_nos||"").split("+").filter(Boolean);
-  var links=pos.map(function(p){return '<a target="_blank" href="/data#orders?order_no='+encodeURIComponent(p)+'">'+esc(p)+' 订单账</a>'});
-  if(!parts.length&&!links.length)return '<td class="nil">—</td>';
-  return '<td class="po-fold" onclick="if(event.target.tagName!==\'A\')this.classList.toggle(\'open\')">'+
-    '<span class="po-head">'+esc((parts[0]||"—").slice(0,10))+(parts.length>1?' <b class="po-more">+'+(parts.length-1)+'</b>':'')+' 📎</span>'+
-    '<span class="po-full">'+esc(parts.join(" / ")||"—")+'<br>'+links.join('<br>')+'</span></td>';}
-return '<tr>'+poCell(r.po_nos,ri)+gapCell(r.bl_no,g.includes("缺BL"))+gapCell(String(r.etd||"").slice(0,10),false)+gapCell(r.trade_terms,false)+numCell(r.goods_cost,g.includes("缺成本"),ordEd(r,"goods_cost"))+numCell(r.goods_sale,g.includes("缺销售"),ordEd(r,"goods_sale"))+numCell(r.ocean_cost_usd,false)+numCell(r.truck_cost_cny,false)+numCell(r.barge_cost_cny,false)+numCell(r.ocean_sale_usd,false,planEd(r,"freight_sale_usd"))+numCell(r.port_sale_cny,false,planEd(r,"freight_sale_cny"))+numCell(r.declared_amount,g.includes("缺报关"))+gapCell(g.join("/"),g.length)+custCell(r)+facCell(r)+'</tr>'}).join("");
-  body+='<tr class="sum"><td>合计</td><td></td><td></td><td></td><td>'+money(s.goods_cost)+'</td><td>'+money(s.goods_sale)+'</td><td>'+money(s.ocean_cost_usd)+'</td><td>'+money(s.truck_cost_cny)+'</td><td>'+money(s.barge_cost_cny)+'</td><td>'+money(s.ocean_sale_usd)+'</td><td>'+money(s.port_sale_cny)+'</td><td>'+money(s.declared_amount)+'</td><td></td><td></td><td></td></tr>';
-  app.innerHTML='<table class="tbl">'+head+body+'</table>';
-}
-async function load(){
-  msg.innerHTML="";app.innerHTML='<div class="hint">Loading...</div>';
-  try{var r=await fetch("/api/db/recon-master?"+qs(),{headers:token()?{Authorization:"Bearer "+token()}:{}});
-    if(r.status===401){showLogin();return}var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);
-    rows=j.data||[];stamp.textContent="生成时间 "+new Date().toLocaleString("zh-CN");render();
-  }catch(e){app.innerHTML="";msg.innerHTML='<div class="err">'+esc(e.message)+'</div>'}
-}
-app.addEventListener("dblclick",async function(e){var td=e.target.closest("td[data-edit]");if(!td)return;
-  var p=td.dataset.edit.split("|");var cur=td.innerText.replace(/,/g,"");
-  var nv=prompt("修改 "+p[2]+" ("+p[1]+")",cur);
-  if(nv===null||nv===cur)return;
-  try{var r=await fetch("/api/db/recon-edit",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},body:JSON.stringify({kind:p[0],key:p[1],field:p[2],value:nv})});
-    var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);load()}
-  catch(err){msg.innerHTML='<div class="err">'+esc(err.message)+'</div>'}});
-window.openEdit=function(i){var r=rows[i];var h="";
-  (r.orders||[]).forEach(function(o){if(!o.po)return;
-    h+='<div class="mrow"><label>'+esc(o.po)+' 工厂成本</label><input data-kind="order" data-key="'+esc(o.po)+'" data-field="goods_cost" value="'+(o.cost||0)+'"></div>';
-    h+='<div class="mrow"><label>'+esc(o.po)+' 客户售价</label><input data-kind="order" data-key="'+esc(o.po)+'" data-field="goods_sale" value="'+(o.sale||0)+'"></div>'});
-  if(r.bl_no){
-    h+='<div class="mrow"><label>海运销售 USD</label><input data-kind="plan" data-key="'+esc(r.bl_no)+'" data-field="freight_sale_usd" value="'+(r.ocean_sale_usd||0)+'"></div>';
-    h+='<div class="mrow"><label>港杂销售 CNY</label><input data-kind="plan" data-key="'+esc(r.bl_no)+'" data-field="freight_sale_cny" value="'+(r.port_sale_cny||0)+'"></div>'}
-  if(!h){msg.innerHTML='<div class="err">本票无可编辑字段(纯货代票金额在海运录入改)</div>';return}
-  mtitle.textContent=(r.po_nos||"(无PO)")+"  "+(r.bl_no||"");mbody.innerHTML=h;
-  mbody.querySelectorAll("input").forEach(function(inp){inp.dataset.orig=inp.value});
-  modal.style.display="block"};
-msave.onclick=async function(){var ins=mbody.querySelectorAll("input");msave.disabled=true;
-  try{for(var k=0;k<ins.length;k++){var inp=ins[k];if(inp.value===inp.dataset.orig)continue;
-    var rr=await fetch("/api/db/recon-edit",{method:"PATCH",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token()},body:JSON.stringify({kind:inp.dataset.kind,key:inp.dataset.key,field:inp.dataset.field,value:inp.value})});
-    var jj=await rr.json();if(!rr.ok||!jj.success)throw new Error(inp.dataset.key+": "+(jj.error||rr.statusText))}
-    modal.style.display="none";load()}
-  catch(e){alert("保存失败: "+e.message)}finally{msave.disabled=false}};
-reload.onclick=load;exportBtn.onclick=async function(){try{var r=await fetch("/api/db/recon-export?"+qs(),{headers:token()?{Authorization:"Bearer "+token()}: {}});if(r.status===401){showLogin();return}if(!r.ok)throw new Error("导出失败");var b=await r.blob(),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="recon-"+company.value+".xlsx";a.click();URL.revokeObjectURL(a.href)}catch(e){msg.innerHTML='<div class="err">'+esc(e.message)+'</div>'}};
-go.onclick=async function(){try{var r=await fetch("/api/db/auth-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u.value,password:p.value})});var d=await r.json();if(!r.ok||!d.token)throw new Error(d.error||"登录失败");localStorage.setItem("sanlyn_token",d.token);login.style.display="none";main.style.display="block";load()}catch(e){le.textContent=e.message}};
-load();
+    links.push('<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_portcharge&token='+encodeURIComponent(t)+'">港杂单</a>')}
+  if(!links.length)return h.esc(name);
+  return '<span class="po-head">'+h.esc(name.slice(0,10))+' 📎'+docs.length+'</span><span class="po-full">'+h.esc(name)+'<br>'+links.join("<br>")+'</span>'}
+function factoryCell(r,h){var parts=String(r.factory||"").split(" / ").filter(Boolean),pos=String(r.po_nos||"").split("+").filter(Boolean);
+  var links=pos.map(function(p){return '<a target="_blank" href="/data#orders?order_no='+encodeURIComponent(p)+'">'+h.esc(p)+' 订单账</a>'});
+  if(!parts.length&&!links.length)return '<span class="nil">-</span>';
+  return '<span class="po-head">'+h.esc((parts[0]||"-").slice(0,10))+(parts.length>1?' <b class="po-more">+'+(parts.length-1)+'</b>':'')+' 📎</span><span class="po-full">'+h.esc(parts.join(" / ")||"-")+'<br>'+links.join("<br>")+'</span>'}
+function rowEdit(r){var out=[];(r.orders||[]).forEach(function(o){if(!o.po)return;
+  out.push({label:o.po+" 工厂成本",kind:"order",key:o.po,field:"goods_cost",value:o.cost||0});
+  out.push({label:o.po+" 客户售价",kind:"order",key:o.po,field:"goods_sale",value:o.sale||0})});
+  if(r.bl_no){out.push({label:"海运销售 USD",kind:"plan",key:r.bl_no,field:"freight_sale_usd",value:r.ocean_sale_usd||0});
+    out.push({label:"港杂销售 CNY",kind:"plan",key:r.bl_no,field:"freight_sale_cny",value:r.port_sale_cny||0})}
+  return out}
+var table=SanlynTable.mount(document.getElementById("app"),{
+  api:"/api/db/recon-master",params:function(){return {company:company.value,year:year.value}},
+  exportUrl:"/api/db/recon-export",editApi:"/api/db/recon-edit",loginApi:"/api/db/auth-login",
+  sumKeys:["goods_cost","goods_sale","ocean_cost_usd","truck_cost_cny","barge_cost_cny","ocean_sale_usd","port_sale_cny","declared_amount"],
+  rowEdit:rowEdit,
+  columns:[
+    {key:"po_nos",label:"PO号",type:"fold",sep:"+",show:3},
+    {key:"bl_no",label:"BL",gap:"缺BL"},{key:"etd",label:"ETD",render:function(r,h){return h.esc(String(r.etd||"").slice(0,10))}},
+    {key:"trade_terms",label:"贸易条款"},{key:"goods_cost",label:"货品成本",type:"num",gap:"缺成本",edit:function(r){var p=onePo(r);return p?{kind:"order",key:p,field:"goods_cost"}:null}},
+    {key:"goods_sale",label:"货品销售",type:"num",gap:"缺销售",edit:function(r){var p=onePo(r);return p?{kind:"order",key:p,field:"goods_sale"}:null}},
+    {key:"ocean_cost_usd",label:"海运成本USD",type:"num"},{key:"truck_cost_cny",label:"拖车CNY",type:"num"},{key:"barge_cost_cny",label:"驳船CNY",type:"num"},
+    {key:"ocean_sale_usd",label:"海运销售USD",type:"num",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_usd"}:null}},
+    {key:"port_sale_cny",label:"港杂销售CNY",type:"num",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_cny"}:null}},
+    {key:"declared_amount",label:"报关额",type:"num",gap:"缺报关"},{key:"gap_flags",label:"缺口",gap:true,render:function(r,h){var g=r.gap_flags||[];return h.esc(g.join("/"))}},
+    {key:"docs",label:"客户·账单",fold:true,render:docsCell},{key:"factory",label:"工厂·账单",fold:true,render:factoryCell}
+  ]});
+reload.onclick=function(){table.load()};exportBtn.onclick=function(){table.exportExcel("recon-"+company.value+".xlsx")};
 </script>
 </body>
 </html>
