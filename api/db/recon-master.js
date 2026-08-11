@@ -58,7 +58,11 @@ order_groups AS (
          string_agg(DISTINCT COALESCE(NULLIF(customer_name,''), company_code), ' / ') AS customer,
          string_agg(DISTINCT NULLIF(factory_name,''), ' / ') AS factory,
          SUM(COALESCE(factory_total_amount, total_amount_factory, factory_amount, 0)) AS goods_cost,
-         SUM(COALESCE(customer_amount, total_amount, 0)) AS goods_sale
+         SUM(COALESCE(customer_amount, total_amount, 0)) AS goods_sale,
+         json_agg(json_build_object('po', COALESCE(order_no, contract_no),
+                  'cost', COALESCE(factory_total_amount, total_amount_factory, factory_amount, 0),
+                  'sale', COALESCE(customer_amount, total_amount, 0))
+                  ORDER BY COALESCE(order_no, contract_no)) AS orders
     FROM order_pick
    GROUP BY COALESCE(clean_bl, 'ORDER:' || COALESCE(order_no, contract_no, _id::text)), clean_bl
 ),
@@ -95,7 +99,7 @@ bill_groups AS (
 joined AS (
   SELECT COALESCE(og.group_key, pg.bl_no) AS group_key,
          COALESCE(og.bl_no, pg.bl_no) AS bl_no, og.contracts, og.customer_pos,
-         og.po_nos, COALESCE(og.customer, pg.plan_customer) AS customer, og.factory,
+         og.po_nos, og.orders, COALESCE(og.customer, pg.plan_customer) AS customer, og.factory,
          COALESCE(og.etd, pg.etd) AS etd, og.trade_terms,
          COALESCE(og.goods_cost,0) AS goods_cost, COALESCE(og.goods_sale,0) AS goods_sale,
          COALESCE(bg.ocean_cost_usd,0) AS ocean_cost_usd,
@@ -125,7 +129,7 @@ decl AS (
     ) x ON TRUE
    GROUP BY j.group_key
 )
-SELECT j.po_nos, j.bl_no, j.etd, j.trade_terms, j.customer, j.factory,
+SELECT j.po_nos, j.orders, j.bl_no, j.etd, j.trade_terms, j.customer, j.factory,
        ROUND(j.goods_cost::numeric,2) AS goods_cost,
        ROUND(j.goods_sale::numeric,2) AS goods_sale,
        ROUND(j.ocean_cost_usd::numeric,2) AS ocean_cost_usd,

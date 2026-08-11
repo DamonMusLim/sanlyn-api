@@ -563,14 +563,7 @@
       var w=document.getElementById('rm-wrap');host.parentNode.insertBefore(w,bar.nextSibling);}
     else document.body.appendChild(bar);
   }
-  bar.onclick=function(){
-    var w=document.getElementById('rm-wrap'),f=document.getElementById('rm-frame');
-    var show=w.style.display==='none';
-    w.style.display=show?'block':'none';
-    bar.textContent=show?'📋 收起对账主表':'📋 对账主表(每票一行)';
-    if(show&&!f.src)f.src='/public/recon-master.html';
-    if(show)w.scrollIntoView({behavior:'smooth'});
-  };
+  bar.onclick=function(){window.open('/public/recon-master.html','_blank')};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(mount,800)});
   else setTimeout(mount,800);
 })();
