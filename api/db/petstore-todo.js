@@ -23,8 +23,8 @@ export async function loadPetstoreTodo(pool, q = {}) {
      WHERE ${where.join(" AND ")}
      ORDER BY CASE todo_type WHEN '已过期' THEN 0 WHEN '无货位' THEN 1
                              WHEN '快过期' THEN 2 ELSE 3 END,
-              NULLIF(split_part(COALESCE(shelf,''),'-',1),'')::int NULLS LAST,
-              NULLIF(split_part(COALESCE(shelf,''),'-',2),'')::int NULLS LAST,
+              CASE WHEN COALESCE(shelf,'') ~ '^[0-9]+-[0-9]+' THEN split_part(shelf,'-',1)::int ELSE 9999 END,
+              CASE WHEN COALESCE(shelf,'') ~ '^[0-9]+-[0-9]+' THEN split_part(split_part(shelf,'-',2),',',1)::int ELSE 0 END,
               product_name`;
   const r = await pool.query(sql, args);
   return r.rows;
