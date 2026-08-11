@@ -14,18 +14,34 @@ export async function loadPetstoreTodo(pool, q = {}) {
   else { where.push(`snapshot_date = (SELECT max(snapshot_date) FROM petstore_daily_todo)`); }
   if (type) { args.push(type); where.push(`todo_type = $${args.length}`); }
   if (shelf) { args.push(shelf + "%"); where.push(`COALESCE(shelf,'') LIKE $${args.length}`); }
+  // 分渠道价:商品接口不返回,取改价日志里每个渠道最近一次的价
+  // (Damon 0812:「美团,饿了么价格补上,这样搜就比较容易了」)
   const sql = `
-    SELECT todo_type, shelf, product_name, spec, warn_status,
-           production_date, expire_date, stock, out_price, month_sale,
-           product_code, barcode, category, supplier,
-           snapshot_date::text AS snapshot_date, done_at, done_by
-      FROM petstore_daily_todo
-     WHERE ${where.join(" AND ")}
-     ORDER BY CASE todo_type WHEN '已过期' THEN 0 WHEN '无货位' THEN 1
+    WITH ch AS (
+      SELECT DISTINCT ON (product_code, channel) product_code, channel, new_price
+        FROM petstore_pricing_log
+       WHERE channel IN ('美团','饿了么','京东到家') AND new_price > 0.01
+       ORDER BY product_code, channel, ts DESC
+    ), chp AS (
+      SELECT product_code,
+             max(new_price) FILTER (WHERE channel='美团')     AS mt_price,
+             max(new_price) FILTER (WHERE channel='饿了么')   AS eb_price,
+             max(new_price) FILTER (WHERE channel='京东到家') AS jd_price
+        FROM ch GROUP BY product_code
+    )
+    SELECT t.todo_type, t.shelf, t.product_name, t.spec, t.warn_status,
+           t.production_date, t.expire_date, t.stock, t.out_price, t.month_sale,
+           c.mt_price, c.eb_price, c.jd_price,
+           t.product_code, t.barcode, t.category, t.supplier,
+           t.snapshot_date::text AS snapshot_date, t.done_at, t.done_by
+      FROM petstore_daily_todo t
+      LEFT JOIN chp c ON c.product_code = t.product_code
+     WHERE ${where.join(" AND ").replace(/\b(snapshot_date|todo_type|shelf)\b/g, "t.$1")}
+     ORDER BY CASE t.todo_type WHEN '已过期' THEN 0 WHEN '无货位' THEN 1
                              WHEN '快过期' THEN 2 ELSE 3 END,
-              CASE WHEN COALESCE(shelf,'') ~ '^[0-9]+-[0-9]+' THEN split_part(shelf,'-',1)::int ELSE 9999 END,
-              CASE WHEN COALESCE(shelf,'') ~ '^[0-9]+-[0-9]+' THEN split_part(split_part(shelf,'-',2),',',1)::int ELSE 0 END,
-              product_name`;
+              CASE WHEN COALESCE(t.shelf,'') ~ '^[0-9]+-[0-9]+' THEN split_part(t.shelf,'-',1)::int ELSE 9999 END,
+              CASE WHEN COALESCE(t.shelf,'') ~ '^[0-9]+-[0-9]+' THEN split_part(split_part(t.shelf,'-',2),',',1)::int ELSE 0 END,
+              t.product_name`;
   const r = await pool.query(sql, args);
   return r.rows;
 }
