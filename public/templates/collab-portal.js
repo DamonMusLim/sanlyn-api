@@ -85,10 +85,12 @@ function renderHero(s, ps){
 function fileLink(type, ref, aud){ return window._fileURL ? window._fileURL(type, ref, aud) : '#'; }
 function docRow(icon, label, href, source){
   const safe = esc(href);
-  const tag = source ? `<span class="doc-tag">${esc(source)}</span>` : '';   // 去掉「规则自动」等标签，全变纯模块
+  // 状态标签(我方已备/贵司提请)合并进「预览」按钮，不再单列 tag；下载独立（Damon 0812 图2）
+  const preview = source
+    ? `<a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;" href="${safe}" target="_blank">${esc(source)} · 预览</a>`
+    : `<a class="doc-btn" href="${safe}" target="_blank">👁 预览</a>`;
   return `<div class="doc-row"><span>${icon}</span><div class="doc-row-main">${esc(label)}</div>
-    ${tag}
-    <div class="doc-actions"><a class="doc-btn" href="${safe}" target="_blank">👁 预览</a><a class="doc-btn" href="${safe}" target="_blank" download>⬇ 下载</a></div></div>`;
+    <div class="doc-actions">${preview}<a class="doc-btn" href="${safe}" target="_blank" download>⬇ 下载</a></div></div>`;
 }
 function requirementDocs(s){
   const cr = s.carrier_requirements || s.requirements || s.carrier_docs_required || null;

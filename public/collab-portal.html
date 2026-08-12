@@ -226,10 +226,9 @@ body.ui-v1 .v2-only { display:none !important; }
     <div class="portal-section-head"><div><div class="portal-section-title">请贵司上传</div><div class="portal-section-sub">SO 订舱确认 / 提单 B/L</div></div></div>
     <div class="portal-section-body">
       <div style="display:grid;gap:8px;margin-bottom:10px;">
-        <div class="up-zone" onclick="pickFileSO()" style="border-color:#1a73e8;color:#1a73e8;font-weight:700;">＋ 上传 SO 订舱确认</div>
-        <div class="up-zone" onclick="pickFile('ocean')">＋ 上传提单 B/L / BL草稿（≤8MB 可多次）</div>
+        <div id="uzSO"><div class="up-zone" onclick="pickFileSO()" style="border-color:#1a73e8;color:#1a73e8;font-weight:700;">＋ 上传 SO 订舱确认</div></div>
+        <div id="uzBL"><div class="up-zone" onclick="pickFile('ocean')">＋ 上传提单 B/L / BL草稿（≤8MB 可多次）</div></div>
       </div>
-      <div class="receipt-list" id="fl_ocean_v2"></div>
       <div id="blNoSection_v2" style="margin-top:10px;"></div>
     </div>
   </div>

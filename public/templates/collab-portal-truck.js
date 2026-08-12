@@ -1,22 +1,44 @@
 var _qfIdx = 0, _cntrZone = null, _autoSaveTimer = null;
 
+const _upClean = fn => String(fn||'').replace(/^(\[[^\]]*\]|_[^_]+_)+/, '') || String(fn||'');
+const _upInSeg = (fn, seg) => { fn=String(fn||''); return fn.startsWith('['+seg+']') || fn.startsWith('_'+seg+'_') || fn.startsWith('_'+seg+'__'); };
 function renderFiles(){
-  ['ocean','truck','customs'].forEach(seg=>{
-    const el = $(seg === 'ocean' ? 'fl_ocean_v2' : 'fl_'+seg) || $('fl_'+seg); if(!el) return;
-    // 后端把 [ocean] 前缀清洗成 _ocean_，所以两种前缀都要认（否则上传后列表永远空）
-    const inSeg = fn => fn.startsWith('['+seg+']') || fn.startsWith('_'+seg+'_') || fn.startsWith('_'+seg+'__');
-    const clean = fn => fn.replace(/^(\[[^\]]*\]|_[^_]+_)+/, '') || fn;   // 去掉 [ocean][SO舱单] / _ocean__SO舱单_ 前缀
+  // 海运段：不再另列一份文件清单，直接把「已上传」状态渲进上传框本身（Damon：不要重复，上传后按钮变已上传、可更换）
+  if ($('uzSO') || $('uzBL')) renderUploadZones();
+  ['truck','customs'].forEach(seg=>{
+    const el = $('fl_'+seg); if(!el) return;
     const fu = window._fileURL || (()=>'#');
-    el.innerHTML = uploads.filter(u=>inSeg(String(u.filename||''))).map(u=>{
+    el.innerHTML = uploads.filter(u=>_upInSeg(u.filename, seg)).map(u=>{
       const url = fu('upload', u.stored);
-      // 紧凑一行：已上传·预览合并绿标 + 下载独立（Damon：不要太大位置）
       return `<div class="file-row" style="padding:5px 10px;margin-bottom:5px;gap:8px;">
         <span style="font-size:12px;">📄</span>
-        <span style="flex:1;font-weight:700;font-size:11px;min-width:0;overflow-wrap:anywhere;">${esc(clean(String(u.filename||'')))}</span>
+        <span style="flex:1;font-weight:700;font-size:11px;min-width:0;overflow-wrap:anywhere;">${esc(_upClean(u.filename))}</span>
         <a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank">✓ 已上传·预览</a>
         <a class="doc-btn" style="padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank" download>⬇ 下载</a></div>`;
     }).join('');
   });
+}
+// 海运上传区：SO / BL 各一块。未传=虚线上传框；已传=绿框「已上传」+文件(预览/下载)+「点击更换/再传」
+function renderUploadZones(){
+  const soZone = $('uzSO'), blZone = $('uzBL'); if(!soZone && !blZone) return;
+  const fu = window._fileURL || (()=>'#');
+  const isSO = fn => /SO舱单|入货|排载|配舱|舱单|订舱确认|manifest|放箱|(^|[^A-Z])S\/?O([^A-Z]|$)/i.test(_upClean(fn)) || /SO舱单/.test(String(fn||''));
+  const ocean = uploads.filter(u=>_upInSeg(u.filename,'ocean'));
+  const soFiles = ocean.filter(u=>isSO(u.filename));
+  const blFiles = ocean.filter(u=>!soFiles.includes(u));
+  const fileRow = u => { const url=fu('upload',u.stored); return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid #d1fae5;">
+      <span>📄</span><span style="flex:1;font-weight:700;font-size:11px;overflow-wrap:anywhere;">${esc(_upClean(u.filename))}</span>
+      <a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank">✓ 已上传·预览</a>
+      <a class="doc-btn" style="padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank" download>⬇ 下载</a></div>`; };
+  const zone = (label, files, pick) => files.length
+    ? `<div style="border:1.5px solid #a7f3d0;background:#f0fdf4;border-radius:10px;overflow:hidden;">
+         <div style="padding:7px 12px;display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:800;color:#15803d;">
+           <span>✓ ${esc(label)} 已上传</span>
+           <span onclick="${pick}" style="cursor:pointer;color:#1a73e8;">↻ 点击更换 / 再传</span></div>
+         ${files.map(fileRow).join('')}</div>`
+    : `<div class="up-zone" onclick="${pick}" style="border-color:#1a73e8;color:#1a73e8;font-weight:700;">＋ 上传 ${esc(label)}</div>`;
+  if (soZone) soZone.innerHTML = zone('SO 订舱确认', soFiles, 'pickFileSO()');
+  if (blZone) blZone.innerHTML = zone('提单 B/L / BL草稿（≤8MB 可多次）', blFiles, "pickFile('ocean')");
 }
 
 function pickFile(zone){ upZone = zone; $('fileInput').click(); }
