@@ -101,12 +101,28 @@ ckts AS (
     --  ② 进项票金额 = 该行报关金额（±1元）
     --  ③ 我们的订单行 order_line_items：按报关品名匹配，且这些行只指向唯一一家工厂
     --  ④ 票备注含品名
+    --  ⓪ 【真源·优先】报关逐项表自己的 order_id → orders.factory
+    --     Damon 0812：「其实就是我们的报关表带出来的数据」——对。
+    --     customs_declaration_items.order_id 本来就是「这一行报关对应哪张订单」，
+    --     长期没填（103 行只有 16 行有值），下面那几档推理全是在补这个洞。
+    --     0812 按「箱数唯一 / 品名唯一」回填 49 行（data_guard_log 留痕），现 65/103。
+    --     这一档命中就不再推理；填不上的行才往下走。
     COALESCE(
       (SELECT i2.seller_name FROM finance_invoices_in i2, jsonb_array_elements(i2.line_items) li
         WHERE i2.customs_nos @> ARRAY[d.customs_no]::varchar[] AND i2.line_items IS NOT NULL
           AND (li->>'nm') = c.goods_name AND (li->>'qty')::numeric = c.qty LIMIT 1),
       (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
           AND abs(v.amount_incl_tax - c.amount_cny) < 1 LIMIT 1),
+      -- ⓪ 报关逐项表的 order_id → orders.factory
+      --    ⚠️ 排在两档进项票【之后】：一张订单可能跨多家工厂，而 orders.factory 只有一个值。
+      --    0812 实测 021720260000118373 就是 42-Order-3 一张订单四家工厂（悦佰兔/天缘/荣康/淘淘），
+      --    把它排第一会让四行全变成天缘。进项票是铁证，order_id 只是推断，不能压过铁证。
+      (SELECT o0.factory FROM customs_declaration_items ci0
+         JOIN customs_declarations cd0 ON cd0.id = ci0.declaration_id
+         JOIN orders o0 ON o0.id = ci0.order_id
+        WHERE cd0.declaration_no = d.customs_no AND ci0.deleted_at IS NULL
+          AND ci0.sort_order::text = ltrim(c.item_no,'0')
+          AND COALESCE(o0.factory,'') <> '' LIMIT 1),
       -- ③ 箱数匹配【放在品名前面】：Damon 0812「品名会花，箱数不会花」。
       --    660860 实证：项03/项04 都叫「宠物箱包」，按品名两行都归了大之圣；
       --    实际 51 箱那行是 40-DG-4 = 河北悦佰兔，¥19,608 被错记到大之圣头上。
@@ -165,6 +181,12 @@ ckts AS (
                       AND (li3->>'nm') = c.goods_name AND (li3->>'qty')::numeric = c.qty) THEN '进项票逐行'
       WHEN EXISTS (SELECT 1 FROM inv v WHERE v.customs_no = d.customs_no
                     AND abs(v.amount_incl_tax - c.amount_cny) < 1) THEN '进项票金额'
+      WHEN EXISTS (SELECT 1 FROM customs_declaration_items ci9
+                     JOIN customs_declarations cd9 ON cd9.id = ci9.declaration_id
+                     JOIN orders o9 ON o9.id = ci9.order_id
+                    WHERE cd9.declaration_no = d.customs_no AND ci9.deleted_at IS NULL
+                      AND ci9.sort_order::text = ltrim(c.item_no,'0') AND COALESCE(o9.factory,'')<>'')
+        THEN '报关单逐项订单'
       WHEN EXISTS (SELECT 1 FROM order_line_items l JOIN orders o ON o.id = l.order_id
                     WHERE l.qty_ctn = c.qty AND o.factory <> ''
                       AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
