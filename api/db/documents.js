@@ -1625,7 +1625,8 @@ export default async function handler(req, res) {
           releaseType:(sp.release_type||"")+(/swb/i.test(sp.release_type||"")?" 海运单":(/电放/.test(sp.release_type||"")?"":"")),
           payTerm:"P（待确认）", consignee:_blCnee, consAddr:_blCneeAddr, hsCode:_blA.hs||"", showHs:true,
           vessel:vessel, voyage:voyage, pol:polSp, pod:podSp, finalDest:podSp,
-          marks:"N/M", totalCtn:_blA.ctn, description:_blA.descr||"CAT LITTER", gwKg:_blA.gw, cbm:_blA.cbm, containers:_blCtns
+          marks:"N/M", totalCtn:_blA.ctn, description:_blA.descr||"CAT LITTER", gwKg:_blA.gw, cbm:_blA.cbm, containers:_blCtns,
+          warnings:["⚠ 付款方式 P/C 请确认后再发（成交方式需与客户核对）","VGM 称重方式：Method 2 累加计算法（货重 = 净重 + 纸箱 + 托盘）"]
         };
         const _blMod = await import("./docs/bl-sample-xlsx.js");
         if(req.query.preview){ res.setHeader("Content-Type","text/html; charset=utf-8"); return res.send(_blMod.renderBlSampleHtml(_blData)); }
