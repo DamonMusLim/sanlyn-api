@@ -3,8 +3,11 @@ var _qfIdx = 0, _cntrZone = null, _autoSaveTimer = null;
 function renderFiles(){
   ['ocean','truck','customs'].forEach(seg=>{
     const el = $(seg === 'ocean' ? 'fl_ocean_v2' : 'fl_'+seg) || $('fl_'+seg); if(!el) return;
-    el.innerHTML = uploads.filter(u=>String(u.filename||'').startsWith('['+seg+']')).map(u=>`
-      <div class="file-row"><span>📄</span><span style="flex:1;font-weight:700;">${esc(String(u.filename).replace('['+seg+']',''))}</span>
+    // 后端把 [ocean] 前缀清洗成 _ocean_，所以两种前缀都要认（否则上传后列表永远空）
+    const inSeg = fn => fn.startsWith('['+seg+']') || fn.startsWith('_'+seg+'_') || fn.startsWith('_'+seg+'__');
+    const clean = fn => fn.replace(/^(\[[^\]]*\]|_[^_]+_)+/, '') || fn;   // 去掉 [ocean][SO舱单] / _ocean__SO舱单_ 前缀
+    el.innerHTML = uploads.filter(u=>inSeg(String(u.filename||''))).map(u=>`
+      <div class="file-row"><span>📄</span><span style="flex:1;font-weight:700;">${esc(clean(String(u.filename||'')))}</span>
       <span style="color:#047857;font-size:10px;">${esc(bjTime(u.uploaded_at))} ✓</span></div>`).join('');
   });
 }
