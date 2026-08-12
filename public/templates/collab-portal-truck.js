@@ -6,9 +6,15 @@ function renderFiles(){
     // 后端把 [ocean] 前缀清洗成 _ocean_，所以两种前缀都要认（否则上传后列表永远空）
     const inSeg = fn => fn.startsWith('['+seg+']') || fn.startsWith('_'+seg+'_') || fn.startsWith('_'+seg+'__');
     const clean = fn => fn.replace(/^(\[[^\]]*\]|_[^_]+_)+/, '') || fn;   // 去掉 [ocean][SO舱单] / _ocean__SO舱单_ 前缀
-    el.innerHTML = uploads.filter(u=>inSeg(String(u.filename||''))).map(u=>`
-      <div class="file-row"><span>📄</span><span style="flex:1;font-weight:700;">${esc(clean(String(u.filename||'')))}</span>
-      <span style="color:#047857;font-size:10px;">${esc(bjTime(u.uploaded_at))} ✓</span></div>`).join('');
+    const fu = window._fileURL || (()=>'#');
+    el.innerHTML = uploads.filter(u=>inSeg(String(u.filename||''))).map(u=>{
+      const url = fu('upload', u.stored);
+      // 已上传 与 预览 合并成一个绿标按钮；下载独立（Damon 0812）
+      return `<div class="file-row"><span>📄</span>
+        <span style="flex:1;font-weight:700;min-width:0;overflow-wrap:anywhere;">${esc(clean(String(u.filename||'')))}</span>
+        <a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;" href="${esc(url)}" target="_blank">✓ 已上传 · 预览</a>
+        <a class="doc-btn" href="${esc(url)}" target="_blank" download>⬇ 下载</a></div>`;
+    }).join('');
   });
 }
 

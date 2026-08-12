@@ -36,6 +36,18 @@ async function handleValidate(req, res, pool) {
   const portalScope = role === "supplier_portal"
     ? { segments: meta.segments || ["ocean","truck","customs"], company_label: meta.company_label || null, field_profile: meta.field_profile || null }
     : null;
+  // 货代看自己的公司资料+联系人（图2 卡片用）——本方看本方，非跨方泄露
+  if (role === "supplier_portal" && portalScope && portalScope.company_label) {
+    try {
+      const cp = await pool.query(
+        `SELECT code, name_cn, name_en, short_name, contact_name, contact_phone, contact_email, address, legal_representative
+           FROM companies
+          WHERE name_cn = $1 OR code = $2 OR short_name = $1
+          ORDER BY (merged_into_code IS NULL) DESC, id LIMIT 1`,
+        [portalScope.company_label, meta.company_code || null]);
+      if (cp.rows.length) portalScope.company_profile = cp.rows[0];
+    } catch (e) {}
+  }
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId)
     return res.json({ valid: false, error: "链接数据异常 — 缺少 shipment_id" });

@@ -70,7 +70,10 @@ function renderHero(s, ps){
   body.innerHTML = `<div class="hero-grid">
     <div><div class="hero-name">${esc(ps.company_label || '货代协同')}</div>
       <div class="hero-bl">${esc(s.bl_no || s.hbl_no || '提单号待回传')}</div>
-      <button class="btn btn-blue btn-sm" style="margin-top:8px;" type="button" onclick="jumpTo('so')">📤 点击上传资料</button></div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" type="button" onclick="openCompanyCard()">🏢 公司资料 / 联系人</button>
+        <button class="btn btn-blue btn-sm" type="button" onclick="jumpTo('so')">📤 上传资料</button>
+      </div></div>
     <div class="mini-kv">
       <span>出单方式</span><span style="${rel.empty?'color:#9ca3af;':''}">${esc(rel.badge)}</span>
       <span>柜量/航线</span><span>${esc([qty, route].filter(Boolean).join(' · ') || '待确认')}</span>
@@ -260,6 +263,40 @@ function jumpTo(target){
     setTimeout(()=>{ el.style.boxShadow=prev||''; }, 1700);
   }
 }
+// 图2 公司资料/联系人卡片（复用同一套弹窗风格，不另造模板；数据来自 companies 真源）
+function openCompanyCard(){
+  const p = window._companyProfile || {};
+  const label = (window._sheetP && window._sheetP.company_label) || (document.querySelector('.hero-name')?.textContent) || '公司资料';
+  const kv = (k,v)=>`<div style="display:grid;grid-template-columns:88px 1fr;gap:6px 12px;padding:7px 0;border-bottom:1px solid #f0f2f5;">
+    <span style="color:#6b7280;font-weight:700;">${esc(k)}</span><span style="color:${v?'#111827':'#cbd5e1'};font-weight:700;overflow-wrap:anywhere;">${v?esc(v):'—'}</span></div>`;
+  const hasAny = p && (p.code||p.name_cn||p.contact_phone||p.address);
+  let m = document.getElementById('companyModal');
+  if(!m){ m=document.createElement('div'); m.id='companyModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:997;';
+    m.onclick=function(){ this.style.display='none'; }; document.body.appendChild(m); }
+  const body = hasAny ? `
+    <div style="font-size:12px;font-weight:900;color:#374151;margin:4px 0 4px;">🏢 公司资料</div>
+    ${kv('公司名称', p.name_cn || label)}
+    ${kv('英文名', p.name_en)}
+    ${kv('简称', p.short_name)}
+    ${kv('统一编码', p.code)}
+    ${kv('法定代表人', p.legal_representative)}
+    ${kv('地址', p.address)}
+    <div style="font-size:12px;font-weight:900;color:#374151;margin:14px 0 4px;">📇 联系人</div>
+    ${kv('联系人', p.contact_name)}
+    ${kv('电话', p.contact_phone)}
+    ${kv('邮箱', p.contact_email)}
+    <div style="font-size:10px;color:#9ca3af;margin-top:10px;">资料以我方 companies 主数据为准；如需更正请联系我方。</div>`
+    : `<div style="text-align:center;padding:24px;color:#6b7280;">暂无该公司档案资料<br><span style="font-size:11px;color:#9ca3af;">（company_label=${esc(label)} 在 companies 未匹配到）</span></div>`;
+  m.innerHTML = `<div style="position:absolute;left:50%;top:8%;transform:translateX(-50%);width:min(520px,94vw);background:#fff;border-radius:16px;padding:22px;box-shadow:0 12px 48px rgba(0,0,0,.28);max-height:84vh;overflow:auto;" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="font-size:17px;font-weight:900;color:#1a1d23;overflow-wrap:anywhere;">${esc(label)}</div>
+      <span style="cursor:pointer;color:#9ca3af;font-weight:800;font-size:18px;padding:2px 6px;" onclick="document.getElementById('companyModal').style.display='none'">✕</span></div>
+    ${body}
+    <div style="text-align:right;margin-top:16px;"><button class="btn btn-blue btn-sm" onclick="document.getElementById('companyModal').style.display='none';jumpTo('so')">📤 去上传资料</button></div>
+  </div>`;
+  m.style.display='block';
+}
 // 账单确认：本机记录（正式以系统确认为准）——一键全确认 + 每行单独确认
 function billKey(k){ return 'collab_bill_checked_'+token+'_'+k; }
 function isBillConfirmed(k){ return !!localStorage.getItem(billKey(k)); }
@@ -444,6 +481,7 @@ async function boot(){
   const ps = d.portal_scope || {};
   if (d.dispatched_at) s.dispatched_at = d.dispatched_at;   // 委托/接单时间戳（后端 magic_links.created_at）
   window._sheetP = s;
+  window._companyProfile = ps.company_profile || null;   // 图2 公司资料/联系人卡片
   const isGodview = d.role === 'supplier_portal' &&
     (ps.field_profile === 'upstream_downstream' || ps.field_profile === 'shipping_booking');
   if (isGodview && window.CollabPortalGodview) {
