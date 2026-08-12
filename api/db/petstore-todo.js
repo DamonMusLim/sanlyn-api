@@ -29,7 +29,8 @@ export async function loadPetstoreTodo(pool, q = {}) {
              max(new_price) FILTER (WHERE channel='京东到家') AS jd_price
         FROM ch GROUP BY product_code
     )
-    SELECT t.todo_type, t.shelf, t.product_name, t.spec, t.warn_status,
+    SELECT t.todo_type, t.expiry_grade, t.days_left_text, t.date_source,
+           t.shelf, t.product_name, t.spec, t.warn_status,
            t.production_date, t.expire_date, t.stock, t.out_price, t.month_sale,
            c.mt_price, c.eb_price, c.jd_price,
            t.product_code, t.barcode, t.category, t.supplier,

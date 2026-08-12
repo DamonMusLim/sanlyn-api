@@ -4,9 +4,9 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { loadPetstoreTodo } from "./petstore-todo.js";
 
-const HEADS = ["待办","货架号","商品名称","规格","保质期状态","生产日期","到期日",
+const HEADS = ["待办","临期等级","剩余","日期来源","货架号","商品名称","规格","保质期状态","生产日期","到期日",
                "库存","门店售价","美团价","饿了么价","京东到家价","月销","商品编码","条码","一级分类","供应商","完成"];
-const KEYS  = ["todo_type","shelf","product_name","spec","warn_status","production_date",
+const KEYS  = ["todo_type","expiry_grade","days_left_text","date_source","shelf","product_name","spec","warn_status","production_date",
                "expire_date","stock","out_price","mt_price","eb_price","jd_price","month_sale",
                "product_code","barcode","category","supplier"];
 const FILL = { "已过期":"FFC7CE", "无货位":"FFE699", "快过期":"FFF2CC", "无生产日期":"DDEBF7" };
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
       const c = FILL[r.todo_type];
       if (c) row.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + c } };
     });
-    [9,9,42,14,12,12,12,7,10,9,10,11,7,13,15,12,10,7].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    [9,8,8,9,9,42,14,12,12,12,7,10,9,10,11,7,13,15,12,10,7].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
     ws.views = [{ state: "frozen", ySplit: 1 }];
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: HEADS.length } };
     ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };

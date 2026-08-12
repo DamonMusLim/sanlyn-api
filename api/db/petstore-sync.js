@@ -4,7 +4,7 @@ import { requireAuth } from "../auth.js";
 
 const FIELDS = ["todo_type","shelf","product_name","spec","warn_status","production_date",
                 "expire_date","stock","out_price","month_sale","product_code","barcode",
-                "category","supplier"];
+                "category","supplier","expiry_grade","days_left_text","date_source"];
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS petstore_daily_todo (
@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS petstore_daily_todo (
   done_at TIMESTAMPTZ, done_by TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+-- 临期等级 5..0(Damon 0812):硬闸读它就不用猜"这是不是临期品"
+ALTER TABLE petstore_daily_todo ADD COLUMN IF NOT EXISTS expiry_grade INTEGER;
+ALTER TABLE petstore_daily_todo ADD COLUMN IF NOT EXISTS days_left_text TEXT;
+ALTER TABLE petstore_daily_todo ADD COLUMN IF NOT EXISTS date_source TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_petstore_daily_todo
   ON petstore_daily_todo(snapshot_date, product_code, todo_type);
 CREATE INDEX IF NOT EXISTS ix_petstore_daily_todo_date
@@ -51,6 +55,8 @@ export default async function handler(req, res) {
         `INSERT INTO petstore_daily_todo (snapshot_date, ${FIELDS.join(",")}) VALUES (${ph})
          ON CONFLICT (snapshot_date, product_code, todo_type) DO UPDATE SET
            shelf=EXCLUDED.shelf, product_name=EXCLUDED.product_name, spec=EXCLUDED.spec,
+           expiry_grade=EXCLUDED.expiry_grade, days_left_text=EXCLUDED.days_left_text,
+           date_source=EXCLUDED.date_source,
            warn_status=EXCLUDED.warn_status, production_date=EXCLUDED.production_date,
            expire_date=EXCLUDED.expire_date, stock=EXCLUDED.stock, out_price=EXCLUDED.out_price,
            month_sale=EXCLUDED.month_sale, barcode=EXCLUDED.barcode, category=EXCLUDED.category,
