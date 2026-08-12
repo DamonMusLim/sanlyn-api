@@ -1577,7 +1577,7 @@ export default async function handler(req, res) {
         var _swbCnee = (_cneeR.rows[0] && _cneeR.rows[0].customer) || pickClean(sp.customer_en, sp.customer) || "[CONSIGNEE]";
         var _swbCneeAddr = "";
         try{ var _ca=await pool.query("SELECT address FROM companies WHERE name_en=$1 OR name_cn=$1 ORDER BY (address IS NOT NULL) DESC LIMIT 1",[_swbCnee]); if(_ca.rows[0]) _swbCneeAddr=_ca.rows[0].address||""; }catch(e){}
-        var _swbTo = to;   // 兜底=shipping_line
+        var _swbTo = pick(sp.shipping_line, spraw.shippingLine, "___________________________");   // 兜底=船公司名
         var _formRef = "";
         try{
           var _cc = pick(sp.carrier_code, spraw.carrierCode, "");
