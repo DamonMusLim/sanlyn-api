@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CP-4起 运费单据 · 上传前检查</title>
+<link rel="stylesheet" href="/public/sanlyn-table.css">
+<style>.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 18px;margin-bottom:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.card b{min-width:210px}.card .bl{color:#6b7280;font-family:monospace;min-width:150px}
+.card a{color:#2563eb;font-weight:700;text-decoration:none;border:1px solid #bfdbfe;border-radius:6px;padding:4px 12px}
+.card .note{color:#b45309;font-size:12px}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="title">CP-4 起 · 运费单据检查页</div><div class="meta">检查无误后回话"上传"，PDF 落入对应 Google Drive 票夹 · v2026.08.12</div></div></div>
+  <div id="app"></div>
+</div>
+<script src="/public/sanlyn-table.js"></script>
+<script>
+var T=[
+ {f:"51.cp-4",          po:"40-CP-4",              bl:"MEDUWZ495815",  docs:["fob_invoice"],                 note:"FOB·只收海运费"},
+ {f:"52.LL-3.LL-4.DG-1",po:"40-DG-1+40-LL-3+40-LL-4",bl:"ESLCHNQIN061639",docs:["fob_invoice","fob_portcharge"],note:"EXW·含港杂/拖车原价"},
+ {f:"53.LL-5 CP-5 DG-4",po:"40-CP-5+40-DG-3+40-DG-4+…",bl:"MEDUXS320232", docs:["fob_invoice","fob_portcharge"],note:"EXW+FOB混·港杂按EXW柜50%"},
+ {f:"54.CL-16-19",      po:"40-CL-16~19",          bl:"COAU6460522270",docs:["fob_invoice"],                 note:"FOB·含驳船线"},
+ {f:"55.xm-1",          po:"40-XM-1",              bl:"AXI0361194",    docs:["fob_invoice"],                 note:"FOB"},
+ {f:"57.CP-6.CP-7.LL-6",po:"40-CP-6+40-CP-7+40-LL-6",bl:"MEDUY8325498", docs:["fob_invoice","fob_portcharge"],note:"EXW+FOB混·港杂6208.60"},
+ {f:"58.YIWU TAOLAN",   po:"纯中介",                bl:"OOLU2171072710",docs:["fob_invoice","fob_portcharge"],note:"外单·原价转"}
+];
+var NAMES={fob_invoice:"海运费单 INVOICE",fob_portcharge:"港杂费账单"};
+var tok=SanlynTable.token();
+document.getElementById("app").innerHTML=T.map(function(t){
+  var links=t.docs.map(function(d){
+    return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(t.bl)+'&type='+d+'&token='+encodeURIComponent(tok)+'">'+NAMES[d]+'</a>'}).join(" ");
+  return '<div class="card"><b>'+SanlynTable.esc(t.f)+'</b><span class="bl">'+SanlynTable.esc(t.bl)+'</span>'+links+'<span class="note">'+SanlynTable.esc(t.po)+' · '+SanlynTable.esc(t.note)+'</span></div>'}).join("");
+if(!tok)document.getElementById("app").innerHTML='<div class="err">请先在对账主表登录一次再刷新本页(共用登录态)</div>'+document.getElementById("app").innerHTML;
+</script>
+<div class="wrap"><div class="meta">56.DG-2=客户自提无运费单 · 40-LL-7/8(OOLU2335623260)刚开船,销售价还没定,出单后补</div></div>
+</body>
+</html>
