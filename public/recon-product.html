@@ -15,6 +15,7 @@
         <select id="factory" style="height:32px;border:1px solid #d1d5db;border-radius:6px;min-width:180px"><option value="">全部工厂</option></select>
     <select id="terms" style="height:32px;border:1px solid #d1d5db;border-radius:6px"><option value="">全部条款</option></select>
     <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="gaponly">只看缺口</label>
+    <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="checkbox" id="hideext" checked>隐藏外单</label>
 <button class="btn" id="reload">刷新</button>
     <button class="btn" id="exportBtn">导出Excel</button>
   </div>
@@ -71,6 +72,7 @@ function baseFilter(r){
   if(f&&String(r.factory||"").indexOf(f)<0)return false;
   if(t&&String(r.trade_terms||"")!==t)return false;
   if(g&&!(r.gap_flags||[]).length)return false;
+  if(document.getElementById("hideext").checked&&r.external_src)return false;
   return true;}
 function fillOpts(){var fs={},ts={};table.rows.forEach(function(r){
     String(r.factory||"").split(" / ").filter(Boolean).forEach(function(x){fs[x]=1});
@@ -79,7 +81,7 @@ function fillOpts(){var fs={},ts={};table.rows.forEach(function(r){
   var fv=F.value,tv=T.value;
   F.innerHTML='<option value="">全部工厂</option>'+Object.keys(fs).sort().map(function(x){return '<option'+(x===fv?" selected":"")+'>'+SanlynTable.esc(x)+'</option>'}).join("");
   T.innerHTML='<option value="">全部条款</option>'+Object.keys(ts).sort().map(function(x){return '<option'+(x===tv?" selected":"")+'>'+SanlynTable.esc(x)+'</option>'}).join("");}
-["factory","terms","gaponly"].forEach(function(id){document.getElementById(id).onchange=function(){table.render()}});
+["factory","terms","gaponly","hideext"].forEach(function(id){document.getElementById(id).onchange=function(){table.render()}});
 setInterval(function(){if(table.rows.length&&!document.getElementById("factory").dataset.f){document.getElementById("factory").dataset.f=1;fillOpts()}},400);
 var _oldReload=reload.onclick;reload.onclick=function(){document.getElementById("factory").dataset.f="";_oldReload();setTimeout(fillOpts,1500)};
 exportBtn.onclick=function(){table.exportExcel("recon-product-"+(company.value||"all")+".xlsx")};
