@@ -65,7 +65,7 @@ var table=SanlynTable.mount(document.getElementById("app"),{
     {key:"barge_cost_cny",label:"驳船CNY",type:"num",group:"海运"},
     {key:"ocean_sale_usd",label:"销售USD",type:"num",group:"海运",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_usd"}:null}},
     {key:"port_sale_cny",label:"港杂CNY",type:"num",group:"海运",edit:function(r){var k=planKey(r);return k?{kind:"plan",key:k,field:"freight_sale_cny"}:null}},
-    {key:"gap_flags",label:"缺口",gap:true,render:function(r,h){var g=r.gap_flags||[];return h.esc(g.join("/"))}}
+    {key:"gap_flags",label:"缺口",gap:true,render:function(r,h){var g=r.gap_flags||[];if(!g.length&&r.pipeline)return '<span class="st-na">未出运</span>';return h.esc(g.join("/"))}}
   ]});
 SanlynTable.companySelect(document.getElementById("company"),"CN-00040").then(function(){});
 company.onchange=function(){table.load()};
