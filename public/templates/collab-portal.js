@@ -85,10 +85,11 @@ function renderHero(s, ps){
 function fileLink(type, ref, aud){ return window._fileURL ? window._fileURL(type, ref, aud) : '#'; }
 function docRow(icon, label, href, source){
   const safe = esc(href);
-  // 状态标签(我方已备/贵司提请)合并进「预览」按钮，不再单列 tag；下载独立（Damon 0812 图2）
+  // 预览按钮带 &preview=1（Excel类→HTML预览给客户看；HTML类忽略照常）；下载不带
+  const pvHref = esc(href + (href.indexOf('?')>=0?'&':'?') + 'preview=1');
   const preview = source
-    ? `<a class="doc-btn" style="background:var(--goodbg);color:var(--good);border-color:color-mix(in srgb,var(--good) 40%,var(--line));" href="${safe}" target="_blank">${esc(source)} · 预览</a>`
-    : `<a class="doc-btn" href="${safe}" target="_blank">👁 预览</a>`;
+    ? `<a class="doc-btn" style="background:var(--goodbg);color:var(--good);border-color:color-mix(in srgb,var(--good) 40%,var(--line));" href="${pvHref}" target="_blank">${esc(source)} · 预览</a>`
+    : `<a class="doc-btn" href="${pvHref}" target="_blank">👁 预览</a>`;
   return `<div class="doc-row"><span>${icon}</span><div class="doc-row-main">${esc(label)}</div>
     <div class="doc-actions">${preview}<a class="doc-btn" href="${safe}" target="_blank" download>⬇ 下载</a></div></div>`;
 }

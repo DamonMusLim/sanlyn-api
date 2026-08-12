@@ -52,3 +52,25 @@ export async function renderBookingNoteXlsx(d) {
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }
+
+// HTML 预览（客户/货代看，不下载）—— 与 excel 同数据
+export function renderBookingNoteHtml(d){
+  const e = v => v==null?"":String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/\n/g,"<br>");
+  const n = (v,dp)=> (v===null||v===undefined||v==="")?"":Number(v).toLocaleString("en-US",{minimumFractionDigits:dp||0,maximumFractionDigits:dp||0});
+  return `<!doctype html><html><head><meta charset="utf-8"><title>出口货物委托单/托书</title>
+  <style>body{font-family:-apple-system,'PingFang SC',Arial,sans-serif;background:#f0f2f5;margin:0;padding:18px;color:#111}
+  .p{max-width:820px;margin:auto;background:#fff;border:1px solid #ddd;border-radius:8px;padding:22px}
+  h2{text-align:center;margin:0 0 6px}.d{text-align:right;color:#666;font-size:12px;margin-bottom:10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}td,th{border:1px solid #ccc;padding:6px 8px;vertical-align:top}
+  .k{color:#666;font-weight:700;width:150px}.b{color:#1d4ed8;font-weight:700}.g th{background:#f4f4f4;font-size:11px}.red{color:#b91c1c}</style></head><body><div class="p">
+  <h2>出口货物委托单 / 托书</h2><div class="d">托运日期: ${e(d.bookingDate)}</div>
+  <table><tr><td class="k">Shipper 发货人</td><td>${e(d.shipperName)}${d.shipperAddr?"<br>ADD: "+e(d.shipperAddr):""}</td><td class="k">请帮忙订船东</td><td class="b">${e(d.carrierBook)}</td></tr>
+  <tr><td class="k">Consignee 收货人</td><td>${e(d.consignee)}${d.consAddr?"<br>"+e(d.consAddr):""}</td><td class="k">船名航次 / 出单方式</td><td>${e([d.vessel,d.voyage].filter(Boolean).join(" / "))} · ${e(d.releaseType)}</td></tr>
+  <tr><td class="k">Notify 通知人</td><td>${e(d.notify)}</td><td class="k">ETD</td><td>${e(d.etd)}${d.loadDate?"（"+e(d.loadDate)+"装柜）":""}</td></tr>
+  <tr><td class="k">装货港 / 卸货港</td><td>${e(d.pol)} → ${e(d.pod)}</td><td class="k">最终目的地</td><td>${e(d.finalDest||d.pod)}</td></tr></table>
+  <table style="margin-top:12px"><tr class="g"><th>集装箱/封号</th><th>No. of containers</th><th>货描 Description</th><th>毛重(KGS)</th><th>体积(CBM)</th></tr>
+  <tr><td>${e(d.containerSummary)}</td><td>${e(d.ctnLine)}</td><td class="red">${e(d.goodsDesc)}</td><td>${d.gwKg?n(d.gwKg,0):""}</td><td>${d.cbm?n(d.cbm,3):""}</td></tr></table>
+  <table style="margin-top:12px"><tr><td class="k">运费</td><td>${e(d.freight||"FREIGHT PREPAID")}</td><td class="k">运输条款</td><td>${e(d.term||"CY-CY")}</td><td class="k">成交方式</td><td>${e(d.incoterm)}</td></tr></table>
+  <div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:14px">预览 · 关闭本页回到列表点「下载」可改 Excel</div>
+  </div></body></html>`;
+}

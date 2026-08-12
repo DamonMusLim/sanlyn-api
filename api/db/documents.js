@@ -1620,15 +1620,16 @@ export default async function handler(req, res) {
         try{ var _blAgg=await pool.query("SELECT string_agg(DISTINCT oli.hs_code,',') AS hs, string_agg(DISTINCT NULLIF(oli.bl_description,''),' / ') AS descr, SUM(oli.qty_ctn) AS ctn, ROUND(SUM(COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,2) AS gw, ROUND(SUM(COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3) AS cbm FROM orders o JOIN order_line_items oli ON oli.order_id=o.id WHERE o.shipping_plan_id=$1",[sp.id]); _blA=_blAgg.rows[0]||{}; }catch(e){}
         var _blCtns=[];
         try{ var _blCtnR=await pool.query("SELECT container_no,seal_no,container_type,vgm_weight_kg,cargo_weight_kg FROM container_bookings WHERE shipping_plan_id=$1 ORDER BY container_no",[sp.id]); _blCtns=_blCtnR.rows.map(function(c){ return { no:c.container_no, seal:c.seal_no, type:c.container_type, vgm:c.vgm_weight_kg, pkgs:_blA.ctn, gw:c.cargo_weight_kg, cbm:_blA.cbm }; }); }catch(e){}
-        const { renderBlSampleXlsx } = await import("./docs/bl-sample-xlsx.js");
-        var _blBuf = await renderBlSampleXlsx({
+        var _blData = {
           shipperName:_blShName, shipperAddrEn:_blShAddrEn, blNo:pick(sp.bl_no,""),
           releaseType:(sp.release_type||"")+(/swb/i.test(sp.release_type||"")?" 海运单":(/电放/.test(sp.release_type||"")?"":"")),
           payTerm:"P（待确认）", consignee:_blCnee, consAddr:_blCneeAddr, hsCode:_blA.hs||"", showHs:true,
           vessel:vessel, voyage:voyage, pol:polSp, pod:podSp, finalDest:podSp,
-          marks:"N/M", totalCtn:_blA.ctn, description:_blA.descr||"CAT LITTER", gwKg:_blA.gw, cbm:_blA.cbm, containers:_blCtns,
-          warnings:["⚠ 付款方式 P/C 请确认后再发（成交方式需与客户核对）","VGM 称重方式：Method 2 累加计算法（货重 = 净重 + 纸箱 + 托盘）"]
-        });
+          marks:"N/M", totalCtn:_blA.ctn, description:_blA.descr||"CAT LITTER", gwKg:_blA.gw, cbm:_blA.cbm, containers:_blCtns
+        };
+        const _blMod = await import("./docs/bl-sample-xlsx.js");
+        if(req.query.preview){ res.setHeader("Content-Type","text/html; charset=utf-8"); return res.send(_blMod.renderBlSampleHtml(_blData)); }
+        var _blBuf = await _blMod.renderBlSampleXlsx(_blData);
         res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.setHeader("Content-Disposition",'attachment; filename="'+("BL-Sample-"+(sp.bl_no||sp.id))+'.xlsx"');
         return res.send(_blBuf);
@@ -1649,8 +1650,7 @@ export default async function handler(req, res) {
         var _bnA={};
         try{ var _bnAgg=await pool.query("SELECT string_agg(DISTINCT oli.hs_code,',') AS hs, string_agg(DISTINCT NULLIF(oli.bl_description,''),' / ') AS descr, SUM(oli.qty_ctn) AS ctn, ROUND(SUM(COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,2) AS gw, ROUND(SUM(COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3) AS cbm FROM orders o JOIN order_line_items oli ON oli.order_id=o.id WHERE o.shipping_plan_id=$1",[sp.id]); _bnA=_bnAgg.rows[0]||{}; }catch(e){}
         var _bnQty=pick(sp.container_qty,1), _bnType=pick(sp.container_type,"40HQ");
-        const { renderBookingNoteXlsx } = await import("./docs/booking-note-xlsx.js");
-        var _bnBuf = await renderBookingNoteXlsx({
+        var _bnData = {
           bookingDate: fmtD(new Date()), shipperName:_bnShName, shipperAddr:_bnShAddr,
           consignee:_bnCnee, consAddr:_bnCneeAddr, carrierBook:_bnBook,
           vessel:vessel, voyage:voyage, etd:fmtD(sp.etd), loadDate:fmtD(sp.factory_cargo_ready),
@@ -1659,7 +1659,10 @@ export default async function handler(req, res) {
           containerSummary:(_bnQty+"*"+_bnType), ctnLine:(_bnA.ctn?Number(_bnA.ctn).toLocaleString("en-US")+" CTNS":""),
           goodsDesc:(_bnA.descr||"CAT LITTER")+(_bnA.hs?"  HS:"+_bnA.hs:""), gwKg:_bnA.gw, cbm:_bnA.cbm,
           ctnQty:(_bnQty+"*"+_bnType), freight:"FREIGHT PREPAID", term:"CY-CY", incoterm:pick(sp.freight_term,"")
-        });
+        };
+        const _bnMod = await import("./docs/booking-note-xlsx.js");
+        if(req.query.preview){ res.setHeader("Content-Type","text/html; charset=utf-8"); return res.send(_bnMod.renderBookingNoteHtml(_bnData)); }
+        var _bnBuf = await _bnMod.renderBookingNoteXlsx(_bnData);
         res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.setHeader("Content-Disposition",'attachment; filename="'+("Booking-Note-"+(sp.bl_no||sp.id))+'.xlsx"');
         return res.send(_bnBuf);

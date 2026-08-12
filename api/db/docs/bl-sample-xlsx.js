@@ -48,3 +48,29 @@ export async function renderBlSampleXlsx(d) {
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }
+
+// HTML 预览（客户/货代点"预览"看，不用下载）—— 与 excel 同数据
+export function renderBlSampleHtml(d){
+  const e = v => v==null?"":String(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/\n/g,"<br>");
+  const n = (v,dp)=> (v===null||v===undefined||v==="")?"":Number(v).toLocaleString("en-US",{minimumFractionDigits:dp||0,maximumFractionDigits:dp||0});
+  const rows = (d.containers||[]).map(c=>`<tr><td>${e(c.no)}</td><td>${e(c.seal)}</td><td>${e(c.type)}</td><td>${n(c.vgm,2)}</td><td>${n(c.pkgs)}</td><td>${n(c.gw,2)}</td><td>${n(c.cbm,3)}</td></tr>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>提单样单/补料 · ${e(d.blNo)}</title>
+  <style>body{font-family:-apple-system,'PingFang SC',Arial,sans-serif;background:#f0f2f5;margin:0;padding:18px;color:#111}
+  .p{max-width:820px;margin:auto;background:#fff;border:1px solid #ddd;border-radius:8px;padding:22px}
+  h2{text-align:center;margin:0 0 14px}.k{color:#666;font-weight:700;width:150px}
+  table{width:100%;border-collapse:collapse;font-size:13px}td,th{border:1px solid #ccc;padding:6px 8px;vertical-align:top}
+  .g th{background:#f4f4f4;font-size:11px}.no{border:0}.no td{border:0;padding:3px 8px}.w{color:#b45309;font-size:12px}</style></head><body><div class="p">
+  <h2>提单样单 / 补料（Shipping Instruction）</h2>
+  <table class="no"><tr><td class="k">Shipper 发货人</td><td>${e(d.shipperName)}${d.shipperAddrEn?"<br>ADD: "+e(d.shipperAddrEn):""}</td><td class="k">提单号</td><td>${e(d.blNo)}</td></tr>
+  <tr><td class="k">Consignee 收货人</td><td>${e(d.consignee)}${d.consAddr?"<br>"+e(d.consAddr):""}</td><td class="k">出单方式 / HS</td><td>${e(d.releaseType||"SWB 海运单")} · HS ${e(d.hsCode)}</td></tr>
+  <tr><td class="k">Notify 通知人</td><td>${e(d.notify||"SAME AS CONSIGNEE")}</td><td class="k">付款方式</td><td>${e(d.payTerm||"P（待确认）")}</td></tr>
+  <tr><td class="k">船名航次</td><td>${e([d.vessel,d.voyage].filter(Boolean).join(" "))}</td><td class="k">装货港</td><td>${e(d.pol)}</td></tr>
+  <tr><td class="k">卸货港</td><td>${e(d.pod)}</td><td class="k">最终目的地</td><td>${e(d.finalDest||d.pod)}</td></tr></table>
+  <table style="margin-top:12px"><tr class="g"><th>唛头</th><th>总件数</th><th>货描</th><th>总重</th><th>体积</th></tr>
+  <tr><td>${e(d.marks||"N/M")}</td><td>${d.totalCtn?n(d.totalCtn)+" CARTONS":""}</td><td>${e(d.description)}${d.hsCode?"<br>HS: "+e(d.hsCode):""}</td><td>${d.gwKg?n(d.gwKg,2)+" KGS":""}</td><td>${d.cbm?n(d.cbm,3)+" CBM":""}</td></tr></table>
+  <div style="margin:12px 0 6px;font-weight:700">分箱信息（VGM = 货重 + 柜皮重）</div>
+  <table class="g"><tr class="g"><th>CONTAINER NO</th><th>SEAL NO</th><th>TYPE</th><th>VGM (KGS)</th><th>NO OF PKGS</th><th>GROSS WEIGHT</th><th>MEASUREMENT</th></tr>${rows}</table>
+  <div class="w" style="margin-top:12px">⚠ 付款方式 P/C 请确认后再发（成交方式需与客户核对）<br>VGM 称重方式：Method 2 累加计算法（货重 = 净重 + 纸箱 + 托盘）</div>
+  <div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:14px">预览 · 关闭本页回到列表点「下载」可改 Excel</div>
+  </div></body></html>`;
+}

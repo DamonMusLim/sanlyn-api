@@ -40,7 +40,7 @@ async function handleFileProxy(req, res, pool) {
   if (type === "booking_note") {
     // 托书/出口货物委托单 Excel → documents?type=booking_note
     const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 });
-    const urlX = `http://127.0.0.1:9000/api/db/documents?type=booking_note&id=${encodeURIComponent(auth.planId)}&token=${encodeURIComponent(jwtX)}`;
+    const urlX = `http://127.0.0.1:9000/api/db/documents?type=booking_note&id=${encodeURIComponent(auth.planId)}&token=${encodeURIComponent(jwtX)}${req.query.preview?"&preview=1":""}`;
     try {
       const up = await fetch(urlX);
       res.status(up.status);
@@ -52,7 +52,7 @@ async function handleFileProxy(req, res, pool) {
   if (type === "bl_sample") {
     // 提单样单/补料 Excel（可改·客户复用）→ documents?type=bl_sample
     const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 });
-    const urlX = `http://127.0.0.1:9000/api/db/documents?type=bl_sample&id=${encodeURIComponent(auth.planId)}&token=${encodeURIComponent(jwtX)}`;
+    const urlX = `http://127.0.0.1:9000/api/db/documents?type=bl_sample&id=${encodeURIComponent(auth.planId)}&token=${encodeURIComponent(jwtX)}${req.query.preview?"&preview=1":""}`;
     try {
       const up = await fetch(urlX);
       res.status(up.status);
