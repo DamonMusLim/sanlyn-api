@@ -111,7 +111,11 @@ export async function fetchRows(pool, opts) {
         STRING_AGG(DISTINCT order_no, ',' ORDER BY order_no) AS order_no,
         STRING_AGG(DISTINCT order_no, ',' ORDER BY order_no) AS order_nos,
         COALESCE(NULLIF(MAX(fer_qty),0), NULLIF(SUM(qty_oli),0)) AS qty,
-        NULLIF(SUM(factory_expected_value),0) AS factory_expected_amount,
+        -- 应开金额（Damon 2026-08-12 拍板）：读结果表 factory_invoice_expected_amounts
+        -- 口径 customs_line_fob_cny_v1 = 报关逐项金额 × 行级工厂归属。
+        -- 依据：报关金额源自检疫报告(厂检单)，本来就是照工厂出厂价申报的，比订单里的 factory_price 可靠。
+        -- ⛔ status<>'ready'（工厂未定/超额/已锁）一律返回 NULL，页面显「待人工填」，绝不发错数给工厂。
+        NULLIF(SUM(factory_expected_value),0) AS legacy_expected_amount,
         COALESCE(MAX(fer_declare), NULLIF(SUM(declare_value),0), NULLIF(SUM(purchase_value),0)) AS system_expected_amount,
         MAX(fer_declare) AS declare_amount,
         NULLIF(SUM(sales_value),0) AS sales_amount
@@ -126,7 +130,8 @@ export async function fetchRows(pool, opts) {
                   AND COALESCE(s.status,'need_amount')='need_amount' THEN 'pending_confirm'
              ELSE COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END)
            END AS status,
-           b.factory_expected_amount,
+           fie.expected_amount AS factory_expected_amount,
+           b.legacy_expected_amount,
            b.system_expected_amount,
            b.sales_amount,
            CASE WHEN b.sales_amount > 0 AND COALESCE(s.manual_expected_amount, b.system_expected_amount) > b.sales_amount * 1.5
@@ -146,6 +151,8 @@ export async function fetchRows(pool, opts) {
            ${includeSlipDetails ? ", COALESCE(pay.slip_details, '[]'::jsonb) AS slip_details" : ""},
            ev.created_at AS last_event_at
       FROM b
+      LEFT JOIN factory_invoice_expected_amounts fie
+        ON fie.customs_no = b.customs_no AND fie.factory_name = b.factory_name AND fie.status = 'ready'
       -- 2026-07-14: 一票多厂时 status 单键会把 manual 额双计到别厂行(140601772471 案例:DS的221650曾串到春叶/中砂行),必须按厂匹配
       LEFT JOIN customs_invoice_status s ON s.customs_no=b.customs_no AND s.factory_code=b.factory_code
       LEFT JOIN brand_pick bp ON bp.factory_code=b.factory_code AND bp.decl_key=b.customs_no
