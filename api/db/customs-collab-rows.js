@@ -60,8 +60,15 @@ export async function fetchRows(pool, opts) {
              MIN(fer.export_date) AS export_date,
              CASE WHEN COUNT(i.item)=0 THEN NULL
                   ELSE ROUND(SUM(NULLIF(i.item->>'amount','')::numeric), 2) END AS declare_amount,
-             COALESCE(ROUND(SUM(NULLIF(i.item->>'qty_ctn','')::numeric),2), ROUND(SUM(NULLIF(i.item->>'qty2','')::numeric),2)) AS qty
+             COALESCE(ROUND(SUM(NULLIF(i.item->>'qty_ctn','')::numeric),2), ROUND(SUM(NULLIF(i.item->>'qty2','')::numeric),2)) AS qty,
+             -- 0812：订单认不回报关单时会退回用提单号当 key，同一票就出现两行
+             -- （COAU6461510080 和 020220260000869856 各记一次，应开总额虚高 ¥139,285）。
+             -- 把报关单自己的提单号带出来，多加一条「按提单号认」的路。
+             MAX(NULLIF(sp.bl_no,'')) AS bl_no,
+             MAX(NULLIF(sp.so_no,'')) AS so_no
         FROM finance_export_rebates fer
+        LEFT JOIN customs_declarations cd0 ON cd0.declaration_no = fer.customs_no
+        LEFT JOIN shipping_plans sp ON sp._id = cd0.shipping_plan_id
         LEFT JOIN LATERAL jsonb_array_elements(
           CASE WHEN jsonb_typeof(fer.raw->'items')='array' THEN fer.raw->'items' ELSE '[]'::jsonb END
         ) AS i(item) ON true
@@ -75,7 +82,12 @@ export async function fetchRows(pool, opts) {
              f.export_date AS fer_export_date,
              COALESCE(f.customs_no, NULLIF(ord.bl_no,''), ord.order_no) AS decl_key
         FROM ord
-        LEFT JOIN fer_base f ON ((f.order_scope IS NOT NULL AND ord.order_no=ANY(f.order_scope)) OR (f.order_scope IS NULL AND f.contract_no=ord.contract_no))
+        LEFT JOIN fer_base f ON (
+              (f.order_scope IS NOT NULL AND ord.order_no=ANY(f.order_scope))
+           OR (f.order_scope IS NULL AND f.contract_no=ord.contract_no)
+           -- ③ 提单号/SO 认回（订单和报关单合同号对不上时唯一能连起来的东西）
+           OR (COALESCE(ord.bl_no,'') <> '' AND ord.bl_no IN (f.bl_no, f.so_no))
+        )
     ),
     brand_rollup AS (
       SELECT k.factory_code,

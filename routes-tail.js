@@ -32,6 +32,9 @@ export function registerTailRoutes(app, mount) {
   // ── Reconciliation / monthly statement ──
   mount("/api/db/reconciliation", () => import("./api/db/reconciliation.js"));
   mount("/api/db/recon-master", () => import("./api/db/recon-master.js"));
+  mount("/api/db/orders-master-grid",   () => import("./api/db/orders-master-grid.js"));   // 0812 订单密网格
+  mount("/api/db/shipping-master-grid", () => import("./api/db/shipping-master-grid.js")); // 0812 海运密网格
+  mount("/api/db/customs-master-grid",  () => import("./api/db/customs-master-grid.js"));  // 0812 报关密网格
   mount("/api/db/tax-rebate-master", () => import("./api/db/tax-rebate-master.js"));
   mount("/api/db/petstore-todo",        () => import("./api/db/petstore-todo.js"));
   mount("/api/db/petstore-todo-export", () => import("./api/db/petstore-todo-export.js"));

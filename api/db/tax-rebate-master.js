@@ -32,7 +32,8 @@ WITH decl AS (
 inv AS (
   -- 进项票挂到票上有两条路：customs_nos 直挂，或 contract_nos 对上合同号。
   -- 只走 customs_nos 会漏掉大量只填了合同号的票（0811 实测漏 1 张 ¥38,121）。
-  SELECT DISTINCT d.customs_no, i.invoice_no, i.seller_name, i.amount_incl_tax, i.remark, i.issue_date
+  SELECT DISTINCT d.customs_no, i.invoice_no, i.seller_name, i.seller_tax_id, i.amount_incl_tax,
+         i.amount_ex_tax, i.tax_rate AS inv_tax_rate, i.remark, i.issue_date
   FROM decl d
   JOIN finance_invoices_in i
     ON (i.customs_nos @> ARRAY[d.customs_no]::varchar[]
@@ -126,7 +127,47 @@ ckts AS (
                     WHERE l.qty_ctn = c.qty AND o.factory <> ''
                       AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                            OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))) THEN '订单箱数'
-      ELSE '整票唯一厂' END AS factory_src
+      ELSE '整票唯一厂' END AS factory_src,
+    -- 行级 PO：跟工厂第③/③b档同一套匹配（报关品名 → 订单箱数），唯一命中才给，不唯一就留空。
+    -- 票级 order_nos 是「这票涉及的所有 PO」，贴到行上会误导，所以两个都给、页面分开显示。
+    COALESCE(
+      (SELECT CASE WHEN count(DISTINCT o.order_no) = 1 THEN max(o.order_no) END
+         FROM order_line_items l JOIN orders o ON o.id = l.order_id
+        WHERE l.declaration_name = c.goods_name
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
+      (SELECT CASE WHEN count(DISTINCT o.order_no) = 1 THEN max(o.order_no) END
+         FROM order_line_items l JOIN orders o ON o.id = l.order_id
+        WHERE l.qty_ctn = c.qty
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')))
+    ) AS line_po,
+    -- 海关侧（我们自己的报关单）同项号的值，跟税局值并排放，页面逐行对差异。
+    -- 两边都是权威源但口径可能差：税局的品名是抽字打出来的会花，金额分位四舍五入差 ±1。
+    (SELECT ci2.hs_code FROM customs_declaration_items ci2 JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+      WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+        AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_hs,
+    (SELECT ci2.declaration_name_cn FROM customs_declaration_items ci2 JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+      WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+        AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_name,
+    (SELECT ci2.qty FROM customs_declaration_items ci2 JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+      WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+        AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_qty,
+    (SELECT ci2.declaration_amount FROM customs_declaration_items ci2 JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+      WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+        AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_amt,
+    (SELECT ci2.net_weight_kg FROM customs_declaration_items ci2 JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+      WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+        AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_nw,
+    (SELECT ci2.unit FROM customs_declaration_items ci2 JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+      WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+        AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_unit,
+    (SELECT ci2.fob_usd FROM customs_declaration_items ci2 JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+      WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+        AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_usd,
+    (SELECT ci2.declaration_currency FROM customs_declaration_items ci2 JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+      WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+        AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_cur
   FROM decl d JOIN finance_rebate_ckts_lines c ON c.customs_no = d.customs_no
 ),
 ckts2 AS (
@@ -136,6 +177,29 @@ ckts2 AS (
       WHERE v.customs_no = k.customs_no AND v.seller_name = k.line_factory
       ORDER BY v.issue_date LIMIT 1)) AS invoice_no2
   FROM ckts k
+),
+-- 外贸企业免退税：实退 = 进项专票【不含税额】× 退税率。
+-- 单位是「每张票」不是「每行」——一张票常横跨该票多行，按行乘会重复计数
+-- （0812 实测 4-7 月按行算出 ¥906,176 反超按报关额估的 ¥686,016，就是这个错）。
+-- 一张进项票对应的退税率取「该票所属工厂在本报关单上的行」的税率；税率不唯一则不给数。
+real_agg AS (
+  SELECT customs_no,
+    CASE WHEN bool_and(rt IS NOT NULL) THEN round(sum(ex * rt), 2) END AS real_rebate,
+    round(sum(ex), 2) AS inv_ex_sum,
+    count(*) AS inv_n,
+    count(*) FILTER (WHERE rt IS NULL) AS inv_norate
+  FROM (
+    -- 驱动表是【本票所有货物类进项票】，不是「挂上了某一行的票」。
+    -- 0812 实测 171960 有两张中砂的票，只有一张匹配到行，按行驱动会漏掉 ¥58,725 → 实退少算 ¥7,634。
+    SELECT v.customs_no, v.invoice_no,
+      max(v.amount_ex_tax) AS ex,
+      -- 退税率取「这家工厂在本报关单上的行」的税率；该厂行税率不唯一 → 不给数（宁可空着）
+      (SELECT CASE WHEN count(DISTINCT k.rate) = 1 THEN max(k.rate) END
+         FROM ckts2 k WHERE k.customs_no = v.customs_no AND k.line_factory = v.seller_name) AS rt
+    FROM inv v
+    WHERE v.amount_ex_tax IS NOT NULL
+    GROUP BY v.customs_no, v.invoice_no, v.seller_name
+  ) t GROUP BY customs_no
 ),
 ckts_agg AS (
   SELECT customs_no, count(*) n,
@@ -151,6 +215,15 @@ ckts_agg AS (
       -- 申报表口径：出口商品代码=tzhckspDm，美元离岸价=税局原值，法定单位/数量
       'decl_code', decl_code, 'usd_fob', usd_fob, 'ckbgdh', ckbgdh,
       'ckfph', ckfph, 'legal_unit', legal_unit, 'legal_qty', legal_qty,
+      -- 外贸企业免退税：实际应退 = 进项专票【不含税额】× 退税率，不是报关额×退税率。
+      -- 报关额那个只是上限估值（报关价 > 采购价，天然偏高）。两个都给，页面并排显示。
+      'po', line_po,
+      'cd_hs', cd_hs, 'cd_name', cd_name, 'cd_qty', cd_qty, 'cd_amt', cd_amt, 'cd_nw', cd_nw,
+      'cd_unit', cd_unit, 'cd_usd', cd_usd, 'cd_cur', cd_cur,
+      'inv_ex', (SELECT v.amount_ex_tax FROM inv v WHERE v.invoice_no = invoice_no2 LIMIT 1),
+      -- 进货明细官方列要的：供货方纳税人识别号 + 开票日期
+      'inv_taxid', (SELECT v.seller_tax_id FROM inv v WHERE v.invoice_no = invoice_no2 LIMIT 1),
+      'inv_date', (SELECT to_char(v.issue_date,'YYYY-MM-DD') FROM inv v WHERE v.invoice_no = invoice_no2 LIMIT 1),
       'region', source_region,
       'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
       'region_factory', NULL,
@@ -270,6 +343,21 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
   d.fob_cny, d.fob_foreign, d.currency, d.exchange_rate,
   COALESCE(k.n, a.n, 0) AS item_count, COALESCE(k.bad, a.bad, 0) AS bad_lines,
   COALESCE(k.est_rebate, a.est_rebate) AS est_rebate, a.no_nw,
+  -- 实退（进项票不含税×退税率）与估值（报关额×退税率）并排给，页面两个都显示
+  ra.real_rebate, ra.inv_ex_sum, ra.inv_n, ra.inv_norate,
+  -- 工厂开票协同入口：本票涉及的每家工厂 → companies.code → invoice_links 的对外链接。
+  -- 没有链接的工厂也返回（link=null），页面显示「未建协同链接」，别假装有。
+  (SELECT json_agg(DISTINCT jsonb_build_object(
+      'factory', t.fac, 'code', t.code, 'link', t.link)::jsonb)
+     FROM (
+       SELECT DISTINCT k.line_factory AS fac,
+         (SELECT co.code FROM companies co WHERE k.line_factory IN (co.name_cn, co.factory_name, co.short_name) LIMIT 1) AS code,
+         (SELECT il.code FROM invoice_links il
+           WHERE il.scope_type = 'factory' AND il.expires_at > now()
+             AND il.scope_value = (SELECT co2.code FROM companies co2 WHERE k.line_factory IN (co2.name_cn, co2.factory_name, co2.short_name) LIMIT 1)
+           ORDER BY il.created_at DESC LIMIT 1) AS link
+       FROM ckts2 k WHERE k.customs_no = d.customs_no AND k.line_factory IS NOT NULL
+     ) t) AS collab,
   COALESCE(k.line_amt_sum, a.line_amt_sum) AS line_amt_sum,
   k.ckts_declarable,
   -- 数据等级：报关单级 = 逐项都有净重 且 逐项金额合计与报关额吻合；否则是模版/预估，不能当退税依据
@@ -360,6 +448,7 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
 FROM decl d
 LEFT JOIN agg a ON a.customs_no = d.customs_no
 LEFT JOIN ckts_agg k ON k.customs_no = d.customs_no
+LEFT JOIN real_agg ra ON ra.customs_no = d.customs_no
 ORDER BY d.export_date DESC, d.customs_no`;
   const r = await pool.query(sql, [from]);
   return r.rows;

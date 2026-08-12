@@ -7,7 +7,7 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
 export async function loadOrdersMasterGrid(pool, q = {}) {
-  const from = String(q.from || "2025-10-01").trim();
+  const from = String(q.from || "2026-01-01").trim();
   const sql = `
 SELECT o.id, o.order_no, o.contract_no, o.customer_po, o.status,
   COALESCE(NULLIF(o.company_name_en,''), NULLIF(o.customer,'')) AS customer,
@@ -47,7 +47,7 @@ SELECT o.id, o.order_no, o.contract_no, o.customer_po, o.status,
     WHERE l.order_id = o.id
   ), '[]'::json) AS items
 FROM orders o
-WHERE o.created_at >= $1
+WHERE o.deleted_at IS NULL AND o.created_at >= $1   -- 订单的 created_at 就是下单日,本身就是业务日期
 ORDER BY o.created_at DESC`;
   const r = await pool.query(sql, [from]);
   return r.rows;
