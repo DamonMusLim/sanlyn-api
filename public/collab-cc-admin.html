@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sanlyn OS · 单据抄送名单</title>
+<style>
+  :root{ --bg:#0b1220; --surface:#141f33; --surface2:#1b2942; --line:#26374f; --ink:#e8eefc; --muted:#8ba0c4;
+         --accent:#33c6dd; --good:#3ecf8e; --warn:#f5b64c; --bad:#ff6a7d; --radius:14px; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:radial-gradient(1200px 600px at 20% -10%, #16233c 0%, var(--bg) 55%); color:var(--ink);
+        font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,Roboto,sans-serif;
+        min-height:100vh; padding:22px 16px 60px; }
+  .wrap{ max-width:760px; margin:0 auto; }
+  h1{ font-size:20px; margin:6px 0 2px; letter-spacing:.3px; }
+  .sub{ color:var(--muted); font-size:13px; margin-bottom:18px; }
+  .sub b{ color:var(--accent); font-weight:600; }
+  .cols{ display:grid; grid-template-columns:1fr; gap:16px; }
+  @media(min-width:640px){ .cols{ grid-template-columns:1fr 1fr; } }
+  .card{ background:linear-gradient(180deg, var(--surface) 0%, #121c2e 100%); border:1px solid var(--line);
+         border-radius:var(--radius); padding:16px; }
+  .card h2{ font-size:15px; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .dot{ width:9px; height:9px; border-radius:50%; box-shadow:0 0 10px currentColor; }
+  .biz .dot{ color:var(--accent); background:var(--accent); }
+  .fin .dot{ color:var(--good); background:var(--good); }
+  ul{ list-style:none; margin:0 0 12px; padding:0; display:flex; flex-direction:column; gap:8px; min-height:8px; }
+  li{ display:flex; align-items:center; gap:10px; background:var(--surface2); border:1px solid var(--line);
+      border-radius:10px; padding:9px 11px; }
+  li .e{ font-size:13.5px; word-break:break-all; flex:1; }
+  li .l{ color:var(--muted); font-size:12px; }
+  li.off{ opacity:.45; }
+  li.off .e{ text-decoration:line-through; }
+  .mini{ border:1px solid var(--line); background:transparent; color:var(--muted); border-radius:8px;
+         font-size:12px; padding:4px 9px; cursor:pointer; white-space:nowrap; transition:.15s; }
+  .mini:hover{ color:var(--ink); border-color:#3a4f70; }
+  .mini.danger{ color:var(--bad); border-color:#54303c; }
+  .mini.danger.arm{ background:var(--bad); color:#1a0e12; border-color:var(--bad); font-weight:700; }
+  .empty{ color:var(--muted); font-size:12.5px; padding:6px 2px; }
+  .addrow{ display:flex; gap:7px; margin-top:4px; }
+  .addrow input{ flex:1; min-width:0; background:#0e1728; border:1px solid var(--line); color:var(--ink);
+         border-radius:9px; padding:9px 11px; font-size:13.5px; }
+  .addrow input.lbl{ flex:0 0 96px; }
+  .addrow input:focus{ outline:none; border-color:var(--accent); }
+  .add{ border:1px solid var(--accent); background:rgba(51,198,221,.12); color:var(--accent);
+        border-radius:9px; padding:0 14px; font-size:13.5px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  .add:active{ transform:translateY(1px); }
+  .note{ color:var(--muted); font-size:12px; margin-top:14px; line-height:1.7; }
+  .toast{ position:fixed; left:50%; bottom:26px; transform:translateX(-50%) translateY(20px); opacity:0;
+          background:#0e1728; border:1px solid var(--line); color:var(--ink); padding:10px 16px; border-radius:10px;
+          font-size:13.5px; transition:.25s; pointer-events:none; max-width:90vw; }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .toast.bad{ border-color:var(--bad); color:#ffd7dd; }
+  .gate{ text-align:center; padding:40px 12px; color:var(--muted); }
+  .gate input{ background:#0e1728; border:1px solid var(--line); color:var(--ink); border-radius:9px;
+        padding:10px 12px; font-size:13.5px; width:min(420px,90%); margin:12px auto; display:block; }
+  .gate button{ border:1px solid var(--accent); background:rgba(51,198,221,.12); color:var(--accent);
+        border-radius:9px; padding:9px 20px; font-size:14px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>单据抄送名单</h1>
+  <div class="sub">每封海运单据由 <b>OCEANBABY</b> 自动发对方后，都会抄送一份给这里的 <b>我方业务 / 财务</b>。可自助增删。</div>
+  <div id="app"></div>
+  <div class="note">
+    · 删除要点两次（防误删）：先点「删除」，按钮变红再点一次「确认无误」才生效。<br>
+    · 「停用」= 暂时不抄送但保留（随时可再启用）；「删除」= 移出名单。<br>
+    · 改动即时对下一封发信生效。
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const LS = "sanlyn_token";
+function tok(){ return localStorage.getItem(LS) || localStorage.getItem("sanlyn_jwt") || localStorage.getItem("token") || ""; }
+function toast(msg, bad){ const t=document.getElementById("toast"); t.textContent=msg; t.className="toast show"+(bad?" bad":""); clearTimeout(t._h); t._h=setTimeout(()=>t.className="toast",2200); }
+async function api(method, body){
+  const r = await fetch("/api/db/booking-collab/cc-list", {
+    method, headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+tok() },
+    body: body?JSON.stringify(body):undefined
+  });
+  if(r.status===401||r.status===403){ gate(); throw new Error("未登录"); }
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok||!j.ok) throw new Error(j.error||("HTTP "+r.status));
+  return j;
+}
+function esc(s){ return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+let LIST = [];
+function render(){
+  const app = document.getElementById("app");
+  const mk = (cat, title, cls) => {
+    const items = LIST.filter(x=>x.category===cat);
+    const rows = items.length ? items.map(x=>`
+      <li class="${x.active?'':'off'}" data-e="${esc(x.email)}">
+        <span class="dot"></span>
+        <span class="e">${esc(x.email)}${x.label?` <span class="l">· ${esc(x.label)}</span>`:''}</span>
+        <button class="mini" data-act="toggle" data-e="${esc(x.email)}">${x.active?'停用':'启用'}</button>
+        <button class="mini danger" data-act="remove" data-e="${esc(x.email)}">删除</button>
+      </li>`).join("") : `<li class="empty" style="background:none;border:none;padding:6px 2px">（还没有，下面添加）</li>`;
+    return `<div class="card ${cls}">
+      <h2><span class="dot"></span>${title}<span style="color:var(--muted);font-weight:400;font-size:12px">· ${items.length}</span></h2>
+      <ul>${rows}</ul>
+      <div class="addrow">
+        <input type="email" placeholder="邮箱" data-add-email="${cat}">
+        <input class="lbl" type="text" placeholder="姓名(可选)" data-add-label="${cat}">
+      </div>
+      <div class="addrow"><button class="add" data-add="${cat}" style="flex:1;padding:9px">＋ 添加到${title}</button></div>
+    </div>`;
+  };
+  app.innerHTML = `<div class="cols">${mk("biz","业务","biz")}${mk("fin","财务","fin")}</div>`;
+
+  app.querySelectorAll("[data-add]").forEach(btn=>btn.onclick=async()=>{
+    const cat=btn.getAttribute("data-add");
+    const ei=app.querySelector(`[data-add-email="${cat}"]`), li=app.querySelector(`[data-add-label="${cat}"]`);
+    const email=(ei.value||"").trim(); if(!email) return toast("填个邮箱",1);
+    try{ const j=await api("POST",{action:"add",category:cat,email,label:li.value||""}); LIST=j.list; render(); toast("已添加 "+email); }
+    catch(e){ toast(e.message,1); }
+  });
+  app.querySelectorAll('[data-act="toggle"]').forEach(btn=>btn.onclick=async()=>{
+    try{ const j=await api("POST",{action:"toggle",email:btn.getAttribute("data-e")}); LIST=j.list; render(); }
+    catch(e){ toast(e.message,1); }
+  });
+  // 两步确认删除：先点变红「确认无误」，再点才真删（不用原生 confirm，微信 webview 会屏蔽）
+  app.querySelectorAll('[data-act="remove"]').forEach(btn=>{
+    btn.onclick=async()=>{
+      if(btn.classList.contains("arm")){
+        const email=btn.getAttribute("data-e");
+        try{ const j=await api("POST",{action:"remove",email}); LIST=j.list; render(); toast("已删除 "+email); }
+        catch(e){ toast(e.message,1); }
+        return;
+      }
+      app.querySelectorAll('[data-act="remove"].arm').forEach(b=>{ b.classList.remove("arm"); b.textContent="删除"; });
+      btn.classList.add("arm"); btn.textContent="确认无误·再点删除";
+      clearTimeout(btn._t); btn._t=setTimeout(()=>{ btn.classList.remove("arm"); btn.textContent="删除"; },3500);
+    };
+  });
+}
+function gate(){
+  document.getElementById("app").innerHTML =
+    `<div class="gate">需要内部登录令牌才能管理抄送名单。<br>
+     <input id="gtk" type="password" placeholder="粘贴 sanlyn_token">
+     <button onclick="localStorage.setItem('sanlyn_token',document.getElementById('gtk').value.trim());location.reload()">保存并继续</button></div>`;
+}
+(async function(){
+  if(!tok()) return gate();
+  try{ const j=await api("GET"); LIST=j.list||[]; render(); }
+  catch(e){ if(e.message!=="未登录") toast(e.message,1); }
+})();
+</script>
+</body>
+</html>
