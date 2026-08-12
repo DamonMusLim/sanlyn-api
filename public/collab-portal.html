@@ -195,24 +195,88 @@ body.ui-v1 .v2-only { display:none !important; }
   .bill-summary { grid-template-columns:72px 1fr; }
   .bill-money,.bill-summary .badge { justify-self:start; }
 }
+
+/* ══════════ SANLYN 深色设计系统（对齐 Damon 喜欢的原型 be14f939）——覆盖上方浅色 ══════════ */
+:root{
+  --bg:#0b1220; --bg2:#0d1526; --surface:#141f33; --surface2:#1b283f; --line:#26344f;
+  --ink:#eaf1fb; --ink2:#9fb0cd; --ink3:#6b7d9c;
+  --accent:#33c6dd; --accent2:#5b8cff; --accentInk:#04121a;
+  --good:#3ecf8e; --goodbg:#12271f; --warn:#f5b64c; --warnbg:#2a2010; --bad:#ff6a7d; --badbg:#2a1319;
+  --glass:rgba(255,255,255,.03); --shadow:0 18px 40px -22px rgba(0,0,0,.75); --r:16px;
+}
+:root[data-theme="light"]{
+  --bg:#eef2f8; --bg2:#e7ecf5; --surface:#ffffff; --surface2:#f3f6fb; --line:#e0e7f1;
+  --ink:#101a2c; --ink2:#48597a; --ink3:#7788a6; --glass:rgba(10,30,60,.02); --shadow:0 16px 34px -22px rgba(20,40,80,.35);
+}
+body{ background:var(--bg)!important; color:var(--ink)!important; position:relative; }
+body::before{ content:""; position:fixed; inset:-30% -10% auto -10%; height:70vh; z-index:0; pointer-events:none;
+  background:radial-gradient(50% 60% at 20% 0%, rgba(51,198,221,.16), transparent 70%),radial-gradient(45% 55% at 85% 5%, rgba(91,140,255,.14), transparent 70%); filter:blur(8px); }
+.shell-narrow,.shell-tight{ position:relative; z-index:1; }
+.portal-bar{ background:color-mix(in srgb,var(--bg) 80%, transparent)!important; backdrop-filter:blur(14px); border-bottom:1px solid var(--line); box-shadow:none!important; }
+.portal-brand{ color:var(--ink2)!important; } .portal-brand *{color:inherit}
+.portal-login-badge,#topBadge{ color:var(--ink3)!important; }
+#themeToggle{ margin-left:12px; font-size:13px; color:var(--ink2); background:var(--surface2); border:1px solid var(--line); border-radius:8px; padding:5px 10px; cursor:pointer; }
+
+.card,.portal-section,.step-card{ background:var(--surface)!important; border:1px solid var(--line)!important; border-radius:var(--r)!important; box-shadow:var(--shadow)!important; color:var(--ink); }
+.section,.portal-section-head,.portal-section-body,.step-head{ border-color:var(--line)!important; }
+.portal-section-title,.step-title,.doc-group-title{ color:var(--ink)!important; }
+.portal-section-sub,.step-sub,.msub{ color:var(--ink3)!important; }
+
+.badge-green{ background:var(--goodbg)!important; color:var(--good)!important; border-color:color-mix(in srgb,var(--good) 40%,transparent)!important; }
+.badge-amber{ background:var(--warnbg)!important; color:var(--warn)!important; border-color:color-mix(in srgb,var(--warn) 40%,transparent)!important; }
+.badge-red{ background:var(--badbg)!important; color:var(--bad)!important; border-color:color-mix(in srgb,var(--bad) 40%,transparent)!important; }
+.badge-blue{ background:color-mix(in srgb,var(--accent) 14%,transparent)!important; color:var(--accent)!important; border-color:color-mix(in srgb,var(--accent) 40%,transparent)!important; }
+
+.btn-blue{ background:linear-gradient(135deg,var(--accent),var(--accent2))!important; color:var(--accentInk)!important; }
+.btn-green{ background:var(--good)!important; color:var(--accentInk)!important; }
+.btn-ghost{ background:var(--surface2)!important; color:var(--ink2)!important; border-color:var(--line)!important; }
+.doc-btn{ background:var(--surface2)!important; color:var(--accent)!important; border-color:var(--line)!important; }
+.doc-btn:hover{ border-color:var(--accent)!important; background:color-mix(in srgb,var(--accent) 12%,transparent)!important; }
+
+.up-zone{ background:var(--surface2)!important; border-color:var(--line)!important; color:var(--ink2)!important; }
+.up-zone:hover{ border-color:var(--accent)!important; color:var(--accent)!important; }
+.file-row{ background:var(--goodbg)!important; border-color:color-mix(in srgb,var(--good) 30%,var(--line))!important; color:var(--ink)!important; }
+.doc-row{ background:var(--surface2)!important; border-color:var(--line)!important; color:var(--ink)!important; }
+.doc-row-main{ color:var(--ink)!important; } .doc-tag{ background:var(--surface)!important; color:var(--ink2)!important; }
+.icon-link{ color:var(--accent)!important; }
+
+.bill-row{ background:var(--surface)!important; border-color:var(--line)!important; }
+.bill-summary{ background:transparent!important; } .bill-summary b{ color:var(--ink)!important; } .bill-summary .desc{ color:var(--ink3)!important; }
+.bill-money{ color:var(--ink)!important; } .bill-money.empty{ color:var(--warn)!important; }
+.bill-detail{ background:var(--surface2)!important; border-color:var(--line)!important; color:var(--ink); }
+.bill-edit-table th,.bill-edit-table td{ border-color:var(--line)!important; color:var(--ink); }
+.bill-edit-table input,.bill-edit-table select,.form-input,.cargo-t input.cell-in{ background:var(--surface2)!important; color:var(--ink)!important; border-color:var(--line)!important; }
+
+.seg-tabs{ border-color:var(--line)!important; } .seg-tab{ color:var(--ink3)!important; } .seg-tab.active{ color:var(--accent)!important; border-bottom-color:var(--accent)!important; }
+.deadline-grid .deadline-cell,.deadline-cell{ background:var(--surface2)!important; border-color:var(--line)!important; }
+.deadline-cell div:first-child{ color:var(--ink3)!important; } .deadline-cell div:last-child{ color:var(--ink)!important; }
+.chip{ background:var(--surface2)!important; border-color:var(--line)!important; color:var(--ink2)!important; } .chip b{ color:var(--ink)!important; } .chip span{ color:var(--ink3)!important; }
+.hero-name{ color:var(--ink)!important; } .hero-bl{ color:var(--accent)!important; }
+.mini-kv span:nth-child(odd){ color:var(--ink3)!important; } .mini-kv span:nth-child(even){ color:var(--ink)!important; }
+.center-state,.center-state h2{ color:var(--ink)!important; } .center-state p{ color:var(--ink3)!important; }
+.cargo-t th{ background:var(--surface2)!important; color:var(--ink2)!important; border-color:var(--line)!important; }
+.cargo-t td{ border-color:var(--line)!important; color:var(--ink); }
+.toast{ background:var(--surface2)!important; color:var(--ink)!important; border:1px solid var(--line); }
+.form-label{ color:var(--ink2)!important; }
 </style>
 </head>
 <body>
 <script>document.body.classList.toggle('ui-v1', new URLSearchParams(location.search).get('ui') === 'v1');</script>
 
-<div class="portal-bar"><div class="portal-brand">SANLYN OS</div><div class="portal-login-badge" id="topBadge">供应链端口</div></div>
+<div class="portal-bar"><div class="portal-brand">SANLYN OS</div><div class="portal-login-badge" id="topBadge">供应链端口</div><button id="themeToggle" title="切换深/浅色" onclick="(function(){var r=document.documentElement,c=r.getAttribute('data-theme');var dark=c?c==='dark':true;r.setAttribute('data-theme',dark?'light':'dark');try{localStorage.setItem('collab_theme',dark?'light':'dark')}catch(e){}})()">◐</button></div>
+<script>try{var _t=localStorage.getItem('collab_theme');if(_t)document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
 
 <div class="center-state" id="stateLoading"><div class="big">⏳</div><p>正在加载…</p></div>
 
 <div class="hidden" id="stateForm">
 <div class="shell-narrow">
 
-  <div class="card" style="border:2px solid #fbbf24;">
-    <div style="background:#fffbeb;padding:14px 16px;display:flex;align-items:center;gap:12px;">
+  <div class="card" style="border:1px solid color-mix(in srgb,var(--warn) 45%,var(--line));">
+    <div style="background:var(--warnbg);padding:14px 16px;display:flex;align-items:center;gap:12px;">
       <div style="font-size:24px;">🏢</div>
       <div style="flex:1;">
-        <div style="font-size:13px;font-weight:800;color:#92400e;" id="bannerTitle">— 供应链端口</div>
-        <div style="font-size:11px;color:#a16207;margin-top:2px;" id="bannerSub">承包段一个口全干：下载 · 回填 · 回传</div>
+        <div style="font-size:14px;font-weight:800;color:var(--warn);" id="bannerTitle">— 供应链端口</div>
+        <div style="font-size:11px;color:var(--ink2);margin-top:2px;" id="bannerSub">承包段一个口全干：下载 · 回填 · 回传</div>
       </div>
       <div class="badge badge-amber" id="bannerBadge">需要您操作</div>
     </div>
