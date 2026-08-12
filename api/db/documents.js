@@ -1482,7 +1482,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if(["so","debit","freight-quote","sq","tr","swb_loi"].includes(type)){
+    if(["so","debit","freight-quote","sq","tr","swb_loi","bl_sample"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
       var spR=await pool.query(
         "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
@@ -1605,6 +1605,33 @@ export default async function handler(req, res) {
         }catch(e){}
         const { renderSwbLoi } = await import("./docs/swb-loi.js");
         ({ html, _xlsCapture, totRow } = await renderSwbLoi({ sp, spraw, cfg3, shipperName:_shName, shipperAddr:_shAddr, shipperAddrEn:_shAddrEn, signerName:_signer, sigDataUri:_sigDataUri, sealRotDeg:_sealRot, consignee:_swbCnee, consAddr:_swbCneeAddr, carrierTo:_swbTo, formRef:_formRef, stampUrl:_stampUrl, vessel, voyage, polSp, podSp, html, _xlsCapture, totRow, ap, esc, pick, fmtD }));
+      }
+
+      if(type==="bl_sample"){
+        // 提单样单/补料 Excel（可改·客户复用）——出货人/收货人/HS/柜/重量全数据驱动
+        var _blsh = pick(sp.issuing_company, cfg3.nameEN, "");
+        var _blShName=_blsh, _blShAddrEn="";
+        try{ var _bc=await pool.query("SELECT name_en,name_cn,address_en FROM companies WHERE name_cn=$1 OR name_en=$1 LIMIT 1",[_blsh]); if(_bc.rows[0]){ _blShName=_bc.rows[0].name_en||_bc.rows[0].name_cn||_blsh; _blShAddrEn=_bc.rows[0].address_en||""; } }catch(e){}
+        var _blCneeR=await pool.query("SELECT customer FROM orders WHERE shipping_plan_id=$1 AND COALESCE(customer,'')<>'' ORDER BY order_no LIMIT 1",[sp.id]);
+        var _blCnee=(_blCneeR.rows[0]&&_blCneeR.rows[0].customer)||pickClean(sp.customer_en,sp.customer)||"";
+        var _blCneeAddr="";
+        try{ var _bca=await pool.query("SELECT address FROM companies WHERE name_en=$1 OR name_cn=$1 LIMIT 1",[_blCnee]); if(_bca.rows[0]) _blCneeAddr=_bca.rows[0].address||""; }catch(e){}
+        var _blA={};
+        try{ var _blAgg=await pool.query("SELECT string_agg(DISTINCT oli.hs_code,',') AS hs, string_agg(DISTINCT NULLIF(oli.bl_description,''),' / ') AS descr, SUM(oli.qty_ctn) AS ctn, ROUND(SUM(COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,2) AS gw, ROUND(SUM(COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3) AS cbm FROM orders o JOIN order_line_items oli ON oli.order_id=o.id WHERE o.shipping_plan_id=$1",[sp.id]); _blA=_blAgg.rows[0]||{}; }catch(e){}
+        var _blCtns=[];
+        try{ var _blCtnR=await pool.query("SELECT container_no,seal_no,container_type,vgm_weight_kg,cargo_weight_kg FROM container_bookings WHERE shipping_plan_id=$1 ORDER BY container_no",[sp.id]); _blCtns=_blCtnR.rows.map(function(c){ return { no:c.container_no, seal:c.seal_no, type:c.container_type, vgm:c.vgm_weight_kg, pkgs:_blA.ctn, gw:c.cargo_weight_kg, cbm:_blA.cbm }; }); }catch(e){}
+        const { renderBlSampleXlsx } = await import("./docs/bl-sample-xlsx.js");
+        var _blBuf = await renderBlSampleXlsx({
+          shipperName:_blShName, shipperAddrEn:_blShAddrEn, blNo:pick(sp.bl_no,""),
+          releaseType:(sp.release_type||"")+(/swb/i.test(sp.release_type||"")?" 海运单":(/电放/.test(sp.release_type||"")?"":"")),
+          payTerm:"P（待确认）", consignee:_blCnee, consAddr:_blCneeAddr, hsCode:_blA.hs||"", showHs:true,
+          vessel:vessel, voyage:voyage, pol:polSp, pod:podSp, finalDest:podSp,
+          marks:"N/M", totalCtn:_blA.ctn, description:_blA.descr||"CAT LITTER", gwKg:_blA.gw, cbm:_blA.cbm, containers:_blCtns,
+          warnings:["⚠ 付款方式 P/C 请确认后再发（成交方式需与客户核对）","VGM 称重方式：Method 2 累加计算法（货重 = 净重 + 纸箱 + 托盘）"]
+        });
+        res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition",'attachment; filename="'+("BL-Sample-"+(sp.bl_no||sp.id))+'.xlsx"');
+        return res.send(_blBuf);
       }
     }
 

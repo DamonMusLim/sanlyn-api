@@ -25,7 +25,7 @@ async function resolveRoleToken(pool, raw, roles) {
 // 车队只能拿 SO（托书）；报关行 SO + CD（报关底稿，ref 必须是本票挂的订单号）。
 const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl", "quarantine"], customer_booking: ["pack"],
   factory_booking: ["upload"],
-  supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl", "quarantine"] };
+  supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl", "quarantine", "bl_sample"] };
 
 async function handleFileProxy(req, res, pool) {
   const { token: raw, type, ref, aud } = req.query || {};
@@ -37,6 +37,18 @@ async function handleFileProxy(req, res, pool) {
   let docId;
   // 电放/SWB 保函：真源是 documents?type=tr（渲染「电放申请书暨保函」）。
   // 旧路由错把 telex 发给 shipping-plan-pdf，而它没有 telex 渲染器→回退成「海运计划确认书」(Damon 0812 指出)。
+  if (type === "bl_sample") {
+    // 提单样单/补料 Excel（可改·客户复用）→ documents?type=bl_sample
+    const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 });
+    const urlX = `http://127.0.0.1:9000/api/db/documents?type=bl_sample&id=${encodeURIComponent(auth.planId)}&token=${encodeURIComponent(jwtX)}`;
+    try {
+      const up = await fetch(urlX);
+      res.status(up.status);
+      const ct = up.headers.get("content-type"); if (ct) res.setHeader("Content-Type", ct);
+      const cd = up.headers.get("content-disposition"); if (cd) res.setHeader("Content-Disposition", cd);
+      return res.end(Buffer.from(await up.arrayBuffer()));
+    } catch (e) { return res.status(502).json({ ok: false, error: "提单样单服务不可用" }); }
+  }
   if (type === "telex") {
     // 保函按放单方式选模板：SWB→海运单保函(swb_loi)，电放/其它→电放申请书暨保函(tr)。id=planId 最稳。
     const { rows: _rr } = await pool.query(`SELECT release_type FROM shipping_plans WHERE id=$1`, [auth.planId]);
