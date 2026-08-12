@@ -168,7 +168,10 @@ function renderBillingEntry(billing, s){
       const pc = segData.port_charge || {status:'待贵司填', amount:{}};
       const pcMoney = moneyMap(pc.amount);
       summary = [s.pol||'起点', s.pod||'港口'].join(' → ') + ' · 港杂 ' + (pcMoney || (pc.status||'待填'));
-      detail = `<div style="font-size:12px;color:#374151;font-weight:800;">🚢 海运费：${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>
+      detail = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="font-size:12px;color:#374151;font-weight:800;">🔒 海运费：${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>
+          <span class="badge badge-blue" style="font-size:10px;">已锁价 · 只读</span></div>
+        <div style="font-size:10px;color:#9ca3af;margin-top:3px;">海运费以报价中心已报价为准，此处不可改；如有异议请联系我方。</div>
         <div style="margin-top:12px;border-top:1px dashed #e5e7eb;padding-top:10px;">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:12px;font-weight:800;color:#374151;">⚓ 港杂费</span><span class="badge ${chipTone(pc.status)}">${esc(pc.status||'待贵司填')}</span></div>
           ${portChargeEditor()}
@@ -232,16 +235,16 @@ function buildTodoPopup(items){
     document.body.appendChild(m);
   }
   const rows = items.length
-    ? items.map((it,i)=>`<button onclick="jumpTo('${it.target}')" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:11px 13px;margin-bottom:8px;cursor:pointer;font-family:inherit;">
-        <span style="width:22px;height:22px;border-radius:50%;background:#f59e0b;color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
-        <span style="flex:1;"><span style="font-size:13px;font-weight:800;color:#92400e;">${esc(it.label)}</span><br><span style="font-size:11px;color:#a16207;">${esc(TODO_HINT[it.target]||'')}</span></span>
-        <span style="color:#1a73e8;font-weight:900;">›</span></button>`).join('')
-    : `<div style="text-align:center;padding:20px;color:#059669;font-weight:800;">✅ 资料已齐全，感谢配合</div>`;
-  m.innerHTML = `<div style="position:absolute;left:50%;top:12%;transform:translateX(-50%);width:min(460px,92vw);background:#fff;border-radius:14px;padding:18px;" onclick="event.stopPropagation()">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-      <div style="font-size:15px;font-weight:900;color:#1a1d23;">📋 待办清单${items.length?'（'+items.length+'项）':''}</div>
-      <span style="cursor:pointer;color:#9ca3af;font-weight:800;" onclick="document.getElementById('todoModal').style.display='none'">✕</span></div>
-    <div style="font-size:11px;color:#6b7280;margin-bottom:12px;">点任意一项，直接跳到要填/要传的地方</div>
+    ? items.map((it,i)=>`<button type="button" onclick="jumpTo('${it.target}')" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:1.5px solid #fde68a;background:#fffbeb;border-radius:11px;padding:16px 16px;margin-bottom:11px;cursor:pointer;font-family:inherit;">
+        <span style="width:30px;height:30px;border-radius:50%;background:#f59e0b;color:#fff;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
+        <span style="flex:1;"><span style="font-size:15px;font-weight:800;color:#92400e;">${esc(it.label)}</span><br><span style="font-size:12px;color:#a16207;">${esc(TODO_HINT[it.target]||'')}</span></span>
+        <span style="color:#1a73e8;font-weight:900;font-size:18px;">›</span></button>`).join('')
+    : `<div style="text-align:center;padding:26px;color:#059669;font-weight:800;font-size:15px;">✅ 资料已齐全，感谢配合</div>`;
+  m.innerHTML = `<div style="position:absolute;left:50%;top:8%;transform:translateX(-50%);width:min(600px,94vw);background:#fff;border-radius:16px;padding:24px;box-shadow:0 12px 48px rgba(0,0,0,.28);" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <div style="font-size:18px;font-weight:900;color:#1a1d23;">📋 待办清单${items.length?'（'+items.length+'项）':''}</div>
+      <span style="cursor:pointer;color:#9ca3af;font-weight:800;font-size:18px;padding:4px 8px;" onclick="document.getElementById('todoModal').style.display='none'">✕</span></div>
+    <div style="font-size:13px;color:#6b7280;margin-bottom:16px;">点任意一项，直接跳到要填 / 要传的地方 👇</div>
     ${rows}</div>`;
 }
 function openTodoPopup(){ const m=document.getElementById('todoModal'); if(m) m.style.display='block'; }
@@ -341,20 +344,25 @@ function truckExtraFeeEditor(){
 function addTruckFeeRow(){
   const tb = document.getElementById('truckExtraRows'); if(!tb) return;
   const id = 'tkf_' + (tb.children.length + 1) + '_' + token.slice(0,4);
-  tb.insertAdjacentHTML('beforeend', `<div id="${id}" style="display:grid;grid-template-columns:1fr 84px 92px auto;gap:6px;margin-bottom:6px;align-items:center;">
-    <input placeholder="费目 如 超时费" style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
-    <input type="number" min="0" step="0.01" placeholder="金额" style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
-    <select style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;"><option value="">付款方</option><option value="我方">我方</option><option value="工厂">工厂</option><option value="货代">货代</option></select>
-    <button class="btn btn-blue btn-sm" onclick="submitTruckFee('${id}')">提报</button></div>`);
+  tb.insertAdjacentHTML('beforeend', `<div id="${id}" style="border:1px solid #eef0f3;border-radius:8px;padding:8px;margin-bottom:8px;">
+    <div style="display:grid;grid-template-columns:1fr 84px 92px auto;gap:6px;align-items:center;">
+      <input placeholder="费目 如 超时费" style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
+      <input type="number" min="0" step="0.01" placeholder="金额" style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
+      <select style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;"><option value="">付款方</option><option value="我方">我方</option><option value="工厂">工厂</option><option value="货代">货代</option></select>
+      <button class="btn btn-blue btn-sm" onclick="submitTruckFee('${id}')">提报</button>
+    </div>
+    <input class="tkf-note" placeholder="备注（如 超时2天 / 压夜费 / 车队要求）" style="width:100%;border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;margin-top:6px;">
+  </div>`);
 }
 async function submitTruckFee(id){
   const tr = document.getElementById(id); if(!tr) return;
   const ins = tr.querySelectorAll('input'), sel = tr.querySelector('select');
   const cost = (ins[0]?.value||'').trim(), amount = ins[1]?.value||'', payer = sel?.value||'';
+  const note = (tr.querySelector('.tkf-note')?.value||'').trim();
   if(!cost || !amount || !payer){ toast('费目、金额、付款方必填'); return; }
   try{
     const r = await fetch(`${API}/collab-bill-submit`, {method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({token, action:'add', cost_category:cost, charge_basis:'per_bl', currency:'CNY', unit_price:amount, amount, reason:'拖车其他费用·付款方:'+payer})});
+      body:JSON.stringify({token, action:'add', cost_category:cost, charge_basis:'per_bl', currency:'CNY', unit_price:amount, amount, reason:'拖车其他费用·付款方:'+payer+(note?'·备注:'+note:'')})});
     const d = await r.json().catch(()=>({}));
     if(!r.ok || !d.ok) throw new Error(d.error || '提报失败');
     toast('已提报「'+cost+'·'+payer+'付」，待我方确认');
