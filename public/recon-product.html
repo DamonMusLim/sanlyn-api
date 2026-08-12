@@ -48,7 +48,7 @@ var table=SanlynTable.mount(document.getElementById("app"),{
   sumKeys:["goods_cost","goods_sale","declared_amount","received_cny"],
   columns:[
     {key:"etd",label:"日期",render:function(r,h){return h.esc(String(r.etd||"").slice(0,10))}},
-    {key:"factory",label:"工厂",fold:true,render:function(r,h){return foldTxt(r.factory," / ")}},
+    {key:"factory",label:"工厂",fold:true,render:function(r,h){return foldTxt(r.factory," / ")+(r.external_src?' <b title="外单(内部标记)" style="color:#b45309">·外</b>':"")}},
     {key:"customer",label:"客户",render:function(r,h){return h.esc(String(r.customer||"—").slice(0,16))}},
     {key:"po_nos",label:"PO号",type:"fold",sep:"+",show:3},
     {key:"bl_no",label:"BL",gap:"缺BL"},

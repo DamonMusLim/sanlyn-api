@@ -33,10 +33,11 @@ function docsCell(r,h){var t=h.token(),bl=r.bl_no||"",name=String(r.customer||"-
   if(!links.length)return h.esc(name);
   // links 顺序: 合并版在最上
   return '<span class="po-head">'+h.esc(name.slice(0,10))+' 📎'+links.length+'</span><span class="po-full">'+h.esc(name)+'<br>'+links.join("<br>")+'</span>'}
-function factoryCell(r,h){var parts=String(r.factory||"").split(" / ").filter(Boolean),pos=String(r.po_nos||"").split("+").filter(Boolean);
+function factoryCell(r,h){var ext=r.external_src?' <b title="外单(内部标记)" style="color:#b45309">·外</b>':'';
+  var parts=String(r.factory||"").split(" / ").filter(Boolean),pos=String(r.po_nos||"").split("+").filter(Boolean);
   var links=pos.map(function(p){return '<a target="_blank" href="/data#orders?order_no='+encodeURIComponent(p)+'">'+h.esc(p)+' 订单账</a>'});
   if(!parts.length&&!links.length)return '<span class="nil">-</span>';
-  return '<span class="po-head">'+h.esc((parts[0]||"-").slice(0,10))+(parts.length>1?' <b class="po-more">+'+(parts.length-1)+'</b>':'')+' 📎</span><span class="po-full">'+h.esc(parts.join(" / ")||"-")+'<br>'+links.join("<br>")+'</span>'}
+  return '<span class="po-head">'+h.esc((parts[0]||"-").slice(0,10))+ext+(parts.length>1?' <b class="po-more">+'+(parts.length-1)+'</b>':'')+' 📎</span><span class="po-full">'+h.esc(parts.join(" / ")||"-")+'<br>'+links.join("<br>")+'</span>'}
 function rowEdit(r){var out=[];(r.orders||[]).forEach(function(o){if(!o.po)return;
   out.push({label:o.po+" 工厂成本",kind:"order",key:o.po,field:"goods_cost",value:o.cost||0});
   out.push({label:o.po+" 客户售价",kind:"order",key:o.po,field:"goods_sale",value:o.sale||0})});

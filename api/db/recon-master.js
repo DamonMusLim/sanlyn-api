@@ -60,6 +60,7 @@ order_groups AS (
          SUM(COALESCE(factory_total_amount, total_amount_factory, factory_amount, 0)) AS goods_cost,
          SUM(COALESCE(customer_amount, total_amount, 0)) AS goods_sale,
          bool_or(COALESCE(remarks,'') LIKE '%客户自提%') AS self_pickup,
+         bool_or(COALESCE(remarks,'') LIKE '%[外单]%') AS external_src,
          bool_or(COALESCE(remarks,'') LIKE '%混单报关%') AS merged_decl,
          json_agg(json_build_object('po', COALESCE(order_no, contract_no),
                   'cost', COALESCE(factory_total_amount, total_amount_factory, factory_amount, 0),
@@ -106,6 +107,7 @@ joined AS (
          COALESCE(og.po_nos, pg.plan_orders, pg.plan_contracts) AS po_nos,
          og.orders, pg.plan_contracts,
          COALESCE(og.self_pickup,false) AS self_pickup, COALESCE(og.merged_decl,false) AS merged_decl,
+         COALESCE(og.external_src,false) AS external_src,
          COALESCE(og.customer, pg.plan_customer) AS customer, og.factory,
          COALESCE(og.etd, pg.etd) AS etd, og.trade_terms,
          COALESCE(og.goods_cost,0) AS goods_cost, COALESCE(og.goods_sale,0) AS goods_sale,
@@ -151,7 +153,7 @@ decl AS (
     ) x ON TRUE
    GROUP BY j.group_key
 )
-SELECT j.po_nos, j.orders, j.bl_no, j.etd, j.trade_terms, j.customer, j.factory,
+SELECT j.po_nos, j.orders, j.external_src, j.bl_no, j.etd, j.trade_terms, j.customer, j.factory,
        ROUND(j.goods_cost::numeric,2) AS goods_cost,
        ROUND(j.goods_sale::numeric,2) AS goods_sale,
        ROUND(j.ocean_cost_usd::numeric,2) AS ocean_cost_usd,
