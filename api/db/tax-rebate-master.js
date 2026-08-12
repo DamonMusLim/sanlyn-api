@@ -14,11 +14,19 @@ WITH -- 工厂名归一：进项票销方名、订单 factory 都是自由文本
 --  部门账户不合并，但法人只有一个）。
 -- 一律过 companies 归到法人正式名；merged_into_code 再跳一次到存续公司。
 fac_alias AS (
-  SELECT v.variant, COALESCE(m.name_cn, co.name_cn) AS canon
+  -- ⛔ 必须 DISTINCT ON(variant)：同一法人在 companies 里可能有多行
+  -- （中宠 3 行：zc-brand / DEPRECATED-zc-oem / VEN-ZC），不去重会把逐项行放大 3 倍，
+  -- 0812 实测中宠催票额被算成 ¥2,240,431（真值 ¥982,444）、实退直接算不出来。
+  -- 排序取「未合并、未废弃」的那条为准。
+  SELECT DISTINCT ON (v.variant) v.variant, COALESCE(m.name_cn, co.name_cn) AS canon
     FROM companies co
     CROSS JOIN LATERAL (VALUES (co.name_cn),(co.factory_name),(co.short_name)) AS v(variant)
     LEFT JOIN companies m ON m.code = co.merged_into_code
    WHERE COALESCE(v.variant,'') <> ''
+   ORDER BY v.variant,
+            (co.merged_into_code IS NULL) DESC,
+            (co.code NOT LIKE 'DEPRECATED%') DESC,
+            co.id
 ),
 decl AS (
   SELECT f.customs_no, f.export_date, f.contract_no, f.fob_cny,
@@ -125,7 +133,20 @@ ckts AS (
                FROM order_line_items l3 JOIN orders o3 ON o3.id = l3.order_id
               WHERE o3.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                  OR (d.contract_no <> '' AND o3.contract_no <> '' AND d.contract_no LIKE '%'||o3.contract_no||'%')))
-    ) AS line_factory_raw,
+      ,
+    -- ⑥ 整票只对应【一张订单】且该订单只有一家工厂 → 所有行都是它。
+    --    比第⑤档硬：⑤ 是「多张订单碰巧同厂」需过金额覆盖闸门（171960 就是在这翻的车，
+    --    那票挂了 3 张订单、订单只覆盖 55%，毛绒用品被错兜给中砂）；
+    --    这一档要求报关单只映射到一张订单，不存在"另一家工厂的货混在同一票"的可能。
+    --    521266 实例：53 个 SKU 被报关行归并成 3 个项号，逐项金额跟订单行完全对不上，
+    --    但三项合计 ¥502,456.40 = 37-ZC-20 全额，合同号 CP26031415 也对得上。
+    (SELECT CASE WHEN count(DISTINCT o.order_no) = 1 AND count(DISTINCT o.factory) = 1
+                 THEN max(o.factory) END
+       FROM orders o
+      WHERE COALESCE(o.factory,'') <> ''
+        AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+             OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')))
+  ) AS line_factory_raw,
     -- 证据出处（页面必须如实显示是哪一档判出来的，不能一律写「进项票实证」）
     CASE
       WHEN EXISTS (SELECT 1 FROM finance_invoices_in i3, jsonb_array_elements(i3.line_items) li3
@@ -141,6 +162,10 @@ ckts AS (
                     WHERE l.qty_ctn = c.qty AND o.factory <> ''
                       AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                            OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))) THEN '订单箱数'
+      WHEN EXISTS (SELECT 1 FROM orders o2 WHERE COALESCE(o2.factory,'') <> ''
+                     AND (o2.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+                          OR (d.contract_no <> '' AND o2.contract_no <> '' AND d.contract_no LIKE '%'||o2.contract_no||'%')))
+        THEN '整票单订单单工厂'
       ELSE '整票唯一厂' END AS factory_src,
     -- 行级 PO：跟工厂第③/③b档同一套匹配（报关品名 → 订单箱数），唯一命中才给，不唯一就留空。
     -- 票级 order_nos 是「这票涉及的所有 PO」，贴到行上会误导，所以两个都给、页面分开显示。
