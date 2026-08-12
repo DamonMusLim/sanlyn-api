@@ -67,7 +67,7 @@ export function renderBlSampleHtml(d){
   <h2>提单样单 / 补料（Shipping Instruction）</h2>
   <table class="no"><tr><td class="k">Shipper 发货人</td><td>${e(d.shipperName)}${d.shipperAddrEn?"<br>ADD: "+e(d.shipperAddrEn):""}</td><td class="k">提单号</td><td>${e(d.blNo)}</td></tr>
   <tr><td class="k">Consignee 收货人</td><td>${e(d.consignee)}${d.consAddr?"<br>"+e(d.consAddr):""}</td><td class="k">出单方式 / HS</td><td>${e(d.releaseType||"SWB 海运单")} · HS ${e(d.hsCode)}</td></tr>
-  <tr><td class="k">Notify 通知人</td><td>${e(d.notify||"SAME AS CONSIGNEE")}</td><td class="k">付款方式</td><td>${e(d.payTerm||"P（待确认）")}</td></tr>
+  <tr><td class="k">Notify 通知人</td><td>${e(d.notify||"SAME AS CONSIGNEE")}</td><td class="k">显示 HS</td><td>${d.showHs?"是":"否"}</td></tr>
   <tr><td class="k">船名航次</td><td>${e([d.vessel,d.voyage].filter(Boolean).join(" "))}</td><td class="k">装货港</td><td>${e(d.pol)}</td></tr>
   <tr><td class="k">卸货港</td><td>${e(d.pod)}</td><td class="k">最终目的地</td><td>${e(d.finalDest||d.pod)}</td></tr></table>
   <table style="margin-top:12px"><tr class="g"><th>唛头</th><th>总件数</th><th>货描</th><th>总重</th><th>体积</th></tr>

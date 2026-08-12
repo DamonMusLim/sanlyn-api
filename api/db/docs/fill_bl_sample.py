@@ -24,7 +24,8 @@ def s(addr, val):
 s("A2", (d.get("shipperName", "") or "") + (("\nADD: " + d["shipperAddrEn"]) if d.get("shipperAddrEn") else ""))
 s("F2", d.get("blNo", ""))
 s("F3", d.get("releaseType", "") or "SWB 海运单")
-s("F4", d.get("payTerm", "") or "P（待确认）")
+s("E4", "")  # 付款方式去掉（Damon 0813）
+s("F4", "")
 s("F5", d.get("hsCode", ""))
 s("F6", "是 ( V )    否 (   )" if d.get("showHs") else "是 (   )    否 ( V )")
 s("A6", (d.get("consignee", "") or "") + (("\n" + d["consAddr"]) if d.get("consAddr") else ""))
