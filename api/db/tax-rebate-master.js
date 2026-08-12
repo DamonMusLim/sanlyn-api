@@ -49,6 +49,8 @@ ckts AS (
   SELECT d.customs_no, c.item_no, c.hs_code, c.goods_name, c.qty, c.unit,
     c.amount_cny, c.declared_flag,
     (c.raw::jsonb->>'region') AS source_region,
+    -- 申报表口径（自造 xls 导入用）：出口商品代码走 tzhckspDm，美元离岸价用税局原值
+    c.decl_code, c.usd_fob, c.ckbgdh, c.ckfph, c.legal_unit, c.legal_qty,
     (c.raw::jsonb->>'nw_total') AS nw_total,
     -- 退税联的「法定数量」单位是千克时，它就是该行净重
     -- 净重：① 我们自己的报关单逐项（Damon 0812：以我们的报关单数据为准）
@@ -146,6 +148,9 @@ ckts_agg AS (
       'item_no', item_no, 'hs', hs_code, 'name', goods_name, 'qty', qty, 'unit', unit,
       'nw', line_nw, 'amt', amount_cny, 'rate', rate,
       'invoice_no', invoice_no2, 'factory', line_factory, 'factory_src', factory_src,
+      -- 申报表口径：出口商品代码=tzhckspDm，美元离岸价=税局原值，法定单位/数量
+      'decl_code', decl_code, 'usd_fob', usd_fob, 'ckbgdh', ckbgdh,
+      'ckfph', ckfph, 'legal_unit', legal_unit, 'legal_qty', legal_qty,
       'region', source_region,
       'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
       'region_factory', NULL,
@@ -238,7 +243,9 @@ agg AS (
     json_agg(json_build_object(
       'item_no', item_no, 'hs', hs_code, 'name', name, 'qty', qty, 'unit', unit,
       'nw', nw, 'amt', amt, 'rate', rate, 'invoice_no', invoice_no2,
-      'factory', line_factory, 'factory_src', factory_src, 'region', source_region,
+      'factory', line_factory, 'factory_src', factory_src,
+      'decl_code', NULL, 'usd_fob', NULL, 'ckbgdh', NULL,
+      'ckfph', NULL, 'legal_unit', NULL, 'legal_qty', NULL, 'region', source_region,
       'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
       'region_factory', NULL,
       'line_rebate', CASE WHEN rate IS NOT NULL AND amt IS NOT NULL

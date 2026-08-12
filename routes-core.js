@@ -337,6 +337,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/ciq-merged",                 () => import("./api/db/ciq-merged.js")); // 合并报检要素(一票多柜合并成一份检疫申请, 只出要素不申报) 2026-08-08
   mount("/api/db/doc-delivery",               () => import("./api/db/doc-delivery.js")); // 对外发资料: 按收件方出清单(报关行/船东要xlsx能复制)+发件留痕 2026-08-08
   mount("/api/db/decision-rules",             () => import("./api/db/decision-rules.js")); // DNA规则读写: 两步确认存候选·认可3次升active·改2次降级 2026-08-10
+  mount("/api/db/customs-entries",            () => import("./api/db/customs-entries.js")); // 报关单编号读写(邮件自动入库的落点·entry_id幂等·匹配不到票就404不建票) 2026-08-12
   mount("/api/db/inspection-ocr",             () => import("./api/db/inspection-ocr.js")); // 商检单/报检单 OCR (MiniMax-M3) 2026-07-05
   mount("/api/db/cert-application-sheets",    () => import("./api/db/cert-application-sheets.js"));
   mount("/api/db/trucking-pickup-sheets",     () => import("./api/db/trucking-pickup-sheets.js"));
