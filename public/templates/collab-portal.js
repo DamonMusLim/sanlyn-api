@@ -81,8 +81,9 @@ function renderHero(s, ps){
 function fileLink(type, ref, aud){ return window._fileURL ? window._fileURL(type, ref, aud) : '#'; }
 function docRow(icon, label, href, source){
   const safe = esc(href);
+  const tag = source ? `<span class="doc-tag">${esc(source)}</span>` : '';   // 去掉「规则自动」等标签，全变纯模块
   return `<div class="doc-row"><span>${icon}</span><div class="doc-row-main">${esc(label)}</div>
-    <span class="doc-tag">${esc(source)}</span>
+    ${tag}
     <div class="doc-actions"><a class="icon-link" href="${safe}" target="_blank" title="预览">👁</a><a class="icon-link" href="${safe}" target="_blank" download title="下载">⬇</a></div></div>`;
 }
 function requirementDocs(s){
@@ -101,18 +102,17 @@ function renderOurDocs(s){
   $('dlPackAll').href = fileLink('pack', '', 'customs');
   const rel = releaseMeta(s.release_type);
   const releaseRows = rel.show
-    ? [[rel.hi?'🟢':'📠', rel.doc, fileLink('telex'), rel.hi?'我方已备':'规则自动']]
+    ? [[rel.hi?'🟢':'📠', rel.doc, fileLink('telex'), rel.hi?'我方已备':'']]
     : [];
   const groups = [
     ['抬头资料', [
-      ['🏢','订舱委托 / Booking Instruction', fileLink('so'), '规则自动'],
+      ['🏢','订舱委托 / Booking Instruction', fileLink('so'), ''],
       ...releaseRows,
-      ...(s.is_transfer ? [['🔁','内转外信息表', fileLink('transfer'), '规则自动']] : [])
+      ...(s.is_transfer ? [['🔁','内转外信息表', fileLink('transfer'), '']] : [])
     ]],
+    // 货代/船东只需订舱委托 / SO / 保函；不看客户的 PL·SC·IV 合并版 和 报关单
     ['本票单据', [
-      ['📋','排载单 / SO', fileLink('so'), '规则自动'],
-      ['🛂','报关单（海关格式·数据已填）', fileLink('customs_decl'), '规则自动'],
-      ['📦','PL · SC · IV 合并版', fileLink('pack','','customs'), '规则自动']
+      ['📋','排载单 / SO', fileLink('so'), '']
     ]]
   ];
   const certs = requirementDocs(s).map(x => [x[0], x[1], x[2], '贵司提请']);
@@ -170,6 +170,36 @@ function renderBillingEntry(billing, s){
   $('billingSubV2').textContent = canOpen ? '海运费 / 拖车费 / 港杂费 / 报关费' : '当前链接暂无可打开账单';
 }
 
+// 顶部提醒：第一时间告诉货代还差什么没填/没传/没确认（Damon 0812）
+function renderReminder(s){
+  const sub = $('bannerSub'), badge = $('bannerBadge');
+  if(!sub) return;
+  const items = [];
+  const ups = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
+  // SO 订舱确认没传
+  const hasSO = ups.some(u=>/(^|[^A-Z])S\/?O([^A-Z]|$)|入货|排载|配舱|舱单|订舱确认|manifest|放箱/i.test(u.filename||''));
+  if(!hasSO) items.push('SO 订舱确认未上传');
+  // 提单没传 / 提单号没填
+  const hasBL = !!s.bl_no || ups.some(u=>/\bBL\b|提单/i.test(u.filename||''));
+  if(!hasBL) items.push('提单 B/L 未上传');
+  // 费用待填（港杂 / 报关）——没人报=还得他填
+  const seg = (_billSummary && _billSummary.segments) || {};
+  const feeLabel = { port_charge:'港杂费', customs:'报关费', ocean:'海运费', trucking:'拖车费' };
+  const filled = x => !!(x && (x.status==='已录入' || x.status==='已确认'
+    || (x.reported_by && x.reported_by.length)
+    || (x.amount && Object.values(x.amount).some(n=>Number(n)>0))));
+  ['port_charge','customs'].forEach(k=>{ if(!filled(seg[k])) items.push(feeLabel[k]+'待填'); });
+  // 账单没确认
+  const billConfirmed = !!localStorage.getItem('collab_bill_checked_'+token);
+  if(!billConfirmed) items.push('账单未确认');
+  if(items.length){
+    sub.innerHTML = '还差：' + items.map(t=>esc(t)).join(' · ');
+    if(badge){ badge.textContent = '需补齐 ' + items.length + ' 项'; badge.className = 'badge badge-red'; }
+  } else {
+    sub.textContent = '资料已齐全，感谢配合';
+    if(badge){ badge.textContent = '已齐全'; badge.className = 'badge badge-green'; }
+  }
+}
 function toggleBill(k){ document.getElementById('bill_'+k)?.classList.toggle('open'); }
 function portChargeEditor(){
   return `<table class="bill-edit-table"><thead><tr><th>费目</th><th>计价单位</th><th>单价</th><th>金额</th><th></th></tr></thead>
@@ -234,8 +264,8 @@ async function boot(){
 
   segs = ps.segments || ['ocean','truck','customs'];
   $('topBadge').textContent = ps.company_label || '供应链端口';
-  $('bannerTitle').textContent = (ps.company_label || '贵司') + ' — ' + segs.map(x=>SEG_META[x].label).join('+');
-  $('bannerSub').textContent = '贵司承包：' + segs.map(x=>SEG_META[x].label).join('+') + ' ＝ ' + (ps.company_label || '贵司') + (segs.length>=3 ? ' · 一个口全干' : '');
+  $('bannerTitle').textContent = '请填写资料';
+  $('bannerSub').textContent = '正在检查待办事项…';   // 由 renderReminder() 覆盖为「还差什么」
   renderHero(s, ps);
   const chips=[];
   // 航线只给海运方(货代)看；纯车队/报关方不需要知道 POL→POD
@@ -307,7 +337,7 @@ async function boot(){
     const sec = $('blNoSection_v2') || $('blNoSection');
     if (!sec) return;
     if (s.bl_no) {
-      sec.innerHTML = `<div style="background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 提单号已提交：<span style="color:#1a1d23;">${esc(s.bl_no)}</span> · 客户已可查看草稿</div>`;
+      sec.innerHTML = '';   // 去掉绿色「提单号已提交 · 客户已可查看草稿」条（Damon：没必要）
     } else if (blUps.length) {
       sec.innerHTML = `<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:10px 14px;">
         <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px;">📄 BL已上传 — 请填写提单号通知客户确认</div>
@@ -391,6 +421,7 @@ async function boot(){
   _billSheet = s;
   if(segs.includes('ocean')) await fetchBillSummary();
   renderBillingEntry(d.billing || {}, s);
+  renderReminder(s);   // 账单摘要就绪后，顶部提醒「还差什么」
   // 报关费·回传即确认（续页/加项由报关行自行加价，一次确认即结单）
   (function(){
     const seg = document.getElementById('seg-customs'); if(!seg) return;
@@ -454,7 +485,7 @@ async function submitBlNo(){
     if(!d.ok) throw new Error(d.error||'失败');
     if(window._sheetP) window._sheetP.bl_no = d.bl_no;
     const sec=$('blNoSection_v2') || $('blNoSection');
-    if(sec) sec.innerHTML=`<div style="background:#f0fdf4;border:1.5px solid #a7f3d0;border-radius:8px;padding:10px 14px;font-size:12px;color:#047857;font-weight:700;">✅ 提单号已提交：<span style="color:#1a1d23;">${esc(d.bl_no)}</span> · 客户已可查看草稿</div>`;
+    if(sec) sec.innerHTML='';   // 去掉绿色「提单号已提交」条，仅保留 toast 反馈
     toast('✓ 提单号已提交，客户可确认');
   }catch(e){toast('提交失败：'+e.message);if(btn){btn.disabled=false;btn.textContent='提交';}}
 }
