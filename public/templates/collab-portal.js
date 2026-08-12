@@ -84,7 +84,7 @@ function docRow(icon, label, href, source){
   const tag = source ? `<span class="doc-tag">${esc(source)}</span>` : '';   // 去掉「规则自动」等标签，全变纯模块
   return `<div class="doc-row"><span>${icon}</span><div class="doc-row-main">${esc(label)}</div>
     ${tag}
-    <div class="doc-actions"><a class="icon-link" href="${safe}" target="_blank" title="预览">👁</a><a class="icon-link" href="${safe}" target="_blank" download title="下载">⬇</a></div></div>`;
+    <div class="doc-actions"><a class="doc-btn" href="${safe}" target="_blank">👁 预览</a><a class="doc-btn" href="${safe}" target="_blank" download>⬇ 下载</a></div></div>`;
 }
 function requirementDocs(s){
   const cr = s.carrier_requirements || s.requirements || s.carrier_docs_required || null;
@@ -267,7 +267,7 @@ function truckContainerModule(s){
     const lv = liveByNo[c.container_no] || c;
     const cargo = Array.isArray(lv.cargo) ? lv.cargo : [];
     const ctn = cargo.reduce((a,x)=>a+Number(x.cartons||x.ctns||0),0) || Number(c.cartons||0) || '';
-    const cbm = c.cbm || c.cbm_m3 || lv.cbm || '';
+    const cbm = c.cbm || c.cbm_m3 || lv.cbm || (det.length===1 ? (s.total_cbm||'') : '');   // 单柜票兜底用本票总CBM
     const gw  = c.cargo_weight_kg || c.gw_kg || (cargo[0]&&cargo[0].gw_kg) || '';
     const vgm = c.vgm_weight_kg || '';
     const num = v => v==='' ? '—' : Number(v).toLocaleString();

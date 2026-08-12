@@ -276,6 +276,17 @@ async function handleValidate(req, res, pool) {
       sheet.quarantine_docs = quarantineDocs;              // 检疫报告清单（真源 document_uploads，每份带 ref=du.id）
       sheet.has_quarantine = quarantineDocs.length > 0;   // 兼容旧判断
       sheet.containers_live = cbRes.rows;
+      // 本票汇总(CBM/箱数/毛净重)：真源在 order_line_items(cbm_ctn×qty_ctn),plan级 total_cbm 常年空。
+      // 货代/工厂装柜要看 CBM，这里从订单行现算并回填(不覆盖已有非空值)。
+      (function(){
+        let cbm=0, ctn=0, gw=0;
+        (Array.isArray(sheet.orders)?sheet.orders:[]).forEach(o=>(Array.isArray(o&&o.items)?o.items:[]).forEach(it=>{
+          cbm+=Number(it.cbm||0); ctn+=Number(it.ctns||0); gw+=Number(it.gw_kgs||0);
+        }));
+        if((sheet.total_cbm==null||Number(sheet.total_cbm)===0) && cbm>0) sheet.total_cbm = Math.round(cbm*1000)/1000;
+        if((sheet.total_cartons==null||Number(sheet.total_cartons)===0) && ctn>0) sheet.total_cartons = ctn;
+        if((sheet.gross_weight_kg==null||Number(sheet.gross_weight_kg)===0) && gw>0) sheet.gross_weight_kg = Math.round(gw*10)/10;
+      })();
       // ⚠️ 不能塞进 freight_term:它在 FORBIDDEN_KEYS 硬黑名单里(对客条款,外部方一律不许见,
       //    与"发货人不得见下游客户"同属命脉红线)。工厂看的是【它自己那侧】,本就是另一个概念,
       //    所以用独立字段名 factory_purchase_term。
@@ -389,6 +400,9 @@ async function handleValidate(req, res, pool) {
           ...doneState(seq),
         };
       });
+      // 单柜票：本票 CBM 精确归到这唯一的柜（多柜按行归柜的映射 DB 里没有，只在票级给 total_cbm，前端标「本票」）
+      if (Array.isArray(sheet.containers_detail) && sheet.containers_detail.length === 1 && sheet.total_cbm != null)
+        sheet.containers_detail[0].cbm = Number(sheet.total_cbm);
       // 价格：只有客户能看，且只给卖价——cost 一律不出 API
       const costLines = Array.isArray(sheet._cost_lines_raw) ? sheet._cost_lines_raw : [];
       delete sheet._cost_lines_raw;
