@@ -458,6 +458,7 @@ async function handleFactorySubmit(req, res, pool) {
              || CASE WHEN $11::jsonb IS NULL THEN '{}'::jsonb
                 ELSE jsonb_build_object('factory_submits',
                   COALESCE(raw->'factory_submits','{}'::jsonb) || $11::jsonb) END
+             || jsonb_build_object('bl_confirmation', COALESCE(raw->'bl_confirmation','{}'::jsonb) || jsonb_build_object('factory_confirmed', true, 'factory_confirmed_at', to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'factory_label', $12::text))
      WHERE id = $5
      RETURNING freight_term, trucking_arrange, customs_arrange, factory_cargo_ready`,
     [effectiveReady, container_type || null, cargo_type || null, remarks || null, planId,
@@ -471,7 +472,7 @@ async function handleFactorySubmit(req, res, pool) {
            wood_packaging: req.body.attrs.wood_packaging === "yes" ? "yes" : "no",
            fumigation: ["yes","no"].includes(req.body.attrs.fumigation) ? req.body.attrs.fumigation : null,
          }) : null,
-     submitRec]
+     submitRec, myLabel]
   );
 
   // Insert into collab hub queue

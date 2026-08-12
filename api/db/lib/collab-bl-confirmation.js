@@ -5,6 +5,7 @@ const CLEARANCE_BY_COUNTRY = {
   bangladesh: ["TT ISSUING BANK", "TT REFERENCE NO.", "TT DATE", "IRC NO.", "IMPORTER TIN", "IMPORTER BIN"],
   bd: ["TT ISSUING BANK", "TT REFERENCE NO.", "TT DATE", "IRC NO.", "IMPORTER TIN", "IMPORTER BIN"],
 };
+let companyPreferenceReady = false;
 
 function rawObj(v) {
   if (!v) return {};
@@ -24,6 +25,10 @@ function addHours(v, h) {
 
 function clean(v, max = 500) {
   return String(v == null ? "" : v).trim().slice(0, max);
+}
+
+function boolOrNull(v) {
+  return typeof v === "boolean" ? v : null;
 }
 
 // 从中英混排里取英文段（客户页是全英文）。取不到就原样返回，⛔ 不自己翻译。
@@ -116,7 +121,11 @@ function snapshot(row) {
       seal_no: clean(x.seal_no, 40),
       type: clean(x.container_type, 40),
     })),
-    hs_show_on_bl: gate.hs_show_on_bl !== false,
+    factory_confirmed: gate.factory_confirmed === true,
+    factory_confirmed_at: iso(gate.factory_confirmed_at),
+    customer_confirmed: gate.status === "customer_confirmed",
+    customer_action_at: iso(gate.customer_action_at),
+    hs_show_on_bl: gate.hs_show_on_bl !== undefined ? gate.hs_show_on_bl !== false : row.bl_hs_show_default !== false,
     hs_lines: hsLines(row, gate),
     clearance_fields: clearanceFields(row, gate),
   };
@@ -137,6 +146,7 @@ async function validateCustomer(pool, token) {
 async function loadPlan(pool, planId) {
   const { rows } = await pool.query(
     `SELECT sp.id, sp.customer, sp.customer_en, sp.issuing_company, sp.raw,
+            COALESCE(cc.bl_hs_show_default, cn.bl_hs_show_default) AS bl_hs_show_default,
             (SELECT name_en FROM seller_profiles WHERE is_default = TRUE LIMIT 1) AS seller_name_en,
             sp.vessel, sp.voyage, sp.pol, sp.pod, sp.etd, sp.eta, sp.si_cutoff_date,
             COALESCE((SELECT json_agg(json_build_object(
@@ -150,10 +160,59 @@ async function loadPlan(pool, planId) {
                 'cbm', ROUND((COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3)))
                 FROM order_line_items oli WHERE oli.order_id=o.id), '[]'::json)))
               FROM orders o WHERE o.shipping_plan_id=sp.id), '[]'::json) AS orders
-       FROM shipping_plans sp WHERE sp.id=$1 LIMIT 1`,
+       FROM shipping_plans sp
+       LEFT JOIN companies cc ON cc.id = sp.customer_company_id
+       LEFT JOIN LATERAL (
+         SELECT c.bl_hs_show_default
+           FROM orders o JOIN companies c ON c.id = o.customer_company_id OR (o.customer <> '' AND (c.name_en = o.customer OR c.name_cn = o.customer))
+          WHERE o.shipping_plan_id = sp.id
+          ORDER BY o.id LIMIT 1
+       ) cn ON TRUE
+       WHERE sp.id=$1 LIMIT 1`,
     [planId]
   );
   return rows[0] || null;
+}
+
+async function ensureCompanyPreference(pool) {
+  if (companyPreferenceReady) return;
+  await pool.query(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS bl_hs_show_default boolean`);
+  companyPreferenceReady = true;
+}
+
+async function initGatePreference(pool, row) {
+  const raw = rawObj(row.raw);
+  const gate = rawObj(raw.bl_confirmation);
+  if (gate.hs_show_on_bl !== undefined || row.bl_hs_show_default === null || row.bl_hs_show_default === undefined) return row;
+  const next = { ...gate, hs_show_on_bl: row.bl_hs_show_default !== false };
+  await pool.query(
+    `UPDATE shipping_plans
+        SET raw=jsonb_set(COALESCE(raw,'{}'::jsonb), '{bl_confirmation}', $2::jsonb, true),
+            updated_at=NOW()
+      WHERE id=$1`,
+    [row.id, JSON.stringify(next)]
+  );
+  row.raw = { ...raw, bl_confirmation: next };
+  return row;
+}
+
+async function saveCompanyPreference(pool, planId, hsShow) {
+  const pref = boolOrNull(hsShow);
+  if (pref === null) return;
+  await ensureCompanyPreference(pool);
+  await pool.query(
+    `WITH matched AS (
+       SELECT DISTINCT c2.id FROM orders o JOIN companies c2 ON c2.name_en=o.customer OR c2.name_cn=o.customer WHERE o.shipping_plan_id=$1
+     ), target AS (
+       SELECT COALESCE(
+         (SELECT sp.customer_company_id FROM shipping_plans sp WHERE sp.id=$1),
+         (SELECT o.customer_company_id FROM orders o WHERE o.shipping_plan_id=$1 AND o.customer_company_id IS NOT NULL ORDER BY o.id LIMIT 1),
+         (SELECT CASE WHEN COUNT(*)=1 THEN MAX(id) END FROM matched)
+       ) AS id
+     )
+     UPDATE companies c SET bl_hs_show_default=$2 FROM target WHERE c.id=target.id`,
+    [planId, pref]
+  );
 }
 
 async function ensureEvents(pool) {
@@ -170,8 +229,10 @@ async function handleBlConfirmation(req, res, pool) {
   if (!token) return res.status(400).json({ ok: false, error: "token_required" });
   const planId = await validateCustomer(pool, token);
   if (!planId) return res.status(403).json({ ok: false, error: "invalid_token" });
-  const row = await loadPlan(pool, planId);
+  await ensureCompanyPreference(pool);
+  let row = await loadPlan(pool, planId);
   if (!row) return res.status(404).json({ ok: false, error: "not_found" });
+  row = await initGatePreference(pool, row);
   const snap = snapshot(row);
   if (req.method === "GET") return res.json({ ok: true, draft: snap });
 
@@ -182,13 +243,17 @@ async function handleBlConfirmation(req, res, pool) {
 
   await ensureEvents(pool);
   const raw = rawObj(row.raw);
+  const changes = (req.body?.changes && typeof req.body.changes === "object") ? req.body.changes : {};
   const next = {
     ...rawObj(raw.bl_confirmation),
     status: action === "confirm" ? "customer_confirmed" : "revision_requested",
     customer_action_at: new Date().toISOString(),
     customer_snapshot: snap,
-    changes: action === "request_changes" ? (req.body?.changes || {}) : null,
+    changes: action === "request_changes" ? changes : null,
   };
+  if (Array.isArray(changes.hs_lines)) next.hs_lines = changes.hs_lines.map((x, i) => ({ sku: clean(x?.sku || `Line ${i + 1}`, 80), code: clean(x?.code, 40) })).filter(x => x.sku || x.code);
+  if (typeof changes.hs_show_on_bl === "boolean") next.hs_show_on_bl = changes.hs_show_on_bl;
+  if (changes.clearance_docs && typeof changes.clearance_docs === "object" && !Array.isArray(changes.clearance_docs)) next.clearance_docs = changes.clearance_docs;
   if (action === "request_changes") next.timer_paused = true;
   await pool.query(
     `UPDATE shipping_plans
@@ -205,7 +270,8 @@ async function handleBlConfirmation(req, res, pool) {
     [planId, snap.version, action === "confirm" ? "customer_confirm" : "revision_request",
      JSON.stringify({ ...snap, changes: next.changes }), action, `${planId}:${action}:customer_page:${snap.version}`]
   );
-  return res.json({ ok: true, draft: { ...snap, status: next.status } });
+  if (action === "confirm") await saveCompanyPreference(pool, planId, next.hs_show_on_bl);
+  return res.json({ ok: true, draft: { ...snap, status: next.status, hs_lines: next.hs_lines || snap.hs_lines, hs_show_on_bl: next.hs_show_on_bl !== false, customer_confirmed: next.status === "customer_confirmed" } });
 }
 
 export { handleBlConfirmation };

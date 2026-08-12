@@ -42,6 +42,7 @@ async function boot(){
   // 2026-08-06 删「送港/ETD」:工厂只管做货装柜,船期港口是我方物流安排,不给上游看。
   // 后端 collab-field-profiles.js 的 factory profile 也已摘掉这些字段(只删前端 F12 还能看到)。
   if(s.factory_submitted) cells.push(cell('状态','✓ 已提交 · 可修改重交'));
+  const blc=s.bl_confirmation||{}; cells.push(cell('客户提单确认', blc.status==='customer_confirmed'?'✓ 客户已确认':'待客户确认'));
   const _q=ordersArr.reduce((t,o)=>t+(Number(o.total_qty)||0),0), _g=ordersArr.reduce((t,o)=>t+(Number(o.gross_weight)||0),0);
   if(_q&&!SCOPE) cells.push(cell('总箱数',_q.toLocaleString()+'箱'+(_g?' · '+_g.toLocaleString()+' kg':'')));
   $('infoGrid').innerHTML=cells.join('');

@@ -74,6 +74,7 @@ export function renderBlSampleHtml(d){
   <tr><td>${e(d.marks||"N/M")}</td><td>${d.totalCtn?n(d.totalCtn)+" CARTONS":""}</td><td>${e(d.description)}${d.hsCode?"<br>HS: "+e(d.hsCode):""}</td><td>${d.gwKg?n(d.gwKg,2)+" KGS":""}</td><td>${d.cbm?n(d.cbm,3)+" CBM":""}</td></tr></table>
   <div style="margin:12px 0 6px;font-weight:700">分箱信息（VGM = 货重 + 柜皮重）</div>
   <table class="g"><tr class="g"><th>CONTAINER NO</th><th>SEAL NO</th><th>TYPE</th><th>VGM (KGS)</th><th>NO OF PKGS</th><th>GROSS WEIGHT</th><th>MEASUREMENT</th></tr>${rows}</table>
+  <div class="w" style="margin-top:12px">${e(d.confirmStatusText||"⚠ 待双方确认提单信息（HS/货描）")}</div>
   <div class="w" style="margin-top:12px">⚠ 付款方式 P/C 请确认后再发（成交方式需与客户核对）<br>VGM 称重方式：Method 2 累加计算法（货重 = 净重 + 纸箱 + 托盘）</div>
   <div style="text-align:center;color:#9ca3af;font-size:11px;margin-top:14px">预览 · 关闭本页回到列表点「下载」可改 Excel</div>
   </div></body></html>`;

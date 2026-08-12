@@ -15,6 +15,7 @@ const PUBLIC_SHEET_FIELDS = [
   "customer_remarks", "customer_submitted_at", "factory_loading_done",
   "scope_missing", "pricing", "factory_progress", "orders", "factory_cargo",
   "factory_attrs", "factory_entry", "customer_item_notes", "customer_amend",
+  "bl_confirmation",
   "customs_arrange", "trucking_arrange", "forwarder_cn", "forwarder_en",
   "trucking_company_cn", "trucking_cn", "customs_broker_cn", "customs_cn",
   "logistics_provider_kind", "trade_owner_kind",

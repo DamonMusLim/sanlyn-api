@@ -375,11 +375,13 @@ window.renderBLDraft = function(){
   const locked = ['customer_confirmed','revision_requested','auto_submitted'].includes(d.status);
   const goods = blGoodsSummary(d);
   const cntrs = (d.containers||[]).map(x=>({container:x.container_no,type:x.type,seal:x.seal_no}));
+  const factoryStatus = d.factory_confirmed ? 'Factory confirmed products/HS' : 'Awaiting factory products/HS confirmation';
   $('blDraftBox').innerHTML = `
     <div class="bl-alert">
       <div id="blCountdown" style="font-weight:900;"></div>
       <div>${esc(tr('cust.autoSubmitWarn'))}</div>
       <div style="margin-top:4px;font-weight:800;">${esc(tr('cust.statusLine', { status:blStatusText(d.status), version:d.version }))}</div>
+      <div style="margin-top:4px;font-weight:800;">${esc(factoryStatus)}</div>
     </div>
     <div class="bl-doc">
       <div class="bl-grid">
@@ -396,6 +398,7 @@ window.renderBLDraft = function(){
       <div class="bl-lbl" style="margin-top:10px;">${esc(tr('cust.containerSeal'))}</div>
       <table class="bl-table"><thead><tr><th>${esc(tr('cust.containerNo'))}</th><th>${esc(tr('cust.type'))}</th><th>${esc(tr('cust.sealNo'))}</th></tr></thead><tbody>${blRows(cntrs,['container','type','seal'])}</tbody></table>
     </div>
+    <label style="display:block;margin-top:10px;font-size:12px;font-weight:800;">H.S. Code on B/L <select id="blConfirmHsShow" ${locked?'disabled':''} style="margin-left:8px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;"><option value="yes" ${d.hs_show_on_bl!==false?'selected':''}>show on B/L</option><option value="no" ${d.hs_show_on_bl===false?'selected':''}>do not show on B/L</option></select></label>
     <div class="bl-actions">
       <button class="btn btn-green" id="blOkBtn" onclick="submitBLConfirm()" ${locked?'disabled':''}>${esc(tr('cust.blOk'))}</button>
       <button class="btn btn-outline" onclick="openBLChanges()" ${locked?'disabled':''}>${esc(tr('cust.requestChanges'))}</button>
@@ -408,7 +411,9 @@ window.renderBLDraft = function(){
 window.submitBLConfirm = async function(){
   const btn = $('blOkBtn'); if(btn) btn.disabled = true;
   try{
-    const r = await fetch(BL_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,action:'confirm'})});
+    const cur = window._blDraft || {};
+    const changes = { hs_lines: cur.hs_lines || [], hs_show_on_bl: ($('blConfirmHsShow')||{}).value !== 'no' };
+    const r = await fetch(BL_API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,action:'confirm',changes})});
     const d = await r.json();
     if(!r.ok||!d.ok){ alert(d.error||'Submit failed'); if(btn) btn.disabled=false; return; }
     window._blDraft = d.draft; renderBLDraft();

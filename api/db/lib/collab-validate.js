@@ -60,6 +60,7 @@ async function handleValidate(req, res, pool) {
             sp.raw->'customer_item_notes' AS customer_item_notes,
             sp.raw->'factory_cargo' AS factory_cargo,
             sp.raw->'factory_attrs' AS factory_attrs,
+            sp.raw->'bl_confirmation' AS bl_confirmation,
             sp.raw->'customer_amend' AS customer_amend,
             sp.trucking_arrange, sp.customs_arrange,
             sp.forwarder_cn, sp.forwarder_en, sp.trucking_company_cn, sp.trucking_cn, sp.customs_broker_cn, sp.customs_cn,

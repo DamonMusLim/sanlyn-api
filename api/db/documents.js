@@ -1624,11 +1624,15 @@ export default async function handler(req, res) {
         var _blGate = (spraw && typeof spraw.bl_confirmation==="object" && spraw.bl_confirmation) ? spraw.bl_confirmation : {};
         var _blShowHs = _blGate.hs_show_on_bl !== false;   // 客户没设=默认显示
         if(Array.isArray(_blGate.hs_lines) && _blGate.hs_lines.length){ var _hsOv=_blGate.hs_lines.map(function(x){return x&&x.code;}).filter(Boolean); if(_hsOv.length) _blA.hs=_hsOv.join(","); }
-        var _blConfirmed = _blGate.status==="customer_confirmed";
+        var _blCustomerConfirmed = _blGate.status==="customer_confirmed";
+        var _blFactoryConfirmed = _blGate.factory_confirmed===true;
+        var _blConfirmed = _blCustomerConfirmed && _blFactoryConfirmed;
+        var _blConfirmStatusText = _blConfirmed ? "✓ 双方已确认，可提交报关行/船东" : (!_blCustomerConfirmed ? "⚠ 待客户确认提单信息（HS/货描）" : "⚠ 待工厂确认产品HS");
         var _blData = {
           shipperName:_blShName, shipperAddrEn:_blShAddrEn, blNo:pick(sp.bl_no,""),
           releaseType:(sp.release_type||"")+(/swb/i.test(sp.release_type||"")?" 海运单":(/电放/.test(sp.release_type||"")?"":"")),
           payTerm:"P（待确认）", consignee:_blCnee, consAddr:_blCneeAddr, hsCode:_blShowHs?(_blA.hs||""):"", showHs:_blShowHs, confirmed:_blConfirmed,
+          customerConfirmed:_blCustomerConfirmed, factoryConfirmed:_blFactoryConfirmed, confirmStatusText:_blConfirmStatusText,
           vessel:vessel, voyage:voyage, pol:polSp, pod:podSp, finalDest:podSp,
           marks:"N/M", totalCtn:_blA.ctn, description:_blA.descr||"CAT LITTER", gwKg:_blA.gw, cbm:_blA.cbm, containers:_blCtns,
           warnings:["⚠ 付款方式 P/C 请确认后再发（成交方式需与客户核对）","VGM 称重方式：Method 2 累加计算法（货重 = 净重 + 纸箱 + 托盘）"]

@@ -39,7 +39,7 @@ s("B16", (n(d["totalCtn"]) + " CARTONS") if d.get("totalCtn") else "")
 s("C16", (d.get("description", "") or "") + (("\nHS: " + d["hsCode"]) if d.get("hsCode") else ""))
 s("E16", (n(d["gwKg"], 2) + " KGS") if d.get("gwKg") else "")
 s("G16", (n(d["cbm"], 3) + " CBM") if d.get("cbm") else "")
-s("A21", "✓ 客户已确认提单信息（含 HS 显示选择）" if d.get("confirmed") else "⚠ 待客户确认提单信息（HS/货描）——确认前请勿提交")  # 双方确认状态
+s("A21", d.get("confirmStatusText") or ("✓ 双方已确认，可提交报关行/船东" if d.get("confirmed") else "⚠ 待双方确认提单信息（HS/货描）——确认前请勿提交"))
 s("A22", "⚠ 付款方式 P/C 请确认后再发（成交方式需与客户核对）")
 s("A23", "VGM 称重方式：Method 2 累加计算法（货重 = 净重 + 纸箱 + 托盘）")
 
