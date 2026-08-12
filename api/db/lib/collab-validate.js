@@ -106,6 +106,9 @@ async function handleValidate(req, res, pool) {
                   'order_no', o.order_no,
                   'factory',  o.factory,
                   'export_mode', o.export_mode,
+                  'contract_no', o.contract_no,
+                  'brand', o.brand,
+                  'trade_terms', o.trade_terms,
                   'total_qty', o.total_qty,
                   'gross_weight', o.gross_weight,
                   'items', (
