@@ -38,14 +38,13 @@ async function handleFileProxy(req, res, pool) {
   // 电放/SWB 保函：真源是 documents?type=tr（渲染「电放申请书暨保函」）。
   // 旧路由错把 telex 发给 shipping-plan-pdf，而它没有 telex 渲染器→回退成「海运计划确认书」(Damon 0812 指出)。
   if (type === "telex") {
+    // documents?type=tr 用 id=(订单号/合同号) 解析本票，渲染「电放申请书暨保函」
     const { rows: pr } = await pool.query(
-      `SELECT bl_no, primary_contract_no, order_contract_nos FROM shipping_plans WHERE id = $1`, [auth.planId]);
-    const blno = (pr[0] && pr[0].bl_no) || "";
-    const contract = (pr[0] && (pr[0].primary_contract_no || String(pr[0].order_contract_nos || "").split(",")[0].trim())) || "";
-    if (!blno && !contract) return res.status(404).json({ ok: false, error: "本票暂无提单/合同号，无法生成保函" });
+      `SELECT order_no, contract_no FROM orders WHERE shipping_plan_id = $1 AND order_no IS NOT NULL ORDER BY order_no LIMIT 1`, [auth.planId]);
+    const docRef = (pr[0] && (pr[0].order_no || pr[0].contract_no)) || "";
+    if (!docRef) return res.status(404).json({ ok: false, error: "本票暂无订单，无法生成保函" });
     const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 });
-    const q = blno ? `bl_no=${encodeURIComponent(blno)}` : `contract_no=${encodeURIComponent(contract)}`;
-    const urlX = `http://127.0.0.1:9000/api/db/documents?type=tr&${q}&token=${encodeURIComponent(jwtX)}`;
+    const urlX = `http://127.0.0.1:9000/api/db/documents?type=tr&id=${encodeURIComponent(docRef)}&token=${encodeURIComponent(jwtX)}`;
     try {
       const up = await fetch(urlX);
       res.status(up.status);
