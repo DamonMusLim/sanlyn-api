@@ -7,8 +7,8 @@ export async function renderSwbLoi(ctx){
   const blNo   = pick(sp.bl_no, spraw.blNo, spraw.bl_no, "");
   const vsv    = [pick(vessel, sp.vessel, ""), pick(voyage, sp.voyage, "")].filter(Boolean).join(" ");
   const podFnd = [pick(polSp, sp.pol, ""), pick(podSp, sp.pod, "")].filter(Boolean).join(" / ");
-  const shipperName = pick(cfg3.nameEN, cfg3.nameCN, "");
-  const shipperAddr = pick(cfg3.address, "");
+  const shipperName = pick(ctx.shipperName, cfg3.nameEN, cfg3.nameCN, "");   // 出货人=issuing_company（非货代 cfg3）
+  const shipperAddr = pick(ctx.shipperAddr, cfg3.address, "");
   const to = pick(carrierTo, sp.shipping_line, "___________________________");
   const cnee = pick(consignee, "[CONSIGNEE]");
   const dateStr = (function(){ try{ const d=new Date(); return d.getFullYear()+" "+(d.getMonth()+1)+"/"+d.getDate(); }catch(e){ return ""; } })();
