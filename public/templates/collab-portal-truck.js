@@ -13,7 +13,7 @@ function renderFiles(){
       return `<div class="file-row" style="padding:5px 10px;margin-bottom:5px;gap:8px;">
         <span style="font-size:12px;">📄</span>
         <span style="flex:1;font-weight:700;font-size:11px;min-width:0;overflow-wrap:anywhere;">${esc(_upClean(u.filename))}</span>
-        <a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank">✓ 已上传·预览</a>
+        <a class="doc-btn" style="background:var(--goodbg);color:var(--good);border-color:color-mix(in srgb,var(--good) 40%,var(--line));padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank">✓ 已上传·预览</a>
         <a class="doc-btn" style="padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank" download>⬇ 下载</a></div>`;
     }).join('');
   });
@@ -26,17 +26,17 @@ function renderUploadZones(){
   const ocean = uploads.filter(u=>_upInSeg(u.filename,'ocean'));
   const soFiles = ocean.filter(u=>isSO(u.filename));
   const blFiles = ocean.filter(u=>!soFiles.includes(u));
-  const fileRow = u => { const url=fu('upload',u.stored); return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid #d1fae5;">
-      <span>📄</span><span style="flex:1;font-weight:700;font-size:11px;overflow-wrap:anywhere;">${esc(_upClean(u.filename))}</span>
-      <a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank">✓ 已上传·预览</a>
+  const fileRow = u => { const url=fu('upload',u.stored); return `<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-top:1px solid var(--line);">
+      <span>📄</span><span style="flex:1;font-weight:700;font-size:11px;overflow-wrap:anywhere;color:var(--ink);">${esc(_upClean(u.filename))}</span>
+      <a class="doc-btn" style="background:var(--goodbg);color:var(--good);border-color:color-mix(in srgb,var(--good) 40%,var(--line));padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank">✓ 已上传·预览</a>
       <a class="doc-btn" style="padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank" download>⬇ 下载</a></div>`; };
   const zone = (label, files, pick) => files.length
-    ? `<div style="border:1.5px solid #a7f3d0;background:#f0fdf4;border-radius:10px;overflow:hidden;">
-         <div style="padding:7px 12px;display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:800;color:#15803d;">
+    ? `<div style="border:1.5px solid color-mix(in srgb,var(--good) 45%,var(--line));background:var(--goodbg);border-radius:10px;overflow:hidden;">
+         <div style="padding:8px 12px;display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:800;color:var(--good);">
            <span>✓ ${esc(label)} 已上传</span>
-           <span onclick="${pick}" style="cursor:pointer;color:#1a73e8;">↻ 点击更换 / 再传</span></div>
+           <span onclick="${pick}" style="cursor:pointer;color:var(--accent);">↻ 点击更换 / 再传</span></div>
          ${files.map(fileRow).join('')}</div>`
-    : `<div class="up-zone" onclick="${pick}" style="border-color:#1a73e8;color:#1a73e8;font-weight:700;">＋ 上传 ${esc(label)}</div>`;
+    : `<div class="up-zone" onclick="${pick}" style="border-color:var(--accent);color:var(--accent);font-weight:700;">＋ 上传 ${esc(label)}</div>`;
   if (soZone) soZone.innerHTML = zone('SO 订舱确认', soFiles, 'pickFileSO()');
   if (blZone) blZone.innerHTML = zone('提单 B/L / BL草稿（≤8MB 可多次）', blFiles, "pickFile('ocean')");
 }
@@ -68,7 +68,7 @@ function entryFor(d){
   return fe['default'] || (keys.length===1 ? fe[keys[0]] : null);
 }
 function cargoLine(cg){
-  if(!Array.isArray(cg)||!cg.length) return '<span style="color:#b45309;">待工厂确认</span>';
+  if(!Array.isArray(cg)||!cg.length) return '<span style="color:var(--warn);">待工厂确认</span>';
   return cg.map(x=>{
     const parts=[x.name||x.order_no||'—'];
     if(x.cartons) parts.push(x.cartons+'箱');
@@ -95,37 +95,37 @@ function copyQuick(i){
     .catch(()=>{ prompt('手动复制：', quickText(i)); });
 }
 function infoCell(label, val){
-  return `<div style="font-size:11px;"><span style="color:#9ca3af;">${label}</span> <span style="font-weight:700;color:#111827;">${esc(val||'—')}</span></div>`;
+  return `<div style="font-size:11px;"><span style="color:var(--ink3);">${label}</span> <span style="font-weight:700;color:var(--ink);">${esc(val||'—')}</span></div>`;
 }
 function vehHtml(i, d={}){
   return `<div class="ctn-group"><div class="ctn-group-head">
-    <div class="ctn-group-title" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">🚛 车 ${i+1}${((d.cargo||[]).reduce((s,x)=>s+(Number(x.gw_kg)||0),0)>25000)?`<span style="background:#fef2f2;color:#b91c1c;border:1px solid #fca5a5;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:800;">⚠️超重柜>25T·订舱需备注</span>`:''}
-      <span style="color:#9ca3af;font-weight:400;font-size:10px;">箱号</span>
-      <input id="cntr_${i}" value="${esc(d.cntr)}" placeholder="点击填写" style="border:none;border-bottom:1.5px dashed #cbd5e1;background:transparent;font-size:12px;font-weight:800;color:#111827;width:118px;outline:none;font-family:monospace;text-transform:uppercase;">
-      <span style="color:#9ca3af;font-weight:400;font-size:10px;">封号</span>
-      <input id="seal_${i}" value="${esc(d.seal_no)}" placeholder="点击填写" style="border:none;border-bottom:1.5px dashed #cbd5e1;background:transparent;font-size:12px;font-weight:800;color:#111827;width:108px;outline:none;font-family:monospace;text-transform:uppercase;">
+    <div class="ctn-group-title" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">🚛 车 ${i+1}${((d.cargo||[]).reduce((s,x)=>s+(Number(x.gw_kg)||0),0)>25000)?`<span style="background:var(--badbg);color:var(--bad);border:1px solid color-mix(in srgb,var(--bad) 40%,var(--line));border-radius:4px;padding:1px 7px;font-size:10px;font-weight:800;">⚠️超重柜>25T·订舱需备注</span>`:''}
+      <span style="color:var(--ink3);font-weight:400;font-size:10px;">箱号</span>
+      <input id="cntr_${i}" value="${esc(d.cntr)}" placeholder="点击填写" style="border:none;border-bottom:1.5px dashed var(--ink3);background:transparent;font-size:12px;font-weight:800;color:var(--ink);width:118px;outline:none;font-family:monospace;text-transform:uppercase;">
+      <span style="color:var(--ink3);font-weight:400;font-size:10px;">封号</span>
+      <input id="seal_${i}" value="${esc(d.seal_no)}" placeholder="点击填写" style="border:none;border-bottom:1.5px dashed var(--ink3);background:transparent;font-size:12px;font-weight:800;color:var(--ink);width:108px;outline:none;font-family:monospace;text-transform:uppercase;">
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
-      <span style="cursor:pointer;color:#fff;background:#1a73e8;font-size:14px;font-weight:800;padding:6px 14px;border-radius:8px;box-shadow:0 1px 2px rgba(26,115,232,.3);" onclick="openQuickFill(${i})">📋 快捷填写</span>
-      <span style="cursor:pointer;color:#6b7280;font-size:11px;" onclick="copyQuick(${i})" title="复制派车信息文本">复制</span>
-      ${vehs.length>1?`<span style="cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;" onclick="delVeh(${i})">× 删除</span>`:''}
+      <span style="cursor:pointer;color:#fff;background:var(--accent);font-size:14px;font-weight:800;padding:6px 14px;border-radius:8px;box-shadow:0 1px 2px rgba(26,115,232,.3);" onclick="openQuickFill(${i})">📋 快捷填写</span>
+      <span style="cursor:pointer;color:var(--ink3);font-size:11px;" onclick="copyQuick(${i})" title="复制派车信息文本">复制</span>
+      ${vehs.length>1?`<span style="cursor:pointer;color:var(--bad);font-size:11px;font-weight:700;" onclick="delVeh(${i})">× 删除</span>`:''}
     </div></div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px 12px;background:#f9fafb;border-radius:8px;margin:8px 12px 0;padding:10px 12px;">
-      <div style="grid-column:1/-1;font-size:11px;"><span style="color:#9ca3af;">提货地</span> <span style="font-weight:700;color:#111827;">${esc(d.loading_address||'—')}</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px 12px;background:var(--surface2);border-radius:8px;margin:8px 12px 0;padding:10px 12px;">
+      <div style="grid-column:1/-1;font-size:11px;"><span style="color:var(--ink3);">提货地</span> <span style="font-weight:700;color:var(--ink);">${esc(d.loading_address||'—')}</span></div>
       ${infoCell('挂号', d.trailer_plate)}
       ${infoCell('证号', maskId(d.driver_id_no))}
       ${infoCell('箱皮重', d.tare_kg?d.tare_kg+'kg':'')}
       ${(c2=>{const t=String(c2||'');const ph=(t.match(/1\d{10}/)||[''])[0];const nm=t.replace(ph,'').replace(/[:：\s]+$/,'').trim();
-        return infoCell('工厂联系人', nm) + (ph?`<div style="font-size:11px;"><span style="color:#9ca3af;">工厂电话</span> <a href="tel:${ph}" style="font-weight:700;color:#1a73e8;">${ph}</a></div>`:infoCell('工厂电话',''));})(d.loading_contact)}
-      <div style="grid-column:1/-1;font-size:11px;"><span style="color:#9ca3af;">货品</span> <span style="font-weight:700;color:#111827;">${cargoLine(d.cargo)}</span></div>
+        return infoCell('工厂联系人', nm) + (ph?`<div style="font-size:11px;"><span style="color:var(--ink3);">工厂电话</span> <a href="tel:${ph}" style="font-weight:700;color:var(--accent);">${ph}</a></div>`:infoCell('工厂电话',''));})(d.loading_contact)}
+      <div style="grid-column:1/-1;font-size:11px;"><span style="color:var(--ink3);">货品</span> <span style="font-weight:700;color:var(--ink);">${cargoLine(d.cargo)}</span></div>
       ${(()=>{const er=entryFor(d);if(!er)return '';
         const qr=(Array.isArray((window._sheetP||{}).collab_uploads)?window._sheetP.collab_uploads:[]).find(u=>/入厂|二维码|考试/.test(u.filename||''));
-        return `<div style="grid-column:1/-1;font-size:11px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;">
-          <span style="color:#92400e;font-weight:800;">🏭 入厂要求</span>
-          ${er.note?` <span style="color:#92400e;">${esc(er.note)}</span>`:''}
-          ${er.contact||er.phone?` · 厂内对接 <b>${esc(er.contact||'')}</b>${er.phone?` <a href="tel:${esc(er.phone)}" style="color:#1a73e8;font-weight:700;">${esc(er.phone)}</a>`:''}`:''}
-          ${er.exam_url?` · <a href="${esc(er.exam_url)}" target="_blank" style="color:#1a73e8;font-weight:700;">📝 入厂考试/扫码 ↗</a>`:''}
-          ${qr&&window._fileURL?` · <a href="${window._fileURL('upload', qr.stored)}" target="_blank" style="color:#1a73e8;font-weight:700;">🔲 二维码图片</a>`:''}
+        return `<div style="grid-column:1/-1;font-size:11px;background:var(--surface)beb;border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));border-radius:6px;padding:6px 10px;">
+          <span style="color:var(--warn);font-weight:800;">🏭 入厂要求</span>
+          ${er.note?` <span style="color:var(--warn);">${esc(er.note)}</span>`:''}
+          ${er.contact||er.phone?` · 厂内对接 <b>${esc(er.contact||'')}</b>${er.phone?` <a href="tel:${esc(er.phone)}" style="color:var(--accent);font-weight:700;">${esc(er.phone)}</a>`:''}`:''}
+          ${er.exam_url?` · <a href="${esc(er.exam_url)}" target="_blank" style="color:var(--accent);font-weight:700;">📝 入厂考试/扫码 ↗</a>`:''}
+          ${qr&&window._fileURL?` · <a href="${window._fileURL('upload', qr.stored)}" target="_blank" style="color:var(--accent);font-weight:700;">🔲 二维码图片</a>`:''}
         </div>`;})()}
     </div>
     <div style="padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
@@ -137,9 +137,9 @@ function vehHtml(i, d={}){
         <input class="form-input" id="phone_${i}" type="tel" value="${esc(d.driver_phone)}"></div>
       <div class="form-field" style="margin:0;"><label class="form-label">提箱时间</label>
         <input class="form-input" id="pickup_${i}" type="datetime-local" value="${esc(d.pickup_time)}"></div>
-      <div class="form-field" style="margin:0;"><label class="form-label">装柜时间 <span style="font-weight:400;color:#9ca3af;">(工厂已选则跟随，不合适打工厂电话)</span></label>
+      <div class="form-field" style="margin:0;"><label class="form-label">装柜时间 <span style="font-weight:400;color:var(--ink3);">(工厂已选则跟随，不合适打工厂电话)</span></label>
         <input class="form-input" id="loadtime_${i}" type="datetime-local" value="${esc(d.loading_time)}"></div>
-      <div class="form-field" style="margin:0;"><label class="form-label">过磅重(kg) <span style="font-weight:400;color:#9ca3af;">(磅单整车重-车重，对不上会预警)</span></label>
+      <div class="form-field" style="margin:0;"><label class="form-label">过磅重(kg) <span style="font-weight:400;color:var(--ink3);">(磅单整车重-车重，对不上会预警)</span></label>
         <input class="form-input" id="weigh_${i}" type="number" step="0.01" value="${esc(d.weigh_kg||'')}" placeholder="磅单读数"></div>
     </div>
     <div class="up-zone" style="margin:0 12px 12px;" onclick="pickFileCntr('${esc(d.cntr||('车'+(i+1)))}')">📷 本柜 装柜照 / 磅单 / EIR</div>
@@ -183,20 +183,20 @@ function snapV(){ vehs = vehs.map((v,i)=>$('plate_'+i)!==null?{...v,plate:gv('pl
 function renderVehs(){ $('vehGroups').innerHTML = vehs.map((v,i)=>vehHtml(i,v)).join(''); }
 function addVeh(){ vehs.push({}); renderVehs(); }
 function delVeh(i){ snapV(); vehs.splice(i,1); if(!vehs.length) vehs.push({}); renderVehs(); }
-function setSaveStatus(txt, color){ const el=$('vehSaveStatus'); if(el){ el.textContent=txt; el.style.color=color||'#9ca3af'; } }
+function setSaveStatus(txt, color){ const el=$('vehSaveStatus'); if(el){ el.textContent=txt; el.style.color=color||'var(--ink3)'; } }
 async function saveVeh(opts){
   const silent = opts && opts.silent;
   snapV();
   const vehicles = vehs.filter(v=>v.plate||v.driver_phone);
   if(!vehicles.length){ if(!silent) toast('至少一辆车需填车牌和司机电话'); return; }
-  setSaveStatus('保存中…','#b45309');
+  setSaveStatus('保存中…','var(--warn)');
   try{
     const r = await fetch(`${API}/trucking-submit`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({token,vehicles,remarks:''})});
     const d = await r.json();
-    if(!r.ok||!d.ok){ setSaveStatus('保存失败，请重试','#dc2626'); if(!silent) toast(d.error||'保存失败'); return; }
-    setSaveStatus('已自动保存 ✓','#047857');
+    if(!r.ok||!d.ok){ setSaveStatus('保存失败，请重试','var(--bad)'); if(!silent) toast(d.error||'保存失败'); return; }
+    setSaveStatus('已自动保存 ✓','var(--good)');
     if(!silent) toast('✓ 车辆信息已保存');
-  }catch(e){ setSaveStatus('网络错误，未保存','#dc2626'); if(!silent) toast('网络错误'); }
+  }catch(e){ setSaveStatus('网络错误，未保存','var(--bad)'); if(!silent) toast('网络错误'); }
 }
 function autoSaveVeh(){ clearTimeout(_autoSaveTimer); _autoSaveTimer=setTimeout(()=>saveVeh({silent:true}), 600); }

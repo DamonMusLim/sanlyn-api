@@ -75,7 +75,7 @@ function renderHero(s, ps){
         <button class="btn btn-blue btn-sm" type="button" onclick="jumpTo('so')">📤 上传资料</button>
       </div></div>
     <div class="mini-kv">
-      <span>出单方式</span><span style="${rel.empty?'color:#9ca3af;':''}">${esc(rel.badge)}</span>
+      <span>出单方式</span><span style="${rel.empty?'color:var(--ink3);':''}">${esc(rel.badge)}</span>
       <span>柜量/航线</span><span>${esc([qty, route].filter(Boolean).join(' · ') || '待确认')}</span>
       <span>委托拖车</span><span><button class="btn btn-sm ${truckOk?'btn-green':'btn-ghost'}" type="button">${truckOk?'已回填':'待回填'}</button></span>
     </div></div>`;
@@ -87,7 +87,7 @@ function docRow(icon, label, href, source){
   const safe = esc(href);
   // 状态标签(我方已备/贵司提请)合并进「预览」按钮，不再单列 tag；下载独立（Damon 0812 图2）
   const preview = source
-    ? `<a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;" href="${safe}" target="_blank">${esc(source)} · 预览</a>`
+    ? `<a class="doc-btn" style="background:var(--goodbg);color:var(--good);border-color:color-mix(in srgb,var(--good) 40%,var(--line));" href="${safe}" target="_blank">${esc(source)} · 预览</a>`
     : `<a class="doc-btn" href="${safe}" target="_blank">👁 预览</a>`;
   return `<div class="doc-row"><span>${icon}</span><div class="doc-row-main">${esc(label)}</div>
     <div class="doc-actions">${preview}<a class="doc-btn" href="${safe}" target="_blank" download>⬇ 下载</a></div></div>`;
@@ -174,11 +174,11 @@ function renderBillingEntry(billing, s){
       const pcMoney = moneyMap(pc.amount);
       summary = [s.pol||'起点', s.pod||'港口'].join(' → ') + ' · 港杂 ' + (pcMoney || (pc.status||'待填'));
       detail = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <div style="font-size:12px;color:#374151;font-weight:800;">🔒 海运费：${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>
+          <div style="font-size:12px;color:var(--ink2);font-weight:800;">🔒 海运费：${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>
           <span class="badge badge-blue" style="font-size:10px;">已锁价 · 只读</span></div>
-        <div style="font-size:10px;color:#9ca3af;margin-top:3px;">海运费以报价中心已报价为准，此处不可改；如有异议请联系我方。</div>
-        <div style="margin-top:12px;border-top:1px dashed #e5e7eb;padding-top:10px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:12px;font-weight:800;color:#374151;">⚓ 港杂费</span><span class="badge ${chipTone(pc.status)}">${esc(pc.status||'待贵司填')}</span></div>
+        <div style="font-size:10px;color:var(--ink3);margin-top:3px;">海运费以报价中心已报价为准，此处不可改；如有异议请联系我方。</div>
+        <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:12px;font-weight:800;color:var(--ink2);">⚓ 港杂费</span><span class="badge ${chipTone(pc.status)}">${esc(pc.status||'待贵司填')}</span></div>
           ${portChargeEditor()}
         </div>${confirmBtn('ocean')}`;
     } else {
@@ -216,7 +216,7 @@ function renderReminder(s){
   const items = computeTodos(s);
   window._todos = items;
   if(items.length){
-    sub.innerHTML = '还差：' + items.map(t=>esc(t.label)).join(' · ') + ' <span style="color:#1a73e8;text-decoration:underline;white-space:nowrap;">查看待办 ›</span>';
+    sub.innerHTML = '还差：' + items.map(t=>esc(t.label)).join(' · ') + ' <span style="color:var(--accent);text-decoration:underline;white-space:nowrap;">查看待办 ›</span>';
     if(badge){ badge.textContent = '需补齐 ' + items.length + ' 项'; badge.className = 'badge badge-red'; }
   } else {
     sub.textContent = '资料已齐全，感谢配合';
@@ -240,16 +240,16 @@ function buildTodoPopup(items){
     document.body.appendChild(m);
   }
   const rows = items.length
-    ? items.map((it,i)=>`<button type="button" onclick="jumpTo('${it.target}')" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:1.5px solid #fde68a;background:#fffbeb;border-radius:11px;padding:16px 16px;margin-bottom:11px;cursor:pointer;font-family:inherit;">
-        <span style="width:30px;height:30px;border-radius:50%;background:#f59e0b;color:#fff;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
-        <span style="flex:1;"><span style="font-size:15px;font-weight:800;color:#92400e;">${esc(it.label)}</span><br><span style="font-size:12px;color:#a16207;">${esc(TODO_HINT[it.target]||'')}</span></span>
-        <span style="color:#1a73e8;font-weight:900;font-size:18px;">›</span></button>`).join('')
-    : `<div style="text-align:center;padding:26px;color:#059669;font-weight:800;font-size:15px;">✅ 资料已齐全，感谢配合</div>`;
-  m.innerHTML = `<div style="position:absolute;left:50%;top:8%;transform:translateX(-50%);width:min(600px,94vw);background:#fff;border-radius:16px;padding:24px;box-shadow:0 12px 48px rgba(0,0,0,.28);" onclick="event.stopPropagation()">
+    ? items.map((it,i)=>`<button type="button" onclick="jumpTo('${it.target}')" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:1.5px solid color-mix(in srgb,var(--warn) 40%,var(--line));background:var(--surface)beb;border-radius:11px;padding:16px 16px;margin-bottom:11px;cursor:pointer;font-family:inherit;">
+        <span style="width:30px;height:30px;border-radius:50%;background:var(--warn);color:#fff;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
+        <span style="flex:1;"><span style="font-size:15px;font-weight:800;color:var(--warn);">${esc(it.label)}</span><br><span style="font-size:12px;color:var(--warn);">${esc(TODO_HINT[it.target]||'')}</span></span>
+        <span style="color:var(--accent);font-weight:900;font-size:18px;">›</span></button>`).join('')
+    : `<div style="text-align:center;padding:26px;color:var(--good);font-weight:800;font-size:15px;">✅ 资料已齐全，感谢配合</div>`;
+  m.innerHTML = `<div style="position:absolute;left:50%;top:8%;transform:translateX(-50%);width:min(600px,94vw);background:var(--surface);border-radius:16px;padding:24px;box-shadow:0 12px 48px rgba(0,0,0,.28);" onclick="event.stopPropagation()">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-      <div style="font-size:18px;font-weight:900;color:#1a1d23;">📋 待办清单${items.length?'（'+items.length+'项）':''}</div>
-      <span style="cursor:pointer;color:#9ca3af;font-weight:800;font-size:18px;padding:4px 8px;" onclick="document.getElementById('todoModal').style.display='none'">✕</span></div>
-    <div style="font-size:13px;color:#6b7280;margin-bottom:16px;">点任意一项，直接跳到要填 / 要传的地方 👇</div>
+      <div style="font-size:18px;font-weight:900;color:var(--ink);">📋 待办清单${items.length?'（'+items.length+'项）':''}</div>
+      <span style="cursor:pointer;color:var(--ink3);font-weight:800;font-size:18px;padding:4px 8px;" onclick="document.getElementById('todoModal').style.display='none'">✕</span></div>
+    <div style="font-size:13px;color:var(--ink3);margin-bottom:16px;">点任意一项，直接跳到要填 / 要传的地方 👇</div>
     ${rows}</div>`;
 }
 function openTodoPopup(){ const m=document.getElementById('todoModal'); if(m) m.style.display='block'; }
@@ -261,7 +261,7 @@ function jumpTo(target){
   if(el){
     el.scrollIntoView({behavior:'smooth', block:'center'});
     const prev = el.style.boxShadow;
-    el.style.transition='box-shadow .25s'; el.style.boxShadow='0 0 0 3px #fbbf24';
+    el.style.transition='box-shadow .25s'; el.style.boxShadow='0 0 0 3px var(--warn)';
     setTimeout(()=>{ el.style.boxShadow=prev||''; }, 1700);
   }
 }
@@ -269,31 +269,31 @@ function jumpTo(target){
 function openCompanyCard(){
   const p = window._companyProfile || {};
   const label = (window._sheetP && window._sheetP.company_label) || (document.querySelector('.hero-name')?.textContent) || '公司资料';
-  const kv = (k,v)=>`<div style="display:grid;grid-template-columns:88px 1fr;gap:6px 12px;padding:7px 0;border-bottom:1px solid #f0f2f5;">
-    <span style="color:#6b7280;font-weight:700;">${esc(k)}</span><span style="color:${v?'#111827':'#cbd5e1'};font-weight:700;overflow-wrap:anywhere;">${v?esc(v):'—'}</span></div>`;
+  const kv = (k,v)=>`<div style="display:grid;grid-template-columns:88px 1fr;gap:6px 12px;padding:7px 0;border-bottom:1px solid var(--line);">
+    <span style="color:var(--ink3);font-weight:700;">${esc(k)}</span><span style="color:${v?'var(--ink)':'var(--ink3)'};font-weight:700;overflow-wrap:anywhere;">${v?esc(v):'—'}</span></div>`;
   const hasAny = p && (p.code||p.name_cn||p.contact_phone||p.address);
   let m = document.getElementById('companyModal');
   if(!m){ m=document.createElement('div'); m.id='companyModal';
     m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:997;';
     m.onclick=function(){ this.style.display='none'; }; document.body.appendChild(m); }
   const body = hasAny ? `
-    <div style="font-size:12px;font-weight:900;color:#374151;margin:4px 0 4px;">🏢 公司资料</div>
+    <div style="font-size:12px;font-weight:900;color:var(--ink2);margin:4px 0 4px;">🏢 公司资料</div>
     ${kv('公司名称', p.name_cn || label)}
     ${kv('英文名', p.name_en)}
     ${kv('简称', p.short_name)}
     ${kv('统一编码', p.code)}
     ${kv('法定代表人', p.legal_representative)}
     ${kv('地址', p.address)}
-    <div style="font-size:12px;font-weight:900;color:#374151;margin:14px 0 4px;">📇 联系人</div>
+    <div style="font-size:12px;font-weight:900;color:var(--ink2);margin:14px 0 4px;">📇 联系人</div>
     ${kv('联系人', p.contact_name)}
     ${kv('电话', p.contact_phone)}
     ${kv('邮箱', p.contact_email)}
-    <div style="font-size:10px;color:#9ca3af;margin-top:10px;">资料以我方 companies 主数据为准；如需更正请联系我方。</div>`
-    : `<div style="text-align:center;padding:24px;color:#6b7280;">暂无该公司档案资料<br><span style="font-size:11px;color:#9ca3af;">（company_label=${esc(label)} 在 companies 未匹配到）</span></div>`;
-  m.innerHTML = `<div style="position:absolute;left:50%;top:8%;transform:translateX(-50%);width:min(520px,94vw);background:#fff;border-radius:16px;padding:22px;box-shadow:0 12px 48px rgba(0,0,0,.28);max-height:84vh;overflow:auto;" onclick="event.stopPropagation()">
+    <div style="font-size:10px;color:var(--ink3);margin-top:10px;">资料以我方 companies 主数据为准；如需更正请联系我方。</div>`
+    : `<div style="text-align:center;padding:24px;color:var(--ink3);">暂无该公司档案资料<br><span style="font-size:11px;color:var(--ink3);">（company_label=${esc(label)} 在 companies 未匹配到）</span></div>`;
+  m.innerHTML = `<div style="position:absolute;left:50%;top:8%;transform:translateX(-50%);width:min(520px,94vw);background:var(--surface);border-radius:16px;padding:22px;box-shadow:0 12px 48px rgba(0,0,0,.28);max-height:84vh;overflow:auto;" onclick="event.stopPropagation()">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-      <div style="font-size:17px;font-weight:900;color:#1a1d23;overflow-wrap:anywhere;">${esc(label)}</div>
-      <span style="cursor:pointer;color:#9ca3af;font-weight:800;font-size:18px;padding:2px 6px;" onclick="document.getElementById('companyModal').style.display='none'">✕</span></div>
+      <div style="font-size:17px;font-weight:900;color:var(--ink);overflow-wrap:anywhere;">${esc(label)}</div>
+      <span style="cursor:pointer;color:var(--ink3);font-weight:800;font-size:18px;padding:2px 6px;" onclick="document.getElementById('companyModal').style.display='none'">✕</span></div>
     ${body}
     <div style="text-align:right;margin-top:16px;"><button class="btn btn-blue btn-sm" onclick="document.getElementById('companyModal').style.display='none';jumpTo('so')">📤 去上传资料</button></div>
   </div>`;
@@ -337,10 +337,10 @@ function openPortChargePaste(){
     m.id = 'pcPasteModal';
     m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:998;';
     m.onclick = function(){ this.style.display='none'; };
-    m.innerHTML = `<div style="position:absolute;left:50%;top:15%;transform:translateX(-50%);width:min(520px,92vw);background:#fff;border-radius:12px;padding:18px;" onclick="event.stopPropagation()">
+    m.innerHTML = `<div style="position:absolute;left:50%;top:15%;transform:translateX(-50%);width:min(520px,92vw);background:var(--surface);border-radius:12px;padding:18px;" onclick="event.stopPropagation()">
       <div style="font-size:14px;font-weight:800;margin-bottom:8px;">📋 港杂费 · 粘贴导入</div>
-      <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">每行一个费目，如「THC 港杂费 1200」「铅封费 50」。自动识别费目名+金额，导入后请选计价单位再逐条提报。</div>
-      <textarea id="pcPasteText" style="width:100%;height:150px;border:1.5px solid #e0e4ea;border-radius:8px;padding:10px;font-size:13px;box-sizing:border-box;" placeholder="THC 1200&#10;单证费 350&#10;铅封费 50"></textarea>
+      <div style="font-size:11px;color:var(--ink3);margin-bottom:8px;">每行一个费目，如「THC 港杂费 1200」「铅封费 50」。自动识别费目名+金额，导入后请选计价单位再逐条提报。</div>
+      <textarea id="pcPasteText" style="width:100%;height:150px;border:1.5px solid var(--line);border-radius:8px;padding:10px;font-size:13px;box-sizing:border-box;" placeholder="THC 1200&#10;单证费 350&#10;铅封费 50"></textarea>
       <div style="display:flex;gap:10px;margin-top:10px;justify-content:flex-end;">
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pcPasteModal').style.display='none'">取消</button>
         <button class="btn btn-green btn-sm" onclick="parsePortChargePaste()">✓ 解析导入</button>
@@ -374,8 +374,8 @@ function parsePortChargePaste(){
 // 拖车·新增费用（超时费 / 滞港费等），每笔可选付款方（我方 / 工厂 / 货代）。
 // 货代 token 后端只准提报 port_charge 费段，这里作为「待我方确认」提报，付款方随 reason 带上供我方归口。
 function truckExtraFeeEditor(){
-  return `<div style="border:1px dashed #e5e7eb;border-radius:8px;padding:10px 12px;margin-top:12px;">
-    <div style="font-size:11px;color:#6b7280;font-weight:800;margin-bottom:6px;">其他费用（超时费 / 滞港费等 · 提报待我方确认）</div>
+  return `<div style="border:1px dashed var(--line);border-radius:8px;padding:10px 12px;margin-top:12px;">
+    <div style="font-size:11px;color:var(--ink3);font-weight:800;margin-bottom:6px;">其他费用（超时费 / 滞港费等 · 提报待我方确认）</div>
     <div id="truckExtraRows"></div>
     <button class="btn btn-ghost btn-sm" onclick="addTruckFeeRow()">＋ 新增费用</button>
   </div>`;
@@ -383,14 +383,14 @@ function truckExtraFeeEditor(){
 function addTruckFeeRow(){
   const tb = document.getElementById('truckExtraRows'); if(!tb) return;
   const id = 'tkf_' + (tb.children.length + 1) + '_' + token.slice(0,4);
-  tb.insertAdjacentHTML('beforeend', `<div id="${id}" style="border:1px solid #eef0f3;border-radius:8px;padding:8px;margin-bottom:8px;">
+  tb.insertAdjacentHTML('beforeend', `<div id="${id}" style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;">
     <div style="display:grid;grid-template-columns:1fr 84px 92px auto;gap:6px;align-items:center;">
-      <input placeholder="费目 如 超时费" style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
-      <input type="number" min="0" step="0.01" placeholder="金额" style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
-      <select style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;"><option value="">付款方</option><option value="我方">我方</option><option value="工厂">工厂</option><option value="货代">货代</option></select>
+      <input placeholder="费目 如 超时费" style="border:1px solid var(--line);border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
+      <input type="number" min="0" step="0.01" placeholder="金额" style="border:1px solid var(--line);border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
+      <select style="border:1px solid var(--line);border-radius:6px;padding:6px;font-size:11px;font-family:inherit;"><option value="">付款方</option><option value="我方">我方</option><option value="工厂">工厂</option><option value="货代">货代</option></select>
       <button class="btn btn-blue btn-sm" onclick="submitTruckFee('${id}')">提报</button>
     </div>
-    <input class="tkf-note" placeholder="备注（如 超时2天 / 压夜费 / 车队要求）" style="width:100%;border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;margin-top:6px;">
+    <input class="tkf-note" placeholder="备注（如 超时2天 / 压夜费 / 车队要求）" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:6px;font-size:11px;font-family:inherit;margin-top:6px;">
   </div>`);
 }
 async function submitTruckFee(id){
@@ -413,7 +413,7 @@ function truckContainerModule(s){
   const det = (Array.isArray(s.containers_detail) && s.containers_detail.length)
     ? s.containers_detail
     : (Array.isArray(s.containers_live) ? s.containers_live : []);
-  if(!det.length) return `<div style="font-size:12px;color:#374151;font-weight:800;">${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} · 装柜/拖车信息暂无</div>`;
+  if(!det.length) return `<div style="font-size:12px;color:var(--ink2);font-weight:800;">${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} · 装柜/拖车信息暂无</div>`;
   const live = Array.isArray(s.containers_live) ? s.containers_live : [];
   const liveByNo = {}; live.forEach(c=>{ if(c.container_no) liveByNo[c.container_no]=c; });
   const fileU = window._fileURL || (()=>'#');
@@ -429,14 +429,14 @@ function truckContainerModule(s){
     const info = [['车牌', c.plate||lv.plate], ['司机', c.driver_name||lv.driver_name], ['电话', c.driver_phone||lv.driver_phone]].filter(r=>r[1]);
     const photos = Array.isArray(c.pickup_photos) ? c.pickup_photos : [];
     const photoHtml = photos.length
-      ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">`+photos.map(p=>{ const u=fileU('upload',p.stored); return `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" loading="lazy" style="width:64px;height:64px;object-fit:cover;border:1px solid #e5e7eb;border-radius:6px;"></a>`; }).join('')+`</div>`
-      : `<div style="font-size:11px;color:#9ca3af;margin-top:6px;">暂无装箱照片</div>`;
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">`+photos.map(p=>{ const u=fileU('upload',p.stored); return `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" loading="lazy" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--line);border-radius:6px;"></a>`; }).join('')+`</div>`
+      : `<div style="font-size:11px;color:var(--ink3);margin-top:6px;">暂无装箱照片</div>`;
     return `<div class="ctn-group" style="margin-bottom:8px;">
       <div class="ctn-group-head"><span class="ctn-group-title">🚛 ${esc(c.container_no||'柜号待定')}${c.container_type?' · '+esc(c.container_type):''}${c.seal_no?' · 封 '+esc(c.seal_no):''}</span></div>
       <div style="padding:8px 12px;">
-        ${info.length?`<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">${info.map(r=>`<span style="color:#6b7280;">${esc(r[0])} <b style="color:#111827;">${esc(String(r[1]))}</b></span>`).join('')}</div>`:''}
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">${metrics.map(m=>`<div style="border:1px solid #e5e7eb;border-radius:6px;padding:6px;background:#f9fafb;"><div style="font-size:10px;color:#6b7280;font-weight:800;">${esc(m[0])}</div><div style="font-size:12px;color:#111827;font-weight:900;">${esc(String(m[1]))}</div></div>`).join('')}</div>
-        <div style="font-size:11px;color:#6b7280;font-weight:800;margin-top:8px;">工厂装箱照片</div>
+        ${info.length?`<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">${info.map(r=>`<span style="color:var(--ink3);">${esc(r[0])} <b style="color:var(--ink);">${esc(String(r[1]))}</b></span>`).join('')}</div>`:''}
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">${metrics.map(m=>`<div style="border:1px solid var(--line);border-radius:6px;padding:6px;background:var(--surface2);"><div style="font-size:10px;color:var(--ink3);font-weight:800;">${esc(m[0])}</div><div style="font-size:12px;color:var(--ink);font-weight:900;">${esc(String(m[1]))}</div></div>`).join('')}</div>
+        <div style="font-size:11px;color:var(--ink3);font-weight:800;margin-top:8px;">工厂装箱照片</div>
         ${photoHtml}
       </div></div>`;
   }).join('');
@@ -493,8 +493,8 @@ async function boot(){
   // 单据链接构造（海运/报关段共用）
   const orders = Array.isArray(s.orders)?s.orders:[];
   const dlRow = (icon, label, href, extra='') =>
-    `<a class="dl-btn" href="${href}" target="_blank">${icon} <span style="flex:1;">${label}</span>${extra}<span style="color:#1a73e8;">下载 ↗</span></a>`;
-  const pv = (href) => `<span style="color:#059669;font-weight:700;cursor:pointer;margin-right:14px;" onclick="event.preventDefault();showPreview('${href}')">预览</span>`;
+    `<a class="dl-btn" href="${href}" target="_blank">${icon} <span style="flex:1;">${label}</span>${extra}<span style="color:var(--accent);">下载 ↗</span></a>`;
+  const pv = (href) => `<span style="color:var(--good);font-weight:700;cursor:pointer;margin-right:14px;" onclick="event.preventDefault();showPreview('${href}')">预览</span>`;
   window._fileURL = (type, ref, aud) => `${API}/file?token=${encodeURIComponent(token)}&type=${type}${ref?`&ref=${encodeURIComponent(ref)}`:''}${aud?`&aud=${aud}`:''}`;
   const fileURL = window._fileURL;
 
@@ -526,11 +526,11 @@ async function boot(){
     let curIdx = stages.findIndex(x=>!x.done); if(curIdx<0) curIdx = stages.length-1;
     const bar = stages.map((x,i)=>{
       const on = x.done, cur = i===curIdx;
-      return `<span style="font-size:11px;font-weight:${cur?'800':'600'};color:${on?'#047857':cur?'#b45309':'#9ca3af'};">`
-        + (on?'✅':cur?'🔶':'◯') + ' ' + x.label + (x.due&&(cur||!on)?`<span style="font-weight:400;color:#6b7280;"> ${x.due}</span>`:'') + '</span>';
+      return `<span style="font-size:11px;font-weight:${cur?'800':'600'};color:${on?'var(--good)':cur?'var(--warn)':'var(--ink3)'};">`
+        + (on?'✅':cur?'🔶':'◯') + ' ' + x.label + (x.due&&(cur||!on)?`<span style="font-weight:400;color:var(--ink3);"> ${x.due}</span>`:'') + '</span>';
     }).join('<span style="color:#d1d5db;margin:0 6px;">→</span>');
     const div = document.createElement('div');
-    div.style.cssText = 'margin:10px 0 2px;padding:8px 14px;background:#fff;border:1px solid #e5e7eb;border-radius:9px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;';
+    div.style.cssText = 'margin:10px 0 2px;padding:8px 14px;background:var(--surface);border:1px solid var(--line);border-radius:9px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;';
     div.innerHTML = bar;
     if($('chips')) $('chips').parentNode.insertBefore(div, $('chips').nextSibling);
   })();
@@ -546,17 +546,17 @@ async function boot(){
   (function(){
     const box = document.getElementById('oceanDocs');
     if (!box) return;
-    const upBtn = (label) => `<span style="color:#b45309;font-weight:700;cursor:pointer;margin-right:14px;font-size:12px;" onclick="event.preventDefault();_cntrZone='${label}';pickFile('ocean')">上传盖章件</span>`;
+    const upBtn = (label) => `<span style="color:var(--warn);font-weight:700;cursor:pointer;margin-right:14px;font-size:12px;" onclick="event.preventDefault();_cntrZone='${label}';pickFile('ocean')">上传盖章件</span>`;
     const rows = [];
     if (s.is_transfer)
-      rows.push(dlRow('🔁', '内转外信息表 <span style="font-size:10px;color:#9ca3af;">第二程</span>', fileURL('transfer'), pv(fileURL('transfer')) + upBtn('内转外')));
+      rows.push(dlRow('🔁', '内转外信息表 <span style="font-size:10px;color:var(--ink3);">第二程</span>', fileURL('transfer'), pv(fileURL('transfer')) + upBtn('内转外')));
     const ups = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
     const isLiquid = !!(s.factory_attrs && (s.factory_attrs.liquid==='yes'));
     const msds = ups.filter(u=>/msds|鉴定/i.test(u.filename||''));
     if (isLiquid && !msds.length)
-      rows.push(`<div style="border:1.5px solid #fca5a5;background:#fef2f2;border-radius:8px;padding:9px 14px;margin-top:6px;font-size:12px;color:#b91c1c;font-weight:700;">🧪 本票含液体货：MSDS + 海运运输条件鉴定报告 <b>必传</b>（订舱备注需注明液体货）——从下方回传口上传</div>`);
+      rows.push(`<div style="border:1.5px solid color-mix(in srgb,var(--bad) 40%,var(--line));background:var(--badbg);border-radius:8px;padding:9px 14px;margin-top:6px;font-size:12px;color:var(--bad);font-weight:700;">🧪 本票含液体货：MSDS + 海运运输条件鉴定报告 <b>必传</b>（订舱备注需注明液体货）——从下方回传口上传</div>`);
     if (msds.length) msds.forEach(u => rows.push(dlRow('🧪', (/鉴定/.test(u.filename)?'海运鉴定报告':'MSDS')+' · '+esc(u.filename), fileURL('upload', u.stored))));
-    else if (!isLiquid) rows.push(`<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:9px 14px;margin-top:6px;font-size:12px;color:#9ca3af;">🧪 MSDS / 海运鉴定报告 · 上传后自动出现（电池/液体货需要）</div>`);
+    else if (!isLiquid) rows.push(`<div style="border:1.5px dashed var(--line);border-radius:8px;padding:9px 14px;margin-top:6px;font-size:12px;color:var(--ink3);">🧪 MSDS / 海运鉴定报告 · 上传后自动出现（电池/液体货需要）</div>`);
     box.innerHTML = rows.join('');
   })();
   // （单据链接构造已上移至 boot 顶部）
@@ -575,15 +575,15 @@ async function boot(){
     if (s.bl_no) {
       sec.innerHTML = '';   // 去掉绿色「提单号已提交 · 客户已可查看草稿」条（Damon：没必要）
     } else if (blUps.length) {
-      sec.innerHTML = `<div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:8px;padding:10px 14px;">
-        <div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:6px;">📄 BL已上传 — 请填写提单号通知客户确认</div>
+      sec.innerHTML = `<div style="background:var(--surface)beb;border:1.5px solid color-mix(in srgb,var(--warn) 40%,var(--line));border-radius:8px;padding:10px 14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--warn);margin-bottom:6px;">📄 BL已上传 — 请填写提单号通知客户确认</div>
         <div style="display:flex;gap:8px;">
-          <input id="blNoInput" type="text" placeholder="B/L No.（如 OOLU2345678）" style="flex:1;border:1px solid #fde68a;border-radius:6px;padding:7px 10px;font-size:12px;font-family:inherit;outline:none;" value="${esc(s.bl_no||'')}">
-          <button onclick="submitBlNo()" style="padding:7px 16px;border-radius:6px;border:none;background:#d97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">提交</button>
+          <input id="blNoInput" type="text" placeholder="B/L No.（如 OOLU2345678）" style="flex:1;border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));border-radius:6px;padding:7px 10px;font-size:12px;font-family:inherit;outline:none;" value="${esc(s.bl_no||'')}">
+          <button onclick="submitBlNo()" style="padding:7px 16px;border-radius:6px;border:none;background:var(--warn);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">提交</button>
         </div>
       </div>`;
     } else {
-      sec.innerHTML = `<div style="background:#f8fafc;border:1.5px dashed #e0e4ea;border-radius:8px;padding:9px 14px;font-size:12px;color:#9ca3af;">📄 上传BL草稿后，填写提单号即可推送给客户确认</div>`;
+      sec.innerHTML = `<div style="background:var(--surface2);border:1.5px dashed var(--line);border-radius:8px;padding:9px 14px;font-size:12px;color:var(--ink3);">📄 上传BL草稿后，填写提单号即可推送给客户确认</div>`;
     }
   })();
   dl += dlRow('🛂', '报关单（海关格式·数据已填）', fileURL('customs_decl'), pv(fileURL('customs_decl')));
@@ -598,7 +598,7 @@ async function boot(){
   }
   else if (s.has_quarantine) dl += dlRow('🌿', '检疫报告（CIQ / 植检 · 出证件）', fileURL('quarantine'), pv(fileURL('quarantine')));  // 兼容旧字段
   else if (quar.length) quar.forEach(u => { dl += dlRow('🌿', '检疫报告 · '+esc(u.filename), fileURL('upload', u.stored), pv(fileURL('upload', u.stored))); });
-  else dl += `<div style="border:1.5px dashed #e0e4ea;border-radius:8px;padding:10px 14px;margin-top:6px;font-size:12px;color:#9ca3af;">🌿 检疫报告 · 出证后自动出现在这里</div>`;
+  else dl += `<div style="border:1.5px dashed var(--line);border-radius:8px;padding:10px 14px;margin-top:6px;font-size:12px;color:var(--ink3);">🌿 检疫报告 · 出证后自动出现在这里</div>`;
   $('dlBox').innerHTML = dl;
   // 申报字段表（直接带过来，免开文件）：品名/HS/箱数/净毛/CBM/申报金额 — 来自订单明细真值
   (function(){
@@ -613,9 +613,9 @@ async function boot(){
     const rows = [...agg.values()].filter(a => a.name !== '—' || a.ctns);
     if (!rows.length) { $('cdTable').innerHTML=''; return; }
     const fmt = n => n ? Number(n.toFixed(2)).toLocaleString() : '—';
-    $('cdTable').innerHTML = '<div style="font-size:12px;font-weight:800;color:#374151;margin-bottom:6px;">📑 申报字段（本票汇总）</div>'
+    $('cdTable').innerHTML = '<div style="font-size:12px;font-weight:800;color:var(--ink2);margin-bottom:6px;">📑 申报字段（本票汇总）</div>'
       + '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;">'
-      + '<tr style="background:#f9fafb;color:#6b7280;">' + ['报关品名','HS','箱数','净重kg','毛重kg','CBM','申报金额'].map(h=>`<th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb;">${h}</th>`).join('') + '</tr>'
+      + '<tr style="background:var(--surface2);color:var(--ink3);">' + ['报关品名','HS','箱数','净重kg','毛重kg','CBM','申报金额'].map(h=>`<th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--line);">${h}</th>`).join('') + '</tr>'
       + rows.map(a=>`<tr><td style="padding:6px 8px;font-weight:700;">${esc(a.name)}</td><td style="padding:6px 8px;">${esc(a.hs)}</td><td style="padding:6px 8px;">${a.ctns||'—'}</td><td style="padding:6px 8px;">${fmt(a.nw)}</td><td style="padding:6px 8px;">${fmt(a.gw)}</td><td style="padding:6px 8px;">${a.cbm?a.cbm.toFixed(3):'—'}</td><td style="padding:6px 8px;font-weight:700;">${fmt(a.amt)}</td></tr>`).join('')
       + '</table></div>';
   })();
@@ -644,11 +644,11 @@ async function boot(){
     if(s.eta) rows.push(['预计到港 ETA', fmtD(s.eta)]);
     if(s.dispatched_at){ let _dt; try{ _dt=new Date(s.dispatched_at).toLocaleString('sv-SE',{timeZone:'Asia/Shanghai'}).slice(0,16); }catch(e){ _dt=String(s.dispatched_at).replace('T',' ').slice(0,16); } rows.push(['接单时间', _dt]); }
     if(!rows.length) return;
-    const html = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:10px;">'
-      + '<div style="font-size:12px;font-weight:800;color:#1d4ed8;margin-bottom:6px;">⚓ SO / 下单信息 <span style="font-weight:400;color:#60a5fa;font-size:10px;">排载单按此做</span>'
-      + (raw.tracking?` <a href="${esc(raw.tracking)}" target="_blank" style="float:right;font-size:11px;color:#1a73e8;">📍 场站货物追踪 ↗</a>`:'') + '</div>'
+    const html = '<div style="background:var(--surface2);border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));border-radius:8px;padding:10px 14px;margin-bottom:10px;">'
+      + '<div style="font-size:12px;font-weight:800;color:var(--accent);margin-bottom:6px;">⚓ SO / 下单信息 <span style="font-weight:400;color:var(--accent2);font-size:10px;">排载单按此做</span>'
+      + (raw.tracking?` <a href="${esc(raw.tracking)}" target="_blank" style="float:right;font-size:11px;color:var(--accent);">📍 场站货物追踪 ↗</a>`:'') + '</div>'
       + '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px 14px;">'
-      + rows.map(r=>'<div style="font-size:11px;"><span style="color:#6b7280;">'+r[0]+'</span> <span style="font-weight:700;color:#111827;">'+esc(String(r[1]))+'</span></div>').join('')
+      + rows.map(r=>'<div style="font-size:11px;"><span style="color:var(--ink3);">'+r[0]+'</span> <span style="font-weight:700;color:var(--ink);">'+esc(String(r[1]))+'</span></div>').join('')
       + '</div></div>';
     if ($('soInfo')) $('soInfo').innerHTML = html;
     if ($('soInfoC')) $('soInfoC').innerHTML = html;
@@ -663,7 +663,7 @@ async function boot(){
     const seg = document.getElementById('seg-customs'); if(!seg) return;
     const uz = seg.querySelector('.up-zone'); if(!uz) return;
     const box = document.createElement('div');
-    box.style.cssText = 'background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12px;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+    box.style.cssText = 'background:var(--surface)beb;border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12px;color:var(--warn);display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
     box.innerHTML = '💴 <b>本票报关费</b>请在回传后确认（续页 / 加项自行加价）· 确认即结单'
       + '<button class="btn btn-blue btn-sm" style="margin-left:auto;" onclick="openBillingInvoice()">确认报关费 →</button>';
     uz.parentNode.insertBefore(box, uz);
@@ -676,7 +676,7 @@ async function boot(){
     if (seg.querySelector('#truckFeeConfirm')) return;
     const box = document.createElement('div');
     box.id = 'truckFeeConfirm';
-    box.style.cssText = 'background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;margin:0 0 12px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
+    box.style.cssText = 'background:var(--surface)beb;border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));border-radius:8px;padding:10px 14px;margin:0 0 12px;font-size:12px;color:var(--warn);display:flex;align-items:center;gap:10px;flex-wrap:wrap;';
     box.innerHTML = '💴 <b>本票拖车费</b>请在装货完成后确认（续页 / 加项自行加价）· 确认即结单'
       + '<button class="btn btn-blue btn-sm" style="margin-left:auto;" onclick="openBillingInvoice()">确认价格 →</button>';
     const vg = document.getElementById('vehGroups');
@@ -691,7 +691,7 @@ async function boot(){
       if (!$('vehSaveStatus')) {
         const st = document.createElement('div');
         st.id = 'vehSaveStatus';
-        st.style.cssText = 'font-size:12px;color:#9ca3af;text-align:right;margin-top:6px;';
+        st.style.cssText = 'font-size:12px;color:var(--ink3);text-align:right;margin-top:6px;';
         st.textContent = '填完车牌 / 司机电话即自动保存';
         btn.parentNode.insertBefore(st, btn.nextSibling);
       }
@@ -741,7 +741,7 @@ async function uploadOne(f, zone){
 }
 document.querySelectorAll('.up-zone').forEach(z=>{
   const zone = (z.getAttribute('onclick')||'').includes('truck') ? 'truck' : 'customs';
-  z.addEventListener('dragover', e=>{ e.preventDefault(); z.style.background='#eff6ff'; });
+  z.addEventListener('dragover', e=>{ e.preventDefault(); z.style.background='var(--surface2)'; });
   z.addEventListener('dragleave', ()=>{ z.style.background=''; });
   z.addEventListener('drop', e=>{ e.preventDefault(); z.style.background=''; ingestFiles([...e.dataTransfer.files], zone); });
 });
