@@ -270,7 +270,15 @@ async function handleBlConfirmation(req, res, pool) {
     [planId, snap.version, action === "confirm" ? "customer_confirm" : "revision_request",
      JSON.stringify({ ...snap, changes: next.changes }), action, `${planId}:${action}:customer_page:${snap.version}`]
   );
-  if (action === "confirm") await saveCompanyPreference(pool, planId, next.hs_show_on_bl);
+  if (action === "confirm") {
+    await saveCompanyPreference(pool, planId, next.hs_show_on_bl);
+    // 客户确认提单后 → OCEANBABY(ob@) 自动把单据(托书/排载单)发到对方业务邮箱。
+    // 不阻塞确认响应(fire-and-forget)；真发受 DOC_MAIL_LIVE 门控(默认 dry-run 只记日志)。
+    import("./collab-doc-mailer.js")
+      .then(m => m.sendPlanDocs(pool, planId, { trigger: "bl_confirmed" }))
+      .then(r => console.log("[doc-mailer] bl_confirmed plan", planId, JSON.stringify(r && (r.sends || r.reason || (r.dryrun ? "dryrun" : r.error)))))
+      .catch(e => console.error("[doc-mailer] fail", e && e.message));
+  }
   return res.json({ ok: true, draft: { ...snap, status: next.status, hs_lines: next.hs_lines || snap.hs_lines, hs_show_on_bl: next.hs_show_on_bl !== false, customer_confirmed: next.status === "customer_confirmed" } });
 }
 
