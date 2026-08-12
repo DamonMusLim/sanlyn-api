@@ -37,8 +37,10 @@ export async function renderSwbLoi(ctx){
     @media print{body{background:#fff;padding:0;}.page{max-width:100%;box-shadow:none;}}
   </style>`;
 
+  const _rot = (typeof ctx.sealRotDeg === 'number') ? ctx.sealRotDeg : 0;   // 印章随机倾斜(DAS ±10°)
+  const _jit = (Math.random() * 10 - 5);                                     // 上下抖动
   const stampBox = ctx.stampUrl
-    ? `<div class="stamp"><img src="${esc(ctx.stampUrl)}" alt="seal"></div>`
+    ? `<div class="stamp" style="transform:rotate(${_rot.toFixed(1)}deg) translateY(${_jit.toFixed(1)}px);"><img src="${esc(ctx.stampUrl)}" alt="seal"></div>`
     : `<div class="stamp ph">此处加盖公章<br>(Company Stamp)</div>`;
 
   html = `<!DOCTYPE html><html lang="zh"><head><meta charset="UTF-8"><title>海运单保函 SEA WAYBILL LOI — ${esc(blNo)}</title>${CSS}${ap?'<script>window.onload=function(){window.print()}<\/script>':""}</head><body><div class="page">
@@ -63,7 +65,7 @@ export async function renderSwbLoi(ctx){
       <p class="n">本保函应根据中国有关法律进行解释，任何与本保函有关的纠纷均应提交中华人民共和国有管辖权的海事法院解决。</p>
     </div>
     <div class="sig">
-      <div class="row">发货人签字 (公司盖章)${signer?`<span class="sign-hw">${esc(signer)}</span>`:""}</div>
+      <div class="row">发货人签字 (公司盖章)${ctx.sigDataUri?`<img src="${esc(ctx.sigDataUri)}" alt="sig" style="height:44px;vertical-align:middle;margin-left:4px;">`:(signer?`<span class="sign-hw">${esc(signer)}</span>`:"")}</div>
       <div class="row">货运代理人盖章 (FORWARDER'S STAMP)</div>
       <div class="row">日期 (DATE)　${esc(dateStr)}</div>
       ${stampBox}

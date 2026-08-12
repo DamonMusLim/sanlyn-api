@@ -1596,8 +1596,15 @@ export default async function handler(req, res) {
             if(_st.rows[0]) _stampUrl = _st.rows[0].url || "";
           }
         }catch(e){}
+        // DAS 真签名(Damon 林 手写体PNG,自带抖动) + 印章随机倾斜(±10°)——就是"DAS变动性都有了"
+        var _sigDataUri = "", _sealRot = 0;
+        try{
+          var _ss = await import("../stamp/_straddle-shared.js");
+          if(_ss.randomSealRotationDeg) _sealRot = _ss.randomSealRotationDeg();
+          if(_ss.generateSignaturePng){ var _sigBuf = await _ss.generateSignaturePng(); _sigDataUri = "data:image/png;base64,"+_sigBuf.toString("base64"); }
+        }catch(e){}
         const { renderSwbLoi } = await import("./docs/swb-loi.js");
-        ({ html, _xlsCapture, totRow } = await renderSwbLoi({ sp, spraw, cfg3, shipperName:_shName, shipperAddr:_shAddr, shipperAddrEn:_shAddrEn, signerName:_signer, consignee:_swbCnee, consAddr:_swbCneeAddr, carrierTo:_swbTo, formRef:_formRef, stampUrl:_stampUrl, vessel, voyage, polSp, podSp, html, _xlsCapture, totRow, ap, esc, pick, fmtD }));
+        ({ html, _xlsCapture, totRow } = await renderSwbLoi({ sp, spraw, cfg3, shipperName:_shName, shipperAddr:_shAddr, shipperAddrEn:_shAddrEn, signerName:_signer, sigDataUri:_sigDataUri, sealRotDeg:_sealRot, consignee:_swbCnee, consAddr:_swbCneeAddr, carrierTo:_swbTo, formRef:_formRef, stampUrl:_stampUrl, vessel, voyage, polSp, podSp, html, _xlsCapture, totRow, ap, esc, pick, fmtD }));
       }
     }
 
