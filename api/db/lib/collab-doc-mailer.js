@@ -44,6 +44,26 @@ async function buildTransport() {
   });
 }
 
+// 全局抄送名单（我方业务）——存 system_settings.key='doc_mail.cc'，value=JSON 数组
+// （元素可为 "a@x.com" 或 {email,label}），可随时增删。env DOC_MAIL_CC 作兜底/附加。
+async function loadCcList(pool) {
+  const out = [];
+  try {
+    const r = await pool.query(`SELECT value FROM system_settings WHERE key='doc_mail.cc' LIMIT 1`);
+    if (r.rows[0] && r.rows[0].value) {
+      let arr = [];
+      try { arr = JSON.parse(r.rows[0].value); } catch (_e) { arr = String(r.rows[0].value).split(/[,;\s]+/); }
+      for (const it of (Array.isArray(arr) ? arr : [])) {
+        const e = typeof it === "string" ? it : (it && it.email);
+        if (e && (it.active !== false)) out.push(String(e).trim());
+      }
+    }
+  } catch (_e) { /* 表/键不存在 → 忽略 */ }
+  if (process.env.DOC_MAIL_CC) out.push(...process.env.DOC_MAIL_CC.split(/[,;\s]+/));
+  // 去重、去空、去无效
+  return Array.from(new Set(out.filter((e) => e && /.+@.+\..+/.test(e))));
+}
+
 async function loadTemplate(pool, key) {
   try {
     const r = await pool.query(`SELECT subject, html FROM email_templates WHERE tpl_key=$1 AND coalesce(is_active,true) ORDER BY id DESC LIMIT 1`, [key]);
@@ -112,13 +132,16 @@ export async function sendPlanDocs(pool, planId, opts = {}) {
   const subject = fillVars(tpl.subject, info.ctx);
   const html = fillVars(tpl.html, info.ctx);
 
+  // 全局抄送我方业务（去掉与主收件人重复的）
+  const ccAll = opts.cc ? (Array.isArray(opts.cc) ? opts.cc : [opts.cc]) : await loadCcList(pool);
+
   // 去重：已发过的 (doc_type,email) 不再发
   let prev = [];
   try { const p = await pool.query(`SELECT raw->'doc_sends' AS ds FROM shipping_plans WHERE id=$1`, [planId]); prev = Array.isArray(p.rows[0] && p.rows[0].ds) ? p.rows[0].ds : []; } catch (_e) { prev = []; }
   const sentKey = new Set(prev.map((x) => `${x.doc_type}|${x.email}`));
 
   const result = {
-    planId, live, to, subject,
+    planId, live, to, cc: ccAll, subject,
     attachments: attachments.map((a) => ({ filename: a.filename, doc_type: a.doc_type, size: a.content.length })),
     sends: [],
   };
@@ -133,16 +156,18 @@ export async function sendPlanDocs(pool, planId, opts = {}) {
   for (const email of to) {
     const atts = attachments.filter((a) => opts.force || !sentKey.has(`${a.doc_type}|${email}`));
     if (!atts.length) { result.sends.push({ email, skipped: "already sent" }); continue; }
+    const cc = ccAll.filter((c) => c.toLowerCase() !== email.toLowerCase());
     try {
       await transport.sendMail({
         from: process.env.SMTP_FROM || process.env.SMTP_USER,
         to: email,
+        cc: cc.length ? cc : undefined,
         subject,
         html,
         attachments: atts.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
       });
-      for (const a of atts) newEntries.push({ doc_type: a.doc_type, email, sent_at: nowIso, subject, trigger: opts.trigger || null });
-      result.sends.push({ email, ok: true, docs: atts.map((a) => a.doc_type) });
+      for (const a of atts) newEntries.push({ doc_type: a.doc_type, email, cc, sent_at: nowIso, subject, trigger: opts.trigger || null });
+      result.sends.push({ email, ok: true, cc, docs: atts.map((a) => a.doc_type) });
     } catch (e) {
       result.sends.push({ email, ok: false, error: e.message });
     }
