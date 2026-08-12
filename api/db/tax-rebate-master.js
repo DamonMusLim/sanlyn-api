@@ -92,12 +92,36 @@ ckts AS (
                OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
       (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
           AND c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%' LIMIT 1),
-      -- ⑤ 整票的订单只指向唯一一家工厂 → 每一行都是这家（无歧义，Damon 0812：按公司分开除重）
+      -- ⑤ 整票的订单只指向唯一一家工厂 → 每一行都是这家（需先通过「订单覆盖全票」闸门）
       (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
          FROM orders o WHERE o.factory IS NOT NULL AND o.factory <> ''
           AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
-               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')))
-    ) AS line_factory
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))
+          AND (
+             -- 闸门：本票订单的金额要能覆盖报关额（≥90%）才允许「整票唯一工厂」下沉。
+             -- 品名可以对不上（报关叫「宠物罐头食品」、订单叫「宠物食品」），但钱不会说谎。
+             -- 171960 只挂了猫砂订单(¥157,560/¥288,288=55%)，毛绒用品那行就该待分。
+             SELECT COALESCE(sum(l3.qty_ctn * COALESCE(l3.unit_price,0)),0) >= d.fob_cny * 0.90
+               FROM order_line_items l3 JOIN orders o3 ON o3.id = l3.order_id
+              WHERE o3.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+                 OR (d.contract_no <> '' AND o3.contract_no <> '' AND d.contract_no LIKE '%'||o3.contract_no||'%')))
+    ) AS line_factory,
+    -- 证据出处（页面必须如实显示是哪一档判出来的，不能一律写「进项票实证」）
+    CASE
+      WHEN EXISTS (SELECT 1 FROM finance_invoices_in i3, jsonb_array_elements(i3.line_items) li3
+                    WHERE i3.customs_nos @> ARRAY[d.customs_no]::varchar[] AND i3.line_items IS NOT NULL
+                      AND (li3->>'nm') = c.goods_name AND (li3->>'qty')::numeric = c.qty) THEN '进项票逐行'
+      WHEN EXISTS (SELECT 1 FROM inv v WHERE v.customs_no = d.customs_no
+                    AND abs(v.amount_incl_tax - c.amount_cny) < 1) THEN '进项票金额'
+      WHEN EXISTS (SELECT 1 FROM order_line_items l JOIN orders o ON o.id = l.order_id
+                    WHERE l.declaration_name = c.goods_name AND o.factory <> ''
+                      AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+                           OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))) THEN '订单品名'
+      WHEN EXISTS (SELECT 1 FROM order_line_items l JOIN orders o ON o.id = l.order_id
+                    WHERE l.qty_ctn = c.qty AND o.factory <> ''
+                      AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+                           OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))) THEN '订单箱数'
+      ELSE '整票唯一厂' END AS factory_src
   FROM decl d JOIN finance_rebate_ckts_lines c ON c.customs_no = d.customs_no
 ),
 ckts2 AS (
@@ -118,7 +142,7 @@ ckts_agg AS (
     json_agg(json_build_object(
       'item_no', item_no, 'hs', hs_code, 'name', goods_name, 'qty', qty, 'unit', unit,
       'nw', line_nw, 'amt', amount_cny, 'rate', rate,
-      'invoice_no', invoice_no2, 'factory', line_factory,
+      'invoice_no', invoice_no2, 'factory', line_factory, 'factory_src', factory_src,
       'region', source_region,
       'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
       'region_factory', NULL,
@@ -156,12 +180,36 @@ line AS (
         WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.declaration_name = ci.declaration_name_cn
           AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
-      -- ⑤ 整票的订单只指向唯一一家工厂 → 每一行都是这家（无歧义，Damon 0812：按公司分开除重）
+      -- ⑤ 整票的订单只指向唯一一家工厂 → 每一行都是这家（需先通过「订单覆盖全票」闸门）
       (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
          FROM orders o WHERE o.factory IS NOT NULL AND o.factory <> ''
           AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
-               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))
+          AND (
+             -- 闸门：本票订单的金额要能覆盖报关额（≥90%）才允许「整票唯一工厂」下沉。
+             -- 品名可以对不上（报关叫「宠物罐头食品」、订单叫「宠物食品」），但钱不会说谎。
+             -- 171960 只挂了猫砂订单(¥157,560/¥288,288=55%)，毛绒用品那行就该待分。
+             SELECT COALESCE(sum(l3.qty_ctn * COALESCE(l3.unit_price,0)),0) >= d.fob_cny * 0.90
+               FROM order_line_items l3 JOIN orders o3 ON o3.id = l3.order_id
+              WHERE o3.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+                 OR (d.contract_no <> '' AND o3.contract_no <> '' AND d.contract_no LIKE '%'||o3.contract_no||'%')))
     ) AS line_factory,
+    -- 证据出处（页面必须如实显示是哪一档判出来的，不能一律写「进项票实证」）
+    CASE
+      WHEN EXISTS (SELECT 1 FROM finance_invoices_in i3, jsonb_array_elements(i3.line_items) li3
+                    WHERE i3.customs_nos @> ARRAY[d.customs_no]::varchar[] AND i3.line_items IS NOT NULL
+                      AND (li3->>'nm') = ci.declaration_name_cn AND (li3->>'qty')::numeric = ci.qty) THEN '进项票逐行'
+      WHEN EXISTS (SELECT 1 FROM inv v WHERE v.customs_no = d.customs_no
+                    AND abs(v.amount_incl_tax - ci.declaration_amount) < 1) THEN '进项票金额'
+      WHEN EXISTS (SELECT 1 FROM order_line_items l JOIN orders o ON o.id = l.order_id
+                    WHERE l.declaration_name = ci.declaration_name_cn AND o.factory <> ''
+                      AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+                           OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))) THEN '订单品名'
+      WHEN EXISTS (SELECT 1 FROM order_line_items l JOIN orders o ON o.id = l.order_id
+                    WHERE l.qty_ctn = ci.qty AND o.factory <> ''
+                      AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+                           OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))) THEN '订单箱数'
+      ELSE '整票唯一厂' END AS factory_src,
     (SELECT v.invoice_no FROM inv v WHERE v.customs_no = d.customs_no
         AND (v.amount_incl_tax = ci.declaration_amount
              OR (ci.declaration_name_cn <> '' AND v.remark ILIKE '%'||ci.declaration_name_cn||'%'))
@@ -187,7 +235,7 @@ agg AS (
     json_agg(json_build_object(
       'item_no', item_no, 'hs', hs_code, 'name', name, 'qty', qty, 'unit', unit,
       'nw', nw, 'amt', amt, 'rate', rate, 'invoice_no', invoice_no2,
-      'factory', line_factory, 'region', source_region,
+      'factory', line_factory, 'factory_src', factory_src, 'region', source_region,
       'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
       'region_factory', NULL,
       'line_rebate', CASE WHEN rate IS NOT NULL AND amt IS NOT NULL
