@@ -1588,16 +1588,16 @@ export default async function handler(req, res) {
         }catch(e){}
         // 出货人=issuing_company（不是货代 cfg3！shipping 文档 cfg3 被强制成 OCEANBABY）。解析其 name_en/address/公章
         var _sh = pick(sp.issuing_company, cfg3.nameCN, cfg3.nameEN, "");
-        var _shName = _sh, _shAddr = pick(cfg3.address,""), _stampUrl = "";
+        var _shName = _sh, _shAddr = pick(cfg3.address,""), _shAddrEn = "", _stampUrl = "", _signer = "Damon";
         try{
-          var _sc = await pool.query("SELECT code,name_en,name_cn,address FROM companies WHERE name_cn=$1 OR name_en=$1 ORDER BY (address IS NOT NULL) DESC LIMIT 1",[_sh]);
-          if(_sc.rows[0]){ _shName = _sc.rows[0].name_en || _sc.rows[0].name_cn || _sh; _shAddr = _sc.rows[0].address || _shAddr;
+          var _sc = await pool.query("SELECT code,name_en,name_cn,address,address_en FROM companies WHERE name_cn=$1 OR name_en=$1 ORDER BY (address IS NOT NULL) DESC LIMIT 1",[_sh]);
+          if(_sc.rows[0]){ _shName = _sc.rows[0].name_en || _sc.rows[0].name_cn || _sh; _shAddr = _sc.rows[0].address || _shAddr; _shAddrEn = _sc.rows[0].address_en || "";
             var _st = await pool.query("SELECT url FROM customer_stamps WHERE upper(company_code)=upper($1) AND is_active=true ORDER BY is_default DESC, uploaded_at DESC LIMIT 1",[_sc.rows[0].code]);
             if(_st.rows[0]) _stampUrl = _st.rows[0].url || "";
           }
         }catch(e){}
         const { renderSwbLoi } = await import("./docs/swb-loi.js");
-        ({ html, _xlsCapture, totRow } = await renderSwbLoi({ sp, spraw, cfg3, shipperName:_shName, shipperAddr:_shAddr, consignee:_swbCnee, consAddr:_swbCneeAddr, carrierTo:_swbTo, formRef:_formRef, stampUrl:_stampUrl, vessel, voyage, polSp, podSp, html, _xlsCapture, totRow, ap, esc, pick, fmtD }));
+        ({ html, _xlsCapture, totRow } = await renderSwbLoi({ sp, spraw, cfg3, shipperName:_shName, shipperAddr:_shAddr, shipperAddrEn:_shAddrEn, signerName:_signer, consignee:_swbCnee, consAddr:_swbCneeAddr, carrierTo:_swbTo, formRef:_formRef, stampUrl:_stampUrl, vessel, voyage, polSp, podSp, html, _xlsCapture, totRow, ap, esc, pick, fmtD }));
       }
     }
 

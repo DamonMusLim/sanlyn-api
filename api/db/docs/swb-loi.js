@@ -8,7 +8,8 @@ export async function renderSwbLoi(ctx){
   const vsv    = [pick(vessel, sp.vessel, ""), pick(voyage, sp.voyage, "")].filter(Boolean).join(" ");
   const podFnd = [pick(polSp, sp.pol, ""), pick(podSp, sp.pod, "")].filter(Boolean).join(" / ");
   const shipperName = pick(ctx.shipperName, cfg3.nameEN, cfg3.nameCN, "");   // 出货人=issuing_company（非货代 cfg3）
-  const shipperAddr = pick(ctx.shipperAddr, cfg3.address, "");
+  const shipperAddr = pick(ctx.shipperAddrEn, ctx.shipperAddr, cfg3.address, "");   // 抬头用英文地址(address_en)
+  const signer = pick(ctx.signerName, "");   // 授权签字人（手写体签名）
   const to = pick(carrierTo, sp.shipping_line, "___________________________");
   const cnee = pick(consignee, "[CONSIGNEE]");
   const dateStr = (function(){ try{ const d=new Date(); return d.getFullYear()+" "+(d.getMonth()+1)+"/"+d.getDate(); }catch(e){ return ""; } })();
@@ -30,8 +31,9 @@ export async function renderSwbLoi(ctx){
     .stamp{position:absolute;right:30px;bottom:6px;width:150px;height:150px;}
     .stamp img{width:100%;height:100%;object-fit:contain;}
     .stamp.ph{border:1px dashed #bbb;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:11px;text-align:center;line-height:1.5;}
+    .sign-hw{font-family:'Snell Roundhand','Brush Script MT','Segoe Script',cursive;font-style:italic;font-size:28px;color:#16305c;margin:0 0 2px 6px;}
     .foot{border-top:1px solid #000;margin-top:34px;padding-top:6px;font-size:11px;}
-    .foot .ref{color:#666;font-size:10px;margin-top:4px;}
+    .foot .ref{color:#666;font-size:10px;}
     @media print{body{background:#fff;padding:0;}.page{max-width:100%;box-shadow:none;}}
   </style>`;
 
@@ -61,12 +63,12 @@ export async function renderSwbLoi(ctx){
       <p class="n">本保函应根据中国有关法律进行解释，任何与本保函有关的纠纷均应提交中华人民共和国有管辖权的海事法院解决。</p>
     </div>
     <div class="sig">
-      <div class="row">发货人签字 (公司盖章)</div>
+      <div class="row">发货人签字 (公司盖章)${signer?`<span class="sign-hw">${esc(signer)}</span>`:""}</div>
       <div class="row">货运代理人盖章 (FORWARDER'S STAMP)</div>
       <div class="row">日期 (DATE)　${esc(dateStr)}</div>
       ${stampBox}
     </div>
-    <div class="foot">${esc(shipperName)}${shipperAddr?"　ADD: "+esc(shipperAddr):""}${formRef?`<div class="ref">${esc(formRef)}</div>`:""}</div>
+    <div class="foot">${formRef?`<span class="ref">${esc(formRef)}</span>`:"&nbsp;"}</div>
   </div></body></html>`;
 
   return { html, _xlsCapture, totRow };
