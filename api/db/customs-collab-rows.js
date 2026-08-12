@@ -152,7 +152,11 @@ export async function fetchRows(pool, opts) {
            ev.created_at AS last_event_at
       FROM b
       LEFT JOIN factory_invoice_expected_amounts fie
-        ON fie.customs_no = b.customs_no AND fie.factory_name = b.factory_name AND fie.status = 'ready'
+        -- 协同页的 decl_key 可能是报关单号，也可能是提单号（正式报关单号未回填时）。
+        -- 结果表两种 key 都存：报关单号行 + 'BL:<提单号>' 聚合别名行。
+        ON (fie.customs_no = b.customs_no OR fie.customs_no = 'BL:'||b.customs_no
+            OR fie.customs_no = 'BL:'||REPLACE(b.customs_no,'DRAFT-',''))
+       AND fie.factory_name = b.factory_name AND fie.status = 'ready'
       -- 2026-07-14: 一票多厂时 status 单键会把 manual 额双计到别厂行(140601772471 案例:DS的221650曾串到春叶/中砂行),必须按厂匹配
       LEFT JOIN customs_invoice_status s ON s.customs_no=b.customs_no AND s.factory_code=b.factory_code
       LEFT JOIN brand_pick bp ON bp.factory_code=b.factory_code AND bp.decl_key=b.customs_no
