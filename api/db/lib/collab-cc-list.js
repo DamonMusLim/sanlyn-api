@@ -14,8 +14,8 @@ async function readList(pool) {
   if (!Array.isArray(a)) a = [];
   // 归一：老的纯字符串项 → 对象（默认业务）
   return a.map((x) => (typeof x === "string"
-    ? { email: String(x).trim(), label: "", category: "biz", active: true }
-    : { email: String(x.email || "").trim(), label: String(x.label || ""), category: (x.category === "fin" ? "fin" : "biz"), active: x.active !== false, added_at: x.added_at || null, added_by: x.added_by || null }
+    ? { email: String(x).trim(), label: "", phone: "", category: "biz", active: true }
+    : { email: String(x.email || "").trim(), label: String(x.label || ""), phone: String(x.phone || ""), category: (x.category === "fin" ? "fin" : "biz"), active: x.active !== false, added_at: x.added_at || null, added_by: x.added_by || null }
   )).filter((x) => x.email);
 }
 
@@ -41,7 +41,7 @@ async function handleCcList(req, res, pool) {
   if (action === "add") {
     if (!EMAIL_RE.test(email)) return res.status(400).json({ ok: false, error: "邮箱格式不对" });
     if (list.some((x) => x.email.toLowerCase() === email)) return res.status(409).json({ ok: false, error: "该邮箱已在名单里" });
-    list.push({ email, label: String(b.label || "").slice(0, 40), category, active: true, added_at: new Date().toISOString(), added_by: (req.user && req.user.username) || null });
+    list.push({ email, label: String(b.label || "").slice(0, 40), phone: String(b.phone || "").slice(0, 40), category, active: true, added_at: new Date().toISOString(), added_by: (req.user && req.user.username) || null });
     await writeList(pool, list);
     return res.json({ ok: true, list });
   }
