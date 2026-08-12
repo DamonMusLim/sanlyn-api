@@ -1620,10 +1620,15 @@ export default async function handler(req, res) {
         try{ var _blAgg=await pool.query("SELECT string_agg(DISTINCT oli.hs_code,',') AS hs, string_agg(DISTINCT NULLIF(oli.bl_description,''),' / ') AS descr, SUM(oli.qty_ctn) AS ctn, ROUND(SUM(COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,2) AS gw, ROUND(SUM(COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3) AS cbm FROM orders o JOIN order_line_items oli ON oli.order_id=o.id WHERE o.shipping_plan_id=$1",[sp.id]); _blA=_blAgg.rows[0]||{}; }catch(e){}
         var _blCtns=[];
         try{ var _blCtnR=await pool.query("SELECT container_no,seal_no,container_type,vgm_weight_kg,cargo_weight_kg FROM container_bookings WHERE shipping_plan_id=$1 ORDER BY container_no",[sp.id]); _blCtns=_blCtnR.rows.map(function(c){ return { no:c.container_no, seal:c.seal_no, type:c.container_type, vgm:c.vgm_weight_kg, pkgs:_blA.ctn, gw:c.cargo_weight_kg, cbm:_blA.cbm }; }); }catch(e){}
+        // BL确认闸门(raw.bl_confirmation)：客户选的「显示HS」+ HS改单 + 确认状态——排载单/SO 跟着走
+        var _blGate = (spraw && typeof spraw.bl_confirmation==="object" && spraw.bl_confirmation) ? spraw.bl_confirmation : {};
+        var _blShowHs = _blGate.hs_show_on_bl !== false;   // 客户没设=默认显示
+        if(Array.isArray(_blGate.hs_lines) && _blGate.hs_lines.length){ var _hsOv=_blGate.hs_lines.map(function(x){return x&&x.code;}).filter(Boolean); if(_hsOv.length) _blA.hs=_hsOv.join(","); }
+        var _blConfirmed = _blGate.status==="customer_confirmed";
         var _blData = {
           shipperName:_blShName, shipperAddrEn:_blShAddrEn, blNo:pick(sp.bl_no,""),
           releaseType:(sp.release_type||"")+(/swb/i.test(sp.release_type||"")?" 海运单":(/电放/.test(sp.release_type||"")?"":"")),
-          payTerm:"P（待确认）", consignee:_blCnee, consAddr:_blCneeAddr, hsCode:_blA.hs||"", showHs:true,
+          payTerm:"P（待确认）", consignee:_blCnee, consAddr:_blCneeAddr, hsCode:_blShowHs?(_blA.hs||""):"", showHs:_blShowHs, confirmed:_blConfirmed,
           vessel:vessel, voyage:voyage, pol:polSp, pod:podSp, finalDest:podSp,
           marks:"N/M", totalCtn:_blA.ctn, description:_blA.descr||"CAT LITTER", gwKg:_blA.gw, cbm:_blA.cbm, containers:_blCtns,
           warnings:["⚠ 付款方式 P/C 请确认后再发（成交方式需与客户核对）","VGM 称重方式：Method 2 累加计算法（货重 = 净重 + 纸箱 + 托盘）"]
