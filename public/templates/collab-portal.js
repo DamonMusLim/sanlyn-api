@@ -69,7 +69,8 @@ function renderHero(s, ps){
   const truckOk = !!(s.trucking_detail && Array.isArray(s.trucking_detail.vehicles) && s.trucking_detail.vehicles.some(v=>v.plate||v.driver_phone));
   body.innerHTML = `<div class="hero-grid">
     <div><div class="hero-name">${esc(ps.company_label || '货代协同')}</div>
-      <div class="hero-bl">${esc(s.bl_no || s.hbl_no || '提单号待回传')}</div></div>
+      <div class="hero-bl">${esc(s.bl_no || s.hbl_no || '提单号待回传')}</div>
+      <button class="btn btn-blue btn-sm" style="margin-top:8px;" type="button" onclick="jumpTo('so')">📤 点击上传资料</button></div>
     <div class="mini-kv">
       <span>出单方式</span><span style="${rel.empty?'color:#9ca3af;':''}">${esc(rel.badge)}</span>
       <span>柜量/航线</span><span>${esc([qty, route].filter(Boolean).join(' · ') || '待确认')}</span>
@@ -151,57 +152,131 @@ function renderBillingEntry(billing, s){
   window._billingToken = canOpen ? billing.token : '';
   if(!segs.includes('ocean')) return;
   card.classList.remove('hidden');
-  const map = { ocean:'海运费', trucking:'拖车费', port_charge:'港杂费' };
-  const keys = ['ocean','trucking','port_charge'];   // 报关费不给货代看：下单时已知，由巴匕(我方)内部填(Damon 0812)
+  // 港杂费并进海运费（海运+港杂 一个模块）；报关费不给货代（我方内填）。只剩 海运 / 拖车 两行。
+  const map = { ocean:'海运费', trucking:'拖车费' };
+  const keys = ['ocean','trucking'];
   const segData = (_billSummary && _billSummary.segments) || {};
+  const confirmBtn = k => `<div style="text-align:right;margin-top:10px;"><button class="btn ${isBillConfirmed(k)?'btn-ghost':'btn-blue'} btn-sm bill-confirm-btn" ${isBillConfirmed(k)?'disabled':''} onclick="confirmBill('${k}')">${isBillConfirmed(k)?'✓ 已确认':'单独确认'}</button></div>`;
   body.innerHTML = keys.map(k=>{
     const x = segData[k] || {status:'待报', amount:{}, pending_amount:{}};
     const money = moneyMap(x.amount);
     const pending = moneyMap(x.pending_amount);
     const empty = !money && !pending;
-    const summary = k === 'port_charge' ? '可编辑费目表 · 新增待我方确认'
-      : k === 'trucking' ? '装柜/拖车信息 + 工厂装箱照片 · 点开查看'
-      : [s.pol||'起点', s.pod||'港口'].join(' → ');
-    const detail = k === 'port_charge' ? portChargeEditor()
-      : k === 'trucking' ? truckContainerModule(s)   // 嵌入工厂装柜整个模块(柜号+拖车信息+装箱照片)，默认收起
-      : `<div style="font-size:12px;color:#374151;font-weight:800;">${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>`;
+    // 海运行：摘要带港杂状态；明细=海运 + 港杂费编辑器
+    let summary, detail;
+    if(k === 'ocean'){
+      const pc = segData.port_charge || {status:'待贵司填', amount:{}};
+      const pcMoney = moneyMap(pc.amount);
+      summary = [s.pol||'起点', s.pod||'港口'].join(' → ') + ' · 港杂 ' + (pcMoney || (pc.status||'待填'));
+      detail = `<div style="font-size:12px;color:#374151;font-weight:800;">🚢 海运费：${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>
+        <div style="margin-top:12px;border-top:1px dashed #e5e7eb;padding-top:10px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="font-size:12px;font-weight:800;color:#374151;">⚓ 港杂费</span><span class="badge ${chipTone(pc.status)}">${esc(pc.status||'待贵司填')}</span></div>
+          ${portChargeEditor()}
+        </div>${confirmBtn('ocean')}`;
+    } else {
+      summary = '装柜/拖车信息 + 工厂装箱照片 · 点开查看';
+      detail = truckContainerModule(s) + truckExtraFeeEditor() + confirmBtn('trucking');
+    }
     return `<div class="bill-row" id="bill_${k}">
       <button class="bill-summary" type="button" onclick="toggleBill('${k}')"><b>${map[k]}</b><span class="desc">${esc(summary)}</span>
         <span class="bill-money ${empty?'empty':''}">${esc(money || pending || '未填写金额')}</span><span class="badge ${chipTone(x.status)}">${esc(x.status)}</span></button>
       <div class="bill-detail">${detail}</div></div>`;
   }).join('');
-  $('billingSubV2').textContent = canOpen ? '海运费 / 拖车费 / 港杂费' : '当前链接暂无可打开账单';
+  ['ocean','trucking'].forEach(k=>{ if(isBillConfirmed(k)) markBillUI(k); });
+  $('billingSubV2').textContent = '海运+港杂 / 拖车 · 一键全确认或逐行确认';
 }
 
-// 顶部提醒：第一时间告诉货代还差什么没填/没传/没确认（Damon 0812）
-function renderReminder(s){
-  const sub = $('bannerSub'), badge = $('bannerBadge');
-  if(!sub) return;
+// 顶部提醒：算出「还差什么」，写进 banner，并生成可点击跳转的待办弹窗（Damon 0812）
+function computeTodos(s){
   const items = [];
   const ups = Array.isArray(s.collab_uploads)?s.collab_uploads:[];
-  // SO 订舱确认没传
   const hasSO = ups.some(u=>/(^|[^A-Z])S\/?O([^A-Z]|$)|入货|排载|配舱|舱单|订舱确认|manifest|放箱/i.test(u.filename||''));
-  if(!hasSO) items.push('SO 订舱确认未上传');
-  // 提单没传 / 提单号没填
+  if(!hasSO) items.push({label:'SO 订舱确认未上传', target:'so'});
   const hasBL = !!s.bl_no || ups.some(u=>/\bBL\b|提单/i.test(u.filename||''));
-  if(!hasBL) items.push('提单 B/L 未上传');
-  // 费用待填（港杂 / 报关）——没人报=还得他填
+  if(!hasBL) items.push({label:'提单 B/L 未上传', target:'bl'});
   const seg = (_billSummary && _billSummary.segments) || {};
-  const feeLabel = { port_charge:'港杂费', customs:'报关费', ocean:'海运费', trucking:'拖车费' };
   const filled = x => !!(x && (x.status==='已录入' || x.status==='已确认'
     || (x.reported_by && x.reported_by.length)
     || (x.amount && Object.values(x.amount).some(n=>Number(n)>0))));
-  ['port_charge'].forEach(k=>{ if(!filled(seg[k])) items.push(feeLabel[k]+'待填'); });   // 报关费由我方内部填，不催货代
-  // 账单没确认
-  const billConfirmed = !!localStorage.getItem('collab_bill_checked_'+token);
-  if(!billConfirmed) items.push('账单未确认');
+  if(!filled(seg.port_charge)) items.push({label:'港杂费待填', target:'port'});   // 报关费由我方内部填，不催货代
+  if(!allBillsConfirmed()) items.push({label:'账单未确认', target:'bill'});
+  return items;
+}
+function renderReminder(s){
+  const sub = $('bannerSub'), badge = $('bannerBadge');
+  if(!sub) return;
+  const items = computeTodos(s);
+  window._todos = items;
   if(items.length){
-    sub.innerHTML = '还差：' + items.map(t=>esc(t)).join(' · ');
+    sub.innerHTML = '还差：' + items.map(t=>esc(t.label)).join(' · ') + ' <span style="color:#1a73e8;text-decoration:underline;white-space:nowrap;">查看待办 ›</span>';
     if(badge){ badge.textContent = '需补齐 ' + items.length + ' 项'; badge.className = 'badge badge-red'; }
   } else {
     sub.textContent = '资料已齐全，感谢配合';
     if(badge){ badge.textContent = '已齐全'; badge.className = 'badge badge-green'; }
   }
+  // banner 整块可点开弹窗
+  const bannerCard = badge ? badge.closest('.card') : null;
+  if(bannerCard){ bannerCard.style.cursor='pointer'; bannerCard.onclick = openTodoPopup; }
+  buildTodoPopup(items);
+  // 一打开就能看到：本次加载若有待办，自动弹一次
+  if(items.length && !window._todoShown){ window._todoShown = true; setTimeout(openTodoPopup, 350); }
+}
+const TODO_HINT = { so:'去「请贵司上传」上传承运人订舱确认/BL', bl:'去「请贵司上传」上传提单 B/L', port:'去「费用与对账」填港杂费', bill:'去「费用与对账」一键确认账单' };
+function buildTodoPopup(items){
+  let m = document.getElementById('todoModal');
+  if(!m){
+    m = document.createElement('div');
+    m.id='todoModal';
+    m.style.cssText='display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:997;';
+    m.onclick=function(){ this.style.display='none'; };
+    document.body.appendChild(m);
+  }
+  const rows = items.length
+    ? items.map((it,i)=>`<button onclick="jumpTo('${it.target}')" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid #fde68a;background:#fffbeb;border-radius:9px;padding:11px 13px;margin-bottom:8px;cursor:pointer;font-family:inherit;">
+        <span style="width:22px;height:22px;border-radius:50%;background:#f59e0b;color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</span>
+        <span style="flex:1;"><span style="font-size:13px;font-weight:800;color:#92400e;">${esc(it.label)}</span><br><span style="font-size:11px;color:#a16207;">${esc(TODO_HINT[it.target]||'')}</span></span>
+        <span style="color:#1a73e8;font-weight:900;">›</span></button>`).join('')
+    : `<div style="text-align:center;padding:20px;color:#059669;font-weight:800;">✅ 资料已齐全，感谢配合</div>`;
+  m.innerHTML = `<div style="position:absolute;left:50%;top:12%;transform:translateX(-50%);width:min(460px,92vw);background:#fff;border-radius:14px;padding:18px;" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div style="font-size:15px;font-weight:900;color:#1a1d23;">📋 待办清单${items.length?'（'+items.length+'项）':''}</div>
+      <span style="cursor:pointer;color:#9ca3af;font-weight:800;" onclick="document.getElementById('todoModal').style.display='none'">✕</span></div>
+    <div style="font-size:11px;color:#6b7280;margin-bottom:12px;">点任意一项，直接跳到要填/要传的地方</div>
+    ${rows}</div>`;
+}
+function openTodoPopup(){ const m=document.getElementById('todoModal'); if(m) m.style.display='block'; }
+function jumpTo(target){
+  const m=document.getElementById('todoModal'); if(m) m.style.display='none';
+  const idMap = { so:'uploadPanel', bl:'uploadPanel', port:'billingCardV2', bill:'billingCardV2' };
+  const el = document.getElementById(idMap[target]||target);
+  if(target==='port' || target==='bill'){ document.getElementById('bill_ocean')?.classList.add('open'); }
+  if(el){
+    el.scrollIntoView({behavior:'smooth', block:'center'});
+    const prev = el.style.boxShadow;
+    el.style.transition='box-shadow .25s'; el.style.boxShadow='0 0 0 3px #fbbf24';
+    setTimeout(()=>{ el.style.boxShadow=prev||''; }, 1700);
+  }
+}
+// 账单确认：本机记录（正式以系统确认为准）——一键全确认 + 每行单独确认
+function billKey(k){ return 'collab_bill_checked_'+token+'_'+k; }
+function isBillConfirmed(k){ return !!localStorage.getItem(billKey(k)); }
+function allBillsConfirmed(){ return ['ocean','trucking'].every(isBillConfirmed); }
+function markBillUI(k){
+  const row=document.getElementById('bill_'+k); if(!row) return;
+  row.querySelectorAll('.bill-confirm-btn').forEach(btn=>{ btn.textContent='✓ 已确认'; btn.disabled=true; btn.classList.remove('btn-blue'); btn.classList.add('btn-ghost'); });
+}
+function confirmBill(k){
+  const label={ocean:'海运费 + 港杂费', trucking:'拖车费'}[k]||k;
+  if(!confirm('确认「'+label+'」金额与柜数无误？确认后如需改价请走提报，待我方确认。')) return;
+  localStorage.setItem(billKey(k), new Date().toISOString());
+  markBillUI(k); toast('已确认 '+label+'（本机记录，正式以系统确认为准）');
+  if(window._sheetP) renderReminder(window._sheetP);
+}
+function confirmAllBills(){
+  if(!confirm('一键确认本票全部费用（海运+港杂 / 拖车）金额与柜数无误？')) return;
+  ['ocean','trucking'].forEach(k=>{ localStorage.setItem(billKey(k), new Date().toISOString()); markBillUI(k); });
+  toast('已一键确认全部费用（本机记录，正式以系统确认为准）');
+  if(window._sheetP) renderReminder(window._sheetP);
 }
 function toggleBill(k){ document.getElementById('bill_'+k)?.classList.toggle('open'); }
 function portChargeEditor(){
@@ -253,6 +328,38 @@ function parsePortChargePaste(){
   });
   const m = document.getElementById('pcPasteModal'); if(m) m.style.display='none';
   toast(n ? ('已导入 '+n+' 行，请选计价单位后逐条提报') : '未识别到费目/金额');
+}
+// 拖车·新增费用（超时费 / 滞港费等），每笔可选付款方（我方 / 工厂 / 货代）。
+// 货代 token 后端只准提报 port_charge 费段，这里作为「待我方确认」提报，付款方随 reason 带上供我方归口。
+function truckExtraFeeEditor(){
+  return `<div style="border:1px dashed #e5e7eb;border-radius:8px;padding:10px 12px;margin-top:12px;">
+    <div style="font-size:11px;color:#6b7280;font-weight:800;margin-bottom:6px;">其他费用（超时费 / 滞港费等 · 提报待我方确认）</div>
+    <div id="truckExtraRows"></div>
+    <button class="btn btn-ghost btn-sm" onclick="addTruckFeeRow()">＋ 新增费用</button>
+  </div>`;
+}
+function addTruckFeeRow(){
+  const tb = document.getElementById('truckExtraRows'); if(!tb) return;
+  const id = 'tkf_' + (tb.children.length + 1) + '_' + token.slice(0,4);
+  tb.insertAdjacentHTML('beforeend', `<div id="${id}" style="display:grid;grid-template-columns:1fr 84px 92px auto;gap:6px;margin-bottom:6px;align-items:center;">
+    <input placeholder="费目 如 超时费" style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
+    <input type="number" min="0" step="0.01" placeholder="金额" style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;">
+    <select style="border:1px solid #c8cdd6;border-radius:6px;padding:6px;font-size:11px;font-family:inherit;"><option value="">付款方</option><option value="我方">我方</option><option value="工厂">工厂</option><option value="货代">货代</option></select>
+    <button class="btn btn-blue btn-sm" onclick="submitTruckFee('${id}')">提报</button></div>`);
+}
+async function submitTruckFee(id){
+  const tr = document.getElementById(id); if(!tr) return;
+  const ins = tr.querySelectorAll('input'), sel = tr.querySelector('select');
+  const cost = (ins[0]?.value||'').trim(), amount = ins[1]?.value||'', payer = sel?.value||'';
+  if(!cost || !amount || !payer){ toast('费目、金额、付款方必填'); return; }
+  try{
+    const r = await fetch(`${API}/collab-bill-submit`, {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({token, action:'add', cost_category:cost, charge_basis:'per_bl', currency:'CNY', unit_price:amount, amount, reason:'拖车其他费用·付款方:'+payer})});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok) throw new Error(d.error || '提报失败');
+    toast('已提报「'+cost+'·'+payer+'付」，待我方确认');
+    tr.querySelectorAll('input,select,button').forEach(x=>x.disabled=true);
+  }catch(e){ toast(e.message || '提报失败'); }
 }
 // 拖车费·嵌入工厂装柜整个模块：柜号 + 拖车信息 + gw/cbm/ctn/vgm + 工厂装箱照片（默认随账单行收起）
 function truckContainerModule(s){
