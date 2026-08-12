@@ -51,11 +51,15 @@ export default async function handler(req, res) {
       const target = Number(b.target_price);
       if (!Number.isFinite(target) || target <= 0)
         return res.status(400).json({ success: false, error: "target_price 必须是正数" });
+      // origin=system(Cora等自动管线) → proposed,必须走 店长审→Claude终审
+      // origin=boss / 缺省(老板在详情页点的) → pending 直通,他自己就是终审
+      const origin = String(b.origin || "boss");
+      const initStatus = origin === "system" ? "proposed" : "pending";
       const r = await pool.query(
-        `INSERT INTO petstore_price_intents (product_code, product_name, channel, old_price, target_price, reason, author)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        `INSERT INTO petstore_price_intents (product_code, product_name, channel, old_price, target_price, reason, author, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [code, b.product_name || null, b.channel || "门店", b.old_price ?? null, target,
-         String(b.reason || "").trim() || "老板在详情页采纳", author]);
+         String(b.reason || "").trim() || "老板在详情页采纳", author, initStatus]);
       if (String(b.note || "").trim())
         await pool.query(`INSERT INTO petstore_product_notes (product_code, note, author) VALUES ($1,$2,$3)`,
           [code, b.note.trim(), author]);
