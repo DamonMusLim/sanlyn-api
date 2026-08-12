@@ -35,10 +35,13 @@ inv AS (
   SELECT DISTINCT d.customs_no, i.invoice_no, i.seller_name, i.amount_incl_tax, i.remark, i.issue_date
   FROM decl d
   JOIN finance_invoices_in i
-    ON i.customs_nos @> ARRAY[d.customs_no]::varchar[]
-    OR (i.contract_nos IS NOT NULL AND d.contract_no <> '' AND EXISTS (
-          SELECT 1 FROM unnest(i.contract_nos) c
-          WHERE c <> '' AND d.contract_no LIKE '%'||c||'%'))
+    ON (i.customs_nos @> ARRAY[d.customs_no]::varchar[]
+        OR (i.contract_nos IS NOT NULL AND d.contract_no <> '' AND EXISTS (
+              SELECT 1 FROM unnest(i.contract_nos) c
+              WHERE c <> '' AND d.contract_no LIKE '%'||c||'%')))
+    -- 退税只认【货物类】进项票；运费/海代/报关/仓储票不是货物进项，
+    -- 混进来会把「进项超报关额」算成假倒挂（0812 实测 046610 被多算 ¥5,044 运费）
+    AND i.seller_name !~ '物流|货运|货代|供应链|运输|船务|报关|国际货|海运|仓储|财务'
 ),
 -- 税局出口退税联（finance_rebate_ckts_lines）是最高权威口径：
 -- 它是税局认的逐项，HS/数量/人民币离岸价都以它为准；有它就不用报关单PDF那一层。
@@ -342,7 +345,11 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
   (SELECT string_agg(v.invoice_no, ',' ORDER BY v.issue_date) FROM inv v
      WHERE v.customs_no = d.customs_no) AS invoices,
   (SELECT round(sum(v.amount_incl_tax), 2) FROM inv v
-     WHERE v.customs_no = d.customs_no) AS invoice_amt
+     WHERE v.customs_no = d.customs_no) AS invoice_amt,
+  -- 价格倒挂告警：进项票含税合计 > 报关额 = 采购价高于出口价，税局重点稽查项
+  CASE WHEN (SELECT sum(v.amount_incl_tax) FROM inv v WHERE v.customs_no = d.customs_no) > d.fob_cny + 1
+       THEN round((SELECT sum(v.amount_incl_tax) FROM inv v WHERE v.customs_no = d.customs_no) - d.fob_cny, 2)
+  END AS inv_over
 FROM decl d
 LEFT JOIN agg a ON a.customs_no = d.customs_no
 LEFT JOIN ckts_agg k ON k.customs_no = d.customs_no

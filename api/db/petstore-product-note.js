@@ -16,7 +16,13 @@ CREATE TABLE IF NOT EXISTS petstore_price_intents (
   channel TEXT NOT NULL DEFAULT '门店', old_price NUMERIC, target_price NUMERIC NOT NULL,
   reason TEXT, author TEXT,
   status TEXT NOT NULL DEFAULT 'pending',   -- pending / applied / failed / cancelled
-  result TEXT, created_at TIMESTAMPTZ DEFAULT now(), applied_at TIMESTAMPTZ);
+  result TEXT, created_at TIMESTAMPTZ DEFAULT now(), applied_at TIMESTAMPTZ,
+  worker_id TEXT, claimed_at TIMESTAMPTZ);
+ALTER TABLE petstore_price_intents ADD COLUMN IF NOT EXISTS worker_id TEXT;
+ALTER TABLE petstore_price_intents ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+-- 同 SKU 同渠道只允许一条未终态指令,否则 pending 和 approved 会互相覆盖(codex 0812)
+CREATE UNIQUE INDEX IF NOT EXISTS ux_ppi_open ON petstore_price_intents(product_code, channel)
+  WHERE status IN ('proposed','mgr_ok','approved','pending','applying');
 CREATE INDEX IF NOT EXISTS ix_ppi_pending ON petstore_price_intents(status, created_at);
 CREATE INDEX IF NOT EXISTS ix_ppi_code ON petstore_price_intents(product_code, created_at DESC);
 CREATE TABLE IF NOT EXISTS petstore_price_lock (
@@ -55,6 +61,15 @@ export default async function handler(req, res) {
       // origin=boss / 缺省(老板在详情页点的) → pending 直通,他自己就是终审
       const origin = String(b.origin || "boss");
       const initStatus = origin === "system" ? "proposed" : "pending";
+      // 同 SKU 同渠道已有未完成指令 → 拒绝,别排队打架
+      const dup = await pool.query(
+        `SELECT id, status, target_price FROM petstore_price_intents
+          WHERE product_code=$1 AND channel=$2
+            AND status IN ('proposed','mgr_ok','approved','pending','applying') LIMIT 1`,
+        [code, b.channel || "门店"]);
+      if (dup.rowCount)
+        return res.status(409).json({ success: false,
+          error: `该品已有一条未完成指令(#${dup.rows[0].id} ${dup.rows[0].status} → ¥${dup.rows[0].target_price}),先处理它` });
       const r = await pool.query(
         `INSERT INTO petstore_price_intents (product_code, product_name, channel, old_price, target_price, reason, author, status)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
