@@ -8,7 +8,19 @@ import { requireAuth } from "../auth.js";
 export async function loadTaxRebateMaster(pool, q = {}) {
   const from = String(q.from || "2026-01-01").trim();
   const sql = `
-WITH decl AS (
+WITH -- 工厂名归一：进项票销方名、订单 factory 都是自由文本，同一法人会写出好几个名字
+-- （「烟台中宠股份」vs「烟台中宠食品股份」= 同一法人，前者少了「食品」二字，
+--  见记忆 zhongchong_legal_entity_multi_account：1法人 + OEM/品牌/国内 三个部门账户，
+--  部门账户不合并，但法人只有一个）。
+-- 一律过 companies 归到法人正式名；merged_into_code 再跳一次到存续公司。
+fac_alias AS (
+  SELECT v.variant, COALESCE(m.name_cn, co.name_cn) AS canon
+    FROM companies co
+    CROSS JOIN LATERAL (VALUES (co.name_cn),(co.factory_name),(co.short_name)) AS v(variant)
+    LEFT JOIN companies m ON m.code = co.merged_into_code
+   WHERE COALESCE(v.variant,'') <> ''
+),
+decl AS (
   SELECT f.customs_no, f.export_date, f.contract_no, f.fob_cny,
     f.fob_foreign, f.currency, f.exchange_rate,
     COALESCE(f.rebate_lifecycle_status, f.status) AS status,
@@ -32,7 +44,8 @@ WITH decl AS (
 inv AS (
   -- 进项票挂到票上有两条路：customs_nos 直挂，或 contract_nos 对上合同号。
   -- 只走 customs_nos 会漏掉大量只填了合同号的票（0811 实测漏 1 张 ¥38,121）。
-  SELECT DISTINCT d.customs_no, i.invoice_no, i.seller_name, i.seller_tax_id, i.amount_incl_tax,
+  SELECT DISTINCT d.customs_no, i.invoice_no,
+         COALESCE(fa.canon, i.seller_name) AS seller_name, i.seller_tax_id, i.amount_incl_tax,
          i.amount_ex_tax, i.tax_rate AS inv_tax_rate, i.remark, i.issue_date
   FROM decl d
   JOIN finance_invoices_in i
@@ -43,6 +56,7 @@ inv AS (
     -- 退税只认【货物类】进项票；运费/海代/报关/仓储票不是货物进项，
     -- 混进来会把「进项超报关额」算成假倒挂（0812 实测 046610 被多算 ¥5,044 运费）
     AND i.seller_name !~ '物流|货运|货代|供应链|运输|船务|报关|国际货|海运|仓储|财务'
+  LEFT JOIN fac_alias fa ON fa.variant = i.seller_name
 ),
 -- 税局出口退税联（finance_rebate_ckts_lines）是最高权威口径：
 -- 它是税局认的逐项，HS/数量/人民币离岸价都以它为准；有它就不用报关单PDF那一层。
@@ -111,7 +125,7 @@ ckts AS (
                FROM order_line_items l3 JOIN orders o3 ON o3.id = l3.order_id
               WHERE o3.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                  OR (d.contract_no <> '' AND o3.contract_no <> '' AND d.contract_no LIKE '%'||o3.contract_no||'%')))
-    ) AS line_factory,
+    ) AS line_factory_raw,
     -- 证据出处（页面必须如实显示是哪一档判出来的，不能一律写「进项票实证」）
     CASE
       WHEN EXISTS (SELECT 1 FROM finance_invoices_in i3, jsonb_array_elements(i3.line_items) li3
@@ -170,13 +184,22 @@ ckts AS (
         AND ci2.sort_order::text = ltrim(c.item_no,'0') LIMIT 1) AS cd_cur
   FROM decl d JOIN finance_rebate_ckts_lines c ON c.customs_no = d.customs_no
 ),
+ckts2n AS (
+  -- 工厂名归一到法人正式名：进项票销方/订单 factory 都是自由文本，同一法人写法多。
+  -- 「烟台中宠股份」和「烟台中宠食品股份」是同一个法人（前者少了「食品」二字），
+  -- 记忆 zhongchong_legal_entity_multi_account：1 法人 + OEM/品牌/国内 三个部门账户，
+  -- 部门账户不合并，但法人只有一个 —— 催票、退税归属都按法人算。
+  -- 归不到公司表的原样保留，绝不丢。
+  SELECT k.*, COALESCE(fa.canon, k.line_factory_raw) AS line_factory
+    FROM ckts k LEFT JOIN fac_alias fa ON fa.variant = k.line_factory_raw
+),
 ckts2 AS (
   -- 行工厂已定 → 直接挂这家工厂在本票的进项票（Damon 0812：票都开了为什么还显示缺）
-  SELECT k.*, COALESCE(k.invoice_no,
+  SELECT n.*, COALESCE(n.invoice_no,
     (SELECT v.invoice_no FROM inv v
-      WHERE v.customs_no = k.customs_no AND v.seller_name = k.line_factory
+      WHERE v.customs_no = n.customs_no AND v.seller_name = n.line_factory
       ORDER BY v.issue_date LIMIT 1)) AS invoice_no2
-  FROM ckts k
+  FROM ckts2n n
 ),
 -- 外贸企业免退税：实退 = 进项专票【不含税额】× 退税率。
 -- 单位是「每张票」不是「每行」——一张票常横跨该票多行，按行乘会重复计数
