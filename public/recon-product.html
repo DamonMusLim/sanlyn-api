@@ -27,9 +27,11 @@ function tkey(r){return r.bl_no||r.po_nos||""}
 function foldTxt(v,sep){var p=String(v||"").split(sep).filter(Boolean);if(p.length<=1)return SanlynTable.esc(p[0]||"—");
   return '<span class="po-head">'+SanlynTable.esc(p[0].slice(0,12))+' <b class="po-more">+'+(p.length-1)+'</b></span><span class="po-full">'+SanlynTable.esc(p.join(" / "))+'</span>'}
 function docsCell(r,h){var t=h.token(),bl=r.bl_no||"",docs=r.docs||[],links=[];
+  var pos=(r.orders||[]).map(function(o){return o.po}).filter(Boolean);
+  if(pos.length)links.push('<a target="_blank" href="/templates/export-docs-template.html?order_no='+encodeURIComponent(pos[0])+'&ids='+encodeURIComponent(pos.join(","))+'&mode=detail&token='+encodeURIComponent(t)+'">客户资料合并版(PL+SC+IV)</a>');
   if(bl){links=docs.map(function(d){return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type='+encodeURIComponent(d.doc_type)+'&token='+encodeURIComponent(t)+'">'+h.esc(d.doc_no)+'</a>'});
     links.push('<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_invoice&token='+encodeURIComponent(t)+'">海运费单</a>')}
-  return links.length?'<span class="po-head">📎'+docs.length+'</span><span class="po-full">'+links.join("<br>")+'</span>':'—'}
+  return links.length?'<span class="po-head">📎'+links.length+'</span><span class="po-full">'+links.join("<br>")+'</span>':'—'}
 function stCell(r,h){var s=r.product_status||"未核";
   return '<span class="st '+STC[s]+'" onclick="setSt(\''+h.esc(tkey(r)).replace(/'/g,"")+'\')">'+h.esc(s)+'</span>'}
 window.setSt=async function(key){
