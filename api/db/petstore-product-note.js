@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS petstore_price_intents (
   status TEXT NOT NULL DEFAULT 'pending',   -- pending / applied / failed / cancelled
   result TEXT, created_at TIMESTAMPTZ DEFAULT now(), applied_at TIMESTAMPTZ);
 CREATE INDEX IF NOT EXISTS ix_ppi_pending ON petstore_price_intents(status, created_at);
-CREATE INDEX IF NOT EXISTS ix_ppi_code ON petstore_price_intents(product_code, created_at DESC);`;
+CREATE INDEX IF NOT EXISTS ix_ppi_code ON petstore_price_intents(product_code, created_at DESC);
+CREATE TABLE IF NOT EXISTS petstore_price_lock (
+  product_code TEXT PRIMARY KEY, product_name TEXT, locked BOOLEAN NOT NULL DEFAULT true,
+  reason TEXT, locked_by TEXT, locked_at TIMESTAMPTZ DEFAULT now());`;
 
 export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
@@ -32,6 +35,18 @@ export default async function handler(req, res) {
   try {
     const pool = getPool();
     await pool.query(DDL);
+    // 🔒 锁价:这个品不再被任何自动调价碰(Damon 0812「不监控产品多一个设置,流量品就稳定了」)
+    if (["lock", "unlock"].includes(String(b.action || ""))) {
+      const locked = b.action === "lock";
+      const r = await pool.query(
+        `INSERT INTO petstore_price_lock (product_code, product_name, locked, reason, locked_by)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (product_code) DO UPDATE SET locked=EXCLUDED.locked, reason=EXCLUDED.reason,
+           locked_by=EXCLUDED.locked_by, locked_at=now(), product_name=COALESCE(EXCLUDED.product_name, petstore_price_lock.product_name)
+         RETURNING *`,
+        [code, b.product_name || null, locked, String(b.reason || "").trim() || (locked ? "老板锁价" : "解锁"), author]);
+      return res.status(200).json({ success: true, kind: "lock", data: r.rows[0] });
+    }
     if (String(b.action || "note") === "price") {
       const target = Number(b.target_price);
       if (!Number.isFinite(target) || target <= 0)

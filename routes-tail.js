@@ -39,6 +39,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/petstore-product-detail", () => import("./api/db/petstore-product-detail.js"));
   mount("/api/db/petstore-product-note",   () => import("./api/db/petstore-product-note.js"));
   mount("/api/db/petstore-intents",        () => import("./api/db/petstore-intents.js"));
+  mount("/api/db/petstore-locks",          () => import("./api/db/petstore-locks.js"));
   mount("/api/db/recon-export", () => import("./api/db/recon-export.js"));
   mount("/api/db/recon-edit", () => import("./api/db/recon-edit.js")); // 对账主表行内编辑 2026-08-11
   mount("/api/db/recon-confirm", () => import("./api/db/recon-confirm.js")); // 对平状态 2026-08-12

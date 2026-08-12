@@ -48,8 +48,17 @@ ckts AS (
     (c.raw::jsonb->>'region') AS source_region,
     (c.raw::jsonb->>'nw_total') AS nw_total,
     -- 退税联的「法定数量」单位是千克时，它就是该行净重
-    CASE WHEN c.raw::jsonb->>'legal_unit' = '千克'
-         THEN (c.raw::jsonb->>'legal_qty')::numeric END AS line_nw,
+    -- 净重：① 我们自己的报关单逐项（Damon 0812：以我们的报关单数据为准）
+    --       ② 退税联法定数量(千克)  ③ 退税联第二数量(千克)
+    COALESCE(
+      (SELECT ci2.net_weight_kg FROM customs_declaration_items ci2
+         JOIN customs_declarations cd2 ON cd2.id = ci2.declaration_id
+        WHERE cd2.declaration_no = d.customs_no AND ci2.deleted_at IS NULL
+          AND ci2.sort_order::text = ltrim(c.item_no,'0')
+        LIMIT 1),
+      CASE WHEN c.raw::jsonb->>'legal_unit' = '千克'
+           THEN (c.raw::jsonb->>'legal_qty')::numeric END,
+      (c.raw::jsonb->>'nw_line')::numeric) AS line_nw,
     CASE WHEN c.hs_code LIKE '2309%' THEN 0.09
          WHEN c.hs_code IS NULL OR c.hs_code = '' THEN NULL
          ELSE 0.13 END AS rate,
@@ -74,6 +83,13 @@ ckts AS (
         WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.declaration_name = c.goods_name
           AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
+      -- ③b 箱数匹配（Damon 0812 抓的规律：PDF 抽字会把品名抽花，箱数不会花）
+      --     只在「该箱数在本票订单里只指向唯一一家工厂」时才落地，实测 0 冲突
+      (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
+         FROM order_line_items l JOIN orders o ON o.id = l.order_id
+        WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.qty_ctn = c.qty
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
       (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
           AND c.goods_name <> '' AND v.remark ILIKE '%'||c.goods_name||'%' LIMIT 1),
       -- ⑤ 整票的订单只指向唯一一家工厂 → 每一行都是这家（无歧义，Damon 0812：按公司分开除重）
@@ -83,6 +99,14 @@ ckts AS (
                OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')))
     ) AS line_factory
   FROM decl d JOIN finance_rebate_ckts_lines c ON c.customs_no = d.customs_no
+),
+ckts2 AS (
+  -- 行工厂已定 → 直接挂这家工厂在本票的进项票（Damon 0812：票都开了为什么还显示缺）
+  SELECT k.*, COALESCE(k.invoice_no,
+    (SELECT v.invoice_no FROM inv v
+      WHERE v.customs_no = k.customs_no AND v.seller_name = k.line_factory
+      ORDER BY v.issue_date LIMIT 1)) AS invoice_no2
+  FROM ckts k
 ),
 ckts_agg AS (
   SELECT customs_no, count(*) n,
@@ -94,14 +118,14 @@ ckts_agg AS (
     json_agg(json_build_object(
       'item_no', item_no, 'hs', hs_code, 'name', goods_name, 'qty', qty, 'unit', unit,
       'nw', line_nw, 'amt', amount_cny, 'rate', rate,
-      'invoice_no', invoice_no, 'factory', line_factory,
+      'invoice_no', invoice_no2, 'factory', line_factory,
       'region', source_region,
       'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
       'region_factory', NULL,
       'line_rebate', CASE WHEN rate IS NOT NULL AND amount_cny IS NOT NULL
                           THEN round(amount_cny * rate, 2) END
     ) ORDER BY item_no) AS items
-  FROM ckts GROUP BY customs_no
+  FROM ckts2 GROUP BY customs_no
 ),
 line AS (
   SELECT d.customs_no, ci.sort_order AS item_no, ci.hs_code,
@@ -120,6 +144,13 @@ line AS (
         AND (v.amount_incl_tax = ci.declaration_amount
              OR (ci.declaration_name_cn <> '' AND v.remark ILIKE '%'||ci.declaration_name_cn||'%'))
       ORDER BY (v.amount_incl_tax = ci.declaration_amount) DESC LIMIT 1),
+      -- ③b 箱数匹配（Damon 0812 抓的规律：PDF 抽字会把品名抽花，箱数不会花）
+      --     只在「该箱数在本票订单里只指向唯一一家工厂」时才落地，实测 0 冲突
+      (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
+         FROM order_line_items l JOIN orders o ON o.id = l.order_id
+        WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.qty_ctn = ci.qty
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
       (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
          FROM order_line_items l JOIN orders o ON o.id = l.order_id
         WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.declaration_name = ci.declaration_name_cn
@@ -139,6 +170,13 @@ line AS (
   JOIN customs_declaration_items ci
     ON ci.declaration_id = d.decl_id AND ci.deleted_at IS NULL
 ),
+line2 AS (
+  SELECT l.*, COALESCE(l.invoice_no,
+    (SELECT v.invoice_no FROM inv v
+      WHERE v.customs_no = l.customs_no AND v.seller_name = l.line_factory
+      ORDER BY v.issue_date LIMIT 1)) AS invoice_no2
+  FROM line l
+),
 agg AS (
   SELECT customs_no, count(*) AS n,
     count(*) FILTER (WHERE rate IS NULL OR amt IS NULL) AS bad,
@@ -148,14 +186,14 @@ agg AS (
          ELSE round(sum(amt * rate), 2) END AS est_rebate,
     json_agg(json_build_object(
       'item_no', item_no, 'hs', hs_code, 'name', name, 'qty', qty, 'unit', unit,
-      'nw', nw, 'amt', amt, 'rate', rate, 'invoice_no', invoice_no,
+      'nw', nw, 'amt', amt, 'rate', rate, 'invoice_no', invoice_no2,
       'factory', line_factory, 'region', source_region,
       'region_name', (SELECT a.area_name FROM customs_source_area a WHERE a.area_code = source_region),
       'region_factory', NULL,
       'line_rebate', CASE WHEN rate IS NOT NULL AND amt IS NOT NULL
                           THEN round(amt * rate, 2) END
     ) ORDER BY item_no) AS items
-  FROM line GROUP BY customs_no
+  FROM line2 GROUP BY customs_no
 )
 SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
   d.status, d.batch, d.apply_date, d.flow_status, d.batch_total,

@@ -55,7 +55,7 @@ function advise(sku, todos) {
 }
 
 export async function loadDetail(pool, code) {
-  const [sku, logs, todos, notes, intents] = await Promise.all([
+  const [sku, logs, todos, notes, intents, lock] = await Promise.all([
     pool.query(`SELECT * FROM petstore_skus WHERE product_code=$1 LIMIT 1`, [code]),
     pool.query(`SELECT log_date::text AS log_date, ts, channel, old_price, new_price, rate, reason, result
                   FROM petstore_pricing_log WHERE product_code=$1 ORDER BY ts DESC LIMIT 200`, [code]),
@@ -67,11 +67,14 @@ export async function loadDetail(pool, code) {
     pool.query(`SELECT id, channel, old_price, target_price, reason, author, status, result, created_at, applied_at
                   FROM petstore_price_intents WHERE product_code=$1 ORDER BY created_at DESC LIMIT 30`, [code])
         .catch(() => ({ rows: [] })),
+    pool.query(`SELECT locked, reason, locked_by, locked_at FROM petstore_price_lock WHERE product_code=$1`, [code])
+        .catch(() => ({ rows: [] })),
   ]);
   const s = sku.rows[0] || null;
   const t = todos.rows || [];
   return { sku: s, history: logs.rows, todos: t, notes: notes.rows || [],
-           intents: intents.rows || [], advice: advise(s, t) };
+           intents: intents.rows || [], lock: (lock.rows || [])[0] || null,
+           advice: advise(s, t) };
 }
 
 export default async function handler(req, res) {
