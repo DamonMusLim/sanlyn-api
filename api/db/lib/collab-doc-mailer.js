@@ -44,24 +44,23 @@ async function buildTransport() {
   });
 }
 
-// 全局抄送名单（我方业务）——存 system_settings.key='doc_mail.cc'，value=JSON 数组
-// （元素可为 "a@x.com" 或 {email,label}），可随时增删。env DOC_MAIL_CC 作兜底/附加。
-async function loadCcList(pool) {
+// 抄送 = 我方（发货方 issuing_company）在【公司表】里的 业务/财务 联系人邮箱。
+// 不单独维护名单——增删就在公司卡片里改联系人（Damon：嵌入公司表，不用单独做）。
+// env DOC_MAIL_CC 作应急附加。
+async function loadCcList(pool, planId) {
   const out = [];
   try {
-    const r = await pool.query(`SELECT value FROM system_settings WHERE key='doc_mail.cc' LIMIT 1`);
-    if (r.rows[0] && r.rows[0].value) {
-      let arr = [];
-      try { arr = JSON.parse(r.rows[0].value); } catch (_e) { arr = String(r.rows[0].value).split(/[,;\s]+/); }
-      for (const it of (Array.isArray(arr) ? arr : [])) {
-        const e = typeof it === "string" ? it : (it && it.email);
-        if (e && (it.active !== false)) out.push(String(e).trim());
-      }
-    }
-  } catch (_e) { /* 表/键不存在 → 忽略 */ }
+    const r = await pool.query(
+      `SELECT c.biz_contact_email, c.fin_contact_email
+         FROM shipping_plans sp JOIN companies c ON c.name_cn = sp.issuing_company
+        WHERE sp.id = $1 LIMIT 1`, [planId]);
+    const c = r.rows[0] || {};
+    if (c.biz_contact_email) out.push(c.biz_contact_email); // 业务联系人
+    if (c.fin_contact_email) out.push(c.fin_contact_email); // 财务联系人
+  } catch (_e) { /* 列缺失/无匹配 → 忽略 */ }
   if (process.env.DOC_MAIL_CC) out.push(...process.env.DOC_MAIL_CC.split(/[,;\s]+/));
   // 去重、去空、去无效
-  return Array.from(new Set(out.filter((e) => e && /.+@.+\..+/.test(e))));
+  return Array.from(new Set(out.map((e) => String(e).trim()).filter((e) => e && /.+@.+\..+/.test(e))));
 }
 
 async function loadTemplate(pool, key) {
@@ -133,7 +132,7 @@ export async function sendPlanDocs(pool, planId, opts = {}) {
   const html = fillVars(tpl.html, info.ctx);
 
   // 全局抄送我方业务（去掉与主收件人重复的）
-  const ccAll = opts.cc ? (Array.isArray(opts.cc) ? opts.cc : [opts.cc]) : await loadCcList(pool);
+  const ccAll = opts.cc ? (Array.isArray(opts.cc) ? opts.cc : [opts.cc]) : await loadCcList(pool, planId);
 
   // 去重：已发过的 (doc_type,email) 不再发
   let prev = [];

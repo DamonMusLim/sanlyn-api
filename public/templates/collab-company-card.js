@@ -42,7 +42,8 @@
         biz_contact_phone: val("cc_biz_contact_phone"),
         biz_contact_email: val("cc_biz_contact_email"),
         fin_contact_name: val("cc_fin_contact_name"),
-        fin_contact_phone: val("cc_fin_contact_phone")
+        fin_contact_phone: val("cc_fin_contact_phone"),
+        fin_contact_email: val("cc_fin_contact_email")
       };
       var r = await fetch(API + "/company-profile", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({token:token, profile:patch})});
       var d = await r.json().catch(function(){ return {}; });
@@ -70,7 +71,8 @@
       input("业务联系人电话", "cc_biz_contact_phone", p.biz_contact_phone || p.contact_phone, locked),
       input("业务联系人邮箱", "cc_biz_contact_email", p.biz_contact_email || p.contact_email, locked),
       input("财务联系人姓名", "cc_fin_contact_name", p.fin_contact_name, locked),
-      input("财务联系人电话", "cc_fin_contact_phone", p.fin_contact_phone, locked)
+      input("财务联系人电话", "cc_fin_contact_phone", p.fin_contact_phone, locked),
+      input("财务联系人邮箱", "cc_fin_contact_email", p.fin_contact_email, locked)
     ].join("") : '<div style="padding:24px;text-align:center;color:#6b7280;">暂无本方公司档案</div>';
     m.innerHTML = '<div style="position:absolute;left:50%;top:5%;transform:translateX(-50%);width:min(560px,94vw);max-height:88vh;overflow:auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.24);" onclick="event.stopPropagation()">'+
       '<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px;"><b style="font-size:17px;">公司资料 / 联系人</b><button style="border:0;background:transparent;font-size:20px;cursor:pointer;" onclick="document.getElementById(\'companyModal\').style.display=\'none\'">x</button></div>'+

@@ -9,13 +9,14 @@ const EDITABLE = [
   "legal_representative", "address", "business_license_no",
   "business_license_url", "biz_contact_name", "biz_contact_phone",
   "biz_contact_email", "fin_contact_name", "fin_contact_phone",
+  "fin_contact_email",
 ];
 const SELECT_COLS = [
   "id", "code", "name_cn", "name_en", "short_name", "contact_name",
   "contact_phone", "contact_email", "address", "address_en",
   "legal_representative", "business_license_no", "business_license_url",
   "biz_contact_name", "biz_contact_phone", "biz_contact_email",
-  "fin_contact_name", "fin_contact_phone", "profile_locked",
+  "fin_contact_name", "fin_contact_phone", "fin_contact_email", "profile_locked",
   "profile_locked_at", "customs_reg_code",
 ];
 
@@ -33,6 +34,7 @@ async function ensureColumns(pool) {
       ADD COLUMN IF NOT EXISTS biz_contact_email text,
       ADD COLUMN IF NOT EXISTS fin_contact_name text,
       ADD COLUMN IF NOT EXISTS fin_contact_phone text,
+      ADD COLUMN IF NOT EXISTS fin_contact_email text,
       ADD COLUMN IF NOT EXISTS profile_locked boolean DEFAULT false,
       ADD COLUMN IF NOT EXISTS profile_locked_at timestamptz`);
 }
