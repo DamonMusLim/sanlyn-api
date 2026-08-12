@@ -59,7 +59,7 @@ export default async function handler(req, res) {
   try {
     // 1. 拉订单
     const { rows: orders } = await pool.query(
-      `SELECT order_no, contract_no, products, raw
+      `SELECT id, order_no, contract_no, products, raw
        FROM orders
        WHERE order_no = ANY($1) OR contract_no = ANY($1)`,
       [orderNos]
@@ -76,7 +76,20 @@ export default async function handler(req, res) {
     const allSkus = new Set();
 
     for (const ord of orders) {
-      const items = Array.isArray(ord.products) ? ord.products
+      // 根治(2026-08-13 Damon"读OLI"): order_line_items(OLI) 是数量唯一真源，先读 OLI；
+      // 只有 OLI 空才回退 products/raw（旧值可能错，如箱数 1440 而 OLI=1400）。
+      let items = [];
+      try {
+        const liR = await pool.query(
+          "SELECT sku, barcode, product_name, declaration_name, qty_ctn, cbm_ctn, nw_ctn, gw_ctn FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",
+          [ord.id]);
+        items = liR.rows.map(li => ({
+          sku: li.sku, qty: Number(li.qty_ctn) || 0, cbm: Number(li.cbm_ctn) || 0,
+          net_weight: Number(li.nw_ctn) || 0, gross_weight: Number(li.gw_ctn) || 0,
+          declaration_name: li.declaration_name, name: li.product_name,
+        }));
+      } catch (e) { /* fall through to products/raw */ }
+      if (!items.length) items = Array.isArray(ord.products) ? ord.products
                   : Array.isArray(ord.raw?.products) ? ord.raw.products
                   : Array.isArray(ord.raw?.items) ? ord.raw.items
                   : [];

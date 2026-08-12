@@ -76,8 +76,22 @@ export default async function handler(req, res) {
     const uploaded = DOC_DEFS.filter(d => d.field);
     const missing  = DOC_DEFS.filter(d => !d.field);
 
-    // ── Products from order ──
-    const products = (oRaw.products || []).map(p => ({
+    // ── Products from order ── 根治(2026-08-13 Damon"读OLI"): order_line_items(OLI) 是数量唯一真源。
+    // 先读 OLI；只有 OLI 空才回退 orders.products（旧值可能是错的，如箱数 1440 而 OLI=1400）。
+    let productSrc = [];
+    if (order && order.id) {
+      try {
+        const liR = await pool.query(
+          "SELECT sku, barcode, product_name, qty_ctn, size, unit_price FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",
+          [order.id]);
+        productSrc = liR.rows.map(li => ({
+          name: li.product_name, qty: Number(li.qty_ctn) || 0,
+          barcode: li.barcode || li.sku, size: li.size, unitPrice: li.unit_price,
+        }));
+      } catch (e) { /* fall through to raw.products */ }
+    }
+    if (!productSrc.length) productSrc = Array.isArray(oRaw.products) ? oRaw.products : [];
+    const products = productSrc.map(p => ({
       name:     p.name || p.productName || "—",
       qty:      p.qty  || p.quantity || "—",
       barcode:  p.barcode || p.sku || p.code || "—",

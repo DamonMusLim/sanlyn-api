@@ -78,21 +78,26 @@ export default async function handler(req, res) {
   const o = orderRes.rows[0];
   const raw = o.raw || {};
 
-  // Enrich products: join products table by barcode to get declaration fields
-  let orderProducts = Array.isArray(o.products) ? o.products : [];
-  // 2026-06-10: orders.products 旧列常为 NULL — 明细真值=order_line_items, 空时回退 OLI
-  if (!orderProducts.length) {
-    try {
-      const liR = await pool.query("SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id", [o.id || o._id]);
-      orderProducts = liR.rows.map(li => ({
-        sku: li.sku || "", barcode: li.barcode || li.sku || "",
-        qty: Number(li.qty_ctn) || 0,
-        netWeight: Number(li.nw_ctn) || 0,
-        grossWeight: Number(li.gw_ctn) || 0,
-        hsCode: li.hs_code || "",
-      }));
-    } catch (e) { /* keep empty — render shows no rows rather than invented data */ }
-  }
+  // 根治(2026-08-13 Damon"读OLI"): order_line_items(OLI) 是数量唯一真源。先读 OLI；
+  // 只有 OLI 为空(纯货代/无出口订单)才回退 orders.products。原来"products 非空就用"的假设是错的——
+  // 部分订单 products 是旧值(如箱数 1440 而 OLI=1400)，会印错报关数量。
+  let orderProducts = [];
+  try {
+    const liR = await pool.query("SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id", [o.id || o._id]);
+    orderProducts = liR.rows.map(li => ({
+      sku: li.sku || "", barcode: li.barcode || li.sku || "",
+      name: li.product_name || "",
+      qty: Number(li.qty_ctn) || 0,
+      netWeight: Number(li.nw_ctn) || 0,
+      grossWeight: Number(li.gw_ctn) || 0,
+      cbm: Number(li.cbm_ctn) || 0,
+      hsCode: li.hs_code || "",
+      size: li.size || "",
+      unitPrice: li.unit_price != null ? Number(li.unit_price) : null,
+      declaration_name: li.declaration_name || "",
+    }));
+  } catch (e) { /* keep empty — 宁可空也不编 */ }
+  if (!orderProducts.length) orderProducts = Array.isArray(o.products) ? o.products : [];
   let enriched = orderProducts;
 
   if (orderProducts.length > 0) {

@@ -439,8 +439,12 @@ body::before{ content:""; position:fixed; inset:-30% -10% auto -10%; height:70vh
   }
   if (ui === 'v1') add('/public/templates/collab-portal.v1.js');
   else add('/public/templates/collab-portal.js', function(){
-    add('/public/templates/collab-portal-truck.js', function(){
-      if (window.CollabPortalBoot) window.CollabPortalBoot();
+    add('/public/templates/collab-company-card.js', function(){
+      add('/public/templates/collab-portcharge-draft.js', function(){
+        add('/public/templates/collab-portal-truck.js', function(){
+          if (window.CollabPortalBoot) window.CollabPortalBoot();
+        });
+      });
     });
   });
 })();

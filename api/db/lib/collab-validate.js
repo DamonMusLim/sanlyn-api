@@ -3,6 +3,7 @@ import fs from "fs";
 import { billingSegmentFor, sanitizeSheet, visibleBillLines } from "./collab-field-profiles.js";
 import { materializeAndList } from "./carrier-requirements.js";
 import { rawToHash, COLLAB_VERSION, COLLAB_VERSION_AT } from "./collab-shared.js";
+import { ensureColumns as ensureCompanyColumns, findCompany as findScopedCompany } from "./collab-company-profile.js";
 
 async function handleValidate(req, res, pool) {
   let _partyHasBills = false;   // 该方是否有可见账单行；决定 billing 卡片出不出
@@ -58,6 +59,7 @@ async function handleValidate(req, res, pool) {
             sp.container_type, sp.container_qty, sp.collab_status,
             sp.total_cartons, sp.gross_weight_kg, sp.total_cbm, sp.freight_term,
             sp.raw->'customer_item_notes' AS customer_item_notes,
+            sp.raw->'doc_sends' AS doc_sends,
             sp.raw->'factory_cargo' AS factory_cargo,
             sp.raw->'factory_attrs' AS factory_attrs,
             sp.raw->'bl_confirmation' AS bl_confirmation,
@@ -254,10 +256,18 @@ async function handleValidate(req, res, pool) {
     role,
     internal: meta.field_profile === "upstream_downstream" || meta.field_profile === "shipping_booking",
   }).catch(() => []);
+  const companyProfile = await (async () => {
+    try {
+      await ensureCompanyColumns(pool);
+      return await findScopedCompany(pool, { role, meta, planId });
+    } catch (e) { return null; }
+  })();
+  if (role === "supplier_portal" && portalScope && companyProfile) portalScope.company_profile = companyProfile;
 
   return res.json({
     valid: true,
     role,
+    company_profile: companyProfile,
     // 协同版本戳（Damon 2026-08-06）：线上跑的是哪一版，外部页脚可直接显示
     collab_version: COLLAB_VERSION,
     collab_version_at: COLLAB_VERSION_AT,
