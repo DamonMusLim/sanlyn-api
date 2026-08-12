@@ -38,9 +38,12 @@ async function handleFileProxy(req, res, pool) {
   // 电放/SWB 保函：真源是 documents?type=tr（渲染「电放申请书暨保函」）。
   // 旧路由错把 telex 发给 shipping-plan-pdf，而它没有 telex 渲染器→回退成「海运计划确认书」(Damon 0812 指出)。
   if (type === "telex") {
-    // documents?type=tr 渲染「电放申请书暨保函」；sp 解析支持 id::text=计划id，直接传 planId 最稳
+    // 保函按放单方式选模板：SWB→海运单保函(swb_loi)，电放/其它→电放申请书暨保函(tr)。id=planId 最稳。
+    const { rows: _rr } = await pool.query(`SELECT release_type FROM shipping_plans WHERE id=$1`, [auth.planId]);
+    const _rel = String((_rr[0] && _rr[0].release_type) || "").trim();
+    const _docType = (/swb|海运单/i.test(_rel)) ? "swb_loi" : "tr";
     const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 });
-    const urlX = `http://127.0.0.1:9000/api/db/documents?type=tr&id=${encodeURIComponent(auth.planId)}&token=${encodeURIComponent(jwtX)}`;
+    const urlX = `http://127.0.0.1:9000/api/db/documents?type=${_docType}&id=${encodeURIComponent(auth.planId)}&token=${encodeURIComponent(jwtX)}`;
     try {
       const up = await fetch(urlX);
       res.status(up.status);

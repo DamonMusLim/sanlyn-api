@@ -1482,7 +1482,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if(["so","debit","freight-quote","sq","tr"].includes(type)){
+    if(["so","debit","freight-quote","sq","tr","swb_loi"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
       var spR=await pool.query(
         "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
@@ -1569,6 +1569,31 @@ export default async function handler(req, res) {
       if(type==="tr"){
         const { renderTr } = await import("./docs/tr.js");
         ({ html, _xlsCapture, totRow } = await renderTr({ sp, spraw, cfg3, fwd, vessel, voyage, polSp, podSp, soNo, html, _xlsCapture, totRow, ap, esc, pick, fmtD }));
+      }
+
+      if(type==="swb_loi"){
+        // SEA WAYBILL 海运单保函：收货人=订单customer(≠plan.customer父级买方) / 致=carrier.loi_recipient / 章=出货人公章
+        var _cneeR = await pool.query("SELECT customer FROM orders WHERE shipping_plan_id=$1 AND COALESCE(customer,'')<>'' ORDER BY order_no LIMIT 1",[sp.id]);
+        var _swbCnee = (_cneeR.rows[0] && _cneeR.rows[0].customer) || pickClean(sp.customer_en, sp.customer) || "[CONSIGNEE]";
+        var _swbCneeAddr = "";
+        try{ var _ca=await pool.query("SELECT address FROM companies WHERE name_en=$1 OR name_cn=$1 ORDER BY (address IS NOT NULL) DESC LIMIT 1",[_swbCnee]); if(_ca.rows[0]) _swbCneeAddr=_ca.rows[0].address||""; }catch(e){}
+        var _swbTo = to;   // 兜底=shipping_line
+        var _formRef = "";
+        try{
+          var _cc = pick(sp.carrier_code, spraw.carrierCode, "");
+          if(_cc){
+            var _cr = await pool.query("SELECT name_cn,name_en,loi_recipient FROM carriers WHERE upper(scac)=upper($1) OR upper(code)=upper($1) OR bl_prefixes ? upper($1) LIMIT 1",[_cc]);
+            if(_cr.rows[0]){ var _c=_cr.rows[0]; var _en=_c.loi_recipient||_c.name_en||""; _swbTo=[_c.name_cn||"", _en?("("+_en+")"):""].join(""); if(String(_c.name_en||_c.name_cn||"").toUpperCase().includes("OOCL")||/OOLU/i.test(_cc)) _formRef="OCHLCSU 08/21"; }
+          }
+        }catch(e){}
+        // 出货人公章：issuing_company → companies.code → customer_stamps(DAS)。无DAS章=占位不盖(Damon铁律)
+        var _stampUrl = "";
+        try{
+          var _sh = pick(sp.issuing_company, cfg3.nameCN, cfg3.nameEN, "");
+          if(_sh){ var _st=await pool.query("SELECT cs.url FROM customer_stamps cs JOIN companies co ON upper(cs.company_code)=upper(co.code) WHERE (co.name_cn=$1 OR co.name_en=$1) AND cs.is_active=true ORDER BY cs.is_default DESC, cs.uploaded_at DESC LIMIT 1",[_sh]); if(_st.rows[0]) _stampUrl=_st.rows[0].url||""; }
+        }catch(e){}
+        const { renderSwbLoi } = await import("./docs/swb-loi.js");
+        ({ html, _xlsCapture, totRow } = await renderSwbLoi({ sp, spraw, cfg3, consignee:_swbCnee, consAddr:_swbCneeAddr, carrierTo:_swbTo, formRef:_formRef, stampUrl:_stampUrl, vessel, voyage, polSp, podSp, html, _xlsCapture, totRow, ap, esc, pick, fmtD }));
       }
     }
 
