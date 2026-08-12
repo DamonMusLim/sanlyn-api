@@ -108,6 +108,15 @@ ckts AS (
     --     0812 按「箱数唯一 / 品名唯一」回填 49 行（data_guard_log 留痕），现 65/103。
     --     这一档命中就不再推理；填不上的行才往下走。
     COALESCE(
+      -- 🔒【真源·最高优先】customs_declaration_items.factory_company_id
+      --    Damon 0812「要根治！就是我们的报关表带出来的数据」——这一行的工厂固化在报关逐项表上，
+      --    factory_source 记依据、data_guard_log 留痕。命中就不再推理，
+      --    下面几档只对「还没固化的新行」生效。
+      (SELECT co1.name_cn FROM customs_declaration_items ci1
+         JOIN customs_declarations cd1 ON cd1.id = ci1.declaration_id
+         JOIN companies co1 ON co1.id = ci1.factory_company_id
+        WHERE cd1.declaration_no = d.customs_no AND ci1.deleted_at IS NULL
+          AND ci1.sort_order::text = ltrim(c.item_no,'0') LIMIT 1),
       (SELECT i2.seller_name FROM finance_invoices_in i2, jsonb_array_elements(i2.line_items) li
         WHERE i2.customs_nos @> ARRAY[d.customs_no]::varchar[] AND i2.line_items IS NOT NULL
           AND (li->>'nm') = c.goods_name AND (li->>'qty')::numeric = c.qty LIMIT 1),
@@ -176,6 +185,16 @@ ckts AS (
   ) AS line_factory_raw,
     -- 证据出处（页面必须如实显示是哪一档判出来的，不能一律写「进项票实证」）
     CASE
+      WHEN (SELECT ci8.factory_source FROM customs_declaration_items ci8
+              JOIN customs_declarations cd8 ON cd8.id = ci8.declaration_id
+             WHERE cd8.declaration_no = d.customs_no AND ci8.deleted_at IS NULL
+               AND ci8.sort_order::text = ltrim(c.item_no,'0')
+               AND ci8.factory_company_id IS NOT NULL LIMIT 1) IS NOT NULL
+        THEN '🔒' || (SELECT ci8.factory_source FROM customs_declaration_items ci8
+              JOIN customs_declarations cd8 ON cd8.id = ci8.declaration_id
+             WHERE cd8.declaration_no = d.customs_no AND ci8.deleted_at IS NULL
+               AND ci8.sort_order::text = ltrim(c.item_no,'0')
+               AND ci8.factory_company_id IS NOT NULL LIMIT 1)
       WHEN EXISTS (SELECT 1 FROM finance_invoices_in i3, jsonb_array_elements(i3.line_items) li3
                     WHERE i3.customs_nos @> ARRAY[d.customs_no]::varchar[] AND i3.line_items IS NOT NULL
                       AND (li3->>'nm') = c.goods_name AND (li3->>'qty')::numeric = c.qty) THEN '进项票逐行'
