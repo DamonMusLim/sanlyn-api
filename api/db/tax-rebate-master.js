@@ -107,16 +107,26 @@ ckts AS (
           AND (li->>'nm') = c.goods_name AND (li->>'qty')::numeric = c.qty LIMIT 1),
       (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
           AND abs(v.amount_incl_tax - c.amount_cny) < 1 LIMIT 1),
-      (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
-         FROM order_line_items l JOIN orders o ON o.id = l.order_id
-        WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.declaration_name = c.goods_name
-          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
-               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
-      -- ③b 箱数匹配（Damon 0812 抓的规律：PDF 抽字会把品名抽花，箱数不会花）
-      --     只在「该箱数在本票订单里只指向唯一一家工厂」时才落地，实测 0 冲突
+      -- ③ 箱数匹配【放在品名前面】：Damon 0812「品名会花，箱数不会花」。
+      --    660860 实证：项03/项04 都叫「宠物箱包」，按品名两行都归了大之圣；
+      --    实际 51 箱那行是 40-DG-4 = 河北悦佰兔，¥19,608 被错记到大之圣头上。
+      --    订单归属三条路缺一不可：raw.order_nos → 合同号 → 【提单号反查】。
+      --    660860 的合同号只写了 40-CP-5/40-DG-3，漏了 40-DG-4，只有提单号能把它捞回来。
+      --    ⚠️ 一船多柜时同提单下有兄弟报关单，要排除已被兄弟单认领的订单。
       (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
          FROM order_line_items l JOIN orders o ON o.id = l.order_id
         WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.qty_ctn = c.qty
+          AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
+               OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%')
+               OR (COALESCE(d.bl_no,'') <> '' AND o.bl_no = d.bl_no
+                   AND NOT EXISTS (SELECT 1 FROM finance_export_rebates f9
+                                    WHERE f9.customs_no <> d.customs_no
+                                      AND f9.contract_no <> '' AND o.contract_no <> ''
+                                      AND f9.contract_no LIKE '%'||o.contract_no||'%')))),
+      -- ③b 品名匹配（箱数分不开时才用）
+      (SELECT CASE WHEN count(DISTINCT o.factory) = 1 THEN max(o.factory) END
+         FROM order_line_items l JOIN orders o ON o.id = l.order_id
+        WHERE o.factory IS NOT NULL AND o.factory <> '' AND l.declaration_name = c.goods_name
           AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))),
       (SELECT v.seller_name FROM inv v WHERE v.customs_no = d.customs_no
@@ -156,7 +166,7 @@ ckts AS (
       WHEN EXISTS (SELECT 1 FROM inv v WHERE v.customs_no = d.customs_no
                     AND abs(v.amount_incl_tax - c.amount_cny) < 1) THEN '进项票金额'
       WHEN EXISTS (SELECT 1 FROM order_line_items l JOIN orders o ON o.id = l.order_id
-                    WHERE l.declaration_name = c.goods_name AND o.factory <> ''
+                    WHERE l.qty_ctn = c.qty AND o.factory <> ''
                       AND (o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text((d.raw_order_nos)::jsonb)))
                            OR (d.contract_no <> '' AND o.contract_no <> '' AND d.contract_no LIKE '%'||o.contract_no||'%'))) THEN '订单品名'
       WHEN EXISTS (SELECT 1 FROM order_line_items l JOIN orders o ON o.id = l.order_id
