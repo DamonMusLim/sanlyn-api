@@ -5,18 +5,18 @@
   function esc(v){ return v==null?"":String(v).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
   function val(id){ var el=document.getElementById(id); return el ? el.value.trim() : ""; }
 
-  // ── 深色主题（跟协同页共用的 CSS 变量，带深色兜底，任何页都好看）──
+  // ── ReactBits Pro 暗色令牌（扒自 profile-2：neutral-900 卡 / neutral-800 描边 / blue-600 强调）──
   var C = {
-    surface:"var(--surface,#141f33)", surface2:"var(--surface2,#1b2942)", field:"#0e1728",
-    line:"var(--line,#26374f)", ink:"var(--ink,#e8eefc)", muted:"var(--muted,#8ba0c4)",
-    accent:"var(--accent,#33c6dd)", good:"var(--good,#3ecf8e)", warn:"var(--warn,#f5b64c)", bad:"var(--bad,#ff6a7d)"
+    surface:"#171717", surface2:"rgba(38,38,38,.5)", field:"#0f0f0f",
+    line:"#262626", line2:"#404040", ink:"#fafafa", muted:"#a3a3a3",
+    accent:"#2563eb", accent2:"#06b6d4", good:"#10b981", warn:"#f59e0b", bad:"#f87171"
   };
   function row(k, html){
     return '<label style="display:block;margin:9px 0;"><span style="display:block;font-size:11.5px;font-weight:700;color:'+C.muted+';margin-bottom:4px;letter-spacing:.2px;">'+esc(k)+'</span>'+html+'</label>';
   }
   function input(k, id, v, ro){
     return row(k, '<input id="'+id+'" value="'+esc(v||'')+'" '+(ro?'disabled':'')+
-      ' style="width:100%;box-sizing:border-box;border:1px solid '+C.line+';border-radius:9px;padding:9px 11px;font:inherit;font-size:13.5px;color:'+C.ink+';background:'+(ro?'rgba(255,255,255,.03)':C.field)+';'+(ro?'opacity:.72;':'')+'">');
+      ' style="width:100%;box-sizing:border-box;border:1px solid '+C.line2+';border-radius:10px;padding:10px 12px;font:inherit;font-size:13.5px;color:'+C.ink+';background:'+(ro?'rgba(255,255,255,.03)':C.field)+';'+(ro?'opacity:.6;':'')+'">');
   }
   function twoCol(a, b){ return '<div style="display:flex;gap:8px;">'+
     '<div style="flex:1;min-width:0;">'+a+'</div><div style="flex:1;min-width:0;">'+b+'</div></div>'; }
@@ -87,7 +87,7 @@
     btn.style.background=C.warn; btn.style.color="#1a1206";
     clearTimeout(btn._t); btn._t=setTimeout(function(){
       btn.removeAttribute("data-arm"); btn.textContent="保存并锁定";
-      btn.style.background=C.accent; btn.style.color="#04222b";
+      btn.style.background=C.accent; btn.style.color="#fff";
     }, 4000);
   }
 
@@ -115,12 +115,12 @@
         input("邮箱", "cc_fin_contact_email", p.fin_contact_email, locked))
     ].join("") : '<div style="padding:24px;text-align:center;color:'+C.muted+';">暂无本方公司档案</div>';
 
-    m.innerHTML = '<div style="position:absolute;left:50%;top:4%;transform:translateX(-50%);width:min(560px,94vw);max-height:90vh;overflow:auto;background:'+C.surface+';border:1px solid '+C.line+';border-radius:16px;padding:18px 18px 16px;box-shadow:0 24px 70px rgba(0,0,0,.5);color:'+C.ink+';" onclick="event.stopPropagation()">'+
+    m.innerHTML = '<div style="position:absolute;left:50%;top:4%;transform:translateX(-50%);width:min(560px,94vw);max-height:90vh;overflow:auto;background:'+C.surface+';border:1px solid '+C.line+';border-radius:28px;padding:20px 20px 18px;box-shadow:0 30px 80px rgba(0,0,0,.6);color:'+C.ink+';" onclick="event.stopPropagation()">'+
       '<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:4px;"><b style="font-size:17px;">公司资料 / 联系人</b><button style="border:1px solid '+C.line+';background:transparent;color:'+C.muted+';font-size:15px;cursor:pointer;border-radius:8px;width:30px;height:30px;line-height:1;" onclick="document.getElementById(\'companyModal\').style.display=\'none\'">✕</button></div>'+
       '<div style="font-size:12px;color:'+C.muted+';margin-bottom:6px;">这些联系人（业务/财务）会作为单据自动发信的<b style="color:'+C.accent+';font-weight:600;">抄送</b>对象。</div>'+
       (locked?'<div style="background:rgba(245,182,76,.12);border:1px solid '+C.warn+';color:'+C.warn+';border-radius:10px;padding:9px 11px;font-size:12px;font-weight:600;margin:8px 0;">资料已锁定，如需修改请联系 Sanlyn 运营解锁</div>':'')+
       body + '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;"><button onclick="document.getElementById(\'companyModal\').style.display=\'none\'" style="padding:9px 15px;border:1px solid '+C.line+';background:transparent;color:'+C.muted+';border-radius:9px;font-weight:600;cursor:pointer;">关闭</button>' +
-      (p && !locked ? '<button id="ccSave" onclick="CollabCompanyCard.save()" style="padding:9px 17px;border:0;background:'+C.accent+';color:#04222b;border-radius:9px;font-weight:700;cursor:pointer;">保存并锁定</button>' : '') + '</div></div>';
+      (p && !locked ? '<button id="ccSave" onclick="CollabCompanyCard.save()" style="padding:10px 18px;border:0;background:'+C.accent+';color:#fff;border-radius:10px;font-weight:600;cursor:pointer;">保存并锁定</button>' : '') + '</div></div>';
   };
   window.CollabCompanyCard = { load:load, save:save };
   document.addEventListener("DOMContentLoaded", function(){
@@ -131,7 +131,7 @@
       var b = document.createElement("button");
       b.id = "companyCardQuick"; b.type = "button"; b.onclick = window.openCompanyCard;
       b.textContent = "公司资料 / 联系人";
-      b.style.cssText = "position:fixed;right:12px;bottom:28px;z-index:80;border:1px solid var(--line,#26374f);background:var(--surface,#141f33);color:var(--ink,#e8eefc);border-radius:10px;padding:9px 13px;font-size:12px;font-weight:700;box-shadow:0 8px 22px rgba(0,0,0,.35);cursor:pointer;";
+      b.style.cssText = "position:fixed;right:12px;bottom:28px;z-index:80;border:1px solid #404040;background:#171717;color:#fafafa;border-radius:12px;padding:10px 14px;font-size:12px;font-weight:600;box-shadow:0 8px 22px rgba(0,0,0,.5);cursor:pointer;";
       host.appendChild(b);
     }, 800);
   });
