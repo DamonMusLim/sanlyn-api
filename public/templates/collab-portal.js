@@ -116,10 +116,10 @@ function renderOurDocs(s){
       ...releaseRows,
       ...(s.is_transfer ? [['🔁','内转外信息表', fileLink('transfer'), '']] : [])
     ]],
-    // 货代/船东只需订舱委托 / SO / 保函；不看客户的 PL·SC·IV 合并版 和 报关单
+    // 两份单据：托书(第一单·订舱·客户/工厂填) + 排载单/SO(装完·补料带VGM·给报关行/船东)
     ['本票单据', [
-      ['📋','排载单 / SO', fileLink('so'), ''],
-      ['📄','提单样单 / 补料（可改 Excel）', fileLink('bl_sample'), '客户可改']
+      ['📋','托书 / 委托单（Booking Instruction · 可改 Excel）', fileLink('booking_note'), '第一单·订舱'],
+      ['📄','排载单 / SO（补料·带 VGM · 可改 Excel）', fileLink('bl_sample'), '装完给报关行/船东']
     ]]
   ];
   const certs = requirementDocs(s).map(x => [x[0], x[1], x[2], '贵司提请']);

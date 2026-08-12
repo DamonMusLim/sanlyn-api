@@ -1482,7 +1482,7 @@ export default async function handler(req, res) {
       }
     }
 
-    if(["so","debit","freight-quote","sq","tr","swb_loi","bl_sample"].includes(type)){
+    if(["so","debit","freight-quote","sq","tr","swb_loi","bl_sample","booking_note"].includes(type)){
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
       var spR=await pool.query(
         "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
@@ -1632,6 +1632,37 @@ export default async function handler(req, res) {
         res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.setHeader("Content-Disposition",'attachment; filename="'+("BL-Sample-"+(sp.bl_no||sp.id))+'.xlsx"');
         return res.send(_blBuf);
+      }
+
+      if(type==="booking_note"){
+        // 托书/出口货物委托单 Excel（第一单·订舱）——发货人issuing_company / 收货人订单customer / 请帮忙订船东carrier / 成交方式freight_term
+        var _bnsh = pick(sp.issuing_company, cfg3.nameEN, "");
+        var _bnShName=_bnsh, _bnShAddr=pick(cfg3.address,"");
+        try{ var _bnc=await pool.query("SELECT name_en,name_cn,address FROM companies WHERE name_cn=$1 OR name_en=$1 LIMIT 1",[_bnsh]); if(_bnc.rows[0]){ _bnShName=_bnc.rows[0].name_en||_bnc.rows[0].name_cn||_bnsh; _bnShAddr=_bnc.rows[0].address||_bnShAddr; } }catch(e){}
+        var _bnCneeR=await pool.query("SELECT customer FROM orders WHERE shipping_plan_id=$1 AND COALESCE(customer,'')<>'' ORDER BY order_no LIMIT 1",[sp.id]);
+        var _bnCnee=(_bnCneeR.rows[0]&&_bnCneeR.rows[0].customer)||pickClean(sp.customer_en,sp.customer)||"";
+        var _bnCneeAddr="";
+        try{ var _bnca=await pool.query("SELECT address FROM companies WHERE name_en=$1 OR name_cn=$1 LIMIT 1",[_bnCnee]); if(_bnca.rows[0]) _bnCneeAddr=_bnca.rows[0].address||""; }catch(e){}
+        var _bnCarrier="";
+        try{ var _cc2=pick(sp.carrier_code,""); if(_cc2){ var _cr2=await pool.query("SELECT name_cn,name_en FROM carriers WHERE upper(scac)=upper($1) OR upper(code)=upper($1) OR bl_prefixes ? upper($1) LIMIT 1",[_cc2]); if(_cr2.rows[0]) _bnCarrier=_cr2.rows[0].name_cn||_cr2.rows[0].name_en||""; } }catch(e){}
+        var _bnBook=[_bnCarrier, [polSp,podSp].filter(Boolean).join(" – ")].filter(Boolean).join(" / ");
+        var _bnA={};
+        try{ var _bnAgg=await pool.query("SELECT string_agg(DISTINCT oli.hs_code,',') AS hs, string_agg(DISTINCT NULLIF(oli.bl_description,''),' / ') AS descr, SUM(oli.qty_ctn) AS ctn, ROUND(SUM(COALESCE(oli.gw_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,2) AS gw, ROUND(SUM(COALESCE(oli.cbm_ctn,0)*COALESCE(oli.qty_ctn,0))::numeric,3) AS cbm FROM orders o JOIN order_line_items oli ON oli.order_id=o.id WHERE o.shipping_plan_id=$1",[sp.id]); _bnA=_bnAgg.rows[0]||{}; }catch(e){}
+        var _bnQty=pick(sp.container_qty,1), _bnType=pick(sp.container_type,"40HQ");
+        const { renderBookingNoteXlsx } = await import("./docs/booking-note-xlsx.js");
+        var _bnBuf = await renderBookingNoteXlsx({
+          bookingDate: fmtD(new Date()), shipperName:_bnShName, shipperAddr:_bnShAddr,
+          consignee:_bnCnee, consAddr:_bnCneeAddr, carrierBook:_bnBook,
+          vessel:vessel, voyage:voyage, etd:fmtD(sp.etd), loadDate:fmtD(sp.factory_cargo_ready),
+          releaseType:sp.release_type||"", notify:"",
+          pol:polSp, pod:podSp, placeOfDelivery:podSp, finalDest:podSp,
+          containerSummary:(_bnQty+"*"+_bnType), ctnLine:(_bnA.ctn?Number(_bnA.ctn).toLocaleString("en-US")+" CTNS":""),
+          goodsDesc:(_bnA.descr||"CAT LITTER")+(_bnA.hs?"  HS:"+_bnA.hs:""), gwKg:_bnA.gw, cbm:_bnA.cbm,
+          ctnQty:(_bnQty+"*"+_bnType), freight:"FREIGHT PREPAID", term:"CY-CY", incoterm:pick(sp.freight_term,"")
+        });
+        res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition",'attachment; filename="'+("Booking-Note-"+(sp.bl_no||sp.id))+'.xlsx"');
+        return res.send(_bnBuf);
       }
     }
 
