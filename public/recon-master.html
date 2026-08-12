@@ -27,7 +27,7 @@ function planKey(r){return r.bl_no||""}
 function docsCell(r,h){var t=h.token(),bl=r.bl_no||"",name=String(r.customer||"-"),docs=r.docs||[],links=[];
   var pos=(r.orders||[]).map(function(o){return o.po}).filter(Boolean);
   if(pos.length)links.push('<a target="_blank" href="/templates/export-docs-template.html?order_no='+encodeURIComponent(pos[0])+'&ids='+encodeURIComponent(pos.join(","))+'&mode=detail&token='+encodeURIComponent(t)+'">客户资料合并版(PL+SC+IV)</a>');
-  if(bl){links=docs.map(function(d){return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type='+encodeURIComponent(d.doc_type)+'&token='+encodeURIComponent(t)+'">'+h.esc(d.doc_no)+'</a>'});
+  if(bl){links=links.concat(docs.map(function(d){return '<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type='+encodeURIComponent(d.doc_type)+'&token='+encodeURIComponent(t)+'">'+h.esc(d.doc_no)+'</a>'}));
     links.push('<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_invoice&token='+encodeURIComponent(t)+'">海运费单</a>');
     links.push('<a target="_blank" href="/api/db/shipping-plan-pdf?bl='+encodeURIComponent(bl)+'&type=fob_portcharge&token='+encodeURIComponent(t)+'">港杂单</a>')}
   if(!links.length)return h.esc(name);
