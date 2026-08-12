@@ -18,7 +18,8 @@ fac_alias AS (
   -- （中宠 3 行：zc-brand / DEPRECATED-zc-oem / VEN-ZC），不去重会把逐项行放大 3 倍，
   -- 0812 实测中宠催票额被算成 ¥2,240,431（真值 ¥982,444）、实退直接算不出来。
   -- 排序取「未合并、未废弃」的那条为准。
-  SELECT DISTINCT ON (v.variant) v.variant, COALESCE(m.name_cn, co.name_cn) AS canon
+  SELECT DISTINCT ON (v.variant) v.variant, COALESCE(m.name_cn, co.name_cn) AS canon,
+         COALESCE(m.short_name, co.short_name) AS canon_short
     FROM companies co
     CROSS JOIN LATERAL (VALUES (co.name_cn),(co.factory_name),(co.short_name)) AS v(variant)
     LEFT JOIN companies m ON m.code = co.merged_into_code
@@ -215,7 +216,9 @@ ckts2n AS (
   -- 记忆 zhongchong_legal_entity_multi_account：1 法人 + OEM/品牌/国内 三个部门账户，
   -- 部门账户不合并，但法人只有一个 —— 催票、退税归属都按法人算。
   -- 归不到公司表的原样保留，绝不丢。
-  SELECT k.*, COALESCE(fa.canon, k.line_factory_raw) AS line_factory
+  SELECT k.*, COALESCE(fa.canon, k.line_factory_raw) AS line_factory,
+         -- 简称给页面显示用（Damon 0812：「食品就中宠了」），全称留在 title 里
+         fa.canon_short AS line_factory_short
     FROM ckts k LEFT JOIN fac_alias fa ON fa.variant = k.line_factory_raw
 ),
 ckts2 AS (
@@ -265,7 +268,7 @@ ckts_agg AS (
       'ckfph', ckfph, 'legal_unit', legal_unit, 'legal_qty', legal_qty,
       -- 外贸企业免退税：实际应退 = 进项专票【不含税额】× 退税率，不是报关额×退税率。
       -- 报关额那个只是上限估值（报关价 > 采购价，天然偏高）。两个都给，页面并排显示。
-      'po', line_po,
+      'po', line_po, 'factory_short', line_factory_short,
       'cd_hs', cd_hs, 'cd_name', cd_name, 'cd_qty', cd_qty, 'cd_amt', cd_amt, 'cd_nw', cd_nw,
       'cd_unit', cd_unit, 'cd_usd', cd_usd, 'cd_cur', cd_cur,
       'inv_ex', (SELECT v.amount_ex_tax FROM inv v WHERE v.invoice_no = invoice_no2 LIMIT 1),
