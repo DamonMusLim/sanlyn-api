@@ -135,7 +135,7 @@ function renderDeadlines(s){
   const grid = $('deadlineGrid'), panel = $('deadlinePanel'); if(!grid || !panel) return;
   const rows = [
     ['进场', raw.cutoff_port || raw.port_cutoff || s.port_cutoff_date || '待确认'],
-    ['VGM', bjTime(raw.vgm_cutoff || s.vgm_cutoff || s.vgm_cutoff_at) || '待确认'],
+    ['截VGM', bjTime(raw.vgm_cutoff || s.vgm_cutoff || s.vgm_cutoff_at) || '待确认'],   // 是截VGM时间(deadline)，非VGM重量
     ['SI', bjTime(raw.doc_cutoff || s.doc_cutoff || s.si_cutoff_date || s.doc_cutoff_at) || '待确认'],
     ['预计开船', fmtD(s.etd) || '待确认']
   ];
@@ -151,23 +151,26 @@ function renderBillingEntry(billing, s){
   window._billingToken = canOpen ? billing.token : '';
   if(!segs.includes('ocean')) return;
   card.classList.remove('hidden');
-  const map = { ocean:'海运费', trucking:'拖车费', port_charge:'港杂费', customs:'报关费' };
-  const keys = ['ocean','trucking','port_charge','customs'];
+  const map = { ocean:'海运费', trucking:'拖车费', port_charge:'港杂费' };
+  const keys = ['ocean','trucking','port_charge'];   // 报关费不给货代看：下单时已知，由巴匕(我方)内部填(Damon 0812)
   const segData = (_billSummary && _billSummary.segments) || {};
   body.innerHTML = keys.map(k=>{
     const x = segData[k] || {status:'待报', amount:{}, pending_amount:{}};
     const money = moneyMap(x.amount);
     const pending = moneyMap(x.pending_amount);
     const empty = !money && !pending;
-    const summary = k === 'port_charge' ? '可编辑费目表 · 新增待我方确认' : [s.pol||'起点', s.pod||'港口'].join(' → ');
-    const detail = k === 'port_charge' ? portChargeEditor() :
-      `<div style="font-size:12px;color:#374151;font-weight:800;">${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>`;
+    const summary = k === 'port_charge' ? '可编辑费目表 · 新增待我方确认'
+      : k === 'trucking' ? '装柜/拖车信息 + 工厂装箱照片 · 点开查看'
+      : [s.pol||'起点', s.pod||'港口'].join(' → ');
+    const detail = k === 'port_charge' ? portChargeEditor()
+      : k === 'trucking' ? truckContainerModule(s)   // 嵌入工厂装柜整个模块(柜号+拖车信息+装箱照片)，默认收起
+      : `<div style="font-size:12px;color:#374151;font-weight:800;">${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} → ${esc(money || pending || '未填写金额')}</div>`;
     return `<div class="bill-row" id="bill_${k}">
       <button class="bill-summary" type="button" onclick="toggleBill('${k}')"><b>${map[k]}</b><span class="desc">${esc(summary)}</span>
         <span class="bill-money ${empty?'empty':''}">${esc(money || pending || '未填写金额')}</span><span class="badge ${chipTone(x.status)}">${esc(x.status)}</span></button>
       <div class="bill-detail">${detail}</div></div>`;
   }).join('');
-  $('billingSubV2').textContent = canOpen ? '海运费 / 拖车费 / 港杂费 / 报关费' : '当前链接暂无可打开账单';
+  $('billingSubV2').textContent = canOpen ? '海运费 / 拖车费 / 港杂费' : '当前链接暂无可打开账单';
 }
 
 // 顶部提醒：第一时间告诉货代还差什么没填/没传/没确认（Damon 0812）
@@ -188,7 +191,7 @@ function renderReminder(s){
   const filled = x => !!(x && (x.status==='已录入' || x.status==='已确认'
     || (x.reported_by && x.reported_by.length)
     || (x.amount && Object.values(x.amount).some(n=>Number(n)>0))));
-  ['port_charge','customs'].forEach(k=>{ if(!filled(seg[k])) items.push(feeLabel[k]+'待填'); });
+  ['port_charge'].forEach(k=>{ if(!filled(seg[k])) items.push(feeLabel[k]+'待填'); });   // 报关费由我方内部填，不催货代
   // 账单没确认
   const billConfirmed = !!localStorage.getItem('collab_bill_checked_'+token);
   if(!billConfirmed) items.push('账单未确认');
@@ -204,7 +207,85 @@ function toggleBill(k){ document.getElementById('bill_'+k)?.classList.toggle('op
 function portChargeEditor(){
   return `<table class="bill-edit-table"><thead><tr><th>费目</th><th>计价单位</th><th>单价</th><th>金额</th><th></th></tr></thead>
     <tbody id="portChargeRows"></tbody></table>
-    <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="addPortChargeRow()">＋ 新增费目</button>`;
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick="addPortChargeRow()">＋ 新增费目</button>
+      <button class="btn btn-blue btn-sm" onclick="openPortChargePaste()">📋 快速填写 / 粘贴导入</button>
+    </div>`;
+}
+// 港杂费·快速填写：粘贴一段费目文本，自动拆行填入费目+金额（货代再选计价单位后逐条提报）
+function openPortChargePaste(){
+  let m = document.getElementById('pcPasteModal');
+  if(!m){
+    m = document.createElement('div');
+    m.id = 'pcPasteModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:998;';
+    m.onclick = function(){ this.style.display='none'; };
+    m.innerHTML = `<div style="position:absolute;left:50%;top:15%;transform:translateX(-50%);width:min(520px,92vw);background:#fff;border-radius:12px;padding:18px;" onclick="event.stopPropagation()">
+      <div style="font-size:14px;font-weight:800;margin-bottom:8px;">📋 港杂费 · 粘贴导入</div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">每行一个费目，如「THC 港杂费 1200」「铅封费 50」。自动识别费目名+金额，导入后请选计价单位再逐条提报。</div>
+      <textarea id="pcPasteText" style="width:100%;height:150px;border:1.5px solid #e0e4ea;border-radius:8px;padding:10px;font-size:13px;box-sizing:border-box;" placeholder="THC 1200&#10;单证费 350&#10;铅封费 50"></textarea>
+      <div style="display:flex;gap:10px;margin-top:10px;justify-content:flex-end;">
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pcPasteModal').style.display='none'">取消</button>
+        <button class="btn btn-green btn-sm" onclick="parsePortChargePaste()">✓ 解析导入</button>
+      </div></div>`;
+    document.body.appendChild(m);
+  }
+  const ta = document.getElementById('pcPasteText'); if(ta) ta.value='';
+  m.style.display = 'block';
+}
+function parsePortChargePaste(){
+  const t = (document.getElementById('pcPasteText')||{}).value || '';
+  const lines = t.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  let n = 0;
+  lines.forEach(line=>{
+    const nums = line.match(/\d+(?:\.\d+)?/g) || [];
+    if(!nums.length) return;                              // 无金额的行跳过
+    const amount = nums[nums.length-1];
+    let name = line.replace(/[\s\d.,×xX*\/元]*$/,'').trim();   // 去掉行尾金额/单位
+    if(!name) name = line.replace(/[\d.,×xX*]/g,'').trim() || '港杂费目';
+    addPortChargeRow();
+    const tb = document.getElementById('portChargeRows');
+    const tr = tb && tb.lastElementChild; if(!tr) return;
+    const ins = tr.querySelectorAll('input');
+    if(ins[0]) ins[0].value = name;      // 费目
+    if(ins[2]) ins[2].value = amount;    // 金额
+    n++;
+  });
+  const m = document.getElementById('pcPasteModal'); if(m) m.style.display='none';
+  toast(n ? ('已导入 '+n+' 行，请选计价单位后逐条提报') : '未识别到费目/金额');
+}
+// 拖车费·嵌入工厂装柜整个模块：柜号 + 拖车信息 + gw/cbm/ctn/vgm + 工厂装箱照片（默认随账单行收起）
+function truckContainerModule(s){
+  const det = (Array.isArray(s.containers_detail) && s.containers_detail.length)
+    ? s.containers_detail
+    : (Array.isArray(s.containers_live) ? s.containers_live : []);
+  if(!det.length) return `<div style="font-size:12px;color:#374151;font-weight:800;">${esc(s.pol||'起点')} → ${esc(s.pod||'港口')} · 装柜/拖车信息暂无</div>`;
+  const live = Array.isArray(s.containers_live) ? s.containers_live : [];
+  const liveByNo = {}; live.forEach(c=>{ if(c.container_no) liveByNo[c.container_no]=c; });
+  const fileU = window._fileURL || (()=>'#');
+  return det.map(c=>{
+    const lv = liveByNo[c.container_no] || c;
+    const cargo = Array.isArray(lv.cargo) ? lv.cargo : [];
+    const ctn = cargo.reduce((a,x)=>a+Number(x.cartons||x.ctns||0),0) || Number(c.cartons||0) || '';
+    const cbm = c.cbm || c.cbm_m3 || lv.cbm || '';
+    const gw  = c.cargo_weight_kg || c.gw_kg || (cargo[0]&&cargo[0].gw_kg) || '';
+    const vgm = c.vgm_weight_kg || '';
+    const num = v => v==='' ? '—' : Number(v).toLocaleString();
+    const metrics = [['毛重 GW', gw===''?'—':num(gw)+' kg'], ['CBM', cbm===''?'—':Number(cbm).toFixed(3)], ['箱数 CTN', ctn===''?'—':ctn], ['VGM', vgm===''?'—':num(vgm)+' kg']];
+    const info = [['车牌', c.plate||lv.plate], ['司机', c.driver_name||lv.driver_name], ['电话', c.driver_phone||lv.driver_phone]].filter(r=>r[1]);
+    const photos = Array.isArray(c.pickup_photos) ? c.pickup_photos : [];
+    const photoHtml = photos.length
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">`+photos.map(p=>{ const u=fileU('upload',p.stored); return `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" loading="lazy" style="width:64px;height:64px;object-fit:cover;border:1px solid #e5e7eb;border-radius:6px;"></a>`; }).join('')+`</div>`
+      : `<div style="font-size:11px;color:#9ca3af;margin-top:6px;">暂无装箱照片</div>`;
+    return `<div class="ctn-group" style="margin-bottom:8px;">
+      <div class="ctn-group-head"><span class="ctn-group-title">🚛 ${esc(c.container_no||'柜号待定')}${c.container_type?' · '+esc(c.container_type):''}${c.seal_no?' · 封 '+esc(c.seal_no):''}</span></div>
+      <div style="padding:8px 12px;">
+        ${info.length?`<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;margin-bottom:8px;">${info.map(r=>`<span style="color:#6b7280;">${esc(r[0])} <b style="color:#111827;">${esc(String(r[1]))}</b></span>`).join('')}</div>`:''}
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">${metrics.map(m=>`<div style="border:1px solid #e5e7eb;border-radius:6px;padding:6px;background:#f9fafb;"><div style="font-size:10px;color:#6b7280;font-weight:800;">${esc(m[0])}</div><div style="font-size:12px;color:#111827;font-weight:900;">${esc(String(m[1]))}</div></div>`).join('')}</div>
+        <div style="font-size:11px;color:#6b7280;font-weight:800;margin-top:8px;">工厂装箱照片</div>
+        ${photoHtml}
+      </div></div>`;
+  }).join('');
 }
 function addPortChargeRow(){
   const tb = $('portChargeRows'); if(!tb) return;
