@@ -1630,7 +1630,20 @@ export default async function handler(req, res) {
         };
         const _blMod = await import("./docs/bl-sample-xlsx.js");
         if(req.query.preview){ res.setHeader("Content-Type","text/html; charset=utf-8"); return res.send(_blMod.renderBlSampleHtml(_blData)); }
-        var _blBuf = await _blMod.renderBlSampleXlsx(_blData);
+        // 下载：填 Damon 原模版(openpyxl 只改数据格,其余字节级保留,不重造)
+        var _blBuf = await new Promise(async (resolve,reject)=>{
+          var _cp = await import("child_process");
+          var _um = await import("url");
+          var _py = _um.fileURLToPath(new URL("./docs/fill_bl_sample.py", import.meta.url));
+          var _tpl = _um.fileURLToPath(new URL("./docs/templates/bl-sample-template.xlsx", import.meta.url));
+          var _ps = _cp.spawn("python3", [_py, _tpl]);
+          var _out=[], _err=[];
+          _ps.stdout.on("data",x=>_out.push(x));
+          _ps.stderr.on("data",x=>_err.push(x));
+          _ps.on("error", e=>reject(e));
+          _ps.on("close", code=> code===0 ? resolve(Buffer.concat(_out)) : reject(new Error("openpyxl fill: "+Buffer.concat(_err).toString().slice(0,300))));
+          _ps.stdin.write(JSON.stringify(_blData)); _ps.stdin.end();
+        });
         res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         res.setHeader("Content-Disposition",'attachment; filename="'+("BL-Sample-"+(sp.bl_no||sp.id))+'.xlsx"');
         return res.send(_blBuf);
