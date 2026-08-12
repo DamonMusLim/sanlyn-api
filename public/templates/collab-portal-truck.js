@@ -9,11 +9,12 @@ function renderFiles(){
     const fu = window._fileURL || (()=>'#');
     el.innerHTML = uploads.filter(u=>inSeg(String(u.filename||''))).map(u=>{
       const url = fu('upload', u.stored);
-      // 已上传 与 预览 合并成一个绿标按钮；下载独立（Damon 0812）
-      return `<div class="file-row"><span>📄</span>
-        <span style="flex:1;font-weight:700;min-width:0;overflow-wrap:anywhere;">${esc(clean(String(u.filename||'')))}</span>
-        <a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;" href="${esc(url)}" target="_blank">✓ 已上传 · 预览</a>
-        <a class="doc-btn" href="${esc(url)}" target="_blank" download>⬇ 下载</a></div>`;
+      // 紧凑一行：已上传·预览合并绿标 + 下载独立（Damon：不要太大位置）
+      return `<div class="file-row" style="padding:5px 10px;margin-bottom:5px;gap:8px;">
+        <span style="font-size:12px;">📄</span>
+        <span style="flex:1;font-weight:700;font-size:11px;min-width:0;overflow-wrap:anywhere;">${esc(clean(String(u.filename||'')))}</span>
+        <a class="doc-btn" style="background:#dcfce7;color:#15803d;border-color:#bbf7d0;padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank">✓ 已上传·预览</a>
+        <a class="doc-btn" style="padding:3px 8px;font-size:10px;" href="${esc(url)}" target="_blank" download>⬇ 下载</a></div>`;
     }).join('');
   });
 }

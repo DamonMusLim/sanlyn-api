@@ -35,8 +35,26 @@ async function handleFileProxy(req, res, pool) {
   if (!allowed.includes(type)) return res.status(403).json({ ok: false, error: "无权下载该类型" });
 
   let docId;
-  // 非危声明/电放保函：shipping-plan-pdf 端点（关联字段=计划 id）
-  if (type === "nondg" || type === "telex" || type === "transfer" || type === "customs_decl") {
+  // 电放/SWB 保函：真源是 documents?type=tr（渲染「电放申请书暨保函」）。
+  // 旧路由错把 telex 发给 shipping-plan-pdf，而它没有 telex 渲染器→回退成「海运计划确认书」(Damon 0812 指出)。
+  if (type === "telex") {
+    const { rows: pr } = await pool.query(
+      `SELECT bl_no, primary_contract_no, order_contract_nos FROM shipping_plans WHERE id = $1`, [auth.planId]);
+    const blno = (pr[0] && pr[0].bl_no) || "";
+    const contract = (pr[0] && (pr[0].primary_contract_no || String(pr[0].order_contract_nos || "").split(",")[0].trim())) || "";
+    if (!blno && !contract) return res.status(404).json({ ok: false, error: "本票暂无提单/合同号，无法生成保函" });
+    const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 });
+    const q = blno ? `bl_no=${encodeURIComponent(blno)}` : `contract_no=${encodeURIComponent(contract)}`;
+    const urlX = `http://127.0.0.1:9000/api/db/documents?type=tr&${q}&token=${encodeURIComponent(jwtX)}`;
+    try {
+      const up = await fetch(urlX);
+      res.status(up.status);
+      const ct = up.headers.get("content-type"); if (ct) res.setHeader("Content-Type", ct);
+      return res.end(Buffer.from(await up.arrayBuffer()));
+    } catch (e) { return res.status(502).json({ ok: false, error: "保函服务不可用" }); }
+  }
+  // 非危声明/内转外/报关单：shipping-plan-pdf 端点（关联字段=计划 id）
+  if (type === "nondg" || type === "transfer" || type === "customs_decl") {
     const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 }); // documents 鉴权核 accounts 表,虚构 uid 会 ACCOUNT_NOT_FOUND → 用真实服务账号 svc-agent(id=90)
     const urlX = `http://127.0.0.1:9000/api/db/shipping-plan-pdf?id=${auth.planId}&type=${type}&token=${encodeURIComponent(jwtX)}`;
     try {
