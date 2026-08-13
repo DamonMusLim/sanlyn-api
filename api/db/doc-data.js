@@ -32,7 +32,7 @@ function firstCompanyText(v) {
 function cfgFromCompany(c) {
   return {
     nameEN: c.name_en || "", nameCN: c.name_cn || "",
-    address: firstCompanyText(c.address), tel: c.contact_phone || "", email: c.einvoice_email || "",
+    address: firstCompanyText(c.address_en) || firstCompanyText(c.address), tel: c.contact_phone || "", email: c.einvoice_email || "",
     taxNo: c.tax_id || c.registration_no || "",
     termsPO: [],
     bank: {
@@ -79,7 +79,7 @@ export async function loadSellerCfg(pool, raw, qco, opts) {
   }
   try {
     if(issuingId > 0 && !opts.shipping){
-      var cr = await pool.query("SELECT id, code, name_cn, name_en, address, contact_phone, einvoice_email, registration_no, tax_id FROM companies WHERE id=$1 LIMIT 1", [issuingId]);
+      var cr = await pool.query("SELECT id, code, name_cn, name_en, address, address_en, contact_phone, einvoice_email, registration_no, tax_id FROM companies WHERE id=$1 LIMIT 1", [issuingId]);
       if(cr.rows.length){
         companyCfg = cfgFromCompany(cr.rows[0]);
         companyCode = cr.rows[0].code || "";
