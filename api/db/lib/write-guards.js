@@ -21,10 +21,18 @@ export function normalizeAmount(v) {
   return n;
 }
 
-export async function ticketTerms(pool, blNo) {
-  if (!blNo) return "";
+// 四路匹配同 recon order_pick: BL / shipping_plan_id / order_nos / contract_nos — 漏一路都可能把混票误判纯FOB
+export async function ticketTerms(pool, plan) {
+  if (!plan) return "";
   const r = await pool.query(
-    `SELECT string_agg(DISTINCT NULLIF(BTRIM(trade_terms),''), '+') AS terms
-       FROM orders WHERE deleted_at IS NULL AND BTRIM(bl_no)=BTRIM($1)`, [blNo]);
+    `SELECT string_agg(DISTINCT t, '+' ORDER BY t) AS terms FROM (
+       SELECT NULLIF(BTRIM(o.trade_terms),'') AS t FROM orders o
+        WHERE o.deleted_at IS NULL AND (
+              (NULLIF(BTRIM($1::text),'') IS NOT NULL AND BTRIM(o.bl_no)=BTRIM($1::text))
+           OR o.shipping_plan_id::text = $2::text
+           OR o.order_no = ANY(COALESCE($3::text[],'{}'::text[]))
+           OR o.contract_no = ANY(COALESCE($4::text[],'{}'::text[]))
+        )) x WHERE t IS NOT NULL`,
+    [plan.bl_no || "", String(plan._id || ""), plan.order_nos || null, plan.contract_nos || null]);
   return (r.rows[0] && r.rows[0].terms) || "";
 }

@@ -103,7 +103,7 @@ async function save(pool, body, user) {
       WHERE _id=$6 RETURNING *`, vals);
   const saved = [];
   for (const row of (body.lines || [])) {
-    const _terms = await ticketTerms(pool, pr.rows[0].bl_no);
+    const _terms = await ticketTerms(pool, pr.rows[0]);
     if (clean(row.cost_category || row.fee_name)) saved.push(await saveBill(pool, pr.rows[0], row, user, _terms, body.__warnings = body.__warnings || []));
   }
   return { plan: pr.rows[0], lines: saved };
