@@ -198,19 +198,18 @@ body.ui-v1 .v2-only { display:none !important; }
 
 /* ══════════ SANLYN 深色设计系统（对齐 Damon 喜欢的原型 be14f939）——覆盖上方浅色 ══════════ */
 :root{
-  --bg:#0b1220; --bg2:#0d1526; --surface:#141f33; --surface2:#1b283f; --line:#26344f;
-  --ink:#eaf1fb; --ink2:#9fb0cd; --ink3:#6b7d9c;
-  --accent:#33c6dd; --accent2:#5b8cff; --accentInk:#04121a;
-  --good:#3ecf8e; --goodbg:#12271f; --warn:#f5b64c; --warnbg:#2a2010; --bad:#ff6a7d; --badbg:#2a1319;
-  --glass:rgba(255,255,255,.03); --shadow:0 18px 40px -22px rgba(0,0,0,.75); --r:16px;
+  --bg:#0a0a0a; --bg2:#0f0f0f; --surface:#171717; --surface2:#262626; --line:#262626;
+  --ink:#fafafa; --ink2:#a3a3a3; --ink3:#737373;
+  --accent:#2563eb; --accent2:#3b82f6; --accentInk:#ffffff;
+  --good:#34d399; --goodbg:rgba(16,185,129,.12); --warn:#fbbf24; --warnbg:rgba(245,158,11,.12); --bad:#f87171; --badbg:rgba(248,113,113,.12);
+  --glass:rgba(255,255,255,.03); --shadow:0 18px 40px -22px rgba(0,0,0,.8); --r:12px;
 }
 :root[data-theme="light"]{
   --bg:#eef2f8; --bg2:#e7ecf5; --surface:#ffffff; --surface2:#f3f6fb; --line:#e0e7f1;
   --ink:#101a2c; --ink2:#48597a; --ink3:#7788a6; --glass:rgba(10,30,60,.02); --shadow:0 16px 34px -22px rgba(20,40,80,.35);
 }
 body{ background:var(--bg)!important; color:var(--ink)!important; position:relative; }
-body::before{ content:""; position:fixed; inset:-30% -10% auto -10%; height:70vh; z-index:0; pointer-events:none;
-  background:radial-gradient(50% 60% at 20% 0%, rgba(51,198,221,.16), transparent 70%),radial-gradient(45% 55% at 85% 5%, rgba(91,140,255,.14), transparent 70%); filter:blur(8px); }
+body::before{ content:none; }
 .shell-narrow,.shell-tight{ position:relative; z-index:1; }
 .portal-bar{ background:color-mix(in srgb,var(--bg) 80%, transparent)!important; backdrop-filter:blur(14px); border-bottom:1px solid var(--line); box-shadow:none!important; }
 .portal-brand{ color:var(--ink2)!important; } .portal-brand *{color:inherit}
