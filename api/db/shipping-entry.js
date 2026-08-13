@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { guardBillRow, ticketTerms } from "./lib/write-guards.js";
 import { carrierFromBl, normalizeCarrier, normalizeChargeName, normalizeContainerType, num } from "./lib/portcharge-close-loop.js";
 
 function clean(v) { return String(v ?? "").trim(); }
@@ -56,14 +57,18 @@ async function detail(pool, key) {
   return { plan, bills: bills.rows, standards: await standards(pool, plan), fee_items: await feeItems(pool) };
 }
 
-async function saveBill(pool, plan, row, user) {
+async function saveBill(pool, plan, row, user, terms, warnings) {
   const direction = clean(row.direction || row.inout || "付");
   const qty = n(row.qty) ?? 1;
   const unit = n(row.unit_price) ?? 0;
   const total = n(row.amount) ?? Number((unit * qty).toFixed(2));
   const norm = await normalizeChargeName(pool, row.cost_category || row.fee_name, plan.carrier_code || plan.shipping_line || carrierFromBl(plan.bl_no), plan.bl_no);
   const amount = total;
-  const sale = direction === "收" ? (n(row.sale_amount) ?? total) : 0;
+  let sale = direction === "收" ? (n(row.sale_amount) ?? total) : 0;
+  if (sale > 0) {
+    const g = guardBillRow({ cost_category: norm.name, currency: row.currency, sale_amount: sale }, terms);
+    if (g.warning) { sale = g.sale; if (warnings) warnings.push(g.warning); }
+  }
   const raw = { original_name: norm.original_name, unmapped: !!norm.unmapped, entry_direction: direction };
   const vals = [plan.bl_no, plan._id, norm.name, amount, clean(row.currency || "CNY"), sale, qty, unit, clean(row.charge_basis || row.unit), clean(row.remarks), ym(row.bill_month), JSON.stringify(raw)];
   if (row.id) {
@@ -98,7 +103,8 @@ async function save(pool, body, user) {
       WHERE _id=$6 RETURNING *`, vals);
   const saved = [];
   for (const row of (body.lines || [])) {
-    if (clean(row.cost_category || row.fee_name)) saved.push(await saveBill(pool, pr.rows[0], row, user));
+    const _terms = await ticketTerms(pool, pr.rows[0].bl_no);
+    if (clean(row.cost_category || row.fee_name)) saved.push(await saveBill(pool, pr.rows[0], row, user, _terms, body.__warnings = body.__warnings || []));
   }
   return { plan: pr.rows[0], lines: saved };
 }
@@ -114,8 +120,9 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, data: await listPlans(pool, req.query), fee_items: await feeItems(pool) });
     }
     if (req.method === "PATCH" || req.method === "POST") {
-      const data = await save(pool, req.body || {}, req.user);
-      return res.status(200).json({ success: true, data });
+      const body = req.body || {};
+      const data = await save(pool, body, req.user);
+      return res.status(200).json({ success: true, data, warnings: body.__warnings || [] });
     }
     res.status(405).json({ success: false, error: "GET/PATCH/POST required" });
   } catch (err) {
