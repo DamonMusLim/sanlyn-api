@@ -780,6 +780,9 @@ export default async function handler(req, res) {
     // LEFT JOIN latest loading_collab_sheets per order for driver chip
     let query = `
       SELECT o.*,
+             -- 0813 真行项目条数。⛔ 别用 o.products 快照:12 张单(112 条明细)有行项目但快照是空的,
+             --    页面会显示「—」当成"没数据"。铁律:订单域行项目就取 order_line_items。
+             (SELECT count(*) FROM order_line_items li WHERE li.order_id = o.id)::int AS line_item_count,
              lcs.loading->>'driver_name'    AS driver_name,
              lcs.loading->>'driver_phone'   AS driver_phone,
              lcs.loading->>'truck_plate'    AS truck_plate,

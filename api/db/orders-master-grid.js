@@ -9,6 +9,20 @@ import { requireAuth } from "../auth.js";
 export async function loadOrdersMasterGrid(pool, q = {}) {
   const from = String(q.from || "2026-01-01").trim();
   const sql = `
+WITH pbar AS MATERIALIZED (
+  -- 0813 性能修复:原来两段 LEFT JOIN LATERAL 对 products 做**逐行全表扫**
+  -- (1326 行项目 x 1939 products x 2 = 510 万次正则,EXPLAIN 实测 18.2s)。
+  -- 改成先把 products 扫**一次**、正则只跑 1939 次,聚合成两张对照表再等值 JOIN。
+  -- ⚖️ 匹配规则一个字没改(仍是严格两条路 + 条码必须 8-14 位纯数字),只改执行方式。
+  SELECT p.barcode, upper(btrim(p.sku)) AS k_sku,
+         regexp_replace(upper(btrim(p.product_name)),'[^A-Z0-9]','','g') AS k_name
+  FROM products p
+  WHERE p.barcode ~ '^[0-9]{8,14}$'
+), psku AS MATERIALIZED (
+  SELECT k_sku, min(barcode) AS barcode FROM pbar WHERE k_sku IS NOT NULL GROUP BY k_sku
+), pname AS MATERIALIZED (
+  SELECT k_name, min(barcode) AS barcode FROM pbar WHERE k_name IS NOT NULL GROUP BY k_name
+)
 SELECT o.id, o.order_no, o.contract_no, o.customer_po, o.status,
   COALESCE(NULLIF(o.company_name_en,''), NULLIF(o.customer,'')) AS customer,
   COALESCE(NULLIF(o.factory,''),(SELECT c.name_cn FROM companies c WHERE c.id = o.factory_company_id LIMIT 1)) AS factory,
@@ -31,19 +45,10 @@ SELECT o.id, o.order_no, o.contract_no, o.customer_po, o.status,
       'sku', l.sku, 'name', l.product_name,
       'size', l.size, 'qty', l.qty_ctn, 'price', l.unit_price,
       'subtotal', l.subtotal, 'nw', l.nw_ctn, 'gw', l.gw_ctn
-    ) ORDER BY l.sort_order)
+    ) ORDER BY l.sort_order, l.id)
     FROM order_line_items l
-    LEFT JOIN LATERAL (
-      SELECT min(p.barcode) barcode FROM products p
-      WHERE p.barcode ~ '^[0-9]{8,14}$'
-        AND upper(btrim(p.sku)) = upper((regexp_match(btrim(l.product_name),'^([A-Z]{2,4}-[0-9]{2,3}[A-Z]?)'))[1])
-    ) bsk ON true
-    LEFT JOIN LATERAL (
-      SELECT min(p.barcode) barcode FROM products p
-      WHERE p.barcode ~ '^[0-9]{8,14}$'
-        AND regexp_replace(upper(btrim(p.product_name)),'[^A-Z0-9]','','g')
-          = regexp_replace(upper(btrim(l.product_name)),'[^A-Z0-9]','','g')
-    ) bcn ON true
+    LEFT JOIN psku  bsk ON bsk.k_sku  = upper((regexp_match(btrim(l.product_name),'^([A-Z]{2,4}-[0-9]{2,3}[A-Z]?)'))[1])
+    LEFT JOIN pname bcn ON bcn.k_name = regexp_replace(upper(btrim(l.product_name)),'[^A-Z0-9]','','g')
     WHERE l.order_id = o.id
   ), '[]'::json) AS items
 FROM orders o

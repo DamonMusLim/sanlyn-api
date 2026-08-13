@@ -4,7 +4,7 @@ const INTERNAL_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
 //    _id 同样禁 —— 它常含客户名(sp_enrich_.../TAOLAN-TRK-...)，等于泄漏客户身份。
 //    外部方看 ext_ref：工厂=订单号，货代/船司=BL或SO。
 const PUBLIC_SHEET_FIELDS = [
-  "id", "ext_ref", "is_booked", "pol", "pod", "etd", "eta", "container_type",
+  "id", "ext_ref", "is_booked", "pol", "pod", "etd", "eta", "atd", "ata", "current_status_cn", "container_type",
   "container_qty", "collab_status", "total_cartons", "gross_weight_kg",
   "total_cbm", "so_no", "bl_no", "cargo_cutoff", "carrier_code", "vessel",
   "voyage", "release_type", "is_transfer", "so_info", "collab_uploads",

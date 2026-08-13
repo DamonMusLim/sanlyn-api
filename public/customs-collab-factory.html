@@ -88,7 +88,7 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
   function invoiceText(row){const invoices=Array.isArray(row.invoices)?row.invoices:[];if(!invoices.length)return"";return invoices.map(inv=>{const no=inv.invoice_no||"发票";const amt=inv.amount_incl_tax||inv.amount||"";return amt?`${no} ${money(amt)}`:no}).join("；")}
   function visibleOrderNo(row){return row.order_no||row.contract_no||"-"}
   function visibleQty(row){return row.qty||row.qty_ctn||row.cartons||"-"}
-  function rowAmount(row){if(row.amount_anchored===false)return 0;return row.expected_amount??row.effective_expected_amount??0}
+  function rowAmount(row){if(row.amount_anchored===false)return 0;/* 🩸 0813：工厂端只能拿到 factory_expected_amount。expected_amount / effective_expected_amount 都在 collab-field-profiles.js 的工厂禁看黑名单里（防报关价/销售价/毛利外泄），出门就被权限层删掉，所以以前这里恒为 0、一直显示「待我司确认」。⛔ 别为了让页面有数去放开黑名单，要改就改这里。 */return row.factory_expected_amount??row.expected_amount??row.effective_expected_amount??0}
   function copyBtn(value,label){const v=value==null?"":String(value);return `<button class="copyBtn" type="button" data-copy="${attr(v)}" data-copy-label="${attr(label)}">⧉</button>`}
   function copyField(value,label){return `<span class="copyField"><span class="copyText">${escapeHtml(value||"-")}</span>${copyBtn(value||"",label)}</span>`}
   function toast(text){const el=$("toast");el.textContent=text;el.classList.add("show");clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.remove("show"),1800)}
@@ -140,13 +140,13 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
     catch(err){showMessage("err",err.message||String(err))}
     finally{state.busyKey="";render()}
   }
-  function taxAmount(line){const amt=moneyNum(line.amount);const rate=Number(line.vat_rate)||0;return rate>0?amt*rate:0}
+  function taxAmount(line){const amt=moneyNum(line.invoice_amount??line.amount);const rate=Number(line.vat_rate)||0;return rate>0?amt*rate:0}
   function renderSlipViewer(row){
     const slips=slipList(row);
     return `<div class="uploadedBox" style="margin-top:0;border-top:0;padding-top:0"><div class="uploadedTitle">${escapeHtml(visibleOrderNo(row))} 付款水单</div>${slips.length?slips.map(s=>`<div class="uploadedLine"><div><strong>${money(s.amount)}</strong><div class="invoiceInfo">${escapeHtml(String(s.slip_date||"").slice(0,10)||"未填付款日")}</div></div><div>${s.file_url?`<a class="linkBtn" href="${escapeHtml(s.file_url)}" target="_blank" rel="noopener">查看文件</a>`:`<span class="invoiceInfo">暂无文件</span>`}</div></div>`).join(""):`<div class="invoiceInfo">我司尚未付款</div>`}</div>`;
   }
   function renderInvoiceTemplate(tpl,ref,invoices){
-    const lines=Array.isArray(tpl?.lines)?tpl.lines:[];const total=lines.reduce((s,l)=>s+moneyNum(l.amount),0);const taxTotal=lines.reduce((s,l)=>s+taxAmount(l),0);const grossTotal=total+taxTotal;
+    const lines=Array.isArray(tpl?.lines)?tpl.lines:[];const total=lines.reduce((s,l)=>s+moneyNum(l.invoice_amount??l.amount),0);const taxTotal=lines.reduce((s,l)=>s+taxAmount(l),0);const grossTotal=total+taxTotal;
     const warn=(tpl?.over_baoguan?`<div class="tplWarn">⚠ 采购价超过报关申报价，请联系我司核对（报关资料待更新）</div>`:"")
       +(tpl?.lines_anchored===false?`<div class="docWarn">⚠ 明细未锚定报关项号，以我司最终确认为准</div>`:"");
     if(tpl&&tpl.needs_customs_import){return `<div class="invoiceTpl"><h2 class="invoiceTplTitle">开票模板</h2><div class="tplWarn">⚠ 该单报关明细尚未导入系统，暂不能自动生成开票明细行。请按我司提供的《开票资料表》开票；本单应开（报关申报口径）：<strong>${money(tpl.total_incl)}</strong>，开票金额不得超过此数。</div><div class="remarkBox"><div class="remarkLabel">备注</div><div class="remarkValue">PO号：${copyField(tpl.po_no||"-","备注PO号")} ｜ 工厂号：${copyField(tpl.factory_ref||"—","备注工厂号")}</div></div></div>`;}
@@ -170,11 +170,11 @@ button,input{font:inherit}.page{max-width:1120px;margin:0 auto;padding:22px 16px
           <td>${copyField(String(l.spec||"").replace(/^0\|0\|/,""),"第"+(i+1)+"行规格")}</td>
           <td class="c">${copyField(l.unit||"箱","第"+(i+1)+"行单位")}</td>
           <td class="r">${copyField(numberText(l.qty),"第"+(i+1)+"行数量")}</td>
-          <td class="r">${copyField(money(l.unit_price_ex),"第"+(i+1)+"行单价")}</td>
-          <td class="r">${copyField(money(l.amount),"第"+(i+1)+"行金额")}</td>
+          <td class="r">${copyField(money((l.invoice_unit_price??l.unit_price_ex)),"第"+(i+1)+"行单价")}</td>
+          <td class="r">${copyField(money(l.invoice_amount??l.amount),"第"+(i+1)+"行金额")}</td>
           <td class="c">${copyField(Math.round((Number(l.vat_rate)||0)*100)+"%","第"+(i+1)+"行税率")}</td>
           <td class="r">${copyField(money(taxAmount(l)),"第"+(i+1)+"行税额")}</td>
-          <td class="c">${copyBtn([l.name,l.spec,l.unit,numberText(l.qty),money(l.unit_price_ex),money(l.amount)].filter(Boolean).join(" / "),"第"+(i+1)+"行")}</td>
+          <td class="c">${copyBtn([l.name,l.spec,l.unit,numberText(l.qty),money((l.invoice_unit_price??l.unit_price_ex)),money(l.invoice_amount??l.amount)].filter(Boolean).join(" / "),"第"+(i+1)+"行")}</td>
         </tr>`).join(""):`<tr><td colspan="9" class="c">暂无产品行</td></tr>`}</tbody>
       </table></div>
       <div class="totalBar"><div class="totalCell">合计</div><div class="totalCell">${copyField(money(total),"合计金额")}</div><div class="totalCell">${copyField(money(taxTotal),"合计税额")}</div></div>
