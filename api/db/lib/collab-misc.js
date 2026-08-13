@@ -1,5 +1,41 @@
 // collab-misc.js — extracted from booking-collab.js (structural split 2026-07-31, zero behavior change)
 import { requireAuth } from "../../auth.js";
+import { rawToHash } from "./collab-shared.js";
+import vesselMapHandler from "../../vessel-map.js";
+
+// ── GET /vessel-track?token=<raw> ──────────────────────────────
+// 客户协同页拿真船位:客户没有登录态,vessel-map 直调会 401。这里用 collab token 换出
+// 本票 BL 的 portun token+subscriptionId(复用 vessel-map 全部成本守卫+缓存订阅,不新增花费),
+// 前端据此内嵌 portun-map.html 显示真 GPS 船位。只放行 portun_allowed 的票,否则 tracked:false 退回航线示意图。
+async function handleVesselTrack(req, res, pool) {
+  const raw = (req.query && req.query.token) || "";
+  if (!raw) return res.status(400).json({ ok: false, error: "token 必填" });
+  const { rows } = await pool.query(
+    `SELECT sp.bl_no, (sp.raw->>'portun_allowed') AS allowed
+       FROM magic_links ml
+       JOIN shipping_plans sp ON sp.id = NULLIF(ml.meta->>'shipment_id','')::int
+      WHERE ml.token_hash = $1 AND ml.recipient_role = 'customer_booking'
+        AND ml.revoked_at IS NULL AND ml.expires_at > NOW() LIMIT 1`,
+    [rawToHash(raw)]
+  );
+  if (!rows.length) return res.status(403).json({ ok: false, error: "链接无效或已过期" });
+  const blNo = (rows[0].bl_no || "").trim();
+  if (rows[0].allowed !== "true" || !blNo) return res.json({ ok: true, tracked: false });
+
+  // 复用 vessel-map handler:mock res 抓返回。它内部走 DB 缓存(30天内不重复订阅=不重复收费)。
+  const cap = { code: 200, body: null };
+  const mockRes = { setHeader() {}, status(c) { cap.code = c; return this; }, json(j) { cap.body = j; return this; }, end() { return this; } };
+  try { await vesselMapHandler({ method: "POST", body: { blNo } }, mockRes); }
+  catch (e) { return res.json({ ok: true, tracked: false, error: String(e.message || e) }); }
+  const d = cap.body || {};
+  return res.json({
+    ok: true,
+    tracked: !d.arrived && !!d.token && !!d.subscriptionId,
+    blNo, carrierCode: d.carrierCode || null,
+    token: d.token || null, subscriptionId: d.subscriptionId || null,
+    arrived: !!d.arrived, reason: d.reason || null,
+  });
+}
 
 // ── GET /validate?token=<raw> ──────────────────────────────────
 async function handleCustomsDocStatus(req, res, pool) {
@@ -165,4 +201,4 @@ async function handleShipmentOrders(req, res, pool) {
   });
 }
 
-export { handleCustomsDocStatus, handleCollabMessages, handlePostCollabMessage, handleShipmentOrders };
+export { handleCustomsDocStatus, handleCollabMessages, handlePostCollabMessage, handleShipmentOrders, handleVesselTrack };

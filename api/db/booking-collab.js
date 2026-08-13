@@ -31,7 +31,7 @@ import { handleSetFactoryBill, handleConfirmFactoryBill, handlePartyDefaults, ha
 import { handleFileProxy, handleCollabUpload } from "./lib/collab-files.js";
 import { handleGetSailings, handlePostSailing, handleGetPlan, handlePatchPlan, handleDeleteSailing, handlePlansList, handlePlanFactories } from "./lib/collab-sailings-plans.js";
 import { handleGetContacts, handleSupplyChainOptions, handleCollabPartyInvoices, handleCollabVendorOptions, handleCollabAssignVendor } from "./lib/collab-contacts-vendor.js";
-import { handleCustomsDocStatus, handleCollabMessages, handlePostCollabMessage, handleShipmentOrders } from "./lib/collab-misc.js";
+import { handleCustomsDocStatus, handleCollabMessages, handlePostCollabMessage, handleShipmentOrders, handleVesselTrack } from "./lib/collab-misc.js";
 import { handleCollabPricing, handleCollabOrderPricing, handleCollabPricingSubmit } from "./lib/collab-pricing.js";
 import { handleBlConfirmation } from "./lib/collab-bl-confirmation.js";
 import { handleCompanyProfile } from "./lib/collab-company-profile.js";
@@ -60,6 +60,7 @@ export default async function handler(req, res) {
     if (req.method === "GET"    && pathSuffix === "port-charge-draft") return await handlePortChargeDraft(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "archive-retrieve-request") return await handleArchiveRetrieveRequest(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "customs-doc-status") return await handleCustomsDocStatus(req, res, pool);
+    if (req.method === "GET"    && pathSuffix === "vessel-track")       return await handleVesselTrack(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-factory-link")  return await handleSendFactoryLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "send-customer-link") return await handleSendCustomerLink(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "factory-submit")     return await handleFactorySubmit(req, res, pool);

@@ -28,6 +28,7 @@ export async function fetchRows(pool, opts) {
   const sql = `
     WITH ord AS (
       SELECT o.id AS order_id, o.order_no, o.contract_no, o.bl_no,
+             o.factory_company_id,   -- 0813：给「按固化工厂收窄」那道闸用
              COALESCE(o.factory_code, c_id.code,
                (SELECT p.factory_code FROM order_line_items x JOIN products p ON p.id=x.product_id
                  WHERE x.order_id=o.id AND p.factory_code IS NOT NULL LIMIT 1)) AS factory_code,
@@ -94,7 +95,32 @@ export async function fetchRows(pool, opts) {
               (f.order_scope IS NOT NULL AND ord.order_no=ANY(f.order_scope))
            OR (f.order_scope IS NULL AND f.contract_no=ord.contract_no)
            -- ③ 提单号/SO 认回（订单和报关单合同号对不上时唯一能连起来的东西）
-           OR (COALESCE(ord.bl_no,'') <> '' AND ord.bl_no IN (f.bl_no, f.so_no))
+           --  🩸 0813 必须带「兄弟单排除」：一份提单常挂多张报关单（MEDUY8325498 挂了
+           --     802324/802335/802346 三张），只按提单认会让每张订单同时匹配到全部兄弟单 →
+           --     中砂的 40-LL-6 跑到中宠页面上、三行 PO 全被合并成同一串（Damon：「为什么会有重复」）。
+           --     所以：该订单如果已经被【别的报关单】按合同号认领了，就不要再用提单号把它拉过来。
+           OR (COALESCE(ord.bl_no,'') <> '' AND ord.bl_no IN (f.bl_no, f.so_no)
+               AND NOT EXISTS (
+                 SELECT 1 FROM finance_export_rebates f9
+                  WHERE f9.customs_no <> f.customs_no
+                    AND COALESCE(f9.contract_no,'') <> '' AND COALESCE(ord.contract_no,'') <> ''
+                    AND f9.contract_no LIKE '%'||ord.contract_no||'%'))
+        )
+        -- 🔒 0813 再加一道硬闸：这张报关单的逐项工厂如果已经固化，
+        --    就只认【这几家工厂】的订单。一份提单挂多张报关单、多张订单又共用同一个合同号时
+        --    （FS20260625907 同时是 40-CP-6/40-CP-7 中宠 和 40-LL-6 中砂 的合同），
+        --    上面三条路都会把别家工厂的订单拉进来 → 中砂的票出现在中宠页面上。
+        --    报关逐项工厂是我们固化过、带依据的真值，用它收窄最可靠。
+        AND (
+          NOT EXISTS (
+            SELECT 1 FROM customs_declarations cd8
+              JOIN customs_declaration_items ci8 ON ci8.declaration_id = cd8.id AND ci8.deleted_at IS NULL
+             WHERE cd8.declaration_no = f.customs_no AND ci8.factory_company_id IS NOT NULL)
+          OR EXISTS (
+            SELECT 1 FROM customs_declarations cd8
+              JOIN customs_declaration_items ci8 ON ci8.declaration_id = cd8.id AND ci8.deleted_at IS NULL
+             WHERE cd8.declaration_no = f.customs_no
+               AND ci8.factory_company_id = ord.factory_company_id)
         )
     ),
     brand_rollup AS (

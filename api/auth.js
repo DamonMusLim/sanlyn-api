@@ -150,6 +150,7 @@ const PUBLIC_PATHS = [
   "/api/db/booking-collab/file",
   "/api/db/booking-collab/upload",
   "/api/db/booking-collab/sailings",
+  "/api/db/booking-collab/vessel-track",
   "/api/db/booking-collab/collab-pricing",
   "/api/db/booking-collab/collab-order-pricing",
   "/api/db/booking-collab/collab-pricing-submit",

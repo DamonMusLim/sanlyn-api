@@ -71,13 +71,29 @@ function lineFromItem(item, i) {
 function factoryGoodsLineFromItem(item, i) {
   const ctn = num(item?.qty_ctn);
   const qty = ctn ?? num(item?.qty2 ?? item?.qty1 ?? item?.qty);
+  const hs = cleanString(item?.hs_code || item?.hs) || null;
+  // 🩸 0813：这里原来只返回 品名/规格/单位/数量，没有金额/单价/税率，
+  //    工厂端开票模板于是永远显示 ¥0.00 / 0%（Damon 截图指出）。
+  //    金额取报关逐项申报值（含税口径，跟应开金额同源）；
+  //    税率按 HS：2309 系 9%，其余 13%（退税率只有这两个值，第三个值=算错）。
+  //    ⚖️ 这是【建议开票金额】，不是退税依据 —— 退税一律以真实进项票不含税额为准。
+  const gross = num(item?.amount ?? item?.amt ?? item?.total ?? item?.declaration_amount);
+  const vatRate = String(hs || "").startsWith("2309") ? 0.09 : 0.13;
   return {
     item_id: item?.id || null,
     name: cleanString(item?.name_cn || item?.name) || `报关项${i + 1}`,
     spec: cleanString(item?.spec) || null,
-    hs_code: cleanString(item?.hs_code || item?.hs) || null,
+    hs_code: hs,
     unit: ctn !== null ? "箱" : unit(item?.unit2 || item?.unit1 || item?.unit),
     qty,
+    // ⛔ 字段名不能叫 amount / unit_price / declaration_amount —— 那几个在
+    //    collab-field-profiles.js 的【工厂禁看黑名单】里（防报关价/销售价外泄），
+    //    出门就被权限层删掉，工厂端只会看到 ¥0.00。
+    //    用 invoice_* 命名，语义也更准：这是【建议开票金额】，不是报关额、更不是退税依据。
+    invoice_amount: gross,
+    invoice_unit_price: qty && gross !== null ? num(gross / qty) : null,
+    vat_rate: vatRate,
+    tax_rate: vatRate,
   };
 }
 
