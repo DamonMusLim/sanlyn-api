@@ -24,9 +24,9 @@ async function resolveRoleToken(pool, raw, roles) {
 // ── GET /file?token=&type=so|cd&ref= — 文档下载代理 ─────────
 // magic token 换内部 JWT，服务端转发 documents 渲染，JWT 不出服务器。
 // 车队只能拿 SO（托书）；报关行 SO + CD（报关底稿，ref 必须是本票挂的订单号）。
-const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl", "quarantine"], customer_booking: ["pack"],
-  factory_booking: ["upload"],
-  supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl", "quarantine", "bl_sample", "booking_note"] };
+const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl", "quarantine"], customer_booking: ["pack", "pickup_photo", "quarantine"],
+  factory_booking: ["upload", "pickup_photo"],
+  supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl", "quarantine", "bl_sample", "booking_note", "pickup_photo"] };
 
 async function handleFileProxy(req, res, pool) {
   const { token: raw, type, ref, aud } = req.query || {};
@@ -101,6 +101,25 @@ async function handleFileProxy(req, res, pool) {
       return res.end('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"120\"><rect width=\"120\" height=\"120\" fill=\"#fdf1ea\"/><rect x=\"42\" y=\"38\" width=\"36\" height=\"26\" rx=\"3\" fill=\"#e7c8b4\"/><rect x=\"42\" y=\"33\" width=\"16\" height=\"7\" rx=\"2\" fill=\"#e7c8b4\"/><text x=\"60\" y=\"80\" font-size=\"11\" fill=\"#9a3412\" text-anchor=\"middle\" font-family=\"sans-serif\">\u5df2\u5b58\u6863</text><text x=\"60\" y=\"96\" font-size=\"9\" fill=\"#b45309\" text-anchor=\"middle\" font-family=\"sans-serif\">\u7533\u8bf7\u63d0\u53d6</text></svg>');
     }
     res.setHeader("Content-Type", hit.mime || "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(hit.filename)}`);
+    return res.end(fs.readFileSync(fp));
+  }
+  // 工厂装箱/司机/铅封照片：客户可看本票工厂上传的图。真源=raw.collab_uploads(与upload同源)，
+  // 但只放行 role=factory 或图片类型，防客户越权拉到别方(货代/我方)的上传件。
+  if (type === "pickup_photo") {
+    const { rows: upl } = await pool.query(
+      `SELECT raw->'collab_uploads' AS u FROM shipping_plans WHERE id = $1`, [auth.planId]);
+    const list = (upl[0] && upl[0].u) || [];
+    const stored = String(ref || "");
+    const hit = Array.isArray(list) ? list.find(x => x && x.stored === stored && (x.role === "factory" || String(x.mime || "").startsWith("image/"))) : null;
+    if (!hit) return res.status(403).json({ ok: false, error: "照片不属于本票或非工厂图" });
+    const fp = path.join(UPLOAD_DIR, String(auth.planId), hit.stored);
+    if (!fs.existsSync(fp)) {
+      res.setHeader("Content-Type", "image/svg+xml");
+      return res.end('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" fill="#fdf1ea"/><text x="60" y="64" font-size="11" fill="#9a3412" text-anchor="middle" font-family="sans-serif">已存档</text></svg>');
+    }
+    res.setHeader("Content-Type", hit.mime || "image/jpeg");
+    res.setHeader("Cache-Control", "private, max-age=3600");
     res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(hit.filename)}`);
     return res.end(fs.readFileSync(fp));
   }

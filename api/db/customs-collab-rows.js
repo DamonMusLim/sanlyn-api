@@ -45,7 +45,15 @@ export async function fetchRows(pool, opts) {
         LEFT JOIN companies c ON c.code=o.factory_code
         LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
        WHERE (COALESCE(o.status,'') IN ('shipped','delivered','completed','closed','archived','done','received')
-              OR COALESCE(o.bl_no,'') <> '')
+              OR COALESCE(o.bl_no,'') <> ''
+              -- 🩸 0813：orders.status 靠人维护、必然滞后。40-LL-7 货 8-11 就出了、报关单
+              --    422720260000958343 也在，但订单还是 pending 且 bl_no 空 → 整张订单被挡在协同页外，
+              --    工厂看不到这票、也没法传票。
+              --    【报关单存在 = 已出运】才是铁证，比订单状态可靠，补成第三个入口。
+              OR EXISTS (SELECT 1 FROM finance_export_rebates f0
+                          WHERE COALESCE(o.contract_no,'') <> ''
+                            AND COALESCE(f0.contract_no,'') <> ''
+                            AND f0.contract_no LIKE '%'||o.contract_no||'%'))
          AND COALESCE(o.status,'') <> 'cancelled'
     ),
     fer_base AS (
@@ -150,13 +158,17 @@ export async function fetchRows(pool, opts) {
                 THEN ROUND((COALESCE(s.manual_expected_amount, b.system_expected_amount) / b.sales_amount)::numeric, 2) ELSE NULL END AS ratio_alert,
            b.declare_amount,
            s.manual_expected_amount,
-           COALESCE(s.manual_expected_amount, b.system_expected_amount) AS effective_expected_amount,
+           -- 🩸 0813：工厂端页面读的是 effective_expected_amount，而 0812 把应开金额
+           --    改成读结果表 factory_invoice_expected_amounts 后只喂了 factory_expected_amount，
+           --    这里没接上 → 工厂打开协同页金额全是 ¥0.00（Damon：「没数据」）。
+           --    优先级：人工填 > 结果表 > 旧的 system 估算。
+           COALESCE(s.manual_expected_amount, fie.expected_amount, b.system_expected_amount) AS effective_expected_amount,
            COALESCE(u.uploaded_amount,0) AS uploaded_amount,
            COALESCE(u.valid_invoice_count,0)::int AS valid_invoice_count,
            COALESCE(ri.received_amount,0) AS received_amount,
-           CASE WHEN COALESCE(s.manual_expected_amount, b.system_expected_amount) IS NULL
+           CASE WHEN COALESCE(s.manual_expected_amount, fie.expected_amount, b.system_expected_amount) IS NULL
                 THEN NULL
-                ELSE ROUND(COALESCE(s.manual_expected_amount, b.system_expected_amount) - COALESCE(u.uploaded_amount,0), 2)
+                ELSE ROUND(COALESCE(s.manual_expected_amount, fie.expected_amount, b.system_expected_amount) - COALESCE(u.uploaded_amount,0), 2)
             END AS diff_amount,
            COALESCE(pay.paid_amount,0) AS paid_amount,
            COALESCE(pay.slip_count,0)::int AS slip_count

@@ -201,7 +201,6 @@ export default async function handler(req, res) {
           note              = COALESCE(EXCLUDED.note, export_certs.note),
           contract_no       = COALESCE(EXCLUDED.contract_no, export_certs.contract_no),
           invoice_no        = COALESCE(EXCLUDED.invoice_no, export_certs.invoice_no),
-          status            = COALESCE(EXCLUDED.status, export_certs.status),
           issues            = COALESCE(EXCLUDED.issues, export_certs.issues),
           is_external       = COALESCE(EXCLUDED.is_external, export_certs.is_external),
           fee_cny           = COALESCE(EXCLUDED.fee_cny, export_certs.fee_cny),

@@ -449,16 +449,44 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
   ra.real_rebate, ra.inv_ex_sum, ra.inv_n, ra.inv_norate,
   -- 工厂开票协同入口：本票涉及的每家工厂 → companies.code → invoice_links 的对外链接。
   -- 没有链接的工厂也返回（link=null），页面显示「未建协同链接」，别假装有。
+  -- 工厂开票协同入口：本票涉及的每家工厂 → companies.code → invoice_links 的对外链接。
+  -- 🩸 0813 修：原来只从 ckts2（税局退税联链路）取工厂，
+  --    报关单级的票（data_grade='customs'，没有退税联）collab 恒为空 → 协同/上传按钮整排消失
+  --    （实例 422720260000958343 / 958349，中砂 40-LL-7）。
+  --    改成三路 UNION：已固化的 factory_company_id → 税局链路 → 报关单链路，取到就算。
+  -- 没有链接的工厂也返回（link=null），页面显示「未建协同链接」，别假装有。
   (SELECT json_agg(DISTINCT jsonb_build_object(
       'factory', t.fac, 'code', t.code, 'link', t.link)::jsonb)
      FROM (
-       SELECT DISTINCT k.line_factory AS fac,
-         (SELECT co.code FROM companies co WHERE k.line_factory IN (co.name_cn, co.factory_name, co.short_name) LIMIT 1) AS code,
+       SELECT DISTINCT f.fac,
+         (SELECT co.code FROM companies co
+           WHERE f.fac IN (co.name_cn, co.factory_name, co.short_name)
+             AND co.merged_into_code IS NULL AND co.active IS NOT FALSE
+           ORDER BY co.id LIMIT 1) AS code,
          (SELECT il.code FROM invoice_links il
            WHERE il.scope_type = 'factory' AND il.expires_at > now()
-             AND il.scope_value = (SELECT co2.code FROM companies co2 WHERE k.line_factory IN (co2.name_cn, co2.factory_name, co2.short_name) LIMIT 1)
+             AND il.scope_value = (SELECT co2.code FROM companies co2
+                                    WHERE f.fac IN (co2.name_cn, co2.factory_name, co2.short_name)
+                                      AND co2.merged_into_code IS NULL AND co2.active IS NOT FALSE
+                                    ORDER BY co2.id LIMIT 1)
            ORDER BY il.created_at DESC LIMIT 1) AS link
-       FROM ckts2 k WHERE k.customs_no = d.customs_no AND k.line_factory IS NOT NULL
+       FROM (
+         -- ① 已固化在报关逐项表上的（最可靠，两条链路都覆盖）
+         SELECT co3.name_cn AS fac
+           FROM customs_declaration_items ci3
+           JOIN customs_declarations cd3 ON cd3.id = ci3.declaration_id
+           JOIN companies co3 ON co3.id = ci3.factory_company_id
+          WHERE cd3.declaration_no = d.customs_no AND ci3.deleted_at IS NULL
+         UNION
+         -- ② 税局链路推出来的
+         SELECT k.line_factory FROM ckts2 k
+          WHERE k.customs_no = d.customs_no AND k.line_factory IS NOT NULL
+         UNION
+         -- ③ 报关单链路推出来的
+         SELECT l2.line_factory FROM line2 l2
+          WHERE l2.customs_no = d.customs_no AND l2.line_factory IS NOT NULL
+       ) f
+       WHERE COALESCE(f.fac,'') <> ''
      ) t) AS collab,
   COALESCE(k.line_amt_sum, a.line_amt_sum) AS line_amt_sum,
   k.ckts_declarable,
