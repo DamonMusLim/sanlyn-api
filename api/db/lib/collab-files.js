@@ -24,7 +24,7 @@ async function resolveRoleToken(pool, raw, roles) {
 // ── GET /file?token=&type=so|cd&ref= — 文档下载代理 ─────────
 // magic token 换内部 JWT，服务端转发 documents 渲染，JWT 不出服务器。
 // 车队只能拿 SO（托书）；报关行 SO + CD（报关底稿，ref 必须是本票挂的订单号）。
-const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl", "quarantine"], customer_booking: ["pack", "pickup_photo", "quarantine"],
+const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl", "quarantine"], customer_booking: ["pack", "pl", "iv", "sc", "pickup_photo", "quarantine"],
   factory_booking: ["upload", "pickup_photo"],
   supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl", "quarantine", "bl_sample", "booking_note", "pickup_photo"] };
 
@@ -149,14 +149,15 @@ async function handleFileProxy(req, res, pool) {
   let extraQ = "";
   if (type === "so") {
     docId = auth.planId; // 计划级文档按 id 精确解析
-  } else if (type === "pack") {
-    // 报关资料/客户资料合并版：id=首单 + ids=本票全部订单（与管理端同一关联，绝不只合一单）
+  } else if (["pack", "pl", "iv", "sc"].includes(type)) {
+    // 报关资料/客户资料：id=首单 + ids=本票全部订单（与管理端同一关联，绝不只合一单）
     const { rows: ords } = await pool.query(
       `SELECT order_no FROM orders WHERE shipping_plan_id = $1 AND order_no IS NOT NULL ORDER BY order_no`, [auth.planId]);
     if (!ords.length) return res.status(404).json({ ok: false, error: "本票无订单" });
     docId = ords[0].order_no;
     extraQ = `&ids=${encodeURIComponent(ords.map(o => o.order_no).join(","))}&style=v2&audience=customer` +
-             (aud === "customs" ? "&customs=1" : "");
+             (aud === "customs" ? "&customs=1" : "") +
+             (req.query.format === "xlsx" ? "&format=xlsx" : "");
   } else {
     // CD 按订单号；必须属于本票（防横向拉别票资料）
     const { rows } = await pool.query(
