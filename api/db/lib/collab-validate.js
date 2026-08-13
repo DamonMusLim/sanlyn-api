@@ -56,6 +56,7 @@ async function handleValidate(req, res, pool) {
   // Fetch plan + orders
   const planRes = await pool.query(
     `SELECT sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta,
+            sp.atd, sp.ata, sp.current_status_cn,
             sp.container_type, sp.container_qty, sp.collab_status,
             sp.total_cartons, sp.gross_weight_kg, sp.total_cbm, sp.freight_term,
             sp.raw->'customer_item_notes' AS customer_item_notes,
@@ -139,7 +140,7 @@ async function handleValidate(req, res, pool) {
        FROM shipping_plans sp
        LEFT JOIN orders o ON o.shipping_plan_id = sp.id
       WHERE sp.id = $1
-      GROUP BY sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta, sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage, sp.freight_sale_usd, sp.logistics_provider_kind, sp.trade_owner_kind, sp.release_type, sp.source_system,
+      GROUP BY sp.id, sp._id, sp.shipment_no, sp.pol, sp.pod, sp.etd, sp.eta, sp.atd, sp.ata, sp.current_status_cn, sp.so_no, sp.bl_no, sp.cargo_cutoff, sp.carrier_code, sp.vessel, sp.voyage, sp.freight_sale_usd, sp.logistics_provider_kind, sp.trade_owner_kind, sp.release_type, sp.source_system,
                sp.container_type, sp.container_qty, sp.collab_status,
                sp.total_cartons, sp.gross_weight_kg, sp.total_cbm, sp.freight_term,
                sp.raw, sp.trucking_detail, sp.issuing_company, sp.trucking_arrange, sp.customs_arrange, sp.customer, sp.customer_en,
@@ -252,7 +253,10 @@ async function handleValidate(req, res, pool) {
         WHERE o.shipping_plan_id = $1 AND du.doc_type = 'quarantine_report'
           AND COALESCE(du.stamped_url, du.url) IS NOT NULL
         ORDER BY du.id`, [planId]);
-    quarantineDocs = qr.map(r => ({ ref: String(r.id), name: r.name })); // 一票可多份(拼柜每单一张CIQ)，全列出
+    // 一票可多份(拼柜每单一张CIQ)全列出；但同一张合并证会被按订单登记多行(name 相同)→ 按 name 去重,只显示一张。
+    const _seen = new Set();
+    quarantineDocs = qr.map(r => ({ ref: String(r.id), name: r.name }))
+      .filter(d => (_seen.has(d.name) ? false : (_seen.add(d.name), true)));
   } catch (e) { /* 检疫探测失败不阻断门户 */ }
 
   const carrierRequirements = await materializeAndList(pool, planId, {
