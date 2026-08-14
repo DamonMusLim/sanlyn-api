@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>供应商对账</title>
+<link rel="stylesheet" href="/public/sanlyn-table.css">
+<style>.st-ok{color:#15803d;font-weight:700}.st-bad{color:#b91c1c;font-weight:700}.st-na{color:#6b7280}.hintline{font-size:12px;color:#6b7280;margin-top:6px}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="title">供应商对账 <span class="meta">应付账期</span></div><div class="meta">v2026.08.14-1 · <span id="stamp"></span></div></div></div>
+  <div class="bar">
+    <input id="supplier" placeholder="供应商名称(必填,模糊)">
+    <input id="year" placeholder="年份(默认全部)">
+    <button class="btn" id="reload">刷新</button>
+    <button class="btn" id="exportBtn">导出Excel</button>
+  </div>
+  <div id="msg"></div><div class="panel" id="app"><div class="hint">Loading...</div></div>
+  <div id="unmatched" class="hintline"></div>
+</div>
+<script src="/public/sanlyn-table.js"></script>
+<script>
+var qs=new URLSearchParams(location.search);
+supplier.value=qs.get("supplier")||"";
+year.value=qs.get("year")||"";
+function moneyCell(v,h){var n=Number(v||0),cls=n<0?"st-bad":(n>0?"st-ok":"st-na");return '<span class="'+cls+'">'+h.money(n)+'</span>'}
+function supplierCell(r,h){var cls=r.supplier==="待映射"?"st-bad":"";var txt=r.supplier||"";
+  if(r.counterparty_names)txt+=" · "+r.counterparty_names;
+  return '<span class="'+cls+'">'+h.esc(txt)+'</span>'}
+var config={
+  filter:function(){return true},
+  api:"/api/db/recon-supplier",params:function(){return {supplier:supplier.value,year:year.value}},
+  loginApi:"/api/db/auth-login",
+  columns:[
+    {key:"supplier",label:"供应商",render:supplierCell},
+    {key:"ym",label:"账期月"},
+    {key:"bill_cny",label:"CNY",type:"num",group:"账单"},
+    {key:"bill_usd",label:"USD",type:"num",group:"账单"},
+    {key:"paid_babi_cny",label:"CNY",type:"num",group:"巴匕付"},
+    {key:"paid_babi_usd",label:"USD",type:"num",group:"巴匕付"},
+    {key:"paid_ocean_cny",label:"CNY",type:"num",group:"洋宝宝付"},
+    {key:"paid_ocean_usd",label:"USD",type:"num",group:"洋宝宝付"},
+    {key:"gap_cny",label:"CNY",group:"差额",render:function(r,h){return moneyCell(r.gap_cny,h)}},
+    {key:"gap_usd",label:"USD",group:"差额",render:function(r,h){return moneyCell(r.gap_usd,h)}}
+  ]};
+var table=null,oldLoad=null;
+function ensureTable(){
+  if(table)return;
+  table=SanlynTable.mount(document.getElementById("app"),config);
+  oldLoad=table.load.bind(table);
+  table.load=loadTable;
+}
+async function loadTable(){
+  if(!supplier.value.trim()){document.getElementById("app").innerHTML='<div class="hint">请输入供应商名称</div>';return}
+  await oldLoad();
+  var xs=table.rows.filter(function(r){return r.unmatched&&r.counterparty_names}).map(function(r){return r.ym+" "+r.counterparty_names});
+  unmatched.textContent=xs.length?"待映射户名: "+xs.join("；"):"";
+}
+function reloadTable(){
+  if(!supplier.value.trim()){document.getElementById("app").innerHTML='<div class="hint">请输入供应商名称</div>';return}
+  ensureTable();table.load();
+}
+function csvCell(v){var s=String(v==null?"":v);return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s}
+function exportCsv(){
+  if(!table||!table.rows.length)return;
+  var cols=config.columns,rows=[cols.map(function(c){return c.group?c.group+"-"+c.label:c.label})];
+  table.rows.forEach(function(r){rows.push(cols.map(function(c){return r[c.key]}))});
+  var blob=new Blob(["\ufeff"+rows.map(function(r){return r.map(csvCell).join(",")}).join("\n")],{type:"text/csv;charset=utf-8"});
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="recon-supplier-"+(supplier.value||"supplier")+".csv";a.click();URL.revokeObjectURL(a.href);
+}
+supplier.onkeydown=function(e){if(e.key==="Enter")reloadTable()};
+year.onkeydown=function(e){if(e.key==="Enter")reloadTable()};
+reload.onclick=reloadTable;
+exportBtn.onclick=exportCsv;
+reloadTable();
+</script>
+</body>
+</html>

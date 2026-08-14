@@ -8,7 +8,7 @@ const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 30;
 
 const TAB_SQL = {
-  price: "problem_type IN ('below_cost','above_market','price')",
+  price: "problem_type IN ('below_cost','above_market','price','restock_reprice')",
   expiry: "problem_type IN ('stale_90d','expiry')",
   shelfless: "problem_type IN ('no_shelf','shelfless')",
   badname: "problem_type = 'badname'",
@@ -375,7 +375,7 @@ async function getStats(req, res) {
   const { rows } = await getPool().query(`
     SELECT
       CASE
-        WHEN problem_type IN ('below_cost','above_market','price') THEN 'price'
+        WHEN problem_type IN ('below_cost','above_market','price','restock_reprice') THEN 'price'
         WHEN problem_type='expiry' THEN 'expiry'
         WHEN problem_type='stale_90d' THEN 'stale'
         WHEN problem_type IN ('no_shelf','shelfless') THEN 'shelfless'
