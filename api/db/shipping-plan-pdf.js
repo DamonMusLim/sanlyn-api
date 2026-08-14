@@ -705,7 +705,7 @@ ${printBtn}
     // 海运费发票 Freight Invoice
     // ══════════════════════════════════════════
     if (isFreight) {
-      const invoiceNo = "FI-" + fmt(p.shipment_no) + "-" + genDate.replace(/-/g,"");
+      const invoiceNo = "FI-" + fmt(p.bl_no || p.shipment_no) + "-" + genDate.replace(/-/g,""); // 铁则:客户单据用BL号,CY内部号不外泄
       const billTo = cust ? (cust.name_en || cust.name_cn) : fmt(p.customer_en||p.customer);
       const feeRows = [
         { desc: "Ocean Freight 海运费", cur: "USD", amt: p.freight_sale_usd },
@@ -723,7 +723,7 @@ ${printBtn}
       const totalUsd = feeRows.filter(r=>r.cur==="USD").reduce((s,r)=>s+Number(r.amt||0),0);
       const totalCny = feeRows.filter(r=>r.cur==="CNY").reduce((s,r)=>s+Number(r.amt||0),0);
 
-      const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>海运费发票 — ${fmt(p.shipment_no)}</title><style>${sharedCss}
+      const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>海运费发票 — ${fmt(p.bl_no || p.shipment_no)}</title><style>${sharedCss}
       .inv-box { border:1px solid #e2e8f0; border-radius:6px; margin-bottom:14px; overflow:hidden; }
       </style></head><body>
 ${printBtn}
@@ -750,7 +750,7 @@ ${printBtn}
 
   <div class="sec-title">航次信息 / Shipment</div>
   <div class="grid3" style="margin-bottom:14px">
-    <div class="field"><div class="lbl">Shipment Ref.</div><div class="val">${fmt(p.shipment_no)}</div></div>
+    <div class="field"><div class="lbl">Shipment Ref.</div><div class="val">${fmt(p.bl_no || p.shipment_no)}</div></div>
     <div class="field"><div class="lbl">Vessel / Voyage</div><div class="val">${fmt(p.vessel)} ${fmt(p.voyage)}</div></div>
     <div class="field"><div class="lbl">Route</div><div class="val">${fmt(p.pol)} → ${fmt(p.pod)}</div></div>
     <div class="field"><div class="lbl">Container</div><div class="val">${fmt(p.container_type)} × ${fmt(p.container_qty||1)}</div></div>
@@ -952,7 +952,7 @@ ${printBtn}
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
 
       const fobInvNo = await issueDocNo(pool, {
-        prefix: "FI", seed: p.shipment_no || p.bl_no || p.id, blNo: p.bl_no,
+        prefix: "FI", seed: p.bl_no || p.shipment_no || p.id, blNo: p.bl_no,
         docType: "fob_invoice", totalUsd, totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
         snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, qty: actualCtnQty, warnings: fobWarnings },
