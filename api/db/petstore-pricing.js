@@ -34,25 +34,41 @@ function timingTokenMatches(input, expected) {
   return crypto.timingSafeEqual(a, b);
 }
 
+function decodeJwtPayload(req) {
+  const auth = String(req.headers.authorization || "");
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
+  const payloadPart = token.split(".")[1];
+  if (!payloadPart) return {};
+  try {
+    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payloadPart.length / 4) * 4, "=");
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch (e) {
+    return {};
+  }
+}
+
+function bossUsers() {
+  return String(process.env.PRICING_BOSS_USERS || "damon_sl")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function requireBoss(req, res) {
   if (req.headers["x-clerk-session"]) {
     json(res, 403, { success: false, error: "clerk_forbidden" });
     return false;
   }
 
+  const payload = decodeJwtPayload(req);
+  if (payload.username && bossUsers().includes(String(payload.username))) return true;
+
   const expected = process.env.PRICING_BOSS_TOKEN;
-  if (!expected) {
-    json(res, 503, { success: false, error: "pricing_boss_token_not_configured" });
-    return false;
-  }
-
   const got = req.headers["x-pricing-boss"];
-  if (!timingTokenMatches(got, expected)) {
-    json(res, 403, { success: false, error: "boss_token_invalid" });
-    return false;
-  }
+  if (got && expected && timingTokenMatches(got, expected)) return true;
 
-  return true;
+  json(res, 403, { success: false, error: "boss_forbidden" });
+  return false;
 }
 
 function normalizeTab(tab) {
@@ -72,6 +88,22 @@ function clampLimit(value) {
 function parseCursor(value) {
   const n = Number.parseInt(value || "0", 10);
   return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function defaultShanghaiYesterday() {
+  const d = new Date(Date.now() - 86400000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d).reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function parseSalesDate(value) {
+  const date = String(value || defaultShanghaiYesterday()).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 }
 
 async function readBody(req) {
@@ -221,6 +253,60 @@ async function getStats(req, res) {
   return json(res, 200, { success: true, rows });
 }
 
+async function getDailySales(req, res) {
+  const date = parseSalesDate(req.query?.date);
+  if (!date) return json(res, 400, { success: false, error: "bad_date" });
+
+  const { rows } = await getPool().query(`
+    WITH sales AS (
+      SELECT
+        product_code,
+        product_name,
+        spec,
+        sum(-delta)::numeric AS sold_qty,
+        min(stock_after)::numeric AS stock_now,
+        count(*)::int AS tx_count,
+        sum(case when order_channel::text != '0' then -delta else 0 end)::numeric AS online_qty
+      FROM petstore_stock_ledger
+      WHERE order_type = 'XS'
+        AND delta < 0
+        AND change_time::date = $1::date
+      GROUP BY 1,2,3
+    ),
+    dna AS (
+      SELECT DISTINCT ON (product_code)
+        product_code,
+        qty_30,
+        days_of_supply,
+        restock_verdict
+      FROM petstore_sku_sales_dna
+      ORDER BY product_code, as_of DESC
+    )
+    SELECT
+      s.product_code,
+      s.product_name,
+      s.spec,
+      s.sold_qty,
+      s.stock_now,
+      s.tx_count,
+      s.online_qty,
+      d.qty_30,
+      d.days_of_supply,
+      d.restock_verdict
+    FROM sales s
+    LEFT JOIN dna d ON d.product_code = s.product_code
+    ORDER BY s.sold_qty DESC
+  `, [date]);
+
+  const summary = rows.reduce((acc, r) => ({
+    sku_count: acc.sku_count + 1,
+    total_qty: acc.total_qty + Number(r.sold_qty || 0),
+    online_qty: acc.online_qty + Number(r.online_qty || 0),
+  }), { sku_count: 0, total_qty: 0, online_qty: 0 });
+
+  return json(res, 200, { success: true, date, rows, summary });
+}
+
 async function postVerdict(req, res) {
   const body = await readBody(req);
   const id = Number.parseInt(body.id, 10);
@@ -297,6 +383,7 @@ export default async function handler(req, res) {
     const action = req.method === "GET" ? req.query?.action : (req.body?.action || (await readBody(req)).action);
     if (req.method === "GET" && action === "queue") return getQueue(req, res);
     if (req.method === "GET" && action === "stats") return getStats(req, res);
+    if (req.method === "GET" && action === "daily_sales") return getDailySales(req, res);
     if (req.method === "POST" && action === "verdict") return postVerdict(req, res);
     if (req.method === "POST" && action === "undo") return postUndo(req, res);
     return json(res, 400, { success: false, error: "bad_action" });
