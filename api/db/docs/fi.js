@@ -5,9 +5,9 @@ export async function renderFi(ctx){
       var fiR=await pool.query("SELECT * FROM orders WHERE id::text=$1 OR _id=$1 OR contract_no=$1 OR order_no=$1 OR customer_po=$1 LIMIT 1",[id]);
       if(!fiR.rows.length) return res.status(404).send("<h1>订单未找到: "+esc(id)+"</h1>");
       var fo=fiR.rows[0];
-      var liQ=await pool.query("SELECT declaration_name, product_name, factory_name, qty_ctn, nw_ctn FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[fo.id||fo._id]);
+      var liQ=await pool.query("SELECT declaration_name, product_name, qty_ctn, nw_ctn FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[fo.id||fo._id]);
       var fiLines=liQ.rows||[];
-      var factory=pick(fiLines.find(function(l){return l.factory_name;})&&fiLines.find(function(l){return l.factory_name;}).factory_name, fo.factory, "____________________");
+      var factory=pick(fo.factory, "____________________");
       var sampleName=pick(fiLines.find(function(l){return l.declaration_name;})&&fiLines.find(function(l){return l.declaration_name;}).declaration_name, fiLines[0]&&fiLines[0].product_name, "____________");
       // 箱数+NW 与装箱单(PL)同源: Σ(qty_ctn), Σ(nw_ctn × qty_ctn) — 不用可能 stale 的 orders 快照
       var qtyCtn=fiLines.reduce(function(s,l){return s+(Number(l.qty_ctn)||0);},0);
