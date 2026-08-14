@@ -18,6 +18,10 @@ function clean(s, max = 120) {
   return String(s || "").replace(/\u0000/g, " ").replace(/[ \t]{2,}/g, " ").trim().slice(0, max);
 }
 
+function cleanLine(s) {
+  return clean(s, 220).replace(/^[\s"'`]+|[\s"'`]+$/g, "");
+}
+
 function normalizeDate(value, year) {
   const s = clean(value).replace(/[年月]/g, "-").replace(/日/g, " ");
   let m = s.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:\D{0,6}(\d{1,2}):(\d{2}))?/);
@@ -33,6 +37,40 @@ function pick(text, patterns) {
     if (m && clean(m[1])) return clean(m[1]);
   }
   return "";
+}
+
+function compactLines(text) {
+  const seen = new Set(), out = [];
+  for (const raw of String(text || "").split(/\n+/)) {
+    const line = cleanLine(raw);
+    if (!line || line.length > 220) continue;
+    if (/^(?:[A-Z]{2,}|[CD-FGILNOPTQV]{2,}|[耀-鿿]{1,3})$/.test(line)) continue;
+    if (seen.has(line)) continue;
+    seen.add(line);
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+function utf16Runs(buf, offset) {
+  const out = [];
+  let cur = "";
+  for (let i = offset; i + 1 < buf.length; i += 2) {
+    const code = buf.readUInt16LE(i);
+    const ok = (code >= 0x20 && code <= 0x7e) || (code >= 0x4e00 && code <= 0x9fff) ||
+      [0x3000, 0x3001, 0x3002, 0xff08, 0xff09, 0xff0c, 0xff1a].includes(code);
+    if (ok) cur += String.fromCharCode(code);
+    else {
+      if (cleanLine(cur).length >= 2) out.push(cur);
+      cur = "";
+    }
+  }
+  if (cleanLine(cur).length >= 2) out.push(cur);
+  return out;
+}
+
+function textFromOleStrings(buf) {
+  return compactLines([...utf16Runs(buf, 0), ...utf16Runs(buf, 1)].join("\n"));
 }
 
 function textFromSheetJs(buf) {
@@ -93,6 +131,8 @@ export async function extractTextFromUpload(buf, filename, mime) {
   if (/\.(xls|xlsx)$/.test(name) || /spreadsheet|excel/.test(mt)) {
     const t = textFromSheetJs(buf);
     if (clean(t).length > 20) return t;
+    const ole = textFromOleStrings(buf);
+    if (clean(ole).length > 20) return ole;
   }
   if (/\.pdf$/i.test(name) || mt === "application/pdf") {
     const t = await textFromPdf(buf);
@@ -105,6 +145,34 @@ export async function extractTextFromUpload(buf, filename, mime) {
   const latin = buf.toString("latin1").replace(/[^\x20-\x7e\n:：./-]/g, " ");
   const utf16 = buf.toString("utf16le").replace(/[^\x20-\x7e一-龥\n:：./\\-]/g, "\n");
   return `${latin}\n${utf16}`.replace(/[ \t]{2,}/g, " ").replace(/\n{2,}/g, "\n");
+}
+
+function lineAfter(text, labelRe, valueRe) {
+  const lines = String(text || "").split(/\n+/).map(cleanLine).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    if (!labelRe.test(lines[i])) continue;
+    const same = lines[i].replace(labelRe, "").replace(/^[:：\s]+/, "");
+    if (same && (!valueRe || valueRe.test(same))) return clean(same);
+    for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
+      if (!valueRe || valueRe.test(lines[j])) return clean(lines[j]);
+    }
+  }
+  return "";
+}
+
+function firstLine(text, re) {
+  const lines = String(text || "").split(/\n+/).map(cleanLine).filter(Boolean);
+  const hit = lines.find((line) => re.test(line));
+  return hit ? clean(hit) : "";
+}
+
+function dateLine(text) {
+  const lines = String(text || "").split(/\n+/).map(cleanLine).filter(Boolean);
+  return lines.find((line) => !/^DATE[:：]/i.test(line) && /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(line)) || "";
+}
+
+function contactName(value) {
+  return clean(String(value || "").replace(/[\/,，\s-]*\d[\d\- /]{5,}.*/, "")) || clean(value);
 }
 
 function parseContainer(text) {
@@ -126,21 +194,27 @@ function parseCarrier(text, blNo) {
 }
 
 export function parseBookingNotice(text, fallbackYear, filename = "") {
-  const src = clean(`${filename}\n${text}`, 200000);
+  const src = compactLines(`${filename}\n${text}`);
   const year = String(fallbackYear || new Date().getFullYear());
   const bl = pick(src, [/提运?单号\s*[:：]?\s*([A-Z]{3,4}\d{7,12})/i, /B\/?L\s*(?:NO\.?|号)?\s*[:：]?\s*([A-Z]{3,4}\d{7,12})/i, /\b([A-Z]{4}\d{8,12})\b/]);
   const so = pick(src, [/(?:S\/?O|订舱号|订舱确认号)\s*(?:NO\.?|号)?\s*[:：]?\s*((?!ProductBuildVer)[A-Z0-9][A-Z0-9-]{5,24})/i]);
-  const terminal = pick(src, [/(?:入货场站|进仓场站|场站)\s*[:：]\s*([^\n；;]{4,80})/]);
-  const contact = pick(src, [/(?:场站联系人|联系人)\s*[:：]\s*([^\n；;]{2,60})/]);
-  const phone = pick(src, [/(?:联系电话|电话)\s*[:：]\s*([0-9\- /]{6,40})/]);
-  const etd = normalizeDate(pick(src, [/(?:开船时间|ETD|离港日?)[^\d]{0,20}(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})/i, /(?:开船时间|ETD)[^\d]{0,20}(\d{1,2}[-/.]\d{1,2})/i]), year);
+  const terminal = pick(src, [/(?:入货场站|进仓场站|场站)[ \t]*[:：][ \t]*([^\n；;]{4,80})/]) ||
+    lineAfter(src, /^(?:入货场站|进仓场站|场站)\s*[:：]?$/, /货运|物流|代理|有限公司/) ||
+    firstLine(src, /货运|物流|代理|有限公司/);
+  const contact = pick(src, [/(?:场站联系人|联系人)[ \t]*[:：][ \t]*([^\n；;]{2,60})/]) ||
+    lineAfter(src, /^(?:场站联系人|联系人)\s*[:：]?$/, /^(?!舱单|备注|联系电话)[一-龥]{2,8}$/) ||
+    pick(src, [/\n([一-龥]{2,8})\n\d{7,12}\b/]);
+  const phone = pick(src, [/(?:联系电话|电话)[ \t]*[:：][ \t]*([0-9\- /]{6,40})/, /\b(\d{7,12}(?:[-/ ]\d{2,8})?)\b/]);
+  const etd = normalizeDate(pick(src, [/(?:开船时间|ETD|离港日?)[^\d]{0,20}(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})/i, /(?:开船时间|ETD)[^\d]{0,20}(\d{1,2}[-/.]\d{1,2})/i]), year) ||
+    normalizeDate(lineAfter(src, /^(?:船名\/航次|船名|Vessel)/i, /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/), year) ||
+    normalizeDate(dateLine(src), year);
   const portCutoff = normalizeDate(pick(src, [/(?:截港时间|截港|CY\s*CUT[- ]?OFF)\s*[:：]?\s*(\d{1,4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?(?:\D{0,6}\d{1,2}:\d{2})?)/i]), year);
   const docCutoff = normalizeDate(pick(src, [/(?:截单时间|截单|SI\s*CUT[- ]?OFF)\s*[:：]?\s*(\d{1,4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?(?:\D{0,6}\d{1,2}:\d{2})?)/i]), year);
   const vgmCutoff = normalizeDate(pick(src, [/(?:截\s*VGM|VGM\s*CUT[- ]?OFF)\s*[:：]?\s*(\d{1,4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?(?:\D{0,6}\d{1,2}:\d{2})?)/i]), year);
   const ctn = parseContainer(src);
   return {
     bl_no: bl, so_no: so, carrier: parseCarrier(src, bl), etd,
-    terminal, terminal_contact: contact, terminal_tel: phone,
+    terminal, terminal_contact: contactName(contact), terminal_tel: phone,
     container_qty: ctn.container_qty, container_type: ctn.container_type,
     port_cutoff_at: portCutoff, cargo_cutoff: portCutoff, doc_cutoff: docCutoff, vgm_cutoff: vgmCutoff
   };
@@ -162,14 +236,27 @@ function quoteIdent(name) {
 async function resolveCarrierCompany(pool, carrier) {
   if (!carrier) return { code: null, status: "empty" };
   const aliases = CARRIER_ALIASES[carrier] || [carrier];
-  const r = await pool.query(
+  const sql = (where) =>
     `SELECT code, name_cn, name_en FROM companies
       WHERE code NOT LIKE 'DEPRECATED%' AND COALESCE(active,true)
-        AND (${aliases.map((_, i) => `UPPER(COALESCE(code,''))=UPPER($${i + 1}) OR UPPER(COALESCE(name_en,'')) LIKE '%'||UPPER($${i + 1})||'%' OR name_cn LIKE '%'||$${i + 1}||'%'`).join(" OR ")})
-      ORDER BY (UPPER(COALESCE(code,''))=UPPER($1)) DESC, id LIMIT 2`,
+        AND (${where})
+      ORDER BY (UPPER(COALESCE(code,''))=UPPER($1)) DESC, id LIMIT 2`;
+  const direct = await pool.query(
+    sql(aliases.map((_, i) => `UPPER(COALESCE(code,''))=UPPER($${i + 1}) OR UPPER(COALESCE(name_en,'')) LIKE '%'||UPPER($${i + 1})||'%' OR name_cn LIKE '%'||$${i + 1}||'%'`).join(" OR ")),
     aliases
   );
-  return r.rows.length === 1 ? { code: r.rows[0].code, status: "matched" } : { code: null, status: r.rows.length ? "ambiguous" : "not_found" };
+  if (direct.rows.length === 1) return { code: direct.rows[0].code, status: "matched" };
+  if (direct.rows.length > 1) return { code: null, status: "ambiguous" };
+  const normalized = aliases.map((x) => String(x).trim().toUpperCase());
+  const byAlias = await pool.query(
+    `SELECT c.code, c.name_cn, c.name_en
+       FROM company_aliases a JOIN companies c ON c.code = a.company_code
+      WHERE COALESCE(a.status,'active')='active' AND c.code NOT LIKE 'DEPRECATED%' AND COALESCE(c.active,true)
+        AND UPPER(a.normalized_alias) = ANY($1::text[])
+      ORDER BY c.id LIMIT 2`,
+    [normalized]
+  ).catch(() => ({ rows: [] }));
+  return byAlias.rows.length === 1 ? { code: byAlias.rows[0].code, status: "matched_alias" } : { code: null, status: byAlias.rows.length ? "ambiguous" : "not_found" };
 }
 
 export async function backfillBookingNotice(pool, planId, text, filename) {

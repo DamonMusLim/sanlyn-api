@@ -7,13 +7,14 @@ const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 30;
 
 const TAB_SQL = {
-  price: "problem_type IN ('below_cost','above_market','price')",
-  expiry: "problem_type IN ('stale_90d','expiry')",
-  shelfless: "problem_type IN ('no_shelf','shelfless')",
+  price: "problem_type IN ('below_cost','above_market')",
+  expiry: "problem_type = 'expiry'",
+  stale: "problem_type = 'stale_90d'",
+  shelfless: "problem_type = 'no_shelf'",
   badname: "problem_type = 'badname'",
 };
 
-const ALLOWED_VERDICTS = ["合理", "跟市场", "我定价", "清仓", "驳回"];
+const ALLOWED_VERDICTS = ["合理", "跟市场", "我定价", "清仓", "驳回", "安排货位"];
 const REJECT_REASONS = ["证据不足", "数据不准", "特殊品", "暂不处理"];
 
 function json(res, code, data) {
@@ -91,8 +92,6 @@ function parseCursor(value) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-
-
 async function readBody(req) {
   if (req.body && typeof req.body === "object") return req.body;
   return new Promise((resolve, reject) => {
@@ -141,7 +140,9 @@ async function getQueue(req, res) {
 
   const orderSql = tab === "expiry"
     ? "COALESCE(l.days_left, 999999) ASC, COALESCE(l.stock_qty,0) * COALESCE(l.cost_price,0) DESC"
-    : "ABS(COALESCE(l.new_price,0) - COALESCE(l.old_price,0)) * COALESCE(l.stock_qty,0) DESC, l.ts DESC";
+    : tab === "stale"
+      ? "COALESCE(l.stock_qty,0) * COALESCE(l.cost_price,0) DESC, l.ts DESC"
+      : "ABS(COALESCE(l.new_price,0) - COALESCE(l.old_price,0)) * COALESCE(l.stock_qty,0) DESC, l.ts DESC";
 
   const sql = `
     WITH ranked AS (
@@ -159,9 +160,9 @@ async function getQueue(req, res) {
     ${highstockJoin}
     SELECT
       l.id, l.ts, l.log_date, l.store_code, l.channel, l.product_code,
-      l.product_name, l.old_price, l.new_price, l.rate, l.reason, l.result,
+      l.product_name, l.pic_url, l.old_price, l.new_price, l.rate, l.reason, l.result,
       l.days_left, l.tier, l.source_hash, l.synced_at,
-      l.mkt_price, l.mkt_store, l.mkt_sold, l.mkt_total_sold,
+      l.mkt_price, l.mt_price, l.ele_price, l.mkt_store, l.mkt_sold, l.mkt_total_sold,
       l.mkt_n_stores, l.mkt_matched_title, l.mkt_conf, l.mkt_captured_at,
       l.cost_price, l.stock_qty, l.qty_90, l.expiry_flag, l.problem_type,
       l.damon_verdict, l.damon_price, l.damon_reason, l.confirmed_at,
@@ -222,9 +223,10 @@ async function getStats(req, res) {
   const { rows } = await getPool().query(`
     SELECT
       CASE
-        WHEN problem_type IN ('below_cost','above_market','price') THEN 'price'
-        WHEN problem_type IN ('stale_90d','expiry') THEN 'expiry'
-        WHEN problem_type IN ('no_shelf','shelfless') THEN 'shelfless'
+        WHEN problem_type IN ('below_cost','above_market') THEN 'price'
+        WHEN problem_type = 'expiry' THEN 'expiry'
+        WHEN problem_type = 'stale_90d' THEN 'stale'
+        WHEN problem_type = 'no_shelf' THEN 'shelfless'
         WHEN problem_type = 'badname' THEN 'badname'
         ELSE 'other'
       END AS tab,
@@ -239,8 +241,6 @@ async function getStats(req, res) {
   `);
   return json(res, 200, { success: true, rows });
 }
-
-
 
 async function postVerdict(req, res, bodyArg) {
   const body = bodyArg || await readBody(req);
