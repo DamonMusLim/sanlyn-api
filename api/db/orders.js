@@ -914,7 +914,11 @@ export default async function handler(req, res) {
     }
     if (conds.length) query += " WHERE " + conds.join(" AND ");
     params.push(parseInt(limit));
-    query += ` ORDER BY o.created_at DESC LIMIT $${params.length}`;
+    // Damon 0813:「订单按下单时间筛选默认」。
+    // created_at 不是下单时间,是记录建进库的时间 —— 一批脚本补录的老单 created_at 全是
+    // 2026-08-05/06(脚本跑的日子),按它排会把 2025 年的老单顶到最前面。
+    // order_date 才是真下单日(153/153 有值,其中 106 张与 created_at 不同,且与合同号日期吻合)。
+    query += ` ORDER BY o.order_date DESC NULLS LAST, o.created_at DESC LIMIT $${params.length}`;
     const result = await pool.query(query, params);
 
     // ── P1-1 field filtering (negative-list defence-in-depth) ──

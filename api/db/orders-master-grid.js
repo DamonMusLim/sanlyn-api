@@ -14,8 +14,11 @@ WITH pbar AS MATERIALIZED (
   -- (1326 行项目 x 1939 products x 2 = 510 万次正则,EXPLAIN 实测 18.2s)。
   -- 改成先把 products 扫**一次**、正则只跑 1939 次,聚合成两张对照表再等值 JOIN。
   -- ⚖️ 匹配规则一个字没改(仍是严格两条路 + 条码必须 8-14 位纯数字),只改执行方式。
-  SELECT p.barcode, upper(btrim(p.sku)) AS k_sku,
-         regexp_replace(upper(btrim(p.product_name)),'[^A-Z0-9]','','g') AS k_name
+  -- 0813 审核补强(codex 提):归一化后可能变成空串(纯中文/纯符号品名)。空串会互相相等,
+  -- 一旦哪天有个纯中文名带条码的产品进 products,order_line_items 里 33 条空 key 的行会集体串到它头上。
+  -- 用 NULLIF 把空串变 NULL,配合下面 IS NOT NULL 直接排除。今天 products 侧空 key 为 0 行,改动不影响现有结果(已对拍)。
+  SELECT p.barcode, NULLIF(upper(btrim(p.sku)),'') AS k_sku,
+         NULLIF(regexp_replace(upper(btrim(p.product_name)),'[^A-Z0-9]','','g'),'') AS k_name
   FROM products p
   WHERE p.barcode ~ '^[0-9]{8,14}$'
 ), psku AS MATERIALIZED (
@@ -47,13 +50,16 @@ SELECT o.id, o.order_no, o.contract_no, o.customer_po, o.status,
       'subtotal', l.subtotal, 'nw', l.nw_ctn, 'gw', l.gw_ctn
     ) ORDER BY l.sort_order, l.id)
     FROM order_line_items l
-    LEFT JOIN psku  bsk ON bsk.k_sku  = upper((regexp_match(btrim(l.product_name),'^([A-Z]{2,4}-[0-9]{2,3}[A-Z]?)'))[1])
-    LEFT JOIN pname bcn ON bcn.k_name = regexp_replace(upper(btrim(l.product_name)),'[^A-Z0-9]','','g')
+    LEFT JOIN psku  bsk ON bsk.k_sku  = NULLIF(upper((regexp_match(btrim(l.product_name),'^([A-Z]{2,4}-[0-9]{2,3}[A-Z]?)'))[1]),'')
+    LEFT JOIN pname bcn ON bcn.k_name = NULLIF(regexp_replace(upper(btrim(l.product_name)),'[^A-Z0-9]','','g'),'')
     WHERE l.order_id = o.id
   ), '[]'::json) AS items
 FROM orders o
-WHERE o.deleted_at IS NULL AND o.created_at >= $1   -- 订单的 created_at 就是下单日,本身就是业务日期
-ORDER BY o.created_at DESC`;
+WHERE o.deleted_at IS NULL AND o.order_date >= $1
+  -- 0813 更正:原来这里写 created_at 并注释「created_at 就是下单日」—— 是错的。
+  -- created_at 是记录建库时间;脚本补录的老单 created_at 全是 2026-08-05/06,
+  -- 按它筛/排会把 2025 年的单当成新单。真下单日是 order_date(153/153 有值)。
+ORDER BY o.order_date DESC NULLS LAST`;
   const r = await pool.query(sql, [from]);
   return r.rows;
 }

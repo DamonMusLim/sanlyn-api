@@ -78,10 +78,18 @@ async function stampSeal(pdfBuffer, sealUrl) {
     try { img = await pdfDoc.embedPng(imgBytes); }
     catch (e) { img = await pdfDoc.embedJpg(imgBytes); }
     const dims = img.scale(1);
-    const w = 60, h = (dims.height / dims.width) * 60;
+    // 真实公章标准直径=40mm(跟DAS其它盖章路径SEAL_DIAMETER_PT同一个常量)，之前写死60pt(≈21mm)只有真章一半大——
+    // 图片本身按40mm出的没错，问题在嵌入PDF时的显示尺寸没跟着改。中心点保持在原来手工核对过的位置不变，只是半径变大。
+    const SEAL_DIAMETER_PT = 40 * 72 / 25.4; // ≈113.4pt = 真实40mm
+    // 真章比例放大后，中心点也往右下微调，避开上方"直接投资结算流程简化"勾选格线，
+    // 落在"单位公章或财务专用章"字样和"填表说明"标题之间的空白区（实测调过，非拍脑袋）。
+    const oldCenterX = 155 + 45, oldCenterY = 138 + 13;
+    const w = SEAL_DIAMETER_PT, h = (dims.height / dims.width) * SEAL_DIAMETER_PT;
+    const x = oldCenterX - w / 2, y = oldCenterY - h / 2;
     // 定位在"单位公章或财务专用章"印刷字样右侧的空白处，避免盖住上方"备注/申明"文字行
-    // 注：seal_url 原图无透明通道(RGB无alpha)，降低透明度减轻底色遮挡——图片本身待补透明版
-    page.drawImage(img, { x: 155, y: 138, width: w, height: h, opacity: 0.5 });
+    // 2026-08-13起 seal_url 已换成带真实透明通道的实拍图(squareCropStamp同款处理)，
+    // opacity 不用再靠调低来遮丑，跟其他DAS盖章一致给0.88即可(纯白底已经是透明的)。
+    page.drawImage(img, { x, y, width: w, height: h, opacity: 0.88 });
     return Buffer.from(await pdfDoc.save());
   } catch (e) {
     console.error("[receipt-doc] stampSeal failed:", e.message);
@@ -111,11 +119,25 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
   if (allOrderNos.length > 0) {
     const ph2 = allOrderNos.map((_, i) => `$${i + 1}`).join(",");
     const oRes = await pool.query(
-      `SELECT _id, order_no, contract_no, customer_po, raw FROM orders
-       WHERE order_no IN (${ph2}) OR contract_no IN (${ph2}) OR _id::text IN (${ph2})`,
+      `SELECT o._id, o.order_no, o.contract_no, o.customer_po, o.raw,
+              COALESCE(ctr.code, c.country) AS country_code
+       FROM orders o
+       LEFT JOIN companies c ON c.id = o.customer_company_id
+       LEFT JOIN countries ctr ON ctr.id = c.country_id
+       WHERE o.order_no IN (${ph2}) OR o.contract_no IN (${ph2}) OR o._id::text IN (${ph2})`,
       allOrderNos
     );
     orders = oRes.rows;
+  }
+
+  // 付款人国别：走 orders.customer_company_id → companies.country_id/country → countries 查真实注册国，
+  // 不是猜的；多票关联到不同国家时不确定，宁可留空也不瞎选一个。
+  // 注：companies.country_id(FK) 和 companies.country(文本代码) 两列都可能是数据源，很多行只填了后者，两个都要认。
+  let payerCountry = "";
+  const countryCodes = [...new Set(orders.map(o => o.country_code).filter(Boolean))];
+  if (countryCodes.length === 1) {
+    const cRes = await pool.query(`SELECT name_cn FROM countries WHERE code=$1`, [countryCodes[0]]);
+    payerCountry = cRes.rows[0]?.name_cn || "";
   }
 
   const sellerCfg = await loadSellerCfg(pool, {}, null, { shipping: true });
@@ -136,7 +158,7 @@ export async function renderReceiptDoc(pool, refs, overrides = {}) {
     receipt_company_name: sellerCfg.nameCN || sellerCfg.nameEN || "",
     receipt_org_code: orgCodeSegment(sellerCfg.taxNo),
     payer_name: overrides.payer_name || customerName,
-    payer_country: overrides.payer_country || "",
+    payer_country: overrides.payer_country || payerCountry,
     contract_no: contractNo,
     amount_total: amountCny,
     service_trade_amount: amountCny,
