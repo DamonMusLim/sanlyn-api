@@ -2,19 +2,31 @@
   "template_key": "ap_forwarder",
   "name": "货代应付对账",
   "roles": [
-    { "role": "finance", "scope": "all" },
-    { "role": "forwarder", "scope_field": "supplier_company_code", "token": ["recon_links", "magic_links"] }
+    {
+      "role": "finance",
+      "scope": "all"
+    },
+    {
+      "role": "forwarder",
+      "scope_field": "supplier_company_code",
+      "token": [
+        "recon_links",
+        "magic_links"
+      ]
+    }
   ],
   "expected": {
     "source_type": "sql",
     "period_field": "bill_month",
-    "sql": "SELECT g.party_code || '|' || COALESCE(g.bl_no,'') || '|' || COALESCE(g.payer_company_code,'') || '|' || COALESCE(g.currency,'') AS match_ref, g.party_code, g.supplier_company_code, g.supplier_name, g.payer_company_code, g.bl_no, g.bill_month, g.expected_amount, g.currency FROM (SELECT COALESCE(fsb.supplier_company_code, fsb.supplier) AS party_code, MAX(fsb.supplier_company_code) AS supplier_company_code, MAX(fsb.supplier) AS supplier_name, fsb.payer_company_code, fsb.bl_no, fsb.bill_month, SUM(fsb.amount) AS expected_amount, COALESCE(fsb.currency_norm, fsb.currency) AS currency FROM freight_supplier_bills fsb WHERE fsb.bill_month >= substring($1::text, 1, 7) AND fsb.bill_month < substring($2::text, 1, 7) GROUP BY COALESCE(fsb.supplier_company_code, fsb.supplier), fsb.payer_company_code, fsb.bl_no, fsb.bill_month, COALESCE(fsb.currency_norm, fsb.currency)) g ORDER BY 1"
+    "sql": "SELECT g.party_code || '|' || COALESCE(g.bl_no,'') || '|' || COALESCE(g.payer_company_code,'') || '|' || COALESCE(g.currency,'') AS match_ref, g.party_code, g.supplier_company_code, g.supplier_name, g.payer_company_code, g.bl_no, g.bill_month, g.expected_amount, g.currency FROM (SELECT COALESCE(fsb.supplier_company_code, fsb.supplier) AS party_code, MAX(fsb.supplier_company_code) AS supplier_company_code, MAX(fsb.supplier) AS supplier_name, fsb.payer_company_code, fsb.bl_no, fsb.bill_month, SUM(fsb.amount) AS expected_amount, COALESCE(fsb.currency_norm, fsb.currency) AS currency FROM freight_supplier_bills fsb WHERE COALESCE(fsb.rebill_status,'') NOT IN ('voided','absorbed') AND fsb.bill_month >= substring($1::text, 1, 7) AND fsb.bill_month < substring($2::text, 1, 7) GROUP BY COALESCE(fsb.supplier_company_code, fsb.supplier), fsb.payer_company_code, fsb.bl_no, fsb.bill_month, COALESCE(fsb.currency_norm, fsb.currency)) g ORDER BY 1"
   },
   "actual": {
     "source_type": "sql",
     "sql": "SELECT fii.id AS invoice_id, fii.invoice_no, fii.issue_date, fii.seller_name, fii.seller_company_code, fii.buyer_company_code, fii.amount_incl_tax AS actual_amount, fii.currency, fii.review_status, bl.bl_no, COALESCE(fii.seller_company_code, fii.seller_name) || '|' || bl.bl_no || '|' || COALESCE(fii.buyer_company_code,'') || '|' || COALESCE(fii.currency,'') AS match_ref FROM finance_invoices_in fii CROSS JOIN LATERAL unnest(fii.customs_nos) AS bl(bl_no) WHERE COALESCE(fii.void_status,'') NOT IN ('void','red_ink','cancelled','作废','已作废')"
   },
-  "match_keys": ["match_ref"],
+  "match_keys": [
+    "match_ref"
+  ],
   "amount_fields": {
     "expected": "expected_amount",
     "actual": "actual_amount",
@@ -22,36 +34,127 @@
   },
   "status_machine": {
     "initial": "pending_confirm",
-    "terminal": ["completed"],
-    "rules": [
-      { "when": "expected_amount == null", "status": "need_amount" },
-      { "when": "confirmed_at == null && actual_amount == 0", "status": "pending_confirm" },
-      { "when": "confirmed_at != null && actual_amount == 0", "status": "confirmed_wait_invoice" },
-      { "when": "abs(diff_amount) <= tolerance_amount", "status": "matched" },
-      { "when": "actual_amount < expected_amount - tolerance_amount", "status": "partial_uploaded" },
-      { "when": "actual_amount > expected_amount + tolerance_amount", "status": "over_issued" }
+    "terminal": [
+      "completed"
     ],
-    "manual_transitions": ["completed", "reopen", "void", "override_amount"]
+    "rules": [
+      {
+        "when": "expected_amount == null",
+        "status": "need_amount"
+      },
+      {
+        "when": "confirmed_at == null && actual_amount == 0",
+        "status": "pending_confirm"
+      },
+      {
+        "when": "confirmed_at != null && actual_amount == 0",
+        "status": "confirmed_wait_invoice"
+      },
+      {
+        "when": "abs(diff_amount) <= tolerance_amount",
+        "status": "matched"
+      },
+      {
+        "when": "actual_amount < expected_amount - tolerance_amount",
+        "status": "partial_uploaded"
+      },
+      {
+        "when": "actual_amount > expected_amount + tolerance_amount",
+        "status": "over_issued"
+      }
+    ],
+    "manual_transitions": [
+      "completed",
+      "reopen",
+      "void",
+      "override_amount"
+    ]
   },
   "field_schema": [
-    { "key": "match_ref", "label": "匹配键", "source": "expected.match_ref" },
-    { "key": "party_code", "label": "货代编码/名称", "source": "expected.party_code" },
-    { "key": "supplier_company_code", "label": "货代编码", "source": "expected.supplier_company_code" },
-    { "key": "supplier_name", "label": "货代", "source": "expected.supplier_name" },
-    { "key": "payer_company_code", "label": "付款主体", "source": "expected.payer_company_code" },
-    { "key": "bl_no", "label": "提单号", "source": "expected.bl_no" },
-    { "key": "bill_month", "label": "账单月", "source": "expected.bill_month" },
-    { "key": "expected_amount", "label": "应付金额", "source": "expected.expected_amount" },
-    { "key": "uploaded_amount", "label": "已收票金额", "source": "actual.actual_amount" },
-    { "key": "diff_amount", "label": "差额", "source": "computed" },
-    { "key": "currency", "label": "币种", "source": "expected.currency" },
-    { "key": "status", "label": "状态", "source": "computed" }
+    {
+      "key": "match_ref",
+      "label": "匹配键",
+      "source": "expected.match_ref"
+    },
+    {
+      "key": "party_code",
+      "label": "货代编码/名称",
+      "source": "expected.party_code"
+    },
+    {
+      "key": "supplier_company_code",
+      "label": "货代编码",
+      "source": "expected.supplier_company_code"
+    },
+    {
+      "key": "supplier_name",
+      "label": "货代",
+      "source": "expected.supplier_name"
+    },
+    {
+      "key": "payer_company_code",
+      "label": "付款主体",
+      "source": "expected.payer_company_code"
+    },
+    {
+      "key": "bl_no",
+      "label": "提单号",
+      "source": "expected.bl_no"
+    },
+    {
+      "key": "bill_month",
+      "label": "账单月",
+      "source": "expected.bill_month"
+    },
+    {
+      "key": "expected_amount",
+      "label": "应付金额",
+      "source": "expected.expected_amount"
+    },
+    {
+      "key": "uploaded_amount",
+      "label": "已收票金额",
+      "source": "actual.actual_amount"
+    },
+    {
+      "key": "diff_amount",
+      "label": "差额",
+      "source": "computed"
+    },
+    {
+      "key": "currency",
+      "label": "币种",
+      "source": "expected.currency"
+    },
+    {
+      "key": "status",
+      "label": "状态",
+      "source": "computed"
+    }
   ],
   "visibility_rules": {
-    "finance": { "include": ["*"] },
+    "finance": {
+      "include": [
+        "*"
+      ]
+    },
     "forwarder": {
-      "include": ["match_ref", "party_code", "supplier_name", "payer_company_code", "bl_no", "bill_month", "expected_amount", "uploaded_amount", "status"],
-      "exclude": ["raw", "source_payload", "other_forwarder_rows"]
+      "include": [
+        "match_ref",
+        "party_code",
+        "supplier_name",
+        "payer_company_code",
+        "bl_no",
+        "bill_month",
+        "expected_amount",
+        "uploaded_amount",
+        "status"
+      ],
+      "exclude": [
+        "raw",
+        "source_payload",
+        "other_forwarder_rows"
+      ]
     }
   }
 }
