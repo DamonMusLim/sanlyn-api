@@ -275,7 +275,8 @@ async function handleCollabUpload(req, res, pool) {
   if (purpose) rec.purpose = purpose;
   if (containerSeq) rec.container_seq = containerSeq;
   if (auth.role === "supplier_portal" && /S\/?O|入货|排载|配舱|订舱确认|FCL|VGM|SI/i.test(`${safe} ${purpose || ""}`)) {
-    const text = String(req.body.text || req.body.ocr_text || extractTextFromUpload(buf, safe)).slice(0, 200000);
+    const extracted = req.body.text || req.body.ocr_text || await extractTextFromUpload(buf, safe, mime);
+    const text = String(extracted || "").slice(0, 200000);
     rec.booking_backfill = await backfillBookingNotice(pool, auth.planId, text, safe).catch(e => ({ error: e.message }));
   }
   await pool.query(
