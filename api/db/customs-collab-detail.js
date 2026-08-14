@@ -73,7 +73,28 @@ async function handleDetail(req, res) {
     let invoiceTemplate;
     if (factoryMode) {
       const contractNo = st.contract_no || row.contract_no || null;
-      let orderResult = contractNo
+
+      /* 🔒 0814 根治第一条路：报关行自带的 order_id —— 这是报关单直连订单的字段，
+         比任何字符串匹配都权威（081620 的行上写着 order_id=5 = 37-LL-21，之前完全没走）。
+         ⚠️ 之前误判「这些老票没有订单」的真因：台账 contract_no 存的是【工厂合同号】
+         （PBZSA-20251231 / PBZSC-20251202 / PBCAM-2025071102），
+         而订单的 contract_no 是我们的【销售合同号】（FS20251230062 …），
+         拿工厂合同号去 orders.contract_no 里找，永远找不到 —— 订单一直都在，是查法错了。 */
+      let orderResult = await client.query(
+        `SELECT o.id, o.order_no, o.contract_no, o.issuing_company, o.company_code, o.customer_po
+           FROM customs_declarations cd
+           JOIN customs_declaration_items ci ON ci.declaration_id = cd.id AND ci.deleted_at IS NULL
+           JOIN orders o ON o.id = ci.order_id
+          WHERE cd.declaration_no = $1
+            AND COALESCE(o.status,'') <> 'cancelled'
+            AND ($2::text IS NULL OR COALESCE(o.factory_code,
+                  (SELECT code FROM companies WHERE id=o.factory_company_id)) = $2)
+          ORDER BY o.id DESC
+          LIMIT 1`,
+        [customsNo, factoryMode ? scope.factory.code : null]
+      );
+
+      if (!orderResult.rows[0]) orderResult = contractNo
         ? await client.query(
             /* 🩸 0814：台账 contract_no 常是多合同拼串
                （660860 = 'CP26031606-2/FS20260603076'），全等匹配认不到订单 →
@@ -134,6 +155,35 @@ async function handleDetail(req, res) {
           [customsNo]
         );
       }
+      if (!orderResult.rows[0]) {
+        /* 🔒 0814 根治第二条路：按【提单号 / SO 号】认订单。
+           报关单挂 shipping_plans，订单也存 bl_no —— 合同号两边写法不同的时候，
+           提单号是唯一能连起来的东西。协同列表 customs-collab-rows.js 早就走这条
+           （024053↔39-LL-Order-20、055648↔48-PBCAM-2025071102 就是这么连上的），
+           只有 detail 漏了 → 列表上有订单号、点开模板却说没订单。
+           ⚠️ 照抄 rows.js 的两道闸，否则一份提单挂多张报关单时会认到兄弟单的订单：
+             ① 该订单若已被【别的报关单】按合同号认领，就不许再用提单号拉过来
+             ② 工厂模式下按工厂收窄 */
+        orderResult = await client.query(
+          `SELECT o.id, o.order_no, o.contract_no, o.issuing_company, o.company_code, o.customer_po
+             FROM orders o
+             JOIN customs_declarations cd ON cd.declaration_no = $1
+             JOIN shipping_plans sp ON sp._id = cd.shipping_plan_id
+            WHERE COALESCE(o.status,'') <> 'cancelled'
+              AND COALESCE(o.bl_no,'') <> ''
+              AND o.bl_no IN (NULLIF(sp.bl_no,''), NULLIF(sp.so_no,''))
+              AND ($2::text IS NULL OR COALESCE(o.factory_code,
+                    (SELECT code FROM companies WHERE id=o.factory_company_id)) = $2)
+              AND NOT EXISTS (
+                SELECT 1 FROM finance_export_rebates f9
+                 WHERE f9.customs_no <> $1
+                   AND COALESCE(f9.contract_no,'') <> '' AND COALESCE(o.contract_no,'') <> ''
+                   AND f9.contract_no LIKE '%'||o.contract_no||'%')
+            ORDER BY o.id DESC
+            LIMIT 1`,
+          [customsNo, factoryMode ? scope.factory.code : null]
+        );
+      }
       const order = orderResult.rows[0] || null;
 
       // 合并报关单: 该报关单/BL下同工厂的全部订单(合并开票,产品全列)
@@ -175,6 +225,28 @@ async function handleDetail(req, res) {
         );
         const b = buyerResult.rows[0];
         buyer = { name: b?.name_cn || buyerKey || null, tax_id: b?.tax_id || null };
+      }
+
+      /* 🔒 0814 根治：买方兜底读报关主体（forge 裁决「方案B：改取数来源，不补建订单」）
+         原来买方【只能从订单带】(orders.issuing_company)，于是订单压根不存在的老票
+         （081620/024053/055648，2026-01，合同号在 orders 里查不到）买方永远空白。
+         进项专票的购买方 = 出口主体，这是报关单上的客观事实（境内收发货人），
+         `customs_declarations.owner_company_id` 55/55 有值且都指向巴匕(id=37)。
+         ⛔ 顺序必须是【订单优先、报关主体兜底】，不能反过来 ——
+            库里有订单的 issuing_company 是「义乌淘蓝进出口有限公司」（代理/借抬头出口），
+            反过来会把这类票的买方错写成巴匕。
+         判不出就留空，绝不猜。 */
+      if (!buyer.name) {
+        const ownerResult = await client.query(
+          `SELECT co.name_cn, co.tax_id
+             FROM customs_declarations cd
+             JOIN companies co ON co.id = cd.owner_company_id
+            WHERE cd.declaration_no = $1
+            LIMIT 1`,
+          [customsNo]
+        );
+        const o = ownerResult.rows[0];
+        if (o?.name_cn) buyer = { name: o.name_cn, tax_id: o.tax_id || null, source: "customs_owner" };
       }
 
       const sellerResult = await client.query(
