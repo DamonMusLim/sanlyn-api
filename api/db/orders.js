@@ -2,6 +2,7 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js"; // S18.1: handler-level auth guard
 import { serializeOrdersForRole } from "../lib/orders/serializer.js"; // W0-1: role-scoped allowlist
 import createShippingPlan from "./shipping-plan-create.js";
+import { checkOrderNoPrefix, checkOrderNoPrefixGroupAware, logGuard, resolveCompanyIdentity } from "./_order-company-change.js";
 
 // ── P1-1: 代理模式敏感字段剥离 ──────────────────────────────────
 // 当 order.mode === 'agent' 且请求者是工厂角色时，从 raw JSONB 里剥离这些 key。
@@ -182,27 +183,6 @@ const PATCH_ALLOWED_COLS = [
   // is_locked 不在此列——只允许通过专属锁单端点修改
 ];
 
-// Order_no prefix must match company_code numeric suffix.
-// Naming convention: order_no = "{customer_num}-{factory}-{seq}", e.g. "37-WP-60" for CN-00037.
-// Add `raw.order_no_prefix_exempt: true` to bypass (used for legacy JDY customs declaration numbers).
-// Returns { ok: true } or { ok: false, error: string } — caller responds with 400.
-function checkOrderNoPrefix(order_no, company_code, raw) {
-  if (raw && raw.order_no_prefix_exempt) return { ok: true };
-  if (!order_no || !company_code) return { ok: true }; // partial PATCH — skip when either is missing
-  const prefixMatch = String(order_no).match(/^([0-9]{2})-/);
-  const ccMatch     = String(company_code).match(/00([0-9]{2})$/);
-  if (!prefixMatch || !ccMatch) return { ok: true }; // unconventional format — don't block
-  if (prefixMatch[1] !== ccMatch[1]) {
-    return {
-      ok: false,
-      error: "order_no_prefix_mismatch",
-      message: `Prefix '${prefixMatch[1]}-' on order_no '${order_no}' does not match company_code '${company_code}'. ` +
-               `Either correct the prefix or set raw.order_no_prefix_exempt=true with reason if intentional.`
-    };
-  }
-  return { ok: true };
-}
-
 function actorOf(req) {
   const u = req.user || {};
   return u.name || u.username || u.email || u.role || "admin";
@@ -290,16 +270,55 @@ async function handlePatch(req, res) {
   const { id, raw: rawPatch, ...rest } = body;
   if (!id) return res.status(400).json({ error: "id required" });
 
-  // Validate order_no/company_code prefix consistency BEFORE writing
+  // Validate order_no/company_code prefix consistency BEFORE writing.
+  // 2026-08-14: 同一 active 集团内换下单公司放行(订单号不动),留痕 data_guard_log。
   if (rest.order_no !== undefined || rest.company_code !== undefined) {
     // Need current row for the field the PATCH isn't touching
-    const cur = await pool.query("SELECT order_no, company_code, raw FROM orders WHERE id=$1", [id]);
+    const cur = await pool.query("SELECT order_no, company_code, customer_company_id, raw FROM orders WHERE id=$1", [id]);
     if (cur.rows[0]) {
-      const finalOrderNo = rest.order_no    !== undefined ? rest.order_no    : cur.rows[0].order_no;
-      const finalCompany = rest.company_code !== undefined ? rest.company_code : cur.rows[0].company_code;
-      const finalRaw     = { ...(cur.rows[0].raw || {}), ...(rawPatch || {}) };
-      const chk = checkOrderNoPrefix(finalOrderNo, finalCompany, finalRaw);
-      if (!chk.ok) return res.status(400).json({ error: chk.error, message: chk.message });
+      const curRow = cur.rows[0];
+      const finalOrderNo = rest.order_no    !== undefined ? rest.order_no    : curRow.order_no;
+      const finalCompany = rest.company_code !== undefined ? rest.company_code : curRow.company_code;
+      const finalRaw     = { ...(curRow.raw || {}), ...(rawPatch || {}) };
+      const chk = await checkOrderNoPrefixGroupAware(pool, finalOrderNo, finalCompany, finalRaw, curRow.company_code);
+      if (!chk.ok) {
+        return res.status(400).json({
+          error: chk.error,
+          message: chk.message + " 若两家公司属同一集团，请先在「公司分组」里把它们并入同一组。"
+        });
+      }
+      if (chk.exempt_reason === "same_company_group") {
+        await logGuard(pool, {
+          table_name: "orders",
+          row_key: String(id),
+          field: "order_no_prefix",
+          old_value: curRow.company_code,
+          new_value: finalCompany,
+          reason: "same_company_group:" + chk.group_code
+        });
+      }
+      // 改了内部码,customer_company_id 必须跟着走 —— 单据抬头/国别/地址读的是它,
+      // 不联动就等于"页面改了、单据没改"(2026-08-14 48-LL-3 就是这么半改的)。
+      if (rest.company_code !== undefined && rest.company_code !== curRow.company_code) {
+        const companyIdentity = await resolveCompanyIdentity(pool, rest.company_code);
+        if (!companyIdentity) {
+          return res.status(400).json({
+            error: "company_code_not_found",
+            message: "公司表里没有 " + rest.company_code + "，请先建档"
+          });
+        }
+        if (rest.customer_company_id === undefined) {
+          rest.customer_company_id = companyIdentity.id;
+          await logGuard(pool, {
+            table_name: "orders",
+            row_key: String(id),
+            field: "customer_company_id",
+            old_value: curRow.customer_company_id,
+            new_value: companyIdentity.id,
+            reason: "sync_from_company_code"
+          });
+        }
+      }
     }
   }
 
