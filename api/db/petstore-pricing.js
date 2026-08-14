@@ -257,7 +257,8 @@ async function getDailySales(req, res) {
   const date = parseSalesDate(req.query?.date);
   if (!date) return json(res, 400, { success: false, error: "bad_date" });
 
-  const { rows } = await getPool().query(`
+  const pool = getPool();
+  const { rows } = await pool.query(`
     WITH sales AS (
       SELECT
         product_code,
@@ -298,17 +299,65 @@ async function getDailySales(req, res) {
     ORDER BY s.sold_qty DESC
   `, [date]);
 
+  const { rows: adjustments } = await pool.query(`
+    SELECT
+      l.src_id,
+      l.product_code,
+      l.product_name,
+      l.spec,
+      l.order_type,
+      l.stock_before,
+      l.stock_after,
+      l.delta,
+      l.remark,
+      l.change_time,
+      n.reason AS noted_reason
+    FROM petstore_stock_ledger l
+    LEFT JOIN petstore_stock_notes n ON n.ledger_src_id = l.src_id::text
+    WHERE l.order_type <> 'XS'
+      AND l.change_time::date = $1::date
+    ORDER BY l.change_time
+  `, [date]);
+
+  const adjustmentSummary = adjustments.reduce((acc, r) => ({
+    count: acc.count + 1,
+    total_delta: acc.total_delta + Number(r.delta || 0),
+    unnoted_count: acc.unnoted_count + (r.noted_reason ? 0 : 1),
+  }), { count: 0, total_delta: 0, unnoted_count: 0 });
+
   const summary = rows.reduce((acc, r) => ({
     sku_count: acc.sku_count + 1,
     total_qty: acc.total_qty + Number(r.sold_qty || 0),
     online_qty: acc.online_qty + Number(r.online_qty || 0),
   }), { sku_count: 0, total_qty: 0, online_qty: 0 });
 
-  return json(res, 200, { success: true, date, rows, summary });
+  return json(res, 200, { success: true, date, rows, summary, adjustments, adjustment_summary: adjustmentSummary });
 }
 
-async function postVerdict(req, res) {
-  const body = await readBody(req);
+async function postStockNote(req, res, bodyArg) {
+  const body = bodyArg || await readBody(req);
+  const srcId = String(body.src_id || "").trim();
+  const reason = String(body.reason || "").trim();
+  if (!srcId || !reason) return json(res, 400, { success: false, error: "bad_request" });
+
+  const result = await getPool().query(`
+    INSERT INTO petstore_stock_notes (ledger_src_id, product_code, change_date, delta, reason)
+    SELECT src_id::text, product_code, change_time::date, delta, $2
+    FROM petstore_stock_ledger
+    WHERE src_id::text = $1
+    ON CONFLICT (ledger_src_id) DO UPDATE
+    SET reason = excluded.reason,
+        created_at = now()
+    RETURNING *
+  `, [srcId, reason]);
+
+  if (!result.rows.length) return json(res, 404, { success: false, error: "ledger_not_found" });
+  audit("/api/db/petstore-pricing", srcId, "stock_note", null);
+  return json(res, 200, { success: true, row: result.rows[0] });
+}
+
+async function postVerdict(req, res, bodyArg) {
+  const body = bodyArg || await readBody(req);
   const id = Number.parseInt(body.id, 10);
   const verdict = String(body.verdict || "").trim();
   const reason = body.reason ? String(body.reason).trim() : null;
@@ -350,8 +399,8 @@ async function postVerdict(req, res) {
   return json(res, 200, { success: true, row: result.rows[0] });
 }
 
-async function postUndo(req, res) {
-  const body = await readBody(req);
+async function postUndo(req, res, bodyArg) {
+  const body = bodyArg || await readBody(req);
   const id = Number.parseInt(body.id, 10);
   if (!id) return json(res, 400, { success: false, error: "bad_request" });
 
@@ -380,12 +429,14 @@ export default async function handler(req, res) {
   if (!requireBoss(req, res)) return;
 
   try {
-    const action = req.method === "GET" ? req.query?.action : (req.body?.action || (await readBody(req)).action);
+    const body = req.method === "POST" ? await readBody(req) : null;
+    const action = req.method === "GET" ? req.query?.action : body?.action;
     if (req.method === "GET" && action === "queue") return getQueue(req, res);
     if (req.method === "GET" && action === "stats") return getStats(req, res);
     if (req.method === "GET" && action === "daily_sales") return getDailySales(req, res);
-    if (req.method === "POST" && action === "verdict") return postVerdict(req, res);
-    if (req.method === "POST" && action === "undo") return postUndo(req, res);
+    if (req.method === "POST" && action === "verdict") return postVerdict(req, res, body);
+    if (req.method === "POST" && action === "undo") return postUndo(req, res, body);
+    if (req.method === "POST" && action === "stock_note") return postStockNote(req, res, body);
     return json(res, 400, { success: false, error: "bad_action" });
   } catch (e) {
     return json(res, 500, { success: false, error: e.message || "server_error" });
