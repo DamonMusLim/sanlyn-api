@@ -204,6 +204,8 @@ export default async function handler(req, res) {
 
     const generatedAt = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     const genDate = new Date().toISOString().slice(0, 10);
+    // 铁则(0813): 客户结算单据日期=ETD出运日(费用发生日); genDate仅作生成痕迹
+    const docDate = (p && p.etd) ? String(p.etd).slice(0, 10) : genDate;
 
     // ── Fetch customer/consignee info for docs that need it ──
     let cust = null;
@@ -280,7 +282,7 @@ export default async function handler(req, res) {
     const docHeader = (title, ref, coEN, coCN) => `
       <div class="header">
         <div><div class="co-name">${esc(coCN || coEN || "三林宠物 Sanlyn")}</div><div class="co-sub">${esc(coEN || "XIAMEN SANLYN IMPORT AND EXPORT CO., LTD")}</div>${coEN ? "" : '<div class="co-sub" style="font-size:9px;color:#94a3b8">ai.sanlynos.com</div>'}</div>
-        <div><div class="doc-title">${title}</div><div class="ref-no">${fmt(ref)}</div><div class="gen-time">Date: ${genDate} · Generated: ${generatedAt}</div></div>
+        <div><div class="doc-title">${title}</div><div class="ref-no">${fmt(ref)}</div><div class="gen-time">Date: ${docDate} · Generated: ${generatedAt}</div></div>
       </div>`;
 
     // ══════════════════════════════════════════
@@ -438,7 +440,7 @@ ${printBtn}
   <div>
     <div class="doc-t">📋 托书 Booking Note</div>
     <div class="ref-no">${esc(refNo)}</div>
-    <div class="gen-t">${genDate} · Generated: ${generatedAt}</div>
+    <div class="gen-t">${docDate} · Generated: ${generatedAt}</div>
   </div>
   <div class="co-r">
     <div class="co-name">Sanlyn <span class="co-os">OS</span></div>
@@ -705,7 +707,7 @@ ${printBtn}
     // 海运费发票 Freight Invoice
     // ══════════════════════════════════════════
     if (isFreight) {
-      const invoiceNo = "FI-" + fmt(p.bl_no || p.shipment_no) + "-" + genDate.replace(/-/g,""); // 铁则:客户单据用BL号,CY内部号不外泄
+      const invoiceNo = "FI-" + fmt(p.bl_no || p.shipment_no) + "-" + docDate.replace(/-/g,""); // 铁则:客户单据用BL号,CY内部号不外泄
       const billTo = cust ? (cust.name_en || cust.name_cn) : fmt(p.customer_en||p.customer);
       const feeRows = [
         { desc: "Ocean Freight 海运费", cur: "USD", amt: p.freight_sale_usd },
@@ -755,7 +757,7 @@ ${printBtn}
     <div class="field"><div class="lbl">Route</div><div class="val">${fmt(p.pol)} → ${fmt(p.pod)}</div></div>
     <div class="field"><div class="lbl">Container</div><div class="val">${fmt(p.container_type)} × ${fmt(p.container_qty||1)}</div></div>
     <div class="field"><div class="lbl">ETD</div><div class="val">${fmtDate(p.etd)}</div></div>
-    <div class="field"><div class="lbl">Invoice Date</div><div class="val">${genDate}</div></div>
+    <div class="field"><div class="lbl">Invoice Date</div><div class="val">${docDate}</div></div>
   </div>
 
   <div class="sec-title">费用明细 / Fee Breakdown</div>
