@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { getDailySales, postStockNote } from "./petstore-pricing-sales.js";
+import { createCardPriceIntents } from "./petstore-pricing-card-intents.js";
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 30;
@@ -19,7 +20,7 @@ const CARD_VERDICTS = ["同意", "不改", "自定", "下架", "标记死货"];
 const CARD_BODY_KEYS = new Set(["action", "batch_token", "decisions"]);
 const CARD_DECISION_KEYS = new Set([
   "product_code", "product_name", "verdict", "price", "offline_price", "online_price",
-  "reason", "dna_snapshot", "other_changes", "at",
+  "online_channel", "reason", "dna_snapshot", "other_changes", "at",
 ]);
 
 function json(res, code, data) {
@@ -229,10 +230,10 @@ async function postCardConfirm(req, res, bodyArg) {
         WHERE p.id=latest.id
           AND (p.idem_key IS NULL OR p.idem_key=$7)
           AND (p.confirmed_at IS NULL OR p.idem_key=$7)
-        RETURNING p.id, p.product_code, p.damon_verdict, p.damon_price, p.damon_online_price, p.exec_status, p.idem_key
+        RETURNING p.id, p.product_code, p.product_name, p.old_price, p.new_price, p.mt_price, p.ele_price, p.damon_verdict, p.damon_price, p.damon_online_price, p.exec_status, p.idem_key
       `, [d.product_code, d.verdict, d.price, d.online_price, d.reason, d.context, d.idem_key]);
       if (updated.length) {
-        saved.push(updated[0]);
+        saved.push(await createCardPriceIntents(client, updated[0], d, req));
         continue;
       }
       const current = await client.query(`
