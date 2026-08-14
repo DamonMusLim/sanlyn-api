@@ -102,14 +102,41 @@ export async function ensureCustomsStatus(client, customsNo, factoryCode = null)
                  AND (SELECT contract_no FROM fer_one) LIKE '%'||o.contract_no||'%')
              OR o.order_no = $1 OR o.bl_no = $1)
      ),
-     ord AS (
+     ord_from_orders AS (
        SELECT per.factory_code,
               MAX(per.contract_no) AS contract_no,
-              COALESCE(NULLIF(SUM(per.declare_value),0), NULLIF(SUM(per.purchase_value),0)) AS purchase_amount,
-              COUNT(*) AS n
+              COALESCE(NULLIF(SUM(per.declare_value),0), NULLIF(SUM(per.purchase_value),0)) AS purchase_amount
          FROM per
         WHERE ($2::text IS NULL OR per.factory_code = $2)
         GROUP BY per.factory_code
+     ),
+     /* 🔒 0814 根治：报关逐项工厂已经固化在 customs_declaration_items.factory_company_id 上
+        （带 factory_source 依据 + data_guard_log 留痕）。这里原来【只从订单推工厂】，
+        于是两类票永远建不出状态行 → detail 返 404 →「开票模板打不开」：
+          ① 一票多厂：878686 三家（中砂/大之圣/春叶），订单认到大之圣，中砂 scope 里被拒
+          ② 老票没订单：081620 / 024053 / 055648 合同号在订单表里压根不存在
+        报关单是客观事实、逐项工厂已核定，比订单可靠 —— 用它兜底建行。
+        金额用报关逐项金额（跟 factory_invoice_expected_amounts 同源口径）。 */
+     ord_from_decl AS (
+       SELECT co.code AS factory_code,
+              (SELECT contract_no FROM fer_one) AS contract_no,
+              round(sum(ci.declaration_amount), 2) AS purchase_amount
+         FROM customs_declaration_items ci
+         JOIN customs_declarations cd ON cd.id = ci.declaration_id
+         JOIN companies co ON co.id = ci.factory_company_id
+        WHERE cd.declaration_no = $1 AND ci.deleted_at IS NULL
+          AND ci.declaration_amount IS NOT NULL
+          AND COALESCE(ci.declaration_currency,'CNY') IN ('CNY','人民币','142')
+          AND ($2::text IS NULL OR co.code = $2)
+        GROUP BY co.code
+     ),
+     ord AS (
+       -- 订单优先（有采购价口径），订单认不到才用报关逐项兜底
+       SELECT factory_code, contract_no, purchase_amount, 1 AS n FROM ord_from_orders
+       UNION ALL
+       SELECT d.factory_code, d.contract_no, d.purchase_amount, 1
+         FROM ord_from_decl d
+        WHERE NOT EXISTS (SELECT 1 FROM ord_from_orders o2 WHERE o2.factory_code = d.factory_code)
      )
      INSERT INTO customs_invoice_status
        (customs_no, factory_code, contract_no, system_expected_amount,
