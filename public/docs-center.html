@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>单据模板中心</title>
+<link rel="stylesheet" href="/public/sanlyn-table.css">
+<style>.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.dc{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px}
+.dc b{font-size:14px}.dc p{margin:6px 0 10px;color:#6b7280;font-size:12px}
+.dc button{border:1px solid #93c5fd;background:#eff6ff;color:#1d4ed8;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer}</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="title">单据模板中心</div><div class="meta">全部单据生成器一页直达 · 实时取库渲染 · v2026.08.14</div></div></div>
+  <div class="bar">
+    <input id="ord" placeholder="订单号 (货品类单据用)" style="min-width:220px">
+    <input id="bl" placeholder="BL号 (海运类单据用)" style="min-width:220px">
+  </div>
+  <div class="grid" id="app"></div>
+</div>
+<script src="/public/sanlyn-table.js"></script>
+<script>
+var DOCS=[
+ ["SC 销售合同","客户签约版, 货品行+条款+银行","doc","sc"],
+ ["IV 商业发票","客户售价, 报关/收款用","doc","iv"],
+ ["PL 装箱单","箱数/毛净重/体积","doc","pl"],
+ ["PO 采购单","下给工厂, 中英双语","doc","po"],
+ ["客户资料合并版 PL+SC+IV","三合一, 全SKU明细","merge",""],
+ ["SO 托书","给货代订舱","doc","so"],
+ ["运费账单 Debit Note","向客户收运费(公版)","doc","debit"],
+ ["电放保函 Telex Release","电放申请书暨保函","doc","tr"],
+ ["海运费单 INVOICE","按BL, 出运日计价","pdf","fob_invoice"],
+ ["港杂费账单","按BL, 行级费目","pdf","fob_portcharge"],
+ ["报关单(海关格式)","按BL整票","pdf","customs_decl"],
+ ["出全套报关(一份PDF)","报关单+PL/SC/IV报关版+报检","pdf","customs_bundle"]
+];
+function tok(){return SanlynTable.token()}
+function open2(kind,t){
+  var o=document.getElementById("ord").value.trim(), b=document.getElementById("bl").value.trim();
+  if(kind==="doc"&&["so","debit","tr"].indexOf(t)<0){ if(!o)return alert("填订单号");
+    window.open("/api/db/documents?type="+t+"&id="+encodeURIComponent(o)+"&token="+encodeURIComponent(tok()));return}
+  if(kind==="doc"){ if(!b&&!o)return alert("填BL号或票号");
+    window.open("/api/db/documents?type="+t+"&id="+encodeURIComponent(b||o)+"&token="+encodeURIComponent(tok()));return}
+  if(kind==="merge"){ if(!o)return alert("填订单号(多单逗号分隔)");
+    var ids=o.split(/[,，\s]+/).filter(Boolean);
+    window.open("/templates/export-docs-template.html?order_no="+encodeURIComponent(ids[0])+"&ids="+encodeURIComponent(ids.join(","))+"&mode=detail&token="+encodeURIComponent(tok()));return}
+  if(!b)return alert("填BL号");
+  window.open("/api/db/shipping-plan-pdf?bl="+encodeURIComponent(b)+"&type="+t+"&token="+encodeURIComponent(tok()));
+}
+document.getElementById("app").innerHTML=DOCS.map(function(d,i){
+  return '<div class="dc"><b>'+SanlynTable.esc(d[0])+'</b><p>'+SanlynTable.esc(d[1])+'</p><button onclick="open2(\''+d[2]+'\',\''+d[3]+'\')">打开</button></div>'}).join("");
+</script>
+</body>
+</html>
