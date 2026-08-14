@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { getDailySales, postStockNote } from "./petstore-pricing-sales.js";
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 30;
@@ -90,21 +91,7 @@ function parseCursor(value) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-function defaultShanghaiYesterday() {
-  const d = new Date(Date.now() - 86400000);
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(d).reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
 
-function parseSalesDate(value) {
-  const date = String(value || defaultShanghaiYesterday()).trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
-}
 
 async function readBody(req) {
   if (req.body && typeof req.body === "object") return req.body;
@@ -253,108 +240,7 @@ async function getStats(req, res) {
   return json(res, 200, { success: true, rows });
 }
 
-async function getDailySales(req, res) {
-  const date = parseSalesDate(req.query?.date);
-  if (!date) return json(res, 400, { success: false, error: "bad_date" });
 
-  const pool = getPool();
-  const { rows } = await pool.query(`
-    WITH sales AS (
-      SELECT
-        product_code,
-        product_name,
-        spec,
-        sum(-delta)::numeric AS sold_qty,
-        min(stock_after)::numeric AS stock_now,
-        count(*)::int AS tx_count,
-        sum(case when order_channel::text = '0' then -delta else 0 end) /* 0814实证:渠道0=外卖(长单号,美团/饿了么聚合),渠道1=线下POS(单号嵌日期时间) */::numeric AS online_qty
-      FROM petstore_stock_ledger
-      WHERE order_type = 'XS'
-        AND delta < 0
-        AND change_time::date = $1::date
-      GROUP BY 1,2,3
-    ),
-    dna AS (
-      SELECT DISTINCT ON (product_code)
-        product_code,
-        qty_30,
-        days_of_supply,
-        restock_verdict
-      FROM petstore_sku_sales_dna
-      ORDER BY product_code, as_of DESC
-    )
-    SELECT
-      s.product_code,
-      s.product_name,
-      s.spec,
-      s.sold_qty,
-      s.stock_now,
-      s.tx_count,
-      s.online_qty,
-      d.qty_30,
-      d.days_of_supply,
-      d.restock_verdict
-    FROM sales s
-    LEFT JOIN dna d ON d.product_code = s.product_code
-    ORDER BY s.sold_qty DESC
-  `, [date]);
-
-  const { rows: adjustments } = await pool.query(`
-    SELECT
-      l.src_id,
-      l.product_code,
-      l.product_name,
-      l.spec,
-      l.order_type,
-      l.stock_before,
-      l.stock_after,
-      l.delta,
-      l.remark,
-      l.change_time,
-      n.reason AS noted_reason
-    FROM petstore_stock_ledger l
-    LEFT JOIN petstore_stock_notes n ON n.ledger_src_id = l.src_id::text
-    WHERE l.order_type <> 'XS'
-      AND l.change_time::date = $1::date
-    ORDER BY l.change_time
-  `, [date]);
-
-  const adjustmentSummary = adjustments.reduce((acc, r) => ({
-    count: acc.count + 1,
-    total_delta: acc.total_delta + Number(r.delta || 0),
-    unnoted_count: acc.unnoted_count + (r.noted_reason ? 0 : 1),
-  }), { count: 0, total_delta: 0, unnoted_count: 0 });
-
-  const summary = rows.reduce((acc, r) => ({
-    sku_count: acc.sku_count + 1,
-    total_qty: acc.total_qty + Number(r.sold_qty || 0),
-    online_qty: acc.online_qty + Number(r.online_qty || 0),
-  }), { sku_count: 0, total_qty: 0, online_qty: 0 });
-
-  return json(res, 200, { success: true, date, rows, summary, adjustments, adjustment_summary: adjustmentSummary });
-}
-
-async function postStockNote(req, res, bodyArg) {
-  const body = bodyArg || await readBody(req);
-  const srcId = String(body.src_id || "").trim();
-  const reason = String(body.reason || "").trim();
-  if (!srcId || !reason) return json(res, 400, { success: false, error: "bad_request" });
-
-  const result = await getPool().query(`
-    INSERT INTO petstore_stock_notes (ledger_src_id, product_code, change_date, delta, reason)
-    SELECT src_id::text, product_code, change_time::date, delta, $2
-    FROM petstore_stock_ledger
-    WHERE src_id::text = $1
-    ON CONFLICT (ledger_src_id) DO UPDATE
-    SET reason = excluded.reason,
-        created_at = now()
-    RETURNING *
-  `, [srcId, reason]);
-
-  if (!result.rows.length) return json(res, 404, { success: false, error: "ledger_not_found" });
-  audit("/api/db/petstore-pricing", srcId, "stock_note", null);
-  return json(res, 200, { success: true, row: result.rows[0] });
-}
 
 async function postVerdict(req, res, bodyArg) {
   const body = bodyArg || await readBody(req);
