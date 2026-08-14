@@ -169,8 +169,13 @@ async function handlePartyDefaults(req, res, pool) {
 // Upsert a default party company into collab_party_defaults.
 async function handleSetPartyDefault(req, res, pool) {
   if (!requireAuth(req, res)) return;
-  const { party_type, company_id, company_cn } = req.body || {};
-  if (!party_type || !company_id) return res.status(400).json({ ok: false, error: "party_type/company_id 必填" });
+  const { party_type, company_id, company_cn, clear } = req.body || {};
+  if (!party_type) return res.status(400).json({ ok: false, error: "party_type 必填" });
+  if (clear) {
+    await pool.query("DELETE FROM collab_party_defaults WHERE party_type=$1", [party_type]);
+    return res.json({ ok: true, cleared: true });
+  }
+  if (!company_id) return res.status(400).json({ ok: false, error: "company_id 必填" });
   await pool.query(
     `INSERT INTO collab_party_defaults (party_type, company_id, company_cn, updated_at, updated_by)
      VALUES ($1, $2, $3, NOW(), $4)
