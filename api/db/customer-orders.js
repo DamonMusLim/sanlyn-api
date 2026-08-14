@@ -67,6 +67,7 @@ export default async function handler(req, res) {
         }
       }
       const plan = await _findShippingPlan(pool, order);
+      await attachLiveProducts(pool, order);
       return res.status(200).json({ success: true, data: _merge(order, plan, isAdmin) });
     }
 
@@ -153,6 +154,7 @@ export default async function handler(req, res) {
     }
 
     // ── Merge orders with their shipping plans ──
+    await attachLiveProducts(pool, orders);
     const merged = orders.map(o => {
       const key = o.order_no || o._id;
       const plan = planByOrderNo[String(key)] || null;
@@ -240,6 +242,33 @@ const PLAN_FORBIDDEN_KEYS = [
   "seal_fee",       // Seal fee
 ];
 
+
+// ── 把 order_line_items(真表)批量挂到订单上,给 _merge 用 ──
+// ⚖️ 2026-08-13:同一份数据有「真表」和「快照副本」两处时,永远读真表。
+async function attachLiveProducts(pool, orders) {
+  const list = Array.isArray(orders) ? orders : [orders];
+  const ids = list.map(function(o){ return o && o.id; }).filter(Boolean);
+  if (!ids.length) return orders;
+  try {
+    const { rows } = await pool.query(
+      "SELECT order_id, sku, barcode, product_name, size, qty_ctn, unit, unit_price, subtotal, nw_ctn, gw_ctn, cbm_ctn, hs_code, declaration_name, sort_order FROM order_line_items WHERE order_id = ANY($1) ORDER BY sort_order NULLS LAST, id",
+      [ids]
+    );
+    const by = {};
+    rows.forEach(function(li){
+      (by[li.order_id] = by[li.order_id] || []).push({
+        sku: li.sku, barcode: li.barcode, name: li.product_name, productName: li.product_name,
+        size: li.size, qty: li.qty_ctn, unit: li.unit || "CTN",
+        unitPrice: li.unit_price, subtotal: li.subtotal,
+        netWeight: li.nw_ctn, grossWeight: li.gw_ctn, cbm: li.cbm_ctn,
+        hsCode: li.hs_code, declarationName: li.declaration_name,
+      });
+    });
+    list.forEach(function(o){ if (o && by[o.id]) o.__liveProducts = by[o.id]; });
+  } catch (e) { console.warn("[customer-orders] attachLiveProducts failed:", e.message); }
+  return orders;
+}
+
 // ── Merge order + shipping plan into unified record ──
 // isAdmin controls whether internal cost fields are included in the response.
 function _merge(order, plan, isAdmin) {
@@ -248,7 +277,12 @@ function _merge(order, plan, isAdmin) {
   // Strip forbidden product-level fields for non-admin callers.
   // orders.raw.products may contain factoryPrice/factorySubtotal/vatRate etc.
   // that reveal Sanlyn's procurement cost and tax structure.
-  let products = raw.products || order.products || [];
+  // ⚖️ 根治 2026-08-13:真表(order_line_items)优先,快照只是副本。
+  //    调用方需先 await attachLiveProducts(pool, orders) 把 __liveProducts 挂上。
+  //    ⚠️ 本文件当前未挂路由(routes 里搜不到),改对是防它哪天被挂上又带回旧坑。
+  let products = (Array.isArray(order.__liveProducts) && order.__liveProducts.length)
+               ? order.__liveProducts
+               : (raw.products || order.products || []);
   if (!isAdmin && Array.isArray(products)) {
     products = products.map(function(p) {
       if (!p || typeof p !== "object") return p;

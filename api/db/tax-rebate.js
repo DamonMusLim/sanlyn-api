@@ -10,6 +10,57 @@ import { loadInvoiceGapByCustoms } from "./tax-rebate-invoice-gap.js";
 
 const REBATE_STATUSES = ["未退税", "待退税", "已申报", "已退税", "已到账"];
 
+
+/* ===== 0813/0814：admin 退税模块的三个数改用已校准口径 =====
+   原来的问题（Damon 截图指出「可申报退税额 ¥0.00」）：
+     est_rebate 直接读 fer.rebate_expected —— 那个字段大量为空（958343 就是 0）
+     invoice_due_amount 走旧映射，会串票（958343 报关额 157,234 却显示 77,420 = 40-LL-6 的数）
+   现在统一读三处真源：
+     报关逐项 customs_declaration_items（金额×退税率，2309系 9% 其余 13%）
+     进项票   finance_invoices_in（不含税额×退税率 = 外贸企业免退税真正到账的钱，单位是每张票）
+     应开     factory_invoice_expected_amounts（status='ready'，口径 customs_line_fob_cny_v1）
+   ⛔ 不改前端 bundle（一份 bundle 服务两条业务线，部署会打架）。 */
+async function loadCalibrated(pool, customsNos) {
+  const out = new Map();
+  if (!customsNos.length) return out;
+  const est = await pool.query(
+    `SELECT cd.declaration_no dn,
+            round(sum(ci.declaration_amount *
+              CASE WHEN ci.hs_code LIKE '2309%' THEN 0.09 ELSE 0.13 END), 2) est
+       FROM customs_declaration_items ci
+       JOIN customs_declarations cd ON cd.id = ci.declaration_id
+      WHERE ci.deleted_at IS NULL AND cd.declaration_no = ANY($1::text[])
+        AND ci.declaration_amount IS NOT NULL
+        AND COALESCE(ci.declaration_currency,'CNY') IN ('CNY','人民币','142')
+      GROUP BY 1`, [customsNos]);
+  const real = await pool.query(
+    `SELECT dn, CASE WHEN bool_and(rt IS NOT NULL) THEN round(sum(ex*rt),2) END real
+       FROM (
+         SELECT cd.declaration_no dn, i.invoice_no,
+                max(i.amount_ex_tax) ex,
+                (SELECT CASE WHEN count(DISTINCT CASE WHEN ci2.hs_code LIKE '2309%' THEN 0.09 ELSE 0.13 END)=1
+                             THEN max(CASE WHEN ci2.hs_code LIKE '2309%' THEN 0.09 ELSE 0.13 END) END
+                   FROM customs_declaration_items ci2
+                  WHERE ci2.declaration_id = cd.id AND ci2.deleted_at IS NULL) rt
+           FROM finance_invoices_in i
+           JOIN customs_declarations cd ON cd.declaration_no = ANY(i.customs_nos)
+          WHERE cd.declaration_no = ANY($1::text[])
+            AND i.amount_ex_tax IS NOT NULL
+            AND i.seller_name !~ '物流|货运|货代|供应链|运输|船务|报关|国际货|海运|仓储|财务'
+          GROUP BY cd.id, cd.declaration_no, i.invoice_no
+       ) t GROUP BY dn`, [customsNos]);
+  const due = await pool.query(
+    `SELECT customs_no dn, round(sum(expected_amount),2) due
+       FROM factory_invoice_expected_amounts
+      WHERE status='ready' AND customs_no = ANY($1::text[])
+      GROUP BY 1`, [customsNos]);
+  const put = (rows, key) => rows.forEach(r => {
+    const o = out.get(r.dn) || {}; o[key] = r[key] === null ? null : Number(r[key]); out.set(r.dn, o);
+  });
+  put(est.rows, 'est'); put(real.rows, 'real'); put(due.rows, 'due');
+  return out;
+}
+
 function extractInvoiceFileUrl(attachments) {
   const list = Array.isArray(attachments) ? attachments : attachments ? [attachments] : [];
   for (const x of list) {
@@ -392,12 +443,17 @@ export default async function handler(req, res) {
     }
 
     const invoiceGapByCustoms = await loadInvoiceGapByCustoms(pool, ferRows);
+    const calib = await loadCalibrated(pool, ferRows.map(r => r.customs_no).filter(Boolean));
 
     let sumRebate = 0, okCount = 0, missCount = 0, invOkCount = 0;
     const rows = ferRows.map(r => {
       const invoiceNos = Array.isArray(r.invoice_nos) ? r.invoice_nos : [];
       const invoiceStatus = invoiceNos.length > 0 ? "已开票" : "未开票";
-      const rebate = parseFloat(r.rebate_expected || 0) || 0;
+      const cal = calib.get(r.customs_no) || {};
+      // 实退（进项票不含税×率）> 报关额估 > 台账旧字段
+      const rebate = (cal.real != null ? cal.real
+                    : (cal.est != null ? cal.est
+                    : (parseFloat(r.rebate_expected || 0) || 0)));
       sumRebate += rebate;
       const linkedOrders = (r.order_nos || "").split(", ").map(s => s.trim()).filter(Boolean);
       const matchedOrder = linkedOrders.find(ono => declByOrder[ono]);
@@ -451,7 +507,9 @@ export default async function handler(req, res) {
         report_uploaded: reportUploaded,
         input_invoice_ok: hasInputInv,
         input_invoices: inputInvoices,
-        invoice_due_amount: invoiceGap.invoice_due_amount,
+        invoice_due_amount: (cal.due != null ? cal.due : invoiceGap.invoice_due_amount),
+        est_rebate_customs: cal.est ?? null,     // 报关额×率（上限估）
+        real_rebate: cal.real ?? null,           // 进项票不含税×率（真正到账口径）
         invoice_received_amount: invoiceGap.invoice_received_amount,
         invoice_gap: invoiceGap.invoice_gap,
         invoice_gap_factories: invoiceGap.invoice_gap_factories,

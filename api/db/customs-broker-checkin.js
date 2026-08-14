@@ -162,8 +162,28 @@ export default async function handler(req, res) {
           exportCompany  = order.company_code || raw.companyCode || null;
 
           // Enrich products for declaration
-          const products = Array.isArray(order.products) ? order.products
-                         : Array.isArray(raw.products) ? raw.products : [];
+          // ⚖️ 根治 2026-08-13(Damon:「订单主表就是改数据的,要实时更新的才对!客户随时可能换产品」):
+          //    order_line_items 是真表,order.products / raw.products 只是快照副本,
+          //    订单主表改完明细快照不跟着变 → 报关行看到的品名/箱数是旧的。
+          //    真表优先,一条行项目都没有的历史老单才回退快照。
+          let products = [];
+          try {
+            const _liR = await pool.query(
+              "SELECT sku, barcode, product_name, size, qty_ctn, unit, nw_ctn, gw_ctn, cbm_ctn, hs_code, declaration_name FROM order_line_items WHERE order_id=$1 ORDER BY sort_order NULLS LAST, id",
+              [order.id]
+            );
+            products = _liR.rows.map(function(li){
+              return { sku: li.sku, barcode: li.barcode, name: li.product_name,
+                       productName: li.product_name, size: li.size,
+                       qty: li.qty_ctn, unit: li.unit || "CTN",
+                       netWeight: li.nw_ctn, grossWeight: li.gw_ctn, cbm: li.cbm_ctn,
+                       hsCode: li.hs_code, declarationName: li.declaration_name };
+            });
+          } catch (e) { console.warn("[customs-broker-checkin] OLI read failed:", e.message); }
+          if (!products.length) {
+            products = Array.isArray(order.products) ? order.products
+                     : Array.isArray(raw.products) ? raw.products : [];
+          }
           const skus = products.map(p => p.sku || p.barcode).filter(Boolean);
           let enrichMap = {};
           if (skus.length) {

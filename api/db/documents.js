@@ -380,37 +380,59 @@ export default async function handler(req, res) {
       var inco = _isDual
         ? (o.trade_terms || "")
         : pick(o.trade_terms, raw.tradeTerms, raw.incoterms, "FOB");
-      // SSOT (2026-07-09): read canonical top-level orders.products (same source as the
-      // front-end doc-editor), inheriting rich fields from the raw.products snapshot by SKU.
-      // Fixes stale/partial raw.products (dropped rows + wrong prices, e.g. 40-DG-2).
-      var prods=await enrichProdsFromMaster(pool,getCanonicalProds(o,raw));
-      // HIGH-1: if products empty, fall back to order_line_items table
-      if(!prods.length && (o.id||o._id)){
+      // ⚖️ SSOT 2026-08-13(Damon 定调):「这是订单主表的问题…订单主表就是改数据的,要实时更新的才对!
+      //    客户随时可能换产品」——**order_line_items 是真表,orders.products 只是快照副本**。
+      //    原来的顺序是反的:先读快照、快照空了才读真表。于是订单主表改完明细,
+      //    快照不会跟着变 → PI/IV/PL/SC 全部出旧数(实测 78-WP-1 改成 58,494.50 后单据还印 60,040.95)。
+      //    现在改成:**真表优先,真表没有行才回退快照**(兼容历史上只有快照没有行项目的老单)。
+      // ⛔ 别再改回快照优先。同类坑今天已踩三次:订单列表「项数」、数据管理密网格、这里。
+      var prods=[];
+      if(o.id||o._id){
         try{
           var liR=await pool.query("SELECT * FROM order_line_items WHERE order_id=$1 ORDER BY sort_order,id",[o.id||o._id]);
           if(liR.rows.length){
+            // 快照里的富字段(报关品名/BL品名/税率/品牌等)按 SKU 继承过来,真表没有的不硬造
+            var _snapBySku={};
+            (getCanonicalProds(o,raw)||[]).forEach(function(p){
+              var k=String(p.sku||p.code||"").trim().toUpperCase(); if(k&&!_snapBySku[k])_snapBySku[k]=p;
+            });
             var liProds=liR.rows.map(function(li){
+              var sn=_snapBySku[String(li.sku||"").trim().toUpperCase()]||{};
               return{
-                productName: li.product_name||li.name||(li.raw&&li.raw.productName)||"",
-                sku:         li.sku||(li.raw&&li.raw.sku)||"",
-                barcode:     li.barcode||(li.raw&&li.raw.barcode)||"",
+                productName: li.product_name||li.name||sn.name||"",
+                sku:         li.sku||sn.sku||"",
+                code:        li.sku||sn.code||"",
+                barcode:     li.barcode||sn.barcode||"",
                 qty:         li.qty_ctn||li.qty||0,
-                unit:        li.unit||"CTN",
+                unit:        li.unit||sn.unit||"CTN",
                 unitPrice:   li.unit_price||0,
                 subtotal:    li.subtotal||0,
-                factoryPrice:li.factory_price||li.unit_price||0,
-                netWeight:   li.nw_ctn||li.net_weight||0,
-                grossWeight: li.gw_ctn||li.gross_weight||0,
-                cbm:         li.cbm_ctn||li.cbm||0,
-                bgbx:        li.bg_bx||(li.raw&&li.raw.bgBx)||"",
-                size:        li.size||(li.raw&&li.raw.size)||"",
-                hsCode:      li.hs_code||(li.raw&&li.raw.hsCode)||"",
+                factoryPrice:li.factory_price||sn.factoryPrice||0,
+                factorySubtotal: li.factory_subtotal||sn.factorySubtotal||0,
+                netWeight:   li.nw_ctn||sn.netWeight||0,
+                grossWeight: li.gw_ctn||sn.grossWeight||0,
+                cbm:         li.cbm_ctn||sn.cbm||0,
+                totalCbm:    (Number(li.cbm_ctn||sn.cbm||0)*Number(li.qty_ctn||0))||0,
+                bgbx:        li.bg_bx||sn.bgBx||"",
+                bgBx:        li.bg_bx||sn.bgBx||"",
+                size:        li.size||sn.size||"",
+                brand:       li.brand||sn.brand||"",
+                hsCode:      li.hs_code||sn.hsCode||"",
+                declarationName: li.declaration_name||sn.declarationName||"",
+                blDescription:   li.bl_description||sn.blDescription||"",
+                vatRate:      li.vat_rate||sn.vatRate||null,
+                taxRebateRate:li.tax_rebate_rate||sn.taxRebateRate||null,
+                productId:    li.product_id||sn.productId||null,
+                orderLineItemId: li.id,
+                sortOrder:    li.sort_order||sn.sortOrder||0,
               };
             });
             prods=await enrichProdsFromMaster(pool,liProds);
           }
-        }catch(e){console.warn("[documents] order_line_items fallback failed:",e.message);}
+        }catch(e){console.warn("[documents] order_line_items read failed:",e.message);}
       }
+      // 回退:该单根本没有行项目(历史老单只有快照)时才用快照
+      if(!prods.length) prods=await enrichProdsFromMaster(pool,getCanonicalProds(o,raw));
       // ── Look up container assignment from container_bookings subtable ──
       // Source of truth for which container holds which order (plus driver/VGM/trucking).
       // Falls back to orders.raw.containerNo if no booking record yet.
@@ -1474,6 +1496,65 @@ export default async function handler(req, res) {
       if(type==="pi"){
         const { renderPi } = await import("./docs/pi.js");
         ({ html, _xlsCapture, totRow } = await renderPi({ pool, raw, order:o, ordNo, cno, curr, cfg, cust, caddr, ctel, date, pol, pod, inco, prods, tot, html, _xlsCapture, totRow, audience, ap, esc, pick, fmtM, wrap, docHdr, buyerBlock, productRows, termsCard, bankCard, sigBlock, loadDocColConfig, buildColsFromConfig, resolveUnitPrice, mkTotRow }));
+        // ⚖️ 2026-08-13 Damon:「给客户的 PI 要保留!跟实际的会有不同的」「装柜会有误差的」
+        //   单据本身读真表(实时),但**发出去那一版必须冻结** —— 否则工厂少发/客户改单之后,
+        //   再点一次 PI 就变了,发给客户的那份永远找不回来。
+        //   复用已在跑的 doc_issue_log(港杂/海运费单据用了177条),只加 order_no 列。
+        //   ⛔ 内容没变不新增版本(避免每次预览都灌一条);内容一变立刻存新版,旧版永不覆盖。
+        try {
+          const _lines = (prods||[]).map(function(p){
+            return { sku:p.sku||p.code||"", name:p.productName||p.name||"",
+                     qty:Number(p.qty||0), unit:p.unit||"CTN",
+                     unitPrice:Number(p.unitPrice||0), subtotal:Number(p.subtotal||0) };
+          });
+          const _tot = _lines.reduce(function(a,b){ return a + (b.subtotal||0); }, 0);
+          const _qty = _lines.reduce(function(a,b){ return a + (b.qty||0); }, 0);
+          // ⚠️ ordNo 是客户 PO(如 WP-1),不是系统单号(78-WP-1)。按单号查得用 o.order_no。
+          const _ordKey = o.order_no || ordNo;
+          // 存两层:lines = 客户在 PI 上看到的样子(报关品名已压缩);
+          //        source_lines = 当时 order_line_items 的真实逐条,将来对账/查差异用。
+          let _srcLines = [];
+          try {
+            const _sr = await pool.query(
+              "SELECT sku, product_name, qty_ctn, unit, unit_price, subtotal FROM order_line_items WHERE order_id=$1 ORDER BY sort_order NULLS LAST, id",[o.id]);
+            _srcLines = _sr.rows.map(function(r){
+              return { sku:r.sku, name:r.product_name, qty:Number(r.qty_ctn||0),
+                       unit:r.unit||"CTN", unitPrice:Number(r.unit_price||0), subtotal:Number(r.subtotal||0) };
+            });
+          } catch(_e){}
+          const _snap = { order_no:_ordKey, customer_po:ordNo, contract_no:cno, currency:curr,
+                          buyer:cust||null, incoterm:inco||null,
+                          line_count:_lines.length, total_qty:_qty,
+                          total_amount:Number(_tot.toFixed(2)),
+                          lines:_lines, source_line_count:_srcLines.length, source_lines:_srcLines };
+          const _fp = JSON.stringify({ c:_lines.length, q:_qty, t:Number(_tot.toFixed(2)),
+                                       l:_lines.map(function(x){ return x.sku+":"+x.qty+":"+x.subtotal; }),
+                                       s:_srcLines.map(function(x){ return x.sku+":"+x.qty+":"+x.subtotal; }) });
+          const _prev = await pool.query(
+            "SELECT snapshot FROM doc_issue_log WHERE doc_type='pi' AND order_no=$1 ORDER BY id DESC LIMIT 1",[_ordKey]);
+          let _same = false;
+          if (_prev.rows.length) {
+            const p0 = _prev.rows[0].snapshot || {};
+            const pl = Array.isArray(p0.lines) ? p0.lines : [];
+            const _pfp = JSON.stringify({ c:pl.length, q:Number(p0.total_qty||0), t:Number(p0.total_amount||0),
+                                          l:pl.map(function(x){ return x.sku+":"+x.qty+":"+x.subtotal; }),
+                                          s:(Array.isArray(p0.source_lines)?p0.source_lines:[]).map(function(x){ return x.sku+":"+x.qty+":"+x.subtotal; }) });
+            _same = (_pfp === _fp);
+          }
+          if (!_same) {
+            const _n = await pool.query(
+              "SELECT count(*)::int AS c FROM doc_issue_log WHERE doc_type='pi' AND order_no=$1",[_ordKey]);
+            const _seq = (_n.rows[0].c||0) + 1;
+            const _d = new Date(Date.now()+8*3600*1000).toISOString().slice(0,10).replace(/-/g,"");
+            await pool.query(
+              "INSERT INTO doc_issue_log(doc_no, bl_no, order_no, doc_type, total_usd, total_cny, generated_at, generated_by, snapshot) "+
+              "VALUES ($1,$2,$3,'pi',$4,$5,now(),$6,$7)",
+              ["PI-"+_ordKey+"-"+_d+"-"+_seq, o.bl_no||null, _ordKey,
+               String(curr).toUpperCase()==="USD" ? _tot.toFixed(2) : 0,
+               String(curr).toUpperCase()==="CNY" ? _tot.toFixed(2) : 0,
+               (req.user && req.user.username) || "system", JSON.stringify(_snap)]);
+          }
+        } catch(e){ console.warn("[documents] PI 存档失败(不影响出单):", e.message); }
       }
 
       if(type==="po"){
