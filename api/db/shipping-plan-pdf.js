@@ -803,7 +803,7 @@ ${printBtn}
     if (isFobInvoice) {
       // 拉最新汇率 USD_CNY
       const fxRes = await pool.query(
-        `SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' ORDER BY fetched_at DESC LIMIT 1`
+        `SELECT rate FROM exchange_rates WHERE currency_pair='USD_CNY' AND fetched_at::date <= $1::date ORDER BY fetched_at DESC LIMIT 1`, [docDate]
       );
       const baseRate = fxRes.rows.length ? parseFloat(fxRes.rows[0].rate) : 7.0;
       const fxRate   = Math.round((baseRate + 0.1) * 10000) / 10000; // +0.1，保留4位
@@ -1040,7 +1040,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       <div class="row"><div class="lbl">TO (客户名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}<div style="font-size:9px;font-weight:400;color:${billAddr?'#555':'#bbb'};margin-top:2px">${billAddr?esc(billAddr):'地址 Address: _______________________________'}</div></div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
-      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${genDate}</div></div>
+      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${docDate}</div></div>
     </div>
     <div class="info-box">
       <div class="row"><div class="lbl">Vessel/Voyage (船名航次):</div><div class="val">${esc(vessel)}</div></div>
@@ -1116,7 +1116,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
   </table>
 
   <div class="fx-note">* Please remit the full amount in ONE of the following currencies. / 请选择以下一种币种全额支付。</div>
-  <div class="fx-note">开票日期汇率 Invoice Date Rate (<strong>${genDate}</strong>): <strong>1 USD = ${fxRate.toFixed(4)} CNY</strong></div>
+  <div class="fx-note">开票日期汇率 Invoice Date Rate (<strong>${docDate}</strong>): <strong>1 USD = ${fxRate.toFixed(4)} CNY</strong></div>
 
   <div class="pay-grid">
     <div class="pay-box usd">
@@ -1443,7 +1443,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}<div style="font-size:9px;font-weight:400;color:${(factory&&factory.address)?'#555':'#bbb'};margin-top:2px">${(factory&&factory.address)?esc(factory.address):'地址 Address: _______________________________'}</div></div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
-      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${genDate}</div></div>
+      <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${docDate}</div></div>
     </div>
     <div class="info-box">
       <div class="row"><div class="lbl">Vessel/Voyage (船名航次):</div><div class="val">${esc(vessel)}</div></div>
