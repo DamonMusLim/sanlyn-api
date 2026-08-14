@@ -1,4 +1,5 @@
 import { rawToHash } from "./collab-shared.js";
+import { freezePlanCustomerDocs } from "./collab-customer-doc-freeze.js";
 
 const FINAL = new Set(["customer_confirmed", "submitted", "submitted_to_carrier", "auto_submitted"]);
 const CLEARANCE_BY_COUNTRY = {
@@ -272,6 +273,13 @@ async function handleBlConfirmation(req, res, pool) {
   );
   if (action === "confirm") {
     await saveCompanyPreference(pool, planId, next.hs_show_on_bl);
+    try {
+      const frozen = await freezePlanCustomerDocs(pool, planId, {
+        generatedBy: "customer_booking",
+        trigger: "bl_confirmed",
+      });
+      console.log("[doc-freeze] bl_confirmed plan", planId, JSON.stringify(frozen.docs));
+    } catch (e) { console.error("[doc-freeze] fail", e && e.message); }
     // 客户确认提单后 → OCEANBABY(ob@) 自动把单据(托书/排载单)发到对方业务邮箱。
     // 不阻塞确认响应(fire-and-forget)；真发受 DOC_MAIL_LIVE 门控(默认 dry-run 只记日志)。
     import("./collab-doc-mailer.js")

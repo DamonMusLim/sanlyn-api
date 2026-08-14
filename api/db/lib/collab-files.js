@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { generateToken } from "../../auth.js";
 import { rawToHash } from "./collab-shared.js";
+import { sendFrozenCustomerDoc } from "./collab-customer-doc-freeze.js";
 import { backfillBookingNotice, extractTextFromUpload } from "./booking-notice-parse.js";
 
 // ── 角色 token 解析（车队/报关行 文件口共用）──────────────
@@ -147,6 +148,10 @@ async function handleFileProxy(req, res, pool) {
     } catch (e) { return res.status(502).json({ ok: false, error: "检疫报告服务不可用" }); }
   }
   let extraQ = "";
+  if (auth.role === "customer_booking" && ["pack", "pl", "iv", "sc"].includes(type)) {
+    if (req.query.format && req.query.format !== "html") return res.status(404).json({ ok: false, error: "该格式尚未正式发出" });
+    return await sendFrozenCustomerDoc(pool, auth.planId, type, res);
+  }
   if (type === "so") {
     docId = auth.planId; // 计划级文档按 id 精确解析
   } else if (["pack", "pl", "iv", "sc"].includes(type)) {
