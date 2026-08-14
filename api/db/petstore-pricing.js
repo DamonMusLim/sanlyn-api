@@ -376,7 +376,8 @@ async function getStats(req, res) {
     SELECT
       CASE
         WHEN problem_type IN ('below_cost','above_market','price') THEN 'price'
-        WHEN problem_type IN ('stale_90d','expiry') THEN 'expiry'
+        WHEN problem_type='expiry' THEN 'expiry'
+        WHEN problem_type='stale_90d' THEN 'stale'
         WHEN problem_type IN ('no_shelf','shelfless') THEN 'shelfless'
         WHEN problem_type = 'badname' THEN 'badname'
         ELSE 'other'
