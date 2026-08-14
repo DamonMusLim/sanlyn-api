@@ -7,15 +7,20 @@ const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 30;
 
 const TAB_SQL = {
-  price: "problem_type IN ('below_cost','above_market')",
-  expiry: "problem_type = 'expiry'",
-  stale: "problem_type = 'stale_90d'",
-  shelfless: "problem_type = 'no_shelf'",
+  price: "problem_type IN ('below_cost','above_market','price')",
+  expiry: "problem_type IN ('stale_90d','expiry')",
+  shelfless: "problem_type IN ('no_shelf','shelfless')",
   badname: "problem_type = 'badname'",
 };
 
-const ALLOWED_VERDICTS = ["合理", "跟市场", "我定价", "清仓", "驳回", "安排货位"];
+const ALLOWED_VERDICTS = ["合理", "跟市场", "我定价", "清仓", "驳回"];
 const REJECT_REASONS = ["证据不足", "数据不准", "特殊品", "暂不处理"];
+const CARD_VERDICTS = ["同意", "不改", "自定", "下架", "标记死货"];
+const CARD_BODY_KEYS = new Set(["action", "batch_token", "decisions"]);
+const CARD_DECISION_KEYS = new Set([
+  "product_code", "product_name", "verdict", "price", "offline_price", "online_price",
+  "reason", "dna_snapshot", "other_changes", "at",
+]);
 
 function json(res, code, data) {
   return res.status(code).json(data);
@@ -104,6 +109,154 @@ async function readBody(req) {
   });
 }
 
+function parseCodes(value) {
+  const codes = String(value || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return Array.from(new Set(codes));
+}
+
+function normalizeMoney(value) {
+  if (value === "" || value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : NaN;
+}
+
+function rejectUnknownKeys(obj, allowed) {
+  return Object.keys(obj || {}).filter((key) => !allowed.has(key));
+}
+
+function trimString(value, max) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s ? s.slice(0, max) : null;
+}
+
+async function getCardView(req, res) {
+  const codes = parseCodes(req.query?.codes);
+  if (!codes.length) return json(res, 400, { ok: false, error: "codes_required" });
+  if (codes.length > 200) return json(res, 400, { ok: false, error: "too_many_codes", max: 200 });
+  const { rows } = await getPool().query(`
+    WITH ranked AS (
+      SELECT *, row_number() OVER (PARTITION BY product_code ORDER BY ts DESC, id DESC) AS rn
+      FROM petstore_pricing_log WHERE product_code = ANY($1)
+    ),
+    latest AS (SELECT * FROM ranked WHERE rn = 1),
+    dna AS (
+      SELECT d.*
+      FROM petstore_sku_sales_dna d
+      JOIN (
+        SELECT store_code, product_code, max(as_of) AS as_of
+        FROM petstore_sku_sales_dna
+        WHERE product_code = ANY($1)
+        GROUP BY store_code, product_code
+      ) x ON x.store_code=d.store_code AND x.product_code=d.product_code AND x.as_of=d.as_of
+    )
+    SELECT
+      l.product_code, l.product_name, l.mt_price, l.ele_price, l.barcode, l.pic_url,
+      l.old_price, l.new_price, l.cost_price, l.stock_qty, l.days_left, l.problem_type,
+      d.qty_30, d.qty_90, d.qty_180, d.sale_days_30, d.oos_days_30, d.daily_avg_30,
+      d.gross_margin_pct, d.days_of_supply, d.velocity_tier, d.restock_verdict, d.cur_stock
+    FROM latest l
+    LEFT JOIN dna d ON d.product_code = l.product_code AND d.store_code = l.store_code
+  `, [codes]);
+  const data = {};
+  for (const r of rows) data[r.product_code] = r;
+  return json(res, 200, { ok: true, data });
+}
+
+async function postCardConfirm(req, res, bodyArg) {
+  const body = bodyArg || await readBody(req);
+  const badBodyKeys = rejectUnknownKeys(body, CARD_BODY_KEYS);
+  if (badBodyKeys.length) return json(res, 400, { ok: false, error: "unknown_fields", fields: badBodyKeys });
+  const batchToken = String(body.batch_token || "").trim();
+  const decisions = Array.isArray(body.decisions) ? body.decisions : [];
+  if (!batchToken) return json(res, 400, { ok: false, error: "batch_token_required" });
+  if (!decisions.length) return json(res, 400, { ok: false, error: "decisions_required" });
+  if (decisions.length > 200) return json(res, 400, { ok: false, error: "too_many_decisions", max: 200 });
+
+  const rows = [];
+  for (const d of decisions) {
+    if (!d || typeof d !== "object" || Array.isArray(d)) return json(res, 400, { ok: false, error: "bad_decision" });
+    const badDecisionKeys = rejectUnknownKeys(d, CARD_DECISION_KEYS);
+    if (badDecisionKeys.length) {
+      return json(res, 400, { ok: false, error: "unknown_decision_fields", product_code: d?.product_code || null, fields: badDecisionKeys });
+    }
+    const productCode = String(d.product_code || "").trim();
+    const verdict = String(d.verdict || "").trim();
+    const price = normalizeMoney(d.offline_price ?? d.price);
+    const onlinePrice = normalizeMoney(d.online_price);
+    if (!productCode || !CARD_VERDICTS.includes(verdict)) return json(res, 400, { ok: false, error: "bad_decision" });
+    if (Number.isNaN(price) || Number.isNaN(onlinePrice) || (verdict === "自定" && price == null && onlinePrice == null)) {
+      return json(res, 400, { ok: false, error: "bad_price", product_code: productCode });
+    }
+    rows.push({
+      product_code: productCode,
+      verdict,
+      price,
+      online_price: onlinePrice,
+      reason: trimString(d.reason, 500),
+      context: JSON.stringify({
+        dna_snapshot: d.dna_snapshot || null,
+        other_changes: d.other_changes || null,
+        decided_at: trimString(d.at, 80),
+      }),
+      idem_key: `pricing-card:${batchToken}:${productCode}`,
+    });
+  }
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const saved = [];
+    const skipped = [];
+    for (const d of rows) {
+      const { rows: updated } = await client.query(`
+        WITH latest AS (
+          SELECT id FROM petstore_pricing_log
+          WHERE product_code=$1
+          ORDER BY ts DESC, id DESC
+          LIMIT 1
+        )
+        UPDATE petstore_pricing_log p
+        SET damon_verdict=$2,
+            damon_price=$3,
+            damon_online_price=$4,
+            damon_reason=COALESCE($5, damon_reason),
+            damon_context=$6,
+            confirmed_at=now(),
+            exec_status='pending',
+            idem_key=$7
+        FROM latest
+        WHERE p.id=latest.id
+          AND (p.idem_key IS NULL OR p.idem_key=$7)
+          AND (p.confirmed_at IS NULL OR p.idem_key=$7)
+        RETURNING p.id, p.product_code, p.damon_verdict, p.damon_price, p.damon_online_price, p.exec_status, p.idem_key
+      `, [d.product_code, d.verdict, d.price, d.online_price, d.reason, d.context, d.idem_key]);
+      if (updated.length) {
+        saved.push(updated[0]);
+        continue;
+      }
+      const current = await client.query(`
+        SELECT id, product_code, confirmed_at, idem_key
+        FROM petstore_pricing_log
+        WHERE product_code=$1
+        ORDER BY ts DESC, id DESC
+        LIMIT 1
+      `, [d.product_code]);
+      skipped.push({
+        product_code: d.product_code,
+        reason: current.rows.length ? "already_confirmed_by_other_batch" : "not_found",
+      });
+    }
+    await client.query("COMMIT");
+    return json(res, 200, { ok: true, saved, skipped });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch {}
+    return json(res, 409, { ok: false, error: e.message || "submit_failed" });
+  } finally {
+    client.release();
+  }
+}
+
 function audit(api, id, verdict, price) {
   console.info(JSON.stringify({
     ts: new Date().toISOString(),
@@ -140,9 +293,7 @@ async function getQueue(req, res) {
 
   const orderSql = tab === "expiry"
     ? "COALESCE(l.days_left, 999999) ASC, COALESCE(l.stock_qty,0) * COALESCE(l.cost_price,0) DESC"
-    : tab === "stale"
-      ? "COALESCE(l.stock_qty,0) * COALESCE(l.cost_price,0) DESC, l.ts DESC"
-      : "ABS(COALESCE(l.new_price,0) - COALESCE(l.old_price,0)) * COALESCE(l.stock_qty,0) DESC, l.ts DESC";
+    : "ABS(COALESCE(l.new_price,0) - COALESCE(l.old_price,0)) * COALESCE(l.stock_qty,0) DESC, l.ts DESC";
 
   const sql = `
     WITH ranked AS (
@@ -160,9 +311,9 @@ async function getQueue(req, res) {
     ${highstockJoin}
     SELECT
       l.id, l.ts, l.log_date, l.store_code, l.channel, l.product_code,
-      l.product_name, l.pic_url, l.old_price, l.new_price, l.rate, l.reason, l.result,
+      l.product_name, l.old_price, l.new_price, l.rate, l.reason, l.result,
       l.days_left, l.tier, l.source_hash, l.synced_at,
-      l.mkt_price, l.mt_price, l.ele_price, l.mkt_store, l.mkt_sold, l.mkt_total_sold,
+      l.mkt_price, l.mkt_store, l.mkt_sold, l.mkt_total_sold,
       l.mkt_n_stores, l.mkt_matched_title, l.mkt_conf, l.mkt_captured_at,
       l.cost_price, l.stock_qty, l.qty_90, l.expiry_flag, l.problem_type,
       l.damon_verdict, l.damon_price, l.damon_reason, l.confirmed_at,
@@ -223,10 +374,9 @@ async function getStats(req, res) {
   const { rows } = await getPool().query(`
     SELECT
       CASE
-        WHEN problem_type IN ('below_cost','above_market') THEN 'price'
-        WHEN problem_type = 'expiry' THEN 'expiry'
-        WHEN problem_type = 'stale_90d' THEN 'stale'
-        WHEN problem_type = 'no_shelf' THEN 'shelfless'
+        WHEN problem_type IN ('below_cost','above_market','price') THEN 'price'
+        WHEN problem_type IN ('stale_90d','expiry') THEN 'expiry'
+        WHEN problem_type IN ('no_shelf','shelfless') THEN 'shelfless'
         WHEN problem_type = 'badname' THEN 'badname'
         ELSE 'other'
       END AS tab,
@@ -241,6 +391,8 @@ async function getStats(req, res) {
   `);
   return json(res, 200, { success: true, rows });
 }
+
+
 
 async function postVerdict(req, res, bodyArg) {
   const body = bodyArg || await readBody(req);
@@ -311,12 +463,19 @@ export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
   addPricingCorsHeaders(res);
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (!requireAuth(req, res)) return;
-  if (!requireBoss(req, res)) return;
 
   try {
     const body = req.method === "POST" ? await readBody(req) : null;
     const action = req.method === "GET" ? req.query?.action : body?.action;
+    const cardAction = (req.method === "GET" && req.query?.view === "card") ||
+      (req.method === "POST" && action === "card_confirm");
+    if (cardAction) {
+      if (!req.headers["x-clerk-session"]) return json(res, 401, { ok: false, error: "clerk_session_required" });
+      if (req.method === "GET" && req.query?.view === "card") return getCardView(req, res);
+      return postCardConfirm(req, res, body);
+    }
+    if (!requireAuth(req, res)) return;
+    if (!requireBoss(req, res)) return;
     if (req.method === "GET" && action === "queue") return getQueue(req, res);
     if (req.method === "GET" && action === "stats") return getStats(req, res);
     if (req.method === "GET" && action === "daily_sales") return getDailySales(req, res);
