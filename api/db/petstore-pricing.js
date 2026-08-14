@@ -266,7 +266,7 @@ async function getDailySales(req, res) {
         sum(-delta)::numeric AS sold_qty,
         min(stock_after)::numeric AS stock_now,
         count(*)::int AS tx_count,
-        sum(case when order_channel::text != '0' then -delta else 0 end)::numeric AS online_qty
+        sum(case when order_channel::text = '0' then -delta else 0 end) /* 0814实证:渠道0=外卖(长单号,美团/饿了么聚合),渠道1=线下POS(单号嵌日期时间) */::numeric AS online_qty
       FROM petstore_stock_ledger
       WHERE order_type = 'XS'
         AND delta < 0
