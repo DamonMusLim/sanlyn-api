@@ -1,6 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { guardBillRow, ticketTerms } from "./lib/write-guards.js";
+import { guardBillRow, resolvePayer, ticketTerms } from "./lib/write-guards.js";
 import { carrierFromBl, normalizeCarrier, normalizeChargeName, normalizeContainerType, num } from "./lib/portcharge-close-loop.js";
 
 function clean(v) { return String(v ?? "").trim(); }
@@ -58,6 +58,18 @@ async function detail(pool, key) {
 }
 
 async function saveBill(pool, plan, row, user, terms, warnings) {
+  const payerResult = await resolvePayer(pool, plan);
+  let payer = clean(row.payer_company_code || row.payer);
+  if (payerResult.owned && !payer) payer = payerResult.payer;
+  if (!payerResult.owned) {
+    payer = "";
+    if (warnings) warnings.push("无我方订单,归属待定,已建待归属任务");
+    await pool.query(
+      `INSERT INTO tasks (id, title, reason, status, source, owner_object_type, owner_object_id, created_at, updated_at)
+       VALUES ($1, $2, $3, 'open', 'payer-guard', 'logistics', $4, now(), now())
+       ON CONFLICT (id) DO NOTHING`,
+      [`payer-${clean(plan.bl_no)}`, "货代账单待归属", "无我方订单却挂巴匕应付", clean(plan.bl_no)]);
+  }
   const direction = clean(row.direction || row.inout || "付");
   const qty = n(row.qty) ?? 1;
   const unit = n(row.unit_price) ?? 0;
@@ -70,20 +82,21 @@ async function saveBill(pool, plan, row, user, terms, warnings) {
     if (g.warning) { sale = g.sale; if (warnings) warnings.push(g.warning); }
   }
   const raw = { original_name: norm.original_name, unmapped: !!norm.unmapped, entry_direction: direction };
-  const vals = [plan.bl_no, plan._id, norm.name, amount, clean(row.currency || "CNY"), sale, qty, unit, clean(row.charge_basis || row.unit), clean(row.remarks), ym(row.bill_month), JSON.stringify(raw)];
+  const vals = [plan.bl_no, plan._id, norm.name, amount, clean(row.currency || "CNY"), sale, qty, unit, clean(row.charge_basis || row.unit), clean(row.remarks), ym(row.bill_month), JSON.stringify(raw), payer || null];
   if (row.id) {
     vals.push(row.id);
     const r = await pool.query(
       `UPDATE freight_supplier_bills
           SET bl_no=$1, link_plan_id=$2, cost_category=$3, amount=$4, currency=$5, sale_amount=$6,
-              qty=$7, unit_price=$8, charge_basis=$9, remarks=$10, bill_month=$11, raw=$12, updated_at=now()
-        WHERE id=$13 RETURNING *`, vals);
+              qty=$7, unit_price=$8, charge_basis=$9, remarks=$10, bill_month=$11, raw=$12,
+              payer_company_code=$13, updated_at=now()
+        WHERE id=$14 RETURNING *`, vals);
     return r.rows[0];
   }
   const r = await pool.query(
     `INSERT INTO freight_supplier_bills
-       (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, qty, unit_price, charge_basis, remarks, bill_month, raw, supplier, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'录入表单',now(),now())
+       (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, qty, unit_price, charge_basis, remarks, bill_month, raw, payer_company_code, supplier, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'录入表单',now(),now())
      RETURNING *`, vals);
   return r.rows[0];
 }
