@@ -206,6 +206,7 @@ export default async function handler(req, res) {
     const genDate = new Date().toISOString().slice(0, 10);
     // 铁则(0813 Damon定): 单据日期=min(出运日,下单日,今天) — 已开船用出运日,延期票用SO下单日,永不未来
     const docDate = (() => {
+      if (p && p.so_date) { const d = new Date(p.so_date); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); } // 真源字段优先
       const cands = [p && p.etd, p && p.created_at, new Date()]
         .map(d => d ? new Date(d) : null).filter(d => d && !isNaN(d));
       const t = new Date(Math.min(...cands.map(d => d.getTime())));
