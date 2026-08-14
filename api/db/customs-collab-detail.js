@@ -75,15 +75,43 @@ async function handleDetail(req, res) {
       const contractNo = st.contract_no || row.contract_no || null;
       let orderResult = contractNo
         ? await client.query(
+            /* 🩸 0814：台账 contract_no 常是多合同拼串
+               （660860 = 'CP26031606-2/FS20260603076'），全等匹配认不到订单 →
+               order 为 null → 买方那段被 if(order) 整个跳过 → 开票模板「购买方信息」空白。
+               跟 customs-collab-status.js 的 404 是同一个病根，这里也补 LIKE 兜底。
+               排序让全等优先，避免多合同时挑错单。 */
             `SELECT id, order_no, contract_no, issuing_company, company_code, customer_po
                FROM orders
-              WHERE contract_no=$1
+              WHERE COALESCE(contract_no,'') <> ''
+                AND ($1 = contract_no OR $1 LIKE '%'||contract_no||'%')
                 AND COALESCE(status,'') <> 'cancelled'
-              ORDER BY id DESC
+              ORDER BY ($1 = contract_no) DESC, id DESC
               LIMIT 1`,
             [contractNo]
           )
         : { rows: [] };
+      if (!orderResult.rows[0]) {
+        /* 🩸 0814 补上最权威的一条路：台账 raw.order_nos。
+           802335/802346 的台账合同号是 CP26052851，而订单 40-CP-6/40-CP-7 的合同号是
+           FS20260625907 —— 合同号根本对不上，真正的关联在 raw.order_nos 里。
+           系统别处（退税主表证据链、协同 fer_base）早就用这条，只有这里漏了，
+           导致 order=null → 买方信息空白。
+           工厂模式下再按工厂收窄，避免一票多厂时认到别家的订单。 */
+        orderResult = await client.query(
+          `SELECT o.id, o.order_no, o.contract_no, o.issuing_company, o.company_code, o.customer_po
+             FROM orders o
+             JOIN finance_export_rebates f ON f.customs_no = $1
+            WHERE COALESCE(o.status,'') <> 'cancelled'
+              AND o.order_no = ANY(ARRAY(SELECT jsonb_array_elements_text(
+                    CASE WHEN jsonb_typeof(f.raw->'order_nos')='array'
+                         THEN f.raw->'order_nos' ELSE '[]'::jsonb END)))
+              AND ($2::text IS NULL OR COALESCE(o.factory_code,
+                    (SELECT code FROM companies WHERE id=o.factory_company_id)) = $2)
+            ORDER BY o.id DESC
+            LIMIT 1`,
+          [customsNo, factoryMode ? scope.factory.code : null]
+        );
+      }
       if (!orderResult.rows[0]) {
         orderResult = await client.query(
           `SELECT id, order_no, contract_no, issuing_company, company_code, customer_po

@@ -92,7 +92,15 @@ export async function ensureCustomsStatus(client, customsNo, factoryCode = null)
          FROM orders o
          LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
         WHERE COALESCE(o.status,'') <> 'cancelled'
-          AND (o.contract_no = (SELECT contract_no FROM fer_one) OR o.order_no = $1 OR o.bl_no = $1)
+          AND (
+                -- 🩸 0814：台账 contract_no 常是多合同拼串（660860 = 'CP26031606-2/FS20260603076'），
+                --    全等匹配一个订单都认不到 → 不建状态行 → detail 返 404 → 工厂端「开票模板打不开」。
+                --    系统别处早就用 LIKE 拆开认，这里漏了。保留全等（更快）再加 LIKE 兜底。
+                o.contract_no = (SELECT contract_no FROM fer_one)
+             OR (COALESCE(o.contract_no,'') <> ''
+                 AND COALESCE((SELECT contract_no FROM fer_one),'') <> ''
+                 AND (SELECT contract_no FROM fer_one) LIKE '%'||o.contract_no||'%')
+             OR o.order_no = $1 OR o.bl_no = $1)
      ),
      ord AS (
        SELECT per.factory_code,
