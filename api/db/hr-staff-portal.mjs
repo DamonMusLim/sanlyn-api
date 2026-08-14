@@ -423,7 +423,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / checkout / leave / reimbursement / overtime / update_profile / checklist / agenda / rest_change / suggest" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / checkout / leave / reimbursement / reimbursement_ocr / overtime / update_profile / checklist / agenda / rest_change / suggest" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });

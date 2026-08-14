@@ -92,7 +92,7 @@ export default async function handler(req, res) {
 
     return res.json({
       success: true,
-      data: { count: gj.task_count, link: gj.public_url, token: gj.token, purpose: gj.purpose },
+      data: { count: gj.task_count, link: gj.public_url, token: gj.token, purpose: gj.purpose, reused: !!gj.reused },
     });
   } catch (e) {
     return res.status(500).json({ success: false, error: String(e.message || e) });

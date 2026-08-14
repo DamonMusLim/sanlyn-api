@@ -42,6 +42,17 @@ export async function reviewPhoto(title, hint, dataUrl) {
       signal: AbortSignal.timeout(40000),
     });
     const d = await r.json();
+    if (!r.ok) {
+      const detail = d?.base_resp?.status_msg || d?.error || d?.msg || JSON.stringify(d).slice(0, 300);
+      console.error(`[staff-check-photo] MiniMax HTTP ${r.status} model=MiniMax-M3: ${detail}`);
+      return null;
+    }
+    const baseCode = d?.base_resp?.status_code;
+    if (baseCode !== undefined && Number(baseCode) !== 0) {
+      const detail = d?.base_resp?.status_msg || "MiniMax request failed";
+      console.error(`[staff-check-photo] MiniMax ${baseCode} model=MiniMax-M3: ${detail}`);
+      return null;
+    }
     const m = d?.choices?.[0]?.message || {};
     let t = m.content || m.reasoning_content || "";   // M3 是推理模型,正文可能为空
     t = t.replace(/```json|```/g, "").trim();       // M3 会用 code fence 包
@@ -122,6 +133,62 @@ export function saveReceipt(filename, mime, dataB64) {
   const safe = String(filename || "receipt").replace(/[^a-zA-Z0-9._一-龥-]/g, "_");
   fs.writeFileSync(path.join(dir, safe), buf);
   return `${PUBLIC_HOST}/uploads/reimbursement/${path.basename(dir)}/${safe}`;
+}
+
+export async function recognizeReceipt(dataB64, mime = "image/jpeg") {
+  const key = process.env.MINIMAX_API_KEY;
+  if (!key || !dataB64) return { amount: null, invoice_date: "", biller: "", _error: "missing_key_or_image" };
+  if (!/^image\//.test(String(mime || ""))) {
+    return { amount: null, invoice_date: "", biller: "", _error: "bad_mime" };
+  }
+  const buf = Buffer.from(dataB64, "base64");
+  if (buf.length > MAX_BYTES) {
+    return { amount: null, invoice_date: "", biller: "", _error: "too_large" };
+  }
+  const prompt = `识别这张报销发票/小票。只回 JSON,不要解释:
+{"amount":金额数字或null,"invoice_date":"YYYY-MM-DD或空","biller":"开票方/收款方,看不清留空"}
+不要猜;看不清的字段留空或 null。`;
+  try {
+    const r = await fetch("https://api.minimaxi.com/v1/text/chatcompletion_v2", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "MiniMax-M3",
+        max_tokens: 500,
+        temperature: 0.1,
+        messages: [{ role: "user", content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mime || "image/jpeg"};base64,${dataB64}` } },
+        ] }],
+      }),
+      signal: AbortSignal.timeout(45000),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      console.error("[staff-reimb-ocr] MiniMax HTTP", r.status, JSON.stringify(d).slice(0, 300));
+      return { amount: null, invoice_date: "", biller: "", _error: `http_${r.status}` };
+    }
+    const baseCode = d?.base_resp?.status_code;
+    if (baseCode !== undefined && Number(baseCode) !== 0) {
+      const detail = d?.base_resp?.status_msg || "MiniMax request failed";
+      console.error(`[staff-reimb-ocr] MiniMax ${baseCode} model=MiniMax-M3: ${detail}`);
+      return { amount: null, invoice_date: "", biller: "", _error: detail, _code: baseCode, _model: "MiniMax-M3" };
+    }
+    let t = d?.choices?.[0]?.message?.content || d?.reply || "";
+    t = t.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+    const a = t.indexOf("{"), b = t.lastIndexOf("}");
+    if (a >= 0 && b >= a) t = t.slice(a, b + 1);
+    const x = JSON.parse(t);
+    const amount = Number(x.amount);
+    return {
+      amount: Number.isFinite(amount) && amount > 0 ? amount : null,
+      invoice_date: /^\d{4}-\d{2}-\d{2}$/.test(String(x.invoice_date || "")) ? x.invoice_date : "",
+      biller: String(x.biller || "").trim().slice(0, 80),
+    };
+  } catch (e) {
+    console.error("[staff-reimb-ocr] fail", e.message);
+    return { amount: null, invoice_date: "", biller: "", _error: e.message };
+  }
 }
 
 // 身份证照片存私有目录，路径规则跟 hr-employees.mjs 的 saveDoc 保持一致（只存相对路径）

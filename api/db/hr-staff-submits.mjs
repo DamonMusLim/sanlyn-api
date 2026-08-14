@@ -4,7 +4,7 @@
 // 从 hr-staff-portal.mjs 拆出来（0804，单文件≤500行铁律）。
 // 共同点：**status 一律 pending，员工改不了自己的审批状态**；审批在后台各自的模块里。
 // 返回 true = 已处理并已 res.json()，调用方直接 return。
-import { saveReceipt } from "./hr-staff-portal-lib.mjs";
+import { recognizeReceipt, saveReceipt } from "./hr-staff-portal-lib.mjs";
 
 export async function tryStaffSubmit(ctx) {
   const { action, b, res, pool, me, empId, today } = ctx;
@@ -32,6 +32,17 @@ export async function tryStaffSubmit(ctx) {
          VALUES ($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING id, status`,
         [me.company_code, empId, me.name, b.amount, b.item_desc || null, b.purchase_date || null, url]);
       return res.status(200).json({ success: true, data: r.rows[0], message: "已提交，等店长审批" });
+    }
+
+    if (action === "reimbursement_ocr") {
+      if (!b.receipt_base64) return res.status(400).json({ success: false, error: "图片必填" });
+      const data = await recognizeReceipt(b.receipt_base64, b.receipt_mime || "image/jpeg");
+      const found = !!(data.amount || data.invoice_date || data.biller);
+      return res.status(200).json({
+        success: true,
+        data,
+        message: found ? "已识别，请核对金额后提交" : "没认出来，自己填",
+      });
     }
 
     if (action === "overtime") {
