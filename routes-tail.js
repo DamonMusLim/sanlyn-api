@@ -46,6 +46,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/petstore-make-batch",     () => import("./api/db/petstore-make-batch.js"));
   mount("/api/db/petstore-batch",          () => import("./api/db/petstore-batch.js"));
   mount("/api/db/petstore-pricing",        () => import("./api/db/petstore-pricing.js")); // 定价经营台(0814)
+  mount("/api/db/petstore-pricing-decide", () => import("./api/db/petstore-pricing-decide.mjs")); // 改价拍板·老板终审(0816)
   mount("/api/db/petstore-ops-row",        () => import("./api/db/petstore-ops-row.js")); // 商品经营行统一契约(0815)
   mount("/api/db/petstore-products-grid", () => import("./api/db/petstore-products-grid.js")); // 商品库主数据密网格(0815)
   mount("/api/db/recon-export", () => import("./api/db/recon-export.js"));
