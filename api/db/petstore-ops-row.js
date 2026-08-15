@@ -50,7 +50,7 @@ const VIEW_COLS = {
 const ORDER_SQL = {
   pricing: "ABS(COALESCE(store_price,0) - COALESCE(market_price,0)) * COALESCE(cur_stock,0) DESC NULLS LAST, product_code",
   restock: "GREATEST(0, 7 - COALESCE(days_of_supply, 999999)) * COALESCE(daily_avg_90,0) * COALESCE(store_price,0) DESC NULLS LAST, product_code",
-  expiry: "days_left ASC NULLS LAST, COALESCE(cur_stock,0) * COALESCE(cost_price,0) DESC NULLS LAST, product_code",
+  expiry: "days_left ASC NULLS LAST, product_code",
   shelfless: "COALESCE(cur_stock,0) * COALESCE(cost_price,0) DESC NULLS LAST, product_code",
   badname: "COALESCE(cur_stock,0) * COALESCE(cost_price,0) DESC NULLS LAST, product_code",
   daily: "COALESCE(cur_stock,0) * COALESCE(cost_price,0) DESC NULLS LAST, product_code",
@@ -131,6 +131,13 @@ function uniqueCols(cols) {
   return Array.from(new Set(cols));
 }
 
+function expiryRank(flag) {
+  if (flag === "过期") return 0;
+  if (flag === "临期") return 1;
+  if (flag === "清仓") return 2;
+  return 3;
+}
+
 function shapeRow(row) {
   const refs = {
     sales_src: row.sales_src,
@@ -140,6 +147,9 @@ function shapeRow(row) {
   };
   const clean = { ...row, refs };
   for (const col of REF_COLS) delete clean[col];
+  if (Object.prototype.hasOwnProperty.call(clean, "expiry_flag")) {
+    clean.expiry_rank = expiryRank(clean.expiry_flag);
+  }
   return clean;
 }
 
@@ -167,9 +177,9 @@ async function getOpsRows(req, res) {
   if (view === "restock") {
     filters.push("(restock_verdict IS NOT NULL OR COALESCE(restock_qty,0) > 0)");
   } else if (view === "expiry") {
-    filters.push("(expiry_flag = true OR days_left IS NOT NULL)");
+    filters.push("(expiry_flag IS NOT NULL OR days_left IS NOT NULL)");
   } else if (view === "shelfless") {
-    filters.push("shelf_missing = true");
+    filters.push("(shelf_missing = true AND COALESCE(cur_stock,0) > 0)");
   } else if (view === "badname") {
     filters.push("'badname' = ANY(problem_types)");
   }

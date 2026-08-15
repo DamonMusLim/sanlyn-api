@@ -78,7 +78,8 @@ WITH sku AS (
     spec AS spec_text,
     cost_price,
     out_price,
-    shelf_list AS shelf_code,
+    NULLIF(regexp_replace(COALESCE(shelf_list, ''), '[\[\]"]', '', 'g'), '') AS shelf_code,
+    (COALESCE(NULLIF(regexp_replace(COALESCE(shelf_list, ''), '[\[\]"\s]', '', 'g'), ''), '') = '') AS shelf_missing,
     supplier,
     own_brand,
     snapshot_date
@@ -149,7 +150,6 @@ pending AS (
     array_agg(DISTINCT problem_type) FILTER (WHERE problem_type IS NOT NULL) AS problem_types,
     count(*)::int AS pending_card_cnt,
     min(days_left) AS days_left,
-    -- 0815 Claude止血:expiry_flag 是文本(临期/清仓/过期),原写 bool_or 报"COALESCE types text and boolean cannot be matched"
     (array_agg(expiry_flag ORDER BY ts DESC, id DESC) FILTER (WHERE expiry_flag IS NOT NULL))[1] AS expiry_flag,
     (array_agg(pic_url ORDER BY ts DESC, id DESC) FILTER (WHERE pic_url IS NOT NULL))[1] AS pic_url
   FROM petstore_pricing_log
@@ -216,8 +216,8 @@ SELECT
   dna.restock_verdict,
   dna.restock_qty,
   s.shelf_code,
-  (NULLIF(btrim(COALESCE(s.shelf_code, '')), '') IS NULL) AS shelf_missing,
-  COALESCE(ps.expiry_flag, p.expiry_flag) AS expiry_flag,  -- 0815止血:文本非布尔
+  s.shelf_missing,
+  COALESCE(ps.expiry_flag, p.expiry_flag) AS expiry_flag,
 
   'petstore_stock_ledger'::text AS sales_src,
   'petstore_stock_ledger'::text AS stock_src,
