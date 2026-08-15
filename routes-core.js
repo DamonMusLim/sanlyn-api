@@ -1,15 +1,12 @@
-// ══════════════════════════════════════════════════════════
-// server.js — Express adapter for Alibaba Cloud FC
-// Wraps Vercel serverless handlers into Express routes
-// Deploy: FC HTTP Trigger or standalone Node.js
+// server.js — Express adapter for Alibaba Cloud FC routes.
+import { registerPetHrRoutes } from "./routes-pet-hr.mjs";
 export function registerCoreRoutes(app, mount) {
   mount("/api/db/auth-login",        () => import("./api/db/auth-login.js"));
   mount("/api/db/version",           () => import("./api/db/version.js")); // 版本自检:commit+部署时间 2026-07-07
   mount("/api/db/account-identities", () => import("./api/db/account-identities.js"));
   mount("/api/db/migrate-account-identities", () => import("./api/db/migrate-account-identities.js"));
   mount("/api/tasks-closure", () => import("./api/tasks-closure.js"));
-  // Dev-only fixture login — endpoint self-guards (404 in production, 403 without ENABLE_TEST_AUTH=1)
-  // TOOLCHAIN-TEST-ACCOUNT-FIXTURE-001
+  // Dev-only fixture login; endpoint self-guards.
   mount("/api/db/test-fixture-login", () => import("./api/db/test-fixture-login.js"));
   mount("/api/db/admin",             () => import("./api/db/admin.js"));
   mount("/api/db/accounts",          () => import("./api/db/accounts.js"));
@@ -245,28 +242,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/fix-co-account",    () => import("./api/db/fix-co-account.js"));
   mount("/api/db/countries",         () => import("./api/db/countries.mjs"));
   mount("/api/db/migrate-countries",  () => import("./api/db/migrate-countries.mjs"));
-  mount("/api/db/petstore-pricing-log", () => import("./api/db/petstore-pricing-log.mjs"));
-  mount("/api/db/petstore-pricing", () => import("./api/db/petstore-pricing.js"));
-  mount("/api/db/petstore-health", () => import("./api/db/petstore-health.mjs")); // 宠物店数据体检(只读) [Claude 0721] // petstore AI pricing log (readonly) [Claude 0721]
-  mount("/api/db/hermes-digest", () => import("./api/db/hermes-digest.mjs"));
-  mount("/api/db/hr-employees", () => import("./api/db/hr-employees.mjs")); // 集团HRM员工花名册 [Claude 0728]
-  mount("/api/db/hr-employee-docs", () => import("./api/db/hr-employee-docs.mjs")); // 员工凭据柜(身份证/合同/协议…) [Claude 0803]
-  mount("/api/db/hr-rest", () => import("./api/db/hr-rest.mjs")); // 固定休息日规则 + 调休审批 [Claude 0804]
-  mount("/api/db/hr-contract", () => import("./api/db/hr-contract.mjs")); // 劳动合同模版(人社部范本填空) [Claude 0801]
-  mount("/api/db/hr-shifts", () => import("./api/db/hr-shifts.mjs")); // 集团HRM排班表 [Claude 0728]
-  mount("/api/db/hr-staff-checkin", () => import("./api/db/hr-staff-checkin.mjs")); // 集团HRM打卡只读 [Claude 0728]
-  mount("/api/db/hr-leave-requests", () => import("./api/db/hr-leave-requests.mjs")); // 集团HRM请假审批 [Claude 0728]
-  mount("/api/db/hr-reimbursements", () => import("./api/db/hr-reimbursements.mjs")); // 集团HRM报销审批 [Claude 0728]
-  mount("/api/db/hr-overtime", () => import("./api/db/hr-overtime.mjs")); // 集团HRM加班调休 [Claude 0728]
-  mount("/api/db/hr-payroll", () => import("./api/db/hr-payroll.mjs")); // 集团HRM薪酬算薪 [Claude 0728]
-  mount("/api/db/hr-events", () => import("./api/db/hr-events.mjs")); // 集团HRM入转调离 [Claude 0728]
-  mount("/api/db/hr-handbook", () => import("./api/db/hr-handbook.mjs")); // 集团HRM员工手册 [Claude 0728]
-  mount("/api/db/hr-org-settings", () => import("./api/db/hr-org-settings.mjs")); // 集团HRM组织配置 [Claude 0728]
-  mount("/api/db/hr-profile", () => import("./api/db/hr-profile.mjs")); // 集团HRM串联聚合 [Claude 0728]
-  mount("/api/db/hr-staff-portal", () => import("./api/db/hr-staff-portal.mjs")); // 员工自助(限权token) [Claude 0728]
-  mount("/api/db/hr-staff-auth", () => import("./api/db/hr-staff-auth.mjs")); // 员工端登录(公开,手机号+密码) [Claude 0730]
-  mount("/api/db/hr-apply", () => import("./api/db/hr-apply.mjs")); // 招聘自助投递(公开路径,见 api/auth.js PUBLIC_PATHS) [Claude 0728]
-  mount("/api/db/hr-recruit", () => import("./api/db/hr-recruit.mjs")); // 招聘管理端 [Claude 0728]
+  registerPetHrRoutes(mount);
   mount("/api/db/mailings", () => import("./api/db/mailings.mjs"));
    mount("/api/db/customs-fix-amount", () => import("./api/db/customs-fix-amount.mjs"));
   mount("/api/db/companies",          () => import("./api/db/companies.js"));

@@ -2,6 +2,7 @@
 // 闭环的中段:老板在详情页点采纳 → 这里排队 → Studio 每5分钟取走执行 → 回写状态
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { reportFailure } from "./lib/report-failure.mjs";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, OPTIONS");
@@ -63,6 +64,11 @@ export default async function handler(req, res) {
     }
     res.status(405).json({ success: false, error: "GET/POST only" });
   } catch (err) {
+    await reportFailure("petstore-intents", err, {
+      impact: "定价意图认领/回写失败，可能导致改价管线静默卡住",
+      method: req.method,
+      action: req.body?.action || null,
+    }, { pool });
     res.status(500).json({ success: false, error: err.message });
   }
 }

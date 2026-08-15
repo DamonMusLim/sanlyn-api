@@ -20,6 +20,8 @@ import {
   D, PRIVATE_ROOT, agendaFor, reviewPhoto, openChecklist,
   todoFor, saveReceipt, savePrivateIdCard, monthOf,
 } from "./hr-staff-portal-lib.mjs";
+import { managerExtras, tryManagerAction } from "./hr-manager-mobile.mjs";
+import { reportFailure } from "./lib/report-failure.mjs";
 
 // 员工自己传的证件也进凭据柜(hr_employee_docs)。存不进去不影响他交资料 —— 快捷指针已经写了。
 async function vaultPut(pool, company, empId, kind, rel, mime) {
@@ -132,6 +134,7 @@ export default async function handler(req, res) {
       const todayCk = await pool.query(
         `SELECT id, checkin_at, checkout_at, source FROM hr_staff_checkin
           WHERE employee_ref=$1 AND checkin_date=$2 ORDER BY checkin_at DESC LIMIT 1`, [empId, today]);
+      const manager = await managerExtras(pool, empId, me);
       return res.status(200).json({
         success: true, today,
         today_checkin: todayCk.rows[0] || null,
@@ -167,6 +170,7 @@ export default async function handler(req, res) {
         agenda: await agendaFor(pool, me.company_code, today),
         shifts: shifts.rows, leaves: leaves.rows, reimbursements: reimb.rows,
         payslips: pay.rows, overtime: ot.rows, handbook: book.rows,
+        manager,
       });
     }
 
@@ -175,6 +179,8 @@ export default async function handler(req, res) {
       const action = b.action;
       // 「今天」按 +08 算,unlock 和调休都用这一个,别各算各的
       const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+
+      if (await tryManagerAction({ action, b, res, pool, me, empId })) return;
 
       // ── 打卡开门（0730 Damon 定名）─────────────────────────────
       // 一个动作 = 开门 + 打卡 + 摄像头抓拍。设计意图(Damon原话)：
@@ -428,6 +434,12 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
   } catch (err) {
+    await reportFailure("hr-staff-portal", err, {
+      impact: "员工端/店长端手机工作台不可用或提交失败",
+      employee_id: empId || null,
+      method: req.method,
+      action: req.body?.action || null,
+    }, { pool });
     return res.status(500).json({ success: false, error: err.message });
   }
 }

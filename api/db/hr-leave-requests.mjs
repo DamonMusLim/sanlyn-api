@@ -1,12 +1,15 @@
 // /api/db/hr-leave-requests.mjs — 集团HRM · 员工请假申请+审批
 // GET 列表 / POST 新建请假 / PATCH 仅限审批字段(status/review_note/reviewed_by/reviewed_at)。
 import { getPool, setCors } from "./db.js";
+import { requireAuth } from "./auth.js";
+import { reportFailure } from "./lib/report-failure.mjs";
 
 const APPROVAL_FIELDS = ["status", "review_note", "reviewed_by"];
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
   const pool = getPool();
 
   try {
@@ -69,6 +72,11 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
   } catch (err) {
+    await reportFailure("hr-leave-requests", err, {
+      impact: "请假审批列表/审批动作失败",
+      method: req.method,
+      user: req.user?.username || req.user?.account || req.user?.sub || null,
+    }, { pool });
     return res.status(500).json({ success: false, error: err.message });
   }
 }

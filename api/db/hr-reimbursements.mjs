@@ -5,6 +5,8 @@
 import fs from "fs";
 import path from "path";
 import { getPool, setCors } from "./db.js";
+import { requireAuth } from "./auth.js";
+import { reportFailure } from "./lib/report-failure.mjs";
 
 const UPLOAD_DIR = "/opt/sanlyn-uploads/reimbursement";
 // 绝对域名：SPA 同时跑在 ai.sanlyn.cn 和 pet.sanlyn.cn 两个域，相对路径 /uploads/... 在 pet 域会404
@@ -28,6 +30,7 @@ function saveReceipt(filename, mime, dataB64) {
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (!requireAuth(req, res)) return;
   const pool = getPool();
 
   try {
@@ -98,6 +101,11 @@ export default async function handler(req, res) {
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
   } catch (err) {
+    await reportFailure("hr-reimbursements", err, {
+      impact: "报销审批列表/审批动作失败",
+      method: req.method,
+      user: req.user?.username || req.user?.account || req.user?.sub || null,
+    }, { pool });
     return res.status(500).json({ success: false, error: err.message });
   }
 }

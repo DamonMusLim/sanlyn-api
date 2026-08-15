@@ -1,0 +1,25 @@
+export function registerPetHrRoutes(mount) {
+  mount("/api/db/petstore-pricing-log", () => import("./api/db/petstore-pricing-log.mjs"));
+  mount("/api/db/petstore-pricing", () => import("./api/db/petstore-pricing.js"));
+  mount("/api/db/petstore-health", () => import("./api/db/petstore-health.mjs"));
+  mount("/api/db/hermes-digest", () => import("./api/db/hermes-digest.mjs"));
+  mount("/api/db/hr-employees", () => import("./api/db/hr-employees.mjs"));
+  mount("/api/db/hr-employee-docs", () => import("./api/db/hr-employee-docs.mjs"));
+  mount("/api/db/hr-rest", () => import("./api/db/hr-rest.mjs"));
+  mount("/api/db/hr-contract", () => import("./api/db/hr-contract.mjs"));
+  mount("/api/db/hr-shifts", () => import("./api/db/hr-shifts.mjs"));
+  mount("/api/db/hr-staff-checkin", () => import("./api/db/hr-staff-checkin.mjs"));
+  mount("/api/db/hr-leave-requests", () => import("./api/db/hr-leave-requests.mjs"));
+  mount("/api/db/hr-reimbursements", () => import("./api/db/hr-reimbursements.mjs"));
+  mount("/api/db/hr-overtime", () => import("./api/db/hr-overtime.mjs"));
+  mount("/api/db/hr-payroll", () => import("./api/db/hr-payroll.mjs"));
+  mount("/api/db/hr-events", () => import("./api/db/hr-events.mjs"));
+  mount("/api/db/hr-handbook", () => import("./api/db/hr-handbook.mjs"));
+  mount("/api/db/hr-org-settings", () => import("./api/db/hr-org-settings.mjs"));
+  mount("/api/db/hr-profile", () => import("./api/db/hr-profile.mjs"));
+  mount("/api/db/hr-staff-portal", () => import("./api/db/hr-staff-portal.mjs"));
+  mount("/api/db/hr-staff-auth", () => import("./api/db/hr-staff-auth.mjs"));
+  mount("/api/db/hr-apply", () => import("./api/db/hr-apply.mjs"));
+  mount("/api/db/hr-recruit", () => import("./api/db/hr-recruit.mjs"));
+  mount("/api/db/job-failures", () => import("./api/db/job-failures.mjs"));
+}
