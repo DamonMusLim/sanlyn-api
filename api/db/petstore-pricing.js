@@ -3,6 +3,7 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { getDailySales, postStockNote } from "./petstore-pricing-sales.js";
 import { createCardPriceIntents } from "./petstore-pricing-card-intents.js";
+import { requirePricingCardBatchOwner, requirePricingCardSession } from "./petstore-pricing-card-auth.js";
 import { loadMarketTruthForCodes } from "./pricing/market-truth.js";
 
 const MAX_LIMIT = 100;
@@ -165,13 +166,13 @@ async function getCardView(req, res) {
   return json(res, 200, { ok: true, data });
 }
 
-async function postCardConfirm(req, res, bodyArg) {
+async function postCardConfirm(req, res, bodyArg, cardSession) {
   const body = bodyArg || await readBody(req);
   const badBodyKeys = rejectUnknownKeys(body, CARD_BODY_KEYS);
   if (badBodyKeys.length) return json(res, 400, { ok: false, error: "unknown_fields", fields: badBodyKeys });
   const batchToken = String(body.batch_token || "").trim();
+  if (!(await requirePricingCardBatchOwner(req, res, batchToken, cardSession))) return;
   const decisions = Array.isArray(body.decisions) ? body.decisions : [];
-  if (!batchToken) return json(res, 400, { ok: false, error: "batch_token_required" });
   if (!decisions.length) return json(res, 400, { ok: false, error: "decisions_required" });
   if (decisions.length > 200) return json(res, 400, { ok: false, error: "too_many_decisions", max: 200 });
 
@@ -417,9 +418,17 @@ export default async function handler(req, res) {
     const action = req.method === "GET" ? req.query?.action : body?.action;
     const cardAction = (req.method === "GET" && req.query?.view === "card") || (req.method === "POST" && action === "card_confirm");
     if (cardAction) {
-      if (!req.headers["x-clerk-session"]) return json(res, 401, { ok: false, error: "clerk_session_required" });
+      let cardSession = null;
+      if (req.headers["x-clerk-session"]) {
+        cardSession = requirePricingCardSession(req, res);
+        if (!cardSession) return;
+      } else {
+        if (!requireAuth(req, res)) return;
+        if (!requireBoss(req, res)) return;
+        cardSession = { role: "boss", source: "pricing_boss" };
+      }
       if (req.method === "GET" && req.query?.view === "card") return getCardView(req, res);
-      return postCardConfirm(req, res, body);
+      return postCardConfirm(req, res, body, cardSession);
     }
     if (!requireAuth(req, res)) return;
     if (!requireBoss(req, res)) return;
