@@ -3,6 +3,7 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { getDailySales, postStockNote } from "./petstore-pricing-sales.js";
 import { createCardPriceIntents } from "./petstore-pricing-card-intents.js";
+import { loadMarketTruthForCodes } from "./pricing/market-truth.js";
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 30;
@@ -259,13 +260,7 @@ async function postCardConfirm(req, res, bodyArg) {
 }
 
 function audit(api, id, verdict, price) {
-  console.info(JSON.stringify({
-    ts: new Date().toISOString(),
-    api,
-    id,
-    verdict: verdict || null,
-    price: price ?? null,
-  }));
+  console.info(JSON.stringify({ ts: new Date().toISOString(), api, id, verdict: verdict || null, price: price ?? null }));
 }
 
 async function getQueue(req, res) {
@@ -298,21 +293,15 @@ async function getQueue(req, res) {
 
   const sql = `
     WITH ranked AS (
-      SELECT *,
-        row_number() OVER (
-          PARTITION BY product_code
-          ORDER BY ts DESC, id DESC
-        ) AS rn
+      SELECT *, row_number() OVER (PARTITION BY product_code ORDER BY ts DESC, id DESC) AS rn
       FROM petstore_pricing_log
       WHERE ${filters.join(" AND ")}
     ),
-    latest AS (
-      SELECT * FROM ranked WHERE rn = 1
-    )
+    latest AS (SELECT * FROM ranked WHERE rn = 1)
     ${highstockJoin}
     SELECT
       l.id, l.ts, l.log_date, l.store_code, l.channel, l.product_code,
-      l.product_name, l.old_price, l.new_price, l.rate, l.reason, l.result,
+      l.product_name, l.old_price, l.new_price AS log_new_price, l.rate, l.reason, l.result,
       l.days_left, l.tier, l.source_hash, l.synced_at,
       l.mkt_price, l.mkt_store, l.mkt_sold, l.mkt_total_sold,
       l.mkt_n_stores, l.mkt_matched_title, l.mkt_conf, l.mkt_captured_at,
@@ -328,37 +317,7 @@ async function getQueue(req, res) {
 
   const { rows } = await pool.query(sql, [limit, offset]);
   const codes = rows.map((r) => r.product_code).filter(Boolean);
-
-  let quotesByCode = {};
-  if (codes.length) {
-    const quotes = await pool.query(`
-      SELECT
-        product_code, store_name, source, source_tier, matched_title, spec_text,
-        price, orig_price, monthly_sales, match_conf, captured_at
-      FROM (
-        SELECT
-          q.product_code, q.store_name, q.source, q.source_tier, q.matched_title,
-          q.spec_text, q.price, q.orig_price, q.monthly_sales, q.match_conf,
-          q.captured_at,
-          row_number() OVER (
-            PARTITION BY q.product_code
-            ORDER BY COALESCE(q.monthly_sales,0) DESC, q.captured_at DESC
-          ) AS rn
-        FROM petstore_market_quotes q
-        WHERE q.product_code = ANY($1)
-          AND q.captured_at >= now() - interval '14 days'
-      ) t
-      WHERE rn <= 8
-      ORDER BY product_code, COALESCE(monthly_sales,0) DESC, captured_at DESC
-    `, [codes]);
-
-    quotesByCode = quotes.rows.reduce((acc, q) => {
-      const { product_code: code, ...quote } = q;
-      if (!acc[code]) acc[code] = [];
-      acc[code].push(quote);
-      return acc;
-    }, {});
-  }
+  const market = await loadMarketTruthForCodes(pool, codes);
 
   return json(res, 200, {
     success: true,
@@ -367,7 +326,16 @@ async function getQueue(req, res) {
     limit,
     cursor: offset,
     next_cursor: rows.length === limit ? String(offset + limit) : null,
-    rows: rows.map((row) => ({ ...row, quotes: quotesByCode[row.product_code] || [] })),
+    rows: rows.map((row) => {
+      const ref = market.refByCode[row.product_code] || null;
+      return {
+        ...row,
+        new_price: ref && ref.basis === "valid_comparable_quote" ? ref.value : null,
+        market_ref: ref,
+        quotes: market.quotesByCode[row.product_code] || [],
+        excluded: market.excludedByCode[row.product_code] || [],
+      };
+    }),
   });
 }
 
@@ -383,18 +351,13 @@ async function getStats(req, res) {
         ELSE 'other'
       END AS tab,
       count(*) FILTER (WHERE exec_status = 'pending')::int AS pending,
-      count(*) FILTER (
-        WHERE exec_status IN ('approved','rejected')
-          AND confirmed_at::date = current_date
-      )::int AS done_today,
+      count(*) FILTER (WHERE exec_status IN ('approved','rejected') AND confirmed_at::date = current_date)::int AS done_today,
       count(*) FILTER (WHERE exec_status = 'failed')::int AS failed
     FROM petstore_pricing_log
     GROUP BY 1
   `);
   return json(res, 200, { success: true, rows });
 }
-
-
 
 async function postVerdict(req, res, bodyArg) {
   const body = bodyArg || await readBody(req);
@@ -403,34 +366,19 @@ async function postVerdict(req, res, bodyArg) {
   const reason = body.reason ? String(body.reason).trim() : null;
   const price = body.price === "" || body.price == null ? null : Number(body.price);
 
-  if (!id || !ALLOWED_VERDICTS.includes(verdict)) {
-    return json(res, 400, { success: false, error: "bad_request" });
-  }
-  if (verdict === "我定价" && (!Number.isFinite(price) || price < 0)) {
-    return json(res, 400, { success: false, error: "price_required" });
-  }
-  if (verdict === "驳回" && !REJECT_REASONS.includes(reason)) {
-    return json(res, 400, { success: false, error: "reject_reason_required" });
-  }
+  if (!id || !ALLOWED_VERDICTS.includes(verdict)) return json(res, 400, { success: false, error: "bad_request" });
+  if (verdict === "我定价" && (!Number.isFinite(price) || price < 0)) return json(res, 400, { success: false, error: "price_required" });
+  if (verdict === "驳回" && !REJECT_REASONS.includes(reason)) return json(res, 400, { success: false, error: "reject_reason_required" });
 
   const pool = getPool();
-  const current = await pool.query(
-    "SELECT id, confirmed_at, exec_status FROM petstore_pricing_log WHERE id=$1",
-    [id],
-  );
+  const current = await pool.query("SELECT id, confirmed_at, exec_status FROM petstore_pricing_log WHERE id=$1", [id]);
   if (!current.rowCount) return json(res, 404, { success: false, error: "not_found" });
-  if (current.rows[0].confirmed_at) {
-    return json(res, 409, { success: false, error: "already_confirmed", row: current.rows[0] });
-  }
+  if (current.rows[0].confirmed_at) return json(res, 409, { success: false, error: "already_confirmed", row: current.rows[0] });
 
   const status = verdict === "驳回" ? "rejected" : "approved";
   const result = await pool.query(`
     UPDATE petstore_pricing_log
-    SET damon_verdict=$2,
-        damon_price=$3,
-        damon_reason=$4,
-        confirmed_at=now(),
-        exec_status=$5
+    SET damon_verdict=$2, damon_price=$3, damon_reason=$4, confirmed_at=now(), exec_status=$5
     WHERE id=$1 AND confirmed_at IS NULL
     RETURNING *
   `, [id, verdict, price, reason, status]);
@@ -449,9 +397,7 @@ async function postUndo(req, res, bodyArg) {
     SET exec_status='pending',
         confirmed_at=NULL,
         damon_reason=concat_ws(' ', damon_reason, '[撤回 ' || to_char(now(), 'YYYY-MM-DD HH24:MI:SS') || ']')
-    WHERE id=$1
-      AND exec_status='approved'
-      AND executed_at IS NULL
+    WHERE id=$1 AND exec_status='approved' AND executed_at IS NULL
     RETURNING *
   `, [id]);
 
@@ -469,8 +415,7 @@ export default async function handler(req, res) {
   try {
     const body = req.method === "POST" ? await readBody(req) : null;
     const action = req.method === "GET" ? req.query?.action : body?.action;
-    const cardAction = (req.method === "GET" && req.query?.view === "card") ||
-      (req.method === "POST" && action === "card_confirm");
+    const cardAction = (req.method === "GET" && req.query?.view === "card") || (req.method === "POST" && action === "card_confirm");
     if (cardAction) {
       if (!req.headers["x-clerk-session"]) return json(res, 401, { ok: false, error: "clerk_session_required" });
       if (req.method === "GET" && req.query?.view === "card") return getCardView(req, res);
