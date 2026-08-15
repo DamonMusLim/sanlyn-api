@@ -66,6 +66,25 @@ async function requireDecider(req, res, pool, body = {}) {
   return person;
 }
 
+function unsupportedFields(body) {
+  const names = {
+    offline_price: "线下价",
+    online_price: "线上价",
+    shelf_code: "货位",
+    cur_stock: "库存",
+    expiry_date: "到期日",
+    off_shelf: "下架停售",
+    mark_dead: "标记死货",
+  };
+  const out = [];
+  const changes = body.other_changes && typeof body.other_changes === "object" ? body.other_changes : {};
+  for (const key of Object.keys(names)) {
+    const v = body[key] ?? changes[key];
+    if (v !== undefined && v !== null && v !== "" && v !== false) out.push(names[key]);
+  }
+  return out;
+}
+
 function snapshot(row, body, effectivePrice) {
   return {
     intent: {
@@ -84,12 +103,33 @@ function snapshot(row, body, effectivePrice) {
       action: body.action,
       effective_price: effectivePrice,
       note: text(body.note, 500),
+      batch_ids: body._batch_ids || null,
     },
     guard: {
       cost_price: row.cost_price,
       cost_state: row.cost_state,
     },
   };
+}
+
+function rowEffectivePrice(row, body) {
+  if (body.action !== "approve") return null;
+  const map = body.effective_prices && typeof body.effective_prices === "object" ? body.effective_prices : {};
+  const raw = Object.prototype.hasOwnProperty.call(map, row.id)
+    ? map[row.id]
+    : (row.id === body._primary_id ? body.effective_price : null);
+  return moneyOrNull(raw ?? row.target_price);
+}
+
+function selectedIds(body) {
+  const id = Number.parseInt(String(body.id || ""), 10);
+  const ids = [id];
+  const siblings = body.include_siblings ? (body.sibling_intent_ids || []) : [];
+  for (const raw of siblings) {
+    const n = Number.parseInt(String(raw || ""), 10);
+    if (Number.isFinite(n) && n > 0 && !ids.includes(n)) ids.push(n);
+  }
+  return ids;
 }
 
 async function listIntents(req, res, pool) {
@@ -109,7 +149,24 @@ async function listIntents(req, res, pool) {
         WHEN p.target_price < COALESCE(o.cost_price, s.cost_price) THEN 'blocked'
         ELSE 'ok'
       END AS cost_state,
-      o.store_price, o.mt_price, o.ele_price, o.pic_url, o.category, o.cur_stock
+      o.category, o.spec_text, o.pic_url, o.supplier, o.is_locked_price, o.lock_reason,
+      o.store_price, o.mt_price, o.ele_price, o.market_price, o.market_store,
+      o.market_quote_cnt, o.market_captured_at,
+      o.sales_1d, o.sales_7d, o.sales_30d, o.sales_90d, o.daily_avg_90,
+      o.cur_stock, o.days_of_supply, o.days_left, o.last_sale_at,
+      o.problem_types, o.restock_verdict, o.shelf_code, o.expiry_flag,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'channel', sib.channel,
+          'old_price', sib.old_price,
+          'target_price', sib.target_price,
+          'intent_id', sib.id
+        ) ORDER BY sib.created_at ASC, sib.id ASC)
+        FROM petstore_price_intents sib
+        WHERE sib.product_code = p.product_code
+          AND sib.status = 'proposed'
+          AND sib.id <> p.id
+      ), '[]'::jsonb) AS sibling_channels
     FROM petstore_price_intents p
     LEFT JOIN petstore_ops_row o ON o.product_code = p.product_code
     LEFT JOIN petstore_skus s ON s.product_code = p.product_code
@@ -123,9 +180,15 @@ async function decideIntent(req, res, pool, body) {
   if (!DECISION_ACTIONS.has(String(body.action || ""))) {
     return send(res, 400, { success: false, error: "action 只能是 approve / reject" });
   }
-  const id = Number.parseInt(String(body.id || ""), 10);
-  if (!Number.isFinite(id) || id <= 0) {
+
+  const ids = selectedIds(body);
+  if (!ids.length || !Number.isFinite(ids[0]) || ids[0] <= 0) {
     return send(res, 400, { success: false, error: "id 必填" });
+  }
+
+  const unsupported = unsupportedFields(body);
+  if (unsupported.length) {
+    return send(res, 400, { success: false, error: `${unsupported.join("、")} 暂不可改：当前后端没有写入路径` });
   }
 
   const person = await requireDecider(req, res, pool, body);
@@ -134,7 +197,10 @@ async function decideIntent(req, res, pool, body) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const current = (await client.query(`
+    body._primary_id = ids[0];
+    body._batch_ids = ids.length > 1 ? ids : null;
+
+    const locked = await client.query(`
       SELECT
         p.id, p.product_code, p.product_name, p.channel, p.old_price, p.target_price,
         p.reason, p.author, p.status, p.created_at,
@@ -147,65 +213,85 @@ async function decideIntent(req, res, pool, body) {
       FROM petstore_price_intents p
       LEFT JOIN petstore_ops_row o ON o.product_code = p.product_code
       LEFT JOIN petstore_skus s ON s.product_code = p.product_code
-      WHERE p.id = $1
-      FOR UPDATE OF p`, [id])).rows[0];
+      WHERE p.id = ANY($1::int[])
+      FOR UPDATE OF p`, [ids]);
 
-    if (!current || current.status !== "proposed") {
+    if (locked.rowCount !== ids.length || locked.rows.some((r) => r.status !== "proposed")) {
       await client.query("ROLLBACK");
       return send(res, 409, { success: false, error: "该改价单已被处理或不存在" });
     }
 
-    const effectivePrice = body.action === "approve"
-      ? moneyOrNull(body.effective_price ?? current.target_price)
-      : null;
-    if (body.action === "approve" && (effectivePrice == null || Number.isNaN(effectivePrice) || effectivePrice <= 0)) {
+    const rowsById = new Map(locked.rows.map((r) => [Number(r.id), r]));
+    const orderedRows = ids.map((id) => rowsById.get(id));
+    const primaryCode = orderedRows[0].product_code;
+    const wrongSku = orderedRows.find((r) => String(r.product_code) !== String(primaryCode));
+    if (wrongSku) {
       await client.query("ROLLBACK");
-      return send(res, 400, { success: false, error: "批准时 effective_price 必须是正数" });
-    }
-    const cost = moneyOrNull(current.cost_price);
-    if (body.action === "approve" && cost != null && !Number.isNaN(cost) && effectivePrice < cost) {
-      await client.query("ROLLBACK");
-      return send(res, 409, { success: false, error: "批准价低于成本，已拦截", cost_price: cost, effective_price: effectivePrice });
+      return send(res, 400, { success: false, error: "同批提交只能处理同一个商品的其他渠道" });
     }
 
-    const note = text(body.note, 500);
-    const snap = JSON.stringify(snapshot(current, body, effectivePrice));
-    const params = [id, person.person_id, note, snap];
-    let updated;
-
-    if (body.action === "approve") {
-      params.push(effectivePrice);
-      updated = await client.query(`
-        UPDATE petstore_price_intents
-           SET status = 'approved',
-               target_price = $5,
-               decided_by_person_id = $2,
-               decided_at = now(),
-               decided_note = $3,
-               decided_snapshot = $4::jsonb
-         WHERE id = $1 AND status = 'proposed'
-         RETURNING id, product_code, product_name, channel, old_price, target_price,
-                   status, decided_by_person_id, decided_at, decided_note, decided_snapshot`, params);
-    } else {
-      updated = await client.query(`
-        UPDATE petstore_price_intents
-           SET status = 'rejected',
-               decided_by_person_id = $2,
-               decided_at = now(),
-               decided_note = $3,
-               decided_snapshot = $4::jsonb
-         WHERE id = $1 AND status = 'proposed'
-         RETURNING id, product_code, product_name, channel, old_price, target_price,
-                   status, decided_by_person_id, decided_at, decided_note, decided_snapshot`, params);
+    for (const row of orderedRows) {
+      const effectivePrice = rowEffectivePrice(row, body);
+      if (body.action === "approve" && (effectivePrice == null || Number.isNaN(effectivePrice) || effectivePrice <= 0)) {
+        await client.query("ROLLBACK");
+        return send(res, 400, { success: false, error: `${row.channel || row.id} 批准价必须是正数` });
+      }
+      const cost = moneyOrNull(row.cost_price);
+      if (body.action === "approve" && cost != null && !Number.isNaN(cost) && effectivePrice < cost) {
+        await client.query("ROLLBACK");
+        return send(res, 409, {
+          success: false,
+          error: `${row.channel || row.id} 批准价低于成本，整体未提交`,
+          intent_id: row.id,
+          cost_price: cost,
+          effective_price: effectivePrice,
+        });
+      }
     }
 
-    if (updated.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return send(res, 409, { success: false, error: "该改价单已被处理" });
+    const updatedRows = [];
+    for (const row of orderedRows) {
+      const effectivePrice = rowEffectivePrice(row, body);
+      const note = text(body.note, 500);
+      const snap = JSON.stringify(snapshot(row, body, effectivePrice));
+      const params = [row.id, person.person_id, note, snap];
+      let updated;
+
+      if (body.action === "approve") {
+        params.push(effectivePrice);
+        updated = await client.query(`
+          UPDATE petstore_price_intents
+             SET status = 'approved',
+                 target_price = $5,
+                 decided_by_person_id = $2,
+                 decided_at = now(),
+                 decided_note = $3,
+                 decided_snapshot = $4::jsonb
+           WHERE id = $1 AND status = 'proposed'
+           RETURNING id, product_code, product_name, channel, old_price, target_price,
+                     status, decided_by_person_id, decided_at, decided_note, decided_snapshot`, params);
+      } else {
+        updated = await client.query(`
+          UPDATE petstore_price_intents
+             SET status = 'rejected',
+                 decided_by_person_id = $2,
+                 decided_at = now(),
+                 decided_note = $3,
+                 decided_snapshot = $4::jsonb
+           WHERE id = $1 AND status = 'proposed'
+           RETURNING id, product_code, product_name, channel, old_price, target_price,
+                     status, decided_by_person_id, decided_at, decided_note, decided_snapshot`, params);
+      }
+
+      if (updated.rowCount === 0) {
+        await client.query("ROLLBACK");
+        return send(res, 409, { success: false, error: "该改价单已被处理" });
+      }
+      updatedRows.push(updated.rows[0]);
     }
 
     await client.query("COMMIT");
-    return send(res, 200, { success: true, row: updated.rows[0] });
+    return send(res, 200, { success: true, row: updatedRows[0], rows: updatedRows });
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     console.error("[petstore-pricing-decide]", err);
