@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
-import { requireAuth } from "../auth.js";
+import { requireAuth, verifyToken } from "../auth.js";
 import { getDailySales, postStockNote } from "./petstore-pricing-sales.js";
 import { createCardPriceIntents } from "./petstore-pricing-card-intents.js";
 import { requirePricingCardBatchOwner, requirePricingCardSession } from "./petstore-pricing-card-auth.js";
@@ -47,11 +47,11 @@ function timingTokenMatches(input, expected) {
 function decodeJwtPayload(req) {
   const auth = String(req.headers.authorization || "");
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
-  const payloadPart = token.split(".")[1];
-  if (!payloadPart) return {};
+  if (!token) return {};
   try {
-    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payloadPart.length / 4) * 4, "=");
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+    /* 0817: 原来只 base64 解码不验签 —— requireBoss 拿它比对 username,
+       这条路由一旦被挂到全局中间件之外就是直接越权改价。改用会验签的 verifyToken。 */
+    return verifyToken(token) || {};
   } catch (e) {
     return {};
   }
