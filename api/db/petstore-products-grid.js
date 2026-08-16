@@ -1,3 +1,4 @@
+
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
@@ -301,6 +302,15 @@ async function getList(req, res) {
       market_src_id, as_of,
       pet_type, shelf_life_days, expire_date_batch, compliance_status, shelf_location,
       brand_final, brand_guess, brand_src, series, series_src,
+      -- Claude 止血改：旧视图 petstore_ops_row 没有 margin_pct 列（只有 v2 影子有），
+      -- 直接选会报 column does not exist，页面整个挂掉。改为按线下价现算毛利率。
+      CASE WHEN store_price IS NULL OR store_price = 0 OR cost_price IS NULL THEN NULL
+           ELSE round(((store_price - cost_price) / store_price * 100)::numeric, 2)
+      END AS margin_pct,
+      round(market_price_prev::numeric, 2) AS market_price_prev,
+      round(market_price_delta::numeric, 2) AS market_price_delta,
+      round(market_price_delta_pct::numeric, 2) AS market_price_delta_pct,
+      market_days_unchanged,
       ARRAY[]::jsonb[] AS items
     FROM final_rows
     ${where}
