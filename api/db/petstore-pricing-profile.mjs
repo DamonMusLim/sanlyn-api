@@ -14,6 +14,12 @@ function hasOwn(obj, key) {
   return Object.prototype.hasOwnProperty.call(obj || {}, key);
 }
 
+const DEFAULT_STOCKTAKE_STORE_CODE = "63350001";
+
+function stocktakeStoreCode() {
+  return text(process.env.PETSTORE_STOCKTAKE_STORE_CODE || DEFAULT_STOCKTAKE_STORE_CODE, 80);
+}
+
 const STOCK_REASONS = new Set([
   "PRODUCT_DAMAGE",
   "PRODUCT_LOSE",
@@ -89,6 +95,41 @@ export async function applyProfileUpdate(pool, body, primaryId, person) {
     }
 
     const row = before.rows[0];
+    let stockBook = null;
+    let stockDiff = null;
+    let stockStoreCode = null;
+
+    if (stock.requested) {
+      stockBook = moneyOrNull(row.cur_stock);
+      stockStoreCode = stocktakeStoreCode();
+
+      if (stockBook == null || Number.isNaN(stockBook)) {
+        await client.query("ROLLBACK");
+        return {
+          conflict: true,
+          status: 400,
+          error: "账面库存未知,无法建盘点差异单 —— 请先到果冻橙确认账面数",
+          updated: [],
+          snapshot: null,
+          intents: {},
+        };
+      }
+
+      if (!stockStoreCode) {
+        await client.query("ROLLBACK");
+        return {
+          conflict: true,
+          status: 400,
+          error: "门店编码缺失,无法建盘点差异单",
+          updated: [],
+          snapshot: null,
+          intents: {},
+        };
+      }
+
+      stockDiff = stock.value - stockBook;
+    }
+
     const changed = keys.filter((key) => profileChanged(row[key], patch[key]));
     const updatedLabels = changed.map(profileLabel);
     const actions = {};
@@ -154,8 +195,6 @@ export async function applyProfileUpdate(pool, body, primaryId, person) {
     }
 
     if (stock.requested) {
-      const book = moneyOrNull(row.cur_stock);
-      const diff = book == null || Number.isNaN(book) ? null : stock.value - book;
       const inserted = await client.query(`
         INSERT INTO petstore_stocktake
           (ymd, store_code, product_code, product_name, book_qty, count_qty, diff,
@@ -164,15 +203,15 @@ export async function applyProfileUpdate(pool, body, primaryId, person) {
           (CURRENT_DATE, $1, $2, $3, $4, $5, $6,
            $7, 'pending', $8, $9, now(), now())
         RETURNING id`,
-        [text(body.store_code, 80), row.product_code, row.product_name, book, stock.value,
-          diff, String(body.stock_reason || ""), text(body.note, 500), person.person_id]);
+        [stockStoreCode, row.product_code, row.product_name, stockBook, stock.value,
+          stockDiff, String(body.stock_reason || ""), text(body.note, 500), person.person_id]);
       updatedLabels.push("已建盘点差异单(待审核)");
       actions.stock_count = {
         status: "pending",
         stocktake_id: inserted.rows[0].id,
-        book_qty: book,
+        book_qty: stockBook,
         count_qty: stock.value,
-        diff,
+        diff: stockDiff,
         reason: String(body.stock_reason || ""),
       };
     }
