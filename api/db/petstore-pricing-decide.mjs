@@ -1,6 +1,8 @@
+// api/db/petstore-pricing-decide.mjs
 import { getPool, setCors } from "./db.js";
 import { verifyToken } from "./auth.js";
 import { resolvePerson, capSources } from "./authz.js";
+import { applyProfileUpdate, validateProfileActions } from "./petstore-pricing-profile.mjs";
 
 const MAX_LIMIT = 80;
 const DECISION_ACTIONS = new Set(["approve", "reject"]);
@@ -24,10 +26,6 @@ function moneyOrNull(value) {
   if (value === "" || value == null) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : NaN;
-}
-
-function hasOwn(obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj || {}, key);
 }
 
 function tokenFrom(req, body = {}) {
@@ -73,103 +71,16 @@ async function requireDecider(req, res, pool, body = {}) {
 function unsupportedFields(body) {
   const changes = body.other_changes && typeof body.other_changes === "object" ? body.other_changes : {};
   const bad = [];
-
   const offline = body.offline_price ?? changes.offline_price;
   const online = body.online_price ?? changes.online_price;
   const shelfCode = body.shelf_code ?? changes.shelf_code;
   const expiryDate = body.expiry_date ?? changes.expiry_date;
-  const stock = body.cur_stock ?? changes.cur_stock;
-  const offShelf = body.off_shelf ?? changes.off_shelf;
-  const markDead = body.mark_dead ?? changes.mark_dead;
 
   if (offline !== undefined && offline !== null && offline !== "") bad.push("线下价暂不可改：当前后端没有写入路径");
   if (online !== undefined && online !== null && online !== "") bad.push("线上价暂不可改：当前后端没有写入路径");
   if (shelfCode !== undefined && shelfCode !== null && shelfCode !== "") bad.push("货位请使用 shelf_location 写入");
   if (expiryDate !== undefined && expiryDate !== null && expiryDate !== "") bad.push("到期日请使用 expire_date_batch 写入");
-  if (stock !== undefined && stock !== null && stock !== "") bad.push("库存真源在果冻橙，这里改了会被同步覆盖，请到果冻橙改");
-  if (offShelf !== undefined && offShelf !== null && offShelf !== "" && offShelf !== false) bad.push("下架停售对顾客可见且不可逆，需单独确认后再开");
-  if (markDead !== undefined && markDead !== null && markDead !== "" && markDead !== false) bad.push("标记死货对顾客可见且不可逆，需单独确认后再开");
-
   return bad;
-}
-
-function profilePatch(body) {
-  const patch = {};
-  if (hasOwn(body, "shelf_location")) patch.shelf_location = text(body.shelf_location, 120);
-  if (hasOwn(body, "expire_date_batch")) patch.expire_date_batch = text(body.expire_date_batch, 80);
-  return patch;
-}
-
-function profileLabel(key) {
-  return key === "shelf_location" ? "货位" : "到期日";
-}
-
-function profileChanged(oldValue, newValue) {
-  return String(oldValue ?? "").trim() !== String(newValue ?? "").trim();
-}
-
-async function applyProfileUpdate(pool, body, primaryId, person) {
-  const patch = profilePatch(body);
-  const keys = Object.keys(patch);
-  if (!keys.length) return { updated: [], snapshot: null };
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    const before = await client.query(`
-      SELECT
-        p.product_code,
-        ps.shelf_location,
-        ps.expire_date_batch
-      FROM petstore_price_intents p
-      LEFT JOIN petstore_sku_supp ps ON ps.product_code = p.product_code
-      WHERE p.id = $1`, [primaryId]);
-
-    if (before.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return { notFound: true, updated: [], snapshot: null };
-    }
-
-    const row = before.rows[0];
-    const changed = keys.filter((key) => profileChanged(row[key], patch[key]));
-    if (!changed.length) {
-      await client.query("COMMIT");
-      return { updated: [], snapshot: null };
-    }
-
-    await client.query(`
-      INSERT INTO petstore_sku_supp (product_code, shelf_location, expire_date_batch)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (product_code) DO UPDATE SET
-        shelf_location = COALESCE(EXCLUDED.shelf_location, petstore_sku_supp.shelf_location),
-        expire_date_batch = COALESCE(EXCLUDED.expire_date_batch, petstore_sku_supp.expire_date_batch)`,
-      [row.product_code, hasOwn(patch, "shelf_location") ? patch.shelf_location : null,
-        hasOwn(patch, "expire_date_batch") ? patch.expire_date_batch : null]);
-
-    await client.query("COMMIT");
-    return {
-      updated: changed.map(profileLabel),
-      snapshot: {
-        product_code: row.product_code,
-        decided_by_person_id: person.person_id,
-        before: {
-          shelf_location: row.shelf_location,
-          expire_date_batch: row.expire_date_batch,
-        },
-        after: {
-          shelf_location: hasOwn(patch, "shelf_location") ? patch.shelf_location : row.shelf_location,
-          expire_date_batch: hasOwn(patch, "expire_date_batch") ? patch.expire_date_batch : row.expire_date_batch,
-        },
-        updated: changed.map(profileLabel),
-      },
-    };
-  } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 
 function snapshot(row, body, effectivePrice, profileResult) {
@@ -281,10 +192,15 @@ async function decideIntent(req, res, pool, body) {
     return send(res, 400, { success: false, error: unsupported.join("；") });
   }
 
+  const actionError = validateProfileActions(body);
+  if (actionError) {
+    return send(res, 400, { success: false, error: actionError });
+  }
+
   const person = await requireDecider(req, res, pool, body);
   if (!person) return null;
 
-  let profileResult = { updated: [], snapshot: null };
+  let profileResult = { updated: [], snapshot: null, intents: {} };
   try {
     profileResult = await applyProfileUpdate(pool, body, ids[0], person);
   } catch (err) {
@@ -293,6 +209,14 @@ async function decideIntent(req, res, pool, body) {
   }
   if (profileResult.notFound) {
     return send(res, 409, { success: false, error: "该改价单已被处理或不存在", profile_updated: [] });
+  }
+  if (profileResult.conflict) {
+    return send(res, profileResult.status || 409, {
+      success: false,
+      error: profileResult.error,
+      profile_updated: profileResult.updated,
+      ...profileResult.intents,
+    });
   }
 
   const client = await pool.connect();
@@ -319,7 +243,7 @@ async function decideIntent(req, res, pool, body) {
 
     if (locked.rowCount !== ids.length || locked.rows.some((r) => r.status !== "proposed")) {
       await client.query("ROLLBACK");
-      return send(res, 409, { success: false, error: "该改价单已被处理或不存在", profile_updated: profileResult.updated });
+      return send(res, 409, { success: false, error: "该改价单已被处理或不存在", profile_updated: profileResult.updated, ...profileResult.intents });
     }
 
     const rowsById = new Map(locked.rows.map((r) => [Number(r.id), r]));
@@ -328,14 +252,14 @@ async function decideIntent(req, res, pool, body) {
     const wrongSku = orderedRows.find((r) => String(r.product_code) !== String(primaryCode));
     if (wrongSku) {
       await client.query("ROLLBACK");
-      return send(res, 400, { success: false, error: "同批提交只能处理同一个商品的其他渠道", profile_updated: profileResult.updated });
+      return send(res, 400, { success: false, error: "同批提交只能处理同一个商品的其他渠道", profile_updated: profileResult.updated, ...profileResult.intents });
     }
 
     for (const row of orderedRows) {
       const effectivePrice = rowEffectivePrice(row, body);
       if (body.action === "approve" && (effectivePrice == null || Number.isNaN(effectivePrice) || effectivePrice <= 0)) {
         await client.query("ROLLBACK");
-        return send(res, 400, { success: false, error: `${row.channel || row.id} 批准价必须是正数`, profile_updated: profileResult.updated });
+        return send(res, 400, { success: false, error: `${row.channel || row.id} 批准价必须是正数`, profile_updated: profileResult.updated, ...profileResult.intents });
       }
       const cost = moneyOrNull(row.cost_price);
       if (body.action === "approve" && cost != null && !Number.isNaN(cost) && effectivePrice < cost) {
@@ -347,6 +271,7 @@ async function decideIntent(req, res, pool, body) {
           cost_price: cost,
           effective_price: effectivePrice,
           profile_updated: profileResult.updated,
+          ...profileResult.intents,
         });
       }
     }
@@ -387,7 +312,7 @@ async function decideIntent(req, res, pool, body) {
 
       if (updated.rowCount === 0) {
         await client.query("ROLLBACK");
-        return send(res, 409, { success: false, error: "该改价单已被处理", profile_updated: profileResult.updated });
+        return send(res, 409, { success: false, error: "该改价单已被处理", profile_updated: profileResult.updated, ...profileResult.intents });
       }
       updatedRows.push(updated.rows[0]);
     }
@@ -399,11 +324,12 @@ async function decideIntent(req, res, pool, body) {
       rows: updatedRows,
       profile_updated: profileResult.updated,
       decision: body.action,
+      ...profileResult.intents,
     });
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     console.error("[petstore-pricing-decide]", err);
-    return send(res, 500, { success: false, error: "服务异常", profile_updated: profileResult.updated });
+    return send(res, 500, { success: false, error: "服务异常", profile_updated: profileResult.updated, ...profileResult.intents });
   } finally {
     client.release();
   }
