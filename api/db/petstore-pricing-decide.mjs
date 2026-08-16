@@ -3,6 +3,7 @@ import { getPool, setCors } from "./db.js";
 import { verifyToken } from "./auth.js";
 import { resolvePerson, capSources } from "./authz.js";
 import { applyProfileUpdate, validateProfileActions } from "./petstore-pricing-profile.mjs";
+import { RIVALS_CTES, RIVALS_JOINS, RIVALS_SELECT } from "./petstore-pricing-rivals.mjs";
 
 const MAX_LIMIT = 80;
 const DECISION_ACTIONS = new Set(["approve", "reject"]);
@@ -174,6 +175,7 @@ async function listIntents(req, res, pool) {
   ORDER BY p.created_at ASC, p.id ASC
   LIMIT $1
 ),
+${RIVALS_CTES},
 category_stats AS MATERIALIZED (
   SELECT
     category AS name,
@@ -212,6 +214,7 @@ brand_stats AS MATERIALIZED (
 )
 SELECT
   p.*,
+  ${RIVALS_SELECT}
   jsonb_build_object(
     'category', CASE
       WHEN cs.sku_cnt >= 3 THEN jsonb_build_object(
@@ -260,6 +263,7 @@ SELECT
 FROM picked p
 LEFT JOIN category_stats cs ON cs.name = p.category
 LEFT JOIN brand_stats bs ON bs.name = p.band_brand_name
+${RIVALS_JOINS}
 ORDER BY p.created_at ASC, p.id ASC;`, [limit]);
   send(res, 200, { success: true, total_pending: total.rows[0]?.total_pending || 0, rows });
 }
