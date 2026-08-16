@@ -151,11 +151,12 @@ async function listIntents(req, res, pool) {
     END AS cost_state,
     o.category, o.spec_text, o.pic_url, o.supplier, o.is_locked_price, o.lock_reason,
     o.store_price, o.mt_price, o.ele_price, o.market_price, o.market_store,
-    o.market_quote_cnt, o.market_captured_at,
+    o.market_quote_cnt, o.market_captured_at, o.barcode,
     o.sales_1d, o.sales_7d, o.sales_30d, o.sales_90d, o.daily_avg_90,
     o.cur_stock, o.days_of_supply, o.days_left, o.last_sale_at,
     o.problem_types, o.restock_verdict, o.expiry_flag,
-    ps.shelf_location, ps.expire_date_batch, ps.brand,
+    COALESCE(NULLIF(ps.shelf_location, ''), o.shelf_code) AS shelf_location,
+    ps.expire_date_batch, ps.brand,
     CASE
       WHEN NULLIF(trim(ps.brand), '') IS NOT NULL THEN trim(ps.brand)
       WHEN length(split_part(trim(p.product_name), ' ', 1)) BETWEEN 1 AND 12
