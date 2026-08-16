@@ -138,42 +138,129 @@ async function listIntents(req, res, pool) {
     SELECT COUNT(*)::int AS total_pending
     FROM petstore_price_intents
     WHERE status = 'proposed'`);
-  const { rows } = await pool.query(`
-    SELECT
-      p.id, p.product_code, p.product_name, p.channel, p.old_price, p.target_price,
-      p.reason, p.author, p.status, p.created_at,
-      COALESCE(o.cost_price, s.cost_price) AS cost_price,
-      CASE
-        WHEN COALESCE(o.cost_price, s.cost_price) IS NULL THEN 'unknown_cost'
-        WHEN p.target_price < COALESCE(o.cost_price, s.cost_price) THEN 'blocked'
-        ELSE 'ok'
-      END AS cost_state,
-      o.category, o.spec_text, o.pic_url, o.supplier, o.is_locked_price, o.lock_reason,
-      o.store_price, o.mt_price, o.ele_price, o.market_price, o.market_store,
-      o.market_quote_cnt, o.market_captured_at,
-      o.sales_1d, o.sales_7d, o.sales_30d, o.sales_90d, o.daily_avg_90,
-      o.cur_stock, o.days_of_supply, o.days_left, o.last_sale_at,
-      o.problem_types, o.restock_verdict, o.expiry_flag,
-      ps.shelf_location, ps.expire_date_batch, ps.brand,
-      COALESCE((
-        SELECT jsonb_agg(jsonb_build_object(
-          'channel', sib.channel,
-          'old_price', sib.old_price,
-          'target_price', sib.target_price,
-          'intent_id', sib.id
-        ) ORDER BY sib.created_at ASC, sib.id ASC)
-        FROM petstore_price_intents sib
-        WHERE sib.product_code = p.product_code
-          AND sib.status = 'proposed'
-          AND sib.id <> p.id
-      ), '[]'::jsonb) AS sibling_channels
-    FROM petstore_price_intents p
-    LEFT JOIN petstore_ops_row o ON o.product_code = p.product_code
-    LEFT JOIN petstore_skus s ON s.product_code = p.product_code
-    LEFT JOIN petstore_sku_supp ps ON ps.product_code = p.product_code
-    WHERE p.status = 'proposed'
-    ORDER BY p.created_at ASC, p.id ASC
-    LIMIT $1`, [limit]);
+  const { rows } = await pool.query(`WITH picked AS MATERIALIZED (
+  SELECT
+    p.id, p.product_code, p.product_name, p.channel, p.old_price, p.target_price,
+    p.reason, p.author, p.status, p.created_at,
+    COALESCE(o.cost_price, s.cost_price) AS cost_price,
+    CASE
+      WHEN COALESCE(o.cost_price, s.cost_price) IS NULL THEN 'unknown_cost'
+      WHEN p.target_price < COALESCE(o.cost_price, s.cost_price) THEN 'blocked'
+      ELSE 'ok'
+    END AS cost_state,
+    o.category, o.spec_text, o.pic_url, o.supplier, o.is_locked_price, o.lock_reason,
+    o.store_price, o.mt_price, o.ele_price, o.market_price, o.market_store,
+    o.market_quote_cnt, o.market_captured_at,
+    o.sales_1d, o.sales_7d, o.sales_30d, o.sales_90d, o.daily_avg_90,
+    o.cur_stock, o.days_of_supply, o.days_left, o.last_sale_at,
+    o.problem_types, o.restock_verdict, o.expiry_flag,
+    ps.shelf_location, ps.expire_date_batch, ps.brand,
+    CASE
+      WHEN NULLIF(trim(ps.brand), '') IS NOT NULL THEN trim(ps.brand)
+      WHEN length(split_part(trim(p.product_name), ' ', 1)) BETWEEN 1 AND 12
+        THEN split_part(trim(p.product_name), ' ', 1)
+      ELSE NULL
+    END AS band_brand_name,
+    CASE
+      WHEN NULLIF(trim(ps.brand), '') IS NULL
+       AND length(split_part(trim(p.product_name), ' ', 1)) BETWEEN 1 AND 12
+      THEN true ELSE false
+    END AS band_brand_inferred
+  FROM petstore_price_intents p
+  LEFT JOIN petstore_ops_row o ON o.product_code = p.product_code
+  LEFT JOIN petstore_skus s ON s.product_code = p.product_code
+  LEFT JOIN petstore_sku_supp ps ON ps.product_code = p.product_code
+  WHERE p.status = 'proposed'
+  ORDER BY p.created_at ASC, p.id ASC
+  LIMIT $1
+),
+category_stats AS MATERIALIZED (
+  SELECT
+    category AS name,
+    COUNT(*)::int AS sku_cnt,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY store_price)::numeric AS median,
+    percentile_cont(0.25) WITHIN GROUP (ORDER BY store_price)::numeric AS p25,
+    percentile_cont(0.75) WITHIN GROUP (ORDER BY store_price)::numeric AS p75
+  FROM petstore_ops_row
+  WHERE NULLIF(trim(category), '') IS NOT NULL
+    AND store_price > 0
+  GROUP BY category
+),
+brand_pool AS MATERIALIZED (
+  SELECT
+    CASE
+      WHEN NULLIF(trim(ps.brand), '') IS NOT NULL THEN trim(ps.brand)
+      WHEN length(split_part(trim(o.product_name), ' ', 1)) BETWEEN 1 AND 12
+        THEN split_part(trim(o.product_name), ' ', 1)
+      ELSE NULL
+    END AS name,
+    o.store_price
+  FROM petstore_ops_row o
+  LEFT JOIN petstore_sku_supp ps ON ps.product_code = o.product_code
+  WHERE o.store_price > 0
+),
+brand_stats AS MATERIALIZED (
+  SELECT
+    name,
+    COUNT(*)::int AS sku_cnt,
+    percentile_cont(0.5) WITHIN GROUP (ORDER BY store_price)::numeric AS median,
+    percentile_cont(0.25) WITHIN GROUP (ORDER BY store_price)::numeric AS p25,
+    percentile_cont(0.75) WITHIN GROUP (ORDER BY store_price)::numeric AS p75
+  FROM brand_pool
+  WHERE name IS NOT NULL
+  GROUP BY name
+)
+SELECT
+  p.*,
+  jsonb_build_object(
+    'category', CASE
+      WHEN cs.sku_cnt >= 3 THEN jsonb_build_object(
+        'name', cs.name,
+        'sku_cnt', cs.sku_cnt,
+        'median', round(cs.median, 2),
+        'p25', round(cs.p25, 2),
+        'p75', round(cs.p75, 2),
+        'deviation_pct', CASE
+          WHEN p.old_price IS NOT NULL AND cs.median > 0
+          THEN round(((p.old_price / cs.median) - 1) * 100, 1)
+          ELSE NULL
+        END
+      )
+      ELSE NULL
+    END,
+    'brand', CASE
+      WHEN bs.sku_cnt >= 3 THEN jsonb_build_object(
+        'name', bs.name,
+        'sku_cnt', bs.sku_cnt,
+        'median', round(bs.median, 2),
+        'p25', round(bs.p25, 2),
+        'p75', round(bs.p75, 2),
+        'deviation_pct', CASE
+          WHEN p.old_price IS NOT NULL AND bs.median > 0
+          THEN round(((p.old_price / bs.median) - 1) * 100, 1)
+          ELSE NULL
+        END,
+        'inferred', p.band_brand_inferred
+      )
+      ELSE NULL
+    END
+  ) AS price_band,
+  COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+      'channel', sib.channel,
+      'old_price', sib.old_price,
+      'target_price', sib.target_price,
+      'intent_id', sib.id
+    ) ORDER BY sib.created_at ASC, sib.id ASC)
+    FROM petstore_price_intents sib
+    WHERE sib.product_code = p.product_code
+      AND sib.status = 'proposed'
+      AND sib.id <> p.id
+  ), '[]'::jsonb) AS sibling_channels
+FROM picked p
+LEFT JOIN category_stats cs ON cs.name = p.category
+LEFT JOIN brand_stats bs ON bs.name = p.band_brand_name
+ORDER BY p.created_at ASC, p.id ASC;`, [limit]);
   send(res, 200, { success: true, total_pending: total.rows[0]?.total_pending || 0, rows });
 }
 
