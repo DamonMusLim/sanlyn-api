@@ -24,6 +24,7 @@ const { loadCustomsItems } = await import("/opt/sanlyn-api-test/api/db/customs-c
 const pool = getPool();
 
 const AUTO_MARK = "[自动核销:缺口已补齐";
+const ACTOR_ID = "invoice-gap-scan";
 
 // ⚠ SQL_ASCII 库:varchar(n)=n字节,汉字≈3字节。截断按字节(照 rebate_gaps/amount_divergence)。
 const fitBytes = (s, max) => { s = String(s ?? ""); let out = "", n = 0; for (const ch of s) { const b = Buffer.byteLength(ch); if (n + b > max) break; out += ch; n += b; } return out; };
@@ -88,13 +89,14 @@ function idFor(prefix, factory, customsNo) {
 }
 
 async function upsertTask(id, title, orderNo, priority, action) {
+  const client = await pool.connect();
   try {
-    const ex = await pool.query(`SELECT id, status, next_action FROM tasks WHERE id=$1 LIMIT 1`, [id]);
+    const ex = await client.query(`SELECT id, status, next_action FROM tasks WHERE id=$1 LIMIT 1`, [id]);
     if (ex.rows.length) {
       const status = ex.rows[0].status;
       const autoClosed = status === "cancelled" && String(ex.rows[0].next_action || "").includes(AUTO_MARK);
       if (status === "done" || (status === "cancelled" && !autoClosed)) return "skip"; // 人工终态永不复活
-      await pool.query(
+      await client.query(
         `UPDATE tasks
             SET title=$2, related_order_no=$3, next_action=$4, domain='对账',
                 priority=$5, task_type='INVOICE_GAP', assigned_to='agent',
@@ -105,21 +107,35 @@ async function upsertTask(id, title, orderNo, priority, action) {
       );
       return autoClosed ? "revive" : "upd";
     }
-    await pool.query(
-      `INSERT INTO tasks(id,title,task_type,priority,status,related_order_no,next_action,domain,assigned_to,created_at,updated_at)
-       VALUES($1,$2,'INVOICE_GAP',$3,'open',$4,$5,'对账','agent',NOW(),NOW())`,
-      [id, title, priority, orderNo, action]
-    ).catch(async () => {
-      await pool.query(
+    await client.query("BEGIN");
+    try {
+      await client.query(
+        `INSERT INTO tasks(id,title,task_type,priority,status,related_order_no,next_action,domain,assigned_to,created_at,updated_at)
+         VALUES($1,$2,'INVOICE_GAP',$3,'open',$4,$5,'对账','agent',NOW(),NOW())`,
+        [id, title, priority, orderNo, action]
+      );
+    } catch {
+      await client.query("ROLLBACK");
+      await client.query("BEGIN");
+      await client.query(
         `INSERT INTO tasks(id,title,status,related_order_no,domain,created_at,updated_at)
          VALUES($1,$2,'open',$3,'对账',NOW(),NOW())`,
         [id, title, orderNo]
-      ).catch(() => {});
-    });
+      );
+    }
+    await client.query(
+      `INSERT INTO task_events(task_id,event_type,actor_type,actor_id,to_status,note)
+       VALUES($1,'created','system',$2,'open','发票缺口扫描创建任务')`,
+      [id, ACTOR_ID]
+    );
+    await client.query("COMMIT");
     return "new";
   } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
     console.log(`${id} upsert failed:`, e.message);
     return "err";
+  } finally {
+    client.release();
   }
 }
 

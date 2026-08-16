@@ -77,6 +77,7 @@ function idFor(r) {
 }
 
 const AUTO_MARK = "[自动核销:差额已回到阈内";
+const ACTOR_ID = "amount-divergence-scan";
 
 // STRING_AGG 的 order_nos 不限长:标题只放前3个+计数
 function shortNos(orderNos) {
@@ -94,14 +95,15 @@ function taskText(r) {
 }
 
 async function upsertTask(id, title, orderNo, priority, action) {
+  const client = await pool.connect();
   try {
-    const ex = await pool.query(`SELECT id, status, next_action FROM tasks WHERE id=$1 LIMIT 1`, [id]);
+    const ex = await client.query(`SELECT id, status, next_action FROM tasks WHERE id=$1 LIMIT 1`, [id]);
     if (ex.rows.length) {
       const status = ex.rows[0].status;
       const autoClosed = status === "cancelled" && String(ex.rows[0].next_action || "").includes(AUTO_MARK);
       if (status === "done" || (status === "cancelled" && !autoClosed)) return "skip"; // 人工终态永不复活
       // 带自动核销标记的 cancelled 可复活; open 刷内容; doing 只刷内容不动状态
-      await pool.query(
+      await client.query(
         `UPDATE tasks
             SET title=$2, related_order_no=$3, next_action=$4, domain='对账',
                 priority=$5, task_type='AMOUNT_DIVERGENCE', assigned_to='agent',
@@ -112,21 +114,35 @@ async function upsertTask(id, title, orderNo, priority, action) {
       );
       return autoClosed ? "revive" : "upd";
     }
-    await pool.query(
-      `INSERT INTO tasks(id,title,task_type,priority,status,related_order_no,next_action,domain,assigned_to,created_at,updated_at)
-       VALUES($1,$2,'AMOUNT_DIVERGENCE',$3,'open',$4,$5,'对账','agent',NOW(),NOW())`,
-      [id, title, priority, orderNo, action]
-    ).catch(async () => {
-      await pool.query(
+    await client.query("BEGIN");
+    try {
+      await client.query(
+        `INSERT INTO tasks(id,title,task_type,priority,status,related_order_no,next_action,domain,assigned_to,created_at,updated_at)
+         VALUES($1,$2,'AMOUNT_DIVERGENCE',$3,'open',$4,$5,'对账','agent',NOW(),NOW())`,
+        [id, title, priority, orderNo, action]
+      );
+    } catch {
+      await client.query("ROLLBACK");
+      await client.query("BEGIN");
+      await client.query(
         `INSERT INTO tasks(id,title,status,related_order_no,domain,created_at,updated_at)
          VALUES($1,$2,'open',$3,'对账',NOW(),NOW())`,
         [id, title, orderNo]
-      ).catch(() => {});
-    });
+      );
+    }
+    await client.query(
+      `INSERT INTO task_events(task_id,event_type,actor_type,actor_id,to_status,note)
+       VALUES($1,'created','system',$2,'open','金额背离扫描创建任务')`,
+      [id, ACTOR_ID]
+    );
+    await client.query("COMMIT");
     return "new";
   } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
     console.log(`${id} upsert failed:`, e.message);
     return "err";
+  } finally {
+    client.release();
   }
 }
 

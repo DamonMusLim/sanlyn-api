@@ -13,6 +13,7 @@ const pool = getPool();
 const SCOPE = `fer.export_date >= '2026-01-01' AND fer.export_date < '2026-07-01'`;
 const ESC = " | agent:照此补,补不到→问Damon";
 const AUTO_MARK = "[自动核销:缺料已补齐";
+const ACTOR_ID = "rebate-gaps";
 
 // SQL_ASCII库: 按字节截断且不切断多字节字符
 const fitBytes = (s, max) => { s = String(s ?? ""); let out = "", n = 0; for (const ch of s) { const b = Buffer.byteLength(ch); if (n + b > max) break; out += ch; n += b; } return out; };
@@ -25,22 +26,36 @@ async function upsertTask(id, title, orderNo, priority, action){
   title = fitBytes(title, 200);
   orderNo = orderNo ? fitBytes(orderNo, 64) : null;
   activeIds.push(id);
+  const client = await pool.connect();
   try {
-    const ex = await pool.query(`SELECT id, status, next_action FROM tasks WHERE id=$1 LIMIT 1`,[id]);
+    const ex = await client.query(`SELECT id, status, next_action FROM tasks WHERE id=$1 LIMIT 1`,[id]);
     if (ex.rows.length){
       const status = ex.rows[0].status;
       const autoClosed = status === "cancelled" && String(ex.rows[0].next_action||"").includes(AUTO_MARK);
       if (status === "done" || (status === "cancelled" && !autoClosed)) return "skip"; // 人工终态永不复活
-      await pool.query(`UPDATE tasks SET title=$2, related_order_no=$3, next_action=$4, domain='退税',
+      await client.query(`UPDATE tasks SET title=$2, related_order_no=$3, next_action=$4, domain='退税',
           priority=$5, task_type='REBATE_GAP', assigned_to='agent',
           status=CASE WHEN status='cancelled' THEN 'open' ELSE status END, updated_at=NOW()
         WHERE id=$1`,[id,title,orderNo,action+ESC,priority]);
       return autoClosed ? "revive" : "upd";
     }
-    await pool.query(`INSERT INTO tasks(id,title,task_type,priority,status,related_order_no,next_action,domain,assigned_to,created_at,updated_at)
+    await client.query("BEGIN");
+    await client.query(`INSERT INTO tasks(id,title,task_type,priority,status,related_order_no,next_action,domain,assigned_to,created_at,updated_at)
       VALUES($1,$2,'REBATE_GAP',$3,'open',$4,$5,'退税','agent',NOW(),NOW())`,[id,title,priority,orderNo,action+ESC]);
+    await client.query(
+      `INSERT INTO task_events(task_id,event_type,actor_type,actor_id,to_status,note)
+       VALUES($1,'created','system',$2,'open','退税缺口扫描创建任务')`,
+      [id, ACTOR_ID]
+    );
+    await client.query("COMMIT");
     return "new";
-  } catch(e){ console.log(`${id} upsert failed:`, e.message); return "err"; }
+  } catch(e){
+    await client.query("ROLLBACK").catch(()=>{});
+    console.log(`${id} upsert failed:`, e.message);
+    return "err";
+  } finally {
+    client.release();
+  }
 }
 
 // 本轮未检出的 open 任务=缺料已补齐,自动核销(仅在全部检测器无异常时调用,防漏扫误销)
