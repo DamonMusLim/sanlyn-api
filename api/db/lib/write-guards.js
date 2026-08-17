@@ -39,29 +39,5 @@ export async function ticketTerms(pool, plan) {
 
 // 归属判定(Damon 0815铁律): 外单借巴匕协议价订舱→账单抬头是巴匕属正常, 但费用归属只认实际订单。
 // 有我方订单 → payer=票客户; 无订单 → payer 必须留空(绝不默认BABI), 由调用方建"待归属"任务。
-export async function resolvePayer(pool, plan) {
-  if (!plan) return { payer: null, owned: false };
-  const r = await pool.query(
-    `WITH matched AS (
-       SELECT NULLIF(BTRIM(o.company_code), '') AS payer,
-              COALESCE(o.customer_amount, o.total_amount, 0) AS order_amount,
-              o.id
-         FROM orders o
-        WHERE o.deleted_at IS NULL AND (
-            (NULLIF(BTRIM($1::text),'') IS NOT NULL AND BTRIM(o.bl_no)=BTRIM($1::text))
-         OR o.shipping_plan_id::text = $2::text
-         OR o.order_no = ANY(COALESCE($3::text[],'{}'::text[]))
-         OR o.contract_no = ANY(COALESCE($4::text[],'{}'::text[]))
-        )
-     )
-     SELECT EXISTS(SELECT 1 FROM matched) AS owned,
-            (
-              SELECT payer
-                FROM matched
-               WHERE payer IS NOT NULL
-               ORDER BY order_amount DESC NULLS LAST, id
-               LIMIT 1
-            ) AS payer`,
-    [plan.bl_no || "", String(plan._id || ""), plan.order_nos || null, plan.contract_nos || null]);
-  return { payer: r.rows[0]?.payer || null, owned: !!r.rows[0]?.owned };
-}
+// resolvePayer 已迁至 payer-resolver.js (v1.0.0, 2026-08-17 Damon 归属DNA)
+export { resolvePayer, PAYER_RESOLVER_VERSION } from "./payer-resolver.js";

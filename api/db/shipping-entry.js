@@ -58,7 +58,7 @@ async function detail(pool, key) {
 }
 
 async function saveBill(pool, plan, row, user, terms, warnings) {
-  const payerResult = await resolvePayer(pool, plan);
+  const payerResult = await resolvePayer(pool, plan, row);
   let payer = clean(row.payer_company_code || row.payer);
   if (payerResult.owned && !payer) payer = payerResult.payer;
   if (!payerResult.owned) {
@@ -82,7 +82,7 @@ async function saveBill(pool, plan, row, user, terms, warnings) {
     if (g.warning) { sale = g.sale; if (warnings) warnings.push(g.warning); }
   }
   const raw = { original_name: norm.original_name, unmapped: !!norm.unmapped, entry_direction: direction };
-  const vals = [plan.bl_no, plan._id, norm.name, amount, clean(row.currency || "CNY"), sale, qty, unit, clean(row.charge_basis || row.unit), clean(row.remarks), ym(row.bill_month), JSON.stringify(raw), payer || null];
+  const vals = [plan.bl_no, String(plan.id), norm.name, amount, clean(row.currency || "CNY"), sale, qty, unit, clean(row.charge_basis || row.unit), clean(row.remarks), ym(row.bill_month), JSON.stringify(raw), payer || null];
   if (row.id) {
     vals.push(row.id);
     const r = await pool.query(
