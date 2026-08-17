@@ -16,6 +16,11 @@ const cases = [
   ["COAU6460527060", "USD", "CN-00048", "internal-transfer signal, USD to customer"],
 ];
 
+const extraCases = [
+  ["177IGJGJN55159A", "海运费", "CN-00037", "CNY计价海运费应归收货人客户不是BABI"],
+  ["COAU7261303510", "驳船海运费", "BABI", "驳船=联程海运一段,计入海运成本(basis须为barge-is-ocean-cost)"],
+];
+
 function pickLine(rows, currency) {
   const cur = currency.toUpperCase();
   const same = rows.filter(r => String(r.currency || "CNY").toUpperCase() === cur);
@@ -48,7 +53,7 @@ async function loadLockedLine(pool) {
     `SELECT *
        FROM active_freight_supplier_bills
       WHERE raw->>'payer_locked'='1'
-        AND NULLIF(BTRIM(COALESCE(payer_company_code, payer, '')),'') IS NOT NULL
+        AND NULLIF(BTRIM(COALESCE(payer_company_code,'')),'') IS NOT NULL
       ORDER BY id DESC LIMIT 1`);
   if (!br.rows.length) throw new Error("missing real locked bill line");
   const row = br.rows[0];
@@ -82,7 +87,7 @@ async function checkAsk(pool) {
   try {
     const { plan, row } = await loadMissingTerms(pool);
     const got = await resolvePayer(pool, plan, withoutPayerLocked(row));
-    const task = await pool.query("SELECT id FROM tasks WHERE id=$1 AND status='open' AND source='payer-guard'", [`terms-${row.bl_no || plan.bl_no}`]);
+    const task = await pool.query("SELECT id FROM tasks WHERE id=$1 AND status='open' AND source='payer-guard'", [got.task_id]);
     const pass = got.ask?.options?.includes("EXW") && got.ask?.options?.includes("FOB") && task.rows.length === 1;
     console.log([pass ? "OK" : "FAIL", "missing-terms-ask", `basis=${got.basis || ""}`, `task=${task.rows[0]?.id || ""}`, got.ask?.question || ""].join(" | "));
     return pass;
@@ -115,6 +120,19 @@ async function main() {
       console.log([pass ? "OK" : "FAIL", bl, currency, `expected=${expected} got=${got.payer || ""}`, `basis=${got.basis || ""}`, reason].join(" | "));
     }
 
+    let extraOk = 0;
+    for (const [bl, cat, expected, note] of extraCases) {
+      const pr = await pool.query(`SELECT * FROM shipping_plans WHERE BTRIM(bl_no)=BTRIM($1) ORDER BY id LIMIT 1`, [bl]);
+      const br = await pool.query(
+        `SELECT * FROM freight_supplier_bills WHERE BTRIM(bl_no)=BTRIM($1) AND cost_category=$2
+           AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed') LIMIT 1`, [bl, cat]);
+      if (!pr.rows.length || !br.rows.length) { console.log(`SKIP | ${bl} | ${cat} 找不到数据`); continue; }
+      const got = await resolvePayer(pool, pr.rows[0], withoutPayerLocked(br.rows[0]));
+      const pass = got.payer === expected;
+      if (pass) extraOk++;
+      console.log([pass ? "OK" : "FAIL", bl, cat, `expected=${expected} got=${got.payer || ""}`, `basis=${got.basis || ""}`, note].join(" | "));
+    }
+
     const locked = await loadLockedLine(pool);
     const lockedGot = await resolvePayer(pool, locked.plan, locked.row);
     const lockedExpected = String(locked.row.payer_company_code || locked.row.payer || "").trim();
@@ -123,7 +141,7 @@ async function main() {
 
     const askPass = await checkAsk(pool);
     const exwPass = await checkExwBreakdown(pool);
-    console.log(`summary ${ok}/${cases.length} payer cases; locked ${lockedPass ? "OK" : "FAIL"}; ask ${askPass ? "OK" : "FAIL"}; exw ${exwPass ? "OK" : "FAIL"}`);
+    console.log(`summary ${ok}/${cases.length} payer cases; extra ${extraOk}/${extraCases.length}; locked ${lockedPass ? "OK" : "FAIL"}; ask ${askPass ? "OK" : "FAIL"}; exw ${exwPass ? "OK" : "FAIL"}`);
     process.exitCode = ok === cases.length && lockedPass && askPass && exwPass ? 0 : 1;
   } finally {
     await pool.end();

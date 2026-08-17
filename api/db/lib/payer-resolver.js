@@ -1,12 +1,13 @@
-// payer-resolver v1.0.0 · 2026-08-17
+// payer-resolver v1.1.0 · 2026-08-17
 // 费用归属判定(Damon 0817 DNA): 先看提单发货人,再看条款,不看订单工厂
 //   R0 raw.payer_locked=1 → 原值不动
-//   R1 驳船海运费 → BABI(内转外驳船段) | 其他海运费(不论USD/CNY) → 收货人客户
+//   R1 驳船(任何写法) → BABI 且归类=海运成本(联程一段,从美金差价扣,不作港杂)
+//       其他海运费(不论USD/CNY) → 收货人客户
 //   R2a 内转外 → BABI   R2b EXW → 客户
 //   R2c FOB: 发货人=我方贸易公司 → BABI;发货人=外部工厂 → 该发货人
 //   R2d 混条款 / R2e 缺条款 → needsHuman + ask{} + 建 terms-<票> 任务
 // 验收: 12/12 归属 + CNY海运归客户 + 驳船归BABI + locked + ask + exw,全过(2026-08-17 真库)
-export const PAYER_RESOLVER_VERSION = "1.0.0";
+export const PAYER_RESOLVER_VERSION = "1.1.0";
 
 const SELF = "SELF";
 
@@ -368,8 +369,10 @@ export async function resolvePayer(pool, plan, row = null) {
       : result({ payer: null, basis: "legacy-no-order", confidence: "low", needsHuman: true, reason: "compatible old signature: no matched order", owned: false, task_id: taskId("payer-", plan, row) });
   }
 
-  if (isBargeOcean(row) && isOcean(row)) {
-    return result({ payer: "BABI", basis: "barge-ocean-internal-transfer", confidence: "high", reason: ["驳船海运费是内转外驳船段,属我方路由选择", mismatch].filter(Boolean).join("; "), owned: true });
+  // 驳船=联程运输的一段,属海运费成本(不是港杂,不单独向客户收);
+  // 成本由我方承担并从美金海运差价里扣 → payer=BABI,但归类为 ocean-cost 不是 port charge
+  if (isBargeOcean(row)) {
+    return result({ payer: "BABI", basis: "barge-is-ocean-cost", confidence: "high", reason: ["驳船是联程海运的一段,计入海运费成本,从美金差价扣,不作港杂向客户收", mismatch].filter(Boolean).join("; "), owned: true, hint: "此行应归入海运成本桶,勿并入港杂" });
   }
 
   if (isOcean(row)) {
