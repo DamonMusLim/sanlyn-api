@@ -183,17 +183,31 @@ export async function loadPortChargeIssue(pool, p, opts = {}) {
   const payerCode = cleanText(opts.payerCode);
   const warnings = [];
   const payerSql = `
-    SELECT payer_company_code, COUNT(*)::int AS line_count, SUM(sale_amount)::numeric AS total_cny
+    SELECT payer_company_code,
+           COUNT(*)::int AS line_count,
+           COUNT(*) FILTER (WHERE COALESCE(sale_amount,0) > 0)::int AS billable_line_count,
+           COUNT(*) FILTER (WHERE sale_amount IS NULL)::int AS missing_sale_amount_count,
+           COALESCE(SUM(sale_amount),0)::numeric AS total_cny
       FROM active_freight_supplier_bills
      WHERE (bl_no = $1 OR link_plan_id = $2)
        AND (cost_category !~* '海运|ocean|freight')
        AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
-       AND COALESCE(sale_amount,0) > 0
        AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed')
        AND COALESCE(payer_company_code,'') <> ''
      GROUP BY payer_company_code
      ORDER BY payer_company_code`;
   const payers = (await pool.query(payerSql, [blNo, planId])).rows;
+  const diagSql = `
+    SELECT COUNT(*)::int AS line_count,
+           COUNT(*) FILTER (WHERE COALESCE(payer_company_code,'') = '')::int AS missing_payer_count,
+           COUNT(*) FILTER (WHERE sale_amount IS NULL)::int AS missing_sale_amount_count,
+           COUNT(*) FILTER (WHERE COALESCE(sale_amount,0) > 0)::int AS billable_line_count
+      FROM active_freight_supplier_bills
+     WHERE (bl_no = $1 OR link_plan_id = $2)
+       AND (cost_category !~* '海运|ocean|freight')
+       AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
+       AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed')`;
+  const diag = (await pool.query(diagSql, [blNo, planId])).rows[0] || {};
   if (!payerCode && payers.length > 1) {
     return { needs_payer_selection: true, payers, rows: [], totalCny: 0, usedFallbackCard: false, warnings };
   }
@@ -201,22 +215,34 @@ export async function loadPortChargeIssue(pool, p, opts = {}) {
   let rows = [];
   if (selectedPayer) {
     const r = await pool.query(
-      `SELECT cost_category, sale_amount AS amount, sale_amount, currency, charge_basis,
-              CASE WHEN NULLIF(raw->>'sale_qty','') ~ '^[0-9]+(\\.[0-9]+)?$'
-                   THEN NULLIF(raw->>'sale_qty','')::numeric ELSE NULL END AS qty,
-              CASE
-                WHEN NULLIF(raw->>'sale_qty','') ~ '^[0-9]+(\\.[0-9]+)?$'
-                 AND NULLIF(raw->>'sale_qty','')::numeric > 0
-                THEN sale_amount / NULLIF(raw->>'sale_qty','')::numeric
-                ELSE NULL
-              END AS unit_price
-         FROM active_freight_supplier_bills
-        WHERE (bl_no = $1 OR link_plan_id = $3)
-          AND payer_company_code = $2
-          AND (cost_category !~* '海运|ocean|freight')
-          AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
-          AND COALESCE(sale_amount,0) > 0
-          AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed')
+      `WITH base AS (
+         SELECT cost_category, sale_amount AS amount, sale_amount, currency, charge_basis,
+                CASE WHEN NULLIF(raw->>'sale_qty','') ~ '^[0-9]+(\\.[0-9]+)?$'
+                     THEN NULLIF(raw->>'sale_qty','')::numeric ELSE NULL END AS raw_sale_qty,
+                CASE WHEN NULLIF(raw->>'unit_price','') ~ '^[0-9]+(\\.[0-9]+)?$'
+                     THEN NULLIF(raw->>'unit_price','')::numeric ELSE NULL END AS raw_unit_price,
+                qty AS column_qty, id
+           FROM active_freight_supplier_bills
+          WHERE (bl_no = $1 OR link_plan_id = $3)
+            AND payer_company_code = $2
+            AND (cost_category !~* '海运|ocean|freight')
+            AND UPPER(COALESCE(currency,'CNY')) = 'CNY'
+            AND COALESCE(sale_amount,0) > 0
+            AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed')
+       ), normalized AS (
+         SELECT *, COALESCE(raw_sale_qty, column_qty) AS bill_qty
+           FROM base
+       )
+       SELECT cost_category, amount, sale_amount, currency, charge_basis,
+              bill_qty AS qty,
+              COALESCE(
+                CASE WHEN bill_qty > 0
+                       AND raw_unit_price IS NOT NULL
+                       AND ROUND((raw_unit_price * bill_qty)::numeric,2) = ROUND(sale_amount::numeric,2)
+                     THEN raw_unit_price ELSE NULL END,
+                sale_amount / NULLIF(bill_qty,0)
+              ) AS unit_price
+         FROM normalized
         ORDER BY id`,
       [blNo, selectedPayer, planId]
     );
@@ -232,6 +258,15 @@ export async function loadPortChargeIssue(pool, p, opts = {}) {
     if (fallback.warning) warnings.push(fallback.warning);
     usedFallbackCard = rows.length > 0;
   }
+  let dataIssue = null;
+  if (!rows.length) {
+    const lineCount = num(diag.line_count);
+    if (!lineCount) dataIssue = "no_matching_rows";
+    else if (!selectedPayer || (num(diag.missing_payer_count) === lineCount && !payers.length)) dataIssue = "missing_payer";
+    else if (!num(diag.billable_line_count) && num(diag.missing_sale_amount_count)) dataIssue = "missing_sale_amount";
+    else dataIssue = "no_billable_rows";
+    warnings.push(dataIssue);
+  }
   const totalCny = rows.reduce((s, r) => s + num(r.sale_amount ?? r.amount), 0);
   return {
     factoryCode: selectedPayer,
@@ -240,6 +275,13 @@ export async function loadPortChargeIssue(pool, p, opts = {}) {
     totalCny: Number(totalCny.toFixed(2)),
     usedFallbackCard,
     needs_terms: needsTerms && !rows.length,
+    data_issue: dataIssue,
+    data_issue_detail: !dataIssue ? null : {
+      line_count: num(diag.line_count),
+      missing_payer_count: num(diag.missing_payer_count),
+      missing_sale_amount_count: num(diag.missing_sale_amount_count),
+      billable_line_count: num(diag.billable_line_count),
+    },
     warning: warnings[0] || null,
     warnings,
   };

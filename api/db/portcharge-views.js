@@ -73,10 +73,11 @@ async function officialRows(pool, port, ct, carrier = "") {
     where += ` AND upper(carrier) = upper($${params.length})`;
   }
   const r = await pool.query(
-    `SELECT carrier, charge_item_name, amount_cny, unit_basis, conditional_flag
+    `SELECT DISTINCT ON (upper(carrier), COALESCE(station_name,''), charge_item_code)
+            carrier, station_name, charge_item_code, charge_item_name, amount_cny, unit_basis, conditional_flag
        FROM carrier_tariff_standards
       WHERE ${where}
-      ORDER BY carrier, charge_item_code, valid_from DESC, id DESC`,
+      ORDER BY upper(carrier), COALESCE(station_name,''), charge_item_code, valid_from DESC, id DESC`,
     params
   );
   return r.rows;
@@ -104,6 +105,14 @@ function addFee(bucket, item, amount) {
   bucket[item] = money(num(bucket[item]) + num(amount));
 }
 
+function stationLabel(v) {
+  return clean(v) || "未指定场站";
+}
+
+function officialItem(row, aliases) {
+  return `${normItem(row.charge_item_name, aliases)} @ ${stationLabel(row.station_name)}`;
+}
+
 async function matrix(pool, q) {
   const port = clean(q.port || "青岛");
   const ct = normalizeContainerType(q.ct || "40HQ");
@@ -113,19 +122,27 @@ async function matrix(pool, q) {
   const carriers = new Map();
   for (const row of official) {
     const c = normalizeCarrier(row.carrier);
-    if (!carriers.has(c)) carriers.set(c, { carrier: c, official: {}, forwarders: {} });
-    addFee(carriers.get(c).official, normItem(row.charge_item_name, aliases), row.amount_cny);
+    if (!carriers.has(c)) carriers.set(c, { carrier: c, official: {}, official_rows: [], forwarders: {}, forwarders_status: "no_data" });
+    const g = carriers.get(c);
+    addFee(g.official, officialItem(row, aliases), row.amount_cny);
+    g.official_rows.push({
+      station_name: stationLabel(row.station_name),
+      charge_item_name: normItem(row.charge_item_name, aliases),
+      amount_cny: money(row.amount_cny),
+      unit_basis: row.unit_basis || "",
+    });
   }
   for (const row of locals) {
     const c = normalizeCarrier(row.carrier);
     const fwd = clean(row.company_name) || "未命名货代";
-    if (!carriers.has(c)) carriers.set(c, { carrier: c, official: {}, forwarders: {} });
+    if (!carriers.has(c)) carriers.set(c, { carrier: c, official: {}, official_rows: [], forwarders: {}, forwarders_status: "no_data" });
     const group = carriers.get(c).forwarders[fwd] || {};
     for (const fee of flattenFees(row.fees)) {
       if (feeConditional(fee)) continue;
       addFee(group, normItem(feeName(fee), aliases), feeAmount(fee));
     }
     carriers.get(c).forwarders[fwd] = group;
+    carriers.get(c).forwarders_status = "ok";
   }
   return { view: "matrix", port, container_type: ct, carriers: [...carriers.values()] };
 }
@@ -136,8 +153,15 @@ async function carrierView(pool, q) {
   const carrier = normalizeCarrier(q.carrier || "");
   const aliases = await aliasMap(pool);
   const official = {};
+  const official_rows = [];
   for (const row of await officialRows(pool, port, ct, carrier)) {
-    addFee(official, normItem(row.charge_item_name, aliases), row.amount_cny);
+    addFee(official, officialItem(row, aliases), row.amount_cny);
+    official_rows.push({
+      station_name: stationLabel(row.station_name),
+      charge_item_name: normItem(row.charge_item_name, aliases),
+      amount_cny: money(row.amount_cny),
+      unit_basis: row.unit_basis || "",
+    });
   }
   const forwarders = {};
   for (const row of await localRows(pool, port, ct, carrier)) {
@@ -149,7 +173,7 @@ async function carrierView(pool, q) {
     }
   }
   const items = [...new Set([...Object.keys(official), ...Object.values(forwarders).flatMap(Object.keys)])];
-  return { view: "carrier", port, container_type: ct, carrier, official, forwarders, items };
+  return { view: "carrier", port, container_type: ct, carrier, official, official_rows, forwarders, forwarders_status: Object.keys(forwarders).length ? "ok" : "no_data", items };
 }
 
 async function lane(pool, q) {

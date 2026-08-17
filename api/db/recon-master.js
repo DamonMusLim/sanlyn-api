@@ -117,10 +117,23 @@ joined AS (
          COALESCE(bg.barge_cost_cny,0) AS barge_cost_cny,
          COALESCE(bg.truck_cost_cny,0) AS truck_cost_cny,
          COALESCE(pg.ocean_sale_usd,0) AS ocean_sale_usd,
-         COALESCE(pg.port_sale_cny,0) AS port_sale_cny
+         COALESCE(pg.port_sale_cny,0) AS port_sale_cny,
+         fx.rate AS fx_rate_used,
+         CASE WHEN COALESCE(bg.barge_cost_cny,0) > 0 AND fx.rate IS NULL THEN NULL
+              WHEN COALESCE(bg.barge_cost_cny,0) > 0 THEN COALESCE(bg.barge_cost_cny,0) / NULLIF(fx.rate,0)
+              ELSE 0 END AS barge_cost_usd,
+         (COALESCE(bg.barge_cost_cny,0) > 0 AND fx.rate IS NULL) AS fx_missing
     FROM order_groups og
     FULL JOIN plan_groups pg ON pg.bl_no = og.bl_no
     LEFT JOIN bill_groups bg ON bg.bl_no = COALESCE(og.bl_no, pg.bl_no)
+    LEFT JOIN LATERAL (
+      SELECT rate
+        FROM exchange_rates
+       WHERE currency_pair='USD_CNY'
+         AND fetched_at::date <= COALESCE(og.etd, pg.etd)::date
+       ORDER BY fetched_at DESC
+       LIMIT 1
+    ) fx ON TRUE
 ),
 recv_grp AS (
   SELECT j.group_key, SUM(l.amount_alloc) AS received_cny
@@ -161,8 +174,13 @@ SELECT j.po_nos, j.orders, j.external_src, j.pipeline, j.bl_no, j.etd, j.trade_t
        ROUND(j.ocean_cost_usd::numeric,2) AS ocean_cost_usd,
        ROUND(j.truck_cost_cny::numeric,2) AS truck_cost_cny,
        ROUND(j.barge_cost_cny::numeric,2) AS barge_cost_cny,
+       ROUND(j.barge_cost_usd::numeric,2) AS barge_cost_usd,
+       ROUND(j.fx_rate_used::numeric,6) AS fx_rate_used,
+       j.fx_missing,
        ROUND(j.ocean_sale_usd::numeric,2) AS ocean_sale_usd,
        ROUND(j.port_sale_cny::numeric,2) AS port_sale_cny,
+       CASE WHEN j.fx_missing THEN NULL
+            ELSE ROUND((j.ocean_sale_usd - j.ocean_cost_usd - j.barge_cost_usd)::numeric,2) END AS freight_margin_usd,
        ROUND(COALESCE(d.declared_amount,0)::numeric,2) AS declared_amount,
        COALESCE(dg.docs,'[]'::json) AS docs,
        ROUND(COALESCE(rg.received_cny,0)::numeric,2) AS received_cny,
