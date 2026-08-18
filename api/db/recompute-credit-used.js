@@ -39,6 +39,8 @@ export default async function handler(req, res) {
     //
     //    We use company_code col first, fallback to raw->>'companyCode'.
     //    Currency-aware: aggregated per code per currency.
+    //    raw.paymentStatus is absent in current production data, so no fake
+    //    paid-status filter is applied here.
     const { rows: exposures } = await pool.query(`
       SELECT
         COALESCE(NULLIF(o.company_code, ''), o.raw->>'companyCode') AS code,
@@ -46,13 +48,39 @@ export default async function handler(req, res) {
         SUM(
           COALESCE(CAST(NULLIF(o.total_amount::text,'') AS NUMERIC), 0)
           - COALESCE((
-              SELECT SUM(CAST(COALESCE(p.raw->>'receivedAmount', p.amount::text, '0') AS NUMERIC))
-              FROM finance_payments p
-              WHERE p.order_no = o.order_no
+              SELECT SUM(m.received_amount)
+              FROM (
+                SELECT DISTINCT ON (p.id)
+                  p.id,
+                  COALESCE(
+                    CASE
+                      WHEN p.raw->>'receivedAmount' IS NULL THEN NULL
+                      WHEN regexp_replace(p.raw->>'receivedAmount', '[, ]', '', 'g') ~ '^-?\\d+(\\.\\d+)?$'
+                        THEN regexp_replace(p.raw->>'receivedAmount', '[, ]', '', 'g')::numeric
+                      ELSE NULL
+                    END,
+                    p.amount,
+                    0
+                  ) AS received_amount
+                FROM finance_payments p
+                WHERE COALESCE(p.direction, '') NOT IN ('out', 'refund')
+                  AND (
+                    (
+                      NULLIF(BTRIM(p.contract_no), '') IS NOT NULL
+                      AND NULLIF(BTRIM(o.contract_no), '') IS NOT NULL
+                      AND NULLIF(BTRIM(p.contract_no), '') = NULLIF(BTRIM(o.contract_no), '')
+                    )
+                    OR (
+                      NULLIF(BTRIM(p.order_no), '') IS NOT NULL
+                      AND NULLIF(BTRIM(o.order_no), '') IS NOT NULL
+                      AND NULLIF(BTRIM(p.order_no), '') = NULLIF(BTRIM(o.order_no), '')
+                    )
+                  )
+                ORDER BY p.id
+              ) m
             ), 0)
         ) AS outstanding
       FROM orders o
-      WHERE COALESCE(o.raw->>'paymentStatus','') <> 'paid'
       GROUP BY code, currency
     `);
 
