@@ -41,7 +41,7 @@ import { ocrInvoice } from "./factory-invoice-ocr.js";
 export const config = { api: { bodyParser: false } };
 
 const PUBLIC_HOST = process.env.PUBLIC_HOST || "https://api.sanlyn.cn";
-const LINK_TTL_DAYS = 60;
+const LINK_TTL_DAYS = 7;
 const CODE_LEN = 12;
 const RATE_WINDOW_MS = 5 * 60 * 1000;
 const RATE_MAX = 30;

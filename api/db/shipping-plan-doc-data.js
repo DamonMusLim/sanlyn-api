@@ -59,6 +59,29 @@ async function loadOrdersByPo(pool, poList) {
   }
 }
 
+async function loadPlanOrderCargo(pool, planId) {
+  try {
+    const r = await pool.query(
+      `SELECT COUNT(*) AS order_count,
+              COALESCE(SUM(COALESCE(total_cartons, total_qty)),0) AS cartons,
+              SUM(gross_weight) AS gw,
+              SUM(total_cbm) AS cbm
+         FROM orders
+        WHERE shipping_plan_id = $1`,
+      [planId]
+    );
+    const row = r.rows[0] || {};
+    if (!num(row.order_count)) return { cartons: null, gw: null, cbm: null };
+    return {
+      cartons: numOrNull(row.cartons),
+      gw: numOrNull(row.gw),
+      cbm: numOrNull(row.cbm),
+    };
+  } catch (_) {
+    return { cartons: null, gw: null, cbm: null };
+  }
+}
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -126,10 +149,14 @@ async function loadContainers(pool, p) {
     bookings = r.rows;
   } catch (_) {}
 
+  const orderCargo = await loadPlanOrderCargo(pool, p.id);
   let rows = [];
   // Freight invoice container source priority: containers_detail(EIR) > bookings > legacy container_no > qty placeholder.
   if (details.length) {
     const orderData = await loadOrdersByPo(pool, details.map(x => x.order_no));
+    const perDetailCartons = orderCargo.cartons !== null ? Math.round(orderCargo.cartons / details.length) : null;
+    const perDetailGw = orderCargo.gw !== null ? Number((orderCargo.gw / details.length).toFixed(3)) : null;
+    const perDetailCbm = orderCargo.cbm !== null ? Number((orderCargo.cbm / details.length).toFixed(3)) : null;
     rows = details.map(x => {
       const poFromDetail = stripCompanyPrefix(x.order_no);
       const ord = orderData[poFromDetail] || {};
@@ -137,28 +164,36 @@ async function loadContainers(pool, p) {
         no: String(x.container_no || "").trim(),
         seal: String(x.seal_no || "").trim() || "—",
         po: poFromDetail || ord.customer_po || scNo,
-        ctn: numOrNull(ord.cartons),
-        gw: numOrNull(ord.gross_weight),
-        cbm: numOrNull(ord.total_cbm),
+        ctn: numOrNull(ord.cartons) ?? perDetailCartons,
+        gw: numOrNull(ord.gross_weight) ?? perDetailGw,
+        cbm: numOrNull(ord.total_cbm) ?? perDetailCbm,
       };
     });
   } else if (bookings.length) {
-    const totalCartons = planCartons(p);
+    const totalCartons = planCartons(p) ?? orderCargo.cartons;
     const perCtnCartons = totalCartons !== null ? Math.round(totalCartons / bookings.length) : null;
-    const perCtnCBM = hasValue(p.total_cbm) ? num(p.total_cbm) / bookings.length : null;
+    const perCtnGw = orderCargo.gw !== null ? Number((orderCargo.gw / bookings.length).toFixed(3)) : null;
+    const totalCbm = hasValue(p.total_cbm) ? num(p.total_cbm) : orderCargo.cbm;
+    const perCtnCBM = totalCbm !== null ? totalCbm / bookings.length : null;
     rows = bookings.map(cb => ({
       no: String(cb.container_no || "").trim(),
       seal: String(cb.seal_no || "").trim() || "—",
       po: stripCompanyPrefix(cb.contract_no) || orderNo || scNo,
       ctn: perCtnCartons,
-      gw: numOrNull(cb.gross_weight_kg),
-      cbm: perCtnCBM ? Number(perCtnCBM.toFixed(3)) : null,
+      gw: numOrNull(cb.gross_weight_kg) ?? perCtnGw,
+      cbm: perCtnCBM !== null ? Number(perCtnCBM.toFixed(3)) : null,
     }));
   } else {
     const poList = orderNo !== "—" ? splitList(orderNo, /[,\s]+/) : [];
     const orderData = await loadOrdersByPo(pool, poList);
     const placeholderQty = Math.max(parseInt(p.container_qty, 10) || 1, 1);
     const sourceNos = ctnNos.length ? ctnNos : Array.from({ length: placeholderQty }, () => "");
+    const fallbackCartons = planCartons(p) ?? orderCargo.cartons;
+    const fallbackGw = numOrNull(p.gross_weight_kg) ?? orderCargo.gw;
+    const fallbackCbm = numOrNull(p.total_cbm) ?? orderCargo.cbm;
+    const perLegacyCartons = fallbackCartons !== null ? Math.round(fallbackCartons / sourceNos.length) : null;
+    const perLegacyGw = fallbackGw !== null ? Number((fallbackGw / sourceNos.length).toFixed(3)) : null;
+    const perLegacyCbm = fallbackCbm !== null ? Number((fallbackCbm / sourceNos.length).toFixed(3)) : null;
     rows = sourceNos.map((no, i) => {
       const po = stripCompanyPrefix(poList[i]) || (orderNo !== "—" ? stripCompanyPrefix(orderNo) : scNo) || "—";
       const ord = orderData[po] || {};
@@ -167,9 +202,9 @@ async function loadContainers(pool, p) {
         no,
         seal: sealNos[i] || "—",
         po,
-        ctn: numOrNull(ord.cartons) ?? (single ? planCartons(p) : null),
-        gw: numOrNull(ord.gross_weight) ?? (single ? numOrNull(p.gross_weight_kg) : null),
-        cbm: numOrNull(ord.total_cbm) ?? (single ? numOrNull(p.total_cbm) : null),
+        ctn: numOrNull(ord.cartons) ?? (single ? fallbackCartons : perLegacyCartons),
+        gw: numOrNull(ord.gross_weight) ?? (single ? fallbackGw : perLegacyGw),
+        cbm: numOrNull(ord.total_cbm) ?? (single ? fallbackCbm : perLegacyCbm),
       };
     });
   }
@@ -179,9 +214,9 @@ async function loadContainers(pool, p) {
   return {
     rows,
     totals: {
-      cartons: totals.cartons || planCartons(p),
-      gw: totals.gw || numOrNull(p.gross_weight_kg),
-      cbm: totals.cbm || numOrNull(p.total_cbm),
+      cartons: totals.cartons || planCartons(p) || orderCargo.cartons,
+      gw: totals.gw || numOrNull(p.gross_weight_kg) || orderCargo.gw,
+      cbm: totals.cbm || numOrNull(p.total_cbm) || orderCargo.cbm,
     },
     qty: details.length || bookings.length || ctnNos.length || num(p.container_qty) || 1,
     type: p.container_type || "40HQ",

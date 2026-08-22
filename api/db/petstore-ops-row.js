@@ -102,7 +102,10 @@ function requireBoss(req, res) {
   }
 
   const payload = decodeJwtPayload(req);
-  if (payload.username && bossUsers().includes(String(payload.username))) return true;
+  // 0822:员工端 token 载荷是 {role,employee_id,name},没有 username;
+  //      老板从员工端进来只有 name(Damon id=35 manager)。两字段都认,大小写不敏感。
+  const who = String(payload.username || payload.name || "").trim().toLowerCase();
+  if (who && bossUsers().includes(who)) return true;
 
   const expected = process.env.PRICING_BOSS_TOKEN;
   const got = req.headers["x-pricing-boss"];

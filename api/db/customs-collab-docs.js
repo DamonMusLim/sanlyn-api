@@ -26,10 +26,23 @@ function rateLimit(req, key) {
   hit.count += 1;
   return hit.count <= RATE_MAX;
 }
+/* 🔴 0817 Damon：「所有的项目单位以后也不能错」。
+   原来这里三处都在猜单位：
+     ① 认不出就 `|| "箱"` 默认成箱
+     ② `ctn !== null ? "箱"` —— 只要有箱数就写死「箱」，无视报关逐项真单位
+     ③ 第一个取值链漏了 item.unit
+   实证：664707 项5「宠物美容烘干箱」报关单原件是**台**（真报关单PDF逐项解析入库，
+   HS 8509809000 家电类法定单位就是台），页面却渲染成「件」。
+   现在：报关逐项 unit 是唯一真值，认不出**留空**，绝不默认成箱。 */
 function unit(v) {
   const s = cleanString(v);
-  const map = { CTN: "箱", PCS: "件", KG: "千克", BAG: "包", SET: "套" };
-  return map[s.toUpperCase()] || s || "箱";
+  if (!s) return null;
+  const map = { CTN: "箱", PCS: "件", KG: "千克", KGS: "千克", BAG: "包", SET: "套", UNIT: "台", PC: "件" };
+  return map[s.toUpperCase()] || s;
+}
+/** 报关逐项 unit 优先；都没有才按箱数兜底；仍判不出返回 null（不猜） */
+function unitOf(item, ctn) {
+  return unit(item?.unit) || unit(item?.unit2) || unit(item?.unit1) || (ctn !== null ? "箱" : null);
 }
 function dateOnly(v) {
   if (!v) return null;
@@ -61,7 +74,7 @@ function lineFromItem(item, i) {
     item_id: item?.id || null,
     name: cleanString(item?.name_cn || item?.name) || `报关项${i + 1}`,
     spec: cleanString(item?.spec) || null,
-    unit: ctn !== null ? "箱" : unit(item?.unit2 || item?.unit1),
+    unit: unitOf(item, ctn),
     qty,
     unit_price: unitPrice,
     amount,
@@ -77,14 +90,18 @@ function factoryGoodsLineFromItem(item, i) {
   //    金额取报关逐项申报值（含税口径，跟应开金额同源）；
   //    税率按 HS：2309 系 9%，其余 13%（退税率只有这两个值，第三个值=算错）。
   //    ⚖️ 这是【建议开票金额】，不是退税依据 —— 退税一律以真实进项票不含税额为准。
-  const gross = num(item?.amount ?? item?.amt ?? item?.total ?? item?.declaration_amount);
+  // 🩸 0817 Damon：「开票总金额就是报关金额含税的」——报关额 = 发票【价税合计】，
+  //    不是金额栏。原来直接把报关额当不含税金额给前端，前端再 ×税率加上去，
+  //    价税合计就虚高了 9%/13%（CP-7 被要求开 ¥322,229.07，实际应开 ¥295,623.00）。
+  const grossIncl = num(item?.amount ?? item?.amt ?? item?.total ?? item?.declaration_amount);
   const vatRate = String(hs || "").startsWith("2309") ? 0.09 : 0.13;
+  const gross = grossIncl === null ? null : num(grossIncl / (1 + vatRate));
   return {
     item_id: item?.id || null,
     name: cleanString(item?.name_cn || item?.name) || `报关项${i + 1}`,
     spec: cleanString(item?.spec) || null,
     hs_code: hs,
-    unit: ctn !== null ? "箱" : unit(item?.unit2 || item?.unit1 || item?.unit),
+    unit: unitOf(item, ctn),
     qty,
     // ⛔ 字段名不能叫 amount / unit_price / declaration_amount —— 那几个在
     //    collab-field-profiles.js 的【工厂禁看黑名单】里（防报关价/销售价外泄），
@@ -303,30 +320,8 @@ export async function factorySpread(client, customsNo, contractNo) {
   return r.rows.map((x) => x.code).filter(Boolean);
 }
 
-async function oliLines(client, orderIds, rawUnit) {
-  if (!orderIds.length) return [];
-  const r = await client.query(
-    `SELECT COALESCE(NULLIF(BTRIM(oli.declaration_name),''),NULLIF(BTRIM(oli.product_name),''),
-                    NULLIF(BTRIM(p.declaration_name),''),NULLIF(BTRIM(p.product_name),'')) AS name,
-            COALESCE(NULLIF(BTRIM(p.spec),''),NULLIF(BTRIM(oli.size),'')) AS spec,
-            COALESCE(NULLIF(BTRIM(p.transaction_unit),''),NULLIF($2,''),NULLIF(BTRIM(oli.unit),''),'箱') AS unit,
-            ROUND(SUM(COALESCE(oli.qty_ctn,0))::numeric,2) AS qty,
-            ROUND(COALESCE(NULLIF(SUM(oli.factory_subtotal),0),
-                           NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0),
-                           NULLIF(SUM(oli.qty_ctn*p.factory_price),0),0)::numeric,2) AS amount
-       FROM order_line_items oli
-       LEFT JOIN products p ON p.id=oli.product_id
-      WHERE oli.order_id = ANY($1::int[])
-      GROUP BY 1,2,3
-      ORDER BY MIN(oli.sort_order) NULLS LAST, MIN(oli.id)`,
-    [orderIds, rawUnit || ""]
-  );
-  return r.rows.map((l) => {
-    const qty = num(l.qty);
-    const amount = num(l.amount);
-    return { item_id: null, name: l.name || null, spec: l.spec || null, unit: unit(l.unit), qty, unit_price: qty ? num(amount / qty) : null, amount };
-  });
-}
+/* 0817：oliLines() 已删 —— 它的唯一调用点(无锚时拿 OLI 当货物行)按 forge 裁决 A 去掉后，
+   这个函数就是死代码。留着=下次有人手滑又接回去。Damon 0817:「我们靠的是真实数据，不是OLI」。 */
 
 async function packingLines(client, orderIds) {
   if (!orderIds.length) return [];
@@ -423,13 +418,37 @@ export async function handleFactoryDoc(req, res) {
       rawItems = anchored ? filtered : [];
     }
 
-    const purchaseLines = await oliLines(client, group.ids, rawItems[0]?.unit2 || rawItems[0]?.unit1);
+    /* 🔴 0817 forge 裁决 A（FAIL 当前逻辑）：这里违反 Damon 07-14 硬规3「不可以OLI」。
+       原来 anchored=false 就拿 OLI 生成货物行给工厂，且 factoryExpectedAmount 无论
+       anchored 与否都从 OLI 算。07-14 的护栏只装在 detail 侧，单据这条漏了一个月。
+       裁决：无锚只显占位，绝不用 OLI 补；金额走
+       人工锁定额 > factory_invoice_expected_amounts > 报关逐项合计 > null。
+       ⚖️ 死结（工厂拿不到明细没法开票）forge 的答复：**改流程不改数据原则** ——
+          引导去开票资料表/人工确认入口，人工确认必须附真报关单证据。 */
     const goods = anchored ? factoryGoodsLinesFromItems(rawItems, party.sellerRaw, false) : {
       anchored: false,
-      lines: purchaseLines.map((l, i) => factoryGoodsLineFromItem(l, i)),
+      pending_customs: true,
+      lines: [{ item_id: null, name: "待报关资料", spec: "报关明细待导入，请用开票资料表或走人工确认",
+                unit: null, qty: null, invoice_amount: null, invoice_unit_price: null,
+                vat_rate: null, tax_rate: null }],
     };
-    const purchaseAmounts = purchaseLines.map((x) => Number(x.amount)).filter(Number.isFinite);
-    const factoryExpectedAmount = purchaseAmounts.length ? num(purchaseAmounts.reduce((s, v) => s + v, 0)) : null;
+    const feaRes = await client.query(
+      `SELECT ROUND(COALESCE(
+                (SELECT s.manual_expected_amount FROM customs_invoice_status s
+                  WHERE s.customs_no=$1 AND s.factory_code=$2),
+                (SELECT f.expected_amount FROM factory_invoice_expected_amounts f
+                  WHERE f.customs_no=$1 AND f.status='ready'
+                    AND f.factory_name=(SELECT name_cn FROM companies WHERE code=$2)
+                  ORDER BY f.generated_at DESC NULLS LAST LIMIT 1),
+                (SELECT SUM(ci.declaration_amount) FROM customs_declaration_items ci
+                   JOIN customs_declarations cd ON cd.id=ci.declaration_id
+                   JOIN companies co ON co.id=ci.factory_company_id
+                  WHERE cd.declaration_no=$1 AND ci.deleted_at IS NULL AND co.code=$2
+                    AND COALESCE(ci.declaration_currency,'CNY') IN ('CNY','人民币','142'))
+              )::numeric,2) AS amt`,
+      [customsNo, scope?.factory?.code || null]
+    );
+    const factoryExpectedAmount = num(feaRes.rows[0]?.amt);
 
     return res.json(scrubFactoryCustomsPayload({ success: true, doc: {
       kind,

@@ -8,7 +8,7 @@ const PUBLIC_SHEET_FIELDS = [
   "container_qty", "collab_status", "total_cartons", "gross_weight_kg",
   "total_cbm", "so_no", "bl_no", "cargo_cutoff", "carrier_code", "vessel",
   "voyage", "release_type", "is_transfer", "so_info", "collab_uploads",
-  "quarantine_docs", "has_quarantine", "containers_live", "containers_detail",
+  "quarantine_docs", "has_quarantine", "uploaded_docs", "containers_live", "containers_detail",
   "sailings", "trucking_detail", "factory_submitted", "factory_cargo_ready",
   "factory_container_type", "factory_cargo_type", "factory_remarks",
   "factory_submitted_at", "customer_submitted", "customer_reference_no",

@@ -112,6 +112,29 @@ async function getBillColumns(pool) {
   return billColumnsCache;
 }
 
+async function resolvePlanIdForBill(pool, blNo, linkPlanId) {
+  const raw = norm(linkPlanId);
+  if (/^[0-9]+$/.test(raw)) return raw;
+
+  const plans = await pool.query(
+    `SELECT id
+       FROM shipping_plans
+      WHERE bl_no = $1
+        AND bl_no NOT LIKE '%#%'
+      ORDER BY id
+      LIMIT 2`,
+    [blNo]
+  );
+  if (plans.rows.length === 1) return String(plans.rows[0].id);
+  if (!raw) return null;
+
+  const err = new Error(plans.rows.length ? "link_plan_id ambiguous by bl_no" : "link_plan_id cannot resolve by bl_no");
+  err.status = 409;
+  err.code = plans.rows.length ? "ambiguous_plan" : "plan_not_found";
+  err.field = "link_plan_id";
+  throw err;
+}
+
 async function findCompanies(pool, q) {
   const term = norm(q);
   if (!term) return [];
@@ -336,6 +359,7 @@ export default async function handler(req, res) {
     const raw = buildRaw(body, supplier, payer, payerType, freightTerm);
     raw.original_name = chargeNorm.original_name || null;
     raw.unmapped = Boolean(chargeNorm.unmapped);
+    const linkPlanId = await resolvePlanIdForBill(pool, blNo, body.link_plan_id);
 
     const base = {
       supplier: companyLabel(supplier),
@@ -352,7 +376,7 @@ export default async function handler(req, res) {
       pair_id: body.pair_id || null,
       rebill_status: payerResult.rebillStatus,
       incoterm: freightTerm || null,
-      link_plan_id: body.link_plan_id || null,
+      link_plan_id: linkPlanId,
       link_agency_id: body.link_agency_id || null,
       reconciled: false,
       reconcile_note: body.reconcile_note || null,

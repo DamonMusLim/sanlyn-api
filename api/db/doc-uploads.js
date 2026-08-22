@@ -71,7 +71,12 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const { docId, contractNo, limit = 100 } = req.query || {};
       const conds = [], vals = [];
-      if (docId)      { vals.push(docId);      conds.push("doc_id = $" + vals.length); }
+      if (docId) {
+        vals.push(docId);
+        const exactParam = "$" + vals.length;
+        vals.push(String(docId).replace(/[\\%_]/g, "\\$&") + ":%");
+        conds.push("(doc_id = " + exactParam + " OR doc_id LIKE $" + vals.length + " ESCAPE '\\')");
+      }
       if (contractNo) { vals.push(contractNo); conds.push("contract_no = $" + vals.length); }
       if (!conds.length) return res.status(400).json({ error: "docId or contractNo required" });
       vals.push(parseInt(limit));

@@ -167,12 +167,18 @@ export async function replaceItems(client, declId, seed, ownerCompanyId, declara
         ownerCompanyId,
         hsCode,
         text(it.name_cn),
-        text(it.unit1) || text(it.unit) || "千克",
+        // 0817 Damon: "one and again told you to follow the customs declaration, why fabricate".
+        //   Was `|| "千克"`: when the source had no unit it invented one and wrote it into the
+        //   declaration-items master table. Audit shows all 11 existing rows took their unit from
+        //   source (unit1), so nothing bad was produced yet - but it is a landmine: the day the
+        //   source lacks a unit, an invented "千克" would be treated as declaration truth for
+        //   invoicing and rebate. Unknown must stay NULL. Empty is safer than fake.
+        text(it.unit1) || text(it.unit) || null,
         qty,
         num(it.amount),
-        text(it.currency) || "人民币",
+        text(it.currency) || null,   // same: never default currency (a USD ticket read as CNY miscomputes the rebate)
         num(it.unit_price),
-        text(it.origin_country) || text(it.country_of_origin) || "中国",
+        text(it.origin_country) || text(it.country_of_origin) || null,   // same: never default origin country
         text(it.dest_country) || text(it.destination_country),
         sort,
         JSON.stringify(raw),

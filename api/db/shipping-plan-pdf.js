@@ -823,6 +823,36 @@ ${printBtn}
       const totalGW      = p.gross_weight_kg || null;
       const totalCBM     = p.total_cbm || null;
       const freightTerm  = "PREPAID";
+      const numOrNull = (v) => {
+        if (v === null || v === undefined || String(v).trim() === "") return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const cargoNumOrNull = (v) => {
+        const n = numOrNull(v);
+        return n > 0 ? n : null;
+      };
+
+      let orderCargo = { cartons: null, gw: null, cbm: null };
+      try {
+        const cargoRes = await pool.query(
+          `SELECT COUNT(*) AS order_count,
+                  COALESCE(SUM(COALESCE(total_cartons, total_qty)),0) AS cartons,
+                  SUM(gross_weight) AS gw,
+                  SUM(total_cbm) AS cbm
+             FROM orders
+            WHERE shipping_plan_id = $1`,
+          [p.id]
+        );
+        const cargoRow = cargoRes.rows[0] || {};
+        if (numOrNull(cargoRow.order_count)) {
+          orderCargo = {
+            cartons: cargoNumOrNull(cargoRow.cartons),
+            gw: cargoNumOrNull(cargoRow.gw),
+            cbm: cargoNumOrNull(cargoRow.cbm),
+          };
+        }
+      } catch(_) {}
 
       // ── 方案A: 同BL多个shipping_plan → 每个plan一柜 ──
       // ── 方案B: 单plan多PO → 查orders表取每PO的CTN/GW/CBM ──
@@ -857,7 +887,7 @@ ${printBtn}
       } catch(_) {}
 
       const isMultiPlan = siblingPlans.length > 0;
-      const useBookings = cbookings.length > 1; // 有多行柜子记录才用，单行退回老逻辑
+      const useBookings = cbookings.length >= 1; // 有柜子记录就用，单柜也从 booking 取封条/柜货重
 
       let ctnRows = [];
       let sumCartons = 0, sumGW = 0, sumCBM = 0;
@@ -865,10 +895,13 @@ ${printBtn}
       if (useBookings) {
         // 从 container_bookings 读多柜（每行一柜，有 contract_no/cargo_weight_kg）
         // 总量字段从 shipping_plans 读（total_cartons/cbm 不在 container_bookings 里）
-        const perCtnCartons = p.total_cartons ? Math.round(parseInt(p.total_cartons) / cbookings.length) : null;
-        const perCtnCBM     = p.total_cbm     ? parseFloat(p.total_cbm) / cbookings.length : null;
+        const totalBookingCartons = p.total_cartons ? parseInt(p.total_cartons) : orderCargo.cartons;
+        const totalBookingCBM     = p.total_cbm ? parseFloat(p.total_cbm) : orderCargo.cbm;
+        const perCtnCartons = totalBookingCartons != null ? Math.round(totalBookingCartons / cbookings.length) : null;
+        const perCtnCBM     = totalBookingCBM != null ? totalBookingCBM / cbookings.length : null;
+        const perCtnGW      = orderCargo.gw != null ? orderCargo.gw / cbookings.length : null;
         ctnRows = cbookings.map((cb, i) => {
-          const gwVal  = cb.gross_weight_kg ? parseFloat(cb.gross_weight_kg) : null;
+          const gwVal  = cb.gross_weight_kg ? parseFloat(cb.gross_weight_kg) : (perCtnGW != null ? parseFloat(perCtnGW.toFixed(3)) : null);
           const ctnVal = perCtnCartons;
           const cbmVal = perCtnCBM ? parseFloat(perCtnCBM.toFixed(3)) : null;
           sumCartons += ctnVal || 0;
@@ -926,9 +959,13 @@ ${printBtn}
           const po    = poList[i] || (orderNo !== "—" ? orderNo : scNo) || "—";
           const ord   = orderDataMap[po] || {};
           const isSingle = ctnNos.length === 1;
-          const ctnVal = ord.total_cartons ? parseInt(ord.total_cartons) : (isSingle && totalCartons ? parseInt(totalCartons) : null);
-          const gwVal  = ord.gross_weight  ? parseFloat(ord.gross_weight) : (isSingle && totalGW ? parseFloat(totalGW) : null);
-          const cbmVal = ord.total_cbm     ? parseFloat(ord.total_cbm)    : (isSingle && totalCBM ? parseFloat(totalCBM) : null);
+          const sourceLen = ctnNos.length || 1;
+          const fallbackCartons = totalCartons ? parseInt(totalCartons) : orderCargo.cartons;
+          const fallbackGW = totalGW ? parseFloat(totalGW) : orderCargo.gw;
+          const fallbackCBM = totalCBM ? parseFloat(totalCBM) : orderCargo.cbm;
+          const ctnVal = ord.total_cartons ? parseInt(ord.total_cartons) : (fallbackCartons != null ? (isSingle ? fallbackCartons : Math.round(fallbackCartons / sourceLen)) : null);
+          const gwVal  = ord.gross_weight  ? parseFloat(ord.gross_weight) : (fallbackGW != null ? (isSingle ? fallbackGW : parseFloat((fallbackGW / sourceLen).toFixed(3))) : null);
+          const cbmVal = ord.total_cbm     ? parseFloat(ord.total_cbm)    : (fallbackCBM != null ? (isSingle ? fallbackCBM : parseFloat((fallbackCBM / sourceLen).toFixed(3))) : null);
           sumCartons += ctnVal || 0;
           sumGW      += gwVal  || 0;
           sumCBM     += cbmVal || 0;
@@ -937,15 +974,14 @@ ${printBtn}
       }
 
       const actualCtnQty = ctnRows.length || ctnNos.length;
-      const footerCartons = sumCartons > 0 ? sumCartons : (totalCartons ? parseInt(totalCartons) : null);
-      const footerGW      = sumGW > 0 ? sumGW : (totalGW ? parseFloat(totalGW) : null);
-      const footerCBM     = sumCBM > 0 ? sumCBM : (totalCBM ? parseFloat(totalCBM) : null);
+      const footerCartons = sumCartons > 0 ? sumCartons : (totalCartons ? parseInt(totalCartons) : orderCargo.cartons);
+      const footerGW      = sumGW > 0 ? sumGW : (totalGW ? parseFloat(totalGW) : orderCargo.gw);
+      const footerCBM     = sumCBM > 0 ? sumCBM : (totalCBM ? parseFloat(totalCBM) : orderCargo.cbm);
 
       const ctnRowsHtml = ctnRows.map((r, i) => `<tr class="ctn-row">
           <td class="ctn-idx">Container ${i+1}</td>
           <td class="ctn-no">${esc(r.no)}</td>
           <td class="ctn-seal">${esc(r.seal)}</td>
-          <td style="padding:5px 8px;font-weight:700;color:#111;font-size:9.5px">${esc(r.po)}</td>
           <td class="ctn-ctn">${r.ctn ? r.ctn.toLocaleString('en') : '—'}</td>
           <td class="ctn-gw">${r.gw ? fmtNum(r.gw)+' KGS' : '—'}</td>
           <td class="ctn-cbm">${r.cbm ? r.cbm.toFixed(3)+' CBM' : '—'}</td>
@@ -959,7 +995,7 @@ ${printBtn}
         : [];
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
 
-      const fobInvNo = await issueDocNo(pool, { docDate,
+      const fobInvNo = await issueDocNo(pool, { docDate, noDate: true,
         prefix: "FI", seed: p.bl_no || p.shipment_no || p.id, blNo: p.bl_no,
         docType: "fob_invoice", totalUsd, totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
@@ -1062,7 +1098,6 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
           <th style="padding:5px 8px;text-align:left;width:70px">Container #</th>
           <th style="padding:5px 8px;text-align:left;width:120px">Container No.</th>
           <th style="padding:5px 8px;text-align:left;width:100px">Seal No.</th>
-          <th style="padding:5px 8px;text-align:left;width:90px">PO / 合同号</th>
           <th style="padding:5px 8px;text-align:right;width:70px">CTN</th>
           <th style="padding:5px 8px;text-align:right;width:95px">Gross Weight</th>
           <th style="padding:5px 8px;text-align:right;width:75px">Volume</th>
@@ -1072,7 +1107,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       <tfoot>
         <tr style="background:#f7f7f7;font-weight:900;border-top:2px solid #111;font-size:9.5px">
           <td style="padding:6px 8px;color:#666;font-size:9px">${actualCtnQty} × ${ctnType}</td>
-          <td style="padding:6px 8px" colspan="3"></td>
+          <td style="padding:6px 8px" colspan="2"></td>
           <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerCartons ? footerCartons.toLocaleString('en') : '—'}</td>
           <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerGW ? fmtNum(footerGW)+' KGS' : '—'}</td>
           <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerCBM ? footerCBM.toFixed(3)+' CBM' : '—'}</td>

@@ -268,17 +268,31 @@ async function handleDetail(req, res) {
       const spread = await factorySpread(client, customsNo, st.contract_no || row.contract_no || order?.contract_no);
       const ciTpl = await loadCustomsItems(client, customsNo);
       const anchoredTpl = factoryGoodsLinesFromItems(ciTpl.items, sellerRow, spread.length > 1);
-      const anchorResult = orderIds.length
-        ? await client.query(
-            `SELECT ROUND(COALESCE(NULLIF(SUM(oli.factory_subtotal),0),
-                           NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0),
-                           NULLIF(SUM(oli.qty_ctn*p.factory_price),0))::numeric,2) AS factory_expected_amount
-               FROM order_line_items oli
-               LEFT JOIN products p ON p.id=oli.product_id
-              WHERE oli.order_id = ANY($1::int[])`,
-            [orderIds]
-          )
-        : { rows: [] };
+      /* 🔴 0817：这里原来是【OLI 口径】——
+             SUM(oli.factory_subtotal) → SUM(qty_ctn*bg_bx*factory_price) → SUM(qty_ctn*factory_price)
+         直接违反 Damon 07-14 硬规3「不可以OLI，要看发票，以及报关资料」：
+         金额合法来源只有【报关资料】(锚定/上限) 与【发票】(实开)，
+         OLI 不许出现在任何显示层与 API 返回值。
+         07-14 只删了列表侧(customs-collab-rows.js 262/276)的 OLI 兜底，**详情这条漏了**。
+         实证 664707：OLI 算出 ¥102,581.08 显示给工厂，报关口径真值 ¥126,344.00，少 ¥23,762.92。
+
+         正确取数：人工锁定额 > 报关口径应开表 > 报关逐项合计 > null(显示「待报关资料」)。
+         ⛔ 判不出返回 null，绝不用 OLI 兜底。 */
+      const anchorResult = await client.query(
+        `SELECT ROUND(COALESCE(
+                  (SELECT s.manual_expected_amount FROM customs_invoice_status s
+                    WHERE s.customs_no=$1 AND s.factory_code=$2),
+                  (SELECT f.expected_amount FROM factory_invoice_expected_amounts f
+                    WHERE f.customs_no=$1 AND f.factory_name=$3 AND f.status='ready'
+                    ORDER BY f.generated_at DESC NULLS LAST LIMIT 1),
+                  (SELECT SUM(ci.declaration_amount) FROM customs_declaration_items ci
+                     JOIN customs_declarations cd ON cd.id=ci.declaration_id
+                     JOIN companies co ON co.id=ci.factory_company_id
+                    WHERE cd.declaration_no=$1 AND ci.deleted_at IS NULL AND co.code=$2
+                      AND COALESCE(ci.declaration_currency,'CNY') IN ('CNY','人民币','142'))
+                )::numeric, 2) AS factory_expected_amount`,
+        [customsNo, st.factory_code, sellerRow?.name_cn || scope?.factory?.name || null]
+      );
       const factoryExpectedAmount = money(anchorResult.rows[0]?.factory_expected_amount);
 
       invoiceTemplate = { buyer, seller, lines: anchoredTpl.lines, order_no: mergedOrderNos || order?.order_no || null,

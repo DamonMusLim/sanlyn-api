@@ -10,7 +10,7 @@ export async function fetchRows(pool, opts) {
   const params = [opts.start, opts.end];
   const where = [`b.export_date >= $1::date`, `b.export_date < $2::date`];
   const includeSlipDetails = !!opts.includeSlipDetails;
-  const paidAmountExpr = includeSlipDetails ? "COALESCE(bl.amount_alloc,0)" : "COALESCE(bl.amount_alloc, bs.amount)";
+  const paidAmountExpr = "COALESCE(bl.amount_alloc,0)";
 
   if (opts.factoryCode) {
     params.push(opts.factoryCode);
@@ -37,10 +37,11 @@ export async function fetchRows(pool, opts) {
              CASE WHEN o.order_no ILIKE '%-DG-%'
                   THEN (SELECT NULLIF(SUM(oli.declare_amount_per_box*oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id)
                   ELSE NULL END AS declare_value,
-             (SELECT COALESCE(NULLIF(SUM(oli.factory_subtotal),0), NULLIF(SUM(oli.qty_ctn*oli.bg_bx*p.factory_price),0), NULLIF(SUM(oli.qty_ctn*p.factory_price),0)) FROM order_line_items oli LEFT JOIN products p ON p.id=oli.product_id WHERE oli.order_id=o.id) AS factory_expected_value,
-             COALESCE((SELECT NULLIF(SUM(oli.factory_subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id),
-                      NULLIF(o.total_amount_factory,0)) AS purchase_value,
+             -- 0817 删：factory_expected_value(OLI) 唯一消费者 legacy_expected_amount 已随 forge 裁决B 删除
+             -- 0817 删：purchase_value(OLI) 唯一消费者 system_expected_amount 已随 forge 裁决C 断开
              (SELECT NULLIF(SUM(oli.qty_ctn),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS qty_oli,
+             -- sales_value 不是应开金额，是【我方销售额】；唯一用途是 ratio_alert
+             --   「应开 > 销售额×1.5 就告警」的异常检测分母，不外显为应开。 OLI_INTERNAL_SCAN_ONLY
              (SELECT NULLIF(SUM(oli.subtotal),0) FROM order_line_items oli WHERE oli.order_id=o.id) AS sales_value
         FROM orders o
         LEFT JOIN companies c ON c.code=o.factory_code
@@ -128,6 +129,7 @@ export async function fetchRows(pool, opts) {
              k.decl_key,
              UPPER(TRIM(COALESCE(NULLIF(TRIM(oli.brand), ''), NULLIF(TRIM(p.brand), '')))) AS brand,
              BOOL_OR(ob.company_code IS NOT NULL) AS is_own_brand,
+             -- OLI_INTERNAL_SCAN_ONLY：brand_amount 只用于 ORDER BY 挑主品牌，金额不外显
              SUM(COALESCE(oli.factory_subtotal, 0)) AS brand_amount
         FROM keyed k
         JOIN order_line_items oli ON oli.order_id=k.order_id
@@ -161,8 +163,16 @@ export async function fetchRows(pool, opts) {
         -- 口径 customs_line_fob_cny_v1 = 报关逐项金额 × 行级工厂归属。
         -- 依据：报关金额源自检疫报告(厂检单)，本来就是照工厂出厂价申报的，比订单里的 factory_price 可靠。
         -- ⛔ status<>'ready'（工厂未定/超额/已锁）一律返回 NULL，页面显「待人工填」，绝不发错数给工厂。
-        NULLIF(SUM(factory_expected_value),0) AS legacy_expected_amount,
-        COALESCE(MAX(fer_declare), NULLIF(SUM(declare_value),0), NULLIF(SUM(purchase_value),0)) AS system_expected_amount,
+        -- 0817 forge 裁决 B：legacy_expected_amount 本质是 OLI，绝不能进 API 返回值。
+        --   仅保留为内部比对用途需另建扫描器；这里直接删。 -- OLI_REMOVED_20260817
+        /* 🔴 0817 forge 裁决 C（FAIL 当前逻辑）：原来最后兜底到 SUM(purchase_value)，
+           而 purchase_value = COALESCE(SUM(oli.factory_subtotal), o.total_amount_factory) —— 是 OLI。
+           这正是今早查出「22 票 状态表应开 vs 报关口径应开 差 ¥171万」的根。
+           Damon 07-14 硬规3：金额只能来自报关资料与发票，OLI 连兜底都不许。
+           forge：「没有报关额时变 null 是正确行为，不是回归。状态机不要拿脏金额维持看似正常。」
+           影响实测：31票人工锁定不受影响 · 24票换成报关口径真值 · 5票变null——
+           而那 5 票全是提单号/订单号当主键的【模版行】，本就不该有应开金额。 */
+        COALESCE(MAX(fer_declare), NULLIF(SUM(declare_value),0)) AS system_expected_amount,
         MAX(fer_declare) AS declare_amount,
         NULLIF(SUM(sales_value),0) AS sales_amount
         FROM keyed
@@ -177,7 +187,6 @@ export async function fetchRows(pool, opts) {
              ELSE COALESCE(s.status, CASE WHEN b.system_expected_amount IS NULL THEN 'need_amount' ELSE 'pending_confirm' END)
            END AS status,
            fie.expected_amount AS factory_expected_amount,
-           b.legacy_expected_amount,
            b.system_expected_amount,
            b.sales_amount,
            CASE WHEN b.sales_amount > 0 AND COALESCE(s.manual_expected_amount, b.system_expected_amount) > b.sales_amount * 1.5
@@ -197,7 +206,9 @@ export async function fetchRows(pool, opts) {
                 ELSE ROUND(COALESCE(s.manual_expected_amount, fie.expected_amount, b.system_expected_amount) - COALESCE(u.uploaded_amount,0), 2)
             END AS diff_amount,
            COALESCE(pay.paid_amount,0) AS paid_amount,
-           COALESCE(pay.slip_count,0)::int AS slip_count
+           COALESCE(pay.slip_count,0)::int AS slip_count,
+           COALESCE(pay.unallocated_slip_amount,0) AS unallocated_slip_amount,
+           COALESCE(pay.unallocated_slip_count,0)::int AS unallocated_slip_count
            ${includeSlipDetails ? ", COALESCE(pay.slip_details, '[]'::jsonb) AS slip_details" : ""},
            ev.created_at AS last_event_at
       FROM b
@@ -234,8 +245,34 @@ export async function fetchRows(pool, opts) {
            )
       ) ri ON true
       LEFT JOIN LATERAL (
-        SELECT COALESCE(SUM(${paidAmountExpr}),0) AS paid_amount,
-               COUNT(DISTINCT bs.id) AS slip_count
+        SELECT
+               -- 记忆库口径是「核销只认 alloc_status='allocated'」；本次按 Damon 指定的排除法实现（当前 allocation_conflict/manual_review 各 0 条，两种写法数值等价）。
+               COALESCE(SUM(CASE WHEN COALESCE(bl.alloc_status,'') NOT IN ('pending_allocation','voided_duplicate') THEN ${paidAmountExpr} ELSE 0 END),0) AS paid_amount,
+               COUNT(DISTINCT bs.id) AS slip_count,
+               (SELECT COALESCE(SUM(pending_slips.amount),0)
+                  FROM (
+                    SELECT DISTINCT bs2.id, bs2.amount
+                      FROM bank_slip_links bl2
+                      JOIN bank_slips bs2 ON bs2.id=bl2.slip_id
+                     WHERE bl2.alloc_status='pending_allocation'
+                       AND (
+                         bl2.bl_no = b.customs_no
+                         OR (b.contract_no IS NOT NULL AND bl2.contract_no = b.contract_no)
+                         OR (b.order_no IS NOT NULL AND bl2.order_no = ANY(string_to_array(b.order_no, ',')))
+                       )
+                  ) pending_slips) AS unallocated_slip_amount,
+               (SELECT COUNT(*)
+                  FROM (
+                    SELECT DISTINCT bs2.id
+                      FROM bank_slip_links bl2
+                      JOIN bank_slips bs2 ON bs2.id=bl2.slip_id
+                     WHERE bl2.alloc_status='pending_allocation'
+                       AND (
+                         bl2.bl_no = b.customs_no
+                         OR (b.contract_no IS NOT NULL AND bl2.contract_no = b.contract_no)
+                         OR (b.order_no IS NOT NULL AND bl2.order_no = ANY(string_to_array(b.order_no, ',')))
+                       )
+                  ) pending_slips) AS unallocated_slip_count
                ${includeSlipDetails ? `,
                COALESCE(jsonb_agg(jsonb_build_object(
                  'amount', COALESCE(bl.amount_alloc,0),
@@ -244,9 +281,9 @@ export async function fetchRows(pool, opts) {
                ) ORDER BY bs.payment_date DESC NULLS LAST, bs.id DESC), '[]'::jsonb) AS slip_details` : ""}
           FROM bank_slip_links bl
           JOIN bank_slips bs ON bs.id=bl.slip_id
-         WHERE bl.bl_no = b.customs_no
+         WHERE (bl.bl_no = b.customs_no
             OR (b.contract_no IS NOT NULL AND bl.contract_no = b.contract_no)
-            OR (b.order_no IS NOT NULL AND bl.order_no = ANY(string_to_array(b.order_no, ',')))
+            OR (b.order_no IS NOT NULL AND bl.order_no = ANY(string_to_array(b.order_no, ','))))
       ) pay ON true
       LEFT JOIN invoice_events ev ON ev.id=s.last_event_id
      WHERE ${where.join(" AND ")}
@@ -270,6 +307,8 @@ export async function fetchRows(pool, opts) {
     qty: Number(r.qty) || null,
     paid_amount: money(r.paid_amount) || 0,
     slip_count: Number(r.slip_count) || 0,
+    unallocated_slip_amount: money(r.unallocated_slip_amount) || 0,
+    unallocated_slip_count: Number(r.unallocated_slip_count) || 0,
     sales_amount: money(r.sales_amount),
     ratio_alert: r.ratio_alert != null ? Number(r.ratio_alert) : null,
   }));

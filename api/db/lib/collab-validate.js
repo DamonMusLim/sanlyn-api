@@ -5,6 +5,69 @@ import { materializeAndList } from "./carrier-requirements.js";
 import { rawToHash, COLLAB_VERSION, COLLAB_VERSION_AT } from "./collab-shared.js";
 import { ensureColumns as ensureCompanyColumns, findCompany as findScopedCompany } from "./collab-company-profile.js";
 
+const CUSTOMER_FINISHED_DOC_TYPES = ["pl_sc_iv", "bl", "freight_bill", "portcharge_bill", "insurance"];
+const CUSTOMER_GENERATABLE_DOC_TYPES = [];  // BL要真实提单(不出模版);港杂费删;海运费按卖价另判
+const DOC_VISIBILITY_TYPES = new Set(["bl", "pl_sc_iv", "freight_bill", "portcharge_bill", "fe", "quarantine"]);
+
+function normalizeHiddenDocTypes(list) {
+  const out = new Set();
+  for (const v of Array.isArray(list) ? list : []) {
+    const t = String(v || "").trim();
+    if (DOC_VISIBILITY_TYPES.has(t)) out.add(t);
+  }
+  return [...out];
+}
+
+async function resolveHiddenDocTypes(pool, companyProfile) {
+  const companyCode = String(companyProfile?.code || "").trim();
+  if (!companyCode) return [];
+  try {
+    const { rows } = await pool.query(
+      `SELECT collab_hidden_docs
+         FROM companies
+        WHERE code = $1
+        LIMIT 1`,
+      [companyCode]
+    );
+    return normalizeHiddenDocTypes(rows[0]?.collab_hidden_docs);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function hasCustomsPackReady(pool, planId) {
+  // 报关已完成判据 = 有提单号(记忆铁律:出口不报关拿不到提单,shipped+有BL=报关已完成)。
+  // ⛔ 不查 customs_declaration_items —— 很多真做过报关的票那表是空的(数据不在那)。
+  try {
+    const { rows } = await pool.query(
+      `SELECT (btrim(COALESCE(bl_no, '')) <> '') AS ok FROM shipping_plans WHERE id = $1`,
+      [planId]
+    );
+    return rows[0]?.ok === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function hasCustomerPortchargeSale(pool, planId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1
+         FROM freight_supplier_bills fsb
+         JOIN shipping_plans sp ON sp.id = $1
+        WHERE (fsb.link_plan_id = $1::text OR (btrim(COALESCE(sp.bl_no, '')) <> '' AND fsb.bl_no = sp.bl_no))
+          AND fsb.cost_category IN ('港杂费', '拖车费', 'THC')
+          AND fsb.sale_amount IS NOT NULL
+          AND fsb.sale_amount > 0
+        LIMIT 1`,
+      [planId]
+    );
+    return rows.length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
 async function handleValidate(req, res, pool) {
   let _partyHasBills = false;   // 该方是否有可见账单行；决定 billing 卡片出不出
   const raw = req.query && req.query.token;
@@ -252,6 +315,7 @@ async function handleValidate(req, res, pool) {
          JOIN orders o ON (o.contract_no = du.contract_no OR o.order_no = du.contract_no)
         WHERE o.shipping_plan_id = $1 AND du.doc_type = 'quarantine_report'
           AND COALESCE(du.stamped_url, du.url) IS NOT NULL
+          AND COALESCE(du.name,'') NOT ILIKE '%申请%'   -- 申请单≠植检证(证书要签发),不给客户当证书显示
         ORDER BY du.id`, [planId]);
     // 一票可多份(拼柜每单一张CIQ)全列出；但同一张合并证会被按订单登记多行(name 相同)→ 按 name 去重,只显示一张。
     const _seen = new Set();
@@ -270,6 +334,41 @@ async function handleValidate(req, res, pool) {
     } catch (e) { return null; }
   })();
   if (role === "supplier_portal" && portalScope && companyProfile) portalScope.company_profile = companyProfile;
+  const hiddenDocTypes = role === "customer_booking"
+    ? await resolveHiddenDocTypes(pool, companyProfile)
+    : [];
+
+  const customsPackReady = await hasCustomsPackReady(pool, planId);
+  const portchargeBillReady = role === "customer_booking"
+    ? await hasCustomerPortchargeSale(pool, planId)
+    : false;
+  const uploadedDocs = (() => {
+    const list = Array.isArray(planRes.rows[0].collab_uploads) ? planRes.rows[0].collab_uploads : [];
+    const latest = new Map();
+    for (const item of list) {
+      if (!item || !CUSTOMER_FINISHED_DOC_TYPES.includes(item.doc_type)) continue;
+      latest.set(item.doc_type, {
+        doc_type: item.doc_type,
+        filename: item.filename || "",
+        uploaded_at: item.uploaded_at || null,
+      });
+    }
+    if (role === "customer_booking") for (const docType of CUSTOMER_GENERATABLE_DOC_TYPES) {
+      if (!latest.has(docType)) latest.set(docType, { doc_type: docType, source: "generated" });
+    }
+    if (role === "customer_booking") {
+      const _fs = planRes.rows[0].freight_sale_usd;   // 海运费单仅当有卖价才显(空的不出)
+      if (_fs != null && Number(_fs) > 0 && !latest.has("freight_bill"))
+        latest.set("freight_bill", { doc_type: "freight_bill", source: "generated" });
+    }
+    if (role === "customer_booking" && portchargeBillReady && !latest.has("portcharge_bill")) {
+      latest.set("portcharge_bill", { doc_type: "portcharge_bill", source: "generated" });
+    }
+    if (role === "customer_booking" && customsPackReady && !latest.has("pl_sc_iv")) {
+      latest.set("pl_sc_iv", { doc_type: "pl_sc_iv", source: "generated" });
+    }
+    return CUSTOMER_FINISHED_DOC_TYPES.map(t => latest.get(t)).filter(Boolean);
+  })();
 
   return res.json({
     valid: true,
@@ -279,6 +378,8 @@ async function handleValidate(req, res, pool) {
     collab_version: COLLAB_VERSION,
     collab_version_at: COLLAB_VERSION_AT,
     carrier_requirements: carrierRequirements,
+    uploaded_docs: uploadedDocs,
+    hidden_doc_types: hiddenDocTypes,
     // factory_booking 下 preview 标志无意义，不能驱动前端显示全貌。
     is_preview: role !== "factory_booking" && meta.preview === true,
     preview_godview: role !== "factory_booking" && meta.preview === true && !(factoryScope && factoryScope.label),
@@ -305,6 +406,7 @@ async function handleValidate(req, res, pool) {
       const sheet = { ...planRes.rows[0], sailings: sailingsRes.rows };
       sheet.quarantine_docs = quarantineDocs;              // 检疫报告清单（真源 document_uploads，每份带 ref=du.id）
       sheet.has_quarantine = quarantineDocs.length > 0;   // 兼容旧判断
+      sheet.uploaded_docs = uploadedDocs;
       sheet.containers_live = cbRes.rows;
       // 本票汇总(CBM/箱数/毛净重)：真源在 order_line_items(cbm_ctn×qty_ctn),plan级 total_cbm 常年空。
       // 货代/工厂装柜要看 CBM，这里从订单行现算并回填(不覆盖已有非空值)。

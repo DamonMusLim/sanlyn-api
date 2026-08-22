@@ -302,7 +302,7 @@ async function handlePortalLink(req, res) {
     const ins = await pool.query(
       `INSERT INTO invoice_links
          (code,purpose,scope_type,scope_value,order_no,expires_at,created_by,created_at)
-       VALUES ($1,'portal','factory',$2,'',NOW()+interval '1 year',$3,NOW())
+       VALUES ($1,'portal','factory',$2,'',NOW()+interval '7 days',$3,NOW())
        RETURNING code, expires_at`,
       [code, factoryCode, createdBy]
     );

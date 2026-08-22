@@ -25,9 +25,99 @@ async function resolveRoleToken(pool, raw, roles) {
 // ── GET /file?token=&type=so|cd&ref= — 文档下载代理 ─────────
 // magic token 换内部 JWT，服务端转发 documents 渲染，JWT 不出服务器。
 // 车队只能拿 SO（托书）；报关行 SO + CD（报关底稿，ref 必须是本票挂的订单号）。
-const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl", "quarantine"], customer_booking: ["pack", "pl", "iv", "sc", "pickup_photo", "quarantine"],
+const CUSTOMER_FINISHED_DOC_TYPES = ["pl_sc_iv", "bl", "freight_bill", "portcharge_bill", "insurance"];
+
+const FILE_TYPES_BY_ROLE = { trucking_booking: ["so"], broker_booking: ["so", "pack", "customs_decl", "quarantine"], customer_booking: ["pack", ...CUSTOMER_FINISHED_DOC_TYPES, "pickup_photo", "quarantine"],
   factory_booking: ["upload", "pickup_photo"],
   supplier_portal: ["so", "cd", "pack", "nondg", "telex", "transfer", "upload", "customs_decl", "quarantine", "bl_sample", "booking_note", "pickup_photo"] };
+
+function isColdArchivedUpload(hit) {
+  return hit && (
+    hit.archived === true ||
+    hit.cold_archived === true ||
+    hit.archive_status === "archived" ||
+    hit.storage_tier === "cold" ||
+    !!hit.archived_at ||
+    !!hit.nas_path ||
+    !!hit.cold_path ||
+    !!hit.archive_ref
+  );
+}
+
+function sendMissingUploadSvg(res, state) {
+  res.setHeader("Content-Type", "image/svg+xml");
+  if (state === "archived") {
+    return res.end('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"120\" data-state=\"archived\"><rect width=\"120\" height=\"120\" fill=\"#fdf1ea\"/><rect x=\"42\" y=\"38\" width=\"36\" height=\"26\" rx=\"3\" fill=\"#e7c8b4\"/><rect x=\"42\" y=\"33\" width=\"16\" height=\"7\" rx=\"2\" fill=\"#e7c8b4\"/><text x=\"60\" y=\"80\" font-size=\"11\" fill=\"#9a3412\" text-anchor=\"middle\" font-family=\"sans-serif\">\u5df2\u5b58\u6863</text><text x=\"60\" y=\"96\" font-size=\"9\" fill=\"#b45309\" text-anchor=\"middle\" font-family=\"sans-serif\">\u7533\u8bf7\u63d0\u53d6</text></svg>');
+  }
+  return res.end('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"120\" data-state=\"lost\"><rect width=\"120\" height=\"120\" fill=\"#fee2e2\"/><rect x=\"41\" y=\"30\" width=\"38\" height=\"28\" rx=\"3\" fill=\"#fecaca\" stroke=\"#dc2626\" stroke-width=\"2\"/><circle cx=\"60\" cy=\"44\" r=\"7\" fill=\"#fca5a5\"/><path d=\"M33 88h54\" stroke=\"#b91c1c\" stroke-width=\"2\" stroke-linecap=\"round\"/><text x=\"60\" y=\"76\" font-size=\"10\" fill=\"#991b1b\" text-anchor=\"middle\" font-family=\"sans-serif\">\ud83d\udcf7 \u6587\u4ef6\u5df2\u4e22\u5931</text><text x=\"60\" y=\"96\" font-size=\"9\" fill=\"#b91c1c\" text-anchor=\"middle\" font-family=\"sans-serif\">\u8bf7\u91cd\u65b0\u4e0a\u4f20</text></svg>');
+}
+
+function sendCollabStoredUpload(res, planId, hit, inline = true) {
+  const fp = path.join(UPLOAD_DIR, String(planId), hit.stored);
+  if (!fs.existsSync(fp)) {
+    // Fail closed: only explicit cold-storage markers may say archived; otherwise tell the user to re-upload.
+    return sendMissingUploadSvg(res, isColdArchivedUpload(hit) ? "archived" : "lost");
+  }
+  res.setHeader("Content-Type", hit.mime || "application/octet-stream");
+  res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(hit.filename)}`);
+  return res.end(fs.readFileSync(fp));
+}
+
+async function proxyInternalDoc(res, url, unavailableError) {
+  try {
+    const up = await fetch(url);
+    res.status(up.status);
+    const ct = up.headers.get("content-type"); if (ct) res.setHeader("Content-Type", ct);
+    const cd = up.headers.get("content-disposition"); if (cd) res.setHeader("Content-Disposition", cd);
+    return res.end(Buffer.from(await up.arrayBuffer()));
+  } catch (e) {
+    return res.status(502).json({ ok: false, error: unavailableError || "文档服务不可用" });
+  }
+}
+
+async function hasCustomsPackReady(pool, planId) {
+  // 报关已完成判据 = 有提单号(记忆铁律:出口不报关拿不到提单,shipped+有BL=报关已完成)。
+  // ⛔ 不查 customs_declaration_items —— 很多真做过报关的票那表是空的(数据不在那)。
+  try {
+    const { rows } = await pool.query(
+      `SELECT (btrim(COALESCE(bl_no, '')) <> '') AS ok FROM shipping_plans WHERE id = $1`,
+      [planId]
+    );
+    return rows[0]?.ok === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function hasCustomerPortchargeSale(pool, planId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1
+         FROM freight_supplier_bills fsb
+         JOIN shipping_plans sp ON sp.id = $1
+        WHERE (fsb.link_plan_id = $1::text OR (btrim(COALESCE(sp.bl_no, '')) <> '' AND fsb.bl_no = sp.bl_no))
+          AND fsb.cost_category IN ('港杂费', '拖车费', 'THC')
+          AND fsb.sale_amount IS NOT NULL
+          AND fsb.sale_amount > 0
+        LIMIT 1`,
+      [planId]
+    );
+    return rows.length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function customerPackUrl(pool, planId, jwt) {
+  const { rows: ords } = await pool.query(
+    `SELECT order_no FROM orders WHERE shipping_plan_id = $1 AND order_no IS NOT NULL ORDER BY order_no`,
+    [planId]
+  );
+  if (!ords.length) return null;
+  const ids = ords.map(o => o.order_no).join(",");
+  return `http://127.0.0.1:9000/api/db/documents?type=pack&id=${encodeURIComponent(ords[0].order_no)}`
+    + `&ids=${encodeURIComponent(ids)}&style=v2&audience=customer&preview=1&token=${encodeURIComponent(jwt)}`;
+}
 
 async function handleFileProxy(req, res, pool) {
   const { token: raw, type, ref, aud } = req.query || {};
@@ -95,15 +185,44 @@ async function handleFileProxy(req, res, pool) {
     const list = (upl[0] && upl[0].u) || [];
     const hit = Array.isArray(list) ? list.find(x => x && x.stored === String(ref || "")) : null;
     if (!hit) return res.status(403).json({ ok: false, error: "文件不属于本票" });
-    const fp = path.join(UPLOAD_DIR, String(auth.planId), hit.stored);
-    if (!fs.existsSync(fp)) {
-      // 已转 NAS 冷存:回"已存档"占位图(不再破图),顾客可点"申请提取"发邮箱
-      res.setHeader("Content-Type", "image/svg+xml");
-      return res.end('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" height=\"120\"><rect width=\"120\" height=\"120\" fill=\"#fdf1ea\"/><rect x=\"42\" y=\"38\" width=\"36\" height=\"26\" rx=\"3\" fill=\"#e7c8b4\"/><rect x=\"42\" y=\"33\" width=\"16\" height=\"7\" rx=\"2\" fill=\"#e7c8b4\"/><text x=\"60\" y=\"80\" font-size=\"11\" fill=\"#9a3412\" text-anchor=\"middle\" font-family=\"sans-serif\">\u5df2\u5b58\u6863</text><text x=\"60\" y=\"96\" font-size=\"9\" fill=\"#b45309\" text-anchor=\"middle\" font-family=\"sans-serif\">\u7533\u8bf7\u63d0\u53d6</text></svg>');
+    return sendCollabStoredUpload(res, auth.planId, hit);
+  }
+  if (auth.role === "customer_booking" && CUSTOMER_FINISHED_DOC_TYPES.includes(type)) {
+    const { rows: upl } = await pool.query(
+      `SELECT raw->'collab_uploads' AS u FROM shipping_plans WHERE id = $1`, [auth.planId]);
+    const list = (upl[0] && upl[0].u) || [];
+    const hit = Array.isArray(list) ? [...list].reverse().find(x => x && x.doc_type === type) : null;
+    if (hit) {
+      const stored = String(hit.stored || "");
+      const ownsStored = Array.isArray(list) && list.some(x => x && x.stored === stored);
+      if (!stored || !ownsStored) return res.status(403).json({ ok: false, error: "文件不属于本票" });
+      return sendCollabStoredUpload(res, auth.planId, hit, !!req.query.preview);
     }
-    res.setHeader("Content-Type", hit.mime || "application/octet-stream");
-    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(hit.filename)}`);
-    return res.end(fs.readFileSync(fp));
+    const jwtX = generateToken({ uid: 90, username: "svc-agent", role: "admin", tv: 1 });
+    if (type === "freight_bill") {
+      // 海运费单:仅当有海运费卖价(freight_sale_usd)才生成;空的不出(Damon:有金额才显,1200 待录入)
+      const { rows: _fr } = await pool.query("SELECT freight_sale_usd FROM shipping_plans WHERE id=$1", [auth.planId]);
+      if (_fr[0]?.freight_sale_usd == null || Number(_fr[0].freight_sale_usd) <= 0)
+        return res.status(404).json({ ok: false, error: "not_uploaded" });
+      const urlX = `http://127.0.0.1:9000/api/db/shipping-plan-pdf?type=fob_invoice&id=${encodeURIComponent(auth.planId)}&format=pdf&token=${encodeURIComponent(jwtX)}`;
+      return proxyInternalDoc(res, urlX, "海运费单服务不可用");
+    }
+    if (type === "portcharge_bill") {
+      if (!(await hasCustomerPortchargeSale(pool, auth.planId)))
+        return res.status(404).json({ ok: false, error: "not_uploaded" });
+      const urlX = `http://127.0.0.1:9000/api/db/shipping-plan-pdf?type=fob_portcharge&id=${encodeURIComponent(auth.planId)}&format=pdf&token=${encodeURIComponent(jwtX)}`;
+      return proxyInternalDoc(res, urlX, "港杂费单服务不可用");
+    }
+    // ⛔ BL 不出模版(Damon:要真实提单),只发上传的真提单(上方 uploaded 已处理);没上传就落到 404 not_uploaded
+    if (type === "pl_sc_iv") {
+      if (!(await hasCustomsPackReady(pool, auth.planId))) {
+        return res.status(404).json({ ok: false, error: "customs_not_final" });
+      }
+      const urlX = await customerPackUrl(pool, auth.planId, jwtX);
+      if (!urlX) return res.status(404).json({ ok: false, error: "本票无订单" });
+      return proxyInternalDoc(res, urlX, "PL/SC/IV 服务不可用");
+    }
+    return res.status(404).json({ ok: false, error: "not_uploaded" });
   }
   // 工厂装箱/司机/铅封照片：客户可看本票工厂上传的图。真源=raw.collab_uploads(与upload同源)，
   // 但只放行 role=factory 或图片类型，防客户越权拉到别方(货代/我方)的上传件。
@@ -114,15 +233,8 @@ async function handleFileProxy(req, res, pool) {
     const stored = String(ref || "");
     const hit = Array.isArray(list) ? list.find(x => x && x.stored === stored && (x.role === "factory" || String(x.mime || "").startsWith("image/"))) : null;
     if (!hit) return res.status(403).json({ ok: false, error: "照片不属于本票或非工厂图" });
-    const fp = path.join(UPLOAD_DIR, String(auth.planId), hit.stored);
-    if (!fs.existsSync(fp)) {
-      res.setHeader("Content-Type", "image/svg+xml");
-      return res.end('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120"><rect width="120" height="120" fill="#fdf1ea"/><text x="60" y="64" font-size="11" fill="#9a3412" text-anchor="middle" font-family="sans-serif">已存档</text></svg>');
-    }
-    res.setHeader("Content-Type", hit.mime || "image/jpeg");
     res.setHeader("Cache-Control", "private, max-age=3600");
-    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(hit.filename)}`);
-    return res.end(fs.readFileSync(fp));
+    return sendCollabStoredUpload(res, auth.planId, hit);
   }
   // 检疫报告：真源 document_uploads(doc_type=quarantine_report)，按本票 plan→orders 的 contract_no 或 order_no 匹配（防越权拉别票）
   if (type === "quarantine") {
@@ -148,7 +260,7 @@ async function handleFileProxy(req, res, pool) {
     } catch (e) { return res.status(502).json({ ok: false, error: "检疫报告服务不可用" }); }
   }
   let extraQ = "";
-  if (auth.role === "customer_booking" && ["pack", "pl", "iv", "sc"].includes(type)) {
+  if (auth.role === "customer_booking" && type === "pack") {
     if (req.query.format && req.query.format !== "html") return res.status(404).json({ ok: false, error: "该格式尚未正式发出" });
     return await sendFrozenCustomerDoc(pool, auth.planId, type, res);
   }
@@ -255,6 +367,9 @@ async function handleCollabUpload(req, res, pool) {
   const purpose = String((req.body && req.body.purpose) || "").slice(0, 40) || null;
   const seqRaw = parseInt(req.body && req.body.container_seq, 10);
   const containerSeq = seqRaw > 0 ? seqRaw : null;
+  const docTypeRaw = String((req.body && req.body.doc_type) || "");
+  const uploadDocTypes = [...CUSTOMER_FINISHED_DOC_TYPES, "other"];
+  const docType = uploadDocTypes.includes(docTypeRaw) ? docTypeRaw : "other";
   const fScope = auth.role === "factory_booking" && auth.meta ? auth.meta.factory_scope : null;
   const scopeSeqs = fScope && Array.isArray(fScope.seqs) ? fScope.seqs.map(Number).filter(Boolean) : [];
   if (containerSeq && scopeSeqs.length && !scopeSeqs.includes(containerSeq))
@@ -277,6 +392,7 @@ async function handleCollabUpload(req, res, pool) {
     mime: String(mime || "").slice(0, 60) || null, size: buf.length,
     uploaded_at: new Date().toISOString(),
   };
+  rec.doc_type = docType;
   if (purpose) rec.purpose = purpose;
   if (containerSeq) rec.container_seq = containerSeq;
   if (auth.role === "supplier_portal" && /S\/?O|入货|排载|配舱|订舱确认|FCL|VGM|SI/i.test(`${safe} ${purpose || ""}`)) {

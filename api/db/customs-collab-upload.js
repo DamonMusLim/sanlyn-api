@@ -3,7 +3,8 @@
 import { getPool } from "../db.js";
 import { cleanString } from "./factory-portal-utils.js";
 import { readUploadPayload, validateFile, uploadToOss, insertFinanceInvoice } from "./factory-invoice-upload.js";
-import { ocrInvoice } from "./factory-invoice-ocr.js";
+import crypto from "crypto";
+import { ocrInvoice, stripGoodsPrefix } from "./factory-invoice-ocr.js";
 import { money, uploadedForCustoms, reconcileStatus, writeInvoiceEvent } from "./customs-collab-status.js";
 import { resolveFactory, rateLimit, failClosed, assertFactoryCustoms, sellerNameMatches, json } from "./customs-collab-shared.js";
 
@@ -34,8 +35,68 @@ async function handleUpload(req, res) {
 
     const parsed = ocr?.parsed || {};
     const amountInclTax = money(parsed.amount_incl_tax);
-    const sellerOcr = cleanString(parsed.seller_name);
+
+    /* 0817 OCR bug: buyer/seller got swapped (real case: seller read as our own company).
+       Prompt now states left=buyer right=seller; this is the fallback: if seller side matches
+       US and buyer side does not, swap them. Name is unreliable, prefer tax id. */
+    const OUR_TAX_IDS = new Set(["91350206MA34RW3852"]);
+    let sellerOcr = cleanString(parsed.seller_name);
+    let buyerOcr = cleanString(parsed.buyer_name);
+    let sellerTaxOcr = cleanString(parsed.seller_tax_id);
+    let buyerTaxOcr = cleanString(parsed.buyer_tax_id);
+    let swapped = false;
+    const looksOurs = (tax, nm) => OUR_TAX_IDS.has(tax) || /巴匕|巴比/.test(nm || "");
+    if (looksOurs(sellerTaxOcr, sellerOcr) && !looksOurs(buyerTaxOcr, buyerOcr)) {
+      [sellerOcr, buyerOcr] = [buyerOcr, sellerOcr];
+      [sellerTaxOcr, buyerTaxOcr] = [buyerTaxOcr, sellerTaxOcr];
+      parsed.seller_name = sellerOcr; parsed.buyer_name = buyerOcr;
+      parsed.seller_tax_id = sellerTaxOcr; parsed.buyer_tax_id = buyerTaxOcr;
+      swapped = true;
+    }
     const sellerMismatch = !!sellerOcr && !sellerNameMatches(scope.factory.name, sellerOcr);
+
+    /* 0817 new: goods-name check. Invoice item names carry a tax-bureau category prefix
+       like *宠物用品*猫砂 -> strip it before comparing with declaration item names.
+       Report only, never modify invoice or declaration. */
+    const lineItems = Array.isArray(parsed.line_items) ? parsed.line_items : [];
+    let goodsCheck = null;
+    if (lineItems.length) {
+      const dq = await pool.query(
+        `SELECT ci.declaration_name_cn nm, ci.qty, ci.unit, ci.declaration_amount amt
+           FROM customs_declaration_items ci
+           JOIN customs_declarations cd ON cd.id = ci.declaration_id
+           JOIN companies co ON co.id = ci.factory_company_id
+          WHERE cd.declaration_no = $1 AND ci.deleted_at IS NULL AND co.code = $2
+          ORDER BY ci.sort_order`,
+        [customsNo, scope.factory.code]
+      );
+      const decl = dq.rows;
+      if (decl.length) {
+        const dnames = decl.map((d) => String(d.nm || "").trim());
+        const inames = lineItems.map((l) => stripGoodsPrefix(l.name));
+        const missing = dnames.filter((n) => n && !inames.includes(n));
+        const extra = inames.filter((n) => n && !dnames.includes(n));
+        const qtyDiff = [];
+        const unitNotes = [];
+        for (const d of decl) {
+          const hit = lineItems.find((l) => stripGoodsPrefix(l.name) === String(d.nm || "").trim());
+          if (hit && hit.qty !== null && Math.abs(Number(hit.qty) - Number(d.qty)) > 0.01)
+            qtyDiff.push({ name: d.nm, declared: Number(d.qty), invoiced: Number(hit.qty) });
+          /* 0817 Damon 核对后纠正：单位不一致【不是】问题，不要报警。
+             退税申报表的单位取自海关计量单位(hgjldwmc)，来自报关单，进项发票的单位根本不进那张表。
+             实证：猫砂报关按千克、发票按箱开，已成功退税十几批；税局侧 313 行里 台/件/条/个 都收。
+             我先前把它判成 goods_mismatch 是自造假警报，现降级为 note，只记录不拦。 */
+          if (hit && hit.unit && String(d.unit || "") && hit.unit !== String(d.unit))
+            unitNotes.push({ name: d.nm, unit_declared: d.unit, unit_invoiced: hit.unit });
+        }
+        goodsCheck = {
+          declared_lines: decl.length, invoiced_lines: lineItems.length,
+          missing_in_invoice: missing, extra_in_invoice: extra, qty_diff: qtyDiff,
+          unit_notes: unitNotes,
+          ok: missing.length === 0 && extra.length === 0 && qtyDiff.length === 0,
+        };
+      }
+    }
 
     let reviewStatus = "pending";
     let warning = "";
@@ -52,8 +113,23 @@ async function handleUpload(req, res) {
       needsManualReview = true;
       warning = warning ? `${warning}；卖方与工厂不一致，请核实` : "卖方与工厂不一致，请核实";
     }
+    if (goodsCheck && !goodsCheck.ok) {
+      if (reviewStatus === "pending") reviewStatus = "goods_mismatch";
+      needsManualReview = true;
+      const bits = [];
+      if (goodsCheck.missing_in_invoice.length) bits.push(`报关有发票没开：${goodsCheck.missing_in_invoice.join("、")}`);
+      if (goodsCheck.extra_in_invoice.length) bits.push(`发票多开：${goodsCheck.extra_in_invoice.join("、")}`);
+      if (goodsCheck.qty_diff.length) bits.push(`数量不符 ${goodsCheck.qty_diff.length} 行`);
+      const msg = `品名与报关单不一致（${bits.join("；")}）`;
+      warning = warning ? `${warning}；${msg}` : msg;
+    }
 
-    const attachments = [{ url: oss.url, key: oss.key, name: file.fileName, mime: file.mime, size: file.size, uploaded_at: new Date().toISOString() }];
+    /* 0817 forge #3 二修：按 OSS key 去重是无效的 —— 每次上传都生成新的随机 key
+       （f4039a1b… / 79da7eed… / 3fdc6c9e…），永远不命中，实测重传 3 次附件堆到 4 条。
+       改按【文件内容 sha256】去重：同一份 PDF 不管传几次都只留一条。 */
+    const fileHash = crypto.createHash("sha256").update(file.buffer || file.data || Buffer.alloc(0)).digest("hex");
+    const attachments = [{ url: oss.url, key: oss.key, name: file.fileName, mime: file.mime,
+                           size: file.size, sha256: fileHash, uploaded_at: new Date().toISOString() }];
     const invoiceNo = cleanString(parsed.invoice_no) || `OCR_PENDING_${Date.now()}`;
 
     await client.query("BEGIN");
@@ -74,7 +150,7 @@ async function handleUpload(req, res) {
       customsNos: [customsNo],
       reviewStatus,
       attachments,
-      lineItems: [],
+      lineItems,
       raw: {
         uploaded_from: "customs_collab",
         customs_no: customsNo,
@@ -86,6 +162,8 @@ async function handleUpload(req, res) {
         ocr_error: ocrError ? ocrError.message : null,
         target_amount_incl_tax: expected,
         needs_manual_review: needsManualReview,
+        goods_check: goodsCheck,
+        buyer_seller_swapped: swapped,
         seller_mismatch: sellerMismatch,
       },
     });

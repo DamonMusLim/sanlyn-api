@@ -24,6 +24,33 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { normalizeChargeName } from "./lib/portcharge-close-loop.js";
 
+function cleanText(v) {
+  return String(v ?? "").trim();
+}
+
+async function resolvePlanIdForBill(pool, blNo, linkPlanId) {
+  const raw = cleanText(linkPlanId);
+  if (/^[0-9]+$/.test(raw)) return raw;
+
+  const plans = await pool.query(
+    `SELECT id
+       FROM shipping_plans
+      WHERE bl_no = $1
+        AND bl_no NOT LIKE '%#%'
+      ORDER BY id
+      LIMIT 2`,
+    [cleanText(blNo)]
+  );
+  if (plans.rows.length === 1) return String(plans.rows[0].id);
+  if (!raw) return null;
+
+  const err = new Error(plans.rows.length ? "link_plan_id ambiguous by bl_no" : "link_plan_id cannot resolve by bl_no");
+  err.status = 409;
+  err.code = plans.rows.length ? "ambiguous_plan" : "plan_not_found";
+  err.field = "link_plan_id";
+  throw err;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -40,16 +67,19 @@ export default async function handler(req, res) {
       const raw = b.raw && typeof b.raw === "object" ? { ...b.raw } : {};
       raw.original_name = chargeNorm.original_name || null;
       raw.unmapped = Boolean(chargeNorm.unmapped);
+      const linkPlanId = await resolvePlanIdForBill(pool, b.bl_no, b.link_plan_id);
       const r = await pool.query(
         `INSERT INTO freight_supplier_bills
            (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, rebill_status, supplier, bill_month, raw, created_at, updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) RETURNING *`,
-        [b.bl_no, b.link_plan_id ?? null, chargeNorm.name || b.cost_category, b.amount, b.currency,
+        [b.bl_no, linkPlanId, chargeNorm.name || b.cost_category, b.amount, b.currency,
          b.sale_amount ?? null, b.rebill_status ?? null, b.supplier ?? "待补",
          b.bill_month ?? null, JSON.stringify(raw)]
       );
       return res.status(201).json({ success: true, data: r.rows[0] });
-    } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) {
+      return res.status(err.status || 500).json({ success: false, error: err.message, code: err.code, field: err.field });
+    }
   }
 
   // ── PATCH: admin/finance only — correct FSB records (amount, category, notes) ──
@@ -63,6 +93,11 @@ export default async function handler(req, res) {
       if (!body.id) return res.status(400).json({ success: false, error: "id required" });
       const PATCHABLE = ["amount","sale_amount","cost_category","rebill_status","reconcile_note","container_no","link_plan_id","incoterm","supplier_type","currency","rebill_to_type","rebill_to_name","rebill_dn_no","rebill_finance_slip_id","confirmed_at","confirmed_by","unit_price","qty","charge_basis","remarks"];
       const pool = getPool();
+      if (Object.prototype.hasOwnProperty.call(body, "link_plan_id")) {
+        const current = await pool.query("SELECT bl_no FROM freight_supplier_bills WHERE id = $1", [body.id]);
+        if (!current.rows.length) return res.status(404).json({ success: false, error: "record not found" });
+        body.link_plan_id = await resolvePlanIdForBill(pool, body.bl_no || current.rows[0].bl_no, body.link_plan_id);
+      }
       const params = [], sets = [];
       for (const col of PATCHABLE) {
         if (!Object.prototype.hasOwnProperty.call(body, col)) continue;
@@ -77,7 +112,9 @@ export default async function handler(req, res) {
       );
       if (!r.rows.length) return res.status(404).json({ success: false, error: "record not found" });
       return res.status(200).json({ success: true, data: r.rows[0] });
-    } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+    } catch (err) {
+      return res.status(err.status || 500).json({ success: false, error: err.message, code: err.code, field: err.field });
+    }
   }
 
   // ── DELETE: admin only — remove wrong FSB entries ──

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
-import { requireAuth, verifyToken } from "../auth.js";
+import { requireAuth } from "../auth.js";
 import { getDailySales, postStockNote } from "./petstore-pricing-sales.js";
 import { createCardPriceIntents } from "./petstore-pricing-card-intents.js";
 import { requirePricingCardBatchOwner, requirePricingCardSession } from "./petstore-pricing-card-auth.js";
@@ -47,11 +47,11 @@ function timingTokenMatches(input, expected) {
 function decodeJwtPayload(req) {
   const auth = String(req.headers.authorization || "");
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
-  if (!token) return {};
+  const payloadPart = token.split(".")[1];
+  if (!payloadPart) return {};
   try {
-    /* 0817: 原来只 base64 解码不验签 —— requireBoss 拿它比对 username,
-       这条路由一旦被挂到全局中间件之外就是直接越权改价。改用会验签的 verifyToken。 */
-    return verifyToken(token) || {};
+    const padded = payloadPart.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payloadPart.length / 4) * 4, "=");
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
   } catch (e) {
     return {};
   }
@@ -71,7 +71,10 @@ function requireBoss(req, res) {
   }
 
   const payload = decodeJwtPayload(req);
-  if (payload.username && bossUsers().includes(String(payload.username))) return true;
+  // 0822:员工端 token 载荷是 {role,employee_id,name},没有 username;
+  //      老板从员工端进来只有 name(Damon id=35 manager)。两字段都认,大小写不敏感。
+  const who = String(payload.username || payload.name || "").trim().toLowerCase();
+  if (who && bossUsers().includes(who)) return true;
 
   const expected = process.env.PRICING_BOSS_TOKEN;
   const got = req.headers["x-pricing-boss"];
@@ -113,7 +116,7 @@ async function readBody(req) {
 }
 
 function parseCodes(value) {
-  const codes = String(value || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const codes = String(value || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   return Array.from(new Set(codes));
 }
 

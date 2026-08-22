@@ -103,6 +103,56 @@ export async function uploadToOss(factoryCode, invoiceNo, file) {
   };
 }
 
+
+/** 命中同一张发票号时原地更新。⛔ 不覆盖人工已定的 review_status；附件按 key 去重；raw 不浅覆盖。 */
+async function updateExistingInvoice(pool, existing, data) {
+  const MACHINE_OWNED = new Set(["pending", "ocr_failed", "over_issued", "under_issued",
+                                 "seller_mismatch", "goods_mismatch", "suspect_dup", null, ""]);
+  const keepStatus = !MACHINE_OWNED.has(existing.review_status);   // forge #2: 人工态不许冲
+  await pool.query(
+    `UPDATE finance_invoices_in SET
+       invoice_code=COALESCE($2,invoice_code), issue_date=COALESCE($3::date,issue_date),
+       seller_name=COALESCE($4,seller_name), seller_tax_id=COALESCE($5,seller_tax_id),
+       buyer_name=COALESCE($6,buyer_name),  buyer_tax_id=COALESCE($7,buyer_tax_id),
+       seller_company_code=COALESCE($8,seller_company_code),
+       amount_ex_tax=COALESCE($9,amount_ex_tax), total_tax=COALESCE($10,total_tax),
+       amount_incl_tax=COALESCE($11,amount_incl_tax), tax_rate=COALESCE($12,tax_rate),
+       customs_nos = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(customs_nos,'{}'::text[]) || $13::text[]))),
+       contract_nos= (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(contract_nos,'{}'::text[]) || $14::text[]))),
+       review_status = CASE WHEN $19::boolean THEN review_status ELSE $15 END,
+       line_items = CASE WHEN jsonb_array_length($16::jsonb)>0 THEN $16::jsonb ELSE line_items END,
+       -- forge #3: 附件按 key 去重，重传同一文件不再堆积
+       attachments = (
+         SELECT COALESCE(jsonb_agg(a ORDER BY ord), '[]'::jsonb) FROM (
+           -- 0817 二修：优先按文件内容 sha256 去重（每次上传 key 都是新的随机值，按 key 去重无效）
+           SELECT DISTINCT ON (COALESCE(a->>'sha256', a->>'key', a->>'url')) a, ord
+             FROM jsonb_array_elements(COALESCE(attachments,'[]'::jsonb) || $17::jsonb)
+                  WITH ORDINALITY t(a, ord)
+            ORDER BY COALESCE(a->>'sha256', a->>'key', a->>'url'), ord
+         ) d),
+       -- forge #4: 不浅覆盖，新载荷追加进 raw.reuploads[]
+       -- forge 复审 #4：只留最近 10 次重传，避免 raw 无限膨胀（OCR 原文很大）
+       raw = COALESCE(raw,'{}'::jsonb) || jsonb_build_object(
+               'reuploads', (
+                 SELECT COALESCE(jsonb_agg(x ORDER BY ord), '[]'::jsonb) FROM (
+                   SELECT x, ord FROM jsonb_array_elements(
+                     COALESCE(raw->'reuploads','[]'::jsonb)
+                     || jsonb_build_array($18::jsonb || jsonb_build_object('at', now()::text))
+                   ) WITH ORDINALITY t(x, ord)
+                   ORDER BY ord DESC LIMIT 10
+                 ) k)),
+       updated_at=NOW()
+     WHERE id=$1`,
+    [existing.id, data.invoiceCode||null, data.issueDate||null,
+     data.sellerName||null, data.sellerTaxId||null, data.buyerName||null, data.buyerTaxId||null,
+     data.factoryCode, data.amountExTax, data.totalTax, data.amountInclTax, data.taxRate,
+     data.customsNos||[], data.contractNos||[], data.reviewStatus||"pending",
+     JSON.stringify(data.lineItems||[]), JSON.stringify(data.attachments),
+     JSON.stringify(data.raw), keepStatus]
+  );
+  return existing.id;
+}
+
 export async function insertFinanceInvoice(pool, data) {
   const fullSql = `
     INSERT INTO finance_invoices_in
@@ -147,9 +197,61 @@ export async function insertFinanceInvoice(pool, data) {
   ];
 
   try {
+    /* 0817: dedupe by invoice_no. Re-uploading the same invoice used to insert a second row,
+       so the "already invoiced" total doubled (real case: 664707 showed 252,688 vs expected 126,344
+       and flipped to over_issued). One invoice number = one row; re-upload refreshes it in place.
+       Skip OCR_PENDING_* placeholders - those are distinct failed reads, not duplicates. */
+    if (data.invoiceNo && !/^OCR_PENDING_/.test(String(data.invoiceNo))) {
+      /* 0817 v2 (forge review FAIL -> rewritten). Two real bugs found by re-uploading the same PDF:
+           b1 re-upload INSERTed a 2nd row -> "already invoiced" doubled (664707: expected 126,344, shown 252,688, flipped to over_issued)
+           b2 OCR misread the 20-digit invoice no (...361311 read as ...363111) so exact-key dedupe missed
+
+         forge rejected v1 on 5 counts; all fixed here:
+           1) seller_tax_id+amount+date is NOT proof of "same invoice" (split/limit/re-issued invoices exist).
+              -> never merge on it. Insert as a NEW row flagged suspected_duplicate + needs_review, let a human decide.
+              Merging would silently delete one input invoice from the rebate pool = wrong money.
+           2) review_status was overwritten unconditionally -> would reset a human confirmed/rejected state.
+              -> only overwrite while the old state is still machine-owned (pending / ocr_* / *_mismatch).
+           3) attachments were appended blindly -> same file piles up. Dedupe by key/url.
+           4) raw was shallow-merged -> nested human notes could be clobbered. Keep old, park the new
+              payload under raw.reuploads[] instead of overwriting.
+           5) SELECT-then-INSERT races: two concurrent uploads both miss and both insert.
+              -> a partial UNIQUE INDEX on invoice_no is the real fix (migration below); this code also
+                 catches 23505 and falls back to the update path. */
+      const dup = await pool.query(
+        `SELECT id, review_status FROM finance_invoices_in WHERE invoice_no=$1 ORDER BY id LIMIT 1`,
+        [data.invoiceNo]
+      );
+      if (dup.rows[0]?.id) return updateExistingInvoice(pool, dup.rows[0], data);
+
+      if (data.sellerTaxId && data.amountInclTax !== null && data.issueDate) {
+        const alt = await pool.query(
+          `SELECT id, invoice_no FROM finance_invoices_in
+            WHERE seller_tax_id=$1 AND amount_incl_tax=$2 AND issue_date=$3::date AND invoice_no <> $4
+            ORDER BY id LIMIT 1`,
+          [data.sellerTaxId, data.amountInclTax, data.issueDate, data.invoiceNo]
+        );
+        if (alt.rows[0]) {
+          // flag only - do NOT merge (forge #1/#2)
+          data.reviewStatus = "suspect_dup";
+          data.raw = { ...(data.raw || {}), suspect_dup: {
+            of_invoice_id: alt.rows[0].id, of_invoice_no: alt.rows[0].invoice_no,
+            ocr_read: data.invoiceNo,
+            reason: "same seller_tax_id + amount_incl_tax + issue_date but different invoice_no; could be an OCR digit misread OR a genuinely separate invoice - human must decide",
+            at: new Date().toISOString() } };
+        }
+      }
+    }
+
     const r = await pool.query(fullSql, params);
     return r.rows[0]?.id;
   } catch (e) {
+    if (e.code === "23505") {          // forge #5: 并发下两个请求都没查到就都插 → 唯一索引拦住，回落更新
+      const again = await pool.query(
+        `SELECT id, review_status FROM finance_invoices_in WHERE invoice_no=$1 ORDER BY id LIMIT 1`,
+        [data.invoiceNo]);
+      if (again.rows[0]?.id) return updateExistingInvoice(pool, again.rows[0], data);
+    }
     if (e.code !== "42703") throw e;
 
     // 老库列缺失兜底：只写题目要求中的最小核心列。

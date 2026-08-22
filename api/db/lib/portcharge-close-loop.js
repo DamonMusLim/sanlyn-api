@@ -113,9 +113,9 @@ export async function normalizeChargeName(pool, rawName, carrier = "*", sampleBl
   return { name: raw, unmapped: true, original_name: raw };
 }
 
-export async function issueDocNo(pool, { prefix, seed, docType, blNo, totalUsd = 0, totalCny = 0, generatedBy = null, snapshot = {}, docDate = null }) {
+export async function issueDocNo(pool, { prefix, seed, docType, blNo, totalUsd = 0, totalCny = 0, generatedBy = null, snapshot = {}, docDate = null, noDate = false }) {
   const today = String(docDate || new Date().toISOString().slice(0, 10)).slice(0, 10).replace(/-/g, ""); // 0813铁则: 单号日期段=出运日
-  const base = `${prefix}-${docKey(seed)}-${today}`;
+  const base = noDate ? `${prefix}-${docKey(seed)}` : `${prefix}-${docKey(seed)}-${today}`;
   const r = await pool.query(
     `SELECT COALESCE(MAX(NULLIF(regexp_replace(doc_no, '^.*-([0-9]+)$', '\\1'), doc_no)::int), 0) AS n
        FROM doc_issue_log

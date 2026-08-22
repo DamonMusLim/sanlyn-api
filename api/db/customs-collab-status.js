@@ -86,9 +86,11 @@ export async function ensureCustomsStatus(client, customsNo, factoryCode = null)
                            FROM order_line_items oli
                           WHERE oli.order_id=o.id)
                    ELSE NULL END AS declare_value,
+              /* 0817 forge 裁决 C：purchase_value 是 OLI 口径，绝不能进应开金额。
+                 保留字段仅供内部比对(OLI_INTERNAL_SCAN_ONLY)，⛔ 不许再喂 system_expected_amount。 */
               COALESCE((SELECT SUM(oli.factory_subtotal)
                           FROM order_line_items oli
-                         WHERE oli.order_id=o.id), o.total_amount_factory) AS purchase_value
+                         WHERE oli.order_id=o.id), o.total_amount_factory) AS purchase_value  -- OLI_INTERNAL_SCAN_ONLY
          FROM orders o
          LEFT JOIN companies c_id ON c_id.id=o.factory_company_id
         WHERE COALESCE(o.status,'') <> 'cancelled'
@@ -105,7 +107,8 @@ export async function ensureCustomsStatus(client, customsNo, factoryCode = null)
      ord_from_orders AS (
        SELECT per.factory_code,
               MAX(per.contract_no) AS contract_no,
-              COALESCE(NULLIF(SUM(per.declare_value),0), NULLIF(SUM(per.purchase_value),0)) AS purchase_amount
+              -- 0817 forge 裁决 C：同上，去掉 OLI 兜底；取不到就 null，由状态机判 need_customs
+              NULLIF(SUM(per.declare_value),0) AS purchase_amount
          FROM per
         WHERE ($2::text IS NULL OR per.factory_code = $2)
         GROUP BY per.factory_code
@@ -194,11 +197,19 @@ export async function ensureCustomsStatus(client, customsNo, factoryCode = null)
 export async function uploadedForCustoms(client, customsNo, factoryCode = null) {
   // factory_code IS NULL 的历史/手工链保持可见(存量已由 M028 回填,此处兜未来漏写厂码的链)
   const r = await client.query(
-    `SELECT COALESCE(SUM(fii.amount_incl_tax), 0) AS uploaded_amount,
-            COUNT(DISTINCT fii.id)::int AS valid_invoice_count,
+    /* 🩸 0817 自测抓到：把 suspected_duplicate 放进外层 WHERE 排除，
+       里面的 FILTER 就永远看不到它，suspect_dup_amount 恒为 0 —— 金额凭空消失，
+       等于"藏起来"而不是"单列出来"。所以排除必须做在 SUM 的 FILTER 里，WHERE 只挡 void/red_ink。 */
+    `SELECT COALESCE(SUM(fii.amount_incl_tax) FILTER (
+              WHERE COALESCE(fii.review_status,'') <> 'suspect_dup'), 0) AS uploaded_amount,
+            COUNT(DISTINCT fii.id) FILTER (
+              WHERE COALESCE(fii.review_status,'') <> 'suspect_dup')::int AS valid_invoice_count,
+            COALESCE(SUM(fii.amount_incl_tax) FILTER (
+              WHERE COALESCE(fii.review_status,'')='suspect_dup'), 0) AS suspect_dup_amount,
             COUNT(DISTINCT fii.id) FILTER (
               WHERE COALESCE(fii.review_status,'') IN
-                ('pending','ocr_failed','seller_mismatch','over_issued','under_issued')
+                ('pending','ocr_failed','seller_mismatch','over_issued','under_issued',
+                 'goods_mismatch','suspect_dup')
             )::int AS pending_review_count
        FROM invoice_customs_links l
        JOIN finance_invoices_in fii ON fii.id=l.invoice_id
@@ -210,6 +221,7 @@ export async function uploadedForCustoms(client, customsNo, factoryCode = null) 
   );
   return {
     uploaded_amount: money(r.rows[0]?.uploaded_amount) || 0,
+    suspect_dup_amount: money(r.rows[0]?.suspect_dup_amount) || 0,
     valid_invoice_count: Number(r.rows[0]?.valid_invoice_count) || 0,
     pending_review_count: Number(r.rows[0]?.pending_review_count) || 0,
   };

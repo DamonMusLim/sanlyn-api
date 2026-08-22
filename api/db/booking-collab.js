@@ -36,6 +36,7 @@ import { handleCollabPricing, handleCollabOrderPricing, handleCollabPricingSubmi
 import { handleBlConfirmation } from "./lib/collab-bl-confirmation.js";
 import { handleCompanyProfile } from "./lib/collab-company-profile.js";
 import { handlePortChargeDraft } from "./lib/collab-port-charge-draft.js";
+import { handleSiData, handleSiDraft } from "./lib/collab-si-customer.js";
 
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
@@ -58,6 +59,8 @@ export default async function handler(req, res) {
     if (req.method === "GET"    && pathSuffix === "factory-invoice-code") return await handleFactoryInvoiceCode(req, res, pool);
     if ((req.method === "GET" || req.method === "POST") && pathSuffix === "company-profile") return await handleCompanyProfile(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "port-charge-draft") return await handlePortChargeDraft(req, res, pool);
+    if (req.method === "GET"    && pathSuffix === "si-data")           return await handleSiData(req, res, pool);
+    if (req.method === "POST"   && pathSuffix === "si-draft")          return await handleSiDraft(req, res, pool);
     if (req.method === "POST"   && pathSuffix === "archive-retrieve-request") return await handleArchiveRetrieveRequest(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "customs-doc-status") return await handleCustomsDocStatus(req, res, pool);
     if (req.method === "GET"    && pathSuffix === "vessel-track")       return await handleVesselTrack(req, res, pool);

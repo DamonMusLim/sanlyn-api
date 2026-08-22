@@ -73,8 +73,10 @@ export default async function handler(req, res) {
           `SELECT li.id AS line_id, o.order_no
            FROM order_line_items li JOIN orders o ON o.id = li.order_id
            WHERE li.declaration_name = $1
+             -- OLI_INTERNAL_SCAN_ONLY：按金额容差把退税行匹配到订单行，纯内部关联，金额不外显
              AND abs(COALESCE(li.factory_subtotal, li.subtotal, 0) - $2) <= $3
              AND o.status != 'cancelled'
+           -- OLI_INTERNAL_SCAN_ONLY：同上，仅排序用
            ORDER BY abs(COALESCE(li.factory_subtotal, li.subtotal, 0) - $2) ASC
            LIMIT 1`, [decl, amt, tol]);
         m = mr.rows[0] || null;
