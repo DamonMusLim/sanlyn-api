@@ -429,13 +429,77 @@ export default async function handler(req, res) {
       });
     }
 
-    // Mark linked orders as confirmed + 回挂 shipping_plan_id + 带出开票公司（工厂端"下游"显示用）
+    // Mark linked orders: 回挂 shipping_plan_id;业务状态只允许 pending -> confirmed
+    var link_result = { linked: [], already_linked: [], not_found: [], failed: [] };
+
     if (orderNos && orderNos.length) {
       var nos = arr(orderNos);
-      await pool.query(
-        "UPDATE orders SET status = 'confirmed', shipping_plan_id = $2, updated_at = NOW() WHERE order_no = ANY($1) AND (status = 'pending' OR shipping_plan_id IS NULL)",
-        [nos, plan.id]
-      ).catch(function() {});
+
+      try {
+        var existingR = await pool.query(
+          "SELECT order_no, shipping_plan_id FROM orders WHERE order_no = ANY($1)",
+          [nos]
+        );
+
+        var existingMap = {};
+        existingR.rows.forEach(function(r) {
+          existingMap[r.order_no] = r.shipping_plan_id;
+        });
+
+        link_result.not_found = nos.filter(function(no) {
+          return !Object.prototype.hasOwnProperty.call(existingMap, no);
+        });
+
+        link_result.already_linked = existingR.rows
+          .filter(function(r) { return r.shipping_plan_id; })
+          .map(function(r) {
+            return { order_no: r.order_no, shipping_plan_id: r.shipping_plan_id };
+          });
+
+        if (link_result.not_found.length) {
+          console.warn("[shipping-plan-create] order_link_not_found", {
+            event: "order_link_not_found",
+            plan_id: plan.id,
+            not_found: link_result.not_found
+          });
+        }
+
+        var linkable = existingR.rows
+          .filter(function(r) { return !r.shipping_plan_id; })
+          .map(function(r) { return r.order_no; });
+
+        if (linkable.length) {
+          var linkedR = await pool.query(
+            "UPDATE orders SET shipping_plan_id = $2, updated_at = NOW() WHERE order_no = ANY($1) AND shipping_plan_id IS NULL RETURNING order_no",
+            [linkable, plan.id]
+          );
+
+          link_result.linked = linkedR.rows.map(function(r) { return r.order_no; });
+
+          await pool.query(
+            "UPDATE orders SET status = 'confirmed', updated_at = NOW() WHERE order_no = ANY($1) AND status = 'pending'",
+            [link_result.linked]
+          );
+        }
+      } catch (e) {
+        link_result.failed = nos.filter(function(no) {
+          return link_result.linked.indexOf(no) === -1 &&
+            link_result.not_found.indexOf(no) === -1 &&
+            !link_result.already_linked.some(function(r) { return r.order_no === no; });
+        });
+
+        console.warn("[shipping-plan-create] order_link_failed", {
+          event: "order_link_failed",
+          plan_id: plan.id,
+          order_nos: nos,
+          linked: link_result.linked,
+          already_linked: link_result.already_linked,
+          not_found: link_result.not_found,
+          failed: link_result.failed,
+          error: e.message
+        });
+      }
+
       // 回填 order_contract_nos（列表「合同号」列读这个字段）+ contract_nos 数组
       await pool.query(
         `UPDATE shipping_plans sp
@@ -450,6 +514,7 @@ export default async function handler(req, res) {
             AND d.cns IS NOT NULL`,
         [plan.id, nos]
       ).catch(function(e) { console.warn("[plan-create] contract_nos backfill skip:", e.message); });
+
       if (!plan.issuing_company) {
         pool.query(
           `UPDATE shipping_plans sp SET issuing_company = o.issuing_company
@@ -457,13 +522,20 @@ export default async function handler(req, res) {
             WHERE sp.id = $1 AND o.order_no = ANY($2) AND o.issuing_company IS NOT NULL
               AND sp.issuing_company IS NULL`,
           [plan.id, nos]
-        ).catch(function() {});
+        ).catch(function(e) {
+          // ⚖️ 0824:此处原为静默吞错,导致 3 张票 issuing_company 空着没人知道(已人工补)
+          console.warn("[shipping-plan-create] issuing_company_backfill_failed", {
+            event: "issuing_company_backfill_failed",
+            plan_id: plan.id, order_nos: nos, error: e && e.message
+          });
+        });
       }
     }
 
     var _blm = await mirrorPlanBlToOrders(pool, plan, actorOf(req));
     return res.status(200).json({
       success: true,
+      link_result: link_result,
       data: plan,
       summary: { shipmentNo: plan.shipment_no, soNo: plan.so_no, vessel: vessel, etd: etd, orderNos: orderNos },
       bl_mirror: _blm
