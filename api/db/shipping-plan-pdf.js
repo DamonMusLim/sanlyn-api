@@ -195,12 +195,15 @@ export default async function handler(req, res) {
     const isSI         = type === "si";
     const isBooking    = type === "booking";
     const isBlDraft    = type === "bl_draft";
-    const isFreight    = type === "freight_invoice";
+    // ⛔ type=freight_invoice 已于 2026-08-24 删除(Damon 点名):
+    //    它是三林/Sanlyn 抬头+含杂费+标「内部文件」,不是给客户的对外账单。
+    //    客户要纯海运费发票 → /templates/export-docs-template.html?page=freight&shipment_id=<整型id>
+    //    见记忆 reference_freight_invoice_template。删除时实测零调用方。
     const isFobInvoice = type === "fob_invoice";
     const isFobPortcharge = type === "fob_portcharge";
     const isDebitNote  = type === "freight_debit_note";
     const isExwInvoice = type === "exw_invoice"; // EXW全费用账单(客户版) — 独立渲染器 doc-exw-invoice.js
-    const isConfirm    = !isCost && !isSI && !isBooking && !isBlDraft && !isFreight && !isFobInvoice && !isFobPortcharge && !isDebitNote && !isExwInvoice;
+    const isConfirm    = !isCost && !isSI && !isBooking && !isBlDraft && !isFobInvoice && !isFobPortcharge && !isDebitNote && !isExwInvoice;
 
     const generatedAt = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     const genDate = new Date().toISOString().slice(0, 10);
@@ -215,7 +218,7 @@ export default async function handler(req, res) {
 
     // ── Fetch customer/consignee info for docs that need it ──
     let cust = null;
-    if (isBooking || isBlDraft || isFreight || isFobInvoice || isFobPortcharge || isExwInvoice) {
+    if (isBooking || isBlDraft || isFobInvoice || isFobPortcharge || isExwInvoice) {
       const customerName = p.customer_en || p.customer_cn || p.customer || "";
       if (customerName) {
         try {
@@ -711,94 +714,6 @@ ${printBtn}
 
     // ══════════════════════════════════════════
     // 海运费发票 Freight Invoice
-    // ══════════════════════════════════════════
-    if (isFreight) {
-      const invoiceNo = "FI-" + fmt(p.bl_no || p.shipment_no) + "-" + docDate.replace(/-/g,""); // 铁则:客户单据用BL号,CY内部号不外泄
-      const billTo = cust ? (cust.name_en || cust.name_cn) : fmt(p.customer_en||p.customer);
-      const feeRows = [
-        { desc: "Ocean Freight 海运费", cur: "USD", amt: p.freight_sale_usd },
-        { desc: "Documentation Fee 单证费", cur: "CNY", amt: p.doc_fee },
-        { desc: "TLX Fee 电放费", cur: "CNY", amt: p.tlx_fee },
-        { desc: "Information Transmission Fee 信息传输费", cur: "CNY", amt: p.info_trans_fee },
-        { desc: "Booking Fee 订舱费", cur: "CNY", amt: p.bkg_fee },
-        { desc: "THC 码头操作费", cur: "CNY", amt: p.thc_fee },
-        { desc: "EIR Fee 设备交接费", cur: "CNY", amt: p.eir_fee },
-        { desc: "Seal Fee 封签费", cur: "CNY", amt: p.seal_fee },
-        { desc: "Trucking Fee 拖车费", cur: "CNY", amt: p.trucking_cost_total },
-        { desc: "Customs Fee 报关费", cur: "CNY", amt: p.customs_cost_total },
-        { desc: "Insurance 保险费", cur: "CNY", amt: p.insurance_cost },
-      ].filter(r => r.amt != null && parseFloat(r.amt) !== 0);
-      const totalUsd = feeRows.filter(r=>r.cur==="USD").reduce((s,r)=>s+Number(r.amt||0),0);
-      const totalCny = feeRows.filter(r=>r.cur==="CNY").reduce((s,r)=>s+Number(r.amt||0),0);
-
-      const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>海运费发票 — ${fmt(p.bl_no || p.shipment_no)}</title><style>${sharedCss}
-      .inv-box { border:1px solid #e2e8f0; border-radius:6px; margin-bottom:14px; overflow:hidden; }
-      </style></head><body>
-${printBtn}
-<div class="page">
-  ${docHeader("💵 海运费发票 Freight Invoice", invoiceNo)}
-  <div style="color:#7b1fa2;font-size:10px;text-align:right;margin-top:-12px;margin-bottom:12px;font-weight:600">🔒 内部文件 INTERNAL ONLY</div>
-
-  <div class="grid2" style="margin-bottom:14px">
-    <div>
-      <div class="sec-title">开票方 / From</div>
-      <div style="padding:8px 0;line-height:1.8;font-size:12px">
-        <strong>XIAMEN SANLYN IMPORT AND EXPORT CO., LTD</strong><br>
-        Xiamen, Fujian, China
-      </div>
-    </div>
-    <div>
-      <div class="sec-title">收票方 / Bill To</div>
-      <div style="padding:8px 0;line-height:1.8;font-size:12px">
-        <strong>${esc(billTo)}</strong><br>
-        ${cust ? esc(cust.address||cust.destination_port||"") : ""}
-      </div>
-    </div>
-  </div>
-
-  <div class="sec-title">航次信息 / Shipment</div>
-  <div class="grid3" style="margin-bottom:14px">
-    <div class="field"><div class="lbl">Shipment Ref.</div><div class="val">${fmt(p.bl_no || p.shipment_no)}</div></div>
-    <div class="field"><div class="lbl">Vessel / Voyage</div><div class="val">${fmt(p.vessel)} ${fmt(p.voyage)}</div></div>
-    <div class="field"><div class="lbl">Route</div><div class="val">${fmt(p.pol)} → ${fmt(p.pod)}</div></div>
-    <div class="field"><div class="lbl">Container</div><div class="val">${fmt(p.container_type)} × ${fmt(p.container_qty||1)}</div></div>
-    <div class="field"><div class="lbl">ETD</div><div class="val">${fmtDate(p.etd)}</div></div>
-    <div class="field"><div class="lbl">Invoice Date</div><div class="val">${docDate}</div></div>
-  </div>
-
-  <div class="sec-title">费用明细 / Fee Breakdown</div>
-  <table>
-    <thead><tr><th>#</th><th>费用项目 Description</th><th style="text-align:right">币种</th><th style="text-align:right">金额 Amount</th></tr></thead>
-    <tbody>
-      ${feeRows.map((r,i)=>`<tr><td style="color:#94a3b8">${i+1}</td><td>${esc(r.desc)}</td><td style="text-align:right;font-family:monospace">${r.cur}</td><td style="text-align:right;font-family:monospace;font-weight:700">${fmtNum(r.amt)}</td></tr>`).join("")}
-    </tbody>
-    <tfoot>
-      ${totalUsd > 0 ? `<tr><td colspan="2" style="text-align:right">小计 Subtotal (USD)</td><td style="text-align:right;font-family:monospace">USD</td><td style="text-align:right;font-family:monospace">${fmtNum(totalUsd)}</td></tr>` : ""}
-      <tr><td colspan="2" style="text-align:right;color:#1e3a8a">小计 Subtotal (CNY)</td><td style="text-align:right;font-family:monospace;color:#1e3a8a">CNY</td><td style="text-align:right;font-family:monospace;color:#1e3a8a">${fmtNum(totalCny)}</td></tr>
-    </tfoot>
-  </table>
-  ${(totalUsd > 0 || totalCny > 0) ? `
-  <div class="total-bar">
-    ${totalUsd > 0 ? `<span class="total-lbl">USD</span><span class="total-val" style="margin-right:16px">${fmtNum(totalUsd)}</span>` : ""}
-    <span class="total-lbl">CNY 合计</span><span class="total-val">¥ ${fmtNum(totalCny)}</span>
-  </div>` : ""}
-
-  <div class="sig-area">
-    <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">制单 Prepared By</div></div>
-    <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">审核 Approved By</div></div>
-    <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">Date</div></div>
-  </div>
-  <div class="footer"><span>XIAMEN SANLYN IMPORT AND EXPORT CO., LTD · 内部专用</span><span>Invoice No: ${invoiceNo} · ${genDate}</span></div>
-</div>${autoprint}</body></html>`;
-      res.setHeader("Content-Type", "text/html; charset=utf-8");
-      return res.status(200).send(html);
-    }
-
-
-    // ══════════════════════════════════════════
-    // FOB 海运费发票 (客户版·对外)
-    // GET ?id=xxx&type=fob_invoice
-    // 只含海运费USD + 当日汇率+0.1 CNY等值，不含港杂费
     // ══════════════════════════════════════════
     if (isFobInvoice) {
       // 拉最新汇率 USD_CNY
