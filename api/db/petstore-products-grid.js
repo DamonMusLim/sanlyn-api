@@ -1,12 +1,11 @@
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-
+import { pricingTagBaseJoinSql, pricingTagBaseSelectSql, pricingTagSelectSql } from "./petstore-pricing-tag-sql.js";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
 function json(res, code, data) { return res.status(code).json(data); }
-
 function addBossCorsHeaders(res) {
   const old = String(res.getHeader("Access-Control-Allow-Headers") || "Content-Type, Authorization");
   const needed = ["Content-Type", "Authorization", "X-Pricing-Boss", "X-Clerk-Session"];
@@ -34,7 +33,6 @@ function decodeJwtPayload(req) {
 }
 
 function bossUsers() { return String(process.env.PRICING_BOSS_USERS || "damon_sl").split(",").map((s) => s.trim()).filter(Boolean); }
-
 function requireBoss(req, res) {
   if (req.headers["x-clerk-session"]) {
     json(res, 403, { success: false, error: "clerk_forbidden" });
@@ -54,7 +52,6 @@ function requireBoss(req, res) {
 }
 
 function clampLimit(value) { const n = Number.parseInt(value || "", 10); return !Number.isFinite(n) || n <= 0 ? DEFAULT_LIMIT : Math.min(n, MAX_LIMIT); }
-
 function parseCursor(value) { const n = Number.parseInt(value || "0", 10); return Number.isFinite(n) && n > 0 ? n : 0; }
 
 function textParam(value, max = 120) { const s = String(value || "").trim(); return s ? s.slice(0, max) : null; }
@@ -315,6 +312,7 @@ async function getList(req, res) {
         s.pet_type, s.shelf_life_days, s.expire_date_batch,
         s.compliance_status, s.shelf_location,
         pm.take_out, pm.month_sale, pm.warn_status_str, pm.label_list,
+${pricingTagBaseSelectSql}
         gp.presence_state, gp.missing_count, gp.supplier_sync_status,
         online_price.online_source_sku_id,
         online_price.online_original_price, online_price.online_activity_price,
@@ -334,6 +332,7 @@ async function getList(req, res) {
        AND pei.is_current
        AND pei.external_product_code = o.product_code
       LEFT JOIN product_master pm ON pm.product_id = pei.product_id
+${pricingTagBaseJoinSql}
       LEFT JOIN gdc_product_presence gp
         ON gp.store_code = '63350001'
        AND gp.product_code = o.product_code
@@ -451,6 +450,7 @@ async function getList(req, res) {
       CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_src_id END AS market_src_id, as_of,
       pet_type, shelf_life_days, expire_date_batch, compliance_status, shelf_location,
       take_out, month_sale, warn_status_str, label_list,
+${pricingTagSelectSql}
       presence_state, missing_count, supplier_sync_status, gdc_profile,
       online_source_sku_id,
       round(online_original_price::numeric, 2) AS online_original_price,
