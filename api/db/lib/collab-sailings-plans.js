@@ -4,6 +4,81 @@ import { requireAuth } from "../../auth.js";
 import { derivePlanFactories } from "../booking-collab-view.js";
 import { rawToHash } from "./collab-shared.js";
 
+const EXTERNAL_SAILING_ROLES = ["customer_booking", "shipper_booking"];
+
+function parseMeta(value) {
+  if (!value) return {};
+  if (typeof value === "string") {
+    try { return JSON.parse(value) || {}; } catch (_e) { return {}; }
+  }
+  return typeof value === "object" ? value : {};
+}
+
+function normalizeCompanyName(value) {
+  return String(value || "").toUpperCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function isOurShipperName(value) {
+  const name = normalizeCompanyName(value);
+  return name.includes("XIAMENPETBABY")
+    || name.includes("OCEANBABY")
+    || name.includes("厦门巴匕")
+    || name.includes("洋宝宝");
+}
+
+function metaCompanyRefs(meta) {
+  const scope = meta.shipper_scope || meta.company_scope || {};
+  return [
+    meta.company_id,
+    meta.company_ref,
+    meta.company_code,
+    meta.shipper_company_id,
+    meta.shipper_company_ref,
+    scope.company_id,
+    scope.company_ref,
+    scope.company_code,
+  ].filter(v => v != null && String(v).trim() !== "").map(v => String(v).trim());
+}
+
+function metaCompanyLabels(meta) {
+  const scope = meta.shipper_scope || meta.company_scope || {};
+  return [
+    meta.company_label,
+    meta.company_name,
+    meta.shipper,
+    meta.shipper_name,
+    scope.label,
+    scope.name,
+  ].filter(v => v != null && String(v).trim() !== "");
+}
+
+async function loadTokenCompany(pool, meta) {
+  const refs = metaCompanyRefs(meta);
+  if (!refs.length) return null;
+  const { rows } = await pool.query(
+    `SELECT id, code, name_cn, name_en
+       FROM companies
+      WHERE id::text = ANY($1::text[])
+         OR code = ANY($1::text[])
+      LIMIT 1`,
+    [refs]
+  );
+  return rows[0] || null;
+}
+
+function shipperMatchesTokenCompany(shipper, company, labels) {
+  const target = normalizeCompanyName(shipper);
+  if (!target) return false;
+  // shipping_plans.shipper is legacy free text, so ID-backed company rows still need normalized text comparison here.
+  const candidates = [
+    company?.name_cn,
+    company?.name_en,
+    company?.code,
+    ...labels,
+  ].map(normalizeCompanyName).filter(Boolean);
+  return candidates.some(value => value === target);
+}
+
 // ── GET /sailings?token=<raw> ─────────────────────────────────
 async function handleGetSailings(req, res, pool) {
   const raw = req.query && req.query.token;
@@ -11,21 +86,41 @@ async function handleGetSailings(req, res, pool) {
 
   const hash = rawToHash(raw);
   const { rows: lnk } = await pool.query(
-    `SELECT meta FROM magic_links
+    `SELECT recipient_role, meta FROM magic_links
       WHERE token_hash = $1
-        AND recipient_role IN ('factory_booking','customer_booking')
+        AND recipient_role = ANY($2::text[])
         AND expires_at > NOW()
         AND revoked_at IS NULL
       LIMIT 1`,
-    [hash]
+    [hash, EXTERNAL_SAILING_ROLES]
   );
   if (!lnk.length) return res.status(403).json({ ok: false, error: "链接无效" });
 
-  const meta = (typeof lnk[0].meta === "string" ? JSON.parse(lnk[0].meta) : lnk[0].meta) || {};
+  const meta = parseMeta(lnk[0].meta);
   const planId = parseInt(meta.shipment_id, 10);
+  if (!planId) return res.status(403).json({ ok: false, error: "链接无效" });
+
+  const { rows: planRows } = await pool.query(
+    `SELECT id, shipper
+       FROM shipping_plans
+      WHERE id = $1
+      LIMIT 1`,
+    [planId]
+  );
+  if (!planRows.length) return res.status(403).json({ ok: false, error: "链接无效" });
+
+  const role = lnk[0].recipient_role;
+  if (role === "shipper_booking") {
+    const shipper = planRows[0].shipper;
+    const tokenCompany = await loadTokenCompany(pool, meta);
+    const labels = metaCompanyLabels(meta);
+    if (!shipper || isOurShipperName(shipper) || !shipperMatchesTokenCompany(shipper, tokenCompany, labels)) {
+      return res.status(403).json({ ok: false, error: "无权查看船期" });
+    }
+  }
 
   const { rows } = await pool.query(
-    `SELECT id, carrier, vessel, voyage, etd, eta, cutoff_date, rate_usd, currency, is_recommended
+    `SELECT id, carrier, vessel, voyage, etd, eta, cutoff_date, is_recommended
        FROM plan_sailings
       WHERE shipping_plan_id = $1
       ORDER BY etd ASC`,
