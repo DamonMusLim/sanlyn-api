@@ -77,7 +77,8 @@ plan_groups AS (
          MAX(NULLIF(array_to_string(COALESCE(sp.order_nos,'{}'::text[]),'+'),'')) AS plan_orders,
          MAX(NULLIF(array_to_string(COALESCE(sp.contract_nos,'{}'::text[]),'+'),'')) AS plan_contracts,
          MAX(sp.freight_sale_usd) AS ocean_sale_usd,
-         MAX(sp.freight_sale_cny) AS port_sale_cny
+         MAX(sp.freight_sale_cny) AS port_sale_cny,
+         MAX(NULLIF(BTRIM(sp.cost_evidence_status),'')) AS cost_evidence_status
     FROM shipping_plans sp
    WHERE sp.deleted_at IS NULL
      AND ($1 = '' OR sp.company_code = $1)
@@ -88,6 +89,7 @@ plan_groups AS (
 ),
 bill_groups AS (
   SELECT BTRIM(bl_no) AS bl_no,
+         COUNT(*)::int AS supplier_bill_count,
          SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency,'USD'))='USD'
                    AND (cost_category ILIKE '%海运%' OR cost_category ILIKE '%ocean%' OR cost_category ILIKE '%freight%')
                   THEN COALESCE(amount,0) ELSE 0 END) AS ocean_cost_usd,
@@ -116,13 +118,16 @@ joined AS (
          COALESCE(bg.ocean_cost_usd,0) AS ocean_cost_usd,
          COALESCE(bg.barge_cost_cny,0) AS barge_cost_cny,
          COALESCE(bg.truck_cost_cny,0) AS truck_cost_cny,
+         COALESCE(bg.supplier_bill_count,0) AS supplier_bill_count,
+         pg.cost_evidence_status,
          COALESCE(pg.ocean_sale_usd,0) AS ocean_sale_usd,
          COALESCE(pg.port_sale_cny,0) AS port_sale_cny,
          fx.rate AS fx_rate_used,
          CASE WHEN COALESCE(bg.barge_cost_cny,0) > 0 AND fx.rate IS NULL THEN NULL
               WHEN COALESCE(bg.barge_cost_cny,0) > 0 THEN COALESCE(bg.barge_cost_cny,0) / NULLIF(fx.rate,0)
               ELSE 0 END AS barge_cost_usd,
-         (COALESCE(bg.barge_cost_cny,0) > 0 AND fx.rate IS NULL) AS fx_missing
+         (COALESCE(bg.barge_cost_cny,0) > 0 AND fx.rate IS NULL) AS fx_missing,
+         (COALESCE(bg.supplier_bill_count,0) > 0 OR pg.cost_evidence_status = 'zero_margin_confirmed') AS margin_covered
     FROM order_groups og
     FULL JOIN plan_groups pg ON pg.bl_no = og.bl_no
     LEFT JOIN bill_groups bg ON bg.bl_no = COALESCE(og.bl_no, pg.bl_no)
@@ -177,9 +182,14 @@ SELECT j.po_nos, j.orders, j.external_src, j.pipeline, j.bl_no, j.etd, j.trade_t
        ROUND(j.barge_cost_usd::numeric,2) AS barge_cost_usd,
        ROUND(j.fx_rate_used::numeric,6) AS fx_rate_used,
        j.fx_missing,
+       j.supplier_bill_count,
+       j.cost_evidence_status,
+       j.margin_covered,
        ROUND(j.ocean_sale_usd::numeric,2) AS ocean_sale_usd,
        ROUND(j.port_sale_cny::numeric,2) AS port_sale_cny,
-       CASE WHEN j.fx_missing THEN NULL
+       CASE WHEN NOT j.margin_covered THEN NULL
+            WHEN j.cost_evidence_status = 'zero_margin_confirmed' THEN 0
+            WHEN j.fx_missing THEN NULL
             ELSE ROUND((j.ocean_sale_usd - j.ocean_cost_usd - j.barge_cost_usd)::numeric,2) END AS freight_margin_usd,
        ROUND(COALESCE(d.declared_amount,0)::numeric,2) AS declared_amount,
        COALESCE(dg.docs,'[]'::json) AS docs,
@@ -209,7 +219,17 @@ export default async function handler(req, res) {
   if (!requireAuth(req, res)) return;
   try {
     const rows = await loadReconMaster(getPool(), req.query);
-    res.status(200).json({ success: true, data: rows, count: rows.length });
+    const marginTotal = rows.length;
+    const marginCovered = rows.filter((r) => r.margin_covered).length;
+    const marginCoveragePct = marginTotal ? Math.round((marginCovered / marginTotal) * 10000) / 100 : 0;
+    res.status(200).json({
+      success: true,
+      data: rows,
+      count: rows.length,
+      margin_covered_count: marginCovered,
+      margin_total_count: marginTotal,
+      margin_coverage_pct: marginCoveragePct,
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

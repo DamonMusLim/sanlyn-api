@@ -1,6 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { guardBillRow, resolvePayer, ticketTerms } from "./lib/write-guards.js";
+import { guardBillRow, guardPlanFreightCostCurrency, resolvePayer, ticketTerms } from "./lib/write-guards.js";
 import { carrierFromBl, normalizeCarrier, normalizeChargeName, normalizeContainerType, num } from "./lib/portcharge-close-loop.js";
 
 function clean(v) { return String(v ?? "").trim(); }
@@ -107,13 +107,31 @@ async function save(pool, body, user) {
   const old = await detail(pool, key);
   if (!old) throw new Error("shipment not found");
   const p = body.plan || body;
+  const guard = guardPlanFreightCostCurrency(p, old.plan);
+  if (guard) {
+    const err = new Error(guard.error);
+    err.status = guard.status;
+    err.field = guard.field;
+    throw err;
+  }
   const saleUsd = n(p.freight_sale_usd ?? (String(old.plan.container_type).includes("20") ? p.actual_20gp_usd : p.actual_40hq_usd));
-  const vals = [clean(p.status || p.flow_status || old.plan.flow_status), p.etd || old.plan.etd, saleUsd, n(p.freight_sale_cny), clean(p.remarks ?? old.plan.remarks), old.plan._id];
+  const vals = [
+    clean(p.status || p.flow_status || old.plan.flow_status),
+    p.etd || old.plan.etd,
+    n(p.freight_cost),
+    clean(p.freight_cost_currency).toUpperCase() || null,
+    saleUsd,
+    n(p.freight_sale_cny),
+    clean(p.remarks ?? old.plan.remarks),
+    old.plan._id,
+  ];
   const pr = await pool.query(
     `UPDATE shipping_plans
-        SET flow_status=$1, etd=$2, freight_sale_usd=COALESCE($3,freight_sale_usd),
-            freight_sale_cny=COALESCE($4,freight_sale_cny), remarks=$5, updated_at=now()
-      WHERE _id=$6 RETURNING *`, vals);
+        SET flow_status=$1, etd=$2, freight_cost=COALESCE($3,freight_cost),
+            freight_cost_currency=COALESCE($4,freight_cost_currency),
+            freight_sale_usd=COALESCE($5,freight_sale_usd),
+            freight_sale_cny=COALESCE($6,freight_sale_cny), remarks=$7, updated_at=now()
+      WHERE _id=$8 RETURNING *`, vals);
   const saved = [];
   for (const row of (body.lines || [])) {
     const _terms = await ticketTerms(pool, pr.rows[0]);
@@ -139,6 +157,6 @@ export default async function handler(req, res) {
     }
     res.status(405).json({ success: false, error: "GET/PATCH/POST required" });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(err.status || 500).json({ success: false, error: err.message, field: err.field });
   }
 }

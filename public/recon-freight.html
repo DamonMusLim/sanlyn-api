@@ -18,7 +18,7 @@
 <button class="btn" id="reload">刷新</button>
     <button class="btn" id="exportBtn">导出Excel</button>
   </div>
-  <div id="msg"></div><div class="panel" id="app"><div class="hint">Loading...</div></div>
+  <div id="msg"></div><div class="meta" id="coverage"></div><div class="panel" id="app"><div class="hint">Loading...</div></div>
 </div>
 <script src="/public/sanlyn-table.js"></script>
 <script>
@@ -52,7 +52,8 @@ var table=SanlynTable.mount(document.getElementById("app"),{
     {key:"barge_cost_usd",label:"驳船USD",type:"num",group:"成本"},
     {key:"ocean_sale_usd",label:"海运USD",type:"num",group:"收客"},
     {key:"port_sale_cny",label:"港杂CNY",type:"num",group:"收客"},
-    {key:"margin",label:"毛差USD",render:function(r,h){if(r.fx_missing)return '<span class="st-bad">fx_missing</span>';
+    {key:"margin",label:"毛差USD",render:function(r,h){if(!r.margin_covered)return '<span class="st-na">—</span>';
+      if(r.fx_missing)return '<span class="st-bad">fx_missing</span>';
       var d=r.freight_margin_usd==null?Number(r.ocean_sale_usd||0)-Number(r.ocean_cost_usd||0)-Number(r.barge_cost_usd||0):Number(r.freight_margin_usd);
       if(!Number(r.ocean_sale_usd||0)&&!Number(r.ocean_cost_usd||0))return '<span class="st-na">—</span>';
       var cls=d>=0?"st-ok":"st-bad";return '<span class="'+cls+'">'+h.money(d)+'</span>'}},
@@ -60,9 +61,17 @@ var table=SanlynTable.mount(document.getElementById("app"),{
     {key:"freight_status",label:"状态",render:stCell},
     {key:"jump",label:"↗",render:function(r,h){return r.bl_no?'<a href="/public/recon-product.html?bl='+encodeURIComponent(r.bl_no)+'">产品账</a>':""}}
   ]});
-SanlynTable.companySelect(document.getElementById("company"),"CN-00040").then(function(){});
-company.onchange=function(){table.load()};
-reload.onclick=function(){table.load()};
+async function loadCoverage(){
+  try{
+    var r=await fetch("/api/db/recon-master?"+new URLSearchParams({company:company.value,year:year.value}).toString(),{headers:{Authorization:"Bearer "+SanlynTable.token()}});
+    var j=await r.json();if(!r.ok||!j.success)throw new Error(j.error||r.statusText);
+    coverage.textContent="本毛利覆盖 "+(j.margin_covered_count||0)+"/"+(j.margin_total_count||0)+" 票（"+(j.margin_coverage_pct||0)+"%）";
+  }catch(e){coverage.textContent="本毛利覆盖读取失败: "+e.message}
+}
+SanlynTable.companySelect(document.getElementById("company"),"CN-00040").then(function(){loadCoverage()});
+company.onchange=function(){table.load();loadCoverage()};
+year.onchange=function(){table.load();loadCoverage()};
+reload.onclick=function(){table.load();loadCoverage()};
 function baseFilter(r){
   var f=document.getElementById("factory").value, t=document.getElementById("terms").value, g=document.getElementById("gaponly").checked;
   if(f&&String(r.factory||"").indexOf(f)<0)return false;
@@ -80,6 +89,7 @@ function fillOpts(){var fs={},ts={};table.rows.forEach(function(r){
 setInterval(function(){if(table.rows.length&&!document.getElementById("factory").dataset.f){document.getElementById("factory").dataset.f=1;fillOpts()}},400);
 var _oldReload=reload.onclick;reload.onclick=function(){document.getElementById("factory").dataset.f="";_oldReload();setTimeout(fillOpts,1500)};
 exportBtn.onclick=function(){table.exportExcel("recon-freight-"+(company.value||"all")+".xlsx")};
+loadCoverage();
 var hlBl=new URLSearchParams(location.search).get("bl");
 if(hlBl){var n=0,iv=setInterval(function(){n++;var trs=document.querySelectorAll("table.tbl tr");
   if(trs.length>1||n>40){clearInterval(iv);trs.forEach(function(tr){if(tr.textContent.indexOf(hlBl)>=0){tr.classList.add("hl");tr.scrollIntoView({block:"center"})}})}},250)}

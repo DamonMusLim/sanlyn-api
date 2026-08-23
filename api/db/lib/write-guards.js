@@ -21,6 +21,19 @@ export function normalizeAmount(v) {
   return n;
 }
 
+export function guardPlanFreightCostCurrency(plan, existingPlan = {}) {
+  const hasIncomingCost = Object.prototype.hasOwnProperty.call(plan || {}, "freight_cost");
+  const cost = hasIncomingCost ? normalizeAmount(plan.freight_cost) : normalizeAmount(existingPlan.freight_cost);
+  if (!hasIncomingCost || cost == null || cost <= 0) return null;
+  const currency = String(plan.freight_cost_currency ?? existingPlan.freight_cost_currency ?? "").trim();
+  if (currency) return null;
+  return {
+    status: 422,
+    error: "freight_cost_currency required when freight_cost > 0",
+    field: "freight_cost_currency",
+  };
+}
+
 // 四路匹配同 recon order_pick: BL / shipping_plan_id / order_nos / contract_nos — 漏一路都可能把混票误判纯FOB
 export async function ticketTerms(pool, plan) {
   if (!plan) return "";
