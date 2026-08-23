@@ -92,7 +92,8 @@ function issuesOf(r){
   if (!r.container_qty)               out.push('柜量为空或0');
   if (r.kind === 'missing')           out.push('是自家客户却没挂上订单');
   if (r.kind === 'nocustomer')        out.push('客户为空');
-  if (!r.issuing_company)             out.push('缺出单人');
+  // ⚖️ 外单(freight_agency)=别人的货我们只卖运力,出单人是货主自己不是我们,空着是对的
+  if (!r.issuing_company && r.source_system !== 'freight_agency') out.push('缺出单人');
   if (r.etd && r.eta && r.eta < r.etd) out.push('ETA早于ETD');
   // 柜号真实分隔符是斜杠,也可能是逗号
   if (r.container_no && r.container_qty) {
