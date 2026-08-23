@@ -73,9 +73,19 @@ function issuerCell(v){
   return '<span title="'+esc(t)+'">'+esc(t.length>10 ? t.slice(0,10)+'…' : t)+'</span>';
 }
 
-// 数据质量:只标真问题。货代服务(freight)没有我们的订单是正常的,不算问题。
+// 数据质量:只标真问题。
+//  ⚖️ 货代服务(freight)没有我们的订单是正常的,不算问题。
+//  ⚖️ 2026-08-23 Damon:「这些都还没发货…也没有船公司,是真实的订单」——
+//     待订舱的票本来就没提单号/船/柜/卖价,那是在途业务不是脏数据。
+//     判据:未出运(无提单号且无船名)的票,一律不报出运类缺失。
 function issuesOf(r){
   var out = [];
+  var 未出运 = !r.bl_no && !r.vessel;   // 还没订舱/发货
+  if (未出运) {
+    // 只查这类票该有的东西:客户 + 出单人
+    if (r.kind === 'nocustomer') out.push('客户为空');
+    return out;
+  }
   if (!r.bl_no)                       out.push('缺提单号');
   if (!r.etd)                         out.push('缺ETD');
   if (!r.container_no)                out.push('缺柜号');
