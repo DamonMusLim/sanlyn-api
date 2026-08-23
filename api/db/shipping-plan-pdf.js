@@ -195,6 +195,17 @@ export default async function handler(req, res) {
     const isSI         = type === "si";
     const isBooking    = type === "booking";
     const isBlDraft    = type === "bl_draft";
+    // 明确拒绝已删除的类型,别掉进 isConfirm 兜底渲染成别的单据
+    if (type === "freight_invoice") {
+      return res.status(410).json({
+        success: false,
+        error: "type=freight_invoice 已删除",
+        message: "该模板是内部件(三林抬头/含杂费/标内部文件),不是给客户的对外账单。" +
+                 "客户要纯海运费发票请用 /templates/export-docs-template.html?page=freight&shipment_id=<整型id>",
+        replacement: "/templates/export-docs-template.html?page=freight"
+      });
+    }
+
     // ⛔ type=freight_invoice 已于 2026-08-24 删除(Damon 点名):
     //    它是三林/Sanlyn 抬头+含杂费+标「内部文件」,不是给客户的对外账单。
     //    客户要纯海运费发票 → /templates/export-docs-template.html?page=freight&shipment_id=<整型id>
