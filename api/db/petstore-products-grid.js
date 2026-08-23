@@ -383,7 +383,7 @@ async function getList(req, res) {
                 NULLIF(item->>'activityStartTime', '') AS start_text,
                 NULLIF(item->>'activityEndTime', '') AS end_text,
                 NULLIF(item->>'activityPrice', '')::numeric AS activity_price
-              FROM jsonb_array_elements(COALESCE(r.raw_payload->'listActivityProduct', '[]'::jsonb)) item
+              FROM jsonb_array_elements(CASE WHEN jsonb_typeof(r.raw_payload->'listActivityProduct') = 'array' THEN r.raw_payload->'listActivityProduct' ELSE '[]'::jsonb END) item
             ) src
             CROSS JOIN LATERAL (
               SELECT to_timestamp(start_text, 'YYYY-MM-DD HH24:MI:SS') AS start_at, to_timestamp(end_text, 'YYYY-MM-DD HH24:MI:SS') AS end_at
