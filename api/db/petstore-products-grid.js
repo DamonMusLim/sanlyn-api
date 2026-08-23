@@ -1,4 +1,3 @@
-
 import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
@@ -6,23 +5,19 @@ import { requireAuth } from "../auth.js";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
-function json(res, code, data) {
-  return res.status(code).json(data);
-}
+function json(res, code, data) { return res.status(code).json(data); }
 
 function addBossCorsHeaders(res) {
   const old = String(res.getHeader("Access-Control-Allow-Headers") || "Content-Type, Authorization");
   const needed = ["Content-Type", "Authorization", "X-Pricing-Boss", "X-Clerk-Session"];
-  const merged = Array.from(new Set([...old.split(",").map((s) => s.trim()).filter(Boolean), ...needed]));
-  res.setHeader("Access-Control-Allow-Headers", merged.join(", "));
+  res.setHeader("Access-Control-Allow-Headers", Array.from(new Set([...old.split(",").map((s) => s.trim()).filter(Boolean), ...needed])).join(", "));
 }
 
 function timingTokenMatches(input, expected) {
   if (typeof input !== "string" || typeof expected !== "string") return false;
   const a = Buffer.from(input, "utf8");
   const b = Buffer.from(expected, "utf8");
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function decodeJwtPayload(req) {
@@ -38,12 +33,7 @@ function decodeJwtPayload(req) {
   }
 }
 
-function bossUsers() {
-  return String(process.env.PRICING_BOSS_USERS || "damon_sl")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
+function bossUsers() { return String(process.env.PRICING_BOSS_USERS || "damon_sl").split(",").map((s) => s.trim()).filter(Boolean); }
 
 function requireBoss(req, res) {
   if (req.headers["x-clerk-session"]) {
@@ -52,8 +42,6 @@ function requireBoss(req, res) {
   }
 
   const payload = decodeJwtPayload(req);
-  // 0822:员工端 token 载荷是 {role,employee_id,name},没有 username;
-  //      老板从员工端进来只有 name(Damon id=35 manager)。两字段都认,大小写不敏感。
   const who = String(payload.username || payload.name || "").trim().toLowerCase();
   if (who && bossUsers().includes(who)) return true;
 
@@ -65,21 +53,11 @@ function requireBoss(req, res) {
   return false;
 }
 
-function clampLimit(value) {
-  const n = Number.parseInt(value || "", 10);
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_LIMIT;
-  return Math.min(n, MAX_LIMIT);
-}
+function clampLimit(value) { const n = Number.parseInt(value || "", 10); return !Number.isFinite(n) || n <= 0 ? DEFAULT_LIMIT : Math.min(n, MAX_LIMIT); }
 
-function parseCursor(value) {
-  const n = Number.parseInt(value || "0", 10);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
+function parseCursor(value) { const n = Number.parseInt(value || "0", 10); return Number.isFinite(n) && n > 0 ? n : 0; }
 
-function textParam(value, max = 120) {
-  const s = String(value || "").trim();
-  return s ? s.slice(0, max) : null;
-}
+function textParam(value, max = 120) { const s = String(value || "").trim(); return s ? s.slice(0, max) : null; }
 
 function personId(req) {
   const payload = decodeJwtPayload(req);
@@ -88,9 +66,7 @@ function personId(req) {
   return Number.isFinite(n) ? n : null;
 }
 
-function safeIdent(name) {
-  return `"${String(name).replace(/"/g, '""')}"`;
-}
+function safeIdent(name) { return `"${String(name).replace(/"/g, '""')}"`; }
 
 async function getColumns(pool, table) {
   const { rows } = await pool.query(`
@@ -380,21 +356,48 @@ async function getList(req, res) {
       ) online_price ON true
       LEFT JOIN LATERAL (
         SELECT jsonb_strip_nulls(jsonb_build_object(
-          'spu_code', r.spu_code,
-          'take_out', r.raw_payload->'takeOut',
-          'month_sale', r.raw_payload->'monthSale',
-          'warn_status_str', r.raw_payload->'warnStatusStr',
-          'label_list', r.raw_payload->'labelList',
-          'supplier_list', r.raw_payload->'supplierList'
-        ) - ARRAY[
-          'product_name','product_code','src_id','order_no','fetched_at',
-          'order_channel','store_code','upc_code','category_name',
-          'first_category_name','second_category_name'
-        ]) AS gdc_profile
-        FROM gdc_product_profile_raw r
+          'sku_id', r.sku_id, 'spu_product_code', r.spu_product_code, 'collected_at', r.collected_at,
+          'product_status', r.product_status, 'first_category_name', r.raw_payload->'firstCategoryName',
+          'second_category_name', r.raw_payload->'secondCategoryName', 'take_out', r.raw_payload->'takeOut',
+          'month_sale', r.raw_payload->'monthSale', 'warn_status_str', r.raw_payload->'warnStatusStr',
+          'label_list', r.raw_payload->'labelList', 'supplier_list', r.raw_payload->'supplierList',
+          'channel_codes', r.raw_payload->'channelCodes', 'channel_activities', act.channel_activities
+        )) AS gdc_profile
+        FROM gdc_emall_product_raw r
+        LEFT JOIN LATERAL (
+          SELECT jsonb_object_agg(channel_key, activity ORDER BY channel_key) AS channel_activities
+          FROM (
+            SELECT DISTINCT ON (channel_key) channel_key,
+              jsonb_strip_nulls(jsonb_build_object(
+                'channel', channel_key, 'channelCode', channel_code, 'activityPrice', activity_price,
+                'activityStartTime', start_text, 'activityEndTime', end_text,
+                'daysLeft', CASE WHEN end_at IS NULL THEN NULL ELSE ceil(extract(epoch FROM end_at - now()) / 86400)::int END,
+                'lifecycleRatio', ratio,
+                'expiryStatus', CASE WHEN ratio IS NULL THEN NULL WHEN ratio <= 0 THEN 'expired' WHEN ratio <= 0.15 THEN 'soon' ELSE 'normal' END,
+                'activityType', item->>'activityType', 'activityName', item->>'activityName', 'orderLimitNum', item->>'orderLimitNum'
+              )) AS activity, end_at
+            FROM (
+              SELECT item,
+                CASE item->>'channelCode' WHEN 'MEI_TUAN' THEN 'meituan' WHEN 'E_BAI' THEN 'eleme' WHEN 'JD' THEN 'jd_daojia' ELSE NULL END AS channel_key,
+                item->>'channelCode' AS channel_code,
+                NULLIF(item->>'activityStartTime', '') AS start_text,
+                NULLIF(item->>'activityEndTime', '') AS end_text,
+                NULLIF(item->>'activityPrice', '')::numeric AS activity_price
+              FROM jsonb_array_elements(COALESCE(r.raw_payload->'listActivityProduct', '[]'::jsonb)) item
+            ) src
+            CROSS JOIN LATERAL (
+              SELECT to_timestamp(start_text, 'YYYY-MM-DD HH24:MI:SS') AS start_at, to_timestamp(end_text, 'YYYY-MM-DD HH24:MI:SS') AS end_at
+            ) tm
+            CROSS JOIN LATERAL (
+              SELECT CASE WHEN start_text IS NULL OR end_at <= start_at THEN NULL ELSE (extract(epoch FROM end_at - now()) / extract(epoch FROM end_at - start_at))::numeric END AS ratio
+            ) calc
+            WHERE channel_key IN ('meituan', 'eleme')
+            ORDER BY channel_key, (end_at < now()), end_at ASC NULLS LAST
+          ) picked
+        ) act ON true
         WHERE r.store_code = '63350001'
-          AND r.product_code = o.product_code
-        ORDER BY r.fetched_at DESC, r.batch_id DESC
+          AND r.sku_id = o.product_code
+        ORDER BY r.collected_at DESC
         LIMIT 1
       ) gpr ON true
     ),
@@ -454,8 +457,6 @@ async function getList(req, res) {
       round(online_activity_price::numeric, 2) AS online_activity_price,
       online_price_captured_at,
       brand_final, brand_guess, brand_src, series, series_src,
-      -- Claude 止血改：旧视图 petstore_ops_row 没有 margin_pct 列（只有 v2 影子有），
-      -- 直接选会报 column does not exist，页面整个挂掉。改为按线下价现算毛利率。
       CASE WHEN store_price IS NULL OR store_price = 0 OR cost_price IS NULL THEN NULL
            ELSE round(((store_price - cost_price) / store_price * 100)::numeric, 2)
       END AS margin_pct,
