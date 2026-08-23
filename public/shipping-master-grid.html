@@ -127,7 +127,7 @@ async function load(){
   document.getElementById('sub').textContent = '加载中…';
   try{
     var r = await fetch('/api/db/shipping-master-grid?from='+encodeURIComponent(from),
-                        { headers: SanlynTable.authHeaders() });
+                        { headers: { Authorization: "Bearer " + SanlynTable.token() } });
     var j = await r.json();
     if (!r.ok || !j.success) throw new Error(j.error || ('HTTP '+r.status));
     ROWS = j.data || [];

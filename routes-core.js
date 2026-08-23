@@ -81,6 +81,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/share-center",             () => import("./api/db/share-center.js"));
   mount("/api/db/bb-overview",              () => import("./api/db/bb-overview.js"));
   mount("/api/db/freight-invoice-b",        () => import("./api/db/freight-invoice-b.js"));
+  mount("/api/db/plan-invoices",            () => import("./api/db/plan-invoices.js"));
   mount("/api/db/freight-bill-intake",      () => import("./api/db/freight-bill-intake.js"));
   mount("/api/db/canonical-doc",            () => import("./api/db/canonical-doc.js"));
   mount("/api/db/order-intake-validate", () => import("./api/db/order-intake-validate.js"));
@@ -487,7 +488,6 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/portal/documents", () => import("./api/portal/documents.js"));
   mount("/api/portal/missing",   () => import("./api/portal/missing.js"));
   mount("/api/portal/orders",    () => import("./api/portal/orders.js"));    // Stage C1
-  
   // MiniMax chat completion proxy for Task Workspace V1.5 (read-only).
   // Hard contract: keys stay in process.env.MINIMAX_API_KEY; rate-limited
   // 30s/task+role; daily cap 100; max_tokens hard 800; prompt 4000 chars.

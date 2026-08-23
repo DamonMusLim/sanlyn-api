@@ -27,14 +27,17 @@ const rows=await Q(`
     AND (sp.gross_weight_kg IS NULL OR sp.total_cartons IS NULL OR sp.total_cbm IS NULL)`);
 let filled=0,skipped=[];
 for(const r of rows){
-  const perCtr=r.q/Math.max(r.cq,1);
+  const q=Number(r.q);
+  const cq=Number(r.cq);
+  const norders=Number(r.norders);
+  const perCtr=q/Math.max(cq,1);
   const gwAgrees = r.sg!=null && Math.abs(Number(r.sg)-Number(r.gw))/Number(r.gw)<0.01;
-  const safe = perCtr<=2600 && (r.norders===1 || (gwAgrees && perCtr>=100)); // 单订单无挂接歧义不设下限(代购小票),下限仅多订单佐证;与booking-collab.js写路径同口径
-  if(!safe){ skipped.push(`#${r.id} ${r.shipment_no}(${r.norders}单,每柜${perCtr.toFixed(0)}箱)`); continue; }
+  const safe = perCtr<=2600 && (norders===1 || (gwAgrees && perCtr>=100)); // 单订单无挂接歧义不设下限(代购小票),下限仅多订单佐证;与booking-collab.js写路径同口径
+  if(!safe){ skipped.push(`#${r.id} ${r.shipment_no}(${norders}单,每柜${perCtr.toFixed(0)}箱)`); continue; }
   if(!DRY){
-    await Q(`UPDATE shipping_plans SET gross_weight_kg=COALESCE(gross_weight_kg,$2),total_cartons=COALESCE(total_cartons,$3),total_cbm=COALESCE(total_cbm,$4),updated_at=now() WHERE id=$1`,[r.id,r.gw,r.q,r.cbm]);
+    await Q(`UPDATE shipping_plans SET gross_weight_kg=COALESCE(gross_weight_kg,$2),total_cartons=COALESCE(total_cartons,$3),total_cbm=COALESCE(total_cbm,$4),updated_at=now() WHERE id=$1`,[r.id,r.gw,q,r.cbm]);
   }
-  console.log(`${DRY?'[DRY]':'✅'} #${r.id} ${r.shipment_no} 填空 GW${r.gw}/箱${r.q}/CBM${r.cbm}`);
+  console.log(`${DRY?'[DRY]':'✅'} #${r.id} ${r.shipment_no} 填空 GW${r.gw}/箱${q}/CBM${r.cbm}`);
   filled++;
 }
 console.log(`\n${DRY?'[DRY] 将填':'已填'} ${filled} 票; 跳过(歧义,留DQ19告警) ${skipped.length}: ${skipped.join(' | ')}`);

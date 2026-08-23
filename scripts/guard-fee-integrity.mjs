@@ -2,11 +2,26 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { loadReconMaster } from "../api/db/recon-master.js";
 
 const { Pool } = pg;
 const EPS = 0.01;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const SCAN_DIRS = ["api", "public"];
+const BUSINESS_KEY_RE = /(qty|quantity|amount|price|unit|basis|currency|rate|paid|receive|payment|total)/i;
+const SYNONYMS = {
+  amount: ["amount", "paid_amount", "this_amount", "sale_amount", "total_amount"],
+  receivedamount: ["amount", "paid_amount", "this_amount", "received_amount"],
+  received_amount: ["amount", "paid_amount", "this_amount"],
+  paidamount: ["amount", "paid_amount", "this_amount"],
+  thisamount: ["amount", "paid_amount", "this_amount"],
+  sale_qty: ["qty", "quantity", "sale_qty"],
+  saleqty: ["qty", "quantity", "sale_qty"],
+  qty: ["qty", "quantity"],
+  quantity: ["qty", "quantity"],
+  unit_price: ["unit_price", "price", "sale_unit_price"],
+  unitprice: ["unit_price", "price", "sale_unit_price"],
+  price: ["price", "unit_price", "sale_unit_price"],
+};
 
 async function loadDotenv() {
   try {
@@ -54,6 +69,7 @@ function mismatch(a, b) {
 async function walk(dir, out = []) {
   for (const ent of await fs.readdir(dir, { withFileTypes: true })) {
     if (ent.name === "node_modules" || ent.name === ".git" || ent.name.startsWith(".codex")) continue;
+    if (/\.bak/i.test(ent.name)) continue;
     const p = path.join(dir, ent.name);
     if (ent.isDirectory()) await walk(p, out);
     else if (/\.(js|mjs|cjs|sql)$/.test(ent.name)) out.push(p);
@@ -103,38 +119,193 @@ async function billMathCheck(pool) {
   return { name: "bill_unit_qty_amount_mismatch", rows };
 }
 
-function businessRawKeys(src) {
-  const keys = new Set();
-  const re = /raw\s*->>\s*'([^']+)'/g;
+function normalizeName(v) {
+  return String(v || "").replace(/[^A-Za-z0-9]/g, "").toLowerCase();
+}
+
+function displayPath(file, line) {
+  return `${path.relative(ROOT, file)}:${line}`;
+}
+
+function lineNumberAt(src, index) {
+  return src.slice(0, index).split(/\r?\n/).length;
+}
+
+function tableName(v) {
+  return String(v || "").replace(/^public\./, "");
+}
+
+function quoteIdent(name) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`unsafe table identifier: ${name}`);
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function parseAliases(src) {
+  const aliases = new Map();
+  const tables = new Set();
+  const re = /\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)(?:\s+(?:AS\s+)?([A-Za-z_][\w]*))?/gi;
   let m;
   while ((m = re.exec(src))) {
-    const key = m[1];
-    if (/(qty|quantity|amount|price|unit|basis|currency|rate)/i.test(key)) keys.add(key);
+    const tbl = tableName(m[1]);
+    const alias = m[2] && !/^(ON|USING|WHERE|LEFT|RIGHT|FULL|INNER|OUTER|JOIN|GROUP|ORDER|LIMIT|UNION)$/i.test(m[2])
+      ? m[2]
+      : tbl;
+    if (!tbl || /\(/.test(tbl)) continue;
+    tables.add(tbl);
+    aliases.set(alias, tbl);
+    aliases.set(tbl, tbl);
   }
-  return [...keys].sort();
+  return { aliases, tables };
+}
+
+function rawReferences(src, file) {
+  const refs = [];
+  const { aliases, tables } = parseAliases(src);
+  const re = /\b(?:(\w+)\s*\.\s*)?raw\s*->>\s*['"]([^'"]+)['"]/g;
+  let m;
+  while ((m = re.exec(src))) {
+    const key = m[2];
+    if (!BUSINESS_KEY_RE.test(key)) continue;
+    let table = m[1] ? aliases.get(m[1]) : aliases.get("raw");
+    if (!table && !m[1] && tables.size === 1) table = [...tables][0];
+    refs.push({ file, line: lineNumberAt(src, m.index), table: table || null, raw_key: key });
+  }
+  return refs;
+}
+
+async function businessRawRefs() {
+  const files = [];
+  for (const dir of SCAN_DIRS) {
+    try {
+      await walk(path.join(ROOT, dir), files);
+    } catch {
+      // Some deployments do not have every scan directory.
+    }
+  }
+  const refs = [];
+  for (const file of files) {
+    const src = await fs.readFile(file, "utf8");
+    refs.push(...rawReferences(src, file));
+  }
+  const seen = new Set();
+  return refs.filter((ref) => {
+    const key = `${ref.file}:${ref.line}:${ref.table || ""}:${ref.raw_key}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).sort((a, b) => displayPath(a.file, a.line).localeCompare(displayPath(b.file, b.line)));
+}
+
+async function tableExists(pool, table) {
+  const r = await pool.query("SELECT to_regclass($1) AS tbl", [`public.${table}`]);
+  return Boolean(r.rows[0]?.tbl);
+}
+
+async function tableColumns(pool, table) {
+  const r = await pool.query(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1`,
+    [table]
+  );
+  return r.rows.map((x) => x.column_name);
+}
+
+function trueColumnsFor(rawKey, columns) {
+  const wanted = new Set([rawKey, normalizeName(rawKey), ...(SYNONYMS[rawKey] || []), ...(SYNONYMS[normalizeName(rawKey)] || [])]);
+  return columns.filter((col) => wanted.has(col) || wanted.has(normalizeName(col))).filter((col) => col !== "raw");
 }
 
 async function rawCoverageCheck(pool) {
-  const files = await walk(ROOT);
-  const keys = new Set();
-  for (const file of files) {
-    const src = await fs.readFile(file, "utf8");
-    for (const key of businessRawKeys(src)) keys.add(key);
-  }
+  const refs = await businessRawRefs();
   const rows = [];
-  for (const key of [...keys].sort()) {
+  const cache = new Map();
+  for (const ref of refs) {
+    if (!ref.table) {
+      rows.push({ level: "UNOWNED", location: displayPath(ref.file, ref.line), table: null, raw_key: ref.raw_key, covered_rows: null, total_rows: null, true_columns: [], note: "alias/table unresolved" });
+      continue;
+    }
+    if (!(await tableExists(pool, ref.table))) {
+      rows.push({ level: "UNOWNED", location: displayPath(ref.file, ref.line), table: ref.table, raw_key: ref.raw_key, covered_rows: null, total_rows: null, true_columns: [], note: "table not found" });
+      continue;
+    }
+    if (!cache.has(ref.table)) cache.set(ref.table, await tableColumns(pool, ref.table));
+    const trueColumns = trueColumnsFor(ref.raw_key, cache.get(ref.table));
     const r = await pool.query(
-      `SELECT COUNT(*) FILTER (WHERE raw ? $1 AND NULLIF(raw->>$1,'') IS NOT NULL)::int AS covered
-         FROM freight_supplier_bills`,
-      [key]
+      `SELECT COUNT(*)::int AS total_rows,
+              COUNT(*) FILTER (WHERE raw ? $1 AND NULLIF(raw->>$1,'') IS NOT NULL)::int AS covered_rows
+         FROM ${quoteIdent(ref.table)}`,
+      [ref.raw_key]
     );
-    if (!n(r.rows[0]?.covered)) rows.push({ table: "freight_supplier_bills", raw_key: key, covered_rows: 0 });
+    const covered = n(r.rows[0]?.covered_rows);
+    const total = n(r.rows[0]?.total_rows);
+    const pct = total ? covered / total : 0;
+    if (covered === 0 || (covered > 0 && pct < 0.2)) {
+      rows.push({
+        level: covered === 0 ? "RED" : "YELLOW",
+        location: displayPath(ref.file, ref.line),
+        table: ref.table,
+        raw_key: ref.raw_key,
+        covered_rows: covered,
+        total_rows: total,
+        coverage_pct: Math.round(pct * 10000) / 100,
+        true_columns: trueColumns,
+        note: trueColumns.length ? "same-meaning native column present" : "",
+      });
+    }
   }
-  return { name: "raw_business_key_zero_coverage", rows };
+  return { name: "raw_business_key_coverage_by_owner_table", rows };
 }
 
 async function marginBargeCheck(pool) {
-  const rows = await loadReconMaster(pool, { year: process.env.GUARD_YEAR || "2026" });
+  const year = process.env.GUARD_YEAR || "2026";
+  const sql = `
+    WITH bill_groups AS (
+      SELECT BTRIM(bl_no) AS bl_no,
+             SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency,'USD'))='USD'
+                       AND (cost_category ILIKE '%海运%' OR cost_category ILIKE '%ocean%' OR cost_category ILIKE '%freight%')
+                      THEN COALESCE(amount,0) ELSE 0 END) AS ocean_cost_usd,
+             SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency,'USD'))='CNY'
+                       AND (cost_category ILIKE '%驳船%' OR cost_category ILIKE '%barge%')
+                      THEN COALESCE(amount,0) ELSE 0 END) AS barge_cost_cny
+        FROM active_freight_supplier_bills
+       WHERE UPPER(COALESCE(currency_norm,currency,'USD')) IN ('USD','CNY')
+         AND NULLIF(BTRIM(bl_no),'') IS NOT NULL
+       GROUP BY BTRIM(bl_no)
+    ), plan_groups AS (
+      SELECT BTRIM(sp.bl_no) AS bl_no,
+             MIN(sp.etd) AS etd,
+             MAX(sp.freight_sale_usd) AS ocean_sale_usd
+        FROM shipping_plans sp
+       WHERE sp.deleted_at IS NULL
+         AND NULLIF(BTRIM(sp.bl_no),'') IS NOT NULL
+         AND sp.bl_no !~ '^[0-9]+-[0-9]+$'
+         AND ($1 = '' OR EXTRACT(YEAR FROM sp.etd)::text = $1)
+       GROUP BY BTRIM(sp.bl_no)
+    )
+    SELECT pg.bl_no,
+           COALESCE(bg.ocean_cost_usd,0) AS ocean_cost_usd,
+           COALESCE(bg.barge_cost_cny,0) AS barge_cost_cny,
+           CASE WHEN COALESCE(bg.barge_cost_cny,0) > 0 AND fx.rate IS NULL THEN NULL
+                WHEN COALESCE(bg.barge_cost_cny,0) > 0 THEN COALESCE(bg.barge_cost_cny,0) / NULLIF(fx.rate,0)
+                ELSE 0 END AS barge_cost_usd,
+           COALESCE(pg.ocean_sale_usd,0) AS ocean_sale_usd,
+           (COALESCE(bg.barge_cost_cny,0) > 0 AND fx.rate IS NULL) AS fx_missing,
+           CASE WHEN COALESCE(bg.barge_cost_cny,0) > 0 AND fx.rate IS NULL THEN NULL
+                ELSE ROUND((COALESCE(pg.ocean_sale_usd,0) - COALESCE(bg.ocean_cost_usd,0)
+                  - CASE WHEN COALESCE(bg.barge_cost_cny,0) > 0 THEN COALESCE(bg.barge_cost_cny,0) / NULLIF(fx.rate,0) ELSE 0 END)::numeric,2)
+            END AS freight_margin_usd
+      FROM plan_groups pg
+      LEFT JOIN bill_groups bg ON bg.bl_no = pg.bl_no
+      LEFT JOIN LATERAL (
+        SELECT rate
+          FROM exchange_rates
+         WHERE currency_pair='USD_CNY'
+           AND fetched_at::date <= pg.etd::date
+         ORDER BY fetched_at DESC
+         LIMIT 1
+      ) fx ON TRUE`;
+  const rows = (await pool.query(sql, [year])).rows;
   const bad = [];
   for (const r of rows) {
     if (n(r.barge_cost_cny) <= 0) continue;
