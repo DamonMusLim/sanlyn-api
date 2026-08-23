@@ -90,17 +90,21 @@ plan_groups AS (
 bill_groups AS (
   SELECT BTRIM(bl_no) AS bl_no,
          COUNT(*)::int AS supplier_bill_count,
-         SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency,'USD'))='USD'
+         COUNT(*) FILTER (
+           WHERE NULLIF(BTRIM(COALESCE(currency_norm,currency,'')),'') IS NULL
+         )::int AS currency_missing_count,
+         SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency))='USD'
                    AND (cost_category ILIKE '%海运%' OR cost_category ILIKE '%ocean%' OR cost_category ILIKE '%freight%')
                   THEN COALESCE(amount,0) ELSE 0 END) AS ocean_cost_usd,
-         SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency,'USD'))='CNY'
+         SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency))='CNY'
                    AND (cost_category ILIKE '%驳船%' OR cost_category ILIKE '%barge%')
                   THEN COALESCE(amount,0) ELSE 0 END) AS barge_cost_cny,
-         SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency,'USD'))='CNY'
+         SUM(CASE WHEN UPPER(COALESCE(currency_norm,currency))='CNY'
                    AND cost_category ~* '拖车|trucking|拖驳'
                   THEN COALESCE(amount,0) ELSE 0 END) AS truck_cost_cny
     FROM active_freight_supplier_bills
-   WHERE UPPER(COALESCE(currency_norm,currency,'USD')) IN ('USD','CNY')
+   WHERE (UPPER(COALESCE(currency_norm,currency)) IN ('USD','CNY')
+          OR NULLIF(BTRIM(COALESCE(currency_norm,currency,'')),'') IS NULL)
      AND NULLIF(BTRIM(bl_no),'') IS NOT NULL
    GROUP BY BTRIM(bl_no)
 ),
@@ -119,6 +123,8 @@ joined AS (
          COALESCE(bg.barge_cost_cny,0) AS barge_cost_cny,
          COALESCE(bg.truck_cost_cny,0) AS truck_cost_cny,
          COALESCE(bg.supplier_bill_count,0) AS supplier_bill_count,
+         COALESCE(bg.currency_missing_count,0) AS currency_missing_count,
+         COALESCE(bg.currency_missing_count,0) > 0 AS currency_missing,
          pg.cost_evidence_status,
          COALESCE(pg.ocean_sale_usd,0) AS ocean_sale_usd,
          COALESCE(pg.port_sale_cny,0) AS port_sale_cny,
@@ -185,9 +191,12 @@ SELECT j.po_nos, j.orders, j.external_src, j.pipeline, j.bl_no, j.etd, j.trade_t
        j.supplier_bill_count,
        j.cost_evidence_status,
        j.margin_covered,
+       j.currency_missing_count,
+       j.currency_missing,
        ROUND(j.ocean_sale_usd::numeric,2) AS ocean_sale_usd,
        ROUND(j.port_sale_cny::numeric,2) AS port_sale_cny,
        CASE WHEN NOT j.margin_covered THEN NULL
+            WHEN j.currency_missing THEN NULL
             WHEN j.cost_evidence_status = 'zero_margin_confirmed' THEN 0
             WHEN j.fx_missing THEN NULL
             ELSE ROUND((j.ocean_sale_usd - j.ocean_cost_usd - j.barge_cost_usd)::numeric,2) END AS freight_margin_usd,
