@@ -340,6 +340,9 @@ async function getList(req, res) {
         s.compliance_status, s.shelf_location,
         pm.take_out, pm.month_sale, pm.warn_status_str, pm.label_list,
         gp.presence_state, gp.missing_count, gp.supplier_sync_status,
+        online_price.online_source_sku_id,
+        online_price.online_original_price, online_price.online_activity_price,
+        online_price.online_price_captured_at,
         gpr.gdc_profile,
         NULLIF(s.brand, '') AS supp_brand,
         CASE
@@ -358,6 +361,23 @@ async function getList(req, res) {
       LEFT JOIN gdc_product_presence gp
         ON gp.store_code = '63350001'
        AND gp.product_code = o.product_code
+      LEFT JOIN LATERAL (
+        SELECT
+          max(source_sku_id) AS online_source_sku_id,
+          max(price) FILTER (WHERE channel = '线上原价') AS online_original_price,
+          max(price) FILTER (WHERE channel = '线上活动价') AS online_activity_price,
+          max(captured_at) AS online_price_captured_at
+        FROM (
+          SELECT DISTINCT ON (h.channel)
+            h.source_sku_id, h.channel, h.price, h.captured_at
+          FROM petstore_price_history h
+          WHERE h.source_sku_id = o.product_code
+            AND h.source_table = 'gdc_online_price'
+            AND h.channel IN ('线上原价', '线上活动价')
+            AND h.price_type = '生效'
+          ORDER BY h.channel, h.effective_at DESC, h.captured_at DESC, h.id DESC
+        ) h
+      ) online_price ON true
       LEFT JOIN LATERAL (
         SELECT jsonb_strip_nulls(jsonb_build_object(
           'spu_code', r.spu_code,
@@ -429,6 +449,10 @@ async function getList(req, res) {
       pet_type, shelf_life_days, expire_date_batch, compliance_status, shelf_location,
       take_out, month_sale, warn_status_str, label_list,
       presence_state, missing_count, supplier_sync_status, gdc_profile,
+      online_source_sku_id,
+      round(online_original_price::numeric, 2) AS online_original_price,
+      round(online_activity_price::numeric, 2) AS online_activity_price,
+      online_price_captured_at,
       brand_final, brand_guess, brand_src, series, series_src,
       -- Claude 止血改：旧视图 petstore_ops_row 没有 margin_pct 列（只有 v2 影子有），
       -- 直接选会报 column does not exist，页面整个挂掉。改为按线下价现算毛利率。
