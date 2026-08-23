@@ -51,7 +51,7 @@ var COLS = [
   {k:'shipment_no', t:'CY号'},   {k:'bl_no', t:'提单号'},
   {k:'customer',    t:'客户'},   {k:'issuing_company', t:'出单人', render:issuerCell},
   {k:'etd', t:'ETD'},            {k:'eta', t:'ETA'},
-  {k:'pol', t:'起运港', render:portCell},  {k:'pod', t:'目的港', render:portCell},
+  {k:'pol', t:'起运港', render:polCell},   {k:'pod', t:'目的港', render:podCell},
   {k:'vessel', t:'船名'},        {k:'voyage', t:'航次'},
   {k:'forwarder_cn', t:'货代'},
   {k:'container_qty', t:'柜量', num:true},
@@ -95,15 +95,18 @@ function issuesOf(r){
 // ⚖️ 2026-07-23 铁律:港口显示走 ports.name_en(后端已 JOIN),原文只作悬停。
 //    manual_default_westport = 2026-07-08 Damon 拍板的人工默认(西港107:北港2),
 //    标成「人工默认」而非「已核实」——可回溯,将来扫 Studio BL 能纠个别北港。
-function portCell(v, r){
+function portCell(v, raw, warn){
   if (!v) return '<span class="na">—</span>';
-  var raw = (r && (r.pod_raw || r.pol_raw)) || '';
-  var tip = raw && raw !== v ? '原文：' + raw : v;
-  if (r && r.port_resolution_status === 'manual_default_westport')
+  var tip = (raw && raw !== v) ? ('原文：' + raw) : v;
+  if (warn)
     return '<span class="k k-nocustomer" title="' + esc(tip) + ' · 2026-07-08 人工默认西港，非已核实">'
          + esc(v) + ' ⚠</span>';
   return '<span title="' + esc(tip) + '">' + esc(v) + '</span>';
 }
+function polCell(v, r){ return portCell(v, r && r.pol_raw, false); }
+// port_resolution_status 说的是**目的港**,别拿它标起运港
+function podCell(v, r){ return portCell(v, r && r.pod_raw,
+  !!(r && r.port_resolution_status === 'manual_default_westport')); }
 
 function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
