@@ -81,6 +81,13 @@ function textParam(value, max = 120) {
   return s ? s.slice(0, max) : null;
 }
 
+function personId(req) {
+  const payload = decodeJwtPayload(req);
+  const raw = req.body?.updated_by_person_id || req.body?.person_id || req.body?.personId || payload.employee_id || payload.person_id || null;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
 function safeIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`;
 }
@@ -135,6 +142,93 @@ function chineseExcludeReason(reason) {
   return dict[s] || s || "未写排除原因";
 }
 
+function quoteExcluded(row) {
+  return Boolean(row?.exclude_reason || row?.is_soft_excluded === true || row?.is_comparable === false);
+}
+
+function splitQuotesByReviewState(rows) {
+  const byId = new Map();
+  for (const row of rows) {
+    const key = row?.id == null ? JSON.stringify(row) : String(row.id);
+    const prev = byId.get(key);
+    if (!prev || (!quoteExcluded(prev) && quoteExcluded(row))) byId.set(key, row);
+  }
+  const valid = [];
+  const excluded = [];
+  for (const row of byId.values()) {
+    if (quoteExcluded(row)) {
+      excluded.push({ ...row, quote_group: "被排除报价", exclude_reason_cn: chineseExcludeReason(row.exclude_reason) });
+    } else {
+      valid.push({ ...row, quote_group: "有效报价" });
+    }
+  }
+  return { valid, excluded };
+}
+
+function presenceStateCn(state) {
+  return {
+    seen_active: "在售",
+    missing_once: "缺失1次",
+    missing_since: "连续缺失",
+    confirmed_offline: "已下架",
+  }[state] || null;
+}
+
+function labelListText(value) {
+  if (value == null) return "标签未同步";
+  if (!Array.isArray(value)) return null;
+  if (value.length === 0) return "无标签";
+  return value.map((v) => String(v?.labelName || v?.name || v).trim()).filter(Boolean).join(", ") || "无标签";
+}
+
+function decorateRows(rows) {
+  return rows.map((row) => ({
+    ...row,
+    presence_state_cn: presenceStateCn(row.presence_state),
+    label_list_text: labelListText(row.label_list),
+  }));
+}
+
+async function reviewProduct(req, res) {
+  const productCode = textParam(req.body?.product_code || req.query?.product_code, 80);
+  if (!productCode) return json(res, 400, { ok: false, error: "product_code_required" });
+
+  const action = textParam(req.body?.review || req.body?.marker || req.body?.status || req.body?.value, 40);
+  const marker = action === "verified" ? "正常" : action === "written_off" ? "死货" : null;
+  if (!["verified", "written_off", "clear"].includes(action)) {
+    return json(res, 400, { ok: false, error: "invalid_review_action" });
+  }
+
+  const note = textParam(req.body?.note, 500);
+  const updatedBy = personId(req);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`
+      INSERT INTO petstore_product_status (product_code, marker, note, updated_by_person_id, updated_at)
+      VALUES ($1, $2, $3, $4, now())
+      ON CONFLICT (product_code) DO UPDATE SET
+        marker = EXCLUDED.marker,
+        note = EXCLUDED.note,
+        updated_by_person_id = EXCLUDED.updated_by_person_id,
+        updated_at = now()
+    `, [productCode, marker, note, updatedBy]);
+    if (note) {
+      await client.query(`
+        INSERT INTO petstore_product_notes (product_code, note, author)
+        VALUES ($1, $2, $3)
+      `, [productCode, note, updatedBy == null ? null : String(updatedBy)]);
+    }
+    await client.query("COMMIT");
+    return json(res, 200, { ok: true, product_code: productCode, marker });
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 async function getDetail(req, res) {
   const productCode = textParam(req.query?.product_code, 80);
   if (!productCode) return json(res, 400, { ok: false, error: "product_code_required" });
@@ -158,15 +252,11 @@ async function getDetail(req, res) {
     selectJsonByProduct(pool, "petstore_stock_notes", productCode, { limit: 300 }),
   ]);
 
+  const quotes = splitQuotesByReviewState([...validQuotes, ...marketQuotes]);
   return json(res, 200, {
     ok: true,
     product_code: productCode,
-    quotes: {
-      valid: validQuotes.map((r) => ({ ...r, quote_group: "有效报价" })),
-      excluded: marketQuotes
-        .filter((r) => r.exclude_reason)
-        .map((r) => ({ ...r, quote_group: "被排除报价", exclude_reason_cn: chineseExcludeReason(r.exclude_reason) })),
-    },
+    quotes,
     price_history: [
       ...ourPriceHistory.map((r) => ({ ...r, history_group: "我方生效价" })),
       ...marketHistory.map((r) => ({ ...r, history_group: "竞店日聚合" })),
@@ -215,8 +305,8 @@ function buildFilters(query) {
   else if (["过期", "临期", "清仓"].includes(expiry)) push("expiry_flag = ?", expiry);
 
   const nearby = textParam(query.nearby, 20);
-  if (nearby === "has") filters.push("market_price IS NOT NULL");
-  if (nearby === "none") filters.push("market_price IS NULL");
+  if (nearby === "has") filters.push("market_price IS NOT NULL AND COALESCE(market_valid_cnt,0) > 0");
+  if (nearby === "none") filters.push("(market_price IS NULL OR COALESCE(market_valid_cnt,0) = 0)");
 
   const problem = textParam(query.problem, 80);
   if (problem === "any") filters.push("cardinality(COALESCE(problem_types, ARRAY[]::text[])) > 0");
@@ -248,6 +338,9 @@ async function getList(req, res) {
         o.*,
         s.pet_type, s.shelf_life_days, s.expire_date_batch,
         s.compliance_status, s.shelf_location,
+        pm.take_out, pm.month_sale, pm.warn_status_str, pm.label_list,
+        gp.presence_state, gp.missing_count, gp.supplier_sync_status,
+        gpr.gdc_profile,
         NULLIF(s.brand, '') AS supp_brand,
         CASE
           WHEN NULLIF(s.brand, '') IS NOT NULL THEN NULL
@@ -257,6 +350,33 @@ async function getList(req, res) {
         END AS raw_brand_guess
       FROM petstore_ops_row o
       LEFT JOIN petstore_sku_supp s ON s.product_code = o.product_code
+      LEFT JOIN product_external_ids pei
+        ON pei.source_system = 'jelly_orange'
+       AND pei.is_current
+       AND pei.external_product_code = o.product_code
+      LEFT JOIN product_master pm ON pm.product_id = pei.product_id
+      LEFT JOIN gdc_product_presence gp
+        ON gp.store_code = '63350001'
+       AND gp.product_code = o.product_code
+      LEFT JOIN LATERAL (
+        SELECT jsonb_strip_nulls(jsonb_build_object(
+          'spu_code', r.spu_code,
+          'take_out', r.raw_payload->'takeOut',
+          'month_sale', r.raw_payload->'monthSale',
+          'warn_status_str', r.raw_payload->'warnStatusStr',
+          'label_list', r.raw_payload->'labelList',
+          'supplier_list', r.raw_payload->'supplierList'
+        ) - ARRAY[
+          'product_name','product_code','src_id','order_no','fetched_at',
+          'order_channel','store_code','upc_code','category_name',
+          'first_category_name','second_category_name'
+        ]) AS gdc_profile
+        FROM gdc_product_profile_raw r
+        WHERE r.store_code = '63350001'
+          AND r.product_code = o.product_code
+        ORDER BY r.fetched_at DESC, r.batch_id DESC
+        LIMIT 1
+      ) gpr ON true
     ),
     branded AS (
       SELECT
@@ -295,24 +415,29 @@ async function getList(req, res) {
       round(ele_price::numeric, 2) AS ele_price,
       round(cost_price::numeric, 2) AS cost_price,
       price_status, src_log_id,
-      round(market_price::numeric, 2) AS market_price,
-      market_store, market_sold, market_spec, market_captured_at,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN round(market_price::numeric, 2) END AS market_price,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_store END AS market_store,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_sold END AS market_sold,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_spec END AS market_spec,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_captured_at END AS market_captured_at,
       market_quote_cnt, market_valid_cnt, market_excluded_cnt,
       sales_1d, sales_7d, sales_30d, sales_90d, daily_avg_90,
       cur_stock, days_of_supply, days_left, last_sale_at,
       problem_types, pending_card_cnt, restock_verdict, restock_qty,
       shelf_code, shelf_missing, expiry_flag, sales_src, stock_src,
-      market_src_id, as_of,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_src_id END AS market_src_id, as_of,
       pet_type, shelf_life_days, expire_date_batch, compliance_status, shelf_location,
+      take_out, month_sale, warn_status_str, label_list,
+      presence_state, missing_count, supplier_sync_status, gdc_profile,
       brand_final, brand_guess, brand_src, series, series_src,
       -- Claude 止血改：旧视图 petstore_ops_row 没有 margin_pct 列（只有 v2 影子有），
       -- 直接选会报 column does not exist，页面整个挂掉。改为按线下价现算毛利率。
       CASE WHEN store_price IS NULL OR store_price = 0 OR cost_price IS NULL THEN NULL
            ELSE round(((store_price - cost_price) / store_price * 100)::numeric, 2)
       END AS margin_pct,
-      round(market_price_prev::numeric, 2) AS market_price_prev,
-      round(market_price_delta::numeric, 2) AS market_price_delta,
-      round(market_price_delta_pct::numeric, 2) AS market_price_delta_pct,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN round(market_price_prev::numeric, 2) END AS market_price_prev,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN round(market_price_delta::numeric, 2) END AS market_price_delta,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN round(market_price_delta_pct::numeric, 2) END AS market_price_delta_pct,
       market_days_unchanged,
       ARRAY[]::jsonb[] AS items
     FROM final_rows
@@ -321,10 +446,11 @@ async function getList(req, res) {
     LIMIT $${params.length - 1} OFFSET $${params.length}
   `, params);
 
+  const decorated = decorateRows(rows);
   return json(res, 200, {
     ok: true,
-    rows,
-    data: rows,
+    rows: decorated,
+    data: decorated,
     limit,
     cursor: offset,
     next_cursor: rows.length === limit ? String(offset + limit) : null,
@@ -332,13 +458,14 @@ async function getList(req, res) {
 }
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, OPTIONS");
   addBossCorsHeaders(res);
   if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
     if (!requireAuth(req, res)) return;
     if (!requireBoss(req, res)) return;
+    if (req.method === "POST" && req.query?.action === "review") return reviewProduct(req, res);
     if (req.method !== "GET") return json(res, 405, { ok: false, error: "method_not_allowed" });
     if (req.query?.action === "detail") return getDetail(req, res);
     return getList(req, res);
