@@ -1,0 +1,148 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>海运主表 · 数据管理</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="/public/sanlyn-table.js"></script>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:18px 20px;font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f6f7f9;color:#1a1a2e}
+  h1{font-size:19px;margin:0 0 2px}
+  .sub{font-size:12px;color:#8c8c99;margin-bottom:14px}
+  .bar{background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+  .bar label{font-size:12px;color:#555}
+  input[type=date]{padding:5px 8px;border:1px solid #d8dbe0;border-radius:6px;font:inherit}
+  button{padding:6px 14px;border:0;border-radius:6px;background:#1a1a2e;color:#fff;font:inherit;cursor:pointer}
+  .stat{margin-left:auto;font-size:12px;color:#555}
+  .stat b{color:#1a1a2e}
+  .wrap{background:#fff;border-radius:10px;overflow:auto;max-height:calc(100vh - 190px);box-shadow:0 1px 3px rgba(0,0,0,.07)}
+  table{border-collapse:separate;border-spacing:0;font-size:12px;white-space:nowrap}
+  th,td{padding:6px 9px;border-bottom:1px solid #eef0f3;text-align:left}
+  thead th{position:sticky;top:0;z-index:3;background:#1a1a2e;color:#fff;font-weight:600}
+  tbody tr:hover{background:#f9fafb}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .na{color:#c3c7ce}
+  .flag{width:26px;text-align:center;cursor:help}
+  .sub-row td{background:#fbfcfd;color:#555;font-size:11px;padding-left:34px}
+  .k{display:inline-block;padding:1px 6px;border-radius:9px;font-size:11px}
+  .k-linked{background:#e7f6ec;color:#137a3a}
+  .k-freight{background:#e8f0fe;color:#1a56c4}
+  .k-missing{background:#fdeaea;color:#c0362c}
+  .k-nocustomer{background:#fff3e0;color:#a35b00}
+  .err{color:#c0362c;padding:14px}
+</style>
+
+<h1>海运主表 · 数据管理</h1>
+<div class="sub" id="sub">加载中…</div>
+
+<div class="bar">
+  <label>开船日起 <input type="date" id="from" value="2026-01-01"></label>
+  <button id="go">刷新</button>
+  <label><input type="checkbox" id="onlyBad"> 只看有问题的票</label>
+  <span class="stat" id="stat"></span>
+</div>
+
+<div class="wrap"><table>
+  <thead><tr id="head"></tr></thead>
+  <tbody id="body"></tbody>
+</table></div>
+
+<script>
+var COLS = [
+  {k:'shipment_no', t:'CY号'},   {k:'bl_no', t:'提单号'},
+  {k:'customer',    t:'客户'},   {k:'kind', t:'归属', render:kindCell},
+  {k:'etd', t:'ETD'},            {k:'eta', t:'ETA'},
+  {k:'pol', t:'起运港'},         {k:'pod', t:'目的港'},
+  {k:'vessel', t:'船名'},        {k:'voyage', t:'航次'},
+  {k:'forwarder_cn', t:'货代'},
+  {k:'container_qty', t:'柜量', num:true},
+  {k:'container_type', t:'柜型'},{k:'container_no', t:'柜号'},
+  {k:'status', t:'状态'},
+  {k:'freight_cost', t:'成本USD', num:true},
+  {k:'freight_sale_usd', t:'卖价USD', num:true},
+  {k:'so_no', t:'SO号'},         {k:'mbl_no', t:'MBL'}, {k:'hbl_no', t:'HBL'}
+];
+
+var KIND_TXT = {linked:'已挂单', freight:'货代服务', missing:'缺关联', nocustomer:'无客户'};
+function kindCell(v){ return '<span class="k k-'+(v||'')+'">'+(KIND_TXT[v]||v||'—')+'</span>'; }
+
+// 数据质量:只标真问题。货代服务(freight)没有我们的订单是正常的,不算问题。
+function issuesOf(r){
+  var out = [];
+  if (!r.bl_no)                       out.push('缺提单号');
+  if (!r.etd)                         out.push('缺ETD');
+  if (!r.container_no)                out.push('缺柜号');
+  if (!r.container_qty)               out.push('柜量为空或0');
+  if (r.kind === 'missing')           out.push('是自家客户却没挂上订单');
+  if (r.kind === 'nocustomer')        out.push('客户为空');
+  if (r.etd && r.eta && r.eta < r.etd) out.push('ETA早于ETD');
+  // 柜号真实分隔符是斜杠,也可能是逗号
+  if (r.container_no && r.container_qty) {
+    var n = r.container_no.split(/[\/,]/).map(function(s){return s.trim()}).filter(Boolean).length;
+    if (n !== r.container_qty) out.push('柜号'+n+'个 vs 柜量'+r.container_qty);
+  }
+  return out;
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function cell(v){ return (v===null||v===undefined||v==='') ? '<span class="na">—</span>' : esc(v); }
+function money(v){ return (v===null||v===undefined||v==='') ? '<span class="na">—</span>'
+  : Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+var ROWS = [];
+
+function head(){
+  document.getElementById('head').innerHTML =
+    '<th class="flag"></th>' + COLS.map(function(c){ return '<th>'+c.t+'</th>'; }).join('');
+}
+
+function draw(){
+  var only = document.getElementById('onlyBad').checked;
+  var html = '', bad = 0;
+  ROWS.forEach(function(r){
+    var iss = issuesOf(r);
+    if (iss.length) bad++;
+    if (only && !iss.length) return;
+    html += '<tr>';
+    html += '<td class="flag"' + (iss.length ? ' title="'+esc(iss.join('\n'))+'">🔴' : '>') + '</td>';
+    COLS.forEach(function(c){
+      var v = r[c.k];
+      html += '<td'+(c.num?' class="num"':'')+'>'
+            + (c.render ? c.render(v) : (c.num ? money(v) : cell(v))) + '</td>';
+    });
+    html += '</tr>';
+    (r.items || []).forEach(function(it){
+      html += '<tr class="sub-row"><td></td><td colspan="'+COLS.length+'">↳ '
+            + esc(it.order_no||'') + ' · ' + esc(it.contract_no||'')
+            + (it.customer ? ' · ' + esc(it.customer) : '') + '</td></tr>';
+    });
+  });
+  document.getElementById('body').innerHTML = html || '<tr><td colspan="'+(COLS.length+1)+'" class="na" style="padding:16px">没有符合条件的票</td></tr>';
+  document.getElementById('stat').innerHTML =
+    '共 <b>'+ROWS.length+'</b> 票 · 其中 <b>'+bad+'</b> 票有数据质量问题';
+}
+
+async function load(){
+  var from = document.getElementById('from').value || '2026-01-01';
+  document.getElementById('sub').textContent = '加载中…';
+  try{
+    var r = await fetch('/api/db/shipping-master-grid?from='+encodeURIComponent(from),
+                        { headers: SanlynTable.authHeaders() });
+    var j = await r.json();
+    if (!r.ok || !j.success) throw new Error(j.error || ('HTTP '+r.status));
+    ROWS = j.data || [];
+    document.getElementById('sub').textContent =
+      '只读 · 数据源 shipping_plans(未删除) · 生成 ' + new Date().toLocaleString('zh-CN');
+    draw();
+  }catch(e){
+    document.getElementById('body').innerHTML =
+      '<tr><td colspan="'+(COLS.length+1)+'" class="err">读取失败：'+esc(e.message)+'</td></tr>';
+    document.getElementById('sub').textContent = '加载失败';
+  }
+}
+
+head();
+document.getElementById('go').onclick = load;
+document.getElementById('onlyBad').onchange = draw;
+load();
+</script>
