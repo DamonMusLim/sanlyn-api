@@ -9,7 +9,13 @@ export async function loadShippingMasterGrid(pool, q = {}) {
   const from = String(q.from || "2026-01-01").trim();
   const sql = `
 SELECT s._id AS id, s.shipment_no, s.bl_no, s.mbl_no, s.hbl_no, s.so_no,
-  s.vessel, s.voyage, s.pol, s.pod,
+  s.vessel, s.voyage,
+  -- ⚖️ 2026-07-23 铁律:港口一律走 port_id -> ports.name_en,绝不直接读自由文本
+  --    (pol/pod 文本有 20 种写法,历史裸名故意不强改——改了就是制造错误事实)
+  COALESCE(pol_p.name_en, s.pol) AS pol,
+  COALESCE(pod_p.name_en, s.pod) AS pod,
+  s.pol AS pol_raw, s.pod AS pod_raw,
+  s.port_resolution_status,
   to_char(s.etd,'YYYY-MM-DD') AS etd, to_char(s.eta,'YYYY-MM-DD') AS eta,
   to_char(s.cutoff_date,'YYYY-MM-DD') AS cutoff,
   s.container_no, s.container_qty, s.container_type,
@@ -50,6 +56,8 @@ SELECT s._id AS id, s.shipment_no, s.bl_no, s.mbl_no, s.hbl_no, s.so_no,
     ELSE 'missing'        -- 是自家客户却没挂上单 → 真缺,要补
   END AS kind
 FROM shipping_plans s
+LEFT JOIN ports pol_p ON pol_p.id = s.pol_port_id
+LEFT JOIN ports pod_p ON pod_p.id = s.pod_port_id
 WHERE s.deleted_at IS NULL   -- 🩸0812审计:漏了这句,7张已软删的重复/作废票混进了"今年88票"(含测试数据 __TEST_CXLDEL__)
   AND COALESCE(s.etd, s.created_at) >= $1   -- 业务日期=开船日,不是进库日
 ORDER BY s.etd DESC NULLS LAST, s.created_at DESC`;
