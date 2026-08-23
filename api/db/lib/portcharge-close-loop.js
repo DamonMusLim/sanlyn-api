@@ -113,9 +113,28 @@ export async function normalizeChargeName(pool, rawName, carrier = "*", sampleBl
   return { name: raw, unmapped: true, original_name: raw };
 }
 
-export async function issueDocNo(pool, { prefix, seed, docType, blNo, totalUsd = 0, totalCny = 0, generatedBy = null, snapshot = {}, docDate = null, noDate = false }) {
+export async function issueDocNo(pool, { prefix, seed, docType, blNo, totalUsd = 0, totalCny = 0, generatedBy = null, snapshot = {}, docDate = null, noDate = false, noSeq = false }) {
   const today = String(docDate || new Date().toISOString().slice(0, 10)).slice(0, 10).replace(/-/g, ""); // 0813铁则: 单号日期段=出运日
   const base = noDate ? `${prefix}-${docKey(seed)}` : `${prefix}-${docKey(seed)}-${today}`;
+  // ⚖️ 2026-08-24 Damon:「前缀 + BL 号,字段表就可以了」——对外单据号不再拼出运日与递增序号。
+  //    BL 号本来就是现成字段,号即 `${prefix}-${BL}`。同一票重复出单 = 同一个号(幂等),
+  //    不是每点一次生成一个新号(原来 PC-COAU9507915320-20260707-5 那个 -5 就是被点了 5 次)。
+  if (noSeq) {
+    const exist = await pool.query(`SELECT doc_no FROM doc_issue_log WHERE doc_no = $1 LIMIT 1`, [base]);
+    if (exist.rows[0]) return exist.rows[0].doc_no;   // 幂等:已发过就返回原号
+    try {
+      await pool.query(
+        `INSERT INTO doc_issue_log
+           (doc_no, bl_no, doc_type, total_usd, total_cny, generated_by, snapshot)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+        [base, cleanText(blNo) || null, docType, num(totalUsd), num(totalCny), generatedBy, JSON.stringify(snapshot)]
+      );
+    } catch (e) {
+      if (e?.code !== "23505") throw e;   // 并发下别人先插了,照样返回该号
+    }
+    return base;
+  }
+
   const r = await pool.query(
     `SELECT COALESCE(MAX(NULLIF(regexp_replace(doc_no, '^.*-([0-9]+)$', '\\1'), doc_no)::int), 0) AS n
        FROM doc_issue_log

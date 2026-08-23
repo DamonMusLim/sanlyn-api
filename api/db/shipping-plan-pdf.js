@@ -921,8 +921,10 @@ ${printBtn}
         : [];
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
 
-      const fobInvNo = await issueDocNo(pool, { docDate, noDate: true,
-        prefix: "FI", seed: p.bl_no || p.shipment_no || p.id, blNo: p.bl_no,
+      // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空时用 NOBL 占位(docKey 的兜底),
+      //    绝不降级用 shipment_no —— 那会把 CY 内部号印给客户(实测出过 FI-CY00416)。
+      const fobInvNo = await issueDocNo(pool, { docDate, noDate: true, noSeq: true,
+        prefix: "FI", seed: p.bl_no || null, blNo: p.bl_no,
         docType: "fob_invoice", totalUsd, totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
         snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, qty: actualCtnQty, warnings: fobWarnings },
@@ -1319,8 +1321,8 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         }).join("")
         : `<tr><td colspan="6" style="text-align:center;color:#999">No CNY port charge rows found / 未找到人民币港杂费明细</td></tr>`;
 
-      const portchargeNo = await issueDocNo(pool, { docDate,
-        prefix: "PC", seed: p.bl_no || p.shipment_no || p.id, blNo: p.bl_no,
+      const portchargeNo = await issueDocNo(pool, { docDate, noDate: true, noSeq: true,
+        prefix: "PC", seed: p.bl_no || null, blNo: p.bl_no,
         docType: "fob_portcharge", totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
         snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, payer_company_code: factoryCode, charges: portChargeRows, used_fallback_card: usedFallbackCard },
