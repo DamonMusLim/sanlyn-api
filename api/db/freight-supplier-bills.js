@@ -28,53 +28,11 @@ function cleanText(v) {
   return String(v ?? "").trim();
 }
 
-function isMissingRequired(v) {
-  return v == null || (typeof v === "string" && v.trim() === "");
-}
-
-function missingRequiredFields(obj, fields) {
-  return fields.filter((field) => isMissingRequired(obj[field]));
-}
-
-function actorOf(req) {
-  const u = req.user || {};
-  return cleanText(u.username || u.name || u.email || u.account || u.sub || u.uid || u.id || u.role) || "unknown";
-}
-
-function auditValue(v) {
-  if (v === undefined) return null;
-  if (v instanceof Date) return v.toISOString();
-  return v;
-}
-
-function sameAuditValue(a, b) {
-  return JSON.stringify(auditValue(a)) === JSON.stringify(auditValue(b));
-}
-
-function buildChanges(oldRow, newRow, fields) {
-  const changes = {};
-  for (const field of fields) {
-    if (sameAuditValue(oldRow[field], newRow[field])) continue;
-    changes[field] = {
-      old: auditValue(oldRow[field]),
-      new: auditValue(newRow[field]),
-    };
-  }
-  return changes;
-}
-
-function auditPlanId(row) {
-  const raw = cleanText(row?.link_plan_id);
-  if (!/^[0-9]+$/.test(raw)) return null;
-  return Number(raw);
-}
-
-// 可传 pool 或事务内的 client
-async function resolvePlanIdForBill(db, blNo, linkPlanId) {
+async function resolvePlanIdForBill(pool, blNo, linkPlanId) {
   const raw = cleanText(linkPlanId);
   if (/^[0-9]+$/.test(raw)) return raw;
 
-  const plans = await db.query(
+  const plans = await pool.query(
     `SELECT id
        FROM shipping_plans
       WHERE bl_no = $1
@@ -99,18 +57,11 @@ export default async function handler(req, res) {
 
   // ── POST: admin only — create new bill row ──
   if (req.method === "POST") {
-    if (!requireAuth(req, res)) return;
-    if (req.user?.role !== "admin") return res.status(403).json({ success: false, error: "admin role required" });
+    if (req.user?.role !== "admin") return res.status(403).json({ error: "admin role required" });
     try {
       const b = req.body || {};
-      const missing = missingRequiredFields(b, ["bl_no", "cost_category", "amount", "currency", "sale_amount"]);
-      if (missing.length) {
-        return res.status(400).json({
-          success: false,
-          error: `missing required field(s): ${missing.join(", ")}`,
-          fields: missing,
-        });
-      }
+      if (!b.bl_no || !b.cost_category || b.amount == null || !b.currency)
+        return res.status(400).json({ error: "bl_no, cost_category, amount, currency required" });
       const pool = getPool();
       const chargeNorm = await normalizeChargeName(pool, b.cost_category, b.carrier || b.shipping_line || "*", b.bl_no);
       const raw = b.raw && typeof b.raw === "object" ? { ...b.raw } : {};
@@ -122,7 +73,7 @@ export default async function handler(req, res) {
            (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, rebill_status, supplier, bill_month, raw, created_at, updated_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now(),now()) RETURNING *`,
         [b.bl_no, linkPlanId, chargeNorm.name || b.cost_category, b.amount, b.currency,
-         b.sale_amount, b.rebill_status ?? null, b.supplier ?? "待补",
+         b.sale_amount ?? null, b.rebill_status ?? null, b.supplier ?? "待补",
          b.bill_month ?? null, JSON.stringify(raw)]
       );
       return res.status(201).json({ success: true, data: r.rows[0] });
@@ -133,88 +84,43 @@ export default async function handler(req, res) {
 
   // ── PATCH: admin/finance only — correct FSB records (amount, category, notes) ──
   if (req.method === "PATCH") {
-    if (!requireAuth(req, res)) return;
     const pRole = req.user?.role;
     if (pRole !== "admin" && pRole !== "finance") {
-      return res.status(403).json({ success: false, error: "admin or finance role required for corrections" });
+      return res.status(403).json({ error: "admin or finance role required for corrections" });
     }
-    const pool = getPool();
-    const client = await pool.connect();
     try {
       const body = req.body || {};
       if (!body.id) return res.status(400).json({ success: false, error: "id required" });
       const PATCHABLE = ["amount","sale_amount","cost_category","rebill_status","reconcile_note","container_no","link_plan_id","incoterm","supplier_type","currency","rebill_to_type","rebill_to_name","rebill_dn_no","rebill_finance_slip_id","confirmed_at","confirmed_by","unit_price","qty","charge_basis","remarks"];
-      const patchFields = PATCHABLE.filter((col) => Object.prototype.hasOwnProperty.call(body, col));
-      if (!patchFields.length) return res.status(400).json({ success: false, error: "no patchable fields" });
-
-      for (const col of ["sale_amount", "amount", "currency"]) {
-        if (Object.prototype.hasOwnProperty.call(body, col) && isMissingRequired(body[col])) {
-          return res.status(400).json({ success: false, error: `missing required field: ${col}`, field: col });
-        }
-      }
-
-      await client.query("BEGIN");
-
-      const current = await client.query("SELECT * FROM freight_supplier_bills WHERE id = $1 FOR UPDATE", [body.id]);
-      if (!current.rows.length) {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ success: false, error: "record not found" });
-      }
-      const oldRow = current.rows[0];
-
+      const pool = getPool();
       if (Object.prototype.hasOwnProperty.call(body, "link_plan_id")) {
-        body.link_plan_id = await resolvePlanIdForBill(client, body.bl_no || oldRow.bl_no, body.link_plan_id);
+        const current = await pool.query("SELECT bl_no FROM freight_supplier_bills WHERE id = $1", [body.id]);
+        if (!current.rows.length) return res.status(404).json({ success: false, error: "record not found" });
+        body.link_plan_id = await resolvePlanIdForBill(pool, body.bl_no || current.rows[0].bl_no, body.link_plan_id);
       }
-
       const params = [], sets = [];
       for (const col of PATCHABLE) {
         if (!Object.prototype.hasOwnProperty.call(body, col)) continue;
-        params.push(body[col]);
-        sets.push(`${col} = $${params.length}`);
+        params.push(body[col]); sets.push(`${col} = $${params.length}`);
       }
+      if (!sets.length) return res.status(400).json({ success: false, error: "no patchable fields" });
       sets.push(`updated_at = now()`);
       params.push(body.id);
-
-      const r = await client.query(
+      const r = await pool.query(
         `UPDATE freight_supplier_bills SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING *`,
         params
       );
-      const newRow = r.rows[0];
-      const actor = actorOf(req);
-      const changedAt = new Date().toISOString();
-      const changes = buildChanges(oldRow, newRow, patchFields);
-      const detail = {
-        bill_id: newRow.id,
-        bl_no: newRow.bl_no,
-        cost_category: newRow.cost_category,
-        requested_fields: patchFields,
-        changed_fields: Object.keys(changes),
-        changes,
-        actor,
-        changed_at: changedAt,
-      };
-
-      await client.query(
-        `INSERT INTO shipping_plan_audit (plan_id, plan_uid, action, actor, detail)
-         VALUES ($1,$2,'freight_supplier_bill_patch',$3,$4::jsonb)`,
-        [auditPlanId(newRow), `fsb:${newRow.id}`, actor, JSON.stringify(detail)]
-      );
-
-      await client.query("COMMIT");
-      return res.status(200).json({ success: true, data: newRow });
+      if (!r.rows.length) return res.status(404).json({ success: false, error: "record not found" });
+      return res.status(200).json({ success: true, data: r.rows[0] });
     } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
       return res.status(err.status || 500).json({ success: false, error: err.message, code: err.code, field: err.field });
-    } finally {
-      client.release();
     }
   }
 
   // ── DELETE: admin only — remove wrong FSB entries ──
   if (req.method === "DELETE") {
-    if (!requireAuth(req, res)) return;
     const dRole = req.user?.role;
-    if (dRole !== "admin") return res.status(403).json({ success: false, error: "admin role required for deletion" });
+    if (dRole !== "admin") return res.status(403).json({ error: "admin role required for deletion" });
     try {
       const body = req.body || {};
       if (!body.id) return res.status(400).json({ success: false, error: "id required" });
@@ -225,11 +131,11 @@ export default async function handler(req, res) {
     } catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   }
 
-  // Only GET (and above POST/PATCH/DELETE) allowed
+  // Only GET (and above PATCH/DELETE) allowed
   if (req.method !== "GET") {
     return res.status(405).json({
       error: "Method not allowed.",
-      allowed: ["GET", "POST", "PATCH", "DELETE"],
+      allowed: ["GET", "PATCH", "DELETE"],
     });
   }
 
@@ -352,7 +258,6 @@ export default async function handler(req, res) {
          reconciled,
          reconcile_note,
          source_row,
-         raw,
          confirmed_at,
          confirmed_by,
          created_at,

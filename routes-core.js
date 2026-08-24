@@ -40,6 +40,9 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/customs-draft",    () => import("./api/db/customs-draft.js"));   // 报关底稿生成
   mount("/api/db/doc-auth",          () => import("./api/db/doc-auth.js"));
   mount("/api/db/documents",         () => import("./api/db/documents.js"));
+  mount("/api/db/doc-registry",         () => import("./api/db/doc-registry.js")); // 模板中心统一登记表 (P0/P1a/P1b)
+  mount("/api/db/doc-registry/:code",   () => import("./api/db/doc-registry.js"));
+  mount("/api/db/templates-preview-context", () => import("./api/db/templates-preview-context.js")); // 模板预览取演示单
   mount("/api/db/document_files",     () => import("./api/db/document-files.js")); // 单证文件清单读端点(document_files SSOT) — table-check 缺单证检测 (2026-06-16)
   mount("/api/db/seller-profiles",   () => import("./api/db/seller-profiles.js")); // issuing company list for SELLER dropdown — internal only (BANK-ACCOUNT-PAYEE-MINIMAL-FIX-001)
   mount("/api/db/order-payee-account", () => import("./api/db/order-payee-account.js")); // order-scoped payee bank account (customer-safe)
