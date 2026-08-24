@@ -44,3 +44,4 @@ server.js.*
 query_orders.mjs
 .codex-backups/
 BRIEF-*.md
+forge_brief_*.md
