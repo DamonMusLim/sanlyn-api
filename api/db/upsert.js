@@ -1,7 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { registerFiles } from "./m3-writer.js"; // ★ M3 Phase 1
 import { mirrorPlanBlToOrders } from "../lib/bl-order-mirror.js"; // 2026-07-13: bl_no 镜像同步到 orders
-const TABLES = ["orders","finance_payments","shipping_plans","accounts","customs_data","products"];
+const TABLES = ["orders","finance_payments","shipping_plans","customs_data","products"];
 
 // ─── JDY 订单主表 widget ID → 业务字段（从表单数据结构确认） ───
 const ORDER_WIDGETS = {
@@ -237,16 +237,16 @@ export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (!req.user || req.user.role !== "admin") {
+    return res.status(403).json({ success: false, error: "Forbidden: admin only" });
+  }
   try {
     const pool = getPool();
     const { table, record: rawRecord } = req.body;
     if (!TABLES.includes(table)) return res.status(400).json({ success: false, error: "Invalid table" });
     let sql, vals;
     let m3FileMeta = null; // ★ M3 Phase 1: populated in customs_data branch
-    if (table === "accounts") {
-      sql = `INSERT INTO accounts (username,password,role,company,supplier_role,permissions,department,raw,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW()) ON CONFLICT (username) DO UPDATE SET password=CASE WHEN accounts.password LIKE '$2b$%' OR accounts.password LIKE '$2a$%' THEN accounts.password ELSE EXCLUDED.password END,role=$3,company=$4,supplier_role=$5,permissions=$6,department=$7,raw=$8,updated_at=NOW() RETURNING *`;
-      vals = [rawRecord.username,rawRecord.password,rawRecord.role,rawRecord.company,rawRecord.supplierRole||rawRecord.supplier_role,rawRecord.permissions,rawRecord.department,JSON.stringify(rawRecord)];
-    } else if (table === "orders") {
+    if (table === "orders") {
       const hasWidgets = Object.keys(rawRecord).some(k => k.startsWith("_widget_"));
       const record = hasWidgets ? _normalizeJDYOrder(rawRecord) : rawRecord;
 

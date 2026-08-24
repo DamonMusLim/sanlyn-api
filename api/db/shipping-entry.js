@@ -3,6 +3,8 @@ import { requireAuth } from "../auth.js";
 import { guardBillRow, guardPlanFreightCostCurrency, resolvePayer, ticketTerms } from "./lib/write-guards.js";
 import { carrierFromBl, normalizeCarrier, normalizeChargeName, normalizeContainerType, num } from "./lib/portcharge-close-loop.js";
 
+const INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin"];
+
 function clean(v) { return String(v ?? "").trim(); }
 function n(v) { return v === "" || v == null ? null : num(v); }
 function ym(v) { return clean(v || new Date().toISOString().slice(0, 7)); }
@@ -31,7 +33,7 @@ async function feeItems(pool) {
   return r.rows;
 }
 
-async function listPlans(pool, q) {
+async function listPlans(pool, q, codes = null) {
   const s = `%${clean(q.search)}%`;
   const r = await pool.query(
     `SELECT id, _id, shipment_no, bl_no, flow_status, status, etd, pol, pod, container_type,
@@ -39,16 +41,18 @@ async function listPlans(pool, q) {
        FROM shipping_plans
       WHERE deleted_at IS NULL
         AND ($1='%%' OR shipment_no ILIKE $1 OR bl_no ILIKE $1)
+        AND ($2::text[] IS NULL OR company_code = ANY($2::text[]))
       ORDER BY updated_at DESC NULLS LAST, id DESC
-      LIMIT 80`, [s]);
+      LIMIT 80`, [s, codes]);
   return r.rows;
 }
 
-async function detail(pool, key) {
+async function detail(pool, key, codes = null) {
   const pr = await pool.query(
     `SELECT * FROM shipping_plans WHERE _id=$1 OR id::text=$1 OR shipment_no=$1 OR bl_no=$1 LIMIT 1`, [key]);
   if (!pr.rows.length) return null;
   const plan = pr.rows[0];
+  if (codes !== null && !codes.includes(plan.company_code)) return null;
   const bills = await pool.query(
     `SELECT id, bl_no, cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis, remarks, raw
        FROM active_freight_supplier_bills
@@ -147,10 +151,22 @@ export default async function handler(req, res) {
   try {
     const pool = getPool();
     if (req.method === "GET") {
-      if (req.query.id) return res.status(200).json({ success: true, data: await detail(pool, req.query.id) });
-      return res.status(200).json({ success: true, data: await listPlans(pool, req.query), fee_items: await feeItems(pool) });
+      const isInternal = req.user && INTERNAL_ROLES.includes(req.user.role);
+      const codes = isInternal ? null
+        : (Array.isArray(req.user.companyCodes) && req.user.companyCodes.length
+            ? req.user.companyCodes
+            : (req.user.companyCode ? [req.user.companyCode] : []));
+      if (!isInternal && codes.length === 0) {
+        if (req.query.id) return res.status(200).json({ success: true, data: null });
+        return res.status(200).json({ success: true, data: [], fee_items: await feeItems(pool) });
+      }
+      if (req.query.id) return res.status(200).json({ success: true, data: await detail(pool, req.query.id, codes) });
+      return res.status(200).json({ success: true, data: await listPlans(pool, req.query, codes), fee_items: await feeItems(pool) });
     }
     if (req.method === "PATCH" || req.method === "POST") {
+      if (!req.user || req.user.role !== "admin") {
+        return res.status(403).json({ success: false, error: "Forbidden: admin only" });
+      }
       const body = req.body || {};
       const data = await save(pool, body, req.user);
       return res.status(200).json({ success: true, data, warnings: body.__warnings || [] });
