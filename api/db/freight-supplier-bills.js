@@ -69,11 +69,12 @@ function auditPlanId(row) {
   return Number(raw);
 }
 
-async function resolvePlanIdForBill(pool, blNo, linkPlanId) {
+// 可传 pool 或事务内的 client
+async function resolvePlanIdForBill(db, blNo, linkPlanId) {
   const raw = cleanText(linkPlanId);
   if (/^[0-9]+$/.test(raw)) return raw;
 
-  const plans = await pool.query(
+  const plans = await db.query(
     `SELECT id
        FROM shipping_plans
       WHERE bl_no = $1
@@ -145,6 +146,12 @@ export default async function handler(req, res) {
       const PATCHABLE = ["amount","sale_amount","cost_category","rebill_status","reconcile_note","container_no","link_plan_id","incoterm","supplier_type","currency","rebill_to_type","rebill_to_name","rebill_dn_no","rebill_finance_slip_id","confirmed_at","confirmed_by","unit_price","qty","charge_basis","remarks"];
       const patchFields = PATCHABLE.filter((col) => Object.prototype.hasOwnProperty.call(body, col));
       if (!patchFields.length) return res.status(400).json({ success: false, error: "no patchable fields" });
+
+      for (const col of ["sale_amount", "amount", "currency"]) {
+        if (Object.prototype.hasOwnProperty.call(body, col) && isMissingRequired(body[col])) {
+          return res.status(400).json({ success: false, error: `missing required field: ${col}`, field: col });
+        }
+      }
 
       await client.query("BEGIN");
 
