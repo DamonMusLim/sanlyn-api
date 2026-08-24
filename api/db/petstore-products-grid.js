@@ -2,6 +2,13 @@ import crypto from "crypto";
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import { pricingTagBaseJoinSql, pricingTagBaseSelectSql, pricingTagSelectSql } from "./petstore-pricing-tag-sql.js";
+import { decorateRows, productDetailExtras, selectJsonByProduct, splitQuotesByReviewState } from "./petstore-products-detail.js";
+import {
+  productGridExtraBaseJoinSql,
+  productGridExtraBaseSelectSql,
+  productGridExtraFinalJoinSql,
+  productGridExtraFinalSelectSql,
+} from "./petstore-products-grid-extra-sql.js";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
@@ -63,105 +70,6 @@ function personId(req) {
   return Number.isFinite(n) ? n : null;
 }
 
-function safeIdent(name) { return `"${String(name).replace(/"/g, '""')}"`; }
-
-async function getColumns(pool, table) {
-  const { rows } = await pool.query(`
-    SELECT column_name
-    FROM information_schema.columns
-    WHERE table_schema = ANY (current_schemas(false))
-      AND table_name = $1
-  `, [table]);
-  return new Set(rows.map((r) => r.column_name));
-}
-
-async function selectJsonByProduct(pool, table, productCode, opts = {}) {
-  const cols = await getColumns(pool, table);
-  if (!cols.has("product_code")) return [];
-  const dateCol = ["ts", "created_at", "captured_at", "effective_at", "log_date", "note_date", "as_of"]
-    .find((c) => cols.has(c));
-  const orderCol = dateCol || "product_code";
-  const where = [`product_code=$1`];
-  const params = [productCode];
-
-  if (opts.days && dateCol) {
-    params.push(opts.days);
-    where.push(`${safeIdent(dateCol)} >= now() - ($${params.length}::int || ' days')::interval`);
-  }
-
-  const limit = Number.isFinite(opts.limit) ? opts.limit : 200;
-  params.push(limit);
-
-  const { rows } = await pool.query(`
-    SELECT to_jsonb(t) AS row
-    FROM ${safeIdent(table)} t
-    WHERE ${where.join(" AND ")}
-    ORDER BY ${safeIdent(orderCol)} DESC NULLS LAST
-    LIMIT $${params.length}
-  `, params);
-  return rows.map((r) => r.row);
-}
-
-function chineseExcludeReason(reason) {
-  const s = String(reason || "").trim();
-  const dict = {
-    no_barcode: "条码不一致",
-    bad_match: "匹配不可靠",
-    far_price: "价格偏离太大",
-    stale: "报价太旧",
-    spec_mismatch: "规格不一致",
-    duplicate: "重复报价",
-  };
-  return dict[s] || s || "未写排除原因";
-}
-
-function quoteExcluded(row) {
-  return Boolean(row?.exclude_reason || row?.is_soft_excluded === true || row?.is_comparable === false);
-}
-
-function splitQuotesByReviewState(rows) {
-  const byId = new Map();
-  for (const row of rows) {
-    const key = row?.id == null ? JSON.stringify(row) : String(row.id);
-    const prev = byId.get(key);
-    if (!prev || (!quoteExcluded(prev) && quoteExcluded(row))) byId.set(key, row);
-  }
-  const valid = [];
-  const excluded = [];
-  for (const row of byId.values()) {
-    if (quoteExcluded(row)) {
-      excluded.push({ ...row, quote_group: "被排除报价", exclude_reason_cn: chineseExcludeReason(row.exclude_reason) });
-    } else {
-      valid.push({ ...row, quote_group: "有效报价" });
-    }
-  }
-  return { valid, excluded };
-}
-
-function presenceStateCn(state) {
-  return {
-    seen_active: "在售",
-    missing_once: "缺失1次",
-    missing_since: "连续缺失",
-    confirmed_offline: "已下架",
-  }[state] || null;
-}
-
-function labelListText(value) {
-  if (value == null) return "标签未同步";
-  if (!Array.isArray(value)) return null;
-  if (value.length === 0) return "无标签";
-  return value.map((v) => String(v?.labelName || v?.name || v).trim()).filter(Boolean).join(", ") || "无标签";
-}
-
-function decorateRows(rows) {
-  return rows.map((row) => ({
-    ...row,
-    presence_state_cn: presenceStateCn(row.presence_state),
-    label_list_text: labelListText(row.label_list),
-  }));
-}
-
 async function reviewProduct(req, res) {
   const productCode = textParam(req.body?.product_code || req.query?.product_code, 80);
   if (!productCode) return json(res, 400, { ok: false, error: "product_code_required" });
@@ -215,6 +123,7 @@ async function getDetail(req, res) {
     problems,
     stockLedger,
     stockNotes,
+    extras,
   ] = await Promise.all([
     selectJsonByProduct(pool, "petstore_valid_quotes", productCode, { limit: 200 }),
     selectJsonByProduct(pool, "petstore_market_quotes", productCode, { limit: 300 }),
@@ -223,6 +132,7 @@ async function getDetail(req, res) {
     selectJsonByProduct(pool, "petstore_pricing_log", productCode, { limit: 300 }),
     selectJsonByProduct(pool, "petstore_stock_ledger", productCode, { limit: 300 }),
     selectJsonByProduct(pool, "petstore_stock_notes", productCode, { limit: 300 }),
+    productDetailExtras(pool, productCode),
   ]);
 
   const quotes = splitQuotesByReviewState([...validQuotes, ...marketQuotes]);
@@ -240,6 +150,9 @@ async function getDetail(req, res) {
       boss_verdict: r.damon_verdict || "",
       exec_result: r.result || r.exec_status || "",
     })),
+    operation_history: extras.operation_history,
+    sales_record: extras.sales_record,
+    stock_ledger: stockLedger.map((r) => ({ ...r, ledger_group: "库存流水" })),
     stock_notes: [
       ...stockLedger.map((r) => ({ ...r, note_group: "库存变动", reason_missing: false })),
       ...stockNotes.map((r) => ({
@@ -248,6 +161,7 @@ async function getDetail(req, res) {
         reason_missing: !(r.reason || r.note || r.memo || r.remark),
       })),
     ],
+    notes: extras.notes,
   });
 }
 
@@ -315,9 +229,10 @@ async function getList(req, res) {
 ${pricingTagBaseSelectSql}
         gp.presence_state, gp.missing_count, gp.supplier_sync_status,
         online_price.online_source_sku_id,
-        online_price.online_original_price, online_price.online_activity_price,
-        online_price.online_price_captured_at,
-        gpr.gdc_profile,
+	        online_price.online_original_price, online_price.online_activity_price,
+	        online_price.online_price_captured_at,
+	${productGridExtraBaseSelectSql}
+	        gpr.gdc_profile,
         NULLIF(s.brand, '') AS supp_brand,
         CASE
           WHEN NULLIF(s.brand, '') IS NOT NULL THEN NULL
@@ -332,8 +247,9 @@ ${pricingTagBaseSelectSql}
        AND pei.is_current
        AND pei.external_product_code = o.product_code
       LEFT JOIN product_master pm ON pm.product_id = pei.product_id
-${pricingTagBaseJoinSql}
-      LEFT JOIN gdc_product_presence gp
+	${pricingTagBaseJoinSql}
+	${productGridExtraBaseJoinSql}
+	      LEFT JOIN gdc_product_presence gp
         ON gp.store_code = '63350001'
        AND gp.product_code = o.product_code
       LEFT JOIN LATERAL (
@@ -437,17 +353,18 @@ ${pricingTagBaseJoinSql}
       round(ele_price::numeric, 2) AS ele_price,
       round(cost_price::numeric, 2) AS cost_price,
       price_status, src_log_id,
-      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN round(market_price::numeric, 2) END AS market_price,
-      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_store END AS market_store,
-      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_sold END AS market_sold,
-      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_spec END AS market_spec,
-      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_captured_at END AS market_captured_at,
-      market_quote_cnt, market_valid_cnt, market_excluded_cnt,
-      sales_1d, sales_7d, sales_30d, sales_90d, daily_avg_90,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN round(COALESCE(market_min_price, market_price)::numeric, 2) END AS market_price,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN COALESCE(market_low_store, market_store) END AS market_store,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN COALESCE(market_low_sold, market_sold) END AS market_sold,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN COALESCE(market_low_spec, market_spec) END AS market_spec,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN COALESCE(market_low_captured_at, market_captured_at) END AS market_captured_at,
+	      market_quote_cnt, market_valid_cnt, market_excluded_cnt,
+	${productGridExtraFinalSelectSql}
+	      sales_1d, sales_7d, sales_30d, sales_90d, daily_avg_90,
       cur_stock, days_of_supply, days_left, last_sale_at,
       problem_types, pending_card_cnt, restock_verdict, restock_qty,
       shelf_code, shelf_missing, expiry_flag, sales_src, stock_src,
-      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN market_src_id END AS market_src_id, as_of,
+      CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN COALESCE(market_low_src_id, market_src_id) END AS market_src_id, as_of,
       pet_type, shelf_life_days, expire_date_batch, compliance_status, shelf_location,
       take_out, month_sale, warn_status_str, label_list,
 ${pricingTagSelectSql}
@@ -464,9 +381,10 @@ ${pricingTagSelectSql}
       CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN round(market_price_delta::numeric, 2) END AS market_price_delta,
       CASE WHEN COALESCE(market_valid_cnt,0) > 0 THEN round(market_price_delta_pct::numeric, 2) END AS market_price_delta_pct,
       market_days_unchanged,
-      ARRAY[]::jsonb[] AS items
-    FROM final_rows
-    ${where}
+	      ARRAY[]::jsonb[] AS items
+	    FROM final_rows
+	${productGridExtraFinalJoinSql}
+	    ${where}
     ORDER BY ${sort}
     LIMIT $${params.length - 1} OFFSET $${params.length}
   `, params);

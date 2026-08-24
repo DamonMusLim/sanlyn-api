@@ -36,7 +36,7 @@ export async function managerExtras(pool, empId, me) {
   };
   if (!caps.dashboard && !caps.approvals) return null;
 
-  const [leaves, reimb, prices, failures] = await Promise.all([
+  const [leaves, reimb, prices, bossTasks, failures] = await Promise.all([
     caps.approvals ? pool.query(
       `SELECT l.id, l.employee_id, l.employee_name, l.store_id,
               to_char(l.leave_date_start,'YYYY-MM-DD') AS leave_date_start,
@@ -64,6 +64,21 @@ export async function managerExtras(pool, empId, me) {
       `SELECT COUNT(*)::int AS pending
          FROM petstore_price_intents
         WHERE status IN ('proposed','mgr_ok','pending','approved')`) : { rows: [{ pending: 0 }] },
+    caps.approvals ? pool.query(
+      `WITH boss_tasks AS (
+         SELECT id, title, next_action, created_at
+           FROM tasks
+          WHERE status=$1 AND task_prefix=$2 AND needs_human=$3
+          ORDER BY created_at DESC NULLS LAST, id DESC
+       )
+       SELECT
+         (SELECT COUNT(*)::int FROM boss_tasks) AS pending,
+         COALESCE((
+           SELECT json_agg(json_build_object('id', id, 'title', title, 'next_action', next_action)
+                           ORDER BY created_at DESC NULLS LAST, id DESC)
+             FROM (SELECT id, title, next_action, created_at FROM boss_tasks LIMIT 5) t
+         ), '[]'::json) AS tasks`,
+      ["open", "CAW", true]) : { rows: [{ pending: 0, tasks: [] }] },
     caps.dashboard ? pool.query(
       `SELECT id, source, impact, error_message, first_seen_at, last_seen_at, seen_count
          FROM job_failures WHERE status='open'
@@ -81,6 +96,8 @@ export async function managerExtras(pool, empId, me) {
         purchase_date: x.purchase_date, receipt_url: x.receipt_url, status: x.status, created_at: x.created_at,
       })),
       pricing_pending: prices.rows[0]?.pending || 0,
+      boss_tasks_pending: bossTasks.rows[0]?.pending || 0,
+      boss_tasks: bossTasks.rows[0]?.tasks || [],
     },
     failures: failures.rows,
   };
