@@ -167,9 +167,7 @@ function rowsForCsv(){
   state.data.tariff.forEach(function(r){rows.push(Object.assign({section:"官方费率"},r));});
   state.data.matrices.forEach(function(r){rows.push(Object.assign({section:"货代实报套餐"},r));});
   state.data.matrix_items.forEach(function(r){rows.push(Object.assign({section:"套餐明细"},r));});
-  state.data.local.forEach(function(r){rows.push(Object.assign({setokens used
-69,743
-ction:"本地费"},r));});
+  state.data.local.forEach(function(r){rows.push(Object.assign({section:"本地费"},r));});
   return {cols:[["section","类别"]].concat(cols.tariff,cols.matrices,cols.matrix_items,cols.local),rows:rows};
 }
 function exportCsv(){
