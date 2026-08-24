@@ -1,0 +1,166 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>价表总台</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="/public/sanlyn-table.js"></script>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:18px 20px;font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f6f7f9;color:#1a1a2e}
+  h1{font-size:19px;margin:0 0 2px}.sub{font-size:12px;color:#7b7f89;margin-bottom:12px}
+  .bar,.tabs{background:#fff;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+  .tabs{padding:8px}.tab{border:0;border-radius:7px;padding:7px 14px;background:#eef0f3;color:#333;cursor:pointer;font:inherit}.tab.on{background:#1a1a2e;color:#fff}
+  label{font-size:12px;color:#555}input[type=text]{width:130px;padding:6px 8px;border:1px solid #d8dbe0;border-radius:6px;font:inherit}button{font:inherit}
+  .stat{margin-left:auto;font-size:12px;color:#555}.stat b{color:#1a1a2e}.csv{border:0;border-radius:6px;background:#1a1a2e;color:#fff;padding:6px 12px;cursor:pointer}
+  .wrap{background:#fff;border-radius:10px;overflow:auto;max-height:calc(100vh - 210px);box-shadow:0 1px 3px rgba(0,0,0,.07)}
+  table{border-collapse:separate;border-spacing:0;font-size:12px;white-space:nowrap;min-width:100%}
+  th,td{padding:6px 9px;border-bottom:1px solid #eef0f3;text-align:left;vertical-align:top}
+  thead th{position:sticky;top:0;z-index:3;background:#1a1a2e;color:#fff;font-weight:600}
+  tbody tr:hover{background:#f9fafb}.num{text-align:right;font-variant-numeric:tabular-nums}.na{color:#b9bec7}.warn{background:#fff5cc}.expired{color:#c0362c;font-weight:600}.draft td{background:#f1f2f4;color:#858993}
+  .group td{position:sticky;top:31px;z-index:2;background:#eef6ff;color:#174b7a;font-weight:600}.err{color:#c0362c;padding:14px}.right{margin-left:auto;display:flex;gap:12px;align-items:center}
+</style>
+
+<h1>价表总台</h1>
+<div class="sub" id="sub">加载中…</div>
+
+<div class="tabs">
+  <button class="tab on" data-tab="ocean">海运周价</button>
+  <button class="tab" data-tab="tariff">官方港杂费率</button>
+  <button class="tab" data-tab="local">本地费</button>
+  <span class="right"><span class="stat" id="stat"></span><button class="csv" id="csv">导出CSV</button></span>
+</div>
+
+<div class="bar">
+  <label>起运港 <input type="text" id="pol"></label>
+  <label>目的港 <input type="text" id="pod"></label>
+  <label>船公司 <input type="text" id="carrier"></label>
+  <label><input type="checkbox" id="active" checked> 只看有效</label>
+</div>
+
+<div class="wrap"><table>
+  <thead><tr id="head"></tr></thead>
+  <tbody id="body"></tbody>
+</table></div>
+
+<script>
+var state={tab:"ocean",data:{ocean:[],tariff:[],local:[]},count:{ocean:0,tariff:0,local:0}};
+var cols={
+  ocean:[
+    ["pol","起运港"],["pod","目的港"],["carrier","船公司"],["forwarder","货代"],["currency","币种"],
+    ["gp20","20GP成本","num","money"],["hq40","40HQ成本","num","money"],
+    ["customer_gp20","20GP客户价","num","money"],["customer_hq40","40HQ客户价","num","money"],
+    ["margin20","20GP毛差","num","margin20"],["margin40","40HQ毛差","num","margin40"],
+    ["valid","有效期"],["status","状态","status"],["remarks","备注"]
+  ],
+  tariff:[
+    ["carrier","船公司"],["port","港口"],["container_type","箱型"],["fee","费目"],["amount_cny","金额CNY","num","money"],
+    ["unit_basis","计费单位"],["flag","必收/条件","flag"],["station_name","场站"],["valid","有效期"]
+  ],
+  local:[
+    ["carrier","船公司"],["pol","起运港"],["pod","目的港"],["company_name","公司"],["container_type","箱型"],
+    ["charge_name","费目"],["amount","金额","num","money"],["currency","币种"],["cost_total","成本合计","num","money"],
+    ["sell_total","销售合计","num","money"],["markup_cny","加价","num","money"],["free_time","免箱期","free"],
+    ["valid","有效期"],["is_active","启用","bool"]
+  ]
+};
+
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+function blank(v){return v===null||v===undefined||v==="";}
+function cell(v){return blank(v)?'<span class="na">—</span>':esc(v);}
+function money(v){return blank(v)?'<span class="na">—</span>':Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function diff(a,b){if(blank(a)||blank(b))return null;var n=Number(a)-Number(b);return Number.isFinite(n)?n:null;}
+function validText(r){var a=r.valid_from||"",b=r.valid_to||r.valid_until||"";return (a||"")+(a||b?" ~ ":"")+(b||"");}
+function expired(r){var d=r.valid_to||r.valid_until;return d && d < new Date().toISOString().slice(0,10);}
+function feeName(r){return [r.charge_item_code,r.charge_item_name].filter(Boolean).join(" · ");}
+function flagText(r){return r.required_flag?"必收":(r.conditional_flag?"条件":"—");}
+function freeText(v){if(blank(v))return ""; if(typeof v==="object")return JSON.stringify(v); return v;}
+function statusText(v){return v==="draft"?"草稿":(v||"");}
+function renderValue(r,c){
+  var k=c[0], mode=c[3]||c[2], v=r[k];
+  if(k==="valid")return '<span class="'+(expired(r)?"expired":"")+'">'+cell(validText(r))+"</span>";
+  if(k==="fee")return cell(feeName(r));
+  if(k==="flag")return cell(flagText(r));
+  if(k==="free_time")return cell(freeText(v));
+  if(k==="is_active")return v===true?"是":(v===false?"否":'<span class="na">—</span>');
+  if(k==="status")return cell(statusText(v));
+  if(mode==="money")return money(v);
+  if(mode==="margin20")return money(diff(r.customer_gp20,r.gp20));
+  if(mode==="margin40")return money(diff(r.customer_hq40,r.hq40));
+  return cell(v);
+}
+function oceanWarn(r,k){
+  return ["gp20","hq40","customer_gp20","customer_hq40"].includes(k) && blank(r[k]);
+}
+function drawHead(){
+  document.getElementById("head").innerHTML=cols[state.tab].map(function(c){return "<th>"+c[1]+"</th>";}).join("");
+}
+function drawRows(){
+  var rows=state.data[state.tab]||[], html="";
+  if(state.tab==="tariff"){
+    var last="";
+    rows.forEach(function(r){
+      var key=(r.carrier||"")+"|"+(r.port||"");
+      if(key!==last){
+        last=key;
+        var sum=rows.filter(function(x){return (x.carrier||"")+"|"+(x.port||"")===key&&x.required_flag;})
+          .reduce(function(a,x){return a+(blank(x.amount_cny)?0:Number(x.amount_cny)||0);},0);
+        html+='<tr class="group"><td colspan="'+cols.tariff.length+'">'+cell((r.carrier||"—")+" / "+(r.port||"—"))+' · 必收合计 '+money(sum)+"</td></tr>";
+      }
+      html+=rowHtml(r);
+    });
+  } else rows.forEach(function(r){html+=rowHtml(r);});
+  document.getElementById("body").innerHTML=html||'<tr><td colspan="'+cols[state.tab].length+'" class="na" style="padding:16px">没有符合条件的数据</td></tr>';
+  document.getElementById("stat").innerHTML="当前 <b>"+rows.length+"</b> 行";
+}
+function rowHtml(r){
+  var tr=state.tab==="ocean"&&r.status==="draft"?' class="draft"':"";
+  return "<tr"+tr+">"+cols[state.tab].map(function(c){
+    var cls=[];
+    if(c[2]==="num")cls.push("num");
+    if(state.tab==="ocean"&&oceanWarn(r,c[0]))cls.push("warn");
+    return '<td'+(cls.length?' class="'+cls.join(" ")+'"':"")+">"+renderValue(r,c)+"</td>";
+  }).join("")+"</tr>";
+}
+function draw(){drawHead();drawRows();}
+function query(){
+  var p=new URLSearchParams();
+  ["pol","pod","carrier"].forEach(function(id){var v=document.getElementById(id).value.trim();if(v)p.set(id,v);});
+  p.set("active_only",document.getElementById("active").checked?"true":"false");
+  return p.toString();
+}
+async function load(){
+  document.getElementById("sub").textContent="加载中…";
+  try{
+    var r=await fetch("/api/db/rates-hub?"+query(),{headers:{Authorization:"Bearer "+SanlynTable.token()}});
+    var j=await r.json();
+    if(!r.ok||!j.success)throw new Error(j.error||("HTTP "+r.status));
+    state.data=j.data||state.data; state.count=j.count||state.count;
+    document.getElementById("sub").textContent="只读 · freight_rates + carrier_tariff_standards + local_charges · 生成 "+new Date().toLocaleString("zh-CN");
+    draw();
+  }catch(e){
+    document.getElementById("sub").textContent="加载失败";
+    document.getElementById("body").innerHTML='<tr><td class="err">读取失败：'+esc(e.message)+"</td></tr>";
+  }
+}
+function csvValue(v){return '"' + String(blank(v)?"":v).replace(/"/g,'""') + '"';}
+function exportCsv(){
+  var rows=state.data[state.tab]||[], cs=cols[state.tab], out=[cs.map(function(c){return csvValue(c[1]);}).join(",")];
+  rows.forEach(function(r){out.push(cs.map(function(c){
+    if(c[0]==="valid")return csvValue(validText(r));
+    if(c[0]==="fee")return csvValue(feeName(r));
+    if(c[0]==="flag")return csvValue(flagText(r));
+    if(c[0]==="status")return csvValue(statusText(r.status));
+    if(c[3]==="margin20")return csvValue(diff(r.customer_gp20,r.gp20));
+    if(c[3]==="margin40")return csvValue(diff(r.customer_hq40,r.hq40));
+    return csvValue(c[0]==="free_time"?freeText(r[c[0]]):r[c[0]]);
+  }).join(","));});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob(["\ufeff"+out.join("\n")],{type:"text/csv;charset=utf-8"}));
+  a.download="rates-hub-"+state.tab+".csv"; a.click(); URL.revokeObjectURL(a.href);
+}
+document.querySelectorAll(".tab").forEach(function(b){b.onclick=function(){state.tab=b.dataset.tab;document.querySelectorAll(".tab").forEach(function(x){x.classList.toggle("on",x===b);});draw();};});
+["pol","pod","carrier"].forEach(function(id){document.getElementById(id).onchange=load;});
+document.getElementById("active").onchange=load;
+document.getElementById("csv").onclick=exportCsv;
+load();
+</script>
+
