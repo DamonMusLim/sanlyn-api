@@ -1,5 +1,3 @@
-// 价表总台 · 五类价表只读聚合接口
-// ⛔ 只读: 不建表、不改结构、不补 0、不默认币种。
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
@@ -62,6 +60,67 @@ LEFT JOIN ports pol_p ON pol_p.id = f.pol_port_id
 LEFT JOIN ports pod_p ON pod_p.id = f.pod_port_id
 WHERE ${conds.join(" AND ")}
 ORDER BY COALESCE(f.valid_to,'9999-12-31'::date) DESC, f.pol, f.pod, f.carrier, f.forwarder`,
+    params
+  };
+}
+
+function buildOceanPlans(q) {
+  const params = [];
+  const conds = [`sp.deleted_at IS NULL`];
+  if (q.pol) conds.push(`COALESCE(pol_p.name_en, sp.pol) ILIKE ${likeParam(params, q.pol)}`);
+  if (q.pod) conds.push(`COALESCE(pod_p.name_en, sp.pod) ILIKE ${likeParam(params, q.pod)}`);
+  if (q.carrier) {
+    const p = carrierParam(params, q.carrier);
+    conds.push(CARRIER_NORM.replaceAll("%SRC%", "sp.carrier_code") + " = " + CARRIER_NORM.replaceAll("%SRC%", p));
+  }
+  return {
+    sql: `
+SELECT sp.id,
+  sp.bl_no,
+  COALESCE(pol_p.name_en, sp.pol) AS pol,
+  COALESCE(pod_p.name_en, sp.pod) AS pod,
+  sp.pol AS pol_raw, sp.pod AS pod_raw,
+  sp.carrier_code, sp.forwarder_cn, sp.container_type, sp.container_qty,
+  to_char(sp.etd,'YYYY-MM-DD') AS etd,
+  sp.freight_cost, sp.freight_cost_currency, sp.freight_sale_usd, sp.shipment_no
+FROM shipping_plans sp
+LEFT JOIN ports pol_p ON pol_p.id = sp.pol_port_id
+LEFT JOIN ports pod_p ON pod_p.id = sp.pod_port_id
+WHERE ${conds.join(" AND ")}
+ORDER BY sp.etd DESC NULLS LAST, sp.bl_no NULLS LAST, sp.shipment_no NULLS LAST, sp.id`,
+    params
+  };
+}
+
+function buildOceanBills(q) {
+  const params = [];
+  const conds = [`b.cost_category ILIKE '%海运%'`];
+  if (q.pol) conds.push(`COALESCE(pol_p.name_en, sp.pol) ILIKE ${likeParam(params, q.pol)}`);
+  if (q.pod) conds.push(`COALESCE(pod_p.name_en, sp.pod) ILIKE ${likeParam(params, q.pod)}`);
+  if (q.carrier) {
+    const p = carrierParam(params, q.carrier);
+    conds.push(CARRIER_NORM.replaceAll("%SRC%", "COALESCE(sp.carrier_code, sp.shipping_line)") + " = " + CARRIER_NORM.replaceAll("%SRC%", p));
+  }
+  return {
+    sql: `
+SELECT b.id, b.bl_no, b.cost_category, b.currency, b.amount, b.sale_amount,
+  b.supplier, b.bill_month, COALESCE(b.remarks, b.reconcile_note) AS remarks
+FROM freight_supplier_bills b
+LEFT JOIN LATERAL (
+  SELECT sp.*
+  FROM shipping_plans sp
+  WHERE sp.deleted_at IS NULL
+    AND (
+      (NULLIF(b.link_plan_id,'') IS NOT NULL AND sp.id::text = b.link_plan_id)
+      OR (NULLIF(b.bl_no,'') IS NOT NULL AND sp.bl_no = b.bl_no)
+    )
+  ORDER BY (sp.id::text = b.link_plan_id) DESC, sp.id
+  LIMIT 1
+) sp ON true
+LEFT JOIN ports pol_p ON pol_p.id = sp.pol_port_id
+LEFT JOIN ports pod_p ON pod_p.id = sp.pod_port_id
+WHERE ${conds.join(" AND ")}
+ORDER BY b.bill_month DESC NULLS LAST, b.bl_no NULLS LAST, b.supplier, b.cost_category, b.id`,
     params
   };
 }
@@ -244,8 +303,10 @@ ORDER BY i.etd DESC NULLS LAST, i.bl_no`,
 }
 
 export async function loadRatesHub(pool, q = {}) {
-  const activeOnly = truthy(q.active_only, true);
+  const activeOnly = truthy(q.active_only, false);
   const ocean = buildOcean(q, activeOnly);
+  const oceanPlans = buildOceanPlans(q);
+  const oceanBills = buildOceanBills(q);
   const tariff = buildTariff(q, activeOnly);
   const matrices = buildMatrices(q, activeOnly);
   const matrixItems = buildMatrixItems(q, activeOnly);
@@ -255,10 +316,12 @@ export async function loadRatesHub(pool, q = {}) {
   const customs = buildCustoms(q, activeOnly);
   const insurance = buildInsurance(q);
   const [
-    oceanRes, tariffRes, matricesRes, matrixItemsRes, localRes,
+    oceanRes, oceanPlansRes, oceanBillsRes, tariffRes, matricesRes, matrixItemsRes, localRes,
     truckRes, truckLegacyRes, customsRes, insuranceRes
   ] = await Promise.all([
     pool.query(ocean.sql, ocean.params),
+    pool.query(oceanPlans.sql, oceanPlans.params),
+    pool.query(oceanBills.sql, oceanBills.params),
     pool.query(tariff.sql, tariff.params),
     pool.query(matrices.sql, matrices.params),
     pool.query(matrixItems.sql, matrixItems.params),
@@ -271,6 +334,8 @@ export async function loadRatesHub(pool, q = {}) {
   return {
     data: {
       ocean: oceanRes.rows,
+      ocean_plans: oceanPlansRes.rows,
+      ocean_bills: oceanBillsRes.rows,
       tariff: tariffRes.rows,
       matrices: matricesRes.rows,
       matrix_items: matrixItemsRes.rows,
@@ -282,6 +347,8 @@ export async function loadRatesHub(pool, q = {}) {
     },
     count: {
       ocean: oceanRes.rowCount,
+      ocean_plans: oceanPlansRes.rowCount,
+      ocean_bills: oceanBillsRes.rowCount,
       tariff: tariffRes.rowCount,
       matrices: matricesRes.rowCount,
       matrix_items: matrixItemsRes.rowCount,
@@ -306,4 +373,3 @@ export default async function handler(req, res) {
     res.status(500).json({ success: false, error: err.message });
   }
 }
-
