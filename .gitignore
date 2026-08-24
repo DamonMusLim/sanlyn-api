@@ -42,3 +42,5 @@ server.js.*
 *.bak.*
 *bak[0-9]*
 query_orders.mjs
+.codex-backups/
+BRIEF-*.md

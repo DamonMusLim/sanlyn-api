@@ -83,26 +83,6 @@ function renderHero(s, ps){
 }
 
 function fileLink(type, ref, aud){ return window._fileURL ? window._fileURL(type, ref, aud) : '#'; }
-async function checkCollabUploadState(img){
-  const wrap = img && img.closest ? img.closest('[data-upload-wrap]') : null;
-  const btn = wrap ? wrap.querySelector('.lost-reupload') : null;
-  if(!wrap || !btn || wrap.dataset.checked) return;
-  wrap.dataset.checked = '1';
-  try{
-    const r = await fetch(img.dataset.checkUrl || img.src, {cache:'no-store'});
-    const ct = r.headers.get('content-type') || '';
-    if(!/image\/svg\+xml/i.test(ct)) return;
-    const text = await r.text();
-    if(text.indexOf('data-state="lost"') >= 0) btn.style.display = 'inline-flex';
-  }catch(e){}
-}
-function reuploadLostPhoto(btn){
-  const wrap = btn && btn.closest ? btn.closest('[data-upload-wrap]') : null;
-  if(!wrap) return;
-  window._cntrZone = '补传-' + (wrap.dataset.filename || wrap.dataset.stored || '装箱照片');
-  if(typeof pickFile === 'function') pickFile('truck');
-  else document.getElementById('fileInput')?.click();
-}
 function docRow(icon, label, href, source){
   const safe = esc(href);
   // 预览按钮带 &preview=1（Excel类→HTML预览给客户看；HTML类忽略照常）；下载不带
@@ -451,13 +431,7 @@ function truckContainerModule(s){
     const info = [['车牌', c.plate||lv.plate], ['司机', c.driver_name||lv.driver_name], ['电话', c.driver_phone||lv.driver_phone]].filter(r=>r[1]);
     const photos = Array.isArray(c.pickup_photos) ? c.pickup_photos : [];
     const photoHtml = photos.length
-      ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">`+photos.map(p=>{
-        const u=fileU('upload',p.stored);
-        return `<span data-upload-wrap data-stored="${esc(p.stored||'')}" data-filename="${esc(p.filename||'')}" style="display:inline-flex;flex-direction:column;gap:4px;align-items:flex-start;">
-          <a href="${esc(u)}" target="_blank"><img src="${esc(u)}" data-check-url="${esc(u)}" onload="checkCollabUploadState(this)" loading="lazy" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--line);border-radius:6px;"></a>
-          <button type="button" class="btn btn-sm lost-reupload" onclick="reuploadLostPhoto(this)" style="display:none;background:#dc2626;color:#fff;border-color:#dc2626;padding:3px 7px;font-size:10px;">重新上传</button>
-        </span>`;
-      }).join('')+`</div>`
+      ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">`+photos.map(p=>{ const u=fileU('upload',p.stored); return `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" loading="lazy" style="width:64px;height:64px;object-fit:cover;border:1px solid var(--line);border-radius:6px;"></a>`; }).join('')+`</div>`
       : `<div style="font-size:11px;color:var(--ink3);margin-top:6px;">暂无装箱照片</div>`;
     return `<div class="ctn-group" style="margin-bottom:8px;">
       <div class="ctn-group-head"><span class="ctn-group-title">🚛 ${esc(c.container_no||'柜号待定')}${c.container_type?' · '+esc(c.container_type):''}${c.seal_no?' · 封 '+esc(c.seal_no):''}</span></div>
