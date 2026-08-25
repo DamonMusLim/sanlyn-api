@@ -343,11 +343,177 @@
         .toast.success {
             background: #52c41a;
         }
+        /* 新增样式 */
+        .entry-cards {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .entry-card {
+            flex: 1;
+            min-width: 180px;
+            background: white;
+            border: 1px solid #d7dbe0;
+            border-radius: 6px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: border 0.1s;
+        }
+        .entry-card.active {
+            border: 2px solid #2f54eb;
+            background: #f0f5ff;
+        }
+        .entry-card svg {
+            flex-shrink: 0;
+        }
+        .entry-card .card-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .entry-card .card-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1f2329;
+        }
+        .entry-card .card-desc {
+            font-size: 12px;
+            color: #8a919f;
+        }
+        .modal-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-panel {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            width: 90%;
+            max-width: 480px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+        }
+        .modal-panel h3 {
+            margin-bottom: 16px;
+            font-size: 16px;
+        }
+        .modal-panel .drop-zone {
+            border: 2px dashed #d7dbe0;
+            border-radius: 6px;
+            padding: 30px;
+            text-align: center;
+            color: #8a919f;
+            font-size: 14px;
+            margin-bottom: 16px;
+            cursor: pointer;
+        }
+        .modal-panel .drop-zone:hover {
+            border-color: #2f54eb;
+        }
+        .modal-panel .btn-row {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+        .modal-panel .pending-warning {
+            color: #fa8c16;
+            font-size: 12px;
+            margin-top: 12px;
+            text-align: center;
+        }
+        .template-input-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .template-input-row input {
+            flex: 1;
+            height: 32px;
+            border: 1px solid #d7dbe0;
+            border-radius: 4px;
+            padding: 0 8px;
+            font-size: 14px;
+        }
+        .template-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #e5e8ec;
+            border-radius: 4px;
+        }
+        .template-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-bottom: 1px solid #f0f2f5;
+            cursor: pointer;
+        }
+        .template-item:hover {
+            background: #f5f7fa;
+        }
+        .template-item .del-template {
+            color: #f5222d;
+            cursor: pointer;
+            padding: 0 4px;
+            font-size: 16px;
+        }
+        .template-item .del-template:hover {
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <div class="status-bar">
-        <span>📋 契约版本 54字段(37表头+17明细行) · 归类 auto19/new28/manual3/const4 · 数据来源:DOM实测2026-08-25</span>
+        <span>契约版本 54字段(37表头+17明细行) · 归类 auto19/new28/manual3/const4 · 数据来源:DOM实测2026-08-25</span>
+    </div>
+
+    <!-- 功能一：三个录单入口 -->
+    <div class="entry-cards">
+        <div class="entry-card" id="cardExcel">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2f54eb" stroke-width="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="8" y1="13" x2="16" y2="13" />
+                <line x1="8" y1="17" x2="16" y2="17" />
+                <line x1="8" y1="9" x2="10" y2="9" />
+            </svg>
+            <div class="card-text">
+                <span class="card-title">表格导入/下载</span>
+                <span class="card-desc">下模板 → 填 Excel → 传回来</span>
+            </div>
+        </div>
+        <div class="entry-card active" id="cardManual">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2f54eb" stroke-width="1.5">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+            <div class="card-text">
+                <span class="card-title">新建舱单</span>
+                <span class="card-desc">手工逐字段录入</span>
+            </div>
+        </div>
+        <div class="entry-card" id="cardAI">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2f54eb" stroke-width="1.5">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+                <path d="M9 9h6v6H9z" />
+                <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3" />
+            </svg>
+            <div class="card-text">
+                <span class="card-title">AI单证识别</span>
+                <span class="card-desc">丢单据自动抽字段</span>
+            </div>
+        </div>
     </div>
 
     <div class="toolbar">
@@ -851,6 +1017,44 @@
                 showToast('已复制收货人→通知人');
             }
 
+            // 模板相关
+            const TEMPLATE_KEY = 'manifest_templates';
+            function getTemplates() {
+                try {
+                    return JSON.parse(localStorage.getItem(TEMPLATE_KEY)) || [];
+                } catch(e) { return []; }
+            }
+            function saveTemplates(list) {
+                localStorage.setItem(TEMPLATE_KEY, JSON.stringify(list));
+            }
+            function getHeaderValues() {
+                const values = {};
+                // 37个表头字段的id列表（不含明细行）
+                const headerIds = ['master_bl_no','carrier','cargo_type','transport_terms','payment_method','bl_type','bl_copies','place_of_issue','payment_place','consignor_note','vessel','voyage','shipping_agent','shipper.name','shipper.address','shipper.country_code','shipper.phone','shipper.enterprise_code','shipper.aeo_code','consignee.name','consignee.address','consignee.country_code','consignee.phone','consignee.enterprise_code','consignee.aeo_code','consignee.actual_contact','consignee.actual_contact_phone','notify.name','notify.address','notify.country_code','notify.phone','notify.enterprise_code','notify.aeo_code','place_of_receipt','pol','pod','final_destination'];
+                headerIds.forEach(id => {
+                    const el = $(id);
+                    if (el) values[id] = el.value;
+                    else {
+                        const sel = document.querySelector(`[data-field="${id}"] .value`);
+                        if (sel) values[id] = sel.textContent;
+                    }
+                });
+                return values;
+            }
+            function applyHeaderValues(values) {
+                let count = 0;
+                Object.keys(values).forEach(key => {
+                    const el = $(key);
+                    if (el) {
+                        if (el.value !== values[key]) { el.value = values[key]; count++; }
+                    } else {
+                        const sel = document.querySelector(`[data-field="${key}"] .value`);
+                        if (sel && sel.textContent !== values[key]) { sel.textContent = values[key]; count++; }
+                    }
+                });
+                return count;
+            }
+
             // 初始化
             function init() {
                 // 自定义下拉
@@ -883,10 +1087,12 @@
                     console.log('保存到草稿箱', {});
                     showToast('已保存到草稿箱(模拟)', 'success');
                 });
-                $('copyBtn').addEventListener('click', () => { console.log('复制'); showToast('已复制(模拟)'); });
+                $('copyBtn').addEventListener('click', () => {
+                    // 复制功能：清空主提单号/船名/航次
+                    ['master_bl_no','vessel','voyage'].forEach(id => { if($(id)) $(id).value=''; });
+                    showToast('已复制,请填写主提单号/船名/航次');
+                });
                 $('closeBtn').addEventListener('click', () => { console.log('关闭'); showToast('关闭(模拟)'); });
-                $('templateSelect').addEventListener('click', () => showToast('选择模板(待接入)'));
-                $('saveTemplate').addEventListener('click', () => showToast('保存模板(待接入)'));
                 $('checkVoyage').addEventListener('click', () => {
                     const v = $('voyage').value;
                     if (v.includes('V.')) showToast('航次不可以有 V.', 'error');
@@ -916,6 +1122,134 @@
                         this.parentElement.classList.toggle('collapsed');
                     });
                 });
+
+                // 功能一：三个入口卡片
+                const cardExcel = $('cardExcel');
+                const cardManual = $('cardManual');
+                const cardAI = $('cardAI');
+                // 新建舱单是当前激活态，不做点击弹窗
+                cardManual.addEventListener('click', () => {
+                    // 已经是激活态，不做任何事
+                });
+                // 表格导入面板
+                cardExcel.addEventListener('click', () => {
+                    showModal(`
+                        <h3>表格导入/下载</h3>
+                        <div style="margin-bottom:16px;">
+                            <button class="btn btn-primary" id="downloadTemplateBtn" style="width:100%;">下载模板</button>
+                        </div>
+                        <div class="drop-zone" id="excelDropZone">拖入 .xlsx 或点击选择</div>
+                        <div class="btn-row">
+                            <button class="btn" id="closeExcelModal">关闭</button>
+                        </div>
+                        <div class="pending-warning">待接入,本轮不处理文件</div>
+                    `);
+                    $('downloadTemplateBtn').addEventListener('click', () => showToast('模板下载待接入'));
+                    $('excelDropZone').addEventListener('click', () => showToast('文件选择待接入'));
+                    $('closeExcelModal').addEventListener('click', closeModal);
+                });
+                // AI识别面板
+                cardAI.addEventListener('click', () => {
+                    showModal(`
+                        <h3>AI单证识别</h3>
+                        <div class="drop-zone" id="aiDropZone">拖入提单/托书 PDF 或图片</div>
+                        <div class="btn-row">
+                            <button class="btn" id="closeAIModal">关闭</button>
+                        </div>
+                        <div class="pending-warning">待接入,本轮不处理文件</div>
+                    `);
+                    $('aiDropZone').addEventListener('click', () => showToast('文件选择待接入'));
+                    $('closeAIModal').addEventListener('click', closeModal);
+                });
+
+                // 功能二：模板机制
+                $('saveTemplate').addEventListener('click', () => {
+                    showModal(`
+                        <h3>保存模板</h3>
+                        <div class="template-input-row">
+                            <input type="text" id="templateNameInput" placeholder="模板名称" maxlength="20">
+                            <button class="btn btn-primary" id="confirmSaveTemplate">保存</button>
+                        </div>
+                        <div class="btn-row">
+                            <button class="btn" id="closeSaveTemplateModal">取消</button>
+                        </div>
+                    `);
+                    $('confirmSaveTemplate').addEventListener('click', () => {
+                        const name = $('templateNameInput').value.trim();
+                        if (!name) { showToast('请输入模板名称', 'error'); return; }
+                        const templates = getTemplates();
+                        const values = getHeaderValues();
+                        templates.push({ name, savedAt: new Date().toISOString(), values });
+                        saveTemplates(templates);
+                        closeModal();
+                        showToast(`模板「${name}」已保存`);
+                    });
+                    $('closeSaveTemplateModal').addEventListener('click', closeModal);
+                });
+
+                $('templateSelect').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const templates = getTemplates();
+                    let html = `<h3>选择模板</h3>`;
+                    if (templates.length === 0) {
+                        html += `<div style="padding:20px;text-align:center;color:#8a919f;">暂无模板</div>`;
+                    } else {
+                        html += `<div class="template-list">`;
+                        templates.forEach((t, idx) => {
+                            const date = new Date(t.savedAt).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+                            html += `<div class="template-item" data-idx="${idx}">
+                                <span>${t.name} <span style="color:#8a919f;font-size:12px;">(${date})</span></span>
+                                <span class="del-template" data-idx="${idx}">×</span>
+                            </div>`;
+                        });
+                        html += `</div>`;
+                    }
+                    html += `<div class="btn-row"><button class="btn" id="closeTemplateModal">关闭</button></div>`;
+                    showModal(html);
+                    // 绑定选择
+                    document.querySelectorAll('.template-item').forEach(item => {
+                        item.addEventListener('click', function(e) {
+                            if (e.target.classList.contains('del-template')) return;
+                            const idx = parseInt(this.dataset.idx);
+                            const t = getTemplates()[idx];
+                            if (t) {
+                                const count = applyHeaderValues(t.values);
+                                closeModal();
+                                showToast(`已套用模板「${t.name}」,共回填 ${count} 个字段`);
+                            }
+                        });
+                    });
+                    // 绑定删除
+                    document.querySelectorAll('.del-template').forEach(del => {
+                        del.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            const idx = parseInt(this.dataset.idx);
+                            let templates = getTemplates();
+                            templates.splice(idx, 1);
+                            saveTemplates(templates);
+                            // 重新渲染
+                            $('templateSelect').click();
+                        });
+                    });
+                    $('closeTemplateModal').addEventListener('click', closeModal);
+                });
+            }
+
+            // 模态框管理
+            function showModal(html) {
+                closeModal();
+                const overlay = document.createElement('div');
+                overlay.className = 'modal-overlay';
+                overlay.id = 'modalOverlay';
+                overlay.innerHTML = `<div class="modal-panel">${html}</div>`;
+                document.body.appendChild(overlay);
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === overlay) closeModal();
+                });
+            }
+            function closeModal() {
+                const overlay = $('modalOverlay');
+                if (overlay) overlay.remove();
             }
 
             init();
