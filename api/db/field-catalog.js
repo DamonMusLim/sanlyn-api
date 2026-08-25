@@ -4,7 +4,18 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth }      from "../auth.js";
 
-const MODULE_ORDER = ["orders", "order_line_items", "products", "shipping_plans", "companies", "customs", "shipping", "finance"];
+const MODULE_ORDER = [
+  "orders",
+  "order_line_items",
+  "products",
+  "shipping_plans",
+  "container_bookings",
+  "companies",
+  "customs",
+  "manifest",
+  "shipping",
+  "finance",
+];
 
 function isTrue(value) {
   return value === true || value === "true";

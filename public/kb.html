@@ -18,7 +18,7 @@
     .chip.active{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}.count{color:var(--muted);margin-left:4px}
     .main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px}.list{display:flex;flex-direction:column;gap:10px}.item{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;cursor:pointer}
     .item:hover{border-color:var(--accent)}.title{font-size:16px;font-weight:650;margin-bottom:8px}.meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:12px}
-    .tag,.badge{border:1px solid var(--line);border-radius:999px;padding:2px 7px}.badge.hgj{color:#2563eb}.badge.sanlyn{color:var(--accent2)}.body{display:none;border-top:1px solid var(--line);margin-top:12px;padding-top:12px;white-space:pre-wrap}
+    .tag,.badge{border:1px solid var(--line);border-radius:999px;padding:2px 7px}.badge.hgj{color:#2563eb}.badge.sanlyn{color:var(--accent2)}.body{display:none;border-top:1px solid var(--line);margin-top:12px;padding-top:12px}.bodyText{white-space:pre-wrap}.bodyActions{margin-bottom:10px}
     .item.open .body{display:block}.side{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;height:max-content}.side h2{font-size:18px;margin:0 0 12px}
     .formrow{margin-bottom:10px}.formrow label{display:block;margin-bottom:5px;color:var(--muted);font-size:12px}.empty,.err{padding:22px;text-align:center;color:var(--muted)}.err{color:var(--danger)}
     .hidden{display:none}.pager{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted)}
@@ -46,7 +46,7 @@
         </div>
       </div>
       <aside class="side hidden" id="formBox">
-        <h2>新建条目</h2>
+        <h2 id="formTitle">新建条目</h2>
         <div class="formrow"><label>标题</label><input id="fTitle"></div>
         <div class="formrow"><label>主题</label><select id="fTopic"></select></div>
         <div class="formrow"><label>分类</label><select id="fCategory"><option value="">未分类</option><option>外贸知识</option><option>物流知识</option></select></div>
@@ -60,7 +60,7 @@
   <script>
   const API="/api/db/knowledge";
   const TOPICS=["舱单申报","报关通关","退税","保险","提单单证","贸易术语","报价询盘","集装箱船务","系统选型","业务经营","其他"];
-  const state={q:"",topic:"",ours:false,limit:50,offset:0,total:0,openId:null};
+  const state={q:"",topic:"",ours:false,limit:50,offset:0,total:0,openId:null,formMode:"new",editId:null};
   const $=id=>document.getElementById(id);
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
   function headers(json){const h=json?{"Content-Type":"application/json"}:{};const t=token();if(t)h.Authorization="Bearer "+t;return h}
@@ -68,15 +68,20 @@
   function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
   function params(){const p=new URLSearchParams({limit:state.limit,offset:state.offset});if(state.q)p.set("q",state.q);if(state.topic)p.set("topic",state.topic);if(state.ours)p.set("is_ours","true");return p}
   function renderChips(facets){const box=$("chips");const all=Object.values(facets||{}).reduce((a,b)=>a+b,0);let html=`<button class="chip ${state.topic?"":"active"}" data-topic="">全部<span class="count">${all}</span></button>`;for(const t of TOPICS){html+=`<button class="chip ${state.topic===t?"active":""}" data-topic="${esc(t)}">${esc(t)}<span class="count">${facets?.[t]||0}</span></button>`}box.innerHTML=html}
-  function renderList(rows){const box=$("list");if(!rows.length){box.innerHTML='<div class="empty">没有匹配条目</div>';return}box.innerHTML=rows.map(r=>`<article class="item ${state.openId===r.id?"open":""}" data-id="${r.id}" data-url="${esc(r.url||"")}" data-ours="${r.is_ours?"1":"0"}"><div class="title">${esc(r.title)}</div><div class="meta"><span class="tag">${esc(r.topic||"未分类")}</span><span class="badge ${r.is_ours?"sanlyn":"hgj"}">${r.is_ours?"SANLYN":"HGJ"}</span>${(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div><div class="body" id="body-${r.id}"></div></article>`).join("")}
-  async function load(){try{const d=await api(API+"?"+params());state.total=d.total;renderChips(d.facets.topic);renderList(d.data);$("summary").textContent=`共 ${d.total} 条，当前显示 ${d.data.length} 条`;$("pageInfo").textContent=`${state.offset+1}-${Math.min(state.offset+state.limit,state.total)} / ${state.total}`;$("prev").disabled=state.offset===0;$("next").disabled=state.offset+state.limit>=state.total}catch(e){$("list").innerHTML=`<div class="err">${esc(e.message)}</div>`;$("summary").textContent="读取失败"}}
-  async function openItem(el){const id=Number(el.dataset.id);if(el.dataset.ours!=="1"){const url=el.dataset.url;if(url)window.open(url,"_blank","noopener");return}state.openId=state.openId===id?null:id;document.querySelectorAll(".item").forEach(x=>x.classList.toggle("open",Number(x.dataset.id)===state.openId));if(state.openId){const body=$("body-"+id);if(!body.textContent){const d=await api(API+"?id="+id);body.textContent=d.data.body||""}}}
-  async function save(){try{$("formErr").textContent="";const body={title:$("fTitle").value,topic:$("fTopic").value,category:$("fCategory").value||null,tags:$("fTags").value,body:$("fBody").value};await api(API,{method:"POST",body:JSON.stringify(body)});["fTitle","fTags","fBody"].forEach(id=>$(id).value="");$("formBox").classList.add("hidden");state.offset=0;await load()}catch(e){$("formErr").textContent=e.message}}
-  function initForm(){const sel=$("fTopic");sel.innerHTML=TOPICS.map(t=>`<option>${esc(t)}</option>`).join("");$("newBtn").onclick=()=>$("formBox").classList.remove("hidden");$("cancel").onclick=()=>$("formBox").classList.add("hidden");$("save").onclick=save}
+  function renderList(rows){const box=$("list");if(!rows.length){box.innerHTML='<div class="empty">没有匹配条目</div>';return}box.innerHTML=rows.map(r=>`<article class="item ${state.openId===r.id?"open":""}" data-id="${r.id}" data-url="${esc(r.url||"")}" data-ours="${r.is_ours?"1":"0"}"><div class="title">${esc(r.title)}</div><div class="meta"><span class="tag">${esc(r.topic||"未分类")}</span><span class="badge ${r.is_ours?"sanlyn":"hgj"}">${r.is_ours?"SANLYN":"HGJ"}</span>${(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div><div class="body" id="body-${r.id}">${r.is_ours?'<div class="bodyActions"><button class="btn editBtn" type="button">编辑</button></div>':""}<div class="bodyText" id="bodyText-${r.id}"></div></div></article>`).join("")}
+  async function fillBody(id){const body=$("bodyText-"+id);if(!body||body.textContent)return;const d=await api(API+"?id="+id);body.textContent=d.data.body||""}
+  async function load(){try{const d=await api(API+"?"+params());state.total=d.total;renderChips(d.facets.topic);renderList(d.data);$("summary").textContent=`共 ${d.total} 条，当前显示 ${d.data.length} 条`;$("pageInfo").textContent=`${state.offset+1}-${Math.min(state.offset+state.limit,state.total)} / ${state.total}`;$("prev").disabled=state.offset===0;$("next").disabled=state.offset+state.limit>=state.total;if(state.openId)await fillBody(state.openId)}catch(e){$("list").innerHTML=`<div class="err">${esc(e.message)}</div>`;$("summary").textContent="读取失败"}}
+  async function openItem(el){const id=Number(el.dataset.id);if(el.dataset.ours!=="1"){const url=el.dataset.url;if(url)window.open(url,"_blank","noopener");return}state.openId=state.openId===id?null:id;document.querySelectorAll(".item").forEach(x=>x.classList.toggle("open",Number(x.dataset.id)===state.openId));if(state.openId)await fillBody(id)}
+  function setFormMode(mode,id=null){state.formMode=mode;state.editId=id;$("formTitle").textContent=mode==="edit"?"编辑条目":"新建条目";$("formErr").textContent=""}
+  function showForm(){ $("formBox").classList.remove("hidden") }
+  function resetForm(){["fTitle","fTags","fBody"].forEach(id=>$(id).value="");$("fCategory").value="";$("fTopic").value=TOPICS[0];setFormMode("new");showForm()}
+  async function editItem(id){const d=await api(API+"?id="+id);const r=d.data||{};setFormMode("edit",id);$("fTitle").value=r.title||"";$("fTopic").value=r.topic||TOPICS[0];$("fCategory").value=r.category||"";$("fTags").value=Array.isArray(r.tags)?r.tags.join(", "):(r.tags||"");$("fBody").value=r.body||"";showForm()}
+  async function save(){try{$("formErr").textContent="";const body={title:$("fTitle").value,topic:$("fTopic").value,category:$("fCategory").value||null,tags:$("fTags").value,body:$("fBody").value};const editing=state.formMode==="edit"&&state.editId;await api(editing?API+"?id="+state.editId:API,{method:editing?"PATCH":"POST",body:JSON.stringify(body)});const keepOpen=editing?state.editId:null;["fTitle","fTags","fBody"].forEach(id=>$(id).value="");$("formBox").classList.add("hidden");setFormMode("new");if(keepOpen)state.openId=keepOpen;else state.offset=0;await load()}catch(e){$("formErr").textContent=e.message}}
+  function initForm(){const sel=$("fTopic");sel.innerHTML=TOPICS.map(t=>`<option>${esc(t)}</option>`).join("");$("newBtn").onclick=resetForm;$("cancel").onclick=()=>{$("formBox").classList.add("hidden");setFormMode("new")};$("save").onclick=save}
   let timer=null;$("q").addEventListener("input",e=>{clearTimeout(timer);timer=setTimeout(()=>{state.q=e.target.value.trim();state.offset=0;load()},250)});
   $("oursOnly").onchange=e=>{state.ours=e.target.checked;state.offset=0;load()};
   $("chips").onclick=e=>{const b=e.target.closest(".chip");if(!b)return;state.topic=b.dataset.topic;state.offset=0;load()};
-  $("list").onclick=e=>{const el=e.target.closest(".item");if(el)openItem(el).catch(err=>alert(err.message))};
+  $("list").onclick=e=>{const btn=e.target.closest(".editBtn");if(btn){const el=btn.closest(".item");if(el)editItem(Number(el.dataset.id)).catch(err=>alert(err.message));return}const el=e.target.closest(".item");if(el)openItem(el).catch(err=>alert(err.message))};
   $("prev").onclick=()=>{state.offset=Math.max(0,state.offset-state.limit);load()};
   $("next").onclick=()=>{state.offset+=state.limit;load()};
   initForm();load();
