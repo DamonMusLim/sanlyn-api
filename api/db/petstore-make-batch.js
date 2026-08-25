@@ -7,8 +7,10 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 import fs from "node:fs";
+import { spawnSync } from "node:child_process";
 
 const CLERK = "http://127.0.0.1:7432";
+const CLERK_DB = process.env.CLERK_DB_PATH || "/opt/pet-ai-clerk/data/decisions.db";
 const STORE = "63350001";
 
 // 待办类型 → 任务包用途 + 卡片 kind
@@ -27,6 +29,39 @@ function adminToken() {
   return "";
 }
 
+function lockKey(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+function sqlLit(s) {
+  return "'" + String(s || "").replace(/'/g, "''") + "'";
+}
+
+function activeClerkBatch({ storeCode, purpose }) {
+  const sql = `
+    SELECT b.token, b.purpose, b.task_count, b.created_at, b.expires_at,
+           SUM(CASE WHEN t.status='pending' THEN 1 ELSE 0 END) AS pending,
+           COUNT(t.id) AS total
+      FROM clerk_batches b
+      JOIN clerk_tasks t ON t.batch_token = b.token
+     WHERE b.store_code = ${sqlLit(storeCode)}
+       AND b.purpose = ${sqlLit(purpose)}
+       AND COALESCE(b.paused, 0) = 0
+     GROUP BY b.token
+    HAVING SUM(CASE WHEN t.status='pending' THEN 1 ELSE 0 END) > 0
+     ORDER BY b.created_at DESC
+     LIMIT 1`;
+  const r = spawnSync("sqlite3", ["-json", "-readonly", CLERK_DB, sql], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  if (r.status !== 0) throw new Error(`无法读取店员批次库，已拒绝建批次防重复: ${String(r.stderr || "").trim() || CLERK_DB}`);
+  const rows = JSON.parse(r.stdout || "[]");
+  return rows[0] || null;
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -35,11 +70,12 @@ export default async function handler(req, res) {
 
   const { kind, owner = null, limit = 300 } = req.body || {};
   const p = getPool();
+  const client = await p.connect();
 
   try {
     // ── 老板专属：价格确认卡由 Studio 的 boss_cards.py 生成，这里只回它的链接 ──
     if (kind === "价格确认") {
-      const r = await p.query(
+      const r = await client.query(
         `SELECT product_code, product_name, spec, shelf, out_price, stock, month_sale,
                 todo_type, warn_status, expire_date
            FROM petstore_daily_todo
@@ -60,7 +96,22 @@ export default async function handler(req, res) {
     const cfg = KINDS[kind];
     if (!cfg) return res.status(400).json({ success: false, error: `未知模板 ${kind}` });
 
-    const r = await p.query(
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1)", [
+      lockKey(`petstore-make-batch|${STORE}|${kind}`),
+    ]);
+
+    const active = activeClerkBatch({ storeCode: STORE, purpose: cfg.purpose });
+    if (active) {
+      await client.query("COMMIT");
+      return res.status(409).json({
+        success: false,
+        error: `${cfg.purpose}已有未完成批次 ${active.token}，剩余${Number(active.pending || 0)}件/共${Number(active.total || active.task_count || 0)}件；先做完再建。`,
+        data: { kind, existing_batch: active },
+      });
+    }
+
+    const r = await client.query(
       `SELECT product_code, product_name, spec, shelf, out_price, stock, month_sale,
               production_date, expire_date, warn_status, barcode
          FROM petstore_daily_todo
@@ -68,8 +119,10 @@ export default async function handler(req, res) {
           AND todo_type = $1 AND stock > 0
         ORDER BY shelf NULLS LAST, product_code LIMIT $2`, [kind, limit]);
 
-    if (r.rows.length === 0)
+    if (r.rows.length === 0) {
+      await client.query("COMMIT");
       return res.json({ success: true, data: { count: 0, link: null, kind } });
+    }
 
     const products = r.rows.map((x) => ({
       product_code: x.product_code, product_name: x.product_name,
@@ -90,11 +143,15 @@ export default async function handler(req, res) {
     const gj = await gr.json();
     if (!gj.ok) throw new Error(gj.error || "clerk generate-link 失败");
 
+    await client.query("COMMIT");
     return res.json({
       success: true,
       data: { count: gj.task_count, link: gj.public_url, token: gj.token, purpose: gj.purpose, reused: !!gj.reused },
     });
   } catch (e) {
+    try { await client.query("ROLLBACK"); } catch {}
     return res.status(500).json({ success: false, error: String(e.message || e) });
+  } finally {
+    client.release();
   }
 }
