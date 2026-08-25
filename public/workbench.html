@@ -193,14 +193,16 @@
         }
         /* 下拉菜单 */
         .dropdown {
-            position: relative;
+            position: static;
         }
         .dropdown-panel {
             display: none;
             position: absolute;
             top: 52px;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 24px;
+            right: auto;
+            max-width: calc(100vw - 48px);
+            overflow-x: auto;
             background: #fff;
             border: 1px solid #e5e7eb;
             border-radius: 8px;
