@@ -117,14 +117,43 @@ async function handleConfirmFactoryBill(req, res, pool) {
     [JSON.stringify(nextVersions), planId]
   );
 
-  await pool.query(
-    `UPDATE tasks
-        SET status = 'done', updated_at = NOW()
-      WHERE raw->>'plan_id' = $1
-        AND task_type = '账单确认'
-        AND status <> 'done'`,
-    [String(planId)]
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `WITH candidates AS (
+         SELECT id, status
+           FROM tasks
+          WHERE raw->>'plan_id' = $1
+            AND task_type = '账单确认'
+            AND status <> 'done'
+          FOR UPDATE
+       ), event_rows AS (
+         INSERT INTO task_events (
+           task_id, event_type, actor_type, actor_id,
+           from_status, to_status, note, metadata, created_at
+         )
+         SELECT id, 'done', 'system', 'collab-billing',
+                status, 'done',
+                '工厂账单确认完成,自动关闭账单确认任务 plan_id=' || $1 || ', version=' || $2,
+                jsonb_build_object('plan_id', $1::text, 'version', $2::int, 'task_type', '账单确认'),
+                NOW()
+           FROM candidates
+         RETURNING task_id
+       )
+       UPDATE tasks t
+          SET status = 'done', updated_at = NOW()
+         FROM event_rows e
+        WHERE t.id = e.task_id`,
+      [String(planId), confirmVersion]
+    );
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(function() {});
+    throw e;
+  } finally {
+    client.release();
+  }
 
   return res.json({ ok: true });
 }
