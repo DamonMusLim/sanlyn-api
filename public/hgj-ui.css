@@ -1,0 +1,114 @@
+/*
+ * HGJ shared UI tokens and small components.
+ * Source: getComputedStyle values from eyun.hgj.com/work_bench, 2026-08-26.
+ */
+:root {
+  color-scheme: light dark;
+  --hgj-bg: #F2F3F5;
+  --hgj-card: #FFFFFF;
+  --hgj-primary: #006AFF;
+  --hgj-primary-bg: #E6F4FF;
+  --hgj-title: #282828;
+  --hgj-side-bg: #00132E;
+  --hgj-side-text: #99A0AB;
+  --hgj-line: #E5E5E5;
+  --hgj-text: #282828;
+  --hgj-muted: #666666;
+  --hgj-danger: #B42318;
+  --hgj-warn: #B54708;
+  --hgj-font: -apple-system, system-ui, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --hgj-bg: #101418;
+    --hgj-card: #1A2028;
+    --hgj-primary: #006AFF;
+    --hgj-primary-bg: #102C52;
+    --hgj-title: #F2F4F7;
+    --hgj-side-bg: #00132E;
+    --hgj-side-text: #99A0AB;
+    --hgj-line: #303A49;
+    --hgj-text: #F2F4F7;
+    --hgj-muted: #A4ACB9;
+    --hgj-danger: #FF8A80;
+    --hgj-warn: #FFB86B;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* HGJ page canvas: neutral page background and 16px system font. */
+.hgj-page {
+  margin: 0;
+  background: var(--hgj-bg);
+  color: var(--hgj-text);
+  font: 16px/1.5 var(--hgj-font);
+}
+
+/* HGJ white workbench card/panel: square, no shadow, separated by margin. */
+.hgj-card {
+  background: var(--hgj-card);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin-bottom: 10px;
+}
+
+/* HGJ panel title: bold 16px text with 3px blue vertical rule. */
+.hgj-panel-title {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--hgj-primary);
+  color: var(--hgj-title);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+/* HGJ small tab button such as "未开票" and "未核销". */
+.hgj-tabbtn {
+  border: 1px solid var(--hgj-primary);
+  border-radius: 3px;
+  background: var(--hgj-primary-bg);
+  color: var(--hgj-primary);
+  font: 12px/1 var(--hgj-font);
+  cursor: pointer;
+}
+
+/* HGJ action link such as ignore/detail: blue, no underline. */
+.hgj-link {
+  color: var(--hgj-primary);
+  font-size: 14px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* HGJ left sidebar shell. */
+.hgj-side {
+  width: 180px;
+  background: var(--hgj-side-bg);
+  color: var(--hgj-side-text);
+}
+
+/* HGJ left sidebar item. */
+.hgj-side-item {
+  height: 48px;
+  color: var(--hgj-side-text);
+  font-size: 16px;
+}
+
+/* HGJ top tab strip. */
+.hgj-tabbar {
+  height: 32px;
+  border-bottom: 1px solid var(--hgj-line);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}

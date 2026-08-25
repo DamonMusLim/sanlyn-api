@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>操作预警</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--warn:var(--hgj-warn);--chip:var(--hgj-primary-bg);--thead:var(--hgj-bg)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--hgj-font)}
+    .wrap{max-width:1180px;margin:0 auto;padding:22px}.top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:16px}
+    h1{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.sub,.basis,.muted{color:var(--muted);font-size:13px}.actions{display:flex;gap:8px;align-items:center}
+    button{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:0;height:34px;padding:0 11px;cursor:pointer;font:inherit}
+    button:hover{border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}.tabs{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px;margin-bottom:14px}
+    .tab{height:auto;min-height:62px;text-align:left;padding:9px 10px}.tab.active{border-color:var(--accent);box-shadow:none}
+    .tab .name{display:block;font-weight:700}.tab .num{display:block;margin-top:3px;color:var(--muted)}.tab .num.ready{color:var(--accent);font-weight:750}.tab .num.no-data{color:var(--warn);font-weight:750}
+    .panel{background:var(--panel);border:0;border-radius:0;box-shadow:none;overflow:hidden;margin-bottom:10px}.panel-head{display:flex;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+    .panel-title{font-size:16px;font-weight:700;line-height:16px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title)}.basis{margin-top:3px}.empty,.error,.no-data-card{padding:26px;text-align:center;color:var(--muted)}
+    .no-data-card{text-align:left}.no-data-card strong{display:block;color:var(--warn);font-size:20px;margin-bottom:8px}.no-data-card p{margin:7px 0}
+    table{width:100%;border-collapse:collapse}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}th{font-size:12px;color:var(--muted);background:var(--thead);font-weight:700}
+    td.action{width:96px}td.action button{border:0;background:transparent;color:var(--accent);font-size:14px;padding:0;height:auto}.ignored{opacity:.52}.pill{display:inline-block;border:1px solid var(--accent);border-radius:3px;background:var(--chip);padding:2px 7px;color:var(--accent);font-size:12px}.error{color:#d92d20}
+    @media(max-width:860px){.wrap{padding:14px}.top{display:block}.actions{margin-top:10px}.tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.panel-head{display:block}table{display:block;overflow-x:auto;white-space:nowrap}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <h1 class="hgj-panel-title">操作预警</h1>
+        <div class="sub" id="summary">加载中</div>
+      </div>
+      <div class="actions">
+        <button id="settingsBtn" type="button">预警条件设置</button>
+        <button class="primary" id="refreshBtn" type="button">刷新</button>
+      </div>
+    </header>
+    <nav class="tabs hgj-tabbar" id="tabs" aria-label="操作预警节点"></nav>
+    <section class="panel hgj-card" id="panel"></section>
+  </div>
+  <script>
+    (function(){
+      "use strict";
+      var API="/api/db/ops-alerts";
+      var IGNORE_KEY="sanlyn.opsAlerts.ignored.v1";
+      var state={nodes:[],active:"signing",ignored:loadIgnored()};
+      var tabs=document.getElementById("tabs"),panel=document.getElementById("panel"),summary=document.getElementById("summary");
+      function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+      function headers(){var h={},t=token();if(t)h.Authorization="Bearer "+t;return h}
+      function loadIgnored(){try{return JSON.parse(localStorage.getItem(IGNORE_KEY)||"{}")}catch(e){return {}}}
+      function saveIgnored(){localStorage.setItem(IGNORE_KEY,JSON.stringify(state.ignored))}
+      function pct(b){return b&&b.fill_rate!==null?b.fill_rate+"%":"未设置"}
+      function basisText(n){
+        var b=n.basis||{};
+        if(!b.total)return "依据 "+(b.field||"未设置")+"，活票数未接入";
+        if(!b.filled)return "依据 "+b.field+"，当前未设置（活票 "+b.total+"）";
+        return "依据 "+b.field+"，字段填充率 "+b.filled+"/"+b.total+"（"+pct(b)+"）";
+      }
+      function text(el,value){el.textContent=value==null||value===""?"未设置":String(value)}
+      function clear(el){while(el.firstChild)el.removeChild(el.firstChild)}
+      function activeNode(){return state.nodes.find(function(n){return n.key===state.active})||state.nodes[0]}
+      async function api(){
+        var r=await fetch(API,{headers:headers()});
+        var d=await r.json().catch(function(){return {success:false,error:"接口返回异常"}});
+        if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");
+        return d;
+      }
+      function renderTabs(){
+        clear(tabs);
+        state.nodes.forEach(function(n){
+          var b=document.createElement("button");
+          b.type="button";b.className="tab hgj-tabbtn"+(n.key===state.active?" active":"");b.title=basisText(n);b.dataset.key=n.key;
+          var name=document.createElement("span"),num=document.createElement("span");
+          name.className="name";num.className="num "+(n.state==="ready"?"ready":"no-data");
+          text(name,n.title);text(num,n.state==="ready"?n.count:"未接入");
+          b.appendChild(name);b.appendChild(num);tabs.appendChild(b);
+        });
+      }
+      function renderPanel(){
+        var n=activeNode();clear(panel);
+        if(!n){panel.appendChild(box("empty","暂无数据"));return}
+        var head=document.createElement("div"),left=document.createElement("div"),title=document.createElement("div"),basis=document.createElement("div"),right=document.createElement("span");
+        head.className="panel-head";title.className="panel-title";basis.className="basis";right.className="pill";
+        text(title,n.title);text(basis,basisText(n));text(right,n.state==="ready"?"业务预警":"系统未接入");
+        left.appendChild(title);left.appendChild(basis);head.appendChild(left);head.appendChild(right);panel.appendChild(head);
+        if(n.state!=="ready"){renderNoData(n);return}
+        renderTable(n);
+      }
+      function box(cls,msg){var d=document.createElement("div");d.className=cls;d.textContent=msg;return d}
+      function renderNoData(n){
+        var b=n.basis||{},card=document.createElement("div"),strong=document.createElement("strong"),p1=document.createElement("p"),p2=document.createElement("p"),p3=document.createElement("p");
+        card.className="no-data-card";text(strong,n.title+" · 未接入");
+        text(p1,"差字段："+(b.field||"未设置")+"。当前 "+(b.filled?b.filled+"/"+b.total+" 有值":"未设置，活票 "+(b.total||"未接入"))+"，填充率 "+pct(b)+"。");
+        text(p2,b.note||"该字段有人写入后此处自动生效。");
+        text(p3,"系统未接入条目不提供忽略，避免把数据问题当业务确认处理。");
+        card.appendChild(strong);card.appendChild(p1);card.appendChild(p2);card.appendChild(p3);panel.appendChild(card);
+      }
+      function renderTable(n){
+        var rows=Array.isArray(n.rows)?n.rows:[],table=document.createElement("table"),thead=document.createElement("thead"),tbody=document.createElement("tbody");
+        var tr=document.createElement("tr");["订单编号","委托单位","ETD","操作"].forEach(function(h){var th=document.createElement("th");text(th,h);tr.appendChild(th)});thead.appendChild(tr);
+        rows.forEach(function(r){
+          var id=String(r.id||r.plan_id||r.order_no||""),ignored=!!state.ignored[id],tr=document.createElement("tr");
+          if(ignored)tr.className="ignored";
+          [["order_no"],["customer"],["etd"]].forEach(function(k){var td=document.createElement("td");text(td,r[k[0]]);tr.appendChild(td)});
+          var td=document.createElement("td"),btn=document.createElement("button");td.className="action";btn.type="button";btn.dataset.id=id;btn.textContent=ignored?"已忽略":"忽略";td.appendChild(btn);tr.appendChild(td);tbody.appendChild(tr);
+        });
+        table.appendChild(thead);table.appendChild(tbody);panel.appendChild(table);
+        if(!rows.length)panel.appendChild(box("empty","没有待处理业务预警"));
+      }
+      async function load(){
+        try{
+          summary.textContent="加载中";var d=await api();state.nodes=d.data||[];
+          if(!state.nodes.some(function(n){return n.key===state.active}))state.active=state.nodes[0]&&state.nodes[0].key;
+          var ready=state.nodes.filter(function(n){return n.state==="ready"}).map(function(n){return n.title+" "+n.count}).join(" · ");
+          summary.textContent=(ready||"暂无可计算业务预警")+" · 生成 "+new Date(d.generated_at||Date.now()).toLocaleString("zh-CN");
+          renderTabs();renderPanel();
+        }catch(e){clear(tabs);clear(panel);panel.appendChild(box("error",e.message));summary.textContent="读取失败"}
+      }
+      tabs.addEventListener("click",function(e){var b=e.target.closest(".tab");if(!b)return;state.active=b.dataset.key;renderTabs();renderPanel()});
+      panel.addEventListener("click",function(e){var b=e.target.closest("button[data-id]");if(!b)return;state.ignored[b.dataset.id]=true;saveIgnored();renderPanel()});
+      document.getElementById("refreshBtn").addEventListener("click",load);
+      document.getElementById("settingsBtn").addEventListener("click",function(){alert("预警条件设置暂未接入。")});
+      load();
+    })();
+  </script>
+</body>
+</html>

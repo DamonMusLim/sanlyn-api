@@ -12,15 +12,21 @@ function side(direction) {
   return null;
 }
 
+function billId(value) {
+  const id = String(value || "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : null;
+}
+
 export async function markPayment(req, res) {
   setCors(req, res, "POST, PATCH, OPTIONS");
   if (!requireFinance(req, res)) return;
   const body = req.body || {};
   const s = side(body.direction);
-  const id = Number(body.id);
+  const id = billId(body.id);
   const paidAmount = toNum(body.paid_amount);
   if (!s) return bad(res, 400, "bad_direction", "direction must be payable or receivable");
-  if (!Number.isInteger(id) || id <= 0) return bad(res, 400, "bad_id", "id required");
+  // freight_supplier_bills.id is uuid in live data; keep it as a parameterized string.
+  if (!id) return bad(res, 400, "bad_id", "valid uuid id required");
   if (paidAmount === null || paidAmount < 0) return bad(res, 400, "bad_paid_amount", "paid_amount must be >= 0");
 
   const pool = getPool();

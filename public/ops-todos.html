@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>操作待办</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--danger:var(--hgj-danger);--chip:var(--hgj-primary-bg)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--hgj-font)}
+    .wrap{max-width:1280px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}
+    h1,h2{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.sub,.basis{color:var(--muted);font-size:12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.panel{background:var(--panel);border:0;border-radius:0;box-shadow:none;padding:14px;margin-bottom:10px}
+    .wide{grid-column:1/-1}.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:10px}.field{min-width:135px}.grow{flex:1}.field label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:0;background:var(--panel);color:var(--text);padding:8px 10px;font:inherit}textarea{min-height:80px;resize:vertical}
+    button{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:0;padding:8px 10px;cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button.danger{color:var(--danger)}button:disabled{opacity:.55;cursor:not-allowed}
+    table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);font-weight:600}.desc{max-width:520px;white-space:pre-wrap;word-break:break-word}.tag{display:inline-block;border:1px solid var(--accent);border-radius:3px;padding:1px 7px;margin-right:4px;background:var(--chip);color:var(--accent);font-size:12px}td button{border:0;background:transparent;color:var(--accent);font-size:14px;padding:0 6px}.err{color:var(--danger)}.empty{color:var(--muted);text-align:center;padding:18px}.form{display:none;margin-top:10px}.form.open{display:grid;grid-template-columns:110px 100px 1fr 130px 130px;gap:8px;align-items:end}.pager{display:flex;justify-content:space-between;align-items:center;margin-top:10px;color:var(--muted);font-size:12px}
+    @media(max-width:900px){.wrap{padding:14px}.top,.grid{display:block}.panel{margin-bottom:12px}.form.open{grid-template-columns:1fr}.bar{display:grid;grid-template-columns:1fr 1fr}.field{min-width:0}table{display:block;overflow-x:auto;white-space:nowrap}.desc{white-space:normal;min-width:260px}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <div class="top">
+      <div><h1 class="hgj-panel-title">待办 / 审核</h1><div class="sub" id="stamp">加载中</div></div>
+      <button class="primary" id="newBtn">新建待办</button>
+    </div>
+    <section class="panel hgj-card wide">
+      <div class="bar">
+        <div class="field"><label>开始日期</label><input id="from" type="date"></div>
+        <div class="field"><label>结束日期</label><input id="to" type="date"></div>
+        <div class="field"><label>severity</label><select id="sev"><option value="">全部</option><option>P1</option><option>P2</option><option>P3</option></select></div>
+        <div class="field"><label>status</label><select id="st"><option value="">全部</option><option>open</option><option>in_progress</option><option>blocked</option><option>approved</option><option>rejected</option><option>resolved</option><option>done</option></select></div>
+        <button id="filter">筛选</button>
+      </div>
+      <div class="form" id="form">
+        <div><label class="sub">check_code</label><input id="fCode" value="MANUAL"></div>
+        <div><label class="sub">severity</label><select id="fSev"><option>P2</option><option>P1</option><option>P3</option></select></div>
+        <div><label class="sub">跟进事项</label><textarea id="fDesc"></textarea></div>
+        <div><label class="sub">owner_no</label><input id="fOwner"></div>
+        <div><label class="sub">reviewer_no</label><input id="fReviewer"></div>
+        <button class="primary" id="save">保存</button><button id="cancel">取消</button><span class="err" id="formErr"></span>
+      </div>
+      <div class="basis" id="todoBasis">依据：未接入</div>
+      <div id="todoBox"></div>
+      <div class="pager"><button id="prev">上一页</button><span id="page"></span><button id="next">下一页</button></div>
+    </section>
+    <div class="grid">
+      <section class="panel hgj-card"><h2 class="hgj-panel-title">待审核</h2><div class="basis" id="pendingBasis">依据：未接入</div><div id="pendingBox"></div></section>
+      <section class="panel hgj-card"><h2 class="hgj-panel-title">审核结果</h2><div class="basis" id="resultBasis">依据：未接入</div><div id="resultBox"></div></section>
+    </div>
+  </div>
+  <script>
+  const API="/api/db/ops-todos",state={limit:80,offset:0,count:null};
+  const $=id=>document.getElementById(id);
+  function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+  function headers(body){const h=body?{"Content-Type":"application/json"}:{};const t=token();if(t)h.Authorization="Bearer "+t;return h}
+  async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{...headers(opt.body),...(opt.headers||{})}});const d=await r.json().catch(()=>({error:"接口返回异常"}));if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");return d}
+  function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
+  function params(view){const p=new URLSearchParams({limit:state.limit,offset:view?0:state.offset});if(view)p.set("view",view);["from","to"].forEach(id=>{if($(id).value)p.set(id,$(id).value)});if($("sev").value)p.set("severity",$("sev").value);if($("st").value)p.set("status",$("st").value);return p}
+  function addCell(tr,txt,cls){const td=el("td",cls);td.textContent=txt||"";tr.appendChild(td);return td}
+  function table(rows, review){const box=el("div");if(!rows.length){box.appendChild(el("div","empty","没有匹配记录"));return box}const t=el("table"),thead=el("thead"),hr=el("tr");["跟进时间","跟进事项(全部)","往来单位","相关人员","创建人","操作"].forEach(x=>hr.appendChild(el("th","",x)));thead.appendChild(hr);t.appendChild(thead);const tb=el("tbody");rows.forEach(r=>{const tr=el("tr");addCell(tr,r.created_at);const d=addCell(tr,r.description,"desc");d.title="check_code: "+(r.check_code||"")+"; status: "+(r.status||"");addCell(tr,r.target_table||"未设置");addCell(tr,(r.owner_label||r.owner_no||"未设置")+" / "+(r.reviewer_label||r.reviewer_no||"未设置"));addCell(tr,r.is_manual?"人工新建":"系统检查");const op=el("td");op.appendChild(el("span","tag",r.severity||"未设置"));op.appendChild(el("span","tag",r.status||"未设置"));if(review){const ok=el("button","primary","通过"),bad=el("button","danger","驳回");ok.onclick=()=>reviewIt(r.id,"approve");bad.onclick=()=>reviewIt(r.id,"reject");op.appendChild(ok);op.appendChild(bad)}tr.appendChild(op);tb.appendChild(tr)});t.appendChild(tb);box.appendChild(t);return box}
+  function render(boxId,basisId,d,review){const box=$(boxId);box.textContent="";box.appendChild(table(d.data||[],review));const count=d.count===null||d.count===undefined?"未接入":String(d.count);$(basisId).textContent="共 "+count+" 条 · 依据 "+(d.basis||"未接入")}
+  async function load(){try{const a=await Promise.all([api(API+"?"+params()),api(API+"?"+params("pending_review")),api(API+"?"+params("review_results"))]);state.count=a[0].count;render("todoBox","todoBasis",a[0],false);render("pendingBox","pendingBasis",a[1],true);render("resultBox","resultBasis",a[2],false);$("stamp").textContent="生成时间 "+new Date().toLocaleString("zh-CN");$("page").textContent=state.count==null?"未接入":(state.offset+1)+"-"+Math.min(state.offset+state.limit,state.count)+" / "+state.count;$("prev").disabled=state.offset===0;$("next").disabled=state.count==null||state.offset+state.limit>=state.count}catch(e){["todoBox","pendingBox","resultBox"].forEach(id=>{$(id).textContent="";$(id).appendChild(el("div","err",e.message))});$("stamp").textContent="读取失败"}}
+  async function save(){try{$("formErr").textContent="";await api(API,{method:"POST",body:JSON.stringify({check_code:$("fCode").value,severity:$("fSev").value,description:$("fDesc").value,owner_no:$("fOwner").value,reviewer_no:$("fReviewer").value})});$("fDesc").value="";$("form").classList.remove("open");state.offset=0;await load()}catch(e){$("formErr").textContent=e.message}}
+  async function reviewIt(id,action){try{await api(API,{method:"PATCH",body:JSON.stringify({id,action})});await load()}catch(e){alert(e.message)}}
+  $("newBtn").onclick=()=>$("form").classList.add("open");$("cancel").onclick=()=>$("form").classList.remove("open");$("save").onclick=save;$("filter").onclick=()=>{state.offset=0;load()};$("prev").onclick=()=>{state.offset=Math.max(0,state.offset-state.limit);load()};$("next").onclick=()=>{state.offset+=state.limit;load()};load();
+  </script>
+</body>
+</html>

@@ -34,6 +34,11 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/recon-master", () => import("./api/db/recon-master.js"));
   mount("/api/db/orders-master-grid",   () => import("./api/db/orders-master-grid.js"));   // 0812 订单密网格
   mount("/api/db/shipping-master-grid", () => import("./api/db/shipping-master-grid.js")); // 0812 海运密网格
+  mount("/api/db/ops-alerts", () => import("./api/db/ops-alerts.js")); // 0825 操作预警：未接入节点不反推假数
+  mount("/api/db/ops-todos", () => import("./api/db/ops-todos.js")); // 0825 操作待办/审核：operation_todos 真源
+  mount("/api/db/fee-alerts", () => import("./api/db/fee-alerts.js")); // 0825 费用预警：未接入/无法判断不反推假数
+  mount("/api/db/biz-alerts", () => import("./api/db/biz-alerts.js")); // 0825 业务预警：额度/合同未设置不反推假数
+  mount("/api/db/global-search", () => import("./api/db/global-search.js")); // 0825 顶栏全局搜索：只读白名单表
   mount("/api/db/rates-hub",              () => import("./api/db/rates-hub.js")); // 0825 价表总台(海运周价/官方港杂/本地费)
   mount("/api/db/customs-master-grid",  () => import("./api/db/customs-master-grid.js"));  // 0812 报关密网格
   mount("/api/db/tax-rebate-master", () => import("./api/db/tax-rebate-master.js"));
@@ -57,6 +62,8 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/recon-confirm", () => import("./api/db/recon-confirm.js")); // 对平状态 2026-08-12
   mount("/api/db/recon-companies", () => import("./api/db/recon-companies.js")); // 公司下拉 2026-08-12
   mount("/api/db/field-lookup", () => import("./api/db/field-lookup.js"));
+  mount("/api/db/invoice-bill-match", () => import("./api/db/invoice-bill-match.js")); // 补挂已存在的发票-账单匹配 handler，避免带 token 仍 404。
+  mount("/api/db/freight-invoice-confirm", () => import("./api/db/freight-invoice-confirm.js")); // 补挂已存在的货代发票确认 handler，避免确认写入管道断线。
   mount("/api/db/knowledge", () => import("./api/db/knowledge.js"));
   mount("/api/db/customs-intake", () => import("./api/db/customs-intake.js")); // 录单执行器V1 2026-08-12
   mount("/api/db/shipping-entry", () => import("./api/db/shipping-entry.js"));

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>费用预警</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--warn:var(--hgj-warn);--bad:var(--hgj-danger);--chip:var(--hgj-primary-bg)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 var(--hgj-font)}.wrap{max-width:1180px;margin:0 auto;padding:22px}
+    .top{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;margin-bottom:16px}h1{font-size:16px;line-height:16px;margin:0;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.sub{color:var(--muted);font-size:13px}.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:0;padding:8px 11px;cursor:pointer}.btn:disabled{opacity:.45;cursor:not-allowed}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{padding:8px 12px}.tab.active{border-color:var(--accent);color:var(--accent);background:var(--chip)}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px}.metric{background:var(--panel);border:0;border-radius:0;box-shadow:none;padding:14px;margin-bottom:10px}.label{color:var(--muted);font-size:12px}.num{font-size:26px;font-weight:700;margin:3px 0}.note{color:var(--muted);font-size:12px}.warn{color:var(--warn)}.bad{color:var(--bad)}
+    .bar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:12px 0}.panel{background:var(--panel);border:0;border-radius:0;box-shadow:none;overflow:hidden;margin-bottom:10px}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:13px 14px;border-top:1px solid var(--line);align-items:center}.row:first-child{border-top:0}.main{min-width:0}.title{font-weight:650;overflow-wrap:anywhere}.meta{display:flex;gap:7px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:5px}.pill{border:1px solid var(--accent);background:var(--chip);color:var(--accent);border-radius:3px;padding:2px 7px}.empty,.err{padding:24px;text-align:center;color:var(--muted)}.err{color:var(--bad)}.hidden{display:none}.detail{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);color:var(--muted);font-size:12px}
+    .row .btn,#ignoreAll{border:0;background:transparent;color:var(--accent);font-size:14px;padding:0 6px}.toast{position:fixed;right:16px;bottom:16px;background:var(--panel);border:1px solid var(--line);border-radius:0;padding:10px 12px;box-shadow:none}@media(max-width:760px){.wrap{padding:16px}.top,.bar{display:grid;align-items:stretch}.grid{grid-template-columns:1fr}.row{grid-template-columns:1fr}.row .btn{justify-self:start}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <div class="top">
+      <div><h1 class="hgj-panel-title">费用预警</h1><div class="sub" id="summary">加载中</div></div>
+      <button class="btn" id="reload">刷新</button>
+    </div>
+    <div class="tabs">
+      <button class="tab hgj-tabbtn active" data-tab="invoiced">未开票</button>
+      <button class="tab hgj-tabbtn" data-tab="settled">未核销</button>
+    </div>
+    <div class="grid">
+      <section class="metric hgj-card"><div class="label">未开票</div><div class="num" id="mInvoice">未接入</div><div class="note" id="mInvoiceNote"></div></section>
+      <section class="metric hgj-card"><div class="label">无法判断</div><div class="num warn" id="mUnknown">未设置</div><div class="note" id="mUnknownNote"></div></section>
+      <section class="metric hgj-card"><div class="label">未核销</div><div class="num bad" id="mSettled">未接入</div><div class="note" id="mSettledNote"></div></section>
+    </div>
+    <div class="bar">
+      <div class="sub" id="tabNote"></div>
+      <button class="btn" id="ignoreAll">全部忽略</button>
+    </div>
+    <section class="panel hgj-card" id="list"></section>
+  </div>
+  <div class="toast hidden" id="toast"></div>
+  <script>
+  const API="/api/db/fee-alerts";
+  const state={tab:"invoiced",data:null,open:new Set(),ignored:new Set(JSON.parse(localStorage.getItem("fee_alert_ignored")||"[]"))};
+  const $=id=>document.getElementById(id);
+  function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+  function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
+  function showToast(text){$("toast").textContent=text;$("toast").classList.remove("hidden");setTimeout(()=>$("toast").classList.add("hidden"),1800)}
+  function saveIgnored(){localStorage.setItem("fee_alert_ignored",JSON.stringify([...state.ignored]))}
+  function displayCount(v, fallback){return v===null||v===undefined?fallback:String(v)}
+  async function load(){
+    try{
+      const h={};const t=token();if(t)h.Authorization="Bearer "+t;
+      const r=await fetch(API,{headers:h});const d=await r.json().catch(()=>({error:"接口返回异常"}));
+      if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");
+      state.data=d;render();
+    }catch(e){$("summary").textContent="读取失败";$("list").innerHTML=`<div class="err">${esc(e.message)}</div>`}
+  }
+  function renderMetrics(){
+    const d=state.data||{};const inv=d.invoiced||{}, unk=d.unknown||{}, set=d.settled||{};
+    $("summary").textContent=d.generated_at?`生成时间 ${new Date(d.generated_at).toLocaleString()}`:"已加载";
+    $("mInvoice").textContent=displayCount(inv.count,"未接入");
+    $("mInvoiceNote").textContent=`依据 ${inv.basis?.table||"未设置"}；可判断 ${inv.basis?.eligible??"未设置"} 行`;
+    $("mUnknown").textContent=displayCount(unk.count,"未设置");
+    const r=unk.reasons||{};$("mUnknownNote").textContent=`挂不到票 ${r.no_shipping_plan_link??"未设置"}，无账期 ${r.no_bill_month??"未设置"}，挂靠异常 ${r.shipping_plan_unresolved??"未设置"}`;
+    $("mSettled").textContent=set.state==="not_connected"?"未接入":displayCount(set.count,"未设置");
+    $("mSettledNote").textContent=set.basis?.note||"未设置";
+  }
+  function filteredRows(){
+    const rows=state.data?.invoiced?.rows||[];
+    return rows.filter(r=>!state.ignored.has(String(r.id)));
+  }
+  function rowHtml(r){
+    const id=String(r.id);const detail=state.open.has(id);
+    const title=`账单编号 ${r.bill_no||r.id} 到账期了，还没有开票，快去看看吧。`;
+    return `<article class="row"><div class="main"><div class="title">${esc(title)}</div><div class="meta"><span class="pill">BL ${esc(r.bl_no||"未设置")}</span><span class="pill">账期 ${esc(r.bill_month||"未设置")}</span><span class="pill">依据 ${esc(r.basis||"未设置")}</span></div>${detail?`<div class="detail">供应商 ${esc(r.supplier||"未设置")} · 费用 ${esc(r.cost_category||"未设置")} · 金额 ${esc(r.currency||"")} ${esc(r.amount??"未设置")} · shipping_plan ${esc(r.shipping_plan_id||"未设置")}</div>`:""}</div><div><button class="btn detailBtn" data-id="${esc(id)}">查看详情</button> <button class="btn ignoreBtn" data-id="${esc(id)}">忽略</button></div></article>`;
+  }
+  function renderList(){
+    const box=$("list"), d=state.data||{};
+    $("ignoreAll").disabled=state.tab!=="invoiced"||!(d.invoiced?.rows||[]).length;
+    if(state.tab==="settled"){
+      $("tabNote").textContent=d.settled?.basis?.note||"未接入";
+      box.innerHTML=`<div class="empty">未接入 · ${esc(d.settled?.basis?.note||"核销写入管道未完成")}</div>`;return;
+    }
+    const rows=filteredRows();$("tabNote").textContent=d.invoiced?.basis?.note||"未设置";
+    if(!rows.length){box.innerHTML='<div class="empty">没有未忽略的业务预警</div>';return}
+    box.innerHTML=rows.map(rowHtml).join("");
+  }
+  function render(){renderMetrics();document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===state.tab));renderList()}
+  document.querySelector(".tabs").onclick=e=>{const b=e.target.closest(".tab");if(!b)return;state.tab=b.dataset.tab;render()};
+  $("reload").onclick=load;
+  $("ignoreAll").onclick=()=>{if(state.tab!=="invoiced")return;filteredRows().forEach(r=>state.ignored.add(String(r.id)));saveIgnored();render();showToast("已忽略当前业务预警")};
+  $("list").onclick=e=>{const detail=e.target.closest(".detailBtn"), ignore=e.target.closest(".ignoreBtn");if(detail){const id=detail.dataset.id;state.open.has(id)?state.open.delete(id):state.open.add(id);render()}if(ignore){state.ignored.add(ignore.dataset.id);saveIgnored();render();showToast("已忽略")}};
+  load();
+  </script>
+</body>
+</html>

@@ -4,33 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sanlyn 工作台多标签页</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: #f3f5f8;
-      --bar: #ffffff;
-      --bar2: #f8fafc;
-      --line: #d9e0ea;
-      --text: #152033;
-      --muted: #667085;
-      --active: #2563eb;
-      --active-bg: #eaf1ff;
+      --bg: var(--hgj-bg);
+      --bar: var(--hgj-card);
+      --bar2: var(--hgj-card);
+      --line: var(--hgj-line);
+      --text: var(--hgj-text);
+      --muted: var(--hgj-muted);
+      --active: var(--hgj-primary);
+      --active-bg: var(--hgj-primary-bg);
       --danger: #c0362c;
-      --shadow: 0 1px 4px rgba(16, 24, 40, 0.08);
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #111827;
-        --bar: #182231;
-        --bar2: #121a26;
-        --line: #2b3748;
-        --text: #eef2f7;
-        --muted: #a7b0bf;
-        --active: #75a7ff;
-        --active-bg: #1e3558;
-        --danger: #ff8a80;
-        --shadow: none;
-      }
+      --shadow: none;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
@@ -41,7 +27,7 @@
       min-width: 320px;
       background: var(--bg);
       color: var(--text);
-      font: 14px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      font: 16px/1.4 var(--hgj-font);
     }
     .top {
       display: grid;
@@ -51,7 +37,7 @@
       padding: 8px 12px 0;
       background: var(--bar);
       border-bottom: 1px solid var(--line);
-      box-shadow: var(--shadow);
+      box-shadow: none;
       min-width: 0;
     }
     .brand {
@@ -74,7 +60,7 @@
       padding-bottom: 0;
     }
     .tab {
-      height: 36px;
+      height: 32px;
       min-width: 126px;
       max-width: 240px;
       display: grid;
@@ -82,19 +68,19 @@
       align-items: center;
       gap: 6px;
       padding: 0 8px 0 12px;
-      border: 1px solid var(--line);
-      border-bottom: 0;
-      border-radius: 8px 8px 0 0;
-      background: var(--bar2);
-      color: var(--muted);
+      border: 1px solid var(--active);
+      border-radius: 3px;
+      background: var(--active-bg);
+      color: var(--active);
       cursor: pointer;
       user-select: none;
       flex: 0 0 auto;
+      font-size: 12px;
     }
     .tab[aria-selected="true"] {
-      height: 40px;
+      height: 32px;
       background: var(--active-bg);
-      color: var(--text);
+      color: var(--active);
       border-color: var(--active);
       font-weight: 700;
     }
@@ -108,7 +94,7 @@
       width: 22px;
       height: 22px;
       border: 0;
-      border-radius: 5px;
+      border-radius: 0;
       background: transparent;
       color: inherit;
       cursor: pointer;
@@ -127,7 +113,7 @@
     button, select {
       height: 30px;
       border: 1px solid var(--line);
-      border-radius: 6px;
+      border-radius: 0;
       background: var(--bar2);
       color: var(--text);
       font: inherit;
@@ -158,7 +144,7 @@
       border-radius: 7px;
       background: #1f2937;
       color: #fff;
-      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
+      box-shadow: none;
       display: none;
       z-index: 20;
     }
@@ -172,13 +158,13 @@
     }
   </style>
 </head>
-<body>
+<body class="hgj-page">
   <header class="top">
     <div class="brand">
       <strong>Sanlyn 工作台</strong>
       <span>v2026.08.25-1 · <span id="generatedAt">生成时间 --</span></span>
     </div>
-    <nav id="tabs" class="tabs" aria-label="工作台标签页"></nav>
+    <nav id="tabs" class="tabs hgj-tabbar" aria-label="工作台标签页"></nav>
     <div class="tools">
       <select id="launcher" aria-label="打开页面">
         <option value="">打开页面...</option>
@@ -221,6 +207,7 @@
         ["海运总表", "/ocean"],
         ["价表总台", "/rates"],
         ["主表", "/ship-grid"],
+        ["操作预警", "/public/ops-alerts.html"],
         ["录入表单", "/ship-entry"],
         ["舱单录单", "/manifest"],
         ["舱单配置驱动版", "/manifest-cfg"],

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>业务预警</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--warn:var(--hgj-warn);--bad:var(--hgj-danger);--chip:var(--hgj-primary-bg)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 var(--hgj-font)}.wrap{max-width:1180px;margin:0 auto;padding:22px}
+    .top{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;margin-bottom:16px}h1,h2{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.sub,.basis{color:var(--muted);font-size:12px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+    button,.tab{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:0;padding:8px 11px;cursor:pointer}.tab{border-color:var(--accent);background:var(--chip);color:var(--accent);border-radius:3px;font-size:12px}.tab.active{border-color:var(--accent);color:var(--accent);background:var(--chip)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:disabled{opacity:.5;cursor:not-allowed}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px}.metric,.panel{background:var(--panel);border:0;border-radius:0;box-shadow:none}.metric{padding:14px;margin-bottom:10px}.panel{padding:14px;margin-bottom:10px}.label{color:var(--muted);font-size:12px}.num{font-size:26px;font-weight:700;margin:3px 0}.warn{color:var(--warn)}.bad{color:var(--bad)}
+    .bar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.list{border:0;border-radius:0;box-shadow:none;overflow:hidden;background:var(--panel);margin-bottom:10px}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:13px 14px;border-top:1px solid var(--line);align-items:center}.row:first-child{border-top:0}.title{font-weight:650;overflow-wrap:anywhere}.meta{display:flex;gap:7px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:5px}.pill{border:1px solid var(--accent);background:var(--chip);color:var(--accent);border-radius:3px;padding:2px 7px}.empty,.err{padding:22px;text-align:center;color:var(--muted)}.err{color:var(--bad)}
+    .settings{display:grid;grid-template-columns:1.3fr 120px 90px 1fr 140px 140px auto;gap:8px;align-items:end}.settings label{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}input,select{width:100%;border:1px solid var(--line);border-radius:0;background:var(--panel);color:var(--text);padding:8px 10px;font:inherit}.row button,#ignoreAll{border:0;background:transparent;color:var(--accent);font-size:14px;padding:0 6px}.toast{position:fixed;right:16px;bottom:16px;background:var(--panel);border:1px solid var(--line);border-radius:0;padding:10px 12px;box-shadow:none}.hidden{display:none}
+    @media(max-width:900px){.wrap{padding:16px}.top,.bar{display:grid;align-items:stretch}.grid{grid-template-columns:1fr}.row,.settings{grid-template-columns:1fr}.row button{justify-self:start}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <div class="top">
+      <div><h1 class="hgj-panel-title">业务预警</h1><div class="sub" id="stamp">加载中</div></div>
+      <button id="reload">刷新</button>
+    </div>
+    <div class="tabs">
+      <button class="tab hgj-tabbtn active" data-tab="credit">信用额度</button>
+      <button class="tab hgj-tabbtn" data-tab="contracts">合同日期</button>
+    </div>
+    <div class="grid">
+      <section class="metric hgj-card"><div class="label" id="mAlertLabel">业务预警</div><div class="num bad" id="mAlerts">未接入</div><div class="basis" id="mAlertsBasis">依据 未接入</div></section>
+      <section class="metric hgj-card"><div class="label">未设置</div><div class="num warn" id="mUnset">未设置</div><div class="basis" id="mUnsetBasis">不产生预警</div></section>
+      <section class="metric hgj-card"><div class="label">已设置</div><div class="num" id="mConfigured">未设置</div><div class="basis" id="mConfiguredBasis">Damon 逐家设置后才计算</div></section>
+    </div>
+    <section class="panel hgj-card">
+      <h2 class="hgj-panel-title">设置入口</h2>
+      <div class="settings">
+        <div><label>公司</label><select id="company"></select></div>
+        <div><label>信用额度</label><input id="limit" inputmode="decimal" placeholder="未设置"></div>
+        <div><label>币种</label><input id="currency" maxlength="8" placeholder="未设置"></div>
+        <div><label>备注</label><input id="note" placeholder="未设置"></div>
+        <div><label>合同开始</label><input id="start" type="date"></div>
+        <div><label>合同结束</label><input id="end" type="date"></div>
+        <button class="primary" id="save">保存</button>
+      </div>
+      <div class="basis">额度值必须由 Damon 逐家设定；默认全空，AI 不猜任何公司额度。</div>
+    </section>
+    <div class="bar">
+      <div class="basis" id="tabBasis">依据 未接入</div>
+      <button id="ignoreAll">全部忽略</button>
+    </div>
+    <section class="list hgj-card" id="list"></section>
+  </div>
+  <div class="toast hidden" id="toast"></div>
+  <script>
+  const API="/api/db/biz-alerts";
+  const state={tab:"credit",data:null,ignored:new Set(JSON.parse(localStorage.getItem("biz_alert_ignored")||"[]"))};
+  const $=id=>document.getElementById(id);
+  function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+  function headers(body){const h=body?{"Content-Type":"application/json"}:{};const t=token();if(t)h.Authorization="Bearer "+t;return h}
+  function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
+  function fmtMoney(v,c){return v===null||v===undefined?"未接入":`${c||""} ${Number(v).toLocaleString("zh-CN",{maximumFractionDigits:2})}`.trim()}
+  function fmtPct(v){return v===null||v===undefined?"未接入":(v*100).toFixed(1)+"%"}
+  function count(v,missing){return v===null||v===undefined?missing:String(v)}
+  function toast(t){$("toast").textContent=t;$("toast").classList.remove("hidden");setTimeout(()=>$("toast").classList.add("hidden"),1800)}
+  async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{...headers(opt.body),...(opt.headers||{})}});const d=await r.json().catch(()=>({error:"接口返回异常"}));if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");return d}
+  function companyLabel(c){return `${c.code||"未设置"} · ${c.name_cn||c.name_en||"未设置"}`}
+  function fillCompanies(){
+    const sel=$("company");sel.textContent="";
+    (state.data?.companies||[]).forEach(c=>{const o=el("option","",companyLabel(c));o.value=c.id;sel.appendChild(o)});
+    syncForm();
+  }
+  function selectedCompany(){const id=String($("company").value);return (state.data?.companies||[]).find(c=>String(c.id)===id)}
+  function syncForm(){const c=selectedCompany();if(!c)return; $("limit").value=c.credit_limit??"";$("currency").value=c.credit_currency||"";$("note").value=c.credit_limit_note||"";$("start").value=c.contract_start||"";$("end").value=c.contract_end||""}
+  async function load(){
+    try{state.data=await api(API);$("stamp").textContent="生成时间 "+new Date(state.data.generated_at).toLocaleString("zh-CN");fillCompanies();render()}
+    catch(e){$("stamp").textContent="读取失败";$("list").textContent="";$("list").appendChild(el("div","err",e.message))}
+  }
+  function activeBlock(){return state.tab==="credit"?state.data?.credit:state.data?.contracts}
+  function renderMetrics(){
+    const b=activeBlock()||{};$("mAlertLabel").textContent=state.tab==="credit"?"快超信用额度":"合同到期";
+    $("mAlerts").textContent=b.state==="not_connected"?"未接入":count(b.count,"未设置");
+    $("mUnset").textContent=count(b.unset?.count,"未接入");$("mConfigured").textContent=count(b.configured,"未接入");
+    $("mAlertsBasis").textContent="依据 "+(b.basis?.note||"未接入");
+    $("mUnsetBasis").textContent=state.tab==="credit"?"未设置额度的公司不产生预警":"未设置合同日期的公司不产生预警";
+    $("mConfiguredBasis").textContent=b.basis?.table?`数据源 ${b.basis.table}`:"未接入";
+    $("tabBasis").textContent=`依据 ${b.basis?.note||"未接入"}`;
+  }
+  function meta(items){const m=el("div","meta");items.forEach(x=>m.appendChild(el("span","pill",x)));return m}
+  function renderCreditRow(r){
+    const row=el("article","row"), main=el("div",""), title=el("div","title",`请注意，${r.name} 快超信用额度了`);
+    main.appendChild(title);main.appendChild(meta([`已用/额度 ${fmtMoney(r.used_amount,r.credit_currency)} / ${fmtMoney(r.credit_limit,r.credit_currency)}`,`比例 ${fmtPct(r.ratio)}`,`依据行 ${r.row_count}，付款金额空值 ${r.missing_paid_amount}`]));
+    const b=el("button","", "忽略");b.onclick=()=>ignore(r.id);row.appendChild(main);row.appendChild(b);return row;
+  }
+  function renderContractRow(r){
+    const row=el("article","row"), main=el("div",""), txt=r.days_left<0?`请注意，${r.name} 合同已到期`:`请注意，${r.name} 合同快到期了`;
+    main.appendChild(el("div","title",txt));main.appendChild(meta([`合同结束 ${r.contract_end||"未设置"}`,`剩余 ${r.days_left} 天`,`依据 companies.contract_end，字段已设置`]));
+    const b=el("button","", "忽略");b.onclick=()=>ignore(r.id);row.appendChild(main);row.appendChild(b);return row;
+  }
+  function renderUnset(rows){
+    const box=el("div","");
+    if(!rows.length){box.appendChild(el("div","empty","没有未设置公司"));return box}
+    rows.slice(0,80).forEach(r=>{const row=el("article","row");row.appendChild(el("div","title",companyLabel(r)));const b=el("button","", "去设置");b.onclick=()=>{$("company").value=r.id;syncForm();window.scrollTo({top:0,behavior:"smooth"})};row.appendChild(b);box.appendChild(row)});
+    return box;
+  }
+  function renderList(){
+    const box=$("list");box.textContent="";const b=activeBlock()||{};const rows=(b.rows||[]).filter(r=>!state.ignored.has(r.id));
+    $("ignoreAll").disabled=b.state==="not_connected"||!rows.length;
+    if(b.state==="not_connected"){box.appendChild(el("div","empty","未接入 · "+(b.basis?.note||"待迁移")));return}
+    rows.forEach(r=>box.appendChild(state.tab==="credit"?renderCreditRow(r):renderContractRow(r)));
+    if(!rows.length)box.appendChild(el("div","empty","没有未忽略的业务预警"));
+    const unsetTitle=el("div","empty",(state.tab==="credit"?"未设置额度 ":"未设置合同日期 ")+count(b.unset?.count,"未接入")+" 家");
+    box.appendChild(unsetTitle);box.appendChild(renderUnset(b.unset?.rows||[]));
+  }
+  function render(){renderMetrics();document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===state.tab));renderList()}
+  function ignore(id){state.ignored.add(id);localStorage.setItem("biz_alert_ignored",JSON.stringify([...state.ignored]));render();toast("已忽略业务预警")}
+  $("ignoreAll").onclick=()=>{const b=activeBlock()||{};(b.rows||[]).forEach(r=>state.ignored.add(r.id));localStorage.setItem("biz_alert_ignored",JSON.stringify([...state.ignored]));render();toast("已忽略当前业务预警")};
+  $("reload").onclick=load;$("company").onchange=syncForm;
+  document.querySelector(".tabs").onclick=e=>{const b=e.target.closest(".tab");if(!b)return;state.tab=b.dataset.tab;render()};
+  $("save").onclick=async()=>{const c=selectedCompany();if(!c)return;await api(API,{method:"PATCH",body:JSON.stringify({company_id:c.id,credit_limit:$("limit").value,credit_currency:$("currency").value,credit_limit_note:$("note").value,contract_start:$("start").value,contract_end:$("end").value})});toast("已保存");await load()};
+  load();
+  </script>
+</body>
+</html>
