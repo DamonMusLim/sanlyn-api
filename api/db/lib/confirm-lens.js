@@ -145,7 +145,7 @@ export async function defaultLines(pool, sp, ctx) {
   const r = await pool.query(
     `SELECT bl_no, cost_category, canonical_category, fob_scope,
             amount, sale_amount, currency, unit_price, qty, charge_basis,
-            supplier, supplier_company_code, payer_company_code, rebill_status, remarks, raw
+            supplier, supplier_company_code, payer_company_code, rebill_status, confirmed_at, remarks, raw
        FROM active_freight_supplier_bills
       WHERE ${where.join(" AND ")}
       ORDER BY id`,
@@ -155,6 +155,7 @@ export async function defaultLines(pool, sp, ctx) {
   const customsArrange = clean(sp.customs_arrange, 20).toLowerCase();
   const lines = [];
   for (const row of r.rows) {
+    if (!ctx.internal && isPendingBillRow(row)) continue;
     const scope = clean(row.fob_scope, 16) || classifyFobScope(row.canonical_category, row.cost_category);
     if (ctx.internal && !internalSegmentMatch(lens.segment, row.cost_category, scope)) continue;
     const receivable = lens.side === "receivable" ? receivableAmount(row, scope) : null;
@@ -178,6 +179,13 @@ export async function defaultLines(pool, sp, ctx) {
     addRawCostLines(lines, sp.cost_lines, blNo, lens, ctx, customsArrange);
   }
   return { lines, exwTransfer, lens };
+}
+
+function isPendingBillRow(row) {
+  const raw = parseJson(row.raw, {});
+  return clean(row.rebill_status, 40).toLowerCase() === "pending" ||
+    Boolean(raw?.collab_pending?.status) ||
+    (!row.confirmed_at && clean(row.rebill_status, 40).toLowerCase() === "draft");
 }
 
 function internalSegmentMatch(segment, name, scope) {
@@ -278,12 +286,26 @@ export function redactPayloadForLens(payload, lens, parties) {
     safe.buyer = parties.buyer;
     safe.seller = parties.seller;
   }
-  safe.bill_lines = (safe.bill_lines || []).map(line => redactLine(line));
-  safe.invoices = (safe.invoices || []).map(invoice => redactInvoice(invoice));
+  safe.bill_lines = (safe.bill_lines || []).filter(line => !isExternalFreightLine(line)).map(line => redactLine(line));
+  safe.invoices = (safe.invoices || []).filter(invoice => !isExternalFreightInvoice(invoice)).map(invoice => redactInvoice(invoice));
+  if (safe.bill_kind === "ocean") safe.bill_kind = "port_charge";
   delete safe.local_charge_baseline;
   delete safe.freight_rate_baseline;
   delete safe.exw_transfer_to_customer;
   return safe;
+}
+
+function isExternalFreightLine(line) {
+  const label = clean(`${line?.name || ""} ${line?.cost_category || ""}`, 200).toLowerCase();
+  const scope = clean(line?.fob_scope, 20).toLowerCase();
+  const currency = clean(line?.currency, 8).toUpperCase();
+  return scope === "freight" || currency === "USD" || /海运|运费|ocean|freight|baf|fuel/i.test(label);
+}
+
+function isExternalFreightInvoice(invoice) {
+  const label = clean(`${invoice?.item_name || ""} ${invoice?.title || ""}`, 200).toLowerCase();
+  const currency = clean(invoice?.currency, 8).toUpperCase();
+  return currency === "USD" || /海运|运费|ocean|freight|transport/i.test(label);
 }
 
 function redactLine(line) {

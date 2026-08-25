@@ -310,13 +310,13 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
 
 	  <div class="block" id="sectionFees">
     <div class="bh" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
-      <div><h2 data-i18n="fwd.feesTitle">④ 费用与对账</h2><p data-i18n="fwd.feesSub">海运费 / 拖车费 / 港杂费 / 报关费</p></div><span class="lock">🔒 <span data-i18n="fwd.authOnly">仅授权人可见</span></span>
+      <div><h2 data-i18n="fwd.feesTitle">④ 费用与对账</h2><p>港杂费 / 本方需确认费用</p></div><span class="lock">🔒 <span data-i18n="fwd.authOnly">仅授权人可见</span></span>
     </div>
     <div class="bb" style="display:flex;flex-direction:column;gap:9px" id="feeBody"></div>
     <div class="bb" style="padding-top:0;display:flex;flex-direction:column;gap:9px">
       <div class="billgrp" style="margin-top:5px" data-i18n="fwd.reconcile">对账</div>
       <div class="kv" style="padding:2px 2px">
-        <span class="k" data-i18n="fwd.ar">应收合计 AR</span><span class="v" id="arV">USD 2,850 + ¥ 3,200</span>
+        <span class="k" data-i18n="fwd.ar">应收合计 AR</span><span class="v" id="arV">—</span>
         <span class="k" data-i18n="fwd.received">已收</span><span class="v" style="color:var(--faint)">—</span>
         <span class="k" data-i18n="fwd.balance">未收余额</span><span class="v" id="arDue" style="color:var(--wait);font-size:15px">全额待收</span>
       </div>
@@ -373,6 +373,7 @@ details.exp>summary .chev{flex:0 0 auto;margin-left:6px}
 <script src="collab-i18n.js"></script>
 <script>CollabI18n.mount(document.getElementById("langMount"), { langs:["zh","en","bm"], default:"zh", scope:"forwarder" });</script>
 <script src="collab-truck-block.js"></script>
+<script src="forwarder-confirm-fees.js"></script>
 <script>
   (function(){
     var qs = new URLSearchParams(location.search);

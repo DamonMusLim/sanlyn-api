@@ -118,6 +118,8 @@ function renderAll(){
 // 箱号谁填:货代承包拖车段(他们的车队)→ 他们填(确认/需修改);否则只读核对 + 只留「修改」
 function renderBoxMode(){
   const theirTruck = Array.isArray(state.segments) && state.segments.includes("truck");
+  const section = $("sectionTruck");
+  if(section) section.style.display = theirTruck ? "" : "none";
   const sub = $("boxSub"), badge = $("boxBadge"), acts = $("boxActs");
   if(!acts) return;
   if(theirTruck){
@@ -244,7 +246,14 @@ function renderContainerLines(s){
 function allowedLine(l){
   const keys = Object.keys(l || {}).join(" ").toLowerCase();
   if(/cost|margin|profit|gross|purchase/.test(keys)) return false;
+  if(sensitiveFeeLine(l)) return false;
   return l && (l.amount != null || l.unit_price != null || l.name);
+}
+function sensitiveFeeLine(l){
+  const name = String((l && (l.name || l.cost_category)) || "").toLowerCase();
+  const scope = String((l && l.fob_scope) || "").toLowerCase();
+  const cur = String((l && l.currency) || "").toUpperCase();
+  return /ocean|freight|海运|运费/.test(name) || scope === "freight" || cur === "USD";
 }
 function groupTier(lines){
   const t = (lines || []).map(l => l && l.ac_tier);
@@ -261,11 +270,10 @@ function feeLegend(){
   return `<div style="display:flex;gap:12px;font-size:11px;color:var(--sub);padding:1px 2px 3px"><span>🟢默认确认</span><span>🟠需确认</span><span>🔴不确认金额</span></div>`;
 }
 function groupLines(lines){
-  const out = { ocean:[], local:[], truck:[], customs:[], other:[] };
+  const out = { local:[], truck:[], customs:[], other:[] };
   lines.filter(allowedLine).forEach(l=>{
     const name = String(l.name || l.cost_category || "").toLowerCase();
-    if(/ocean|freight|海运/.test(name)) out.ocean.push(l);
-    else if(/truck|拖车/.test(name)) out.truck.push(l);
+    if(/truck|拖车/.test(name)) out.truck.push(l);
     else if(/custom|报关/.test(name)) out.customs.push(l);
     else if(/local|thc|doc|seal|港杂|文件|铅封|码头/.test(name)) out.local.push(l);
     else out.other.push(l);
@@ -293,14 +301,16 @@ function renderFees(){
   $("arV").textContent = totalByCurrency(lines);
   $("arDue").textContent = lines.length ? "以账单确认为准" : (state.invoiceError || "费用尚未录入");
 }
+function feeAllowed(roleSeg){
+  return Array.isArray(state.segments) && state.segments.includes(roleSeg);
+}
 function feeOurs(g){
   return [
     feeLegend(),
-    feeBill("🚢","海运费 Ocean Freight", cntrSummary(state.sheet), g.ocean, true),
     localDetails(g.local.concat(g.other)),
-    quoteBill("🚚","拖车费 Trucking","报价前请看提货地址","truck"),
-    pickupBlock(),
-    quoteBill("📋","报关费 Customs", `${state.sheet.pol || "—"} · ${cntrSummary(state.sheet)}`, "customs"),
+    feeAllowed("truck") ? quoteBill("🚚","拖车费 Trucking","报价前请看提货地址","truck") : "",
+    feeAllowed("truck") ? pickupBlock() : "",
+    feeAllowed("customs") ? quoteBill("📋","报关费 Customs", `${state.sheet.pol || "—"} · ${cntrSummary(state.sheet)}`, "customs") : "",
     `<a class="invoice-cta" href="/public/invoice-confirm-preview.html?token=${encodeURIComponent(token)}">💰 打开账单 · 改价 · 开票 <small>可议价改单价 · 我方代开/对方自开</small></a>`
   ].join("");
 }
@@ -309,12 +319,11 @@ function feeNom(g){
   const body = rows.length ? rows.map((l,i)=>`<tr><td>${esc(l.name || "费用")}</td><td class="r"><input type="number" value="${esc(Number(l.amount || 0))}" data-bill-id="${esc(l.id || "")}" oninput="sumFee()"></td></tr>`).join("")
     : `<tr><td>新增费目</td><td class="r"><input type="number" value="0" oninput="sumFee()"></td></tr>`;
   return `
-  <div class="bill"><span class="bi">🚢</span><div class="bt2"><b>海运费 Ocean Freight</b><span>客户与贵司直接结算</span></div><span class="na">不经我方 · 无需填写</span></div>
   <div class="block" style="border-radius:11px"><div class="bh"><h2 style="font-size:14.5px">港杂费 Local Charges</h2><p>请逐项填写贵司报价</p></div>
     <div class="bb"><table class="fee-in"><thead><tr><th>费目</th><th class="r">金额 CNY</th></tr></thead><tbody>${body}<tr class="sum"><td>合计</td><td class="r" id="feeSum">—</td></tr></tbody></table>
       <button class="addfee" onclick="addFee()">+ 新增费目</button><div class="pending">提交后由 Sanlyn 核价确认</div></div></div>
-  ${quoteBill("🚚","拖车费 Trucking","报价前请看提货地址","truck")}${pickupBlock()}
-  ${quoteBill("📋","报关费 Customs",`${state.sheet.pol || "—"} · 如由贵司安排`,"customs")}`;
+  ${feeAllowed("truck") ? quoteBill("🚚","拖车费 Trucking","报价前请看提货地址","truck") + pickupBlock() : ""}
+  ${feeAllowed("customs") ? quoteBill("📋","报关费 Customs",`${state.sheet.pol || "—"} · 如由贵司安排`,"customs") : ""}`;
 }
 function feeBill(icon, title, sub, lines, withDownload){
   const value = totalByCurrency(lines);

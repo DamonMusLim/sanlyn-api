@@ -1,6 +1,7 @@
 // collab-billing.js — extracted from booking-collab.js (structural split 2026-07-31, zero behavior change)
 import { requireAuth } from "../../auth.js";
 import { derivePlanFactories } from "../booking-collab-view.js";
+import { handleCollabBillSummary } from "./collab-bill-summary.js";
 import { rawToHash } from "./collab-shared.js";
 
 const INTERNAL_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
@@ -465,85 +466,5 @@ async function handleCollabBillConfirm(req, res, pool) {
   if (pending.action === "delete") await pool.query(`UPDATE freight_supplier_bills SET rebill_status='voided', confirmed_at=NOW(), confirmed_by=$1, raw=COALESCE(raw,'{}'::jsonb)-'collab_pending', updated_at=NOW() WHERE id=$2`, [by, id]);
   else { const p = pending.proposed || rows[0]; await pool.query(`UPDATE freight_supplier_bills SET cost_category=$1,amount=$2,currency=$3,qty=$4,unit_price=$5,charge_basis=$6,canonical_category=$1,currency_norm=$3,rebill_status=NULL,confirmed_at=NOW(),confirmed_by=$7,raw=COALESCE(raw,'{}'::jsonb)-'collab_pending',updated_at=NOW() WHERE id=$8`, [p.cost_category, p.amount, p.currency, p.qty, p.unit_price, p.charge_basis, by, id]); }
   return res.json({ ok: true, status: "accepted" });
-}
-// QUOTE_PORTAL 2026-08-08 Damon:「他们不是有报价表？点击可以跳转到他们的报价中心上，
-// 我们的一切原则，不重造。」—— 报价中心早就有(SPA /forwarder-quote/:code)，
-// 短码明文存在 forwarder_portal_tokens.code，按看单方自己的公司反查即可，不新建页面。
-// 只给【看单方自己的】那一个，不给同票其他方 —— 否则货代能点进车队的报价中心。
-const OWN_COMPANY_COL = {
-  supplier_portal:  "forwarder_company_id",
-  trucking_booking: "trucking_company_id",
-  broker_booking:   "customs_broker_id",
-};
-async function ownQuotePortal(pool, planId, role) {
-  const col = OWN_COMPANY_COL[role];
-  if (!col) return null;
-  try {
-    const { rows } = await pool.query(
-      `SELECT t.code, t.forwarder_co, t.expires_at > NOW() AS alive
-         FROM shipping_plans sp
-         JOIN forwarder_portal_tokens t ON t.company_id = sp.${col}
-        WHERE sp.id = $1
-        ORDER BY t.expires_at DESC
-        LIMIT 1`, [planId]);
-    const r = rows[0];
-    if (!r || !r.code) return null;
-    return { url: "/forwarder-quote/" + encodeURIComponent(r.code), company: r.forwarder_co || "", expired: !r.alive };
-  } catch (e) {
-    console.warn("[collab-billing] ownQuotePortal:", e.message);
-    return null; // 报价中心查不到就不显示入口，绝不给死链
-  }
-}
-async function handleCollabBillSummary(req, res, pool) {
-  const token = req.query && req.query.token;
-  let planId = req.query && req.query.plan_id, internal = false;
-  let auth = null;
-  if (token) { auth = await readBillToken(pool, token); if (!auth || !auth.planId) return res.status(403).json({ ok: false, error: "链接无效或已过期" }); planId = auth.planId; internal = INTERNAL_PROFILES.has(cleanText(auth.meta.field_profile)); }
-  else { if (!requireAuth(req, res)) return; internal = true; }
-  if (!planId) return res.status(400).json({ ok: false, error: "plan_id 必填" });
-  const plan = await billPlan(pool, planId), blNo = plan && (plan.bl_no || plan.hbl_no);
-  if (!plan) return res.status(404).json({ ok: false, error: "找不到出货计划" });
-  if (!blNo) return res.status(400).json({ ok: false, error: "BL 尚未录入，不能汇总账单" });
-  const { rows } = await pool.query(`SELECT id,cost_category,amount,currency,qty,unit_price,charge_basis,supplier,supplier_type,confirmed_at,raw->'collab_pending' AS pending FROM freight_supplier_bills WHERE bl_no=$1 AND COALESCE(rebill_status,'') <> 'voided'`, [blNo]);
-  const segs = { ocean: [], trucking: [], port_charge: [], customs: [] };
-  for (const r of rows) (segs[segmentForCategory(r.cost_category)] || segs.port_charge).push(r);
-  const segment = (key) => { const rs = segs[key] || [], pending = rs.filter(r => r.pending && r.pending.status), confirmed = rs.filter(r => r.confirmed_at && !(r.pending && r.pending.status)); // SEGMENT_LINES 2026-08-08：原来只返回总额不返回费目明细，
-    // 于是前端展开后没东西可画，只能显示一条「未填写金额」的死杠 ——
-    // 而这一段明明有钱(拖车费 5,600 CNY)。补上逐条明细，展开才有内容。
-    const lineOut = rs.map(r => ({
-      name: r.cost_category || "费用",
-      qty: r.qty == null ? null : Number(r.qty),
-      unit_price: r.unit_price == null ? null : Number(r.unit_price),
-      amount: r.amount == null ? null : Number(r.amount),
-      currency: r.currency || "CNY",
-      charge_basis: r.charge_basis || null,
-      confirmed: !!r.confirmed_at,
-      pending: !!(r.pending && r.pending.status),
-    }));
-    return { status: pending.length ? "待确认" : confirmed.length ? "已定" : rs.length ? "已录入" : "待贵司填", reported_by: [...new Set(rs.map(r => r.supplier || r.supplier_type).filter(Boolean))], amount: totalsByCurrency(rs), pending_amount: totalsByCurrency(pending), lines: lineOut }; };
-  // 🔴 2026-08-08 修越权：原来不分角色，四段全返回 —— 实测车队 token 能拿到
-  // 海运费段以及货代公司名。权限矩阵定的是【钱只给货代】，车队只看拖车费、
-  // 报关行只看报关费。上一轮修了提报/改价的跨段越权，汇总这条漏了。
-  // SUMMARY_SCOPED
-  const SEG_BY_ROLE = {
-    supplier_portal:  ["ocean", "trucking", "port_charge", "customs"], // 货代=我方付款对象,全段可见
-    trucking_booking: ["trucking"],
-    broker_booking:   ["customs"],
-  };
-  const visibleSegs = internal
-    ? ["ocean", "trucking", "port_charge", "customs"]
-    : (SEG_BY_ROLE[auth && auth.role] || []);
-  const segments = {};
-  for (const k of visibleSegs) segments[k] = segment(k);
-  const out = { ok: true, shipping_plan_id: plan.id, bl_no: blNo, segments };
-  if (!internal && auth) {
-    const qp = await ownQuotePortal(pool, plan.id, auth.role);
-    if (qp && !qp.expired) out.quote_portal = qp;
-  }
-  if (internal) {
-    const refs = await pool.query(`SELECT (SELECT row_to_json(lc) FROM local_charges lc WHERE ($1='' OR lc.pol ILIKE $1) AND ($2='' OR lc.pod ILIKE $2) ORDER BY lc.updated_at DESC LIMIT 1) AS local_charge_last,(SELECT json_agg(x) FROM (SELECT company_name, container_type, cost_total, sell_total, updated_at FROM local_charges WHERE ($1='' OR pol ILIKE $1) AND ($2='' OR pod ILIKE $2) ORDER BY updated_at DESC LIMIT 5) x) AS route_base`, [plan.pol || "", plan.pod || ""]);
-    out.references = { local_charges_last: refs.rows[0].local_charge_last || null, route_base: refs.rows[0].route_base || [], declaration_stats: await declarationStats(pool, plan.id) };
-  }
-  return res.json(out);
 }
 export { handleSetFactoryBill, handleConfirmFactoryBill, handlePartyDefaults, handleSetPartyDefault, handlePartyBillingStatus, handleSetPartyBilling, handleCollabBillSubmit, handleCollabBillConfirm, handleCollabBillSummary };

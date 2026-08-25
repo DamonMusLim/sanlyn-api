@@ -1,5 +1,5 @@
-const FWD_SHEET_UI_VERSION = "v2.2.0";
-const FWD_SHEET_UI_DATE = "2026-08-08";
+const FWD_SHEET_UI_VERSION = "v2026.08.24-1";
+const FWD_SHEET_UI_DATE = "2026-08-24";
 const API = "/api/db/booking-collab";
 const INVOICE_API = "/api/db/invoice-collab-confirm";
 const token = new URLSearchParams(location.search).get("token") || "";
@@ -150,8 +150,9 @@ function renderAll(){
   if (_co) _co.textContent = forwarderName(s) || "—";
   if (_l2) _l2.textContent = [bl, String(rel.label || "").replace(/ · .*/, ""), cntrSummary(s)].filter(Boolean).join(" · ");
   if (_l3) _l3.textContent = route || "";
-  $("agrTag").className = state.segments.includes("truck") ? "flag urgent" : "flag";
-  $("agrTag").textContent = state.segments.includes("truck") ? tr("fwd.truckDelegated") : tr("fwd.truckReview");
+  const hasTruck = state.segments.includes("truck");
+  $("agrTag").className = hasTruck ? "flag urgent" : "flag";
+  $("agrTag").textContent = hasTruck ? tr("fwd.truckDelegated") : "海运";
   $("etdV").textContent = fmtD(s.etd);
   $("gateV").textContent = fmtDT(s.cargo_cutoff || s.gate_in_cutoff || s.cutoff_date);
   $("vgmV").textContent = fmtAutoAfterSo(s.vgm_cutoff || s.vgm_deadline);
@@ -170,6 +171,8 @@ function renderAll(){
 
 function renderBoxMode(){
   const theirTruck = Array.isArray(state.segments) && state.segments.includes("truck");
+  const section = $("sectionTruck");
+  if(section) section.style.display = theirTruck ? "" : "none";
   const sub = $("boxSub"), badge = $("boxBadge"), acts = $("boxActs");
   if(!acts) return;
   if(theirTruck){
@@ -287,6 +290,10 @@ function renderContainerLines(s){
   }).join("<br>");
 }
 	function renderTruck(){
+	  if(!(Array.isArray(state.segments) && state.segments.includes("truck"))){
+	    $("truckBody").innerHTML = "";
+	    return;
+	  }
 	  const detail = state.sheet.trucking_detail || {};
 	  const list = Array.isArray(detail.vehicles) && detail.vehicles.length
 	    ? detail.vehicles
@@ -323,136 +330,6 @@ function renderContainerLines(s){
 	  });
 }
 
-function allowedLine(l){
-  const keys = Object.keys(l || {}).join(" ").toLowerCase();
-  if(/cost|margin|profit|gross|purchase|local_charges|base/.test(keys)) return false;
-  return l && (l.amount != null || l.unit_price != null || l.name || l.cost_category);
-}
-function groupLines(lines){
-  const out = { ocean:[], local:[], truck:[], customs:[], other:[] };
-  lines.filter(allowedLine).forEach(l=>{
-    const name = String(l.name || l.cost_category || "").toLowerCase();
-    if(/ocean|freight|海运/.test(name)) out.ocean.push(l);
-    else if(/truck|拖车/.test(name)) out.truck.push(l);
-    else if(/custom|报关/.test(name)) out.customs.push(l);
-    else if(/local|thc|doc|seal|港杂|文件|铅封|码头/.test(name)) out.local.push(l);
-    else out.other.push(l);
-  });
-  return out;
-}
-function lineAmount(l){
-  const amount = l.amount != null ? l.amount : Number(l.unit_price || 0) * Number(l.qty || 1);
-  return money(amount, l.currency);
-}
-function totalByCurrency(lines){
-  const map = {};
-  lines.filter(allowedLine).forEach(l=>{
-    const cur = l.currency || "CNY";
-    const n = Number(l.amount != null ? l.amount : Number(l.unit_price || 0) * Number(l.qty || 1));
-    if(Number.isFinite(n)) map[cur] = (map[cur] || 0) + n;
-  });
-  return Object.keys(map).map(cur => money(map[cur], cur)).join(" + ") || "—";
-}
-function amountText(v){
-  if(!v) return "";
-  if(typeof v === "string") return v;
-  return Object.keys(v).map(cur => money(v[cur], cur)).join(" + ");
-}
-function segAmount(key, fallback){
-  const seg = state.bill.segments && state.bill.segments[key];
-  if(seg && seg.amount) return amountText(seg.amount);
-  return totalByCurrency(fallback || []);
-}
-function segStatus(key, lines){
-  const seg = (state.bill.segments || {})[key] || {};
-  const s = String(seg.status || ""), a = amountText(seg.amount);
-  if(s === "已定") return { cls:"ok", label:tr("fwd.billFixed") };
-  if(s === "待确认") return { cls:"", label:tr("fwd.billPending") };
-  if(s === "已录入" || lines.length || a) return { cls:"", label:tr("fwd.billEntered") };
-  return { cls:"", label:tr("fwd.billNeedInput") };
-}
-	function renderFees(){
-	  const lines = Array.isArray(state.invoice.bill_lines) ? state.invoice.bill_lines.filter(allowedLine) : [];
-	  const g = groupLines(lines);
-	  g.local = g.local.concat(g.other);
-	  $("feeBody").innerHTML = [
-	    feeVisible("ocean","ocean",g.ocean) ? feePanel("ocean", "🚢", "海运费 Ocean Freight", cntrSummary(state.sheet), g.ocean, "ocean") : "",
-	    feeVisible("truck","trucking",g.truck) ? feePanel("truck", "🚚", "拖车费 Trucking", "报价前请看提货地址", g.truck, "trucking") : "",
-    feeAllowed("ocean") ? feePanel("local", "🏗", tr("fwd.localFee"), "请逐项填写贵司报价", g.local, "port_charge", true) : "",
-	    feeVisible("customs","customs",g.customs) ? feePanel("customs", "📋", "报关费 Customs", scrub(state.sheet.pol || "—"), g.customs, "customs") : ""
-	  ].join("") + billConfirmBox();
-	  $("arV").textContent = totalByCurrency(lines);
-	  $("arDue").textContent = lines.length ? tr("fwd.billConfirm") : humanBillHint(state);
-	}
-	function feeAllowed(roleSeg){
-	  const scope = Array.isArray(state.segments) && state.segments.length ? state.segments : ["ocean","truck","customs"];
-	  return scope.includes(roleSeg);
-	}
-	function feeVisible(roleSeg, billSeg, lines){
-	  if(!feeAllowed(roleSeg)) return false;
-	  const seg = (state.bill.segments || {})[billSeg] || {};
-	  return lines.length || seg.amount || seg.pending_amount || !/待报|无账单/.test(String(seg.status || ""));
-	}
-// 2026-08-08：展开区原来只认 state.invoice.bill_lines(这票是空的)，
-// 于是拖车费明明有 5,600 CNY，展开后却只有一条「未填写金额」死杠。
-// collab-bill-summary 现已返回每段费目明细，优先用它。
-function segLines(segKey, fallback){
-  const seg = (state.bill.segments || {})[segKey] || {};
-  if (Array.isArray(seg.lines) && seg.lines.length) return seg.lines;
-  return Array.isArray(fallback) ? fallback : [];
-}
-function basisText(b){
-  if (b === "per_container") return tr("fwd.basisPerCntr");
-  if (b === "per_bl") return tr("fwd.basisPerBl");
-  if (b === "per_declaration") return tr("fwd.basisPerDecl");
-  if (b === "per_item") return tr("fwd.basisPerItem");
-  return "";
-}
-// QUOTE_PORTAL_UI 2026-08-08 Damon:「他们不是有报价表？点击可以跳转到他们的报价中心上，
-// 我们的一切原则，不重造。」报价中心是现成的 SPA，这里只挂入口，不复制报价表。
-// 后端查不到/已过期就返回空 → 这里什么都不画，绝不给死链。
-function quotePortalRow(){
-  const qp = state.bill.quote_portal;
-  if (!qp || !qp.url) return "";
-  return `<a class="quote-jump" href="${esc(qp.url)}" target="_blank" rel="noopener">`
-       + `<span>${esc(tr("fwd.quotePortal"))}</span><span class="qj-arrow">→</span></a>`;
-}
-function feePanel(key, icon, title, sub, lines, segKey, editable){
-  const value = segAmount(segKey, lines);
-  const missing = value === "—" || /待报|待贵司填|无账单/.test(String((state.bill.segments || {})[segKey]?.status || ""));
-  const status = segStatus(segKey, lines);
-  const _ls = segLines(segKey, lines);
-  const rows = _ls.length ? _ls.map(l=>{
-    const nm = esc(scrub(l.name || l.cost_category || "费用"));
-    const bt = basisText(l.charge_basis);
-    const calc = (l.qty != null && l.unit_price != null) ? `${esc(String(l.unit_price))} × ${esc(String(l.qty))}` : "";
-    const amt = l.amount != null ? money(l.amount, l.currency) : (lineAmount(l) || "");
-    return `<div class="exp-row"><span>${nm}${bt ? ` <small class="dim">${esc(bt)}</small>` : ""}</span>`
-         + `<span class="mono">${calc ? `<small class="dim">${calc} = </small>` : ""}${esc(amt || tr("fwd.amountMissing"))}</span></div>`;
-  }).join("") : "";
-  return `<details class="exp">
-    <summary class="fee-head"><span class="bi">${icon}</span><div class="bt2"><b>${esc(title)}</b><span>${esc(sub || "—")}</span></div>
-      <div class="fee-actions"><span class="fee-chip ${status.cls}">${esc(status.label)}</span><span class="${missing ? "fee-missing" : "bv"}">${missing ? esc(tr("fwd.amountMissing")) : esc(value)}</span><span class="chev">▾</span></div></summary>
-    <div class="exp-body">${rows || `<div class="pending">${esc(tr("fwd.amountMissing"))}</div>`}${editable ? feeInputRows() : ""}${quotePortalRow()}</div>
-  </details>`;
-}
-function feeInputRows(){
-  return `<div class="fee-form">
-    <input id="feeName" value="${esc(tr("fwd.localFee"))}" aria-label="fee">
-    <select id="feeBasis" aria-label="计价单位"><option value="per_container">每柜 × N</option><option value="per_bl">整票 × 1</option></select>
-    <input id="feeUnit" type="number" min="0" step="0.01" placeholder="单价">
-    <button class="bdl" onclick="submitLocalFee()">${esc(tr("common.submit"))}</button>
-  </div>`;
-}
-	function billConfirmBox(){
-  const ocean = segAmount("ocean", []);
-  const truck = segAmount("trucking", []);
-  return `<div class="confirmbox on">
-    <div><b>${esc(tr("fwd.billConfirm"))}</b><div class="tip">${esc(tr("fwd.billRange", { ocean, truck }))}</div></div>
-    <label class="fe-rem"><input id="billCheck" type="checkbox" ${state.billLocked ? "checked disabled" : ""}> ${esc(tr("fwd.billCheck"))}</label>
-    <button class="btn ok" onclick="confirmBillLock()" ${state.billLocked ? "disabled" : ""}>${state.billLocked ? esc(tr("fwd.locked")) : esc(tr("fwd.billConfirm"))}</button>
-	  </div>`;
-	}
 	function renderTodos(){
 	  const s = state.sheet, tasks = [];
 	  const vehs = ((s.trucking_detail && s.trucking_detail.vehicles) || s.containers_detail || []);
@@ -461,7 +338,7 @@ function feeInputRows(){
 	  const portSeg = (state.bill.segments || {}).port_charge || {};
 	  if(!hasUpload(/(^|[^A-Z])S\/?O([^A-Z]|$)|放舱|订舱确认|舱单|manifest/i)) tasks.push(["待传 SO 订舱确认","sectionUpload"]);
 	  if(!hasUpload(/\bBL\b|提单/i)) tasks.push(["待传提单 B/L","sectionUpload"]);
-	  if(feeAllowed("ocean") && segAmount("port_charge", []) === "—" && !portSeg.pending_amount) tasks.push(["待填港杂费报价","sectionFees"]);
+	  if(feeAllowed("port_charge") && segAmount("port_charge", []) === "—" && !portSeg.pending_amount) tasks.push(["待填港杂费报价","sectionFees"]);
 	  if(!state.billLocked) tasks.push(["待确认本票账单","sectionFees"]);
 	  if(missVeh) tasks.push(["待回填车辆与司机","sectionTruck"]);
 	  if(missCntr) tasks.push(["待确认箱号封号","sectionTruck"]);
@@ -534,7 +411,7 @@ document.getElementById("sheet").addEventListener("click", e => {
 });
 window.onCollabI18nChange = function(){
   if(!state.sheet || !Object.keys(state.sheet).length) return;
-  $("agrTag").textContent = state.segments.includes("truck") ? tr("fwd.truckDelegated") : tr("fwd.truckReview");
+  $("agrTag").textContent = state.segments.includes("truck") ? tr("fwd.truckDelegated") : "海运";
   $("soHint").textContent = uploadedHint(/(^|[^A-Z])S\/?O([^A-Z]|$)|放舱|订舱确认|舱单|manifest/i, tr("fwd.soHint"));
   $("blHint").textContent = uploadedHint(/\bBL\b|提单/i, tr("fwd.blHint"));
   renderRef(); renderReceipts(); renderDocs(releaseMeta(state.sheet.release_type)); renderCarrierReq(); renderBoxMode(); renderFees(); renderTodos();
