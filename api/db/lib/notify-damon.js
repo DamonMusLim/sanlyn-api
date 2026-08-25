@@ -16,7 +16,11 @@ async function registerTask({ title, applicant, url }) {
     const { getPool } = await import("../pool.js").catch(() => ({ getPool: null }));
     let pool = null;
     if (getPool) pool = getPool();
-    if (!pool) { const pg = await import("pg"); pool = new pg.default.Pool({ connectionString: process.env.DATABASE_URL || "postgres://sanlyn_admin:Snlnb7f92c74d6fbaa8b97b0379b@127.0.0.1:5432/sanlyn_db" }); }
+    if (!pool) {
+      if (!process.env.DATABASE_URL) return { ok: false, error: "no DB pool available (getPool unavailable and DATABASE_URL unset)" };
+      const pg = await import("pg");
+      pool = new pg.default.Pool({ connectionString: process.env.DATABASE_URL });
+    }
     const id = ("clb-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)).slice(0, 32);
     await pool.query(
       `INSERT INTO tasks (id,title,status,mode,source,priority,domain,task_type,level,current_holder,current_holder_role,relay_path,reason,notify_stage,created_at)

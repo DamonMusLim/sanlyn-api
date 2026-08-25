@@ -11,12 +11,18 @@ import pg from "pg";
 import dotenv from "dotenv";
 dotenv.config({ path: new URL("../../.env.local", import.meta.url) });
 
+const requiredDbEnv = ["PG_HOST", "PG_DATABASE", "PG_USER", "PG_PASSWORD"];
+const missingDbEnv = requiredDbEnv.filter((key) => !process.env[key]?.trim());
+if (missingDbEnv.length) {
+  throw new Error("[orders-recompute] missing required DB env vars: " + missingDbEnv.join(", "));
+}
+
 const pool = new pg.Pool({
-  host:     process.env.DB_HOST     || "127.0.0.1",
-  port:     parseInt(process.env.DB_PORT || "5432"),
-  database: process.env.DB_NAME     || "sanlyn_db",
-  user:     process.env.DB_USER     || "sanlyn_admin",
-  password: process.env.DB_PASSWORD || "Snlnb7f92c74d6fbaa8b97b0379b",
+  host:     process.env.PG_HOST,
+  port:     parseInt(process.env.PG_PORT || "5432"),
+  database: process.env.PG_DATABASE,
+  user:     process.env.PG_USER,
+  password: process.env.PG_PASSWORD,
   max: 5,
 });
 
