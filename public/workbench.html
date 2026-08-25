@@ -17,6 +17,7 @@
             font-size: 14px;
             line-height: 1.5;
             display: flex;
+            flex-direction: column;
             min-height: 100vh;
         }
         /* ===== 左侧栏 ===== */
@@ -28,7 +29,6 @@
             flex-shrink: 0;
             display: flex;
             flex-direction: column;
-            min-height: 100vh;
             align-self: stretch;
         }
         .sidebar-title {
@@ -127,7 +127,6 @@
             align-items: center;
             padding: 0 24px;
             color: #fff;
-            margin: 0 -24px 0;
             justify-content: space-between;
         }
         .top-nav-left {
@@ -191,7 +190,6 @@
             padding: 0 24px;
             gap: 24px;
             border-bottom: 1px solid #e5e7eb;
-            margin: 0 -24px 20px;
         }
         .quick-item {
             display: flex;
@@ -612,11 +610,9 @@
                 padding: 0 16px 40px;
             }
             .top-nav {
-                margin: 0 -16px 0;
                 padding: 0 16px;
             }
             .quick-bar {
-                margin: 0 -16px 20px;
                 padding: 0 16px;
                 overflow-x: auto;
             }
@@ -627,315 +623,324 @@
                 flex-direction: column;
             }
         }
+        /* 新增布局容器 */
+        .layout {
+            display: flex;
+            flex: 1;
+            align-items: stretch;
+        }
     </style>
 </head>
 <body>
-    <!-- 左侧栏 -->
-    <aside class="sidebar">
-        <div class="sidebar-title">工作台</div>
-        <div class="nav-item active">
-            <span class="icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            </span> 工作台
+    <!-- 顶部导航 -->
+    <div class="top-nav">
+        <div class="top-nav-left">
+            <span class="product-name">洋宝宝 · 物流系统</span>
+            <div class="nav-links">
+                <a href="#">海运</a>
+                <a href="#">报关</a>
+                <a href="#">财务</a>
+                <a href="#">数据</a>
+            </div>
         </div>
-        <div class="nav-item">
-            <span class="icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>
-            </span> 订舱管理 <span class="arrow">▾</span>
+        <div class="top-nav-right">
+            <span class="bell">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                <span class="badge">3</span>
+            </span>
+            <span class="user-name">上海洋宝宝国际物流有限公司</span>
         </div>
-        <div class="submenu">
-            <a href="#">订舱列表 <span class="badge">待建</span></a>
-            <a href="#">新建订舱 <span class="badge">待建</span></a>
-        </div>
-        <div class="nav-item">
-            <span class="icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M15 9.5c0-1.5-1.5-2.5-3-2.5s-3 1-3 2.5 1.5 2.5 3 2.5 3 1 3 2.5-1.5 2.5-3 2.5-3-1-3-2.5"/></svg>
-            </span> 财务管理 <span class="arrow">▾</span>
-        </div>
-        <div class="submenu">
-            <a href="#">待支付 <span class="badge">待建</span></a>
-            <a href="#">已支付 <span class="badge">待建</span></a>
-            <a href="#">开票记录 <span class="badge">待建</span></a>
-        </div>
-        <div class="nav-item">
-            <span class="icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
-            </span> 提单管理
-        </div>
-        <div class="nav-item">
-            <span class="icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18M8 4v16"/></svg>
-            </span> 盯箱宝 <span class="arrow">▾</span>
-        </div>
-        <div class="submenu">
-            <a href="#">出口查询 <span class="badge">待建</span></a>
-            <a href="#">进口查询 <span class="badge">待建</span></a>
-        </div>
-        <div class="nav-item">
-            <span class="icon">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>
-            </span> 企业信息 <span class="arrow">▾</span>
-        </div>
-        <div class="submenu">
-            <a href="#">公司资料 <span class="badge">待建</span></a>
-            <a href="#">同事管理 <span class="badge">待建</span></a>
-        </div>
-        <div class="sidebar-footer">上海洋宝宝国际物流有限公司</div>
-    </aside>
+    </div>
+    <!-- 快捷入口 -->
+    <div class="quick-bar">
+        <div class="quick-item"><span class="dot"></span> 海运总表 /ocean</div>
+        <div class="quick-item"><span class="dot"></span> 价表总台 /rates</div>
+        <div class="quick-item"><span class="dot"></span> 录入表单 /ship-entry</div>
+        <div class="quick-item"><span class="dot"></span> 主表 /ship-grid</div>
+    </div>
 
-    <!-- 主内容 -->
-    <div class="main">
-        <!-- 顶部导航 -->
-        <div class="top-nav">
-            <div class="top-nav-left">
-                <span class="product-name">洋宝宝 · 物流系统</span>
-                <div class="nav-links">
-                    <a href="#">海运</a>
-                    <a href="#">报关</a>
-                    <a href="#">财务</a>
-                    <a href="#">数据</a>
-                </div>
+    <!-- 布局容器 -->
+    <div class="layout">
+        <!-- 左侧栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-title">工作台</div>
+            <div class="nav-item active">
+                <span class="icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                </span> 工作台
             </div>
-            <div class="top-nav-right">
-                <span class="bell">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-                    <span class="badge">3</span>
-                </span>
-                <span class="user-name">上海洋宝宝国际物流有限公司</span>
+            <div class="nav-item">
+                <span class="icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>
+                </span> 订舱管理 <span class="arrow">▾</span>
             </div>
-        </div>
-        <!-- 快捷入口 -->
-        <div class="quick-bar">
-            <div class="quick-item"><span class="dot"></span> 海运总表 /ocean</div>
-            <div class="quick-item"><span class="dot"></span> 价表总台 /rates</div>
-            <div class="quick-item"><span class="dot"></span> 录入表单 /ship-entry</div>
-            <div class="quick-item"><span class="dot"></span> 主表 /ship-grid</div>
-        </div>
+            <div class="submenu">
+                <a href="#">订舱列表 <span class="badge">待建</span></a>
+                <a href="#">新建订舱 <span class="badge">待建</span></a>
+            </div>
+            <div class="nav-item">
+                <span class="icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M15 9.5c0-1.5-1.5-2.5-3-2.5s-3 1-3 2.5 1.5 2.5 3 2.5 3 1 3 2.5-1.5 2.5-3 2.5-3-1-3-2.5"/></svg>
+                </span> 财务管理 <span class="arrow">▾</span>
+            </div>
+            <div class="submenu">
+                <a href="#">待支付 <span class="badge">待建</span></a>
+                <a href="#">已支付 <span class="badge">待建</span></a>
+                <a href="#">开票记录 <span class="badge">待建</span></a>
+            </div>
+            <div class="nav-item">
+                <span class="icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
+                </span> 提单管理
+            </div>
+            <div class="nav-item">
+                <span class="icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18M8 4v16"/></svg>
+                </span> 盯箱宝 <span class="arrow">▾</span>
+            </div>
+            <div class="submenu">
+                <a href="#">出口查询 <span class="badge">待建</span></a>
+                <a href="#">进口查询 <span class="badge">待建</span></a>
+            </div>
+            <div class="nav-item">
+                <span class="icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>
+                </span> 企业信息 <span class="arrow">▾</span>
+            </div>
+            <div class="submenu">
+                <a href="#">公司资料 <span class="badge">待建</span></a>
+                <a href="#">同事管理 <span class="badge">待建</span></a>
+            </div>
+            <div class="sidebar-footer">上海洋宝宝国际物流有限公司</div>
+        </aside>
 
-        <!-- 页面标题 -->
-        <div class="page-header">
-            <h1>业务管理</h1>
-            <label class="switch-label">
-                <input type="checkbox" checked> 只看自己的订单
-            </label>
-        </div>
+        <!-- 主内容 -->
+        <div class="main">
+            <!-- 页面标题 -->
+            <div class="page-header">
+                <h1>业务管理</h1>
+                <label class="switch-label">
+                    <input type="checkbox" checked> 只看自己的订单
+                </label>
+            </div>
 
-        <!-- 三组卡片 -->
-        <div class="card-groups">
-            <!-- 组1 -->
-            <div class="card-group">
-                <div class="group-title">待办事项</div>
-                <div class="card-list">
-                    <div class="card-item" onclick="go('/ocean')">
-                        <div class="card-icon orange-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5"/></svg>
+            <!-- 三组卡片 -->
+            <div class="card-groups">
+                <!-- 组1 -->
+                <div class="card-group">
+                    <div class="group-title">待办事项</div>
+                    <div class="card-list">
+                        <div class="card-item" onclick="go('/ocean')">
+                            <div class="card-icon orange-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.5"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number orange">1056</div>
+                                <div class="card-label">缺卖价</div>
+                            </div>
+                            <div class="card-nav">→ 海运总表</div>
                         </div>
-                        <div class="card-info">
-                            <div class="card-number orange">1056</div>
-                            <div class="card-label">缺卖价</div>
+                        <div class="card-item" onclick="go('/ocean')">
+                            <div class="card-icon red-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number red">222</div>
+                                <div class="card-label">费目不明</div>
+                            </div>
+                            <div class="card-nav">→ 海运总表</div>
                         </div>
-                        <div class="card-nav">→ 海运总表</div>
+                        <div class="card-item" onclick="go('/ocean')">
+                            <div class="card-icon blue-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number dark">144</div>
+                                <div class="card-label">待开账单</div>
+                            </div>
+                            <div class="card-nav">→ 海运总表</div>
+                        </div>
                     </div>
-                    <div class="card-item" onclick="go('/ocean')">
-                        <div class="card-icon red-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
+                </div>
+                <!-- 组2 -->
+                <div class="card-group">
+                    <div class="group-title">出运跟踪</div>
+                    <div class="card-list">
+                        <div class="card-item" onclick="go('/ocean')">
+                            <div class="card-icon blue-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number dark">16</div>
+                                <div class="card-label">在办</div>
+                            </div>
+                            <div class="card-nav">→ 海运总表</div>
                         </div>
-                        <div class="card-info">
-                            <div class="card-number red">222</div>
-                            <div class="card-label">费目不明</div>
+                        <div class="card-item" onclick="go('/ocean')">
+                            <div class="card-icon orange-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number orange">27</div>
+                                <div class="card-label">缺ETA</div>
+                            </div>
+                            <div class="card-nav">→ 海运总表</div>
                         </div>
-                        <div class="card-nav">→ 海运总表</div>
+                        <div class="card-item" onclick="go('/ocean')">
+                            <div class="card-icon orange-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number orange">6</div>
+                                <div class="card-label">缺提单号</div>
+                            </div>
+                            <div class="card-nav">→ 海运总表</div>
+                        </div>
                     </div>
-                    <div class="card-item" onclick="go('/ocean')">
-                        <div class="card-icon blue-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
+                </div>
+                <!-- 组3 -->
+                <div class="card-group">
+                    <div class="group-title">数据缺口</div>
+                    <div class="card-list">
+                        <div class="card-item" onclick="go('/ocean')">
+                            <div class="card-icon orange-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number orange">190</div>
+                                <div class="card-label">缺条款</div>
+                            </div>
+                            <div class="card-nav">→ 海运总表</div>
                         </div>
-                        <div class="card-info">
-                            <div class="card-number dark">144</div>
-                            <div class="card-label">待开账单</div>
+                        <div class="card-item" onclick="go('/ocean')">
+                            <div class="card-icon red-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number red">610</div>
+                                <div class="card-label">挂不到票</div>
+                            </div>
+                            <div class="card-nav">→ 海运总表</div>
                         </div>
-                        <div class="card-nav">→ 海运总表</div>
+                        <div class="card-item" onclick="go('/rates')">
+                            <div class="card-icon orange-bg">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+                            </div>
+                            <div class="card-info">
+                                <div class="card-number orange">14</div>
+                                <div class="card-label">本周价待填</div>
+                            </div>
+                            <div class="card-nav">→ 价表总台</div>
+                        </div>
                     </div>
                 </div>
             </div>
-            <!-- 组2 -->
-            <div class="card-group">
-                <div class="group-title">出运跟踪</div>
-                <div class="card-list">
-                    <div class="card-item" onclick="go('/ocean')">
-                        <div class="card-icon blue-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>
-                        </div>
-                        <div class="card-info">
-                            <div class="card-number dark">16</div>
-                            <div class="card-label">在办</div>
-                        </div>
-                        <div class="card-nav">→ 海运总表</div>
-                    </div>
-                    <div class="card-item" onclick="go('/ocean')">
-                        <div class="card-icon orange-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-                        </div>
-                        <div class="card-info">
-                            <div class="card-number orange">27</div>
-                            <div class="card-label">缺ETA</div>
-                        </div>
-                        <div class="card-nav">→ 海运总表</div>
-                    </div>
-                    <div class="card-item" onclick="go('/ocean')">
-                        <div class="card-icon orange-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
-                        </div>
-                        <div class="card-info">
-                            <div class="card-number orange">6</div>
-                            <div class="card-label">缺提单号</div>
-                        </div>
-                        <div class="card-nav">→ 海运总表</div>
-                    </div>
-                </div>
-            </div>
-            <!-- 组3 -->
-            <div class="card-group">
-                <div class="group-title">数据缺口</div>
-                <div class="card-list">
-                    <div class="card-item" onclick="go('/ocean')">
-                        <div class="card-icon orange-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>
-                        </div>
-                        <div class="card-info">
-                            <div class="card-number orange">190</div>
-                            <div class="card-label">缺条款</div>
-                        </div>
-                        <div class="card-nav">→ 海运总表</div>
-                    </div>
-                    <div class="card-item" onclick="go('/ocean')">
-                        <div class="card-icon red-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg>
-                        </div>
-                        <div class="card-info">
-                            <div class="card-number red">610</div>
-                            <div class="card-label">挂不到票</div>
-                        </div>
-                        <div class="card-nav">→ 海运总表</div>
-                    </div>
-                    <div class="card-item" onclick="go('/rates')">
-                        <div class="card-icon orange-bg">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
-                        </div>
-                        <div class="card-info">
-                            <div class="card-number orange">14</div>
-                            <div class="card-label">本周价待填</div>
-                        </div>
-                        <div class="card-nav">→ 价表总台</div>
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- 两栏 -->
-        <div class="two-columns">
-            <div class="left-panel">
-                <div class="panel-title">公告中心</div>
-                <div class="tabs">
-                    <span class="tab active">船司公告<span class="dot"></span></span>
-                    <span class="tab">下载专区<span class="dot"></span></span>
-                    <span class="tab">平台公告<span class="dot"></span></span>
-                    <span class="tab">船期<span class="dot"></span></span>
-                    <span class="tab">港口公告<span class="dot"></span></span>
-                    <span class="tab">用箱规则<span class="dot"></span></span>
+            <!-- 两栏 -->
+            <div class="two-columns">
+                <div class="left-panel">
+                    <div class="panel-title">公告中心</div>
+                    <div class="tabs">
+                        <span class="tab active">船司公告<span class="dot"></span></span>
+                        <span class="tab">下载专区<span class="dot"></span></span>
+                        <span class="tab">平台公告<span class="dot"></span></span>
+                        <span class="tab">船期<span class="dot"></span></span>
+                        <span class="tab">港口公告<span class="dot"></span></span>
+                        <span class="tab">用箱规则<span class="dot"></span></span>
+                    </div>
+                    <div class="filter-row">
+                        <input type="text" placeholder="关键词" style="width:140px;">
+                        <select>
+                            <option>全部船司</option>
+                            <option>CMA</option>
+                            <option>ONE</option>
+                            <option>COSCO</option>
+                        </select>
+                        <button>查询</button>
+                        <button>重置</button>
+                    </div>
+                    <ul class="announce-list">
+                        <li class="announce-item">
+                            <span class="type-tag">费用</span>
+                            <span class="announce-title">【CMA】巴拿马附加费 CAN20 $250/TEU</span>
+                            <span class="pin-tag">置顶</span>
+                            <span class="announce-date">2026-08-26 生效</span>
+                        </li>
+                        <li class="announce-item">
+                            <span class="type-tag">费用</span>
+                            <span class="announce-title">【ONE】出口土耳其收取亏舱费</span>
+                            <span class="announce-date">2026-07-23</span>
+                        </li>
+                        <li class="announce-item">
+                            <span class="type-tag">公告</span>
+                            <span class="announce-title">【COSCO】订舱取消费</span>
+                            <span class="pin-tag">置顶</span>
+                            <span class="announce-date">2026-07-23</span>
+                        </li>
+                    </ul>
+                    <div class="pagination">
+                        <span>‹</span>
+                        <span class="active">1</span>
+                        <span>2</span>
+                        <span>3</span>
+                        <span>4</span>
+                        <span>5</span>
+                        <span>6</span>
+                        <span>…</span>
+                        <span>13</span>
+                        <span>›</span>
+                    </div>
+                    <div class="data-source">数据源:海管家船司公告 · 待接入自动抓取</div>
                 </div>
-                <div class="filter-row">
-                    <input type="text" placeholder="关键词" style="width:140px;">
-                    <select>
-                        <option>全部船司</option>
-                        <option>CMA</option>
-                        <option>ONE</option>
-                        <option>COSCO</option>
-                    </select>
-                    <button>查询</button>
-                    <button>重置</button>
+                <div class="right-panel">
+                    <div class="panel-title">截单日历</div>
+                    <div class="calendar-header">
+                        <span>八月 2026</span>
+                        <div class="calendar-nav">
+                            <button>‹</button>
+                            <button>›</button>
+                        </div>
+                    </div>
+                    <div class="calendar-grid" id="calendarGrid"></div>
+                    <div class="calendar-note">未来7天无开航票</div>
                 </div>
-                <ul class="announce-list">
-                    <li class="announce-item">
-                        <span class="type-tag">费用</span>
-                        <span class="announce-title">【CMA】巴拿马附加费 CAN20 $250/TEU</span>
-                        <span class="pin-tag">置顶</span>
-                        <span class="announce-date">2026-08-26 生效</span>
-                    </li>
-                    <li class="announce-item">
-                        <span class="type-tag">费用</span>
-                        <span class="announce-title">【ONE】出口土耳其收取亏舱费</span>
-                        <span class="announce-date">2026-07-23</span>
-                    </li>
-                    <li class="announce-item">
-                        <span class="type-tag">公告</span>
-                        <span class="announce-title">【COSCO】订舱取消费</span>
-                        <span class="pin-tag">置顶</span>
-                        <span class="announce-date">2026-07-23</span>
-                    </li>
-                </ul>
-                <div class="pagination">
-                    <span>‹</span>
-                    <span class="active">1</span>
-                    <span>2</span>
-                    <span>3</span>
-                    <span>4</span>
-                    <span>5</span>
-                    <span>6</span>
-                    <span>…</span>
-                    <span>13</span>
-                    <span>›</span>
-                </div>
-                <div class="data-source">数据源:海管家船司公告 · 待接入自动抓取</div>
             </div>
-            <div class="right-panel">
-                <div class="panel-title">截单日历</div>
-                <div class="calendar-header">
-                    <span>八月 2026</span>
-                    <div class="calendar-nav">
-                        <button>‹</button>
-                        <button>›</button>
+
+            <!-- 统计 -->
+            <div class="stats-section">
+                <div class="stats-box">
+                    <div class="stats-header">
+                        <h3>订舱统计</h3>
+                        <button class="export-btn">导出</button>
+                    </div>
+                    <div class="stats-tabs">
+                        <span class="tab active">TEU统计</span>
+                        <span class="tab">票统计</span>
+                    </div>
+                    <div class="date-range">
+                        <input type="date" value="2026-08-01"> 至 <input type="date" value="2026-08-25">
+                    </div>
+                    <div class="stats-placeholder">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
+                        <span>待接入</span>
                     </div>
                 </div>
-                <div class="calendar-grid" id="calendarGrid"></div>
-                <div class="calendar-note">未来7天无开航票</div>
-            </div>
-        </div>
-
-        <!-- 统计 -->
-        <div class="stats-section">
-            <div class="stats-box">
-                <div class="stats-header">
-                    <h3>订舱统计</h3>
-                    <button class="export-btn">导出</button>
-                </div>
-                <div class="stats-tabs">
-                    <span class="tab active">TEU统计</span>
-                    <span class="tab">票统计</span>
-                </div>
-                <div class="date-range">
-                    <input type="date" value="2026-08-01"> 至 <input type="date" value="2026-08-25">
-                </div>
-                <div class="stats-placeholder">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
-                    <span>待接入</span>
-                </div>
-            </div>
-            <div class="stats-box">
-                <div class="stats-header">
-                    <h3>消费统计</h3>
-                    <button class="export-btn">导出</button>
-                </div>
-                <div class="stats-tabs">
-                    <span class="tab active">月份统计</span>
-                    <span class="tab">季度统计</span>
-                </div>
-                <div class="date-range">
-                    <input type="date" value="2026-08-01"> 至 <input type="date" value="2026-08-25">
-                </div>
-                <div class="stats-placeholder">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
-                    <span>待接入</span>
+                <div class="stats-box">
+                    <div class="stats-header">
+                        <h3>消费统计</h3>
+                        <button class="export-btn">导出</button>
+                    </div>
+                    <div class="stats-tabs">
+                        <span class="tab active">月份统计</span>
+                        <span class="tab">季度统计</span>
+                    </div>
+                    <div class="date-range">
+                        <input type="date" value="2026-08-01"> 至 <input type="date" value="2026-08-25">
+                    </div>
+                    <div class="stats-placeholder">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-6 4 3 5-8"/></svg>
+                        <span>待接入</span>
+                    </div>
                 </div>
             </div>
         </div>
