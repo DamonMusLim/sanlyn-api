@@ -41,6 +41,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/petstore-todo-export", () => import("./api/db/petstore-todo-export.js"));
   mount("/api/db/petstore-sync",        () => import("./api/db/petstore-sync.js"));
   mount("/api/db/petstore-product-detail", () => import("./api/db/petstore-product-detail.js"));
+  mount("/api/db/petstore-supervision", () => import("./api/db/petstore-supervision.js"));
   mount("/api/db/petstore-product-note",   () => import("./api/db/petstore-product-note.js"));
   mount("/api/db/petstore-intents",        () => import("./api/db/petstore-intents.js"));
   mount("/api/db/petstore-locks",          () => import("./api/db/petstore-locks.js"));
