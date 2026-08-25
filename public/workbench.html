@@ -12,41 +12,188 @@
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         }
         body {
-            background: #ffffff;
+            background: #f5f7fa;
             color: #1f2329;
             font-size: 14px;
             line-height: 1.5;
-            padding: 20px 24px 40px;
-            max-width: 1440px;
-            margin: 0 auto;
-        }
-        /* 顶部工具条 */
-        .top-toolbar {
             display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            gap: 12px;
-            padding-bottom: 16px;
-            border-bottom: 0.5px solid #e5e6eb;
-            margin-bottom: 20px;
+            min-height: 100vh;
         }
-        .toolbar-btn {
+        /* ===== 左侧栏 ===== */
+        .sidebar {
+            width: 190px;
             background: #fff;
-            border: 0.5px solid #c9cdd4;
-            border-radius: 4px;
-            padding: 6px 16px;
-            font-size: 13px;
-            color: #1f2329;
+            border-right: 1px solid #e5e6eb;
+            padding: 20px 0 0 0;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: sticky;
+            top: 0;
+        }
+        .sidebar-title {
+            font-size: 18px;
+            font-weight: 700;
+            padding: 0 20px 16px;
+            color: #111827;
+            letter-spacing: 0.5px;
+        }
+        .nav-item {
+            padding: 10px 16px 10px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #374151;
+            font-size: 14px;
             cursor: pointer;
-            transition: background 0.1s;
+            border-left: 4px solid transparent;
+            transition: all 0.1s;
+            position: relative;
         }
-        .toolbar-btn:hover {
-            background: #f5f6f7;
+        .nav-item.active {
+            background: #eff6ff;
+            border-left-color: #2563eb;
+            color: #2563eb;
+            font-weight: 500;
         }
-        .toolbar-btn:active {
-            background: #e9eaec;
+        .nav-item .icon {
+            width: 16px;
+            height: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #6b7280;
         }
-        /* 主标题行 */
+        .nav-item.active .icon {
+            color: #2563eb;
+        }
+        .nav-item .arrow {
+            margin-left: auto;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .submenu {
+            background: #f9fafb;
+            padding: 4px 0 8px 0;
+            border-left: 4px solid transparent;
+        }
+        .submenu a {
+            display: block;
+            padding: 6px 16px 6px 46px;
+            font-size: 13px;
+            color: #4b5563;
+            text-decoration: none;
+            border-left: 4px solid transparent;
+        }
+        .submenu a:hover {
+            background: #f3f4f6;
+            color: #2563eb;
+        }
+        .submenu a .badge {
+            color: #9ca3af;
+            font-size: 12px;
+            margin-left: 6px;
+        }
+        /* ===== 主内容区 ===== */
+        .main {
+            flex: 1;
+            padding: 0 24px 40px;
+            min-width: 0;
+        }
+        /* 顶部导航 */
+        .top-nav {
+            background: #1f2937;
+            height: 52px;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            color: #fff;
+            margin: 0 -24px 0;
+            justify-content: space-between;
+        }
+        .top-nav-left {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+        }
+        .product-name {
+            font-weight: 600;
+            font-size: 15px;
+            letter-spacing: 0.3px;
+        }
+        .nav-links {
+            display: flex;
+            gap: 24px;
+        }
+        .nav-links a {
+            color: #d1d5db;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .nav-links a:hover {
+            color: #fff;
+        }
+        .top-nav-right {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        .bell {
+            position: relative;
+            font-size: 18px;
+            color: #d1d5db;
+            cursor: pointer;
+        }
+        .bell .badge {
+            position: absolute;
+            top: -4px;
+            right: -8px;
+            background: #dc2626;
+            color: #fff;
+            font-size: 10px;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        .user-name {
+            font-size: 13px;
+            color: #e5e7eb;
+        }
+        /* 第二行快捷入口 */
+        .quick-bar {
+            background: #f9fafb;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            gap: 24px;
+            border-bottom: 1px solid #e5e6eb;
+            margin: 0 -24px 20px;
+        }
+        .quick-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #374151;
+            cursor: pointer;
+        }
+        .quick-item .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            background: #2563eb;
+        }
+        .quick-item:nth-child(2) .dot { background: #7c3aed; }
+        .quick-item:nth-child(3) .dot { background: #059669; }
+        .quick-item:nth-child(4) .dot { background: #d97706; }
+        /* 页面标题 */
         .page-header {
             display: flex;
             justify-content: space-between;
@@ -54,213 +201,176 @@
             margin-bottom: 20px;
         }
         .page-header h1 {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 600;
-            letter-spacing: 0.5px;
+            color: #111827;
         }
         .switch-label {
             display: flex;
             align-items: center;
             gap: 8px;
             font-size: 13px;
-            color: #4e5969;
+            color: #4b5563;
             cursor: pointer;
-            user-select: none;
         }
-        .switch-label input[type="checkbox"] {
+        .switch-label input {
+            accent-color: #2563eb;
             width: 16px;
             height: 16px;
-            accent-color: #3370ff;
-            cursor: pointer;
         }
-        /* 三组卡片 */
+        /* 卡片组 */
         .card-groups {
             display: flex;
+            flex-direction: column;
             gap: 24px;
             margin-bottom: 32px;
-            flex-wrap: wrap;
         }
         .card-group {
-            flex: 1 1 0;
-            min-width: 200px;
-            background: #fafbfc;
-            border: 0.5px solid #e5e6eb;
+            background: #fff;
+            border: 1px solid #e5e6eb;
             border-radius: 8px;
-            padding: 16px;
+            padding: 16px 20px;
         }
         .group-title {
             font-size: 15px;
             font-weight: 600;
-            color: #1f2329;
+            color: #111827;
             margin-bottom: 14px;
             padding-bottom: 8px;
-            border-bottom: 0.5px solid #e5e6eb;
+            border-bottom: 1px solid #f0f1f3;
         }
         .card-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
         }
         .card-item {
-            background: #ffffff;
-            border: 0.5px solid #e5e6eb;
-            border-radius: 6px;
-            padding: 12px 12px 10px;
+            background: #fff;
+            border: 1px solid #e5e6eb;
+            border-radius: 8px;
+            padding: 16px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 14px;
             cursor: pointer;
-            transition: background 0.1s;
+            transition: box-shadow 0.1s;
             position: relative;
         }
         .card-item:hover {
-            background: #f8f9fb;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
         }
         .card-icon {
-            width: 36px;
-            height: 36px;
-            border-radius: 6px;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 18px;
-            background: #f2f3f5;
-            border: 0.5px solid #e5e6eb;
             flex-shrink: 0;
+            background: #eff6ff;
+            color: #2563eb;
         }
+        .card-icon.red-bg { background: #fef2f2; color: #dc2626; }
+        .card-icon.orange-bg { background: #fffbeb; color: #d97706; }
+        .card-icon.blue-bg { background: #eff6ff; color: #2563eb; }
         .card-info {
             flex: 1;
             display: flex;
             flex-direction: column;
         }
         .card-number {
-            font-size: 24px;
+            font-size: 28px;
             font-weight: 700;
-            line-height: 1.2;
-            letter-spacing: -0.3px;
+            line-height: 1.1;
+            letter-spacing: -0.5px;
         }
+        .card-number.red { color: #dc2626; }
+        .card-number.orange { color: #d97706; }
+        .card-number.dark { color: #111827; }
         .card-label {
             font-size: 13px;
-            color: #4e5969;
-            margin-top: 2px;
+            color: #6b7280;
+            margin-top: 4px;
         }
         .card-nav {
             font-size: 12px;
-            color: #86909c;
-            margin-top: 4px;
-            text-align: right;
+            color: #9ca3af;
             position: absolute;
-            bottom: 6px;
+            bottom: 8px;
             right: 12px;
         }
-        /* 卡片颜色 */
-        .card-yellow {
-            background-color: #fffbe6;
-            border-color: #f5d97a;
-        }
-        .card-yellow .card-number {
-            color: #b8860b;
-        }
-        .card-red {
-            background-color: #fff1f0;
-            border-color: #f5a09a;
-        }
-        .card-red .card-number {
-            color: #c0392b;
-        }
-        .card-white {
-            background-color: #ffffff;
-            border-color: #e5e6eb;
-        }
-        .card-white .card-number {
-            color: #1f2329;
-        }
-        .card-gray {
-            background-color: #f7f8fa;
-            border-color: #e5e6eb;
-        }
-        .card-gray .card-number {
-            color: #a9aeb8;
-        }
-        /* 下方两栏 */
+        /* 两栏 */
         .two-columns {
             display: flex;
             gap: 24px;
             margin-bottom: 32px;
-            flex-wrap: wrap;
         }
-        .left-panel {
-            flex: 2;
-            min-width: 300px;
-            border: 0.5px solid #e5e6eb;
-            border-radius: 8px;
+        .left-panel, .right-panel {
             background: #fff;
-            padding: 16px;
-        }
-        .right-panel {
-            flex: 1;
-            min-width: 240px;
-            border: 0.5px solid #e5e6eb;
+            border: 1px solid #e5e6eb;
             border-radius: 8px;
-            background: #fff;
-            padding: 16px;
+            padding: 20px;
         }
+        .left-panel { flex: 2; }
+        .right-panel { flex: 1; }
         .panel-title {
             font-size: 16px;
             font-weight: 600;
-            margin-bottom: 12px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            margin-bottom: 16px;
+            color: #111827;
         }
         .tabs {
             display: flex;
-            gap: 4px;
-            border-bottom: 0.5px solid #e5e6eb;
-            margin-bottom: 12px;
-            flex-wrap: wrap;
+            gap: 2px;
+            border-bottom: 1px solid #e5e6eb;
+            margin-bottom: 16px;
         }
         .tab {
-            padding: 6px 14px;
+            padding: 8px 16px;
             font-size: 13px;
-            border: 0.5px solid transparent;
-            border-bottom: none;
-            border-radius: 4px 4px 0 0;
+            color: #6b7280;
             cursor: pointer;
-            color: #4e5969;
-            background: transparent;
+            border-bottom: 2px solid transparent;
+            position: relative;
         }
         .tab.active {
-            background: #fff;
-            border-color: #e5e6eb;
-            border-bottom: 2px solid #3370ff;
-            color: #1f2329;
+            color: #2563eb;
+            border-bottom-color: #2563eb;
             font-weight: 500;
+        }
+        .tab .dot {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 6px;
+            height: 6px;
+            background: #dc2626;
+            border-radius: 50%;
         }
         .filter-row {
             display: flex;
             gap: 8px;
-            align-items: center;
             margin-bottom: 16px;
             flex-wrap: wrap;
         }
         .filter-row input, .filter-row select {
             padding: 6px 10px;
-            border: 0.5px solid #c9cdd4;
+            border: 1px solid #d1d5db;
             border-radius: 4px;
             font-size: 13px;
             background: #fff;
         }
         .filter-row button {
-            padding: 6px 16px;
-            border: 0.5px solid #c9cdd4;
+            padding: 6px 14px;
+            border: 1px solid #d1d5db;
             background: #fff;
             border-radius: 4px;
             font-size: 13px;
             cursor: pointer;
         }
         .filter-row button:hover {
-            background: #f5f6f7;
+            background: #f9fafb;
         }
         .announce-list {
             list-style: none;
@@ -270,41 +380,59 @@
             align-items: center;
             gap: 12px;
             padding: 10px 0;
-            border-bottom: 0.5px solid #f0f1f3;
+            border-bottom: 1px solid #f0f1f3;
             font-size: 14px;
         }
         .announce-item:last-child {
             border-bottom: none;
         }
         .type-tag {
-            background: #f2f3f5;
+            background: #f3f4f6;
             border-radius: 4px;
             padding: 2px 8px;
             font-size: 12px;
-            color: #4e5969;
+            color: #4b5563;
             flex-shrink: 0;
         }
         .announce-title {
             flex: 1;
-            color: #1f2329;
+            color: #111827;
         }
         .pin-tag {
-            color: #e5484d;
+            color: #dc2626;
             font-size: 12px;
-            border: 0.5px solid #e5484d;
+            border: 1px solid #dc2626;
             border-radius: 3px;
             padding: 0 4px;
-            margin-left: 6px;
             flex-shrink: 0;
         }
         .announce-date {
-            color: #86909c;
+            color: #9ca3af;
             font-size: 13px;
             flex-shrink: 0;
         }
+        .pagination {
+            display: flex;
+            gap: 4px;
+            margin-top: 16px;
+            justify-content: flex-end;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        .pagination span {
+            padding: 4px 8px;
+            border: 1px solid #e5e6eb;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .pagination span.active {
+            background: #2563eb;
+            color: #fff;
+            border-color: #2563eb;
+        }
         .data-source {
             font-size: 12px;
-            color: #a9aeb8;
+            color: #9ca3af;
             margin-top: 12px;
             text-align: right;
         }
@@ -319,13 +447,9 @@
             font-weight: 600;
             font-size: 15px;
         }
-        .calendar-nav {
-            display: flex;
-            gap: 8px;
-        }
         .calendar-nav button {
             background: none;
-            border: 0.5px solid #c9cdd4;
+            border: 1px solid #d1d5db;
             border-radius: 4px;
             width: 26px;
             height: 26px;
@@ -342,44 +466,42 @@
         }
         .calendar-grid .weekday {
             font-weight: 500;
-            color: #4e5969;
+            color: #6b7280;
             padding: 6px 0;
             font-size: 12px;
         }
         .calendar-grid .day {
             padding: 6px 0;
             border-radius: 4px;
-            color: #1f2329;
+            color: #111827;
         }
         .calendar-grid .day.today {
-            background: #3370ff;
+            background: #2563eb;
             color: #fff;
             font-weight: 600;
         }
         .calendar-grid .day.other-month {
-            color: #c9cdd4;
+            color: #d1d5db;
         }
         .calendar-note {
             font-size: 12px;
-            color: #86909c;
+            color: #9ca3af;
             margin-top: 12px;
             text-align: center;
-            border-top: 0.5px solid #f0f1f3;
+            border-top: 1px solid #f0f1f3;
             padding-top: 10px;
         }
-        /* 统计占位 */
+        /* 统计 */
         .stats-section {
             display: flex;
             gap: 24px;
-            flex-wrap: wrap;
         }
         .stats-box {
             flex: 1;
-            min-width: 280px;
-            border: 0.5px solid #e5e6eb;
-            border-radius: 8px;
-            padding: 16px;
             background: #fff;
+            border: 1px solid #e5e6eb;
+            border-radius: 8px;
+            padding: 20px;
         }
         .stats-header {
             display: flex;
@@ -393,7 +515,7 @@
         }
         .stats-header .export-btn {
             padding: 4px 12px;
-            border: 0.5px solid #c9cdd4;
+            border: 1px solid #d1d5db;
             background: #fff;
             border-radius: 4px;
             font-size: 12px;
@@ -406,22 +528,22 @@
         }
         .stats-tabs .tab {
             padding: 4px 12px;
-            border: 0.5px solid #e5e6eb;
+            border: 1px solid #e5e6eb;
             border-radius: 4px;
             font-size: 13px;
             cursor: pointer;
             background: #fff;
         }
         .stats-tabs .tab.active {
-            background: #f2f3f5;
-            border-color: #c9cdd4;
+            background: #f3f4f6;
+            border-color: #d1d5db;
         }
         .stats-placeholder {
-            border: 0.5px dashed #e5e6eb;
+            border: 1px dashed #e5e6eb;
             border-radius: 6px;
             padding: 32px;
             text-align: center;
-            color: #a9aeb8;
+            color: #9ca3af;
             font-size: 14px;
             background: #fafbfc;
         }
@@ -430,311 +552,362 @@
             gap: 8px;
             align-items: center;
             font-size: 13px;
-            color: #4e5969;
+            color: #6b7280;
             margin-bottom: 12px;
         }
         .date-range input {
             padding: 4px 8px;
-            border: 0.5px solid #c9cdd4;
+            border: 1px solid #d1d5db;
             border-radius: 4px;
             font-size: 13px;
         }
         /* 响应式 */
         @media (max-width: 900px) {
-            .card-groups {
+            .sidebar {
+                display: none;
+            }
+            .main {
+                padding: 0 16px 40px;
+            }
+            .top-nav {
+                margin: 0 -16px 0;
+                padding: 0 16px;
+            }
+            .quick-bar {
+                margin: 0 -16px 20px;
+                padding: 0 16px;
+                overflow-x: auto;
+            }
+            .card-list {
+                grid-template-columns: 1fr;
+            }
+            .two-columns, .stats-section {
                 flex-direction: column;
             }
-            .two-columns {
-                flex-direction: column;
-            }
-            .stats-section {
-                flex-direction: column;
-            }
-        }
-        .go-link {
-            font-size: 12px;
-            color: #86909c;
-            margin-top: 4px;
         }
     </style>
 </head>
 <body>
+    <!-- 左侧栏 -->
+    <aside class="sidebar">
+        <div class="sidebar-title">工作台</div>
+        <div class="nav-item active">
+            <span class="icon">▦</span> 工作台
+        </div>
+        <div class="nav-item">
+            <span class="icon">▤</span> 订舱管理 <span class="arrow">▾</span>
+        </div>
+        <div class="submenu">
+            <a href="#">订舱列表 <span class="badge">待建</span></a>
+            <a href="#">新建订舱 <span class="badge">待建</span></a>
+        </div>
+        <div class="nav-item">
+            <span class="icon">▥</span> 财务管理 <span class="arrow">▾</span>
+        </div>
+        <div class="submenu">
+            <a href="#">待支付 <span class="badge">待建</span></a>
+            <a href="#">已支付 <span class="badge">待建</span></a>
+            <a href="#">开票记录 <span class="badge">待建</span></a>
+        </div>
+        <div class="nav-item">
+            <span class="icon">▦</span> 提单管理
+        </div>
+        <div class="nav-item">
+            <span class="icon">▧</span> 盯箱宝 <span class="arrow">▾</span>
+        </div>
+        <div class="submenu">
+            <a href="#">出口查询 <span class="badge">待建</span></a>
+            <a href="#">进口查询 <span class="badge">待建</span></a>
+        </div>
+        <div class="nav-item">
+            <span class="icon">▨</span> 企业信息 <span class="arrow">▾</span>
+        </div>
+        <div class="submenu">
+            <a href="#">公司资料 <span class="badge">待建</span></a>
+            <a href="#">同事管理 <span class="badge">待建</span></a>
+        </div>
+    </aside>
 
-<!-- 顶部工具条 -->
-<div class="top-toolbar">
-    <button class="toolbar-btn" onclick="go('/ocean')">海运总表</button>
-    <button class="toolbar-btn" onclick="go('/rates')">价表总台</button>
-    <button class="toolbar-btn" onclick="go('/ship-entry')">录入表单</button>
-    <button class="toolbar-btn" onclick="go('/ship-grid')">主表</button>
-</div>
-
-<!-- 主标题 -->
-<div class="page-header">
-    <h1>业务管理</h1>
-    <label class="switch-label">
-        <input type="checkbox" checked> 只看自己的订单
-    </label>
-</div>
-
-<!-- 三组卡片 -->
-<div class="card-groups" id="cardGroups">
-    <!-- 组1 待办事项 -->
-    <div class="card-group">
-        <div class="group-title">待办事项</div>
-        <div class="card-list">
-            <div class="card-item card-yellow" onclick="go('/ocean')">
-                <div class="card-icon">📋</div>
-                <div class="card-info">
-                    <div class="card-number">1056</div>
-                    <div class="card-label">缺卖价</div>
+    <!-- 主内容 -->
+    <div class="main">
+        <!-- 顶部导航 -->
+        <div class="top-nav">
+            <div class="top-nav-left">
+                <span class="product-name">洋宝宝 · 物流系统</span>
+                <div class="nav-links">
+                    <a href="#">海运</a>
+                    <a href="#">报关</a>
+                    <a href="#">财务</a>
+                    <a href="#">数据</a>
                 </div>
-                <div class="card-nav">→ 海运总表</div>
             </div>
-            <div class="card-item card-red" onclick="go('/ocean')">
-                <div class="card-icon">🧾</div>
-                <div class="card-info">
-                    <div class="card-number">222</div>
-                    <div class="card-label">费目不明</div>
-                </div>
-                <div class="card-nav">→ 海运总表</div>
+            <div class="top-nav-right">
+                <span class="bell">◉<span class="badge">3</span></span>
+                <span class="user-name">上海洋宝宝国际物流有限公司</span>
             </div>
-            <div class="card-item card-white" onclick="go('/ocean')">
-                <div class="card-icon">💼</div>
-                <div class="card-info">
-                    <div class="card-number">144</div>
-                    <div class="card-label">待开账单</div>
+        </div>
+        <!-- 快捷入口 -->
+        <div class="quick-bar">
+            <div class="quick-item"><span class="dot"></span> 海运总表 /ocean</div>
+            <div class="quick-item"><span class="dot"></span> 价表总台 /rates</div>
+            <div class="quick-item"><span class="dot"></span> 录入表单 /ship-entry</div>
+            <div class="quick-item"><span class="dot"></span> 主表 /ship-grid</div>
+        </div>
+
+        <!-- 页面标题 -->
+        <div class="page-header">
+            <h1>业务管理</h1>
+            <label class="switch-label">
+                <input type="checkbox" checked> 只看自己的订单
+            </label>
+        </div>
+
+        <!-- 三组卡片 -->
+        <div class="card-groups">
+            <!-- 组1 -->
+            <div class="card-group">
+                <div class="group-title">待办事项</div>
+                <div class="card-list">
+                    <div class="card-item" onclick="go('/ocean')">
+                        <div class="card-icon orange-bg">▤</div>
+                        <div class="card-info">
+                            <div class="card-number orange">1056</div>
+                            <div class="card-label">缺卖价</div>
+                        </div>
+                        <div class="card-nav">→ 海运总表</div>
+                    </div>
+                    <div class="card-item" onclick="go('/ocean')">
+                        <div class="card-icon red-bg">▤</div>
+                        <div class="card-info">
+                            <div class="card-number red">222</div>
+                            <div class="card-label">费目不明</div>
+                        </div>
+                        <div class="card-nav">→ 海运总表</div>
+                    </div>
+                    <div class="card-item" onclick="go('/ocean')">
+                        <div class="card-icon blue-bg">▣</div>
+                        <div class="card-info">
+                            <div class="card-number dark">144</div>
+                            <div class="card-label">待开账单</div>
+                        </div>
+                        <div class="card-nav">→ 海运总表</div>
+                    </div>
                 </div>
-                <div class="card-nav">→ 海运总表</div>
+            </div>
+            <!-- 组2 -->
+            <div class="card-group">
+                <div class="group-title">出运跟踪</div>
+                <div class="card-list">
+                    <div class="card-item" onclick="go('/ocean')">
+                        <div class="card-icon blue-bg">◆</div>
+                        <div class="card-info">
+                            <div class="card-number dark">16</div>
+                            <div class="card-label">在办</div>
+                        </div>
+                        <div class="card-nav">→ 海运总表</div>
+                    </div>
+                    <div class="card-item" onclick="go('/ocean')">
+                        <div class="card-icon orange-bg">⏳</div>
+                        <div class="card-info">
+                            <div class="card-number orange">27</div>
+                            <div class="card-label">缺ETA</div>
+                        </div>
+                        <div class="card-nav">→ 海运总表</div>
+                    </div>
+                    <div class="card-item" onclick="go('/ocean')">
+                        <div class="card-icon orange-bg">▢</div>
+                        <div class="card-info">
+                            <div class="card-number orange">6</div>
+                            <div class="card-label">缺提单号</div>
+                        </div>
+                        <div class="card-nav">→ 海运总表</div>
+                    </div>
+                </div>
+            </div>
+            <!-- 组3 -->
+            <div class="card-group">
+                <div class="group-title">数据缺口</div>
+                <div class="card-list">
+                    <div class="card-item" onclick="go('/ocean')">
+                        <div class="card-icon orange-bg">▤</div>
+                        <div class="card-info">
+                            <div class="card-number orange">190</div>
+                            <div class="card-label">缺条款</div>
+                        </div>
+                        <div class="card-nav">→ 海运总表</div>
+                    </div>
+                    <div class="card-item" onclick="go('/ocean')">
+                        <div class="card-icon red-bg">∞</div>
+                        <div class="card-info">
+                            <div class="card-number red">610</div>
+                            <div class="card-label">挂不到票</div>
+                        </div>
+                        <div class="card-nav">→ 海运总表</div>
+                    </div>
+                    <div class="card-item" onclick="go('/rates')">
+                        <div class="card-icon orange-bg">◈</div>
+                        <div class="card-info">
+                            <div class="card-number orange">14</div>
+                            <div class="card-label">本周价待填</div>
+                        </div>
+                        <div class="card-nav">→ 价表总台</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 两栏 -->
+        <div class="two-columns">
+            <div class="left-panel">
+                <div class="panel-title">公告中心</div>
+                <div class="tabs">
+                    <span class="tab active">船司公告<span class="dot"></span></span>
+                    <span class="tab">下载专区<span class="dot"></span></span>
+                    <span class="tab">平台公告<span class="dot"></span></span>
+                    <span class="tab">船期<span class="dot"></span></span>
+                    <span class="tab">港口公告<span class="dot"></span></span>
+                    <span class="tab">用箱规则<span class="dot"></span></span>
+                </div>
+                <div class="filter-row">
+                    <input type="text" placeholder="关键词" style="width:140px;">
+                    <select>
+                        <option>全部船司</option>
+                        <option>CMA</option>
+                        <option>ONE</option>
+                        <option>COSCO</option>
+                    </select>
+                    <button>查询</button>
+                    <button>重置</button>
+                </div>
+                <ul class="announce-list">
+                    <li class="announce-item">
+                        <span class="type-tag">费用</span>
+                        <span class="announce-title">【CMA】巴拿马附加费 CAN20 $250/TEU</span>
+                        <span class="pin-tag">置顶</span>
+                        <span class="announce-date">2026-08-26 生效</span>
+                    </li>
+                    <li class="announce-item">
+                        <span class="type-tag">费用</span>
+                        <span class="announce-title">【ONE】出口土耳其收取亏舱费</span>
+                        <span class="announce-date">2026-07-23</span>
+                    </li>
+                    <li class="announce-item">
+                        <span class="type-tag">公告</span>
+                        <span class="announce-title">【COSCO】订舱取消费</span>
+                        <span class="pin-tag">置顶</span>
+                        <span class="announce-date">2026-07-23</span>
+                    </li>
+                </ul>
+                <div class="pagination">
+                    <span>‹</span>
+                    <span class="active">1</span>
+                    <span>2</span>
+                    <span>3</span>
+                    <span>4</span>
+                    <span>5</span>
+                    <span>6</span>
+                    <span>…</span>
+                    <span>13</span>
+                    <span>›</span>
+                </div>
+                <div class="data-source">数据源:海管家船司公告 · 待接入自动抓取</div>
+            </div>
+            <div class="right-panel">
+                <div class="panel-title">截单日历</div>
+                <div class="calendar-header">
+                    <span>八月 2026</span>
+                    <div class="calendar-nav">
+                        <button>‹</button>
+                        <button>›</button>
+                    </div>
+                </div>
+                <div class="calendar-grid" id="calendarGrid"></div>
+                <div class="calendar-note">未来7天无开航票</div>
+            </div>
+        </div>
+
+        <!-- 统计 -->
+        <div class="stats-section">
+            <div class="stats-box">
+                <div class="stats-header">
+                    <h3>订舱统计</h3>
+                    <button class="export-btn">导出</button>
+                </div>
+                <div class="stats-tabs">
+                    <span class="tab active">TEU统计</span>
+                    <span class="tab">票统计</span>
+                </div>
+                <div class="date-range">
+                    <input type="date" value="2026-08-01"> 至 <input type="date" value="2026-08-25">
+                </div>
+                <div class="stats-placeholder">待接入</div>
+            </div>
+            <div class="stats-box">
+                <div class="stats-header">
+                    <h3>消费统计</h3>
+                    <button class="export-btn">导出</button>
+                </div>
+                <div class="stats-tabs">
+                    <span class="tab active">月份统计</span>
+                    <span class="tab">季度统计</span>
+                </div>
+                <div class="date-range">
+                    <input type="date" value="2026-08-01"> 至 <input type="date" value="2026-08-25">
+                </div>
+                <div class="stats-placeholder">待接入</div>
             </div>
         </div>
     </div>
-    <!-- 组2 出运跟踪 -->
-    <div class="card-group">
-        <div class="group-title">出运跟踪</div>
-        <div class="card-list">
-            <div class="card-item card-white" onclick="go('/ocean')">
-                <div class="card-icon">🚢</div>
-                <div class="card-info">
-                    <div class="card-number">16</div>
-                    <div class="card-label">在办</div>
-                </div>
-                <div class="card-nav">→ 海运总表</div>
-            </div>
-            <div class="card-item card-yellow" onclick="go('/ocean')">
-                <div class="card-icon">⏳</div>
-                <div class="card-info">
-                    <div class="card-number">27</div>
-                    <div class="card-label">缺ETA</div>
-                </div>
-                <div class="card-nav">→ 海运总表</div>
-            </div>
-            <div class="card-item card-yellow" onclick="go('/ocean')">
-                <div class="card-icon">📄</div>
-                <div class="card-info">
-                    <div class="card-number">6</div>
-                    <div class="card-label">缺提单号</div>
-                </div>
-                <div class="card-nav">→ 海运总表</div>
-            </div>
-        </div>
-    </div>
-    <!-- 组3 数据缺口 -->
-    <div class="card-group">
-        <div class="group-title">数据缺口</div>
-        <div class="card-list">
-            <div class="card-item card-yellow" onclick="go('/ocean')">
-                <div class="card-icon">📑</div>
-                <div class="card-info">
-                    <div class="card-number">190</div>
-                    <div class="card-label">缺条款</div>
-                </div>
-                <div class="card-nav">→ 海运总表</div>
-            </div>
-            <div class="card-item card-red" onclick="go('/ocean')">
-                <div class="card-icon">🔗</div>
-                <div class="card-info">
-                    <div class="card-number">610</div>
-                    <div class="card-label">挂不到票</div>
-                </div>
-                <div class="card-nav">→ 海运总表</div>
-            </div>
-            <div class="card-item card-yellow" onclick="go('/rates')">
-                <div class="card-icon">💹</div>
-                <div class="card-info">
-                    <div class="card-number">14</div>
-                    <div class="card-label">本周价待填</div>
-                </div>
-                <div class="card-nav">→ 价表总台</div>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- 下方两栏:公告 + 日历 -->
-<div class="two-columns">
-    <!-- 左栏公告 -->
-    <div class="left-panel">
-        <div class="panel-title">公告中心</div>
-        <div class="tabs">
-            <span class="tab active">船司公告</span>
-            <span class="tab">下载专区</span>
-            <span class="tab">平台公告</span>
-            <span class="tab">船期</span>
-            <span class="tab">港口公告</span>
-            <span class="tab">用箱规则</span>
-        </div>
-        <div class="filter-row">
-            <input type="text" placeholder="关键词" style="width:140px;">
-            <select>
-                <option>全部船司</option>
-                <option>CMA</option>
-                <option>ONE</option>
-                <option>COSCO</option>
-            </select>
-            <button>查询</button>
-            <button>重置</button>
-        </div>
-        <ul class="announce-list">
-            <li class="announce-item">
-                <span class="type-tag">费用</span>
-                <span class="announce-title">【CMA】巴拿马附加费 CAN20 $250/TEU</span>
-                <span class="pin-tag">置顶</span>
-                <span class="announce-date">2026-08-26 生效</span>
-            </li>
-            <li class="announce-item">
-                <span class="type-tag">费用</span>
-                <span class="announce-title">【ONE】出口土耳其收取亏舱费</span>
-                <span class="announce-date">2026-07-23</span>
-            </li>
-            <li class="announce-item">
-                <span class="type-tag">公告</span>
-                <span class="announce-title">【COSCO】订舱取消费</span>
-                <span class="pin-tag">置顶</span>
-                <span class="announce-date">2026-07-23</span>
-            </li>
-        </ul>
-        <div class="data-source">数据源:海管家船司公告 · 待接入自动抓取</div>
-    </div>
-    <!-- 右栏日历 -->
-    <div class="right-panel">
-        <div class="panel-title">截单日历</div>
-        <div class="calendar-header">
-            <span>八月 2026</span>
-            <div class="calendar-nav">
-                <button>‹</button>
-                <button>›</button>
-            </div>
-        </div>
-        <div class="calendar-grid" id="calendarGrid">
-            <!-- 动态生成 JS -->
-        </div>
-        <div class="calendar-note">未来7天无开航票</div>
-    </div>
-</div>
-
-<!-- 最下方统计占位 -->
-<div class="stats-section">
-    <div class="stats-box">
-        <div class="stats-header">
-            <h3>订舱统计</h3>
-            <button class="export-btn">导出</button>
-        </div>
-        <div class="stats-tabs">
-            <span class="tab active">TEU统计</span>
-            <span class="tab">票统计</span>
-        </div>
-        <div class="date-range">
-            <input type="date" value="2026-08-01"> 至 <input type="date" value="2026-08-25">
-        </div>
-        <div class="stats-placeholder">待接入</div>
-    </div>
-    <div class="stats-box">
-        <div class="stats-header">
-            <h3>消费统计</h3>
-            <button class="export-btn">导出</button>
-        </div>
-        <div class="stats-tabs">
-            <span class="tab active">月份统计</span>
-            <span class="tab">季度统计</span>
-        </div>
-        <div class="date-range">
-            <input type="date" value="2026-08-01"> 至 <input type="date" value="2026-08-25">
-        </div>
-        <div class="stats-placeholder">待接入</div>
-    </div>
-</div>
-
-<script>
-    // 取数逻辑:后续替换为 GET /api/db/workbench-stats
-    function loadStats() {
-        // 返回写死的真实数据(2026-08-25)
-        return {
-            // 组1
-            missingSellPrice: 1056,
-            unclearCost: 222,
-            pendingBilling: 144,
-            // 组2
-            inProgress: 16,
-            missingEta: 27,
-            missingBlNo: 6,
-            // 组3
-            missingTerms: 190,
-            noMatchedBill: 610,
-            weeklyPricePending: 14
-        };
-    }
-
-    // 跳转函数(占位)
-    function go(path) {
-        console.log('跳转到:', path);
-        // 实际跳转: window.location.href = path;
-    }
-
-    // 日历渲染(2026年8月, 周一起始, 今天25高亮)
-    (function renderCalendar() {
-        const grid = document.getElementById('calendarGrid');
-        if (!grid) return;
-        // 2026年8月1日是周六? 计算: 2026-08-01 星期几
-        const year = 2026, month = 7; // 8月索引7
-        const firstDay = new Date(year, month, 1);
-        // 周一作为第一天: getDay() 0=周日, 1=周一 ... 6=周六
-        let startOffset = (firstDay.getDay() + 6) % 7; // 周一=0, 周日=6
-        const daysInMonth = new Date(year, month + 1, 0).getDate();
-        const today = 25; // 2026-08-25
-
-        let html = '';
-        // 星期头
-        const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
-        weekdays.forEach(d => {
-            html += `<div class="weekday">${d}</div>`;
-        });
-        // 空白格
-        for (let i = 0; i < startOffset; i++) {
-            html += `<div class="day other-month"></div>`;
+    <script>
+        // 取数逻辑:后续替换为 GET /api/db/workbench-stats
+        function loadStats() {
+            return {
+                missingSellPrice: 1056,
+                unclearCost: 222,
+                pendingBilling: 144,
+                inProgress: 16,
+                missingEta: 27,
+                missingBlNo: 6,
+                missingTerms: 190,
+                noMatchedBill: 610,
+                weeklyPricePending: 14
+            };
         }
-        // 日期格
-        for (let d = 1; d <= daysInMonth; d++) {
-            const isToday = (d === today) ? 'today' : '';
-            html += `<div class="day ${isToday}">${d}</div>`;
+
+        function go(path) {
+            console.log('跳转到:', path);
         }
-        // 补齐最后一周(可选)
-        const totalCells = startOffset + daysInMonth;
-        const remainder = totalCells % 7;
-        if (remainder > 0) {
-            for (let i = 0; i < 7 - remainder; i++) {
-                html += `<div class="day other-month"></div>`;
+
+        // 日历渲染
+        (function renderCalendar() {
+            const grid = document.getElementById('calendarGrid');
+            if (!grid) return;
+            const year = 2026, month = 7;
+            const firstDay = new Date(year, month, 1);
+            let startOffset = (firstDay.getDay() + 6) % 7;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const today = 25;
+            let html = '';
+            const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+            weekdays.forEach(d => { html += `<div class="weekday">${d}</div>`; });
+            for (let i = 0; i < startOffset; i++) { html += `<div class="day other-month"></div>`; }
+            for (let d = 1; d <= daysInMonth; d++) {
+                const isToday = (d === today) ? 'today' : '';
+                html += `<div class="day ${isToday}">${d}</div>`;
             }
-        }
-        grid.innerHTML = html;
-    })();
+            const totalCells = startOffset + daysInMonth;
+            const remainder = totalCells % 7;
+            if (remainder > 0) {
+                for (let i = 0; i < 7 - remainder; i++) { html += `<div class="day other-month"></div>`; }
+            }
+            grid.innerHTML = html;
+        })();
 
-    // 初始化时调用loadStats(预留)
-    window.addEventListener('DOMContentLoaded', () => {
-        const stats = loadStats();
-        // 目前静态展示, 后续可动态更新DOM
-        console.log('工作台统计已加载', stats);
-    });
-</script>
-
+        window.addEventListener('DOMContentLoaded', () => {
+            const stats = loadStats();
+            console.log('工作台统计已加载', stats);
+        });
+    </script>
 </body>
 </html>
