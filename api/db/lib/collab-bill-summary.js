@@ -22,10 +22,10 @@ function segmentForCategory(cat) {
     : /海运|ocean|freight|运费/i.test(cat) ? "ocean"
     : "port_charge";
 }
-function totalsByCurrency(rows) {
+function totalsByCurrency(rows, valueOf = r => Number(r.amount || 0)) {
   return rows.reduce((a, r) => {
     const c = normCcy(r.currency || "CNY");
-    a[c] = Number(((a[c] || 0) + Number(r.amount || 0)).toFixed(2));
+    a[c] = Number(((a[c] || 0) + valueOf(r)).toFixed(2));
     return a;
   }, {});
 }
@@ -119,11 +119,14 @@ function segmentPayload(rows, internal) {
   const pending = rows.filter(r => r.pending && r.pending.status);
   const confirmed = rows.filter(r => r.confirmed_at && !(r.pending && r.pending.status));
   const visibleRows = internal ? rows : (confirmed.length ? confirmed : rows.filter(r => !(r.pending && r.pending.status)));
+  const pick = r => internal
+    ? Number(r.amount || 0)
+    : (r.sale_amount != null ? Number(r.sale_amount) : Number(r.amount || 0));
   const lines = visibleRows.map(r => ({
     name: r.cost_category || "费用",
     qty: r.qty == null ? null : Number(r.qty),
     unit_price: r.unit_price == null ? null : Number(r.unit_price),
-    amount: r.amount == null ? null : Number(r.amount),
+    amount: pick(r),
     currency: r.currency || "CNY",
     charge_basis: r.charge_basis || null,
     confirmed: !!r.confirmed_at,
@@ -132,7 +135,7 @@ function segmentPayload(rows, internal) {
   return {
     status: pending.length ? "待确认" : confirmed.length ? "已定" : rows.length ? "已录入" : "待贵司填",
     reported_by: [...new Set(visibleRows.map(r => r.supplier || r.supplier_type).filter(Boolean))],
-    amount: totalsByCurrency(visibleRows),
+    amount: totalsByCurrency(visibleRows, pick),
     pending_amount: internal ? totalsByCurrency(pending) : {},
     lines,
   };
@@ -155,7 +158,7 @@ export async function handleCollabBillSummary(req, res, pool) {
   if (!plan) return res.status(404).json({ ok: false, error: "找不到出货计划" });
   if (!blNo) return res.status(400).json({ ok: false, error: "BL 尚未录入，不能汇总账单" });
   const { rows } = await pool.query(
-    `SELECT id,cost_category,amount,currency,qty,unit_price,charge_basis,supplier,supplier_type,
+    `SELECT id,cost_category,amount,sale_amount,currency,qty,unit_price,charge_basis,supplier,supplier_type,
             confirmed_at,raw->'collab_pending' AS pending
        FROM freight_supplier_bills
       WHERE bl_no=$1 AND COALESCE(rebill_status,'') <> 'voided'`,
