@@ -67,6 +67,39 @@ async function appendEventMessage(pool, task, user, eventType, payload) {
   );
 }
 
+function actorType(user) {
+  return user.role || "user";
+}
+
+function actorId(user) {
+  return user.uid || user.id || user.sub || user.username || user.name || "unknown";
+}
+
+function taskClosureNote(task, action, payload) {
+  const parts = [`action=${action}`];
+  const payloadText = payload && Object.keys(payload).length ? JSON.stringify(payload) : "";
+  if (payloadText) parts.push(`payload=${payloadText}`);
+  if (task.title) parts.push(`task=${task.title}`);
+  return parts.join("; ");
+}
+
+async function appendTaskDoneEvent(client, task, user, action, payload) {
+  await client.query(
+    `INSERT INTO task_events (
+       task_id, event_type, actor_type, actor_id,
+       from_status, to_status, note, metadata, created_at
+     ) VALUES ($1, 'done', $2, $3, $4, 'done', $5, $6::jsonb, NOW())`,
+    [
+      task.id,
+      actorType(user),
+      actorId(user),
+      task.status || null,
+      taskClosureNote(task, action, payload),
+      JSON.stringify({ action, payload: payload || {} }),
+    ]
+  );
+}
+
 // ── action 分发器 ──
 async function applyAction(pool, task, actionName, payload, user) {
   const r = { orderTouched: false, shippingPlanTouched: false, taskClosed: false };
@@ -285,6 +318,7 @@ export default async function handler(req, res) {
 
       // 关任务
       if (outcome.taskClosed) {
+        await appendTaskDoneEvent(client, task, req.user || {}, action, payload);
         await client.query(
           "UPDATE tasks SET status='done', closed_at=NOW() WHERE id=$1",
           [task.id]

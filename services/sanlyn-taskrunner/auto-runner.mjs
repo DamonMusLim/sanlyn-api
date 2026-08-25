@@ -152,13 +152,23 @@ async function processTask(db, task) {
       return;
     }
 
-    await db.query(
-      `UPDATE tasks SET ai_suggestion = $1, status = 'done', closed_at = now(), updated_at = now()
-       WHERE id = $2`,
-      [suggestion, task.id]
-    );
-    await logEvent(db, task.id, "auto_run_done", "doing", "done",
-      `MiniMax(${model}) 自动完成,tokens_in=${usage.prompt_tokens || usage.total_tokens || 0} tokens_out=${usage.completion_tokens || 0}`);
+    const doneNote = `MiniMax(${model}) 自动完成,tokens_in=${usage.prompt_tokens || usage.total_tokens || 0} tokens_out=${usage.completion_tokens || 0}`;
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      await logEvent(client, task.id, "done", "doing", "done", doneNote);
+      await client.query(
+        `UPDATE tasks SET ai_suggestion = $1, status = 'done', closed_at = now(), updated_at = now()
+         WHERE id = $2`,
+        [suggestion, task.id]
+      );
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
+    }
     console.log(`[${task.id}] done`);
   } catch (e) {
     const errMsg = String(e && e.message || e);

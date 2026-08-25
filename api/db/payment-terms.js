@@ -90,17 +90,44 @@ async function _updateFinanceDueDate(pool, order) {
 
 // Close any open task for this order's payment-term confirmation
 async function _closeTermTask(pool, orderId) {
+  const client = await pool.connect();
   try {
-    await pool.query(
-      `UPDATE tasks
-       SET status = 'done', closed_at = NOW(), updated_at = NOW()
-       WHERE owner_object_type = 'order'
-         AND owner_object_id = $1
-         AND task_type = 'payment_term_confirm'
-         AND status = 'open'`,
+    await client.query("BEGIN");
+    await client.query(
+      `WITH candidates AS (
+         SELECT id, status
+           FROM tasks
+          WHERE owner_object_type = 'order'
+            AND owner_object_id = $1
+            AND task_type = 'payment_term_confirm'
+            AND status = 'open'
+          FOR UPDATE
+       ), event_rows AS (
+         INSERT INTO task_events (
+           task_id, event_type, actor_type, actor_id,
+           from_status, to_status, note, metadata, created_at
+         )
+         SELECT id, 'done', 'system', 'payment-terms',
+                status, 'done',
+                '付款条款确认通过,自动关闭付款条款确认任务 order_id=' || $1,
+                jsonb_build_object('order_id', $1::text, 'task_type', 'payment_term_confirm'),
+                NOW()
+           FROM candidates
+         RETURNING task_id
+       )
+       UPDATE tasks t
+          SET status = 'done', closed_at = NOW(), updated_at = NOW()
+         FROM event_rows e
+        WHERE t.id = e.task_id`,
       [String(orderId)]
     );
-  } catch (e) { /* non-fatal */ }
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(function() {});
+    /* non-fatal */
+  } finally {
+    client.release();
+  }
 }
 
 export default async function handler(req, res) {

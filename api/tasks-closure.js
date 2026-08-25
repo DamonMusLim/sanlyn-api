@@ -48,6 +48,23 @@ function hasEvidence(evidence) {
   return !!asText(evidence);
 }
 
+function evidenceSummary(evidence) {
+  if (!hasEvidence(evidence)) return "";
+  if (typeof evidence === "string") return asText(evidence);
+  try {
+    return JSON.stringify(evidence);
+  } catch {
+    return "[unserializable evidence]";
+  }
+}
+
+function eventNote(action, note, evidence) {
+  if (note) return note;
+  const evidenceText = evidenceSummary(evidence);
+  if (evidenceText) return `action=${action}; evidence=${evidenceText}`;
+  return `action=${action}`;
+}
+
 function canAccessTask(task, user) {
   if (!user) return false;
   const role = asText(user.role).toLowerCase();
@@ -215,13 +232,26 @@ async function applyAction(client, task, user, body) {
     params = [task.id, body.until];
   }
 
-  const r = await client.query(sql, params);
-  const updated = r.rows[0];
-  await insertEvent(client, task, user, action, fromStatus, toStatus, note, {
+  const metadata = {
     evidence,
     assignee: action === "assign" ? asText(body.assignee) : undefined,
     until: action === "snooze" ? asText(body.until) : undefined,
-  });
+  };
+  const terminal = toStatus === "done" || toStatus === "cancelled";
+  const terminalEventType = terminal ? toStatus : action;
+  const auditNote = eventNote(action, note, evidence);
+
+  if (terminal) {
+    await insertEvent(client, task, user, terminalEventType, fromStatus, toStatus, auditNote, metadata);
+  }
+
+  const r = await client.query(sql, params);
+  const updated = r.rows[0];
+
+  if (!terminal) {
+    await insertEvent(client, task, user, action, fromStatus, toStatus, auditNote, metadata);
+  }
+
   return { task: updated, action, noop: false };
 }
 
