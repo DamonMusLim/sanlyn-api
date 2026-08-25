@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sanlyn Knowledge Base</title>
+  <style>
+    :root{color-scheme:light dark;--bg:#f6f7f9;--panel:#fff;--text:#151922;--muted:#667085;--line:#d9dee7;--accent:#0f766e;--accent2:#9333ea;--chip:#eef2f7;--danger:#b42318}
+    @media(prefers-color-scheme:dark){:root{--bg:#111418;--panel:#1a1f26;--text:#f2f4f7;--muted:#a4acb9;--line:#343b47;--accent:#2dd4bf;--accent2:#c084fc;--chip:#252c36;--danger:#ff8a80}}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .wrap{max-width:1160px;margin:0 auto;padding:24px}.top{display:flex;gap:14px;align-items:center;justify-content:space-between;margin-bottom:18px}
+    h1{font-size:24px;margin:0}.sub{color:var(--muted);font-size:13px}.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:8px;padding:9px 12px;cursor:pointer}
+    .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}.btn:disabled{opacity:.55;cursor:not-allowed}
+    .toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:12px;align-items:center;margin-bottom:12px}
+    input,textarea,select{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);padding:10px 12px;font:inherit}
+    textarea{min-height:180px;resize:vertical}.search{font-size:16px}.switch{display:flex;gap:8px;align-items:center;color:var(--muted);white-space:nowrap}.switch input{width:auto}
+    .chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px}.chip{border:1px solid var(--line);background:var(--chip);color:var(--text);border-radius:999px;padding:6px 10px;cursor:pointer}
+    .chip.active{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}.count{color:var(--muted);margin-left:4px}
+    .main{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px}.list{display:flex;flex-direction:column;gap:10px}.item{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;cursor:pointer}
+    .item:hover{border-color:var(--accent)}.title{font-size:16px;font-weight:650;margin-bottom:8px}.meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;color:var(--muted);font-size:12px}
+    .tag,.badge{border:1px solid var(--line);border-radius:999px;padding:2px 7px}.badge.hgj{color:#2563eb}.badge.sanlyn{color:var(--accent2)}.body{display:none;border-top:1px solid var(--line);margin-top:12px;padding-top:12px;white-space:pre-wrap}
+    .item.open .body{display:block}.side{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;height:max-content}.side h2{font-size:18px;margin:0 0 12px}
+    .formrow{margin-bottom:10px}.formrow label{display:block;margin-bottom:5px;color:var(--muted);font-size:12px}.empty,.err{padding:22px;text-align:center;color:var(--muted)}.err{color:var(--danger)}
+    .hidden{display:none}.pager{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted)}
+    @media(max-width:820px){.wrap{padding:16px}.top,.toolbar{grid-template-columns:1fr;display:grid}.main{grid-template-columns:1fr}.side{order:-1}.switch{white-space:normal}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div><h1>Sanlyn 知识库</h1><div class="sub" id="summary">加载中</div></div>
+      <button class="btn primary" id="newBtn">+ 新建条目</button>
+    </div>
+    <div class="toolbar">
+      <input id="q" class="search" placeholder="搜索标题">
+      <label class="switch"><input type="checkbox" id="oursOnly"> 只看我们写的</label>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="main">
+      <div>
+        <div class="list" id="list"></div>
+        <div class="pager">
+          <button class="btn" id="prev">上一页</button>
+          <span id="pageInfo"></span>
+          <button class="btn" id="next">下一页</button>
+        </div>
+      </div>
+      <aside class="side hidden" id="formBox">
+        <h2>新建条目</h2>
+        <div class="formrow"><label>标题</label><input id="fTitle"></div>
+        <div class="formrow"><label>主题</label><select id="fTopic"></select></div>
+        <div class="formrow"><label>分类</label><select id="fCategory"><option value="">未分类</option><option>外贸知识</option><option>物流知识</option></select></div>
+        <div class="formrow"><label>标签，逗号分隔</label><input id="fTags"></div>
+        <div class="formrow"><label>正文</label><textarea id="fBody"></textarea></div>
+        <div class="formrow"><button class="btn primary" id="save">保存</button> <button class="btn" id="cancel">取消</button></div>
+        <div class="err" id="formErr"></div>
+      </aside>
+    </div>
+  </div>
+  <script>
+  const API="/api/db/knowledge";
+  const TOPICS=["舱单申报","报关通关","退税","保险","提单单证","贸易术语","报价询盘","集装箱船务","系统选型","业务经营","其他"];
+  const state={q:"",topic:"",ours:false,limit:50,offset:0,total:0,openId:null};
+  const $=id=>document.getElementById(id);
+  function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+  function headers(json){const h=json?{"Content-Type":"application/json"}:{};const t=token();if(t)h.Authorization="Bearer "+t;return h}
+  async function api(path,opts={}){const r=await fetch(path,{...opts,headers:{...headers(opts.body),...(opts.headers||{})}});const d=await r.json().catch(()=>({error:"接口返回异常"}));if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");return d}
+  function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
+  function params(){const p=new URLSearchParams({limit:state.limit,offset:state.offset});if(state.q)p.set("q",state.q);if(state.topic)p.set("topic",state.topic);if(state.ours)p.set("is_ours","true");return p}
+  function renderChips(facets){const box=$("chips");const all=Object.values(facets||{}).reduce((a,b)=>a+b,0);let html=`<button class="chip ${state.topic?"":"active"}" data-topic="">全部<span class="count">${all}</span></button>`;for(const t of TOPICS){html+=`<button class="chip ${state.topic===t?"active":""}" data-topic="${esc(t)}">${esc(t)}<span class="count">${facets?.[t]||0}</span></button>`}box.innerHTML=html}
+  function renderList(rows){const box=$("list");if(!rows.length){box.innerHTML='<div class="empty">没有匹配条目</div>';return}box.innerHTML=rows.map(r=>`<article class="item ${state.openId===r.id?"open":""}" data-id="${r.id}" data-url="${esc(r.url||"")}" data-ours="${r.is_ours?"1":"0"}"><div class="title">${esc(r.title)}</div><div class="meta"><span class="tag">${esc(r.topic||"未分类")}</span><span class="badge ${r.is_ours?"sanlyn":"hgj"}">${r.is_ours?"SANLYN":"HGJ"}</span>${(r.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")}</div><div class="body" id="body-${r.id}"></div></article>`).join("")}
+  async function load(){try{const d=await api(API+"?"+params());state.total=d.total;renderChips(d.facets.topic);renderList(d.data);$("summary").textContent=`共 ${d.total} 条，当前显示 ${d.data.length} 条`;$("pageInfo").textContent=`${state.offset+1}-${Math.min(state.offset+state.limit,state.total)} / ${state.total}`;$("prev").disabled=state.offset===0;$("next").disabled=state.offset+state.limit>=state.total}catch(e){$("list").innerHTML=`<div class="err">${esc(e.message)}</div>`;$("summary").textContent="读取失败"}}
+  async function openItem(el){const id=Number(el.dataset.id);if(el.dataset.ours!=="1"){const url=el.dataset.url;if(url)window.open(url,"_blank","noopener");return}state.openId=state.openId===id?null:id;document.querySelectorAll(".item").forEach(x=>x.classList.toggle("open",Number(x.dataset.id)===state.openId));if(state.openId){const body=$("body-"+id);if(!body.textContent){const d=await api(API+"?id="+id);body.textContent=d.data.body||""}}}
+  async function save(){try{$("formErr").textContent="";const body={title:$("fTitle").value,topic:$("fTopic").value,category:$("fCategory").value||null,tags:$("fTags").value,body:$("fBody").value};await api(API,{method:"POST",body:JSON.stringify(body)});["fTitle","fTags","fBody"].forEach(id=>$(id).value="");$("formBox").classList.add("hidden");state.offset=0;await load()}catch(e){$("formErr").textContent=e.message}}
+  function initForm(){const sel=$("fTopic");sel.innerHTML=TOPICS.map(t=>`<option>${esc(t)}</option>`).join("");$("newBtn").onclick=()=>$("formBox").classList.remove("hidden");$("cancel").onclick=()=>$("formBox").classList.add("hidden");$("save").onclick=save}
+  let timer=null;$("q").addEventListener("input",e=>{clearTimeout(timer);timer=setTimeout(()=>{state.q=e.target.value.trim();state.offset=0;load()},250)});
+  $("oursOnly").onchange=e=>{state.ours=e.target.checked;state.offset=0;load()};
+  $("chips").onclick=e=>{const b=e.target.closest(".chip");if(!b)return;state.topic=b.dataset.topic;state.offset=0;load()};
+  $("list").onclick=e=>{const el=e.target.closest(".item");if(el)openItem(el).catch(err=>alert(err.message))};
+  $("prev").onclick=()=>{state.offset=Math.max(0,state.offset-state.limit);load()};
+  $("next").onclick=()=>{state.offset+=state.limit;load()};
+  initForm();load();
+  </script>
+</body>
+</html>

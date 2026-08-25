@@ -56,6 +56,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/recon-confirm", () => import("./api/db/recon-confirm.js")); // 对平状态 2026-08-12
   mount("/api/db/recon-companies", () => import("./api/db/recon-companies.js")); // 公司下拉 2026-08-12
   mount("/api/db/field-lookup", () => import("./api/db/field-lookup.js"));
+  mount("/api/db/knowledge", () => import("./api/db/knowledge.js"));
   mount("/api/db/customs-intake", () => import("./api/db/customs-intake.js")); // 录单执行器V1 2026-08-12
   mount("/api/db/shipping-entry", () => import("./api/db/shipping-entry.js"));
   mount("/api/db/statement-portal-data", () => import("./api/db/statement-portal-data.js")); // 客户对账单门户public
