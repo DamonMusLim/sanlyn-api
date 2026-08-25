@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新建舱单 · 洋宝宝</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f9fafb;
+            display: flex;
+            justify-content: center;
+            padding: 24px 16px;
+            color: #1f2937;
+        }
+        .container {
+            max-width: 1280px;
+            width: 100%;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px 24px 32px;
+        }
+        /* 顶部工具栏 */
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            gap: 12px;
+            border-bottom: 1px solid #eef0f2;
+            padding-bottom: 16px;
+        }
+        .toolbar-left {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .toolbar-right {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            border: 1px solid #d1d5db;
+            background: white;
+            color: #374151;
+            cursor: pointer;
+            transition: background 0.1s;
+            line-height: 1.4;
+        }
+        .btn:hover {
+            background: #f3f4f6;
+        }
+        .btn-primary {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+        .btn-outline-blue {
+            background: white;
+            border: 1px solid #2563eb;
+            color: #2563eb;
+        }
+        .btn-outline-blue:hover {
+            background: #eff6ff;
+        }
+        .btn-outline-gray {
+            background: white;
+            border: 1px solid #d1d5db;
+            color: #374151;
+        }
+        .btn-outline-gray:hover {
+            background: #f9fafb;
+        }
+        .template-select {
+            padding: 6px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: white;
+            font-size: 13px;
+            color: #1f2937;
+        }
+        /* 分区 */
+        .section {
+            margin-top: 24px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .section-header {
+            background: #6b74a8;
+            color: white;
+            padding: 10px 16px;
+            font-weight: 600;
+            font-size: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .section-header .arrow {
+            font-size: 18px;
+            transition: transform 0.2s;
+        }
+        .section.collapsed .section-body {
+            display: none;
+        }
+        .section.collapsed .arrow {
+            transform: rotate(-90deg);
+        }
+        .section-body {
+            padding: 20px 20px 16px;
+            background: white;
+        }
+        /* 表单栅格 */
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 18px 24px;
+        }
+        @media (max-width: 900px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .field-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: #111827;
+            display: flex;
+            align-items: center;
+        }
+        .field-label .required {
+            color: #dc2626;
+            margin-right: 4px;
+            font-weight: 700;
+        }
+        .field-control {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+        .field-control input, .field-control select {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 13px;
+            background: white;
+            transition: border 0.1s;
+        }
+        .field-control input:focus, .field-control select:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 1px #2563eb;
+        }
+        .field-control input.error, .field-control select.error {
+            border-color: #dc2626;
+            box-shadow: 0 0 0 1px #dc2626;
+        }
+        .field-hint {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+        .error-msg {
+            font-size: 12px;
+            color: #dc2626;
+            min-height: 16px;
+        }
+        .inline-btn {
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            border: 1px solid #2563eb;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .inline-btn:hover {
+            background: #1d4ed8;
+        }
+        .inline-btn.orange {
+            background: #f97316;
+            border-color: #f97316;
+            font-size: 12px;
+            padding: 5px 10px;
+        }
+        .inline-btn.orange:hover {
+            background: #ea580c;
+        }
+        .link-info {
+            font-size: 12px;
+            color: #f97316;
+            cursor: pointer;
+            text-decoration: underline dotted;
+            background: none;
+            border: none;
+            padding: 0;
+        }
+        .autocomplete-wrap {
+            position: relative;
+            flex: 1;
+        }
+        .autocomplete-list {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            max-height: 180px;
+            overflow-y: auto;
+            z-index: 20;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .autocomplete-item {
+            padding: 8px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .autocomplete-item:hover {
+            background: #f0f5ff;
+        }
+        .port-note {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+            font-style: italic;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #111827;
+            color: white;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            opacity: 0.9;
+            z-index: 999;
+            transition: opacity 0.2s;
+        }
+        .toast.hide {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .summary-error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #b91c1c;
+            padding: 8px 14px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            display: none;
+        }
+        .summary-error.show {
+            display: block;
+        }
+        .full-row {
+            grid-column: 1 / -1;
+        }
+        .mt-2 {
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- 顶部工具栏 -->
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <select class="template-select" id="templateSelect">
+                <option value="">选择模板 ▾</option>
+                <option value="t1">标准模板</option>
+                <option value="t2">危险品模板</option>
+            </select>
+            <button class="btn btn-outline-gray" id="saveTemplateBtn">保存模板</button>
+        </div>
+        <div class="toolbar-right">
+            <button class="btn btn-primary" id="sendBtn">保存到待发送</button>
+            <button class="btn btn-outline-blue" id="draftBtn">保存到草稿箱</button>
+            <button class="btn btn-outline-gray" id="copyBtn">复制</button>
+            <button class="btn btn-outline-gray" id="closeBtn">关闭</button>
+        </div>
+    </div>
+
+    <!-- 错误汇总 -->
+    <div id="summaryError" class="summary-error"></div>
+
+    <!-- 分区一：基本信息 -->
+    <div class="section" id="section1">
+        <div class="section-header" data-target="section1">
+            <span>基本信息</span>
+            <span class="arrow">▾</span>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <!-- 主提单号 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>主提单号</div>
+                    <div class="field-control">
+                        <input type="text" id="blNo" placeholder="只能是大写字符和数字" maxlength="20" autocomplete="off">
+                    </div>
+                    <div class="error-msg" id="err-blNo"></div>
+                </div>
+                <!-- 船公司 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>船公司</div>
+                    <div class="field-control">
+                        <select id="carrier">
+                            <option value="">请选择船公司</option>
+                            <option value="COSCO">COSCO 中远海运</option>
+                            <option value="OOCL">OOCL 东方海外</option>
+                            <option value="MSC">MSC 地中海航运</option>
+                            <option value="ONE">ONE 海洋网联</option>
+                            <option value="EVERGREEN">EVERGREEN 长荣海运</option>
+                            <option value="YANG_MING">YANG_MING 阳明海运</option>
+                            <option value="CNC">CNC 正利航业</option>
+                            <option value="KMTC">KMTC 高丽海运</option>
+                            <option value="TSLINE">TSLINE 德翔海运</option>
+                            <option value="ESL">ESL 阿联酋航运</option>
+                            <option value="SITC">SITC 海丰国际</option>
+                            <option value="MAERSK">MAERSK 马士基</option>
+                            <option value="HAPAG_LLOYD">HAPAG_LLOYD 赫伯罗特</option>
+                            <option value="IAL">IAL 亚洲区间航运</option>
+                            <option value="NAMSUNG">NAMSUNG 南星海运</option>
+                            <option value="WHL">WHL 万海航运</option>
+                            <option value="ZIM">ZIM 以星综合航运</option>
+                            <option value="HMM">HMM 现代商船</option>
+                            <option value="ASL">ASL 亚海航运</option>
+                            <option value="SKR">SKR 长锦商船</option>
+                            <option value="TCLC">TCLC 太海集运</option>
+                        </select>
+                    </div>
+                    <div class="error-msg" id="err-carrier"></div>
+                </div>
+                <!-- 货物类型 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>货物类型</div>
+                    <div class="field-control">
+                        <select id="cargoType">
+                            <option value="">请选择</option>
+                            <option value="普通货物">普通货物</option>
+                            <option value="冷冻品">冷冻品</option>
+                            <option value="危险品">危险品</option>
+                            <option value="冷藏危险品">冷藏危险品</option>
+                        </select>
+                    </div>
+                    <div class="error-msg" id="err-cargoType"></div>
+                </div>
+                <!-- 运输条款 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>运输条款</div>
+                    <div class="field-control">
+                        <select id="transportTerms">
+                            <option value="CY-CY" selected>CY-CY</option>
+                            <option value="CY-FO">CY-FO</option>
+                            <option value="FI-CY">FI-CY</option>
+                            <option value="FI-FO">FI-FO</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- 付款方式 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>付款方式</div>
+                    <div class="field-control">
+                        <select id="payment">
+                            <option value="">请选择</option>
+                            <option value="PREPAID">PREPAID 预付</option>
+                            <option value="COLLECT">COLLECT 到付</option>
+                            <option value="ELSEWHERE">ELSEWHERE 第三地付</option>
+                        </select>
+                    </div>
+                    <div class="error-msg" id="err-payment"></div>
+                </div>
+                <!-- 提单类型 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>提单类型</div>
+                    <div class="field-control">
+                        <select id="blType">
+                            <option value="">请选择</option>
+                            <option value="OBL">OBL 正本提单</option>
+                            <option value="SWB">SWB 海运单</option>
+                            <option value="TER">TER 电放</option>
+                        </select>
+                    </div>
+                    <div class="error-msg" id="err-blType"></div>
+                </div>
+                <!-- 提单份数 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>提单份数</div>
+                    <div class="field-control">
+                        <input type="text" id="blCopies" value="3" placeholder="数字，不能含字母" inputmode="numeric">
+                    </div>
+                    <div class="error-msg" id="err-blCopies"></div>
+                </div>
+                <!-- 签发地 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>签发地</div>
+                    <div class="field-control">
+                        <input type="text" id="issuePlace" value="SHANGHAI|CNSHA" placeholder="请输入港口大写英文全称">
+                    </div>
+                    <div class="error-msg" id="err-issuePlace"></div>
+                </div>
+                <!-- 付款地点 -->
+                <div class="field">
+                    <div class="field-label">付款地点</div>
+                    <div class="field-control">
+                        <input type="text" id="payPlace" placeholder="请输入港口大写英文全称">
+                    </div>
+                </div>
+                <!-- 委托信息 全行 -->
+                <div class="field full-row">
+                    <div class="field-label">委托信息 <span style="color:#6b7280;font-weight:400;">(选填)</span></div>
+                    <div class="field-control">
+                        <input type="text" id="delegation" placeholder="请输入委托信息">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分区二：船舶信息 -->
+    <div class="section" id="section2">
+        <div class="section-header" data-target="section2">
+            <span>船舶信息</span>
+            <span class="arrow">▾</span>
+        </div>
+        <div class="section-body">
+            <div class="form-grid">
+                <!-- 船名 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>船名</div>
+                    <div class="field-control">
+                        <input type="text" id="vesselName" placeholder="只能是大写字符和数字" style="text-transform:uppercase;">
+                    </div>
+                    <div class="error-msg" id="err-vesselName"></div>
+                </div>
+                <!-- 航次 + 检验 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>航次</div>
+                    <div class="field-control">
+                        <input type="text" id="voyage" placeholder="输入航次，不可以有V.">
+                        <button class="inline-btn" id="checkVoyageBtn" style="flex-shrink:0;">检验航次</button>
+                    </div>
+                    <div class="error-msg" id="err-voyage"></div>
+                </div>
+                <!-- 船代 + 查看 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>船代</div>
+                    <div class="field-control">
+                        <select id="shippingAgent">
+                            <option value="">请选择船代</option>
+                            <option value="" disabled>(名单待补)</option>
+                        </select>
+                        <button class="inline-btn" id="viewAgentBtn" style="flex-shrink:0;">查看船司船代</button>
+                    </div>
+                    <div class="error-msg" id="err-shippingAgent"></div>
+                </div>
+                <!-- 发货地 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>发货地</div>
+                    <div class="field-control">
+                        <div class="autocomplete-wrap">
+                            <input type="text" id="origin" placeholder="港口名称|五子码" autocomplete="off">
+                            <div class="autocomplete-list" id="originList" style="display:none;"></div>
+                        </div>
+                        <button class="link-info" id="originInfo">ⓘ 说明</button>
+                    </div>
+                    <div class="error-msg" id="err-origin"></div>
+                </div>
+                <!-- 装货港 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>装货港</div>
+                    <div class="field-control">
+                        <input type="text" id="loadPort" value="SHANGHAI|CNSHA" placeholder="请输入港口大写英文全称">
+                    </div>
+                    <div class="error-msg" id="err-loadPort"></div>
+                </div>
+                <!-- 卸货港 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>卸货港</div>
+                    <div class="field-control">
+                        <div class="autocomplete-wrap">
+                            <input type="text" id="dischargePort" placeholder="港口名称|五子码" autocomplete="off">
+                            <div class="autocomplete-list" id="dischargeList" style="display:none;"></div>
+                        </div>
+                        <button class="link-info" id="dischargeInfo">ⓘ 说明</button>
+                    </div>
+                    <div class="error-msg" id="err-dischargePort"></div>
+                </div>
+                <!-- 目的港 -->
+                <div class="field">
+                    <div class="field-label"><span class="required">*</span>目的港</div>
+                    <div class="field-control">
+                        <div class="autocomplete-wrap">
+                            <input type="text" id="destination" placeholder="港口名称|五子码" autocomplete="off">
+                            <div class="autocomplete-list" id="destinationList" style="display:none;"></div>
+                        </div>
+                        <button class="link-info" id="destinationInfo">ⓘ 说明</button>
+                    </div>
+                    <div class="error-msg" id="err-destination"></div>
+                </div>
+            </div>
+            <div class="port-note">港口库共 118 个,本页先内嵌 5 个常用,完整表待接 /api/db/ports</div>
+        </div>
+    </div>
+
+    <!-- 后续分区占位 -->
+    <!-- SECTION-3+ 待补 -->
+
+</div>
+
+<script>
+    (function() {
+        // 港口数据
+        const ports = [
+            { name: 'Shanghai', code: 'CNSHA' },
+            { name: 'Xingang', code: 'CNTXG' },
+            { name: 'Port Klang', code: 'MYPKG' },
+            { name: 'Port Klang Westport', code: 'MYPKGW' },
+            { name: 'Port Klang Northport', code: 'MYPKGN' }
+        ];
+
+        // 工具函数
+        const $ = id => document.getElementById(id);
+        const showToast = (msg) => {
+            let toast = document.querySelector('.toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.className = 'toast';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = msg;
+            toast.classList.remove('hide');
+            setTimeout(() => toast.classList.add('hide'), 1800);
+        };
+
+        // 折叠
+        document.querySelectorAll('.section-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const section = header.parentElement;
+                section.classList.toggle('collapsed');
+            });
+        });
+
+        // 主提单号 自动大写 + 限制
+        $('blNo').addEventListener('input', function() {
+            this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        });
+
+        // 船名 自动大写
+        $('vesselName').addEventListener('input', function() {
+            this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        });
+
+        // 航次 校验 V.
+        $('voyage').addEventListener('input', function() {
+            const val = this.value;
+            const errEl = $('err-voyage');
+            if (val.includes('V.') || val.includes('v.')) {
+                errEl.textContent = '航次不可以有 V.';
+                this.classList.add('error');
+            } else {
+                errEl.textContent = '';
+                this.classList.remove('error');
+            }
+        });
+
+        // 提单份数 只允许数字
+        $('blCopies').addEventListener('input', function() {
+            this.value = this.value.replace(/\D/g, '');
+        });
+
+        // 检验航次按钮
+        $('checkVoyageBtn').addEventListener('click', () => {
+            console.log('检验航次 clicked');
+            showToast('航次校验(本轮仅提示)');
+        });
+
+        // 查看船司船代
+        $('viewAgentBtn').addEventListener('click', () => {
+            console.log('查看船司船代 clicked');
+            showToast('船代名单待补');
+        });
+
+        // 说明链接
+        document.querySelectorAll('.link-info').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                showToast('港口格式: 英文名|五子码');
+            });
+        });
+
+        // 联想输入逻辑
+        function setupAutocomplete(inputId, listId) {
+            const input = $(inputId);
+            const list = $(listId);
+            input.addEventListener('input', function() {
+                const query = this.value.trim().toLowerCase();
+                list.innerHTML = '';
+                if (!query) { list.style.display = 'none'; return; }
+                const matches = ports.filter(p => 
+                    p.name.toLowerCase().includes(query) || p.code.toLowerCase().includes(query)
+                );
+                if (matches.length === 0) { list.style.display = 'none'; return; }
+                list.style.display = 'block';
+                matches.forEach(p => {
+                    const item = document.createElement('div');
+                    item.className = 'autocomplete-item';
+                    item.textContent = `${p.name}|${p.code}`;
+                    item.addEventListener('click', () => {
+                        input.value = `${p.name}|${p.code}`;
+                        list.style.display = 'none';
+                        // 清除错误
+                        const errId = inputId.replace('origin','err-origin').replace('dischargePort','err-dischargePort').replace('destination','err-destination');
+                        if (errId) {
+                            const errEl = $(errId);
+                            if (errEl) { errEl.textContent = ''; input.classList.remove('error'); }
+                        }
+                    });
+                    list.appendChild(item);
+                });
+            });
+            document.addEventListener('click', (e) => {
+                if (!list.contains(e.target) && e.target !== input) {
+                    list.style.display = 'none';
+                }
+            });
+        }
+        setupAutocomplete('origin', 'originList');
+        setupAutocomplete('dischargePort', 'dischargeList');
+        setupAutocomplete('destination', 'destinationList');
+
+        // 必填校验 (保存到待发送)
+        function validateRequired() {
+            const errors = [];
+            const fields = [
+                { id: 'blNo', errId: 'err-blNo', name: '主提单号' },
+                { id: 'carrier', errId: 'err-carrier', name: '船公司' },
+                { id: 'cargoType', errId: 'err-cargoType', name: '货物类型' },
+                { id: 'payment', errId: 'err-payment', name: '付款方式' },
+                { id: 'blType', errId: 'err-blType', name: '提单类型' },
+                { id: 'blCopies', errId: 'err-blCopies', name: '提单份数' },
+                { id: 'issuePlace', errId: 'err-issuePlace', name: '签发地' },
+                { id: 'vesselName', errId: 'err-vesselName', name: '船名' },
+                { id: 'voyage', errId: 'err-voyage', name: '航次' },
+                { id: 'shippingAgent', errId: 'err-shippingAgent', name: '船代' },
+                { id: 'origin', errId: 'err-origin', name: '发货地' },
+                { id: 'loadPort', errId: 'err-loadPort', name: '装货港' },
+                { id: 'dischargePort', errId: 'err-dischargePort', name: '卸货港' },
+                { id: 'destination', errId: 'err-destination', name: '目的港' }
+            ];
+            fields.forEach(f => {
+                const el = $(f.id);
+                const errEl = $(f.errId);
+                let value = el.value.trim();
+                if (el.tagName === 'SELECT') {
+                    if (value === '' || value === null) {
+                        errors.push(f.name);
+                        el.classList.add('error');
+                        if (errEl) errEl.textContent = '必填项';
+                    } else {
+                        el.classList.remove('error');
+                        if (errEl) errEl.textContent = '';
+                    }
+                } else {
+                    if (value === '') {
+                        errors.push(f.name);
+                        el.classList.add('error');
+                        if (errEl) errEl.textContent = '必填项';
+                    } else {
+                        el.classList.remove('error');
+                        if (errEl) errEl.textContent = '';
+                    }
+                }
+            });
+            // 航次特殊校验
+            const voyageEl = $('voyage');
+            if (voyageEl.value.includes('V.') || voyageEl.value.includes('v.')) {
+                if (!errors.includes('航次')) errors.push('航次');
+                $('err-voyage').textContent = '航次不可以有 V.';
+                voyageEl.classList.add('error');
+            }
+            return errors;
+        }
+
+        // 保存到待发送
+        $('sendBtn').addEventListener('click', () => {
+            const errs = validateRequired();
+            const summary = $('summaryError');
+            if (errs.length > 0) {
+                summary.textContent = `还有 ${errs.length} 项必填未完成`;
+                summary.classList.add('show');
+                // 滚动到第一个错误
+                const firstErr = document.querySelector('.field-control input.error, .field-control select.error');
+                if (firstErr) {
+                    firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+                console.log('校验失败', errs);
+            } else {
+                summary.classList.remove('show');
+                console.log('保存到待发送 (模拟)');
+                showToast('已保存到待发送(本轮未接后端)');
+            }
+        });
+
+        // 保存到草稿箱 (不校验)
+        $('draftBtn').addEventListener('click', () => {
+            console.log('保存到草稿箱');
+            showToast('已存草稿(本轮未接后端)');
+        });
+
+        // 复制
+        $('copyBtn').addEventListener('click', () => {
+            console.log('复制');
+            showToast('已复制(模拟)');
+        });
+
+        // 关闭
+        $('closeBtn').addEventListener('click', () => {
+            console.log('关闭');
+            showToast('关闭(模拟)');
+        });
+
+        // 保存模板
+        $('saveTemplateBtn').addEventListener('click', () => {
+            console.log('保存模板');
+            showToast('模板已保存(模拟)');
+        });
+
+        // 模板选择
+        $('templateSelect').addEventListener('change', function() {
+            console.log('模板选择', this.value);
+        });
+
+        // 发货地等 输入时清除错误
+        ['origin','dischargePort','destination','loadPort','issuePlace','vesselName','voyage','blNo','carrier','cargoType','payment','blType','blCopies','shippingAgent'].forEach(id => {
+            const el = $(id);
+            if (el) {
+                el.addEventListener('input', function() {
+                    this.classList.remove('error');
+                    const errId = 'err-' + id;
+                    const errEl = $(errId);
+                    if (errEl) errEl.textContent = '';
+                });
+                el.addEventListener('change', function() {
+                    this.classList.remove('error');
+                    const errId = 'err-' + id;
+                    const errEl = $(errId);
+                    if (errEl) errEl.textContent = '';
+                });
+            }
+        });
+    })();
+</script>
+</body>
+</html>
