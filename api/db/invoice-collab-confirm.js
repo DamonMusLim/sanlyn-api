@@ -15,6 +15,7 @@ import {
   loadLaneBenchmarks,
   redactPayloadForLens,
 } from "./lib/confirm-lens.js";
+import { derivePortalSegments } from "./lib/collab-portal-segments.js";
 
 const KIND = "port_charge_invoice_confirmation";
 const SELLER_NAME = "上海洋宝宝国际物流有限公司";
@@ -69,7 +70,14 @@ async function validateToken(pool, raw) {
   // ⚠️ meta.preview 绝不当 godview/internal：否则 factory/supplier 预览链接会暴露客户开票(买方/销售价/毛利)，
   //    违反[洋宝宝加价不外泄]。internal 仅认显式内部 field_profile。预览按各自 role 的 lens 走。
   const internal = fieldProfile === "shipping_booking" || fieldProfile === "upstream_downstream";
-  return { shipmentId, role, meta, internal, scope: { ...(scope || {}), label } };
+  let portalDerive = null;
+  if (role === "supplier_portal" && !internal) {
+    portalDerive = await derivePortalSegments(pool, {
+      planId: shipmentId, companyLabel: meta?.company_label || label || null, companyCode: meta?.company_code || null, requested: Array.isArray(meta?.segments) ? meta.segments : null,
+    });
+    meta.segments = portalDerive.segments;
+  }
+  return { shipmentId, role, meta, internal, portalDerive, scope: { ...(scope || {}), label } };
 }
 
 async function loadShipment(pool, ctx) {
@@ -260,7 +268,7 @@ async function buildPayload(pool, sp, buyer, seller, saved, ctx) {
     save_as_default: saved?.payload?.save_as_default ?? true,
     updated_at: saved?.updated_at || null,
   };
-  return redactPayloadForLens(payload, defaults.lens, { buyer, seller });
+  return redactPayloadForLens(payload, defaults.lens, { buyer, seller, stripOcean: ctx.role === "supplier_portal" && !ctx.internal && ctx.portalDerive?.allowOcean === false, keepVoyageFacts: (ctx.portalDerive?.segments || []).includes("customs") });
 }
 
 async function partiesForView(pool, sp, ctx) {
@@ -296,7 +304,8 @@ async function partiesForView(pool, sp, ctx) {
   let sellerCompany = sp.party_company || {};
   if (ctx.role === "trucking_booking") sellerCompany = await loadCompany(pool, sp.trucking_code || sp.trucking_name);
   if (ctx.role === "broker_booking") sellerCompany = await loadCompany(pool, sp.broker_code || sp.broker_name);
-  return { buyer: own, seller: companyView(sellerCompany, ctx.scope.label || sp.forwarder_name || sp.trucking_name || sp.broker_name) };
+  const fallback = ctx.role === "supplier_portal" && !ctx.internal ? (ctx.scope.label || "") : (ctx.scope.label || sp.forwarder_name || sp.trucking_name || sp.broker_name);
+  return { buyer: own, seller: companyView(sellerCompany, fallback) };
 }
 
 function invoiceRef(ctx) {

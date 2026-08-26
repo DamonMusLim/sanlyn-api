@@ -1,13 +1,15 @@
 // collab-validate.js — extracted from booking-collab.js (structural split 2026-07-31, zero behavior change)
 import fs from "fs";
-import { billingSegmentFor, sanitizeSheet, visibleBillLines } from "./collab-field-profiles.js";
+import { billingSegmentFor, profileForSegments, sanitizeSheet, visibleBillLines } from "./collab-field-profiles.js";
 import { materializeAndList } from "./carrier-requirements.js";
 import { rawToHash, COLLAB_VERSION, COLLAB_VERSION_AT } from "./collab-shared.js";
 import { ensureColumns as ensureCompanyColumns, findCompany as findScopedCompany } from "./collab-company-profile.js";
+import { derivePortalSegments, stripOceanDeep } from "./collab-portal-segments.js";
 
 const CUSTOMER_FINISHED_DOC_TYPES = ["pl_sc_iv", "bl", "freight_bill", "portcharge_bill", "insurance"];
 const CUSTOMER_GENERATABLE_DOC_TYPES = [];  // BL要真实提单(不出模版);港杂费删;海运费按卖价另判
 const DOC_VISIBILITY_TYPES = new Set(["bl", "pl_sc_iv", "freight_bill", "portcharge_bill", "fe", "quarantine"]);
+const INTERNAL_FIELD_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
 
 function normalizeHiddenDocTypes(list) {
   const out = new Set();
@@ -97,8 +99,9 @@ async function handleValidate(req, res, pool) {
   }
   const meta = (typeof rawMeta === "string" ? JSON.parse(rawMeta) : rawMeta) || {};
   const factoryScope = meta.factory_scope || null;
+  const requestedSegments = Array.isArray(meta.segments) ? meta.segments : null;
   const portalScope = role === "supplier_portal"
-    ? { segments: meta.segments || ["ocean","truck","customs"], company_label: meta.company_label || null, field_profile: meta.field_profile || null }
+    ? { segments: requestedSegments || [], company_label: meta.company_label || null, field_profile: meta.field_profile || null }
     : null;
   // 货代看自己的公司资料+联系人（图2 卡片用）——本方看本方，非跨方泄露
   if (role === "supplier_portal" && portalScope && portalScope.company_label) {
@@ -115,6 +118,14 @@ async function handleValidate(req, res, pool) {
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId)
     return res.json({ valid: false, error: "链接数据异常 — 缺少 shipment_id" });
+  let portalDerive = null;
+  if (role === "supplier_portal" && !INTERNAL_FIELD_PROFILES.has(meta.field_profile || "")) {
+    portalDerive = await derivePortalSegments(pool, {
+      planId, companyLabel: meta.company_label || null, companyCode: meta.company_code || null, requested: requestedSegments,
+    });
+    portalScope.segments = portalDerive.segments;
+  }
+  const portalProfile = portalDerive ? profileForSegments(portalDerive.segments, { allowOcean: portalDerive.allowOcean }) : null;
 
   // Fetch plan + orders
   const planRes = await pool.query(
@@ -541,7 +552,7 @@ async function handleValidate(req, res, pool) {
       // 2026-08-05 Damon:「物流费他没账单，不该有这个的」
       // 该方一条可见账单行都没有 → 不下发 billing token → 前端整张卡不渲染
       _partyHasBills = visibleBillLines(costLines, {
-        role, field_profile: meta.field_profile || null, plan: planRes.rows[0],
+        role, field_profile: meta.field_profile || null, plan: planRes.rows[0], profile: portalProfile,
       }).length > 0;
       if (role === "customer_booking") {
         const saleLines = costLines
@@ -643,11 +654,15 @@ async function handleValidate(req, res, pool) {
       // 2026-08-06：so_no/bl_no 对工厂已屏蔽，但「是否已订舱」这个状态工厂要知道
       // （决定柜型锁不锁）。→ 下发布尔值，绝不下发号码本身。
       sheet.is_booked = !!(String(sheet.so_no||"").trim() || String(sheet.bl_no||"").trim());
+      const noPortalOcean = role === "supplier_portal" && portalDerive && !portalDerive.allowOcean;
       sheet.ext_ref =
-        (role === "factory_booking")
+        noPortalOcean
+          ? ""
+          : (role === "factory_booking")
           ? (_ordRefs.length ? [...new Set(_ordRefs)].join(" / ") : "")
           : (String(sheet.bl_no || "").trim() || String(sheet.so_no || "").trim() || "");
-    return sanitizeSheet(sheet, { role, field_profile: meta.field_profile || null, plan: planRes.rows[0] });
+      if (noPortalOcean) stripOceanDeep(sheet, { keepVoyageFacts: (portalDerive?.segments || []).includes("customs") });
+    return sanitizeSheet(sheet, { role, field_profile: meta.field_profile || null, plan: planRes.rows[0], profile: portalProfile });
     })(),
     ...(factoryProfileAddress ? { factory_profile_address: factoryProfileAddress } : {}),
     factory_scope: factoryScope,
@@ -657,8 +672,8 @@ async function handleValidate(req, res, pool) {
       token: _partyHasBills ? raw : null,        // 无账单不给 token
       show_amount: _partyHasBills,
       segment: (() => {
-        const segment = billingSegmentFor({ role, field_profile: meta.field_profile || null });
-        return role === "supplier_portal" && !meta.field_profile && segment === "ocean"
+        const segment = billingSegmentFor({ role, field_profile: meta.field_profile || null, profile: portalProfile });
+        return role === "supplier_portal" && !meta.field_profile && !portalDerive?.allowOcean
           ? ((portalScope && portalScope.segments && portalScope.segments[0]) || "supplier")
           : segment;
       })(),

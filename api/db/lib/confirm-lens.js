@@ -1,3 +1,5 @@
+import { stripOceanDeep } from "./collab-portal-segments.js";
+
 const ROLE_POLICIES = {
   customer_booking: { role: "customer", side: "receivable", segment: "customer" },
   shipper_booking: { role: "shipper", side: "receivable", segment: "port_charge" },
@@ -291,6 +293,7 @@ export function redactPayloadForLens(payload, lens, parties) {
   if (safe.bill_kind === "ocean") safe.bill_kind = "port_charge";
   delete safe.local_charge_baseline;
   delete safe.freight_rate_baseline;
+  if (parties?.stripOcean && safe.shipment) stripOceanDeep(safe.shipment, { keepVoyageFacts: Boolean(parties.keepVoyageFacts) });
   delete safe.exw_transfer_to_customer;
   return safe;
 }

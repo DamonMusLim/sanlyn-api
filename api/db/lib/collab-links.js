@@ -146,6 +146,17 @@ async function handleSendPortalLink(req, res, pool) {
   if (!planRow.rows.length)
     return res.status(404).json({ ok: false, error: "找不到出货计划" });
   const numericId = planRow.rows[0].id;
+  if (company_label) {
+    const company = await pool.query(
+      `SELECT type FROM companies
+        WHERE name_cn = $1 OR short_name = $1 OR code = $1
+        ORDER BY (merged_into_code IS NULL) DESC, id LIMIT 1`,
+      [company_label]
+    );
+    if (["factory", "customer"].includes(company.rows[0]?.type)) {
+      return res.status(400).json({ ok: false, error: "该公司是工厂/客户，请发对应的工厂或客户门户链接，不能发供应链门户" });
+    }
+  }
   const segs = (Array.isArray(segments) ? segments : ["ocean", "truck", "customs"])
     .filter(s => ["ocean", "truck", "customs"].includes(s));
   if (!segs.length) return res.status(400).json({ ok: false, error: "segments 至少一段" });

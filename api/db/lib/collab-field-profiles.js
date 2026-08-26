@@ -1,3 +1,5 @@
+import { OCEAN_BUSINESS_KEYS, VOYAGE_FACT_KEYS } from "./collab-portal-segments.js";
+
 const INTERNAL_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
 
 // 🔴 CY内部号铁律(2026-08-05 Damon)：CY开头=Sanlyn内部代码，对外一律不下发。
@@ -170,22 +172,41 @@ export function profileFor({ role, field_profile } = {}) {
   return FIELD_PROFILES.minimal;
 }
 
-export function billingSegmentFor({ role, field_profile } = {}) {
-  return profileFor({ role, field_profile }).billingSegment || "supplier";
+export function profileForSegments(segments, { allowOcean } = {}) {
+  const list = Array.isArray(segments) ? segments : [];
+  if (!list.length) return FIELD_PROFILES.minimal;
+  const map = { ocean: FIELD_PROFILES.carrier, truck: FIELD_PROFILES.trucking, customs: FIELD_PROFILES.broker };
+  const profiles = list.map(s => map[s]).filter(Boolean);
+  if (!profiles.length) return FIELD_PROFILES.minimal;
+  const keepVoyageFacts = list.includes("customs");
+  const sheetFields = [...new Set(profiles.flatMap(p => Array.isArray(p.sheetFields) ? p.sheetFields : []))]
+    .filter(k => allowOcean !== false || (!OCEAN_BUSINESS_KEYS.has(k) && (keepVoyageFacts || !VOYAGE_FACT_KEYS.has(k))));
+  const billingSegment = list.includes("ocean") ? "ocean" : list.includes("customs") ? "customs" : list.includes("truck") ? "truck" : "port_charge";
+  return {
+    sheetFields,
+    billingSegment,
+    directions: [...new Set(profiles.flatMap(p => p.directions || []))],
+    allowCostAmount: false,
+    scopes: [...new Set(profiles.flatMap(p => p.scopes || []))],
+  };
 }
 
-export function sanitizeSheet(sheet, { role, field_profile, plan } = {}) {
-  const profile = profileFor({ role, field_profile });
+export function billingSegmentFor({ role, field_profile, profile } = {}) {
+  return (profile || profileFor({ role, field_profile })).billingSegment || "supplier";
+}
+
+export function sanitizeSheet(sheet, { role, field_profile, plan, profile } = {}) {
+  const resolvedProfile = profile || profileFor({ role, field_profile });
   const safe = clonePlain(sheet || {});
-  if (Array.isArray(profile.sheetFields)) keepOnly(safe, profile.sheetFields);
-  if (!profile.allowCostAmount) redactDeep(safe, { allowSale: role === "customer_booking" || field_profile === "customer" });
+  if (Array.isArray(resolvedProfile.sheetFields)) keepOnly(safe, resolvedProfile.sheetFields);
+  if (!resolvedProfile.allowCostAmount) redactDeep(safe, { allowSale: role === "customer_booking" || field_profile === "customer" });
   if (role === "supplier_portal" && !INTERNAL_PROFILES.has(clean(field_profile))) {
     delete safe.customer_name;
     delete safe.customer_en;
     delete safe.freight_term;
     delete safe.plan_freight_term;
   }
-  if (profile === FIELD_PROFILES.minimal) {
+  if (resolvedProfile === FIELD_PROFILES.minimal) {
     safe.orders = [];
     safe.factory_cargo = [];
     safe.containers_live = [];
@@ -206,8 +227,8 @@ export function sanitizeSheet(sheet, { role, field_profile, plan } = {}) {
   return safe;
 }
 
-export function visibleBillLines(lines, { field_profile, role, plan, resolvedPartyCode } = {}) {
-  const profile = profileFor({ role, field_profile });
+export function visibleBillLines(lines, { field_profile, role, plan, resolvedPartyCode, profile } = {}) {
+  profile = profile || profileFor({ role, field_profile });
   const partyCode = clean(resolvedPartyCode).toUpperCase();
   const internal = Boolean(profile.allowCostAmount);
   if (!Array.isArray(lines)) return [];
