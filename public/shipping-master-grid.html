@@ -124,6 +124,7 @@ function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
 function cell(v){ return (v===null||v===undefined||v==='') ? '<span class="na">—</span>' : esc(v); }
 function money(v){ return (v===null||v===undefined||v==='') ? '<span class="na">—</span>'
   : Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function openWorkbenchTab(title,url){if(window.parent!==window)window.parent.postMessage({type:'sanlyn:open-tab',title:title,url:url},location.origin);else window.open(url,'_blank');}
 
 var ROWS = [];
 
@@ -139,7 +140,8 @@ function draw(){
     var iss = issuesOf(r);
     if (iss.length) bad++;
     if (only && !iss.length) return;
-    html += '<tr>';
+    var key = r.shipment_no || r.bl_no || r.id || '';
+    html += '<tr class="open-row" data-title="'+esc(r.shipment_no||r.bl_no||'海运票')+'" data-url="/ship-entry?id='+encodeURIComponent(key)+'">';
     html += '<td class="flag"' + (iss.length ? ' title="'+esc(iss.join('\n'))+'">🔴' : '>') + '</td>';
     COLS.forEach(function(c){
       var v = r[c.k];
@@ -180,5 +182,10 @@ async function load(){
 head();
 document.getElementById('go').onclick = load;
 document.getElementById('onlyBad').onchange = draw;
+document.getElementById('body').onclick = function(e) {
+  var row = e.target.closest('.open-row');
+  if (!row || e.target.closest('button')) return;
+  openWorkbenchTab(row.dataset.title, row.dataset.url);
+};
 load();
 </script>

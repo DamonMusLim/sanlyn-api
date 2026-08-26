@@ -63,6 +63,8 @@ var cols={
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
 function blank(v){return v===null||v===undefined||v==="";}
 function cell(v){return blank(v)?'<span class="na">—</span>':esc(v);}
+function attr(v){return esc(v).replace(/'/g,"&#39;");}
+function openWorkbenchTab(title,url){if(window.parent!==window)window.parent.postMessage({type:'sanlyn:open-tab',title:title,url:url},location.origin);else window.open(url,'_blank');}
 function money(v){return blank(v)?'<span class="na">—</span>':Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
 function diff(a,b){if(blank(a)||blank(b))return null;var n=Number(a)-Number(b);return Number.isFinite(n)?n:null;}
 function validText(r){var a=r.valid_from||"",b=r.valid_to||r.valid_until||"";return (a||"")+(a||b?" ~ ":"")+(b||"");}
@@ -107,10 +109,19 @@ function tableHtml(rows, cs, empty, opt){
 }
 function rowHtml(r,cs,opt){
   var tr=opt&&opt.rowClass?opt.rowClass(r):"";
-  return "<tr"+(tr?' class="'+tr+'"':"")+">"+cs.map(function(c){
+  var target=detailTarget(r,cs), attrs=target?' data-title="'+attr(target.title)+'" data-url="'+attr(target.url)+'"':"";
+  return "<tr"+(tr?' class="'+tr+'"':"")+attrs+">"+cs.map(function(c){
     var cls=[]; if(c[2]==="num")cls.push("num"); if(opt&&opt.warn&&opt.warn(r,c[0]))cls.push("warn");
     return '<td'+(cls.length?' class="'+cls.join(" ")+'"':"")+">"+renderValue(r,c)+"</td>";
   }).join("")+"</tr>";
+}
+function detailTarget(r,cs){
+  if(cs===cols.ocean_bills&&r.id)return {title:r.bill_no||r.bl_no||("账单 "+r.id),url:"/rates?bill_id="+encodeURIComponent(r.id)};
+  var key=r.shipment_no||r.bl_no||"";
+  if(key)return {title:r.bl_no||r.shipment_no,url:"/ship-entry?id="+encodeURIComponent(key)};
+  if(r.id)return {title:r.bill_no||("账单 "+r.id),url:"/rates?bill_id="+encodeURIComponent(r.id)};
+  if(r.code)return {title:"费率套餐 "+r.code,url:"/rates?matrix_code="+encodeURIComponent(r.code)};
+  return null;
 }
 function oceanWarn(r,k){return ["gp20","hq40","customer_gp20","customer_hq40"].includes(k)&&blank(r[k]);}
 function planWarn(r,k){return ["freight_cost","freight_cost_currency","freight_sale_usd"].includes(k)&&blank(r[k]);}
@@ -180,6 +191,7 @@ document.querySelectorAll(".tab").forEach(function(b){b.onclick=function(){state
 ["pol","pod","carrier"].forEach(function(id){document.getElementById(id).onchange=load;});
 document.getElementById("active").onchange=load;
 document.getElementById("csv").onclick=exportCsv;
+document.getElementById("content").onclick=function(e){var row=e.target.closest("tr[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url)};
 load();
 </script>
 </body>

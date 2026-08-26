@@ -87,6 +87,7 @@
         renderTable(n);
       }
       function box(cls,msg){var d=document.createElement("div");d.className=cls;d.textContent=msg;return d}
+      function openWorkbenchTab(title,url){if(window.parent!==window)window.parent.postMessage({type:'sanlyn:open-tab',title:title,url:url},location.origin);else window.open(url,'_blank')}
       function renderNoData(n){
         var b=n.basis||{},card=document.createElement("div"),strong=document.createElement("strong"),p1=document.createElement("p"),p2=document.createElement("p"),p3=document.createElement("p");
         card.className="no-data-card";text(strong,n.title+" · 未接入");
@@ -100,6 +101,7 @@
         var tr=document.createElement("tr");["订单编号","委托单位","ETD","操作"].forEach(function(h){var th=document.createElement("th");text(th,h);tr.appendChild(th)});thead.appendChild(tr);
         rows.forEach(function(r){
           var id=String(r.id||r.plan_id||r.order_no||""),ignored=!!state.ignored[id],tr=document.createElement("tr");
+          if(r.order_no){tr.dataset.title=r.order_no;tr.dataset.url="/ship-grid?q="+encodeURIComponent(r.order_no)}
           if(ignored)tr.className="ignored";
           [["order_no"],["customer"],["etd"]].forEach(function(k){var td=document.createElement("td");text(td,r[k[0]]);tr.appendChild(td)});
           var td=document.createElement("td"),btn=document.createElement("button");td.className="action";btn.type="button";btn.dataset.id=id;btn.textContent=ignored?"已忽略":"忽略";td.appendChild(btn);tr.appendChild(td);tbody.appendChild(tr);
@@ -122,6 +124,7 @@
         var id=b.dataset.id,was=!!state.ignored[id];state.ignored[id]=!was;saveIgnored();renderPanel();
         try{await api(was?"DELETE":"POST",{key:state.active,id:id})}catch(err){state.ignored[id]=was;saveIgnored();renderPanel();alert(err.message)}
       });
+      panel.addEventListener("click",function(e){var row=e.target.closest("tr[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url)});
       document.getElementById("refreshBtn").addEventListener("click",load);
       document.getElementById("settingsBtn").addEventListener("click",function(){alert("预警条件设置暂未接入。")});
       load();

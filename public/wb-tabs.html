@@ -1,454 +1,64 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sanlyn 工作台多标签页</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sanlyn 工作台</title>
   <link rel="stylesheet" href="/public/hgj-ui.css">
-  <style>
-    :root {
-      --bg: var(--hgj-bg);
-      --bar: var(--hgj-card);
-      --bar2: var(--hgj-card);
-      --line: var(--hgj-line);
-      --text: var(--hgj-text);
-      --muted: var(--hgj-muted);
-      --active: var(--hgj-primary);
-      --active-bg: var(--hgj-primary-bg);
-      --danger: #c0362c;
-      --shadow: none;
-    }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; }
-    body {
-      margin: 0;
-      display: grid;
-      grid-template-rows: auto 1fr;
-      min-width: 320px;
-      background: var(--bg);
-      color: var(--text);
-      font: 16px/1.4 var(--hgj-font);
-    }
-    .top {
-      display: grid;
-      grid-template-columns: auto 1fr auto;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px 0;
-      background: var(--bar);
-      border-bottom: 1px solid var(--line);
-      box-shadow: none;
-      min-width: 0;
-    }
-    .brand {
-      display: flex;
-      flex-direction: column;
-      min-width: 122px;
-      padding: 0 2px 8px 0;
-      white-space: nowrap;
-    }
-    .brand strong { font-size: 15px; line-height: 20px; }
-    .brand span { color: var(--muted); font-size: 11px; line-height: 16px; }
-    .tabs {
-      display: flex;
-      align-items: flex-end;
-      gap: 4px;
-      min-width: 0;
-      overflow-x: auto;
-      overflow-y: hidden;
-      scrollbar-width: thin;
-      padding-bottom: 0;
-    }
-    .tab {
-      height: 32px;
-      min-width: 126px;
-      max-width: 240px;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      align-items: center;
-      gap: 6px;
-      padding: 0 8px 0 12px;
-      border: 1px solid var(--active);
-      border-radius: 3px;
-      background: var(--active-bg);
-      color: var(--active);
-      cursor: pointer;
-      user-select: none;
-      flex: 0 0 auto;
-      font-size: 12px;
-    }
-    .tab[aria-selected="true"] {
-      height: 32px;
-      background: var(--active-bg);
-      color: var(--active);
-      border-color: var(--active);
-      font-weight: 700;
-    }
-    .tab.dragging { opacity: 0.45; }
-    .tab-title {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .close {
-      width: 22px;
-      height: 22px;
-      border: 0;
-      border-radius: 0;
-      background: transparent;
-      color: inherit;
-      cursor: pointer;
-      font-size: 17px;
-      line-height: 20px;
-      padding: 0;
-    }
-    .close:hover { background: rgba(127, 127, 127, 0.16); color: var(--danger); }
-    .close[hidden] { display: none; }
-    .tools {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding-bottom: 8px;
-    }
-    button, select {
-      height: 30px;
-      border: 1px solid var(--line);
-      border-radius: 0;
-      background: var(--bar2);
-      color: var(--text);
-      font: inherit;
-    }
-    button { padding: 0 9px; cursor: pointer; }
-    button:hover, select:hover { border-color: var(--active); }
-    select { max-width: 150px; padding: 0 6px; }
-    .stage {
-      min-height: 0;
-      display: grid;
-      background: var(--bg);
-    }
-    .frame {
-      width: 100%;
-      height: 100%;
-      border: 0;
-      background: #fff;
-      display: none;
-    }
-    .frame.active { display: block; }
-    .toast {
-      position: fixed;
-      left: 50%;
-      bottom: 22px;
-      transform: translateX(-50%);
-      max-width: min(520px, calc(100vw - 32px));
-      padding: 10px 14px;
-      border-radius: 7px;
-      background: #1f2937;
-      color: #fff;
-      box-shadow: none;
-      display: none;
-      z-index: 20;
-    }
-    .toast.show { display: block; }
-    @media (max-width: 760px) {
-      .top { grid-template-columns: 1fr; padding: 8px 8px 0; }
-      .brand { padding-bottom: 2px; }
-      .tools { justify-content: space-between; padding-bottom: 6px; }
-      select { flex: 1; max-width: none; }
-      .tab { min-width: 112px; max-width: 180px; }
-    }
-  </style>
+  <link rel="stylesheet" href="/public/wb-tabs.css">
 </head>
 <body class="hgj-page">
-  <header class="top">
-    <div class="brand">
-      <strong>Sanlyn 工作台</strong>
-      <span>v2026.08.25-1 · <span id="generatedAt">生成时间 --</span></span>
+  <aside class="side hgj-side">
+    <div class="side-logo">
+      <strong>Sanlyn</strong>
+      <span>v2026.08.26-1 · <span id="generatedAt">生成时间 --</span></span>
     </div>
+    <nav id="sideNav" class="side-nav" aria-label="工作台导航"></nav>
+    <button id="customNav" class="custom-nav" type="button">自定义导航</button>
+  </aside>
+  <section class="workspace">
+    <header class="topbar">
+      <div class="module-brand"><span class="top-logo">S</span><span class="module-title" id="moduleTitle">工作台</span></div>
+      <div id="topSearch" class="top-search"></div>
+      <div class="top-actions">
+        <div class="menu-wrap">
+          <button class="top-menu" type="button" data-menu="settings">设置中心</button>
+          <div class="top-dropdown" id="menu-settings" hidden></div>
+        </div>
+        <div class="menu-wrap">
+          <button class="top-menu" type="button" data-menu="help">帮助中心</button>
+          <div class="top-dropdown" id="menu-help" hidden></div>
+        </div>
+        <div class="menu-wrap">
+          <button class="top-menu" type="button" data-menu="resource">企业资源</button>
+          <div class="top-dropdown" id="menu-resource" hidden></div>
+        </div>
+        <button class="icon-btn" id="noticeBtn" type="button" title="通知" aria-label="通知">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16v-5a6 6 0 0 0-12 0v5l-2 2h16z"/><path d="M9.5 20a2.5 2.5 0 0 0 5 0"/></svg>
+        </button>
+        <div class="company">Sanlyn</div>
+      </div>
+    </header>
     <nav id="tabs" class="tabs hgj-tabbar" aria-label="工作台标签页"></nav>
-    <div class="tools">
-      <select id="launcher" aria-label="打开页面">
-        <option value="">打开页面...</option>
-      </select>
-      <button id="refreshBtn" type="button" title="刷新当前页">刷新</button>
+    <main id="stage" class="stage" aria-label="标签页内容"></main>
+  </section>
+  <div class="float-tools" aria-label="快捷工具">
+    <button type="button" data-tool="刷新" title="刷新当前页"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v6h-6"/></svg></button>
+    <button type="button" data-tool="搜索" title="聚焦搜索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
+    <button type="button" data-tool="返回首页" title="返回首页"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/></svg></button>
+  </div>
+  <button id="assistantFab" class="assistant-fab" type="button" aria-label="助手">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a8 8 0 0 0-8 8v6a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-6a8 8 0 0 0-8-8z"/><path d="M9 12h.01M15 12h.01M9 16h6"/></svg>
+  </button>
+  <aside id="assistantPanel" class="assistant-panel" hidden>
+    <div class="assistant-head">
+      <strong>助手 · 待建</strong>
+      <button id="assistantClose" type="button" aria-label="关闭">×</button>
     </div>
-  </header>
-  <main id="stage" class="stage" aria-label="标签页内容"></main>
+    <p>此模块尚未开发。海管家对应功能：右下角助手。</p>
+  </aside>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
-  <script>
-    (function () {
-      "use strict";
-
-      var MAX_TABS = 20;
-      var FIXED_ID = "workbench";
-      /*
-       * localStorage key: sanlyn.wbTabs.v1
-       * Stored value: { activeId, tabs:[{ id, title, url, fixed }] }
-       * It only stores shell/tab metadata. Each iframe page keeps its own form,
-       * filter, scroll, and app state while the shell is open.
-       */
-      var STORAGE_KEY = "sanlyn.wbTabs.v1";
-      /*
-       * Child page protocol:
-       * window.parent.postMessage({
-       *   type: "sanlyn:open-tab", // "open-tab" is also accepted for migration
-       *   title: "QO25091200001_单票报价详情",
-       *   url: "/quote-v3.html?id=QO25091200001",
-       *   id: "quote-QO25091200001" // optional stable id; url is used if omitted
-       * }, location.origin);
-       * The shell accepts same-origin relative/absolute URLs only, opens or
-       * focuses the matching tab, and refuses the 21st tab.
-       */
-      var DEFAULT_TABS = [
-        { id: FIXED_ID, title: "工作台", url: "/wb", fixed: true }
-      ];
-      var PAGES = [
-        ["工作台", "/wb"],
-        ["海运总表", "/ocean"],
-        ["价表总台", "/rates"],
-        ["主表", "/ship-grid"],
-        ["操作预警", "/public/ops-alerts.html"],
-        ["录入表单", "/ship-entry"],
-        ["舱单录单", "/manifest"],
-        ["舱单配置驱动版", "/manifest-cfg"],
-        ["知识库", "/kb"]
-      ];
-      var state = loadState();
-      var tabsEl = document.getElementById("tabs");
-      var stageEl = document.getElementById("stage");
-      var launcherEl = document.getElementById("launcher");
-      var toastEl = document.getElementById("toast");
-      var toastTimer = 0;
-      var dragId = "";
-
-      document.getElementById("generatedAt").textContent =
-        "生成时间 " + new Date().toLocaleString("zh-CN");
-
-      PAGES.forEach(function (p) {
-        var option = document.createElement("option");
-        option.value = p[1];
-        option.textContent = p[0] + " · " + p[1];
-        launcherEl.appendChild(option);
-      });
-
-      launcherEl.addEventListener("change", function () {
-        var url = launcherEl.value;
-        var page = PAGES.find(function (p) { return p[1] === url; });
-        if (page) openTab({ title: page[0], url: page[1] });
-        launcherEl.value = "";
-      });
-
-      document.getElementById("refreshBtn").addEventListener("click", function () {
-        var frame = document.querySelector('.frame[data-id="' + cssEscape(state.activeId) + '"]');
-        if (frame && frame.contentWindow) frame.contentWindow.location.reload();
-      });
-
-      window.addEventListener("message", function (event) {
-        if (event.origin !== location.origin) return;
-        var data = event.data || {};
-        if (data.type !== "sanlyn:open-tab" && data.type !== "open-tab") return;
-        var safeUrl = normalizeUrl(data.url);
-        if (!safeUrl) return showToast("只允许打开本站页面");
-        openTab({ id: data.id, title: data.title || safeUrl, url: safeUrl });
-      });
-
-      render();
-
-      function loadState() {
-        var fallback = { activeId: FIXED_ID, tabs: DEFAULT_TABS.slice() };
-        try {
-          var raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-          if (!raw || !Array.isArray(raw.tabs)) return fallback;
-          var tabs = raw.tabs.filter(validTab).slice(0, MAX_TABS);
-          if (!tabs.some(function (t) { return t.id === FIXED_ID; })) {
-            tabs.unshift(DEFAULT_TABS[0]);
-          }
-          tabs = tabs.map(function (t) {
-            return t.id === FIXED_ID ? DEFAULT_TABS[0] : t;
-          });
-          var activeId = tabs.some(function (t) { return t.id === raw.activeId; })
-            ? raw.activeId
-            : FIXED_ID;
-          return { activeId: activeId, tabs: tabs };
-        } catch (err) {
-          return fallback;
-        }
-      }
-
-      function validTab(tab) {
-        return tab && typeof tab.id === "string" && typeof tab.title === "string" &&
-          typeof tab.url === "string" && !!normalizeUrl(tab.url);
-      }
-
-      function saveState() {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          activeId: state.activeId,
-          tabs: state.tabs
-        }));
-      }
-
-      function render() {
-        tabsEl.textContent = "";
-        state.tabs.forEach(function (tab) {
-          var btn = document.createElement("div");
-          btn.className = "tab";
-          btn.dataset.id = tab.id;
-          btn.draggable = !tab.fixed;
-          btn.setAttribute("role", "tab");
-          btn.tabIndex = 0;
-          btn.setAttribute("aria-selected", String(tab.id === state.activeId));
-          btn.title = tab.title + " · " + tab.url;
-          btn.innerHTML = '<span class="tab-title"></span><button class="close" type="button" title="关闭">×</button>';
-          btn.querySelector(".tab-title").textContent = tab.title;
-          btn.querySelector(".close").hidden = !!tab.fixed;
-          btn.addEventListener("click", function () { activateTab(tab.id); });
-          btn.addEventListener("keydown", function (ev) {
-            if (ev.key === "Enter" || ev.key === " ") {
-              ev.preventDefault();
-              activateTab(tab.id);
-            }
-          });
-          btn.querySelector(".close").addEventListener("click", function (ev) {
-            ev.stopPropagation();
-            closeTab(tab.id);
-          });
-          btn.addEventListener("dragstart", onDragStart);
-          btn.addEventListener("dragover", onDragOver);
-          btn.addEventListener("drop", onDrop);
-          btn.addEventListener("dragend", onDragEnd);
-          tabsEl.appendChild(btn);
-          ensureFrame(tab);
-        });
-        Array.from(stageEl.children).forEach(function (frame) {
-          var keep = state.tabs.some(function (t) { return t.id === frame.dataset.id; });
-          if (!keep) frame.remove();
-        });
-        updateFrameVisibility();
-        var activeTab = tabsEl.querySelector('[data-id="' + cssEscape(state.activeId) + '"]');
-        if (activeTab) activeTab.scrollIntoView({ block: "nearest", inline: "nearest" });
-      }
-
-      function ensureFrame(tab) {
-        var selector = '.frame[data-id="' + cssEscape(tab.id) + '"]';
-        var frame = document.querySelector(selector);
-        if (!frame) {
-          frame = document.createElement("iframe");
-          frame.className = "frame";
-          frame.dataset.id = tab.id;
-          frame.title = tab.title;
-          frame.src = tab.url;
-          stageEl.appendChild(frame);
-        } else {
-          frame.title = tab.title;
-        }
-      }
-
-      function updateFrameVisibility() {
-        Array.from(stageEl.children).forEach(function (frame) {
-          frame.classList.toggle("active", frame.dataset.id === state.activeId);
-        });
-      }
-
-      function openTab(input) {
-        var url = normalizeUrl(input.url);
-        if (!url) return showToast("只允许打开本站页面");
-        var id = sanitizeId(input.id || url);
-        var existing = state.tabs.find(function (t) { return t.id === id || t.url === url; });
-        if (existing) {
-          existing.title = String(input.title || existing.title).slice(0, 80);
-          state.activeId = existing.id;
-          saveState();
-          render();
-          return;
-        }
-        if (state.tabs.length >= MAX_TABS) return showToast("最多同时打开 20 个标签页");
-        state.tabs.push({
-          id: id,
-          title: String(input.title || url).slice(0, 80),
-          url: url,
-          fixed: false
-        });
-        state.activeId = id;
-        saveState();
-        render();
-      }
-
-      function activateTab(id) {
-        if (state.activeId === id) return;
-        state.activeId = id;
-        saveState();
-        render();
-      }
-
-      function closeTab(id) {
-        var idx = state.tabs.findIndex(function (t) { return t.id === id; });
-        if (idx < 0 || state.tabs[idx].fixed) return;
-        state.tabs.splice(idx, 1);
-        if (state.activeId === id) {
-          state.activeId = (state.tabs[idx] || state.tabs[idx - 1] || state.tabs[0]).id;
-        }
-        saveState();
-        render();
-      }
-
-      function normalizeUrl(url) {
-        if (typeof url !== "string" || !url.trim()) return "";
-        try {
-          var parsed = new URL(url, location.origin);
-          if (parsed.origin !== location.origin) return "";
-          return parsed.pathname + parsed.search + parsed.hash;
-        } catch (err) {
-          return "";
-        }
-      }
-
-      function sanitizeId(value) {
-        return String(value).replace(/[^A-Za-z0-9_.:-]+/g, "-").slice(0, 120) ||
-          "tab-" + Date.now();
-      }
-
-      function showToast(message) {
-        toastEl.textContent = message;
-        toastEl.classList.add("show");
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2400);
-      }
-
-      function onDragStart(ev) {
-        dragId = ev.currentTarget.dataset.id;
-        ev.currentTarget.classList.add("dragging");
-        ev.dataTransfer.effectAllowed = "move";
-      }
-
-      function onDragOver(ev) {
-        if (!dragId) return;
-        ev.preventDefault();
-        ev.dataTransfer.dropEffect = "move";
-      }
-
-      function onDrop(ev) {
-        ev.preventDefault();
-        var targetId = ev.currentTarget.dataset.id;
-        if (!dragId || dragId === targetId || targetId === FIXED_ID) return;
-        var from = state.tabs.findIndex(function (t) { return t.id === dragId; });
-        var to = state.tabs.findIndex(function (t) { return t.id === targetId; });
-        if (from <= 0 || to <= 0) return;
-        var moved = state.tabs.splice(from, 1)[0];
-        state.tabs.splice(to, 0, moved);
-        saveState();
-        render();
-      }
-
-      function onDragEnd(ev) {
-        ev.currentTarget.classList.remove("dragging");
-        dragId = "";
-      }
-
-      function cssEscape(value) {
-        if (window.CSS && CSS.escape) return CSS.escape(value);
-        return String(value).replace(/["\\]/g, "\\$&");
-      }
-    })();
-  </script>
+  <script src="/global-search.js"></script>
+  <script src="/wb-tabs.js"></script>
 </body>
 </html>

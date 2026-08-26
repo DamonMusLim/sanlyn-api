@@ -3,6 +3,9 @@ import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
 const IGNORE_SCOPE = "invoiced";
+// Unit: percentage points, not a 0-1 ratio. Below 20% means the link table is
+// too sparse to be treated as connected; real routes should quickly exceed it.
+const INVOICE_LINK_COVERAGE_READY_PERCENT = 20;
 
 function clampLimit(value) {
   const n = Number.parseInt(value || "200", 10);
@@ -69,6 +72,11 @@ counts AS (
          COUNT(*) FILTER (WHERE unknown_reason = 'no_bill_month')::int AS no_bill_month
     FROM classified
 ),
+invoice_link_stats AS (
+  SELECT COUNT(*)::int AS invoice_link_rows,
+         COUNT(DISTINCT NULLIF(BTRIM(bill_id::text), ''))::int AS invoice_link_distinct_bill_ids
+    FROM finance_invoice_bill_links
+),
 alert_rows AS (
   SELECT COALESCE(json_agg(json_build_object(
     'id', bill_id,
@@ -93,22 +101,43 @@ alert_rows AS (
      LIMIT $1
   ) x
 )
-SELECT counts.*, alert_rows.rows FROM counts, alert_rows`;
+SELECT counts.*, invoice_link_stats.*, alert_rows.rows
+  FROM counts, invoice_link_stats, alert_rows`;
   const row = (await pool.query(sql, [limit, IGNORE_SCOPE, !!options.includeIgnored])).rows[0] || {};
+  const eligible = Number(row.eligible || 0);
+  const invoiceLinkRows = Number(row.invoice_link_rows || 0);
+  const invoiceLinkDistinctBillIds = Number(row.invoice_link_distinct_bill_ids || 0);
+  const invoiceLinkCoveragePercent = eligible > 0 ? (invoiceLinkDistinctBillIds / eligible) * 100 : 100;
+  const invoiceLinksConnected = invoiceLinkCoveragePercent >= INVOICE_LINK_COVERAGE_READY_PERCENT;
   const reasons = {
     no_shipping_plan_link: Number(row.no_shipping_plan_link || 0),
     shipping_plan_unresolved: Number(row.shipping_plan_unresolved || 0),
     no_bill_month: Number(row.no_bill_month || 0),
   };
+  const invoiceBasisExtra = {
+    table: "freight_supplier_bills + finance_invoice_bill_links",
+    total: Number(row.total || 0),
+    eligible,
+    invoice_link_rows: invoiceLinkRows,
+    invoice_link_distinct_bill_ids: invoiceLinkDistinctBillIds,
+    invoice_link_coverage_percent: Number(invoiceLinkCoveragePercent.toFixed(2)),
+    invoice_link_ready_threshold_percent: INVOICE_LINK_COVERAGE_READY_PERCENT,
+  };
+  const disconnectedNote = `发票挂靠数据尚未接入（finance_invoice_bill_links 当前 ${invoiceLinkRows} 行，覆盖 ${invoiceLinkCoveragePercent.toFixed(1)}%）。挂靠接口 /api/db/invoice-bill-match 已于 2026-08-26 补挂路由，产生数据后此处自动生效。`;
   return {
-    invoiced: {
+    invoiced: invoiceLinksConnected ? {
       state: "ready",
       count: Number(row.alert_count || 0),
       rows: Array.isArray(row.rows) ? row.rows : [],
       basis: basis("ready", "仅统计已挂靠 shipping_plans 且 bill_month 有值、但未出现在 finance_invoice_bill_links 的账单行。", {
-        table: "freight_supplier_bills + finance_invoice_bill_links",
-        total: Number(row.total || 0),
-        eligible: Number(row.eligible || 0),
+        ...invoiceBasisExtra,
+      }),
+    } : {
+      state: "not_connected",
+      count: null,
+      rows: [],
+      basis: basis("not_connected", disconnectedNote, {
+        ...invoiceBasisExtra,
       }),
     },
     unknown: {

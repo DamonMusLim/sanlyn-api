@@ -62,6 +62,7 @@
   function fmtPct(v){return v===null||v===undefined?"未接入":(v*100).toFixed(1)+"%"}
   function count(v,missing){return v===null||v===undefined?missing:String(v)}
   function toast(t){$("toast").textContent=t;$("toast").classList.remove("hidden");setTimeout(()=>$("toast").classList.add("hidden"),1800)}
+  function openWorkbenchTab(title,url){if(window.parent!==window)window.parent.postMessage({type:'sanlyn:open-tab',title:title,url:url},location.origin);else window.open(url,'_blank')}
   async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{...headers(opt.body),...(opt.headers||{})}});const d=await r.json().catch(()=>({error:"接口返回异常"}));if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");return d}
   function companyLabel(c){return `${c.code||"未设置"} · ${c.name_cn||c.name_en||"未设置"}`}
   function fillCompanies(){
@@ -88,11 +89,13 @@
   function meta(items){const m=el("div","meta");items.forEach(x=>m.appendChild(el("span","pill",x)));return m}
   function renderCreditRow(r){
     const row=el("article","row"), main=el("div",""), title=el("div","title",`请注意，${r.name} 快超信用额度了`);
+    row.dataset.title=r.name||"信用额度预警";row.dataset.url="/ship-grid?q="+encodeURIComponent(r.name||r.id);
     main.appendChild(title);main.appendChild(meta([`已用/额度 ${fmtMoney(r.used_amount,r.credit_currency)} / ${fmtMoney(r.credit_limit,r.credit_currency)}`,`比例 ${fmtPct(r.ratio)}`,`依据行 ${r.row_count}，付款金额空值 ${r.missing_paid_amount}`]));
     const b=el("button","", "忽略");b.onclick=()=>ignore(r.id);row.appendChild(main);row.appendChild(b);return row;
   }
   function renderContractRow(r){
     const row=el("article","row"), main=el("div",""), txt=r.days_left<0?`请注意，${r.name} 合同已到期`:`请注意，${r.name} 合同快到期了`;
+    row.dataset.title=r.name||"合同日期预警";row.dataset.url="/ship-grid?q="+encodeURIComponent(r.name||r.id);
     main.appendChild(el("div","title",txt));main.appendChild(meta([`合同结束 ${r.contract_end||"未设置"}`,`剩余 ${r.days_left} 天`,`依据 companies.contract_end，字段已设置`]));
     const b=el("button","", "忽略");b.onclick=()=>ignore(r.id);row.appendChild(main);row.appendChild(b);return row;
   }
@@ -116,6 +119,7 @@
   function ignore(id){state.ignored.add(id);localStorage.setItem("biz_alert_ignored",JSON.stringify([...state.ignored]));render();toast("已忽略业务预警")}
   $("ignoreAll").onclick=()=>{const b=activeBlock()||{};(b.rows||[]).forEach(r=>state.ignored.add(r.id));localStorage.setItem("biz_alert_ignored",JSON.stringify([...state.ignored]));render();toast("已忽略当前业务预警")};
   $("reload").onclick=load;$("company").onchange=syncForm;
+  $("list").onclick=e=>{const row=e.target.closest(".row[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url)};
   document.querySelector(".tabs").onclick=e=>{const b=e.target.closest(".tab");if(!b)return;state.tab=b.dataset.tab;render()};
   $("save").onclick=async()=>{const c=selectedCompany();if(!c)return;await api(API,{method:"PATCH",body:JSON.stringify({company_id:c.id,credit_limit:$("limit").value,credit_currency:$("currency").value,credit_limit_note:$("note").value,contract_start:$("start").value,contract_end:$("end").value})});toast("已保存");await load()};
   load();

@@ -5,19 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Sanlyn 全局搜索</title>
   <link rel="stylesheet" href="/public/hgj-ui.css">
+  <link rel="stylesheet" href="/public/wb-tabs.css">
   <style>
-    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--hover:var(--hgj-primary-bg);--shadow:none}
-    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--hgj-font)}
-    .page{max-width:1120px;margin:0 auto;padding:22px}.bar{display:flex;align-items:center;gap:16px;margin-bottom:14px}.brand{min-width:160px}.brand h1{font-size:22px;margin:0}.meta{color:var(--muted);font-size:12px}
-    .brand h1{font-size:16px;line-height:16px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.global-search{position:relative;flex:1;min-width:240px}.search-shell{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:0;padding:8px 10px}
-    .search-icon{width:18px;height:18px;color:var(--muted);flex:0 0 auto}.search-input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font:inherit;font-size:15px;min-width:0}
-    .clear-btn{border:0;background:transparent;color:var(--muted);font-size:18px;line-height:1;cursor:pointer;padding:2px 6px}.clear-btn[hidden]{display:none}
-    .dropdown{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;background:var(--panel);border:0;border-radius:0;box-shadow:none;max-height:min(68vh,520px);overflow:auto;padding:8px}
-    .dropdown[hidden]{display:none}.state{padding:18px;color:var(--muted);text-align:center}.group{padding:6px 0}.group-title{padding:4px 8px;color:var(--muted);font-size:12px;font-weight:700}
-    .result{width:100%;display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px;align-items:start;text-align:left;border:0;background:transparent;color:var(--text);border-radius:0;padding:9px 8px;cursor:pointer}
-    .result:hover,.result.active{background:var(--hover)}.type{color:var(--accent);font-weight:700;font-size:12px}.label{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.sub{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .panel{border:0;background:var(--panel);border-radius:0;box-shadow:none;padding:18px;margin-bottom:10px}.panel h2{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.panel p{margin:6px 0;color:var(--muted)}
-    @media(max-width:720px){.page{padding:14px}.bar{display:grid}.brand{min-width:0}.dropdown{max-height:70vh}.result{grid-template-columns:64px minmax(0,1fr)}}
+    body{margin:0;background:var(--hgj-bg);color:var(--hgj-text);font:16px/1.5 var(--hgj-font)}
+    .page{max-width:1120px;margin:0 auto;padding:22px}.bar{display:flex;align-items:center;gap:16px;margin-bottom:14px}.brand{min-width:160px}.brand h1{font-size:16px;line-height:16px;margin:0;padding-left:10px;border-left:3px solid var(--hgj-primary);color:var(--hgj-title);font-weight:700}.meta{color:var(--hgj-muted);font-size:12px}.global-search{position:relative;flex:1;min-width:240px}.panel{background:var(--hgj-card);border:0;border-radius:0;box-shadow:none;padding:18px;margin-bottom:10px}.panel h2{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--hgj-primary);color:var(--hgj-title);font-weight:700}.panel p{margin:6px 0;color:var(--hgj-muted)}
+    @media(max-width:720px){.page{padding:14px}.bar{display:grid}.brand{min-width:0}.result{grid-template-columns:64px minmax(0,1fr)}}
   </style>
 </head>
 <body class="hgj-page">
@@ -25,7 +17,7 @@
     <header class="bar">
       <div class="brand">
         <h1 class="hgj-panel-title">全局搜索</h1>
-        <div class="meta">v2026.08.25-1 · <span id="generatedAt"></span></div>
+        <div class="meta">v2026.08.26-1 · <span id="generatedAt"></span></div>
       </div>
       <div id="globalSearch" class="global-search"></div>
     </header>
@@ -35,72 +27,10 @@
       <p>数据依据：shipping_plans、orders、companies、customers、freight_supplier_bills、container_bookings、ports。</p>
     </section>
   </div>
+  <script src="/global-search.js"></script>
   <script>
-  (function(){
-    "use strict";
-    var API="/api/db/global-search";
     document.getElementById("generatedAt").textContent="生成时间 "+new Date().toLocaleString("zh-CN");
-    function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
-    function headers(){var h={};var t=token();if(t)h.Authorization="Bearer "+t;return h}
-    function el(tag,cls,text){var n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
-    function openTab(item){window.parent.postMessage({type:"sanlyn:open-tab",title:item.label,url:item.url},location.origin)}
-    function mountGlobalSearch(root){
-      var timer=0,last="",items=[],active=-1;
-      var shell=el("div","search-shell");
-      var icon=el("span","search-icon","⌕");
-      var input=el("input","search-input");
-      var clear=el("button","clear-btn","×");
-      var box=el("div","dropdown");
-      input.type="search";input.placeholder="搜索提单 / 订单 / 客户 / 账单 / 集装箱";input.autocomplete="off";
-      clear.type="button";clear.title="清空";clear.hidden=true;box.hidden=true;
-      shell.append(icon,input,clear);root.append(shell,box);
-      function showState(text){box.textContent="";box.appendChild(el("div","state",text));box.hidden=false}
-      function render(groups){
-        box.textContent="";items=[];active=-1;
-        if(!groups.length){showState("没有匹配结果");return}
-        groups.forEach(function(group){
-          var wrap=el("div","group");wrap.appendChild(el("div","group-title",group.type));
-          (group.items||[]).forEach(function(item){
-            items.push(item);
-            var btn=el("button","result");btn.type="button";
-            btn.appendChild(el("div","type",item.type));
-            var txt=el("div");txt.appendChild(el("div","label",item.label||"未设置"));
-            txt.appendChild(el("div","sub",item.sub||"未设置"));btn.appendChild(txt);
-            btn.addEventListener("click",function(){openTab(item)});
-            wrap.appendChild(btn);
-          });
-          box.appendChild(wrap);
-        });
-        box.hidden=false;
-      }
-      function mark(){
-        Array.prototype.forEach.call(box.querySelectorAll(".result"),function(n,i){n.classList.toggle("active",i===active)});
-      }
-      async function search(){
-        var q=input.value.trim();clear.hidden=!q;
-        if(q.length<2){box.hidden=true;items=[];return}
-        if(q===last)return;last=q;showState("查询中");
-        try{
-          var r=await fetch(API+"?q="+encodeURIComponent(q),{headers:headers()});
-          var d=await r.json().catch(function(){return{success:false,error:"接口返回异常"}});
-          if(!r.ok||d.success===false)throw new Error(d.error||"查询失败");
-          render(Array.isArray(d.data)?d.data:[]);
-        }catch(err){showState(err.message||"查询失败")}
-      }
-      input.addEventListener("input",function(){clearTimeout(timer);timer=setTimeout(search,250)});
-      input.addEventListener("focus",function(){if(input.value.trim().length>=2)box.hidden=false});
-      input.addEventListener("keydown",function(e){
-        if(e.key==="Enter"&&items[0]){e.preventDefault();openTab(items[Math.max(active,0)])}
-        if(e.key==="Escape")box.hidden=true;
-        if(e.key==="ArrowDown"&&items.length){e.preventDefault();active=(active+1)%items.length;mark()}
-        if(e.key==="ArrowUp"&&items.length){e.preventDefault();active=(active+items.length-1)%items.length;mark()}
-      });
-      clear.addEventListener("click",function(){input.value="";last="";items=[];clear.hidden=true;box.hidden=true;input.focus()});
-      document.addEventListener("click",function(e){if(!root.contains(e.target))box.hidden=true});
-    }
-    window.SanlynGlobalSearch={mount:mountGlobalSearch};
-    mountGlobalSearch(document.getElementById("globalSearch"));
-  })();
+    SanlynGlobalSearch.mount(document.getElementById("globalSearch"));
   </script>
 </body>
 </html>
