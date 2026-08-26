@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>订单录入 · 先建单后补全</title>
+<link rel="stylesheet" href="/public/hgj-ui.css">
+<style>
+body{margin:0;background:var(--hgj-bg);color:var(--hgj-text);font:14px/1.5 var(--hgj-font)}
+.page{max-width:1180px;margin:0 auto;padding:16px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:10px}
+.title{font-size:18px;font-weight:700;color:var(--hgj-title)}
+.meta{font-size:12px;color:var(--hgj-muted)}
+.panel{background:var(--hgj-card);border-radius:0;box-shadow:none;padding:14px;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px}
+.wide{grid-column:1/-1}
+label{display:block;font-size:12px;color:var(--hgj-muted);margin-bottom:4px}
+input,select,textarea{width:100%;height:34px;border:1px solid var(--hgj-line);border-radius:0;background:var(--hgj-card);color:var(--hgj-text);padding:0 8px}
+textarea{height:66px;padding-top:8px;resize:vertical}
+button{height:34px;border:1px solid var(--hgj-primary);border-radius:0;background:var(--hgj-primary);color:#fff;padding:0 14px;cursor:pointer}
+button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.msg{padding:9px 10px;border:1px solid var(--hgj-line);background:var(--hgj-card);margin-bottom:10px}
+.err{color:var(--hgj-danger)}.ok{color:var(--hgj-primary)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{border:1px solid var(--hgj-line);padding:10px;background:var(--hgj-card)}
+.stat b{display:block;font-size:13px;color:var(--hgj-title)}
+.stat span{font-size:12px;color:var(--hgj-muted)}
+.draft{border-left:3px solid var(--hgj-primary)}
+.pill{display:inline-block;border:1px solid var(--hgj-line);padding:2px 6px;margin:2px 4px 2px 0;color:var(--hgj-muted)}
+#login{max-width:320px;margin:12vh auto;background:var(--hgj-card);padding:18px;display:none}
+@media(max-width:800px){.grid,.stats{grid-template-columns:1fr}.head{display:block}}
+</style>
+</head>
+<body>
+<div id="login">
+  <div class="title">登录</div>
+  <label>用户名</label><input id="u">
+  <label>密码</label><input id="p" type="password">
+  <button id="go" style="width:100%;margin-top:10px">登录</button>
+  <div id="le" class="err meta"></div>
+</div>
+<main class="page" id="app">
+  <div class="head">
+    <div><div class="title">订单录入</div><div class="meta">v2026.08.26-1 · <span id="stamp"></span></div></div>
+    <div class="row"><button class="secondary" id="openWb">在工作台打开</button><button class="secondary" id="patchBtn" hidden>保存补全草稿</button><button id="createBtn">先建草稿单</button></div>
+  </div>
+  <div id="msg"></div>
+  <section class="panel">
+    <h1 class="hgj-panel-title">必填 1 项</h1>
+    <div class="grid" style="margin-top:12px">
+      <div>
+        <label>买方公司代码 *</label>
+        <input id="companyCode" list="buyers" placeholder="例如 CN-00037">
+        <datalist id="buyers"></datalist>
+      </div>
+      <div><label>客户 PO</label><input id="customerPo"></div>
+      <div><label>目的港</label><input id="destinationPort"></div>
+      <div><label>工厂代码</label><input id="factoryCode"></div>
+      <div><label>销售侧成交方式</label><input id="tradeTerms" placeholder="未谈定可留空，草稿缺口显示"></div>
+      <div><label>采购侧成交方式</label><input id="purchaseTerms"></div>
+      <div><label>收货人</label><input id="consignee"></div>
+      <div class="wide"><label>备注</label><textarea id="remarks"></textarea></div>
+    </div>
+  </section>
+  <section class="panel">
+    <h1 class="hgj-panel-title">未接入字段</h1>
+    <div class="stats" id="stats"></div>
+  </section>
+  <section class="panel draft" id="draftBox" hidden>
+    <h1 class="hgj-panel-title">草稿单</h1>
+    <div id="draftInfo" class="meta" style="margin-top:10px"></div>
+    <div id="missing" style="margin-top:8px"></div>
+  </section>
+</main>
+<script src="/order-entry.js"></script>
+</body>
+</html>
