@@ -157,9 +157,9 @@ async function handleSendPortalLink(req, res, pool) {
       return res.status(400).json({ ok: false, error: "该公司是工厂/客户，请发对应的工厂或客户门户链接，不能发供应链门户" });
     }
   }
-  const segs = (Array.isArray(segments) ? segments : ["ocean", "truck", "customs"])
+  const segs = (Array.isArray(segments) ? segments : [])
     .filter(s => ["ocean", "truck", "customs"].includes(s));
-  if (!segs.length) return res.status(400).json({ ok: false, error: "segments 至少一段" });
+  if (!segs.length) return res.status(400).json({ ok: false, error: "segments 必填，且只能是 ocean/truck/customs 的子集 —— 不勾段不再默认给全段" });
 
   await pool.query(
     `UPDATE magic_links SET revoked_at = NOW()
@@ -221,8 +221,15 @@ async function handleMasterPreviewToken(req, res, pool) {
   } else {
     const segs = Array.isArray(segments) ? segments.filter(s => ["ocean","truck","customs","factory"].includes(s))
       : [party].filter(s => ["ocean","truck","customs"].includes(s));
-    meta.segments = segs.length ? segs : ["ocean", "truck", "customs"];
-    if (company_label) meta.company_label = String(company_label).slice(0, 60); else meta.field_profile = "shipping_booking";
+    if (company_label) {
+      if (!segs.length) return res.status(400).json({ ok: false, error: "预览外部公司视角必须指定 segments" });
+      meta.segments = segs;
+      meta.company_label = String(company_label).slice(0, 60);
+    } else {
+      // 内部 shipping_booking 预览是我方全貌，不是发给外部供应商的默认全段链接。
+      meta.segments = segs.length ? segs : ["ocean", "truck", "customs"];
+      meta.field_profile = "shipping_booking";
+    }
   }
 
   const raw = genRaw();

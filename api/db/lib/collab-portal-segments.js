@@ -19,12 +19,12 @@ function clean(v) {
   return String(v || "").trim();
 }
 
-function requestedList(requested, allowed) {
-  return Array.isArray(requested) ? requested.map(clean).filter(Boolean) : [...allowed];
+function requestedList(requested) {
+  return Array.isArray(requested) ? requested.map(clean).filter(Boolean) : [];
 }
 
 function makeSegments(requested, allowed) {
-  const req = requestedList(requested, allowed);
+  const req = requestedList(requested);
   const reqSet = new Set(req);
   const segments = SEGMENT_ORDER.filter(s => reqSet.has(s) && allowed.has(s));
   if (reqSet.has("factory")) segments.push("factory");
