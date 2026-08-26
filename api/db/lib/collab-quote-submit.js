@@ -4,6 +4,7 @@
 // 待 Sanlyn 人工核价后才落 freight_supplier_bills。绝不在此写 sale_amount / 任何财务真值。
 import crypto from "node:crypto";
 import { notifyDamonCard } from "./notify-damon.js";
+import { derivePortalSegments } from "./collab-portal-segments.js";
 
 const SEG_OK = new Set(["truck", "customs", "local", "ocean", "port_charge"]);
 
@@ -31,7 +32,13 @@ export async function handleCollabQuoteSubmit(req, res, pool) {
   const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId) return res.status(400).json({ ok: false, error: "链接数据异常" });
-  const allowedSegs = Array.isArray(meta.segments) ? meta.segments : ["ocean", "truck", "customs"];
+  const derived = await derivePortalSegments(pool, {
+    planId,
+    companyLabel: meta.company_label,
+    companyCode: meta.company_code,
+    requested: Array.isArray(meta.segments) ? meta.segments : null,
+  });
+  const allowedSegs = derived.segments;
 
   const nowIso = new Date().toISOString();
   const by = meta.company_label || meta.field_profile || "forwarder";

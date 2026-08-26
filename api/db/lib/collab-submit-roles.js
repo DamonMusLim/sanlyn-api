@@ -1,5 +1,6 @@
 // collab-submit-roles.js — extracted from booking-collab.js (structural split 2026-07-31, zero behavior change)
 import { rawToHash } from "./collab-shared.js";
+import { derivePortalSegments } from "./collab-portal-segments.js";
 
 // ── POST /customer-submit ─────────────────────────────────────
 async function handleCustomerSubmit(req, res, pool) {
@@ -247,11 +248,18 @@ async function handleTruckingSubmit(req, res, pool) {
   );
   if (!rows.length) return res.status(403).json({ ok: false, error: "链接无效或已过期" });
   const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
-  if (rows[0].recipient_role === 'supplier_portal' &&
-      !(meta.segments || []).includes('truck'))
-    return res.status(403).json({ ok: false, error: "贵司端口未承包车队段" });
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId) return res.status(500).json({ ok: false, error: "链接数据异常" });
+  if (rows[0].recipient_role === 'supplier_portal') {
+    const derived = await derivePortalSegments(pool, {
+      planId,
+      companyLabel: meta.company_label,
+      companyCode: meta.company_code,
+      requested: Array.isArray(meta.segments) ? meta.segments : null,
+    });
+    if (!derived.segments.includes('truck'))
+      return res.status(403).json({ ok: false, error: "贵司端口未承包车队段" });
+  }
 
   // 过磅重→柜表（真值写回；箱封号只填空防覆盖）
   // 失败/柜号不匹配 → cb_warnings 红标留痕，绝不静默吞掉
@@ -337,11 +345,18 @@ async function handleBrokerSubmit(req, res, pool) {
   );
   if (!rows.length) return res.status(403).json({ ok: false, error: "链接无效或已过期" });
   const meta = (typeof rows[0].meta === "string" ? JSON.parse(rows[0].meta) : rows[0].meta) || {};
-  if (rows[0].recipient_role === 'supplier_portal' &&
-      !(meta.segments || []).includes('customs'))
-    return res.status(403).json({ ok: false, error: "贵司端口未承包报关段" });
   const planId = parseInt(meta.shipment_id, 10);
   if (!planId) return res.status(500).json({ ok: false, error: "链接数据异常" });
+  if (rows[0].recipient_role === 'supplier_portal') {
+    const derived = await derivePortalSegments(pool, {
+      planId,
+      companyLabel: meta.company_label,
+      companyCode: meta.company_code,
+      requested: Array.isArray(meta.segments) ? meta.segments : null,
+    });
+    if (!derived.segments.includes('customs'))
+      return res.status(403).json({ ok: false, error: "贵司端口未承包报关段" });
+  }
 
   const ack = { broker_ack: {
     confirmed: confirmed !== false, remarks: remarks || null,
