@@ -3,18 +3,20 @@
 var MAX_TABS=20,FIXED_ID="workbench",STORAGE_KEY="sanlyn.wbTabs.v2";
 // 新增页面要同时加 nginx location 和这里；否则会被转成待建占位，避免落进 SPA 兜底页。
 var KNOWN_REAL_PATHS=[
-  "/wb","/wb-tabs","/ocean","/rates","/ship-grid","/ship-entry","/order-entry","/manifest","/manifest-send","/manifest-cfg","/kb",
-  "/ops-alerts","/fee-alerts","/biz-alerts","/ops-todos","/global-search",
+  "/wb","/wb-tabs","/ocean","/rates","/ship-grid","/ship-entry","/order-entry","/order-services","/manifest","/manifest-send","/ams-send","/vgm-send","/manifest-cfg","/kb",
+  "/ops-alerts","/fee-alerts","/biz-alerts","/ops-todos","/audit-review","/global-search",
   "/agent","/center","/check","/client","/dv","/email","/empty-shelf","/health","/html","/login","/me","/my","/one","/petwatch","/restock","/si","/sources","/staff-tasks","/trip"
 ];
 var BUILT={
-  "工作台":"/wb","运价管理":"/rates","海运出口":"/ship-grid","订单录入":"/order-entry",
-  "上海-舱单发送":"/manifest-send","账单管理":"/ocean","审核提交记录":"/ops-todos"
+  "工作台":"/wb","运价管理":"/rates","海运出口":"/ship-grid","订单录入":"/order-entry","服务项目":"/order-services",
+  "上海-舱单发送":"/manifest-send","AMS发送":"/ams-send","VGM发送":"/vgm-send","账单管理":"/ocean","审核提交记录":"/ops-todos",
+  "报价审核":"/audit-review?type=quote","费用模板审核":"/audit-review?type=fee_template","订单审核":"/audit-review?type=order","提单审核":"/audit-review?type=bl",
+  "费用审核":"/audit-review?type=fee","账单审核":"/audit-review?type=bill","往来公司审核":"/audit-review?type=company","合同审核":"/audit-review?type=contract"
 };
 var NAV=[
   n("工作台"),n("运价管理"),n("智能邮箱"),
   n("报价管理",["单票报价","费用模板"]),
-  n("集运订单",["待接单","订单录入","海运出口","海运进口","空运出口","空运进口","物流园报关","陆运","铁路运输","内贸水运","自拼"]),
+  n("集运订单",["待接单","订单录入","服务项目","海运出口","海运进口","空运出口","空运进口","物流园报关","陆运","铁路运输","内贸水运","自拼"]),
   n("数据通道",["上海-舱单发送","青岛-舱单发送","厦门-舱单发送","天津/大连-舱单","深圳/南沙-舱单","AFR发送","AMS发送","ISF发送","EM&ACI发送","订舱平台","在线报关","VGM发送","盯箱宝","全程货物跟踪","SPOT电商","ICS2"]),
   n("费用管理",["集运费用明细","账单管理","开票记录","收付管理","核销管理","提成管理"]),
   n("提单管理"),

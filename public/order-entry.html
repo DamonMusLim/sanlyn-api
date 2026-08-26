@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>订单录入 · 先建单后补全</title>
+<title>订单录入 · 双轨单号</title>
 <link rel="stylesheet" href="/public/hgj-ui.css">
 <style>
 body{margin:0;background:var(--hgj-bg);color:var(--hgj-text);font:14px/1.5 var(--hgj-font)}
@@ -26,10 +26,11 @@ button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
 .stat{border:1px solid var(--hgj-line);padding:10px;background:var(--hgj-card)}
 .stat b{display:block;font-size:13px;color:var(--hgj-title)}
 .stat span{font-size:12px;color:var(--hgj-muted)}
+.ids{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .draft{border-left:3px solid var(--hgj-primary)}
 .pill{display:inline-block;border:1px solid var(--hgj-line);padding:2px 6px;margin:2px 4px 2px 0;color:var(--hgj-muted)}
 #login{max-width:320px;margin:12vh auto;background:var(--hgj-card);padding:18px;display:none}
-@media(max-width:800px){.grid,.stats{grid-template-columns:1fr}.head{display:block}}
+@media(max-width:800px){.grid,.stats,.ids{grid-template-columns:1fr}.head{display:block}}
 </style>
 </head>
 <body>
@@ -42,10 +43,14 @@ button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
 </div>
 <main class="page" id="app">
   <div class="head">
-    <div><div class="title">订单录入</div><div class="meta">v2026.08.26-1 · <span id="stamp"></span></div></div>
+    <div><div class="title">订单录入</div><div class="meta">v2026.08.26-2 · <span id="stamp"></span></div></div>
     <div class="row"><button class="secondary" id="openWb">在工作台打开</button><button class="secondary" id="patchBtn" hidden>保存补全草稿</button><button id="createBtn">先建草稿单</button></div>
   </div>
   <div id="msg"></div>
+  <section class="panel">
+    <h1 class="hgj-panel-title">双轨编号</h1>
+    <div class="ids" id="idStats" style="margin-top:12px"></div>
+  </section>
   <section class="panel">
     <h1 class="hgj-panel-title">必填 1 项</h1>
     <div class="grid" style="margin-top:12px">
@@ -69,6 +74,7 @@ button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
   </section>
   <section class="panel draft" id="draftBox" hidden>
     <h1 class="hgj-panel-title">草稿单</h1>
+    <div class="ids" id="draftIds" style="margin-top:10px"></div>
     <div id="draftInfo" class="meta" style="margin-top:10px"></div>
     <div id="missing" style="margin-top:8px"></div>
   </section>

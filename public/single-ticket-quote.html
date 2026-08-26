@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>单票报价</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--nav:#00132E;--bad:var(--hgj-danger);--warn:var(--hgj-warn)}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--hgj-font)}button,input{height:34px;border:1px solid var(--line);border-radius:0;background:var(--panel);color:var(--text);font:inherit;padding:0 10px}button{cursor:pointer}button.primary{background:#006AFF;border-color:#006AFF;color:#fff}.app{display:grid;grid-template-columns:180px minmax(0,1fr);min-height:100vh}.side{background:var(--nav);color:#fff}.brand{height:56px;padding:17px 16px;font-weight:700}.navitem{height:48px;display:flex;align-items:center;padding:0 16px;color:#d9e6ff;border-left:3px solid transparent}.navitem.on{background:rgba(255,255,255,.08);border-left-color:#006AFF;color:#fff}.main{padding:18px 20px}.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;margin-bottom:12px}.title{font-size:18px;line-height:20px;margin:0;color:var(--hgj-title);padding-left:10px;border-left:3px solid #006AFF}.sub,.muted{color:var(--muted);font-size:12px}.search{display:flex;gap:8px;align-items:center}#q{width:280px}.grid{display:grid;grid-template-columns:320px minmax(0,1fr);gap:10px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:0;box-shadow:none}.card{padding:12px}.num{font-size:22px;font-weight:700;margin-top:2px}.panel{margin-bottom:10px;overflow:hidden}.head{height:42px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 12px}.head b{padding-left:9px;border-left:3px solid #006AFF}.body{padding:12px}.kv{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;border-bottom:1px solid var(--line);padding:8px 0}.kv span:first-child{color:var(--muted)}.pill{border:1px solid #006AFF;color:#006AFF;background:var(--hgj-primary-bg);padding:1px 7px;font-size:12px}.bad{color:var(--bad)}.warn{color:var(--warn)}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:8px 9px;text-align:left;vertical-align:top}th{background:var(--bg);color:var(--muted);font-size:12px}.empty{padding:18px;color:var(--muted);text-align:center}.rowbtn{width:100%;height:auto;text-align:left;padding:10px 12px;border:0;border-bottom:1px solid var(--line);background:var(--panel)}.rowbtn strong,.rowbtn span{display:block;overflow-wrap:anywhere}.rowbtn span{color:var(--muted);font-size:12px}.rate{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.field{border:1px solid var(--line);padding:8px}.field b{display:block}.field span{display:block;color:var(--muted);font-size:12px;margin-top:3px}@media(max-width:900px){.app{display:block}.side{display:none}.main{padding:14px}.top,.grid{display:block}.search{margin-top:10px;align-items:stretch}.cards,.rate{grid-template-columns:1fr}#q{width:100%}table{display:block;overflow-x:auto;white-space:nowrap}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="app">
+    <aside class="side"><div class="brand">Sanlyn</div><div class="navitem on">单票报价</div></aside>
+    <main class="main">
+      <header class="top">
+        <div><h1 class="title hgj-panel-title">单票报价</h1><div id="sub" class="sub">版本 v2026.08.26-1 · 生成时间 2026-08-26</div></div>
+        <div class="search"><input id="q" placeholder="BL / 订舱号 / 订单号 / 票ID"><button id="load" class="primary" type="button">查询</button></div>
+      </header>
+      <section class="cards">
+        <div class="card"><div class="muted">单票字段</div><div id="mTicket" class="num">未接入</div></div>
+        <div class="card"><div class="muted">明细行</div><div id="mLines" class="num">未接入</div></div>
+        <div class="card"><div class="muted">价表命中</div><div id="mRates" class="num">未接入</div></div>
+        <div class="card"><div class="muted">报价状态</div><div id="mQuote" class="num warn">未设置</div></div>
+      </section>
+      <section class="grid">
+        <div>
+          <section class="panel"><div class="head"><b>当前单票</b><span id="state" class="pill">未接入</span></div><div id="ticket" class="body"></div></section>
+          <section class="panel"><div class="head"><b>字段填充率</b><span class="pill">真实字段</span></div><div id="coverage" class="body"></div></section>
+        </div>
+        <div>
+          <section class="panel"><div class="head"><b>报价字段</b><span class="pill">不反推</span></div><div id="quoteFields" class="body rate"></div></section>
+          <section class="panel"><div class="head"><b>匹配价表</b><span class="pill">已设置才显示</span></div><div id="rates" class="body"></div></section>
+          <section class="panel"><div class="head"><b>订单明细</b><span class="pill">order_line_items</span></div><div id="lines" class="body"></div></section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/single-ticket-quote.js"></script>
+</body>
+</html>

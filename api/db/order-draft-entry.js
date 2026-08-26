@@ -1,5 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { allocateOrderIdentifiers, orderIdentifierStats } from "./order-id-policy.js";
 
 const INTERNAL_ROLES = new Set(["admin", "logistics", "sales", "operator", "superadmin", "ceo"]);
 const COMPLETION_FIELDS = [
@@ -81,6 +82,13 @@ async function fieldStats(pool) {
   });
 }
 
+async function entryStats(pool) {
+  const cols = await existingColumns(pool);
+  const fields = await fieldStats(pool);
+  const identifiers = await orderIdentifierStats(pool, cols);
+  return { fields, identifiers };
+}
+
 async function listBuyers(pool, req) {
   const codes = userCodes(req);
   const scoped = !isInternal(req);
@@ -138,13 +146,15 @@ async function createDraft(req, body) {
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext('orders_draft_entry'))");
+    const ids = await allocateOrderIdentifiers(client);
     const nr = await client.query("SELECT COALESCE(MAX(id),0)+1 AS id FROM orders");
     const id = Number(nr.rows[0].id);
-    const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const data = {
       id,
-      _id: "order_draft_" + id,
-      order_no: "DRAFT-" + ymd + "-" + String(id).padStart(5, "0"),
+      _id: "order_" + ids.internal_snowflake_id,
+      order_no: ids.public_order_no,
+      public_order_no: ids.public_order_no,
+      internal_snowflake_id: ids.internal_snowflake_id,
       contract_no: null,
       company_code: companyCode,
       company_name_cn: buyer?.name_cn || "",
@@ -179,7 +189,7 @@ async function createDraft(req, body) {
       values
     );
     await client.query("COMMIT");
-    return r.rows[0];
+    return { ...r.rows[0], public_order_no: ids.public_order_no, internal_snowflake_id: ids.internal_snowflake_id };
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
@@ -252,7 +262,13 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const pool = getPool();
-      return res.status(200).json({ success: true, buyers: await listBuyers(pool, req), field_stats: await fieldStats(pool) });
+      const stats = await entryStats(pool);
+      return res.status(200).json({
+        success: true,
+        buyers: await listBuyers(pool, req),
+        field_stats: stats.fields,
+        identifier_stats: stats.identifiers,
+      });
     }
     if (req.method === "POST") return res.status(200).json({ success: true, order: await createDraft(req, req.body || {}) });
     if (req.method === "PATCH") return res.status(200).json({ success: true, order: await patchDraft(req, req.body || {}) });

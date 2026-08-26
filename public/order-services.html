@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>服务项目</title>
+<link rel="stylesheet" href="/public/hgj-ui.css">
+<style>
+body{margin:0;background:var(--hgj-bg);color:var(--hgj-text);font:14px/1.5 var(--hgj-font)}
+.page{max-width:1180px;margin:0 auto;padding:16px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:10px}
+.title{font-size:18px;font-weight:700;color:var(--hgj-title)}
+.meta{font-size:12px;color:var(--hgj-muted)}
+.panel{background:var(--hgj-card);border-radius:0;box-shadow:none;padding:14px;margin-bottom:10px}
+.bar{display:grid;grid-template-columns:1fr 1fr auto auto;gap:8px;align-items:end}
+label{display:block;font-size:12px;color:var(--hgj-muted);margin-bottom:4px}
+input{width:100%;height:34px;border:1px solid var(--hgj-line);border-radius:0;background:var(--hgj-card);color:var(--hgj-text);padding:0 8px}
+button{height:34px;border:1px solid var(--hgj-primary);border-radius:0;background:var(--hgj-primary);color:#fff;padding:0 14px;cursor:pointer}
+button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
+button:disabled{opacity:.55;cursor:not-allowed}
+.msg{padding:9px 10px;border:1px solid var(--hgj-line);background:var(--hgj-card);margin-bottom:10px}
+.err{color:var(--hgj-danger)}.ok{color:var(--hgj-primary)}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.service{border:1px solid var(--hgj-line);background:var(--hgj-card);padding:10px;min-height:118px}
+.service-top{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.service input{width:16px;height:16px;flex:0 0 auto}
+.service b{color:var(--hgj-title);font-size:14px}
+.status{font-size:12px;color:var(--hgj-muted);overflow-wrap:anywhere}
+.selected .status{color:var(--hgj-primary)}
+.nodata .status{color:var(--hgj-warn)}
+.readonly{border-left:3px solid var(--hgj-warn)}
+#login{max-width:320px;margin:12vh auto;background:var(--hgj-card);padding:18px;display:none}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.bar{grid-template-columns:1fr}.head{display:block}}
+@media(max-width:560px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="login">
+  <div class="title">登录</div>
+  <label>用户名</label><input id="u">
+  <label>密码</label><input id="p" type="password">
+  <button id="go" style="width:100%;margin-top:10px">登录</button>
+  <div id="le" class="err meta"></div>
+</div>
+<main class="page" id="app">
+  <div class="head">
+    <div><div class="title">服务项目</div><div class="meta">v2026.08.26-1 · <span id="stamp">生成时间 --</span></div></div>
+    <button class="secondary" id="openWb">在工作台打开</button>
+  </div>
+  <div id="msg"></div>
+  <section class="panel">
+    <h1 class="hgj-panel-title">选择票据</h1>
+    <div class="bar" style="margin-top:12px">
+      <div><label>计划 ID</label><input id="planId" placeholder="shipping_plans.id 或 _id"></div>
+      <div><label>提单号</label><input id="blNo" placeholder="BL No"></div>
+      <button id="loadBtn">读取</button>
+      <button id="saveBtn" class="secondary" disabled>保存勾选</button>
+    </div>
+    <div class="meta" id="planInfo" style="margin-top:8px">请输入计划 ID 或提单号读取真实服务项目。</div>
+  </section>
+  <section class="panel" id="setupPanel" hidden>
+    <h1 class="hgj-panel-title">未接入</h1>
+    <div class="meta" id="setupText" style="margin-top:10px"></div>
+  </section>
+  <section class="panel">
+    <h1 class="hgj-panel-title">服务项目 12 项</h1>
+    <div class="grid" id="services" style="margin-top:12px"></div>
+  </section>
+</main>
+<script src="/order-services.js"></script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>审核管理专项</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--card:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--primary:var(--hgj-primary);--chip:var(--hgj-primary-bg);--danger:var(--hgj-danger);--warn:var(--hgj-warn)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--hgj-font)}
+    .wrap{max-width:1280px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;margin-bottom:14px}
+    h1,h2{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--primary);color:var(--hgj-title);font-weight:700}.sub,.basis,.muted{color:var(--muted);font-size:12px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{border:1px solid var(--primary);border-radius:3px;background:var(--chip);color:var(--primary);padding:8px 10px;cursor:pointer;font-size:12px}.tab.active{background:var(--primary);color:#fff}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.panel,.metric{background:var(--card);border:0;border-radius:0;box-shadow:none;padding:14px;margin-bottom:10px}.wide{grid-column:1/-1}
+    .metric .label{font-size:12px;color:var(--muted)}.metric .num{font-size:24px;font-weight:700;line-height:1.2;color:var(--hgj-title);font-variant-numeric:tabular-nums}.num.na{color:var(--warn)}
+    table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);font-weight:600}.mono{font-variant-numeric:tabular-nums}.bad{color:var(--danger)}.warn{color:var(--warn)}
+    .pill{display:inline-block;border:1px solid var(--primary);border-radius:3px;background:var(--chip);color:var(--primary);font-size:12px;padding:1px 7px}.empty,.err{padding:18px;color:var(--muted);text-align:center}.err{color:var(--danger)}.rowtitle{max-width:460px;word-break:break-word}
+    @media(max-width:900px){.wrap{padding:14px}.top{display:block}.grid{grid-template-columns:1fr 1fr}table{display:block;overflow-x:auto;white-space:nowrap}.rowtitle{min-width:260px;white-space:normal}}@media(max-width:560px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <div class="top">
+      <div><h1 class="hgj-panel-title" id="title">审核管理专项</h1><div class="sub" id="stamp">v2026.08.26-1 · 加载中</div></div>
+      <div class="sub">只读看板 · 不执行审批写入</div>
+    </div>
+    <nav class="tabs hgj-tabbar" id="tabs" aria-label="审核专项"></nav>
+    <div class="grid">
+      <section class="metric hgj-card"><div class="label">数据状态</div><div class="num na" id="mState">未接入</div><div class="basis" id="mStateBasis"></div></section>
+      <section class="metric hgj-card"><div class="label">字段填充率</div><div class="num na" id="mFill">未接入</div><div class="basis" id="mFillBasis"></div></section>
+      <section class="metric hgj-card"><div class="label">待审记录</div><div class="num na" id="mPending">未接入</div><div class="basis" id="mPendingBasis"></div></section>
+      <section class="metric hgj-card"><div class="label">操作</div><div class="num na">未接入</div><div class="basis">未授权写入，不提供忽略/通过/驳回</div></section>
+      <section class="panel hgj-card wide"><h2 class="hgj-panel-title">接入来源</h2><div class="basis" id="basis"></div><div id="sources"></div></section>
+      <section class="panel hgj-card wide"><h2 class="hgj-panel-title">待审核明细</h2><div class="basis" id="todoBasis"></div><div id="rows"></div></section>
+    </div>
+  </div>
+  <script src="/audit-review.js"></script>
+</body>
+</html>
