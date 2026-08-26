@@ -4,8 +4,7 @@ import { requireAuth } from "../auth.js";
 
 // fill_rate is a percentage, e.g. 97.4 means 97.4%.
 const MIN_FILL_RATE = 80;
-const IGNORE_CODE = "ALERT_IGNORED";
-const IGNORE_TABLE = "ops_alerts";
+const IGNORE_SCOPE = "ops";
 const NODES = [
   ["booking", "待订舱", "booking_sent_at", "订舱发送时间有人写入后，此处自动生效。"],
   ["allocation", "待配舱", "booking_no", "订舱号稳定写入后，此处自动生效。"],
@@ -33,17 +32,17 @@ function actorFrom(req) {
   return clean(u.employee_code || u.staff_no || u.username || u.account || u.email || u.uid || u.id || u.sub || u.name || "unknown", 120);
 }
 
-function targetId(key, id) {
+function targetKey(key, id) {
   return clean(key, 80) + ":" + clean(id, 160);
 }
 
 async function ignoredTargets(pool) {
   const r = await pool.query(
-    `SELECT target_id FROM operation_todos
-      WHERE check_code=$1 AND target_table=$2 AND status='resolved'`,
-    [IGNORE_CODE, IGNORE_TABLE]
+    `SELECT target_key FROM alert_ignores
+      WHERE scope=$1`,
+    [IGNORE_SCOPE]
   );
-  return new Set(r.rows.map((x) => String(x.target_id || "")));
+  return new Set(r.rows.map((x) => String(x.target_key || "")));
 }
 
 function makeNode(meta, stats, rows, ignored = new Set()) {
@@ -52,7 +51,7 @@ function makeNode(meta, stats, rows, ignored = new Set()) {
   const b = basis(field, filled, stats.total, note);
   const ready = b.fill_rate !== null && b.fill_rate >= MIN_FILL_RATE;
   if (!ready) return { key, title, state: "no_data", count: null, rows: [], basis: b };
-  const list = key === "signing" ? rows.filter((r) => !ignored.has(targetId(key, r.id || r.plan_id || r.order_no))) : [];
+  const list = key === "signing" ? rows.filter((r) => !ignored.has(targetKey(key, r.id || r.plan_id || r.order_no))) : [];
   return { key, title, state: "ready", count: list.length, rows: list, basis: b };
 }
 
@@ -130,41 +129,26 @@ async function ignoreAlert(req, res, pool) {
   const found = await assertReadyRow(pool, key, id);
   if (!found.ok) return res.status(found.status).json({ success: false, error: found.error });
   const actor = actorFrom(req);
-  const tid = targetId(key, id);
-  const detail = JSON.stringify({ source: "ops-alerts", key, id, title: found.node.title });
+  const target = targetKey(key, id);
   const note = clean(req.body?.notes || `ignored by ${actor}`, 2000);
-  const existing = await pool.query(
-    `SELECT id FROM operation_todos WHERE check_code=$1 AND target_table=$2 AND target_id=$3 ORDER BY id DESC LIMIT 1`,
-    [IGNORE_CODE, IGNORE_TABLE, tid]
+  await pool.query(
+    `INSERT INTO alert_ignores (scope, target_key, actor, note)
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT (scope, target_key)
+     DO UPDATE SET actor=EXCLUDED.actor, note=EXCLUDED.note, created_at=NOW()`,
+    [IGNORE_SCOPE, target, actor, note]
   );
-  if (existing.rows[0]) {
-    await pool.query(
-      `UPDATE operation_todos
-          SET status='resolved', resolved_by=$2, resolved_at=NOW(), notes=$3, detail_json=$4::json, updated_at=NOW()
-        WHERE id=$1`,
-      [existing.rows[0].id, actor, note, detail]
-    );
-  } else {
-    await pool.query(
-      `INSERT INTO operation_todos
-         (check_code,severity,target_table,target_id,description,detail_json,status,resolved_by,resolved_at,notes)
-       VALUES ($1,'P3',$2,$3,$4,$5::json,'resolved',$6,NOW(),$7)`,
-      [IGNORE_CODE, IGNORE_TABLE, tid, `${found.node.title} ignored: ${id}`, detail, actor, note]
-    );
-  }
-  return res.status(200).json({ success: true, ignored: true, target_id: tid });
+  return res.status(200).json({ success: true, ignored: true, scope: IGNORE_SCOPE, target_key: target });
 }
 
 async function unignoreAlert(req, res, pool) {
   const key = clean(req.body?.key || req.query?.key || req.body?.node || req.query?.node, 80);
   const id = clean(req.body?.id || req.query?.id, 160);
   if (!key || !id) return res.status(400).json({ success: false, error: "key and id required" });
-  const actor = actorFrom(req);
   await pool.query(
-    `UPDATE operation_todos
-        SET status='rejected', resolved_by=$4, resolved_at=NOW(), notes=$5, updated_at=NOW()
-      WHERE check_code=$1 AND target_table=$2 AND target_id=$3 AND status='resolved'`,
-    [IGNORE_CODE, IGNORE_TABLE, targetId(key, id), actor, `unignored by ${actor}`]
+    `DELETE FROM alert_ignores
+      WHERE scope=$1 AND target_key=$2`,
+    [IGNORE_SCOPE, targetKey(key, id)]
   );
   return res.status(200).json({ success: true, ignored: false });
 }
