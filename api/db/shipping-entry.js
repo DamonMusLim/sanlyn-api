@@ -4,6 +4,8 @@ import { guardBillRow, guardPlanFreightCostCurrency, resolvePayer, ticketTerms }
 import { carrierFromBl, normalizeCarrier, normalizeChargeName, normalizeContainerType, num } from "./lib/portcharge-close-loop.js";
 
 const INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "ceo", "superadmin"];
+const FEE_STATUS = Object.freeze({ RECORDED: "fee_recorded", COMPLETED: "fee_completed" });
+const FEE_STATUS_ALIASES = new Map([["费用已录入", FEE_STATUS.RECORDED], ["费用已完成", FEE_STATUS.COMPLETED]]);
 
 function clean(v) { return String(v ?? "").trim(); }
 function n(v) { return v === "" || v == null ? null : num(v); }
@@ -18,6 +20,22 @@ function calcTax(row, total) {
   if (direct !== null) return direct;
   const rate = n(row.tax_rate);
   return rate === null ? null : Number((total * rate / 100).toFixed(2));
+}
+function normalizeFeeStatus(v) {
+  const raw = clean(v);
+  if (!raw) return null;
+  return FEE_STATUS_ALIASES.get(raw) || (Object.values(FEE_STATUS).includes(raw) ? raw : null);
+}
+function inferredFeeStatus(row) {
+  // fee_recorded: fee line has enough billing facts to be entered, but no completion evidence yet.
+  // fee_completed: recorded line also has confirmation/reconcile/payment evidence from confirmed_at/reconciled/ap_status.
+  if (row?.confirmed_at || row?.reconciled === true || ["paid", "completed", "settled"].includes(clean(row?.ap_status).toLowerCase())) {
+    return FEE_STATUS.COMPLETED;
+  }
+  if (clean(row?.cost_category || row?.fee_name) && n(row?.amount) !== null && clean(row?.currency) && clean(row?.settlement_company || row?.supplier)) {
+    return FEE_STATUS.RECORDED;
+  }
+  return null;
 }
 
 async function standards(pool, plan) {
@@ -105,7 +123,7 @@ async function saveBill(pool, plan, row, user, terms, warnings) {
     plan.bl_no, String(plan.id), norm.name, amount, clean(row.currency || "CNY"), sale, qty, unit,
     clean(row.charge_basis || row.unit), clean(row.remarks), ym(row.bill_month), JSON.stringify(raw),
     payer || null, settlement || null, n(row.exchange_rate), total, n(row.tax_rate), tax,
-    clean(row.calculation_formula) || null, clean(row.fee_status) || null, n(row.sort_order),
+    clean(row.calculation_formula) || null, normalizeFeeStatus(row.fee_status) || inferredFeeStatus(row), n(row.sort_order),
   ];
   if (row.id) {
     vals.push(row.id);

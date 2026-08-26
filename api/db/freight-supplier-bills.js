@@ -344,6 +344,7 @@ export default async function handler(req, res) {
          remarks,
          pair_id,
          rebill_status,
+         fee_status,
          payer_company_code,
          (SELECT name_cn FROM companies c WHERE c.code = freight_supplier_bills.payer_company_code LIMIT 1) AS payer_name,
          incoterm,

@@ -85,6 +85,29 @@ function parseValue(name, v) {
   return has(v) ? clean(v, 500) : null;
 }
 
+function actorOf(req) {
+  const u = req.user || {};
+  return clean(u.username || u.name || u.email || u.account || u.sub || u.uid || u.id || u.role, 160) || "unknown";
+}
+
+async function auditWrite(client, req, meta, action, row, before = null) {
+  const detail = {
+    module: "invoice-records",
+    table: meta.table,
+    side: meta.side,
+    action,
+    id: row?.id || before?.id || null,
+    before,
+    after: row,
+    actor: actorOf(req),
+  };
+  await client.query(
+    `INSERT INTO shipping_plan_audit (plan_id, plan_uid, action, actor, detail)
+     VALUES (NULL,$1,$2,$3,$4::jsonb)`,
+    [`invoice:${meta.side}:${detail.id || "new"}`, `invoice_${action}`, detail.actor, JSON.stringify(detail)]
+  );
+}
+
 function writeInput(body, cols, requireId) {
   const id = clean(body?.id, 80);
   if (requireId && !id) throw new Error("id required");
@@ -101,40 +124,57 @@ function writeInput(body, cols, requireId) {
 }
 
 async function writeRow(pool, req) {
-  const meta = metaFor(req.body?.side);
-  if (!meta) throw new Error("side must be out or in");
-  if (!(await tableExists(pool, meta.table))) throw new Error(`未接入: 缺 ${meta.table}；当前填充率 未接入`);
-  const cols = await columns(pool, meta.table);
-  if (!cols.has("id")) throw new Error(`未接入: 缺 ${meta.table}.id；当前填充率 未接入`);
-  if (req.method === "POST") {
-    const input = writeInput(req.body, cols, false);
-    const names = input.fields.map((x) => `"${x}"`);
-    const ph = input.fields.map((_, i) => `$${i + 1}`);
-    if (cols.has("created_at")) { names.push("created_at"); ph.push("NOW()"); }
-    if (cols.has("updated_at")) { names.push("updated_at"); ph.push("NOW()"); }
-    const r = await pool.query(`INSERT INTO ${meta.table} (${names.join(",")}) VALUES (${ph.join(",")}) RETURNING id::text AS id`, input.values);
-    return { side: meta.side, id: r.rows[0]?.id };
+  const client = await pool.connect();
+  try {
+    const meta = metaFor(req.body?.side);
+    if (!meta) throw new Error("side must be out or in");
+    if (!(await tableExists(client, meta.table))) throw new Error(`未接入: 缺 ${meta.table}；当前填充率 未接入`);
+    const cols = await columns(client, meta.table);
+    if (!cols.has("id")) throw new Error(`未接入: 缺 ${meta.table}.id；当前填充率 未接入`);
+    await client.query("BEGIN");
+    if (req.method === "POST") {
+      const input = writeInput(req.body, cols, false);
+      const names = input.fields.map((x) => `"${x}"`);
+      const ph = input.fields.map((_, i) => `$${i + 1}`);
+      if (cols.has("created_at")) { names.push("created_at"); ph.push("NOW()"); }
+      if (cols.has("updated_at")) { names.push("updated_at"); ph.push("NOW()"); }
+      const r = await client.query(`INSERT INTO ${meta.table} (${names.join(",")}) VALUES (${ph.join(",")}) RETURNING id::text AS id`, input.values);
+      await auditWrite(client, req, meta, "post", r.rows[0]);
+      await client.query("COMMIT");
+      return { side: meta.side, id: r.rows[0]?.id };
+    }
+    if (req.method === "PATCH") {
+      const input = writeInput(req.body, cols, true);
+      const current = await client.query(`SELECT * FROM ${meta.table} WHERE id::text=$1 FOR UPDATE`, [input.id]);
+      if (!current.rowCount) throw new Error("not found");
+      const sets = input.fields.map((x, i) => `"${x}"=$${i + 1}`);
+      if (cols.has("updated_at")) sets.push("updated_at=NOW()");
+      const r = await client.query(`UPDATE ${meta.table} SET ${sets.join(",")} WHERE id::text=$${input.values.length + 1} RETURNING id::text AS id`, [...input.values, input.id]);
+      await auditWrite(client, req, meta, "patch", r.rows[0], current.rows[0]);
+      await client.query("COMMIT");
+      return { side: meta.side, id: r.rows[0]?.id };
+    }
+    if (req.method === "DELETE") {
+      const id = clean(req.body?.id || req.query?.id, 80);
+      if (!id) throw new Error("id required");
+      const statusCol = cols.has("void_status") ? "void_status" : (cols.has("review_status") ? "review_status" : "");
+      if (!statusCol) throw new Error(`未接入: 缺 ${meta.table}.void_status/review_status；当前填充率 未接入`);
+      const current = await client.query(`SELECT * FROM ${meta.table} WHERE id::text=$1 FOR UPDATE`, [id]);
+      if (!current.rowCount) throw new Error("not found");
+      const sets = [`${statusCol}=$1`];
+      if (cols.has("updated_at")) sets.push("updated_at=NOW()");
+      const r = await client.query(`UPDATE ${meta.table} SET ${sets.join(",")} WHERE id::text=$2 RETURNING id::text AS id`, ["voided", id]);
+      await auditWrite(client, req, meta, "delete", { ...r.rows[0], soft_deleted: true }, current.rows[0]);
+      await client.query("COMMIT");
+      return { side: meta.side, id: r.rows[0]?.id, soft_deleted: true };
+    }
+    throw new Error("method not allowed");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-  if (req.method === "PATCH") {
-    const input = writeInput(req.body, cols, true);
-    const sets = input.fields.map((x, i) => `"${x}"=$${i + 1}`);
-    if (cols.has("updated_at")) sets.push("updated_at=NOW()");
-    const r = await pool.query(`UPDATE ${meta.table} SET ${sets.join(",")} WHERE id::text=$${input.values.length + 1} RETURNING id::text AS id`, [...input.values, input.id]);
-    if (!r.rowCount) throw new Error("not found");
-    return { side: meta.side, id: r.rows[0]?.id };
-  }
-  if (req.method === "DELETE") {
-    const id = clean(req.body?.id || req.query?.id, 80);
-    if (!id) throw new Error("id required");
-    const statusCol = cols.has("void_status") ? "void_status" : (cols.has("review_status") ? "review_status" : "");
-    if (!statusCol) throw new Error(`未接入: 缺 ${meta.table}.void_status/review_status；当前填充率 未接入`);
-    const sets = [`${statusCol}=$1`];
-    if (cols.has("updated_at")) sets.push("updated_at=NOW()");
-    const r = await pool.query(`UPDATE ${meta.table} SET ${sets.join(",")} WHERE id::text=$2 RETURNING id::text AS id`, ["voided", id]);
-    if (!r.rowCount) throw new Error("not found");
-    return { side: meta.side, id: r.rows[0]?.id, soft_deleted: true };
-  }
-  throw new Error("method not allowed");
 }
 
 function coverageFor(meta, rows, colSet, missingTable) {

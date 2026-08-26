@@ -11,7 +11,7 @@ const REQUIRED = [
 const OPTIONAL = [
   "supplier_company_code", "payer_company_code", "currency_norm", "incoterm",
   "link_plan_id", "reconciled", "ap_status", "ap_paid_amount", "ap_paid_at",
-  "ar_status", "ar_paid_amount", "ar_paid_at", "payment_note", "bill_file",
+  "ar_status", "ar_paid_amount", "ar_paid_at", "payment_note", "bill_file", "fee_status",
 ];
 const DETAIL_COLS = REQUIRED.concat(OPTIONAL);
 
@@ -142,6 +142,7 @@ async function fetchRows(pool, cols, q) {
     incoterm: x.incoterm || null,
     link_plan_id: x.link_plan_id || null,
     rebill_status: x.rebill_status || null,
+    fee_status: x.fee_status || null,
     reconciled: x.reconciled === null ? null : !!x.reconciled,
     ap_status: x.ap_status || null,
     ap_paid_amount: money(x.ap_paid_amount),

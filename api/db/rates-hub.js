@@ -104,7 +104,7 @@ function buildOceanBills(q) {
   return {
     sql: `
 SELECT b.id, b.bl_no, b.cost_category, b.currency, b.amount, b.sale_amount,
-  b.supplier, b.bill_month, COALESCE(b.remarks, b.reconcile_note) AS remarks
+  b.supplier, b.bill_month, b.fee_status, COALESCE(b.remarks, b.reconcile_note) AS remarks
 FROM freight_supplier_bills b
 LEFT JOIN LATERAL (
   SELECT sp.*

@@ -6,6 +6,7 @@
   function set(el,v,empty){el.textContent=v===null||v===undefined||v===""?(empty||"未接入"):String(v);}
   function blank(v){return v===null||v===undefined||v==="";}
   function money(v,c){if(blank(v))return"未设置";var n=Number(v);return Number.isFinite(n)?((c?c+" ":"")+NF.format(n)):"未设置";}
+  function feeStatus(v){return {fee_recorded:"费用已录入",fee_completed:"费用已完成","费用已录入":"费用已录入","费用已完成":"费用已完成"}[v]||v;}
   function pct(v){return v===null||v===undefined?"未接入":(Number(v).toFixed(1).replace(/\\.0$/,"")+"%");}
   function clear(el){while(el.firstChild)el.removeChild(el.firstChild);}
   function div(cls,text){var d=document.createElement("div");if(cls)d.className=cls;if(text!==undefined)d.textContent=text;return d;}
@@ -40,7 +41,7 @@
     var box=$("rows");clear(box);
     if(!rows||!rows.length){box.appendChild(div("empty",missingText(cov)));return;}
     var table=document.createElement("table");var thead=document.createElement("thead");var hr=document.createElement("tr");
-    ["月份","供应商","BL/柜号","费目","数量","单价","金额","AP/AR","状态","来源"].forEach(function(h){var th=document.createElement("th");set(th,h);hr.appendChild(th);});
+    ["月份","供应商","BL/柜号","费目","数量","单价","金额","AP/AR","费用状态","状态","来源"].forEach(function(h){var th=document.createElement("th");set(th,h);hr.appendChild(th);});
     thead.appendChild(hr);table.appendChild(thead);
     var tb=document.createElement("tbody");
     rows.forEach(function(r){
@@ -49,6 +50,7 @@
       td(tr,[r.bl_no,r.container_no].filter(Boolean).join(" / "));
       td(tr,r.cost_category);td(tr,r.qty,"");td(tr,money(r.unit_price,r.currency));
       td(tr,money(r.amount,r.currency));td(tr,[money(r.ap_paid_amount,r.currency),money(r.ar_paid_amount,r.currency)].join(" / "));
+      td(tr,feeStatus(r.fee_status));
       td(tr,[r.ap_status,r.rebill_status,r.reconciled===true?"已对平":""].filter(Boolean).join(" / "));
       td(tr,[r.bill_file,r.link_plan_id].filter(Boolean).join(" / "));
       tb.appendChild(tr);

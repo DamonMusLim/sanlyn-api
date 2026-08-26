@@ -23,6 +23,7 @@
   .group td{position:sticky;top:31px;z-index:2;background:#eef6ff;color:#174b7a;font-weight:600}.err{color:#c0362c;padding:14px}.mini{color:#7b7f89;font-size:12px}.linkbtn{border:0;background:transparent;color:#174b7a;cursor:pointer;padding:0}
   @media(max-width:1100px){.sections{grid-template-columns:1fr}.sections .wrap{max-height:none}}
 </style>
+<script src="/public/wb-open-tab.js" data-protocol="sanlyn:open-tab"></script>
 </head>
 <body>
 <h1>价表总台</h1>
@@ -51,7 +52,7 @@ var state={tab:"ocean",expanded:{},data:{ocean:[],ocean_plans:[],ocean_bills:[],
 var cols={
   ocean:[["pol","起运港"],["pod","目的港"],["carrier","船公司"],["forwarder","货代"],["currency","币种"],["gp20","20GP成本","num","money"],["hq40","40HQ成本","num","money"],["customer_gp20","20GP客户价","num","money"],["customer_hq40","40HQ客户价","num","money"],["margin20","20GP毛差","num","margin20"],["margin40","40HQ毛差","num","margin40"],["valid","有效期"],["status","状态","status"],["remarks","备注"]],
   ocean_plans:[["bl_no","提单号"],["pol","起运港"],["pod","目的港"],["carrier_code","船公司"],["forwarder_cn","货代"],["container_type","箱型"],["container_qty","柜量","num"],["etd","开航"],["freight_cost","成本","num","money"],["freight_cost_currency","成本币种"],["freight_sale_usd","卖价","num","money"],["actual_margin","毛差","num","actual_margin"],["shipment_no","订舱号"]],
-  ocean_bills:[["bl_no","提单号"],["cost_category","费目"],["currency","币种"],["amount","成本","num","money"],["sale_amount","转客户价","num","money"],["supplier","供应商"],["bill_month","账单月"],["remarks","备注"]],
+  ocean_bills:[["bl_no","提单号"],["cost_category","费目"],["currency","币种"],["amount","成本","num","money"],["sale_amount","转客户价","num","money"],["supplier","供应商"],["bill_month","账单月"],["fee_status","费用状态","fee_status"],["remarks","备注"]],
   tariff:[["carrier","船公司"],["port","港口"],["container_type","箱型"],["fee","费目"],["amount_cny","金额CNY","num","money"],["unit_basis","计费单位"],["flag","必收/条件","flag"],["station_name","场站"],["valid","有效期"],["review_status","审核"]],
   matrices:[["code","套餐"],["carrier_code","船公司"],["pol","起运港"],["pod","目的港"],["bl_type","提单"],["free_days_origin","起运免堆","num"],["free_days_dest","目的免堆","num"],["total_cost_20gp","20GP合计","num","money"],["total_cost_40hq","40HQ合计","num","money"],["cost_currency","币种"],["is_active","启用","bool"],["valid","有效期"]],
   matrix_items:[["matrix_code","套餐"],["charge_name","费目"],["container_type","箱型"],["unit_price","单价","num","money"],["qty","数量","num"],["amount","金额","num","money"],["currency","币种"],["unit","单位"],["is_required","必收","bool"]],
@@ -73,6 +74,7 @@ function feeName(r){return [r.charge_item_code,r.charge_item_name].filter(Boolea
 function flagText(r){return r.required_flag?"必收":(r.conditional_flag?"条件":"—");}
 function freeText(v){if(blank(v))return ""; if(typeof v==="object")return JSON.stringify(v); return v;}
 function statusText(v){return v==="draft"?"草稿":(v||"");}
+function feeStatusText(v){return {fee_recorded:"费用已录入",fee_completed:"费用已完成","费用已录入":"费用已录入","费用已完成":"费用已完成"}[v]||v;}
 function tierText(v){return {light:"轻柜",heavy:"重柜",xheavy:"超重柜"}[v]||v;}
 function ruleText(r){if(blank(r.base_fee)||blank(r.max_free_descs)||blank(r.extra_per_desc))return "";return r.base_fee+"元含"+r.max_free_descs+"个品名，超出每个+"+r.extra_per_desc+"元";}
 function rateText(v){if(blank(v))return "";var n=Number(v)*100;return Number.isFinite(n)?n.toFixed(2).replace(/\.?0+$/,"")+"%":v;}
@@ -90,6 +92,7 @@ function renderValue(r,c){
   if(k==="actual_margin"){var m=diff(r.freight_sale_usd,r.freight_cost);return (m===null?'<span class="na">—</span>':money(m))+multiCtn(r);}
   if(k==="is_active"||k==="is_required"||k==="insurance_required")return v===true?"是":(v===false?"否":'<span class="na">—</span>');
   if(k==="status")return cell(statusText(v));
+  if(mode==="fee_status")return cell(feeStatusText(v));
   if(mode==="tier")return cell(tierText(v));
   if(mode==="rate")return cell(rateText(v));
   if(mode==="markup")return cell(markupText(v));
