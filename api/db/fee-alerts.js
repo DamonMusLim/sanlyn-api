@@ -1,6 +1,9 @@
-// GET /api/db/fee-alerts — 费用预警面板，只读；未接入数据不反推假数。
+// GET/POST/DELETE /api/db/fee-alerts — 费用预警面板；未接入数据不反推假数。
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+
+const IGNORE_CODE = "ALERT_IGNORED";
+const IGNORE_TABLE = "fee_alerts";
 
 function clampLimit(value) {
   const n = Number.parseInt(value || "200", 10);
@@ -12,9 +15,26 @@ function basis(state, note, extra = {}) {
   return { state, note, ...extra };
 }
 
-async function loadInvoiceAlerts(pool, limit) {
+function clean(v, max = 200) {
+  return String(v ?? "").trim().slice(0, max);
+}
+
+function actorFrom(req) {
+  const u = req.user || {};
+  return clean(u.employee_code || u.staff_no || u.username || u.account || u.email || u.uid || u.id || u.sub || u.name || "unknown", 120);
+}
+
+function targetId(id) {
+  return "invoiced:" + clean(id, 160);
+}
+
+async function loadInvoiceAlerts(pool, limit, options = {}) {
   const sql = `
-WITH base AS (
+WITH ignored AS (
+  SELECT target_id FROM operation_todos
+   WHERE check_code=$2 AND target_table=$3 AND status='resolved'
+),
+base AS (
   SELECT b.id::text AS bill_id, b.bl_no, b.bill_month, b.supplier, b.cost_category,
          b.amount, b.currency, b.link_plan_id::text AS link_plan_id,
          sp.id AS shipping_plan_id, sp._id AS shipping_plan_uid, sp.shipment_no,
@@ -30,7 +50,7 @@ WITH base AS (
    WHERE COALESCE(b.rebill_status, '') NOT IN ('voided', 'absorbed')
 ),
 classified AS (
-  SELECT *,
+  SELECT *, i.target_id IS NOT NULL AS is_ignored,
     CASE
       WHEN NULLIF(BTRIM(link_plan_id), '') IS NULL THEN 'no_shipping_plan_link'
       WHEN shipping_plan_id IS NULL THEN 'shipping_plan_unresolved'
@@ -38,11 +58,12 @@ classified AS (
       ELSE NULL
     END AS unknown_reason
   FROM base
+  LEFT JOIN ignored i ON i.target_id = 'invoiced:' || bill_id
 ),
 counts AS (
   SELECT COUNT(*)::int AS total,
          COUNT(*) FILTER (WHERE unknown_reason IS NULL)::int AS eligible,
-         COUNT(*) FILTER (WHERE unknown_reason IS NULL AND NOT has_invoice_link)::int AS alert_count,
+         COUNT(*) FILTER (WHERE unknown_reason IS NULL AND NOT has_invoice_link AND ($4::boolean OR NOT is_ignored))::int AS alert_count,
          COUNT(*) FILTER (WHERE unknown_reason IS NOT NULL)::int AS unknown_count,
          COUNT(*) FILTER (WHERE unknown_reason = 'no_shipping_plan_link')::int AS no_shipping_plan_link,
          COUNT(*) FILTER (WHERE unknown_reason = 'shipping_plan_unresolved')::int AS shipping_plan_unresolved,
@@ -68,13 +89,13 @@ alert_rows AS (
   ) ORDER BY bill_month NULLS LAST, bl_no NULLS LAST, bill_id), '[]'::json) AS rows
   FROM (
     SELECT * FROM classified
-     WHERE unknown_reason IS NULL AND NOT has_invoice_link
+     WHERE unknown_reason IS NULL AND NOT has_invoice_link AND ($4::boolean OR NOT is_ignored)
      ORDER BY bill_month NULLS LAST, bl_no NULLS LAST, bill_id
      LIMIT $1
   ) x
 )
 SELECT counts.*, alert_rows.rows FROM counts, alert_rows`;
-  const row = (await pool.query(sql, [limit])).rows[0] || {};
+  const row = (await pool.query(sql, [limit, IGNORE_CODE, IGNORE_TABLE, !!options.includeIgnored])).rows[0] || {};
   const reasons = {
     no_shipping_plan_link: Number(row.no_shipping_plan_link || 0),
     shipping_plan_unresolved: Number(row.shipping_plan_unresolved || 0),
@@ -125,14 +146,72 @@ async function loadSettlementState(pool) {
   };
 }
 
+async function assertReadyInvoice(pool, id) {
+  const data = await loadInvoiceAlerts(pool, 500, { includeIgnored: true });
+  if (data.invoiced.state !== "ready") return { ok: false, status: 403, error: "no_data alert cannot be ignored" };
+  const row = (data.invoiced.rows || []).find((r) => String(r.id) === String(id));
+  if (!row) return { ok: false, status: 404, error: "alert row not found" };
+  return { ok: true, row };
+}
+
+async function ignoreAlert(req, res, pool) {
+  const kind = clean(req.body?.kind || req.body?.tab || "invoiced", 80);
+  const id = clean(req.body?.id, 160);
+  if (kind !== "invoiced") return res.status(403).json({ success: false, error: "no_data alert cannot be ignored" });
+  if (!id) return res.status(400).json({ success: false, error: "id required" });
+  const found = await assertReadyInvoice(pool, id);
+  if (!found.ok) return res.status(found.status).json({ success: false, error: found.error });
+  const actor = actorFrom(req);
+  const tid = targetId(id);
+  const detail = JSON.stringify({ source: "fee-alerts", kind, id, bill_no: found.row.bill_no || id });
+  const note = clean(req.body?.notes || `ignored by ${actor}`, 2000);
+  const existing = await pool.query(
+    `SELECT id FROM operation_todos WHERE check_code=$1 AND target_table=$2 AND target_id=$3 ORDER BY id DESC LIMIT 1`,
+    [IGNORE_CODE, IGNORE_TABLE, tid]
+  );
+  if (existing.rows[0]) {
+    await pool.query(
+      `UPDATE operation_todos
+          SET status='resolved', resolved_by=$2, resolved_at=NOW(), notes=$3, detail_json=$4::json, updated_at=NOW()
+        WHERE id=$1`,
+      [existing.rows[0].id, actor, note, detail]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO operation_todos
+         (check_code,severity,target_table,target_id,description,detail_json,status,resolved_by,resolved_at,notes)
+       VALUES ($1,'P3',$2,$3,$4,$5::json,'resolved',$6,NOW(),$7)`,
+      [IGNORE_CODE, IGNORE_TABLE, tid, `未开票预警 ignored: ${id}`, detail, actor, note]
+    );
+  }
+  return res.status(200).json({ success: true, ignored: true, target_id: tid });
+}
+
+async function unignoreAlert(req, res, pool) {
+  const kind = clean(req.body?.kind || req.query?.kind || req.body?.tab || req.query?.tab || "invoiced", 80);
+  const id = clean(req.body?.id || req.query?.id, 160);
+  if (kind !== "invoiced") return res.status(403).json({ success: false, error: "no_data alert cannot be unignored" });
+  if (!id) return res.status(400).json({ success: false, error: "id required" });
+  const actor = actorFrom(req);
+  await pool.query(
+    `UPDATE operation_todos
+        SET status='rejected', resolved_by=$4, resolved_at=NOW(), notes=$5, updated_at=NOW()
+      WHERE check_code=$1 AND target_table=$2 AND target_id=$3 AND status='resolved'`,
+    [IGNORE_CODE, IGNORE_TABLE, targetId(id), actor, `unignored by ${actor}`]
+  );
+  return res.status(200).json({ success: true, ignored: false });
+}
+
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "GET") return res.status(405).json({ success: false, error: "GET required" });
   if (!requireAuth(req, res)) return;
 
   try {
     const pool = getPool();
+    if (req.method === "POST") return ignoreAlert(req, res, pool);
+    if (req.method === "DELETE") return unignoreAlert(req, res, pool);
+    if (req.method !== "GET") return res.status(405).json({ success: false, error: "Method not allowed" });
     const limit = clampLimit(req.query?.limit);
     const invoiceData = await loadInvoiceAlerts(pool, limit);
     const settled = await loadSettlementState(pool);

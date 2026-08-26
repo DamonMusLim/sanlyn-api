@@ -6,6 +6,8 @@ const DONE = new Set(["approved", "rejected", "resolved", "done"]);
 const LIVE = new Set(["open", "in_progress", "blocked"]);
 const ALL_STATUS = new Set([...DONE, ...LIVE]);
 const SEVERITY = new Set(["P1", "P2", "P3"]);
+const AI_LOGIN_COLS = ["login_username", "username", "account", "account_id", "user_id", "employee_id"];
+let aiStaffColumnsCache = null;
 
 function clean(v, max = 200) {
   return String(v ?? "").trim().slice(0, max);
@@ -21,28 +23,82 @@ function manualCode(v) {
   return raw.startsWith("MANUAL") ? raw : "MANUAL:" + raw;
 }
 
+async function aiStaffColumns(pool) {
+  if (aiStaffColumnsCache) return aiStaffColumnsCache;
+  try {
+    const r = await pool.query(
+      `SELECT column_name
+         FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='ai_staff'`
+    );
+    aiStaffColumnsCache = new Set(r.rows.map((x) => x.column_name));
+  } catch (_) {
+    aiStaffColumnsCache = new Set();
+  }
+  return aiStaffColumnsCache;
+}
+
+function aiNameExpr() {
+  return "COALESCE(to_jsonb(ai_staff)->>'name_cn',to_jsonb(ai_staff)->>'name',to_jsonb(ai_staff)->>'name_en')";
+}
+
 async function actorFrom(req, pool) {
   const u = req.user || {};
   const out = {
-    no: clean(u.employee_code || u.staff_no || u.username || u.account || u.uid || u.id || u.sub || u.name, 80),
+    no: clean(u.staff_no || "", 80),
     name: clean(u.name || u.username || u.account || u.email || "", 120),
     aliases: new Set(),
+    identityKnown: false,
   };
   [out.no, u.employee_code, u.staff_no, u.username, u.account, u.uid, u.id, u.sub, u.name].forEach((x) => {
     const s = clean(x, 80);
     if (s) out.aliases.add(s);
   });
+  const cols = await aiStaffColumns(pool);
+  const preds = [];
+  const vals = [];
+  if (cols.has("staff_no")) {
+    [u.staff_no, u.employee_code].forEach((x) => {
+      const s = clean(x, 80);
+      if (s) { vals.push(s); preds.push(`staff_no = $${vals.length}`); }
+    });
+  }
+  AI_LOGIN_COLS.filter((c) => cols.has(c)).forEach((c) => {
+    [u.username, u.account, u.uid, u.id, u.sub, u.employee_id, u.employeeId].forEach((x) => {
+      const s = clean(x, 120);
+      if (s) { vals.push(s); preds.push(`lower(${c}::text) = lower($${vals.length})`); }
+    });
+  });
+  if (cols.has("staff_no") && preds.length) {
+    try {
+      const r = await pool.query(
+        `SELECT staff_no AS no,${aiNameExpr()} AS name
+           FROM ai_staff
+          WHERE ${preds.join(" OR ")}
+          ORDER BY staff_no
+          LIMIT 1`,
+        vals
+      );
+      const a = r.rows[0];
+      if (a && a.no) {
+        out.no = clean(a.no, 80);
+        out.identityKnown = true;
+        out.aliases.add(out.no);
+        if (a.name) { out.name = a.name; out.aliases.add(a.name); }
+      }
+    } catch (_) {}
+  }
   if (u.employee_id || u.employeeId) {
     try {
       const r = await pool.query("SELECT employee_code,name FROM hr_employees WHERE id=$1", [u.employee_id || u.employeeId]);
       const e = r.rows[0];
       if (e) {
-        if (e.employee_code) { out.no = e.employee_code; out.aliases.add(e.employee_code); }
+        if (!out.identityKnown && e.employee_code) { out.no = e.employee_code; out.aliases.add(e.employee_code); }
         if (e.name) { out.name = e.name; out.aliases.add(e.name); }
       }
     } catch (_) {}
   }
-  if (!out.no) out.no = "unknown";
+  if (!out.identityKnown) out.no = "unknown";
   return out;
 }
 
@@ -58,8 +114,10 @@ async function displayMap(pool, codes) {
     r.rows.forEach((x) => { if (x.no && x.name) map[x.no] = x.no + " " + x.name; });
   } catch (_) {}
   try {
+    const cols = await aiStaffColumns(pool);
+    if (!cols.has("staff_no")) throw new Error("ai_staff.staff_no missing");
     const r = await pool.query(
-      `SELECT staff_no AS no,COALESCE(to_jsonb(ai_staff)->>'name_cn',to_jsonb(ai_staff)->>'name',to_jsonb(ai_staff)->>'name_en') AS name
+      `SELECT staff_no AS no,${aiNameExpr()} AS name
          FROM ai_staff WHERE staff_no = ANY($1)`,
       [vals]
     );
@@ -150,6 +208,9 @@ async function reviewTodo(req, res, pool) {
   const actor = await actorFrom(req, pool);
   const cur = await pool.query("SELECT id,owner_no,status FROM operation_todos WHERE id=$1", [id]);
   if (!cur.rows.length) return res.status(404).json({ success: false, error: "待办不存在" });
+  if (!actor.identityKnown || actor.no === "unknown") {
+    return res.status(403).json({ success: false, error: "无法确认审核人身份，暂不能审批" });
+  }
   if (cur.rows[0].owner_no && actor.aliases.has(cur.rows[0].owner_no)) {
     return res.status(403).json({ success: false, error: "执行人不能审核自己的待办" });
   }

@@ -78,7 +78,7 @@
   function activeBlock(){return state.tab==="credit"?state.data?.credit:state.data?.contracts}
   function renderMetrics(){
     const b=activeBlock()||{};$("mAlertLabel").textContent=state.tab==="credit"?"快超信用额度":"合同到期";
-    $("mAlerts").textContent=b.state==="not_connected"?"未接入":count(b.count,"未设置");
+    $("mAlerts").textContent=b.state==="not_connected"?"未接入":b.state==="no_data"?"无数据":count(b.count,"未设置");
     $("mUnset").textContent=count(b.unset?.count,"未接入");$("mConfigured").textContent=count(b.configured,"未接入");
     $("mAlertsBasis").textContent="依据 "+(b.basis?.note||"未接入");
     $("mUnsetBasis").textContent=state.tab==="credit"?"未设置额度的公司不产生预警":"未设置合同日期的公司不产生预警";
@@ -104,8 +104,9 @@
   }
   function renderList(){
     const box=$("list");box.textContent="";const b=activeBlock()||{};const rows=(b.rows||[]).filter(r=>!state.ignored.has(r.id));
-    $("ignoreAll").disabled=b.state==="not_connected"||!rows.length;
+    $("ignoreAll").disabled=b.state==="not_connected"||b.state==="no_data"||!rows.length;
     if(b.state==="not_connected"){box.appendChild(el("div","empty","未接入 · "+(b.basis?.note||"待迁移")));return}
+    if(b.state==="no_data"){box.appendChild(el("div","empty","无数据 · "+(b.basis?.note||"等待真实回写数据")));return}
     rows.forEach(r=>box.appendChild(state.tab==="credit"?renderCreditRow(r):renderContractRow(r)));
     if(!rows.length)box.appendChild(el("div","empty","没有未忽略的业务预警"));
     const unsetTitle=el("div","empty",(state.tab==="credit"?"未设置额度 ":"未设置合同日期 ")+count(b.unset?.count,"未接入")+" 家");

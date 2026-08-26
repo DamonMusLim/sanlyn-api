@@ -58,8 +58,9 @@
       function text(el,value){el.textContent=value==null||value===""?"未设置":String(value)}
       function clear(el){while(el.firstChild)el.removeChild(el.firstChild)}
       function activeNode(){return state.nodes.find(function(n){return n.key===state.active})||state.nodes[0]}
-      async function api(){
-        var r=await fetch(API,{headers:headers()});
+      async function api(method,body){
+        var h=headers();if(body)h["Content-Type"]="application/json";
+        var r=await fetch(API,{method:method||"GET",headers:h,body:body?JSON.stringify(body):undefined});
         var d=await r.json().catch(function(){return {success:false,error:"接口返回异常"}});
         if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");
         return d;
@@ -116,7 +117,11 @@
         }catch(e){clear(tabs);clear(panel);panel.appendChild(box("error",e.message));summary.textContent="读取失败"}
       }
       tabs.addEventListener("click",function(e){var b=e.target.closest(".tab");if(!b)return;state.active=b.dataset.key;renderTabs();renderPanel()});
-      panel.addEventListener("click",function(e){var b=e.target.closest("button[data-id]");if(!b)return;state.ignored[b.dataset.id]=true;saveIgnored();renderPanel()});
+      panel.addEventListener("click",async function(e){
+        var b=e.target.closest("button[data-id]");if(!b)return;
+        var id=b.dataset.id,was=!!state.ignored[id];state.ignored[id]=!was;saveIgnored();renderPanel();
+        try{await api(was?"DELETE":"POST",{key:state.active,id:id})}catch(err){state.ignored[id]=was;saveIgnored();renderPanel();alert(err.message)}
+      });
       document.getElementById("refreshBtn").addEventListener("click",load);
       document.getElementById("settingsBtn").addEventListener("click",function(){alert("预警条件设置暂未接入。")});
       load();

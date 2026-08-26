@@ -17,6 +17,9 @@ const FSB_COLS = [
   "currency",
   "rebill_status",
 ];
+// Unit: rows where ar_paid_amount > 0. Less than 1 means payment writeback has
+// not produced any usable paid amount data, so credit usage must not calculate.
+const MIN_PAID_POSITIVE_ROWS = 1;
 
 function clean(v, max = 200) {
   return String(v ?? "").trim().slice(0, max);
@@ -89,6 +92,21 @@ async function loadCompanies(pool, schema) {
 
 async function loadUsage(pool, schema) {
   if (!schema.billsReady) return { rows: [], connected: false };
+  const stats = await pool.query(
+    `SELECT COUNT(*)::int AS total_rows,
+            COUNT(*) FILTER (WHERE COALESCE(ar_paid_amount,0) > 0)::int AS paid_positive_rows,
+            COUNT(*) FILTER (WHERE NULLIF(BTRIM(payer_company_code), '') IS NOT NULL)::int AS payer_company_code_rows
+       FROM freight_supplier_bills`
+  );
+  const coverage = {
+    total_rows: Number(stats.rows[0]?.total_rows || 0),
+    paid_positive_rows: Number(stats.rows[0]?.paid_positive_rows || 0),
+    payer_company_code_rows: Number(stats.rows[0]?.payer_company_code_rows || 0),
+    min_paid_positive_rows: MIN_PAID_POSITIVE_ROWS,
+  };
+  if (coverage.paid_positive_rows < MIN_PAID_POSITIVE_ROWS) {
+    return { rows: [], connected: true, hasUsablePaidData: false, coverage };
+  }
   const r = await pool.query(
     `SELECT payer_company_code AS code, currency,
             COUNT(*)::int AS row_count,
@@ -101,7 +119,7 @@ async function loadUsage(pool, schema) {
         AND COALESCE(rebill_status, '') NOT IN ('voided', 'absorbed')
       GROUP BY payer_company_code, currency`
   );
-  return { rows: r.rows, connected: true };
+  return { rows: r.rows, connected: true, hasUsablePaidData: true, coverage };
 }
 
 function companyName(c) {
@@ -109,6 +127,26 @@ function companyName(c) {
 }
 
 function buildCredit(companies, usageState) {
+  const coverage = usageState.coverage || null;
+  if (usageState.connected && !usageState.hasUsablePaidData) {
+    const paid = coverage?.paid_positive_rows ?? 0;
+    const total = coverage?.total_rows ?? 0;
+    const payer = coverage?.payer_company_code_rows ?? 0;
+    const note = `已收金额尚未接入（ar_paid_amount 当前 ${paid}/${total} 行有值）。收付回写管道修复上线并产生数据后，此处自动生效。`;
+    return {
+      state: "no_data",
+      count: null,
+      rows: [],
+      unset: { count: null, rows: [] },
+      incomplete: { count: null, rows: [] },
+      configured: null,
+      basis: basis("no_data", note, {
+        threshold: `${MIN_PAID_POSITIVE_ROWS}行 ar_paid_amount > 0`,
+        table: "companies + freight_supplier_bills",
+        payer_company_code_coverage: `${payer}/${total}`,
+      }),
+    };
+  }
   const usage = new Map();
   usageState.rows.forEach((r) => usage.set(`${r.code}::${r.currency}`, r));
   const unset = [];
@@ -160,7 +198,13 @@ function buildCredit(companies, usageState) {
       usageState.connected
         ? "只有 companies.credit_limit 与 credit_currency 已人工设置的公司才计算；已用=freight_supplier_bills 未收金额汇总。"
         : "freight_supplier_bills 必要列未接入，信用额度预警不计算。",
-      { threshold: "80%", table: "companies + freight_supplier_bills" }
+      {
+        threshold: "80%",
+        table: "companies + freight_supplier_bills",
+        payer_company_code_coverage: coverage
+          ? `${coverage.payer_company_code_rows}/${coverage.total_rows}`
+          : "未接入",
+      }
     ),
   };
 }

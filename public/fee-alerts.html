@@ -42,15 +42,20 @@
   const state={tab:"invoiced",data:null,open:new Set(),ignored:new Set(JSON.parse(localStorage.getItem("fee_alert_ignored")||"[]"))};
   const $=id=>document.getElementById(id);
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+  function headers(body){const h={};const t=token();if(t)h.Authorization="Bearer "+t;if(body)h["Content-Type"]="application/json";return h}
+  async function api(method,body){
+    const r=await fetch(API,{method:method||"GET",headers:headers(body),body:body?JSON.stringify(body):undefined});
+    const d=await r.json().catch(()=>({error:"接口返回异常"}));
+    if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");
+    return d;
+  }
   function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
   function showToast(text){$("toast").textContent=text;$("toast").classList.remove("hidden");setTimeout(()=>$("toast").classList.add("hidden"),1800)}
   function saveIgnored(){localStorage.setItem("fee_alert_ignored",JSON.stringify([...state.ignored]))}
   function displayCount(v, fallback){return v===null||v===undefined?fallback:String(v)}
   async function load(){
     try{
-      const h={};const t=token();if(t)h.Authorization="Bearer "+t;
-      const r=await fetch(API,{headers:h});const d=await r.json().catch(()=>({error:"接口返回异常"}));
-      if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");
+      const d=await api();
       state.data=d;render();
     }catch(e){$("summary").textContent="读取失败";$("list").innerHTML=`<div class="err">${esc(e.message)}</div>`}
   }
@@ -87,8 +92,8 @@
   function render(){renderMetrics();document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===state.tab));renderList()}
   document.querySelector(".tabs").onclick=e=>{const b=e.target.closest(".tab");if(!b)return;state.tab=b.dataset.tab;render()};
   $("reload").onclick=load;
-  $("ignoreAll").onclick=()=>{if(state.tab!=="invoiced")return;filteredRows().forEach(r=>state.ignored.add(String(r.id)));saveIgnored();render();showToast("已忽略当前业务预警")};
-  $("list").onclick=e=>{const detail=e.target.closest(".detailBtn"), ignore=e.target.closest(".ignoreBtn");if(detail){const id=detail.dataset.id;state.open.has(id)?state.open.delete(id):state.open.add(id);render()}if(ignore){state.ignored.add(ignore.dataset.id);saveIgnored();render();showToast("已忽略")}};
+  $("ignoreAll").onclick=async()=>{if(state.tab!=="invoiced")return;const rows=filteredRows();rows.forEach(r=>state.ignored.add(String(r.id)));saveIgnored();render();try{for(const r of rows)await api("POST",{kind:"invoiced",id:String(r.id)});showToast("已忽略当前业务预警")}catch(e){showToast(e.message);load()}};
+  $("list").onclick=async e=>{const detail=e.target.closest(".detailBtn"), ignore=e.target.closest(".ignoreBtn");if(detail){const id=detail.dataset.id;state.open.has(id)?state.open.delete(id):state.open.add(id);render()}if(ignore){const id=ignore.dataset.id;state.ignored.add(id);saveIgnored();render();try{await api("POST",{kind:"invoiced",id});showToast("已忽略")}catch(err){state.ignored.delete(id);saveIgnored();render();showToast(err.message)}}};
   load();
   </script>
 </body>
