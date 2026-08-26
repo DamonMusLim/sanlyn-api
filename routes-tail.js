@@ -37,11 +37,13 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/ops-alerts", () => import("./api/db/ops-alerts.js")); // 0825 操作预警：未接入节点不反推假数
   mount("/api/db/ops-todos", () => import("./api/db/ops-todos.js")); // 0825 操作待办/审核：operation_todos 真源
   mount("/api/db/fee-alerts", () => import("./api/db/fee-alerts.js")); // 0825 费用预警：未接入/无法判断不反推假数
+  mount("/api/db/fee-templates", () => import("./api/db/fee-templates.js")); // 0826 费用模板：只读真实费率来源
   mount("/api/db/biz-alerts", () => import("./api/db/biz-alerts.js")); // 0825 业务预警：额度/合同未设置不反推假数
   mount("/api/db/order-services", () => import("./api/db/order-services.js")); // 0826 服务项目12项: explicit + derived read lens
   mount("/api/db/order-draft-entry", () => import("./api/db/order-draft-entry.js")); // 0826 订单录入:先建草稿后补全
   mount("/api/db/global-search", () => import("./api/db/global-search.js")); // 0825 顶栏全局搜索：只读白名单表
   mount("/api/db/rates-hub",              () => import("./api/db/rates-hub.js")); // 0825 价表总台(海运周价/官方港杂/本地费)
+  mount("/api/db/manifest-send", () => import("./api/db/manifest-send.js")); // 0826 上海舱单发送:申报通道只读接入状态
   mount("/api/db/customs-master-grid",  () => import("./api/db/customs-master-grid.js"));  // 0812 报关密网格
   mount("/api/db/tax-rebate-master", () => import("./api/db/tax-rebate-master.js"));
   mount("/api/db/petstore-todo",        () => import("./api/db/petstore-todo.js"));

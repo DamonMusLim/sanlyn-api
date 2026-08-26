@@ -3,13 +3,13 @@
 var MAX_TABS=20,FIXED_ID="workbench",STORAGE_KEY="sanlyn.wbTabs.v2";
 // 新增页面要同时加 nginx location 和这里；否则会被转成待建占位，避免落进 SPA 兜底页。
 var KNOWN_REAL_PATHS=[
-  "/wb","/wb-tabs","/ocean","/rates","/ship-grid","/ship-entry","/order-entry","/manifest","/manifest-cfg","/kb",
+  "/wb","/wb-tabs","/ocean","/rates","/ship-grid","/ship-entry","/order-entry","/manifest","/manifest-send","/manifest-cfg","/kb",
   "/ops-alerts","/fee-alerts","/biz-alerts","/ops-todos","/global-search",
   "/agent","/center","/check","/client","/dv","/email","/empty-shelf","/health","/html","/login","/me","/my","/one","/petwatch","/restock","/si","/sources","/staff-tasks","/trip"
 ];
 var BUILT={
   "工作台":"/wb","运价管理":"/rates","海运出口":"/ship-grid","订单录入":"/order-entry",
-  "上海-舱单发送":"/manifest","账单管理":"/ocean","审核提交记录":"/ops-todos"
+  "上海-舱单发送":"/manifest-send","账单管理":"/ocean","审核提交记录":"/ops-todos"
 };
 var NAV=[
   n("工作台"),n("运价管理"),n("智能邮箱"),

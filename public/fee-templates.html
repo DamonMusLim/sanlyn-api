@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>费用模板</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--chip:var(--hgj-primary-bg);--bad:var(--hgj-danger)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--hgj-font)}
+    .wrap{max-width:1180px;margin:0 auto;padding:22px}.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-end;margin-bottom:16px}
+    h1,h2{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.sub,.muted{color:var(--muted);font-size:12px}
+    .tabs,.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.filters{align-items:end}.field{display:grid;gap:4px}.field label{color:var(--muted);font-size:12px}
+    button,.tab,input{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:0;padding:8px 10px;box-shadow:none}button{cursor:pointer}.tab{border-color:var(--accent);background:var(--chip);color:var(--accent);border-radius:3px;font-size:12px}.tab.active,.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.panel,.metric{background:var(--panel);border:0;border-radius:0;box-shadow:none;padding:14px;margin-bottom:10px}.num{font-size:24px;font-weight:700}.bad{color:var(--bad)}
+    table{width:100%;border-collapse:collapse;background:var(--panel)}th,td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);font-weight:600}.empty,.err{padding:22px;text-align:center;color:var(--muted)}.err{color:var(--bad)}.pill{display:inline-block;border:1px solid var(--accent);border-radius:3px;background:var(--chip);color:var(--accent);padding:1px 7px;font-size:12px;margin:0 4px 4px 0}.rowlink{color:var(--accent);cursor:pointer}
+    @media(max-width:900px){.wrap{padding:16px}.top,.grid,.filters{display:grid;grid-template-columns:1fr}table{display:block;overflow-x:auto;white-space:nowrap}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <div class="top">
+      <div><h1 class="hgj-panel-title">费用模板</h1><div class="sub" id="stamp">v2026.08.26-1 · 加载中</div></div>
+      <button id="reload">刷新</button>
+    </div>
+    <div class="tabs" id="tabs"></div>
+    <section class="panel hgj-card">
+      <div class="filters">
+        <div class="field"><label>船司/服务</label><input id="carrier" placeholder="全部"></div>
+        <div class="field"><label>起运港/口岸</label><input id="pol" placeholder="全部"></div>
+        <div class="field"><label>目的港</label><input id="pod" placeholder="全部"></div>
+        <button class="primary" id="search">查询</button>
+      </div>
+      <div class="muted" id="basis">未接入字段会保持空白，不反推金额/费率。</div>
+    </section>
+    <section class="grid">
+      <div class="metric hgj-card"><div class="muted">接入状态</div><div class="num" id="stateText">未接入</div></div>
+      <div class="metric hgj-card"><div class="muted">真实行数</div><div class="num" id="rowCount">未接入</div></div>
+      <div class="metric hgj-card"><div class="muted">缺字段</div><div class="num bad" id="missingCount">未接入</div></div>
+    </section>
+    <section class="panel hgj-card">
+      <h2 class="hgj-panel-title">字段填充率</h2>
+      <div id="coverage"></div>
+    </section>
+    <section class="panel hgj-card">
+      <h2 class="hgj-panel-title">模板明细</h2>
+      <div id="rows"></div>
+    </section>
+  </div>
+  <script src="/fee-templates.js"></script>
+</body>
+</html>
