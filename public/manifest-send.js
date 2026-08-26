@@ -9,6 +9,17 @@
   function text(el,v,fallback){el.textContent=v===null||v===undefined||v===""?(fallback||"未设置"):String(v)}
   function el(tag,cls,txt){var x=document.createElement(tag);if(cls)x.className=cls;if(txt!==undefined)text(x,txt);return x}
   function pct(filled,total){if(!total)return "未接入";return Math.round(Number(filled||0)*1000/Number(total))/10+"%"}
+  function cargoText(r){
+    if(!r||r.cargo_type_state==="not_connected")return "未接入";
+    if(r.cargo_type_state==="unmapped")return "未接入";
+    return (r.cargo_type_enum||"")+" · "+(r.cargo_type_label||"");
+  }
+  function cargoMissingText(r){
+    if(!r||r.cargo_type_state==="ready")return "";
+    var rate=fieldRate(((state.coverage||{}).fields||[]).filter(function(f){return f.name==="cargo_type_enum"}));
+    if(r&&r.cargo_type_state==="unmapped")return "货物属性未接入：customs_shipments.cargo_type 尚未映射到内部枚举；原始值 "+r.cargo_type_raw+"；当前填充率 "+rate+"。";
+    return "货物属性未接入：缺 customs_shipments.cargo_type 内部枚举值；当前填充率 "+rate+"。";
+  }
   async function api(q){
     var r=await fetch(API+(q?"?q="+encodeURIComponent(q):""),{headers:headers()});
     var d=await r.json().catch(function(){return {success:false,error:"接口返回异常"}});
@@ -48,10 +59,11 @@
     var r=state.selected;
     if(!r){box.appendChild(el("div","empty","未接入 · 缺可读取舱单记录，当前填充率 未接入。"));return}
     var table=document.createElement("table"),body=document.createElement("tbody");
-    [["舱单编号",r.shipment_no],["委托单位",r.company_name||r.company_code],["船公司",r.carrier],["船名航次",[r.vessel,r.voyage].filter(Boolean).join(" / ")],["提单号",r.bl_no],["柜数",r.container_count||"未接入"],["明细行",r.line_count||"未接入"],["状态",r.status]].forEach(function(pair){
+    [["舱单编号",r.shipment_no],["委托单位",r.company_name||r.company_code],["船公司",r.carrier],["船名航次",[r.vessel,r.voyage].filter(Boolean).join(" / ")],["提单号",r.bl_no],["货物属性",cargoText(r)],["柜数",r.container_count||"未接入"],["明细行",r.line_count||"未接入"],["状态",r.status]].forEach(function(pair){
       var tr=document.createElement("tr");td(tr,pair[0]);td(tr,pair[1]);body.appendChild(tr);
     });
     table.appendChild(body);box.appendChild(table);
+    var cargoMissing=cargoMissingText(r);if(cargoMissing)box.appendChild(el("p","bad",cargoMissing));
     if(r.missing&&r.missing.length){
       var p=el("p","muted","缺字段："+r.missing.map(function(x){return x.label+"("+x.name+")";}).join("、"));
       box.appendChild(p);

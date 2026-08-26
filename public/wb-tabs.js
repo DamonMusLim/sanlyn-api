@@ -3,20 +3,22 @@
 var MAX_TABS=20,FIXED_ID="workbench",STORAGE_KEY="sanlyn.wbTabs.v2";
 // 新增页面要同时加 nginx location 和这里；否则会被转成待建占位，避免落进 SPA 兜底页。
 var KNOWN_REAL_PATHS=[
-  "/wb","/wb-tabs","/ocean","/rates","/ship-grid","/ship-entry","/order-entry","/order-services","/manifest","/manifest-send","/ams-send","/vgm-send","/manifest-cfg","/kb",
-  "/ops-alerts","/fee-alerts","/biz-alerts","/ops-todos","/audit-review","/global-search",
-  "/agent","/center","/check","/client","/dv","/email","/empty-shelf","/health","/html","/login","/me","/my","/one","/petwatch","/restock","/si","/sources","/staff-tasks","/trip"
+  "/wb","/wb-tabs","/ocean","/rates","/ship-grid","/ship-entry","/order-entry","/order-services","/order-staff-slots","/manifest","/manifest-send","/qingdao-manifest-send","/xiamen-manifest-send","/tianjin-dalian-manifest-send","/online-customs","/afr-send","/ams-send","/isf-send","/ics2-send","/vgm-send","/container-watch","/cargo-insurance","/shipment-tracking","/warehouse-info","/spot-ecommerce","/manifest-cfg","/kb",
+  "/ops-alerts","/fee-alerts","/biz-alerts","/ops-todos","/audit-review","/global-search","/settlement-management","/commission-management","/business-report","/financial-report","/booking-platform","/bl-management","/cargo-info","/consolidated-fee-details","/invoice-records","/receipt-payment-management",
+  "/custom-nav","/agent","/center","/check","/client","/dv","/email","/empty-shelf","/health","/html","/login","/me","/my","/one","/petwatch","/restock","/si","/sources","/staff-tasks","/trip"
 ];
 var BUILT={
-  "工作台":"/wb","运价管理":"/rates","海运出口":"/ship-grid","订单录入":"/order-entry","服务项目":"/order-services",
-  "上海-舱单发送":"/manifest-send","AMS发送":"/ams-send","VGM发送":"/vgm-send","账单管理":"/ocean","审核提交记录":"/ops-todos",
+  "工作台":"/wb","运价管理":"/rates","海运出口":"/ship-grid","订单录入":"/order-entry","服务项目":"/order-services","订单人员槽":"/order-staff-slots",
+  "上海-舱单发送":"/manifest-send","青岛-舱单发送":"/qingdao-manifest-send","厦门-舱单发送":"/xiamen-manifest-send","天津/大连-舱单":"/tianjin-dalian-manifest-send","AFR发送":"/afr-send","AMS发送":"/ams-send","ISF发送":"/isf-send","ICS2":"/ics2-send","在线报关":"/online-customs","VGM发送":"/vgm-send","订舱平台":"/booking-platform","账单管理":"/ocean","审核提交记录":"/ops-todos",
+  "盯箱宝":"/container-watch","全程货物跟踪":"/shipment-tracking","SPOT电商":"/spot-ecommerce","货运保险":"/cargo-insurance","核销管理":"/settlement-management","提成管理":"/commission-management",
+  "集运费用明细":"/consolidated-fee-details","开票记录":"/invoice-records","收付管理":"/receipt-payment-management","业务报表":"/business-report","财务报表":"/financial-report","提单管理":"/bl-management","箱货信息":"/cargo-info","仓储信息":"/warehouse-info",
   "报价审核":"/audit-review?type=quote","费用模板审核":"/audit-review?type=fee_template","订单审核":"/audit-review?type=order","提单审核":"/audit-review?type=bl",
-  "费用审核":"/audit-review?type=fee","账单审核":"/audit-review?type=bill","往来公司审核":"/audit-review?type=company","合同审核":"/audit-review?type=contract"
+  "费用审核":"/audit-review?type=fee","账单审核":"/audit-review?type=bill","往来公司审核":"/audit-review?type=company","合同审核":"/audit-review?type=contract","自定义导航":"/custom-nav"
 };
 var NAV=[
   n("工作台"),n("运价管理"),n("智能邮箱"),
   n("报价管理",["单票报价","费用模板"]),
-  n("集运订单",["待接单","订单录入","服务项目","海运出口","海运进口","空运出口","空运进口","物流园报关","陆运","铁路运输","内贸水运","自拼"]),
+  n("集运订单",["待接单","订单录入","服务项目","订单人员槽","海运出口","海运进口","空运出口","空运进口","物流园报关","陆运","铁路运输","内贸水运","自拼"]),
   n("数据通道",["上海-舱单发送","青岛-舱单发送","厦门-舱单发送","天津/大连-舱单","深圳/南沙-舱单","AFR发送","AMS发送","ISF发送","EM&ACI发送","订舱平台","在线报关","VGM发送","盯箱宝","全程货物跟踪","SPOT电商","ICS2"]),
   n("费用管理",["集运费用明细","账单管理","开票记录","收付管理","核销管理","提成管理"]),
   n("提单管理"),
@@ -26,9 +28,9 @@ var NAV=[
 ];
 var MENUS={settings:["参数设置","成员与权限"],help:["吐槽产品","新手教程","小程序","海管家二维码","货代Q宝"],resource:["企业资源"]};
 var DEFAULT_TABS=[{id:FIXED_ID,title:"工作台",url:"/wb",fixed:true}];
-var state=loadState(),tabsEl=$("tabs"),stageEl=$("stage"),navEl=$("sideNav"),toastEl=$("toast"),moduleTitle=$("moduleTitle"),toastTimer=0,dragId="";
+var state=loadState(),tabsEl=$("tabs"),stageEl=$("stage"),navEl=$("sideNav"),toastEl=$("toast"),moduleTitle=$("moduleTitle"),toastTimer=0,dragId="",customNav=[];
 $("generatedAt").textContent="生成时间 "+new Date().toLocaleString("zh-CN");
-renderNav();renderMenus();mountSearch();bindShell();render();
+renderNav();renderMenus();mountSearch();bindShell();render();loadCustomNav();
 function n(name,children){return {name:name,children:(children||[]).map(function(x){return {name:x}})}}
 function $(id){return document.getElementById(id)}
 function builtUrl(name){return BUILT[name]||""}
@@ -36,7 +38,7 @@ function pendingUrl(name){return "/wb-tabs-placeholder?module="+encodeURICompone
 function openNav(name){var url=builtUrl(name);openTab({title:url?name:name+" · 待建",url:url||pendingUrl(name),pending:!url,sourceName:name})}
 function renderNav(){
   navEl.textContent="";
-  NAV.forEach(function(item){
+  navTree().forEach(function(item){
     var sec=document.createElement("div"),main=document.createElement("button"),leafs=document.createElement("div"),has=item.children.length;
     sec.className="nav-section"+(has?" open":"");main.className="nav-main";main.type="button";
     main.innerHTML='<span class="nav-caret"></span><span class="nav-main-title"></span>';
@@ -55,12 +57,18 @@ function renderNav(){
 function renderMenus(){
   Object.keys(MENUS).forEach(function(key){var box=$("menu-"+key);box.textContent="";MENUS[key].forEach(function(label){var b=document.createElement("button");b.type="button";b.textContent=label;b.addEventListener("click",function(){hideMenus();openNav(label)});box.appendChild(b)})});
 }
+function navTree(){return customNav.length?[n("工作台"),n("我的导航",customNav.map(function(x){return x.title})),n("自定义导航")]:NAV}
+function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
+async function loadCustomNav(){
+  var t=token();if(!t)return;
+  try{var r=await fetch("/api/db/custom-nav",{headers:{Authorization:"Bearer "+t}}),d=await r.json();customNav=d&&d.state==="ready"&&Array.isArray(d.custom_items)?d.custom_items:[];customNav.forEach(function(x){if(x&&x.title&&x.url)BUILT[x.title]=x.url});renderNav();syncNav()}catch(e){}
+}
 function mountSearch(){
   if(window.SanlynGlobalSearch)window.SanlynGlobalSearch.mount($("topSearch"),{open:openSearchItem});
 }
 function openSearchItem(item){openTab({title:item.label||"搜索结果",url:item.url})}
 function bindShell(){
-  window.addEventListener("message",function(event){if(event.origin!==location.origin||!trustedFrameSource(event.source))return;var d=event.data||{};if(d.type!=="sanlyn:open-tab"&&d.type!=="open-tab")return;openTab({id:d.id,title:d.title||d.url,url:d.url,sourceName:d.sourceName})});
+  window.addEventListener("message",function(event){if(event.origin!==location.origin||!trustedFrameSource(event.source))return;var d=event.data||{};if(d.type==="sanlyn:nav-updated"){loadCustomNav();return}if(d.type!=="sanlyn:open-tab"&&d.type!=="open-tab")return;openTab({id:d.id,title:d.title||d.url,url:d.url,sourceName:d.sourceName})});
   document.addEventListener("click",function(e){var m=e.target.closest("[data-menu]");if(m){toggleMenu(m.dataset.menu);return}if(!e.target.closest(".menu-wrap"))hideMenus()});
   $("noticeBtn").onclick=function(){openNav("通知")};$("customNav").onclick=function(){openNav("自定义导航")};
   $("assistantFab").onclick=function(){$("assistantPanel").hidden=false};$("assistantClose").onclick=function(){$("assistantPanel").hidden=true};

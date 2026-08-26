@@ -3,6 +3,8 @@ import { requireAuth } from "../auth.js";
 import { allocateOrderIdentifiers, orderIdentifierStats } from "./order-id-policy.js";
 
 const INTERNAL_ROLES = new Set(["admin", "logistics", "sales", "operator", "superadmin", "ceo"]);
+const NEW_ORDER_STATUS = "new";
+const EDITABLE_START_STATUSES = ["new", "draft"];
 const COMPLETION_FIELDS = [
   ["factory_code", "工厂代码"],
   ["trade_terms", "销售侧成交方式"],
@@ -53,6 +55,39 @@ async function loadBuyer(pool, companyCode) {
   return r.rows[0] || null;
 }
 
+async function findCustomerBusinessDuplicate(pool, companyCode, customerPo, excludeId) {
+  const po = clean(customerPo);
+  if (!po) return null;
+  const cols = await existingColumns(pool);
+  if (!cols.has("customer_po")) return null;
+  const publicExpr = cols.has("public_order_no") ? "public_order_no" : "NULL::text AS public_order_no";
+  const internalExpr = cols.has("internal_snowflake_id") ? "internal_snowflake_id::text AS internal_snowflake_id" : "NULL::text AS internal_snowflake_id";
+  const params = [companyCode, po.toUpperCase()];
+  let exclude = "";
+  if (excludeId) {
+    params.push(excludeId);
+    exclude = ` AND id <> $${params.length}`;
+  }
+  const r = await pool.query(
+    `SELECT id, order_no, ${publicExpr}, ${internalExpr}, customer_po, status, created_at
+       FROM orders
+      WHERE UPPER(COALESCE(company_code,'')) = UPPER($1)
+        AND UPPER(BTRIM(COALESCE(customer_po,''))) = $2
+        ${exclude}
+      ORDER BY created_at DESC NULLS LAST, id DESC
+      LIMIT 1`,
+    params
+  );
+  return r.rows[0] || null;
+}
+
+function duplicateError(dup) {
+  const err = new Error("客户业务编号已存在，已拦截重复录入");
+  err.status = 409;
+  err.duplicate = dup;
+  return err;
+}
+
 async function fieldStats(pool) {
   const cols = await existingColumns(pool);
   const expr = (field, sql) => cols.has(field) ? sql : "0::int AS " + field;
@@ -86,6 +121,28 @@ async function entryStats(pool) {
   const cols = await existingColumns(pool);
   const fields = await fieldStats(pool);
   const identifiers = await orderIdentifierStats(pool, cols);
+  const hasCustomerPo = cols.has("customer_po");
+  let customerPoFilled = 0;
+  let total = 0;
+  if (hasCustomerPo) {
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE NULLIF(BTRIM(customer_po),'') IS NOT NULL)::int AS filled
+         FROM orders`
+    ).catch(() => ({ rows: [{ total: 0, filled: 0 }] }));
+    total = Number((r.rows[0] || {}).total || 0);
+    customerPoFilled = Number((r.rows[0] || {}).filled || 0);
+  }
+  identifiers.unshift({
+    field: "customer_po",
+    label: "客户业务编号",
+    policy: "同客户下不允许重复",
+    total,
+    filled: customerPoFilled,
+    fill_rate: total && customerPoFilled ? Math.round(customerPoFilled / total * 100) : null,
+    connected: hasCustomerPo && total > 0 && customerPoFilled > 0,
+    missing: hasCustomerPo ? (total ? "orders.customer_po filled samples" : "orders sample rows") : "orders.customer_po",
+  });
   return { fields, identifiers };
 }
 
@@ -133,6 +190,9 @@ async function createDraft(req, body) {
     err.status = 404;
     throw err;
   }
+  const customerPo = clean(body.customer_po || body.customerPO);
+  const duplicate = await findCustomerBusinessDuplicate(pool, companyCode, customerPo);
+  if (duplicate) throw duplicateError(duplicate);
   const cols = await existingColumns(pool);
   const raw = {
     draft_entry: true,
@@ -146,6 +206,8 @@ async function createDraft(req, body) {
   try {
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext('orders_draft_entry'))");
+    const lockedDuplicate = await findCustomerBusinessDuplicate(client, companyCode, customerPo);
+    if (lockedDuplicate) throw duplicateError(lockedDuplicate);
     const ids = await allocateOrderIdentifiers(client);
     const nr = await client.query("SELECT COALESCE(MAX(id),0)+1 AS id FROM orders");
     const id = Number(nr.rows[0].id);
@@ -164,12 +226,12 @@ async function createDraft(req, body) {
       currency: buyer?.currency || null,
       destination_port: clean(body.destination_port) || buyer?.destination_port || "",
       consignee: clean(body.consignee) || buyer?.consignee || "",
-      customer_po: clean(body.customer_po) || null,
+      customer_po: customerPo || null,
       factory_code: clean(body.factory_code).toUpperCase() || null,
       factory: clean(body.factory) || "",
       trade_terms: clean(body.trade_terms).toUpperCase() || null,
       purchase_trade_terms: clean(body.purchase_trade_terms).toUpperCase() || null,
-      status: "draft",
+      status: NEW_ORDER_STATUS,
       production_status: null,
       products: JSON.stringify(Array.isArray(body.products) ? body.products : []),
       remarks: clean(body.remarks) || "",
@@ -220,6 +282,16 @@ async function patchDraft(req, body) {
   const pool = getPool();
   const cols = await existingColumns(pool);
   const fields = body.fields && typeof body.fields === "object" ? body.fields : {};
+  if (clean(fields.customer_po)) {
+    const own = await pool.query("SELECT company_code FROM orders WHERE id=$1 LIMIT 1", [id]);
+    if (!own.rows.length) {
+      const err = new Error("draft order not found");
+      err.status = 404;
+      throw err;
+    }
+    const duplicate = await findCustomerBusinessDuplicate(pool, own.rows[0].company_code, fields.customer_po, id);
+    if (duplicate) throw duplicateError(duplicate);
+  }
   const allowed = {
     customer_po: clean(fields.customer_po) || null,
     destination_port: clean(fields.destination_port) || null,
@@ -243,9 +315,9 @@ async function patchDraft(req, body) {
   const r = await pool.query(
     `UPDATE orders
         SET ${sets.join(", ")}
-      WHERE id=$${values.length} AND status='draft'
+      WHERE id=$${values.length} AND status = ANY($${values.length + 1}::text[])
       RETURNING id, order_no, status, raw`,
-    values
+    values.concat([EDITABLE_START_STATUSES])
   );
   if (!r.rows.length) {
     const err = new Error("draft order not found");
@@ -262,6 +334,20 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const pool = getPool();
+      if (req.query.action === "duplicate-check") {
+        const companyCode = clean(req.query.companyCode).toUpperCase();
+        const customerPo = clean(req.query.customerPo);
+        if (!companyCode || !customerPo) return res.status(200).json({ success: true, duplicate: null });
+        if (!isInternal(req)) {
+          const allowed = userCodes(req).map(x => x.toUpperCase());
+          if (!allowed.includes(companyCode)) return res.status(403).json({ success: false, error: "buyer_company_code outside account scope" });
+        }
+        const excludeId = Number(req.query.excludeId || 0);
+        return res.status(200).json({
+          success: true,
+          duplicate: await findCustomerBusinessDuplicate(pool, companyCode, customerPo, Number.isInteger(excludeId) && excludeId > 0 ? excludeId : null),
+        });
+      }
       const stats = await entryStats(pool);
       return res.status(200).json({
         success: true,
@@ -274,6 +360,6 @@ export default async function handler(req, res) {
     if (req.method === "PATCH") return res.status(200).json({ success: true, order: await patchDraft(req, req.body || {}) });
     return res.status(405).json({ success: false, error: "GET/POST/PATCH required" });
   } catch (e) {
-    return res.status(e.status || 500).json({ success: false, error: e.message });
+    return res.status(e.status || 500).json({ success: false, error: e.message, duplicate: e.duplicate || null });
   }
 }

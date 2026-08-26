@@ -1,6 +1,7 @@
 // /api/db/manifest-send — Shanghai manifest declaration-channel read lens.
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { normalizeCargoType } from "./lib/cargo-type-enum.js";
 
 const READ_ROLES = new Set(["admin", "logistics", "sales", "ops", "finance"]);
 const BASE_FIELDS = [
@@ -60,6 +61,14 @@ function coverage(rows, fields, colSet) {
   });
 }
 
+function cargoEnumCoverage(rows, colSet) {
+  if (!colSet.has("cargo_type")) {
+    return { name: "cargo_type_enum", label: "货物属性内部枚举", state: "not_connected", filled: 0, total: rows.length, fill_rate: null };
+  }
+  const filled = rows.filter((r) => normalizeCargoType(r.cargo_type).state === "ready").length;
+  return { name: "cargo_type_enum", label: "货物属性内部枚举", state: "ready", filled, total: rows.length, fill_rate: pct(filled, rows.length) };
+}
+
 function missingFor(row, fields, colSet) {
   return fields
     .filter(([name]) => !colSet.has(name) || !hasValue(row[name]))
@@ -68,6 +77,10 @@ function missingFor(row, fields, colSet) {
 
 function rowOut(row, fields, colSet) {
   const missing = missingFor(row, fields, colSet);
+  const cargoType = normalizeCargoType(colSet.has("cargo_type") ? row.cargo_type : null);
+  if (cargoType.state === "unmapped") {
+    missing.push({ name: "cargo_type_enum", label: "货物属性内部枚举", reason: "unmapped" });
+  }
   return {
     id: row.id,
     shipment_no: row.shipment_no,
@@ -79,6 +92,10 @@ function rowOut(row, fields, colSet) {
     carrier: colSet.has("carrier") ? row.carrier : null,
     etd: row.etd,
     status: row.status,
+    cargo_type_enum: cargoType.code,
+    cargo_type_label: cargoType.label,
+    cargo_type_raw: cargoType.raw,
+    cargo_type_state: colSet.has("cargo_type") ? cargoType.state : "not_connected",
     line_count: Number(row.line_count || 0),
     container_count: Number(row.container_count || 0),
     missing_count: missing.length,
@@ -141,7 +158,7 @@ export default async function handler(req, res) {
     const pool = getPool();
     const colSet = await columns(pool, "customs_shipments");
     const rows = await listShipments(pool, colSet, req.query || {});
-    const fields = coverage(rows, BASE_FIELDS, colSet);
+    const fields = coverage(rows, BASE_FIELDS, colSet).concat(cargoEnumCoverage(rows, colSet));
     const sendCoverage = coverage(rows, SEND_FIELDS, colSet);
     const selected = rows[0] ? rowOut(rows[0], BASE_FIELDS, colSet) : null;
     const lineSummary = selected ? await summary(pool, selected.id) : null;

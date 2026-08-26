@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>智能邮箱</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--chip:var(--hgj-primary-bg);--bad:var(--hgj-danger);--warn:var(--hgj-warn)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 var(--hgj-font)}
+    .wrap{max-width:1220px;margin:0 auto;padding:22px}
+    .top{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;margin-bottom:16px}
+    h1,h2{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}
+    .sub,.note,.meta{color:var(--muted);font-size:12px}.actions{display:flex;gap:8px;flex-wrap:wrap}
+    button,.tab,select,input,textarea{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:0;padding:8px 10px;font:inherit}
+    button{cursor:pointer}.primary{background:var(--accent);border-color:var(--accent);color:#fff}.ghost{border-color:var(--accent);color:var(--accent);background:var(--chip)}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.tab{font-size:12px}.tab.active{border-color:var(--accent);color:var(--accent);background:var(--chip)}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}.metric,.panel{background:var(--panel);border:0;border-radius:0;box-shadow:none}.metric{padding:14px}.panel{padding:14px;margin-bottom:10px}
+    .label{color:var(--muted);font-size:12px}.num{font-size:26px;font-weight:700;margin:3px 0}.warn{color:var(--warn)}.bad{color:var(--bad)}
+    .cols{display:grid;grid-template-columns:320px minmax(0,1fr);gap:10px}.list{border-top:1px solid var(--line);margin-top:8px}.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);align-items:center}
+    .rowTitle{font-weight:650;overflow-wrap:anywhere}.pillbar{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}.pill{border:1px solid var(--accent);background:var(--chip);color:var(--accent);border-radius:0;padding:2px 7px;font-size:12px}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:4px;margin-bottom:8px}.field label{font-size:12px;color:var(--muted)}textarea{min-height:150px;resize:vertical}.preview{min-height:150px;border:1px solid var(--line);padding:10px;background:var(--bg);white-space:pre-wrap;overflow-wrap:anywhere}
+    .empty,.err{padding:22px;text-align:center;color:var(--muted)}.err{color:var(--bad)}.hidden{display:none}.toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px}
+    @media(max-width:900px){.wrap{padding:16px}.top,.toolbar{display:grid;align-items:stretch}.grid,.cols,.split{grid-template-columns:1fr}.row{grid-template-columns:1fr}.actions{display:grid}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1 class="hgj-panel-title">智能邮箱</h1>
+        <div class="sub" id="stamp">v2026.08.26-1 · 加载中</div>
+      </div>
+      <div class="actions">
+        <button id="reload">刷新</button>
+        <button class="ghost" id="openTemplates">模板中心</button>
+      </div>
+    </div>
+    <div class="grid">
+      <section class="metric hgj-card"><div class="label">模板</div><div class="num" id="mTemplates">未接入</div><div class="note" id="mTemplatesNote">缺 email_templates</div></section>
+      <section class="metric hgj-card"><div class="label">发件主体</div><div class="num" id="mSenders">未接入</div><div class="note" id="mSendersNote">缺 email_senders</div></section>
+      <section class="metric hgj-card"><div class="label">最近邮件</div><div class="num" id="mLogs">未接入</div><div class="note" id="mLogsNote">缺 email_message_log</div></section>
+      <section class="metric hgj-card"><div class="label">失败/未发</div><div class="num warn" id="mRisk">未接入</div><div class="note" id="mRiskNote">缺 status 字段</div></section>
+    </div>
+    <div class="tabs">
+      <button class="tab hgj-tabbtn active" data-tab="compose">草稿</button>
+      <button class="tab hgj-tabbtn" data-tab="templates">模板</button>
+      <button class="tab hgj-tabbtn" data-tab="logs">记录</button>
+      <button class="tab hgj-tabbtn" data-tab="wiring">接入状态</button>
+    </div>
+    <section class="panel hgj-card" id="composePanel">
+      <h2 class="hgj-panel-title">草稿工作台</h2>
+      <div class="split">
+        <div>
+          <div class="field"><label for="tpl">模板</label><select id="tpl"></select></div>
+          <div class="field"><label for="sender">发件主体</label><select id="sender"></select></div>
+          <div class="field"><label for="to">收件人邮箱</label><input id="to" placeholder="未设置"></div>
+          <div class="field"><label for="subject">主题</label><input id="subject" placeholder="未接入"></div>
+          <div class="field"><label for="body">正文草稿</label><textarea id="body" placeholder="未接入"></textarea></div>
+          <button class="primary" id="draftBtn">生成草稿</button>
+        </div>
+        <div>
+          <div class="field"><label>预览</label><div class="preview" id="preview">未接入 · 缺模板正文；当前填充率 0/0</div></div>
+          <div class="note">本页只生成草稿，不执行发送、催款或任何对外消息。</div>
+        </div>
+      </div>
+    </section>
+    <section class="panel hgj-card hidden" id="templatesPanel">
+      <div class="toolbar"><h2 class="hgj-panel-title">模板</h2><div class="note" id="templateBasis"></div></div>
+      <div class="list" id="templateList"></div>
+    </section>
+    <section class="panel hgj-card hidden" id="logsPanel">
+      <div class="toolbar"><h2 class="hgj-panel-title">记录</h2><div class="note" id="logBasis"></div></div>
+      <div class="list" id="logList"></div>
+    </section>
+    <section class="panel hgj-card hidden" id="wiringPanel">
+      <h2 class="hgj-panel-title">接入状态</h2>
+      <div class="list" id="wiringList"></div>
+    </section>
+  </div>
+  <script src="/smart-email.js"></script>
+</body>
+</html>

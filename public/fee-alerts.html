@@ -18,14 +18,18 @@
 <body class="hgj-page">
   <div class="wrap">
     <div class="top">
-      <div><h1 class="hgj-panel-title">费用预警</h1><div class="sub" id="summary">加载中</div></div>
+      <div><h1 class="hgj-panel-title">费用预警</h1><div class="sub" id="summary">v2026.08.26-2 · 加载中</div></div>
       <button class="btn" id="reload">刷新</button>
     </div>
     <div class="tabs">
-      <button class="tab hgj-tabbtn active" data-tab="invoiced">未开票</button>
+      <button class="tab hgj-tabbtn active" data-tab="entered">已录入</button>
+      <button class="tab hgj-tabbtn" data-tab="completed">已完成</button>
+      <button class="tab hgj-tabbtn" data-tab="invoiced">未开票</button>
       <button class="tab hgj-tabbtn" data-tab="settled">未核销</button>
     </div>
     <div class="grid">
+      <section class="metric hgj-card"><div class="label">已录入</div><div class="num" id="mEntered">未接入</div><div class="note" id="mEnteredNote"></div></section>
+      <section class="metric hgj-card"><div class="label">已完成</div><div class="num" id="mCompleted">未接入</div><div class="note" id="mCompletedNote"></div></section>
       <section class="metric hgj-card"><div class="label">未开票</div><div class="num" id="mInvoice">未接入</div><div class="note" id="mInvoiceNote"></div></section>
       <section class="metric hgj-card"><div class="label">无法判断</div><div class="num warn" id="mUnknown">未设置</div><div class="note" id="mUnknownNote"></div></section>
       <section class="metric hgj-card"><div class="label">未核销</div><div class="num bad" id="mSettled">未接入</div><div class="note" id="mSettledNote"></div></section>
@@ -37,65 +41,6 @@
     <section class="panel hgj-card" id="list"></section>
   </div>
   <div class="toast hidden" id="toast"></div>
-  <script>
-  const API="/api/db/fee-alerts";
-  const state={tab:"invoiced",data:null,open:new Set(),ignored:new Set(JSON.parse(localStorage.getItem("fee_alert_ignored")||"[]"))};
-  const $=id=>document.getElementById(id);
-  function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
-  function headers(body){const h={};const t=token();if(t)h.Authorization="Bearer "+t;if(body)h["Content-Type"]="application/json";return h}
-  async function api(method,body){
-    const r=await fetch(API,{method:method||"GET",headers:headers(body),body:body?JSON.stringify(body):undefined});
-    const d=await r.json().catch(()=>({error:"接口返回异常"}));
-    if(!r.ok||d.success===false)throw new Error(d.error||"请求失败");
-    return d;
-  }
-  function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]))}
-  function showToast(text){$("toast").textContent=text;$("toast").classList.remove("hidden");setTimeout(()=>$("toast").classList.add("hidden"),1800)}
-  function openWorkbenchTab(title,url){if(window.parent!==window)window.parent.postMessage({type:'sanlyn:open-tab',title:title,url:url},location.origin);else window.open(url,'_blank')}
-  function saveIgnored(){localStorage.setItem("fee_alert_ignored",JSON.stringify([...state.ignored]))}
-  function displayCount(v, fallback){return v===null||v===undefined?fallback:String(v)}
-  async function load(){
-    try{
-      const d=await api();
-      state.data=d;render();
-    }catch(e){$("summary").textContent="读取失败";$("list").innerHTML=`<div class="err">${esc(e.message)}</div>`}
-  }
-  function renderMetrics(){
-    const d=state.data||{};const inv=d.invoiced||{}, unk=d.unknown||{}, set=d.settled||{};
-    $("summary").textContent=d.generated_at?`生成时间 ${new Date(d.generated_at).toLocaleString()}`:"已加载";
-    $("mInvoice").textContent=displayCount(inv.count,"未接入");
-    $("mInvoiceNote").textContent=`依据 ${inv.basis?.table||"未设置"}；可判断 ${inv.basis?.eligible??"未设置"} 行`;
-    $("mUnknown").textContent=displayCount(unk.count,"未设置");
-    const r=unk.reasons||{};$("mUnknownNote").textContent=`挂不到票 ${r.no_shipping_plan_link??"未设置"}，无账期 ${r.no_bill_month??"未设置"}，挂靠异常 ${r.shipping_plan_unresolved??"未设置"}`;
-    $("mSettled").textContent=set.state==="not_connected"?"未接入":displayCount(set.count,"未设置");
-    $("mSettledNote").textContent=set.basis?.note||"未设置";
-  }
-  function filteredRows(){
-    const rows=state.data?.invoiced?.rows||[];
-    return rows.filter(r=>!state.ignored.has(String(r.id)));
-  }
-  function rowHtml(r){
-    const id=String(r.id);const detail=state.open.has(id);
-    const title=`账单编号 ${r.bill_no||r.id} 到账期了，还没有开票，快去看看吧。`;
-    return `<article class="row" data-title="${esc(r.bill_no||r.bl_no||id)}" data-url="/rates?bill_id=${encodeURIComponent(id)}"><div class="main"><div class="title">${esc(title)}</div><div class="meta"><span class="pill">BL ${esc(r.bl_no||"未设置")}</span><span class="pill">账期 ${esc(r.bill_month||"未设置")}</span><span class="pill">依据 ${esc(r.basis||"未设置")}</span></div>${detail?`<div class="detail">供应商 ${esc(r.supplier||"未设置")} · 费用 ${esc(r.cost_category||"未设置")} · 金额 ${esc(r.currency||"")} ${esc(r.amount??"未设置")} · shipping_plan ${esc(r.shipping_plan_id||"未设置")}</div>`:""}</div><div><button class="btn detailBtn" data-id="${esc(id)}">查看详情</button> <button class="btn ignoreBtn" data-id="${esc(id)}">忽略</button></div></article>`;
-  }
-  function renderList(){
-    const box=$("list"), d=state.data||{};
-    $("ignoreAll").disabled=state.tab!=="invoiced"||!(d.invoiced?.rows||[]).length;
-    if(state.tab==="settled"){
-      $("tabNote").textContent=d.settled?.basis?.note||"未接入";
-      box.innerHTML=`<div class="empty">未接入 · ${esc(d.settled?.basis?.note||"核销写入管道未完成")}</div>`;return;
-    }
-    const rows=filteredRows();$("tabNote").textContent=d.invoiced?.basis?.note||"未设置";
-    if(!rows.length){box.innerHTML='<div class="empty">没有未忽略的业务预警</div>';return}
-    box.innerHTML=rows.map(rowHtml).join("");
-  }
-  function render(){renderMetrics();document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===state.tab));renderList()}
-  document.querySelector(".tabs").onclick=e=>{const b=e.target.closest(".tab");if(!b)return;state.tab=b.dataset.tab;render()};
-  $("reload").onclick=load;
-  $("ignoreAll").onclick=async()=>{if(state.tab!=="invoiced")return;const rows=filteredRows();rows.forEach(r=>state.ignored.add(String(r.id)));saveIgnored();render();try{for(const r of rows)await api("POST",{kind:"invoiced",id:String(r.id)});showToast("已忽略当前业务预警")}catch(e){showToast(e.message);load()}};
-  $("list").onclick=async e=>{const detail=e.target.closest(".detailBtn"), ignore=e.target.closest(".ignoreBtn");if(detail){const id=detail.dataset.id;state.open.has(id)?state.open.delete(id):state.open.add(id);render();return}if(ignore){const id=ignore.dataset.id;state.ignored.add(id);saveIgnored();render();try{await api("POST",{kind:"invoiced",id});showToast("已忽略")}catch(err){state.ignored.delete(id);saveIgnored();render();showToast(err.message)}return}const row=e.target.closest(".row[data-url]");if(row)openWorkbenchTab(row.dataset.title,row.dataset.url)};
-  load();
-  </script>
+  <script src="/fee-alerts.js"></script>
 </body>
 </html>

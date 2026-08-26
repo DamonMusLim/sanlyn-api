@@ -6,6 +6,9 @@ const IGNORE_SCOPE = "invoiced";
 // Unit: percentage points, not a 0-1 ratio. Below 20% means the link table is
 // too sparse to be treated as connected; real routes should quickly exceed it.
 const INVOICE_LINK_COVERAGE_READY_PERCENT = 20;
+const FEE_SOURCE_TABLE = "freight_supplier_bills";
+const ENTERED_FIELDS = ["id", "cost_category", "amount", "currency"];
+const DONE_STATUS_VALUES = ["paid", "settled", "completed", "done", "closed"];
 
 function clampLimit(value) {
   const n = Number.parseInt(value || "200", 10);
@@ -28,6 +31,105 @@ function actorFrom(req) {
 
 function targetKey(id) {
   return clean(id, 160);
+}
+
+async function tableExists(pool, table) {
+  const r = await pool.query("SELECT to_regclass($1) AS name", [`public.${table}`]);
+  return Boolean(r.rows[0]?.name);
+}
+
+async function tableColumns(pool, table) {
+  const r = await pool.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name=$1`,
+    [table]
+  );
+  return new Set(r.rows.map((x) => x.column_name));
+}
+
+function pct(filled, total) {
+  if (!total) return null;
+  return Number(((Number(filled || 0) / Number(total)) * 100).toFixed(1));
+}
+
+async function fieldCoverage(pool, cols, fields) {
+  const total = Number((await pool.query(`SELECT COUNT(*)::int AS n FROM ${FEE_SOURCE_TABLE}`)).rows[0]?.n || 0);
+  const out = [];
+  for (const field of fields.filter((x) => cols.has(x))) {
+    const r = await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE NULLIF(BTRIM("${field}"::text), '') IS NOT NULL)::int AS filled
+         FROM ${FEE_SOURCE_TABLE}`
+    );
+    const filled = Number(r.rows[0]?.filled || 0);
+    out.push({ field, filled, total, fill_rate_percent: pct(filled, total) });
+  }
+  return { total, fields: out };
+}
+
+function fillNote(coverage) {
+  if (!coverage?.fields?.length) return "当前填充率 未接入";
+  return coverage.fields.map((x) => `${x.field} ${x.fill_rate_percent ?? "未接入"}%`).join("；");
+}
+
+async function loadFeeStages(pool) {
+  if (!(await tableExists(pool, FEE_SOURCE_TABLE))) {
+    const missing = [`${FEE_SOURCE_TABLE}`];
+    return {
+      entered: { state: "not_connected", count: null, basis: basis("not_connected", `未接入: 缺 ${missing.join(" / ")}；当前填充率 未接入`, { table: FEE_SOURCE_TABLE, missing_fields: missing }) },
+      completed: { state: "not_connected", count: null, basis: basis("not_connected", `未接入: 缺 ${missing.join(" / ")}；当前填充率 未接入`, { table: FEE_SOURCE_TABLE, missing_fields: missing }) },
+    };
+  }
+  const cols = await tableColumns(pool, FEE_SOURCE_TABLE);
+  const completionFields = ["reconciled", "ap_status", "ar_status"].filter((x) => cols.has(x));
+  const coverage = await fieldCoverage(pool, cols, ENTERED_FIELDS.concat(completionFields));
+  const missingEntered = ENTERED_FIELDS.filter((x) => !cols.has(x));
+  const enteredReady = !missingEntered.length && coverage.total > 0 &&
+    ENTERED_FIELDS.every((field) => (coverage.fields.find((x) => x.field === field)?.filled || 0) > 0);
+
+  let entered = { state: "not_connected", count: null, basis: basis("not_connected", `未接入: 缺 ${missingEntered.map((x) => `${FEE_SOURCE_TABLE}.${x}`).join(" / ") || "真实费用行"}；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total, missing_fields: missingEntered }) };
+  if (enteredReady) {
+    const r = await pool.query(
+      `SELECT COUNT(*)::int AS n
+         FROM ${FEE_SOURCE_TABLE}
+        WHERE NULLIF(BTRIM(cost_category::text), '') IS NOT NULL
+          AND amount IS NOT NULL
+          AND NULLIF(BTRIM(currency::text), '') IS NOT NULL`
+    );
+    const enteredCount = Number(r.rows[0]?.n || 0);
+    if (enteredCount > 0) {
+      entered = { state: "ready", count: enteredCount, basis: basis("ready", `已录入只认 ${FEE_SOURCE_TABLE} 真实费用行；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total }) };
+    }
+  }
+
+  const filledCompletion = completionFields.some((field) => (coverage.fields.find((x) => x.field === field)?.filled || 0) > 0);
+  if (!completionFields.length || !filledCompletion) {
+    return {
+      entered,
+      completed: { state: "not_connected", count: null, basis: basis("not_connected", `未接入: 缺 ${FEE_SOURCE_TABLE}.reconciled 或 AP/AR 完成状态字段；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total, missing_fields: completionFields.length ? [] : ["reconciled", "ap_status", "ar_status"] }) },
+    };
+  }
+
+  const conditions = [];
+  const vals = [];
+  if (cols.has("reconciled")) conditions.push("reconciled IS TRUE");
+  if (cols.has("ap_status") || cols.has("ar_status")) vals.push(DONE_STATUS_VALUES);
+  if (cols.has("ap_status")) conditions.push("lower(COALESCE(ap_status,'')) = ANY($1::text[])");
+  if (cols.has("ar_status")) conditions.push("lower(COALESCE(ar_status,'')) = ANY($1::text[])");
+  const done = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM ${FEE_SOURCE_TABLE} WHERE ${conditions.join(" OR ")}`,
+    vals
+  );
+  const doneCount = Number(done.rows[0]?.n || 0);
+  if (doneCount <= 0) {
+    return {
+      entered,
+      completed: { state: "not_connected", count: null, basis: basis("not_connected", `未接入: 缺已完成费用行；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total, completion_fields: completionFields }) },
+    };
+  }
+  return {
+    entered,
+    completed: { state: "ready", count: doneCount, basis: basis("ready", `已完成只认 ${conditions.join(" 或 ")}；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total, completion_fields: completionFields }) },
+  };
 }
 
 async function loadInvoiceAlerts(pool, limit, options = {}) {
@@ -228,9 +330,11 @@ export default async function handler(req, res) {
     const limit = clampLimit(req.query?.limit);
     const invoiceData = await loadInvoiceAlerts(pool, limit);
     const settled = await loadSettlementState(pool);
+    const feeStages = await loadFeeStages(pool);
     res.status(200).json({
       success: true,
       generated_at: new Date().toISOString(),
+      fee_stages: feeStages,
       invoiced: invoiceData.invoiced,
       settled,
       unknown: invoiceData.unknown,

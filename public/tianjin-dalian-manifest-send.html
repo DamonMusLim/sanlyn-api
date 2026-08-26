@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>天津/大连-舱单</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--chip:var(--hgj-primary-bg);--warn:var(--hgj-warn);--bad:var(--hgj-danger)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--hgj-font)}.wrap{max-width:1280px;margin:0 auto;padding:22px}
+    .top{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;margin-bottom:14px}.title{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.sub,.muted{color:var(--muted);font-size:13px}
+    .notice{border-left:3px solid var(--warn);padding:10px 14px;margin-bottom:10px;color:var(--hgj-title);font-weight:700}.actions{display:flex;gap:8px;align-items:center}.send-action{display:flex;flex-direction:column;gap:4px;align-items:flex-start}.send-help{max-width:430px;color:var(--muted);font-size:12px;line-height:1.35}button,input{border:1px solid var(--line);border-radius:0;background:var(--panel);color:var(--text);height:34px;padding:0 11px;font:inherit}button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:disabled{opacity:.5;cursor:not-allowed}
+    .grid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:10px}.panel{background:var(--panel);border:0;border-radius:0;box-shadow:none;margin-bottom:10px;overflow:hidden}.panel-head{display:flex;justify-content:space-between;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line)}.panel-title{font-weight:700;color:var(--hgj-title);padding-left:10px;border-left:3px solid var(--accent);line-height:16px}.body{padding:14px}
+    .list{display:grid;gap:1px;background:var(--line)}.row{border:0;background:var(--panel);padding:11px 12px;text-align:left;height:auto}.row.active{outline:2px solid var(--accent);outline-offset:-2px}.row strong{display:block;font-size:14px;overflow-wrap:anywhere}.row span{display:block;color:var(--muted);font-size:12px;margin-top:4px;overflow-wrap:anywhere}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}.metric{padding:13px 14px;background:var(--panel)}.metric .num{font-size:24px;font-weight:700;margin-top:3px}.warn{color:var(--warn)}.bad{color:var(--bad)}.pill{display:inline-block;border:1px solid var(--accent);border-radius:0;background:var(--chip);color:var(--accent);padding:2px 7px;font-size:12px}
+    table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}th{background:var(--bg);color:var(--muted);font-size:12px}.fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.field{border:1px solid var(--line);padding:8px}.field b{display:block;font-size:13px}.field span{display:block;color:var(--muted);font-size:12px;margin-top:3px}.empty,.error{padding:24px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+    @media(max-width:900px){.wrap{padding:14px}.top,.grid{display:block}.actions{margin-top:10px;flex-wrap:wrap}.metrics,.fields{grid-template-columns:1fr}table{display:block;overflow-x:auto;white-space:nowrap}}
+  </style>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <header class="top">
+      <div><h1 class="title hgj-panel-title">天津/大连-舱单</h1><div id="summary" class="sub">加载中</div></div>
+      <div class="actions">
+        <input id="search" placeholder="舱单号 / BL / 委托单位 / 天津 / 大连">
+        <button id="reload" type="button">刷新</button>
+        <div class="send-action">
+          <button id="sendBtn" class="primary" type="button" disabled title="天津/大连舱单发送通道尚未对接：缺口岸申报接口、通道凭证、tjdl_manifest_status / tjdl_manifest_sent_at / tjdl_manifest_receipt_no 三列。">发送天津/大连舱单</button>
+          <div id="sendHelp" class="send-help">天津/大连舱单发送通道尚未对接；本页只能核对天津/大连口岸舱单抬头、收发通和明细字段是否齐全。</div>
+        </div>
+      </div>
+    </header>
+    <div class="notice hgj-card">本页只做数据核对，不会向海关、船公司或第三方平台发送任何报文。</div>
+    <section class="metrics">
+      <div class="metric hgj-card"><div class="muted">天津/大连记录</div><div id="mRows" class="num">未接入</div></div>
+      <div class="metric hgj-card"><div class="muted">口岸字段填充</div><div id="mPort" class="num">未接入</div></div>
+      <div class="metric hgj-card"><div class="muted">抬头字段填充</div><div id="mHeader" class="num warn">未接入</div></div>
+      <div class="metric hgj-card"><div class="muted">申报通道</div><div id="mSend" class="num bad">未接入</div></div>
+    </section>
+    <main class="grid">
+      <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">天津/大连舱单列表</div><span id="listCount" class="pill">未接入</span></div><div id="list" class="list"></div></section>
+      <section>
+        <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">当前舱单</div><span id="readyPill" class="pill">未接入</span></div><div id="detail" class="body"></div></section>
+        <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">字段填充率</div><span class="pill">真实字段</span></div><div id="coverage" class="body fields"></div></section>
+        <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">通道接入状态</div><span class="pill">禁止忽略</span></div><div id="sendState" class="body"></div></section>
+      </section>
+    </main>
+  </div>
+  <script src="/cargo-type-enum.js"></script>
+  <script src="/tianjin-dalian-manifest-send.js"></script>
+</body>
+</html>

@@ -44,7 +44,7 @@ button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
 <main class="page" id="app">
   <div class="head">
     <div><div class="title">订单录入</div><div class="meta">v2026.08.26-2 · <span id="stamp"></span></div></div>
-    <div class="row"><button class="secondary" id="openWb">在工作台打开</button><button class="secondary" id="patchBtn" hidden>保存补全草稿</button><button id="createBtn">先建草稿单</button></div>
+    <div class="row"><button class="secondary" id="openWb">在工作台打开</button><button class="secondary" id="patchBtn" hidden>保存补全新建单</button><button id="createBtn">新建订单</button></div>
   </div>
   <div id="msg"></div>
   <section class="panel">
@@ -59,10 +59,10 @@ button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
         <input id="companyCode" list="buyers" placeholder="例如 CN-00037">
         <datalist id="buyers"></datalist>
       </div>
-      <div><label>客户 PO</label><input id="customerPo"></div>
+      <div><label>客户业务编号</label><input id="customerPo"><div id="dupHint" class="meta"></div></div>
       <div><label>目的港</label><input id="destinationPort"></div>
       <div><label>工厂代码</label><input id="factoryCode"></div>
-      <div><label>销售侧成交方式</label><input id="tradeTerms" placeholder="未谈定可留空，草稿缺口显示"></div>
+      <div><label>销售侧成交方式</label><input id="tradeTerms" placeholder="未谈定可留空，新建缺口显示"></div>
       <div><label>采购侧成交方式</label><input id="purchaseTerms"></div>
       <div><label>收货人</label><input id="consignee"></div>
       <div class="wide"><label>备注</label><textarea id="remarks"></textarea></div>
@@ -73,7 +73,7 @@ button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
     <div class="stats" id="stats"></div>
   </section>
   <section class="panel draft" id="draftBox" hidden>
-    <h1 class="hgj-panel-title">草稿单</h1>
+    <h1 class="hgj-panel-title">新建单</h1>
     <div class="ids" id="draftIds" style="margin-top:10px"></div>
     <div id="draftInfo" class="meta" style="margin-top:10px"></div>
     <div id="missing" style="margin-top:8px"></div>
