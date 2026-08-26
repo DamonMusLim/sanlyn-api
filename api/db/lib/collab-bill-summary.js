@@ -1,5 +1,6 @@
 import { requireAuth } from "../../auth.js";
 import { rawToHash } from "./collab-shared.js";
+import { derivePortalSegments } from "./collab-portal-segments.js";
 
 const INTERNAL_PROFILES = new Set(["shipping_booking", "upstream_downstream"]);
 const ROLE_SEGMENT = {
@@ -96,14 +97,14 @@ async function ownQuotePortal(pool, planId, role) {
   }
 }
 
-function visibleSegments(auth, internal) {
+function visibleSegments(auth, internal, portalSegments = null) {
   if (internal) return ALL_SEGS;
   if (!auth) return [];
   if (auth.role === "supplier_portal") {
-    const scoped = Array.isArray(auth.meta?.segments)
-      ? auth.meta.segments.map(normalizeSegment).filter(s => s && s !== "ocean")
+    const scoped = Array.isArray(portalSegments)
+      ? portalSegments.map(normalizeSegment).filter(s => s && s !== "ocean")
       : [];
-    return scoped.length ? scoped.filter(s => ALL_SEGS.includes(s)) : ["port_charge"];
+    return scoped.filter(s => ALL_SEGS.includes(s));
   }
   const seg = ROLE_SEGMENT[auth.role]?.segment;
   return seg ? [seg] : [];
@@ -166,8 +167,18 @@ export async function handleCollabBillSummary(req, res, pool) {
   );
   const segs = { ocean: [], trucking: [], port_charge: [], customs: [] };
   for (const r of rows) (segs[segmentForCategory(r.cost_category)] || segs.port_charge).push(r);
+  let portalSegments = null;
+  if (auth?.role === "supplier_portal" && !internal) {
+    const portalDerive = await derivePortalSegments(pool, {
+      planId,
+      companyLabel: auth.meta?.company_label,
+      companyCode: auth.meta?.company_code,
+      requested: Array.isArray(auth.meta?.segments) ? auth.meta.segments : null,
+    });
+    portalSegments = portalDerive.segments;
+  }
   const segments = {};
-  for (const k of visibleSegments(auth, internal)) segments[k] = segmentPayload(segs[k] || [], internal);
+  for (const k of visibleSegments(auth, internal, portalSegments)) segments[k] = segmentPayload(segs[k] || [], internal);
   const out = { ok: true, shipping_plan_id: plan.id, bl_no: blNo, segments };
   if (!internal && auth) {
     const qp = await ownQuotePortal(pool, plan.id, auth.role);
