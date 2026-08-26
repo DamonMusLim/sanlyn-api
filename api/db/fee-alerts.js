@@ -71,7 +71,27 @@ function fillNote(coverage) {
   return coverage.fields.map((x) => `${x.field} ${x.fill_rate_percent ?? "未接入"}%`).join("；");
 }
 
-async function loadFeeStages(pool) {
+function feeRowSql(whereSql, orderSql) {
+  return `SELECT COALESCE(json_agg(json_build_object(
+    'id', id::text,
+    'bl_no', bl_no,
+    'bill_month', bill_month,
+    'supplier', supplier,
+    'cost_category', cost_category,
+    'amount', amount,
+    'currency', currency,
+    'basis', 'freight_supplier_bills 真实费用行'
+  ) ${orderSql}), '[]'::json) AS rows
+  FROM (
+    SELECT id, bl_no, bill_month, supplier, cost_category, amount, currency
+      FROM ${FEE_SOURCE_TABLE}
+     WHERE ${whereSql}
+     ORDER BY bill_month DESC NULLS LAST, bl_no NULLS LAST, id
+     LIMIT $1
+  ) x`;
+}
+
+async function loadFeeStages(pool, limit) {
   if (!(await tableExists(pool, FEE_SOURCE_TABLE))) {
     const missing = [`${FEE_SOURCE_TABLE}`];
     return {
@@ -97,7 +117,16 @@ async function loadFeeStages(pool) {
     );
     const enteredCount = Number(r.rows[0]?.n || 0);
     if (enteredCount > 0) {
-      entered = { state: "ready", count: enteredCount, basis: basis("ready", `已录入只认 ${FEE_SOURCE_TABLE} 真实费用行；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total }) };
+      const rows = await pool.query(feeRowSql(
+        "NULLIF(BTRIM(cost_category::text), '') IS NOT NULL AND amount IS NOT NULL AND NULLIF(BTRIM(currency::text), '') IS NOT NULL",
+        "ORDER BY bill_month DESC NULLS LAST, bl_no NULLS LAST, id"
+      ), [limit]);
+      entered = {
+        state: "ready",
+        count: enteredCount,
+        rows: Array.isArray(rows.rows[0]?.rows) ? rows.rows[0].rows : [],
+        basis: basis("ready", `已录入只认 ${FEE_SOURCE_TABLE} 真实费用行；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total }),
+      };
     }
   }
 
@@ -126,13 +155,49 @@ async function loadFeeStages(pool) {
       completed: { state: "not_connected", count: null, basis: basis("not_connected", `未接入: 缺已完成费用行；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total, completion_fields: completionFields }) },
     };
   }
+  const rowConditions = conditions.map((x) => x.replace("$1::text[]", "$2::text[]"));
+  const doneRows = await pool.query(
+    feeRowSql(`(${rowConditions.join(" OR ")})`, "ORDER BY bill_month DESC NULLS LAST, bl_no NULLS LAST, id"),
+    vals.length ? [limit, DONE_STATUS_VALUES] : [limit]
+  );
   return {
     entered,
-    completed: { state: "ready", count: doneCount, basis: basis("ready", `已完成只认 ${conditions.join(" 或 ")}；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total, completion_fields: completionFields }) },
+    completed: {
+      state: "ready",
+      count: doneCount,
+      rows: Array.isArray(doneRows.rows[0]?.rows) ? doneRows.rows[0].rows : [],
+      basis: basis("ready", `已完成只认 ${conditions.join(" 或 ")}；${fillNote(coverage)}`, { table: FEE_SOURCE_TABLE, total: coverage.total, completion_fields: completionFields }),
+    },
   };
 }
 
 async function loadInvoiceAlerts(pool, limit, options = {}) {
+  const required = ["freight_supplier_bills", "shipping_plans", "finance_invoice_bill_links", "alert_ignores"];
+  const presence = await Promise.all(required.map(async (name) => [name, await tableExists(pool, name)]));
+  const missingTables = presence.filter(([, exists]) => !exists).map(([name]) => name);
+  if (missingTables.length) {
+    const hasBills = !missingTables.includes("freight_supplier_bills");
+    const cols = hasBills ? await tableColumns(pool, FEE_SOURCE_TABLE) : new Set();
+    const coverage = hasBills ? await fieldCoverage(pool, cols, ["link_plan_id", "bill_month"]) : { total: 0, fields: [] };
+    return {
+      invoiced: {
+        state: "not_connected",
+        count: null,
+        rows: [],
+        basis: basis("not_connected", `未接入: 缺 ${missingTables.join(" / ")}；${fillNote(coverage)}`, {
+          table: required.join(" + "),
+          total: coverage.total,
+          missing_fields: missingTables,
+        }),
+      },
+      unknown: {
+        count: null,
+        reasons: {},
+        rows: [],
+        basis: basis("not_connected", `未接入: 缺 ${missingTables.join(" / ")}；当前填充率 ${fillNote(coverage)}`),
+      },
+    };
+  }
   const sql = `
 WITH ignored AS (
   SELECT target_key FROM alert_ignores
@@ -252,6 +317,17 @@ SELECT counts.*, invoice_link_stats.*, alert_rows.rows
 }
 
 async function loadSettlementState(pool) {
+  if (!(await tableExists(pool, "finance_settlement_links"))) {
+    return {
+      state: "not_connected",
+      count: null,
+      rows: [],
+      basis: basis("not_connected", "未接入: 缺 finance_settlement_links；当前填充率 未接入", {
+        table: "finance_settlement_links",
+        missing_fields: ["finance_settlement_links"],
+      }),
+    };
+  }
   const q = await pool.query("SELECT COUNT(*)::int AS n FROM finance_settlement_links");
   const total = Number(q.rows[0]?.n || 0);
   if (total <= 1) {
@@ -330,7 +406,7 @@ export default async function handler(req, res) {
     const limit = clampLimit(req.query?.limit);
     const invoiceData = await loadInvoiceAlerts(pool, limit);
     const settled = await loadSettlementState(pool);
-    const feeStages = await loadFeeStages(pool);
+    const feeStages = await loadFeeStages(pool, limit);
     res.status(200).json({
       success: true,
       generated_at: new Date().toISOString(),

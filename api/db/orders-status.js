@@ -11,13 +11,15 @@
 // Forward writes orders.forward_meta JSONB and notifies channels (placeholder).
 
 import { getPool, setCors } from "../db.js";
+import { requireAuth } from "../auth.js";
 
 // State machine
 var ALLOWED_TRANSITIONS = {
+  new:                ["pending_confirm", "pending_quote", "submitted"],
   draft:              ["pending_confirm", "pending_quote", "submitted"],
-  pending_confirm:    ["factory_confirmed", "draft"],
-  pending_quote:      ["factory_confirmed", "draft"],
-  factory_confirmed:  ["submitted", "draft"],
+  pending_confirm:    ["factory_confirmed", "new", "draft"],
+  pending_quote:      ["factory_confirmed", "new", "draft"],
+  factory_confirmed:  ["submitted", "new", "draft"],
   submitted:          ["shipped"],
   shipped:            ["delivered"],
   delivered:          [],
@@ -45,6 +47,7 @@ export default async function handler(req, res) {
   setCors(req, res, "POST, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+  if (!requireAuth(req, res)) return;
 
   var pool = getPool();
   var body = req.body || {};

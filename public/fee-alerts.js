@@ -12,6 +12,9 @@ function openWorkbenchTab(title,url){if(window.parent!==window)window.parent.pos
 function saveIgnored(){localStorage.setItem("fee_alert_ignored",JSON.stringify(Array.from(state.ignored)))}
 function displayCount(stage,fallback){return stage&&stage.state==="ready"&&stage.count!=null?String(stage.count):(fallback||"未接入")}
 function basisNote(stage){return stage&&stage.basis&&stage.basis.note?stage.basis.note:"未接入"}
+function feeLine(r){
+  return '<article class="row"><div class="main"><div class="title">'+esc(r.cost_category||"未设置")+'</div><div class="meta"><span class="pill">BL '+esc(r.bl_no||"未设置")+'</span><span class="pill">账期 '+esc(r.bill_month||"未设置")+'</span><span class="pill">供应商 '+esc(r.supplier||"未设置")+'</span></div><div class="detail">金额 '+esc(r.currency||"")+" "+esc(r.amount==null?"未设置":r.amount)+' · 依据 '+esc(r.basis||"freight_supplier_bills 真实费用行")+'</div></div></article>';
+}
 async function api(method,body){
   var r=await fetch(API,{method:method||"GET",headers:headers(body),body:body?JSON.stringify(body):undefined});
   var d=await r.json().catch(function(){return{error:"接口返回异常"}});
@@ -49,8 +52,14 @@ function stagePanel(key,label){
   $("tabNote").textContent=basisNote(stage);
   $("ignoreAll").disabled=true;
   $("ignoreAll").hidden=true;
-  var count=displayCount(stage);
-  $("list").innerHTML='<div class="empty">'+esc(label)+' · '+esc(count)+'<div class="detail">'+esc(basisNote(stage))+'</div></div>';
+  if(!stage||stage.state!=="ready"){
+    $("list").innerHTML='<div class="empty">未接入 · '+esc(basisNote(stage))+'</div>';return;
+  }
+  var rows=Array.isArray(stage.rows)?stage.rows:[];
+  if(!rows.length){
+    $("list").innerHTML='<div class="empty">'+esc(label)+' · '+esc(displayCount(stage))+'<div class="detail">未接入: 缺可展示费用行；'+esc(basisNote(stage))+'</div></div>';return;
+  }
+  $("list").innerHTML=rows.map(feeLine).join("");
 }
 function renderList(){
   var d=state.data||{}, box=$("list");
