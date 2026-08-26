@@ -57,7 +57,7 @@ function stagePanel(key,label){
   }
   var rows=Array.isArray(stage.rows)?stage.rows:[];
   if(!rows.length){
-    $("list").innerHTML='<div class="empty">'+esc(label)+' · '+esc(displayCount(stage))+'<div class="detail">未接入: 缺可展示费用行；'+esc(basisNote(stage))+'</div></div>';return;
+    $("list").innerHTML='<div class="empty">未接入 · '+esc(label)+'<div class="detail">缺可展示费用行；'+esc(basisNote(stage))+'</div></div>';return;
   }
   $("list").innerHTML=rows.map(feeLine).join("");
 }

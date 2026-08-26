@@ -1,4 +1,4 @@
-// GET/PATCH /api/db/biz-alerts — 业务预警：信用额度 / 合同日期。
+// GET/PATCH/POST/DELETE /api/db/biz-alerts — 业务预警：信用额度 / 合同日期。
 // 零数据只显示未接入或未设置；信用额度必须人工设置，不反推额度。
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
@@ -17,6 +17,7 @@ const FSB_COLS = [
   "currency",
   "rebill_status",
 ];
+const IGNORE_SCOPE_PREFIX = "biz-alerts";
 // Unit: rows where ar_paid_amount > 0. Less than 1 means payment writeback has
 // not produced any usable paid amount data, so credit usage must not calculate.
 const MIN_PAID_POSITIVE_ROWS = 1;
@@ -40,8 +41,22 @@ function roleCanWrite(req) {
   return req.user?.role === "admin";
 }
 
+function actorFrom(req) {
+  const u = req.user || {};
+  return clean(u.employee_code || u.staff_no || u.username || u.account || u.email || u.uid || u.id || u.sub || u.name || "unknown", 120);
+}
+
+function ignoreScope(kind) {
+  return `${IGNORE_SCOPE_PREFIX}:${kind}`;
+}
+
 function basis(state, note, extra = {}) {
   return { state, note, ...extra };
+}
+
+async function tableExists(pool, table) {
+  const r = await pool.query("SELECT to_regclass($1) AS name", [`public.${table}`]);
+  return Boolean(r.rows[0]?.name);
 }
 
 async function tableColumns(pool, table) {
@@ -58,9 +73,11 @@ async function loadSchema(pool) {
     tableColumns(pool, "companies"),
     tableColumns(pool, "freight_supplier_bills"),
   ]);
+  const ignoresReady = await tableExists(pool, "alert_ignores");
   return {
     companies,
     bills,
+    ignoresReady,
     companyReady: COMPANY_COLS.every((c) => companies.has(c)),
     billsReady: FSB_COLS.every((c) => bills.has(c)),
   };
@@ -252,12 +269,67 @@ function buildContracts(companies) {
   };
 }
 
+async function loadIgnored(pool, schema) {
+  if (!schema.ignoresReady) return { state: "not_connected", targets: new Set(), count: null };
+  const r = await pool.query(
+    `SELECT scope, target_key
+       FROM alert_ignores
+      WHERE scope = ANY($1::text[])`,
+    [[ignoreScope("credit"), ignoreScope("contracts")]]
+  );
+  const targets = new Set(r.rows.map((x) => `${x.scope}:${x.target_key}`));
+  return { state: "ready", targets, count: targets.size };
+}
+
+function applyIgnores(block, kind, ignored) {
+  if (!block || block.state !== "ready") return block;
+  const scope = ignoreScope(kind);
+  const allRows = Array.isArray(block.rows) ? block.rows : [];
+  const rows = allRows.filter((r) => !ignored.targets.has(`${scope}:${r.id}`));
+  return {
+    ...block,
+    count: rows.length,
+    rows,
+    ignored_count: allRows.length - rows.length,
+  };
+}
+
 async function list(req, res, pool) {
   const schema = await loadSchema(pool);
   const companies = await loadCompanies(pool, schema);
   const usage = await loadUsage(pool, schema);
+  const ignored = await loadIgnored(pool, schema);
   const missingCompanyCols = COMPANY_COLS.filter((c) => !schema.companies.has(c));
   const missingBillCols = FSB_COLS.filter((c) => !schema.bills.has(c));
+  let credit = schema.companyReady
+    ? applyIgnores(buildCredit(companies, usage), "credit", ignored)
+    : {
+        state: "not_connected",
+        count: null,
+        rows: [],
+        unset: { count: null, rows: [] },
+        incomplete: { count: null, rows: [] },
+        configured: null,
+        basis: basis("not_connected", "companies 信用额度字段未接入；先执行待批准 migration。"),
+      };
+  let contracts = schema.companyReady
+    ? applyIgnores(buildContracts(companies), "contracts", ignored)
+    : {
+        state: "not_connected",
+        count: null,
+        rows: [],
+        unset: { count: null, rows: [] },
+        configured: null,
+        basis: basis("not_connected", "companies 合同日期字段未接入；先执行待批准 migration。"),
+      };
+  if (!schema.companyReady) {
+    const note = `未接入: 缺 ${missingCompanyCols.map((c) => `companies.${c}`).join(" / ")}；当前填充率 未接入`;
+    credit = { ...credit, basis: basis("not_connected", note) };
+    contracts = { ...contracts, basis: basis("not_connected", note) };
+  } else if (!schema.billsReady && credit.state === "not_connected") {
+    const note = `未接入: 缺 ${missingBillCols.map((c) => `freight_supplier_bills.${c}`).join(" / ")}；当前填充率 未接入`;
+    credit = { ...credit, basis: basis("not_connected", note) };
+  }
   return res.status(200).json({
     success: true,
     generated_at: new Date().toISOString(),
@@ -268,28 +340,12 @@ async function list(req, res, pool) {
       missing_company_columns: missingCompanyCols,
       missing_bill_columns: missingBillCols,
     },
+    ignore: schema.ignoresReady
+      ? { state: "ready", ignored_count: ignored.count, table: "alert_ignores" }
+      : { state: "not_connected", ignored_count: null, missing_fields: ["alert_ignores"], note: "未接入: 缺 alert_ignores；当前填充率 未接入" },
     companies,
-    credit: schema.companyReady
-      ? buildCredit(companies, usage)
-      : {
-          state: "not_connected",
-          count: null,
-          rows: [],
-          unset: { count: null, rows: [] },
-          incomplete: { count: null, rows: [] },
-          configured: null,
-          basis: basis("not_connected", "companies 信用额度字段未接入；先执行待批准 migration。"),
-        },
-    contracts: schema.companyReady
-      ? buildContracts(companies)
-      : {
-          state: "not_connected",
-          count: null,
-          rows: [],
-          unset: { count: null, rows: [] },
-          configured: null,
-          basis: basis("not_connected", "companies 合同日期字段未接入；先执行待批准 migration。"),
-        },
+    credit,
+    contracts,
   });
 }
 
@@ -324,14 +380,75 @@ async function updateSettings(req, res, pool) {
   return res.status(200).json({ success: true, data: r.rows[0] });
 }
 
+async function assertReadyAlert(pool, kind, id) {
+  if (!["credit", "contracts"].includes(kind)) {
+    return { ok: false, status: 403, error: "not_connected alert cannot be ignored" };
+  }
+  const schema = await loadSchema(pool);
+  if (!schema.ignoresReady) {
+    return { ok: false, status: 409, error: "未接入: 缺 alert_ignores；当前填充率 未接入" };
+  }
+  if (!schema.companyReady) {
+    return { ok: false, status: 403, error: "not_connected alert cannot be ignored" };
+  }
+  const companies = await loadCompanies(pool, schema);
+  const block = kind === "credit"
+    ? buildCredit(companies, await loadUsage(pool, schema))
+    : buildContracts(companies);
+  if (block.state !== "ready") {
+    return { ok: false, status: 403, error: "not_connected alert cannot be ignored" };
+  }
+  const row = (block.rows || []).find((r) => String(r.id) === String(id));
+  if (!row) return { ok: false, status: 404, error: "alert row not found" };
+  return { ok: true, schema, row };
+}
+
+async function ignoreAlert(req, res, pool) {
+  const kind = clean(req.body?.kind || req.body?.tab, 40);
+  const id = clean(req.body?.id, 160);
+  if (!id) return res.status(400).json({ success: false, error: "id required" });
+  const found = await assertReadyAlert(pool, kind, id);
+  if (!found.ok) return res.status(found.status).json({ success: false, error: found.error });
+  const actor = actorFrom(req);
+  const note = clean(req.body?.note || req.body?.notes || `ignored by ${actor}`, 1000);
+  await pool.query(
+    `INSERT INTO alert_ignores (scope, target_key, actor, note)
+     VALUES ($1,$2,$3,$4)
+     ON CONFLICT (scope, target_key)
+     DO UPDATE SET actor=EXCLUDED.actor, note=EXCLUDED.note, created_at=NOW()`,
+    [ignoreScope(kind), id, actor, note]
+  );
+  return res.status(200).json({ success: true, ignored: true, scope: ignoreScope(kind), target_key: id });
+}
+
+async function unignoreAlert(req, res, pool) {
+  const kind = clean(req.body?.kind || req.query?.kind || req.body?.tab || req.query?.tab, 40);
+  const id = clean(req.body?.id || req.query?.id, 160);
+  if (!["credit", "contracts"].includes(kind)) {
+    return res.status(403).json({ success: false, error: "not_connected alert cannot be unignored" });
+  }
+  if (!id) return res.status(400).json({ success: false, error: "id required" });
+  if (!(await tableExists(pool, "alert_ignores"))) {
+    return res.status(409).json({ success: false, error: "未接入: 缺 alert_ignores；当前填充率 未接入" });
+  }
+  await pool.query(
+    `DELETE FROM alert_ignores
+      WHERE scope=$1 AND target_key=$2`,
+    [ignoreScope(kind), id]
+  );
+  return res.status(200).json({ success: true, ignored: false });
+}
+
 export default async function handler(req, res) {
-  setCors(req, res, "GET, PATCH, OPTIONS");
+  setCors(req, res, "GET, PATCH, POST, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return;
   try {
     const pool = getPool();
     if (req.method === "GET") return list(req, res, pool);
     if (req.method === "PATCH") return updateSettings(req, res, pool);
+    if (req.method === "POST") return ignoreAlert(req, res, pool);
+    if (req.method === "DELETE") return unignoreAlert(req, res, pool);
     return res.status(405).json({ success: false, error: "Method not allowed" });
   } catch (err) {
     console.error("[biz-alerts]", err);

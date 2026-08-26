@@ -63,7 +63,7 @@ function renderCoverage(cov) {
   const box = $("coverage");
   box.textContent = "";
   if (!cov || !cov.fields || !cov.fields.length) {
-    box.appendChild(el("div", "empty", "未接入 · 缺少字段或没有真实行，填充率 0%"));
+    box.appendChild(el("div", "empty", "未接入 · 缺少字段或没有真实行；当前填充率 未接入"));
     return;
   }
   cov.fields.forEach((f) => {
@@ -96,7 +96,7 @@ function renderRows(rows, source) {
     const tr = el("tr");
     const scope = [r.carrier, r.pol, r.pod, r.container_type].map((x) => display(x, "")).filter(Boolean).join(" / ");
     const a = cell(tr, scope || "未设置", "rowlink");
-    a.onclick = () => openTab(source.label + " " + display(r.id), "/rates-hub.html");
+    a.onclick = () => openTab(source.label + " " + display(r.id), "/rates");
     cell(tr, display(r.fee_name));
     cell(tr, display(r.basis));
     cell(tr, money(r.cost_amount, r.currency));
@@ -113,9 +113,9 @@ function render(data) {
   $("stamp").textContent = `${data.version || "v2026.08.26-1"} · 生成时间 ${new Date(data.generated_at).toLocaleString("zh-CN")}`;
   $("stateText").textContent = data.state === "ready" ? "已接入" : "未接入";
   $("rowCount").textContent = data.coverage?.total_rows ? String(data.coverage.total_rows) : "未接入";
-  $("missingCount").textContent = data.coverage?.missing_fields?.length ? String(data.coverage.missing_fields.length) : "0";
+  $("missingCount").textContent = data.coverage?.missing_fields?.length ? String(data.coverage.missing_fields.length) : "未接入";
   const missing = data.coverage?.missing_fields || [];
-  const rate = data.coverage?.fields?.map((f) => `${f.name} ${f.fill_rate_percent}%`).join("；") || "填充率 0%";
+  const rate = data.coverage?.fields?.map((f) => `${f.name} ${f.fill_rate_percent}%`).join("；") || "当前填充率 未接入";
   $("basis").textContent = data.state === "ready"
     ? `数据源 ${data.source.table}；${rate}`
     : `未接入：缺 ${missing.join("、") || "真实数据行"}；${rate}`;
@@ -139,4 +139,5 @@ $("search").onclick = load;
 ["carrier", "pol", "pod"].forEach((id) => $(id).addEventListener("keydown", (e) => {
   if (e.key === "Enter") load();
 }));
+if (window.parent !== window) window.parent.postMessage({ type: "sanlyn:module-ready", title: "费用模板", url: location.pathname + location.search }, location.origin);
 load();

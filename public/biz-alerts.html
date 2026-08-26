@@ -53,7 +53,7 @@
   <div class="toast hidden" id="toast"></div>
   <script>
   const API="/api/db/biz-alerts";
-  const state={tab:"credit",data:null,ignored:new Set(JSON.parse(localStorage.getItem("biz_alert_ignored")||"[]"))};
+  const state={tab:"credit",data:null};
   const $=id=>document.getElementById(id);
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
   function headers(body){const h=body?{"Content-Type":"application/json"}:{};const t=token();if(t)h.Authorization="Bearer "+t;return h}
@@ -79,7 +79,7 @@
   function activeBlock(){return state.tab==="credit"?state.data?.credit:state.data?.contracts}
   function renderMetrics(){
     const b=activeBlock()||{};$("mAlertLabel").textContent=state.tab==="credit"?"快超信用额度":"合同到期";
-    $("mAlerts").textContent=b.state==="not_connected"?"未接入":b.state==="no_data"?"无数据":count(b.count,"未设置");
+    $("mAlerts").textContent=b.state==="not_connected"||b.state==="no_data"?"未接入":count(b.count,"未设置");
     $("mUnset").textContent=count(b.unset?.count,"未接入");$("mConfigured").textContent=count(b.configured,"未接入");
     $("mAlertsBasis").textContent="依据 "+(b.basis?.note||"未接入");
     $("mUnsetBasis").textContent=state.tab==="credit"?"未设置额度的公司不产生预警":"未设置合同日期的公司不产生预警";
@@ -87,17 +87,17 @@
     $("tabBasis").textContent=`依据 ${b.basis?.note||"未接入"}`;
   }
   function meta(items){const m=el("div","meta");items.forEach(x=>m.appendChild(el("span","pill",x)));return m}
-  function renderCreditRow(r){
+  function renderCreditRow(r,canIgnore){
     const row=el("article","row"), main=el("div",""), title=el("div","title",`请注意，${r.name} 快超信用额度了`);
     row.dataset.title=r.name||"信用额度预警";row.dataset.url="/ship-grid?q="+encodeURIComponent(r.name||r.id);
     main.appendChild(title);main.appendChild(meta([`已用/额度 ${fmtMoney(r.used_amount,r.credit_currency)} / ${fmtMoney(r.credit_limit,r.credit_currency)}`,`比例 ${fmtPct(r.ratio)}`,`依据行 ${r.row_count}，付款金额空值 ${r.missing_paid_amount}`]));
-    const b=el("button","", "忽略");b.onclick=()=>ignore(r.id);row.appendChild(main);row.appendChild(b);return row;
+    row.appendChild(main);if(canIgnore){const b=el("button","", "忽略");b.onclick=()=>ignore("credit",r.id);row.appendChild(b)}return row;
   }
-  function renderContractRow(r){
+  function renderContractRow(r,canIgnore){
     const row=el("article","row"), main=el("div",""), txt=r.days_left<0?`请注意，${r.name} 合同已到期`:`请注意，${r.name} 合同快到期了`;
     row.dataset.title=r.name||"合同日期预警";row.dataset.url="/ship-grid?q="+encodeURIComponent(r.name||r.id);
     main.appendChild(el("div","title",txt));main.appendChild(meta([`合同结束 ${r.contract_end||"未设置"}`,`剩余 ${r.days_left} 天`,`依据 companies.contract_end，字段已设置`]));
-    const b=el("button","", "忽略");b.onclick=()=>ignore(r.id);row.appendChild(main);row.appendChild(b);return row;
+    row.appendChild(main);if(canIgnore){const b=el("button","", "忽略");b.onclick=()=>ignore("contracts",r.id);row.appendChild(b)}return row;
   }
   function renderUnset(rows){
     const box=el("div","");
@@ -106,22 +106,24 @@
     return box;
   }
   function renderList(){
-    const box=$("list");box.textContent="";const b=activeBlock()||{};const rows=(b.rows||[]).filter(r=>!state.ignored.has(r.id));
-    $("ignoreAll").disabled=b.state==="not_connected"||b.state==="no_data"||!rows.length;
+    const box=$("list");box.textContent="";const b=activeBlock()||{};const rows=b.rows||[],ignoreReady=state.data?.ignore?.state==="ready";
+    $("ignoreAll").disabled=b.state!=="ready"||!ignoreReady||!rows.length;
     if(b.state==="not_connected"){box.appendChild(el("div","empty","未接入 · "+(b.basis?.note||"待迁移")));return}
-    if(b.state==="no_data"){box.appendChild(el("div","empty","无数据 · "+(b.basis?.note||"等待真实回写数据")));return}
-    rows.forEach(r=>box.appendChild(state.tab==="credit"?renderCreditRow(r):renderContractRow(r)));
+    if(b.state==="no_data"){box.appendChild(el("div","empty","未接入 · "+(b.basis?.note||"等待真实回写数据")));return}
+    if(!ignoreReady)box.appendChild(el("div","empty",state.data?.ignore?.note||"未接入 · 缺 alert_ignores；当前填充率 未接入，暂不提供忽略。"));
+    rows.forEach(r=>box.appendChild(state.tab==="credit"?renderCreditRow(r,ignoreReady):renderContractRow(r,ignoreReady)));
     if(!rows.length)box.appendChild(el("div","empty","没有未忽略的业务预警"));
     const unsetTitle=el("div","empty",(state.tab==="credit"?"未设置额度 ":"未设置合同日期 ")+count(b.unset?.count,"未接入")+" 家");
     box.appendChild(unsetTitle);box.appendChild(renderUnset(b.unset?.rows||[]));
   }
   function render(){renderMetrics();document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===state.tab));renderList()}
-  function ignore(id){state.ignored.add(id);localStorage.setItem("biz_alert_ignored",JSON.stringify([...state.ignored]));render();toast("已忽略业务预警")}
-  $("ignoreAll").onclick=()=>{const b=activeBlock()||{};(b.rows||[]).forEach(r=>state.ignored.add(r.id));localStorage.setItem("biz_alert_ignored",JSON.stringify([...state.ignored]));render();toast("已忽略当前业务预警")};
+  async function ignore(kind,id){try{await api(API,{method:"POST",body:JSON.stringify({kind,id})});toast("已忽略业务预警");await load()}catch(e){toast(e.message)}}
+  $("ignoreAll").onclick=async()=>{const b=activeBlock()||{},kind=state.tab,rows=b.rows||[];try{for(const r of rows)await api(API,{method:"POST",body:JSON.stringify({kind,id:r.id})});toast("已忽略当前业务预警");await load()}catch(e){toast(e.message);await load()}};
   $("reload").onclick=load;$("company").onchange=syncForm;
   $("list").onclick=e=>{const row=e.target.closest(".row[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url)};
   document.querySelector(".tabs").onclick=e=>{const b=e.target.closest(".tab");if(!b)return;state.tab=b.dataset.tab;render()};
   $("save").onclick=async()=>{const c=selectedCompany();if(!c)return;await api(API,{method:"PATCH",body:JSON.stringify({company_id:c.id,credit_limit:$("limit").value,credit_currency:$("currency").value,credit_limit_note:$("note").value,contract_start:$("start").value,contract_end:$("end").value})});toast("已保存");await load()};
+  if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",title:"业务预警",url:location.pathname+location.search},location.origin);
   load();
   </script>
 </body>

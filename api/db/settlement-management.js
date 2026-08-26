@@ -1,10 +1,11 @@
-// 核销管理 · read-only lens over finance_settlement_links.
+// 核销管理 · finance_settlement_links lens + guarded drafts.
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-const VERSION = "v2026.08.26-1";
+const VERSION = "v2026.08.26-2";
 const TABLE = "finance_settlement_links";
 const READ_ROLES = new Set(["admin", "finance", "ceo", "superadmin"]);
+const WRITE_ROLES = new Set(["admin", "finance", "ceo", "superadmin"]);
 const FIELDS = [
   ["id", "核销ID"], ["payment_id", "收付ID"], ["target_type", "核销对象"],
   ["target_id", "对象编号"], ["amount_applied", "核销金额"], ["currency", "币种"],
@@ -12,6 +13,7 @@ const FIELDS = [
   ["created_at", "创建时间"], ["updated_at", "更新时间"],
 ];
 const REQUIRED = ["payment_id", "target_type", "target_id", "amount_applied", "currency", "status"];
+const EDIT_FIELDS = ["payment_id", "target_type", "target_id", "amount_applied", "currency", "status", "source", "created_by"];
 
 function fail(res, status, error) {
   return res.status(status).json({ success: false, error });
@@ -28,6 +30,62 @@ function pct(filled, total) {
 }
 function sqlIdent(name) {
   return `"${name.replace(/"/g, '""')}"`;
+}
+function parseValue(name, v) {
+  if (name === "amount_applied") {
+    if (!has(v)) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) throw new Error("amount_applied must be numeric");
+    return n;
+  }
+  return has(v) ? clean(v, 500) : null;
+}
+function writeInput(body, cols, requireId) {
+  const id = clean(body?.id, 80);
+  if (requireId && !id) throw new Error("id required");
+  const fields = [];
+  const values = [];
+  for (const name of EDIT_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(body || {}, name)) continue;
+    if (!cols.has(name)) throw new Error(`未接入: 缺 ${TABLE}.${name}；当前填充率 未接入`);
+    fields.push(name);
+    values.push(parseValue(name, body[name]));
+  }
+  if (!fields.length) throw new Error("no editable fields");
+  return { id, fields, values };
+}
+async function writeRow(pool, req) {
+  if (!(await tableExists(pool))) throw new Error(`未接入: 缺 ${TABLE}；当前填充率 未接入`);
+  const cols = await tableColumns(pool);
+  if (!cols.has("id")) throw new Error(`未接入: 缺 ${TABLE}.id；当前填充率 未接入`);
+  if (req.method === "POST") {
+    const input = writeInput(req.body, cols, false);
+    const names = input.fields.map(sqlIdent);
+    const ph = input.fields.map((_, i) => `$${i + 1}`);
+    if (cols.has("created_at")) { names.push("created_at"); ph.push("NOW()"); }
+    if (cols.has("updated_at")) { names.push("updated_at"); ph.push("NOW()"); }
+    const r = await pool.query(`INSERT INTO ${TABLE} (${names.join(",")}) VALUES (${ph.join(",")}) RETURNING id::text AS id`, input.values);
+    return { id: r.rows[0]?.id };
+  }
+  if (req.method === "PATCH") {
+    const input = writeInput(req.body, cols, true);
+    const sets = input.fields.map((x, i) => `${sqlIdent(x)}=$${i + 1}`);
+    if (cols.has("updated_at")) sets.push("updated_at=NOW()");
+    const r = await pool.query(`UPDATE ${TABLE} SET ${sets.join(",")} WHERE id::text=$${input.values.length + 1} RETURNING id::text AS id`, [...input.values, input.id]);
+    if (!r.rowCount) throw new Error("not found");
+    return { id: r.rows[0]?.id };
+  }
+  if (req.method === "DELETE") {
+    const id = clean(req.body?.id || req.query?.id, 80);
+    if (!id) throw new Error("id required");
+    if (!cols.has("status")) throw new Error(`未接入: 缺 ${TABLE}.status；当前填充率 未接入`);
+    const sets = ["status=$1"];
+    if (cols.has("updated_at")) sets.push("updated_at=NOW()");
+    const r = await pool.query(`UPDATE ${TABLE} SET ${sets.join(",")} WHERE id::text=$2 RETURNING id::text AS id`, ["voided", id]);
+    if (!r.rowCount) throw new Error("not found");
+    return { id: r.rows[0]?.id, soft_deleted: true };
+  }
+  throw new Error("method not allowed");
 }
 async function tableExists(pool) {
   const r = await pool.query("SELECT to_regclass($1) AS name", [`public.${TABLE}`]);
@@ -141,11 +199,19 @@ function metrics(data) {
 }
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "GET") return fail(res, 405, "GET required");
   if (!requireAuth(req, res)) return;
   if (!READ_ROLES.has(req.user?.role)) return fail(res, 403, "Forbidden");
+  if (req.method !== "GET") {
+    if (!WRITE_ROLES.has(req.user?.role)) return fail(res, 403, "Forbidden");
+    try {
+      const changed = await writeRow(getPool(), req);
+      return res.status(200).json({ success: true, version: VERSION, changed });
+    } catch (err) {
+      return fail(res, err.message === "not found" ? 404 : 400, err.message);
+    }
+  }
   try {
     const pool = getPool();
     if (!(await tableExists(pool))) {

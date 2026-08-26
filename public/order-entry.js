@@ -13,6 +13,7 @@ function duplicateText(d){
   if(!d)return "";
   return "已存在: "+(d.public_order_no||d.order_no||("ID "+d.id))+"；状态 "+(d.status||"未设置")+"；企业内部编号 "+(d.internal_snowflake_id||"未接入");
 }
+function statusText(v){return v==="new"||!v?"新建":v}
 async function req(url,opt){
   var r=await fetch(url,opt||{headers:headers()});
   if(r.status===401){showLogin();throw new Error("需要登录")}
@@ -83,7 +84,7 @@ function renderDraft(order){
   var ids=$("draftIds");ids.textContent="";
   ids.appendChild(idCard("对外单号",order.public_order_no||order.order_no,"public_order_no"));
   ids.appendChild(idCard("内部主键",order.internal_snowflake_id,"internal_snowflake_id"));
-  $("draftInfo").textContent="已新建: "+(order.public_order_no||order.order_no||("ID "+order.id))+"；状态 "+(order.status||"new")+"；合同号 "+(order.contract_no||"未设置");
+  $("draftInfo").textContent="已新建: "+(order.public_order_no||order.order_no||("ID "+order.id))+"；状态 "+statusText(order.status)+"；合同号 "+(order.contract_no||"未设置");
   var miss=$("missing");miss.textContent="";
   var raw=order.raw||{}, arr=raw.draft_missing_fields||[];
   if(!arr.length){miss.appendChild(el("span","pill","补全率 100%"));return}

@@ -57,6 +57,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/custom-nav", () => import("./api/db/custom-nav.js")); // 0826 工作台自定义导航:复用system_settings配置真源
   mount("/api/db/rates-hub",              () => import("./api/db/rates-hub.js")); // 0825 价表总台(海运周价/官方港杂/本地费)
   mount("/api/db/online-customs", () => import("./api/db/online-customs.js")); // 0826 在线报关:只读接入状态,不对外发送
+  mount("/api/db/manifest-message-channel", () => import("./api/db/manifest-message-channel.js")); // 0826 报文生成+校验+落地待发:不对外发送
   mount("/api/db/manifest-send", () => import("./api/db/manifest-send.js")); // 0826 上海舱单发送:申报通道只读接入状态
   mount("/api/db/tianjin-dalian-manifest-send", () => import("./api/db/tianjin-dalian-manifest-send.js")); // 0826 天津/大连舱单:只读接入状态,不对外发送
   mount("/api/db/shenzhen-nansha-manifest-send", () => import("./api/db/shenzhen-nansha-manifest-send.js")); // 0826 深圳/南沙舱单发送:只读接入状态,不对外发送

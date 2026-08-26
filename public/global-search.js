@@ -4,11 +4,11 @@ var API="/api/db/global-search";
 function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
 function headers(){var h={},t=token();if(t)h.Authorization="Bearer "+t;return h}
 function el(tag,cls,text){var n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
-function defaultOpen(item){if(window.parent!==window)window.parent.postMessage({type:"sanlyn:open-tab",title:item.label,url:item.url},location.origin);else window.open(item.url,"_blank","noopener")}
+function defaultOpen(item){if(window.parent!==window)window.parent.postMessage({type:"sanlyn:open-tab",title:item.label,url:item.url},location.origin);else window.open("/wb-tabs?open="+encodeURIComponent(item.url),"_blank","noopener")}
 function mountGlobalSearch(root,opt){
   var timer=0,last="",items=[],active=-1,open=(opt&&opt.open)||defaultOpen;
   var shell=el("div","search-shell"),icon=el("span","search-icon","⌕"),input=el("input","search-input"),clear=el("button","clear-btn","×"),box=el("div","dropdown");
-  input.type="search";input.placeholder=(opt&&opt.placeholder)||"搜索提单 / 订单 / 客户 / 账单 / 集装箱";input.autocomplete="off";clear.type="button";clear.title="清空";clear.hidden=true;box.hidden=true;
+  input.type="search";input.placeholder=(opt&&opt.placeholder)||"搜索模块 / 提单 / 订单 / 客户 / 账单 / 集装箱";input.autocomplete="off";clear.type="button";clear.title="清空";clear.hidden=true;box.hidden=true;
   shell.append(icon,input,clear);root.append(shell,box);
   function showState(text){box.textContent="";box.appendChild(el("div","state",text));box.hidden=false}
   function render(groups){

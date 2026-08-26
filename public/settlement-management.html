@@ -20,13 +20,13 @@
 </head>
 <body class="hgj-page">
   <div class="shell">
-    <aside class="side"><h2>海管家</h2><div class="on">核销管理</div><div>核销链接</div><div>字段接入</div></aside>
+    <aside class="side"><h2>核销管理</h2><div class="on">核销管理</div><div>核销链接</div><div>字段接入</div></aside>
     <main class="wrap">
       <header class="top">
         <div><h1 class="title hgj-panel-title">核销管理</h1><div id="summary" class="sub">加载中</div></div>
-        <div class="actions"><input id="q" placeholder="收付ID / 对象编号 / 来源"><select id="targetType"><option value="">全部对象</option><option value="ar">AR</option><option value="invoice_out">invoice_out</option></select><select id="status"><option value="">全部状态</option><option value="applied">applied</option><option value="pending">pending</option><option value="voided">voided</option></select><button id="reload" class="primary" type="button">查询</button></div>
+        <div class="actions"><input id="q" placeholder="收付ID / 对象编号 / 来源"><select id="targetType"><option value="">全部对象</option><option value="ar">AR</option><option value="invoice_out">invoice_out</option></select><select id="status"><option value="">全部状态</option><option value="applied">applied</option><option value="pending">pending</option><option value="voided">voided</option></select><button id="reload" class="primary" type="button">查询</button><button id="add" type="button">新增</button><button id="edit" type="button">编辑</button><button id="del" type="button">作废</button></div>
       </header>
-      <div class="notice hgj-card">本页只读；核销只展示 finance_settlement_links 真实链接。未接入不显示 0，不提供忽略操作。</div>
+      <div class="notice hgj-card">本页支持受控新增、编辑、作废；核销只展示 finance_settlement_links 真实链接。未接入不显示 0，不提供忽略操作。</div>
       <section class="metrics">
         <div class="metric hgj-card"><div class="muted">核销链接</div><div id="mTotal" class="num">未接入</div></div>
         <div class="metric hgj-card"><div class="muted">已应用</div><div id="mApplied" class="num">未接入</div></div>

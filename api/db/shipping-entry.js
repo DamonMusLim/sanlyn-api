@@ -8,6 +8,17 @@ const INTERNAL_ROLES = ["admin", "logistics", "sales", "finance", "operator", "c
 function clean(v) { return String(v ?? "").trim(); }
 function n(v) { return v === "" || v == null ? null : num(v); }
 function ym(v) { return clean(v || new Date().toISOString().slice(0, 7)); }
+function calcTotal(row) {
+  const qty = n(row.qty) ?? 1;
+  const unit = n(row.unit_price) ?? 0;
+  return n(row.total_price) ?? Number((unit * qty).toFixed(2));
+}
+function calcTax(row, total) {
+  const direct = n(row.tax_amount);
+  if (direct !== null) return direct;
+  const rate = n(row.tax_rate);
+  return rate === null ? null : Number((total * rate / 100).toFixed(2));
+}
 
 async function standards(pool, plan) {
   const carrier = normalizeCarrier(plan.carrier_code || plan.shipping_line || carrierFromBl(plan.bl_no || plan.shipment_no));
@@ -54,9 +65,11 @@ async function detail(pool, key, codes = null) {
   const plan = pr.rows[0];
   if (codes !== null && !codes.includes(plan.company_code)) return null;
   const bills = await pool.query(
-    `SELECT id, bl_no, cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis, remarks, raw
-       FROM active_freight_supplier_bills
-      WHERE bl_no=$1 OR link_plan_id=$2
+    `SELECT id, bl_no, cost_category, amount, sale_amount, currency, qty, unit_price, charge_basis,
+            supplier, settlement_company, exchange_rate, total_price, tax_rate, tax_amount,
+            calculation_formula, fee_status, sort_order, remarks, raw
+       FROM freight_supplier_bills
+      WHERE COALESCE(rebill_status,'') <> 'voided' AND (bl_no=$1 OR link_plan_id=$2)
       ORDER BY id`, [plan.bl_no, plan._id]);
   return { plan, bills: bills.rows, standards: await standards(pool, plan), fee_items: await feeItems(pool) };
 }
@@ -77,30 +90,43 @@ async function saveBill(pool, plan, row, user, terms, warnings) {
   const direction = clean(row.direction || row.inout || "付");
   const qty = n(row.qty) ?? 1;
   const unit = n(row.unit_price) ?? 0;
-  const total = n(row.amount) ?? Number((unit * qty).toFixed(2));
+  const total = calcTotal(row);
+  const tax = calcTax(row, total);
   const norm = await normalizeChargeName(pool, row.cost_category || row.fee_name, plan.carrier_code || plan.shipping_line || carrierFromBl(plan.bl_no), plan.bl_no);
-  const amount = total;
-  let sale = direction === "收" ? (n(row.sale_amount) ?? total) : 0;
+  const amount = n(row.amount) ?? Number((total + (tax || 0)).toFixed(2));
+  let sale = direction === "收" ? (n(row.sale_amount) ?? amount) : 0;
   if (sale > 0) {
     const g = guardBillRow({ cost_category: norm.name, currency: row.currency, sale_amount: sale }, terms);
     if (g.warning) { sale = g.sale; if (warnings) warnings.push(g.warning); }
   }
   const raw = { original_name: norm.original_name, unmapped: !!norm.unmapped, entry_direction: direction };
-  const vals = [plan.bl_no, String(plan.id), norm.name, amount, clean(row.currency || "CNY"), sale, qty, unit, clean(row.charge_basis || row.unit), clean(row.remarks), ym(row.bill_month), JSON.stringify(raw), payer || null];
+  const settlement = clean(row.settlement_company || row.supplier);
+  const vals = [
+    plan.bl_no, String(plan.id), norm.name, amount, clean(row.currency || "CNY"), sale, qty, unit,
+    clean(row.charge_basis || row.unit), clean(row.remarks), ym(row.bill_month), JSON.stringify(raw),
+    payer || null, settlement || null, n(row.exchange_rate), total, n(row.tax_rate), tax,
+    clean(row.calculation_formula) || null, clean(row.fee_status) || null, n(row.sort_order),
+  ];
   if (row.id) {
     vals.push(row.id);
     const r = await pool.query(
       `UPDATE freight_supplier_bills
           SET bl_no=$1, link_plan_id=$2, cost_category=$3, amount=$4, currency=$5, sale_amount=$6,
               qty=$7, unit_price=$8, charge_basis=$9, remarks=$10, bill_month=$11, raw=$12,
-              payer_company_code=$13, updated_at=now()
-        WHERE id=$14 RETURNING *`, vals);
+              payer_company_code=$13, settlement_company=$14, exchange_rate=$15, total_price=$16,
+              tax_rate=$17, tax_amount=$18, calculation_formula=$19, fee_status=$20,
+              sort_order=$21, updated_at=now()
+        WHERE id=$22 RETURNING *`, vals);
     return r.rows[0];
   }
   const r = await pool.query(
     `INSERT INTO freight_supplier_bills
-       (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, qty, unit_price, charge_basis, remarks, bill_month, raw, payer_company_code, supplier, created_at, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'录入表单',now(),now())
+       (bl_no, link_plan_id, cost_category, amount, currency, sale_amount, qty, unit_price,
+        charge_basis, remarks, bill_month, raw, payer_company_code, supplier, settlement_company,
+        exchange_rate, total_price, tax_rate, tax_amount, calculation_formula, fee_status,
+        sort_order, created_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14,'录入表单'),$14,
+             $15,$16,$17,$18,$19,$20,$21,now(),now())
      RETURNING *`, vals);
   return r.rows[0];
 }

@@ -1,11 +1,11 @@
 (function(){
   "use strict";
-  var API="/api/db/invoice-records",VERSION="v2026.08.26-1";
+  var API="/api/db/invoice-records",VERSION="v2026.08.26-2";
   var state={rows:[],selected:null,coverage:[],metrics:{},generatedAt:null};
   var moneyFields={amount_ex_tax:1,total_tax:1,amount_incl_tax:1,tax_rate:1};
   var $=function(id){return document.getElementById(id)};
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
-  function headers(){var h={},t=token();if(t)h.Authorization="Bearer "+t;return h}
+  function headers(json){var h={},t=token();if(t)h.Authorization="Bearer "+t;if(json)h["Content-Type"]="application/json";return h}
   function clear(x){while(x.firstChild)x.removeChild(x.firstChild)}
   function has(v){return !(v===null||v===undefined||v===""||(Array.isArray(v)&&!v.length))}
   function text(x,v,fallback){x.textContent=has(v)?String(v):(fallback||"未接入")}
@@ -16,6 +16,40 @@
   function sideLabel(side){return side==="out"?"销项":side==="in"?"进项":"发票"}
   function title(r){return r.invoice_no||r.contract_nos&&r.contract_nos[0]||r.customs_nos&&r.customs_nos[0]||("ID "+(r.id||"未接入"))}
   function fieldValue(r,k){return moneyFields[k]?money(r[k]):fmt(r[k])}
+  function parseLines(s){var o={};String(s||"").split(/\n/).forEach(function(line){var i=line.indexOf("=");if(i<1)return;o[line.slice(0,i).trim()]=line.slice(i+1).trim()});return o}
+  function editable(r){
+    return [
+      "invoice_no="+fmt(r&&r.invoice_no,""),"invoice_type="+fmt(r&&r.invoice_type,""),"issue_date="+fmt(r&&r.issue_date,""),
+      "seller_name="+fmt(r&&r.seller_name,""),"seller_tax_id="+fmt(r&&r.seller_tax_id,""),"buyer_name="+fmt(r&&r.buyer_name,""),
+      "buyer_tax_id="+fmt(r&&r.buyer_tax_id,""),"amount_ex_tax="+fmt(r&&r.amount_ex_tax,""),"total_tax="+fmt(r&&r.total_tax,""),
+      "amount_incl_tax="+fmt(r&&r.amount_incl_tax,""),"tax_rate="+fmt(r&&r.tax_rate,""),"currency="+fmt(r&&r.currency,""),
+      "review_status="+fmt(r&&r.review_status,"draft"),"void_status="+fmt(r&&r.void_status,""),"source="+fmt(r&&r.source,"manual"),
+      "contract_nos="+fmt(r&&r.contract_nos,""),"customs_nos="+fmt(r&&r.customs_nos,"")
+    ].join("\n");
+  }
+  async function save(method,body){
+    var r=await fetch(API,{method:method,headers:headers(true),body:JSON.stringify(body)});
+    var d=await r.json().catch(function(){return{success:false,error:"接口返回异常"}});
+    if(!r.ok||d.success===false)throw new Error(d.error||"保存失败");
+    return d;
+  }
+  async function addRow(){
+    var side=$("side").value==="in"?"in":"out";
+    var raw=prompt("新增发票，逐行填写 field=value。金额不确定请留空。",editable({side:side}));
+    if(raw===null)return;
+    try{var body=parseLines(raw);body.side=side;await save("POST",body);await load()}catch(e){alert(e.message)}
+  }
+  async function editRow(){
+    var r=state.selected;if(!r){alert("未选择记录");return}
+    var raw=prompt("编辑发票，逐行填写 field=value。留空会保存为空，不会编造金额。",editable(r));
+    if(raw===null)return;
+    try{var body=parseLines(raw);body.side=r.side;body.id=r.id;await save("PATCH",body);await load()}catch(e){alert(e.message)}
+  }
+  async function voidRow(){
+    var r=state.selected;if(!r){alert("未选择记录");return}
+    if(!confirm("作废当前发票记录？后端只写 voided 状态，不物理删除。"))return;
+    try{await save("DELETE",{side:r.side,id:r.id});await load()}catch(e){alert(e.message)}
+  }
   async function api(){
     var p=new URLSearchParams(),q=$("q").value.trim(),side=$("side").value,status=$("status").value;
     if(q)p.set("q",q);if(side)p.set("side",side);if(status)p.set("status",status);
@@ -100,6 +134,9 @@
   $("q").addEventListener("keydown",function(e){if(e.key==="Enter")load()});
   $("side").addEventListener("change",load);
   $("status").addEventListener("change",load);
+  $("add").addEventListener("click",addRow);
+  $("edit").addEventListener("click",editRow);
+  $("del").addEventListener("click",voidRow);
   if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",title:"开票记录",url:location.pathname+location.search},location.origin);
   load();
 })();

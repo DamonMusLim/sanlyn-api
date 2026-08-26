@@ -1,11 +1,11 @@
 (function(){
   "use strict";
-  var API="/api/db/settlement-management",VERSION="v2026.08.26-1";
+  var API="/api/db/settlement-management",VERSION="v2026.08.26-2";
   var state={rows:[],selected:null,coverage:null,metrics:{},generatedAt:null,reason:""};
   var $=function(id){return document.getElementById(id);};
   var NF=new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||"";}
-  function headers(){var h={},t=token();if(t)h.Authorization="Bearer "+t;return h;}
+  function headers(json){var h={},t=token();if(t)h.Authorization="Bearer "+t;if(json)h["Content-Type"]="application/json";return h;}
   function clear(x){while(x.firstChild)x.removeChild(x.firstChild);}
   function has(v){return !(v===null||v===undefined||v==="");}
   function text(x,v,fallback){x.textContent=has(v)?String(v):(fallback||"未接入");}
@@ -15,6 +15,37 @@
   function pct(f){return !f||f.fill_rate===null||f.fill_rate===undefined?"未接入":Number(f.fill_rate).toFixed(1).replace(/\\.0$/,"")+"%";}
   function rowTitle(r){return [r.target_type,r.target_id].filter(has).join(" · ")||("ID "+(r.id||"未接入"));}
   function missingText(){return state.reason||"未接入 · 缺 finance_settlement_links 可核销真实链接；当前填充率 未接入。";}
+  function parseLines(s){var o={};String(s||"").split(/\n/).forEach(function(line){var i=line.indexOf("=");if(i<1)return;o[line.slice(0,i).trim()]=line.slice(i+1).trim();});return o;}
+  function editable(r){
+    return [
+      "payment_id="+fmt(r&&r.payment_id,""),"target_type="+fmt(r&&r.target_type,"invoice_out"),
+      "target_id="+fmt(r&&r.target_id,""),"amount_applied="+fmt(r&&r.amount_applied,""),
+      "currency="+fmt(r&&r.currency,"CNY"),"status="+fmt(r&&r.status,"applied"),
+      "source="+fmt(r&&r.source,"manual"),"created_by="+fmt(r&&r.created_by,"")
+    ].join("\n");
+  }
+  async function save(method,body){
+    var r=await fetch(API,{method:method,headers:headers(true),body:JSON.stringify(body)});
+    var d=await r.json().catch(function(){return{success:false,error:"接口返回异常"};});
+    if(!r.ok||d.success===false)throw new Error(d.error||"保存失败");
+    return d;
+  }
+  async function addRow(){
+    var raw=prompt("新增核销链接，逐行填写 field=value。金额不确定请留空。",editable({}));
+    if(raw===null)return;
+    try{await save("POST",parseLines(raw));await load();}catch(e){alert(e.message);}
+  }
+  async function editRow(){
+    var r=state.selected;if(!r){alert("未选择记录");return;}
+    var raw=prompt("编辑核销链接，逐行填写 field=value。留空会保存为空，不会编造金额。",editable(r));
+    if(raw===null)return;
+    try{var body=parseLines(raw);body.id=r.id;await save("PATCH",body);await load();}catch(e){alert(e.message);}
+  }
+  async function voidRow(){
+    var r=state.selected;if(!r){alert("未选择记录");return;}
+    if(!confirm("作废当前核销链接？后端只写 voided 状态，不物理删除。"))return;
+    try{await save("DELETE",{id:r.id});await load();}catch(e){alert(e.message);}
+  }
   async function api(){
     var p=new URLSearchParams(),q=$("q").value.trim(),target=$("targetType").value,status=$("status").value;
     if(q)p.set("q",q);if(target)p.set("target_type",target);if(status)p.set("status",status);
@@ -74,6 +105,9 @@
   $("list").addEventListener("click",function(e){var b=e.target.closest(".row");if(!b)return;var id=b.dataset.id;state.selected=state.rows.find(function(r){return String(r.id||"")===id;})||state.selected;render();});
   $("reload").addEventListener("click",load);$("q").addEventListener("keydown",function(e){if(e.key==="Enter")load();});
   $("targetType").addEventListener("change",load);$("status").addEventListener("change",load);
+  $("add").addEventListener("click",addRow);
+  $("edit").addEventListener("click",editRow);
+  $("del").addEventListener("click",voidRow);
   if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",title:"核销管理",url:location.pathname+location.search},location.origin);
   load();
 })();

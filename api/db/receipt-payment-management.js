@@ -1,9 +1,10 @@
-// 收付管理 · read-only lens over finance_payments / finance_records.
+// 收付管理 · finance_payments lens + guarded drafts.
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-const VERSION = "v2026.08.26-1";
+const VERSION = "v2026.08.26-2";
 const READ_ROLES = new Set(["admin", "finance", "sales", "ops", "operator", "ceo", "superadmin"]);
+const WRITE_ROLES = new Set(["admin", "finance", "ceo", "superadmin"]);
 const TABLE = "finance_payments";
 const FIELDS = [
   ["payment_no", "收付编号"], ["direction_canonical", "方向"], ["status", "状态"],
@@ -19,6 +20,10 @@ const RAW_AMOUNT_EXPR = `CASE
     THEN regexp_replace(p.raw->>'receivedAmount', '[, ]', '', 'g')::numeric
   ELSE NULL
 END`;
+const EDIT_FIELDS = ["_id", "payment_no", "direction", "status", "payment_date", "paid_date", "currency",
+  "paid_amount", "this_amount", "amount", "customer", "customer_en", "contract_no", "order_no", "bank_ref",
+  "pay_type", "type", "tt_slip_url", "invoice_url", "pay_item", "plan_id"];
+const NUM_FIELDS = new Set(["paid_amount", "this_amount", "amount"]);
 
 function fail(res, status, error) {
   return res.status(status).json({ success: false, error });
@@ -33,6 +38,65 @@ function has(v) {
   if (Array.isArray(v)) return v.length > 0;
   if (typeof v === "object") return Object.keys(v).length > 0;
   return String(v).trim() !== "";
+}
+
+function parseValue(name, v) {
+  if (NUM_FIELDS.has(name)) {
+    if (!has(v)) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n)) throw new Error(`${name} must be numeric`);
+    return n;
+  }
+  return has(v) ? clean(v, 500) : null;
+}
+
+function writeInput(body, cols, requireId) {
+  const id = clean(body?.id, 80);
+  if (requireId && !id) throw new Error("id required");
+  const fields = [];
+  const values = [];
+  for (const name of EDIT_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(body || {}, name)) continue;
+    if (!cols.has(name)) throw new Error(`未接入: 缺 ${TABLE}.${name}；当前填充率 未接入`);
+    fields.push(name);
+    values.push(parseValue(name, body[name]));
+  }
+  if (!fields.length) throw new Error("no editable fields");
+  return { id, fields, values };
+}
+
+async function writeRow(pool, req) {
+  if (!(await tableExists(pool, TABLE))) throw new Error(`未接入: 缺 ${TABLE}；当前填充率 未接入`);
+  const cols = await columns(pool, TABLE);
+  if (!cols.has("id")) throw new Error(`未接入: 缺 ${TABLE}.id；当前填充率 未接入`);
+  if (req.method === "POST") {
+    const input = writeInput(req.body, cols, false);
+    const names = input.fields.map((x) => `"${x}"`);
+    const ph = input.fields.map((_, i) => `$${i + 1}`);
+    if (cols.has("created_at")) { names.push("created_at"); ph.push("NOW()"); }
+    if (cols.has("updated_at")) { names.push("updated_at"); ph.push("NOW()"); }
+    const r = await pool.query(`INSERT INTO ${TABLE} (${names.join(",")}) VALUES (${ph.join(",")}) RETURNING id::text AS id`, input.values);
+    return { id: r.rows[0]?.id };
+  }
+  if (req.method === "PATCH") {
+    const input = writeInput(req.body, cols, true);
+    const sets = input.fields.map((x, i) => `"${x}"=$${i + 1}`);
+    if (cols.has("updated_at")) sets.push("updated_at=NOW()");
+    const r = await pool.query(`UPDATE ${TABLE} SET ${sets.join(",")} WHERE id::text=$${input.values.length + 1} RETURNING id::text AS id`, [...input.values, input.id]);
+    if (!r.rowCount) throw new Error("not found");
+    return { id: r.rows[0]?.id };
+  }
+  if (req.method === "DELETE") {
+    const id = clean(req.body?.id || req.query?.id, 80);
+    if (!id) throw new Error("id required");
+    if (!cols.has("status")) throw new Error(`未接入: 缺 ${TABLE}.status；当前填充率 未接入`);
+    const sets = ["status=$1"];
+    if (cols.has("updated_at")) sets.push("updated_at=NOW()");
+    const r = await pool.query(`UPDATE ${TABLE} SET ${sets.join(",")} WHERE id::text=$2 RETURNING id::text AS id`, ["voided", id]);
+    if (!r.rowCount) throw new Error("not found");
+    return { id: r.rows[0]?.id, soft_deleted: true };
+  }
+  throw new Error("method not allowed");
 }
 
 function pct(filled, total) {
@@ -221,11 +285,19 @@ function metrics(rows) {
 }
 
 export default async function handler(req, res) {
-  setCors(req, res, "GET, OPTIONS");
+  setCors(req, res, "GET, POST, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
   if (!requireAuth(req, res)) return;
   if (!READ_ROLES.has(req.user?.role)) return fail(res, 403, "Forbidden");
-  if (req.method !== "GET") return fail(res, 405, "GET required");
+  if (req.method !== "GET") {
+    if (!WRITE_ROLES.has(req.user?.role)) return fail(res, 403, "Forbidden");
+    try {
+      const changed = await writeRow(getPool(), req);
+      return res.status(200).json({ success: true, version: VERSION, changed });
+    } catch (err) {
+      return fail(res, err.message === "not found" ? 404 : 400, err.message);
+    }
+  }
   try {
     const pool = getPool();
     const exists = await tableExists(pool, TABLE);

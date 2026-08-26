@@ -20,13 +20,13 @@
 </head>
 <body class="hgj-page">
   <div class="shell">
-    <aside class="side"><h2>海管家</h2><div class="on">收付管理</div><div>收款</div><div>付款</div></aside>
+    <aside class="side"><h2>收付管理</h2><div class="on">收付管理</div><div>收款</div><div>付款</div></aside>
     <main class="wrap">
       <header class="top">
         <div><h1 class="title hgj-panel-title">收付管理</h1><div id="summary" class="sub">加载中</div></div>
-        <div class="actions"><input id="q" placeholder="编号 / 客户 / 合同 / 订单 / 流水"><select id="direction"><option value="">全部方向</option><option value="AR">收款</option><option value="AP">付款</option></select><select id="status"><option value="">全部状态</option><option value="matched">matched</option><option value="pending">pending</option><option value="confirmed">confirmed</option></select><button id="reload" class="primary" type="button">查询</button></div>
+        <div class="actions"><input id="q" placeholder="编号 / 客户 / 合同 / 订单 / 流水"><select id="direction"><option value="">全部方向</option><option value="AR">收款</option><option value="AP">付款</option></select><select id="status"><option value="">全部状态</option><option value="matched">matched</option><option value="pending">pending</option><option value="confirmed">confirmed</option></select><button id="reload" class="primary" type="button">查询</button><button id="add" type="button">新增</button><button id="edit" type="button">编辑</button><button id="del" type="button">作废</button></div>
       </header>
-      <div class="notice hgj-card">本页只读；金额只展示 finance_payments 真实字段，未设置显示未设置，零数据/缺字段显示未接入和填充率。</div>
+      <div class="notice hgj-card">本页支持受控新增、编辑、作废；金额只展示 finance_payments 真实字段，未设置显示未设置，零数据/缺字段显示未接入和填充率。</div>
       <section class="metrics">
         <div class="metric hgj-card"><div class="muted">记录样本</div><div id="mTotal" class="num">未接入</div></div>
         <div class="metric hgj-card"><div class="muted">收款记录</div><div id="mAr" class="num">未接入</div></div>

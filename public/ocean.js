@@ -178,15 +178,15 @@
                 html += `<tr class="bl-row ${isExpanded?'expanded':''}" data-bl="${attr(bl)}" data-title="${attr(bl || key || '海运票')}" data-url="/ship-entry?id=${encodeURIComponent(key)}">`;
                 if (colVisibility.arrow) html += `<td data-action="toggle">${isExpanded?'▼':'▶'}</td>`;
                 if (colVisibility.bl) {
-                    html += `<td><span>${bl}</span>${multi ? `<span class="badge badge-multi">×${plan.container_qty}柜</span>` : ''}</td>`;
+                    html += `<td><span>${attr(bl)}</span>${multi ? `<span class="badge badge-multi">×${attr(plan.container_qty)}柜</span>` : ''}</td>`;
                 }
-                if (colVisibility.etd) html += `<td>${fmtDate(plan.etd)}</td>`;
-                if (colVisibility.route) html += `<td>${plan.pol || '?'} → ${plan.pod || '?'}</td>`;
-                if (colVisibility.customer) html += `<td>${plan.customer || '—'}</td>`;
+                if (colVisibility.etd) html += `<td>${attr(fmtDate(plan.etd))}</td>`;
+                if (colVisibility.route) html += `<td>${attr(plan.pol || '?')} → ${attr(plan.pod || '?')}</td>`;
+                if (colVisibility.customer) html += `<td>${attr(plan.customer || '—')}</td>`;
                 if (colVisibility.term) {
                     if (termConflict) html += `<td><span class="badge badge-conflict">冲突</span></td>`;
                     else if (!termLabel) html += `<td><span class="badge badge-missing">缺</span></td>`;
-                    else html += `<td><span class="badge" style="background:#e0e0e0;">${termLabel}</span></td>`;
+                    else html += `<td><span class="badge badge-rebill">${attr(termLabel)}</span></td>`;
                 }
                 if (colVisibility.cost) {
                     html += `<td class="num">`;
@@ -487,4 +487,5 @@
             bindEvents();
             loadData();
         });
+        if (window.parent !== window) window.parent.postMessage({type:'sanlyn:module-ready',title:'账单管理',url:location.pathname+location.search},location.origin);
     })();

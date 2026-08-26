@@ -1,10 +1,10 @@
 (function(){
   "use strict";
-  var API="/api/db/receipt-payment-management",VERSION="v2026.08.26-1";
+  var API="/api/db/receipt-payment-management",VERSION="v2026.08.26-2";
   var state={rows:[],selected:null,coverage:[],metrics:{},generatedAt:null};
   var $=function(id){return document.getElementById(id)};
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
-  function headers(){var h={},t=token();if(t)h.Authorization="Bearer "+t;return h}
+  function headers(json){var h={},t=token();if(t)h.Authorization="Bearer "+t;if(json)h["Content-Type"]="application/json";return h}
   function clear(x){while(x.firstChild)x.removeChild(x.firstChild)}
   function has(v){return !(v===null||v===undefined||v===""||(Array.isArray(v)&&!v.length))}
   function text(x,v,fallback){x.textContent=has(v)?String(v):(fallback||"未接入")}
@@ -14,6 +14,39 @@
   function pctField(f){return !f||f.fill_rate===null||f.fill_rate===undefined?"未接入":Number(f.fill_rate).toFixed(1).replace(/\.0$/,"")+"%"}
   function dirLabel(v){return v==="AR"?"收款":v==="AP"?"付款":(has(v)?v:"未分类")}
   function rowTitle(r){return r.payment_no||r.bank_ref||r.contract_no||("ID "+(r.id||"未接入"))}
+  function parseLines(s){var o={};String(s||"").split(/\n/).forEach(function(line){var i=line.indexOf("=");if(i<1)return;o[line.slice(0,i).trim()]=line.slice(i+1).trim()});return o}
+  function directionRaw(v){return v==="AP"?"out":v==="AR"?"in":""}
+  function editable(r){
+    return [
+      "direction="+directionRaw(r&&r.direction_canonical),"status="+fmt(r&&r.status,"draft"),
+      "payment_date="+fmt(r&&r.payment_date,""),"paid_date="+fmt(r&&r.paid_date,""),"currency="+fmt(r&&r.currency,""),
+      "this_amount="+fmt(r&&r.effective_amount,""),"customer="+fmt(r&&r.customer,""),"customer_en="+fmt(r&&r.customer_en,""),
+      "contract_no="+fmt(r&&r.contract_no,""),"order_no="+fmt(r&&r.order_no,""),"bank_ref="+fmt(r&&r.bank_ref,""),
+      "pay_type="+fmt(r&&r.payment_type,""),"tt_slip_url="+fmt(r&&r.tt_slip_url,""),"invoice_url="+fmt(r&&r.invoice_url,"")
+    ].join("\n");
+  }
+  async function save(method,body){
+    var r=await fetch(API,{method:method,headers:headers(true),body:JSON.stringify(body)});
+    var d=await r.json().catch(function(){return{success:false,error:"接口返回异常"}});
+    if(!r.ok||d.success===false)throw new Error(d.error||"保存失败");
+    return d;
+  }
+  async function addRow(){
+    var raw=prompt("新增收付，逐行填写 field=value。金额不确定请留空。",editable({direction_canonical:$("direction").value||"AR"}));
+    if(raw===null)return;
+    try{await save("POST",parseLines(raw));await load()}catch(e){alert(e.message)}
+  }
+  async function editRow(){
+    var r=state.selected;if(!r){alert("未选择记录");return}
+    var raw=prompt("编辑收付，逐行填写 field=value。留空会保存为空，不会编造金额。",editable(r));
+    if(raw===null)return;
+    try{var body=parseLines(raw);body.id=r.id;await save("PATCH",body);await load()}catch(e){alert(e.message)}
+  }
+  async function voidRow(){
+    var r=state.selected;if(!r){alert("未选择记录");return}
+    if(!confirm("作废当前收付记录？后端只写 voided 状态，不物理删除。"))return;
+    try{await save("DELETE",{id:r.id});await load()}catch(e){alert(e.message)}
+  }
   async function api(){
     var p=new URLSearchParams(),q=$("q").value.trim(),direction=$("direction").value,status=$("status").value;
     if(q)p.set("q",q);if(direction)p.set("direction",direction);if(status)p.set("status",status);
@@ -94,6 +127,9 @@
   $("reload").addEventListener("click",load);
   $("q").addEventListener("keydown",function(e){if(e.key==="Enter")load()});
   $("direction").addEventListener("change",load);$("status").addEventListener("change",load);
+  $("add").addEventListener("click",addRow);
+  $("edit").addEventListener("click",editRow);
+  $("del").addEventListener("click",voidRow);
   if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",title:"收付管理",url:location.pathname+location.search},location.origin);
   load();
 })();

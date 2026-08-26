@@ -23,14 +23,15 @@
     </header>
     <section class="panel hgj-card">
       <h2 class="hgj-panel-title">独立测试页</h2>
-      <p>可搜提单号、订单号、客户/公司名、账单编号、集装箱号。少于 2 个字符不查库。</p>
-      <p>数据依据：shipping_plans、orders、companies、customers、freight_supplier_bills、container_bookings、ports。</p>
+      <p>可搜模块入口、提单号、订单号、客户/公司名、账单编号、集装箱号。少于 2 个字符不查库。</p>
+      <p>模块入口来自后端固定白名单；业务数据依据 shipping_plans、orders、companies、customers、freight_supplier_bills、container_bookings、ports。</p>
     </section>
   </div>
   <script src="/global-search.js"></script>
   <script>
     document.getElementById("generatedAt").textContent="生成时间 "+new Date().toLocaleString("zh-CN");
     SanlynGlobalSearch.mount(document.getElementById("globalSearch"));
+    if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",title:"全局搜索",url:location.pathname+location.search},location.origin);
   </script>
 </body>
 </html>

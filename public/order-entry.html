@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>订单录入 · 双轨单号</title>
+<title>订单录入 · 新建起点</title>
 <link rel="stylesheet" href="/public/hgj-ui.css">
 <style>
 body{margin:0;background:var(--hgj-bg);color:var(--hgj-text);font:14px/1.5 var(--hgj-font)}
@@ -43,7 +43,7 @@ button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
 </div>
 <main class="page" id="app">
   <div class="head">
-    <div><div class="title">订单录入</div><div class="meta">v2026.08.26-2 · <span id="stamp"></span></div></div>
+    <div><div class="title">订单录入</div><div class="meta">v2026.08.26-3 · 订单状态起点：新建 · <span id="stamp"></span></div></div>
     <div class="row"><button class="secondary" id="openWb">在工作台打开</button><button class="secondary" id="patchBtn" hidden>保存补全新建单</button><button id="createBtn">新建订单</button></div>
   </div>
   <div id="msg"></div>
@@ -73,7 +73,7 @@ button.secondary{background:var(--hgj-card);color:var(--hgj-primary)}
     <div class="stats" id="stats"></div>
   </section>
   <section class="panel draft" id="draftBox" hidden>
-    <h1 class="hgj-panel-title">新建单</h1>
+    <h1 class="hgj-panel-title">新建单 · 状态起点</h1>
     <div class="ids" id="draftIds" style="margin-top:10px"></div>
     <div id="draftInfo" class="meta" style="margin-top:10px"></div>
     <div id="missing" style="margin-top:8px"></div>

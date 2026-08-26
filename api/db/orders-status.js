@@ -25,8 +25,13 @@ var ALLOWED_TRANSITIONS = {
   delivered:          [],
 };
 
+function currentStatus(status) {
+  var s = String(status || "").trim();
+  return s || "new";
+}
+
 function canTransition(from, to) {
-  return ALLOWED_TRANSITIONS[from]?.includes(to);
+  return ALLOWED_TRANSITIONS[currentStatus(from)]?.includes(to);
 }
 
 async function appendHistory(pool, orderId, fromStatus, toStatus, byUser, extra) {
@@ -60,6 +65,7 @@ export default async function handler(req, res) {
     var cur = await pool.query("SELECT id, status, factory_code, export_mode, products FROM orders WHERE id = $1", [orderId]);
     if (cur.rows.length === 0) return res.status(404).json({ error: "order not found" });
     var order = cur.rows[0];
+    var fromStatus = currentStatus(order.status);
 
     // ─── action: forward ───
     if (action === "forward") {
@@ -69,8 +75,8 @@ export default async function handler(req, res) {
       if (!["confirm", "quote"].includes(mode)) return res.status(400).json({ error: "mode must be 'confirm' or 'quote'" });
 
       var nextStatus = mode === "quote" ? "pending_quote" : "pending_confirm";
-      if (!canTransition(order.status, nextStatus)) {
-        return res.status(409).json({ error: "cannot forward from status " + order.status });
+      if (!canTransition(fromStatus, nextStatus)) {
+        return res.status(409).json({ error: "cannot forward from status " + fromStatus });
       }
 
       var meta = {
@@ -87,7 +93,7 @@ export default async function handler(req, res) {
         "UPDATE orders SET forward_meta = $1::jsonb WHERE id = $2",
         [JSON.stringify(meta), orderId]
       );
-      await appendHistory(pool, orderId, order.status, nextStatus, body.byUser, { mode, channels });
+      await appendHistory(pool, orderId, fromStatus, nextStatus, body.byUser, { mode, channels });
 
       // TODO: fire actual notifications (email / WeChat / portal push)
       // queueEmail({ to: recipients, ... })
@@ -100,10 +106,10 @@ export default async function handler(req, res) {
     if (action === "set_status") {
       var to = body.status;
       if (!to) return res.status(400).json({ error: "status required" });
-      if (!canTransition(order.status, to)) {
-        return res.status(409).json({ error: "illegal transition " + order.status + " → " + to });
+      if (!canTransition(fromStatus, to)) {
+        return res.status(409).json({ error: "illegal transition " + fromStatus + " -> " + to });
       }
-      await appendHistory(pool, orderId, order.status, to, body.byUser);
+      await appendHistory(pool, orderId, fromStatus, to, body.byUser);
       return res.status(200).json({ success: true, status: to });
     }
 
@@ -131,14 +137,14 @@ export default async function handler(req, res) {
       );
 
       // Auto-advance status if was pending_quote/pending_confirm
-      var canAdvance = order.status === "pending_quote" || order.status === "pending_confirm";
+      var canAdvance = fromStatus === "pending_quote" || fromStatus === "pending_confirm";
       if (canAdvance) {
-        await appendHistory(pool, orderId, order.status, "factory_confirmed", body.byUser, { reason: "factory_update" });
+        await appendHistory(pool, orderId, fromStatus, "factory_confirmed", body.byUser, { reason: "factory_update" });
       }
 
       return res.status(200).json({
         success: true,
-        status: canAdvance ? "factory_confirmed" : order.status,
+        status: canAdvance ? "factory_confirmed" : fromStatus,
         products: merged,
       });
     }

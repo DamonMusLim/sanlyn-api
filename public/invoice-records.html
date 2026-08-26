@@ -20,13 +20,13 @@
 </head>
 <body class="hgj-page">
   <div class="shell">
-    <aside class="side"><h2>海管家</h2><div class="on">开票记录</div><div>销项发票</div><div>进项发票</div></aside>
+    <aside class="side"><h2>开票记录</h2><div class="on">开票记录</div><div>销项发票</div><div>进项发票</div></aside>
     <main class="wrap">
       <header class="top">
         <div><h1 class="title hgj-panel-title">开票记录</h1><div id="summary" class="sub">加载中</div></div>
-        <div class="actions"><input id="q" placeholder="发票号 / 公司 / 合同 / 报关单"><select id="side"><option value="all">全部</option><option value="out">销项</option><option value="in">进项</option></select><select id="status"><option value="">全部状态</option><option value="issued">issued</option><option value="pending">pending</option><option value="draft">draft</option></select><button id="reload" class="primary" type="button">查询</button></div>
+        <div class="actions"><input id="q" placeholder="发票号 / 公司 / 合同 / 报关单"><select id="side"><option value="all">全部</option><option value="out">销项</option><option value="in">进项</option></select><select id="status"><option value="">全部状态</option><option value="issued">issued</option><option value="pending">pending</option><option value="draft">draft</option></select><button id="reload" class="primary" type="button">查询</button><button id="add" type="button">新增</button><button id="edit" type="button">编辑</button><button id="del" type="button">作废</button></div>
       </header>
-      <div class="notice hgj-card">本页只读；金额、额度、费率未设置时显示未设置，未接入字段显示缺字段和当前填充率。</div>
+      <div class="notice hgj-card">本页支持受控新增、编辑、作废；金额、额度、费率未设置时显示未设置，未接入字段显示缺字段和当前填充率。</div>
       <section class="metrics">
         <div class="metric hgj-card"><div class="muted">记录样本</div><div id="mTotal" class="num">未接入</div></div>
         <div class="metric hgj-card"><div class="muted">销项记录</div><div id="mOut" class="num">未接入</div></div>

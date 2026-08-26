@@ -2,6 +2,7 @@
 // Read-only top-bar global search. Sources are fixed allowlist tables/columns.
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { searchModules } from "./global-search-modules.js";
 
 const LIMIT = 5;
 
@@ -132,10 +133,11 @@ export async function loadGlobalSearch(pool, q) {
   const needle = cleanQuery(q);
   if (needle.length < 2) return [];
   const like = "%" + escapeLike(needle) + "%";
+  const moduleGroup = searchModules(needle);
   const results = await Promise.all(
     SEARCHES.map((cfg) => pool.query(cfg.sql, [like, LIMIT]).then((r) => groupResult(cfg.type, r.rows)))
   );
-  return results.filter((g) => g.items.length);
+  return [moduleGroup].concat(results).filter((g) => g && g.items.length);
 }
 
 export default async function handler(req, res) {

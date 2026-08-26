@@ -255,4 +255,5 @@
   });
 
   loadConfig();
+  if (window.parent !== window) window.parent.postMessage({ type: "sanlyn:module-ready", title: "舱单配置", url: location.pathname + location.search }, location.origin);
 })();

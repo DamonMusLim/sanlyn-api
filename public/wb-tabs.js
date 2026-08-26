@@ -28,7 +28,7 @@ var NAV=[
   n("审核管理",["审核提交记录","报价审核","费用模板审核","订单审核","提单审核","费用审核","账单审核","往来公司审核","合同审核"]),
   n("货运保险"),n("报表中心",["业务报表","财务报表"])
 ];
-var MENUS={settings:["参数设置","成员与权限"],help:["吐槽产品","新手教程","小程序","海管家二维码","货代Q宝"],resource:["企业资源"]};
+var MENUS={settings:["参数设置","成员与权限"],help:["吐槽产品","新手教程","小程序","系统二维码","货代Q宝"],resource:["企业资源"]};
 var DEFAULT_TABS=[{id:FIXED_ID,title:"工作台",url:"/wb",fixed:true}];
 var state=loadState(),tabsEl=$("tabs"),stageEl=$("stage"),navEl=$("sideNav"),toastEl=$("toast"),moduleTitle=$("moduleTitle"),toastTimer=0,dragId="",customNav=[];
 $("generatedAt").textContent="生成时间 "+new Date().toLocaleString("zh-CN");
@@ -90,7 +90,7 @@ function render(){
 }
 function ensureFrame(tab){
   var frame=stageEl.querySelector('.frame[data-id="'+cssEscape(tab.id)+'"]');if(frame){frame.title=tab.title;return}
-  if(tab.url.indexOf("/wb-tabs-placeholder?")===0){frame=document.createElement("section");frame.className="frame placeholder";frame.dataset.id=tab.id;frame.innerHTML='<div class="placeholder-card hgj-card"><h1></h1><p></p></div>';frame.querySelector("h1").textContent=(tab.sourceName||tab.title.replace(/ · 待建$/,""))+" · 待建";frame.querySelector("p").textContent="此模块尚未开发。海管家对应功能："+(tab.sourceName||tab.title.replace(/ · 待建$/,""))+"。"}else{frame=document.createElement("iframe");frame.className="frame";frame.src=tab.url;frame.title=tab.title;frame.dataset.id=tab.id}
+  if(tab.url.indexOf("/wb-tabs-placeholder?")===0){frame=document.createElement("section");frame.className="frame placeholder";frame.dataset.id=tab.id;frame.innerHTML='<div class="placeholder-card hgj-card"><h1></h1><p></p></div>';frame.querySelector("h1").textContent=(tab.sourceName||tab.title.replace(/ · 待建$/,""))+" · 待建";frame.querySelector("p").textContent="此模块尚未开发。对标功能："+(tab.sourceName||tab.title.replace(/ · 待建$/,""))+"。"}else{frame=document.createElement("iframe");frame.className="frame";frame.src=tab.url;frame.title=tab.title;frame.dataset.id=tab.id}
   stageEl.appendChild(frame);
 }
 function trustedFrameSource(source){return !!source&&source!==window&&Array.from(stageEl.querySelectorAll("iframe.frame")).some(function(f){return f.contentWindow===source})}
