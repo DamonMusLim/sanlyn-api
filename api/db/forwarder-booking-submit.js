@@ -115,12 +115,9 @@ export default async function handler(req, res) {
   add("vessel",   b.vessel?.trim()  || null);
   add("voyage",   b.voyage?.trim()  || null);
   add("flow_status",   "booked");
-  // booking_sent_at may or may not exist depending on migration state
-  // Store in raw.booking_sent_at instead to be safe
+  sets.push("booking_sent_at = COALESCE(booking_sent_at, NOW())"); // 货代提交订舱确认时，记录首次托书/订舱发出时间。
 
   // vault merge for BL draft (if provided)
-  // Always store booking_sent_at in vault (safe even if column doesn't exist)
-  const bookingSentAt = new Date().toISOString();
   let vaultMerge = null;
   if (b.bl_draft && b.bl_draft.filename) {
     const bl = {

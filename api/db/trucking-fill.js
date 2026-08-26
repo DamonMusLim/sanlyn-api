@@ -188,6 +188,14 @@ export default async function handler(req, res) {
             [...vals, bl_token]
           );
         }
+        // 工厂提交装柜资料时，记录首次派车/装柜确认时间到票级告警字段。
+        await pool.query(
+          `UPDATE shipping_plans
+              SET factory_dispatch_confirmed_at = COALESCE(factory_dispatch_confirmed_at, NOW()),
+                  updated_at = NOW()
+            WHERE bl_no = $1 OR contract_no = $2`,
+          [base.bl_no || null, rows[0]?.contract_no || base.order_no || null]
+        );
         return res.status(200).json({ success: true });
       }
 

@@ -145,6 +145,16 @@ export default async function handler(req, res) {
       var sql = "UPDATE container_bookings SET " + sets.join(",") +
                 " WHERE bl_no=$" + iBl + " AND container_no=$" + iCno + " RETURNING *";
       var r = await pool.query(sql, params);
+      if (role === "factory") {
+        // 工厂扫码提交装柜证据时，记录首次派车/装柜确认时间到票级告警字段。
+        await pool.query(
+          `UPDATE shipping_plans
+              SET factory_dispatch_confirmed_at = COALESCE(factory_dispatch_confirmed_at, NOW()),
+                  updated_at = NOW()
+            WHERE bl_no = $1`,
+          [bl]
+        );
+      }
       return res.json({ success: true, data: r.rows[0], role: role });
     }
 

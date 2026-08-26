@@ -203,6 +203,16 @@ export default async function handler(req, res) {
         "UPDATE customs_data SET raw = $1::jsonb, updated_at = NOW() WHERE contract_no = $2",
         [JSON.stringify(newRaw), contract_no]
       );
+      if (newStatus === "released") {
+        // BL 控制台切到 released 放单完成时，记录首次电放/换单完成时间。
+        await pool.query(
+          `UPDATE shipping_plans
+              SET telex_released_at = COALESCE(telex_released_at, NOW()),
+                  updated_at = NOW()
+            WHERE contract_no = $1 OR $1 = ANY(COALESCE(contract_nos, ARRAY[]::text[]))`,
+          [contract_no]
+        );
+      }
 
       return res.status(200).json({
         success: true,
