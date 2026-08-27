@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>退税主表</title>
+<link rel="stylesheet" href="/public/sanlyn-table.css">
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f1f5f9;font:13px/1.5 -apple-system,"PingFang SC",sans-serif;color:#111827}
+.wrap{padding:14px}.top{background:#0f172a;color:#fff;padding:12px 16px;border-radius:10px 10px 0 0}
+.title{font-size:17px;font-weight:800}.meta{font-size:11px;opacity:.75;margin-top:3px}
+.bar{background:#1e293b;padding:8px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bar input,.bar select{padding:5px 8px;border:0;border-radius:6px;font-size:12px}
+
+.declbox{margin-top:14px;border-top:2px dashed #cbd5e1;padding-top:10px}
+.declhd{font-size:12px;color:#334155;margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tbd{color:#b0b7c3;font-size:11px}
+table.decl th.ex,table.decl td.ex{background:#f6f7f9;color:#64748b;border-left:2px solid #cbd5e1}
+table.decl th.ex{background:#eceff3;font-weight:500}
+tr.bandrow td{padding:2px 6px;font-size:10px;border:0}
+td.band-o{background:#eef2ff;color:#3730a3}
+td.band-x{background:#f6f7f9;color:#94a3b8;border-left:2px solid #cbd5e1}
+.probbar{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.declhd.bar{gap:8px;align-items:center;margin-bottom:8px}
+.btn.collab{background:#059669;text-decoration:none;display:inline-block;line-height:1.5}
+.btn.collab.off{background:#e2e8f0;color:#94a3b8;cursor:not-allowed}
+.btn.up{background:#7c3aed}
+.btn.up:disabled{opacity:.85}
+.pb{font-size:11px;padding:3px 9px;border-radius:999px;font-weight:600}
+.pb.red{background:#fee2e2;color:#991b1b}
+.pb.amber{background:#fef3c7;color:#92400e}
+.pb.mute{background:#f1f5f9;color:#94a3b8;font-weight:400}
+.vbadge{font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap}
+.vbadge.ok{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.vbadge.mid{background:#e0f2fe;color:#075985;border:1px solid #7dd3fc}
+.vbadge.no{background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1}
+.vbadge .sm{font-weight:400;opacity:.85}
+tr.blg td{background:linear-gradient(#dbeafe,#eff6ff);border-top:3px solid #2563eb;padding:8px 12px;color:#1e3a8a}
+.blg-t{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.blg-n{background:#2563eb;color:#fff;font-weight:800;font-size:15px;border-radius:6px;padding:1px 9px}
+.blg-x{font-weight:700;font-size:13px}
+.blg-bl{font-family:ui-monospace,Menlo,monospace;font-weight:700;font-size:14px;letter-spacing:.5px}
+.blg-warn{background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;border-radius:999px;padding:2px 9px}
+.blg-ok{background:#dcfce7;color:#166534;font-size:11px;border-radius:999px;padding:2px 9px}
+.blg-s{font-size:11.5px;color:#334155;margin-top:3px}
+tr.blf td{background:#eff6ff;border-bottom:3px solid #2563eb;padding:3px 12px 5px 12px;font-size:11px;color:#60a5fa}
+tr.blm>td:first-child,tr.blm>td.blmc{border-left:10px solid #2563eb}
+tr.main.blm>td{background:#f8fbff}
+.blno{font-size:14px;color:#fff;background:#2563eb;font-weight:800;line-height:1.2;margin-top:4px;border-radius:5px;padding:2px 5px;display:inline-block;letter-spacing:.5px}
+.declbox.clean{border-top-color:#bbf7d0}
+.infobar{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11px;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px;margin-bottom:8px}
+.infobar .ib i{font-style:normal;color:#94a3b8;margin-right:4px}
+table.decl tbody tr:nth-child(even) td{background:#fafbfc}
+table.decl{margin-bottom:10px}
+table.decl caption{text-align:left;font-size:12px;font-weight:700;color:#0f172a;padding:4px 0}
+table.decl th{background:#eef2ff;font-size:11px;white-space:nowrap}
+table.decl td{font-size:11px}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+.btn.xs{padding:2px 8px;font-size:11px}
+.btn{padding:5px 12px;border:0;border-radius:6px;background:#2563eb;color:#fff;font-size:12px;cursor:pointer}
+.cards{display:flex;gap:10px;padding:10px 16px;background:#fff;flex-wrap:wrap;border-bottom:1px solid #e5e7eb}
+.card{border:1px solid #e5e7eb;border-radius:8px;padding:8px 14px;min-width:118px}
+.card .k{font-size:11px;color:#6b7280}.card .v{font-size:18px;font-weight:800;margin-top:2px}
+.panel{background:#fff;border-radius:0 0 10px 10px;overflow:auto;max-height:80vh}
+table.tbl{border-collapse:collapse;width:100%;font-size:12px}
+.tbl th{position:sticky;top:0;background:#1f2937;color:#fff;padding:7px 8px;text-align:left;white-space:nowrap;z-index:3}
+.tbl td{border-bottom:1px solid #e5e7eb;padding:6px 8px;white-space:nowrap;vertical-align:middle}
+tr.main{cursor:pointer}tr.main:hover td{background:#eff6ff}tr.main.open td{background:#e0f2fe}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+.own{white-space:normal;max-width:230px;line-height:1.35}
+.own .po{font-weight:700}.own .fa{color:#64748b;font-size:11px}
+tr.det>td{padding:0;background:#f8fafc;border-bottom:2px solid #cbd5e1}
+tr.det.hide{display:none}
+div.hide{display:none}
+.detbox{padding:8px 10px 12px 34px}
+.dhd{font-size:11px;color:#475569;margin-bottom:6px;display:flex;gap:0;flex-wrap:wrap;align-items:center}
+.dhd span{padding:2px 9px;background:#e2e8f0;border-right:1px solid #cbd5e1}
+.dhd span:first-child{border-radius:5px 0 0 5px}.dhd span:last-child{border-radius:0 5px 5px 0;border-right:0}
+.dhd b{color:#0f172a;font-family:ui-monospace,Menlo,monospace}
+.dhd i{font-style:normal;color:#94a3b8}
+.sub{border-collapse:collapse;font-size:12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.13);border-radius:6px;overflow:hidden}
+.sub th{background:#334155;color:#fff;padding:5px 10px;white-space:nowrap;text-align:left;font-weight:600}
+.sub th.core{background:#1d4ed8}
+.sub td{border-bottom:1px solid #e5e7eb;padding:5px 10px;white-space:nowrap}
+.sub td.core{background:#eff6ff;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.sub td.w-nw{min-width:88px}.sub td.w-amt{min-width:104px}.sub td.w-rt{min-width:62px;text-align:center}
+.sub td.w-rb{min-width:104px}
+.sub tr.bad td{background:#fff5f5}.sub tr.bad td.core{background:#fee2e2}
+.sub tr.bad td:first-child{box-shadow:inset 3px 0 0 #dc2626}
+.sub tfoot td{font-weight:800;border-top:2px solid #334155;background:#f1f5f9}
+.sub tfoot td.core{background:#dbeafe;font-size:13px}
+.ownc{white-space:normal;max-width:260px;line-height:1.3}
+.ownc .inv{font-family:ui-monospace,Menlo,monospace;font-size:11px}
+.ownc .sm{color:#64748b;font-size:11px}
+.pill{display:inline-block;padding:0 6px;border-radius:8px;font-size:11px;font-weight:700}
+.p-ok{background:#dcfce7;color:#166534}.p-warn{background:#fef3c7;color:#92400e}
+.p-bad{background:#fee2e2;color:#991b1b}.p-gray{background:#e5e7eb;color:#4b5563}.p-blue{background:#dbeafe;color:#1e40af}
+.arw{display:inline-block;width:12px;color:#2563eb;font-weight:800}
+tfoot.sumrow td{background:#0f172a;color:#fff;font-weight:800;position:sticky;bottom:0}
+.empty{text-align:center;padding:16px;color:#64748b}
+table.fac{border-collapse:collapse;font-size:12px;width:100%}
+.fac th{background:#065f46;color:#fff;padding:6px 9px;text-align:left;white-space:nowrap}
+.fac th.r,.fac td.r{text-align:right;font-variant-numeric:tabular-nums}
+.fac td{border-bottom:1px solid #e5e7eb;padding:5px 9px;white-space:nowrap}
+.fac tr.hot td{background:#fef2f2}
+.fac tfoot td{font-weight:800;background:#f1f5f9;border-top:2px solid #065f46}
+.fac .nm{font-weight:700;cursor:pointer;color:#065f46;text-decoration:underline}
+tr.mon.cl td{background:#334155;opacity:.85}
+tr.mon td{background:#0f172a;color:#fff;font-weight:800;font-size:13px;padding:8px 10px;cursor:pointer;position:sticky;top:30px;z-index:4}
+tr.mon td .lab{position:sticky;left:6px;display:inline-block;background:#0f172a;padding:2px 8px;border-radius:6px;z-index:5}
+tr.mon td .s{font-weight:500;font-size:11px;opacity:.8;margin-left:10px}
+tr.mon td .g{color:#86efac}
+tr.fold td{background:#f1f5f9;color:#475569;font-size:12px;padding:5px 10px 5px 34px;cursor:pointer;border-bottom:1px solid #cbd5e1}
+tr.fold td b{color:#0f172a}
+tr.done.hide,tr.done.hide+tr.det{display:none}
+tr.done td{background:#fafafa;color:#64748b}
+.sb{font-size:11px;color:#1e40af;background:#dbeafe;border-radius:6px;padding:0 5px;display:inline-block}
+
+.loginbox{padding:24px;text-align:center}
+.loginbox input{padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;margin:0 4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top"><div class="title">退税主表 · 以报关单为准</div>
+<div class="meta">v2026.08.11-1 · HS/品名/数量/净重/报关金额/退税率 全部取自海关报关单 · 不用 OLI · 蓝色区=核心计算列 · 点行展开逐项 · <span id="stamp"></span></div></div>
+<div class="bar">
+ <select id="view">
+  <option value="all">全部</option><option value="ckts_ok">🏛税局可申报</option><option value="grade_k">🏛税局级</option><option value="grade_c">✅报关单级</option><option value="grade_t">⚠️模版级（不可作依据）</option><option value="ready">可申报（料齐）</option>
+  <option value="noorder">无订单</option><option value="norate">缺HS</option>
+  <option value="noitem">缺报关逐项</option><option value="noinv">缺进项票</option><option value="over">🔴进项超报关额</option>
+  <option value="done">已申报/申报中</option><option value="undone">未申报</option>
+ </select>
+ <select id="mon"></select>
+ <select id="fac"></select>
+ <input id="kw" placeholder="搜报关单/订单/工厂/品名/BL">
+ <input id="from" value="2026-01-01" style="width:105px" title="起始出口日">
+ <label class="sm">申报年月 <input id="sbym" size="6" placeholder="202608" oninput="SB_YM=this.value.trim();draw()"></label>
+ <label class="sm">批次 <input id="sbpc" size="3" value="002" oninput="SB_PC=this.value.trim()||'002';draw()"></label>
+ <label class="sm" style="font-weight:700"><input type="checkbox" id="onlybad" checked onchange="draw()"> 只看有问题的票</label>
+ <button class="btn" onclick="reload()">刷新</button>
+ <button class="btn" style="background:#059669" onclick="togFac()">🏭 工厂开票总览</button>
+ <button class="btn" onclick="setAll(1)">全部展开</button>
+ <button class="btn" onclick="setAll(0)">全部收起</button>
+</div>
+<div class="cards" id="cards"></div>
+<div id="facwrap" style="display:none;background:#fff;padding:12px 16px;border-bottom:2px solid #cbd5e1"></div>
+<div class="panel"><div id="boot" style="padding:20px;color:#64748b">Loading…</div>
+<table class="tbl" id="grid" style="display:none"><thead id="th"></thead><tbody id="tb"></tbody><tfoot id="tf"></tfoot></table></div>
+</div>
+<script src="/public/sanlyn-table.js"></script>
+<script>
+var DATA=[];
+
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function m(v){return v==null?'—':Number(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function gaps(r){if(isClosed(r))return [];var g=[];if(Number(r.inv_over)>0)g.push('🔴进项超报关额 '+m(r.inv_over));if(!r.item_count)g.push('缺报关逐项');else if(r.bad_lines)g.push('缺HS');
+ if(!r.invoices)g.push('缺进项票');if(!r.order_nos)g.push('无订单');return g}
+function statusCell(r){
+ var h='<span class="pill '+(r.status==='已申报'?'p-ok':r.status==='申报中'?'p-blue':'p-gray')+'">'+esc(r.status)+'</span>';
+ if(!r.batch) return h;
+ var mm=String(r.batch).slice(0,6), ym=mm.slice(0,4)+'年'+mm.slice(4,6)+'月';
+ h+='<br><span class="sb">'+ym+'申报 · '+esc(r.batch)+'</span>';
+ var t=[]; if(r.apply_date)t.push(esc(r.apply_date)); if(r.flow_status)t.push(esc(r.flow_status));
+ if(t.length)h+='<br><span class="sm">'+t.join(' · ')+'</span>';
+ return h}
+function facFB(r){return (Number(r.seller_count)===1&&r.factories)?r.factories:''}
+/* 抬头条 = 单证/物流，不再重复 PO 和工厂 */
+function dhead(r){
+ var P=['<b style="color:#0f172a">'+esc(String(r.export_date).slice(0,7))+'月</b>'];
+ var bl=r.bl_no||r.mbl_no||r.hbl_no;
+ P.push('提单 '+(bl?'<b>'+esc(bl)+'</b>':'<i>未回填</i>'));
+ var ctnq=(r.container_qty?r.container_qty+'×'+(r.container_type||'柜'):'');
+ P.push('柜号 '+(r.containers?'<b>'+esc(r.containers)+'</b>'+(ctnq?' <i>('+esc(ctnq)+')</i>':''):'<i>—</i>')+
+   (r.bl_siblings?' <span class="pill p-warn">本提单与 '+esc(r.bl_siblings)+' 共用柜，勿重复计柜</span>':''));
+ P.push('船名航次 '+((r.vessel||r.voyage)?'<b>'+esc([r.vessel,r.voyage].filter(Boolean).join(' / '))+'</b>':'<i>—</i>'));
+ if(r.so_no)P.push('SO <b>'+esc(r.so_no)+'</b>');
+ P.push('合同号 '+(r.contract_no?'<b>'+esc(r.contract_no)+'</b>':'<i>无</i>'));
+ if(r.etd)P.push('ETD <b>'+esc(r.etd)+'</b>');
+ if(r.ckts_declarable)P.push('<b style="color:#b45309">✅ 税局标记：可申报</b>');
+ if(Number(r.inv_over)>0)P.push('<b style="color:#b91c1c">🔴 价格倒挂：进项票超报关额 '+m(r.inv_over)+'（税局重点稽查）</b>');
+ P.push('数据等级 '+(r.data_grade==='ckts'?'<b style="color:#065f46">🏛 税局出口退税联（最高口径）</b>'
+   :r.data_grade==='customs'?'<b style="color:#166534">报关单级</b>':(r.data_grade==='template'?'<b style="color:#b45309">模版/预估 — 不可作退税依据</b>':'<i>无逐项</i>')));
+ return '<div class="dhd">'+P.map(function(x){return '<span>'+x+'</span>'}).join('')+'</div>'}
+/* 归属·开票 单元格：发票号在上，PO/工厂在下 */
+function facCell(r,x){
+ // 工厂三档证据：①进项票销方(实证) ②货源地→已登记工厂 ③货源地地名(待认)
+ if(x.factory){
+   // 工厂是「怎么判出来的」，跟「有没有票」是两件事，分开显示
+   var src=x.factory_src||'';
+   var LAB={'进项票逐行':'发票逐行对上（品名+箱数）','进项票金额':'发票金额对上',
+            '订单品名':'按订单品名','订单箱数':'按订单箱数','整票唯一厂':'整票只有这一家'};
+   var byInv=(src==='进项票逐行'||src==='进项票金额');
+   var tail = byInv ? '' : (x.invoice_no ? ' ｜ 已挂票' : ' ｜ <b style="color:#b91c1c">票未到</b>');
+   return '<td><b>'+facHtml(x.factory,x.factory_short)+'</b><br><span class="sm" style="color:'+(byInv?'#166534':'#64748b')+'">'
+     + esc(LAB[src]||src||'已判定') + tail + '</span></td>' }
+ if(x.region_factory) return '<td>'+esc(x.region_factory)+'<br><span class="sm">货源地 '+esc(x.region_name||x.region)+'</span></td>';
+ if(Number(r.seller_count)===1&&r.factories) return '<td>'+esc(r.factories)+'<br><span class="sm">整票唯一销方</span></td>';
+ if(x.region) return '<td><span class="pill p-warn">'+esc(x.region_name||x.region)+'</span><br><span class="sm">货源地·工厂待认</span></td>';
+ if(r.order_factories) return '<td><span style="color:#94a3b8">'+esc(r.order_factories)+'</span><br><span class="sm">订单·未核实</span></td>';
+ return '<td><span class="pill p-bad">无工厂</span></td>'}
+function custCell(r){
+ var c=r.customer||'';
+ return '<td class="ownc">'+(c?esc(c):'<span class="pill p-gray">—</span>')+
+   (r.order_nos?'<br><span class="sm">'+esc(r.order_nos)+'</span>':'')+'</td>'}
+function invCell(r,x){
+ var FB=facFB(r);
+ if(x.invoice_no) return '<td class="ownc"><span class="inv">'+esc(x.invoice_no)+'</span></td>';
+ if(FB&&r.invoices) return '<td class="ownc"><span class="inv" style="color:#64748b">'+esc(r.invoices)+'</span></td>';
+ return '<td class="ownc"><span class="pill p-bad">缺进项票</span><br><span class="sm">'+
+   (r.order_nos?esc(r.order_nos)+' · ':'')+esc(x.name||'')+' ¥'+m(x.amt)+'</span></td>'}
+function ownCell(r,x){
+ var FB=facFB(r), inv, fac;
+ if(x.invoice_no){ inv='<span class="inv">'+esc(x.invoice_no)+'</span>' }
+ else if(FB&&r.invoices){ inv='<span class="inv" style="color:#64748b">'+esc(r.invoices)+'</span>' }
+ else { inv='<span class="pill p-bad">缺进项票</span>' }
+ if(!x.factory&&!FB){ inv='<span class="pill p-bad">缺进项票</span>' }
+ var ask='<span class="pill p-bad">⛔找不到 · 请补票</span><br><span class="sm">'+
+   (r.order_nos?'订单 '+esc(r.order_nos)+' · ':'')+esc(x.name||'')+' ¥'+m(x.amt)+'</span>';
+ if(x.factory){ fac='<b>'+esc(x.factory)+'</b>' }
+ else if(FB){ fac=esc(FB) }
+ else if(r.factories){ fac='<span class="pill p-warn">待分：'+esc(r.factories)+'</span><br>'+ask }
+ else if(r.order_factories){ fac='<span class="pill p-gray">'+esc(r.order_factories)+'（订单，未核实）</span><br>'+ask }
+ else { fac=ask }
+ var po= r.order_nos?esc(r.order_nos):'<span class="pill p-bad">无订单</span>';
+ return '<td class="ownc">'+inv+'<br><span class="sm">'+po+' · '+fac+'</span></td>'}
+
+/* ===== 税局申报表格式（对齐电子税务局「出口明细/进货明细」导入模版） =====
+   铁律：出口商品代码/美元离岸价/法定单位数量 一律取税局退税联原值（decl_code/usd_fob/legal_*），
+        我们自己算不出来的一律显示「⛔待补」，绝不用报关单字段顶替去凑格式。 */
+var SB_YM='', SB_PC='002';
+function sbYM(){ return SB_YM || (new Date().getFullYear()+String(new Date().getMonth()+1).padStart(2,'0')) }
+function gl(n){ return sbYM()+SB_PC+String(n).padStart(8,'0') }   /* 关联号 17 位 */
+function nd(v){ return (v==null||v==='')?'<span class="tbd">待补</span>':esc(String(v)) }
+function nn(v,d){ return (v==null||v==='')?'<span class="tbd">待补</span>':Number(v).toLocaleString('zh-CN',{minimumFractionDigits:d||0,maximumFractionDigits:d||0}) }
+
+/* 整票体检：把「需要人管的事」算出来。没有事就不该占屏幕。
+   Damon 0812：「有问题在显示出来，没问题就不显示或者有需要才看」。 */
+function digits2(v){ return String(v==null?'':v).replace(/\D/g,'') }
+function lineBad(x){
+ if(x.cd_hs==null && x.cd_amt==null && x.cd_qty==null) return null;   /* 我方没录逐项，另算 */
+ var b=[];
+ if(x.hs&&x.cd_hs){ var a=digits2(x.hs),c=digits2(x.cd_hs);
+   if(a!==c && !(a.indexOf(c)===0||c.indexOf(a)===0)) b.push('HS') }
+ if(x.cd_qty!=null&&x.cd_unit){
+   var q=null;
+   if(x.legal_unit&&x.legal_unit===x.cd_unit) q=x.legal_qty;
+   else if(x.unit&&x.unit===x.cd_unit)        q=x.qty;
+   if(q!=null&&Math.abs(Number(q)-Number(x.cd_qty))>0.01) b.push('数量') }
+ if(x.amt!=null&&x.cd_amt!=null){
+   var cur=(x.cd_cur||'CNY').toUpperCase();
+   if(['CNY','RMB','142','人民币'].indexOf(cur)>=0 && Math.abs(x.amt-x.cd_amt)>1) b.push('金额') }
+ if(x.nw!=null&&x.cd_nw!=null&&Math.abs(x.nw-x.cd_nw)>0.5) b.push('净重');
+ return b.length?b:[] }
+/* 「报关单已核验」徽章：只有真比对过才给。三档，绝不含糊：
+   ✅ 税局↔我方逐项全对（最高，有退税联可比）
+   🔵 报关单级已锁（逐项工厂已固化、无退税联可比 → 只说"我方数据已固化"，不吹"已核验"）
+   ⚪ 未核（还有对不上或没固化） */
+function verifyBadge(r){
+ var it=r.items||[]; if(!it.length) return '';
+ if(r.data_grade === 'ckts'){
+   var cmp=it.filter(function(x){ return x.cd_hs!=null || x.cd_amt!=null || x.cd_qty!=null });
+   var bad=it.filter(function(x){ var b=lineBad(x); return b && b.length });
+   if(cmp.length===it.length && !bad.length)
+     return '<span class="vbadge ok" title="税局出口退税联与我方报关单逐项比对：HS/数量/金额/净重全部一致">'+
+            '✅ 报关单已核验 <span class="sm">税局↔我方 '+it.length+' 项全对</span></span>';
+   if(bad.length)
+     return '<span class="vbadge no" title="税局与我方报关单对不上，见下方红框">⚠ 报关单未核平 '+bad.length+' 项</span>';
+   return '<span class="vbadge mid" title="部分行没有税局退税联可比对">◻ 报关单部分可比</span>';
+ }
+ var locked=it.filter(function(x){ return String(x.factory_src||'').indexOf('🔒')===0 }).length;
+ if(locked===it.length)
+   return '<span class="vbadge mid" title="尚无税局退税联可比对；我方逐项工厂已固化并留痕">'+
+          '🔵 报关单级·已固化 <span class="sm">待退税联比对</span></span>';
+ return '<span class="vbadge no" title="逐项尚未固化">⚪ 报关单未核验</span>' }
+
+function probs(r){
+ var it=r.items||[], P=[];
+ var mis=0, misf=[], nodecl=0, noinv=0, nocd=0;
+ /* 🩸 0813：cd_* 那几个字段只在【税局退税联】链路里才填。
+    data_grade='customs' 的票本身就来自我们自己的报关单，cd_* 恒为 null，
+    原来会误报「我方报关单缺 N 行逐项」（958349 实测）。只有能跟税局对比的票才谈这个。 */
+ var canCompare = (r.data_grade === 'ckts');
+ it.forEach(function(x){
+  var b=lineBad(x);
+  if(b===null){ if(canCompare) nocd++ }
+  else if(b.length){ mis++; misf=misf.concat(b) }
+  if(!x.decl_code) nodecl++;
+  if(!x.invoice_no) noinv++;
+ });
+ if(mis)    P.push({k:'red', t:'税局↔海关 '+mis+' 行对不上（'+[...new Set(misf)].join('/')+'）'});
+ if(nocd)   P.push({k:'amber',t:'我方报关单缺 '+nocd+' 行逐项'});
+ if(r.real_rebate==null) P.push({k:'red', t:'进项票未齐，实退算不出'});
+ else if(noinv) P.push({k:'amber',t:noinv+' 行没挂到进项票'});
+ /* ⛔ 不进 P：这是我们这边退税联没拉到（隧道断），不是 Damon 要处理的事。
+       0812 Damon 指出：票齐了就算结束，别拿我的抓数缺口占他的待办。
+       改成静音提示，只在展开时显示。 */
+ if(r.inv_over) P.push({k:'red', t:'🔴 进项超报关额 '+m(r.inv_over)});
+ if(r.bad_lines) P.push({k:'red', t:r.bad_lines+' 行缺 HS，整票应退算不出'});
+ return P }
+/* 静音提示：不算待办，只在展开区小字说明我们这边还缺什么 */
+function notes(r){
+ var it=r.items||[], N=[];
+ var nodecl=it.filter(function(x){return !x.decl_code}).length;
+ if(nodecl) N.push(nodecl+' 行缺税局商品代码/美元离岸价（退税联未拉到，隧道恢复后自动补）');
+ return N }
+function probBar(P){
+ if(!P.length) return '';
+ return '<div class="probbar">'+P.map(function(x){
+   return '<span class="pb '+x.k+'">'+esc(x.t)+'</span>' }).join('')+'</div>' }
+
+/* 税局（出口退税联）↔ 我方报关单 逐项对。
+   两边都是权威源，正常应该一模一样；不一样就是有一边错了，必须看见。
+
+   ⚠️ 0812 踩的坑：一开始拿税局的【成交数量/单位】（箱 2,800）去比我方的【法定数量/单位】
+   （千克 45,120），比出一堆假差异。税局一行同时有成交(qty/unit)和法定(legal_qty/legal_unit)
+   两套，必须先按单位配对，配得上才比数；两套单位都配不上才算真的单位不符。
+   HS 也一样：税局给 1404909090、我们库里存 1404.90.9000，只是写法不同 → 只比数字。
+
+   容差：金额 ±1 元（退税联分位四舍五入）、净重 ±0.5kg；HS/数量/单位配上后必须完全相同。 */
+function digits(v){ return String(v==null?'':v).replace(/\D/g,'') }
+function cmpCell(x){
+ if(x.cd_hs==null && x.cd_amt==null && x.cd_qty==null)
+   return '<td class="ex sm"><span class="pill p-warn">我方报关单无此项</span></td>';
+ var bad=[], note=[], okn=0;
+ /* HS：只比数字；税局有时给8位、我们库里存10位 → 前缀相同就算一致，只做提示 */
+ if(x.hs&&x.cd_hs){ var a=digits(x.hs), b=digits(x.cd_hs);
+   if(a===b) okn++;
+   else if(a&&b&&(a.indexOf(b)===0||b.indexOf(a)===0)){ okn++; note.push('HS 位数不同 '+a+'/'+b) }
+   else bad.push('HS 税局'+x.hs+' / 我方'+x.cd_hs) }
+ /* 数量：先按单位配对（税局一行有成交和法定两套），配不上就不比，不算错 */
+ if(x.cd_qty!=null&&x.cd_unit){
+   var pair=null;
+   if(x.legal_unit&&x.legal_unit===x.cd_unit) pair={q:x.legal_qty,tag:'法定'};
+   else if(x.unit&&x.unit===x.cd_unit)        pair={q:x.qty,tag:'成交'};
+   if(pair){ if(pair.q!=null&&Math.abs(Number(pair.q)-Number(x.cd_qty))>0.01)
+       bad.push(pair.tag+'数量 '+m(pair.q)+' / '+m(x.cd_qty)+' '+x.cd_unit); else okn++ }
+   else note.push('数量口径不同 税局'+(x.legal_unit||x.unit||'?')+' / 我方'+x.cd_unit+'，未比');
+ }
+ /* 金额：税局给的是人民币。我方那行如果记的是外币（358365 存的是 USD 13,824），
+    直接比会假报差 ¥86,814 —— 0812 我就这么误报过。币制不是 CNY 就改比美元离岸价。 */
+ if(x.amt!=null&&x.cd_amt!=null){
+   var cur=(x.cd_cur||'CNY').toUpperCase(), isCny=(cur==='CNY'||cur==='RMB'||cur==='142'||cur==='人民币');
+   if(isCny){ if(Math.abs(x.amt-x.cd_amt)>1) bad.push('金额 '+m(x.amt)+' / '+m(x.cd_amt)); else okn++ }
+   else if(x.usd_fob!=null&&x.cd_amt!=null&&(cur==='USD'||cur==='502'||cur==='美元')){
+     if(Math.abs(x.usd_fob-x.cd_amt)>1) bad.push('美元离岸价 '+m(x.usd_fob)+' / '+m(x.cd_amt)); else okn++ }
+   else note.push('币制 '+cur+'，金额未比');
+ }
+ if(x.nw!=null&&x.cd_nw!=null){ if(Math.abs(x.nw-x.cd_nw)>0.5) bad.push('净重 '+m(x.nw)+' / '+m(x.cd_nw)); else okn++ }
+ var tail = note.length ? '<br><span style="color:#94a3b8">'+note.map(esc).join('<br>')+'</span>' : '';
+ if(!bad.length) return '<td class="ex sm" title="HS·数量·金额·净重 '+okn+' 项全对"><span style="color:#16a34a">✓</span>'+
+   (note.length?tail:'')+'</td>';
+ return '<td class="ex sm" style="background:#fff1f2"><b style="color:#b91c1c">⚠ '+bad.length+' 处不符</b><br>'+
+   bad.map(function(t){return '<span style="color:#b91c1c">'+esc(t)+'</span>'}).join('<br>')+tail+'</td>' }
+
+/* 出口明细。
+   ⚖️ 左边是税局官方列，原样、原序、原名（带 *），一个字都不动 —— 这块是要贴进税局模版的。
+      右边灰区是我们自己加的提示（工厂/客户/报关额），不属于申报字段，复制 TSV 时也不会带走。 */
+function declExport(r,seq){
+ var it=r.items||[];
+ var H='<thead><tr>'+
+  '<th>*申报年月</th><th>*申报批次</th><th>*关联号</th><th>出口货物报关单号</th>'+
+  '<th>*出口发票号码</th><th>*出口日期</th><th>*出口商品代码</th><th>*出口商品名称</th>'+
+  '<th>*计量单位</th><th>*出口数量</th><th>*美元离岸价</th>'+
+  '<th class="ex">海关核对 <span style="font-weight:400">（税局↔我方报关单）</span></th>'+
+  '<th class="ex">PO号</th><th class="ex">工厂 <span style="font-weight:400">（依据）</span></th>'+
+  '<th class="ex">客户</th><th class="ex">净重</th><th class="ex">报关金额</th><th class="ex">应退（估）</th></tr>'+
+  '<tr class="bandrow"><td colspan="11" class="band-o">↑ 税局官方字段（原样贴模版）</td>'+
+  '<td colspan="7" class="band-x">↑ 我们的补充 · 非申报字段，仅作核对提示</td></tr></thead>';
+ var rows=it.map(function(x,i){
+  /* 税局的「出口货物报关单号」= 18位报关单号 + 3位项号（共21位）——
+     以税局 queryCkbgdxx 返回的 ckbgdh 原值为准（429 行全是 21 位）。
+     0812 我一度按 20 位（2位项号）自建，错的。ckbgdh 有值就直接用，别自己拼。 */
+  var bg=x.ckbgdh || (r.customs_no+String(x.item_no||'').padStart(3,'0'));
+  var bgSelf=!x.ckbgdh;
+  return '<tr>'+
+   '<td class="n">'+sbYM()+'</td><td class="n">'+SB_PC+'</td>'+
+   '<td class="n mono">'+gl(seq.n++)+'</td>'+
+   '<td class="n mono"'+(bgSelf?' title="税局未返回，按18+3位自建"':'')+'>'+esc(bg)+(bgSelf?'<span class="sm" style="color:#b45309"> ·自建</span>':'')+'</td>'+
+   '<td class="n mono">'+nd(x.ckfph)+'</td>'+
+   '<td class="n">'+esc(String(r.export_date).slice(0,10))+'</td>'+
+   '<td class="n mono">'+nd(x.decl_code)+'</td>'+
+   '<td>'+esc(x.name||'')+'</td>'+
+   '<td class="n">'+nd(x.legal_unit||x.unit)+'</td>'+
+   '<td class="n">'+nn(x.legal_qty!=null?x.legal_qty:x.qty)+'</td>'+
+   '<td class="n">'+nn(x.usd_fob,2)+'</td>'+
+   cmpCell(x)+
+   /* PO 优先用行级（唯一命中才有）；没有就退回票级并标「票级」，别让人以为这行就是这个 PO */
+   '<td class="ex sm">'+(x.po?'<b>'+esc(x.po)+'</b>'
+      :(r.order_nos?'<span style="color:#94a3b8">'+esc(r.order_nos)+'<br>（票级·未落到行）</span>':'<span class="tbd">无订单</span>'))+'</td>'+
+   '<td class="ex sm">'+(x.factory?facHtml(x.factory,x.factory_short):'待分')+
+      (x.factory_src?'<br><span style="color:#94a3b8">'+esc(x.factory_src)+'</span>':'')+'</td>'+
+   '<td class="ex sm">'+esc(r.customer||'')+'</td>'+
+   '<td class="ex sm n">'+(x.nw?m(x.nw)+' kg':'—')+'</td>'+
+   '<td class="ex sm n">'+m(x.amt)+'</td>'+
+   '<td class="ex sm n">'+m(x.line_rebate)+'</td></tr>' }).join('');
+ return '<table class="sub decl"><caption>出口明细</caption>'+H+'<tbody>'+rows+'</tbody></table>' }
+
+function declBuy(r,seq0){
+ var it=r.items||[];
+ /* 一张进项票常覆盖同一票的多行。按行铺开会把同一张票的全额重复列 N 遍，
+    看着像退 N 份钱（0812 Damon 一眼看出来）。所以按发票号去重，一票一行。
+    ⚖️ 同样：左边官方列原样，右边灰区是我们的提示（工厂名、覆盖了哪几个关联号）。 */
+ var byInv={}, order=[], noinv=[];
+ it.forEach(function(x,i){
+  var gl_=gl(seq0+i);
+  if(!x.invoice_no){ noinv.push({g:gl_,x:x}); return }
+  if(!byInv[x.invoice_no]){ byInv[x.invoice_no]={ino:x.invoice_no,fac:x.factory,facShort:x.factory_short,ex:x.inv_ex,rate:x.rate,
+    tax:x.inv_taxid,dt:x.inv_date,gs:[],nms:[],pos:[]}; order.push(x.invoice_no) }
+  byInv[x.invoice_no].gs.push(gl_); byInv[x.invoice_no].nms.push(x.name||'');
+  if(x.po && byInv[x.invoice_no].pos.indexOf(x.po)<0) byInv[x.invoice_no].pos.push(x.po);
+ });
+ var H='<thead><tr>'+
+  '<th>*申报年月</th><th>*申报批次</th><th>*关联号</th><th>*税种</th><th>*凭证种类</th>'+
+  '<th>*进货凭证号</th><th>*开票日期</th><th>*供货方纳税人识别号</th>'+
+  '<th>*金额（不含税）</th><th>*退税率</th>'+
+  '<th class="ex">供货企业（工厂）</th><th class="ex">PO号</th><th class="ex">覆盖商品</th><th class="ex">本票应退</th></tr>'+
+  '<tr class="bandrow"><td colspan="10" class="band-o">↑ 税局官方字段（原样贴模版）</td>'+
+  '<td colspan="4" class="band-x">↑ 我们的补充 · 非申报字段，仅作核对提示</td></tr></thead>';
+ function head3(v){ return '<td class="n">'+sbYM()+'</td><td class="n">'+SB_PC+'</td><td class="n mono">'+v+'</td>' }
+ var rows=order.map(function(k){ var v=byInv[k];
+  return '<tr>'+head3(v.gs[0])+
+   '<td class="n">V</td><td class="n">02</td>'+
+   '<td class="n mono">'+esc(v.ino)+'</td>'+
+   '<td class="n">'+nd(v.dt)+'</td>'+
+   '<td class="n mono">'+nd(v.tax)+'</td>'+
+   '<td class="n">'+(v.ex!=null?m(v.ex):'<span class="tbd">待补</span>')+'</td>'+
+   '<td class="n">'+(v.rate?(v.rate*100).toFixed(0)+'%':'—')+'</td>'+
+   '<td class="ex sm">'+facHtml(v.fac,v.facShort)+'</td>'+
+   '<td class="ex sm">'+(v.pos.length?'<b>'+esc(v.pos.join('/'))+'</b>':'<span class="tbd">—</span>')+'</td>'+
+   '<td class="ex sm">'+v.gs.map(function(g){return g.slice(-3)}).join('、')+
+     ' <span style="color:#94a3b8">'+esc(v.nms.join('/').slice(0,26))+'</span></td>'+
+   '<td class="ex sm n">'+((v.ex!=null&&v.rate)?'<b>'+m(v.ex*v.rate)+'</b>':'—')+'</td></tr>' }).join('');
+ var miss=noinv.map(function(o){
+  return '<tr class="bad">'+head3(o.g)+
+   '<td class="n">V</td><td class="n">02</td>'+
+   '<td class="n" colspan="3"><span class="pill p-bad">进项票未到，此行不能申报</span></td>'+
+   '<td class="n"><span class="tbd">待补</span></td>'+
+   '<td class="n">'+(o.x.rate?(o.x.rate*100).toFixed(0)+'%':'—')+'</td>'+
+   '<td class="ex sm">'+esc(o.x.factory||'待分')+'</td>'+
+   '<td class="ex sm">'+(o.x.po?esc(o.x.po):'<span class="tbd">—</span>')+'</td>'+
+   '<td class="ex sm">'+o.g.slice(-3)+' <span style="color:#94a3b8">'+esc(o.x.name||'')+'</span></td>'+
+   '<td class="ex sm n">—</td></tr>' }).join('');
+ var lsum=order.reduce(function(a,k){var v=byInv[k];return a+((v.ex!=null&&v.rate)?v.ex*v.rate:0)},0);
+ var foot='';
+ if(r.real_rebate!=null){
+  var d=Number(r.real_rebate)-lsum;
+  foot='<tfoot><tr><td colspan="13">本票实退'+(Math.abs(d)>1?
+    '（上表 '+m(lsum)+' + 还没匹配到行的票 '+m(d)+'，本票共 '+(r.inv_n||0)+' 张）':'')+'</td>'+
+    '<td class="n"><b style="color:#166534">'+m(r.real_rebate)+'</b></td></tr></tfoot>' }
+ return '<table class="sub decl"><caption>进货明细</caption>'+H+'<tbody>'+rows+miss+'</tbody>'+foot+'</table>' }
+
+/* 整票的「我们这边」的信息一次说全：客户/PO/合同/提单/柜/船期。
+   全是非申报字段，只为核对时不用再翻别处。 */
+function declInfo(r){
+ var P=[];
+ function add(k,v){ if(v) P.push('<span class="ib"><i>'+k+'</i> '+esc(String(v))+'</span>') }
+ add('客户', r.customer);
+ add('PO', r.order_nos);
+ add('合同', (r.contract_no||'').replace(/\s*\/\s*$/,''));
+ add('提单', r.bl_no || r.mbl_no || r.hbl_no);
+ add('柜号', r.containers);
+ add('柜量', r.container_qty ? r.container_qty+'×'+(r.container_type||'') : '');
+ add('船名航次', r.vessel ? r.vessel+(r.voyage?' / '+r.voyage:'') : '');
+ add('币制/汇率', (r.currency&&Number(r.exchange_rate)>0) ? r.currency+' @ '+r.exchange_rate : (r.currency||''));
+ add('同船兄弟单', r.bl_siblings);
+ return P.length ? '<div class="infobar">'+P.join('')+'</div>' : '' }
+var DECL_ID=0;
+/* 0812 Damon：「红框隐藏，下面才是最真实的」。
+   顺序定死：问题条 → 综合逐项表（默认展开，日常看数就看它）→ 申报表（默认收起，导出贴税局模版才用）。
+   申报表里很多列还是「待补」（退税联没拉到），拿它当日常视图会以为数据没了。 */
+/* 工厂开票协同入口。一票几家工厂就出几个按钮，直接进那家工厂的协同页催票。
+   没建过协同链接的工厂不给假链接，显示成灰的「未建链接」——点了也只是提示，不瞎跳。 */
+/* 工厂一律显示【公司全名】（Damon 0812：「要写全名，公司」）。
+   0812 我一度改成简称（中宠/宠爱/大之圣），被否了 —— 催票、开票、申报都要对得上营业执照，
+   简称还容易切错（公司表里就有「市淘淘」「市天缘」这种）。只有协同按钮因为要并排放才缩写。 */
+function facHtml(full, short, cls){
+ var f=String(full||''); if(!f) return '';
+ return '<span'+(cls?' class="'+cls+'"':'')+'>'+esc(f)+'</span>' }
+function facName(full, short){
+ var f=String(full||'');
+ if(short && !/^[市省县区]/.test(short)) return short;
+ return f.replace(/(股份)?有限(责任)?公司$|制造有限公司$|制品厂$/,'') || f }
+
+/* 上传进项票 —— 直接复用协同页那条链路（Damon 定过：复用 customs-collab，不重造）：
+   POST /api/db/customs-collab?action=upload&c=<工厂协同链接码>，multipart 带 file + customs_no。
+   后端会 OCR 识别 → 跟应开金额比对（超额/不足/卖方不符都会标出来）→ 存 OSS → 落 finance_invoices_in。
+   ⛔ 没建协同链接的工厂传不了（后端按 c= 认工厂），按钮置灰并说明原因，绝不假装能传。 */
+function upBtns(r){
+ /* 只给【这票还欠票的工厂】出上传按钮。
+    0812 Damon：171960 上中砂的票早挂上了，还弹「传中砂的票」= 噪音。
+    欠不欠按行看：该工厂在本票有任意一行 invoice_no 为空才算欠。 */
+ var owe={};
+ (r.items||[]).forEach(function(x){ if(!x.invoice_no && x.factory) owe[x.factory]=1 });
+ var C=(r.collab||[]).filter(function(c){return c.link && owe[c.factory]});
+ var no=(r.collab||[]).filter(function(c){return !c.link && owe[c.factory]});
+ var h=C.map(function(c){
+   var nm=facName(c.factory,c.short);
+   return '<button class="btn xs up" onclick="pickUp(this,\''+esc(c.link)+'\',\''+esc(r.customs_no)+'\',\''+esc(c.factory)+'\')">'+
+     '⬆ 传 '+esc(nm)+' 的票</button>' }).join('');
+ if(no.length) h+='<span class="tbd" title="'+esc(no.map(function(c){return c.factory}).join('、'))+
+   '">（'+no.length+' 家未建协同链接，传不了）</span>';
+ return h }
+function pickUp(btn,code,customsNo,facName_){
+ var inp=document.createElement('input');
+ inp.type='file'; inp.accept='.pdf,.jpg,.jpeg,.png,.ofd';
+ inp.onchange=function(){ var f=inp.files[0]; if(!f) return; doUp(btn,code,customsNo,facName_,f) };
+ inp.click() }
+async function doUp(btn,code,customsNo,facName_,f){
+ var old=btn.textContent; btn.disabled=true; btn.textContent='上传中… '+f.name.slice(0,18);
+ try{
+  var fd=new FormData(); fd.append('file',f); fd.append('customs_no',customsNo);
+  var res=await fetch('/api/db/customs-collab?action=upload&c='+encodeURIComponent(code),{method:'POST',body:fd});
+  var d=await res.json().catch(function(){return{}});
+  if(!res.ok||d.success===false||d.error){ throw new Error(d.error||('HTTP '+res.status)) }
+  /* 后端可能返回 warning（超额/不足/卖方不符）——如实显示，不要吞掉 */
+  var w=d.warning||d.review_warning||'';
+  btn.textContent = w ? ('⚠ 已存档：'+w) : '✅ 已上传，正在刷新';
+  btn.style.background = w ? '#b45309' : '#059669';
+  if(!w) setTimeout(reload,900);
+ }catch(e){ btn.textContent='❌ '+String(e.message).slice(0,40); btn.style.background='#b91c1c';
+   setTimeout(function(){btn.disabled=false;btn.textContent=old;btn.style.background=''},4000) } }
+
+function collabBtns(r){
+ var C=r.collab||[]; if(!C.length) return '';
+ return C.map(function(c){
+  var nm=facName(c.factory, c.short);
+  if(c.link) return '<a class="btn xs collab" target="_blank" href="/public/customs-collab-factory.html?c='+
+    encodeURIComponent(c.link)+'" title="'+esc(c.factory)+' · 开票协同">🏭 '+esc(nm)+'</a>';
+  return '<span class="btn xs collab off" title="'+esc(c.factory)+
+    ' 还没建协同链接，去工厂开票总览里生成">🏭 '+esc(nm)+' · 未建链接</span>' }).join('') }
+
+function declBlock(r,gen,gid){
+ /* 0812 Damon：「红框全部移动到蓝框上」——
+    两个按钮 + 状态 + 问题药丸全部并到综合表上方那一行，不再各占一行。 */
+ var s0={n:1}, id='dcl'+(++DECL_ID), P=probs(r);
+ var head = P.length
+   ? '<span style="color:#b91c1c;font-weight:700">需要处理 '+P.length+' 件</span>'
+   : '<span style="color:#166534;font-weight:700">✅ 全对 · 实退 '+m(r.real_rebate)+' · 可申报</span>';
+ return '<div class="declbox'+(P.length?'':' clean')+'">'+
+  '<div class="declhd bar">'+
+    '<button class="btn xs" style="background:#64748b" '+
+      'onclick="togDecl(\''+gid+'\',this,\'综合逐项表\')">▾ 收起综合逐项表</button>'+
+    '<button class="btn xs" style="background:#94a3b8" '+
+      'onclick="togDecl(\''+id+'\',this)">🏛 展开税局申报表格式</button>'+
+    verifyBadge(r)+collabBtns(r)+upBtns(r)+
+    head + P.map(function(x){ return '<span class="pb '+x.k+'">'+esc(x.t)+'</span>' }).join('')+
+    notes(r).map(function(t){ return '<span class="pb mute">'+esc(t)+'</span>' }).join('')+
+  '</div>'+
+  '<div id="'+gid+'">'+gen+'</div>'+
+  '<div id="'+id+'" class="hide">'+
+   '<div class="declhd">申报年月 <b>'+sbYM()+'</b> · 批次 <b>'+SB_PC+'</b>'+
+   (r.real_rebate!=null?' · 进项不含税 '+m(r.inv_ex_sum)+' × 退税率（'+(r.inv_n||0)+' 张票）· 报关额估 '+m(r.est_rebate):'')+
+   ' <button class="btn xs" onclick="cpDecl(this)">复制为 TSV</button></div>'+
+   declInfo(r)+declExport(r,s0)+declBuy(r,1)+
+  '</div></div>' }
+function togDecl(id,btn,label){ var e=document.getElementById(id), h=e.classList.toggle('hide');
+ if(label) btn.textContent = (h?'▸ 展开':'▾ 收起')+label;
+ else btn.textContent = h ? '🏛 展开税局申报表格式' : '🏛 收起申报表格式' }
+function cpDecl(btn){
+ /* 只复制官方列（.ex 是我们自己加的提示，贴进税局模版会串列，必须剔掉）。 */
+ var box=btn.closest('.declbox'), out=[];
+ box.querySelectorAll('table.decl').forEach(function(t){
+  out.push(t.querySelector('caption').textContent);
+  t.querySelectorAll('tr').forEach(function(tr){
+   if(tr.classList.contains('bandrow')) return;
+   var cells=[].filter.call(tr.children,function(c){return !c.classList.contains('ex')});
+   if(!cells.length) return;
+   out.push(cells.map(function(c){return c.innerText.replace(/\s+/g,' ').trim()}).join('\t')) });
+  out.push('') });
+ navigator.clipboard.writeText(out.join('\n')).then(function(){btn.textContent='已复制官方列 ✓';
+  setTimeout(function(){btn.textContent='复制为 TSV'},1800)}) }
+
+/* 应退税额两个口径，别混：
+   实退 = 进项专票【不含税额】× 退税率  —— 外贸企业免退税真正到账的数，进项票齐了才算得出
+   估值 = 报关额 × 退税率              —— 上限，报关价天然高于采购价，永远偏大 */
+function rebCell(r){
+ if(r.est_rebate==null) return '<td class="n">'+(r.rebate_expected?'<span style="color:#64748b">'+m(r.rebate_expected)+'</span>':'—')+'</td>';
+ var tmpl=!(r.data_grade==='ckts'||r.data_grade==='customs');
+ var est= tmpl ? '<span style="color:#94a3b8">'+m(r.est_rebate)+'</span><br><span class="pill p-warn">模版·非报关单</span>'
+                : '<span style="color:#64748b">'+m(r.est_rebate)+'</span>';
+ if(r.real_rebate!=null)
+   return '<td class="n"><b style="color:#166534;font-size:14px">'+m(r.real_rebate)+'</b>'+
+     '<br><span class="sm" style="color:#94a3b8">估 '+m(r.est_rebate)+'</span></td>';
+ return '<td class="n"><span class="pill p-bad">进项票未齐</span><br>'+est+'</td>' }
+
+var COLS=['','出口日','报关单号','出口主体','归属（PO · 工厂）','逐项','报关额','应退税额<br><span class="sm" style="font-weight:400">上=进项实退 下=报关额估</span>','状态','缺口'];
+function detail(r){
+ var it=r.items||[];
+ var HD='<thead><tr><th>项</th><th>HS编码</th><th>品名</th><th>数量</th>'+
+  '<th class="core">净重</th><th class="core">报关金额</th><th class="core">退税率</th><th class="core">本行应退</th>'+
+  '<th>工厂 <span style="font-weight:400;opacity:.75">（下方小字=依据）</span></th><th>客户</th><th>进项发票</th></tr></thead>';
+ if(!it.length) return '<div class="detbox">'+dhead(r)+'<table class="sub">'+HD+
+  '<tbody><tr><td colspan="10" class="empty">暂无报关单逐项数据 —— 应退税额无法计算<br>'+
+  '<span class="sm">补齐海关「出口退税联」明细（queryCkbgdxx）后再判断退税</span></td>'+
+  facCell(r,{})+custCell(r)+invCell(r,{})+'</tr></tbody></table></div>';
+ var bad=it.filter(function(x){return !x.rate}).length;
+ var rows=it.map(function(x){return '<tr class="'+(x.rate?'':'bad')+'">'+
+  '<td class="n">'+esc(x.item_no||'')+'</td>'+
+  '<td>'+(x.hs?esc(x.hs):'<span class="pill p-bad">缺HS</span>')+'</td>'+
+  '<td><b>'+esc(x.name||'')+'</b></td>'+
+  '<td class="n">'+(x.qty!=null?Number(x.qty).toLocaleString('zh-CN'):'')+' '+esc(x.unit||'')+'</td>'+
+  '<td class="core w-nw">'+(x.nw?m(x.nw)+' kg':'—')+'</td>'+
+  '<td class="core w-amt">'+m(x.amt)+'</td>'+
+  '<td class="core w-rt">'+(x.rate?(x.rate*100).toFixed(0)+'%':'—')+'</td>'+
+  '<td class="core w-rb">'+m(x.line_rebate)+'</td>'+
+  facCell(r,x)+custCell(r)+invCell(r,x)+'</tr>'}).join('');
+ var sum=it.reduce(function(a,x){return a+(Number(x.line_rebate)||0)},0);
+ var nw=it.reduce(function(a,x){return a+(Number(x.nw)||0)},0);
+ var am=it.reduce(function(a,x){return a+(Number(x.amt)||0)},0);
+ /* 0812 Damon：「上面综合——隐藏，税务-海关数据，这样也能做到匹配」。
+    申报表里已经把税局值和我方报关单值逐项并排对了，综合表是重复信息 → 默认收起。 */
+ var gid='gen'+(++DECL_ID);
+ var gen='<table class="sub">'+HD+'<tbody>'+rows+
+  '</tbody><tfoot><tr><td colspan="4">合计（'+it.length+' 项'+(bad?'，'+bad+' 项缺HS':'')+'）</td>'+
+  '<td class="core">'+m(nw)+' kg</td><td class="core">'+m(am)+'</td><td class="core">—</td>'+
+  '<td class="core">'+(bad?'—':m(sum))+'</td>'+
+  '<td colspan="3" class="sm">'+(bad?'有逐项缺HS，暂不计算整票应退':'')+'</td></tr></tfoot></table>';
+ return '<div class="detbox">'+dhead(r)+declBlock(r,gen,gid)+'</div>'}
+function pass(r,v,kw){
+ var mo=document.getElementById('mon').value, fa=document.getElementById('fac').value;
+ /* 「只看有问题的票」：干净票（税局↔海关全对、进项票齐、无缺料）默认不占屏幕。
+    已封存的月份（3月前，全退完了）本来就不该出现在待办里。 */
+ if(document.getElementById('onlybad').checked && (isClosed(r) || !probs(r).length)) return false;
+ if(mo&&String(r.export_date).slice(0,7)!==mo) return false;
+ if(fa){ var af=(r.factories||r.order_factories)||''; if(fa==='__none__'){ if(af) return false } else if(af.indexOf(fa)<0) return false }
+ if(kw){var s=(r.customs_no+' '+(r.order_nos||'')+' '+(r.factories||'')+' '+(r.order_factories||'')+' '+(r.bl_no||'')+' '+(r.mbl_no||'')+' '+(r.contract_no||'')+' '+(r.items||[]).map(function(x){return x.name+' '+x.hs}).join(' ')).toLowerCase();
+  if(s.indexOf(kw.toLowerCase())<0)return false}
+ var done=(r.status==='已申报'||r.status==='申报中');
+ if(v==='done')return done; if(v==='undone')return !done;
+ if(v==='ready')return !done&&r.item_count>0&&!r.bad_lines&&r.invoices&&r.order_nos;
+ if(v==='noorder')return !r.order_nos; if(v==='norate')return r.bad_lines>0;
+ if(v==='noitem')return !r.item_count; if(v==='noinv')return !r.invoices;
+ if(v==='over')return Number(r.inv_over)>0;
+ if(v==='ckts_ok')return !!r.ckts_declarable;
+ if(v==='grade_k')return r.data_grade==='ckts';
+ if(v==='grade_c')return r.data_grade==='customs'; if(v==='grade_t')return r.data_grade==='template';
+ return true}
+var CLOSED_BEFORE='2026-04';   // Damon 0812：3月前全部退税了，封存不再查
+function isClosed(r){return String(r.export_date).slice(0,7) < CLOSED_BEFORE}
+/* 折叠规则：已封存 / 已申报 / 申报中 / 没有待办事项 —— 都只显示一行，点开才看细节。
+   0812 Damon：「结束了就隐藏，就显示图2」。票齐且税局↔海关全对 = 结束。 */
+function isDone(r){return isClosed(r)||r.status==='已申报'||r.status==='申报中'||!probs(r).length}
+/* 一份提单可能对应多张报关单（一船多柜 / 一票拆多单）——必须放在一起看。
+   Damon 0812：「一份BL——多张报关单都要一起。记得！」
+   实测 6 组 13 票：MEDUY8325498 一提单 3 张单、ESLCHNQIN064737 / MEDUXS320232 /
+   MEDUWX608047 各 2 张。分开看会漏掉兄弟单，也容易把共用的柜重复计。 */
+function blKey(r){ return String(r.bl_no||r.mbl_no||r.hbl_no||'').trim() }
+function groupByBL(list){
+ var by={}, seq=[];
+ list.forEach(function(r){ var k=blKey(r)||('__'+r.customs_no);
+   if(!by[k]){by[k]=[];seq.push(k)} by[k].push(r) });
+ return seq.map(function(k){ return {bl:(k.indexOf('__')===0?'':k), rows:by[k]} }) }
+function blHead(g, gi){
+ if(g.rows.length < 2) return '';
+ var ok=g.rows.filter(function(r){return !probs(r).length}).length;
+ var fob=0, real=0, nreal=0, cons={};
+ g.rows.forEach(function(r){ fob+=Number(r.fob_cny)||0;
+   if(r.real_rebate!=null){ real+=Number(r.real_rebate); nreal++ }
+   String(r.containers||'').split('/').forEach(function(c){c=c.trim();if(c)cons[c]=1}) });
+ var nc=Object.keys(cons).length;
+ return '<tr class="blg"><td colspan="10">'+
+   '<div class="blg-t"><span class="blg-n">'+g.rows.length+'</span>'+
+     '<span class="blg-x">张报关单 · 同一提单</span>'+
+     '<span class="blg-bl">'+esc(g.bl)+'</span>'+
+     '<span class="blg-warn">⚠ 申报要一起报，柜别重复计</span>'+
+     (ok?'<span class="blg-ok">其中 '+ok+' 张已料齐</span>':'')+
+   '</div>'+
+   '<div class="blg-s">报关额合计 <b>'+m(fob)+'</b> ｜ 实退合计 <b style="color:#166534">'+m(real)+'</b>'+
+     (nreal<g.rows.length?'（'+nreal+'/'+g.rows.length+' 票进项票已齐）':'')+
+     (nc?' ｜ 共用 '+nc+' 个柜 '+esc(Object.keys(cons).join(' / ')):'')+'</div>'+
+   '</td></tr>' }
+function blFoot(g){
+ if(g.rows.length < 2) return '';
+ return '<tr class="blf"><td colspan="10">└ 以上 '+g.rows.length+' 张属同一提单 '+esc(g.bl)+'</td></tr>' }
+function rowHtml(r,folded,bl){
+  var g=gaps(r),n=r.item_count;
+  var fl = r.factories?esc(r.factories.split('/').join(' / '))
+        :(r.order_factories?'<span style="color:#94a3b8">'+esc(r.order_factories)+'（订单）</span>':'—');
+  var own='<td class="own">'+(r.order_nos?'<span class="po">'+esc(r.order_nos)+'</span>':'<span class="pill p-bad">无订单</span>')+
+   '<br><span class="fa">'+fl+(Number(r.seller_count)>1?' <span class="pill p-warn">'+r.seller_count+'厂</span>':'')+'</span></td>';
+  return '<tr class="main'+(folded?' done hide':' open')+(bl?' blm':'')+'" onclick="tog(this)">'+
+   '<td'+(bl?' class="blmc"':'')+'><span class="arw">'+(folded?'▸':'▾')+'</span>'+
+   (bl?'<div class="blno">'+bl.i+'/'+bl.n+'</div>':'')+'</td>'+
+   '<td><b>'+esc(String(r.export_date).slice(0,7))+'</b><br><span class="sm">'+esc(String(r.export_date).slice(5))+'</span></td><td>'+esc(r.customs_no)+'</td><td>厦门巴匕</td>'+own+
+   '<td>'+(n?'<span class="pill '+(r.data_grade==='ckts'?'p-blue':r.data_grade==='customs'?'p-ok':'p-warn')+'">'+(r.data_grade==='ckts'?'🏛':'')+n+' 项'+(r.bad_lines?' · '+r.bad_lines+'缺HS':'')+'</span>'+
+     ((r.data_grade==='ckts'||r.data_grade==='customs')?'':'<br><span class="pill p-gray">无净重/额不符</span>'):'<span class="pill p-gray">0 项</span>')+'</td>'+
+   '<td class="n">'+((!r.fob_cny||Number(r.fob_cny)===0)&&r.fob_foreign
+      ? '<span class="pill p-bad">缺汇率</span><br><span class="sm">'+esc(r.currency||'')+' '+m(r.fob_foreign)+'</span>'
+      : m(r.fob_cny))+'</td>'+
+   rebCell(r)+
+   '<td>'+statusCell(r)+'</td>'+
+   '<td>'+(g.length?'<span class="pill p-bad">'+g[0]+'</span>'+(g.length>1?' <span class="pill p-gray">+'+(g.length-1)+'</span>':''):'<span class="pill p-ok">齐</span>')+'</td></tr>'+
+   '<tr class="det'+(folded?' hide':'')+(bl?' blm':'')+'"><td colspan="10"'+(bl?' class="blmc"':'')+'>'+detail(r)+'</td></tr>'}
+function togMon(i){var b=document.getElementById('mb'+i),a=document.getElementById('ma'+i);
+ var h=b.style.display==='none'; b.style.display=h?'':'none'; a.textContent=h?'▾':'▸'}
+function togDone(i){var b=document.getElementById('mb'+i),a=document.getElementById('da'+i);
+ var rs=b.querySelectorAll('tr.done'),on=rs[0]&&rs[0].classList.contains('hide');
+ rs.forEach(function(tr){tr.classList.toggle('hide',!on);
+   tr.classList.toggle('open',!!on); tr.querySelector('.arw').textContent=on?'▾':'▸';
+   tr.nextElementSibling.classList.toggle('hide',!on)});
+ a.textContent=on?'▾':'▸'}
+function facStats(){
+ var F={};
+ function g(k){ if(!F[k])F[k]={f:k,ok:0,okamt:0,inv:{},wait:0,waitamt:0,no:0,noamt:0,noreb:0,tk:{}}; return F[k] }
+ DATA.forEach(function(r){
+  if(isClosed(r)) return;
+  var invf=r.factories||'', ordf=r.order_factories||'', its=r.items||[];
+  if(!its.length) return;
+  /* 本票里「哪几家工厂已经有票挂上了」——按行级 factory 收集，不看票级 */
+  var facHasInv={}; its.forEach(function(x){ if(x.invoice_no && x.factory) facHasInv[x.factory]=1 });
+  its.forEach(function(x){
+   /* 🩸 0812 修：原来判「待配」看的是【这张报关单有没有票】，
+      一票多厂时必错 —— 660860 上只有悦佰兔的票，中宠和大之圣那三行根本没开，
+      却被算成「待配」；171960 项02 大之圣同理（票是中砂的）。
+      正确判据是【这家工厂在这票有没有票】。 */
+   var fac = x.factory||invf||ordf||'（工厂未知）';
+   if(x.invoice_no){ var a=g(fac);
+     a.ok++; a.okamt+=Number(x.amt)||0; a.inv[x.invoice_no]=1; a.tk[r.customs_no]=1 }
+   else if(facHasInv[fac]){ var b=g(fac);
+     b.wait++; b.waitamt+=Number(x.amt)||0; b.tk[r.customs_no]=1 }
+   else { var c=g(fac);
+     c.no++; c.noamt+=Number(x.amt)||0; c.noreb+=Number(x.line_rebate)||0; c.tk[r.customs_no]=1 }
+  });
+ });
+ return Object.keys(F).map(function(k){return F[k]}).sort(function(a,b){return (b.noamt+b.waitamt)-(a.noamt+a.waitamt)})}
+function drawFac(){
+ var L=facStats(), T={ok:0,wait:0,no:0,noamt:0,noreb:0,waitamt:0};
+ var H='<div style="font-weight:800;margin-bottom:6px">🏭 工厂开票总览 —— 谁开了 / 谁没开（点工厂名筛选该厂）</div>'+
+  '<table class="fac"><thead><tr><th>工厂</th><th class="r">✅已开票行</th><th class="r">已开票额</th>'+
+  '<th class="r">发票张数</th><th class="r">🟡待配行</th><th class="r">🔴未开票行</th>'+
+  '<th class="r">未开票报关额</th><th class="r">压着退税</th><th>涉及报关单</th></tr></thead><tbody>';
+ L.forEach(function(v){
+  T.ok+=v.ok;T.wait+=v.wait;T.no+=v.no;T.noamt+=v.noamt;T.noreb+=v.noreb;T.waitamt+=v.waitamt;
+  H+='<tr class="'+(v.no?'hot':'')+'">'+
+   '<td><span class="nm" onclick="pickFac(\''+v.f.replace(/'/g,"")+'\')">'+esc(v.f)+'</span></td>'+
+   '<td class="r">'+(v.ok||'—')+'</td><td class="r">'+(v.okamt?m(v.okamt):'—')+'</td>'+
+   '<td class="r">'+(Object.keys(v.inv).length||'—')+'</td>'+
+   '<td class="r">'+(v.wait?'<b style="color:#b45309">'+v.wait+'</b>':'—')+'</td>'+
+   '<td class="r">'+(v.no?'<b style="color:#b91c1c">'+v.no+'</b>':'—')+'</td>'+
+   '<td class="r">'+(v.noamt?m(v.noamt):'—')+'</td>'+
+   '<td class="r">'+(v.noreb?'<b style="color:#b91c1c">'+m(v.noreb)+'</b>':'—')+'</td>'+
+   '<td style="white-space:normal;max-width:420px;font-size:11px;color:#64748b">'+esc(Object.keys(v.tk).sort().join(' / '))+'</td></tr>'});
+ H+='</tbody><tfoot><tr><td>合计</td><td class="r">'+T.ok+'</td><td class="r">—</td><td class="r">—</td>'+
+  '<td class="r">'+T.wait+'</td><td class="r">'+T.no+'</td><td class="r">'+m(T.noamt)+'</td>'+
+  '<td class="r">'+m(T.noreb)+'</td><td></td></tr></tfoot></table>'+
+  '<div style="font-size:11px;color:#64748b;margin-top:6px">'+
+  '✅已开票=进项票已配到具体行 ｜ 🟡待配=<b>这家工厂</b>在本票有票但配不到这一行 ｜ 🔴未开票=工厂根本没开（工厂名取自订单，未经进项票核实）</div>';
+ document.getElementById('facwrap').innerHTML=H}
+function togFac(){var w=document.getElementById('facwrap');
+ var on=w.style.display==='none'; w.style.display=on?'':'none'; if(on)drawFac()}
+function pickFac(f){document.getElementById('fac').value=f;draw();window.scrollTo(0,document.body.scrollHeight)}
+function draw(){
+ var v=document.getElementById('view').value,kw=document.getElementById('kw').value.trim();
+ var rows=DATA.filter(function(r){return pass(r,v,kw)});
+ /* 同一提单的报关单必须整组出现：只要组里有一张进了筛选，兄弟单一起带出来。
+    Damon 0812：「一份BL——多张报关单都要一起。记得！」
+    否则「只看有问题的票」会把已齐的兄弟单藏掉，看不出这票其实要跟谁一起报。
+    ⚠️ 已封存月份（3月前全退完）不往回捞，那批不该出现在待办里。 */
+ (function(){
+  var inSet={}; rows.forEach(function(r){inSet[r.customs_no]=1});
+  var bls={}; rows.forEach(function(r){var b=blKey(r); if(b) bls[b]=1});
+  var add=DATA.filter(function(r){
+    return !inSet[r.customs_no] && blKey(r) && bls[blKey(r)] && !isClosed(r) });
+  if(add.length){ add.forEach(function(r){r._sib=1}); rows=rows.concat(add);
+    rows.sort(function(a,b){ return String(b.export_date).localeCompare(String(a.export_date))
+      || String(a.customs_no).localeCompare(String(b.customs_no)) }) }
+ })();
+ document.getElementById('th').innerHTML='<tr>'+COLS.map(function(c){return '<th>'+c+'</th>'}).join('')+'</tr>';
+ var byM={},order=[];
+ rows.forEach(function(r){var k=String(r.export_date).slice(0,7);
+  if(!byM[k]){byM[k]=[];order.push(k)} byM[k].push(r)});
+ var H='';
+ order.forEach(function(k,mi){
+  /* 折叠单位是「提单组」不是单票：组里只要有一张没料齐，整组都留在上面，
+     不能把兄弟单折到「已料齐」里去 —— 那样就又看不见它们要一起报了。 */
+  var g=byM[k], gs=groupByBL(g);
+  var openG=gs.filter(function(x){return x.rows.some(function(r){return !isDone(r)})});
+  var doneG=gs.filter(function(x){return x.rows.every(isDone)});
+  var open=openG.reduce(function(a,x){return a.concat(x.rows)},[]);
+  var done=doneG.reduce(function(a,x){return a.concat(x.rows)},[]);
+  var fob=g.reduce(function(a,r){return a+(r.fob_cny||0)},0);
+  var reb=g.filter(function(r){return (r.data_grade==='ckts'||r.data_grade==='customs')&&r.est_rebate!=null})
+           .reduce(function(a,r){return a+Number(r.est_rebate)},0);
+  var dreb=done.reduce(function(a,r){return a+(Number(r.rebate_expected)||0)},0);
+  var bs={}; done.forEach(function(r){if(r.batch)bs[r.batch]=1});
+  var closed = k < CLOSED_BEFORE;
+  H+='<tr class="mon'+(closed?' cl':'')+'" onclick="togMon('+mi+')"><td colspan="10">'+
+     '<span class="lab"><span class="arw" id="ma'+mi+'">'+(closed?'▸':'▾')+'</span> '+k.slice(0,4)+'年'+k.slice(5,7)+'月'+
+     (closed?' <span class="pill p-ok">已完结·全部退税</span>':'')+'</span>'+
+     '<span class="s">'+g.length+' 票 · 报关额 '+m(fob)+' · 可信应退 <span class="g">'+m(reb)+'</span>'+
+     (done.length?' · 已申报 '+done.length+' 票（'+m(dreb)+'）'+(Object.keys(bs).length?' 批次 '+Object.keys(bs).sort().join('、'):''):'')+
+     '</span></td></tr>';
+  H+='<tbody class="mb" id="mb'+mi+'"'+(closed?' style="display:none"':'')+'>';
+  openG.forEach(function(gg,gi){ H+=blHead(gg,gi);
+    var multi=gg.rows.length>1;
+    gg.rows.forEach(function(r,i){H+=rowHtml(r, isDone(r) && !multi, multi?{i:i+1,n:gg.rows.length}:null)});
+    H+=blFoot(gg) });
+  if(done.length){
+   H+='<tr class="fold" onclick="togDone('+mi+')"><td colspan="10"><span id="da'+mi+'">▸</span> '+
+      '已申报/已退税 <b>'+done.length+' 票</b> · 应退 <b>'+m(dreb)+'</b>'+
+      (Object.keys(bs).length?' · 批次 '+Object.keys(bs).sort().join('、'):'')+' —— 点击展开</td></tr>';
+   doneG.forEach(function(gg,gi){ H+=blHead(gg,'d'+gi);
+     var multi=gg.rows.length>1;
+     gg.rows.forEach(function(r,i){H+=rowHtml(r,true, multi?{i:i+1,n:gg.rows.length}:null)});
+     H+=blFoot(gg) });
+  }
+  H+='</tbody>';
+ });
+ /* 🩸 tbody 不能嵌套：H 里每个月是一个 <tbody class="mb">，外面再套一层 <tbody id="tb">，
+    浏览器解析时会把内层提出来变成兄弟节点。第二次 draw() 只换掉已经空了的 #tb，
+    上一轮的月份 tbody 全留在表里 → 一改筛选行数就翻倍（61 票渲染出 81 行）。
+    所以重画前必须先把上一轮遗留的 tbody.mb 清掉。 */
+ (function(){ var tb=document.getElementById('tb'), tbl=tb.closest('table');
+   if(tbl) tbl.querySelectorAll('tbody.mb').forEach(function(x){x.remove()});
+   tb.outerHTML='<tbody id="tb">'+H+'</tbody>' })();
+ var fob=rows.reduce(function(a,r){return a+(r.fob_cny||0)},0);
+ var C=rows.filter(function(r){return (r.data_grade==='ckts'||r.data_grade==='customs')&&r.est_rebate!=null});
+ var T=rows.filter(function(r){return r.data_grade==='template'&&r.est_rebate!=null});
+ var reb=C.reduce(function(a,r){return a+Number(r.est_rebate)},0);
+ var rebT=T.reduce(function(a,r){return a+Number(r.est_rebate)},0);
+ var R=rows.filter(function(r){return r.real_rebate!=null});
+ var real=R.reduce(function(a,r){return a+Number(r.real_rebate)},0);
+ document.getElementById('tf').innerHTML='<tr class="sumrow"><td colspan="6">合计 '+rows.length+' 票 · <b>报关单级 '+C.length+' 票</b>'+
+  ' · 进项票已齐 '+R.length+' 票'+
+  (T.length?' · 模版级 '+T.length+' 票（¥'+m(rebT)+' 仅参考，不计入）':'')+'</td><td class="n">'+m(fob)+
+  '</td><td class="n"><b style="color:#166534">'+m(real)+'</b><br><span class="sm" style="color:#94a3b8">估 '+m(reb)+'</span></td><td colspan="2"></td></tr>';
+ var CARDS=[['当前票数',rows.length],
+  ['实退合计（进项票已齐 '+R.length+' 票）','¥'+m(real)],
+  ['报关额估上限（'+C.length+' 票）','¥'+m(reb)],
+  ['进项票未齐',(C.length-R.length)+' 票'],
+  ['🏛税局可申报',DATA.filter(function(r){return r.ckts_declarable}).length+' 票'],
+  ['⚠️模版级',DATA.filter(function(r){return !isClosed(r)&&r.data_grade==='template'}).length+' 票'],
+  ['缺报关逐项',DATA.filter(function(r){return !isClosed(r)&&!r.item_count}).length+' 票'],
+  ['缺HS',DATA.filter(function(r){return !isClosed(r)&&r.bad_lines>0}).length+' 票'],
+  ['缺进项票',DATA.filter(function(r){return !isClosed(r)&&!r.invoices}).length+' 票'],
+  ['无订单',DATA.filter(function(r){return !isClosed(r)&&!r.order_nos}).length+' 票']];
+ document.getElementById('cards').innerHTML=CARDS.map(function(c){return '<div class="card"><div class="k">'+c[0]+'</div><div class="v">'+c[1]+'</div></div>'}).join('')}
+function tog(tr){var o=tr.classList.toggle('open');tr.querySelector('.arw').textContent=o?'▾':'▸';tr.nextElementSibling.classList.toggle('hide',!o)}
+function setAll(on){document.querySelectorAll('tr.main').forEach(function(tr){
+ tr.classList.toggle('open',!!on);tr.querySelector('.arw').textContent=on?'▾':'▸';tr.nextElementSibling.classList.toggle('hide',!on)})}
+(function(){
+ var ms={},fs={};
+ DATA.forEach(function(r){
+  ms[String(r.export_date).slice(0,7)]=1;
+  ((r.factories||r.order_factories)||'').split('/').filter(Boolean).forEach(function(f){fs[f]=(fs[f]||0)+1})});
+ var mk=Object.keys(ms).sort().reverse();
+ document.getElementById('mon').innerHTML='<option value="">全部月份</option>'+
+  mk.map(function(k){var n=DATA.filter(function(r){return String(r.export_date).slice(0,7)===k}).length;
+   return '<option value="'+k+'">'+k.replace('-','年')+'月 ('+n+')</option>'}).join('');
+ var fk=Object.keys(fs).sort(function(a,b){return fs[b]-fs[a]});
+ var nn=DATA.filter(function(r){return !r.factories&&!r.order_factories}).length;
+ document.getElementById('fac').innerHTML='<option value="">全部工厂</option>'+
+  fk.map(function(k){return '<option value="'+k+'">'+k+' ('+fs[k]+')</option>'}).join('')+
+  (nn?'<option value="__none__">（无工厂）('+nn+')</option>':'');
+})();
+['view','mon','fac'].forEach(function(id){document.getElementById(id).onchange=draw});
+document.getElementById('kw').oninput=draw;
+
+function fillFilters(){
+ var ms={},fs={};
+ DATA.forEach(function(r){ms[String(r.export_date).slice(0,7)]=1;
+  ((r.factories||r.order_factories)||'').split('/').filter(Boolean).forEach(function(f){fs[f]=(fs[f]||0)+1})});
+ var mk=Object.keys(ms).sort().reverse();
+ document.getElementById('mon').innerHTML='<option value="">全部月份</option>'+
+  mk.map(function(k){var n=DATA.filter(function(r){return String(r.export_date).slice(0,7)===k}).length;
+   return '<option value="'+k+'">'+k.replace('-','年')+'月 ('+n+')</option>'}).join('');
+ var fk=Object.keys(fs).sort(function(a,b){return fs[b]-fs[a]});
+ var nn=DATA.filter(function(r){return !r.factories&&!r.order_factories}).length;
+ document.getElementById('fac').innerHTML='<option value="">全部工厂</option>'+
+  fk.map(function(k){return '<option value="'+k+'">'+k+' ('+fs[k]+')</option>'}).join('')+
+  (nn?'<option value="__none__">（无工厂）('+nn+')</option>':'')}
+function num(x){var v=Number(x);return isFinite(v)?v:null}
+function normalize(rows){
+ rows.forEach(function(r){
+  r.item_count=parseInt(r.item_count||0,10); r.bad_lines=parseInt(r.bad_lines||0,10);
+  r.fob_cny=num(r.fob_cny)||0; r.est_rebate=(r.est_rebate==null?null:num(r.est_rebate));
+  (r.items||[]).forEach(function(x){['amt','rate','line_rebate','nw','qty'].forEach(function(k){
+   if(x[k]!=null)x[k]=num(x[k])})})});
+ return rows}
+async function reload(){
+ var boot=document.getElementById('boot');
+ boot.style.display='';boot.textContent='Loading…';document.getElementById('grid').style.display='none';
+ try{
+  var t=SanlynTable.token();
+  var url='/api/db/tax-rebate-master?from='+encodeURIComponent(document.getElementById('from').value||'2026-01-01');
+  var res=await fetch(url,{headers:t?{Authorization:'Bearer '+t}:{}});
+  if(res.status===401){boot.innerHTML='<div class="loginbox">需要登录。请先在 <a href="/data">/data</a> 登录后再打开本页。</div>';return}
+  var d=await res.json();
+  if(!d.success)throw new Error(d.error||'接口错误');
+  DATA=normalize(d.data||[]); fillFilters();
+  boot.style.display='none';document.getElementById('grid').style.display='';
+  document.getElementById('stamp').textContent=new Date().toLocaleString('zh-CN')+' · '+DATA.length+' 票';
+  draw();
+ }catch(e){
+  /* 0812 踩过：draw() 抛错时 boot 已经 display:none，错误提示写进去也看不见 → 整页白。
+     出错必须把 boot 重新显示出来，并且把 grid 藏掉。 */
+  boot.style.display=''; document.getElementById('grid').style.display='none';
+  boot.innerHTML='<div class="loginbox" style="color:#b91c1c">加载失败：'+SanlynTable.esc(e.message)+
+    '<br><span class="sm">'+SanlynTable.esc(String(e.stack||'').split('\n').slice(0,3).join(' / '))+'</span></div>';
+  console.error(e) }}
+['view','mon','fac'].forEach(function(id){document.getElementById(id).onchange=draw});
+document.getElementById('kw').oninput=draw;
+document.getElementById('from').onchange=reload;
+var _d=draw;draw=function(){_d();if(document.getElementById('facwrap').style.display!=='none')drawFac()};
+reload();
+</script>
+</body></html>
