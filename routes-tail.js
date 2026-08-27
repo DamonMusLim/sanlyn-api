@@ -53,6 +53,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/bl-management", () => import("./api/db/bl-management.js")); // 0826 提单管理:只读真实字段覆盖率
   mount("/api/db/transport-directions", () => import("./api/db/transport-directions.js")); // 0826 六方向运输:只读shipping_plans方向字段覆盖率
   mount("/api/db/order-draft-entry", () => import("./api/db/order-draft-entry.js")); // 0826 订单录入:先建草稿后补全
+  mount("/api/db/quick-entry", () => import("./api/db/quick-entry.js")); // 0827 通用快速录入:字段id/canonical_key驱动
   mount("/api/db/global-search", () => import("./api/db/global-search.js")); // 0825 顶栏全局搜索：只读白名单表
   mount("/api/db/custom-nav", () => import("./api/db/custom-nav.js")); // 0826 工作台自定义导航:复用system_settings配置真源
   mount("/api/db/rates-hub",              () => import("./api/db/rates-hub.js")); // 0825 价表总台(海运周价/官方港杂/本地费)

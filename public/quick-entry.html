@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>快速录入</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    body { margin:0; background:var(--hgj-bg); color:var(--hgj-text); font:14px/1.45 var(--hgj-font); }
+    .wrap { max-width:1180px; margin:0 auto; padding:18px; }
+    .top { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid var(--hgj-line); padding-bottom:12px; }
+    h1 { margin:0; font-size:20px; font-weight:700; }
+    .meta { color:var(--hgj-muted); font-size:12px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    button { border:1px solid var(--hgj-line); background:var(--hgj-card); color:var(--hgj-text); padding:7px 12px; cursor:pointer; }
+    button.primary { background:var(--hgj-primary); border-color:var(--hgj-primary); color:#fff; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .notice,.status { margin-top:12px; padding:10px 12px; background:var(--hgj-card); border:1px solid var(--hgj-line); color:var(--hgj-muted); }
+    .error { color:var(--hgj-danger); }
+    form { margin-top:14px; }
+    .section { background:var(--hgj-card); border:1px solid var(--hgj-line); margin-bottom:12px; }
+    .section h2 { margin:0; padding:9px 12px; font-size:15px; border-bottom:1px solid var(--hgj-line); }
+    .grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; padding:12px; }
+    .field { min-width:0; }
+    .span-2 { grid-column:span 2; }
+    .span-3,.span-4 { grid-column:span 4; }
+    label { display:flex; gap:6px; align-items:center; margin-bottom:4px; font-weight:600; font-size:13px; }
+    .fid { color:var(--hgj-muted); font-weight:400; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    input,select,textarea { width:100%; border:1px solid var(--hgj-line); background:var(--hgj-card); color:var(--hgj-text); padding:7px 8px; font:14px var(--hgj-font); }
+    textarea { min-height:76px; resize:vertical; }
+    input[readonly],textarea[readonly],select:disabled { background:var(--hgj-bg); }
+    .hint { min-height:18px; color:var(--hgj-muted); font-size:12px; margin-top:3px; }
+    .missing { color:var(--hgj-warn); }
+    .lookup { position:relative; }
+    .suggest { position:absolute; z-index:20; left:0; right:0; top:100%; background:var(--hgj-card); border:1px solid var(--hgj-line); max-height:190px; overflow:auto; display:none; }
+    .suggest button { display:block; width:100%; border:0; border-bottom:1px solid var(--hgj-line); text-align:left; }
+    @media (max-width:820px) { .top{align-items:flex-start; flex-direction:column;} .grid{grid-template-columns:1fr;} .span-2,.span-3,.span-4{grid-column:span 1;} }
+  </style>
+  <script src="/public/wb-open-tab.js" data-protocol="sanlyn:open-tab"></script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <h1 id="title">快速录入</h1>
+        <div class="meta" id="meta">加载中...</div>
+      </div>
+      <div class="actions">
+        <button id="reloadBtn" type="button">重新加载</button>
+        <button id="submitBtn" class="primary" type="submit" form="entryForm">保存一条</button>
+      </div>
+    </div>
+    <div id="status" class="status">正在读取字段配置...</div>
+    <form id="entryForm"></form>
+  </div>
+  <script src="/quick-entry.js"></script>
+</body>
+</html>
