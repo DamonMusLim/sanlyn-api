@@ -42,6 +42,7 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/invoice-records", () => import("./api/db/invoice-records.js")); // 0826 开票记录:只读进销项发票真源
   mount("/api/db/receipt-payment-management", () => import("./api/db/receipt-payment-management.js")); // 0826 收付管理:只读finance_payments真源
   mount("/api/db/settlement-management", () => import("./api/db/settlement-management.js")); // 0826 核销管理:只读finance_settlement_links真源
+  mount("/api/db/commission-management", () => import("./api/db/commission-management.js")); // 0827 提成管理:无提成规则表则返回no_data
   mount("/api/db/commission-report", () => import("./api/db/commission-report.js")); // 0826 提成管理:只读真实回款+费率字段
   mount("/api/db/business-report", () => import("./api/db/business-report.js")); // 0826 业务报表:只读真实字段覆盖率
   mount("/api/db/financial-report", () => import("./api/db/financial-report.js")); // 0826 财务报表:只读真实财务字段覆盖率
@@ -54,6 +55,9 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/transport-directions", () => import("./api/db/transport-directions.js")); // 0826 六方向运输:只读shipping_plans方向字段覆盖率
   mount("/api/db/order-draft-entry", () => import("./api/db/order-draft-entry.js")); // 0826 订单录入:先建草稿后补全
   mount("/api/db/quick-entry", () => import("./api/db/quick-entry.js")); // 0827 通用快速录入:字段id/canonical_key驱动
+  mount("/api/db/field-engine", () => import("./api/db/field-engine.js")); // 0828 通用表格字段定义:只读
+  mount("/api/db/hy-grid", () => import("./api/db/hy-grid.js")); // 0828 通用表格数据:字段定义驱动只读
+  mount("/api/db/hy-modules", () => import("./api/db/hy-modules.js")); // 0828 海管家通用表模块目录:字段定义白名单
   mount("/api/db/global-search", () => import("./api/db/global-search.js")); // 0825 顶栏全局搜索：只读白名单表
   mount("/api/db/custom-nav", () => import("./api/db/custom-nav.js")); // 0826 工作台自定义导航:复用system_settings配置真源
   mount("/api/db/rates-hub",              () => import("./api/db/rates-hub.js")); // 0825 价表总台(海运周价/官方港杂/本地费)
@@ -93,6 +97,9 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/petstore-decision-gate",  () => import("./api/db/petstore-decision-gate.js")); // 拍板提交闸 M083(0817):277条压成4组,D组必须逐条确认
   mount("/api/db/petstore-ops-row",        () => import("./api/db/petstore-ops-row.js")); // 商品经营行统一契约(0815)
   mount("/api/db/petstore-products-grid", () => import("./api/db/petstore-products-grid.js")); // 商品库主数据密网格(0815)
+  mount("/api/db/petstore-stock-query", () => import("./api/db/petstore-stock-query.js")); // mini橙库存查询
+  mount("/api/db/petstore-stock-changes", () => import("./api/db/petstore-stock-changes.js")); // mini橙库存变化
+  mount("/api/db/petstore-stock-alerts", () => import("./api/db/petstore-stock-alerts.js")); // mini橙库存预警
   mount("/api/db/recon-export", () => import("./api/db/recon-export.js"));
   mount("/api/db/recon-edit", () => import("./api/db/recon-edit.js")); // 对账主表行内编辑 2026-08-11
   mount("/api/db/recon-confirm", () => import("./api/db/recon-confirm.js")); // 对平状态 2026-08-12
