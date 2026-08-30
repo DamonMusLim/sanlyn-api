@@ -22,9 +22,9 @@ async function listRows(req) {
              praise_food, critic_food, comment_labels, third_order_id,
              add_comment, add_comment_time
         FROM public.petstore_reviews
-       WHERE ($1::text IS NULL OR store_code = $1)
-         AND ($2::text IS NULL OR channel_code = $2)
-         AND ($3::text IS NULL OR comment_type = $3)
+       WHERE ($1::text IS NULL OR store_code::text = $1)
+         AND ($2::text IS NULL OR channel_code::text = $2)
+         AND ($3::text IS NULL OR comment_type::text = $3)
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
       SELECT *, ROW_NUMBER() OVER (ORDER BY comment_time DESC NULLS LAST, comment_id DESC) AS __rn

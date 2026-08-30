@@ -21,7 +21,7 @@ async function listRows(req) {
              exposure_cnt, click_cnt, order_cnt, avg_rank, min_rank, max_rank,
              ctr_uv, cvr_uv, cxr_uv, data_date
         FROM public.petstore_mt_searchword_ranking
-       WHERE ($1::text IS NULL OR rank_type = $1)
+       WHERE ($1::text IS NULL OR rank_type::text = $1)
          AND ($2::text IS NULL OR search_word ILIKE '%' || $2 || '%')
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
