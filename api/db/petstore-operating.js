@@ -25,7 +25,7 @@ async function listRows(req) {
              merchant_subsidy_amount, store_count, recipient_name_count, pulled_at
         FROM public.gdc_operating_month
        WHERE ($1::text IS NULL OR store_code = $1)
-         AND ($2::text IS NULL OR stat_month = $2)
+         AND ($2::text IS NULL OR stat_month::text = $2)
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
       SELECT *, ROW_NUMBER() OVER (ORDER BY stat_month DESC NULLS LAST, store_code ASC) AS __rn
