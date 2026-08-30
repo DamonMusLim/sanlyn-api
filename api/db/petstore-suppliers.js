@@ -36,9 +36,9 @@ async function listRows(req) {
          AND ($4::boolean IS NULL OR enable = $4)
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
-      SELECT * FROM filtered ORDER BY order_count DESC, supplier_name ASC LIMIT $5 OFFSET $6
+      SELECT *, ROW_NUMBER() OVER (ORDER BY order_count DESC, supplier_name ASC) AS __rn FROM filtered ORDER BY order_count DESC, supplier_name ASC LIMIT $5 OFFSET $6
     )
-    SELECT COALESCE(jsonb_agg(to_jsonb(page_rows)) FILTER (WHERE page_rows.supplier_code IS NOT NULL), '[]'::jsonb) AS rows,
+    SELECT COALESCE(jsonb_agg(to_jsonb(page_rows) - '__rn' ORDER BY page_rows.__rn) FILTER (WHERE page_rows.supplier_code IS NOT NULL), '[]'::jsonb) AS rows,
            total_count.total
       FROM total_count LEFT JOIN page_rows ON true GROUP BY total_count.total`;
   const r = await getPool().query(sql, params);

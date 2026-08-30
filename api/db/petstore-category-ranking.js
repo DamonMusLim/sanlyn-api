@@ -73,12 +73,12 @@ async function listRows(req) {
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM scored
     ), page_rows AS (
-      SELECT * FROM scored
+      SELECT *, ROW_NUMBER() OVER (ORDER BY sales_amount DESC NULLS LAST, category_name ASC) AS __rn FROM scored
        ORDER BY sales_amount DESC NULLS LAST, category_name ASC
        LIMIT $3 OFFSET $4
     )
     SELECT COALESCE(
-             jsonb_agg(to_jsonb(page_rows)) FILTER (WHERE page_rows.category_name IS NOT NULL),
+             jsonb_agg(to_jsonb(page_rows) - '__rn' ORDER BY page_rows.__rn) FILTER (WHERE page_rows.category_name IS NOT NULL),
              '[]'::jsonb
            ) AS rows,
            total_count.total

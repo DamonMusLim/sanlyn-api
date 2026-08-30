@@ -5,7 +5,9 @@ import { requireAuth } from "../auth.js";
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
-const DIFF_SQL = { profit: "diff > 0", loss: "diff < 0", zero: "diff = 0" };
+// Object.create(null) + Object.hasOwn 双保险:
+// 0830 codex 实测 kind=constructor 会命中继承属性,把函数体拼进 SQL。
+const DIFF_SQL = Object.assign(Object.create(null), { profit: "diff > 0", loss: "diff < 0", zero: "diff = 0" });
 
 function cleanText(value, max = 120) {
   const s = String(value ?? "").trim();
@@ -28,7 +30,7 @@ async function listRows(req) {
   const status = cleanText(req.query?.status, 40);
   const productCode = cleanText(req.query?.product_code, 120);
   const diffKey = cleanText(req.query?.diff, 20);
-  const diffClause = (diffKey && DIFF_SQL[diffKey]) ? `AND (${DIFF_SQL[diffKey]})` : "";
+  const diffClause = (diffKey && Object.hasOwn(DIFF_SQL, diffKey)) ? `AND (${DIFF_SQL[diffKey]})` : "";
 
   const params = [storeCode, status, productCode, pageSize, offset];
   const sql = `
@@ -44,12 +46,12 @@ async function listRows(req) {
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
-      SELECT * FROM filtered
+      SELECT *, ROW_NUMBER() OVER (ORDER BY ymd DESC NULLS LAST, product_code ASC) AS __rn FROM filtered
        ORDER BY ymd DESC NULLS LAST, product_code ASC
        LIMIT $4 OFFSET $5
     )
     SELECT COALESCE(
-             jsonb_agg(to_jsonb(page_rows)) FILTER (WHERE page_rows.product_code IS NOT NULL),
+             jsonb_agg(to_jsonb(page_rows) - '__rn' ORDER BY page_rows.__rn) FILTER (WHERE page_rows.product_code IS NOT NULL),
              '[]'::jsonb
            ) AS rows,
            total_count.total

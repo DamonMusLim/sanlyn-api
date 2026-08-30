@@ -8,14 +8,21 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
 
 // 单据类型实测分布:XS销售4640 ML门店4 78 DI调入180 TK退库141 BS报损63 DB调拨25 DO调出24
-const KIND_SQL = {
-  in:       "delta > 0",                                  // 入库:所有增加
-  out:      "delta < 0 AND order_type <> 'XS'",            // 出库:减少但排除销售出货
-  sale:     "order_type = 'XS'",                           // 销售出库
-  transfer: "order_type IN ('DB','DI','DO')",              // 调拨
-  loss:     "order_type = 'BS'",                           // 报损
-  back:     "order_type = 'TK'",                           // 退库
-};
+// Object.create(null) + Object.hasOwn 双保险:
+// 0830 codex 实测 kind=constructor 会命中继承属性,把函数体拼进 SQL。
+const KIND_SQL = Object.assign(Object.create(null), {
+  // 口径按【单据类型】划,不按 delta 正负 —— 0830 codex 指出按正负分会互相重叠,
+  // 而且 order_type 为 NULL 时 <>'XS' 不成立会被静默排除。
+  in:       "order_type IN ('DI','TK')",                 // 入库:调入 + 退库
+  out:      "order_type IN ('DO','BS')",                 // 出库:调出 + 报损
+  sale:     "order_type = 'XS'",                         // 销售出货
+  transfer: "order_type IN ('DB','DI','DO')",            // 调拨(含调入调出)
+  loss:     "order_type = 'BS'",                         // 报损
+  back:     "order_type = 'TK'",                         // 退库
+  store:    "order_type = 'ML'",                         // 门店单
+  plus:     "delta > 0",                                 // 纯按数量增加(口径宽,慎用)
+  minus:    "delta < 0",                                 // 纯按数量减少
+});
 
 function cleanText(value, max = 120) {
   const s = String(value ?? "").trim();
@@ -39,7 +46,7 @@ async function listRows(req) {
   const orderNo = cleanText(req.query?.order_no, 120);
   // kind 只能是白名单里的键,拼进 SQL 的是【我们自己写死的常量】,不是用户输入
   const kindKey = cleanText(req.query?.kind, 20);
-  const kindClause = (kindKey && KIND_SQL[kindKey]) ? `AND (${KIND_SQL[kindKey]})` : "";
+  const kindClause = (kindKey && Object.hasOwn(KIND_SQL, kindKey)) ? `AND (${KIND_SQL[kindKey]})` : "";
 
   const params = [storeCode, productCode, orderNo, pageSize, offset];
   const sql = `
@@ -56,12 +63,12 @@ async function listRows(req) {
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
-      SELECT * FROM filtered
+      SELECT *, ROW_NUMBER() OVER (ORDER BY change_time DESC NULLS LAST, order_no DESC) AS __rn FROM filtered
        ORDER BY change_time DESC NULLS LAST, order_no DESC
        LIMIT $4 OFFSET $5
     )
     SELECT COALESCE(
-             jsonb_agg(to_jsonb(page_rows)) FILTER (WHERE page_rows.product_code IS NOT NULL),
+             jsonb_agg(to_jsonb(page_rows) - '__rn' ORDER BY page_rows.__rn) FILTER (WHERE page_rows.product_code IS NOT NULL),
              '[]'::jsonb
            ) AS rows,
            total_count.total
