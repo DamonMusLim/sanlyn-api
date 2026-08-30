@@ -32,8 +32,17 @@ async function listRows(req) {
              suggest_qty, verdict_reason, source, status,
              decided_by, decided_at, decided_qty, decided_note,
              exec_status, exec_at, exec_order_no, exec_error, readback_ok, created_at,
+             supplier_name, min_order, order_multiple, arrival_days, terms_missing,
              -- 🔴 库存为负是上游数据问题(果冻橙同步来的),标出来别让人当真
-             (cur_stock < 0) AS stock_is_negative
+             (cur_stock < 0) AS stock_is_negative,
+             -- 🔴 建议量够不够起订量 —— 不够的话这条建议根本下不了单
+             (min_order IS NOT NULL AND suggest_qty < min_order) AS below_min_order,
+             -- 起订量/倍数都有时,算出「实际该下多少」(向上取整到倍数)
+             CASE WHEN min_order IS NULL THEN NULL
+                  WHEN order_multiple IS NULL OR order_multiple <= 1
+                       THEN GREATEST(suggest_qty, min_order)
+                  ELSE CEIL(GREATEST(suggest_qty, min_order) / order_multiple) * order_multiple
+             END AS orderable_qty
         FROM public.petstore_restock_intents
        WHERE ($1::text IS NULL OR status = $1)
          AND ($2::text IS NULL OR batch_no = $2)
@@ -60,7 +69,9 @@ async function summary() {
            COUNT(*)::int AS cnt,
            COALESCE(SUM(suggest_qty),0)::numeric AS suggest_total,
            COALESCE(SUM(decided_qty),0)::numeric AS decided_total,
-           COUNT(*) FILTER (WHERE cur_stock < 0)::int AS negative_stock
+           COUNT(*) FILTER (WHERE cur_stock < 0)::int AS negative_stock,
+           COUNT(*) FILTER (WHERE terms_missing)::int AS terms_missing,
+           COUNT(*) FILTER (WHERE min_order IS NOT NULL AND suggest_qty < min_order)::int AS below_min_order
       FROM public.petstore_restock_intents
      GROUP BY status ORDER BY 2 DESC`);
   return { rows: r.rows, total: r.rows.length };
