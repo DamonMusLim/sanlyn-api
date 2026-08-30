@@ -100,6 +100,10 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/petstore-stock-query", () => import("./api/db/petstore-stock-query.js")); // mini橙库存查询
   mount("/api/db/petstore-stock-changes", () => import("./api/db/petstore-stock-changes.js")); // mini橙库存变化
   mount("/api/db/petstore-stock-alerts", () => import("./api/db/petstore-stock-alerts.js")); // mini橙库存预警
+  mount("/api/db/petstore-goods-list", () => import("./api/db/petstore-goods-list.js")); // mini橙商品主线:商品库
+  mount("/api/db/petstore-goods-detail", () => import("./api/db/petstore-goods-detail.js")); // mini橙商品主线:商品详情
+  mount("/api/db/petstore-goods-expiry", () => import("./api/db/petstore-goods-expiry.js")); // mini橙商品主线:保质期
+  mount("/api/db/petstore-goods-shelf", () => import("./api/db/petstore-goods-shelf.js")); // mini橙商品主线:货位
   mount("/api/db/recon-export", () => import("./api/db/recon-export.js"));
   mount("/api/db/recon-edit", () => import("./api/db/recon-edit.js")); // 对账主表行内编辑 2026-08-11
   mount("/api/db/recon-confirm", () => import("./api/db/recon-confirm.js")); // 对平状态 2026-08-12
