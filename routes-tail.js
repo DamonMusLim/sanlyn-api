@@ -107,6 +107,11 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/petstore-goods-detail", () => import("./api/db/petstore-goods-detail.js")); // mini橙商品主线:商品详情
   mount("/api/db/petstore-goods-expiry", () => import("./api/db/petstore-goods-expiry.js")); // mini橙商品主线:保质期
   mount("/api/db/petstore-goods-shelf", () => import("./api/db/petstore-goods-shelf.js")); // mini橙商品主线:货位
+  mount("/api/db/petstore-sales-ranking", () => import("./api/db/petstore-sales-ranking.js")); // mini橙销量分析:商品动销排行
+  mount("/api/db/petstore-sales-dead", () => import("./api/db/petstore-sales-dead.js")); // mini橙销量分析:无动销商品
+  mount("/api/db/petstore-restock", () => import("./api/db/petstore-restock.js")); // mini橙销量分析:智能补货
+  mount("/api/db/petstore-price-log", () => import("./api/db/petstore-price-log.js")); // mini橙价格:调价监控/改价日志
+  mount("/api/db/petstore-market-compare", () => import("./api/db/petstore-market-compare.js")); // mini橙竞品:智能比价
   mount("/api/db/recon-export", () => import("./api/db/recon-export.js"));
   mount("/api/db/recon-edit", () => import("./api/db/recon-edit.js")); // 对账主表行内编辑 2026-08-11
   mount("/api/db/recon-confirm", () => import("./api/db/recon-confirm.js")); // 对平状态 2026-08-12
