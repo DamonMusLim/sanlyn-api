@@ -12,7 +12,7 @@ function json(res, s, d) { return res.status(s).json(d); }
 
 async function detail(code) {
   const sql = `
-    SELECT s.product_code, s.product_name, s.category, s.spec, s.unit,
+    SELECT s.product_code, s.product_name, s.category, s.spec,
            s.out_price, s.stock_num, s.month_sale, s.shelf_list, s.own_brand,
            s.no_sale_months, s.snapshot_date,
            c.product_status, c.shelf_no, c.store_code, c.last_changed_at,
