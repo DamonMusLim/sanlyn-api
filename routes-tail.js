@@ -100,6 +100,9 @@ export function registerTailRoutes(app, mount) {
   mount("/api/db/petstore-stock-query", () => import("./api/db/petstore-stock-query.js")); // mini橙库存查询
   mount("/api/db/petstore-stock-changes", () => import("./api/db/petstore-stock-changes.js")); // mini橙库存变化
   mount("/api/db/petstore-stock-alerts", () => import("./api/db/petstore-stock-alerts.js")); // mini橙库存预警
+  mount("/api/db/petstore-perm-users", () => import("./api/db/petstore-perm-users.js")); // mini橙权限:子账号列表
+  mount("/api/db/petstore-perm-roles", () => import("./api/db/petstore-perm-roles.js")); // mini橙权限:角色列表
+  mount("/api/db/petstore-perm-save", () => import("./api/db/petstore-perm-save.js")); // mini橙权限:唯一写入口
   mount("/api/db/petstore-goods-list", () => import("./api/db/petstore-goods-list.js")); // mini橙商品主线:商品库
   mount("/api/db/petstore-goods-detail", () => import("./api/db/petstore-goods-detail.js")); // mini橙商品主线:商品详情
   mount("/api/db/petstore-goods-expiry", () => import("./api/db/petstore-goods-expiry.js")); // mini橙商品主线:保质期
