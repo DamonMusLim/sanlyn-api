@@ -9,7 +9,7 @@ import { requireAuth } from "../auth.js";
 // 🩸 记忆教训:拍板卡「点了不落地」。所以这里每一次写都必须带 decided_by,
 //    数据库 CHECK 也会拦(ck_ri_decided)。写完立刻回读,把库里的真实状态返回去,
 //    ⛔ 不返回"我以为写成了什么"。
-const ACTIONS = Object.assign(Object.create(null), { approve: 1, reject: 1, expire: 1 });
+const ACTIONS = Object.assign(Object.create(null), { approve: 1, reject: 1, expire: 1, execute: 1 });
 
 function json(res, s, d) { return res.status(s).json(d); }
 function cleanText(v, m = 500) { const s = String(v ?? "").trim(); return s ? s.slice(0, m) : null; }
@@ -46,8 +46,35 @@ async function decide(req, who) {
     return { code: 400, body: { ok: false, error: "case_qty_needs_single", hint: "填箱规一次只能一个商品" } };
   }
 
-  const status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "expired";
   const pool = getPool();
+
+  // execute:已导出并在果冻橙导入完成后,标记这批已执行。
+  // 🩸 为什么必须有这一步:导出口只导【已批准且未执行】的。不标记的话,
+  //    下次点导出会把同一批再导一遍 —— 那就是重复下单,是花钱的错。
+  if (action === "execute") {
+    const orderNo = cleanText(b.order_no, 60);
+    if (!orderNo) return { code: 400, body: { ok: false, error: "execute_needs_order_no", hint: "要填果冻橙那边的要货单号,不然对不上账" } };
+    const r0 = await pool.query(
+      `UPDATE public.petstore_restock_intents
+          SET exec_status = 'executed', exec_at = now(), exec_order_no = $1, decided_note =
+              COALESCE(decided_note,'') || CASE WHEN $2::text <> '' THEN ' · ' || $2::text ELSE '' END
+        WHERE id = ANY($3::bigint[])
+          AND status = 'approved'
+          AND COALESCE(exec_status,'') <> 'executed'
+        RETURNING id, product_code, exec_status, exec_at, exec_order_no`,
+      [orderNo, note || "", ids]);
+    const back0 = await pool.query(
+      `SELECT id, status, exec_status, exec_at, exec_order_no, decided_qty
+         FROM public.petstore_restock_intents WHERE id = ANY($1::bigint[]) ORDER BY id`, [ids]);
+    return { code: 200, body: {
+      ok: true, action, requested: ids.length, changed: r0.rows.length,
+      skipped: ids.length - r0.rows.length,
+      skipped_reason: ids.length - r0.rows.length ? "这些不是【已批准且未执行】(可能已经标过了)" : null,
+      rows: r0.rows, readback: back0.rows,
+    } };
+  }
+
+  const status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "expired";
 
   // 批准时:没显式给量就用建议量(COALESCE),保证 decided_qty 一定有值
   const sql = `
