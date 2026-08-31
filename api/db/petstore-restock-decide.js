@@ -57,13 +57,18 @@ async function decide(req, who) {
     const r0 = await pool.query(
       // 🩸 库是 SQL_ASCII —— SQL 里【不许出现中文字面量】(拼一个「·」就报
       //    invalid byte sequence for encoding "UTF8")。备注要拼就在 JS 里拼好再当参数传。
+      // 🩸 两个坑,都栽过:
+      //  ① exec_status 的 CHECK 只认 'ok'/'failed' —— 我一开始写 'executed',被拦。
+      //     「已执行」是 status 那一列的事(ck_ri_status 认 'executed'),别把两列搞混。
+      //  ② ck_ri_exec_ok 要求 exec_status='ok' 时 exec_order_no 和 readback_ok 都不为空。
+      //     readback_ok=false —— 因为是人工导进果冻橙的,我们【没有】回读验证过,别谎报 true。
       `UPDATE public.petstore_restock_intents
-          SET exec_status = 'executed', exec_at = now(), exec_order_no = $1,
+          SET status = 'executed', exec_status = 'ok', exec_at = now(),
+              exec_order_no = $1, readback_ok = false,
               decided_note = COALESCE($2::text, decided_note)
         WHERE id = ANY($3::bigint[])
           AND status = 'approved'
-          AND COALESCE(exec_status,'') <> 'executed'
-        RETURNING id, product_code, exec_status, exec_at, exec_order_no`,
+        RETURNING id, product_code, status, exec_status, exec_at, exec_order_no`,
       [orderNo, note ? note : null, ids]);
     const back0 = await pool.query(
       `SELECT id, status, exec_status, exec_at, exec_order_no, decided_qty
@@ -71,7 +76,7 @@ async function decide(req, who) {
     return { code: 200, body: {
       ok: true, action, requested: ids.length, changed: r0.rows.length,
       skipped: ids.length - r0.rows.length,
-      skipped_reason: ids.length - r0.rows.length ? "这些不是【已批准且未执行】(可能已经标过了)" : null,
+      skipped_reason: ids.length - r0.rows.length ? "这些不是【已批准】状态(可能已经标过了)" : null,
       rows: r0.rows, readback: back0.rows,
     } };
   }

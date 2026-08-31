@@ -25,8 +25,7 @@ async function rows(storeCode) {
        FROM public.petstore_restock_intents i
        LEFT JOIN public.petstore_gdc_purchase_config g
               ON g.product_code = i.product_code AND g.store_code = i.store_code
-      WHERE i.status = 'approved'
-        AND COALESCE(i.exec_status, '') <> 'executed'
+      WHERE i.status = 'approved'          -- 标过已执行的 status 会变成 'executed',自然就不在这里了
         AND i.decided_qty > 0
         AND ($1::text IS NULL OR i.store_code = $1)
       ORDER BY g.supplier_code NULLS LAST, i.product_code`,
