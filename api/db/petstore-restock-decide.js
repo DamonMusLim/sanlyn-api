@@ -30,6 +30,13 @@ async function decide(req, who) {
   // ⛔ 不让前端自己算件数 —— 算错了库里就是错的(数据库 CHECK 也会拦)。
   const cases = num(b.cases);
   const unit = cleanText(b.buy_unit, 10) === "case" ? "case" : null;
+  // 进货时【顺手填】的箱规 —— Damon 0831:「不用特意去填,不进货你去填就麻烦了」。
+  // 填一次就记进 petstore_product_pack,下次这个品自动带出来。
+  const packQty  = num(b.case_qty);
+  const packUnit = cleanText(b.pack_unit, 20);
+  if (packQty !== null && (packQty <= 1 || packQty > 10000)) {
+    return { code: 400, body: { ok: false, error: "bad_case_qty", hint: "箱规要大于1、不超过10000" } };
+  }
 
   if (action === "reject" && !note) return { code: 400, body: { ok: false, error: "reject_needs_note" } };
 
@@ -59,12 +66,53 @@ async function decide(req, who) {
        AND status = 'proposed'          -- ⛔ 只动待审的,已决定的不许被覆盖
      RETURNING id, product_code, product_name, status, decided_by, decided_at, decided_qty, decided_cases, buy_unit, decided_note`;
 
-  const r = await pool.query(sql, [status, who, note, qty, ids, unit, cases]);
+  // 一个事务里三步:①学箱规 ②回填到这些待审行 ③再做审核写入。
+  // 顺序不能反 —— 第③步的 SQL 读的就是 case_qty 这一列。
+  const client = await pool.connect();
+  let r;
+  try {
+    await client.query("BEGIN");
+
+    if (status === "approved" && unit === "case" && packQty !== null) {
+      // ① 学:只学【这批待审行】涉及的商品,⛔ 不许前端指定 product_code
+      await client.query(
+        `INSERT INTO public.petstore_product_pack (product_code, pack_qty, unit_name, learned_from, updated_by)
+         SELECT DISTINCT product_code, $1::numeric, $2::text, 'restock_approve', $3::text
+           FROM public.petstore_restock_intents
+          WHERE id = ANY($4::bigint[]) AND status = 'proposed'
+         ON CONFLICT (product_code) DO UPDATE
+            SET pack_qty = EXCLUDED.pack_qty, unit_name = EXCLUDED.unit_name,
+                learned_from = EXCLUDED.learned_from, updated_by = EXCLUDED.updated_by,
+                updated_at = now()`,
+        [packQty, packUnit, who, ids]);
+    }
+
+    // ② 回填:待审行还没有箱规的,从已学到的箱规里带出来
+    await client.query(
+      `UPDATE public.petstore_restock_intents r
+          SET case_qty = p.pack_qty
+         FROM public.petstore_product_pack p
+        WHERE p.product_code = r.product_code
+          AND r.id = ANY($1::bigint[]) AND r.status = 'proposed'
+          AND (r.case_qty IS NULL OR r.case_qty <> p.pack_qty)`, [ids]);
+
+    // ③ 审核写入
+    r = await client.query(sql, [status, who, note, qty, ids, unit, cases]);
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
 
   // 🔴 回读:把这批 id 在库里的真实状态再查一遍,返回真实值而不是"我以为写成了什么"
   const back = await pool.query(
-    `SELECT id, status, decided_by, decided_at, decided_qty, decided_cases, buy_unit, case_qty
-       FROM public.petstore_restock_intents WHERE id = ANY($1::bigint[]) ORDER BY id`, [ids]);
+    `SELECT r.id, r.status, r.decided_by, r.decided_at, r.decided_qty, r.decided_cases,
+            r.buy_unit, r.case_qty, p.updated_by AS pack_by, p.learned_from AS pack_src
+       FROM public.petstore_restock_intents r
+       LEFT JOIN public.petstore_product_pack p ON p.product_code = r.product_code
+      WHERE r.id = ANY($1::bigint[]) ORDER BY r.id`, [ids]);
 
   const changed = r.rows.length;
   const skipped = ids.length - changed;

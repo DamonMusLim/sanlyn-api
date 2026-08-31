@@ -27,33 +27,39 @@ async function listRows(req) {
   ];
   const sql = `
     WITH filtered AS (
-      SELECT id, batch_no, store_code, product_code, product_name, spec,
-             cur_stock, daily_avg_30, days_of_supply, qty_30, oos_days_30,
-             suggest_qty, verdict_reason, source, status,
-             decided_by, decided_at, decided_qty, decided_note,
-             exec_status, exec_at, exec_order_no, exec_error, readback_ok, created_at,
-             supplier_name, min_order, order_multiple, arrival_days, terms_missing,
-             buy_unit, case_qty, case_barcode, decided_cases,
-             -- 有整箱码才谈得上「按箱采购」
-             (case_qty IS NOT NULL AND case_qty > 1) AS can_buy_case,
+      SELECT r.id, r.batch_no, r.store_code, r.product_code, r.product_name, r.spec,
+             r.cur_stock, r.daily_avg_30, r.days_of_supply, r.qty_30, r.oos_days_30,
+             r.suggest_qty, r.verdict_reason, r.source, r.status,
+             r.decided_by, r.decided_at, r.decided_qty, r.decided_note,
+             r.exec_status, r.exec_at, r.exec_order_no, r.exec_error, r.readback_ok, r.created_at,
+             r.supplier_name, r.min_order, r.order_multiple, r.arrival_days, r.terms_missing,
+             r.buy_unit, r.case_barcode, r.decided_cases,
+             -- 箱规来源:这一行自己的 > 学到的(petstore_product_pack)。
+             -- Damon 0831:「进货的时候顺手填」,填过一次以后这里就带出来了。
+             COALESCE(r.case_qty, pk.pack_qty) AS case_qty,
+             pk.unit_name  AS pack_unit,
+             pk.updated_by AS pack_by,          -- 谁填的,界面上要能看见
+             (COALESCE(r.case_qty, pk.pack_qty) IS NOT NULL
+              AND COALESCE(r.case_qty, pk.pack_qty) > 1) AS can_buy_case,
              -- 按箱要几箱:向上取整,不够一箱也算一箱
-             CASE WHEN case_qty IS NOT NULL AND case_qty > 1
-                  THEN CEIL(GREATEST(suggest_qty, COALESCE(min_order,0)) / case_qty)
+             CASE WHEN COALESCE(r.case_qty, pk.pack_qty) > 1
+                  THEN CEIL(GREATEST(r.suggest_qty, COALESCE(r.min_order,0)) / COALESCE(r.case_qty, pk.pack_qty))
              END AS suggest_cases,
              -- 🔴 库存为负是上游数据问题(果冻橙同步来的),标出来别让人当真
-             (cur_stock < 0) AS stock_is_negative,
+             (r.cur_stock < 0) AS stock_is_negative,
              -- 🔴 建议量够不够起订量 —— 不够的话这条建议根本下不了单
-             (min_order IS NOT NULL AND suggest_qty < min_order) AS below_min_order,
+             (r.min_order IS NOT NULL AND r.suggest_qty < r.min_order) AS below_min_order,
              -- 起订量/倍数都有时,算出「实际该下多少」(向上取整到倍数)
-             CASE WHEN min_order IS NULL THEN NULL
-                  WHEN order_multiple IS NULL OR order_multiple <= 1
-                       THEN GREATEST(suggest_qty, min_order)
-                  ELSE CEIL(GREATEST(suggest_qty, min_order) / order_multiple) * order_multiple
+             CASE WHEN r.min_order IS NULL THEN NULL
+                  WHEN r.order_multiple IS NULL OR r.order_multiple <= 1
+                       THEN GREATEST(r.suggest_qty, r.min_order)
+                  ELSE CEIL(GREATEST(r.suggest_qty, r.min_order) / r.order_multiple) * r.order_multiple
              END AS orderable_qty
-        FROM public.petstore_restock_intents
-       WHERE ($1::text IS NULL OR status = $1)
-         AND ($2::text IS NULL OR batch_no = $2)
-         AND ($3::text IS NULL OR store_code = $3)
+        FROM public.petstore_restock_intents r
+        LEFT JOIN public.petstore_product_pack pk ON pk.product_code = r.product_code
+       WHERE ($1::text IS NULL OR r.status = $1)
+         AND ($2::text IS NULL OR r.batch_no = $2)
+         AND ($3::text IS NULL OR r.store_code = $3)
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
       SELECT *, ROW_NUMBER() OVER (ORDER BY days_of_supply ASC NULLS FIRST, daily_avg_30 DESC NULLS LAST, id ASC) AS __rn
@@ -72,16 +78,17 @@ async function listRows(req) {
 // 汇总:每个状态各多少条、多少量,给审核页顶部用
 async function summary() {
   const r = await getPool().query(`
-    SELECT status,
+    SELECT r.status,
            COUNT(*)::int AS cnt,
-           COALESCE(SUM(suggest_qty),0)::numeric AS suggest_total,
-           COALESCE(SUM(decided_qty),0)::numeric AS decided_total,
-           COUNT(*) FILTER (WHERE cur_stock < 0)::int AS negative_stock,
-           COUNT(*) FILTER (WHERE terms_missing)::int AS terms_missing,
-           COUNT(*) FILTER (WHERE min_order IS NOT NULL AND suggest_qty < min_order)::int AS below_min_order,
-           COUNT(*) FILTER (WHERE case_qty IS NOT NULL AND case_qty > 1)::int AS can_buy_case
-      FROM public.petstore_restock_intents
-     GROUP BY status ORDER BY 2 DESC`);
+           COALESCE(SUM(r.suggest_qty),0)::numeric AS suggest_total,
+           COALESCE(SUM(r.decided_qty),0)::numeric AS decided_total,
+           COUNT(*) FILTER (WHERE r.cur_stock < 0)::int AS negative_stock,
+           COUNT(*) FILTER (WHERE r.terms_missing)::int AS terms_missing,
+           COUNT(*) FILTER (WHERE r.min_order IS NOT NULL AND r.suggest_qty < r.min_order)::int AS below_min_order,
+           COUNT(*) FILTER (WHERE COALESCE(r.case_qty, pk.pack_qty) > 1)::int AS can_buy_case
+      FROM public.petstore_restock_intents r
+      LEFT JOIN public.petstore_product_pack pk ON pk.product_code = r.product_code
+     GROUP BY r.status ORDER BY 2 DESC`);
   return { rows: r.rows, total: r.rows.length };
 }
 
