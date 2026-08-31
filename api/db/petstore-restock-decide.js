@@ -26,6 +26,10 @@ async function decide(req, who) {
 
   const note = cleanText(b.note, 500);
   const qty = num(b.qty);
+  // 按箱采购:前端传箱数,后端算实际件数(箱数 × 每箱数量)。
+  // ⛔ 不让前端自己算件数 —— 算错了库里就是错的(数据库 CHECK 也会拦)。
+  const cases = num(b.cases);
+  const unit = cleanText(b.buy_unit, 10) === "case" ? "case" : null;
 
   if (action === "reject" && !note) return { code: 400, body: { ok: false, error: "reject_needs_note" } };
 
@@ -39,18 +43,27 @@ async function decide(req, who) {
            decided_by   = $2,
            decided_at   = now(),
            decided_note = $3,
-           decided_qty  = CASE WHEN $1 = 'approved'
-                               THEN COALESCE($4::numeric, suggest_qty)
-                               ELSE decided_qty END
+           buy_unit     = CASE WHEN $1 = 'approved' AND $6::text = 'case' AND case_qty > 1
+                               THEN 'case' ELSE buy_unit END,
+           decided_cases = CASE WHEN $1 = 'approved' AND $6::text = 'case' AND case_qty > 1
+                                THEN COALESCE($7::numeric, CEIL(GREATEST(suggest_qty, COALESCE(min_order,0)) / case_qty))
+                                ELSE decided_cases END,
+           decided_qty  = CASE
+                            WHEN $1 <> 'approved' THEN decided_qty
+                            -- 按箱:件数 = 箱数 × 每箱,后端算
+                            WHEN $6::text = 'case' AND case_qty > 1
+                              THEN COALESCE($7::numeric, CEIL(GREATEST(suggest_qty, COALESCE(min_order,0)) / case_qty)) * case_qty
+                            ELSE COALESCE($4::numeric, suggest_qty)
+                          END
      WHERE id = ANY($5::bigint[])
        AND status = 'proposed'          -- ⛔ 只动待审的,已决定的不许被覆盖
-     RETURNING id, product_code, product_name, status, decided_by, decided_at, decided_qty, decided_note`;
+     RETURNING id, product_code, product_name, status, decided_by, decided_at, decided_qty, decided_cases, buy_unit, decided_note`;
 
-  const r = await pool.query(sql, [status, who, note, qty, ids]);
+  const r = await pool.query(sql, [status, who, note, qty, ids, unit, cases]);
 
   // 🔴 回读:把这批 id 在库里的真实状态再查一遍,返回真实值而不是"我以为写成了什么"
   const back = await pool.query(
-    `SELECT id, status, decided_by, decided_at, decided_qty
+    `SELECT id, status, decided_by, decided_at, decided_qty, decided_cases, buy_unit, case_qty
        FROM public.petstore_restock_intents WHERE id = ANY($1::bigint[]) ORDER BY id`, [ids]);
 
   const changed = r.rows.length;

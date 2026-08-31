@@ -33,6 +33,13 @@ async function listRows(req) {
              decided_by, decided_at, decided_qty, decided_note,
              exec_status, exec_at, exec_order_no, exec_error, readback_ok, created_at,
              supplier_name, min_order, order_multiple, arrival_days, terms_missing,
+             buy_unit, case_qty, case_barcode, decided_cases,
+             -- 有整箱码才谈得上「按箱采购」
+             (case_qty IS NOT NULL AND case_qty > 1) AS can_buy_case,
+             -- 按箱要几箱:向上取整,不够一箱也算一箱
+             CASE WHEN case_qty IS NOT NULL AND case_qty > 1
+                  THEN CEIL(GREATEST(suggest_qty, COALESCE(min_order,0)) / case_qty)
+             END AS suggest_cases,
              -- 🔴 库存为负是上游数据问题(果冻橙同步来的),标出来别让人当真
              (cur_stock < 0) AS stock_is_negative,
              -- 🔴 建议量够不够起订量 —— 不够的话这条建议根本下不了单
@@ -71,7 +78,8 @@ async function summary() {
            COALESCE(SUM(decided_qty),0)::numeric AS decided_total,
            COUNT(*) FILTER (WHERE cur_stock < 0)::int AS negative_stock,
            COUNT(*) FILTER (WHERE terms_missing)::int AS terms_missing,
-           COUNT(*) FILTER (WHERE min_order IS NOT NULL AND suggest_qty < min_order)::int AS below_min_order
+           COUNT(*) FILTER (WHERE min_order IS NOT NULL AND suggest_qty < min_order)::int AS below_min_order,
+           COUNT(*) FILTER (WHERE case_qty IS NOT NULL AND case_qty > 1)::int AS can_buy_case
       FROM public.petstore_restock_intents
      GROUP BY status ORDER BY 2 DESC`);
   return { rows: r.rows, total: r.rows.length };
