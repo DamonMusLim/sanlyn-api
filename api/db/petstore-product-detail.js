@@ -21,8 +21,9 @@ async function detail(code) {
                      'barcode', b.barcode, 'kind', b.code_kind,
                      'is_primary', b.is_primary, 'source', b.source,
                      -- 一品多码照果冻橙的语义:一个条码=一种包装规格
+                     -- ⛔ box_in_price(箱进价)是成本,存库可以,接口不许返回
                      'pack_type', b.pack_type, 'pack_qty', b.pack_qty,
-                     'box_in_price', b.box_in_price, 'box_out_price', b.box_out_price)
+                     'box_out_price', b.box_out_price)
                    ORDER BY b.is_primary DESC, b.pack_qty, b.id)
               FROM public.petstore_product_barcodes b
              WHERE b.product_code = s.product_code)                       AS barcodes,
@@ -49,7 +50,7 @@ async function detail(code) {
 async function byBarcode(bc) {
   const r = await getPool().query(`
     SELECT b.barcode, b.code_kind, b.is_primary, b.product_code,
-           b.pack_type, b.pack_qty, b.box_in_price, b.box_out_price,
+           b.pack_type, b.pack_qty, b.box_out_price,   -- ⛔ 不返回 box_in_price(成本)
            s.product_name, s.spec, s.out_price, s.stock_num,
            -- 扫整箱码时该收多少:有箱售价用箱售价,没有就单价×装箱数
            COALESCE(b.box_out_price, s.out_price * COALESCE(b.pack_qty,1)) AS scan_price
