@@ -19,8 +19,11 @@ async function detail(code) {
            sup.shelf_life_days, sup.brand, sup.pet_type, sup.compliance_status,
            (SELECT jsonb_agg(jsonb_build_object(
                      'barcode', b.barcode, 'kind', b.code_kind,
-                     'is_primary', b.is_primary, 'source', b.source)
-                   ORDER BY b.is_primary DESC, b.id)
+                     'is_primary', b.is_primary, 'source', b.source,
+                     -- 一品多码照果冻橙的语义:一个条码=一种包装规格
+                     'pack_type', b.pack_type, 'pack_qty', b.pack_qty,
+                     'box_in_price', b.box_in_price, 'box_out_price', b.box_out_price)
+                   ORDER BY b.is_primary DESC, b.pack_qty, b.id)
               FROM public.petstore_product_barcodes b
              WHERE b.product_code = s.product_code)                       AS barcodes,
            (SELECT jsonb_agg(jsonb_build_object('tag_code', t.tag_code, 'tag_name', g.tag_name,
@@ -46,7 +49,10 @@ async function detail(code) {
 async function byBarcode(bc) {
   const r = await getPool().query(`
     SELECT b.barcode, b.code_kind, b.is_primary, b.product_code,
-           s.product_name, s.spec, s.out_price, s.stock_num
+           b.pack_type, b.pack_qty, b.box_in_price, b.box_out_price,
+           s.product_name, s.spec, s.out_price, s.stock_num,
+           -- 扫整箱码时该收多少:有箱售价用箱售价,没有就单价×装箱数
+           COALESCE(b.box_out_price, s.out_price * COALESCE(b.pack_qty,1)) AS scan_price
       FROM public.petstore_product_barcodes b
       LEFT JOIN public.petstore_skus s ON s.product_code = b.product_code
      WHERE b.barcode = $1
@@ -62,8 +68,9 @@ async function multi(req) {
     WITH m AS (
       SELECT product_code, COUNT(*)::int AS code_count,
              jsonb_agg(jsonb_build_object('barcode', barcode, 'kind', code_kind,
-                                          'is_primary', is_primary)
-                       ORDER BY is_primary DESC, id) AS barcodes
+                                          'is_primary', is_primary, 'pack_qty', pack_qty,
+                                          'box_out_price', box_out_price)
+                       ORDER BY is_primary DESC, pack_qty, id) AS barcodes
         FROM public.petstore_product_barcodes
        GROUP BY product_code HAVING COUNT(*) > 1
     ), total_count AS (SELECT COUNT(*)::int AS total FROM m)
