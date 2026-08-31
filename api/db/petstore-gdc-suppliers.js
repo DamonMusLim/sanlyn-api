@@ -29,6 +29,10 @@ async function list(q) {
              -- ⛔ bank_no / opening_name / open_bank_name / tax_no / invoice_header
              --    故意不 SELECT:那是打钱用的付款资料
              CASE s.stream_type WHEN 1 THEN '客户' ELSE '供应商' END AS stream_label,
+             -- 结算方式:果冻橙存的是数字,这里翻成人话
+             CASE s.settlement_type WHEN 1 THEN '货到付款' WHEN 2 THEN '月结'
+                                    WHEN 3 THEN '预付'     WHEN 4 THEN '账期'
+                                    ELSE '未设置' END AS settlement_label,
              CASE WHEN s.enable = 0 AND s.state_flag = 0 THEN '正常' ELSE '停用' END AS status_label,
              -- 资料齐不齐:能不能联系上,是「同时发送」的硬前置
              (btrim(COALESCE(s.contact_phone, '')) <> '') AS has_phone,
