@@ -34,11 +34,17 @@ async function decide(req, who) {
   // 填一次就记进 petstore_product_pack,下次这个品自动带出来。
   const packQty  = num(b.case_qty);
   const packUnit = cleanText(b.pack_unit, 20);
-  if (packQty !== null && (packQty <= 1 || packQty > 10000)) {
-    return { code: 400, body: { ok: false, error: "bad_case_qty", hint: "箱规要大于1、不超过10000" } };
+  if (packQty !== null && (!Number.isInteger(packQty) || packQty <= 1 || packQty > 10000)) {
+    // codex 审出:numeric 列 + CHECK 都不拦小数,100.5 会算出小数件数
+    return { code: 400, body: { ok: false, error: "bad_case_qty", hint: "箱规要是大于1、不超过10000的整数" } };
   }
 
   if (action === "reject" && !note) return { code: 400, body: { ok: false, error: "reject_needs_note" } };
+  // codex 审出:绕开前端直接 POST 多个 id + 一个 case_qty,会把同一个箱规写到一批商品上。
+  // 箱规是【一个商品一个】的事实,后端必须自己兜住,不能指望前端只在单选时带。
+  if (packQty !== null && ids.length !== 1) {
+    return { code: 400, body: { ok: false, error: "case_qty_needs_single", hint: "填箱规一次只能一个商品" } };
+  }
 
   const status = action === "approve" ? "approved" : action === "reject" ? "rejected" : "expired";
   const pool = getPool();
@@ -73,18 +79,14 @@ async function decide(req, who) {
   try {
     await client.query("BEGIN");
 
+    // ① 这次填的箱规,先只写进【这一行】,不动全局记忆。
+    //    codex 审出:先写全局的话,一个 status 已经不是 proposed、实际 changed=0 的请求
+    //    照样会把全店的箱规改掉。所以顺序必须是「先落这一行 → 审核真生效了 → 才敢记住」。
     if (status === "approved" && unit === "case" && packQty !== null) {
-      // ① 学:只学【这批待审行】涉及的商品,⛔ 不许前端指定 product_code
       await client.query(
-        `INSERT INTO public.petstore_product_pack (product_code, pack_qty, unit_name, learned_from, updated_by)
-         SELECT DISTINCT product_code, $1::numeric, $2::text, 'restock_approve', $3::text
-           FROM public.petstore_restock_intents
-          WHERE id = ANY($4::bigint[]) AND status = 'proposed'
-         ON CONFLICT (product_code) DO UPDATE
-            SET pack_qty = EXCLUDED.pack_qty, unit_name = EXCLUDED.unit_name,
-                learned_from = EXCLUDED.learned_from, updated_by = EXCLUDED.updated_by,
-                updated_at = now()`,
-        [packQty, packUnit, who, ids]);
+        `UPDATE public.petstore_restock_intents
+            SET case_qty = $1::numeric
+          WHERE id = ANY($2::bigint[]) AND status = 'proposed'`, [packQty, ids]);
     }
 
     // ② 回填:待审行还没有箱规的,从已学到的箱规里带出来
@@ -94,10 +96,23 @@ async function decide(req, who) {
          FROM public.petstore_product_pack p
         WHERE p.product_code = r.product_code
           AND r.id = ANY($1::bigint[]) AND r.status = 'proposed'
-          AND (r.case_qty IS NULL OR r.case_qty <> p.pack_qty)`, [ids]);
+          AND r.case_qty IS NULL`, [ids]);
 
     // ③ 审核写入
     r = await client.query(sql, [status, who, note, qty, ids, unit, cases]);
+
+    // ④ 审核【真的生效了】才记住箱规。changed=0 的请求什么都改不了。
+    if (status === "approved" && unit === "case" && packQty !== null && r.rows.length === 1) {
+      await client.query(
+        `INSERT INTO public.petstore_product_pack
+                (product_code, pack_qty, unit_name, learned_from, updated_by)
+         VALUES ($1, $2::numeric, $3::text, 'restock_approve', $4::text)
+         ON CONFLICT (product_code) DO UPDATE
+            SET pack_qty = EXCLUDED.pack_qty, unit_name = EXCLUDED.unit_name,
+                learned_from = EXCLUDED.learned_from, updated_by = EXCLUDED.updated_by,
+                updated_at = now()`,
+        [r.rows[0].product_code, packQty, packUnit, who]);
+    }
     await client.query("COMMIT");
   } catch (e) {
     await client.query("ROLLBACK").catch(() => {});

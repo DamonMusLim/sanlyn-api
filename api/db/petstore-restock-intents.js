@@ -36,14 +36,14 @@ async function listRows(req) {
              r.buy_unit, r.case_barcode, r.decided_cases,
              -- 箱规来源:这一行自己的 > 学到的(petstore_product_pack)。
              -- Damon 0831:「进货的时候顺手填」,填过一次以后这里就带出来了。
-             COALESCE(r.case_qty, pk.pack_qty) AS case_qty,
+             COALESCE(r.case_qty, CASE WHEN r.status = 'proposed' THEN pk.pack_qty END) AS case_qty,
              pk.unit_name  AS pack_unit,
              pk.updated_by AS pack_by,          -- 谁填的,界面上要能看见
-             (COALESCE(r.case_qty, pk.pack_qty) IS NOT NULL
-              AND COALESCE(r.case_qty, pk.pack_qty) > 1) AS can_buy_case,
+             (COALESCE(r.case_qty, CASE WHEN r.status = 'proposed' THEN pk.pack_qty END) IS NOT NULL
+              AND COALESCE(r.case_qty, CASE WHEN r.status = 'proposed' THEN pk.pack_qty END) > 1) AS can_buy_case,
              -- 按箱要几箱:向上取整,不够一箱也算一箱
-             CASE WHEN COALESCE(r.case_qty, pk.pack_qty) > 1
-                  THEN CEIL(GREATEST(r.suggest_qty, COALESCE(r.min_order,0)) / COALESCE(r.case_qty, pk.pack_qty))
+             CASE WHEN COALESCE(r.case_qty, CASE WHEN r.status = 'proposed' THEN pk.pack_qty END) > 1
+                  THEN CEIL(GREATEST(r.suggest_qty, COALESCE(r.min_order,0)) / COALESCE(r.case_qty, CASE WHEN r.status = 'proposed' THEN pk.pack_qty END))
              END AS suggest_cases,
              -- 🔴 库存为负是上游数据问题(果冻橙同步来的),标出来别让人当真
              (r.cur_stock < 0) AS stock_is_negative,
@@ -85,7 +85,7 @@ async function summary() {
            COUNT(*) FILTER (WHERE r.cur_stock < 0)::int AS negative_stock,
            COUNT(*) FILTER (WHERE r.terms_missing)::int AS terms_missing,
            COUNT(*) FILTER (WHERE r.min_order IS NOT NULL AND r.suggest_qty < r.min_order)::int AS below_min_order,
-           COUNT(*) FILTER (WHERE COALESCE(r.case_qty, pk.pack_qty) > 1)::int AS can_buy_case
+           COUNT(*) FILTER (WHERE COALESCE(r.case_qty, CASE WHEN r.status = 'proposed' THEN pk.pack_qty END) > 1)::int AS can_buy_case
       FROM public.petstore_restock_intents r
       LEFT JOIN public.petstore_product_pack pk ON pk.product_code = r.product_code
      GROUP BY r.status ORDER BY 2 DESC`);
