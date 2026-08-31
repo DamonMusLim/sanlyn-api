@@ -21,11 +21,18 @@ async function decide(req, who) {
   if (!action || !Object.hasOwn(ACTIONS, action)) return { code: 400, body: { ok: false, error: "bad_action" } };
 
   const ids = Array.isArray(b.ids) ? b.ids.map(Number).filter(Number.isInteger) : [];
-  if (!ids.length) return { code: 400, body: { ok: false, error: "no_ids" } };
+  // execute 按批次标时不需要 ids
+  if (!ids.length && !(action === "execute" && cleanText(b.batch, 40))) {
+    return { code: 400, body: { ok: false, error: "no_ids" } };
+  }
   if (ids.length > 200) return { code: 400, body: { ok: false, error: "too_many_ids" } };
 
   const note = cleanText(b.note, 500);
   const qty = num(b.qty);
+  // codex 审出:decided_qty 是 numeric,5.5 能存进去,导给果冻橙的采购量就成了小数。
+  if (qty !== null && !Number.isInteger(qty)) {
+    return { code: 400, body: { ok: false, error: "bad_qty", hint: "批准量要是整数" } };
+  }
   // 按箱采购:前端传箱数,后端算实际件数(箱数 × 每箱数量)。
   // ⛔ 不让前端自己算件数 —— 算错了库里就是错的(数据库 CHECK 也会拦)。
   const cases = num(b.cases);
@@ -54,6 +61,9 @@ async function decide(req, who) {
   if (action === "execute") {
     const orderNo = cleanText(b.order_no, 60);
     if (!orderNo) return { code: 400, body: { ok: false, error: "execute_needs_order_no", hint: "要填果冻橙那边的要货单号,不然对不上账" } };
+    // codex 审出:导 100 条只勾 20 条标,剩下 80 条下次会被重复导出。
+    // 所以标记按【导出批次】整批来,不按人手勾。batch 优先,没给才退回按 ids。
+    const batch = cleanText(b.batch, 40);
     const r0 = await pool.query(
       // 🩸 库是 SQL_ASCII —— SQL 里【不许出现中文字面量】(拼一个「·」就报
       //    invalid byte sequence for encoding "UTF8")。备注要拼就在 JS 里拼好再当参数传。
@@ -62,21 +72,26 @@ async function decide(req, who) {
       //     「已执行」是 status 那一列的事(ck_ri_status 认 'executed'),别把两列搞混。
       //  ② ck_ri_exec_ok 要求 exec_status='ok' 时 exec_order_no 和 readback_ok 都不为空。
       //     readback_ok=false —— 因为是人工导进果冻橙的,我们【没有】回读验证过,别谎报 true。
+      // ⛔ 不动 decided_note —— codex 审出:那是【为什么批准】的理由,
+      //    被执行备注冲掉的话以后复盘查不到。执行信息进 exec_* 那几列。
       `UPDATE public.petstore_restock_intents
           SET status = 'executed', exec_status = 'ok', exec_at = now(),
-              exec_order_no = $1, readback_ok = false,
-              decided_note = COALESCE($2::text, decided_note)
-        WHERE id = ANY($3::bigint[])
-          AND status = 'approved'
-        RETURNING id, product_code, status, exec_status, exec_at, exec_order_no`,
-      [orderNo, note ? note : null, ids]);
+              exec_order_no = $1, readback_ok = false
+        WHERE status = 'approved'
+          AND export_batch IS NOT NULL          -- 没导出过就不可能已执行
+          AND ($2::text IS NOT NULL AND export_batch = $2::text
+               OR $2::text IS NULL AND id = ANY($3::bigint[]))
+        RETURNING id, product_code, status, exec_status, exec_at, exec_order_no, export_batch`,
+      [orderNo, batch, ids]);
     const back0 = await pool.query(
-      `SELECT id, status, exec_status, exec_at, exec_order_no, decided_qty
-         FROM public.petstore_restock_intents WHERE id = ANY($1::bigint[]) ORDER BY id`, [ids]);
+      `SELECT id, status, exec_status, exec_at, exec_order_no, decided_qty, export_batch
+         FROM public.petstore_restock_intents
+        WHERE ($1::text IS NOT NULL AND export_batch = $1::text
+               OR $1::text IS NULL AND id = ANY($2::bigint[])) ORDER BY id`, [batch, ids]);
     return { code: 200, body: {
-      ok: true, action, requested: ids.length, changed: r0.rows.length,
-      skipped: ids.length - r0.rows.length,
-      skipped_reason: ids.length - r0.rows.length ? "这些不是【已批准】状态(可能已经标过了)" : null,
+      ok: true, action, batch, requested: batch ? r0.rows.length : ids.length, changed: r0.rows.length,
+      skipped: batch ? 0 : ids.length - r0.rows.length,
+      skipped_reason: (!batch && ids.length - r0.rows.length) ? "这些不是【已批准且已导出】的(可能已经标过了)" : null,
       rows: r0.rows, readback: back0.rows,
     } };
   }

@@ -33,7 +33,7 @@ async function listRows(req) {
              r.decided_by, r.decided_at, r.decided_qty, r.decided_note,
              r.exec_status, r.exec_at, r.exec_order_no, r.exec_error, r.readback_ok, r.created_at,
              r.supplier_name, r.min_order, r.order_multiple, r.arrival_days, r.terms_missing,
-             r.buy_unit, r.case_barcode, r.decided_cases,
+             r.buy_unit, r.case_barcode, r.decided_cases, r.export_batch, r.exported_at,
              -- 箱规来源:这一行自己的 > 学到的(petstore_product_pack)。
              -- Damon 0831:「进货的时候顺手填」,填过一次以后这里就带出来了。
              COALESCE(r.case_qty, CASE WHEN r.status = 'proposed' THEN pk.pack_qty END) AS case_qty,
