@@ -55,14 +55,16 @@ async function decide(req, who) {
     const orderNo = cleanText(b.order_no, 60);
     if (!orderNo) return { code: 400, body: { ok: false, error: "execute_needs_order_no", hint: "要填果冻橙那边的要货单号,不然对不上账" } };
     const r0 = await pool.query(
+      // 🩸 库是 SQL_ASCII —— SQL 里【不许出现中文字面量】(拼一个「·」就报
+      //    invalid byte sequence for encoding "UTF8")。备注要拼就在 JS 里拼好再当参数传。
       `UPDATE public.petstore_restock_intents
-          SET exec_status = 'executed', exec_at = now(), exec_order_no = $1, decided_note =
-              COALESCE(decided_note,'') || CASE WHEN $2::text <> '' THEN ' · ' || $2::text ELSE '' END
+          SET exec_status = 'executed', exec_at = now(), exec_order_no = $1,
+              decided_note = COALESCE($2::text, decided_note)
         WHERE id = ANY($3::bigint[])
           AND status = 'approved'
           AND COALESCE(exec_status,'') <> 'executed'
         RETURNING id, product_code, exec_status, exec_at, exec_order_no`,
-      [orderNo, note || "", ids]);
+      [orderNo, note ? note : null, ids]);
     const back0 = await pool.query(
       `SELECT id, status, exec_status, exec_at, exec_order_no, decided_qty
          FROM public.petstore_restock_intents WHERE id = ANY($1::bigint[]) ORDER BY id`, [ids]);
