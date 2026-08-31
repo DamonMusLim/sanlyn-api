@@ -33,7 +33,7 @@ async function list(q) {
              s.stock_num, s.in_transit, s.day_sale, s.week_sale, s.month_sale,
              s.shortage_day, s.stock_sale_days, s.days_available,
              s.min_order, s.order_multiple, s.purchase_unit, s.relation_ali,
-             s.out_price, s.zero_time, s.create_time,
+             s.out_price, s.zero_time, s.create_time, s.online_price, s.shelf_name,
              -- ⛔ cost_price / gross_margin_pct 故意不选:那是成本
              -- 起订量/倍数都有时,算出「实际该下多少」(向上取整到倍数)
              CASE WHEN s.min_order IS NULL THEN NULL
@@ -51,6 +51,8 @@ async function list(q) {
          AND ($3::text IS NULL OR s.supplier_code = $3)
          AND ($4::text IS NULL OR s.product_name ILIKE '%' || $4 || '%'
               OR s.product_code = $4 OR s.upc_code = $4)
+         -- adjust=1 只看智能比价那 11 条(果冻橙那边是另一个页签,同一批次不同商品)
+         AND ($7::text IS NULL OR ($7 = '1') = s.is_adjust)
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
       SELECT *, ROW_NUMBER() OVER (ORDER BY ${orderBy}, product_code) AS __rn
@@ -63,7 +65,7 @@ async function list(q) {
 
   const r = await getPool().query(sql, [
     clean(q?.store_code) , clean(q?.scene, 40), clean(q?.supplier_code, 40),
-    clean(q?.q, 60), pageSize, (page - 1) * pageSize,
+    clean(q?.q, 60), pageSize, (page - 1) * pageSize, clean(q?.adjust, 2),
   ]);
   const f = r.rows[0] || { rows: [], total: 0 };
   return { rows: f.rows, total: f.total, page, pageSize };
