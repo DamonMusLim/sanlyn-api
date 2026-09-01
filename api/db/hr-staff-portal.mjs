@@ -140,7 +140,7 @@ export default async function handler(req, res) {
            FROM hr_rest_change_requests
           WHERE employee_id=$1 ORDER BY created_at DESC LIMIT 8`, [empId]);
       const todayCk = await pool.query(
-        `SELECT id, checkin_at, checkout_at, source FROM hr_staff_checkin
+        `SELECT id, checkin_at, source FROM hr_staff_checkin
           WHERE employee_ref=$1 AND checkin_date=$2 ORDER BY checkin_at DESC LIMIT 1`, [empId, today]);
       const manager = await managerExtras(pool, empId, me);
       return res.status(200).json({
@@ -242,9 +242,9 @@ export default async function handler(req, res) {
         } catch (e) { /* 摄像头没装店/离线都算正常，不报错 */ }
         if (!snap) suspicious.push("无抓拍");
 
-        // 4) 记打卡（上班没打过就记上班，打过就记下班）
+        // 4) 记打卡。0802 起只记上班：当天已有行就什么都不写（不再记下班）。
         const exist = (await pool.query(
-          "SELECT id, checkin_at, checkout_at FROM hr_staff_checkin WHERE employee_ref=$1 AND checkin_date=$2 LIMIT 1",
+          "SELECT id, checkin_at FROM hr_staff_checkin WHERE employee_ref=$1 AND checkin_date=$2 LIMIT 1",
           [empId, today])).rows[0];
         const susp = suspicious.length ? suspicious.join("+") : null;
         let what;
@@ -287,7 +287,9 @@ export default async function handler(req, res) {
           message:"店址标好了，以后开门会显示你离店多远" });
       }
 
-      if (action === "checkin" || action === "checkout") {
+      // 0802 Damon 定：只记上班，不记下班。下班打卡(action=checkout)已整段移除——
+      // 前端本来就没入口，后端这条路也一并关掉，避免绕过 UI 写出 checkout_at。
+      if (action === "checkin") {
         const code = String(b.code || "").trim();
         const pt = await pool.query(
           "SELECT code,label FROM hr_checkin_points WHERE code=$1 AND company_code=$2 AND is_active=true",
@@ -295,21 +297,15 @@ export default async function handler(req, res) {
         if (!pt.rows.length) return res.status(400).json({ success:false, error:"二维码无效，请扫店里墙上那个" });
         const today = new Date(Date.now() + 8*3600*1000).toISOString().slice(0,10);
         const exist = await pool.query(
-          "SELECT id, checkin_at, checkout_at FROM hr_staff_checkin WHERE employee_ref=$1 AND checkin_date=$2 LIMIT 1",
+          "SELECT id, checkin_at FROM hr_staff_checkin WHERE employee_ref=$1 AND checkin_date=$2 LIMIT 1",
           [empId, today]);
-        if (action === "checkin") {
-          if (exist.rows.length) return res.status(200).json({ success:true, already:true,
-            message:`今天已经打过卡了（${String(exist.rows[0].checkin_at).slice(11,16)}）` });
-          await pool.query(
-            `INSERT INTO hr_staff_checkin (id, company_code, employee_ref, staff_name, checkin_date, checkin_at, source, scan_code, store_code)
-             VALUES ($1,$2,$3,$4,$5,now(),'qr',$6,$7)`,
-            [`qr-${empId}-${today}`, me.company_code, empId, me.name, today, code, me.company_code]);
-          return res.status(200).json({ success:true, message:`上班打卡成功 · ${pt.rows[0].label}` });
-        }
-        if (!exist.rows.length) return res.status(400).json({ success:false, error:"今天还没上班打卡" });
-        if (exist.rows[0].checkout_at) return res.status(200).json({ success:true, already:true, message:"今天已经打过下班卡了" });
-        await pool.query("UPDATE hr_staff_checkin SET checkout_at=now() WHERE id=$1", [exist.rows[0].id]);
-        return res.status(200).json({ success:true, message:"下班打卡成功，辛苦了 🐾" });
+        if (exist.rows.length) return res.status(200).json({ success:true, already:true,
+          message:`今天已经打过卡了（${String(exist.rows[0].checkin_at).slice(11,16)}）` });
+        await pool.query(
+          `INSERT INTO hr_staff_checkin (id, company_code, employee_ref, staff_name, checkin_date, checkin_at, source, scan_code, store_code)
+           VALUES ($1,$2,$3,$4,$5,now(),'qr',$6,$7)`,
+          [`qr-${empId}-${today}`, me.company_code, empId, me.name, today, code, me.company_code]);
+        return res.status(200).json({ success:true, message:`上班打卡成功 · ${pt.rows[0].label}` });
       }
 
       // 员工「只能提不能批」的那几个动作(请假/报销/加班/调休/建议)拆到 hr-staff-submits.mjs
@@ -437,7 +433,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: true, message: `已保存：${done.join("、")}` });
       }
 
-      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / checkout / leave / reimbursement / reimbursement_ocr / overtime / update_profile / checklist / agenda / rest_change / suggest" });
+      return res.status(400).json({ success: false, error: "action 只能是 unlock / set_point_location / checkin / leave / reimbursement / reimbursement_ocr / overtime / update_profile / checklist / agenda / rest_change / suggest" });
     }
 
     return res.status(405).json({ success: false, error: "不支持的方法" });
