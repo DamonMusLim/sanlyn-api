@@ -60,20 +60,41 @@ async function list(q) {
 
 // 汇总：这一页真正要回答的是「压了多少钱」
 // ⚠️ 这里【会用到成本】算金额，但只返回汇总数，不返回任何单品成本。
-async function summary() {
+// 🩸 窗口(window_start/end)从【表里】读，不写死在代码里 ——
+//    那是"这批数据是哪个窗口拉的"，是数据的属性。写死的话下次换窗口重拉就开始骗人。
+// ⚠️ summary 必须吃跟列表【同一套筛选参数】，否则筛完之后底部数字还是全量的，
+//    看着像"筛选没生效"或者"数字算错了"。
+async function summary(q = {}) {
   const r = await getPool().query(
-    `SELECT COUNT(*)::int AS sku_total,
+    `WITH filtered AS (
+       SELECT z.product_code, z.stock_num, z.stock_cost, z.price, z.offline_cost_price,
+              z.window_start, z.window_end
+         FROM public.petstore_gdc_zero_sale z
+        WHERE ($1::text IS NULL OR z.store_code = $1)
+          AND ($2::text IS NULL OR z.product_name ILIKE '%' || $2 || '%'
+               OR z.product_code = $2 OR z.upc_code = $2 OR z.sku_id = $2)
+          AND ($3::text IS NULL
+               OR ($3 = 'has'  AND z.stock_num > 0)
+               OR ($3 = 'zero' AND COALESCE(z.stock_num, 0) = 0))
+     )
+     SELECT COUNT(*)::int AS sku_total,
             COUNT(DISTINCT product_code)::int AS product_total,
+            ROUND(COALESCE(SUM(stock_num), 0)::numeric, 0) AS stock_total,
             COUNT(*) FILTER (WHERE stock_num > 0)::int AS with_stock,
-            ROUND(COALESCE(SUM(stock_cost) FILTER (WHERE stock_num > 0), 0)::numeric, 0) AS money_stuck,
+            ROUND(COALESCE(SUM(stock_cost), 0)::numeric, 1) AS stock_cost_total,
+            ROUND(COALESCE(SUM(stock_cost) FILTER (WHERE stock_num > 0), 0)::numeric, 1) AS money_stuck,
             COUNT(*) FILTER (WHERE stock_num > 0 AND price IS NOT NULL
                              AND offline_cost_price IS NOT NULL
-                             AND price < offline_cost_price)::int AS below_cost
-       FROM public.petstore_gdc_zero_sale`);
+                             AND price < offline_cost_price)::int AS below_cost,
+            MIN(window_start)::text AS window_start,
+            MAX(window_end)::text   AS window_end
+       FROM filtered`,
+    [clean(q.store_code), clean(q.q, 60), clean(q.stock, 10)]);
   const s = r.rows[0] || {};
   return {
     rows: [{ ...s,
-      hint: "压着的钱 = 有库存却卖不动的那些 SKU 的库存成本合计",
+      hint: "库存成本总额 = 这批数据里所有 SKU 的库存成本合计",
+      stuck_hint: "压着的钱 = 其中【有库存却卖不动】的那部分",
       below_cost_hint: "售价低于成本的，卖一个亏一个" }],
     total: 1,
   };
@@ -85,7 +106,7 @@ export default async function handler(req, res) {
   try {
     if (!requireAuth(req, res)) return;
     if (req.method !== "GET") return json(res, 405, { ok: false, error: "method_not_allowed" });
-    if (String(req.query?.scope ?? "") === "summary") return json(res, 200, await summary());
+    if (String(req.query?.scope ?? "") === "summary") return json(res, 200, await summary(req.query || {}));
     return json(res, 200, await list(req.query || {}));
   } catch (e) { return json(res, 500, { error: e.message || "server_error" }); }
 }
