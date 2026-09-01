@@ -9,6 +9,7 @@ import { requireAuth } from "../auth.js";
 // 这一页在果冻橙是 2936 条,我们 2935(差 1,分页漂掉的,已记在案)。
 function json(res, s, d) { return res.status(s).json(d); }
 function clean(v, m = 80) { const s = String(v ?? "").trim(); return s ? s.slice(0, m) : null; }
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 
 const ORDER = Object.assign(Object.create(null), {
   days: "days_available ASC NULLS FIRST",     // 可销天数最短的在前 = 最急的
@@ -54,6 +55,11 @@ export default async function handler(req, res) {
            AND ($3::text IS NULL OR g.supplier_code = $3)
            AND ($4::text IS NULL OR ($4 = 'zero' AND g.stock_num <= 0)
                                  OR ($4 = 'has'  AND g.stock_num > 0))
+           AND ($7::text IS NULL OR g.supplier_name ILIKE '%' || $7 || '%')
+           AND ($8::numeric IS NULL OR g.month_sale >= $8)
+           AND ($9::text IS NULL
+                OR ($9 = 'has' AND g.relation_ali IS TRUE)
+                OR ($9 = 'none' AND COALESCE(g.relation_ali, false) = false))
       ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
       page_rows AS (
         SELECT *, ROW_NUMBER() OVER (ORDER BY ${orderBy}, product_code) AS __rn
@@ -67,6 +73,7 @@ export default async function handler(req, res) {
     const r = await getPool().query(sql, [
       clean(q.store_code), clean(q.q, 60), clean(q.supplier_code, 40),
       clean(q.stock, 10), pageSize, (page - 1) * pageSize,
+      clean(q.supplier_name, 80), num(q.month_sale_gte), clean(q.ali_relation, 10),
     ]);
     const f = r.rows[0] || { rows: [], total: 0 };
     return json(res, 200, { rows: f.rows, total: f.total, page, pageSize });

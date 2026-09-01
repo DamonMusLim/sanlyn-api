@@ -10,6 +10,7 @@ import { requireAuth } from "../auth.js";
 // 实测:1309 条里只有 147 个有库存、16 个设了库存上下限、38 家供应商。
 function json(res, s, d) { return res.status(s).json(d); }
 function clean(v, m = 80) { const s = String(v ?? "").trim(); return s ? s.slice(0, m) : null; }
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 
 const ORDER = Object.assign(Object.create(null), {
   stock: "stock_num DESC NULLS LAST",
@@ -59,6 +60,11 @@ export default async function handler(req, res) {
            AND ($3::text IS NULL
                 OR ($3 = 'has'  AND w.stock_num > 0)
                 OR ($3 = 'zero' AND COALESCE(w.stock_num, 0) = 0))
+           AND ($6::text IS NULL OR w.supplier_name ILIKE '%' || $6 || '%')
+           AND ($7::numeric IS NULL OR w.stock_num >= $7)
+           AND ($8::text IS NULL
+                OR ($8 = 'has' AND w.relation_ali IS TRUE)
+                OR ($8 = 'none' AND COALESCE(w.relation_ali, false) = false))
       ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
       page_rows AS (
         SELECT *, ROW_NUMBER() OVER (ORDER BY ${orderBy}, product_code) AS __rn
@@ -72,6 +78,7 @@ export default async function handler(req, res) {
     const r = await getPool().query(sql, [
       clean(q.q, 60), clean(q.category, 60), clean(q.stock, 10),
       pageSize, (page - 1) * pageSize,
+      clean(q.supplier_name, 80), num(q.stock_num_gte), clean(q.ali_relation, 10),
     ]);
     const f = r.rows[0] || { rows: [], total: 0 };
     return json(res, 200, { rows: f.rows, total: f.total, page, pageSize });

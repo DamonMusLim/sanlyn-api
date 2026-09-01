@@ -17,6 +17,7 @@ const ORDER = Object.assign(Object.create(null), {
 
 function json(res, s, d) { return res.status(s).json(d); }
 function clean(v, m = 80) { const s = String(v ?? "").trim(); return s ? s.slice(0, m) : null; }
+function num(v) { const n = Number(v); return Number.isFinite(n) ? n : null; }
 
 async function list(q) {
   const page = Math.max(1, Number(q?.page) || 1);
@@ -53,6 +54,19 @@ async function list(q) {
               OR s.product_code = $4 OR s.upc_code = $4)
          -- adjust=1 只看智能比价那 11 条(果冻橙那边是另一个页签,同一批次不同商品)
          AND ($7::text IS NULL OR ($7 = '1') = s.is_adjust)
+         AND ($8::numeric IS NULL OR s.stock_num >= $8)
+         AND ($9::numeric IS NULL OR s.stock_num <= $9)
+         AND ($10::numeric IS NULL OR s.min_order >= $10)
+         AND ($11::numeric IS NULL OR s.day_sale >= $11)
+         AND ($12::numeric IS NULL OR s.stock_sale_days >= $12)
+         AND ($13::numeric IS NULL OR s.order_multiple >= $13)
+         AND ($14::text IS NULL OR s.purchase_status = $14)
+         AND ($15::text IS NULL
+              OR ($15 = 'has' AND NULLIF(BTRIM(s.shelf_name), '') IS NOT NULL)
+              OR ($15 = 'none' AND NULLIF(BTRIM(s.shelf_name), '') IS NULL))
+         AND ($16::text IS NULL
+              OR ($16 = 'has' AND s.relation_ali IS TRUE)
+              OR ($16 = 'none' AND COALESCE(s.relation_ali, false) = false))
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
       SELECT *, ROW_NUMBER() OVER (ORDER BY ${orderBy}, product_code) AS __rn
@@ -66,6 +80,9 @@ async function list(q) {
   const r = await getPool().query(sql, [
     clean(q?.store_code) , clean(q?.scene, 40), clean(q?.supplier_code, 40),
     clean(q?.q, 60), pageSize, (page - 1) * pageSize, clean(q?.adjust, 2),
+    num(q?.stock_num_gte), num(q?.stock_num_lte), num(q?.min_order_gte),
+    num(q?.day_sale_gte), num(q?.stock_sale_days_gte), num(q?.order_multiple_gte),
+    clean(q?.purchase_status, 40), clean(q?.shelf_name, 10), clean(q?.ali_relation, 10),
   ]);
   const f = r.rows[0] || { rows: [], total: 0 };
   return { rows: f.rows, total: f.total, page, pageSize };
