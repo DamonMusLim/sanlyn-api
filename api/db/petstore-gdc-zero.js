@@ -31,7 +31,11 @@ async function list(q) {
       SELECT z.store_code, z.sku_id, z.product_code, z.product_name, z.sku_spec,
              z.upc_code, z.channel_codes, z.product_status,
              z.stock_num, z.price, z.offline_price,
-             z.primary_cat, z.secondary_cat, z.pic_url
+             z.primary_cat, z.secondary_cat, z.labels, z.pic_url,
+             -- 果冻橙那一列是两行叠着显示的,这里拼成一样的形状
+             CASE WHEN COALESCE(z.primary_cat,'') = '' THEN NULL
+                  ELSE z.primary_cat || COALESCE(' / ' || NULLIF(z.secondary_cat,''), '')
+             END AS cat_text
              -- ⛔ offline_cost_price / stock_cost / gross_profit / gross_profit_rate 故意不选
         FROM public.petstore_gdc_zero_sale z
        WHERE ($1::text IS NULL OR z.store_code = $1)
