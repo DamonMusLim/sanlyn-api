@@ -14,7 +14,7 @@
 import crypto from "crypto";
 import { getPool, setCors } from "./db.js";
 
-const TOKEN_DAYS = 30;          // 员工自己登录的，比店长发的长效链接短
+const TOKEN_DAYS = 90;          // 员工自己登录的，比店长发的长效链接短
 const MAX_FAIL = 5;
 const LOCK_MIN = 15;
 
