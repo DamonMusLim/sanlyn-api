@@ -314,7 +314,7 @@ export async function loadLines(pool, orderIds) {
          NULLIF(btrim(p.declaration_elements), '') AS declaration_elements,
          oli.qty_ctn,
          oli.nw_ctn, oli.gw_ctn,
-         oli.unit_price,
+         oli.unit_price, oli.declare_amount_per_box,
          oli.subtotal
        FROM order_line_items oli
        LEFT JOIN product_one p ON p.sku = oli.sku
@@ -365,9 +365,9 @@ export async function loadLines(pool, orderIds) {
        SUM(CASE WHEN k.gw_ctn IS NOT NULL AND k.qty_ctn IS NOT NULL THEN k.gw_ctn * k.qty_ctn ELSE NULL END) AS gross_weight_kg,
        -- 2026-08-07: 原为 MIN(unit_price) —— 合并行取了最便宜那个(猫砂 ECO 55.3 vs ENRICH 61 → 印55.30),
        --   与报检申报单价(总值/数量=56.155)对不上, 且 单价×数量≠总价。改为加权均价(总价÷数量), 自洽且与报检一致。
-       CASE WHEN SUM(k.qty_ctn) > 0 THEN ROUND(SUM(k.subtotal)::numeric / SUM(k.qty_ctn)::numeric, 5)
+       CASE WHEN SUM(k.qty_ctn) > 0 THEN ROUND(SUM(COALESCE(k.qty_ctn * NULLIF(k.declare_amount_per_box, 0), k.subtotal))::numeric / SUM(k.qty_ctn)::numeric, 5)
             ELSE MIN(k.unit_price) END AS unit_price,
-       SUM(k.subtotal) AS total_amount
+       SUM(COALESCE(k.qty_ctn * NULLIF(k.declare_amount_per_box, 0), k.subtotal)) AS total_amount
      FROM keyed k
      LEFT JOIN hs_elements h ON h.hs_code IS NOT DISTINCT FROM k.hs_code
      LEFT JOIN name_by_hs n ON n.hs_code IS NOT DISTINCT FROM k.hs_code
