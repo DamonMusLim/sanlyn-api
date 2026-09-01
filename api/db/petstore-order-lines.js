@@ -75,9 +75,9 @@ async function listLines(req) {
     ), total_count AS (
       SELECT COUNT(*)::int AS total FROM filtered
     ), page_rows AS (
-      SELECT *, ROW_NUMBER() OVER (ORDER BY change_time DESC NULLS LAST, order_no ASC) AS __rn
+      SELECT *, ROW_NUMBER() OVER (ORDER BY sold_at DESC NULLS LAST, order_no ASC) AS __rn
         FROM filtered
-       ORDER BY change_time DESC NULLS LAST, order_no ASC
+       ORDER BY sold_at DESC NULLS LAST, order_no ASC
        LIMIT $7 OFFSET $8
     )
     SELECT COALESCE(jsonb_agg(to_jsonb(page_rows) - '__rn' ORDER BY page_rows.__rn)
