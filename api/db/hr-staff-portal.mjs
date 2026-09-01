@@ -82,7 +82,15 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const month = monthOf(req.query?.month);
-      const from = `${month}-01`, to = `${month}-31`;
+      // 🩸 原来写死 `${month}-31` —— 9/4/6/11 月只有 30 天、2 月更短,
+      //    Postgres 直接报 date/time field value out of range,登录后拉数据整个炸。
+      //    0901 实测:今天 9-01,它拼出 2026-09-31 → 30 天的月份【全店员都登不进去】。
+      //    改成 月初 +1月 -1天 算真实月末(Date.UTC 的 day=0 就是上个月最后一天),
+      //    ⛔ 不假设任何月份有几天。
+      const from = `${month}-01`;
+      const to = new Date(Date.UTC(
+        Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0
+      )).toISOString().slice(0, 10);
       const [shifts, leaves, reimb, pay, ot, book] = await Promise.all([
         pool.query(`SELECT to_char(work_date,'${D}') AS work_date, start_time, end_time, shift_label, is_rest_day
                       FROM hr_shifts WHERE employee_id=$1 AND work_date BETWEEN $2 AND $3 ORDER BY work_date`,
