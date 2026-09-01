@@ -47,6 +47,8 @@ async function list(q) {
          AND ($3::text IS NULL
               OR ($3 = 'no_phone'  AND btrim(COALESCE(s.contact_phone,'')) = '')
               OR ($3 = 'has_phone' AND btrim(COALESCE(s.contact_phone,'')) <> ''))
+         AND ($6::text IS NULL OR s.supplier_type::text = $6)
+         AND ($7::text IS NULL OR s.settlement_type::text = $7)
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
       SELECT *, ROW_NUMBER() OVER (ORDER BY total_counts DESC NULLS LAST, supplier_code) AS __rn
@@ -60,6 +62,7 @@ async function list(q) {
   const r = await getPool().query(sql, [
     Number.isInteger(st) ? st : null, clean(q?.q, 60), clean(q?.filter, 20),
     pageSize, (page - 1) * pageSize,
+    clean(q?.supplier_type, 20), clean(q?.settlement_type, 20),
   ]);
   const f = r.rows[0] || { rows: [], total: 0 };
   return { rows: f.rows, total: f.total, page, pageSize, settle_labels: SETTLE };

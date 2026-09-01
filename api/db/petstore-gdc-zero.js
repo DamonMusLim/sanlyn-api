@@ -44,6 +44,8 @@ async function list(q) {
          AND ($3::text IS NULL
               OR ($3 = 'has'  AND z.stock_num > 0)
               OR ($3 = 'zero' AND COALESCE(z.stock_num, 0) = 0))
+         AND ($6::text IS NULL OR z.product_status::text = $6)
+         AND ($7::text IS NULL OR z.channel_codes ILIKE '%' || $7 || '%')
     ), total_count AS (SELECT COUNT(*)::int AS total FROM filtered),
     page_rows AS (
       SELECT *, ROW_NUMBER() OVER (ORDER BY ${orderBy}, sku_id) AS __rn
@@ -57,6 +59,7 @@ async function list(q) {
   const r = await getPool().query(sql, [
     clean(q.store_code), clean(q.q, 60), clean(q.stock, 10),
     pageSize, (page - 1) * pageSize,
+    clean(q.product_status, 20), clean(q.channel_codes, 60),
   ]);
   const f = r.rows[0] || { rows: [], total: 0 };
   return { rows: f.rows, total: f.total, page, pageSize };
@@ -80,6 +83,8 @@ async function summary(q = {}) {
           AND ($3::text IS NULL
                OR ($3 = 'has'  AND z.stock_num > 0)
                OR ($3 = 'zero' AND COALESCE(z.stock_num, 0) = 0))
+          AND ($4::text IS NULL OR z.product_status::text = $4)
+          AND ($5::text IS NULL OR z.channel_codes ILIKE '%' || $5 || '%')
      )
      SELECT COUNT(*)::int AS sku_total,
             COUNT(DISTINCT product_code)::int AS product_total,
@@ -93,7 +98,8 @@ async function summary(q = {}) {
             MIN(window_start)::text AS window_start,
             MAX(window_end)::text   AS window_end
        FROM filtered`,
-    [clean(q.store_code), clean(q.q, 60), clean(q.stock, 10)]);
+    [clean(q.store_code), clean(q.q, 60), clean(q.stock, 10),
+     clean(q.product_status, 20), clean(q.channel_codes, 60)]);
   const s = r.rows[0] || {};
   return {
     rows: [{ ...s,
