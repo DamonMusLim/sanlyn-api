@@ -20,6 +20,61 @@ function stripCompanyPrefix(s) {
   return String(s).replace(/^\d+-/, "");
 }
 
+async function loadSellerBank(pool) {
+  const fallbackAccounts = [
+    { bank: "BANK OF CHINA XIAMEN BRANCH", swift: "BKCHCNBJ73A", account: "433849630299", currency: "USD" },
+    { bank: "BANK OF CHINA XIAMEN BRANCH", swift: "BKCHCNBJ73A", account: "433849860868", currency: "CNY" },
+  ];
+  const fallback = {
+    name_cn: "上海洋宝宝国际物流有限公司",
+    name_en: "SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.",
+    address: "",
+    address_en: "",
+    bank_name: "BANK OF CHINA XIAMEN BRANCH",
+    bank_accounts: fallbackAccounts,
+    bank_address: "",
+    bank_address_en: "",
+  };
+
+  try {
+    const r = await pool.query(
+      `SELECT name_cn, name_en, address, address_en, bank_name, bank_account, bank_accounts, to_jsonb(c) AS company_json
+       FROM companies c
+       WHERE code = $1
+       LIMIT 1`,
+      ["OCEANBABY"]
+    );
+    if (!r.rows.length) {
+      console.error("loadSellerBank: OCEANBABY company not found, using fallback bank info");
+      return fallback;
+    }
+
+    const row = r.rows[0];
+    let bankAccounts = row.bank_accounts || [];
+    if (typeof bankAccounts === "string") {
+      try { bankAccounts = JSON.parse(bankAccounts); }
+      catch (_e) { bankAccounts = []; }
+    }
+    if (!Array.isArray(bankAccounts) || !bankAccounts.length) bankAccounts = fallbackAccounts;
+
+    const companyJson = row.company_json || {};
+    return {
+      name_cn: row.name_cn || fallback.name_cn,
+      name_en: row.name_en || fallback.name_en,
+      address: row.address || "",
+      address_en: row.address_en || "",
+      bank_name: row.bank_name || fallback.bank_name,
+      bank_account: row.bank_account || "",
+      bank_accounts: bankAccounts,
+      bank_address: companyJson.bank_address || companyJson.bank_addr || "",
+      bank_address_en: companyJson.bank_address_en || companyJson.bank_addr_en || "",
+    };
+  } catch (e) {
+    console.error("loadSellerBank: failed to load OCEANBABY company bank info, using fallback bank info", e);
+    return fallback;
+  }
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -912,6 +967,17 @@ ${printBtn}
       const fobWarnings = ctnQty && ctnQty !== actualCtnQty
         ? [`container_qty(${ctnQty}) 与实际柜明细(${actualCtnQty})不一致, 已按实际柜数计算单价`]
         : [];
+      const fobSellerBank = await loadSellerBank(pool);
+      const fobUsdBank = (fobSellerBank.bank_accounts || []).find(x => String(x.currency || "").toUpperCase() === "USD") || {};
+      const fobCnyBank = (fobSellerBank.bank_accounts || []).find(x => String(x.currency || "").toUpperCase() === "CNY") || {};
+      // TODO: 英文行名与中文 bank_name 不一致(中文含"文灶支行",英文只到 XIAMEN BRANCH), 真源缺英文全称,待 Damon 确认后统一。
+      const fobBankNameEn = fobUsdBank.bank || fobCnyBank.bank || "BANK OF CHINA XIAMEN BRANCH";
+      const fobSwift = fobUsdBank.swift || fobCnyBank.swift || "BKCHCNBJ73A";
+      const fobUsdAccount = fobUsdBank.account || "433849630299";
+      const fobCnyAccount = fobCnyBank.account || "433849860868";
+      const fobSellerAddressLine = fobSellerBank.address_en ? `Seller Addr: ${esc(fobSellerBank.address_en)}<br>` : "";
+      // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
+      const fobBankAddressLine = fobSellerBank.bank_address_en ? `Bank Addr: ${esc(fobSellerBank.bank_address_en)}<br>` : "";
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
 
       const fobDocSeed = normalizeDocSeed(p.bl_no, p.contract_no);
@@ -1099,12 +1165,13 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     </div>
     <div class="box-bk">
       <div class="title">BANKING INFORMATION (银行信息)</div>
-      Bank Name: <strong>BANK OF CHINA XIAMEN BRANCH</strong><br>
-      Account Name: <strong>SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</strong><br>
-      Swift Code: <strong>BKCHCNBJ73A</strong><br>
-      Bank Addr: No. 40 North Hubin Road, Xiamen<br>
-      USD Account (美金账号): <strong>433849630299</strong><br>
-      CNY Account (人民币账号): <strong>433849860868</strong><br>
+      Bank Name: <strong>${esc(fobBankNameEn)}</strong><br>
+      Account Name: <strong>${esc(fobSellerBank.name_en)}</strong><br>
+      ${fobSellerAddressLine}
+      Swift Code: <strong>${esc(fobSwift)}</strong><br>
+      ${fobBankAddressLine}
+      USD Account (美金账号): <strong>${esc(fobUsdAccount)}</strong><br>
+      CNY Account (人民币账号): <strong>${esc(fobCnyAccount)}</strong><br>
       <span style="color:#c00;font-size:8px">* Please check the account number carefully before remittance.</span>
     </div>
   </div>
@@ -1370,6 +1437,18 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, payer_company_code: factoryCode, charges: portChargeRows, used_fallback_card: usedFallbackCard },
       });
 
+      const pcSellerBank = await loadSellerBank(pool);
+      const pcUsdBank = (pcSellerBank.bank_accounts || []).find(x => String(x.currency || "").toUpperCase() === "USD") || {};
+      const pcCnyBank = (pcSellerBank.bank_accounts || []).find(x => String(x.currency || "").toUpperCase() === "CNY") || {};
+      // TODO: 英文行名与中文 bank_name 不一致(中文含"文灶支行",英文只到 XIAMEN BRANCH), 真源缺英文全称,待 Damon 确认后统一。
+      const pcBankNameEn = pcCnyBank.bank || pcUsdBank.bank || "BANK OF CHINA XIAMEN BRANCH";
+      const pcSwift = pcCnyBank.swift || pcUsdBank.swift || "BKCHCNBJ73A";
+      const pcUsdAccount = pcUsdBank.account || "433849630299";
+      const pcCnyAccount = pcCnyBank.account || "433849860868";
+      const pcSellerAddressLine = pcSellerBank.address_en ? `Seller Addr: ${esc(pcSellerBank.address_en)}<br>` : "";
+      // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
+      const pcBankAddressLine = pcSellerBank.bank_address_en ? `Bank Addr: ${esc(pcSellerBank.bank_address_en)}<br>` : "";
+
       const fobPortchargeHtml = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
 <title>Port Charge Statement — ${esc(p.shipment_no || blNo)}</title>
@@ -1535,12 +1614,13 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     </div>
     <div class="box-bk">
       <div class="title">BANKING INFORMATION (银行信息)</div>
-      Bank Name: <strong>BANK OF CHINA XIAMEN BRANCH</strong><br>
-      Account Name: <strong>SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</strong><br>
-      Swift Code: <strong>BKCHCNBJ73A</strong><br>
-      Bank Addr: No. 40 North Hubin Road, Xiamen<br>
-      USD Account (美金账号): <strong>433849630299</strong><br>
-      CNY Account (人民币账号): <strong>433849860868</strong><br>
+      Bank Name: <strong>${esc(pcBankNameEn)}</strong><br>
+      Account Name: <strong>${esc(pcSellerBank.name_en)}</strong><br>
+      ${pcSellerAddressLine}
+      Swift Code: <strong>${esc(pcSwift)}</strong><br>
+      ${pcBankAddressLine}
+      USD Account (美金账号): <strong>${esc(pcUsdAccount)}</strong><br>
+      CNY Account (人民币账号): <strong>${esc(pcCnyAccount)}</strong><br>
       <span style="color:#c00;font-size:8px">* Please check the account number carefully before remittance.</span>
     </div>
   </div>
@@ -1605,6 +1685,18 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       const containerLabel = [p.container_type, p.container_qty ? `×${p.container_qty}` : ""].filter(Boolean).join(" ");
       const ticketCount = p.order_contract_nos ? (Array.isArray(p.order_contract_nos) ? p.order_contract_nos.length : 1) : 1;
       const boxCount = p.container_qty || 1;
+
+      const debitSellerBank = await loadSellerBank(pool);
+      const debitUsdBank = (debitSellerBank.bank_accounts || []).find(x => String(x.currency || "").toUpperCase() === "USD") || {};
+      const debitCnyBank = (debitSellerBank.bank_accounts || []).find(x => String(x.currency || "").toUpperCase() === "CNY") || {};
+      // TODO: 英文行名与中文 bank_name 不一致(中文含"文灶支行",英文只到 XIAMEN BRANCH), 真源缺英文全称,待 Damon 确认后统一。
+      const debitBankNameEn = debitUsdBank.bank || debitCnyBank.bank || "BANK OF CHINA XIAMEN BRANCH";
+      const debitSwift = debitUsdBank.swift || debitCnyBank.swift || "BKCHCNBJ73A";
+      const debitUsdAccount = debitUsdBank.account || "433849630299";
+      const debitCnyAccount = debitCnyBank.account || "433849860868";
+      const debitSellerAddressLine = debitSellerBank.address_en ? `Seller Addr: ${esc(debitSellerBank.address_en)}<br>` : "";
+      // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
+      const debitBankAddressLine = debitSellerBank.bank_address_en ? `Bank Addr: ${esc(debitSellerBank.bank_address_en)}<br>` : "";
 
       const debitHtml = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
@@ -1711,9 +1803,11 @@ table tr:last-child td{border-bottom:none}
   <!-- Bank info -->
   <div class="bank-box">
     <strong>BANKING INFORMATION · 银行信息</strong><br>
-    Bank: <strong>BANK OF CHINA XIAMEN BRANCH</strong> &nbsp;·&nbsp; Swift: <strong>BKCHCNBJ73A</strong><br>
-    USD A/C: <strong>433849630299</strong> &nbsp;·&nbsp; CNY A/C: <strong>433849860868</strong><br>
-    Account Name: <strong>SHANGHAI OCEAN BABY INTERNATIONAL LOGISTICS CO., LTD.</strong>
+    Bank: <strong>${esc(debitBankNameEn)}</strong> &nbsp;·&nbsp; Swift: <strong>${esc(debitSwift)}</strong><br>
+    ${debitBankAddressLine}
+    USD A/C: <strong>${esc(debitUsdAccount)}</strong> &nbsp;·&nbsp; CNY A/C: <strong>${esc(debitCnyAccount)}</strong><br>
+    Account Name: <strong>${esc(debitSellerBank.name_en)}</strong><br>
+    ${debitSellerAddressLine}
   </div>
 
   <!-- See-quotation link — only shown when quote_ref exists -->
