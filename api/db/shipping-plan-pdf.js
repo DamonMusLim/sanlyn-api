@@ -1508,6 +1508,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     <div class="hdr-l">
       <div class="co-en">SHANGHAI OCEAN BABY INT'L LOGISTICS CO., LTD.</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
+      <div style="font-size:9px;color:#555;margin-top:2px">${esc(pcSellerBank.address || "")}</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
     </div>
     <div class="hdr-r">
@@ -1524,7 +1525,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
   <div class="info-grid">
     <div class="info-box">
-      <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}<div style="font-size:9px;font-weight:400;color:${(factory&&factory.address)?'#555':'#bbb'};margin-top:2px">${(factory&&factory.address)?esc(factory.address):'地址 Address: _______________________________'}</div></div></div>
+      <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}${(factory&&factory.address)?`<div style="font-size:9px;font-weight:400;color:#555;margin-top:2px">${esc(factory.address)}</div>`:''}</div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
       <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${docDate}</div></div>
