@@ -1613,15 +1613,12 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       3. LIABILITY: All business is transacted under our Standard Trading Conditions.
     </div>
     <div class="box-bk">
-      <div class="title">BANKING INFORMATION (银行信息)</div>
-      Bank Name: <strong>${esc(pcBankNameEn)}</strong><br>
-      Account Name: <strong>${esc(pcSellerBank.name_en)}</strong><br>
-      ${pcSellerAddressLine}
-      Swift Code: <strong>${esc(pcSwift)}</strong><br>
-      ${pcBankAddressLine}
-      USD Account (美金账号): <strong>${esc(pcUsdAccount)}</strong><br>
-      CNY Account (人民币账号): <strong>${esc(pcCnyAccount)}</strong><br>
-      <span style="color:#c00;font-size:8px">* Please check the account number carefully before remittance.</span>
+      <div class="title">银行信息</div>
+      开户行: <strong>${esc(pcSellerBank.bank_name || "中国银行厦门文灶支行")}</strong><br>
+      账户名: <strong>${esc(pcSellerBank.name_cn || "上海洋宝宝国际物流有限公司")}</strong><br>
+      ${pcSellerBank.address ? `公司地址: ${esc(pcSellerBank.address)}<br>` : ""}
+      人民币账号: <strong>${esc(pcCnyAccount)}</strong><br>
+      <span style="color:#c00;font-size:8px">* 汇款前请仔细核对账号。</span>
     </div>
   </div>
 
