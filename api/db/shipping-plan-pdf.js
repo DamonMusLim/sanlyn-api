@@ -75,6 +75,26 @@ async function loadSellerBank(pool) {
   }
 }
 
+async function loadSellerStamp(pool) {
+  try {
+    const r = await pool.query(
+      `SELECT url FROM customer_stamps
+       WHERE company_code = $1 AND COALESCE(is_active,false) = true
+       ORDER BY COALESCE(is_default,false) DESC, id DESC
+       LIMIT 1`,
+      ["OCEANBABY"]
+    );
+    if (!r.rows.length || !r.rows[0].url) {
+      console.error("loadSellerStamp: OCEANBABY active stamp not found");
+      return "";
+    }
+    return r.rows[0].url;
+  } catch (e) {
+    console.error("loadSellerStamp: failed to load OCEANBABY stamp", e);
+    return "";
+  }
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -979,6 +999,8 @@ ${printBtn}
       // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
       const fobBankAddressLine = fobSellerBank.bank_address_en ? `Bank Addr: ${esc(fobSellerBank.bank_address_en)}<br>` : "";
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
+      const fobSellerStampUrl = await loadSellerStamp(pool);
+      const fobSellerStampHtml = fobSellerStampUrl ? `<div class="seal-area"><img class="company-seal" src="${esc(fobSellerStampUrl)}"><div class="seal-label">盖章 / Company Seal</div></div>` : "";
 
       const fobDocSeed = normalizeDocSeed(p.bl_no, p.contract_no);
       if (!fobDocSeed) return res.status(409).send("<h1>本票缺提单号和合同号,无法生成对外单号,请先补齐</h1>");
@@ -1041,6 +1063,9 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 .box-tt,.box-bk{padding:9px 11px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;font-size:9px;line-height:1.8;color:#444}
 .box-tt strong,.box-bk strong{color:#111}
 .box-tt .title,.box-bk .title{font-size:9.5px;font-weight:900;color:#111;letter-spacing:.05em;margin-bottom:4px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px}
+.seal-area{grid-column:2;justify-self:end;text-align:center;margin-top:8px;width:120px;break-inside:avoid;page-break-inside:avoid}
+.company-seal{display:block;width:110px;height:110px;object-fit:contain;border-radius:50%;opacity:.88;margin:0 0 3px auto}
+.seal-label{font-size:8px;color:#666;font-weight:700;line-height:1.2}
 .warn{color:#c00;font-size:8px}
 .footer-bar{display:flex;justify-content:space-between;margin-top:10px;padding-top:6px;border-top:1px solid #ddd;font-size:8px;color:#999;font-family:monospace}
 @media print{body{padding:0;background:#fff}.page{margin:0;padding:6mm 10mm;box-shadow:none}.pay-grid,.pay-box,.bottom,.box-tt,.box-bk{page-break-inside:avoid;break-inside:avoid}.pay-grid{margin-bottom:8px}.fx-note{margin:4px 0 6px}}
@@ -1051,6 +1076,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     <div class="hdr-l">
       <div class="co-en">SHANGHAI OCEAN BABY INT'L LOGISTICS CO., LTD.</div>
       <div class="co-cn">上海洋宝宝国际物流有限公司</div>
+      <div style="font-size:9px;color:#555;margin-top:2px">${esc(fobSellerBank.address_en || "")}</div>
       <div class="tag">Ocean Freight · Air Freight · Express · Integrated Logistics Solutions</div>
     </div>
     <div class="hdr-r">
@@ -1063,7 +1089,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 
   <div class="info-grid">
     <div class="info-box">
-      <div class="row"><div class="lbl">TO (客户名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}<div style="font-size:9px;font-weight:400;color:${billAddr?'#555':'#bbb'};margin-top:2px">${billAddr?esc(billAddr):'地址 Address: _______________________________'}</div></div></div>
+      <div class="row"><div class="lbl">TO (客户名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}${billAddr?`<div style="font-size:9px;font-weight:400;color:#555;margin-top:2px">${esc(billAddr)}</div>`:''}</div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
       <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${docDate}</div></div>
@@ -1174,6 +1200,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       CNY Account (人民币账号): <strong>${esc(fobCnyAccount)}</strong><br>
       <span style="color:#c00;font-size:8px">* Please check the account number carefully before remittance.</span>
     </div>
+    ${fobSellerStampHtml}
   </div>
 
 
@@ -1448,6 +1475,8 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       const pcSellerAddressLine = pcSellerBank.address_en ? `Seller Addr: ${esc(pcSellerBank.address_en)}<br>` : "";
       // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
       const pcBankAddressLine = pcSellerBank.bank_address_en ? `Bank Addr: ${esc(pcSellerBank.bank_address_en)}<br>` : "";
+      const pcSellerStampUrl = await loadSellerStamp(pool);
+      const pcSellerStampHtml = pcSellerStampUrl ? `<div class="seal-area"><img class="company-seal" src="${esc(pcSellerStampUrl)}"><div class="seal-label">盖章 / Company Seal</div></div>` : "";
 
       const fobPortchargeHtml = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
@@ -1498,6 +1527,9 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 .box-tt,.box-bk{padding:9px 11px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;font-size:9px;line-height:1.8;color:#444}
 .box-tt strong,.box-bk strong{color:#111}
 .box-tt .title,.box-bk .title{font-size:9.5px;font-weight:900;color:#111;letter-spacing:.05em;margin-bottom:4px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px}
+.seal-area{grid-column:2;justify-self:end;text-align:center;margin-top:8px;width:120px;break-inside:avoid;page-break-inside:avoid}
+.company-seal{display:block;width:110px;height:110px;object-fit:contain;border-radius:50%;opacity:.88;margin:0 0 3px auto}
+.seal-label{font-size:8px;color:#666;font-weight:700;line-height:1.2}
 .warn{color:#c00;font-size:8px}
 .footer-bar{display:flex;justify-content:space-between;margin-top:10px;padding-top:6px;border-top:1px solid #ddd;font-size:8px;color:#999;font-family:monospace}
 @media print{body{padding:0;background:#fff}.page{margin:0;padding:6mm 10mm;box-shadow:none}.pay-grid,.pay-box,.bottom,.box-tt,.box-bk{page-break-inside:avoid;break-inside:avoid}.pay-grid{margin-bottom:8px}.fx-note{margin:4px 0 6px}}
@@ -1621,6 +1653,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       人民币账号: <strong>${esc(pcCnyAccount)}</strong><br>
       <span style="color:#c00;font-size:8px">* 汇款前请仔细核对账号。</span>
     </div>
+    ${pcSellerStampHtml}
   </div>
 
 
