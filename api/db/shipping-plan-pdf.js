@@ -1290,7 +1290,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       } catch(_) {}
 
       const isMultiPlan = siblingPlans.length > 0;
-      const useBookings = cbookings.length > 1; // 有多行柜子记录才用，单行退回老逻辑
+      const useBookings = cbookings.length >= 1; // 有柜子记录就用，单柜也从 booking 取封条/柜货重
 
       let ctnRows = [];
       let sumCartons = 0, sumGW = 0, sumCBM = 0;
@@ -1438,11 +1438,16 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       });
 
       const pcSellerBank = await loadSellerBank(pool);
+      const pcUsdBank = (pcSellerBank.bank_accounts || []).find(x => String(x.currency || "").toUpperCase() === "USD") || {};
       const pcCnyBank = (pcSellerBank.bank_accounts || []).find(x => String(x.currency || "").toUpperCase() === "CNY") || {};
-      const pcBankNameCn = pcSellerBank.bank_name || "";
-      const pcAccountNameCn = pcSellerBank.name_cn || "";
-      const pcCnyAccount = pcCnyBank.account || "";
-      const pcSellerAddressLine = pcSellerBank.address ? `公司地址: <strong>${esc(pcSellerBank.address)}</strong><br>` : "";
+      // TODO: 英文行名与中文 bank_name 不一致(中文含"文灶支行",英文只到 XIAMEN BRANCH), 真源缺英文全称,待 Damon 确认后统一。
+      const pcBankNameEn = pcCnyBank.bank || pcUsdBank.bank || "BANK OF CHINA XIAMEN BRANCH";
+      const pcSwift = pcCnyBank.swift || pcUsdBank.swift || "BKCHCNBJ73A";
+      const pcUsdAccount = pcUsdBank.account || "433849630299";
+      const pcCnyAccount = pcCnyBank.account || "433849860868";
+      const pcSellerAddressLine = pcSellerBank.address_en ? `Seller Addr: ${esc(pcSellerBank.address_en)}<br>` : "";
+      // TODO: companies 当前没有银行地址真源字段, 不再打印来源不明的 Bank Addr; 将来有字段再恢复输出。
+      const pcBankAddressLine = pcSellerBank.bank_address_en ? `Bank Addr: ${esc(pcSellerBank.bank_address_en)}<br>` : "";
 
       const fobPortchargeHtml = `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
@@ -1608,12 +1613,15 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       3. LIABILITY: All business is transacted under our Standard Trading Conditions.
     </div>
     <div class="box-bk">
-      <div class="title">银行信息</div>
-      开户行: <strong>${esc(pcBankNameCn)}</strong><br>
-      账户名: <strong>${esc(pcAccountNameCn)}</strong><br>
+      <div class="title">BANKING INFORMATION (银行信息)</div>
+      Bank Name: <strong>${esc(pcBankNameEn)}</strong><br>
+      Account Name: <strong>${esc(pcSellerBank.name_en)}</strong><br>
       ${pcSellerAddressLine}
-      人民币账号: <strong>${esc(pcCnyAccount)}</strong><br>
-      <span style="color:#c00;font-size:8px">* 汇款前请仔细核对账号。</span>
+      Swift Code: <strong>${esc(pcSwift)}</strong><br>
+      ${pcBankAddressLine}
+      USD Account (美金账号): <strong>${esc(pcUsdAccount)}</strong><br>
+      CNY Account (人民币账号): <strong>${esc(pcCnyAccount)}</strong><br>
+      <span style="color:#c00;font-size:8px">* Please check the account number carefully before remittance.</span>
     </div>
   </div>
 
