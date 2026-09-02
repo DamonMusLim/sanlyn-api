@@ -1405,7 +1405,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
           <td class="ctn-idx">Container ${i+1}</td>
           <td class="ctn-no">${esc(r.no)}</td>
           <td class="ctn-seal">${esc(r.seal)}</td>
-          <td style="padding:5px 8px;font-weight:700;color:#111;font-size:9.5px">${esc(r.po)}</td>
+          <td style="padding:3px 6px;font-weight:700;color:#111;font-size:9px;line-height:1.15">${esc(r.po)}</td>
           <td class="ctn-ctn">${r.ctn ? r.ctn.toLocaleString('en') : '—'}</td>
           <td class="ctn-gw">${r.gw ? fmtNum(r.gw)+' KGS' : '—'}</td>
           <td class="ctn-cbm">${r.cbm ? r.cbm.toFixed(3)+' CBM' : '—'}</td>
@@ -1483,56 +1483,57 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
 <title>Port Charge Statement — ${esc(p.shipment_no || blNo)}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-size:11px;color:#111;background:#e5e7eb;padding:0}
-.page{max-width:200mm;margin:14px auto;padding:11mm 13mm;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:14px}
-.hdr-l .co-en{font-size:15px;font-weight:900;color:#111;letter-spacing:.01em;line-height:1.2}
-.hdr-l .co-cn{font-size:10px;color:#555;margin-top:3px}
-.hdr-l .tag{font-size:8.5px;color:#888;margin-top:4px}
+body{font-family:"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-size:10.5px;color:#111;background:#e5e7eb;padding:0}
+.page{max-width:200mm;margin:10px auto;padding:9mm 11mm;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}
+.hdr-l .co-en{font-size:14px;font-weight:900;color:#111;letter-spacing:.01em;line-height:1.15}
+.hdr-l .co-cn{font-size:9.5px;color:#555;margin-top:2px}
+.hdr-l .tag{font-size:8px;color:#888;margin-top:2px}
 .hdr-r{text-align:right}
-.hdr-r .doc-en{font-size:18px;font-weight:900;color:#111;letter-spacing:.05em}
+.hdr-r .doc-en{font-size:17px;font-weight:900;color:#111;letter-spacing:.05em}
 .hdr-r .doc-cn{font-size:10px;color:#555;margin-top:1px}
-.hdr-r .inv-no{display:inline-block;font-size:11px;font-weight:800;color:#111;font-family:monospace;border:2px solid #111;border-radius:3px;padding:2px 9px;margin-top:4px;letter-spacing:.03em}
-.info-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:0 12px;margin-bottom:12px;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden}
-.info-box{font-size:10px}
-.info-box .row{display:grid;grid-template-columns:118px 1fr;border-bottom:1px solid #efefef;min-height:22px}
+.hdr-r .inv-no{display:inline-block;font-size:10.5px;font-weight:800;color:#111;font-family:monospace;border:1.5px solid #111;border-radius:3px;padding:1px 7px;margin-top:3px;letter-spacing:.03em}
+.info-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:0 8px;margin-bottom:7px;border:1px solid #e0e0e0;border-radius:4px;overflow:hidden}
+.info-box{font-size:9.5px}
+.info-box .row{display:grid;grid-template-columns:112px 1fr;border-bottom:1px solid #efefef;min-height:18px}
 .info-box .row:last-child{border-bottom:none}
-.info-box .lbl{background:#f7f7f7;color:#666;font-weight:700;padding:4px 8px;border-right:1px solid #efefef;display:flex;align-items:center}
-.info-box .val{color:#111;font-weight:600;padding:4px 8px;display:flex;align-items:center}
+.info-box .lbl{background:#f7f7f7;color:#666;font-weight:700;padding:2px 6px;border-right:1px solid #efefef;display:flex;align-items:center}
+.info-box .val{color:#111;font-weight:600;padding:2px 6px;display:flex;align-items:center}
 .info-box .val.big{font-size:12px;font-weight:900}
-table.charges{width:100%;border-collapse:collapse;margin-bottom:0;font-size:10px;border:1px solid #ccc}
-table.charges thead th{background:#111;color:#fff;padding:7px 9px;text-align:left;font-weight:700;font-size:9.5px;letter-spacing:.04em}
+table.charges{width:100%;border-collapse:collapse;margin-bottom:0;font-size:9.2px;line-height:1.15;border:1px solid #ccc;table-layout:fixed}
+table.charges thead th{background:#111;color:#fff;padding:4px 7px;text-align:left;font-weight:700;font-size:8.8px;line-height:1.1;letter-spacing:.03em}
 table.charges thead th.r{text-align:right}
 table.charges thead th.c{text-align:center}
-table.charges tr.section td{background:#333;color:#fff;font-weight:800;letter-spacing:.05em;font-size:9.5px;text-transform:uppercase;padding:5px 9px}
-table.charges tbody td{padding:7px 9px;border-bottom:1px solid #efefef;font-family:monospace;color:#111}
+table.charges tr.section td{background:#333;color:#fff;font-weight:800;letter-spacing:.04em;font-size:8.8px;text-transform:uppercase;padding:3px 7px}
+table.charges tbody td{padding:3px 7px;border-bottom:1px solid #efefef;font-family:monospace;color:#111;height:18px}
 table.charges tbody td.label{font-family:inherit;color:#222}
-table.charges tbody td.r{text-align:right}
+table.charges tbody td.r{text-align:right;font-size:12px;line-height:1.1}
 table.charges tbody td.c{text-align:center}
 table.charges tfoot{border-top:2px solid #111}
-table.charges tfoot tr td{padding:7px 9px;font-weight:800;font-family:monospace;color:#111;background:#f7f7f7}
+table.charges tfoot tr td{padding:4px 7px;font-weight:800;font-family:monospace;color:#111;background:#f7f7f7}
 table.charges tfoot tr.total-usd td{font-size:12px}
 table.charges tfoot tr td:last-child{text-align:right}
 table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:10px}
-.fx-note{text-align:right;font-size:8.5px;color:#666;margin:6px 0 10px;font-style:italic}
+.fx-note{text-align:right;font-size:8px;color:#666;margin:3px 0 5px;font-style:italic}
 .fx-note strong{color:#111;font-style:normal}
-.pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
-.pay-box{padding:12px 14px;border-radius:4px;border:2px solid #111}
+.pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:7px}
+.pay-box{padding:7px 10px;border-radius:4px;border:1.5px solid #111}
 .pay-box.usd{background:#f7f7f7}
 .pay-box.cny{background:#efefef}
-.pay-box .plbl{font-size:8.5px;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:#111;margin-bottom:5px}
-.pay-box .pamt{font-size:20px;font-weight:900;font-family:monospace;color:#111}
-.pay-box .psub{font-size:8px;color:#666;margin-top:3px}
-.bottom{display:grid;grid-template-columns:1.05fr 1fr;gap:10px}
-.box-tt,.box-bk{padding:9px 11px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;font-size:9px;line-height:1.8;color:#444}
+.pay-box .plbl{font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.05em;color:#111;margin-bottom:2px}
+.pay-box .pamt{font-size:18px;font-weight:900;font-family:monospace;color:#111;line-height:1.1}
+.pay-box .psub{font-size:8px;color:#666;margin-top:1px}
+.bottom{display:grid;grid-template-columns:1.05fr 1fr;gap:7px}
+.box-tt,.box-bk{padding:6px 8px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;font-size:8.4px;line-height:1.45;color:#444}
 .box-tt strong,.box-bk strong{color:#111}
-.box-tt .title,.box-bk .title{font-size:9.5px;font-weight:900;color:#111;letter-spacing:.05em;margin-bottom:4px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:3px}
-.seal-area{grid-column:2;justify-self:end;text-align:center;margin-top:8px;width:120px;break-inside:avoid;page-break-inside:avoid}
-.company-seal{display:block;width:110px;height:110px;object-fit:contain;border-radius:50%;opacity:.88;margin:0 0 3px auto}
+.box-tt .title,.box-bk .title{font-size:8.8px;font-weight:900;color:#111;letter-spacing:.04em;margin-bottom:2px;text-transform:uppercase;border-bottom:1px solid #ddd;padding-bottom:2px}
+.box-bk strong{font-size:12px}
+.seal-area{grid-column:2;justify-self:end;text-align:center;margin-top:4px;width:98px;break-inside:avoid;page-break-inside:avoid}
+.company-seal{display:block;width:90px;height:90px;object-fit:contain;border-radius:50%;opacity:.88;margin:0 0 2px auto}
 .seal-label{font-size:8px;color:#666;font-weight:700;line-height:1.2}
 .warn{color:#c00;font-size:8px}
-.footer-bar{display:flex;justify-content:space-between;margin-top:10px;padding-top:6px;border-top:1px solid #ddd;font-size:8px;color:#999;font-family:monospace}
-@media print{body{padding:0;background:#fff}.page{margin:0;padding:6mm 10mm;box-shadow:none}.pay-grid,.pay-box,.bottom,.box-tt,.box-bk{page-break-inside:avoid;break-inside:avoid}.pay-grid{margin-bottom:8px}.fx-note{margin:4px 0 6px}}
+.footer-bar{display:flex;justify-content:space-between;margin-top:6px;padding-top:4px;border-top:1px solid #ddd;font-size:8px;color:#999;font-family:monospace}
+@media print{@page{size:A4;margin:8mm}body{padding:0;background:#fff}.page{margin:0;padding:0;max-width:none;box-shadow:none}.pay-grid,.pay-box,.bottom,.box-tt,.box-bk{page-break-inside:avoid;break-inside:avoid}.pay-grid{margin-bottom:5px}.fx-note{margin:2px 0 4px}}
 @media screen{body{background:#f1f5f9}.page{box-shadow:0 4px 32px rgba(0,0,0,.12);margin:20px auto;border-radius:8px}}
 </style></head><body>
 <div class="page">
@@ -1550,14 +1551,14 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     </div>
   </div>
 
-  ${usedFallbackCard ? `<div style="background:#fff3cd;border:2px solid #c00;border-radius:4px;padding:8px 12px;margin-bottom:12px;font-size:11px;font-weight:800;color:#c00">
+  ${usedFallbackCard ? `<div style="background:#fff3cd;border:2px solid #c00;border-radius:4px;padding:5px 8px;margin-bottom:7px;font-size:10px;font-weight:800;color:#c00">
     ⚠️ 系统未查到该票真实账单明细(freight_supplier_bills)，以下为标准参考费率估算，非实际账单数据，出单前请人工核实真实费用！
     <br>⚠️ NOT ACTUAL BILLED CHARGES — reference rate card only, verify against real supplier invoice before issuing.
   </div>` : ""}
 
   <div class="info-grid">
     <div class="info-box">
-      <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big" style="display:block;padding:5px 8px">${esc(billTo)}${(factory&&factory.address)?`<div style="font-size:9px;font-weight:400;color:#555;margin-top:2px">${esc(factory.address)}</div>`:''}</div></div>
+      <div class="row"><div class="lbl">TO (工厂名称):</div><div class="val big" style="display:block;padding:3px 6px">${esc(billTo)}${(factory&&factory.address)?`<div style="font-size:8.5px;font-weight:400;color:#555;margin-top:1px">${esc(factory.address)}</div>`:''}</div></div>
       <div class="row"><div class="lbl">SHPT MODE:</div><div class="val">Sea Export</div></div>
       <div class="row"><div class="lbl">INV/BL NO.:</div><div class="val">${esc(blNo)}</div></div>
       <div class="row"><div class="lbl">DATE (出单日期):</div><div class="val">${docDate}</div></div>
@@ -1571,41 +1572,41 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
   </div>
 
   <!-- ── CONTAINER SECTION ── -->
-  <div style="margin-bottom:12px;border:1px solid #ddd;border-radius:4px;overflow:hidden;font-size:10px">
-    <div style="background:#111;color:#fff;font-weight:800;font-size:9.5px;letter-spacing:.05em;padding:6px 10px;display:flex;justify-content:space-between;align-items:center">
+  <div style="margin-bottom:7px;border:1px solid #ddd;border-radius:4px;overflow:hidden;font-size:9.2px;line-height:1.15">
+    <div style="background:#111;color:#fff;font-weight:800;font-size:8.8px;letter-spacing:.04em;padding:4px 7px;display:flex;justify-content:space-between;align-items:center">
       <span>Containers / 集装箱明细 (${actualCtnQty} × ${ctnType})</span>
       <span style="font-weight:700;letter-spacing:.03em">Freight Term: ${freightTerm}</span>
     </div>
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="background:#333;color:#fff;font-size:9px;font-weight:700;letter-spacing:.03em">
-          <th style="padding:5px 8px;text-align:left;width:70px">Container #</th>
-          <th style="padding:5px 8px;text-align:left;width:120px">Container No.</th>
-          <th style="padding:5px 8px;text-align:left;width:100px">Seal No.</th>
-          <th style="padding:5px 8px;text-align:left;width:90px">PO / 合同号</th>
-          <th style="padding:5px 8px;text-align:right;width:70px">CTN</th>
-          <th style="padding:5px 8px;text-align:right;width:95px">Gross Weight</th>
-          <th style="padding:5px 8px;text-align:right;width:75px">Volume</th>
+          <th style="padding:3px 6px;text-align:left;width:70px">Container #</th>
+          <th style="padding:3px 6px;text-align:left;width:120px">Container No.</th>
+          <th style="padding:3px 6px;text-align:left;width:100px">Seal No.</th>
+          <th style="padding:3px 6px;text-align:left;width:90px">PO / 合同号</th>
+          <th style="padding:3px 6px;text-align:right;width:70px">CTN</th>
+          <th style="padding:3px 6px;text-align:right;width:95px">Gross Weight</th>
+          <th style="padding:3px 6px;text-align:right;width:75px">Volume</th>
         </tr>
       </thead>
       <tbody>${ctnRowsHtml}</tbody>
       <tfoot>
-        <tr style="background:#f7f7f7;font-weight:900;border-top:2px solid #111;font-size:9.5px">
-          <td style="padding:6px 8px;color:#666;font-size:9px">${actualCtnQty} × ${ctnType}</td>
-          <td style="padding:6px 8px" colspan="3"></td>
-          <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerCartons ? footerCartons.toLocaleString('en') : '—'}</td>
-          <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerGW ? fmtNum(footerGW)+' KGS' : '—'}</td>
-          <td style="padding:6px 8px;text-align:right;font-family:monospace">${footerCBM ? footerCBM.toFixed(3)+' CBM' : '—'}</td>
+        <tr style="background:#f7f7f7;font-weight:900;border-top:1.5px solid #111;font-size:9.5px">
+          <td style="padding:4px 6px;color:#666;font-size:9px">${actualCtnQty} × ${ctnType}</td>
+          <td style="padding:4px 6px" colspan="3"></td>
+          <td style="padding:4px 6px;text-align:right;font-family:monospace;font-size:12px">${footerCartons ? footerCartons.toLocaleString('en') : '—'}</td>
+          <td style="padding:4px 6px;text-align:right;font-family:monospace;font-size:12px">${footerGW ? fmtNum(footerGW)+' KGS' : '—'}</td>
+          <td style="padding:4px 6px;text-align:right;font-family:monospace;font-size:12px">${footerCBM ? footerCBM.toFixed(3)+' CBM' : '—'}</td>
         </tr>
       </tfoot>
     </table>
   </div>
   <style>
-    tr.ctn-row td{padding:5px 10px;border-bottom:1px solid #efefef;color:#111}
+    tr.ctn-row td{padding:3px 6px;border-bottom:1px solid #efefef;color:#111;height:18px;line-height:1.15}
     tr.ctn-row td.ctn-idx{color:#888;font-size:9px}
-    tr.ctn-row td.ctn-no{font-family:monospace;font-weight:800;font-size:10px}
+    tr.ctn-row td.ctn-no{font-family:monospace;font-weight:800;font-size:12px}
     tr.ctn-row td.ctn-seal{font-family:monospace;color:#555;font-size:9.5px}
-    tr.ctn-row td.ctn-ctn,tr.ctn-row td.ctn-gw,tr.ctn-row td.ctn-cbm{font-family:monospace;text-align:right;font-size:9.5px}
+    tr.ctn-row td.ctn-ctn,tr.ctn-row td.ctn-gw,tr.ctn-row td.ctn-cbm{font-family:monospace;text-align:right;font-size:12px}
   </style>
 
   <table class="charges">
