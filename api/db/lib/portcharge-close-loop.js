@@ -31,6 +31,39 @@ export function docKey(v) {
   return cleanText(v || "NOBL").replace(/[^A-Z0-9]/gi, "").toUpperCase() || "NOBL";
 }
 
+export function hasValue(v) {
+  return v !== null && v !== undefined && String(v).trim() !== "";
+}
+
+export function normalizeDocSeed(blNo, contractNo) {
+  const firstNonEmpty = v => {
+    if (Array.isArray(v)) return v.map(x => String(x || "").trim()).find(Boolean) || null;
+    if (!hasValue(v)) return null;
+    const s = String(v).trim();
+    if (s.startsWith("[") && s.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(s);
+        if (Array.isArray(parsed)) return firstNonEmpty(parsed);
+      } catch (_) {}
+    }
+    return s;
+  };
+  return firstNonEmpty(blNo) || firstNonEmpty(contractNo);
+}
+
+// 铁则(0813 Damon定): 单据日期=min(出运日,下单日,今天) — 已开船用出运日,延期票用SO下单日,永不未来。
+// 2026-09-02 从 shipping-plan-pdf.js 搬来此处与 shipping-plan-doc-data.js 共用,注释随函数一起搬。
+export function docIssueDate(p) {
+  if (p && p.so_date) {   // 真源字段优先
+    const d = new Date(p.so_date);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }
+  const cands = [p && p.etd, p && p.created_at, new Date()]
+    .map(d => d ? new Date(d) : null).filter(d => d && !isNaN(d));
+  const t = new Date(Math.min(...cands.map(d => d.getTime())));
+  return new Date(t.getTime() - t.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 function rawObj(v) {
   if (!v) return {};
   if (typeof v === "object") return v;

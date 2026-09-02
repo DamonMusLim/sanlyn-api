@@ -1,6 +1,6 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { issueDocNo, loadPortChargeIssue } from "./lib/portcharge-close-loop.js";
+import { docIssueDate, hasValue, issueDocNo, loadPortChargeIssue, normalizeDocSeed } from "./lib/portcharge-close-loop.js";
 
 function stripCompanyPrefix(s) {
   return String(s || "").replace(/^\d+-/, "");
@@ -15,10 +15,6 @@ function parseRaw(raw) {
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
-}
-
-function hasValue(v) {
-  return v !== null && v !== undefined && String(v).trim() !== "";
 }
 
 function numOrNull(v) {
@@ -118,6 +114,19 @@ async function loadFactory(pool, code) {
     return r.rows[0] || null;
   } catch (_) {
     return null;
+  }
+}
+
+async function loadSeller(pool) {
+  try {
+    const r = await pool.query(
+      "SELECT name_en, address_en FROM companies WHERE code = $1 LIMIT 1",
+      ["OCEANBABY"]
+    );
+    return { seller: r.rows[0] || null, fallback: false };
+  } catch (e) {
+    console.error("[loadSeller] failed:", e);
+    return { seller: null, fallback: true };
   }
 }
 
@@ -229,9 +238,15 @@ export async function buildShippingPlanDocData(pool, id, page, actor = null, que
   if (!p) return null;
   const raw = parseRaw(p.raw);
   const genDate = today();
+  const docDate = docIssueDate(p);
   const containers = await loadContainers(pool, p);
+  const sellerInfo = await loadSeller(pool);
+  const seller = sellerInfo.seller;
+  const docSeed = normalizeDocSeed(p.bl_no, p.contract_no);
+  const needsDocNo = !docSeed;
+  const docNoWarning = needsDocNo ? "本票缺提单号和合同号,无法生成对外单号,请先补齐" : "";
   const common = {
-    id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no || "—", sc_no: p.contract_no || "—",
+    id: p.id, bl_no: p.bl_no || "—", sc_no: p.contract_no || "—",
     order_no: raw.customerPO || "—", vessel: [p.vessel, p.voyage].filter(Boolean).join(" / ") || "—",
     etd: p.etd, pol: p.pol || "—", pod: p.pod || "—", gen_date: genDate,
   };
@@ -240,17 +255,26 @@ export async function buildShippingPlanDocData(pool, id, page, actor = null, que
     if (pc.needs_payer_selection) return { page, needs_payer_selection: true, payers: pc.payers, shipment: common };
     const factory = await loadFactory(pool, pc.factoryCode);
     const totalCny = pc.totalCny;
+    const needsAmount = !totalCny || totalCny <= 0;
     const data = {
-      page, shipment: common, factory, containers, charges: pc.rows,
+      page, shipment: common, seller, seller_fallback: sellerInfo.fallback, factory, containers, charges: pc.rows,
       used_fallback_card: pc.usedFallbackCard,
       needs_terms: pc.needs_terms,
       warning: pc.warning,
       warnings: pc.warnings || [],
+      needs_amount: needsAmount,
+      amount_warning: needsAmount ? "本票未录运费,请先在票上录入后再出单" : "",
+      needs_docno: needsDocNo,
+      docno_warning: docNoWarning,
       totals: { cny: Number(totalCny.toFixed(2)) },
       pdf_type: "fob_portcharge",
     };
+    if (needsDocNo) return data;
+    // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),
+    //    两者都空则不发号(见 normalizeDocSeed)。绝不降级用 shipment_no —— 那会把 CY 内部号
+    //    印给客户(实测出过 FI-CY00416)。
     data.doc_no = await issueDocNo(pool, {
-      prefix: "PC", seed: p.bl_no || p.shipment_no || p.id, blNo: p.bl_no,
+      prefix: "PC", seed: docSeed, blNo: p.bl_no, noDate: true, noSeq: true, docDate,
       docType: "fob_portcharge", totalCny, generatedBy: actor,
       snapshot: { shipment: common, factory_code: pc.factoryCode, charges: pc.rows, used_fallback_card: pc.usedFallbackCard, warnings: pc.warnings || [] },
     });
@@ -259,20 +283,29 @@ export async function buildShippingPlanDocData(pool, id, page, actor = null, que
   const customer = await loadCustomer(pool, p);
   const fxRate = await latestFx(pool);
   const totalUsd = num(p.freight_sale_usd);
+  const needsAmount = !totalUsd || totalUsd <= 0;
   const unitPrice = containers.qty > 0 ? totalUsd / containers.qty : totalUsd;
   const plannedQty = num(p.container_qty);
   const warnings = plannedQty && plannedQty !== containers.qty
     ? [`container_qty(${plannedQty}) 与实际柜明细(${containers.qty})不一致, 已按实际柜数计算单价`]
     : [];
   const data = {
-    page: "freight", shipment: common, customer, containers,
+    page: "freight", shipment: common, seller, seller_fallback: sellerInfo.fallback, customer, containers,
     charges: [{ cost_category: "海运费 Ocean Freight", charge_basis: "Per Container / 箱", currency: "USD", qty: containers.qty, unit_price: unitPrice, amount: totalUsd }],
     totals: { usd: Number(totalUsd.toFixed(2)), cny: Number((totalUsd * fxRate).toFixed(2)), fx_rate: fxRate },
     pdf_type: "fob_invoice",
+    needs_amount: needsAmount,
+    amount_warning: needsAmount ? "本票未录运费,请先在票上录入后再出单" : "",
+    needs_docno: needsDocNo,
+    docno_warning: docNoWarning,
     warnings,
   };
+  if (needsDocNo) return data;
+  // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),
+  //    两者都空则不发号(见 normalizeDocSeed)。绝不降级用 shipment_no —— 那会把 CY 内部号
+  //    印给客户(实测出过 FI-CY00416)。
   data.doc_no = await issueDocNo(pool, {
-    prefix: "FI", seed: p.shipment_no || p.bl_no || p.id, blNo: p.bl_no,
+    prefix: "FI", seed: docSeed, blNo: p.bl_no, noDate: true, noSeq: true, docDate,
     docType: "fob_invoice", totalUsd, totalCny: data.totals.cny, generatedBy: actor,
     snapshot: { shipment: common, containers, charges: data.charges, warnings },
   });

@@ -11,7 +11,7 @@ import { renderInboundNotice } from "./inbound-notice.js"; // 入货通知/订�
 import { renderInspectionRequest } from "./inspection-request-form.js"; // 出境货物检验检疫申请/报检单 2026-07-05
 import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
 import { renderReceiptDoc } from "./receipt-doc.js"; // 收款证明(银行原版docx母版灌数据) 2026-07-07
-import { issueDocNo, loadPortChargeIssue } from "./lib/portcharge-close-loop.js";
+import { docIssueDate, issueDocNo, loadPortChargeIssue, normalizeDocSeed } from "./lib/portcharge-close-loop.js";
 
 // 合同号/PO 展示用：去掉前导公司码前缀(如 "38-XM-244" -> "XM-244")，纯展示，不影响任何金额/归属计算。
 // 呼应 documents.js 里同名用途的 stripPrefix()（那边只硬编码strip "40-"，这里适配任意公司码前缀）。
@@ -218,14 +218,7 @@ export default async function handler(req, res) {
 
     const generatedAt = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
     const genDate = new Date().toISOString().slice(0, 10);
-    // 铁则(0813 Damon定): 单据日期=min(出运日,下单日,今天) — 已开船用出运日,延期票用SO下单日,永不未来
-    const docDate = (() => {
-      if (p && p.so_date) { const d = new Date(p.so_date); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); } // 真源字段优先
-      const cands = [p && p.etd, p && p.created_at, new Date()]
-        .map(d => d ? new Date(d) : null).filter(d => d && !isNaN(d));
-      const t = new Date(Math.min(...cands.map(d => d.getTime())));
-      return new Date(t.getTime() - t.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-    })();
+    const docDate = docIssueDate(p);
 
     // ── Fetch customer/consignee info for docs that need it ──
     let cust = null;
@@ -921,10 +914,13 @@ ${printBtn}
         : [];
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
 
-      // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空时用 NOBL 占位(docKey 的兜底),
-      //    绝不降级用 shipment_no —— 那会把 CY 内部号印给客户(实测出过 FI-CY00416)。
+      const fobDocSeed = normalizeDocSeed(p.bl_no, p.contract_no);
+      if (!fobDocSeed) return res.status(409).send("<h1>本票缺提单号和合同号,无法生成对外单号,请先补齐</h1>");
+      // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),
+      //    两者都空则不发号(见 normalizeDocSeed)。绝不降级用 shipment_no —— 那会把 CY 内部号
+      //    印给客户(实测出过 FI-CY00416)。
       const fobInvNo = await issueDocNo(pool, { docDate, noDate: true, noSeq: true,
-        prefix: "FI", seed: p.bl_no || null, blNo: p.bl_no,
+        prefix: "FI", seed: fobDocSeed, blNo: p.bl_no,
         docType: "fob_invoice", totalUsd, totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
         snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, qty: actualCtnQty, warnings: fobWarnings },
@@ -1321,8 +1317,13 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
         }).join("")
         : `<tr><td colspan="6" style="text-align:center;color:#999">No CNY port charge rows found / 未找到人民币港杂费明细</td></tr>`;
 
+      const portchargeDocSeed = normalizeDocSeed(p.bl_no, p.contract_no);
+      if (!portchargeDocSeed) return res.status(409).send("<h1>本票缺提单号和合同号,无法生成对外单号,请先补齐</h1>");
+      // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),
+      //    两者都空则不发号(见 normalizeDocSeed)。绝不降级用 shipment_no —— 那会把 CY 内部号
+      //    印给客户(实测出过 FI-CY00416)。
       const portchargeNo = await issueDocNo(pool, { docDate, noDate: true, noSeq: true,
-        prefix: "PC", seed: p.bl_no || null, blNo: p.bl_no,
+        prefix: "PC", seed: portchargeDocSeed, blNo: p.bl_no,
         docType: "fob_portcharge", totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
         snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, payer_company_code: factoryCode, charges: portChargeRows, used_fallback_card: usedFallbackCard },
