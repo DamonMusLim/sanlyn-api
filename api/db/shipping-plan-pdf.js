@@ -981,8 +981,55 @@ ${printBtn}
           <td class="ctn-cbm">${r.cbm ? r.cbm.toFixed(3)+' CBM' : '—'}</td>
         </tr>`).join("");
 
-      const totalUsd  = parseFloat(p.freight_sale_usd || 0);
-      const unitPrice = actualCtnQty > 0 ? totalUsd / actualCtnQty : totalUsd;
+      const fallbackTotalUsd  = parseFloat(p.freight_sale_usd || 0);
+      const fallbackUnitPrice = actualCtnQty > 0 ? fallbackTotalUsd / actualCtnQty : fallbackTotalUsd;
+      let fobChargeRows = [];
+      let fobChargeRowsUsedFallback = false;
+      let fobChargeFallbackReason = "";
+      try {
+        const fobChargeRes = await pool.query(
+          `SELECT cost_category, charge_basis, currency, qty, unit_price, sale_amount, payer_company_code
+             FROM freight_supplier_bills
+            WHERE (bl_no = $1 OR link_plan_id = $2)
+              AND UPPER(COALESCE(currency,'')) = 'USD'
+              AND COALESCE(rebill_status,'') NOT IN ('voided','absorbed')
+            ORDER BY id`,
+          [p.bl_no, p.id]
+        );
+        const usdRows = fobChargeRes.rows || [];
+        const payerCodes = [...new Set(usdRows.map(r => String(r.payer_company_code || "").trim()).filter(Boolean))];
+        const payerCode = String(req.query.payer_company_code || "").trim();
+        if (payerCodes.length > 1 && !payerCode) {
+          return res.status(409).send("<h1>Multiple payer_company_code found</h1><pre>" + esc(JSON.stringify(payerCodes, null, 2)) + "</pre>");
+        }
+        fobChargeRows = payerCode
+          ? usdRows.filter(r => String(r.payer_company_code || "").trim() === payerCode)
+          : usdRows;
+        if (usdRows.length && payerCode && !fobChargeRows.length) {
+          return res.status(409).send("<h1>No USD charge rows found for payer_company_code</h1><pre>" + esc(JSON.stringify({ payer_company_code: payerCode, available: payerCodes }, null, 2)) + "</pre>");
+        }
+        if (!usdRows.length) {
+          fobChargeRowsUsedFallback = true;
+          fobChargeFallbackReason = "no freight_supplier_bills USD rows";
+        }
+      } catch (e) {
+        fobChargeRowsUsedFallback = true;
+        fobChargeFallbackReason = `failed to load freight_supplier_bills USD rows: ${e && (e.message || e)}`;
+      }
+      if (fobChargeRowsUsedFallback) {
+        console.warn("[fob_invoice pdf] fallback to shipping_plans.freight_sale_usd", {
+          shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, reason: fobChargeFallbackReason
+        });
+        fobChargeRows = [{
+          cost_category: "海运费 Ocean Freight",
+          charge_basis: "Per Container / 箱",
+          currency: "USD",
+          qty: ctnQty,
+          unit_price: fallbackUnitPrice,
+          sale_amount: fallbackTotalUsd,
+        }];
+      }
+      const totalUsd = fobChargeRows.reduce((sum, r) => sum + (parseFloat(r.sale_amount) || 0), 0);
       const totalCny  = Math.round(totalUsd * fxRate * 100) / 100;
       const fobWarnings = ctnQty && ctnQty !== actualCtnQty
         ? [`container_qty(${ctnQty}) 与实际柜明细(${actualCtnQty})不一致, 已按实际柜数计算单价`]
@@ -1001,6 +1048,19 @@ ${printBtn}
       const fobWarningHtml = fobWarnings.length ? `<div style="background:#fff7ed;border:1px solid #fb923c;color:#9a3412;border-radius:4px;padding:7px 10px;margin-bottom:10px;font-size:10px;font-weight:800">${esc(fobWarnings.join("；"))}</div>` : "";
       const fobSellerStampUrl = await loadSellerStamp(pool);
       const fobSellerStampHtml = fobSellerStampUrl ? `<div class="seal-area"><img class="company-seal" src="${esc(fobSellerStampUrl)}"><div class="seal-label">盖章 / Company Seal</div></div>` : "";
+      const fobChargeRowsHtml = fobChargeRows.map(r => {
+        const qty = r.qty == null || r.qty === "" ? 1 : Number(r.qty);
+        const amount = parseFloat(r.sale_amount) || 0;
+        const unitPrice = r.unit_price == null || r.unit_price === "" ? (qty ? amount / qty : amount) : Number(r.unit_price);
+        return `<tr>
+        <td>${esc(r.cost_category || "")}</td>
+        <td>${esc(r.charge_basis || "")}</td>
+        <td class="c">${esc(r.currency || "USD")}</td>
+        <td class="c">${fmtNum(qty, 0)}</td>
+        <td class="r">${fmtNum(unitPrice)}</td>
+        <td class="r">${fmtNum(amount)}</td>
+      </tr>`;
+      }).join("");
 
       const fobDocSeed = normalizeDocSeed(p.bl_no, p.contract_no);
       if (!fobDocSeed) return res.status(409).send("<h1>本票缺提单号和合同号,无法生成对外单号,请先补齐</h1>");
@@ -1011,7 +1071,7 @@ ${printBtn}
         prefix: "FI", seed: fobDocSeed, blNo: p.bl_no,
         docType: "fob_invoice", totalUsd, totalCny,
         generatedBy: req.user?.email || req.user?.username || req.user?.name || req.user?.role || null,
-        snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, qty: actualCtnQty, warnings: fobWarnings },
+        snapshot: { shipment_id: p.id, shipment_no: p.shipment_no, bl_no: p.bl_no, qty: actualCtnQty, warnings: fobWarnings, charges: fobChargeRows, used_fallback_freight_sale_usd: fobChargeRowsUsedFallback },
       });
 
       const fobHtml = `<!DOCTYPE html>
@@ -1152,14 +1212,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
     </thead>
     <tbody>
       <tr class="section"><td colspan="6">Ocean Freight | 海运费</td></tr>
-      <tr>
-        <td>海运费 Ocean Freight</td>
-        <td>Per Container / 箱</td>
-        <td class="c">USD</td>
-        <td class="c">${ctnQty}</td>
-        <td class="r">${fmtNum(unitPrice)}</td>
-        <td class="r">${fmtNum(totalUsd)}</td>
-      </tr>
+      ${fobChargeRowsHtml}
     </tbody>
     <tfoot>
       <tr class="total-usd"><td class="label" colspan="5">TOTAL USD (美元合计)</td><td>$ ${fmtNum(totalUsd)}</td></tr>
