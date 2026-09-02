@@ -300,7 +300,7 @@ export default async function handler(req, res) {
           const { htmlToPdf } = await import("./_html-to-pdf.js");
           const _exwPdf = await htmlToPdf(_exwHtml);
           res.setHeader("Content-Type", "application/pdf");
-          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("EXW全费用账单_" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("EXW全费用账单_" + (p.bl_no || p.contract_no || p.id || "")   /* 0903 文件名必须带BL号,不许用 shipment_no(CY内部号)——与单号同一条铁则 */ + ".pdf"));
           res.setHeader("Cache-Control", "no-store");
           return res.status(200).send(_exwPdf);
         } catch(e) {
@@ -1212,7 +1212,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
               margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" },
             }));
             res.setHeader("Content-Type", "application/pdf");
-            res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+            res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.bl_no || p.contract_no || p.id || "")   /* 0903 文件名必须带BL号,不许用 shipment_no(CY内部号)——与单号同一条铁则 */ + ".pdf"));
             res.setHeader("Cache-Control", "no-store");
             return res.status(200).send(_pdfBuf);
           } finally {
@@ -1224,7 +1224,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
             const { htmlToPdf } = await import("./_html-to-pdf.js");
             const _pdfBuf = await htmlToPdf(fobHtml);
             res.setHeader("Content-Type", "application/pdf");
-            res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+            res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.bl_no || p.contract_no || p.id || "")   /* 0903 文件名必须带BL号,不许用 shipment_no(CY内部号)——与单号同一条铁则 */ + ".pdf"));
             res.setHeader("Cache-Control", "no-store");
             return res.status(200).send(_pdfBuf);
           } catch(_fallbackErr) { /* fall through to HTML, matching old behavior */ }
@@ -1633,7 +1633,7 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
           const { htmlToPdf } = await import("./_html-to-pdf.js");
           const _pdfBuf = await htmlToPdf(fobPortchargeHtml);
           res.setHeader("Content-Type", "application/pdf");
-          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("PC-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("PC-" + (p.bl_no || p.contract_no || p.id || "")   /* 0903 文件名必须带BL号,不许用 shipment_no(CY内部号)——与单号同一条铁则 */ + ".pdf"));
           res.setHeader("Cache-Control", "no-store");
           return res.status(200).send(_pdfBuf);
         } catch(_e) { /* fall through to HTML */ }
