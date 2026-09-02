@@ -1,6 +1,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
-import { docIssueDate, hasValue, issueDocNo, loadPortChargeIssue, normalizeDocSeed } from "./lib/portcharge-close-loop.js";
+import { ACCOUNTS, SELLER_BANK } from "./invoice-collab-confirm.js";
+import { docIssueDate, hasValue, isChinaPayer, issueDocNo, loadPortChargeIssue, normalizeDocSeed, resolvePayerCompany } from "./lib/portcharge-close-loop.js";
 
 function stripCompanyPrefix(s) {
   return String(s || "").replace(/^\d+-/, "");
@@ -92,6 +93,10 @@ async function loadPlan(pool, id) {
 
 async function loadCustomer(pool, p) {
   const name = p.customer_en || p.customer_cn || p.customer || "";
+  try {
+    const company = await resolvePayerCompany(pool, p);
+    if (company) return company;
+  } catch (_) {}
   if (!name) return null;
   try {
     const r = await pool.query(
@@ -120,10 +125,21 @@ async function loadFactory(pool, code) {
 async function loadSeller(pool) {
   try {
     const r = await pool.query(
-      "SELECT name_en, address_en FROM companies WHERE code = $1 LIMIT 1",
+      "SELECT name_en, name_cn, address, address_en FROM companies WHERE code = $1 LIMIT 1",
       ["OCEANBABY"]
     );
-    return { seller: r.rows[0] || null, fallback: false };
+    const seller = r.rows[0] || null;
+    if (seller) {
+      seller.bank = {
+        name_cn: SELLER_BANK,
+        accounts: ACCOUNTS,
+        // TODO: 英文行名/英文地址缺真源,待 Damon 确认是否为 XIAMEN WENZAO SUB-BRANCH.
+        name_en: "BANK OF CHINA XIAMEN BRANCH",
+        address_en: "No. 40 North Hubin Road, Xiamen",
+        swift_code: "BKCHCNBJ73A",
+      };
+    }
+    return { seller, fallback: false };
   } catch (e) {
     console.error("[loadSeller] failed:", e);
     return { seller: null, fallback: true };
@@ -299,6 +315,7 @@ export async function buildShippingPlanDocData(pool, id, page, actor = null, que
     needs_docno: needsDocNo,
     docno_warning: docNoWarning,
     warnings,
+    default_lang: isChinaPayer(customer) ? "zh" : "en",
   };
   if (needsDocNo) return data;
   // ⚖️ 铁则:客户单据用BL号,CY内部号不外泄。BL为空退 FS 合同号(contract_no),

@@ -51,6 +51,47 @@ export function normalizeDocSeed(blNo, contractNo) {
   return firstNonEmpty(blNo) || firstNonEmpty(contractNo);
 }
 
+export function countryNorm(v) {
+  return String(v || "").trim().toUpperCase();
+}
+
+// ⚖️ 铁则:判付款方是不是中国公司,【只能】看 companies.country,绝不能用公司 code 的前缀。
+//    反例(生产库实证):SEVEN SEAS & SUMMITS SDN. BHD. 是马来西亚公司(country=MY),
+//    但它的 code 是 CN-00079 —— 按前缀判会把马来客户判成中国公司,正好判反。
+//    country 现状:CN 89家/MY 12/BD 2/SG 2/CL 2/其他3,另有1家写中文"中国"、1家为空,故需归一。
+export function isChinaPayer(customer) {
+  const c = countryNorm(customer && customer.country);
+  return c === "CN" || c === "CHINA" || c === "中国";
+}
+
+export async function resolvePayerCompany(pool, p) {
+  const name = p.customer_en || p.customer_cn || p.customer || "";
+  const companyId = p.customer_company_id || p.customer_id || null;
+  const companyCode = p.customer_company_code || p.customer_code || "";
+  if (companyId) {
+    const r = await pool.query(
+      "SELECT code, name_en, name_cn, address, address_en, country FROM companies WHERE id = $1 LIMIT 1",
+      [companyId]
+    );
+    if (r.rows[0]) return r.rows[0];
+  }
+  if (companyCode) {
+    const r = await pool.query(
+      "SELECT code, name_en, name_cn, address, address_en, country FROM companies WHERE code = $1 LIMIT 1",
+      [companyCode]
+    );
+    if (r.rows[0]) return r.rows[0];
+  }
+  if (name) {
+    const r = await pool.query(
+      "SELECT code, name_en, name_cn, address, address_en, country FROM companies WHERE name_en ILIKE $1 OR name_cn ILIKE $1 LIMIT 1",
+      ["%" + String(name).trim() + "%"]
+    );
+    if (r.rows[0]) return r.rows[0];
+  }
+  return null;
+}
+
 // 铁则(0813 Damon定): 单据日期=min(出运日,下单日,今天) — 已开船用出运日,延期票用SO下单日,永不未来。
 // 2026-09-02 从 shipping-plan-pdf.js 搬来此处与 shipping-plan-doc-data.js 共用,注释随函数一起搬。
 export function docIssueDate(p) {

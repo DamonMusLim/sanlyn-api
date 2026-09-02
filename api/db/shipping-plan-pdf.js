@@ -11,7 +11,7 @@ import { renderInboundNotice } from "./inbound-notice.js"; // 入货通知/订�
 import { renderInspectionRequest } from "./inspection-request-form.js"; // 出境货物检验检疫申请/报检单 2026-07-05
 import { renderCustomsBundle } from "./customs-bundle-pdf.js"; // 一次性报关合成多页PDF 2026-07-05
 import { renderReceiptDoc } from "./receipt-doc.js"; // 收款证明(银行原版docx母版灌数据) 2026-07-07
-import { docIssueDate, issueDocNo, loadPortChargeIssue, normalizeDocSeed } from "./lib/portcharge-close-loop.js";
+import { docIssueDate, isChinaPayer as isChinaFreightPayer, issueDocNo, loadPortChargeIssue, normalizeDocSeed, resolvePayerCompany } from "./lib/portcharge-close-loop.js";
 
 // 合同号/PO 展示用：去掉前导公司码前缀(如 "38-XM-244" -> "XM-244")，纯展示，不影响任何金额/归属计算。
 // 呼应 documents.js 里同名用途的 stripPrefix()（那边只硬编码strip "40-"，这里适配任意公司码前缀）。
@@ -1114,13 +1114,53 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       if (String(req.query.format || "") === "pdf") {
         try {
-          const { htmlToPdf } = await import("./_html-to-pdf.js");
-          const _pdfBuf = await htmlToPdf(fobHtml);
-          res.setHeader("Content-Type", "application/pdf");
-          res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
-          res.setHeader("Cache-Control", "no-store");
-          return res.status(200).send(_pdfBuf);
-        } catch(_e) { /* fall through to HTML */ }
+          let fobLang = String(req.query.lang || "").toLowerCase();
+          if (fobLang !== "zh" && fobLang !== "en") {
+            let fobPayer = null;
+            try {
+              fobPayer = await resolvePayerCompany(pool, p);
+            } catch (_e) {}
+            fobLang = isChinaFreightPayer(fobPayer) ? "zh" : "en";
+          }
+          const _proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0] || "https";
+          const _host = String(req.headers["x-forwarded-host"] || req.headers.host || "api.sanlyn.cn").split(",")[0];
+          const _base = _proto + "://" + _host;
+          const _token = req.query.token ? "&token=" + encodeURIComponent(req.query.token) : "";
+          const _url = _base + "/hy/freight-invoice.html?shipment_id=" + encodeURIComponent(p.id || id || bl) + "&lang=" + encodeURIComponent(fobLang) + "&print=1" + _token;
+          const { default: puppeteer } = await import("puppeteer-core");
+          let _browser;
+          try {
+            _browser = await puppeteer.launch({
+              executablePath: "/usr/bin/google-chrome",
+              headless: "new",
+              args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            });
+            const _page = await _browser.newPage();
+            await _page.goto(_url, { waitUntil: "networkidle0", timeout: 60000 });
+            await _page.waitForSelector("#freightPage", { timeout: 10000 });
+            await _page.emulateMediaType("print");
+            const _pdfBuf = Buffer.from(await _page.pdf({
+              format: "A4", printBackground: true,
+              margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" },
+            }));
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+            res.setHeader("Cache-Control", "no-store");
+            return res.status(200).send(_pdfBuf);
+          } finally {
+            if (_browser) await _browser.close();
+          }
+        } catch(_e) {
+          console.error("[fob_invoice pdf] puppeteer goto hy/freight-invoice failed, fallback to embedded English HTML:", _e && (_e.stack || _e.message || _e));
+          try {
+            const { htmlToPdf } = await import("./_html-to-pdf.js");
+            const _pdfBuf = await htmlToPdf(fobHtml);
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader("Content-Disposition", "attachment; filename=" + encodeURIComponent("FI-" + (p.shipment_no || p.bl_no || p.id || "") + ".pdf"));
+            res.setHeader("Cache-Control", "no-store");
+            return res.status(200).send(_pdfBuf);
+          } catch(_fallbackErr) { /* fall through to HTML, matching old behavior */ }
+        }
       }
       return res.status(200).send(fobHtml);
     }
