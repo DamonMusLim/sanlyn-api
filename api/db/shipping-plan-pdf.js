@@ -1126,7 +1126,8 @@ table.charges tfoot tr td.label{font-family:inherit;text-align:right;font-size:1
           const _host = String(req.headers["x-forwarded-host"] || req.headers.host || "api.sanlyn.cn").split(",")[0];
           const _base = _proto + "://" + _host;
           const _token = req.query.token ? "&token=" + encodeURIComponent(req.query.token) : "";
-          const _url = _base + "/hy/freight-invoice.html?shipment_id=" + encodeURIComponent(p.id || id || bl) + "&lang=" + encodeURIComponent(fobLang) + "&print=1" + _token;
+          const _tpl = fobLang === "zh" ? "/hy/freight-invoice-cn.html" : "/hy/freight-invoice-en.html";
+          const _url = _base + _tpl + "?shipment_id=" + encodeURIComponent(p.id || id || bl) + "&print=1" + _token;
           const { default: puppeteer } = await import("puppeteer-core");
           let _browser;
           try {
