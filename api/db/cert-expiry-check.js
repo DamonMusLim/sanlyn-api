@@ -87,14 +87,45 @@ function mergeProductCertItems(items) {
   return merged;
 }
 
-export default async function handler(req, res) {
-  setCors(req, res, "GET, POST, OPTIONS");
-  if (req.method === "OPTIONS") return res.status(200).end();
+function taskPayloadForItem(item) {
+  var isProduct = item.cert_scope === "product";
+  var tid = isProduct
+    ? productCertTaskId(item)
+    : companyTaskId(item.company_code, item.cert_key);
+  var daysLeft = Number(item.days_left);
+  var riskLevel = daysLeft < 0 ? "high" : daysLeft <= 7 ? "high" : daysLeft <= 14 ? "mid" : "low";
+  var subject = isProduct
+    ? `${item.product_label || item.product_key} / ${item.company_name || item.company_code || "未指定工厂"}`
+    : item.cert_name_cn;
+  var title = daysLeft < 0
+    ? `[证书已过期] ${subject} ${item.cert_name_cn} 已逾期 ${Math.abs(daysLeft)} 天`
+    : `[证书到期提醒] ${subject} ${item.cert_name_cn} 还剩 ${daysLeft} 天`;
+  var reasonLines = isProduct
+    ? [
+        `品名：${item.product_label || item.product_key}`,
+        `工厂：${item.company_name || item.company_code || "—"}`,
+        `证书：${item.cert_name_cn}`,
+        `证书编号：${item.cert_no || "—"}`,
+        `到期日：${item.expire_date}`,
+        `请及时联系工厂重新出具并上传新证书，否则可能影响订舱/出运流程。`,
+      ]
+    : [
+        `证书编号：${item.cert_no || "—"}`,
+        `到期日：${item.expire_date}`,
+        `请及时更新并上传新证书，否则可能影响出口流程。`,
+      ];
 
-  var pool = getPool();
-  try {
-    // 1. 查到期证书
-    var r = await pool.query(`
+  return {
+    tid,
+    title,
+    riskLevel,
+    reason: reasonLines.join("\n"),
+  };
+}
+
+export async function runCertExpiryCheck(pool, { write = false } = {}) {
+  // 1. 查到期证书
+  var r = await pool.query(`
       SELECT
         'company' AS cert_scope,
         cc.company_code, cc.cert_key, cc.cert_no,
@@ -141,56 +172,34 @@ export default async function handler(req, res) {
       ORDER BY expire_date ASC
     `);
 
-    var items = mergeProductCertItems(r.rows);
-    if (items.length === 0) {
-      return res.status(200).json({ success: true, message: "all_clear", created: 0, skipped: 0 });
+  var items = mergeProductCertItems(r.rows);
+  var created = 0, skipped = 0;
+  var results = [];
+
+  for (var item of items) {
+    var task = taskPayloadForItem(item);
+    var itemResult = { ...item, task_id: task.tid, action: write ? "pending" : "dry_run" };
+
+    // 检查是否已有 open/doing 任务
+    var exist = await pool.query(
+      `SELECT id FROM tasks WHERE id = $1 AND status IN ('open','doing') LIMIT 1`,
+      [task.tid]
+    );
+    if (exist.rows.length > 0) {
+      skipped++;
+      itemResult.action = "skipped_existing";
+      results.push(itemResult);
+      continue;
     }
 
-    // GET = dry run，只返回清单不建任务
-    if (req.method === "GET") {
-      return res.status(200).json({ success: true, mode: "dry_run", count: items.length, items });
+    if (!write) {
+      itemResult.action = "would_create";
+      results.push(itemResult);
+      continue;
     }
 
-    // 2. POST = 建任务卡
-    var created = 0, skipped = 0;
-    for (var item of items) {
-      var isProduct = item.cert_scope === "product";
-      var tid = isProduct
-        ? productCertTaskId(item)
-        : companyTaskId(item.company_code, item.cert_key);
-      var daysLeft = Number(item.days_left);
-      var riskLevel = daysLeft < 0 ? "high" : daysLeft <= 7 ? "high" : daysLeft <= 14 ? "mid" : "low";
-      var subject = isProduct
-        ? `${item.product_label || item.product_key} / ${item.company_name || item.company_code || "未指定工厂"}`
-        : item.cert_name_cn;
-      var title = daysLeft < 0
-        ? `[证书已过期] ${subject} ${item.cert_name_cn} 已逾期 ${Math.abs(daysLeft)} 天`
-        : `[证书到期提醒] ${subject} ${item.cert_name_cn} 还剩 ${daysLeft} 天`;
-      var reasonLines = isProduct
-        ? [
-            `品名：${item.product_label || item.product_key}`,
-            `工厂：${item.company_name || item.company_code || "—"}`,
-            `证书：${item.cert_name_cn}`,
-            `证书编号：${item.cert_no || "—"}`,
-            `到期日：${item.expire_date}`,
-            `请及时联系工厂重新出具并上传新证书，否则可能影响订舱/出运流程。`,
-          ]
-        : [
-            `证书编号：${item.cert_no || "—"}`,
-            `到期日：${item.expire_date}`,
-            `请及时更新并上传新证书，否则可能影响出口流程。`,
-          ];
-      var reason = reasonLines.join("\n");
-
-      // 检查是否已有 open/doing 任务
-      var exist = await pool.query(
-        `SELECT id FROM tasks WHERE id = $1 AND status IN ('open','doing') LIMIT 1`,
-        [tid]
-      );
-      if (exist.rows.length > 0) { skipped++; continue; }
-
-      // upsert：可能之前 cancelled 了，重新开一张
-      await pool.query(`
+    // upsert：可能之前 cancelled 了，重新开一张
+    var upsert = await pool.query(`
         -- 2026-09-04 修两处:
         --  (1) jsonb_build_object 里的 $7..$10 必须显式 ::text -- 否则 PG 报
         --      "could not determine data type of parameter $7", POST 路径从来没成功过
@@ -211,16 +220,42 @@ export default async function handler(req, res) {
           updated_at = NOW()
         WHERE tasks.status = 'cancelled'
       `, [
-        tid, title, riskLevel,
+        task.tid, task.title, task.riskLevel,
         item.company_code,
         item.expire_date,
-        reason,
+        task.reason,
         item.cert_key, item.cert_name_cn, item.cert_no || "", item.alert_type,
       ]);
+    if (upsert.rowCount > 0) {
       created++;
+      itemResult.action = "created";
+    } else {
+      skipped++;
+      itemResult.action = "skipped_conflict";
     }
+    results.push(itemResult);
+  }
 
-    return res.status(200).json({ success: true, total: items.length, created, skipped });
+  return {
+    success: true,
+    mode: write ? "write" : "dry_run",
+    message: items.length === 0 ? "all_clear" : "checked",
+    total: items.length,
+    count: items.length,
+    created,
+    skipped,
+    items: results,
+  };
+}
+
+export default async function handler(req, res) {
+  setCors(req, res, "GET, POST, OPTIONS");
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  var pool = getPool();
+  try {
+    var result = await runCertExpiryCheck(pool, { write: req.method !== "GET" });
+    return res.status(200).json(result);
   } catch (e) {
     console.error("[cert-expiry-check]", e);
     return res.status(500).json({ success: false, error: e.message });
