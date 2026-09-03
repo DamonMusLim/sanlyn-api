@@ -20,12 +20,13 @@
     .ml{padding:13px 15px;display:flex;flex-direction:column;gap:7px;min-width:0}.subj{font-weight:600;font-size:14px}.meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--ink-2)}.meta b{font-family:var(--mono);font-weight:500;color:var(--ink)}
     .mr{border-left:1px solid var(--line-soft);background:var(--card-2);padding:13px 15px;display:flex;flex-direction:column;gap:7px;font-size:12px}.kv{display:flex;justify-content:space-between;gap:8px}.kv span:first-child{color:var(--ink-3)}.kv span:last-child{font-family:var(--mono);text-align:right}
     .atts{display:flex;flex-wrap:wrap;gap:5px}.att{font:11px var(--mono);background:var(--card-2);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--ink-2)}.risk{border-color:var(--cold);color:var(--cold);background:var(--cold-soft)}
+    .people{padding:10px 15px;display:flex;flex-direction:column;gap:7px}.person{display:grid;grid-template-columns:minmax(180px,1fr) 70px 92px auto;gap:9px;align-items:center;font-size:12.5px}.addr{font-family:var(--mono);overflow-wrap:anywhere}.role{color:var(--ink-3);font-family:var(--mono)}.ok{color:var(--go);border-color:var(--go);background:var(--go-soft)}.weak{color:var(--wait);border-color:var(--wait);background:var(--wait-soft)}.warn{color:var(--wait)}.badbox{color:var(--cold)}
     details{border-top:1px solid var(--line-soft);background:var(--card)}summary{cursor:pointer;padding:8px 15px;color:var(--go);font-size:12px;font-weight:600}.form{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 15px 15px}
     .fld{display:flex;flex-direction:column;gap:5px}.fld.wide{grid-column:1/-1}.fld label{font-size:11.5px;color:var(--ink-3)}input,textarea{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:5px;background:var(--card);color:var(--ink);width:100%}textarea{min-height:150px;resize:vertical}
     .filebox{border:1px dashed var(--line);border-radius:6px;padding:9px;display:flex;flex-direction:column;gap:6px;background:var(--card-2)}.filerow{display:flex;align-items:center;gap:8px;font-size:12.5px}.filerow input{width:15px;height:15px;accent-color:var(--go)}.nm{font-family:var(--mono);font-size:11.5px}.tag{margin-left:auto;font-size:10.5px;border-radius:3px;padding:0 5px;border:1px solid currentColor}
     .acts{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.btn{font:inherit;font-size:12px;padding:6px 12px;border-radius:5px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}.btn.pri{background:var(--go);border-color:var(--go);color:#fff;font-weight:500}.btn:disabled{opacity:.55;cursor:not-allowed}.msg{font-size:12px;color:var(--ink-3)}.msg.bad{color:var(--cold)}
     .empty{padding:32px 16px;text-align:center;color:var(--ink-3);font-size:13px}.empty b{display:block;color:var(--ink-2);font-size:14px;margin-bottom:4px}footer{color:var(--ink-3);font-size:12px;border-top:1px solid var(--line);padding-top:13px}code{font-family:var(--mono);font-size:11.5px}
-    @media(max-width:860px){.mail-head,.form{grid-template-columns:1fr}.mr{border-left:0;border-top:1px solid var(--line-soft)}.hint{margin-left:0}}
+    @media(max-width:860px){.mail-head,.form,.person{grid-template-columns:1fr}.mr{border-left:0;border-top:1px solid var(--line-soft)}.hint{margin-left:0}}
   </style>
 </head>
 <body>
@@ -37,14 +38,14 @@
     </header>
     <nav class="tabs" role="tablist" id="tabs">
       <button role="tab" aria-selected="true" data-tab="draft" data-wired="true">待发 <span class="cnt">0</span></button>
-      <button role="tab" aria-selected="false" data-tab="reply" data-wired="false">待回复 <span class="cnt">未接入</span></button>
+      <button role="tab" aria-selected="false" data-tab="reply" data-wired="true">待回复 <span class="cnt">0</span></button>
       <button role="tab" aria-selected="false" data-tab="sent" data-wired="true">已发送 <span class="cnt">0</span></button>
-      <button role="tab" aria-selected="false" data-tab="cold" data-wired="false">谁未回复 <span class="cnt">未接入</span></button>
+      <button role="tab" aria-selected="false" data-tab="cold" data-wired="true">谁未回复 <span class="cnt">0</span></button>
       <button role="tab" aria-selected="false" data-tab="risk" data-wired="false">异常卡点 <span class="cnt">未接入</span></button>
       <button role="tab" aria-selected="false" data-tab="new" data-wired="false">选模板发信 <span class="cnt">未接入</span></button>
     </nav>
     <section class="panel" id="pane"></section>
-    <footer><code>mail_outbox</code> 队列 · <span id="stamp">v2026.09.03-1 · 生成时间 --</span></footer>
+    <footer><code>mail_outbox</code> 队列 · <span id="stamp">v2026.09.03-2 · 生成时间 --</span></footer>
   </main>
   <script src="/hy/mail.js"></script>
 </body>

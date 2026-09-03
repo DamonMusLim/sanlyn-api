@@ -1,8 +1,8 @@
 (function(){
 "use strict";
-var API_OUTBOX="/api/db/mail-outbox",API_EDIT="/api/db/mail-outbox-edit";
+var API_OUTBOX="/api/db/mail-outbox",API_EDIT="/api/db/mail-outbox-edit",API_REPLIES="/api/db/mail-replies";
 var TAB_KEYS={draft:1,reply:1,sent:1,cold:1,risk:1,new:1};
-var state={tab:"draft",rows:{draft:[],sent:[]},loading:false,error:""};
+var state={tab:"draft",rows:{draft:[],sent:[]},replies:null,loading:false,error:""};
 var pane=id("pane"),tabs=id("tabs"),stamp=id("stamp");
 function id(v){return document.getElementById(v)}
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
@@ -25,6 +25,10 @@ function attBlocked(a){return !!(a&&a.no_external)}
 function attChecked(a){return !attBlocked(a)&&a.selected!==false}
 function rowById(idv){return arr(state.rows.draft).find(function(r){return String(r.id)===String(idv)})}
 function mailTime(m){return fmtTime(m.sent_at||m.prepared_at||m.created_at)}
+function replyRows(){return arr(state.replies&&state.replies.data)}
+function replyReady(){return state.replies&&state.replies.upstream_ok!==false}
+function pendingMails(){return replyReady()?replyRows().filter(function(r){return Number(r.pending_count)>0}):[]}
+function daysSince(v){var d=new Date(v);return isNaN(d.getTime())?0:Math.max(0,Math.floor((Date.now()-d.getTime())/86400000))}
 function tabFromHash(){var tab=location.hash.replace(/^#/,"");return TAB_KEYS[tab]?tab:"draft"}
 function syncHash(tab){if(location.hash==="#"+tab)return;history.replaceState(null,"",location.pathname+location.search+"#"+tab)}
 async function fetchJson(url,opt){
@@ -38,11 +42,13 @@ async function load(){
   try{
     var draft=fetchJson(API_OUTBOX+"?status=draft",{headers:headers()});
     var sent=fetchJson(API_OUTBOX+"?status=sent",{headers:headers()});
-    var all=await Promise.all([draft,sent]);
+    var replies=fetchJson(API_REPLIES,{headers:headers()}).catch(function(e){return {upstream_ok:false,upstream_error:e.message,data:[]}});
+    var all=await Promise.all([draft,sent,replies]);
     state.rows.draft=arr(all[0].data).filter(function(r){return r.status==="draft"});
     state.rows.sent=arr(all[1].data).filter(function(r){return r.status==="sent"});
-    stamp.textContent="v2026.09.03-1 · 生成时间 "+new Date().toLocaleString("zh-CN");
-  }catch(e){state.error=e.message;state.rows={draft:[],sent:[]}}
+    state.replies=all[2];
+    stamp.textContent="v2026.09.03-2 · 生成时间 "+new Date().toLocaleString("zh-CN");
+  }catch(e){state.error=e.message;state.rows={draft:[],sent:[]};state.replies={upstream_ok:false,upstream_error:e.message,data:[]}}
   state.loading=false;render();
 }
 function setTab(tab,skipHash){
@@ -55,9 +61,13 @@ function setTab(tab,skipHash){
 function render(){
   setCount("draft",state.rows.draft.length);
   setCount("sent",state.rows.sent.length);
+  setCount("reply",replyReady()?pendingMails().length:"取不到");
+  setCount("cold",replyReady()?coldPeople().length:"取不到");
   Array.prototype.forEach.call(tabs.querySelectorAll("button[data-wired=false] .cnt"),function(x){x.textContent="未接入"});
   if(state.tab==="draft")return renderDraft();
+  if(state.tab==="reply")return renderReply();
   if(state.tab==="sent")return renderSent();
+  if(state.tab==="cold")return renderCold();
   var names={reply:["待回复","对方来信 · 等我们回"],sent:["已发送","已发送记录"],cold:["谁未回复","我们发了 · 对方没回"],risk:["异常卡点","需要人介入的邮件"],new:["选模板发信","模板备料入口"]};
   var item=names[state.tab]||names.reply;
   pane.innerHTML='<div class="ph"><h2>'+item[0]+'</h2><span class="sub">'+item[1]+'</span></div><div class="empty"><b>未接入</b>本页先接 mail_outbox 待发草稿，其它标签保留设计稿入口。</div>';
@@ -65,6 +75,63 @@ function render(){
 function setCount(tab,n){
   var el=tabs.querySelector('button[data-tab="'+tab+'"] .cnt');
   if(el)el.textContent=String(n);
+}
+function replyHead(title,sub){
+  var warn=state.replies&&state.replies.truncated?'<span class="hint warn">⚠ 未查全(上游截断)</span>':'';
+  return '<div class="ph"><h2>'+title+'</h2><span class="sub">'+sub+'</span>'+warn+'</div>';
+}
+function renderReply(){
+  var head=replyHead("待回复","mail_replies.pending_count > 0");
+  if(state.loading){pane.innerHTML=head+'<div class="empty"><b>加载中</b>正在读取回复状态。</div>';return}
+  if(!replyReady())return renderReplyError(head);
+  var rows=pendingMails();
+  if(!rows.length){pane.innerHTML=head+'<div class="empty"><b>没有待回复邮件</b>当前所有可确认收件人都已回复。</div>';return}
+  pane.innerHTML=head+rows.map(replyCard).join("");
+}
+function renderReplyError(head){
+  var msg=state.replies&&state.replies.upstream_error||state.error||"上游未返回可用回复状态";
+  pane.innerHTML=head+'<div class="empty badbox"><b>回复状态取不到</b>'+esc(msg)+'</div>';
+}
+function replyCard(m){
+  return '<article class="mail"><div class="mail-head"><div class="ml">'+
+    '<div class="subj">'+esc(m.subject||"(无主题)")+'</div><div class="meta">'+
+    '<span>提单 <b>'+esc(m.related_bl_no||"--")+'</b></span><span>发出 <b>'+esc(fmtTime(m.sent_at))+'</b></span>'+
+    '<span>已回 <b>'+esc(m.replied_count||0)+'</b> / 欠 <b>'+esc(m.pending_count||0)+'</b></span></div></div>'+
+    '<aside class="mr"><div class="kv"><span>Outbox</span><span>'+esc(m.outbox_id||"--")+'</span></div><div class="kv"><span>收件人</span><span>'+arr(m.recipients).length+'</span></div></aside></div>'+
+    '<details><summary>展开收件人</summary><div class="people">'+arr(m.recipients).map(recipientLine).join("")+'</div></details></article>';
+}
+function matchLabel(r){
+  if(r.match_kind==="bl_fallback")return '<span class="tag weak">弱匹配(按提单号)</span>';
+  return r.match_kind?'<span class="tag ok">'+esc(r.match_kind)+'</span>':'';
+}
+function recipientLine(r){
+  var status=r.replied===true?"✅已回":r.replied===false?"⏳未回":"?";
+  var extra=r.replied===true?'<span>'+esc(fmtTime(r.replied_at))+'</span>'+matchLabel(r):"";
+  return '<div class="person"><span class="addr">'+esc(r.email||"--")+'</span><span class="role">'+esc(r.role||"--")+'</span><span>'+status+'</span>'+extra+'</div>';
+}
+function coldPeople(){
+  if(!replyReady())return [];
+  var map={};
+  replyRows().forEach(function(m){
+    arr(m.recipients).forEach(function(r){
+      if(r.replied!==false||!r.email)return;
+      var k=String(r.email).toLowerCase(),d=daysSince(m.sent_at);
+      if(!map[k])map[k]={email:r.email,count:0,days:0};
+      map[k].count++;
+      if(d>map[k].days)map[k].days=d;
+    });
+  });
+  return Object.keys(map).map(function(k){return map[k]}).sort(function(a,b){return b.days-a.days||b.count-a.count||a.email.localeCompare(b.email)});
+}
+function renderCold(){
+  var head=replyHead("谁未回复","按收件人聚合 replied=false");
+  if(state.loading){pane.innerHTML=head+'<div class="empty"><b>加载中</b>正在统计未回复人。</div>';return}
+  if(!replyReady())return renderReplyError(head);
+  var rows=coldPeople();
+  if(!rows.length){pane.innerHTML=head+'<div class="empty"><b>没有未回复收件人</b>当前没有 replied=false 的收件人。</div>';return}
+  pane.innerHTML=head+'<div class="people coldlist">'+rows.map(function(p){
+    return '<div class="person"><span class="addr">'+esc(p.email)+'</span><span>欠着 <b>'+p.count+'</b> 封</span><span>最久 <b>'+p.days+'</b> 天</span></div>';
+  }).join("")+'</div>';
 }
 function renderDraft(){
   var head='<div class="ph"><h2>待发</h2><span class="sub">mail_outbox.status=draft</span><span class="hint">只能保存草稿，不发送</span></div>';
