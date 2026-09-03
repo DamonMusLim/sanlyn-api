@@ -191,10 +191,16 @@ export default async function handler(req, res) {
 
       // upsert：可能之前 cancelled 了，重新开一张
       await pool.query(`
+        -- 2026-09-04 修两处:
+        --  (1) jsonb_build_object 里的 $7..$10 必须显式 ::text -- 否则 PG 报
+        --      "could not determine data type of parameter $7", POST 路径从来没成功过
+        --      (GET 不走这段, 所以只跑 dry-run 会以为是好的)。
+        --  (2) dispatched_by 必填 sentinel(哨兵巡检): 该列默认 unknown, 漏写等于污染账本。
         INSERT INTO tasks (id, title, task_type, level, status, risk_level,
-          company_code, mode, due_at, reason, raw, created_at, updated_at)
+          company_code, mode, due_at, reason, raw, source, dispatched_by, created_at, updated_at)
         VALUES ($1,$2,'cert_expiry','doc','open',$3,$4,'owned',$5,$6,
-          jsonb_build_object('cert_key',$7,'cert_name_cn',$8,'cert_no',$9,'alert_type',$10),
+          jsonb_build_object('cert_key',$7::text,'cert_name_cn',$8::text,'cert_no',$9::text,'alert_type',$10::text),
+          'cert-expiry-check','sentinel',
           NOW(), NOW())
         ON CONFLICT (id) DO UPDATE SET
           title      = EXCLUDED.title,
