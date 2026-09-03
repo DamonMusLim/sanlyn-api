@@ -6,6 +6,14 @@ const REPLY_ACCOUNT_ID = "ob-biz";
 const REPLY_LIMIT = 2000;
 const UPSTREAM_TIMEOUT_MS = 8000;
 const MATCH_RANK = { in_reply_to: 1, references: 2, bl_fallback: 3 };
+const PERSONAL_DOMAINS = new Set([
+  "gmail.com", "qq.com", "163.com", "126.com", "yeah.net", "hotmail.com",
+  "outlook.com", "foxmail.com", "yahoo.com", "live.com", "icloud.com",
+  "msn.com", "aol.com", "proton.me", "protonmail.com",
+]);
+const COMPANY_EMAIL_COLS = [
+  "contact_email", "einvoice_email", "biz_contact_email", "fin_contact_email",
+];
 
 function asArray(value) {
   if (Array.isArray(value)) return value;
@@ -29,6 +37,23 @@ function normalizeEmail(value) {
   const text = cleanText(value).toLowerCase();
   const angle = text.match(/<([^<>@\s]+@[^<>\s]+)>/);
   return angle ? angle[1] : text;
+}
+
+function emailDomain(value) {
+  const email = normalizeEmail(value);
+  const at = email.lastIndexOf("@");
+  return at > 0 ? email.slice(at + 1) : "";
+}
+
+function partyIdentity(value) {
+  const email = normalizeEmail(value);
+  const domain = emailDomain(email);
+  const personal = !domain || PERSONAL_DOMAINS.has(domain);
+  return {
+    key: personal ? email : domain,
+    label: personal ? email : domain,
+    is_personal_domain: personal,
+  };
 }
 
 function normalizeMessageId(value) {
@@ -88,7 +113,11 @@ function recipientRows(row, upstreamOk, replies) {
       if (normalizeEmail(reply.from_email) !== email) continue;
       const matchKind = matchKindForReply(reply, row.message_id, row.related_bl_no);
       if (!matchKind) continue;
-      const candidate = { replied_at: reply.received_at || null, match_kind: matchKind };
+      const candidate = {
+        replied_by: reply.from_email || null,
+        replied_at: reply.received_at || null,
+        match_kind: matchKind,
+      };
       if (betterReplyMatch(candidate, best)) {
         best = candidate;
       }
@@ -97,26 +126,132 @@ function recipientRows(row, upstreamOk, replies) {
 
     return {
       ...item,
+      party_key: partyIdentity(item.email).key,
       replied: Boolean(best),
+      replied_by: best?.replied_by || null,
       replied_at: best?.replied_at || null,
       match_kind: best?.match_kind || null,
     };
   });
 }
 
-function normalizeOutboxRow(row, upstreamOk, replies) {
+function partyRows(recipients, upstreamOk, companyLabels) {
+  const byKey = new Map();
+  for (const recipient of recipients) {
+    const ident = partyIdentity(recipient.email);
+    if (!ident.key) continue;
+    if (!byKey.has(ident.key)) {
+      byKey.set(ident.key, {
+        party_key: ident.key,
+        party_label: companyLabels[ident.key] || ident.label,
+        is_personal_domain: ident.is_personal_domain,
+        emails: [],
+        replied: upstreamOk ? false : null,
+        replied_by: null,
+        replied_at: null,
+        match_kind: null,
+      });
+    }
+    const party = byKey.get(ident.key);
+    const email = cleanText(recipient.email);
+    if (email && !party.emails.includes(email)) party.emails.push(email);
+    if (!upstreamOk || recipient.replied !== true) continue;
+    const candidate = {
+      replied_by: recipient.replied_by || recipient.email || null,
+      replied_at: recipient.replied_at || null,
+      match_kind: recipient.match_kind || null,
+    };
+    if (betterReplyMatch(candidate, party)) {
+      party.replied = true;
+      party.replied_by = candidate.replied_by;
+      party.replied_at = candidate.replied_at;
+      party.match_kind = candidate.match_kind;
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+function collectRecipientKeys(rows) {
+  const emails = new Set();
+  const domains = new Set();
+  for (const row of rows) {
+    for (const email of [...asArray(row.to_emails), ...asArray(row.cc_emails)]) {
+      const normalized = normalizeEmail(email);
+      const domain = emailDomain(normalized);
+      if (normalized) emails.add(normalized);
+      if (domain && !PERSONAL_DOMAINS.has(domain)) domains.add(domain);
+    }
+  }
+  return { emails: Array.from(emails), domains: Array.from(domains) };
+}
+
+function displayCompany(row) {
+  return cleanText(row.name_cn) || cleanText(row.name_en) || cleanText(row.short_name) || cleanText(row.code);
+}
+
+async function companyLabelsForRows(pool, rows) {
+  const keys = collectRecipientKeys(rows);
+  if (!keys.emails.length && !keys.domains.length) return {};
+  try {
+    const cols = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name='companies' AND column_name = ANY($1::text[])`,
+      [["code", "name_cn", "name_en", "short_name", ...COMPANY_EMAIL_COLS]]
+    );
+    const have = new Set(cols.rows.map(row => row.column_name));
+    const emailCols = COMPANY_EMAIL_COLS.filter(col => have.has(col));
+    if (!emailCols.length) return {};
+
+    const selectCols = ["code", "name_cn", "name_en", "short_name"]
+      .filter(col => have.has(col))
+      .concat(emailCols);
+    const emailTests = emailCols.map(col => `lower(coalesce(${col}::text,'')) = ANY($1::text[])`);
+    const domainTests = emailCols.map(col => `
+      EXISTS (SELECT 1 FROM unnest($2::text[]) d
+        WHERE lower(coalesce(${col}::text,'')) LIKE '%@' || d)`);
+    const result = await pool.query(
+      `SELECT ${selectCols.join(", ")} FROM companies
+       WHERE ${emailTests.concat(domainTests).join(" OR ")}
+       ORDER BY id LIMIT 500`,
+      [keys.emails, keys.domains]
+    );
+
+    const labels = {};
+    for (const row of result.rows) {
+      const label = displayCompany(row);
+      if (!label) continue;
+      for (const col of emailCols) {
+        const value = cleanText(row[col]).toLowerCase();
+        const exact = normalizeEmail(value);
+        if (exact && keys.emails.includes(exact)) labels[exact] = labels[exact] || label;
+        for (const domain of keys.domains) {
+          if (value.includes("@" + domain)) labels[domain] = labels[domain] || label;
+        }
+      }
+    }
+    return labels;
+  } catch {
+    return {};
+  }
+}
+
+function normalizeOutboxRow(row, upstreamOk, replies, companyLabels) {
   const recipients = recipientRows(row, upstreamOk, replies);
+  const parties = partyRows(recipients, upstreamOk, companyLabels || {});
   const item = {
     outbox_id: row.id,
     subject: row.subject || "",
     related_bl_no: row.related_bl_no || null,
     sent_at: row.sent_at || null,
     recipients,
+    parties,
   };
 
   if (upstreamOk) {
     item.replied_count = recipients.filter(recipient => recipient.replied === true).length;
     item.pending_count = recipients.filter(recipient => recipient.replied === false).length;
+    item.party_replied_count = parties.filter(party => party.replied === true).length;
+    item.party_pending_count = parties.filter(party => party.replied === false).length;
   }
   return item;
 }
@@ -204,7 +339,8 @@ export default async function handler(req, res) {
   ]);
 
   const upstreamOk = Boolean(upstream.ok);
-  const data = outboxResult.rows.map(row => normalizeOutboxRow(row, upstreamOk, upstream.replies));
+  const companyLabels = await companyLabelsForRows(pool, outboxResult.rows);
+  const data = outboxResult.rows.map(row => normalizeOutboxRow(row, upstreamOk, upstream.replies, companyLabels));
   const payload = { ok: true, upstream_ok: upstreamOk, data };
 
   if (!upstreamOk) {

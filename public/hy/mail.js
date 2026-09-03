@@ -27,7 +27,7 @@ function rowById(idv){return arr(state.rows.draft).find(function(r){return Strin
 function mailTime(m){return fmtTime(m.sent_at||m.prepared_at||m.created_at)}
 function replyRows(){return arr(state.replies&&state.replies.data)}
 function replyReady(){return state.replies&&state.replies.upstream_ok!==false}
-function pendingMails(){return replyReady()?replyRows().filter(function(r){return Number(r.pending_count)>0}):[]}
+function pendingMails(){return replyReady()?replyRows().filter(function(r){return Number(r.party_pending_count)>0}):[]}
 function daysSince(v){var d=new Date(v);return isNaN(d.getTime())?0:Math.max(0,Math.floor((Date.now()-d.getTime())/86400000))}
 function tabFromHash(){var tab=location.hash.replace(/^#/,"");return TAB_KEYS[tab]?tab:"draft"}
 function syncHash(tab){if(location.hash==="#"+tab)return;history.replaceState(null,"",location.pathname+location.search+"#"+tab)}
@@ -62,7 +62,7 @@ function render(){
   setCount("draft",state.rows.draft.length);
   setCount("sent",state.rows.sent.length);
   setCount("reply",replyReady()?pendingMails().length:"取不到");
-  setCount("cold",replyReady()?coldPeople().length:"取不到");
+  setCount("cold",replyReady()?coldParties().length:"取不到");
   Array.prototype.forEach.call(tabs.querySelectorAll("button[data-wired=false] .cnt"),function(x){x.textContent="未接入"});
   if(state.tab==="draft")return renderDraft();
   if(state.tab==="reply")return renderReply();
@@ -81,7 +81,7 @@ function replyHead(title,sub){
   return '<div class="ph"><h2>'+title+'</h2><span class="sub">'+sub+'</span>'+warn+'</div>';
 }
 function renderReply(){
-  var head=replyHead("待回复","mail_replies.pending_count > 0");
+  var head=replyHead("待回复","按公司主体统计 party_pending_count > 0");
   if(state.loading){pane.innerHTML=head+'<div class="empty"><b>加载中</b>正在读取回复状态。</div>';return}
   if(!replyReady())return renderReplyError(head);
   var rows=pendingMails();
@@ -96,41 +96,49 @@ function replyCard(m){
   return '<article class="mail"><div class="mail-head"><div class="ml">'+
     '<div class="subj">'+esc(m.subject||"(无主题)")+'</div><div class="meta">'+
     '<span>提单 <b>'+esc(m.related_bl_no||"--")+'</b></span><span>发出 <b>'+esc(fmtTime(m.sent_at))+'</b></span>'+
-    '<span>已回 <b>'+esc(m.replied_count||0)+'</b> / 欠 <b>'+esc(m.pending_count||0)+'</b></span></div></div>'+
+    '<span>已回 <b>'+esc(m.party_replied_count||0)+'</b> / 欠 <b>'+esc(m.party_pending_count||0)+'</b></span></div></div>'+
     '<aside class="mr"><div class="kv"><span>Outbox</span><span>'+esc(m.outbox_id||"--")+'</span></div><div class="kv"><span>收件人</span><span>'+arr(m.recipients).length+'</span></div></aside></div>'+
-    '<details><summary>展开收件人</summary><div class="people">'+arr(m.recipients).map(recipientLine).join("")+'</div></details></article>';
+    '<details><summary>展开收件人</summary><div class="people">'+arr(m.recipients).map(function(r){return recipientLine(r,m)}).join("")+'</div></details></article>';
 }
 function matchLabel(r){
   if(r.match_kind==="bl_fallback")return '<span class="tag weak">弱匹配(按提单号)</span>';
   return r.match_kind?'<span class="tag ok">'+esc(r.match_kind)+'</span>':'';
 }
-function recipientLine(r){
-  var status=r.replied===true?"✅已回":r.replied===false?"⏳未回":"?";
+function partyByKey(m,key){
+  return arr(m&&m.parties).find(function(p){return String(p.party_key||"")===String(key||"")});
+}
+function recipientLine(r,m){
+  var party=partyByKey(m,r.party_key),sameCompany=party&&party.replied===true&&r.replied===false;
+  var status=r.replied===true?"✅已回":sameCompany?"✅同公司已回":r.replied===false?"⏳未回":"?";
   var extra=r.replied===true?'<span>'+esc(fmtTime(r.replied_at))+'</span>'+matchLabel(r):"";
   return '<div class="person"><span class="addr">'+esc(r.email||"--")+'</span><span class="role">'+esc(r.role||"--")+'</span><span>'+status+'</span>'+extra+'</div>';
 }
-function coldPeople(){
+function coldParties(){
   if(!replyReady())return [];
   var map={};
   replyRows().forEach(function(m){
-    arr(m.recipients).forEach(function(r){
-      if(r.replied!==false||!r.email)return;
-      var k=String(r.email).toLowerCase(),d=daysSince(m.sent_at);
-      if(!map[k])map[k]={email:r.email,count:0,days:0};
+    arr(m.parties).forEach(function(p){
+      if(p.replied!==false||!p.party_key)return;
+      var k=String(p.party_key).toLowerCase(),d=daysSince(m.sent_at);
+      if(!map[k])map[k]={key:p.party_key,label:p.party_label||p.party_key,count:0,days:0,emails:{}};
       map[k].count++;
+      arr(p.emails).forEach(function(e){if(e)map[k].emails[e]=true});
       if(d>map[k].days)map[k].days=d;
     });
   });
-  return Object.keys(map).map(function(k){return map[k]}).sort(function(a,b){return b.days-a.days||b.count-a.count||a.email.localeCompare(b.email)});
+  return Object.keys(map).map(function(k){
+    map[k].emailList=Object.keys(map[k].emails).sort();
+    return map[k];
+  }).sort(function(a,b){return b.days-a.days||b.count-a.count||a.label.localeCompare(b.label)});
 }
 function renderCold(){
-  var head=replyHead("谁未回复","按收件人聚合 replied=false");
+  var head=replyHead("谁未回复","按公司/主体聚合 party.replied=false");
   if(state.loading){pane.innerHTML=head+'<div class="empty"><b>加载中</b>正在统计未回复人。</div>';return}
   if(!replyReady())return renderReplyError(head);
-  var rows=coldPeople();
-  if(!rows.length){pane.innerHTML=head+'<div class="empty"><b>没有未回复收件人</b>当前没有 replied=false 的收件人。</div>';return}
+  var rows=coldParties();
+  if(!rows.length){pane.innerHTML=head+'<div class="empty"><b>没有未回复主体</b>当前没有 party.replied=false 的公司/主体。</div>';return}
   pane.innerHTML=head+'<div class="people coldlist">'+rows.map(function(p){
-    return '<div class="person"><span class="addr">'+esc(p.email)+'</span><span>欠着 <b>'+p.count+'</b> 封</span><span>最久 <b>'+p.days+'</b> 天</span></div>';
+    return '<div class="person"><span class="addr">'+esc(p.label)+'</span><span>欠着 <b>'+p.count+'</b> 封</span><span>最久 <b>'+p.days+'</b> 天</span><span class="role">'+esc(p.emailList.join(", "))+'</span></div>';
   }).join("")+'</div>';
 }
 function renderDraft(){
