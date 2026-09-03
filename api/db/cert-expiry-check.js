@@ -13,9 +13,13 @@
 
 import { getPool, setCors } from "../db.js";
 
-function taskId(companyCode, certKey) {
+function companyTaskId(companyCode, certKey) {
   // 固定格式，幂等去重；max 32 chars
   return ("CERT-" + companyCode + "-" + certKey).slice(0, 32);
+}
+
+function productTaskId(productKey, certKey) {
+  return ("PCERT-" + productKey + "-" + certKey).slice(0, 32);
 }
 
 export default async function handler(req, res) {
@@ -27,7 +31,9 @@ export default async function handler(req, res) {
     // 1. 查到期证书
     var r = await pool.query(`
       SELECT
+        'company' AS cert_scope,
         cc.company_code, cc.cert_key, cc.cert_no,
+        NULL::text AS product_key, NULL::text AS product_label,
         cc.expire_date,
         ctc.cert_name_cn, ctc.cert_name_en, ctc.warn_days,
         c.company AS company_name, c.role AS company_role,
@@ -43,7 +49,27 @@ export default async function handler(req, res) {
       WHERE cc.expire_date IS NOT NULL
         AND cc.expire_date <= CURRENT_DATE + (ctc.warn_days || ' days')::INTERVAL
         AND cc.status NOT IN ('rejected')
-      ORDER BY cc.expire_date ASC
+      UNION ALL
+      SELECT
+        'product' AS cert_scope,
+        pc.company_code, pc.cert_key, pc.cert_no,
+        pc.product_key, pc.product_label,
+        pc.expire_date,
+        ctc.cert_name_cn, ctc.cert_name_en, ctc.warn_days,
+        c.company AS company_name, c.role AS company_role,
+        CASE
+          WHEN pc.expire_date < CURRENT_DATE THEN 'expired'
+          ELSE 'expiring_soon'
+        END AS alert_type,
+        (pc.expire_date - CURRENT_DATE) AS days_left
+      FROM product_certs pc
+      JOIN cert_type_config ctc
+        ON ctc.cert_key = pc.cert_key AND ctc.expire_track = true AND ctc.active = true
+      LEFT JOIN customers c ON c.company_code = pc.company_code
+      WHERE pc.expire_date IS NOT NULL
+        AND pc.expire_date <= CURRENT_DATE + (ctc.warn_days || ' days')::INTERVAL
+        AND pc.status NOT IN ('rejected')
+      ORDER BY expire_date ASC
     `);
 
     var items = r.rows;
@@ -59,17 +85,33 @@ export default async function handler(req, res) {
     // 2. POST = 建任务卡
     var created = 0, skipped = 0;
     for (var item of items) {
-      var tid = taskId(item.company_code, item.cert_key);
+      var isProduct = item.cert_scope === "product";
+      var tid = isProduct
+        ? productTaskId(item.product_key, item.cert_key)
+        : companyTaskId(item.company_code, item.cert_key);
       var daysLeft = Number(item.days_left);
       var riskLevel = daysLeft < 0 ? "high" : daysLeft <= 7 ? "high" : daysLeft <= 14 ? "mid" : "low";
+      var subject = isProduct
+        ? `${item.product_label || item.product_key} / ${item.company_name || item.company_code || "未指定工厂"}`
+        : item.cert_name_cn;
       var title = daysLeft < 0
-        ? `[证书已过期] ${item.cert_name_cn} 已逾期 ${Math.abs(daysLeft)} 天`
-        : `[证书到期提醒] ${item.cert_name_cn} 还剩 ${daysLeft} 天`;
-      var reason = [
-        `证书编号：${item.cert_no || "—"}`,
-        `到期日：${item.expire_date}`,
-        `请及时更新并上传新证书，否则可能影响出口流程。`,
-      ].join("\n");
+        ? `[证书已过期] ${subject} ${item.cert_name_cn} 已逾期 ${Math.abs(daysLeft)} 天`
+        : `[证书到期提醒] ${subject} ${item.cert_name_cn} 还剩 ${daysLeft} 天`;
+      var reasonLines = isProduct
+        ? [
+            `品名：${item.product_label || item.product_key}`,
+            `工厂：${item.company_name || item.company_code || "—"}`,
+            `证书：${item.cert_name_cn}`,
+            `证书编号：${item.cert_no || "—"}`,
+            `到期日：${item.expire_date}`,
+            `请及时联系工厂重新出具并上传新证书，否则可能影响订舱/出运流程。`,
+          ]
+        : [
+            `证书编号：${item.cert_no || "—"}`,
+            `到期日：${item.expire_date}`,
+            `请及时更新并上传新证书，否则可能影响出口流程。`,
+          ];
+      var reason = reasonLines.join("\n");
 
       // 检查是否已有 open/doing 任务
       var exist = await pool.query(
