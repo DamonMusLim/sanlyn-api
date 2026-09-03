@@ -36,7 +36,7 @@ export default async function handler(req, res) {
         NULL::text AS product_key, NULL::text AS product_label,
         cc.expire_date,
         ctc.cert_name_cn, ctc.cert_name_en, ctc.warn_days,
-        c.company AS company_name, c.role AS company_role,
+        c.name_cn AS company_name, c.type AS company_role,
         CASE
           WHEN cc.expire_date < CURRENT_DATE THEN 'expired'
           ELSE 'expiring_soon'
@@ -45,7 +45,9 @@ export default async function handler(req, res) {
       FROM company_certs cc
       JOIN cert_type_config ctc
         ON ctc.cert_key = cc.cert_key AND ctc.expire_track = true AND ctc.active = true
-      LEFT JOIN customers c ON c.company_code = cc.company_code
+      -- 🔴 2026-09-04 修:原来 JOIN customers 且取 c.company/c.role,两者都不存在 -> 接口一调就 500
+      -- (所以历史上 0 张 CERT- 卡:既没接 cron,接了也会挂)。证件挂的是工厂,工厂在 companies 不在 customers。
+      LEFT JOIN companies c ON c.code = cc.company_code
       WHERE cc.expire_date IS NOT NULL
         AND cc.expire_date <= CURRENT_DATE + (ctc.warn_days || ' days')::INTERVAL
         AND cc.status NOT IN ('rejected')
@@ -56,7 +58,7 @@ export default async function handler(req, res) {
         pc.product_key, pc.product_label,
         pc.expire_date,
         ctc.cert_name_cn, ctc.cert_name_en, ctc.warn_days,
-        c.company AS company_name, c.role AS company_role,
+        c.name_cn AS company_name, c.type AS company_role,
         CASE
           WHEN pc.expire_date < CURRENT_DATE THEN 'expired'
           ELSE 'expiring_soon'
@@ -65,7 +67,7 @@ export default async function handler(req, res) {
       FROM product_certs pc
       JOIN cert_type_config ctc
         ON ctc.cert_key = pc.cert_key AND ctc.expire_track = true AND ctc.active = true
-      LEFT JOIN customers c ON c.company_code = pc.company_code
+      LEFT JOIN companies c ON c.code = pc.company_code
       WHERE pc.expire_date IS NOT NULL
         AND pc.expire_date <= CURRENT_DATE + (ctc.warn_days || ' days')::INTERVAL
         AND pc.status NOT IN ('rejected')
