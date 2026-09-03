@@ -11,7 +11,15 @@ function headers(json){var h={},t=token();if(t)h.Authorization="Bearer "+t;if(js
 function arr(v){return Array.isArray(v)?v:[]}
 function textList(v){return arr(v).join("\n")}
 function parseEmails(v){return String(v||"").split(/[\n,;]+/).map(function(x){return x.trim()}).filter(Boolean)}
-function fmtTime(v){return v?String(v).replace("T"," ").slice(0,16):"--"}
+// 🔴 2026-09-03 时区坑:后端回的是 ISO(UTC)。原来直接切字符串 -> 显示 09-02 21:13,
+// 实际是北京 09-03 05:13(差8小时还退了一天)。同一个坑 portun-sync 日志也踩过(t-0817-portun-log-tz)。
+// 必须按 Asia/Shanghai 格式化,别再改回字符串切片。
+function fmtTime(v){
+  if(!v) return "--";
+  var d=new Date(v);
+  if(isNaN(d.getTime())) return String(v).replace("T"," ").slice(0,16);
+  return d.toLocaleString("sv-SE",{timeZone:"Asia/Shanghai"}).slice(0,16);
+}
 function attName(a){return a.name||a.filename||a.file_name||a.n||a.title||a.url||"未命名附件"}
 function attBlocked(a){return !!(a&&a.no_external)}
 function attChecked(a){return !attBlocked(a)}
