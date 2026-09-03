@@ -10,7 +10,7 @@ function productKey(value) {
 
 function certFromRow(row) {
   if (!row.cert_id) return null;
-  return {
+  var cert = {
     id: row.cert_id,
     product_key: row.product_key,
     product_label: row.cert_product_label,
@@ -23,6 +23,20 @@ function certFromRow(row) {
     status: row.status,
     note: row.cert_note,
   };
+  if (row.days_expired !== null && row.days_expired !== undefined) {
+    cert.days_expired = Number(row.days_expired);
+  }
+  return cert;
+}
+
+function actionHint(reason, cert) {
+  if (reason === "no_cert") return "向工厂索取首份证件";
+  if (reason === "expired") {
+    var certNo = cert?.cert_no || "";
+    return "催工厂重新出具(可凭原报告号" + certNo + "去催)";
+  }
+  if (reason === "rejected_only") return "证件被驳回,需重新提交";
+  return "证件有效,无需处理";
 }
 
 export default async function handler(req, res) {
@@ -76,16 +90,46 @@ export default async function handler(req, res) {
         r.id AS rule_id, r.match_type, r.match_value, r.cert_key, r.note AS rule_note,
         pc.id AS cert_id, pc.product_key, pc.product_label AS cert_product_label,
         pc.company_code, pc.cert_no, pc.file_url, pc.issue_date, pc.expire_date,
-        pc.status, pc.note AS cert_note
+        pc.status, pc.note AS cert_note, pc.reason_code, pc.days_expired
       FROM product_cert_rules r
       LEFT JOIN LATERAL (
-        SELECT *
-        FROM product_certs pc
-        WHERE pc.product_key = lower(regexp_replace(r.match_value, '\\s+', '', 'g'))
-          AND pc.cert_key = r.cert_key
-          AND pc.status NOT IN ('rejected')
-          AND (pc.expire_date IS NULL OR pc.expire_date >= CURRENT_DATE)
-        ORDER BY pc.expire_date ASC NULLS LAST, pc.updated_at DESC
+        SELECT picked.*, state.reason_code
+        FROM (
+          SELECT CASE
+            WHEN COUNT(*) = 0 THEN 'no_cert'
+            WHEN BOOL_OR(COALESCE(pc.status, '') <> 'rejected'
+              AND (pc.expire_date IS NULL OR pc.expire_date >= CURRENT_DATE)) THEN 'ok'
+            WHEN BOOL_AND(COALESCE(pc.status, '') = 'rejected') THEN 'rejected_only'
+            ELSE 'expired'
+          END AS reason_code
+          FROM product_certs pc
+          WHERE pc.product_key = lower(regexp_replace(r.match_value, '\\s+', '', 'g'))
+            AND pc.cert_key = r.cert_key
+        ) state
+        LEFT JOIN LATERAL (
+          SELECT
+            pc.*,
+            CASE
+              WHEN pc.expire_date < CURRENT_DATE THEN (CURRENT_DATE - pc.expire_date::date)::int
+              ELSE NULL
+            END AS days_expired
+          FROM product_certs pc
+          WHERE pc.product_key = lower(regexp_replace(r.match_value, '\\s+', '', 'g'))
+            AND pc.cert_key = r.cert_key
+            AND (
+              (state.reason_code = 'ok'
+                AND COALESCE(pc.status, '') <> 'rejected'
+                AND (pc.expire_date IS NULL OR pc.expire_date >= CURRENT_DATE))
+              OR (state.reason_code = 'expired'
+                AND COALESCE(pc.status, '') <> 'rejected'
+                AND pc.expire_date < CURRENT_DATE)
+            )
+          ORDER BY
+            CASE WHEN state.reason_code = 'expired' THEN pc.expire_date END DESC NULLS LAST,
+            CASE WHEN state.reason_code = 'ok' THEN pc.expire_date END ASC NULLS LAST,
+            pc.updated_at DESC
+          LIMIT 1
+        ) picked ON true
         LIMIT 1
       ) pc ON true
       WHERE r.active = true
@@ -96,6 +140,7 @@ export default async function handler(req, res) {
 
     var required = rulesRes.rows.map(function(row) {
       var cert = certFromRow(row);
+      var reason = row.reason_code || "no_cert";
       return {
         cert_key: row.cert_key,
         matched_rule: {
@@ -105,11 +150,10 @@ export default async function handler(req, res) {
           product_key: productKey(row.match_value),
           note: row.rule_note,
         },
-        satisfied: Boolean(cert),
+        satisfied: reason === "ok",
         cert,
-        reason: cert
-          ? "已找到未拒绝且未过期的产品级证件"
-          : "命中品名规则,但没有有效产品级证件",
+        reason,
+        action_hint: actionHint(reason, cert),
       };
     });
     var missing = [...new Set(required.filter((r) => !r.satisfied).map((r) => r.cert_key))];
