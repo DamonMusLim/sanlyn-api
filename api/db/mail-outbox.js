@@ -1,5 +1,6 @@
-import { requireAuth, setCors } from './_auth.js';
-import { getPool } from './_db.js';
+import { setCors } from '../db.js';
+import { requireAuth } from '../auth.js';
+import { getPool } from '../db.js';
 
 const ALLOWED_STATUSES = new Set(['pending', 'changes', 'approved', 'sent', 'rejected', 'failed']);
 
