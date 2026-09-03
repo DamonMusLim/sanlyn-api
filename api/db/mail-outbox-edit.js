@@ -35,6 +35,34 @@ function normalizeValue(field, value) {
   return value;
 }
 
+function attachmentName(item) {
+  return isObject(item) && typeof item.name === "string" ? item.name : "";
+}
+
+function checkNoExternalAttachments(currentAttachments, nextAttachments) {
+  const incomingByName = new Map();
+  nextAttachments.filter(isObject).forEach((item) => {
+    const name = attachmentName(item);
+    if (!name) return;
+    if (!incomingByName.has(name)) incomingByName.set(name, []);
+    incomingByName.get(name).push(item);
+  });
+  const removed = [];
+  const unprotected = [];
+  (Array.isArray(currentAttachments) ? currentAttachments : []).filter(isObject).forEach((item) => {
+    if (item.no_external !== true) return;
+    const name = attachmentName(item);
+    if (!name) return;
+    const incoming = incomingByName.get(name) || [];
+    if (!incoming.length) removed.push(name);
+    else if (!incoming.some((next) => next.no_external === true)) unprotected.push(name);
+  });
+  if (removed.length || unprotected.length) {
+    return { error: "no_external_attachment_removed", removed_names: removed, unprotected_names: unprotected };
+  }
+  return null;
+}
+
 function buildUpdate(fields) {
   const sets = [];
   const params = [];
@@ -109,6 +137,17 @@ export default async function handler(req, res) {
     if (current.status !== "draft") {
       await client.query("ROLLBACK");
       return reject(res, 400, "not_draft");
+    }
+    if (checked.fields.includes("attachments")) {
+      // UI 禁用勾选拦不住直接调接口；no_external 标记丢失后成本价附件可能外发，这是红线。
+      const attachmentCheck = checkNoExternalAttachments(current.attachments, req.body.changes.attachments);
+      if (attachmentCheck) {
+        await client.query("ROLLBACK");
+        return reject(res, 400, attachmentCheck.error, {
+          removed_names: attachmentCheck.removed_names,
+          unprotected_names: attachmentCheck.unprotected_names
+        });
+      }
     }
 
     const before = {};

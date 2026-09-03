@@ -22,7 +22,7 @@ function fmtTime(v){
 }
 function attName(a){return a.name||a.filename||a.file_name||a.n||a.title||a.url||"未命名附件"}
 function attBlocked(a){return !!(a&&a.no_external)}
-function attChecked(a){return !attBlocked(a)}
+function attChecked(a){return !attBlocked(a)&&a.selected!==false}
 function rowById(idv){return arr(state.rows.draft).find(function(r){return String(r.id)===String(idv)})}
 function mailTime(m){return fmtTime(m.sent_at||m.prepared_at||m.created_at)}
 function tabFromHash(){var tab=location.hash.replace(/^#/,"");return TAB_KEYS[tab]?tab:"draft"}
@@ -132,7 +132,11 @@ function collect(formEl,row){
     cc_emails:parseEmails(fd.get("cc_emails")),
     subject:String(fd.get("subject")||"").trim(),
     body_html:String(fd.get("body_html")||""),
-    attachments:attachments.filter(function(a,i){return selected[i]&&!attBlocked(a)})
+    attachments:attachments.map(function(a,i){
+      var next=Object.assign({},a);
+      next.selected=!attBlocked(a)&&!!selected[i];
+      return next;
+    })
   };
 }
 async function save(formEl){
