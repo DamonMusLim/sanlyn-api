@@ -18,8 +18,73 @@ function companyTaskId(companyCode, certKey) {
   return ("CERT-" + companyCode + "-" + certKey).slice(0, 32);
 }
 
-function productTaskId(productKey, certKey) {
-  return ("PCERT-" + productKey + "-" + certKey).slice(0, 32);
+function hashText(value) {
+  var hash = 2166136261;
+  var text = String(value || "");
+  for (var i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function compactIdPart(value) {
+  return String(value || "").trim().replace(/\s+/g, "").replace(/[^0-9A-Za-z_-]/g, "");
+}
+
+function physicalProductCertKey(item) {
+  var certNo = String(item.cert_no || "").trim();
+  var fileUrl = String(item.file_url || "").trim();
+  var physicalKey = certNo
+    ? "cert_no:" + certNo
+    : fileUrl
+      ? "file_url:" + fileUrl
+      : "product_key:" + (item.product_key || "");
+  return [item.company_code || "", item.cert_key || "", physicalKey].join("|");
+}
+
+function productCertTaskId(item) {
+  var certNo = String(item.cert_no || "").trim();
+  var fallback = certNo || item.company_code || item.product_key || "unknown";
+  var readable = compactIdPart(fallback + "-" + (item.cert_key || ""));
+  var keyHash = hashText(physicalProductCertKey(item));
+  return ("PCERT-" + readable).slice(0, 23) + "-" + keyHash;
+}
+
+function mergeProductCertItems(items) {
+  var merged = [];
+  var byPhysicalCert = new Map();
+
+  for (var item of items) {
+    if (item.cert_scope !== "product") {
+      merged.push(item);
+      continue;
+    }
+
+    var key = physicalProductCertKey(item);
+    var existing = byPhysicalCert.get(key);
+    var productLabel = item.product_label || item.product_key || "";
+    if (!existing) {
+      existing = {
+        ...item,
+        product_keys: [],
+        product_labels: [],
+      };
+      byPhysicalCert.set(key, existing);
+      merged.push(existing);
+    }
+
+    if (item.product_key && !existing.product_keys.includes(item.product_key)) {
+      existing.product_keys.push(item.product_key);
+    }
+    if (productLabel && !existing.product_labels.includes(productLabel)) {
+      existing.product_labels.push(productLabel);
+    }
+    existing.product_key = existing.product_keys.join(" / ");
+    existing.product_label = existing.product_labels.join(" / ");
+  }
+
+  return merged;
 }
 
 export default async function handler(req, res) {
@@ -34,6 +99,7 @@ export default async function handler(req, res) {
         'company' AS cert_scope,
         cc.company_code, cc.cert_key, cc.cert_no,
         NULL::text AS product_key, NULL::text AS product_label,
+        NULL::text AS file_url,
         cc.expire_date,
         ctc.cert_name_cn, ctc.cert_name_en, ctc.warn_days,
         c.name_cn AS company_name, c.type AS company_role,
@@ -56,6 +122,7 @@ export default async function handler(req, res) {
         'product' AS cert_scope,
         pc.company_code, pc.cert_key, pc.cert_no,
         pc.product_key, pc.product_label,
+        pc.file_url,
         pc.expire_date,
         ctc.cert_name_cn, ctc.cert_name_en, ctc.warn_days,
         c.name_cn AS company_name, c.type AS company_role,
@@ -74,7 +141,7 @@ export default async function handler(req, res) {
       ORDER BY expire_date ASC
     `);
 
-    var items = r.rows;
+    var items = mergeProductCertItems(r.rows);
     if (items.length === 0) {
       return res.status(200).json({ success: true, message: "all_clear", created: 0, skipped: 0 });
     }
@@ -89,7 +156,7 @@ export default async function handler(req, res) {
     for (var item of items) {
       var isProduct = item.cert_scope === "product";
       var tid = isProduct
-        ? productTaskId(item.product_key, item.cert_key)
+        ? productCertTaskId(item)
         : companyTaskId(item.company_code, item.cert_key);
       var daysLeft = Number(item.days_left);
       var riskLevel = daysLeft < 0 ? "high" : daysLeft <= 7 ? "high" : daysLeft <= 14 ? "mid" : "low";
