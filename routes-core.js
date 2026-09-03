@@ -26,6 +26,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/customers",         () => import("./api/db/customers.js"));
   mount("/api/db/import-customers",  () => import("./api/db/import-customers.js"));
   mount("/api/db/customer-stamps",   () => import("./api/db/customer-stamps.js"));
+  mount("/api/db/contract-archive",  () => import("./api/db/contract-archive.js")); // 通用合同PDF导出即归档留痕 2026-08-19
   mount("/api/db/customer-brand-routes", () => import("./api/db/customer-brand-routes.js")); // factory-self brand→customer auth (2026-05-19)
   mount("/api/db/partner-relationships", () => import("./api/db/partner-relationships.js")); // partner network listing (2026-05-19)
   mount("/api/db/customs",           () => import("./api/db/customs.js"));
@@ -130,6 +131,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/freight-board", () => import("./api/db/freight-board.js"));
   mount("/api/db/freight-inquiry", () => import("./api/db/freight-inquiry.js"));
   mount("/api/public/ship-schedules-sync", () => import("./api/public/ship-schedules-sync.js"));
+  mount("/api/public/weiyun-suppliers-sync", () => import("./api/public/weiyun-suppliers-sync.js"));
   mount("/api/db/orders-pending-freight", () => import("./api/db/orders-pending-freight.js"));
   mount("/api/db/orders",            () => import("./api/db/orders.js"));
   mount("/api/db/payments",          () => import("./api/db/payments.js"));
@@ -252,6 +254,17 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/companies",          () => import("./api/db/companies.js"));
   mount("/api/db/trucking-vendors",  () => import("./api/db/trucking-vendors.js"));
   mount("/api/db/trucking-rates",     () => import("./api/db/trucking-rates.js"));
+  mount("/api/db/ingest", () => import("./api/db/ingest.js")); // AI智能下单粘贴解析预览 2026-08-27
+  mount("/api/db/hy-grid-write",     () => import("./api/db/hy-grid-write.js")); // 字段编辑(强制留痕) 2026-09-03
+  mount("/api/db/mail-outbox",       () => import("./api/db/mail-outbox.js"));   // 发件台待发队列 2026-09-03
+  mount("/api/db/hy-grid",            () => import("./api/db/hy-grid.js"));
+  mount("/api/db/hy-modules",         () => import("./api/db/hy-modules.js"));
+  mount("/api/db/hy-module-status", () => import("./api/db/hy-module-status.js"));
+  mount("/api/db/hy-rates", () => import("./api/db/hy-rates.js"));
+  mount("/api/db/manifest-compose", () => import("./api/db/manifest-compose.js"));
+  mount("/api/db/plan-exceptions", () => import("./api/db/plan-exceptions.js"));
+  mount("/api/db/tpl-resolve", () => import("./api/db/tpl-resolve.js"));
+  mount("/api/db/freight-bills",      () => import("./api/db/freight-bills.js"));
   mount("/api/db/service-rates-admin",   () => import("./api/db/service-rates-admin.js")); // 2026-08-05 admin只读:一票的拖车/报关费率明细(门户费率+我方自维护合并)
   mount("/api/db/quote-dna",             () => import("./api/db/quote-dna.js")); // 2026-08-05 报价DNA:综合价比价 + 记录选定(chosen/chosen_reason)
   mount("/api/db/customs-rates",      () => import("./api/db/customs-rates.js"));
