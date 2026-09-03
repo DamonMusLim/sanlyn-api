@@ -180,7 +180,9 @@ function buildOutboxQuery(query) {
       WHERE ${where.join(" AND ")}
       ORDER BY sent_at DESC NULLS LAST, id DESC
     `,
-    params,
+    // 🔴 node-pg 的参数字段叫 values 不叫 params。写成 params 时无参调用正常、
+    // 一带筛选就 500 "there is no parameter $1" —— 不传参那条路测不出来。
+    values: params,
   };
 }
 
