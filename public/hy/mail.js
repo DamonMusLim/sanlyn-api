@@ -1,6 +1,7 @@
 (function(){
 "use strict";
 var API_LIST="/api/db/mail-outbox?status=draft",API_EDIT="/api/db/mail-outbox-edit";
+var TAB_KEYS={draft:1,reply:1,sent:1,cold:1,risk:1,new:1};
 var state={tab:"draft",rows:[],loading:false,error:""};
 var pane=id("pane"),tabs=id("tabs"),cntDraft=id("cntDraft"),stamp=id("stamp");
 function id(v){return document.getElementById(v)}
@@ -15,6 +16,8 @@ function attName(a){return a.name||a.filename||a.file_name||a.n||a.title||a.url|
 function attBlocked(a){return !!(a&&a.no_external)}
 function attChecked(a){return !attBlocked(a)}
 function rowById(idv){return state.rows.find(function(r){return String(r.id)===String(idv)})}
+function tabFromHash(){var tab=location.hash.replace(/^#/,"");return TAB_KEYS[tab]?tab:"draft"}
+function syncHash(tab){if(location.hash==="#"+tab)return;history.replaceState(null,"",location.pathname+location.search+"#"+tab)}
 async function fetchJson(url,opt){
   var r=await fetch(url,opt||{headers:headers()});
   var j=await r.json().catch(function(){return {}});
@@ -30,9 +33,11 @@ async function load(){
   }catch(e){state.error=e.message;state.rows=[]}
   state.loading=false;render();
 }
-function setTab(tab){
+function setTab(tab,skipHash){
+  if(!TAB_KEYS[tab])tab="draft";
   state.tab=tab;
   Array.prototype.forEach.call(tabs.querySelectorAll("button"),function(b){b.setAttribute("aria-selected",String(b.dataset.tab===tab))});
+  if(!skipHash)syncHash(tab);
   render();
 }
 function render(){
@@ -117,6 +122,8 @@ async function save(formEl){
   btn.disabled=false;
 }
 tabs.addEventListener("click",function(ev){var b=ev.target.closest("button[data-tab]");if(b)setTab(b.dataset.tab)});
+window.addEventListener("hashchange",function(){setTab(tabFromHash(),true)});
 if(window.parent!==window)window.parent.postMessage({type:"sanlyn:module-ready",title:"发件台",url:location.pathname+location.search},location.origin);
+setTab(tabFromHash(),true);
 load();
 })();
