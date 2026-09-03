@@ -1,9 +1,9 @@
 (function(){
 "use strict";
-var API_LIST="/api/db/mail-outbox?status=draft",API_EDIT="/api/db/mail-outbox-edit";
+var API_OUTBOX="/api/db/mail-outbox",API_EDIT="/api/db/mail-outbox-edit";
 var TAB_KEYS={draft:1,reply:1,sent:1,cold:1,risk:1,new:1};
-var state={tab:"draft",rows:[],loading:false,error:""};
-var pane=id("pane"),tabs=id("tabs"),cntDraft=id("cntDraft"),stamp=id("stamp");
+var state={tab:"draft",rows:{draft:[],sent:[]},loading:false,error:""};
+var pane=id("pane"),tabs=id("tabs"),stamp=id("stamp");
 function id(v){return document.getElementById(v)}
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||""}
@@ -15,7 +15,8 @@ function fmtTime(v){return v?String(v).replace("T"," ").slice(0,16):"--"}
 function attName(a){return a.name||a.filename||a.file_name||a.n||a.title||a.url||"未命名附件"}
 function attBlocked(a){return !!(a&&a.no_external)}
 function attChecked(a){return !attBlocked(a)}
-function rowById(idv){return state.rows.find(function(r){return String(r.id)===String(idv)})}
+function rowById(idv){return arr(state.rows.draft).find(function(r){return String(r.id)===String(idv)})}
+function mailTime(m){return fmtTime(m.sent_at||m.prepared_at||m.created_at)}
 function tabFromHash(){var tab=location.hash.replace(/^#/,"");return TAB_KEYS[tab]?tab:"draft"}
 function syncHash(tab){if(location.hash==="#"+tab)return;history.replaceState(null,"",location.pathname+location.search+"#"+tab)}
 async function fetchJson(url,opt){
@@ -27,10 +28,13 @@ async function fetchJson(url,opt){
 async function load(){
   state.loading=true;state.error="";render();
   try{
-    var data=await fetchJson(API_LIST,{headers:headers()});
-    state.rows=arr(data.data).filter(function(r){return r.status==="draft"});
+    var draft=fetchJson(API_OUTBOX+"?status=draft",{headers:headers()});
+    var sent=fetchJson(API_OUTBOX+"?status=sent",{headers:headers()});
+    var all=await Promise.all([draft,sent]);
+    state.rows.draft=arr(all[0].data).filter(function(r){return r.status==="draft"});
+    state.rows.sent=arr(all[1].data).filter(function(r){return r.status==="sent"});
     stamp.textContent="v2026.09.03-1 · 生成时间 "+new Date().toLocaleString("zh-CN");
-  }catch(e){state.error=e.message;state.rows=[]}
+  }catch(e){state.error=e.message;state.rows={draft:[],sent:[]}}
   state.loading=false;render();
 }
 function setTab(tab,skipHash){
@@ -41,31 +45,47 @@ function setTab(tab,skipHash){
   render();
 }
 function render(){
-  cntDraft.textContent=String(state.rows.length);
+  setCount("draft",state.rows.draft.length);
+  setCount("sent",state.rows.sent.length);
+  Array.prototype.forEach.call(tabs.querySelectorAll("button[data-wired=false] .cnt"),function(x){x.textContent="未接入"});
   if(state.tab==="draft")return renderDraft();
+  if(state.tab==="sent")return renderSent();
   var names={reply:["待回复","对方来信 · 等我们回"],sent:["已发送","已发送记录"],cold:["谁未回复","我们发了 · 对方没回"],risk:["异常卡点","需要人介入的邮件"],new:["选模板发信","模板备料入口"]};
   var item=names[state.tab]||names.reply;
   pane.innerHTML='<div class="ph"><h2>'+item[0]+'</h2><span class="sub">'+item[1]+'</span></div><div class="empty"><b>未接入</b>本页先接 mail_outbox 待发草稿，其它标签保留设计稿入口。</div>';
+}
+function setCount(tab,n){
+  var el=tabs.querySelector('button[data-tab="'+tab+'"] .cnt');
+  if(el)el.textContent=String(n);
 }
 function renderDraft(){
   var head='<div class="ph"><h2>待发</h2><span class="sub">mail_outbox.status=draft</span><span class="hint">只能保存草稿，不发送</span></div>';
   if(state.loading){pane.innerHTML=head+'<div class="empty"><b>加载中</b>正在读取待发队列。</div>';return}
   if(state.error){pane.innerHTML=head+'<div class="empty"><b>读取失败</b>'+esc(state.error)+'</div>';return}
-  if(!state.rows.length){pane.innerHTML=head+'<div class="empty"><b>没有待发的邮件</b>mail_outbox 当前没有 draft 行。</div>';return}
-  pane.innerHTML=head+state.rows.map(card).join("");
+  if(!state.rows.draft.length){pane.innerHTML=head+'<div class="empty"><b>没有待发的邮件</b>mail_outbox 当前没有 draft 行。</div>';return}
+  pane.innerHTML=head+state.rows.draft.map(function(m){return card(m,true)}).join("");
   bindForms();
 }
-function card(m){
+function renderSent(){
+  var head='<div class="ph"><h2>已发送</h2><span class="sub">mail_outbox.status=sent</span><span class="hint">已发送记录只读</span></div>';
+  if(state.loading){pane.innerHTML=head+'<div class="empty"><b>加载中</b>正在读取已发送记录。</div>';return}
+  if(state.error){pane.innerHTML=head+'<div class="empty"><b>读取失败</b>'+esc(state.error)+'</div>';return}
+  if(!state.rows.sent.length){pane.innerHTML=head+'<div class="empty"><b>没有已发送记录</b>mail_outbox 当前没有 sent 行。</div>';return}
+  pane.innerHTML=head+state.rows.sent.map(function(m){return card(m,false)}).join("");
+}
+function card(m,editable){
   var attachments=arr(m.attachments);
   var chips=attachments.length?attachments.map(function(a){return '<span class="att '+(attBlocked(a)?"risk":"")+'">'+(attBlocked(a)?"⚠ 禁外发 ":"")+esc(attName(a))+'</span>'}).join(""):'<span class="att">无附件</span>';
-  return '<article class="mail" data-id="'+esc(m.id)+'"><div class="mail-head"><div class="ml">'+
+  var html='<article class="mail" data-id="'+esc(m.id)+'"><div class="mail-head"><div class="ml">'+
     '<div class="subj">'+esc(m.subject||"(无主题)")+'</div><div class="meta">'+
     '<span>收 <b>'+arr(m.to_emails).length+'</b> 人</span><span>抄送 <b>'+arr(m.cc_emails).length+'</b> 人</span>'+
     '<span>提单 <b>'+esc(m.related_bl_no||"--")+'</b></span><span>模板 <b>'+esc(m.tpl_key||"--")+'</b></span></div>'+
     '<div class="atts">'+chips+'</div></div><aside class="mr">'+
     '<div class="kv"><span>状态</span><span>'+esc(m.status)+'</span></div><div class="kv"><span>备料</span><span>'+esc(m.prepared_by||"--")+'</span></div>'+
-    '<div class="kv"><span>时间</span><span>'+esc(fmtTime(m.prepared_at))+'</span></div><div class="kv"><span>ID</span><span>'+esc(m.id)+'</span></div>'+
-    '</aside></div><details><summary>展开编辑</summary>'+form(m)+'</details></article>';
+    '<div class="kv"><span>时间</span><span>'+esc(mailTime(m))+'</span></div><div class="kv"><span>ID</span><span>'+esc(m.id)+'</span></div>'+
+    '</aside></div>';
+  if(editable)html+='<details><summary>展开编辑</summary>'+form(m)+'</details>';
+  return html+'</article>';
 }
 function form(m){
   return '<form class="form" data-id="'+esc(m.id)+'">'+

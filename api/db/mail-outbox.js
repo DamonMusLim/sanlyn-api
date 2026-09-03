@@ -50,6 +50,7 @@ function normalizeRow(row) {
     status: row.status,
     prepared_by: row.prepared_by,
     prepared_at: row.prepared_at,
+    sent_at: row.sent_at,   // 2026-09-03 已发送列表要显示【发送时间】,否则回落成备料时间会误导
     review_note: row.review_note || ''
   };
 }
@@ -77,7 +78,7 @@ export default async function handler(req, res) {
       SELECT
         id, tpl_key, sender_key, to_emails, cc_emails, subject,
         body_html, attachments, entity_type, entity_id, related_bl_no,
-        status, prepared_by, prepared_at, review_note
+        status, prepared_by, prepared_at, sent_at, review_note
       FROM mail_outbox
       WHERE status = ANY($1::text[])
       ORDER BY prepared_at DESC NULLS LAST, id DESC
