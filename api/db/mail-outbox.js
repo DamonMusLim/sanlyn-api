@@ -2,10 +2,10 @@ import { setCors } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { getPool } from '../db.js';
 
-const ALLOWED_STATUSES = new Set(['pending', 'changes', 'approved', 'sent', 'rejected', 'failed']);
+const ALLOWED_STATUSES = new Set(['draft', 'pending', 'changes', 'approved', 'sent', 'rejected', 'failed']);
 
 function getStatusFilter(value) {
-  if (!value) return ['pending', 'changes'];
+  if (!value) return ['draft'];
   const status = String(value).trim();
   return ALLOWED_STATUSES.has(status) ? [status] : null;
 }
@@ -80,7 +80,7 @@ export default async function handler(req, res) {
         status, prepared_by, prepared_at, review_note
       FROM mail_outbox
       WHERE status = ANY($1::text[])
-      ORDER BY created_at DESC
+      ORDER BY prepared_at DESC NULLS LAST, id DESC
       LIMIT $2
     `,
     params

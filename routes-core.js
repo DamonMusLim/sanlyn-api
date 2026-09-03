@@ -257,6 +257,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/ingest", () => import("./api/db/ingest.js")); // AI智能下单粘贴解析预览 2026-08-27
   mount("/api/db/hy-grid-write",     () => import("./api/db/hy-grid-write.js")); // 字段编辑(强制留痕) 2026-09-03
   mount("/api/db/mail-outbox",       () => import("./api/db/mail-outbox.js"));   // 发件台待发队列 2026-09-03
+  mount("/api/db/mail-outbox-edit", () => import("./api/db/mail-outbox-edit.js"));
   mount("/api/db/hy-grid",            () => import("./api/db/hy-grid.js"));
   mount("/api/db/hy-modules",         () => import("./api/db/hy-modules.js"));
   mount("/api/db/hy-module-status", () => import("./api/db/hy-module-status.js"));

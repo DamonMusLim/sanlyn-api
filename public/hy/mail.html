@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>发件台</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--ink:#14202a;--ink-2:#42566a;--ink-3:#7089a0;--paper:#eef2f4;--card:#fff;--card-2:#f6f9fa;--line:#d4dee3;--line-soft:#e6edf0;--go:#0e6f6f;--go-soft:#e0f0ef;--wait:#9a5b16;--wait-soft:#fbeee0;--cold:#a32c2c;--cold-soft:#f9e7e7;--mono:ui-monospace,Menlo,Consolas,monospace;--sans:var(--hgj-font,system-ui,sans-serif)}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.55 var(--sans)}
+    .wrap{max-width:1160px;margin:0 auto;padding:24px 18px 60px;display:flex;flex-direction:column;gap:15px}
+    .eb{font:500 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+    h1{margin:7px 0 3px;font-size:23px;font-weight:600}.head p{margin:0;color:var(--ink-2);font-size:13px}
+    .tabs{display:flex;gap:2px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:3px;overflow-x:auto}
+    .tabs button{font:inherit;font-size:13px;border:0;background:none;color:var(--ink-2);padding:9px 13px;border-radius:6px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:7px;flex:1;justify-content:center;min-width:112px}
+    .tabs button[aria-selected=true]{background:var(--go-soft);color:var(--go);font-weight:600}.cnt{font:11px var(--mono);background:var(--card-2);border:1px solid var(--line);border-radius:99px;padding:0 6px;color:var(--ink-3)}
+    .panel{background:var(--card);border:1px solid var(--line);border-radius:9px;overflow:hidden}.ph{display:flex;align-items:baseline;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line-soft);background:var(--card-2);flex-wrap:wrap}
+    .ph h2{margin:0;font-size:13.5px}.sub{font:12px var(--mono);color:var(--ink-3)}.hint{margin-left:auto;font-size:11px;color:var(--ink-3)}
+    .mail{border-bottom:1px solid var(--line-soft)}.mail:last-child{border-bottom:0}.mail-head{display:grid;grid-template-columns:1fr 218px;gap:0}
+    .ml{padding:13px 15px;display:flex;flex-direction:column;gap:7px;min-width:0}.subj{font-weight:600;font-size:14px}.meta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--ink-2)}.meta b{font-family:var(--mono);font-weight:500;color:var(--ink)}
+    .mr{border-left:1px solid var(--line-soft);background:var(--card-2);padding:13px 15px;display:flex;flex-direction:column;gap:7px;font-size:12px}.kv{display:flex;justify-content:space-between;gap:8px}.kv span:first-child{color:var(--ink-3)}.kv span:last-child{font-family:var(--mono);text-align:right}
+    .atts{display:flex;flex-wrap:wrap;gap:5px}.att{font:11px var(--mono);background:var(--card-2);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--ink-2)}.risk{border-color:var(--cold);color:var(--cold);background:var(--cold-soft)}
+    details{border-top:1px solid var(--line-soft);background:var(--card)}summary{cursor:pointer;padding:8px 15px;color:var(--go);font-size:12px;font-weight:600}.form{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 15px 15px}
+    .fld{display:flex;flex-direction:column;gap:5px}.fld.wide{grid-column:1/-1}.fld label{font-size:11.5px;color:var(--ink-3)}input,textarea{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:5px;background:var(--card);color:var(--ink);width:100%}textarea{min-height:150px;resize:vertical}
+    .filebox{border:1px dashed var(--line);border-radius:6px;padding:9px;display:flex;flex-direction:column;gap:6px;background:var(--card-2)}.filerow{display:flex;align-items:center;gap:8px;font-size:12.5px}.filerow input{width:15px;height:15px;accent-color:var(--go)}.nm{font-family:var(--mono);font-size:11.5px}.tag{margin-left:auto;font-size:10.5px;border-radius:3px;padding:0 5px;border:1px solid currentColor}
+    .acts{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.btn{font:inherit;font-size:12px;padding:6px 12px;border-radius:5px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}.btn.pri{background:var(--go);border-color:var(--go);color:#fff;font-weight:500}.btn:disabled{opacity:.55;cursor:not-allowed}.msg{font-size:12px;color:var(--ink-3)}.msg.bad{color:var(--cold)}
+    .empty{padding:32px 16px;text-align:center;color:var(--ink-3);font-size:13px}.empty b{display:block;color:var(--ink-2);font-size:14px;margin-bottom:4px}footer{color:var(--ink-3);font-size:12px;border-top:1px solid var(--line);padding-top:13px}code{font-family:var(--mono);font-size:11.5px}
+    @media(max-width:860px){.mail-head,.form{grid-template-columns:1fr}.mr{border-left:0;border-top:1px solid var(--line-soft)}.hint{margin-left:0}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="head">
+      <div class="eb">ob@sanlynos.com · 上海洋宝宝</div>
+      <h1>发件台</h1>
+      <p>模板出信、人工审核、按提单追回复。这里只看和修改待发草稿，不提供发送能力。</p>
+    </header>
+    <nav class="tabs" role="tablist" id="tabs">
+      <button role="tab" aria-selected="true" data-tab="draft">待发 <span class="cnt" id="cntDraft">0</span></button>
+      <button role="tab" aria-selected="false" data-tab="reply">待回复 <span class="cnt">0</span></button>
+      <button role="tab" aria-selected="false" data-tab="sent">已发送 <span class="cnt">0</span></button>
+      <button role="tab" aria-selected="false" data-tab="cold">谁未回复 <span class="cnt">0</span></button>
+      <button role="tab" aria-selected="false" data-tab="risk">异常卡点 <span class="cnt">0</span></button>
+      <button role="tab" aria-selected="false" data-tab="new">选模板发信</button>
+    </nav>
+    <section class="panel" id="pane"></section>
+    <footer><code>mail_outbox</code> 队列 · <span id="stamp">v2026.09.03-1 · 生成时间 --</span></footer>
+  </main>
+  <script src="/hy/mail.js"></script>
+</body>
+</html>
