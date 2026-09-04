@@ -356,7 +356,7 @@ function openTab(input){
   if(state.tabs.length>=MAX_TABS)return showToast("最多同时打开 20 个标签页");
   state.tabs.push({id:id,title:String(input.title||url).slice(0,80),url:url,fixed:false,sourceName:input.sourceName||input.title||url});state.activeId=id;saveState();render();
 }
-function normalizeUrl(url){if(typeof url!=="string"||!url.trim())return "";try{var parsed=new URL(url,location.origin);if(parsed.origin!==location.origin)return "";if(REAL_PATHS.indexOf(parsed.pathname)<0)return "";return parsed.pathname+parsed.search+parsed.hash}catch(e){return ""}}
+function normalizeUrl(url){if(typeof url!=="string"||!url.trim())return "";var raw=url.trim();if(raw.charAt(0)!=="/"){/* 值不带 / 时必须转成 /hy/grid.html?module=,否则会被 SPA 兜底吞成老 admin 首页,用户会以为 hy 里嵌了老版本。2026-09-05 实测 finance_recon_exceptions 复现。 */raw="/hy/grid.html?module="+encodeURIComponent(raw)}try{var parsed=new URL(raw,location.origin);if(parsed.origin!==location.origin)return "";if(REAL_PATHS.indexOf(parsed.pathname)<0)return "";return parsed.pathname+parsed.search+parsed.hash}catch(e){return ""}}
 function trustedFrameSource(source){return !!source&&source!==window&&Array.from(stageEl.querySelectorAll("iframe.frame")).some(function(f){return f.contentWindow===source})}
 function updatePaneVisibility(){Array.from(stageEl.children).forEach(function(p){p.classList.toggle("active",p.dataset.id===state.activeId)})}
 function refreshActive(){var pane=stageEl.querySelector('.frame[data-id="'+cssEscape(state.activeId)+'"]');if(pane&&pane.contentWindow)pane.contentWindow.location.reload();else showToast("待建模块无页面可刷新")}
