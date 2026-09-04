@@ -260,6 +260,7 @@ export function registerCoreRoutes(app, mount) {
   mount("/api/db/shipment-cert-gate", () => import("./api/db/shipment-cert-gate.js")); // 货物单证缺件检查 2026-09-04
   mount("/api/db/mail-replies",      () => import("./api/db/mail-replies.js"));
   mount("/api/db/mail-outbox-edit", () => import("./api/db/mail-outbox-edit.js"));
+  mount("/api/db/hy-workbench",      () => import("./api/db/hy-workbench.js"));
   mount("/api/db/hy-grid",            () => import("./api/db/hy-grid.js"));
   mount("/api/db/hy-modules",         () => import("./api/db/hy-modules.js"));
   mount("/api/db/hy-module-status", () => import("./api/db/hy-module-status.js"));

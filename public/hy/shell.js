@@ -139,7 +139,7 @@ var MODULE_MAP={
 };
 var REMOVED_SHELL_PAGES=[];
 var moduleRows=[],moduleSet={},REAL_PATHS=unique(Object.keys(DEDICATED).map(function(k){return pathOnly(DEDICATED[k])}).concat(WORKBENCH_LINKS.map(function(x){return pathOnly(x.url)}),["/hy/grid.html"]));
-var DEFAULT_TABS=[{id:FIXED_ID,title:"工作台",url:"",fixed:true,sourceName:"工作台",workbench:true}];
+var DEFAULT_TABS=[{id:FIXED_ID,title:"工作台",url:"/hy/workbench.html",fixed:true,sourceName:"工作台",workbench:true}];
 var state=loadState(),tabsEl=$("tabs"),stageEl=$("stage"),navEl=$("sideNav"),toastEl=$("toast"),moduleTitle=$("moduleTitle"),toastTimer=0,dragId="";
 var MODULE_STATE={};
 var MODULE_BY_NAME={};
@@ -329,7 +329,7 @@ function render(){
 }
 function ensurePane(tab){
   var pane=stageEl.querySelector('.frame[data-id="'+cssEscape(tab.id)+'"]');if(pane)return;
-  if(tab.id===FIXED_ID){pane=document.createElement("section");pane.className="frame hy-workbench";pane.dataset.id=tab.id;renderWorkbenchPane(pane)}
+  if(tab.id===FIXED_ID){pane=document.createElement("iframe");pane.className="frame";pane.dataset.id=tab.id;pane.title=tab.title;pane.src=tab.url}
   else if(tab.pending){
     pane=document.createElement("section");pane.className="frame placeholder";pane.dataset.id=tab.id;
     var sourceName=tab.sourceName||tab.title.replace(/ · [^·]+$/,""),row=getModuleStatus(sourceName,tab.parentName||""),statusText=pendingStatusText(row),note=row&&row.note?row.note:STATUS_FALLBACK_NOTE,moduleKey=row&&row.our_module_key?row.our_module_key:"",moduleLine=moduleKey?'<li>我方对应表:'+escapeHtml(moduleKey)+'</li>':"";
