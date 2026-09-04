@@ -29,12 +29,12 @@
       </div>
     </header>
     <section class="panel">
-      <div class="ph"><div><h2>待办</h2><div class="sub">默认今天-60天到今天+30天；催款只计 bucket_older，bucket_nodate 单列未纳入。</div></div><span class="count" id="todoCount">未接入</span></div>
+      <div class="ph"><div><h2>待办</h2><div class="sub">默认今天-60天到今天+30天；催款只统计已过账期的部分；没有账期日期的单独列出、不计入催款金额。</div></div><span class="count" id="todoCount">未接入</span></div>
       <div id="todoNotes"></div>
       <table><thead><tr><th>类型</th><th>跟进时间</th><th>跟进事项</th><th>往来单位</th></tr></thead><tbody id="todos"></tbody></table>
     </section>
     <section class="panel">
-      <div class="ph"><div><h2>费用预警</h2><div class="sub" id="warnNote">未核销口径: ar_paid_at 填充率 0%、ap_paid_at 1.2%；“未核销 3096”是没记录，不是确认没核销。</div></div><div class="toolbar"><div class="tabs" role="tablist"><button data-tab="uninvoiced" aria-selected="true">未开票 <span id="uninvoicedCount">未接入</span></button><button data-tab="unsettled" aria-selected="false">未核销 <span id="unsettledCount">未接入</span></button></div><button class="btn" id="ignoreAll" type="button">全部忽略</button><button class="btn" id="detail" type="button">查看详情</button></div></div>
+      <div class="ph"><div><h2>费用预警</h2><div class="sub" id="warnNote">系统尚未记录收付时间（收款 0%、付款 1.2%），所以这里是“没有记录”，不是“确认没核销”。</div></div><div class="toolbar"><div class="tabs" role="tablist"><button data-tab="uninvoiced" aria-selected="true">未开票 <span id="uninvoicedCount">未接入</span></button><button data-tab="unsettled" aria-selected="false">未核销 <span id="unsettledCount">未接入</span></button></div><button class="btn" id="ignoreAll" type="button">全部忽略</button><button class="btn" id="detail" type="button">查看详情</button></div></div>
       <div id="warnings"></div>
     </section>
     <section class="panel">
@@ -57,6 +57,7 @@
     function open(title,url){if(window.SanlynOpenTab)window.SanlynOpenTab(title,url);else window.open(url,"_blank")}
     function rowClick(e){var btn=e.target.closest("button");if(btn)return;var r=e.target.closest("[data-url]");if(r)open(r.dataset.title||"详情",r.dataset.url)}
     function note(text){return text?'<div class="note">'+esc(text)+'</div>':""}
+    function billLabel(r){return r.bl_no?[r.bl_no,r.cost_category].filter(Boolean).join(" · "):(r.id?"内部号 "+String(r.id).slice(0,8):"未接入")}
     async function load(){
       var h={},t=token();if(t)h.Authorization="Bearer "+t;
       var q="?from="+encodeURIComponent($("from").value)+"&to="+encodeURIComponent($("to").value);
@@ -69,7 +70,7 @@
       $("todoCount").textContent=rows.length?rows.length+" 条":"无数据·原因见下";
       $("todoNotes").innerHTML=Object.keys(notes).map(function(k){return note(notes[k])}).join("");
       $("todos").innerHTML=rows.length?rows.map(function(r){
-        var cls=r.excluded?"type excluded":"type", time=r.time?String(r.time).slice(0,10):(r.excluded?"无账期日期":"未接入");
+        var cls=r.excluded?"type excluded":"type", time=r.time?String(r.time).slice(0,10):"—";
         return '<tr data-url="'+esc(r.url||"")+'" data-title="'+esc(r.title||"待办")+'"><td><span class="'+cls+'">'+esc(r.type)+'</span></td><td>'+esc(time)+'</td><td>'+esc(r.title)+(r.amount?' · '+money(r.amount,r.ccy):"")+'</td><td>'+esc(r.party||"未接入")+'</td></tr>';
       }).join(""):'<tr><td colspan="4"><div class="empty">无数据·原因：接口没有返回可展示待办或对应来源未接入。</div></td></tr>';
     }
@@ -79,7 +80,7 @@
       if(w.note)return $("warnings").innerHTML=note(w.note);
       if(!rows.length)return $("warnings").innerHTML='<div class="empty">无数据·原因：当前 tab 没有可展示记录，或已被本地忽略。</div>';
       $("warnings").innerHTML=rows.map(function(r){
-        var id=state.tab+":"+r.id, text=state.tab==="uninvoiced"?"账单编号 "+(r.id||"未接入")+" 到账期了,还没有开票,快去看看吧。":"账单编号 "+(r.id||"未接入")+" 没有核销时间记录,请按没记录口径查看。";
+        var id=state.tab+":"+r.id, text=state.tab==="uninvoiced"?billLabel(r)+" 尚未开票":billLabel(r)+" 没有核销时间记录，请按没记录口径查看。";
         return '<div class="warnrow" data-url="/hy/consolidated-fee-details.html" data-title="费用详情"><div><div class="line">'+esc(text)+'</div><div class="detail">'+esc([r.bill_month,r.supplier,r.bl_no,r.cost_category].filter(Boolean).join(" · "))+" · "+money(r.amount,r.currency)+'</div></div><div class="actions"><button class="btn ignore" data-id="'+esc(id)+'" type="button">忽略</button></div></div>';
       }).join("");
     }

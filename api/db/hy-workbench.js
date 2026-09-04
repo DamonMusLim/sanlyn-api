@@ -4,6 +4,8 @@ import { getPool, setCors } from "../db.js";
 const VERSION = "v2026.09.05-1";
 const LIMIT = 80;
 const NEED_BILL_COLS = ["id", "supplier", "bl_no", "cost_category", "amount", "currency", "bill_month", "ar_paid_at", "ap_paid_at"];
+const PERSONAL_DOMAINS = new Set(["gmail.com", "qq.com", "163.com", "126.com", "yeah.net", "hotmail.com", "outlook.com", "foxmail.com", "yahoo.com", "live.com", "icloud.com", "msn.com", "aol.com", "proton.me", "protonmail.com"]);
+const COMPANY_EMAIL_COLS = ["contact_email", "einvoice_email", "biz_contact_email", "fin_contact_email"];
 
 function clean(v, max = 160) {
   return String(v ?? "").trim().slice(0, max);
@@ -51,11 +53,97 @@ function todo(type, time, title, party, url, id, extra = {}) {
   return { id: `${type}:${id || title}`, type, time: time || null, title, party: party || "未接入", url, ...extra };
 }
 
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value == null) return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [value];
+    } catch {
+      return value ? [value] : [];
+    }
+  }
+  return [value];
+}
+
+function normalizeEmail(value) {
+  const text = clean(value, 240).toLowerCase();
+  const angle = text.match(/<([^<>@\s]+@[^<>\s]+)>/);
+  return angle ? angle[1] : text;
+}
+
+function emailDomain(value) {
+  const email = normalizeEmail(value);
+  const at = email.lastIndexOf("@");
+  return at > 0 ? email.slice(at + 1) : "";
+}
+
+function partyIdentity(value) {
+  const email = normalizeEmail(value);
+  const domain = emailDomain(email);
+  const personal = !domain || PERSONAL_DOMAINS.has(domain);
+  return { key: personal ? email : domain, label: personal ? email : domain };
+}
+
+function displayCompany(row) {
+  return clean(row.name_cn) || clean(row.name_en) || clean(row.short_name) || clean(row.code);
+}
+
+async function companyLabelsForEmails(pool, rows) {
+  const emails = new Set(), domains = new Set();
+  for (const row of rows) for (const email of asArray(row.party_raw)) {
+    const normalized = normalizeEmail(email), domain = emailDomain(normalized);
+    if (normalized) emails.add(normalized);
+    if (domain && !PERSONAL_DOMAINS.has(domain)) domains.add(domain);
+  }
+  if (!emails.size && !domains.size) return {};
+  try {
+    const cols = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name='companies' AND column_name = ANY($1::text[])`,
+      [["code", "name_cn", "name_en", "short_name", ...COMPANY_EMAIL_COLS]]
+    );
+    const have = new Set(cols.rows.map((row) => row.column_name));
+    const emailCols = COMPANY_EMAIL_COLS.filter((col) => have.has(col));
+    if (!emailCols.length) return {};
+    const selectCols = ["code", "name_cn", "name_en", "short_name"].filter((col) => have.has(col)).concat(emailCols);
+    const tests = emailCols.map((col) => `lower(coalesce(${col}::text,'')) = ANY($1::text[])`)
+      .concat(emailCols.map((col) => `EXISTS (SELECT 1 FROM unnest($2::text[]) d WHERE lower(coalesce(${col}::text,'')) LIKE '%@' || d)`));
+    const result = await pool.query(`SELECT ${selectCols.join(", ")} FROM companies WHERE ${tests.join(" OR ")} ORDER BY id LIMIT 500`, [Array.from(emails), Array.from(domains)]);
+    const labels = {};
+    for (const row of result.rows) {
+      const label = displayCompany(row);
+      if (!label) continue;
+      for (const col of emailCols) {
+        const value = clean(row[col], 240).toLowerCase(), exact = normalizeEmail(value);
+        if (exact && emails.has(exact)) labels[exact] = labels[exact] || label;
+        for (const domain of domains) if (value.includes("@" + domain)) labels[domain] = labels[domain] || label;
+      }
+    }
+    return labels;
+  } catch {
+    return {};
+  }
+}
+
+function mailPartyLabel(value, companyLabels) {
+  const byKey = new Map();
+  for (const email of asArray(value)) {
+    const ident = partyIdentity(email);
+    if (!ident.key) continue;
+    const item = byKey.get(ident.key) || { label: companyLabels[ident.key] || ident.label, count: 0 };
+    item.count += 1;
+    byKey.set(ident.key, item);
+  }
+  return Array.from(byKey.values()).map((item) => item.count > 1 ? `${item.label} · ${item.count} 人` : item.label).join("、");
+}
+
 async function mailDraftTodos(pool, rg) {
   const cols = await columns(pool, "mail_outbox");
   if (!cols.has("status")) return { rows: [], note: "未接入: 缺 mail_outbox.status" };
   const dateCol = cols.has("prepared_at") ? "prepared_at" : cols.has("created_at") ? "created_at" : "";
-  const party = cols.has("to_emails") ? "to_emails::text" : cols.has("sender_key") ? "sender_key::text" : "NULL";
+  const party = cols.has("to_emails") ? "to_emails" : cols.has("sender_key") ? "sender_key" : "NULL";
   const where = ["status='draft'"];
   const args = [];
   if (dateCol) {
@@ -63,12 +151,13 @@ async function mailDraftTodos(pool, rg) {
     where.push(`${dateCol} >= $1::date AND ${dateCol} < ($2::date + interval '1 day')`);
   }
   const r = await pool.query(
-    `SELECT id::text, ${dateCol ? `to_char(${dateCol},'YYYY-MM-DD')` : "NULL"} AS time, ${party} AS party
+    `SELECT id::text, ${dateCol ? `to_char(${dateCol},'YYYY-MM-DD')` : "NULL"} AS time, ${party} AS party_raw
        FROM mail_outbox WHERE ${where.join(" AND ")}
       ORDER BY ${dateCol ? dateCol + " DESC NULLS LAST," : ""} id DESC LIMIT ${LIMIT}`,
     args
   );
-  return { rows: r.rows.map((x) => todo("邮件", x.time, "待发邮件", x.party, "/hy/mail.html#draft", x.id)) };
+  const labels = await companyLabelsForEmails(pool, r.rows);
+  return { rows: r.rows.map((x) => todo("邮件", x.time, "待发邮件", mailPartyLabel(x.party_raw, labels), "/hy/mail.html#draft", x.id)) };
 }
 
 async function replyTodos(req, rg) {
@@ -112,11 +201,11 @@ async function arTodos(pool) {
     const nodateAmt = num(x.bucket_nodate);
     if (oldAmt) {
       overdue += oldAmt;
-      rows.push(todo("催款", null, `真超期 ${x.ccy || ""} ${oldAmt}`, x.settle_party, "/hy/grid.html?module=v_ar_aging", `${x.settle_party}:old`, { amount: oldAmt, ccy: x.ccy || null }));
+      rows.push(todo("催款", null, "真超期", x.settle_party, "/hy/grid.html?module=v_ar_aging", `${x.settle_party}:old`, { amount: oldAmt, ccy: x.ccy || null }));
     }
     if (nodateAmt) {
       nodate += nodateAmt;
-      rows.push(todo("催款", null, `无账期日期·未纳入 ${x.ccy || ""} ${nodateAmt}`, x.settle_party, "/hy/grid.html?module=v_ar_aging_caveat", `${x.settle_party}:nodate`, { amount: nodateAmt, excluded: true, ccy: x.ccy || null }));
+      rows.push(todo("催款", null, "无账期日期·未纳入催款金额", x.settle_party, "/hy/grid.html?module=v_ar_aging_caveat", `${x.settle_party}:nodate`, { amount: nodateAmt, excluded: true, ccy: x.ccy || null }));
     }
   }
   return { rows, summary: { overdue_total: num(overdue), nodate_total: num(nodate) } };
