@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>自定义导航</title>
+  <link rel="stylesheet" href="../hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--chip:var(--hgj-primary-bg);--bad:var(--hgj-danger)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 var(--hgj-font)}.wrap{max-width:1180px;margin:0 auto;padding:22px}
+    .top{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;margin-bottom:16px}.sub{color:var(--muted);font-size:13px}.actions{display:flex;gap:8px;flex-wrap:wrap}
+    h1{font-size:16px;line-height:16px;margin:0;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:0;padding:8px 11px;cursor:pointer}.btn.primary{border-color:var(--accent);background:var(--chip);color:var(--accent)}.btn:disabled{opacity:.45;cursor:not-allowed}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.panel{background:var(--panel);border:0;border-radius:0;box-shadow:none;margin-bottom:10px;min-width:0}.head{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:14px;border-bottom:1px solid var(--line)}.head strong{font-size:15px}.note{color:var(--muted);font-size:12px}
+    .list{padding:8px 14px 14px}.row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:42px;border-top:1px solid var(--line)}.row:first-child{border-top:0}.row input{width:16px;height:16px}.title{font-weight:650;overflow-wrap:anywhere}.url{color:var(--muted);font-size:12px;overflow-wrap:anywhere}.empty,.err{padding:24px;text-align:center;color:var(--muted)}.err{color:var(--bad)}.status{padding:12px 14px;border-bottom:1px solid var(--line);color:var(--muted);font-size:13px}.hidden{display:none}.toast{position:fixed;right:16px;bottom:16px;background:var(--panel);border:1px solid var(--line);border-radius:0;padding:10px 12px;box-shadow:none}@media(max-width:820px){.wrap{padding:16px}.top{display:grid;align-items:stretch}.grid{grid-template-columns:1fr}}
+  </style>
+<script src="../wb-open-tab.js" data-protocol="sanlyn:open-tab"></script>
+</head>
+<body class="hgj-page">
+  <div class="wrap">
+    <div class="top">
+      <div><h1 class="hgj-panel-title">自定义导航</h1><div class="sub" id="summary">v2026.08.26-1 · 加载中</div></div>
+      <div class="actions"><button class="btn" id="reload" type="button">刷新</button><button class="btn primary" id="save" type="button">保存</button></div>
+    </div>
+    <section class="panel hgj-card"><div class="status" id="basis">未接入: 缺配置状态；当前填充率 未接入</div></section>
+    <div class="grid">
+      <section class="panel hgj-card"><div class="head"><strong>可选模块</strong><span class="note" id="availableCount">未接入</span></div><div class="list" id="available"></div></section>
+      <section class="panel hgj-card"><div class="head"><strong>当前导航</strong><span class="note" id="selectedCount">未接入</span></div><div class="list" id="selected"></div></section>
+    </div>
+  </div>
+  <div class="toast hidden" id="toast"></div>
+  <script src="/public/custom-nav.js"></script>
+</body>
+</html>

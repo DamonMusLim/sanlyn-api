@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>开票记录</title>
+  <link rel="stylesheet" href="../hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--chip:var(--hgj-primary-bg);--warn:var(--hgj-warn);--bad:var(--hgj-danger);--side:var(--hgj-side-bg);--sideText:var(--hgj-side-text)}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 var(--hgj-font)}button,input,select{height:34px;border:1px solid var(--line);border-radius:0;background:var(--panel);color:var(--text);font:inherit;padding:0 11px}button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    .shell{display:grid;grid-template-columns:180px minmax(0,1fr);min-height:100vh}.side{background:var(--side);color:var(--sideText)}.side h2{height:48px;margin:0;padding:0 16px;font-size:16px;line-height:48px;color:#fff}.side div{height:48px;padding:0 16px;line-height:48px}.side .on{background:rgba(255,255,255,.08);color:#fff;border-left:3px solid var(--accent)}
+    .wrap{padding:22px;max-width:1360px;width:100%;margin:0 auto}.top{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;margin-bottom:14px}.title{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}.sub,.muted{color:var(--muted);font-size:13px}.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .notice{border-left:3px solid var(--warn);padding:10px 14px;margin-bottom:10px;color:var(--hgj-title);font-weight:700}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}.metric{padding:13px 14px;background:var(--panel)}.num{font-size:24px;font-weight:700;margin-top:3px}.warn{color:var(--warn)}.bad{color:var(--bad)}
+    .grid{display:grid;grid-template-columns:390px minmax(0,1fr);gap:10px}.panel{background:var(--panel);border:0;border-radius:0;box-shadow:none;margin-bottom:10px;overflow:hidden}.panel-head{display:flex;justify-content:space-between;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line)}.panel-title{font-weight:700;color:var(--hgj-title);padding-left:10px;border-left:3px solid var(--accent);line-height:16px}.body{padding:14px}
+    .list{display:grid;gap:1px;background:var(--line);max-height:calc(100vh - 278px);overflow:auto}.row{border:0;background:var(--panel);padding:11px 12px;text-align:left;height:auto}.row.active{outline:2px solid var(--accent);outline-offset:-2px}.row strong,.row span{display:block;overflow-wrap:anywhere}.row span{color:var(--muted);font-size:12px;margin-top:4px}
+    .pill{display:inline-block;border:1px solid var(--accent);border-radius:0;background:var(--chip);color:var(--accent);padding:2px 7px;font-size:12px}.pill.warn{border-color:var(--warn);background:transparent;color:var(--warn)}.pill.bad{border-color:var(--bad);background:transparent;color:var(--bad)}.tabs{display:flex;gap:6px}.tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+    .alerts{display:grid;gap:8px}.alert{border-left:3px solid var(--bad);padding:10px 12px;background:var(--panel)}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}th{background:var(--bg);color:var(--muted);font-size:12px}.fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.field{border:1px solid var(--line);padding:8px}.field b{display:block;font-size:13px}.field span{display:block;color:var(--muted);font-size:12px;margin-top:3px}.empty,.error{padding:24px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+    @media(max-width:900px){.shell{display:block}.side{display:none}.wrap{padding:14px}.top,.grid{display:block}.actions{margin-top:10px}.metrics,.fields{grid-template-columns:1fr}.list{max-height:none}table{display:block;overflow-x:auto;white-space:nowrap}}
+  </style>
+<script src="../wb-open-tab.js" data-protocol="sanlyn:open-tab"></script>
+</head>
+<body class="hgj-page">
+  <div class="shell">
+    <aside class="side"><h2>开票记录</h2><div class="on">开票记录</div><div>销项发票</div><div>进项发票</div></aside>
+    <main class="wrap">
+      <header class="top">
+        <div><h1 class="title hgj-panel-title">开票记录</h1><div id="summary" class="sub">加载中</div></div>
+        <div class="actions"><input id="q" placeholder="发票号 / 公司 / 合同 / 报关单"><select id="side"><option value="all">全部</option><option value="out">销项</option><option value="in">进项</option></select><select id="status"><option value="">全部状态</option><option value="issued">issued</option><option value="pending">pending</option><option value="draft">draft</option></select><button id="reload" class="primary" type="button">查询</button><button id="add" type="button">新增</button><button id="edit" type="button">编辑</button><button id="del" type="button">作废</button></div>
+      </header>
+      <div class="notice hgj-card">本页支持受控新增、编辑、作废；金额、额度、费率未设置时显示未设置，未接入字段显示缺字段和当前填充率。</div>
+      <section class="metrics">
+        <div class="metric hgj-card"><div class="muted">记录样本</div><div id="mTotal" class="num">未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">销项记录</div><div id="mOut" class="num">未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">进项记录</div><div id="mIn" class="num">未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">真实业务预警</div><div id="mAlerts" class="num warn">未接入</div></div>
+      </section>
+      <main class="grid">
+        <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">记录列表</div><span id="listCount" class="pill">未接入</span></div><div id="list" class="list"></div></section>
+        <section>
+          <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">真实业务预警</div><span class="pill bad">不可自动处理</span></div><div id="alerts" class="body alerts"></div></section>
+          <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">发票信息</div><span id="statePill" class="pill">未接入</span></div><div id="detail" class="body"></div></section>
+          <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">字段填充率</div><span class="pill bad">未接入不可忽略</span></div><div id="coverage" class="body fields"></div></section>
+        </section>
+      </main>
+    </main>
+  </div>
+  <script src="/public/invoice-records.js"></script>
+</body>
+</html>

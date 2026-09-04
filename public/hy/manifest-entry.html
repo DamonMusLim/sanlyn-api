@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>舱单录单 · 契约版</title>
+    <link rel="stylesheet" href="/manifest-entry.css">
+</head>
+<body>
+    <div class="status-bar">
+        <span>契约版本 54字段(37表头+17明细行) · 归类 auto19/new28/manual3/const4 · 数据来源:DOM实测2026-08-25</span>
+    </div>
+
+    <!-- 功能一：三个录单入口 -->
+    <div class="entry-cards">
+        <div class="entry-card" id="cardExcel">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2f54eb" stroke-width="1.5">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="8" y1="13" x2="16" y2="13" />
+                <line x1="8" y1="17" x2="16" y2="17" />
+                <line x1="8" y1="9" x2="10" y2="9" />
+            </svg>
+            <div class="card-text">
+                <span class="card-title">表格导入/下载</span>
+                <span class="card-desc">下模板 → 填 Excel → 传回来</span>
+            </div>
+        </div>
+        <div class="entry-card active" id="cardManual">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2f54eb" stroke-width="1.5">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+            <div class="card-text">
+                <span class="card-title">新建舱单</span>
+                <span class="card-desc">手工逐字段录入</span>
+            </div>
+        </div>
+        <div class="entry-card" id="cardAI">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2f54eb" stroke-width="1.5">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+                <path d="M9 9h6v6H9z" />
+                <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3" />
+            </svg>
+            <div class="card-text">
+                <span class="card-title">AI单证识别</span>
+                <span class="card-desc">丢单据自动抽字段</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <div class="toolbar-left">
+            <button class="btn" id="templateSelect">选择模板▾</button>
+            <button class="btn" id="saveTemplate">保存模板</button>
+        </div>
+        <div class="toolbar-right">
+            <button class="btn btn-primary" id="saveToSend">保存到待发送</button>
+            <button class="btn btn-outline-blue" id="saveDraft">保存到草稿箱</button>
+            <button class="btn" id="copyBtn">复制</button>
+            <button class="btn" id="closeBtn">关闭</button>
+        </div>
+    </div>
+
+    <!-- 基本信息 -->
+    <div class="section" id="sec-basic">
+        <div class="section-header"><span>基本信息</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="grid">
+                <div class="field">
+                    <div class="field-label"><span>主提单号</span><span class="fill-tag">auto</span><span class="required-star">*</span></div>
+                    <input type="text" id="master_bl_no" maxlength="30" placeholder="A-Z0-9 大写字母数字" autocomplete="off">
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>船公司</span><span class="fill-tag">auto</span><span class="required-star">*</span></div>
+                    <div class="custom-select" id="carrier-select" data-field="carrier">
+                        <span class="value"></span><span class="arrow">▾</span>
+                    </div>
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>货物类型</span><span class="fill-tag">manual</span><span class="required-star">*</span></div>
+                    <div class="custom-select" id="cargo_type-select" data-field="cargo_type">
+                        <span class="value"></span><span class="arrow">▾</span>
+                    </div>
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>运输条款</span><span class="fill-tag">const</span><span class="required-star">*</span></div>
+                    <div class="custom-select" id="transport_terms-select" data-field="transport_terms">
+                        <span class="value">CY-CY</span><span class="arrow">▾</span>
+                    </div>
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>付款方式</span><span class="fill-tag">manual</span><span class="required-star">*</span></div>
+                    <div class="custom-select" id="payment_method-select" data-field="payment_method">
+                        <span class="value"></span><span class="arrow">▾</span>
+                    </div>
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>提单类型</span><span class="fill-tag">new</span><span class="required-star">*</span></div>
+                    <div class="custom-select" id="bl_type-select" data-field="bl_type">
+                        <span class="value"></span><span class="arrow">▾</span>
+                    </div>
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>提单份数</span><span class="fill-tag">const</span><span class="required-star">*</span></div>
+                    <input type="text" id="bl_copies" value="3" maxlength="3" placeholder="数字">
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>签发地</span><span class="fill-tag">const</span><span class="required-star">*</span></div>
+                    <input type="text" id="place_of_issue" value="SHANGHAI|CNSHA" maxlength="140" placeholder="港口|五子码">
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>付款地点</span><span class="fill-tag">manual</span></div>
+                    <input type="text" id="payment_place" maxlength="140" placeholder="港口大写英文全称">
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>委托信息</span><span class="fill-tag">auto</span></div>
+                    <input type="text" id="consignor_note" maxlength="50" placeholder="委托备注">
+                    <div class="error-msg"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 委托信息 (实际是船舶信息等，但契约顺序如此) 按契约顺序：委托信息在基本信息后，但契约里没有单独委托信息分区，只有consignor_note字段。按8分区要求，委托信息分区放consignor_note -->
+    <div class="section" id="sec-consignor">
+        <div class="section-header"><span>委托信息</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="grid">
+                <div class="field">
+                    <div class="field-label"><span>委托信息</span><span class="fill-tag">auto</span></div>
+                    <input type="text" id="consignor_note_dup" maxlength="50" placeholder="委托备注">
+                    <div class="error-msg"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 船舶信息 -->
+    <div class="section" id="sec-vessel">
+        <div class="section-header"><span>船舶信息</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="grid">
+                <div class="field">
+                    <div class="field-label"><span>船名</span><span class="fill-tag">auto</span><span class="required-star">*</span></div>
+                    <input type="text" id="vessel" maxlength="35" placeholder="A-Z0-9 空格" autocomplete="off">
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>航次</span><span class="fill-tag">auto</span><span class="required-star">*</span></div>
+                    <div style="display:flex; gap:6px;">
+                        <input type="text" id="voyage" maxlength="20" placeholder="航次" autocomplete="off" style="flex:1;">
+                        <button class="btn btn-sm" id="checkVoyage" style="background:#2f54eb;color:white;border:none;">检验航次</button>
+                    </div>
+                    <div class="error-msg"></div>
+                </div>
+                <div class="field">
+                    <div class="field-label"><span>船代</span><span class="fill-tag">new</span><span class="required-star">*</span></div>
+                    <div style="display:flex; gap:6px;">
+                        <div class="custom-select" id="shipping_agent-select" data-field="shipping_agent" style="flex:1;">
+                            <span class="value"></span><span class="arrow">▾</span>
+                        </div>
+                        <button class="btn btn-sm" id="viewAgent" style="background:white;border:1px solid #2f54eb;color:#2f54eb;">查看船司船代</button>
+                    </div>
+                    <div class="error-msg"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 发货人信息 -->
+    <div class="section" id="sec-shipper">
+        <div class="section-header"><span>发货人信息</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="party-actions">
+                <button class="btn btn-sm" data-party="shipper" data-action="smart">智能识别导入</button>
+                <button class="btn btn-sm" data-party="shipper" data-action="history">历史发货人</button>
+            </div>
+            <div class="grid">
+                <div class="field"><div class="field-label"><span>发货人名称</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="shipper.name" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>发货人地址</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="shipper.address" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>发货人国家代码</span><span class="fill-tag">new</span><span class="required-star">*</span></div><div class="custom-select" id="shipper.country_code-select" data-field="shipper.country_code"><span class="value"></span><span class="arrow">▾</span></div><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>发货人联系电话</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="shipper.phone" maxlength="50"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>发货人企业代码</span><span class="fill-tag">new</span></div><input type="text" id="shipper.enterprise_code" maxlength="140" placeholder="含+，前后无空格"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>发货人AEO 代码</span><span class="fill-tag">new</span></div><input type="text" id="shipper.aeo_code" maxlength="140"><div class="error-msg"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 收货人信息 -->
+    <div class="section" id="sec-consignee">
+        <div class="section-header"><span>收货人信息</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="party-actions">
+                <button class="btn btn-sm" data-party="consignee" data-action="smart">智能识别导入</button>
+                <button class="btn btn-sm" data-party="consignee" data-action="history">历史收货人</button>
+                <button class="btn btn-sm" id="copyToNotify" style="background:#e6f7ff;border-color:#91caff;">复制收货人→通知人</button>
+            </div>
+            <div class="grid">
+                <div class="field"><div class="field-label"><span>收货人名称</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="consignee.name" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>收货人地址</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="consignee.address" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>收货人国家代码</span><span class="fill-tag">new</span><span class="required-star">*</span></div><div class="custom-select" id="consignee.country_code-select" data-field="consignee.country_code"><span class="value"></span><span class="arrow">▾</span></div><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>收货人联系电话</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="consignee.phone" maxlength="50"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>收货人企业代码</span><span class="fill-tag">new</span></div><input type="text" id="consignee.enterprise_code" maxlength="140" placeholder="含+，前后无空格"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>收货人AEO 代码</span><span class="fill-tag">new</span></div><input type="text" id="consignee.aeo_code" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>实际联系人</span><span class="fill-tag">new</span></div><input type="text" id="consignee.actual_contact" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>实际联系人电话</span><span class="fill-tag">new</span></div><input type="text" id="consignee.actual_contact_phone" maxlength="50"><div class="error-msg"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知人信息 -->
+    <div class="section" id="sec-notify">
+        <div class="section-header"><span>通知人信息</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="party-actions">
+                <button class="btn btn-sm" data-party="notify" data-action="smart">智能识别导入</button>
+                <button class="btn btn-sm" data-party="notify" data-action="history">历史通知人</button>
+            </div>
+            <div class="grid">
+                <div class="field"><div class="field-label"><span>通知人名称</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="notify.name" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>通知人地址</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="notify.address" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>通知人国家代码</span><span class="fill-tag">new</span><span class="required-star">*</span></div><div class="custom-select" id="notify.country_code-select" data-field="notify.country_code"><span class="value"></span><span class="arrow">▾</span></div><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>通知人联系电话</span><span class="fill-tag">new</span><span class="required-star">*</span></div><input type="text" id="notify.phone" maxlength="50"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>通知人企业代码</span><span class="fill-tag">new</span></div><input type="text" id="notify.enterprise_code" maxlength="140" placeholder="含+，前后无空格"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>通知人AEO 代码</span><span class="fill-tag">new</span></div><input type="text" id="notify.aeo_code" maxlength="140"><div class="error-msg"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VGM信息 (契约里没有VGM字段，但分区要求有，放空占位) -->
+    <div class="section" id="sec-vgm">
+        <div class="section-header"><span>VGM信息</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="grid">
+                <div class="field"><div class="field-label"><span>VGM(待补)</span><span class="fill-tag">new</span></div><input type="text" placeholder="待补" disabled><div class="error-msg"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 箱货明细行表 -->
+    <div class="section" id="sec-lines">
+        <div class="section-header"><span>箱货明细行</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="line-table-wrapper">
+                <table class="line-table" id="lineTable">
+                    <thead>
+                        <tr>
+                            <th style="min-width:40px;">#</th>
+                            <th>提单号</th><th>箱号</th><th>封号</th><th>箱型</th><th>货主箱标记</th>
+                            <th>英文品名</th><th>HS Code</th><th>件数</th><th>包装单位</th><th>毛重</th><th>体积</th>
+                            <th>唛头</th><th class="danger-col">UN Code(危)</th><th class="danger-col">类别(危)</th>
+                            <th class="danger-col">危品联系人</th><th class="danger-col">危品联系电话</th><th>空箱</th>
+                            <th style="min-width:80px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lineTableBody">
+                    </tbody>
+                </table>
+            </div>
+            <button class="btn btn-sm add-row-btn" id="addLineRow">+ 增加行</button>
+        </div>
+    </div>
+
+    <!-- 更多信息 -->
+    <div class="section" id="sec-more">
+        <div class="section-header"><span>更多信息</span><span class="arrow">▾</span></div>
+        <div class="section-body">
+            <div class="grid">
+                <div class="field"><div class="field-label"><span>发货地</span><span class="fill-tag">auto</span><span class="required-star">*</span></div><input type="text" id="place_of_receipt" maxlength="140" placeholder="港口|五子码"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>装货港</span><span class="fill-tag">auto</span><span class="required-star">*</span></div><input type="text" id="pol" value="SHANGHAI|CNSHA" maxlength="140"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>卸货港</span><span class="fill-tag">auto</span><span class="required-star">*</span></div><input type="text" id="pod" maxlength="140" placeholder="港口|五子码"><div class="error-msg"></div></div>
+                <div class="field"><div class="field-label"><span>目的港</span><span class="fill-tag">auto</span><span class="required-star">*</span></div><input type="text" id="final_destination" maxlength="140" placeholder="港口|五子码"><div class="error-msg"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="/public/manifest-entry.js"></script>
+</body>
+</html>
