@@ -475,11 +475,13 @@ async function handleGet(pool, token, res){
   var closed = await loadClosedMap(pool, supplierName);
   var plans = await loadPlans(pool, token.company_id);
   var lanes = groupActivePlans(plans, closed);
+  var preferredCarriers = (await pool.query("SELECT COALESCE(preferred_carriers, '{}'::text[]) AS preferred_carriers FROM companies WHERE id = $1 LIMIT 1", [token.company_id])).rows[0]?.preferred_carriers || [];
 
   return send(res, 200, {
     ok:true,
     forwarder_co:supplierName,
     company_id:token.company_id,
+    preferred_carriers:preferredCarriers,
     lanes:lanes,
     carrier_catalog:await loadCarrierCatalog(pool),   // 2026-08-04:我们真实跑过的船司+各自航线
   });
