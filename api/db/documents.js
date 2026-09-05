@@ -1563,7 +1563,43 @@ export default async function handler(req, res) {
       }
     }
 
-    if(["so","debit","freight-quote","sq","tr","swb_loi","bl_sample","booking_note"].includes(type)){
+    if(["so","debit","freight-quote","sq","tr","swb_loi","bl_sample","booking_note","hbl","hbl_copy","hbl_tr","hbl_overlay"].includes(type)){
+      if(type==="hbl" || type==="hbl_copy" || type==="hbl_tr" || type==="hbl_overlay"){
+        // HBL 提单打印：正本/副本/电放/套打 共用 docs/hbl.js，靠 type 区分水印与套打
+        const _blRes = await pool.query(
+          `SELECT id, shipping_plan_id, bl_kind, bl_no, mbl_no, hbl_no,
+                  shipper_name, shipper_address, consignee_name, consignee_address,
+                  notify_name, notify_address, marks, cargo_name_en, cargo_name_cn,
+                  hs_code, pkgs, pkg_unit, gross_weight_kg, cbm, net_weight_kg,
+                  payment_method, transport_terms, bl_form, payment_address,
+                  additional_terms, issue_date, issue_place, overseas_delivery_address,
+                  bl_remarks, created_at, updated_at
+             FROM bill_of_ladings
+            WHERE shipping_plan_id = $1 AND bl_kind = 'HBL'
+            ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+            LIMIT 1`, [sp.id]);
+        const _cbRes = await pool.query(
+          `SELECT shipping_plan_id, bl_no, container_no, seal_no, container_type,
+                  cargo_weight_kg, vgm_weight_kg
+             FROM container_bookings
+            WHERE shipping_plan_id = $1
+            ORDER BY container_no NULLS LAST, seal_no NULLS LAST`, [sp.id]);
+        const _portRaw = [sp && sp.pol, sp && sp.discharge_port, sp && sp.pod, sp && sp.place_of_receipt, sp && sp.place_of_delivery]
+          .filter(function(x){ return x !== undefined && x !== null && String(x).trim() !== ""; });
+        const _portKeys = Array.from(new Set(_portRaw.map(function(x){ return String(x).trim().toUpperCase(); })));
+        const _portNames = {};
+        if(_portKeys.length){
+          const _pr = await pool.query("select code, unlocode, name_en from ports where upper(code) = any($1) or upper(unlocode) = any($1)", [_portKeys]);
+          for(const row of (_pr.rows || [])){
+            const dn = row.name_en || "";
+            if(!dn) continue;
+            if(row.code) _portNames[String(row.code).toUpperCase()] = dn;
+            if(row.unlocode) _portNames[String(row.unlocode).toUpperCase()] = dn;
+          }
+        }
+        const { renderHbl } = await import("./docs/hbl.js");
+        ({ html, _xlsCapture, totRow } = await renderHbl({ sp, spraw, cfg3, fwd, vessel, voyage, polSp, podSp, soNo, html, _xlsCapture, totRow, ap, esc, pick, fmtD, type, bl: _blRes.rows[0] || null, containers: _cbRes.rows || [], portNames: _portNames }));
+      }
       // 2026-05-19: accept _id / shipment_no / contract_no / bl_no
       var spR=await pool.query(
         "SELECT * FROM shipping_plans WHERE _id=$1 OR shipment_no=$1 OR contract_no=$1 OR bl_no=$1 OR id::text=$1 OR order_contract_nos ILIKE '%'||$1||'%' LIMIT 1",
@@ -2183,7 +2219,11 @@ export default async function handler(req, res) {
         var pdfBuf=await page.pdf({
           format:"A4",
           printBackground:true,
-          margin:{top:"14mm",bottom:"14mm",left:"12mm",right:"12mm"},
+          displayHeaderFooter:true,
+          headerTemplate:"<div></div>",
+          footerTemplate:"<div style=\"font-size:9px;color:#333;width:100%;padding:0 15mm;text-align:center;\">"
+            +"第 <span class=\"pageNumber\"></span> 页 / 共 <span class=\"totalPages\"></span> 页</div>",
+          margin:{top:"14mm",bottom:"16mm",left:"15mm",right:"15mm"},
         });
         await browser.close();
         // Infer a filename from the html (grab first <title> tag)
