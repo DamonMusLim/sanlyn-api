@@ -10,7 +10,7 @@ import "dotenv/config";
 import { getPool } from "../api/db.js";
 
 const LIVE = process.env.ESCALATION_LIVE === "1";
-const LIMIT = 5;
+const LIMIT = Number(process.env.ESCALATION_MAX_PUSHES || 5);
 const NOTIFY_URL = process.env.NOTIFY_URL || "http://127.0.0.1:3791/notify";
 const PUBLIC_TASK_URL = "https://sanlyn.cn/public/task.html?task=";
 const MS = {
@@ -43,17 +43,30 @@ function todayKey(now) {
   return now.toISOString().slice(0, 10);
 }
 
+function normalizedPriority(priority) {
+  const value = String(priority || "").trim().toUpperCase();
+  return value || null;
+}
+
+function priorityLabel(priority) {
+  return normalizedPriority(priority) || "EMPTY";
+}
+
 function nextStage(task, now) {
   if (isSnoozed(task, now)) return null;
 
   const stage = Number(task.notify_stage || 0);
-  const priority = task.priority;
+  const priority = normalizedPriority(task.priority);
   const createdAt = asDate(task.created_at);
   const lastNotifiedAt = asDate(task.last_notified_at);
   const nextNotifyAt = asDate(task.next_notify_at);
   const acknowledged = Boolean(task.acknowledged_at);
   const resolved = Boolean(task.resolved_at);
   const dueByNextNotify = nextNotifyAt && nextNotifyAt <= now;
+
+  if (!priority && dueByNextNotify) {
+    return { stage: stage + 1, reason: "显式定时提醒到点", nextAt: null };
+  }
 
   if (!createdAt) return null;
 
@@ -110,12 +123,14 @@ async function fetchCandidates(pool, now) {
             next_notify_at, last_notified_at, raw, due_at, created_at
       FROM tasks
       WHERE status IN ('open', 'doing')
-        AND priority IN ('P0', 'P1')
-        AND source IS NOT NULL
+        AND (
+          upper(nullif(trim(priority), '')) IN ('P0', 'P1')
+          OR (nullif(trim(priority), '') IS NULL AND next_notify_at <= $1::timestamptz)
+        )
       ORDER BY
-        CASE priority WHEN 'P0' THEN 0 ELSE 1 END,
+        CASE upper(nullif(trim(priority), '')) WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 ELSE 2 END,
         COALESCE(next_notify_at, created_at) ASC`,
-    []
+    [now.toISOString()]
   );
   return rows;
 }
@@ -182,7 +197,7 @@ async function processOne(pool, task, stageInfo, now) {
   const key = idempotencyKey(task.id, stageInfo, now);
 
   if (!LIVE) {
-    console.log(`[DRY] task=${task.id} stage=${stageInfo.stage} key=${key} reason=${stageInfo.reason} title=${task.title}`);
+    console.log(`[DRY] task=${task.id} priority=${priorityLabel(task.priority)} source=${task.source || ""} stage=${stageInfo.stage} key=${key} reason=${stageInfo.reason} title=${task.title}`);
     return { pushed: false, skipped: false };
   }
 
@@ -221,7 +236,7 @@ async function processOne(pool, task, stageInfo, now) {
   } finally {
     c.release();
   }
-  console.log(`[LIVE] pushed task=${task.id} stage=${stageInfo.stage} key=${key} reason=${stageInfo.reason}`);
+  console.log(`[LIVE] pushed task=${task.id} priority=${priorityLabel(task.priority)} stage=${stageInfo.stage} key=${key} reason=${stageInfo.reason}`);
   return { pushed: true, skipped: false };
 }
 
@@ -237,11 +252,20 @@ async function main() {
   try {
     const tasks = await fetchCandidates(pool, now);
     scanned = tasks.length;
-    const dueTasks = tasks
+    const allDueTasks = tasks
       .map((task) => ({ task, stageInfo: nextStage(task, now) }))
-      .filter((x) => x.stageInfo)
-      .slice(0, LIMIT);
-    due = dueTasks.length;
+      .filter((x) => x.stageInfo);
+    const priorityCounts = allDueTasks.reduce((acc, item) => {
+      const key = priorityLabel(item.task.priority);
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const dueTasks = LIVE ? allDueTasks.slice(0, LIMIT) : allDueTasks;
+    due = allDueTasks.length;
+
+    console.log(
+      `待推汇总: total=${due} priority=${JSON.stringify(priorityCounts)} live_limit=${LIVE ? LIMIT : "dry-all"}`
+    );
 
     for (const item of dueTasks) {
       try {
