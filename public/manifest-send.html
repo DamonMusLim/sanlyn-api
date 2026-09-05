@@ -12,8 +12,9 @@
     .notice{border-left:3px solid var(--warn);padding:10px 14px;margin-bottom:10px;color:var(--hgj-title);font-weight:700}.actions{display:flex;gap:8px;align-items:center}.send-action{display:flex;flex-direction:column;gap:4px;align-items:flex-start}.send-help{max-width:430px;color:var(--muted);font-size:12px;line-height:1.35}button,input{border:1px solid var(--line);border-radius:0;background:var(--panel);color:var(--text);height:34px;padding:0 11px;font:inherit}button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:disabled{opacity:.5;cursor:not-allowed}
     .grid{display:grid;grid-template-columns:300px minmax(0,1fr);gap:10px}.panel{background:var(--panel);border:0;border-radius:0;box-shadow:none;margin-bottom:10px;overflow:hidden}.panel-head{display:flex;justify-content:space-between;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line)}.panel-title{font-weight:700;color:var(--hgj-title);padding-left:10px;border-left:3px solid var(--accent);line-height:16px}.body{padding:14px}
     .list{display:grid;gap:1px;background:var(--line)}.row{border:0;background:var(--panel);padding:11px 12px;text-align:left;height:auto}.row.active{outline:2px solid var(--accent);outline-offset:-2px}.row strong{display:block;font-size:14px;overflow-wrap:anywhere}.row span{display:block;color:var(--muted);font-size:12px;margin-top:4px;overflow-wrap:anywhere}
-    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}.metric{padding:13px 14px;background:var(--panel)}.metric .num{font-size:24px;font-weight:700;margin-top:3px}.warn{color:var(--warn)}.bad{color:var(--bad)}.pill{display:inline-block;border:1px solid var(--accent);border-radius:0;background:var(--chip);color:var(--accent);padding:2px 7px;font-size:12px}
+    .metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:10px}.metric{padding:13px 14px;background:var(--panel)}.metric .num{font-size:24px;font-weight:700;margin-top:3px}.warn{color:var(--warn)}.bad{color:var(--bad)}.pill{display:inline-block;border:1px solid var(--accent);border-radius:0;background:var(--chip);color:var(--accent);padding:2px 7px;font-size:12px}
     table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}th{background:var(--bg);color:var(--muted);font-size:12px}.fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.field{border:1px solid var(--line);padding:8px}.field b{display:block;font-size:13px}.field span{display:block;color:var(--muted);font-size:12px;margin-top:3px}.empty,.error{padding:24px;text-align:center;color:var(--muted)}.error{color:var(--bad)}
+    .mini-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.kv{border:1px solid var(--line);padding:10px}.kv b{display:block;font-size:12px;color:var(--muted);font-weight:400}.kv span{display:block;margin-top:4px;overflow-wrap:anywhere}.kv.bad span{color:var(--bad);font-weight:700}.block-note{margin:10px 0 0}
     @media(max-width:900px){.wrap{padding:14px}.top,.grid{display:block}.actions{margin-top:10px}.metrics,.fields{grid-template-columns:1fr}table{display:block;overflow-x:auto;white-space:nowrap}}
   </style>
 <script src="/public/wb-open-tab.js" data-protocol="sanlyn:open-tab"></script>
@@ -36,18 +37,20 @@
       <div class="metric hgj-card"><div class="muted">舱单记录</div><div id="mRows" class="num">未接入</div></div>
       <div class="metric hgj-card"><div class="muted">抬头字段填充</div><div id="mHeader" class="num">未接入</div></div>
       <div class="metric hgj-card"><div class="muted">明细字段填充</div><div id="mLines" class="num warn">未接入</div></div>
+      <div class="metric hgj-card"><div class="muted">业务字段填充</div><div id="mBusiness" class="num">未接入</div></div>
       <div class="metric hgj-card"><div class="muted">申报通道</div><div id="mSend" class="num bad">未接入</div></div>
     </section>
     <main class="grid">
       <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">舱单列表</div><span id="listCount" class="pill">未接入</span></div><div id="list" class="list"></div></section>
       <section>
         <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">当前舱单</div><span id="readyPill" class="pill">未接入</span></div><div id="detail" class="body"></div></section>
+        <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">订单进程 / 业务类型 / 业务异常</div><span id="businessPill" class="pill">未接入</span></div><div id="business" class="body"></div></section>
         <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">字段填充率</div><span class="pill">真实字段</span></div><div id="coverage" class="body fields"></div></section>
         <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">申报通道接入状态</div><span class="pill">禁止忽略</span></div><div id="sendState" class="body"></div></section>
       </section>
     </main>
   </div>
-  <script src="/cargo-type-enum.js"></script>
-  <script src="/manifest-send.js"></script>
+  <script src="/public/cargo-type-enum.js"></script>
+  <script src="/public/manifest-send.js"></script>
 </body>
 </html>

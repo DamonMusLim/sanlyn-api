@@ -28,6 +28,7 @@
         <div class="actions">
           <input id="search" placeholder="CY / 订舱号 / SO / BL / 客户 / 货代">
           <select id="state"><option value="">全部</option><option value="ready">已有订舱号</option><option value="missing_booking">缺订舱号</option></select>
+          <button id="nextTicket" type="button">下一票</button>
           <button id="reload" type="button">刷新</button>
           <button id="sendBtn" class="primary" type="button" disabled>发送订舱</button>
           <button id="openWb" type="button">工作台打开</button>
@@ -44,12 +45,13 @@
         <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">订舱列表</div><span id="listCount" class="pill">未接入</span></div><div id="list" class="list"></div></section>
         <section>
           <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">当前订舱</div><span id="readyPill" class="pill">未接入</span></div><div id="detail" class="body"></div></section>
+          <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">提单/签单资料下载</div><span id="docPill" class="pill bad">未接入</span></div><div id="docs" class="body"></div></section>
           <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">字段填充率</div><span class="pill">真实字段</span></div><div id="coverage" class="body fields"></div></section>
           <section class="panel hgj-card"><div class="panel-head"><div class="panel-title">订舱通道接入状态</div><span class="pill bad">禁止忽略</span></div><div id="channelState" class="body"></div></section>
         </section>
       </main>
     </div>
   </div>
-  <script src="/booking-platform.js"></script>
+  <script src="/public/booking-platform.js"></script>
 </body>
 </html>
