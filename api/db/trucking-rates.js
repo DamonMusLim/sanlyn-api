@@ -2,7 +2,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-const VERSION = "v2026.08.27-1";
+const VERSION = "v2026.08.27-4";
 const FEE_STATUS = Object.freeze({ RECORDED: "fee_recorded", COMPLETED: "fee_completed" });
 const SERVICE_COLS = [
   "id", "service", "quote_owner_company_id", "executor_company_id", "payable_company_id",
@@ -246,6 +246,10 @@ function partnerKey(row) {
   return row.company_id || row.company_name || row.executor_company_id || null;
 }
 
+function quotedRateRows(rows) {
+  return rows.filter((row) => row.source !== "derived_from_bills");
+}
+
 async function adoptRate(req, res) {
   const body = req.body || {};
   const rateId = parseRateId(body.rate_id || body.service_rate_id);
@@ -369,7 +373,7 @@ function summarize(rows, partnerCount, service) {
   if (service === "customs" && rows.length === 0) {
     return "未接入：报关报价尚无数据，需先录入";
   }
-  const quoted = new Set(rows.map(partnerKey).filter(Boolean)).size;
+  const quoted = new Set(quotedRateRows(rows).map(partnerKey).filter(Boolean)).size;
   if (partnerCount && quoted < partnerCount) return `未接入：该线路仅 ${quoted} 家有报价`;
   return rows.length ? "ready" : "未接入：该线路仅 0 家有报价";
 }
@@ -400,7 +404,7 @@ export default async function handler(req, res) {
       rows: rateRows,
       state: rateRows.length ? "ready" : "not_connected",
       message: summarize(rateRows, partnerRows.length, service),
-      coverage: { partner_count: partnerRows.length, quoted_partner_count: new Set(rateRows.map(partnerKey).filter(Boolean)).size },
+      coverage: { partner_count: partnerRows.length, quoted_partner_count: new Set(quotedRateRows(rateRows).map(partnerKey).filter(Boolean)).size },
       trucking_context: routeCoverage,
     });
   } catch (err) {

@@ -44,6 +44,8 @@ thead th{background:#111;color:#fff;padding:8px 7px;text-align:right;font-size:1
 thead th.l{text-align:left;}thead th.c{text-align:center;}
 tbody td{padding:9px 7px;border-bottom:1px solid #e2e5e9;text-align:right;vertical-align:top;}
 tbody td.l{text-align:left;}tbody td.c{text-align:center;}
+tfoot td{background:#f5f5f5;color:#111;font-weight:900;padding:9px 7px;border-top:1px solid #111;text-align:right;}
+tfoot td.l{text-align:left;}tfoot td.c{text-align:center;}
 .desc-name{font-weight:700;}
 .desc-size{color:#555;font-weight:400;margin-left:6px;}
 tr.group-header td{background:#dbeafe;color:#1e3a8a;font-weight:900;font-size:11px;text-align:left;padding:6px 10px;border:1px solid #93c5fd;letter-spacing:.3px;}
@@ -110,7 +112,7 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   </div>
   <div class="portbar"><span class="cur">起运港 → 目的港 (POL → POD): <span class="ed" id="pl-port" contenteditable data-ph="POL → POD">—</span></span><span></span></div>
   <table><thead><tr><th class="c" style="width:36px">NO.</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:80px">QTY (CTN)</th><th style="width:100px">N.W. (KG)</th><th style="width:100px">G.W. (KG)</th><th style="width:90px">CBM (M³)</th></tr></thead>
-  <tbody id="pl-body"><tr><td colspan="6" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
+  <tbody id="pl-body"><tr><td colspan="6" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody><tfoot id="pl-foot"></tfoot></table>
   <div class="sigs">
     <div class="sig"><div class="sig-t">BUYER AUTHORIZED SIGNATURE<span class="seal-wrap" id="pl-buyer-seal-area" ondragover="event.preventDefault()" ondrop="dropSeal(event,'pl:buyer')"><img id="pl-buyer-seal"></span><span class="seal-hint" id="pl-buyer-seal-hint" onclick="openSealPicker('pl:buyer')">click seal</span></div><div class="sig-sub">(Signature / Company Seal)</div></div>
     <div class="sig"><div class="sig-t">SELLER AUTHORIZED SIGNATURE<span class="seal-wrap" id="pl-seller-seal-area" ondragover="event.preventDefault()" ondrop="dropSeal(event,'pl:seller')"><img id="pl-seller-seal"></span><span class="seal-hint" id="pl-seller-seal-hint" onclick="openSealPicker('pl:seller')">click seal</span></div><div class="sig-sub">(Signature / Company Seal)</div></div>
@@ -134,7 +136,7 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   </div>
   <div class="portbar"><span class="cur">起运港 → 目的港 (POL → POD): <span class="ed" id="sc-port" contenteditable data-ph="POL → POD">—</span></span><span class="cur">CURRENCY: <span class="ed" id="sc-cur" contenteditable>CNY</span></span></div>
   <table><thead><tr><th class="c" style="width:36px">NO.</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:80px">QTY (CTN)</th><th style="width:130px">UNIT PRICE <span class="curwrap">(<span id="sc-curh1">CNY</span>)</span></th><th style="width:140px">AMOUNT <span class="curwrap">(<span id="sc-curh2">CNY</span>)</span></th></tr></thead>
-  <tbody id="sc-body"><tr><td colspan="5" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
+  <tbody id="sc-body"><tr><td colspan="5" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody><tfoot id="sc-foot"></tfoot></table>
   <div class="boxes">
     <div class="box"><div class="box-t">TERMS &amp; CONDITIONS</div><div class="ed" id="sc-terms" contenteditable></div></div>
     <div class="box"><div class="box-t">BANKING INFORMATION</div><div class="bank-line ed" id="sc-bank" contenteditable></div></div>
@@ -162,7 +164,7 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
   </div>
   <div class="portbar"><span class="cur">起运港 → 目的港 (POL → POD): <span class="ed" id="iv-port" contenteditable data-ph="POL → POD">—</span></span><span class="cur">CURRENCY: <span class="ed" id="iv-cur" contenteditable>CNY</span></span></div>
   <table><thead><tr><th class="c" style="width:36px">NO.</th><th class="l">DESCRIPTION &amp; SIZE</th><th style="width:80px">QTY (CTN)</th><th style="width:130px">UNIT PRICE <span class="curwrap">(<span id="iv-curh1">CNY</span>)</span></th><th style="width:140px">AMOUNT <span class="curwrap">(<span id="iv-curh2">CNY</span>)</span></th></tr></thead>
-  <tbody id="iv-body"><tr><td colspan="5" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody></table>
+  <tbody id="iv-body"><tr><td colspan="5" class="c" style="padding:16px;color:#94a3b8">加载中…</td></tr></tbody><tfoot id="iv-foot"></tfoot></table>
   <div class="boxes">
     <div class="box"><div class="box-t">TERMS &amp; CONDITIONS</div><div class="ed" id="iv-terms" contenteditable></div></div>
     <div class="box"><div class="box-t">BANKING INFORMATION</div><div class="bank-line ed" id="iv-bank" contenteditable></div></div>
@@ -204,5 +206,35 @@ tr.grand td{background:#111;color:#fff;font-weight:900;font-size:13px;padding:9p
 </div>
 
 <script src="export-docs-template.js"></script>
+<script>
+(function(){
+  function sumRows(){
+    var rows=window._customsMode?(window._agg&&window._agg.rows)||[]:(window._rows||[]).filter(function(r){return r&&!r.isHeader;});
+    return rows.reduce(function(t,r){
+      t.qty+=Number(r.qty)||0;t.nw+=Number(r.nw)||0;t.gw+=Number(r.gw)||0;t.cbm+=Number(r.cbm)||0;t.amt+=Number(r.amt)||0;
+      return t;
+    },{qty:0,nw:0,gw:0,cbm:0,amt:0});
+  }
+  function removeGrand(id){
+    var body=document.getElementById(id);
+    if(!body)return;
+    Array.prototype.slice.call(body.querySelectorAll('tr.grand')).forEach(function(row){row.parentNode.removeChild(row);});
+  }
+  function writeFoot(){
+    var t=sumRows(),cur=window._cur||'CNY',freight=Number(window._freight||0)||0;
+    removeGrand('pl-body');removeGrand('sc-body');removeGrand('iv-body');
+    var pl=document.getElementById('pl-foot');
+    if(pl){
+      pl.innerHTML='<tr><td></td><td class="l">GRAND TOTAL:</td><td>'+qtyUnit(t.qty,'CTN')+'</td><td>'+fmt(t.nw)+'</td><td>'+fmt(t.gw)+'</td><td>'+fmt(t.cbm,3)+'</td></tr>';
+    }
+    ['sc','iv'].forEach(function(pfx){
+      var foot=document.getElementById(pfx+'-foot');
+      if(foot)foot.innerHTML='<tr><td></td><td class="l">GRAND TOTAL:</td><td>'+Math.round(t.qty)+' CTN</td><td>'+(window._customsMode?esc(cur):'')+'</td><td>'+fmt(t.amt+freight)+'</td></tr>';
+    });
+  }
+  var old=window.renderAll;
+  if(typeof old==='function')window.renderAll=function(){old.apply(this,arguments);writeFoot();};
+})();
+</script>
 </body>
 </html>

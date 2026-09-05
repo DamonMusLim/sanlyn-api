@@ -571,6 +571,10 @@ SELECT d.customs_no, to_char(d.export_date,'YYYY-MM-DD') AS export_date,
      WHERE v.customs_no = d.customs_no) AS invoices,
   (SELECT round(sum(v.amount_incl_tax), 2) FROM inv v
      WHERE v.customs_no = d.customs_no) AS invoice_amt,
+  CASE WHEN doc.file_url IS NOT NULL THEN json_build_object(
+    'file_name', doc.file_name,
+    'file_url', doc.file_url
+  ) END AS decl_file,
   -- 价格倒挂告警：进项票含税合计 > 报关额 = 采购价高于出口价，税局重点稽查项
   CASE WHEN (SELECT sum(v.amount_incl_tax) FROM inv v WHERE v.customs_no = d.customs_no) > d.fob_cny + 1
        THEN round((SELECT sum(v.amount_incl_tax) FROM inv v WHERE v.customs_no = d.customs_no) - d.fob_cny, 2)
@@ -579,6 +583,7 @@ FROM decl d
 LEFT JOIN agg a ON a.customs_no = d.customs_no
 LEFT JOIN ckts_agg k ON k.customs_no = d.customs_no
 LEFT JOIN real_agg ra ON ra.customs_no = d.customs_no
+LEFT JOIN customs_docs doc ON doc.customs_no = d.customs_no
 ORDER BY d.export_date DESC, d.customs_no`;
   const r = await pool.query(sql, [from]);
   return r.rows;

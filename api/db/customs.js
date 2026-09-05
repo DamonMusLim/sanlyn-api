@@ -23,6 +23,54 @@ function buildSet(body, writable, params, jsonbCols) {
   return sets;
 }
 
+function includeArchived(q = {}) {
+  const v = String(q.include_archived ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function keywordFrom(q = {}) {
+  return String(q.q || q.search || q.keyword || "").trim();
+}
+
+function planArchivedExpr(alias = "sp") {
+  return `COALESCE(${alias}.ata::date, ${alias}.eta::date, ${alias}.etd::date + INTERVAL '14 day') < current_date - 60`;
+}
+
+function planVisibleExpr(alias = "sp") {
+  return `COALESCE(NOT (${planArchivedExpr(alias)}), true)`;
+}
+
+function pushKeyword(conds, vals, aliasCd, aliasSp, keyword) {
+  if (!keyword) return;
+  vals.push(`%${keyword}%`);
+  const p = `$${vals.length}`;
+  conds.push(`(
+    ${aliasCd}.customs_no ILIKE ${p}
+    OR ${aliasCd}.shipment_no ILIKE ${p}
+    OR ${aliasCd}.contract_no ILIKE ${p}
+    OR ${aliasCd}.order_no ILIKE ${p}
+    OR ${aliasSp}.bl_no ILIKE ${p}
+    OR ${aliasSp}.mbl_no ILIKE ${p}
+    OR ${aliasSp}.hbl_no ILIKE ${p}
+    OR ${aliasSp}.so_no ILIKE ${p}
+    OR ${aliasSp}.shipment_no ILIKE ${p}
+    OR ${aliasSp}.customer ILIKE ${p}
+    OR ${aliasSp}.contract_no ILIKE ${p}
+    OR array_to_string(${aliasSp}.contract_nos, ',') ILIKE ${p}
+    OR array_to_string(${aliasSp}.order_nos, ',') ILIKE ${p}
+  )`);
+}
+
+async function archivedCount(pool) {
+  const r = await pool.query(`
+    SELECT count(*)::int AS n
+    FROM shipping_plans sp
+    WHERE sp.deleted_at IS NULL
+      AND ${planArchivedExpr("sp")}
+  `);
+  return Number(r.rows[0]?.n || 0);
+}
+
 export default async function handler(req, res) {
   setCors(req, res, "GET, POST, PATCH, OPTIONS");
   if (req.method === "OPTIONS") return res.status(200).end();
@@ -71,6 +119,9 @@ export default async function handler(req, res) {
   try {
     const pool = getPool();
     const { contract, shipment } = req.query;
+    const showArchived = includeArchived(req.query);
+    const keyword = keywordFrom(req.query);
+    const shouldFilterArchived = !showArchived && !keyword && !contract && !shipment;
 
     const userCompanyCode = req.user.companyCode || req.user.company_code;
     const isPrivileged = req.user.role === 'admin' || req.user.role === 'system';
@@ -94,6 +145,10 @@ export default async function handler(req, res) {
       conds.push(`(cd.shipment_no = $${vals.length + 1} OR sp.shipment_no = $${vals.length + 1})`);
       vals.push(shipment);
     }
+    pushKeyword(conds, vals, "cd", "sp", keyword);
+    if (shouldFilterArchived) {
+      conds.push(`(sp.id IS NULL OR ${planVisibleExpr("sp")})`);
+    }
 
     const where1 = conds.length ? "WHERE " + conds.join(" AND ") : "";
     const q1 = await pool.query(`
@@ -104,8 +159,12 @@ export default async function handler(req, res) {
         sp.vessel  AS sp_vessel,
         sp.voyage  AS sp_voyage,
         sp.etd     AS sp_etd,
+        sp.eta     AS sp_eta,
+        sp.ata     AS sp_ata,
         sp.pol     AS sp_pol,
-        sp.pod     AS sp_pod
+        sp.pod     AS sp_pod,
+        COALESCE(sp.ata::date, sp.eta::date, sp.etd::date + INTERVAL '14 day') AS arrival_basis,
+        COALESCE((${planArchivedExpr("sp")}), false) AS is_archived
       FROM customs_data cd
       LEFT JOIN shipping_plans sp ON sp.id = cd.shipping_plan_id
       ${where1}
@@ -116,6 +175,30 @@ export default async function handler(req, res) {
     // 只在全量列表时补（加了 contract/shipment 精确过滤时不补，避免噪音）
     let virtualRows = [];
     if (!contract && !shipment) {
+      const virtualConds = [
+        "sp.deleted_at IS NULL",
+        "(NULLIF(sp.bl_no,'') IS NOT NULL OR NULLIF(sp.so_no,'') IS NOT NULL)",
+        "NOT EXISTS (SELECT 1 FROM customs_data cd2 WHERE cd2.shipping_plan_id = sp.id)"
+      ];
+      const virtualVals = [];
+      if (keyword) {
+        virtualVals.push(`%${keyword}%`);
+        const p = `$${virtualVals.length}`;
+        virtualConds.push(`(
+          sp.bl_no ILIKE ${p}
+          OR sp.mbl_no ILIKE ${p}
+          OR sp.hbl_no ILIKE ${p}
+          OR sp.so_no ILIKE ${p}
+          OR sp.shipment_no ILIKE ${p}
+          OR sp.customer ILIKE ${p}
+          OR sp.contract_no ILIKE ${p}
+          OR array_to_string(sp.contract_nos, ',') ILIKE ${p}
+          OR array_to_string(sp.order_nos, ',') ILIKE ${p}
+        )`);
+      }
+      if (shouldFilterArchived) {
+        virtualConds.push(planVisibleExpr("sp"));
+      }
       const q2 = await pool.query(`
         SELECT
           ('sp_' || sp.id)                                          AS _id,
@@ -147,19 +230,28 @@ export default async function handler(req, res) {
           sp.vessel  AS sp_vessel,
           sp.voyage  AS sp_voyage,
           sp.etd     AS sp_etd,
+          sp.eta     AS sp_eta,
+          sp.ata     AS sp_ata,
           sp.pol     AS sp_pol,
-          sp.pod     AS sp_pod
+          sp.pod     AS sp_pod,
+          COALESCE(sp.ata::date, sp.eta::date, sp.etd::date + INTERVAL '14 day') AS arrival_basis,
+          COALESCE((${planArchivedExpr("sp")}), false) AS is_archived
         FROM shipping_plans sp
-        WHERE (NULLIF(sp.bl_no,'') IS NOT NULL OR NULLIF(sp.so_no,'') IS NOT NULL)
-          AND NOT EXISTS (
-            SELECT 1 FROM customs_data cd2 WHERE cd2.shipping_plan_id = sp.id
-          )
+        WHERE ${virtualConds.join(" AND ")}
         ORDER BY sp.etd DESC NULLS LAST
-      `);
+      `, virtualVals);
       virtualRows = q2.rows;
     }
 
-    return res.status(200).json({ data: [...q1.rows, ...virtualRows] });
+    const data = [...q1.rows, ...virtualRows];
+    return res.status(200).json({
+      success: true,
+      data,
+      count: data.length,
+      archived_count: await archivedCount(pool),
+      include_archived: showArchived ? 1 : 0,
+      archive_rule: "COALESCE(ata, eta, etd + 14 days) < current_date - 60"
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }

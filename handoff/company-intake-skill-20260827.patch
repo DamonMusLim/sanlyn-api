@@ -1,0 +1,25 @@
+*** Begin Patch
+*** Update File: /home/damon/.claude/skills/company-intake/SKILL.md
+@@
+-> **一公司多角色 = 多行**：瀚龙同时是货代(forwarder)+拖车(trucking)=两行，各自 code。中远海既是货代(47)又要当报关行=补一条 `customs_broker` 行。resolve 时按**需要的角色**查/建，不复用错角色。
++> **一家公司一行，多角色写 `company_roles`**：公司实体只在 `companies` 保留一条 canonical 行；这家公司具备货代/拖车/报关等多种能力时，在 `company_roles` 为同一个 `company_id` 补多个 role。`companies.type` 暂保留给旧查询兼容，不再用“同一税号多行”表达多角色。2026-08-27 冲突记录：桌面按旧规矩把一家公司多角色建成 3 行，被 Damon 驳回撤销；新铁律改为公司表税号不能重复，多角色进 `company_roles`。
+@@
+-| `type` | ✅ | 见分类表（角色级） |
++| `type` | ✅ | 见分类表（旧查询兼容主类型）；多能力/多资质写 `company_roles` |
+@@
+-   → 命中且角色对 → 直接用
+-   → 命中但角色不同（如库里是forwarder，这次要trucking）→ 建**新角色行**（多行，见分类表）
++   → 命中且已有所需 `company_roles.role` → 直接用
++   → 命中但缺本次所需角色（如库里主类型是forwarder，这次要trucking）→ 给同一 `company_id` 补 `company_roles`，不新建 companies 行
+@@
+-5. 写 companies（字段白名单，缺省 NULL）。
++5. 写 companies（字段白名单，缺省 NULL）；若一家公司有多个能力/资质，写 `company_roles`。
+@@
+-3. **一公司多角色多行**，各自 code，按需要角色 resolve，不复用错角色。
++3. **一家公司一行，多角色写 `company_roles`**；按需要角色 resolve，但不为同一实体/同一税号新建多条 companies。
+@@
+-- **② 一实体一 canonical 行，VEN-* = 开票主体真行**：同一家公司**同一角色**不该多行（VEN-* vs 旧短码 = 真重复，非多角色）。**开票主体行（VEN-*，带税号+银行）为准**；旧短码行（LL/zc-oem 等，常缺税号）是历史脏行，合并进 VEN-* 或标 deprecated。查重命中同名不同码 → **合并，不新建、不留两条**。涉税/PO 卖方一律解析到 VEN-* 那条（PO 模板已改为按 `factory_code` 查）。
+-  - ⚠️ 区分「多角色多行」（瀚龙=货代+拖车，合法，见上）vs「同角色重复」（中砂 LL+VEN-LL，bug，要合并）。
++- **② 一实体一 canonical 行，VEN-* = 开票主体真行**：同一家公司**同一角色**不该多行（VEN-* vs 旧短码 = 真重复）。**开票主体行（VEN-*，带税号+银行）为准**；旧短码行（LL/zc-oem 等，常缺税号）是历史脏行，合并进 VEN-* 或标 deprecated。查重命中同名不同码 → **合并，不新建、不留两条**。涉税/PO 卖方一律解析到 VEN-* 那条（PO 模板已改为按 `factory_code` 查）。
++  - ⚠️ 多能力/多资质不是多 companies 行：同一家公司可在 `company_roles` 同时有 forwarder/trucking/customs_broker；**同一角色重复仍是 bug，必须合并**。
+*** End Patch

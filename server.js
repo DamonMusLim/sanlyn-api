@@ -188,6 +188,7 @@ function mount(route, handlerModule) {
 }
 // Route Registration — mirrors Vercel's file-based routing
 // ── /api/db/* endpoints ──
+mount("/api/db/hgj-template-195", () => import("./api/db/hgj-template-195.js"));
 registerCoreRoutes(app, mount);
 // ── Static files (driver-evidence page) ──
 import { join } from "path";

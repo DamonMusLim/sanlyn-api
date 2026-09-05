@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>海管家195模板</title>
+  <link rel="stylesheet" href="/public/hgj-ui.css">
+  <style>
+    :root{--bg:var(--hgj-bg);--panel:var(--hgj-card);--text:var(--hgj-text);--muted:var(--hgj-muted);--line:var(--hgj-line);--accent:var(--hgj-primary);--chip:var(--hgj-primary-bg);--bad:var(--hgj-danger);--warn:var(--hgj-warn);--side:var(--hgj-side-bg);--sideText:var(--hgj-side-text)}
+    body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--hgj-font)}
+    .shell{display:grid;grid-template-columns:180px minmax(0,1fr);min-height:100vh}
+    .side{background:var(--side);color:var(--sideText)}
+    .side h2{height:48px;margin:0;padding:0 16px;color:var(--hgj-card);font-size:16px;line-height:48px}
+    .side div{height:48px;padding:0 16px;line-height:48px}
+    .side .on{background:transparent;border-left:3px solid var(--accent);color:var(--hgj-card)}
+    .wrap{max-width:1380px;margin:0 auto;padding:22px;width:100%}
+    .top{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;margin-bottom:14px}
+    .title{font-size:16px;line-height:16px;margin:0 0 8px;padding-left:10px;border-left:3px solid var(--accent);color:var(--hgj-title);font-weight:700}
+    .sub,.muted{color:var(--muted);font-size:12px}
+    .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    input,textarea,button{border:1px solid var(--line);border-radius:0;background:var(--panel);color:var(--text);font:inherit}
+    input{height:32px;padding:0 9px}
+    textarea{width:100%;min-height:170px;padding:10px;resize:vertical}
+    button{height:32px;padding:0 12px;cursor:pointer}
+    button.primary{border-color:var(--accent);background:var(--chip);color:var(--accent)}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}
+    .metric{padding:13px 14px;background:var(--panel)}
+    .num{font-size:24px;font-weight:700;margin-top:3px}
+    .bad{color:var(--bad)}.warn{color:var(--warn)}.ok{color:var(--accent)}
+    .tabs{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+    .tab{border:1px solid var(--accent);background:var(--panel);color:var(--accent)}
+    .tab.active{background:var(--chip)}
+    .panel{background:var(--panel);border:0;border-radius:0;box-shadow:none;margin-bottom:10px;overflow:hidden}
+    .panel-head{display:flex;justify-content:space-between;gap:12px;padding:13px 14px;border-bottom:1px solid var(--line)}
+    .panel-title{font-weight:700;color:var(--hgj-title);padding-left:10px;border-left:3px solid var(--accent);line-height:16px}
+    .body{padding:14px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top}
+    th{background:var(--bg);color:var(--muted);font-size:12px}
+    code{color:var(--accent)}
+    .editor{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+    .preview{min-height:170px;border:1px solid var(--line);padding:10px;background:var(--panel);white-space:normal}
+    .hgj-missing{display:inline-block;border:1px solid var(--warn);background:var(--chip);color:var(--warn);padding:0 4px}
+    .groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+    .group{padding:13px 14px}
+    .kv{display:grid;gap:8px;margin-top:12px}
+    .kv div{display:grid;grid-template-columns:170px minmax(0,1fr);gap:10px;border-bottom:1px solid var(--line);padding-bottom:7px}
+    .kv b{color:var(--accent);font-weight:700}.kv span{overflow-wrap:anywhere}.kv .missing span{color:var(--warn)}
+    .empty{padding:24px;text-align:center;color:var(--muted)}
+    @media(max-width:900px){.shell{display:block}.side{display:none}.wrap{padding:14px}.top,.editor{display:block}.actions{margin-top:10px}.metrics,.groups{grid-template-columns:1fr}table{display:block;overflow-x:auto;white-space:nowrap}}
+  </style>
+</head>
+<body class="hgj-page">
+  <main class="shell">
+    <aside class="side hgj-side">
+      <h2>海管家</h2>
+      <div class="on hgj-side-item">195模板</div>
+      <div class="hgj-side-item">占位符映射</div>
+      <div class="hgj-side-item">通用渲染器</div>
+    </aside>
+    <section class="wrap">
+      <header class="top">
+        <div>
+          <h1 class="title hgj-panel-title">海管家195模板</h1>
+          <div id="summary" class="sub">加载中</div>
+        </div>
+        <div class="actions">
+          <input id="recordKey" placeholder="订单号 / 业务编号 / 提单号">
+          <button id="reload" type="button">刷新</button>
+          <button id="renderBtn" class="primary" type="button">渲染预览</button>
+        </div>
+      </header>
+      <section class="metrics">
+        <div class="metric hgj-card"><div class="muted">占位符</div><div id="mTotal" class="num">未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">已接入</div><div id="mReady" class="num">未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">未接入</div><div id="mMissing" class="num bad">未接入</div></div>
+        <div class="metric hgj-card"><div class="muted">映射填充率</div><div id="mRate" class="num warn">未接入</div></div>
+      </section>
+      <nav class="tabs">
+        <button class="tab active" data-tab="mapping" type="button">映射表</button>
+        <button class="tab" data-tab="values" type="button">当前值</button>
+        <button class="tab" data-tab="renderer" type="button">渲染器</button>
+      </nav>
+      <section id="mapping" class="pane panel hgj-card"></section>
+      <section id="values" class="pane groups" hidden></section>
+      <section id="renderer" class="pane panel hgj-card" hidden>
+        <div class="panel-head"><div class="panel-title">通用渲染器</div><span id="previewMeta" class="muted">未接入字段会标注</span></div>
+        <div class="body editor">
+          <textarea id="templateText" spellcheck="false"></textarea>
+          <div id="preview" class="preview"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script src="/hgj-template-renderer.js"></script>
+  <script src="/hgj-template-195.js"></script>
+</body>
+</html>

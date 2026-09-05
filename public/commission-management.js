@@ -1,6 +1,6 @@
 (function(){
   "use strict";
-  var API="/api/db/commission-report",VERSION="v2026.08.26-1";
+  var API="/api/db/commission-management",VERSION="v2026.08.27-1";
   var state={rows:[],selected:null,coverage:null,metrics:{},generatedAt:null,reason:""};
   var $=function(id){return document.getElementById(id);};
   var NF=new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -15,7 +15,7 @@
   function rate(v){if(!has(v))return"未设置";var n=Number(v);return Number.isFinite(n)?(n*100).toFixed(2).replace(/\\.00$/,"")+"%":"未设置";}
   function pct(f){return !f||f.fill_rate===null||f.fill_rate===undefined?"未接入":Number(f.fill_rate).toFixed(1).replace(/\\.0$/,"")+"%";}
   function title(r){return [r.username,r.company,r.company_code].filter(has).join(" · ")||"未接入对象";}
-  function missingText(){return state.reason||"未接入 · 缺 accounts/orders 提成字段；当前填充率 未接入。";}
+  function missingText(){return state.reason||"未接入 · 提成规则尚未配置，需先定义提成基数与比例。";}
   function defaultMonth(){var d=new Date();d.setMonth(d.getMonth()-1,1);return d.toISOString().slice(0,7);}
   async function api(){
     var p=new URLSearchParams(),q=$("q").value.trim(),m=$("month").value||defaultMonth();
@@ -31,7 +31,7 @@
     var m=state.metrics||{};
     setMetric("mPeople",m.reseller_count);setMetric("mOrders",m.paid_order_count);setMetric("mAlerts",m.alert_count);
     text($("mState"),state.rows.length?"已接入":"未接入");$("mState").className=state.rows.length?"num":"num warn";
-    $("summary").textContent=VERSION+" · 期间 "+($("month").value||defaultMonth())+" · 生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN");
+    $("summary").textContent=VERSION+" · 期间 "+($("month").value||defaultMonth())+" · "+(state.reason||"生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN"));
   }
   function renderAmounts(){
     var box=$("amounts");clear(box);var rows=(state.metrics&&state.metrics.by_currency)||[];
@@ -65,7 +65,7 @@
   }
   function renderCoverage(){
     var box=$("coverage");clear(box);var cov=state.coverage;
-    if(!cov||!cov.fields||!cov.fields.length){box.appendChild(el("div","empty","未接入 · 缺 accounts/orders 字段；当前填充率 未接入。"));return;}
+    if(!cov||!cov.fields||!cov.fields.length){box.appendChild(el("div","empty",missingText()));return;}
     cov.fields.forEach(function(f){var d=el("div","field");d.appendChild(el("b","",f.label));d.appendChild(el("span","",f.table+"."+f.name+" · "+f.filled+"/"+f.total+" · 当前填充率 "+pct(f)));box.appendChild(d);});
   }
   function render(){renderMetrics();renderAmounts();renderList();renderAlerts();renderDetail();renderCoverage();}

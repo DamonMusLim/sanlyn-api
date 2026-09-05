@@ -1,7 +1,7 @@
 (function(){
   "use strict";
-  var API="/api/db/settlement-management",VERSION="v2026.08.26-2";
-  var state={rows:[],selected:null,coverage:null,metrics:{},generatedAt:null,reason:""};
+  var API="/api/db/settlement-management",VERSION="v2026.08.27-1";
+  var state={rows:[],payments:[],selected:null,coverage:null,metrics:{},generatedAt:null,reason:""};
   var $=function(id){return document.getElementById(id);};
   var NF=new Intl.NumberFormat("zh-CN",{minimumFractionDigits:2,maximumFractionDigits:2});
   function token(){return localStorage.getItem("sanlyn_jwt")||localStorage.getItem("sanlyn_token")||localStorage.getItem("token")||"";}
@@ -14,6 +14,7 @@
   function money(v,c){if(!has(v))return"未设置";var n=Number(v);return Number.isFinite(n)?((c?c+" ":"")+NF.format(n)):"未设置";}
   function pct(f){return !f||f.fill_rate===null||f.fill_rate===undefined?"未接入":Number(f.fill_rate).toFixed(1).replace(/\\.0$/,"")+"%";}
   function rowTitle(r){return [r.target_type,r.target_id].filter(has).join(" · ")||("ID "+(r.id||"未接入"));}
+  function paymentTitle(r){return [r.contract_no,r.order_no,r.customer].filter(has).join(" · ")||("收付ID "+(r.payment_id||"未接入"));}
   function missingText(){return state.reason||"未接入 · 缺 finance_settlement_links 可核销真实链接；当前填充率 未接入。";}
   function parseLines(s){var o={};String(s||"").split(/\n/).forEach(function(line){var i=line.indexOf("=");if(i<1)return;o[line.slice(0,i).trim()]=line.slice(i+1).trim();});return o;}
   function editable(r){
@@ -59,7 +60,8 @@
   function renderMetrics(){
     var m=state.metrics||{};
     setMetric("mTotal",m.total_links);setMetric("mApplied",m.applied_links);setMetric("mAlerts",m.alert_count);
-    text($("mState"),state.rows.length?"已接入":"未接入");$("mState").className=state.rows.length?"num":"num warn";
+    setMetric("mReceipts",m.total_receipts);setMetric("mLinkedReceipts",m.linked_receipts);setMetric("mUnlinkedReceipts",m.unlinked_receipts);
+    text($("mState"),state.rows.length?"核销已接入":(state.payments.length?"收款已接入":"未接入"));$("mState").className=state.rows.length||state.payments.length?"num":"num warn";
     $("summary").textContent=VERSION+" · 生成时间 "+new Date(state.generatedAt||Date.now()).toLocaleString("zh-CN");
   }
   function renderAmounts(){
@@ -78,6 +80,17 @@
       box.appendChild(b);
     });
   }
+  function renderPayments(){
+    var box=$("payments");clear(box);text($("paymentCount"),state.payments.length||"未接入");
+    if(!state.payments.length){box.appendChild(el("div","empty","未接入 · 缺 finance_payments 收款真源或当前权限范围无真实收款；当前填充率 未接入。"));return;}
+    state.payments.forEach(function(r){
+      var d=el("div","pay");
+      d.appendChild(el("b","",paymentTitle(r)));
+      d.appendChild(el("span","",money(r.amount,r.currency)+" · "+fmt(r.currency)+" · "+fmt(r.payment_date)+" · 流水 "+fmt(r.bank_ref)));
+      d.appendChild(el("span","",Number(r.settlement_link_count||0)>0?("已接 "+r.settlement_link_count+" 条核销链接 · 已核销 "+money(r.settled_amount,r.currency)):"未接核销链接 · 缺 finance_settlement_links.payment_id 对应记录"));
+      box.appendChild(d);
+    });
+  }
   function allAlerts(){var out=[];state.rows.forEach(function(r){(r.alerts||[]).forEach(function(a){out.push({row:r,alert:a});});});return out;}
   function renderAlerts(){
     var box=$("alerts");clear(box);var rows=allAlerts();
@@ -94,13 +107,14 @@
   }
   function renderCoverage(){
     var box=$("coverage");clear(box);var cov=state.coverage;
-    if(!cov||!cov.fields||!cov.fields.length){box.appendChild(el("div","empty","未接入 · 缺 finance_settlement_links 字段；当前填充率 未接入。"));return;}
-    cov.fields.forEach(function(f){var d=el("div","field");d.appendChild(el("b","",f.label));d.appendChild(el("span","",cov.table+"."+f.name+" · "+f.filled+"/"+f.total+" · 当前填充率 "+pct(f)));box.appendChild(d);});
+    var groups=cov&&cov.links?[cov.links,cov.payments]:[cov];
+    if(!groups[0]||!groups[0].fields||!groups[0].fields.length){box.appendChild(el("div","empty","未接入 · 缺 finance_settlement_links 字段；当前填充率 未接入。"));return;}
+    groups.forEach(function(g){if(!g||!g.fields)return;g.fields.forEach(function(f){var d=el("div","field");d.appendChild(el("b","",f.label));d.appendChild(el("span","",g.table+"."+f.name+" · "+f.filled+"/"+f.total+" · 当前填充率 "+pct(f)));box.appendChild(d);});});
   }
-  function render(){renderMetrics();renderAmounts();renderList();renderAlerts();renderDetail();renderCoverage();}
+  function render(){renderMetrics();renderPayments();renderAmounts();renderList();renderAlerts();renderDetail();renderCoverage();}
   async function load(){
-    try{var d=await api();state.rows=d.data||[];state.selected=d.selected||state.rows[0]||null;state.coverage=d.coverage;state.metrics=d.metrics||{};state.generatedAt=d.generated_at;state.reason=d.reason||"";render();}
-    catch(e){$("summary").textContent=VERSION+" · 读取失败";["amounts","list","alerts","detail","coverage"].forEach(function(id){clear($(id));$(id).appendChild(el("div","error",e.message));});}
+    try{var d=await api();state.rows=d.data||[];state.payments=d.payments||[];state.selected=d.selected||state.rows[0]||null;state.coverage=d.coverage;state.metrics=d.metrics||{};state.generatedAt=d.generated_at;state.reason=d.reason||"";render();}
+    catch(e){$("summary").textContent=VERSION+" · 读取失败";["payments","amounts","list","alerts","detail","coverage"].forEach(function(id){clear($(id));$(id).appendChild(el("div","error",e.message));});}
   }
   $("list").addEventListener("click",function(e){var b=e.target.closest(".row");if(!b)return;var id=b.dataset.id;state.selected=state.rows.find(function(r){return String(r.id||"")===id;})||state.selected;render();});
   $("reload").addEventListener("click",load);$("q").addEventListener("keydown",function(e){if(e.key==="Enter")load();});

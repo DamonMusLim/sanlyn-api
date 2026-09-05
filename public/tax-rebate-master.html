@@ -272,6 +272,17 @@ function verifyBadge(r){
    return '<span class="vbadge mid" title="尚无税局退税联可比对；我方逐项工厂已固化并留痕">'+
           '🔵 报关单级·已固化 <span class="sm">待退税联比对</span></span>';
  return '<span class="vbadge no" title="逐项尚未固化">⚪ 报关单未核验</span>' }
+function declFileBadge(r){
+ var f=r.decl_file;
+ if(!f || !f.file_url) return '<span class="vbadge no">📄 报关单未上传</span>';
+ return '<button type="button" class="vbadge ok" data-key="'+esc(f.file_url)+'" onclick="openDeclFile(this)">📄 报关单</button>' }
+async function openDeclFile(btn){
+ var key=btn.getAttribute('data-key'), t=SanlynTable.token();
+ var res=await fetch('/api/files/signed?key='+encodeURIComponent(key),{headers:t?{Authorization:'Bearer '+t}:{}});
+ if(!res.ok) return alert('报关单打开失败：'+res.status);
+ var j=await res.json();
+ if(j && j.url) window.open(j.url,'_blank');
+}
 
 function probs(r){
  var it=r.items||[], P=[];
@@ -542,7 +553,7 @@ function declBlock(r,gen,gid){
       'onclick="togDecl(\''+gid+'\',this,\'综合逐项表\')">▾ 收起综合逐项表</button>'+
     '<button class="btn xs" style="background:#94a3b8" '+
       'onclick="togDecl(\''+id+'\',this)">🏛 展开税局申报表格式</button>'+
-    verifyBadge(r)+collabBtns(r)+upBtns(r)+
+    verifyBadge(r)+declFileBadge(r)+collabBtns(r)+upBtns(r)+
     head + P.map(function(x){ return '<span class="pb '+x.k+'">'+esc(x.t)+'</span>' }).join('')+
     notes(r).map(function(t){ return '<span class="pb mute">'+esc(t)+'</span>' }).join('')+
   '</div>'+

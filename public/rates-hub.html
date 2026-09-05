@@ -2,200 +2,73 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>价表总台</title>
+<title>运价管理</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/public/hgj-ui.css">
 <script src="/public/sanlyn-table.js"></script>
-<style>
-  *{box-sizing:border-box}
-  body{margin:0;padding:18px 20px;font:13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f6f7f9;color:#1a1a2e}
-  h1{font-size:19px;margin:0 0 2px}.sub{font-size:12px;color:#7b7f89;margin-bottom:12px}
-  .bar,.tabs{background:#fff;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.07)}
-  .tabs{padding:8px}.tab{border:0;border-radius:7px;padding:7px 14px;background:#eef0f3;color:#333;cursor:pointer;font:inherit}.tab.on{background:#1a1a2e;color:#fff}
-  label{font-size:12px;color:#555}input[type=text]{width:130px;padding:6px 8px;border:1px solid #d8dbe0;border-radius:6px;font:inherit}button{font:inherit}
-  .right{margin-left:auto;display:flex;gap:12px;align-items:center}.stat{font-size:12px;color:#555}.stat b{color:#1a1a2e}.csv{border:0;border-radius:6px;background:#1a1a2e;color:#fff;padding:6px 12px;cursor:pointer}
-  .content{display:block}.sections{display:grid;grid-template-columns:1fr;gap:16px}.section{min-width:0}.section h2{font-size:14px;margin:0 0 7px;color:#333;display:flex;justify-content:space-between}
-  .wrap{background:#fff;border-radius:8px;overflow:auto;max-height:calc(100vh - 215px);box-shadow:0 1px 3px rgba(0,0,0,.07)}
-  .sections .wrap{max-height:calc(100vh - 248px)}table{border-collapse:separate;border-spacing:0;font-size:12px;white-space:nowrap;min-width:100%}
-  th,td{padding:6px 9px;border-bottom:1px solid #eef0f3;text-align:left;vertical-align:top}
-  thead th{position:sticky;top:0;z-index:3;background:#1a1a2e;color:#fff;font-weight:600}
-  tbody tr:hover{background:#f9fafb}.num{text-align:right;font-variant-numeric:tabular-nums}.na{color:#b9bec7}.warn{background:#fff5cc}.bad{color:#c0362c;font-weight:600}.expired{color:#858993}.expired td{background:#f1f2f4;color:#858993}.draft td{background:#f1f2f4;color:#858993}
-  .tag{display:inline-block;margin-left:6px;padding:1px 5px;border-radius:5px;background:#eef6ff;color:#174b7a;font-size:11px}
-  .group td{position:sticky;top:31px;z-index:2;background:#eef6ff;color:#174b7a;font-weight:600}.err{color:#c0362c;padding:14px}.mini{color:#7b7f89;font-size:12px}.linkbtn{border:0;background:transparent;color:#174b7a;cursor:pointer;padding:0}
-  @media(max-width:1100px){.sections{grid-template-columns:1fr}.sections .wrap{max-height:none}}
-</style>
 <script src="/public/wb-open-tab.js" data-protocol="sanlyn:open-tab"></script>
+<style>
+  body.hgj-page{min-height:100vh}
+  .app{display:grid;grid-template-columns:180px minmax(0,1fr);min-height:100vh}
+  .side{width:180px;background:var(--hgj-side-bg);color:var(--hgj-side-text)}
+  .brand{height:56px;padding:16px 18px;color:#fff;font-size:16px;font-weight:700}
+  .side button{display:block;width:100%;height:48px;border:0;background:transparent;color:var(--hgj-side-text);font:16px/48px var(--hgj-font);text-align:left;padding:0 18px;cursor:pointer}
+  .side button.on{background:var(--hgj-primary);color:#fff}
+  .main{min-width:0;padding:0 14px 14px}
+  .top{height:56px;display:flex;align-items:center;gap:12px}
+  h1{margin:0;color:var(--hgj-title);font-size:18px;font-weight:700}
+  .stamp{margin-left:auto;color:var(--hgj-muted);font-size:12px}
+  .toolbar{padding:12px 14px;display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+  .field{display:grid;gap:4px}.field span{color:var(--hgj-muted);font-size:12px}
+  input[type=text]{height:32px;width:132px;border:1px solid var(--hgj-line);border-radius:0;background:var(--hgj-card);color:var(--hgj-text);padding:0 8px}
+  .check{height:32px;display:flex;align-items:center;gap:6px;color:var(--hgj-text);font-size:13px}
+  .primary{height:32px;border:1px solid var(--hgj-primary);border-radius:0;background:var(--hgj-primary);color:#fff;padding:0 14px;cursor:pointer}
+  .ghost{height:32px;border:1px solid var(--hgj-primary);border-radius:0;background:var(--hgj-primary-bg);color:var(--hgj-primary);padding:0 14px;cursor:pointer}
+  .summary{padding:10px 14px;color:var(--hgj-muted);font-size:13px}
+  .content{min-width:0}.sections{display:grid;grid-template-columns:1fr;gap:10px}.section{min-width:0}
+  .section-head{height:42px;display:flex;align-items:center;gap:10px;padding:0 14px}
+  .section-head .mini{margin-left:auto;color:var(--hgj-muted);font-size:12px}
+  .table-wrap{overflow:auto;max-height:calc(100vh - 250px)}
+  table{border-collapse:separate;border-spacing:0;min-width:100%;white-space:nowrap;font-size:12px}
+  th,td{padding:7px 9px;border-bottom:1px solid var(--hgj-line);text-align:left;vertical-align:top}
+  thead th{position:sticky;top:0;z-index:3;background:#F7F8FA;color:var(--hgj-title);font-weight:700}
+  tbody tr:hover{background:#F7FBFF}.num{text-align:right;font-variant-numeric:tabular-nums}
+  .na{color:var(--hgj-muted)}.bad{color:var(--hgj-danger);font-weight:700}.warn{background:#FFF7E8}
+  .expired td,.draft td{color:var(--hgj-muted);background:#F7F8FA}
+  .tag{display:inline-block;margin-left:6px;padding:1px 5px;border:1px solid var(--hgj-primary);border-radius:0;background:var(--hgj-primary-bg);color:var(--hgj-primary);font-size:11px}
+  .group td{position:sticky;top:31px;z-index:2;background:var(--hgj-primary-bg);color:var(--hgj-primary);font-weight:700}
+  .empty{padding:18px;color:var(--hgj-warn);line-height:1.7;white-space:normal}.err{padding:18px;color:var(--hgj-danger)}
+  .linkbtn{border:0;background:transparent;color:var(--hgj-primary);cursor:pointer;padding:0}
+  @media(max-width:860px){.app{grid-template-columns:1fr}.side{width:100%;display:flex;overflow:auto}.brand{display:none}.side button{width:auto;min-width:96px}.main{padding:0 10px 10px}.table-wrap{max-height:none}}
+</style>
 </head>
-<body>
-<h1>价表总台</h1>
-<div class="sub" id="sub">加载中...</div>
-
-<div class="tabs">
-  <button class="tab on" data-tab="ocean">海运</button>
-  <button class="tab" data-tab="charges">港杂</button>
-  <button class="tab" data-tab="truck">拖车</button>
-  <button class="tab" data-tab="customs">报关</button>
-  <button class="tab" data-tab="insurance">保险</button>
-  <span class="right"><span class="stat" id="stat"></span><button class="csv" id="csv">导出CSV</button></span>
+<body class="hgj-page">
+<div class="app">
+  <aside class="side">
+    <div class="brand">运价管理</div>
+    <button class="on" data-tab="ocean">海运运价</button>
+    <button data-tab="charges">港杂费</button>
+    <button data-tab="truck">拖车报价</button>
+    <button data-tab="customs">报关报价</button>
+    <button data-tab="insurance">货运保险</button>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <h1>运价管理</h1>
+      <div class="stamp" id="stamp">v2026.08.29-1 · 生成时间 --</div>
+    </div>
+    <section class="hgj-card toolbar">
+      <label class="field"><span>起运港</span><input type="text" id="pol"></label>
+      <label class="field"><span>目的港</span><input type="text" id="pod"></label>
+      <label class="field"><span>船公司</span><input type="text" id="carrier"></label>
+      <label class="check"><input type="checkbox" id="active"> 只看有效</label>
+      <button class="primary" id="search">查询</button>
+      <button class="ghost" id="csv">导出CSV</button>
+    </section>
+    <section class="hgj-card summary" id="sub">加载中...</section>
+    <section id="content" class="content"></section>
+  </main>
 </div>
-
-<div class="bar">
-  <label>起运港 <input type="text" id="pol"></label>
-  <label>目的港 <input type="text" id="pod"></label>
-  <label>船公司 <input type="text" id="carrier"></label>
-  <label><input type="checkbox" id="active"> 只看有效</label>
-</div>
-
-<div id="content" class="content"></div>
-
-<script>
-var state={tab:"ocean",expanded:{},data:{ocean:[],ocean_plans:[],ocean_bills:[],tariff:[],matrices:[],matrix_items:[],local:[],truck:[],truck_legacy:[],customs:[],insurance:[]},count:{}};
-var cols={
-  ocean:[["pol","起运港"],["pod","目的港"],["carrier","船公司"],["forwarder","货代"],["currency","币种"],["gp20","20GP成本","num","money"],["hq40","40HQ成本","num","money"],["customer_gp20","20GP客户价","num","money"],["customer_hq40","40HQ客户价","num","money"],["margin20","20GP毛差","num","margin20"],["margin40","40HQ毛差","num","margin40"],["valid","有效期"],["status","状态","status"],["remarks","备注"]],
-  ocean_plans:[["bl_no","提单号"],["pol","起运港"],["pod","目的港"],["carrier_code","船公司"],["forwarder_cn","货代"],["container_type","箱型"],["container_qty","柜量","num"],["etd","开航"],["freight_cost","成本","num","money"],["freight_cost_currency","成本币种"],["freight_sale_usd","卖价","num","money"],["actual_margin","毛差","num","actual_margin"],["shipment_no","订舱号"]],
-  ocean_bills:[["bl_no","提单号"],["cost_category","费目"],["currency","币种"],["amount","成本","num","money"],["sale_amount","转客户价","num","money"],["supplier","供应商"],["bill_month","账单月"],["fee_status","费用状态","fee_status"],["remarks","备注"]],
-  tariff:[["carrier","船公司"],["port","港口"],["container_type","箱型"],["fee","费目"],["amount_cny","金额CNY","num","money"],["unit_basis","计费单位"],["flag","必收/条件","flag"],["station_name","场站"],["valid","有效期"],["review_status","审核"]],
-  matrices:[["code","套餐"],["carrier_code","船公司"],["pol","起运港"],["pod","目的港"],["bl_type","提单"],["free_days_origin","起运免堆","num"],["free_days_dest","目的免堆","num"],["total_cost_20gp","20GP合计","num","money"],["total_cost_40hq","40HQ合计","num","money"],["cost_currency","币种"],["is_active","启用","bool"],["valid","有效期"]],
-  matrix_items:[["matrix_code","套餐"],["charge_name","费目"],["container_type","箱型"],["unit_price","单价","num","money"],["qty","数量","num"],["amount","金额","num","money"],["currency","币种"],["unit","单位"],["is_required","必收","bool"]],
-  local:[["carrier","船公司"],["pol","起运港"],["pod","目的港"],["company_name","公司"],["container_type","箱型"],["charge_name","费目"],["amount","金额","num","money"],["currency","币种"],["cost_total","成本合计","num","money"],["sell_total","销售合计","num","money"],["markup_cny","加价","num","money"],["free_time","免箱期","free"],["valid","有效期"],["is_active","启用","bool"]],
-  truck:[["factory_name","工厂"],["pol","起运港"],["pod","目的港"],["container_type","箱型"],["tier","轻重档","tier"],["rate","价格","num","money"],["currency","币种"],["unit","单位"],["valid","有效期"],["is_active","启用","bool"]],
-  customs:[["vendor_cn","报关行"],["pol","口岸"],["base_fee","基础费","num","money"],["max_free_descs","含品名数","num"],["extra_per_desc","超品名加收","num","money"],["billing_rule","计费规则"],["currency","币种"],["notes","备注"],["valid","有效期"]],
-  insurance:[["bl_no","提单号"],["pol","起运港"],["pod","目的港"],["insured_name","被保险人"],["policyholder_name","投保人"],["insurance_rate","费率","rate"],["markup_pct","加成","markup"],["invoice_amount","发票金额","num","money"],["insured_amount","保额","num","money"],["check","保额校验"],["currency","币种"],["status","状态"],["insurance_policy_no","保单号"],["insurance_cost","保费","num","money"],["etd","ETD"],["vessel_voyage","船名航次"]]
-};
-function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
-function blank(v){return v===null||v===undefined||v==="";}
-function cell(v){return blank(v)?'<span class="na">—</span>':esc(v);}
-function attr(v){return esc(v).replace(/'/g,"&#39;");}
-function openWorkbenchTab(title,url){if(window.parent!==window)window.parent.postMessage({type:'sanlyn:open-tab',title:title,url:url},location.origin);else window.open(url,'_blank');}
-function money(v){return blank(v)?'<span class="na">—</span>':Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});}
-function diff(a,b){if(blank(a)||blank(b))return null;var n=Number(a)-Number(b);return Number.isFinite(n)?n:null;}
-function validText(r){var a=r.valid_from||"",b=r.valid_to||r.valid_until||"";return (a||"")+(a||b?" ~ ":"")+(b||"");}
-function expired(r){var d=r.valid_to||r.valid_until;return d && d < new Date().toISOString().slice(0,10);}
-function feeName(r){return [r.charge_item_code,r.charge_item_name].filter(Boolean).join(" · ");}
-function flagText(r){return r.required_flag?"必收":(r.conditional_flag?"条件":"—");}
-function freeText(v){if(blank(v))return ""; if(typeof v==="object")return JSON.stringify(v); return v;}
-function statusText(v){return v==="draft"?"草稿":(v||"");}
-function feeStatusText(v){return {fee_recorded:"费用已录入",fee_completed:"费用已完成","费用已录入":"费用已录入","费用已完成":"费用已完成"}[v]||v;}
-function tierText(v){return {light:"轻柜",heavy:"重柜",xheavy:"超重柜"}[v]||v;}
-function ruleText(r){if(blank(r.base_fee)||blank(r.max_free_descs)||blank(r.extra_per_desc))return "";return r.base_fee+"元含"+r.max_free_descs+"个品名，超出每个+"+r.extra_per_desc+"元";}
-function rateText(v){if(blank(v))return "";var n=Number(v)*100;return Number.isFinite(n)?n.toFixed(2).replace(/\.?0+$/,"")+"%":v;}
-function markupText(v){if(blank(v))return "";var n=Number(v);return Number.isFinite(n)?n+"%(发票额×"+(n/100).toFixed(2).replace(/\.?0+$/,"")+")":v;}
-function checkText(r){if(blank(r.insured_amount)||blank(r.invoice_amount)||blank(r.markup_pct))return '<span class="na">—</span>';var want=Number(r.invoice_amount)*Number(r.markup_pct)/100,got=Number(r.insured_amount);if(!Number.isFinite(want)||!Number.isFinite(got))return '<span class="na">—</span>';return Math.abs(got-want)<=1?"通过":'<span class="bad">不一致：应为 '+money(want)+"</span>";}
-function multiCtn(r){return Number(r.container_qty)>1?'<span class="tag">多柜</span>':"";}
-function renderValue(r,c){
-  var k=c[0], mode=c[2], mode2=c[3], v=r[k];
-  if(k==="valid")return '<span class="'+(expired(r)?"expired":"")+'">'+cell(validText(r))+"</span>";
-  if(k==="fee")return cell(feeName(r));
-  if(k==="flag")return cell(flagText(r));
-  if(k==="free_time")return cell(freeText(v));
-  if(k==="billing_rule")return cell(ruleText(r));
-  if(k==="check")return checkText(r);
-  if(k==="actual_margin"){var m=diff(r.freight_sale_usd,r.freight_cost);return (m===null?'<span class="na">—</span>':money(m))+multiCtn(r);}
-  if(k==="is_active"||k==="is_required"||k==="insurance_required")return v===true?"是":(v===false?"否":'<span class="na">—</span>');
-  if(k==="status")return cell(statusText(v));
-  if(mode==="fee_status")return cell(feeStatusText(v));
-  if(mode==="tier")return cell(tierText(v));
-  if(mode==="rate")return cell(rateText(v));
-  if(mode==="markup")return cell(markupText(v));
-  if(mode2==="money")return money(v);
-  if(mode2==="margin20")return money(diff(r.customer_gp20,r.gp20));
-  if(mode2==="margin40")return money(diff(r.customer_hq40,r.hq40));
-  return cell(v);
-}
-function tableHtml(rows, cs, empty, opt){
-  var html='<div class="wrap"><table><thead><tr>'+cs.map(function(c){return "<th>"+c[1]+"</th>";}).join("")+"</tr></thead><tbody>";
-  if(!rows.length)return html+'<tr><td colspan="'+cs.length+'" class="na" style="padding:16px">'+empty+'</td></tr></tbody></table></div>';
-  if(opt&&opt.group){
-    var last="";
-    rows.forEach(function(r){var key=opt.group(r);if(key!==last){last=key;html+='<tr class="group"><td colspan="'+cs.length+'">'+cell(key)+'</td></tr>';}html+=rowHtml(r,cs,opt);});
-  } else rows.forEach(function(r){html+=rowHtml(r,cs,opt);});
-  return html+"</tbody></table></div>";
-}
-function rowHtml(r,cs,opt){
-  var tr=opt&&opt.rowClass?opt.rowClass(r):"";
-  var target=detailTarget(r,cs), attrs=target?' data-title="'+attr(target.title)+'" data-url="'+attr(target.url)+'"':"";
-  return "<tr"+(tr?' class="'+tr+'"':"")+attrs+">"+cs.map(function(c){
-    var cls=[]; if(c[2]==="num")cls.push("num"); if(opt&&opt.warn&&opt.warn(r,c[0]))cls.push("warn");
-    return '<td'+(cls.length?' class="'+cls.join(" ")+'"':"")+">"+renderValue(r,c)+"</td>";
-  }).join("")+"</tr>";
-}
-function detailTarget(r,cs){
-  if(cs===cols.ocean_bills&&r.id)return {title:r.bill_no||r.bl_no||("账单 "+r.id),url:"/rates?bill_id="+encodeURIComponent(r.id)};
-  var key=r.shipment_no||r.bl_no||"";
-  if(key)return {title:r.bl_no||r.shipment_no,url:"/ship-entry?id="+encodeURIComponent(key)};
-  if(r.id)return {title:r.bill_no||("账单 "+r.id),url:"/rates?bill_id="+encodeURIComponent(r.id)};
-  if(r.code)return {title:"费率套餐 "+r.code,url:"/rates?matrix_code="+encodeURIComponent(r.code)};
-  return null;
-}
-function oceanWarn(r,k){return ["gp20","hq40","customer_gp20","customer_hq40"].includes(k)&&blank(r[k]);}
-function planWarn(r,k){return ["freight_cost","freight_cost_currency","freight_sale_usd"].includes(k)&&blank(r[k]);}
-function drawOcean(){
-  content.innerHTML='<div class="sections"><div class="section"><h2>价表 <span class="mini">'+state.data.ocean.length+' 行</span></h2>'+tableHtml(state.data.ocean,cols.ocean,"没有符合条件的数据",{rowClass:function(r){return expired(r)?"expired":(r.status==="draft"?"draft":"")},warn:oceanWarn})+'</div><div class="section"><h2>出运票实际海运费 <span class="mini">'+state.data.ocean_plans.length+' 票</span></h2>'+tableHtml(state.data.ocean_plans,cols.ocean_plans,"没有出运票",{warn:planWarn})+'</div><div class="section"><h2>海运费账单明细 <span class="mini">'+state.data.ocean_bills.length+' 行</span></h2>'+tableHtml(state.data.ocean_bills,cols.ocean_bills,"没有海运费账单")+'</div></div>';
-  stat("价表 <b>"+state.data.ocean.length+"</b> / 出运票 <b>"+state.data.ocean_plans.length+"</b> / 账单 <b>"+state.data.ocean_bills.length+"</b>");
-}
-function drawCharges(){
-  var itemsBy={};state.data.matrix_items.forEach(function(i){(itemsBy[i.matrix_code]=itemsBy[i.matrix_code]||[]).push(i);});
-  var mrows=[];
-  state.data.matrices.forEach(function(m){mrows.push(m);if(state.expanded[m.code])itemsBy[m.code]&&itemsBy[m.code].forEach(function(i){mrows.push(Object.assign({code:"  · "+i.matrix_code,carrier_code:"明细",pol:i.charge_name,pod:i.container_type,bl_type:i.unit,free_days_origin:i.qty,total_cost_20gp:i.unit_price,total_cost_40hq:i.amount,cost_currency:i.currency,is_active:i.is_required,valid_from:"",valid_to:""}));});});
-  content.innerHTML='<div class="sections"><div class="section"><h2>官方费率 <span class="mini">'+state.data.tariff.length+' 行</span></h2>'+tableHtml(state.data.tariff,cols.tariff,"没有官方费率",{group:function(r){return (r.carrier||"—")+" / "+(r.port||"—");}})+'</div><div class="section"><h2>货代实报套餐 <span class="mini">'+state.data.matrices.length+' 套餐</span></h2>'+matrixTable(mrows)+'</div><div class="section"><h2>本地费 <span class="mini">'+state.data.local.length+' 行</span></h2>'+tableHtml(state.data.local,cols.local,"没有本地费")+'</div></div>';
-  stat("官方 <b>"+state.data.tariff.length+"</b> / 套餐 <b>"+state.data.matrices.length+"</b> / 本地 <b>"+state.data.local.length+"</b>");
-}
-function matrixTable(rows){
-  var cs=cols.matrices, html='<div class="wrap"><table><thead><tr>'+cs.map(function(c){return "<th>"+c[1]+"</th>";}).join("")+"</tr></thead><tbody>";
-  if(!rows.length)return html+'<tr><td colspan="'+cs.length+'" class="na" style="padding:16px">没有货代实报套餐</td></tr></tbody></table></div>';
-  rows.forEach(function(r){var real=state.data.matrices.indexOf(r)>=0;html+="<tr>"+cs.map(function(c,i){var v=renderValue(r,c);if(real&&i===0)v='<button class="linkbtn" onclick="toggleMatrix(\''+esc(r.code)+'\')">'+(state.expanded[r.code]?"收起":"展开")+"</button> "+cell(r.code);return '<td'+(c[2]==="num"?' class="num"':"")+">"+v+"</td>";}).join("")+"</tr>";});
-  return html+"</tbody></table></div>";
-}
-function drawTruck(){content.innerHTML='<div class="section"><h2>service_rates · truck <span class="mini">'+state.data.truck.length+' 行</span></h2>'+tableHtml(state.data.truck,cols.truck,"没有符合条件的数据",{group:function(r){return r.factory_name||"—";}})+'</div><div class="section" style="margin-top:12px"><h2>旧表·待并入 service_rates <span class="mini">'+state.data.truck_legacy.length+' 行</span></h2>'+legacyTable()+'</div>';stat("当前 <b>"+state.data.truck.length+"</b> 行，旧表 <b>"+state.data.truck_legacy.length+"</b> 行");}
-function legacyTable(){var rows=state.data.truck_legacy;if(!rows.length)return tableHtml([], [["x","旧表"]], "旧表没有数据");var keys=Object.keys(rows[0]);return tableHtml(rows,keys.map(function(k){return [k,k];}),"旧表没有数据");}
-function drawCustoms(){content.innerHTML=tableHtml(state.data.customs,cols.customs,"没有符合条件的数据");stat("当前 <b>"+state.data.customs.length+"</b> 行");}
-function drawInsurance(){content.innerHTML=tableHtml(state.data.insurance,cols.insurance,"没有符合条件的数据");stat("当前 <b>"+state.data.insurance.length+"</b> 行");}
-function stat(s){document.getElementById("stat").innerHTML=s;}
-function draw(){({ocean:drawOcean,charges:drawCharges,truck:drawTruck,customs:drawCustoms,insurance:drawInsurance}[state.tab])();}
-function query(){
-  var p=new URLSearchParams();
-  ["pol","pod","carrier"].forEach(function(id){var v=document.getElementById(id).value.trim();if(v)p.set(id,v);});
-  p.set("active_only",document.getElementById("active").checked?"true":"false");
-  return p.toString();
-}
-async function load(){
-  document.getElementById("sub").textContent="加载中...";
-  try{
-    var r=await fetch("/api/db/rates-hub?"+query(),{headers:{Authorization:"Bearer "+SanlynTable.token()}});
-    var j=await r.json(); if(!r.ok||!j.success)throw new Error(j.error||("HTTP "+r.status));
-    state.data=Object.assign(state.data,j.data||{}); state.count=j.count||{};
-    document.getElementById("sub").textContent="只读 · 海运/港杂/拖车/报关/保险 · 生成 "+new Date().toLocaleString("zh-CN");
-    draw();
-  }catch(e){document.getElementById("sub").textContent="加载失败";content.innerHTML='<div class="wrap"><table><tbody><tr><td class="err">读取失败：'+esc(e.message)+"</td></tr></tbody></table></div>";}
-}
-function csvValue(v){return '"' + String(blank(v)?"":v).replace(/"/g,'""') + '"';}
-function rowsForCsv(){
-  if(state.tab==="ocean"){
-    var rows=[];
-    state.data.ocean.forEach(function(r){rows.push(Object.assign({section:"价表"},r));});
-    state.data.ocean_plans.forEach(function(r){rows.push(Object.assign({section:"出运票实际海运费"},r));});
-    state.data.ocean_bills.forEach(function(r){rows.push(Object.assign({section:"海运费账单明细"},r));});
-    return {cols:[["section","类别"]].concat(cols.ocean,cols.ocean_plans,cols.ocean_bills),rows:rows};
-  }
-  if(state.tab!=="charges")return {cols:cols[state.tab]||cols.ocean,rows:state.data[state.tab]||[]};
-  var rows=[];
-  state.data.tariff.forEach(function(r){rows.push(Object.assign({section:"官方费率"},r));});
-  state.data.matrices.forEach(function(r){rows.push(Object.assign({section:"货代实报套餐"},r));});
-  state.data.matrix_items.forEach(function(r){rows.push(Object.assign({section:"套餐明细"},r));});
-  state.data.local.forEach(function(r){rows.push(Object.assign({section:"本地费"},r));});
-  return {cols:[["section","类别"]].concat(cols.tariff,cols.matrices,cols.matrix_items,cols.local),rows:rows};
-}
-function exportCsv(){
-  var pack=rowsForCsv(), out=[pack.cols.map(function(c){return csvValue(c[1]);}).join(",")];
-  pack.rows.forEach(function(r){out.push(pack.cols.map(function(c){var k=c[0];if(k==="valid")return csvValue(validText(r));if(k==="fee")return csvValue(feeName(r));if(k==="flag")return csvValue(flagText(r));if(k==="billing_rule")return csvValue(ruleText(r));if(k==="check")return csvValue(checkText(r).replace(/<[^>]+>/g,""));if(k==="actual_margin")return csvValue(diff(r.freight_sale_usd,r.freight_cost));if(k==="tier")return csvValue(tierText(r[k]));if(k==="insurance_rate")return csvValue(rateText(r[k]));if(k==="markup_pct")return csvValue(markupText(r[k]));if(c[3]==="margin20")return csvValue(diff(r.customer_gp20,r.gp20));if(c[3]==="margin40")return csvValue(diff(r.customer_hq40,r.hq40));return csvValue(k==="free_time"?freeText(r[k]):r[k]);}).join(","));});
-  var a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+out.join("\n")],{type:"text/csv;charset=utf-8"}));a.download="rates-hub-"+state.tab+".csv";a.click();URL.revokeObjectURL(a.href);
-}
-function toggleMatrix(code){state.expanded[code]=!state.expanded[code];draw();}
-document.querySelectorAll(".tab").forEach(function(b){b.onclick=function(){state.tab=b.dataset.tab;document.querySelectorAll(".tab").forEach(function(x){x.classList.toggle("on",x===b);});draw();};});
-["pol","pod","carrier"].forEach(function(id){document.getElementById(id).onchange=load;});
-document.getElementById("active").onchange=load;
-document.getElementById("csv").onclick=exportCsv;
-document.getElementById("content").onclick=function(e){var row=e.target.closest("tr[data-url]");if(!row||e.target.closest("button"))return;openWorkbenchTab(row.dataset.title,row.dataset.url)};
-load();
-</script>
+<script src="/public/rates-hub.js"></script>
 </body>
 </html>

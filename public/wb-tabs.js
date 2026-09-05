@@ -3,13 +3,13 @@
 var MAX_TABS=20,FIXED_ID="workbench",STORAGE_KEY="sanlyn.wbTabs.v2";
 // 新增页面要同时加 nginx location、KNOWN_REAL_PATHS 白名单和 BUILT 映射；否则会被转成待建占位，避免落进 SPA 兜底页。
 var KNOWN_REAL_PATHS=[
-  "/wb","/wb-tabs","/ocean","/rates","/ship-grid","/ship-entry","/order-entry","/order-services","/order-staff-slots","/manifest","/manifest-send","/qingdao-manifest-send","/xiamen-manifest-send","/tianjin-dalian-manifest-send","/shenzhen-nansha-manifest-send","/online-customs","/afr-send","/ams-send","/isf-send","/em-aci-send","/ics2-send","/vgm-send","/container-watch","/cargo-insurance","/shipment-tracking","/warehouse-info","/spot-ecommerce","/manifest-cfg","/kb",
-  "/ops-alerts","/fee-alerts","/fee-templates","/biz-alerts","/ops-todos","/audit-review","/global-search","/settlement-management","/commission-management","/business-report","/financial-report","/booking-platform","/bl-management","/cargo-info","/consolidated-fee-details","/invoice-records","/receipt-payment-management","/single-ticket-quote","/smart-email","/transport-directions",
+  "/wb","/wb-tabs","/ocean","/rates","/rates-hub","/ship-grid","/ship-entry","/order-entry","/order-services","/order-staff-slots","/manifest","/manifest-send","/qingdao-manifest-send","/xiamen-manifest-send","/tianjin-dalian-manifest-send","/shenzhen-nansha-manifest-send","/online-customs","/afr-send","/ams-send","/isf-send","/em-aci-send","/ics2-send","/vgm-send","/container-watch","/cargo-insurance","/shipment-tracking","/warehouse-info","/spot-ecommerce","/manifest-cfg","/kb",
+  "/ops-alerts","/fee-alerts","/fee-templates","/biz-alerts","/ops-todos","/audit-review","/global-search","/settlement-management","/commission-management","/business-report","/financial-report","/booking-platform","/bl-management","/cargo-info","/consolidated-fee-details","/invoice-records","/receipt-payment-management","/single-ticket-quote","/smart-email","/transport-directions","/hy","/hy/index.html","/hy/grid.html",
   "/custom-nav","/agent","/center","/check","/client","/dv","/email","/empty-shelf","/health","/html","/login","/me","/my","/one","/petwatch","/restock","/si","/sources","/staff-tasks","/trip"
 ];
 // 导航叶子到已上线真实页的映射。没有真实页的模块不要硬映射，让待建机制兜底。
 var BUILT={
-  "工作台":"/wb","运价管理":"/rates","智能邮箱":"/smart-email","单票报价":"/single-ticket-quote","费用模板":"/fee-templates",
+  "工作台":"/wb","海运工作台":"/hy/index.html","运价管理":"/rates-hub","智能邮箱":"/smart-email","单票报价":"/single-ticket-quote","费用模板":"/fee-templates",
   "海运出口":"/ship-grid","海运进口":"/transport-directions","空运出口":"/transport-directions","空运进口":"/transport-directions","陆运":"/transport-directions","铁路运输":"/transport-directions","内贸水运":"/transport-directions","自拼":"/transport-directions","订单录入":"/order-entry","服务项目":"/order-services","订单人员槽":"/order-staff-slots",
   "上海-舱单发送":"/manifest-send","青岛-舱单发送":"/qingdao-manifest-send","厦门-舱单发送":"/xiamen-manifest-send","天津/大连-舱单":"/tianjin-dalian-manifest-send","深圳/南沙-舱单":"/shenzhen-nansha-manifest-send","AFR发送":"/afr-send","AMS发送":"/ams-send","ISF发送":"/isf-send","EM&ACI发送":"/em-aci-send","ICS2":"/ics2-send","在线报关":"/online-customs","VGM发送":"/vgm-send","订舱平台":"/booking-platform","账单管理":"/ocean","审核提交记录":"/ops-todos",
   "盯箱宝":"/container-watch","全程货物跟踪":"/shipment-tracking","SPOT电商":"/spot-ecommerce","货运保险":"/cargo-insurance","核销管理":"/settlement-management","提成管理":"/commission-management",

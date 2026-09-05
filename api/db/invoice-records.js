@@ -2,7 +2,7 @@
 import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
 
-const VERSION = "v2026.08.26-2";
+const VERSION = "v2026.08.27-1";
 const READ_ROLES = new Set(["admin", "finance", "sales", "ops", "operator", "ceo", "superadmin"]);
 const WRITE_ROLES = new Set(["admin", "finance", "ceo", "superadmin"]);
 const TABLES = [
@@ -12,11 +12,16 @@ const TABLES = [
 const FIELDS = [
   ["invoice_no", "发票号码"], ["invoice_type", "发票类型"], ["issue_date", "开票日期"],
   ["seller_name", "销售方"], ["seller_tax_id", "销售方税号"], ["buyer_name", "购买方"],
-  ["buyer_tax_id", "购买方税号"], ["amount_ex_tax", "不含税金额"], ["total_tax", "税额"],
+  ["buyer_tax_id", "购买方税号"], ["buyer_company_code", "购买方公司码"], ["seller_company_code", "销售方公司码"],
+  ["amount_ex_tax", "不含税金额"], ["total_tax", "税额"],
   ["amount_incl_tax", "价税合计"], ["tax_rate", "税率"], ["currency", "币种"],
   ["review_status", "审核状态"], ["void_status", "作废状态"], ["source", "来源"],
   ["contract_nos", "合同号"], ["customs_nos", "报关单号"], ["attachments", "附件"],
   ["line_items", "明细行"], ["created_at", "创建时间"], ["updated_at", "更新时间"],
+];
+const EXTRA_RETURN_FIELDS = [
+  "bl_nos", "payee_bank_name", "payee_bank_account", "payment_currency_limit",
+  "receivable_fx_currency", "receivable_fx_amount", "remark",
 ];
 const MONEY_FIELDS = new Set(["amount_ex_tax", "total_tax", "amount_incl_tax", "tax_rate"]);
 const EDIT_FIELDS = ["invoice_no", "invoice_type", "issue_date", "seller_name", "seller_tax_id", "buyer_name",
@@ -34,6 +39,7 @@ function clean(v, max = 120) {
 function has(v) {
   if (v === null || v === undefined) return false;
   if (Array.isArray(v)) return v.length > 0;
+  if (v instanceof Date) return !Number.isNaN(v.getTime());
   if (typeof v === "object") return Object.keys(v).length > 0;
   return String(v).trim() !== "";
 }
@@ -224,7 +230,10 @@ async function loadRows(pool, meta, colSet, query) {
   ];
   params.push(limit);
   const id = colSet.has("id") ? "i.id::text AS id" : "NULL AS id";
-  const fields = FIELDS.map(([name]) => colExpr(name, colSet)).join(", ");
+  const fields = [
+    ...FIELDS.map(([name]) => colExpr(name, colSet)),
+    ...EXTRA_RETURN_FIELDS.map((name) => colExpr(name, colSet)),
+  ].join(", ");
   const order = [
     colSet.has("issue_date") ? "i.issue_date DESC NULLS LAST" : "",
     colSet.has("updated_at") ? "i.updated_at DESC NULLS LAST" : "",
@@ -257,6 +266,7 @@ function alertsFor(row, colSet) {
 function normalize(row, colSet) {
   const out = { side: row.side, side_label: row.side_label, id: row.id, alerts: alertsFor(row, colSet) };
   for (const [name] of FIELDS) out[name] = row[name];
+  for (const name of EXTRA_RETURN_FIELDS) out[name] = row[name];
   out.missing = FIELDS
     .filter(([name]) => !colSet.has(name) || !has(row[name]))
     .map(([name, label]) => ({ name, label, reason: colSet.has(name) ? "empty" : "not_connected" }));
