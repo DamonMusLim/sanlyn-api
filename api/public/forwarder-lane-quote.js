@@ -314,14 +314,19 @@ function buildLines(body, token, company, validFrom, validTo) {
   }
   rawLines.forEach(function(line) {
     var carrier = text(line && line.carrier);
+    var rawContainerType = text(line && line.container_type);
     var ct = containerType(line && line.container_type);
-    var usd = positiveNumber(line && line.unguaranteed_usd);
-    if (!usd) {
-      out.skipped.push({ carrier: carrier, container_type: ct || text(line && line.container_type), reason: "unguaranteed_usd_not_positive" });
+    if (!ct) {
+      out.skipped.push({
+        carrier: carrier,
+        container_type: rawContainerType,
+        reason: "unsupported_container_type: " + rawContainerType,
+      });
       return;
     }
-    if (!ct) {
-      out.skipped.push({ carrier: carrier, container_type: text(line && line.container_type), reason: "unsupported_container_type" });
+    var usd = positiveNumber(line && line.unguaranteed_usd);
+    if (!usd) {
+      out.skipped.push({ carrier: carrier, container_type: ct, reason: "unguaranteed_usd_not_positive" });
       return;
     }
     out.lines.push({
