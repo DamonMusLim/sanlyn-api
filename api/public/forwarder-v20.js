@@ -26,6 +26,10 @@ async function ensureColumns(pool){
       ADD COLUMN IF NOT EXISTS trucking_included boolean DEFAULT false,
       ADD COLUMN IF NOT EXISTS trucking_fee      numeric
   `);
+  await pool.query(`
+    ALTER TABLE forwarder_carrier_agreements
+      ADD COLUMN IF NOT EXISTS company_code text
+  `);
 }
 
 async function loadToken(pool, code){
@@ -37,9 +41,16 @@ async function loadToken(pool, code){
       created_at timestamptz DEFAULT now()
     )
   `);
+  await pool.query(`
+    ALTER TABLE forwarder_portal_tokens
+      ADD COLUMN IF NOT EXISTS company_id int
+  `);
   if (!code) return { error:404, body:{ ok:false, error:"not_found" } };
   const { rows } = await pool.query(
-    "SELECT code, forwarder_co, expires_at FROM forwarder_portal_tokens WHERE code = $1",
+    `SELECT t.code, t.forwarder_co, t.company_id, c.code AS company_code, t.expires_at
+       FROM forwarder_portal_tokens t
+       LEFT JOIN companies c ON c.id = t.company_id
+      WHERE t.code = $1`,
     [code]
   );
   if (!rows.length) return { error:404, body:{ ok:false, error:"not_found" } };
@@ -98,15 +109,24 @@ function groupRows(rows){
   return Object.keys(groups).map(function(k){ return groups[k]; });
 }
 
-async function resolveCarriers(pool, forwarderCo, lanes){
+async function resolveCarriers(pool, token, lanes){
   // 定义(Damon 2026-07-03 "只看自己相关的"): 船司 = ①本货代该航线级协议(精确 pol+pod) ②客户订单指定 ③本货代已报价。
   // 去掉"起运港级协议全铺"(byPol)——那会把该港所有 open 单冒出来(89单→太多)。0船司的航线由上层过滤隐藏。
+  var forwarderCo = token.forwarder_co;
+  var companyCode = token.company_code || null;
+  var companyId = token.company_id || null;
   var agMap = {};        // 航线级协议 pol::pod -> {carrier}
   var quotedByRfq = {};  // rfq_id -> {carrier}
   try {
     var r = await pool.query(
-      "SELECT UPPER(TRIM(carrier_code)) AS code, UPPER(TRIM(COALESCE(pol,''))) AS pol, UPPER(TRIM(COALESCE(pod,''))) AS pod FROM forwarder_carrier_agreements WHERE forwarder_co=$1 AND active IS TRUE AND pod IS NOT NULL AND TRIM(pod) <> ''",
-      [forwarderCo]);
+      `SELECT UPPER(TRIM(carrier_code)) AS code,
+              UPPER(TRIM(COALESCE(pol,''))) AS pol,
+              UPPER(TRIM(COALESCE(pod,''))) AS pod
+         FROM forwarder_carrier_agreements
+        WHERE (company_code = $1 OR forwarder_co = $2)
+          AND active IS TRUE
+          AND pod IS NOT NULL AND TRIM(pod) <> ''`,
+      [companyCode, forwarderCo]);
     r.rows.forEach(function(row){
       var k = normalizePort(row.pol) + "::" + normalizePort(row.pod);
       (agMap[k] = agMap[k] || {})[row.code] = 1;
@@ -114,8 +134,12 @@ async function resolveCarriers(pool, forwarderCo, lanes){
   } catch(e){}
   try {
     var q = await pool.query(
-      "SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier FROM freight_rfq_items WHERE forwarder_co=$1 AND carrier IS NOT NULL AND TRIM(carrier) <> ''",
-      [forwarderCo]);
+      `SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier
+         FROM freight_rfq_items
+        WHERE (($1::int IS NOT NULL AND forwarder_company_id = $1)
+            OR forwarder_co = $2)
+          AND carrier IS NOT NULL AND TRIM(carrier) <> ''`,
+      [companyId, forwarderCo]);
     q.rows.forEach(function(row){
       if (!row.rfq_id) return;
       (quotedByRfq[String(row.rfq_id)] = quotedByRfq[String(row.rfq_id)] || {})[row.carrier] = 1;
@@ -167,14 +191,25 @@ async function attachOfficialPortCharges(pool, lanes){
   return lanes;
 }
 
-async function attachForwarderQuotes(pool, forwarderCo, lanes){
+async function attachForwarderQuotes(pool, token, lanes){
   // 接真实数据(Damon 2026-07-05 去mock): 把本货代 freight_rfq_items 真实报价 按 rfq_id+carrier attach。
   // 只含真报过的船司(voyage/vessel/免柜/rate/cutoff),没报的carrier无键 → 前端显空,绝不造假voyage。
+  var forwarderCo = token.forwarder_co;
+  var companyId = token.company_id || null;
   var byKey = {};
   try {
     var r = await pool.query(
-      "SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier, vessel, voyage, to_char(etd,'MM/DD') AS etd, usd_rate, transit_days, free_pol_days, free_pod_days, to_char(si_cutoff_at,'MM/DD') AS si_cutoff, to_char(cy_cutoff_at,'MM/DD') AS cy_cutoff, container_type FROM freight_rfq_items WHERE forwarder_co=$1 AND carrier IS NOT NULL AND TRIM(carrier) <> ''",
-      [forwarderCo]);
+      `SELECT rfq_id, UPPER(TRIM(carrier)) AS carrier, vessel, voyage,
+              to_char(etd,'MM/DD') AS etd, usd_rate, transit_days,
+              free_pol_days, free_pod_days,
+              to_char(si_cutoff_at,'MM/DD') AS si_cutoff,
+              to_char(cy_cutoff_at,'MM/DD') AS cy_cutoff,
+              container_type
+         FROM freight_rfq_items
+        WHERE (($1::int IS NOT NULL AND forwarder_company_id = $1)
+            OR forwarder_co = $2)
+          AND carrier IS NOT NULL AND TRIM(carrier) <> ''`,
+      [companyId, forwarderCo]);
     r.rows.forEach(function(row){
       byKey[String(row.rfq_id) + "::" + row.carrier] = {
         vessel: row.vessel || "", voyage: row.voyage || "",
@@ -201,6 +236,7 @@ async function attachForwarderQuotes(pool, forwarderCo, lanes){
 }
 
 async function handleGet(pool, token, res){
+  await ensureColumns(pool);
   const { rows } = await pool.query(`
     SELECT r.id, r.pol, r.pod, r.ctnr_type, r.status, r.etd,
            COALESCE(r.service_type, 'ocean') AS service_type,
@@ -218,10 +254,10 @@ async function handleGet(pool, token, res){
            ) AS product_summary
       FROM freight_rfqs r
       LEFT JOIN LATERAL (
-        SELECT container_qty, gross_weight_kg, carrier_code AS order_carrier
-          FROM shipping_plans
-         WHERE order_id = r.order_id
-         ORDER BY id DESC LIMIT 1
+        SELECT sp2.container_qty, sp2.gross_weight_kg, sp2.carrier_code AS order_carrier
+          FROM shipping_plans sp2
+         WHERE sp2.id = r.shipping_plan_id
+         LIMIT 1
       ) sp ON TRUE
      WHERE r.status = 'open'
        AND COALESCE(r.service_type, 'ocean') = 'ocean'
@@ -230,10 +266,10 @@ async function handleGet(pool, token, res){
      LIMIT 300
   `);
   var lanes = groupRows(rows);
-  lanes = await resolveCarriers(pool, token.forwarder_co, lanes);
+  lanes = await resolveCarriers(pool, token, lanes);
   lanes = lanes.filter(function(l){ return (l.carrier_options||[]).length > 0; }); // 其他不显示:无协议无订单指定船司的航线整条隐藏
   lanes = await attachOfficialPortCharges(pool, lanes);
-  lanes = await attachForwarderQuotes(pool, token.forwarder_co, lanes);
+  lanes = await attachForwarderQuotes(pool, token, lanes);
   return send(res, 200, {
     ok:true,
     forwarder_co:token.forwarder_co,
