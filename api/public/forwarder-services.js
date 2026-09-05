@@ -193,7 +193,7 @@ async function saveQuote(req, res, pool, token) {
   if (!token.company_id) return res.status(403).json({ ok: false, error: "token missing company_id" });
   const body = bodyOf(req);
   const service = clean(body.service || body.svc);
-  if (service === "insurance") return res.json({ ok: true, saved: false, skipped: "insurance branch unchanged" });
+  if (service === "insurance") return res.json({ ok: true, saved: false, skipped: "保险暂未开放" });
   if (service !== "truck" && service !== "customs") return res.status(400).json({ ok: false, error: "service invalid" });
   const rate = body.rate_cny == null ? null : Number(body.rate_cny);
   if (!Number.isFinite(rate) || rate <= 0) return res.status(400).json({ ok: false, error: "rate_cny invalid" });
@@ -230,6 +230,9 @@ export default async function handler(req, res) {
     if (!token) return res.status(410).json({ ok: false, error: "链接已过期" });
     if (req.method === "GET" && service === "truck") return await handleTruck(req, res, pool, token);
     if (req.method === "GET" && service === "customs") return await handleCustoms(req, res, pool, token);
+    if (req.method === "GET" && service === "insurance") {
+      return res.json({ ok: true, service: "insurance", available: false, reason: "未开放", policies: [] });
+    }
     if (req.method === "POST" && segments[segments.length - 1] === "quote") return await saveQuote(req, res, pool, token);
     return res.status(404).json({ ok: false, error: "Not found" });
   } catch (e) {

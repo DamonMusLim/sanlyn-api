@@ -165,7 +165,8 @@ async function loadRfqHistory(pool, companyId, pol, pod, carrier) {
 
 async function loadShipmentHistory(pool, companyId, pol, pod, carrier) {
   const { rows } = await pool.query(
-    `SELECT sp.freight_cost, sp.freight_cost_currency, sp.container_type, sp.etd, sp.bl_no, sp.shipment_no, sp.pol, sp.pod
+    `SELECT sp.freight_cost, sp.freight_cost_currency, sp.container_type, sp.etd, sp.bl_no, sp.shipment_no,
+            sp.vessel, sp.voyage, sp.pol, sp.pod
        FROM shipping_plans sp
       WHERE sp.forwarder_company_id = $1
         AND upper(btrim(COALESCE(sp.carrier_code, ''))) = $2
@@ -183,6 +184,8 @@ async function loadShipmentHistory(pool, companyId, pol, pod, carrier) {
       etd: dateOnly(row.etd),
       bl_no: row.bl_no || null,
       shipment_no: row.shipment_no || null,
+      vessel: row.vessel || null,
+      voyage: row.voyage || null,
       date: dateOnly(row.etd),
     };
   });
@@ -223,6 +226,60 @@ async function loadNextSailings(pool, pol, pod, carrier) {
   return out.slice(0, 3);
 }
 
+async function loadVoyageHistory(pool, companyId, pol, pod, carrier) {
+  const { rows } = await pool.query(
+    `SELECT sp.voyage, sp.vessel, sp.etd, sp.pol, sp.pod
+       FROM shipping_plans sp
+      WHERE sp.forwarder_company_id = $1
+        AND upper(btrim(COALESCE(sp.carrier_code, ''))) = $2
+        AND btrim(COALESCE(sp.voyage, '')) <> ''
+      ORDER BY sp.etd DESC NULLS LAST, sp.id DESC
+      LIMIT 300`,
+    [companyId, carrier]
+  );
+  return rows.filter(function(row) { return sameLane(row, pol, pod); }).map(function(row) {
+    return {
+      voyage: text(row.voyage),
+      vessel: row.vessel || null,
+      etd: dateOnly(row.etd),
+      source: "history",
+    };
+  });
+}
+
+function buildVoyageOptions(nextSailings, voyageHistory) {
+  var byVoyage = {};
+  function add(row, requireVessel) {
+    var voyage = text(row && row.voyage);
+    var vessel = text(row && row.vessel);
+    if (!voyage || (requireVessel && !vessel)) return;
+    var entry = {
+      voyage: voyage,
+      vessel: vessel || null,
+      etd: dateOnly(row.etd),
+      source: row.source || "history",
+    };
+    var existing = byVoyage[voyage];
+    if (!existing || ts(entry.etd) > ts(existing.etd) || (ts(entry.etd) === ts(existing.etd) && !existing.vessel && entry.vessel)) {
+      byVoyage[voyage] = entry;
+    }
+  }
+
+  nextSailings.forEach(function(row) {
+    add({ ...row, source: "schedule" }, true);
+  });
+  voyageHistory.forEach(function(row) {
+    add(row, false);
+  });
+
+  return Object.values(byVoyage)
+    .sort(function(a, b) {
+      if (a.source !== b.source) return a.source === "schedule" ? -1 : 1;
+      return ts(b.etd) - ts(a.etd);
+    })
+    .slice(0, 12);
+}
+
 async function handleGet(pool, token, req, res) {
   var pol = normalizePort(req.query && req.query.pol);
   var pod = normalizePort(req.query && req.query.pod);
@@ -236,9 +293,11 @@ async function handleGet(pool, token, req, res) {
     loadRfqHistory(pool, token.company_id, pol, pod, carrier),
     loadShipmentHistory(pool, token.company_id, pol, pod, carrier),
     loadNextSailings(pool, pol, pod, carrier),
+    loadVoyageHistory(pool, token.company_id, pol, pod, carrier),
   ]);
   var history = parts[0].concat(parts[1]).concat(parts[2]);
   history.sort(function(a, b) { return ts(firstDate(b)) - ts(firstDate(a)); });
+  var voyageOptions = buildVoyageOptions(parts[3], parts[4]);
 
   return send(res, 200, {
     ok: true,
@@ -247,6 +306,7 @@ async function handleGet(pool, token, req, res) {
     carrier: carrier,
     history: history.slice(0, 90),
     next_sailings: parts[3],
+    voyage_options: voyageOptions,
   });
 }
 
