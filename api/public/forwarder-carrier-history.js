@@ -48,6 +48,15 @@ function normCarrier(v) {
   return text(v).toUpperCase().replace(/\s+/g, " ");
 }
 
+function normBox(v) {
+  return text(v).toUpperCase().replace(/\s+/g, "").replace("HC", "HQ");
+}
+
+function cleanCurrency(v) {
+  var s = text(v).toUpperCase();
+  return s || "USD";
+}
+
 function sameLane(row, pol, pod) {
   return normalizePort(row.pol) === pol && normalizePort(row.pod) === pod;
 }
@@ -65,6 +74,33 @@ function parseDepartures(v) {
   } catch (_) {
     return [];
   }
+}
+
+function rateRows(row) {
+  var base = {
+    source: "freight_rates",
+    gp20: numOrNull(row.gp20),
+    hq40: numOrNull(row.hq40),
+    valid_from: dateOnly(row.valid_from),
+    valid_to: dateOnly(row.valid_to),
+    status: row.status || null,
+    rate_source: row.source || null,
+    updated_at: row.updated_at || null,
+    date: dateOnly(firstDate(row)),
+    currency: cleanCurrency(row.currency),
+  };
+  var box = normBox(row.container_type);
+  if (box === "20GP") {
+    return [{ ...base, container_type: "20GP", amount: base.gp20 }];
+  }
+  if (box === "40HQ" || box === "40GP") {
+    return [{ ...base, container_type: box, amount: base.hq40 }];
+  }
+  var out = [];
+  if (base.gp20 != null) out.push({ ...base, container_type: "20GP", amount: base.gp20 });
+  if (base.hq40 != null) out.push({ ...base, container_type: "40HQ", amount: base.hq40 });
+  if (!out.length) out.push({ ...base, container_type: null, amount: null });
+  return out;
 }
 
 async function loadToken(pool, code) {
@@ -89,7 +125,7 @@ async function loadToken(pool, code) {
 
 async function loadRateHistory(pool, companyId, pol, pod, carrier) {
   const { rows } = await pool.query(
-    `SELECT fr.gp20, fr.hq40, fr.valid_from, fr.valid_to, fr.status, fr.source,
+    `SELECT fr.gp20, fr.hq40, fr.currency, fr.valid_from, fr.valid_to, fr.status, fr.source,
             fr.updated_at, fr.pol, fr.pod
        FROM freight_rates fr
       WHERE fr.forwarder_company_id = $1
@@ -98,24 +134,12 @@ async function loadRateHistory(pool, companyId, pol, pod, carrier) {
       LIMIT 300`,
     [companyId, carrier]
   );
-  return rows.filter(function(row) { return sameLane(row, pol, pod); }).slice(0, 30).map(function(row) {
-    return {
-      source: "freight_rates",
-      gp20: numOrNull(row.gp20),
-      hq40: numOrNull(row.hq40),
-      valid_from: dateOnly(row.valid_from),
-      valid_to: dateOnly(row.valid_to),
-      status: row.status || null,
-      rate_source: row.source || null,
-      updated_at: row.updated_at || null,
-      date: dateOnly(firstDate(row)),
-    };
-  });
+  return rows.filter(function(row) { return sameLane(row, pol, pod); }).slice(0, 30).flatMap(rateRows);
 }
 
 async function loadRfqHistory(pool, companyId, pol, pod, carrier) {
   const { rows } = await pool.query(
-    `SELECT i.usd_rate, i.container_type, i.vessel, i.etd, i.submitted_at, r.pol, r.pod
+    `SELECT i.usd_rate, i.currency, i.container_type, i.vessel, i.etd, i.submitted_at, r.pol, r.pod
        FROM freight_rfq_items i
        JOIN freight_rfqs r ON r.id = i.rfq_id
       WHERE i.forwarder_company_id = $1
@@ -128,6 +152,8 @@ async function loadRfqHistory(pool, companyId, pol, pod, carrier) {
     return {
       source: "freight_rfq_items",
       usd_rate: numOrNull(row.usd_rate),
+      amount: numOrNull(row.usd_rate),
+      currency: cleanCurrency(row.currency),
       container_type: row.container_type || null,
       vessel: row.vessel || null,
       etd: dateOnly(row.etd),
@@ -139,7 +165,7 @@ async function loadRfqHistory(pool, companyId, pol, pod, carrier) {
 
 async function loadShipmentHistory(pool, companyId, pol, pod, carrier) {
   const { rows } = await pool.query(
-    `SELECT sp.freight_cost, sp.container_type, sp.etd, sp.bl_no, sp.shipment_no, sp.pol, sp.pod
+    `SELECT sp.freight_cost, sp.freight_cost_currency, sp.container_type, sp.etd, sp.bl_no, sp.shipment_no, sp.pol, sp.pod
        FROM shipping_plans sp
       WHERE sp.forwarder_company_id = $1
         AND upper(btrim(COALESCE(sp.carrier_code, ''))) = $2
@@ -151,6 +177,8 @@ async function loadShipmentHistory(pool, companyId, pol, pod, carrier) {
     return {
       source: "shipping_plans",
       freight_cost: numOrNull(row.freight_cost),
+      amount: numOrNull(row.freight_cost),
+      currency: cleanCurrency(row.freight_cost_currency),
       container_type: row.container_type || null,
       etd: dateOnly(row.etd),
       bl_no: row.bl_no || null,
