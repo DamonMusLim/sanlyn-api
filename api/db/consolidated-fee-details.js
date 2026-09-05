@@ -1,8 +1,8 @@
 // GET /api/db/consolidated-fee-details — 集运费用明细，只读 freight_supplier_bills 真源。
-import { getPool, setCors } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { getPool, setCors } from "../db.js";
 
-const VERSION = "v2026.08.26-1";
+const VERSION = "v2026.09.05-1";
 const TABLE = "freight_supplier_bills";
 const REQUIRED = [
   "id", "bill_month", "supplier", "cost_category", "amount", "currency",
@@ -12,8 +12,12 @@ const OPTIONAL = [
   "supplier_company_code", "payer_company_code", "currency_norm", "incoterm",
   "link_plan_id", "reconciled", "ap_status", "ap_paid_amount", "ap_paid_at",
   "ar_status", "ar_paid_amount", "ar_paid_at", "payment_note", "bill_file", "fee_status",
+  "sale_amount", "total_price", "tax_rate", "tax_amount", "exchange_rate", "raw",
+  "settlement_company", "charge_basis", "direction",
 ];
 const DETAIL_COLS = REQUIRED.concat(OPTIONAL);
+const TAX_COLS = ["tax_rate", "tax_amount", "total_price"];
+const FX_PATH = "'freight_rate_snapshot','fx'";
 
 function clean(v, max = 160) {
   return String(v ?? "").trim().slice(0, max);
@@ -83,6 +87,17 @@ async function coverage(pool, cols) {
   return { total_rows: totalRows, missing_fields: missingFields(cols), fields };
 }
 
+function fxSnapshot(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const fx = raw.freight_rate_snapshot?.fx;
+  if (!fx || typeof fx !== "object") return null;
+  return {
+    rate: fx.rate ?? null,
+    date: fx.date ?? null,
+    source: fx.source ?? null,
+  };
+}
+
 function addFilter(q, params, conds, cols, queryKey, column) {
   const value = clean(q[queryKey]);
   if (!value || !cols.has(column)) return;
@@ -134,15 +149,23 @@ async function fetchRows(pool, cols, q) {
     payer_company_code: x.payer_company_code || null,
     cost_category: x.cost_category || null,
     amount: money(x.amount),
+    sale_amount: money(x.sale_amount),
     currency: x.currency_norm || x.currency || null,
     qty: money(x.qty),
     unit_price: money(x.unit_price),
+    total_price: money(x.total_price),
+    tax_rate: money(x.tax_rate),
+    tax_amount: money(x.tax_amount),
+    exchange_rate: money(x.exchange_rate),
+    fx_snapshot: fxSnapshot(x.raw),
     bl_no: x.bl_no || null,
     container_no: x.container_no || null,
     incoterm: x.incoterm || null,
+    charge_basis: x.charge_basis || null,
     link_plan_id: x.link_plan_id || null,
     rebill_status: x.rebill_status || null,
     fee_status: x.fee_status || null,
+    direction: x.direction || null,
     reconciled: x.reconciled === null ? null : !!x.reconciled,
     ap_status: x.ap_status || null,
     ap_paid_amount: money(x.ap_paid_amount),
@@ -152,6 +175,62 @@ async function fetchRows(pool, cols, q) {
     ar_paid_at: x.ar_paid_at || null,
     payment_note: x.payment_note || null,
     bill_file: x.bill_file || null,
+    settlement_company: x.settlement_company || null,
+  }));
+}
+
+async function fetchTicketMargins(pool, cols, rows) {
+  const bls = [...new Set(rows.map((r) => r.bl_no).filter(Boolean))];
+  if (!bls.length) return new Map();
+  if (!cols.has("sale_amount")) {
+    return new Map(bls.map((bl) => [bl, { missing_sale_column: true, currencies: [] }]));
+  }
+  const currencyExpr = cols.has("currency_norm")
+    ? `COALESCE(NULLIF(currency_norm,''), NULLIF(currency,''), '未记录币种')`
+    : `COALESCE(NULLIF(currency,''), '未记录币种')`;
+  const r = await pool.query(
+    `SELECT bl_no,
+            ${currencyExpr} AS currency,
+            COUNT(*)::int AS line_count,
+            COUNT(*) FILTER (WHERE sale_amount IS NULL)::int AS unpriced_count,
+            COUNT(*) FILTER (WHERE amount IS NULL)::int AS missing_cost_count,
+            SUM(sale_amount) FILTER (WHERE sale_amount IS NOT NULL) AS sale_sum,
+            SUM(amount) FILTER (WHERE amount IS NOT NULL) AS cost_sum
+       FROM ${TABLE}
+      WHERE bl_no = ANY($1::text[])
+      GROUP BY bl_no, ${currencyExpr}`,
+    [bls]
+  );
+  const map = new Map();
+  for (const row of r.rows) {
+    const item = map.get(row.bl_no) || { missing_sale_column: false, currencies: [] };
+    const unpriced = Number(row.unpriced_count || 0);
+    const missingCost = Number(row.missing_cost_count || 0);
+    const complete = unpriced === 0 && missingCost === 0;
+    const sale = money(row.sale_sum);
+    const cost = money(row.cost_sum);
+    item.currencies.push({
+      currency: row.currency,
+      line_count: Number(row.line_count || 0),
+      unpriced_count: unpriced,
+      missing_cost_count: missingCost,
+      sale_sum: sale,
+      cost_sum: cost,
+      profit: complete ? money(Number(sale || 0) - Number(cost || 0)) : null,
+      complete,
+    });
+    map.set(row.bl_no, item);
+  }
+  return map;
+}
+
+function attachTicketMargins(rows, margins) {
+  return rows.map((row) => ({
+    ...row,
+    ticket_margin: row.bl_no ? margins.get(row.bl_no) || null : {
+      missing_bl_no: true,
+      currencies: [],
+    },
   }));
 }
 
@@ -166,6 +245,18 @@ function summarize(rows) {
     currencies: [...byCurrency.entries()].map(([currency, amount]) => ({ currency, amount })),
     suppliers: new Set(rows.map((r) => r.supplier).filter(Boolean)).size,
     bl_count: new Set(rows.map((r) => r.bl_no).filter(Boolean)).size,
+  };
+}
+
+function sourceMeta(cols) {
+  const presentTaxCols = TAX_COLS.filter((c) => cols.has(c));
+  return {
+    table: TABLE,
+    tax_columns_present: presentTaxCols,
+    tax_columns_missing: TAX_COLS.filter((c) => !cols.has(c)),
+    fx_snapshot_path: cols.has("raw") ? `raw->${FX_PATH}` : null,
+    fx_note: cols.has("raw") ? "汇率只读每票冻结快照；缺快照时不现取汇率。" : "raw 列不存在，无法读取每票冻结汇率。",
+    payment_time_note: "系统尚未记录收付时间,这里是\"没有记录\"不是\"确认没核销\"",
   };
 }
 
@@ -189,15 +280,16 @@ export default async function handler(req, res) {
     const stats = await coverage(pool, cols);
     const connected = !stats.missing_fields.length && stats.total_rows > 0;
     const rows = connected ? await fetchRows(pool, cols, req.query || {}) : [];
+    const margins = connected ? await fetchTicketMargins(pool, cols, rows) : new Map();
     return res.status(200).json({
       success: true,
       version: VERSION,
       generated_at: new Date().toISOString(),
       state: connected ? "ready" : "not_connected",
-      source: { table: TABLE },
+      source: sourceMeta(cols),
       coverage: stats,
       summary: summarize(rows),
-      rows,
+      rows: attachTicketMargins(rows, margins),
     });
   } catch (err) {
     console.error("[consolidated-fee-details]", err);
