@@ -28,14 +28,20 @@ function nullableNumber(v) {
 }
 
 function ymd(date) {
+  // 2026-09-06 修:原来用 toISOString().slice(0,10) 取的是 UTC 日期。
+  // 服务器在东八区,00:00-08:00 之间 UTC 还停在前一天 —— 实测 9/6 00:32 CST 提交,
+  // 有效期被写成 9/5~9/12,货代少拿一天。日期一律按服务器本地日算。
   var d = date instanceof Date ? date : new Date(date);
   if (!Number.isFinite(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+  var y = d.getFullYear();
+  var m = d.getMonth() + 1;
+  var day = d.getDate();
+  return y + "-" + (m < 10 ? "0" + m : String(m)) + "-" + (day < 10 ? "0" + day : String(day));
 }
 
 function addDays(date, days) {
   var d = new Date(date.getTime());
-  d.setUTCDate(d.getUTCDate() + days);
+  d.setDate(d.getDate() + days);   // 同上:本地日推进,不用 setUTCDate
   return d;
 }
 
